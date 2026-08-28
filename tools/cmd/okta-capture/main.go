@@ -25,6 +25,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"regexp"
 	"strings"
 	"time"
 
@@ -201,6 +202,40 @@ func sessionToken(env map[string]string) (string, error) {
 // Every object is printed with a verdict beside it. A filter that can silently
 // under-match must show what it looked at, which is how six leftovers hid in a
 // neighbouring tenant while a cleanup reported success.
+// The three verdicts an application can get. Padded so the audit's columns line
+// up whichever one is printed.
+const (
+	verdictKeep   = "keep   "
+	verdictDelete = "DELETE "
+	verdictSpare  = "spare  "
+)
+
+// appVerdict decides what a cleanup run does with one Okta application.
+//
+// The keeper is identified by something it CARRIES, never by a name the filter
+// happens to miss — the same shape entra-inventory.mjs uses, and for the same
+// reason. Two applications are RESUMED rather than recreated: the saved SCIM app
+// (OKTA_SCIM_APP_ID) and the OIDC app (OKTA_OIDC_APP_NAME, which defaults to the
+// bare word "emisar"). Both match /emisar/, so -cleanup deactivated and deleted
+// the two apps the next certification run signs in against. The USER filter
+// already learned this lesson and exempts the signed-in admin after exactly this
+// accident; the application filter had not.
+func appVerdict(id, label, settingsLabel string, env map[string]string) string {
+	if scim := env["OKTA_SCIM_APP_ID"]; scim != "" && id == scim {
+		return verdictKeep
+	}
+	if oidc := env["OKTA_OIDC_APP_NAME"]; oidc != "" && label == oidc {
+		return verdictKeep
+	}
+	if oursName.MatchString(label) || oursName.MatchString(settingsLabel) {
+		return verdictDelete
+	}
+	return verdictSpare
+}
+
+// oursName is the name this rig gives everything it creates.
+var oursName = regexp.MustCompile(`(?i)emisar`)
+
 func auditTenant(ctx context.Context, env map[string]string, remove bool) error {
 	// SSWS. Okta's API does not accept the console session cookie — it answers 403
 	// — so a token is what makes a DOM-free inventory possible.
@@ -249,8 +284,9 @@ func auditTenant(ctx context.Context, env map[string]string, remove bool) error 
   const users = await get('/api/v1/users?limit=200');
   const me = await get('/api/v1/users/me');
 
-  // Ours by the names this rig uses. Anything else is reported and left alone.
-  const oursApp = a => /emisar/i.test(a.label || '') || /emisar/i.test((a.settings && a.settings.app && a.settings.app.label) || '');
+  // Applications are reported raw. The keep/delete verdict is decided in Go by
+  // appVerdict, so it is reachable by a test — this rig cannot be rehearsed
+  // against a live tenant without mutating someone's Okta org.
 
   // This rig creates APPLICATIONS, not users. Okta is the identity provider
   // here — it pushes accounts to emisar, so nothing it does adds one back.
@@ -269,7 +305,7 @@ func auditTenant(ctx context.Context, env map[string]string, remove bool) error 
   const apiTokens = await get('/api/v1/api-tokens');
 
   return JSON.stringify({
-    apps: apps.map(a => ({id: a.id, label: a.label, status: a.status, ours: oursApp(a)})),
+    apps: apps.map(a => ({id: a.id, label: a.label, status: a.status, settingsLabel: (a.settings && a.settings.app && a.settings.app.label) || ''})),
     users: (users.error ? [] : users).map(u => ({id: u.id, email: u.profile && u.profile.email, status: u.status, ours: oursUser(u)})),
     usersError: users.error || null,
     tokens: (apiTokens.error ? [] : apiTokens).map(t => ({id: t.id, name: t.name})),
@@ -288,7 +324,7 @@ func auditTenant(ctx context.Context, env map[string]string, remove bool) error 
 		Error string `json:"error"`
 		Apps  []struct {
 			ID, Label, Status string
-			Ours              bool
+			SettingsLabel     string `json:"settingsLabel"`
 		}
 		Users []struct {
 			ID, Email, Status string
@@ -309,11 +345,9 @@ func auditTenant(ctx context.Context, env map[string]string, remove bool) error 
 
 	fmt.Println("--- every application, and what this run will do with it ---")
 	for _, app := range report.Apps {
-		verdict := "spare  "
-		if app.Ours {
-			verdict = "DELETE "
-		}
-		fmt.Printf("  %s %-40s %s (%s)\n", verdict, app.Label, app.Status, app.ID)
+		fmt.Printf("  %s %-40s %s (%s)\n",
+			appVerdict(app.ID, app.Label, app.SettingsLabel, env),
+			app.Label, app.Status, app.ID)
 	}
 
 	fmt.Println("--- every user ---")
@@ -341,7 +375,7 @@ func auditTenant(ctx context.Context, env map[string]string, remove bool) error 
 	}
 
 	for _, app := range report.Apps {
-		if !app.Ours {
+		if appVerdict(app.ID, app.Label, app.SettingsLabel, env) != verdictDelete {
 			continue
 		}
 		if err := deleteOktaApp(ctx, token, app.ID); err != nil {

@@ -983,9 +983,9 @@ func certifyClientFlow(ctx context.Context, env map[string]string, outDir, redir
 func countCaptureClients(ctx context.Context) (int, error) {
 	script := fmt.Sprintf(`(() => {
   const visible = el => el.offsetWidth > 0 || el.offsetHeight > 0;
-  return [...document.querySelectorAll('tr')]
-	.filter(tr => visible(tr) && (tr.textContent || '').includes(%q)).length;
-})()`, captureClientName)
+  const ours = tr => [%q, %q].some(name => (tr.textContent || '').includes(name));
+  return [...document.querySelectorAll('tr')].filter(tr => visible(tr) && ours(tr)).length;
+})()`, captureClientName, certifyClientName)
 	var count int
 	err := chromedp.Run(ctx, chromedp.Evaluate(script, &count))
 	return count, err
@@ -1018,23 +1018,27 @@ func removeCaptureClients(ctx context.Context, env map[string]string, outDir str
 		// nothing and left the clients behind.
 		selectRow := fmt.Sprintf(`(() => {
   const visible = el => el.offsetWidth > 0 || el.offsetHeight > 0;
-  const row = [...document.querySelectorAll('tr')]
-	.find(tr => visible(tr) && (tr.textContent || '').includes(%q));
+  const ours = tr => [%q, %q].some(name => (tr.textContent || '').includes(name));
+  const row = [...document.querySelectorAll('tr')].find(tr => visible(tr) && ours(tr));
   if (!row) return false;
   const box = row.querySelector('input[type=checkbox],[role=checkbox]');
   if (!box) return false;
   box.click();
   return true;
-})()`, captureClientName)
+})()`, captureClientName, certifyClientName)
 		var selected bool
 		if err := chromedp.Run(ctx, chromedp.Evaluate(selectRow, &selected)); err != nil {
 			return err
 		}
 		if !selected {
-			if attempt == 0 {
-				fmt.Println("  no capture clients to remove")
-			}
-			return nil
+			// countCaptureClients already said before > 0, so the rows are there
+			// and the checkbox selector missed them. Reporting "no capture
+			// clients to remove" here told an operator their project was clean
+			// while live OAuth secrets sat in it — the exact thing
+			// shared-capture-rigs-own-what-they-create forbids.
+			_ = idpcapture.Screenshot(ctx, outDir, "google-cleanup-unselectable")
+			_ = describePage(ctx, env)
+			return fmt.Errorf("%d client(s) match this rig's names but no row checkbox could be selected", before)
 		}
 		if err := chromedp.Run(ctx, chromedp.Sleep(time.Second)); err != nil {
 			return err
@@ -1141,6 +1145,15 @@ func removeCaptureClients(ctx context.Context, env map[string]string, outDir str
 			return fmt.Errorf("clicked delete but %d capture client(s) remain", after)
 		}
 		fmt.Printf("  removed a capture client (%d left)\n", after)
+	}
+	// The loop is capped, so exhausting it is not success: say what is left
+	// rather than returning a silent all-clear over live credentials.
+	remaining, err := countCaptureClients(ctx)
+	if err != nil {
+		return err
+	}
+	if remaining > 0 {
+		return fmt.Errorf("gave up after 10 delete attempts with %d client(s) still present", remaining)
 	}
 	return nil
 }
