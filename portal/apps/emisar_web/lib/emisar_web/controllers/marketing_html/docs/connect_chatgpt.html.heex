@@ -18,37 +18,12 @@
         </:dek>
       </.docs_header>
 
-      <p class="mt-6 text-base leading-7 text-zinc-400">
-        Using Claude Code, Cursor, Claude Desktop, or a CLI instead? Those connect through the
-        <.docs_inline_code>emisar-mcp</.docs_inline_code>
-        stdio bridge — see <.link
-          navigate={~p"/docs/connect-cli-agent"}
-          class="text-brand-400 hover:text-brand-300"
-        >Connect a CLI agent</.link>. For Claude.ai, see <.link
-          navigate={~p"/docs/connect-claude-ai"}
-          class="text-brand-400 hover:text-brand-300"
-        >Claude.ai</.link>.
-      </p>
+      <.docs_cloud_connector_pointer
+        sibling_label="Claude.ai"
+        sibling_path={~p"/docs/connect-claude-ai"}
+      />
 
-      <.docs_prerequisites>
-        <:item>
-          An account with at least one runner online. Otherwise the agent signs in fine and finds
-          an empty catalog with nothing to call. New here? Run the
-          <.link navigate={~p"/docs/quickstart"} class="text-brand-400 hover:text-brand-300">
-            quickstart
-          </.link>
-          first, then come back to wire in your LLM.
-        </:item>
-        <:item>
-          Runners that do not require signed dispatch. Claude.ai and ChatGPT do not create emisar
-          dispatch signatures, so a runner that requires one needs the
-          <.link
-            navigate={~p"/docs/connect-cli-agent"}
-            class="text-brand-400 hover:text-brand-300"
-          >local MCP bridge</.link>
-          with a signing key and certificate instead.
-        </:item>
-      </.docs_prerequisites>
+      <.docs_cloud_connector_prerequisites />
 
       <.docs_h2 id="connect">Add the connector</.docs_h2>
       <p class="mt-4 text-base text-zinc-400">
@@ -109,31 +84,9 @@
           before the next test.
         </li>
       </ol>
-      <.docs_h2 id="verify">Verify the connection</.docs_h2>
-      <ol class="mt-4 list-decimal space-y-3 pl-6 text-base text-zinc-300">
-        <li>
-          Ask the client to run <code>linux.uptime</code> on any one of the connected runners.
-        </li>
-        <li>Confirm that the client returns the action output.</li>
-        <li>
-          Open <a
-            href={~p"/app/audit"}
-            class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
-          >Audit</a>. Confirm that the event records the client, runner, action, and reason.
-        </li>
-      </ol>
+      <.docs_cloud_connector_verify />
 
-      <.docs_h2 id="sign-in-grants">What the sign-in grants</.docs_h2>
-      <p class="mt-4 text-base leading-7 text-zinc-400">
-        The consent screen mints a key bound to <em>your</em>
-        membership. The connector acts as you. Every call is attributed to you and the agent you are using. It reaches
-        only the runners and actions your own access already allows (<.link
-          navigate={~p"/docs/agents-and-keys#no-scope"}
-          class="text-brand-400 hover:text-brand-300"
-        >how a key inherits its operator's scope</.link>). Revoke it any time from
-        <strong>AI agents</strong>
-        in the console, or from the connector settings in Claude or ChatGPT.
-      </p>
+      <.docs_cloud_connector_grants />
     </.docs_layout>
   </section>
 

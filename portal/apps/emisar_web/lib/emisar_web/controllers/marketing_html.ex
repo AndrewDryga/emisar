@@ -132,6 +132,93 @@ defmodule EmisarWeb.MarketingHTML do
   @doc "How many tools the MCP surface exposes. See `SchemaRegistry.tool_count/0`."
   def mcp_tool_count, do: @mcp_tool_count
 
+  # ── Shared chrome for the two cloud-connector docs pages ──────────────
+  # /docs/connect-chatgpt and /docs/connect-claude-ai hand-copied these three
+  # blocks, so a change to the verify contract had to be made twice and the
+  # copies were one edit from drifting. The vendor setup steps stay per-page;
+  # only the product mechanics that must read identically live here.
+
+  attr :sibling_label, :string, required: true, doc: "the OTHER cloud connector's name"
+  attr :sibling_path, :string, required: true
+
+  @doc "The local-clients cross-pointer both cloud-connector pages open with."
+  def docs_cloud_connector_pointer(assigns) do
+    ~H"""
+    <p class="mt-6 text-base leading-7 text-zinc-400">
+      Using Claude Code, Cursor, Claude Desktop, or a CLI instead? Those connect through the
+      <.docs_inline_code>emisar-mcp</.docs_inline_code>
+      stdio bridge — see <.link
+        navigate={~p"/docs/connect-cli-agent"}
+        class="text-brand-400 hover:text-brand-300"
+      >Connect a CLI agent</.link>. For {@sibling_label}, see <.link
+        navigate={@sibling_path}
+        class="text-brand-400 hover:text-brand-300"
+      >{@sibling_label}</.link>.
+    </p>
+    """
+  end
+
+  @doc "The prerequisites every cloud connector shares — a runner online, no signed dispatch."
+  def docs_cloud_connector_prerequisites(assigns) do
+    ~H"""
+    <.docs_prerequisites>
+      <:item>
+        An account with at least one runner online. Otherwise the agent signs in fine and finds
+        an empty catalog with nothing to call. New here? Run the
+        <.link navigate={~p"/docs/quickstart"} class="text-brand-400 hover:text-brand-300">
+          quickstart
+        </.link>
+        first, then come back to wire in your LLM.
+      </:item>
+      <:item>
+        Runners that do not require signed dispatch. Claude.ai and ChatGPT do not create emisar
+        dispatch signatures, so a runner that requires one needs the
+        <.link
+          navigate={~p"/docs/connect-cli-agent"}
+          class="text-brand-400 hover:text-brand-300"
+        >local MCP bridge</.link>
+        with a signing key and certificate instead.
+      </:item>
+    </.docs_prerequisites>
+    """
+  end
+
+  @doc "The verify steps — one read-only action, then its audit receipt."
+  def docs_cloud_connector_verify(assigns) do
+    ~H"""
+    <.docs_h2 id="verify">Verify the connection</.docs_h2>
+    <ol class="mt-4 list-decimal space-y-3 pl-6 text-base text-zinc-300">
+      <li>
+        Ask the client to run <code>linux.uptime</code> on any one of the connected runners.
+      </li>
+      <li>Confirm that the client returns the action output.</li>
+      <li>
+        Open <a
+          href={~p"/app/audit"}
+          class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
+        >Audit</a>. Confirm that the event records the client, runner, action, and reason.
+      </li>
+    </ol>
+    """
+  end
+
+  @doc "What the OAuth sign-in grants — membership-bound key, operator-scoped reach."
+  def docs_cloud_connector_grants(assigns) do
+    ~H"""
+    <.docs_h2 id="sign-in-grants">What the sign-in grants</.docs_h2>
+    <p class="mt-4 text-base leading-7 text-zinc-400">
+      The consent screen mints a key bound to <em>your</em>
+      membership. The connector acts as you. Every call is attributed to you and the agent you are using. It reaches
+      only the runners and actions your own access already allows (<.link
+        navigate={~p"/docs/agents-and-keys#no-scope"}
+        class="text-brand-400 hover:text-brand-300"
+      >how a key inherits its operator's scope</.link>). Revoke it any time from
+      <strong>AI agents</strong>
+      in the console, or from the connector settings in Claude or ChatGPT.
+    </p>
+    """
+  end
+
   @plan_limits Enum.map(~w(free team enterprise), fn slug ->
                  plan = Emisar.Billing.plan(slug)
 
