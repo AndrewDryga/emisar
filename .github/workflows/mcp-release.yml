@@ -25,4 +25,4 @@ jobs:
       attestations: write
       contents: write
       id-token: write
-    uses: AndrewDryga/emisar/.github/workflows/mcp-release-trusted.yml@8bc034250767a3d3d8f4c84c9f6e1d693a624a23
+    uses: AndrewDryga/emisar/.github/workflows/mcp-release-trusted.yml@c78ddda4d6075ebf34ba1c6d592086697bc32aca

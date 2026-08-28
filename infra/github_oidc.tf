@@ -10,7 +10,7 @@ locals {
   # authority (or, worse, an unreviewed commit keeps it). One definition makes
   # the rotation a single edit. See the rotation note on
   # google_iam_workload_identity_pool_provider.github_releases below.
-  trusted_job_workflow_sha = "8bc034250767a3d3d8f4c84c9f6e1d693a624a23"
+  trusted_job_workflow_sha = "c78ddda4d6075ebf34ba1c6d592086697bc32aca"
 }
 
 resource "google_iam_workload_identity_pool" "github" {
