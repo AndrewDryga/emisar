@@ -5,6 +5,12 @@
 // cursor-zoom-out target) closes it and returns focus to the figure's button.
 // The close button is the dialog's only focusable control, so Tab is contained
 // by parking focus on it. No-ops on pages without screenshots.
+//
+// Deliberately NOT unified with mobile_nav.js's dialog: the two keyboard
+// contracts differ where it matters — this parks Tab on one control, the
+// drawer cycles focus across many — so a shared helper would grow a config
+// knob per difference, and each file now reads as its complete keyboard
+// contract.
 export function initDocsLightbox() {
   const dialogs = Array.from(document.querySelectorAll("[data-lightbox]"))
   if (dialogs.length === 0) return
