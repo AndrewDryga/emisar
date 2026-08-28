@@ -2,7 +2,7 @@ schema_version: 1
 id: pfsense.auth_log
 title: GET /api/v2/status/logs/auth
 kind: script
-risk: low
+risk: medium
 description: >
   Show recent authentication-log entries — webConfigurator and SSH logins to
   the firewall, successes and failures, with user and source IP. Use to spot

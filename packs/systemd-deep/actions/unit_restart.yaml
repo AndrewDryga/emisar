@@ -20,7 +20,9 @@ args:
     required: true
     description: Unit name (e.g., nginx.service).
     validation:
-      pattern: "^[a-zA-Z0-9@_][a-zA-Z0-9@_\\-.]{0,127}$"
+      pattern: "^[a-zA-Z0-9@:_.][a-zA-Z0-9@:_.\\-]{0,127}$"
+# The execution contract matches linux.systemctl_restart — same command, same
+# deadline, whichever pack the operator installed.
 execution:
   command:
     binary: systemctl
@@ -29,7 +31,7 @@ execution:
   cancel_grace: 30s
 output:
   parser: text
-  max_stdout_bytes: 8192
+  max_stdout_bytes: 4096
   max_stderr_bytes: 8192
 examples:
   - title: Restart nginx

@@ -2,7 +2,7 @@ schema_version: 1
 id: kubernetes.pod_previous_logs
 title: Tail PREVIOUS container logs (crash debug)
 kind: exec
-risk: low
+risk: medium
 description: >
   `kubectl logs --previous` — logs from the previously crashed container instance. The go-to action for CrashLoopBackOff: the current container has nothing yet, the crashed one explains why.
 side_effects:

@@ -3,7 +3,7 @@ schema_version: 1
 id: linux.last_logins
 title: Recent successful logins
 kind: exec
-risk: low
+risk: medium
 
 description: >
   Show the last N successful logins via `last`. Depending on the distribution,

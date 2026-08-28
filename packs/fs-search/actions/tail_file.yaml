@@ -2,7 +2,7 @@ schema_version: 1
 id: fs.tail_file
 title: tail -n <N> <file>
 kind: script
-risk: low
+risk: medium
 description: Show the last N lines of one file.
 side_effects:
   - One read of the file.

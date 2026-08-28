@@ -2,7 +2,7 @@ schema_version: 1
 id: caddy.access_log_tail
 title: tail caddy access log
 kind: exec
-risk: low
+risk: medium
 description: Tail the access log (path configurable via CADDY_ACCESS_LOG env).
 side_effects: ["One file read.", "Read-only."]
 search_terms:

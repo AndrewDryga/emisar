@@ -3,7 +3,7 @@ schema_version: 1
 id: linux.grep_log
 title: Grep a log file
 kind: exec
-risk: low
+risk: medium
 
 description: >
   Grep an extended regex (POSIX -E) against a log file under /var/log.

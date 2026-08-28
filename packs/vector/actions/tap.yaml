@@ -2,7 +2,7 @@ schema_version: 1
 id: vector.tap
 title: vector tap --outputs-of
 kind: exec
-risk: low
+risk: medium
 description: >
   Sample live events flowing OUT of a named component for a bounded
   window, as JSON, then auto-exit. The run terminates after duration_ms —

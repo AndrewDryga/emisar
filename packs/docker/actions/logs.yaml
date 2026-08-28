@@ -3,7 +3,7 @@ schema_version: 1
 id: docker.logs
 title: docker logs (last N lines)
 kind: exec
-risk: low
+risk: medium
 
 description: >
   Return the last N log lines for one container. Container name is

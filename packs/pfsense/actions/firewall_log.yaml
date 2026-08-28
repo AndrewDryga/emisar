@@ -2,7 +2,7 @@ schema_version: 1
 id: pfsense.firewall_log
 title: GET /api/v2/status/logs/firewall
 kind: script
-risk: low
+risk: medium
 description: >
   Show recent firewall filter-log entries — blocked/passed packets with time,
   interface, action, and source/destination. Use to see what is being

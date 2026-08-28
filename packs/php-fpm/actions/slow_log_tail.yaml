@@ -2,7 +2,7 @@ schema_version: 1
 id: phpfpm.slow_log_tail
 title: tail FPM slow_log
 kind: exec
-risk: low
+risk: medium
 description: Tail the FPM slow log (last N lines of PHP backtraces for slow requests).
 side_effects: ["One file read.", "Read-only."]
 args:

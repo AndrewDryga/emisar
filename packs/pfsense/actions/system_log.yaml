@@ -2,7 +2,7 @@ schema_version: 1
 id: pfsense.system_log
 title: GET /api/v2/status/logs/system
 kind: script
-risk: low
+risk: medium
 description: >
   Show recent system-log entries — the general pfSense log (boot, services,
   errors). Use for "what happened on the box recently?".

@@ -2,7 +2,7 @@ schema_version: 1
 id: vl.query
 title: GET /select/logsql/query
 kind: script
-risk: low
+risk: medium
 description: >
   Run a LogsQL query and return matching log entries as newline-delimited
   JSON. Every request has a trailing window ending now, limited to 24 hours;

@@ -2,7 +2,7 @@ schema_version: 1
 id: pfsense.dhcp_log
 title: GET /api/v2/status/logs/dhcp
 kind: script
-risk: low
+risk: medium
 description: >
   Show recent DHCP server log entries — lease discover/offer/request/ack and
   declines, with client MACs and assigned addresses. Use to debug a client that

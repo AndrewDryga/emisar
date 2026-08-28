@@ -28,8 +28,6 @@ cases:
     arrange:
       - argv: [systemctl, stop, cron.service]
     probes:
-      # --no-block returns before the job completes, so the probe waits for the
-      # state rather than reading it once and racing the manager.
       - name: the unit reaches the running state
         argv: [systemctl, is-active, cron.service]
         retry_for: 10s

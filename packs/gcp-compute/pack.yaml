@@ -2,7 +2,7 @@ schema_version: 1
 
 id: gcp-compute
 name: Google Cloud Compute diagnostics and recovery
-version: 0.2.2
+version: 0.2.3
 description: >
   Google Cloud Compute diagnostics plus governed recovery mutations: VM
   instance and managed-instance-group reads, instance start/stop/reset/delete,

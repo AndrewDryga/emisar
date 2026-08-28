@@ -15,7 +15,9 @@ args:
     required: true
     description: Unit name.
     validation:
-      pattern: "^[a-zA-Z0-9@_][a-zA-Z0-9@_\\-.]{0,127}$"
+      pattern: "^[a-zA-Z0-9@:_.][a-zA-Z0-9@:_.\\-]{0,127}$"
+# The execution contract matches linux.systemctl_start — same command, same
+# deadline, whichever pack the operator installed.
 execution:
   command:
     binary: systemctl

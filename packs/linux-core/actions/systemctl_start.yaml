@@ -6,10 +6,10 @@ kind: exec
 risk: high
 
 description: >
-  `systemctl start <unit>`. Brings a unit up. The unit name is
-  pattern-restricted to safe systemd unit naming. Combine with
-  `linux.systemctl_status` afterward to confirm the unit reached
-  active state.
+  `systemctl start <unit>`. Brings a unit up and waits for the start job
+  to finish, so a successful run means the unit reached its started
+  state — a failed start fails the run rather than reporting a queued
+  job.
 
 side_effects:
   - Starts the unit (and any required dependencies).
@@ -23,18 +23,19 @@ args:
     validation:
       pattern: "^[a-zA-Z0-9@:_.][a-zA-Z0-9@:_.\\-]{0,127}$"
 
+# The execution contract matches systemd.unit_start — same command, same
+# deadline, whichever pack the operator installed.
 execution:
   command:
     binary: systemctl
     argv:
       - "start"
-      - "--no-block"
       - "{{ args.unit }}"
-  timeout: 60s
+  timeout: 120s
 
 output:
   parser: text
-  max_stdout_bytes: 8192
+  max_stdout_bytes: 4096
   max_stderr_bytes: 8192
 
 examples:

@@ -2,7 +2,7 @@ schema_version: 1
 id: systemd.boot_errors
 title: Boot-time journal errors
 kind: exec
-risk: low
+risk: medium
 description: '`journalctl -b -p err` — every error-priority log line from the current boot. Use to triage a "is everything healthy?" check.'
 side_effects:
   - One journalctl invocation.

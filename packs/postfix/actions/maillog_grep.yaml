@@ -2,7 +2,7 @@ schema_version: 1
 id: postfix.maillog_grep
 title: grep mail.log for queue-id / address
 kind: exec
-risk: low
+risk: medium
 description: List all mail-log entries matching a string.
 side_effects: ["One file read.", "Read-only."]
 args:

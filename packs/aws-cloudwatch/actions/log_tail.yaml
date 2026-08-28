@@ -2,7 +2,7 @@ schema_version: 1
 id: cw.log_tail
 title: aws logs tail
 kind: exec
-risk: low
+risk: medium
 description: Tail recent log events for one log group (no follow).
 side_effects: ["One API call.", "Read-only."]
 args:

@@ -2,7 +2,7 @@ schema_version: 1
 id: sentry.issue_details
 title: Show issue details
 kind: script
-risk: low
+risk: medium
 description: Show one Sentry issue's status, assignee, first/last seen, event and user counts, and metadata.
 side_effects: [One read-only API request.]
 args:

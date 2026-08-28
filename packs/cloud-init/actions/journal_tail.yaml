@@ -2,7 +2,7 @@ schema_version: 1
 id: cloud-init.journal_tail
 title: journalctl -u cloud-init -n <lines>
 kind: exec
-risk: low
+risk: medium
 description: >
   Tail systemd journal entries for the four cloud-init units (cloud-init,
   cloud-init-local, cloud-config, cloud-final). Use when boot failed

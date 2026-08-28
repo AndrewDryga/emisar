@@ -2,7 +2,7 @@ schema_version: 1
 id: phpfpm.error_log_tail
 title: tail FPM error_log
 kind: exec
-risk: low
+risk: medium
 description: Tail the FPM error log (last N lines).
 side_effects: ["One file read.", "Read-only."]
 args:

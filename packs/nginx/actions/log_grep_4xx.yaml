@@ -2,7 +2,7 @@ schema_version: 1
 id: nginx.log_grep_4xx
 title: Recent 4xx responses from access log
 kind: exec
-risk: low
+risk: medium
 description: >
   Grep the access log for 4xx status codes. Needs the log on disk — the
   official container image symlinks it to stdout, where the host's log

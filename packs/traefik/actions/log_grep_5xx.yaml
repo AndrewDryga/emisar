@@ -2,7 +2,7 @@ schema_version: 1
 id: traefik.log_grep_5xx
 title: Recent 5xx responses from access log
 kind: exec
-risk: low
+risk: medium
 description: >
   Grep the Traefik access log for 5xx responses and tail the most recent —
   the front-door view of backend failures. Matches both the JSON format

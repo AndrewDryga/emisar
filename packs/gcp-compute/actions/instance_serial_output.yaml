@@ -2,7 +2,7 @@ schema_version: 1
 id: gcp.instance_serial_output
 title: gcloud compute instances get-serial-port-output
 kind: exec
-risk: low
+risk: medium
 description: >
   Get bounded serial-port output for one Compute Engine instance. Boot logs
   can contain application-written sensitive data, so restrict this action by

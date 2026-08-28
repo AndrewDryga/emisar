@@ -3,7 +3,7 @@ schema_version: 1
 id: linux.tail_log
 title: Tail a log file
 kind: exec
-risk: low
+risk: medium
 
 description: >
   Read the last N lines of a log file under /var/log. Read-only. Use

@@ -30,17 +30,18 @@ args:
     required: true
     description: Systemd unit to restart (e.g. nginx, nomad, consul.service, foo@bar.service).
     validation:
-      pattern: "^[A-Za-z0-9@._:][A-Za-z0-9@._:-]{0,127}$"
-      max_length: 128
+      pattern: "^[a-zA-Z0-9@:_.][a-zA-Z0-9@:_.\\-]{0,127}$"
 
+# The execution contract matches systemd.unit_restart — same command, same
+# deadline, whichever pack the operator installed.
 execution:
   command:
     binary: systemctl
     argv:
       - "restart"
       - "{{ args.unit }}"
-  timeout: 60s
-  cwd: /
+  timeout: 120s
+  cancel_grace: 30s
 
 output:
   parser: text

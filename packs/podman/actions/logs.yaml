@@ -2,7 +2,7 @@ schema_version: 1
 id: podman.logs
 title: podman logs <id> --tail <N>
 kind: exec
-risk: low
+risk: medium
 description: Tail container logs (last N lines).
 side_effects: ["One CLI call.", "Read-only."]
 args:

@@ -2,7 +2,7 @@ schema_version: 1
 id: pfsense.openvpn_log
 title: GET /api/v2/status/logs/openvpn
 kind: script
-risk: low
+risk: medium
 description: >
   Show recent OpenVPN log entries — tunnel up/down, client connect/disconnect,
   and TLS/auth handshake errors. Use to debug VPN connectivity or a client that

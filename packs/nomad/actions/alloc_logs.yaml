@@ -2,7 +2,7 @@ schema_version: 1
 id: nomad.alloc_logs
 title: Tail a task's application logs — stdout (nomad alloc logs)
 kind: script
-risk: low
+risk: medium
 description: >
   Tail application logs (stdout) from one task in a Nomad allocation — the last
   N lines the app/service/container wrote to stdout. This is the read for "show

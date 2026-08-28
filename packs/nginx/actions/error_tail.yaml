@@ -3,7 +3,7 @@ schema_version: 1
 id: nginx.error_tail
 title: Tail nginx error log
 kind: exec
-risk: low
+risk: medium
 
 description: >
   Return the last N lines from /var/log/nginx/error.log. Use to spot
