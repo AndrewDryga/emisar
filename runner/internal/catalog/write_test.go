@@ -170,7 +170,11 @@ func TestWrite_ObjectSetAndImmutability(t *testing.T) {
 		if err := json.Unmarshal(Schemas()[name], &schema); err != nil {
 			t.Fatalf("parse schema %s: %v", name, err)
 		}
-		if want := "https://emisar.dev/" + path; schema.ID != want {
+		// registry.emisar.dev — the host that actually SERVES the object.
+		// This asserted emisar.dev, which serves nothing at that path, so it
+		// pinned the mistake rather than catching it: v2 through v5 all shipped
+		// with an unresolvable $id and are immutable, so they stay wrong.
+		if want := "https://registry.emisar.dev/" + path; schema.ID != want {
 			t.Errorf("schema %s $id = %q, want %q", name, schema.ID, want)
 		}
 	}

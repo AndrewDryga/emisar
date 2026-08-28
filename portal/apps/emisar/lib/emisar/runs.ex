@@ -2489,10 +2489,15 @@ defmodule Emisar.Runs do
   end
 
   defp recover_cancellation(%ActionRun{status: :cancelling} = run, generation) do
+    # No "reason": CancelMsg is envelope-only, so the runner discards anything
+    # else. The two cancel senders had also drifted into sending different
+    # things under that key — this one the run's reason_text, the other the
+    # cancel's own reason — so it was inconsistent traffic on a frame that
+    # freezes at 1.0, mentioned in neither the spec nor the wire golden.
+    # Defining a real cancel reason later is an additive change.
     Emisar.Runners.deliver_to_runner(run.account_id, run.runner_id, generation, %{
       "type" => "cancel",
-      "request_id" => run.request_id,
-      "reason" => run.reason_text
+      "request_id" => run.request_id
     })
   end
 
@@ -2732,7 +2737,7 @@ defmodule Emisar.Runs do
     |> Emisar.Approvals.cancel_request_for_run_in_multi(run.id)
     |> Repo.commit_multi(
       after_commit: fn changes ->
-        deliver_cancel_to_runner(changes.run_cancel, reason)
+        deliver_cancel_to_runner(changes.run_cancel)
         broadcast_cancellation(changes.run_cancel)
         Emisar.Approvals.broadcast_request_cancelled(changes.request_cancel)
       end
@@ -2880,19 +2885,19 @@ defmodule Emisar.Runs do
   # Publish a cancellation only after its state + audit record committed. A
   # dispatch that starts afterward then observes `:cancelled` and refuses to
   # publish an action instead of receiving this cancel before the action exists.
-  defp deliver_cancel_to_runner({outcome, %ActionRun{} = run}, reason)
+  defp deliver_cancel_to_runner({outcome, %ActionRun{} = run})
        when outcome in [:cancelling, :retry] do
     with {:ok, generation} <-
            Emisar.Runners.current_connection_generation(run.account_id, run.runner_id) do
+      # See recover_cancellation/2: the runner reads only the envelope.
       Emisar.Runners.deliver_to_runner(run.account_id, run.runner_id, generation, %{
         "type" => "cancel",
-        "request_id" => run.request_id,
-        "reason" => reason
+        "request_id" => run.request_id
       })
     end
   end
 
-  defp deliver_cancel_to_runner(_, _reason), do: :ok
+  defp deliver_cancel_to_runner(_outcome), do: :ok
 
   defp broadcast_cancellation({outcome, %ActionRun{} = run})
        when outcome in [:cancelled, :cancelling],

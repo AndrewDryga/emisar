@@ -69,6 +69,13 @@ var reviewedNonAdditiveChanges = map[string]bool{
 	// knowledge, so `30` meaning seconds became 30 nanoseconds and clamped
 	// silently.
 	"run-opts-timeout-ms": true,
+	// request_id removed from runner_state, heartbeat and shutdown. No builder
+	// ever set it on those three — state.go and client.go construct their
+	// envelope without it, and shutdown is portal->runner — so the golden was
+	// publishing a field no implementation sends, which a third party writing a
+	// runner from it would faithfully emit. Removing a key nobody sends cannot
+	// be misread by any peer: the field was already absent on the wire.
+	"drop-unsent-request-id": true,
 }
 
 type wireGolden struct {
@@ -169,6 +176,14 @@ func canonicalWireFrames() []wireFrameCase {
 	envelope := func(messageType MessageType, requestID string) Envelope {
 		return Envelope{Type: messageType, ProtocolVersion: ProtocolVersion, RequestID: requestID}
 	}
+	// Frames that carry NO request_id, because no builder sets one. runner_state
+	// (state.go) and heartbeat (client.go) construct their envelope without it,
+	// and shutdown is portal->runner so the runner never builds one at all.
+	// Stamping it here anyway published a field no implementation sends — a
+	// third party writing a runner from this golden would emit it.
+	unaddressed := func(messageType MessageType) Envelope {
+		return Envelope{Type: messageType, ProtocolVersion: ProtocolVersion}
+	}
 
 	return []wireFrameCase{
 		{
@@ -204,7 +219,7 @@ func canonicalWireFrames() []wireFrameCase {
 			name: string(MsgShutdown),
 			marshal: func() ([]byte, error) {
 				return json.Marshal(ShutdownMsg{
-					Envelope: envelope(MsgShutdown, "req_wire_shutdown"),
+					Envelope: unaddressed(MsgShutdown),
 					Reason:   "cloud_shutdown",
 					Message:  "The control plane is restarting; reconnect shortly.",
 				})
@@ -214,7 +229,7 @@ func canonicalWireFrames() []wireFrameCase {
 			name: string(MsgRunnerState),
 			marshal: func() ([]byte, error) {
 				return json.Marshal(RunnerStateMsg{
-					Envelope:                 envelope(MsgRunnerState, "req_wire_state"),
+					Envelope:                 unaddressed(MsgRunnerState),
 					Version:                  "0.12.0",
 					Hostname:                 "runner-db-01",
 					Group:                    "database",
@@ -291,7 +306,7 @@ func canonicalWireFrames() []wireFrameCase {
 			name: string(MsgHeartbeat),
 			marshal: func() ([]byte, error) {
 				return json.Marshal(HeartbeatMsg{
-					Envelope:   envelope(MsgHeartbeat, "req_wire_heartbeat"),
+					Envelope:   unaddressed(MsgHeartbeat),
 					ActionLoad: 4,
 				})
 			},

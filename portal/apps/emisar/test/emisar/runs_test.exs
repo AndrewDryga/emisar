@@ -3584,12 +3584,10 @@ defmodule Emisar.RunsTest do
                      500
 
       assert_receive {:cloud_to_runner, ^generation,
-                      %{
-                        "type" => "cancel",
-                        "request_id" => ^request_id,
-                        "reason" => "operator requested stop"
-                      }},
+                      %{"type" => "cancel", "request_id" => ^request_id} = frame},
                      500
+
+      refute Map.has_key?(frame, "reason")
 
       assert generation == successor.connection_generation
       assert request_id == run.request_id
@@ -4047,13 +4045,14 @@ defmodule Emisar.RunsTest do
               }} =
                Runs.cancel_run(run, subject, "user pressed stop")
 
+      # No "reason" on the wire: CancelMsg is envelope-only, so the runner
+      # discards anything beyond it. The reason stays on the run record, which
+      # is asserted above.
       assert_receive {:cloud_to_runner, _generation,
-                      %{
-                        "type" => "cancel",
-                        "request_id" => request_id,
-                        "reason" => "user pressed stop"
-                      }},
+                      %{"type" => "cancel", "request_id" => request_id} = frame},
                      500
+
+      refute Map.has_key?(frame, "reason")
 
       assert request_id == run.request_id
       assert Runs.peek_run_by_id(run.id).status == :cancelling

@@ -709,6 +709,22 @@ name or a major release, following the deprecation path.
   `catalog.json`, `suggest.json`, immutable catalog snapshots, versioned JSON
   schemas, and content-addressed pack tarballs under
   `v1/packs/<id>/<version>/<sha256>/pack.tar.gz`.
+
+  A content hash is written `sha256:<64 hex>` wherever it appears in a
+  document, and that prefix is a FIXED LITERAL, not an algorithm selector.
+  Every consumer hard-codes it — the tarball path builder trims exactly that
+  string, the runner's normalizer trims exactly that string, and every
+  validating regex spells it out — so a hash announced under a different
+  algorithm would not be read as a different algorithm, it would simply fail to
+  parse. Changing the digest is a new `v2/` layout, not a new prefix value,
+  because the path segment is the bare hex with the prefix stripped and every
+  published object is immutable at its current address.
+
+  A published schema object's `$id` names the host that serves it,
+  `registry.emisar.dev`. The v2 through v5 suites shipped naming `emisar.dev`,
+  which serves nothing at that path; those objects are immutable and stay
+  wrong. v6 was corrected before publication and `TestSchemaIDsNameTheHostThatServesThem`
+  pins it.
 - The runner's default registry is currently the facade
   `https://emisar.dev`. The facade serves `/packs.json`,
   `/packs/suggest.json`, `/packs/<id>/pack.tar.gz`, and
