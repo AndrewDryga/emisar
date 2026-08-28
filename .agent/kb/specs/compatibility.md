@@ -422,6 +422,14 @@ completion
 help
 ```
 
+The runner reads per-user config from the platform's own config directory —
+`os.UserConfigDir()`, which honours `$XDG_CONFIG_HOME` on Unix and is
+`~/Library/Application Support` on macOS, the same function `emisar-mcp` uses —
+and still from the literal `~/.config/emisar` where an existing config sits.
+`/etc/emisar/config.yaml` wins over both. It previously hardcoded `~/.config`
+while calling that XDG, so on a Mac the two binaries disagreed about where
+per-user config lives.
+
 The runner's exit codes match the bridge's: **0 success, 2 for a usage
 failure — an unknown command, an unknown flag, a missing or extra argument —
 130 for an interrupt, and 1 for everything else**, which is a failure of the

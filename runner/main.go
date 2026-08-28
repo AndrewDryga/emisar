@@ -152,6 +152,14 @@ authoring, approval workflow, and audit storage live in the cloud.`,
 	root.SetFlagErrorFunc(func(_ *cobra.Command, err error) error {
 		return usageError{err}
 	})
+
+	// `emisar --version` is the one-line MACHINE contract install.sh verifies by
+	// exact string equality, and it was riding cobra's default template — an
+	// accidental pin, where a library upgrade that reworded its own default
+	// would break every install at the verification step. Own the format so it
+	// changes only when we change it. (`emisar version` is the human form and
+	// deliberately carries build metadata.)
+	root.SetVersionTemplate("emisar version {{.Version}}\n")
 	root.PersistentFlags().StringVar(&flagConfig, "config", "", "path to config.yaml (default: $EMISAR_CONFIG, else /etc/emisar/config.yaml)")
 	// "extra ... dirs" was wrong twice: it REPLACES the configured list rather
 	// than extending it, and it is not only a search path — `pack install`

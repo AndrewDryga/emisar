@@ -31,13 +31,42 @@ type runtime struct {
 // SIGHUP reload, this reflects the new registry.
 func (r *runtime) registry() *packs.Registry { return r.engine.Registry() }
 
-// defaultConfigPaths lists where emisar looks for config.yaml when
-// --config isn't given, in priority order: the canonical install
-// location first, then a per-user XDG path.
+// defaultConfigPaths lists where emisar looks for config.yaml when --config
+// isn't given, in priority order: the canonical install location first, then
+// the per-user ones.
+//
+// os.UserConfigDir() comes first among those because it is what the platform
+// actually means by "the user's config directory" — it honours
+// $XDG_CONFIG_HOME on Unix and is ~/Library/Application Support on macOS, which
+// is where emisar-mcp already writes. Hardcoding ~/.config called itself XDG
+// while ignoring the one variable XDG defines, and on a Mac it meant one
+// product writing one tree and reading another.
+//
+// The literal ~/.config path stays as a second candidate: it is where an
+// existing config sits, and dropping a location a reader already finds would
+// break those hosts for no gain. Deduplicated, since on Linux without
+// $XDG_CONFIG_HOME the two are the same directory.
 func defaultConfigPaths() []string {
 	paths := []string{"/etc/emisar/config.yaml"}
+	seen := map[string]bool{}
+
+	add := func(dir string) {
+		if dir == "" {
+			return
+		}
+		path := filepath.Join(dir, "emisar", "config.yaml")
+		if seen[path] {
+			return
+		}
+		seen[path] = true
+		paths = append(paths, path)
+	}
+
+	if dir, err := os.UserConfigDir(); err == nil {
+		add(dir)
+	}
 	if home, err := os.UserHomeDir(); err == nil && home != "" {
-		paths = append(paths, filepath.Join(home, ".config", "emisar", "config.yaml"))
+		add(filepath.Join(home, ".config"))
 	}
 	return paths
 }

@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 )
 
@@ -75,5 +76,27 @@ func TestUsageErrorFromExecute(t *testing.T) {
 		if got := exitCode(context.Background(), usageErrorFromExecute(errors.New(message))); got != exitFailure {
 			t.Errorf("%q exited %d, want %d", message, got, exitFailure)
 		}
+	}
+}
+
+// `emisar --version` is the one-line MACHINE contract: install.sh compares it
+// by exact string equality against "emisar version <X.Y.Z>" and dies on any
+// difference. It used to ride cobra's DEFAULT template, so a library upgrade
+// that reworded its own default would have broken every install at the
+// verification step, with nothing in this repo changed. The format is ours now,
+// and this pins the exact shape install.sh expects.
+func TestVersionFlagMatchesTheInstallerContract(t *testing.T) {
+	root := newRootCmd()
+	var out strings.Builder
+	root.SetOut(&out)
+	root.SetErr(&out)
+	root.SetArgs([]string{"--version"})
+
+	if err := root.Execute(); err != nil {
+		t.Fatalf("--version: %v", err)
+	}
+	want := "emisar version " + Version + "\n"
+	if out.String() != want {
+		t.Errorf("--version = %q, want %q (install.sh compares this exactly)", out.String(), want)
 	}
 }
