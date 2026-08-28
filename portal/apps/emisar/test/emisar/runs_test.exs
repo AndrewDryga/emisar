@@ -123,32 +123,31 @@ defmodule Emisar.RunsTest do
   end
 
   describe "run_outcome_facts/1" do
-    test "gives every status its terminality and its fixed cause" do
-      expected = %{
-        pending: {false, nil},
-        pending_approval: {false, nil},
-        sent: {false, nil},
-        running: {false, nil},
-        cancelling: {false, nil},
-        success: {true, nil},
-        denied: {true, "Denied by policy."},
-        failed: {true, "The action failed."},
-        error: {true, "The run ended with an error."},
-        validation_failed: {true, "The runner returned an invalid result."},
-        unknown_action: {true, "The runner does not recognize this action."},
-        cancelled: {true, nil},
-        timed_out: {true, "The action timed out."},
-        refused: {true, "The runner refused the dispatch."}
+    test "gives every status its terminality" do
+      terminal = %{
+        pending: false,
+        pending_approval: false,
+        sent: false,
+        running: false,
+        cancelling: false,
+        success: true,
+        denied: true,
+        failed: true,
+        error: true,
+        validation_failed: true,
+        unknown_action: true,
+        cancelled: true,
+        timed_out: true,
+        refused: true
       }
 
-      assert Enum.sort(Map.keys(expected)) == Enum.sort(Ecto.Enum.values(ActionRun, :status))
+      assert Enum.sort(Map.keys(terminal)) == Enum.sort(Ecto.Enum.values(ActionRun, :status))
 
-      for {status, {terminal?, error_message}} <- expected do
+      for {status, terminal?} <- terminal do
         facts = Runs.run_outcome_facts(%ActionRun{status: status})
 
         assert facts.status == status
         assert facts.terminal? == terminal?, "expected #{status} terminal? to be #{terminal?}"
-        assert facts.error_message == error_message, "wrong fixed cause for #{status}"
       end
     end
 
@@ -159,7 +158,6 @@ defmodule Emisar.RunsTest do
       assert Runs.run_outcome_facts(run) == %{
                status: :sent,
                terminal?: false,
-               error_message: nil,
                output_complete: nil,
                approval_pending?: false,
                dispatch_deadline_at: ~U[2026-07-13 14:52:10.000000Z],
@@ -191,7 +189,6 @@ defmodule Emisar.RunsTest do
 
       assert facts.local_audit_failed?
       assert facts.status == :success
-      assert facts.error_message == nil
       refute Runs.run_outcome_facts(%ActionRun{status: :success}).local_audit_failed?
     end
 
@@ -224,7 +221,9 @@ defmodule Emisar.RunsTest do
         without_text = Runs.run_outcome_facts(%ActionRun{status: run.status})
 
         refute inspect(facts) =~ canary, "#{run.status} leaked untrusted text"
-        assert facts.error_message == without_text.error_message
+        # The facts are decided by status alone, so a run carrying untrusted
+        # text produces exactly the same outcome as one without it.
+        assert facts == without_text
       end
     end
 
@@ -232,7 +231,7 @@ defmodule Emisar.RunsTest do
       for reason_text <- ["approval denied", "approval denied: password=do-not-echo"] do
         facts = Runs.run_outcome_facts(%ActionRun{status: :cancelled, reason_text: reason_text})
 
-        assert facts.error_message == nil
+        assert facts.status == :cancelled
         refute inspect(facts) =~ reason_text
       end
     end

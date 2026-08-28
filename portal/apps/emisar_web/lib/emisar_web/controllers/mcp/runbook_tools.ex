@@ -172,7 +172,15 @@ defmodule EmisarWeb.MCP.RunbookTools do
            %{operation_id: operation_id}
          )}
 
-      {:error, reason} when reason in [:not_found, :draft_changed] ->
+      # A runbook that does not exist is NOT a stale read. Folding :not_found in
+      # here answered "the draft changed, fetch it again" for a slug that has
+      # nothing to fetch — the wrong remedy, and it contradicted get_runbook,
+      # which answers runbook_not_found for the same slug. A model given two
+      # different answers about one object retries the useless one.
+      {:error, :not_found} ->
+        {:error, error("runbook_not_found", "No runbook has that slug.")}
+
+      {:error, :draft_changed} ->
         {:error,
          error(
            "draft_changed",

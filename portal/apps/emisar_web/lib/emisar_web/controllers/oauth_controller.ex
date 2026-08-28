@@ -340,6 +340,18 @@ defmodule EmisarWeb.OAuthController do
       else: base
   end
 
+  # RFC 6749 §5.2 maps `server_error` to HTTP 500: it means the authorization
+  # server hit an unexpected condition, not that the request was wrong. Sending
+  # it as 400 told every client the failure was PERMANENT, so a transient
+  # database blip made the client abandon its code and the operator redo the
+  # whole browser authorization. Every other code here really is the caller's
+  # fault and stays 400.
+  defp token_error(conn, :server_error) do
+    conn
+    |> put_status(:internal_server_error)
+    |> json(%{error: oauth_error(:server_error)})
+  end
+
   defp token_error(conn, reason) do
     conn
     |> put_status(:bad_request)

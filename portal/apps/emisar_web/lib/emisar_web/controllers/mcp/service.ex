@@ -215,7 +215,6 @@ defmodule EmisarWeb.MCP.Service do
       finished_at: run.finished_at,
       exit_code: run.exit_code,
       duration_ms: run.duration_ms,
-      error_message: facts.error_message,
       output_complete: if(facts.output_complete == false, do: false),
       local_audit_failed: if(facts.local_audit_failed?, do: true),
       approval: approval,

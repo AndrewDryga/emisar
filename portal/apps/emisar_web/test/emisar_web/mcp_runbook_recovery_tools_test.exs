@@ -481,6 +481,16 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
 
     assert stale_hash["error"]["code"] == "draft_changed"
 
+    # A slug that does not resolve is NOT a stale read. Both used to answer
+    # draft_changed — "fetch it again before editing" — for a runbook with
+    # nothing to fetch, while get_runbook answered runbook_not_found for the
+    # same slug. Two contradictory answers about one object make a model retry
+    # the useless one.
+    missing =
+      call(conn, "update_runbook_draft", Map.put(revision_args, "slug", "no-such-runbook"))
+
+    assert missing["error"]["code"] == "runbook_not_found"
+
     revised = call(conn, "update_runbook_draft", revision_args)
 
     assert revised["slug"] == "cache-health"
@@ -2259,9 +2269,13 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
     failed_summary = Enum.find(summaries, &(&1["run_id"] == failed_run.id))
     successful_summary = Enum.find(summaries, &(&1["run_id"] == successful_run.id))
 
-    assert failed_summary["error_message"] == "The action failed."
+    # `status` carries the outcome. The derived `error_message` was a 1:1
+    # restatement of it in frozen English, so it went — the point of this test
+    # is that the runner's own text never reaches a model.
+    assert failed_summary["status"] == "failed"
+    assert successful_summary["status"] == "success"
     refute Jason.encode!(summaries) =~ "€dmin@db1"
-    refute Map.has_key?(successful_summary, "error_message")
+    refute Map.has_key?(failed_summary, "error_message")
   end
 
   test "recent history returns typed output intact and omits it under the aggregate budget", %{
@@ -2381,10 +2395,11 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
     approval_summary = Enum.find(summaries, &(&1["run_id"] == approval_run.id))
 
     for summary <- [default_summary, explicit_summary, generic_summary] do
-      assert summary["error_message"] == "Denied by policy."
+      assert summary["status"] == "denied"
+      refute Map.has_key?(summary, "error_message")
     end
 
-    refute Map.has_key?(approval_summary, "error_message")
+    assert approval_summary["status"] == "cancelled"
 
     encoded = Jason.encode!(summaries)
     refute encoded =~ secret
