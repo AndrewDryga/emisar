@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/andrewdryga/emisar/runner/pkg/packspec"
 )
@@ -545,5 +546,33 @@ func TestWritePackInfo_DocsLineComesFromThePackOrIsAbsent(t *testing.T) {
 	hidden := info("nodocs")
 	if strings.Contains(hidden, "Docs:") {
 		t.Errorf("a pack with no homepage must print no Docs line; got:\n%s", hidden)
+	}
+}
+
+// A pack description is a folded YAML paragraph — 200+ runes ending in a
+// newline — and `pack list` printed it raw into the tabwriter cell: every
+// column ballooned to paragraph width and the embedded newline broke the row
+// model, so the "table" rendered as alternating prose and blank lines. The
+// docs show the bounded single-line shape; now the CLI does too.
+func TestListDescriptionBoundsAFoldedParagraph(t *testing.T) {
+	folded := "Inspect Linux network bonding / LACP: list bond interfaces, read a bond's full status " +
+		"from /proc/net/bonding (mode, LACP actor/partner state, per-slave link status).\nSecond line.\n"
+	got := listDescription(folded)
+	if strings.ContainsRune(got, '\n') {
+		t.Errorf("cell carries a newline: %q", got)
+	}
+	if want := "Inspect Linux network bonding / LACP: list bond interfac…"; got != want {
+		t.Errorf("listDescription = %q, want %q", got, want)
+	}
+
+	if got := listDescription("Short and sweet.\n"); got != "Short and sweet." {
+		t.Errorf("short description mangled: %q", got)
+	}
+
+	// Rune-safe: a multi-byte character at the boundary is dropped whole,
+	// never cut into invalid UTF-8.
+	long := strings.Repeat("é", 60)
+	if got := listDescription(long); !utf8.ValidString(got) {
+		t.Errorf("truncation produced invalid UTF-8: %q", got)
 	}
 }

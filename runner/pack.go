@@ -150,11 +150,32 @@ func packListCmd() *cobra.Command {
 					}
 				}
 				hash, _ := reg.PackHash(p.ID)
-				fmt.Fprintf(tw, "%s\t%s\t%d\t%s\t%s\n", p.ID, p.Version, actions, shortHash(hash), p.Description)
+				fmt.Fprintf(tw, "%s\t%s\t%d\t%s\t%s\n",
+					p.ID, p.Version, actions, shortHash(hash), listDescription(p.Description))
 			}
 			return tw.Flush()
 		},
 	}
+}
+
+// listDescription bounds a pack description to one table cell. Descriptions
+// are folded YAML paragraphs — 200+ runes with a trailing newline — and
+// tabwriter lays rows out by cell, so printing one raw blew every column out
+// to paragraph width and the embedded newline broke the row model entirely:
+// the "table" rendered as alternating prose and blank lines. One line,
+// rune-truncated so a multi-byte character is never cut in half; the full text
+// stays on `pack info` and in --json.
+func listDescription(description string) string {
+	description = strings.TrimSpace(description)
+	if i := strings.IndexByte(description, '\n'); i >= 0 {
+		description = strings.TrimSpace(description[:i])
+	}
+	const max = 56
+	runes := []rune(description)
+	if len(runes) <= max {
+		return description
+	}
+	return strings.TrimSpace(string(runes[:max])) + "…"
 }
 
 func packInfoCmd() *cobra.Command {
