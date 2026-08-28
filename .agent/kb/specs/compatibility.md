@@ -422,6 +422,16 @@ completion
 help
 ```
 
+The runner's exit codes match the bridge's: **0 success, 2 for a usage
+failure — an unknown command, an unknown flag, a missing or extra argument —
+130 for an interrupt, and 1 for everything else**, which is a failure of the
+work rather than of the invocation. It previously answered 1 for all of them,
+so a script could not tell a mistyped flag from a misconfigured host from an
+action that ran and failed. That matters because `action run` is the documented
+post-install verification step, and this section froze the bridge's codes
+explicitly while saying nothing about the runner's — so the flat 1 would have
+frozen by default.
+
 The runner's global flags are `--config`, `--json`, `--packs-dir`, and
 `-v/--version`. **Every flag `emisar <verb> --help` documents on the commands
 above is frozen with its command** — the list is deliberately not enumerated

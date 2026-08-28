@@ -168,10 +168,13 @@ func TestCLI_NoArgsAndHelpPrintRootHelpExitZero(t *testing.T) {
 // to stderr exactly once (SilenceUsage + SilenceErrors keep main's single print
 // from being doubled, main.go:37-58) and the process exits 1. closes
 // ,.
-func TestCLI_UnknownCommandExitsOneSingleError(t *testing.T) {
+func TestCLI_UnknownCommandExitsUsageSingleError(t *testing.T) {
 	stdout, stderr, code := runCLI(t, []string{"frobnicate"}, nil)
-	if code != 1 {
-		t.Errorf("exit = %d, want 1", code)
+	// 2, not 1: a typo is a usage failure, matching the bridge's frozen
+	// contract. A flat 1 made a mistyped command indistinguishable from a
+	// misconfigured host or an action that ran and failed.
+	if code != 2 {
+		t.Errorf("exit = %d, want 2", code)
 	}
 	if !strings.Contains(stderr, "unknown command") || !strings.Contains(stderr, "frobnicate") {
 		t.Errorf("stderr should name the unknown command, got %q", stderr)
@@ -184,14 +187,14 @@ func TestCLI_UnknownCommandExitsOneSingleError(t *testing.T) {
 	}
 }
 
-// An unknown global flag is rejected with a single error on stderr, exit 1.
+// An unknown global flag is rejected with a single error on stderr, exit 2.
 func TestCLI_UnknownGlobalFlagRejected(t *testing.T) {
 	// On the root and on a subcommand: both reject the unknown flag.
 	for _, args := range [][]string{{"--bogus"}, {"version", "--bogus"}} {
 		t.Run(strings.Join(args, " "), func(t *testing.T) {
 			stdout, stderr, code := runCLI(t, args, nil)
-			if code != 1 {
-				t.Errorf("exit = %d, want 1", code)
+			if code != 2 {
+				t.Errorf("exit = %d, want 2", code)
 			}
 			if !strings.Contains(stderr, "unknown flag") || !strings.Contains(stderr, "--bogus") {
 				t.Errorf("stderr should reject the unknown flag, got %q", stderr)
@@ -406,8 +409,8 @@ func TestCLI_ParentCommandsRejectStrayOperands(t *testing.T) {
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			stdout, stderr, code := runCLI(t, c.args, nil)
-			if code != 1 {
-				t.Errorf("exit = %d, want 1; stderr=%q", code, stderr)
+			if code != 2 {
+				t.Errorf("exit = %d, want 2; stderr=%q", code, stderr)
 			}
 			if !strings.Contains(stderr, "unknown command") || !strings.Contains(stderr, c.typo) {
 				t.Errorf("stderr should name the rejected operand %q, got %q", c.typo, stderr)
@@ -481,8 +484,8 @@ func TestCLI_ZeroArgLeavesRejectSurplusOperands(t *testing.T) {
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			stdout, stderr, code := runCLI(t, c.args, nil)
-			if code != 1 {
-				t.Errorf("exit = %d, want 1; stderr=%q", code, stderr)
+			if code != 2 {
+				t.Errorf("exit = %d, want 2; stderr=%q", code, stderr)
 			}
 			if !strings.Contains(stderr, `"surplus"`) || !strings.Contains(stderr, c.path) {
 				t.Errorf("stderr should reject %q for %q, got %q", "surplus", c.path, stderr)
@@ -518,8 +521,8 @@ func TestCLI_RequiredArgErrorsNameTheirPlaceholder(t *testing.T) {
 
 			t.Run("no args names the placeholder", func(t *testing.T) {
 				stdout, stderr, code := runCLI(t, base, nil)
-				if code != 1 {
-					t.Errorf("exit = %d, want 1; stderr=%q", code, stderr)
+				if code != 2 {
+					t.Errorf("exit = %d, want 2; stderr=%q", code, stderr)
 				}
 				if !strings.Contains(stderr, c.placeholder) {
 					t.Errorf("stderr should name %s, got %q", c.placeholder, stderr)
@@ -532,8 +535,8 @@ func TestCLI_RequiredArgErrorsNameTheirPlaceholder(t *testing.T) {
 			t.Run("surplus args still rejected", func(t *testing.T) {
 				surplus := append(append([]string{}, base...), "one", "two")
 				stdout, stderr, code := runCLI(t, surplus, nil)
-				if code != 1 {
-					t.Errorf("exit = %d, want 1; stderr=%q", code, stderr)
+				if code != 2 {
+					t.Errorf("exit = %d, want 2; stderr=%q", code, stderr)
 				}
 				if !strings.Contains(stderr, "accepts 1 arg(s), received 2") {
 					t.Errorf("stderr should reject the surplus operands, got %q", stderr)

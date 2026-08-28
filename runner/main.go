@@ -9,9 +9,11 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 
 	"github.com/spf13/cobra"
@@ -50,8 +52,69 @@ func main() {
 
 	if err := newRootCmd().ExecuteContext(ctx); err != nil {
 		fmt.Fprintln(os.Stderr, "error:", err)
-		os.Exit(1)
+		os.Exit(exitCode(ctx, usageErrorFromExecute(err)))
 	}
+}
+
+// Exit codes, matching the bridge's frozen contract: usage failures are 2,
+// everything else is 1, and an interrupt is 130.
+//
+// The runner used to answer 1 for all of them — a mistyped flag, a
+// misconfigured host, and an action that ran and failed were indistinguishable
+// to a script, while emisar-mcp answered 2 for the very same mistakes. That
+// matters because `action run` is the documented post-install verification
+// step, so CI really does branch on it. compatibility.md freezes the bridge's
+// codes explicitly and said nothing about the runner's, which means the flat 1
+// would have frozen by default.
+const (
+	exitFailure = 1
+	exitUsage   = 2
+	exitSignal  = 130
+)
+
+// usageError marks a mistake in how the command was INVOKED, as opposed to a
+// failure of the work it went on to do.
+type usageError struct{ err error }
+
+func (e usageError) Error() string { return e.err.Error() }
+func (e usageError) Unwrap() error { return e.err }
+
+// usageErrorFromExecute recognises the invocation mistakes cobra reports as
+// plain errors rather than through SetFlagErrorFunc. Matching its message text
+// is unpleasant but it is the only signal cobra gives, and the alternative —
+// treating "you typed it wrong" as "the work failed" — is what shipped.
+func usageErrorFromExecute(err error) error {
+	var usage usageError
+	if errors.As(err, &usage) {
+		return err
+	}
+	for _, prefix := range []string{
+		"unknown command",
+		"unknown flag",
+		"unknown shorthand flag",
+		"accepts ",
+		"requires at least",
+		"requires exactly",
+	} {
+		if strings.HasPrefix(err.Error(), prefix) {
+			return usageError{err}
+		}
+	}
+	return err
+}
+
+func exitCode(ctx context.Context, err error) int {
+	var usage usageError
+	if errors.As(err, &usage) {
+		return exitUsage
+	}
+	// Ctrl-C during the work, not a failure of it. Checked after usage so an
+	// interrupt arriving while a usage error surfaces still reports the usage
+	// mistake, which is the actionable one.
+	if ctx.Err() != nil && errors.Is(ctx.Err(), context.Canceled) {
+		return exitSignal
+	}
+	return exitFailure
 }
 
 // newRootCmd builds the full command tree. Split from main so tests can walk
@@ -81,6 +144,14 @@ authoring, approval workflow, and audit storage live in the cloud.`,
 		SilenceErrors: true,
 		Version:       Version,
 	}
+	// Every way cobra can tell us the INVOCATION was wrong, marked so main can
+	// exit 2 instead of the flat 1 that made a typo indistinguishable from a
+	// broken host. A bad flag comes through here; a bad command or a bad
+	// argument count arrives as an ordinary error from Execute, so those are
+	// recognised by cobra's own message prefixes in usageErrorFromExecute.
+	root.SetFlagErrorFunc(func(_ *cobra.Command, err error) error {
+		return usageError{err}
+	})
 	root.PersistentFlags().StringVar(&flagConfig, "config", "", "path to config.yaml (default: $EMISAR_CONFIG, else /etc/emisar/config.yaml)")
 	root.PersistentFlags().StringSliceVar(&flagPacksDir, "packs-dir", nil, "extra pack search dirs (overrides config)")
 	root.PersistentFlags().BoolVar(&flagJSONOut, "json", false, "emit JSON output where applicable")
@@ -147,9 +218,16 @@ func showHelp(cmd *cobra.Command, _ []string) error { return cmd.Help() }
 // many, never which.
 func requireOne(placeholder string) cobra.PositionalArgs {
 	return func(cmd *cobra.Command, args []string) error {
+		// Marked at the source: this is an invocation mistake, so it exits 2.
+		// Recognising it by message text instead would mean matching our own
+		// prose, which is exactly the fragile thing usageErrorFromExecute only
+		// does because cobra gives no other signal.
 		if len(args) == 0 {
-			return fmt.Errorf("%s requires %s", cmd.CommandPath(), placeholder)
+			return usageError{fmt.Errorf("%s requires %s", cmd.CommandPath(), placeholder)}
 		}
-		return cobra.ExactArgs(1)(cmd, args)
+		if err := cobra.ExactArgs(1)(cmd, args); err != nil {
+			return usageError{err}
+		}
+		return nil
 	}
 }
