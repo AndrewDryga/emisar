@@ -130,9 +130,14 @@ defmodule EmisarWeb.AuditExportController do
 
   defp parse_limit(nil), do: {:ok, Audit.default_export_limit()}
 
+  # Clamped here, not only inside the query, so the limit the controller holds is
+  # the page size that was actually served. Comparing a delivered page against the
+  # raw parameter meant `?limit=5000` returned a full 1,000 rows and NO
+  # `rel="next"` — and a conformant SIEM reads a missing Link as "caught up" and
+  # stops, thousands of events short.
   defp parse_limit(value) when is_binary(value) do
     case Integer.parse(value) do
-      {n, ""} when n > 0 -> {:ok, n}
+      {n, ""} when n > 0 -> {:ok, min(n, Audit.max_export_limit())}
       _ -> {:error, "limit must be a positive integer"}
     end
   end
@@ -200,10 +205,14 @@ defmodule EmisarWeb.AuditExportController do
     end
   end
 
+  # Plug.Conn.Query.encode, not URI.encode_query — a repeated `event_type[]=a&
+  # event_type[]=b` arrives as a list value, and URI.encode_query RAISES on one,
+  # which turned the drain signal into a 500 on the exact path a SIEM catching up
+  # with a type filter takes.
   defp next_page_url(conn, cursor) do
     base = PublicUrl.url("/api/audit")
     params = Map.put(conn.query_params || %{}, "cursor", cursor) |> Map.delete("since")
-    base <> "?" <> URI.encode_query(params)
+    base <> "?" <> Plug.Conn.Query.encode(params)
   end
 
   # SIEMs want exact JSON they can ingest as-is. Project every column

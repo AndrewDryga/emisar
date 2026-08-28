@@ -215,6 +215,51 @@ defmodule EmisarWeb.AuditExportControllerTest do
       assert link =~ "cursor=#{cursor}"
     end
 
+    test "an over-cap limit still advertises the next page", %{
+      conn: conn,
+      account: account,
+      raw_key: raw
+    } do
+      # The served page is clamped to max_export_limit, so a caller asking for
+      # more must still be told there is more. The delivered rows used to be
+      # compared against the RAW parameter, so a full clamped page carried no
+      # Link at all — and a conformant SIEM reads a missing Link as "caught up".
+      # A full page is the only shape that discriminates, hence the bulk insert.
+      cap = Audit.max_export_limit()
+      Enum.each(1..(cap + 1), fn _ -> insert_event(account, "user.signed_in") end)
+
+      conn =
+        conn
+        |> bearer(raw)
+        |> get(~p"/api/audit?limit=#{cap + 500}&event_type=user.signed_in")
+
+      assert length(conn |> ndjson() |> parse_ndjson()) == cap
+      assert [link] = get_resp_header(conn, "link")
+      assert link =~ ~s(rel="next")
+    end
+
+    test "a repeated event_type builds the next link instead of raising", %{
+      conn: conn,
+      account: account,
+      raw_key: raw
+    } do
+      # `?event_type[]=a&event_type[]=b` is the pinned-supported repeated form,
+      # and it reaches the header builder as a list. URI.encode_query rejects
+      # one, so building the Link raised and the response became a 500 — on the
+      # exact path a SIEM catching up with a type filter takes.
+      Enum.each(1..3, fn _ -> insert_event(account, "user.signed_in") end)
+
+      conn =
+        conn
+        |> bearer(raw)
+        |> get("/api/audit?limit=2&event_type[]=user.signed_in&event_type[]=user.signed_out")
+
+      assert conn.status == 200
+      assert [link] = get_resp_header(conn, "link")
+      assert link =~ ~s(rel="next")
+      assert link =~ "event_type"
+    end
+
     test "?cursor=<…> resumes strictly after the prior page", %{
       conn: conn,
       account: account,
