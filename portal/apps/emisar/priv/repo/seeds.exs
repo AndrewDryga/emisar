@@ -134,25 +134,11 @@ baseline_action_descriptors = fn pack_id ->
   end)
 end
 
-# Aggregate stream chunks: total byte size and sha256 of the
-# concatenation. Used to populate ActionRun.{stdout,stderr}_{bytes,sha256}
-# so the meta strip reads believably.
+# Aggregate stream chunks so terminal byte counts read believably.
 chunks_bytes = fn chunks, stream ->
   chunks
   |> Enum.filter(fn {s, _} -> s == stream end)
   |> Enum.reduce(0, fn {_, t}, acc -> acc + byte_size(t) end)
-end
-
-chunks_sha = fn chunks, stream ->
-  blob =
-    chunks
-    |> Enum.filter(fn {s, _} -> s == stream end)
-    |> Enum.map_join("", fn {_, t} -> t end)
-
-  case blob do
-    "" -> nil
-    _ -> :crypto.hash(:sha256, blob) |> Base.encode16(case: :lower)
-  end
 end
 
 # -- Demo account + owner --------------------------------------------
@@ -1665,7 +1651,7 @@ if existing_runs == [] do
   end
 
   # Wrap finalize_success to take the realistic-output blob too, and
-  # update bytes/sha so the meta strip reads believably.
+  # update byte counts so the meta strip reads believably.
   finalize_success = fn run, finished_at, duration_ms, chunks ->
     append_chunks.(run, chunks)
 
@@ -1676,8 +1662,6 @@ if existing_runs == [] do
         duration_ms: duration_ms,
         emitted_stdout_bytes: chunks_bytes.(chunks, "stdout"),
         emitted_stderr_bytes: chunks_bytes.(chunks, "stderr"),
-        emitted_stdout_sha256: chunks_sha.(chunks, "stdout"),
-        emitted_stderr_sha256: chunks_sha.(chunks, "stderr"),
         output_complete: true,
         event_id: "seed-" <> Ecto.UUID.generate()
       })
@@ -1697,8 +1681,6 @@ if existing_runs == [] do
       error_message: reason,
       emitted_stdout_bytes: chunks_bytes.(chunks, "stdout"),
       emitted_stderr_bytes: chunks_bytes.(chunks, "stderr"),
-      emitted_stdout_sha256: chunks_sha.(chunks, "stdout"),
-      emitted_stderr_sha256: chunks_sha.(chunks, "stderr"),
       output_complete: true,
       event_id: "seed-" <> Ecto.UUID.generate()
     })
@@ -2029,8 +2011,6 @@ if existing_runs == [] do
       duration_ms: 1820,
       emitted_stdout_bytes: chunks_bytes.(caddy_reload_stdout, "stdout"),
       emitted_stderr_bytes: chunks_bytes.(caddy_reload_stdout, "stderr"),
-      emitted_stdout_sha256: chunks_sha.(caddy_reload_stdout, "stdout"),
-      emitted_stderr_sha256: chunks_sha.(caddy_reload_stdout, "stderr"),
       output_complete: true
     )
     |> Repo.update!()
@@ -2430,7 +2410,6 @@ typed_demo_run =
                 duration_ms: 740,
                 emitted_stdout_bytes: chunks_bytes.(chunks, "stdout"),
                 emitted_stderr_bytes: 0,
-                emitted_stdout_sha256: chunks_sha.(chunks, "stdout"),
                 output_complete: true,
                 structured_output: typed_demo_output,
                 event_id: "seed-" <> Ecto.UUID.generate()
