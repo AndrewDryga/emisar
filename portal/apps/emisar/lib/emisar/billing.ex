@@ -32,8 +32,13 @@ defmodule Emisar.Billing do
       features: [
         runners: "3 runners",
         members: "1 user",
-        audit_retention: "7-day audit retention",
-        support: "Community support"
+        audit_retention: "7-day audit retention"
+        # No support entry: "Community support" named a channel that does not
+        # exist — no Discord, forum, or Discussions anywhere — while /support
+        # offers email help with no plan qualifier. Free claims no distinct
+        # support channel rather than an imaginary one; the comparison table
+        # renders the em-dash it already renders for any absent feature, and
+        # Team's "Email support" stays the real differentiator.
       ]
     },
     "team" => %{

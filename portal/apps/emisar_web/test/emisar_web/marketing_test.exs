@@ -702,8 +702,11 @@ defmodule EmisarWeb.MarketingTest do
       end
 
       for {plan_id, plan} <- plans do
+        # Free names no support channel — it used to say "Community support",
+        # which pointed at nothing — so its cell is the em-dash the table
+        # already renders for any absent feature, exactly like deployment.
         assert pricing_comparison_cell_text(document, "support", plan_id) ==
-                 Keyword.fetch!(plan.features, :support)
+                 Keyword.get(plan.features, :support, "—")
 
         assert pricing_comparison_cell_text(document, "deployment", plan_id) ==
                  Keyword.get(plan.features, :deployment_planning, "—")
