@@ -366,7 +366,7 @@ services:
       context: .
       dockerfile: dev/mcp/Dockerfile
       args:
-        MCP_VERSION: "0.3.0"
+        MCP_VERSION: "0.7.0"
     image: emisar/mcp:dev
     profiles: ["test"]
     depends_on:
@@ -444,9 +444,13 @@ services:
   # The signed-dispatch e2e's ordinary runbook target. Keep this SUT narrow:
   # the published runbook exercises only linux-core, while runner-1's broad
   # demo catalog belongs to the interactive stack and unrelated pack tests.
+  # It enrolls under its OWN id and reaches the runbook through the edge-web
+  # group — it used to adopt runner-1's edge-fra-01 row, so the obvious manual
+  # `docker compose --profile test up -d` (runner-1 is unprofiled and always
+  # starts) put two live connections on one runner row.
   runner-runbook:
     <<: *runner
-    hostname: edge-fra-01.northstar.example
+    hostname: runbook-edge-01.northstar.example
     profiles: ["test"]
     depends_on:
       seeder:

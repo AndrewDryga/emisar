@@ -652,8 +652,13 @@ func (a *App) infraGate(ctx context.Context) error {
 			return err
 		}
 	}
-	return a.gatePhase("infra rendered templates", func() error {
+	if err := a.gatePhase("infra rendered templates", func() error {
 		return a.infraOps(ctx, []string{"validate-templates"})
+	}); err != nil {
+		return err
+	}
+	return a.gatePhase("infra trusted release pins", func() error {
+		return a.infraOps(ctx, []string{"verify-release-pins"})
 	})
 }
 

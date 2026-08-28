@@ -1,11 +1,14 @@
 schema_version: 1
 
 # Minimal ordinary runner for the signed-dispatch e2e's published-runbook leg.
-# It adopts the seeded edge-fra-01 row, but advertises only the linux-core pack
-# that morning-edge-readiness actually executes. The interactive demo keeps its
-# broad edge host catalog in edge-fra-01.yaml. DEV ONLY.
+# It advertises only the linux-core pack that morning-edge-readiness actually
+# executes; the interactive demo keeps its broad edge host catalog in
+# edge-fra-01.yaml. The runbook targets `group:edge-web`, so this enrolls under
+# its OWN id rather than adopting the seeded edge-fra-01 row: sharing that id
+# meant `docker compose --profile test up -d` — the obvious manual command —
+# brought up two live connections claiming one runner row. DEV ONLY.
 runner:
-  id: "edge-fra-01"
+  id: "runbook-edge-01"
   group: "edge-web"
   labels:
     env: prod

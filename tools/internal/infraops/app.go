@@ -22,6 +22,7 @@ const usageText = `usage: ./run ops <command> [args]
   drill pitr [--apply]               run the PITR and IAM recovery drill
   drill cleanup [--apply [ID]]       list or clean recovery drill resources
   validate-templates                 render and validate production cloud-init
+  verify-release-pins                verify trusted release workflow commit pins
   verify-pack-environment [repo] [environment]
                                      verify the registry deployment environment
 `
@@ -86,6 +87,11 @@ func (a *App) Run(ctx context.Context, args []string) error {
 			return usage("usage: ./run ops validate-templates")
 		}
 		return a.validateTemplates(ctx)
+	case "verify-release-pins":
+		if len(args) != 1 {
+			return usage("usage: ./run ops verify-release-pins")
+		}
+		return a.checkTrustedReleasePins(ctx)
 	case "verify-pack-environment":
 		if len(args) > 3 {
 			return usage("usage: ./run ops verify-pack-environment [repo] [environment]")

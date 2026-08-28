@@ -197,9 +197,9 @@ var docsShots = []shot{
 	//	./run smoke
 	//	PORTAL_URL=http://localhost:4010 ./run capture docs runbook-publish
 	//
-	// Do NOT add COMPOSE_PROFILES=test — runner-runbook pins the same
-	// edge-fra-01 identity with a linux-core-only pack set, wins the connection
-	// lease, and strips the caddy catalog this procedure resolves against.
+	// Do NOT add COMPOSE_PROFILES=test — runner-runbook joins the same edge-web
+	// group with a linux-core-only pack set, so the plan this procedure
+	// photographs resolves across two runners instead of the demo host alone.
 	{Name: "runbook-publish", Path: "/app/demo/runbooks", Clicks: []string{navigateRowLink(`a[href*="/runbooks/"][href$="/edit"]`, "Edge configuration rollout", "#runbook-actions-desktop-publish"), openPublishReview}, Anchor: Anchor{Selector: "#shell-canvas"}, Width: 1440, TopCSS: 1060, Output: "docs/runbooks/publish.webp"}, // anchor the PAGE, not the panel — a sub-page crop upscales in the docs column and the type balloons; the crop ends after the review card, before the Publish check section opens. Recapture needs edge-fra-01 online advertising a TRUSTED caddy pack (the ./run smoke stack provides this), or Publish stays disabled and the review panel never opens.
 	{Name: "runbook-start", Path: "/app/demo/runbooks", Clicks: []string{navigateRowLink(`a[href*="/runbooks/"][href$="/run"]`, "Edge configuration rollout", "#runbook-start-execution"), waitForResolvedRunbookPlan}, Anchor: Anchor{Selector: "#shell-canvas"}, Width: 1440, TopCSS: 1050, Output: "docs/runbooks/start.webp"},
 	{Name: "runbook-approval", Path: "/app/demo/approvals", Clicks: []string{navigateRowLink(`#pending a[href*="/approvals/"]`, "Edge configuration rollout", "#approval-decision-form")}, Anchor: Anchor{Selector: "#shell-canvas"}, Width: 1280, TopCSS: 1120, Output: "docs/runbooks/approval.webp"},
