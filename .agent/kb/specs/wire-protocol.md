@@ -215,10 +215,15 @@ the trusted manifest owns every execution semantic the portal reasons about.
 ```
 
 Portal-originated unsigned dispatches may include an `opts` object with
-`timeout`, `max_stdout_bytes`, and `max_stderr_bytes`. Values are positive
-integers; `timeout` is nanoseconds, matching Go's `time.Duration` JSON encoding.
-The portal validates this envelope before persistence and the runner clamps each
-value to the action's declared override bounds. Attested MCP dispatches never
+`timeout_ms`, `max_stdout_bytes`, and `max_stderr_bytes`. Values are positive
+integers, and each name carries its unit the way `duration_ms` and
+`max_attestation_age_seconds` do elsewhere in this protocol. The field was
+`timeout` in nanoseconds, matching Go's `time.Duration` JSON encoding — an
+internal representation leaking onto a wire contract, where a caller sending
+`30` meaning seconds got 30 nanoseconds and was clamped with no error anywhere,
+because the portal validates this envelope as positive integers and knows
+nothing of units. The portal validates it before persistence and the runner
+clamps each value to the action's declared override bounds. Attested MCP dispatches never
 carry overrides: the runner rejects them because they are not part of the signed
 execution intent.
 

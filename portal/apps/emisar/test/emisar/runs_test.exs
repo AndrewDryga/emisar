@@ -2012,7 +2012,7 @@ defmodule Emisar.RunsTest do
       _ = Fixtures.Catalog.create_action(runner: runner, action_id: "linux.uptime", risk: "low")
 
       opts = %{
-        "timeout" => 5_000_000_000,
+        "timeout_ms" => 5_000,
         "max_stdout_bytes" => 65_536,
         "max_stderr_bytes" => 16_384
       }
@@ -3539,7 +3539,7 @@ defmodule Emisar.RunsTest do
         Runs.create_run(
           base_attrs(account.id, runner.id, %{
             args_raw: args_raw,
-            opts: %{"timeout" => 30_000_000_000}
+            opts: %{"timeout_ms" => 30_000}
           })
         )
 

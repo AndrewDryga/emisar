@@ -57,7 +57,7 @@ defmodule Emisar.Runs.ActionRun.Changeset do
   @max_db_integer 2_147_483_647
   @max_db_bigint 9_223_372_036_854_775_807
   @max_run_opt_value 9_223_372_036_854_775_807
-  @run_opt_keys ~w(timeout max_stdout_bytes max_stderr_bytes)
+  @run_opt_keys ~w(timeout_ms max_stdout_bytes max_stderr_bytes)
 
   def create(attrs) do
     attrs = Map.put(attrs, :args_raw, action_args_raw(attrs))
@@ -169,7 +169,7 @@ defmodule Emisar.Runs.ActionRun.Changeset do
           [opts: "must be an object"]
 
         Enum.any?(Map.keys(opts), &(&1 not in @run_opt_keys)) ->
-          [opts: "supports only timeout, max_stdout_bytes, and max_stderr_bytes"]
+          [opts: "supports only timeout_ms, max_stdout_bytes, and max_stderr_bytes"]
 
         Enum.any?(Map.values(opts), &invalid_run_opt?/1) ->
           [opts: "values must be positive integers within the signed 64-bit range"]

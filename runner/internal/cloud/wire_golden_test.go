@@ -9,7 +9,6 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
-	"time"
 
 	"github.com/andrewdryga/emisar/runner/internal/attest"
 	"github.com/andrewdryga/emisar/runner/pkg/actionspec"
@@ -20,7 +19,7 @@ var updateWireGolden = flag.Bool("update", false, "update the wire protocol gold
 // nonAdditiveChangeID names the one non-additive wire change currently allowed
 // to keep ProtocolVersion. Set it to "" for ordinary work: the guard then
 // refuses any non-additive regeneration, which is what it exists for.
-const nonAdditiveChangeID = "runner-state-drop-unadvertised-limits"
+const nonAdditiveChangeID = ""
 
 // reviewedNonAdditiveChanges records non-additive wire changes that deliberately
 // do NOT bump ProtocolVersion, with the reasoning that earned the exception.
@@ -60,6 +59,16 @@ var reviewedNonAdditiveChanges = map[string]bool{
 	// printing the advertisement copy; the enforced values remain in each
 	// pack's YAML. Dropping receiver-unread fields cannot be misread.
 	"runner-state-drop-unadvertised-limits": true,
+	// opts.timeout (a raw Go nanosecond int64) -> opts.timeout_ms. The field is
+	// optional and has NO producer: the console dispatches with opts: %{} and
+	// the MCP surface never exposed run opts, so no deployed peer sends it. An
+	// un-upgraded portal that started to would have its unknown `timeout`
+	// ignored, leaving the action's own authored timeout — a fallback, not a
+	// misread. The old name leaked Go's internal representation onto a frozen
+	// wire while the portal validated it as a bare positive integer with no unit
+	// knowledge, so `30` meaning seconds became 30 nanoseconds and clamped
+	// silently.
+	"run-opts-timeout-ms": true,
 }
 
 type wireGolden struct {
@@ -172,7 +181,7 @@ func canonicalWireFrames() []wireFrameCase {
 					PackRef:          "database@1.2.3/sha256:" + repeated("a", 64),
 					Args:             map[string]any{"job_id": 891234567890123456, "mode": "graceful"},
 					ArgsRaw:          json.RawMessage(`{"job_id":891234567890123456,"mode":"graceful"}`),
-					Opts:             &RunOpts{Timeout: actionspec.Duration(45 * time.Second), MaxStdoutBytes: 65536, MaxStderrBytes: 16384},
+					Opts:             &RunOpts{TimeoutMS: 45_000, MaxStdoutBytes: 65536, MaxStderrBytes: 16384},
 					Reason:           "planned maintenance",
 					OperationID:      "op_wire_golden_0001",
 					Attestation:      canonicalAttestation(),

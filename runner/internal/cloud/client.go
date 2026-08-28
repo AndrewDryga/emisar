@@ -1126,7 +1126,7 @@ func requestForDispatch(m RunActionMsg, registry *packs.Registry, progress engin
 	}
 	if m.Opts != nil {
 		req.Opts = engine.Opts{
-			Timeout:        m.Opts.Timeout.Std(),
+			Timeout:        m.Opts.Timeout(),
 			MaxStdoutBytes: m.Opts.MaxStdoutBytes,
 			MaxStderrBytes: m.Opts.MaxStderrBytes,
 		}

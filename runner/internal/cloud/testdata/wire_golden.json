@@ -88,7 +88,7 @@
         "mode": "graceful"
       },
       "opts": {
-        "timeout": 45000000000,
+        "timeout_ms": 45000,
         "max_stdout_bytes": 65536,
         "max_stderr_bytes": 16384
       },

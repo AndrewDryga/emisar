@@ -30,8 +30,8 @@ func runOptsForWire(opts *RunOpts) *runOptsWire {
 		return nil
 	}
 	wire := &runOptsWire{}
-	if opts.Timeout != 0 {
-		wire.Timeout = &opts.Timeout
+	if opts.TimeoutMS != 0 {
+		wire.TimeoutMS = &opts.TimeoutMS
 	}
 	if opts.MaxStdoutBytes != 0 {
 		wire.MaxStdoutBytes = &opts.MaxStdoutBytes

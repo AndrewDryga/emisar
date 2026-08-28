@@ -17,6 +17,7 @@ import (
 	"fmt"
 	"reflect"
 	"strings"
+	"time"
 	"unicode/utf8"
 
 	"github.com/andrewdryga/emisar/runner/internal/attest"
@@ -104,9 +105,9 @@ type runActionMsgWire struct {
 }
 
 type runOptsWire struct {
-	Timeout        *actionspec.Duration `json:"timeout,omitempty"`
-	MaxStdoutBytes *int                 `json:"max_stdout_bytes,omitempty"`
-	MaxStderrBytes *int                 `json:"max_stderr_bytes,omitempty"`
+	TimeoutMS      *int `json:"timeout_ms,omitempty"`
+	MaxStdoutBytes *int `json:"max_stdout_bytes,omitempty"`
+	MaxStderrBytes *int `json:"max_stderr_bytes,omitempty"`
 }
 
 func (o *runOptsWire) value() (*RunOpts, error) {
@@ -114,11 +115,11 @@ func (o *runOptsWire) value() (*RunOpts, error) {
 		return nil, nil
 	}
 	result := &RunOpts{}
-	if o.Timeout != nil {
-		if *o.Timeout <= 0 {
-			return nil, fmt.Errorf("cloud: run_action opts.timeout must be positive")
+	if o.TimeoutMS != nil {
+		if *o.TimeoutMS <= 0 {
+			return nil, fmt.Errorf("cloud: run_action opts.timeout_ms must be positive")
 		}
-		result.Timeout = *o.Timeout
+		result.TimeoutMS = *o.TimeoutMS
 	}
 	if o.MaxStdoutBytes != nil {
 		if *o.MaxStdoutBytes <= 0 {
@@ -302,14 +303,31 @@ func validateUniqueJSON(raw []byte) error {
 
 // RunOpts is the per-call override envelope. Each field is clamped to the
 // action's declared min/max bounds before use.
+// RunOpts are the per-dispatch limit overrides the portal may send.
+//
+// The timeout is milliseconds, and its name says so. It was `timeout` carrying
+// a raw Go nanosecond int64, which is this language's internal representation
+// leaking onto a wire contract: a caller sending 30 meaning seconds got 30
+// nanoseconds, and because the portal validates opts as a positive integer with
+// no unit knowledge, that clamped silently with no error anywhere. The same
+// protocol already spells duration_ms and max_attestation_age_seconds, so the
+// unit belongs in the name.
 type RunOpts struct {
-	Timeout        actionspec.Duration `json:"timeout,omitempty"`
-	MaxStdoutBytes int                 `json:"max_stdout_bytes,omitempty"`
-	MaxStderrBytes int                 `json:"max_stderr_bytes,omitempty"`
+	TimeoutMS      int `json:"timeout_ms,omitempty"`
+	MaxStdoutBytes int `json:"max_stdout_bytes,omitempty"`
+	MaxStderrBytes int `json:"max_stderr_bytes,omitempty"`
+}
+
+// Timeout is the override as a duration, or zero when the portal sent none.
+func (o *RunOpts) Timeout() time.Duration {
+	if o == nil {
+		return 0
+	}
+	return time.Duration(o.TimeoutMS) * time.Millisecond
 }
 
 func (o *RunOpts) hasOverrides() bool {
-	return o != nil && (o.Timeout != 0 || o.MaxStdoutBytes != 0 || o.MaxStderrBytes != 0)
+	return o != nil && (o.TimeoutMS != 0 || o.MaxStdoutBytes != 0 || o.MaxStderrBytes != 0)
 }
 
 // CancelMsg asks the runner to terminate a running action. The runner

@@ -219,7 +219,7 @@ defmodule Emisar.Runs.ActionRunTest do
 
     test "accepts the canonical unsigned runner options envelope" do
       opts = %{
-        "timeout" => 5_000_000_000,
+        "timeout_ms" => 5_000,
         "max_stdout_bytes" => 65_536,
         "max_stderr_bytes" => 16_384
       }
@@ -232,14 +232,14 @@ defmodule Emisar.Runs.ActionRunTest do
 
     test "rejects runner options the Go wire decoder cannot use" do
       value_error = "values must be positive integers within the signed 64-bit range"
-      key_error = "supports only timeout, max_stdout_bytes, and max_stderr_bytes"
+      key_error = "supports only timeout_ms, max_stdout_bytes, and max_stderr_bytes"
 
       invalid = [
-        {%{"timeout" => "5s"}, value_error},
-        {%{"timeout" => 1.5}, value_error},
-        {%{"timeout" => 0}, value_error},
-        {%{"timeout" => -1}, value_error},
-        {%{"timeout" => 9_223_372_036_854_775_808}, value_error},
+        {%{"timeout_ms" => "5s"}, value_error},
+        {%{"timeout_ms" => 1.5}, value_error},
+        {%{"timeout_ms" => 0}, value_error},
+        {%{"timeout_ms" => -1}, value_error},
+        {%{"timeout_ms" => 9_223_372_036_854_775_808}, value_error},
         {%{"future" => 1}, key_error},
         {%{timeout: 1}, key_error}
       ]
@@ -255,7 +255,7 @@ defmodule Emisar.Runs.ActionRunTest do
     test "rejects nonempty runner options on an attested run" do
       attrs = %{
         attestation: Fixtures.Runs.signed_attestation().attestation,
-        opts: %{"timeout" => 1}
+        opts: %{"timeout_ms" => 1}
       }
 
       changeset = ActionRun.Changeset.create(create_attrs(attrs))

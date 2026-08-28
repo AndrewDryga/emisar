@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestClientRejectsInvalidControlRequestIDs(t *testing.T) {
@@ -61,28 +62,44 @@ func TestRunActionMsgPreservesExactArgumentBytes(t *testing.T) {
 	}
 }
 
-func TestRunActionMsgUsesIntegerNanosecondOptions(t *testing.T) {
+func TestRunActionMsgUsesIntegerMillisecondOptions(t *testing.T) {
 	requestID := testRequestID("req_opts")
-	valid := []byte("{\"type\":\"run_action\",\"request_id\":\"" + requestID + "\",\"action_id\":\"a.b\",\"args\":{},\"opts\":{\"timeout\":5000000000,\"max_stdout_bytes\":65536,\"max_stderr_bytes\":16384}}")
+	valid := []byte("{\"type\":\"run_action\",\"request_id\":\"" + requestID + "\",\"action_id\":\"a.b\",\"args\":{},\"opts\":{\"timeout_ms\":5000,\"max_stdout_bytes\":65536,\"max_stderr_bytes\":16384}}")
 
 	var msg RunActionMsg
 	if err := json.Unmarshal(valid, &msg); err != nil {
 		t.Fatalf("Unmarshal integer options: %v", err)
 	}
-	if msg.Opts == nil || msg.Opts.Timeout != 5_000_000_000 ||
+	if msg.Opts == nil || msg.Opts.TimeoutMS != 5_000 ||
 		msg.Opts.MaxStdoutBytes != 65_536 || msg.Opts.MaxStderrBytes != 16_384 {
 		t.Fatalf("decoded options = %+v", msg.Opts)
 	}
+	if got := msg.Opts.Timeout(); got != 5*time.Second {
+		t.Errorf("Timeout() = %v, want 5s", got)
+	}
 
-	invalid := []byte("{\"type\":\"run_action\",\"request_id\":\"" + requestID + "\",\"action_id\":\"a.b\",\"args\":{},\"opts\":{\"timeout\":\"5s\"}}")
+	invalid := []byte("{\"type\":\"run_action\",\"request_id\":\"" + requestID + "\",\"action_id\":\"a.b\",\"args\":{},\"opts\":{\"timeout_ms\":\"5s\"}}")
 	if err := json.Unmarshal(invalid, &msg); err == nil {
-		t.Fatal("string timeout was accepted")
+		t.Fatal("string timeout_ms was accepted")
+	}
+
+	// The retired `timeout` spelling is now simply an unknown field, so it is
+	// ignored rather than read as milliseconds. That is the safe direction: the
+	// action falls back to its own authored timeout instead of running for a
+	// number scaled a million-fold wrong.
+	stale := []byte("{\"type\":\"run_action\",\"request_id\":\"" + requestID + "\",\"action_id\":\"a.b\",\"args\":{},\"opts\":{\"timeout\":5000000000}}")
+	var staleMsg RunActionMsg
+	if err := json.Unmarshal(stale, &staleMsg); err != nil {
+		t.Fatalf("Unmarshal retired timeout spelling: %v", err)
+	}
+	if staleMsg.Opts != nil && staleMsg.Opts.TimeoutMS != 0 {
+		t.Errorf("retired `timeout` leaked into TimeoutMS = %d", staleMsg.Opts.TimeoutMS)
 	}
 }
 
 func TestRunActionMsgRejectsNonPositiveOptions(t *testing.T) {
 	requestID := testRequestID("req_bad_opts")
-	for _, option := range []string{"timeout", "max_stdout_bytes", "max_stderr_bytes"} {
+	for _, option := range []string{"timeout_ms", "max_stdout_bytes", "max_stderr_bytes"} {
 		for _, value := range []int{-1, 0} {
 			t.Run(fmt.Sprintf("%s_%d", option, value), func(t *testing.T) {
 				raw := fmt.Sprintf(
@@ -128,7 +145,7 @@ func TestRunActionMsgRejectsNoncanonicalKnownFieldAliases(t *testing.T) {
 	for _, raw := range []string{
 		"{\"type\":\"run_action\",\"ACTION_ID\":\"a.b\",\"args\":{}}",
 		"{\"type\":\"run_action\",\"action_id\":\"a.b\",\"ACTION_ID\":\"a.c\",\"args\":{}}",
-		"{\"type\":\"run_action\",\"action_id\":\"a.b\",\"args\":{},\"opts\":{\"TIMEOUT\":\"1s\"}}",
+		"{\"type\":\"run_action\",\"action_id\":\"a.b\",\"args\":{},\"opts\":{\"TIMEOUT_MS\":\"1s\"}}",
 		"{\"type\":\"run_action\",\"action_id\":\"a.b\",\"args\":{},\"attestation\":{\"ACTION_ID\":\"a.b\"}}",
 		"{\"type\":\"run_action\",\"action_id\":\"a.b\",\"args\":{},\"attestation\":{\"CERT_CHAIN\":[]}}",
 	} {
