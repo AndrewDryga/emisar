@@ -7,7 +7,7 @@ defmodule EmisarWeb.AuditExportLive do
   """
   use EmisarWeb, :live_view
   alias Emisar.{ApiKeys, Billing}
-  alias EmisarWeb.{Permissions, UrlHelpers}
+  alias EmisarWeb.{Permissions, URLHelpers}
   alias Phoenix.LiveView.JS
 
   def mount(_params, _session, socket) do
@@ -36,7 +36,7 @@ defmodule EmisarWeb.AuditExportLive do
        Billing.audit_export_available?(socket.assigns.current_account)
      )
      |> assign(:export_secret, nil)
-     |> assign(:base_audit_url, UrlHelpers.derive_base_url(socket) <> "/api/audit")
+     |> assign(:base_audit_url, URLHelpers.derive_base_url(socket) <> "/api/audit")
      |> assign_export_keys()}
   end
 

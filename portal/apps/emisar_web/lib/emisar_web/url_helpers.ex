@@ -1,4 +1,4 @@
-defmodule EmisarWeb.UrlHelpers do
+defmodule EmisarWeb.URLHelpers do
   @moduledoc """
   Cross-LV helpers for URLs that operators copy/paste (install
   one-liners, MCP snippets). Resolves from `socket.host_uri` so dev

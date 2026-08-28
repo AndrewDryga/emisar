@@ -5,7 +5,7 @@ defmodule EmisarWeb.RunnersLive do
   alias EmisarWeb.FleetStates
   alias EmisarWeb.LiveTable
   alias EmisarWeb.RunnerInstall
-  alias EmisarWeb.UrlHelpers
+  alias EmisarWeb.URLHelpers
 
   @reload_debounce_ms 500
 
@@ -14,7 +14,7 @@ defmodule EmisarWeb.RunnersLive do
      socket
      |> assign(:page_title, "Runners")
      |> assign(:install_command, nil)
-     |> assign(:base_url, UrlHelpers.derive_base_url(socket))
+     |> assign(:base_url, URLHelpers.derive_base_url(socket))
      |> assign(:show_troubleshooting?, false)
      |> assign(:reload_scheduled?, false)
      |> assign_retention_hours(socket.assigns.current_account)}
@@ -297,7 +297,7 @@ defmodule EmisarWeb.RunnersLive do
     if socket.assigns.install_command do
       socket
     else
-      base = UrlHelpers.derive_base_url(socket)
+      base = URLHelpers.derive_base_url(socket)
       # Only the command + base are used here — unlike the dedicated page, this
       # wizard needs no key id: any runner joining re-runs load/2 and shows the
       # list, so there's no per-key join to match.

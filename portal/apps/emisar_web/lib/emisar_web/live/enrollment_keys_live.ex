@@ -1,7 +1,7 @@
 defmodule EmisarWeb.EnrollmentKeysLive do
   use EmisarWeb, :live_view
   alias Emisar.Runners
-  alias EmisarWeb.{LiveForm, LiveTable, Permissions, UrlHelpers}
+  alias EmisarWeb.{LiveForm, LiveTable, Permissions, URLHelpers}
   alias Phoenix.LiveView.JS
 
   def mount(_params, _session, socket) do
@@ -20,7 +20,7 @@ defmodule EmisarWeb.EnrollmentKeysLive do
        |> assign(:new_secret, nil)
        |> assign(:new_key, nil)
        |> assign(:install_command, nil)
-       |> assign(:base_url, UrlHelpers.derive_base_url(socket))
+       |> assign(:base_url, URLHelpers.derive_base_url(socket))
        # IL-18: only hit the billing read on the connected mount; the
        # cap-warning banner just stays hidden until it loads.
        |> assign(:billing, connected?(socket) && fetch_billing(socket))

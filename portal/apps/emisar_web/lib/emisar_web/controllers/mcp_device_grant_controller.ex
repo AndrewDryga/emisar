@@ -22,7 +22,7 @@ defmodule EmisarWeb.MCPDeviceGrantController do
   """
   use EmisarWeb, :controller
   alias Emisar.ApiKeys
-  alias EmisarWeb.UrlHelpers
+  alias EmisarWeb.URLHelpers
 
   @poll_interval_s 5
 
@@ -51,7 +51,7 @@ defmodule EmisarWeb.MCPDeviceGrantController do
 
     case ApiKeys.open_device_grant(requested_clients, context) do
       {:ok, device_code, user_code, _grant} ->
-        base = UrlHelpers.derive_base_url(conn)
+        base = URLHelpers.derive_base_url(conn)
 
         json(conn, %{
           device_code: device_code,

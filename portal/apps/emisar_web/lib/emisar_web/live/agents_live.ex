@@ -25,7 +25,7 @@ defmodule EmisarWeb.AgentsLive do
   """
   use EmisarWeb, :live_view
   alias Emisar.{Accounts, ApiKeys, Compat}
-  alias EmisarWeb.{ConfirmDialog, LiveForm, LiveTable, Permissions, UrlHelpers, UserAgent}
+  alias EmisarWeb.{ConfirmDialog, LiveForm, LiveTable, Permissions, URLHelpers, UserAgent}
   alias Phoenix.LiveView.JS
 
   @refresh_ms 15_000
@@ -58,7 +58,7 @@ defmodule EmisarWeb.AgentsLive do
      |> assign(:watch_since, DateTime.utc_now())
      |> assign(:snippet_open?, false)
      |> assign(:selected_client, nil)
-     |> assign(:base_url, UrlHelpers.derive_base_url(socket))
+     |> assign(:base_url, URLHelpers.derive_base_url(socket))
      # Which install command to open on. `get_connect_info/2` is nil on the
      # dead render, which lands on the Linux default and corrects itself the
      # moment the socket connects — the block it feeds only renders after the
@@ -1940,7 +1940,7 @@ defmodule EmisarWeb.AgentsLive do
   # same for every local client — extracting it keeps the per-client
   # snippet focused on just the config the operator needs to paste, and
   # cloud-LLM users never see it at all. The command comes from
-  # UrlHelpers.mcp_install_command/1, so a dev or self-hosted portal's
+  # URLHelpers.mcp_install_command/1, so a dev or self-hosted portal's
   # base URL rides along as EMISAR_URL.
   attr :base_url, :string, required: true
   attr :detected_os, :atom, required: true
@@ -1964,7 +1964,7 @@ defmodule EmisarWeb.AgentsLive do
           </div>
         </:actions>
       </.step_header>
-      <%= case {UrlHelpers.mcp_install_command(@base_url), UrlHelpers.mcp_windows_install_command(@base_url)} do %>
+      <%= case {URLHelpers.mcp_install_command(@base_url), URLHelpers.mcp_windows_install_command(@base_url)} do %>
         <% {{:ok, command}, {:ok, windows_command}} -> %>
           <.os_code_panel id="install-mcp-cmd" detected={@detected_os}>
             <:tab os={:linux} label="Linux" code={command} />

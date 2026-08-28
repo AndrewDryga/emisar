@@ -23,7 +23,7 @@ defmodule EmisarWeb.RunnerInstallLive do
   use EmisarWeb, :live_view
   alias Emisar.Runners
   alias EmisarWeb.RunnerInstall
-  alias EmisarWeb.UrlHelpers
+  alias EmisarWeb.URLHelpers
 
   def mount(_params, _session, socket) do
     # Install mints a root-capable key at mount — a subject that can't mint got a
@@ -48,7 +48,7 @@ defmodule EmisarWeb.RunnerInstallLive do
       if connected?(socket) do
         Process.send_after(self(), :reveal_troubleshooting, RunnerInstall.troubleshoot_after_ms())
 
-        base = UrlHelpers.derive_base_url(socket)
+        base = URLHelpers.derive_base_url(socket)
         {command, key_id} = RunnerInstall.mint_command(socket.assigns.current_subject, base)
 
         socket

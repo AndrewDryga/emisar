@@ -2,7 +2,7 @@ defmodule EmisarWeb.RunnerDetailLive do
   use EmisarWeb, :live_view
   alias Emisar.{Accounts, Catalog, Runners, Runs}
   alias EmisarWeb.{ConfirmDialog, FleetStates, LiveTable}
-  alias EmisarWeb.{Permissions, TransportReason, UrlHelpers}
+  alias EmisarWeb.{Permissions, TransportReason, URLHelpers}
 
   def mount(%{"id" => id}, _session, socket) do
     membership = socket.assigns.current_membership
@@ -31,7 +31,7 @@ defmodule EmisarWeb.RunnerDetailLive do
           {:ok,
            socket
            |> assign(:page_title, runner.name)
-           |> assign(:base_url, UrlHelpers.derive_base_url(socket))
+           |> assign(:base_url, URLHelpers.derive_base_url(socket))
            |> assign_runner(runner)
            |> ConfirmDialog.init()}
         else

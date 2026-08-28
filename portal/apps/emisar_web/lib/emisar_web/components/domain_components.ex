@@ -18,7 +18,7 @@ defmodule EmisarWeb.DomainComponents do
 
   import EmisarWeb.CoreComponents
   alias Emisar.Runs
-  alias EmisarWeb.{FleetStates, TimeHelpers, UrlHelpers}
+  alias EmisarWeb.{FleetStates, TimeHelpers, URLHelpers}
 
   # The one spelling of the runner self-update, read by both surfaces that ask
   # for it — the page notice and the per-row version chip's tooltip — so an
@@ -743,7 +743,7 @@ defmodule EmisarWeb.DomainComponents do
 
   defp version_upgrade_command(:runner, _base_url), do: {:ok, @runner_update_command}
 
-  defp version_upgrade_command(:mcp, base_url), do: UrlHelpers.mcp_install_command(base_url)
+  defp version_upgrade_command(:mcp, base_url), do: URLHelpers.mcp_install_command(base_url)
 
   @doc "The shared refusal shown when a privileged installer cannot be fetched safely."
   attr :class, :string, default: nil
