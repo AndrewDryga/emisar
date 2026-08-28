@@ -194,12 +194,16 @@ func bootWithConfig(cfg *config.Config) (*runtime, error) {
 	}, nil
 }
 
-// protectedPaths lists the roots holding this runner's own credentials, which
-// no action argument may name: the config directory — config.yaml sits beside
-// runner.env, which carries the enrollment key and every pack credential the
-// operator exported — and the state directory, which holds the control-plane
-// bearer token. install.sh relocates both (--etc-dir, --data-dir), so they are
-// read from the loaded config rather than hardcoded into a pack's denylist.
+// protectedPaths lists the roots holding this runner's own credentials and
+// tamper-evident trail, which no action argument may name: the config directory
+// — config.yaml sits beside runner.env, which carries the enrollment key and
+// every pack credential the operator exported — the state directory, which holds
+// the control-plane bearer token, and the journal directory, which holds the
+// append-only security log (an ordinary path-arg action must not read prior runs'
+// arguments and output back to the control plane, nor truncate the trail it
+// owns). install.sh relocates all three (--etc-dir, --data-dir, --log-dir), so
+// they are read from the loaded config rather than hardcoded into a pack's
+// denylist.
 func protectedPaths(cfg *config.Config) []string {
 	candidates := []string{cfg.Paths.DataDir}
 	if cfg.Source != "" {
@@ -207,6 +211,9 @@ func protectedPaths(cfg *config.Config) []string {
 	}
 	if cfg.Cloud.TokenPath != "" {
 		candidates = append(candidates, filepath.Dir(cfg.Cloud.TokenPath))
+	}
+	if cfg.Events.JSONLPath != "" {
+		candidates = append(candidates, filepath.Dir(cfg.Events.JSONLPath))
 	}
 	out := make([]string, 0, len(candidates))
 	seen := make(map[string]struct{}, len(candidates))

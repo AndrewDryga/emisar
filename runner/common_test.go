@@ -347,6 +347,20 @@ func TestProtectedPaths(t *testing.T) {
 			want: []string{"/var/lib/emisar", "/etc/emisar"},
 		},
 		{
+			// The journal lives under --log-dir, apart from the data dir on a
+			// default install (/var/log/emisar vs /var/lib/emisar). Its root is
+			// protected so a path-arg action can neither read the tamper-evident
+			// trail back to the control plane nor truncate it.
+			name: "journal dir is protected",
+			cfg: &config.Config{
+				Source: "/etc/emisar/config.yaml",
+				Paths:  config.Paths{DataDir: "/var/lib/emisar"},
+				Cloud:  config.Cloud{TokenPath: "/var/lib/emisar/token"},
+				Events: config.Events{JSONLPath: "/var/log/emisar/events.jsonl"},
+			},
+			want: []string{"/var/lib/emisar", "/etc/emisar", "/var/log/emisar"},
+		},
+		{
 			name: "a token stored away from the data dir is protected too",
 			cfg: &config.Config{
 				Source: "/opt/emisar/config.yaml",
