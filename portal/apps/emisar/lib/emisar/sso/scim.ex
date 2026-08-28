@@ -1238,27 +1238,22 @@ defmodule Emisar.SSO.SCIM do
     display = attrs[:display] || attrs["display"]
     member_ids = attrs[:member_ids] || attrs["member_ids"] || []
 
+    multi =
+      provider
+      |> scim_group_multi()
+      |> Multi.run(:group, fn repo, %{sync: {locked, _first_push?}} ->
+        create_or_fetch_directory_group(repo, locked, external_group_id, display)
+      end)
+      |> Multi.run(:members, fn _repo, %{sync: {locked, _first_push?}, group: group} ->
+        desired_ids = resolve_member_identity_ids(locked, member_ids)
+        {:ok, replace_group_members(locked, group, display, desired_ids)}
+      end)
+      |> scim_group_authorization_steps()
+
     with :ok <- validate_scim_group_values(external_group_id, display, member_ids),
-         {:ok, {current_provider, affected, group}} <-
-           Repo.transaction(fn ->
-             {locked_provider, first_push?} = lock_provider!(provider)
-
-             group =
-               create_or_fetch_directory_group!(locked_provider, external_group_id, display)
-
-             desired_ids = resolve_member_identity_ids(locked_provider, member_ids)
-
-             affected = replace_group_members(locked_provider, group, display, desired_ids)
-
-             affected = identities_to_recompute(locked_provider, affected, first_push?)
-
-             current_provider =
-               prepare_scim_group_authorization_change!(locked_provider, affected)
-
-             {current_provider, affected, group}
-           end),
-         :ok <- recompute_role_for_affected(current_provider, affected) do
-      scim_fetch_group(provider, group.id)
+         {:ok, changes} <- Repo.commit_multi(multi),
+         :ok <- recompute_role_for_affected(changes.authorization, changes.affected) do
+      scim_fetch_group(provider, changes.group.id)
     end
   end
 
@@ -1271,27 +1266,34 @@ defmodule Emisar.SSO.SCIM do
     display = attrs[:display] || attrs["display"]
     member_ids = attrs[:member_ids] || attrs["member_ids"] || []
 
+    multi =
+      provider
+      |> scim_group_multi()
+      |> Multi.run(:addressed_group, fn repo, %{sync: {locked, _first_push?}} ->
+        fetch_group_row(repo, locked, id)
+      end)
+      |> Multi.run(:identity_guard, fn _repo, %{addressed_group: group} ->
+        case ensure_group_external_id(group, external_group_id) do
+          :ok -> {:ok, :ok}
+          {:error, reason} -> {:error, reason}
+        end
+      end)
+      |> Multi.run(:group, fn repo, %{sync: {locked, _first_push?}, addressed_group: group} ->
+        put_group_display(repo, locked, group, display)
+      end)
+      |> Multi.run(:members, fn _repo, %{sync: {locked, _first_push?}, group: group} ->
+        desired_ids = resolve_member_identity_ids(locked, member_ids)
+        {:ok, replace_group_members(locked, group, display, desired_ids)}
+      end)
+      |> scim_group_authorization_steps()
+
     with true <- Repo.valid_uuid?(id),
          :ok <- validate_optional_scim_string(external_group_id),
          :ok <- validate_optional_scim_string(display),
          :ok <- validate_scim_member_ids(member_ids),
-         {:ok, {current_provider, affected, group}} <-
-           Repo.transaction(fn ->
-             {locked_provider, first_push?} = lock_provider!(provider)
-             group = fetch_group_row!(locked_provider, id)
-             :ok = ensure_group_external_id(group, external_group_id)
-             group = put_group_display!(locked_provider, group, display)
-             desired_ids = resolve_member_identity_ids(locked_provider, member_ids)
-             affected = replace_group_members(locked_provider, group, display, desired_ids)
-             affected = identities_to_recompute(locked_provider, affected, first_push?)
-
-             current_provider =
-               prepare_scim_group_authorization_change!(locked_provider, affected)
-
-             {current_provider, affected, group}
-           end),
-         :ok <- recompute_role_for_affected(current_provider, affected) do
-      scim_fetch_group(provider, group.id)
+         {:ok, changes} <- Repo.commit_multi(multi),
+         :ok <- recompute_role_for_affected(changes.authorization, changes.affected) do
+      scim_fetch_group(provider, changes.group.id)
     else
       false -> {:error, :not_found}
       error -> error
@@ -1304,37 +1306,35 @@ defmodule Emisar.SSO.SCIM do
   invented by the delete path.
   """
   def scim_delete_group(%IdentityProvider{} = provider, id) do
+    multi =
+      provider
+      |> scim_group_multi()
+      |> Multi.run(:group, fn repo, %{sync: {locked, _first_push?}} ->
+        fetch_group_row(repo, locked, id)
+      end)
+      |> Multi.run(:members, fn _repo, %{sync: {locked, _first_push?}, group: group} ->
+        current = current_group_members(locked, group.id)
+        affected = load_identities(locked, Enum.map(current, & &1.user_identity_id))
+        :ok = soft_delete_group_members(current)
+        {:ok, affected}
+      end)
+      |> Multi.update(:deleted_group, fn %{group: group} ->
+        DirectoryGroup.Changeset.delete(group)
+      end)
+      |> scim_group_authorization_steps()
+
     with true <- Repo.valid_uuid?(id),
-         {:ok, {current_provider, affected, summary}} <-
-           Repo.transaction(fn ->
-             {locked_provider, first_push?} = lock_provider!(provider)
-             group = fetch_group_row!(locked_provider, id)
-             current = current_group_members(locked_provider, group.id)
-             affected = load_identities(locked_provider, Enum.map(current, & &1.user_identity_id))
-             :ok = soft_delete_group_members(current)
-             delete_changeset = DirectoryGroup.Changeset.delete(group)
+         {:ok, changes} <- Repo.commit_multi(multi),
+         :ok <- recompute_role_for_affected(changes.authorization, changes.affected) do
+      group = changes.group
 
-             case Repo.update(delete_changeset) do
-               {:ok, _group} -> :ok
-               {:error, reason} -> Repo.rollback(reason)
-             end
-
-             affected = identities_to_recompute(locked_provider, affected, first_push?)
-
-             current_provider =
-               prepare_scim_group_authorization_change!(locked_provider, affected)
-
-             summary = %{
-               id: group.id,
-               external_group_id: group.external_group_id,
-               display: group.display,
-               member_ids: []
-             }
-
-             {current_provider, affected, summary}
-           end),
-         :ok <- recompute_role_for_affected(current_provider, affected) do
-      {:ok, summary}
+      {:ok,
+       %{
+         id: group.id,
+         external_group_id: group.external_group_id,
+         display: group.display,
+         member_ids: []
+       }}
     else
       false -> {:error, :not_found}
       error -> error
@@ -1343,15 +1343,20 @@ defmodule Emisar.SSO.SCIM do
 
   @doc "Internal — rename one server-issued Group resource without changing identity."
   def scim_rename_group(%IdentityProvider{} = provider, id, display) do
+    multi =
+      provider
+      |> scim_group_multi()
+      |> Multi.run(:addressed_group, fn repo, %{sync: {locked, _first_push?}} ->
+        fetch_group_row(repo, locked, id)
+      end)
+      |> Multi.run(:group, fn repo, %{sync: {locked, _first_push?}, addressed_group: group} ->
+        put_group_display(repo, locked, group, display)
+      end)
+
     with true <- Repo.valid_uuid?(id),
          :ok <- validate_optional_scim_string(display),
-         {:ok, group} <-
-           Repo.transaction(fn ->
-             {locked_provider, _first_push?} = lock_provider!(provider)
-             group = fetch_group_row!(locked_provider, id)
-             put_group_display!(locked_provider, group, display)
-           end) do
-      scim_fetch_group(provider, group.id)
+         {:ok, changes} <- Repo.commit_multi(multi) do
+      scim_fetch_group(provider, changes.group.id)
     else
       false -> {:error, :not_found}
       error -> error
@@ -1382,28 +1387,38 @@ defmodule Emisar.SSO.SCIM do
         remove_ids,
         display \\ nil
       ) do
+    multi =
+      provider
+      |> scim_group_multi()
+      |> Multi.run(:addressed_group, fn repo, %{sync: {locked, _first_push?}} ->
+        fetch_group_row(repo, locked, id)
+      end)
+      |> Multi.run(:group, fn repo, %{sync: {locked, _first_push?}, addressed_group: group} ->
+        put_group_display(repo, locked, group, display)
+      end)
+      |> Multi.run(:members, fn _repo, %{sync: {locked, _first_push?}, group: group} ->
+        added = add_group_members(locked, group, resolve_member_identity_ids(locked, add_ids))
+
+        removed =
+          remove_group_members(locked, group, resolve_member_identity_ids(locked, remove_ids))
+
+        {:ok, {added, removed, Enum.uniq(added ++ removed)}}
+      end)
+      |> Multi.run(:affected, fn _repo, %{sync: {locked, first_push?}, members: members} ->
+        {_added, _removed, touched} = members
+        {:ok, identities_to_recompute(locked, touched, first_push?)}
+      end)
+      |> Multi.run(:authorization, fn repo, %{sync: {locked, _first_push?}, affected: affected} ->
+        prepare_scim_group_authorization_change(repo, locked, affected)
+      end)
+
     with true <- Repo.valid_uuid?(id),
          :ok <- validate_optional_scim_string(display),
          :ok <- validate_scim_patch_member_ids(add_ids, remove_ids),
-         {:ok, {current_provider, added, removed, affected, group}} <-
-           Repo.transaction(fn ->
-             {locked_provider, first_push?} = lock_provider!(provider)
-             group = fetch_group_row!(locked_provider, id)
-             group = put_group_display!(locked_provider, group, display)
-             add_ids = resolve_member_identity_ids(locked_provider, add_ids)
-             remove_ids = resolve_member_identity_ids(locked_provider, remove_ids)
-             added = add_group_members(locked_provider, group, add_ids)
-             removed = remove_group_members(locked_provider, group, remove_ids)
-             touched = Enum.uniq(added ++ removed)
-             affected = identities_to_recompute(locked_provider, touched, first_push?)
-
-             current_provider =
-               prepare_scim_group_authorization_change!(locked_provider, affected)
-
-             {current_provider, added, removed, affected, group}
-           end),
-         :ok <- recompute_role_for_affected(current_provider, affected),
-         {:ok, summary} <- scim_fetch_group(provider, group.id) do
+         {:ok, changes} <- Repo.commit_multi(multi),
+         :ok <- recompute_role_for_affected(changes.authorization, changes.affected),
+         {:ok, summary} <- scim_fetch_group(provider, changes.group.id) do
+      {added, removed, _touched} = changes.members
       {:ok, Map.merge(summary, %{added: length(added), removed: length(removed)})}
     else
       false -> {:error, :not_found}
@@ -1475,43 +1490,74 @@ defmodule Emisar.SSO.SCIM do
   # A group push proves the group exists, whether or not it named any members.
   # Deriving existence from membership rows meant an empty push created nothing,
   # so the `GET` right after a 201 answered 404.
-  defp create_or_fetch_directory_group!(provider, external_group_id, display) do
+  defp create_or_fetch_directory_group(
+         repo,
+         %IdentityProvider{} = provider,
+         external_group_id,
+         display
+       ) do
     existing =
       if external_group_id do
         DirectoryGroup.Query.not_deleted()
         |> DirectoryGroup.Query.by_account_id(provider.account_id)
         |> DirectoryGroup.Query.by_provider_id(provider.id)
         |> DirectoryGroup.Query.by_external_group_id(external_group_id)
-        |> Repo.peek()
+        |> repo.one()
       end
 
     case existing do
       %DirectoryGroup{} = group ->
-        put_group_display!(provider, group, display)
+        put_group_display(repo, provider, group, display)
 
       nil ->
         provider.account_id
         |> DirectoryGroup.Changeset.create(provider.id, external_group_id, display)
-        |> Repo.insert()
-        |> case do
-          {:ok, group} -> group
-          {:error, reason} -> Repo.rollback(reason)
-        end
+        |> repo.insert()
     end
   end
 
-  defp fetch_group_row!(%IdentityProvider{} = provider, id) do
-    result =
-      DirectoryGroup.Query.not_deleted()
-      |> DirectoryGroup.Query.by_account_id(provider.account_id)
-      |> DirectoryGroup.Query.by_provider_id(provider.id)
-      |> DirectoryGroup.Query.by_id(id)
-      |> Repo.fetch(DirectoryGroup.Query)
+  defp fetch_group_row(repo, %IdentityProvider{} = provider, id) do
+    DirectoryGroup.Query.not_deleted()
+    |> DirectoryGroup.Query.by_account_id(provider.account_id)
+    |> DirectoryGroup.Query.by_provider_id(provider.id)
+    |> DirectoryGroup.Query.by_id(id)
+    |> repo.fetch(DirectoryGroup.Query)
+  end
 
-    case result do
-      {:ok, group} -> group
-      {:error, reason} -> Repo.rollback(reason)
-    end
+  # The shared head of every SCIM group write: account -> subscription ->
+  # provider in the same lock order as user provisioning, so cancellation and a
+  # group mutation serialize rather than accepting a stale paid entitlement
+  # (bearer authentication happened before the request entered the domain).
+  # `:sync` yields `{locked_provider, first_push?}` — reaching a group write IS
+  # the directory pushing groups, and the stamp rides the same lock so the
+  # recompute can tell an empty snapshot from an absent one.
+  defp scim_group_multi(%IdentityProvider{} = provider) do
+    Multi.new()
+    |> Multi.run(:account, fn repo, _changes ->
+      Accounts.fetch_and_lock_account(provider.account_id, repo: repo)
+    end)
+    |> Multi.run(:locked_provider, fn repo, _changes ->
+      fetch_current_scim_provider(provider, repo, lock?: true)
+    end)
+    |> Multi.run(:sync, fn repo, %{locked_provider: locked} ->
+      first_push? = is_nil(locked.scim_groups_synced_at)
+
+      with {:ok, stamped} <- repo.update(IdentityProvider.Changeset.mark_groups_synced(locked)) do
+        {:ok, {stamped, first_push?}}
+      end
+    end)
+  end
+
+  # The shared tail: which identities the recompute must revisit, and the
+  # fail-closed pending marker for them.
+  defp scim_group_authorization_steps(multi) do
+    multi
+    |> Multi.run(:affected, fn _repo, %{sync: {locked, first_push?}, members: changed} ->
+      {:ok, identities_to_recompute(locked, changed, first_push?)}
+    end)
+    |> Multi.run(:authorization, fn repo, %{sync: {locked, _first_push?}, affected: affected} ->
+      prepare_scim_group_authorization_change(repo, locked, affected)
+    end)
   end
 
   defp ensure_group_external_id(_group, nil), do: :ok
@@ -1519,41 +1565,13 @@ defmodule Emisar.SSO.SCIM do
   defp ensure_group_external_id(%DirectoryGroup{external_group_id: external_id}, external_id),
     do: :ok
 
-  defp ensure_group_external_id(_group, _external_id), do: Repo.rollback(:invalid_scim_group)
+  defp ensure_group_external_id(_group, _external_id), do: {:error, :invalid_scim_group}
 
-  defp put_group_display!(provider, group, display) do
-    changeset = DirectoryGroup.Changeset.rename(group, display)
-
-    case Repo.update(changeset) do
-      {:ok, updated_group} ->
-        :ok = refresh_group_display(provider, updated_group, display)
-        updated_group
-
-      {:error, reason} ->
-        Repo.rollback(reason)
+  defp put_group_display(repo, provider, group, display) do
+    with {:ok, updated_group} <- repo.update(DirectoryGroup.Changeset.rename(group, display)) do
+      :ok = refresh_group_display(provider, updated_group, display)
+      {:ok, updated_group}
     end
-  end
-
-  defp lock_provider!(%IdentityProvider{} = provider) do
-    # Bearer authentication happened before the request entered the domain.
-    # Rebuild its authority under the same account -> subscription -> provider
-    # lock order as user provisioning, so cancellation and a group mutation
-    # serialize rather than accepting a stale paid entitlement.
-    with {:ok, _account} <- Accounts.fetch_and_lock_account(provider.account_id, repo: Repo),
-         {:ok, locked} <- fetch_current_scim_provider(provider, Repo, lock?: true) do
-      stamp_group_sync!(locked)
-    else
-      {:error, reason} -> Repo.rollback(reason)
-    end
-  end
-
-  defp stamp_group_sync!(locked) do
-    # Reaching a group write IS the directory pushing groups. Stamped under the
-    # same lock the write holds, so the recompute below can tell an empty
-    # snapshot from an absent one.
-    first_push? = is_nil(locked.scim_groups_synced_at)
-    {:ok, stamped} = locked |> IdentityProvider.Changeset.mark_groups_synced() |> Repo.update()
-    {stamped, first_push?}
   end
 
   # The first push after sync is enabled is the moment the snapshot becomes
@@ -1564,26 +1582,22 @@ defmodule Emisar.SSO.SCIM do
 
   defp identities_to_recompute(_provider, affected, false), do: affected
 
-  # Takes the provider already locked by `lock_provider!/1` — same transaction,
-  # so its `authorization_version` is the current one.
-  defp prepare_scim_group_authorization_change!(provider, []), do: provider
+  # Takes the provider already locked by `scim_group_multi/1` — same
+  # transaction, so its `authorization_version` is the current one.
+  defp prepare_scim_group_authorization_change(_repo, provider, []), do: {:ok, provider}
 
-  defp prepare_scim_group_authorization_change!(provider, identities) do
-    case bump_provider_authorization_version(provider) do
-      {:ok, updated_provider} ->
-        {:ok, _version} =
-          Accounts.mark_directory_authorization_pending(
-            Repo,
-            provider.account_id,
-            provider.id,
-            Enum.map(identities, & &1.user_id),
-            updated_provider.authorization_version
-          )
+  defp prepare_scim_group_authorization_change(repo, provider, identities) do
+    with {:ok, updated_provider} <- bump_provider_authorization_version(provider) do
+      {:ok, _version} =
+        Accounts.mark_directory_authorization_pending(
+          repo,
+          provider.account_id,
+          provider.id,
+          Enum.map(identities, & &1.user_id),
+          updated_provider.authorization_version
+        )
 
-        updated_provider
-
-      {:error, reason} ->
-        Repo.rollback(reason)
+      {:ok, updated_provider}
     end
   end
 
