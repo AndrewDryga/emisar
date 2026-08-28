@@ -1,6 +1,7 @@
 defmodule Emisar.ApiKeys.ApiKey.Changeset do
   use Emisar, :changeset
   alias Emisar.ApiKeys.ApiKey
+  alias Emisar.BrowserInput
 
   @fields ~w[name description kind expires_at]a
 
@@ -37,55 +38,13 @@ defmodule Emisar.ApiKeys.ApiKey.Changeset do
   # The one interpretation of operator-typed key attributes, so the create form
   # can never accept — or reject — what the mint would decide differently.
   defp cast_operator_input(%ApiKey{} = key, attrs) do
-    attrs = normalize(attrs)
+    attrs = BrowserInput.normalize(attrs, blank: [:description], expiry: [:expires_at])
 
     key
     |> cast(attrs, @fields)
     |> validate_required([:name])
     |> validate_length(:name, min: 1, max: 80)
     |> validate_future_expiry()
-  end
-
-  # The create form posts raw browser strings: an untouched optional field
-  # arrives as `""` rather than absent, and `<input type="datetime-local">`
-  # emits `YYYY-MM-DDTHH:MM` (no seconds, no zone), which Ecto can't cast to
-  # `:utc_datetime_usec`. Both key shapes are normalized so a browser map and
-  # an internal atom-keyed map mean the same thing.
-  defp normalize(attrs), do: Map.new(attrs, &normalize_field/1)
-
-  defp normalize_field({field, value}) when field in [:description, "description"],
-    do: {field, blank_to_nil(value)}
-
-  defp normalize_field({field, value}) when field in [:expires_at, "expires_at"],
-    do: {field, normalize_expiry(value)}
-
-  defp normalize_field(field), do: field
-
-  defp blank_to_nil(value) when is_binary(value),
-    do: if(String.trim(value) == "", do: nil, else: value)
-
-  defp blank_to_nil(value), do: value
-
-  # An operator typing "expires Dec 25 at 10am" gets 10:00 UTC that day — the
-  # browser sends no zone, and the form labels the field UTC rather than have
-  # the server guess an offset. Anything that isn't a browser minute stamp (an
-  # already-typed `%DateTime{}`, a full timestamp, or garbage) passes through
-  # for Ecto to cast or reject, so a malformed expiry can never quietly become
-  # "no expiry" — which would hand out a key with the 30-day default instead.
-  defp normalize_expiry(value) when is_binary(value) do
-    case String.trim(value) do
-      "" -> nil
-      expires_at -> parse_browser_expiry(expires_at)
-    end
-  end
-
-  defp normalize_expiry(value), do: value
-
-  defp parse_browser_expiry(value) do
-    case DateTime.from_iso8601(value <> ":00Z") do
-      {:ok, expires_at, _offset} -> expires_at
-      {:error, _reason} -> value
-    end
   end
 
   # An expiry at or before now mints a credential that is dead on arrival —
