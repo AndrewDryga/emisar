@@ -30,6 +30,41 @@ defmodule Emisar.TelemetryTest do
     measurements
   end
 
+  describe "measure_published_catalog/0" do
+    # A catalog the portal cannot refresh fails silently: it keeps serving the
+    # last-good document, so auto-trust freezes at that snapshot and new pack
+    # versions stop reaching the fleet, with only a Logger.warning. Cache.status/0
+    # already knew, and nothing consumed it. This gauge is what makes a stuck
+    # refresh alertable, so it must actually emit.
+    test "emits [:emisar, :catalog, :published] with age_seconds + packs" do
+      measurements =
+        capture_measurements(
+          [:emisar, :catalog, :published],
+          &Emisar.Telemetry.measure_published_catalog/0
+        )
+
+      assert is_integer(measurements.age_seconds)
+      assert is_integer(measurements.packs)
+      assert measurements.packs >= 0
+    end
+
+    # Before any remote body has validated, the portal is serving its bundled
+    # snapshot and has never confirmed the registry. That is the MOST stale
+    # state, so it must read as a large age rather than a healthy zero — a zero
+    # would look identical to a catalog refreshed one second ago.
+    test "a portal that has never validated a remote catalog reports a large age" do
+      assert Emisar.Catalog.PublishedRegistry.status().checked_at == nil
+
+      measurements =
+        capture_measurements(
+          [:emisar, :catalog, :published],
+          &Emisar.Telemetry.measure_published_catalog/0
+        )
+
+      assert measurements.age_seconds >= 86_400
+    end
+  end
+
   describe "measure_approval_queue/0" do
     test "emits [:emisar, :approvals, :pending] with count + oldest_age_seconds" do
       account = Fixtures.Accounts.create_account()

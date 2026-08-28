@@ -36,6 +36,21 @@ defmodule Emisar.Catalog.PublishedRegistry do
   @spec pack_count() :: non_neg_integer()
   def pack_count, do: length(list())
 
+  @doc """
+  Freshness of the served catalog: `%{source:, checked_at:, loaded_at:, count:}`.
+
+  `checked_at` is the last body the registry served that VALIDATED — nil until
+  one has. A portal that cannot refresh keeps serving its last-good document, so
+  this is the only way to tell a current catalog from a frozen one.
+  """
+  @spec status() :: %{
+          source: atom(),
+          checked_at: DateTime.t() | nil,
+          loaded_at: DateTime.t(),
+          count: non_neg_integer()
+        }
+  def status, do: Cache.status()
+
   @doc "Total declared actions across every published pack."
   @spec action_count() :: non_neg_integer()
   def action_count, do: list() |> Enum.map(&length(&1.actions)) |> Enum.sum()

@@ -12,10 +12,28 @@ defmodule Emisar.Catalog.PublishedRegistry.CatalogClient do
 
   @receive_timeout 10_000
 
-  # The published catalog is small (KBs to a few MB). A body past this cap is a
-  # defect or a hostile/compromised origin trying to OOM the fetch, so stream and
-  # abort at the cap instead of buffering an unbounded response into memory.
-  @max_body_bytes 8_000_000
+  # A body past this cap is a defect or a hostile/compromised origin trying to
+  # OOM the fetch, so stream and abort at the cap instead of buffering an
+  # unbounded response into memory.
+  #
+  # SIZE IT AGAINST THE REAL DOCUMENT. At 100 packs the published catalog is
+  # 5.6 MB — 70% of the previous 8 MB cap, or roughly 135 packs from refusing
+  # every refresh. Two thirds of those bytes are `previous_versions[].actions`,
+  # the retained descriptors that let a runner on a slightly-older version keep
+  # a verified manifest, so they are not droppable without weakening trust.
+  #
+  # This is deliberately headroom, not a fix. The structural fix is to publish a
+  # retained version's manifest as its own content-addressed object and fetch it
+  # on demand; that stays available after 1.0 because ADDING a registry object
+  # path is additive — the freeze forbids changing the paths that exist, not
+  # introducing new ones. Until then, `emisar.catalog.published.age_seconds`
+  # makes a stuck refresh alertable, which is what actually hurt: the failure
+  # mode is silent, and auto-trust simply freezes on the last-good document.
+  #
+  # This bounds a body we DECOMPRESS nothing from: Finch sends no
+  # accept-encoding, so GCS transcodes the gzip-stored object and we count the
+  # plain bytes we will hold.
+  @max_body_bytes 32_000_000
 
   @doc """
   GET `url` and return its body. `{:error, reason}` on any transport failure,

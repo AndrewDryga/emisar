@@ -210,6 +210,19 @@ defmodule EmisarWeb.Telemetry do
       last_value("emisar.runners.connection.disabled",
         description: "Disabled runners (gauge)"
       ),
+      # Published pack catalog freshness (sampled by
+      # Emisar.Telemetry.measure_published_catalog/0). A catalog the portal
+      # cannot refresh fails SILENTLY — it keeps serving the last-good document,
+      # so auto-trust freezes at that snapshot and new pack versions stop
+      # reaching the fleet, with only a log line. Alert on a rising age.
+      last_value("emisar.catalog.published.age_seconds",
+        description:
+          "Seconds since the published catalog last validated; a rising value means " <>
+            "auto-trust is frozen on the last-good document (gauge)"
+      ),
+      last_value("emisar.catalog.published.packs",
+        description: "Packs in the catalog currently served (gauge)"
+      ),
       # VM Metrics — last_value, not distribution: these are gauges
       # sampled periodically, not per-event histograms. system_counts
       # come free with telemetry_poller's default measurements; the
@@ -235,7 +248,8 @@ defmodule EmisarWeb.Telemetry do
       # Fleet-wide domain gauges — each reads an aggregate and emits; the
       # matching `last_value` metric is defined above. Fleet-wide / no account_id.
       {Emisar.Telemetry, :measure_approval_queue, []},
-      {Emisar.Telemetry, :measure_runner_connections, []}
+      {Emisar.Telemetry, :measure_runner_connections, []},
+      {Emisar.Telemetry, :measure_published_catalog, []}
     ]
   end
 end

@@ -18,7 +18,12 @@ defmodule Emisar.Telemetry do
 
   The matching `Telemetry.Metrics` definitions live in `EmisarWeb.Telemetry`.
   """
-  alias Emisar.{Approvals, Runners}
+  alias Emisar.{Approvals, Catalog, Runners}
+
+  # Reported before any remote catalog has validated. Larger than any
+  # refresh interval, so "never fetched" alerts exactly like "stopped
+  # fetching" rather than reading as a healthy zero.
+  @never_checked_age_seconds 86_400
 
   @doc """
   A run reached a terminal status. Emits `[:emisar, :run, :finished]` with a
@@ -129,5 +134,36 @@ defmodule Emisar.Telemetry do
   @spec measure_runner_connections() :: :ok
   def measure_runner_connections do
     :telemetry.execute([:emisar, :runners, :connection], Runners.connection_counts())
+  end
+
+  @doc """
+  Sampler — how stale the published pack catalog is. Emits
+  `[:emisar, :catalog, :published]` with `:age_seconds` since the last body the
+  registry served that VALIDATED, and `:packs` in the catalog currently served.
+
+  This exists because a catalog the portal cannot refresh fails silently: it
+  keeps serving the last-good document, so auto-trust freezes at that snapshot
+  and new pack versions stop reaching the fleet fleet-wide, with only a
+  `Logger.warning` to say so. Nothing consumed `Cache.status/0`, so nobody
+  learned. A rising `age_seconds` is the alertable signal.
+
+  `age_seconds` is deliberately large rather than nil before the first
+  successful remote fetch: a portal that has NEVER validated a remote catalog is
+  the most stale state there is, not an absent measurement.
+  """
+  @spec measure_published_catalog() :: :ok
+  def measure_published_catalog do
+    status = Catalog.PublishedRegistry.status()
+
+    age =
+      case status.checked_at do
+        nil -> @never_checked_age_seconds
+        checked_at -> DateTime.diff(DateTime.utc_now(), checked_at)
+      end
+
+    :telemetry.execute(
+      [:emisar, :catalog, :published],
+      %{age_seconds: age, packs: status.count}
+    )
   end
 end
