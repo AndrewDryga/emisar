@@ -112,6 +112,18 @@
         <li class="flex items-start gap-2.5">
           <span class="flex-none text-zinc-500">—</span>
           <span>
+            <strong class="text-zinc-200">Build rules on the top-level fields.</strong>
+            Those are stable. The keys inside
+            <.docs_inline_code>payload</.docs_inline_code>
+            depend on the event type and can change with the feature that writes them, and an
+            empty value is omitted rather than sent as null — so treat the sample above as the
+            envelope, not a schema. Anything worth correlating on, such as <.docs_inline_code>mcp_client_metadata</.docs_inline_code>, is promoted to the top
+            level for exactly that reason.
+          </span>
+        </li>
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-500">—</span>
+          <span>
             Send
             <.docs_inline_code>since</.docs_inline_code>
             <strong class="text-zinc-200">on the first call only</strong>

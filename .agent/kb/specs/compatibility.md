@@ -372,7 +372,25 @@ event today carries the 15 top-level fields `id`, `occurred_at`,
 `request_id`, `mcp_client_metadata`, and `payload`. The CSV download's header
 row, column order, CRLF line endings, always-quoted fields, and
 formula-injection guard are likewise fixed, since operators parse the saved
-artifact.
+artifact. Its first column is `id`, the same identifier the NDJSON export
+carries — the only value the two share, and therefore what makes an auditor's
+downloaded file reconcilable with the same window pulled from a SIEM. The two
+agree on nothing else: the CSV carries `severity` and `auth_method` that the
+feed does not, omits `account_id`, `user_agent` and `mcp_client_metadata`, and
+names its timestamp `occurred_at_utc` at second precision against the feed's
+microsecond `occurred_at`. Column order freezes, so a leading column cannot be
+added later without breaking positional parsers.
+
+**`payload` is the one frozen field whose INTERIOR is not frozen.** It is an
+event-type-specific object with no schema and no version of its own, written
+with nil keys dropped — so a key is not guaranteed to appear even across two
+events of the same type, and its shape may change with the feature that emits
+it. Only the field's presence and its JSON-object type are contract. Anything a
+correlation rule must depend on belongs at the top level instead, which is why
+`mcp_client_metadata` is PROMOTED there and deliberately left in the payload as
+well: the top-level copy is the stable one to pivot on. Documentation that
+prints a sample event is illustrating the envelope, not publishing the
+payload's keys, and says so.
 
 **What happens on skew.** A key of the wrong kind fails with 403
 `wrong_key_kind`; a malformed parameter with 400 `invalid_params`. Adding a

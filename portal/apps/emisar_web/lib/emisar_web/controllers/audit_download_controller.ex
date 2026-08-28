@@ -260,13 +260,21 @@ defmodule EmisarWeb.AuditDownloadController do
   defp page(nil), do: [limit: @page_limit]
   defp page(cursor), do: [limit: @page_limit, cursor: cursor]
 
+  # `id` leads. It is the ONLY value shared with the NDJSON export, so it is what
+  # makes the two joinable — the concrete case being an auditor who downloads
+  # this file while the security team pulls the same window from their SIEM.
+  # Without it there was no join key at all: the two share no identifier, and
+  # their timestamps differ in name, format AND precision, so even a lossy
+  # match on time failed. Column ORDER freezes at 1.0, so a leading column has
+  # to be chosen now — added later it would break every positional parser.
   defp csv_header do
-    "occurred_at_utc,event_type,severity,actor_kind,actor_id,actor_label," <>
+    "id,occurred_at_utc,event_type,severity,actor_kind,actor_id,actor_label," <>
       "target_kind,target_id,target_label,ip_address,auth_method,request_id,payload\r\n"
   end
 
   defp csv_row(event) do
     [
+      event.id,
       TimeHelpers.forensic_time(event.occurred_at),
       event.event_type,
       event.event_type |> Audit.event_outcome() |> Atom.to_string(),

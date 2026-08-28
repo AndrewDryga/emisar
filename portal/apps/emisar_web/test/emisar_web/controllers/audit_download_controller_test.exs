@@ -34,10 +34,17 @@ defmodule EmisarWeb.AuditDownloadControllerTest do
       assert disposition =~ ~s(attachment; filename="audit-#{account.slug}-)
 
       body = response(conn, 200)
-      assert body =~ "occurred_at_utc,event_type,severity"
+      assert body =~ "id,occurred_at_utc,event_type,severity"
       # The Type filter applied — alice's event exports, bob's doesn't.
       assert body =~ "alice@example.com"
       refute body =~ "bob@example.com"
+
+      # `id` is the join key between this file and the NDJSON export. Without it
+      # the two shared no identifier, and their timestamps differ in name,
+      # format and precision — so "the auditor's CSV and the SIEM's copy of the
+      # same window" could not be reconciled at all.
+      [event] = Repo.all(Audit.Event) |> Enum.filter(&(&1.event_type == "user.invited"))
+      assert body =~ event.id
 
       [exported] =
         Repo.all(Audit.Event) |> Enum.filter(&(&1.event_type == "audit.exported"))
