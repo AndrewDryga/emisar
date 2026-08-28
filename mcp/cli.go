@@ -100,12 +100,20 @@ func cliToolCallUsage(toolName string, exact bool) string {
 	return "emisar-mcp <tool> [JSON | -] [--json]"
 }
 
+// runCLIContext re-validates and re-arms the CLI state even though main
+// already did both. That is DELIBERATE, not drift: this is the boundary that
+// guarantees unsafe arguments never produce an HTTP request, and
+// TestCLIRejectsUnsafeArgumentsBeforeHTTP drives this function directly to
+// prove it — removing the "redundant" check here let four requests escape in
+// that test. main's earlier call is the fast UX exit; this one is the law.
 func (b *bridge) runCLIContext(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	b.directCLI = true
 	b.diagnostics = stderr
+
 	if err := validateCLIInvocation(args); err != nil {
 		return cliUsageError(stderr, err.Error())
 	}
+
 	command := args[0]
 	switch command {
 	case "--":

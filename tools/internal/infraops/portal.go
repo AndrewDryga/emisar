@@ -378,7 +378,6 @@ func (a *App) portal(ctx context.Context, args []string) error {
 	var failed atomic.Bool
 	var wait sync.WaitGroup
 	for _, item := range selected {
-		item := item
 		wait.Add(1)
 		go func() {
 			defer wait.Done()

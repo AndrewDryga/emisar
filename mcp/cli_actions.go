@@ -333,8 +333,7 @@ func cliOperationContinuation(operationID, executionID string, next cliToolResul
 	default:
 		return ""
 	}
-	fleetNext := cliFleetNext(next)
-	return cliFleetNextCommandForOS(fleetNext, next.Tool, account, runtime.GOOS)
+	return cliFleetNextCommandForOS(next, next.Tool, account, runtime.GOOS)
 }
 
 func renderCLIWaitForRun(w io.Writer, raw []byte) (string, bool) {

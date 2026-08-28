@@ -32,16 +32,11 @@ type cliFleetRunner struct {
 	Hostname          string            `json:"hostname"`
 	Labels            map[string]string `json:"labels"`
 	Packs             []string          `json:"packs"`
-	PacksNext         cliFleetNext      `json:"packs_next"`
+	PacksNext         cliToolResultNext `json:"packs_next"`
 	LastSeenAt        string            `json:"last_seen_at"`
 	RunnerRef         string            `json:"runner_ref"`
 	EnforceSignatures bool              `json:"enforce_signatures"`
 	Issues            []cliFleetIssue   `json:"issues"`
-}
-
-type cliFleetNext struct {
-	Tool      string          `json:"tool"`
-	Arguments json.RawMessage `json:"arguments"`
 }
 
 type cliFleetPackAction struct {
@@ -56,12 +51,12 @@ type cliFleetPack struct {
 }
 
 type cliFleetAction struct {
-	ActionID string       `json:"action_id"`
-	PackRef  string       `json:"pack_ref"`
-	Title    string       `json:"title"`
-	Summary  string       `json:"summary"`
-	Risk     string       `json:"risk"`
-	Next     cliFleetNext `json:"next"`
+	ActionID string            `json:"action_id"`
+	PackRef  string            `json:"pack_ref"`
+	Title    string            `json:"title"`
+	Summary  string            `json:"summary"`
+	Risk     string            `json:"risk"`
+	Next     cliToolResultNext `json:"next"`
 }
 
 func writeCLIFleetOutput(w io.Writer, toolName string, arguments, raw []byte, account string) (bool, error) {
@@ -148,13 +143,13 @@ func renderCLIListRunners(w io.Writer, raw []byte, account string) (string, bool
 
 	for _, runner := range runners {
 		out.WriteString("\n")
-		out.WriteString(cliStyledText(w, "1", cliFleetText(runner.Name, 120)))
+		out.WriteString(cliStyledText(w, "1", cliInlineText(runner.Name, 120)))
 		out.WriteString(" — ")
 		out.WriteString(cliFleetStatus(w, runner.Status))
 		out.WriteString("\n")
 
-		location := cliFleetText(runner.Hostname, maxCLIHumanStringRunes)
-		group := cliFleetText(runner.Group, 120)
+		location := cliInlineText(runner.Hostname, maxCLIHumanStringRunes)
+		group := cliInlineText(runner.Group, 120)
 		if location != "" || group != "" {
 			out.WriteString("  ")
 			out.WriteString(location)
@@ -179,7 +174,7 @@ func renderCLIListRunners(w io.Writer, raw []byte, account string) (string, bool
 		if lastSeen := cliFleetTime(runner.LastSeenAt); lastSeen != "" {
 			fmt.Fprintf(&out, "  Last seen  %s\n", lastSeen)
 		}
-		fmt.Fprintf(&out, "  Runner ref  %s\n", cliFleetText(runner.RunnerRef, maxCLIFleetRefRunes))
+		fmt.Fprintf(&out, "  Runner ref  %s\n", cliInlineText(runner.RunnerRef, maxCLIFleetRefRunes))
 		if runner.EnforceSignatures {
 			out.WriteString("  Dispatch signatures required.\n")
 		}
@@ -232,7 +227,7 @@ func renderCLIListPacks(w io.Writer, arguments, raw []byte, account string) (str
 		out.WriteString(cliFleetStatus(w, pack.Availability))
 		out.WriteString("\n")
 		fmt.Fprintf(&out, "  %s\n", cliFleetActionCount(pack.Actions))
-		fmt.Fprintf(&out, "  Pack ref  %s\n", cliFleetText(pack.PackRef, maxCLIFleetRefRunes))
+		fmt.Fprintf(&out, "  Pack ref  %s\n", cliInlineText(pack.PackRef, maxCLIFleetRefRunes))
 		if command := cliFleetPackActionsCommandForOS(pack.PackRef, account, runtime.GOOS); command != "" {
 			fmt.Fprintf(&out, "  Actions  %s\n", command)
 		}
@@ -254,7 +249,7 @@ func cliFleetPackActionsCommandForOS(packRef, account, goos string) string {
 	if err != nil {
 		return ""
 	}
-	return cliFleetNextCommandForOS(cliFleetNext{
+	return cliFleetNextCommandForOS(cliToolResultNext{
 		Tool:      findActionsToolName,
 		Arguments: arguments,
 	}, findActionsToolName, account, goos)
@@ -284,7 +279,7 @@ func renderCLIFindActions(w io.Writer, arguments, raw []byte, account string) (s
 		Query string `json:"query"`
 	}
 	_ = json.Unmarshal(arguments, &input)
-	query := cliFleetText(input.Query, maxCLIHumanStringRunes)
+	query := cliInlineText(input.Query, maxCLIHumanStringRunes)
 	if len(candidates) == 0 {
 		if query == "" {
 			return "No matching actions found.\n", true
@@ -300,20 +295,20 @@ func renderCLIFindActions(w io.Writer, arguments, raw []byte, account string) (s
 	out.WriteString(".\n")
 	for _, candidate := range candidates {
 		out.WriteString("\n")
-		out.WriteString(cliStyledText(w, "1", cliFleetText(candidate.ActionID, 128)))
-		if title := cliFleetText(candidate.Title, maxCLIHumanStringRunes); title != "" {
+		out.WriteString(cliStyledText(w, "1", cliInlineText(candidate.ActionID, 128)))
+		if title := cliInlineText(candidate.Title, maxCLIHumanStringRunes); title != "" {
 			out.WriteString(" — ")
 			out.WriteString(title)
 		}
 		out.WriteString("\n")
-		if summary := cliFleetText(candidate.Summary, maxCLIHumanStringRunes); summary != "" {
+		if summary := cliInlineText(candidate.Summary, maxCLIHumanStringRunes); summary != "" {
 			fmt.Fprintf(&out, "  %s\n", summary)
 		}
 		fmt.Fprintf(
 			&out,
 			"  %s · pack %s\n",
 			cliFleetRisk(w, candidate.Risk),
-			cliFleetText(candidate.PackRef, maxCLIFleetRefRunes),
+			cliInlineText(candidate.PackRef, maxCLIFleetRefRunes),
 		)
 		if command := cliFleetActionInspectCommand(candidate, account); command != "" {
 			fmt.Fprintf(&out, "  Inspect  %s\n", command)
@@ -326,7 +321,7 @@ func renderCLIFindActions(w io.Writer, arguments, raw []byte, account string) (s
 }
 
 func cliFleetStatus(w io.Writer, value string) string {
-	value = cliFleetText(value, 40)
+	value = cliInlineText(value, 40)
 	switch value {
 	case "connected", "executable":
 		return cliStyledText(w, "32", value)
@@ -340,7 +335,7 @@ func cliFleetStatus(w io.Writer, value string) string {
 }
 
 func cliFleetRisk(w io.Writer, value string) string {
-	value = cliFleetText(value, 40)
+	value = cliInlineText(value, 40)
 	label := value + " risk"
 	switch value {
 	case "low":
@@ -354,7 +349,10 @@ func cliFleetRisk(w io.Writer, value string) string {
 	}
 }
 
-func cliFleetText(value string, limit int) string {
+// cliInlineText bounds a server string to one terminal-safe line of at most
+// limit runes. One definition: cli_fleet and cli_runbooks each carried their
+// own spelling of it.
+func cliInlineText(value string, limit int) string {
 	value = terminalSafeLine(value)
 	runes := []rune(value)
 	if len(runes) > limit {
@@ -366,7 +364,7 @@ func cliFleetText(value string, limit int) string {
 func cliFleetTime(value string) string {
 	parsed, err := time.Parse(time.RFC3339Nano, value)
 	if err != nil {
-		return cliFleetText(value, 80)
+		return cliInlineText(value, 80)
 	}
 	return parsed.UTC().Format("2006-01-02 15:04 UTC")
 }
@@ -382,7 +380,7 @@ func cliFleetLabels(labels map[string]string) string {
 	sort.Strings(keys)
 	values := make([]string, 0, min(len(keys), maxCLIFleetLabels)+1)
 	for _, key := range keys[:min(len(keys), maxCLIFleetLabels)] {
-		values = append(values, cliFleetText(key, 80)+"="+cliFleetText(labels[key], 120))
+		values = append(values, cliInlineText(key, 80)+"="+cliInlineText(labels[key], 120))
 	}
 	if len(keys) > maxCLIFleetLabels {
 		values = append(values, fmt.Sprintf("+%d more", len(keys)-maxCLIFleetLabels))
@@ -396,7 +394,7 @@ func cliFleetValues(values []string, limit int) string {
 	}
 	displayed := make([]string, 0, min(len(values), limit)+1)
 	for _, value := range values[:min(len(values), limit)] {
-		displayed = append(displayed, cliFleetText(value, 80))
+		displayed = append(displayed, cliInlineText(value, 80))
 	}
 	if len(values) > limit {
 		displayed = append(displayed, fmt.Sprintf("+%d more", len(values)-limit))
@@ -406,7 +404,7 @@ func cliFleetValues(values []string, limit int) string {
 
 func writeCLIFleetIssues(out *strings.Builder, w io.Writer, issues []cliFleetIssue) {
 	for _, issue := range issues[:min(len(issues), maxCLIFleetIssues)] {
-		message := cliFleetText(issue.Message, maxCLIHumanStringRunes)
+		message := cliInlineText(issue.Message, maxCLIHumanStringRunes)
 		if message != "" {
 			fmt.Fprintf(out, "  %s  %s\n", cliStyledText(w, "33", "Issue"), message)
 		}
@@ -417,7 +415,7 @@ func writeCLIFleetIssues(out *strings.Builder, w io.Writer, issues []cliFleetIss
 }
 
 func cliFleetPackName(packRef string) string {
-	safe := cliFleetText(packRef, maxCLIFleetRefRunes)
+	safe := cliInlineText(packRef, maxCLIFleetRefRunes)
 	identity, _, found := strings.Cut(safe, "/")
 	if !found {
 		return safe
@@ -453,7 +451,7 @@ func cliFleetActionCount(actions []cliFleetPackAction) string {
 	return strings.Join(parts, ", ") + " actions"
 }
 
-func cliFleetNextCommandForOS(next cliFleetNext, expectedTool, account, goos string) string {
+func cliFleetNextCommandForOS(next cliToolResultNext, expectedTool, account, goos string) string {
 	if next.Tool != expectedTool || expectedTool == "" || len(next.Tool) > 128 ||
 		terminalSafeLine(next.Tool) != next.Tool ||
 		firstJSONByte(next.Arguments) != '{' || len(next.Arguments) > maxCLIFleetCommand ||

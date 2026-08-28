@@ -338,20 +338,31 @@ func main() {
 	}
 }
 
+// helpOrVersion answers -h/--help/-v/--version when it is the sole argument.
+// Checked twice on purpose — before account parsing (bare `emisar-mcp --help`)
+// and after (`emisar-mcp --account x --help`); the body lives once.
+func helpOrVersion(args []string, stdout io.Writer) (int, bool) {
+	if len(args) != 1 {
+		return 0, false
+	}
+	switch args[0] {
+	case "-h", "--help", "help":
+		fmt.Fprint(stdout, helpText)
+		return 0, true
+	case "-v", "--version":
+		fmt.Fprintf(stdout, "%s %s\n", bridgeName, Version)
+		return 0, true
+	}
+	return 0, false
+}
+
 func runProgramMode(args []string, stdin io.Reader, stdout, stderr io.Writer, interactive bool) int {
 	if len(args) == 0 && interactive {
 		fmt.Fprint(stdout, helpText)
 		return 0
 	}
-	if len(args) == 1 {
-		switch args[0] {
-		case "-h", "--help", "help":
-			fmt.Fprint(stdout, helpText)
-			return 0
-		case "-v", "--version":
-			fmt.Fprintf(stdout, "%s %s\n", bridgeName, Version)
-			return 0
-		}
+	if code, handled := helpOrVersion(args, stdout); handled {
+		return code
 	}
 	account := ""
 	if len(args) > 0 {
@@ -364,15 +375,8 @@ func runProgramMode(args []string, stdin io.Reader, stdout, stderr io.Writer, in
 			return cliUsageError(stderr, "usage: emisar-mcp [--account <slug-or-id>] <command>")
 		}
 	}
-	if len(args) == 1 {
-		switch args[0] {
-		case "-h", "--help", "help":
-			fmt.Fprint(stdout, helpText)
-			return 0
-		case "-v", "--version":
-			fmt.Fprintf(stdout, "%s %s\n", bridgeName, Version)
-			return 0
-		}
+	if code, handled := helpOrVersion(args, stdout); handled {
+		return code
 	}
 	if len(args) > 0 && args[0] == "auth" {
 		return runAuthCommand(account, args[1:], stdout, stderr)
@@ -755,7 +759,7 @@ func readFrames(r io.Reader, frames chan<- frameRead, done <-chan struct{}) {
 	reader := bufio.NewReaderSize(r, 64*1024)
 	for {
 		line, oversize, err := readFrameLine(reader)
-		if onlyJSONWhitespace(line) {
+		if firstJSONByte(line) == 0 {
 			line = nil
 		}
 		frame := frameRead{line: line, oversize: oversize, err: err}
@@ -1264,17 +1268,6 @@ func trimFrameDelimiter(line []byte) []byte {
 		line = line[:len(line)-1]
 	}
 	return line
-}
-
-func onlyJSONWhitespace(line []byte) bool {
-	for _, value := range line {
-		switch value {
-		case ' ', '\t', '\r', '\n':
-		default:
-			return false
-		}
-	}
-	return true
 }
 
 func (b *bridge) forwardRequestContext(

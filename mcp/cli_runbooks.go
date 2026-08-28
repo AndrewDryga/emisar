@@ -227,7 +227,7 @@ func cliRunbookInspectCommandForOS(slug, status, account, goos string) string {
 	if err != nil {
 		return ""
 	}
-	return cliFleetNextCommandForOS(cliFleetNext{
+	return cliFleetNextCommandForOS(cliToolResultNext{
 		Tool:      getRunbookToolName,
 		Arguments: arguments,
 	}, getRunbookToolName, account, goos)
@@ -358,7 +358,7 @@ func writeCLIRunbookDefinition(out *strings.Builder, w io.Writer, raw json.RawMe
 
 func cliRunbookStepContext(step cliRunbookStep) string {
 	parts := make([]string, 0, 2)
-	if pack := cliRunbookInlineText(step.Pack.ID, 160); pack != "" {
+	if pack := cliInlineText(step.Pack.ID, 160); pack != "" {
 		parts = append(parts, "Pack "+pack)
 	}
 
@@ -371,7 +371,7 @@ func cliRunbookStepContext(step cliRunbookStep) string {
 	}
 	refs := make([]string, 0, min(len(step.Targets.Refs), maxCLIRunbookStepTargets))
 	for _, ref := range step.Targets.Refs {
-		if safe := cliRunbookInlineText(ref, 160); safe != "" {
+		if safe := cliInlineText(ref, 160); safe != "" {
 			refs = append(refs, safe)
 		}
 	}
@@ -398,7 +398,7 @@ func cliRunbookStepArguments(arguments map[string]cliRunbookBinding) string {
 
 	parts := make([]string, 0, min(len(keys), maxCLIRunbookStepArgs))
 	for _, key := range keys[:min(len(keys), maxCLIRunbookStepArgs)] {
-		name := cliRunbookInlineText(key, 80)
+		name := cliInlineText(key, 80)
 		value := cliRunbookBindingValue(arguments[key])
 		if name != "" && value != "" {
 			parts = append(parts, name+"="+value)
@@ -413,7 +413,7 @@ func cliRunbookStepArguments(arguments map[string]cliRunbookBinding) string {
 func cliRunbookBindingValue(binding cliRunbookBinding) string {
 	switch binding.Source {
 	case "input", "output":
-		if ref := cliRunbookInlineText(binding.Ref, 160); ref != "" {
+		if ref := cliInlineText(binding.Ref, 160); ref != "" {
 			return binding.Source + ":" + ref
 		}
 	case "literal":
@@ -429,18 +429,14 @@ func cliRunbookBindingValue(binding cliRunbookBinding) string {
 			if value == "" {
 				return `""`
 			}
-			return cliRunbookInlineText(value, 160)
+			return cliInlineText(value, 160)
 		}
 		var compact bytes.Buffer
 		if json.Compact(&compact, raw) == nil {
-			return cliRunbookInlineText(compact.String(), 160)
+			return cliInlineText(compact.String(), 160)
 		}
 	}
 	return ""
-}
-
-func cliRunbookInlineText(value string, limit int) string {
-	return cliResultText(terminalSafeLine(value), limit)
 }
 
 func renderCLIRunbookDraft(w io.Writer, raw []byte, account string) (string, bool) {

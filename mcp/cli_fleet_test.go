@@ -254,7 +254,7 @@ func TestCLIFleetFormattingCannotEmitTerminalControls(t *testing.T) {
 }
 
 func TestCLIFleetOmitsTerminalHostileContinuation(t *testing.T) {
-	next := cliFleetNext{
+	next := cliToolResultNext{
 		Tool:      "get_action",
 		Arguments: json.RawMessage(`{"action_id":"safe` + string(rune(0x202e)) + `vil","pack_ref":"postgres@1/sha256:abc"}`),
 	}
@@ -264,7 +264,7 @@ func TestCLIFleetOmitsTerminalHostileContinuation(t *testing.T) {
 }
 
 func TestCLIFleetContinuationUsesPowerShellQuoting(t *testing.T) {
-	next := cliFleetNext{
+	next := cliToolResultNext{
 		Tool: "get_action",
 		Arguments: json.RawMessage(
 			`{"action_id":"postgres.read","pack_ref":"postgres@1/sha256:abc","target":"operator's database"}`,
@@ -279,7 +279,7 @@ func TestCLIFleetContinuationUsesPowerShellQuoting(t *testing.T) {
 func TestCLIFleetRejectsMismatchedContinuationArguments(t *testing.T) {
 	runner := cliFleetRunner{
 		RunnerRef: "db-01~0123456789abcdef0123456789abcdef",
-		PacksNext: cliFleetNext{
+		PacksNext: cliToolResultNext{
 			Tool:      listPacksToolName,
 			Arguments: json.RawMessage(`{"runner_refs":["db-02~abcdef0123456789abcdef0123456789"],"availability":"all"}`),
 		},
@@ -291,7 +291,7 @@ func TestCLIFleetRejectsMismatchedContinuationArguments(t *testing.T) {
 	candidate := cliFleetAction{
 		ActionID: "postgres.read",
 		PackRef:  "postgres@1/sha256:abc",
-		Next: cliFleetNext{
+		Next: cliToolResultNext{
 			Tool:      "get_action",
 			Arguments: json.RawMessage(`{"action_id":"postgres.erase","pack_ref":"postgres@1/sha256:abc"}`),
 		},

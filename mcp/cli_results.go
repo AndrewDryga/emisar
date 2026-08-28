@@ -469,7 +469,7 @@ func cliSafeReadContinuation(next cliToolResultNext, account string) string {
 	case listRunnersToolName, listPacksToolName, findActionsToolName, getActionToolName,
 		getOperationToolName, waitForRunToolName, recentRunsToolName,
 		listRunbooksToolName, getRunbookToolName:
-		fleetNext := cliFleetNext(next)
+		fleetNext := next
 		return cliFleetNextCommandForOS(fleetNext, next.Tool, account, runtime.GOOS)
 	default:
 		return ""
