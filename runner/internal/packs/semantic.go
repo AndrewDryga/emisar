@@ -3,6 +3,7 @@ package packs
 import (
 	"encoding/json"
 	"fmt"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -45,32 +46,67 @@ func validateActionSemantics(action *actionspec.Action) error {
 	return nil
 }
 
-// shellBinaries are the interpreters whose -c argument is program text a shell
-// will expand. Keying the guard below on the literal "/bin/sh" let `binary:
-// bash` — a legal bare name under actionspec's path rule — carry a caller's
-// value straight into `bash -c`, which is arbitrary command execution from an
-// action argument. The check must follow the SHAPE, not one spelling.
-var shellBinaries = map[string]bool{
-	"/bin/sh": true,
-	"sh":      true,
-	"bash":    true,
-	"dash":    true,
-	"ash":     true,
-	"ksh":     true,
-	"zsh":     true,
-	"busybox": true,
+// programInterpreters maps an interpreter's name to the short flag rune that
+// introduces program text on its argv: a shell or python reads its program
+// after -c, perl/ruby/node/awk after -e, php after -r.
+var programInterpreters = map[string]rune{
+	"/bin/sh": 'c',
+	"sh":      'c',
+	"bash":    'c',
+	"dash":    'c',
+	"ash":     'c',
+	"ksh":     'c',
+	"zsh":     'c',
+	"busybox": 'c',
+	"python":  'c',
+	"python3": 'c',
+	"perl":    'e',
+	"ruby":    'e',
+	"node":    'e',
+	"awk":     'e',
+	"gawk":    'e',
+	"php":     'r',
+}
+
+// execWrappers are binaries that exec a command taken from their OWN argv, so an
+// interpreter can hide behind one: `timeout 30 sh -c '…'` names timeout (not a
+// shell) as the binary. Keying the guard on the binary alone waved a caller's
+// value straight into `sh -c` — arbitrary command execution from an action
+// argument. When the binary is a wrapper, the argv is scanned for the real
+// interpreter it fronts. A binary that is NEITHER an interpreter nor a wrapper
+// runs its own argument grammar, whose tokens are its data, not a nested command
+// — `nomad node status` must not be read as a Node.js program.
+var execWrappers = map[string]bool{
+	"env":     true,
+	"timeout": true,
+	"nice":    true,
+	"setsid":  true,
+	"stdbuf":  true,
+	"nohup":   true,
+	"xargs":   true,
+	"flock":   true,
+	"runuser": true,
+	"script":  true,
 }
 
 // validateShellProgramReferences keeps caller-controlled values out of the
-// program text a shell interprets after -c. A regex is not proof against every
-// shell expansion; authors must instead pass open-ended text through env or a
-// positional argv element. Finite membership and bounded numeric args remain
-// pack-authored program choices, not caller-authored shell text.
+// program text an interpreter runs after its program flag. A regex is not proof
+// against every shell expansion; authors must instead pass open-ended text
+// through env or a positional argv element. Finite membership and bounded
+// numeric args remain pack-authored program choices, not caller-authored shell
+// text. The interpreter is resolved through the binary and any exec-wrapper in
+// front of it, so a wrapper cannot hide the shell. (awk's positional-program
+// form is not matched — its ambiguous option grammar risks false positives; the
+// -e/-c forms are.)
 func validateShellProgramReferences(action *actionspec.Action, argv []string) error {
-	if action.Execution.Command == nil || !shellBinaries[action.Execution.Command.Binary] {
+	if action.Execution.Command == nil {
 		return nil
 	}
-	program, ok := shellProgram(argv)
+	interpreter, flag, rest, ok := interpreterInvocation(action.Execution.Command.Binary, argv)
+	if !ok {
+		return nil
+	}
+	program, ok := interpreterProgram(rest, flag)
 	if !ok {
 		return nil
 	}
@@ -88,27 +124,65 @@ func validateShellProgramReferences(action *actionspec.Action, argv []string) er
 			continue
 		}
 		return fmt.Errorf(
-			"action %s: arg %s must not be embedded in %s -c program text; pass it through execution.env and reference it as \"$VAR\", or pass it as a whole positional argv element",
+			"action %s: arg %s must not be embedded in %s -%c program text; pass it through execution.env and reference it as \"$VAR\", or pass it as a whole positional argv element",
 			action.ID,
 			name,
-			action.Execution.Command.Binary,
+			interpreter,
+			flag,
 		)
 	}
 	return nil
 }
 
-func shellProgram(argv []string) (string, bool) {
-	for index, arg := range argv {
+// interpreterInvocation resolves which interpreter the command runs and the argv
+// that follows it: the binary itself, or — when the binary is a known
+// exec-wrapper — the first interpreter token in its argv. A binary that is
+// neither returns ok=false, so its own argument tokens are never scanned.
+func interpreterInvocation(binary string, argv []string) (name string, flag rune, rest []string, ok bool) {
+	if f, isInterp := interpreterFlag(binary); isInterp {
+		return binary, f, argv, true
+	}
+	if !execWrappers[filepath.Base(binary)] {
+		return "", 0, nil, false
+	}
+	for index, tok := range argv {
+		if f, isInterp := interpreterFlag(tok); isInterp {
+			return tok, f, argv[index+1:], true
+		}
+	}
+	return "", 0, nil, false
+}
+
+// interpreterFlag reports whether a token names a program interpreter (matched
+// by the whole token or its path base, so "/usr/bin/python3" counts) and its
+// program flag.
+func interpreterFlag(token string) (rune, bool) {
+	if f, ok := programInterpreters[token]; ok {
+		return f, true
+	}
+	if base := filepath.Base(token); base != token {
+		if f, ok := programInterpreters[base]; ok {
+			return f, true
+		}
+	}
+	return 0, false
+}
+
+// interpreterProgram returns the program-text token that follows the flag rune
+// (e.g. -c for a shell, -e for perl), tolerating combined short flags like -ec.
+// A lone "--" ends option scanning.
+func interpreterProgram(tokens []string, flag rune) (string, bool) {
+	for index, arg := range tokens {
 		if arg == "--" {
 			return "", false
 		}
-		if len(arg) < 2 || arg[0] != '-' || arg[1] == '-' || !strings.ContainsRune(arg[1:], 'c') {
+		if len(arg) < 2 || arg[0] != '-' || arg[1] == '-' || !strings.ContainsRune(arg[1:], flag) {
 			continue
 		}
-		if index+1 >= len(argv) {
+		if index+1 >= len(tokens) {
 			return "", false
 		}
-		return argv[index+1], true
+		return tokens[index+1], true
 	}
 	return "", false
 }

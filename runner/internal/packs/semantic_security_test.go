@@ -172,6 +172,59 @@ func TestLoad_EnforcesSafeShellArgumentChannels(t *testing.T) {
 			critical:  true,
 			wantError: "arg script must not be embedded in /bin/sh -c program text",
 		},
+		{
+			// A wrapper as the binary hid the shell from the old
+			// binary-only guard: `timeout 30 sh -c '<program>'` names
+			// timeout, not sh.
+			name:   "timeout wrapper hides sh -c",
+			id:     "testpack.timeout_wrap",
+			binary: "timeout",
+			args: `args:
+  - name: pattern
+    type: string
+    required: true`,
+			argv:      `argv: ["30", "sh", "-c", "grep {{ args.pattern }} /var/log/x"]`,
+			wantError: "arg pattern must not be embedded in sh -c program text",
+		},
+		{
+			name:   "env wrapper hides sh -c",
+			id:     "testpack.env_wrap",
+			binary: "env",
+			args: `args:
+  - name: pattern
+    type: string
+    required: true`,
+			argv:      `argv: ["sh", "-c", "grep {{ args.pattern }} /var/log/x"]`,
+			wantError: "arg pattern must not be embedded in sh -c program text",
+		},
+		{
+			// The wrapper form still admits bounded values into program
+			// text, exactly like a bare shell does.
+			name:   "wrapper with bounded numeric passes",
+			id:     "testpack.timeout_bounded",
+			binary: "timeout",
+			args: `args:
+  - name: count
+    type: integer
+    required: true
+    validation:
+      min: 1
+      max: 100`,
+			argv: `argv: ["30", "sh", "-c", "head -n {{ args.count }} /var/log/x"]`,
+		},
+		{
+			// A wrapper fronting an interpreter that reads its program
+			// from -e is caught the same way.
+			name:   "perl -e program text",
+			id:     "testpack.perl_e",
+			binary: "timeout",
+			args: `args:
+  - name: pattern
+    type: string
+    required: true`,
+			argv:      `argv: ["30", "perl", "-e", "system('grep {{ args.pattern }}')"]`,
+			wantError: "arg pattern must not be embedded in perl -e program text",
+		},
 	}
 
 	for _, tc := range tests {
