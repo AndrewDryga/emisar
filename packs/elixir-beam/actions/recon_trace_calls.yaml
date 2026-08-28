@@ -123,11 +123,11 @@ output:
   redact:
     - name: elixir-term-kv-secret
       type: regex
-      pattern: '(?i)\b([a-z0-9_]*(?:password|passwd|pwd|secret|token|api_?key|credential|private_key|access_key|signing_salt|encryption_salt|cookie)[a-z0-9_]*"?\s*(?:=>|:)\s*)(<<"(?:[^"\\]|\\.)*">>|"(?:[^"\\]|\\.)*"|''(?:[^''\\]|\\.)*''|[^\s,}\]]+)'
+      pattern: '(?i)\b([a-z0-9_]*(?:password|passwd|pwd|secret|token|api_?key|credential|private_key|access_key|signing_salt|encryption_salt|cookie)[a-z0-9_]*"?\s*(?:=>|:)\s*)(<<"(?:[^"\\]|\\.)*">>|<<[^>]*>>|"(?:[^"\\]|\\.)*"|''(?:[^''\\]|\\.)*''|[^\s,}\]]+)'
       replacement: '${1}[REDACTED]'
     - name: elixir-term-tuple-secret
       type: regex
-      pattern: '(?i)(\{:?"?[a-z0-9_]*(?:password|passwd|pwd|secret|token|api_?key|credential|private_key|access_key|signing_salt|encryption_salt|cookie)[a-z0-9_]*"?,\s*)(<<"(?:[^"\\]|\\.)*">>|"(?:[^"\\]|\\.)*"|''(?:[^''\\]|\\.)*''|[^\s,)}\]]+)'
+      pattern: '(?i)(\{:?"?[a-z0-9_]*(?:password|passwd|pwd|secret|token|api_?key|credential|private_key|access_key|signing_salt|encryption_salt|cookie)[a-z0-9_]*"?,\s*)(<<"(?:[^"\\]|\\.)*">>|<<[^>]*>>|"(?:[^"\\]|\\.)*"|''(?:[^''\\]|\\.)*''|[^\s,)}\]]+)'
       replacement: '${1}[REDACTED]'
 examples:
   - title: Trace arity-only Phoenix endpoint calls for two seconds
