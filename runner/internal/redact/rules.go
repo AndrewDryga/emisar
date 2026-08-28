@@ -109,8 +109,24 @@ func DefaultRules() []actionspec.RedactionRule {
 	// config and connection strings and matched nothing: DSNs and connection
 	// URLs, the key-derivation inputs (salt/pepper), cookie/session signing keys,
 	// and the passphrase spellings.
-	const secretName = `(?:password|passwd|passphrase|pwd|secret|token|api[_-]?key|access[_-]?key|secret[_-]?key|client[_-]?secret|private[_-]?key|access[_-]?token|refresh[_-]?token|id[_-]?token|auth[_-]?token|session[_-]?token|account[_-]?key|aws[_-]?secret[_-]?access[_-]?key|aws[_-]?session[_-]?token|dsn|connection[_-]?string|conn[_-]?str|database[_-]?url|db[_-]?url|redis[_-]?url|amqp[_-]?url|smtp[_-]?url|credentials?|signing[_-]?key|encryption[_-]?key|secret[_-]?key[_-]?base|cookie[_-]?key|session[_-]?key|salt|pepper)`
-	const secretField = `(?:[A-Za-z0-9]+[._-])*` + secretName + `(?:[._-][A-Za-z0-9]+)*`
+	const secretName = `(?:password|passwd|passphrase|pwd|secret|token|api[_-]?key|access[_-]?key|secret[_-]?key|client[_-]?secret|private[_-]?key|access[_-]?token|refresh[_-]?token|id[_-]?token|auth[_-]?token|session[_-]?token|account[_-]?key|aws[_-]?secret[_-]?access[_-]?key|aws[_-]?session[_-]?token|dsn|connection[_-]?string|conn[_-]?str|database[_-]?url|db[_-]?url|redis[_-]?url|amqp[_-]?url|smtp[_-]?url|credentials?|signing[_-]?key|encryption[_-]?key|secret[_-]?key[_-]?base|cookie[_-]?key|session[_-]?key|master[_-]?key|salt|pepper)`
+	// Deliberately NOT here: a bare `key` or `auth`. Both are overwhelmingly
+	// non-secret in real output — cache_key, primary_key, sort_key, partition_key,
+	// object_key, and the `key: <name>` column half of tabular config dumps;
+	// auth_method, auth_type, `auth: enabled`. Redacting those buries real output
+	// in [REDACTED] and teaches operators to distrust the mask, which costs more
+	// than the narrow names it would catch (MAILGUN_KEY, REDISCLI_AUTH). Those
+	// belong in the owning pack's own `output.redact`, where the key space is
+	// known.
+	// The prefix separator is OPTIONAL. Requiring one meant a glued name never
+	// matched: DB_PASSWORD was caught and PGPASSWORD — Postgres's own credential
+	// variable — was not, along with DBPASSWORD, MYSQLPASSWORD and ADMINPASSWORD.
+	// The redis pack had already hand-written its own rule for `requirepass` for
+	// exactly this reason, which was the signal that the shared net was too
+	// narrow. The suffix group still requires its separator: a trailing
+	// `_v2`/`.old` is an affix, while an unseparated tail would make the secret
+	// word a substring of some longer unrelated word.
+	const secretField = `(?:[A-Za-z0-9]+[._-]?)*` + secretName + `(?:[._-][A-Za-z0-9]+)*`
 
 	return []actionspec.RedactionRule{
 		{

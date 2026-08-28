@@ -422,6 +422,14 @@ func TestDefaultRules_WidenedSecretFieldNames(t *testing.T) {
 		{"credentials", `credentials: base64blobvalue`, "base64blobvalue"},
 		{"json dsn field", `{"dsn": "postgres://u:p@h/db"}`, "postgres://u:p@h/db"},
 		{"prefixed", `app.database_url=prefixed-secret`, "prefixed-secret"},
+		// Glued names: no separator between the prefix and the secret word. The
+		// prefix group used to REQUIRE one, so DB_PASSWORD was masked and
+		// PGPASSWORD — Postgres's own credential variable — was not.
+		{"PGPASSWORD", `PGPASSWORD=pg-secret-value`, "pg-secret-value"},
+		{"DBPASSWORD", `DBPASSWORD=db-secret-value`, "db-secret-value"},
+		{"MYSQLPASSWORD", `MYSQLPASSWORD=my-secret-value`, "my-secret-value"},
+		{"ADMINPASSWORD", `ADMINPASSWORD=admin-secret-value`, "admin-secret-value"},
+		{"master_key", `RAILS_MASTER_KEY=rails-secret-value`, "rails-secret-value"},
 	}
 
 	for _, tc := range masked {
@@ -447,6 +455,17 @@ func TestDefaultRules_WidenedSecretFieldNames(t *testing.T) {
 		{"credential count metric", `credentials_total 42`},
 		{"url without userinfo", `redis://cache.internal:6379/0 connected`},
 		{"prose mentioning salt", `Rotated the salt for every user last Tuesday.`},
+		// The glued-prefix widening above must not reach these. A bare `key` or
+		// `auth` is deliberately NOT a secret word for exactly this reason: these
+		// are the ordinary output an operator ran the action to read.
+		{"cache key", `cache_key=user:42`},
+		{"primary key", `primary_key=id`},
+		{"partition key", `partition_key=tenant`},
+		{"object key", `object_key=uploads/a.png`},
+		{"auth method", `auth_method=oidc`},
+		{"auth toggle", `auth=enabled`},
+		{"keyspace", `keyspace=analytics`},
+		{"tokenizer", `tokenizer=standard`},
 	}
 
 	for _, tc := range untouched {
