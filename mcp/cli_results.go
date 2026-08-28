@@ -520,6 +520,9 @@ func renderCLIRuns(w io.Writer, runs []cliRunResult, includeIdentity bool) strin
 			writeCLIResultField(&out, "Expires", cliFleetTime(run.Approval.ExpiresAt), 80)
 		}
 		writeCLIRunOutput(&out, run)
+		if run.localOutputClipped {
+			out.WriteString("  … output exceeds the 16,384-character terminal display limit; use --json for the complete result.\n")
+		}
 		if run.LocalAuditFailed {
 			out.WriteString("  Warning  The runner could not complete its local audit record.\n")
 		}

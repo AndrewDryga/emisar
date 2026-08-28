@@ -74,6 +74,68 @@ func TestCLIHumanRunActionFollowsExactContinuation(t *testing.T) {
 	}
 }
 
+func TestCLIHumanRunActionBoundsAutomaticallyFollowedOutput(t *testing.T) {
+	var calls atomic.Int32
+	var operationID string
+	oversizedOutput := strings.Repeat("x", maxCLIResultOutputRunes+100) + "must not print"
+	oversizedOutputJSON, err := json.Marshal(oversizedOutput)
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch call := calls.Add(1); call {
+		case 1:
+			operationID = r.Header.Get(operationIDHeader)
+			writeCLIResult(t, w, r, fmt.Sprintf(`{"structuredContent":{"ok":true,"operation_id":%q,"action_id":"postgres.status","pack_ref":"postgres@1/sha256:abc","runs":[{"run_id":"run-1","operation_id":%q,"action_id":"postgres.status","pack_ref":"postgres@1/sha256:abc","runner_ref":"db-1~abc","status":"running","next":{"tool":"wait_for_run","arguments":{"run_id":"run-1","cursor":"cursor-1","timeout":"60s"}}}]},"content":[],"isError":false}`, operationID, operationID))
+		case 2:
+			writeCLIResult(t, w, r, fmt.Sprintf(`{"structuredContent":{"ok":true,"run":{"run_id":"run-1","operation_id":%q,"action_id":"postgres.status","pack_ref":"postgres@1/sha256:abc","runner_ref":"db-1~abc","status":"running","output":[{"stream":"stdout","text":%s}],"next":{"tool":"wait_for_run","arguments":{"run_id":"run-1","cursor":"cursor-2","timeout":"60s"}}}},"content":[],"isError":false}`, operationID, oversizedOutputJSON))
+		case 3:
+			writeCLIResult(t, w, r, fmt.Sprintf(`{"structuredContent":{"ok":true,"run":{"run_id":"run-1","operation_id":%q,"action_id":"postgres.status","pack_ref":"postgres@1/sha256:abc","runner_ref":"db-1~abc","status":"success","exit_code":0,"output":[{"stream":"stdout","text":"tail"}]}},"content":[],"isError":false}`, operationID))
+		default:
+			t.Errorf("unexpected request %d", call)
+		}
+	}))
+	defer srv.Close()
+
+	stdout, stderr, code := runCLITest(newTestBridge(srv), []string{runActionToolName, `{}`}, "")
+	if code != 0 || stderr != "" || calls.Load() != 3 {
+		t.Fatalf("exit=%d calls=%d stdout=%q stderr=%q", code, calls.Load(), stdout, stderr)
+	}
+	if !strings.Contains(stdout, "output exceeds the 16,384-character terminal display limit") ||
+		strings.Contains(stdout, "must not print") {
+		t.Fatalf("run output was not bounded with a clip notice:\n%s", stdout)
+	}
+	if len([]rune(stdout)) > maxCLIResultOutputRunes+5_000 {
+		t.Fatalf("bounded run output amplified to %d characters", len([]rune(stdout)))
+	}
+}
+
+func TestCLIHumanRunActionRejectsRepeatedWaitContinuation(t *testing.T) {
+	var calls atomic.Int32
+	var operationID string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch call := calls.Add(1); call {
+		case 1:
+			operationID = r.Header.Get(operationIDHeader)
+			writeCLIResult(t, w, r, fmt.Sprintf(`{"structuredContent":{"ok":true,"operation_id":%q,"action_id":"postgres.status","pack_ref":"postgres@1/sha256:abc","runs":[{"run_id":"run-1","operation_id":%q,"action_id":"postgres.status","pack_ref":"postgres@1/sha256:abc","runner_ref":"db-1~abc","status":"running","next":{"tool":"wait_for_run","arguments":{"run_id":"run-1","cursor":"same","timeout":"60s"}}}]},"content":[],"isError":false}`, operationID, operationID))
+		case 2:
+			writeCLIResult(t, w, r, fmt.Sprintf(`{"structuredContent":{"ok":true,"run":{"run_id":"run-1","operation_id":%q,"action_id":"postgres.status","pack_ref":"postgres@1/sha256:abc","runner_ref":"db-1~abc","status":"running","output":[{"stream":"stdout","text":"do not render"}],"next":{"tool":"wait_for_run","arguments":{"run_id":"run-1","cursor":"same","timeout":"60s"}}}},"content":[],"isError":false}`, operationID))
+		default:
+			t.Errorf("unexpected request %d", call)
+		}
+	}))
+	defer srv.Close()
+
+	stdout, stderr, code := runCLITest(newTestBridge(srv), []string{runActionToolName, `{}`}, "")
+	if code != 1 || calls.Load() != 2 {
+		t.Fatalf("exit=%d calls=%d stdout=%q stderr=%q", code, calls.Load(), stdout, stderr)
+	}
+	if !strings.Contains(stderr, "repeated a run wait continuation") ||
+		!strings.Contains(stderr, operationID) || strings.Contains(stdout, "do not render") {
+		t.Fatalf("repeated run wait continuation was not rejected safely:\nstdout=%s\nstderr=%s", stdout, stderr)
+	}
+}
+
 func TestCLIProcessRunsActionThroughTerminalOutput(t *testing.T) {
 	var calls atomic.Int32
 	var mutationOperationID string

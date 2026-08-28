@@ -204,12 +204,31 @@ func (b *bridge) followOneCLIRun(
 	operationID string,
 	initial cliRunResult,
 ) (cliRunResult, error) {
+	// Bound this loop the way followOneCLIRunbookResult bounds its sibling: a
+	// portal that keeps re-issuing a wait continuation (or a run streaming tens of
+	// MB) must not spin forever, repeat itself, or hold unbounded output in memory.
 	current := initial
 	var output []cliRunOutput
-	for cliToolContinuationPresent(current.Next) {
+	remaining := maxCLIResultOutputRunes
+	seen := make(map[string]struct{})
+	clippedOutput := false
+	for pageNumber := 0; pageNumber < maxCLIRunbookResultPages; pageNumber++ {
+		if !cliToolContinuationPresent(current.Next) {
+			if !cliRunTerminal(current.Status) {
+				return current, errors.New("wait_for_run stopped before the run reached a terminal status")
+			}
+			current.Output = output
+			current.localOutputClipped = clippedOutput
+			return current, nil
+		}
 		if !validCLIRunContinuation(current.Next, initial.RunID) {
 			return current, errors.New("the server changed or malformed the run wait continuation")
 		}
+		continuationKey := current.Next.Tool + "\x00" + string(current.Next.Arguments)
+		if _, duplicate := seen[continuationKey]; duplicate {
+			return current, errors.New("wait_for_run repeated a run wait continuation")
+		}
+		seen[continuationKey] = struct{}{}
 		raw, err := b.callCLIContinuation(ctx, current.Next)
 		if err != nil {
 			return current, err
@@ -222,14 +241,15 @@ func (b *bridge) followOneCLIRun(
 			!sameCLIRunIdentity(initial, envelope.Run) || envelope.Run.Status == "" {
 			return current, errors.New("wait_for_run returned a different or invalid run")
 		}
-		output = appendCLIRunOutput(output, envelope.Run.Output...)
+		var clipped bool
+		output, remaining, clipped, err = appendBoundedCLIRunOutput(output, remaining, envelope.Run.Output...)
+		if err != nil {
+			return current, err
+		}
+		clippedOutput = clippedOutput || clipped
 		current = envelope.Run
 	}
-	if !cliRunTerminal(current.Status) {
-		return current, errors.New("wait_for_run stopped before the run reached a terminal status")
-	}
-	current.Output = output
-	return current, nil
+	return current, errors.New("run wait exceeded the safe pagination limit")
 }
 
 func sameCLIRunIdentity(initial, next cliRunResult) bool {
