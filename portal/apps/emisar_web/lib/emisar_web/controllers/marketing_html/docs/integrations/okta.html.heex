@@ -28,145 +28,120 @@
       </p>
 
       <ol class="mt-8 space-y-10">
-        <li class="flex gap-4">
-          <span class="grid h-8 w-8 flex-none place-items-center rounded-full bg-brand-500/20 text-sm font-semibold text-brand-300">
-            1
-          </span>
-          <div class="min-w-0 text-base leading-7 text-zinc-400">
-            <.docs_step_venue>emisar</.docs_step_venue>
-            <p class="font-semibold text-zinc-100">Start the connection.</p>
-            <p class="mt-1.5">
-              Open
-              <a
-                href={~p"/app/sso/new"}
-                class="font-medium text-brand-400 underline decoration-zinc-700 underline-offset-4 hover:text-brand-300"
-              >Team → Single sign-on → Add provider</a>
-              and choose <strong class="text-zinc-200">Okta</strong>. Leave the page open: the
-              callback URL on it is what Okta asks for next, and Okta's values come back here
-              at the end.
-            </p>
-            <.docs_screenshot
-              src="/images/docs/sso/okta-emisar-add-provider.webp"
-              title="emisar · Add provider"
-              caption="Picking the provider here tailors the rest of the form to it."
-              alt="emisar's Add provider form with the Provider type select outlined in green and set to Okta."
-            />
-          </div>
-        </li>
-        <li class="flex gap-4">
-          <span class="grid h-8 w-8 flex-none place-items-center rounded-full bg-brand-500/20 text-sm font-semibold text-brand-300">
-            2
-          </span>
-          <div class="min-w-0 text-base leading-7 text-zinc-400">
-            <.docs_step_venue>Okta</.docs_step_venue>
-            <p class="font-semibold text-zinc-100">Create an OIDC web application.</p>
-            <p class="mt-1.5">
-              In the Okta Admin Console go to <strong class="text-zinc-200">Applications → Applications → Create App Integration</strong>. Choose
-              <strong class="text-zinc-200">OIDC - OpenID Connect</strong>
-              as the sign-in method.
-              Then choose <strong class="text-zinc-200">Web Application</strong>
-              as the application
-              type. This creates the confidential client emisar needs. It authenticates with a
-              client secret.
-            </p>
-            <.docs_screenshot
-              src="/images/docs/sso/okta-oidc-create.webp"
-              title="Okta Admin Console · Create a new app integration"
-              caption="Pick OIDC, and the Application type choices appear below it — emisar is a Web Application."
-              alt="Okta's Create a new app integration dialog with OIDC - OpenID Connect selected among the sign-in methods and outlined in green together with its description, which reveals an Application type section below where Web Application is selected and likewise outlined rather than Single-Page or Native Application."
-            />
-          </div>
-        </li>
-        <li class="flex gap-4">
-          <span class="grid h-8 w-8 flex-none place-items-center rounded-full bg-brand-500/20 text-sm font-semibold text-brand-300">
-            3
-          </span>
-          <div class="min-w-0 text-base leading-7 text-zinc-400">
-            <.docs_step_venue>Okta</.docs_step_venue>
-            <p class="font-semibold text-zinc-100">
-              Register emisar's callback as the only redirect.
-            </p>
-            <p class="mt-1.5">
-              Name the application, then set the sign-in controls explicitly:
-            </p>
-            <.docs_settings>
-              <:setting label="Application name">
-                Use <.docs_inline_code>emisar</.docs_inline_code>, or another
-                name your administrators will recognize.
-              </:setting>
-              <:setting label="Sign-in redirect URIs">
-                Copy the callback from the Add provider page. It ends with
-                <.docs_inline_code>/sign_in/sso/callback</.docs_inline_code>
-                on your emisar host. Keep it as the only entry.
-              </:setting>
-              <:setting label="Allow wildcard *">
-                Leave it off. A wildcard broadens which redirect destinations Okta will trust.
-              </:setting>
-              <:setting label="Grant type">
-                Leave <strong class="text-zinc-200">Authorization Code</strong> selected.
-              </:setting>
-              <:setting label="Assignments">
-                Choose <strong class="text-zinc-200">Skip group assignment for now</strong>. Okta
-                app assignment controls who may sign in; Emisar's
-                <.link
-                  navigate={~p"/docs/scim#role-mapping"}
-                  class="text-brand-300 underline decoration-brand-500/40 underline-offset-4 hover:text-brand-200"
-                >Role mapping</.link>
-                separately controls which Emisar role a synced directory group grants.
-              </:setting>
-            </.docs_settings>
-            <.docs_screenshot
-              src="/images/docs/sso/okta-oidc-settings.webp"
-              title="Okta Admin Console · New Web App Integration"
-              caption="One sign-in redirect URI, wildcard off, Authorization Code. Clear the sign-out box — emisar doesn't use it."
-              alt="Okta's New Web App Integration form with the Grant type block and the Sign-in redirect URIs block each outlined in green: app integration name emisar, Authorization Code ticked under Core grants, https://emisar.dev/sign_in/sso/callback as the only sign-in redirect URI, the allow-wildcard box unchecked, and an empty sign-out redirect URI field."
-            />
-          </div>
-        </li>
-        <li class="flex gap-4">
-          <span class="grid h-8 w-8 flex-none place-items-center rounded-full bg-brand-500/20 text-sm font-semibold text-brand-300">
-            4
-          </span>
-          <div class="min-w-0 text-base leading-7 text-zinc-400">
-            <.docs_step_venue>Okta</.docs_step_venue>
-            <p class="font-semibold text-zinc-100">Copy the client credentials.</p>
-            <p class="mt-1.5">
-              Saving lands you on the app's General tab with its
-              <strong class="text-zinc-200">Client ID</strong>
-              and <strong class="text-zinc-200">Client secret</strong>. You need both, plus your <strong class="text-zinc-200">issuer</strong>.
-            </p>
-            <.docs_screenshot
-              src="/images/docs/sso/okta-oidc-credentials.webp"
-              title="Okta Admin Console · Client Credentials"
-              caption="Keep Client authentication on Client secret — emisar is a confidential client and replays that secret to your IdP."
-              alt="The Okta app's General tab showing Client Credentials, with the Client ID row and the Client secrets table each outlined in green as the two values to copy: the Client ID with a copy button, Client authentication set to Client secret rather than public key, PKCE unchecked, and a masked client secret with its creation date and Active status."
-            />
-          </div>
-        </li>
-        <li class="flex gap-4">
-          <span class="grid h-8 w-8 flex-none place-items-center rounded-full bg-brand-500/20 text-sm font-semibold text-brand-300">
-            5
-          </span>
-          <div class="min-w-0 text-base leading-7 text-zinc-400">
-            <.docs_step_venue>emisar</.docs_step_venue>
-            <p class="font-semibold text-zinc-100">Connect it in emisar.</p>
-            <p class="mt-1.5">
-              Back on the connection you opened in step 1, paste the client ID and secret. For the
-              issuer use your <strong class="text-zinc-200">org</strong>
-              authorization server — that is your Okta org URL itself
-              (<.docs_inline_code>https://your-org.okta.com</.docs_inline_code>,
-              with no
-              <.docs_inline_code>/oauth2/…</.docs_inline_code>
-              path). Then tick <strong class="text-zinc-200">Enabled</strong>, save, and sign in.
-            </p>
-            <.docs_screenshot
-              src="/images/docs/sso/okta-emisar-credentials.webp"
-              title="emisar · Add provider"
-              caption="Three values from Okta. The issuer is your org URL, not an authorization-server path."
-              alt="emisar's OIDC connection fields with Issuer URL, Client ID and Client secret each outlined in green, and the Issuer URL placeholder showing https://YOUR-ORG.okta.com."
-            />
-          </div>
-        </li>
+        <.docs_step n={1}>
+          <.docs_step_venue>emisar</.docs_step_venue>
+          <p class="font-semibold text-zinc-100">Start the connection.</p>
+          <p class="mt-1.5">
+            Open
+            <a
+              href={~p"/app/sso/new"}
+              class="font-medium text-brand-400 underline decoration-zinc-700 underline-offset-4 hover:text-brand-300"
+            >Team → Single sign-on → Add provider</a>
+            and choose <strong class="text-zinc-200">Okta</strong>. Leave the page open: the
+            callback URL on it is what Okta asks for next, and Okta's values come back here
+            at the end.
+          </p>
+          <.docs_screenshot
+            src="/images/docs/sso/okta-emisar-add-provider.webp"
+            title="emisar · Add provider"
+            caption="Picking the provider here tailors the rest of the form to it."
+            alt="emisar's Add provider form with the Provider type select outlined in green and set to Okta."
+          />
+        </.docs_step>
+        <.docs_step n={2}>
+          <.docs_step_venue>Okta</.docs_step_venue>
+          <p class="font-semibold text-zinc-100">Create an OIDC web application.</p>
+          <p class="mt-1.5">
+            In the Okta Admin Console go to <strong class="text-zinc-200">Applications → Applications → Create App Integration</strong>. Choose
+            <strong class="text-zinc-200">OIDC - OpenID Connect</strong>
+            as the sign-in method.
+            Then choose <strong class="text-zinc-200">Web Application</strong>
+            as the application
+            type. This creates the confidential client emisar needs. It authenticates with a
+            client secret.
+          </p>
+          <.docs_screenshot
+            src="/images/docs/sso/okta-oidc-create.webp"
+            title="Okta Admin Console · Create a new app integration"
+            caption="Pick OIDC, and the Application type choices appear below it — emisar is a Web Application."
+            alt="Okta's Create a new app integration dialog with OIDC - OpenID Connect selected among the sign-in methods and outlined in green together with its description, which reveals an Application type section below where Web Application is selected and likewise outlined rather than Single-Page or Native Application."
+          />
+        </.docs_step>
+        <.docs_step n={3}>
+          <.docs_step_venue>Okta</.docs_step_venue>
+          <p class="font-semibold text-zinc-100">
+            Register emisar's callback as the only redirect.
+          </p>
+          <p class="mt-1.5">
+            Name the application, then set the sign-in controls explicitly:
+          </p>
+          <.docs_settings>
+            <:setting label="Application name">
+              Use <.docs_inline_code>emisar</.docs_inline_code>, or another
+              name your administrators will recognize.
+            </:setting>
+            <:setting label="Sign-in redirect URIs">
+              Copy the callback from the Add provider page. It ends with
+              <.docs_inline_code>/sign_in/sso/callback</.docs_inline_code>
+              on your emisar host. Keep it as the only entry.
+            </:setting>
+            <:setting label="Allow wildcard *">
+              Leave it off. A wildcard broadens which redirect destinations Okta will trust.
+            </:setting>
+            <:setting label="Grant type">
+              Leave <strong class="text-zinc-200">Authorization Code</strong> selected.
+            </:setting>
+            <:setting label="Assignments">
+              Choose <strong class="text-zinc-200">Skip group assignment for now</strong>. Okta
+              app assignment controls who may sign in; Emisar's
+              <.link
+                navigate={~p"/docs/scim#role-mapping"}
+                class="text-brand-300 underline decoration-brand-500/40 underline-offset-4 hover:text-brand-200"
+              >Role mapping</.link>
+              separately controls which Emisar role a synced directory group grants.
+            </:setting>
+          </.docs_settings>
+          <.docs_screenshot
+            src="/images/docs/sso/okta-oidc-settings.webp"
+            title="Okta Admin Console · New Web App Integration"
+            caption="One sign-in redirect URI, wildcard off, Authorization Code. Clear the sign-out box — emisar doesn't use it."
+            alt="Okta's New Web App Integration form with the Grant type block and the Sign-in redirect URIs block each outlined in green: app integration name emisar, Authorization Code ticked under Core grants, https://emisar.dev/sign_in/sso/callback as the only sign-in redirect URI, the allow-wildcard box unchecked, and an empty sign-out redirect URI field."
+          />
+        </.docs_step>
+        <.docs_step n={4}>
+          <.docs_step_venue>Okta</.docs_step_venue>
+          <p class="font-semibold text-zinc-100">Copy the client credentials.</p>
+          <p class="mt-1.5">
+            Saving lands you on the app's General tab with its
+            <strong class="text-zinc-200">Client ID</strong>
+            and <strong class="text-zinc-200">Client secret</strong>. You need both, plus your <strong class="text-zinc-200">issuer</strong>.
+          </p>
+          <.docs_screenshot
+            src="/images/docs/sso/okta-oidc-credentials.webp"
+            title="Okta Admin Console · Client Credentials"
+            caption="Keep Client authentication on Client secret — emisar is a confidential client and replays that secret to your IdP."
+            alt="The Okta app's General tab showing Client Credentials, with the Client ID row and the Client secrets table each outlined in green as the two values to copy: the Client ID with a copy button, Client authentication set to Client secret rather than public key, PKCE unchecked, and a masked client secret with its creation date and Active status."
+          />
+        </.docs_step>
+        <.docs_step n={5}>
+          <.docs_step_venue>emisar</.docs_step_venue>
+          <p class="font-semibold text-zinc-100">Connect it in emisar.</p>
+          <p class="mt-1.5">
+            Back on the connection you opened in step 1, paste the client ID and secret. For the
+            issuer use your <strong class="text-zinc-200">org</strong>
+            authorization server — that is your Okta org URL itself
+            (<.docs_inline_code>https://your-org.okta.com</.docs_inline_code>,
+            with no
+            <.docs_inline_code>/oauth2/…</.docs_inline_code>
+            path). Then tick <strong class="text-zinc-200">Enabled</strong>, save, and sign in.
+          </p>
+          <.docs_screenshot
+            src="/images/docs/sso/okta-emisar-credentials.webp"
+            title="emisar · Add provider"
+            caption="Three values from Okta. The issuer is your org URL, not an authorization-server path."
+            alt="emisar's OIDC connection fields with Issuer URL, Client ID and Client secret each outlined in green, and the Issuer URL placeholder showing https://YOUR-ORG.okta.com."
+          />
+        </.docs_step>
       </ol>
 
       <.docs_callout kind={:note} title="The rest of the connection form">
@@ -225,154 +200,129 @@
       </.docs_callout>
 
       <ol class="mt-8 space-y-10">
-        <li class="flex gap-4">
-          <span class="grid h-8 w-8 flex-none place-items-center rounded-full bg-brand-500/20 text-sm font-semibold text-brand-300">
-            1
-          </span>
-          <div class="min-w-0 text-base leading-7 text-zinc-400">
-            <.docs_step_venue>Okta</.docs_step_venue>
-            <p class="font-semibold text-zinc-100">Add the SCIM 2.0 Header Auth app.</p>
-            <p class="mt-1.5">
-              In the Okta Admin Console go to
-              <strong class="text-zinc-200">Applications → Applications → Browse App Catalog</strong>
-              and search for <strong class="text-zinc-200">SCIM 2.0</strong>. Pick
-              <strong class="text-zinc-200">SCIM 2.0 Test App (Header Auth)</strong>
-              — Header Auth is the variant that sends the token the way emisar reads it — then <strong class="text-zinc-200">Add Integration</strong>. Name it something an
-              administrator will recognise later, take the defaults on the Sign-On tab, and finish.
-            </p>
-            <.docs_screenshot
-              src="/images/docs/sso/okta-scim-catalog.webp"
-              title="Okta Admin Console · Browse App Integration Catalog"
-              caption="Four SCIM test apps share this name — take the 2.0 Header Auth one."
-              alt="Okta's Browse App Integration Catalog with SCIM 2.0 Test App typed into the search box, showing a typeahead list of SCIM 2.0 Test App (Basic Auth), SCIM 2.0 Test App (Header Auth), SCIM 2.0 Test App (OAuth Bearer Token), SCIM 1.1 Test App (Header Auth), and SCIM 1.1 Test App (Basic Auth)."
-            />
-          </div>
-        </li>
-        <li class="flex gap-4">
-          <span class="grid h-8 w-8 flex-none place-items-center rounded-full bg-brand-500/20 text-sm font-semibold text-brand-300">
-            2
-          </span>
-          <div class="min-w-0 text-base leading-7 text-zinc-400">
-            <.docs_step_venue>Okta</.docs_step_venue>
-            <p class="font-semibold text-zinc-100">
-              Point it at emisar and test the credentials.
-            </p>
-            <p class="mt-1.5">
-              On the application's <strong class="text-zinc-200">Provisioning</strong>
-              tab, choose <strong class="text-zinc-200">Configure API Integration</strong>
-              and enable API
-              integration. Enter the SCIM base URL as <strong class="text-zinc-200">Base URL</strong>. Enter the bearer as <strong class="text-zinc-200">API Token</strong>. Paste the token exactly as emisar
-              showed it. Okta sends it in the
-              <.docs_inline_code>Authorization</.docs_inline_code>
-              header without a
-              <.docs_inline_code>Bearer</.docs_inline_code>
-              keyword. The
-              <.docs_inline_code>ems-</.docs_inline_code>
-              prefix lets emisar accept it unambiguously. Select
-              <strong class="text-zinc-200">Test API Credentials</strong>
-              before saving.
-            </p>
-            <.docs_screenshot
-              src="/images/docs/sso/okta-scim-verified.webp"
-              title="Okta Admin Console · Test API Credentials"
-              caption="The green result confirms that Okta reached emisar with this URL and bearer."
-              alt="Okta's SCIM API integration form after a successful live test, with a green verified-success message, the emisar SCIM base URL filled, the API Token masked, and Import Groups enabled."
-            />
-            <p class="mt-4">
-              A failed test means the token or URL is wrong. Check for a truncated token and a base
-              URL missing its
-              <.docs_inline_code>/scim/v2</.docs_inline_code>
-              suffix. For a bad token, emisar returns <em>“The SCIM bearer token is missing,
-              malformed, or not authorized.”</em>
-              Okta shows this message. Rotate the token in
-              emisar and paste the new one.
-            </p>
-          </div>
-        </li>
-        <li class="flex gap-4">
-          <span class="grid h-8 w-8 flex-none place-items-center rounded-full bg-brand-500/20 text-sm font-semibold text-brand-300">
-            3
-          </span>
-          <div class="min-w-0 text-base leading-7 text-zinc-400">
-            <.docs_step_venue>Okta</.docs_step_venue>
-            <p class="font-semibold text-zinc-100">Turn on the lifecycle operations.</p>
-            <p class="mt-1.5">
-              Still under <strong class="text-zinc-200">Provisioning</strong>, open
-              <strong class="text-zinc-200">To App</strong>
-              → <strong class="text-zinc-200">Edit</strong>
-              and set each operation as follows:
-            </p>
-            <.docs_settings>
-              <:setting label="Create Users">
-                <strong class="text-zinc-200">On.</strong> Assigned people can be provisioned.
-              </:setting>
-              <:setting label="Update User Attributes">
-                <strong class="text-zinc-200">On.</strong> Profile changes reach Emisar.
-              </:setting>
-              <:setting label="Deactivate Users">
-                <strong class="text-zinc-200">On.</strong> This makes offboarding automatic and
-                also carries reactivation.
-              </:setting>
-              <:setting label="Sync Password">
-                <strong class="text-zinc-200">Off.</strong> Emisar has no passwords to sync.
-              </:setting>
-            </.docs_settings>
-            <.docs_screenshot
-              src="/images/docs/sso/okta-scim-to-app.webp"
-              title="Okta Admin Console · Provisioning to App"
-              caption="Without these three, the integration authenticates but never pushes anything."
-              alt="Okta's Provisioning to App settings in edit mode with Create Users, Update User Attributes and Deactivate Users all enabled, and Sync Password left off."
-            />
-          </div>
-        </li>
-        <li class="flex gap-4">
-          <span class="grid h-8 w-8 flex-none place-items-center rounded-full bg-brand-500/20 text-sm font-semibold text-brand-300">
-            4
-          </span>
-          <div class="min-w-0 text-base leading-7 text-zinc-400">
-            <.docs_step_venue>Okta</.docs_step_venue>
-            <p class="font-semibold text-zinc-100">Assign the people to sync.</p>
-            <p class="mt-1.5">
-              Assignment is what actually provisions someone. On the
-              <strong class="text-zinc-200">Assignments</strong>
-              tab, use <strong class="text-zinc-200">Assign</strong>
-              → <strong class="text-zinc-200">Assign to People</strong>
-              (or to a group). Each person you assign appears in emisar under
-              <strong class="text-zinc-200">Synced members</strong>
-              at the connection's default role, and each one you unassign is deprovisioned there.
-            </p>
-            <.docs_screenshot
-              src="/images/docs/sso/okta-scim-assignments.webp"
-              title="Okta · Assignments"
-              caption="This live assignment provisioned the certification user through the assigned Okta group."
-              alt="The Assignments tab of the emisar directory sync application in Okta, with the Assign dropdown outlined in green and one assigned certification user listed below it."
-            />
-          </div>
-        </li>
-        <li class="flex gap-4">
-          <span class="grid h-8 w-8 flex-none place-items-center rounded-full bg-brand-500/20 text-sm font-semibold text-brand-300">
-            5
-          </span>
-          <div class="min-w-0 text-base leading-7 text-zinc-400">
-            <.docs_step_venue>Okta</.docs_step_venue>
-            <p class="font-semibold text-zinc-100">
-              Push the groups you want to map access from.
-            </p>
-            <p class="mt-1.5">
-              Complete this step when Okta groups control roles or runner access. Groups travel on their
-              own tab — <strong class="text-zinc-200">Push Groups</strong>, beside Assignments, not
-              part of the To App settings you just turned on. Push a group here and it appears in
-              emisar under <strong class="text-zinc-200">Synced groups</strong>, ready to map by its
-              immutable directory-group identity.
-            </p>
-            <.docs_screenshot
-              src="/images/docs/sso/okta-scim-push-groups.webp"
-              title="Okta · Push Groups"
-              caption="This group was pushed successfully and is Active. Assigning people does not push their groups."
-              alt="The Push Groups tab of the emisar directory sync application in Okta, with the Push Groups action outlined in green and one certification group listed with Push Status Active."
-            />
-          </div>
-        </li>
+        <.docs_step n={1}>
+          <.docs_step_venue>Okta</.docs_step_venue>
+          <p class="font-semibold text-zinc-100">Add the SCIM 2.0 Header Auth app.</p>
+          <p class="mt-1.5">
+            In the Okta Admin Console go to
+            <strong class="text-zinc-200">Applications → Applications → Browse App Catalog</strong>
+            and search for <strong class="text-zinc-200">SCIM 2.0</strong>. Pick
+            <strong class="text-zinc-200">SCIM 2.0 Test App (Header Auth)</strong>
+            — Header Auth is the variant that sends the token the way emisar reads it — then <strong class="text-zinc-200">Add Integration</strong>. Name it something an
+            administrator will recognise later, take the defaults on the Sign-On tab, and finish.
+          </p>
+          <.docs_screenshot
+            src="/images/docs/sso/okta-scim-catalog.webp"
+            title="Okta Admin Console · Browse App Integration Catalog"
+            caption="Four SCIM test apps share this name — take the 2.0 Header Auth one."
+            alt="Okta's Browse App Integration Catalog with SCIM 2.0 Test App typed into the search box, showing a typeahead list of SCIM 2.0 Test App (Basic Auth), SCIM 2.0 Test App (Header Auth), SCIM 2.0 Test App (OAuth Bearer Token), SCIM 1.1 Test App (Header Auth), and SCIM 1.1 Test App (Basic Auth)."
+          />
+        </.docs_step>
+        <.docs_step n={2}>
+          <.docs_step_venue>Okta</.docs_step_venue>
+          <p class="font-semibold text-zinc-100">
+            Point it at emisar and test the credentials.
+          </p>
+          <p class="mt-1.5">
+            On the application's <strong class="text-zinc-200">Provisioning</strong>
+            tab, choose <strong class="text-zinc-200">Configure API Integration</strong>
+            and enable API
+            integration. Enter the SCIM base URL as <strong class="text-zinc-200">Base URL</strong>. Enter the bearer as <strong class="text-zinc-200">API Token</strong>. Paste the token exactly as emisar
+            showed it. Okta sends it in the
+            <.docs_inline_code>Authorization</.docs_inline_code>
+            header without a
+            <.docs_inline_code>Bearer</.docs_inline_code>
+            keyword. The
+            <.docs_inline_code>ems-</.docs_inline_code>
+            prefix lets emisar accept it unambiguously. Select
+            <strong class="text-zinc-200">Test API Credentials</strong>
+            before saving.
+          </p>
+          <.docs_screenshot
+            src="/images/docs/sso/okta-scim-verified.webp"
+            title="Okta Admin Console · Test API Credentials"
+            caption="The green result confirms that Okta reached emisar with this URL and bearer."
+            alt="Okta's SCIM API integration form after a successful live test, with a green verified-success message, the emisar SCIM base URL filled, the API Token masked, and Import Groups enabled."
+          />
+          <p class="mt-4">
+            A failed test means the token or URL is wrong. Check for a truncated token and a base
+            URL missing its
+            <.docs_inline_code>/scim/v2</.docs_inline_code>
+            suffix. For a bad token, emisar returns <em>“The SCIM bearer token is missing,
+            malformed, or not authorized.”</em>
+            Okta shows this message. Rotate the token in
+            emisar and paste the new one.
+          </p>
+        </.docs_step>
+        <.docs_step n={3}>
+          <.docs_step_venue>Okta</.docs_step_venue>
+          <p class="font-semibold text-zinc-100">Turn on the lifecycle operations.</p>
+          <p class="mt-1.5">
+            Still under <strong class="text-zinc-200">Provisioning</strong>, open
+            <strong class="text-zinc-200">To App</strong>
+            → <strong class="text-zinc-200">Edit</strong>
+            and set each operation as follows:
+          </p>
+          <.docs_settings>
+            <:setting label="Create Users">
+              <strong class="text-zinc-200">On.</strong> Assigned people can be provisioned.
+            </:setting>
+            <:setting label="Update User Attributes">
+              <strong class="text-zinc-200">On.</strong> Profile changes reach Emisar.
+            </:setting>
+            <:setting label="Deactivate Users">
+              <strong class="text-zinc-200">On.</strong> This makes offboarding automatic and
+              also carries reactivation.
+            </:setting>
+            <:setting label="Sync Password">
+              <strong class="text-zinc-200">Off.</strong> Emisar has no passwords to sync.
+            </:setting>
+          </.docs_settings>
+          <.docs_screenshot
+            src="/images/docs/sso/okta-scim-to-app.webp"
+            title="Okta Admin Console · Provisioning to App"
+            caption="Without these three, the integration authenticates but never pushes anything."
+            alt="Okta's Provisioning to App settings in edit mode with Create Users, Update User Attributes and Deactivate Users all enabled, and Sync Password left off."
+          />
+        </.docs_step>
+        <.docs_step n={4}>
+          <.docs_step_venue>Okta</.docs_step_venue>
+          <p class="font-semibold text-zinc-100">Assign the people to sync.</p>
+          <p class="mt-1.5">
+            Assignment is what actually provisions someone. On the
+            <strong class="text-zinc-200">Assignments</strong>
+            tab, use <strong class="text-zinc-200">Assign</strong>
+            → <strong class="text-zinc-200">Assign to People</strong>
+            (or to a group). Each person you assign appears in emisar under
+            <strong class="text-zinc-200">Synced members</strong>
+            at the connection's default role, and each one you unassign is deprovisioned there.
+          </p>
+          <.docs_screenshot
+            src="/images/docs/sso/okta-scim-assignments.webp"
+            title="Okta · Assignments"
+            caption="This live assignment provisioned the certification user through the assigned Okta group."
+            alt="The Assignments tab of the emisar directory sync application in Okta, with the Assign dropdown outlined in green and one assigned certification user listed below it."
+          />
+        </.docs_step>
+        <.docs_step n={5}>
+          <.docs_step_venue>Okta</.docs_step_venue>
+          <p class="font-semibold text-zinc-100">
+            Push the groups you want to map access from.
+          </p>
+          <p class="mt-1.5">
+            Complete this step when Okta groups control roles or runner access. Groups travel on their
+            own tab — <strong class="text-zinc-200">Push Groups</strong>, beside Assignments, not
+            part of the To App settings you just turned on. Push a group here and it appears in
+            emisar under <strong class="text-zinc-200">Synced groups</strong>, ready to map by its
+            immutable directory-group identity.
+          </p>
+          <.docs_screenshot
+            src="/images/docs/sso/okta-scim-push-groups.webp"
+            title="Okta · Push Groups"
+            caption="This group was pushed successfully and is Active. Assigning people does not push their groups."
+            alt="The Push Groups tab of the emisar directory sync application in Okta, with the Push Groups action outlined in green and one certification group listed with Push Status Active."
+          />
+        </.docs_step>
       </ol>
 
       <.docs_callout kind={:note} title="Okta lines up on identity by default.">

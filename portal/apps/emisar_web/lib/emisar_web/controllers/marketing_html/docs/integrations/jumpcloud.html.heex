@@ -27,208 +27,168 @@
         Connecting an identity provider is a paid feature. <.plan_note tier={:team} />
       </p>
       <ol class="mt-8 space-y-10">
-        <li class="flex gap-4">
-          <span class="grid h-8 w-8 flex-none place-items-center rounded-full bg-brand-500/20 text-sm font-semibold text-brand-300">
-            1
-          </span>
-          <div class="min-w-0 text-base leading-7 text-zinc-400">
-            <.docs_step_venue>emisar</.docs_step_venue>
-            <p class="font-semibold text-zinc-100">Start the connection.</p>
-            <p class="mt-1.5">
-              Open
-              <a
-                href={~p"/app/sso/new"}
-                class="font-medium text-brand-400 underline decoration-zinc-700 underline-offset-4 hover:text-brand-300"
-              >Team → Single sign-on → Add provider</a>
-              and choose <strong class="text-zinc-200">JumpCloud</strong>. Leave the page open: the
-              callback URL on it is what JumpCloud asks for next, and JumpCloud's values come back here
-              at the end.
-            </p>
-            <.docs_screenshot
-              src="/images/docs/sso/jumpcloud-emisar-add-provider.webp"
-              title="emisar · Add provider"
-              caption="Picking the provider here tailors the rest of the form to it."
-              alt="emisar's Add provider form with the Provider type select outlined in green and set to JumpCloud."
-            />
-          </div>
-        </li>
-        <li class="flex gap-4">
-          <span class="grid h-8 w-8 flex-none place-items-center rounded-full bg-brand-500/20 text-sm font-semibold text-brand-300">
-            2
-          </span>
-          <div class="min-w-0 text-base leading-7 text-zinc-400">
-            <.docs_step_venue>JumpCloud</.docs_step_venue>
-            <p class="font-semibold text-zinc-100">Open SSO Applications.</p>
-            <p class="mt-1.5">
-              In the JumpCloud Admin Portal go to
-              <strong class="text-zinc-200">Access → SSO Applications</strong>
-              and press <strong class="text-zinc-200">Add New Application</strong>.
-            </p>
-          </div>
-        </li>
-        <li class="flex gap-4">
-          <span class="grid h-8 w-8 flex-none place-items-center rounded-full bg-brand-500/20 text-sm font-semibold text-brand-300">
-            3
-          </span>
-          <div class="min-w-0 text-base leading-7 text-zinc-400">
-            <.docs_step_venue>JumpCloud</.docs_step_venue>
-            <p class="font-semibold text-zinc-100">Choose Custom Application.</p>
-            <p class="mt-1.5">
-              emisar is not in JumpCloud's catalog, so scroll past the featured tiles to <strong class="text-zinc-200">Custom Application</strong>, press its <strong class="text-zinc-200">Select</strong>, then <strong class="text-zinc-200">Next</strong>.
-            </p>
+        <.docs_step n={1}>
+          <.docs_step_venue>emisar</.docs_step_venue>
+          <p class="font-semibold text-zinc-100">Start the connection.</p>
+          <p class="mt-1.5">
+            Open
+            <a
+              href={~p"/app/sso/new"}
+              class="font-medium text-brand-400 underline decoration-zinc-700 underline-offset-4 hover:text-brand-300"
+            >Team → Single sign-on → Add provider</a>
+            and choose <strong class="text-zinc-200">JumpCloud</strong>. Leave the page open: the
+            callback URL on it is what JumpCloud asks for next, and JumpCloud's values come back here
+            at the end.
+          </p>
+          <.docs_screenshot
+            src="/images/docs/sso/jumpcloud-emisar-add-provider.webp"
+            title="emisar · Add provider"
+            caption="Picking the provider here tailors the rest of the form to it."
+            alt="emisar's Add provider form with the Provider type select outlined in green and set to JumpCloud."
+          />
+        </.docs_step>
+        <.docs_step n={2}>
+          <.docs_step_venue>JumpCloud</.docs_step_venue>
+          <p class="font-semibold text-zinc-100">Open SSO Applications.</p>
+          <p class="mt-1.5">
+            In the JumpCloud Admin Portal go to
+            <strong class="text-zinc-200">Access → SSO Applications</strong>
+            and press <strong class="text-zinc-200">Add New Application</strong>.
+          </p>
+        </.docs_step>
+        <.docs_step n={3}>
+          <.docs_step_venue>JumpCloud</.docs_step_venue>
+          <p class="font-semibold text-zinc-100">Choose Custom Application.</p>
+          <p class="mt-1.5">
+            emisar is not in JumpCloud's catalog, so scroll past the featured tiles to <strong class="text-zinc-200">Custom Application</strong>, press its <strong class="text-zinc-200">Select</strong>, then <strong class="text-zinc-200">Next</strong>.
+          </p>
 
-            <.docs_screenshot
-              src="/images/docs/sso/jumpcloud-sso-custom-app.webp"
-              title="JumpCloud · Select Application"
-              caption="The Custom Application tile sits last, after the catalog's featured integrations."
-              alt="JumpCloud's Create New Application Integration wizard on step 1, Select Application, showing featured tiles for Google Workspace, AWS IAM Identity Center, Slack, Atlassian Cloud, Personio, CrowdStrike and Salesforce, with the Custom Application tile in the bottom-right corner outlined in green."
-            />
-          </div>
-        </li>
-        <li class="flex gap-4">
-          <span class="grid h-8 w-8 flex-none place-items-center rounded-full bg-brand-500/20 text-sm font-semibold text-brand-300">
-            4
-          </span>
-          <div class="min-w-0 text-base leading-7 text-zinc-400">
-            <.docs_step_venue>JumpCloud</.docs_step_venue>
-            <p class="font-semibold text-zinc-100">Enable SSO, and pick OIDC.</p>
-            <p class="mt-1.5">
-              Tick <strong class="text-zinc-200">Manage Single Sign-On (SSO)</strong>. That reveals a
-              <strong class="text-zinc-200">Select One</strong>
-              pair beneath it — choose <strong class="text-zinc-200">Configure SSO with OIDC</strong>.
-              The form defaults to SAML, but emisar uses OIDC. Select Configure SSO with OIDC now
-              because changing this choice later is difficult.
-            </p>
-            <p class="mt-4">
-              If you also want directory sync, tick
-              <strong class="text-zinc-200">Export users to this app (Provisioning)</strong>
-              on this same step — JumpCloud carries both on one application. Leave
-              <strong class="text-zinc-200">Import users from this app</strong>
-              off. That direction
-              pulls users into JumpCloud.
-            </p>
+          <.docs_screenshot
+            src="/images/docs/sso/jumpcloud-sso-custom-app.webp"
+            title="JumpCloud · Select Application"
+            caption="The Custom Application tile sits last, after the catalog's featured integrations."
+            alt="JumpCloud's Create New Application Integration wizard on step 1, Select Application, showing featured tiles for Google Workspace, AWS IAM Identity Center, Slack, Atlassian Cloud, Personio, CrowdStrike and Salesforce, with the Custom Application tile in the bottom-right corner outlined in green."
+          />
+        </.docs_step>
+        <.docs_step n={4}>
+          <.docs_step_venue>JumpCloud</.docs_step_venue>
+          <p class="font-semibold text-zinc-100">Enable SSO, and pick OIDC.</p>
+          <p class="mt-1.5">
+            Tick <strong class="text-zinc-200">Manage Single Sign-On (SSO)</strong>. That reveals a
+            <strong class="text-zinc-200">Select One</strong>
+            pair beneath it — choose <strong class="text-zinc-200">Configure SSO with OIDC</strong>.
+            The form defaults to SAML, but emisar uses OIDC. Select Configure SSO with OIDC now
+            because changing this choice later is difficult.
+          </p>
+          <p class="mt-4">
+            If you also want directory sync, tick
+            <strong class="text-zinc-200">Export users to this app (Provisioning)</strong>
+            on this same step — JumpCloud carries both on one application. Leave
+            <strong class="text-zinc-200">Import users from this app</strong>
+            off. That direction
+            pulls users into JumpCloud.
+          </p>
 
-            <.docs_screenshot
-              src="/images/docs/sso/jumpcloud-sso-options.webp"
-              title="JumpCloud · Select Options"
-              caption="SSO with OIDC and Export users, together on one application. Import users stays off — it points the wrong way."
-              alt="JumpCloud's Select Options step with Manage Single Sign-On (SSO) checked and outlined in green, its Select One radio pair showing Configure SSO with OIDC selected rather than the default SAML; Export users to this app (Provisioning) is also checked, Import users from this app and Add a bookmark are unchecked, and the Next button is enabled."
-            />
-          </div>
-        </li>
-        <li class="flex gap-4">
-          <span class="grid h-8 w-8 flex-none place-items-center rounded-full bg-brand-500/20 text-sm font-semibold text-brand-300">
-            5
-          </span>
-          <div class="min-w-0 text-base leading-7 text-zinc-400">
-            <.docs_step_venue>JumpCloud</.docs_step_venue>
-            <p class="font-semibold text-zinc-100">Name it.</p>
-            <p class="mt-1.5">
-              <strong class="text-zinc-200">Display Label</strong>
-              is what your people see in the JumpCloud User Portal —
-              <.docs_inline_code>emisar</.docs_inline_code>
-              is the obvious choice. Everything else on this step is cosmetic.
-            </p>
+          <.docs_screenshot
+            src="/images/docs/sso/jumpcloud-sso-options.webp"
+            title="JumpCloud · Select Options"
+            caption="SSO with OIDC and Export users, together on one application. Import users stays off — it points the wrong way."
+            alt="JumpCloud's Select Options step with Manage Single Sign-On (SSO) checked and outlined in green, its Select One radio pair showing Configure SSO with OIDC selected rather than the default SAML; Export users to this app (Provisioning) is also checked, Import users from this app and Add a bookmark are unchecked, and the Next button is enabled."
+          />
+        </.docs_step>
+        <.docs_step n={5}>
+          <.docs_step_venue>JumpCloud</.docs_step_venue>
+          <p class="font-semibold text-zinc-100">Name it.</p>
+          <p class="mt-1.5">
+            <strong class="text-zinc-200">Display Label</strong>
+            is what your people see in the JumpCloud User Portal —
+            <.docs_inline_code>emisar</.docs_inline_code>
+            is the obvious choice. Everything else on this step is cosmetic.
+          </p>
 
-            <.docs_screenshot
-              src="/images/docs/sso/jumpcloud-sso-general-info.webp"
-              title="JumpCloud · Enter General Info"
-              caption="Only Display Label is required."
-              alt="JumpCloud's Enter General Info step with the Display Label field filled in with emisar and focused, an empty optional Description, a Color Indicator picker set to blue, and Show this application in User Portal checked."
-            />
-          </div>
-        </li>
-        <li class="flex gap-4">
-          <span class="grid h-8 w-8 flex-none place-items-center rounded-full bg-brand-500/20 text-sm font-semibold text-brand-300">
-            6
-          </span>
-          <div class="min-w-0 text-base leading-7 text-zinc-400">
-            <.docs_step_venue>JumpCloud</.docs_step_venue>
-            <p class="font-semibold text-zinc-100">Check the summary, then configure.</p>
-            <p class="mt-1.5">
-              <strong class="text-zinc-200">Enabled Features</strong>
-              must list <strong class="text-zinc-200">SSO with OIDC</strong>. It also lists
-              <strong class="text-zinc-200">User Export - Provisioning</strong>
-              when selected. If
-              the list says SAML, go <strong class="text-zinc-200">Back</strong>
-              and change the
-              radio. emisar cannot use a SAML connector. Then select <strong class="text-zinc-200">Configure Application</strong>.
-            </p>
+          <.docs_screenshot
+            src="/images/docs/sso/jumpcloud-sso-general-info.webp"
+            title="JumpCloud · Enter General Info"
+            caption="Only Display Label is required."
+            alt="JumpCloud's Enter General Info step with the Display Label field filled in with emisar and focused, an empty optional Description, a Color Indicator picker set to blue, and Show this application in User Portal checked."
+          />
+        </.docs_step>
+        <.docs_step n={6}>
+          <.docs_step_venue>JumpCloud</.docs_step_venue>
+          <p class="font-semibold text-zinc-100">Check the summary, then configure.</p>
+          <p class="mt-1.5">
+            <strong class="text-zinc-200">Enabled Features</strong>
+            must list <strong class="text-zinc-200">SSO with OIDC</strong>. It also lists
+            <strong class="text-zinc-200">User Export - Provisioning</strong>
+            when selected. If
+            the list says SAML, go <strong class="text-zinc-200">Back</strong>
+            and change the
+            radio. emisar cannot use a SAML connector. Then select <strong class="text-zinc-200">Configure Application</strong>.
+          </p>
 
-            <.docs_screenshot
-              src="/images/docs/sso/jumpcloud-sso-review.webp"
-              title="JumpCloud · Review"
-              caption="Enabled Features is the check that the OIDC radio actually took."
-              alt="JumpCloud's Review step for an application about to be added, whose Application Summary panel shows Display Label emisar and Enabled Features listing both SSO with OIDC and User Export - Provisioning, outlined in green, beside a Configure Application button."
-            />
-          </div>
-        </li>
-        <li class="flex gap-4">
-          <span class="grid h-8 w-8 flex-none place-items-center rounded-full bg-brand-500/20 text-sm font-semibold text-brand-300">
-            7
-          </span>
-          <div class="min-w-0 text-base leading-7 text-zinc-400">
-            <.docs_step_venue>JumpCloud</.docs_step_venue>
-            <p class="font-semibold text-zinc-100">Set the redirect URI, then activate.</p>
-            <p class="mt-1.5">
-              On the application's <strong class="text-zinc-200">SSO</strong>
-              tab, put emisar's callback in <strong class="text-zinc-200">Redirect URIs</strong>:
-            </p>
-            <.docs_value label="Redirect URI" copy_text="https://emisar.dev/sign_in/sso/callback">
-              https://emisar.dev/sign_in/sso/callback
-            </.docs_value>
-            <p class="mt-4">
-              Leave <strong class="text-zinc-200">Authorization Code</strong>
-              as the grant type. Either <strong class="text-zinc-200">Client Secret POST</strong>
-              or <strong class="text-zinc-200">Client Secret Basic</strong>
-              works — emisar accepts both. Set <strong class="text-zinc-200">Login URL</strong>
-              to <.docs_inline_code>https://emisar.dev</.docs_inline_code>.
-            </p>
-            <.docs_screenshot
-              src="/images/docs/sso/jumpcloud-sso-oidc-config.webp"
-              title="JumpCloud · OIDC Single Sign-On Configuration"
-              caption="Redirect URIs takes emisar's callback verbatim; Login URL uses the public emisar host."
-              alt="The SSO tab of a JumpCloud OpenID Connect application, with Single Sign-On Active and Provisioning Inactive badges. The complete Redirect URIs group is outlined in green around its heading, https://emisar.dev/sign_in/sso/callback field, and Add URI button; Client Authentication Type is Client Secret POST and Login URL is https://emisar.dev/sign_in."
-            />
-            <p class="mt-4">
-              Under <strong class="text-zinc-200">Attribute Mapping → Standard Scopes</strong>,
-              select <strong class="text-zinc-200">Email</strong>
-              and <strong class="text-zinc-200">Profile</strong>. Email adds the
-              <.docs_inline_code>email</.docs_inline_code>
-              and
-              <.docs_inline_code>email_verified</.docs_inline_code>
-              claims emisar checks before joining sign-in to a synced user. Profile supplies the
-              display-name claims. Then press <strong class="text-zinc-200">Activate</strong>.
-            </p>
-            <.docs_screenshot
-              src="/images/docs/sso/jumpcloud-sso-oidc-scopes.webp"
-              title="JumpCloud · OIDC Attribute Mapping"
-              caption="Email and Profile must both be selected before activation."
-              alt="The SSO tab of a JumpCloud OpenID Connect application, with Single Sign-On Active and Provisioning Inactive badges. Under Attribute Mapping, one green outline surrounds the Standard Scopes heading and the selected Email and Profile rows."
-            />
-          </div>
-        </li>
-        <li class="flex gap-4">
-          <span class="grid h-8 w-8 flex-none place-items-center rounded-full bg-brand-500/20 text-sm font-semibold text-brand-300">
-            8
-          </span>
-          <div class="min-w-0 text-base leading-7 text-zinc-400">
-            <.docs_step_venue>emisar</.docs_step_venue>
-            <p class="font-semibold text-zinc-100">Paste the two values it reveals.</p>
-            <p class="mt-1.5">
-              Activating shows the <strong class="text-zinc-200">Client ID</strong>
-              and <strong class="text-zinc-200">Client Secret</strong>. The issuer is already filled and
-              locked on the connection from step 1. Every JumpCloud organization uses the same
-              issuer. Enter only the client ID and secret. Select <strong class="text-zinc-200">Enabled</strong>, save, and sign in.
-            </p>
-            <.docs_screenshot
-              src="/images/docs/sso/jumpcloud-emisar-credentials.webp"
-              title="emisar · Add provider"
-              caption="Nothing to look up: JumpCloud's issuer is fixed, so emisar fills and locks it."
-              alt="emisar's OIDC connection fields with the Issuer URL locked at https://oauth.id.jumpcloud.com/ behind a padlock, and Client ID and Client secret each outlined in green below it."
-            />
-          </div>
-        </li>
+          <.docs_screenshot
+            src="/images/docs/sso/jumpcloud-sso-review.webp"
+            title="JumpCloud · Review"
+            caption="Enabled Features is the check that the OIDC radio actually took."
+            alt="JumpCloud's Review step for an application about to be added, whose Application Summary panel shows Display Label emisar and Enabled Features listing both SSO with OIDC and User Export - Provisioning, outlined in green, beside a Configure Application button."
+          />
+        </.docs_step>
+        <.docs_step n={7}>
+          <.docs_step_venue>JumpCloud</.docs_step_venue>
+          <p class="font-semibold text-zinc-100">Set the redirect URI, then activate.</p>
+          <p class="mt-1.5">
+            On the application's <strong class="text-zinc-200">SSO</strong>
+            tab, put emisar's callback in <strong class="text-zinc-200">Redirect URIs</strong>:
+          </p>
+          <.docs_value label="Redirect URI" copy_text="https://emisar.dev/sign_in/sso/callback">
+            https://emisar.dev/sign_in/sso/callback
+          </.docs_value>
+          <p class="mt-4">
+            Leave <strong class="text-zinc-200">Authorization Code</strong>
+            as the grant type. Either <strong class="text-zinc-200">Client Secret POST</strong>
+            or <strong class="text-zinc-200">Client Secret Basic</strong>
+            works — emisar accepts both. Set <strong class="text-zinc-200">Login URL</strong>
+            to <.docs_inline_code>https://emisar.dev</.docs_inline_code>.
+          </p>
+          <.docs_screenshot
+            src="/images/docs/sso/jumpcloud-sso-oidc-config.webp"
+            title="JumpCloud · OIDC Single Sign-On Configuration"
+            caption="Redirect URIs takes emisar's callback verbatim; Login URL uses the public emisar host."
+            alt="The SSO tab of a JumpCloud OpenID Connect application, with Single Sign-On Active and Provisioning Inactive badges. The complete Redirect URIs group is outlined in green around its heading, https://emisar.dev/sign_in/sso/callback field, and Add URI button; Client Authentication Type is Client Secret POST and Login URL is https://emisar.dev/sign_in."
+          />
+          <p class="mt-4">
+            Under <strong class="text-zinc-200">Attribute Mapping → Standard Scopes</strong>,
+            select <strong class="text-zinc-200">Email</strong>
+            and <strong class="text-zinc-200">Profile</strong>. Email adds the
+            <.docs_inline_code>email</.docs_inline_code>
+            and
+            <.docs_inline_code>email_verified</.docs_inline_code>
+            claims emisar checks before joining sign-in to a synced user. Profile supplies the
+            display-name claims. Then press <strong class="text-zinc-200">Activate</strong>.
+          </p>
+          <.docs_screenshot
+            src="/images/docs/sso/jumpcloud-sso-oidc-scopes.webp"
+            title="JumpCloud · OIDC Attribute Mapping"
+            caption="Email and Profile must both be selected before activation."
+            alt="The SSO tab of a JumpCloud OpenID Connect application, with Single Sign-On Active and Provisioning Inactive badges. Under Attribute Mapping, one green outline surrounds the Standard Scopes heading and the selected Email and Profile rows."
+          />
+        </.docs_step>
+        <.docs_step n={8}>
+          <.docs_step_venue>emisar</.docs_step_venue>
+          <p class="font-semibold text-zinc-100">Paste the two values it reveals.</p>
+          <p class="mt-1.5">
+            Activating shows the <strong class="text-zinc-200">Client ID</strong>
+            and <strong class="text-zinc-200">Client Secret</strong>. The issuer is already filled and
+            locked on the connection from step 1. Every JumpCloud organization uses the same
+            issuer. Enter only the client ID and secret. Select <strong class="text-zinc-200">Enabled</strong>, save, and sign in.
+          </p>
+          <.docs_screenshot
+            src="/images/docs/sso/jumpcloud-emisar-credentials.webp"
+            title="emisar · Add provider"
+            caption="Nothing to look up: JumpCloud's issuer is fixed, so emisar fills and locks it."
+            alt="emisar's OIDC connection fields with the Issuer URL locked at https://oauth.id.jumpcloud.com/ behind a padlock, and Client ID and Client secret each outlined in green below it."
+          />
+        </.docs_step>
       </ol>
 
       <.docs_callout kind={:note} title="The rest of the connection form">
@@ -261,55 +221,45 @@
         shows where both come from. <.plan_note tier={:enterprise} />
       </p>
       <ol class="mt-8 space-y-10">
-        <li class="flex gap-4">
-          <span class="grid h-8 w-8 flex-none place-items-center rounded-full bg-brand-500/20 text-sm font-semibold text-brand-300">
-            1
-          </span>
-          <div class="min-w-0 text-base leading-7 text-zinc-400">
-            <.docs_step_venue>JumpCloud</.docs_step_venue>
-            <p class="font-semibold text-zinc-100">Point its Provisioning tab at emisar.</p>
-            <p class="mt-1.5">
-              Open the saved application's <strong class="text-zinc-200">Provisioning</strong>
-              tab.
-              JumpCloud also calls it <em>Identity Management</em>. The SCIM version is fixed at
-              2.0. Set <strong class="text-zinc-200">Authentication method</strong>
-              to <strong class="text-zinc-200">Bearer token</strong>. Enter the SCIM base URL as <strong class="text-zinc-200">Base URL</strong>. Enter the bearer as <strong class="text-zinc-200">Token Key</strong>.
-              <strong class="text-zinc-200">Test User Email</strong>
-              must not already exist in
-              emisar. JumpCloud creates and deletes this user during the live check. An existing
-              member causes activation to fail.
-            </p>
-          </div>
-        </li>
-        <li class="flex gap-4">
-          <span class="grid h-8 w-8 flex-none place-items-center rounded-full bg-brand-500/20 text-sm font-semibold text-brand-300">
-            2
-          </span>
-          <div class="min-w-0 text-base leading-7 text-zinc-400">
-            <.docs_step_venue>JumpCloud</.docs_step_venue>
-            <p class="font-semibold text-zinc-100">Test Connection, then Activate.</p>
-            <p class="mt-1.5">
-              Press <strong class="text-zinc-200">Test Connection</strong>, then <strong class="text-zinc-200">Activate</strong>. Activation creates, renames, and
-              deletes a probe group. It also provisions and removes the test user from your live
-              emisar account. Do not press Save. JumpCloud discards the configuration and makes you
-              start over. The probe group can omit <.docs_inline_code>externalId</.docs_inline_code>. emisar returns
-              the id used for the rename and delete.
-            </p>
-            <.docs_screenshot
-              src="/images/docs/sso/jumpcloud-scim-activate.webp"
-              title="JumpCloud · Provisioning"
-              caption="The accepted configuration reports Provisioning Active; the bearer remains masked."
-              alt="The Provisioning tab of a live JumpCloud OpenID Connect application with the Provisioning Active badge outlined in green. Authentication method is Bearer token, Base URL contains https://emisar.dev/scim/v2, Token Key is masked, and both credential fields are outlined in green."
-            />
-            <p class="mt-4">
-              Then bind the people you want synced: the app's
-              <strong class="text-zinc-200">User Groups</strong>
-              tab decides who is in scope. Members appear under
-              <strong class="text-zinc-200">Synced members</strong>
-              on the emisar connection, and their JumpCloud groups become mappable to roles below.
-            </p>
-          </div>
-        </li>
+        <.docs_step n={1}>
+          <.docs_step_venue>JumpCloud</.docs_step_venue>
+          <p class="font-semibold text-zinc-100">Point its Provisioning tab at emisar.</p>
+          <p class="mt-1.5">
+            Open the saved application's <strong class="text-zinc-200">Provisioning</strong>
+            tab.
+            JumpCloud also calls it <em>Identity Management</em>. The SCIM version is fixed at
+            2.0. Set <strong class="text-zinc-200">Authentication method</strong>
+            to <strong class="text-zinc-200">Bearer token</strong>. Enter the SCIM base URL as <strong class="text-zinc-200">Base URL</strong>. Enter the bearer as <strong class="text-zinc-200">Token Key</strong>.
+            <strong class="text-zinc-200">Test User Email</strong>
+            must not already exist in
+            emisar. JumpCloud creates and deletes this user during the live check. An existing
+            member causes activation to fail.
+          </p>
+        </.docs_step>
+        <.docs_step n={2}>
+          <.docs_step_venue>JumpCloud</.docs_step_venue>
+          <p class="font-semibold text-zinc-100">Test Connection, then Activate.</p>
+          <p class="mt-1.5">
+            Press <strong class="text-zinc-200">Test Connection</strong>, then <strong class="text-zinc-200">Activate</strong>. Activation creates, renames, and
+            deletes a probe group. It also provisions and removes the test user from your live
+            emisar account. Do not press Save. JumpCloud discards the configuration and makes you
+            start over. The probe group can omit <.docs_inline_code>externalId</.docs_inline_code>. emisar returns
+            the id used for the rename and delete.
+          </p>
+          <.docs_screenshot
+            src="/images/docs/sso/jumpcloud-scim-activate.webp"
+            title="JumpCloud · Provisioning"
+            caption="The accepted configuration reports Provisioning Active; the bearer remains masked."
+            alt="The Provisioning tab of a live JumpCloud OpenID Connect application with the Provisioning Active badge outlined in green. Authentication method is Bearer token, Base URL contains https://emisar.dev/scim/v2, Token Key is masked, and both credential fields are outlined in green."
+          />
+          <p class="mt-4">
+            Then bind the people you want synced: the app's
+            <strong class="text-zinc-200">User Groups</strong>
+            tab decides who is in scope. Members appear under
+            <strong class="text-zinc-200">Synced members</strong>
+            on the emisar connection, and their JumpCloud groups become mappable to roles below.
+          </p>
+        </.docs_step>
       </ol>
 
       <.docs_h3 id="one-person-one-member">When sign-in and the directory disagree</.docs_h3>

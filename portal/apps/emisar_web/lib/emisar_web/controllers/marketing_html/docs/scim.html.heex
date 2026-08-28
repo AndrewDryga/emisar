@@ -53,111 +53,96 @@
       />
 
       <ol class="mt-8 space-y-6">
-        <li class="flex gap-4">
-          <span class="grid h-8 w-8 flex-none place-items-center rounded-full bg-brand-500/20 text-sm font-semibold text-brand-300">
-            1
-          </span>
-          <div class="min-w-0 text-base leading-7 text-zinc-400">
-            <p class="font-semibold text-zinc-100">
-              From <a
-                href={~p"/app/sso"}
-                class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
-              >Team → Single sign-on</a>, open the connection and click <span class="text-zinc-300">Enable directory sync</span>.
-            </p>
-            <p class="mt-1.5">
-              emisar shows you two things to wire into your provider's SCIM connector:
-            </p>
-            <ul class="mt-2 space-y-2">
-              <li class="flex items-start gap-2.5">
-                <span class="flex-none text-zinc-500">—</span>
-                <span>
-                  the <strong class="text-zinc-200">SCIM base URL</strong>
-                  —
-                  <.docs_inline_code>/scim/v2</.docs_inline_code>
-                  on your emisar host (copy button beside it)
-                </span>
-              </li>
-              <li class="flex items-start gap-2.5">
-                <span class="flex-none text-zinc-500">—</span>
-                <span>
-                  the <strong class="text-zinc-200">bearer token</strong>
-                  — shown once when you enable or rotate, so copy it immediately; if you
-                  missed it, <strong class="text-zinc-200">Rotate token</strong>
-                  mints a new one and the old one stops working.
-                </span>
-              </li>
-            </ul>
-          </div>
-        </li>
-        <li class="flex gap-4">
-          <span class="grid h-8 w-8 flex-none place-items-center rounded-full bg-brand-500/20 text-sm font-semibold text-brand-300">
-            2
-          </span>
-          <div class="min-w-0 text-base leading-7 text-zinc-400">
-            <p class="font-semibold text-zinc-100">
-              Point your IdP's SCIM connector at that base URL and bearer.
-            </p>
-            <p class="mt-1.5">
-              Set the SCIM endpoint to the base URL, paste the token as the API token (emisar
-              reads it from the
-              <.docs_inline_code>Authorization</.docs_inline_code>
-              header), and enable Create, Update, and Deactivate. Okta and Entra need a
-              separate provisioning application — their OIDC login applications cannot
-              provision through SCIM — while JumpCloud carries sign-in and provisioning in
-              one. The <strong class="text-zinc-200">“Point your IdP at this connection”</strong>
-              guide lists the provider-specific settings.
-            </p>
-          </div>
-        </li>
-        <li class="flex gap-4">
-          <span class="grid h-8 w-8 flex-none place-items-center rounded-full bg-brand-500/20 text-sm font-semibold text-brand-300">
-            3
-          </span>
-          <div class="min-w-0 text-base leading-7 text-zinc-400">
-            <p class="font-semibold text-zinc-100">
-              Match the SCIM externalId to the OIDC subject.
-            </p>
-            <p class="mt-1.5">
-              Configure
-              <.docs_inline_code>externalId</.docs_inline_code>
-              to carry the same stable value as the connection's identifier claim, so the SSO
-              login and the synced record resolve to one emisar identity. Matching never uses
-              email, so identifiers that differ cannot be reconciled.
-            </p>
-            <ul class="mt-2 space-y-2">
-              <li class="flex items-start gap-2.5">
-                <span class="flex-none text-zinc-500">—</span>
-                <span>
-                  <strong class="text-zinc-200">Okta</strong>
-                  usually needs no changes: it puts the Okta user ID in <.docs_inline_code>externalId</.docs_inline_code>, and
-                  its organization authorization server sends the same value as
-                  <.docs_inline_code>sub</.docs_inline_code>
-                  — though Okta shows that in examples rather than guaranteeing it, and a
-                  custom authorization server can rewrite the subject claim.
-                </span>
-              </li>
-              <li class="flex items-start gap-2.5">
-                <span class="flex-none text-zinc-500">—</span>
-                <span>
-                  <strong class="text-zinc-200">Entra</strong>
-                  needs changes on both sides: map
-                  <.docs_inline_code>externalId</.docs_inline_code>
-                  from
-                  <.docs_inline_code>mailNickname</.docs_inline_code>
-                  to <.docs_inline_code>objectId</.docs_inline_code>, and
-                  set the connection's identifier claim to <.docs_inline_code>oid</.docs_inline_code>. Entra sends
-                  a different
-                  <.docs_inline_code>sub</.docs_inline_code>
-                  per application, so without both changes the login and provisioning
-                  applications identify different people.
-                </span>
-              </li>
-            </ul>
-            <p class="mt-2">
-              Whatever the provider, check both values against one real user before you roll out.
-            </p>
-          </div>
-        </li>
+        <.docs_step n={1}>
+          <p class="font-semibold text-zinc-100">
+            From <a
+              href={~p"/app/sso"}
+              class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
+            >Team → Single sign-on</a>, open the connection and click <span class="text-zinc-300">Enable directory sync</span>.
+          </p>
+          <p class="mt-1.5">
+            emisar shows you two things to wire into your provider's SCIM connector:
+          </p>
+          <ul class="mt-2 space-y-2">
+            <li class="flex items-start gap-2.5">
+              <span class="flex-none text-zinc-500">—</span>
+              <span>
+                the <strong class="text-zinc-200">SCIM base URL</strong>
+                —
+                <.docs_inline_code>/scim/v2</.docs_inline_code>
+                on your emisar host (copy button beside it)
+              </span>
+            </li>
+            <li class="flex items-start gap-2.5">
+              <span class="flex-none text-zinc-500">—</span>
+              <span>
+                the <strong class="text-zinc-200">bearer token</strong>
+                — shown once when you enable or rotate, so copy it immediately; if you
+                missed it, <strong class="text-zinc-200">Rotate token</strong>
+                mints a new one and the old one stops working.
+              </span>
+            </li>
+          </ul>
+        </.docs_step>
+        <.docs_step n={2}>
+          <p class="font-semibold text-zinc-100">
+            Point your IdP's SCIM connector at that base URL and bearer.
+          </p>
+          <p class="mt-1.5">
+            Set the SCIM endpoint to the base URL, paste the token as the API token (emisar
+            reads it from the
+            <.docs_inline_code>Authorization</.docs_inline_code>
+            header), and enable Create, Update, and Deactivate. Okta and Entra need a
+            separate provisioning application — their OIDC login applications cannot
+            provision through SCIM — while JumpCloud carries sign-in and provisioning in
+            one. The <strong class="text-zinc-200">“Point your IdP at this connection”</strong>
+            guide lists the provider-specific settings.
+          </p>
+        </.docs_step>
+        <.docs_step n={3}>
+          <p class="font-semibold text-zinc-100">
+            Match the SCIM externalId to the OIDC subject.
+          </p>
+          <p class="mt-1.5">
+            Configure
+            <.docs_inline_code>externalId</.docs_inline_code>
+            to carry the same stable value as the connection's identifier claim, so the SSO
+            login and the synced record resolve to one emisar identity. Matching never uses
+            email, so identifiers that differ cannot be reconciled.
+          </p>
+          <ul class="mt-2 space-y-2">
+            <li class="flex items-start gap-2.5">
+              <span class="flex-none text-zinc-500">—</span>
+              <span>
+                <strong class="text-zinc-200">Okta</strong>
+                usually needs no changes: it puts the Okta user ID in <.docs_inline_code>externalId</.docs_inline_code>, and
+                its organization authorization server sends the same value as
+                <.docs_inline_code>sub</.docs_inline_code>
+                — though Okta shows that in examples rather than guaranteeing it, and a
+                custom authorization server can rewrite the subject claim.
+              </span>
+            </li>
+            <li class="flex items-start gap-2.5">
+              <span class="flex-none text-zinc-500">—</span>
+              <span>
+                <strong class="text-zinc-200">Entra</strong>
+                needs changes on both sides: map
+                <.docs_inline_code>externalId</.docs_inline_code>
+                from
+                <.docs_inline_code>mailNickname</.docs_inline_code>
+                to <.docs_inline_code>objectId</.docs_inline_code>, and
+                set the connection's identifier claim to <.docs_inline_code>oid</.docs_inline_code>. Entra sends
+                a different
+                <.docs_inline_code>sub</.docs_inline_code>
+                per application, so without both changes the login and provisioning
+                applications identify different people.
+              </span>
+            </li>
+          </ul>
+          <p class="mt-2">
+            Whatever the provider, check both values against one real user before you roll out.
+          </p>
+        </.docs_step>
       </ol>
 
       <ul class="mt-6 space-y-3 text-base leading-7 text-zinc-400">

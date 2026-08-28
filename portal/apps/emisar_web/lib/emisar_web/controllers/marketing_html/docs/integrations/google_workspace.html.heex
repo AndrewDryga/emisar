@@ -33,195 +33,155 @@
         Connecting an identity provider is a paid feature. <.plan_note tier={:team} />
       </p>
       <ol class="mt-8 space-y-10">
-        <li class="flex gap-4">
-          <span class="grid h-8 w-8 flex-none place-items-center rounded-full bg-brand-500/20 text-sm font-semibold text-brand-300">
-            1
-          </span>
-          <div class="min-w-0 text-base leading-7 text-zinc-400">
-            <.docs_step_venue>emisar</.docs_step_venue>
-            <p class="font-semibold text-zinc-100">Start the connection.</p>
-            <p class="mt-1.5">
-              Open
-              <a
-                href={~p"/app/sso/new"}
-                class="font-medium text-brand-400 underline decoration-zinc-700 underline-offset-4 hover:text-brand-300"
-              >Team → Single sign-on → Add provider</a>
-              and choose <strong class="text-zinc-200">Google Workspace</strong>. Leave the page open: the
-              callback URL on it is what Google asks for next, and Google's values come back here
-              at the end.
-            </p>
-            <.docs_screenshot
-              src="/images/docs/sso/google-emisar-add-provider.webp"
-              title="emisar · Add provider"
-              caption="Picking the provider here tailors the rest of the form to it."
-              alt="emisar's Add provider form with the Provider type select outlined in green and set to Google Workspace."
-            />
-          </div>
-        </li>
-        <li class="flex gap-4">
-          <span class="grid h-8 w-8 flex-none place-items-center rounded-full bg-brand-500/20 text-sm font-semibold text-brand-300">
-            2
-          </span>
-          <div class="min-w-0 text-base leading-7 text-zinc-400">
-            <.docs_step_venue>Google Cloud</.docs_step_venue>
-            <p class="font-semibold text-zinc-100">Name the app your team will see.</p>
-            <p class="mt-1.5">
-              Open <strong class="text-zinc-200">Google Auth Platform → Branding</strong>. The
-              <strong class="text-zinc-200">App name</strong>
-              and <strong class="text-zinc-200">User support email</strong>
-              appear on Google's consent screen. Use a name your members recognize. On a new
-              project, Google presents the same fields in the numbered setup shown next. The
-              fields are identical.
-            </p>
-            <.docs_screenshot
-              src="/images/docs/sso/google-branding.webp"
-              title="Google Auth Platform · Branding"
-              caption="Both values appear on the consent screen your members see."
-              alt="The Branding page of Google Auth Platform with App name and User support email outlined in green, above App logo and App domain sections."
-            />
-          </div>
-        </li>
-        <li class="flex gap-4">
-          <span class="grid h-8 w-8 flex-none place-items-center rounded-full bg-brand-500/20 text-sm font-semibold text-brand-300">
-            3
-          </span>
-          <div class="min-w-0 text-base leading-7 text-zinc-400">
-            <.docs_step_venue>Google Cloud</.docs_step_venue>
-            <p class="font-semibold text-zinc-100">Keep the audience Internal.</p>
-            <p class="mt-1.5">
-              On <strong class="text-zinc-200">Audience</strong>, the user type must be <strong class="text-zinc-200">Internal</strong>. That restricts sign-in to your own
-              Workspace domain and skips Google's verification review entirely. External allows any
-              Google account. Do not use it for emisar. Google rejects outside accounts with
-              <.docs_inline_code>org_internal</.docs_inline_code>
-              before the request reaches emisar.
-            </p>
-            <.docs_screenshot
-              src="/images/docs/sso/google-audience.webp"
-              title="Google Auth Platform · Audience"
-              caption="Internal is the whole domain restriction. Google refuses outside accounts itself."
-              alt="The Google Auth Platform Audience page showing the current user type as Internal and offering a Make external button."
-            />
-          </div>
-        </li>
-        <li class="flex gap-4">
-          <span class="grid h-8 w-8 flex-none place-items-center rounded-full bg-brand-500/20 text-sm font-semibold text-brand-300">
-            4
-          </span>
-          <div class="min-w-0 text-base leading-7 text-zinc-400">
-            <.docs_step_venue>Google Cloud</.docs_step_venue>
-            <p class="font-semibold text-zinc-100">Give Google a contact address, then create.</p>
-            <p class="mt-1.5">
-              For a new project, complete <strong class="text-zinc-200">Contact
-              Information</strong> and <strong class="text-zinc-200">Finish</strong>. Enter an
-              address Google uses for project notices, then select <strong class="text-zinc-200">Create</strong>. Both fields are required but do not
-              control sign-in. The Audience setting already controls sign-in. An existing project
-              does not show these fields. Go straight to Clients.
-            </p>
-            <.docs_screenshot
-              src="/images/docs/sso/google-contact-information.webp"
-              title="Google Auth Platform · Contact Information"
-              caption="Google writes here about the project, not about sign-ins."
-              alt="Step 3, Contact Information, of Google's project configuration, with the Email addresses field outlined in green and Finish below it."
-            />
-          </div>
-        </li>
-        <li class="flex gap-4">
-          <span class="grid h-8 w-8 flex-none place-items-center rounded-full bg-brand-500/20 text-sm font-semibold text-brand-300">
-            5
-          </span>
-          <div class="min-w-0 text-base leading-7 text-zinc-400">
-            <.docs_step_venue>Google Cloud</.docs_step_venue>
-            <p class="font-semibold text-zinc-100">Start an OAuth client.</p>
-            <p class="mt-1.5">
-              Open <strong class="text-zinc-200">Clients → Create client</strong>. Existing clients are
-              listed here too, so this is where you come back to if you need the client ID again.
-            </p>
-          </div>
-        </li>
-        <li class="flex gap-4">
-          <span class="grid h-8 w-8 flex-none place-items-center rounded-full bg-brand-500/20 text-sm font-semibold text-brand-300">
-            6
-          </span>
-          <div class="min-w-0 text-base leading-7 text-zinc-400">
-            <.docs_step_venue>Google Cloud</.docs_step_venue>
-            <p class="font-semibold text-zinc-100">
-              Make it a web application, with emisar's callback.
-            </p>
-            <p class="mt-1.5">
-              Set Application type to <strong class="text-zinc-200">Web application</strong>. Put
-              emisar's callback under <strong class="text-zinc-200">Authorized redirect URIs</strong>.
-            </p>
-            <.docs_value
-              label="Authorized redirect URI"
-              copy_text="https://emisar.dev/sign_in/sso/callback"
-            >
-              https://emisar.dev/sign_in/sso/callback
-            </.docs_value>
-            <p class="mt-4">
-              Mind which list it goes in — <strong class="text-zinc-200">Authorized JavaScript
-              origins</strong>
-              sits directly above it and is not part of this flow. Google matches the URI
-              exactly, so a trailing slash or
-              <.docs_inline_code>http</.docs_inline_code>
-              instead of
-              <.docs_inline_code>https</.docs_inline_code>
-              is rejected at sign-in with a <.docs_inline_code>redirect_uri_mismatch</.docs_inline_code>, not
-              at save time.
-            </p>
-            <.docs_screenshot
-              src="/images/docs/sso/google-web-application.webp"
-              title="Google Cloud · Create OAuth client ID"
-              caption="The callback belongs under Authorized redirect URIs, not the JavaScript origins above it."
-              alt="The Create OAuth client ID form with Application type set to Web application and the Authorized redirect URIs heading both outlined in green, and emisar's callback filled into URIs 1."
-            />
-          </div>
-        </li>
-        <li class="flex gap-4">
-          <span class="grid h-8 w-8 flex-none place-items-center rounded-full bg-brand-500/20 text-sm font-semibold text-brand-300">
-            7
-          </span>
-          <div class="min-w-0 text-base leading-7 text-zinc-400">
-            <.docs_step_venue>Google Cloud</.docs_step_venue>
-            <p class="font-semibold text-zinc-100">
-              Copy both values before you close the dialog.
-            </p>
-            <p class="mt-1.5">
-              Google shows the client ID and secret once. You cannot read the secret again. Copy
-              both now or create another client later.
-            </p>
-            <.docs_screenshot
-              src="/images/docs/sso/google-client-created.webp"
-              title="Google Cloud · OAuth client created"
-              caption="The secret is shown once. Both values are redacted here; yours are real."
-              alt="The OAuth client created dialog with Client ID and Client secret each outlined in green, both showing redacted placeholder values, above a warning that the secret cannot be viewed again."
-            />
-          </div>
-        </li>
-        <li class="flex gap-4">
-          <span class="grid h-8 w-8 flex-none place-items-center rounded-full bg-brand-500/20 text-sm font-semibold text-brand-300">
-            8
-          </span>
-          <div class="min-w-0 text-base leading-7 text-zinc-400">
-            <.docs_step_venue>emisar</.docs_step_venue>
-            <p class="font-semibold text-zinc-100">Paste the credentials into emisar.</p>
-            <p class="mt-1.5">
-              Pick <strong class="text-zinc-200">Google Workspace</strong>
-              as the provider type and paste the client ID and secret. The
-              <strong class="text-zinc-200">Issuer URL</strong>
-              is already filled in and locked —
-              <.docs_inline_code>https://accounts.google.com</.docs_inline_code>
-              for every Google customer — so it is one less thing to get wrong. Leave the identifier
-              claim on <.docs_inline_code>sub</.docs_inline_code>.
-            </p>
+        <.docs_step n={1}>
+          <.docs_step_venue>emisar</.docs_step_venue>
+          <p class="font-semibold text-zinc-100">Start the connection.</p>
+          <p class="mt-1.5">
+            Open
+            <a
+              href={~p"/app/sso/new"}
+              class="font-medium text-brand-400 underline decoration-zinc-700 underline-offset-4 hover:text-brand-300"
+            >Team → Single sign-on → Add provider</a>
+            and choose <strong class="text-zinc-200">Google Workspace</strong>. Leave the page open: the
+            callback URL on it is what Google asks for next, and Google's values come back here
+            at the end.
+          </p>
+          <.docs_screenshot
+            src="/images/docs/sso/google-emisar-add-provider.webp"
+            title="emisar · Add provider"
+            caption="Picking the provider here tailors the rest of the form to it."
+            alt="emisar's Add provider form with the Provider type select outlined in green and set to Google Workspace."
+          />
+        </.docs_step>
+        <.docs_step n={2}>
+          <.docs_step_venue>Google Cloud</.docs_step_venue>
+          <p class="font-semibold text-zinc-100">Name the app your team will see.</p>
+          <p class="mt-1.5">
+            Open <strong class="text-zinc-200">Google Auth Platform → Branding</strong>. The
+            <strong class="text-zinc-200">App name</strong>
+            and <strong class="text-zinc-200">User support email</strong>
+            appear on Google's consent screen. Use a name your members recognize. On a new
+            project, Google presents the same fields in the numbered setup shown next. The
+            fields are identical.
+          </p>
+          <.docs_screenshot
+            src="/images/docs/sso/google-branding.webp"
+            title="Google Auth Platform · Branding"
+            caption="Both values appear on the consent screen your members see."
+            alt="The Branding page of Google Auth Platform with App name and User support email outlined in green, above App logo and App domain sections."
+          />
+        </.docs_step>
+        <.docs_step n={3}>
+          <.docs_step_venue>Google Cloud</.docs_step_venue>
+          <p class="font-semibold text-zinc-100">Keep the audience Internal.</p>
+          <p class="mt-1.5">
+            On <strong class="text-zinc-200">Audience</strong>, the user type must be <strong class="text-zinc-200">Internal</strong>. That restricts sign-in to your own
+            Workspace domain and skips Google's verification review entirely. External allows any
+            Google account. Do not use it for emisar. Google rejects outside accounts with
+            <.docs_inline_code>org_internal</.docs_inline_code>
+            before the request reaches emisar.
+          </p>
+          <.docs_screenshot
+            src="/images/docs/sso/google-audience.webp"
+            title="Google Auth Platform · Audience"
+            caption="Internal is the whole domain restriction. Google refuses outside accounts itself."
+            alt="The Google Auth Platform Audience page showing the current user type as Internal and offering a Make external button."
+          />
+        </.docs_step>
+        <.docs_step n={4}>
+          <.docs_step_venue>Google Cloud</.docs_step_venue>
+          <p class="font-semibold text-zinc-100">Give Google a contact address, then create.</p>
+          <p class="mt-1.5">
+            For a new project, complete <strong class="text-zinc-200">Contact
+            Information</strong> and <strong class="text-zinc-200">Finish</strong>. Enter an
+            address Google uses for project notices, then select <strong class="text-zinc-200">Create</strong>. Both fields are required but do not
+            control sign-in. The Audience setting already controls sign-in. An existing project
+            does not show these fields. Go straight to Clients.
+          </p>
+          <.docs_screenshot
+            src="/images/docs/sso/google-contact-information.webp"
+            title="Google Auth Platform · Contact Information"
+            caption="Google writes here about the project, not about sign-ins."
+            alt="Step 3, Contact Information, of Google's project configuration, with the Email addresses field outlined in green and Finish below it."
+          />
+        </.docs_step>
+        <.docs_step n={5}>
+          <.docs_step_venue>Google Cloud</.docs_step_venue>
+          <p class="font-semibold text-zinc-100">Start an OAuth client.</p>
+          <p class="mt-1.5">
+            Open <strong class="text-zinc-200">Clients → Create client</strong>. Existing clients are
+            listed here too, so this is where you come back to if you need the client ID again.
+          </p>
+        </.docs_step>
+        <.docs_step n={6}>
+          <.docs_step_venue>Google Cloud</.docs_step_venue>
+          <p class="font-semibold text-zinc-100">
+            Make it a web application, with emisar's callback.
+          </p>
+          <p class="mt-1.5">
+            Set Application type to <strong class="text-zinc-200">Web application</strong>. Put
+            emisar's callback under <strong class="text-zinc-200">Authorized redirect URIs</strong>.
+          </p>
+          <.docs_value
+            label="Authorized redirect URI"
+            copy_text="https://emisar.dev/sign_in/sso/callback"
+          >
+            https://emisar.dev/sign_in/sso/callback
+          </.docs_value>
+          <p class="mt-4">
+            Mind which list it goes in — <strong class="text-zinc-200">Authorized JavaScript
+            origins</strong>
+            sits directly above it and is not part of this flow. Google matches the URI
+            exactly, so a trailing slash or
+            <.docs_inline_code>http</.docs_inline_code>
+            instead of
+            <.docs_inline_code>https</.docs_inline_code>
+            is rejected at sign-in with a <.docs_inline_code>redirect_uri_mismatch</.docs_inline_code>, not
+            at save time.
+          </p>
+          <.docs_screenshot
+            src="/images/docs/sso/google-web-application.webp"
+            title="Google Cloud · Create OAuth client ID"
+            caption="The callback belongs under Authorized redirect URIs, not the JavaScript origins above it."
+            alt="The Create OAuth client ID form with Application type set to Web application and the Authorized redirect URIs heading both outlined in green, and emisar's callback filled into URIs 1."
+          />
+        </.docs_step>
+        <.docs_step n={7}>
+          <.docs_step_venue>Google Cloud</.docs_step_venue>
+          <p class="font-semibold text-zinc-100">
+            Copy both values before you close the dialog.
+          </p>
+          <p class="mt-1.5">
+            Google shows the client ID and secret once. You cannot read the secret again. Copy
+            both now or create another client later.
+          </p>
+          <.docs_screenshot
+            src="/images/docs/sso/google-client-created.webp"
+            title="Google Cloud · OAuth client created"
+            caption="The secret is shown once. Both values are redacted here; yours are real."
+            alt="The OAuth client created dialog with Client ID and Client secret each outlined in green, both showing redacted placeholder values, above a warning that the secret cannot be viewed again."
+          />
+        </.docs_step>
+        <.docs_step n={8}>
+          <.docs_step_venue>emisar</.docs_step_venue>
+          <p class="font-semibold text-zinc-100">Paste the credentials into emisar.</p>
+          <p class="mt-1.5">
+            Pick <strong class="text-zinc-200">Google Workspace</strong>
+            as the provider type and paste the client ID and secret. The
+            <strong class="text-zinc-200">Issuer URL</strong>
+            is already filled in and locked —
+            <.docs_inline_code>https://accounts.google.com</.docs_inline_code>
+            for every Google customer — so it is one less thing to get wrong. Leave the identifier
+            claim on <.docs_inline_code>sub</.docs_inline_code>.
+          </p>
 
-            <.docs_screenshot
-              src="/images/docs/sso/google-emisar-connection.webp"
-              title="emisar console · Add provider"
-              caption="Picking Google Workspace locks the issuer to https://accounts.google.com — the padlock means there is nothing for you to look up or mistype."
-              alt="emisar's Add provider form with Provider type set to Google Workspace, the in-app setup steps naming the Google Cloud Console path, the redirect URI to register with a copy button, and a locked Issuer URL field showing https://accounts.google.com."
-            />
-          </div>
-        </li>
+          <.docs_screenshot
+            src="/images/docs/sso/google-emisar-connection.webp"
+            title="emisar console · Add provider"
+            caption="Picking Google Workspace locks the issuer to https://accounts.google.com — the padlock means there is nothing for you to look up or mistype."
+            alt="emisar's Add provider form with Provider type set to Google Workspace, the in-app setup steps naming the Google Cloud Console path, the redirect URI to register with a copy button, and a locked Issuer URL field showing https://accounts.google.com."
+          />
+        </.docs_step>
       </ol>
 
       <.docs_callout kind={:note} title="The rest of the connection form">

@@ -39,138 +39,113 @@
         </p>
       </.docs_callout>
       <ol class="mt-8 space-y-10">
-        <li class="flex gap-4">
-          <span class="grid h-8 w-8 flex-none place-items-center rounded-full bg-brand-500/20 text-sm font-semibold text-brand-300">
-            1
-          </span>
-          <div class="min-w-0 text-base leading-7 text-zinc-400">
-            <.docs_step_venue>emisar</.docs_step_venue>
-            <p class="font-semibold text-zinc-100">Start the connection.</p>
-            <p class="mt-1.5">
-              Open
-              <a
-                href={~p"/app/sso/new"}
-                class="font-medium text-brand-400 underline decoration-zinc-700 underline-offset-4 hover:text-brand-300"
-              >Team → Single sign-on → Add provider</a>
-              and choose <strong class="text-zinc-200">Microsoft Entra ID</strong>. Leave the page open: the
-              callback URL on it is what Entra asks for next, and Entra's values come back here
-              at the end.
-            </p>
-            <.docs_screenshot
-              src="/images/docs/sso/entra-emisar-add-provider.webp"
-              title="emisar · Add provider"
-              caption="Picking the provider here tailors the rest of the form to it."
-              alt="emisar's Add provider form with the Provider type select outlined in green and set to Microsoft Entra ID."
-            />
-          </div>
-        </li>
-        <li class="flex gap-4">
-          <span class="grid h-8 w-8 flex-none place-items-center rounded-full bg-brand-500/20 text-sm font-semibold text-brand-300">
-            2
-          </span>
-          <div class="min-w-0 text-base leading-7 text-zinc-400">
-            <.docs_step_venue>Entra</.docs_step_venue>
-            <p class="font-semibold text-zinc-100">Register the application.</p>
-            <p class="mt-1.5">
-              In the Microsoft Entra admin center go to <strong class="text-zinc-200">App registrations → New registration</strong>. Under
-              <strong class="text-zinc-200">Redirect URI</strong>
-              choose the <strong class="text-zinc-200">Web</strong>
-              platform and enter emisar's callback:
-            </p>
-            <.docs_value label="Redirect URI" copy_text="https://emisar.dev/sign_in/sso/callback">
-              https://emisar.dev/sign_in/sso/callback
-            </.docs_value>
+        <.docs_step n={1}>
+          <.docs_step_venue>emisar</.docs_step_venue>
+          <p class="font-semibold text-zinc-100">Start the connection.</p>
+          <p class="mt-1.5">
+            Open
+            <a
+              href={~p"/app/sso/new"}
+              class="font-medium text-brand-400 underline decoration-zinc-700 underline-offset-4 hover:text-brand-300"
+            >Team → Single sign-on → Add provider</a>
+            and choose <strong class="text-zinc-200">Microsoft Entra ID</strong>. Leave the page open: the
+            callback URL on it is what Entra asks for next, and Entra's values come back here
+            at the end.
+          </p>
+          <.docs_screenshot
+            src="/images/docs/sso/entra-emisar-add-provider.webp"
+            title="emisar · Add provider"
+            caption="Picking the provider here tailors the rest of the form to it."
+            alt="emisar's Add provider form with the Provider type select outlined in green and set to Microsoft Entra ID."
+          />
+        </.docs_step>
+        <.docs_step n={2}>
+          <.docs_step_venue>Entra</.docs_step_venue>
+          <p class="font-semibold text-zinc-100">Register the application.</p>
+          <p class="mt-1.5">
+            In the Microsoft Entra admin center go to <strong class="text-zinc-200">App registrations → New registration</strong>. Under
+            <strong class="text-zinc-200">Redirect URI</strong>
+            choose the <strong class="text-zinc-200">Web</strong>
+            platform and enter emisar's callback:
+          </p>
+          <.docs_value label="Redirect URI" copy_text="https://emisar.dev/sign_in/sso/callback">
+            https://emisar.dev/sign_in/sso/callback
+          </.docs_value>
 
-            <.docs_screenshot
-              src="/images/docs/sso/entra-app-registration.webp"
-              title="Microsoft Entra admin center · Register an application"
-              caption="The platform must be set to Web — the URI beside it is ignored until it is, and the form refuses to register without it."
-              alt="Entra's Register an application form with the name emisar, Supported account types set to Single tenant only, and the Redirect URI section outlined in green: its platform dropdown reads Web and the adjacent field holds https://emisar.dev/sign_in/sso/callback."
-            />
-          </div>
-        </li>
-        <li class="flex gap-4">
-          <span class="grid h-8 w-8 flex-none place-items-center rounded-full bg-brand-500/20 text-sm font-semibold text-brand-300">
-            3
-          </span>
-          <div class="min-w-0 text-base leading-7 text-zinc-400">
-            <.docs_step_venue>Entra</.docs_step_venue>
-            <p class="font-semibold text-zinc-100">Create a client secret.</p>
-            <p class="mt-1.5">
-              Open <strong class="text-zinc-200">Certificates &amp; secrets → New client secret</strong>. Copy the
-              <strong class="text-zinc-200">Value</strong>
-              column, not <strong class="text-zinc-200">Secret ID</strong>
-              — the value is shown once and is unrecoverable afterwards.
-            </p>
+          <.docs_screenshot
+            src="/images/docs/sso/entra-app-registration.webp"
+            title="Microsoft Entra admin center · Register an application"
+            caption="The platform must be set to Web — the URI beside it is ignored until it is, and the form refuses to register without it."
+            alt="Entra's Register an application form with the name emisar, Supported account types set to Single tenant only, and the Redirect URI section outlined in green: its platform dropdown reads Web and the adjacent field holds https://emisar.dev/sign_in/sso/callback."
+          />
+        </.docs_step>
+        <.docs_step n={3}>
+          <.docs_step_venue>Entra</.docs_step_venue>
+          <p class="font-semibold text-zinc-100">Create a client secret.</p>
+          <p class="mt-1.5">
+            Open <strong class="text-zinc-200">Certificates &amp; secrets → New client secret</strong>. Copy the
+            <strong class="text-zinc-200">Value</strong>
+            column, not <strong class="text-zinc-200">Secret ID</strong>
+            — the value is shown once and is unrecoverable afterwards.
+          </p>
 
-            <.docs_screenshot
-              src="/images/docs/sso/entra-client-secret.webp"
-              title="Microsoft Entra · Certificates &amp; secrets"
-              caption="Press New client secret, then copy Value while it is shown. Secret ID is not the credential."
-              alt="The emisar app's Certificates and secrets blade with New client secret outlined in green above one saved secret whose Value and Secret ID are masked."
-            />
-          </div>
-        </li>
-        <li class="flex gap-4">
-          <span class="grid h-8 w-8 flex-none place-items-center rounded-full bg-brand-500/20 text-sm font-semibold text-brand-300">
-            4
-          </span>
-          <div class="min-w-0 text-base leading-7 text-zinc-400">
-            <.docs_step_venue>Entra</.docs_step_venue>
-            <p class="font-semibold text-zinc-100">Copy the client and tenant IDs.</p>
-            <p class="mt-1.5">
-              The registration <strong class="text-zinc-200">Overview</strong> page contains two
-              values. Use <strong class="text-zinc-200">Application (client) ID</strong> as the
-              client ID. Use <strong class="text-zinc-200">Directory (tenant) ID</strong> in the
-              issuer URL.
-            </p>
-            <.docs_screenshot
-              src="/images/docs/sso/entra-app-overview.webp"
-              title="Microsoft Entra · App registration overview"
-              caption="Application (client) ID is emisar's Client ID. Directory (tenant) ID below it goes into the issuer."
-              alt="The emisar app registration's Overview blade with Application (client) ID outlined in green, alongside Object ID, Directory (tenant) ID, client credentials showing one secret, and one web redirect URI."
-            />
-          </div>
-        </li>
-        <li class="flex gap-4">
-          <span class="grid h-8 w-8 flex-none place-items-center rounded-full bg-brand-500/20 text-sm font-semibold text-brand-300">
-            5
-          </span>
-          <div class="min-w-0 text-base leading-7 text-zinc-400">
-            <.docs_step_venue>emisar</.docs_step_venue>
-            <p class="font-semibold text-zinc-100">Paste them into the connection.</p>
-            <p class="mt-1.5">
-              Return to the connection from step 1. Use
-              <strong class="text-zinc-200">Application (client) ID</strong>
-              as the client ID. Use
-              the secret from step 3. Build the issuer from your tenant ID.
-            </p>
-            <.docs_value
-              label="Issuer URL"
-              copy_text="https://login.microsoftonline.com/YOUR-TENANT-ID/v2.0"
-            >
-              https://login.microsoftonline.com/YOUR-TENANT-ID/v2.0
-            </.docs_value>
-            <p class="mt-4">
-              The trailing
-              <.docs_inline_code>/v2.0</.docs_inline_code>
-              selects Entra's v2.0 endpoint. Without it, Entra returns v1.0 tokens. The identifier
-              claim is already <.docs_inline_code>oid</.docs_inline_code>.
-              Entra assigns a different
-              <.docs_inline_code>sub</.docs_inline_code>
-              to each application. The
-              <.docs_inline_code>oid</.docs_inline_code>
-              claim also matches the value directory sync sends. Save the connection. After
-              directory sync below has provisioned the same person, select <strong class="text-zinc-200">Enabled</strong>, save again, and sign in.
-            </p>
-            <.docs_screenshot
-              src="/images/docs/sso/entra-emisar-credentials.webp"
-              title="emisar · Add provider"
-              caption="The issuer carries your tenant ID and ends in /v2.0. The identifier claim is already oid."
-              alt="emisar's OIDC connection fields with Issuer URL, Client ID and Client secret each outlined in green, the Issuer URL placeholder showing https://login.microsoftonline.com/YOUR-TENANT-ID/v2.0, and the Identifier claim reading oid — Microsoft Entra."
-            />
-          </div>
-        </li>
+          <.docs_screenshot
+            src="/images/docs/sso/entra-client-secret.webp"
+            title="Microsoft Entra · Certificates &amp; secrets"
+            caption="Press New client secret, then copy Value while it is shown. Secret ID is not the credential."
+            alt="The emisar app's Certificates and secrets blade with New client secret outlined in green above one saved secret whose Value and Secret ID are masked."
+          />
+        </.docs_step>
+        <.docs_step n={4}>
+          <.docs_step_venue>Entra</.docs_step_venue>
+          <p class="font-semibold text-zinc-100">Copy the client and tenant IDs.</p>
+          <p class="mt-1.5">
+            The registration <strong class="text-zinc-200">Overview</strong> page contains two
+            values. Use <strong class="text-zinc-200">Application (client) ID</strong> as the
+            client ID. Use <strong class="text-zinc-200">Directory (tenant) ID</strong> in the
+            issuer URL.
+          </p>
+          <.docs_screenshot
+            src="/images/docs/sso/entra-app-overview.webp"
+            title="Microsoft Entra · App registration overview"
+            caption="Application (client) ID is emisar's Client ID. Directory (tenant) ID below it goes into the issuer."
+            alt="The emisar app registration's Overview blade with Application (client) ID outlined in green, alongside Object ID, Directory (tenant) ID, client credentials showing one secret, and one web redirect URI."
+          />
+        </.docs_step>
+        <.docs_step n={5}>
+          <.docs_step_venue>emisar</.docs_step_venue>
+          <p class="font-semibold text-zinc-100">Paste them into the connection.</p>
+          <p class="mt-1.5">
+            Return to the connection from step 1. Use
+            <strong class="text-zinc-200">Application (client) ID</strong>
+            as the client ID. Use
+            the secret from step 3. Build the issuer from your tenant ID.
+          </p>
+          <.docs_value
+            label="Issuer URL"
+            copy_text="https://login.microsoftonline.com/YOUR-TENANT-ID/v2.0"
+          >
+            https://login.microsoftonline.com/YOUR-TENANT-ID/v2.0
+          </.docs_value>
+          <p class="mt-4">
+            The trailing
+            <.docs_inline_code>/v2.0</.docs_inline_code>
+            selects Entra's v2.0 endpoint. Without it, Entra returns v1.0 tokens. The identifier
+            claim is already <.docs_inline_code>oid</.docs_inline_code>.
+            Entra assigns a different
+            <.docs_inline_code>sub</.docs_inline_code>
+            to each application. The
+            <.docs_inline_code>oid</.docs_inline_code>
+            claim also matches the value directory sync sends. Save the connection. After
+            directory sync below has provisioned the same person, select <strong class="text-zinc-200">Enabled</strong>, save again, and sign in.
+          </p>
+          <.docs_screenshot
+            src="/images/docs/sso/entra-emisar-credentials.webp"
+            title="emisar · Add provider"
+            caption="The issuer carries your tenant ID and ends in /v2.0. The identifier claim is already oid."
+            alt="emisar's OIDC connection fields with Issuer URL, Client ID and Client secret each outlined in green, the Issuer URL placeholder showing https://login.microsoftonline.com/YOUR-TENANT-ID/v2.0, and the Identifier claim reading oid — Microsoft Entra."
+          />
+        </.docs_step>
       </ol>
 
       <.docs_h2 id="scim">Directory sync</.docs_h2>
@@ -192,132 +167,112 @@
         shows where both come from.
       </p>
       <ol class="mt-8 space-y-10">
-        <li class="flex gap-4">
-          <span class="grid h-8 w-8 flex-none place-items-center rounded-full bg-brand-500/20 text-sm font-semibold text-brand-300">
-            1
-          </span>
-          <div class="min-w-0 text-base leading-7 text-zinc-400">
-            <.docs_step_venue>Entra</.docs_step_venue>
-            <p class="font-semibold text-zinc-100">Create the enterprise application.</p>
-            <p class="mt-1.5">
-              Provisioning needs a separate object from the sign-in app registration. Go to <strong class="text-zinc-200">Enterprise applications → New application → Create your own application</strong>.
-              Name it <.docs_inline_code>emisar</.docs_inline_code>. Choose <strong class="text-zinc-200">Integrate any other application you do not find in the gallery</strong>.
-            </p>
-            <.docs_screenshot
-              src="/images/docs/sso/entra-create-enterprise-app.webp"
-              title="Microsoft Entra · Browse App Gallery"
-              caption="The gallery is for apps Microsoft already ships an integration for. emisar is not one, so it is created by hand."
-              alt="Entra's Browse Microsoft Entra App Gallery blade with the Create your own application button outlined in green, above gallery tiles for Amazon Web Services, Google Cloud Platform, Oracle and SAP."
-            />
-          </div>
-        </li>
-        <li class="flex gap-4">
-          <span class="grid h-8 w-8 flex-none place-items-center rounded-full bg-brand-500/20 text-sm font-semibold text-brand-300">
-            2
-          </span>
-          <div class="min-w-0 text-base leading-7 text-zinc-400">
-            <.docs_step_venue>Entra</.docs_step_venue>
-            <p class="font-semibold text-zinc-100">Point it at emisar.</p>
-            <p class="mt-1.5">
-              On the new application's <strong class="text-zinc-200">Provisioning</strong>
-              page, set <strong class="text-zinc-200">Provisioning Mode</strong>
-              to <strong class="text-zinc-200">Automatic</strong>. Enter the SCIM base URL as <strong class="text-zinc-200">Tenant URL</strong>. Enter the bearer as <strong class="text-zinc-200">Secret Token</strong>.
-            </p>
-            <.docs_value label="Tenant URL" copy_text="https://emisar.dev/scim/v2">
-              https://emisar.dev/scim/v2
-            </.docs_value>
+        <.docs_step n={1}>
+          <.docs_step_venue>Entra</.docs_step_venue>
+          <p class="font-semibold text-zinc-100">Create the enterprise application.</p>
+          <p class="mt-1.5">
+            Provisioning needs a separate object from the sign-in app registration. Go to <strong class="text-zinc-200">Enterprise applications → New application → Create your own application</strong>.
+            Name it <.docs_inline_code>emisar</.docs_inline_code>. Choose <strong class="text-zinc-200">Integrate any other application you do not find in the gallery</strong>.
+          </p>
+          <.docs_screenshot
+            src="/images/docs/sso/entra-create-enterprise-app.webp"
+            title="Microsoft Entra · Browse App Gallery"
+            caption="The gallery is for apps Microsoft already ships an integration for. emisar is not one, so it is created by hand."
+            alt="Entra's Browse Microsoft Entra App Gallery blade with the Create your own application button outlined in green, above gallery tiles for Amazon Web Services, Google Cloud Platform, Oracle and SAP."
+          />
+        </.docs_step>
+        <.docs_step n={2}>
+          <.docs_step_venue>Entra</.docs_step_venue>
+          <p class="font-semibold text-zinc-100">Point it at emisar.</p>
+          <p class="mt-1.5">
+            On the new application's <strong class="text-zinc-200">Provisioning</strong>
+            page, set <strong class="text-zinc-200">Provisioning Mode</strong>
+            to <strong class="text-zinc-200">Automatic</strong>. Enter the SCIM base URL as <strong class="text-zinc-200">Tenant URL</strong>. Enter the bearer as <strong class="text-zinc-200">Secret Token</strong>.
+          </p>
+          <.docs_value label="Tenant URL" copy_text="https://emisar.dev/scim/v2">
+            https://emisar.dev/scim/v2
+          </.docs_value>
 
-            <.docs_screenshot
-              src="/images/docs/sso/entra-provisioning.webp"
-              title="Microsoft Entra · Enterprise application provisioning"
-              caption="After the live test, the Provisioning overview reported a completed incremental cycle with one group and two users."
-              alt="The emisar directory sync enterprise application's Provisioning overview in Entra, with tenant-specific identifiers masked and Current cycle status: Incremental sync completed outlined in green above 100% completed, one group and two users."
-            />
-            <p class="mt-4">
-              Press <strong class="text-zinc-200">Test Connection</strong>. Entra queries a random
-              GUID that cannot exist. It expects an empty result, not an error. emisar returns that
-              result. A failure means the URL or token is wrong, not the schema. Save.
-            </p>
+          <.docs_screenshot
+            src="/images/docs/sso/entra-provisioning.webp"
+            title="Microsoft Entra · Enterprise application provisioning"
+            caption="After the live test, the Provisioning overview reported a completed incremental cycle with one group and two users."
+            alt="The emisar directory sync enterprise application's Provisioning overview in Entra, with tenant-specific identifiers masked and Current cycle status: Incremental sync completed outlined in green above 100% completed, one group and two users."
+          />
+          <p class="mt-4">
+            Press <strong class="text-zinc-200">Test Connection</strong>. Entra queries a random
+            GUID that cannot exist. It expects an empty result, not an error. emisar returns that
+            result. A failure means the URL or token is wrong, not the schema. Save.
+          </p>
 
-            <.docs_screenshot
-              src="/images/docs/sso/entra-provisioning-credentials.webp"
-              title="Microsoft Entra · Connectivity"
-              caption="Leave authentication on Bearer. Tenant URL and the masked bearer sit together above Test connection."
-              alt="The Connectivity page for the emisar directory sync enterprise application, with the connection form outlined in green: Bearer authentication selected, Tenant URL set to https://emisar.dev/scim/v2, Secret token masked, and Test connection beneath."
-            />
-          </div>
-        </li>
-        <li class="flex gap-4">
-          <span class="grid h-8 w-8 flex-none place-items-center rounded-full bg-brand-500/20 text-sm font-semibold text-brand-300">
-            3
-          </span>
-          <div class="min-w-0 text-base leading-7 text-zinc-400">
-            <.docs_step_venue>Entra</.docs_step_venue>
-            <p class="font-semibold text-zinc-100">Remap externalId to objectId.</p>
-            <p class="mt-1.5">
-              Open <strong class="text-zinc-200">Manage → Attribute mapping</strong>
-              and change the source attribute feeding
-              <.docs_inline_code>externalId</.docs_inline_code>
-              from
-              <.docs_inline_code>mailNickname</.docs_inline_code>
-              to <.docs_inline_code>objectId</.docs_inline_code>. On a tenant
-              still using Entra's older provisioning screens, the same setting lives under <strong class="text-zinc-200">Mappings → Provision Microsoft Entra ID Users</strong>.
-            </p>
+          <.docs_screenshot
+            src="/images/docs/sso/entra-provisioning-credentials.webp"
+            title="Microsoft Entra · Connectivity"
+            caption="Leave authentication on Bearer. Tenant URL and the masked bearer sit together above Test connection."
+            alt="The Connectivity page for the emisar directory sync enterprise application, with the connection form outlined in green: Bearer authentication selected, Tenant URL set to https://emisar.dev/scim/v2, Secret token masked, and Test connection beneath."
+          />
+        </.docs_step>
+        <.docs_step n={3}>
+          <.docs_step_venue>Entra</.docs_step_venue>
+          <p class="font-semibold text-zinc-100">Remap externalId to objectId.</p>
+          <p class="mt-1.5">
+            Open <strong class="text-zinc-200">Manage → Attribute mapping</strong>
+            and change the source attribute feeding
+            <.docs_inline_code>externalId</.docs_inline_code>
+            from
+            <.docs_inline_code>mailNickname</.docs_inline_code>
+            to <.docs_inline_code>objectId</.docs_inline_code>. On a tenant
+            still using Entra's older provisioning screens, the same setting lives under <strong class="text-zinc-200">Mappings → Provision Microsoft Entra ID Users</strong>.
+          </p>
 
-            <.docs_screenshot
-              src="/images/docs/sso/entra-attribute-mapping.webp"
-              title="Microsoft Entra · Attribute mapping"
-              caption="The saved result: objectId now feeds externalId. Open this row to verify the complete mapping."
-              alt="The emisar directory sync application's Attribute mapping list on the Users tab, with the row mapping objectId to externalId outlined in green among the surrounding user mappings."
-            />
+          <.docs_screenshot
+            src="/images/docs/sso/entra-attribute-mapping.webp"
+            title="Microsoft Entra · Attribute mapping"
+            caption="The saved result: objectId now feeds externalId. Open this row to verify the complete mapping."
+            alt="The emisar directory sync application's Attribute mapping list on the Users tab, with the row mapping objectId to externalId outlined in green among the surrounding user mappings."
+          />
 
-            <.docs_screenshot
-              src="/images/docs/sso/entra-externalid-objectid.webp"
-              title="Microsoft Entra · Edit Attribute Mapping"
-              caption="Change the source, not the target — externalId must stay aligned with the OIDC oid claim."
-              alt="Entra's Edit Attribute Mapping pane with the Source attribute row outlined in green and set to objectId, alongside Mapping type Direct, Target attribute externalId, and Apply this mapping set to Always."
-            />
-            <p class="mt-4">
-              Entra defaults to <.docs_inline_code>mailNickname</.docs_inline_code>.
-              This value can be missing, duplicated, or changed. It also differs from the identifier
-              used by the sign-in connection. If SSO uses
-              <.docs_inline_code>oid</.docs_inline_code>
-              while SCIM uses <.docs_inline_code>mailNickname</.docs_inline_code>, one person
-              becomes two identities. The directory provisions one, and sign-in creates another.
-              <.docs_inline_code>objectId</.docs_inline_code>
-              is the same
-              immutable value as <.docs_inline_code>oid</.docs_inline_code>, so
-              both flows identify one person.
-            </p>
-          </div>
-        </li>
-        <li class="flex gap-4">
-          <span class="grid h-8 w-8 flex-none place-items-center rounded-full bg-brand-500/20 text-sm font-semibold text-brand-300">
-            4
-          </span>
-          <div class="min-w-0 text-base leading-7 text-zinc-400">
-            <.docs_step_venue>Entra</.docs_step_venue>
-            <p class="font-semibold text-zinc-100">Assign the people to sync.</p>
-            <p class="mt-1.5">
-              Under <strong class="text-zinc-200">Users and groups</strong>, assign each person who
-              needs an emisar account. Then, on <strong class="text-zinc-200">Provisioning → Settings</strong>, set
-              <strong class="text-zinc-200">Scope</strong>
-              to <strong class="text-zinc-200">Sync only assigned users and groups</strong>
-              and turn <strong class="text-zinc-200">Provisioning Status</strong>
-              on. Scope is separate from assignment and defaults to everyone. Change it, or Entra
-              sends the entire directory regardless of assignment. Entra syncs roughly every 40
-              minutes. New members appear under
-              <strong class="text-zinc-200">Synced members</strong>
-              after the next cycle, not immediately. Their Entra groups then appear under <strong class="text-zinc-200">Synced groups</strong>.
-            </p>
-            <.docs_screenshot
-              src="/images/docs/sso/entra-assign-users.webp"
-              title="Entra · Users and groups"
-              caption="The certification group is assigned here and was provisioned to emisar."
-              alt="The Users and groups page of the emisar SCIM enterprise application, with Add user/group visible and the assigned emisar certification members group outlined in green."
-            />
-          </div>
-        </li>
+          <.docs_screenshot
+            src="/images/docs/sso/entra-externalid-objectid.webp"
+            title="Microsoft Entra · Edit Attribute Mapping"
+            caption="Change the source, not the target — externalId must stay aligned with the OIDC oid claim."
+            alt="Entra's Edit Attribute Mapping pane with the Source attribute row outlined in green and set to objectId, alongside Mapping type Direct, Target attribute externalId, and Apply this mapping set to Always."
+          />
+          <p class="mt-4">
+            Entra defaults to <.docs_inline_code>mailNickname</.docs_inline_code>.
+            This value can be missing, duplicated, or changed. It also differs from the identifier
+            used by the sign-in connection. If SSO uses
+            <.docs_inline_code>oid</.docs_inline_code>
+            while SCIM uses <.docs_inline_code>mailNickname</.docs_inline_code>, one person
+            becomes two identities. The directory provisions one, and sign-in creates another.
+            <.docs_inline_code>objectId</.docs_inline_code>
+            is the same
+            immutable value as <.docs_inline_code>oid</.docs_inline_code>, so
+            both flows identify one person.
+          </p>
+        </.docs_step>
+        <.docs_step n={4}>
+          <.docs_step_venue>Entra</.docs_step_venue>
+          <p class="font-semibold text-zinc-100">Assign the people to sync.</p>
+          <p class="mt-1.5">
+            Under <strong class="text-zinc-200">Users and groups</strong>, assign each person who
+            needs an emisar account. Then, on <strong class="text-zinc-200">Provisioning → Settings</strong>, set
+            <strong class="text-zinc-200">Scope</strong>
+            to <strong class="text-zinc-200">Sync only assigned users and groups</strong>
+            and turn <strong class="text-zinc-200">Provisioning Status</strong>
+            on. Scope is separate from assignment and defaults to everyone. Change it, or Entra
+            sends the entire directory regardless of assignment. Entra syncs roughly every 40
+            minutes. New members appear under
+            <strong class="text-zinc-200">Synced members</strong>
+            after the next cycle, not immediately. Their Entra groups then appear under <strong class="text-zinc-200">Synced groups</strong>.
+          </p>
+          <.docs_screenshot
+            src="/images/docs/sso/entra-assign-users.webp"
+            title="Entra · Users and groups"
+            caption="The certification group is assigned here and was provisioned to emisar."
+            alt="The Users and groups page of the emisar SCIM enterprise application, with Add user/group visible and the assigned emisar certification members group outlined in green."
+          />
+        </.docs_step>
       </ol>
 
       <p class="mt-8 text-base leading-7 text-zinc-400">

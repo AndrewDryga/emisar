@@ -30,200 +30,165 @@
         Connecting an identity provider is a paid feature. <.plan_note tier={:team} />
       </p>
       <ol class="mt-8 space-y-10">
-        <li class="flex gap-4">
-          <span class="grid h-8 w-8 flex-none place-items-center rounded-full bg-brand-500/20 text-sm font-semibold text-brand-300">
-            1
-          </span>
-          <div class="min-w-0 text-base leading-7 text-zinc-400">
-            <.docs_step_venue>emisar</.docs_step_venue>
-            <p class="font-semibold text-zinc-100">Start the connection.</p>
-            <p class="mt-1.5">
-              Open
-              <a
-                href={~p"/app/sso/new"}
-                class="font-medium text-brand-400 underline decoration-zinc-700 underline-offset-4 hover:text-brand-300"
-              >Team → Single sign-on → Add provider</a>
-              and choose <strong class="text-zinc-200">Keycloak</strong>. Leave the page open: the
-              callback URL on it is what Keycloak asks for next, and Keycloak's values come back here
-              at the end.
+        <.docs_step n={1}>
+          <.docs_step_venue>emisar</.docs_step_venue>
+          <p class="font-semibold text-zinc-100">Start the connection.</p>
+          <p class="mt-1.5">
+            Open
+            <a
+              href={~p"/app/sso/new"}
+              class="font-medium text-brand-400 underline decoration-zinc-700 underline-offset-4 hover:text-brand-300"
+            >Team → Single sign-on → Add provider</a>
+            and choose <strong class="text-zinc-200">Keycloak</strong>. Leave the page open: the
+            callback URL on it is what Keycloak asks for next, and Keycloak's values come back here
+            at the end.
+          </p>
+          <.docs_screenshot
+            src="/images/docs/sso/keycloak-emisar-add-provider.webp"
+            title="emisar · Add provider"
+            caption="Picking the provider here tailors the rest of the form to it."
+            alt="emisar's Add provider form with the Provider type select outlined in green and set to Keycloak."
+          />
+        </.docs_step>
+        <.docs_step n={2}>
+          <.docs_step_venue>Keycloak</.docs_step_venue>
+          <p class="font-semibold text-zinc-100">Start an OpenID Connect client.</p>
+          <p class="mt-1.5">
+            In the Keycloak Admin Console, choose your realm, then go to <strong class="text-zinc-200">Clients → Create client</strong>. Leave
+            <strong class="text-zinc-200">Client type</strong>
+            on <span class="text-zinc-300">OpenID Connect</span>, set
+            <strong class="text-zinc-200">Client ID</strong>
+            to <.docs_inline_code>emisar-portal</.docs_inline_code>,
+            and click <strong class="text-zinc-200">Next</strong>.
+          </p>
+          <.docs_screenshot
+            src="/images/docs/sso/keycloak-client-general.webp"
+            title="Keycloak Admin Console · General settings"
+            caption="Create an OpenID Connect client for the emisar web application."
+            alt="Keycloak's Create client General settings step with OpenID Connect selected, emisar-portal as the client ID, and emisar as the name."
+          />
+        </.docs_step>
+        <.docs_step n={3}>
+          <.docs_step_venue>Keycloak</.docs_step_venue>
+          <p class="font-semibold text-zinc-100">Enable only the flow emisar uses.</p>
+          <p class="mt-1.5">
+            Set the capability controls before continuing:
+          </p>
+          <.docs_settings>
+            <:setting label="Client authentication">
+              <strong class="text-zinc-200">On.</strong>
+            </:setting>
+            <:setting label="Standard flow">
+              <strong class="text-zinc-200">On.</strong>
+            </:setting>
+            <:setting label="Require PKCE">
+              <strong class="text-zinc-200">On</strong>, with method <.docs_inline_code>S256</.docs_inline_code>.
+            </:setting>
+            <:setting label="Every other flow">
+              <strong class="text-zinc-200">Off.</strong> This includes Authorization, DPoP,
+              Direct access grants, Implicit flow, Service accounts roles, and both device flows.
+            </:setting>
+          </.docs_settings>
+          <p class="mt-4">
+            Select <strong class="text-zinc-200">Next</strong>.
+          </p>
+          <.docs_screenshot
+            src="/images/docs/sso/keycloak-client-capabilities.webp"
+            title="Keycloak Admin Console · Capability config"
+            caption="A confidential client using the authorization-code flow with PKCE."
+            alt="Keycloak's Capability config step with Client authentication, Standard flow, and Require PKCE enabled; all other capabilities and authentication flows are disabled."
+          />
+        </.docs_step>
+        <.docs_step n={4}>
+          <.docs_step_venue>Keycloak</.docs_step_venue>
+          <p class="font-semibold text-zinc-100">Register the exact redirect URI.</p>
+          <p class="mt-1.5">
+            Copy the callback shown in emisar and paste it into <strong class="text-zinc-200">Valid redirect URIs</strong>. It ends in <.docs_inline_code>/sign_in/sso/callback</.docs_inline_code>.
+            Do not add a wildcard. The other URL fields can stay empty. Select <strong class="text-zinc-200">Save</strong>.
+          </p>
+          <.docs_screenshot
+            src="/images/docs/sso/keycloak-client-redirect.webp"
+            title="Keycloak Admin Console · Login settings"
+            caption="The screenshot uses a reserved example host; paste the callback from your emisar form verbatim."
+            alt="Keycloak's Login settings step with https://emisar.dev/sign_in/sso/callback entered as the sole Valid redirect URI and no wildcard."
+          />
+        </.docs_step>
+        <.docs_step n={5}>
+          <.docs_step_venue>Keycloak</.docs_step_venue>
+          <p class="font-semibold text-zinc-100">Copy the client secret.</p>
+          <p class="mt-1.5">
+            Open the saved client's <strong class="text-zinc-200">Credentials</strong>
+            tab. Copy its client secret into emisar's
+            <strong class="text-zinc-200">Client secret</strong>
+            field. Treat the client secret like a password. Do not put it in tickets, chat, or
+            screenshots.
+          </p>
+          <.docs_screenshot
+            src="/images/docs/sso/keycloak-client-secret.webp"
+            title="Keycloak Admin Console · Credentials"
+            caption="The client secret stays masked in this guide."
+            alt="The Keycloak Credentials tab for emisar-portal with Client Id and Secret selected and the client secret hidden behind password dots."
+          />
+        </.docs_step>
+        <.docs_step n={6}>
+          <.docs_step_venue>Keycloak</.docs_step_venue>
+          <p class="font-semibold text-zinc-100">Verify the identity scopes.</p>
+          <p class="mt-1.5">
+            On the <strong class="text-zinc-200">Client scopes</strong>
+            tab, confirm that
+            <.docs_inline_code>email</.docs_inline_code>
+            and
+            <.docs_inline_code>profile</.docs_inline_code>
+            are assigned as <span class="text-zinc-300">Default</span>. The authorization request includes <.docs_inline_code>openid</.docs_inline_code>, so Keycloak does
+            not list it as an assigned client scope.
+          </p>
+          <.docs_screenshot
+            src="/images/docs/sso/keycloak-client-scopes.webp"
+            title="Keycloak Admin Console · Client scopes"
+            caption="The default email and profile scopes give emisar the verified identity claims it needs."
+            alt="The Keycloak Client scopes table for emisar-portal with email and profile assigned as Default scopes."
+          />
+        </.docs_step>
+        <.docs_step n={7}>
+          <.docs_step_venue>emisar</.docs_step_venue>
+          <p class="font-semibold text-zinc-100">Connect and test the first sign-in.</p>
+          <p class="mt-1.5">
+            Back on the connection you opened in step 1, paste the client ID and secret, and
+            build the issuer from your Keycloak host and realm:
+          </p>
+          <.docs_value
+            label="Issuer URL"
+            copy_text="https://YOUR-KEYCLOAK-HOST/realms/YOUR-REALM"
+          >
+            https://YOUR-KEYCLOAK-HOST/realms/YOUR-REALM
+          </.docs_value>
+          <p class="mt-4">
+            Press <strong class="text-zinc-200">Test connection</strong>
+            — it fetches the realm's discovery document, so a wrong host or realm fails here
+            rather than at someone's first sign-in. Then tick
+            <strong class="text-zinc-200">Enabled</strong>
+            and save. Open a private window and sign in as a Keycloak user who is not in emisar.
+            Auto-provisioning assigns the default role. Manual provisioning creates a pending
+            request for an administrator.
+          </p>
+          <.docs_callout kind={:warn} title="Your Keycloak has to be reachable from emisar">
+            <p>
+              emisar fetches the realm's discovery document, JWKS, and token endpoint from
+              its own network, so the realm URL must resolve to a public address with a
+              certificate from a public CA — private and internal addresses are refused.
             </p>
-            <.docs_screenshot
-              src="/images/docs/sso/keycloak-emisar-add-provider.webp"
-              title="emisar · Add provider"
-              caption="Picking the provider here tailors the rest of the form to it."
-              alt="emisar's Add provider form with the Provider type select outlined in green and set to Keycloak."
-            />
-          </div>
-        </li>
-        <li class="flex gap-4">
-          <span class="grid h-8 w-8 flex-none place-items-center rounded-full bg-brand-500/20 text-sm font-semibold text-brand-300">
-            2
-          </span>
-          <div class="min-w-0 text-base leading-7 text-zinc-400">
-            <.docs_step_venue>Keycloak</.docs_step_venue>
-            <p class="font-semibold text-zinc-100">Start an OpenID Connect client.</p>
-            <p class="mt-1.5">
-              In the Keycloak Admin Console, choose your realm, then go to <strong class="text-zinc-200">Clients → Create client</strong>. Leave
-              <strong class="text-zinc-200">Client type</strong>
-              on <span class="text-zinc-300">OpenID Connect</span>, set
-              <strong class="text-zinc-200">Client ID</strong>
-              to <.docs_inline_code>emisar-portal</.docs_inline_code>,
-              and click <strong class="text-zinc-200">Next</strong>.
+            <p class="mt-3">
+              Publish an internal Keycloak through a gateway emisar can reach.
             </p>
-            <.docs_screenshot
-              src="/images/docs/sso/keycloak-client-general.webp"
-              title="Keycloak Admin Console · General settings"
-              caption="Create an OpenID Connect client for the emisar web application."
-              alt="Keycloak's Create client General settings step with OpenID Connect selected, emisar-portal as the client ID, and emisar as the name."
-            />
-          </div>
-        </li>
-        <li class="flex gap-4">
-          <span class="grid h-8 w-8 flex-none place-items-center rounded-full bg-brand-500/20 text-sm font-semibold text-brand-300">
-            3
-          </span>
-          <div class="min-w-0 text-base leading-7 text-zinc-400">
-            <.docs_step_venue>Keycloak</.docs_step_venue>
-            <p class="font-semibold text-zinc-100">Enable only the flow emisar uses.</p>
-            <p class="mt-1.5">
-              Set the capability controls before continuing:
-            </p>
-            <.docs_settings>
-              <:setting label="Client authentication">
-                <strong class="text-zinc-200">On.</strong>
-              </:setting>
-              <:setting label="Standard flow">
-                <strong class="text-zinc-200">On.</strong>
-              </:setting>
-              <:setting label="Require PKCE">
-                <strong class="text-zinc-200">On</strong>, with method <.docs_inline_code>S256</.docs_inline_code>.
-              </:setting>
-              <:setting label="Every other flow">
-                <strong class="text-zinc-200">Off.</strong> This includes Authorization, DPoP,
-                Direct access grants, Implicit flow, Service accounts roles, and both device flows.
-              </:setting>
-            </.docs_settings>
-            <p class="mt-4">
-              Select <strong class="text-zinc-200">Next</strong>.
-            </p>
-            <.docs_screenshot
-              src="/images/docs/sso/keycloak-client-capabilities.webp"
-              title="Keycloak Admin Console · Capability config"
-              caption="A confidential client using the authorization-code flow with PKCE."
-              alt="Keycloak's Capability config step with Client authentication, Standard flow, and Require PKCE enabled; all other capabilities and authentication flows are disabled."
-            />
-          </div>
-        </li>
-        <li class="flex gap-4">
-          <span class="grid h-8 w-8 flex-none place-items-center rounded-full bg-brand-500/20 text-sm font-semibold text-brand-300">
-            4
-          </span>
-          <div class="min-w-0 text-base leading-7 text-zinc-400">
-            <.docs_step_venue>Keycloak</.docs_step_venue>
-            <p class="font-semibold text-zinc-100">Register the exact redirect URI.</p>
-            <p class="mt-1.5">
-              Copy the callback shown in emisar and paste it into <strong class="text-zinc-200">Valid redirect URIs</strong>. It ends in <.docs_inline_code>/sign_in/sso/callback</.docs_inline_code>.
-              Do not add a wildcard. The other URL fields can stay empty. Select <strong class="text-zinc-200">Save</strong>.
-            </p>
-            <.docs_screenshot
-              src="/images/docs/sso/keycloak-client-redirect.webp"
-              title="Keycloak Admin Console · Login settings"
-              caption="The screenshot uses a reserved example host; paste the callback from your emisar form verbatim."
-              alt="Keycloak's Login settings step with https://emisar.dev/sign_in/sso/callback entered as the sole Valid redirect URI and no wildcard."
-            />
-          </div>
-        </li>
-        <li class="flex gap-4">
-          <span class="grid h-8 w-8 flex-none place-items-center rounded-full bg-brand-500/20 text-sm font-semibold text-brand-300">
-            5
-          </span>
-          <div class="min-w-0 text-base leading-7 text-zinc-400">
-            <.docs_step_venue>Keycloak</.docs_step_venue>
-            <p class="font-semibold text-zinc-100">Copy the client secret.</p>
-            <p class="mt-1.5">
-              Open the saved client's <strong class="text-zinc-200">Credentials</strong>
-              tab. Copy its client secret into emisar's
-              <strong class="text-zinc-200">Client secret</strong>
-              field. Treat the client secret like a password. Do not put it in tickets, chat, or
-              screenshots.
-            </p>
-            <.docs_screenshot
-              src="/images/docs/sso/keycloak-client-secret.webp"
-              title="Keycloak Admin Console · Credentials"
-              caption="The client secret stays masked in this guide."
-              alt="The Keycloak Credentials tab for emisar-portal with Client Id and Secret selected and the client secret hidden behind password dots."
-            />
-          </div>
-        </li>
-        <li class="flex gap-4">
-          <span class="grid h-8 w-8 flex-none place-items-center rounded-full bg-brand-500/20 text-sm font-semibold text-brand-300">
-            6
-          </span>
-          <div class="min-w-0 text-base leading-7 text-zinc-400">
-            <.docs_step_venue>Keycloak</.docs_step_venue>
-            <p class="font-semibold text-zinc-100">Verify the identity scopes.</p>
-            <p class="mt-1.5">
-              On the <strong class="text-zinc-200">Client scopes</strong>
-              tab, confirm that
-              <.docs_inline_code>email</.docs_inline_code>
-              and
-              <.docs_inline_code>profile</.docs_inline_code>
-              are assigned as <span class="text-zinc-300">Default</span>. The authorization request includes <.docs_inline_code>openid</.docs_inline_code>, so Keycloak does
-              not list it as an assigned client scope.
-            </p>
-            <.docs_screenshot
-              src="/images/docs/sso/keycloak-client-scopes.webp"
-              title="Keycloak Admin Console · Client scopes"
-              caption="The default email and profile scopes give emisar the verified identity claims it needs."
-              alt="The Keycloak Client scopes table for emisar-portal with email and profile assigned as Default scopes."
-            />
-          </div>
-        </li>
-        <li class="flex gap-4">
-          <span class="grid h-8 w-8 flex-none place-items-center rounded-full bg-brand-500/20 text-sm font-semibold text-brand-300">
-            7
-          </span>
-          <div class="min-w-0 text-base leading-7 text-zinc-400">
-            <.docs_step_venue>emisar</.docs_step_venue>
-            <p class="font-semibold text-zinc-100">Connect and test the first sign-in.</p>
-            <p class="mt-1.5">
-              Back on the connection you opened in step 1, paste the client ID and secret, and
-              build the issuer from your Keycloak host and realm:
-            </p>
-            <.docs_value
-              label="Issuer URL"
-              copy_text="https://YOUR-KEYCLOAK-HOST/realms/YOUR-REALM"
-            >
-              https://YOUR-KEYCLOAK-HOST/realms/YOUR-REALM
-            </.docs_value>
-            <p class="mt-4">
-              Press <strong class="text-zinc-200">Test connection</strong>
-              — it fetches the realm's discovery document, so a wrong host or realm fails here
-              rather than at someone's first sign-in. Then tick
-              <strong class="text-zinc-200">Enabled</strong>
-              and save. Open a private window and sign in as a Keycloak user who is not in emisar.
-              Auto-provisioning assigns the default role. Manual provisioning creates a pending
-              request for an administrator.
-            </p>
-            <.docs_callout kind={:warn} title="Your Keycloak has to be reachable from emisar">
-              <p>
-                emisar fetches the realm's discovery document, JWKS, and token endpoint from
-                its own network, so the realm URL must resolve to a public address with a
-                certificate from a public CA — private and internal addresses are refused.
-              </p>
-              <p class="mt-3">
-                Publish an internal Keycloak through a gateway emisar can reach.
-              </p>
-            </.docs_callout>
+          </.docs_callout>
 
-            <.docs_screenshot
-              src="/images/docs/sso/keycloak-emisar-credentials.webp"
-              title="emisar · Add provider"
-              caption="Three values from Keycloak. The issuer is the realm URL, not the host on its own."
-              alt="emisar's OIDC connection fields with Issuer URL, Client ID and Client secret each outlined in green, and the Issuer URL placeholder showing https://YOUR-HOST/realms/YOUR-REALM."
-            />
-          </div>
-        </li>
+          <.docs_screenshot
+            src="/images/docs/sso/keycloak-emisar-credentials.webp"
+            title="emisar · Add provider"
+            caption="Three values from Keycloak. The issuer is the realm URL, not the host on its own."
+            alt="emisar's OIDC connection fields with Issuer URL, Client ID and Client secret each outlined in green, and the Issuer URL placeholder showing https://YOUR-HOST/realms/YOUR-REALM."
+          />
+        </.docs_step>
       </ol>
 
       <.docs_callout kind={:note} title="The rest of the connection form">

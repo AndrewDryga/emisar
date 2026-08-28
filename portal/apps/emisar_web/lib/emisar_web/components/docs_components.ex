@@ -600,6 +600,31 @@ defmodule EmisarWeb.DocsComponents do
     """
   end
 
+  attr :n, :integer, required: true, doc: "the visible step number"
+
+  slot :inner_block, required: true
+
+  @doc """
+  One numbered walkthrough step — the brand number circle plus the step body.
+  Six docs pages hand-rolled this `<li>` scaffold 47 times, each circle carrying
+  its number as a literal, so renumbering a guide meant editing every one. The
+  provider-walkthrough rule grows this surface one step per vendor screen, so
+  the scaffold lives here once. Belongs inside the page's `<ol class="mt-8
+  space-y-10">`.
+  """
+  def docs_step(assigns) do
+    ~H"""
+    <li class="flex gap-4">
+      <span class="grid h-8 w-8 flex-none place-items-center rounded-full bg-brand-500/20 text-sm font-semibold text-brand-300">
+        {@n}
+      </span>
+      <div class="min-w-0 text-base leading-7 text-zinc-400">
+        {render_slot(@inner_block)}
+      </div>
+    </li>
+    """
+  end
+
   @doc """
   A captioned docs screenshot that opens fullscreen on activation. The
   window-bar `title` and the visible `caption` mark it as a figure OF the
