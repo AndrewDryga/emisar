@@ -430,6 +430,56 @@ bump into a compatibility event for a promise nobody made. `completion
 --no-descriptions` is cobra's flag and is recorded in the surface golden as a
 fact about the current library, not as a contract.
 
+**`connect` means opposite things in the two binaries, deliberately, and both
+names freeze.** `emisar connect` is the long-running daemon systemd and the
+container CMD run. `emisar-mcp connect` is a one-shot interactive setup that
+opens a browser, rewrites LLM client configuration in `$HOME`, and exits. Both
+are installed from the same domain, and both failure modes are quiet: `emisar
+connect` on a workstation simply sits there; `emisar-mcp connect` on a server
+writes client configs for a user with no LLM clients. Renaming either now would
+break every service unit or runbook that names it, so the resolution is
+documentation, not a rename: **no runbook, doc page, or support answer should
+say "run connect" without naming the binary.**
+
+**The installers use different flag names for the install location on purpose,
+and they freeze that way.** `install.sh --bin-dir/BIN_DIR` installs a system
+binary into a system path; `install-mcp.sh --install-dir/INSTALL_DIR` and
+`install-mcp.ps1 -InstallDir` install a per-user bridge. They are three
+different products' conventions — POSIX long flags and a PowerShell parameter —
+and unifying them would rename a flag every existing bootstrap line passes.
+`-ConnectAll` exists only on the PowerShell installer because only it can
+enumerate Windows clients at install time; the Unix path connects afterwards
+with `emisar-mcp connect --all`.
+
+**The control-plane origin has one name per surface, and they do not collapse.**
+`cloud.url` in config, `EMISAR_URL` in the environment, `--url` on
+`emisar-mcp connect`, `-PortalOrigin` in PowerShell, and a bare positional URL
+on `auth login`/`auth status`. Each is that surface's own convention and each
+freezes. The one behaviour worth stating: `EMISAR_URL` silently overrides the
+runner's configured `cloud.url` with no provenance in the output, and the bridge
+REQUIRES it in stdio mode — so an `EnvironmentFile` carrying it for the bridge
+also retargets `doctor`, `pack install`, and the daemon on that host.
+
+**Packs live at `/etc/emisar/packs` on a host install and `/opt/emisar/packs` in
+the container image, and both freeze.** The host path is what `install.sh` has
+always written and what every deployed runner's `paths.packs` names; the
+container path is the image's own layout, where `/etc` is a config mount rather
+than a place for shipped content. A pack tree holds shell programs, so `/etc` is
+the arguable one — but moving it would break every installed host for a tidiness
+that no operator asked for. `emisar pack list` prints the resolved directory, so
+the answer to "where do packs live" is a command rather than a memorized path.
+
+**Ten of install.sh's environment variables carry no `EMISAR_` prefix, and they
+freeze that way.** `VERSION`, `BIN_DIR`, `ETC_DIR`, `DATA_DIR`, `LOG_DIR`,
+`SERVICE_USER`, `SERVICE_GROUP`, `ASSUME_YES`, `NO_START`, and `NO_SERVICE` are
+the conventional spellings for a shell installer, and `VERSION` in particular is
+set by GitLab CI and most Makefiles — which is exactly why `emisar update`
+maintains a denylist that strips all of them before re-running the installer
+under sudo (see `selfupdate.go`, and the test that pins the runner-identity half
+of it). The prefix would have been better from the start; renaming them now
+breaks every bootstrap line and every automation that sets one, for no
+capability. The denylist is the mitigation and it is tested.
+
 A duration on the runner CLI, in the runner config, and in pack action YAML is
 ONE spelling: Go's syntax extended with whole-value `d` and `w` suffixes, plus
 `y` where `signing --ttl` accepts it. `--ttl` and the config used to be parsed by
