@@ -9,6 +9,7 @@ defmodule EmisarWeb.MCP.ValidationError do
   `details`; raw values and messages never reach the log event.
   """
 
+  alias Emisar.Crypto
   alias Emisar.RawJSON
   alias EmisarWeb.MCP.{InputContract, SchemaRegistry}
   require Logger
@@ -208,7 +209,7 @@ defmodule EmisarWeb.MCP.ValidationError do
     case conn.assigns[:api_key] do
       %{account_id: account_id, credential_lineage_id: lineage_id}
       when is_binary(account_id) and is_binary(lineage_id) ->
-        hmac_hex(["mcp-client-lineage-v1", 0, account_id, 0, lineage_id])
+        Crypto.telemetry_fingerprint(["mcp-client-lineage-v1", 0, account_id, 0, lineage_id])
 
       _ ->
         nil
@@ -270,16 +271,18 @@ defmodule EmisarWeb.MCP.ValidationError do
          raw_body when is_binary(raw_body) <- conn.assigns[:raw_body],
          %RawJSON.Node{} = tree <- conn.assigns[:mcp_json_tree],
          {:ok, params} <- RawJSON.fetch(tree, ["params"]) do
-      hmac_hex(["mcp-call-v1", 0, account_id, 0, lineage_id, 0, RawJSON.slice(raw_body, params)])
+      Crypto.telemetry_fingerprint([
+        "mcp-call-v1",
+        0,
+        account_id,
+        0,
+        lineage_id,
+        0,
+        RawJSON.slice(raw_body, params)
+      ])
     else
       _other -> nil
     end
-  end
-
-  defp hmac_hex(payload) do
-    key = Application.fetch_env!(:emisar, :mcp_telemetry_salt)
-    mac = :crypto.mac(:hmac, :sha256, key, payload)
-    Base.encode16(mac, case: :lower)
   end
 
   defp safe_log_issues(issues, tool) when is_list(issues) do

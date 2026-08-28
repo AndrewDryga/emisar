@@ -18,6 +18,19 @@ defmodule Emisar.Crypto do
   @secret_bytes 32
 
   @doc """
+  Keyed fingerprint for MCP validation telemetry: a stable, non-reversible
+  identifier for one exact (account, credential lineage, request body) triple,
+  so repeated identical rejections correlate in logs without ever logging the
+  body. HMAC-SHA256 under the deploy's telemetry salt, hex-encoded — here and
+  not at the call site because ALL keyed hashing lives behind this module, and
+  this was the one `:crypto.mac` outside it.
+  """
+  def telemetry_fingerprint(payload) do
+    key = Emisar.Config.fetch_env!(:emisar, :mcp_telemetry_salt)
+    :hmac |> :crypto.mac(:sha256, key, payload) |> Base.encode16(case: :lower)
+  end
+
+  @doc """
   A fresh random secret string (url-safe base64, no padding). Prepend a
   type tag (e.g. `"emo-"`) to form the full token, then store its `hash/1`.
   OAuth uses this directly (it looks tokens up by hash, with no prefix
