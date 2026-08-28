@@ -5,6 +5,12 @@
 risk_accountability:
   mode: complete
   exceptions:
+    # pm2.env joined this list when it was retiered low->high: it prints the
+    # process's whole merged environment, which the packs manual puts at high.
+    # It carries the same exception as its siblings for the same reason stated
+    # above — there is no pm2 SUT at all, not because this action is untestable
+    # in principle. Building that SUT would let all five drop their exception.
+    pm2.env: requires_privileged_host
     pm2.reload: requires_privileged_host
     pm2.restart: requires_privileged_host
     pm2.scale: requires_privileged_host
