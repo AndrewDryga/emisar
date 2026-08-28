@@ -440,7 +440,7 @@ as permission to rename the ones it forgot. `action run --arg/--reason/
 --timeout/--stream`, `pack install --hash/--dest/--force`, `pack suggest
 --catalog/--names-only`, `pack update --dry-run`, `pack diff
 --to/--stat/--registry`, `pack verify --arg`, `audit verify --all`, `events
-tail --lines/-f`, `events grep --action/--caller/--event`, `state
+tail --lines/-f`, `events grep --action/--type/--event-id/--request-id`, `state
 check-dispatch-log --data-dir`, `signing init --ca-name/--scope/--ttl/--key`,
 `signing new-ca --ca-name/--ttl/--key`, and `signing new-cert
 --ca-key/--ca-cert/--key-name/--scope/--ttl/--key` are all inside the freeze.

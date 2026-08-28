@@ -97,9 +97,10 @@ func eventsCatCmd() *cobra.Command {
 
 func eventsGrepCmd() *cobra.Command {
 	var (
-		actionID string
-		actor    string
-		eventID  string
+		actionID  string
+		requestID string
+		eventID   string
+		eventType string
 	)
 	cmd := &cobra.Command{
 		Use:   "grep",
@@ -125,7 +126,10 @@ func eventsGrepCmd() *cobra.Command {
 				if eventID != "" && ev.EventID != eventID {
 					continue
 				}
-				if actor != "" && !strings.Contains(ev.Caller.ControlPlaneRequestID, actor) {
+				if eventType != "" && string(ev.Type) != eventType {
+					continue
+				}
+				if requestID != "" && !strings.Contains(ev.Caller.ControlPlaneRequestID, requestID) {
 					continue
 				}
 				fmt.Println(string(line))
@@ -133,9 +137,19 @@ func eventsGrepCmd() *cobra.Command {
 			return s.Err()
 		},
 	}
+	// --type is the field a SIEM alerts on and the one that had no filter at
+	// all: action_blocked_by_admission exists so a rule can fire on it, and
+	// `events grep` could not select it.
+	//
+	// The other two are renamed to say what they match. `--caller` matched a
+	// request ULID, not a person, and `--event` matched an event id, not an
+	// event type — so `--caller alice@corp` and `--event dispatch_refused` were
+	// the natural guesses, and both printed nothing and exited 0. On a
+	// forensics tool that reads as "it never happened".
 	cmd.Flags().StringVar(&actionID, "action", "", "filter by action id")
-	cmd.Flags().StringVar(&actor, "caller", "", "substring match on caller control_plane_request_id")
-	cmd.Flags().StringVar(&eventID, "event", "", "match a specific event id")
+	cmd.Flags().StringVar(&eventType, "type", "", "filter by event_type (exact)")
+	cmd.Flags().StringVar(&eventID, "event-id", "", "match a specific event id")
+	cmd.Flags().StringVar(&requestID, "request-id", "", "substring match on the caller's control-plane request id")
 	return cmd
 }
 

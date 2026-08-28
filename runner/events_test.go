@@ -66,9 +66,9 @@ func configWithJournal(t *testing.T, dir string) (cfgPath, jsonlPath string) {
 	cfgPath = writeMinimalConfig(t, dir, packDir)
 	jsonlPath = filepath.Join(dir, "events.jsonl")
 	writeJournal(t, jsonlPath,
-		audit.Event{EventID: "evt_a", ActionID: "linux.uptime", Caller: audit.CallerRef{ControlPlaneRequestID: "req-aaa"}},
-		audit.Event{EventID: "evt_b", ActionID: "linux.memory", Caller: audit.CallerRef{ControlPlaneRequestID: "req-bbb"}},
-		audit.Event{EventID: "evt_c", ActionID: "linux.uptime", Caller: audit.CallerRef{ControlPlaneRequestID: "req-ccc"}},
+		audit.Event{EventID: "evt_a", Type: audit.EventExecutionStarted, ActionID: "linux.uptime", Caller: audit.CallerRef{ControlPlaneRequestID: "req-aaa"}},
+		audit.Event{EventID: "evt_b", Type: audit.EventActionBlockedByAdmission, ActionID: "linux.memory", Caller: audit.CallerRef{ControlPlaneRequestID: "req-bbb"}},
+		audit.Event{EventID: "evt_c", Type: audit.EventExecutionStarted, ActionID: "linux.uptime", Caller: audit.CallerRef{ControlPlaneRequestID: "req-ccc"}},
 	)
 	return cfgPath, jsonlPath
 }
@@ -388,7 +388,7 @@ func TestEventsGrepCmd_FilterByEventID(t *testing.T) {
 	out := captureStdout(t, func() {
 		cmd := eventsGrepCmd()
 		cmd.SilenceUsage, cmd.SilenceErrors = true, true
-		cmd.SetArgs([]string{"--event", "evt_b"})
+		cmd.SetArgs([]string{"--event-id", "evt_b"})
 		execErr = cmd.Execute()
 	})
 	if execErr != nil {
@@ -400,7 +400,7 @@ func TestEventsGrepCmd_FilterByEventID(t *testing.T) {
 }
 
 // grep by caller does a substring match on caller.control_plane_request_id.
-func TestEventsGrepCmd_FilterByCaller(t *testing.T) {
+func TestEventsGrepCmd_FilterByRequestID(t *testing.T) {
 	withFlags(t)
 	dir := t.TempDir()
 	flagConfig, _ = configWithJournal(t, dir)
@@ -409,7 +409,7 @@ func TestEventsGrepCmd_FilterByCaller(t *testing.T) {
 	out := captureStdout(t, func() {
 		cmd := eventsGrepCmd()
 		cmd.SilenceUsage, cmd.SilenceErrors = true, true
-		cmd.SetArgs([]string{"--caller", "req-bbb"})
+		cmd.SetArgs([]string{"--request-id", "req-bbb"})
 		execErr = cmd.Execute()
 	})
 	if execErr != nil {
@@ -422,6 +422,34 @@ func TestEventsGrepCmd_FilterByCaller(t *testing.T) {
 
 // Combined filters AND together: an action that matches but a caller that
 // doesn't yields nothing. and (no matches).
+// event_type is the field a SIEM alerts on — action_blocked_by_admission exists
+// precisely so a rule can fire on it — and `events grep` had no filter for it at
+// all, while `--event` matched an event ID and `--caller` a request ULID. So the
+// two natural guesses printed nothing and exited 0, which on a forensics tool
+// reads as "it never happened".
+func TestEventsGrepCmd_FilterByType(t *testing.T) {
+	withFlags(t)
+	dir := t.TempDir()
+	flagConfig, _ = configWithJournal(t, dir)
+
+	var execErr error
+	out := captureStdout(t, func() {
+		cmd := eventsGrepCmd()
+		cmd.SilenceUsage, cmd.SilenceErrors = true, true
+		cmd.SetArgs([]string{"--type", string(audit.EventActionBlockedByAdmission)})
+		execErr = cmd.Execute()
+	})
+	if execErr != nil {
+		t.Fatalf("events grep --type: %v", execErr)
+	}
+	if !strings.Contains(out, "evt_b") {
+		t.Fatalf("the blocked event should match:\n%s", out)
+	}
+	if strings.Contains(out, "evt_a") || strings.Contains(out, "evt_c") {
+		t.Fatalf("a different event_type must not match:\n%s", out)
+	}
+}
+
 func TestEventsGrepCmd_CombinedFiltersAndNoMatch(t *testing.T) {
 	withFlags(t)
 	dir := t.TempDir()
@@ -432,7 +460,7 @@ func TestEventsGrepCmd_CombinedFiltersAndNoMatch(t *testing.T) {
 		cmd := eventsGrepCmd()
 		cmd.SilenceUsage, cmd.SilenceErrors = true, true
 		// linux.uptime exists, but never with caller req-bbb (that's linux.memory).
-		cmd.SetArgs([]string{"--action", "linux.uptime", "--caller", "req-bbb"})
+		cmd.SetArgs([]string{"--action", "linux.uptime", "--request-id", "req-bbb"})
 		execErr = cmd.Execute()
 	})
 	if execErr != nil {

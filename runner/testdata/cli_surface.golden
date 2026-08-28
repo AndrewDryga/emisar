@@ -14,7 +14,7 @@ emisar connect
 emisar doctor --probe
 emisar events
 emisar events cat
-emisar events grep --action --caller --event
+emisar events grep --action --event-id --request-id --type
 emisar events tail --follow --lines
 emisar help
 emisar pack
