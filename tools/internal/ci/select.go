@@ -196,6 +196,9 @@ func (selection *Selection) include(file string) {
 	// mcp/sign.go plus the signer construction in mcp/main.go; there is no
 	// mcp/internal/signing package, and naming one here meant a change to
 	// attested dispatch on the bridge side skipped the required check entirely.
+	// Both scenarios boot through the shared demo seeder before reaching their
+	// own assertions, so a seed change is a behavior input to both.
+	sharedE2ESeed := file == "portal/apps/emisar/priv/repo/seeds.exs"
 	if hasAnyPrefix(
 		file,
 		"tools/cmd/signing-e2e/",
@@ -203,7 +206,7 @@ func (selection *Selection) include(file string) {
 		"runner/internal/signing/",
 		"runner/internal/attest/",
 		"mcp/internal/attest/",
-	) || member(file, "docker-compose.yml", "tools/internal/devtool/e2e.go", "mcp/sign.go", "mcp/main.go") {
+	) || sharedE2ESeed || member(file, "docker-compose.yml", "tools/internal/devtool/e2e.go", "mcp/sign.go", "mcp/main.go") {
 		selection.SigningE2E = true
 	}
 	if hasAnyPrefix(
@@ -215,7 +218,7 @@ func (selection *Selection) include(file string) {
 		"portal/apps/emisar_web/lib/emisar_web/controllers/oauth",
 		"portal/apps/emisar_web/lib/emisar_web/controllers/scim/",
 		"portal/apps/emisar_web/lib/emisar_web/live/sso",
-	) || member(file, "docker-compose.yml", "tools/internal/devtool/e2e.go") {
+	) || sharedE2ESeed || member(file, "docker-compose.yml", "tools/internal/devtool/e2e.go") {
 		selection.SSOE2E = true
 	}
 }

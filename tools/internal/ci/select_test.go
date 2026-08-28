@@ -389,6 +389,19 @@ func TestSelectAndFrozenMigrations(t *testing.T) {
 		resetHard(t, root, base)
 	})
 
+	t.Run("the shared demo seed selects both e2e scenarios", func(t *testing.T) {
+		writeFixture(t, root, "portal/apps/emisar/priv/repo/seeds.exs", "# shared seed\n")
+		commitAll(t, root, "shared seed")
+		selection, err := Select(context.Background(), root, "pull_request", base)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !selection.SigningE2E || !selection.SSOE2E {
+			t.Fatalf("shared seed selection = %+v", selection)
+		}
+		resetHard(t, root, base)
+	})
+
 	// Go writes the pack/catalog schema and the Portal reads it; the Portal-side
 	// proof lives in the Portal suite, so a Go-only schema change has to select it.
 	t.Run("cross-language pack schema selects the portal suite", func(t *testing.T) {
