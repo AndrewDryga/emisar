@@ -244,76 +244,83 @@ func auditTenant(ctx context.Context, env map[string]string, remove bool) error 
 		return errors.New("no OKTA_API_TOKEN in the secrets file or environment, and the console session was refused above")
 	}
 
-	script := fmt.Sprintf(`(async () => {
-  const auth = {accept: 'application/json', authorization: 'SSWS ' + %q};
-  const get = async path => {
-    const r = await fetch(path, {credentials: 'include', headers: auth});
-    if (!r.ok) return {error: r.status + ' ' + path};
-    return r.json();
-  };
+	// The org-admin SSWS token authenticates the API directly, so these calls run
+	// from Go with the token in an Authorization header — never injected into
+	// page JS, where any script, extension, or crash reporter could read the
+	// org-admin credential. The browser session stays only for screenshots.
+	client := &http.Client{Timeout: 30 * time.Second}
+	orgURL := env["OKTA_ORG_URL"]
 
-  const apps = await get('/api/v1/apps?limit=200');
-  if (apps.error) return JSON.stringify({error: apps.error});
-  const users = await get('/api/v1/users?limit=200');
-  const me = await get('/api/v1/users/me');
+	var apps []struct {
+		ID       string `json:"id"`
+		Label    string `json:"label"`
+		Status   string `json:"status"`
+		Settings struct {
+			App struct {
+				Label string `json:"label"`
+			} `json:"app"`
+		} `json:"settings"`
+	}
+	if apiErr, err := oktaAPIGet(ctx, client, orgURL, token, "/api/v1/apps?limit=200", &apps); err != nil {
+		return err
+	} else if apiErr != "" {
+		return fmt.Errorf("the org API refused: %s", apiErr)
+	}
 
-  // Applications are reported raw. The keep/delete verdict is decided in Go by
-  // appVerdict, so it is reachable by a test — this rig cannot be rehearsed
-  // against a live tenant without mutating someone's Okta org.
+	var users []struct {
+		ID      string `json:"id"`
+		Status  string `json:"status"`
+		Profile struct {
+			Email string `json:"email"`
+		} `json:"profile"`
+	}
+	usersError, err := oktaAPIGet(ctx, client, orgURL, token, "/api/v1/users?limit=200", &users)
+	if err != nil {
+		return err
+	}
 
-  // This rig creates APPLICATIONS, not users. Okta is the identity provider
-  // here — it pushes accounts to emisar, so nothing it does adds one back.
-  //
-  // Matching /emisar/ against an email therefore found no leftover of ours; it
-  // found the tenant's only account, at our own domain, which is the one this
-  // rig signs in WITH. A cleanup run would have deactivated and deleted the
-  // admin that owns the tenant. Match only an address this rig demonstrably
-  // generates, and never the signed-in account, whatever it is called.
-  const oursUser = u =>
-    u.id !== (me && me.id) && /scim-probe|okta-capture-probe/i.test((u.profile && u.profile.email) || '');
+	// me exempts the signed-in admin from the user filter; a soft failure just
+	// leaves it empty, exactly as the previous inventory tolerated.
+	var me struct {
+		ID string `json:"id"`
+	}
+	if _, err := oktaAPIGet(ctx, client, orgURL, token, "/api/v1/users/me", &me); err != nil {
+		return err
+	}
 
-  // API tokens too, now that -mint-token creates them. A rig owns everything it
-  // creates, and a long-lived credential is the last thing that should go
-  // unlisted in someone's tenant.
-  const apiTokens = await get('/api/v1/api-tokens');
-
-  return JSON.stringify({
-    apps: apps.map(a => ({id: a.id, label: a.label, status: a.status, settingsLabel: (a.settings && a.settings.app && a.settings.app.label) || ''})),
-    users: (users.error ? [] : users).map(u => ({id: u.id, email: u.profile && u.profile.email, status: u.status, ours: oursUser(u)})),
-    usersError: users.error || null,
-    tokens: (apiTokens.error ? [] : apiTokens).map(t => ({id: t.id, name: t.name})),
-    tokensError: apiTokens.error || null,
-  });
-})()`, token)
-
-	var raw string
-	if err := chromedp.Run(ctx, chromedp.Evaluate(script, &raw, func(p *runtime.EvaluateParams) *runtime.EvaluateParams {
-		return p.WithAwaitPromise(true)
-	})); err != nil {
+	// API tokens too, now that -mint-token creates them. A rig owns everything
+	// it creates, and a long-lived credential is the last thing that should go
+	// unlisted in someone's tenant.
+	var apiTokens []struct {
+		ID   string `json:"id"`
+		Name string `json:"name"`
+	}
+	tokensError, err := oktaAPIGet(ctx, client, orgURL, token, "/api/v1/api-tokens", &apiTokens)
+	if err != nil {
 		return err
 	}
 
 	var report struct {
-		Error string `json:"error"`
-		Apps  []struct {
-			ID, Label, Status string
-			SettingsLabel     string `json:"settingsLabel"`
-		}
-		Users []struct {
-			ID, Email, Status string
-			Ours              bool
-		}
-		UsersError string `json:"usersError"`
-		Tokens     []struct {
-			ID, Name string
-		}
-		TokensError string `json:"tokensError"`
+		Apps        []oktaApp
+		Users       []oktaUser
+		UsersError  string
+		Tokens      []oktaAPIToken
+		TokensError string
 	}
-	if err := json.Unmarshal([]byte(raw), &report); err != nil {
-		return fmt.Errorf("could not read the tenant: %w (%s)", err, raw)
+	for _, app := range apps {
+		report.Apps = append(report.Apps, oktaApp{app.ID, app.Label, app.Status, app.Settings.App.Label})
 	}
-	if report.Error != "" {
-		return fmt.Errorf("the org API refused: %s", report.Error)
+	report.UsersError = usersError
+	for _, user := range users {
+		// This rig creates APPLICATIONS, not users. Match only an address this
+		// rig demonstrably generates, and never the signed-in account: matching
+		// /emisar/ against an email once found the tenant's own admin.
+		ours := user.ID != me.ID && oursUserEmail.MatchString(user.Profile.Email)
+		report.Users = append(report.Users, oktaUser{user.ID, user.Profile.Email, user.Status, ours})
+	}
+	report.TokensError = tokensError
+	for _, apiToken := range apiTokens {
+		report.Tokens = append(report.Tokens, oktaAPIToken{apiToken.ID, apiToken.Name})
 	}
 
 	fmt.Println("--- every application, and what this run will do with it ---")
@@ -351,7 +358,7 @@ func auditTenant(ctx context.Context, env map[string]string, remove bool) error 
 		if appVerdict(app.ID, app.Label, app.SettingsLabel, env) != verdictDelete {
 			continue
 		}
-		if err := deleteOktaApp(ctx, token, app.ID); err != nil {
+		if err := deleteOktaApp(ctx, client, orgURL, token, app.ID); err != nil {
 			return err
 		}
 		fmt.Printf("  removed application %s\n", app.Label)
@@ -361,7 +368,7 @@ func auditTenant(ctx context.Context, env map[string]string, remove bool) error 
 		if !user.Ours {
 			continue
 		}
-		if err := deleteOktaUser(ctx, token, user.ID); err != nil {
+		if err := deleteOktaUser(ctx, client, orgURL, token, user.ID); err != nil {
 			return err
 		}
 		fmt.Printf("  removed user %s\n", user.Email)
@@ -369,36 +376,86 @@ func auditTenant(ctx context.Context, env map[string]string, remove bool) error 
 	return nil
 }
 
+// oktaApp, oktaUser, and oktaAPIToken are the inventory rows the audit prints
+// and the cleanup acts on, built from the org API's Go-side reads.
+type oktaApp struct {
+	ID, Label, Status, SettingsLabel string
+}
+
+type oktaUser struct {
+	ID, Email, Status string
+	Ours              bool
+}
+
+type oktaAPIToken struct {
+	ID, Name string
+}
+
+// oursUserEmail matches the addresses this rig demonstrably generates, so a
+// cleanup deletes only accounts it created — never the signed-in admin or the
+// tenant's own users, whatever they are called.
+var oursUserEmail = regexp.MustCompile(`(?i)scim-probe|okta-capture-probe`)
+
+// oktaAPIGet performs an org-API GET with the SSWS token supplied from Go, so
+// the org-admin credential never enters page JS. It returns a soft apiError
+// string for a non-2xx status (callers may tolerate it the way the console
+// inventory did) and a hard error only for a transport or decode failure.
+func oktaAPIGet(ctx context.Context, client *http.Client, orgURL, token, path string, target any) (string, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, orgURL+path, nil)
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("Authorization", "SSWS "+token)
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", err
+	}
+	if resp.StatusCode/100 != 2 {
+		return fmt.Sprintf("%d %s", resp.StatusCode, path), nil
+	}
+	if err := json.Unmarshal(body, target); err != nil {
+		return "", fmt.Errorf("decode %s: %w", path, err)
+	}
+	return "", nil
+}
+
 // deleteOktaApp deactivates then deletes; Okta refuses to delete an active app.
-func deleteOktaApp(ctx context.Context, token, id string) error {
-	return oktaCalls(ctx, token, []string{
+func deleteOktaApp(ctx context.Context, client *http.Client, orgURL, token, id string) error {
+	return oktaCalls(ctx, client, orgURL, token, []string{
 		"POST /api/v1/apps/" + id + "/lifecycle/deactivate",
 		"DELETE /api/v1/apps/" + id,
 	})
 }
 
 // deleteOktaUser deactivates then deletes, for the same reason.
-func deleteOktaUser(ctx context.Context, token, id string) error {
-	return oktaCalls(ctx, token, []string{
+func deleteOktaUser(ctx context.Context, client *http.Client, orgURL, token, id string) error {
+	return oktaCalls(ctx, client, orgURL, token, []string{
 		"POST /api/v1/users/" + id + "/lifecycle/deactivate",
 		"DELETE /api/v1/users/" + id,
 	})
 }
 
-func oktaCalls(ctx context.Context, token string, calls []string) error {
+func oktaCalls(ctx context.Context, client *http.Client, orgURL, token string, calls []string) error {
 	for _, call := range calls {
 		method, path, _ := strings.Cut(call, " ")
-		script := fmt.Sprintf(`(async () => {
-  const r = await fetch(%q, {method: %q, credentials: 'include', headers: {accept: 'application/json', authorization: 'SSWS ' + %q}});
-  return r.status;
-})()`, path, method, token)
-
-		var status int
-		if err := chromedp.Run(ctx, chromedp.Evaluate(script, &status, func(p *runtime.EvaluateParams) *runtime.EvaluateParams {
-			return p.WithAwaitPromise(true)
-		})); err != nil {
+		req, err := http.NewRequestWithContext(ctx, method, orgURL+path, nil)
+		if err != nil {
 			return err
 		}
+		req.Header.Set("Accept", "application/json")
+		req.Header.Set("Authorization", "SSWS "+token)
+		resp, err := client.Do(req)
+		if err != nil {
+			return err
+		}
+		status := resp.StatusCode
+		resp.Body.Close()
 		if status >= 400 && status != 404 {
 			return fmt.Errorf("%s returned %d", call, status)
 		}
