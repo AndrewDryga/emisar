@@ -6588,19 +6588,13 @@ defmodule Emisar.AccountsTest do
           subject
         )
 
-      first_attrs = %{
-        "full_name" => "First",
-        "password" => "a-very-strong-password"
-      }
+      first_attrs = %{"full_name" => "First"}
 
       assert {:ok, _} = Accounts.accept_invitation(membership, token, first_attrs)
 
       # The locked re-judge of the (now non-pending) invitation refuses the
-      # second submit before it could overwrite the winner's password.
-      second_attrs = %{
-        "full_name" => "Second",
-        "password" => "another-strong-password"
-      }
+      # second submit before it could overwrite the winner's display name.
+      second_attrs = %{"full_name" => "Second"}
 
       assert Accounts.accept_invitation(membership, token, second_attrs) ==
                {:error, :not_found}
@@ -6627,10 +6621,7 @@ defmodule Emisar.AccountsTest do
                  subject
                )
 
-      late_attrs = %{
-        "full_name" => "Late Member",
-        "password" => "a-very-strong-password"
-      }
+      late_attrs = %{"full_name" => "Late Member"}
 
       assert Accounts.accept_invitation(membership, token, late_attrs) ==
                {:error, :not_found}

@@ -228,7 +228,7 @@ func (v *Verifier) Check(dispatch Dispatch, att *Attestation) Decision {
 	}
 	// 3. The signer emits 16 random bytes as lowercase hex. Keeping that exact
 	//    shape bounds replay keys and rejects delimiter/control-character input
-	//    even though the v4 signed body is independently unambiguous.
+	//    even though the v5 signed body is independently unambiguous.
 	if !validNonce(att.Nonce) {
 		return refuse("bad_nonce", "the attestation nonce is not 32 lowercase hex characters")
 	}

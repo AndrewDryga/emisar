@@ -7,7 +7,7 @@ application data are `high`; the switches that cut a node out of service are
 `critical`, so account policy denies them until an operator opts in.
 
 A representative sample below — run `emisar pack info cassandra` for the full,
-current list (119 actions).
+current list.
 
 | ID                                          | Mutation        | Risk     |
 | ------------------------------------------- | --------------- | -------- |

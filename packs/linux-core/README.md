@@ -3,7 +3,7 @@
 Safe, read-only Linux diagnostics plus narrow systemd unit control.
 
 A representative sample below — run `emisar pack info linux-core` for the full,
-current list (34 actions).
+current list.
 
 | ID                         | Mutation        | Risk     | Notes                              |
 | -------------------------- | --------------- | -------- | ---------------------------------- |

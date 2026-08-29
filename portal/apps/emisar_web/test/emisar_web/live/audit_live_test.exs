@@ -653,8 +653,8 @@ defmodule EmisarWeb.AuditLiveTest do
       {:ok, _} =
         Audit.log(account.id, "user.invited",
           actor_kind: "user",
-          actor_label: "via-password",
-          auth_method: "password"
+          actor_label: "via-magic_link",
+          auth_method: "magic_link"
         )
 
       # Sign-in method is conditional: a Type that carries it must be selected
@@ -664,8 +664,8 @@ defmodule EmisarWeb.AuditLiveTest do
         live(conn, ~p"/app/#{account}/audit?event_type=user.invited&auth_method=sso")
 
       assert html =~ "via-sso"
-      # the password-session event is filtered out.
-      refute html =~ "via-password"
+      # the magic-link-session event is filtered out.
+      refute html =~ "via-magic_link"
     end
 
     test "selecting an actor kind surfaces a picker of that kind's resolved actors",

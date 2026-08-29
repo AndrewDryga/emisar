@@ -92,7 +92,7 @@ defmodule Emisar.Runs.Attestation do
 
   def validate(_headers, _facts), do: {:error, :invalid_attestation}
 
-  @doc "Internal — the normalized v4 envelope the portal persists and relays verbatim."
+  @doc "Internal — the normalized v5 envelope the portal persists and relays verbatim."
   @spec envelope(t()) :: map()
   def envelope(%__MODULE__{envelope: envelope}), do: envelope
 

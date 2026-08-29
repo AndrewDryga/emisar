@@ -297,7 +297,7 @@ defmodule Emisar.Audit do
   defp mcp_client_metadata(%Runs.ActionRun{}), do: nil
 
   # Positive signing evidence for a bridge-attested run's terminal audit event
-  # (see `run_event_changeset/1`). `attestation` carries the relayed v4 envelope;
+  # (see `run_event_changeset/1`). `attestation` carries the relayed v5 envelope;
   # its `cert` names the CA and leaf key that authorized the dispatch.
   defp signed?(%Runs.ActionRun{attestation: %{"cert_chain" => [_leaf | _rest]}}), do: true
   defp signed?(%Runs.ActionRun{}), do: false

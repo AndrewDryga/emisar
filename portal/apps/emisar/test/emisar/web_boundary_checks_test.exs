@@ -188,7 +188,7 @@ defmodule Emisar.WebBoundaryChecksTest do
       defmodule EmisarWeb.Probe do
         alias Emisar.Auth.Subject
 
-        def build(user, account), do: Subject.for_user(user, account, :password, [])
+        def build(user, account), do: Subject.for_user(user, account, :magic_link, [])
         def rebuild(user, account), do: Emisar.Auth.Subject.for_user(user, account, nil)
       end
       """
