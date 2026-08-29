@@ -747,6 +747,37 @@ func TestInitializeCredentialState_ReadOnlyFallbackWaitsForAuthFailure(t *testin
 	}
 }
 
+// A write-access denial at steady state — a peer holding the cross-process lock
+// past its timeout, or an unwritable config directory — must skip this request's
+// rotation refresh and proceed on the current credential, not fail an
+// otherwise-valid request the way startup already degrades to read-only.
+func TestForward_DegradesWhenCredentialRefreshCannotWrite(t *testing.T) {
+	current := testAPIKey(50)
+	store := newCredentialStoreAt(t.TempDir(), testEndpointOrigin, keyPrefix(current))
+	if err := store.persist(testCredentialState(current, "")); err != nil {
+		t.Fatal(err)
+	}
+	// The bridge starts with no synced stamp, so the next refresh takes the
+	// locked write path; a denied chmod makes withLock return a degradable
+	// credentialWriteAccessError before it mutates any state.
+	store.ops.chmod = func(string, os.FileMode) error { return os.ErrPermission }
+
+	b := newRotationTestBridge(store, current)
+	var authorizations []string
+	b.client = &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		authorizations = append(authorizations, req.Header.Get("Authorization"))
+		return jsonRPCResponse(""), nil
+	})}
+
+	frame := []byte(`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"recent_runs","arguments":{}}}`)
+	if _, err := b.forward(frame); err != nil {
+		t.Fatalf("forward under credential-lock contention: %v", err)
+	}
+	if len(authorizations) != 1 || authorizations[0] != "Bearer "+current {
+		t.Fatalf("authorizations = %#v, want one request on the current key", authorizations)
+	}
+}
+
 func TestForward_WritableCredentialRecoversPeerPromotionAfterRetryUnauthorized(t *testing.T) {
 	current := testAPIKey(42)
 	configDir := t.TempDir()

@@ -1282,7 +1282,14 @@ func (b *bridge) forwardRequestContext(
 	ctx, cancel := context.WithTimeout(ctx, httpTimeout)
 	defer cancel()
 	if err := b.refreshCredentialState(); err != nil {
-		return nil, localBridge(fmt.Errorf("refresh credential state: %w", err))
+		// A peer holding the cross-process lock past its timeout (or another
+		// transient write-access denial) must not fail an otherwise-valid
+		// request: skip this request's rotation refresh and proceed on the
+		// current credential, the same way startup degrades to read-only reads.
+		// withLock returns before mutating state, so the in-memory key is intact.
+		if !isCredentialWriteDegradable(err) {
+			return nil, localBridge(fmt.Errorf("refresh credential state: %w", err))
+		}
 	}
 
 	operationID := headers.operationID

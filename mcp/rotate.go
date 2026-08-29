@@ -440,6 +440,17 @@ func rotationHash(key string) string {
 	return hex.EncodeToString(digest[:])
 }
 
+// isCredentialWriteDegradable reports whether a refreshCredentialState failure
+// is a write-access denial the bridge may degrade around rather than a
+// persistence failure that must stop the caller. It is a sandboxed config
+// directory at startup, or a peer holding the cross-process lock at steady
+// state; in both the in-memory credential is intact because withLock returns
+// before running its transition.
+func isCredentialWriteDegradable(err error) bool {
+	var accessErr *credentialWriteAccessError
+	return errors.As(err, &accessErr) && isCredentialWriteUnavailable(accessErr)
+}
+
 // initializeCredentialState prefers the locked, durable rotation path. Some
 // MCP clients sandbox their server processes away from the user's config
 // directory. A write denial before the state callback runs may safely fall back
@@ -450,8 +461,7 @@ func (b *bridge) initializeCredentialState() (bool, error) {
 	if err == nil || b.credentialStore == nil {
 		return false, err
 	}
-	var accessErr *credentialWriteAccessError
-	if !errors.As(err, &accessErr) || !isCredentialWriteUnavailable(accessErr) {
+	if !isCredentialWriteDegradable(err) {
 		return false, err
 	}
 
