@@ -2,8 +2,8 @@ schema_version: 1
 id: ch.processes
 title: SELECT * FROM system.processes
 kind: exec
-risk: low
-description: List currently-running queries.
+risk: medium
+description: List currently-running queries. Rated medium because the output carries live query text, which can include literal request values no redaction list can enumerate.
 side_effects: ["One SELECT.", "Read-only."]
 args: []
 execution:

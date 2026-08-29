@@ -2,8 +2,8 @@ schema_version: 1
 id: postgres.pg_stat_statements_top
 title: Top statements by total time
 kind: exec
-risk: low
-description: Show the top 30 normalized queries by total_exec_time. Requires pg_stat_statements extension to be loaded.
+risk: medium
+description: Show the top 30 normalized queries by total_exec_time. Requires pg_stat_statements extension to be loaded. Rated medium because the output carries statement text (table and column names, query shape) no redaction list can enumerate.
 side_effects: ["One SELECT against pg_stat_statements.", "Read-only."]
 search_terms:
   - db is slow

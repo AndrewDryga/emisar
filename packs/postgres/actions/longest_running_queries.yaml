@@ -2,8 +2,8 @@ schema_version: 1
 id: postgres.longest_running_queries
 title: Top 20 by query age
 kind: exec
-risk: low
-description: List backends in 'active' state, oldest first. Use to spot stuck/runaway work.
+risk: medium
+description: List backends in 'active' state, oldest first. Use to spot stuck/runaway work. Rated medium because the output carries live query text, which can include literal request values no redaction list can enumerate.
 side_effects: ["One SELECT.", "Read-only."]
 search_terms:
   - db is slow

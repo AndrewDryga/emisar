@@ -2,8 +2,8 @@ schema_version: 1
 id: mysql.processlist
 title: SHOW FULL PROCESSLIST
 kind: exec
-risk: low
-description: List every active connection with its current command, state, and full query. The first stop for "what is the DB doing?"
+risk: medium
+description: List every active connection with its current command, state, and full query. The first stop for "what is the DB doing?" Rated medium because the output carries live query text, which can include literal request values no redaction list can enumerate.
 side_effects:
   - One SHOW PROCESSLIST.
   - Read-only.

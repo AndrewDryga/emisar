@@ -2,9 +2,9 @@ schema_version: 1
 id: mysql.innodb_status
 title: SHOW ENGINE INNODB STATUS
 kind: exec
-risk: low
+risk: medium
 description: >
-  Show full InnoDB engine status — buffer pool, latest deadlock detected, longest waiting transaction, undo space, log sequence number. The canonical "InnoDB is sick" diagnostic.
+  Show full InnoDB engine status — buffer pool, latest deadlock detected, longest waiting transaction, undo space, log sequence number. The canonical "InnoDB is sick" diagnostic. Rated medium because the status blob embeds live SQL from the latest deadlock and active transactions, which can include literal request values no redaction list can enumerate.
 side_effects:
   - One SHOW ENGINE INNODB STATUS.
   - Read-only.

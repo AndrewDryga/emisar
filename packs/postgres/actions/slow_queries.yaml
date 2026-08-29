@@ -3,13 +3,15 @@ schema_version: 1
 id: postgres.slow_queries
 title: Top slow queries from pg_stat_statements
 kind: exec
-risk: low
+risk: medium
 
 description: >
   List the top N query fingerprints by mean execution time from
   pg_stat_statements. Requires the extension to be loaded
   (shared_preload_libraries = 'pg_stat_statements'); errors out
-  cleanly if it isn't. Read-only.
+  cleanly if it isn't. Read-only. Rated medium because the output carries
+  statement text (table and column names, query shape) no redaction list
+  can enumerate.
 
 side_effects:
   - One SELECT against pg_stat_statements.

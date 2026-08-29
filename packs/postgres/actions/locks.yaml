@@ -3,13 +3,15 @@ schema_version: 1
 id: postgres.locks
 title: Blocking lock graph
 kind: exec
-risk: low
+risk: medium
 
 description: >
   Show who's blocking whom. Joins pg_locks with pg_stat_activity to
   show blocker_pid → blocked_pid pairs plus the truncated SQL of each
   side. Read-only. Use before a `cancel_query`; you want to cancel the
-  blocker, not the victim.
+  blocker, not the victim. Rated medium because the truncated SQL of each
+  side is live query text, which can include literal request values no
+  redaction list can enumerate.
 
 side_effects:
   - One SELECT joining pg_locks and pg_stat_activity.

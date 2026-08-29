@@ -2,8 +2,8 @@ schema_version: 1
 id: postgres.backend_holding_xmin
 title: Backend holding the oldest xmin
 kind: exec
-risk: low
-description: Show the backend whose snapshot is preventing vacuum from cleaning dead tuples cluster-wide.
+risk: medium
+description: Show the backend whose snapshot is preventing vacuum from cleaning dead tuples cluster-wide. Rated medium because the output carries live query text, which can include literal request values no redaction list can enumerate.
 side_effects: ["One SELECT.", "Read-only."]
 args: []
 execution:

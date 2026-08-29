@@ -2,8 +2,8 @@ schema_version: 1
 id: postgres.lock_blocking_chains
 title: Blocker → blocked chains
 kind: exec
-risk: low
-description: List each blocked backend with its blocker. Use to find the head of a stuck lock chain.
+risk: medium
+description: List each blocked backend with its blocker. Use to find the head of a stuck lock chain. Rated medium because the output carries live query text, which can include literal request values no redaction list can enumerate.
 side_effects: ["One SELECT joining pg_locks.", "Read-only."]
 search_terms:
   - lock contention

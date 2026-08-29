@@ -2,10 +2,12 @@ schema_version: 1
 id: vl.field_values
 title: GET /select/logsql/field_values
 kind: script
-risk: low
+risk: medium
 description: >
   List the most frequent values of one log field, each with a hit count.
-  Use to enumerate levels, namespaces, hosts, or any other dimension.
+  Use to enumerate levels, namespaces, hosts, or any other dimension. Rated
+  medium because the field argument accepts _msg, returning raw log message
+  text (matching vl.query) that no redaction list can enumerate.
 side_effects:
   - One read-only HTTP GET to the VictoriaLogs query API.
   - Read-only.
