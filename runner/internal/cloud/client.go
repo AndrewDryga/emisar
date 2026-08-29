@@ -1,7 +1,6 @@
 package cloud
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -486,6 +485,7 @@ func (c *Client) dispatch(parent context.Context, raw []byte) error {
 	envelope, err := PeekEnvelope(raw)
 	if err != nil {
 		c.opts.Logger.Warn("cloud.bad_envelope", "error", err)
+		c.refuseUndecodableDispatch(parent, "")
 		return nil
 	}
 	switch envelope.Type {
@@ -494,10 +494,12 @@ func (c *Client) dispatch(parent context.Context, raw []byte) error {
 			return err
 		}
 		var m RunActionMsg
-		decoder := json.NewDecoder(bytes.NewReader(raw))
-		decoder.UseNumber()
-		if err := decoder.Decode(&m); err != nil {
+		// RunActionMsg.UnmarshalJSON owns the size, uniqueness, alias and
+		// request_id checks, and captures the exact args token itself — a
+		// decoder option here would never reach the args.
+		if err := json.Unmarshal(raw, &m); err != nil {
 			c.opts.Logger.Warn("cloud.bad_run_action", "error", err)
+			c.refuseUndecodableDispatch(parent, envelope.RequestID)
 			return nil
 		}
 		return c.startRun(parent, m)
@@ -763,6 +765,57 @@ func (c *Client) refusedDispatchResult(ctx context.Context, m RunActionMsg, reas
 	return withLocalAudit(result, c.opts.Engine.RecordDispatchRefusal(
 		context.WithoutCancel(ctx), requestForDispatch(m, nil, nil), detail,
 	))
+}
+
+const (
+	dispatchUndecodableReason = "dispatch_undecodable"
+	// The code leads the detail so a journal line names the classification on
+	// its own, without the payload that produced it.
+	dispatchUndecodableDetail = dispatchUndecodableReason +
+		": message did not decode as a valid run_action; nothing was executed"
+)
+
+// refuseUndecodableDispatch journals — and, when the message carries a usable
+// correlation id, answers — a dispatch rejected before it could become a
+// RunActionMsg: an unreadable envelope, an oversized frame, duplicate or
+// aliased keys, an invalid request_id. Those rejections never reach startRun,
+// so no other path records them, and this is precisely the class a compromised
+// control plane produces: without an entry the tamper-evident journal says the
+// attempt never happened, and the portal sees only a dispatch timeout with no
+// cause.
+//
+// Only the fixed rejection code is journaled and returned. The payload that
+// failed to decode is untrusted and is never persisted — the same rule
+// recordPreExecutionEvent applies to arguments that failed validation.
+func (c *Client) refuseUndecodableDispatch(parent context.Context, requestID string) {
+	ctx := context.WithoutCancel(parent)
+	if err := validateRequestID(requestID); err != nil {
+		// No correlation id to attribute a result to, so the journal entry is
+		// the only durable record this attempt can leave.
+		c.opts.Engine.RecordDispatchRefusal(ctx, engine.Request{}, dispatchUndecodableDetail)
+		return
+	}
+	eventID := c.opts.Engine.RecordDispatchRefusal(
+		ctx, engine.Request{ControlPlaneRequestID: requestID}, dispatchUndecodableDetail)
+
+	c.mu.Lock()
+	if _, exists := c.runs[requestID]; exists {
+		c.mu.Unlock()
+		// A live run already owns this correlation id. Its own terminal result
+		// is authoritative and must not be pre-empted by a malformed re-send.
+		c.opts.Logger.Warn("cloud.undecodable_dispatch_duplicate_id", "request_id", requestID)
+		return
+	}
+	enqueued := c.enqueueTransientLocked(requestID, withLocalAudit(
+		failedDispatchResult(requestID, dispatchUndecodableReason, dispatchUndecodableDetail),
+		eventID,
+	))
+	c.mu.Unlock()
+	if !enqueued {
+		c.opts.Logger.Warn("cloud.undecodable_dispatch_not_queued", "request_id", requestID)
+		return
+	}
+	c.signalSend()
 }
 
 func failedDispatchResult(requestID, reason, detail string) ActionResultMsg {

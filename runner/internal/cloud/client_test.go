@@ -55,6 +55,28 @@ func (s *blockingAuditSink) Write(context.Context, audit.Event) error {
 
 func (*blockingAuditSink) Close() error { return nil }
 
+// recordingAuditSink keeps every journaled event so a test can assert what the
+// tamper-evident trail actually contains — and what it must never contain.
+type recordingAuditSink struct {
+	mu     sync.Mutex
+	events []audit.Event
+}
+
+func (s *recordingAuditSink) Write(_ context.Context, ev audit.Event) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.events = append(s.events, ev)
+	return nil
+}
+
+func (*recordingAuditSink) Close() error { return nil }
+
+func (s *recordingAuditSink) all() []audit.Event {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return append([]audit.Event(nil), s.events...)
+}
+
 type failAfterAuditSink struct {
 	successes int
 	attempts  int
@@ -1001,6 +1023,108 @@ func TestClient_CancelMsgTerminatesInflightAction(t *testing.T) {
 	if res["status"] != "cancelled" {
 		t.Fatalf("status=%v, want cancelled: %+v", res["status"], res)
 	}
+}
+
+// A dispatch rejected at the decode layer is the class a compromised control
+// plane produces most cheaply, and it is the one class that used to vanish: no
+// journal entry, no reply, only a portal-side timeout with no cause. It must
+// now leave a dispatch_refused entry and a terminal result — carrying the
+// rejection code and nothing from the payload.
+func TestClient_UndecodableRunActionIsJournaledAndAnswered(t *testing.T) {
+	journalEntry := func(t *testing.T, sink *recordingAuditSink) audit.Event {
+		t.Helper()
+		events := sink.all()
+		if len(events) != 1 {
+			t.Fatalf("journaled %d events, want exactly 1: %+v", len(events), events)
+		}
+		if events[0].Type != audit.EventDispatchRefused {
+			t.Fatalf("event type=%q, want %q", events[0].Type, audit.EventDispatchRefused)
+		}
+		if events[0].Error != dispatchUndecodableDetail {
+			t.Fatalf("event error=%q, want %q", events[0].Error, dispatchUndecodableDetail)
+		}
+		// The payload never decoded, so nothing in it is trusted enough to
+		// persist — not even the action id it claimed.
+		if events[0].ActionID != "" || events[0].PackID != "" {
+			t.Fatalf("undecoded payload reached the journal: %+v", events[0])
+		}
+		return events[0]
+	}
+
+	t.Run("answers a usable request id", func(t *testing.T) {
+		sink := &recordingAuditSink{}
+		cli := buildClient(t, &queuedDialer{})
+		cli.opts.Engine.Journal = audit.New(audit.Defaults{}, sink)
+
+		requestID := testRequestID("undecodable")
+		// A duplicate key: rejected inside RunActionMsg.UnmarshalJSON, so the
+		// message never becomes a dispatch startRun could refuse.
+		raw := []byte(`{"type":"run_action","protocol_version":1,"request_id":"` + requestID +
+			`","action_id":"t.echo","args":{"msg":"a","msg":"b"}}`)
+		if err := cli.dispatch(context.Background(), raw); err != nil {
+			t.Fatalf("dispatch error=%v; a malformed message must not end the session", err)
+		}
+
+		event := journalEntry(t, sink)
+		if event.Caller.ControlPlaneRequestID != requestID {
+			t.Fatalf("event request id=%q, want %q", event.Caller.ControlPlaneRequestID, requestID)
+		}
+		result := queuedResult(t, cli, requestID)
+		if result.Status != "failed" || result.Reason != dispatchUndecodableReason {
+			t.Fatalf("result=%+v, want a failed %s", result, dispatchUndecodableReason)
+		}
+		if result.EventID != event.EventID {
+			t.Fatalf("result event id=%q, journal event id=%q", result.EventID, event.EventID)
+		}
+	})
+
+	t.Run("journals an unreadable envelope without a request id", func(t *testing.T) {
+		sink := &recordingAuditSink{}
+		cli := buildClient(t, &queuedDialer{})
+		cli.opts.Engine.Journal = audit.New(audit.Defaults{}, sink)
+
+		if err := cli.dispatch(context.Background(), []byte(`{"type":`)); err != nil {
+			t.Fatalf("dispatch error=%v; a malformed message must not end the session", err)
+		}
+
+		if id := journalEntry(t, sink).Caller.ControlPlaneRequestID; id != "" {
+			t.Fatalf("event request id=%q, want empty", id)
+		}
+		cli.mu.Lock()
+		queued := len(cli.runs)
+		cli.mu.Unlock()
+		if queued != 0 {
+			t.Fatalf("queued %d response states for an uncorrelatable message", queued)
+		}
+	})
+
+	t.Run("never pre-empts a live run holding the same id", func(t *testing.T) {
+		sink := &recordingAuditSink{}
+		cli := buildClient(t, &queuedDialer{})
+		cli.opts.Engine.Journal = audit.New(audit.Defaults{}, sink)
+
+		requestID := testRequestID("undecodable-live")
+		cli.mu.Lock()
+		cli.runs[requestID] = &runState{requestID: requestID, started: true}
+		cli.mu.Unlock()
+
+		raw := []byte(`{"type":"run_action","protocol_version":1,"request_id":"` + requestID +
+			`","action_id":"t.echo","args":{"msg":"a","msg":"a"}}`)
+		if err := cli.dispatch(context.Background(), raw); err != nil {
+			t.Fatalf("dispatch error=%v", err)
+		}
+
+		journalEntry(t, sink)
+		cli.mu.Lock()
+		state := cli.runs[requestID]
+		cli.mu.Unlock()
+		state.mu.Lock()
+		pending := len(state.pending)
+		state.mu.Unlock()
+		if pending != 0 {
+			t.Fatalf("malformed re-send queued %d messages onto a live run", pending)
+		}
+	})
 }
 
 func TestClientRejectsKnownMessagesWithIncompatibleProtocolVersion(t *testing.T) {
