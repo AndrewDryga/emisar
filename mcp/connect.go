@@ -206,12 +206,7 @@ func connectClients(
 	for _, id := range requested {
 		key, err := response.clientKey(id)
 		if err != nil {
-			return cliCommandError(
-				stderr,
-				"The approval response was incomplete",
-				[]string{err.Error()},
-				"Nothing was configured. Run `emisar-mcp connect` again.",
-			)
+			return incompleteApprovalError(stderr, err)
 		}
 		keys[id] = key
 	}
@@ -220,12 +215,7 @@ func connectClients(
 	if selection.cliNeeded {
 		credential, err := response.cliCredential()
 		if err != nil {
-			return cliCommandError(
-				stderr,
-				"The approval response was incomplete",
-				[]string{err.Error()},
-				"Nothing was configured. Run `emisar-mcp connect` again.",
-			)
+			return incompleteApprovalError(stderr, err)
 		}
 		if code := storeCLIAccountCredential(origin, credential, io.Discard, stderr); code != 0 {
 			failures++
@@ -565,6 +555,18 @@ func connectAuthorizationError(stderr io.Writer, err error, origin string) int {
 			"Check the server URL and your network connection, then run `emisar-mcp connect` again.",
 		)
 	}
+}
+
+// incompleteApprovalError reports an approval response that omitted a client key
+// or the CLI credential the connect flow needs. Both call sites have already
+// configured nothing, so they share one message.
+func incompleteApprovalError(stderr io.Writer, err error) int {
+	return cliCommandError(
+		stderr,
+		"The approval response was incomplete",
+		[]string{err.Error()},
+		"Nothing was configured. Run `emisar-mcp connect` again.",
+	)
 }
 
 func containsString(values []string, want string) bool {
