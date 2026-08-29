@@ -91,7 +91,7 @@ defmodule Emisar.Accounts.Account.Changeset do
     changeset
     |> validate_required([:name, :slug])
     |> validate_length(:name, min: 1, max: 80)
-    |> validate_format(:slug, ~r/^[a-z][a-z0-9-]{1,62}[a-z0-9]$/,
+    |> validate_format(:slug, ~r/\A[a-z][a-z0-9-]{1,62}[a-z0-9]\z/,
       message: "must be lowercase letters/numbers/hyphens, start with a letter, 3-64 chars"
     )
     # The router serves literal /app/<segment> paths at these names (the

@@ -15,7 +15,7 @@ defmodule Emisar.EmailAddress do
 
   import Ecto.Changeset
 
-  @format ~r/^[^\s]+@[^\s]+$/
+  @format ~r/\A[^\s]+@[^\s]+\z/
   @message "must have the @ sign and no spaces"
   @max_length 254
 

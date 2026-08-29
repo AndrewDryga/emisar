@@ -33,6 +33,15 @@ defmodule Emisar.Policies.GlobTest do
       assert Glob.match?("", "")
       refute Glob.match?("", "x")
     end
+
+    test "* spans an embedded newline so a value can't evade a wildcard deny" do
+      # A `$`-anchored, non-dotall regex matched only up to the first newline, so
+      # a deny glob missed a value carrying one. Whole-string `\A…\z` + the `s`
+      # flag close that evasion.
+      assert Glob.match?("*", "cassandra.drop\nrm -rf /")
+      assert Glob.match?("cassandra.*", "cassandra.drop_table\nmalicious")
+      assert Glob.match?("cassandra.drop*", "cassandra.drop\n")
+    end
   end
 
   describe "compile/1 + match_compiled?/2" do

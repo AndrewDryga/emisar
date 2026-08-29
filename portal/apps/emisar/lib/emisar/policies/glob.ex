@@ -32,7 +32,10 @@ defmodule Emisar.Policies.Glob do
   def compile(pattern) do
     if String.contains?(pattern, "*") do
       escaped = pattern |> Regex.escape() |> String.replace("\\*", ".*")
-      {:regex, Regex.compile!("^" <> escaped <> "$", "i")}
+      # `\A…\z` + the `s` (dotall) flag anchor to the WHOLE string and let `*`
+      # span an embedded newline, so a deny glob can never be evaded by a value
+      # carrying one (a `$`-anchored pattern matches before a trailing newline).
+      {:regex, Regex.compile!("\\A" <> escaped <> "\\z", "is")}
     else
       {:literal, String.downcase(pattern)}
     end

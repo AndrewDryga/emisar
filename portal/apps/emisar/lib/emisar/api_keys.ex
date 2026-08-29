@@ -705,7 +705,7 @@ defmodule Emisar.ApiKeys do
 
   defp valid_rotation_material?(prefix, hash) do
     is_binary(prefix) and byte_size(prefix) == @prefix_size and
-      String.valid?(prefix) and String.match?(prefix, ~r/^emk-[A-Za-z0-9_-]{8}$/) and
+      String.valid?(prefix) and String.match?(prefix, ~r/\Aemk-[A-Za-z0-9_-]{8}\z/) and
       is_binary(hash) and byte_size(hash) == 32
   end
 

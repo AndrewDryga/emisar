@@ -33,7 +33,7 @@ defmodule Emisar.Catalog.PublishedRegistry.Catalog do
   alias Emisar.Catalog.TrustedManifest
 
   @schema_version 1
-  @hash_regex ~r/^sha256:[0-9a-f]{64}$/
+  @hash_regex ~r/\Asha256:[0-9a-f]{64}\z/
   @risks ~w(low medium high critical)
   @kinds ~w(exec script)
 

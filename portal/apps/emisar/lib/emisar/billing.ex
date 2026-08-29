@@ -2006,7 +2006,7 @@ defmodule Emisar.Billing do
   defp non_negative_integer(_value), do: nil
 
   defp currency_code(value) when is_binary(value) do
-    if String.match?(value, ~r/^[A-Z]{3}$/), do: value
+    if String.match?(value, ~r/\A[A-Z]{3}\z/), do: value
   end
 
   defp currency_code(_value), do: nil

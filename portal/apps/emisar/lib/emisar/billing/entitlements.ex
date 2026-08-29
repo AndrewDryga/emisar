@@ -188,5 +188,5 @@ defmodule Emisar.Billing.Entitlements do
 
   defp parse_boolean(_value), do: nil
 
-  defp validate_slug(slug), do: if(slug =~ ~r/^[a-z][a-z0-9_-]{0,31}$/, do: slug, else: nil)
+  defp validate_slug(slug), do: if(slug =~ ~r/\A[a-z][a-z0-9_-]{0,31}\z/, do: slug, else: nil)
 end

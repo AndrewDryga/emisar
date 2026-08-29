@@ -85,7 +85,7 @@ defmodule Emisar.Mail.DeliverabilityEvent do
 
     length(code_points) in 1..@max_email_length and
       Enum.all?(code_points, &(&1 >= 32 and &1 != 127)) and
-      Regex.match?(~r/^[^\s]+@[^\s]+$/, email)
+      Regex.match?(~r/\A[^\s]+@[^\s]+\z/, email)
   end
 
   # Deactivation is what separates a permanent bounce from a transient one, so a
