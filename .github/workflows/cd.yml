@@ -400,8 +400,8 @@ jobs:
             curl -fsSI --retry 3 --retry-delay 2 "$url" >/dev/null
           done <<<"$tarball_urls"
 
-  production-cutover:
-    name: CD - Check production cutover
+  deployment-plan:
+    name: CD - Plan production
     # Every successful main commit carries a freshly tested portal image. Never
     # plan with an older applied digest: that would hide application drift after
     # a failed plan behind an otherwise successful infrastructure reconciliation.
@@ -412,62 +412,6 @@ jobs:
       ((needs.ci.outputs.packs_release == 'true' && needs.packs-publish.result == 'success') ||
        (needs.ci.outputs.packs_release != 'true' && needs.packs-publish.result == 'skipped'))
     needs: [ci, portal-publish, packs-publish]
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    outputs:
-      standard: ${{ steps.cutover.outputs.standard }}
-    permissions:
-      contents: read
-    env:
-      PUBLISHED_IMAGE: ${{ needs.portal-publish.outputs.image }}
-    steps:
-      - name: Protect the directory-group authorization cutover
-        id: cutover
-        run: |
-          set -euo pipefail
-          [[ "$PUBLISHED_IMAGE" =~ ^ghcr\.io/andrewdryga/emisar@sha256:[0-9a-f]{64}$ ]] || {
-            echo "::error::The cutover requires this commit's tested immutable image (got '$PUBLISHED_IMAGE')"
-            exit 1
-          }
-          live_health=$(curl -fsS --retry 5 --retry-delay 2 https://emisar.dev/healthz)
-          live_revision=$(jq -er .revision <<< "$live_health")
-          [[ "$live_revision" =~ ^[0-9a-f]{40}$ ]] || {
-            echo "::error::Live health returned an invalid revision: ${live_revision}"
-            exit 1
-          }
-
-          # Migration 20261004 changes authorization identity from the IdP's
-          # reusable externalId to emisar's immutable DirectoryGroup UUID. A
-          # v0.42 node serving beside the migrated schema can regrant a dormant
-          # mapping after delete/recreate, so the normal rolling plan must not
-          # be offered until production has crossed it under a no-overlap
-          # maintenance procedure. This source-level hold is deliberately not
-          # inferred from one /healthz response: the load balancer can return a
-          # new node while an old node still serves. Remove the hold only after
-          # the maintenance evidence proves the entire old fleet is gone.
-          echo "standard=false" >> "$GITHUB_OUTPUT"
-          {
-            echo "### Production Terraform plan withheld"
-            echo "- live revision: \`${live_revision}\`"
-            echo "- candidate revision: \`${GITHUB_SHA}\`"
-            echo "- tested image: \`${PUBLISHED_IMAGE}\`"
-            echo "- the candidate contains \`20261004000000_bind_authorization_mappings_to_directory_groups\`, which is not safe with old and new portal nodes serving together"
-            echo "- use the reviewed no-overlap cutover in .github/DEPLOYMENT.md: publish the candidate and catalog, drain the MIG, then run the main-only Portal recovery-plan workflow"
-            echo "- after the migration commits, v0.42 is not a rollback candidate; rollback may use only an image that understands DirectoryGroup UUID mappings"
-            echo "- the tested immutable image remains available to the maintenance procedure"
-          } >> "$GITHUB_STEP_SUMMARY"
-
-  deployment-plan:
-    name: CD - Plan production
-    if: >-
-      always() &&
-      needs.ci.result == 'success' &&
-      needs.portal-publish.result == 'success' &&
-      needs.production-cutover.result == 'success' &&
-      needs.production-cutover.outputs.standard == 'true' &&
-      ((needs.ci.outputs.packs_release == 'true' && needs.packs-publish.result == 'success') ||
-       (needs.ci.outputs.packs_release != 'true' && needs.packs-publish.result == 'skipped'))
-    needs: [ci, portal-publish, packs-publish, production-cutover]
     runs-on: ubuntu-latest
     timeout-minutes: 30
     concurrency:
