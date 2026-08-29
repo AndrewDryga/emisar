@@ -2,7 +2,11 @@ schema_version: 1
 id: minio
 name: MinIO operations
 version: 0.1.19
-retired_below: 0.1.10
+# Every version below this one runs `mc admin trace -v`, which prints other
+# clients' request headers — their SigV4 credential and signature, and a
+# presigned URL's query signature, which is a reusable object-access capability
+# until it expires — straight into model-visible output and the audit log.
+retired_below: 0.1.19
 description: >
   Cluster + bucket + user introspection plus operator surface (user
   enable/disable, bucket heal, cluster service restart). Talks to mc
