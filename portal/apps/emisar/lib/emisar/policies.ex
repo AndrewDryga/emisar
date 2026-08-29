@@ -780,8 +780,9 @@ defmodule Emisar.Policies do
   def evaluate(%Policy{rules: rules} = policy, %{} = match_ctx) do
     action_id = match_ctx["action_id"] || ""
     risk = normalize_risk(match_ctx["risk"])
+    overrides = compile_overrides(overrides_for(rules))
 
-    case find_override(overrides_for(rules), action_id) do
+    case find_compiled_override(overrides, action_id) do
       nil ->
         decision = default_for_tier(defaults_for(rules), risk)
         decision = atomize(decision)
@@ -812,15 +813,6 @@ defmodule Emisar.Policies do
       add_outcome_action(outcome, decision, action_id)
     end)
   end
-
-  defp find_override(overrides, action_id) when is_list(overrides),
-    do: Enum.find(overrides, &override_matches?(&1, action_id))
-
-  defp override_matches?(%{"action" => pattern}, action_id)
-       when is_binary(pattern) and pattern != "",
-       do: Glob.match?(pattern, action_id)
-
-  defp override_matches?(_, _), do: false
 
   defp compile_overrides(overrides) when is_list(overrides),
     do: Enum.flat_map(overrides, &compile_override/1)

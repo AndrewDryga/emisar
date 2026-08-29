@@ -689,6 +689,47 @@ defmodule Emisar.PoliciesTest do
              ]
     end
 
+    # Every dispatch in the account evaluates this list, so an admin cannot save
+    # a pattern set that burns the node's shared schedulers for every tenant.
+    test "rejects an override action longer than the cap" do
+      action = String.duplicate("a", 201)
+      changeset = rules_changeset(%{"overrides" => [%{"action" => action, "decision" => "deny"}]})
+
+      refute changeset.valid?
+
+      assert errors_on(changeset).rules == [
+               "override action must be at most 200 characters"
+             ]
+    end
+
+    test "rejects an override action carrying more wildcards than the cap" do
+      action = String.duplicate("*a", 9)
+      changeset = rules_changeset(%{"overrides" => [%{"action" => action, "decision" => "deny"}]})
+
+      refute changeset.valid?
+
+      assert errors_on(changeset).rules == [
+               "override action must use at most 8 wildcards"
+             ]
+    end
+
+    test "rejects more overrides than a policy may carry" do
+      overrides =
+        for index <- 1..201, do: %{"action" => "linux.#{index}", "decision" => "deny"}
+
+      changeset = rules_changeset(%{"overrides" => overrides})
+
+      refute changeset.valid?
+      assert errors_on(changeset).rules == ["a policy may carry at most 200 overrides"]
+    end
+
+    test "accepts an override list at the caps" do
+      overrides =
+        for index <- 1..200, do: %{"action" => "linux.#{index}*", "decision" => "deny"}
+
+      assert rules_changeset(%{"overrides" => overrides}).valid?
+    end
+
     test "a minimal policy with neither defaults nor overrides is valid" do
       assert rules_changeset(%{"schema_version" => 2}).valid?
     end

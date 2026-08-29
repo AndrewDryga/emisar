@@ -6,6 +6,14 @@ defmodule Emisar.Policies.Policy.Changeset do
   @valid_sections ["schema_version", "defaults", "overrides", "approval"]
   @valid_approval_keys ["min_approvals", "allow_self_approval"]
 
+  # Every dispatch in the account evaluates this list, so the rules an admin may
+  # save are bounded: a `*a*a*a…` pattern is a catastrophic-backtracking regex
+  # run on the shared schedulers of every tenant on the node, and past PCRE's
+  # own limit `Regex.compile!/2` raises straight out of the dispatch path.
+  @max_overrides 200
+  @max_override_action_length 200
+  @max_override_wildcards 8
+
   @doc """
   Validation-only changeset for the policy editor form. Casts the
   assembled `rules` map and runs the same `validate_rules/1` checks as
@@ -125,6 +133,9 @@ defmodule Emisar.Policies.Policy.Changeset do
 
   defp check_overrides(nil), do: :ok
 
+  defp check_overrides(overrides) when length(overrides) > @max_overrides,
+    do: {:error, "a policy may carry at most #{@max_overrides} overrides"}
+
   defp check_overrides(overrides) when is_list(overrides) do
     decisions = Policies.decisions()
 
@@ -142,6 +153,14 @@ defmodule Emisar.Policies.Policy.Changeset do
         override["action"] != String.trim(override["action"]) ->
           {:halt, {:error, "override action must not have surrounding whitespace"}}
 
+        String.length(override["action"]) > @max_override_action_length ->
+          {:halt,
+           {:error, "override action must be at most #{@max_override_action_length} characters"}}
+
+        wildcard_count(override["action"]) > @max_override_wildcards ->
+          {:halt,
+           {:error, "override action must use at most #{@max_override_wildcards} wildcards"}}
+
         true ->
           {:cont, :ok}
       end
@@ -149,6 +168,8 @@ defmodule Emisar.Policies.Policy.Changeset do
   end
 
   defp check_overrides(_), do: {:error, "overrides must be a list"}
+
+  defp wildcard_count(action), do: action |> String.graphemes() |> Enum.count(&(&1 == "*"))
 
   defp check_approval(nil), do: {:error, "approval settings are required"}
 
