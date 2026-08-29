@@ -22,12 +22,22 @@ defmodule Emisar.Crypto do
   identifier for one exact (account, credential lineage, request body) triple,
   so repeated identical rejections correlate in logs without ever logging the
   body. HMAC-SHA256 under the deploy's telemetry salt, hex-encoded — here and
-  not at the call site because ALL keyed hashing lives behind this module, and
-  this was the one `:crypto.mac` outside it.
+  not at the call site because ALL keyed hashing lives behind this module.
   """
   def telemetry_fingerprint(payload) do
     key = Emisar.Config.fetch_env!(:emisar, :mcp_telemetry_salt)
     :hmac |> :crypto.mac(:sha256, key, payload) |> Base.encode16(case: :lower)
+  end
+
+  @doc """
+  Paddle webhook signature: the lowercase-hex HMAC-SHA256 of a timestamped signed
+  payload under the endpoint's webhook secret, for constant-time comparison
+  against the `h1=` value Paddle sends on each billing event. Keyed hashing lives
+  here, not inline in the billing client, so there is one crypto review surface.
+  """
+  def paddle_webhook_signature(secret, signed_payload)
+      when is_binary(secret) and is_binary(signed_payload) do
+    :hmac |> :crypto.mac(:sha256, secret, signed_payload) |> Base.encode16(case: :lower)
   end
 
   @doc """

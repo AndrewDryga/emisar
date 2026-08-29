@@ -228,7 +228,7 @@ defmodule Emisar.Billing.PaddleClient.Live do
          {timestamp, ""} <- Integer.parse(timestamp_str),
          :ok <- check_timestamp(timestamp),
          signed_payload = "#{timestamp}:#{payload}",
-         computed = compute_signature(secret, signed_payload),
+         computed = Emisar.Crypto.paddle_webhook_signature(secret, signed_payload),
          true <- Emisar.Crypto.secure_compare(computed, expected) do
       :ok
     else
@@ -236,9 +236,6 @@ defmodule Emisar.Billing.PaddleClient.Live do
       _ -> {:error, :signature_mismatch}
     end
   end
-
-  defp compute_signature(secret, signed_payload),
-    do: :crypto.mac(:hmac, :sha256, secret, signed_payload) |> Base.encode16(case: :lower)
 
   defp check_timestamp(timestamp) do
     delta = abs(System.system_time(:second) - timestamp)

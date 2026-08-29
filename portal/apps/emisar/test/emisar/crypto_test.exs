@@ -101,6 +101,22 @@ defmodule Emisar.CryptoTest do
     end
   end
 
+  describe "paddle_webhook_signature/2" do
+    test "is a deterministic lowercase-hex HMAC-SHA256 keyed by the webhook secret" do
+      payload = "1700000000:{\"a\":1}"
+      signature = Crypto.paddle_webhook_signature("whsec", payload)
+
+      assert signature == Crypto.paddle_webhook_signature("whsec", payload)
+      assert signature =~ ~r/\A[0-9a-f]{64}\z/
+
+      assert signature ==
+               :crypto.mac(:hmac, :sha256, "whsec", payload) |> Base.encode16(case: :lower)
+
+      refute signature == Crypto.paddle_webhook_signature("other", payload)
+      refute signature == Crypto.paddle_webhook_signature("whsec", "1700000000:{\"a\":2}")
+    end
+  end
+
   describe "credential_step_up_code/0" do
     test "returns a six-digit code and its digest" do
       {code, digest} = Crypto.credential_step_up_code()
