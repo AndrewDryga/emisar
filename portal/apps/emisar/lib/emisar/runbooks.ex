@@ -536,7 +536,23 @@ defmodule Emisar.Runbooks do
            Repo.commit_multi(multi, after_commit: &after_mcp_draft_committed/1),
          {:ok, runbook} <- fetch_mcp_draft(id, subject) do
       {:ok, if(reservation.fresh?, do: :created, else: :replay), runbook}
+    else
+      {:error, %Ecto.Changeset{} = changeset} -> map_derived_id_conflict(changeset)
+      {:error, reason} -> {:error, reason}
     end
+  end
+
+  # The MCP resource id is derived from the operation; past the 24h dedup window a
+  # re-derived id collides with the still-living runbook/execution PK. Present that
+  # as an operation conflict, never a raw changeset (or an Ecto.ConstraintError).
+  defp map_derived_id_conflict(%Ecto.Changeset{errors: errors} = changeset) do
+    id_conflict? =
+      Enum.any?(errors, fn
+        {:id, {_message, opts}} -> opts[:constraint] == :unique
+        _ -> false
+      end)
+
+    if id_conflict?, do: {:error, :operation_conflict}, else: {:error, changeset}
   end
 
   defp mcp_draft_attrs(facts, definition, id) do
@@ -1071,6 +1087,9 @@ defmodule Emisar.Runbooks do
              after_commit: &Approvals.after_runbook_execution_request_committed/1
            ) do
       settle_mcp_execution(changes, execution_id, subject)
+    else
+      {:error, %Ecto.Changeset{} = changeset} -> map_derived_id_conflict(changeset)
+      {:error, reason} -> {:error, reason}
     end
   end
 

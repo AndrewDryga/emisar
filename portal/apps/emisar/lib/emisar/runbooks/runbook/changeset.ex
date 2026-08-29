@@ -45,6 +45,11 @@ defmodule Emisar.Runbooks.Runbook.Changeset do
     |> validate_required([:draft_definition])
     |> validate_draft_definition()
     |> changeset()
+    # The MCP path supplies a deterministic `id` derived from the operation, and
+    # the 24h operation-dedup row is pruned while this runbook lives on — so a
+    # re-derived id can collide with an existing PK. Map that to a tagged conflict
+    # instead of an unhandled Ecto.ConstraintError (a 500 for a scheduled agent).
+    |> unique_constraint(:id, name: :runbooks_pkey)
   end
 
   @doc """

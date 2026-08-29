@@ -1266,6 +1266,28 @@ defmodule Emisar.RunbooksTest do
       assert Repo.aggregate(MCPOperations.Operation, :count) == 1
     end
 
+    test "a re-derived id after the dedup row is pruned conflicts instead of crashing" do
+      {_user, account, owner} = Fixtures.Subjects.owner_subject()
+      subject = api_client_subject(account, owner, "retention conflict")
+      facts = mcp_draft_facts()
+
+      assert {:ok, :created, _created} = Runbooks.create_or_replay_mcp_draft(facts, subject)
+
+      # The 24h operation-dedup row is pruned while the runbook lives on.
+      Repo.delete_all(MCPOperations.Operation)
+
+      # The same operation re-derives the same runbook id (from the lineage +
+      # operation_id, not the slug), now colliding with the live PK; a different
+      # slug isolates the id conflict so the assertion doesn't ride a
+      # constraint-check race. Without unique_constraint(:id) this raised.
+      retried = %{facts | slug: "retried-conflict-slug", title: "Retried"}
+
+      assert Runbooks.create_or_replay_mcp_draft(retried, subject) ==
+               {:error, :operation_conflict}
+
+      assert Repo.aggregate(Runbooks.Runbook, :count) == 1
+    end
+
     test "reports an incomplete operation when the committed draft is missing" do
       {_user, account, owner} = Fixtures.Subjects.owner_subject()
       subject = api_client_subject(account, owner, "incomplete draft")
@@ -2092,6 +2114,21 @@ defmodule Emisar.RunbooksTest do
       assert replayed.id == fixture.execution_id
       assert Repo.aggregate(RunbookExecution, :count) == 1
       assert Repo.aggregate(MCPOperations.Operation, :count) == 1
+    end
+
+    test "a re-derived execution id after the dedup row is pruned conflicts instead of crashing" do
+      fixture = mcp_execution_fixture()
+      facts = mcp_execution_facts(fixture.runbook, operation_id: fixture.operation_id)
+
+      # The 24h operation-dedup row is pruned while the execution lives on.
+      Repo.delete_all(MCPOperations.Operation)
+
+      # The same operation re-derives the same execution id, now colliding with
+      # the live PK; without unique_constraint(:id) this raised.
+      assert Runbooks.create_or_replay_mcp_execution(facts, fixture.subject) ==
+               {:error, :operation_conflict}
+
+      assert Repo.aggregate(RunbookExecution, :count) == 1
     end
 
     test "replays without resolving the current live runbook" do

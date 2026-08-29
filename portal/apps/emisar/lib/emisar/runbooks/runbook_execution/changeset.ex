@@ -35,6 +35,11 @@ defmodule Emisar.Runbooks.RunbookExecution.Changeset do
     |> unique_constraint(:mcp_operation_record_id,
       name: :runbook_executions_mcp_operation_index
     )
+    # The MCP path supplies a deterministic `id` derived from the operation; the
+    # 24h operation-dedup row is pruned while the execution lives on, so a
+    # re-derived id can collide with an existing PK. Map that to a tagged conflict
+    # rather than an unhandled Ecto.ConstraintError (a 500 for a scheduled agent).
+    |> unique_constraint(:id, name: :runbook_executions_pkey)
   end
 
   def succeed(%RunbookExecution{} = execution, now) do
