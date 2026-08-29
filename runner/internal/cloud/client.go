@@ -22,6 +22,11 @@ var errResponseBacklogFull = errors.New("response backlog full")
 
 var errTerminalShutdown = errors.New("cloud: terminal shutdown")
 
+// errProtocolVersionUnsupported marks a wire-protocol mismatch. Unlike a
+// dropped socket it is local, deterministic, and unchanged by retrying, so the
+// session that hit it must NOT count as connected (see runSession).
+var errProtocolVersionUnsupported = errors.New("cloud: unsupported protocol version")
+
 const (
 	resultStatusSignatureInvalid = "signature_invalid"
 	resultStatusPackHashMismatch = "pack_hash_mismatch"
@@ -398,6 +403,16 @@ func (c *Client) runSession(parent context.Context) (bool, error) {
 		}
 		if err := c.dispatch(parent, raw); err != nil {
 			sessionCancel()
+			if errors.Is(err, errProtocolVersionUnsupported) {
+				// Local, deterministic, and unchanged by retrying, exactly like
+				// the runner_state size check above: the next session receives
+				// the same message from the same peer. Reporting a successful
+				// connect here would reset the backoff on every pass and turn a
+				// permanent condition into a 1 Hz reconnect storm against the
+				// portal — the shape the package's additive-safety promise
+				// exists to avoid.
+				return false, fmt.Errorf("dispatch: %w", err)
+			}
 			return true, fmt.Errorf("dispatch: %w", err)
 		}
 	}
@@ -488,11 +503,16 @@ func (c *Client) dispatch(parent context.Context, raw []byte) error {
 		c.refuseUndecodableDispatch(parent, "")
 		return nil
 	}
+	// Every KNOWN message must carry the exact protocol version; an unknown
+	// type stays ignorable so an additive message family cannot break a peer.
 	switch envelope.Type {
-	case MsgRunAction:
-		if err := requireProtocolVersion(envelope); err != nil {
+	case MsgRunAction, MsgCancel, MsgAckResult, MsgError, MsgShutdown:
+		if err := c.requireProtocolVersion(envelope); err != nil {
 			return err
 		}
+	}
+	switch envelope.Type {
+	case MsgRunAction:
 		var m RunActionMsg
 		// RunActionMsg.UnmarshalJSON owns the size, uniqueness, alias and
 		// request_id checks, and captures the exact args token itself — a
@@ -504,27 +524,18 @@ func (c *Client) dispatch(parent context.Context, raw []byte) error {
 		}
 		return c.startRun(parent, m)
 	case MsgCancel:
-		if err := requireProtocolVersion(envelope); err != nil {
-			return err
-		}
 		if err := validateRequestID(envelope.RequestID); err != nil {
 			c.opts.Logger.Warn("cloud.bad_cancel", "error", err)
 			return nil
 		}
 		c.cancelRun(envelope.RequestID)
 	case MsgAckResult:
-		if err := requireProtocolVersion(envelope); err != nil {
-			return err
-		}
 		if err := validateRequestID(envelope.RequestID); err != nil {
 			c.opts.Logger.Warn("cloud.bad_ack_result", "error", err)
 			return nil
 		}
 		c.ackRun(envelope.RequestID)
 	case MsgError:
-		if err := requireProtocolVersion(envelope); err != nil {
-			return err
-		}
 		if envelope.RequestID != "" {
 			if err := validateRequestID(envelope.RequestID); err != nil {
 				c.opts.Logger.Warn("cloud.bad_error", "error", err)
@@ -544,9 +555,6 @@ func (c *Client) dispatch(parent context.Context, raw []byte) error {
 			c.retryFinalization(envelope.RequestID)
 		}
 	case MsgShutdown:
-		if err := requireProtocolVersion(envelope); err != nil {
-			return err
-		}
 		var m ShutdownMsg
 		if err := json.Unmarshal(raw, &m); err != nil {
 			c.opts.Logger.Warn("cloud.bad_shutdown", "error", err)
@@ -576,16 +584,28 @@ func terminalShutdownReason(reason string) bool {
 	}
 }
 
-func requireProtocolVersion(envelope Envelope) error {
-	if envelope.ProtocolVersion != ProtocolVersion {
-		return fmt.Errorf(
-			"cloud: %s protocol_version %d does not match supported version %d",
-			envelope.Type,
-			envelope.ProtocolVersion,
-			ProtocolVersion,
-		)
+// requireProtocolVersion ends the session when a known message carries a
+// version this build does not implement, and records that as a PERMANENT local
+// condition: the peer speaks a wire protocol we cannot read, so every
+// reconnect meets the same message. Persisting it lets doctor explain the loop
+// instead of leaving the operator with a reconnect log.
+func (c *Client) requireProtocolVersion(envelope Envelope) error {
+	if envelope.ProtocolVersion == ProtocolVersion {
+		return nil
 	}
-	return nil
+	message := fmt.Sprintf(
+		"the control plane sent %s at protocol_version %d; this runner implements version %d",
+		envelope.Type, envelope.ProtocolVersion, ProtocolVersion,
+	)
+	if c.opts.TerminalShutdownPath != "" {
+		if err := WriteTerminalShutdown(
+			c.opts.TerminalShutdownPath, ReasonProtocolVersionUnsupported, message,
+		); err != nil {
+			c.opts.Logger.Error("cloud.shutdown_state_write_failed",
+				"reason", ReasonProtocolVersionUnsupported, "error", err)
+		}
+	}
+	return fmt.Errorf("%w: %s", errProtocolVersionUnsupported, message)
 }
 
 // startRun spawns a handler for one run_action, subject to the

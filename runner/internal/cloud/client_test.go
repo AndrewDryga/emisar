@@ -1127,6 +1127,52 @@ func TestClient_UndecodableRunActionIsJournaledAndAnswered(t *testing.T) {
 	})
 }
 
+// A protocol_version this build cannot read is a PERMANENT local condition:
+// the same peer sends the same message on the next connection. The session
+// must not report itself as connected — that resets the reconnect backoff and
+// turns the mismatch into a 1 Hz dial storm — and must leave a durable record
+// so doctor can explain the loop.
+func TestClient_ProtocolVersionMismatchIsPermanentAndRecorded(t *testing.T) {
+	statePath := filepath.Join(t.TempDir(), "terminal_shutdown.json")
+	conn := newFakeConn()
+	cli := buildClient(t, &queuedDialer{conns: []*fakeConn{conn}}, func(o *Options) {
+		o.TerminalShutdownPath = statePath
+	})
+
+	conn.in <- []byte(`{"type":"cancel","protocol_version":2,"request_id":"` +
+		testRequestID("from-a-newer-portal") + `"}`)
+
+	connected, err := cli.runSession(context.Background())
+	if !errors.Is(err, errProtocolVersionUnsupported) {
+		t.Fatalf("runSession error=%v, want an unsupported protocol version", err)
+	}
+	if connected {
+		t.Fatal("a version mismatch reported the session as connected; the caller resets its backoff and redials at ReconnectMin forever")
+	}
+
+	state, err := ReadRecentTerminalShutdown(statePath, time.Now().UTC())
+	if err != nil {
+		t.Fatalf("read terminal shutdown state: %v", err)
+	}
+	if state == nil || state.Reason != ReasonProtocolVersionUnsupported {
+		t.Fatalf("terminal shutdown state=%+v, want reason %q", state, ReasonProtocolVersionUnsupported)
+	}
+	if !strings.Contains(state.Message, "protocol_version 2") {
+		t.Fatalf("state message=%q, want the peer's version", state.Message)
+	}
+}
+
+// A shutdown FRAME may only declare the portal's own terminal reasons: the
+// runner-owned protocol reason must not be claimable by a peer.
+func TestTerminalShutdownReasonRejectsLocallyOwnedReason(t *testing.T) {
+	if terminalShutdownReason(ReasonProtocolVersionUnsupported) {
+		t.Fatal("a shutdown frame must not be able to declare the runner's own protocol condition")
+	}
+	if !persistedShutdownReason(ReasonProtocolVersionUnsupported) {
+		t.Fatal("the runner's own protocol condition must be persistable")
+	}
+}
+
 func TestClientRejectsKnownMessagesWithIncompatibleProtocolVersion(t *testing.T) {
 	cli := buildClient(t, &queuedDialer{})
 

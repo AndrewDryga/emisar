@@ -18,6 +18,12 @@ import (
 // persisted terminal shutdown as the current cloud status.
 const TerminalShutdownFreshness = 24 * time.Hour
 
+// ReasonProtocolVersionUnsupported is the runner's OWN terminal condition: the
+// control plane speaks a wire-protocol version this build cannot read. It is
+// never accepted from a shutdown frame — terminalShutdownReason still governs
+// what the portal may declare — so a peer cannot claim it.
+const ReasonProtocolVersionUnsupported = "protocol_version_unsupported"
+
 const (
 	terminalShutdownStateFilename = "terminal_shutdown.json"
 	maxTerminalShutdownStateBytes = 16 << 10
@@ -40,13 +46,22 @@ func TerminalShutdownStatePath(dataDir string) string {
 	return filepath.Join(dataDir, terminalShutdownStateFilename)
 }
 
+// persistedShutdownReason accepts what may live in the durable state: the
+// portal's terminal shutdown reasons plus the conditions the runner records
+// about itself. It stays separate from terminalShutdownReason, which classifies
+// what a SHUTDOWN FRAME may declare, so a peer can never send a locally-owned
+// reason and have it treated as its own rejection.
+func persistedShutdownReason(reason string) bool {
+	return terminalShutdownReason(reason) || reason == ReasonProtocolVersionUnsupported
+}
+
 // WriteTerminalShutdown persists a terminal cloud rejection using the same
 // synced temp-file replacement used by the runner's other durable state.
 func WriteTerminalShutdown(path, reason, message string) error {
 	if path == "" {
 		return errors.New("cloud: terminal shutdown state path is empty")
 	}
-	if !terminalShutdownReason(reason) {
+	if !persistedShutdownReason(reason) {
 		return fmt.Errorf("cloud: %q is not a terminal shutdown reason", reason)
 	}
 
@@ -112,7 +127,7 @@ func ReadRecentTerminalShutdown(path string, now time.Time) (*TerminalShutdownSt
 		}
 		return nil, fmt.Errorf("cloud: decode terminal shutdown state trailer: %w", err)
 	}
-	if !terminalShutdownReason(state.Reason) || state.Timestamp.IsZero() {
+	if !persistedShutdownReason(state.Reason) || state.Timestamp.IsZero() {
 		return nil, nil
 	}
 

@@ -462,12 +462,18 @@ func checkCloud(ctx context.Context, cfg *config.Config, client *http.Client) ch
 }
 
 func terminalShutdownDetail(shutdown *cloud.TerminalShutdownState) string {
-	detail := fmt.Sprintf("the control plane rejected this runner: %s", shutdown.Reason)
+	lead := "the control plane rejected this runner"
+	if shutdown.Reason == cloud.ReasonProtocolVersionUnsupported {
+		// Not a rejection: the peer is reachable and willing, we simply cannot
+		// read what it sends.
+		lead = "this runner cannot read the control plane's wire protocol"
+	}
+	detail := fmt.Sprintf("%s: %s", lead, shutdown.Reason)
 	if shutdown.Message != "" {
 		detail += " — " + shutdown.Message
 	}
 	switch shutdown.Reason {
-	case "runner_version_unsupported":
+	case cloud.ReasonProtocolVersionUnsupported, "runner_version_unsupported":
 		return detail + "; upgrade the runner and restart it"
 	case "runner_revoked":
 		return detail + "; re-register the runner in the control plane and restart it"
