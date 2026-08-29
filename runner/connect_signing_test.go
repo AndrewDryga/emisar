@@ -31,7 +31,8 @@ func TestBuildVerifierRejectsMemoryOnlyEnforcement(t *testing.T) {
 			TrustedCAs:        []config.TrustedCA{{Name: "ca-prod", PEM: caPEM}},
 		},
 	}
-	if _, err := buildVerifier(cfg, "runner-1", signing.NewMemoryNonceStore()); err == nil {
+	id := runnerIdentity{externalID: "runner-1", group: "prod"}
+	if _, err := buildVerifier(cfg, id, signing.NewMemoryNonceStore()); err == nil {
 		t.Fatal("production verifier accepted memory-only replay state")
 	}
 }

@@ -199,7 +199,7 @@ func TestEngine_AdmissionDenylistBlocks(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	e.Admission = pol
+	e.SetAdmission(pol)
 
 	res, err := e.Run(context.Background(), Request{
 		ActionID: "t.echo",
@@ -228,7 +228,7 @@ func TestEngine_AdmissionAllowlistGate(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	e.Admission = pol
+	e.SetAdmission(pol)
 
 	res, err := e.Run(context.Background(), Request{
 		ActionID: "t.echo",
@@ -254,7 +254,7 @@ func TestEngine_AdmissionPassesThrough(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	e.Admission = pol
+	e.SetAdmission(pol)
 
 	res, err := e.Run(context.Background(), Request{
 		ActionID: "t.echo",
@@ -917,7 +917,7 @@ func TestEngine_StreamingRedactsPrivateKeyTruncatedBeforeEnd(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	e.Redactor = redact.New(rules)
+	e.SetRedactor(redact.New(rules))
 
 	var (
 		mu       sync.Mutex

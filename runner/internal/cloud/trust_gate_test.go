@@ -252,7 +252,7 @@ func TestClient_AdmissionDenyBeatsValidSignatureAndMatchingHash(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	cli.opts.Engine.Admission = pol
+	cli.opts.Engine.SetAdmission(pol)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

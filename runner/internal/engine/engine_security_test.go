@@ -131,7 +131,7 @@ func TestEngine_MaxRiskBlocksAboveCeiling(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	e.Admission = pol
+	e.SetAdmission(pol)
 
 	low, err := e.Run(context.Background(), Request{
 		ActionID: "t.echo",
@@ -360,7 +360,7 @@ func TestEngine_UnflaggedCredentialMaskedInExecutedCommand(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CompileAll: %v", err)
 	}
-	engine := &Engine{Redactor: redact.New(defaults)}
+	engine := New(Config{Redactor: redact.New(defaults)})
 	act := &actionspec.Action{
 		ID:   "p.deploy",
 		Args: []actionspec.Arg{{Name: "header", Type: actionspec.ArgString}},

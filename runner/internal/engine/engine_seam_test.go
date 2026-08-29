@@ -332,7 +332,7 @@ func TestEngine_AdmissionBlockJournaledAsDedicatedEvent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	e.Admission = pol
+	e.SetAdmission(pol)
 
 	res, err := e.Run(context.Background(), Request{
 		ActionID: "t.echo",

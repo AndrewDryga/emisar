@@ -167,10 +167,10 @@ func TestStateBuilder_AdvertisesDegradedPacks(t *testing.T) {
 	policy, err := admission.New(nil, nil, "")
 	must(err)
 	b := &StateBuilder{
-		Version:     "0.0.1",
-		Group:       "g",
-		GetRegistry: func() *packs.Registry { return reg },
-		Admission:   policy,
+		Version:      "0.0.1",
+		Group:        "g",
+		GetRegistry:  func() *packs.Registry { return reg },
+		GetAdmission: func() *admission.Policy { return policy },
 	}
 	msg := b.Build()
 
@@ -292,9 +292,9 @@ func TestStateBuilder_AdmissionDenylistHidesAction(t *testing.T) {
 		t.Fatal(err)
 	}
 	b := &StateBuilder{
-		Version:     "0.2.0",
-		GetRegistry: func() *packs.Registry { return reg },
-		Admission:   pol,
+		Version:      "0.2.0",
+		GetRegistry:  func() *packs.Registry { return reg },
+		GetAdmission: func() *admission.Policy { return pol },
 	}
 	msg := b.Build()
 	if len(msg.Actions) != 0 {
@@ -359,9 +359,9 @@ actions:
 		t.Fatal(err)
 	}
 	b := &StateBuilder{
-		Version:     "0.2.0",
-		GetRegistry: func() *packs.Registry { return reg },
-		Admission:   pol,
+		Version:      "0.2.0",
+		GetRegistry:  func() *packs.Registry { return reg },
+		GetAdmission: func() *admission.Policy { return pol },
 	}
 	msg := b.Build()
 	if len(msg.Actions) != 1 || msg.Actions[0].ID != "t.echo" {
@@ -376,9 +376,9 @@ func TestStateBuilder_AdmissionAllowlistKeepsMatching(t *testing.T) {
 		t.Fatal(err)
 	}
 	b := &StateBuilder{
-		Version:     "0.2.0",
-		GetRegistry: func() *packs.Registry { return reg },
-		Admission:   pol,
+		Version:      "0.2.0",
+		GetRegistry:  func() *packs.Registry { return reg },
+		GetAdmission: func() *admission.Policy { return pol },
 	}
 	msg := b.Build()
 	if len(msg.Actions) != 1 || msg.Actions[0].ID != "t.echo" {

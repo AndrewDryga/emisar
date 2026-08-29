@@ -9,15 +9,18 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"reflect"
 	"strconv"
 	"strings"
 	"syscall"
 
 	"github.com/spf13/cobra"
 
+	"github.com/andrewdryga/emisar/runner/internal/admission"
 	"github.com/andrewdryga/emisar/runner/internal/cloud"
 	"github.com/andrewdryga/emisar/runner/internal/config"
 	"github.com/andrewdryga/emisar/runner/internal/fsutil"
+	"github.com/andrewdryga/emisar/runner/internal/redact"
 	"github.com/andrewdryga/emisar/runner/internal/signing"
 )
 
@@ -86,7 +89,7 @@ env var can be unset after the first successful connect.`,
 			// every verifier replacement.
 			defer nonceStore.Close()
 
-			verifier, err := buildVerifier(rt.cfg, rt.externalID, nonceStore)
+			verifier, err := buildVerifier(rt.cfg, rt.identity(), nonceStore)
 			if err != nil {
 				return fmt.Errorf("signing: %w", err)
 			}
@@ -111,12 +114,17 @@ env var can be unset after the first successful connect.`,
 			}
 
 			builder := &cloud.StateBuilder{
-				Version:     Version,
-				Hostname:    rt.hostname,
-				Group:       rt.cfg.Runner.Group,
-				Labels:      rt.cfg.Runner.Labels,
-				GetRegistry: rt.engine.Registry,
-				Admission:   rt.admission,
+				Version:  Version,
+				Hostname: rt.hostname,
+				// Identity is fixed for the process: the control plane knows
+				// this runner by what it registered as, and the journal stamps
+				// every event with it. A changed runner.group/labels is
+				// reported as restart-required by reloadRuntime rather than
+				// half-applied.
+				Group:        rt.cfg.Runner.Group,
+				Labels:       rt.cfg.Runner.Labels,
+				GetRegistry:  rt.engine.Registry,
+				GetAdmission: rt.engine.Admission,
 			}
 			client := cloud.NewClient(dialer, cloud.Options{
 				StateBuilder:         builder,
@@ -140,13 +148,13 @@ env var can be unset after the first successful connect.`,
 			// signal context via cmd.Context(); SIGHUP stays connect-local below.
 			ctx := cmd.Context()
 
-			// SIGHUP: reload packs and rebuild the signature verifier from the
-			// (possibly edited) config, then re-send runner_state on the active
-			// connection. Safe mid-action: the engine holds the registry and the
-			// client holds the verifier behind atomic pointers, so in-flight runs
-			// keep the pointers they captured at start. Every verifier shares the
-			// process-lifetime nonce store, so replay state is continuous across
-			// the construction-to-swap window.
+			// SIGHUP: re-read the config and apply every section a live runner
+			// can change, then re-send runner_state on the active connection.
+			// Safe mid-action: packs, admission, redaction and the verifier all
+			// sit behind atomic pointers, so in-flight runs keep what they
+			// captured at start. Every verifier shares the process-lifetime
+			// nonce store, so replay state is continuous across the
+			// construction-to-swap window.
 			hup := make(chan os.Signal, 1)
 			signal.Notify(hup, syscall.SIGHUP)
 			defer signal.Stop(hup)
@@ -156,23 +164,7 @@ env var can be unset after the first successful connect.`,
 					case <-ctx.Done():
 						return
 					case <-hup:
-						changed, packErr, signingErr := reloadComponents(
-							rt.engine.Reload,
-							func() error {
-								verifier, err := reloadVerifier(rt.externalID, nonceStore)
-								if err == nil {
-									client.SetVerifier(verifier)
-								}
-								return err
-							},
-						)
-						if packErr != nil {
-							logger.Error("reload_failed", "error", packErr)
-						}
-						if signingErr != nil {
-							logger.Error("signing_reload_failed", "error", signingErr)
-						}
-						if changed {
+						if reloadRuntime(rt, client, nonceStore, logger) {
 							client.Readvertise()
 						}
 					}
@@ -225,28 +217,113 @@ func runnerLockPath(dataDir string) string {
 	return filepath.Join(dataDir, "runner.lock")
 }
 
-func reloadComponents(reloadPacks, reloadSigning func() error) (changed bool, packErr, signingErr error) {
-	packErr = reloadPacks()
-	signingErr = reloadSigning()
-	return packErr == nil || signingErr == nil, packErr, signingErr
+// reloadRuntime re-reads the config file and applies every section a running
+// runner can change: the installed packs, the local admission policy, the
+// global redaction rules, and the signature verifier. It reports whether
+// anything was applied so the caller only re-advertises when it was.
+//
+// Everything else is bound to a resource this process holds for its lifetime —
+// the identity it registered under and stamps on every journal event, the
+// control-plane connection, the locked data directory, the open journal — and
+// a live swap of those is a different runner, not a reload. Each such section
+// that DIFFERS is named at Warn with "restart required". Silence was the bug:
+// an operator who tightened admission.deny and reloaded was told the reload
+// succeeded while the runner kept admitting the actions they had just banned.
+func reloadRuntime(
+	rt *runtime, client *cloud.Client, nonceStore *signing.NonceStore, logger *slog.Logger,
+) (applied bool) {
+	// Packs first, and independently of the config file: `pack install` sends
+	// the SIGHUP that picks the new pack up, and it reloads from the same dirs
+	// this process booted with, so an unreadable config must not block it.
+	if err := rt.engine.Reload(); err != nil {
+		logger.Error("reload_failed", "error", err)
+	} else {
+		applied = true
+	}
+
+	cfg, err := loadConfig()
+	if err != nil {
+		logger.Error("reload_failed", "error", err)
+		return applied
+	}
+	for _, section := range restartRequiredChanges(rt.cfg, cfg) {
+		logger.Warn("reload_restart_required",
+			"section", section,
+			"detail", "this section changed on disk; only a restart applies it")
+	}
+
+	if admit, err := admission.New(
+		cfg.Admission.Allow, cfg.Admission.Deny, cfg.Admission.MaxRisk,
+	); err != nil {
+		logger.Error("admission_reload_failed", "error", err)
+	} else {
+		rt.engine.SetAdmission(admit)
+		applied = true
+	}
+
+	if rules, err := redact.CompileAll(redact.DefaultRules(), cfg.Redaction.Rules); err != nil {
+		logger.Error("redaction_reload_failed", "error", err)
+	} else {
+		rt.engine.SetRedactor(redact.New(rules))
+		applied = true
+	}
+
+	// The verifier follows the reloaded signing policy but keeps the BOOT
+	// identity: certificate scope is judged against the same group and labels
+	// this runner advertises, so the enforced and the advertised identity
+	// cannot drift apart.
+	if verifier, err := buildVerifier(cfg, rt.identity(), nonceStore); err != nil {
+		logger.Error("signing_reload_failed", "error", err)
+	} else {
+		client.SetVerifier(verifier)
+		applied = true
+	}
+	return applied
+}
+
+// restartRequiredChanges names the config sections that differ from the ones
+// this process booted with and cannot be applied to it.
+func restartRequiredChanges(booted, current *config.Config) []string {
+	var sections []string
+	if !reflect.DeepEqual(booted.Runner, current.Runner) {
+		sections = append(sections, "runner")
+	}
+	if !reflect.DeepEqual(booted.Cloud, current.Cloud) {
+		sections = append(sections, "cloud")
+	}
+	if !reflect.DeepEqual(booted.Paths, current.Paths) {
+		sections = append(sections, "paths")
+	}
+	if !reflect.DeepEqual(booted.Execution, current.Execution) {
+		sections = append(sections, "execution")
+	}
+	if !reflect.DeepEqual(booted.Events, current.Events) {
+		sections = append(sections, "events")
+	}
+	return sections
 }
 
 // buildVerifier constructs the dispatch signature verifier from config: the
 // trusted CAs, whether enforcement is on, the attestation freshness window, and
-// the runner's local group/labels (the cert-scope identity). Every build receives
-// the same process-owned nonce store; only immutable policy is replaced.
-func buildVerifier(cfg *config.Config, externalID string, nonceStore *signing.NonceStore) (*signing.Verifier, error) {
+// the runner's identity (the cert-scope ceiling). Every build receives the same
+// process-owned nonce store and the same identity; only signing policy is
+// replaced.
+func buildVerifier(
+	cfg *config.Config, id runnerIdentity, nonceStore *signing.NonceStore,
+) (*signing.Verifier, error) {
 	if cfg.Signing.EnforceSignatures && !nonceStore.Durable() {
 		return nil, fmt.Errorf("signing: enforcement requires durable replay state")
 	}
-	return newVerifier(cfg, externalID, nonceStore)
+	return newVerifier(cfg, id, nonceStore)
 }
 
-func buildStateVerifier(cfg *config.Config, externalID string) (*signing.Verifier, error) {
-	return newVerifier(cfg, externalID, signing.NewMemoryNonceStore())
+func buildStateVerifier(cfg *config.Config, id runnerIdentity) (*signing.Verifier, error) {
+	return newVerifier(cfg, id, signing.NewMemoryNonceStore())
 }
 
-func newVerifier(cfg *config.Config, externalID string, nonceStore *signing.NonceStore) (*signing.Verifier, error) {
+func newVerifier(
+	cfg *config.Config, id runnerIdentity, nonceStore *signing.NonceStore,
+) (*signing.Verifier, error) {
 	portalOrigin := ""
 	if cfg.Signing.EnforceSignatures {
 		var err error
@@ -261,7 +338,7 @@ func newVerifier(cfg *config.Config, externalID string, nonceStore *signing.Nonc
 	}
 	return signing.NewVerifier(
 		cfg.Signing.EnforceSignatures, cas, cfg.Signing.MaxAttestationAge.Std(),
-		externalID, portalOrigin, cfg.Runner.Group, cfg.Runner.Labels, nonceStore)
+		id.externalID, portalOrigin, id.group, id.labels, nonceStore)
 }
 
 // canonicalPortalOrigin maps the runner's websocket/HTTP control-plane URL to
@@ -301,20 +378,6 @@ func openRuntimeNonceStore(cfg *config.Config) (*signing.NonceStore, error) {
 		return signing.NewMemoryNonceStore(), nil
 	}
 	return openNonceStore(cfg)
-}
-
-// reloadVerifier re-reads the config file and rebuilds the verifier so a SIGHUP
-// picks up a rotated or revoked trusted key without a runner restart.
-func reloadVerifier(externalID string, nonceStore *signing.NonceStore) (*signing.Verifier, error) {
-	cfgPath, err := resolveConfigPath()
-	if err != nil {
-		return nil, fmt.Errorf("config path: %w", err)
-	}
-	cfg, err := config.Load(cfgPath)
-	if err != nil {
-		return nil, fmt.Errorf("load config: %w", err)
-	}
-	return buildVerifier(cfg, externalID, nonceStore)
 }
 
 // resolveExternalID uses the host lifecycle as the default identity boundary.

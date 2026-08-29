@@ -24,7 +24,23 @@ type runtime struct {
 	externalID string
 	journal    *audit.Journal
 	engine     *engine.Engine
-	admission  *admission.Policy
+}
+
+// runnerIdentity is what this process registered as, advertises, stamps on
+// every journal event, and enforces certificate scope against. It is fixed for
+// the process lifetime: changing it is a different runner, not a reload.
+type runnerIdentity struct {
+	externalID string
+	group      string
+	labels     map[string]string
+}
+
+func (r *runtime) identity() runnerIdentity {
+	return runnerIdentity{
+		externalID: r.externalID,
+		group:      r.cfg.Runner.Group,
+		labels:     r.cfg.Runner.Labels,
+	}
 }
 
 // registry returns the current pack registry from the engine. After a
@@ -190,7 +206,6 @@ func bootWithConfig(cfg *config.Config) (*runtime, error) {
 		externalID: externalID,
 		journal:    journal,
 		engine:     eng,
-		admission:  admit,
 	}, nil
 }
 

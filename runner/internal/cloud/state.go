@@ -42,13 +42,14 @@ type StateBuilder struct {
 	Group       string
 	Labels      map[string]string
 	GetRegistry func() *packs.Registry
-	// Admission, if set, filters the advertised action list — any
+	// GetAdmission, if set, filters the advertised action list — any
 	// action rejected by the host operator's allow/deny policy is
 	// hidden from the cloud catalog entirely. The engine ALSO enforces
 	// admission at run time, so a compromised portal trying to dispatch
 	// a hidden id still gets a hard refusal; this filter just keeps
-	// the UI honest.
-	Admission *admission.Policy
+	// the UI honest. Called every Build, like GetRegistry, so a policy
+	// reloaded on SIGHUP cannot advertise a catalog the engine would refuse.
+	GetAdmission func() *admission.Policy
 	// GetVerifier returns the dispatch verifier (nil = signature enforcement off). When it
 	// enforces, Build advertises that this runner verifies a client signature
 	// on every dispatch (so the cloud disables its own dispatch to it), plus
@@ -108,14 +109,18 @@ func (b *StateBuilder) Build() RunnerStateMsg {
 			Reason: boundDegradedReason(degraded.Reason),
 		})
 	}
+	var policy *admission.Policy
+	if b.GetAdmission != nil {
+		policy = b.GetAdmission()
+	}
 	for _, a := range reg.Actions() {
-		if ok, _ := b.Admission.Admit(a.ID); !ok {
+		if ok, _ := policy.Admit(a.ID); !ok {
 			continue
 		}
 		// Risk ceiling: a too-risky action is hidden from the catalog (and
 		// refused at dispatch, in the engine), so a read-only demo never shows
 		// high/critical actions to the operator or the LLM.
-		if ok, _ := b.Admission.AdmitRisk(a.Risk); !ok {
+		if ok, _ := policy.AdmitRisk(a.Risk); !ok {
 			continue
 		}
 		msg.Actions = append(msg.Actions, descriptorFor(a))

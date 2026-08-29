@@ -44,17 +44,22 @@ starting the runner, and to diff two hosts that should look identical.`,
 			if err != nil {
 				return err
 			}
-			verifier, err := buildStateVerifier(cfg, externalID)
+			identity := runnerIdentity{
+				externalID: externalID,
+				group:      cfg.Runner.Group,
+				labels:     cfg.Runner.Labels,
+			}
+			verifier, err := buildStateVerifier(cfg, identity)
 			if err != nil {
 				return err
 			}
 			b := &cloud.StateBuilder{
-				Version:     Version,
-				Group:       cfg.Runner.Group,
-				Labels:      cfg.Runner.Labels,
-				GetRegistry: func() *packs.Registry { return registry },
-				Admission:   policy,
-				GetVerifier: func() *signing.Verifier { return verifier },
+				Version:      Version,
+				Group:        cfg.Runner.Group,
+				Labels:       cfg.Runner.Labels,
+				GetRegistry:  func() *packs.Registry { return registry },
+				GetAdmission: func() *admission.Policy { return policy },
+				GetVerifier:  func() *signing.Verifier { return verifier },
 			}
 			return printJSON(b.Build())
 		},

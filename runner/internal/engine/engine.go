@@ -132,10 +132,16 @@ type Result struct {
 // swap it without locking out in-flight runs.
 type Engine struct {
 	registry atomic.Pointer[packs.Registry]
+	// admission and redactor are the two policy objects a config reload can
+	// replace. Behind atomic pointers for the same reason as the registry: a
+	// SIGHUP must apply an operator's tightened deny list (or new redaction
+	// rule) without waiting for in-flight runs, and a run reads each one at
+	// the moment it needs it.
+	admission atomic.Pointer[admission.Policy]
+	redactor  atomic.Pointer[redact.Engine]
 
 	Executor     *executor.Executor
 	Journal      *audit.Journal
-	Redactor     *redact.Engine
 	PreviewBytes int
 	// CancelGrace is the per-action SIGTERM->SIGKILL window passed into
 	// every executor.Plan. Defaults to executor.DefaultCancelGrace.
@@ -144,10 +150,6 @@ type Engine struct {
 	// engine construction so SIGHUP can pick up new packs from the same
 	// places we boot-loaded from.
 	PackDirs []string
-	// Admission is the runner-local allow/deny policy. Defense-in-depth
-	// on top of cloud policy: every Run call passes through Admit before
-	// the registry lookup. Nil means "admit everything" (default).
-	Admission *admission.Policy
 	// ProtectedPaths are the runner's own configuration and state roots.
 	// No action argument may name a path inside them, whatever its pack
 	// declared — they hold the enrollment key, the operator's pack
@@ -184,17 +186,37 @@ func New(cfg Config) *Engine {
 	e := &Engine{
 		Executor:       cfg.Executor,
 		Journal:        cfg.Journal,
-		Redactor:       cfg.Redactor,
 		PreviewBytes:   cfg.PreviewBytes,
 		CancelGrace:    cfg.CancelGrace,
 		PackDirs:       cfg.PackDirs,
-		Admission:      cfg.Admission,
 		ProtectedPaths: cfg.ProtectedPaths,
 		Logger:         cfg.Logger,
 	}
 	e.registry.Store(cfg.Registry)
+	e.admission.Store(cfg.Admission)
+	e.redactor.Store(cfg.Redactor)
 	return e
 }
+
+// Admission returns the runner-local allow/deny policy. Defense-in-depth on
+// top of cloud policy: every Run call passes through Admit before the registry
+// lookup. Nil means "admit everything" (the default, and what a nil Policy's
+// own methods answer).
+func (e *Engine) Admission() *admission.Policy { return e.admission.Load() }
+
+// SetAdmission replaces the local admission policy — a config reload applies
+// an operator's edited allow/deny/max_risk without restarting the daemon and
+// killing its in-flight runs. A run that already passed admission keeps
+// running; every later one is judged by the new policy.
+func (e *Engine) SetAdmission(policy *admission.Policy) { e.admission.Store(policy) }
+
+// Redactor returns the global output redaction engine (nil = none configured).
+func (e *Engine) Redactor() *redact.Engine { return e.redactor.Load() }
+
+// SetRedactor replaces the global redaction rules. Output is redacted as it
+// leaves the executor, so a reload applies to output produced after the swap,
+// including from a run that started before it.
+func (e *Engine) SetRedactor(r *redact.Engine) { e.redactor.Store(r) }
 
 // Registry returns the current pack registry. Safe to call from any
 // goroutine. The returned pointer is a snapshot; do not retain it past
@@ -322,7 +344,11 @@ func (e *Engine) Run(ctx context.Context, req Request) (*Result, error) {
 	// allow/deny config gets the final word. A reject here is recorded
 	// in the JSONL journal so a compromised-portal attack leaves a
 	// tamper-evident host-side trail.
-	if ok, reason := e.Admission.Admit(req.ActionID); !ok {
+	//
+	// One snapshot for both gates below: a reload landing between them must
+	// not judge the id against one policy and the risk against another.
+	policy := e.Admission()
+	if ok, reason := policy.Admit(req.ActionID); !ok {
 		ev := e.baseEvent(req, audit.EventActionBlockedByAdmission, now)
 		ev.ActionID = req.ActionID
 		ev.Error = reason
@@ -345,7 +371,7 @@ func (e *Engine) Run(ctx context.Context, req Request) (*Result, error) {
 	// filter. A too-risky action is hidden from cloud, but a stale or
 	// compromised portal that dispatches it anyway is refused here, with a
 	// host-side journal entry, exactly like an allow/deny block.
-	if ok, reason := e.Admission.AdmitRisk(act.Risk); !ok {
+	if ok, reason := policy.AdmitRisk(act.Risk); !ok {
 		ev := e.baseEvent(req, audit.EventActionBlockedByAdmission, now)
 		ev.PackID = act.PackID
 		ev.ActionID = act.ID
@@ -862,12 +888,14 @@ func verifyScriptSHA(si packs.ScriptInfo) error {
 // the action and global rules. Sensitive values may be echoed by a child
 // process, so argv masking alone is not a complete confidentiality boundary.
 func (e *Engine) combinedRedactor(act *actionspec.Action, cleanArgs map[string]any) *redact.Engine {
+	// One snapshot of the global rules for this action's whole output.
+	global := e.Redactor()
+	if global == nil {
+		global = redact.Empty()
+	}
 	secrets := sensitiveValues(cleanArgs, act.Args)
 	if len(secrets) == 0 && len(act.Output.Redact) == 0 {
-		if e.Redactor == nil {
-			return redact.Empty()
-		}
-		return e.Redactor
+		return global
 	}
 
 	// ONE rule for the whole sensitive set, masking in a single pass. As one
@@ -894,10 +922,10 @@ func (e *Engine) combinedRedactor(act *actionspec.Action, cleanArgs map[string]a
 			"action", act.ID,
 			"error", err,
 			"fallback", "sensitive arguments and global rules only")
-		return e.Redactor.Extend(rules)
+		return global.Extend(rules)
 	}
 
-	return e.Redactor.Extend(append(rules, authored...))
+	return global.Extend(append(rules, authored...))
 }
 
 func (e *Engine) executionInfo(r *executor.Result, redactedStdout, redactedStderr, scriptSHA string, plan executor.Plan, auditArgv []string) *audit.ExecutionInfo {
