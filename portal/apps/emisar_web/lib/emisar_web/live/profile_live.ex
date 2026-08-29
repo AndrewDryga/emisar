@@ -12,7 +12,7 @@ defmodule EmisarWeb.ProfileLive do
   @mfa_enrollment_email_suppressed_error "Emisar cannot deliver mail to your current address. Contact support to restore email delivery before setting up MFA."
   @mfa_enrollment_email_delivery_error "We could not deliver the verification code. Try again. If it keeps failing, contact support."
 
-  def mount(_params, session, socket) do
+  def mount(_params, _session, socket) do
     user = socket.assigns.current_user
 
     {:ok,
@@ -23,7 +23,6 @@ defmodule EmisarWeb.ProfileLive do
      |> assign(:mfa_recovery_regeneration_error, nil)
      |> assign(:mfa_disable_step, :idle)
      |> assign(:mfa_disable_error, nil)
-     |> assign(:current_session_token, session["user_token"])
      |> assign(:session_count, 0)
      |> assign(:session_page_count, 0)
      |> assign(:metadata, %Emisar.Repo.Paginator.Metadata{count: 0, limit: 0})
@@ -79,9 +78,9 @@ defmodule EmisarWeb.ProfileLive do
     opts = LiveTable.params_to_opts(params)
     list_opts = Keyword.put(opts, :page, Keyword.put(opts[:page], :limit, 15))
 
-    presented_token = socket.assigns.current_session_token
+    presented_digest = socket.assigns.current_auth.token
 
-    case Auth.list_sessions_for_user(presented_token, socket.assigns.current_subject, list_opts) do
+    case Auth.list_sessions_for_user(presented_digest, socket.assigns.current_subject, list_opts) do
       {:ok, sessions, metadata} ->
         presented = Enum.map(sessions, &present_session/1)
 
@@ -345,10 +344,10 @@ defmodule EmisarWeb.ProfileLive do
   end
 
   def handle_event("revoke_other_sessions", _params, socket) do
-    keep = socket.assigns.current_session_token
+    keep_digest = socket.assigns.current_auth.token
 
     revoked_count =
-      Auth.revoke_and_disconnect_other_sessions!(keep, socket.assigns.current_subject)
+      Auth.revoke_and_disconnect_other_sessions!(keep_digest, socket.assigns.current_subject)
 
     msg =
       case revoked_count do
@@ -476,7 +475,7 @@ defmodule EmisarWeb.ProfileLive do
              secret,
              otp,
              socket.assigns.mfa_enrollment_proof,
-             socket.assigns.current_session_token,
+             socket.assigns.current_auth.token,
              socket.assigns.current_subject
            ) do
         {:ok, updated, recovery_codes} ->

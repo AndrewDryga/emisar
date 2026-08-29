@@ -17,7 +17,7 @@ defmodule EmisarWeb.MfaSetupLive do
   @email_suppressed_error "Emisar cannot deliver mail to your current address. Contact support to restore email delivery before setting up MFA."
   @email_delivery_error "We could not deliver the verification code. Try again. If it keeps failing, contact support."
 
-  def mount(_params, session, socket) do
+  def mount(_params, _session, socket) do
     user = socket.assigns.current_user
     account = socket.assigns.current_account
 
@@ -27,7 +27,7 @@ defmodule EmisarWeb.MfaSetupLive do
     # via another account's IdP is NOT exempt here and must prove local MFA).
     case Accounts.ensure_account_compliant(account, socket.assigns.current_subject) do
       {:error, :mfa_required} ->
-        mount_required_mfa(socket, user, session["user_token"])
+        mount_required_mfa(socket, user)
 
       {:error, :sso_required} ->
         # The :ensure_sso_compliant on_mount already bounced a non-SSO session on
@@ -45,7 +45,7 @@ defmodule EmisarWeb.MfaSetupLive do
     end
   end
 
-  defp mount_required_mfa(socket, user, presented_token) do
+  defp mount_required_mfa(socket, user) do
     mode = if is_nil(user.mfa_enabled_at), do: :enrollment, else: :challenge
 
     title =
@@ -57,7 +57,6 @@ defmodule EmisarWeb.MfaSetupLive do
      socket
      |> assign(:page_title, title)
      |> assign(:mfa_mode, mode)
-     |> assign(:current_session_token, presented_token)
      |> assign(:mfa_recovery_codes, nil)
      |> assign(:mfa_challenge_mode, :totp)
      |> assign(:mfa_challenge_error, nil)
@@ -318,7 +317,7 @@ defmodule EmisarWeb.MfaSetupLive do
              secret,
              otp,
              socket.assigns.mfa_enrollment_proof,
-             socket.assigns.current_session_token,
+             socket.assigns.current_auth.token,
              socket.assigns.current_subject
            ) do
         {:ok, updated, recovery_codes} ->
@@ -387,7 +386,7 @@ defmodule EmisarWeb.MfaSetupLive do
          {:ok, _session} <-
            Auth.complete_current_session_mfa(
              proof,
-             socket.assigns.current_session_token,
+             socket.assigns.current_auth.token,
              socket.assigns.current_subject
            ) do
       {:noreply, push_navigate(socket, to: ~p"/app")}

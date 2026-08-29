@@ -376,22 +376,21 @@ defmodule Emisar.Auth do
 
   @doc """
   "Sign out everywhere except this device" — kills every session except
-  the one carrying `keep_token` (the caller's current cookie) AND
-  broadcasts a disconnect to each of those sessions' LiveView sockets.
-  Returns the count of sessions terminated.
+  the one whose stored token digest is `keep_digest` (the caller's current
+  session) AND broadcasts a disconnect to each of those sessions' LiveView
+  sockets. Returns the count of sessions terminated.
 
   Self-service only: the user signing out is the subject's own actor, so
   it's read from the `%Subject{}` rather than passed separately — there's
   no way to revoke anyone else's sessions through this path.
   """
   def revoke_and_disconnect_other_sessions!(
-        keep_token,
+        keep_digest,
         %Subject{actor: %Users.User{} = user} = subject
       )
-      when is_binary(keep_token) do
-    keep_digest = Crypto.hash(keep_token)
+      when is_binary(keep_digest) do
     topics = live_socket_topics_for_user(user, except: keep_digest)
-    count = revoke_other_sessions!(user, keep_token, subject.context)
+    count = revoke_other_sessions!(user, keep_digest, subject.context)
     if count > 0, do: disconnect_live_sessions(topics)
     count
   end
@@ -474,21 +473,21 @@ defmodule Emisar.Auth do
   Self-service — the user is the subject's own actor, so the list spans every
   workspace they belong to, exactly like the identity it describes.
 
-  `presented_token` is the caller's own raw session token: it is hashed once
-  here and each stored digest is compared against it in constant time, so the
-  row making this request comes back `current?: true` and no caller has to
-  handle a digest to find it. A `nil` (or otherwise non-binary) token simply
-  marks every row `current?: false`.
+  `presented_digest` is the digest of the caller's own session token: each
+  stored digest is compared against it in constant time, so the row making
+  this request comes back `current?: true` and no caller has to hash a token
+  here. A `nil` (or otherwise non-binary) digest simply marks every row
+  `current?: false`.
 
   Rows project into `%SessionFacts{}` — no token, no digest, no raw metadata —
   so the device list cannot leak credential material. Returns `{:ok,
   [%SessionFacts{}], %Paginator.Metadata{}}`, or `{:error, :unauthorized}` for
   a non-user subject.
   """
-  def list_sessions_for_user(presented_token, subject, opts \\ [])
+  def list_sessions_for_user(presented_digest, subject, opts \\ [])
 
-  def list_sessions_for_user(presented_token, %Subject{actor: %Users.User{} = user}, opts) do
-    presented_digest = presented_session_digest(presented_token)
+  def list_sessions_for_user(presented_digest, %Subject{actor: %Users.User{} = user}, opts) do
+    presented_digest = presented_session_digest(presented_digest)
 
     sessions_query =
       UserToken.Query.by_user_id(user.id)
@@ -505,10 +504,10 @@ defmodule Emisar.Auth do
     end
   end
 
-  def list_sessions_for_user(_presented_token, %Subject{}, _opts), do: {:error, :unauthorized}
+  def list_sessions_for_user(_presented_digest, %Subject{}, _opts), do: {:error, :unauthorized}
 
-  defp presented_session_digest(token) when is_binary(token), do: Crypto.hash(token)
-  defp presented_session_digest(_token), do: nil
+  defp presented_session_digest(digest) when is_binary(digest), do: digest
+  defp presented_session_digest(_digest), do: nil
 
   defp session_facts(%UserToken{} = token, presented_digest) do
     %SessionFacts{
@@ -585,17 +584,18 @@ defmodule Emisar.Auth do
   @doc """
   Internal — the token-deletion half of
   `revoke_and_disconnect_other_sessions!/2` (the Subject-fronted public
-  surface): revoke every session except the one carrying `keep_token`.
-  Pass `nil` to revoke every session including the current one.
+  surface): revoke every session except the one whose stored token digest
+  is `keep_digest`. Pass `nil` to revoke every session including the current
+  one.
   """
-  def revoke_other_sessions!(user, keep_token, context \\ %RequestContext{})
+  def revoke_other_sessions!(user, keep_digest, context \\ %RequestContext{})
 
-  def revoke_other_sessions!(%Users.User{} = user, keep_token, context)
-      when is_binary(keep_token) do
+  def revoke_other_sessions!(%Users.User{} = user, keep_digest, context)
+      when is_binary(keep_digest) do
     sessions_query =
       UserToken.Query.by_user_id(user.id)
       |> UserToken.Query.by_context("session")
-      |> UserToken.Query.except_token_digest(Crypto.hash(keep_token))
+      |> UserToken.Query.except_token_digest(keep_digest)
 
     revoke_sessions_atomically!(user, sessions_query, context)
   end
@@ -2111,7 +2111,8 @@ defmodule Emisar.Auth do
   base32 strings) along with the user — show these once and never again. The
   plaintext leaves this function and the DB never sees it.
 
-  `presented_token` is the raw bearer from the browser completing enrollment.
+  `presented_digest` is the stored token digest of the browser session
+  completing enrollment (the raw cookie never reaches this layer).
   The user enrollment, audit rows, and that exact same-user live session's local
   proof stamp commit atomically, so recovery codes are never emitted for an
   enrollment whose browser cannot continue.
@@ -2120,11 +2121,11 @@ defmodule Emisar.Auth do
         secret,
         otp,
         proof,
-        presented_token,
+        presented_digest,
         %Subject{actor: %Users.User{} = user} = subject
       )
       when is_binary(secret) and is_binary(otp) and is_binary(proof) and
-             is_binary(presented_token) do
+             is_binary(presented_digest) do
     with {:ok, payload} <- verify_mfa_enrollment_proof_for_user(proof, user),
          true <- Crypto.valid_totp?(secret, otp) do
       {plain_codes, digests} = generate_recovery_codes()
@@ -2137,7 +2138,7 @@ defmodule Emisar.Auth do
         end
       end)
       |> Multi.run(:session, fn repo, %{user: loaded_user} ->
-        fetch_and_lock_current_session(presented_token, loaded_user.id, repo)
+        fetch_and_lock_current_session(presented_digest, loaded_user.id, repo)
       end)
       |> Multi.run(:enabled_at, fn _repo, _changes -> {:ok, DateTime.utc_now()} end)
       |> Multi.merge(fn %{user: loaded_user, session: session, enabled_at: enabled_at} ->
@@ -2167,9 +2168,9 @@ defmodule Emisar.Auth do
 
   def enable_mfa(_, _, _, _, %Subject{}), do: {:error, :mfa_enrollment_proof_stale}
 
-  defp fetch_and_lock_current_session(presented_token, user_id, repo)
-       when is_binary(presented_token) and is_binary(user_id) do
-    UserToken.Query.by_token_digest(Crypto.hash(presented_token))
+  defp fetch_and_lock_current_session(presented_digest, user_id, repo)
+       when is_binary(presented_digest) and is_binary(user_id) do
+    UserToken.Query.by_token_digest(presented_digest)
     |> UserToken.Query.by_user_id(user_id)
     |> UserToken.Query.by_context("session")
     |> UserToken.Query.not_expired("session")
@@ -2734,8 +2735,8 @@ defmodule Emisar.Auth do
   Internal — finish an already-authenticated browser's local-MFA step-up. The
   signed `proof` came from `verify_mfa_challenge/3`; this transaction re-locks
   its user and rechecks the exact enrollment before touching the session. The
-  raw bearer must name one live same-user session, so a stale/revoked/foreign
-  token cannot be upgraded or resurrected.
+  `presented_digest` must name one live same-user session, so a
+  stale/revoked/foreign session cannot be upgraded or resurrected.
 
   Factor consumption and this handoff are deliberately two stages, matching the
   magic-link MFA completion path. A rare session race may spend one TOTP bucket
@@ -2743,10 +2744,10 @@ defmodule Emisar.Auth do
   """
   def complete_current_session_mfa(
         proof,
-        presented_token,
+        presented_digest,
         %Subject{actor: %Users.User{id: subject_user_id}}
       )
-      when is_binary(proof) and is_binary(presented_token) do
+      when is_binary(proof) and is_binary(presented_digest) do
     case mfa_proof_user_id(proof) do
       ^subject_user_id ->
         Multi.new()
@@ -2754,7 +2755,7 @@ defmodule Emisar.Auth do
           lock_signing_in_user(subject_user_id, proof, repo)
         end)
         |> Multi.run(:session, fn repo, %{user: user} ->
-          fetch_and_lock_current_session(presented_token, user.id, repo)
+          fetch_and_lock_current_session(presented_digest, user.id, repo)
         end)
         |> Multi.update(:mfa_session, fn %{user: user, session: session} ->
           UserToken.Changeset.local_mfa_verified(session, user.mfa_enabled_at)

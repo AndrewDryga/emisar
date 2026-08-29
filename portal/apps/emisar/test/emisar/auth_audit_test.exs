@@ -89,7 +89,7 @@ defmodule Emisar.AuthAuditTest do
       otp = NimbleTOTP.verification_code(secret)
 
       assert {:ok, updated, _codes} =
-               Auth.enable_mfa(secret, otp, proof, session_token, subject)
+               Auth.enable_mfa(secret, otp, proof, Crypto.hash(session_token), subject)
 
       assert [event] = events_of(account, "user.mfa_enabled")
       assert event.actor_id == updated.id
@@ -107,7 +107,7 @@ defmodule Emisar.AuthAuditTest do
           secret,
           NimbleTOTP.verification_code(secret),
           proof,
-          session_token,
+          Crypto.hash(session_token),
           subject
         )
 
@@ -128,7 +128,7 @@ defmodule Emisar.AuthAuditTest do
           secret,
           NimbleTOTP.verification_code(secret),
           proof,
-          session_token,
+          Crypto.hash(session_token),
           subject
         )
 
@@ -150,7 +150,7 @@ defmodule Emisar.AuthAuditTest do
           secret,
           NimbleTOTP.verification_code(secret),
           proof,
-          session_token,
+          Crypto.hash(session_token),
           subject
         )
 
@@ -172,7 +172,7 @@ defmodule Emisar.AuthAuditTest do
           secret,
           NimbleTOTP.verification_code(secret),
           proof,
-          session_token,
+          Crypto.hash(session_token),
           subject
         )
 
@@ -198,7 +198,7 @@ defmodule Emisar.AuthAuditTest do
           secret,
           NimbleTOTP.verification_code(secret),
           proof,
-          session_token,
+          Crypto.hash(session_token),
           subject
         )
 
@@ -253,7 +253,7 @@ defmodule Emisar.AuthAuditTest do
           secret,
           NimbleTOTP.verification_code(secret),
           proof,
-          session_token,
+          Crypto.hash(session_token),
           subject
         )
 
@@ -354,7 +354,7 @@ defmodule Emisar.AuthAuditTest do
       account: account,
       keep: keep
     } do
-      assert n = Auth.revoke_other_sessions!(user, keep)
+      assert n = Auth.revoke_other_sessions!(user, Crypto.hash(keep))
       assert n >= 1
 
       assert [event] = events_of(account, "user.other_sessions_revoked")

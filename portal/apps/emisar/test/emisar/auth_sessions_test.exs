@@ -6,7 +6,7 @@ defmodule Emisar.AuthSessionsTest do
   Profile page calls.
   """
   use Emisar.DataCase, async: true
-  alias Emisar.{Auth, Config, Fixtures, RequestContext}
+  alias Emisar.{Auth, Config, Crypto, Fixtures, RequestContext}
 
   defmodule RecordingSessionDisconnector do
     def disconnect_live_sessions(topics) do
@@ -45,7 +45,7 @@ defmodule Emisar.AuthSessionsTest do
         )
 
       assert {:ok, [session], metadata} =
-               Auth.list_sessions_for_user(live, subject, page: [limit: 1])
+               Auth.list_sessions_for_user(Crypto.hash(live), subject, page: [limit: 1])
 
       assert session.current?
       assert metadata.count == 1
@@ -68,7 +68,7 @@ defmodule Emisar.AuthSessionsTest do
       token = Fixtures.Auth.create_session_token!(user, :magic_link, nil)
       assert {:ok, _} = Auth.request_magic_link(user, %RequestContext{})
 
-      assert {:ok, [session], _meta} = Auth.list_sessions_for_user(token, subject)
+      assert {:ok, [session], _meta} = Auth.list_sessions_for_user(Crypto.hash(token), subject)
       assert session.current?
     end
 
@@ -85,7 +85,7 @@ defmodule Emisar.AuthSessionsTest do
         "ip_address" => "203.0.113.9"
       })
 
-      assert {:ok, sessions, _meta} = Auth.list_sessions_for_user(current, subject)
+      assert {:ok, sessions, _meta} = Auth.list_sessions_for_user(Crypto.hash(current), subject)
       assert [%{ip_address: "198.51.100.7"}] = Enum.filter(sessions, & &1.current?)
       assert [%{ip_address: "203.0.113.9"}] = Enum.reject(sessions, & &1.current?)
     end
@@ -103,7 +103,7 @@ defmodule Emisar.AuthSessionsTest do
       theirs =
         Fixtures.Auth.create_session_token!(Fixtures.Users.create_user(), :magic_link, nil)
 
-      assert {:ok, [session], _meta} = Auth.list_sessions_for_user(theirs, subject)
+      assert {:ok, [session], _meta} = Auth.list_sessions_for_user(Crypto.hash(theirs), subject)
       refute session.current?
     end
 
@@ -117,7 +117,7 @@ defmodule Emisar.AuthSessionsTest do
           "user_agent" => "Mozilla/5.0 Firefox/126.0"
         })
 
-      assert {:ok, [session], _meta} = Auth.list_sessions_for_user(token, subject)
+      assert {:ok, [session], _meta} = Auth.list_sessions_for_user(Crypto.hash(token), subject)
 
       assert %Auth.SessionFacts{
                current?: true,
@@ -137,7 +137,7 @@ defmodule Emisar.AuthSessionsTest do
     } do
       token = Fixtures.Auth.create_session_token!(user, :magic_link, nil)
 
-      assert {:ok, [session], _meta} = Auth.list_sessions_for_user(token, subject)
+      assert {:ok, [session], _meta} = Auth.list_sessions_for_user(Crypto.hash(token), subject)
       assert session.ip_address == nil
       assert session.user_agent == nil
     end
@@ -151,8 +151,10 @@ defmodule Emisar.AuthSessionsTest do
       Fixtures.Memberships.create_membership(account_id: other_account.id, user_id: user.id)
       other_subject = Fixtures.Subjects.subject_for(user, other_account)
 
-      assert {:ok, [session], _meta} = Auth.list_sessions_for_user(token, subject)
-      assert {:ok, [same_session], _meta} = Auth.list_sessions_for_user(token, other_subject)
+      assert {:ok, [session], _meta} = Auth.list_sessions_for_user(Crypto.hash(token), subject)
+
+      assert {:ok, [same_session], _meta} =
+               Auth.list_sessions_for_user(Crypto.hash(token), other_subject)
 
       # Sessions belong to the identity, not to a tenant — same row, same facts.
       assert same_session == session
@@ -170,16 +172,16 @@ defmodule Emisar.AuthSessionsTest do
     test ":ok and the row goes away" do
       {user, _account, subject} = Fixtures.Subjects.owner_subject()
       token = Fixtures.Auth.create_session_token!(user, :magic_link, nil)
-      assert {:ok, [session], _} = Auth.list_sessions_for_user(token, subject)
+      assert {:ok, [session], _} = Auth.list_sessions_for_user(Crypto.hash(token), subject)
 
       assert Auth.revoke_session(session.id, subject) == :ok
-      assert {:ok, [], _} = Auth.list_sessions_for_user(token, subject)
+      assert {:ok, [], _} = Auth.list_sessions_for_user(Crypto.hash(token), subject)
     end
 
     test "disconnects the exact token topic only after commit" do
       {user, _account, subject} = Fixtures.Subjects.owner_subject()
       token = Fixtures.Auth.create_session_token!(user, :magic_link, nil)
-      assert {:ok, [session], _} = Auth.list_sessions_for_user(token, subject)
+      assert {:ok, [session], _} = Auth.list_sessions_for_user(Crypto.hash(token), subject)
 
       Config.put_override(
         :emisar,
@@ -212,7 +214,7 @@ defmodule Emisar.AuthSessionsTest do
     test "refuses a non-user subject without touching the session" do
       {user, account, user_subject} = Fixtures.Subjects.owner_subject()
       token = Fixtures.Auth.create_session_token!(user, :magic_link, nil)
-      assert {:ok, [session], _} = Auth.list_sessions_for_user(token, user_subject)
+      assert {:ok, [session], _} = Auth.list_sessions_for_user(Crypto.hash(token), user_subject)
       {_raw_key, api_key} = Fixtures.ApiKeys.create_api_key(account_id: account.id)
       api_subject = Auth.Subject.for_api_key(api_key, account)
 
@@ -232,8 +234,8 @@ defmodule Emisar.AuthSessionsTest do
       Fixtures.Auth.create_session_token!(user, :magic_link, nil)
       Fixtures.Auth.create_session_token!(user, :magic_link, nil)
 
-      assert Auth.revoke_other_sessions!(user, keep) == 2
-      assert {:ok, [survivor], _} = Auth.list_sessions_for_user(keep, subject)
+      assert Auth.revoke_other_sessions!(user, Crypto.hash(keep)) == 2
+      assert {:ok, [survivor], _} = Auth.list_sessions_for_user(Crypto.hash(keep), subject)
       assert survivor.current?
     end
 

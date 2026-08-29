@@ -41,7 +41,7 @@ defmodule Emisar.AuthMfaSessionConcurrencyTest do
             secret,
             NimbleTOTP.verification_code(secret),
             proof,
-            session_token,
+            Crypto.hash(session_token),
             subject
           )
         end)
@@ -109,7 +109,7 @@ defmodule Emisar.AuthMfaSessionConcurrencyTest do
         Enum.map(tokens, fn {label, token} ->
           unboxed_task(fn ->
             send(parent, {:enrollment_backend, label, backend_pid()})
-            {label, Auth.enable_mfa(secret, otp, proof, token, subject)}
+            {label, Auth.enable_mfa(secret, otp, proof, Crypto.hash(token), subject)}
           end)
         end)
 

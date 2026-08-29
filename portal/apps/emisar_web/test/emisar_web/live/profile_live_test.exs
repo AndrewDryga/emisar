@@ -733,7 +733,9 @@ defmodule EmisarWeb.ProfileLiveTest do
       subject = Fixtures.Subjects.subject_for(user, account)
 
       {:ok, sessions, _meta} =
-        Auth.list_sessions_for_user(session_token(conn), subject, page: [limit: 100])
+        Auth.list_sessions_for_user(Emisar.Crypto.hash(session_token(conn)), subject,
+          page: [limit: 100]
+        )
 
       other = Enum.find(sessions, &(not &1.current?))
 
@@ -762,7 +764,9 @@ defmodule EmisarWeb.ProfileLiveTest do
       subject = Fixtures.Subjects.subject_for(user, account)
 
       {:ok, sessions, _meta} =
-        Auth.list_sessions_for_user(session_token(conn), subject, page: [limit: 100])
+        Auth.list_sessions_for_user(Emisar.Crypto.hash(session_token(conn)), subject,
+          page: [limit: 100]
+        )
 
       other = Enum.find(sessions, &(not &1.current?))
       current = Enum.find(sessions, & &1.current?)

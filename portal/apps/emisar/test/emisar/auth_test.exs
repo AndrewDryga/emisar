@@ -745,7 +745,7 @@ defmodule Emisar.AuthTest do
       _other1 = Fixtures.Auth.create_session_token!(user, :magic_link, nil)
       _other2 = Fixtures.Auth.create_session_token!(user, :magic_link, nil)
 
-      assert Auth.revoke_and_disconnect_other_sessions!(keep, subject) == 2
+      assert Auth.revoke_and_disconnect_other_sessions!(Crypto.hash(keep), subject) == 2
 
       {:ok, remaining, _} = Auth.list_sessions_for_user(nil, subject)
       assert length(remaining) == 1
@@ -756,7 +756,7 @@ defmodule Emisar.AuthTest do
     test "with only the current session, revokes nothing", %{user: user, subject: subject} do
       keep = Fixtures.Auth.create_session_token!(user, :magic_link, nil)
 
-      assert Auth.revoke_and_disconnect_other_sessions!(keep, subject) == 0
+      assert Auth.revoke_and_disconnect_other_sessions!(Crypto.hash(keep), subject) == 0
       assert {:ok, %User{}, _} = Auth.fetch_user_and_token_by_session_token(keep)
     end
   end
@@ -2194,7 +2194,7 @@ defmodule Emisar.AuthTest do
                  secret,
                  NimbleTOTP.verification_code(secret),
                  proof,
-                 session_token,
+                 Crypto.hash(session_token),
                  subject
                )
 
@@ -2212,7 +2212,7 @@ defmodule Emisar.AuthTest do
                secret,
                NimbleTOTP.verification_code(secret),
                "forged",
-               session_token,
+               Crypto.hash(session_token),
                subject
              ) == {:error, :mfa_enrollment_proof_stale}
 
@@ -2249,7 +2249,7 @@ defmodule Emisar.AuthTest do
                secret,
                NimbleTOTP.verification_code(secret),
                proof,
-               session_token,
+               Crypto.hash(session_token),
                subject
              ) == {:error, :mfa_enrollment_proof_stale}
     end
@@ -2274,7 +2274,7 @@ defmodule Emisar.AuthTest do
                secret,
                NimbleTOTP.verification_code(secret),
                expired,
-               session_token,
+               Crypto.hash(session_token),
                subject
              ) == {:error, :mfa_enrollment_proof_stale}
     end
@@ -2368,7 +2368,7 @@ defmodule Emisar.AuthTest do
     } do
       proof = Fixtures.Users.mfa_enrollment_proof(subject)
 
-      assert Auth.enable_mfa(secret, "000000", proof, session_token, subject) ==
+      assert Auth.enable_mfa(secret, "000000", proof, Crypto.hash(session_token), subject) ==
                {:error, :invalid_otp}
     end
 
@@ -2385,7 +2385,7 @@ defmodule Emisar.AuthTest do
                secret,
                NimbleTOTP.verification_code(secret),
                proof,
-               session_token,
+               Crypto.hash(session_token),
                subject
              ) == {:error, :session_not_found}
 
@@ -2406,7 +2406,7 @@ defmodule Emisar.AuthTest do
                secret,
                NimbleTOTP.verification_code(secret),
                proof,
-               session_token,
+               Crypto.hash(session_token),
                subject
              ) == {:error, :session_not_found}
 
@@ -2427,7 +2427,7 @@ defmodule Emisar.AuthTest do
                secret,
                NimbleTOTP.verification_code(secret),
                proof,
-               foreign_token,
+               Crypto.hash(foreign_token),
                subject
              ) == {:error, :session_not_found}
 
@@ -2451,7 +2451,7 @@ defmodule Emisar.AuthTest do
                secret,
                NimbleTOTP.verification_code(secret),
                proof,
-               raw_token,
+               Crypto.hash(raw_token),
                subject
              ) == {:error, :session_not_found}
 
@@ -3117,7 +3117,7 @@ defmodule Emisar.AuthTest do
                )
 
       assert {:ok, %UserToken{id: updated_id}} =
-               Auth.complete_current_session_mfa(proof, session_token, subject)
+               Auth.complete_current_session_mfa(proof, Crypto.hash(session_token), subject)
 
       assert {:ok, current_user, current_session} =
                Auth.fetch_user_and_token_by_session_token(session_token)
@@ -3171,7 +3171,7 @@ defmodule Emisar.AuthTest do
                Auth.verify_mfa_challenge(user, {:recovery_code, recovery_code})
 
       assert {:ok, _session} =
-               Auth.complete_current_session_mfa(proof, sso_token, sso_subject)
+               Auth.complete_current_session_mfa(proof, Crypto.hash(sso_token), sso_subject)
 
       assert {:ok, current_user, session} =
                Auth.fetch_user_and_token_by_session_token(sso_token)
@@ -3206,10 +3206,10 @@ defmodule Emisar.AuthTest do
       {other_user, _other_account, other_subject} = Fixtures.Subjects.owner_subject()
       other_token = Fixtures.Auth.create_session_token!(other_user, :magic_link, nil)
 
-      assert Auth.complete_current_session_mfa(proof, session_token, other_subject) ==
+      assert Auth.complete_current_session_mfa(proof, Crypto.hash(session_token), other_subject) ==
                {:error, :mfa_proof_stale}
 
-      assert Auth.complete_current_session_mfa(proof, other_token, subject) ==
+      assert Auth.complete_current_session_mfa(proof, Crypto.hash(other_token), subject) ==
                {:error, :session_not_found}
 
       assert {:ok, _user, session} =
@@ -3229,7 +3229,7 @@ defmodule Emisar.AuthTest do
 
       :ok = Auth.delete_session_token(session_token)
 
-      assert Auth.complete_current_session_mfa(proof, session_token, subject) ==
+      assert Auth.complete_current_session_mfa(proof, Crypto.hash(session_token), subject) ==
                {:error, :session_not_found}
 
       assert Auth.verify_mfa_challenge(Repo.reload!(user), {:recovery_code, recovery_code}) ==
@@ -3254,12 +3254,12 @@ defmodule Emisar.AuthTest do
       |> UserToken.Changeset.hashed(digest, "confirm", user.email)
       |> Repo.insert!()
 
-      assert Auth.complete_current_session_mfa(proof, wrong_context_token, subject) ==
+      assert Auth.complete_current_session_mfa(proof, Crypto.hash(wrong_context_token), subject) ==
                {:error, :session_not_found}
 
       age_tokens(user.id, 61 * 24 * 60)
 
-      assert Auth.complete_current_session_mfa(proof, session_token, subject) ==
+      assert Auth.complete_current_session_mfa(proof, Crypto.hash(session_token), subject) ==
                {:error, :session_not_found}
 
       session =
@@ -3285,7 +3285,7 @@ defmodule Emisar.AuthTest do
 
       assert Auth.complete_current_session_mfa(
                proof,
-               session_token,
+               Crypto.hash(session_token),
                %{next_subject | actor: re_enrolled}
              ) == {:error, :mfa_proof_stale}
 

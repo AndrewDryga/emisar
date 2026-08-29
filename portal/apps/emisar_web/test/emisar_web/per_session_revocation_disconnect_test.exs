@@ -19,7 +19,9 @@ defmodule EmisarWeb.PerSessionRevocationDisconnectTest do
     revoked = Fixtures.Auth.create_session_token!(user, :magic_link, nil)
     survivor = Fixtures.Auth.create_session_token!(user, :magic_link, nil)
 
-    assert {:ok, sessions, _metadata} = Auth.list_sessions_for_user(revoked, subject)
+    assert {:ok, sessions, _metadata} =
+             Auth.list_sessions_for_user(Emisar.Crypto.hash(revoked), subject)
+
     revoked_session = Enum.find(sessions, & &1.current?)
 
     revoked_topic = Auth.live_socket_topic_for_session(revoked)

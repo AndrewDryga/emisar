@@ -109,12 +109,13 @@ defmodule Emisar.Fixtures.Users do
 
     try do
       proof = mfa_enrollment_proof(subject)
+      session_digest = Emisar.Crypto.hash(session_token)
 
       case Emisar.Auth.enable_mfa(
              secret,
              NimbleTOTP.verification_code(secret),
              proof,
-             session_token,
+             session_digest,
              subject
            ) do
         {:error, :invalid_otp} ->
@@ -122,7 +123,7 @@ defmodule Emisar.Fixtures.Users do
             secret,
             NimbleTOTP.verification_code(secret),
             proof,
-            session_token,
+            session_digest,
             subject
           )
 
