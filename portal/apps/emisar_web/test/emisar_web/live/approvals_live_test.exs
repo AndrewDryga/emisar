@@ -100,6 +100,16 @@ defmodule EmisarWeb.ApprovalsLiveTest do
     refute html =~ "Your pack access limits this page"
   end
 
+  test "a crafted set_max_grant_lifetime without the seconds key does not crash the socket", %{
+    conn: conn
+  } do
+    {conn, _user, account} = register_and_log_in(conn)
+    {:ok, lv, _html} = live(conn, ~p"/app/#{account}/approvals")
+
+    # Dropping the "seconds" key would match no clause and crash the socket.
+    assert render_hook(lv, "set_max_grant_lifetime", %{})
+  end
+
   test "explains when pack access narrows the approval collections", %{conn: conn} do
     {_owner_conn, _owner, account} = register_and_log_in(conn)
     admin = Fixtures.Users.create_user()

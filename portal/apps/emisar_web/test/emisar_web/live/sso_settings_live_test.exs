@@ -1044,6 +1044,19 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
       assert html =~ "private, loopback, or metadata"
     end
 
+    test "test_connection off the create form does not crash the socket", %{
+      conn: conn,
+      account: account
+    } do
+      # The :edit route loads :edit_form, not the :new/:show :form that
+      # test_connection reads — and the event is reachable over the socket from any
+      # route. It used to KeyError; the mount default + nil-guard make it a no-op.
+      provider = insert_provider(account, %{})
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/sso/#{provider.id}/edit")
+
+      assert render_hook(lv, "test_connection", %{})
+    end
+
     test "a non-https issuer prompts for a valid URL instead of fetching", %{
       conn: conn,
       account: account

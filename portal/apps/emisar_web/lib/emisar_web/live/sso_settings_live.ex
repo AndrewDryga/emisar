@@ -85,6 +85,10 @@ defmodule EmisarWeb.SSOSettingsLive do
       |> assign(:synced_members, [])
       |> assign(:synced_members_load_error?, false)
       |> assign(:edit_form, nil)
+      # The :new/:show create form. Only those actions assign it, but test_connection
+      # reads it and is reachable over the socket from any route (IL-15), so default
+      # it here — a nil default makes the crafted event a no-op, not a KeyError.
+      |> assign(:form, nil)
       # Connection(s) in scope: ALL on :index (a list), the one on :show (detail).
       # Set per-action in handle_params.
       |> assign(:providers, [])
@@ -819,6 +823,10 @@ defmodule EmisarWeb.SSOSettingsLive do
   # Read the issuer the operator has typed (the form is kept current by validate)
   # and probe its OIDC discovery. The whole {:ok, …}/{:error, …} result is stashed
   # for the inline banner — no flash (the result is the point of the surface).
+  # No create form in scope (an :edit/:index route, or a crafted off-route event) —
+  # nothing to test, so no-op rather than KeyError on the absent form.
+  defp do_test_connection(%{assigns: %{form: nil}} = socket), do: {:noreply, socket}
+
   defp do_test_connection(socket) do
     issuer = Ecto.Changeset.get_field(socket.assigns.form.source, :issuer)
 

@@ -154,6 +154,11 @@ defmodule EmisarWeb.PacksLive do
   defp normalize_risk(risk) when risk in @risk_tiers, do: risk
   defp normalize_risk(_), do: ""
 
+  # A crafted `name[]=` posts a list, and `String.trim/1` crashes the socket on a
+  # non-binary; total like normalize_risk/1 above.
+  defp normalize_name(name) when is_binary(name), do: String.trim(name)
+  defp normalize_name(_), do: ""
+
   # Everything the page renders, from one Catalog read: the rows in current
   # pack access, the filtered groups, the actions each version advertises, and
   # the counts.
@@ -204,7 +209,7 @@ defmodule EmisarWeb.PacksLive do
   def handle_event("filter", params, socket) do
     {:noreply,
      socket
-     |> assign(:name_filter, String.trim(params["name"] || ""))
+     |> assign(:name_filter, normalize_name(params["name"]))
      |> assign(:risk_filter, normalize_risk(params["risk"]))
      |> load_packs()}
   end

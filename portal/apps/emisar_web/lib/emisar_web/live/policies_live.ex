@@ -208,7 +208,8 @@ defmodule EmisarWeb.PoliciesLive do
      end)}
   end
 
-  def handle_event("remove_override", %{"editor" => editor_id, "index" => idx}, socket) do
+  def handle_event("remove_override", %{"editor" => editor_id, "index" => idx}, socket)
+      when is_binary(editor_id) and is_binary(idx) do
     case Integer.parse(idx) do
       {i, _} ->
         {:noreply,
@@ -220,6 +221,8 @@ defmodule EmisarWeb.PoliciesLive do
         {:noreply, socket}
     end
   end
+
+  def handle_event("remove_override", _params, socket), do: {:noreply, socket}
 
   def handle_event("add_ruleset", _params, socket) do
     cond do
@@ -240,7 +243,8 @@ defmodule EmisarWeb.PoliciesLive do
     end
   end
 
-  def handle_event("set_target", %{"uid" => uid, "target" => target}, socket) do
+  def handle_event("set_target", %{"uid" => uid, "target" => target}, socket)
+      when is_binary(uid) and is_binary(target) do
     {scope_type, scope_value} = parse_target(target)
 
     {:noreply,

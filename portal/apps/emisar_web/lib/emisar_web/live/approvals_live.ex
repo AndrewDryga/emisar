@@ -141,6 +141,10 @@ defmodule EmisarWeb.ApprovalsLive do
     end
   end
 
+  # A crafted event that drops the "seconds" key would otherwise match no clause
+  # and crash the socket.
+  def handle_event("set_max_grant_lifetime", _params, socket), do: {:noreply, socket}
+
   defp revoke_all_grants(socket) do
     case Approvals.revoke_all_grants(socket.assigns.current_subject) do
       {:ok, revoked_count} ->

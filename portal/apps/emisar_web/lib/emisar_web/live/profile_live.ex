@@ -218,11 +218,12 @@ defmodule EmisarWeb.ProfileLive do
            |> assign(:email_step_error, nil)
            |> put_flash(:info, "We sent a new code to #{socket.assigns.current_user.email}.")}
 
-        {:error, :not_found} ->
-          {:noreply, put_flash(socket, :error, "Couldn't send a new code. Try again.")}
-
         {:error, :rate_limited} ->
           {:noreply, assign(socket, :email_step_error, MfaErrors.message(:email_rate_limited))}
+
+        # :not_found (row gone mid-session) or any other unexpected Multi failure.
+        {:error, _reason} ->
+          {:noreply, put_flash(socket, :error, "Couldn't send a new code. Try again.")}
       end
     else
       {:noreply, put_flash(socket, :error, "Start an email change first.")}
@@ -252,7 +253,8 @@ defmodule EmisarWeb.ProfileLive do
     end
   end
 
-  def handle_event("start_oidc_unlink", %{"identity_id" => identity_id}, socket) do
+  def handle_event("start_oidc_unlink", %{"identity_id" => identity_id}, socket)
+      when is_binary(identity_id) do
     case find_oidc_identity(socket, identity_id: identity_id) do
       %{removable?: true} = identity ->
         {:noreply, begin_oidc_step_up(socket, identity, :unlink)}
@@ -261,10 +263,14 @@ defmodule EmisarWeb.ProfileLive do
         {:noreply,
          put_flash(socket, :error, "Verify this sign-in method yourself before removing it.")}
 
-      nil ->
+      # No match (nil) or a matched-but-unlinked identity (a retired provider still
+      # in the list) — either way there is nothing linked to remove.
+      _ ->
         {:noreply, put_flash(socket, :error, "That sign-in method is no longer linked.")}
     end
   end
+
+  def handle_event("start_oidc_unlink", _params, socket), do: {:noreply, socket}
 
   def handle_event("confirm_oidc_step_up", %{"oidc_step" => %{"code" => code}}, socket) do
     case socket.assigns.oidc_step do
@@ -724,6 +730,14 @@ defmodule EmisarWeb.ProfileLive do
          socket
          |> put_flash(:error, "Could not change to that email — it may already be in use.")
          |> reset_email_step()}
+
+      # Any other domain failure (e.g. the row was soft-deleted mid-session) — the
+      # proof is spent, so reset rather than leave a dead step-up open.
+      {:error, _reason} ->
+        {:noreply,
+         socket
+         |> put_flash(:error, "Could not change your email. Try again.")
+         |> reset_email_step()}
     end
   end
 
@@ -753,7 +767,8 @@ defmodule EmisarWeb.ProfileLive do
         |> put_flash(:error, MfaErrors.message(:email_rate_limited))
         |> reset_email_step()
 
-      {:error, :not_found} ->
+      # :not_found (row gone mid-session) or any other unexpected Multi failure.
+      {:error, _reason} ->
         socket
         |> put_flash(:error, "Couldn't start the email change. Try again.")
         |> reset_email_step()

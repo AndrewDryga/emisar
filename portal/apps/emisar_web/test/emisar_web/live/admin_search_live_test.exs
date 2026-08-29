@@ -33,6 +33,14 @@ defmodule EmisarWeb.AdminSearchLiveTest do
       refute html =~ other_account.name
     end
 
+    test "a crafted search event with a non-binary query does not crash the socket", %{conn: conn} do
+      {:ok, live, _html} = live(conn, ~p"/admin")
+
+      # `query[]=` posts a list; Admin.search_accounts/2 guards is_binary and would
+      # otherwise crash this staff socket.
+      assert render_hook(live, "search", %{"query" => ["oops"]})
+    end
+
     test "a disabled account is listed and says so", %{conn: conn} do
       account = Fixtures.Accounts.create_account() |> Fixtures.Accounts.disable_account()
 

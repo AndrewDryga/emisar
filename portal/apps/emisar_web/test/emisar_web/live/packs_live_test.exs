@@ -14,6 +14,14 @@ defmodule EmisarWeb.PacksLiveTest do
       assert html =~ "No packs reported yet"
     end
 
+    test "a crafted filter event with non-binary params does not crash the socket", %{conn: conn} do
+      {conn, _user, account} = register_and_log_in(conn)
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/packs")
+
+      # `name[]=` / `risk[]=` post lists; String.trim/1 would crash the socket.
+      assert render_hook(lv, "filter", %{"name" => ["oops"], "risk" => ["bad"]})
+    end
+
     test "lists in-scope packs in full and names the rest for discovery only", %{conn: conn} do
       {conn, user, account} = register_and_log_in(conn)
       runner = Fixtures.Runners.create_runner(account_id: account.id)

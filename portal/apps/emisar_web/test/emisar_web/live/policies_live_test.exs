@@ -46,6 +46,17 @@ defmodule EmisarWeb.PoliciesLiveTest do
       assert lv |> element("#add-ruleset-control") |> render() =~ "lg:col-span-3"
     end
 
+    test "crafted set_target/remove_override events with non-binary params don't crash the socket",
+         %{conn: conn} do
+      {conn, _user, account} = register_and_log_in(conn)
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/policies")
+
+      # `target[]=` / `index[]=` post lists; parse_target and Integer.parse would
+      # crash the socket without the guards.
+      assert render_hook(lv, "set_target", %{"uid" => ["x"], "target" => ["runner:1"]})
+      assert render_hook(lv, "remove_override", %{"editor" => ["e"], "index" => ["0"]})
+    end
+
     test "the approval-count input is programmatically labelled (UI-005 a11y)", %{conn: conn} do
       # The raw min_approvals number input had no accessible name; it now carries
       # an editor-scoped id wired to its "Required approvals" <label for> (the id

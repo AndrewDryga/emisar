@@ -422,6 +422,16 @@ defmodule EmisarWeb.ProfileLiveTest do
              )
     end
 
+    test "a crafted start_oidc_unlink does not crash the socket", %{conn: conn, account: account} do
+      # An enabled-but-unlinked provider entry carries identity_id: nil, so a crafted
+      # null (or non-binary) identity_id matched a non-removable, non-linked entry and
+      # CaseClauseError'd the socket; the guard + total case make it a no-op.
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/profile")
+
+      assert render_hook(lv, "start_oidc_unlink", %{"identity_id" => nil})
+      assert render_hook(lv, "start_oidc_unlink", %{"identity_id" => ["x"]})
+    end
+
     test "keeps a wrong local proof inline and arms only a valid handoff", %{
       conn: conn,
       account: account,

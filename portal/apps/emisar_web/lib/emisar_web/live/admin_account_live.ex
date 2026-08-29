@@ -39,6 +39,14 @@ defmodule EmisarWeb.AdminAccountLive do
          socket
          |> put_flash(:error, "Account not found.")
          |> push_navigate(to: ~p"/admin")}
+
+      # Staff was revoked mid-session (account_overview re-checks per call). Fail
+      # closed to the gate-protected front door rather than 500 on a CaseClauseError.
+      {:error, :unauthorized} ->
+        {:ok,
+         socket
+         |> put_flash(:error, "You no longer have staff access.")
+         |> push_navigate(to: ~p"/admin")}
     end
   end
 

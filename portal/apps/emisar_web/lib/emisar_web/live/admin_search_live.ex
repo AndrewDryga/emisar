@@ -22,9 +22,11 @@ defmodule EmisarWeb.AdminSearchLive do
 
   # The typed value is assigned straight back, so a re-render (a flash, a
   # reconnect) re-serves what the operator typed rather than resetting the box.
-  def handle_event("search", %{"query" => query}, socket) do
+  def handle_event("search", %{"query" => query}, socket) when is_binary(query) do
     {:noreply, socket |> assign(:query, query) |> assign_accounts(query)}
   end
+
+  def handle_event("search", _params, socket), do: {:noreply, socket}
 
   # `Admin.search_accounts/2` re-checks staff on every call (IL-15), so this
   # asserts an invariant the `:ensure_admin` mount gate already holds: a denial
