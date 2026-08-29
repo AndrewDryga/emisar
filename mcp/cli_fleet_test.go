@@ -222,6 +222,115 @@ func TestCLIFindActionsUsesActionPreviewsAndAnInspectCommand(t *testing.T) {
 	}
 }
 
+func TestCLIFleetRenderersCapItemsAtLimit(t *testing.T) {
+	// The portal pages these lists, so a page never exceeds maxCLIResultItems in
+	// practice — but the human renderers must still cap the way their twelve
+	// sibling loops do rather than dump an unbounded page, and must say more are
+	// available even when the cap, not a returned cursor, forced the cut. Each
+	// case returns maxCLIResultItems+3 items and no continuation.
+	const overflow = maxCLIResultItems + 3
+	cases := []struct {
+		name    string
+		tool    string
+		args    string
+		build   func(t *testing.T) json.RawMessage
+		marker  string // rendered exactly once per item
+		dropped string // identifier of the first item past the cap
+		notice  string
+	}{
+		{
+			name:    "runners",
+			tool:    listRunnersToolName,
+			args:    `{}`,
+			marker:  "Runner ref  ",
+			dropped: fmt.Sprintf("runner-%03d~", maxCLIResultItems),
+			notice:  "More runners are available.",
+			build: func(t *testing.T) json.RawMessage {
+				runners := make([]map[string]any, overflow)
+				for i := range runners {
+					runners[i] = map[string]any{
+						"name":       fmt.Sprintf("runner-%03d", i),
+						"status":     "connected",
+						"runner_ref": fmt.Sprintf("runner-%03d~0123456789abcdef0123456789abcdef", i),
+						"issues":     []any{},
+					}
+				}
+				return marshalFleetResult(t, map[string]any{
+					"ok":      true,
+					"summary": map[string]any{"connected": overflow, "matched": overflow},
+					"runners": runners,
+				})
+			},
+		},
+		{
+			name:    "packs",
+			tool:    listPacksToolName,
+			args:    `{}`,
+			marker:  "Pack ref  ",
+			dropped: fmt.Sprintf("pack%03d@", maxCLIResultItems),
+			notice:  "More packs are available.",
+			build: func(t *testing.T) json.RawMessage {
+				packs := make([]map[string]any, overflow)
+				for i := range packs {
+					packs[i] = map[string]any{
+						"pack_ref":     fmt.Sprintf("pack%03d@1.2.3/sha256:abc", i),
+						"availability": "executable",
+						"actions":      []any{},
+						"issues":       []any{},
+					}
+				}
+				return marshalFleetResult(t, map[string]any{"ok": true, "packs": packs})
+			},
+		},
+		{
+			name:    "actions",
+			tool:    findActionsToolName,
+			args:    `{"query":"anything"}`,
+			marker:  " · pack ",
+			dropped: fmt.Sprintf("action_%03d", maxCLIResultItems),
+			notice:  "More actions are available.",
+			build: func(t *testing.T) json.RawMessage {
+				candidates := make([]map[string]any, overflow)
+				for i := range candidates {
+					candidates[i] = map[string]any{
+						"action_id": fmt.Sprintf("demo.action_%03d", i),
+						"pack_ref":  "demo@1.0.0/sha256:abc",
+						"risk":      "low",
+					}
+				}
+				return marshalFleetResult(t, map[string]any{"ok": true, "candidates": candidates})
+			},
+		},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			var stdout bytes.Buffer
+			if err := writeCLIToolOutputWithSchema(&stdout, c.tool, json.RawMessage(c.args), c.build(t), nil, "", false, true); err != nil {
+				t.Fatal(err)
+			}
+			out := stdout.String()
+			if got := strings.Count(out, c.marker); got != maxCLIResultItems {
+				t.Errorf("rendered %d items, want the %d-item cap:\n%s", got, maxCLIResultItems, out)
+			}
+			if !strings.Contains(out, c.notice) {
+				t.Errorf("capped output omitted the overflow notice %q:\n%s", c.notice, out)
+			}
+			if strings.Contains(out, c.dropped) {
+				t.Errorf("output rendered %q past the cap:\n%s", c.dropped, out)
+			}
+		})
+	}
+}
+
+func marshalFleetResult(t *testing.T, v any) json.RawMessage {
+	t.Helper()
+	raw, err := json.Marshal(v)
+	if err != nil {
+		t.Fatalf("marshal fleet result: %v", err)
+	}
+	return raw
+}
+
 func TestCLIFleetFormattingCannotEmitTerminalControls(t *testing.T) {
 	raw := json.RawMessage(`{
 		"ok":true,

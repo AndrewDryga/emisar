@@ -115,8 +115,9 @@ func renderCLIListRunners(w io.Writer, raw []byte, account string) (string, bool
 
 	var out strings.Builder
 	matched := max(result.Summary.Matched, len(runners))
-	if matched > len(runners) || hasJSONValue(result.NextCursor) {
-		fmt.Fprintf(&out, "Showing %d of %d runners", len(runners), matched)
+	shown := runners[:min(len(runners), maxCLIResultItems)]
+	if matched > len(shown) || hasJSONValue(result.NextCursor) {
+		fmt.Fprintf(&out, "Showing %d of %d runners", len(shown), matched)
 	} else {
 		fmt.Fprintf(&out, "%d %s", matched, plural(matched, "runner", "runners"))
 	}
@@ -141,7 +142,7 @@ func renderCLIListRunners(w io.Writer, raw []byte, account string) (string, bool
 	}
 	out.WriteString("\n")
 
-	for _, runner := range runners {
+	for _, runner := range shown {
 		out.WriteString("\n")
 		out.WriteString(cliStyledText(w, "1", cliInlineText(runner.Name, 120)))
 		out.WriteString(" — ")
@@ -180,7 +181,7 @@ func renderCLIListRunners(w io.Writer, raw []byte, account string) (string, bool
 		}
 		writeCLIFleetIssues(&out, w, runner.Issues)
 	}
-	if hasJSONValue(result.NextCursor) {
+	if hasJSONValue(result.NextCursor) || len(runners) > maxCLIResultItems {
 		out.WriteString("\nMore runners are available. Use --json to continue with the returned cursor.\n")
 	}
 	return out.String(), true
@@ -220,7 +221,7 @@ func renderCLIListPacks(w io.Writer, arguments, raw []byte, account string) (str
 
 	var out strings.Builder
 	fmt.Fprintf(&out, "%d %s\n", len(packs), plural(len(packs), "pack", "packs"))
-	for _, pack := range packs {
+	for _, pack := range packs[:min(len(packs), maxCLIResultItems)] {
 		out.WriteString("\n")
 		out.WriteString(cliStyledText(w, "1", cliFleetPackName(pack.PackRef)))
 		out.WriteString(" — ")
@@ -233,7 +234,7 @@ func renderCLIListPacks(w io.Writer, arguments, raw []byte, account string) (str
 		}
 		writeCLIFleetIssues(&out, w, pack.Issues)
 	}
-	if hasJSONValue(result.NextCursor) {
+	if hasJSONValue(result.NextCursor) || len(packs) > maxCLIResultItems {
 		out.WriteString("\nMore packs are available. Use --json to continue with the returned cursor.\n")
 	}
 	return out.String(), true
@@ -293,7 +294,7 @@ func renderCLIFindActions(w io.Writer, arguments, raw []byte, account string) (s
 		fmt.Fprintf(&out, " for %q", query)
 	}
 	out.WriteString(".\n")
-	for _, candidate := range candidates {
+	for _, candidate := range candidates[:min(len(candidates), maxCLIResultItems)] {
 		out.WriteString("\n")
 		out.WriteString(cliStyledText(w, "1", cliInlineText(candidate.ActionID, 128)))
 		if title := cliInlineText(candidate.Title, maxCLIHumanStringRunes); title != "" {
@@ -314,7 +315,7 @@ func renderCLIFindActions(w io.Writer, arguments, raw []byte, account string) (s
 			fmt.Fprintf(&out, "  Inspect  %s\n", command)
 		}
 	}
-	if hasJSONValue(result.Next) {
+	if hasJSONValue(result.Next) || len(candidates) > maxCLIResultItems {
 		out.WriteString("\nMore actions are available. Use --json to continue with the returned next call.\n")
 	}
 	return out.String(), true
