@@ -96,5 +96,8 @@ cases:
       json:
         /sealed: false
   - action: vault.token_lookup_self
+    # `token lookup` returns the token itself as data.id; redaction rewrites it
+    # to "[REDACTED]" so the canary root token never reaches stdout.
     expect:
-      stdout_contains: [display_name, root]
+      stdout_contains: [display_name, root, '"[REDACTED]"']
+      stdout_not_contains: [packtest-canary-vault-token-f34c]

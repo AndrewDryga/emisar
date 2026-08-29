@@ -141,6 +141,26 @@ cases:
   - action: consul.connect_ca_configuration
     expect:
       stdout_contains: [Provider, Config]
+  # Consul omits the built-in CA's PrivateKey on a default read, so first set a
+  # CA config that carries one (the fixture is a throwaway packtest CA). The read
+  # then returns PrivateKey and redaction rewrites its value to "[REDACTED]" so
+  # the signing key never leaves the host.
+  - name: consul.connect-ca-configuration-redacts-private-key
+    action: consul.connect_ca_configuration
+    arrange:
+      - argv:
+          - /bin/sh
+          - -c
+          - >-
+            jq -n
+            --rawfile key /packs/consul/test/fixtures/ca/ca-key.pem
+            --rawfile cert /packs/consul/test/fixtures/ca/ca.pem
+            '{Provider:"consul",Config:{PrivateKey:$key,RootCert:$cert}}'
+            | curl -fsS -X PUT --data-binary @-
+            "$CONSUL_HTTP_ADDR/v1/connect/ca/configuration"
+    expect:
+      stdout_contains: [Provider, Config, '"[REDACTED]"']
+      stdout_not_contains: ["BEGIN RSA PRIVATE KEY", "BEGIN PRIVATE KEY"]
   - action: consul.connect_ca_roots
     expect:
       stdout_contains: [ActiveRootID, Roots]

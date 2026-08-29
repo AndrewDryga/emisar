@@ -208,6 +208,28 @@ cases:
       stdout_contains: [line-two, line-three]
       stdout_not_contains: [line-one]
 
+  # Same PEM redaction rule as fs.head_file, for the tail read. The key block
+  # sits at the end of the file so the tailed window covers it; the rule spans
+  # the block's lines and the key body never reaches stdout.
+  - name: fs.tail-file-redacts-private-key
+    action: fs.tail_file
+    args: {path: /tmp/packtest-tail-pem/server.conf, lines: 5}
+    arrange:
+      - argv:
+          - /bin/sh
+          - -c
+          - |
+            mkdir -p /tmp/packtest-tail-pem
+            printf '%s\n' \
+              'listen 0.0.0.0:8443' \
+              '-----BEGIN OPENSSH PRIVATE KEY-----' \
+              'NOTAREALKEYpacktestNOTAREALKEYpacktest' \
+              'NOTAREALKEYpacktestNOTAREALKEYpacktest' \
+              '-----END OPENSSH PRIVATE KEY-----' > /tmp/packtest-tail-pem/server.conf
+    expect:
+      stdout_contains: ["[REDACTED PRIVATE KEY]"]
+      stdout_not_contains: [NOTAREALKEYpacktest]
+
   - action: fs.count_lines
     args: {path: /tmp/packtest-count/notes.txt}
     arrange:
@@ -228,6 +250,28 @@ cases:
     expect:
       stdout_contains: ["bravo ERROR connect refused"]
       stdout_not_contains: [alpha ok, charlie ok]
+
+  # Same PEM redaction rule as fs.head_file, for the single-file grep that can
+  # surface a key inside a matched file. `.` matches every line (the arg pattern
+  # forbids `|`), so the whole block comes back and the rule spans it, keeping
+  # the key body out of stdout.
+  - name: fs.grep-file-redacts-private-key
+    action: fs.grep_file
+    args: {path: /tmp/packtest-grep-pem/id_ed25519, pattern: "."}
+    arrange:
+      - argv:
+          - /bin/sh
+          - -c
+          - |
+            mkdir -p /tmp/packtest-grep-pem
+            printf '%s\n' \
+              '-----BEGIN OPENSSH PRIVATE KEY-----' \
+              'NOTAREALKEYpacktestNOTAREALKEYpacktest' \
+              'NOTAREALKEYpacktestNOTAREALKEYpacktest' \
+              '-----END OPENSSH PRIVATE KEY-----' > /tmp/packtest-grep-pem/id_ed25519
+    expect:
+      stdout_contains: ["[REDACTED PRIVATE KEY]"]
+      stdout_not_contains: [NOTAREALKEYpacktest]
 
   # Same guard as du_top, and the same failure it hides: grep's exit status is
   # lost to head, so an unreadable file would come back as "no matches".
@@ -253,6 +297,29 @@ cases:
     expect:
       stdout_contains: ["/tmp/packtest-rgrep/nested/app.log:2:bravo ERROR connect refused"]
       stdout_not_contains: [quiet.log]
+
+  # Same PEM redaction rule as fs.head_file, for the recursive search that can
+  # surface a key committed into a source tree. grep prints each matching line
+  # prefixed with file:line; `.` matches every line (the arg pattern forbids
+  # `|`), so the whole block comes back and the rule spans it across those
+  # prefixes, keeping the key body out of stdout.
+  - name: fs.grep-recursive-redacts-private-key
+    action: fs.grep_recursive
+    args: {path: /tmp/packtest-rgrep-pem, pattern: "."}
+    arrange:
+      - argv:
+          - /bin/sh
+          - -c
+          - |
+            mkdir -p /tmp/packtest-rgrep-pem
+            printf '%s\n' \
+              '-----BEGIN OPENSSH PRIVATE KEY-----' \
+              'NOTAREALKEYpacktestNOTAREALKEYpacktest' \
+              'NOTAREALKEYpacktestNOTAREALKEYpacktest' \
+              '-----END OPENSSH PRIVATE KEY-----' > /tmp/packtest-rgrep-pem/id_ed25519
+    expect:
+      stdout_contains: ["[REDACTED PRIVATE KEY]"]
+      stdout_not_contains: [NOTAREALKEYpacktest]
 
   # Each script-routed denial asserts the shared guard's own error and that the
   # delegating reader spy was untouched. This prevents kernel permissions or a

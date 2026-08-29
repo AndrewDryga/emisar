@@ -68,6 +68,15 @@ cases:
     args: {pattern: maxmemory}
     expect:
       stdout_contains: [maxmemory]
+  # The SUT starts redis-server with --requirepass set to the canary, so
+  # CONFIG GET requirepass returns it. Redaction masks the value line, keeping
+  # the key line, so the operator sees the password is set but never its value.
+  - name: redis.config-get-redacts-requirepass
+    action: redis.config_get
+    args: {pattern: requirepass}
+    expect:
+      stdout_contains: [requirepass, "[REDACTED]"]
+      stdout_not_contains: [packtest-canary-redis-c08d17]
   - action: redis.dbsize
     arrange:
       - argv: [redis-cli, SET, packtest:ready, "yes"]

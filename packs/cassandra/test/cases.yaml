@@ -360,6 +360,15 @@ cases:
     expect:
       exit: [0]
       stdout_contains: ["no setting name matched: no_such_setting"]
+  # The encryption keystore/truststore settings are the credential-bearing rows:
+  # 4.x returns their passwords in the clear, and the pack's redaction masks any
+  # setting whose name carries a credential word. Narrow to the keystore settings
+  # so the masked lines are the whole answer and assert the placeholder appears.
+  - name: cassandra.cqlsh_settings-redacts-credentials
+    action: cassandra.cqlsh_settings
+    args: {filter: "keystore"}
+    expect:
+      stdout_contains: ["keystore", "[REDACTED]"]
   - action: cassandra.nodetool_getseeds
     expect:
       stdout_contains: ["Seed node list"]

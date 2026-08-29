@@ -1,13 +1,12 @@
-# Every action here declares a `private-key-pem` redaction rule, and until now
-# nothing proved any of them MATCHED — the pack had no cases.yaml at all. The
-# gate validates that a rule compiles, which is exactly how redis.acl_getuser
-# shipped a rule that could not fire.
-#
-# The fixture mints a real CA, leaf, and PKCS#12 bundle, plus a combined.pem
-# holding the leaf certificate AND its private key. That combined file is the
-# shape the rule exists for: an operator reading a bundle must not get the key
-# back through the model. Each case asserts the placeholder is present AND the
-# key's own bytes are gone.
+# Every action here declares a `private-key-pem` redaction rule as a BACKSTOP.
+# None of these commands can print a private key: the openssl reads all pass
+# `-noout`/`-nokeys` (x509, pkcs12) and never emit the key even from a combined
+# cert+key bundle, and find_certs prints file paths, not contents. So the rule
+# cannot be made to fire, and each action is accounted for as unreachable below.
+# The fixture still mints a real CA, leaf, PKCS#12 bundle, and a combined.pem
+# (leaf certificate AND its private key), and each case asserts the command's
+# real output while proving the key's own bytes never come back — the boundary
+# that keeps the redaction rule a backstop rather than the active defence.
 services: [ssl-material]
 versions:
   - version: "13-slim"
@@ -15,6 +14,21 @@ versions:
     default: true
 env:
   PK12_PASSWORD: packtest-p12-pass
+redaction_accountability:
+  exceptions:
+    # The command is the boundary on every action here: openssl x509/pkcs12 run
+    # with -noout/-nokeys never print a key (even from the combined cert+key
+    # bundle), key_modulus prints a digest of the modulus, and find_certs prints
+    # paths. So the private-key-pem rule cannot fire — it is a backstop against a
+    # future edit that makes one of these print certificate material. Measured,
+    # not assumed: removing the rule leaves every case here green.
+    ssl.cert_text: unreachable_by_construction
+    ssl.cert_expiry: unreachable_by_construction
+    ssl.cert_fingerprint: unreachable_by_construction
+    ssl.find_certs: unreachable_by_construction
+    ssl.key_modulus: unreachable_by_construction
+    ssl.pkcs12_info: unreachable_by_construction
+    ssl.verify_chain: unreachable_by_construction
 defaults:
   expect:
     stdout_not_empty: true
