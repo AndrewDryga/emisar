@@ -384,6 +384,16 @@ func gitShow(root, ref, path string) (string, bool) {
 	return string(out), true
 }
 
+// isZeroSHA reports whether ref is git's all-zero object name — the "no parent"
+// sentinel a push event carries on an initial or force push. It is the one
+// unresolvable base that means "nothing to diff" rather than "broken checkout".
+func isZeroSHA(ref string) bool {
+	if len(ref) != 40 && len(ref) != 64 {
+		return false
+	}
+	return strings.Trim(ref, "0") == ""
+}
+
 func refExists(root, ref string) bool {
 	return exec.Command("git", "-C", root, "rev-parse", "--verify", "--quiet", ref+"^{commit}").Run() == nil
 }
@@ -452,12 +462,21 @@ func runCheck(baseRef string) int {
 	}
 
 	if !refExists(root, baseRef) {
-		// No resolvable base (e.g. a zero SHA on an initial/force push) means we
-		// can't tell which versions this change *introduced*. Treating every
-		// existing dep as newly added would flag deps that already merged through
-		// the PR gate, so skip instead — the PR path is the real enforcement point.
-		fmt.Printf("dep-age-gate: base ref %q does not resolve; nothing to diff, skipping.\n", baseRef)
-		return 0
+		// The genuine "no prior commit to diff" signal is the git zero SHA that a
+		// push event carries on an initial or force push — there, treating every
+		// existing dep as newly added would flag deps that already merged, so skip.
+		if isZeroSHA(baseRef) {
+			fmt.Printf("dep-age-gate: base ref %q is the empty commit; nothing to diff, skipping.\n", baseRef)
+			return 0
+		}
+		// A NAMED ref that does not resolve (origin/main in a coop box or an
+		// unfetched worktree, a fork's differing default) is a broken environment,
+		// not an empty diff. Skipping there let a two-hour-old dependency pass a
+		// green gate — the exact silent-stop shape the shell-lint phase refuses.
+		// Fail and say how to fix it.
+		fmt.Fprintf(os.Stderr, "::error::dep-age-gate: base ref %q does not resolve; "+
+			"fetch it (e.g. `git fetch origin main`) or pass --base <ref> — refusing to skip the age check.\n", baseRef)
+		return 2
 	}
 
 	now := time.Now().UTC()

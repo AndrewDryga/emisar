@@ -209,3 +209,20 @@ func TestEvaluateRejectsAnUndatedRelease(t *testing.T) {
 		t.Fatalf("an undated release was accepted: %v", got)
 	}
 }
+
+func TestIsZeroSHA(t *testing.T) {
+	zeros40 := "0000000000000000000000000000000000000000"
+	zeros64 := "0000000000000000000000000000000000000000000000000000000000000000"
+	for _, ref := range []string{zeros40, zeros64} {
+		if !isZeroSHA(ref) {
+			t.Errorf("isZeroSHA(%q) = false, want true (the push no-parent sentinel)", ref)
+		}
+	}
+	// A named ref or a real commit must NOT read as the empty sentinel — those
+	// are broken-checkout / real-base cases the gate must not silently skip.
+	for _, ref := range []string{"origin/main", "HEAD", "abc1234", "1234567890123456789012345678901234567890", ""} {
+		if isZeroSHA(ref) {
+			t.Errorf("isZeroSHA(%q) = true, want false", ref)
+		}
+	}
+}
