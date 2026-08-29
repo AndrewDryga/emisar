@@ -1,6 +1,5 @@
 defmodule EmisarWeb.RoleCopyTest do
   use ExUnit.Case, async: true
-
   alias EmisarWeb.RoleCopy
 
   describe "change_title/2" do
