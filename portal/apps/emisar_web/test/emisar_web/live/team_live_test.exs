@@ -2490,6 +2490,45 @@ defmodule EmisarWeb.TeamLiveTest do
                access_before
     end
 
+    test "a refused save keeps its editor open on what was typed", %{
+      conn: conn,
+      account: account
+    } do
+      # A successful rename leaves its "Member updated." flash on the page for a
+      # few seconds. A refusal inside that window is still a refusal — the editor
+      # stays open holding the operator's text instead of closing on someone
+      # else's success.
+      member = Fixtures.Memberships.create_membership(account_id: account.id, role: "operator")
+      synced = scim_synced_member(account)
+
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/team")
+
+      render_click(lv, "start_edit", %{"membership_id" => member.id})
+
+      renamed =
+        render_submit(lv, "save_edit", %{
+          "membership_id" => member.id,
+          "user" => %{"full_name" => "Renamed Member"}
+        })
+
+      assert renamed =~ "Member updated."
+
+      render_click(lv, "start_edit", %{"membership_id" => synced.membership.id})
+
+      refused =
+        render_submit(lv, "save_edit", %{
+          "membership_id" => synced.membership.id,
+          "user" => %{"full_name" => "Typed But Refused"}
+        })
+
+      assert refused =~ "managed by your identity provider"
+
+      assert has_element?(
+               lv,
+               "#edit-form-#{synced.membership.id} input[value='Typed But Refused']"
+             )
+    end
+
     test "the roster hides Edit name and refuses a crafted save_edit", %{
       conn: conn,
       account: account

@@ -497,7 +497,7 @@ defmodule EmisarWeb.TeamLive do
         {:error, reason} -> {:error, error_message(reason)}
       end
     end)
-    |> tap_clear_edit()
+    |> close_edit_if_saved()
   end
 
   def handle_event("validate", %{"invite" => params} = event, socket) do
@@ -548,6 +548,7 @@ defmodule EmisarWeb.TeamLive do
         {:error, reason} -> {:error, error_message(reason)}
       end
     end)
+    |> noreply()
   end
 
   # Typed-confirm state for the "Remove from team" dialog (UX friction only —
@@ -565,6 +566,7 @@ defmodule EmisarWeb.TeamLive do
         {:error, reason} -> {:error, error_message(reason)}
       end
     end)
+    |> noreply()
   end
 
   def handle_event("reinstate", %{"membership_id" => id}, socket) do
@@ -577,6 +579,7 @@ defmodule EmisarWeb.TeamLive do
         {:error, reason} -> {:error, error_message(reason)}
       end
     end)
+    |> noreply()
   end
 
   def handle_event("end_sessions", %{"membership_id" => id}, socket) do
@@ -586,6 +589,7 @@ defmodule EmisarWeb.TeamLive do
         {:error, reason} -> {:error, error_message(reason)}
       end
     end)
+    |> noreply()
   end
 
   def handle_event("verify_reset_totp", %{"otp" => otp}, socket) do
@@ -659,15 +663,19 @@ defmodule EmisarWeb.TeamLive do
     end
   end
 
-  defp tap_clear_scope_edit({:noreply, %{assigns: %{flash: %{"info" => _}}} = socket}),
+  # A REJECTED save keeps its editor open on what the operator typed; only a
+  # save that went through closes it. (This read the flash before — so a still
+  # visible "Member updated." from a previous save closed the editor on a
+  # refusal and threw the typed name away with it.)
+  defp close_scope_edit_if_saved({:ok, socket}),
     do: {:noreply, assign(socket, :scope_editing_id, nil)}
 
-  defp tap_clear_scope_edit(other), do: other
+  defp close_scope_edit_if_saved({:error, socket}), do: {:noreply, socket}
 
-  defp tap_clear_edit({:noreply, %{assigns: %{flash: %{"info" => _}}} = socket}),
+  defp close_edit_if_saved({:ok, socket}),
     do: {:noreply, socket |> assign(:editing_id, nil) |> assign(:edit_form, nil)}
 
-  defp tap_clear_edit(other), do: other
+  defp close_edit_if_saved({:error, socket}), do: {:noreply, socket}
 
   defp save_built_access(socket, id, {:ok, access}) do
     with_membership(socket, id, fn membership ->
@@ -680,7 +688,7 @@ defmodule EmisarWeb.TeamLive do
         {:error, reason} -> {:error, error_message(reason)}
       end
     end)
-    |> tap_clear_scope_edit()
+    |> close_scope_edit_if_saved()
   end
 
   defp save_built_access(socket, id, {:error, :invalid_pack_access}),
@@ -701,18 +709,22 @@ defmodule EmisarWeb.TeamLive do
     do: {:noreply, put_flash(socket, :error, message)}
 
   # Repetitive plumbing: look up the membership, run `fun`, flash + reload.
+  # Returns the outcome with the socket so a caller can act on the RESULT — a
+  # member that vanished mid-flight reads as an error, since nothing happened.
   defp with_membership(socket, id, fun) do
     case find_member_membership(socket, id) do
       nil ->
-        {:noreply, socket}
+        {:error, socket}
 
       %Accounts.Membership{} = membership ->
         case fun.(membership) do
-          {:ok, message} -> {:noreply, socket |> put_flash(:info, message) |> reload()}
-          {:error, message} -> {:noreply, put_flash(socket, :error, message)}
+          {:ok, message} -> {:ok, socket |> put_flash(:info, message) |> reload()}
+          {:error, message} -> {:error, put_flash(socket, :error, message)}
         end
     end
   end
+
+  defp noreply({_result, socket}), do: {:noreply, socket}
 
   defp error_message(reason), do: EmisarWeb.MemberErrors.message(reason)
 
