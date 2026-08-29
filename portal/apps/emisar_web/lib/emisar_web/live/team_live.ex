@@ -103,8 +103,14 @@ defmodule EmisarWeb.TeamLive do
     end
   end
 
-  def handle_info({:list_changed, :team, _event_type, _id}, socket),
-    do: {:noreply, reload(socket)}
+  # Only the roster renders the team read, so only the roster reloads it: on the
+  # invite or MFA-reset route the same broadcast would run ten reads nothing
+  # renders and re-assign the runner + pack lists under an open picker.
+  def handle_info(
+        {:list_changed, :team, _event_type, _id},
+        %{assigns: %{live_action: :index}} = socket
+      ),
+      do: {:noreply, reload(socket)}
 
   def handle_info(
         {:sso_link_requests_changed, account_id},
