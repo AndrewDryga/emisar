@@ -24,6 +24,20 @@ import (
 // is the audit trail of a security product. Fail at load, say why.
 const MaxPreviewBytesLimit = 64 * 1024
 
+// MaxAttestationAgeLimit caps signing.max_attestation_age at one week.
+//
+// The window is the replay exposure of a signed dispatch AND the retention of
+// the nonce journal that detects the replay. That journal is bounded (100k
+// fresh entries), so a very wide window does not merely weaken replay
+// protection — it eventually fills the journal, at which point the runner
+// refuses EVERY signed dispatch. A week is far past any legitimate
+// offline-queueing need and stays clear of that cliff.
+//
+// Refused rather than clamped, like events.max_preview_bytes: an operator who
+// asked for a month-long window is asking for something that breaks dispatch
+// later, so say it at load.
+const MaxAttestationAgeLimit = actionspec.Duration(7 * 86_400e9)
+
 // SchemaVersion is the currently supported config schema version.
 const SchemaVersion = 1
 
@@ -320,6 +334,12 @@ func (c *Config) validateSigning() error {
 	}
 	if c.Signing.MaxAttestationAge <= 0 {
 		c.Signing.MaxAttestationAge = actionspec.Duration(86_400e9) // 24h
+	}
+	if c.Signing.MaxAttestationAge > MaxAttestationAgeLimit {
+		return fmt.Errorf(
+			"config: signing.max_attestation_age must not exceed %s (a wider replay window fills the nonce journal, and every signed dispatch is then refused)",
+			MaxAttestationAgeLimit.Std(),
+		)
 	}
 	return nil
 }

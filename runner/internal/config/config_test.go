@@ -288,6 +288,24 @@ func TestValidate_MaxAttestationAgeDefault(t *testing.T) {
 	}
 }
 
+// TestValidate_RejectsMaxAttestationAgeAboveCeiling covers the upper bound: a
+// window wider than a week widens replay exposure and eventually fills the
+// bounded nonce journal, after which every signed dispatch is refused. The
+// value at the ceiling stays accepted.
+func TestValidate_RejectsMaxAttestationAgeAboveCeiling(t *testing.T) {
+	cfg := validConfig()
+	cfg.Signing.MaxAttestationAge = MaxAttestationAgeLimit + 1
+	if err := cfg.Validate(); err == nil {
+		t.Fatal("max_attestation_age above the ceiling must be rejected")
+	}
+
+	cfg = validConfig()
+	cfg.Signing.MaxAttestationAge = MaxAttestationAgeLimit
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("max_attestation_age at the ceiling must be accepted: %v", err)
+	}
+}
+
 // TestValidate_RejectsWrongSchemaVersion covers: schema_version
 // must equal the supported version (config.go:145-147). Zero (the field unset)
 // and any other value are both rejected.
