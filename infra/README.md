@@ -31,7 +31,7 @@ Better Stack -> external probes, on-call escalation (severe GCP alarms page in),
 |---|---|
 | Terraform and HCP contract | `versions.tf`, `providers.tf`, `project.tf`, `variables.tf`, `outputs.tf` |
 | Runtime | `network.tf`, `compute.tf`, `database.tf`, `livebook.tf` |
-| Public edge | `certificates.tf`, `load_balancer.tf`, `mta_sts.tf`, `dns.tf` |
+| Public edge | `certificates.tf`, `load_balancer.tf`, `security_policy.tf`, `mta_sts.tf`, `dns.tf` |
 | Identity and delivery | `iam.tf`, `secrets.tf`, `github_oidc.tf` |
 | Distribution | `pack_registry.tf`, `packs/` |
 | Operations | `logging.tf`, `betterstack.tf`, `monitoring.tf`, `monitoring_*.tf` |
@@ -43,7 +43,7 @@ Better Stack -> external probes, on-call escalation (severe GCP alarms page in),
 |---|---|
 | Compute | Regional managed instance group plus a host-supervised private admin runner per portal VM, optional single-node Livebook workbench, Shielded VMs, no external VM IPs, zero-unavailable portal rolling updates |
 | Database | Cloud SQL PostgreSQL 18, private IP, IAM database authentication through a local proxy, PITR, automated backups, deletion protection |
-| Network | Dedicated VPC, flow logs, Cloud NAT, load-balancer-only application ingress, IAP-only SSH |
+| Network | Dedicated VPC, flow logs, Cloud NAT, load-balancer-only application ingress, IAP-only SSH, Cloud Armor per-IP edge rate limiting |
 | TLS | Certificate Manager DNS authorization, managed certificates, restricted TLS 1.2+ policy |
 | Secrets | Explicit Secret Manager versions fingerprint the VM template; VM access is per-secret and read-only |
 | Supply chain | Production runs an immutable portal GHCR digest built and tested by CI; COS installs a pinned immutable runner release from the Emisar release host with checksum verification, private packs are rendered by Terraform, and public pack and release artifacts are versioned in GCS |

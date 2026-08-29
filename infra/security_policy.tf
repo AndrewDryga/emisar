@@ -1,27 +1,29 @@
-# Edge rate limiting, in PREVIEW.
+# Edge rate limiting.
 #
 # Before this, the only rate limit was application-level: every abusive request
 # cost a BEAM process and a database round trip before anything said no. Cloud
-# Armor answers at the edge.
+# Armor answers at the edge, and this policy is shared by the portal and Livebook
+# backends (load_balancer.tf).
 #
-# Every rule ships with `preview = true` ON PURPOSE. A rate limit tuned by
-# guessing is a rate limit that drops real operators — an MCP client polling
-# `wait_for_run`, a fleet of runners reconnecting after a rollout, a CI job
-# dispatching a batch. Preview logs what WOULD have been blocked without
-# blocking it, so the thresholds get set from this deployment's own traffic.
-# Flipping a rule to enforcing is a one-line change and its own reviewed apply.
+# The per-IP ceiling enforces (deny 429 + ban) at a deliberately generous
+# threshold. Generous ON PURPOSE: the legitimate high-rate clients — an MCP
+# client polling `wait_for_run`, a fleet of runners reconnecting after a rollout
+# behind one NAT, a CI job dispatching a batch — must not be dropped, while
+# volumetric abuse from a single source still gets banned. Tighten from the
+# request logs; lowering the threshold is a one-line change and its own reviewed
+# apply.
 
 resource "google_compute_security_policy" "app" {
   name        = "emisar-app"
-  description = "Edge rate limiting for the portal backend. Rules are in preview until tuned against real traffic."
+  description = "Edge per-IP rate limiting for the load balancer backends."
 
-  # Per-IP request ceiling. The threshold is deliberately generous: the point of
-  # the first pass is to find out where legitimate traffic actually sits, and a
-  # rule that never fires in preview teaches nothing.
+  # Per-IP request ceiling, enforcing. 600/min (10 req/s) bans volumetric abuse
+  # from a single source without stranding a legitimate poller, a post-rollout
+  # runner reconnect storm behind one NAT, or a CI batch. Tighten from the
+  # request logs if abuse warrants it.
   rule {
     action   = "rate_based_ban"
     priority = 1000
-    preview  = true
 
     match {
       versioned_expr = "SRC_IPS_V1"

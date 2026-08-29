@@ -41,6 +41,10 @@ resource "google_compute_backend_service" "livebook" {
   connection_draining_timeout_sec = 120
   health_checks                   = [google_compute_health_check.livebook[0].id]
 
+  # Shared per-IP edge rate limit (security_policy.tf). IAP authenticates
+  # operators here, but the ceiling still caps volumetric abuse in front of IAP.
+  security_policy = google_compute_security_policy.app.id
+
   # Omitting OAuth credentials selects Google's managed browser client. IAP
   # authenticates the user; Livebook independently validates its signed JWT.
   iap {
@@ -72,6 +76,11 @@ resource "google_compute_backend_service" "livebook_public" {
   timeout_sec                     = var.backend_timeout_sec
   connection_draining_timeout_sec = 120
   health_checks                   = [google_compute_health_check.livebook[0].id]
+
+  # This backend is deliberately IAP-free (rule 13: /public/* widget assets load
+  # without an operator cookie), so the shared per-IP edge ceiling
+  # (security_policy.tf) is its only gate against unauthenticated volumetric abuse.
+  security_policy = google_compute_security_policy.app.id
 
   log_config {
     enable      = var.lb_request_log_sampling > 0
