@@ -204,8 +204,12 @@ defmodule EmisarWeb.TeamLive do
     # The pack list has no coverage rule to normalize — what is checked IS the
     # draft, including a pack the account no longer carries, which the picker
     # keeps ticked so the operator can see and remove it.
-    pack_mode = Map.get(params, "pack_access_mode", "all")
-    pack_scope = List.wrap(params["pack_scope"])
+    {pack_mode, pack_scope} =
+      submitted_pack_selection(
+        params,
+        socket.assigns.scope_pack_mode,
+        socket.assigns.scope_pack_draft
+      )
 
     # Same terms as the runner half: clearing a selection you had is a mistake
     # worth naming, but merely REVEALING an empty one is not — a form does not
@@ -371,9 +375,14 @@ defmodule EmisarWeb.TeamLive do
   def handle_event("approval_access_changed", %{"_request_id" => id} = params, socket) do
     mode = params["runner_access_mode"]
     scope = List.wrap(params["scope"])
-    pack_mode = Map.get(params, "pack_access_mode", "all")
-    pack_scope = List.wrap(params["pack_scope"])
     previous_pack_draft = Map.get(socket.assigns.approval_pack_drafts, id, [])
+
+    {pack_mode, pack_scope} =
+      submitted_pack_selection(
+        params,
+        Map.get(socket.assigns.approval_pack_modes, id, "all"),
+        previous_pack_draft
+      )
 
     pack_errors =
       if pack_mode == "restricted" and pack_scope == [] and previous_pack_draft != [] do
@@ -492,7 +501,10 @@ defmodule EmisarWeb.TeamLive do
   end
 
   def handle_event("validate", %{"invite" => params} = event, socket) do
-    case Accounts.change_invitation(params, socket.assigns.current_subject) do
+    case Accounts.change_invitation(
+           keep_pack_selection(socket, params),
+           socket.assigns.current_subject
+         ) do
       {:ok, changeset} -> {:noreply, assign_form(socket, LiveForm.on_change(changeset, event))}
       {:error, :unauthorized} -> {:noreply, socket}
     end
@@ -609,6 +621,28 @@ defmodule EmisarWeb.TeamLive do
       do: MapSet.delete(expanded, id),
       else: MapSet.put(expanded, id)
   end
+
+  # The pack half unmounts while the chosen runner mode reaches nothing, so a
+  # change event fired from that state carries NO pack params at all — reading
+  # them as "all packs" there widened a grant the operator had already narrowed,
+  # silently, on the way back to selected runners. A mounted control always posts
+  # its mode, so an absent mode means unmounted, while an absent scope under a
+  # present mode is a genuinely empty selection.
+  defp submitted_pack_selection(params, _mode, _draft)
+       when is_map_key(params, "pack_access_mode"),
+       do: {params["pack_access_mode"], List.wrap(params["pack_scope"])}
+
+  defp submitted_pack_selection(_params, mode, draft), do: {mode, draft}
+
+  # The same absence, for the invite form — its draft lives in the changeset.
+  defp keep_pack_selection(%{assigns: %{form: %Phoenix.HTML.Form{} = form}}, params)
+       when not is_map_key(params, "pack_access_mode") do
+    params
+    |> Map.put("pack_access_mode", to_string(form[:pack_access_mode].value))
+    |> Map.put("pack_scope", List.wrap(form[:pack_scope].value))
+  end
+
+  defp keep_pack_selection(_socket, params), do: params
 
   # Groups lead — a group is the wider grant, so the visible tags start there.
   defp scope_tag_items(%Accounts.RunnerAccess{} = access) do

@@ -473,6 +473,42 @@ defmodule EmisarWeb.TeamLiveTest do
                }
     end
 
+    test "clearing a pending request's runner access keeps its pack selection", %{conn: conn} do
+      {conn, _user, account} = register_and_log_in(conn)
+      Fixtures.Accounts.create_subscription(account, "team")
+      provider = Fixtures.SSO.create_identity_provider(account_id: account.id)
+      request = Fixtures.SSO.create_link_request(provider: provider, full_name: "Dana Ops")
+      runner = Fixtures.Runners.create_runner(account_id: account.id, group: "database")
+      Fixtures.Catalog.create_action(runner: runner, action_id: "pg.up", pack_id: "postgres")
+
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/team")
+      form = "#approve-request-#{request.id}"
+
+      render_change(lv, "approval_access_changed", %{
+        "_request_id" => request.id,
+        "runner_access_mode" => "all",
+        "pack_access_mode" => "restricted",
+        "pack_scope" => ["pack:postgres"]
+      })
+
+      assert has_element?(lv, "#{form} input[value='pack:postgres']:checked")
+
+      # "No runners" unmounts the pack half, so the events either side of it
+      # carry no pack params — the selection is the operator's until they change
+      # it, never re-opened to every pack.
+      render_change(lv, "approval_access_changed", %{
+        "_request_id" => request.id,
+        "runner_access_mode" => "none"
+      })
+
+      render_change(lv, "approval_access_changed", %{
+        "_request_id" => request.id,
+        "runner_access_mode" => "all"
+      })
+
+      assert has_element?(lv, "#{form} input[value='pack:postgres']:checked")
+    end
+
     test "an unverified OIDC email is shown only as context, never as an existing-account match",
          %{
            conn: conn
@@ -1527,6 +1563,66 @@ defmodule EmisarWeb.TeamLiveTest do
       refute render(lv) =~ "selected packs"
     end
 
+    test "clearing runner access and choosing it again keeps the pack selection", %{conn: conn} do
+      {conn, owner, account} = register_and_log_in(conn, %{account: %{name: "PackKeepOrg"}})
+      subject = Fixtures.Subjects.subject_for(owner, account, role: :owner)
+      email = "packkeep-#{System.unique_integer([:positive])}@example.com"
+
+      {:ok, %{membership: m}} =
+        Emisar.Accounts.invite_user_to_account(
+          Fixtures.Accounts.invitation_attrs(
+            email: email,
+            role: "admin",
+            runner_access_mode: "all"
+          ),
+          subject
+        )
+
+      runner = Fixtures.Runners.create_runner(account_id: account.id, name: "r1", group: "dba")
+      Fixtures.Catalog.create_action(runner: runner, action_id: "pg.up", pack_id: "postgres")
+
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/team")
+      render_click(lv, "start_scope_edit", %{"membership_id" => m.id})
+      form = "form[phx-submit='save_scopes']"
+
+      render_change(lv, "scope_changed", %{
+        "membership_id" => m.id,
+        "runner_access_mode" => "all",
+        "pack_access_mode" => "restricted",
+        "pack_scope" => ["pack:postgres"]
+      })
+
+      assert has_element?(lv, "#{form} input[value='pack:postgres']:checked")
+
+      # "No runners" unmounts the pack half, so the next event carries no pack
+      # params at all. Reading that as "All packs" widened the grant on the way
+      # back — and the save would have persisted it without a word.
+      render_change(lv, "scope_changed", %{
+        "membership_id" => m.id,
+        "runner_access_mode" => "none"
+      })
+
+      render_change(lv, "scope_changed", %{"membership_id" => m.id, "runner_access_mode" => "all"})
+
+      assert has_element?(lv, "#{form} input[value='pack:postgres']:checked")
+
+      render_submit(element(lv, form), %{
+        "membership_id" => m.id,
+        "runner_access_mode" => "all",
+        "pack_access_mode" => "restricted",
+        "pack_scope" => ["pack:postgres"]
+      })
+
+      assert Emisar.Accounts.runner_access_for_membership(account.id, m.id) ==
+               %Emisar.Accounts.RunnerAccess{
+                 mode: :all,
+                 groups: [],
+                 runner_ids: [],
+                 pack_mode: :restricted,
+                 pack_ids: ["postgres"]
+               }
+    end
+
     test "picking a group disables its runners live, so they can't be double-scoped", %{
       conn: conn
     } do
@@ -2475,6 +2571,41 @@ defmodule EmisarWeb.TeamLiveTest do
         |> render_change()
 
       assert html =~ "must have the @ sign and no spaces"
+    end
+
+    test "clearing runner access and choosing it again keeps the pack selection", %{
+      conn: conn,
+      account: account
+    } do
+      runner = Fixtures.Runners.create_runner(account_id: account.id, group: "dba")
+      Fixtures.Catalog.create_action(runner: runner, action_id: "pg.up", pack_id: "postgres")
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/team/invite")
+
+      lv
+      |> form("#invite_form", %{"invite" => %{"runner_access_mode" => "all"}})
+      |> render_change()
+
+      lv
+      |> form("#invite_form", %{"invite" => %{"pack_access_mode" => "restricted"}})
+      |> render_change()
+
+      lv
+      |> form("#invite_form", %{"invite" => %{"pack_scope" => ["pack:postgres"]}})
+      |> render_change()
+
+      assert has_element?(lv, "#invite_form input[value='pack:postgres']:checked")
+
+      # The pack half unmounts under "No runners", so it posts nothing on the
+      # way back — the invitee must not gain every pack from that round trip.
+      lv
+      |> form("#invite_form", %{"invite" => %{"runner_access_mode" => "none"}})
+      |> render_change()
+
+      lv
+      |> form("#invite_form", %{"invite" => %{"runner_access_mode" => "all"}})
+      |> render_change()
+
+      assert has_element?(lv, "#invite_form input[value='pack:postgres']:checked")
     end
 
     test "a role outside the allowed set is rejected with no membership created", %{lv: lv} do
