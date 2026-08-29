@@ -2,9 +2,15 @@ schema_version: 1
 id: minio.admin_trace
 title: mc admin trace (5s window)
 kind: exec
-risk: low
-description: Trace S3 API calls hitting the cluster for 5 seconds.
-side_effects: ["One admin call.", "Read-only."]
+risk: medium
+description: >
+  Trace S3 API calls hitting the cluster for 5 seconds. Returns the one-line
+  request summary — method, path, status, timing — never request or response
+  headers, which carry the caller's SigV4 credential and signature.
+side_effects:
+  - One admin call.
+  - Read-only.
+  - Returns live request paths, which name the buckets and keys clients are reading.
 args:
   - name: alias
     type: string
@@ -17,7 +23,7 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
-      - "out=$(timeout 5 mc admin trace -v \"${1}\" 2>&1); status=$?; printf '%s\\n' \"$out\"; case \"$status\" in 0|124) exit 0 ;; *) exit \"$status\" ;; esac"
+      - "out=$(timeout 5 mc admin trace \"${1}\" 2>&1); status=$?; printf '%s\\n' \"$out\"; case \"$status\" in 0|124) exit 0 ;; *) exit \"$status\" ;; esac"
       - "emisar"
       - "{{ args.alias }}"
   timeout: 15s
@@ -25,6 +31,17 @@ output:
   parser: text
   max_stdout_bytes: 1048576
   max_stderr_bytes: 8192
+  # Defence in depth behind dropping -v: a presigned URL carries its credential
+  # and signature in the query string, so they reach the summary line too.
+  redact:
+    - name: sigv4-credential
+      type: regex
+      pattern: 'Credential=[^,&\s]+'
+      replacement: 'Credential=[REDACTED]'
+    - name: sigv4-signature
+      type: regex
+      pattern: 'Signature=[A-Za-z0-9]+'
+      replacement: 'Signature=[REDACTED]'
 examples:
   - title: Trace 5s
     args:

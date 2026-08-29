@@ -1,0 +1,11 @@
+recipes:
+  # The baseline closes net.ipv4.ping_group_range, which is what leaves ping
+  # with nothing but a raw socket — and no_new_privs already blocks the file
+  # capability ping ships with, so the probe fails until the service itself
+  # carries CAP_NET_RAW.
+  - access: 0
+    recipe: 0
+    fixture: debian
+    action: net.ping_extended
+    prepare: ["printf '1 0' > /proc/sys/net/ipv4/ping_group_range"]
+    probe: ping -c 1 -W 1 127.0.0.1

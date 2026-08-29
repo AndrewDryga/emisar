@@ -103,6 +103,37 @@ cases:
           stdout_contains: [enabled]
     cleanup:
       - argv: [mc, admin, user, remove, minio, harness_user]
+  # A presigned URL carries its credential and signature in the query string,
+  # and the trace summary line prints the whole query string — so this is the
+  # shape that proves the redaction rules fire. The replay loop runs detached so
+  # requests keep landing while the action's own five-second window is open.
+  - name: minio.admin-trace-redacts-presigned-credentials
+    action: minio.admin_trace
+    args: {alias: minio}
+    arrange:
+      - argv: [mc, mb, "--ignore-existing", minio/harness-trace]
+      - argv: [/bin/sh, -c, 'printf harness-object | mc pipe minio/harness-trace/probe.txt']
+      - name: replay a presigned GET across the trace window
+        argv:
+          - /bin/sh
+          - -c
+          - |
+            set -eu
+            url=$(mc share download --json --expire 1h minio/harness-trace/probe.txt \
+              | sed -n 's/.*"share":"\([^"]*\)".*/\1/p')
+            [ -n "$url" ]
+            (i=0; while [ "$i" -lt 20 ]; do curl -s -o /dev/null "$url"; sleep 1; i=$((i + 1)); done) \
+              >/dev/null 2>&1 &
+            echo armed
+    expect:
+      stdout_contains:
+        - s3.GetObject
+        - harness-trace/probe.txt
+        - "X-Amz-Credential=[REDACTED]"
+        - "X-Amz-Signature=[REDACTED]"
+      stdout_not_contains: [aws4_request]
+    cleanup:
+      - argv: [mc, rb, "--force", minio/harness-trace]
   # The server re-execs itself in place on restart, so the container (and its
   # /data) survives; mc prints one compact JSON line (piped stdin turns on
   # JSONLine mode). The probes retry through the restart window and prove the

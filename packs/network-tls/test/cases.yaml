@@ -16,3 +16,28 @@ cases:
       status: failure
       exit: [1]
       stderr_contains: [reachable=false, host=tcp, port=81]
+
+  # Both raw-socket actions run as an identity that really holds CAP_NET_RAW.
+  # The runner sets no_new_privs on every action child, so the setuid bit and
+  # the file capability these binaries ship with grant nothing — running them
+  # as anyone else would only assert the denial the pack's host_access recipe
+  # exists to remove.
+  - action: net.ping_extended
+    args: {host: tcp, count: 2, timeout: 2}
+    runner_user: root
+    runner_reason: >
+      ICMP echo needs CAP_NET_RAW, which no_new_privs stops ping's own file
+      capability from supplying.
+    expect:
+      stdout_contains: ["2 packets transmitted", "0% packet loss"]
+
+  - action: net.traceroute_mtr
+    args: {host: tcp, cycles: 1}
+    runner_user: root
+    runner_reason: >
+      mtr opens a raw socket, which no_new_privs stops its own file capability
+      from supplying.
+    expect:
+      # mtr truncates the hop name to its column width, so the evidence that the
+      # raw socket worked is a reported hop, not the target's full name.
+      stdout_contains: ["HOST:", "Loss%", "1.|--"]

@@ -22,7 +22,10 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
-      - "cat /etc/sudoers 2>/dev/null; echo; ls -la /etc/sudoers.d/ 2>/dev/null"
+      # Guard the read: /etc/sudoers is 0440 root:root, and an unreadable file
+      # must fail rather than answer a privilege-escalation audit with a blank
+      # page that reads as "no sudo rules".
+      - "[ -r /etc/sudoers ] || { echo '/etc/sudoers is not readable by this runner identity' >&2; exit 1; }; cat /etc/sudoers; echo; ls -la /etc/sudoers.d/"
   timeout: 5s
 
 output:

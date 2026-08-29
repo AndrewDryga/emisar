@@ -1,7 +1,7 @@
 schema_version: 1
 id: aws-s3
 name: AWS S3 operations
-version: 0.1.7
+version: 0.1.8
 retired_below: 0.1.4
 description: >
   Read-only S3 diagnostics for bounded bucket and object inventory, access,
@@ -37,6 +37,7 @@ setup:
     - "Read-only: the principal needs s3:ListAllMyBuckets, s3:ListBucket, s3:GetBucketLocation and the exact s3:GetBucket* / s3:GetObject permissions for the buckets you inspect."
     - "Alternative to env keys: an `~/.aws/credentials` profile (read from disk, no `inherit_env` entry) or, on EC2/ECS, the instance/task role from instance metadata (no credentials needed at all)."
     - "Object metadata is projected locally: custom metadata key names are returned, but their values and object bodies never leave the runner."
+    - "List actions return a `next_page_cursor`; feed it back as `page_cursor` for explicit bounded pagination."
     - "This remote-target pack declares no host detection signal and is never auto-suggested merely because aws is installed."
   verify: s3.list_buckets
 

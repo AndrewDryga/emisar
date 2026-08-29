@@ -1,4 +1,12 @@
 services:
+  runner-tools:
+    build:
+      context: ${EMISAR_ROOT}/packs/network-tls/test
+      dockerfile: Dockerfile
+      args:
+        PACKTEST_RUNNER_IMAGE: ${PACKTEST_RUNNER_IMAGE:-emisar-runner-tools:latest}
+    image: emisar-packtest-network-tls-tools:latest
+
   tcp:
     image: nginx:${PACKTEST_VERSION:-1.31.3}${PACKTEST_DIGEST-}
     healthcheck:

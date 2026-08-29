@@ -2,7 +2,7 @@ schema_version: 1
 
 id: network-tls
 name: Network + TLS diagnostics
-version: 0.1.16
+version: 0.1.17
 description: >
   DNS lookups, reachability probes, TLS certificate inspection, and
   HTTP timing tests. All read-only. Use for "is X reachable?" and
@@ -30,6 +30,24 @@ setup:
     target.
   notes:
     - "DNS/whois/ipinfo go to public resolvers and services; reachability and TLS probes need a network path from the runner to the target, so firewalls or egress rules can block them."
+  host_access:
+    - actions:
+        - net.traceroute_mtr
+        - net.ping_extended
+      requirement: Open raw ICMP sockets with CAP_NET_RAW.
+      recipes:
+        - name: Grant CAP_NET_RAW to the Emisar service
+          commands:
+            - "sudo install -d -m 0755 /etc/systemd/system/emisar.service.d"
+            - "printf '%s\\n' '[Service]' 'AmbientCapabilities=CAP_NET_RAW' | sudo tee /etc/systemd/system/emisar.service.d/10-network-tls-host-access.conf >/dev/null"
+            - "sudo systemctl daemon-reload"
+            - "sudo systemctl restart emisar"
+          verify:
+            - "systemctl show emisar --property=AmbientCapabilities --value | grep -Fwi cap_net_raw"
+          impact: >
+            Every Emisar action on this runner inherits CAP_NET_RAW and can open raw
+            sockets — sending crafted packets and reading traffic on this host's
+            interfaces — well beyond mtr and ping.
   verify: net.tls_cert_expiry
 
 actions:

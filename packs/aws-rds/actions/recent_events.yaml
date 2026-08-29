@@ -18,16 +18,15 @@ args:
     default: 100
     description: Maximum events to return.
     validation: {min: 1, max: 1000}
-  - name: next_token
+  - name: page_cursor
     type: string
     required: false
     default: ""
-    sensitive: true
-    description: Opaque AWS CLI token from a previous result.
+    description: Opaque AWS CLI pagination cursor from a previous result.
     validation: {pattern: "^[A-Za-z0-9+/=_-]*$", max_length: 4096}
 execution:
   script: {path: scripts/rds_read.sh, interpreter: /bin/sh}
-  argv: [events, "{{ args.duration_minutes }}", "{{ args.limit }}", "{{ args.next_token }}"]
+  argv: [events, "{{ args.duration_minutes }}", "{{ args.limit }}", "{{ args.page_cursor }}"]
   timeout: 60s
 output:
   parser: json

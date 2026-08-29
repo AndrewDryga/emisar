@@ -3,6 +3,8 @@ schema_version: 1
 id: debugging.dmesg_oom
 title: OOM-kill events from dmesg
 kind: exec
+# Stays low where its dmesg_tail sibling is medium: this is a projection, not a
+# raw read — 30 lines matched on the OOM vocabulary, never arbitrary log text.
 risk: low
 
 description: >

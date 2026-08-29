@@ -2,7 +2,7 @@ schema_version: 1
 
 id: fs-search
 name: Filesystem search and inspection
-version: 0.1.14
+version: 0.1.15
 # 0.1.11 and below let a low-risk, no-approval read reach the runner process
 # environment and other secret-bearing proc/device endpoints. 0.1.8 and below
 # additionally allowed the runner's own configuration and state directories.

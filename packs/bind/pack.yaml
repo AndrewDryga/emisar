@@ -2,7 +2,7 @@ schema_version: 1
 
 id: bind
 name: BIND DNS server
-version: 0.1.15
+version: 0.1.16
 # Unchanged: rndc_stats moving low -> medium corrects the tier for a file
 # rewrite, but the shipped default auto-runs both, so no approval was skipped
 # and no earlier version is unsafe to keep running.

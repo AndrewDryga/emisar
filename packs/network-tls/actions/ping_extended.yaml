@@ -3,10 +3,12 @@ id: net.ping_extended
 title: ping (with count + timeout)
 kind: exec
 risk: low
-description: Send N ICMP echo requests with explicit per-probe timeout.
+description: >
+  Send N ICMP echo requests with explicit per-probe timeout. Needs CAP_NET_RAW on the runner identity where the host does not open `net.ipv4.ping_group_range`: ping ships setuid or file-capability elevation, and the runner's `no_new_privs` blocks both, so grant the capability from this pack's setup before enabling the action.
 side_effects:
   - Outbound ICMP.
   - Read-only.
+  - Opens an ICMP socket, so it fails without CAP_NET_RAW on a host with a closed ping group range.
 search_terms:
   - unreachable
 args:

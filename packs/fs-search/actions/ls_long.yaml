@@ -28,6 +28,7 @@ args:
         - /etc/sudoers.d
         - /etc/emisar
         - /var/lib/emisar
+        - /var/log/emisar
 execution:
   command:
     binary: ls

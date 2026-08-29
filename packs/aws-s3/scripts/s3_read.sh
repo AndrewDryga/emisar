@@ -11,6 +11,10 @@ project_with_jq() {
   jq -e "$filter" "$tmp"
 }
 
+# Both list projections emit the continuation as next_page_cursor: the runner's
+# default redaction rewrites any string under a token-named key, so passing S3's
+# own ContinuationToken through would reach the model as [REDACTED] and no
+# caller could ever page past the first result.
 case "$1" in
   buckets)
     limit=$2
@@ -26,7 +30,7 @@ case "$1" in
           BucketRegion
         }],
         Prefix,
-        ContinuationToken
+        next_page_cursor: .ContinuationToken
       }' \
       "$@"
     ;;
@@ -45,7 +49,7 @@ case "$1" in
         KeyCount,
         MaxKeys,
         IsTruncated,
-        NextContinuationToken,
+        next_page_cursor: .NextContinuationToken,
         Contents: [(.Contents // [])[] | {
           Key,
           LastModified,

@@ -13,7 +13,9 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
-      - "MP=$(cat /run/nginx.pid 2>/dev/null); [ -n \"$MP\" ] && pgrep -c -P \"$MP\" || echo 0"
+      # An unreadable pid file must not answer "0": zero live workers and no
+      # master pid are opposite findings, and only one of them is an outage.
+      - "MP=$(cat /run/nginx.pid 2>/dev/null); [ -n \"$MP\" ] || { echo 'cannot read the nginx master pid from /run/nginx.pid' >&2; exit 1; }; count=$(pgrep -c -P \"$MP\"); echo \"${count:-0}\""
   timeout: 5s
 output:
   parser: text

@@ -11,6 +11,10 @@ project_with_jq() {
   jq -e "$filter" "$tmp"
 }
 
+# Every projection emits the continuation as next_page_cursor: the runner's
+# default redaction rewrites any string under a token-named key, so passing the
+# CLI's own NextToken through would reach the model as [REDACTED] and no caller
+# could ever page past the first result.
 page() {
   filter=$1
   limit=$2
@@ -186,7 +190,7 @@ cluster_snapshot_projection='
 case "$1" in
   instances)
     page \
-      "{DBInstances: [(.DBInstances // [])[] | $instance_projection], NextToken}" \
+      "{DBInstances: [(.DBInstances // [])[] | $instance_projection], next_page_cursor: .NextToken}" \
       "$2" "$3" describe-db-instances
     ;;
   instance)
@@ -196,7 +200,7 @@ case "$1" in
     ;;
   clusters)
     page \
-      "{DBClusters: [(.DBClusters // [])[] | $cluster_projection], NextToken}" \
+      "{DBClusters: [(.DBClusters // [])[] | $cluster_projection], next_page_cursor: .NextToken}" \
       "$2" "$3" describe-db-clusters
     ;;
   cluster)
@@ -206,12 +210,12 @@ case "$1" in
     ;;
   snapshots)
     page \
-      "{DBSnapshots: [(.DBSnapshots // [])[] | $snapshot_projection], NextToken}" \
+      "{DBSnapshots: [(.DBSnapshots // [])[] | $snapshot_projection], next_page_cursor: .NextToken}" \
       "$2" "$3" describe-db-snapshots
     ;;
   cluster-snapshots)
     page \
-      "{DBClusterSnapshots: [(.DBClusterSnapshots // [])[] | $cluster_snapshot_projection], NextToken}" \
+      "{DBClusterSnapshots: [(.DBClusterSnapshots // [])[] | $cluster_snapshot_projection], next_page_cursor: .NextToken}" \
       "$2" "$3" describe-db-cluster-snapshots
     ;;
   parameter-groups)
@@ -222,7 +226,7 @@ case "$1" in
           DBParameterGroupFamily,
           DBParameterGroupArn
         }],
-        NextToken
+        next_page_cursor: .NextToken
       }' \
       "$2" "$3" describe-db-parameter-groups
     ;;
@@ -234,7 +238,7 @@ case "$1" in
           DBParameterGroupFamily,
           DBClusterParameterGroupArn
         }],
-        NextToken
+        next_page_cursor: .NextToken
       }' \
       "$2" "$3" describe-db-cluster-parameter-groups
     ;;
@@ -254,7 +258,7 @@ case "$1" in
             }
           ]
         }],
-        NextToken
+        next_page_cursor: .NextToken
       }' \
       "$2" "$3" describe-pending-maintenance-actions
     ;;
@@ -269,7 +273,7 @@ case "$1" in
           Date,
           SourceArn
         }],
-        NextToken
+        next_page_cursor: .NextToken
       }' \
       "$3" "$4" describe-events --duration "$2"
     ;;

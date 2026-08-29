@@ -22,6 +22,16 @@ cases:
     args: {limit: 25}
     expect:
       stdout_contains: [DBInstances, harness-db, postgres, db.t3.micro]
+  # The cursor must survive the runner's default redaction in both directions:
+  # a page_cursor the caller feeds back reaches the CLI, and the emitted
+  # next_page_cursor is the real token, not [REDACTED].
+  - name: rds.list-instances-cursor-round-trips
+    action: rds.list_instances
+    args: {limit: 1, page_cursor: "eyJNYXJrZXIiOiAiaGFybmVzcy1wYWdlLTIifQ=="}
+    expect:
+      stdout_contains: [harness-db-page-2]
+      json:
+        /next_page_cursor: "eyJNYXJrZXIiOiAiaGFybmVzcy1wYWdlLTMifQ=="
   - action: rds.describe_instance
     args: {instance: harness-db}
     expect:

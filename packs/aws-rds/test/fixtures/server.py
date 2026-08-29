@@ -92,11 +92,32 @@ CLUSTER = f"""
 """
 
 
+# Three instance pages chained by Marker, so a list case can prove the emitted
+# next_page_cursor is a usable value rather than a redacted one. A request whose
+# Marker is not one of these is a 404: the fixture only answers a cursor it
+# actually handed out.
+INSTANCE_PAGES = {
+    "": ("harness-db", "harness-page-2"),
+    "harness-page-2": ("harness-db-page-2", "harness-page-3"),
+    "harness-page-3": ("harness-db-page-3", None),
+}
+
+
 def response(action, params):
     if action == "DescribeDBInstances":
-        if params.get("DBInstanceIdentifier", ["harness-db"])[0] != "harness-db":
+        identifier = params.get("DBInstanceIdentifier", [None])[0]
+        if identifier is not None:
+            if identifier != "harness-db":
+                return None
+            return wrap(action, f"<DBInstances>{INSTANCE}</DBInstances>")
+        marker = params.get("Marker", [""])[0]
+        if marker not in INSTANCE_PAGES:
             return None
-        return wrap(action, f"<DBInstances>{INSTANCE}</DBInstances>")
+        name, next_marker = INSTANCE_PAGES[marker]
+        result = f"<DBInstances>{INSTANCE.replace('harness-db', name)}</DBInstances>"
+        if next_marker:
+            result += f"<Marker>{next_marker}</Marker>"
+        return wrap(action, result)
     if action == "DescribeDBClusters":
         if params.get("DBClusterIdentifier", ["harness-cluster"])[0] != "harness-cluster":
             return None

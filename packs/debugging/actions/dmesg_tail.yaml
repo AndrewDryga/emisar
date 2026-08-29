@@ -3,7 +3,9 @@ schema_version: 1
 id: debugging.dmesg_tail
 title: Recent kernel messages
 kind: exec
-risk: low
+# Raw kernel ring-buffer lines, up to 5000 of them, and the fallback path IS
+# `journalctl -k` — the same content linux.journalctl serves at medium.
+risk: medium
 
 description: >
   Return the last N kernel log lines. Surfaces OOM kills, hardware

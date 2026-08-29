@@ -18,7 +18,7 @@ args:
   - name: admin
     type: string
     required: false
-    default: "http://localhost:9901"
+    default: "http://127.0.0.1:9901"
     description: Envoy admin URL.
     validation:
       pattern: "^https?://[a-zA-Z0-9._:\\-]{1,253}(:[0-9]{1,5})?$"

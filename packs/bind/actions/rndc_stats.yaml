@@ -11,7 +11,10 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
-      - "rndc stats; sleep 1; cat /var/named/data/named_stats.txt 2>/dev/null || cat /var/cache/bind/named.stats"
+      # Fail when the dump did not happen. BIND APPENDS to its stats file, so a
+      # failed rndc (missing key, named down, no control channel) would leave the
+      # previous dump to be read back as if it were fresh.
+      - "rndc stats || { echo 'rndc stats failed; not reading the previous dump' >&2; exit 1; }; sleep 1; cat /var/named/data/named_stats.txt 2>/dev/null || cat /var/cache/bind/named.stats"
   timeout: 30s
 output:
   parser: text

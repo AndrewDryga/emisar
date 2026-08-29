@@ -2,11 +2,15 @@ schema_version: 1
 id: ec2.console_output
 title: aws ec2 get-console-output
 kind: exec
-risk: low
-description: Get serial console output for one instance. Useful for boot diagnostics.
+risk: medium
+description: >
+  Get serial console output for one instance. Boot logs can contain
+  application-written sensitive data, so restrict this action by policy.
+  Useful for boot diagnostics.
 side_effects:
   - One API call.
   - Read-only.
+  - Returns guest-written serial output and may expose data the guest logged.
 args:
   - name: instance_id
     type: string
