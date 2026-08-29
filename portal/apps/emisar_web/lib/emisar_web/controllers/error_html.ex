@@ -44,8 +44,10 @@ defmodule EmisarWeb.ErrorHTML do
     error_page(%{
       status: 500,
       title: "Something broke on our side",
+      # No promise of a page: on-call is alerted on a sustained 5xx rate, so a
+      # single error reaches our logs and nobody's phone.
       message:
-        "We hit an unexpected error. The on-call engineer has been paged. If this keeps happening, ping support@emisar.dev — include the URL and roughly when it happened."
+        "We hit an unexpected error, and it's recorded on our side. Try again in a moment; if it keeps happening, ping support@emisar.dev — include the URL and roughly when it happened."
     })
   end
 
