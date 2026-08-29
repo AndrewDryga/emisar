@@ -667,6 +667,12 @@ func (a *App) packsGate(ctx context.Context) error {
 
 func (a *App) infraGate(ctx context.Context) error {
 	dir := filepath.Join(a.Root, "infra")
+	// A pure file read, so it fails in milliseconds before terraform or tflint is
+	// invoked — and it belongs in the gate rather than only a CI step, so a green
+	// local run cannot ship a .tool-versions that disagrees with the workflow pins.
+	if err := a.gatePhase("infra toolchain pins", a.checkInfraToolchainPins); err != nil {
+		return err
+	}
 	for _, command := range []struct {
 		label string
 		name  string
