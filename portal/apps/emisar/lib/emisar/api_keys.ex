@@ -879,6 +879,7 @@ defmodule Emisar.ApiKeys do
         })
 
       Multi.new()
+      |> put_active_account_lock(account_id)
       |> Multi.insert(:key, changeset)
       |> Multi.run(:evicted, fn _repo, %{key: key} ->
         evict_quick_ring_overflow(account_id, cap, grace_s, key.auto_generated_at)

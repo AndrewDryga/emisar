@@ -1538,6 +1538,21 @@ defmodule Emisar.ApiKeysTest do
       assert {:ok, [], _} = ApiKeys.list_api_keys_for_account(subject)
     end
 
+    test "refuses to mint into a disabled account" do
+      {_user, account, subject} = owner_subject_pair()
+
+      assert {:ok, _account} =
+               Accounts.set_account_disabled_for_support(
+                 account.id,
+                 true,
+                 "Temporary hold",
+                 subject
+               )
+
+      assert ApiKeys.mint_quick_key(subject) == {:error, :not_found}
+      refute Repo.one(ApiKey)
+    end
+
     test "ring eviction drops the oldest auto-unused key past the cap, never a used one" do
       {_user, _account, subject} = owner_subject_pair()
       opts = [ring_cap: 1, eviction_grace_seconds: 0]
