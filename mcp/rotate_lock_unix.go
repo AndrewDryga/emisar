@@ -21,7 +21,11 @@ import (
 const credentialLockWait = 5 * time.Second
 
 func lockCredentialFile(path string) (func(), error) {
-	file, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0o600)
+	// O_NOFOLLOW refuses a symlink planted at the lock path: withLock validates
+	// the credential directory before calling this, so with the parent trusted
+	// the final component is the only place a same-uid attacker could redirect
+	// the open. Every other credential open is already symlink-safe.
+	file, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR|syscall.O_NOFOLLOW, 0o600)
 	if err != nil {
 		return nil, err
 	}
