@@ -454,7 +454,14 @@ defmodule Emisar.SSO.SCIM do
         Accounts.put_sync_membership_lifecycle(Multi.new(), membership, provider, :suspend)
 
       nil ->
-        Multi.error(Multi.new(), :membership_transition, :not_found)
+        # No membership to offboard is already the offboarded state, so a create
+        # asserting `active: false` succeeds with nothing to do — the same as the
+        # PATCH/DELETE deprovision. Answering `:not_found` (some IdPs replay
+        # offboarding as a create) made Okta/Entra retry forever or re-create the
+        # person, undoing the removal.
+        Multi.run(Multi.new(), :membership_transition, fn _repo, _changes ->
+          {:ok, %{membership: nil, effect: nil}}
+        end)
     end
   end
 

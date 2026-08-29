@@ -3477,6 +3477,34 @@ defmodule Emisar.SSOTest do
       refute deactivated.scim_active
     end
 
+    test "a create asserting active:false for an identity with no membership offboards nothing",
+         %{
+           provider: provider,
+           account: account
+         } do
+      # An IdP replays offboarding as a POST against an OIDC-first identity whose
+      # membership an operator already removed locally. Answering :not_found made
+      # Okta/Entra retry the deactivate forever or re-create the person.
+      user = Fixtures.Users.create_user()
+
+      {:ok, _oidc_identity} =
+        account.id
+        |> SSO.UserIdentity.Changeset.create(provider.id, user.id, %{
+          provider_identifier: "departed-sub",
+          created_by: :provider,
+          provisioned_via: :oidc_jit
+        })
+        |> Repo.insert()
+
+      assert {:ok, %{membership: nil}} =
+               SSO.scim_provision_user(
+                 provider,
+                 scim_attrs(%{external_id: "departed-sub", active: false})
+               )
+
+      refute Fixtures.Memberships.fetch_membership(account.id, user.id)
+    end
+
     test "a sign-in cannot land on a directory-created identity for someone else", %{
       account: account,
       provider: provider
