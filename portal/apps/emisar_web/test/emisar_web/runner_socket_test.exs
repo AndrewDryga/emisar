@@ -331,6 +331,27 @@ defmodule EmisarWeb.RunnerSocketTest do
       # credential heals itself without an operator.
       assert json_response(conn, 401) == %{"error" => "token_expired"}
     end
+
+    test "the upgrade carries the connecting host's address, not the balancer's", %{conn: conn} do
+      runner = Fixtures.Runners.create_runner(connected?: false)
+      {raw, _token} = Runners.mint_runner_token(runner)
+
+      # Behind the load balancer `remote_ip` is the balancer, so every runner in
+      # the fleet used to audit its connects and disconnects as one address.
+      # `Plug.Test` carries the host on the struct and refuses it as a header,
+      # which the upgrade validator requires — hence the direct addition.
+      %{conn | req_headers: [{"host", "emisar.test"} | conn.req_headers]}
+      |> put_req_header("authorization", "Bearer " <> raw)
+      |> put_req_header("x-forwarded-for", "forged, 203.0.113.9, 8.233.97.247")
+      |> put_req_header("connection", "upgrade")
+      |> put_req_header("upgrade", "websocket")
+      |> put_req_header("sec-websocket-version", "13")
+      |> put_req_header("sec-websocket-key", "dGhlIHNhbXBsZSBub25jZQ==")
+      |> get("/runner/socket/websocket")
+
+      assert_receive {_ref, :upgrade, {:websocket, {RunnerSocket, state, _opts}}}
+      assert state.ip_address == "203.0.113.9"
+    end
   end
 
   describe "GET /healthz" do
@@ -1567,18 +1588,6 @@ defmodule EmisarWeb.RunnerSocketTest do
       assert {:push, shut, ^state} = RunnerSocket.handle_info(:runner_socket_drain, state)
       assert %{"type" => "shutdown", "protocol_version" => 1} = decode(shut)
       assert_receive :stop_after_drain, 500
-    end
-  end
-
-  describe "normalize_ip/1" do
-    test "strips the unknown sentinel, passes real strings, rejects junk" do
-      assert RunnerSocket.normalize_ip("unknown") == nil
-      assert RunnerSocket.normalize_ip("203.0.113.9") == "203.0.113.9"
-      assert RunnerSocket.normalize_ip({203, 0, 113, 9}) == nil
-    end
-
-    test "strips the ::ffff: IPv4-mapped wrapper, matching the browser paths" do
-      assert RunnerSocket.normalize_ip("::ffff:192.0.2.5") == "192.0.2.5"
     end
   end
 

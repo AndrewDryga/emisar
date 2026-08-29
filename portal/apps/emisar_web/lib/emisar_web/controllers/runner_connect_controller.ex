@@ -131,11 +131,14 @@ defmodule EmisarWeb.RunnerConnectController do
       # Threaded into the socket process so its lifecycle audit events
       # (connect in init, disconnect in terminate) carry the connecting
       # host's IP + UA — `init/1` builds the `%RequestContext{}` from
-      # these. The conn's process won't outlive the upgrade.
+      # these. The conn's process won't outlive the upgrade. The IP comes
+      # from the same helper every other path uses: `conn.remote_ip` behind
+      # the load balancer is the balancer, so every runner in the fleet
+      # audited as one address.
       state = %{
         token: token,
         runner: runner,
-        ip_address: conn |> ip_string() |> RunnerSocket.normalize_ip(),
+        ip_address: RequestContext.client_ip(conn),
         user_agent: get_req_header(conn, "user-agent") |> List.first()
       }
 
@@ -171,14 +174,6 @@ defmodule EmisarWeb.RunnerConnectController do
   end
 
   # -- Helpers --------------------------------------------------------
-
-  # Stringify `conn.remote_ip` for audit metadata. Falls back to
-  # "unknown" if the tuple isn't an IP (test sockets, unusual
-  # transports); `RunnerSocket.normalize_ip/1` strips that sentinel.
-  defp ip_string(%Plug.Conn{remote_ip: ip}) when is_tuple(ip),
-    do: ip |> :inet_parse.ntoa() |> to_string()
-
-  defp ip_string(_), do: "unknown"
 
   defp read_bearer(conn) do
     case get_req_header(conn, "authorization") do
