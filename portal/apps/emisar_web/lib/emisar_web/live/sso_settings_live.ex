@@ -1,7 +1,7 @@
 defmodule EmisarWeb.SSOSettingsLive do
   use EmisarWeb, :live_view
   alias Emisar.{Accounts, Auth, Catalog, Runners, SSO}
-  alias EmisarWeb.{ConfirmDialog, LiveForm, LiveTable, MailTo}
+  alias EmisarWeb.{ConfirmDialog, LiveForm, LiveTable, MailTo, RoleCopy}
   alias EmisarWeb.{OIDCIdentityHandoff, Permissions, RunnerScope}
   alias Phoenix.LiveView.JS
 
@@ -43,6 +43,10 @@ defmodule EmisarWeb.SSOSettingsLive do
                          Emisar.Auth.roles(),
                          &{Emisar.Auth.role_label(&1), Atom.to_string(&1)}
                        )
+
+  # The role strings a synced member may be moved to — the guard set for the
+  # change_member_role event (a crafted role never reaches update_membership_role).
+  @member_roles Enum.map(@member_role_options, &elem(&1, 1))
 
   # New member provisioning modes for the form's select. JIT adds the membership on
   # first sign-in; manual parks first sign-ins as pending requests an admin
@@ -1016,18 +1020,26 @@ defmodule EmisarWeb.SSOSettingsLive do
     end
   end
 
-  defp do_change_member_role(socket, membership_id, role) do
+  defp do_change_member_role(socket, membership_id, role) when role in @member_roles do
     with_synced_membership(socket, membership_id, fn membership ->
       # Directory sync owns a synced member's role (recomputed each sync), and the
       # DOMAIN refuses a manual change off the membership's own `directory_managed`
       # flag — the UI read-only lock is a courtesy, not the guard. An OIDC-only
       # member (no sync) isn't flagged, so the editable path still works.
       case Accounts.update_membership_role(membership, role, socket.assigns.current_subject) do
-        {:ok, _} -> {:noreply, socket |> put_flash(:info, "Role updated.") |> reload()}
-        {:error, reason} -> {:noreply, put_flash(socket, :error, member_error(reason))}
+        {:ok, _} ->
+          {:noreply, socket |> put_flash(:info, "Role updated.") |> reload()}
+
+        {:error, reason} ->
+          # reload() so the dropdown trigger reflects the STORED role after a
+          # refusal, not the value the operator picked.
+          {:noreply, socket |> put_flash(:error, member_error(reason)) |> reload()}
       end
     end)
   end
+
+  defp do_change_member_role(socket, _membership_id, _role),
+    do: {:noreply, put_flash(socket, :error, "Unknown role.")}
 
   defp do_suspend_member(socket, membership_id) do
     with_synced_membership(socket, membership_id, fn membership ->
@@ -3777,21 +3789,51 @@ defmodule EmisarWeb.SSOSettingsLive do
                   {Emisar.Auth.role_label(member.membership.role)}
                 </.chip>
               </.tooltip>
-              <form
-                :if={not @scim_enabled}
-                id={"synced-role-#{member.membership.id}"}
-                phx-change="change_member_role"
-                class="w-36"
-              >
-                <input type="hidden" name="membership_id" value={member.membership.id} />
-                <.select
-                  id={"synced-role-select-#{member.membership.id}"}
-                  name="role"
-                  size={:compact}
-                  class="text-xs"
-                  options={role_select_options(@member_role_options, member.membership.role)}
-                />
-              </form>
+              <%!-- A role change is a privilege grant, so it goes through the same
+                   styled confirm as the Team roster: a dropdown whose items OPEN a
+                   per-role confirm modal, never a bare select that promotes on a
+                   single change. The handler still authorizes and the DOMAIN owns
+                   the owner / last-owner / self guards (IL-15). --%>
+              <div :if={not @scim_enabled} class="flex items-center">
+                <.dropdown
+                  class="inline-block text-left"
+                  summary_class="rounded px-2 py-1 text-xs font-medium text-zinc-300 ring-1 ring-zinc-800 hover:bg-zinc-900"
+                  panel_class="z-10 mt-2 w-40 p-1 text-xs shadow-xl"
+                >
+                  <:trigger>
+                    {Emisar.Auth.role_label(member.membership.role)}
+                    <span class="text-zinc-500 group-open:hidden">▾</span><span class="hidden text-zinc-500 group-open:inline">▴</span>
+                  </:trigger>
+                  <.menu_item
+                    :for={{label, role} <- @member_role_options}
+                    :if={role != to_string(member.membership.role)}
+                    phx-click={open_confirm("synced-role-#{member.membership.id}-#{role}")}
+                  >
+                    {label}
+                  </.menu_item>
+                </.dropdown>
+                <.confirm_dialog
+                  :for={{label, role} <- @member_role_options}
+                  :if={role != to_string(member.membership.role)}
+                  id={"synced-role-#{member.membership.id}-#{role}"}
+                  tone={:amber}
+                  title={
+                    RoleCopy.change_title(
+                      Accounts.member_display_name(member.membership, member.identity.user),
+                      role
+                    )
+                  }
+                  confirm_label={"Change to #{label}"}
+                  on_confirm={
+                    JS.push("change_member_role",
+                      value: %{membership_id: member.membership.id, role: role}
+                    )
+                    |> close_confirm("synced-role-#{member.membership.id}-#{role}")
+                  }
+                >
+                  <:body>{RoleCopy.change_body(role)}</:body>
+                </.confirm_dialog>
+              </div>
               <%!-- Suspend is reversible (Reactivate undoes it), so it stays
                    NEUTRAL — rose is reserved for the irreversible Delete. The face
                    is bordered, like every visible action verb (§7.47); Reactivate
@@ -3876,13 +3918,6 @@ defmodule EmisarWeb.SSOSettingsLive do
 
   defp role_lock_tip(false),
     do: "Role is managed by directory sync — change this member's groups in your IdP"
-
-  # `{label, value}` role pairs as the shared select's option maps.
-  defp role_select_options(role_options, current_role) do
-    Enum.map(role_options, fn {label, value} ->
-      %{value: value, label: label, disabled: false, selected: to_string(current_role) == value}
-    end)
-  end
 
   # The identity's directory id — the SCIM externalId if synced, else the OIDC sub.
   defp synced_external_id(identity),

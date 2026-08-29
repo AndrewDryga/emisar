@@ -2239,49 +2239,52 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
       %{conn: conn, account: account, provider: provider, membership: membership}
     end
 
-    test "the role picker is the shared select, wired per member", %{
+    test "the role change routes through a per-role confirm dialog, not a bare select", %{
       conn: conn,
       account: account,
       provider: provider,
       membership: membership
     } do
-      # No directory sync on this provider, so the row offers the editable picker —
-      # through the shared select, not a hand-rolled box: an id per row (one derived
-      # id would collide across members), every role offered, the compact
-      # form-field metrics, and the chevron room every console select reserves.
-      # Whether the change lands is the domain's call, guarded above.
-      {:ok, lv, html} = live(conn, ~p"/app/#{account}/settings/sso/#{provider.id}")
+      # No directory sync on this provider, so the role is editable — but a role
+      # change is a privilege grant, so it goes through the same styled confirm as
+      # the Team roster: a per-role confirm modal, never a bare select that would
+      # promote to owner on a single change.
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/sso/#{provider.id}")
 
-      assert has_element?(lv, ~s(select#synced-role-select-#{membership.id}[name="role"]))
+      # The promote-on-change select is gone; a confirm dialog exists for every
+      # OTHER role, and the owner one spells out the consequence.
+      refute has_element?(lv, ~s(select[name="role"]))
+      assert has_element?(lv, "#synced-role-#{membership.id}-owner")
+      assert render(lv) =~ "can remove or demote you"
 
-      assert has_element?(
-               lv,
-               ~s(form#synced-role-#{membership.id}[phx-change="change_member_role"])
-             )
+      # Confirming a role (the dialog's on_confirm pushes change_member_role) lands it.
+      new_role = if membership.role == :operator, do: "viewer", else: "operator"
 
-      assert has_element?(
-               lv,
-               ~s(form#synced-role-#{membership.id} input[name="membership_id"][value="#{membership.id}"])
-             )
+      render_click(lv, "change_member_role", %{
+        "membership_id" => membership.id,
+        "role" => new_role
+      })
 
-      for role <- Emisar.Auth.roles() do
-        assert has_element?(lv, ~s(select[name="role"] option[value="#{role}"]))
-      end
-
-      class = select_class(html, "role")
-      assert class =~ "pr-8"
-      assert class =~ "leading-5"
-      assert class =~ "bg-zinc-900"
+      assert to_string(Repo.reload!(membership).role) == new_role
     end
-  end
 
-  # The box classes of a named select — attribute order varies, so anchor on the
-  # name with a lookahead.
-  defp select_class(html, name) do
-    pattern = ~r/<select(?=[^>]*\bname="#{Regex.escape(name)}")[^>]*\bclass="([^"]*)"/
+    test "a crafted change_member_role with an unknown role is refused", %{
+      conn: conn,
+      account: account,
+      provider: provider,
+      membership: membership
+    } do
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/sso/#{provider.id}")
 
-    [_tag, class] = Regex.run(pattern, html)
-    class
+      html =
+        render_click(lv, "change_member_role", %{
+          "membership_id" => membership.id,
+          "role" => "superadmin"
+        })
+
+      assert html =~ "Unknown role."
+      assert Repo.reload!(membership).role == membership.role
+    end
   end
 
   describe "the 'point your IdP at this connection' setup steps hide once synced" do

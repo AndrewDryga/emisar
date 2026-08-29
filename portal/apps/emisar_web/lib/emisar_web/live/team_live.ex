@@ -1,7 +1,7 @@
 defmodule EmisarWeb.TeamLive do
   use EmisarWeb, :live_view
   alias Emisar.{Accounts, Audit, Catalog, Runners, SSO}
-  alias EmisarWeb.{ConfirmDialog, LiveForm, LiveTable, Permissions, RunnerScope}
+  alias EmisarWeb.{ConfirmDialog, LiveForm, LiveTable, Permissions, RoleCopy, RunnerScope}
   alias Phoenix.LiveView.JS
 
   # String forms of the canonical role enum — the invite/role forms work
@@ -2404,14 +2404,14 @@ defmodule EmisarWeb.TeamLive do
                     }
                     id={"change-role-#{membership.id}-#{role}"}
                     tone={:amber}
-                    title={role_change_title(member_name(membership) || "this member", role)}
+                    title={RoleCopy.change_title(member_name(membership) || "this member", role)}
                     confirm_label={"Change to #{Emisar.Auth.role_label(role)}"}
                     on_confirm={
                       JS.push("change_role", value: %{membership_id: membership.id, role: role})
                       |> close_confirm("change-role-#{membership.id}-#{role}")
                     }
                   >
-                    <:body>{role_change_body(role)}</:body>
+                    <:body>{RoleCopy.change_body(role)}</:body>
                   </.confirm_dialog>
 
                   <%!-- Edit form appears inline under the row, NAKED (§8.1: forms
@@ -3257,33 +3257,6 @@ defmodule EmisarWeb.TeamLive do
   # (the user is always preloaded here). Callers supply the "this member" fallback.
   defp member_name(%Accounts.Membership{} = membership),
     do: Accounts.member_display_name(membership, membership.user)
-
-  # Role-change confirm copy for our styled dialog — the title carries the
-  # escalation question, the body the consequence. Promoting to a privileged role
-  # grants real power (a new owner can act against you), so those spell it out.
-  defp role_change_title(name, "owner"), do: "Make #{name} an owner?"
-  defp role_change_title(name, "admin"), do: "Make #{name} an admin?"
-  defp role_change_title(name, "billing_manager"), do: "Make #{name} a billing manager?"
-  defp role_change_title(name, "operator"), do: "Make #{name} an operator?"
-  defp role_change_title(name, role), do: "Change #{name} to #{Emisar.Auth.role_label(role)}?"
-
-  defp role_change_body("owner") do
-    "Owners have full control — billing, deleting the account, and managing other owners — and can remove or demote you."
-  end
-
-  defp role_change_body("admin") do
-    "Admins manage runners, policy, members, approvals, and billing across the whole account — everything an owner can, except adding or removing owners."
-  end
-
-  defp role_change_body("operator"),
-    do: "Operators can dispatch runs to your fleet and approve gated actions."
-
-  # Every remaining role states its OWN contract, from the one description the
-  # role pickers already render. The hardcoded fallback here used to hand a
-  # billing manager the viewer sentence — "they can see runs, runners, and
-  # audit" — which was the exact inverse of the seat, and any role added later
-  # would have inherited the same wrong promise.
-  defp role_change_body(role), do: Emisar.Auth.role_description(role)
 
   # Membership activity is account-specific. Until a membership has its first
   # console touch, the user's sign-in timestamp is the conservative fallback:
