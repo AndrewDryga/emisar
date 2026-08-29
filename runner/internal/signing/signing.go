@@ -343,17 +343,6 @@ func narrativeDigestWellFormed(s string) bool {
 	return true
 }
 
-// scopeSatisfied reports whether this runner's local identity satisfies the
-// cert's scope. Group: "" = any group; else an exact match. Labels: the runner
-// must CARRY each scope key and its value must match (a subset constraint).
-// Matched ONLY against the runner's own group/labels — never any value the
-// control plane supplies — so the offline CA, not the portal, decides where a
-// cert is valid.
-//
-// The presence check is load-bearing: a bare map read returns "" for a key the
-// runner does not have, so a scope of {"region": ""} was satisfied by every
-// runner in the fleet — a constraint that read as a restriction and was not
-// one. Absent label, no match.
 // decodeCertChain turns the wire's standard-base64 DER entries into raw DER.
 // The count bound is applied here as well as in VerifyChain so an oversized
 // chain is refused before any parsing work.

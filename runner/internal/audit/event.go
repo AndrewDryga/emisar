@@ -138,7 +138,7 @@ func NewID(prefix string) string {
 		panic("audit: entropy source unavailable: " + err.Error())
 	}
 
-	// 128 bits into 26 base32 characters: the first holds the top 2 bits, the
+	// 128 bits into 26 base32 characters: the first holds the top 3 bits, the
 	// remaining 25 take 5 each.
 	id := make([]byte, 26)
 	id[0] = crockford[(raw[0]&224)>>5]
