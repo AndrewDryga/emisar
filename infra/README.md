@@ -72,8 +72,8 @@ instead of applying against changed state.
 
 Normal image rollouts may create one replacement VM per zone while retaining
 every old serving VM. Each replacement's `/healthz` remains false until the
-release has reached PostgreSQL once; only then can an old VM drain. The load
-balancer independently requires `/readyz` continuously. Old and new application
+release has reached PostgreSQL once; only then can the MIG remove an old VM. The
+load balancer independently requires `/readyz` continuously. Old and new application
 versions overlap, so schema changes use expand/contract sequencing. Rollback is
 another reviewed plan that sets `container_image` to a previously published
 IAM-capable digest. Images from before the IAM database runtime are not rollback
@@ -164,9 +164,9 @@ After the first rollout, trust the exact `emisar-admin@0.1.1` hash advertised by
 the new runners in the management account. Critical erasure actions remain
 subject to the management account's normal policy and approval rules.
 
-The pinned `runner-v0.20.1` release understands the structured output schema
-used by the current pack catalog; the private pack does not require a custom
-runner build.
+The pinned `runner-v0.23.1` release understands the current pack setup and
+structured output schemas; the private pack does not require a custom runner
+build.
 
 ## Portal VM operations
 

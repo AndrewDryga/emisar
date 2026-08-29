@@ -131,8 +131,8 @@ repository.
 3. Select **Confirm & Apply** in HCP Terraform. GitHub never applies the plan.
 4. Wait for the managed instance group to replace instances with zero
    unavailable capacity. A replacement must pass `/healthz` after reaching the
-   database once before an old instance drains; the load balancer independently
-   requires `/readyz` before sending traffic.
+   database once before the MIG removes an old instance; the load balancer
+   independently requires `/readyz` before sending traffic.
 5. Verify liveness, readiness, sign-in, runner reconnections, registry output,
    the expected MIG instance count across distinct zones, and the BEAM
    cluster view. Any `cluster discovery failed` or `cluster: can't connect` log
@@ -175,7 +175,7 @@ advisory migration lock serializes concurrent instance boots.
 Committed migrations are immutable. Rolling deployments overlap old and new
 application versions, so schema work uses expand/contract sequencing: add a
 compatible shape, deploy code that tolerates both versions and backfill, then
-remove the old shape in a later release after the earlier version has drained.
+remove the old shape in a later release after the earlier version no longer runs.
 
 Rollback is another reviewed saved plan setting `container_image` to a
 previously published `ghcr.io/andrewdryga/emisar@sha256:...` digest. An

@@ -155,12 +155,15 @@ resource "terraform_data" "livebook_backend_ready" {
 resource "google_compute_backend_service" "app" {
   # A readiness-contract change gets a complete successor backend. The URL map
   # switches only after that backend passes the barrier below.
-  name                            = "${google_compute_region_instance_group_manager.emisar.name}-${local.readiness_generation}-backend"
-  load_balancing_scheme           = "EXTERNAL_MANAGED"
-  protocol                        = "HTTP"
-  port_name                       = "http"
-  timeout_sec                     = var.backend_timeout_sec
-  connection_draining_timeout_sec = 120
+  name                  = "${google_compute_region_instance_group_manager.emisar.name}-${local.readiness_generation}-backend"
+  load_balancing_scheme = "EXTERNAL_MANAGED"
+  protocol              = "HTTP"
+  port_name             = "http"
+  timeout_sec           = var.backend_timeout_sec
+  # Deploys are ordinary rolling replacements. The MIG waits for a healthy
+  # successor; once it removes an old VM, the load balancer must not keep that
+  # VM alive for an extra drain window.
+  connection_draining_timeout_sec = 0
   health_checks                   = [google_compute_health_check.readiness.id]
   security_policy                 = google_compute_security_policy.app.id
 
