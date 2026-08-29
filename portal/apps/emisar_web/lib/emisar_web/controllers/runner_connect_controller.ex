@@ -20,6 +20,16 @@ defmodule EmisarWeb.RunnerConnectController do
        [bucket: "runner_register", limit: 30, window_ms: 60_000, by: :ip]
        when action == :register
 
+  # The refresh and the upgrade are unauthenticated until the presented token
+  # verifies, and every attempt — hit or miss — costs a credential lookup plus a
+  # usage stamp, so an anonymous caller could amplify writes indefinitely. The
+  # budget is per IP and deliberately far above the register cap: a datacenter
+  # of runners shares one NAT egress address, and a reconnect storm after a
+  # deploy must not be throttled into a slow recovery.
+  plug EmisarWeb.Plugs.RateLimit,
+       [bucket: "runner_connect", limit: 120, window_ms: 60_000, by: :ip]
+       when action in [:refresh_token, :websocket]
+
   # -- Token exchange -------------------------------------------------
 
   @doc """
