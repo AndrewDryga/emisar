@@ -208,9 +208,7 @@ defmodule EmisarWeb.MfaSetupLiveTest do
     {_user, _codes} =
       Fixtures.Users.enable_mfa!(Auth.generate_mfa_secret(), subject)
 
-    render_hook(lv, "confirm_mfa", %{
-      "mfa" => %{"otp" => NimbleTOTP.verification_code(pending_secret)}
-    })
+    submit_concurrent_mfa_enrollment(lv, pending_secret)
 
     assert_redirect(lv, "/app/mfa_setup")
     {:ok, _challenge, html} = live(conn, ~p"/app/mfa_setup")
@@ -504,5 +502,29 @@ defmodule EmisarWeb.MfaSetupLiveTest do
     render_hook(lv, "verify_mfa_enrollment_email", %{
       "mfa_enrollment" => %{"code" => code}
     })
+  end
+
+  # A real TOTP generated at the end of one 30-second window can expire before
+  # the LiveView validates it. Retry only that exact rejection once; every code
+  # still passes through the production verifier.
+  defp submit_concurrent_mfa_enrollment(lv, secret) do
+    html =
+      render_hook(lv, "confirm_mfa", %{
+        "mfa" => %{"otp" => NimbleTOTP.verification_code(secret)}
+      })
+
+    case html do
+      html when is_binary(html) ->
+        if html =~ "That code didn" do
+          render_hook(lv, "confirm_mfa", %{
+            "mfa" => %{"otp" => NimbleTOTP.verification_code(secret)}
+          })
+        else
+          html
+        end
+
+      navigation ->
+        navigation
+    end
   end
 end

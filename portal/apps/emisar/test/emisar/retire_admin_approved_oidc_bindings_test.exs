@@ -77,8 +77,10 @@ defmodule Emisar.RetireAdminApprovedOidcBindingsTest do
       )
     end
 
-    Repo.query!(migration.normalize_legacy_sql())
-    Repo.query!(migration.retire_sql())
+    normalize_legacy_sql = Function.capture(migration, :normalize_legacy_sql, 0)
+    retire_sql = Function.capture(migration, :retire_sql, 0)
+    Repo.query!(normalize_legacy_sql.())
+    Repo.query!(retire_sql.())
 
     normalized_safe = Repo.reload!(safe)
     assert normalized_safe.created_by == :admin

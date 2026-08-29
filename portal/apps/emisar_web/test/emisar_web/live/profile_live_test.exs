@@ -1078,9 +1078,7 @@ defmodule EmisarWeb.ProfileLiveTest do
           Fixtures.Subjects.subject_for(user, account)
         )
 
-      render_hook(lv, "confirm_mfa", %{
-        "mfa" => %{"otp" => NimbleTOTP.verification_code(pending_secret)}
-      })
+      submit_concurrent_mfa_enrollment(lv, pending_secret)
 
       assert_redirect(lv, ~p"/app/#{account}/settings/profile")
     end
@@ -1478,6 +1476,30 @@ defmodule EmisarWeb.ProfileLiveTest do
       html
     else
       render_hook(lv, "confirm_mfa", %{"mfa" => %{"otp" => NimbleTOTP.verification_code(secret)}})
+    end
+  end
+
+  # Concurrent-completion tests expect a redirect rather than the success
+  # flash above, but have the same real-clock TOTP boundary. Retry only the
+  # rendered invalid-code branch once with the next current code.
+  defp submit_concurrent_mfa_enrollment(lv, secret) do
+    html =
+      render_hook(lv, "confirm_mfa", %{
+        "mfa" => %{"otp" => NimbleTOTP.verification_code(secret)}
+      })
+
+    case html do
+      html when is_binary(html) ->
+        if html =~ "That code didn" do
+          render_hook(lv, "confirm_mfa", %{
+            "mfa" => %{"otp" => NimbleTOTP.verification_code(secret)}
+          })
+        else
+          html
+        end
+
+      navigation ->
+        navigation
     end
   end
 end

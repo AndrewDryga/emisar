@@ -43,7 +43,8 @@ defmodule Emisar.ClearUnverifiedOidcLinkMatchesTest do
       )
     end
 
-    Repo.query!(migration.repair_sql())
+    repair_sql = Function.capture(migration, :repair_sql, 0)
+    Repo.query!(repair_sql.())
 
     for {request, expected_match} <- requests do
       assert Repo.reload!(request).matched_user_id == expected_match
