@@ -79,7 +79,7 @@ func main() {
 			fail(fmt.Errorf("%s is missing", key))
 		}
 	}
-	if err := os.MkdirAll(*outDir, 0o755); err != nil {
+	if err := os.MkdirAll(*outDir, 0o700); err != nil {
 		fail(err)
 	}
 	if err := run(env, *outDir, *headless, *cleanupOnly, *freshProject, *listProjects, *acceptCloudTOS, *project, *deleteProjects, *certifyRedirect, *certifyCredentials, *certifyLogin); err != nil {

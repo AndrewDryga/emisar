@@ -453,7 +453,7 @@ func run(env map[string]string, outDir, only string, headless, inventory, cleanu
 	if err != nil {
 		return err
 	}
-	if err := os.MkdirAll(outDir, 0o755); err != nil {
+	if err := os.MkdirAll(outDir, 0o700); err != nil {
 		return err
 	}
 

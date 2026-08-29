@@ -31,7 +31,10 @@ func Screenshot(ctx context.Context, outDir, name string) error {
 		return err
 	}
 	path := filepath.Join(outDir, name+".png")
-	if err := os.WriteFile(path, buffer, 0o644); err != nil {
+	// 0600: these are full-page captures of live IdP consoles (client-credential
+	// cards, SCIM token forms), so they stay owner-only like the credential
+	// files the same run writes.
+	if err := os.WriteFile(path, buffer, 0o600); err != nil {
 		return err
 	}
 	fmt.Println("  shot", name)
@@ -47,7 +50,9 @@ func ScreenshotElement(ctx context.Context, outDir, name, selector string) error
 		return err
 	}
 	path := filepath.Join(outDir, name+".png")
-	if err := os.WriteFile(path, buffer, 0o644); err != nil {
+	// 0600 to match Screenshot: a captured control from a live IdP console
+	// stays owner-only like the credential files the same run writes.
+	if err := os.WriteFile(path, buffer, 0o600); err != nil {
 		return err
 	}
 	fmt.Println("  element shot", name)

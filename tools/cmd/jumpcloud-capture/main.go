@@ -207,7 +207,7 @@ func deidentifyHost(ctx context.Context, from, to string) error {
 }
 
 func run(env map[string]string, outDir, credentialsOut, remoteDebugURL string, headless, listApps, cleanupApps, oidcOnly, recoverOIDC bool, explore string) error {
-	if err := os.MkdirAll(outDir, 0o755); err != nil {
+	if err := os.MkdirAll(outDir, 0o700); err != nil {
 		return err
 	}
 	var allocator context.Context
@@ -1270,6 +1270,11 @@ func writeOIDCCredentialFile(path, clientID, clientSecret string) error {
 		return err
 	}
 	defer file.Close()
+	// O_CREATE's mode applies only on creation; tighten a pre-existing file so a
+	// live JumpCloud OIDC secret never lands in a world-readable path.
+	if err := file.Chmod(0o600); err != nil {
+		return err
+	}
 	_, err = fmt.Fprintf(file,
 		"# Disposable JumpCloud certification app\nJUMPCLOUD_CERT_ISSUER=https://oauth.id.jumpcloud.com/\nJUMPCLOUD_CERT_CLIENT_ID=%s\nJUMPCLOUD_CERT_CLIENT_SECRET=%s\nJUMPCLOUD_APP_ID=created\n",
 		clientID,

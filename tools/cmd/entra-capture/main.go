@@ -25,16 +25,21 @@ import (
 
 func main() {
 	env := flag.String("env", "portal/.agent/secrets/entra-trial.env", "env file with the tenant credentials")
-	outDir := flag.String("out", "/tmp/entra", "directory for the captured PNGs")
+	outDir := flag.String("out", "", "directory for the captured PNGs")
 	headless := flag.Bool("headless", true, "run Chrome headless")
 	formOnly := flag.Bool("form-only", false, "capture the filled registration form without creating an app")
 	flag.Parse()
 
+	// Required, and never defaulted to a shared /tmp path: the captures are of a
+	// live IdP console, so they must land in a directory the operator chose.
+	if *outDir == "" {
+		fail(errors.New("-out is required"))
+	}
 	values, err := readEnv(*env)
 	if err != nil {
 		fail(err)
 	}
-	if err := os.MkdirAll(*outDir, 0o755); err != nil {
+	if err := os.MkdirAll(*outDir, 0o700); err != nil {
 		fail(err)
 	}
 	if err := run(values, *outDir, *headless, *formOnly); err != nil {
