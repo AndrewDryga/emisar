@@ -965,6 +965,13 @@ defmodule Emisar.Catalog do
     end
   end
 
+  # Deliberately the pack dimension only, NOT the runner dimension the
+  # per-version deciders (`lock_pack_version/3`, override, revoke) use. Deleting
+  # a whole pack removes the CATALOG entry — a pack-access operation, not a
+  # decision about the versions a particular host happens to run — so a member
+  # who may manage that pack may delete it whole, even if some versions are
+  # deployed only on runners outside their reach. (Founder decision, 2026-08-28,
+  # answering the D-5 sibling question: pack-level delete stays pack-scoped.)
   defp judge_pack_reach(versions, %PackVersion{} = version, %Subject{} = subject) do
     if pack_in_scope?(version, subject), do: {:ok, versions}, else: {:error, :not_found}
   end
