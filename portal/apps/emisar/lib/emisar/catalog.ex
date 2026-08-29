@@ -220,8 +220,13 @@ defmodule Emisar.Catalog do
          {:ok, _seen_ids} <- sync_advertised_actions(runner, actions, packs, connection, now) do
       {:ok, pending_changed?}
     end
+
+    # Narrow: a transient DB/connection blip re-syncs on the next runner_state and
+    # must not crash the socket, but a bare rescue also swallowed a real bug in
+    # the observe path — which the caller then logs and reports as success — so
+    # let a programmer error surface instead.
   rescue
-    error -> {:error, error}
+    error in [Postgrex.Error, DBConnection.ConnectionError] -> {:error, error}
   end
 
   # Pack pins are the SHARED rows: every runner advertising the same
@@ -231,17 +236,26 @@ defmodule Emisar.Catalog do
   # — each host waiting out the previous host's entire sync. Committing the
   # pins on their own keeps that contention proportional to the pins.
   defp pin_advertised_packs(%Runners.Runner{} = runner, packs, connection, now) do
-    Repo.transaction(fn ->
+    Multi.new()
+    |> Multi.run(:owner, fn _repo, _changes ->
       case fetch_catalog_connection_owner(runner, connection) do
-        {:ok, _active_runner} ->
-          packs
-          |> Enum.map(&observe_pack(runner.account_id, &1, now))
-          |> Enum.any?(&(&1 == :pending_changed))
-
-        {:error, :not_found} ->
-          Repo.rollback(connection_reason(connection))
+        {:ok, active_runner} -> {:ok, active_runner}
+        {:error, :not_found} -> {:error, connection_reason(connection)}
       end
     end)
+    |> Multi.run(:pins, fn _repo, _changes ->
+      pending_changed? =
+        packs
+        |> Enum.map(&observe_pack(runner.account_id, &1, now))
+        |> Enum.any?(&(&1 == :pending_changed))
+
+      {:ok, pending_changed?}
+    end)
+    |> Repo.commit_multi()
+    |> case do
+      {:ok, %{pins: pending_changed?}} -> {:ok, pending_changed?}
+      {:error, reason} -> {:error, reason}
+    end
   end
 
   # This runner's OWN rows (`catalog_runner_actions` is keyed by runner_id), so
@@ -254,16 +268,22 @@ defmodule Emisar.Catalog do
   # deployment has no matching descriptors, so it compares as a mismatch and
   # is not executable. It never reads as trusted-and-runnable.
   defp sync_advertised_actions(%Runners.Runner{} = runner, actions, packs, connection, now) do
-    Repo.transaction(fn ->
+    Multi.new()
+    |> Multi.run(:owner, fn _repo, _changes ->
       case fetch_catalog_connection_owner(runner, connection) do
-        {:ok, _active_runner} ->
-          seen_ids = observe_actions(runner, actions, packs, now)
-          prune_missing_actions(runner.id, actions, seen_ids)
-
-        {:error, :not_found} ->
-          Repo.rollback(connection_reason(connection))
+        {:ok, active_runner} -> {:ok, active_runner}
+        {:error, :not_found} -> {:error, connection_reason(connection)}
       end
     end)
+    |> Multi.run(:actions, fn _repo, _changes ->
+      seen_ids = observe_actions(runner, actions, packs, now)
+      {:ok, prune_missing_actions(runner.id, actions, seen_ids)}
+    end)
+    |> Repo.commit_multi()
+    |> case do
+      {:ok, %{actions: pruned}} -> {:ok, pruned}
+      {:error, reason} -> {:error, reason}
+    end
   end
 
   defp validate_catalog_payload(payload) do

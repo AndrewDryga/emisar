@@ -1416,51 +1416,53 @@ defmodule Emisar.Accounts do
     # separately, the answer could go stale between them: another account adding
     # a membership in that window let this directory's name through to a
     # workspace it has no authority over.
-    Repo.transaction(fn ->
+    Multi.new()
+    |> Multi.run(:membership, fn repo, _changes ->
       queryable =
         Membership.Query.not_deleted()
         |> Membership.Query.by_account_and_user(account_id, user_id)
         |> Membership.Query.lock_for_update()
 
-      case Repo.peek(queryable) do
-        nil ->
-          Repo.rollback(:not_found)
-
-        %Membership{} = membership ->
-          case write_display_name(membership, display_name, audit) do
-            {:ok, updated} -> {updated, sole_tenancy?(user_id, account_id)}
-            {:error, reason} -> Repo.rollback(reason)
-          end
+      case repo.peek(queryable) do
+        nil -> {:error, :not_found}
+        %Membership{} = membership -> {:ok, membership}
       end
     end)
+    |> Multi.run(:updated, fn repo, %{membership: membership} ->
+      write_display_name(repo, membership, display_name, audit)
+    end)
+    |> Multi.run(:sole_tenancy, fn repo, _changes ->
+      {:ok, sole_tenancy?(repo, user_id, account_id)}
+    end)
+    |> Repo.commit_multi()
     |> case do
-      {:ok, {membership, sole_tenancy?}} -> {:ok, membership, sole_tenancy?}
+      {:ok, %{updated: updated, sole_tenancy: sole_tenancy?}} -> {:ok, updated, sole_tenancy?}
       {:error, reason} -> {:error, reason}
     end
   end
 
   # The audit row carries the pre-update membership, so the event reads
   # from→to. An unchanged name writes nothing and is not an event.
-  defp write_display_name(%Membership{} = membership, display_name, audit) do
+  defp write_display_name(repo, %Membership{} = membership, display_name, audit) do
     case Membership.Changeset.sync_display_name(membership, display_name) do
       {:noop, membership} ->
         {:ok, membership}
 
       changeset ->
-        with {:ok, updated} <- Repo.update(changeset),
-             {:ok, _event} <- Repo.insert(audit.(membership)) do
+        with {:ok, updated} <- repo.update(changeset),
+             {:ok, _event} <- repo.insert(audit.(membership)) do
           {:ok, updated}
         end
     end
   end
 
-  defp sole_tenancy?(user_id, account_id) do
+  defp sole_tenancy?(repo, user_id, account_id) do
     queryable =
       Membership.Query.not_deleted()
       |> Membership.Query.by_user_id(user_id)
       |> Membership.Query.excluding_account_id(account_id)
 
-    not Repo.exists?(queryable)
+    not repo.exists?(queryable)
   end
 
   @doc """
