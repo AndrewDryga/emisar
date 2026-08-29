@@ -195,7 +195,7 @@ func connectClients(
 	}
 
 	fmt.Fprintln(stdout)
-	response, err := authenticator.authorize(context.Background(), origin, requested, "this machine", stdout)
+	response, err := authenticator.authorize(context.Background(), origin, requested, "this machine", stdout, stderr)
 	if err != nil {
 		return connectAuthorizationError(stderr, err, origin)
 	}

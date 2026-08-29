@@ -3,6 +3,8 @@ package main
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -92,6 +94,7 @@ func loginCLIAuth(
 		[]string{deviceAuthClientID},
 		"Emisar CLI",
 		stdout,
+		stderr,
 	)
 	var credential deviceCredential
 	if err == nil {
@@ -149,7 +152,7 @@ func (auth deviceAuthenticator) authorize(
 	origin string,
 	clientIDs []string,
 	subject string,
-	stdout io.Writer,
+	stdout, stderr io.Writer,
 ) (deviceTokenResponse, error) {
 	grant, err := auth.requestGrant(ctx, origin, clientIDs)
 	if err != nil {
@@ -175,6 +178,7 @@ func (auth deviceAuthenticator) authorize(
 	fmt.Fprintln(stdout, "Waiting for approval (Ctrl-C to cancel)…")
 
 	deadline := auth.now().Add(time.Duration(grant.ExpiresIn) * time.Second)
+	transientFailures := 0
 	for {
 		remaining := deadline.Sub(auth.now())
 		if remaining <= 0 {
@@ -191,16 +195,44 @@ func (auth deviceAuthenticator) authorize(
 			break
 		}
 		response, pending, err := auth.poll(ctx, origin, grant.DeviceCode)
+		if pending {
+			// A transient transport error keeps polling, but is worth one honest
+			// line so a run failing silently against an unreachable server does
+			// not just look stuck until the code expires.
+			if err != nil {
+				transientFailures++
+				if transientFailures == deviceAuthTransientFailureNotice {
+					fmt.Fprintf(stderr, "Still waiting; last error reaching %s: %v\n", origin, err)
+				}
+			}
+			continue
+		}
 		if err != nil {
 			return deviceTokenResponse{}, err
-		}
-		if pending {
-			continue
 		}
 		fmt.Fprintln(stdout)
 		return response, nil
 	}
 	return deviceTokenResponse{}, errors.New("approval code expired; run auth again")
+}
+
+// deviceAuthTransientFailureNotice is how many consecutive transport failures
+// pass before the poll loop prints one line naming the last error, so a run
+// against an unreachable server explains itself instead of only "code expired".
+const deviceAuthTransientFailureNotice = 5
+
+// isSecurityConnectionError reports whether err is a TLS or certificate failure
+// — the class that never recovers by waiting, so the poll loop must surface it
+// immediately rather than retry to the deadline.
+func isSecurityConnectionError(err error) bool {
+	var certErr *tls.CertificateVerificationError
+	if errors.As(err, &certErr) {
+		return true
+	}
+	var unknownAuthority x509.UnknownAuthorityError
+	var hostname x509.HostnameError
+	var invalid x509.CertificateInvalidError
+	return errors.As(err, &unknownAuthority) || errors.As(err, &hostname) || errors.As(err, &invalid)
 }
 
 func (auth deviceAuthenticator) requestGrant(
@@ -256,7 +288,14 @@ func (auth deviceAuthenticator) poll(
 		body,
 	)
 	if err != nil {
-		return deviceTokenResponse{}, true, nil
+		// A TLS/certificate failure never fixes itself by waiting, and silently
+		// polling on would end in a misleading "code expired". Surface it now.
+		// Ordinary transport errors (refused, reset, timeout, DNS) are transient:
+		// keep polling, but pass the error up so the caller can report it.
+		if isSecurityConnectionError(err) {
+			return deviceTokenResponse{}, false, fmt.Errorf("cannot securely reach %s: %w", origin, err)
+		}
+		return deviceTokenResponse{}, true, err
 	}
 	var result deviceTokenResponse
 	switch status {
@@ -448,9 +487,30 @@ func openBrowserURL(rawURL string) bool {
 		return false
 	}
 	command := exec.Command(name, args...)
+	// The browser child inherits this process's environment, and `auth`/`connect`
+	// spawn it before newBridgeFromEnv scrubs EMISAR_SIGNING_KEY — so without a
+	// filtered env the dispatch signing key and API key would reach the browser,
+	// whose crash reporters (Chrome Breakpad, Firefox Crash Reporter) capture the
+	// environment. A browser needs no EMISAR_ variable, so drop them all.
+	command.Env = envWithoutEmisarSecrets()
 	if err := command.Start(); err != nil {
 		return false
 	}
 	go func() { _ = command.Wait() }()
 	return true
+}
+
+// envWithoutEmisarSecrets returns the current environment with every EMISAR_
+// variable removed, so a spawned helper cannot inherit the signing key, API
+// key, or any other Emisar credential.
+func envWithoutEmisarSecrets() []string {
+	environ := os.Environ()
+	filtered := make([]string, 0, len(environ))
+	for _, entry := range environ {
+		if strings.HasPrefix(entry, "EMISAR_") {
+			continue
+		}
+		filtered = append(filtered, entry)
+	}
+	return filtered
 }

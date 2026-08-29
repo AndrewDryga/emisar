@@ -3,11 +3,15 @@ package main
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -16,6 +20,47 @@ import (
 	"testing"
 	"time"
 )
+
+type stubRoundTripper struct{ err error }
+
+func (rt stubRoundTripper) RoundTrip(*http.Request) (*http.Response, error) {
+	return nil, rt.err
+}
+
+// A TLS/certificate failure must stop the poll immediately with the real cause,
+// never keep polling to the deadline and report the misleading "code expired".
+func TestDevicePollSurfacesTLSErrorButRetriesTransient(t *testing.T) {
+	fatal := deviceAuthenticator{client: &http.Client{Transport: stubRoundTripper{err: x509.UnknownAuthorityError{}}}}
+	_, pending, err := fatal.poll(context.Background(), "https://emisar.test", "emdg-0123456789abcdef")
+	if pending || err == nil || !strings.Contains(err.Error(), "cannot securely reach") {
+		t.Fatalf("TLS poll: pending=%v err=%v", pending, err)
+	}
+
+	transient := deviceAuthenticator{client: &http.Client{Transport: stubRoundTripper{err: errors.New("connection refused")}}}
+	_, pending, err = transient.poll(context.Background(), "https://emisar.test", "emdg-0123456789abcdef")
+	if !pending || err == nil {
+		t.Fatalf("transient poll: pending=%v err=%v", pending, err)
+	}
+}
+
+func TestIsSecurityConnectionError(t *testing.T) {
+	for name, tc := range map[string]struct {
+		err  error
+		want bool
+	}{
+		"unknown authority":        {&url.Error{Op: "Post", Err: x509.UnknownAuthorityError{}}, true},
+		"hostname mismatch":        {&url.Error{Op: "Post", Err: x509.HostnameError{Host: "x"}}, true},
+		"certificate verification": {&url.Error{Op: "Post", Err: &tls.CertificateVerificationError{}}, true},
+		"connection refused":       {errors.New("connection refused"), false},
+		"nil":                      {nil, false},
+	} {
+		t.Run(name, func(t *testing.T) {
+			if got := isSecurityConnectionError(tc.err); got != tc.want {
+				t.Fatalf("isSecurityConnectionError = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
 
 const (
 	blitzAccountID     = "018f0000-0000-7000-8000-000000000001"
