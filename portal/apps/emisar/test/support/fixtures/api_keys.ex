@@ -68,6 +68,14 @@ defmodule Emisar.Fixtures.ApiKeys do
   end
 
   @doc """
+  Backdates a key's `inserted_at`, so a test can age a rotation lineage past the
+  auto-rotation ceiling. Returns the updated row.
+  """
+  def backdate_api_key_inserted_at(%ApiKeys.ApiKey{} = key, inserted_at) do
+    key |> Ecto.Changeset.change(inserted_at: inserted_at) |> Repo.update!()
+  end
+
+  @doc """
   Stamps a key as having authenticated an MCP call (`last_used_at` set) —
   the observed-use transition a real client's first call performs.
   """

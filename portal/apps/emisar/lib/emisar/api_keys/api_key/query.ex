@@ -34,6 +34,17 @@ defmodule Emisar.ApiKeys.ApiKey.Query do
   def by_created_by_membership_id(queryable, membership_id),
     do: where(queryable, [api_keys: k], k.created_by_membership_id == ^membership_id)
 
+  def by_credential_lineage_id(queryable \\ all(), lineage_id),
+    do: where(queryable, [api_keys: k], k.credential_lineage_id == ^lineage_id)
+
+  @doc """
+  The lineage origin — the key minted directly (no `replaces_id`) rather than as
+  a rotation successor. Combined with `by_credential_lineage_id/2` it selects the
+  one row whose `inserted_at` dates the whole rotation lineage.
+  """
+  def lineage_origin(queryable \\ all()),
+    do: where(queryable, [api_keys: k], is_nil(k.replaces_id))
+
   def rotation_children(queryable, replaced_ids, rotated_to_ids)
       when is_list(replaced_ids) and is_list(rotated_to_ids) do
     where(

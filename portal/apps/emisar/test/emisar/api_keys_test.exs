@@ -1425,6 +1425,41 @@ defmodule Emisar.ApiKeysTest do
       assert ApiKeys.install_auto_rotation_successor(prefix, hash, forged_subject) ==
                {:error, :not_found}
     end
+
+    test "refuses a fresh successor once the lineage is older than the configured ceiling" do
+      Emisar.Config.put_override(:emisar, :api_key_max_lineage_age_seconds, 60)
+      {_user, account, subject} = owner_subject_pair()
+      soon = DateTime.add(DateTime.utc_now(), 3, :day)
+      {:ok, _raw, key} = ApiKeys.create_key(%{name: "aged", expires_at: soon}, subject)
+
+      Fixtures.ApiKeys.backdate_api_key_inserted_at(
+        key,
+        DateTime.add(DateTime.utc_now(), -120, :second)
+      )
+
+      key_subject = Subject.for_api_key(key, account)
+      {_raw, prefix, hash} = Crypto.mint("emk-", 12)
+
+      assert ApiKeys.install_auto_rotation_successor(prefix, hash, key_subject) ==
+               {:error, :lineage_expired}
+
+      assert %ApiKey{} = Repo.one(ApiKey)
+    end
+
+    test "still rotates a lineage within the configured age ceiling" do
+      Emisar.Config.put_override(:emisar, :api_key_max_lineage_age_seconds, 60)
+      {_user, account, subject} = owner_subject_pair()
+      soon = DateTime.add(DateTime.utc_now(), 3, :day)
+      {:ok, _raw, key} = ApiKeys.create_key(%{name: "young", expires_at: soon}, subject)
+      key_subject = Subject.for_api_key(key, account)
+      {_raw, prefix, hash} = Crypto.mint("emk-", 12)
+
+      assert {:ok, successor} =
+               ApiKeys.install_auto_rotation_successor(prefix, hash, key_subject)
+
+      assert successor.replaces_id == key.id
+      assert successor.credential_lineage_id == key.credential_lineage_id
+    end
   end
 
   describe "subscribe_account_api_keys/1" do

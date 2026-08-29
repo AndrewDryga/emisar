@@ -60,6 +60,14 @@ defmodule Emisar.ApiKeys do
   # the bridge's self-rotation fire on the same horizon.
   @rotation_window_days 7
 
+  # Auto-rotation mints a successor with a fresh expiry, so the rotation window
+  # alone never forces a human back to the console — a leaked key could renew
+  # itself indefinitely. Cap the TOTAL age of a rotation lineage instead: once
+  # the origin key is older than this ceiling, auto-rotation is refused and the
+  # operator must re-mint (the prompt-to-act a stolen key cannot perform).
+  # Overridable through the `Emisar.Config` seam for tests.
+  @default_max_lineage_age_seconds 90 * 24 * 60 * 60
+
   # The activity ladder an operator watches: a call inside 5 minutes is a live
   # agent, one inside a day a quiet one, anything older dormant.
   @active_threshold_seconds 5 * 60
@@ -529,7 +537,10 @@ defmodule Emisar.ApiKeys do
   @doc """
   Installs the calling MCP key's client-generated rotation successor.
   Possession is the authorization; returns `{:ok, successor}` for both the
-  first install and an idempotent retry of the same prefix/hash.
+  first install and an idempotent retry of the same prefix/hash. Once the
+  rotation lineage's origin is older than the configured ceiling a NEW successor
+  is refused with `{:error, :lineage_expired}` (an already-installed successor
+  still round-trips), so a leaked key cannot renew itself forever.
   """
   def install_auto_rotation_successor(
         prefix,
@@ -590,22 +601,54 @@ defmodule Emisar.ApiKeys do
     key.kind == :mcp and key_usable?(key, now) and expiry(key.expires_at, now) == :expiring_soon
   end
 
-  defp install_or_fetch_successor(repo, %ApiKey{rotated_to_id: nil} = source, prefix, hash) do
-    changeset =
-      ApiKey.Changeset.create(
-        source.account_id,
-        source.created_by_id,
-        source.created_by_membership_id,
-        prefix,
-        hash,
-        successor_attrs(source),
-        replaces_id: source.id,
-        credential_lineage_id: source.credential_lineage_id
-      )
+  # Gate ONLY the creation of a fresh successor — the idempotent-retry clause
+  # below never runs this, so a bridge that already rotated keeps working even
+  # if its origin has since crossed the ceiling. A missing origin (only reachable
+  # if the lineage's first key were hard-deleted) fails closed.
+  defp ensure_lineage_within_max_age(repo, %ApiKey{} = source) do
+    origin_queryable =
+      ApiKey.Query.not_deleted()
+      |> ApiKey.Query.by_account_id(source.account_id)
+      |> ApiKey.Query.by_credential_lineage_id(source.credential_lineage_id)
+      |> ApiKey.Query.lineage_origin()
 
-    case repo.insert(changeset) do
-      {:ok, successor} -> {:ok, %{key: successor, created?: true}}
-      {:error, changeset} -> {:error, changeset}
+    case repo.peek(origin_queryable) do
+      %ApiKey{inserted_at: %DateTime{} = origin_at} ->
+        if DateTime.diff(DateTime.utc_now(), origin_at, :second) > max_lineage_age_seconds(),
+          do: {:error, :lineage_expired},
+          else: :ok
+
+      nil ->
+        {:error, :lineage_expired}
+    end
+  end
+
+  defp max_lineage_age_seconds do
+    Emisar.Config.get_env(
+      :emisar,
+      :api_key_max_lineage_age_seconds,
+      @default_max_lineage_age_seconds
+    )
+  end
+
+  defp install_or_fetch_successor(repo, %ApiKey{rotated_to_id: nil} = source, prefix, hash) do
+    with :ok <- ensure_lineage_within_max_age(repo, source) do
+      changeset =
+        ApiKey.Changeset.create(
+          source.account_id,
+          source.created_by_id,
+          source.created_by_membership_id,
+          prefix,
+          hash,
+          successor_attrs(source),
+          replaces_id: source.id,
+          credential_lineage_id: source.credential_lineage_id
+        )
+
+      case repo.insert(changeset) do
+        {:ok, successor} -> {:ok, %{key: successor, created?: true}}
+        {:error, changeset} -> {:error, changeset}
+      end
     end
   end
 
