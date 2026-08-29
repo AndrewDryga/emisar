@@ -139,16 +139,7 @@ type Cloud struct {
 
 // Paths configures filesystem locations.
 type Paths struct {
-	DataDir string `yaml:"data_dir"`
-	// WorkDir is accepted and ignored. Nothing has ever read it — an action's
-	// working directory comes from its own spec (execution.cwd) — but install.sh
-	// wrote it into every host's config until 2026-08-06, and the loader uses
-	// KnownFields(true), so dropping the field breaks any config still carrying
-	// the line. Concretely: the VA1 fleet (installed before that date) still
-	// has `work_dir:` in /etc/emisar/config.yaml. Scrub those hosts
-	// (`sed -i '/^  work_dir:/d' /etc/emisar/config.yaml`, no restart needed),
-	// then delete this field — it must not survive into the 1.0 config freeze.
-	WorkDir string   `yaml:"work_dir,omitempty"`
+	DataDir string   `yaml:"data_dir"`
 	Packs   []string `yaml:"packs"`
 }
 
