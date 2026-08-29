@@ -1693,10 +1693,12 @@ defmodule EmisarWeb.PacksLiveTest do
 
       _pack_version = observe_pending_pack!(account)
 
-      # The observe broadcast queues a coalesced delayed reload; fire the
-      # timer message directly (the runners-page :reveal_troubleshooting
-      # precedent) instead of sleeping through the debounce.
-      send(lv.pid, {:pack_trust_changed, account.id})
+      # The observe broadcast reaches this page's own handler — the shell hook
+      # that keeps the sidebar badge current forwards it instead of swallowing
+      # it — and queues one coalesced reload. Reading the queued flag syncs on
+      # that message; the timer is then fired directly (the runners-page
+      # :reveal_troubleshooting precedent) instead of sleeping the debounce out.
+      assert :sys.get_state(lv.pid).socket.assigns.refresh_queued?
       send(lv.pid, :refresh_packs)
 
       assert render(lv) =~ "acme-tools"

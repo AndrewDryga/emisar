@@ -739,13 +739,13 @@ defmodule EmisarWeb.UserAuth do
 
   defp refresh_pending_access_requests(_msg, socket), do: {:cont, socket}
 
-  # Pack-trust badge counterpart. The count drives both the sidebar badge
-  # and the dashboard banner (both read `@pending_packs_count`), so the
-  # hook owns the refresh end-to-end and HALTS: no host LV needs the
-  # message forwarded, and halting keeps `{:pack_trust_changed, _}` off
-  # pages whose `handle_info/2` doesn't expect it.
+  # Pack-trust badge counterpart. The count drives both the sidebar badge and
+  # the dashboard banner (both read `@pending_packs_count`), and the message
+  # CONTINUES to the host LiveView: halting it here left the Packs page — the
+  # surface that gates dispatch authorization — showing "1 pending" beside a
+  # stale list until someone reloaded, because its own handler never ran.
   defp refresh_pending_packs({:pack_trust_changed, _account_id}, socket) do
-    {:halt,
+    {:cont,
      ShellChrome.put(socket,
        pending_packs_count: pack_pending_count_for(socket.assigns[:current_subject])
      )}
