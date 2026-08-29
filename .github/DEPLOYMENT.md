@@ -26,6 +26,11 @@ its own tested image and saved plan. Revert an application change from `main`
 before applying later infrastructure work when that application state should not
 ship.
 
+The pre-v1 directory-group authorization migration is the one no-overlap
+exception. Normal CD refuses to create its rolling plan. Follow the empty-fleet
+procedure below; do not remove that hold merely because the image and migration
+passed CI.
+
 When one commit changes packs and the portal, production planning waits for the
 reviewed pack publication. Rejecting or canceling that publication halts the
 plan. After the pack is published, rerun the newer commit's failed
@@ -138,14 +143,53 @@ repository.
    cluster view. Any `cluster discovery failed` or `cluster: can't connect` log
    now pages and blocks calling the rollout complete.
 
+The public health endpoints report only status and product `version` — the exact
+deployed Git revision is bound by the reviewed image digest at apply time (step 2)
+and is deliberately not disclosed over the public probes (the repository is public).
+
 ```sh
-expected_revision="$(git rev-parse HEAD)"
+expected_version="$(cat portal/VERSION)"
 curl -fsS https://emisar.dev/healthz \
-  | jq -e --arg revision "$expected_revision" '.status == "ok" and .revision == $revision'
+  | jq -e --arg version "$expected_version" '.status == "ok" and .version == $version'
 curl -fsS https://emisar.dev/readyz \
-  | jq -e --arg revision "$expected_revision" '.status == "ok" and .revision == $revision'
+  | jq -e --arg version "$expected_version" '.status == "ok" and .version == $version'
 curl -fsS https://registry.emisar.dev/v1/catalog.json | jq '.schema_version'
 ```
+
+## Cross the directory-group migration without old/new overlap
+
+This is a bounded pre-v1 cutover, not the normal release path. The candidate
+changes the identity followed by SSO group authorization. An old node serving
+after that migration can regrant a deleted and recreated group, so the old fleet
+must be gone before any candidate node starts.
+
+1. Require green CI and the published, attested image for current `main`. If CD
+   selected a pack release, review and finish that independent publication first;
+   the recovery plan refuses a registry that differs from the candidate image.
+2. Open HCP Terraform in an authenticated browser outside the Portal fleet. Keep
+   it available through recovery: both governed HCP runners are deleted when the
+   MIG reaches zero.
+3. Through Emisar's governed `gcp.mig_resize` action, resize the regional `emisar`
+   MIG to zero. Confirm `https://emisar.dev/healthz` no longer serves. Do not scale
+   it back up directly: the current template still contains the old release.
+4. Run **Portal - Plan no-overlap recovery** on current `main`. It re-verifies the
+   image revision and digest, requires the live pack catalog, uploads provisional
+   `infra/`, and creates one saved HCP run with
+   `directory_group_cutover_ready=true`. It never applies.
+5. Review every action in HCP. Require the expected target-size repair, the exact
+   candidate image/template, and no unrelated destructive action. Confirm & Apply
+   only that saved run. Apply calls the Google managed-instance inventory before
+   the MIG update and fails closed if any old managed instance remains; retries
+   repeat the check.
+6. Wait for HCP to report applied and the complete MIG healthy. Then perform the
+   normal version, readiness, sign-in, runner-reconnection, cluster, registry,
+   migration, and authorization verification. If apply fails after creating any
+   candidate instance, resize the MIG to zero again before planning a retry.
+
+After production has crossed migration `20261004000000`, remove the source hold,
+the manual workflow, and `directory_group_cutover_ready` in one ordinary reviewed
+change. Git history retains this procedure; leaving an obsolete emergency dial
+would turn a one-time invariant into permanent attack surface.
 
 ## Runtime contract
 
@@ -190,8 +234,11 @@ change with an application rollback.
 - `/healthz` requires one successful database check after BEAM startup, then
   becomes database-independent liveness and drives auto-healing.
 - `/readyz` checks database readiness and controls load-balancer eligibility.
-- Both probes report the product `version` and the immutable source `revision`;
-  post-apply verification compares `revision` with the reviewed `main` commit.
+- Both probes report the product `version`; post-apply verification compares it
+  with `portal/VERSION`. The immutable source `revision` is bound by the reviewed
+  image digest at apply time and is not disclosed over these public probes (the
+  repository is public, so the exact deployed Git SHA would map production to any
+  known advisory in that tree).
 - `/metrics` on `METRICS_PORT` (default 9091) is private.
 - `/admin/live` is the admin-gated Phoenix LiveDashboard.
 - Production logs use structured Google Cloud JSON with secret-shaped metadata

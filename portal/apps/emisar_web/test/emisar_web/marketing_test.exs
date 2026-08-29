@@ -536,10 +536,8 @@ defmodule EmisarWeb.MarketingTest do
   test "healthz returns process liveness and the running version", %{conn: conn} do
     conn = get(conn, ~p"/healthz")
     version = EmisarWeb.AppVersion.version()
-    revision = EmisarWeb.AppVersion.revision()
 
     assert json_response(conn, 200) == %{
-             "revision" => revision,
              "status" => "ok",
              "version" => version
            }
@@ -548,10 +546,8 @@ defmodule EmisarWeb.MarketingTest do
   test "readyz returns readiness when the DB is reachable", %{conn: conn} do
     conn = get(conn, ~p"/readyz")
     version = EmisarWeb.AppVersion.version()
-    revision = EmisarWeb.AppVersion.revision()
 
     assert json_response(conn, 200) == %{
-             "revision" => revision,
              "status" => "ok",
              "version" => version
            }
@@ -564,21 +560,20 @@ defmodule EmisarWeb.MarketingTest do
     end
   end
 
-  test "health probes are reachable with no session/auth/CSRF", %{conn: conn} do
+  test "health probes are reachable with no session/auth/CSRF and never leak the revision", %{
+    conn: conn
+  } do
     # The route rides the bare :api pipeline (no fetch_session / fetch_current_user
-    # / protect_from_forgery), so infrastructure probes need no cookies.
+    # / protect_from_forgery), so infrastructure probes need no cookies. The exact
+    # deployed Git revision stays out of the anonymous body (the repo is public).
     version = EmisarWeb.AppVersion.version()
-    revision = EmisarWeb.AppVersion.revision()
 
     for path <- [~p"/healthz", ~p"/readyz"] do
       conn = get(conn, path)
+      body = json_response(conn, 200)
 
-      assert json_response(conn, 200) == %{
-               "revision" => revision,
-               "status" => "ok",
-               "version" => version
-             }
-
+      assert body == %{"status" => "ok", "version" => version}
+      refute Map.has_key?(body, "revision")
       refute conn.assigns[:current_user]
       assert conn.req_cookies == %{}
     end

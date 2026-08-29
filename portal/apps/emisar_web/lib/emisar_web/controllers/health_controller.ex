@@ -22,9 +22,13 @@ defmodule EmisarWeb.HealthController do
   end
 
   defp respond(conn, status) do
-    # Product version drives registry reconciliation; source revision proves
-    # which immutable main build is actually serving that version.
-    metadata = %{version: AppVersion.version(), revision: AppVersion.revision()}
+    # Product version drives registry reconciliation and is already public (the
+    # marketing footer renders it). The source revision is deliberately withheld
+    # from these anonymous probes: the repository is public, so the exact deployed
+    # Git SHA would hand a caller the precise source tree and lockfile serving
+    # production. The baked revision is verified from the image itself
+    # (/app/REVISION) in CI and confirmed by a deploy's reviewed image digest.
+    metadata = %{version: AppVersion.version()}
 
     body =
       if status == :ok,

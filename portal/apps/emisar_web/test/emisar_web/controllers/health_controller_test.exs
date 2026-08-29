@@ -22,15 +22,12 @@ defmodule EmisarWeb.HealthControllerTest do
     assert %{"status" => "ok"} = json_response(get(conn, ~p"/readyz"), 200)
   end
 
-  test "healthz reports the running version and source revision", %{conn: conn} do
+  test "healthz reports the running version but withholds the source revision", %{conn: conn} do
     expected_version = EmisarWeb.AppVersion.version()
-    expected_revision = EmisarWeb.AppVersion.revision()
 
-    assert %{
-             "revision" => ^expected_revision,
-             "status" => "ok",
-             "version" => ^expected_version
-           } =
-             json_response(get(conn, ~p"/healthz"), 200)
+    body = json_response(get(conn, ~p"/healthz"), 200)
+
+    assert body == %{"status" => "ok", "version" => expected_version}
+    refute Map.has_key?(body, "revision")
   end
 end

@@ -348,12 +348,21 @@ jobs:
 
           for endpoint in healthz readyz; do
             curl -fsS -H 'x-forwarded-proto: https' "http://localhost:4000/${endpoint}" \
-              | jq -e --arg revision "$GITHUB_SHA" \
-                '.status == "ok" and .revision == $revision' >/dev/null || {
-                  echo "::error::${endpoint} does not report tested revision ${GITHUB_SHA}"
+              | jq -e '.status == "ok"' >/dev/null || {
+                  echo "::error::${endpoint} does not report status ok"
                   exit 1
                 }
           done
+          echo "health status OK"
+
+          # The Git revision is baked into the image and deliberately withheld from
+          # the anonymous health body (the repo is public), so verify it from the
+          # image itself rather than over HTTP.
+          baked_revision=$(docker exec "$cid" cat /app/REVISION | tr -d '[:space:]')
+          test "$baked_revision" = "$GITHUB_SHA" || {
+            echo "::error::baked revision ${baked_revision} does not match tested ${GITHUB_SHA}"
+            exit 1
+          }
           echo "release revision OK"
 
           docker exec "$cid" /app/bin/emisar rpc \

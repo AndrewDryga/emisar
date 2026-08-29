@@ -359,7 +359,6 @@ defmodule EmisarWeb.RunnerSocketTest do
       version = EmisarWeb.AppVersion.version()
 
       assert json_response(get(conn, ~p"/healthz"), 200) == %{
-               "revision" => EmisarWeb.AppVersion.revision(),
                "status" => "ok",
                "version" => version
              }
