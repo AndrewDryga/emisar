@@ -77,6 +77,23 @@ defmodule Emisar.Catalog.PackVersion.ChangesetTest do
       refute changeset.valid?
       assert "has invalid format" in errors_on(changeset).pending_hash
     end
+
+    # A pending row with no bytes to review is undecidable — Trust and Reject
+    # both refuse it forever — so the write fails closed instead.
+    test "refuses to park a row pending on no hash at all" do
+      changeset = Changeset.mark_pending(%PackVersion{}, nil, DateTime.utc_now())
+
+      refute changeset.valid?
+      assert "can't be blank" in errors_on(changeset).pending_hash
+    end
+
+    test "refuses to erase the pending hash a row already carries" do
+      pack_version = %PackVersion{pending_hash: "sha256:" <> String.duplicate("a", 64)}
+      changeset = Changeset.mark_pending(pack_version, nil, DateTime.utc_now())
+
+      refute changeset.valid?
+      assert "can't be blank" in errors_on(changeset).pending_hash
+    end
   end
 
   describe "override_retirement/2" do

@@ -767,6 +767,40 @@ defmodule Emisar.CatalogTest do
       assert pack_version.pending_hash == Fixtures.Catalog.pack_hash("sha256:custom")
     end
 
+    test "a pack advertised with no hash is skipped, not pinned as undecidable" do
+      runner = Fixtures.Runners.create_runner()
+      account = Emisar.Repo.preload(runner, :account).account
+      subject = owner_subject_for(account)
+
+      payload = state_payload(packs: %{"hashless" => %{"version" => "9.9.9"}})
+
+      assert {:ok, _} = Catalog.observe_state(runner, payload)
+      assert {:ok, [], _} = Catalog.list_pack_versions(subject)
+    end
+
+    test "a hash-less re-advertisement keeps the bytes an operator was asked about" do
+      runner = Fixtures.Runners.create_runner()
+      account = Emisar.Repo.preload(runner, :account).account
+
+      parked =
+        Fixtures.Catalog.create_observed_pack_version(
+          account_id: account.id,
+          pack_id: "custom",
+          version: "1.0",
+          hash: "trusted-bytes",
+          pending_hash: "drifted-bytes",
+          trust_state: :pending
+        )
+
+      hashless = state_payload(packs: %{"custom" => %{"version" => "1.0"}})
+
+      assert {:ok, _} = Catalog.observe_state(runner, hashless)
+
+      reloaded = Repo.reload!(parked)
+      assert reloaded.trust_state == :pending
+      assert reloaded.pending_hash == Fixtures.Catalog.pack_hash("drifted-bytes")
+    end
+
     test "custom pack: re-advertising the same pending hash is a touch (no drift event)" do
       runner = Fixtures.Runners.create_runner()
       account = Emisar.Repo.preload(runner, :account).account

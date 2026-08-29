@@ -36,6 +36,10 @@ defmodule Emisar.Catalog.PackVersion.Changeset do
       trust_state: :pending,
       last_seen_at: now
     })
+    # A pending row with no bytes to review is undecidable: Trust and Reject
+    # both refuse it forever, dispatch stays closed, and only a destructive
+    # delete clears it. Fail the write instead.
+    |> validate_required([:pending_hash])
     |> validate_hashes()
   end
 

@@ -346,9 +346,9 @@ defmodule Emisar.Catalog do
   #
   # Returns :pending_changed when this sighting put a new decision in
   # front of the operator (fresh pending pin, or drift on a known row).
-  defp observe_pack(account_id, {pack_id, info}, now) when is_map(info) do
+  defp observe_pack(account_id, {pack_id, %{"hash" => advertised} = info}, now)
+       when is_binary(advertised) and advertised != "" do
     version = info["version"] || "unknown"
-    advertised = info["hash"]
     verdict = baseline_verdict(pack_id, version, advertised)
 
     changeset =
@@ -393,9 +393,12 @@ defmodule Emisar.Catalog do
     end
   end
 
-  # Skip a malformed (non-map) pack advertisement rather than letting
-  # `info["version"]` raise and abort the whole sync (the valid packs +
-  # actions in the same batch should still persist).
+  # Skip a malformed (non-map) or hash-less pack advertisement rather than
+  # letting `info["version"]` raise and abort the whole sync (the valid packs +
+  # actions in the same batch should still persist). A hash the peer omitted is
+  # nothing to review: it would erase the bytes an operator was asked about and
+  # leave a pending row Trust and Reject both refuse forever, with dispatch
+  # closed account-wide until someone deletes it.
   defp observe_pack(_account_id, _entry, _now), do: :ok
 
   # The pin these advertised bytes earn, judged purely against the published
