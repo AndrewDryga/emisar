@@ -796,30 +796,34 @@ defmodule Emisar.Catalog do
       queryable =
         PackVersion.Query.all()
         |> PackVersion.Query.by_id(pack_version_id)
+        |> scope_pack_versions_to_subject(subject)
         |> PackVersion.Query.lock_for_update()
         |> Authorizer.for_subject(subject)
 
-      with {:ok, pack_version} <- repo.fetch(queryable, PackVersion.Query),
-           true <- pack_in_scope?(pack_version, subject) do
-        {:ok, pack_version}
-      else
-        false -> {:error, :not_found}
-        {:error, :not_found} -> {:error, :not_found}
-      end
+      repo.fetch(queryable, PackVersion.Query)
     else
       {:error, :not_found}
     end
   end
 
-  # Reach a pack and you may decide its versions; cannot reach it and the pack
-  # does not exist for you — which is why an out-of-scope decision is
-  # `:not_found`, the same answer a cross-account id gets, and not
-  # `:unauthorized`, which would confirm the version is there. `list_console_packs/2`
-  # hides these packs, so without this the UI and the mutation disagreed and a
-  # pack-restricted member could flip trust on a pack they are never shown.
-  # Access is re-read at the mutation boundary rather than taken from the
-  # session, so a scope narrowed mid-session takes the decision away from an
+  # Both dimensions `list_console_packs/2` narrows by — pack access AND the
+  # runners the member can reach — so a version the console never showed cannot
+  # be decided from an id lifted out of the audit trail. Composed into the
+  # statement that locks the row, an out-of-scope version answers `:not_found`,
+  # the same answer a cross-account id gets and before any state guard could
+  # report whether it is trusted. Access is re-read here rather than taken from
+  # the session, so a scope narrowed mid-session takes the decision away from an
   # already-open page immediately.
+  defp scope_pack_versions_to_subject(queryable, %Subject{} = subject) do
+    access = Accounts.runner_access_for_subject(subject)
+
+    queryable
+    |> scope_pack_versions_to_packs(access)
+    |> scope_pack_versions_to_visible_runners(visible_deployments(subject, access))
+  end
+
+  # Reach a pack and you may decide its versions; cannot reach it and the pack
+  # does not exist for you.
   defp pack_in_scope?(%PackVersion{} = pack_version, %Subject{} = subject) do
     access = Accounts.runner_access_for_subject(subject)
     Accounts.RunnerAccess.pack_in_scope?(pack_version.pack_id, access)
@@ -1062,13 +1066,13 @@ defmodule Emisar.Catalog do
     end
   end
 
-  # The manual "Clean up now" sweep is narrowed to the operator's own pack
-  # access, exactly as the trust decisions are — deleting a pin REMOVES a trust
-  # decision, and the console never showed this member those packs. The daily
+  # The manual "Clean up now" sweep is narrowed to the operator's own scope,
+  # exactly as the trust decisions are — deleting a pin REMOVES a trust
+  # decision, and the console never showed this member those versions. The daily
   # job passes no subject and stays account-wide, which is the same split
   # `Runners.scope_sweep_to_subject/2` makes for the fleet.
   defp scope_sweep_to_pack_access(queryable, %Subject{} = subject),
-    do: scope_pack_versions_to_packs(queryable, Accounts.runner_access_for_subject(subject))
+    do: scope_pack_versions_to_subject(queryable, subject)
 
   defp scope_sweep_to_pack_access(queryable, nil), do: queryable
 

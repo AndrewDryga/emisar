@@ -69,6 +69,16 @@ defmodule Emisar.CatalogTest do
     |> Fixtures.Subjects.membership_subject()
   end
 
+  # An admin holding every pack but only the named runners — the other half of
+  # the pair of dimensions the console's pack list narrows by.
+  defp runner_restricted_subject(account, runner_ids) do
+    {:ok, access} = Accounts.RunnerAccess.new(:restricted, [], runner_ids)
+
+    Fixtures.Memberships.create_membership(account_id: account.id, role: "admin")
+    |> Fixtures.Memberships.force_runner_access(access)
+    |> Fixtures.Subjects.membership_subject()
+  end
+
   defp account_with_owner do
     account = Fixtures.Accounts.create_account()
     user = Fixtures.Users.create_user()
@@ -1662,6 +1672,31 @@ defmodule Emisar.CatalogTest do
       assert Catalog.trust_pack_version(pack_version.id, restricted) == {:error, :not_found}
       assert Repo.reload!(pack_version).trust_state == :pending
     end
+
+    # The console list narrows by pack access AND by the runners the member
+    # reaches, so a version only out-of-reach hosts deploy is decided by nobody
+    # who cannot see it — an id lifted out of the audit trail included.
+    test "a runner-restricted member cannot trust a version only hidden runners deploy", %{
+      account: account,
+      subject: subject,
+      runner: runner
+    } do
+      reachable = Fixtures.Runners.create_runner(account_id: account.id)
+
+      _ =
+        Catalog.observe_state(
+          runner,
+          state_payload(packs: %{"hidden" => %{"version" => "1.0", "hash" => "sha256:NEW"}})
+        )
+
+      {:ok, [pack_version], _} = Catalog.list_pack_versions(subject)
+      restricted = runner_restricted_subject(account, [reachable.id])
+
+      assert {:ok, %{pack_versions: []}} = Catalog.list_console_packs(%{}, restricted)
+
+      assert Catalog.trust_pack_version(pack_version.id, restricted) == {:error, :not_found}
+      assert Repo.reload!(pack_version).trust_state == :pending
+    end
   end
 
   describe "reject_pack_version/2" do
@@ -2578,6 +2613,21 @@ defmodule Emisar.CatalogTest do
       assert Repo.reload(stale)
 
       # The unrestricted owner still reaches it, so the row really was sweepable.
+      assert Catalog.sweep_unseen_pack_versions(subject) === {:ok, 1}
+      refute Repo.reload(stale)
+    end
+
+    test "a runner-restricted member sweeps only what their fleet deploys", %{
+      account: account,
+      subject: subject,
+      stale: stale
+    } do
+      reachable = Fixtures.Runners.create_runner(account_id: account.id)
+      restricted = runner_restricted_subject(account, [reachable.id])
+
+      assert Catalog.sweep_unseen_pack_versions(restricted) === {:ok, 0}
+      assert Repo.reload(stale)
+
       assert Catalog.sweep_unseen_pack_versions(subject) === {:ok, 1}
       refute Repo.reload(stale)
     end
