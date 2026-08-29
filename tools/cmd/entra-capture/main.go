@@ -14,6 +14,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"regexp"
 	"strings"
 	"time"
 
@@ -28,6 +29,8 @@ func main() {
 	outDir := flag.String("out", "", "directory for the captured PNGs")
 	headless := flag.Bool("headless", true, "run Chrome headless")
 	formOnly := flag.Bool("form-only", false, "capture the filled registration form without creating an app")
+	create := flag.Bool("create", false, "register a new app (refused by default so a re-run cannot mint duplicates)")
+	credentialsOut := flag.String("credentials-out", "", "write the registered app's client id to this ignored env file")
 	flag.Parse()
 
 	// Required, and never defaulted to a shared /tmp path: the captures are of a
@@ -42,7 +45,7 @@ func main() {
 	if err := os.MkdirAll(*outDir, 0o700); err != nil {
 		fail(err)
 	}
-	if err := run(values, *outDir, *headless, *formOnly); err != nil {
+	if err := run(values, *outDir, *headless, *formOnly, *create, *credentialsOut); err != nil {
 		fail(err)
 	}
 }
@@ -58,7 +61,7 @@ func readEnv(path string) (map[string]string, error) {
 	return capture.ReadEnv(path)
 }
 
-func run(env map[string]string, outDir string, headless, formOnly bool) error {
+func run(env map[string]string, outDir string, headless, formOnly, create bool, credentialsOut string) error {
 	opts := append(chromedp.DefaultExecAllocatorOptions[:],
 		chromedp.Flag("headless", headless),
 		chromedp.WindowSize(1440, 1000),
@@ -80,7 +83,7 @@ func run(env map[string]string, outDir string, headless, formOnly bool) error {
 	if err := idpcapture.Screenshot(ctx, outDir, "en-01-signed-in"); err != nil {
 		return err
 	}
-	return appRegistrationFlow(ctx, env, outDir, formOnly)
+	return appRegistrationFlow(ctx, env, outDir, formOnly, create, credentialsOut)
 }
 
 // signIn walks Microsoft's sign-in sequence. Every screen lives in ONE DOM that
@@ -190,13 +193,23 @@ func describePage(ctx context.Context) error {
 // appRegistrationFlow captures the sign-in half of the Entra walkthrough: the
 // registration form with emisar's redirect URI, then the client secret. This is
 // the half that works on a free tenant — provisioning needs P1.
-func appRegistrationFlow(ctx context.Context, env map[string]string, outDir string, formOnly bool) error {
+func appRegistrationFlow(ctx context.Context, env map[string]string, outDir string, formOnly, create bool, credentialsOut string) error {
 	// Registering again would mint yet another duplicate — seven accumulated before
 	// the list blade's failure to render made them visible. With a client id in
 	// hand, go straight to the saved app.
 	if env["ENTRA_CLIENT_ID"] != "" && !formOnly {
 		fmt.Println("  app already registered — skipping the create form")
 		return openRegisteredApp(ctx, env, outDir)
+	}
+	// Pre-create refusal: the App registrations list blade does not render here,
+	// so the rig cannot auto-check for an existing emisar app. Rather than mint a
+	// silent duplicate, refuse unless the operator explicitly opts in with
+	// -create (after confirming with entra-inventory.mjs). form-only never
+	// creates, so it is exempt.
+	if !formOnly && !create {
+		return errors.New("refusing to register a new app: no ENTRA_CLIENT_ID is set and -create was not passed. " +
+			"Run entra-inventory.mjs to confirm no emisar app already exists, then pass -create — or set " +
+			"ENTRA_CLIENT_ID to resume the existing one")
 	}
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate("https://entra.microsoft.com/#view/Microsoft_AAD_RegisteredApps/CreateApplicationBlade"),
@@ -244,7 +257,80 @@ func appRegistrationFlow(ctx context.Context, env map[string]string, outDir stri
 	if err := chromedp.Run(ctx, chromedp.Sleep(20*time.Second)); err != nil {
 		return err
 	}
-	return openRegisteredApp(ctx, env, outDir)
+	return captureNewAppOverview(ctx, env, outDir, credentialsOut)
+}
+
+// captureNewAppOverview finishes a fresh registration. Entra lands on the new
+// app's Overview blade after Register, so the client id is read straight off it
+// and persisted — without this the run always failed at "ENTRA_CLIENT_ID is
+// empty", leaving an unrecorded registration behind.
+func captureNewAppOverview(ctx context.Context, env map[string]string, outDir, credentialsOut string) error {
+	dismissOverlays(ctx)
+	if err := waitForText(ctx, "Application (client) ID", 90*time.Second); err != nil {
+		_ = idpcapture.Screenshot(ctx, outDir, "en-05-overview-failed")
+		return fmt.Errorf("app overview never rendered after Register: %w", err)
+	}
+	clientID, err := readClientID(ctx)
+	if err != nil {
+		_ = idpcapture.Screenshot(ctx, outDir, "en-05-overview-failed")
+		return err
+	}
+	env["ENTRA_CLIENT_ID"] = clientID
+	fmt.Printf("  registered app, client id %s\n", clientID)
+	if credentialsOut != "" {
+		if err := writeEntraCredentialFile(credentialsOut, clientID); err != nil {
+			return err
+		}
+		fmt.Printf("  wrote client id to %s\n", credentialsOut)
+	}
+	_ = highlight(ctx, "Application (client) ID")
+	return idpcapture.Screenshot(ctx, outDir, "en-05-app-overview")
+}
+
+// clientIDPattern is the Entra Application (client) ID GUID shape.
+var clientIDPattern = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
+
+// readClientID pulls the Application (client) ID GUID off the overview blade.
+func readClientID(ctx context.Context) (string, error) {
+	const script = `(() => {
+  const guid = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
+  const labels = [...document.querySelectorAll('*')]
+    .filter(el => (el.textContent || '').trim() === 'Application (client) ID');
+  for (const label of labels) {
+    let node = label;
+    for (let up = 0; up < 6 && node; up++, node = node.parentElement) {
+      const found = [...node.querySelectorAll('*')]
+        .map(el => (el.value || el.textContent || '').trim())
+        .find(text => guid.test(text));
+      if (found) return found;
+    }
+  }
+  return '';
+})()`
+	var value string
+	if err := chromedp.Run(ctx, chromedp.Evaluate(script, &value)); err != nil {
+		return "", err
+	}
+	if !clientIDPattern.MatchString(value) {
+		return "", fmt.Errorf("could not read the Application (client) ID off the overview blade (got %q)", value)
+	}
+	return value, nil
+}
+
+// writeEntraCredentialFile records the registered app's client id to an ignored
+// env file, mirroring jumpcloud-capture's -credentials-out so a later resume run
+// can read ENTRA_CLIENT_ID. Chmod after open tightens a pre-existing file.
+func writeEntraCredentialFile(path, clientID string) error {
+	file, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+	if err := file.Chmod(0o600); err != nil {
+		return err
+	}
+	_, err = fmt.Fprintf(file, "# Disposable Entra certification app\nENTRA_CLIENT_ID=%s\n", clientID)
+	return err
 }
 
 func markRegistrationDocsViewport(ctx context.Context) error {
