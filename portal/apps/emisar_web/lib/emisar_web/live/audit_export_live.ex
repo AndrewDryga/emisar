@@ -53,6 +53,7 @@ defmodule EmisarWeb.AuditExportLive do
         # A denial is a value here, not a crash: a role reduced in another tab
         # returns {:error, :unauthorized}, which used to kill the socket.
         with {:ok, key} <- ApiKeys.fetch_api_key_by_id(id, s.assigns.current_subject),
+             {:ok, key} <- only_audit_export_key(key),
              {:ok, _revoked} <- ApiKeys.revoke_api_key(key, s.assigns.current_subject) do
           {:noreply, s |> put_flash(:info, "Export token revoked.") |> assign_export_keys()}
         else
@@ -128,6 +129,12 @@ defmodule EmisarWeb.AuditExportLive do
         |> assign(:load_error?, true)
     end
   end
+
+  # This page lists and mints only :audit_export tokens, so revoke narrows to that
+  # same kind (like the list does): a crafted id for a same-account MCP agent key
+  # this list never shows reads as a missing row and is never revoked from here.
+  defp only_audit_export_key(%{kind: :audit_export} = key), do: {:ok, key}
+  defp only_audit_export_key(_key), do: {:error, :not_found}
 
   def render(assigns) do
     ~H"""

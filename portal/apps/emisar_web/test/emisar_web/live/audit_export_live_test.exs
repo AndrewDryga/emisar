@@ -301,6 +301,25 @@ defmodule EmisarWeb.AuditExportLiveTest do
       assert is_nil(reread.revoked_at)
     end
 
+    test "an admin cannot revoke a same-account MCP agent key from the SIEM page (wrong-kind no-op)",
+         %{conn: conn, user: user, account: account} do
+      # This page lists and mints only :audit_export tokens. An admin crafting
+      # revoke_export_key with a same-account MCP agent key's id — which the list
+      # never shows — must not revoke it; it reads as a missing row (silent no-op).
+      subject = Fixtures.Subjects.subject_for(user, account)
+
+      {:ok, _raw, mcp_key} = Emisar.ApiKeys.create_key(%{name: "Agent bridge token"}, subject)
+
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/audit/export")
+
+      html = render_click(lv, "revoke_export_key", %{"id" => mcp_key.id})
+      refute html =~ "Export token revoked."
+
+      # The MCP key is untouched — still active.
+      {:ok, reread} = Emisar.ApiKeys.fetch_api_key_by_id(mcp_key.id, subject)
+      assert is_nil(reread.revoked_at)
+    end
+
     test "a revoked export token returns 401 from the export endpoint on its next call",
          %{conn: conn, user: user, account: account} do
       subject = Fixtures.Subjects.subject_for(user, account)
