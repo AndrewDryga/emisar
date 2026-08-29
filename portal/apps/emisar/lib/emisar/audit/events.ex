@@ -17,6 +17,12 @@ defmodule Emisar.Audit.Events do
   alias Emisar.RequestContext
   alias Emisar.{Runbooks, Runners, Runs, SSO, Users}
 
+  # Staff access renders to the CUSTOMER as the team, never the employee:
+  # `actor_id` keeps internal traceability while this label keeps a support
+  # engineer's identity out of the customer's own audit trail. Shared by the
+  # staff read event and every staff mutation (via `actor/1`).
+  @staff_actor_label "Emisar staff"
+
   # -- Account ---------------------------------------------------------
 
   def account_created(%Accounts.Account{} = account, %Users.User{} = owner) do
@@ -136,7 +142,7 @@ defmodule Emisar.Audit.Events do
     Audit.changeset(account.id, "staff.account_viewed",
       actor_kind: "staff",
       actor_id: staff_user.id,
-      actor_label: "Emisar staff",
+      actor_label: @staff_actor_label,
       target_kind: "account",
       target_id: account.id,
       target_label: account.name
@@ -2068,15 +2074,24 @@ defmodule Emisar.Audit.Events do
   # already receives. So the request's ip/ua/request_id AND how the
   # caller authenticated ride the authenticated caller, not a
   # process-dictionary side channel.
-  defp actor(%Subject{} = subject),
-    do: [
+  defp actor(%Subject{} = subject) do
+    [
       actor_kind: Subject.actor_kind(subject),
       actor_id: Subject.actor_id(subject),
       auth_method: format_auth_method(subject.auth_method),
       mfa: subject.mfa,
       user_identity_id: subject.user_identity_id,
       context: subject.context
-    ]
+    ] ++ staff_actor_label(subject)
+  end
+
+  # The audit UI has no "staff" reference resolver, so a staff mutation row would
+  # otherwise print the operator's raw user id to the customer; this labels it as
+  # the team instead. Ordinary subjects resolve their label from account rows.
+  defp staff_actor_label(%Subject{staff_operator_id: id}) when is_binary(id),
+    do: [actor_label: @staff_actor_label]
+
+  defp staff_actor_label(%Subject{}), do: []
 
   defp format_auth_method(nil), do: nil
   defp format_auth_method(method) when is_atom(method), do: Atom.to_string(method)

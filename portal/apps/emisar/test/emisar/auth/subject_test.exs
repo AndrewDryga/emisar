@@ -266,6 +266,17 @@ defmodule Emisar.Auth.SubjectTest do
       assert Subject.actor_id(actorless) == nil
     end
 
+    test "a platform subject audits as its staff operator id, over any actor" do
+      # The platform/support subject carries no actor of its own; its staff
+      # operator id is what the audit trail records.
+      assert Subject.actor_kind(%Subject{staff_operator_id: "s1"}) == "staff"
+      assert Subject.actor_id(%Subject{staff_operator_id: "s1"}) == "s1"
+
+      # An ordinary subject is unaffected.
+      assert Subject.actor_kind(%Subject{actor: %User{id: "u1"}}) == "user"
+      assert Subject.actor_id(%Subject{actor: %ApiKey{id: "k1"}}) == "k1"
+    end
+
     test "user_id/1 is the user actor's id, nil for a key/runner/actor-less subject" do
       user_subject = %Subject{actor: %User{id: "u1"}}
       key_subject = %Subject{actor: %ApiKey{id: "k1"}}
