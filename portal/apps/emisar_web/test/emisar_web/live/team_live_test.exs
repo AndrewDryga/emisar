@@ -418,6 +418,61 @@ defmodule EmisarWeb.TeamLiveTest do
                }
     end
 
+    test "a pack-restricted connection opens its approval already narrowed", %{conn: conn} do
+      {conn, owner, account} = register_and_log_in(conn)
+      Fixtures.Accounts.create_subscription(account, "team")
+      subject = Fixtures.Subjects.subject_for(owner, account, role: :owner)
+      runner = Fixtures.Runners.create_runner(account_id: account.id, group: "database")
+      Fixtures.Catalog.create_trusted_pack_version(account_id: account.id, pack_id: "postgres")
+      Fixtures.Catalog.create_action(runner: runner, action_id: "pg.up", pack_id: "postgres")
+      provider = Fixtures.SSO.create_identity_provider(account_id: account.id)
+
+      # The connection's own default is what an auto-provisioned member gets, so
+      # a manual approval opens on it rather than on "All packs".
+      {:ok, provider} =
+        Emisar.SSO.update_provider(
+          provider,
+          %{
+            default_runner_access_mode: :all,
+            default_runner_scope: [],
+            default_pack_access_mode: :restricted,
+            default_pack_scope: ["pack:postgres"]
+          },
+          subject
+        )
+
+      request =
+        Fixtures.SSO.create_link_request(
+          provider: provider,
+          email: "packed@corp.test",
+          full_name: "Packed Ops",
+          claims: %{
+            "email" => "packed@corp.test",
+            "email_verified" => true,
+            "name" => "Packed Ops"
+          }
+        )
+
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/team")
+      form = "#approve-request-#{request.id}"
+
+      assert has_element?(lv, "#{form} input[value='pack:postgres']:checked")
+
+      render_click(lv, "approve_request", %{"id" => request.id})
+
+      {:ok, user} = Emisar.Users.fetch_user_by_email("packed@corp.test")
+      membership = Fixtures.Memberships.fetch_membership(account.id, user.id)
+
+      assert Emisar.Accounts.runner_access_for_membership(account.id, membership.id) ==
+               %Emisar.Accounts.RunnerAccess{
+                 mode: :all,
+                 groups: [],
+                 runner_ids: [],
+                 pack_mode: :restricted,
+                 pack_ids: ["postgres"]
+               }
+    end
+
     test "an unverified OIDC email is shown only as context, never as an existing-account match",
          %{
            conn: conn

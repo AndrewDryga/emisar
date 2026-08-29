@@ -1108,23 +1108,29 @@ defmodule EmisarWeb.TeamLive do
   # defaults to — SSO derives it, so the page never reads a provider's default
   # fields (or has to decide what a missing connection would mean).
   defp assign_approval_access(socket, request_facts) do
-    {modes, drafts} =
-      Enum.reduce(request_facts, {%{}, %{}}, fn facts, {modes, drafts} ->
-        access = facts.default_runner_access
-        id = facts.request.id
-
-        {Map.put(modes, id, to_string(access.mode)),
-         Map.put(drafts, id, RunnerScope.to_values(access.groups, access.runner_ids))}
-      end)
+    access_by_id = Map.new(request_facts, &{&1.request.id, &1.default_runner_access})
 
     socket
-    |> assign(:approval_access_modes, modes)
-    |> assign(:approval_scope_drafts, drafts)
+    |> assign(:approval_access_modes, by_request(access_by_id, &to_string(&1.mode)))
+    |> assign(
+      :approval_scope_drafts,
+      by_request(access_by_id, &RunnerScope.to_values(&1.groups, &1.runner_ids))
+    )
     |> assign(:approval_scope_errors, %{})
-    |> assign(:approval_pack_modes, %{})
-    |> assign(:approval_pack_drafts, %{})
+    # The pack half is seeded from the same connection default as the runner
+    # half: leaving it blank opened every request on "All packs", so approving a
+    # pack-restricted connection's member by hand granted reach its
+    # auto-provisioned members never get.
+    |> assign(:approval_pack_modes, by_request(access_by_id, &to_string(&1.pack_mode)))
+    |> assign(
+      :approval_pack_drafts,
+      by_request(access_by_id, &RunnerScope.to_pack_values(&1.pack_ids))
+    )
     |> assign(:approval_pack_errors, %{})
   end
+
+  defp by_request(access_by_id, fun),
+    do: Map.new(access_by_id, fn {id, access} -> {id, fun.(access)} end)
 
   # -- Pending SSO access requests (manual provisioning) ----------------
   # People blocked at sign-in until an admin approves. Gated on configure_sso;
