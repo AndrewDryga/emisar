@@ -452,7 +452,7 @@ jobs:
             echo "- candidate revision: \`${GITHUB_SHA}\`"
             echo "- tested image: \`${PUBLISHED_IMAGE}\`"
             echo "- the candidate contains \`20261004000000_bind_authorization_mappings_to_directory_groups\`, which is not safe with old and new portal nodes serving together"
-            echo "- use the reviewed no-overlap cutover: quiesce SSO/SCIM writes, drain every old portal node, migrate once, start only this candidate, verify authorization, then reopen traffic"
+            echo "- use the reviewed no-overlap cutover in .github/DEPLOYMENT.md: publish the candidate and catalog, drain the MIG, then run the main-only Portal recovery-plan workflow"
             echo "- after the migration commits, v0.42 is not a rollback candidate; rollback may use only an image that understands DirectoryGroup UUID mappings"
             echo "- the tested immutable image remains available to the maintenance procedure"
           } >> "$GITHUB_STEP_SUMMARY"

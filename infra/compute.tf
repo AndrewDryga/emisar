@@ -258,6 +258,91 @@ resource "google_compute_instance_template" "emisar" {
 # rel/env.sh.eex), so target_size > 1 forms one BEAM cluster — Phoenix PubSub +
 # Presence span nodes and runs don't strand in :sent. DB migrations run on boot
 # guarded by Ecto's advisory lock in the release entrypoint, so concurrent instances are safe.
+# The pre-v1 directory-group migration changes the identity an authorization
+# mapping follows. An old Portal process serving beside the migrated schema can
+# regrant a deleted/recreated group, so this exceptional cutover drains the MIG
+# before Terraform may restore it. The timestamp deliberately re-runs the proof
+# on every attested apply: a retry after a partial restore must see the new
+# instances and fail closed instead of trusting a barrier recorded in state.
+resource "terraform_data" "directory_group_cutover_empty" {
+  input = var.directory_group_cutover_ready
+  triggers_replace = [
+    var.directory_group_cutover_ready ? timestamp() : "inactive",
+  ]
+
+  provisioner "local-exec" {
+    interpreter = ["/bin/bash", "-c"]
+    command     = <<-EOT
+      set -euo pipefail
+
+      [ "$CUTOVER_READY" = true ] || exit 0
+
+      for tool in curl grep mktemp seq sleep tr wc; do
+        command -v "$tool" >/dev/null || {
+          echo "directory-group cutover check requires $tool" >&2
+          exit 1
+        }
+      done
+
+      url="https://compute.googleapis.com/compute/v1/projects/$PROJECT_ID/regions/$REGION/instanceGroupManagers/$INSTANCE_GROUP/listManagedInstances"
+      response_file=$(mktemp)
+      trap 'rm -f "$response_file"' EXIT
+
+      for attempt in $(seq 1 60); do
+        if ! status=$(curl --silent --show-error \
+          --connect-timeout 5 --max-time 30 --output "$response_file" \
+          --write-out '%%{http_code}' \
+          -X POST \
+          -H "Authorization: Bearer $ACCESS_TOKEN" \
+          -H "Content-Type: application/json" \
+          --data '{}' \
+          "$url"); then
+          echo "managed-instance inventory failed on attempt $attempt" >&2
+          exit 1
+        fi
+
+        case "$status" in
+          200) ;;
+          429|5??)
+            sleep 10
+            continue
+            ;;
+          401|403)
+            echo "managed-instance inventory authentication was rejected with HTTP $status" >&2
+            exit 1
+            ;;
+          *)
+            echo "managed-instance inventory returned unexpected HTTP $status" >&2
+            exit 1
+            ;;
+        esac
+
+        remaining=$(tr -d '[:space:]' < "$response_file" | \
+          grep -o '"instance":' | wc -l | tr -d ' ') || remaining=0
+
+        if [ "$remaining" -eq 0 ]; then
+          echo "directory-group cutover confirmed an empty Portal MIG"
+          exit 0
+        fi
+
+        echo "directory-group cutover still sees $remaining managed instance(s); waiting" >&2
+        sleep 10
+      done
+
+      echo "Portal MIG did not become empty within 10 minutes" >&2
+      exit 1
+    EOT
+
+    environment = {
+      ACCESS_TOKEN   = ephemeral.google_client_config.current.access_token
+      CUTOVER_READY  = tostring(var.directory_group_cutover_ready)
+      INSTANCE_GROUP = "emisar"
+      PROJECT_ID     = var.project_id
+      REGION         = var.region
+    }
+  }
+}
+
 resource "google_compute_region_instance_group_manager" "emisar" {
   # Keep the operator-facing fleet name stable. A zone-set replacement cannot
   # create two same-named MIGs, so topology changes require an explicitly staged
@@ -359,6 +444,7 @@ resource "google_compute_region_instance_group_manager" "emisar" {
   # NAT / firewall / IAM / the database converge, so instances fail to pull the
   # image, read secrets, migrate, or pass its health probes.
   depends_on = [
+    terraform_data.directory_group_cutover_empty,
     google_project_service.apis,
     google_compute_router_nat.emisar,
     google_compute_firewall.lb_to_app,

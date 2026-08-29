@@ -81,6 +81,11 @@ candidates. The Cloud SQL Auth Proxy is a separately pinned infrastructure
 container. The private admin runner is independently pinned in cloud-init and
 continues to invoke the colocated portal release through its stable RPC boundary.
 
+The one pre-v1 directory-group authorization cutover is deliberately not a
+rolling deployment. Normal CD withholds it; `.github/DEPLOYMENT.md` owns the
+empty-fleet procedure and its apply-time managed-instance proof. Remove that
+one-time path after production crosses the migration.
+
 Readiness-contract replacements build a complete successor backend, wait for
 every expected VM to pass `/readyz`, switch the URL map, and retain the previous
 backend for five minutes while that change reaches every edge proxy. `getHealth`

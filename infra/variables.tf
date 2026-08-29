@@ -138,6 +138,12 @@ variable "instance_count" {
   }
 }
 
+variable "directory_group_cutover_ready" {
+  type        = bool
+  description = "One-run attestation for the pre-v1 directory-group authorization cutover. True makes apply prove the Portal MIG has no managed instances before it may restore the fleet; ordinary rolling plans leave it false. Remove after production has crossed migration 20261004000000."
+  default     = false
+}
+
 variable "cos_image" {
   type        = string
   description = "Exact Container-Optimized OS image name for portal VMs. Keep this pinned so an unchanged Terraform configuration always boots the same host bytes; update deliberately after reviewing a newer cos-stable image."
