@@ -374,7 +374,8 @@ func (a *App) validateTemplates(ctx context.Context) error {
 		"emisar-admin-runner-tfe-token",
 		"inherit_env:", "- TFE_TOKEN",
 		`- "gcp.*"`, `- "tfc.*"`,
-		`"$runner" pack install "$pack_ref"`,
+		`pack_url="https://registry.emisar.dev/v1/packs/${pack_id}/${pack_version}/${pack_hash}/pack.tar.gz"`,
+		`"$runner" pack install "$pack_url"`,
 		`--hash "$expected_hash"`,
 		"/var/lib/emisar-admin-runner/gcloud.sh",
 		"/var/lib/emisar-admin-runner/beam.sh",
@@ -430,11 +431,11 @@ func (a *App) validateTemplates(ctx context.Context) error {
 	if len(renderedData) > 262144 {
 		return fmt.Errorf("rendered cloud-init exceeds Compute Engine's per-value metadata limit")
 	}
-	// Every pack this runner installs is installed WITH its expected hash. An
-	// install by bare name pulls whatever the registry currently serves onto the
-	// disk of a runner admitted at max_risk: critical, so the pinned form is not
-	// merely preferred here — the unpinned one must not exist.
-	unpinnedPack := regexp.MustCompile(`pack install "\$(pack|bundle_pack)"(?:[^\n]*\\\n)*[^\n]*`)
+	// Every pack this runner installs is installed WITH its expected hash. A
+	// registry download without one puts bytes that were not authenticated by the
+	// reviewed pin onto a runner admitted at max_risk: critical, so the pinned
+	// form is not merely preferred here — the unpinned one must not exist.
+	unpinnedPack := regexp.MustCompile(`pack install "\$(pack_url|bundle_pack)"(?:[^\n]*\\\n)*[^\n]*`)
 	for _, install := range unpinnedPack.FindAllString(string(renderedData), -1) {
 		// The bundle path is the offline copy shipped inside the verified release
 		// tarball, so it carries the runner's own integrity, not the registry's.

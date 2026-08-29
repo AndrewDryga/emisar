@@ -181,16 +181,19 @@ test -f /var/lib/emisar-admin-runner/packs/emisar-admin/pack.yaml
 test -r /var/lib/emisar-admin-runner/packs/emisar-admin/scripts/callback.sh
 # A missing pack is installed by the pinned loop below, which passes --hash: a
 # pack with no directory validates to an empty hash, which never matches the
-# expected one. The install-by-bare-name that used to sit here added nothing
-# except a window where registry bytes nobody had verified were on the disk of a
-# runner admitted at max_risk: critical.
+# expected one. Build the immutable URL from the reviewed id, version, and hash
+# so an older pinned version remains installable after it leaves the Portal's
+# short name-facade history window.
 while IFS='|' read -r pack_ref expected_hash; do
   pack_id=$${pack_ref%%=*}
+  pack_version=$${pack_ref#*=}
+  pack_hash=$${expected_hash#sha256:}
+  pack_url="https://registry.emisar.dev/v1/packs/$${pack_id}/$${pack_version}/$${pack_hash}/pack.tar.gz"
   installed_hash=$("$runner" pack validate \
     "/var/lib/emisar-admin-runner/packs/$${pack_id}" 2>/dev/null | \
     awk '$1 == "hash:" {print $2}' || true)
   if [ "$installed_hash" != "$expected_hash" ]; then
-    "$runner" pack install "$pack_ref" \
+    "$runner" pack install "$pack_url" \
       --hash "$expected_hash" \
       --dest /var/lib/emisar-admin-runner/packs \
       --force
