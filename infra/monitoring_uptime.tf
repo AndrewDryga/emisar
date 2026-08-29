@@ -107,27 +107,22 @@ resource "google_monitoring_alert_policy" "pack_registry_checks" {
     signal    = "integrity"
   }
 
-  dynamic "conditions" {
-    for_each = {
-      semantic = google_monitoring_uptime_check_config.pack_registry_semantic.uptime_check_id
-    }
-    content {
-      display_name = "${title(conditions.key)} check failed"
-      condition_threshold {
-        filter          = "resource.type = \"uptime_url\" AND metric.type = \"monitoring.googleapis.com/uptime_check/check_passed\" AND metric.label.check_id = \"${conditions.value}\""
-        comparison      = "COMPARISON_GT"
-        threshold_value = 1
-        duration        = "600s"
+  conditions {
+    display_name = "Semantic check failed"
+    condition_threshold {
+      filter          = "resource.type = \"uptime_url\" AND metric.type = \"monitoring.googleapis.com/uptime_check/check_passed\" AND metric.label.check_id = \"${google_monitoring_uptime_check_config.pack_registry_semantic.uptime_check_id}\""
+      comparison      = "COMPARISON_GT"
+      threshold_value = 1
+      duration        = "600s"
 
-        aggregations {
-          alignment_period     = "1200s"
-          per_series_aligner   = "ALIGN_NEXT_OLDER"
-          cross_series_reducer = "REDUCE_COUNT_FALSE"
-          group_by_fields      = ["resource.label.host"]
-        }
-        trigger {
-          count = 1
-        }
+      aggregations {
+        alignment_period     = "1200s"
+        per_series_aligner   = "ALIGN_NEXT_OLDER"
+        cross_series_reducer = "REDUCE_COUNT_FALSE"
+        group_by_fields      = ["resource.label.host"]
+      }
+      trigger {
+        count = 1
       }
     }
   }

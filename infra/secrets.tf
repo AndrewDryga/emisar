@@ -95,7 +95,7 @@ locals {
     var.release_cookie_ready ? {
       "emisar-release-cookie" = {
         env_name = "RELEASE_COOKIE"
-        version  = google_secret_manager_secret_version.release_cookie[0].version
+        version  = one(google_secret_manager_secret_version.release_cookie[*].version)
       }
     } : {},
   )
