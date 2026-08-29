@@ -189,8 +189,8 @@ func TestValidate_RejectsNegativeAuditRotationLimits(t *testing.T) {
 //
 //	-: enforce_signatures with no trusted_cas is a footgun (the
 //	  runner would refuse EVERY dispatch) and is rejected.
-//	-: two trusted CAs sharing a ca_id are rejected.
-//	-: a trusted CA missing ca_id or public_key is rejected.
+//	-: a trusted CA's name is display-only and optional, but its pem
+//	  anchor is required, so a missing or blank pem is rejected.
 //
 // Each case starts from a config that validates and changes only the signing
 // block, so a failure pins the rejection to the signing rule under test.
