@@ -880,9 +880,14 @@ defmodule EmisarWeb.MCPRpcController do
   defp sanitize_client_info(_), do: nil
 
   defp clip_client_field(s) when is_binary(s) do
-    case String.trim(s) do
+    # Strip control/format/surrogate characters — clientInfo is snapshotted onto
+    # every run and rendered in the audit trail and console, where a bidi
+    # override would deceive.
+    cleaned = s |> Emisar.SafeText.strip() |> String.trim()
+
+    case cleaned do
       "" -> nil
-      trimmed -> String.slice(trimmed, 0, 200)
+      value -> String.slice(value, 0, 200)
     end
   end
 

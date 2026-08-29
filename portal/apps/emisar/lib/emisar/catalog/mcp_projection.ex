@@ -21,7 +21,6 @@ defmodule Emisar.Catalog.MCPProjection do
   # same way. `pack_ref` freezes at 1.0, so it has to be right now.
   @pack_version_format ~r/\A[0-9]+(?:\.[0-9]+)*(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?\z/
   @pack_hash_format ~r/\Asha256:[0-9a-f]{64}\z/
-  @unsafe_text ~r/[\p{Cc}\p{Cf}\p{Cs}]/u
   @max_labels 32
   @max_label_key_length 80
   @max_label_value_length 256
@@ -172,7 +171,7 @@ defmodule Emisar.Catalog.MCPProjection do
 
   defp clean_field(value, max) when is_binary(value) do
     if String.valid?(value),
-      do: value |> String.replace(@unsafe_text, "") |> String.slice(0, max),
+      do: value |> Emisar.SafeText.strip() |> String.slice(0, max),
       else: ""
   end
 
@@ -518,7 +517,7 @@ defmodule Emisar.Catalog.MCPProjection do
 
   defp safe_text?(value, min, max) when is_binary(value) do
     String.valid?(value) and String.length(value) in min..max and
-      not Regex.match?(@unsafe_text, value)
+      not Emisar.SafeText.unsafe?(value)
   end
 
   defp safe_text?(_value, _min, _max), do: false

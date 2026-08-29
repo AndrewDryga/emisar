@@ -34,7 +34,9 @@ defmodule Emisar.Runs.RunnerError do
   untrusted `:code`, `:message`, and `:request_id` diagnostics.
 
   A diagnostic that is absent or not a string (a crafted map, a number) becomes
-  `nil`; a long one is cut to its code-point cap.
+  `nil`; a long one is cut to its code-point cap, and control/format/surrogate
+  characters are stripped so a runner can't slip a bidi override onto the audit
+  row it produces.
   """
   @spec new(Ecto.UUID.t(), Ecto.UUID.t(), map(), RequestContext.t()) :: t()
   def new(account_id, runner_id, %{} = attrs, %RequestContext{} = context)
@@ -49,7 +51,12 @@ defmodule Emisar.Runs.RunnerError do
     }
   end
 
-  defp bounded(value, limit) when is_binary(value), do: String.slice(value, 0, limit)
+  defp bounded(value, limit) when is_binary(value) do
+    if String.valid?(value),
+      do: value |> Emisar.SafeText.strip() |> String.slice(0, limit),
+      else: nil
+  end
+
   defp bounded(_value, _limit), do: nil
 
   # The transport validated a canonical run request id, so the correlation is

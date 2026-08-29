@@ -86,6 +86,11 @@ defmodule Emisar.Runners.Runner.Changeset do
     |> validate_length(:group, max: @max_group_length, count: :codepoints)
     |> validate_length(:hostname, max: @max_hostname_length, count: :codepoints)
     |> validate_length(:runner_version, max: @max_runner_version_length, count: :codepoints)
+    # Reject control/format/surrogate characters at ingest so a hostile runner
+    # can't slip a bidi override into a hostname/group/name/label that then
+    # deceives the audit trail, console, and exports downstream.
+    |> validate_safe_text([:name, :group, :hostname, :runner_version])
+    |> validate_safe_labels(:labels)
     |> validate_json_size(:labels, @max_json_bytes)
     |> validate_json_size(:packs, @max_json_bytes)
     |> validate_json_size(:degraded_packs, @max_json_bytes)
@@ -98,6 +103,30 @@ defmodule Emisar.Runners.Runner.Changeset do
     )
     |> validate_signing_advertisement()
   end
+
+  @unsafe_text_message "must not contain control or formatting characters"
+
+  defp validate_safe_text(changeset, fields) do
+    Enum.reduce(fields, changeset, fn field, acc ->
+      validate_change(acc, field, fn ^field, value ->
+        if Emisar.SafeText.unsafe?(value), do: [{field, @unsafe_text_message}], else: []
+      end)
+    end)
+  end
+
+  defp validate_safe_labels(changeset, field) do
+    validate_change(changeset, field, fn ^field, labels ->
+      if unsafe_labels?(labels), do: [{field, @unsafe_text_message}], else: []
+    end)
+  end
+
+  defp unsafe_labels?(labels) when is_map(labels) do
+    Enum.any?(labels, fn {key, value} ->
+      Emisar.SafeText.unsafe?(key) or Emisar.SafeText.unsafe?(value)
+    end)
+  end
+
+  defp unsafe_labels?(_labels), do: false
 
   defp validate_signing_advertisement(changeset) do
     case {get_field(changeset, :enforce_signatures),

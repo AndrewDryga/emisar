@@ -26,6 +26,20 @@ defmodule EmisarWeb.MCP.ClientMetadataTest do
                {:ok, %{"asset_tag" => "LT-4417", "device_id" => "d-99"}}
     end
 
+    test "rejects control/format characters in a value" do
+      rlo = <<0x202E::utf8>>
+
+      assert {:error, message} = ClientMetadata.parse(~s({"env":"prod) <> rlo <> ~s("}))
+      assert message =~ "control or formatting characters"
+    end
+
+    test "rejects control/format characters in a key" do
+      rlo = <<0x202E::utf8>>
+
+      assert {:error, message} = ClientMetadata.parse(~s({"e) <> rlo <> ~s(nv":"prod"}))
+      assert message =~ "control or formatting characters"
+    end
+
     test "accepts numeric values, storing their string representation" do
       assert ClientMetadata.parse(~s({"port":8080,"ratio":1.5})) ==
                {:ok, %{"port" => "8080", "ratio" => "1.5"}}

@@ -20,6 +20,29 @@ defmodule Emisar.Runners.Runner.ChangesetTest do
       assert changeset.valid?
     end
 
+    test "rejects control/format characters in an advertised text field", %{runner: runner} do
+      rlo = <<0x202E::utf8>>
+
+      changeset = Runner.Changeset.apply_state(runner, %{hostname: "db-" <> rlo <> "prod"})
+      refute changeset.valid?
+
+      assert errors_on(changeset).hostname == [
+               "must not contain control or formatting characters"
+             ]
+
+      changeset = Runner.Changeset.apply_state(runner, %{group: "prod" <> rlo})
+      refute changeset.valid?
+      assert errors_on(changeset).group == ["must not contain control or formatting characters"]
+    end
+
+    test "rejects control/format characters in an advertised label", %{runner: runner} do
+      changeset =
+        Runner.Changeset.apply_state(runner, %{labels: %{"env" => "prod" <> <<0x202E::utf8>>}})
+
+      refute changeset.valid?
+      assert errors_on(changeset).labels == ["must not contain control or formatting characters"]
+    end
+
     test "rejects an oversized labels map", %{runner: runner} do
       huge = for i <- 1..5_000, into: %{}, do: {"k#{i}", String.duplicate("v", 32)}
 

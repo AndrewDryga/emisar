@@ -66,19 +66,29 @@ defmodule EmisarWeb.MCP.ClientMetadata do
   end
 
   defp validate_key(key) when is_binary(key) do
-    if String.length(key) > @max_key_length do
-      {:error, "client metadata key #{inspect(key)} exceeds #{@max_key_length} characters"}
-    else
-      :ok
+    cond do
+      String.length(key) > @max_key_length ->
+        {:error, "client metadata key #{inspect(key)} exceeds #{@max_key_length} characters"}
+
+      Emisar.SafeText.unsafe?(key) ->
+        {:error, "client metadata key #{inspect(key)} has control or formatting characters"}
+
+      true ->
+        :ok
     end
   end
 
   defp validate_value(key, value) when is_binary(value) do
-    if String.length(value) > @max_value_length do
-      {:error,
-       "client metadata value for #{inspect(key)} exceeds #{@max_value_length} characters"}
-    else
-      {:ok, value}
+    cond do
+      String.length(value) > @max_value_length ->
+        {:error,
+         "client metadata value for #{inspect(key)} exceeds #{@max_value_length} characters"}
+
+      Emisar.SafeText.unsafe?(value) ->
+        {:error, "client metadata value for #{inspect(key)} has control or formatting characters"}
+
+      true ->
+        {:ok, value}
     end
   end
 
