@@ -835,8 +835,9 @@ func TestResolveArgsRejectsTypesTheRuntimeCannotProduce(t *testing.T) {
 func TestRedactionAccountability(t *testing.T) {
 	redacting := actionDefinition{ID: "example.read", Risk: "low"}
 	redacting.Output.Redact = []struct {
-		Name string `yaml:"name"`
-	}{{Name: "example-secret"}}
+		Name        string `yaml:"name"`
+		Replacement string `yaml:"replacement"`
+	}{{Name: "example-secret", Replacement: `${1}"[REDACTED]"`}}
 	actions := map[string]actionDefinition{
 		"example.read":  redacting,
 		"example.plain": {ID: "example.plain", Risk: "low"},
@@ -876,12 +877,49 @@ func TestRedactionAccountability(t *testing.T) {
 		// is the shape that let the risk exceptions rot.
 		"an exception the case already covers": {
 			except("requires_hardware"), map[string]bool{"example.read": true},
-			"already has a successful behavior case"},
+			"proving its redaction fires"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			err := validateRedactionAccountability(tc.exceptions, actions, tc.successful)
 			if err == nil || !strings.Contains(err.Error(), tc.want) {
 				t.Fatalf("error = %v, want %q", err, tc.want)
+			}
+		})
+	}
+}
+
+// A merely-passing case is not proof: redactionProvenActions must count only
+// cases that assert the replacement placeholder or a secret canary's absence,
+// so a redaction rule that never fires can no longer ride a green run.
+func TestRedactionProvenActions(t *testing.T) {
+	action := actionDefinition{ID: "example.read", Risk: "low"}
+	action.Output.Redact = []struct {
+		Name        string `yaml:"name"`
+		Replacement string `yaml:"replacement"`
+	}{{Name: "token", Replacement: `${1}"[REDACTED]"`}}
+	actions := map[string]actionDefinition{"example.read": action}
+
+	for name, tc := range map[string]struct {
+		expect Expectation
+		want   bool
+	}{
+		"a passing case that asserts nothing about the secret": {
+			Expectation{Status: "success", StdoutNotEmpty: true}, false},
+		"placeholder required in stdout": {
+			Expectation{Status: "success", StdoutContains: []string{`"[REDACTED]"`}}, true},
+		"bare placeholder required in stdout": {
+			Expectation{Status: "success", StdoutContains: []string{"[REDACTED]"}}, true},
+		"secret canary required absent": {
+			Expectation{Status: "success", StdoutNotContains: []string{"packtest-canary-token-1a2b"}}, true},
+		"a non-canary absence proves nothing": {
+			Expectation{Status: "success", StdoutNotContains: []string{"whatever"}}, false},
+		"a failing case never proves redaction": {
+			Expectation{Status: "failure", StdoutContains: []string{`"[REDACTED]"`}}, false},
+	} {
+		t.Run(name, func(t *testing.T) {
+			plan := Plan{Cases: []Case{{Action: "example.read", Expect: tc.expect}}}
+			if got := redactionProvenActions(plan, actions)["example.read"]; got != tc.want {
+				t.Fatalf("proven = %v, want %v", got, tc.want)
 			}
 		})
 	}

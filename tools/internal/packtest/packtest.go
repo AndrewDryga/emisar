@@ -177,12 +177,38 @@ type actionDefinition struct {
 	Output      struct {
 		Parser string `yaml:"parser"`
 		Redact []struct {
-			Name string `yaml:"name"`
+			Name        string `yaml:"name"`
+			Replacement string `yaml:"replacement"`
 		} `yaml:"redact"`
 	} `yaml:"output"`
 }
 
 func (a actionDefinition) redacts() bool { return len(a.Output.Redact) > 0 }
+
+// captureRef matches a regex-replacement capture-group reference ($1, ${1},
+// ${name}) so the literal text around it can be isolated: a behavior case
+// proves a redaction rule fired by asserting that literal in stdout_contains.
+var captureRef = regexp.MustCompile(`\$\{[0-9A-Za-z_]+\}|\$[0-9A-Za-z_]+`)
+
+// redactionLiteralMinLen is the shortest literal fragment or stdout assertion
+// worth comparing, so a lone quote or brace left over from stripping a
+// capture-group reference never grants redaction credit.
+const redactionLiteralMinLen = 3
+
+// redactionReplacementLiterals returns each redact rule's replacement text with
+// capture-group references removed, keeping only fragments long enough to be a
+// meaningful placeholder (e.g. `"[REDACTED]"` out of `${1}"[REDACTED]"`).
+func (a actionDefinition) redactionReplacementLiterals() []string {
+	var literals []string
+	for _, rule := range a.Output.Redact {
+		for _, fragment := range captureRef.Split(rule.Replacement, -1) {
+			if len(fragment) >= redactionLiteralMinLen {
+				literals = append(literals, fragment)
+			}
+		}
+	}
+	return literals
+}
 
 type commandResult struct {
 	exitCode int
@@ -347,6 +373,47 @@ func successfulBehaviorActions(plan Plan) map[string]bool {
 		}
 	}
 	return successful
+}
+
+// redactionProvenActions reports which redacting actions have a passing case
+// that actually EXERCISES their redaction — not merely a case that passed for
+// some other reason. A case proves redaction fired by asserting the rule's
+// replacement literal in stdout_contains, or a declared secret canary's absence
+// in stdout_not_contains. Passing but silent cases were the whole gap in F-5:
+// they satisfied the old accountability check without proving anything.
+func redactionProvenActions(plan Plan, actions map[string]actionDefinition) map[string]bool {
+	proven := make(map[string]bool, len(plan.Cases))
+	for _, test := range plan.Cases {
+		action, ok := actions[test.Action]
+		if !ok || !action.redacts() {
+			continue
+		}
+		expect := mergeActionExpectation(plan.Defaults.Expect, test.Expect)
+		if expect.Status == "success" && expectationProvesRedaction(expect, action) {
+			proven[test.Action] = true
+		}
+	}
+	return proven
+}
+
+// expectationProvesRedaction reports whether a merged expectation asserts that
+// redaction actually happened: either the rule's replacement literal is
+// required in stdout, or a secret canary is required absent from it.
+func expectationProvesRedaction(expect Expectation, action actionDefinition) bool {
+	for _, literal := range action.redactionReplacementLiterals() {
+		for _, want := range expect.StdoutContains {
+			if len(want) >= redactionLiteralMinLen &&
+				(strings.Contains(want, literal) || strings.Contains(literal, want)) {
+				return true
+			}
+		}
+	}
+	for _, absent := range expect.StdoutNotContains {
+		if canaryPattern.MatchString(absent) {
+			return true
+		}
+	}
+	return false
 }
 
 func loadPackVersion(packDir string) (string, error) {
@@ -799,7 +866,7 @@ func validatePlan(pack string, plan Plan, actions map[string]actionDefinition) e
 	if err := validateRiskAccountability(plan.RiskAccountability, actions, successfulActions); err != nil {
 		return err
 	}
-	return validateRedactionAccountability(plan.RedactionAccountability, actions, successfulActions)
+	return validateRedactionAccountability(plan.RedactionAccountability, actions, redactionProvenActions(plan, actions))
 }
 
 func actionNeedsArrangedState(action string) bool {
@@ -1039,9 +1106,11 @@ func validateRiskAccountability(accountability RiskAccountability, actions map[s
 }
 
 // validateRedactionAccountability closes F-5's root cause: the gate validated
-// that a redaction rule compiled and never that it MATCHED. Every action
-// declaring one now needs a successful behavior case or a written reason.
-func validateRedactionAccountability(accountability RedactionExceptions, actions map[string]actionDefinition, successful map[string]bool) error {
+// that a redaction rule compiled and never that it MATCHED. A merely passing
+// case is not proof — the accountability check requires a case that asserts the
+// replacement placeholder or a secret canary's absence (proven), or a written
+// reason why no such case can exist.
+func validateRedactionAccountability(accountability RedactionExceptions, actions map[string]actionDefinition, proven map[string]bool) error {
 	for id, reason := range accountability.Exceptions {
 		action, ok := actions[id]
 		if !ok {
@@ -1050,18 +1119,19 @@ func validateRedactionAccountability(accountability RedactionExceptions, actions
 		if !action.redacts() {
 			return fmt.Errorf("redaction exception action %q declares no redaction rule", id)
 		}
-		if successful[id] {
-			return fmt.Errorf("redaction exception action %q already has a successful behavior case", id)
+		if proven[id] {
+			return fmt.Errorf("redaction exception action %q already has a behavior case proving its redaction fires", id)
 		}
 		if !redactionExceptionReasons[reason] {
 			return fmt.Errorf("redaction exception action %q has unknown reason %q", id, reason)
 		}
 	}
 	for id, action := range actions {
-		if action.redacts() && !successful[id] && accountability.Exceptions[id] == "" {
+		if action.redacts() && !proven[id] && accountability.Exceptions[id] == "" {
 			return fmt.Errorf("action %q declares a redaction rule with nothing proving it fires: "+
-				"add a behavior case asserting the placeholder AND the secret's absence, or a "+
-				"redaction_accountability exception saying why one cannot exist", id)
+				"add a behavior case asserting the placeholder in stdout_contains OR a secret "+
+				"canary's absence in stdout_not_contains, or a redaction_accountability exception "+
+				"saying why one cannot exist", id)
 		}
 	}
 	return nil
