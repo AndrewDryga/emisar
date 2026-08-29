@@ -958,7 +958,7 @@ defmodule Emisar.Auth do
   # undecodable token has no user to attribute — logged + counted server-side
   # instead, with the SAME `{:error, :invalid_or_expired}` return so the response
   # can't be turned into an email-enumeration oracle. Always returns the error.
-  defp record_magic_link_failure(token_id, reason, context) do
+  defp record_magic_link_failure(token_id, reason, context) when is_atom(reason) do
     case peek_magic_link_user(token_id) do
       {:ok, %Users.User{} = user} ->
         Audit.log_for_user(user, "user.sign_in_failed",
@@ -973,6 +973,14 @@ defmodule Emisar.Auth do
 
     {:error, reason}
   end
+
+  # A failed Multi step can forward a %Changeset{} or other non-atom reason; the
+  # is_atom-guarded telemetry call would FunctionClause-crash and a changeset
+  # can't be JSON-encoded into the audit payload — a sign-in 500 plus an
+  # enumeration signal. Collapse every non-atom to the neutral reason a spent or
+  # expired token already gives.
+  defp record_magic_link_failure(token_id, _reason, context),
+    do: record_magic_link_failure(token_id, :invalid_or_expired, context)
 
   # The unlocked lookup discovers only which user row to lock first. It grants
   # no authority: the transaction re-fetches and locks the exact factor after
