@@ -377,7 +377,11 @@ boundary for external side effects.
 Malformed or oversized messages, invalid signatures, pack mismatches, replay
 conflicts, and admission failures execute nothing and produce bounded errors
 without echoing arguments, output, credentials, certificates, or signatures to
-logs.
+logs. A message rejected at the decode layer that still carries a usable
+`request_id` is additionally journaled as a refusal and answered with a terminal
+`failed` result (reason `dispatch_undecodable`), so the portal attributes the
+run instead of waiting for its dispatch timeout; only a message too corrupt to
+yield a `request_id` is dropped silently.
 
 ## Limits
 
