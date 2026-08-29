@@ -212,11 +212,21 @@ defmodule EmisarWeb.ProfileLive do
     # only makes sense while an emailed-code step-up is pending.
     if step == :code and is_binary(new_email) do
       case Auth.issue_email_change_code(new_email, socket.assigns.current_subject) do
-        :ok ->
+        {:ok, :sent} ->
           {:noreply,
            socket
            |> assign(:email_step_error, nil)
            |> put_flash(:info, "We sent a new code to #{socket.assigns.current_user.email}.")}
+
+        # The code goes to the CURRENT address, which has bounced/complained, so
+        # no code will arrive and the change can't complete — say so plainly.
+        {:ok, :suppressed} ->
+          {:noreply,
+           assign(
+             socket,
+             :email_step_error,
+             "We can't send a code to your current email (#{socket.assigns.current_user.email}). Contact support@emisar.dev."
+           )}
 
         {:error, :rate_limited} ->
           {:noreply, assign(socket, :email_step_error, MfaErrors.message(:email_rate_limited))}
@@ -309,11 +319,22 @@ defmodule EmisarWeb.ProfileLive do
                step.purpose,
                socket.assigns.current_subject
              ) do
-          :ok ->
+          {:ok, :sent} ->
             {:noreply,
              socket
              |> assign(:oidc_step_error, nil)
              |> put_flash(:info, "We sent a new code to #{socket.assigns.current_user.email}.")}
+
+          # The account email won't accept mail, so no code can arrive — say so
+          # and drop back to the identity list instead of waiting for a code.
+          {:ok, :suppressed} ->
+            {:noreply,
+             socket
+             |> reset_oidc_step_up()
+             |> put_flash(
+               :error,
+               "We can't deliver a code to #{socket.assigns.current_user.email}."
+             )}
 
           {:error, :rate_limited} ->
             {:noreply, assign(socket, :oidc_step_error, MfaErrors.message(:email_rate_limited))}
@@ -762,6 +783,17 @@ defmodule EmisarWeb.ProfileLive do
         |> assign(:email_step, :code)
         |> put_flash(:info, "We emailed a confirmation code to #{user.email}.")
 
+      # The code goes to the CURRENT address to prove inbox control; that address
+      # has bounced/complained, so no code will arrive — say so instead of a false
+      # "check your inbox". They can't self-fix a suppressed current address.
+      {:error, :delivery_suppressed} ->
+        socket
+        |> put_flash(
+          :error,
+          "We can't send a code to your current email (#{user.email}). Contact support@emisar.dev."
+        )
+        |> reset_email_step()
+
       {:error, :rate_limited} ->
         socket
         |> put_flash(:error, MfaErrors.message(:email_rate_limited))
@@ -793,6 +825,15 @@ defmodule EmisarWeb.ProfileLive do
         |> assign(:oidc_step_error, nil)
         |> assign(:oidc_step_form, to_form(%{"code" => ""}, as: "oidc_step"))
         |> maybe_flash_oidc_code(factor)
+
+      # The account email can't receive the confirmation code, so the step-up
+      # can't proceed — tell them plainly rather than showing a code prompt.
+      {:error, :delivery_suppressed} ->
+        put_flash(
+          socket,
+          :error,
+          "We can't deliver a code to #{socket.assigns.current_user.email}."
+        )
 
       {:error, :rate_limited} ->
         put_flash(socket, :error, MfaErrors.message(:email_rate_limited))

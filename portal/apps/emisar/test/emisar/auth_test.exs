@@ -1625,7 +1625,7 @@ defmodule Emisar.AuthTest do
     } do
       current = user.email
 
-      assert Auth.issue_email_change_code("new@example.com", subject) == :ok
+      assert Auth.issue_email_change_code("new@example.com", subject) == {:ok, :sent}
 
       assert_received {:email, email}
       assert [{_, ^current}] = email.to
@@ -1646,18 +1646,18 @@ defmodule Emisar.AuthTest do
 
       assert subject.actor.email == old_email
 
-      assert Auth.issue_email_change_code("new@example.com", subject) == :ok
+      assert Auth.issue_email_change_code("new@example.com", subject) == {:ok, :sent}
 
       assert_received {:email, email}
       assert [{_, ^current_email}] = email.to
     end
 
     test "issuing again replaces the prior code (single outstanding)", %{subject: subject} do
-      :ok = Auth.issue_email_change_code("first@example.com", subject)
+      {:ok, :sent} = Auth.issue_email_change_code("first@example.com", subject)
       assert_received {:email, first_email}
       first_code = Fixtures.Auth.code_from_email(first_email)
 
-      :ok = Auth.issue_email_change_code("second@example.com", subject)
+      {:ok, :sent} = Auth.issue_email_change_code("second@example.com", subject)
       assert_received {:email, second_email}
       second_code = Fixtures.Auth.code_from_email(second_email)
 
@@ -1675,7 +1675,9 @@ defmodule Emisar.AuthTest do
       Emisar.Config.put_override(:emisar, :rate_limit_enabled, true)
 
       for index <- 1..4 do
-        assert Auth.issue_email_change_code("direct-#{index}@example.com", subject) == :ok
+        assert Auth.issue_email_change_code("direct-#{index}@example.com", subject) ==
+                 {:ok, :sent}
+
         assert_received {:email, _}
       end
 
@@ -1691,6 +1693,16 @@ defmodule Emisar.AuthTest do
       # A refused resend never deletes the live token it failed to replace.
       assert {:ok, %User{email: "latest@example.com"}} =
                Auth.confirm_email_change("latest@example.com", latest_code, subject)
+    end
+
+    test "a suppressed current address is reported, not passed off as sent", %{
+      user: user,
+      subject: subject
+    } do
+      {:ok, _suppression} = Mail.suppress(user.email, :hard_bounce, "bounce")
+
+      assert Auth.issue_email_change_code("new@example.com", subject) == {:ok, :suppressed}
+      refute_received {:email, _}
     end
   end
 
@@ -1798,7 +1810,7 @@ defmodule Emisar.AuthTest do
                  {:error, :invalid}
       end
 
-      :ok = Auth.issue_email_change_code("latest@example.com", subject)
+      {:ok, :sent} = Auth.issue_email_change_code("latest@example.com", subject)
       assert_received {:email, latest_email}
       latest_code = Fixtures.Auth.code_from_email(latest_email)
       wrong_latest = if latest_code == "000000", do: "000001", else: "000000"
@@ -1996,6 +2008,16 @@ defmodule Emisar.AuthTest do
       reloaded = Repo.reload!(user)
       assert reloaded.email == user.email
       assert reloaded.mfa_last_used_at == nil
+    end
+
+    test "a code-factor user whose current address is suppressed can't begin", %{
+      user: user,
+      subject: subject
+    } do
+      {:ok, _suppression} = Mail.suppress(user.email, :hard_bounce, "bounce")
+
+      assert Auth.begin_email_change("new@example.com", subject) == {:error, :delivery_suppressed}
+      refute_received {:email, _}
     end
   end
 
@@ -2336,7 +2358,7 @@ defmodule Emisar.AuthTest do
         assert Auth.verify_mfa_enrollment_code("000000", subject) == {:error, :invalid}
       end
 
-      assert Auth.issue_email_change_code("new@example.com", subject) == :ok
+      assert Auth.issue_email_change_code("new@example.com", subject) == {:ok, :sent}
       assert_received {:email, _email_change_code}
 
       for _ <- 1..2 do

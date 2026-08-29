@@ -483,11 +483,22 @@ defmodule EmisarWeb.SSOSettingsLive do
                :verify_provider,
                socket.assigns.current_subject
              ) do
-          :ok ->
+          {:ok, :sent} ->
             {:noreply,
              socket
              |> assign(:oidc_step_error, nil)
              |> put_flash(:info, "We sent a new code to #{socket.assigns.current_user.email}.")}
+
+          # The account email won't accept mail, so no code can arrive — say so
+          # and drop back instead of waiting for a code that never comes.
+          {:ok, :suppressed} ->
+            {:noreply,
+             socket
+             |> reset_oidc_step_up()
+             |> put_flash(
+               :error,
+               "We can't deliver a code to #{socket.assigns.current_user.email}."
+             )}
 
           {:error, :rate_limited} ->
             {:noreply, assign(socket, :oidc_step_error, email_limit_error())}
@@ -857,6 +868,16 @@ defmodule EmisarWeb.SSOSettingsLive do
              |> assign(:oidc_step_error, nil)
              |> assign(:oidc_step_form, to_form(%{"code" => ""}, as: "oidc_step"))
              |> maybe_flash_provider_code(factor)}
+
+          # The account email can't receive the confirmation code, so verification
+          # can't proceed — tell them plainly rather than showing a code prompt.
+          {:error, :delivery_suppressed} ->
+            {:noreply,
+             put_flash(
+               socket,
+               :error,
+               "We can't deliver a code to #{socket.assigns.current_user.email}."
+             )}
 
           {:error, :rate_limited} ->
             {:noreply, put_flash(socket, :error, email_limit_error())}

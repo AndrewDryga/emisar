@@ -1283,8 +1283,9 @@ defmodule Emisar.Auth do
   identity-defining field (it controls every future magic link) gets a
   credential-grade gate a stolen session alone can't pass. Deletes any prior
   outstanding email-change code (single outstanding). Issuance has one durable
-  five-per-15-minute budget across direct starts and resends. Best-effort
-  delivery; returns `:ok` or `{:error, :not_found | :rate_limited}`.
+  five-per-15-minute budget across direct starts and resends. Reports the
+  delivery outcome: `{:ok, :sent}`, `{:ok, :suppressed}` (the provider won't
+  deliver to the current address), or `{:error, :not_found | :rate_limited}`.
   """
   def issue_email_change_code(new_email, %Subject{actor: %Users.User{id: id}} = subject)
       when is_binary(new_email) do
@@ -1333,16 +1334,17 @@ defmodule Emisar.Auth do
 
       case result do
         {:ok, %{user: loaded_user}} ->
-          _ =
-            Mailers.UserNotifier.deliver_email_change_code(
-              loaded_user,
-              code,
-              new_email,
-              subject.context,
-              subject.account
-            )
-
-          :ok
+          case Mailers.UserNotifier.deliver_email_change_code(
+                 loaded_user,
+                 code,
+                 new_email,
+                 subject.context,
+                 subject.account
+               ) do
+            {:ok, %{suppressed: true}} -> {:ok, :suppressed}
+            {:ok, _sent} -> {:ok, :sent}
+            {:error, reason} -> {:error, reason}
+          end
 
         {:error, reason} ->
           {:error, reason}
@@ -1355,8 +1357,10 @@ defmodule Emisar.Auth do
   the user's CURRENT row — an MFA user re-enters TOTP (`:totp`), otherwise a
   one-time code is emailed to the current address to prove inbox control
   (`:code`, issued here). Returns `{:ok, :totp | :code}` or
-  `{:error, :not_found | :rate_limited}`. The factor is the domain's call so a
-  stale MFA snapshot in the caller can't downgrade the challenge, and
+  `{:error, :not_found | :rate_limited | :delivery_suppressed}` —
+  `:delivery_suppressed` when the current address can't receive the code, so
+  the change can't proceed. The factor is the domain's call so a stale MFA
+  snapshot in the caller can't downgrade the challenge, and
   `confirm_email_change/3` re-derives it the same way.
   """
   def begin_email_change(new_email, %Subject{actor: %Users.User{id: id}} = subject)
@@ -1368,7 +1372,8 @@ defmodule Emisar.Auth do
 
         :code ->
           case do_issue_email_change_code(new_email, user, subject) do
-            :ok -> {:ok, :code}
+            {:ok, :sent} -> {:ok, :code}
+            {:ok, :suppressed} -> {:error, :delivery_suppressed}
             {:error, reason} -> {:error, reason}
           end
       end
@@ -1527,6 +1532,9 @@ defmodule Emisar.Auth do
   A user with local MFA supplies an authenticator or recovery code; otherwise a
   single-use code goes to the current inbox. The provider and purpose are bound
   into both the stored code and the short-lived proof returned by confirmation.
+  Returns `{:ok, :mfa | :email}` or
+  `{:error, :not_found | :rate_limited | :delivery_suppressed}` —
+  `:delivery_suppressed` when the current address can't receive the code.
   """
   def begin_oidc_identity_step_up(
         provider_id,
@@ -1540,21 +1548,26 @@ defmodule Emisar.Auth do
       if mfa_enabled?(user) do
         {:ok, :mfa}
       else
-        with :ok <-
-               issue_oidc_identity_step_up_code(
-                 user,
-                 provider_id,
-                 provider_name,
-                 purpose,
-                 subject
-               ) do
-          {:ok, :email}
+        case issue_oidc_identity_step_up_code(
+               user,
+               provider_id,
+               provider_name,
+               purpose,
+               subject
+             ) do
+          {:ok, :sent} -> {:ok, :email}
+          {:ok, :suppressed} -> {:error, :delivery_suppressed}
+          {:error, reason} -> {:error, reason}
         end
       end
     end
   end
 
-  @doc "Issue a replacement current-inbox code for an in-progress OIDC identity step-up."
+  @doc """
+  Issue a replacement current-inbox code for an in-progress OIDC identity step-up.
+  Returns `{:ok, :sent}`, `{:ok, :suppressed}` (the current address can't receive
+  it), or `{:error, :not_found | :rate_limited | :factor_changed}`.
+  """
   def resend_oidc_identity_step_up_code(
         provider_id,
         provider_name,
@@ -1621,17 +1634,18 @@ defmodule Emisar.Auth do
 
       case result do
         {:ok, %{user: locked_user}} ->
-          _ =
-            Mailers.UserNotifier.deliver_oidc_identity_step_up_code(
-              locked_user,
-              code,
-              provider_name,
-              purpose,
-              subject.context,
-              subject.account
-            )
-
-          :ok
+          case Mailers.UserNotifier.deliver_oidc_identity_step_up_code(
+                 locked_user,
+                 code,
+                 provider_name,
+                 purpose,
+                 subject.context,
+                 subject.account
+               ) do
+            {:ok, %{suppressed: true}} -> {:ok, :suppressed}
+            {:ok, _sent} -> {:ok, :sent}
+            {:error, reason} -> {:error, reason}
+          end
 
         {:error, reason} ->
           {:error, reason}

@@ -1,6 +1,6 @@
 defmodule Emisar.SSOIdentityLinkTest do
   use Emisar.DataCase, async: true
-  alias Emisar.{Audit, Auth, Crypto, Fixtures, Repo, SSO}
+  alias Emisar.{Audit, Auth, Crypto, Fixtures, Mail, Repo, SSO}
   alias Emisar.Auth.UserToken
   alias Emisar.SSO.{IdentityProvider, UserIdentity}
 
@@ -115,6 +115,20 @@ defmodule Emisar.SSOIdentityLinkTest do
                  Repo.reload!(enrolled)
                )
     end
+
+    test "a suppressed current address can't begin the emailed-code step-up",
+         %{user: user} = context do
+      {:ok, _suppression} = Mail.suppress(user.email, :hard_bounce, "bounce")
+
+      assert Auth.begin_oidc_identity_step_up(
+               context.provider.id,
+               context.provider.name,
+               :link,
+               context.subject
+             ) == {:error, :delivery_suppressed}
+
+      refute_received {:email, _}
+    end
   end
 
   describe "resend_oidc_identity_step_up_code/4" do
@@ -130,7 +144,7 @@ defmodule Emisar.SSOIdentityLinkTest do
 
       assert_received {:email, first_email}
 
-      assert :ok =
+      assert {:ok, :sent} =
                Auth.resend_oidc_identity_step_up_code(
                  context.provider.id,
                  context.provider.name,
@@ -154,6 +168,21 @@ defmodule Emisar.SSOIdentityLinkTest do
                  Fixtures.Auth.code_from_email(second_email),
                  context.subject
                )
+    end
+
+    test "a suppressed current address is reported, not passed off as sent",
+         %{user: user} = context do
+      {:ok, _suppression} = Mail.suppress(user.email, :hard_bounce, "bounce")
+
+      assert {:ok, :suppressed} =
+               Auth.resend_oidc_identity_step_up_code(
+                 context.provider.id,
+                 context.provider.name,
+                 :link,
+                 context.subject
+               )
+
+      refute_received {:email, _}
     end
   end
 

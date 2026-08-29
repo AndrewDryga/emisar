@@ -397,7 +397,7 @@ defmodule Emisar.AuthAuditTest do
     } do
       new = "renamed-#{System.unique_integer()}@example.test"
 
-      assert Auth.issue_email_change_code(new, subject) == :ok
+      assert Auth.issue_email_change_code(new, subject) == {:ok, :sent}
       assert_received {:email, email}
       code = Fixtures.Auth.code_from_email(email)
       assert {:ok, _updated} = Auth.confirm_email_change(new, code, subject)

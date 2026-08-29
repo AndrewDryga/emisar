@@ -213,7 +213,7 @@ defmodule EmisarWeb.ProfileLiveTest do
       subject = owner_subject(user, account)
 
       for index <- 1..5 do
-        assert Auth.issue_email_change_code("spent-#{index}@example.com", subject) == :ok
+        assert Auth.issue_email_change_code("spent-#{index}@example.com", subject) == {:ok, :sent}
         assert_received {:email, _}
       end
 

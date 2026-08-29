@@ -25,7 +25,7 @@ defmodule Emisar.AuthEmailAddressConcurrencyTest do
 
       old_confirmation = Fixtures.Auth.create_confirmation_token!(user)
 
-      assert Auth.issue_email_change_code(new_email, subject) == :ok
+      assert Auth.issue_email_change_code(new_email, subject) == {:ok, :sent}
       assert_received {:email, step_up_email}
       step_up_code = Fixtures.Auth.code_from_email(step_up_email)
 
@@ -522,7 +522,7 @@ defmodule Emisar.AuthEmailAddressConcurrencyTest do
   end
 
   defp issue_email_change_code(new_email, subject) do
-    assert Auth.issue_email_change_code(new_email, subject) == :ok
+    assert Auth.issue_email_change_code(new_email, subject) == {:ok, :sent}
     assert_receive {:email, email}, 5_000
     Fixtures.Auth.code_from_email(email)
   end
