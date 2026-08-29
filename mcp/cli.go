@@ -125,15 +125,15 @@ func (b *bridge) runCLIContext(ctx context.Context, args []string, stdin io.Read
 		return b.runToolCallContext(ctx, args[1], arguments, exactJSON, stdout, stderr)
 
 	case "list_tools":
-		return b.runListTools(len(args) == 2, stdout, stderr)
+		return b.runListTools(ctx, len(args) == 2, stdout, stderr)
 
 	case "help":
-		return b.runToolHelp(args[1], len(args) == 3, stdout, stderr)
+		return b.runToolHelp(ctx, args[1], len(args) == 3, stdout, stderr)
 
 	default:
 		callArgs, exactJSON, _ := splitCLIJSONOutputFlag(args[1:])
 		if len(callArgs) == 1 && (callArgs[0] == "-h" || callArgs[0] == "--help") {
-			return b.runToolHelp(command, exactJSON, stdout, stderr)
+			return b.runToolHelp(ctx, command, exactJSON, stdout, stderr)
 		}
 		arguments, err := readCLIArguments(command, callArgs, stdin)
 		if err != nil {
@@ -159,8 +159,8 @@ func splitCLIJSONOutputFlag(args []string) ([]string, bool, error) {
 	return args, false, nil
 }
 
-func (b *bridge) runListTools(exactJSON bool, stdout, stderr io.Writer) int {
-	tools, descriptors, code := b.fetchToolDescriptors(exactJSON, stdout, stderr)
+func (b *bridge) runListTools(ctx context.Context, exactJSON bool, stdout, stderr io.Writer) int {
+	tools, descriptors, code := b.fetchToolDescriptors(ctx, exactJSON, stdout, stderr)
 	if code != 0 {
 		return code
 	}
@@ -180,8 +180,8 @@ func (b *bridge) runListTools(exactJSON bool, stdout, stderr io.Writer) int {
 	return 0
 }
 
-func (b *bridge) runToolHelp(name string, exactJSON bool, stdout, stderr io.Writer) int {
-	_, descriptors, code := b.fetchToolDescriptors(exactJSON, stdout, stderr)
+func (b *bridge) runToolHelp(ctx context.Context, name string, exactJSON bool, stdout, stderr io.Writer) int {
+	_, descriptors, code := b.fetchToolDescriptors(ctx, exactJSON, stdout, stderr)
 	if code != 0 {
 		return code
 	}
@@ -300,8 +300,8 @@ func (b *bridge) fetchCLIInputSchema(ctx context.Context, toolName string) json.
 	return nil
 }
 
-func (b *bridge) fetchToolDescriptors(exactJSON bool, stdout, stderr io.Writer) (json.RawMessage, []json.RawMessage, int) {
-	response, _, err := b.cliRoundTrip("tools/list", "", nil)
+func (b *bridge) fetchToolDescriptors(ctx context.Context, exactJSON bool, stdout, stderr io.Writer) (json.RawMessage, []json.RawMessage, int) {
+	response, _, err := b.cliRoundTripContext(ctx, "tools/list", "", nil)
 	if err != nil {
 		return nil, nil, cliFailure(stderr, "list tools", err)
 	}
@@ -703,9 +703,21 @@ func humanJSONScalar(value any) (string, bool) {
 			limit = maxCLIHumanUnbrokenStringRunes
 		}
 		if len(runes) > limit {
-			short := string(runes[:limit])
-			if lastSpace := strings.LastIndexFunc(short, unicode.IsSpace); lastSpace >= limit/2 {
-				short = strings.TrimSpace(short[:lastSpace])
+			head := runes[:limit]
+			short := string(head)
+			// Break at the last whitespace in the kept text, but only past the
+			// halfway point. Compare RUNE positions: strings.LastIndexFunc
+			// returns a byte offset, so on multibyte text (e.g. CJK) it clears
+			// the limit/2 rune threshold far too early and discards most of the
+			// budget.
+			lastSpace := -1
+			for index, char := range head {
+				if unicode.IsSpace(char) {
+					lastSpace = index
+				}
+			}
+			if lastSpace >= limit/2 {
+				short = strings.TrimSpace(string(head[:lastSpace]))
 			}
 			safe = short + "… [truncated; use --json]"
 		}
