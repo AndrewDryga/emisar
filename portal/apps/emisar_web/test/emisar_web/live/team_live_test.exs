@@ -3246,7 +3246,7 @@ defmodule EmisarWeb.TeamLiveTest do
       # returns nil for it and each handler short-circuits without touching the DB.
       {conn, _owner, account} = register_and_log_in(conn, %{account: %{name: "GhostOrg"}})
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/team")
-      %{lv: lv, ghost_id: Ecto.UUID.generate()}
+      %{conn: conn, account: account, lv: lv, ghost_id: Ecto.UUID.generate()}
     end
 
     test "change_role on an unknown membership id is ignored", %{lv: lv, ghost_id: ghost_id} do
@@ -3281,6 +3281,21 @@ defmodule EmisarWeb.TeamLiveTest do
         })
 
       refute scopes_html =~ "Scope updated."
+    end
+
+    test "a roster event pushed from the invite route is a no-op too", %{
+      conn: conn,
+      account: account,
+      ghost_id: ghost_id
+    } do
+      # The invite and MFA-reset routes never read the roster, its security
+      # stats, or the pending-request queue, so a crafted event that consults
+      # one must stay on the page rather than take the socket down.
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/team/invite")
+
+      assert render_click(lv, "remove", %{"membership_id" => ghost_id}) =~ "Send invite"
+      assert render_click(lv, "toggle_require_mfa", %{}) =~ "Send invite"
+      assert render_click(lv, "dismiss_request", %{"id" => ghost_id}) =~ "Send invite"
     end
   end
 

@@ -32,6 +32,12 @@ defmodule EmisarWeb.TeamLive do
        socket.assigns.current_membership.pack_access_mode == :restricted
      )
      |> assign(:roles, @roles)
+     # The roster, its security stats, and the pending-request queue are read by
+     # the :index route only, but a crafted event reaches their handlers from any
+     # route — an empty default makes that a no-op instead of a dead socket.
+     |> assign(:member_facts, [])
+     |> assign(:security_facts, unavailable_security_facts())
+     |> assign(:pending_requests, [])
      |> assign(:expanded_scopes, MapSet.new())
      |> assign(:editing_id, nil)
      |> assign(:edit_form, nil)
