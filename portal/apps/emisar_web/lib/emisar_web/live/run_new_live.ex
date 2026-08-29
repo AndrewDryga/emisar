@@ -162,11 +162,7 @@ defmodule EmisarWeb.RunNewLive do
           args: args,
           opts: %{},
           reason: reason,
-          source: "operator",
-          requested_by_id: socket.assigns.current_user.id,
-          # Per-user runner ACLs (#238): pass the membership so the
-          # context can reject runners outside the operator's scope.
-          requested_by_membership_id: socket.assigns.current_membership.id
+          source: "operator"
         }
 
         case Runs.dispatch_run(attrs, socket.assigns.current_subject) do
