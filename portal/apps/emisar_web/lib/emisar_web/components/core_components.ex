@@ -609,6 +609,7 @@ defmodule EmisarWeb.CoreComponents do
   attr :groups, :list, required: true
   attr :blank_label, :string, default: nil
   attr :source, :string, default: nil
+  attr :on_open, :any, default: nil
   attr :disabled, :boolean, default: false
   attr :active?, :boolean, default: false
   attr :size, :atom, default: :md, values: [:sm, :md]
@@ -628,6 +629,7 @@ defmodule EmisarWeb.CoreComponents do
       <button
         type="button"
         data-combobox-trigger
+        phx-click={@on_open}
         disabled={@disabled}
         aria-label={@aria_label}
         class={[

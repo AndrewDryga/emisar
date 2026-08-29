@@ -45,15 +45,14 @@ func TestRemotePortalCommandQuotesArguments(t *testing.T) {
 
 func TestParseDatabaseOptions(t *testing.T) {
 	options, err := parseDatabaseOptions([]string{
-		"--host", "portal-a", "--port", "15433", "--user", "ops@example.com",
+		"--host", "portal-a", "--port", "15433",
 		"--psql", "--", "--command=select 1",
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if options.host != "portal-a" || options.port != 15433 ||
-		options.user != "ops@example.com" || !options.psql ||
-		!reflect.DeepEqual(options.psqlArgs, []string{"--command=select 1"}) {
+		!options.psql || !reflect.DeepEqual(options.psqlArgs, []string{"--command=select 1"}) {
 		t.Fatalf("unexpected options: %#v", options)
 	}
 }
@@ -68,6 +67,39 @@ func TestPosticoURLQuotesTheIAMUser(t *testing.T) {
 	got := posticoURL("project:region:emisar", "ops@example.com", 15432)
 	if !strings.HasPrefix(got, "postico://ops%40example.com@127.0.0.1:15432/emisar?") {
 		t.Fatalf("Postico URL did not quote IAM user: %s", got)
+	}
+}
+
+func TestDatabaseProxyUsesManualIAMForPsql(t *testing.T) {
+	got := databaseProxyArgs("project:region:emisar", 15432, false)
+	want := []string{
+		"--private-ip", "--run-connection-test",
+		"--address=127.0.0.1", "--port=15432", "project:region:emisar",
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("proxy args = %v, want %v", got, want)
+	}
+}
+
+func TestDatabaseProxyUsesAutomaticIAMForLongLivedClients(t *testing.T) {
+	got := databaseProxyArgs("project:region:emisar", 15432, true)
+	want := []string{
+		"--private-ip", "--run-connection-test", "--auto-iam-authn",
+		"--address=127.0.0.1", "--port=15432", "project:region:emisar",
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("proxy args = %v, want %v", got, want)
+	}
+}
+
+func TestDatabaseProxyUsesTokenMintedBeforeThePrivateRoute(t *testing.T) {
+	got := databaseProxyEnv(15433, "connector-token")
+	want := map[string]string{
+		"ALL_PROXY":        "socks5://127.0.0.1:15433",
+		"CSQL_PROXY_TOKEN": "connector-token",
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("proxy env = %v, want %v", got, want)
 	}
 }
 

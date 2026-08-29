@@ -402,13 +402,14 @@ defmodule Emisar.Repo do
   defp count_for(true, queryable),
     do: {__MODULE__.aggregate(queryable, :count, :id), :exact}
 
-  # Above this many estimated rows an exact aggregate is a scan worth avoiding;
-  # at or below it counting is cheap (~7ms at 11.6k rows) and worth being exact
-  # about. Nearly every account lives below it and sees a real number. Read
-  # through the Config seam so a test can drive the estimated branch without
-  # inserting fifty thousand rows.
+  # Above this many estimated rows an exact aggregate is a scan worth avoiding.
+  # Production showed that a cold 31k-row audit count can spend ~0.5s reading
+  # an otherwise correct account index, while a freshly vacuumed copy takes
+  # ~8ms. Keep small views exact and make larger, cache-sensitive views honest
+  # estimates. Read through the Config seam so a test can drive the estimated
+  # branch without inserting ten thousand rows.
   defp exact_count_ceiling,
-    do: Emisar.Config.get_env(:emisar, :exact_count_ceiling, 50_000)
+    do: Emisar.Config.get_env(:emisar, :exact_count_ceiling, 10_000)
 
   # The planner's row estimate for THIS query — account scope and all. A
   # table-wide `pg_class.reltuples` would be wrong here: every list is scoped to

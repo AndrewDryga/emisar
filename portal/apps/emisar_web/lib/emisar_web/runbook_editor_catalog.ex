@@ -98,24 +98,6 @@ defmodule EmisarWeb.RunbookEditorCatalog do
   def targets_resolved?(projection, refs, selection),
     do: match?({:ok, _targets}, Runbooks.editor_target_runners(projection, refs, selection))
 
-  @doc "Action choices the domain reports as eligible on every selected target."
-  def action_options(projection, refs, selection, selected_value) do
-    options =
-      projection
-      |> Runbooks.editor_actions(refs, selection)
-      |> Enum.map(&action_option/1)
-      |> Enum.sort_by(& &1.label)
-
-    if selected_value in [nil, ""] or Enum.any?(options, &(&1.value == selected_value)) do
-      options
-    else
-      [
-        unavailable_action_option(selected_value, targets_resolved?(projection, refs, selection))
-        | options
-      ]
-    end
-  end
-
   @doc """
   The eligible action choices for one target set, grouped by pack — the shared
   option-pool shape every step with the same targets renders once. Selection
@@ -130,8 +112,10 @@ defmodule EmisarWeb.RunbookEditorCatalog do
     |> group_action_options()
   end
 
-  @doc "The stable DOM id of one action option pool, derived from its content."
-  def action_pool_id(groups), do: "runbook-action-pool-#{:erlang.phash2(groups)}"
+  @doc "The stable DOM id of the action pool for one target selection in this editor mount."
+  def action_pool_id(refs, selection) when is_list(refs) do
+    "runbook-action-pool-#{:erlang.phash2({Enum.sort(refs), selection})}"
+  end
 
   @doc """
   The per-step extra option group: the saved choice when the current targets no

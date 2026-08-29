@@ -677,7 +677,11 @@ defmodule EmisarWeb.PacksLiveTest do
       # Trust affordance — instead of vanishing from the list.
       assert has_element?(lv, "#packs li", "acme-tools")
       assert has_element?(lv, "#packs li", "Rejected — dispatch refuses this version")
-      assert has_element?(lv, "#trust-#{pack_version.id}")
+
+      assert has_element?(
+               lv,
+               ~s([phx-click="open_pack_action"][phx-value-action="trust"][phx-value-id="#{pack_version.id}"])
+             )
     end
 
     test "a rejected version can be trusted again from its quiet row", %{
@@ -689,7 +693,13 @@ defmodule EmisarWeb.PacksLiveTest do
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/packs")
       render_click(lv, "reject", %{"id" => pack_version.id})
 
-      html = render_click(lv, "trust", %{"id" => pack_version.id})
+      lv
+      |> element(
+        ~s([phx-click="open_pack_action"][phx-value-action="trust"][phx-value-id="#{pack_version.id}"])
+      )
+      |> render_click()
+
+      html = confirm_dialog(lv, "pack-action", "Trust pack")
 
       assert html =~ "Trusted acme-tools v9.9."
       refute has_element?(lv, "#packs li", "Rejected — dispatch refuses this version")
@@ -1191,13 +1201,18 @@ defmodule EmisarWeb.PacksLiveTest do
       {:ok, trusted} = Emisar.Catalog.trust_pack_version(pack_version.id, subject)
 
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/packs")
-      assert has_element?(lv, "#revoke-#{trusted.id}")
 
-      html = render_click(lv, "revoke_trust", %{"id" => trusted.id})
+      selector =
+        ~s([phx-click="open_pack_action"][phx-value-action="revoke_trust"][phx-value-id="#{trusted.id}"])
+
+      assert has_element?(lv, selector)
+
+      lv |> element(selector) |> render_click()
+      html = confirm_dialog(lv, "pack-action", "Revoke trust")
 
       assert html =~ "Revoked trust in acme-tools v9.9."
       assert has_element?(lv, "#packs li", "Rejected — dispatch refuses this version")
-      refute has_element?(lv, "#revoke-#{trusted.id}")
+      refute has_element?(lv, selector)
     end
 
     test "a viewer's crafted revoke-trust event is denied", %{account: account} do
@@ -1227,9 +1242,16 @@ defmodule EmisarWeb.PacksLiveTest do
       pack_version = observe_pending_pack!(account)
 
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/packs")
-      assert has_element?(lv, "#delete-version-#{pack_version.id}")
 
-      html = render_click(lv, "delete_version", %{"id" => pack_version.id})
+      selector =
+        ~s([phx-click="open_pack_action"][phx-value-action="delete_version"][phx-value-id="#{pack_version.id}"])
+
+      assert has_element?(lv, selector)
+      refute has_element?(lv, "#pack-action")
+
+      lv |> element(selector) |> render_click()
+      assert has_element?(lv, "#pack-action")
+      html = confirm_dialog(lv, "pack-action", "Delete version")
 
       assert html =~ "Deleted acme-tools v9.9."
       assert html =~ "re-insert it as a fresh trust decision"
@@ -1243,9 +1265,14 @@ defmodule EmisarWeb.PacksLiveTest do
       _pack_version = observe_pending_pack!(account)
 
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/packs")
-      assert has_element?(lv, "#delete-pack-acme-tools")
 
-      html = render_click(lv, "delete_pack", %{"pack_id" => "acme-tools"})
+      selector =
+        ~s([phx-click="open_pack_action"][phx-value-action="delete_pack"][phx-value-pack-id="acme-tools"])
+
+      assert has_element?(lv, selector)
+
+      lv |> element(selector) |> render_click()
+      html = confirm_dialog(lv, "pack-action", "Delete pack")
 
       assert html =~ "Deleted acme-tools (1 version)."
       refute has_element?(lv, "#packs li", "acme-tools")
@@ -1268,8 +1295,22 @@ defmodule EmisarWeb.PacksLiveTest do
       {:ok, lv, _html} =
         build_conn() |> log_in_user(viewer) |> live(~p"/app/#{account}/packs")
 
-      refute has_element?(lv, "#delete-version-#{pack_version.id}")
-      refute has_element?(lv, "#delete-pack-acme-tools")
+      refute has_element?(
+               lv,
+               ~s([phx-click="open_pack_action"][phx-value-action="delete_version"][phx-value-id="#{pack_version.id}"])
+             )
+
+      refute has_element?(
+               lv,
+               ~s([phx-click="open_pack_action"][phx-value-action="delete_pack"][phx-value-pack-id="acme-tools"])
+             )
+
+      render_click(lv, "open_pack_action", %{
+        "action" => "delete_version",
+        "id" => pack_version.id
+      })
+
+      refute has_element?(lv, "#pack-action")
 
       html = render_click(lv, "delete_version", %{"id" => pack_version.id})
       assert html =~ "Admin required to delete packs."

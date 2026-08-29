@@ -650,6 +650,15 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
               selected_label={@action_selected_label}
               groups={@action_groups}
               source={@action_pool_id}
+              on_open={
+                JS.push("load_action_pool",
+                  value: %{
+                    stage: @stage_index,
+                    step: @step_index,
+                    source: @action_pool_id
+                  }
+                )
+              }
               blank_label={if @step["target_refs"] == [], do: nil, else: "Choose action…"}
               disabled={@read_only? or not @targets_resolved?}
               class="mt-2"
@@ -988,7 +997,6 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
     {_pack, action_id} = RunbookEditorCatalog.split_action_value(assigns.action_choice)
 
     assigns
-    |> assign(:action_options, [])
     |> assign(:target_options, [])
     |> assign(:targets_resolved?, false)
     |> assign(:action_error?, false)
@@ -1001,10 +1009,9 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
     )
   end
 
-  # The shared pool carries the whole eligible catalog for this step's target
-  # set — one copy per DISTINCT set on the page (see `action_pools/1`), cloned
-  # into the panel client-side on first open. The picker itself ships only its
-  # per-step delta: the saved-but-unavailable choice, when there is one.
+  # The lazy shared pool carries the whole eligible catalog for this step's
+  # target set. The initial picker ships only its stable pool id and per-step
+  # delta: the saved-but-unavailable choice, when there is one.
   defp assign_step_pickers(assigns) do
     refs = assigns.step["target_refs"]
     selection = assigns.step["target_selection"]
@@ -1013,31 +1020,25 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
     targets_resolved? =
       RunbookEditorCatalog.targets_resolved?(assigns.catalog, refs, selection)
 
-    action_available? =
-      RunbookEditorCatalog.action_available?(assigns.catalog, refs, selection, choice)
-
-    action_options = RunbookEditorCatalog.action_options(assigns.catalog, refs, selection, choice)
-    pool_groups = RunbookEditorCatalog.action_option_groups(assigns.catalog, refs, selection)
-
     extra_groups =
       RunbookEditorCatalog.unavailable_action_groups(assigns.catalog, refs, selection, choice)
 
-    selected = Enum.find(action_options, &(&1.value == choice))
+    action_available? = choice != "" and extra_groups == []
+
+    {_pack_id, action_id} = RunbookEditorCatalog.split_action_value(choice)
 
     selected_label =
       cond do
         choice == "" and refs == [] -> "Choose targets first"
         choice == "" -> "Choose action…"
-        selected && selected[:unavailable] -> "Unavailable · #{selected.label}"
-        selected -> selected.label
-        true -> elem(RunbookEditorCatalog.split_action_value(choice), 1)
+        targets_resolved? and extra_groups != [] -> "Unavailable · #{action_id}"
+        true -> action_id
       end
 
-    pool_id = RunbookEditorCatalog.action_pool_id(pool_groups)
+    pool_id = RunbookEditorCatalog.action_pool_id(refs, selection)
     picker_key = :erlang.phash2({choice, pool_id, extra_groups})
 
     assigns
-    |> assign(:action_options, action_options)
     |> assign(
       :target_options,
       RunbookEditorCatalog.target_options(assigns.catalog, refs, selection)
@@ -1054,36 +1055,17 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
   end
 
   @doc """
-  The distinct shared action-option pools the current draft's steps reference.
+  The one action-option pool requested by an open picker.
 
-  Render once near the editor form; every step whose combobox names a pool id
-  clones its options from here on first open, so a ten-step runbook over one
-  fleet ships the eligible catalog once instead of ten times.
+  The initial editor ships no catalog options. Opening a picker asks the
+  LiveView for its current target set's pool, and every picker naming that same
+  target-derived id can clone it without another copy.
   """
-  attr :draft, :map, required: true
-  attr :catalog, :map, required: true
+  attr :pool, :any, default: nil
 
-  def action_pools(assigns) do
-    # Only steps whose picker is actually reachable — a collapsed step ships
-    # no pool; expanding one is already a server round-trip, so its pool
-    # arrives with the expanded render.
-    pools =
-      for stage <- assigns.draft["stages"] || [],
-          step <- stage["steps"] || [],
-          step["collapsed"] != "true",
-          uniq: true do
-        {step["target_refs"], step["target_selection"]}
-      end
-      |> Enum.map(fn {refs, selection} ->
-        RunbookEditorCatalog.action_option_groups(assigns.catalog, refs, selection)
-      end)
-      |> Enum.uniq()
-      |> Enum.map(&{RunbookEditorCatalog.action_pool_id(&1), &1})
-
-    assigns = assign(assigns, :pools, pools)
-
+  def action_pool(assigns) do
     ~H"""
-    <.searchable_select_pool :for={{pool_id, groups} <- @pools} id={pool_id} groups={groups} />
+    <.searchable_select_pool :if={@pool} id={@pool.id} groups={@pool.groups} />
     """
   end
 

@@ -130,6 +130,7 @@ defmodule EmisarWeb.RunbookEditorLive do
     socket
     |> assign(:catalog, %Runbooks.EditorProjection{})
     |> assign(:catalog_load_error?, false)
+    |> assign(:action_pool, nil)
   end
 
   defp load_catalog_and_validate(socket) do
@@ -175,6 +176,35 @@ defmodule EmisarWeb.RunbookEditorLive do
        |> validate_and_preview()}
     end
   end
+
+  def handle_event(
+        "load_action_pool",
+        %{"stage" => stage_index, "step" => step_index, "source" => source},
+        socket
+      ) do
+    stage = Enum.at(socket.assigns.draft["stages"], safe_index(stage_index))
+    step = stage && Enum.at(stage["steps"], safe_index(step_index))
+
+    if is_map(step) and is_binary(source) and
+         source ==
+           RunbookEditorCatalog.action_pool_id(
+             step["target_refs"],
+             step["target_selection"]
+           ) do
+      groups =
+        RunbookEditorCatalog.action_option_groups(
+          socket.assigns.catalog,
+          step["target_refs"],
+          step["target_selection"]
+        )
+
+      {:noreply, assign(socket, :action_pool, %{id: source, groups: groups})}
+    else
+      {:noreply, socket}
+    end
+  end
+
+  def handle_event("load_action_pool", _params, socket), do: {:noreply, socket}
 
   def handle_event("add_input", _params, socket) do
     mutate(socket, &append_input/1)

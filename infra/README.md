@@ -237,9 +237,10 @@ notebooks and Livebook configuration persist on `/data`.
 operator route requires a valid IAP assertion.
 
 The local Cloud SQL Auth Proxy logs in as the dedicated Livebook service account
-and Cloud SQL assigns it `emisar_owner`. `DATABASE_URL` and standard `PG*`
-variables are available inside notebooks; there is no database password.
-Analysis connections must retain the read-only defaults exposed by the runtime:
+and Cloud SQL assigns it `emisar_owner` plus read-only `pg_read_all_stats` for
+statement diagnostics. `DATABASE_URL` and standard `PG*` variables are available
+inside notebooks; there is no database password. Analysis connections must
+retain the read-only defaults exposed by the runtime:
 
 ```elixir
 Mix.install([
@@ -358,31 +359,56 @@ Terraform workspace variable `database_operator_iam_user` to one lowercase
 Google user email. Terraform provisions that identity as a Cloud SQL IAM user,
 grants connector login only on the `emisar` instance, grants the project-level
 console discovery permissions Cloud SQL Studio requires, and assigns the
-non-superuser `emisar_owner` database role. The database principal itself exists
-only on `emisar`. Cloud SQL Studio is the browser-based path: select the `emisar`
-database and IAM authentication in the instance's Studio view; there is no
-database password.
+non-superuser `emisar_owner` and read-only `pg_read_all_stats` database roles.
+The Portal runtime does not receive the statistics role. The database principal
+itself exists only on `emisar`. Cloud SQL Studio is the browser-based path:
+select the `emisar` database and IAM authentication in the instance's Studio
+view; there is no database password.
 
-For a local session from an operator workstation, authenticate both gcloud and
-Application Default Credentials as that provisioned user, then run the database
-helper:
+For a local psql session from an operator workstation, authenticate gcloud as
+that provisioned user, then run the database helper:
+
+```bash
+gcloud auth login
+./run ops database --psql              # interactive psql
+./run ops database --psql -- --command='select current_user;'
+```
+
+For a long-lived Postico 2 or `--proxy-only` session, automatic IAM token
+refresh requires matching Application Default Credentials:
 
 ```bash
 gcloud auth application-default login
-./run ops database                     # Postico 2
-./run ops database --psql              # interactive psql
-./run ops database --psql -- --command='select current_user;'
+./run ops database
 ```
 
 The helper selects a running portal VM, opens a local SOCKS5 route to it through
 IAP and OS Login, and sends the local Cloud SQL Auth Proxy's private-IP traffic
 through that route. The Auth Proxy still runs on the workstation under the
-operator's ADC identity, so automatic IAM database authentication and pgAudit
-attribution remain personal; the portal VM supplies network reachability only.
+active gcloud identity for psql or matching ADC for a long-lived client, so IAM
+database authentication and pgAudit attribution remain personal; the portal VM
+supplies network reachability only.
 By default the helper opens Postico 2 and keeps the tunnel alive until Ctrl-C.
 Use `--psql` for a terminal client, or `--proxy-only` to print local connection
 settings for another client and keep the tunnel open. The database remains
 private-only.
+
+`pg_stat_statements` is installed in the production database for cumulative
+query-cost evidence. Query it through the attributable operator session; keep
+the reset timestamp beside every capture so old query fingerprints are not
+mistaken for current traffic:
+
+```sql
+SELECT stats_reset FROM pg_stat_statements_info;
+
+SELECT queryid, calls,
+       round(total_exec_time::numeric, 1) AS total_ms,
+       round(mean_exec_time::numeric, 1) AS mean_ms,
+       rows, query
+FROM pg_stat_statements
+ORDER BY total_exec_time DESC
+LIMIT 25;
+```
 
 The built-in `emisar` principal remains because it owns pgAudit's protected
 event triggers. Terraform gives it a generated apply-only password that is

@@ -22,7 +22,6 @@ Options:
   --project PROJECT   GCP project
   --host NAME         Portal VM used for private routing
   --port PORT         local PostgreSQL port; defaults from 15432
-  --user EMAIL        Cloud SQL IAM user matching ADC
   --psql              open psql instead of Postico 2
   --proxy-only        keep the tunnel open without starting a client
 `
@@ -42,11 +41,10 @@ type databaseOptions struct {
 func parseDatabaseOptions(args []string) (databaseOptions, error) {
 	options := databaseOptions{
 		project: os.Getenv("EMISAR_GCP_PROJECT"),
-		user:    os.Getenv("EMISAR_DATABASE_USER"),
 	}
 	for len(args) > 0 {
 		switch args[0] {
-		case "--project", "--host", "--port", "--user":
+		case "--project", "--host", "--port":
 			if len(args) < 2 {
 				return options, usage("%s requires a value", args[0])
 			}
@@ -56,8 +54,6 @@ func parseDatabaseOptions(args []string) (databaseOptions, error) {
 				options.project = value
 			case "--host":
 				options.host = value
-			case "--user":
-				options.user = value
 			case "--port":
 				port, err := strconv.Atoi(value)
 				if err != nil {
@@ -84,9 +80,6 @@ func parseDatabaseOptions(args []string) (databaseOptions, error) {
 	}
 	if options.port != 0 && (options.port < 1024 || options.port > 65534) {
 		return options, usage("port must be between 1024 and 65534")
-	}
-	if options.user != "" && !emailAddress.MatchString(options.user) {
-		return options, usage("user must be a Google account email address")
 	}
 	if options.proxyOnly && options.psql {
 		return options, usage("--proxy-only cannot be combined with --psql")
@@ -166,6 +159,23 @@ func posticoURL(connectionName, user string, port int) string {
 	return target.String()
 }
 
+func databaseProxyArgs(connectionName string, port int, automaticIAM bool) []string {
+	args := []string{"--private-ip", "--run-connection-test"}
+	if automaticIAM {
+		args = append(args, "--auto-iam-authn")
+	}
+	return append(args,
+		"--address=127.0.0.1", fmt.Sprintf("--port=%d", port), connectionName)
+}
+
+func databaseProxyEnv(socksPort int, accessToken string) map[string]string {
+	env := map[string]string{"ALL_PROXY": fmt.Sprintf("socks5://127.0.0.1:%d", socksPort)}
+	if accessToken != "" {
+		env["CSQL_PROXY_TOKEN"] = accessToken
+	}
+	return env
+}
+
 func (a *App) databaseInventory(ctx context.Context, project string) ([]instance, error) {
 	output, err := a.output(ctx, a.Root, nil, "gcloud", "compute", "instances", "list",
 		"--project="+project, "--filter=labels.cluster_name=emisar AND status=RUNNING",
@@ -243,23 +253,23 @@ func (a *App) database(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
-	if options.user == "" {
-		output, err := a.output(ctx, a.Root, nil, "gcloud", "auth", "list",
-			"--filter=status:ACTIVE", "--format=value(account)")
-		if err != nil {
-			return err
-		}
-		accounts := lines(output)
-		if len(accounts) == 0 {
-			return fmt.Errorf("no active gcloud account; run gcloud auth login")
-		}
-		options.user = accounts[0]
+	output, err := a.output(ctx, a.Root, nil, "gcloud", "auth", "list",
+		"--filter=status:ACTIVE", "--format=value(account)")
+	if err != nil {
+		return err
 	}
+	accounts := lines(output)
+	if len(accounts) == 0 {
+		return fmt.Errorf("no active gcloud account; run gcloud auth login")
+	}
+	options.user = accounts[0]
 	if !emailAddress.MatchString(options.user) {
-		return fmt.Errorf("active gcloud account is not a user email; pass --user explicitly")
+		return fmt.Errorf("active gcloud account is not a user email; run gcloud auth login with the database operator")
 	}
-	if _, err := a.output(ctx, a.Root, nil, "gcloud", "auth", "application-default", "print-access-token"); err != nil {
-		return fmt.Errorf("no Application Default Credentials; run gcloud auth application-default login as %s", options.user)
+	if !options.psql {
+		if _, err := a.output(ctx, a.Root, nil, "gcloud", "auth", "application-default", "print-access-token"); err != nil {
+			return fmt.Errorf("no Application Default Credentials; run gcloud auth application-default login as %s", options.user)
+		}
 	}
 	users, err := a.output(ctx, a.Root, nil, "gcloud", "sql", "users", "list",
 		"--project="+options.project, "--instance=emisar", "--filter=type=CLOUD_IAM_USER",
@@ -293,6 +303,23 @@ func (a *App) database(ctx context.Context, args []string) error {
 	if connectionName == "" {
 		return fmt.Errorf("no Cloud SQL instance emisar in project %s", options.project)
 	}
+	var accessToken, loginToken string
+	if options.psql {
+		accessOutput, err := a.output(ctx, a.Root, nil, "gcloud", "auth", "print-access-token")
+		if err != nil {
+			return fmt.Errorf("generating Cloud SQL connector token: %w", err)
+		}
+		loginOutput, err := a.output(ctx, a.Root, nil, "gcloud", "sql", "generate-login-token",
+			"--instance=emisar", "--project="+options.project)
+		if err != nil {
+			return fmt.Errorf("generating Cloud SQL login token: %w", err)
+		}
+		accessToken = strings.TrimSpace(string(accessOutput))
+		loginToken = strings.TrimSpace(string(loginOutput))
+		if accessToken == "" || loginToken == "" {
+			return fmt.Errorf("gcloud returned an empty Cloud SQL token")
+		}
+	}
 	if options.port == 0 {
 		options.port, err = freePort(15432)
 		if err != nil {
@@ -321,10 +348,9 @@ func (a *App) database(ctx context.Context, args []string) error {
 	}
 
 	fmt.Fprintf(a.Err, "Starting Cloud SQL Auth Proxy on 127.0.0.1:%d...\n", options.port)
-	proxy := a.command(ctx, a.Root, map[string]string{
-		"ALL_PROXY": fmt.Sprintf("socks5://127.0.0.1:%d", socksPort),
-	}, "cloud-sql-proxy", "--private-ip", "--auto-iam-authn", "--run-connection-test",
-		"--address=127.0.0.1", fmt.Sprintf("--port=%d", options.port), connectionName)
+	proxyEnv := databaseProxyEnv(socksPort, accessToken)
+	proxy := a.command(ctx, a.Root, proxyEnv,
+		"cloud-sql-proxy", databaseProxyArgs(connectionName, options.port, !options.psql)...)
 	proxy.Stdin = nil
 	proxyProcess, err := startBackground(proxy)
 	if err != nil {
@@ -355,7 +381,7 @@ Password: none (automatic IAM authentication)
 			"--dbname=emisar", "--username="+options.user, "--no-password")
 		return a.run(ctx, a.Root, map[string]string{
 			"PGAPPNAME": "emisar-database-helper", "PGCONNECT_TIMEOUT": "15",
-			"PGPASSWORD": "", "PGSSLMODE": "disable",
+			"PGPASSWORD": loginToken, "PGSSLMODE": "disable",
 		}, "psql", psqlArgs...)
 	}
 

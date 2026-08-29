@@ -764,7 +764,6 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
           ["draft", "stages", "0", "steps", "0", "action_choice"]
         )
 
-      assert html =~ "linux-core"
       refute html =~ "Version requirement"
 
       assert has_element?(
@@ -772,12 +771,32 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
                ~s(input[type="hidden"][name="draft[stages][0][steps][0][action_choice]"][value=""])
              )
 
-      # The eligible options live in the step's shared pool template, whose
-      # content a spec-conform parser keeps out of the element tree — so the
-      # markup is asserted on the page source instead of via a selector.
+      # The initial editor names the target-derived pool but does not ship
+      # the catalog. The browser asks for it only when this picker opens.
       html = render(lv)
-      assert html =~ ~s(data-value="linux-core|linux.uptime")
       assert html =~ ~s(data-combobox-source="runbook-action-pool-)
+      refute html =~ ~s(data-value="linux-core|linux.uptime")
+      refute html =~ ~s(<template id="runbook-action-pool-)
+
+      [source] = Regex.run(~r/data-combobox-source="([^"]+)"/, html, capture: :all_but_first)
+
+      html =
+        render_hook(lv, "load_action_pool", %{
+          "stage" => "0",
+          "step" => "0",
+          "source" => "runbook-action-pool-forged"
+        })
+
+      refute html =~ ~s(<template id="runbook-action-pool-)
+
+      html =
+        render_hook(lv, "load_action_pool", %{
+          "stage" => "0",
+          "step" => "0",
+          "source" => source
+        })
+
+      assert html =~ ~s(data-value="linux-core|linux.uptime")
       assert html =~ ~s(<template id="runbook-action-pool-)
     end
 
@@ -2099,7 +2118,7 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
         MapSet.new(
           Map.keys(structural) ++
             ["save", "review_publish", "publish", "discard_draft", "delete"] ++
-            ["cancel_publish", "toggle_panel", "toggle_step"]
+            ["cancel_publish", "toggle_panel", "toggle_step", "load_action_pool"]
         )
 
       assert MapSet.equal?(declared, classified),

@@ -151,7 +151,7 @@ resource "google_sql_user" "database_operator" {
   name           = var.database_operator_iam_user
   instance       = google_sql_database_instance.emisar.name
   type           = "CLOUD_IAM_USER"
-  database_roles = ["emisar_owner"]
+  database_roles = ["emisar_owner", "pg_read_all_stats"]
 
   lifecycle {
     prevent_destroy = true
@@ -165,7 +165,8 @@ resource "google_sql_user" "database_operator" {
 
 # This is intentionally an admin/debug principal. It inherits the same
 # application-owner role as the portal because the shared Erlang cookie already
-# grants equivalent production-code authority; notebook connections still set
+# grants equivalent production-code authority; pg_read_all_stats makes
+# statement-level diagnostics visible, while notebook connections still set
 # read-only session defaults to prevent accidental writes during analysis.
 resource "google_sql_user" "livebook" {
   count = var.livebook_enabled && var.database_owner_role_ready ? 1 : 0
@@ -173,7 +174,7 @@ resource "google_sql_user" "livebook" {
   name           = trimsuffix(google_service_account.livebook[0].email, ".gserviceaccount.com")
   instance       = google_sql_database_instance.emisar.name
   type           = "CLOUD_IAM_SERVICE_ACCOUNT"
-  database_roles = ["emisar_owner"]
+  database_roles = ["emisar_owner", "pg_read_all_stats"]
 
   lifecycle {
     prevent_destroy = true

@@ -35,10 +35,11 @@ import {Tooltip} from "./tooltip.js"
 //   - "absolute" → "May 30, 14:59 (your time)" / "May 30, 2027, 14:59"
 //   - "relative" → "3m ago" / "Jul 14"
 
-// Searchable filter combobox (LiveTable `%Filter{search: true}`). The server
-// renders the full option list; this hook is pure client behavior — open/close,
-// type-to-filter over data-search, and selection (write the hidden input, fire
-// the form's change). The root is phx-update="ignore" with a VALUE-KEYED id:
+// Searchable filter combobox (LiveTable `%Filter{search: true}` and runbook
+// action pickers). The server renders options inline or into a lazy shared pool;
+// this hook owns open/close, type-to-filter over data-search, and selection
+// (write the hidden input, fire the form's change). The root is phx-update="ignore"
+// with a VALUE-KEYED id:
 // unrelated live re-renders leave an open panel + query alone, and an actual
 // value change replaces the whole node with a fresh server render.
 const Combobox = {
@@ -71,6 +72,7 @@ const Combobox = {
 
   destroyed() {
     document.removeEventListener("click", this.onDocClick)
+    this.poolObserver?.disconnect()
     this.untrack()
   },
 
@@ -86,12 +88,12 @@ const Combobox = {
   // options clone in from the pool's <template> the first time it opens, and
   // this instance's selected state applies here because the pool is shared.
   hydrate() {
-    if (this.hydrated) return
-    this.hydrated = true
+    if (this.hydrated) return true
     const sourceId = this.el.dataset.comboboxSource
-    if (!sourceId) return
+    if (!sourceId) return true
     const pool = document.getElementById(sourceId)
-    if (!pool || !this.list) return
+    if (!pool || !this.list) return false
+    this.hydrated = true
     this.list.appendChild(pool.content.cloneNode(true))
     const known = new Set(this.options)
     const all = Array.from(this.el.querySelectorAll("[data-combobox-option]"))
@@ -103,12 +105,24 @@ const Combobox = {
       selected.setAttribute("aria-selected", "true")
       selected.classList.add("bg-white/[0.06]", "text-zinc-100")
     }
+    return true
+  },
+
+  watchForPool() {
+    if (this.hydrate() || this.poolObserver) return
+    this.poolObserver = new MutationObserver(() => {
+      if (!this.hydrate()) return
+      this.poolObserver.disconnect()
+      this.poolObserver = null
+      this.filter()
+    })
+    this.poolObserver.observe(document.body, {childList: true, subtree: true})
   },
 
   toggle() { this.panel.hidden ? this.open() : this.close() },
 
   open() {
-    this.hydrate()
+    this.watchForPool()
     this.search.value = ""
     this.filter()
     this.panel.hidden = false
@@ -624,7 +638,8 @@ const CloseTab = {
 // leave the tab — never a URL, socket error, rendered content, or account id.
 const portalPerformanceQueue = []
 let portalTransport = "websocket"
-let portalNavigationStartedAt = null
+let portalNavigation = null
+let portalNavigationGeneration = 0
 const portalSocketStartedAt = performance.now()
 
 const queuePortalPerformance = (report) => {
@@ -685,20 +700,35 @@ let liveSocket = new LiveSocket("/live", Socket, {
 // Show progress bar on live navigation and form submits
 topbar.config({barColors: {0: "#36e6a5"}, shadowColor: "rgba(0, 0, 0, .3)"})
 window.addEventListener("phx:page-loading-start", _info => {
-  portalNavigationStartedAt = performance.now()
+  portalNavigationGeneration += 1
+  portalNavigation = document.visibilityState === "visible"
+    ? {startedAt: performance.now(), generation: portalNavigationGeneration}
+    : null
   topbar.show(300)
 })
 window.addEventListener("phx:page-loading-stop", _info => {
   topbar.hide()
-  if (portalNavigationStartedAt == null) return
+  const navigation = portalNavigation
+  portalNavigation = null
+  if (navigation == null || document.visibilityState !== "visible") return
 
-  queuePortalPerformance({
-    kind: "navigation",
-    duration_ms: Math.round(performance.now() - portalNavigationStartedAt),
-    dom_bytes: new Blob([document.documentElement.outerHTML]).size,
-    transport: portalTransport
-  })
-  portalNavigationStartedAt = null
+  const durationMs = Math.round(performance.now() - navigation.startedAt)
+  requestAnimationFrame(() => requestAnimationFrame(() => {
+    if (document.visibilityState !== "visible" ||
+        navigation.generation !== portalNavigationGeneration) return
+
+    queuePortalPerformance({
+      kind: "navigation",
+      duration_ms: durationMs,
+      dom_bytes: new Blob([document.documentElement.outerHTML]).size,
+      transport: portalTransport
+    })
+  }))
+})
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible") return
+  portalNavigation = null
+  portalNavigationGeneration += 1
 })
 
 // connect if there are any LiveViews on the page

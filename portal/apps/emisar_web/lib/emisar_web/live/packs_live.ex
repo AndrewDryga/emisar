@@ -42,7 +42,11 @@ defmodule EmisarWeb.PacksLive do
     # pack rows live in a `phx-update="stream"` (static once pushed), so the
     # dialog can't live per-row — instead one page-level dialog reads the pack
     # being rejected from `@reject_target`, set by the `open_reject` event.
-    socket = socket |> ConfirmDialog.init() |> assign(:reject_target, nil)
+    socket =
+      socket
+      |> ConfirmDialog.init()
+      |> assign(:reject_target, nil)
+      |> assign(:pending_pack_action, nil)
 
     # Two filters narrow the list. `name_filter` searches pack id AND action id
     # (so "postgres.activity" surfaces the postgres pack); `risk_filter` keeps
@@ -447,6 +451,17 @@ defmodule EmisarWeb.PacksLive do
   def handle_event("confirm_reset", _params, socket),
     do: {:noreply, ConfirmDialog.reset(socket)}
 
+  def handle_event("open_pack_action", %{"action" => action} = params, socket) do
+    if Catalog.subject_can_manage_packs?(socket.assigns.current_subject) do
+      case pending_pack_action(socket, action, params) do
+        {:ok, pending} -> {:noreply, assign(socket, :pending_pack_action, pending)}
+        :error -> {:noreply, socket}
+      end
+    else
+      {:noreply, socket}
+    end
+  end
+
   # The "View contents" disclosure toggled. Track the open state server-side so
   # the pack group's re-insert (a stream child is static once pushed) renders
   # `<details open>` — otherwise the first open snaps shut when the re-render
@@ -491,6 +506,59 @@ defmodule EmisarWeb.PacksLive do
       update(socket, :inspected_actions, &Map.put(&1, id, actions))
     end
   end
+
+  defp pending_pack_action(socket, "delete_pack", %{"pack-id" => pack_id}) do
+    case Map.fetch(socket.assigns.group_cache, pack_id) do
+      {:ok, group} ->
+        {:ok,
+         %{
+           action: "delete_pack",
+           pack_id: pack_id,
+           version_count: length(group.versions),
+           nonce: System.unique_integer([:positive])
+         }}
+
+      :error ->
+        :error
+    end
+  end
+
+  defp pending_pack_action(socket, action, %{"id" => id})
+       when action in ["trust", "revoke_trust", "delete_version"] do
+    with {pack_id, version} <- cached_version(socket.assigns.group_cache, id),
+         fact when is_map(fact) <- socket.assigns.version_facts[id],
+         true <- pack_action_available?(action, version, fact) do
+      {:ok,
+       %{
+         action: action,
+         pack_id: pack_id,
+         version: version,
+         fact: fact,
+         nonce: System.unique_integer([:positive])
+       }}
+    else
+      _other -> :error
+    end
+  end
+
+  defp pending_pack_action(_socket, _action, _params), do: :error
+
+  defp cached_version(group_cache, id) do
+    Enum.find_value(group_cache, fn {pack_id, group} ->
+      case Enum.find(group.versions, &(&1.id == id)) do
+        nil -> nil
+        version -> {pack_id, version}
+      end
+    end)
+  end
+
+  defp pack_action_available?("trust", version, fact),
+    do: fact.trust_state == :rejected and (version.pending_hash || version.hash) != nil
+
+  defp pack_action_available?("revoke_trust", _version, fact),
+    do: fact.trust_state == :trusted
+
+  defp pack_action_available?("delete_version", _version, _fact), do: true
 
   # A drift-reject reverts to the trusted bytes and the on-host mismatch stays
   # live, so it re-surfaces on the next advertisement; a never-trusted reject
@@ -1356,8 +1424,8 @@ defmodule EmisarWeb.PacksLive do
                  naked group — mono pack id + version count on a hairline — with
                  its version rows below. The stream <li> wraps label + rows. The
                  1-2 rare admin verbs per row are small bordered buttons (the
-                 LLM-agents grammar — a menu earns its click only at 3+ verbs);
-                 their confirm dialogs render per row. --%>
+                 LLM-agents grammar — a menu earns its click only at 3+ verbs).
+                 One selected-row dialog is rendered lazily below. --%>
             <li :for={{dom_id, pack} <- @streams.packs} id={dom_id}>
               <header class="flex flex-wrap items-baseline gap-x-2.5 gap-y-1 border-b border-zinc-800/70 pb-2.5">
                 <h2 class="font-mono text-base font-semibold text-zinc-100">{pack.id}</h2>
@@ -1374,28 +1442,13 @@ defmodule EmisarWeb.PacksLive do
                   size={:sm}
                   type="button"
                   class="ml-auto self-center"
-                  phx-click={open_confirm("delete-pack-#{pack.id}")}
+                  phx-click="open_pack_action"
+                  phx-value-action="delete_pack"
+                  phx-value-pack-id={pack.id}
                 >
                   Delete pack
                 </.button>
               </header>
-
-              <.confirm_dialog
-                :if={Catalog.subject_can_manage_packs?(@current_subject)}
-                id={"delete-pack-#{pack.id}"}
-                title={"Delete #{pack.id}?"}
-                confirm_label="Delete pack"
-                on_confirm={
-                  JS.push("delete_pack", value: %{pack_id: pack.id})
-                  |> close_confirm("delete-pack-#{pack.id}")
-                }
-              >
-                <:body>
-                  Removes every recorded version of <code>{pack.id}</code> — trust decisions
-                  and advertised actions — from the catalog. Runners still advertising it
-                  will re-insert it as a fresh trust decision. Audit history is kept.
-                </:body>
-              </.confirm_dialog>
 
               <ul class="divide-y divide-zinc-800/70">
                 <li :for={v <- pack.versions} class="py-2.5">
@@ -1474,20 +1527,26 @@ defmodule EmisarWeb.PacksLive do
                                 (v.pending_hash || v.hash) != nil
                             }
                             tone={:amber}
-                            phx-click={open_confirm("trust-#{v.id}")}
+                            phx-click="open_pack_action"
+                            phx-value-action="trust"
+                            phx-value-id={v.id}
                           >
                             Trust
                           </.menu_item>
                           <.menu_item
                             :if={@version_facts[v.id].trust_state == :trusted}
-                            phx-click={open_confirm("revoke-#{v.id}")}
+                            phx-click="open_pack_action"
+                            phx-value-action="revoke_trust"
+                            phx-value-id={v.id}
                           >
                             Revoke trust
                           </.menu_item>
                           <div class="my-1 border-t border-zinc-800/70"></div>
                           <.menu_item
                             tone={:rose}
-                            phx-click={open_confirm("delete-version-#{v.id}")}
+                            phx-click="open_pack_action"
+                            phx-value-action="delete_version"
+                            phx-value-id={v.id}
                           >
                             Delete
                           </.menu_item>
@@ -1504,71 +1563,6 @@ defmodule EmisarWeb.PacksLive do
                       <% end %>
                     </div>
                   </div>
-
-                  <%!-- The row buttons' confirm dialogs — per row, plain
-                       (client-side) modals; the pushed events stay
-                       server-authz-gated (IL-15). --%>
-                  <%= if Catalog.subject_can_manage_packs?(@current_subject) do %>
-                    <.confirm_dialog
-                      :if={
-                        @version_facts[v.id].trust_state == :rejected and
-                          (v.pending_hash || v.hash) != nil
-                      }
-                      id={"trust-#{v.id}"}
-                      tone={:amber}
-                      title={"Trust #{pack.id} v#{v.version}?"}
-                      confirm_label="Trust pack"
-                      on_confirm={
-                        JS.push("trust", value: %{id: v.id}) |> close_confirm("trust-#{v.id}")
-                      }
-                    >
-                      <:body>
-                        <span :if={not is_nil(v.pending_hash)}>
-                          Adopts the refused contents — its actions may run on {advertiser_count(
-                            @version_facts[v.id].advertising
-                          )} advertising {advertiser_noun(@version_facts[v.id].advertising)}.
-                        </span>
-                        <span :if={is_nil(v.pending_hash)}>
-                          Restores trust in the previously recorded contents — its actions may
-                          dispatch again.
-                        </span>
-                        <span :if={@version_facts[v.id].retired?} class="text-rose-300">
-                          This version was retired by a newer release — trusting it also
-                          overrides that retirement, so its actions run despite the fix.
-                        </span>
-                      </:body>
-                    </.confirm_dialog>
-                    <.confirm_dialog
-                      :if={@version_facts[v.id].trust_state == :trusted}
-                      id={"revoke-#{v.id}"}
-                      title={"Revoke trust in #{pack.id} v#{v.version}?"}
-                      confirm_label="Revoke trust"
-                      on_confirm={
-                        JS.push("revoke_trust", value: %{id: v.id})
-                        |> close_confirm("revoke-#{v.id}")
-                      }
-                    >
-                      <:body>
-                        Dispatch refuses this version until it's trusted again. It stays
-                        listed as rejected, so you can restore trust later.
-                      </:body>
-                    </.confirm_dialog>
-                    <.confirm_dialog
-                      id={"delete-version-#{v.id}"}
-                      title={"Delete #{pack.id} v#{v.version}?"}
-                      confirm_label="Delete version"
-                      on_confirm={
-                        JS.push("delete_version", value: %{id: v.id})
-                        |> close_confirm("delete-version-#{v.id}")
-                      }
-                    >
-                      <:body>
-                        Removes this version and its advertised actions from the catalog.
-                        If a runner still advertises it, it will reappear as a fresh trust
-                        decision on its next connection or reload. Audit history is kept.
-                      </:body>
-                    </.confirm_dialog>
-                  <% end %>
 
                   <.version_contents
                     :if={
@@ -1727,6 +1721,59 @@ defmodule EmisarWeb.PacksLive do
         </aside>
       </div>
 
+      <%!-- One selected-row dialog replaces the pack-level and per-version
+           copies that used to dominate the initial LiveView diff. The open
+           event resolves the row from the scoped cache; each mutation still
+           re-authorizes and re-fetches in Catalog. --%>
+      <div
+        :if={@pending_pack_action}
+        id={"pack-action-mount-#{@pending_pack_action.nonce}"}
+        phx-mounted={show_confirm_dialog("pack-action")}
+      >
+        <.confirm_dialog
+          id="pack-action"
+          tone={if @pending_pack_action.action == "trust", do: :amber, else: :neutral}
+          title={pack_action_title(@pending_pack_action)}
+          confirm_label={pack_action_label(@pending_pack_action)}
+          on_confirm={confirm_pack_action(@pending_pack_action)}
+        >
+          <:body>
+            <%= case @pending_pack_action.action do %>
+              <% "delete_pack" -> %>
+                Removes all {@pending_pack_action.version_count} {if @pending_pack_action.version_count ==
+                                                                       1,
+                                                                     do: "version",
+                                                                     else: "versions"} of
+                <code>{@pending_pack_action.pack_id}</code>
+                — trust decisions and
+                advertised actions included. A runner still advertising it will re-insert it.
+                Audit history is kept.
+              <% "delete_version" -> %>
+                Removes this version and its advertised actions from the catalog. If a runner
+                still advertises it, it will reappear as a fresh trust decision. Audit history
+                is kept.
+              <% "revoke_trust" -> %>
+                Dispatch refuses this version until it is trusted again. It stays listed as
+                rejected, so you can restore trust later.
+              <% "trust" -> %>
+                <span :if={not is_nil(@pending_pack_action.version.pending_hash)}>
+                  Adopts the refused contents — its actions may run on {advertiser_count(
+                    @pending_pack_action.fact.advertising
+                  )} advertising {advertiser_noun(@pending_pack_action.fact.advertising)}.
+                </span>
+                <span :if={is_nil(@pending_pack_action.version.pending_hash)}>
+                  Restores trust in the previously recorded contents — its actions may dispatch
+                  again.
+                </span>
+                <span :if={@pending_pack_action.fact.retired?} class="text-rose-300">
+                  This version was retired by a newer release — trusting it also overrides that
+                  retirement, so its actions run despite the fix.
+                </span>
+            <% end %>
+          </:body>
+        </.confirm_dialog>
+      </div>
+
       <%!-- One page-level reject dialog (the rows are a stream, so it can't be
            per-row). It's always in the DOM so the trigger's `show` finds it;
            `open_reject` then fills @reject_target with the version's token +
@@ -1757,6 +1804,33 @@ defmodule EmisarWeb.PacksLive do
   defp version_count_label(versions) do
     n = length(versions)
     "#{n} #{if n == 1, do: "version", else: "versions"}"
+  end
+
+  defp pack_action_title(%{action: "delete_pack", pack_id: pack_id}),
+    do: "Delete #{pack_id}?"
+
+  defp pack_action_title(%{action: action, pack_id: pack_id, version: version}) do
+    verb =
+      case action do
+        "trust" -> "Trust"
+        "revoke_trust" -> "Revoke trust in"
+        "delete_version" -> "Delete"
+      end
+
+    "#{verb} #{pack_id} v#{version.version}?"
+  end
+
+  defp pack_action_label(%{action: "delete_pack"}), do: "Delete pack"
+  defp pack_action_label(%{action: "delete_version"}), do: "Delete version"
+  defp pack_action_label(%{action: "revoke_trust"}), do: "Revoke trust"
+  defp pack_action_label(%{action: "trust"}), do: "Trust pack"
+
+  defp confirm_pack_action(%{action: "delete_pack", pack_id: pack_id}) do
+    JS.push("delete_pack", value: %{pack_id: pack_id}) |> close_confirm("pack-action")
+  end
+
+  defp confirm_pack_action(%{action: action, version: version}) do
+    JS.push(action, value: %{id: version.id}) |> close_confirm("pack-action")
   end
 
   defp count_footer(pack_count, version_count) do
