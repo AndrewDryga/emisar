@@ -104,9 +104,10 @@ defmodule EmisarWeb.MfaSetupLive do
               </:actions>
             </.simple_form>
 
-            <.mode_switch event="use_recovery" lead="Lost your device?">
+            <.auth_footer_link event="use_recovery">
+              <:lead>Lost your device?</:lead>
               Use a recovery code
-            </.mode_switch>
+            </.auth_footer_link>
           <% else %>
             <.simple_form for={@mfa_recovery_form} phx-submit="verify_recovery">
               <.input
@@ -124,9 +125,10 @@ defmodule EmisarWeb.MfaSetupLive do
               </:actions>
             </.simple_form>
 
-            <.mode_switch event="use_totp" lead="Have your authenticator?">
+            <.auth_footer_link event="use_totp">
+              <:lead>Have your authenticator?</:lead>
               Enter a code instead
-            </.mode_switch>
+            </.auth_footer_link>
           <% end %>
         <% @mfa_recovery_codes -> %>
           <div class="space-y-4">
@@ -421,25 +423,6 @@ defmodule EmisarWeb.MfaSetupLive do
 
   defp challenge_error(:recovery),
     do: "That recovery code didn't match or has already been used."
-
-  attr :event, :string, required: true
-  attr :lead, :string, required: true
-  slot :inner_block, required: true
-
-  defp mode_switch(assigns) do
-    ~H"""
-    <p class="mt-6 text-center text-sm text-zinc-400">
-      {@lead}
-      <button
-        type="button"
-        phx-click={@event}
-        class="font-medium text-brand-400 hover:text-brand-300"
-      >
-        {render_slot(@inner_block)}
-      </button>
-    </p>
-    """
-  end
 
   defp assign_mfa_form(socket) do
     assign(socket, :mfa_form, to_form(%{"otp" => ""}, as: "mfa"))

@@ -109,10 +109,12 @@ defmodule EmisarWeb.MfaChallengeLiveTest do
       {:ok, lv, html} = live(conn, ~p"/sign_in/mfa")
       assert html =~ "authenticator app"
 
-      html = render_click(lv, "use_recovery")
+      # Click the rendered switch-line control (the shared auth_footer_link in its
+      # phx-click mode), not the event by name, so the toggle stays a real button.
+      html = lv |> element("button", "Use a recovery code") |> render_click()
       assert html =~ "recovery codes"
 
-      html = render_click(lv, "use_totp")
+      html = lv |> element("button", "Enter a code instead") |> render_click()
       assert html =~ "authenticator app"
     end
   end

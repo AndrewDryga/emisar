@@ -328,26 +328,43 @@ defmodule EmisarWeb.AuthComponents do
 
   @doc """
   The auth pages' footer switch-line — one muted centered paragraph with a
-  brand link ("New to emisar? Create an account"). One shape for the whole
+  brand control ("New to emisar? Create an account"). One shape for the whole
   auth family (design-console-ux §3; the hand-rolled copies drifted mt-6/mt-8 and
-  dropped classes). The lead-in rides the `:lead` slot, the link label is the
-  default slot, and exactly one of `navigate`/`href` picks the link mode.
+  dropped classes). The lead-in rides the `:lead` slot, the control label is the
+  default slot, and exactly one of `navigate`/`href`/`event` picks the control:
+  the first two render a link, `event` a `phx-click` button — the MFA factor
+  toggle (a same-page switch, not navigation) uses that mode.
 
       <.auth_footer_link href={~p"/sign_up"}>
         <:lead>New to emisar?</:lead>
         Create an account
       </.auth_footer_link>
+
+      <.auth_footer_link event="use_recovery">
+        <:lead>Lost your device?</:lead>
+        Use a recovery code
+      </.auth_footer_link>
   """
   attr :navigate, :string, default: nil
   attr :href, :string, default: nil
-  slot :lead, doc: "the muted lead-in text before the link"
+  attr :event, :string, default: nil
+  slot :lead, doc: "the muted lead-in text before the control"
   slot :inner_block, required: true
 
   def auth_footer_link(assigns) do
     ~H"""
     <p class="mt-6 text-center text-sm text-zinc-400">
       {render_slot(@lead)}
+      <button
+        :if={@event}
+        type="button"
+        phx-click={@event}
+        class="font-medium text-brand-400 hover:text-brand-300"
+      >
+        {render_slot(@inner_block)}
+      </button>
       <.link
+        :if={is_nil(@event)}
         navigate={@navigate}
         href={@href}
         class="font-medium text-brand-400 hover:text-brand-300"

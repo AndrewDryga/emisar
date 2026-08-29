@@ -111,9 +111,10 @@ defmodule EmisarWeb.MfaChallengeLive do
           </:actions>
         </.simple_form>
 
-        <.mode_switch event="use_recovery" lead="Lost your device?">
+        <.auth_footer_link event="use_recovery">
+          <:lead>Lost your device?</:lead>
           Use a recovery code
-        </.mode_switch>
+        </.auth_footer_link>
       <% else %>
         <p class="mb-6 text-sm text-zinc-400">
           Enter one of the <span class="whitespace-nowrap">recovery codes</span>
@@ -138,9 +139,10 @@ defmodule EmisarWeb.MfaChallengeLive do
           </:actions>
         </.simple_form>
 
-        <.mode_switch event="use_totp" lead="Have your authenticator?">
+        <.auth_footer_link event="use_totp">
+          <:lead>Have your authenticator?</:lead>
           Enter a code instead
-        </.mode_switch>
+        </.auth_footer_link>
       <% end %>
 
       <.auth_footer_link navigate={~p"/sign_in/magic"}>
@@ -148,29 +150,6 @@ defmodule EmisarWeb.MfaChallengeLive do
         Start over
       </.auth_footer_link>
     </.auth_layout>
-    """
-  end
-
-  # The factor toggle — the `auth_footer_link` switch-line shape, but firing a
-  # phx-click action rather than navigating. (auth_footer_link takes only
-  # navigate/href; giving it an action slot to converge these is a BACKLOG item —
-  # core_components is mid-flight in a parallel session and can't be touched here.)
-  attr :event, :string, required: true
-  attr :lead, :string, required: true
-  slot :inner_block, required: true
-
-  defp mode_switch(assigns) do
-    ~H"""
-    <p class="mt-6 text-center text-sm text-zinc-400">
-      {@lead}
-      <button
-        type="button"
-        phx-click={@event}
-        class="font-medium text-brand-400 hover:text-brand-300"
-      >
-        {render_slot(@inner_block)}
-      </button>
-    </p>
     """
   end
 end
