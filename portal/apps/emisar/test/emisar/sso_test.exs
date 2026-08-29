@@ -6954,6 +6954,20 @@ defmodule Emisar.SSOTest do
     end
   end
 
+  describe "Provisioning.lock_provider_row/2" do
+    test "refuses a concurrently-deleted provider instead of raising out of a Multi" do
+      {_owner, account, _subject} = enterprise_owner()
+      provider = provider_fixture(account)
+
+      assert {:ok, locked} = SSO.Provisioning.lock_provider_row(provider)
+      assert locked.id == provider.id
+
+      Fixtures.SSO.mark_provider_deleted(provider)
+
+      assert SSO.Provisioning.lock_provider_row(provider) == {:error, :provider_disabled}
+    end
+  end
+
   describe "approve_link_request/3" do
     setup do
       {_owner, account, subject} = enterprise_owner()

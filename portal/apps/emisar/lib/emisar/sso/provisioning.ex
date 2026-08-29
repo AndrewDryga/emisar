@@ -192,12 +192,22 @@ defmodule Emisar.SSO.Provisioning do
     end
   end
 
-  def lock_provider_row!(%IdentityProvider{} = provider, repo \\ Repo) do
-    IdentityProvider.Query.not_deleted()
-    |> IdentityProvider.Query.by_account_id(provider.account_id)
-    |> IdentityProvider.Query.by_id(provider.id)
-    |> IdentityProvider.Query.lock_for_update()
-    |> repo.fetch!(IdentityProvider.Query)
+  # A provider deleted concurrently (or already soft-deleted) reads as
+  # :provider_disabled rather than raising a NoResultsError out of the caller's
+  # Multi and crashing the LiveView — the same clean denial a disabled
+  # connection gives. Composed into a caller's transaction, so it takes the
+  # transaction repo.
+  def lock_provider_row(%IdentityProvider{} = provider, repo \\ Repo) do
+    queryable =
+      IdentityProvider.Query.not_deleted()
+      |> IdentityProvider.Query.by_account_id(provider.account_id)
+      |> IdentityProvider.Query.by_id(provider.id)
+      |> IdentityProvider.Query.lock_for_update()
+
+    case repo.fetch(queryable, IdentityProvider.Query) do
+      {:ok, locked} -> {:ok, locked}
+      {:error, :not_found} -> {:error, :provider_disabled}
+    end
   end
 
   # Minting an identity takes the same provider lock a config edit does, so the
@@ -207,7 +217,7 @@ defmodule Emisar.SSO.Provisioning do
   # under the new configuration.
   def put_provider_lock(multi, %IdentityProvider{} = provider) do
     Multi.run(multi, :locked_provider, fn repo, _changes ->
-      {:ok, lock_provider_row!(provider, repo)}
+      lock_provider_row(provider, repo)
     end)
   end
 

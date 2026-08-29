@@ -2478,8 +2478,9 @@ defmodule Emisar.SSO do
   # takes, one of the two happens first and the other refuses.
   defp put_enabled_provider_lock(multi, %IdentityProvider{} = provider) do
     Multi.run(multi, :locked_provider, fn repo, _changes ->
-      locked = lock_provider_row!(provider, repo)
-      if locked.enabled, do: {:ok, locked}, else: {:error, :provider_disabled}
+      with {:ok, locked} <- lock_provider_row(provider, repo) do
+        if locked.enabled, do: {:ok, locked}, else: {:error, :provider_disabled}
+      end
     end)
   end
 

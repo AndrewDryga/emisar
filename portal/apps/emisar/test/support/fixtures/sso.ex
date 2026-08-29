@@ -51,6 +51,16 @@ defmodule Emisar.Fixtures.SSO do
     provider
   end
 
+  @doc "Disables a provider directly — the state an operator's disable leaves, minus its session sweeps."
+  def disable_provider(%IdentityProvider{} = provider) do
+    provider |> Ecto.Changeset.change(enabled: false) |> Repo.update!()
+  end
+
+  @doc "Soft-deletes a provider directly, for tests exercising a concurrently-removed connection."
+  def mark_provider_deleted(%IdentityProvider{} = provider) do
+    provider |> Ecto.Changeset.change(deleted_at: DateTime.utc_now()) |> Repo.update!()
+  end
+
   @doc "Enables SCIM state directly for tests that exercise later directory transitions."
   def enable_scim(%IdentityProvider{} = provider) do
     prefix = "emsp_#{Emisar.Fixtures.Random.unique_int()}"
