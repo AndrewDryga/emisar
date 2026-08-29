@@ -1774,6 +1774,10 @@ defmodule Emisar.AuthTest do
       assert Auth.confirm_email_change("new@example.com", wrong_code, subject) ==
                {:error, :invalid}
 
+      # The miss is audited (a hijacked session grinding the code leaves a trail).
+      assert [%Audit.Event{event_type: "user.email_change_code_failed"}] =
+               events_of_type("user.email_change_code_failed")
+
       assert {:ok, %User{email: "new@example.com"}} =
                Auth.confirm_email_change("new@example.com", code, subject)
 
@@ -2210,6 +2214,11 @@ defmodule Emisar.AuthTest do
       code = issue_mfa_enrollment_code(subject)
 
       assert Auth.verify_mfa_enrollment_code("000000", subject) == {:error, :invalid}
+
+      # The miss is audited so grinding a hijacked session toward MFA is visible.
+      assert [%Audit.Event{event_type: "user.mfa_enrollment_failed"}] =
+               events_of_type("user.mfa_enrollment_failed")
+
       assert {:ok, proof} = Auth.verify_mfa_enrollment_code(code, subject)
       assert Auth.verify_mfa_enrollment_code(code, subject) == {:error, :invalid}
 

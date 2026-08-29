@@ -1,6 +1,6 @@
 defmodule Emisar.SSOIdentityLinkTest do
   use Emisar.DataCase, async: true
-  alias Emisar.{Auth, Crypto, Fixtures, Repo, SSO}
+  alias Emisar.{Audit, Auth, Crypto, Fixtures, Repo, SSO}
   alias Emisar.Auth.UserToken
   alias Emisar.SSO.{IdentityProvider, UserIdentity}
 
@@ -69,6 +69,13 @@ defmodule Emisar.SSOIdentityLinkTest do
                code,
                context.subject
              ) == {:error, :invalid}
+
+      # The miss is audited (a hijacked session grinding the emailed code leaves a
+      # trail) — the same accountability the TOTP factor path already had.
+      assert [%Audit.Event{event_type: "user.oidc_identity_step_up_failed"}] =
+               Audit.Event.Query.all()
+               |> Audit.Event.Query.by_event_type("user.oidc_identity_step_up_failed")
+               |> Repo.all()
 
       assert Auth.verify_oidc_identity_step_up_proof(
                proof,

@@ -65,7 +65,9 @@ defmodule Emisar.Audit.Event.Query do
     {"user.invitation_accepted", "User accepted invitation"},
     {"user.email_confirmed", "Email confirmed"},
     {"user.email_change_requested", "Email change requested"},
+    {"user.email_change_code_failed", "Email change confirmation failed"},
     {"user.oidc_identity_step_up_requested", "Sign-in method confirmation requested"},
+    {"user.oidc_identity_step_up_failed", "Sign-in method confirmation failed"},
     {"user.oidc_identity_step_up_rate_limited", "Sign-in method confirmation rate limited"},
     {"user.email_change_rate_limited", "Email change rate limited"},
     {"user.email_changed", "Email changed"},
@@ -74,6 +76,7 @@ defmodule Emisar.Audit.Event.Query do
     {"user.updated_by_admin", "Profile edited by admin"},
     {"user.magic_link_issued", "Magic link issued"},
     {"user.mfa_enrollment_requested", "MFA enrollment requested"},
+    {"user.mfa_enrollment_failed", "MFA enrollment confirmation failed"},
     {"user.mfa_enabled", "MFA enabled"},
     {"user.mfa_disabled", "MFA disabled"},
     {"user.mfa_failed", "MFA failed"},
@@ -257,7 +260,9 @@ defmodule Emisar.Audit.Event.Query do
     {"User security",
      [
        {"user.email_change_requested", "Email change requested"},
+       {"user.email_change_code_failed", "Email change confirmation failed"},
        {"user.oidc_identity_step_up_requested", "Sign-in method confirmation requested"},
+       {"user.oidc_identity_step_up_failed", "Sign-in method confirmation failed"},
        {"user.oidc_identity_step_up_rate_limited", "Sign-in method confirmation rate limited"},
        {"user.email_change_rate_limited", "Email change rate limited"},
        {"user.email_changed", "Email changed"},
@@ -265,6 +270,7 @@ defmodule Emisar.Audit.Event.Query do
        {"user.profile_updated", "Profile updated"},
        {"user.updated_by_admin", "Profile edited by admin"},
        {"user.mfa_enrollment_requested", "MFA enrollment requested"},
+       {"user.mfa_enrollment_failed", "MFA enrollment confirmation failed"},
        {"user.mfa_enabled", "MFA enabled"},
        {"user.mfa_disabled", "MFA disabled"},
        {"user.mfa_failed", "MFA failed"},
@@ -945,8 +951,13 @@ defmodule Emisar.Audit.Event.Query do
       {true, false, false, "A user proved ownership of their email address."},
     "user.email_change_requested" =>
       {true, true, false, "A user asked to change their sign-in email (confirmation pending)."},
+    "user.email_change_code_failed" =>
+      {true, false, false, "An emailed email-change confirmation code was wrong or expired."},
     "user.oidc_identity_step_up_requested" =>
       {true, true, false, "A user requested fresh proof before changing an SSO sign-in method."},
+    "user.oidc_identity_step_up_failed" =>
+      {true, false, false,
+       "An emailed SSO sign-in method confirmation code was wrong or expired."},
     "user.oidc_identity_step_up_rate_limited" =>
       {true, false, false,
        "An SSO sign-in method confirmation was refused after the user reached its limit."},
@@ -964,6 +975,8 @@ defmodule Emisar.Audit.Event.Query do
     "user.mfa_enrollment_requested" =>
       {true, false, false,
        "A user requested a current-inbox challenge before enrolling an authenticator."},
+    "user.mfa_enrollment_failed" =>
+      {true, false, false, "An emailed MFA-enrollment confirmation code was wrong or expired."},
     "user.mfa_enabled" => {true, true, false, "A user enrolled a second factor."},
     "user.mfa_disabled" =>
       {true, true, false, "A user (or admin) removed a second-factor enrollment."},

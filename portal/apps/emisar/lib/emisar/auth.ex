@@ -1506,6 +1506,17 @@ defmodule Emisar.Auth do
     {:error, reason}
   end
 
+  # The emailed-code branch (a hijacked session grinding the 6-digit code) left no
+  # trace where the TOTP branch above records one — audit each miss.
+  defp record_email_change_factor_failure({:email_code, _code}, user, reason, context) do
+    Audit.log_for_user(user, "user.email_change_code_failed",
+      context: context,
+      payload: %{reason: to_string(reason)}
+    )
+
+    {:error, reason}
+  end
+
   defp record_email_change_factor_failure(_factor, _user, reason, _context),
     do: {:error, reason}
 
@@ -1664,7 +1675,20 @@ defmodule Emisar.Auth do
              @inbox_step_up_window_ms,
              subject.context
            ) do
-      consume_oidc_identity_step_up_code(user.id, provider_id, purpose, code)
+      case consume_oidc_identity_step_up_code(user.id, provider_id, purpose, code) do
+        {:ok, verified_user} ->
+          {:ok, verified_user}
+
+        # A wrong or expired emailed code leaves an audit trail (the TOTP factor
+        # path records its miss too) so grinding a hijacked session is visible.
+        {:error, reason} ->
+          Audit.log_for_user(user, "user.oidc_identity_step_up_failed",
+            context: subject.context,
+            payload: %{reason: to_string(reason), purpose: Atom.to_string(purpose)}
+          )
+
+          {:error, reason}
+      end
     end
   end
 
@@ -2063,9 +2087,21 @@ defmodule Emisar.Auth do
              @inbox_step_up_limit,
              @inbox_step_up_window_ms,
              subject.context
-           ),
-         {:ok, verified_user} <- consume_mfa_enrollment_code(code, user.id) do
-      {:ok, mfa_enrollment_proof(verified_user)}
+           ) do
+      case consume_mfa_enrollment_code(code, user.id) do
+        {:ok, verified_user} ->
+          {:ok, mfa_enrollment_proof(verified_user)}
+
+        # A wrong or expired emailed code leaves an audit trail so grinding a
+        # hijacked session toward MFA enrollment is visible.
+        {:error, reason} ->
+          Audit.log_for_user(user, "user.mfa_enrollment_failed",
+            context: subject.context,
+            payload: %{reason: to_string(reason)}
+          )
+
+          {:error, reason}
+      end
     end
   end
 
