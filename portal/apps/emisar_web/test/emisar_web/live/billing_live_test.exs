@@ -616,11 +616,12 @@ defmodule EmisarWeb.BillingLiveTest do
     } do
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/billing")
 
-      # No invoice row renders for an operator, so push the event directly:
-      # the Billing context gates the read, not the template (IL-15).
+      # No invoice row renders for an operator, so push the event directly: the
+      # handler's Permissions.gated refuses before the read, and the Billing
+      # context re-checks it too (IL-15) — either way it is a flash, not a PDF.
       html = render_hook(lv, "download_invoice", %{"id" => "txn_stub_1"})
 
-      assert html =~ "Couldn&#39;t open that invoice"
+      assert html =~ "permission to do that"
     end
   end
 

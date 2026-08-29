@@ -149,25 +149,31 @@ defmodule EmisarWeb.BillingLive do
   end
 
   # Download one invoice's PDF — Billing re-checks the transaction against the
-  # account's own invoices + manage-billing, then Paddle mints a short-lived
+  # account's own invoices + view-invoices, then Paddle mints a short-lived
   # signed URL we redirect to (it's served as a download, so the page stays put).
   def handle_event("download_invoice", %{"id" => id}, socket) do
-    case Billing.invoice_pdf_url(
-           socket.assigns.current_account,
-           id,
-           socket.assigns.current_subject
-         ) do
-      {:ok, url} ->
-        {:noreply, redirect(socket, external: url)}
+    Permissions.gated(
+      socket,
+      Billing.subject_can_view_invoices?(socket.assigns.current_subject),
+      fn socket ->
+        case Billing.invoice_pdf_url(
+               socket.assigns.current_account,
+               id,
+               socket.assigns.current_subject
+             ) do
+          {:ok, url} ->
+            {:noreply, redirect(socket, external: url)}
 
-      {:error, reason} ->
-        {:noreply,
-         put_flash(socket, :error, "Couldn't open that invoice: #{humanize_reason(reason)}")}
-    end
+          {:error, reason} ->
+            {:noreply,
+             put_flash(socket, :error, "Couldn't open that invoice: #{humanize_reason(reason)}")}
+        end
+      end
+    )
   end
 
   # Re-run the failed async invoice fetch in place. Authorization lives in
-  # the context read (manage-billing + account scope), same as the mount fetch.
+  # the context read (view-invoices + account scope), same as the mount fetch.
   def handle_event("retry_invoices", _params, socket) do
     account = socket.assigns.current_account
     subject = socket.assigns.current_subject
