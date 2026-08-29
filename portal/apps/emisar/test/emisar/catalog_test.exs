@@ -2015,6 +2015,20 @@ defmodule Emisar.CatalogTest do
 
       assert Catalog.override_pack_retirement(pending.id, restricted) == {:error, :not_found}
     end
+
+    # The same reach the console list narrows by: a version only an out-of-reach
+    # runner deploys is invisible, so it cannot be overridden from an id lifted
+    # out of the audit trail — the runner dimension, not just pack access.
+    test "a runner-restricted member cannot override a version only hidden runners deploy", %{
+      account: account,
+      pack_version: pack_version
+    } do
+      reachable = Fixtures.Runners.create_runner(account_id: account.id)
+      restricted = runner_restricted_subject(account, [reachable.id])
+
+      assert {:ok, %{pack_versions: []}} = Catalog.list_console_packs(%{}, restricted)
+      assert Catalog.override_pack_retirement(pack_version.id, restricted) == {:error, :not_found}
+    end
   end
 
   describe "revoke_pack_version_trust/2" do
@@ -2058,6 +2072,24 @@ defmodule Emisar.CatalogTest do
       assert audit.actor_kind == "user"
       assert audit.actor_id == user.id
       assert audit.payload["revoked_hash"] == Fixtures.Catalog.pack_hash("sha256:OK")
+    end
+
+    # The runner dimension, matching the console list: a trusted version only an
+    # out-of-reach runner deploys cannot be revoked from an id lifted out of the
+    # audit trail.
+    test "a runner-restricted member cannot revoke a version only hidden runners deploy", %{
+      account: account,
+      pack_version: pack_version
+    } do
+      reachable = Fixtures.Runners.create_runner(account_id: account.id)
+      restricted = runner_restricted_subject(account, [reachable.id])
+
+      assert {:ok, %{pack_versions: []}} = Catalog.list_console_packs(%{}, restricted)
+
+      assert Catalog.revoke_pack_version_trust(pack_version.id, restricted) ==
+               {:error, :not_found}
+
+      assert Repo.reload!(pack_version).trust_state == :trusted
     end
 
     test "a same-hash re-advertisement leaves the revoked row rejected", %{

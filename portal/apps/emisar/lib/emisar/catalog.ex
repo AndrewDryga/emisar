@@ -702,9 +702,10 @@ defmodule Emisar.Catalog do
       if Repo.valid_uuid?(pack_version_id) do
         PackVersion.Query.all()
         |> PackVersion.Query.by_id(pack_version_id)
+        |> scope_pack_versions_to_subject(subject)
         |> Authorizer.for_subject(subject)
         |> Repo.fetch_and_update(PackVersion.Query,
-          with: &override_retirement_changeset(&1, overridden_by_id, subject),
+          with: &override_retirement_changeset(&1, overridden_by_id),
           audit: &Audit.Events.pack_retirement_overridden(subject, &1),
           after_commit: fn updated ->
             broadcast_pack_trust(updated.account_id)
@@ -715,16 +716,6 @@ defmodule Emisar.Catalog do
         {:error, :not_found}
       end
     end
-  end
-
-  # Pack access is judged here, on the LOCKED row, because this mutation reaches
-  # the version by id rather than through `lock_pack_version/3` — and BEFORE the
-  # trust state, so a refusal cannot report whether an unreachable version is
-  # trusted.
-  defp override_retirement_changeset(%PackVersion{} = pack_version, overridden_by_id, subject) do
-    if pack_in_scope?(pack_version, subject),
-      do: override_retirement_changeset(pack_version, overridden_by_id),
-      else: :not_found
   end
 
   # Only a TRUSTED row can be overridden (the override re-enables dispatch for
@@ -756,9 +747,10 @@ defmodule Emisar.Catalog do
       if Repo.valid_uuid?(pack_version_id) do
         PackVersion.Query.all()
         |> PackVersion.Query.by_id(pack_version_id)
+        |> scope_pack_versions_to_subject(subject)
         |> Authorizer.for_subject(subject)
         |> Repo.fetch_and_update(PackVersion.Query,
-          with: &revoke_trust_changeset(&1, subject),
+          with: &revoke_trust_changeset/1,
           audit: &Audit.Events.pack_trust_revoked(subject, &1),
           after_commit: fn updated ->
             broadcast_pack_trust(updated.account_id)
@@ -769,14 +761,6 @@ defmodule Emisar.Catalog do
         {:error, :not_found}
       end
     end
-  end
-
-  # Same as the retirement override: this mutation reaches the version by id, so
-  # the locked row's pack is judged here, and before the trust state.
-  defp revoke_trust_changeset(%PackVersion{} = pack_version, subject) do
-    if pack_in_scope?(pack_version, subject),
-      do: revoke_trust_changeset(pack_version),
-      else: :not_found
   end
 
   # Only a TRUSTED row can be revoked; any other state aborts as :not_trusted.
