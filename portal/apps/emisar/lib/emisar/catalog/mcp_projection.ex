@@ -121,37 +121,62 @@ defmodule Emisar.Catalog.MCPProjection do
   def parse_pack_ref(_pack_ref), do: {:error, :invalid_pack_ref}
 
   defp project_runner(%Runners.Runner{} = runner) do
-    with {:ok, runner_ref} <- runner_ref(runner),
-         true <- safe_text?(runner.hostname, 1, 255),
-         true <- safe_text?(runner.group, 1, 80) do
-      {labels, labels_valid?} = safe_labels(runner.labels)
+    # Only an unrepresentable identity drops a runner. Unsafe hostname/group/label
+    # metadata is cleaned and FLAGGED rather than vanishing the connected runner
+    # from the catalog with no signal — otherwise a hostile runner could choose
+    # invisibility to the agent while staying connected, and operator debugging
+    # got nothing.
+    case runner_ref(runner) do
+      {:ok, runner_ref} ->
+        {hostname, hostname_valid?} = safe_field(runner.hostname, 1, 255)
+        {group, group_valid?} = safe_field(runner.group, 1, 80)
+        {labels, labels_valid?} = safe_labels(runner.labels)
+        metadata_valid? = hostname_valid? and group_valid? and labels_valid?
 
-      issues =
-        ([connection_issue(runner), metadata_issue(labels_valid?)] ++
-           degraded_pack_issues(runner))
-        |> Enum.reject(&is_nil/1)
+        issues =
+          ([connection_issue(runner), metadata_issue(metadata_valid?)] ++
+             degraded_pack_issues(runner))
+          |> Enum.reject(&is_nil/1)
 
-      [
-        %{
-          id: runner.id,
-          runner_ref: runner_ref,
-          name: runner.name,
-          hostname: runner.hostname,
-          group: runner.group,
-          enforce_signatures: runner.enforce_signatures,
-          status: runner_status(runner),
-          last_seen_at: last_seen_at(runner),
-          labels: labels,
-          packs: runner.packs || %{},
-          issues: issues
-        }
-      ]
-    else
-      _ -> []
+        [
+          %{
+            id: runner.id,
+            runner_ref: runner_ref,
+            name: runner.name,
+            hostname: hostname,
+            group: group,
+            enforce_signatures: runner.enforce_signatures,
+            status: runner_status(runner),
+            last_seen_at: last_seen_at(runner),
+            labels: labels,
+            packs: runner.packs || %{},
+            issues: issues
+          }
+        ]
+
+      {:error, _reason} ->
+        []
     end
   end
 
   defp project_runner(_runner), do: []
+
+  # A runner-level string that fails the safety check is projected with its
+  # control/format characters stripped and capped to `max` — the model never sees
+  # them — and reported invalid, mirroring how invalid labels are dropped + flagged.
+  defp safe_field(value, min, max) do
+    if safe_text?(value, min, max),
+      do: {value, true},
+      else: {clean_field(value, max), false}
+  end
+
+  defp clean_field(value, max) when is_binary(value) do
+    if String.valid?(value),
+      do: value |> String.replace(@unsafe_text, "") |> String.slice(0, max),
+      else: ""
+  end
+
+  defp clean_field(_value, _max), do: ""
 
   defp runner_deployments(runner) do
     Enum.flat_map(runner.packs, fn
@@ -470,7 +495,10 @@ defmodule Emisar.Catalog.MCPProjection do
   defp metadata_issue(true), do: nil
 
   defp metadata_issue(false) do
-    issue("runner_metadata_invalid", "Some runner labels were omitted because they were invalid.")
+    issue(
+      "runner_metadata_invalid",
+      "Some runner metadata (hostname, group, or labels) was invalid and was cleaned or omitted."
+    )
   end
 
   defp safe_labels(labels) when is_map(labels) do

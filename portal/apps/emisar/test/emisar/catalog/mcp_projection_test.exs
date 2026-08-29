@@ -158,6 +158,30 @@ defmodule Emisar.Catalog.MCPProjectionTest do
     assert "descriptor_mismatch" in Enum.map(issues, & &1.code)
   end
 
+  test "a runner with unsafe metadata stays in the snapshot, cleaned and flagged" do
+    runner = %Runner{
+      id: Ecto.UUID.generate(),
+      account_id: Ecto.UUID.generate(),
+      name: "runner",
+      external_id: Ecto.UUID.generate(),
+      # A right-to-left override (U+202E) — a \p{Cf} format char the projection
+      # previously dropped the whole runner over, hiding it from the agent.
+      hostname: "db-" <> <<0x202E::utf8>> <> "prod",
+      group: "default",
+      labels: %{},
+      packs: %{},
+      degraded_packs: [],
+      online?: true,
+      enforce_signatures: false
+    }
+
+    assert %{runners: [projected]} = MCPProjection.build([], [], [runner])
+
+    assert projected.id == runner.id
+    assert projected.hostname == "db-prod"
+    assert "runner_metadata_invalid" in Enum.map(projected.issues, & &1.code)
+  end
+
   defp deployment(pack_id, version, hash) do
     runner_id = Ecto.UUID.generate()
 
