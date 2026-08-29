@@ -72,11 +72,12 @@ defmodule EmisarWeb.TimeHelpersTest do
   end
 
   describe "format_duration/1" do
-    test "scales ms → s → m" do
+    test "scales ms → s → m, keeping seconds at the minute+ scale" do
       assert format_duration(nil) == "—"
       assert format_duration(312) == "312ms"
       assert format_duration(1_300) == "1.3s"
-      assert format_duration(240_000) == "4m"
+      assert format_duration(252_000) == "4m 12s"
+      assert format_duration(240_000) == "4m 0s"
     end
   end
 

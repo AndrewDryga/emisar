@@ -97,13 +97,15 @@ defmodule EmisarWeb.TimeHelpers do
     do: ndt |> DateTime.from_naive!("Etc/UTC") |> forensic_time()
 
   @doc """
-  Formats a duration given in milliseconds: `"1.3s"`, `"312ms"`, `"4m"`.
+  Formats a duration given in milliseconds: `"312ms"`, `"1.3s"`, `"4m 12s"`.
+  The single duration formatter — `EmisarWeb.AuditSummary` delegates here so a
+  run's duration reads identically on the run views and in the audit trail.
   Useful for run.duration_ms.
   """
   def format_duration(nil), do: "—"
   def format_duration(ms) when ms < 1_000, do: "#{ms}ms"
   def format_duration(ms) when ms < 60_000, do: "#{Float.round(ms / 1_000, 1)}s"
-  def format_duration(ms), do: "#{div(ms, 60_000)}m"
+  def format_duration(ms), do: "#{div(ms, 60_000)}m #{div(rem(ms, 60_000), 1_000)}s"
 
   @doc """
   Pretty-prints a map (e.g. a run's args) as indented JSON for `<pre>`

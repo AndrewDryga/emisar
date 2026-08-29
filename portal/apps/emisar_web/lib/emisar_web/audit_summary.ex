@@ -15,7 +15,7 @@ defmodule EmisarWeb.AuditSummary do
   one line is just a worse version of the detail page.
   """
 
-  alias EmisarWeb.TransportReason
+  alias EmisarWeb.{TimeHelpers, TransportReason}
 
   @doc """
   Returns `[{label, value}, ...]` for the given event. Each value is
@@ -423,16 +423,9 @@ defmodule EmisarWeb.AuditSummary do
   defp format_version(n) when is_integer(n), do: "v#{n}"
   defp format_version(other), do: to_string(other)
 
-  defp format_duration(nil), do: nil
-
-  defp format_duration(ms) when is_integer(ms) do
-    cond do
-      ms < 1_000 -> "#{ms}ms"
-      ms < 60_000 -> "#{Float.round(ms / 1_000, 1)}s"
-      true -> "#{div(ms, 60_000)}m #{div(rem(ms, 60_000), 1_000)}s"
-    end
-  end
-
+  # One duration formatter for the whole console: delegate to TimeHelpers so the
+  # audit trail and the run views can't disagree (a nil/non-integer omits the pair).
+  defp format_duration(ms) when is_integer(ms), do: TimeHelpers.format_duration(ms)
   defp format_duration(_), do: nil
 
   defp format_window(seconds) when is_integer(seconds) and seconds > 0 do
