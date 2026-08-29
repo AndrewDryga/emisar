@@ -384,9 +384,9 @@ defmodule EmisarWeb.ApprovalsLiveTest do
   end
 
   test "a viewer sees pending + recent but no standing-grants rows", %{conn: conn} do
-    # a viewer holds `view` (pending + recent render) but not
-    # `manage_grants`, so `list_grants_for_account` errors → collapsed to [] → the
-    # grants section shows its empty-state, never a grant row or a Revoke button.
+    # a viewer holds `view` (pending + recent render) but not `manage_grants`, so
+    # `list_grants_for_account` refuses the read: the section says who owns
+    # grants instead of claiming there are none, and offers no Revoke button.
     {_owner_conn, owner, account} = register_and_log_in(conn)
     subject = Fixtures.Subjects.subject_for(owner, account)
 
@@ -406,17 +406,19 @@ defmodule EmisarWeb.ApprovalsLiveTest do
 
     {:ok, _lv, html} = build_conn() |> log_in_user(viewer) |> live(~p"/app/#{account}/approvals")
 
-    # …but it doesn't render for the viewer (no manage_grants).
+    # …but it doesn't render for the viewer (no manage_grants), and telling them
+    # the account has none would be a lie about live authorization.
     assert html =~ "viewer can see this"
-    assert html =~ "No active grants."
+    assert html =~ "Only owners and admins can see standing grants."
+    refute html =~ "No active grants."
     refute html =~ "Revoke"
   end
 
   test "an operator sees no standing-grants rows either (manage_grants is admin+)", %{conn: conn} do
-    # operator holds `decide` (so the Revoke button's UI
-    # predicate would pass) but NOT `manage_grants`, and grant rows only load with
-    # manage_grants. The list errors → [], so the section is empty regardless of
-    # the predicate (the GOV-005 visibility/context split never collides).
+    # operator holds `decide` (so the Revoke button's UI predicate would pass)
+    # but NOT `manage_grants`, and grant rows only load with manage_grants. The
+    # read is refused, so the section names who manages grants regardless of the
+    # predicate (the GOV-005 visibility/context split never collides).
     {_owner_conn, owner, account} = register_and_log_in(conn)
     subject = Fixtures.Subjects.subject_for(owner, account)
 
@@ -435,7 +437,8 @@ defmodule EmisarWeb.ApprovalsLiveTest do
     {:ok, _lv, html} =
       build_conn() |> log_in_user(operator) |> live(~p"/app/#{account}/approvals")
 
-    assert html =~ "No active grants."
+    assert html =~ "Only owners and admins can see standing grants."
+    refute html =~ "No active grants."
     refute html =~ "Revoke"
   end
 

@@ -191,7 +191,9 @@ defmodule EmisarWeb.ApprovalsLive do
     {grants, grants_meta, grants_failed?} =
       list_read(Approvals.list_grants_for_account(subject, grants_read_opts))
 
-    grants_error? = grants_failed? and Approvals.subject_can_manage_grants?(subject)
+    can_manage_grants? = Approvals.subject_can_manage_grants?(subject)
+    grants_error? = grants_failed? and can_manage_grants?
+    grants_denied? = grants_failed? and not can_manage_grants?
 
     # Decided-only AT THE QUERY — the old "all minus pending" client-side
     # subtraction made the pager count include pending rows it never showed
@@ -216,6 +218,7 @@ defmodule EmisarWeb.ApprovalsLive do
     |> assign(:grants, grants)
     |> assign(:grants_metadata, grants_meta)
     |> assign(:grants_error?, grants_error?)
+    |> assign(:grants_denied?, grants_denied?)
     |> assign(:approval_event_refs, approval_event_refs)
     |> assign(:decided, decided)
     |> assign(:decided_metadata, decided_meta)
@@ -745,8 +748,16 @@ defmodule EmisarWeb.ApprovalsLive do
               </:item>
               <:empty>
                 <%!-- A standing grant is live authorization to skip the prompt, so
-                     "No active grants." on a failed read understates what the
-                     account currently allows. --%>
+                     "No active grants." on a failed read — or on a read this
+                     member may not do — understates what the account allows. --%>
+                <.empty_state
+                  :if={@grants_denied?}
+                  icon="state.locked"
+                  title="Only owners and admins can see standing grants."
+                >
+                  Grants may be active and letting agents skip the approval prompt — ask an
+                  owner or admin to review them.
+                </.empty_state>
                 <.empty_state
                   :if={@grants_error?}
                   tone={:danger}
@@ -758,7 +769,9 @@ defmodule EmisarWeb.ApprovalsLive do
                   changed.
                 </.empty_state>
                 <.empty_state
-                  :if={not @grants_error? and grants_disabled?(@current_account)}
+                  :if={
+                    not @grants_error? and not @grants_denied? and grants_disabled?(@current_account)
+                  }
                   icon="state.disabled"
                   title="Standing grants are disabled."
                 >
@@ -766,7 +779,10 @@ defmodule EmisarWeb.ApprovalsLive do
                   admin can re-enable them under Maximum grant lifetime below.
                 </.empty_state>
                 <.empty_state
-                  :if={not @grants_error? and not grants_disabled?(@current_account)}
+                  :if={
+                    not @grants_error? and not @grants_denied? and
+                      not grants_disabled?(@current_account)
+                  }
                   icon="product.approval"
                   title="No active grants."
                 >
