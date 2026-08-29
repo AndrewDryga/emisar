@@ -22,6 +22,21 @@ defmodule Emisar.Fixtures.Auth do
     raw
   end
 
+  @doc """
+  Persists one token in an exact `context`, aged to `inserted_at` — the arrange
+  for the retention sweep, which judges each row against its own context's
+  validity window.
+  """
+  def create_aged_token!(%User{} = user, context, %DateTime{} = inserted_at)
+      when is_binary(context) do
+    {_raw, digest} = Crypto.email_token()
+    token = Repo.insert!(UserToken.Changeset.hashed(user, digest, context, user.email))
+
+    {1, _} = UserToken.Query.by_id(token.id) |> Repo.update_all(set: [inserted_at: inserted_at])
+
+    Repo.reload!(token)
+  end
+
   @doc "Backdates one session token's insertion time and returns `:ok`."
   def backdate_session_token!(token, inserted_at)
       when is_binary(token) and is_struct(inserted_at, DateTime) do
