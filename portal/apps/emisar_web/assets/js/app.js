@@ -618,20 +618,88 @@ const CloseTab = {
   }
 }
 
+// Browser timings are untrusted hints that complement Phoenix's server-side
+// LiveView spans. Keep a tiny in-memory queue because a transport fallback can
+// happen before the LiveView hook mounts; only closed enums and measurements
+// leave the tab — never a URL, socket error, rendered content, or account id.
+const portalPerformanceQueue = []
+let portalTransport = "websocket"
+let portalNavigationStartedAt = null
+const portalSocketStartedAt = performance.now()
+
+const queuePortalPerformance = (report) => {
+  if (portalPerformanceQueue.length === 10) portalPerformanceQueue.shift()
+  portalPerformanceQueue.push(report)
+  window.dispatchEvent(new CustomEvent("emisar:portal-performance"))
+}
+
+const fallbackReason = (reason) => {
+  if (reason === "memorized") return "memorized"
+  if (reason == null) return "timeout"
+  if (reason?.type === "close") return "close"
+  return "error"
+}
+
+const portalSocketLogger = (kind, message, data) => {
+  if (kind !== "transport") return
+
+  if (message.startsWith("falling back to LongPoll")) {
+    portalTransport = "long_poll"
+    queuePortalPerformance({
+      kind: "transport_fallback",
+      reason: fallbackReason(data),
+      elapsed_ms: Math.round(performance.now() - portalSocketStartedAt)
+    })
+  } else if (message === "connected to primary after") {
+    portalTransport = "websocket"
+  }
+}
+
+const PortalPerformance = {
+  mounted() {
+    this.flushReports = () => {
+      while (portalPerformanceQueue.length > 0) {
+        this.pushEvent("portal_performance", portalPerformanceQueue.shift())
+      }
+    }
+    window.addEventListener("emisar:portal-performance", this.flushReports)
+    this.flushReports()
+  },
+  updated() { this.flushReports() },
+  destroyed() {
+    window.removeEventListener("emisar:portal-performance", this.flushReports)
+  }
+}
+
 let csrfToken = document.querySelector("meta[name='csrf-token']").getAttribute("content")
 let liveSocket = new LiveSocket("/live", Socket, {
   longPollFallbackMs: 2500,
   // Tab-resume reconnects often finish inside LiveView's 500ms default. The
   // neutral recovery notice should still acknowledge the interruption.
   disconnectedTimeout: 100,
+  logger: portalSocketLogger,
   params: {_csrf_token: csrfToken},
-  hooks: { LocalTime, Combobox, FilterableList, ExpiryCountdown, ResendCooldown, MagicCodeExpiry, CodeInput, FlashAutoClose, Tooltip, DialogFocus, PendingButton, CloseTab }
+  hooks: { LocalTime, Combobox, FilterableList, ExpiryCountdown, ResendCooldown, MagicCodeExpiry, CodeInput, FlashAutoClose, Tooltip, DialogFocus, PendingButton, CloseTab, PortalPerformance }
 })
 
 // Show progress bar on live navigation and form submits
 topbar.config({barColors: {0: "#36e6a5"}, shadowColor: "rgba(0, 0, 0, .3)"})
-window.addEventListener("phx:page-loading-start", _info => topbar.show(300))
-window.addEventListener("phx:page-loading-stop", _info => topbar.hide())
+window.addEventListener("phx:page-loading-start", _info => {
+  portalNavigationStartedAt = performance.now()
+  topbar.show(300)
+})
+window.addEventListener("phx:page-loading-stop", _info => {
+  topbar.hide()
+  if (portalNavigationStartedAt == null) return
+
+  queuePortalPerformance({
+    kind: "navigation",
+    duration_ms: Math.round(performance.now() - portalNavigationStartedAt),
+    dom_bytes: new Blob([document.documentElement.outerHTML]).size,
+    transport: portalTransport
+  })
+  portalNavigationStartedAt = null
+})
 
 // connect if there are any LiveViews on the page
 liveSocket.connect()

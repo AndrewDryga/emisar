@@ -1722,7 +1722,11 @@ defmodule EmisarWeb.CoreComponents do
 
   def console_shell(assigns) do
     ~H"""
-    <div class="flex min-h-screen bg-zinc-950 text-zinc-100">
+    <div
+      id="portal-performance"
+      phx-hook="PortalPerformance"
+      class="flex min-h-screen bg-zinc-950 text-zinc-100"
+    >
       <%!-- Desktop sidebar (lg and up). `sticky top-0 h-screen` pins
            it to the viewport so the bottom user-block (and sign-out
            icon) stays reachable on tall pages instead of being pushed

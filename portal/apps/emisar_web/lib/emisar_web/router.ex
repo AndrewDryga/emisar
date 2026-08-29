@@ -420,6 +420,7 @@ defmodule EmisarWeb.Router do
           {EmisarWeb.UserAuth, :ensure_account_compliant},
           {EmisarWeb.UserAuth, :track_pending_approvals},
           {EmisarWeb.UserAuth, :email_confirmation},
+          {EmisarWeb.PortalPerformance, :default},
           {EmisarWeb.UserAuth, :track_pageviews}
         ] do
         live "/", DashboardLive, :index

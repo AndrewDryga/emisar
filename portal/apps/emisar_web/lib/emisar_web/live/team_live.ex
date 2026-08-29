@@ -66,6 +66,7 @@ defmodule EmisarWeb.TeamLive do
      |> assign(:mfa_reset_error, nil)
      |> assign(:mfa_reset_recovery_form, to_form(%{"code" => ""}, as: :recovery))
      |> assign(:mfa_reset_sso_facts, nil)
+     |> assign(:pending_member_action, nil)
      # The branded sign-in link is a per-account constant to hand to members.
      |> assign(
        :sign_in_url,
@@ -553,6 +554,24 @@ defmodule EmisarWeb.TeamLive do
     end
   end
 
+  def handle_event(
+        "open_member_action",
+        %{"action" => action, "membership_id" => membership_id},
+        socket
+      )
+      when action in ["suspend", "end_sessions", "remove"] do
+    facts = Enum.find(socket.assigns.member_facts, &(&1.membership.id == membership_id))
+
+    if member_action_available?(socket, action, facts) do
+      pending = %{action: action, facts: facts, nonce: System.unique_integer([:positive])}
+      {:noreply, assign(socket, :pending_member_action, pending)}
+    else
+      {:noreply, socket}
+    end
+  end
+
+  def handle_event("open_member_action", _params, socket), do: {:noreply, socket}
+
   def handle_event("remove", %{"membership_id" => id}, socket) do
     with_membership(socket, id, fn membership ->
       case Accounts.delete_membership(membership, socket.assigns.current_subject) do
@@ -675,6 +694,44 @@ defmodule EmisarWeb.TeamLive do
     end
   end
 
+  defp member_action_available?(
+         %{assigns: %{can_manage_team?: true, current_user: %{id: current_user_id}}},
+         action,
+         %{membership: %{user_id: user_id}} = facts
+       )
+       when user_id != current_user_id do
+    action != "suspend" or not facts.disabled?
+  end
+
+  defp member_action_available?(_socket, _action, _facts), do: false
+
+  defp open_member_action_dialog(%{action: "remove"}),
+    do: show_confirm_dialog("member-action")
+
+  defp open_member_action_dialog(_pending), do: open_confirm("member-action")
+
+  defp member_action_title(%{action: "suspend"}), do: "Suspend this member?"
+  defp member_action_title(%{action: "end_sessions"}), do: "End all sessions for this member?"
+  defp member_action_title(%{action: "remove"}), do: "Remove from team"
+
+  defp member_action_label(%{action: "suspend"}), do: "Suspend member"
+  defp member_action_label(%{action: "end_sessions"}), do: "End sessions"
+  defp member_action_label(%{action: "remove"}), do: "Remove member"
+
+  defp member_action_confirm_token(%{action: "remove", facts: %{membership: membership}}),
+    do: (membership.user && membership.user.email) || membership.id
+
+  defp member_action_confirm_token(_pending), do: nil
+
+  defp confirm_member_action(%{action: action, facts: %{membership: membership}}) do
+    event = if action == "end_sessions", do: "end_sessions", else: action
+    js = JS.push(event, value: %{membership_id: membership.id})
+
+    if action == "remove",
+      do: hide_confirm_dialog(js, "member-action"),
+      else: close_confirm(js, "member-action")
+  end
+
   # A REJECTED save keeps its editor open on what the operator typed; only a
   # save that went through closes it. (This read the flash before — so a still
   # visible "Member updated." from a previous save closed the editor on a
@@ -726,12 +783,22 @@ defmodule EmisarWeb.TeamLive do
   defp with_membership(socket, id, fun) do
     case find_member_membership(socket, id) do
       nil ->
-        {:error, socket}
+        {:error, assign(socket, :pending_member_action, nil)}
 
       %Accounts.Membership{} = membership ->
         case fun.(membership) do
-          {:ok, message} -> {:ok, socket |> put_flash(:info, message) |> reload()}
-          {:error, message} -> {:error, put_flash(socket, :error, message)}
+          {:ok, message} ->
+            {:ok,
+             socket
+             |> assign(:pending_member_action, nil)
+             |> put_flash(:info, message)
+             |> reload()}
+
+          {:error, message} ->
+            {:error,
+             socket
+             |> assign(:pending_member_action, nil)
+             |> put_flash(:error, message)}
         end
     end
   end
@@ -2320,7 +2387,6 @@ defmodule EmisarWeb.TeamLive do
                           not Audit.subject_sees_billing_audit_only?(@current_subject)
                         }
                         current_account={@current_account}
-                        typed={@typed}
                         name_locked?={directory_managed?(directory)}
                       />
                     </div>
@@ -2493,6 +2559,41 @@ defmodule EmisarWeb.TeamLive do
                 </.empty_state>
               </:empty>
             </LiveTable.live_table>
+
+            <%!-- One selected member action replaces three hidden dialogs per
+                 roster row. The keyed mount waits for the scoped row facts and
+                 complete consequence copy before revealing the dialog. --%>
+            <div
+              :if={@pending_member_action}
+              id={"member-action-mount-#{@pending_member_action.nonce}"}
+              phx-mounted={open_member_action_dialog(@pending_member_action)}
+            >
+              <.confirm_dialog
+                id="member-action"
+                title={member_action_title(@pending_member_action)}
+                confirm_label={member_action_label(@pending_member_action)}
+                confirm_token={member_action_confirm_token(@pending_member_action)}
+                typed={@typed}
+                on_confirm={confirm_member_action(@pending_member_action)}
+              >
+                <:body>
+                  <%= case @pending_member_action.action do %>
+                    <% "suspend" -> %>
+                      They're signed out and can't sign back in until you restore them.
+                    <% "end_sessions" -> %>
+                      Signs them out of every device; they can sign back in right away.
+                    <% "remove" -> %>
+                      <% membership = @pending_member_action.facts.membership %> Permanently removes
+                      <span class="font-medium text-rose-100">
+                        {(membership.user && membership.user.email) || "this member"}
+                      </span>
+                      from the team: they lose access immediately, their role and runner scopes
+                      are deleted, and they'd need a fresh invite to return. Suspend instead to
+                      keep their access reversible.
+                  <% end %>
+                </:body>
+              </.confirm_dialog>
+            </div>
           </section>
         </div>
 
@@ -2969,7 +3070,6 @@ defmodule EmisarWeb.TeamLive do
   # person-filtered view, so they get no jump into one — not even their own.
   attr :can_view_member_activity?, :boolean, required: true
   attr :current_account, :map, required: true
-  attr :typed, :string, required: true
   attr :name_locked?, :boolean, required: true
 
   defp member_actions(assigns) do
@@ -3055,7 +3155,9 @@ defmodule EmisarWeb.TeamLive do
           <.menu_item
             :if={not @member.disabled?}
             tone={:amber}
-            phx-click={open_confirm("suspend-#{@membership.id}")}
+            phx-click="open_member_action"
+            phx-value-action="suspend"
+            phx-value-membership_id={@membership.id}
           >
             Suspend access
           </.menu_item>
@@ -3079,70 +3181,26 @@ defmodule EmisarWeb.TeamLive do
           >
             Reset MFA
           </.menu_item>
-          <.menu_item phx-click={open_confirm("end-sessions-#{@membership.id}")}>
+          <.menu_item
+            phx-click="open_member_action"
+            phx-value-action="end_sessions"
+            phx-value-membership_id={@membership.id}
+          >
             End all sessions
           </.menu_item>
           <div class="my-1 border-t border-zinc-800/70"></div>
           <%!-- IRREVERSIBLE — typed-confirm modal instead of native
                data-confirm. The button only OPENS the dialog; `remove`
                still fires from Confirm and stays server-authz-gated. --%>
-          <.menu_item tone={:rose} phx-click={show_confirm_dialog("remove-member-#{@membership.id}")}>
+          <.menu_item
+            tone={:rose}
+            phx-click="open_member_action"
+            phx-value-action="remove"
+            phx-value-membership_id={@membership.id}
+          >
             Remove from team
           </.menu_item>
         </.dropdown>
-
-        <%!-- Plain (no-typing) styled confirm modals for the dropdown's
-             reversible destructive actions — the drop-in for a native
-             data-confirm: the menu row's `phx-click` runs `open_confirm/1`,
-             the Confirm here dispatches the event and closes. Same pattern as
-             the typed Remove dialog below; each mirrors its trigger's `:if`
-             so no orphan dialog renders when the action isn't offered. --%>
-        <.confirm_dialog
-          :if={not @member.disabled?}
-          id={"suspend-#{@membership.id}"}
-          title="Suspend this member?"
-          confirm_label="Suspend member"
-          on_confirm={
-            JS.push("suspend", value: %{membership_id: @membership.id})
-            |> close_confirm("suspend-#{@membership.id}")
-          }
-        >
-          <:body>They're signed out and can't sign back in until you restore them.</:body>
-        </.confirm_dialog>
-
-        <.confirm_dialog
-          id={"end-sessions-#{@membership.id}"}
-          title="End all sessions for this member?"
-          confirm_label="End sessions"
-          on_confirm={
-            JS.push("end_sessions", value: %{membership_id: @membership.id})
-            |> close_confirm("end-sessions-#{@membership.id}")
-          }
-        >
-          <:body>Signs them out of every device; they can sign back in right away.</:body>
-        </.confirm_dialog>
-
-        <.confirm_dialog
-          id={"remove-member-#{@membership.id}"}
-          title="Remove from team"
-          confirm_label="Remove member"
-          confirm_token={(@membership.user && @membership.user.email) || @membership.id}
-          typed={@typed}
-          on_confirm={
-            JS.push("remove", value: %{membership_id: @membership.id})
-            |> hide_confirm_dialog("remove-member-#{@membership.id}")
-          }
-        >
-          <:body>
-            Permanently removes
-            <span class="font-medium text-rose-100">
-              {(@membership.user && @membership.user.email) || "this member"}
-            </span>
-            from the team: they lose access immediately, their role and runner scopes are
-            deleted, and they'd need a fresh invite to return. Suspend instead to keep their
-            access reversible.
-          </:body>
-        </.confirm_dialog>
       <% true -> %>
     <% end %>
     """

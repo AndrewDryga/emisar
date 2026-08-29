@@ -255,6 +255,35 @@ defmodule EmisarWeb.AuditLiveTest do
       refute html =~ ~s(name="auth_method")
     end
 
+    test "loads actor and target kind metadata only when the collapsed panel opens",
+         %{conn: conn} do
+      {conn, _user, account} = register_and_log_in(conn)
+      test_pid = self()
+      handler = {__MODULE__, test_pid, make_ref()}
+
+      :ok =
+        :telemetry.attach(
+          handler,
+          [:emisar, :repo, :query],
+          fn _event, _measurements, metadata, _config ->
+            send(test_pid, {:audit_repo_query, self(), metadata.query})
+          end,
+          nil
+        )
+
+      on_exit(fn -> :telemetry.detach(handler) end)
+
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/audit")
+
+      initial_queries = drain_audit_queries(MapSet.new([test_pid, lv.pid]))
+      refute Enum.any?(initial_queries, &kind_metadata_query?/1)
+
+      lv |> element("button[phx-click='toggle_filters']") |> render_click()
+
+      opened_queries = drain_audit_queries(MapSet.new([lv.pid]))
+      assert Enum.count(opened_queries, &kind_metadata_query?/1) == 2
+    end
+
     test "an actor pivot (actor_kind + actor_id) filters the feed and shows a clearable chip",
          %{conn: conn} do
       {conn, _user, account} = register_and_log_in(conn)
@@ -1344,5 +1373,22 @@ defmodule EmisarWeb.AuditLiveTest do
     else
       acc <> html
     end
+  end
+
+  defp drain_audit_queries(pids, queries \\ []) do
+    receive do
+      {:audit_repo_query, pid, query} ->
+        queries = if MapSet.member?(pids, pid), do: [query | queries], else: queries
+        drain_audit_queries(pids, queries)
+    after
+      0 -> Enum.reverse(queries)
+    end
+  end
+
+  defp kind_metadata_query?(query) do
+    sql = String.downcase(query)
+
+    String.contains?(sql, "select distinct") and
+      (String.contains?(sql, "actor_kind") or String.contains?(sql, "target_kind"))
   end
 end

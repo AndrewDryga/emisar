@@ -65,6 +65,7 @@ defmodule EmisarWeb.AgentsLive do
      # operator has picked a client, i.e. over that live socket.
      |> assign(:detected_os, UserAgent.platform(get_connect_info(socket, :user_agent)))
      |> ConfirmDialog.init()
+     |> assign(:pending_key_action, nil)
      |> assign(:rotated, nil)
      |> assign_form(ApiKeys.change_key(default_params()))}
   end
@@ -165,6 +166,28 @@ defmodule EmisarWeb.AgentsLive do
 
   def handle_event("dismiss_rotated", _params, socket),
     do: {:noreply, assign(socket, :rotated, nil)}
+
+  def handle_event("open_key_action", %{"action" => action, "id" => id}, socket)
+      when action in ["rotate", "revoke"] do
+    with_manageable_key(socket, id, fn socket, key ->
+      facts = row_facts(key, DateTime.utc_now())
+
+      if key_action_available?(action, facts) do
+        pending = %{
+          action: action,
+          facts: facts,
+          key: key,
+          nonce: System.unique_integer([:positive])
+        }
+
+        {:noreply, assign(socket, :pending_key_action, pending)}
+      else
+        {:noreply, socket}
+      end
+    end)
+  end
+
+  def handle_event("open_key_action", _params, socket), do: {:noreply, socket}
 
   def handle_event("revoke", %{"id" => id}, socket),
     do: with_manageable_key(socket, id, &do_revoke/2)
@@ -284,8 +307,18 @@ defmodule EmisarWeb.AgentsLive do
     # the page blanked to "Reconnecting", remounted, and the key was still
     # live with nothing said.
     case ApiKeys.revoke_api_key(key, socket.assigns.current_subject) do
-      {:ok, _revoked} -> {:noreply, socket |> put_flash(:info, "API key revoked.") |> reload()}
-      {:error, _} -> {:noreply, put_flash(socket, :error, "Could not revoke the key.")}
+      {:ok, _revoked} ->
+        {:noreply,
+         socket
+         |> assign(:pending_key_action, nil)
+         |> put_flash(:info, "API key revoked.")
+         |> reload()}
+
+      {:error, _} ->
+        {:noreply,
+         socket
+         |> assign(:pending_key_action, nil)
+         |> put_flash(:error, "Could not revoke the key.")}
     end
   end
 
@@ -297,12 +330,22 @@ defmodule EmisarWeb.AgentsLive do
       # and it stays until dismissed (a flash would auto-close over the only
       # copy of the secret's instructions).
       {:ok, raw, _new_key} ->
-        {:noreply, socket |> assign(:rotated, %{name: key.name, secret: raw}) |> reload()}
+        {:noreply,
+         socket
+         |> assign(:pending_key_action, nil)
+         |> assign(:rotated, %{name: key.name, secret: raw})
+         |> reload()}
 
       {:error, _} ->
-        {:noreply, put_flash(socket, :error, "Could not rotate the key.")}
+        {:noreply,
+         socket
+         |> assign(:pending_key_action, nil)
+         |> put_flash(:error, "Could not rotate the key.")}
     end
   end
+
+  defp key_action_available?("rotate", facts), do: facts.rotatable?
+  defp key_action_available?("revoke", facts), do: not facts.revoked?
 
   # Structural refresh-in-place (PubSub / mutation): re-runs with current URL
   # params so the operator doesn't jump back to page 1 after a lifecycle change.
@@ -457,6 +500,30 @@ defmodule EmisarWeb.AgentsLive do
   defp row_facts(key, now) do
     facts = ApiKeys.key_facts(key, now)
     ApiKeys.with_bridge_compatibility(facts, Compat.mcp_status(facts.bridge_version))
+  end
+
+  defp open_key_action_dialog(%{action: "revoke", facts: %{expiry: expiry}})
+       when expiry != :expired,
+       do: show_confirm_dialog("agent-key-action")
+
+  defp open_key_action_dialog(_pending), do: open_confirm("agent-key-action")
+
+  defp pending_key_confirm_token(%{action: "revoke", facts: %{expiry: expiry}, key: key})
+       when expiry != :expired,
+       do: key.name
+
+  defp pending_key_confirm_token(_pending), do: nil
+
+  defp confirm_key_action(%{action: "rotate", key: key}) do
+    JS.push("rotate", value: %{id: key.id}) |> close_confirm("agent-key-action")
+  end
+
+  defp confirm_key_action(%{facts: %{expiry: :expired}, key: key}) do
+    JS.push("revoke", value: %{id: key.id}) |> close_confirm("agent-key-action")
+  end
+
+  defp confirm_key_action(%{key: key}) do
+    JS.push("revoke", value: %{id: key.id}) |> hide_confirm_dialog("agent-key-action")
   end
 
   # The issuing human — the grouping key for the list, carrying the membership
@@ -1364,14 +1431,18 @@ defmodule EmisarWeb.AgentsLive do
                          Revoke stays — it's the operator's off-switch. --%>
                       <.menu_item
                         :if={facts.rotatable?}
-                        phx-click={open_confirm("rotate-#{key.id}")}
+                        phx-click="open_key_action"
+                        phx-value-action="rotate"
+                        phx-value-id={key.id}
                       >
                         Rotate
                       </.menu_item>
                       <div class="my-1 border-t border-zinc-800/70"></div>
                       <.menu_item
                         tone={:rose}
-                        phx-click={show_confirm_dialog("revoke-agent-key-#{key.id}")}
+                        phx-click="open_key_action"
+                        phx-value-action="revoke"
+                        phx-value-id={key.id}
                       >
                         Revoke
                       </.menu_item>
@@ -1402,58 +1473,6 @@ defmodule EmisarWeb.AgentsLive do
                       Audit trail
                     </.button>
                   <% end %>
-                  <.confirm_dialog
-                    :if={
-                      facts.rotatable? and
-                        ApiKeys.subject_can_manage_api_key?(key, @current_subject)
-                    }
-                    id={"rotate-#{key.id}"}
-                    title="Rotate this key?"
-                    confirm_label="Rotate key"
-                    on_confirm={
-                      JS.push("rotate", value: %{id: key.id}) |> close_confirm("rotate-#{key.id}")
-                    }
-                  >
-                    <:body>
-                      A new key with the same scope is minted; this one keeps working until the new
-                      key's first use, then it's revoked automatically.
-                    </:body>
-                  </.confirm_dialog>
-                  <%!-- A usable credential kill stays typed; an expired key is
-                     already unable to authenticate, so revoking that stale row
-                     drops to the plain destructive tier (§5).
-                     Per-row dialog with the key's name baked in at render,
-                     so it opens already-populated. A single page-level dialog
-                     filled by an "open_revoke" round-trip flashed a blank
-                     name/token for one round-trip before the server filled it. --%>
-                  <.confirm_dialog
-                    :if={
-                      not facts.revoked? and
-                        ApiKeys.subject_can_manage_api_key?(key, @current_subject)
-                    }
-                    id={"revoke-agent-key-#{key.id}"}
-                    title="Revoke this agent key"
-                    confirm_label="Revoke key"
-                    confirm_token={if facts.expiry == :expired, do: nil, else: key.name}
-                    typed={@typed}
-                    on_confirm={
-                      JS.push("revoke", value: %{id: key.id})
-                      |> hide_confirm_dialog("revoke-agent-key-#{key.id}")
-                    }
-                  >
-                    <:body>
-                      <%= if facts.expiry == :expired do %>
-                        Permanently marks
-                        <span class="font-mono font-medium text-zinc-200">{key.name}</span>
-                        as revoked. It has already expired and cannot authenticate or run actions.
-                      <% else %>
-                        Permanently revokes
-                        <span class="font-mono font-medium text-zinc-200">{key.name}</span>
-                        — the connected client gets 401s on its next call. This can't be undone;
-                        connect the client again to mint a fresh key.
-                      <% end %>
-                    </:body>
-                  </.confirm_dialog>
                 </:actions>
               </.list_row>
             </:item>
@@ -1479,6 +1498,52 @@ defmodule EmisarWeb.AgentsLive do
               <% end %>
             </:empty>
           </LiveTable.live_table>
+
+          <%!-- Render one dialog only after the chosen row has been fetched
+               through the account-scoped context and re-authorized. The keyed
+               mount opens it after its complete contents arrive, avoiding the
+               blank first frame that the old page-level experiment produced. --%>
+          <div
+            :if={@pending_key_action}
+            id={"agent-key-action-mount-#{@pending_key_action.nonce}"}
+            phx-mounted={open_key_action_dialog(@pending_key_action)}
+          >
+            <.confirm_dialog
+              id="agent-key-action"
+              title={
+                if @pending_key_action.action == "rotate",
+                  do: "Rotate this key?",
+                  else: "Revoke this agent key"
+              }
+              confirm_label={
+                if @pending_key_action.action == "rotate", do: "Rotate key", else: "Revoke key"
+              }
+              confirm_token={pending_key_confirm_token(@pending_key_action)}
+              typed={@typed}
+              on_confirm={confirm_key_action(@pending_key_action)}
+            >
+              <:body>
+                <%= cond do %>
+                  <% @pending_key_action.action == "rotate" -> %>
+                    A new key with the same scope is minted; this one keeps working until the new
+                    key's first use, then it's revoked automatically.
+                  <% @pending_key_action.facts.expiry == :expired -> %>
+                    Permanently marks
+                    <span class="font-mono font-medium text-zinc-200">
+                      {@pending_key_action.key.name}
+                    </span>
+                    as revoked. It has already expired and cannot authenticate or run actions.
+                  <% true -> %>
+                    Permanently revokes
+                    <span class="font-mono font-medium text-zinc-200">
+                      {@pending_key_action.key.name}
+                    </span>
+                    — the connected client gets 401s on its next call. This can't be undone;
+                    connect the client again to mint a fresh key.
+                <% end %>
+              </:body>
+            </.confirm_dialog>
+          </div>
         </div>
 
         <.agent_docs_rail />

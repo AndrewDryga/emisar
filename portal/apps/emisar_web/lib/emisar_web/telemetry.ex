@@ -58,6 +58,7 @@ defmodule EmisarWeb.Telemetry do
   # buckets, and gauge-shaped (VM memory, queue lengths) to last_value.
   @latency_buckets [5, 10, 25, 50, 100, 250, 500, 1000, 2500, 5000, 10_000]
   @db_buckets [1, 5, 10, 25, 50, 100, 250, 500, 1000, 5000]
+  @dom_byte_buckets [25_000, 50_000, 100_000, 200_000, 400_000, 800_000, 1_600_000]
 
   def metrics do
     [
@@ -113,6 +114,27 @@ defmodule EmisarWeb.Telemetry do
         tags: [:view],
         tag_values: &live_view_tags/1,
         unit: {:native, :millisecond},
+        reporter_options: [buckets: @latency_buckets]
+      ),
+
+      # Browser hints complement the authoritative server spans above: the
+      # whole navigation as perceived by the tab, its resulting DOM weight,
+      # and why Phoenix abandoned WebSocket. All tags are normalized in
+      # PortalPerformance; the client cannot manufacture label cardinality.
+      distribution("emisar.portal.browser.navigation.duration_ms",
+        tags: [:view, :transport],
+        unit: :millisecond,
+        reporter_options: [buckets: @latency_buckets]
+      ),
+      distribution("emisar.portal.browser.navigation.dom_bytes",
+        tags: [:view, :transport],
+        unit: :byte,
+        reporter_options: [buckets: @dom_byte_buckets]
+      ),
+      counter("emisar.portal.browser.transport_fallback.count", tags: [:view, :reason]),
+      distribution("emisar.portal.browser.transport_fallback.elapsed_ms",
+        tags: [:view, :reason],
+        unit: :millisecond,
         reporter_options: [buckets: @latency_buckets]
       ),
 

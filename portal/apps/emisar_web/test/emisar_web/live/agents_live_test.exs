@@ -481,19 +481,20 @@ defmodule EmisarWeb.AgentsLiveTest do
       {:ok, _backing} =
         ApiKeys.create_backing_key(account.id, user.id, subject.membership_id, "Claude (OAuth)")
 
-      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/agents")
+      {:ok, lv, html} = live(conn, ~p"/app/#{account}/agents")
 
       # The OAuth connection shows on the list, with Revoke (the operator's
       # off-switch) but NOT Rotate — a fresh emk- secret can't reach the client.
       assert html =~ "Claude (OAuth)"
-      assert html =~ "Revoke this agent key"
-      refute html =~ "Rotate this key?"
+      assert has_element?(lv, "details button", "Revoke")
+      refute has_element?(lv, "details button", "Rotate")
+      refute has_element?(lv, "#agent-key-action")
 
       # Non-vacuous: a normal key on the same page DOES surface Rotate, so the
       # refute above is the OAuth row specifically hiding it.
       {:ok, _raw, _key} = ApiKeys.create_key(%{name: "manual-bot"}, subject)
-      {:ok, _lv, with_manual} = live(conn, ~p"/app/#{account}/agents")
-      assert with_manual =~ "Rotate this key?"
+      {:ok, with_manual, _html} = live(conn, ~p"/app/#{account}/agents")
+      assert has_element?(with_manual, "details button", "Rotate")
     end
 
     test "an owner bulk-revokes every key a member owns from the group header", %{conn: conn} do
@@ -1269,22 +1270,25 @@ defmodule EmisarWeb.AgentsLiveTest do
       {:ok, _raw, usable_key} = ApiKeys.create_key(%{name: "usable-bot"}, subject)
 
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/agents")
-      expired_dialog = "revoke-agent-key-#{expired_key.id}"
-      usable_dialog = "revoke-agent-key-#{usable_key.id}"
+      dialog = "agent-key-action"
 
-      refute has_element?(lv, ~s(##{expired_dialog} input[name="confirm_token"]))
-      refute has_element?(lv, "##{expired_dialog} button[disabled]", "Revoke key")
-      assert has_element?(lv, "##{expired_dialog}", "already expired and cannot authenticate")
+      refute has_element?(lv, "##{dialog}")
+      render_click(lv, "open_key_action", %{"action" => "revoke", "id" => expired_key.id})
 
-      assert has_element?(lv, ~s(##{usable_dialog} input[name="confirm_token"]))
-      assert has_element?(lv, "##{usable_dialog} button[disabled]", "Revoke key")
+      refute has_element?(lv, ~s(##{dialog} input[name="confirm_token"]))
+      refute has_element?(lv, "##{dialog} button[disabled]", "Revoke key")
+      assert has_element?(lv, "##{dialog}", "already expired and cannot authenticate")
 
-      html = confirm_dialog(lv, expired_dialog, "Revoke key")
+      html = confirm_dialog(lv, dialog, "Revoke key")
 
       assert html =~ "API key revoked."
       assert Repo.reload!(expired_key).revoked_at
       refute html =~ "expired-bot"
       flush_key_broadcast(lv)
+
+      render_click(lv, "open_key_action", %{"action" => "revoke", "id" => usable_key.id})
+      assert has_element?(lv, ~s(##{dialog} input[name="confirm_token"]))
+      assert has_element?(lv, "##{dialog} button[disabled]", "Revoke key")
     end
 
     # Four verbs on a manager's live row is the labeled-menu threshold: one
@@ -1308,9 +1312,18 @@ defmodule EmisarWeb.AgentsLiveTest do
 
       assert has_element?(lv, "details button", "Rotate")
       assert has_element?(lv, "details button", "Revoke")
-      # The menu rows still open the same confirm dialogs.
-      assert html =~ "Rotate this key?"
-      assert html =~ "Revoke this agent key"
+      # Hidden row dialogs do not inflate the initial payload. The selected
+      # key's one dialog is rendered only after the server re-fetches it.
+      refute has_element?(lv, "#agent-key-action")
+      refute html =~ "Rotate this key?"
+
+      assert render_click(lv, "open_key_action", %{"action" => "rotate", "id" => key.id}) =~
+               "Rotate this key?"
+
+      assert render_click(lv, "open_key_action", %{"action" => "revoke", "id" => key.id}) =~
+               "Revoke this agent key"
+
+      assert has_element?(lv, ~s(#agent-key-action input[name="confirm_token"]))
       # Revoke is a typed-confirm flow, so the page copy promises "seconds",
       # never "one click".
       assert html =~ "revoke access in seconds"
@@ -1342,8 +1355,13 @@ defmodule EmisarWeb.AgentsLiveTest do
       assert has_element?(lv, "details a", "View audit trail")
       assert has_element?(lv, "details button", "Rotate")
       assert has_element?(lv, "details button", "Revoke")
-      assert has_element?(lv, "#rotate-#{key.id}")
-      assert has_element?(lv, "#revoke-agent-key-#{key.id}")
+      refute has_element?(lv, "#agent-key-action")
+
+      render_click(lv, "open_key_action", %{"action" => "rotate", "id" => key.id})
+      assert has_element?(lv, "#agent-key-action", "Rotate this key?")
+
+      render_click(lv, "open_key_action", %{"action" => "revoke", "id" => key.id})
+      assert has_element?(lv, "#agent-key-action", "Revoke this agent key")
       # The bordered read-pair is the grammar for a row you CAN'T manage.
       refute has_element?(lv, "a.border-zinc-800", "Audit trail")
     end

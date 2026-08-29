@@ -187,10 +187,14 @@ defmodule Emisar.Runs do
            ) do
       {preloads, opts} = Keyword.pop(opts, :preload, [])
 
+      count_queryable =
+        ActionRun.Query.all()
+        |> Authorizer.for_subject(subject)
+
       ActionRun.Query.all()
       |> apply_run_preloads(preloads)
       |> Authorizer.for_subject(subject)
-      |> Repo.list(ActionRun.Query, opts)
+      |> Repo.list(ActionRun.Query, Keyword.put(opts, :count_queryable, count_queryable))
     end
   end
 

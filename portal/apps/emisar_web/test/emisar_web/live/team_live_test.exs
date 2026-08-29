@@ -2381,7 +2381,13 @@ defmodule EmisarWeb.TeamLiveTest do
       membership: membership
     } do
       # Drive the dialog: type the member's email, then Confirm.
-      dialog = "remove-member-#{membership.id}"
+      dialog = "member-action"
+
+      render_click(lv, "open_member_action", %{
+        "action" => "remove",
+        "membership_id" => membership.id
+      })
+
       type_confirm_token(lv, dialog, member.email)
       subscribe_team(account)
       assert confirm_dialog(lv, dialog, "Remove member") =~ "Member removed."
@@ -2389,8 +2395,16 @@ defmodule EmisarWeb.TeamLiveTest do
       assert_team_broadcast(lv, "membership.removed", membership.user_id)
     end
 
-    test "the remove dialog spells out that removal is permanent", %{lv: lv} do
+    test "the remove dialog spells out that removal is permanent", %{
+      lv: lv,
+      membership: membership
+    } do
       # Heavier than the reversible suspend/reset confirms — it states what's lost.
+      render_click(lv, "open_member_action", %{
+        "action" => "remove",
+        "membership_id" => membership.id
+      })
+
       assert render(lv) =~ "they lose access immediately"
       assert render(lv) =~ "need a fresh invite to return"
     end
@@ -2399,7 +2413,12 @@ defmodule EmisarWeb.TeamLiveTest do
       lv: lv,
       membership: membership
     } do
-      dialog = "remove-member-#{membership.id}"
+      dialog = "member-action"
+
+      render_click(lv, "open_member_action", %{
+        "action" => "remove",
+        "membership_id" => membership.id
+      })
 
       # Empty + wrong token → Confirm disabled, `remove` never dispatched.
       assert_raise ArgumentError, ~r/disabled/, fn ->

@@ -72,7 +72,10 @@ defmodule EmisarWeb.AuditLive do
 
   def handle_info(_, socket), do: {:noreply, socket}
 
-  defp reload(socket), do: load(socket, socket.assigns[:filter_params] || %{})
+  # A new event changes the trail, not the filter vocabulary. Rebuilding the
+  # latter ran two DISTINCT scans for every broadcast even while the panel was
+  # collapsed; keep the already-assigned filter state and refresh only rows.
+  defp reload(socket), do: load_events(socket, socket.assigns[:filter_params] || %{})
 
   defp schedule_reload(%{assigns: %{reload_scheduled?: true}} = socket), do: socket
 
@@ -81,8 +84,13 @@ defmodule EmisarWeb.AuditLive do
     assign(socket, :reload_scheduled?, true)
   end
 
+  def handle_event("toggle_filters", _params, %{assigns: %{filters_open?: false}} = socket) do
+    socket = assign(socket, :filters_open?, true)
+    {:noreply, assign_filter_state(socket, socket.assigns.filter_params)}
+  end
+
   def handle_event("toggle_filters", _params, socket),
-    do: {:noreply, update(socket, :filters_open?, &(!&1))}
+    do: {:noreply, assign(socket, :filters_open?, false)}
 
   def handle_event("filter", params, socket) do
     # The filter form doesn't carry actor_id when the "by actor" picker is
@@ -246,8 +254,12 @@ defmodule EmisarWeb.AuditLive do
   end
 
   defp load(socket, params) do
-    socket = assign_filter_state(socket, params)
+    socket
+    |> assign_filter_state(params)
+    |> load_events(params)
+  end
 
+  defp load_events(socket, params) do
     base_filters =
       Audit.applicable_event_filters(
         params["event_type"],
@@ -295,7 +307,7 @@ defmodule EmisarWeb.AuditLive do
     # panel shows only filters that can actually narrow the log. The subject
     # narrows it first: a facet whose every option is unreadable is not offered.
     base_filters =
-      if connected?(socket) do
+      if connected?(socket) and socket.assigns.filters_open? do
         case Audit.available_event_filters(params["event_type"], params, subject) do
           {:ok, filters} -> filters
           {:error, _reason} -> []
@@ -308,8 +320,12 @@ defmodule EmisarWeb.AuditLive do
     # control belongs next to its trigger), not tacked on at the end.
     # base_filters stays the opts source; the actor/target pickers are
     # render-only — actor_id/target_id apply via the opts path in `load/2`.
-    actor_filter = actor_kind_filter(params, subject)
-    target_filter = target_kind_filter(params, subject)
+    {actor_filter, target_filter} =
+      if connected?(socket) and socket.assigns.filters_open? do
+        {actor_kind_filter(params, subject), target_kind_filter(params, subject)}
+      else
+        {[], []}
+      end
 
     filters =
       Enum.flat_map(base_filters, fn

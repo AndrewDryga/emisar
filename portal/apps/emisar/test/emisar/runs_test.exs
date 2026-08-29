@@ -366,6 +366,41 @@ defmodule Emisar.RunsTest do
       assert listed.runner.id == runner.id
     end
 
+    test "counts the filtered feed without its rendering joins" do
+      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
+      {:ok, _run} = Runs.create_run(base_attrs(account.id, runner.id))
+      test_pid = self()
+      handler = {__MODULE__, test_pid, make_ref()}
+
+      :ok =
+        :telemetry.attach(
+          handler,
+          [:emisar, :repo, :query],
+          fn _event, _measurements, metadata, _config ->
+            send(test_pid, {:runs_repo_query, self(), metadata.query})
+          end,
+          nil
+        )
+
+      on_exit(fn -> :telemetry.detach(handler) end)
+
+      assert {:ok, [_listed], %{count: 1}} =
+               Runs.list_runs(subject,
+                 preload: [:runner, :attribution],
+                 filter: [runner_id: runner.id]
+               )
+
+      count_sql =
+        test_pid
+        |> drain_runs_queries()
+        |> Enum.find(&(String.trim(&1) =~ ~r/^SELECT count\(/i))
+
+      assert count_sql
+      refute String.downcase(count_sql) =~ " join "
+      assert count_sql =~ ~s|"runner_id"|
+    end
+
     test "preloads only the requester's membership in the run account" do
       {_owner, account, subject} = Fixtures.Subjects.owner_subject()
       other_account = Fixtures.Accounts.create_account()
@@ -5932,6 +5967,15 @@ defmodule Emisar.RunsTest do
         |> Repo.all()
 
       assert rows == []
+    end
+  end
+
+  defp drain_runs_queries(pid, queries \\ []) do
+    receive do
+      {:runs_repo_query, ^pid, query} -> drain_runs_queries(pid, [query | queries])
+      {:runs_repo_query, _other_pid, _query} -> drain_runs_queries(pid, queries)
+    after
+      0 -> Enum.reverse(queries)
     end
   end
 end

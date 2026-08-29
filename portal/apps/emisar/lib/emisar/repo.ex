@@ -332,6 +332,7 @@ defmodule Emisar.Repo do
     * `:order_by` — extra cursor fields prepended to the query module's
     * `:preload` — Ecto preload list
     * `:page` — `[cursor: ..., limit: ...]` (limit clamped to [1, 100])
+    * `:count_queryable` — an equivalent scoped query without render-only joins
 
   Returns `{:ok, [schema], %Paginator.Metadata{}}` so the LiveTable
   can render Prev/Next cursors directly.
@@ -355,12 +356,15 @@ defmodule Emisar.Repo do
     # the estimate itself once an exact aggregate would be a scan that gets
     # slower forever — nobody reads the last three digits of a six-figure total.
     {count_mode, opts} = Keyword.pop(opts, :count, true)
+    {count_queryable, opts} = Keyword.pop(opts, :count_queryable)
 
     with {:ok, paginator_opts} <- Paginator.init(query_module, order_by, paginator_opts),
          {:ok, queryable} <- Filter.filter(queryable, query_module, filter),
+         {:ok, count_queryable} <-
+           filter_count_queryable(count_queryable, queryable, query_module, filter),
          keyset_query = Paginator.query(queryable, paginator_opts),
          {:ok, rows} <- run_keyset_query(keyset_query, opts) do
-      {count, count_kind} = count_for(count_mode, queryable)
+      {count, count_kind} = count_for(count_mode, count_queryable)
       {results, metadata} = Paginator.metadata(rows, paginator_opts)
 
       {results, ecto_preloads} = Preloader.preload(results, preload, query_module)
@@ -368,6 +372,12 @@ defmodule Emisar.Repo do
       {:ok, results, %{metadata | count: count, count_kind: count_kind}}
     end
   end
+
+  defp filter_count_queryable(nil, filtered_queryable, _query_module, _filter),
+    do: {:ok, filtered_queryable}
+
+  defp filter_count_queryable(count_queryable, _filtered_queryable, query_module, filter),
+    do: Filter.filter(count_queryable, query_module, filter)
 
   defp count_for(false, _queryable), do: {nil, nil}
 
