@@ -55,7 +55,11 @@ services:
   # Postgres — the only stateful dependency
   # ----------------------------------------------------------------
   db:
-    image: postgres:18.4-alpine
+    # The tag documents the version; the @sha256 pins the exact multi-arch index,
+    # so a republished tag can't silently change what CI's signing-e2e/sso-e2e run.
+    # Refresh (tag bump or security patch) with:
+    #   docker buildx imagetools inspect postgres:18.4-alpine --format '{{.Manifest.Digest}}'
+    image: postgres:18.4-alpine@sha256:9a8afca54e7861fd90fab5fdf4c42477a6b1cb7d293595148e674e0a3181de15
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
@@ -83,7 +87,10 @@ services:
   # DEV ONLY — hardcoded secrets, self-signed cert.
   # ----------------------------------------------------------------
   keycloak:
-    image: quay.io/keycloak/keycloak:26.7.0
+    # Pinned to the exact multi-arch index so a republished tag can't change the
+    # SSO e2e stack. Refresh with:
+    #   docker buildx imagetools inspect quay.io/keycloak/keycloak:26.7.0 --format '{{.Manifest.Digest}}'
+    image: quay.io/keycloak/keycloak:26.7.0@sha256:0f198be292568439d700cdbfb893e69a6009bb43a94a06a945b1d3d506c76b13
     # Network SIDECAR of the portal: shares the portal's namespace (loopback +
     # published ports) so the portal reaches Keycloak at the SAME localhost:8443
     # the host browser uses — making the OIDC issuer one consistent localhost

@@ -60,11 +60,18 @@ updates:
         update-types: ["minor", "patch"]
 
   - package-ecosystem: "docker"
+    # Docker directories are not recursive — every Dockerfile/compose location is
+    # listed. "/" is the root docker-compose.yml (the signing-e2e/sso-e2e stack);
+    # "/runner/release" is the published ghcr emisar-runner image customers pull,
+    # which shares portal's debian base and must be bumped alongside it.
     directories:
+      - "/"
       - "/portal"
+      - "/runner/release"
       - "/dev/runner"
       - "/dev/mcp"
       - "/dev/cloud-init"
+      - "/dev/test-host-access"
       - "/dev/test-packs"
       - "/packs/*/test"
       - "/packs/*/test/*"
