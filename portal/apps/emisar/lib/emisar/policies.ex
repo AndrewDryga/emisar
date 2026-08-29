@@ -414,7 +414,7 @@ defmodule Emisar.Policies do
   def snapshot_runbook_decisions(account_id, targets)
       when is_binary(account_id) and is_list(targets) do
     runner_ids = targets |> Enum.map(& &1.runner_id) |> Enum.uniq()
-    groups = targets |> Enum.map(& &1[:group]) |> Enum.reject(&is_nil/1) |> Enum.uniq()
+    groups = targets |> Enum.map(& &1.runner_group) |> Enum.reject(&is_nil/1) |> Enum.uniq()
 
     policies =
       Policy.Query.not_deleted()
@@ -433,7 +433,7 @@ defmodule Emisar.Policies do
       ) ||
         Enum.find(
           policies,
-          &(&1.scope_type == :group and &1.scope_value == to_string(target[:group]))
+          &(&1.scope_type == :group and &1.scope_value == target.runner_group)
         ) ||
         Enum.find(policies, &(&1.scope_type == :account))
 

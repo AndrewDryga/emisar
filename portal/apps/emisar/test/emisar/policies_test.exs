@@ -3,9 +3,11 @@ defmodule Emisar.PoliciesTest do
   alias Emisar.Accounts
   alias Emisar.Accounts.RunnerAccess
   alias Emisar.Auth.Subject
+  alias Emisar.Catalog
   alias Emisar.Fixtures
   alias Emisar.Policies
   alias Emisar.Policies.Policy
+  alias Emisar.Runbooks.Compiler
   alias Emisar.Runners
 
   describe "default_rules/0" do
@@ -793,24 +795,33 @@ defmodule Emisar.PoliciesTest do
   end
 
   describe "snapshot_runbook_decisions/2" do
-    test "returns the exact policy, decision reason, and approval settings for each target" do
-      {_user, account, _subject} = Fixtures.Subjects.owner_subject()
-      runner = Fixtures.Runners.create_runner(account_id: account.id, group: "database")
+    test "returns the account default's decision, reason, and approval settings" do
+      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      runner = trusted_runner(account, subject, "database")
 
-      [snapshot] =
-        Policies.snapshot_runbook_decisions(account.id, [
-          %{
-            runner_id: runner.id,
-            group: runner.group,
-            action_id: "postgres.failover",
-            risk: "high"
-          }
-        ])
+      assert {:ok, compiled} = compile_uptime_plan(subject, runner.group)
+      assert [snapshot] = Policies.snapshot_runbook_decisions(account.id, compiled.items)
+
+      assert snapshot.decision == :allow
+      assert snapshot.policy.scope_type == :account
+      assert snapshot.policy.account_id == account.id
+      assert snapshot.approval == nil
+      assert is_binary(snapshot.reason)
+    end
+
+    test "resolves the ruleset targeting the compiled item's runner group" do
+      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      runner = trusted_runner(account, subject, "database")
+      rules = require_approval_rules(min_approvals: 2, allow_self_approval: false)
+
+      {:ok, group_policy} = Policies.save_scoped_rules(rules, :group, runner.group, subject)
+
+      assert {:ok, compiled} = compile_uptime_plan(subject, runner.group)
+      assert [snapshot] = Policies.snapshot_runbook_decisions(account.id, compiled.items)
 
       assert snapshot.decision == :require_approval
-      assert snapshot.policy.account_id == account.id
-      assert snapshot.approval == %{min_approvals: 1, allow_self_approval: true}
-      assert is_binary(snapshot.reason)
+      assert snapshot.policy.id == group_policy.id
+      assert snapshot.approval == %{min_approvals: 2, allow_self_approval: false}
     end
   end
 
@@ -1618,6 +1629,91 @@ defmodule Emisar.PoliciesTest do
       Accounts.update_membership_runner_access(membership, access, granting_subject)
 
     Fixtures.Subjects.membership_subject(membership)
+  end
+
+  # A runner in `group` advertising one trusted low-risk action, so the compiler
+  # can freeze a real plan item against it.
+  defp trusted_runner(account, subject, group) do
+    runner = Fixtures.Runners.create_runner(account_id: account.id, group: group)
+    hash = Fixtures.Catalog.pack_hash("policies-test")
+
+    payload = %{
+      "hostname" => runner.hostname,
+      "version" => runner.runner_version,
+      "labels" => runner.labels,
+      "enforce_signatures" => false,
+      "packs" => %{"linux-core" => %{"version" => "1.4.2", "hash" => hash}},
+      "actions" => [
+        %{
+          "id" => "linux.uptime",
+          "pack_id" => "linux-core",
+          "title" => "Uptime",
+          "kind" => "exec",
+          "risk" => "low",
+          "summary" => "Reports uptime",
+          "description" => "Reports uptime",
+          "side_effects" => [],
+          "args" => [],
+          "examples" => [],
+          "search_terms" => []
+        }
+      ]
+    }
+
+    assert {:ok, runner} = Catalog.observe_state(runner, payload)
+
+    for version <- Fixtures.Catalog.list_pack_versions(account.id) do
+      assert {:ok, _version} = Catalog.trust_pack_version(version.id, subject)
+    end
+
+    runner
+  end
+
+  defp compile_uptime_plan(subject, group) do
+    definition = %{
+      "schema_version" => 1,
+      "context_markdown" => "",
+      "inputs" => [],
+      "stages" => [
+        %{
+          "id" => "inspect",
+          "title" => "Inspect",
+          "mode" => "parallel",
+          "max_parallel" => 5,
+          "steps" => [
+            %{
+              "id" => "uptime",
+              "pack" => %{"id" => "linux-core"},
+              "action" => "linux.uptime",
+              "targets" => %{"selection" => "all", "refs" => ["group:" <> group]},
+              "args" => %{},
+              "outputs" => [],
+              "success" => [],
+              "wait" => nil
+            }
+          ]
+        }
+      ]
+    }
+
+    Compiler.compile(definition, %{}, "policies-test-seed", subject)
+  end
+
+  defp require_approval_rules(approval) do
+    %{
+      "schema_version" => 2,
+      "defaults" => %{
+        "low" => "require_approval",
+        "medium" => "require_approval",
+        "high" => "require_approval",
+        "critical" => "require_approval"
+      },
+      "overrides" => [],
+      "approval" => %{
+        "min_approvals" => Keyword.fetch!(approval, :min_approvals),
+        "allow_self_approval" => Keyword.fetch!(approval, :allow_self_approval)
+      }
+    }
   end
 
   defp allow_all_rules do
