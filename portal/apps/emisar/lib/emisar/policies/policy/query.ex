@@ -12,6 +12,8 @@ defmodule Emisar.Policies.Policy.Query do
   def by_id(queryable, id),
     do: where(queryable, [policies: p], p.id == ^id)
 
+  def lock_for_update(queryable), do: lock(queryable, "FOR UPDATE")
+
   def by_account_id(queryable, account_id),
     do: where(queryable, [policies: p], p.account_id == ^account_id)
 

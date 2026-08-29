@@ -1006,9 +1006,29 @@ defmodule Emisar.PoliciesTest do
 
       {_user_b, _account_b, subject_b} = Fixtures.Subjects.owner_subject()
 
-      # delete_scoped_policy guards with Subject.ensure_in_account (default
-      # :not_found), so B is refused without A's override being touched.
+      # The locked re-fetch is scoped by Authorizer.for_subject, so A's override
+      # scopes out to :not_found for B without being touched.
       assert Policies.delete_scoped_policy(policy_a, subject_b) == {:error, :not_found}
+      assert {:ok, [_]} = Policies.list_scoped_policies(subject_a)
+    end
+
+    test "a forged struct claiming a reachable scope cannot delete another account's row" do
+      {_user_a, account_a, subject_a} = Fixtures.Subjects.owner_subject()
+      runner_a = Fixtures.Runners.create_runner(account_id: account_a.id, connected?: false)
+
+      {:ok, policy_a} =
+        Policies.save_scoped_rules(deny_all_rules(), :runner, runner_a.id, subject_a)
+
+      {_user_b, account_b, subject_b} = Fixtures.Subjects.owner_subject()
+
+      # Judging scope + account on the caller's struct let a forged struct — one
+      # claiming account B and a group an unrestricted B reaches, but whose id is
+      # A's real row — delete A's policy WHERE id=. The locked for_subject re-read
+      # scopes it out.
+      forged = %{policy_a | account_id: account_b.id, scope_type: :group, scope_value: "anything"}
+
+      assert Policies.delete_scoped_policy(forged, subject_b) == {:error, :not_found}
+      refute Repo.reload!(policy_a).deleted_at
       assert {:ok, [_]} = Policies.list_scoped_policies(subject_a)
     end
   end

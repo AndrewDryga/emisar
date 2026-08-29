@@ -518,14 +518,34 @@ defmodule Emisar.Policies do
              subject,
              Authorizer.manage_policies_permission()
            ),
-         :ok <- ensure_policy_mutation_access(scope_type, subject),
-         :ok <- Subject.ensure_in_account(subject, policy.account_id),
-         :ok <- ensure_scope_in_reach(scope_type, policy.scope_value, subject) do
+         :ok <- ensure_policy_mutation_access(scope_type, subject) do
       Multi.new()
       |> Multi.run(:active_account, fn repo, _changes ->
-        Accounts.fetch_and_lock_account(policy.account_id, repo: repo)
+        Accounts.fetch_and_lock_account(subject.account.id, repo: repo)
       end)
-      |> Multi.update(:policy, Policy.Changeset.delete(policy))
+      # Judge scope on the LOCKED, subject-scoped row, not the caller's struct:
+      # a foreign policy scopes out to :not_found, and a member whose runner
+      # access has since narrowed can no longer spend a row they still hold.
+      |> Multi.run(:loaded_policy, fn repo, _changes ->
+        query =
+          Policy.Query.not_deleted()
+          |> Policy.Query.by_id(policy.id)
+          |> Policy.Query.lock_for_update()
+          |> Authorizer.for_subject(subject)
+
+        with {:ok, loaded_policy} <- repo.fetch(query, Policy.Query),
+             :ok <-
+               ensure_scope_in_reach(
+                 loaded_policy.scope_type,
+                 loaded_policy.scope_value,
+                 subject
+               ) do
+          {:ok, loaded_policy}
+        end
+      end)
+      |> Multi.update(:policy, fn %{loaded_policy: loaded_policy} ->
+        Policy.Changeset.delete(loaded_policy)
+      end)
       |> Multi.insert(:audit, fn %{policy: deleted} ->
         Audit.Events.policy_scope_deleted(subject, deleted)
       end)
