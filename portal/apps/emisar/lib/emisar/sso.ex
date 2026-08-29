@@ -3507,7 +3507,11 @@ defmodule Emisar.SSO do
     Multi.new()
     |> put_active_account_lock(provider.account_id)
     |> put_sso_entitlement(provider.account_id)
-    |> put_provider_lock(provider)
+    # Re-read that the connection is still ENABLED under the lock: disabling a
+    # compromised connection is how an operator revokes it, and binding a new
+    # IdP credential onto an existing member through a closed door is exactly
+    # what that revocation must stop (the fresh-user branch already does this).
+    |> put_enabled_provider_lock(provider)
     |> Multi.merge(fn %{locked_provider: locked_provider} ->
       Multi.new()
       |> Multi.run(:user, fn repo, _changes ->

@@ -210,17 +210,6 @@ defmodule Emisar.SSO.Provisioning do
     end
   end
 
-  # Minting an identity takes the same provider lock a config edit does, so the
-  # namespace check and the write that would violate it cannot interleave. The
-  # check found no live identity while a callback was mid-flight, the edit
-  # committed, and the callback then wrote an identifier from the OLD namespace
-  # under the new configuration.
-  def put_provider_lock(multi, %IdentityProvider{} = provider) do
-    Multi.run(multi, :locked_provider, fn repo, _changes ->
-      lock_provider_row(provider, repo)
-    end)
-  end
-
   # Apply the recomputed authorization in one membership transaction. Accounts
   # preserves a human owner role while still reconciling directory-owned runner
   # access, so the owner exception cannot acknowledge a stale broad grant.

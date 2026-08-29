@@ -6975,6 +6975,32 @@ defmodule Emisar.SSOTest do
       %{account: account, subject: subject, provider: provider}
     end
 
+    test "a matched request cannot be approved once the connection is disabled", %{
+      account: account,
+      provider: provider,
+      subject: subject
+    } do
+      member = Fixtures.Users.create_user(email: "member@acme.test")
+      Fixtures.Memberships.create_membership(account_id: account.id, user_id: member.id)
+
+      request =
+        capture_request(provider, %{
+          "sub" => "okta|member",
+          "email" => "member@acme.test",
+          "email_verified" => true
+        })
+
+      assert request.matched_user_id == member.id
+
+      # The operator revokes a compromised connection between capture and review.
+      Fixtures.SSO.disable_provider(provider)
+
+      assert SSO.approve_link_request(request, RunnerAccess.none(), subject) ==
+               {:error, :provider_disabled}
+
+      refute Repo.one(UserIdentity)
+    end
+
     test "an unmatched request cannot become a manual member once directory sync is enabled", %{
       subject: subject,
       provider: provider
