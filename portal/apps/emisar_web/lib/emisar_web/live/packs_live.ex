@@ -82,6 +82,11 @@ defmodule EmisarWeb.PacksLive do
   defp load_packs(socket) do
     case console_projection(socket) do
       {:ok, projection} ->
+        # What the PREVIOUS filter opened on its own — read before the new match
+        # set replaces it, since those auto-opens end with the filter that made
+        # them while a hand-opened row outlives it.
+        auto_opened = MapSet.new(Map.keys(socket.assigns.matched_actions))
+
         socket
         |> assign(:load_error?, false)
         |> assign(:pack_count, projection.pack_count)
@@ -106,9 +111,10 @@ defmodule EmisarWeb.PacksLive do
         |> assign(:matched_actions, projection.matched_action_ids)
         # A filter drives what's expanded: auto-open every version it matched
         # (via risk/action) and pre-load those action lists so they render at
-        # once. A manual open (`inspect_pack`) then adds to this set until the
-        # next filter change re-seeds it.
-        |> assign(:open_versions, MapSet.new(Map.keys(projection.matched_action_ids)))
+        # once. A manual open (`inspect_pack`) survives a reload as long as its
+        # version still renders — a live catalog change or a cleanup must not
+        # collapse the contents an admin opened to review.
+        |> update(:open_versions, &still_open_versions(&1, auto_opened, projection))
         |> update(:inspected_actions, &seed_action_lists(&1, projection))
         |> assign(:group_cache, group_cache(projection.groups))
         |> stream(:packs, projection.groups, reset: true)
@@ -179,6 +185,18 @@ defmodule EmisarWeb.PacksLive do
 
   defp version_actions(projection, version),
     do: Map.get(projection.actions_by_pack_ref, {version.pack_id, version.version}, [])
+
+  # The versions this load matches, plus the ones a person opened that it still
+  # renders. A version the filter dropped or the catalog no longer holds has no
+  # row left to expand, and the previous filter's own auto-opens go with it.
+  defp still_open_versions(open_versions, auto_opened, projection) do
+    rendered = projection.groups |> Enum.flat_map(& &1.versions) |> MapSet.new(& &1.id)
+
+    open_versions
+    |> MapSet.difference(auto_opened)
+    |> MapSet.intersection(rendered)
+    |> MapSet.union(MapSet.new(Map.keys(projection.matched_action_ids)))
+  end
 
   defp pending_review_title(1), do: "1 pack version needs trust review."
   defp pending_review_title(count), do: "#{count} pack versions need trust review."

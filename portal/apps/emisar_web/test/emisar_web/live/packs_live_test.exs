@@ -369,6 +369,60 @@ defmodule EmisarWeb.PacksLiveTest do
       refute has_element?(lv, ~s(button[aria-expanded="true"]))
     end
 
+    test "an opened contents disclosure survives a catalog reload", %{
+      conn: conn,
+      user: user,
+      account: account
+    } do
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
+      subject = Fixtures.Subjects.subject_for(user, account)
+
+      {:ok, _} =
+        Emisar.Catalog.observe_state(runner, %{
+          "hostname" => "host-1",
+          "version" => "0.1.0",
+          "labels" => %{},
+          "actions" => [
+            %{
+              "id" => "acme.audit",
+              "pack_id" => "acme-tools",
+              "title" => "Audit thing",
+              "kind" => "exec",
+              "risk" => "medium",
+              "description" => "a",
+              "args" => []
+            }
+          ],
+          "packs" => %{
+            "acme-tools" => %{
+              "version" => "9.9",
+              "hash" => Fixtures.Catalog.pack_hash("abc123")
+            }
+          }
+        })
+
+      {:ok, [pack_version], _} = Emisar.Catalog.list_pack_versions(subject)
+      {:ok, _} = Emisar.Catalog.trust_pack_version(pack_version.id, subject)
+
+      {:ok, lv, _dead} = live(conn, ~p"/app/#{account}/packs")
+
+      render_click(lv, "inspect_pack", %{
+        "id" => pack_version.id,
+        "pack-id" => pack_version.pack_id,
+        "version" => pack_version.version
+      })
+
+      assert has_element?(lv, ~s(button[aria-expanded="true"]))
+
+      # A reload — a peer's decision, the retention sweep, "Clean up now" — used
+      # to replace the open set with whatever the FILTER matched, which with no
+      # filter is nothing: the contents an admin opened to review snapped shut.
+      send(lv.pid, :refresh_packs)
+
+      assert render(lv) =~ "acme.audit"
+      assert has_element?(lv, ~s(button[aria-expanded="true"]))
+    end
+
     test "toggling contents re-reads only the opened action list", %{
       conn: conn,
       user: user,
