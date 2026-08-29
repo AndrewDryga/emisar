@@ -370,13 +370,12 @@ defmodule Emisar.OAuth do
     |> Multi.run(:code, fn repo, _changes ->
       # Locked read so two concurrent exchanges of the same code
       # serialize — the loser sees `used_at` set and gets :invalid_grant.
-      code =
+      code_query =
         AuthorizationCode.Query.all()
         |> AuthorizationCode.Query.by_code_hash(Crypto.hash(raw_code))
         |> AuthorizationCode.Query.lock_for_update()
-        |> repo.one()
 
-      with %AuthorizationCode{} <- code,
+      with {:ok, code} <- repo.fetch(code_query, AuthorizationCode.Query),
            :ok <- check_code_live(code),
            :ok <-
              check(presented_client_matches?(repo, code.client_id, client_id), :invalid_grant),
@@ -391,8 +390,8 @@ defmodule Emisar.OAuth do
            :ok <- check(backing_key_usable?(code.api_key_id), :invalid_grant) do
         {:ok, code}
       else
+        {:error, :not_found} -> {:error, :invalid_grant}
         {:error, reason} -> {:error, reason}
-        _ -> {:error, :invalid_grant}
       end
     end)
     |> Multi.run(:account, fn repo, %{code: code} ->
@@ -434,14 +433,13 @@ defmodule Emisar.OAuth do
     # Account-first ordering lets a spent predecessor revoke every successor
     # without deadlocking a concurrent refresh of one of those successors.
     |> Multi.run(:refresh_candidate, fn repo, _changes ->
-      candidate =
+      candidate_query =
         Token.Query.all()
         |> Token.Query.by_refresh_hash(refresh_hash)
-        |> repo.one()
 
-      case candidate do
-        %Token{} = token -> {:ok, token}
-        nil -> {:error, :invalid_grant}
+      case repo.fetch(candidate_query, Token.Query) do
+        {:ok, token} -> {:ok, token}
+        {:error, :not_found} -> {:error, :invalid_grant}
       end
     end)
     |> Multi.run(:account, fn repo, %{refresh_candidate: candidate} ->

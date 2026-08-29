@@ -832,14 +832,16 @@ defmodule Emisar.Auth do
           Users.fetch_and_lock_user_by_id(user_id, repo)
         end)
         |> Multi.run(:token, fn repo, %{user: user} ->
-          loaded_token =
+          loaded_token_query =
             UserToken.Query.by_id(token_id)
             |> UserToken.Query.by_user_id(user.id)
             |> UserToken.Query.by_contexts(@magic_link_contexts)
             |> UserToken.Query.lock_for_update()
-            |> repo.one()
 
-          if loaded_token, do: {:ok, loaded_token}, else: {:error, :invalid_or_expired}
+          case repo.fetch(loaded_token_query, UserToken.Query) do
+            {:ok, loaded_token} -> {:ok, loaded_token}
+            {:error, :not_found} -> {:error, :invalid_or_expired}
+          end
         end)
         |> Multi.run(:outcome, &verify_magic_link_outcome(&1, &2, secret, nonce))
         |> Multi.merge(fn
@@ -1177,16 +1179,18 @@ defmodule Emisar.Auth do
   defp magic_owner_registration(%UserToken{}, %Users.User{}), do: nil
 
   defp lock_verified_magic_link(token_id, %Users.User{} = user, repo) do
-    factor =
+    factor_query =
       UserToken.Query.by_id(token_id)
       |> UserToken.Query.by_user_id(user.id)
       |> UserToken.Query.by_context("magic_link_verified")
       |> UserToken.Query.lock_for_update()
-      |> repo.one()
 
-    if factor && factor.sent_to == user.email && verified_magic_link_fresh?(factor),
-      do: {:ok, factor},
-      else: {:error, :invalid_or_expired}
+    with {:ok, factor} <- repo.fetch(factor_query, UserToken.Query),
+         true <- factor.sent_to == user.email and verified_magic_link_fresh?(factor) do
+      {:ok, factor}
+    else
+      _ -> {:error, :invalid_or_expired}
+    end
   end
 
   defp lock_signing_in_user(user_id, proof, repo) do
@@ -1813,17 +1817,19 @@ defmodule Emisar.Auth do
           Users.fetch_and_lock_user_by_id(user_id, repo)
         end)
         |> Multi.run(:token, fn repo, %{user: user} ->
-          token =
+          token_query =
             UserToken.Query.by_token_digest(digest)
             |> UserToken.Query.by_user_id(user.id)
             |> UserToken.Query.by_context("confirm")
             |> UserToken.Query.not_expired("confirm")
             |> UserToken.Query.lock_for_update()
-            |> repo.one()
 
-          if token && token.sent_to == user.email,
-            do: {:ok, token},
-            else: {:error, :invalid_or_expired}
+          with {:ok, token} <- repo.fetch(token_query, UserToken.Query),
+               true <- token.sent_to == user.email do
+            {:ok, token}
+          else
+            _ -> {:error, :invalid_or_expired}
+          end
         end)
         |> Multi.merge(fn %{user: user} ->
           Users.put_email_confirmation(Multi.new(), user, "confirmation_link", context)
@@ -1973,14 +1979,16 @@ defmodule Emisar.Auth do
     Multi.new()
     |> Multi.run(:user, fn repo, _changes -> Users.fetch_and_lock_user_by_id(user_id, repo) end)
     |> Multi.run(:pending, fn repo, _changes ->
-      loaded =
+      loaded_query =
         UserToken.Query.by_id(pending.id)
         |> UserToken.Query.by_user_id(user_id)
         |> UserToken.Query.by_context("mfa_enrollment_pending")
         |> UserToken.Query.lock_for_update()
-        |> repo.one()
 
-      if loaded, do: {:ok, loaded}, else: {:error, :issuance_expired}
+      case repo.fetch(loaded_query, UserToken.Query) do
+        {:ok, loaded} -> {:ok, loaded}
+        {:error, :not_found} -> {:error, :issuance_expired}
+      end
     end)
     |> Multi.delete_all(:prior, fn _changes ->
       UserToken.Query.by_user_id(user_id)
@@ -2052,15 +2060,17 @@ defmodule Emisar.Auth do
       end
     end)
     |> Multi.run(:token, fn repo, %{user: user} ->
-      loaded_token =
+      loaded_token_query =
         UserToken.Query.by_user_id(user.id)
         |> UserToken.Query.by_context("mfa_enrollment")
         |> UserToken.Query.not_expired("mfa_enrollment")
         |> UserToken.Query.with_attempts_remaining()
         |> UserToken.Query.lock_for_update()
-        |> repo.one()
 
-      if loaded_token, do: {:ok, loaded_token}, else: {:error, :invalid}
+      case repo.fetch(loaded_token_query, UserToken.Query) do
+        {:ok, loaded_token} -> {:ok, loaded_token}
+        {:error, :not_found} -> {:error, :invalid}
+      end
     end)
     |> Multi.run(:outcome, fn repo, %{user: user, token: token} ->
       cond do
@@ -2433,20 +2443,21 @@ defmodule Emisar.Auth do
       end
     end)
     |> Multi.run(:window, fn repo, _changes ->
-      window =
+      window_query =
         SecurityAttemptWindow.Query.by_user_and_scope(user_id, scope)
         |> SecurityAttemptWindow.Query.lock_for_update()
-        |> repo.one()
 
-      if window do
-        database_now =
-          SecurityAttemptWindow.Query.by_user_and_scope(user_id, scope)
-          |> SecurityAttemptWindow.Query.select_database_time()
-          |> repo.one!()
+      case repo.fetch(window_query, SecurityAttemptWindow.Query) do
+        {:ok, window} ->
+          database_now =
+            SecurityAttemptWindow.Query.by_user_and_scope(user_id, scope)
+            |> SecurityAttemptWindow.Query.select_database_time()
+            |> repo.one!()
 
-        {:ok, {window, database_now}}
-      else
-        {:error, :store_unavailable}
+          {:ok, {window, database_now}}
+
+        {:error, :not_found} ->
+          {:error, :store_unavailable}
       end
     end)
     |> Multi.run(:attempt, fn repo, %{window: {window, database_now}} ->

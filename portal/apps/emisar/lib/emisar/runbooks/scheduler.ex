@@ -818,13 +818,12 @@ defmodule Emisar.Runbooks.Scheduler do
 
   @doc "Internal persisted execution result for dispatch and MCP replay."
   def fetch_result(execution_id, account_id) do
-    execution =
+    execution_query =
       RunbookExecution.Query.by_account_id(account_id)
       |> RunbookExecution.Query.by_id(execution_id)
       |> RunbookExecution.Query.with_stages_and_items()
-      |> Repo.one()
 
-    if execution do
+    with {:ok, execution} <- Repo.fetch(execution_query, RunbookExecution.Query) do
       runs = Runs.list_runs_for_runbook_execution(account_id, execution_id)
 
       {:ok,
@@ -835,8 +834,6 @@ defmodule Emisar.Runbooks.Scheduler do
          runs: runs,
          errors: []
        }}
-    else
-      {:error, :not_found}
     end
   end
 end
