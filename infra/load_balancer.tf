@@ -161,9 +161,11 @@ resource "google_compute_backend_service" "app" {
   port_name             = "http"
   timeout_sec           = var.backend_timeout_sec
   # Deploys are ordinary rolling replacements. The MIG waits for a healthy
-  # successor; once it removes an old VM, the load balancer must not keep that
-  # VM alive for an extra drain window.
-  connection_draining_timeout_sec = 0
+  # successor; once it removes an old VM, the load balancer gets one second to
+  # forget it. Provider v7.40.0 omits a literal zero from the update request,
+  # which leaves GCP's previous value unchanged; one is the smallest value the
+  # provider actually sends.
+  connection_draining_timeout_sec = 1
   health_checks                   = [google_compute_health_check.readiness.id]
   security_policy                 = google_compute_security_policy.app.id
 
