@@ -532,6 +532,21 @@ defmodule EmisarWeb.PacksTest do
       assert detail.private[:phoenix_action] == :pack_detail
     end
 
+    test "a client that asks for JSON is served it", %{conn: conn} do
+      # `emisar pack install` sends no Accept header, but a curl default, a
+      # language HTTP client, or a future bridge does — and on the HTML pipeline
+      # these documented public URLs answered that with 406.
+      for path <- [~p"/packs.json", ~p"/packs/suggest.json"] do
+        body =
+          conn
+          |> put_req_header("accept", "application/json")
+          |> get(path)
+          |> json_response(200)
+
+        assert is_map(body)
+      end
+    end
+
     test "GET /packs.json entries carry exactly the public catalog keys", %{conn: conn} do
       body = conn |> get(~p"/packs.json") |> json_response(200)
       entry = Enum.find(body["packs"], &(&1["id"] == "redis"))

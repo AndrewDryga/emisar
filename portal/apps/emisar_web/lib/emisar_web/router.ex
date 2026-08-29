@@ -136,6 +136,22 @@ defmodule EmisarWeb.Router do
     get "/readyz", EmisarWeb.HealthController, :ready
   end
 
+  # -- Pack registry (public, machine-facing) -------------------------
+
+  # `emisar pack install` and any other client reading the catalog. On the
+  # browser pipeline a caller that says `Accept: application/json` — a curl
+  # default, a language HTTP client, a future bridge — got a 406 from a
+  # documented public JSON URL, and every request paid for a session, CSRF
+  # token, CSP header, and an analytics pageview it has no use for.
+  # Declared before the marketing scope so the literal `.json` paths win over
+  # "/packs/:id".
+  scope "/", EmisarWeb do
+    pipe_through :api
+
+    get "/packs.json", PackRegistryController, :index
+    get "/packs/suggest.json", PackRegistryController, :suggest
+  end
+
   # -- Marketing site (public, anyone) --------------------------------
 
   scope "/", EmisarWeb do
@@ -177,9 +193,8 @@ defmodule EmisarWeb.Router do
     get "/packs", MarketingController, :packs
     # Machine-facing registry endpoints (consumed by `emisar pack install`).
     # Declared before "/packs/:id" so the literal segments win; Phoenix
-    # matches top-to-bottom and these are more specific.
-    get "/packs.json", PackRegistryController, :index
-    get "/packs/suggest.json", PackRegistryController, :suggest
+    # matches top-to-bottom and these are more specific. The two JSON ones
+    # live in their own `:api` scope above.
     get "/packs/:id/pack.tar.gz", PackRegistryController, :tarball
     get "/packs/:id/versions/:version/pack.tar.gz", PackRegistryController, :tarball_version
     get "/packs/:id", MarketingController, :pack_detail
