@@ -47,6 +47,12 @@ defmodule Emisar.Fixtures.Auth do
     :ok
   end
 
+  @doc "Backdates a token's insertion time by id and returns `:ok`."
+  def backdate_token_inserted_at!(token_id, %DateTime{} = inserted_at) when is_binary(token_id) do
+    {1, _} = UserToken.Query.by_id(token_id) |> Repo.update_all(set: [inserted_at: inserted_at])
+    :ok
+  end
+
   @doc """
   Persists a session row with arbitrary provenance and returns the raw token.
   `mfa_verified_at` is when this session proved a second factor, or nil for

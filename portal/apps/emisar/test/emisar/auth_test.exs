@@ -879,6 +879,30 @@ defmodule Emisar.AuthTest do
       refute Repo.get_by(Account, name: attacker_workspace)
     end
 
+    test "a resend carries a still-fresh verified factor's workspace intent past the pending window",
+         %{user: user} do
+      workspace = "Workspace #{Ecto.UUID.generate()}"
+
+      # A pending magic link carrying registration intent, then verified — the
+      # verified factor keeps the intent and stamps verified_at.
+      token_id =
+        verify_magic_link(user, owner_registration: owner_registration(workspace, "Owner"))
+
+      # It verified near the end of the pending window, so inserted_at is now older
+      # than 15 minutes while verified_at is recent: the pending window would drop
+      # it, but the verified window still holds and the intent must survive.
+      Fixtures.Auth.backdate_token_inserted_at!(
+        token_id,
+        DateTime.add(DateTime.utc_now(), -20, :minute)
+      )
+
+      {replacement_id, _nonce, _secret} =
+        request_magic_link(user, prior_magic_link_token_id: token_id)
+
+      assert %UserToken{metadata: %{"registration_account_name" => ^workspace}} =
+               Repo.get!(UserToken, replacement_id)
+    end
+
     test "a suppressed address is reported as suppressed and nothing is sent", %{user: user} do
       {:ok, _} = Mail.suppress(user.email, :hard_bounce, "bounce")
 

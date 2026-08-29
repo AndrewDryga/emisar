@@ -794,13 +794,33 @@ defmodule Emisar.Auth do
   defp requested_owner_registration(_repo, %Users.User{}, _registration, _token_id),
     do: {:ok, nil}
 
+  # A resend carries the prior factor's registration intent forward, so freshness
+  # is judged per CONTEXT like the verify path — a magic_link_verified factor
+  # lives by verified_at + its own window, not the pending inserted_at window that
+  # not_expired("magic_link") wrongly applied to every context (a signup that
+  # verified at minute 14 then resent found no factor and silently lost its
+  # workspace intent). Attempts don't gate the intent — the resend mints a fresh
+  # code.
   defp requested_magic_factor(repo, %Users.User{} = user, token_id) do
-    UserToken.Query.by_user_id(user.id)
-    |> UserToken.Query.by_contexts(@magic_link_contexts)
-    |> UserToken.Query.not_expired("magic_link")
-    |> UserToken.Query.by_id(token_id)
-    |> repo.peek()
+    factor =
+      UserToken.Query.by_user_id(user.id)
+      |> UserToken.Query.by_contexts(@magic_link_contexts)
+      |> UserToken.Query.by_id(token_id)
+      |> repo.peek()
+
+    if factor && magic_factor_within_window?(factor), do: factor
   end
+
+  defp magic_factor_within_window?(%UserToken{
+         context: "magic_link",
+         inserted_at: %DateTime{} = inserted_at
+       }),
+       do: fresh_since?(inserted_at, UserToken.Query.magic_link_validity_in_minutes() * 60)
+
+  defp magic_factor_within_window?(%UserToken{context: "magic_link_verified"} = factor),
+    do: verified_magic_link_fresh?(factor)
+
+  defp magic_factor_within_window?(%UserToken{}), do: false
 
   @doc "Validity window of a magic-link code, in minutes — for the sent-page countdown."
   def magic_link_validity_in_minutes, do: UserToken.Query.magic_link_validity_in_minutes()
