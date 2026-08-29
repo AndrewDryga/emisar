@@ -42,7 +42,7 @@ defmodule Emisar.SSO.GroupRunnerAccessMapping.Changeset do
 
   defp changeset(changeset, allowlist) do
     changeset
-    |> validate_length(:external_group_display, max: @max_string_length)
+    |> validate_length(:external_group_display, max: @max_string_length, count: :codepoints)
     |> Emisar.Accounts.RunnerAccess.validate_selection(:runner, :scope, :pack_scope, allowlist)
     |> validate_exclusion(:runner_access_mode, [:none], message: "must grant runner access")
     |> unique_constraint([:provider_id, :directory_group_id],

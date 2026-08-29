@@ -5247,6 +5247,22 @@ defmodule Emisar.SSOTest do
       assert role_of(account.id, identity.user_id) == :operator
     end
 
+    test "rejects a display the varchar(255) column can't hold, measured in code points", %{
+      provider: provider
+    } do
+      # 255 combining-mark graphemes = 510 code points: String.length reads 255
+      # and passes, but Postgres measures varchar(255) in code points, so the old
+      # grapheme check let it through to a 22001 (a 500) rather than invalidValue.
+      combining = String.duplicate("e" <> <<0x0301::utf8>>, 255)
+      assert String.length(combining) == 255
+
+      assert SSO.scim_upsert_group(provider, %{
+               external_id: "grp-combining",
+               display: combining,
+               member_ids: []
+             }) == {:error, :invalid_scim_group}
+    end
+
     test "a group request authenticated before cancellation cannot mutate afterward", %{
       account: account,
       token: token

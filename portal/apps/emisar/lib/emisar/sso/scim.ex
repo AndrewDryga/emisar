@@ -1653,7 +1653,7 @@ defmodule Emisar.SSO.SCIM do
   defp validate_optional_scim_string(nil), do: :ok
 
   defp validate_optional_scim_string(value) when is_binary(value) do
-    if String.length(value) <= @scim_group_string_max_length,
+    if scim_string_within_column?(value),
       do: :ok,
       else: {:error, :invalid_scim_group}
   end
@@ -1661,9 +1661,16 @@ defmodule Emisar.SSO.SCIM do
   defp validate_optional_scim_string(_value), do: {:error, :invalid_scim_group}
 
   defp valid_scim_required_string?(value) when is_binary(value),
-    do: value != "" and String.length(value) <= @scim_group_string_max_length
+    do: value != "" and scim_string_within_column?(value)
 
   defp valid_scim_required_string?(_value), do: false
+
+  # Count CODE POINTS, not graphemes: the backing column is varchar(255), which
+  # Postgres measures in code points, so a 255-grapheme value with combining
+  # marks (~510 code points) would clear String.length yet raise 22001 on insert
+  # — a 500 instead of a clean invalidValue.
+  defp scim_string_within_column?(value),
+    do: length(String.codepoints(value)) <= @scim_group_string_max_length
 
   # The provider's identities for a set of server-issued SCIM User ids. An empty
   # id list resolves to none; valid ids owned by another provider/account are
