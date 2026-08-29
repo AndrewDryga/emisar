@@ -4014,6 +4014,49 @@ defmodule Emisar.RunnersTest do
              ) == 1
     end
 
+    test "a bound runner that has authenticated ends the exhausted-key retry" do
+      account = Fixtures.Accounts.create_account()
+      user = Fixtures.Users.create_user()
+
+      {raw, _key} =
+        Fixtures.Runners.create_enrollment_key(
+          account_id: account.id,
+          created_by_id: user.id,
+          reusable: false
+        )
+
+      attrs = %{hostname: "booted-host", group: "prod", external_id: "booted-ext-id"}
+
+      assert {:ok, %Runner{}, %Token{}, raw_token} =
+               Runners.register_via_enrollment_key(raw, attrs)
+
+      assert {:ok, %Token{}, %Runner{}} = Runners.verify_runner_token(raw_token)
+
+      assert Runners.register_via_enrollment_key(raw, attrs) ==
+               {:error, :enrollment_key_invalid}
+    end
+
+    test "a spent single-use key goes inert once its retry window closes" do
+      account = Fixtures.Accounts.create_account()
+      user = Fixtures.Users.create_user()
+
+      {raw, key} =
+        Fixtures.Runners.create_enrollment_key(
+          account_id: account.id,
+          created_by_id: user.id,
+          reusable: false
+        )
+
+      attrs = %{hostname: "stale-host", group: "prod", external_id: "stale-ext-id"}
+      assert {:ok, %Runner{}, %Token{}, _} = Runners.register_via_enrollment_key(raw, attrs)
+
+      spent_at = DateTime.add(DateTime.utc_now(), -3600, :second)
+      Fixtures.Runners.backdate_enrollment_key_use(Repo.reload!(key), spent_at)
+
+      assert Runners.register_via_enrollment_key(raw, attrs) ==
+               {:error, :enrollment_key_invalid}
+    end
+
     test "revocation disables an exhausted-key retry for the bound identity" do
       {account, user, subject} = account_with_owner_subject()
 

@@ -5,7 +5,7 @@ defmodule Emisar.Fixtures.Runners do
   """
 
   alias Emisar.{Fixtures, Repo, Runners}
-  alias Emisar.Runners.{Runner, Token}
+  alias Emisar.Runners.{EnrollmentKey, Runner, Token}
 
   @doc """
   Persists a runner in `connected` status by default. Caller supplies
@@ -131,6 +131,16 @@ defmodule Emisar.Fixtures.Runners do
       |> Repo.insert()
 
     key
+  end
+
+  @doc """
+  Backdates when a single-use enrollment key was spent, so its crash-recovery
+  retry window has closed.
+  """
+  def backdate_enrollment_key_use(%EnrollmentKey{} = key, %DateTime{} = at) do
+    key
+    |> Ecto.Changeset.change(last_used_at: at)
+    |> Repo.update!()
   end
 
   @doc """

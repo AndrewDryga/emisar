@@ -50,6 +50,10 @@ defmodule Emisar.Runners do
   # runner that receives a successor and dies before persisting it still
   # reconnects on the old one and refreshes again.
   @token_retirement_grace_seconds 24 * 3_600
+  # How long a spent single-use enrollment key stays presentable to the one
+  # runner it bound. A crashed bootstrap is a service restart away, so minutes
+  # is the whole recovery need (see `registration_retry_key?/2`).
+  @registration_retry_window_seconds 15 * 60
 
   # Matches EmisarWeb.RunnerSocket's heartbeat timeout: past this age the socket
   # is already closing the connection, so a stale reading is an imminent drop,
@@ -2574,17 +2578,41 @@ defmodule Emisar.Runners do
            fetch_runner_by_external_id_for_account(external_id, current_key.account_id,
              repo: repo
            ),
-         true <- runner.bootstrap_enrollment_key_id == current_key.id do
+         true <- runner.bootstrap_enrollment_key_id == current_key.id,
+         true <- runner_never_authenticated?(repo, runner) do
       {:ok, :retry}
     else
       _ -> {:error, :enrollment_key_invalid}
     end
   end
 
+  # The retry covers ONE failure: a runner that registered but crashed before it
+  # could persist the token it was handed. Both bounds keep it there. An
+  # enrollment key rides `sudo` argv, so a spent one survives in shell history,
+  # cloud-init, and logs where operators treat it as inert — without these it
+  # stays a permanent credential for re-minting the bound runner's token, and
+  # whoever holds it can supersede a live, trusted runner's lease.
   defp registration_retry_key?(%EnrollmentKey{} = key, now) do
     not key.reusable and key.uses_count == 1 and is_nil(key.revoked_at) and
       is_nil(key.deleted_at) and
-      (is_nil(key.expires_at) or DateTime.compare(now, key.expires_at) != :gt)
+      (is_nil(key.expires_at) or DateTime.compare(now, key.expires_at) != :gt) and
+      within_registration_retry_window?(key.last_used_at, now)
+  end
+
+  defp within_registration_retry_window?(nil, _now), do: false
+
+  defp within_registration_retry_window?(%DateTime{} = last_used_at, now),
+    do: DateTime.diff(now, last_used_at, :second) <= @registration_retry_window_seconds
+
+  # A token the runner has presented means the bootstrap already succeeded, so
+  # there is nothing left to recover.
+  defp runner_never_authenticated?(repo, %Runner{} = runner) do
+    queryable =
+      Token.Query.all()
+      |> Token.Query.by_runner_id(runner.id)
+      |> Token.Query.used()
+
+    not repo.exists?(queryable)
   end
 
   defp consume_enrollment_key(repo, %EnrollmentKey{} = key) do

@@ -16,6 +16,9 @@ defmodule Emisar.Runners.Token.Query do
   def unused(queryable),
     do: where(queryable, [tokens: t], is_nil(t.last_used_at))
 
+  def used(queryable),
+    do: where(queryable, [tokens: t], not is_nil(t.last_used_at))
+
   def by_prefix(queryable, prefix),
     do: where(queryable, [tokens: t], t.token_prefix == ^prefix)
 
