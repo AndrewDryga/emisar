@@ -1113,6 +1113,26 @@ defmodule Emisar.SSOTest do
       refute Repo.one(IdentityProvider)
     end
 
+    test "a rejected create does not echo the typed client secret back" do
+      {_user, _account, subject} = enterprise_owner()
+      foreign_runner = Fixtures.Runners.create_runner()
+
+      attrs = %{
+        kind: :okta,
+        name: "Okta",
+        issuer: "https://idp.test",
+        client_id: "cid",
+        client_secret: "typed-idp-secret",
+        default_runner_access_mode: :restricted,
+        default_runner_scope: ["runner:#{foreign_runner.id}"]
+      }
+
+      assert {:error, changeset} = SSO.configure_provider(attrs, subject)
+      assert "is invalid" in errors_on(changeset).default_runner_access_mode
+      refute Map.has_key?(changeset.changes, :client_secret)
+      refute Map.has_key?(changeset.params, "client_secret")
+    end
+
     test "an injected persisted scope array is ignored, so it never becomes the default" do
       {_user, account, subject} = enterprise_owner()
       runner = Fixtures.Runners.create_runner(account_id: account.id, group: "database")

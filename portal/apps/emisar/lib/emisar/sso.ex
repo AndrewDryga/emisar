@@ -895,7 +895,18 @@ defmodule Emisar.SSO do
         {:error, reason} -> {:error, reason}
       end
     end
+    # Scrub the typed client secret out of any rejected changeset — from the
+    # commit here OR the earlier `provider_access_from_changeset` short-circuit —
+    # matching update_provider: the LiveView re-renders it into the form and a
+    # password input echoes `value=`, so the raw IdP secret would otherwise land
+    # in the DOM and the socket assigns.
+    |> hide_result_secret()
   end
+
+  defp hide_result_secret({:error, %Ecto.Changeset{} = changeset}),
+    do: {:error, hide_secrets(changeset)}
+
+  defp hide_result_secret(result), do: result
 
   @doc "Update a connection's config (locked re-read). `manage_sso` + Team or Enterprise. `{:ok, provider} | {:error, reason}`."
   def update_provider(%IdentityProvider{id: id}, attrs, %Subject{} = subject) do
