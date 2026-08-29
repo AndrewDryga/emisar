@@ -368,7 +368,10 @@ func isUnder(root, candidate string) bool {
 	if rel == "." {
 		return true
 	}
-	if strings.HasPrefix(rel, "..") {
+	// Only a ".." PATH SEGMENT escapes the root. Testing the raw prefix also
+	// rejected legitimate names that merely start with two dots (`..config`),
+	// which fails closed but refuses a file the pack may legitimately ship.
+	if rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
 		return false
 	}
 	return true

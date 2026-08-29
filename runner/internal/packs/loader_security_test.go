@@ -128,6 +128,31 @@ func TestLoad_TraversalActionPathRejected(t *testing.T) {
 	}
 }
 
+// isUnder must key on a ".." path SEGMENT: a name that merely starts with two
+// dots stays inside the root.
+func TestIsUnder(t *testing.T) {
+	root := filepath.Join("/tmp", "pack")
+	cases := map[string]struct {
+		candidate string
+		want      bool
+	}{
+		"root itself":         {root, true},
+		"nested file":         {filepath.Join(root, "actions", "a.yaml"), true},
+		"dotted name":         {filepath.Join(root, "..config.yaml"), true},
+		"dotted directory":    {filepath.Join(root, "..d", "a.yaml"), true},
+		"parent escape":       {filepath.Join(root, "..", "outside.yaml"), false},
+		"parent":              {filepath.Dir(root), false},
+		"sibling with prefix": {root + "-other", false},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			if got := isUnder(root, tc.candidate); got != tc.want {
+				t.Fatalf("isUnder(%q, %q) = %v, want %v", root, tc.candidate, got, tc.want)
+			}
+		})
+	}
+}
+
 // a symlink *inside* the pack whose target resolves *outside*
 // the root passes the lexical isUnder check but is rejected by the
 // post-EvalSymlinks containment re-check. allow_symlinks:true is set so the
