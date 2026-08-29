@@ -271,9 +271,9 @@ func TestBrowserAuthDenialAndHostileURLStoreNothing(t *testing.T) {
 			if opened != test.wantApprovalPage {
 				t.Fatalf("browser opened=%t, want %t", opened, test.wantApprovalPage)
 			}
-			accounts, err := loadStoredCLIAccounts()
-			if err != nil || len(accounts) != 0 {
-				t.Fatalf("denied login stored accounts: %#v, %v", accounts, err)
+			accounts, skipped, err := loadStoredCLIAccounts()
+			if err != nil || len(accounts) != 0 || len(skipped) != 0 {
+				t.Fatalf("denied login stored accounts: %#v, skipped %#v, %v", accounts, skipped, err)
 			}
 		})
 	}
@@ -459,6 +459,56 @@ func TestLoginRejectsUnsafeCredentialPath(t *testing.T) {
 	data, err := os.ReadFile(target)
 	if err != nil || string(data) != "leave me\n" {
 		t.Fatalf("symlink target changed: data=%q err=%v", data, err)
+	}
+}
+
+// One unreadable stored-account file must not take down every other account:
+// loadStoredCLIAccounts skips it, and the good accounts stay listable and
+// usable while the skipped entry is reported.
+func TestStoredAccountsSkipOneCorruptFileWithoutLosingTheRest(t *testing.T) {
+	_, configEnv := useTestUserConfigDir(t)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		writeCLIResult(t, w, r, `{"tools":[]}`)
+	}))
+	defer srv.Close()
+
+	for _, credential := range []deviceCredential{
+		{AccountID: blitzAccountID, AccountSlug: "blitz", AccountName: "Blitz", APIKey: testAPIKey(83)},
+		{AccountID: immersiveAccountID, AccountSlug: "immersive", AccountName: "Immersive", APIKey: testAPIKey(84)},
+	} {
+		var stdout, stderr bytes.Buffer
+		if code := storeCLIAccountCredential(srv.URL, credential, &stdout, &stderr); code != 0 {
+			t.Fatalf("store credential: exit=%d stderr=%q", code, stderr.String())
+		}
+	}
+
+	configDir, err := os.UserConfigDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	corruptName := cliAccountFilePrefix + strings.Repeat("ab", 32) + ".json"
+	corrupt := filepath.Join(configDir, "emisar", "credentials", corruptName)
+	if err := os.WriteFile(corrupt, []byte("{ not valid json"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	accounts, skipped, err := loadStoredCLIAccounts()
+	if err != nil {
+		t.Fatalf("load stored accounts: %v", err)
+	}
+	if len(accounts) != 2 || len(skipped) != 1 || skipped[0].name != corruptName {
+		t.Fatalf("accounts=%d skipped=%#v", len(accounts), skipped)
+	}
+
+	stdout, stderr, code := runMain(t, "", []string{"accounts", "list"}, configEnv)
+	if code != 0 || !strings.Contains(stdout, "Blitz") || !strings.Contains(stdout, "Immersive") ||
+		!strings.Contains(stderr, "could not be read") {
+		t.Fatalf("accounts list: exit=%d stdout=%q stderr=%q", code, stdout, stderr)
+	}
+
+	stdout, stderr, code = runMain(t, "", []string{"accounts", "use", "blitz"}, configEnv)
+	if code != 0 || !strings.Contains(stdout, "Blitz") {
+		t.Fatalf("accounts use blitz: exit=%d stdout=%q stderr=%q", code, stdout, stderr)
 	}
 }
 
@@ -659,7 +709,11 @@ func TestDeviceCredentialRequiresCompleteSafeAccountIdentity(t *testing.T) {
 	}
 }
 
-func TestStoredCLIAccountFailsClosedOnUnsafeState(t *testing.T) {
+// An unsafe or corrupt stored-account file is skipped and reported, never
+// silently dropped and never trusted: listing no longer takes down the whole
+// directory, but the account it names stays unusable so the credential still
+// fails closed.
+func TestStoredCLIAccountUnsafeStateIsSkippedButUnusable(t *testing.T) {
 	tests := []struct {
 		name    string
 		content string
@@ -699,10 +753,20 @@ func TestStoredCLIAccountFailsClosedOnUnsafeState(t *testing.T) {
 				t.Fatal(err)
 			}
 
+			// Listing skips the broken file and reports it, rather than failing
+			// the whole command; no hostile account bytes reach stdout.
 			var stdout, stderr bytes.Buffer
 			code := runAccountsCommand([]string{"list"}, &stdout, &stderr)
-			if code != 1 || stdout.Len() != 0 || !strings.Contains(stderr.String(), test.want) {
-				t.Fatalf("exit=%d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
+			if code != 0 || strings.Contains(stdout.String(), "\x1b") ||
+				!strings.Contains(stderr.String(), test.want) || !strings.Contains(stderr.String(), "could not be read") {
+				t.Fatalf("list exit=%d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
+			}
+
+			// The account is still not usable: selecting its credential fails
+			// closed and surfaces the cause, so a broken file is never trusted.
+			if _, _, err := loadCLICredential(blitzAccountID); err == nil ||
+				!strings.Contains(err.Error(), test.want) {
+				t.Fatalf("loadCLICredential must fail closed on the broken account: %v", err)
 			}
 		})
 	}

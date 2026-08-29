@@ -349,7 +349,7 @@ func resolveCLIAuthOrigin(account, rawOrigin string) (string, error) {
 }
 
 func loadCLICredential(account string) (*credentialStore, credentialState, error) {
-	accounts, err := loadStoredCLIAccounts()
+	accounts, skipped, err := loadStoredCLIAccounts()
 	if err != nil {
 		return nil, credentialState{}, err
 	}
@@ -364,70 +364,73 @@ func loadCLICredential(account string) (*credentialStore, credentialState, error
 		selected, err = findSelectedCLIAccount(accounts, selection)
 	}
 	if err != nil {
+		// The selected account is not among the readable ones. If any entry was
+		// skipped, the selected one may well be a broken file — surface those
+		// causes rather than a bare "not stored" that hides a corrupt state.
+		if errors.Is(err, os.ErrNotExist) && len(skipped) > 0 {
+			return nil, credentialState{}, fmt.Errorf("%w; %s", err, describeSkippedCLIAccounts(skipped))
+		}
 		return nil, credentialState{}, err
 	}
 	return selected.store, selected.state, nil
 }
 
-func loadStoredCLIAccounts() ([]storedCLIAccount, error) {
+// describeSkippedCLIAccounts renders the unreadable stored-account files for a
+// diagnostic. The filenames are opaque hashes, so the causes carry the signal.
+func describeSkippedCLIAccounts(skipped []skippedCLIAccount) string {
+	causes := make([]string, 0, len(skipped))
+	for _, entry := range skipped {
+		causes = append(causes, entry.err.Error())
+	}
+	return fmt.Sprintf("%d stored account file(s) could not be read: %s",
+		len(skipped), strings.Join(causes, "; "))
+}
+
+// skippedCLIAccount records one stored-account file that failed to load. One
+// truncated file, or one written by a newer credentialStateVersion, used to
+// abort the whole walk and take every OTHER account down with it; now such an
+// entry is skipped and reported so the good accounts stay usable.
+type skippedCLIAccount struct {
+	name string
+	err  error
+}
+
+func loadStoredCLIAccounts() ([]storedCLIAccount, []skippedCLIAccount, error) {
 	configDir, err := os.UserConfigDir()
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	dir := filepath.Join(configDir, "emisar", "credentials")
 	dirInfo, err := os.Lstat(dir)
 	if errors.Is(err, os.ErrNotExist) {
-		return nil, nil
+		return nil, nil, nil
 	}
 	if err != nil {
-		return nil, fmt.Errorf("inspect credential directory %s: %w", dir, err)
+		return nil, nil, fmt.Errorf("inspect credential directory %s: %w", dir, err)
 	}
 	if err := rejectUnsafeCredentialDirectory(dir); err != nil {
-		return nil, fmt.Errorf("credential directory %s is unsafe: %w", dir, err)
+		return nil, nil, fmt.Errorf("credential directory %s is unsafe: %w", dir, err)
 	}
 	if err := validateCredentialDirectoryAccess(dir, dirInfo); err != nil {
-		return nil, fmt.Errorf("credential directory %s is unsafe: %w", dir, err)
+		return nil, nil, fmt.Errorf("credential directory %s is unsafe: %w", dir, err)
 	}
 	entries, err := os.ReadDir(dir)
 	if err != nil {
-		return nil, fmt.Errorf("list stored accounts: %w", err)
+		return nil, nil, fmt.Errorf("list stored accounts: %w", err)
 	}
 
 	accounts := make([]storedCLIAccount, 0)
+	var skipped []skippedCLIAccount
 	for _, entry := range entries {
 		if !validCLIAccountFilename(entry.Name()) {
 			continue
 		}
-		store := &credentialStore{
-			path: filepath.Join(dir, entry.Name()),
-			ops:  defaultCredentialFileOps(),
-		}
-		if err := store.validateExistingPath(); err != nil {
-			return nil, fmt.Errorf("stored account %s: %w", entry.Name(), err)
-		}
-		data, err := store.ops.readFile(store.path)
+		account, err := loadOneStoredCLIAccount(configDir, filepath.Join(dir, entry.Name()))
 		if err != nil {
-			return nil, fmt.Errorf("read stored account %s: %w", entry.Name(), err)
+			skipped = append(skipped, skippedCLIAccount{name: entry.Name(), err: err})
+			continue
 		}
-		state, err := decodeCredentialState(data)
-		if err != nil {
-			return nil, fmt.Errorf("stored account %s: %w", entry.Name(), err)
-		}
-		origin, err := parseEndpoint(state.EndpointOrigin, allowInsecureEndpoints())
-		if err != nil {
-			return nil, fmt.Errorf("stored account %s endpoint: %w", entry.Name(), err)
-		}
-		expected := newCLIAccountCredentialStoreAt(configDir, state.AccountID, origin, state.BootstrapPrefix)
-		if expected.path != store.path {
-			return nil, fmt.Errorf("stored account %s does not match its account identity", entry.Name())
-		}
-		store.endpointOrigin = origin
-		store.bootstrapPrefix = state.BootstrapPrefix
-		store.random = expected.random
-		if err := state.validate(origin, state.BootstrapPrefix); err != nil {
-			return nil, fmt.Errorf("stored account %s: %w", entry.Name(), err)
-		}
-		accounts = append(accounts, storedCLIAccount{store: store, state: state})
+		accounts = append(accounts, account)
 	}
 	sort.Slice(accounts, func(i, j int) bool {
 		left := strings.ToLower(accounts[i].state.AccountName)
@@ -440,7 +443,40 @@ func loadStoredCLIAccounts() ([]storedCLIAccount, error) {
 		}
 		return accounts[i].state.EndpointOrigin < accounts[j].state.EndpointOrigin
 	})
-	return accounts, nil
+	return accounts, skipped, nil
+}
+
+// loadOneStoredCLIAccount loads and validates a single stored-account file. Its
+// failure takes down only that entry, never the rest of the directory.
+func loadOneStoredCLIAccount(configDir, path string) (storedCLIAccount, error) {
+	store := &credentialStore{path: path, ops: defaultCredentialFileOps()}
+	name := filepath.Base(path)
+	if err := store.validateExistingPath(); err != nil {
+		return storedCLIAccount{}, fmt.Errorf("stored account %s: %w", name, err)
+	}
+	data, err := store.ops.readFile(store.path)
+	if err != nil {
+		return storedCLIAccount{}, fmt.Errorf("read stored account %s: %w", name, err)
+	}
+	state, err := decodeCredentialState(data)
+	if err != nil {
+		return storedCLIAccount{}, fmt.Errorf("stored account %s: %w", name, err)
+	}
+	origin, err := parseEndpoint(state.EndpointOrigin, allowInsecureEndpoints())
+	if err != nil {
+		return storedCLIAccount{}, fmt.Errorf("stored account %s endpoint: %w", name, err)
+	}
+	expected := newCLIAccountCredentialStoreAt(configDir, state.AccountID, origin, state.BootstrapPrefix)
+	if expected.path != store.path {
+		return storedCLIAccount{}, fmt.Errorf("stored account %s does not match its account identity", name)
+	}
+	store.endpointOrigin = origin
+	store.bootstrapPrefix = state.BootstrapPrefix
+	store.random = expected.random
+	if err := state.validate(origin, state.BootstrapPrefix); err != nil {
+		return storedCLIAccount{}, fmt.Errorf("stored account %s: %w", name, err)
+	}
+	return storedCLIAccount{store: store, state: state}, nil
 }
 
 func validCLIAccountFilename(name string) bool {
@@ -557,7 +593,7 @@ func writeAccountSelection(selection accountSelection) error {
 }
 
 func listCLIAccounts(jsonOutput bool, stdout, stderr io.Writer) int {
-	accounts, err := loadStoredCLIAccounts()
+	accounts, skipped, err := loadStoredCLIAccounts()
 	if err != nil {
 		return cliCommandError(
 			stderr,
@@ -565,6 +601,9 @@ func listCLIAccounts(jsonOutput bool, stdout, stderr io.Writer) int {
 			[]string{err.Error()},
 			"Check the credential file and directory permissions, then try again.",
 		)
+	}
+	if len(skipped) > 0 {
+		fmt.Fprintf(stderr, "Note: %s\n", describeSkippedCLIAccounts(skipped))
 	}
 	selection, selectionErr := readAccountSelection()
 	if selectionErr != nil && !errors.Is(selectionErr, os.ErrNotExist) {
@@ -637,7 +676,7 @@ func useCLIAccount(selector string, stdout, stderr io.Writer) int {
 			"Unset both EMISAR_URL and EMISAR_API_KEY, then run this command again.",
 		)
 	}
-	accounts, err := loadStoredCLIAccounts()
+	accounts, skipped, err := loadStoredCLIAccounts()
 	if err != nil {
 		return cliCommandError(
 			stderr,
@@ -649,10 +688,14 @@ func useCLIAccount(selector string, stdout, stderr io.Writer) int {
 	account, err := resolveStoredCLIAccount(accounts, selector)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
+			details := []string(nil)
+			if len(skipped) > 0 {
+				details = []string{describeSkippedCLIAccounts(skipped)}
+			}
 			return cliCommandError(
 				stderr,
 				fmt.Sprintf("Account %q is not stored", selector),
-				nil,
+				details,
 				"Run `emisar-mcp accounts list` to see stored accounts.",
 				"Run `emisar-mcp auth` to add another account.",
 			)
