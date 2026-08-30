@@ -1,7 +1,6 @@
 services: [mongodb]
 risk_accountability:
   exceptions:
-    mongo.kill_op: requires_concurrent_session
     # rs.stepDown() hands PRIMARY to another member. A standalone mongod is not
     # a replica set at all, so the call has nothing to step down to.
     mongo.replset_stepdown: requires_cluster
@@ -87,6 +86,26 @@ cases:
       - argv: [/bin/sh, -c, 'mongosh --nodb --quiet --eval "db=new Mongo(process.env.MONGO_URI).getDB(\"admin\");print(db.getSiblingDB(\"packtest\").getCollection(\"orders\").getIndexes().filter(function(i){return i.name===\"packtest_drop_idx\"}).length)"']
         expect:
           stdout_contains: ["0"]
+  - action: mongo.kill_op
+    # Start a long, interruptible op — a find over many docs whose $where sleeps
+    # ~50ms per doc, so mongod checks for a kill between docs — identified by its
+    # own collection namespace, resolve its opid from currentOp, then kill it.
+    arrange:
+      - argv: [mongosh, --nodb, --quiet, --eval, "db=new Mongo(process.env.MONGO_URI).getDB('admin');db.getSiblingDB('packtest').killop_fixture.insertMany(Array.from({length:400},function(_,i){return {n:i}}))"]
+      - argv: ["/bin/sh", "-c", "nohup mongosh --nodb --quiet --eval 'db=new Mongo(process.env.MONGO_URI).getDB(\"admin\");db.getSiblingDB(\"packtest\").killop_fixture.find({$where:\"var e=new Date().getTime()+50;while(new Date().getTime()<e){};return true;\"}).toArray()' >/tmp/packtest-killop.log 2>&1 &"]
+    resolve_args:
+      opid:
+        argv: [mongosh, --nodb, --quiet, --eval, "db=new Mongo(process.env.MONGO_URI).getDB('admin');var op=db.currentOp(true).inprog.find(function(o){return o.active && o.ns==='packtest.killop_fixture'});print(op ? op.opid : '')"]
+        retry_for: 15s
+        retry_every: 500ms
+    expect:
+      stdout_contains: ["attempting to kill op"]
+    probes:
+      - argv: [mongosh, --nodb, --quiet, --eval, "db=new Mongo(process.env.MONGO_URI).getDB('admin');print(db.currentOp(true).inprog.filter(function(o){return o.active && o.ns==='packtest.killop_fixture'}).length)"]
+        expect:
+          stdout_contains: ["0"]
+        retry_for: 15s
+        retry_every: 500ms
   - action: mongo.profiler_status
     args: {database: packtest}
     expect:
