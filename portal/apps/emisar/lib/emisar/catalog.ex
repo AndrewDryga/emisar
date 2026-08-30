@@ -244,12 +244,7 @@ defmodule Emisar.Catalog do
       end
     end)
     |> Multi.run(:pins, fn _repo, _changes ->
-      pending_changed? =
-        packs
-        |> Enum.map(&observe_pack(runner.account_id, &1, now))
-        |> Enum.any?(&(&1 == :pending_changed))
-
-      {:ok, pending_changed?}
+      observe_packs(runner.account_id, packs, now)
     end)
     |> Repo.commit_multi()
     |> case do
@@ -345,13 +340,12 @@ defmodule Emisar.Catalog do
 
   # -- Pack-version pinning --------------------------------------------
 
-  # One sighting of (account, pack_id, version) = ONE upsert: first sight
-  # inserts the pin computed from the baseline below; any later (or
-  # concurrent) sight only refreshes last_seen_at, and RETURNING hands
-  # back the canonical row for the drift judgment. The conflict update
-  # deliberately never touches the trust fields — the existing row's
-  # state machine must be JUDGED (judge_drift/4), not replaced; this is
-  # the documented exception to the plain-upsert rule.
+  # One runner_state = ONE sorted upsert for every valid advertised pin. A
+  # reconnect therefore holds the shared pack rows for one statement instead
+  # of issuing (and serializing) up to 128 statements. RETURNING hands back the
+  # canonical row for each drift judgment. The conflict update deliberately
+  # never touches trust fields — the existing row's state machine must be
+  # JUDGED (judge_drift/4), not replaced.
   #
   # Pin decision on first sight:
   #
@@ -364,12 +358,40 @@ defmodule Emisar.Catalog do
   #     trusted hash; a human must Trust in /app/packs before any of
   #     its actions can run.
   #
-  # Returns :pending_changed when this sighting put a new decision in
-  # front of the operator (fresh pending pin, or drift on a known row).
-  defp observe_pack(account_id, {pack_id, %{"hash" => advertised} = info}, now)
+  # Candidate ids distinguish the transaction that actually inserted a row
+  # from concurrent conflicts, so first-sight audit is emitted exactly once.
+  # Results are all materialized before reducing the pending flag: reducing
+  # with Enum.any?/2 over the work itself would stop after the first change and
+  # silently skip later packs.
+  defp observe_packs(account_id, packs, now) do
+    observations =
+      packs
+      |> Enum.map(&pack_observation(account_id, &1, now))
+      |> Enum.reject(&is_nil/1)
+      |> Enum.sort_by(&{&1.pack_id, &1.version})
+
+    returned_by_ref =
+      observations
+      |> upsert_pack_observations(now)
+      |> Map.new(&{{&1.pack_id, &1.version}, &1})
+
+    results =
+      Enum.map(observations, fn observation ->
+        pack_version = Map.fetch!(returned_by_ref, {observation.pack_id, observation.version})
+        judge_pack_observation(pack_version, observation, now)
+      end)
+
+    case Enum.find(results, &match?({:error, _reason}, &1)) do
+      nil -> {:ok, Enum.any?(results, &(&1 == :pending_changed))}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  defp pack_observation(account_id, {pack_id, %{"hash" => advertised} = info}, now)
        when is_binary(advertised) and advertised != "" do
     version = info["version"] || "unknown"
     verdict = baseline_verdict(pack_id, version, advertised)
+    candidate_id = Repo.generate_id()
 
     changeset =
       PackVersion.Changeset.insert(%{
@@ -384,32 +406,39 @@ defmodule Emisar.Catalog do
         last_seen_at: now
       })
 
-    case Repo.insert(changeset,
-           on_conflict: [set: [last_seen_at: now]],
-           conflict_target: [:account_id, :pack_id, :version],
-           returning: true
-         ) do
-      {:ok, %PackVersion{} = pack_version} ->
-        if DateTime.compare(pack_version.first_seen_at, now) == :eq do
-          # Fresh pin — this sighting inserted it.
-          Audit.record(
-            Audit.Events.pack_pinned(
-              pack_version,
-              verdict.audit_event,
-              advertised,
-              verdict.baseline
-            )
-          )
+    if changeset.valid? do
+      entry =
+        changeset
+        |> Ecto.Changeset.apply_changes()
+        |> Map.take([
+          :account_id,
+          :pack_id,
+          :version,
+          :hash,
+          :pending_hash,
+          :trust_state,
+          :trusted_manifest,
+          :first_seen_at,
+          :last_seen_at
+        ])
+        |> Map.merge(%{
+          id: candidate_id,
+          inserted_at: now,
+          updated_at: now
+        })
 
-          if pack_version.trust_state == :pending, do: :pending_changed, else: :ok
-        else
-          judge_drift(pack_version, advertised, verdict, now)
-        end
-
-      {:error, _changeset} ->
-        # Malformed advertisement (oversized/bad field) — skip this pack,
-        # keep the rest of the batch.
-        :ok
+      %{
+        advertised: advertised,
+        candidate_id: candidate_id,
+        entry: entry,
+        pack_id: pack_id,
+        verdict: verdict,
+        version: version
+      }
+    else
+      # Malformed advertisement (oversized/bad field) — skip this pack,
+      # keep the rest of the batch.
+      nil
     end
   end
 
@@ -419,7 +448,48 @@ defmodule Emisar.Catalog do
   # nothing to review: it would erase the bytes an operator was asked about and
   # leave a pending row Trust and Reject both refuse forever, with dispatch
   # closed account-wide until someone deletes it.
-  defp observe_pack(_account_id, _entry, _now), do: :ok
+  defp pack_observation(_account_id, _entry, _now), do: nil
+
+  defp upsert_pack_observations([], _now), do: []
+
+  defp upsert_pack_observations(observations, now) do
+    entries = Enum.map(observations, & &1.entry)
+
+    {_count, returned} =
+      Repo.insert_all(PackVersion, entries,
+        on_conflict: [set: [last_seen_at: now]],
+        conflict_target: [:account_id, :pack_id, :version],
+        returning: true
+      )
+
+    returned
+  end
+
+  defp judge_pack_observation(
+         %PackVersion{id: candidate_id} = pack_version,
+         %{candidate_id: candidate_id} = observation,
+         _now
+       ) do
+    audit =
+      Audit.Events.pack_pinned(
+        pack_version,
+        observation.verdict.audit_event,
+        observation.advertised,
+        observation.verdict.baseline
+      )
+
+    case Audit.record(audit) do
+      {:ok, _event} ->
+        if pack_version.trust_state == :pending, do: :pending_changed, else: :ok
+
+      {:error, changeset} ->
+        {:error, changeset}
+    end
+  end
+
+  defp judge_pack_observation(%PackVersion{} = pack_version, observation, now) do
+    judge_drift(pack_version, observation.advertised, observation.verdict, now)
+  end
 
   # The pin these advertised bytes earn, judged purely against the published
   # baseline. ONE trust snapshot answers both halves of the verdict — the
@@ -488,11 +558,13 @@ defmodule Emisar.Catalog do
 
         case result do
           {:ok, _updated} ->
-            Audit.record(Audit.Events.pack_trust_drift_detected(pack_version, advertised))
-            :pending_changed
+            case Audit.record(Audit.Events.pack_trust_drift_detected(pack_version, advertised)) do
+              {:ok, _event} -> :pending_changed
+              {:error, changeset} -> {:error, changeset}
+            end
 
-          {:error, _changeset} ->
-            :ok
+          {:error, changeset} ->
+            {:error, changeset}
         end
     end
   end
@@ -514,19 +586,21 @@ defmodule Emisar.Catalog do
 
     case Repo.update(changeset) do
       {:ok, %PackVersion{} = updated} ->
-        Audit.record(
+        audit =
           Audit.Events.pack_pinned(
             updated,
             :pack_trust_baseline_reconciled,
             advertised,
             verdict.baseline
           )
-        )
 
-        :pending_changed
+        case Audit.record(audit) do
+          {:ok, _event} -> :pending_changed
+          {:error, changeset} -> {:error, changeset}
+        end
 
-      {:error, _changeset} ->
-        :ok
+      {:error, changeset} ->
+        {:error, changeset}
     end
   end
 
@@ -555,7 +629,7 @@ defmodule Emisar.Catalog do
 
         case Repo.update(changeset) do
           {:ok, _updated} -> :ok
-          {:error, _changeset} -> :ok
+          {:error, changeset} -> {:error, changeset}
         end
     end
   end

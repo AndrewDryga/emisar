@@ -827,6 +827,142 @@ defmodule Emisar.CatalogTest do
       assert pack_version.pending_hash == Fixtures.Catalog.pack_hash("sha256:H1")
     end
 
+    test "known pack refresh query count is independent of fleet catalog size" do
+      one_account = Fixtures.Accounts.create_account()
+      one_runner = Fixtures.Runners.create_runner(account_id: one_account.id)
+      one_packs = %{"refresh-pack-1" => %{"version" => "1.0", "hash" => "bytes-1"}}
+
+      many_account = Fixtures.Accounts.create_account()
+      many_runner = Fixtures.Runners.create_runner(account_id: many_account.id)
+
+      many_packs =
+        Map.new(1..128, fn number ->
+          {"refresh-pack-#{number}", %{"version" => "1.0", "hash" => "bytes-#{number}"}}
+        end)
+
+      one_payload = state_payload(packs: one_packs)
+      many_payload = state_payload(packs: many_packs)
+
+      assert {:ok, _} = Catalog.observe_state(one_runner, one_payload)
+      assert {:ok, _} = Catalog.observe_state(many_runner, many_payload)
+
+      stale_at = DateTime.add(DateTime.utc_now(), -3_600, :second)
+
+      one_account.id
+      |> Fixtures.Catalog.list_pack_versions()
+      |> Enum.each(&Fixtures.Catalog.backdate_pack_version_last_seen(&1, stale_at))
+
+      many_account.id
+      |> Fixtures.Catalog.list_pack_versions()
+      |> Enum.each(&Fixtures.Catalog.backdate_pack_version_last_seen(&1, stale_at))
+
+      test_pid = self()
+      handler = make_ref()
+
+      :telemetry.attach(
+        handler,
+        [:emisar, :repo, :query],
+        fn _event, _measurements, _metadata, _config ->
+          if self() == test_pid, do: send(test_pid, :repo_query)
+        end,
+        nil
+      )
+
+      on_exit(fn -> :telemetry.detach(handler) end)
+
+      _ = drain_repo_query_count()
+      assert {:ok, _} = Catalog.observe_state(one_runner, one_payload)
+      one_queries = drain_repo_query_count()
+
+      assert {:ok, _} = Catalog.observe_state(many_runner, many_payload)
+      many_queries = drain_repo_query_count()
+
+      assert many_queries == one_queries
+      assert one_queries <= 12
+
+      :telemetry.detach(handler)
+
+      one_versions = Fixtures.Catalog.list_pack_versions(one_account.id)
+      many_versions = Fixtures.Catalog.list_pack_versions(many_account.id)
+
+      assert length(one_versions) == 1
+      assert length(many_versions) == 128
+
+      assert Enum.all?(one_versions ++ many_versions, fn pack_version ->
+               pack_version.trust_state == :pending and
+                 DateTime.compare(pack_version.last_seen_at, stale_at) == :gt
+             end)
+    end
+
+    test "first sight audits each pack once and a refresh adds no audit" do
+      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
+
+      payload =
+        state_payload(
+          packs: %{
+            "audit-alpha" => %{"version" => "1.0", "hash" => "alpha"},
+            "audit-bravo" => %{"version" => "1.0", "hash" => "bravo"},
+            "audit-charlie" => %{"version" => "1.0", "hash" => "charlie"}
+          }
+        )
+
+      assert {:ok, _} = Catalog.observe_state(runner, payload)
+      assert {:ok, _} = Catalog.observe_state(runner, payload)
+
+      {:ok, events, _} = Audit.list_events(subject)
+
+      first_sight =
+        Enum.filter(events, &(&1.event_type == "pack_trust_review_required"))
+
+      assert Enum.sort(Enum.map(first_sight, & &1.target_label)) ==
+               ["audit-alpha@1.0", "audit-bravo@1.0", "audit-charlie@1.0"]
+    end
+
+    test "one batch processes known, fresh, drifted, and malformed packs independently" do
+      account = Fixtures.Accounts.create_account()
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
+
+      Fixtures.Catalog.create_observed_pack_version(
+        account_id: account.id,
+        pack_id: "known-pack",
+        version: "1.0",
+        pending_hash: "known-bytes"
+      )
+
+      Fixtures.Catalog.create_trusted_pack_version(
+        account_id: account.id,
+        pack_id: "drifted-pack",
+        version: "1.0",
+        hash: "old-bytes"
+      )
+
+      payload =
+        state_payload(
+          packs: %{
+            "known-pack" => %{"version" => "1.0", "hash" => "known-bytes"},
+            "fresh-pack" => %{"version" => "1.0", "hash" => "fresh-bytes"},
+            "drifted-pack" => %{"version" => "1.0", "hash" => "new-bytes"},
+            "malformed-pack" => %{"version" => "1.0", "hash" => "ignored"}
+          }
+        )
+        |> put_in(["packs", "malformed-pack", "hash"], "not-a-sha256")
+
+      assert {:ok, _} = Catalog.observe_state(runner, payload)
+
+      versions =
+        account.id
+        |> Fixtures.Catalog.list_pack_versions()
+        |> Map.new(&{&1.pack_id, &1})
+
+      assert map_size(versions) == 3
+      assert versions["known-pack"].pending_hash == Fixtures.Catalog.pack_hash("known-bytes")
+      assert versions["fresh-pack"].pending_hash == Fixtures.Catalog.pack_hash("fresh-bytes")
+      assert versions["drifted-pack"].hash == Fixtures.Catalog.pack_hash("old-bytes")
+      assert versions["drifted-pack"].pending_hash == Fixtures.Catalog.pack_hash("new-bytes")
+      refute Map.has_key?(versions, "malformed-pack")
+    end
+
     test "a malformed hash for a known pack is isolated from the rest of the state update" do
       runner = Fixtures.Runners.create_runner()
       account = Repo.preload(runner, :account).account
@@ -914,6 +1050,9 @@ defmodule Emisar.CatalogTest do
       assert pack_version.trust_state == :pending
       assert pack_version.pending_hash == Fixtures.Catalog.pack_hash("sha256:RACE")
       assert pack_version.hash == nil
+
+      {:ok, events, _} = Audit.list_events(subject)
+      assert Enum.count(events, &(&1.event_type == "pack_trust_review_required")) == 1
     end
 
     test "advertising the trusted hash again after approval → no-op (just touches last_seen)" do
