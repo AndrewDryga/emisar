@@ -11,7 +11,22 @@ services:
 
   nomad:
     image: hashicorp/nomad:${PACKTEST_VERSION:-2.0.4}${PACKTEST_DIGEST-}
-    command: agent -server -bootstrap-expect=1 -data-dir=/tmp/nomad -bind=0.0.0.0
+    # ACLs on with a fixed bootstrap token, so acl_token_self has a real Secret
+    # ID to return (and redact). Every case authenticates with the same
+    # management token (NOMAD_TOKEN below), so the read/inspect cases are
+    # unaffected. The token is a canary the harness scans for unredacted.
+    environment:
+      NOMAD_TOKEN: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+    # The image entrypoint is `nomad`, so override it to run a shell wrapper that
+    # enables ACLs, starts the agent, then bootstraps the fixed management token.
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        echo 'acl { enabled = true }' > /tmp/acl.hcl
+        nomad agent -server -bootstrap-expect=1 -data-dir=/tmp/nomad -bind=0.0.0.0 -config=/tmp/acl.hcl &
+        echo 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee' > /tmp/boot.token
+        until (unset NOMAD_TOKEN; nomad acl bootstrap /tmp/boot.token) >/dev/null 2>&1; do sleep 1; done
+        wait
     privileged: true
     healthcheck:
       test: ["CMD", "nomad", "server", "members"]

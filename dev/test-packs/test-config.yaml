@@ -104,6 +104,7 @@ execution:
     - MYSQL_HOST
     - MYSQL_PWD
     - NOMAD_ADDR
+    - NOMAD_TOKEN
     - OIDC_CA_CERT
     - PFSENSE_API_KEY
     - PFSENSE_INSECURE

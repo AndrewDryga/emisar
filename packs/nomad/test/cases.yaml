@@ -14,7 +14,6 @@ risk_accountability:
     nomad.alloc_stop: requires_cluster
     nomad.deployment_fail: requires_cluster
     nomad.job_action_run: requires_cluster
-    nomad.job_dispatch: requires_dynamic_fixture
     nomad.job_promote: requires_cluster
     nomad.job_restart: requires_cluster
     nomad.job_revert: requires_cluster
@@ -24,18 +23,25 @@ risk_accountability:
     nomad.node_purge: requires_cluster
     nomad.operator_raft_remove_peer: requires_cluster
     nomad.task_resources_set: requires_cluster
+    # job dispatch MONITORS placement of the dispatched allocation, so it needs a
+    # running client node. The isolated SUT runs a server only — a nomad client's
+    # cgroup process-manager init fails in the container (cgroup.subtree_control
+    # busy) — so there is nowhere to place it. Same no-running-workloads bucket as
+    # the ops above; registering the parameterized job succeeds, placement can't.
+    nomad.job_dispatch: requires_cluster
 secret_env: [NOMAD_PACKTEST_CANARY]
 env:
   NOMAD_ADDR: "http://nomad:4646"
+  # The ACL management token every case authenticates with (the SUT bootstraps
+  # exactly this one — a UUID, so it can't carry the packtest-canary- name a
+  # secret_env value needs). acl_token_self asserts its Secret ID comes back
+  # masked and this exact value never appears in the clear.
+  NOMAD_TOKEN: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
   # Mirrors the PACKTEST_DB_PASSWORD literal in test/fixtures/inspect.nomad.hcl —
   # declaring it here makes the harness fail any surface that leaks it unredacted.
   NOMAD_PACKTEST_CANARY: packtest-canary-nomad-e57d31
 redaction_accountability:
-  exceptions:
-    # The SUT runs with ACLs off, so `acl token self` has no token to print.
-    # Turning ACLs on means bootstrapping one and threading NOMAD_TOKEN through
-    # every other case here — a fixture change, not a missing assertion.
-    nomad.acl_token_self: requires_dynamic_fixture
+  exceptions: {}
 cases:
   - action: nomad.agent_info
     expect:
@@ -123,6 +129,13 @@ cases:
         - '"PACKTEST_DB_PASSWORD": "[REDACTED]"'
       stdout_not_contains:
         - packtest-canary-nomad-e57d31
+  - action: nomad.acl_token_self
+    # ACLs are on with a management token, so the CLI prints a real Secret ID
+    # that the action redacts. Prove the redaction fires and the token — a
+    # declared canary — never leaves the host in the clear.
+    expect:
+      stdout_contains: ["Secret ID", "[REDACTED]"]
+      stdout_not_contains: ["aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"]
   - name: nomad.job_status_one-non-default-namespace
     action: nomad.job_status_one
     args:
