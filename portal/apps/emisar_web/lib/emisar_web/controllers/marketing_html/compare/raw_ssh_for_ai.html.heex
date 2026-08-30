@@ -71,7 +71,7 @@
          "One chat approval can trust the SSH prefix — and every production command behind it.",
          "Policy gates with approver email + audit; skipping means a policy change, itself audited"},
         {"Audit trail?", "Whatever lands in .bash_history",
-         "Hash-chained JSONL on host, mirrored to cloud"},
+         "Hash-chained JSONL on host, plus a searchable cloud audit trail"},
         {"Output redaction?", "None — passwords leak into chat logs",
          "20 patterns (bearer/JWT, AWS/GitHub/Slack keys, secret assignments + your custom ones) masked on the host before egress"},
         {"Lateral movement?", "SSH key on the model's box ≈ key everywhere",

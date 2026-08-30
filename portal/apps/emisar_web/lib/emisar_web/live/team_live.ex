@@ -2674,7 +2674,8 @@ defmodule EmisarWeb.TeamLive do
             <h4 class="text-sm font-medium text-zinc-100">Single sign-on</h4>
             <p class="mt-1 text-xs leading-relaxed text-zinc-400">
               Connect your organization's identity provider so members sign in through it. New
-              users are provisioned on first sign-in; you choose the role they land with.
+              users are provisioned on first sign-in — automatically or after your approval — and
+              you choose the role they land with.
             </p>
             <%!-- The whole list fits: a connection is unique per provider kind
                  (one Okta, one Google, …), so there are at most a handful. --%>

@@ -241,7 +241,7 @@ defmodule EmisarWeb.MarketingController do
     render(conn, :home,
       page_title: "Give AI tools approved infrastructure actions, not SSH",
       meta_description:
-        "One governed MCP server connects any AI agent to a finite action catalog, enforced on-host with pack trust, policy gates, human approvals, and a hash-chained audit trail.",
+        "One governed MCP server connects any AI agent to a finite action catalog, enforced on-host with pack trust, policy gates, human approvals, and a hash-chained on-host journal.",
       canonical_url: @base <> "/",
       faqs: @home_faqs,
       pack_count: Catalog.published_pack_count(),
