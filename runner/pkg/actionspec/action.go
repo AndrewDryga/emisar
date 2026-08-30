@@ -330,18 +330,32 @@ func isBidiControl(r rune) bool {
 		(r >= '\u202a' && r <= '\u202e') || (r >= '\u2066' && r <= '\u2069')
 }
 
-// validateExecutionEnv rejects environment variables a pack must not set:
-// the dynamic-linker (LD_*/DYLD_*) and shell-startup (BASH_ENV) hijack
-// vectors. The runner's job is to constrain WHAT runs, so even a trusted
-// pack must not be able to LD_PRELOAD a library or BASH_ENV a script into
-// the target process. A binary that genuinely needs extra libraries should
-// get them from the system, not a per-action env injection. Matched
-// case-sensitively — the loader only honors the canonical uppercase forms,
-// so a lowercased variant would be inert anyway.
+// InterpreterHijackEnvVars are env vars that inject code into a process the way
+// LD_PRELOAD/BASH_ENV do: NODE_OPTIONS --require, RUBYOPT -r, PERL5OPT -M, and
+// GIT_SSH_COMMAND an arbitrary command git runs. A pack must not set them (or
+// inherit them — the identical check lives in internal/config/config.go for
+// inherit_env); keep the two lists in sync.
+var InterpreterHijackEnvVars = map[string]bool{
+	"BASH_ENV":        true,
+	"NODE_OPTIONS":    true,
+	"RUBYOPT":         true,
+	"PERL5OPT":        true,
+	"GIT_SSH_COMMAND": true,
+}
+
+// validateExecutionEnv rejects environment variables a pack must not set: the
+// dynamic-linker (LD_*/DYLD_*), shell-startup (BASH_ENV), and interpreter-option
+// (NODE_OPTIONS/RUBYOPT/PERL5OPT/GIT_SSH_COMMAND) hijack vectors. The runner's
+// job is to constrain WHAT runs, so even a trusted pack must not be able to
+// LD_PRELOAD a library, BASH_ENV a script, or --require a module into the target
+// process. A binary that genuinely needs extra libraries should get them from
+// the system, not a per-action env injection. Matched case-sensitively — the
+// loader only honors the canonical uppercase forms, so a lowercased variant
+// would be inert anyway.
 func validateExecutionEnv(a *Action) error {
 	for k := range a.Execution.Env {
-		if strings.HasPrefix(k, "LD_") || strings.HasPrefix(k, "DYLD_") || k == "BASH_ENV" {
-			return fmt.Errorf("action %s: execution.env must not set %q (dynamic-linker/shell-init hijack vector)", a.ID, k)
+		if strings.HasPrefix(k, "LD_") || strings.HasPrefix(k, "DYLD_") || InterpreterHijackEnvVars[k] {
+			return fmt.Errorf("action %s: execution.env must not set %q (dynamic-linker/shell-init/interpreter-option hijack vector)", a.ID, k)
 		}
 	}
 	return nil

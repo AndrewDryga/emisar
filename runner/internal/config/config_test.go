@@ -103,11 +103,14 @@ func TestValidate_RejectsEnrollmentKeyVarInInheritEnv(t *testing.T) {
 func TestValidate_RejectsLinkerHijackVarsInInheritEnv(t *testing.T) {
 	base := validConfig
 
-	// LD_*/DYLD_*/BASH_ENV in inherit_env would let the runner's own process
-	// env hijack the dynamic linker or shell init of every action's child —
-	// the same vector validateExecutionEnv blocks for pack env. Must be
-	// rejected.
-	for _, name := range []string{"LD_PRELOAD", "LD_LIBRARY_PATH", "DYLD_INSERT_LIBRARIES", "BASH_ENV"} {
+	// LD_*/DYLD_*/BASH_ENV and the interpreter-option vars in inherit_env would
+	// let the runner's own process env hijack the dynamic linker, shell init, or
+	// an interpreter of every action's child — the same vectors
+	// validateExecutionEnv blocks for pack env. Must be rejected.
+	for _, name := range []string{
+		"LD_PRELOAD", "LD_LIBRARY_PATH", "DYLD_INSERT_LIBRARIES", "BASH_ENV",
+		"NODE_OPTIONS", "RUBYOPT", "PERL5OPT", "GIT_SSH_COMMAND",
+	} {
 		cfg := base()
 		cfg.Execution.InheritEnv = []string{"NOMAD_TOKEN", name}
 		if err := cfg.Validate(); err == nil {
