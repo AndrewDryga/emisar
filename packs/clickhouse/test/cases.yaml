@@ -8,7 +8,6 @@ versions:
 risk_accountability:
   mode: complete
   exceptions:
-    ch.kill_mutation: requires_concurrent_session
     ch.system_drop_replica: requires_cluster
     ch.system_restart_replica: requires_cluster
 secret_env: [CH_PASSWORD]
@@ -68,6 +67,33 @@ cases:
           stdout_contains: ["0"]
         retry_for: 10s
         retry_every: 250ms
+  - action: ch.kill_mutation
+    # Stop the merge/mutation scheduler so an ALTER…UPDATE mutation stays queued
+    # (is_done=0), resolve its mutation_id from system.mutations, then KILL it.
+    args:
+      database: default
+      table: packtest_events
+    arrange:
+      - argv: [/bin/sh, -c, 'clickhouse-client --host clickhouse --user "$CH_USER" --password "$CH_PASSWORD" --query "SYSTEM STOP MERGES default.packtest_events"']
+      - argv: [/bin/sh, -c, 'clickhouse-client --host clickhouse --user "$CH_USER" --password "$CH_PASSWORD" --query "ALTER TABLE default.packtest_events UPDATE duration_ms = duration_ms WHERE 1"']
+      - argv: [/bin/sh, -c, 'clickhouse-client --host clickhouse --user "$CH_USER" --password "$CH_PASSWORD" --query "SELECT count() FROM system.mutations WHERE database = ''default'' AND table = ''packtest_events'' AND is_done = 0"']
+        expect:
+          stdout_contains: ["1"]
+        retry_for: 10s
+        retry_every: 250ms
+    resolve_args:
+      mutation_id:
+        argv: [/bin/sh, -c, 'clickhouse-client --host clickhouse --user "$CH_USER" --password "$CH_PASSWORD" --query "SELECT mutation_id FROM system.mutations WHERE database = ''default'' AND table = ''packtest_events'' AND is_done = 0 ORDER BY create_time DESC LIMIT 1"']
+        retry_for: 15s
+        retry_every: 500ms
+    expect:
+      stdout_contains: [packtest_events]
+    probes:
+      - argv: [/bin/sh, -c, 'clickhouse-client --host clickhouse --user "$CH_USER" --password "$CH_PASSWORD" --query "SELECT count() FROM system.mutations WHERE database = ''default'' AND table = ''packtest_events'' AND is_done = 0"']
+        expect:
+          stdout_contains: ["0"]
+        retry_for: 15s
+        retry_every: 500ms
   - action: ch.reload_config
     probes:
       - argv: [/bin/sh, -c, 'clickhouse-client --host clickhouse --user "$CH_USER" --password "$CH_PASSWORD" --query "SELECT 1"']
