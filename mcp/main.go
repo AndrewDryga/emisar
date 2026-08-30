@@ -39,6 +39,7 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
+	"crypto/tls"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
@@ -125,6 +126,12 @@ func newHTTPClient() *http.Client {
 	// endpoint multiplexes one connection regardless.
 	transport := http.DefaultTransport.(*http.Transport).Clone()
 	transport.MaxIdleConnsPerHost = maxConcurrentRequests
+	// Pin an explicit TLS 1.2 floor so the transport can't drift with a future Go
+	// default or a GODEBUG override; the RPC endpoint is always modern TLS.
+	if transport.TLSClientConfig == nil {
+		transport.TLSClientConfig = &tls.Config{}
+	}
+	transport.TLSClientConfig.MinVersion = tls.VersionTLS12
 	return &http.Client{
 		Transport:     transport,
 		Timeout:       httpTimeout,
