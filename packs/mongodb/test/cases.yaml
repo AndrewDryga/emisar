@@ -1,7 +1,6 @@
 services: [mongodb]
 risk_accountability:
   exceptions:
-    mongo.drop_index: requires_dynamic_fixture
     mongo.kill_op: requires_concurrent_session
     # rs.stepDown() hands PRIMARY to another member. A standalone mongod is not
     # a replica set at all, so the call has nothing to step down to.
@@ -74,6 +73,20 @@ cases:
     args: {database: packtest, collection: orders}
     expect:
       stdout_contains: [customer_1, status_1]
+  - action: mongo.drop_index
+    # Create a throwaway index, drop it by name, and confirm it's gone.
+    args:
+      db_name: packtest
+      collection: orders
+      index_name: packtest_drop_idx
+    arrange:
+      - argv: [/bin/sh, -c, 'mongosh --nodb --quiet --eval "db=new Mongo(process.env.MONGO_URI).getDB(\"admin\");db.getSiblingDB(\"packtest\").getCollection(\"orders\").createIndex({packtest_drop_field:1},{name:\"packtest_drop_idx\"})"']
+    expect:
+      stdout_contains: [nIndexesWas]
+    probes:
+      - argv: [/bin/sh, -c, 'mongosh --nodb --quiet --eval "db=new Mongo(process.env.MONGO_URI).getDB(\"admin\");print(db.getSiblingDB(\"packtest\").getCollection(\"orders\").getIndexes().filter(function(i){return i.name===\"packtest_drop_idx\"}).length)"']
+        expect:
+          stdout_contains: ["0"]
   - action: mongo.profiler_status
     args: {database: packtest}
     expect:
