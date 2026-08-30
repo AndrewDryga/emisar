@@ -283,7 +283,7 @@ defmodule Emisar.AdminTest do
       assert result.billing.plan == "free"
     end
 
-    test "stamps a staff mutation as the operator, never the system, keeping equals in values",
+    test "stamps a staff mutation as the team, not the system or a spoofable operator id",
          %{staff_operator: staff_operator} do
       account = Fixtures.Accounts.create_account()
 
@@ -297,11 +297,13 @@ defmodule Emisar.AdminTest do
       # A disabled account's own owner is locked out, so read the trail directly.
       event = Enum.find(Repo.all(Audit.Event), &(&1.event_type == "account.disabled"))
 
-      # The customer's own trail attributes the block to the team, keeping the
-      # operator id for internal tracing — never an anonymous "system" job. The
-      # reason value round-trips its embedded "=" unsplit.
+      # The customer's own trail attributes the block to "Emisar staff" — never an
+      # anonymous "system" job, and never the operator's specific id, which is an
+      # unauthenticated argv claim (one staff member could name another). The
+      # authenticated operator stays accountable in Emisar's own dispatch audit.
+      # The reason value round-trips its embedded "=" unsplit.
       assert event.actor_kind == "staff"
-      assert event.actor_id == staff_operator.id
+      assert is_nil(event.actor_id)
       assert event.actor_label == "Emisar staff"
       assert event.payload == %{"reason" => "support=verified"}
 

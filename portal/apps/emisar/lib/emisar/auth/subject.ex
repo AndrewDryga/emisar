@@ -36,9 +36,12 @@ defmodule Emisar.Auth.Subject do
     * `staff_operator_id` — the id of the Emisar staff operator behind a
       platform/support subject (the private admin console / release-RPC support
       path), or nil. That subject holds no `actor` or membership of its own — it
-      acts as the platform — so `actor_kind/1`/`actor_id/1` read this field to
-      audit a staff mutation as `"staff"` with the operator's id rather than an
-      anonymous `"system"` job. nil for every ordinary caller.
+      acts as the platform — so `actor_kind/1` reads this field to mark a staff
+      mutation as `"staff"` (labeled "Emisar staff") rather than an anonymous
+      `"system"` job. On the RELEASE-RPC path the id is a self-reported argv
+      claim, so `Audit.Events.audit_actor_id/1` deliberately keeps it OUT of the
+      customer's `actor_id`; the specific operator stays accountable in Emisar's
+      own authenticated dispatch audit. nil for every ordinary caller.
   """
   alias Emisar.{Accounts, RequestContext, Users}
   alias Emisar.Auth.Role

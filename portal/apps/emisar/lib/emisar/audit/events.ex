@@ -2077,7 +2077,7 @@ defmodule Emisar.Audit.Events do
   defp actor(%Subject{} = subject) do
     [
       actor_kind: Subject.actor_kind(subject),
-      actor_id: Subject.actor_id(subject),
+      actor_id: audit_actor_id(subject),
       auth_method: format_auth_method(subject.auth_method),
       mfa: subject.mfa,
       user_identity_id: subject.user_identity_id,
@@ -2085,9 +2085,19 @@ defmodule Emisar.Audit.Events do
     ] ++ staff_actor_label(subject)
   end
 
-  # The audit UI has no "staff" reference resolver, so a staff mutation row would
-  # otherwise print the operator's raw user id to the customer; this labels it as
-  # the team instead. Ordinary subjects resolve their label from account rows.
+  # A staff subject's `staff_operator_id` is an UNAUTHENTICATED argv claim
+  # (`Admin.execute/3` — the operator self-reports it), so one staff member can
+  # name another. Keep it out of the customer's audit trail (it even reaches the
+  # CSV export): the row still carries actor_kind "staff" and the "Emisar staff"
+  # label, while the specific, authenticated operator stays accountable in
+  # Emisar's own dispatch audit. Ordinary subjects keep their resolved id.
+  defp audit_actor_id(%Subject{staff_operator_id: id}) when is_binary(id), do: nil
+  defp audit_actor_id(%Subject{} = subject), do: Subject.actor_id(subject)
+
+  # A staff mutation row would otherwise print the operator's raw user id to the
+  # customer (see audit_actor_id/1); this labels it as the team instead, since
+  # the audit UI has no "staff" reference resolver. Ordinary subjects resolve
+  # their label from account rows.
   defp staff_actor_label(%Subject{staff_operator_id: id}) when is_binary(id),
     do: [actor_label: @staff_actor_label]
 
