@@ -11,12 +11,12 @@ defmodule Emisar.Compat do
 
       config :emisar, Emisar.Compat,
         runner_minimum: ">= 0.10.0",
-        runner_recommended: ">= 0.19.0",
-        runner_current: "0.19.0",
+        runner_recommended: ">= 0.23.1",
+        runner_current: "0.23.1",
         runner_enforce: false,
         mcp_minimum: ">= 0.3.0",
-        mcp_recommended: ">= 0.7.0",
-        mcp_current: "0.7.0",
+        mcp_recommended: ">= 0.10.1",
+        mcp_current: "0.10.1",
         mcp_enforce: false
 
   `*_minimum` / `*_recommended` are Elixir `Version` requirement strings
