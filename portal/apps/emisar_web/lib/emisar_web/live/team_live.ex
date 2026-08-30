@@ -1831,7 +1831,7 @@ defmodule EmisarWeb.TeamLive do
         Members, roles, and invitations for this workspace — who can dispatch, approve,
         and configure.{" "}<span :if={not @can_manage_team? and @current_role}>Only owners and admins can invite or manage members. Your role: {Emisar.Auth.role_label(
           @current_role
-        )}.{" "}</span><.doc_link href="/docs/teams-and-access">Team &amp; access docs</.doc_link>
+        )}.{" "}</span><.doc_link href={~p"/docs/teams-and-access"}>Team &amp; access docs</.doc_link>
       </.page_intro>
 
       <.loading_state :if={@live_action == :index and @loading?} />

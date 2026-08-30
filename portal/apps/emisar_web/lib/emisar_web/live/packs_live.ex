@@ -1297,7 +1297,7 @@ defmodule EmisarWeb.PacksLive do
         A pack is a versioned bundle of <span class="text-zinc-200">vetted actions</span>
         a runner may execute — the runner advertises what it has installed, and this
         page shows the trust ledger for packs in your access.
-        <.doc_link href="/docs/action-packs">Action pack docs</.doc_link>
+        <.doc_link href={~p"/docs/action-packs"}>Action pack docs</.doc_link>
       </.page_intro>
 
       <div class="mt-2 grid grid-cols-1 gap-x-10 gap-y-8 xl:grid-cols-[minmax(0,1fr)_22rem] xl:items-start">
@@ -1646,7 +1646,7 @@ defmodule EmisarWeb.PacksLive do
         <aside class="space-y-6">
           <.docs_rail
             title="How pack trust works"
-            doc_href="/docs/action-packs"
+            doc_href={~p"/docs/action-packs"}
             doc_label="Action pack docs"
           >
             <p>

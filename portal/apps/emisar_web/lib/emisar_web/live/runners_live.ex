@@ -583,7 +583,7 @@ defmodule EmisarWeb.RunnersLive do
               <div id="runner-explainer" class="hidden xl:block">
                 <.docs_rail
                   title="What's a runner?"
-                  doc_href="/docs/runner-fleet"
+                  doc_href={~p"/docs/runner-fleet"}
                   doc_label="Runner docs"
                 >
                   <p>

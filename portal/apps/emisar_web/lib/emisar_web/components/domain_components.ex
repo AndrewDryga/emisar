@@ -1135,7 +1135,7 @@ defmodule EmisarWeb.DomainComponents do
               </li>
               <li>
                 <.link
-                  navigate="/packs"
+                  href={~p"/packs"}
                   class="group -mx-3 flex items-center gap-4 rounded-lg px-3 py-3.5 transition hover:bg-white/[0.04]"
                 >
                   <div class="min-w-0 flex-1">

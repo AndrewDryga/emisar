@@ -699,7 +699,7 @@ defmodule EmisarWeb.PoliciesLive do
           <.page_intro>
             Each action's risk tier meets your default policy — allow, require approval,
             or deny — with overrides and targeted rulesets for the exceptions.
-            <.doc_link href="/docs/policies-and-approvals">Policy docs</.doc_link>
+            <.doc_link href={~p"/docs/policies-and-approvals"}>Policy docs</.doc_link>
           </.page_intro>
 
           <%!-- A quiet naked line, not a boxed note — the viewer fact isn't an

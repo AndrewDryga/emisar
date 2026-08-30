@@ -2005,9 +2005,9 @@ defmodule EmisarWeb.SSOSettingsLive do
                     </.doc_link>
                   </li>
                   <li :if={SSO.supports_scim?(provider.kind)}>
-                    <.doc_link href="/docs/scim">Directory sync</.doc_link>
+                    <.doc_link href={~p"/docs/scim"}>Directory sync</.doc_link>
                   </li>
-                  <li><.doc_link href="/docs/teams-and-access">Roles &amp; access</.doc_link></li>
+                  <li><.doc_link href={~p"/docs/teams-and-access"}>Roles &amp; access</.doc_link></li>
                 </ul>
               </aside>
             </section>

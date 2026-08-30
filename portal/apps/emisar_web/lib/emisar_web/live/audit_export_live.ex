@@ -154,7 +154,7 @@ defmodule EmisarWeb.AuditExportLive do
       <.page_intro>
         Your SIEM reads audit events as NDJSON from this endpoint, for independent, long-term
         retention. Mint a read-only export token, then point your collector at <code class="font-mono text-zinc-300">{@base_audit_url}</code>.
-        <.doc_link href="/docs/audit-and-siem">Audit log docs</.doc_link>
+        <.doc_link href={~p"/docs/audit-and-siem"}>Audit log docs</.doc_link>
       </.page_intro>
 
       <%!-- CONTENT ON CANVAS (the keys-page grammar): a section header with

@@ -406,12 +406,12 @@ defmodule EmisarWeb.AuditLive do
 
       <.page_intro :if={Audit.subject_sees_billing_audit_only?(@current_subject)}>
         The billing events in this account's audit trail — every plan change, recorded as it
-        happens. <.doc_link href="/docs/audit-and-siem">Audit log docs</.doc_link>
+        happens. <.doc_link href={~p"/docs/audit-and-siem"}>Audit log docs</.doc_link>
       </.page_intro>
       <.page_intro :if={not Audit.subject_sees_billing_audit_only?(@current_subject)}>
         The append-only record of actions, approvals, and access changes in this account —
         exportable to your SIEM for independent, long-term retention.
-        <.doc_link href="/docs/audit-and-siem">Audit log docs</.doc_link>
+        <.doc_link href={~p"/docs/audit-and-siem"}>Audit log docs</.doc_link>
       </.page_intro>
 
       <%!-- THREE filter dimensions share this row — a relative window, the

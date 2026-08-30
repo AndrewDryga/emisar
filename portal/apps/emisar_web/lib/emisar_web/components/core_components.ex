@@ -3413,7 +3413,7 @@ defmodule EmisarWeb.CoreComponents do
   A subtle "read the docs" link from a console page intro to its docs page. Opens
   the public, server-rendered docs in a new tab with an external glyph.
 
-      <.doc_link href="/docs/runner-fleet">Runner docs</.doc_link>
+      <.doc_link href={~p"/docs/runner-fleet"}>Runner docs</.doc_link>
   """
   attr :href, :string, required: true
   slot :inner_block, required: true
@@ -3436,7 +3436,7 @@ defmodule EmisarWeb.CoreComponents do
   docs. The caller gives it a fixed 22rem track that only splits off at xl, so
   its prose never squeezes; below xl it stacks full-width under the list.
 
-      <.docs_rail title="What's a runner?" doc_href="/docs/runner-fleet" doc_label="Runner docs">
+      <.docs_rail title="What's a runner?" doc_href={~p"/docs/runner-fleet"} doc_label="Runner docs">
         <p>A runner is the small emisar agent on one of your hosts…</p>
       </.docs_rail>
   """

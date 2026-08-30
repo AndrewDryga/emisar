@@ -1067,7 +1067,7 @@ defmodule EmisarWeb.AgentsLive do
       <.page_intro :if={@live_action == :connect}>
         Pick how your agent connects. Cloud clients use OAuth and mint their backing key only
         after consent; local clients get a one-time key with setup pre-filled.
-        <.doc_link href="/docs/agents-and-keys">Connect an agent docs</.doc_link>
+        <.doc_link href={~p"/docs/agents-and-keys"}>Connect an agent docs</.doc_link>
       </.page_intro>
 
       <.empty_state
@@ -1560,7 +1560,7 @@ defmodule EmisarWeb.AgentsLive do
     ~H"""
     <.docs_rail
       title="What's an AI agent?"
-      doc_href="/docs/agents-and-keys"
+      doc_href={~p"/docs/agents-and-keys"}
       doc_label="Connect an agent docs"
     >
       <p>

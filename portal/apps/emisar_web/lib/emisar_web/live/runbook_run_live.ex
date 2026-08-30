@@ -899,7 +899,7 @@ defmodule EmisarWeb.RunbookRunLive do
             pack trust, or policy no longer permits an action.
           </p>
           <div class="mt-3">
-            <.doc_link href="/docs/runbooks">Runbook execution guide</.doc_link>
+            <.doc_link href={~p"/docs/runbooks"}>Runbook execution guide</.doc_link>
           </div>
         </section>
 

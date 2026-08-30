@@ -273,7 +273,7 @@ defmodule EmisarWeb.RunbooksLive do
               next stage starts; a denial, timeout, cancellation, or failure stops the run.
             </p>
             <div class="mt-3">
-              <.doc_link href="/docs/runbooks">Read the runbook docs</.doc_link>
+              <.doc_link href={~p"/docs/runbooks"}>Read the runbook docs</.doc_link>
             </div>
           </section>
 
