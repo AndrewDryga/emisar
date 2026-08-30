@@ -47,6 +47,8 @@ defmodule EmisarWeb.ApprovalDecisionGateLiveTest do
         requested_by_id: requested_by.id,
         initiating_membership_id: membership.id,
         args: %{},
+        pack_ref: Fixtures.Catalog.default_pack_ref(),
+        expected_pack_hash: Fixtures.Catalog.default_pack_hash(),
         # A real require-approval run is parked :pending_approval; the finalizer
         # only dispatches a run still in that state.
         status: :pending_approval

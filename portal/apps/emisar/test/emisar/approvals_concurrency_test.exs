@@ -235,6 +235,8 @@ defmodule Emisar.ApprovalsConcurrencyTest do
           requested_by_id: initiator.id,
           initiating_membership_id: initiator_membership.id,
           args: %{},
+          pack_ref: Fixtures.Catalog.default_pack_ref(),
+          expected_pack_hash: Fixtures.Catalog.default_pack_hash(),
           status: :pending_approval
         })
 

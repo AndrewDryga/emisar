@@ -60,7 +60,12 @@ defmodule Emisar.Catalog.RunnerAction.Changeset do
 
   defp shared(changeset) do
     changeset
-    |> validate_required([:account_id, :runner_id, :action_id, :title, :kind, :risk])
+    # pack_id is required: an action with no pack has no trusted manifest to
+    # authorize dispatch from, so a pack-less advertisement is rejected here
+    # (its changeset is invalid and the observe upsert skips it). pack_version
+    # / pack_hash stay optional — a pack named without a resolved version is a
+    # distinct, dispatch-refused shape, not the removed pack-less one.
+    |> validate_required([:account_id, :runner_id, :action_id, :pack_id, :title, :kind, :risk])
     |> validate_length(:action_id, max: @max_action_id_length, count: :codepoints)
     |> validate_format(:action_id, @action_id_format)
     |> validate_length(:pack_id, max: @max_pack_id_length, count: :codepoints)

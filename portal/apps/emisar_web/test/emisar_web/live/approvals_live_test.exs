@@ -23,6 +23,8 @@ defmodule EmisarWeb.ApprovalsLiveTest do
         action_id: "linux.reboot",
         source: "operator",
         args: %{},
+        pack_ref: Fixtures.Catalog.default_pack_ref(),
+        expected_pack_hash: Fixtures.Catalog.default_pack_hash(),
         # A real require-approval run is parked :pending_approval.
         status: :pending_approval
       })
@@ -83,7 +85,12 @@ defmodule EmisarWeb.ApprovalsLiveTest do
       })
 
     subject = Fixtures.Subjects.subject_for(user, account, role: :owner)
-    [pack_version] = Fixtures.Catalog.list_pack_versions(subject.account.id)
+
+    pack_version =
+      subject.account.id
+      |> Fixtures.Catalog.list_pack_versions()
+      |> Enum.find(&(&1.pack_id == "linux-core"))
+
     {:ok, _pack_version} = Catalog.trust_pack_version(pack_version.id, subject)
   end
 

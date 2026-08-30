@@ -47,6 +47,8 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
         reason: "needs review",
         args: %{},
         initiating_membership_id: initiating_membership.id,
+        pack_ref: Fixtures.Catalog.default_pack_ref(),
+        expected_pack_hash: Fixtures.Catalog.default_pack_hash(),
         status: :pending_approval
       })
 
@@ -952,7 +954,12 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
     Fixtures.Catalog.create_action(runner: runner)
 
     stale = DateTime.utc_now() |> DateTime.add(-7200, :second) |> DateTime.to_iso8601()
-    %{attestation: attestation} = Fixtures.Runs.signed_attestation(issued_at: stale)
+
+    %{attestation: attestation} =
+      Fixtures.Runs.signed_attestation(
+        issued_at: stale,
+        pack_ref: Fixtures.Catalog.default_pack_ref()
+      )
 
     run =
       Fixtures.Runs.create_signed_run(%{
@@ -961,6 +968,8 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
         action_id: "linux.uptime",
         source: "mcp",
         args: %{},
+        pack_ref: Fixtures.Catalog.default_pack_ref(),
+        expected_pack_hash: Fixtures.Catalog.default_pack_hash(),
         status: :pending_approval,
         attestation: attestation
       })
@@ -1314,6 +1323,8 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
         reason: "needs review",
         args: %{},
         initiating_membership_id: owner_membership.id,
+        pack_ref: Fixtures.Catalog.default_pack_ref(),
+        expected_pack_hash: Fixtures.Catalog.default_pack_hash(),
         status: :pending_approval
       })
 

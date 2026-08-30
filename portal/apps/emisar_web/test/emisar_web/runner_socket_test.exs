@@ -493,7 +493,32 @@ defmodule EmisarWeb.RunnerSocketTest do
 
       refute_receive :resume_runs
 
-      raw = runner_frame(%{"type" => "runner_state", "packs" => %{}, "actions" => []})
+      # On connect the runner advertises its catalog; delivering the queued run
+      # re-resolves the trusted contract, so the action must be present. Mirror
+      # the default fixture action so its descriptor matches the trusted pin.
+      raw =
+        runner_frame(%{
+          "type" => "runner_state",
+          "packs" => %{
+            "fixture-pack" => %{
+              "version" => "1.0",
+              "hash" => Fixtures.Catalog.default_pack_hash()
+            }
+          },
+          "actions" => [
+            %{
+              "id" => "linux.uptime",
+              "pack_id" => "fixture-pack",
+              "title" => "Uptime",
+              "kind" => "exec",
+              "risk" => "low",
+              "description" => "Reports uptime + load.",
+              "side_effects" => ["reads /proc"],
+              "args" => []
+            }
+          ]
+        })
+
       assert {:ok, refreshed_state} = RunnerSocket.handle_in({raw, text()}, state)
       assert_receive :resume_runs, 500
 

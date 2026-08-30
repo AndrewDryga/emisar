@@ -1345,24 +1345,21 @@ defmodule Emisar.Catalog do
   The action carries `pack_version` populated by `observe_action`
   based on the runner's last-reported `runner_state.packs` payload.
 
-  A pack-less action (no `pack_id`) is the legacy row-authoritative shape and
-  passes with nothing to pin. An action that NAMES a pack but carries no
-  resolved `pack_version` refuses (`:unresolved_pack_version`): ingestion no
-  longer persists that shape, so a surviving row is stale hostile input, not a
-  not-yet-reported version. For a fully versioned pack (both `pack_id` and
-  `pack_version`), trust is fail-CLOSED: only an explicit `:trusted` pin
-  allows dispatch. A MISSING pin row (the old design
-  DELETED it on reject), `:pending`, or `:rejected` all refuse — `runner_actions`
-  reference the version by string with no FK, so a missing row must never read
-  as trusted.
+  `pack_id` is required at ingestion, so a pack-less action no longer reaches
+  here. An action that NAMES a pack but carries no resolved `pack_version`
+  refuses (`:unresolved_pack_version`): ingestion no longer persists that shape,
+  so a surviving row is stale hostile input, not a not-yet-reported version. For
+  a fully versioned pack (both `pack_id` and `pack_version`), trust is
+  fail-CLOSED: only an explicit `:trusted` pin allows dispatch. A MISSING pin row
+  (the old design DELETED it on reject), `:pending`, or `:rejected` all refuse —
+  `runner_actions` reference the version by string with no FK, so a missing row
+  must never read as trusted.
 
   A trusted row whose version the published catalog has RETIRED
   (`PackBaseline.retired?/2`) refuses with a distinct `{:error,
   :pack_retired, pack_version}` unless an admin has overridden it — the
   operator action differs (update the pack vs. review a hash).
   """
-  def check_pack_trusted(%RunnerAction{pack_id: nil}), do: {:ok, nil}
-
   def check_pack_trusted(%RunnerAction{pack_version: nil}),
     do: {:error, :pack_untrusted, :unresolved_pack_version}
 
@@ -1391,28 +1388,14 @@ defmodule Emisar.Catalog do
   operator reviewed, and a drifted advertisement fails closed as
   `:action_contract_changed`.
 
-  Pack-less legacy actions (no `pack_id`) have no pack manifest to lock and
-  retain their row-authoritative dispatch semantics. An action that names a
-  pack without a resolved version is NOT legacy — it fails closed as
-  `:action_contract_changed` instead of re-entering the row-authoritative
-  path.
+  Every action names a pack, so an action carrying no resolved
+  `(pack_id, pack_version, pack_hash)` fails closed as `:pack_ref_mismatch`
+  rather than dispatching from the runner's own advertisement.
   """
   def fetch_dispatch_contract(repo, account_id, runner_id, action_id, pack_ref) do
     case fetch_action_for_account(action_id, runner_id, account_id) do
       {:ok, observed} -> fetch_dispatch_contract_for_action(repo, observed, pack_ref)
       {:error, :not_found} -> {:error, :action_not_found}
-    end
-  end
-
-  defp fetch_dispatch_contract_for_action(repo, %RunnerAction{} = observed, nil)
-       when is_nil(observed.pack_id) do
-    with {:ok, action} <- lock_runner_action(repo, observed),
-         true <- is_nil(action.pack_id),
-         {:ok, descriptor} <- runner_action_descriptor(action) do
-      {:ok, %{action: action, descriptor: descriptor, pack_hash: nil}}
-    else
-      {:error, :not_found} -> {:error, :action_not_found}
-      _other -> {:error, :action_contract_changed}
     end
   end
 
@@ -1802,7 +1785,6 @@ defmodule Emisar.Catalog do
     end)
   end
 
-  defp dispatch_block_reason(%RunnerAction{pack_id: nil}, _versions_by_ref), do: nil
   defp dispatch_block_reason(%RunnerAction{pack_version: nil}, _versions_by_ref), do: nil
 
   defp dispatch_block_reason(%RunnerAction{} = action, versions_by_ref) do

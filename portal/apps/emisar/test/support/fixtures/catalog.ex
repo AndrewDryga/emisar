@@ -8,12 +8,23 @@ defmodule Emisar.Fixtures.Catalog do
 
   @pack_hash_format ~r/\Asha256:[0-9a-f]{64}\z/
 
+  @default_pack_id "fixture-pack"
+  @default_pack_version "1.0"
+
   @doc "Returns a deterministic canonical SHA-256 pack hash for a test label."
   def pack_hash(value) when is_binary(value) do
     if Regex.match?(@pack_hash_format, value),
       do: value,
       else: "sha256:" <> Crypto.hash_hex(value)
   end
+
+  @doc """
+  The pack hash + ref of the default (auto-trusted) fixture action. A test that
+  parks a gated run directly via `Runs.create_run` snapshots these so approve's
+  trust recheck sees the same hash dispatch would have written.
+  """
+  def default_pack_hash, do: pack_hash("#{@default_pack_id}@#{@default_pack_version}")
+  def default_pack_ref, do: "#{@default_pack_id}@#{@default_pack_version}/" <> default_pack_hash()
 
   @doc """
   Inserts a catalog action row for a runner. Mirrors what
@@ -25,18 +36,15 @@ defmodule Emisar.Fixtures.Catalog do
   def create_action(attrs \\ %{}) do
     attrs = Map.new(attrs)
     runner = attrs[:runner] || raise ":runner is required"
+    {pack_id, pack_version, pack_hash} = action_pack_ref(attrs)
 
     params = %{
       account_id: runner.account_id,
       runner_id: runner.id,
       action_id: attrs[:action_id] || "linux.uptime",
-      # The default fixture action is the PACK-LESS legacy shape: dispatch
-      # stays row-authoritative with nothing to pin. Naming a pack without a
-      # version is the unresolvable shape ingestion rejects and dispatch
-      # refuses — a test seeds it only deliberately, by passing pack_id.
-      pack_id: Map.get(attrs, :pack_id),
-      pack_version: attrs[:pack_version],
-      pack_hash: if(attrs[:pack_hash], do: pack_hash(attrs[:pack_hash])),
+      pack_id: pack_id,
+      pack_version: pack_version,
+      pack_hash: pack_hash,
       title: attrs[:title] || "Uptime",
       kind: attrs[:kind] || "exec",
       risk: attrs[:risk] || "low",
@@ -59,7 +67,56 @@ defmodule Emisar.Fixtures.Catalog do
         returning: true
       )
 
+    # The default (no pack_id) models a dispatchable action, so trust its pack.
+    unless Map.has_key?(attrs, :pack_id), do: trust_default_pack(action)
+
     action
+  end
+
+  # Every advertised action names a pack now: ingestion requires a pack_id and
+  # dispatch requires a trusted pin. With no pack_id given, the fixture models
+  # the dispatchable default — a shared "fixture-pack@1.0", trusted below.
+  # Passing pack_id (with optional version/hash) opts out of the auto-trust, so
+  # untrusted / unresolvable / drifted cases arrange their own pin.
+  defp action_pack_ref(%{pack_id: pack_id} = attrs) when is_binary(pack_id),
+    do: {pack_id, attrs[:pack_version], if(attrs[:pack_hash], do: pack_hash(attrs[:pack_hash]))}
+
+  defp action_pack_ref(_attrs),
+    do: {@default_pack_id, @default_pack_version, default_pack_hash()}
+
+  # Trust the shared default pack with a manifest rebuilt from every action it
+  # now carries: dispatch compares the trusted descriptor against the row, so
+  # the manifest must hold each advertised action. Idempotent + race-free (one
+  # sandboxed process per test); the upsert refreshes the accumulated manifest
+  # on every added action.
+  defp trust_default_pack(%Catalog.RunnerAction{} = action) do
+    actions =
+      Catalog.RunnerAction.Query.all()
+      |> Catalog.RunnerAction.Query.by_account_id(action.account_id)
+      |> Catalog.RunnerAction.Query.by_pack(action.pack_id, action.pack_version)
+      |> Repo.all()
+      |> Enum.uniq_by(& &1.action_id)
+
+    {:ok, manifest} = Catalog.TrustedManifest.from_runner_actions(actions)
+    now = DateTime.utc_now()
+
+    {:ok, _pack_version} =
+      Catalog.PackVersion.Changeset.insert(%{
+        account_id: action.account_id,
+        pack_id: action.pack_id,
+        version: action.pack_version,
+        hash: action.pack_hash,
+        trust_state: :trusted,
+        trusted_manifest: manifest,
+        first_seen_at: now,
+        last_seen_at: now
+      })
+      |> Repo.insert(
+        on_conflict: {:replace, [:trusted_manifest, :hash, :trust_state, :last_seen_at]},
+        conflict_target: [:account_id, :pack_id, :version]
+      )
+
+    :ok
   end
 
   @doc """

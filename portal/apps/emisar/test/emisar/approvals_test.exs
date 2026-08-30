@@ -35,6 +35,10 @@ defmodule Emisar.ApprovalsTest do
         requested_by_id: initiator.id,
         initiating_membership_id: initiating_membership.id,
         args: %{},
+        # A parked gated run carries the trusted pack contract dispatch would
+        # have snapshotted; approve re-resolves it and compares the hash.
+        pack_ref: Fixtures.Catalog.default_pack_ref(),
+        expected_pack_hash: Fixtures.Catalog.default_pack_hash(),
         # A real require-approval run is parked :pending_approval — the approval
         # finalizer only dispatches a run still in that state, so the fixture
         # must reflect the invariant (not the :pending default).
@@ -309,6 +313,10 @@ defmodule Emisar.ApprovalsTest do
         requested_by_id: initiator.id,
         initiating_membership_id: initiating_membership.id,
         args: %{},
+        # A parked gated run carries the trusted pack contract dispatch would
+        # have snapshotted; approve re-resolves it and compares the hash.
+        pack_ref: Fixtures.Catalog.default_pack_ref(),
+        expected_pack_hash: Fixtures.Catalog.default_pack_hash(),
         # A real require-approval run is parked :pending_approval; the finalizer
         # only dispatches a run still in that state.
         status: :pending_approval
@@ -377,7 +385,12 @@ defmodule Emisar.ApprovalsTest do
       )
 
     stale = DateTime.utc_now() |> DateTime.add(-7200, :second) |> DateTime.to_iso8601()
-    %{attestation: attestation} = Fixtures.Runs.signed_attestation(issued_at: stale)
+
+    %{attestation: attestation} =
+      Fixtures.Runs.signed_attestation(
+        issued_at: stale,
+        pack_ref: Fixtures.Catalog.default_pack_ref()
+      )
 
     run =
       Fixtures.Runs.create_signed_run(%{
@@ -388,6 +401,8 @@ defmodule Emisar.ApprovalsTest do
         requested_by_id: requester.id,
         initiating_membership_id: requester_membership.id,
         args: %{},
+        pack_ref: Fixtures.Catalog.default_pack_ref(),
+        expected_pack_hash: Fixtures.Catalog.default_pack_hash(),
         status: :pending_approval,
         attestation: attestation
       })
@@ -2639,7 +2654,12 @@ defmodule Emisar.ApprovalsTest do
     } do
       # Parked with a signature already 2h old — it would be refused at dispatch.
       stale = DateTime.utc_now() |> DateTime.add(-7200, :second) |> DateTime.to_iso8601()
-      %{attestation: attestation} = Fixtures.Runs.signed_attestation(issued_at: stale)
+
+      %{attestation: attestation} =
+        Fixtures.Runs.signed_attestation(
+          issued_at: stale,
+          pack_ref: Fixtures.Catalog.default_pack_ref()
+        )
 
       run =
         Fixtures.Runs.create_signed_run(%{
@@ -2650,6 +2670,8 @@ defmodule Emisar.ApprovalsTest do
           requested_by_id: requester.id,
           initiating_membership_id: requester_membership.id,
           args: %{},
+          pack_ref: Fixtures.Catalog.default_pack_ref(),
+          expected_pack_hash: Fixtures.Catalog.default_pack_hash(),
           status: :pending_approval,
           attestation: attestation
         })
@@ -2675,7 +2697,11 @@ defmodule Emisar.ApprovalsTest do
       valid_until = DateTime.add(DateTime.utc_now(), 3_600, :second)
 
       %{attestation: attestation} =
-        Fixtures.Runs.signed_attestation(issued_at: fresh, valid_until: valid_until)
+        Fixtures.Runs.signed_attestation(
+          issued_at: fresh,
+          valid_until: valid_until,
+          pack_ref: Fixtures.Catalog.default_pack_ref()
+        )
 
       run =
         Fixtures.Runs.create_signed_run(%{
@@ -2686,6 +2712,8 @@ defmodule Emisar.ApprovalsTest do
           requested_by_id: requester.id,
           initiating_membership_id: requester_membership.id,
           args: %{},
+          pack_ref: Fixtures.Catalog.default_pack_ref(),
+          expected_pack_hash: Fixtures.Catalog.default_pack_hash(),
           status: :pending_approval,
           attestation: attestation
         })
@@ -3063,6 +3091,8 @@ defmodule Emisar.ApprovalsTest do
           requested_by_id: requester.id,
           initiating_membership_id: requester_membership.id,
           args: %{},
+          pack_ref: Fixtures.Catalog.default_pack_ref(),
+          expected_pack_hash: Fixtures.Catalog.default_pack_hash(),
           status: :pending_approval
         })
 
@@ -3148,6 +3178,8 @@ defmodule Emisar.ApprovalsTest do
           requested_by_id: initiator.id,
           initiating_membership_id: initiating_membership.id,
           args: %{},
+          pack_ref: Fixtures.Catalog.default_pack_ref(),
+          expected_pack_hash: Fixtures.Catalog.default_pack_hash(),
           status: :pending_approval
         })
 
@@ -3203,6 +3235,8 @@ defmodule Emisar.ApprovalsTest do
           api_key_id: key.id,
           args: %{},
           args_sha256: "abc123",
+          pack_ref: Fixtures.Catalog.default_pack_ref(),
+          expected_pack_hash: Fixtures.Catalog.default_pack_hash(),
           status: :pending_approval
         })
 
@@ -3331,6 +3365,8 @@ defmodule Emisar.ApprovalsTest do
           requested_by_id: initiator.id,
           initiating_membership_id: initiating_membership.id,
           args: %{},
+          pack_ref: Fixtures.Catalog.default_pack_ref(),
+          expected_pack_hash: Fixtures.Catalog.default_pack_hash(),
           status: :pending_approval
         })
 
@@ -3385,6 +3421,8 @@ defmodule Emisar.ApprovalsTest do
           requested_by_id: requester.id,
           initiating_membership_id: requester_membership.id,
           args: %{},
+          pack_ref: Fixtures.Catalog.default_pack_ref(),
+          expected_pack_hash: Fixtures.Catalog.default_pack_hash(),
           status: :pending_approval
         })
 

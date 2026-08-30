@@ -3081,10 +3081,6 @@ defmodule Emisar.CatalogTest do
       assert Catalog.check_pack_trusted(act) ==
                {:error, :pack_untrusted, :unresolved_pack_version}
     end
-
-    test "a pack-less action (no pack_id) → {:ok, nil}" do
-      assert Catalog.check_pack_trusted(%RunnerAction{pack_id: nil}) == {:ok, nil}
-    end
   end
 
   describe "fetch_dispatch_contract/5" do
@@ -3136,25 +3132,6 @@ defmodule Emisar.CatalogTest do
 
       assert Catalog.fetch_dispatch_contract(Repo, account.id, runner.id, "absent.probe", nil) ==
                {:error, :action_contract_changed}
-    end
-
-    test "a pack-less legacy action keeps its row-authoritative dispatch contract", %{
-      account: account,
-      runner: runner
-    } do
-      payload =
-        state_payload(
-          packs: %{},
-          actions: [Map.delete(action("legacy.probe"), "pack_id")]
-        )
-
-      assert {:ok, _runner} = Catalog.observe_state(runner, payload)
-
-      assert {:ok, contract} =
-               Catalog.fetch_dispatch_contract(Repo, account.id, runner.id, "legacy.probe", nil)
-
-      assert contract.pack_hash == nil
-      assert contract.action.pack_id == nil
     end
 
     test "returns the persisted trusted descriptor and locked deployment row", %{
