@@ -70,12 +70,18 @@
       <.docs_code
         phx-no-format
         label="docker host"
-        copy_text="docker run -d --name emisar -v emisar-data:/var/lib/emisar -e EMISAR_ENROLLMENT_KEY=emkey-enroll-… ghcr.io/andrewdryga/emisar-runner:X.Y.Z"
+        copy_text="docker run -d --name emisar -v emisar-data:/var/lib/emisar -v emisar-logs:/var/log/emisar -e EMISAR_ENROLLMENT_KEY=emkey-enroll-… ghcr.io/andrewdryga/emisar-runner:X.Y.Z"
       ><span class="text-zinc-500">$</span> docker run -d --name emisar \
     -v emisar-data:/var/lib/emisar \
+    -v emisar-logs:/var/log/emisar \
     -e EMISAR_ENROLLMENT_KEY=emkey-enroll-… \
     ghcr.io/andrewdryga/emisar-runner:X.Y.Z
 <span class="text-zinc-500">$</span> docker logs -f emisar</.docs_code>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        The first volume keeps the runner's identity token; the second keeps the
+        hash-chained security journal at <code class="font-mono">/var/log/emisar</code>, so both survive replacing
+        the container.
+      </p>
 
       <p class="mt-5 text-base leading-7 text-zinc-400">
         In the console, open
@@ -255,11 +261,12 @@ USER 65532</.docs_code>
     -e EMISAR_ENROLLMENT_KEY=emkey-enroll-… \
     -v /etc/emisar/config.yaml:/etc/emisar/config.yaml:ro \
     -v emisar-payments-data:/var/lib/emisar \
+    -v emisar-payments-logs:/var/log/emisar \
     ghcr.io/andrewdryga/emisar-runner:X.Y.Z</.docs_code>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         The official image already covers the core sidecar work: reading the app's files,
-        processes, and network state. The command above adds an operator-owned config and a
-        persistent token volume. Name the container, the volume, and the config's
+        processes, and network state. The command above adds an operator-owned config and
+        persistent token and journal volumes. Name the container, the volumes, and the config's
         <code class="font-mono">runner.id</code>
         after the app — <code class="font-mono">runner.id</code>
         is also the name the console shows, and the sidecar shares the app container's

@@ -83,7 +83,7 @@ changes.
   standing grants, and conditional approval are evaluated before dispatch.
 - **Host-side enforcement.** The runner clamps execution options to the pack's
   limits and runs the declared binary and argv. Runner output is redacted before
-  leaving the host; Emisar retains the resulting redacted output in audit log.
+  leaving the host; Emisar retains the resulting redacted output in run history.
 - **Two records.** The control-plane audit includes denied and pending requests;
   every runner also writes its execution attempts and local refusals to a
   hash-chained JSONL journal.

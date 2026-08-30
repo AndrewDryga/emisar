@@ -99,7 +99,7 @@
                 {"Least agency — typed, scoped capability", "Foundation",
                  "Every action is a typed contract with per-argument bounds. Per-user and per-group runner scopes limit which hosts an agent can reach at all."},
                 {"Short-lived, IdP-issued credentials — no static keys", "Foundation",
-                 "OAuth 2.1 for remote MCP clients; scoped, revocable keys — read-only or execute — for everything else. No long-lived shell key sitting on the host."},
+                 "OAuth 2.1 for remote MCP clients; short-lived, revocable keys for everything else — each inherits the runner access of the operator who created it. No long-lived shell key sitting on the host."},
                 {"Parameter validation, tool-side", "Foundation",
                  "The runner re-validates every argument against the action schema and clamps options to their min/max before exec."},
                 {"Version-controlled, integrity-checked configuration", "Enterprise",
