@@ -21,7 +21,7 @@ issues. Coordinated disclosure on a public advisory is the default.
 
 ## Supported versions
 
-Until `v1.0`, only the latest tagged release receives security fixes.
+Only the latest tagged release receives security fixes, in 1.x and beyond.
 Older versions may be patched at our discretion if the issue is severe
 and the upgrade path from older versions is non-trivial.
 
