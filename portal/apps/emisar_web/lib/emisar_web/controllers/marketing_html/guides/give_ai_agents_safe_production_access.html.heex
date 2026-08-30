@@ -117,8 +117,9 @@
   <p>
     Because everything goes through one door, you get the two things the server-per-tool world
     couldn't give you: one policy in front of every call — allowed, denied, or held for a human, by
-    rules you set once — and one record behind it, where every call lands with its inputs, outputs,
-    and who asked, including the calls that were denied. The agent connects the way it connects to
+    rules you set once — and one record behind it, where every call lands with its inputs, its
+    decision, and who asked — including the ones that were denied — and the redacted output of the
+    calls that ran. The agent connects the way it connects to
     any other MCP tool. On your side, a small runner on each host dials out, re-validates every
     argument, and applies configured output redaction before anything leaves the machine; the
     <.link navigate={~p"/security"}>security model</.link>
