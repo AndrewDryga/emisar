@@ -23,3 +23,5 @@
 #
 # Example (delete once real entries exist):
 #   hex plug 1.99.1 2026-01-31 GHSA-xxxx-yyyy-zzzz — RCE in Plug.Conn, patched only in 1.99.1, actively exploited
+
+hex oidcc 3.9.0 2026-09-16 EEF-CVE-2026-75759 (HIGH) — oidcc 3.8.0 accepts an encrypted ID token/JARM response without a nested signature (SSO auth-bypass class); fixed only in 3.9.0, on our SSO sign-in path. Can't wait out the 14-day minor-bump window; remove once 3.9.0 has aged past it.
