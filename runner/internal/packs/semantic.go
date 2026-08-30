@@ -85,8 +85,14 @@ var execWrappers = map[string]bool{
 	"nohup":   true,
 	"xargs":   true,
 	"flock":   true,
-	"runuser": true,
 	"script":  true,
+	// Privilege wrappers front an interpreter the same way (`sudo -u x sh -c …`),
+	// so they must be scanned too — otherwise `binary: sudo` waves a caller value
+	// straight into the shell that `runuser` (already here) would have caught.
+	"runuser": true,
+	"sudo":    true,
+	"su":      true,
+	"doas":    true,
 }
 
 // validateShellProgramReferences keeps caller-controlled values out of the

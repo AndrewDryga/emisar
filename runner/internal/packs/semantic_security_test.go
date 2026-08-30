@@ -198,6 +198,20 @@ func TestLoad_EnforcesSafeShellArgumentChannels(t *testing.T) {
 			wantError: "arg pattern must not be embedded in sh -c program text",
 		},
 		{
+			// Privilege wrappers hide the shell the same way. `sudo -u x sh -c`
+			// must be scanned, or `binary: sudo` waves a caller value into the
+			// shell and the pack still passes `pack validate`.
+			name:   "sudo wrapper hides sh -c",
+			id:     "testpack.sudo_wrap",
+			binary: "sudo",
+			args: `args:
+  - name: pattern
+    type: string
+    required: true`,
+			argv:      `argv: ["-u", "emisar", "sh", "-c", "grep {{ args.pattern }} /var/log/x"]`,
+			wantError: "arg pattern must not be embedded in sh -c program text",
+		},
+		{
 			// The wrapper form still admits bounded values into program
 			// text, exactly like a bare shell does.
 			name:   "wrapper with bounded numeric passes",
