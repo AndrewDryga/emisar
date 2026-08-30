@@ -2039,6 +2039,14 @@ defmodule Emisar.Runners do
     |> Repo.delete_all()
   end
 
+  # Revoke is CONTAINMENT — it only takes a key's power away. Unlike minting
+  # (which places a host anywhere in the fleet, so it needs full runner access),
+  # revoking needs just the plain `manage_enrollment_keys` permission: a
+  # scope-limited admin must be able to kill a dangerous fleet-wide key during an
+  # incident, and taking capability away is safe at any reach. Account scoping
+  # still holds — the idempotent clause's `ensure_in_account` and the mutating
+  # clause's `for_subject` keep a caller to their own account's keys.
+  #
   # Revoking an already-revoked key is an idempotent no-op — re-stamping
   # revoked_at (plus a fresh audit row + broadcast) would move the revocation
   # time and pollute the trail. Still permission-gated so an unauthorized
@@ -2050,7 +2058,6 @@ defmodule Emisar.Runners do
              subject,
              Authorizer.manage_enrollment_keys_permission()
            ),
-         :ok <- ensure_full_runner_access(subject),
          :ok <- Subject.ensure_in_account(subject, key.account_id) do
       {:ok, key}
     end
@@ -2061,8 +2068,7 @@ defmodule Emisar.Runners do
            Auth.Authorizer.ensure_has_permissions(
              subject,
              Authorizer.manage_enrollment_keys_permission()
-           ),
-         :ok <- ensure_full_runner_access(subject) do
+           ) do
       by_user_id = Subject.actor_id(subject)
 
       EnrollmentKey.Query.not_deleted()
@@ -2317,16 +2323,21 @@ defmodule Emisar.Runners do
   plus the same unrestricted runner access `subject_can_install_runners?/1`
   requires, and for the same reason.
 
-  Deliberately narrower than `subject_can_manage_enrollment_keys?/1`: listing
-  stays open to a runner-restricted admin for audit, while lifecycle mutations
-  require the same fleet reach.
+  Deliberately narrower than `subject_can_manage_enrollment_keys?/1`: listing and
+  revoking stay open to a runner-restricted admin (audit + containment), while
+  MINTING a key requires the same fleet reach — only creation can widen reach.
   """
   def subject_can_create_enrollment_keys?(%Subject{} = subject),
     do: subject_can_manage_enrollment_keys?(subject) and full_runner_access?(subject)
 
-  @doc "Whether `subject` may revoke an enrollment key — the same access required to create one."
+  @doc """
+  Whether `subject` may revoke an enrollment key. Revoke is containment — it only
+  removes a key's power — so it needs the plain `manage_enrollment_keys`
+  permission, NOT the full runner access minting requires. A scope-limited admin
+  can kill a dangerous fleet-wide key during an incident.
+  """
   def subject_can_revoke_enrollment_keys?(%Subject{} = subject),
-    do: subject_can_create_enrollment_keys?(subject)
+    do: subject_can_manage_enrollment_keys?(subject)
 
   @doc """
   Whether `subject` may change the account-wide inactivity window (the runners

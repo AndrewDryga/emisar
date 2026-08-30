@@ -418,9 +418,10 @@ defmodule EmisarWeb.EnrollmentKeysLiveTest do
     assert flash["error"] == "Enrollment keys need an owner or admin role."
   end
 
-  # A runner-scoped admin keeps the list for audit but loses both lifecycle
-  # mutations. The create refusal is explained in place; Revoke is absent.
-  test "a runner-restricted admin can audit keys but cannot create or revoke", %{conn: conn} do
+  # A runner-scoped admin keeps the list for audit AND can still revoke
+  # (containment needs no fleet reach), but cannot create. The create refusal is
+  # explained in place; the Revoke control stays.
+  test "a runner-restricted admin can audit and revoke keys but cannot create", %{conn: conn} do
     {_owner_conn, owner, account} = register_and_log_in(conn)
     owner_subject = Fixtures.Subjects.subject_for(owner, account)
 
@@ -442,7 +443,7 @@ defmodule EmisarWeb.EnrollmentKeysLiveTest do
     assert html =~ "existing-key"
     assert has_element?(lv, "button[disabled]", "New key")
     refute has_element?(lv, ~s(a[href="/app/#{account.slug}/runners/keys/new"]))
-    refute has_element?(lv, ~s([phx-click*="revoke-key-#{key.id}"]))
+    assert has_element?(lv, ~s([phx-click*="revoke-key-#{key.id}"]))
     assert html =~ "needs access to all runners"
 
     # The issue route refuses rather than routing them into a form that cannot
@@ -475,7 +476,11 @@ defmodule EmisarWeb.EnrollmentKeysLiveTest do
     refute html =~ "crafted"
   end
 
-  test "a runner-restricted admin crafting a revoke event is refused", %{conn: conn} do
+  # Revoke is containment, so a runner-restricted admin may do it — and the
+  # handler's own gate (not just the rendered button) honors that. There is no
+  # caller who can load this page but is denied revoke, since both gate on
+  # manage_enrollment_keys; the domain-level denial lives in runners_test.
+  test "a runner-restricted admin's revoke event succeeds", %{conn: conn} do
     {_owner_conn, owner, account} = register_and_log_in(conn)
     owner_subject = Fixtures.Subjects.subject_for(owner, account)
 
@@ -493,8 +498,8 @@ defmodule EmisarWeb.EnrollmentKeysLiveTest do
 
     html = render_click(lv, "revoke", %{"id" => key.id})
 
-    assert html =~ "have permission to do that."
-    assert is_nil(Emisar.Repo.reload!(key).revoked_at)
+    assert html =~ "Key revoked."
+    refute is_nil(Emisar.Repo.reload!(key).revoked_at)
   end
 
   # the list is account-scoped (A's admin sees

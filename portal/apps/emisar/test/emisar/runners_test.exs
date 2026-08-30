@@ -3384,7 +3384,10 @@ defmodule Emisar.RunnersTest do
                {:error, :unauthorized}
     end
 
-    test "an admin without whole-fleet access is refused", %{account: account, subject: owner} do
+    test "an admin with limited runner access CAN revoke — containment needs no fleet reach", %{
+      account: account,
+      subject: owner
+    } do
       {:ok, _raw, key} = Runners.create_enrollment_key(%{reusable: true}, owner)
       {:ok, production} = RunnerAccess.restricted(["production"], [])
 
@@ -3393,8 +3396,10 @@ defmodule Emisar.RunnersTest do
         |> Fixtures.Memberships.force_runner_access(production)
         |> Fixtures.Subjects.membership_subject()
 
-      assert Runners.revoke_enrollment_key(key, restricted) == {:error, :unauthorized}
-      assert is_nil(Repo.reload!(key).revoked_at)
+      assert {:ok, %EnrollmentKey{revoked_at: %DateTime{}}} =
+               Runners.revoke_enrollment_key(key, restricted)
+
+      refute is_nil(Repo.reload!(key).revoked_at)
     end
 
     test "won't touch an enrollment key in another account (cross-account → :not_found)" do
@@ -3815,8 +3820,8 @@ defmodule Emisar.RunnersTest do
       refute Runners.subject_can_manage_enrollment_keys?(viewer_subject_for(account))
     end
 
-    # Listing stays available for audit, while lifecycle mutations require the
-    # same whole-fleet reach.
+    # Listing and revoking stay available (audit + containment), while MINTING a
+    # key requires the whole-fleet reach only creation can widen.
     test "true for an admin whose runner access is restricted" do
       account = Fixtures.Accounts.create_account()
       {:ok, production} = RunnerAccess.restricted(["production"], [])
@@ -3827,8 +3832,8 @@ defmodule Emisar.RunnersTest do
         |> Fixtures.Subjects.membership_subject()
 
       assert Runners.subject_can_manage_enrollment_keys?(restricted)
+      assert Runners.subject_can_revoke_enrollment_keys?(restricted)
       refute Runners.subject_can_create_enrollment_keys?(restricted)
-      refute Runners.subject_can_revoke_enrollment_keys?(restricted)
     end
   end
 
@@ -3864,11 +3869,21 @@ defmodule Emisar.RunnersTest do
   end
 
   describe "subject_can_revoke_enrollment_keys?/1" do
-    test "matches create access" do
+    test "any admin with manage_enrollment_keys can revoke, even scope-restricted" do
       {account, _user, owner} = account_with_owner_subject()
 
       assert Runners.subject_can_revoke_enrollment_keys?(owner)
       refute Runners.subject_can_revoke_enrollment_keys?(viewer_subject_for(account))
+
+      {:ok, production} = RunnerAccess.restricted(["production"], [])
+
+      restricted =
+        Fixtures.Memberships.create_membership(account_id: account.id, role: "admin")
+        |> Fixtures.Memberships.force_runner_access(production)
+        |> Fixtures.Subjects.membership_subject()
+
+      # Containment needs no fleet reach — a scope-limited admin can still revoke.
+      assert Runners.subject_can_revoke_enrollment_keys?(restricted)
     end
   end
 
