@@ -101,7 +101,11 @@ func loadReceipt(executable string, trustPath func(string, fs.FileInfo) error) (
 			return receipt{}, errorsForPath(receiptPath, "is missing "+key)
 		}
 	}
-	if values["schema"] != "1" || values["manager"] != "install.sh" || values["repository"] != officialRepository {
+	// A receipt names the repository its installer served, which during the
+	// EmisarHQ transfer window is either spelling of the same repository.
+	repositoryOK := values["repository"] == officialRepository ||
+		values["repository"] == successorRepository
+	if values["schema"] != "1" || values["manager"] != "install.sh" || !repositoryOK {
 		return receipt{}, errorsForPath(receiptPath, "was not written by the official installer")
 	}
 	for _, key := range []string{"binary", "etc_dir", "data_dir", "log_dir"} {

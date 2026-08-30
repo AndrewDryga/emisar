@@ -29,19 +29,28 @@ const (
 	officialRepository = "andrewdryga/emisar"
 	// Post-split releases are attested by the reusable trusted workflow; the
 	// certificate SAN carries that workflow rather than its thin caller.
-	signerWorkflow       = "AndrewDryga/emisar/.github/workflows/runner-release-trusted.yml"
-	legacyRunnerTag      = "runner-v0.22.1"
-	legacySignerWorkflow = "AndrewDryga/emisar/.github/workflows/runner-release.yml"
-	legacySignerDigest   = "642128eb48205405fd44ce845118e6a68737eea2"
-	releaseBaseURL       = "https://emisar.dev/releases/runner"
-	apiBaseURL           = "https://api.github.com"
-	downloadBaseURL      = "https://github.com"
-	maxAPIBytes          = 4 << 20
-	maxManifestBytes     = 1 << 20
-	maxChecksumsBytes    = 1 << 20
-	maxArchiveBytes      = 256 << 20
-	maxInstallerBytes    = 512 << 10
-	maxBinaryBytes       = 128 << 20
+	signerWorkflow = "AndrewDryga/emisar/.github/workflows/runner-release-trusted.yml"
+	// The repository is moving to the EmisarHQ organization. Releases signed
+	// after the transfer carry the successor spelling in their certificate,
+	// while the fleet's already-written receipts and pre-transfer releases
+	// carry the current one — so verification accepts either identity until
+	// the transfer completes and a later release retires the old spelling.
+	// The current identity is tried first because it signs every release
+	// until the repository actually moves.
+	successorRepository     = "emisarhq/emisar"
+	successorSignerWorkflow = "EmisarHQ/emisar/.github/workflows/runner-release-trusted.yml"
+	legacyRunnerTag         = "runner-v0.22.1"
+	legacySignerWorkflow    = "AndrewDryga/emisar/.github/workflows/runner-release.yml"
+	legacySignerDigest      = "642128eb48205405fd44ce845118e6a68737eea2"
+	releaseBaseURL          = "https://emisar.dev/releases/runner"
+	apiBaseURL              = "https://api.github.com"
+	downloadBaseURL         = "https://github.com"
+	maxAPIBytes             = 4 << 20
+	maxManifestBytes        = 1 << 20
+	maxChecksumsBytes       = 1 << 20
+	maxArchiveBytes         = 256 << 20
+	maxInstallerBytes       = 512 << 10
+	maxBinaryBytes          = 128 << 20
 )
 
 // Options are the operator choices and output streams for one update.
@@ -188,7 +197,8 @@ func run(ctx context.Context, opts Options, deps dependencies) error {
 	}
 	fmt.Fprintf(opts.Stdout, "Verified checksum sha256:%s…\n", digest[:16])
 
-	if err := verifyProvenance(ctx, archivePath, target.TagName, deps, opts.Stdout, opts.Stderr); err != nil {
+	identity, err := verifyProvenance(ctx, archivePath, target.TagName, deps, opts.Stdout, opts.Stderr)
+	if err != nil {
 		return err
 	}
 	bundle, err := extractBundle(archivePath, temp, name)
@@ -197,7 +207,7 @@ func run(ctx context.Context, opts Options, deps dependencies) error {
 	}
 
 	fmt.Fprintf(opts.Stdout, "Updating emisar %s to %s...\n", opts.CurrentVersion, targetVersion)
-	args, env := installerInvocation(bundle, target.TagName, receipt)
+	args, env := installerInvocation(bundle, target.TagName, receipt, identity)
 	if err := deps.runCommand(ctx, "/bin/bash", args, env, opts.Stdout, opts.Stderr); err != nil {
 		return fmt.Errorf("release installer failed: %w", err)
 	}
@@ -495,38 +505,71 @@ func verifyChecksum(archivePath, checksumsPath, archiveName string) (string, err
 	return actual, nil
 }
 
-func verifyProvenance(ctx context.Context, archive, tag string, deps dependencies, stdout, stderr io.Writer) error {
+// releaseIdentity pairs the GitHub repository queried for attestations with
+// the workflow identity those attestations are signed under. The two always
+// travel together: mixing one identity's repository with the other's workflow
+// only verifies by accident of GitHub's rename redirects.
+type releaseIdentity struct {
+	repository string
+	workflow   string
+	digest     string
+}
+
+func acceptedIdentities(tag string) []releaseIdentity {
+	if tag == legacyRunnerTag {
+		return []releaseIdentity{
+			{repository: officialRepository, workflow: legacySignerWorkflow, digest: legacySignerDigest},
+		}
+	}
+	return []releaseIdentity{
+		{repository: officialRepository, workflow: signerWorkflow},
+		{repository: successorRepository, workflow: successorSignerWorkflow},
+	}
+}
+
+// verifyProvenance returns the identity the archive verified against, so the
+// installer invocation re-checks the same pair rather than a hardcoded one.
+// When verification is skipped it returns the first accepted identity — the
+// same spelling the skip warning tells the operator to verify by hand.
+func verifyProvenance(ctx context.Context, archive, tag string, deps dependencies, stdout, stderr io.Writer) (releaseIdentity, error) {
+	identities := acceptedIdentities(tag)
 	gh, err := deps.lookPath("gh")
 	if err != nil {
 		fmt.Fprintln(stderr, "warning: gh is not installed; release provenance was not checked")
-		return nil
+		return identities[0], nil
 	}
 	env := verifierEnvironment()
 	if err := deps.runCommand(ctx, gh, []string{"auth", "status"}, env, io.Discard, io.Discard); err != nil {
 		fmt.Fprintln(stderr, "warning: gh is not authenticated; release provenance was not checked")
-		return nil
+		return identities[0], nil
 	}
-	workflow := signerWorkflow
-	signerDigest := ""
-	if tag == legacyRunnerTag {
-		workflow = legacySignerWorkflow
-		signerDigest = legacySignerDigest
+	var lastErr error
+	for _, identity := range identities {
+		args := []string{
+			"attestation", "verify", archive,
+			"--repo", identity.repository,
+			"--signer-workflow", identity.workflow,
+			"--source-ref", "refs/tags/" + tag,
+		}
+		if identity.digest != "" {
+			args = append(args, "--signer-digest", identity.digest)
+		}
+		args = append(args, "--deny-self-hosted-runners")
+		if err := deps.runCommand(ctx, gh, args, env, io.Discard, io.Discard); err != nil {
+			lastErr = err
+			continue
+		}
+		fmt.Fprintln(stdout, "Verified GitHub build provenance.")
+		return identity, nil
 	}
-	args := []string{
-		"attestation", "verify", archive,
-		"--repo", officialRepository,
-		"--signer-workflow", workflow,
-		"--source-ref", "refs/tags/" + tag,
+	workflows := make([]string, 0, len(identities))
+	for _, identity := range identities {
+		workflows = append(workflows, identity.workflow)
 	}
-	if signerDigest != "" {
-		args = append(args, "--signer-digest", signerDigest)
-	}
-	args = append(args, "--deny-self-hosted-runners")
-	if err := deps.runCommand(ctx, gh, args, env, io.Discard, io.Discard); err != nil {
-		return fmt.Errorf("release attestation did not verify against %s: %w", workflow, err)
-	}
-	fmt.Fprintln(stdout, "Verified GitHub build provenance.")
-	return nil
+	return releaseIdentity{}, fmt.Errorf(
+		"release attestation did not verify against %s: %w",
+		strings.Join(workflows, " or "), lastErr,
+	)
 }
 
 func verifierEnvironment() []string {
@@ -627,7 +670,7 @@ func extractBundle(archivePath, destination, name string) (string, error) {
 	return bundle, nil
 }
 
-func installerInvocation(bundle, tag string, receipt receipt) ([]string, []string) {
+func installerInvocation(bundle, tag string, receipt receipt, identity releaseIdentity) ([]string, []string) {
 	args := []string{
 		filepath.Join(bundle, "install.sh"),
 		"--version", tag,
@@ -667,8 +710,8 @@ func installerInvocation(bundle, tag string, receipt receipt) ([]string, []strin
 	}
 	env = append(env,
 		"PATH=/usr/sbin:/usr/bin:/sbin:/bin",
-		"EMISAR_REPO="+officialRepository,
-		"EMISAR_ATTESTATION_WORKFLOW="+signerWorkflow,
+		"EMISAR_REPO="+identity.repository,
+		"EMISAR_ATTESTATION_WORKFLOW="+identity.workflow,
 		"EMISAR_PACKS=",
 		"SERVICE_USER="+receipt.ServiceUser,
 		"SERVICE_GROUP="+receipt.ServiceGroup,
