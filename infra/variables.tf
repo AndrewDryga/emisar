@@ -176,10 +176,23 @@ variable "disable_billing" {
   default     = false
 }
 
-variable "github_repository" {
-  type        = string
-  description = "Repository whose protected CD and exact-SHA reusable release workflows may assume artifact-publisher identities."
-  default     = "AndrewDryga/emisar"
+variable "github_repositories" {
+  type        = list(string)
+  description = <<-EOT
+    Repository paths whose protected CD and exact-SHA reusable release
+    workflows may assume artifact-publisher identities. Exactly one entry in
+    steady state. During the owner transfer to the EmisarHQ organization the
+    list carries the old and new path together — widen, apply, transfer, then
+    remove the old path in a later plan. The widened window admits no stranger:
+    github_repository_id below pins the one immutable repository these paths
+    are spellings of.
+  EOT
+  default     = ["AndrewDryga/emisar", "EmisarHQ/emisar"]
+
+  validation {
+    condition     = length(var.github_repositories) > 0
+    error_message = "github_repositories must list at least one <owner>/<repo> path."
+  }
 }
 
 variable "github_repository_id" {
@@ -192,9 +205,10 @@ variable "github_repository_id" {
     extra clause (set it before relying on the path pin alone).
     Read it with: gh api repos/<owner>/<repo> --jq .id
 
-    Defaults to the real id, exactly as github_repository defaults to the real
-    path. It used to default to "", which silently DROPPED the clause and left
-    four attacker-reproducible name conditions as the whole boundary — guarding
+    Defaults to the real id, exactly as github_repositories defaults to the
+    real paths. It used to default to "", which silently DROPPED the clause and
+    left four attacker-reproducible name conditions as the whole boundary —
+    guarding
     a token that can replace v1/catalog.json, which every customer runner
     resolves. The id is public via the GitHub API and is not a scale or contact
     tell, so there is no reason to leave the safe value unset.

@@ -11,6 +11,22 @@ locals {
   # the rotation a single edit. See the rotation note on
   # google_iam_workload_identity_pool_provider.github_releases below.
   trusted_job_workflow_sha = "ff1dd7f5902589a61a308f1805c905b4a8f6ac8f"
+
+  # Workflow identities carry the repository path, so during the transfer
+  # window every path in var.github_repositories yields one accepted spelling.
+  # jsonencode renders a valid CEL list literal for the `in` conditions below.
+  cd_workflow_refs = [
+    for repository in var.github_repositories :
+    "${repository}/.github/workflows/cd.yml@refs/heads/main"
+  ]
+  runner_release_workflow_refs = [
+    for repository in var.github_repositories :
+    "${repository}/.github/workflows/runner-release-trusted.yml@${local.trusted_job_workflow_sha}"
+  ]
+  mcp_release_workflow_refs = [
+    for repository in var.github_repositories :
+    "${repository}/.github/workflows/mcp-release-trusted.yml@${local.trusted_job_workflow_sha}"
+  ]
 }
 
 resource "google_iam_workload_identity_pool" "github" {
@@ -45,10 +61,10 @@ resource "google_iam_workload_identity_pool_provider" "github" {
   # provider admits only the protected-main pack publisher. Component releases
   # use the reusable-workflow-bound provider below.
   attribute_condition = join(" && ", [
-    "assertion.repository == \"${var.github_repository}\"",
+    "assertion.repository in ${jsonencode(var.github_repositories)}",
     "assertion.repository_id == \"${var.github_repository_id}\"",
     "assertion.ref == \"refs/heads/main\"",
-    "assertion.workflow_ref == \"${var.github_repository}/.github/workflows/cd.yml@refs/heads/main\"",
+    "assertion.workflow_ref in ${jsonencode(local.cd_workflow_refs)}",
     "assertion.environment == \"pack-registry-production\"",
   ])
 }
@@ -79,13 +95,13 @@ resource "google_iam_workload_identity_pool_provider" "github_releases" {
   }
 
   attribute_condition = join(" && ", [
-    "assertion.repository == \"${var.github_repository}\"",
+    "assertion.repository in ${jsonencode(var.github_repositories)}",
     "assertion.repository_id == \"${var.github_repository_id}\"",
     "assertion.environment == \"public-releases\"",
     "assertion.job_workflow_sha == \"${local.trusted_job_workflow_sha}\"",
     "(${join(" || ", [
-      "(assertion.ref.startsWith(\"refs/tags/runner-v\") && assertion.job_workflow_ref == \"${var.github_repository}/.github/workflows/runner-release-trusted.yml@${local.trusted_job_workflow_sha}\")",
-      "(assertion.ref.startsWith(\"refs/tags/mcp-v\") && assertion.job_workflow_ref == \"${var.github_repository}/.github/workflows/mcp-release-trusted.yml@${local.trusted_job_workflow_sha}\")",
+      "(assertion.ref.startsWith(\"refs/tags/runner-v\") && assertion.job_workflow_ref in ${jsonencode(local.runner_release_workflow_refs)})",
+      "(assertion.ref.startsWith(\"refs/tags/mcp-v\") && assertion.job_workflow_ref in ${jsonencode(local.mcp_release_workflow_refs)})",
     ])})",
   ])
 }
