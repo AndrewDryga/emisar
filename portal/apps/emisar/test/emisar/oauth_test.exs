@@ -1259,15 +1259,13 @@ defmodule Emisar.OAuthTest do
     end
 
     test "a disabled account cannot refresh, and re-enable restores the retained grant",
-         %{account: account, client: client, tokens: tokens} do
-      {_actor, _management_account, support_subject} = Fixtures.Subjects.owner_subject()
-
+         %{account: account, client: client, subject: subject, tokens: tokens} do
       assert {:ok, _account} =
                Emisar.Accounts.set_account_disabled_for_support(
                  account.id,
                  true,
                  "Temporary hold",
-                 support_subject
+                 subject
                )
 
       params = %{"refresh_token" => tokens.refresh_token, "client_id" => client.id}
@@ -1278,7 +1276,7 @@ defmodule Emisar.OAuthTest do
                  account.id,
                  false,
                  "Hold resolved",
-                 support_subject
+                 subject
                )
 
       assert {:ok, _fresh} = OAuth.refresh(params)
@@ -1369,7 +1367,7 @@ defmodule Emisar.OAuthTest do
           "code_verifier" => verifier
         })
 
-      %{account: account, client: client, tokens: tokens}
+      %{account: account, client: client, subject: subject, tokens: tokens}
     end
 
     test "an expired access token (past its TTL) resolves to :invalid", %{tokens: tokens} do
@@ -1431,15 +1429,13 @@ defmodule Emisar.OAuthTest do
     end
 
     test "a disabled account's retained access token resolves generically as invalid",
-         %{account: account, tokens: tokens} do
-      {_actor, _management_account, support_subject} = Fixtures.Subjects.owner_subject()
-
+         %{account: account, subject: subject, tokens: tokens} do
       assert {:ok, _account} =
                Emisar.Accounts.set_account_disabled_for_support(
                  account.id,
                  true,
                  "Temporary hold",
-                 support_subject
+                 subject
                )
 
       assert OAuth.resolve_access_token(tokens.access_token, @resource) == {:error, :invalid}

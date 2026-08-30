@@ -250,10 +250,12 @@ defmodule Emisar.Accounts do
   the audit subject; this function is not exposed to ordinary account callers.
   The transition is idempotent and its audit row commits atomically.
 
-  Requires `manage_own_account`. The account id is deliberately NOT scoped to
-  the subject — disabling another tenant is the whole point of a support
-  action — so this permission check is the only thing standing between a future
-  caller and disabling any account by id. It is not decoration.
+  The subject must be SCOPED TO THE TARGET account — the admin console and the
+  server mix task both build a support subject for the account being disabled —
+  and hold `manage_own_account`. The account-scope check is load-bearing, not
+  decoration: `manage_own_account` is held by every owner/admin for their OWN
+  account, so without it a future tenant-facing caller passing a foreign
+  `account_id` would fail open and disable any account by id.
   """
   def set_account_disabled_for_support(
         account_id,
@@ -266,7 +268,8 @@ defmodule Emisar.Accounts do
            Auth.Authorizer.ensure_has_permissions(
              subject,
              Authorizer.manage_own_account_permission()
-           ) do
+           ),
+         :ok <- Subject.ensure_in_account(subject, account_id) do
       Account.Query.not_deleted()
       |> Account.Query.by_id(account_id)
       |> Repo.fetch_and_update(Account.Query,

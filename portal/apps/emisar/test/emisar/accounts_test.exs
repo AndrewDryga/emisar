@@ -614,8 +614,7 @@ defmodule Emisar.AccountsTest do
 
   describe "fetch_account_by_id_or_slug_including_disabled/1" do
     test "includes a disabled account by id and slug" do
-      {_actor, _management_account, subject} = Fixtures.Subjects.owner_subject()
-      account = Fixtures.Accounts.create_account()
+      {_actor, account, subject} = Fixtures.Subjects.owner_subject()
 
       assert {:ok, disabled} =
                Accounts.set_account_disabled_for_support(
@@ -717,24 +716,20 @@ defmodule Emisar.AccountsTest do
   end
 
   describe "set_account_disabled_for_support/4" do
-    # This function's own @doc says the permission check "is the only thing
-    # standing between a future caller and disabling any account by id. It is not
-    # decoration." Nothing tested it, across ~50 call sites that all pass owner
-    # subjects. Swap the gate to view_own_account_permission() — held by every
-    # membership role AND :api_client — and any authenticated principal locks any
-    # tenant out by UUID, with the suite green.
-    test "denies a principal without manage_own_account" do
-      {_user, management_account, subject} = Fixtures.Subjects.owner_subject()
-      account = Fixtures.Accounts.create_account()
+    # Two load-bearing gates: `manage_own_account` (a viewer of the target is
+    # refused) AND account scope (the subject must be built for the target, so a
+    # foreign account_id fails closed). Weaken either — swap the permission to
+    # view_own_account, or drop the scope check — and any owner/admin could lock
+    # any tenant out by UUID.
+    test "denies a member of the target account who lacks manage_own_account" do
+      {_owner, account, owner_support} = Fixtures.Subjects.owner_subject()
 
       viewer =
         Fixtures.Subjects.membership_subject(
-          Fixtures.Memberships.create_membership(
-            account_id: management_account.id,
-            role: "viewer"
-          )
+          Fixtures.Memberships.create_membership(account_id: account.id, role: "viewer")
         )
 
+      # A viewer of the target account is in scope but holds no manage_own_account.
       assert Accounts.set_account_disabled_for_support(
                account.id,
                true,
@@ -745,14 +740,29 @@ defmodule Emisar.AccountsTest do
       assert {:ok, %Account{disabled_at: nil}} =
                Accounts.fetch_account_by_id_or_slug_including_disabled(account.id)
 
-      # ...and the real support path still works, so the gate is the difference.
+      # ...and the real support path (an owner-scoped support subject) still works.
       assert {:ok, %Account{disabled_at: %DateTime{}}} =
-               Accounts.set_account_disabled_for_support(account.id, true, "abuse", subject)
+               Accounts.set_account_disabled_for_support(account.id, true, "abuse", owner_support)
+    end
+
+    test "refuses to disable an account the support subject is not scoped to" do
+      {_owner, _account_a, subject_a} = Fixtures.Subjects.owner_subject()
+      account_b = Fixtures.Accounts.create_account()
+
+      # Fails closed with :not_found (identical to a missing account), so a support
+      # subject can only disable the account it was built for — manage_own_account
+      # alone (held for one's OWN account) cannot reach a foreign tenant.
+      assert Accounts.set_account_disabled_for_support(account_b.id, true, "cross", subject_a) ==
+               {:error, :not_found}
+
+      assert {:ok, %Account{disabled_at: nil}} =
+               Accounts.fetch_account_by_id_or_slug_including_disabled(account_b.id)
     end
 
     test "disables and re-enables an account with atomic audit attribution" do
-      {actor, _management_account, subject} = Fixtures.Subjects.owner_subject()
-      account = Fixtures.Accounts.create_account()
+      # The support subject is scoped to the target account, exactly as the admin
+      # console and the server mix task both build it.
+      {actor, account, subject} = Fixtures.Subjects.owner_subject()
       :ok = Accounts.subscribe_account_lifecycle(account.id)
 
       assert {:ok, %Account{disabled_at: %DateTime{}}} =
@@ -788,8 +798,7 @@ defmodule Emisar.AccountsTest do
     end
 
     test "repeating the current state is a no-op" do
-      {_actor, _management_account, subject} = Fixtures.Subjects.owner_subject()
-      account = Fixtures.Accounts.create_account()
+      {_actor, account, subject} = Fixtures.Subjects.owner_subject()
       :ok = Accounts.subscribe_account_lifecycle(account.id)
 
       assert {:ok, disabled} =
@@ -839,8 +848,7 @@ defmodule Emisar.AccountsTest do
     end
 
     test "locks members out of the disabled account without touching their other accounts" do
-      {_actor, _management_account, support_subject} = Fixtures.Subjects.owner_subject()
-      account = Fixtures.Accounts.create_account()
+      {_actor, account, support_subject} = Fixtures.Subjects.owner_subject()
       other_account = Fixtures.Accounts.create_account()
       member = Fixtures.Users.create_user()
       outsider = Fixtures.Users.create_user()
@@ -883,9 +891,8 @@ defmodule Emisar.AccountsTest do
 
   describe "subscribe_account_lifecycle/1" do
     test "subscribes only to the named account lifecycle topic" do
-      {_actor, _management_account, subject} = Fixtures.Subjects.owner_subject()
+      {_actor, other_account, subject} = Fixtures.Subjects.owner_subject()
       account = Fixtures.Accounts.create_account()
-      other_account = Fixtures.Accounts.create_account()
       :ok = Accounts.subscribe_account_lifecycle(account.id)
 
       assert {:ok, _other_account} =
