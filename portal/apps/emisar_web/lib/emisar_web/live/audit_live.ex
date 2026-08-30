@@ -454,7 +454,11 @@ defmodule EmisarWeb.AuditLive do
              control — rose would say "something is wrong", but an engaged
              toggle is a filter state, not an alarm (the problem ROWS carry
              their own rose/amber). --%>
+        <%!-- Hidden for a billing-only reader: their slice is routine plan
+             changes (all info severity), so a danger+warn filter matches nothing
+             and the toggle would just look broken. --%>
         <button
+          :if={not Audit.subject_sees_billing_audit_only?(@current_subject)}
           type="button"
           phx-click="toggle_problems"
           aria-pressed={to_string(problems_only?(@filter_params))}

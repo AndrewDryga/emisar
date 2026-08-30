@@ -94,6 +94,7 @@ const Combobox = {
     const pool = document.getElementById(sourceId)
     if (!pool || !this.list) return false
     this.hydrated = true
+    this.list.querySelector("[data-combobox-loading]")?.remove()
     this.list.appendChild(pool.content.cloneNode(true))
     const known = new Set(this.options)
     const all = Array.from(this.el.querySelectorAll("[data-combobox-option]"))
@@ -119,10 +120,22 @@ const Combobox = {
     this.poolObserver.observe(document.body, {childList: true, subtree: true})
   },
 
+  showLoading() {
+    if (this.list.querySelector("[data-combobox-loading]")) return
+    const li = document.createElement("li")
+    li.dataset.comboboxLoading = ""
+    li.className = "px-3 py-2 text-sm text-zinc-500"
+    li.textContent = "Loading actions…"
+    this.list.appendChild(li)
+  },
+
   toggle() { this.panel.hidden ? this.open() : this.close() },
 
   open() {
     this.watchForPool()
+    // Pool-backed picker whose options haven't rendered yet (poolObserver is
+    // still waiting): show a loading cue instead of a blank panel.
+    if (this.poolObserver) this.showLoading()
     this.search.value = ""
     this.filter()
     this.panel.hidden = false
