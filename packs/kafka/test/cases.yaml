@@ -1,9 +1,6 @@
 services: [kafka]
 risk_accountability:
-  exceptions:
-    kafka.reset_offsets_to_earliest: requires_dynamic_fixture
-    kafka.reset_offsets_to_latest: requires_dynamic_fixture
-    kafka.delete_consumer_group: requires_dynamic_fixture
+  exceptions: {}
 versions:
   - version: "4.1.1"
     digest: "@sha256:0bc1bb2478f45b6cea78864df86acdc11e8df2c5172477819a4d12942cbe5d40"
@@ -39,6 +36,50 @@ cases:
       stdout_contains: [User:ANONYMOUS, orders]
     cleanup:
       - argv: [kafka-acls.sh, --bootstrap-server, kafka:9092, --remove, --allow-principal, "User:ANONYMOUS", --operation, Read, --topic, orders, --force]
+  # The three consumer-group mutations each need a group that EXISTS but has no
+  # active member (reset/delete refuse an active group): produce a few records,
+  # consume them with a group that commits its offsets and then exits on the
+  # idle timeout, leaving it empty. Each case uses its own group name.
+  - action: kafka.reset_offsets_to_earliest
+    args:
+      group: packtest-reset-earliest
+      topic: orders
+    arrange:
+      - argv: [/bin/sh, -c, 'printf "m1\nm2\nm3\n" | kafka-console-producer.sh --bootstrap-server kafka:9092 --topic orders']
+      - argv: [/bin/sh, -c, 'kafka-console-consumer.sh --bootstrap-server kafka:9092 --topic orders --group packtest-reset-earliest --from-beginning --timeout-ms 5000 --consumer-property enable.auto.commit=true --consumer-property auto.commit.interval.ms=500 >/dev/null 2>&1 || true']
+    expect:
+      stdout_contains: [packtest-reset-earliest, orders]
+    probes:
+      # Offsets are back at the start, so the group re-reads the first record.
+      - argv: [/bin/sh, -c, 'kafka-console-consumer.sh --bootstrap-server kafka:9092 --topic orders --group packtest-reset-earliest --timeout-ms 6000 --max-messages 1 2>/dev/null || true']
+        expect:
+          stdout_contains: [m1]
+  - action: kafka.reset_offsets_to_latest
+    args:
+      group: packtest-reset-latest
+      topic: orders
+    arrange:
+      - argv: [/bin/sh, -c, 'printf "m1\nm2\nm3\n" | kafka-console-producer.sh --bootstrap-server kafka:9092 --topic orders']
+      - argv: [/bin/sh, -c, 'kafka-console-consumer.sh --bootstrap-server kafka:9092 --topic orders --group packtest-reset-latest --from-beginning --timeout-ms 5000 --consumer-property enable.auto.commit=true --consumer-property auto.commit.interval.ms=500 >/dev/null 2>&1 || true']
+    expect:
+      stdout_contains: [packtest-reset-latest, orders]
+    probes:
+      # The group now carries committed offsets at the log's end for orders.
+      - argv: [/bin/sh, -c, 'kafka-consumer-groups.sh --bootstrap-server kafka:9092 --describe --group packtest-reset-latest']
+        expect:
+          stdout_contains: [packtest-reset-latest, orders]
+  - action: kafka.delete_consumer_group
+    args:
+      group: packtest-delete-group
+    arrange:
+      - argv: [/bin/sh, -c, 'printf "m1\nm2\nm3\n" | kafka-console-producer.sh --bootstrap-server kafka:9092 --topic orders']
+      - argv: [/bin/sh, -c, 'kafka-console-consumer.sh --bootstrap-server kafka:9092 --topic orders --group packtest-delete-group --from-beginning --timeout-ms 5000 --consumer-property enable.auto.commit=true --consumer-property auto.commit.interval.ms=500 >/dev/null 2>&1 || true']
+    expect:
+      stdout_contains: [packtest-delete-group, successful]
+    probes:
+      - argv: [/bin/sh, -c, 'kafka-consumer-groups.sh --bootstrap-server kafka:9092 --list | grep -c packtest-delete-group || true']
+        expect:
+          stdout_contains: ["0"]
   - action: kafka.leader_partitions
     expect:
       stdout_contains: ["2 1"]
