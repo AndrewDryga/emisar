@@ -201,8 +201,8 @@ variable "github_repository_id" {
     Numeric GitHub repository id, pinned alongside the repository PATH. GitHub
     does not reserve a path after a rename or transfer, so a path-only condition
     would let whoever claims the old name mint a pack-publisher token and
-    replace catalog objects that customer runners execute. Empty disables the
-    extra clause (set it before relying on the path pin alone).
+    replace catalog objects that customer runners execute. The validation below
+    requires a numeric id, so the clause is always pinned.
     Read it with: gh api repos/<owner>/<repo> --jq .id
 
     Defaults to the real id, exactly as github_repositories defaults to the
