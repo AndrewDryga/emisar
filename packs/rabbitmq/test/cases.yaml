@@ -12,10 +12,7 @@ defaults:
   expect:
     stdout_not_empty: true
 risk_accountability:
-  exceptions:
-    # Closing a connection needs a live AMQP client holding one; the harness
-    # runs one command against the node and has no second session to close.
-    rmq.close_connection: requires_concurrent_session
+  exceptions: {}
 cases:
   # stop_app stops the RabbitMQ application while leaving the node running, so
   # the probe asks the node itself — the shape redis.shutdown_nosave uses. Its
@@ -53,6 +50,32 @@ cases:
   - action: rmq.list_queues
     expect:
       stdout_contains: [packtest, messages_ready]
+  - action: rmq.close_connection
+    # Open and HOLD an AMQP connection (a pika client with heartbeats off that
+    # sleeps), resolve its connection pid from list_connections, then close it.
+    args:
+      note: "packtest closing it"
+    arrange:
+      - argv: [/bin/sh, -c, 'rabbitmqctl add_user packtest-holder packtest-holder-pw && rabbitmqctl set_permissions packtest-holder ".*" ".*" ".*"']
+      - argv: ["/bin/sh", "-c", "nohup python3 -c 'import pika; c=pika.BlockingConnection(pika.ConnectionParameters(host=\"rabbitmq\", credentials=pika.PlainCredentials(\"packtest-holder\",\"packtest-holder-pw\"), heartbeat=0, client_properties={\"connection_name\":\"packtest-holder\"})); c.sleep(300)' >/tmp/packtest-rmq-holder.log 2>&1 &"]
+      - argv: [/bin/sh, -c, 'rabbitmqctl -q list_connections user | grep -c packtest-holder']
+        expect:
+          stdout_contains: ["1"]
+        retry_for: 15s
+        retry_every: 500ms
+    resolve_args:
+      pid:
+        argv: [/bin/sh, -c, "rabbitmqctl -q list_connections pid user | awk '/packtest-holder/ {print $1; exit}'"]
+        retry_for: 15s
+        retry_every: 500ms
+    expect:
+      status: success
+    probes:
+      - argv: [/bin/sh, -c, 'rabbitmqctl -q list_connections user | grep -c packtest-holder || true']
+        expect:
+          stdout_contains: ["0"]
+        retry_for: 15s
+        retry_every: 500ms
   - action: rmq.list_exchanges
     expect:
       stdout_contains: [amq.direct, direct]
