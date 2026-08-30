@@ -26,6 +26,15 @@ request() {
     --max-filesize 4194304 "$@"
 }
 
+# The runner's default redaction blanks any `token`-compound JSON key, so a raw
+# `nextPageToken` never reaches the model and multi-page reads silently stop at
+# page 1. Rename it to `next_page_cursor` (the `page_cursor` arg feeds it back).
+# Reads from a FILE, never a pipe off `request`, so a curl failure fails the
+# script (set -e) instead of being masked by jq succeeding on empty input.
+rename_next_page_token() {
+  jq -ce 'if has("nextPageToken") then . + {next_page_cursor: .nextPageToken} | del(.nextPageToken) else . end' "$1"
+}
+
 interval() {
   minutes=$1
   end_epoch=$(date -u +%s)
@@ -64,7 +73,10 @@ case "$mode" in
     if [ -n "$page_token" ]; then
       set -- "$@" --data-urlencode "pageToken=$page_token"
     fi
-    request "$@" "$api_base/v3/projects/$project/timeSeries"
+    out=$(mktemp "${TMPDIR:-/tmp}/emisar-gcp-monitoring.XXXXXX")
+    trap 'rm -f -- "$out"' EXIT HUP INT TERM
+    request "$@" "$api_base/v3/projects/$project/timeSeries" >"$out"
+    rename_next_page_token "$out"
     ;;
 
   metric-descriptors)
@@ -82,7 +94,10 @@ case "$mode" in
     if [ -n "$page_token" ]; then
       set -- "$@" --data-urlencode "pageToken=$page_token"
     fi
-    request "$@" "$api_base/v3/projects/$project/metricDescriptors"
+    out=$(mktemp "${TMPDIR:-/tmp}/emisar-gcp-monitoring.XXXXXX")
+    trap 'rm -f -- "$out"' EXIT HUP INT TERM
+    request "$@" "$api_base/v3/projects/$project/metricDescriptors" >"$out"
+    rename_next_page_token "$out"
     ;;
 
   alert-policy-set-enabled)
@@ -183,7 +198,7 @@ case "$mode" in
                  then $sent / $capacity else null end)
             }
           ] | sort_by(.end_time),
-          next_page_tokens: {
+          next_page_cursors: {
             capacity: ($capacity[0].nextPageToken // null),
             received: ($received[0].nextPageToken // null),
             sent: ($sent[0].nextPageToken // null)

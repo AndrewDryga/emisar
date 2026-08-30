@@ -5,7 +5,7 @@ kind: script
 risk: low
 description: >
   List active metric descriptors in one project, optionally restricted to a
-  metric-type prefix. Returns a nextPageToken when another page exists.
+  metric-type prefix. Returns a next_page_cursor when another page exists.
 side_effects:
   - One gcloud token read and one read-only Monitoring API request.
   - Result count is bounded by page_size.
@@ -40,7 +40,7 @@ args:
     type: string
     required: false
     default: ""
-    description: Opaque nextPageToken from a prior result.
+    description: Opaque next_page_cursor from a prior result.
     validation:
       pattern: "^[A-Za-z0-9._~+/=-]*$"
       max_length: 2048

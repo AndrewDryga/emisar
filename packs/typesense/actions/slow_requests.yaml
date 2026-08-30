@@ -2,7 +2,7 @@ schema_version: 1
 id: typesense.slow_requests
 title: Recent slow requests from the server log
 kind: exec
-risk: low
+risk: medium
 description: >
   Tail slow requests from the Typesense server log — slow requests are written to the
   server log prefixed "SLOW REQUEST" (enable with

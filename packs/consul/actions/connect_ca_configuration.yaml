@@ -2,7 +2,7 @@ schema_version: 1
 id: consul.connect_ca_configuration
 title: GET /v1/connect/ca/configuration
 kind: script
-risk: low
+risk: medium
 description: Show CA provider configuration (which CA, intermediate cert TTL, etc). Provider secrets the config map may carry — the Vault provider's Token and the built-in provider's PrivateKey — are redacted from the output.
 side_effects:
   - One API call.

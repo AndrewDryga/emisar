@@ -6,7 +6,7 @@ risk: low
 description: >
   Query one metric type over a bounded recent window, optionally narrowing by
   a Monitoring resource filter. Returns FULL time-series data and a
-  nextPageToken when another page exists.
+  next_page_cursor when another page exists.
 side_effects:
   - One gcloud token read and one read-only Monitoring API request.
   - page_size caps returned points because the request uses view=FULL.
@@ -74,7 +74,7 @@ args:
     type: string
     required: false
     default: ""
-    description: Opaque nextPageToken from a prior result.
+    description: Opaque next_page_cursor from a prior result.
     validation:
       pattern: "^[A-Za-z0-9._~+/=-]*$"
       max_length: 2048
