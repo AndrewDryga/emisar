@@ -330,17 +330,25 @@ func isBidiControl(r rune) bool {
 		(r >= '\u202a' && r <= '\u202e') || (r >= '\u2066' && r <= '\u2069')
 }
 
-// InterpreterHijackEnvVars are env vars that inject code into a process the way
+// interpreterHijackEnvVars are env vars that inject code into a process the way
 // LD_PRELOAD/BASH_ENV do: NODE_OPTIONS --require, RUBYOPT -r, PERL5OPT -M, and
 // GIT_SSH_COMMAND an arbitrary command git runs. A pack must not set them (or
 // inherit them — the identical check lives in internal/config/config.go for
-// inherit_env); keep the two lists in sync.
-var InterpreterHijackEnvVars = map[string]bool{
+// inherit_env, via IsInterpreterHijackEnvVar); keep the two call sites in sync.
+// Private so this security allowlist cannot be mutated by an importer.
+var interpreterHijackEnvVars = map[string]bool{
 	"BASH_ENV":        true,
 	"NODE_OPTIONS":    true,
 	"RUBYOPT":         true,
 	"PERL5OPT":        true,
 	"GIT_SSH_COMMAND": true,
+}
+
+// IsInterpreterHijackEnvVar reports whether name is an interpreter-option hijack
+// var a pack must never set or inherit. The backing map stays private so a
+// caller cannot weaken the check by mutating a shared map.
+func IsInterpreterHijackEnvVar(name string) bool {
+	return interpreterHijackEnvVars[name]
 }
 
 // validateExecutionEnv rejects environment variables a pack must not set: the
@@ -354,7 +362,7 @@ var InterpreterHijackEnvVars = map[string]bool{
 // would be inert anyway.
 func validateExecutionEnv(a *Action) error {
 	for k := range a.Execution.Env {
-		if strings.HasPrefix(k, "LD_") || strings.HasPrefix(k, "DYLD_") || InterpreterHijackEnvVars[k] {
+		if strings.HasPrefix(k, "LD_") || strings.HasPrefix(k, "DYLD_") || IsInterpreterHijackEnvVar(k) {
 			return fmt.Errorf("action %s: execution.env must not set %q (dynamic-linker/shell-init/interpreter-option hijack vector)", a.ID, k)
 		}
 	}

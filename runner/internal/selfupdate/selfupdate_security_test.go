@@ -36,6 +36,23 @@ func TestLoadReceiptRejectsUntrustedOrForeignOwnership(t *testing.T) {
 	}
 }
 
+func TestLoadReceiptAcceptsCaseInsensitiveRepository(t *testing.T) {
+	// GitHub owner/repo slugs are case-insensitive, so a receipt an installer
+	// wrote from a display-cased EMISAR_REPO must pass the repository check. It
+	// then fails later on binary identity (no unit-test fixture matches the
+	// running binary), never on "official installer" — which is exactly what a
+	// mixed-case repo was wrongly rejected with before the fix.
+	for _, repository := range []string{"AndrewDryga/emisar", "EmisarHQ/emisar"} {
+		t.Run(repository, func(t *testing.T) {
+			executable := writeReceiptFixture(t, t.TempDir(), repository)
+			_, err := loadReceipt(executable, func(string, fs.FileInfo) error { return nil })
+			if err == nil || strings.Contains(err.Error(), "official installer") {
+				t.Fatalf("loadReceipt(%q) = %v, want accepted past the repository check", repository, err)
+			}
+		})
+	}
+}
+
 func TestLoadReceiptRequiresTrustedLocator(t *testing.T) {
 	executable := writeReceiptFixture(t, t.TempDir(), officialRepository)
 	locator := filepath.Join(filepath.Dir(executable), receiptLocatorName)

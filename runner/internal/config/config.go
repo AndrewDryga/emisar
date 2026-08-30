@@ -214,14 +214,14 @@ func (c *Config) Validate() error {
 	//
 	// Mirror the pack-env posture (actionspec.validateExecutionEnv): the
 	// dynamic-linker (LD_*/DYLD_*), shell-startup (BASH_ENV), and
-	// interpreter-option (actionspec.InterpreterHijackEnvVars) hijack vectors
+	// interpreter-option (actionspec.IsInterpreterHijackEnvVar) hijack vectors
 	// must not reach an action's child. buildEnv inherits these named vars from
 	// the runner's own process env, so an inherit_env listing LD_PRELOAD would
 	// defeat the same protection the pack-env path enforces. Applies regardless
 	// of cloud config — a local CLI runner spawns actions too.
 	for _, name := range c.Execution.InheritEnv {
 		if strings.HasPrefix(name, "LD_") || strings.HasPrefix(name, "DYLD_") ||
-			actionspec.InterpreterHijackEnvVars[name] {
+			actionspec.IsInterpreterHijackEnvVar(name) {
 			return fmt.Errorf(
 				"config: execution.inherit_env must not include %q (dynamic-linker/shell-init/interpreter-option hijack vector)",
 				name,

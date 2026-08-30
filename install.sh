@@ -38,7 +38,12 @@ set -Eeuo pipefail
 # Configuration (env or flags)
 # -----------------------------------------------------------------------
 
-REPO="${EMISAR_REPO:-andrewdryga/emisar}"
+# GitHub owner/repo slugs are case-insensitive, so an operator may paste the
+# display casing (AndrewDryga/emisar). Lowercase it so the OFFICIAL_REPO gate
+# below runs provenance instead of skipping it, and the receipt records the
+# canonical form self-update accepts. The signer SAN (ATTESTATION_WORKFLOW)
+# keeps its exact casing — it is a separate constant, not derived from REPO.
+REPO="$(printf '%s' "${EMISAR_REPO:-andrewdryga/emisar}" | tr '[:upper:]' '[:lower:]')"
 OFFICIAL_REPO="andrewdryga/emisar"
 RELEASE_BASE_URL="https://emisar.dev/releases/runner"
 # The workflow identity Sigstore build provenance is checked against. It is

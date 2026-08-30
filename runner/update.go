@@ -22,7 +22,7 @@ Container, copied, development, package-managed, and infrastructure-managed
 binaries have no official installer receipt and are refused; update those from
 their deployment source instead.`,
 		Example: `  sudo emisar update
-  sudo emisar update --version 0.19.0`,
+  sudo emisar update --version X.Y.Z`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return selfupdate.Run(cmd.Context(), selfupdate.Options{

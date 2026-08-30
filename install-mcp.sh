@@ -12,7 +12,7 @@
 #   curl -fsSL https://emisar.dev/install-mcp.sh | sudo bash
 #
 #   # Pin a version:
-#   curl -fsSL https://.../install-mcp.sh | sudo bash -s -- --version mcp-v0.1.0
+#   curl -fsSL https://.../install-mcp.sh | sudo bash -s -- --version mcp-vX.Y.Z
 #
 #   # Install to a per-user location (no sudo):
 #   curl -fsSL https://.../install-mcp.sh | INSTALL_DIR=$HOME/.local/bin bash
@@ -39,7 +39,11 @@
 
 set -Eeuo pipefail
 
-REPO="${EMISAR_REPO:-andrewdryga/emisar}"
+# GitHub owner/repo slugs are case-insensitive, so an operator may paste the
+# display casing (AndrewDryga/emisar). Lowercase it so the OFFICIAL_REPO gate
+# runs provenance instead of skipping it. The signer SAN (ATTESTATION_WORKFLOW)
+# keeps its exact casing — a separate constant, not derived from REPO.
+REPO="$(printf '%s' "${EMISAR_REPO:-andrewdryga/emisar}" | tr '[:upper:]' '[:lower:]')"
 OFFICIAL_REPO="andrewdryga/emisar"
 RELEASE_BASE_URL="https://emisar.dev/releases/mcp"
 # Matched literally against the signing certificate's SubjectAlternativeName,
