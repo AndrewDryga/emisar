@@ -659,8 +659,15 @@ defmodule EmisarWeb.ApprovalDetailLive do
   defp decision_error_message(:quorum_already_met),
     do: "The required reviews are already present. Refresh to see the final decision."
 
-  defp decision_error_message(reason) when reason in [:run_cancelled, :run_not_pending_approval],
+  defp decision_error_message(:run_cancelled),
     do: "The run was cancelled before approval, so there's nothing left to approve."
+
+  # NOT necessarily cancelled: under min_approvals: 1 a concurrent approver can
+  # win the account-lock race, dispatch the run, and move it out of
+  # :pending_approval — the loser lands here having approved a now-running
+  # action, so "cancelled" would be a false statement. Stay neutral.
+  defp decision_error_message(:run_not_pending_approval),
+    do: "The run is no longer awaiting approval. Refresh to see its current state."
 
   defp decision_error_message(:runbook_execution_not_approvable),
     do: "The runbook execution is no longer awaiting approval. Refresh to see its current state."

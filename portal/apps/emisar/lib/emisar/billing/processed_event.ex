@@ -11,6 +11,8 @@ defmodule Emisar.Billing.ProcessedEvent do
   @primary_key {:id, :string, autogenerate: false}
   schema "paddle_processed_events" do
     field :event_type, :string
-    field :received_at, :naive_datetime
+    # Matches the column (:utc_datetime_usec) and the DateTime.utc_now/0 write —
+    # a :naive_datetime here would load the stored value as a truncated NaiveDateTime.
+    field :received_at, :utc_datetime_usec
   end
 end

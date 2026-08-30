@@ -284,6 +284,18 @@ defmodule EmisarWeb.AuditExportLive do
             </.list_row>
           </ul>
         </div>
+
+        <.empty_state
+          :if={
+            @export_keys == [] and @continuous_export_available? and not @load_error? and
+              is_nil(@export_secret)
+          }
+          icon="identity.credential"
+          title="No export tokens yet."
+        >
+          Mint a token to start streaming audit events to your SIEM. It's read-only and
+          scoped to audit export.
+        </.empty_state>
       </section>
     </.console_shell>
     """
