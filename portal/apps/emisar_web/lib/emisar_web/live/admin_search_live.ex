@@ -28,13 +28,20 @@ defmodule EmisarWeb.AdminSearchLive do
 
   def handle_event("search", _params, socket), do: {:noreply, socket}
 
-  # `Admin.search_accounts/2` re-checks staff on every call (IL-15), so this
-  # asserts an invariant the `:ensure_admin` mount gate already holds: a denial
-  # here means staff was revoked mid-session, and failing closed drops the
-  # socket into a reconnect the gate then turns away.
+  # `Admin.search_accounts/2` re-checks staff on every call (IL-15). The
+  # `:ensure_admin` mount gate already held, so a denial here means staff was
+  # revoked mid-session — fail closed by flashing and leaving the console,
+  # rather than the old `{:ok, _} =` match that CRASHED the socket.
   defp assign_accounts(socket, query) do
-    {:ok, accounts} = Admin.search_accounts(query, socket.assigns.current_user)
-    assign(socket, :accounts, accounts)
+    case Admin.search_accounts(query, socket.assigns.current_user) do
+      {:ok, accounts} ->
+        assign(socket, :accounts, accounts)
+
+      {:error, :unauthorized} ->
+        socket
+        |> put_flash(:error, "Your staff access has been revoked.")
+        |> redirect(to: ~p"/")
+    end
   end
 
   # `Admin.search_accounts/2` trims before it decides whether to search or list
