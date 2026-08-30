@@ -215,7 +215,6 @@ jobs:
             echo "::error::MCP_PRIVATE_KEY does not match the live emisar.dev publisher proof"
             exit 1
           }
-          printf 'MCP_PRIVATE_KEY_HEX=%s\n' "$seed" >> "$GITHUB_ENV"
           rm -f private.der public.der
 
       - name: Prepare listing
@@ -230,11 +229,18 @@ jobs:
         run: ./mcp-publisher validate /tmp/server.json
 
       - name: Authenticate and publish
+        env:
+          MCP_PRIVATE_KEY: ${{ secrets.MCP_PRIVATE_KEY }}
         run: |
           # Without this, a failed `login` still ran `publish` — which then
           # reported its own failure, hiding which of the two actually broke.
           set -euo pipefail
-          ./mcp-publisher login http --domain emisar.dev --private-key "$MCP_PRIVATE_KEY_HEX"
+          # Derive the seed HERE, scoped to this step, so it never lands in
+          # $GITHUB_ENV where the install/validate/verify steps would inherit a
+          # key they don't need. (mcp-publisher only accepts it on argv.)
+          seed=$(go run ./tools/cmd/ci normalize-mcp-private-key)
+          echo "::add-mask::${seed}"
+          ./mcp-publisher login http --domain emisar.dev --private-key "$seed"
           ./mcp-publisher publish /tmp/server.json
 
       - name: Verify the live listing
