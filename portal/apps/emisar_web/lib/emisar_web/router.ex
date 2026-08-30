@@ -150,6 +150,9 @@ defmodule EmisarWeb.Router do
 
     get "/packs.json", PackRegistryController, :index
     get "/packs/suggest.json", PackRegistryController, :suggest
+
+    # The runbook-definition schema, at the `$id` the schema declares for itself.
+    get "/schemas/runbook-definition-v1.json", SchemaController, :runbook_definition_v1
   end
 
   # -- Marketing site (public, anyone) --------------------------------
