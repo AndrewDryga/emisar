@@ -295,7 +295,7 @@ services:
       context: .
       dockerfile: dev/runner/Dockerfile
       args:
-        RUNNER_VERSION: "0.19.0"
+        RUNNER_VERSION: "0.23.1"
     image: emisar/runner:dev
     hostname: edge-fra-01.northstar.example
     depends_on:
@@ -373,7 +373,7 @@ services:
       context: .
       dockerfile: dev/mcp/Dockerfile
       args:
-        MCP_VERSION: "0.7.0"
+        MCP_VERSION: "0.10.1"
     image: emisar/mcp:dev
     profiles: ["test"]
     depends_on:
