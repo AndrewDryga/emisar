@@ -30,7 +30,15 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
-      - "for u in $(getent passwd | awk -F: '$7 !~ /nologin|false/ {print $1}'); do echo \"--- crontab -u $u ---\"; crontab -l -u \"$u\" 2>/dev/null; done; echo '--- /etc/crontab ---'; cat /etc/crontab 2>/dev/null; echo '--- /etc/cron.d/ ---'; ls -la /etc/cron.d/ 2>/dev/null; for d in hourly daily weekly monthly; do echo \"--- /etc/cron.$d/ ---\"; ls -la \"/etc/cron.$d/\" 2>/dev/null; done"
+      # Guard the enumeration the way sudoers_dump is guarded. Reading another
+      # user's crontab is root-reserved (`crontab` being setgid does not help —
+      # the runner sets no_new_privs), so an unprivileged runner used to discard
+      # every refusal and answer "what is scheduled on this host?" with a clean
+      # empty list, which reads as "nothing is scheduled". Test the identity
+      # rather than crontab's exit status: cronie exits 1 both for "no crontab
+      # for this user" and for "must be privileged to use -u", so the status
+      # cannot tell an honest empty answer from a refused one.
+      - "[ \"$(id -u)\" = 0 ] || { echo 'reading every user crontab requires root; this runner identity would report an incomplete schedule' >&2; exit 1; }; for u in $(getent passwd | awk -F: '$7 !~ /nologin|false/ {print $1}'); do echo \"--- crontab -u $u ---\"; crontab -l -u \"$u\" 2>/dev/null; done; echo '--- /etc/crontab ---'; cat /etc/crontab 2>/dev/null; echo '--- /etc/cron.d/ ---'; ls -la /etc/cron.d/ 2>/dev/null; for d in hourly daily weekly monthly; do echo \"--- /etc/cron.$d/ ---\"; ls -la \"/etc/cron.$d/\" 2>/dev/null; done"
   timeout: 15s
 
 output:

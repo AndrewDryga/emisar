@@ -2,9 +2,11 @@ schema_version: 1
 
 id: redis
 name: Redis operations pack
-version: 0.3.16
-# Older versions allowed credential redirection or caller-controlled Sentinel votes.
-retired_below: 0.3.15
+version: 0.3.17
+# Older versions allowed credential redirection or caller-controlled Sentinel
+# votes, and 0.3.16 let config_set take `dir`/`dbfilename`/`logfile` —
+# with the medium, auto-running bgsave that is an arbitrary file write.
+retired_below: 0.3.17
 description: >
   Deep Redis ops — INFO + memory accounting, slowlog + per-event
   latency, command stats, client list/kill/pause, keyspace introspection

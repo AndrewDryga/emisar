@@ -94,6 +94,18 @@ cases:
     expect:
       stdout_contains: ["crontab -u deploy", packtest-nightly, "/etc/crontab"]
 
+  # The false all-clear this guard closes: reading another user's crontab is
+  # root-reserved, and the enumeration used to discard every refusal — so an
+  # unprivileged runner answered "what is scheduled on this host?" with an
+  # empty list, which an operator or a model reads as "nothing is scheduled".
+  - name: linux.crontab_all-refuses-an-unprivileged-identity
+    action: linux.crontab_all
+    runner_user: nonroot
+    expect:
+      status: failure
+      stderr_contains: ["requires root"]
+      stdout_not_contains: ["/etc/crontab"]
+
   # The image's @reboot job fires when the SUT boots, so cron has really logged
   # a job run by the time this reads. The wait is an arrange step rather than a
   # sleep — and do NOT restart cron to trigger it, which makes cron skip @reboot

@@ -2,7 +2,12 @@ schema_version: 1
 
 id: mongodb
 name: MongoDB operations
-version: 0.3.8
+version: 0.3.9
+# 0.3.8 and below ran explain_query at `executionStats`, which executes the
+# winning plan, while the action was tiered low — so the shipped default policy
+# auto-ran a full collection scan against a production primary with no human in
+# the loop. A mislabeled risk that skipped approval fails closed instead.
+retired_below: 0.3.9
 description: >
   Replica-set + shard-cluster introspection, slow-query identification,
   collection stats, plus remediation surface (killOp, replSet stepDown,

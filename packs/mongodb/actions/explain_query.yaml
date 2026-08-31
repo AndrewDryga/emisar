@@ -3,7 +3,13 @@ id: mongo.explain_query
 title: explain a find()
 kind: exec
 risk: low
-description: Show the execution plan for `find(filter)` on one collection at `executionStats` verbosity.
+description: >
+  Show the query plan for `find(filter)` on one collection at
+  `queryPlanner` verbosity — the plan MongoDB would choose, without
+  running it. Mirrors `postgres.explain_query`; `executionStats`
+  verbosity is not used here because it runs the winning plan to
+  completion, which is a real read against a production primary rather
+  than the plan-only inspection this action's risk tier promises.
 side_effects:
   - One explain command — does NOT execute the query.
   - Read-only.
@@ -32,7 +38,7 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
-      - "mongosh --nodb --quiet --eval 'db=new Mongo(process.env.MONGO_URI).getDB(\"admin\");JSON.stringify(db.getSiblingDB(\"'\"$1\"'\").getCollection(\"'\"$2\"'\").find(JSON.parse(process.env.FILTER || \"{}\")).explain(\"executionStats\"))'"
+      - "mongosh --nodb --quiet --eval 'db=new Mongo(process.env.MONGO_URI).getDB(\"admin\");JSON.stringify(db.getSiblingDB(\"'\"$1\"'\").getCollection(\"'\"$2\"'\").find(JSON.parse(process.env.FILTER || \"{}\")).explain(\"queryPlanner\"))'"
       - "emisar"
       - "{{ args.database }}"
       - "{{ args.collection }}"

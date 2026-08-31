@@ -260,6 +260,24 @@ cases:
       - argv: [redis-cli, CONFIG, GET, maxmemory-policy]
         expect:
           stdout_contains: [allkeys-lru]
+  # `dir` + `dbfilename` + a save is a documented arbitrary-file-write chain,
+  # and redis.bgsave is medium (auto-runs under the shipped default policy), so
+  # the write half needs no approval. The parameter allowlist is what stops the
+  # first step; prove the refusal rather than trusting the pattern.
+  - name: redis.config_set-refuses-the-file-write-chain
+    action: redis.config_set
+    args: {parameter: dir, value: /var/lib/redis/.ssh}
+    expect:
+      status: failure
+      # Refused by argument validation before the action runs, so the message
+      # is the run's reason rather than the command's stderr.
+      reason_contains: ["must be one of"]
+    probes:
+      - name: the data directory is unchanged
+        argv: [redis-cli, CONFIG, GET, dir]
+        expect:
+          stdout_contains: [dir]
+          stdout_not_contains: [".ssh"]
   - action: redis.client_kill
     args: {mode: ID}
     arrange:

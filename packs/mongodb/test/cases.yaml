@@ -58,7 +58,10 @@ cases:
       # an object before the action passes it to JSON.parse.
       filter_json: ' {"status":"paid"}'
     expect:
-      stdout_contains: ['"executionStats"', status_1]
+      stdout_contains: ['"queryPlanner"', status_1]
+      # The tier promise: `executionStats` verbosity RUNS the winning plan to
+      # completion, so a low-risk auto-running action must not ask for it.
+      stdout_not_contains: ['"executionStats"']
   - action: mongo.get_parameter
     expect:
       stdout_contains: ['"authenticationMechanisms"']

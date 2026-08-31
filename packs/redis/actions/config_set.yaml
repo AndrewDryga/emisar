@@ -4,10 +4,14 @@ title: CONFIG SET
 kind: exec
 risk: high
 description: >
-  Change one runtime config parameter. Effects are immediate and
-  may include eviction policy, persistence mode, replication
-  behavior. Combine with config_rewrite to persist. Value pattern is
-  restricted to safe characters.
+  Change one runtime tuning parameter. Effects are immediate and may
+  include eviction policy, persistence mode, replication behavior.
+  Combine with config_rewrite to persist. Only the tuning parameters
+  listed on the `parameter` arg may be set: the ones that choose where
+  Redis writes (`dir`, `dbfilename`, `appendfilename`, `logfile`) or
+  hold a credential (`requirepass`, `masterauth`) are deliberately not
+  settable, because together with a save they let this action write an
+  attacker-chosen file anywhere the server can reach.
 side_effects:
   - Runtime behavior changes immediately.
   - Some parameters affect persistence, replication, eviction.
@@ -19,9 +23,48 @@ args:
   - name: parameter
     type: string
     required: true
-    description: Config parameter name.
+    description: >
+      Tuning parameter to set. Redis owns this name space, so it is an
+      allowlist rather than a pattern: `dir` + `dbfilename` + a save is a
+      documented arbitrary-file-write chain, and `requirepass`/`masterauth`
+      would hand over authentication.
     validation:
-      pattern: "^[a-zA-Z0-9_][a-zA-Z0-9_\\-]{0,63}$"
+      allowed:
+        - maxmemory
+        - maxmemory-policy
+        - maxmemory-samples
+        - maxclients
+        - timeout
+        - tcp-keepalive
+        - appendonly
+        - appendfsync
+        - save
+        - stop-writes-on-bgsave-error
+        - loglevel
+        - slowlog-log-slower-than
+        - slowlog-max-len
+        - latency-monitor-threshold
+        - notify-keyspace-events
+        - repl-backlog-size
+        - repl-backlog-ttl
+        - repl-timeout
+        - repl-ping-replica-period
+        - min-replicas-to-write
+        - min-replicas-max-lag
+        - activedefrag
+        - active-expire-effort
+        - lazyfree-lazy-eviction
+        - lazyfree-lazy-expire
+        - lazyfree-lazy-server-del
+        - lazyfree-lazy-user-del
+        - lazyfree-lazy-user-flush
+        - hash-max-listpack-entries
+        - hash-max-listpack-value
+        - list-max-listpack-size
+        - set-max-intset-entries
+        - set-max-listpack-entries
+        - zset-max-listpack-entries
+        - zset-max-listpack-value
   - name: value
     type: string
     required: true
