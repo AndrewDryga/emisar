@@ -22,7 +22,7 @@ defmodule Emisar.Runners do
   """
   use Supervisor
   alias Ecto.Multi
-  alias Emisar.{Accounts, Audit, Auth, Billing, Compat, Crypto, InstallCommand, Repo}
+  alias Emisar.{Accounts, Audit, Auth, Billing, Compat, Crypto, InstallCommand, Repo, SafeText}
   alias Emisar.Auth.Subject
   alias Emisar.RequestContext
   alias Emisar.Runners.{Authorizer, ConnectionChange, EnrollmentKey, InactiveRetentionInput}
@@ -1138,7 +1138,15 @@ defmodule Emisar.Runners do
     |> Enum.filter(&valid_degraded_pack?/1)
     |> Enum.take(@max_degraded_packs)
     |> Enum.map(fn %{"pack" => pack, "reason" => reason} ->
-      %{"pack" => String.slice(pack, 0, 80), "reason" => String.slice(reason, 0, 500)}
+      # The sibling advertised fields are SafeText-checked on the changeset, but
+      # these two are only shape- and size-bounded, and they reach the MCP
+      # `list_runners` issue line the model reads plus the console's degraded
+      # panel. Strip like `RunnerError`: a degraded report is a best-effort
+      # diagnostic, so it must still arrive rather than fail the whole frame.
+      %{
+        "pack" => pack |> SafeText.strip() |> String.slice(0, 80),
+        "reason" => reason |> SafeText.strip() |> String.slice(0, 500)
+      }
     end)
   end
 

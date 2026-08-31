@@ -3,6 +3,7 @@ defmodule Emisar.Runs.ActionRun.Changeset do
   alias Emisar.Crypto
   alias Emisar.Repo.Changeset, as: RepoChangeset
   alias Emisar.Runs.{ActionRun, Attestation}
+  alias Emisar.SafeText
 
   @create_fields ~w[
     account_id runner_id request_id action_id args_raw args_sha256 sensitive_arg_names client_info mcp_client_metadata
@@ -67,6 +68,13 @@ defmodule Emisar.Runs.ActionRun.Changeset do
     |> put_attestation(Map.get(attrs, :attestation))
     |> validate_required([:account_id, :runner_id, :request_id, :action_id, :source, :args_raw])
     |> validate_change(:request_id, &validate_request_id/2)
+    # The justification chain is the text a human reads before approving a
+    # high-risk action, and the model writes it from runner output this product
+    # tells it to distrust. Reject rather than strip: the caller is an LLM that
+    # can retry with clean text, and a bidi override here reverses what the
+    # approver sees. It also keeps NUL out of these text columns, which Postgres
+    # rejects as a raise rather than a changeset error.
+    |> validate_safe_multiline_text([:reason, :evidence, :expected])
     |> validate_length(:reason, max: @max_reason_length)
     |> validate_length(:evidence, max: @max_evidence_length)
     |> validate_length(:expected, max: @max_expected_length)
@@ -140,6 +148,25 @@ defmodule Emisar.Runs.ActionRun.Changeset do
       else: [request_id: "must be a canonical run request id"]
   end
 
+  defp validate_safe_multiline_text(changeset, fields) do
+    Enum.reduce(fields, changeset, fn field, acc ->
+      validate_change(acc, field, fn ^field, value ->
+        if SafeText.unsafe_multiline?(value),
+          do: [{field, "must not contain control or formatting characters"}],
+          else: []
+      end)
+    end)
+  end
+
+  defp strip_unsafe_multiline_text(changeset, fields) do
+    Enum.reduce(fields, changeset, fn field, acc ->
+      update_change(acc, field, fn
+        value when is_binary(value) -> SafeText.strip_multiline(value)
+        value -> value
+      end)
+    end)
+  end
+
   defp action_args_raw(attrs) do
     case Map.get(attrs, :args_raw) || Map.get(attrs, "args_raw") do
       raw when is_binary(raw) -> raw
@@ -198,6 +225,14 @@ defmodule Emisar.Runs.ActionRun.Changeset do
     run
     |> cast(attrs, @transition_fields)
     |> put_change(:status, status)
+    # A terminal result MUST be recordable, so a hostile runner's text is
+    # stripped rather than rejected — refusing it would leave the run unacked and
+    # the runner replaying it forever. Strip before the length checks so they
+    # measure what is stored. `executed_command` reaches the console's command
+    # panel and the CSV/NDJSON audit export, the surfaces a compromised-runner
+    # investigation reads, and it carries a rendered shell program, so its line
+    # breaks survive.
+    |> strip_unsafe_multiline_text([:executed_command, :error_message, :reason_text])
     # reason_text is the runner's terminal reason — a varchar(255) column, so it
     # keeps the DB string cap. Only the dispatch justification `reason` (now a
     # text column) carries the raised @max_reason_length.

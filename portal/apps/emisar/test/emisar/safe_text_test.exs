@@ -31,4 +31,31 @@ defmodule Emisar.SafeTextTest do
       refute SafeText.unsafe?(SafeText.strip("a" <> @rlo <> "b" <> @null))
     end
   end
+
+  describe "unsafe_multiline?/1" do
+    test "line breaks and tabs are safe" do
+      refute SafeText.unsafe_multiline?("line1\nline2")
+      refute SafeText.unsafe_multiline?("a\tb")
+      refute SafeText.unsafe_multiline?("a\r\nb")
+    end
+
+    test "every other control, format, or surrogate character is still unsafe" do
+      assert SafeText.unsafe_multiline?("safe" <> @rlo <> "evil")
+      assert SafeText.unsafe_multiline?("a" <> @null <> "b")
+      assert SafeText.unsafe_multiline?("a\e[31mb")
+    end
+
+    test "a non-binary is safe" do
+      refute SafeText.unsafe_multiline?(nil)
+    end
+  end
+
+  describe "strip_multiline/1" do
+    test "keeps the layout and drops the deception surface" do
+      assert SafeText.strip_multiline("line1\nline2\tend") == "line1\nline2\tend"
+      assert SafeText.strip_multiline("safe" <> @rlo <> "evil") == "safeevil"
+      assert SafeText.strip_multiline("a" <> @null <> "b") == "ab"
+      refute SafeText.unsafe_multiline?(SafeText.strip_multiline("x" <> @rlo <> "\n" <> @null))
+    end
+  end
 end

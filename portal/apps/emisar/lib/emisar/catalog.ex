@@ -33,7 +33,7 @@ defmodule Emisar.Catalog do
   """
   use Supervisor
   alias Ecto.Multi
-  alias Emisar.{Accounts, ActionContract, Audit, Auth, Repo, Runners, Telemetry}
+  alias Emisar.{Accounts, ActionContract, Audit, Auth, Repo, Runners, SafeText, Telemetry}
   alias Emisar.Auth.Subject
   alias Emisar.Catalog.{Authorizer, ConsoleProjection, EditorProjection}
   alias Emisar.Catalog.{MCPProjection, PackBaseline, PackRetentionInput}
@@ -1704,7 +1704,7 @@ defmodule Emisar.Catalog do
   defp normalize_missing_executable(executable)
        when is_binary(executable) and executable != "" do
     executable
-    |> String.replace(~r/[\p{Cc}\p{Cf}\p{Cs}]/u, "")
+    |> SafeText.strip()
     |> String.slice(0, 255)
     |> case do
       "" -> "unknown"

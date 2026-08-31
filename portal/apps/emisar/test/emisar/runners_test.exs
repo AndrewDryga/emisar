@@ -1751,6 +1751,23 @@ defmodule Emisar.RunnersTest do
       assert second["reason"] == String.duplicate("r", 500)
     end
 
+    # The sibling advertised fields are SafeText-checked on the changeset; these
+    # two were only shape- and size-bounded, and they reach the MCP
+    # `list_runners` issue line the model reads and the console's degraded panel.
+    test "strips control and formatting characters from degraded packs", %{account: account} do
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
+      rlo = <<0x202E::utf8>>
+
+      {:ok, updated} =
+        Runners.apply_state(runner, %{
+          "degraded_packs" => [
+            %{"pack" => "cloud" <> rlo <> "-init", "reason" => "parse" <> <<0>> <> " failed"}
+          ]
+        })
+
+      assert [%{"pack" => "cloud-init", "reason" => "parse failed"}] = updated.degraded_packs
+    end
+
     test "caps advertised degraded packs at 32 entries", %{account: account} do
       runner = Fixtures.Runners.create_runner(account_id: account.id)
 

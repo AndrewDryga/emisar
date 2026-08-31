@@ -484,7 +484,13 @@ defmodule Emisar.Catalog.MCPProjection do
   defp degraded_pack_issues(%Runners.Runner{} = runner) do
     if runner_status(runner) == "connected" do
       Enum.map(runner.degraded_packs || [], fn %{"pack" => pack, "reason" => reason} ->
-        issue("pack_load_failed", "Pack #{pack} failed to load on this runner: #{reason}")
+        # Ingest strips these now, but a row advertised before that still holds
+        # whatever the runner sent, and this string is read by the model.
+        issue(
+          "pack_load_failed",
+          "Pack #{Emisar.SafeText.strip(pack)} failed to load on this runner: " <>
+            Emisar.SafeText.strip(reason)
+        )
       end)
     else
       []
