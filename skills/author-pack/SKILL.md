@@ -322,7 +322,7 @@ the resulting trust state through `list_packs`.
 So verify which state your pack is actually in before certifying anything, then
 prove the whole chain through the customer's real MCP client:
 
-1. `list_packs` with `availability: "all"` — the pack's exact version and
+1. `list_packs` with `include: "all"` — the pack's exact version and
    hash appear as executable, with no descriptor or deployment issues. That is
    your trust verification: MCP does not expose pending, rejected, revoked, or
    retirement-blocked refs, so an absent ref sends you back to the portal's

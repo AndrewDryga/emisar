@@ -35,9 +35,16 @@ var (
 	publicMCPTool = regexp.MustCompile("`(list|find|get|run|wait_for|recent|execute|create|update|cancel|approve|deny|describe|search|start|stop)_(action|actions|operation|operations|pack|packs|runner|runners|run|runs|runbook|runbooks)(_[a-z0-9]+)*`")
 	cardPolicy    = regexp.MustCompile(`(?i)\bmust\b|\bnever\b|\bdo[[:space:]]+not\b`)
 	inlineCode    = regexp.MustCompile("`[^`]*`")
-	markdownLink  = regexp.MustCompile(`!?\[[^]]*\]\([^)]+\)`)
-	elixirFence   = regexp.MustCompile("^```elixir\\s*$")
-	fenceClose    = regexp.MustCompile("^```\\s*$")
+	// The two spellings a skill uses to tell a model what to SEND:
+	// `list_packs include=all`, and `list_packs` with `include: "all"`. The
+	// second demands a request-intent connector so that prose describing a
+	// RESPONSE field is never read as an argument citation.
+	skillInlineToolArgs  = regexp.MustCompile("`([a-z_][a-z0-9_]*)((?: +[a-z_][a-z0-9_]*=[^`]*)+)`")
+	skillInlineArgName   = regexp.MustCompile(`([a-z_][a-z0-9_]*)=`)
+	skillAdjacentToolArg = regexp.MustCompile("`([a-z_][a-z0-9_]*)`[^`\n]{0,24}?\\b(?:with|passing|using)\\b[^`\n]{0,12}`([a-z_][a-z0-9_]*)[[:space:]]*:")
+	markdownLink         = regexp.MustCompile(`!?\[[^]]*\]\([^)]+\)`)
+	elixirFence          = regexp.MustCompile("^```elixir\\s*$")
+	fenceClose           = regexp.MustCompile("^```\\s*$")
 	// Only a module DEFINITION is judged. A manual's examples reference real
 	// modules constantly and correctly — `belongs_to :account,
 	// Emisar.Accounts.Account` is the shape we want copied — so matching a bare
@@ -1014,7 +1021,10 @@ func (c *checker) checkPublicSkillMCPTools() {
 		return
 	}
 	var schema struct {
-		Tools map[string]json.RawMessage `json:"tools"`
+		Defs  map[string]mcpSchemaObject `json:"$defs"`
+		Tools map[string]struct {
+			InputSchema mcpSchemaObject `json:"inputSchema"`
+		} `json:"tools"`
 	}
 	if err := json.Unmarshal(data, &schema); err != nil {
 		c.fail("parsing %s: %v", schemaPath, err)
@@ -1023,6 +1033,10 @@ func (c *checker) checkPublicSkillMCPTools() {
 	if len(schema.Tools) == 0 {
 		c.fail("%s contains no MCP tool names", schemaPath)
 		return
+	}
+	arguments := make(map[string]map[string]bool, len(schema.Tools))
+	for name, tool := range schema.Tools {
+		arguments[name] = tool.InputSchema.argumentNames(schema.Defs)
 	}
 	// The pattern must be able to SEE every tool we ship, or a citation of a
 	// near-miss (get_runner for list_runners) is never examined. Assert that here
@@ -1053,7 +1067,68 @@ func (c *checker) checkPublicSkillMCPTools() {
 			line := bytes.Count(data[:match[0]], []byte("\n")) + 1
 			c.fail("%s:%d cites unknown MCP tool %q; update it from %s", path, line, tool, schemaPath)
 		}
+		c.checkSkillToolArguments(path, data, arguments, schemaPath)
 	}
+}
+
+// A tool name that still exists tells us nothing about the ARGUMENTS beside it:
+// renaming list_packs' filter `availability` -> `include` left every shipped
+// skill (and its Cursor mirror) instructing the model to send an argument the
+// portal rejects outright, while this check stayed green on the names alone.
+// Only the two unambiguous request spellings are judged, so prose about a
+// response field ("`list_packs` returns `availability: executable`") is not
+// mistaken for a call.
+func (c *checker) checkSkillToolArguments(path string, data []byte, arguments map[string]map[string]bool, schemaPath string) {
+	report := func(offset int, tool, argument string) {
+		line := bytes.Count(data[:offset], []byte("\n")) + 1
+		c.fail("%s:%d cites MCP tool %q with unknown argument %q; update it from %s",
+			path, line, tool, argument, schemaPath)
+	}
+	for _, match := range skillInlineToolArgs.FindAllSubmatchIndex(data, -1) {
+		tool := string(data[match[2]:match[3]])
+		accepted, known := arguments[tool]
+		if !known {
+			continue
+		}
+		for _, argument := range skillInlineArgName.FindAllSubmatch(data[match[4]:match[5]], -1) {
+			if name := string(argument[1]); !accepted[name] {
+				report(match[0], tool, name)
+			}
+		}
+	}
+	for _, match := range skillAdjacentToolArg.FindAllSubmatchIndex(data, -1) {
+		tool := string(data[match[2]:match[3]])
+		accepted, known := arguments[tool]
+		if !known {
+			continue
+		}
+		if name := string(data[match[4]:match[5]]); !accepted[name] {
+			report(match[0], tool, name)
+		}
+	}
+}
+
+// The published input schema either lists its properties inline or composes the
+// tool's `<name>_arguments` definition through allOf; resolve both so every
+// tool reports the argument names it really accepts.
+type mcpSchemaObject struct {
+	Properties map[string]json.RawMessage `json:"properties"`
+	AllOf      []struct {
+		Ref string `json:"$ref"`
+	} `json:"allOf"`
+}
+
+func (o mcpSchemaObject) argumentNames(defs map[string]mcpSchemaObject) map[string]bool {
+	names := make(map[string]bool)
+	for name := range o.Properties {
+		names[name] = true
+	}
+	for _, member := range o.AllOf {
+		for name := range defs[strings.TrimPrefix(member.Ref, "#/$defs/")].Properties {
+			names[name] = true
+		}
+	}
+	return names
 }
 
 // The Definition of Done binds each commit to its task with a Coop-Task

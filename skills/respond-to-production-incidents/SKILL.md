@@ -115,7 +115,7 @@ supply.
 1. Use `list_runners` to inspect connectivity, disabled state, exact runner
    generations, labels, pack deployments, and reported issues in the requested
    scope.
-2. Use `list_packs` with `availability: "all"` when needed to distinguish an
+2. Use `list_packs` with `include: "all"` when needed to distinguish an
    absent action from a trusted but mismatched or undeployed pack. MCP omits
    untrusted and retirement-blocked refs; an operator checks those states on
    the portal's **Packs** page and in audit history.

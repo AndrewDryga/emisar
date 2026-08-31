@@ -135,14 +135,14 @@
             <code>list_packs</code>
             shows trusted versions, availability, action counts, issues, and exact
             <code>pack_ref</code>
-            values. The default includes executable packs; use <code>availability: "all"</code>
+            values. The default includes executable packs; use <code>include: "all"</code>
             to diagnose trusted unavailable packs.
           </li>
         </ul>
         <.docs_code
           phx-no-format
           label="shell"
-          copy_text={"emisar-mcp list_runners\nemisar-mcp list_runners '{\"statuses\":[\"connected\"]}'\nemisar-mcp list_packs\nemisar-mcp list_packs '{\"availability\":\"all\"}'"}
+          copy_text={"emisar-mcp list_runners\nemisar-mcp list_runners '{\"statuses\":[\"connected\"]}'\nemisar-mcp list_packs\nemisar-mcp list_packs '{\"include\":\"all\"}'"}
         ><span class="text-zinc-500">$</span> emisar-mcp list_runners
 <span class="text-zinc-500">$</span> emisar-mcp list_runners <span class="text-brand-300">'&#123;"statuses":["connected"]&#125;'</span>
 <span class="text-zinc-500">$</span> emisar-mcp list_packs
@@ -394,9 +394,9 @@
           call), and a cursor is bound to the identical query — a mismatched one is rejected.
         </p>
         <p>
-          <code>availability: "executable"</code>
+          <code>include: "executable"</code>
           is the normal path and omits capabilities that
-          cannot run anywhere in scope. <code>availability: "all"</code>
+          cannot run anywhere in scope. <code>include: "all"</code>
           is diagnostic: it preserves
           trusted but unavailable packs and actions together with deployment issues such as no
           connected runner, a missing executable, or a descriptor mismatch. Pending, rejected,

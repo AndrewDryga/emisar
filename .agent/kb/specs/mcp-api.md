@@ -426,7 +426,7 @@ schemas or deployments.
 {
   "pack_id": "postgres",
   "runner_refs": ["postgres-primary~18a65e2f86b2548f847095a6f36d2fc9"],
-  "availability": "executable",
+  "include": "executable",
   "limit": 15,
   "cursor": "opaque"
 }
@@ -437,7 +437,7 @@ schemas or deployments.
 | `pack_id` | Exact pack ID; mutually exclusive with `pack_ref`. |
 | `pack_ref` | Exact ref returned by this tool; mutually exclusive with `pack_id`. |
 | `runner_refs` | Exact refs, distinct, at most 16. |
-| `availability` | `executable` by default; `all` includes diagnostic entries. |
+| `include` | Filter mode: `executable` (default), `unavailable`, or `all`. Distinct from each returned pack's and action's `availability` state. |
 | `limit` | Pack-ref count, 1 through 50; default 15. |
 | `cursor` | Continuation from the same query. |
 
@@ -476,7 +476,7 @@ Unknown properties are rejected.
 }
 ```
 
-The response shape never changes with `availability`; only which pack refs and
+The response shape never changes with `include`; only which pack refs and
 actions qualify changes. `issues` and each action's `availability` are always
 present. The default returns only pack refs with at least one executable action
 and includes only their executable actions. `all` returns every currently
@@ -565,7 +565,7 @@ when the caller may see them.
           "runner_refs": [
             "cassandra-dbcas103~8e9a70d2d45a1f23c8b4ae63da1384f1"
           ],
-          "availability": "all",
+          "include": "all",
           "limit": 15
         }
       },

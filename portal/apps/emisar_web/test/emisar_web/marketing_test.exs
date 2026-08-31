@@ -1761,7 +1761,7 @@ defmodule EmisarWeb.MarketingTest do
       assert html =~ ~s(id="cli-actions")
       assert html =~ ~s(id="cli-runbooks")
       assert html =~ "emisar-mcp list_packs"
-      assert html =~ ~s(&quot;availability&quot;:&quot;all&quot;)
+      assert html =~ ~s(&quot;include&quot;:&quot;all&quot;)
       assert html =~ "find_actions - --json"
       assert html =~ "structuredContent"
       assert html =~ "makes one logical tool invocation"

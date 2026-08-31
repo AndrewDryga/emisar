@@ -242,13 +242,13 @@ large catalogs, and leave line wrapping to your terminal.
 | Command | What it shows | Input worth knowing |
 | --- | --- | --- |
 | `list_runners` | Runner status, hostname, group, labels, available packs, issues, and exact `runner_ref` values | Use JSON to filter by status, runner name/group/host text, runner refs, pack, action, or issues. |
-| `list_packs` | Trusted pack versions, availability, action counts, exact `pack_ref` values, and a command that finds the pack's actions | The default is executable packs. Pass `{"availability":"all"}` to include trusted unavailable packs. |
+| `list_packs` | Trusted pack versions, availability, action counts, exact `pack_ref` values, and a command that finds the pack's actions | The default is executable packs. Pass `{"include":"all"}` to include trusted unavailable packs. |
 
 ```sh
 emisar-mcp list_runners
 emisar-mcp list_runners '{"statuses":["connected"]}'
 emisar-mcp list_packs
-emisar-mcp list_packs '{"availability":"all"}'
+emisar-mcp list_packs '{"include":"all"}'
 ```
 
 Use `emisar-mcp help <tool>` for every argument and its constraints. Fleet list
