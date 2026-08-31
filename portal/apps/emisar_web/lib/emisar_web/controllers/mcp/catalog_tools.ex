@@ -150,6 +150,7 @@ defmodule EmisarWeb.MCP.CatalogTools do
       |> Enum.reject(&is_nil/1)
       |> Enum.sort_by(&{-&1.score, &1.action["action_id"], &1.pack_ref})
       |> cover_query_concepts()
+      |> Enum.with_index(fn candidate, rank -> Map.put(candidate, :rank, rank) end)
 
     if candidates == [] and exact_action_filter?(args) do
       case deployed_pack_ref(snapshot, args) do
@@ -381,10 +382,21 @@ defmodule EmisarWeb.MCP.CatalogTools do
   defp include_deployment?(mode, availability), do: mode == availability
 
   defp paginate_candidates(candidates, scope, args) do
+    # A keyset cursor can only advance through a list that ascends in its key,
+    # and `cover_query_concepts/1` deliberately breaks score order by promoting
+    # concept champions to the head. Paging on a score-derived key therefore
+    # resumed at the first promoted row instead of after the last emitted one —
+    # repeating rows, and returning page 1 verbatim whenever that row was the
+    # head, which is an unbounded loop for a client told to follow `next`
+    # verbatim. Page on the FINAL rank, which ascends by construction whatever
+    # the ranking did; action_id + pack_ref keep the key naming one exact row.
+    # The width is derived from the count so the padding can never overflow.
+    width = candidates |> length() |> Integer.to_string() |> byte_size()
+
     paginate(
       "find_actions",
       candidates,
-      &search_key/1,
+      &search_key(&1, width),
       scope,
       args,
       :candidates,
@@ -823,9 +835,9 @@ defmodule EmisarWeb.MCP.CatalogTools do
     end
   end
 
-  defp search_key(candidate) do
-    String.pad_leading(Integer.to_string(10_000 - candidate.score), 5, "0") <>
-      "\0" <> candidate.action["action_id"] <> "\0" <> candidate.pack_ref
+  defp search_key(candidate, width) do
+    rank = candidate.rank |> Integer.to_string() |> String.pad_leading(width, "0")
+    rank <> "\0" <> candidate.action["action_id"] <> "\0" <> candidate.pack_ref
   end
 
   defp observed_at, do: DateTime.utc_now() |> DateTime.to_iso8601()

@@ -286,10 +286,54 @@ defmodule EmisarWeb.MCPFindActionsRetrievalTest do
     end
   end
 
+  # Concept promotion reorders the head out of score order, and a keyset cursor
+  # can only advance through a list monotone in its key. Paging a promoting
+  # query on a score-derived key resumed at the promoted row rather than after
+  # the last emitted one: rows repeated, and when that row was the head the next
+  # page WAS the previous page, which never terminates for a client the MCP
+  # instructions tell to follow `next` verbatim. Walk the whole chain that way.
+  test "paging a promoting query yields each candidate exactly once", %{conn: conn} do
+    query =
+      "Measure current uptime and load averages, filesystem disk usage, and demonstrate " <>
+        "parsed JSON output with a session-token field redacted, across every currently " <>
+        "connected runner"
+
+    paged = drain_find_actions(conn, %{"query" => query, "limit" => 5}, 200)
+
+    assert paged == Enum.uniq(paged),
+           "a continuation repeated candidates: #{inspect(paged -- Enum.uniq(paged))}"
+
+    # Nothing is skipped either, and the ranking survives paging: a full first
+    # page must be the prefix of the drained sequence, in order.
+    reference =
+      conn
+      |> rpc_find_actions(%{"query" => query, "limit" => 15})
+      |> Map.fetch!("candidates")
+      |> Enum.map(&{&1["action_id"], &1["pack_ref"]})
+
+    assert Enum.take(paged, length(reference)) == reference
+  end
+
   test "an exact action id outranks every lexical distractor", %{conn: conn} do
     for action_id <- ~w(postgres.replication_lag nomad.alloc_logs redis.info linux.disk_usage) do
       assert [%{"action_id" => ^action_id} | _rest] =
                conn |> rpc_find_actions(%{"action_id" => action_id}) |> Map.fetch!("candidates")
+    end
+  end
+
+  # Budgeted so a re-broken cursor fails the suite instead of hanging it.
+  defp drain_find_actions(conn, arguments, budget) do
+    if budget == 0, do: flunk("find_actions kept handing back a continuation")
+
+    result = rpc_find_actions(conn, arguments)
+    page = Enum.map(result["candidates"], &{&1["action_id"], &1["pack_ref"]})
+
+    case result["next"] do
+      %{"tool" => "find_actions", "arguments" => next_arguments} ->
+        page ++ drain_find_actions(conn, next_arguments, budget - 1)
+
+      _absent ->
+        page
     end
   end
 
