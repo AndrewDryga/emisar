@@ -295,6 +295,27 @@ fetch_release_files() {
     curl --proto '=https' --proto-redir '=https' --tlsv1.2 --connect-timeout 15 --max-time 300 --retry 2 -fsSL -o "${tmp}/SHA256SUMS-MCP" "${base}/SHA256SUMS-MCP"
 }
 
+# A named function rather than an inline block, so the behavior suite can drive
+# the refusal directly — on a host without `gh` the attestation step degrades to
+# a warning, which makes this comparison the only thing standing between a
+# tampered download and execution. install.sh's sha_verify is named for the
+# same reason.
+verify_release_checksum() {
+  local tmp="$1" tarball="$2"
+  if command -v sha256sum >/dev/null 2>&1; then
+    sha_check() { sha256sum -c -; }
+  elif command -v shasum >/dev/null 2>&1; then
+    sha_check() { shasum -a 256 -c -; }
+  else
+    die "neither sha256sum nor shasum found — cannot verify download"
+  fi
+
+  (
+    cd "${tmp}"
+    grep -E "  ${tarball}\$" SHA256SUMS-MCP | sha_check
+  ) || die "checksum verification failed for ${tarball}"
+}
+
 # Same TTY-fallback prompt the runner installer uses — curl|bash makes
 # stdin the script content, not a terminal, so a plain `read` consumes
 # the next line of the script. See install.sh for the longer rationale.
@@ -662,20 +683,17 @@ if ! fetch_release_files "$BASE_URL" "$tmp"; then
 fi
 
 log "verifying checksum"
+# sha_value is the staging/activation integrity helper used further down;
+# verify_release_checksum owns the download comparison itself.
 if command -v sha256sum >/dev/null 2>&1; then
-  sha_check() { sha256sum -c -; }
   sha_value() { sha256sum "$1" | awk '{print $1}'; }
 elif command -v shasum >/dev/null 2>&1; then
-  sha_check() { shasum -a 256 -c -; }
   sha_value() { shasum -a 256 "$1" | awk '{print $1}'; }
 else
   die "neither sha256sum nor shasum found — cannot verify download"
 fi
 
-(
-  cd "${tmp}"
-  grep -E "  ${TARBALL}\$" SHA256SUMS-MCP | sha_check
-) || die "checksum verification failed for ${TARBALL}"
+verify_release_checksum "${tmp}" "${TARBALL}"
 
 # The checksum proves the tarball matches SHA256SUMS-MCP; it says nothing about
 # who produced either, since both come from the same release. The Sigstore build

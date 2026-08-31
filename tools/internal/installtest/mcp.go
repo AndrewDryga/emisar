@@ -3,6 +3,7 @@
 package installtest
 
 import (
+	"bytes"
 	"fmt"
 	"io"
 	"os"
@@ -30,6 +31,7 @@ func MCP(root string, out io.Writer) error {
 		{"install confirmation prompt", mcpConfirmPrompt},
 		{"GitHub token argv hygiene", func(h *harness) error { return githubTokenHygiene(h, "install-mcp.sh") }},
 		{"attestation release epochs", mcpAttestationReleaseEpochs},
+		{"download checksum mismatch", mcpDownloadChecksum},
 		{"latest release resolution", mcpLatestRelease},
 		{"installation and rollback", mcpInstallRollback},
 		{"staging integrity", mcpStagingIntegrity},
@@ -990,6 +992,55 @@ func mcpUninstall(h *harness) error {
 	if _, err := h.successful(h.root, environment,
 		"bash", h.repoPath("install-mcp.sh"), "--uninstall", "--yes", "--install-dir", bin); err != nil {
 		return err
+	}
+	return nil
+}
+
+// Same reasoning as the runner lane: without `gh` the attestation degrades to a
+// warning, so this comparison is the only control between a tampered download
+// and execution — and no case drove it. Exercises the installer's own
+// verify_release_checksum, with a matching-sums control so the refusal cannot
+// pass for an unrelated reason.
+func mcpDownloadChecksum(h *harness) error {
+	const wrongDigest = "0000000000000000000000000000000000000000000000000000000000000000"
+	preamble := `
+die() { printf '%s\n' "$*" >&2; exit 1; }
+tarball=emisar-mcp-9.9.9-linux-amd64.tar.gz
+tmp="$(mktemp -d)"
+printf 'payload\n' >"${tmp}/${tarball}"
+digest_of() {
+  if command -v sha256sum >/dev/null 2>&1; then
+    sha256sum "$1" | awk '{print $1}'
+  else
+    shasum -a 256 "$1" | awk '{print $1}'
+  fi
+}
+`
+	names := []string{"verify_release_checksum"}
+
+	tampered := h.functions(h.repoPath("install-mcp.sh"), names, preamble+`
+printf '%s  %s\n' "`+wrongDigest+`" "$tarball" >"${tmp}/SHA256SUMS-MCP"
+verify_release_checksum "$tmp" "$tarball"
+printf 'CONTINUED\n' >&2
+`, nil)
+	if err := expectFailure(tampered, "checksum verification failed"); err != nil {
+		return fmt.Errorf("a tampered tarball was not refused: %w", err)
+	}
+	if bytes.Contains(tampered.output, []byte("CONTINUED")) {
+		return fmt.Errorf("install continued past the checksum mismatch:\n%s", tampered.output)
+	}
+
+	honest := h.functions(h.repoPath("install-mcp.sh"), names, preamble+`
+printf '%s  %s\n' "$(digest_of "${tmp}/${tarball}")" "$tarball" >"${tmp}/SHA256SUMS-MCP"
+verify_release_checksum "$tmp" "$tarball"
+printf 'CONTINUED\n' >&2
+`, nil)
+	output, err := requireOutput(honest)
+	if err != nil {
+		return fmt.Errorf("a matching checksum was refused: %w", err)
+	}
+	if !bytes.Contains(output, []byte("CONTINUED")) {
+		return fmt.Errorf("the verified path did not continue:\n%s", output)
 	}
 	return nil
 }

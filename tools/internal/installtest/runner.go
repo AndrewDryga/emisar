@@ -54,6 +54,7 @@ func runnerChecks() []runnerCheck {
 		{"owned directory validation", false, runnerOwnedDirectoryValidation},
 		{"GitHub token argv hygiene", false, func(h *harness) error { return githubTokenHygiene(h, "install.sh") }},
 		{"attestation release epochs", false, runnerAttestationReleaseEpochs},
+		{"download checksum mismatch", false, runnerDownloadChecksum},
 		{"enrollment state transitions", true, runnerEnrollmentState},
 		{"binary installation rollback", true, runnerInstallRollback},
 		{"signal-interrupted rollback", false, runnerSignalRollback},
@@ -1022,6 +1023,80 @@ func runnerConfigValueValidation(h *harness) error {
 		if result.err == nil {
 			return fmt.Errorf("value %q would have been baked into config.yaml", value)
 		}
+	}
+	return nil
+}
+
+// The download checksum is the ONLY integrity control on a host without `gh`:
+// verify_attestation degrades to a warning there, so a tampered tarball is
+// stopped by this comparison or not at all. Nothing exercised the mismatch,
+// which meant a regression that let a bad tarball through — a dropped `|| die`,
+// a grep that stopped matching — would have left every gate green. Drive the
+// real download_release, with only the network and the attestation stubbed.
+func runnerDownloadChecksum(h *harness) error {
+	// A digest of the right shape that cannot be the tarball's.
+	const wrongDigest = "0000000000000000000000000000000000000000000000000000000000000000"
+	preamble := `
+REPO=example/fork
+OFFICIAL_REPO=emisar/official
+OS=linux
+ARCH=amd64
+TARBALL=emisar-9.9.9-linux-amd64.tar.gz
+log() { :; }
+warn() { :; }
+die() { printf '%s\n' "$*" >&2; exit 1; }
+github_release_base() { printf 'https://example.invalid/%s\n' "$1"; }
+verify_attestation() { printf 'ATTESTATION REACHED\n' >&2; }
+digest_of() {
+  if command -v sha256sum >/dev/null 2>&1; then
+    sha256sum "$1" | awk '{print $1}'
+  else
+    shasum -a 256 "$1" | awk '{print $1}'
+  fi
+}
+build_tarball() {
+  dir="$1"
+  mkdir -p "${dir}/emisar-9.9.9-linux-amd64"
+  printf 'binary\n' >"${dir}/emisar-9.9.9-linux-amd64/emisar"
+  tar -C "${dir}" -czf "${dir}/${TARBALL}" emisar-9.9.9-linux-amd64
+  rm -rf "${dir}/emisar-9.9.9-linux-amd64"
+}
+`
+	tampered := h.functions(h.repoPath("install.sh"), []string{"download_release", "sha_verify"}, preamble+`
+fetch_release_files() {
+  dir="$3"
+  build_tarball "$dir"
+  printf '%s  %s\n' "`+wrongDigest+`" "$TARBALL" >"${dir}/SHA256SUMS"
+}
+tmp="$(mktemp -d)"
+download_release runner-v9.9.9 "$tmp"
+`, nil)
+	if err := expectFailure(tampered, "checksum verification failed"); err != nil {
+		return fmt.Errorf("a tampered tarball was not refused: %w", err)
+	}
+	// Refused BEFORE the provenance check and before anything is unpacked —
+	// otherwise "fails closed" would only mean "fails eventually".
+	if strings.Contains(string(tampered.output), "ATTESTATION REACHED") {
+		return fmt.Errorf("install continued past the checksum mismatch:\n%s", tampered.output)
+	}
+
+	// The control: the identical path with an honest SHA256SUMS must succeed,
+	// so the refusal above cannot be passing for some unrelated reason.
+	honest := h.functions(h.repoPath("install.sh"), []string{"download_release", "sha_verify"}, preamble+`
+fetch_release_files() {
+  dir="$3"
+  build_tarball "$dir"
+  printf '%s  %s\n' "$(digest_of "${dir}/${TARBALL}")" "$TARBALL" >"${dir}/SHA256SUMS"
+}
+tmp="$(mktemp -d)"
+download_release runner-v9.9.9 "$tmp"
+`, nil)
+	output, err := requireOutput(honest)
+	if err != nil {
+		return fmt.Errorf("a matching checksum did not install: %w", err)
+	}
+	if !strings.Contains(string(output), "ATTESTATION REACHED") {
+		return fmt.Errorf("the verified path never reached attestation:\n%s", output)
 	}
 	return nil
 }
