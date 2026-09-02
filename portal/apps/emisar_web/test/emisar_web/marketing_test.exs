@@ -1353,6 +1353,8 @@ defmodule EmisarWeb.MarketingTest do
       assert html =~ "Pack CI runs only what changed"
       assert html =~ "Signed dispatch uses your own PKI"
       assert html =~ "Identity and session flows now carry current authority"
+      assert html =~ "The v1 hardening pass"
+      assert html =~ "This release closes a full pre-1.0 security audit"
       assert html =~ "SSO and directory access, end to end"
       assert html =~ "Directory groups now grant access through the exact group resource"
 
@@ -1386,6 +1388,7 @@ defmodule EmisarWeb.MarketingTest do
       assert html =~ "v0.41.1"
       assert html =~ "v0.42.0"
       assert html =~ "v0.43.0"
+      assert html =~ "v0.44.0"
       assert html =~ "v0.15.0"
 
       # The first-party RSS feed, the repo, and the "see all" out-link.

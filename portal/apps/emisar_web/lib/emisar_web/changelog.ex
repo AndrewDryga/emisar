@@ -17,6 +17,50 @@ defmodule EmisarWeb.Changelog do
 
   @entries [
     %{
+      date: ~D[2026-09-02],
+      slug: "the-v1-hardening-pass",
+      title: "The v1 hardening pass",
+      tag: "v0.44.0",
+      summary:
+        "This release closes a full pre-1.0 security audit. Runners now reject a malformed or wrong-version dispatch at the wire, before it can reach a host, keep each pack's execution inside its own tree, and refuse credential state they do not own. Most of the pack catalog was republished: three actions were corrected to describe the change they actually make, more secret-bearing reads are redacted at the source, and versions that could print credentials were retired across the fleet. Signed dispatch, the MCP bridge, and both installers each close edge cases the audit found, and every runner and bridge binary now ships from a trusted publisher with signed checksums and provenance you can verify before you install.",
+      details: [
+        {"Security",
+         [
+           "Patched the OIDC library for a HIGH-severity SSO authentication-bypass advisory, and now reject control and bidirectional characters at ingest so they cannot reach an approval or audit surface.",
+           "The raw session cookie no longer reaches LiveView assigns, and a spoofable staff operator id no longer reaches a customer's audit trail.",
+           "Both installers fail closed on a tampered download: a checksum that does not match stops the install."
+         ]},
+        {"Runner",
+         [
+           "A dispatch that fails to decode, or carries the wrong wire-protocol version, is rejected at the wire and journaled; a protocol mismatch is now permanent, not a retry.",
+           "Each pack runs contained to its own tree, the runner's journal is protected from path-argument actions, and the runner refuses a credential file it does not own or that is reached through a symlink.",
+           "status is a single-shot report, an interrupted action has its whole process group killed, and SIGHUP reloads the full config."
+         ]},
+        {"MCP",
+         [
+           "find_actions pages on rank, so promoting a concept can no longer loop or skip results.",
+           "Several OAuth and MCP responses that reported the wrong thing to a client were corrected, and the device poll buckets per authorization so concurrent installs behind one address do not exhaust each other."
+         ]},
+        {"Packs",
+         [
+           "Most of the catalog was republished. Three actions were corrected to describe the change they make, and several reads that could answer with a false all-clear now report honestly.",
+           "Secret-bearing reads redact more at the source, including Redis ACLs, pm2 environments, and secret-named variants, and versions that printed credentials, including old minio releases, were retired across the fleet.",
+           "Privileged packs ship an exact host-access recipe, and every pack's curl runs with the user curlrc disabled."
+         ]},
+        {"Platform",
+         [
+           "Portal pages load faster and their cost is measurable, a paid plan's entitlements follow the subscription lifecycle, and Paddle runner quantities stay in sync.",
+           "A requester can withdraw a run that is still waiting for approval.",
+           "Every runner and bridge release is built by a trusted publisher workflow with signed checksum attestations, and every Docker image CI builds or ships is pinned."
+         ]},
+        {"Website",
+         [
+           "Disclosed X as an analytics processor, stopped the Free plan advertising a support channel it does not include, and corrected homepage and audit-capability claims.",
+           "Verified the GitHub org behind emisar.dev and stated the standing security-support policy."
+         ]}
+      ]
+    },
+    %{
       date: ~D[2026-08-25],
       slug: "sso-and-directory-access-end-to-end",
       title: "SSO and directory access, end to end",
