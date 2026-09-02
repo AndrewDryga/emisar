@@ -16,7 +16,7 @@ defmodule EmisarWeb.AuditExportControllerTest do
     * Unauthenticated → 401
   """
   use EmisarWeb.ConnCase, async: true
-  alias Emisar.{Accounts, Audit, PublicUrl}
+  alias Emisar.{Accounts, Audit, PublicUrl, Repo}
 
   setup do
     {user, account, subject} = Fixtures.Subjects.owner_subject()
@@ -529,6 +529,37 @@ defmodule EmisarWeb.AuditExportControllerTest do
   end
 
   describe "serialized row shape" do
+    test "strips hostile metadata from historical rows", %{
+      conn: conn,
+      account: account,
+      raw_key: raw
+    } do
+      _event =
+        %Audit.Event{
+          account_id: account.id,
+          occurred_at: DateTime.utc_now(),
+          event_type: "audit.test.historical",
+          actor_kind: "system"
+        }
+        |> Ecto.Changeset.change(
+          ip_address: "203.0." <> <<27>> <> "113.7",
+          user_agent: "agent\u202Etxt",
+          request_id: "req\u200D123"
+        )
+        |> Repo.insert!()
+
+      [event] =
+        conn
+        |> bearer(raw)
+        |> get(~p"/api/audit?event_type=audit.test.historical")
+        |> ndjson()
+        |> parse_ndjson()
+
+      assert event["ip_address"] == "203.0.113.7"
+      assert event["user_agent"] == "agenttxt"
+      assert event["request_id"] == "req123"
+    end
+
     test "omits auth_method / mfa / user_identity_id from the feed", %{
       conn: conn,
       account: account,

@@ -19,6 +19,8 @@ defmodule Emisar.RequestContext do
   snapshotted onto the MCP action run — never a policy/approval/authorization
   input.
   """
+  alias Emisar.SafeText
+
   defstruct ip_address: nil,
             user_agent: nil,
             request_id: nil,
@@ -36,5 +38,17 @@ defmodule Emisar.RequestContext do
   other keys are ignored, so a boundary can hand over its raw capture
   without pre-filtering.
   """
-  def new(fields \\ %{}), do: struct(__MODULE__, fields)
+  def new(fields \\ %{}) do
+    context = struct(__MODULE__, fields)
+
+    %{
+      context
+      | ip_address: safe_request_metadata(context.ip_address),
+        user_agent: safe_request_metadata(context.user_agent),
+        request_id: safe_request_metadata(context.request_id)
+    }
+  end
+
+  defp safe_request_metadata(value) when is_binary(value), do: SafeText.strip(value)
+  defp safe_request_metadata(value), do: value
 end

@@ -75,6 +75,25 @@ defmodule EmisarWeb.AuditLiveTest do
       refute html =~ "outside your pack access"
     end
 
+    test "strips hostile metadata from historical rows", %{conn: conn} do
+      {conn, _user, account} = register_and_log_in(conn)
+
+      event =
+        %Audit.Event{
+          account_id: account.id,
+          occurred_at: DateTime.utc_now(),
+          event_type: "audit.test.historical"
+        }
+        |> Ecto.Changeset.change(ip_address: "203.0." <> <<27>> <> "113.7")
+        |> Repo.insert!()
+
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/audit")
+      row = lv |> element("#event-#{event.id}") |> render()
+
+      assert row =~ "203.0.113.7"
+      refute row =~ <<27>>
+    end
+
     test "renders stable copy instead of runner transport diagnostics", %{conn: conn} do
       {conn, _user, account} = register_and_log_in(conn)
 

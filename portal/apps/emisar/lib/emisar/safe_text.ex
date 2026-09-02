@@ -1,8 +1,9 @@
 defmodule Emisar.SafeText do
   @moduledoc """
-  One predicate for the characters that must never survive ingest from a runner,
-  an LLM, or an operator: control (`\\p{Cc}`), format (`\\p{Cf}` — including the
-  bidi overrides like U+202E), and surrogate (`\\p{Cs}`) code points.
+  One predicate for text that must never survive ingest from a runner, an LLM,
+  or an operator: invalid UTF-8 plus control (`\\p{Cc}`), format (`\\p{Cf}` —
+  including the bidi overrides like U+202E), and surrogate (`\\p{Cs}`) code
+  points.
 
   They enable deception and anti-forensics — a hostile runner or MCP client that
   slips one into a hostname, error message, or client label lands it in the audit
@@ -22,9 +23,11 @@ defmodule Emisar.SafeText do
   # renderer obeys), and NUL (which Postgres rejects outright in a text column).
   @unsafe_beyond_line_breaks ~r/(?![\n\r\t])[\p{Cc}\p{Cf}\p{Cs}]/u
 
-  @doc "Whether `value` contains a control, format, or surrogate character."
+  @doc "Whether `value` contains invalid UTF-8, a control, format, or surrogate character."
   @spec unsafe?(term()) :: boolean()
-  def unsafe?(value) when is_binary(value), do: Regex.match?(@unsafe, value)
+  def unsafe?(value) when is_binary(value),
+    do: not String.valid?(value) or Regex.match?(@unsafe, value)
+
   def unsafe?(_value), do: false
 
   @doc """
@@ -34,16 +37,20 @@ defmodule Emisar.SafeText do
   """
   @spec unsafe_multiline?(term()) :: boolean()
   def unsafe_multiline?(value) when is_binary(value),
-    do: Regex.match?(@unsafe_beyond_line_breaks, value)
+    do: not String.valid?(value) or Regex.match?(@unsafe_beyond_line_breaks, value)
 
   def unsafe_multiline?(_value), do: false
 
   @doc "Strips every control, format, and surrogate character from `value`."
   @spec strip(String.t()) :: String.t()
-  def strip(value) when is_binary(value), do: String.replace(value, @unsafe, "")
+  def strip(value) when is_binary(value),
+    do: value |> String.replace_invalid("") |> String.replace(@unsafe, "")
 
   @doc "Strips unsafe characters from `value`, keeping its line breaks and tabs."
   @spec strip_multiline(String.t()) :: String.t()
-  def strip_multiline(value) when is_binary(value),
-    do: String.replace(value, @unsafe_beyond_line_breaks, "")
+  def strip_multiline(value) when is_binary(value) do
+    value
+    |> String.replace_invalid("")
+    |> String.replace(@unsafe_beyond_line_breaks, "")
+  end
 end

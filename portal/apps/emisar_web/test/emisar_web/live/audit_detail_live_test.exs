@@ -1,7 +1,34 @@
 defmodule EmisarWeb.AuditDetailLiveTest do
   use EmisarWeb.ConnCase, async: true
   import Phoenix.LiveViewTest
-  alias Emisar.{Audit, RequestContext, Runs}
+  alias Emisar.{Audit, Repo, RequestContext, Runs}
+
+  test "strips hostile metadata from a historical event", %{conn: conn} do
+    {conn, _user, account} = register_and_log_in(conn)
+
+    event =
+      %Audit.Event{
+        account_id: account.id,
+        occurred_at: DateTime.utc_now(),
+        event_type: "audit.test.historical",
+        actor_kind: "system"
+      }
+      |> Ecto.Changeset.change(
+        ip_address: "203.0." <> <<27>> <> "113.7",
+        user_agent: "curl\u202E/8",
+        request_id: "req\u200D123"
+      )
+      |> Repo.insert!()
+
+    {:ok, _lv, html} = live(conn, ~p"/app/#{account}/audit/#{event.id}")
+
+    assert html =~ "203.0.113.7"
+    assert html =~ "curl/8"
+    assert html =~ "req123"
+    refute html =~ <<27>>
+    refute html =~ "\u202E"
+    refute html =~ "\u200D"
+  end
 
   test "an action_run event shows the runner under the subject, not as a device", %{conn: conn} do
     {conn, _user, account} = register_and_log_in(conn)

@@ -52,13 +52,31 @@ defmodule Emisar.AuditTest do
       {:ok, event} =
         Audit.log(account.id, "audit.test",
           actor_kind: "system",
-          user_agent: String.duplicate("A", 500)
+          user_agent: String.duplicate("\u202E", 100) <> String.duplicate("A", 500)
         )
 
       # The insert SUCCEEDS — a giant `user-agent` on a failed sign-in
       # can't suppress the audit row — and the value is bounded to the
       # varchar(255) column rather than overflowing it.
-      assert String.length(event.user_agent) == 255
+      # Strip before truncation, so hostile codepoints cannot consume the
+      # evidence budget and leave fewer than 255 printable characters.
+      assert event.user_agent == String.duplicate("A", 255)
+    end
+
+    test "unsafe request metadata is stripped without suppressing the audit row", %{
+      account: account
+    } do
+      {:ok, event} =
+        Audit.log(account.id, "audit.test",
+          actor_kind: "system",
+          ip_address: "203.0." <> <<0, 27>> <> "113.7",
+          user_agent: "agent\u202Etxt",
+          request_id: "req\u200D123"
+        )
+
+      assert event.ip_address == "203.0.113.7"
+      assert event.user_agent == "agenttxt"
+      assert event.request_id == "req123"
     end
 
     # normalize/1 uses String.to_existing_atom (IL-14): an
@@ -569,6 +587,41 @@ defmodule Emisar.AuditTest do
       account = Fixtures.Accounts.create_account()
       subject = Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account, role: :owner)
       %{account: account, subject: subject}
+    end
+
+    test "cleans historical request metadata from every authorized read", %{
+      account: account,
+      subject: subject
+    } do
+      Fixtures.Accounts.create_subscription(account, "team")
+
+      historical =
+        %Audit.Event{
+          account_id: account.id,
+          occurred_at: DateTime.utc_now(),
+          event_type: "audit.test.historical"
+        }
+        |> Ecto.Changeset.change(
+          ip_address: "203.0." <> <<27>> <> "113.7",
+          user_agent: "agent\u202Etxt",
+          request_id: "req\u200D123"
+        )
+        |> Repo.insert!()
+
+      assert Repo.get!(Audit.Event, historical.id).user_agent == "agent\u202Etxt"
+
+      assert {:ok, listed_events, _metadata} = Audit.list_events(subject)
+      listed = Enum.find(listed_events, &(&1.id == historical.id))
+      assert_safe_request_metadata(listed)
+
+      assert {:ok, exported_events} =
+               Audit.list_for_export(subject, event_types: ["audit.test.historical"])
+
+      assert [exported] = exported_events
+      assert_safe_request_metadata(exported)
+
+      assert {:ok, fetched} = Audit.fetch_event_by_id(historical.id, subject)
+      assert_safe_request_metadata(fetched)
     end
 
     test "page size + Next cursor walk through every row in order", %{
@@ -2554,6 +2607,12 @@ defmodule Emisar.AuditTest do
   end
 
   # -- Taxonomy helpers ------------------------------------------------
+
+  defp assert_safe_request_metadata(event) do
+    assert event.ip_address == "203.0.113.7"
+    assert event.user_agent == "agenttxt"
+    assert event.request_id == "req123"
+  end
 
   # A reader of the WHOLE trail. The facet accessors narrow their vocabulary to
   # the subject's readable event types, so the panel goldens above need a subject

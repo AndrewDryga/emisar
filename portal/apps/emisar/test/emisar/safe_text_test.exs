@@ -4,12 +4,14 @@ defmodule Emisar.SafeTextTest do
 
   @rlo <<0x202E::utf8>>
   @null <<0>>
+  @invalid <<0xFF>>
 
   describe "unsafe?/1" do
     test "detects control, format, and surrogate characters" do
       assert SafeText.unsafe?("db-" <> @rlo <> "prod")
       assert SafeText.unsafe?("line" <> @null)
       assert SafeText.unsafe?("tab\there")
+      assert SafeText.unsafe?("invalid" <> @invalid)
     end
 
     test "ordinary text (incl. multibyte) is safe" do
@@ -28,6 +30,7 @@ defmodule Emisar.SafeTextTest do
     test "removes the offending characters and keeps the rest" do
       assert SafeText.strip("db-" <> @rlo <> "prod") == "db-prod"
       assert SafeText.strip("keep" <> @null) == "keep"
+      assert SafeText.strip("keep" <> @invalid <> "going") == "keepgoing"
       refute SafeText.unsafe?(SafeText.strip("a" <> @rlo <> "b" <> @null))
     end
   end
@@ -43,6 +46,7 @@ defmodule Emisar.SafeTextTest do
       assert SafeText.unsafe_multiline?("safe" <> @rlo <> "evil")
       assert SafeText.unsafe_multiline?("a" <> @null <> "b")
       assert SafeText.unsafe_multiline?("a\e[31mb")
+      assert SafeText.unsafe_multiline?("invalid" <> @invalid)
     end
 
     test "a non-binary is safe" do
@@ -55,6 +59,7 @@ defmodule Emisar.SafeTextTest do
       assert SafeText.strip_multiline("line1\nline2\tend") == "line1\nline2\tend"
       assert SafeText.strip_multiline("safe" <> @rlo <> "evil") == "safeevil"
       assert SafeText.strip_multiline("a" <> @null <> "b") == "ab"
+      assert SafeText.strip_multiline("a" <> @invalid <> "b") == "ab"
       refute SafeText.unsafe_multiline?(SafeText.strip_multiline("x" <> @rlo <> "\n" <> @null))
     end
   end

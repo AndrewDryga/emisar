@@ -30,7 +30,7 @@ defmodule Emisar.Audit do
   alias Emisar.Audit.{Authorizer, CSVExport, Event, Events}
   alias Emisar.Auth
   alias Emisar.Auth.Subject
-  alias Emisar.{Billing, Crypto, Repo, RequestContext, Runs}
+  alias Emisar.{Billing, Crypto, Repo, RequestContext, Runs, SafeText}
 
   def start_link(opts) do
     Supervisor.start_link(__MODULE__, opts, name: __MODULE__.Supervisor)
@@ -375,6 +375,7 @@ defmodule Emisar.Audit do
       |> filter_by_target_id(target_id)
       |> Authorizer.for_subject(subject)
       |> Repo.list(Event.Query, opts)
+      |> safe_event_page()
     end
   end
 
@@ -585,6 +586,7 @@ defmodule Emisar.Audit do
         |> Event.Query.limit_to(limit)
         |> Authorizer.for_subject(subject)
         |> Repo.all()
+        |> Enum.map(&safe_event_request_metadata/1)
 
       {:ok, events}
     end
@@ -666,11 +668,34 @@ defmodule Emisar.Audit do
       |> Event.Query.by_id(id)
       |> Authorizer.for_subject(subject)
       |> Repo.fetch(Event.Query)
+      |> safe_event_result()
     else
       false -> {:error, :not_found}
       other -> other
     end
   end
+
+  defp safe_event_page({:ok, events, metadata}),
+    do: {:ok, Enum.map(events, &safe_event_request_metadata/1), metadata}
+
+  defp safe_event_page(result), do: result
+
+  defp safe_event_result({:ok, %Event{} = event}),
+    do: {:ok, safe_event_request_metadata(event)}
+
+  defp safe_event_result(result), do: result
+
+  defp safe_event_request_metadata(%Event{} = event) do
+    %{
+      event
+      | ip_address: safe_request_metadata(event.ip_address),
+        user_agent: safe_request_metadata(event.user_agent),
+        request_id: safe_request_metadata(event.request_id)
+    }
+  end
+
+  defp safe_request_metadata(value) when is_binary(value), do: SafeText.strip(value)
+  defp safe_request_metadata(value), do: value
 
   @doc """
   Bulk-resolves the labels for every actor + subject referenced by the

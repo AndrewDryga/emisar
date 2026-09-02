@@ -154,5 +154,31 @@ defmodule EmisarWeb.AuditDownloadControllerTest do
 
       assert body =~ "\"\t=HYPERLINK(\"\"https://attacker.test\"\")\""
     end
+
+    test "strips hostile metadata from historical CSV rows", %{conn: conn} do
+      {conn, _user, account} = register_and_log_in(conn)
+      Fixtures.Accounts.create_subscription(account, "team")
+
+      _event =
+        %Audit.Event{
+          account_id: account.id,
+          occurred_at: DateTime.utc_now(),
+          event_type: "user.invited",
+          actor_kind: "system"
+        }
+        |> Ecto.Changeset.change(
+          ip_address: "203.0." <> <<27>> <> "113.7",
+          request_id: "req\u200D123"
+        )
+        |> Repo.insert!()
+
+      body =
+        conn |> get(~p"/app/#{account}/audit/download?event_type=user.invited") |> response(200)
+
+      assert body =~ "203.0.113.7"
+      assert body =~ "req123"
+      refute body =~ <<27>>
+      refute body =~ "\u200D"
+    end
   end
 end

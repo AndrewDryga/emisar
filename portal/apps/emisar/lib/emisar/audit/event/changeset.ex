@@ -2,6 +2,7 @@ defmodule Emisar.Audit.Event.Changeset do
   use Emisar, :changeset
   alias Emisar.Audit.Event
   alias Emisar.Repo.Changeset, as: RepoChangeset
+  alias Emisar.SafeText
 
   # Request-metadata is attacker-controllable on unauthenticated paths (a
   # failed sign-in carries the client's `user-agent` and forwarded IP).
@@ -37,10 +38,20 @@ defmodule Emisar.Audit.Event.Changeset do
       :user_identity_id,
       :payload
     ])
+    |> strip_unsafe_request_meta()
     |> truncate_request_meta()
     |> truncate_payload()
     |> validate_required([:account_id, :occurred_at, :event_type])
   end
+
+  defp strip_unsafe_request_meta(changeset) do
+    Enum.reduce(@request_meta_fields, changeset, fn field, changeset ->
+      update_change(changeset, field, &strip_unsafe_request_meta_value/1)
+    end)
+  end
+
+  defp strip_unsafe_request_meta_value(value) when is_binary(value), do: SafeText.strip(value)
+  defp strip_unsafe_request_meta_value(value), do: value
 
   defp truncate_request_meta(changeset) do
     RepoChangeset.truncate_codepoints(changeset, @request_meta_fields, @request_meta_limit)
