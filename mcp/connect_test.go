@@ -51,9 +51,20 @@ func TestParseConnectArgs(t *testing.T) {
 		{name: "url without a value", args: []string{"--url"}, wantErr: true},
 		{name: "all with client", args: []string{"--all", "--client", "cursor"}, wantErr: true},
 		{name: "unknown option", args: []string{"--everything"}, wantErr: true},
+		{name: "yes is disconnect only", args: []string{"--yes"}, wantErr: true},
 		{name: "forget is disconnect only", args: []string{"--forget"}, wantErr: true},
 		{name: "auto-permit is connect only", args: []string{"--auto-permit"}, disconnect: true, wantErr: true},
 		{name: "url is connect only", args: []string{"--url", "https://x"}, disconnect: true, wantErr: true},
+		{
+			name:       "yes on disconnect",
+			args:       []string{"--yes"},
+			disconnect: true,
+			check: func(t *testing.T, parsed parsedConnectArgs) {
+				if !parsed.assumeYes {
+					t.Errorf("parsed = %+v", parsed.connectOptions)
+				}
+			},
+		},
 		{
 			name:       "forget on disconnect",
 			args:       []string{"--all", "--forget"},

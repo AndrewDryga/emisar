@@ -67,7 +67,7 @@ name what you want:
 ```sh
 emisar-mcp connect                     # ask about every detected client
 emisar-mcp connect --client cursor     # just this one
-emisar-mcp connect --all --yes         # every client, no questions
+emisar-mcp connect --all               # every client, no questions
 ```
 
 `disconnect` is the reverse, and touches nothing else in those files:
@@ -79,7 +79,7 @@ emisar-mcp disconnect --all
 
 Add `--auto-permit` to `connect` to also silence a client's own "allow this
 tool?" prompt for the emisar server alone. It is opt-in and never implied by
-`--all` or `--yes`: Emisar decides every action server-side, so the client's
+`--all`: Emisar decides every action server-side, so the client's
 prompt adds nothing for Emisar's tools, but it is your setting in your file.
 Only Claude Code, Gemini CLI, Codex CLI, and Grok CLI scope that setting to one
 server; the rest are left alone.

@@ -29,6 +29,7 @@ func MCP(root string, out io.Writer) error {
 	}{
 		{"install directory discovery", mcpInstallDirs},
 		{"install confirmation prompt", mcpConfirmPrompt},
+		{"interactive connection handoff", mcpInteractiveConnect},
 		{"GitHub token argv hygiene", func(h *harness) error { return githubTokenHygiene(h, "install-mcp.sh") }},
 		{"attestation release epochs", mcpAttestationReleaseEpochs},
 		{"download checksum mismatch", mcpDownloadChecksum},
@@ -229,6 +230,44 @@ confirm "install emisar-mcp?"
 	}
 	if strings.TrimSpace(string(output)) != "" {
 		return fmt.Errorf("confirm was not silent without a TTY: %q", output)
+	}
+	return nil
+}
+
+// mcpInteractiveConnect pins the same yes/no contract at the final connection
+// handoff. Every documented affirmative value means unattended and therefore
+// must skip the browser flow; a terminal is necessary for every other value.
+func mcpInteractiveConnect(h *harness) error {
+	result := h.functions(h.repoPath("install-mcp.sh"), []string{"interactive_connect_available"}, `
+tty_available() { [ "$TTY_AVAILABLE" = "1" ]; }
+TTY_AVAILABLE=1
+for value in 1 true yes y on TRUE TrUe YeS Y On; do
+  ASSUME_YES="$value"
+  if interactive_connect_available; then
+    printf 'interactive connect allowed for affirmative value %s\n' "$value" >&2
+    exit 1
+  fi
+done
+for value in "" 0 false no off maybe; do
+  ASSUME_YES="$value"
+  if ! interactive_connect_available; then
+    printf 'interactive connect refused for false value %s\n' "$value" >&2
+    exit 1
+  fi
+done
+TTY_AVAILABLE=0
+ASSUME_YES=0
+if interactive_connect_available; then
+  printf 'interactive connect allowed without a TTY\n' >&2
+  exit 1
+fi
+`, nil)
+	output, err := requireOutput(result)
+	if err != nil {
+		return err
+	}
+	if strings.TrimSpace(string(output)) != "" {
+		return fmt.Errorf("interactive connection check was not silent: %q", output)
 	}
 	return nil
 }

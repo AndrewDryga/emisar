@@ -837,6 +837,12 @@ tty_available() {
   fi
   return 1
 }
+
+# The same truthy contract controls both the install confirmation and whether
+# the unattended path may hand off to an interactive browser flow.
+interactive_connect_available() {
+  ! truthy "${ASSUME_YES}" && tty_available
+}
 # Plain human-facing output for the interactive phases — no log prefix.
 # (Named `out`, and never `say` — macOS ships a text-to-speech /usr/bin/say
 # that would win if the function definition were ever missed.)
@@ -879,7 +885,7 @@ first_bin=${installed_paths%%$'\n'*}
 # client the operator picks, and writes each client's own config shape. Give it
 # the terminal explicitly — under the documented `curl … | sudo bash` this
 # script's own stdin is the pipe, not the operator.
-if [ "${ASSUME_YES}" != "1" ] && tty_available; then
+if interactive_connect_available; then
   run_cli_as_invoking_user connect --url "${EMISAR_URL}" </dev/tty ||
     warn "connection setup did not finish — run 'emisar-mcp connect', or use the manual snippets at ${EMISAR_URL}/app/agents/connect"
 else
