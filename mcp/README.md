@@ -147,7 +147,7 @@ the direct CLI's stored credential:
 | `EMISAR_API_KEY` | yes | Operator API key sent as a Bearer token |
 | `EMISAR_CLIENT` | no | Client label recorded with audit attribution |
 | `EMISAR_CLIENT_METADATA` | no | Self-reported JSON metadata for audit/SIEM correlation; at most 10 string keys with string or number values |
-| `EMISAR_ALLOW_INSECURE` | no | Set to `1` only for an intentional non-loopback HTTP development endpoint; loopback HTTP already works |
+| `EMISAR_ALLOW_INSECURE` | no | Set to `1`, `true`, `yes`, `y`, or `on` (in any case) for an intentional non-loopback HTTP development endpoint; loopback HTTP already works |
 | `EMISAR_SIGNING_KEY` | no | Ed25519 or ECDSA P-256 leaf private key (base64 PKCS#8) for bridge-attested dispatch |
 | `EMISAR_SIGNING_CERT` | no | X.509 certificate chain for `EMISAR_SIGNING_KEY` (base64 PEM); required with it |
 

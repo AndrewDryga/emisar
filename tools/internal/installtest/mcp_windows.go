@@ -106,6 +106,9 @@ func testWindowsMCPInstaller(root, shell string) error {
 		return err
 	}
 	defer os.RemoveAll(temp)
+	if err := testWindowsEndpointOptInContract(root, shell, temp); err != nil {
+		return err
+	}
 	if err := testWindowsAttestationPolicies(root, shell, temp); err != nil {
 		return err
 	}
@@ -137,6 +140,7 @@ func testWindowsMCPInstaller(root, shell string) error {
 	}
 	archiveHash := sha256.Sum256(archiveBytes)
 	checksums := hex.EncodeToString(archiveHash[:]) + "  " + archiveName + "\n"
+	servedChecksums := checksums
 
 	requested := []string(nil)
 	cliKey := windowsInstallerAPIKey(1)
@@ -164,7 +168,10 @@ func testWindowsMCPInstaller(root, shell string) error {
 			writer.Header().Set("Content-Type", "application/zip")
 			_, _ = writer.Write(archiveBytes)
 		case "/mcp-v" + windowsMCPVersion + "/SHA256SUMS-MCP":
-			_, _ = io.WriteString(writer, checksums)
+			serverMu.Lock()
+			response := servedChecksums
+			serverMu.Unlock()
+			_, _ = io.WriteString(writer, response)
 		case "/api/mcp/device_authorization":
 			var body struct {
 				RequestedClients []string `json:"requested_clients"`
@@ -244,16 +251,73 @@ func testWindowsMCPInstaller(root, shell string) error {
 	// sets those rather than a parallel test-only spelling — the same shape the
 	// Unix installers' harness already uses. EMISAR_MCP_TEST_BASE_URL has no
 	// real-variable equivalent and stays; the installer accepts it only for a
-	// loopback origin with EMISAR_ALLOW_INSECURE=1.
+	// loopback origin with an affirmative EMISAR_ALLOW_INSECURE value.
 	env := map[string]string{
 		"APPDATA":                  appData,
 		"LOCALAPPDATA":             localAppData,
 		"USERPROFILE":              home,
 		"HOME":                     home,
-		"EMISAR_ALLOW_INSECURE":    "1",
+		"EMISAR_ALLOW_INSECURE":    " TrUe ",
 		"EMISAR_MCP_TEST_BASE_URL": server.URL,
 	}
 	installer := filepath.Join(root, "install-mcp.ps1")
+	checksumInstallDir := filepath.Join(temp, "checksum-install")
+	checksumExecutable := filepath.Join(checksumInstallDir, "emisar-mcp.exe")
+	assertChecksumFailure := func(name, sums, want string) error {
+		serverMu.Lock()
+		servedChecksums = sums
+		beforeGrants := deviceGrants
+		serverMu.Unlock()
+
+		failureOutput, failureErr := runPowerShellInstaller(
+			shell,
+			installer,
+			environmentWithout(env, "EMISAR_URL", "EMISAR_API_KEY"),
+			"-PortalOrigin",
+			server.URL,
+			"-InstallDir",
+			checksumInstallDir,
+			"-Yes",
+			"-ConnectAll",
+		)
+		if failureErr == nil || !bytes.Contains(failureOutput, []byte(want)) {
+			return fmt.Errorf("%s checksum was not refused: %v\n%s", name, failureErr, failureOutput)
+		}
+		if _, statErr := os.Stat(checksumExecutable); !os.IsNotExist(statErr) {
+			return fmt.Errorf("%s checksum activated %s: %v", name, checksumExecutable, statErr)
+		}
+		serverMu.Lock()
+		afterGrants := deviceGrants
+		serverMu.Unlock()
+		if afterGrants != beforeGrants {
+			return fmt.Errorf("%s checksum reached device authorization: grants %d -> %d", name, beforeGrants, afterGrants)
+		}
+		for _, fixture := range fixtures {
+			data, readErr := os.ReadFile(fixture.path)
+			if readErr != nil || string(data) != fixture.original {
+				return fmt.Errorf("%s checksum changed %s before verification: %v", name, fixture.id, readErr)
+			}
+		}
+		return nil
+	}
+	if err := assertChecksumFailure(
+		"mismatched",
+		strings.Repeat("0", 64)+"  "+archiveName+"\n",
+		"checksum verification failed for "+archiveName,
+	); err != nil {
+		return err
+	}
+	if err := assertChecksumFailure(
+		"missing-entry",
+		hex.EncodeToString(archiveHash[:])+"  another.zip\n",
+		"SHA256SUMS-MCP does not list "+archiveName,
+	); err != nil {
+		return err
+	}
+	serverMu.Lock()
+	servedChecksums = checksums
+	serverMu.Unlock()
+
 	output, err := runPowerShellInstaller(
 		shell,
 		installer,
@@ -408,6 +472,46 @@ func testWindowsMCPInstaller(root, shell string) error {
 	}
 	if _, err := os.Stat(credentials); !os.IsNotExist(err) {
 		return fmt.Errorf("uninstall left CLI credentials: %v", err)
+	}
+	return nil
+}
+
+func testWindowsEndpointOptInContract(root, shell, temp string) error {
+	installer := filepath.Join(root, "install-mcp.ps1")
+	truthyFunction, err := powershellFunction(installer, "Test-Truthy")
+	if err != nil {
+		return err
+	}
+	safeOriginFunction, err := powershellFunction(installer, "Test-SafePortalOrigin")
+	if err != nil {
+		return err
+	}
+	script := truthyFunction + safeOriginFunction + `
+foreach ($value in @("1", "true", "yes", "y", "on", "TRUE", "TrUe", "YeS", "Y", "On", " true ")) {
+    if (-not (Test-Truthy $value)) { throw "affirmative value refused: '$value'" }
+}
+foreach ($value in @($null, "", " ", "0", "false", "no", "off", "maybe", "2", "truthy")) {
+    if (Test-Truthy $value) { throw "unknown value accepted: '$value'" }
+}
+
+$env:EMISAR_ALLOW_INSECURE = ""
+if (-not (Test-SafePortalOrigin "https://portal.example")) { throw "HTTPS origin refused" }
+if (-not (Test-SafePortalOrigin "http://127.0.0.1:4000")) { throw "loopback HTTP origin refused" }
+if (Test-SafePortalOrigin "http://portal.example") { throw "non-loopback HTTP origin accepted without opt-in" }
+$env:EMISAR_ALLOW_INSECURE = "YeS"
+if (-not (Test-SafePortalOrigin "http://portal.example")) { throw "opted-in HTTP origin refused" }
+if (Test-SafePortalOrigin "http://portal.example/path") { throw "HTTP origin with a path accepted" }
+`
+	path := filepath.Join(temp, "endpoint-opt-in-contract.ps1")
+	if err := os.WriteFile(path, []byte(script), 0o600); err != nil {
+		return err
+	}
+	output, err := runPowerShellInstaller(shell, path, environment(nil))
+	if err != nil {
+		return fmt.Errorf("endpoint opt-in contract: %w\n%s", err, output)
+	}
+	if len(bytes.TrimSpace(output)) != 0 {
+		return fmt.Errorf("endpoint opt-in contract wrote unexpected output: %q", output)
 	}
 	return nil
 }

@@ -721,9 +721,10 @@ environment is `VERSION`, `BIN_DIR`, `ETC_DIR`, `DATA_DIR`, `LOG_DIR`,
 variable this inventory does not name is a variable nobody reviews before it
 freezes.
 
-A yes/no variable here — `ASSUME_YES`, `NO_START`, `NO_SERVICE`, and the
-bridge's `EMISAR_ALLOW_INSECURE` — accepts `1`, `true`, `yes`, `y` or `on`, in
-any case. They previously required the literal `1`, so `ASSUME_YES=true` left
+A yes/no variable here — `ASSUME_YES`, `NO_START`, `NO_SERVICE`, and
+`EMISAR_ALLOW_INSECURE` in both the bridge and PowerShell installer — accepts
+`1`, `true`, `yes`, `y` or `on`, in any case. They previously required the
+literal `1`, so `ASSUME_YES=true` left
 the installer interactive, hit a prompt with no terminal and died, and
 `EMISAR_ALLOW_INSECURE=true` silently kept the safety on. Anything unrecognised
 is false, so an unknown value never fails open. `EMISAR_ATTESTATION_WORKFLOW` is the supply-chain-relevant one: it
@@ -762,7 +763,8 @@ removal that did not happen.
 `EMISAR_ATTESTATION_WORKFLOW`, `EMISAR_ALLOW_INSECURE`, and
 `EMISAR_MCP_TEST_BASE_URL`. The last is the one test-only read in any shipped
 installer, kept because the release origin has no operator-facing equivalent,
-and accepted only for a loopback origin with `EMISAR_ALLOW_INSECURE=1`. Install
+and accepted only for a loopback origin with an affirmative
+`EMISAR_ALLOW_INSECURE` value described above. Install
 locations are never redirected by a test variable: the installer reads the real
 `APPDATA` and `LOCALAPPDATA`, so its harness sets those the way the Unix
 harness sets real variables and PATH shims. It installs the native

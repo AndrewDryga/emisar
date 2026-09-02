@@ -1879,7 +1879,7 @@ func parseEndpoint(raw string, allowInsecure bool) (string, error) {
 		}
 		return "", errors.New("EMISAR_URL uses cleartext http to a non-loopback host, " +
 			"which sends the API key in plaintext; use https, or set " +
-			"EMISAR_ALLOW_INSECURE=1 to override")
+			"EMISAR_ALLOW_INSECURE to 1, true, yes, y, or on to override")
 	default:
 		return "", errors.New("EMISAR_URL must use http or https")
 	}

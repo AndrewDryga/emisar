@@ -71,13 +71,18 @@ function Get-WindowsReleaseArchitecture {
     }
 }
 
+function Test-Truthy([string]$Value) {
+    if ([string]::IsNullOrWhiteSpace($Value)) { return $false }
+    return @("1", "true", "yes", "y", "on") -contains $Value.Trim().ToLowerInvariant()
+}
+
 function Test-SafePortalOrigin([string]$Value) {
     $uri = $null
     if (-not [Uri]::TryCreate($Value, [UriKind]::Absolute, [ref]$uri)) { return $false }
     if ($uri.UserInfo -or $uri.Query -or $uri.Fragment) { return $false }
     if ($uri.AbsolutePath -ne "/") { return $false }
     if ($uri.Scheme -eq "https") { return $true }
-    return $uri.Scheme -eq "http" -and $env:EMISAR_ALLOW_INSECURE -eq "1" -and $uri.IsLoopback
+    return $uri.Scheme -eq "http" -and ($uri.IsLoopback -or (Test-Truthy $env:EMISAR_ALLOW_INSECURE))
 }
 
 function Normalize-Version([string]$Value) {
@@ -123,7 +128,7 @@ function Get-AttestationPolicy([string]$Repository, [string]$Tag, [string]$Workf
 
 function Test-TrustedWebUri([Uri]$Uri) {
     if ($Uri.Scheme -eq "https") { return }
-    if ($Uri.Scheme -eq "http" -and $env:EMISAR_ALLOW_INSECURE -eq "1" -and $Uri.IsLoopback) { return }
+    if ($Uri.Scheme -eq "http" -and (Test-Truthy $env:EMISAR_ALLOW_INSECURE) -and $Uri.IsLoopback) { return }
     Stop-Install "refusing an insecure download URL: $($Uri.GetLeftPart([UriPartial]::Authority))"
 }
 
@@ -206,7 +211,7 @@ function Get-GitHubRelease([string]$Tag) {
 function Resolve-Release([string]$RequestedVersion) {
     if ($env:EMISAR_MCP_TEST_BASE_URL) {
         $testUri = [Uri]$env:EMISAR_MCP_TEST_BASE_URL
-        if (-not $testUri.IsLoopback -or $env:EMISAR_ALLOW_INSECURE -ne "1") {
+        if (-not $testUri.IsLoopback -or -not (Test-Truthy $env:EMISAR_ALLOW_INSECURE)) {
             Stop-Install "EMISAR_MCP_TEST_BASE_URL is accepted only for an explicitly enabled loopback test server"
         }
         if (-not $RequestedVersion) {
