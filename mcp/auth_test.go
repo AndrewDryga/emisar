@@ -27,6 +27,29 @@ func (rt stubRoundTripper) RoundTrip(*http.Request) (*http.Response, error) {
 	return nil, rt.err
 }
 
+func TestFilterBrowserEnvironment(t *testing.T) {
+	environ := []string{
+		"EMISAR_API_KEY=upper",
+		"Emisar_Signing_Key=mixed",
+		"emisar_url=lower",
+		"EMISAR_=empty-name",
+		"EMISARISH=value",
+		"PATH=/usr/bin",
+		`=C:=C:\workspace`,
+		"NO_EQUALS",
+	}
+	want := []string{
+		"EMISARISH=value",
+		"PATH=/usr/bin",
+		`=C:=C:\workspace`,
+		"NO_EQUALS",
+	}
+
+	if got := filterBrowserEnvironment(environ); !slices.Equal(got, want) {
+		t.Fatalf("filterBrowserEnvironment() = %q, want %q", got, want)
+	}
+}
+
 // A TLS/certificate failure must stop the poll immediately with the real cause,
 // never keep polling to the deadline and report the misleading "code expired".
 func TestDevicePollSurfacesTLSErrorButRetriesTransient(t *testing.T) {

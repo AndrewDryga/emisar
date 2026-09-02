@@ -504,10 +504,14 @@ func openBrowserURL(rawURL string) bool {
 // variable removed, so a spawned helper cannot inherit the signing key, API
 // key, or any other Emisar credential.
 func envWithoutEmisarSecrets() []string {
-	environ := os.Environ()
+	return filterBrowserEnvironment(os.Environ())
+}
+
+func filterBrowserEnvironment(environ []string) []string {
 	filtered := make([]string, 0, len(environ))
 	for _, entry := range environ {
-		if strings.HasPrefix(entry, "EMISAR_") {
+		key, _, found := strings.Cut(entry, "=")
+		if found && len(key) >= len("EMISAR_") && strings.EqualFold(key[:len("EMISAR_")], "EMISAR_") {
 			continue
 		}
 		filtered = append(filtered, entry)
