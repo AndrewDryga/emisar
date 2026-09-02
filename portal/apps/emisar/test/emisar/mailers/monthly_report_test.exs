@@ -1,6 +1,7 @@
 defmodule Emisar.Mailers.MonthlyReportTest do
   use ExUnit.Case, async: true
   alias Emisar.Mailers.MonthlyReport
+  alias Emisar.Mailers.Style
   alias Emisar.Users
 
   defp report(overrides \\ %{}) do
@@ -65,7 +66,9 @@ defmodule Emisar.Mailers.MonthlyReportTest do
       assert rendered.html =~ "Denied by policy"
       assert rendered.html =~ ~s(href="#{Emisar.PublicUrl.url("/app/fleet-ops")}")
       assert rendered.html =~ ~s(href="https://emisar.dev/unsubscribe/monthly-report/token")
-      assert rendered.html =~ ~s(style="color:#57ecb2;text-decoration:underline;">Unsubscribe</a>)
+
+      assert rendered.html =~
+               ~s(style="color:#{Style.brand()};text-decoration:underline;">Unsubscribe</a>)
     end
 
     test "greets the recipient by email when they have no name" do

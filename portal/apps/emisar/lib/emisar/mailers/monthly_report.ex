@@ -14,32 +14,25 @@ defmodule Emisar.Mailers.MonthlyReport do
   than wearing an outcome color.
   """
   alias Emisar.Mailers.HTML
+  alias Emisar.Mailers.Style
   alias Emisar.PublicUrl
   alias Emisar.Users
 
-  # The console palette, inlined — an email has no Tailwind.
-  @ground "#09090b"
-  @surface "#111114"
-  @hairline "#27272a"
-  @ink "#fafafa"
-  @ink_soft "#a1a1aa"
-  # A zero count: readable at display size, quiet enough to recede.
-  @ink_zero "#71717a"
-  @brand_text "#57ecb2"
-  @brand_fill "#14cf8d"
-  @rose "#fda4af"
-  @amber "#fcd34d"
-
-  # Inter is the product face but no mail client has it; the system stack is
-  # the closest thing every recipient already has installed.
-  @font "-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif"
+  @ground Style.ground()
+  @surface Style.surface()
+  @hairline Style.hairline()
+  @ink Style.ink()
+  @ink_soft Style.ink_soft()
+  @ink_zero Style.ink_zero()
+  @brand Style.brand()
+  @rose Style.rose()
+  @amber Style.amber()
+  @font Style.font()
 
   @stat_tracks 5
   @track_width trunc(100 / @stat_tracks)
 
-  # Zero-width joiners after the preview text, so a client that pads the inbox
-  # snippet from the body pulls in nothing instead of the masthead's alt text.
-  @preview_pad String.duplicate("&#847;&zwnj;&nbsp;", 40)
+  @preview_pad Style.preview_pad()
 
   @doc """
   Builds the report email as `%{subject: binary, text: binary, html: binary}`.
@@ -178,14 +171,15 @@ defmodule Emisar.Mailers.MonthlyReport do
     ~s(<div style="display:none;max-height:0;overflow:hidden;mso-hide:all;">#{HTML.escape(text)}#{@preview_pad}</div>)
   end
 
-  # The transparent white-ink lockup is the only raster logo that sits on a dark
-  # ground without a seam (SVG doesn't render in Gmail). The alt text is styled
-  # so a client with images blocked still shows the wordmark.
+  # The lockup carries its own dark ground (SVG doesn't render in Gmail), because
+  # a client that force-inverts the email cannot invert an image with it — a
+  # transparent white-ink logo would be white ink on a white ground. The alt text
+  # is styled so a client with images blocked still shows the wordmark.
   defp masthead do
     """
     <tr>
-      <td style="padding:0 0 30px;">
-        <img src="#{PublicUrl.url("/images/brand/emisar-status-logo-dark.png")}" width="138" height="30" alt="emisar" style="display:block;border:0;outline:none;text-decoration:none;width:138px;height:30px;font-family:#{@font};font-size:19px;font-weight:600;letter-spacing:-0.01em;color:#{@ink};" />
+      <td style="padding:0 0 20px;">
+        <img src="#{PublicUrl.url("/images/brand/emisar-email-logo.png")}" width="166" height="50" alt="emisar" style="display:block;border:0;outline:none;text-decoration:none;width:166px;height:50px;font-family:#{@font};font-size:19px;font-weight:600;letter-spacing:-0.01em;color:#{@ink};" />
       </td>
     </tr>
     """
@@ -204,7 +198,7 @@ defmodule Emisar.Mailers.MonthlyReport do
 
   defp runs_card(runs) do
     stats = [
-      {"Succeeded", runs.success, @brand_text},
+      {"Succeeded", runs.success, @brand},
       {"Failed", runs.failed, @rose},
       {"Denied by policy", runs.denied, @rose},
       {"Cancelled", runs.cancelled, @ink_soft},
@@ -219,7 +213,7 @@ defmodule Emisar.Mailers.MonthlyReport do
 
   defp approvals_card(approvals) do
     stats = [
-      {"Approved", approvals.approved, @brand_text},
+      {"Approved", approvals.approved, @brand},
       {"Denied", approvals.denied, @rose},
       {"Expired", approvals.expired, @amber},
       {"Cancelled", approvals.cancelled, @ink_soft},
@@ -332,7 +326,7 @@ defmodule Emisar.Mailers.MonthlyReport do
       <td style="padding:30px 0 36px;">
         <table role="presentation" cellpadding="0" cellspacing="0" border="0">
           <tr>
-            <td bgcolor="#{@brand_fill}" style="border-radius:8px;">
+            <td bgcolor="#{@brand}" style="border-radius:8px;">
               <a href="#{HTML.escape(dashboard_url)}" style="display:inline-block;padding:13px 22px;font-family:#{@font};font-size:14px;line-height:1;font-weight:600;color:#{@ground};text-decoration:none;border-radius:8px;">Open your dashboard</a>
             </td>
           </tr>
@@ -347,7 +341,7 @@ defmodule Emisar.Mailers.MonthlyReport do
     <tr>
       <td style="padding:22px 0 0;border-top:1px solid #{@hairline};font-family:#{@font};font-size:12px;line-height:1.7;color:#{@ink_soft};">
         You're receiving this monthly report as an owner of #{HTML.escape(content.account_name)}.<br />
-        <a href="#{HTML.escape(content.unsubscribe_url)}" style="color:#{@brand_text};text-decoration:underline;">Unsubscribe</a>
+        <a href="#{HTML.escape(content.unsubscribe_url)}" style="color:#{@brand};text-decoration:underline;">Unsubscribe</a>
       </td>
     </tr>
     """

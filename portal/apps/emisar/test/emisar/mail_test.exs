@@ -8,6 +8,7 @@ defmodule Emisar.MailTest do
   import Swoosh.TestAssertions
   alias Emisar.Fixtures
   alias Emisar.Mail
+  alias Emisar.Mailers.Style
   alias Emisar.Mailers.UserNotifier
   alias Emisar.RequestContext
   alias Emisar.Runs
@@ -431,7 +432,7 @@ defmodule Emisar.MailTest do
         assert is_binary(email.html_body)
 
         assert email.html_body =~
-                 ~s(href="http://localhost/app/#{account.slug}" target="_top" style="color:#36e6a5;font-weight:600;text-decoration:underline;text-underline-offset:2px;">Northstar</a>)
+                 ~s(href="http://localhost/app/#{account.slug}" target="_top" style="color:#{Style.brand()};font-weight:600;text-decoration:underline;text-underline-offset:2px;">Northstar</a>)
 
         assert email.html_body =~
                  ~s(New sign-in email: <strong style="font-weight:700;color:#fafafa;">new@example.com</strong>.)
@@ -658,7 +659,7 @@ defmodule Emisar.MailTest do
       assert update.headers["References"] == root
       assert update.text_body =~ "1 of 2"
       assert update.html_body =~ "<strong"
-      assert update.html_body =~ "color:#36e6a5;"
+      assert update.html_body =~ "color:#{Style.brand()};"
       refute update.text_body =~ "does not mean the action was dispatched or completed"
     end
 
@@ -702,11 +703,11 @@ defmodule Emisar.MailTest do
       }
 
       cases = [
-        {:approved, 3, "approval request was approved with 3 of 3", "#36e6a5"},
-        {:denied, 1, "approval request was denied by Alex Operator with 1 of 3", "#fda4af"},
-        {:expired, 2, "approval request expired with 2 of 3", "#fcd34d"},
-        {:cancelled, 1, "approval request was cancelled with 1 of 3", "#fcd34d"},
-        {:overridden, 1, "approved the request using an override after 1 of 3", "#fcd34d"}
+        {:approved, 3, "approval request was approved with 3 of 3", Style.brand()},
+        {:denied, 1, "approval request was denied by Alex Operator with 1 of 3", Style.rose()},
+        {:expired, 2, "approval request expired with 2 of 3", Style.amber()},
+        {:cancelled, 1, "approval request was cancelled with 1 of 3", Style.amber()},
+        {:overridden, 1, "approved the request using an override after 1 of 3", Style.amber()}
       ]
 
       Enum.each(cases, fn {kind, count, expected, color} ->
@@ -943,7 +944,7 @@ defmodule Emisar.MailTest do
       assert_email_sent(fn email ->
         assert email.subject == "Approved using an override · postgres.restore"
         assert email.text_body =~ "approved using an override after 1 of 3 approvals"
-        assert email.html_body =~ "color:#fcd34d;"
+        assert email.html_body =~ "color:#{Style.amber()};"
         refute email.text_body =~ "remaining review requirement was waived"
         true
       end)

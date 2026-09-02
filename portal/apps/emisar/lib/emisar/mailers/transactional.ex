@@ -9,19 +9,19 @@ defmodule Emisar.Mailers.Transactional do
   in durable email.
   """
   alias Emisar.Mailers.HTML
+  alias Emisar.Mailers.Style
   alias Emisar.PublicUrl
 
-  @ground "#09090b"
-  @surface "#111114"
-  @hairline "#27272a"
-  @ink "#fafafa"
-  @ink_soft "#a1a1aa"
-  @brand "#36e6a5"
-  @brand_fill "#14cf8d"
-  @rose "#fda4af"
-  @amber "#fcd34d"
-  @font "-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif"
-  @preview_pad String.duplicate("&#847;&zwnj;&nbsp;", 40)
+  @ground Style.ground()
+  @surface Style.surface()
+  @hairline Style.hairline()
+  @ink Style.ink()
+  @ink_soft Style.ink_soft()
+  @brand Style.brand()
+  @rose Style.rose()
+  @amber Style.amber()
+  @font Style.font()
+  @preview_pad Style.preview_pad()
 
   @type fact_value :: binary() | {:link, binary(), binary()}
   @type block ::
@@ -137,8 +137,8 @@ defmodule Emisar.Mailers.Transactional do
   defp masthead do
     """
     <tr>
-      <td style="padding:0 0 30px;">
-        <img src="#{PublicUrl.url("/images/brand/emisar-status-logo-dark.png")}" width="138" height="30" alt="emisar" style="display:block;border:0;outline:none;text-decoration:none;width:138px;height:30px;font-family:#{@font};font-size:19px;font-weight:600;color:#{@ink};" />
+      <td style="padding:0 0 20px;">
+        <img src="#{PublicUrl.url("/images/brand/emisar-email-logo.png")}" width="166" height="50" alt="emisar" style="display:block;border:0;outline:none;text-decoration:none;width:166px;height:50px;font-family:#{@font};font-size:19px;font-weight:600;color:#{@ink};" />
       </td>
     </tr>
     """
@@ -241,7 +241,7 @@ defmodule Emisar.Mailers.Transactional do
   end
 
   defp action_cell({:primary, {label, url}}) do
-    ~s(<td bgcolor="#{@brand_fill}" style="border-radius:8px;"><a href="#{HTML.escape(url)}" target="_top" style="display:inline-block;padding:13px 22px;font-family:#{@font};font-size:14px;line-height:1;font-weight:600;color:#{@ground};text-decoration:none;border-radius:8px;">#{HTML.escape(label)}</a></td>)
+    ~s(<td bgcolor="#{@brand}" style="border-radius:8px;"><a href="#{HTML.escape(url)}" target="_top" style="display:inline-block;padding:13px 22px;font-family:#{@font};font-size:14px;line-height:1;font-weight:600;color:#{@ground};text-decoration:none;border-radius:8px;">#{HTML.escape(label)}</a></td>)
   end
 
   defp action_cell({:secondary, {label, url}}) do
