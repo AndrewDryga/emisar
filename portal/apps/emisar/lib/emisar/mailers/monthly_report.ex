@@ -83,7 +83,7 @@ defmodule Emisar.Mailers.MonthlyReport do
       #{number(runs.total)} #{run_label(runs.total)} recorded
       #{runs_caption(runs)}
 
-    #{text_rows([{"Succeeded", runs.success}, {"Failed", runs.failed}, {"Denied by policy", runs.denied}, {"Cancelled", runs.cancelled}, {"In progress", runs.in_progress}])}\
+    #{text_rows([{"Succeeded", runs.success}, {"Failed", runs.failed}, {"Denied", runs.denied}, {"Cancelled", runs.cancelled}, {"In progress", runs.in_progress}])}\
     """
   end
 
@@ -196,11 +196,15 @@ defmodule Emisar.Mailers.MonthlyReport do
     """
   end
 
+  # The outcome labels mirror `EmisarWeb.RunStatuses`, the glossary the console
+  # and /docs/runs share — the domain app cannot call into the web app, so they
+  # are spelled out here. `Denied` is that glossary's word; the card heading is
+  # what separates it from the approvals card's own `Denied`.
   defp runs_card(runs) do
     stats = [
       {"Succeeded", runs.success, @brand},
       {"Failed", runs.failed, @rose},
-      {"Denied by policy", runs.denied, @rose},
+      {"Denied", runs.denied, @rose},
       {"Cancelled", runs.cancelled, @ink_soft},
       {"In progress", runs.in_progress, @amber}
     ]

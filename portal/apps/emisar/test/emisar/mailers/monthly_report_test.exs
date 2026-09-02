@@ -57,13 +57,13 @@ defmodule Emisar.Mailers.MonthlyReportTest do
       assert rendered.text =~ "18 runs recorded"
       assert rendered.text =~ "18 dispatched to 1 runner"
       assert rendered.text =~ ~r/Succeeded\s+17$/m
-      assert rendered.text =~ ~r/Denied by policy\s+0$/m
+      assert rendered.text =~ ~r/Denied\s+0$/m
       assert rendered.text =~ "/app/fleet-ops"
       assert rendered.text =~ "Unsubscribe: https://emisar.dev/unsubscribe/monthly-report/token"
 
       assert rendered.html =~ ">18</td>"
       assert rendered.html =~ ">17</td>"
-      assert rendered.html =~ "Denied by policy"
+      assert rendered.html =~ ">Denied</td>"
       assert rendered.html =~ ~s(href="#{Emisar.PublicUrl.url("/app/fleet-ops")}")
       assert rendered.html =~ ~s(href="https://emisar.dev/unsubscribe/monthly-report/token")
 
