@@ -46,151 +46,263 @@ func validateActionSemantics(action *actionspec.Action) error {
 	return nil
 }
 
-// programInterpreters maps an interpreter's name to the short flag rune that
-// introduces program text on its argv: a shell or python reads its program
-// after -c, perl/ruby/node/awk after -e, php after -r.
-var programInterpreters = map[string]rune{
-	"/bin/sh": 'c',
-	"sh":      'c',
-	"bash":    'c',
-	"dash":    'c',
-	"ash":     'c',
-	"ksh":     'c',
-	"zsh":     'c',
-	"busybox": 'c',
+var shellInterpreters = map[string]bool{
+	"sh":   true,
+	"bash": true,
+	"dash": true,
+	"ash":  true,
+	"hush": true,
+	"fish": true,
+	"csh":  true,
+	"tcsh": true,
+	"ksh":  true,
+	"zsh":  true,
+}
+
+// codeInterpreters execute source, modules, or scripts selected by their argv.
+// Their option grammars vary by implementation and version, so an open-ended
+// model value is never a safe argv channel. Finite choices remain pack-authored.
+var codeInterpreters = map[string]rune{
 	"python":  'c',
 	"python3": 'c',
 	"perl":    'e',
 	"ruby":    'e',
 	"node":    'e',
+	"nodejs":  'e',
 	"awk":     'e',
 	"gawk":    'e',
+	"mawk":    'e',
+	"nawk":    'e',
 	"php":     'r',
 }
 
-// execWrappers are binaries that exec a command taken from their OWN argv, so an
-// interpreter can hide behind one: `timeout 30 sh -c '…'` names timeout (not a
-// shell) as the binary. Keying the guard on the binary alone waved a caller's
-// value straight into `sh -c` — arbitrary command execution from an action
-// argument. When the binary is a wrapper, the argv is scanned for the real
-// interpreter it fronts. A binary that is NEITHER an interpreter nor a wrapper
-// runs its own argument grammar, whose tokens are its data, not a nested command
-// — `nomad node status` must not be read as a Node.js program.
-var execWrappers = map[string]bool{
-	"env":     true,
-	"timeout": true,
-	"nice":    true,
-	"setsid":  true,
-	"stdbuf":  true,
-	"nohup":   true,
-	"xargs":   true,
-	"flock":   true,
-	"script":  true,
-	// Privilege wrappers front an interpreter the same way (`sudo -u x sh -c …`),
-	// so they must be scanned too — otherwise `binary: sudo` waves a caller value
-	// straight into the shell that `runuser` (already here) would have caught.
-	"runuser": true,
-	"sudo":    true,
-	"su":      true,
-	"doas":    true,
+var versionedCodeInterpreterPrefixes = map[string]rune{
+	"python": 'c',
+	"perl":   'e',
+	"ruby":   'e',
+	"php":    'r',
 }
 
-// validateShellProgramReferences keeps caller-controlled values out of the
-// program text an interpreter runs after its program flag. A regex is not proof
-// against every shell expansion; authors must instead pass open-ended text
-// through env or a positional argv element. Finite membership and bounded
-// numeric args remain pack-authored program choices, not caller-authored shell
-// text. The interpreter is resolved through the binary and any exec-wrapper in
-// front of it, so a wrapper cannot hide the shell. (awk's positional-program
-// form is not matched — its ambiguous option grammar risks false positives; the
-// -e/-c forms are.)
-func validateShellProgramReferences(action *actionspec.Action, argv []string) error {
-	if action.Execution.Command == nil {
-		return nil
-	}
-	interpreter, flag, rest, ok := interpreterInvocation(action.Execution.Command.Binary, argv)
-	if !ok {
-		return nil
-	}
-	program, ok := interpreterProgram(rest, flag)
-	if !ok {
-		return nil
-	}
-	if action.ID == "shell.run_script" && action.Risk == actionspec.RiskCritical {
-		return nil
-	}
+// These variables select startup files, modules, or runtime configuration that
+// can execute code before a fixed program runs. A shell or wrapper can front any
+// of the listed interpreters, so it receives the union; a direct interpreter
+// receives only its own variables below.
+var indirectCodeSelectionEnvVars = map[string]bool{
+	"ENV":              true,
+	"HOME":             true,
+	"KSH_ENV":          true,
+	"XDG_CONFIG_HOME":  true,
+	"ZDOTDIR":          true,
+	"PYTHONHOME":       true,
+	"PYTHONPATH":       true,
+	"PYTHONUSERBASE":   true,
+	"PERLLIB":          true,
+	"PERL5LIB":         true,
+	"RUBYLIB":          true,
+	"RUBYGEMS_GEMDEPS": true,
+	"NODE_PATH":        true,
+	"AWKPATH":          true,
+	"AWKLIBPATH":       true,
+	"PHPRC":            true,
+	"PHP_INI_SCAN_DIR": true,
+}
 
+// execWrappers reinterpret their own argv as another executable, shell source,
+// environment, or runtime-appended arguments. Proving a free-form value is data
+// would require copying each platform's evolving option grammar. Keep this
+// boundary intentionally small: wrapper argv may contain only fixed or finite
+// pack-authored choices. Shipped packs use no wrapper command binaries.
+var execWrappers = map[string]bool{
+	"env":      true,
+	"timeout":  true,
+	"gtimeout": true,
+	"time":     true,
+	"nice":     true,
+	"setsid":   true,
+	"stdbuf":   true,
+	"nohup":    true,
+	"xargs":    true,
+	"gxargs":   true,
+	"flock":    true,
+	"script":   true,
+	"busybox":  true,
+	"runuser":  true,
+	"sudo":     true,
+	"su":       true,
+	"doas":     true,
+}
+
+// validateShellProgramReferences keeps caller-controlled values out of source
+// or command-selection text. Direct shells retain their safe data channels:
+// ordinary execution.env values and argv after a fixed -c program. Wrappers and
+// non-shell code interpreters accept only finite pack-authored values because
+// their option grammars can turn any earlier argv token into code or a child
+// executable. A regex is not proof against shell expansion.
+func validateShellProgramReferences(action *actionspec.Action, argv []string) error {
 	args := make(map[string]actionspec.Arg, len(action.Args))
 	for _, arg := range action.Args {
 		args[arg.Name] = arg
 	}
+	base := ""
+	if action.Execution.Command != nil {
+		base = filepath.Base(action.Execution.Command.Binary)
+	} else if action.Execution.Script != nil {
+		if action.Execution.Script.Interpreter == "" {
+			base = "sh"
+		} else {
+			base = filepath.Base(action.Execution.Script.Interpreter)
+		}
+	}
+	for name, value := range action.Execution.Env {
+		if !environmentSelectsCode(base, name) {
+			continue
+		}
+		if argName, unbounded := firstUnboundedArgumentReference([]string{value}, args); unbounded {
+			return fmt.Errorf(
+				"action %s: execution.env %s must be pack-authored, not args.%s",
+				action.ID,
+				name,
+				argName,
+			)
+		}
+	}
+	if action.Execution.Command == nil {
+		if execWrappers[base] {
+			return fmt.Errorf(
+				"action %s: execution.script.interpreter %s is a command wrapper, not a script interpreter",
+				action.ID,
+				action.Execution.Script.Interpreter,
+			)
+		}
+		return nil
+	}
+	if execWrappers[base] {
+		if name, ok := firstUnboundedArgumentReference(argv, args); ok {
+			return fmt.Errorf(
+				"action %s: arg %s must not be passed through %s command selection; wrappers accept only fixed or finite values",
+				action.ID,
+				name,
+				base,
+			)
+		}
+		return nil
+	}
+	if flag, ok := codeInterpreterFlag(base); ok {
+		if name, ok := firstUnboundedArgumentReference(argv, args); ok {
+			return fmt.Errorf(
+				"action %s: arg %s must not be passed through %s -%c interpreter argv; pass open-ended data through execution.env",
+				action.ID,
+				name,
+				base,
+				flag,
+			)
+		}
+		return nil
+	}
+	if !shellInterpreters[base] {
+		return nil
+	}
+
+	program, staticCommand := shellProgramPrefix(argv)
+	if action.ID == "shell.run_script" && action.Risk == actionspec.RiskCritical && staticCommand {
+		return nil
+	}
+	programContext := action.Execution.Command.Binary + " -c program text"
+	if !staticCommand {
+		programContext = action.Execution.Command.Binary + " shell command selection"
+	}
 	for _, name := range argumentReferences(program) {
-		arg := args[name]
-		if shellProgramArgIsBounded(arg) {
+		if shellProgramArgIsBounded(args[name]) {
 			continue
 		}
 		return fmt.Errorf(
-			"action %s: arg %s must not be embedded in %s -%c program text; pass it through execution.env and reference it as \"$VAR\", or pass it as a whole positional argv element",
+			"action %s: arg %s must not be embedded in %s; pass it through execution.env and reference it as \"$VAR\", or pass it as a whole positional argv element after a fixed -c program",
 			action.ID,
 			name,
-			interpreter,
-			flag,
+			programContext,
 		)
 	}
 	return nil
 }
 
-// interpreterInvocation resolves which interpreter the command runs and the argv
-// that follows it: the binary itself, or — when the binary is a known
-// exec-wrapper — the first interpreter token in its argv. A binary that is
-// neither returns ok=false, so its own argument tokens are never scanned.
-func interpreterInvocation(binary string, argv []string) (name string, flag rune, rest []string, ok bool) {
-	if f, isInterp := interpreterFlag(binary); isInterp {
-		return binary, f, argv, true
+func codeInterpreterFlag(base string) (rune, bool) {
+	if flag, ok := codeInterpreters[base]; ok {
+		return flag, true
 	}
-	if !execWrappers[filepath.Base(binary)] {
-		return "", 0, nil, false
-	}
-	for index, tok := range argv {
-		if f, isInterp := interpreterFlag(tok); isInterp {
-			return tok, f, argv[index+1:], true
+	for prefix, flag := range versionedCodeInterpreterPrefixes {
+		suffix, found := strings.CutPrefix(base, prefix)
+		if !found || suffix == "" {
+			continue
 		}
-	}
-	return "", 0, nil, false
-}
-
-// interpreterFlag reports whether a token names a program interpreter (matched
-// by the whole token or its path base, so "/usr/bin/python3" counts) and its
-// program flag.
-func interpreterFlag(token string) (rune, bool) {
-	if f, ok := programInterpreters[token]; ok {
-		return f, true
-	}
-	if base := filepath.Base(token); base != token {
-		if f, ok := programInterpreters[base]; ok {
-			return f, true
+		validVersion := true
+		for _, char := range suffix {
+			if (char < '0' || char > '9') && char != '.' {
+				validVersion = false
+				break
+			}
+		}
+		if validVersion {
+			return flag, true
 		}
 	}
 	return 0, false
 }
 
-// interpreterProgram returns the program-text token that follows the flag rune
-// (e.g. -c for a shell, -e for perl), tolerating combined short flags like -ec.
-// A lone "--" ends option scanning.
-func interpreterProgram(tokens []string, flag rune) (string, bool) {
-	for index, arg := range tokens {
-		if arg == "--" {
-			return "", false
+func environmentSelectsCode(base, name string) bool {
+	if name == "PATH" || name == "SHELL" {
+		return true
+	}
+	indirectCommand := shellInterpreters[base] || execWrappers[base]
+	if indirectCommand && indirectCodeSelectionEnvVars[name] {
+		return true
+	}
+	if strings.HasPrefix(base, "python") {
+		return name == "HOME" || name == "PYTHONHOME" || name == "PYTHONPATH" || name == "PYTHONUSERBASE"
+	}
+	if strings.HasPrefix(base, "perl") {
+		return name == "PERLLIB" || name == "PERL5LIB"
+	}
+	if strings.HasPrefix(base, "ruby") {
+		return name == "RUBYLIB" || name == "RUBYGEMS_GEMDEPS"
+	}
+	if base == "node" || base == "nodejs" {
+		return name == "NODE_PATH"
+	}
+	if strings.HasSuffix(base, "awk") {
+		return name == "AWKPATH" || name == "AWKLIBPATH"
+	}
+	if strings.HasPrefix(base, "php") {
+		return name == "PHPRC" || name == "PHP_INI_SCAN_DIR"
+	}
+	if base == "fish" {
+		return name == "HOME" || name == "XDG_CONFIG_HOME"
+	}
+	if base == "csh" || base == "tcsh" || base == "zsh" {
+		return name == "HOME"
+	}
+	return false
+}
+
+func firstUnboundedArgumentReference(templates []string, args map[string]actionspec.Arg) (string, bool) {
+	for _, template := range templates {
+		for _, name := range argumentReferences(template) {
+			if !shellProgramArgIsBounded(args[name]) {
+				return name, true
+			}
 		}
-		if len(arg) < 2 || arg[0] != '-' || arg[1] == '-' || !strings.ContainsRune(arg[1:], flag) {
-			continue
-		}
-		if index+1 >= len(tokens) {
-			return "", false
-		}
-		return tokens[index+1], true
 	}
 	return "", false
+}
+
+// shellProgramPrefix proves the one canonical program boundary used by shipped
+// actions. Values after a fixed `-c PROGRAM` are positional data. Any other
+// spelling is left intact so a free reference anywhere fails closed instead of
+// relying on a shell-version-specific option grammar.
+func shellProgramPrefix(tokens []string) (program string, staticCommand bool) {
+	if len(tokens) >= 2 && tokens[0] == "-c" {
+		return strings.Join(tokens[:2], " "), true
+	}
+	return strings.Join(tokens, " "), false
 }
 
 // argumentReferences is called only after expressions.ValidateReferences has
