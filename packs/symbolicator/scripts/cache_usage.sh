@@ -21,15 +21,22 @@ if [ ! -d "$cache_dir" ]; then
   printf 'cache directory %s does not exist\n' "$cache_dir" >&2
   exit 1
 fi
+if [ ! -r "$cache_dir" ] || [ ! -x "$cache_dir" ]; then
+  printf 'cache directory %s is not readable\n' "$cache_dir" >&2
+  exit 1
+fi
 
 printf 'cache root: %s\n\n' "$cache_dir"
 
 # du reports each cache, sort orders them by the bytes that matter. Guard the
 # listing rather than piping a failure into sort, so an unreadable cache root
 # fails loudly instead of printing an empty report that reads as "nothing here".
-usage=$(du -sk "$cache_dir"/* 2>/dev/null || true)
-if [ -z "$usage" ]; then
+set -- "$cache_dir"/*
+if [ "$1" = "$cache_dir/*" ] && [ ! -e "$1" ]; then
   printf 'no caches present yet\n'
+elif ! usage=$(du -sk "$@"); then
+  printf 'could not measure every cache under %s\n' "$cache_dir" >&2
+  exit 1
 else
   printf '%s\n' "$usage" | sort -rn | awk '{
     kb = $1

@@ -54,6 +54,25 @@ cases:
   - action: symbolicator.cache_usage
     expect:
       stdout_contains: ["cache root: /data", "objects", "filesystem:"]
+  - name: symbolicator.cache-usage-reports-a-genuinely-empty-cache
+    action: symbolicator.cache_usage
+    env:
+      SYMBOLICATOR_CACHE_DIR: /tmp/packtest-empty-cache
+    arrange:
+      - argv: [/bin/sh, -c, "rm -rf /tmp/packtest-empty-cache && mkdir -m 0755 /tmp/packtest-empty-cache"]
+    expect:
+      stdout_contains: ["cache root: /tmp/packtest-empty-cache", "no caches present yet", "filesystem:"]
+  - name: symbolicator.cache-usage-fails-on-an-unreadable-cache
+    action: symbolicator.cache_usage
+    env:
+      SYMBOLICATOR_CACHE_DIR: /tmp/packtest-unreadable-cache
+    arrange:
+      - argv: [/bin/sh, -c, "rm -rf /tmp/packtest-unreadable-cache && mkdir -m 000 /tmp/packtest-unreadable-cache"]
+    expect:
+      status: failure
+      exit: [1]
+      reason_contains: [process exited with code 1]
+      stderr_contains: ["cache directory /tmp/packtest-unreadable-cache is not readable"]
   # The seeded object is inside its retention window, so the preview reports it
   # retained and removes nothing — proving it reads the real caches and that a
   # preview never deletes.

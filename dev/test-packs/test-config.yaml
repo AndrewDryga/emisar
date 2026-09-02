@@ -131,6 +131,7 @@ execution:
     - SPARK_MASTER_URL
     - SPARK_REST_URL
     - SPARK_UI_URL
+    - SYMBOLICATOR_CACHE_DIR
     - TFE_ADDRESS
     - TFE_TOKEN
     - TF_BIN
