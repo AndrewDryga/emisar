@@ -23,6 +23,11 @@ args:
     required: true
     description: Verified erasure request and approval reference.
     validation: {max_length: 500}
+  - name: operator
+    type: string
+    required: true
+    description: Self-reported staff operator label (user UUID or email); must resolve to a current Emisar staff user.
+    validation: {max_length: 320}
 execution:
   script: {path: scripts/callback.sh, interpreter: /bin/sh}
   argv:
@@ -30,5 +35,6 @@ execution:
     - "user_id={{ args.user_id }}"
     - "confirmation={{ args.confirmation }}"
     - "reason={{ args.reason }}"
+    - "operator={{ args.operator }}"
   timeout: 120s
 output: {parser: json, parser_required: true, max_stdout_bytes: 65536, max_stderr_bytes: 8192}

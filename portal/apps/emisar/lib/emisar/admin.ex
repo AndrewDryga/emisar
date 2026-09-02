@@ -8,10 +8,10 @@ defmodule Emisar.Admin do
   private pack is the only caller, its arguments have already passed runner
   validation, and the action run is the durable audit record. Every mutation
   lives there. Its third argument is the dispatching staff operator (id or
-  email) — an unauthenticated argv claim, so it is resolved to a real user and
-  `ensure_staff/1`-gated before being stamped as the actor of a staff mutation;
-  a customer's own audit trail then shows staff access, never an anonymous
-  `"system"` job.
+  email) — a self-reported argv label, not authentication. Every mutation
+  requires that label to resolve to a current staff user. Subject-aware writes
+  use it for the customer's staff audit attribution; the action run remains the
+  authoritative record of who dispatched the private action.
 
   The staff-console reads — `search_accounts/2`, `account_overview/2`,
   `record_account_view/2` — back the web `/admin` LiveViews. Each takes the
@@ -27,6 +27,24 @@ defmodule Emisar.Admin do
   alias Emisar.{Repo, Users}
 
   @arg_name ~r/^[a-z][a-z0-9_]*$/
+  @mutation_actions ~w(
+    emisar.admin.account.create
+    emisar.admin.account.disable
+    emisar.admin.account.enable
+    emisar.admin.account.erase
+    emisar.admin.user.erase
+    emisar.admin.plan.grant
+    emisar.admin.plan.revoke
+    emisar.admin.invitation.resend
+    emisar.admin.member.invite
+    emisar.admin.member.suspend
+    emisar.admin.member.reinstate
+    emisar.admin.member.set_role
+    emisar.admin.sessions.revoke
+    emisar.admin.mfa.reset
+    emisar.admin.owner.transfer
+    emisar.admin.billing.sync
+  )
   @job_modules [
     Emisar.Accounts.Jobs.MonthlyReports,
     Emisar.ApiKeys.Jobs.DeviceGrantCleanup,
@@ -176,7 +194,8 @@ defmodule Emisar.Admin do
   def execute("emisar.admin." <> _ = action_id, encoded_args, operator)
       when is_list(encoded_args) and length(encoded_args) <= 3 and is_binary(operator) do
     with {:ok, args} <- decode_args(encoded_args),
-         {:ok, operator_user} <- resolve_operator(operator) do
+         {:ok, operator_user} <- resolve_operator(operator),
+         :ok <- ensure_mutation_operator(action_id, operator_user) do
       dispatch(action_id, args, operator_user)
     end
   end
@@ -186,8 +205,8 @@ defmodule Emisar.Admin do
   # The operator is the dispatching staff member's self-reported id or email — an
   # unauthenticated argv claim. Resolve it to a real user and `ensure_staff/1` it
   # so a staff mutation is only ever stamped to a genuine staff actor. A blank
-  # operator resolves to nil, which read actions carry and mutations refuse
-  # (`support_subject/2`); a claim naming no live staff user fails closed rather
+  # operator resolves to nil, which read actions carry and the central mutation
+  # boundary refuses; a claim naming no live staff user fails closed rather
   # than attributing a customer's mutation to a stranger.
   defp resolve_operator(operator) when is_binary(operator) do
     case String.trim(operator) do
@@ -210,6 +229,11 @@ defmodule Emisar.Admin do
       do: Users.fetch_user_by_id(reference),
       else: Users.fetch_user_by_email(reference)
   end
+
+  defp ensure_mutation_operator(action_id, nil) when action_id in @mutation_actions,
+    do: {:error, :operator_required}
+
+  defp ensure_mutation_operator(_action_id, _operator_user), do: :ok
 
   defp decode_args(encoded_args) do
     Enum.reduce_while(encoded_args, {:ok, %{}}, fn encoded, {:ok, args} ->
@@ -545,7 +569,9 @@ defmodule Emisar.Admin do
 
   # A platform subject that acts AS Emisar: owner permissions, no actor or
   # membership of its own, and the resolved staff operator's id so every mutation
-  # it authorizes audits as `"staff"` with that operator's id (never `"system"`).
+  # it authorizes is labelled `"staff"` (never `"system"`). Customer-visible
+  # events deliberately hide the self-reported person's id; the authenticated
+  # dispatcher remains in the action-run audit.
   # Keeping actor/membership nil preserves the break-glass exemptions in Accounts
   # that key on that shape. A mutation dispatched with no operator is refused here
   # rather than silently falling back to an anonymous actor.

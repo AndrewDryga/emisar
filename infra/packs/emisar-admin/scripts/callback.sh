@@ -10,9 +10,10 @@ encode() {
 }
 
 # The dispatching staff operator (id or email) rides a distinguished `operator=`
-# argv token, kept OUT of the action's own argument list: the portal resolves it
-# to a staff user and stamps that user as the audit actor, so a staff mutation is
-# never recorded as an anonymous system job. Read actions carry no such token.
+# argv token, kept OUT of the action's own argument list. It is a self-reported
+# label, not authentication: the portal requires it to resolve to a current
+# staff user before any mutation, while the action run records the authenticated
+# dispatcher. Read actions carry no such token.
 operator=
 encoded_args=
 separator=

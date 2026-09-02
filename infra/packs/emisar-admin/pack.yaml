@@ -1,7 +1,7 @@
 schema_version: 1
 id: emisar-admin
 name: Emisar private administration
-version: 0.1.2
+version: 0.1.3
 description: >
   Private production administration for emisar itself. Every action is a
   bounded release RPC into the colocated portal; this pack is
@@ -15,6 +15,7 @@ setup:
   notes:
     - "Private means unlisted, not secret: the repository is public."
     - "Actions call the colocated portal release through one fixed RPC script."
+    - "Mutation operator values are checked staff labels, not authentication; the action run records the authenticated dispatcher."
   verify: emisar.admin.runtime.status
 actions:
   - actions/account_find.yaml
