@@ -1,12 +1,12 @@
 package infraops
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
-	"strings"
 )
 
 // The release shims call their trusted workflow at a pinned commit, and
@@ -66,7 +66,7 @@ func (a *App) checkTrustedReleasePins(ctx context.Context) error {
 		if err != nil {
 			return fmt.Errorf("reading %s at the pinned commit %s: %w", workflow, trusted, err)
 		}
-		if !strings.EqualFold(string(current), string(at)) {
+		if !bytes.Equal(current, at) {
 			return fmt.Errorf("%s changed since %s, but %s and infra/github_oidc.tf still pin that commit — "+
 				"the release would silently run the old workflow; commit the edit and re-pin all three to the new SHA",
 				workflow, trusted[:12], shim)
@@ -96,7 +96,7 @@ func (a *App) checkTrustedReleasePins(ctx context.Context) error {
 		if err != nil {
 			return fmt.Errorf("%s does not exist at the pinned commit %s — commit it and re-pin the shims and infra/github_oidc.tf", relative, trusted[:12])
 		}
-		if !strings.EqualFold(string(current), string(at)) {
+		if !bytes.Equal(current, at) {
 			return fmt.Errorf("%s changed since %s, but the shims and infra/github_oidc.tf still pin that commit — "+
 				"the release would silently run the old steps; re-pin all three to the new SHA",
 				relative, trusted[:12])

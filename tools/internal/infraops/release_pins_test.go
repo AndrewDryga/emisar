@@ -85,6 +85,20 @@ func TestCheckTrustedReleasePins(t *testing.T) {
 		}
 	})
 
+	t.Run("case-only trusted workflow drift fails", func(t *testing.T) {
+		root, _ := writeTrustedReleaseRepo(t, trusted)
+		path := filepath.Join(root, ".github", "workflows", "runner-release-trusted.yml")
+		if err := os.WriteFile(path, []byte(strings.Replace(trusted, "ubuntu-latest", "Ubuntu-Latest", 1)), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		var out bytes.Buffer
+		app := New(root, strings.NewReader(""), &out, &out)
+		err := app.checkTrustedReleasePins(context.Background())
+		if err == nil || !strings.Contains(err.Error(), "silently run the old workflow") {
+			t.Fatalf("case-only workflow drift not reported: %v", err)
+		}
+	})
+
 	t.Run("a shim pinned away from terraform fails", func(t *testing.T) {
 		root, sha := writeTrustedReleaseRepo(t, trusted)
 		path := filepath.Join(root, ".github", "workflows", "runner-release.yml")
@@ -117,6 +131,20 @@ func TestCheckTrustedReleasePins(t *testing.T) {
 		err := app.checkTrustedReleasePins(context.Background())
 		if err == nil || !strings.Contains(err.Error(), "silently run the old steps") {
 			t.Fatalf("stale composite pin not reported: %v", err)
+		}
+	})
+
+	t.Run("case-only composite drift fails", func(t *testing.T) {
+		root, _ := writeTrustedReleaseRepo(t, trusted)
+		path := filepath.Join(root, ".github", "actions", "verify-release-tag", "action.yml")
+		if err := os.WriteFile(path, []byte("name: Verify\nruns:\n  using: composite\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		var out bytes.Buffer
+		app := New(root, strings.NewReader(""), &out, &out)
+		err := app.checkTrustedReleasePins(context.Background())
+		if err == nil || !strings.Contains(err.Error(), "silently run the old steps") {
+			t.Fatalf("case-only composite drift not reported: %v", err)
 		}
 	})
 
