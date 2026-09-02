@@ -21,7 +21,7 @@ const cliFleetRunnersResult = `{
       "hostname":"db-iad-01.example",
       "labels":{"region":"us-east-1","env":"prod"},
       "packs":["postgres","systemd"],
-      "packs_next":{"tool":"list_packs","arguments":{"runner_refs":["db-iad-01~0123456789abcdef0123456789abcdef"],"availability":"all","limit":15}},
+      "packs_next":{"tool":"list_packs","arguments":{"runner_refs":["db-iad-01~0123456789abcdef0123456789abcdef"],"include":"all","limit":15}},
       "last_seen_at":"2026-08-21T02:45:31Z",
       "runner_ref":"db-iad-01~0123456789abcdef0123456789abcdef",
       "enforce_signatures":true,
@@ -34,7 +34,7 @@ const cliFleetRunnersResult = `{
       "hostname":"db-fra-02.example",
       "labels":{},
       "packs":[],
-      "packs_next":{"tool":"list_packs","arguments":{"runner_refs":["db-fra-02~abcdef0123456789abcdef0123456789"],"availability":"all","limit":15}},
+      "packs_next":{"tool":"list_packs","arguments":{"runner_refs":["db-fra-02~abcdef0123456789abcdef0123456789"],"include":"all","limit":15}},
       "last_seen_at":"2026-08-20T22:10:00Z",
       "runner_ref":"db-fra-02~abcdef0123456789abcdef0123456789",
       "enforce_signatures":false,
@@ -65,13 +65,13 @@ func TestCLIListRunnersUsesFleetFormatting(t *testing.T) {
 		"  db-iad-01.example · group postgres\n" +
 		"  Labels  env=prod · region=us-east-1\n" +
 		"  Packs  postgres, systemd\n" +
-		"  See packs  emisar-mcp list_packs '{\"runner_refs\":[\"db-iad-01~0123456789abcdef0123456789abcdef\"],\"availability\":\"all\",\"limit\":15}'\n" +
+		"  See packs  emisar-mcp list_packs '{\"runner_refs\":[\"db-iad-01~0123456789abcdef0123456789abcdef\"],\"include\":\"all\",\"limit\":15}'\n" +
 		"  Last seen  2026-08-21 02:45 UTC\n" +
 		"  Runner ref  db-iad-01~0123456789abcdef0123456789abcdef\n" +
 		"  Dispatch signatures required.\n\n" +
 		"db-fra-02 — disconnected\n" +
 		"  db-fra-02.example · group postgres\n" +
-		"  See packs  emisar-mcp list_packs '{\"runner_refs\":[\"db-fra-02~abcdef0123456789abcdef0123456789\"],\"availability\":\"all\",\"limit\":15}'\n" +
+		"  See packs  emisar-mcp list_packs '{\"runner_refs\":[\"db-fra-02~abcdef0123456789abcdef0123456789\"],\"include\":\"all\",\"limit\":15}'\n" +
 		"  Last seen  2026-08-20 22:10 UTC\n" +
 		"  Runner ref  db-fra-02~abcdef0123456789abcdef0123456789\n" +
 		"  Issue  The runner is disconnected.\n\n" +
@@ -83,6 +83,9 @@ func TestCLIListRunnersUsesFleetFormatting(t *testing.T) {
 		if strings.Contains(stdout.String(), unwanted) {
 			t.Errorf("human output retained %q:\n%s", unwanted, stdout.String())
 		}
+	}
+	if strings.Contains(stdout.String(), `"availability":"all"`) {
+		t.Fatalf("runner continuation retained the retired list_packs request field:\n%s", stdout.String())
 	}
 }
 
@@ -149,18 +152,28 @@ func TestCLIListPacksExplainsEmptyHumanViews(t *testing.T) {
 		{
 			name:      "default executable view",
 			arguments: json.RawMessage(`{}`),
-			want:      "No executable packs found.\n\nUse `emisar-mcp list_packs '{\"availability\":\"all\"}'` to include trusted unavailable packs.\n",
+			want:      "No executable packs found.\n\nUse `emisar-mcp list_packs '{\"include\":\"all\"}'` to include trusted unavailable packs.\n",
+		},
+		{
+			name:      "explicit executable view",
+			arguments: json.RawMessage(`{"include":"executable"}`),
+			want:      "No executable packs found.\n\nUse `emisar-mcp list_packs '{\"include\":\"all\"}'` to include trusted unavailable packs.\n",
+		},
+		{
+			name:      "unavailable view",
+			arguments: json.RawMessage(`{"include":"unavailable"}`),
+			want:      "No trusted unavailable packs found.\n",
 		},
 		{
 			name:      "all view",
-			arguments: json.RawMessage(`{"availability":"all"}`),
+			arguments: json.RawMessage(`{"include":"all"}`),
 			want:      "No trusted packs found.\n",
 		},
 		{
 			name:      "selected account",
 			arguments: json.RawMessage(`{}`),
 			account:   "immersive",
-			want:      "No executable packs found.\n\nUse `emisar-mcp --account immersive list_packs '{\"availability\":\"all\"}'` to include trusted unavailable packs.\n",
+			want:      "No executable packs found.\n\nUse `emisar-mcp --account immersive list_packs '{\"include\":\"all\"}'` to include trusted unavailable packs.\n",
 		},
 	}
 	for _, test := range tests {
@@ -390,7 +403,7 @@ func TestCLIFleetRejectsMismatchedContinuationArguments(t *testing.T) {
 		RunnerRef: "db-01~0123456789abcdef0123456789abcdef",
 		PacksNext: cliToolResultNext{
 			Tool:      listPacksToolName,
-			Arguments: json.RawMessage(`{"runner_refs":["db-02~abcdef0123456789abcdef0123456789"],"availability":"all"}`),
+			Arguments: json.RawMessage(`{"runner_refs":["db-02~abcdef0123456789abcdef0123456789"],"include":"all"}`),
 		},
 	}
 	if command := cliFleetRunnerPacksCommand(runner, ""); command != "" {

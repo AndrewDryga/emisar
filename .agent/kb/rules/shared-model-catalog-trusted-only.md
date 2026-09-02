@@ -12,7 +12,7 @@ refs are operator-only facts. Show them on the Packs page and in audit history,
 not as empty model-visible packs or diagnostic issue codes. Recheck trust and
 retirement inside every mutation transaction even when discovery was trusted.
 
-Good: `list_packs(availability: "all")` includes a trusted but offline pack for
+Good: `list_packs(include: "all")` includes a trusted but offline pack for
 deployment diagnosis, while the same ref disappears from all MCP catalog and
 runbook surfaces immediately after trust is revoked. A stale direct dispatch
 returns the shared hidden-contract error without persisting work.

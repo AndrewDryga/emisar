@@ -31,7 +31,7 @@ onboarding and exposes internal process as a false product dependency.
 - Install it directly from a release tag or commit SHA.
 - Discover commands from public installers, portal snippets, installed CLI
   help, and public documentation.
-- Cite `list_packs` with its real `availability: "all"` input and follow a
+- Cite `list_packs` with its real `include: "all"` input and follow a
   returned candidate's `next` call to `get_action`.
 
 ## Bad

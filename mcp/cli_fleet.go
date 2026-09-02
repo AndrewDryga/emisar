@@ -208,14 +208,17 @@ func renderCLIListPacks(w io.Writer, arguments, raw []byte, account string) (str
 	}
 	if len(packs) == 0 {
 		var input struct {
-			Availability string `json:"availability"`
+			Include string `json:"include"`
 		}
 		_ = json.Unmarshal(arguments, &input)
-		if input.Availability == "all" {
+		switch input.Include {
+		case "all":
 			return "No trusted packs found.\n", true
+		case "unavailable":
+			return "No trusted unavailable packs found.\n", true
 		}
 		command := cliToolInvocationForOS(listPacksToolName, account, runtime.GOOS) +
-			" " + shellQuote(`{"availability":"all"}`)
+			" " + shellQuote(`{"include":"all"}`)
 		return "No executable packs found.\n\nUse `" + command + "` to include trusted unavailable packs.\n", true
 	}
 
