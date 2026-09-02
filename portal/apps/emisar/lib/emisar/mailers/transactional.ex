@@ -12,16 +12,16 @@ defmodule Emisar.Mailers.Transactional do
   alias Emisar.Mailers.Style
   alias Emisar.PublicUrl
 
-  @ground Style.ground()
-  @surface Style.surface()
   @hairline Style.hairline()
   @ink Style.ink()
-  @ink_soft Style.ink_soft()
   @brand Style.brand()
   @rose Style.rose()
   @amber Style.amber()
   @font Style.font()
   @preview_pad Style.preview_pad()
+  @ground_fill Style.fill(Style.ground())
+  @surface_fill Style.fill(Style.surface())
+  @button_fill Style.fill(Style.button_fill())
 
   @type fact_value :: binary() | {:link, binary(), binary()}
   @type block ::
@@ -112,15 +112,16 @@ defmodule Emisar.Mailers.Transactional do
         <title>#{HTML.escape(content.title)}</title>
         <style>:root { color-scheme: dark; supported-color-schemes: dark; }</style>
       </head>
-      <body style="margin:0;padding:0;background-color:#{@ground};">
+      <body style="margin:0;padding:0;#{@ground_fill}">
+        #{Style.mso_fallback(:open)}
         <div style="display:none;max-height:0;overflow:hidden;mso-hide:all;">#{HTML.escape(content.preview)}#{@preview_pad}</div>
-        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#{@ground};">
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="#{@ground_fill}">
           <tr>
             <td align="center" style="padding:40px 20px;">
               <table role="presentation" align="center" width="560" cellpadding="0" cellspacing="0" border="0" style="width:100%;max-width:560px;">
                 #{masthead()}
                 <tr>
-                  <td style="padding:0 0 24px;font-family:#{@font};font-size:15px;line-height:1.65;color:#{@ink_soft};">Hi #{HTML.escape(content.recipient)},</td>
+                  <td style="padding:0 0 24px;font-family:#{@font};font-size:15px;line-height:1.65;color:#{@ink};">Hi #{HTML.escape(content.recipient)},</td>
                 </tr>
                 #{Enum.map_join(content.blocks, &html_block/1)}
                 #{html_actions(content.action, content.secondary_action)}
@@ -129,6 +130,7 @@ defmodule Emisar.Mailers.Transactional do
             </td>
           </tr>
         </table>
+        #{Style.mso_fallback(:close)}
       </body>
     </html>
     """
@@ -145,19 +147,19 @@ defmodule Emisar.Mailers.Transactional do
   end
 
   defp html_block({:paragraph, paragraph}) do
-    ~s(<tr><td style="padding:0 0 18px;font-family:#{@font};font-size:15px;line-height:1.65;color:#{@ink_soft};">#{HTML.escape(paragraph)}</td></tr>)
+    ~s(<tr><td style="padding:0 0 18px;font-family:#{@font};font-size:15px;line-height:1.65;color:#{@ink};">#{HTML.escape(paragraph)}</td></tr>)
   end
 
   defp html_block({:link_paragraph, before, label, url, suffix}) do
-    ~s(<tr><td style="padding:0 0 18px;font-family:#{@font};font-size:15px;line-height:1.65;color:#{@ink_soft};">#{HTML.escape(before)}<a href="#{HTML.escape(url)}" target="_top" style="color:#{@brand};font-weight:600;text-decoration:underline;text-underline-offset:2px;">#{HTML.escape(label)}</a>#{HTML.escape(suffix)}</td></tr>)
+    ~s(<tr><td style="padding:0 0 18px;font-family:#{@font};font-size:15px;line-height:1.65;color:#{@ink};">#{HTML.escape(before)}<a href="#{HTML.escape(url)}" target="_top" style="color:#{@brand};font-weight:600;text-decoration:underline;text-underline-offset:2px;">#{HTML.escape(label)}</a>#{HTML.escape(suffix)}</td></tr>)
   end
 
   defp html_block({:emphasis, before, value, suffix}) do
-    ~s(<tr><td style="padding:0 0 18px;font-family:#{@font};font-size:15px;line-height:1.65;color:#{@ink_soft};">#{HTML.escape(before)}<strong style="font-weight:700;color:#{@ink};">#{HTML.escape(value)}</strong>#{HTML.escape(suffix)}</td></tr>)
+    ~s(<tr><td style="padding:0 0 18px;font-family:#{@font};font-size:15px;line-height:1.65;color:#{@ink};">#{HTML.escape(before)}<strong style="font-weight:700;color:#{@ink};">#{HTML.escape(value)}</strong>#{HTML.escape(suffix)}</td></tr>)
   end
 
   defp html_block({:status, before, status, suffix, tone}) do
-    ~s(<tr><td style="padding:0 0 18px;font-family:#{@font};font-size:15px;line-height:1.65;color:#{@ink_soft};">#{HTML.escape(before)}<strong style="font-weight:700;color:#{status_color(tone)};">#{HTML.escape(status)}</strong>#{HTML.escape(suffix)}</td></tr>)
+    ~s(<tr><td style="padding:0 0 18px;font-family:#{@font};font-size:15px;line-height:1.65;color:#{@ink};">#{HTML.escape(before)}<strong style="font-weight:700;color:#{status_color(tone)};">#{HTML.escape(status)}</strong>#{HTML.escape(suffix)}</td></tr>)
   end
 
   defp html_block({:section, title}) do
@@ -170,8 +172,12 @@ defmodule Emisar.Mailers.Transactional do
     """
     <tr>
       <td style="padding:0 0 18px;">
-        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#{@surface};border:1px solid #{@hairline};border-radius:10px;">
-          <tr><td align="center" style="padding:18px 16px;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:24px;line-height:1.1;font-weight:700;letter-spacing:0.16em;color:#{@ink};">#{HTML.escape(code)}</td></tr>
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="#{Style.fill(@hairline)}border-radius:10px;">
+          <tr><td style="padding:1px;">
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="#{@surface_fill}border-radius:9px;">
+              <tr><td align="center" style="padding:18px 16px;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:24px;line-height:1.1;font-weight:700;letter-spacing:0.16em;color:#{@ink};">#{HTML.escape(code)}</td></tr>
+            </table>
+          </td></tr>
         </table>
       </td>
     </tr>
@@ -184,14 +190,26 @@ defmodule Emisar.Mailers.Transactional do
     """
     <tr>
       <td style="padding:0 0 18px;">
-        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border-top:1px solid #{@hairline};">#{rows}</table>
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">#{Style.rule(2)}#{rows}</table>
       </td>
     </tr>
     """
   end
 
   defp html_block({:pre, value}) do
-    ~s(<tr><td style="padding:14px 16px 16px;background-color:#{@surface};border:1px solid #{@hairline};border-radius:10px;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px;line-height:1.6;white-space:pre-wrap;word-break:break-word;color:#{@ink_soft};">#{HTML.escape(value)}</td></tr><tr><td style="height:18px;"></td></tr>)
+    """
+    <tr>
+      <td style="padding:0 0 18px;">
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="#{Style.fill(@hairline)}border-radius:10px;">
+          <tr><td style="padding:1px;">
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="#{@surface_fill}border-radius:9px;">
+              <tr><td style="padding:14px 16px 16px;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px;line-height:1.6;white-space:pre-wrap;word-break:break-word;color:#{@ink};">#{HTML.escape(value)}</td></tr>
+            </table>
+          </td></tr>
+        </table>
+      </td>
+    </tr>
+    """
   end
 
   defp html_block({:list, items}) do
@@ -203,9 +221,10 @@ defmodule Emisar.Mailers.Transactional do
   defp fact_row(label, value) do
     """
     <tr>
-      <td valign="top" style="padding:11px 14px 11px 0;border-bottom:1px solid #{@hairline};font-family:#{@font};font-size:13px;line-height:1.5;color:#{@ink_soft};">#{HTML.escape(label)}</td>
-      <td valign="top" align="right" style="padding:11px 0;border-bottom:1px solid #{@hairline};font-family:#{@font};font-size:13px;line-height:1.5;font-weight:600;color:#{@ink};">#{html_fact_value(value)}</td>
+      <td valign="top" style="padding:11px 14px 11px 0;font-family:#{@font};font-size:13px;line-height:1.5;color:#{@ink};">#{HTML.escape(label)}</td>
+      <td valign="top" align="right" style="padding:11px 0;font-family:#{@font};font-size:13px;line-height:1.5;font-weight:600;color:#{@ink};">#{html_fact_value(value)}</td>
     </tr>
+    #{Style.rule(2)}
     """
   end
 
@@ -216,7 +235,7 @@ defmodule Emisar.Mailers.Transactional do
   defp html_fact_value(value), do: HTML.escape(value)
 
   defp list_item(item) do
-    ~s(<tr><td valign="top" width="18" style="padding:3px 0;font-family:#{@font};font-size:15px;line-height:1.55;color:#{@brand};">•</td><td style="padding:3px 0;font-family:#{@font};font-size:14px;line-height:1.55;color:#{@ink_soft};">#{HTML.escape(item)}</td></tr>)
+    ~s(<tr><td valign="top" width="18" style="padding:3px 0;font-family:#{@font};font-size:15px;line-height:1.55;color:#{@brand};">•</td><td style="padding:3px 0;font-family:#{@font};font-size:14px;line-height:1.55;color:#{@ink};">#{HTML.escape(item)}</td></tr>)
   end
 
   defp html_actions(nil, nil), do: ""
@@ -241,17 +260,18 @@ defmodule Emisar.Mailers.Transactional do
   end
 
   defp action_cell({:primary, {label, url}}) do
-    ~s(<td bgcolor="#{@brand}" style="border-radius:8px;"><a href="#{HTML.escape(url)}" target="_top" style="display:inline-block;padding:13px 22px;font-family:#{@font};font-size:14px;line-height:1;font-weight:600;color:#{@ground};text-decoration:none;border-radius:8px;">#{HTML.escape(label)}</a></td>)
+    ~s(<td style="#{@button_fill}border-radius:8px;"><a href="#{HTML.escape(url)}" target="_top" style="display:inline-block;padding:13px 22px;font-family:#{@font};font-size:14px;line-height:1;font-weight:700;color:#{@brand};text-decoration:none;border-radius:8px;">#{HTML.escape(label)}</a></td>)
   end
 
   defp action_cell({:secondary, {label, url}}) do
-    ~s(<td style="border:1px solid #{@hairline};border-radius:8px;"><a href="#{HTML.escape(url)}" target="_top" style="display:inline-block;padding:12px 21px;font-family:#{@font};font-size:14px;line-height:1;font-weight:600;color:#{@ink};text-decoration:none;border-radius:8px;">#{HTML.escape(label)}</a></td>)
+    ~s(<td style="#{@surface_fill}border-radius:8px;"><a href="#{HTML.escape(url)}" target="_top" style="display:inline-block;padding:12px 21px;font-family:#{@font};font-size:14px;line-height:1;font-weight:600;color:#{@ink};text-decoration:none;border-radius:8px;">#{HTML.escape(label)}</a></td>)
   end
 
   defp html_footer(footer) when is_binary(footer) and footer != "" do
     """
+    #{Style.rule()}
     <tr>
-      <td style="padding:20px 0 0;border-top:1px solid #{@hairline};font-family:#{@font};font-size:12px;line-height:1.65;color:#{@ink_soft};">#{HTML.escape(footer)}</td>
+      <td style="padding:20px 0 0;font-family:#{@font};font-size:12px;line-height:1.65;color:#{@ink};">#{HTML.escape(footer)}</td>
     </tr>
     """
   end

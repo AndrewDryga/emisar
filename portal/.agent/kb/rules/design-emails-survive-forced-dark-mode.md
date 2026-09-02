@@ -1,135 +1,109 @@
-# Rule: an email is designed twice, because Gmail redesigns it for us
+# Rule: an email is frozen, because Gmail rewrites everything it can
 
-**Rule.** An HTML email body is rendered by clients we do not control, and the
-Gmail mobile apps rewrite every color we author. So a color that reaches a mail
-body clears its contrast bar **in both directions**:
+**Rule.** A mail body paints every surface with `Emisar.Mailers.Style.fill/1` — a
+gradient — and gives every text tone 50% HSL lightness. Nothing else survives a
+rewriting client:
 
-1. as authored, against its authored ground, and
-2. **mirrored** — hue and saturation kept, HSL lightness flipped (`L → 1 − L`) —
-   against its mirrored ground.
+- a **gradient or image background is never rewritten**, so a painted ground
+  stays dark everywhere;
+- **text is always rewritten**, whatever it sits on, and 50% lightness is the one
+  value a lightness flip cannot move.
 
-Every color in `Emisar.Mailers.Style` obeys this, and `Emisar.Mailers.StyleTest`
-proves it by reflection, so a new token is covered the moment it is added.
+Two things follow, and both are the rule rather than a style choice:
 
-Two structural consequences follow, and both are the rule, not a style choice:
+- **There is one neutral.** At 50% lightness a grey tops out at `#808080`, 5.0:1
+  on our ground. Headings, counts, body copy and captions all wear `ink/0`;
+  hierarchy comes from size and weight. Saturated hues are unharmed at that
+  lightness — emerald reads 15:1, amber 12:1 — so the accents carry more weight
+  here than they do in the console.
+- **There are no borders.** A border is not a background and cannot be frozen, so
+  a hairline flips to a bright line across a dark card. Rules are `Style.rule/1`
+  rows; a card edge is `fill/1` wrapping `fill/1`, one pixel apart.
 
-- **An accent sits lighter than its console counterpart.** A mid-lightness
-  saturated accent mirrors into another mid-lightness saturated color, so a
-  filled button keeps its fill's brightness while its label flips across —
-  console-weight `#14cf8d` with a near-black label mirrors to a pale mint with a
-  white one, at 1.4:1. Pushing the accent up (`#8df0ca`) mirrors it down to a
-  deep green a white label sits on, at 5.4:1.
-- **A masthead carries its own ground.** An inverting client rewrites CSS colors
-  and leaves images alone, so a transparent white-ink logo lands as white ink on
-  a white ground. `emisar-email-logo.png` bakes the `#09090b` ground into the
-  lockup with rounded transparent corners: invisible on our dark ground,
-  a brand tile on an inverted one.
+Outlook renders no gradient, so the ground reaches it through
+`Style.mso_fallback/1` — a conditional comment Gmail never parses. It must not
+ride along as a `background-color`, which Gmail reads and rewrites.
 
-**Why.** Gmail's mobile apps ignore `<meta name="color-scheme">`, ignore
-`prefers-color-scheme`, and offer no opt-out. A dark-designed email is delivered
-to a Gmail dark-mode reader as a *light* one, and if we have not designed that
-light rendering, nobody has. The founder reported the monthly report arriving
-with an invisible masthead and washed-out counts; the failing colors were exactly
-the accents and the filled CTA.
+**Why.** The founder reported the monthly report arriving unreadable in the Gmail
+app's dark theme. Six probe emails and the published research agree: Litmus files
+the Gmail app under *full color inversion*, the behavior that turns a dark email
+light, and there is no opt-out — no meta, no selector, no hack. `[data-ogsc]` and
+`[data-ogsb]` target Outlook.com, not Gmail, and Gmail ignores
+`prefers-color-scheme` entirely.
 
-`prefers-color-scheme` still matters for Apple Mail and Outlook.com and the
-`color-scheme` meta still tells them the body is handled — this rule is about the
-client that does not ask.
-
-## What Gmail actually does — measured, not assumed
-
-Six probe emails through a real account, read on the phone. Do not re-derive
-this from blog posts; several of them are wrong about it.
+## What was measured, so nobody re-derives it
 
 | | behavior |
 |---|---|
-| Gmail web, dark theme | **does not rewrite the body at all** — our dark design renders as sent |
-| Gmail Android, rewriting | rewrites every authored color by flipping HSL lightness |
+| Gmail web, dark theme | does not rewrite the body at all |
+| Gmail app, dark theme | rewrites every authored color by flipping HSL lightness |
 | `background-color` | rewritten |
+| `background-image` (url or `linear-gradient`) | **exempt** |
 | `background` attribute (image) | **exempt** |
-| `background-image: url(…)` | **exempt** |
-| `background-image: linear-gradient(…)` | **exempt** |
 | any text color | **rewritten, wherever it sits** |
 | `<img>` content | never touched |
 
-Neither removing the `color-scheme` meta nor using pure black stops the rewrite;
-both were probed and both were rewritten.
+Three things were tried and do not work: removing the `color-scheme` meta, using
+pure black as the ground, and authoring the `background-color` light so the
+rewrite would land it on dark and Gmail would infer a dark page. Text was flipped
+in every case, which is what makes it *blind* rather than contrast-aware.
 
-### The gradient trap
+## The alternative, and why it was not taken
 
-Those two rows together are a loaded gun: **a ground can be made immune, and the
-text on it cannot.** A `linear-gradient` ground needs no asset and survives
-untouched, which makes it look like the way to keep an email dark — and it is
-exactly how to make one unreadable. The ground stays near-black while the
-near-white heading on it flips to near-black, and the text disappears into the
-box that was supposed to protect it. Probe 6 rendered precisely that.
-
-So: **never use an image or gradient as a ground behind live text in a mail
-body.** Ground and text must be rewritten together, which means `background-color`
-— the one that is not exempt. The masthead is the sole exemption we take, and it
-is safe only because its text is baked into the image rather than sitting on it.
-
-### Why we do not force the email to stay dark
-
-A lightness flip has exactly one fixed point, 50%, so the only colors that
-survive it unchanged are the ones sitting there. Neutral grey at 50% is
-`#808080`, which is **5.0:1** on our ground and 5.3:1 on pure black — and there
-is only one of it. Staying dark in both modes therefore means every heading,
-number, body line and caption wears one tone at ~5:1, against the three the
-design has now (19:1 / 7.8:1 / 6.4:1). Saturated accents fare better at 50%
-(emerald 11.8:1, amber 12.1:1), so the palette would be one flat grey plus bright
-colors, with no white anywhere.
-
-That is the whole trade, and it is a ceiling rather than an estimate: no
-arrangement of immune grounds raises it, because the text still swings
-symmetrically around 50%. We took the two-way design instead.
+Letting the ground flip with the text produces a readable *light* email in the
+Gmail app while staying dark everywhere else. It was shipped first and rejected:
+making both directions legible forces the accents pale — brand emerald mirrors to
+1.8:1 and brand amber to 2.7:1, unreadable rather than merely dim, failing even
+the 3:1 large-text bar — and pale accents are off-brand in every client, not just
+the one that rewrites. Freezing costs one neutral; the alternative costs the
+palette.
 
 ## ✅ Good
 
 ```elixir
-# One emerald covers link, eyebrow, bullet, count, and button fill. Its mirror is
-# a deep green, so the button's ground-colored label mirrors to white on it.
-def brand, do: "#8df0ca"
+# A painted ground, and tones at the fixed point of a lightness flip.
+def fill(color), do: "background-image:linear-gradient(#{color},#{color});"
+def ink, do: "#808080"
+def brand, do: "#00ffa1"
 ```
 
 ```html
-<img src="…/emisar-email-logo.png" width="166" height="50" alt="emisar" />
+<td style="background-image:linear-gradient(#27272a,#27272a);border-radius:12px;">
+  <td style="padding:1px;">
+    <table style="background-image:linear-gradient(#111114,#111114);border-radius:11px;">
 ```
 
 ## ❌ Bad
 
+```html
+<!-- Rewritten to #f4f4f6, which turns the whole email light. -->
+<body style="background-color:#09090b;">
+
+<!-- Not a background, so it cannot be frozen: this flips to a bright line. -->
+<td style="border-top:1px solid #27272a;">
+```
+
 ```elixir
-# Console tokens, dropped into a mail body untested against the mirror.
-@brand_fill "#14cf8d"   # mirrors to #30eba9; the white label reads at 1.4:1
-@amber "#fcd34d"        # mirrors to #b28903 on near-white: 2.7:1
-@ink_zero "#71717a"     # mirrors to #85858e on near-white: 3.1:1
-```
-
-```html
-<!-- Images are never inverted, so this is white ink on a white ground. -->
-<img src="…/emisar-status-logo-dark.png" />
-```
-
-```html
-<!-- The gradient survives the rewrite. The heading on it does not, so the
-     card keeps its dark ground and loses its text. -->
-<td style="background-image:linear-gradient(#09090b,#09090b);">
-  <div style="color:#fafafa;">12,809</div>
-</td>
+# A solid emerald fill cannot hold a label. Authored dark it reads 9.8:1 and
+# flips to 1.4:1; authored light it reads the reverse. The button is tonal:
+# a frozen dark fill under a brand-coloured label.
+~s(<td bgcolor="#14cf8d"><a style="color:#09090b">)
 ```
 
 ## How it's enforced
 
 `Emisar.Mailers.StyleTest` reads `Style`'s exported color functions, treats
-`ground`/`surface` as grounds and `hairline` as a separator, and asserts every
-remaining token clears 4.5:1 on both grounds in both directions — plus the
-button's ground-colored label on the brand fill. Adding a token to `Style` puts
-it under the bar automatically.
+`ground`/`surface` as grounds and `hairline`/`button_fill` as chrome, and asserts
+every remaining token clears 4.5:1 on both grounds as authored **and** after a
+flip — plus the button label on its fill. It then renders both bodies and fails
+on any `background-color` or `1px` border reaching them, and on a missing Outlook
+ground. Adding a token to `Style` puts it under the bar automatically.
 
 ## Verifying a change by eye
 
-Render the bodies, mirror them, and look at both. The mirror is a five-line
+Render the bodies, apply the rewrite, and look at both. The rewrite is a short
 transform over the rendered HTML — flip the HSL lightness of every `#rrggbb`,
-leave images alone — which reproduced the founder's Gmail capture exactly,
-including the invisible masthead. Shoot the pair side by side and read them
+skipping anything inside a `linear-gradient()`, and leave images alone. Under
+this design the two renderings are near-identical, which is the point. Shoot the
+pair side by side and read them
 (`.agent/kb/rules/design-ui-fix-screenshot-proof.md`).

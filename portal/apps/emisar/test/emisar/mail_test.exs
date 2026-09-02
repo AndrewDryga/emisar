@@ -435,7 +435,7 @@ defmodule Emisar.MailTest do
                  ~s(href="http://localhost/app/#{account.slug}" target="_top" style="color:#{Style.brand()};font-weight:600;text-decoration:underline;text-underline-offset:2px;">Northstar</a>)
 
         assert email.html_body =~
-                 ~s(New sign-in email: <strong style="font-weight:700;color:#fafafa;">new@example.com</strong>.)
+                 ~s(New sign-in email: <strong style="font-weight:700;color:#{Style.ink()};">new@example.com</strong>.)
 
         true
       end)
@@ -854,7 +854,10 @@ defmodule Emisar.MailTest do
         assert email.text_body =~ "/app/globex/runs/run-decided-1"
         assert email.html_body =~ ">View approval</a>"
         assert email.html_body =~ ">View run</a>"
-        assert email.html_body =~ "border:1px solid #27272a"
+
+        assert email.html_body =~
+                 ~s(<td style="#{Style.fill(Style.surface())}border-radius:8px;">)
+
         refute email.text_body =~ "not proof that the action ran"
         # The approval page is the only place arguments are shown.
         refute email.text_body =~ "Arguments"
