@@ -12,6 +12,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -442,11 +443,16 @@ func (e *Engine) Run(ctx context.Context, req Request) (*Result, error) {
 	}
 
 	combinedRedactor := e.combinedRedactor(act, cleanArgs)
+	structuredJSON := act.Output.Parser == actionspec.ParserJSON &&
+		(act.Output.ParserRequired || act.Output.HasSchema())
 
-	// When the caller wants streaming, redact each chunk before it leaves the
+	// When the caller wants streaming, redact text chunks before they leave the
 	// runner and accumulate the redacted bytes locally so the post-run code
-	// (JSON parser, audit journal, run result) sees exactly what the cloud
-	// does. Redaction is stateful per stream: a StreamRedactor holds back a
+	// (parser, audit journal, run result) sees exactly what the cloud does.
+	// Required structured JSON stdout is the exception: hold its bounded raw
+	// document until exit, redact its decoded strings, re-encode it, and only
+	// then emit the valid document. Redaction is stateful per text stream: a
+	// StreamRedactor holds back a
 	// bounded tail so multi-line rules (e.g. a PEM private-key block streamed
 	// one line at a time) still match across chunk boundaries. This matters
 	// for confidentiality, not just tidiness — the cloud reassembles stored
@@ -455,11 +461,14 @@ func (e *Engine) Run(ctx context.Context, req Request) (*Result, error) {
 	streaming := req.OnProgress != nil
 	var (
 		stdoutBuf, stderrBuf strings.Builder
+		rawJSONBuf           strings.Builder
 		outRed, errRed       *redact.StreamRedactor
 	)
 
 	if streaming {
-		outRed = combinedRedactor.StreamRedactor()
+		if !structuredJSON {
+			outRed = combinedRedactor.StreamRedactor()
+		}
 		errRed = combinedRedactor.StreamRedactor()
 		// stdout and stderr stream from separate goroutines; serialize so the
 		// redactors' state and the shared progress sink stay consistent.
@@ -467,6 +476,10 @@ func (e *Engine) Run(ctx context.Context, req Request) (*Result, error) {
 		plan.OnChunk = func(stream executor.Stream, data []byte) {
 			mu.Lock()
 			defer mu.Unlock()
+			if stream == executor.StreamStdout && structuredJSON {
+				rawJSONBuf.Write(data)
+				return
+			}
 			var sr *redact.StreamRedactor
 			var buf *strings.Builder
 			switch stream {
@@ -510,29 +523,50 @@ func (e *Engine) Run(ctx context.Context, req Request) (*Result, error) {
 	var (
 		redactedStdout, redactedStderr string
 		hits                           []redact.Hit
+		jsonRedactionFailed            bool
+		redactionOverflow              bool
 	)
 
 	if streaming {
 		// Execute has returned, so both stream goroutines are done and no
 		// further OnChunk can run — draining the held-back tails needs no lock.
-		if tail := outRed.Flush(); len(tail) > 0 {
-			tail = normalizeUTF8Bytes(tail)
-			req.OnProgress(executor.StreamStdout, tail)
-			stdoutBuf.Write(tail)
+		if structuredJSON {
+			redactedStdout, hits, jsonRedactionFailed = redactJSONOutput(combinedRedactor, rawJSONBuf.String())
+			if len(redactedStdout) > plan.Limits.MaxStdoutBytes {
+				redactedStdout = ""
+				redactionOverflow = true
+			} else if redactedStdout != "" {
+				req.OnProgress(executor.StreamStdout, []byte(redactedStdout))
+			}
+		} else {
+			if tail := outRed.Flush(); len(tail) > 0 {
+				tail = normalizeUTF8Bytes(tail)
+				req.OnProgress(executor.StreamStdout, tail)
+				stdoutBuf.Write(tail)
+			}
+			redactedStdout = stdoutBuf.String()
+			hits = outRed.Hits()
 		}
 		if tail := errRed.Flush(); len(tail) > 0 {
 			tail = normalizeUTF8Bytes(tail)
 			req.OnProgress(executor.StreamStderr, tail)
 			stderrBuf.Write(tail)
 		}
-		redactedStdout = stdoutBuf.String()
 		redactedStderr = stderrBuf.String()
-		hits = redact.MergeHits(outRed.Hits(), errRed.Hits())
+		hits = redact.MergeHits(hits, errRed.Hits())
 	} else {
 		var hs1, hs2 []redact.Hit
-		redactedStdout, hs1 = combinedRedactor.Apply(execRes.Stdout)
+		if structuredJSON {
+			redactedStdout, hs1, jsonRedactionFailed = redactJSONOutput(combinedRedactor, execRes.Stdout)
+			if len(redactedStdout) > plan.Limits.MaxStdoutBytes {
+				redactedStdout = ""
+				redactionOverflow = true
+			}
+		} else {
+			redactedStdout, hs1 = combinedRedactor.Apply(execRes.Stdout)
+			redactedStdout = normalizeUTF8String(redactedStdout)
+		}
 		redactedStderr, hs2 = combinedRedactor.Apply(execRes.Stderr)
-		redactedStdout = normalizeUTF8String(redactedStdout)
 		redactedStderr = normalizeUTF8String(redactedStderr)
 		hits = redact.MergeHits(hs1, hs2)
 	}
@@ -559,7 +593,17 @@ func (e *Engine) Run(ctx context.Context, req Request) (*Result, error) {
 		resultError      string
 		reason           = reasonForStatus(status, execRes)
 	)
-	if status == StatusSuccess && act.Output.HasSchema() {
+	if status == StatusSuccess && jsonRedactionFailed {
+		status = StatusValidationFailed
+		reason = "output_redaction_invalid_json"
+		resultError = "output redaction could not preserve the JSON document"
+		parserError = resultError
+	} else if status == StatusSuccess && redactionOverflow {
+		status = StatusValidationFailed
+		reason = "output_redaction_exceeded_limit"
+		resultError = "redacted structured output exceeded its byte limit"
+		parserError = resultError
+	} else if status == StatusSuccess && act.Output.HasSchema() {
 		if execRes.Truncated.Stdout {
 			status = StatusValidationFailed
 			reason = "output_truncated"
@@ -630,10 +674,23 @@ func (e *Engine) Run(ctx context.Context, req Request) (*Result, error) {
 		StderrSHA256:     hashOutput(redactedStderr),
 		StdoutBytes:      len(redactedStdout),
 		StderrBytes:      len(redactedStderr),
-		TruncatedOut:     execRes.Truncated.Stdout,
+		TruncatedOut:     execRes.Truncated.Stdout || redactionOverflow,
 		TruncatedErr:     execRes.Truncated.Stderr,
 		ExecutedCommand:  executedCommand,
 	}, nil
+}
+
+func redactJSONOutput(redactor *redact.Engine, raw string) (string, []redact.Hit, bool) {
+	redacted, hits, err := redactor.ApplyJSON([]byte(raw))
+	switch {
+	case err == nil:
+		return string(redacted), hits, false
+	case errors.Is(err, redact.ErrInvalidJSON):
+		text, textHits := redactor.Apply(raw)
+		return normalizeUTF8String(text), textHits, false
+	default:
+		return string(redacted), hits, true
+	}
 }
 
 func normalizeUTF8Bytes(data []byte) []byte {

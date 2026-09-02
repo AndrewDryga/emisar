@@ -3,6 +3,7 @@ package engine
 import (
 	"context"
 	"crypto/sha256"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -513,6 +514,53 @@ output:
   max_stderr_bytes: 1024
 `
 
+const escapingJSONAction = `
+schema_version: 1
+id: t.escaping_json
+title: Escaping JSON
+kind: exec
+risk: low
+description: Returns JSON containing an assignment that needs redaction.
+side_effects: [none]
+args: []
+execution:
+  command:
+    binary: printf
+    argv: ['%s', '{"message":"quote\" slash\\ pwd=x","token":"ordinary-\"value","ok":true}']
+  timeout: 5s
+output:
+  parser: json
+  parser_required: true
+  max_stdout_bytes: 1024
+  max_stderr_bytes: 1024
+`
+
+const expandingJSONAction = `
+schema_version: 1
+id: t.expanding_json
+title: Expanding JSON
+kind: exec
+risk: low
+description: Returns JSON whose redaction expands beyond the output limit.
+side_effects: [none]
+args: []
+execution:
+  command:
+    binary: printf
+    argv: ['%s', '{"v":"x"}']
+  timeout: 5s
+output:
+  parser: json
+  parser_required: true
+  max_stdout_bytes: 16
+  max_stderr_bytes: 1024
+  redact:
+    - name: expansion
+      type: literal
+      literal: x
+      replacement: '[REDACTED_REPLACEMENT_THAT_EXCEEDS_THE_LIMIT]'
+`
+
 func setupEngineExtra(t *testing.T, extras map[string]string) (*Engine, *audit.Journal, string) {
 	t.Helper()
 	e, j, root := setupEngine(t)
@@ -632,6 +680,64 @@ func TestEngine_JSONParser_StreamingPath(t *testing.T) {
 	}
 	if res.Stdout == "" {
 		t.Fatal("stdout should be captured under streaming, not silently dropped")
+	}
+}
+
+func TestEngine_JSONParserRequiredRedactsBeforeStreamingCanonicalJSON(t *testing.T) {
+	e, j, root := setupEngineExtra(t, map[string]string{"escaping_json.yaml": escapingJSONAction})
+	defer j.Close()
+	rules, err := redact.CompileAll(redact.DefaultRules())
+	if err != nil {
+		t.Fatal(err)
+	}
+	e.SetRedactor(redact.New(rules))
+
+	var progress strings.Builder
+	res, err := e.Run(context.Background(), Request{
+		ActionID: "t.escaping_json",
+		Reason:   "test",
+		OnProgress: func(stream executor.Stream, data []byte) {
+			if stream == executor.StreamStdout {
+				progress.Write(data)
+			}
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Status != StatusSuccess {
+		t.Fatalf("status=%s reason=%s parser_error=%s", res.Status, res.Reason, res.ParserError)
+	}
+	if !json.Valid([]byte(res.Stdout)) || progress.String() != res.Stdout {
+		t.Fatalf("progress/result mismatch or invalid JSON: progress=%q result=%q", progress.String(), res.Stdout)
+	}
+	if strings.Contains(res.Stdout, "pwd=x") || strings.Contains(res.Stdout, "ordinary-") {
+		t.Fatalf("secret reached structured output: %s", res.Stdout)
+	}
+	decoded := res.Output.(map[string]any)
+	if decoded["message"] != `quote" slash\ pwd=[REDACTED]` || decoded["token"] != "[REDACTED]" {
+		t.Fatalf("unexpected parsed output: %#v", decoded)
+	}
+	events := readJournalEvents(t, root)
+	terminal := events[len(events)-1]
+	if terminal.Execution.StdoutSHA256 != res.StdoutSHA256 || terminal.Execution.StdoutBytes != len(res.Stdout) {
+		t.Fatalf("journal/result output metadata differs: journal=%+v result=%+v", terminal.Execution, res)
+	}
+}
+
+func TestEngine_JSONRedactionExpansionFailsClosedAtOutputLimit(t *testing.T) {
+	e, j, _ := setupEngineExtra(t, map[string]string{"expanding_json.yaml": expandingJSONAction})
+	defer j.Close()
+
+	res, err := e.Run(context.Background(), Request{ActionID: "t.expanding_json", Reason: "test"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Status != StatusValidationFailed || res.Reason != "output_redaction_exceeded_limit" {
+		t.Fatalf("result=%+v", res)
+	}
+	if res.Stdout != "" || !res.TruncatedOut {
+		t.Fatalf("expanded output was not withheld: stdout=%q truncated=%v", res.Stdout, res.TruncatedOut)
 	}
 }
 
