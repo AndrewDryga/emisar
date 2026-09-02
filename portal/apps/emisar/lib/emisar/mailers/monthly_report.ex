@@ -29,6 +29,9 @@ defmodule Emisar.Mailers.MonthlyReport do
   @amber Style.amber()
   @font Style.font()
 
+  # Five, because the approvals split has five outcomes. The runs split has four
+  # and leaves its last track empty on purpose — a shared grid is worth more than
+  # a filled row, and the two splits align column for column because of it.
   @stat_tracks 5
   @track_width trunc(100 / @stat_tracks)
 
@@ -47,7 +50,7 @@ defmodule Emisar.Mailers.MonthlyReport do
       period: Calendar.strftime(report.period_start, "%B %Y"),
       dashboard_url: PublicUrl.url("/app/#{account.slug}"),
       unsubscribe_url: unsubscribe_url,
-      runs: with_in_progress(report.runs),
+      runs: report.runs,
       approvals: report.approvals,
       runners: report.runners,
       team_size: report.team_size
@@ -83,7 +86,7 @@ defmodule Emisar.Mailers.MonthlyReport do
       #{number(runs.total)} #{run_label(runs.total)} recorded
       #{runs_caption(runs)}
 
-    #{text_rows([{"Succeeded", runs.success}, {"Failed", runs.failed}, {"Denied", runs.denied}, {"Cancelled", runs.cancelled}, {"In progress", runs.in_progress}])}\
+    #{text_rows([{"Succeeded", runs.success}, {"Failed", runs.failed}, {"Denied", runs.denied}, {"Cancelled", runs.cancelled}])}\
     """
   end
 
@@ -205,8 +208,7 @@ defmodule Emisar.Mailers.MonthlyReport do
       {"Succeeded", runs.success, @brand},
       {"Failed", runs.failed, @rose},
       {"Denied", runs.denied, @rose},
-      {"Cancelled", runs.cancelled, @ink_soft},
-      {"In progress", runs.in_progress, @amber}
+      {"Cancelled", runs.cancelled, @ink_soft}
     ]
 
     card("Runs", number(runs.total), runs_caption(runs), stats)
@@ -258,9 +260,9 @@ defmodule Emisar.Mailers.MonthlyReport do
   end
 
   # Counts on one row, labels on the next, so every number shares a baseline and
-  # a label that wraps on a narrow screen only makes the label row taller. Every
-  # card spends the same five tracks, so the approvals split lines up with the
-  # runs split above it.
+  # a label that wraps on a narrow screen only makes the label row taller. A card
+  # with fewer outcomes than `@stat_tracks` pads rather than widening, which is
+  # what keeps the two splits on one grid.
   defp stat_columns(stats) do
     tracks = stats ++ List.duplicate(nil, @stat_tracks - length(stats))
 
@@ -352,11 +354,6 @@ defmodule Emisar.Mailers.MonthlyReport do
   end
 
   # -- Formatting ----------------------------------------------------------
-
-  defp with_in_progress(runs) do
-    in_progress = runs.total - runs.success - runs.failed - runs.denied - runs.cancelled
-    Map.put(runs, :in_progress, max(in_progress, 0))
-  end
 
   defp runs_caption(%{dispatched: 0}), do: "No work was dispatched to a runner."
 

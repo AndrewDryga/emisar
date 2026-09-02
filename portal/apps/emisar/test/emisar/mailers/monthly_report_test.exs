@@ -163,9 +163,9 @@ defmodule Emisar.Mailers.MonthlyReportTest do
       assert rendered.html =~ ">11,902</td>"
     end
 
-    test "uses singular run grammar and reports an in-flight remainder" do
-      runs = %{
-        total: 2,
+    test "uses singular run grammar for one run and plural for more" do
+      one_run = %{
+        total: 1,
         success: 1,
         failed: 0,
         denied: 0,
@@ -174,13 +174,25 @@ defmodule Emisar.Mailers.MonthlyReportTest do
         distinct_runners: 1
       }
 
-      rendered = render(%{runs: runs})
-      assert rendered.text =~ "2 runs recorded"
-      assert rendered.text =~ ~r/In progress\s+1$/m
+      assert render(%{runs: one_run}).text =~ "1 run recorded"
+      assert render(%{runs: %{one_run | total: 2, success: 2}}).text =~ "2 runs recorded"
+    end
 
-      one = render(%{runs: %{runs | total: 1}})
-      assert one.text =~ "1 run recorded"
-      refute one.text =~ "1 runs recorded"
+    test "reports no in-flight bucket — a month-boundary report is about finished work" do
+      unfinished = %{
+        total: 5,
+        success: 2,
+        failed: 0,
+        denied: 0,
+        cancelled: 0,
+        dispatched: 5,
+        distinct_runners: 1
+      }
+
+      rendered = render(%{runs: unfinished})
+
+      refute rendered.text =~ "In progress"
+      refute rendered.html =~ "In progress"
     end
 
     test "escapes account and recipient names in the HTML body" do
