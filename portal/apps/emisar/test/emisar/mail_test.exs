@@ -356,7 +356,7 @@ defmodule Emisar.MailTest do
         assert email.text_body =~ "15 minutes"
         assert email.html_body =~ ~s(href="http://localhost/sign_in/magic/tok-magic/ABC234")
         assert email.html_body =~ ~s(target="_top")
-        assert email.html_body =~ ">Sign in</a>"
+        assert email.html_body =~ Style.blend("Sign in") <> "</a>"
 
         assert email.text_body =~
                  "Enter the code in the browser where you asked to sign in. It works once, only in that browser, and expires in 15 minutes.\n\nIf you didn't ask to sign in, ignore this email."
@@ -852,10 +852,11 @@ defmodule Emisar.MailTest do
         assert email.text_body =~ "confirmed with the on-call"
         assert email.text_body =~ "/app/globex/approvals/req-decided-1"
         assert email.text_body =~ "/app/globex/runs/run-decided-1"
-        assert email.html_body =~ ">View approval</a>"
-        assert email.html_body =~ ">View run</a>"
+        assert email.html_body =~ Style.blend("View approval") <> "</a>"
+        assert email.html_body =~ Style.blend("View run") <> "</a>"
 
-        assert email.html_body =~ ~s(border:1px solid #{Style.hairline()};border-radius:8px;)
+        assert email.html_body =~
+                 ~s(class="gm-surface" style="#{Style.fill(Style.surface())}border-radius:8px;")
 
         refute email.text_body =~ "not proof that the action ran"
         # The approval page is the only place arguments are shown.
@@ -904,7 +905,7 @@ defmodule Emisar.MailTest do
 
       assert_email_sent(fn email ->
         assert email.text_body =~ "/app/acme/runbooks/runbook-123/runs/execution-123"
-        assert email.html_body =~ ">View run</a>"
+        assert email.html_body =~ Style.blend("View run") <> "</a>"
         true
       end)
     end

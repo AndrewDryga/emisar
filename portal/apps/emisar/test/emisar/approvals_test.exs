@@ -2025,7 +2025,7 @@ defmodule Emisar.ApprovalsTest do
       assert email.text_body =~ "approved with 1 of 1 approvals"
       assert email.text_body =~ "lgtm"
       assert email.text_body =~ "/app/#{account.slug}/runs/#{run.id}"
-      assert email.html_body =~ ">View run</a>"
+      assert email.html_body =~ Emisar.Mailers.Style.blend("View run") <> "</a>"
       refute email.text_body =~ "Arguments"
 
       assert Enum.any?(emails, fn email ->

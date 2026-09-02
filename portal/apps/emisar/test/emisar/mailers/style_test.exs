@@ -1,52 +1,149 @@
 defmodule Emisar.Mailers.StyleTest do
-  use ExUnit.Case, async: true
-  alias Emisar.Mailers.Style
+  @moduledoc """
+  The properties that keep the design intact in a client that rewrites colors.
 
-  # Grounds are compared against, never drawn on; a hairline is a separator and
-  # is deliberately below text contrast. Everything else in Style that returns a
-  # color is ink, and has to clear the bar in both renderings.
+  Surfaces are painted so a rewrite skips them, neutral text is carried through
+  by `Style.blend/1`, and accents — which no blend can carry, being RGB math
+  against an HSL flip — sit at the one lightness a flip leaves alone.
+  """
+  use ExUnit.Case, async: true
+  alias Emisar.Mailers.MonthlyReport
+  alias Emisar.Mailers.Style
+  alias Emisar.Mailers.Transactional
+  alias Emisar.Users
+
   @grounds [:ground, :surface]
+  # Painted, never drawn on: a hairline separates and the fill carries a label.
   @chrome [:hairline, :button_fill]
+  # Carried through a rewrite by blend/1, so their lightness is unconstrained.
+  @neutrals [:ink, :ink_soft]
 
   describe "the palette" do
-    test "every ink clears 4.5:1 on both grounds, as authored and after a client mirrors it" do
-      for ink <- ink_tokens(), ground <- @grounds do
-        color = apply(Style, ink, [])
+    test "every tone clears 4.5:1 on both grounds" do
+      for token <- text_tokens(), ground <- @grounds do
+        color = apply(Style, token, [])
         bg = apply(Style, ground, [])
 
         assert contrast(color, bg) >= 4.5,
-               "#{ink} (#{color}) on #{ground} (#{bg}) is #{contrast(color, bg)}:1"
-
-        assert contrast(mirror(color), mirror(bg)) >= 4.5,
-               "#{ink} mirrors to #{mirror(color)} on #{mirror(bg)}, " <>
-                 "which is #{contrast(mirror(color), mirror(bg))}:1"
+               "#{token} (#{color}) on #{ground} (#{bg}) is #{contrast(color, bg)}:1"
       end
     end
 
-    test "the button's label clears 4.5:1 on its fill, mirrored too" do
+    test "every accent sits at the one lightness a rewrite leaves alone" do
+      for accent <- text_tokens() -- @neutrals do
+        color = apply(Style, accent, [])
+        {_h, lightness, _s} = to_hsl(color)
+
+        assert_in_delta lightness,
+                        0.5,
+                        0.005,
+                        "#{accent} (#{color}) is at #{round(lightness * 100)}% lightness, so a " <>
+                          "rewrite moves it. No blend can carry a hue — put it at 50%."
+      end
+    end
+
+    test "the button's label clears 4.5:1 on its fill" do
       assert contrast(Style.ink(), Style.button_fill()) >= 4.5
-      assert contrast(mirror(Style.ink()), mirror(Style.button_fill())) >= 4.5
     end
   end
 
-  defp ink_tokens do
+  describe "every rendered body" do
+    test "carries the Gmail stylesheet and the class it keys off" do
+      for {name, html} <- rendered_bodies() do
+        assert html =~ "u + .body", "#{name}: no Gmail-only block"
+        assert html =~ ~s(<body class="body ), "#{name}: nothing for `u + .body` to match"
+      end
+    end
+
+    test "paints every surface, so a rewrite cannot turn one light" do
+      for {name, html} <- rendered_bodies(), background <- backgrounds(html) do
+        assert background =~ ~r/class="[^"]*gm-(ground|surface|hairline|fill)/,
+               "#{name}: a background-color with no gm- class is rewritten to its " <>
+                 "opposite. Pair Style.fill/1 with the class Gmail repaints it by."
+      end
+    end
+
+    test "draws its edges as backgrounds, because a border cannot be painted" do
+      for {name, html} <- rendered_bodies() do
+        refute html =~ ~r/border(-top|-bottom|-left|-right)?:\s*1px/,
+               "#{name}: a border is not a background, so it flips to a bright line. " <>
+                 "Use Style.rule/1, or a fill inside a fill."
+      end
+    end
+  end
+
+  defp backgrounds(html) do
+    ~r/<[a-z]+[^>]*background-color:[^>]*>/
+    |> Regex.scan(html)
+    |> Enum.map(&hd/1)
+  end
+
+  defp rendered_bodies do
+    report = %{
+      period_start: ~U[2026-08-01 00:00:00Z],
+      period_end: ~U[2026-09-01 00:00:00Z],
+      runs: %{
+        total: 4,
+        success: 3,
+        failed: 1,
+        denied: 0,
+        cancelled: 0,
+        dispatched: 4,
+        distinct_runners: 1
+      },
+      approvals: %{
+        requested: 2,
+        approved: 1,
+        denied: 0,
+        expired: 0,
+        cancelled: 0,
+        pending: 1,
+        waiting_now: 1
+      },
+      runners: 1,
+      team_size: 2
+    }
+
+    monthly =
+      MonthlyReport.render(
+        %Users.User{full_name: "Olivia Owner", email: "olivia@example.com"},
+        %{name: "Fleet Ops", slug: "fleet-ops"},
+        report,
+        "https://emisar.dev/u"
+      )
+
+    transactional =
+      Transactional.render(%{
+        recipient: "Olivia Owner",
+        title: "Approval",
+        preview: "Needs approval.",
+        blocks: [
+          {:status, "This action ", "needs your approval", ".", :warning},
+          {:facts, [{"Action", "linux.uptime"}, {"Runner", "web-01"}]},
+          {:section, "Redacted arguments"},
+          {:pre, "host  web-01"},
+          {:code, "834 512"},
+          {:list, ["One", "Two"]}
+        ],
+        action: {"Review approval", "https://emisar.dev/a"},
+        secondary_action: {"Open runner", "https://emisar.dev/r"},
+        footer: "You're receiving this because you can approve actions."
+      })
+
+    [{"monthly report", monthly.html}, {"transactional", transactional.html}]
+  end
+
+  defp text_tokens do
     tokens =
       for {name, 0} <- Style.__info__(:functions),
           name not in @grounds and name not in @chrome,
           match?("#" <> <<_::binary-size(6)>>, apply(Style, name, [])),
           do: name
 
-    # A new color token is covered by the test above the moment it is added; an
-    # empty list would mean the reflection stopped finding any of them.
+    # A new color token falls under both tests the moment it is added; an empty
+    # list would mean the reflection stopped finding any of them.
     assert tokens != []
     tokens
-  end
-
-  # Gmail's mobile dark theme rewrites an authored color by flipping its HSL
-  # lightness and keeping hue and saturation.
-  defp mirror(hex) do
-    {h, l, s} = to_hsl(hex)
-    to_hex(h, 1.0 - l, s)
   end
 
   defp contrast(a, b) do
@@ -74,12 +171,12 @@ defmodule Emisar.Mailers.StyleTest do
     high = Enum.max([r, g, b])
     low = Enum.min([r, g, b])
     chroma = high - low
-    l = (high + low) / 2
-    {hue(r, g, b, high, chroma), l, saturation(chroma, l)}
+    lightness = (high + low) / 2
+    {hue(r, g, b, high, chroma), lightness, saturation(chroma, lightness)}
   end
 
-  defp saturation(chroma, _l) when chroma == 0, do: 0.0
-  defp saturation(chroma, l), do: chroma / (1 - abs(2 * l - 1))
+  defp saturation(chroma, _lightness) when chroma == 0, do: 0.0
+  defp saturation(chroma, lightness), do: chroma / (1 - abs(2 * lightness - 1))
 
   defp hue(_r, _g, _b, _high, chroma) when chroma == 0, do: 0.0
   defp hue(r, g, b, high, chroma) when high == r, do: wrap((g - b) / chroma) / 6
@@ -88,25 +185,4 @@ defmodule Emisar.Mailers.StyleTest do
 
   defp wrap(sector) when sector < 0, do: sector + 6
   defp wrap(sector), do: sector
-
-  defp to_hex(h, l, s) do
-    chroma = (1 - abs(2 * l - 1)) * s
-    sector = h * 6
-    x = chroma * (1 - abs(:math.fmod(sector, 2) - 1))
-    m = l - chroma / 2
-
-    parts = rgb(sector, chroma, x)
-    "#" <> Enum.map_join(parts, &byte(round((&1 + m) * 255)))
-  end
-
-  defp byte(value) do
-    value |> Integer.to_string(16) |> String.downcase() |> String.pad_leading(2, "0")
-  end
-
-  defp rgb(sector, chroma, x) when sector < 1, do: [chroma, x, 0]
-  defp rgb(sector, chroma, x) when sector < 2, do: [x, chroma, 0]
-  defp rgb(sector, chroma, x) when sector < 3, do: [0, chroma, x]
-  defp rgb(sector, chroma, x) when sector < 4, do: [0, x, chroma]
-  defp rgb(sector, chroma, x) when sector < 5, do: [x, 0, chroma]
-  defp rgb(_sector, chroma, x), do: [chroma, 0, x]
 end
