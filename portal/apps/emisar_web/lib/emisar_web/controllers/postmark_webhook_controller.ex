@@ -12,15 +12,15 @@ defmodule EmisarWeb.PostmarkWebhookController do
   and dropped — Postmark retries any non-2xx and has nothing here to fix.
   """
   use EmisarWeb, :controller
-  alias Emisar.{Crypto, Mail}
+  alias Emisar.{Config, Crypto, Mail}
   require Logger
 
   def create(conn, params) do
-    case Emisar.Config.get_env(:emisar, :postmark_webhook_secret) do
-      nil ->
+    case configured_secret() do
+      :disabled ->
         conn |> put_status(:service_unavailable) |> json(%{error: "webhook_disabled"})
 
-      secret ->
+      {:ok, secret} ->
         if authorized?(conn, secret) do
           handle_event(conn, params)
         else
@@ -29,6 +29,19 @@ defmodule EmisarWeb.PostmarkWebhookController do
           # telemetry already records the 401.
           conn |> put_status(:unauthorized) |> json(%{error: "unauthorized"})
         end
+    end
+  end
+
+  # A blank self-hosted environment value must disable this public endpoint,
+  # not become a Basic Auth password an unauthenticated caller can guess.
+  # Nonblank passwords stay byte-exact so configuration is never rewritten.
+  defp configured_secret do
+    case Config.get_env(:emisar, :postmark_webhook_secret) do
+      secret when is_binary(secret) ->
+        if String.trim(secret) == "", do: :disabled, else: {:ok, secret}
+
+      _other ->
+        :disabled
     end
   end
 

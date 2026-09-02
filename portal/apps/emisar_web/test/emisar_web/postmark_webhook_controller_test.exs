@@ -227,16 +227,40 @@ defmodule EmisarWeb.PostmarkWebhookControllerTest do
     assert Mail.suppressed?("user@example.com")
   end
 
-  test "the webhook is disabled (503) when no secret is configured", %{conn: conn} do
-    Emisar.Config.put_override(:emisar, :postmark_webhook_secret, nil)
+  test "the webhook is disabled (503) when no usable secret is configured", %{conn: conn} do
+    for {secret, index} <- Enum.with_index([nil, "", " ", "\t\r\n", "\u00A0\u2003"]) do
+      Emisar.Config.put_override(:emisar, :postmark_webhook_secret, secret)
+      email = "disabled-#{index}@example.com"
+      password = if is_nil(secret), do: @secret, else: secret
 
-    conn =
+      response =
+        conn
+        |> auth(password)
+        |> post_json(%{"RecordType" => "Bounce", "Email" => email, "Inactive" => true})
+
+      assert json_response(response, 503) == %{"error" => "webhook_disabled"}
+      refute Mail.suppressed?(email)
+    end
+  end
+
+  test "a nonblank secret keeps its configured bytes", %{conn: conn} do
+    Emisar.Config.put_override(:emisar, :postmark_webhook_secret, "  exact secret  ")
+
+    rejected =
       conn
-      |> auth()
-      |> post_json(%{"RecordType" => "Bounce", "Email" => "x@example.com", "Inactive" => true})
+      |> auth("exact secret")
+      |> post_json(%{"RecordType" => "SpamComplaint", "Email" => "trimmed@example.com"})
 
-    assert json_response(conn, 503) == %{"error" => "webhook_disabled"}
-    refute Mail.suppressed?("x@example.com")
+    assert json_response(rejected, 401) == %{"error" => "unauthorized"}
+    refute Mail.suppressed?("trimmed@example.com")
+
+    accepted =
+      conn
+      |> auth("  exact secret  ")
+      |> post_json(%{"RecordType" => "SpamComplaint", "Email" => "exact@example.com"})
+
+    assert json_response(accepted, 200)["suppressed"] == true
+    assert Mail.suppressed?("exact@example.com")
   end
 
   # The webhook rides the CSRF-free `:api` pipeline: Postmark POSTs cross-origin

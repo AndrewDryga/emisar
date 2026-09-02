@@ -275,8 +275,8 @@ if config_env() == :prod do
       config :emisar, Emisar.Mailer, adapter: Swoosh.Adapters.Logger
   end
 
-  # Postmark bounce/complaint webhook auth (optional — unset disables the
-  # endpoint with a 503; the mailer still works, suppression just won't fill).
+  # Postmark bounce/complaint webhook auth (optional — unset or blank disables
+  # the endpoint with a 503; the mailer still works, suppression just won't fill).
   config :emisar, postmark_webhook_secret: System.get_env("POSTMARK_WEBHOOK_SECRET")
 
   # -- Sentry --------------------------------------------------------

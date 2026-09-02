@@ -618,11 +618,10 @@ defmodule EmisarWeb.Router do
 
   # -- Provider webhooks ----------------------------------------------
 
-  # Both webhooks are unauthenticated until their signature check runs, and each
-  # request costs a 1 MiB body read, a JSON decode, a retained raw-body copy,
-  # and an HMAC over the whole thing BEFORE anything can reject it. The SCIM
-  # pipeline already carries an IP cap for exactly this reason. Set far above
-  # what a provider sends so a real burst never meets it.
+  # Both webhooks are publicly POSTable until provider authentication runs.
+  # Paddle reads, caches, and HMAC-verifies at most 1 MiB; Postmark decodes at
+  # most 64 KiB and authenticates with Basic Auth. The shared IP cap bounds that
+  # anonymous work while staying far above real provider bursts.
   pipeline :provider_webhook do
     plug EmisarWeb.Plugs.RateLimit,
       bucket: "provider_webhook_ip",
