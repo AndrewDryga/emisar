@@ -714,6 +714,7 @@ func TestWorkersTakesTheSmallestPlanCap(t *testing.T) {
 func TestDeclarationOnlyPlanRecordsRiskWithoutASUT(t *testing.T) {
 	packs := t.TempDir()
 	pack := filepath.Join(packs, "hostpack")
+	write(t, filepath.Join(pack, "pack.yaml"), "id: hostpack\n")
 	if err := os.MkdirAll(filepath.Join(pack, "actions"), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -732,7 +733,7 @@ func TestDeclarationOnlyPlanRecordsRiskWithoutASUT(t *testing.T) {
 	}
 
 	// It validates with no versions, no services, no cases and no compose.yaml.
-	if err := ValidateDeclarations(packs); err != nil {
+	if err := ValidateAccountabilityPlans(packs); err != nil {
 		t.Fatalf("declaration-only plan rejected: %v", err)
 	}
 
@@ -747,7 +748,7 @@ func TestDeclarationOnlyPlanRecordsRiskWithoutASUT(t *testing.T) {
 	if err := os.WriteFile(plan, []byte(silent), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	err = ValidateDeclarations(packs)
+	err = ValidateAccountabilityPlans(packs)
 	if err == nil || !strings.Contains(err.Error(), "host.reboot") {
 		t.Fatalf("error = %v, want it to name the undeclared risky action", err)
 	}
@@ -757,9 +758,83 @@ func TestDeclarationOnlyPlanRecordsRiskWithoutASUT(t *testing.T) {
 	if err := os.WriteFile(plan, []byte(bogus), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	err = ValidateDeclarations(packs)
+	err = ValidateAccountabilityPlans(packs)
 	if err == nil || !strings.Contains(err.Error(), "unknown reason") {
 		t.Fatalf("error = %v, want an unknown-reason rejection", err)
+	}
+
+	// Declaration-only is a whole-pack statement, never a changed-files view.
+	changed := "risk_accountability:\n  exceptions:\n    host.reboot: requires_privileged_host\n"
+	write(t, plan, changed)
+	err = ValidateAccountabilityPlans(packs)
+	if err == nil || !strings.Contains(err.Error(), "mode complete") {
+		t.Fatalf("error = %v, want declaration-only mode complete", err)
+	}
+}
+
+func TestAccountabilityPlansRequireCasesOnlyForDangerousActions(t *testing.T) {
+	tests := []struct {
+		name   string
+		action string
+		want   string
+	}{
+		{
+			name:   "low action",
+			action: "schema_version: 1\nid: example.status\nrisk: low\n",
+		},
+		{
+			name:   "medium action",
+			action: "schema_version: 1\nid: example.inspect\nrisk: medium\n",
+		},
+		{
+			name:   "high action",
+			action: "schema_version: 1\nid: example.restart\nrisk: high\n",
+			want:   "example.restart",
+		},
+		{
+			name:   "critical action",
+			action: "schema_version: 1\nid: example.shell\nrisk: critical\n",
+			want:   "example.shell",
+		},
+		{
+			name: "redacting action",
+			action: "schema_version: 1\nid: example.config\nrisk: medium\n" +
+				"output:\n  redact:\n    - name: credential\n      replacement: '[REDACTED]'\n",
+			want: "example.config",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			packs := t.TempDir()
+			pack := filepath.Join(packs, "example")
+			write(t, filepath.Join(pack, "pack.yaml"), "id: example\n")
+			write(t, filepath.Join(pack, "actions", "action.yaml"), test.action)
+
+			err := ValidateAccountabilityPlans(packs)
+			if test.want == "" {
+				if err != nil {
+					t.Fatalf("safe planless pack rejected: %v", err)
+				}
+				return
+			}
+			if err == nil || !strings.Contains(err.Error(), test.want) ||
+				!strings.Contains(err.Error(), "packs/example/test/cases.yaml") {
+				t.Fatalf("error = %v, want action and plan path", err)
+			}
+		})
+	}
+}
+
+func TestAccountabilityPlanErrorSortsActionIDs(t *testing.T) {
+	packs := t.TempDir()
+	pack := filepath.Join(packs, "example")
+	write(t, filepath.Join(pack, "pack.yaml"), "id: example\n")
+	write(t, filepath.Join(pack, "actions", "z.yaml"), "id: example.zeta\nrisk: high\n")
+	write(t, filepath.Join(pack, "actions", "a.yaml"), "id: example.alpha\nrisk: critical\n")
+
+	err := ValidateAccountabilityPlans(packs)
+	if err == nil || !strings.Contains(err.Error(), "[example.alpha, example.zeta]") {
+		t.Fatalf("error = %v, want sorted action IDs", err)
 	}
 }
 

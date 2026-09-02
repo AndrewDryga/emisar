@@ -321,8 +321,16 @@ func ValidateRiskChanges(packsDir string, files []string) error {
 			continue
 		}
 		checked[pack] = true
-		planPath := filepath.Join(packsDir, pack, "test", "cases.yaml")
+		packDir := filepath.Join(packsDir, pack)
+		actions, err := loadActions(packDir)
+		if err != nil {
+			return err
+		}
+		planPath := filepath.Join(packDir, "test", "cases.yaml")
 		if _, err := os.Stat(planPath); errors.Is(err, os.ErrNotExist) {
+			if required := accountabilityRequiredActions(actions); len(required) > 0 {
+				return missingAccountabilityPlanError(pack, required)
+			}
 			continue
 		} else if err != nil {
 			return err
@@ -331,12 +339,12 @@ func ValidateRiskChanges(packsDir string, files []string) error {
 		if err != nil {
 			return err
 		}
-		actions, err := loadActions(filepath.Join(packsDir, pack))
-		if err != nil {
-			return err
-		}
 		successful := successfulBehaviorActions(plan)
 		if err := validateRiskAccountability(plan.RiskAccountability, actions, successful); err != nil {
+			return fmt.Errorf("%s: %w", pack, err)
+		}
+		redactionProven := redactionProvenActions(plan, actions)
+		if err := validateRedactionAccountability(plan.RedactionAccountability, actions, redactionProven); err != nil {
 			return fmt.Errorf("%s: %w", pack, err)
 		}
 		for _, changed := range files {
@@ -360,9 +368,33 @@ func ValidateRiskChanges(packsDir string, files []string) error {
 				plan.RiskAccountability.Exceptions[action.ID] == "" {
 				return fmt.Errorf("%s: changed high/critical action %q needs a successful behavior case or risk exception", pack, action.ID)
 			}
+			if action.redacts() && !redactionProven[action.ID] &&
+				plan.RedactionAccountability.Exceptions[action.ID] == "" {
+				return fmt.Errorf("%s: changed redacting action %q needs a behavior case proving redaction or redaction exception", pack, action.ID)
+			}
 		}
 	}
 	return nil
+}
+
+func accountabilityRequiredActions(actions map[string]actionDefinition) []string {
+	required := make([]string, 0, len(actions))
+	for id, action := range actions {
+		if action.risky() || action.redacts() {
+			required = append(required, id)
+		}
+	}
+	sort.Strings(required)
+	return required
+}
+
+func missingAccountabilityPlanError(pack string, actions []string) error {
+	return fmt.Errorf(
+		"%s: high/critical or redacting actions [%s] require %s with complete accountability",
+		pack,
+		strings.Join(actions, ", "),
+		filepath.Join("packs", pack, "test", "cases.yaml"),
+	)
 }
 
 func successfulBehaviorActions(plan Plan) map[string]bool {
@@ -517,31 +549,40 @@ func Validate(plans []PlanRef) error {
 	return nil
 }
 
-// ValidateDeclarations checks the declaration-only plans, which Discover
-// deliberately leaves out of the runnable set. They still have to be judged:
-// otherwise a pack could name a risk exception for an action that does not
-// exist, is not risky, or omit an action entirely under mode: complete, and
-// nothing would say so.
-func ValidateDeclarations(packsDir string) error {
-	paths, err := filepath.Glob(filepath.Join(packsDir, "*", "test", "cases.yaml"))
+// ValidateAccountabilityPlans scans the complete public catalog, including
+// packs Discover deliberately leaves out of the runnable set. A pack may omit
+// cases.yaml while every action is low/medium and declares no redaction. Once
+// it carries a high/critical or redacting action, the plan is the durable proof
+// that every such action has a behavior case or a typed exception.
+func ValidateAccountabilityPlans(packsDir string) error {
+	paths, err := filepath.Glob(filepath.Join(packsDir, "*", "pack.yaml"))
 	if err != nil {
 		return err
 	}
 	sort.Strings(paths)
-	for _, path := range paths {
-		plan, err := loadPlan(path)
+	for _, manifestPath := range paths {
+		packDir := filepath.Dir(manifestPath)
+		actions, err := loadActions(packDir)
+		if err != nil {
+			return err
+		}
+		name := filepath.Base(packDir)
+		planPath := filepath.Join(packDir, "test", "cases.yaml")
+		if _, err := os.Stat(planPath); errors.Is(err, os.ErrNotExist) {
+			if required := accountabilityRequiredActions(actions); len(required) > 0 {
+				return missingAccountabilityPlanError(name, required)
+			}
+			continue
+		} else if err != nil {
+			return err
+		}
+		plan, err := loadPlan(planPath)
 		if err != nil {
 			return err
 		}
 		if !plan.DeclarationOnly() {
 			continue
 		}
-		packDir := filepath.Dir(filepath.Dir(path))
-		actions, err := loadActions(packDir)
-		if err != nil {
-			return err
-		}
-		name := filepath.Base(packDir)
 		if err := validatePlan(name, plan, actions); err != nil {
 			return fmt.Errorf("%s: %w", name, err)
 		}
@@ -756,6 +797,9 @@ func validatePlan(pack string, plan Plan, actions map[string]actionDefinition) e
 	// backwards — and demanding them is why 78 risky actions across 22 packs
 	// were silently uncovered instead of declared.
 	if plan.DeclarationOnly() {
+		if plan.RiskAccountability.Mode != "complete" {
+			return fmt.Errorf("declaration-only plan requires risk_accountability.mode complete")
+		}
 		if err := validateRiskAccountability(plan.RiskAccountability, actions, map[string]bool{}); err != nil {
 			return err
 		}

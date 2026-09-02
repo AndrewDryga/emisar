@@ -322,7 +322,7 @@ func TestSelectAndFrozenMigrations(t *testing.T) {
 	})
 
 	t.Run("pack without plan remains contract only", func(t *testing.T) {
-		writeFixture(t, root, "packs/host-only/actions/status.yaml", "id: host.status\n")
+		writeFixture(t, root, "packs/host-only/actions/status.yaml", "id: host.status\nrisk: medium\n")
 		commitAll(t, root, "host only")
 		selection, err := Select(context.Background(), root, "pull_request", base)
 		if err != nil {
@@ -330,6 +330,25 @@ func TestSelectAndFrozenMigrations(t *testing.T) {
 		}
 		if len(selection.PackBehavior) != 0 || !selection.Packs {
 			t.Fatalf("contract-only selection = %+v", selection)
+		}
+		resetHard(t, root, base)
+
+		writeFixture(t, root, "packs/host-only/actions/reboot.yaml", "id: host.reboot\nrisk: high\n")
+		commitAll(t, root, "unplanned risky action")
+		if _, err := Select(context.Background(), root, "pull_request", base); err == nil ||
+			!strings.Contains(err.Error(), "host.reboot") ||
+			!strings.Contains(err.Error(), "packs/host-only/test/cases.yaml") {
+			t.Fatalf("planless risky action error = %v", err)
+		}
+		resetHard(t, root, base)
+
+		writeFixture(t, root, "packs/host-only/actions/config.yaml", "id: host.config\nrisk: medium\n"+
+			"output:\n  redact:\n    - name: credential\n      replacement: '[REDACTED]'\n")
+		commitAll(t, root, "unplanned redacting action")
+		if _, err := Select(context.Background(), root, "pull_request", base); err == nil ||
+			!strings.Contains(err.Error(), "host.config") ||
+			!strings.Contains(err.Error(), "packs/host-only/test/cases.yaml") {
+			t.Fatalf("planless redacting action error = %v", err)
 		}
 		resetHard(t, root, base)
 	})

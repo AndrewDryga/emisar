@@ -1,10 +1,12 @@
 # Rule: risky modeled actions require evidence or a typed reason
 
-**Rule.** In a pack with a container-backed behavior model, every new or
-changed `high` or `critical` action has either a successful semantic behavior
-case or a machine-readable `risk_accountability.exceptions` reason. Packs
-graduated to `mode: complete` account for every risky action. Never replace
-this with a global coverage percentage.
+**Rule.** Every public pack with a `high`/`critical` action or an
+`output.redact` rule has `test/cases.yaml`. Use a successful semantic behavior
+case when the harness can model the action. When it cannot, use a
+declaration-only plan with `risk_accountability.mode: complete` and a typed
+risk or redaction exception for every uncovered action. A pack containing only
+`low`/`medium`, non-redacting actions may omit the plan. Never replace this
+with a global coverage percentage.
 
 Every behavior case owns a fresh Compose project and SUT lifecycle. Setup is
 case-local, ordinary cases are not restarted within the case, and terminal
@@ -48,8 +50,10 @@ successful cases and exception keys. Search plans for `stdout_not_empty` as the
 only assertion, generic passwords or tokens, root runner identity without a
 reason, and multiple cases sharing one Compose project.
 
-**Enforced.** `./run check packs` validates plans. Selective CI rejects a
-changed risky action without a successful case or known exception.
+**Enforced.** `./run check packs` scans the full catalog, so deleting a plan or
+adding a dangerous action to a planless pack fails. Selective CI rejects a
+changed risky or redacting action without a successful case or known
+exception.
 `./run test packs` gives every case a unique Compose project, defaults the
 runner to UID/GID 65532, scans declared canaries, and retains per-case failure
 evidence.
