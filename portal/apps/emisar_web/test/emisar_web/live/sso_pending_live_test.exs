@@ -47,6 +47,27 @@ defmodule EmisarWeb.SSOPendingLiveTest do
     assert html =~ account.name
   end
 
+  test "a matched invitee is told to accept the emailed invitation first", %{conn: conn} do
+    %{conn: conn, request: request, account: account} = pending(conn)
+    user = Fixtures.Users.create_user(email: request.email)
+
+    Fixtures.Memberships.create_membership(
+      account_id: account.id,
+      user_id: user.id,
+      invitation_token_digest: "pending-invitation"
+    )
+
+    request
+    |> Ecto.Changeset.change(matched_user_id: user.id)
+    |> Repo.update!()
+
+    {:ok, _lv, html} = live(conn, ~p"/sign_in/sso/pending")
+
+    assert html =~ "Accept your invitation"
+    assert html =~ "Open the team invitation sent to"
+    refute html =~ "there&#39;s nothing you need to do here"
+  end
+
   test "re-runs SSO automatically when an admin approves", %{conn: conn} do
     %{conn: conn, request: request, provider: provider} = pending(conn)
     {:ok, lv, _html} = live(conn, ~p"/sign_in/sso/pending")

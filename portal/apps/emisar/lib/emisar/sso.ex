@@ -2072,18 +2072,53 @@ defmodule Emisar.SSO do
 
   defp verified_auth_writes(provider, identifier, claims) do
     Multi.new()
-    |> Multi.run(:resolved_identity, fn repo, _changes ->
-      identity =
+    # The first read only tells us which user row to lock. Membership activation
+    # already holds that user before retiring admin-approved identities, so the
+    # callback must take the same user -> identity order. The account and provider
+    # locks above serialize same-account rebinds while this hint is consumed.
+    |> Multi.run(:identity_hint, fn repo, _changes ->
+      hint =
+        UserIdentity.Query.not_deleted()
+        |> UserIdentity.Query.by_provider_and_identifier(provider.id, identifier)
+        |> repo.peek()
+
+      {:ok, hint}
+    end)
+    |> Multi.merge(fn
+      %{identity_hint: %UserIdentity{} = identity} ->
+        existing_identity_auth_writes(provider, identifier, identity, claims)
+
+      %{identity_hint: nil} ->
+        unknown_identity_writes(provider, identifier, claims)
+    end)
+  end
+
+  defp existing_identity_auth_writes(provider, identifier, identity_hint, claims) do
+    Multi.new()
+    |> Multi.run(:locked_user, fn repo, _changes ->
+      Users.fetch_and_lock_user_by_id(identity_hint.user_id, repo)
+    end)
+    |> Multi.run(:resolved_identity, fn repo, %{locked_user: locked_user} ->
+      current =
         UserIdentity.Query.not_deleted()
         |> UserIdentity.Query.by_provider_and_identifier(provider.id, identifier)
         |> UserIdentity.Query.lock_for_update()
         |> repo.peek()
 
-      {:ok, identity}
+      case current do
+        %UserIdentity{user_id: user_id} = identity when user_id == locked_user.id ->
+          {:ok, identity}
+
+        nil ->
+          {:ok, nil}
+
+        %UserIdentity{} ->
+          {:error, :identity_pending_approval}
+      end
     end)
     |> Multi.merge(fn
-      %{resolved_identity: %UserIdentity{} = identity} ->
-        existing_auth_writes(provider, identity, claims)
+      %{locked_user: user, resolved_identity: %UserIdentity{} = identity} ->
+        existing_auth_writes(provider, identity, user, claims)
 
       %{resolved_identity: nil} ->
         unknown_identity_writes(provider, identifier, claims)
@@ -2101,29 +2136,23 @@ defmodule Emisar.SSO do
   # So the first login against a synthesized identifier has to agree on WHO, not
   # only on the identifier. When it does not, nothing is authenticated: it becomes
   # a link request for an admin, which is what an unrecognized person gets anyway.
-  defp existing_auth_writes(%IdentityProvider{} = provider, identity, claims) do
+  defp existing_auth_writes(%IdentityProvider{} = provider, identity, user, claims) do
     if synthesized_oidc_identifier?(identity) do
-      Multi.new()
-      |> Multi.run(:locked_user, fn repo, _changes ->
-        Users.fetch_and_lock_user_by_id(identity.user_id, repo)
-      end)
-      |> Multi.merge(fn %{locked_user: user} ->
-        if claims_name_the_same_person?(provider, identity, user, claims) do
-          returning_auth_writes(provider, identity, user)
-        else
-          pending_auth_writes(provider, identity.provider_identifier, claims)
-        end
-      end)
+      if claims_name_the_same_person?(provider, identity, user, claims) do
+        returning_auth_writes(provider, identity, user)
+      else
+        pending_auth_writes(provider, identity.provider_identifier, claims)
+      end
     else
-      returning_auth_writes(provider, identity)
+      returning_auth_writes(provider, identity, user)
     end
   end
 
-  defp returning_auth_writes(provider, identity, locked_user \\ nil) do
+  defp returning_auth_writes(provider, identity, locked_user) do
     Multi.new()
     |> Multi.update(:identity, UserIdentity.Changeset.touch_last_seen(identity))
-    |> Multi.run(:user, fn _repo, %{identity: identity} ->
-      if locked_user, do: {:ok, locked_user}, else: Users.fetch_user_by_id(identity.user_id)
+    |> Multi.run(:user, fn _repo, _changes ->
+      {:ok, locked_user}
     end)
     |> Multi.run(:auth_result, fn _repo, %{user: user, identity: identity} ->
       {:ok, {:ok, %{user: user, identity: identity, provider: provider, created?: false}}}
@@ -2405,80 +2434,87 @@ defmodule Emisar.SSO do
   end
 
   @doc """
-  Internal — refuse to mint a session through a connection that is no longer enabled.
+  Internal — compose the current SSO authority into Auth's session transaction.
 
-  Called by `Emisar.Auth` from INSIDE the session transaction, with that
-  transaction's repo, so the provider row lock is held across the credential
-  write. `complete_auth/3` checks the same thing, but its lock is released when the
-  identity transaction commits — leaving a window where a disable commits, its
-  session sweep finds nothing, and the callback then inserts a session that
-  survives. Holding the lock here means either the insert precedes the disable, or
-  it is refused after it.
-
-  Returns the current locked provider only when the identity is live and belongs
-  to the same user and account the session is being minted for.
+  The account is already locked by the caller. This takes the remaining durable
+  locks in subscription -> provider -> user -> identity order, then Auth writes
+  the session while all of them remain held. The callback checked the same facts,
+  but its transaction is already over; re-reading here prevents a disable,
+  retirement, or cross-account membership activation from leaving a session
+  minted through stale authority.
   """
-  def ensure_identity_provider_enabled(
-        repo,
-        user_identity_id,
-        user_id,
+  def put_sign_in_authority(
+        %Multi{} = multi,
+        %Users.User{id: user_id},
         account_id,
-        provider_identifier
+        opts
       )
-      when is_binary(user_identity_id) and is_binary(user_id) and is_binary(account_id) and
-             is_binary(provider_identifier) do
-    identity =
-      if Billing.sso_available_for_account_id?(account_id, repo: repo, lock?: true) do
-        UserIdentity.Query.not_deleted()
-        |> UserIdentity.Query.provider_identifier_active()
-        |> UserIdentity.Query.by_id(user_identity_id)
-        |> UserIdentity.Query.by_user_id(user_id)
-        |> UserIdentity.Query.by_account_id(account_id)
-        |> UserIdentity.Query.by_provider_identifier(provider_identifier)
-        |> repo.peek()
-      end
+      when is_binary(user_id) and is_binary(account_id) and is_list(opts) do
+    user_identity_id = Keyword.get(opts, :user_identity_id)
+    provider_identifier = Keyword.get(opts, :provider_identifier)
 
-    case identity do
-      %UserIdentity{provider_id: provider_id} ->
-        locked =
+    if is_binary(user_identity_id) and is_binary(provider_identifier) do
+      multi
+      |> Multi.run(:sso_entitlement, fn repo, _changes ->
+        if Billing.sso_available_for_account_id?(account_id, repo: repo, lock?: true),
+          do: {:ok, :available},
+          else: {:error, :provider_disabled}
+      end)
+      # This read grants nothing; it only identifies the provider row that must
+      # precede the user lock. The exact binding is locked and revalidated below.
+      |> Multi.run(:sso_identity_hint, fn repo, _changes ->
+        hint =
+          UserIdentity.Query.not_deleted()
+          |> UserIdentity.Query.provider_identifier_active()
+          |> UserIdentity.Query.by_id(user_identity_id)
+          |> UserIdentity.Query.by_user_id(user_id)
+          |> UserIdentity.Query.by_account_id(account_id)
+          |> UserIdentity.Query.by_provider_identifier(provider_identifier)
+          |> repo.peek()
+
+        if hint, do: {:ok, hint}, else: {:error, :provider_disabled}
+      end)
+      |> Multi.run(:sso_provider, fn repo, %{sso_identity_hint: hint} ->
+        current =
           IdentityProvider.Query.not_deleted()
           |> IdentityProvider.Query.by_account_id(account_id)
-          |> IdentityProvider.Query.by_id(provider_id)
+          |> IdentityProvider.Query.by_id(hint.provider_id)
           |> IdentityProvider.Query.lock_for_update()
           |> repo.peek()
 
-        case locked do
-          %IdentityProvider{enabled: true} = provider ->
-            live_identity =
-              UserIdentity.Query.not_deleted()
-              |> UserIdentity.Query.provider_identifier_active()
-              |> UserIdentity.Query.by_id(user_identity_id)
-              |> UserIdentity.Query.by_user_id(user_id)
-              |> UserIdentity.Query.by_account_id(account_id)
-              |> UserIdentity.Query.by_provider_id(provider.id)
-              |> UserIdentity.Query.by_provider_identifier(provider_identifier)
-              |> UserIdentity.Query.lock_for_update()
-              |> repo.peek()
-
-            if live_identity, do: {:ok, provider}, else: {:error, :provider_disabled}
-
-          _ ->
-            {:error, :provider_disabled}
+        case current do
+          %IdentityProvider{enabled: true} = provider -> {:ok, provider}
+          _ -> {:error, :provider_disabled}
         end
+      end)
+      |> Multi.run(:sso_user, fn repo, _changes ->
+        case Users.fetch_and_lock_user_by_id(user_id, repo) do
+          {:ok, user} -> {:ok, user}
+          {:error, :not_found} -> {:error, :provider_disabled}
+        end
+      end)
+      |> Multi.run(:sso_identity, fn repo, %{sso_provider: provider} ->
+        identity =
+          UserIdentity.Query.not_deleted()
+          |> UserIdentity.Query.provider_identifier_active()
+          |> UserIdentity.Query.by_id(user_identity_id)
+          |> UserIdentity.Query.by_user_id(user_id)
+          |> UserIdentity.Query.by_account_id(account_id)
+          |> UserIdentity.Query.by_provider_id(provider.id)
+          |> UserIdentity.Query.by_provider_identifier(provider_identifier)
+          |> UserIdentity.Query.lock_for_update()
+          |> repo.peek()
 
-      nil ->
-        {:error, :provider_disabled}
+        if identity, do: {:ok, identity}, else: {:error, :provider_disabled}
+      end)
+    else
+      Multi.error(multi, :sso_provider, :provider_disabled)
     end
   end
 
-  def ensure_identity_provider_enabled(
-        _repo,
-        _identity_id,
-        _user_id,
-        _account_id,
-        _provider_identifier
-      ),
-      do: {:error, :provider_disabled}
+  def put_sign_in_authority(%Multi{} = multi, _user, _account_id, _opts) do
+    Multi.error(multi, :sso_provider, :provider_disabled)
+  end
 
   # A sign-in write additionally re-reads whether the connection is still ENABLED.
   # The provider struct was resolved when the request arrived; disabling it is
@@ -3280,6 +3316,23 @@ defmodule Emisar.SSO do
     end
   end
 
+  @doc "Internal — whether this held sign-in matched an unresolved team invitation."
+  def link_request_invitation_pending?(%LinkRequest{
+        account_id: account_id,
+        matched_user_id: user_id
+      })
+      when is_binary(user_id) do
+    case Accounts.peek_sync_membership(account_id, user_id) do
+      %Accounts.Membership{} = membership ->
+        Accounts.membership_invitation_pending?(membership)
+
+      nil ->
+        false
+    end
+  end
+
+  def link_request_invitation_pending?(%LinkRequest{}), do: false
+
   @doc """
   Approve a pending manual-link request: provision the captured identity at the
   provider's `default_role` and delete the request, atomically. `manage_sso` +
@@ -3332,8 +3385,10 @@ defmodule Emisar.SSO do
   # reaching owner, and (because a session can switch accounts) reaching every
   # other account that person belongs to.
   #
-  # Two limits, both judged on the matched member rather than on the request:
+  # Three limits, all judged on the matched member rather than on the request:
   #
+  #   * an unresolved invitation cannot receive an IdP credential before the
+  #     invitee proves possession and accepts the account access;
   #   * the approver's permissions must COVER the target's role — the same
   #     no-escalation primitive role changes and invites use — so an admin can
   #     never bind themselves onto an owner;
@@ -3364,8 +3419,15 @@ defmodule Emisar.SSO do
          # IdP credential bound to someone they have no authority over.
          {:ok, memberships} <- Accounts.fetch_and_lock_active_memberships_for_user(user, repo) do
       {here, elsewhere} = Enum.split_with(memberships, &(&1.account_id == provider.account_id))
+      matched_membership = Accounts.peek_sync_membership(provider.account_id, user.id)
 
       cond do
+        not match?(%Accounts.Membership{}, matched_membership) ->
+          {:error, :matched_user_unavailable}
+
+        Accounts.membership_invitation_pending?(matched_membership) ->
+          {:error, :invitation_pending}
+
         elsewhere != [] ->
           {:error, :link_target_in_other_accounts}
 

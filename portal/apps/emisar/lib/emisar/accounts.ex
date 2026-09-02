@@ -92,8 +92,7 @@ defmodule Emisar.Accounts do
     if Repo.valid_uuid?(account_id) and Repo.valid_uuid?(membership_id) do
       repo = Keyword.get(opts, :repo, Repo)
 
-      Membership.Query.not_deleted()
-      |> Membership.Query.not_disabled()
+      Membership.Query.authorized()
       |> Membership.Query.by_account_id(account_id)
       |> Membership.Query.by_id(membership_id)
       |> Membership.Query.with_joined_account()
@@ -463,9 +462,9 @@ defmodule Emisar.Accounts do
   end
 
   @doc """
-  Accounts the subject's user is a (non-suspended) member of,
-  name-ordered. Returns `{:ok, [account], %Paginator.Metadata{}}`. Drives
-  the account picker.
+  Accounts the subject's user is currently authorized to enter, name-ordered.
+  Suspended, removed, and unresolved invited seats are excluded. Returns
+  `{:ok, [account], %Paginator.Metadata{}}`. Drives the account picker.
 
   Deliberately **cross-account**: it lists every tenant the user belongs
   to, so it scopes by the subject's own actor id rather than running
@@ -1022,8 +1021,7 @@ defmodule Emisar.Accounts do
       now = DateTime.utc_now()
 
       {count, _} =
-        Membership.Query.not_deleted()
-        |> Membership.Query.not_disabled()
+        Membership.Query.authorized()
         |> Membership.Query.by_id(membership_id)
         |> Membership.Query.by_user_id(user_id)
         |> Membership.Query.with_joined_account()
@@ -1145,7 +1143,7 @@ defmodule Emisar.Accounts do
          manager?,
          %Subject{} = subject
        ) do
-    pending_invitation? = pending_invitation?(membership)
+    pending_invitation? = membership_invitation_pending?(membership)
     disabled? = Membership.disabled?(membership)
     mfa_enrolled? = member_mfa_enrolled?(membership.user)
     confirmation_pending? = member_confirmation_pending?(membership.user)
@@ -1184,14 +1182,13 @@ defmodule Emisar.Accounts do
 
   defp suspended_by_labels(_memberships, _account_id, false), do: %{}
 
-  defp pending_invitation?(%Membership{
-         invitation_accepted_at: nil,
-         invitation_token_digest: digest
-       })
-       when is_binary(digest),
-       do: true
+  @doc "Whether a membership is an unresolved account invitation."
+  defdelegate membership_invitation_pending?(membership),
+    to: Membership,
+    as: :invitation_pending?
 
-  defp pending_invitation?(%Membership{}), do: false
+  @doc "Whether a loaded membership currently grants account authority."
+  defdelegate membership_authorized?(membership), to: Membership, as: :authorizable?
 
   defp member_mfa_enrolled?(%Users.User{mfa_enabled_at: %DateTime{}}), do: true
   defp member_mfa_enrolled?(_user), do: false
@@ -1267,13 +1264,17 @@ defmodule Emisar.Accounts do
     end)
   end
 
-  defp sole_owner?(repo, %Membership{account_id: account_id, role: :owner}) do
-    owner_memberships =
-      Membership.Query.not_deleted()
-      |> Membership.Query.by_account_id(account_id)
-      |> Membership.Query.by_role(:owner)
+  defp sole_owner?(repo, %Membership{account_id: account_id, role: :owner} = membership) do
+    if Membership.authorizable?(membership) do
+      owner_memberships =
+        Membership.Query.authorized()
+        |> Membership.Query.by_account_id(account_id)
+        |> Membership.Query.by_role(:owner)
 
-    repo.aggregate(owner_memberships, :count, :id) == 1
+      repo.aggregate(owner_memberships, :count, :id) == 1
+    else
+      false
+    end
   end
 
   defp sole_owner?(_repo, %Membership{}), do: false
@@ -1530,15 +1531,14 @@ defmodule Emisar.Accounts do
   end
 
   @doc """
-  Internal — Audit's user-event fan-out: EVERY active (not-deleted, not-suspended)
-  membership the user holds, so a user-scoped security event lands one row per
+  Internal — Audit's user-event fan-out: EVERY membership that currently grants
+  authority, so a user-scoped security event lands one row per
   account the user belongs to (each account legitimately sees its own copy). No
   `%Subject{}` — the caller is the subject-less audit builder.
   """
   def list_active_memberships_for_user(%Users.User{id: user_id}) do
-    Membership.Query.not_deleted()
+    Membership.Query.authorized()
     |> Membership.Query.by_user_id(user_id)
-    |> Membership.Query.not_disabled()
     |> Repo.all()
   end
 
@@ -1546,17 +1546,16 @@ defmodule Emisar.Accounts do
   Internal — compose the consequence of one membership becoming active.
 
   Admin approval may bind an OIDC credential to an existing person only while
-  they have no active membership in another account. After a create or real
-  reinstate, the same predicate is re-evaluated against the activated account;
-  a suspended seat is not access and does not retire anything until it becomes
-  active. The DB-only retirement result carries exact socket topics to the
-  outer commit.
+  they have no active membership in another account. After a direct create,
+  invitation acceptance, or real reinstate, the same predicate is re-evaluated
+  against the activated account; a pending or suspended seat is not access and
+  does not retire anything until it becomes active. The DB-only retirement
+  result carries exact socket topics to the outer commit.
   """
   def put_membership_activation_consequence(%Multi{} = multi, %Membership{} = membership) do
     Multi.run(multi, :retired_bindings, fn repo, _changes ->
       active_account_ids =
-        Membership.Query.not_deleted()
-        |> Membership.Query.not_disabled()
+        Membership.Query.authorized()
         |> Membership.Query.by_user_id(membership.user_id)
         |> Membership.Query.select_account_ids()
         |> repo.all()
@@ -1609,7 +1608,7 @@ defmodule Emisar.Accounts do
       |> Membership.Query.by_user_id(user.id)
       |> Membership.Query.lock_for_update()
 
-    {:ok, Enum.filter(repo.all(queryable), &is_nil(&1.disabled_at))}
+    {:ok, Enum.filter(repo.all(queryable), &membership_authorized?/1)}
   end
 
   @doc """
@@ -1739,8 +1738,7 @@ defmodule Emisar.Accounts do
       when is_binary(account_id) and is_binary(membership_id) do
     if Repo.valid_uuid?(account_id) and Repo.valid_uuid?(membership_id) do
       membership =
-        Membership.Query.not_deleted()
-        |> Membership.Query.not_disabled()
+        Membership.Query.authorized()
         |> Membership.Query.by_account_id(account_id)
         |> Membership.Query.by_id(membership_id)
         |> Repo.peek()
@@ -2017,8 +2015,7 @@ defmodule Emisar.Accounts do
   """
   def peek_active_membership(account_id, membership_id)
       when is_binary(account_id) and is_binary(membership_id) do
-    Membership.Query.not_deleted()
-    |> Membership.Query.not_disabled()
+    Membership.Query.authorized()
     |> Membership.Query.by_account_id(account_id)
     |> Membership.Query.by_id(membership_id)
     |> Repo.peek()
@@ -2035,8 +2032,7 @@ defmodule Emisar.Accounts do
   """
   def fetch_active_membership(repo, account_id, membership_id)
       when is_binary(account_id) and is_binary(membership_id) do
-    Membership.Query.not_deleted()
-    |> Membership.Query.not_disabled()
+    Membership.Query.authorized()
     |> Membership.Query.by_account_id(account_id)
     |> Membership.Query.by_id(membership_id)
     |> Membership.Query.with_joined_account()
@@ -2051,8 +2047,7 @@ defmodule Emisar.Accounts do
   """
   def fetch_active_membership_for_user(account_id, user_id)
       when is_binary(account_id) and is_binary(user_id) do
-    Membership.Query.not_deleted()
-    |> Membership.Query.not_disabled()
+    Membership.Query.authorized()
     |> Membership.Query.by_account_and_user(account_id, user_id)
     |> Repo.fetch(Membership.Query)
   end
@@ -2062,8 +2057,7 @@ defmodule Emisar.Accounts do
   @doc "Internal - lock a run initiator's current active membership in the caller's transaction."
   def fetch_and_lock_active_membership(repo, account_id, membership_id)
       when is_binary(account_id) and is_binary(membership_id) do
-    Membership.Query.not_deleted()
-    |> Membership.Query.not_disabled()
+    Membership.Query.authorized()
     |> Membership.Query.by_account_id(account_id)
     |> Membership.Query.by_id(membership_id)
     |> Membership.Query.lock_for_update()
@@ -2105,10 +2099,11 @@ defmodule Emisar.Accounts do
   Internal — pre-auth: called by the web session boundary (`UserAuth`) to build
   `current_account`/`current_user` before there's a Subject to authorize with.
   Resolves the membership to mount as the user's active tenant for this request:
-  if `account_id` is given and the user has a non-suspended membership on that
+  if `account_id` is given and the user has an authorized membership on that
   (non-deleted) account, return it; otherwise fall back to the most
-  recently-joined non-suspended membership — the default for first sign-in or
-  after a stale session value is cleared. Returns
+  recently-joined authorized membership — the default for first sign-in or after
+  a stale session value is cleared. Unresolved invitations grant no access.
+  Returns
   `{:ok, membership} | {:error, :not_found}`.
   """
   def fetch_membership_for_session(%Users.User{id: user_id}, account_id) do
@@ -2117,9 +2112,8 @@ defmodule Emisar.Accounts do
         {:ok, membership}
 
       {:error, :not_found} ->
-        Membership.Query.not_deleted()
+        Membership.Query.authorized()
         |> Membership.Query.by_user_id(user_id)
-        |> Membership.Query.not_disabled()
         |> Membership.Query.with_preloaded_account()
         |> Membership.Query.with_preloaded_user()
         |> Membership.Query.latest()
@@ -2129,9 +2123,8 @@ defmodule Emisar.Accounts do
 
   defp maybe_fetch_session_membership(user_id, account_id) do
     if Repo.valid_uuid?(account_id) do
-      Membership.Query.not_deleted()
+      Membership.Query.authorized()
       |> Membership.Query.by_account_and_user(account_id, user_id)
-      |> Membership.Query.not_disabled()
       |> Membership.Query.with_preloaded_account()
       |> Membership.Query.with_preloaded_user()
       |> Repo.fetch(Membership.Query)
@@ -2149,13 +2142,12 @@ defmodule Emisar.Accounts do
   segment is a UUID (API / SSO / temporary redirects) or the slug (the canonical
   UI form). A non-member or unknown ref both return `{:error, :not_found}` —
   indistinguishable, so a slugged URL never confirms a tenant exists (404, never
-  403). Suspended (`disabled_at`) members and soft-deleted accounts/users are
-  excluded.
+  403). Suspended (`disabled_at`) members, unresolved invitations, and
+  soft-deleted accounts/users are excluded.
   """
   def fetch_membership_by_account_id_or_slug(%Users.User{id: user_id}, account_id_or_slug) do
-    Membership.Query.not_deleted()
+    Membership.Query.authorized()
     |> Membership.Query.by_user_id(user_id)
-    |> Membership.Query.not_disabled()
     |> scope_to_account_ref(account_id_or_slug)
     |> Membership.Query.with_preloaded_account()
     |> Membership.Query.with_preloaded_user()
@@ -2176,15 +2168,14 @@ defmodule Emisar.Accounts do
   `%Subject{}` exists yet. Scoped to the user's OWN live membership, and — unlike
   `fetch_membership_by_account_id_or_slug/2` — the preloaded account may be
   DISABLED, so a member of a disabled account can be routed to that account's own
-  page. An unknown ref, a non-member, a suspended or tombstoned membership, and a
-  deleted account all return `{:error, :not_found}` — indistinguishable, so
-  sign-in never confirms a tenant exists.
+  page. An unknown ref, a non-member, a suspended or tombstoned membership, an
+  unresolved invitation, and a deleted account all return `{:error, :not_found}`
+  — indistinguishable, so sign-in never confirms a tenant exists.
   """
   def fetch_post_auth_membership(%Users.User{id: user_id}, account_id_or_slug)
       when is_binary(account_id_or_slug) do
-    Membership.Query.not_deleted()
+    Membership.Query.authorized()
     |> Membership.Query.by_user_id(user_id)
-    |> Membership.Query.not_disabled()
     |> scope_to_account_ref_including_disabled(account_id_or_slug)
     |> Membership.Query.with_preloaded_account_including_disabled()
     |> Repo.fetch(Membership.Query)
@@ -2234,8 +2225,7 @@ defmodule Emisar.Accounts do
   defp commit_account_switch(account_id, user_id, %Subject{} = subject) do
     Multi.new()
     |> Multi.run(:membership, fn repo, _changes ->
-      Membership.Query.not_deleted()
-      |> Membership.Query.not_disabled()
+      Membership.Query.authorized()
       |> Membership.Query.by_account_and_user(account_id, user_id)
       |> Membership.Query.with_preloaded_account()
       |> Membership.Query.with_preloaded_user()
@@ -2266,7 +2256,11 @@ defmodule Emisar.Accounts do
   suspended" rather than send them to onboarding.
   """
   def all_memberships_suspended?(%Users.User{id: user_id}) do
-    base = Membership.Query.not_deleted() |> Membership.Query.by_user_id(user_id)
+    base =
+      Membership.Query.not_deleted()
+      |> Membership.Query.not_pending_invitation()
+      |> Membership.Query.by_user_id(user_id)
+
     Repo.exists?(base) and not Repo.exists?(Membership.Query.not_disabled(base))
   end
 
@@ -2506,6 +2500,19 @@ defmodule Emisar.Accounts do
     )
   end
 
+  defp broadcast_membership_invitation_accepted(%Membership{} = membership) do
+    Emisar.PubSub.broadcast(
+      account_team_topic(membership.account_id),
+      {:list_changed, :team, "membership.invitation_accepted", membership.user_id}
+    )
+  end
+
+  defp invitation_accepted_effects(%{accepted: membership} = changes) do
+    :ok = broadcast_membership_invitation_accepted(membership)
+
+    after_membership_activation_committed(changes)
+  end
+
   defp broadcast_membership_removed(%Membership{} = membership) do
     Emisar.PubSub.broadcast(
       account_team_topic(membership.account_id),
@@ -2633,15 +2640,18 @@ defmodule Emisar.Accounts do
   # re-counts the winner's committed state — a pre-transaction count is
   # a TOCTOU that could leave the account ownerless.
   defp ensure_not_last_active_owner(%Membership{role: :owner} = membership) do
-    owners =
-      Membership.Query.not_deleted()
-      |> Membership.Query.by_account_id(membership.account_id)
-      |> Membership.Query.by_role(:owner)
-      |> Membership.Query.not_disabled()
-      |> Membership.Query.lock_for_update()
-      |> Repo.all()
+    if membership_authorized?(membership) do
+      owners =
+        Membership.Query.authorized()
+        |> Membership.Query.by_account_id(membership.account_id)
+        |> Membership.Query.by_role(:owner)
+        |> Membership.Query.lock_for_update()
+        |> Repo.all()
 
-    if length(owners) > 1, do: :ok, else: {:error, :last_owner}
+      if length(owners) > 1, do: :ok, else: {:error, :last_owner}
+    else
+      :ok
+    end
   end
 
   # A non-owner leaving play never threatens owner coverage.
@@ -3504,7 +3514,7 @@ defmodule Emisar.Accounts do
   end
 
   defp ensure_member_mfa_reset_actor(%Membership{disabled_at: nil} = membership) do
-    if pending_invitation?(membership), do: {:error, :unauthorized}, else: :ok
+    if membership_invitation_pending?(membership), do: {:error, :unauthorized}, else: :ok
   end
 
   defp ensure_member_mfa_reset_actor(%Membership{}), do: {:error, :unauthorized}
@@ -3523,7 +3533,7 @@ defmodule Emisar.Accounts do
   end
 
   defp ensure_member_mfa_reset_target(%Membership{} = membership) do
-    if pending_invitation?(membership),
+    if membership_invitation_pending?(membership),
       do: {:error, :invitation_pending},
       else: :ok
   end
@@ -4001,13 +4011,10 @@ defmodule Emisar.Accounts do
       |> Multi.run(:runner_access, fn repo, %{membership: membership, invitation: invitation} ->
         replace_runner_access_rows(repo, membership.id, invitation.runner_access)
       end)
-      |> Multi.merge(fn %{membership: membership} ->
-        put_membership_activation_consequence(Multi.new(), membership)
-      end)
       |> Multi.insert(:audit, fn %{user: user, invitation: invitation} ->
         Audit.Events.user_invited(subject, user, invitation.role, invitation.runner_access)
       end)
-      |> Repo.commit_multi(after_commit: &after_membership_activation_committed/1)
+      |> Repo.commit_multi()
       |> case do
         {:ok, %{user: user, membership: membership}} ->
           {:ok, %{membership: membership, user: user, invitation_token: token}}
@@ -4330,21 +4337,31 @@ defmodule Emisar.Accounts do
       when is_binary(token) do
     Multi.new()
     |> put_active_account_lock(membership.account_id, :active_account)
-    |> Multi.run(:membership, fn repo, _changes ->
-      with {:ok, loaded_membership} <- lock_pending_invitation(repo, membership, token),
+    |> Multi.run(:invited_user, fn repo, _changes ->
+      Users.fetch_and_lock_user_by_id(membership.user_id, repo)
+    end)
+    |> Multi.run(:membership, fn repo, %{invited_user: invited_user} ->
+      with {:ok, loaded_membership} <-
+             lock_pending_invitation(repo, membership, token, invited_user),
            true <- loaded_membership.user_id == user.id do
         {:ok, loaded_membership}
       else
         _ -> {:error, :not_found}
       end
     end)
+    |> Multi.run(:credential_revocation, fn repo, %{membership: membership} ->
+      ApiKeys.revoke_credentials_for_membership(repo, membership.id)
+    end)
     |> Multi.update(:accepted, fn %{membership: membership} ->
       Membership.Changeset.accept_invitation(membership)
+    end)
+    |> Multi.merge(fn %{accepted: membership} ->
+      put_membership_activation_consequence(Multi.new(), membership)
     end)
     |> Multi.insert(:audit, fn %{accepted: membership} ->
       Audit.Events.membership_invitation_accepted(membership)
     end)
-    |> Repo.commit_multi()
+    |> Repo.commit_multi(after_commit: &invitation_accepted_effects/1)
     |> case do
       {:ok, %{accepted: membership}} -> {:ok, membership}
       {:error, reason} -> {:error, reason}
@@ -4367,31 +4384,46 @@ defmodule Emisar.Accounts do
       when is_binary(token) do
     Multi.new()
     |> put_active_account_lock(membership.account_id, :active_account)
-    # Lock + re-judge the invitation FIRST: a token burnt between the
+    |> Multi.run(:invited_user, fn repo, _changes ->
+      Users.fetch_and_lock_user_by_id(membership.user_id, repo)
+    end)
+    # Lock + re-judge the invitation before changing either row: a token burnt between the
     # page mount and this submit (a second link holder racing the first
     # acceptor) must fail :not_found here — before register_invited_user
     # could overwrite the winner's display name.
-    |> Multi.run(:membership, fn repo, _changes ->
-      with {:ok, loaded_membership} <- lock_pending_invitation(repo, membership, token) do
-        repo.update(Membership.Changeset.accept_invitation(loaded_membership))
-      end
+    |> Multi.run(:membership, fn repo, %{invited_user: invited_user} ->
+      lock_pending_invitation(repo, membership, token, invited_user)
+    end)
+    |> Multi.run(:credential_revocation, fn repo, %{membership: membership} ->
+      ApiKeys.revoke_credentials_for_membership(repo, membership.id)
     end)
     |> Multi.run(:user, fn _repo, %{membership: loaded_membership} ->
       Users.register_invited_user(loaded_membership.user, user_attrs)
     end)
-    |> Multi.insert(:audit, fn %{user: user, membership: updated} ->
+    |> Multi.update(:accepted, fn %{membership: membership} ->
+      Membership.Changeset.accept_invitation(membership)
+    end)
+    |> Multi.merge(fn %{accepted: membership} ->
+      put_membership_activation_consequence(Multi.new(), membership)
+    end)
+    |> Multi.insert(:audit, fn %{user: user, accepted: updated} ->
       Audit.Events.user_invitation_accepted(user, updated)
     end)
-    |> Repo.commit_multi()
+    |> Repo.commit_multi(after_commit: &invitation_accepted_effects/1)
     |> case do
-      {:ok, %{user: user, membership: updated}} -> {:ok, %{user: user, membership: updated}}
+      {:ok, %{user: user, accepted: updated}} -> {:ok, %{user: user, membership: updated}}
       {:error, reason} -> {:error, reason}
     end
   end
 
   # `nil` means the invitation is no longer pending (accepted, expired,
   # revoked, or the membership vanished) — the accept races resolve here.
-  defp lock_pending_invitation(repo, %Membership{id: id, account_id: account_id}, token) do
+  defp lock_pending_invitation(
+         repo,
+         %Membership{id: id, account_id: account_id},
+         token,
+         %Users.User{} = user
+       ) do
     digest = Crypto.user_invite_token_digest(token)
 
     membership =
@@ -4410,7 +4442,7 @@ defmodule Emisar.Accounts do
            invitation_email_changed_at: email_changed_at
          } = membership
          when is_binary(sent_to) and is_struct(email_changed_at, DateTime) <- membership,
-         {:ok, %Users.User{} = user} <- Users.fetch_and_lock_user_by_id(user_id, repo),
+         true <- user.id == user_id,
          true <- user.email == sent_to and user.email_changed_at == email_changed_at do
       {:ok, %{membership | user: user}}
     else
@@ -4613,8 +4645,7 @@ defmodule Emisar.Accounts do
 
   defp fetch_first_active_owner_user(account_id) do
     result =
-      Membership.Query.not_deleted()
-      |> Membership.Query.not_disabled()
+      Membership.Query.authorized()
       |> Membership.Query.by_account_id(account_id)
       |> Membership.Query.by_role(:owner)
       |> Membership.Query.with_confirmed_user_email()
@@ -4630,8 +4661,7 @@ defmodule Emisar.Accounts do
   end
 
   defp fetch_active_owner_user(account_id, user_id) do
-    Membership.Query.not_deleted()
-    |> Membership.Query.not_disabled()
+    Membership.Query.authorized()
     |> Membership.Query.by_account_id(account_id)
     |> Membership.Query.by_user_id(user_id)
     |> Membership.Query.by_role(:owner)

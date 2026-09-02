@@ -12,6 +12,23 @@ defmodule Emisar.Accounts.Membership.Query do
   def not_disabled(queryable \\ all()),
     do: where(queryable, [memberships: m], is_nil(m.disabled_at))
 
+  @doc "Exclude unresolved account invitations, which grant no authority until acceptance."
+  def not_pending_invitation(queryable \\ all()) do
+    where(
+      queryable,
+      [memberships: m],
+      not (is_nil(m.invitation_accepted_at) and not is_nil(m.invitation_token_digest))
+    )
+  end
+
+  @doc "Memberships that currently grant account access."
+  def authorized(queryable \\ all()) do
+    queryable
+    |> not_deleted()
+    |> not_disabled()
+    |> not_pending_invitation()
+  end
+
   def by_id(queryable, id),
     do: where(queryable, [memberships: m], m.id == ^id)
 

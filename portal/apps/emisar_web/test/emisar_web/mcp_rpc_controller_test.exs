@@ -88,6 +88,29 @@ defmodule EmisarWeb.MCPRpcControllerTest do
       assert is_nil(Repo.reload(key).last_used_at)
     end
 
+    test "a pending invitee's static key is unauthorized without usage side effects", %{
+      account: account,
+      user: user,
+      key: key,
+      raw: raw
+    } do
+      membership = Fixtures.Memberships.fetch_membership(account.id, user.id)
+      {_token, digest} = Crypto.user_invite_token()
+
+      membership
+      |> Ecto.Changeset.change(invitation_token_digest: digest, invitation_accepted_at: nil)
+      |> Repo.update!()
+
+      body =
+        build_conn()
+        |> authorize(raw)
+        |> rpc("ping")
+        |> json_response(401)
+
+      assert body["error"] == %{"code" => -32_001, "message" => "unauthorized"}
+      assert is_nil(Repo.reload(key).last_used_at)
+    end
+
     test "decoded duplicate keys are rejected before authentication", %{conn: conn} do
       raw =
         ~s({"jsonrpc":"2.0","id":"duplicate","method":"tools/call","params":{"name":"run_action","arguments":{"args":{"job_id":1,"job\u005fid":2}}}})

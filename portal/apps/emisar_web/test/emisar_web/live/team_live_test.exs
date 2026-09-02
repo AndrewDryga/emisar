@@ -373,6 +373,38 @@ defmodule EmisarWeb.TeamLiveTest do
                original_access
     end
 
+    test "approval tells the operator when the matched member must accept an invitation first", %{
+      conn: conn
+    } do
+      {conn, owner, account} = register_and_log_in(conn)
+      Fixtures.Accounts.create_subscription(account, "team")
+      provider = Fixtures.SSO.create_identity_provider(account_id: account.id)
+      member = Fixtures.Users.create_user(email: "invited-sso@corp.test")
+
+      {:ok, %{membership: invitation}} =
+        Emisar.Accounts.invite_user_to_account(
+          Fixtures.Accounts.invitation_attrs(email: member.email, role: "operator"),
+          Fixtures.Subjects.subject_for(owner, account, role: :owner)
+        )
+
+      request =
+        Fixtures.SSO.create_link_request(
+          provider: provider,
+          email: member.email,
+          matched_user_id: member.id,
+          claims: %{"email" => member.email, "email_verified" => true}
+        )
+
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/team")
+      html = render_click(lv, "approve_request", %{"id" => request.id})
+
+      assert html =~
+               "must accept their emailed team invitation before you can approve the SSO identity"
+
+      assert Emisar.Repo.reload(request)
+      assert Emisar.Accounts.membership_invitation_pending?(Emisar.Repo.reload!(invitation))
+    end
+
     test "approval uses the access choices reviewed in the modal", %{conn: conn} do
       {conn, _owner, account} = register_and_log_in(conn)
       Fixtures.Accounts.create_subscription(account, "team")
@@ -805,7 +837,7 @@ defmodule EmisarWeb.TeamLiveTest do
       {:ok, user} = Emisar.Users.fetch_user_by_email("scoped-receipt@example.com")
       membership = Fixtures.Memberships.fetch_membership(account.id, user.id)
 
-      assert Emisar.Accounts.runner_access_for_membership(account.id, membership.id) ==
+      assert Emisar.Accounts.runner_access_for_memberships([membership])[membership.id] ==
                %Emisar.Accounts.RunnerAccess{
                  mode: :restricted,
                  groups: [],
@@ -859,7 +891,7 @@ defmodule EmisarWeb.TeamLiveTest do
       {:ok, user} = Emisar.Users.fetch_user_by_email("scoped@example.com")
       membership = Fixtures.Memberships.fetch_membership(account.id, user.id)
 
-      assert Emisar.Accounts.runner_access_for_membership(account.id, membership.id) ==
+      assert Emisar.Accounts.runner_access_for_memberships([membership])[membership.id] ==
                %Emisar.Accounts.RunnerAccess{
                  mode: :restricted,
                  groups: ["database"],
@@ -1413,7 +1445,9 @@ defmodule EmisarWeb.TeamLiveTest do
         }
       )
 
-      assert Emisar.Accounts.runner_access_for_membership(account.id, m.id) ==
+      m = Emisar.Repo.reload!(m)
+
+      assert Emisar.Accounts.runner_access_for_memberships([m])[m.id] ==
                %Emisar.Accounts.RunnerAccess{
                  mode: :restricted,
                  groups: ["dba"],
@@ -1539,7 +1573,9 @@ defmodule EmisarWeb.TeamLiveTest do
         }
       )
 
-      assert Emisar.Accounts.runner_access_for_membership(account.id, m.id) ==
+      m = Emisar.Repo.reload!(m)
+
+      assert Emisar.Accounts.runner_access_for_memberships([m])[m.id] ==
                %Emisar.Accounts.RunnerAccess{
                  mode: :all,
                  groups: [],
@@ -1613,7 +1649,9 @@ defmodule EmisarWeb.TeamLiveTest do
         "pack_scope" => ["pack:postgres"]
       })
 
-      assert Emisar.Accounts.runner_access_for_membership(account.id, m.id) ==
+      m = Emisar.Repo.reload!(m)
+
+      assert Emisar.Accounts.runner_access_for_memberships([m])[m.id] ==
                %Emisar.Accounts.RunnerAccess{
                  mode: :all,
                  groups: [],
@@ -1808,7 +1846,9 @@ defmodule EmisarWeb.TeamLiveTest do
 
       assert html =~ "Choose at least one runner group or runner for selected access."
 
-      assert Emisar.Accounts.runner_access_for_membership(account.id, membership.id) == access
+      membership = Emisar.Repo.reload!(membership)
+
+      assert Emisar.Accounts.runner_access_for_memberships([membership])[membership.id] == access
     end
 
     test "a scoped runner chip names the runner and carries its full id", %{conn: conn} do

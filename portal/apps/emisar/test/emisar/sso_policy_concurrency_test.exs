@@ -3,7 +3,7 @@ defmodule Emisar.SSOPolicyConcurrencyTest do
   import Ecto.Query
   alias Ecto.Adapters.SQL.Sandbox
   alias Emisar.{Accounts, Auth, Config, Crypto, Fixtures, Repo, RequestContext, SSO}
-  alias Emisar.Accounts.Account
+  alias Emisar.Accounts.{Account, Membership}
   alias Emisar.Auth.UserToken
   alias Emisar.SSO.{IdentityProvider, LinkRequest, UserIdentity}
   alias Emisar.Users.User
@@ -264,6 +264,15 @@ defmodule Emisar.SSOPolicyConcurrencyTest do
         {other_owner, other_account, other_subject} = Fixtures.Subjects.owner_subject()
 
         try do
+          {:ok, %{membership: invitation, invitation_token: invitation_token}} =
+            Accounts.invite_user_to_account(
+              Fixtures.Accounts.invitation_attrs(
+                email: context.user.email,
+                role: "operator"
+              ),
+              other_subject
+            )
+
           activation =
             unboxed_task(fn ->
               Config.put_override(
@@ -275,12 +284,10 @@ defmodule Emisar.SSOPolicyConcurrencyTest do
               Config.put_override(:emisar, :task05_disconnect_test_pid, parent)
               send(parent, {:activation_backend, backend_pid()})
 
-              Accounts.invite_user_to_account(
-                Fixtures.Accounts.invitation_attrs(
-                  email: context.user.email,
-                  role: "operator"
-                ),
-                other_subject
+              Accounts.mark_invitation_accepted(
+                invitation,
+                invitation_token,
+                context.user
               )
             end)
 
@@ -307,7 +314,7 @@ defmodule Emisar.SSOPolicyConcurrencyTest do
 
               send(token_blocker.pid, :release)
               assert {:ok, :ok} = Task.await(token_blocker, 30_000)
-              assert {:ok, %{membership: _membership}} = Task.await(activation, 30_000)
+              assert {:ok, %Membership{}} = Task.await(activation, 30_000)
               assert Task.await(minter, 30_000) == {:error, :provider_disabled}
 
               assert_receive {:retirement_disconnect, [^expected_topic], false}, 5_000
@@ -332,6 +339,188 @@ defmodule Emisar.SSOPolicyConcurrencyTest do
     end)
   end
 
+  test "invitation activation and SSO sign-in keep the user before the identity lock" do
+    unboxed_sso(fn context ->
+      identity =
+        context.identity
+        |> Ecto.Changeset.change(created_by: :admin)
+        |> Repo.update!()
+
+      {other_owner, other_account, other_subject} = Fixtures.Subjects.owner_subject()
+
+      try do
+        {:ok, %{membership: invitation, invitation_token: invitation_token}} =
+          Accounts.invite_user_to_account(
+            Fixtures.Accounts.invitation_attrs(
+              email: context.user.email,
+              role: "operator"
+            ),
+            other_subject
+          )
+
+        parent = self()
+        membership_blocker = membership_blocker(invitation, parent)
+
+        try do
+          assert_receive {:membership_locked, membership_backend}, 5_000
+
+          activation =
+            unboxed_task(fn ->
+              send(parent, {:ordered_activation_backend, backend_pid()})
+
+              Accounts.mark_invitation_accepted(
+                invitation,
+                invitation_token,
+                context.user
+              )
+            end)
+
+          try do
+            assert_receive {:ordered_activation_backend, activation_backend}, 5_000
+            await_blocked_by(activation_backend, membership_backend)
+
+            minter =
+              unboxed_task(fn ->
+                send(parent, {:ordered_minter_backend, backend_pid()})
+
+                Auth.complete_sso_account_sign_in(
+                  context.user,
+                  context.account.id,
+                  %RequestContext{},
+                  user_identity_id: identity.id,
+                  provider_identifier: identity.provider_identifier
+                )
+              end)
+
+            try do
+              assert_receive {:ordered_minter_backend, minter_backend}, 5_000
+              await_blocked_by(minter_backend, activation_backend)
+
+              identity_blocker = identity_blocker(identity, parent)
+
+              try do
+                assert_receive {:identity_locked, identity_backend}, 5_000
+
+                send(membership_blocker.pid, :release)
+                assert {:ok, %Membership{}} = Task.await(membership_blocker, 30_000)
+                await_blocked_by(activation_backend, identity_backend)
+
+                send(identity_blocker.pid, :release)
+                assert {:ok, %UserIdentity{}} = Task.await(identity_blocker, 30_000)
+                assert {:ok, %Membership{}} = Task.await(activation, 30_000)
+                assert Task.await(minter, 30_000) == {:error, :provider_disabled}
+                assert Repo.reload!(identity).deleted_at
+              after
+                send(identity_blocker.pid, :release)
+                stop_tasks([identity_blocker])
+              end
+            after
+              stop_tasks([minter])
+            end
+          after
+            stop_tasks([activation])
+          end
+        after
+          send(membership_blocker.pid, :release)
+          stop_tasks([membership_blocker])
+        end
+      after
+        Repo.delete_all(from(stored in Account, where: stored.id == ^other_account.id))
+        Repo.delete_all(from(stored in User, where: stored.id == ^other_owner.id))
+      end
+    end)
+  end
+
+  test "invitation activation and a synthesized callback keep the user before the identity" do
+    unboxed_sso(fn context ->
+      identity =
+        context.identity
+        |> Ecto.Changeset.change(
+          created_by: :admin,
+          provisioned_via: :scim,
+          scim_external_id: context.identity.provider_identifier
+        )
+        |> Repo.update!()
+
+      claims = %{
+        "sub" => identity.provider_identifier,
+        "email" => context.user.email,
+        "email_verified" => true
+      }
+
+      {other_owner, other_account, other_subject} = Fixtures.Subjects.owner_subject()
+
+      try do
+        {:ok, %{membership: invitation, invitation_token: invitation_token}} =
+          Accounts.invite_user_to_account(
+            Fixtures.Accounts.invitation_attrs(
+              email: context.user.email,
+              role: "operator"
+            ),
+            other_subject
+          )
+
+        parent = self()
+        membership_blocker = membership_blocker(invitation, parent)
+        identity_blocker = identity_blocker(identity, parent)
+
+        try do
+          assert_receive {:membership_locked, membership_backend}, 5_000
+          assert_receive {:identity_locked, identity_backend}, 5_000
+
+          activation =
+            unboxed_task(fn ->
+              send(parent, {:callback_order_activation_backend, backend_pid()})
+
+              Accounts.mark_invitation_accepted(
+                invitation,
+                invitation_token,
+                context.user
+              )
+            end)
+
+          try do
+            assert_receive {:callback_order_activation_backend, activation_backend}, 5_000
+            await_blocked_by(activation_backend, membership_backend)
+
+            callback =
+              unboxed_task(fn ->
+                Config.put_override(:emisar, :sso_oidc_impl, StubOIDC)
+                send(parent, {:ordered_callback_backend, backend_pid()})
+                SSO.complete_auth(context.provider, %{"_claims" => claims}, %{})
+              end)
+
+            try do
+              assert_receive {:ordered_callback_backend, callback_backend}, 5_000
+              await_blocked_by(callback_backend, activation_backend)
+
+              send(membership_blocker.pid, :release)
+              assert {:ok, %Membership{}} = Task.await(membership_blocker, 30_000)
+              await_blocked_by(activation_backend, identity_backend)
+
+              send(identity_blocker.pid, :release)
+              assert {:ok, %UserIdentity{}} = Task.await(identity_blocker, 30_000)
+              assert {:ok, %Membership{}} = Task.await(activation, 30_000)
+              assert {:pending, %LinkRequest{}} = Task.await(callback, 30_000)
+              assert Repo.reload!(identity).provider_identifier_retired_at
+            after
+              stop_tasks([callback])
+            end
+          after
+            stop_tasks([activation])
+          end
+        after
+          send(membership_blocker.pid, :release)
+          send(identity_blocker.pid, :release)
+          stop_tasks([membership_blocker, identity_blocker])
+        end
+      after
+        Repo.delete_all(from(stored in Account, where: stored.id == ^other_account.id))
+        Repo.delete_all(from(stored in User, where: stored.id == ^other_owner.id))
+      end
+    end)
+  end
+
   test "a session minted before membership activation commits is swept after it" do
     unboxed_sso(fn context ->
       identity =
@@ -339,12 +528,22 @@ defmodule Emisar.SSOPolicyConcurrencyTest do
         |> Ecto.Changeset.change(created_by: :admin)
         |> Repo.update!()
 
+      {other_owner, other_account, other_subject} = Fixtures.Subjects.owner_subject()
+
+      {:ok, %{membership: invitation, invitation_token: invitation_token}} =
+        Accounts.invite_user_to_account(
+          Fixtures.Accounts.invitation_attrs(
+            email: context.user.email,
+            role: "operator"
+          ),
+          other_subject
+        )
+
       parent = self()
       user_blocker = user_no_key_update_blocker(context.user, parent)
 
       try do
         assert_receive {:user_no_key_update_locked, user_backend}, 5_000
-        {other_owner, other_account, other_subject} = Fixtures.Subjects.owner_subject()
 
         try do
           minter =
@@ -375,12 +574,10 @@ defmodule Emisar.SSOPolicyConcurrencyTest do
                 Config.put_override(:emisar, :task05_disconnect_test_pid, parent)
                 send(parent, {:mint_first_activation_backend, backend_pid()})
 
-                Accounts.invite_user_to_account(
-                  Fixtures.Accounts.invitation_attrs(
-                    email: context.user.email,
-                    role: "operator"
-                  ),
-                  other_subject
+                Accounts.mark_invitation_accepted(
+                  invitation,
+                  invitation_token,
+                  context.user
                 )
               end)
 
@@ -393,7 +590,7 @@ defmodule Emisar.SSOPolicyConcurrencyTest do
               assert {:ok, minted_session, _mfa?} = Task.await(minter, 30_000)
               expected_topic = Auth.live_socket_topic_for_session(minted_session)
 
-              assert {:ok, %{membership: _membership}} = Task.await(activation, 30_000)
+              assert {:ok, %Membership{}} = Task.await(activation, 30_000)
               assert_receive {:retirement_disconnect, [^expected_topic], false}, 5_000
               assert Repo.reload!(identity).deleted_at
 
@@ -427,6 +624,15 @@ defmodule Emisar.SSOPolicyConcurrencyTest do
         {other_owner, other_account, other_subject} = Fixtures.Subjects.owner_subject()
 
         try do
+          {:ok, %{membership: invitation, invitation_token: invitation_token}} =
+            Accounts.invite_user_to_account(
+              Fixtures.Accounts.invitation_attrs(
+                email: context.user.email,
+                role: "operator"
+              ),
+              other_subject
+            )
+
           approval =
             unboxed_task(fn ->
               send(parent, {:approval_first_backend, backend_pid()})
@@ -441,12 +647,10 @@ defmodule Emisar.SSOPolicyConcurrencyTest do
               unboxed_task(fn ->
                 send(parent, {:approval_first_activation_backend, backend_pid()})
 
-                Accounts.invite_user_to_account(
-                  Fixtures.Accounts.invitation_attrs(
-                    email: context.user.email,
-                    role: "operator"
-                  ),
-                  other_subject
+                Accounts.mark_invitation_accepted(
+                  invitation,
+                  invitation_token,
+                  context.user
                 )
               end)
 
@@ -457,7 +661,7 @@ defmodule Emisar.SSOPolicyConcurrencyTest do
               send(identity_blocker.pid, :release)
               assert {:ok, %UserIdentity{}} = Task.await(identity_blocker, 30_000)
               assert {:ok, %{identity: rebound}} = Task.await(approval, 30_000)
-              assert {:ok, %{membership: _membership}} = Task.await(activation, 30_000)
+              assert {:ok, %Membership{}} = Task.await(activation, 30_000)
               assert Repo.reload!(rebound).deleted_at
             after
               stop_tasks([activation])
@@ -497,16 +701,23 @@ defmodule Emisar.SSOPolicyConcurrencyTest do
         {other_owner, other_account, other_subject} = Fixtures.Subjects.owner_subject()
 
         try do
+          {:ok, %{membership: invitation, invitation_token: invitation_token}} =
+            Accounts.invite_user_to_account(
+              Fixtures.Accounts.invitation_attrs(
+                email: context.user.email,
+                role: "operator"
+              ),
+              other_subject
+            )
+
           activation =
             unboxed_task(fn ->
               send(parent, {:activation_first_backend, backend_pid()})
 
-              Accounts.invite_user_to_account(
-                Fixtures.Accounts.invitation_attrs(
-                  email: context.user.email,
-                  role: "operator"
-                ),
-                other_subject
+              Accounts.mark_invitation_accepted(
+                invitation,
+                invitation_token,
+                context.user
               )
             end)
 
@@ -526,7 +737,7 @@ defmodule Emisar.SSOPolicyConcurrencyTest do
 
               send(token_blocker.pid, :release)
               assert {:ok, :ok} = Task.await(token_blocker, 30_000)
-              assert {:ok, %{membership: _membership}} = Task.await(activation, 30_000)
+              assert {:ok, %Membership{}} = Task.await(activation, 30_000)
 
               assert Task.await(approval, 30_000) ==
                        {:error, :link_target_in_other_accounts}
@@ -772,6 +983,24 @@ defmodule Emisar.SSOPolicyConcurrencyTest do
 
         receive do
           :release -> :ok
+        end
+      end)
+    end)
+  end
+
+  defp membership_blocker(membership, parent) do
+    unboxed_task(fn ->
+      Repo.transaction(fn ->
+        locked =
+          Membership.Query.not_deleted()
+          |> Membership.Query.by_id(membership.id)
+          |> Membership.Query.lock_for_update()
+          |> Repo.fetch!(Membership.Query)
+
+        send(parent, {:membership_locked, backend_pid()})
+
+        receive do
+          :release -> locked
         end
       end)
     end)

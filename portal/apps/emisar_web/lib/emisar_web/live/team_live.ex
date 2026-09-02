@@ -1343,6 +1343,14 @@ defmodule EmisarWeb.TeamLive do
          )
          |> assign_sso_state()}
 
+      {:error, :invitation_pending} ->
+        {:noreply,
+         put_flash(
+           socket,
+           :error,
+           "This person must accept their emailed team invitation before you can approve the SSO identity."
+         )}
+
       {:error, _reason} ->
         {:noreply, put_flash(socket, :error, "Couldn't approve that request.")}
     end

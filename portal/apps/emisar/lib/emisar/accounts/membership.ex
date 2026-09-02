@@ -53,4 +53,20 @@ defmodule Emisar.Accounts.Membership do
   @doc "True when a member's access to this tenant has been suspended (`disabled_at` set)."
   def disabled?(%__MODULE__{disabled_at: %DateTime{}}), do: true
   def disabled?(%__MODULE__{}), do: false
+
+  @doc "True when this row is an unresolved account invitation."
+  def invitation_pending?(%__MODULE__{
+        invitation_accepted_at: nil,
+        invitation_token_digest: digest
+      }),
+      do: not is_nil(digest)
+
+  def invitation_pending?(%__MODULE__{}), do: false
+
+  @doc "True when this membership currently grants account authority."
+  def authorizable?(%__MODULE__{} = membership) do
+    is_nil(membership.deleted_at) and
+      not disabled?(membership) and
+      not invitation_pending?(membership)
+  end
 end

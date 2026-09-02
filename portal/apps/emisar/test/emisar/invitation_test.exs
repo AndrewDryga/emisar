@@ -189,7 +189,7 @@ defmodule Emisar.InvitationTest do
 
       # The duplicate group collapses and the production runner disappears —
       # its group already covers it.
-      assert Accounts.runner_access_for_membership(membership.account_id, membership.id) ==
+      assert Accounts.runner_access_for_memberships([membership])[membership.id] ==
                %RunnerAccess{
                  mode: :restricted,
                  groups: ["production"],

@@ -15,7 +15,7 @@ defmodule EmisarWeb.AdminAccountLive do
   """
   use EmisarWeb, :live_view
   import EmisarWeb.StaffComponents
-  alias Emisar.{Admin, Auth}
+  alias Emisar.{Accounts, Admin, Auth}
   alias EmisarWeb.FleetStates
 
   def mount(%{"id" => id}, _session, socket) do
@@ -143,7 +143,9 @@ defmodule EmisarWeb.AdminAccountLive do
                 <.chip>{Auth.role_label(membership.role)}</.chip>
                 <%!-- Both states can hold at once (an invitee suspended before
                      they ever accepted), so neither shadows the other. --%>
-                <.chip :if={is_nil(membership.invitation_accepted_at)}>Invitation pending</.chip>
+                <.chip :if={Accounts.membership_invitation_pending?(membership)}>
+                  Invitation pending
+                </.chip>
                 <.chip :if={membership.disabled_at}>Suspended</.chip>
               </:chips>
               <:meta :if={membership.user.full_name}>{membership.user.full_name}</:meta>

@@ -78,6 +78,24 @@ defmodule EmisarWeb.AdminAccountLiveTest do
       assert html =~ "Legacy manual"
     end
 
+    test "only token-backed invitations carry the pending badge", %{
+      conn: conn,
+      account: account,
+      owner: owner
+    } do
+      pending =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          invitation_token_digest: "pending-invitation"
+        )
+
+      direct = Fixtures.Memberships.fetch_membership(account.id, owner.id)
+      {:ok, live, _html} = live(conn, ~p"/admin/accounts/#{account.id}")
+
+      assert has_element?(live, "#member-#{pending.id}", "Invitation pending")
+      refute has_element?(live, "#member-#{direct.id}", "Invitation pending")
+    end
+
     test "the account can be reached by slug as well as id", %{conn: conn, account: account} do
       {:ok, _live, html} = live(conn, ~p"/admin/accounts/#{account.slug}")
 

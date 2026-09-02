@@ -273,6 +273,31 @@ defmodule Emisar.AccountsTest do
       assert Repo.one(Account.Query.all() |> Account.Query.by_id(account_id)) == nil
     end
 
+    test "a pending owner invitation does not preserve an ownerless account" do
+      owner = Fixtures.Users.create_user()
+      invitee = Fixtures.Users.create_user()
+      account = Fixtures.Accounts.create_account()
+
+      owner_membership =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          user_id: owner.id,
+          role: "owner"
+        )
+
+      owner_subject = Fixtures.Subjects.membership_subject(owner_membership)
+
+      assert {:ok, %{membership: pending_owner}} =
+               Accounts.invite_user_to_account(
+                 Fixtures.Accounts.invitation_attrs(email: invitee.email, role: "owner"),
+                 owner_subject
+               )
+
+      assert Membership.invitation_pending?(pending_owner)
+      assert {:ok, %User{}} = Accounts.erase_user_and_owned_accounts(owner.id)
+      assert Repo.one(Account.Query.all() |> Account.Query.by_id(account.id)) == nil
+    end
+
     test "returns not_found for malformed or unknown ids" do
       assert Accounts.erase_user_and_owned_accounts("not-a-uuid") == {:error, :not_found}
       assert Accounts.erase_user_and_owned_accounts(Ecto.UUID.generate()) == {:error, :not_found}
@@ -3260,6 +3285,105 @@ defmodule Emisar.AccountsTest do
     end
   end
 
+  describe "pending invitation authorization" do
+    test "the invite is visible to its lifecycle but grants access only after acceptance" do
+      user = Fixtures.Users.create_user()
+      current_account = Fixtures.Accounts.create_account()
+
+      current_membership =
+        Fixtures.Memberships.create_membership(
+          account_id: current_account.id,
+          user_id: user.id,
+          role: "owner"
+        )
+
+      current_subject = Fixtures.Subjects.membership_subject(current_membership)
+      {_inviter, invited_account, inviter_subject} = Fixtures.Subjects.owner_subject()
+
+      {:ok, %{membership: invitation, invitation_token: token}} =
+        Accounts.invite_user_to_account(
+          Fixtures.Accounts.invitation_attrs(
+            email: user.email,
+            role: "operator",
+            runner_access_mode: "all"
+          ),
+          inviter_subject
+        )
+
+      assert Membership.invitation_pending?(invitation)
+      refute Membership.authorizable?(invitation)
+      assert {:ok, %Membership{id: invitation_id}} = Accounts.fetch_invitation_by_token(token)
+      assert invitation_id == invitation.id
+
+      assert Accounts.fetch_and_lock_membership(invited_account.id, invitation.id) ==
+               {:error, :not_found}
+
+      assert Accounts.peek_active_membership(invited_account.id, invitation.id) == nil
+
+      assert Accounts.fetch_active_membership(Repo, invited_account.id, invitation.id) ==
+               {:error, :not_found}
+
+      assert Accounts.fetch_active_membership_for_user(invited_account.id, user.id) ==
+               {:error, :not_found}
+
+      assert Accounts.fetch_and_lock_active_membership(
+               Repo,
+               invited_account.id,
+               invitation.id
+             ) == {:error, :not_found}
+
+      assert Accounts.runner_access_for_membership(invited_account.id, invitation.id) ==
+               RunnerAccess.none()
+
+      assert {:ok, %Membership{id: current_id}} =
+               Accounts.fetch_membership_for_session(user, invited_account.id)
+
+      assert current_id == current_membership.id
+
+      assert Accounts.fetch_membership_by_account_id_or_slug(user, invited_account.slug) ==
+               {:error, :not_found}
+
+      assert Accounts.fetch_post_auth_membership(user, invited_account.id) ==
+               {:error, :not_found}
+
+      assert Accounts.switch_account(invited_account.id, current_subject) ==
+               {:error, :not_found}
+
+      assert {:ok, accounts, _metadata} = Accounts.list_accounts_for_user(current_subject)
+      assert Enum.map(accounts, & &1.id) == [current_account.id]
+
+      :ok = Accounts.subscribe_account_team(invited_account.id)
+      assert {:ok, accepted} = Accounts.mark_invitation_accepted(invitation, token, user)
+
+      assert_receive {:list_changed, :team, "membership.invitation_accepted", user_id}
+      assert user_id == user.id
+      assert Membership.authorizable?(accepted)
+
+      assert {:ok, %Membership{id: accepted_id}} =
+               Accounts.fetch_membership_for_session(user, invited_account.id)
+
+      assert accepted_id == accepted.id
+
+      assert {:ok, %Membership{id: ^accepted_id}} =
+               Accounts.fetch_membership_by_account_id_or_slug(user, invited_account.slug)
+
+      assert {:ok, %Membership{id: ^accepted_id}} =
+               Accounts.fetch_post_auth_membership(user, invited_account.id)
+
+      assert %RunnerAccess{mode: :all} =
+               Accounts.runner_access_for_membership(invited_account.id, accepted.id)
+
+      assert {:ok, %Membership{id: ^accepted_id}} =
+               Accounts.switch_account(invited_account.id, current_subject)
+
+      assert {:ok, accepted_accounts, _metadata} =
+               Accounts.list_accounts_for_user(current_subject)
+
+      assert MapSet.new(Enum.map(accepted_accounts, & &1.id)) ==
+               MapSet.new([current_account.id, invited_account.id])
+    end
+  end
+
   describe "fetch_membership_by_account_id_or_slug/2" do
     test "resolves the user's membership by the account slug" do
       user = Fixtures.Users.create_user()
@@ -3594,6 +3718,20 @@ defmodule Emisar.AccountsTest do
       refute Accounts.all_memberships_suspended?(user)
     end
 
+    test "is false when the user has only an unresolved invitation" do
+      user = Fixtures.Users.create_user()
+      {_owner, _account, subject} = Fixtures.Subjects.owner_subject()
+
+      assert {:ok, %{membership: invitation}} =
+               Accounts.invite_user_to_account(
+                 Fixtures.Accounts.invitation_attrs(email: user.email, role: "operator"),
+                 subject
+               )
+
+      assert Membership.invitation_pending?(invitation)
+      refute Accounts.all_memberships_suspended?(user)
+    end
+
     test "is false when the user has NO memberships (distinct from 'all suspended')" do
       # The UI distinguishes "your access was suspended" from "go to onboarding";
       # a user with zero memberships is the latter, so this must be false.
@@ -3633,6 +3771,20 @@ defmodule Emisar.AccountsTest do
 
       assert {:ok, %Membership{role: :admin}} =
                Accounts.update_membership_role(owner_membership, "admin", subject)
+    end
+
+    test "a pending owner invitation can be changed without tripping the last-owner guard" do
+      {_owner, account, subject} = Fixtures.Subjects.owner_subject()
+
+      pending_owner =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          role: "owner",
+          invitation_token_digest: "pending-owner"
+        )
+
+      assert {:ok, %Membership{role: :admin}} =
+               Accounts.update_membership_role(pending_owner, "admin", subject)
     end
 
     test "demoting a member revokes the API keys they minted" do
@@ -4260,6 +4412,21 @@ defmodule Emisar.AccountsTest do
 
       assert {:ok, _} =
                Accounts.suspend_membership(second_owner_membership, owner_subject)
+    end
+
+    test "a pending owner invitation can be suspended", %{
+      account: account,
+      owner_subject: owner_subject
+    } do
+      pending_owner =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          role: "owner",
+          invitation_token_digest: "pending-owner"
+        )
+
+      assert {:ok, %Membership{disabled_at: %DateTime{}}} =
+               Accounts.suspend_membership(pending_owner, owner_subject)
     end
 
     test "suspended membership is excluded from fetch_membership_for_session/2", %{
@@ -5791,6 +5958,20 @@ defmodule Emisar.AccountsTest do
       assert Accounts.delete_membership(owner_membership, subject) == {:error, :last_owner}
     end
 
+    test "a pending owner invitation can be removed" do
+      {_owner, account, subject} = Fixtures.Subjects.owner_subject()
+
+      pending_owner =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          role: "owner",
+          invitation_token_digest: "pending-owner"
+        )
+
+      assert {:ok, %Membership{deleted_at: %DateTime{}}} =
+               Accounts.delete_membership(pending_owner, subject)
+    end
+
     test "removing a member revokes the API keys they minted" do
       account = Fixtures.Accounts.create_account()
       owner = Fixtures.Users.create_user()
@@ -6091,7 +6272,7 @@ defmodule Emisar.AccountsTest do
 
       assert {:ok, %{membership: membership}} = Accounts.invite_user_to_account(attrs, subject)
 
-      assert Accounts.runner_access_for_membership(account.id, membership.id) ==
+      assert Accounts.runner_access_for_memberships([membership])[membership.id] ==
                %RunnerAccess{
                  mode: :all,
                  groups: [],
@@ -6733,6 +6914,43 @@ defmodule Emisar.AccountsTest do
       assert is_nil(reloaded.invitation_accepted_at)
       assert is_binary(reloaded.invitation_token_digest)
     end
+
+    test "acceptance revokes credentials that predate the invitation boundary" do
+      user = Fixtures.Users.create_user()
+      account = Fixtures.Accounts.create_account()
+
+      membership =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          user_id: user.id,
+          role: "operator"
+        )
+
+      subject = Fixtures.Subjects.membership_subject(membership)
+
+      {_raw, key} =
+        Fixtures.ApiKeys.create_api_key(account_id: account.id, created_by_id: user.id)
+
+      {:ok, _device_code, user_code, _grant} =
+        Emisar.ApiKeys.open_device_grant(["claude-code"], %RequestContext{})
+
+      {:ok, grant} = Emisar.ApiKeys.approve_device_grant(user_code, subject)
+      {token, digest} = Crypto.user_invite_token()
+
+      pending =
+        membership
+        |> Ecto.Changeset.change(
+          invitation_token_digest: digest,
+          invitation_sent_to: user.email,
+          invitation_email_changed_at: user.email_changed_at,
+          invitation_accepted_at: nil
+        )
+        |> Repo.update!()
+
+      assert {:ok, _accepted} = Accounts.mark_invitation_accepted(pending, token, user)
+      assert Repo.reload!(key).revoked_at
+      assert Repo.reload!(grant).status == :denied
+    end
   end
 
   describe "accept_invitation/3" do
@@ -6819,6 +7037,62 @@ defmodule Emisar.AccountsTest do
       {:ok, reloaded} = Users.fetch_user_by_id(invitee.id)
       assert is_nil(reloaded.confirmed_at)
       assert is_nil(reloaded.full_name)
+    end
+
+    test "credential revocation rolls back with a rejected acceptance, then commits with it" do
+      {_owner, _account, subject} = Fixtures.Subjects.owner_subject()
+
+      {:ok, %{membership: invitation, user: user, invitation_token: token}} =
+        Accounts.invite_user_to_account(
+          Fixtures.Accounts.invitation_attrs(
+            email: "accept-rollback-#{System.unique_integer([:positive])}@example.test",
+            role: "operator"
+          ),
+          subject
+        )
+
+      temporarily_authorized =
+        invitation
+        |> Ecto.Changeset.change(
+          invitation_token_digest: nil,
+          invitation_accepted_at: DateTime.utc_now()
+        )
+        |> Repo.update!()
+
+      legacy_subject = Fixtures.Subjects.membership_subject(temporarily_authorized)
+
+      {:ok, _raw, key} =
+        Emisar.ApiKeys.create_key(%{name: "legacy pending key"}, legacy_subject)
+
+      {:ok, _device_code, user_code, _grant} =
+        Emisar.ApiKeys.open_device_grant(["claude-code"], %RequestContext{})
+
+      {:ok, grant} = Emisar.ApiKeys.approve_device_grant(user_code, legacy_subject)
+
+      pending =
+        temporarily_authorized
+        |> Ecto.Changeset.change(
+          invitation_token_digest: invitation.invitation_token_digest,
+          invitation_accepted_at: nil
+        )
+        |> Repo.update!()
+
+      assert {:error, %Ecto.Changeset{}} =
+               Accounts.accept_invitation(pending, token, %{
+                 "full_name" => String.duplicate("x", 256)
+               })
+
+      assert is_nil(Repo.reload!(key).revoked_at)
+      assert Repo.reload!(grant).status == :approved
+      assert Membership.invitation_pending?(Repo.reload!(pending))
+
+      assert {:ok, %{membership: accepted}} =
+               Accounts.accept_invitation(pending, token, %{"full_name" => "Accepted Member"})
+
+      assert Membership.authorizable?(accepted)
+      assert Repo.reload!(key).revoked_at
+      assert Repo.reload!(grant).status == :denied
+      assert Repo.reload!(user).confirmed_at
     end
   end
 

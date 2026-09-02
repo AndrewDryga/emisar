@@ -100,6 +100,37 @@ defmodule Emisar.Auth.SubjectTest do
       assert pending_owner.role == :owner
       assert pending_owner.permissions == Emisar.Auth.Permissions.for_role(:owner)
     end
+
+    test "an unresolved invitation has no role or permissions", %{
+      user: user,
+      account: account
+    } do
+      pending =
+        Subject.for_user(user, account, %Membership{
+          role: "owner",
+          user_id: user.id,
+          account_id: account.id,
+          invitation_token_digest: "pending-digest"
+        })
+
+      assert pending.role == nil
+      assert pending.permissions == MapSet.new()
+    end
+
+    test "a direct membership with no invitation fields remains authorized", %{
+      user: user,
+      account: account
+    } do
+      direct =
+        Subject.for_user(user, account, %Membership{
+          role: "admin",
+          user_id: user.id,
+          account_id: account.id
+        })
+
+      assert direct.role == :admin
+      assert direct.permissions == Emisar.Auth.Permissions.for_role(:admin)
+    end
   end
 
   describe "Authorizer.permissions_for/1" do

@@ -116,21 +116,9 @@ defmodule Emisar.Auth do
         {:error, :not_found} -> {:error, :account_disabled}
       end
     end)
-    # An SSO session re-reads its connection HERE, under a lock held across the
-    # insert below. The callback checked it too, but that lock is released when the
-    # identity transaction commits — so a disable could commit, sweep no sessions,
-    # and then this insert would add one that survives.
-    |> Multi.run(:sso_provider, fn repo, _changes ->
-      SSO.ensure_identity_provider_enabled(
-        repo,
-        Keyword.get(opts, :user_identity_id),
-        user.id,
-        account_id,
-        Keyword.get(opts, :provider_identifier)
-      )
-    end)
-    |> Multi.merge(fn _changes ->
-      Users.put_sign_in(Multi.new(), user, "sso", context)
+    |> SSO.put_sign_in_authority(user, account_id, opts)
+    |> Multi.merge(fn %{sso_user: locked_user} ->
+      Users.put_sign_in(Multi.new(), locked_user, "sso", context)
     end)
     |> Multi.insert(:token, fn %{sign_in: signed_in_user, sso_provider: provider} ->
       mfa_verified_at = if provider.satisfies_mfa, do: DateTime.utc_now()

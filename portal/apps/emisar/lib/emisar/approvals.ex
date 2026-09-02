@@ -782,7 +782,7 @@ defmodule Emisar.Approvals do
     |> Enum.filter(fn membership ->
       # Only members who can decide get pinged (viewers can't); the user who
       # triggered the request is excluded since they already saw it in the UI.
-      is_nil(membership.disabled_at) and membership.role in approver_roles and
+      Accounts.membership_authorized?(membership) and membership.role in approver_roles and
         membership.user_id != requested_by_id and
         membership_covers_targets?(
           Map.get(access_by_membership, membership.id, Accounts.RunnerAccess.none()),

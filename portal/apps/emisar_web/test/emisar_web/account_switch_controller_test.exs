@@ -89,6 +89,29 @@ defmodule EmisarWeb.AccountSwitchControllerTest do
              |> Repo.one()
     end
 
+    test "rejects switching into an account whose invitation is still pending", %{conn: conn} do
+      {conn, user, _first} = register_and_log_in(conn)
+      {_owner, invited_account, inviter_subject} = Fixtures.Subjects.owner_subject()
+
+      assert {:ok, %{membership: invitation}} =
+               Accounts.invite_user_to_account(
+                 Fixtures.Accounts.invitation_attrs(email: user.email, role: "operator"),
+                 inviter_subject
+               )
+
+      assert Accounts.membership_invitation_pending?(invitation)
+      conn = post(conn, ~p"/app/accounts/switch", account_id: invited_account.id)
+
+      assert redirected_to(conn) == ~p"/app"
+      assert Phoenix.Flash.get(conn.assigns.flash, :error) =~ "aren't a member"
+      assert get_session(conn, :current_account_id) != invited_account.id
+
+      refute Event.Query.all()
+             |> Event.Query.by_account_id(invited_account.id)
+             |> Event.Query.by_event_type("session.account_switched")
+             |> Repo.one()
+    end
+
     test "rejects a missing/invalid account_id", %{conn: conn} do
       {conn, _user, first} = register_and_log_in(conn)
       conn = post(conn, ~p"/app/accounts/switch", account_id: "not-a-uuid")

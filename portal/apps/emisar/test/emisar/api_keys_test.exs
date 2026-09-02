@@ -2109,6 +2109,29 @@ defmodule Emisar.ApiKeysTest do
       refute Repo.reload!(key).last_used_at
     end
 
+    test "an unresolved invitation cannot mint or authenticate a surviving key" do
+      {user, account, subject} = owner_subject_pair()
+      {:ok, raw, key} = ApiKeys.create_key(%{name: "pre-invitation"}, subject)
+      membership = Fixtures.Memberships.fetch_membership(account.id, user.id)
+      {_token, digest} = Crypto.user_invite_token()
+
+      pending =
+        membership
+        |> Ecto.Changeset.change(invitation_token_digest: digest, invitation_accepted_at: nil)
+        |> Repo.update!()
+
+      pending_subject = Fixtures.Subjects.membership_subject(pending)
+
+      assert pending_subject.role == nil
+
+      assert ApiKeys.create_key(%{name: "while pending"}, pending_subject) ==
+               {:error, :not_found}
+
+      refute ApiKeys.peek_api_key_by_secret(raw)
+      refute ApiKeys.peek_api_key_by_id(key.id)
+      refute Repo.reload!(key).last_used_at
+    end
+
     test "rejects a surviving export key after its membership loses the required role" do
       account = Fixtures.Accounts.create_account()
       Fixtures.Accounts.create_subscription(account, "team")
@@ -2772,6 +2795,24 @@ defmodule Emisar.ApiKeysTest do
 
       assert ApiKeys.approve_device_grant("XXXX-XXXX", subject) == {:error, :unauthorized}
     end
+
+    test "an unresolved invitation cannot approve a device grant from a stale subject" do
+      {user, account, subject} = owner_subject_pair()
+
+      {:ok, _device_code, user_code, grant} =
+        ApiKeys.open_device_grant(["claude-code"], %RequestContext{})
+
+      membership = Fixtures.Memberships.fetch_membership(account.id, user.id)
+      {_token, digest} = Crypto.user_invite_token()
+
+      membership
+      |> Ecto.Changeset.change(invitation_token_digest: digest, invitation_accepted_at: nil)
+      |> Repo.update!()
+
+      assert ApiKeys.approve_device_grant(user_code, subject) == {:error, :not_found}
+      assert Repo.reload!(grant).status == :pending
+      refute Repo.one(Audit.Event)
+    end
   end
 
   describe "deny_device_grant/2" do
@@ -2979,6 +3020,27 @@ defmodule Emisar.ApiKeysTest do
       assert ApiKeys.claim_device_grant(device_code) == {:error, :access_denied}
       assert Repo.all(ApiKey) == []
       refute Enum.any?(Repo.all(Audit.Event), &(&1.event_type == "api_key.created"))
+    end
+
+    test "an unresolved invitation fails closed at claim" do
+      {user, account, subject} = owner_subject_pair()
+
+      {:ok, device_code, user_code, _grant} =
+        ApiKeys.open_device_grant(["claude-code"], %RequestContext{})
+
+      {:ok, approved} = ApiKeys.approve_device_grant(user_code, subject)
+      membership = Fixtures.Memberships.fetch_membership(account.id, user.id)
+      {_token, digest} = Crypto.user_invite_token()
+
+      pending =
+        membership
+        |> Ecto.Changeset.change(invitation_token_digest: digest, invitation_accepted_at: nil)
+        |> Repo.update!()
+
+      assert Accounts.membership_invitation_pending?(pending)
+      assert Repo.reload!(approved).status == :approved
+      assert ApiKeys.claim_device_grant(device_code) == {:error, :access_denied}
+      assert Repo.all(ApiKey) == []
     end
 
     test "pending directory authorization does not demote a human owner at claim" do

@@ -21,6 +21,7 @@ defmodule EmisarWeb.SSOPendingLive do
          socket
          |> assign(:page_title, "Access pending")
          |> assign(:request, request)
+         |> assign(:invitation_pending?, SSO.link_request_invitation_pending?(request))
          |> assign(:status, :pending)}
 
       _ ->
@@ -50,20 +51,32 @@ defmodule EmisarWeb.SSOPendingLive do
              box around a status line is the island §8.1 bans. --%>
         <div class="flex items-center gap-3">
           <.status_dot tone={:brand} animate={:ping} size={:lg} />
-          <p class="text-sm text-zinc-300">
+          <p :if={not @invitation_pending?} class="text-sm text-zinc-300">
             Waiting for an administrator at
             <span class="font-medium text-zinc-100">{@request.account.name}</span>
             to approve your access.
           </p>
+          <p :if={@invitation_pending?} class="text-sm text-zinc-300">
+            Accept your invitation to
+            <span class="font-medium text-zinc-100">{@request.account.name}</span>
+            before an administrator can approve this sign-in.
+          </p>
         </div>
 
-        <p class="text-sm leading-relaxed text-zinc-400">
+        <p :if={not @invitation_pending?} class="text-sm leading-relaxed text-zinc-400">
           You've signed in through your identity provider as <span class="font-medium text-zinc-200">{@request.email}</span>, but this team has an
           admin approve each new member. Leave this page open — it signs you in automatically the
           moment they approve.
         </p>
 
-        <p class="text-xs leading-relaxed text-zinc-400">
+        <p :if={@invitation_pending?} class="text-sm leading-relaxed text-zinc-400">
+          Open the team invitation sent to
+          <span class="font-medium text-zinc-200">{@request.email}</span>
+          and accept it. Then leave this page open — it signs you in automatically
+          when an administrator approves the SSO identity.
+        </p>
+
+        <p :if={not @invitation_pending?} class="text-xs leading-relaxed text-zinc-400">
           Until then you can't reach anything in the account — there's nothing you need to do here.
         </p>
 

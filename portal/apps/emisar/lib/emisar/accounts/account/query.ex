@@ -82,16 +82,17 @@ defmodule Emisar.Accounts.Account.Query do
 
   defp with_joined_paddle_billing_contact_membership(queryable) do
     with_named_binding(queryable, :paddle_billing_contact_membership, fn queryable, binding ->
+      authorized_memberships = Emisar.Accounts.Membership.Query.authorized()
+
       join(
         queryable,
         :left,
         [accounts: a],
-        membership in ^Emisar.Accounts.Membership.Query.not_deleted(),
+        membership in ^authorized_memberships,
         on:
           membership.account_id == a.id and
             membership.user_id == a.paddle_billing_contact_user_id and
-            membership.role == :owner and
-            is_nil(membership.disabled_at),
+            membership.role == :owner,
         as: ^binding
       )
     end)
@@ -112,19 +113,19 @@ defmodule Emisar.Accounts.Account.Query do
 
   @doc """
   Restrict to accounts the given user is a member of — joins through
-  membership on `membership.user_id` and excludes suspended memberships
-  (`disabled_at`). Used by the "switch account" picker, so a suspended user
-  isn't shown the tenant that suspended them. The join composes
-  `Membership.Query.not_deleted/0` so a tombstoned membership can't
-  resurface an account either.
+  membership on `membership.user_id` and includes only memberships that
+  currently grant authority. Used by the account picker, so suspended,
+  tombstoned, and unresolved invited seats do not surface a tenant.
   """
   def by_membership_user_id(queryable, user_id) do
+    authorized_memberships = Emisar.Accounts.Membership.Query.authorized()
+
     queryable
-    |> join(:inner, [accounts: a], m in ^Emisar.Accounts.Membership.Query.not_deleted(),
+    |> join(:inner, [accounts: a], m in ^authorized_memberships,
       on: m.account_id == a.id,
       as: :memberships
     )
-    |> where([memberships: m], m.user_id == ^user_id and is_nil(m.disabled_at))
+    |> where([memberships: m], m.user_id == ^user_id)
   end
 
   # -- Pagination ------------------------------------------------------

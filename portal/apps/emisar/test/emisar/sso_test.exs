@@ -5389,48 +5389,46 @@ defmodule Emisar.SSOTest do
     end
   end
 
-  describe "ensure_identity_provider_enabled/5" do
+  describe "put_sign_in_authority/4" do
     test "refuses a session for an identity whose connection has been disabled" do
-      # Auth calls this INSIDE the session transaction, holding the provider lock
-      # across the credential write. complete_auth checks the same thing, but its
-      # lock is released when the identity transaction commits — so a disable could
-      # commit, sweep no sessions, and the callback then insert one that survives.
       {_user, account, subject} = enterprise_owner()
       provider = account |> provider_fixture() |> Fixtures.SSO.enable_scim()
       %{identity: identity} = provision(provider, "okta|session-guard")
+      {:ok, user} = Users.fetch_user_by_id(identity.user_id)
 
-      assert {:ok, %IdentityProvider{id: provider_id}} =
-               SSO.ensure_identity_provider_enabled(
-                 Repo,
-                 identity.id,
-                 identity.user_id,
-                 account.id,
-                 identity.provider_identifier
+      assert {:ok,
+              %{
+                sso_identity: %UserIdentity{id: identity_id},
+                sso_provider: %IdentityProvider{id: provider_id},
+                sso_user: %Users.User{id: user_id}
+              }} =
+               Ecto.Multi.new()
+               |> SSO.put_sign_in_authority(user, account.id,
+                 user_identity_id: identity.id,
+                 provider_identifier: identity.provider_identifier
                )
+               |> Repo.commit_multi()
 
       assert provider_id == provider.id
+      assert identity_id == identity.id
+      assert user_id == user.id
 
       {:ok, _disabled} = SSO.update_provider(provider, %{enabled: false}, subject)
 
-      assert SSO.ensure_identity_provider_enabled(
-               Repo,
-               identity.id,
-               identity.user_id,
-               account.id,
-               identity.provider_identifier
-             ) ==
-               {:error, :provider_disabled}
+      assert Ecto.Multi.new()
+             |> SSO.put_sign_in_authority(user, account.id,
+               user_identity_id: identity.id,
+               provider_identifier: identity.provider_identifier
+             )
+             |> Repo.commit_multi() == {:error, :provider_disabled}
     end
 
     test "a sign-in with no identity fails closed" do
-      assert SSO.ensure_identity_provider_enabled(
-               Repo,
-               nil,
-               Ecto.UUID.generate(),
-               Ecto.UUID.generate(),
-               nil
-             ) ==
-               {:error, :provider_disabled}
+      user = Fixtures.Users.create_user()
+
+      assert Ecto.Multi.new()
+             |> SSO.put_sign_in_authority(user, Ecto.UUID.generate(), [])
+             |> Repo.commit_multi() == {:error, :provider_disabled}
     end
   end
 
@@ -6939,6 +6937,32 @@ defmodule Emisar.SSOTest do
     end
   end
 
+  describe "link_request_invitation_pending?/1" do
+    test "distinguishes a token-backed invitation from a direct membership and a new user" do
+      account = Fixtures.Accounts.create_account()
+
+      pending =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          invitation_token_digest: "pending-invitation"
+        )
+
+      direct = Fixtures.Memberships.create_membership(account_id: account.id)
+
+      assert SSO.link_request_invitation_pending?(%LinkRequest{
+               account_id: account.id,
+               matched_user_id: pending.user_id
+             })
+
+      refute SSO.link_request_invitation_pending?(%LinkRequest{
+               account_id: account.id,
+               matched_user_id: direct.user_id
+             })
+
+      refute SSO.link_request_invitation_pending?(%LinkRequest{account_id: account.id})
+    end
+  end
+
   # -- approve_link_request/3 ------------------------------------------
 
   describe "granting a role through SSO can't exceed the granter's own" do
@@ -7126,6 +7150,79 @@ defmodule Emisar.SSOTest do
              ) == {:error, :link_target_outranks_approver}
     end
 
+    test "an admin can't bind an identity before an owner accepts their invitation", %{
+      account: account,
+      provider: provider,
+      subject: subject
+    } do
+      owner_user = Fixtures.Users.create_user(email: "invited-owner@acme.test")
+
+      {:ok, %{membership: invitation, invitation_token: invitation_token}} =
+        Accounts.invite_user_to_account(
+          Fixtures.Accounts.invitation_attrs(email: owner_user.email, role: "owner"),
+          subject
+        )
+
+      admin_membership =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          user_id: Fixtures.Users.create_user().id,
+          role: "admin"
+        )
+
+      admin = Fixtures.Subjects.membership_subject(admin_membership)
+
+      request =
+        capture_request(provider, %{
+          "sub" => "okta|latent-owner-credential",
+          "email" => owner_user.email,
+          "email_verified" => true
+        })
+
+      assert request.matched_user_id == owner_user.id
+
+      assert SSO.approve_link_request(request, RunnerAccess.none(), admin) ==
+               {:error, :invitation_pending}
+
+      refute Repo.one(UserIdentity)
+      assert {:ok, still_pending} = SSO.fetch_pending_link_request(request.id)
+      assert still_pending.id == request.id
+      assert Accounts.membership_invitation_pending?(Repo.reload!(invitation))
+
+      assert {:ok, _accepted} =
+               Accounts.mark_invitation_accepted(invitation, invitation_token, owner_user)
+
+      assert SSO.approve_link_request(request, RunnerAccess.none(), admin) ==
+               {:error, :link_target_outranks_approver}
+    end
+
+    test "a request cannot bind after its matched membership is removed", %{
+      account: account,
+      provider: provider,
+      subject: subject
+    } do
+      member = Fixtures.Users.create_user(email: "removed-match@acme.test")
+
+      membership =
+        Fixtures.Memberships.create_membership(account_id: account.id, user_id: member.id)
+
+      request =
+        capture_request(provider, %{
+          "sub" => "okta|removed-match",
+          "email" => member.email,
+          "email_verified" => true
+        })
+
+      Fixtures.Memberships.mark_membership_as_deleted(membership)
+
+      assert SSO.approve_link_request(request, RunnerAccess.none(), subject) ==
+               {:error, :matched_user_unavailable}
+
+      refute Repo.one(UserIdentity)
+      assert {:ok, still_pending} = SSO.fetch_pending_link_request(request.id)
+      assert still_pending.id == request.id
+    end
+
     test "a request inserted after the sweep is still refused", %{
       account: account,
       provider: provider,
@@ -7216,8 +7313,8 @@ defmodule Emisar.SSOTest do
       # Approval is allowed only when the target belongs to no OTHER account —
       # otherwise the approver reaches an account they have no authority over. That
       # check is made once and cannot see forward, so the moment a second
-      # membership exists the reason the binding was permitted has stopped being
-      # true. The binding goes with it.
+      # membership is accepted the reason the binding was permitted has stopped
+      # being true. The binding goes with it.
       target = Fixtures.Users.create_user()
       Fixtures.Memberships.create_membership(account_id: account.id, user_id: target.id)
 
@@ -7250,11 +7347,18 @@ defmodule Emisar.SSOTest do
           )
         )
 
-      assert {:ok, _invite} =
+      assert {:ok, %{membership: invitation, invitation_token: invitation_token}} =
                Accounts.invite_user_to_account(
                  Fixtures.Accounts.invitation_attrs(email: target.email, role: "operator"),
                  other_subject
                )
+
+      # An invitation is only an offer. The existing credential remains valid
+      # until the invited person proves possession and accepts it.
+      refute Repo.reload!(identity).deleted_at
+
+      assert {:ok, _accepted} =
+               Accounts.mark_invitation_accepted(invitation, invitation_token, target)
 
       # The credential the first account's admin approved no longer resolves.
       # This was an OIDC-only manual link, so it has no directory-owned
@@ -7586,11 +7690,16 @@ defmodule Emisar.SSOTest do
           )
         )
 
-      assert {:ok, _invitation} =
+      assert {:ok, %{membership: invitation, invitation_token: invitation_token}} =
                Accounts.invite_user_to_account(
                  Fixtures.Accounts.invitation_attrs(email: member.email, role: "operator"),
                  other_subject
                )
+
+      refute Repo.reload!(rebound).provider_identifier_retired_at
+
+      assert {:ok, _accepted} =
+               Accounts.mark_invitation_accepted(invitation, invitation_token, member)
 
       retired = Repo.reload!(rebound)
       refute retired.deleted_at
@@ -7683,11 +7792,16 @@ defmodule Emisar.SSOTest do
 
       {_other_owner, other_account, other_subject} = Fixtures.Subjects.owner_subject()
 
-      assert {:ok, %{membership: _membership}} =
+      assert {:ok, %{membership: invitation, invitation_token: invitation_token}} =
                Accounts.invite_user_to_account(
                  Fixtures.Accounts.invitation_attrs(email: member.email, role: "operator"),
                  other_subject
                )
+
+      refute Repo.reload!(rebound).provider_identifier_retired_at
+
+      assert {:ok, _accepted} =
+               Accounts.mark_invitation_accepted(invitation, invitation_token, member)
 
       retired = Repo.reload!(rebound)
       refute retired.deleted_at

@@ -1389,6 +1389,31 @@ defmodule Emisar.ApprovalsTest do
       assert members["admin"].email in recipients
     end
 
+    test "does not notify an approver until their invitation is accepted", %{
+      account: account,
+      run: run,
+      members: members
+    } do
+      owner_membership = Fixtures.Memberships.fetch_membership(account.id, members["owner"].id)
+      owner_subject = Fixtures.Subjects.membership_subject(owner_membership)
+      invited = Fixtures.Users.create_user()
+
+      assert {:ok, %{membership: invitation}} =
+               Accounts.invite_user_to_account(
+                 Fixtures.Accounts.invitation_attrs(email: invited.email, role: "admin"),
+                 owner_subject
+               )
+
+      assert Accounts.membership_invitation_pending?(invitation)
+
+      {:ok, _request} =
+        Approvals.create_request(run, Fixtures.Users.create_user().id, "needs approval")
+
+      recipients = notified_recipients()
+      assert members["owner"].email in recipients
+      refute invited.email in recipients
+    end
+
     test "stays within the request's account — other tenants aren't emailed", %{
       run: run,
       members: members

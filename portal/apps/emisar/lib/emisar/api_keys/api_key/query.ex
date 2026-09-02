@@ -152,8 +152,7 @@ defmodule Emisar.ApiKeys.ApiKey.Query do
   """
   def select_owner_labels(queryable, ids, account_id) do
     owner_membership =
-      Emisar.Accounts.Membership.Query.not_deleted()
-      |> Emisar.Accounts.Membership.Query.not_disabled()
+      Emisar.Accounts.Membership.Query.authorized()
       |> Emisar.Accounts.Membership.Query.by_account_id(account_id)
 
     queryable

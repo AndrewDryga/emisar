@@ -159,6 +159,36 @@ defmodule EmisarWeb.AuditExportControllerTest do
       conn = build_conn() |> bearer(raw) |> get(~p"/api/audit")
       assert json_response(conn, 401) == %{"error" => "unauthorized"}
     end
+
+    test "401 while the key owner has not accepted their invitation", %{
+      account: account
+    } do
+      member = Fixtures.Users.create_user()
+
+      membership =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          user_id: member.id,
+          role: "admin"
+        )
+
+      {raw, key} =
+        Fixtures.ApiKeys.create_api_key(
+          account_id: account.id,
+          created_by_id: member.id,
+          kind: :audit_export
+        )
+
+      {_token, digest} = Emisar.Crypto.user_invite_token()
+
+      membership
+      |> Ecto.Changeset.change(invitation_token_digest: digest, invitation_accepted_at: nil)
+      |> Emisar.Repo.update!()
+
+      conn = build_conn() |> bearer(raw) |> get(~p"/api/audit")
+      assert json_response(conn, 401) == %{"error" => "unauthorized"}
+      assert is_nil(Emisar.Repo.reload!(key).last_used_at)
+    end
   end
 
   # Setting up `Fixtures.Subjects.owner_subject` + `Fixtures.ApiKeys.create_api_key` audits

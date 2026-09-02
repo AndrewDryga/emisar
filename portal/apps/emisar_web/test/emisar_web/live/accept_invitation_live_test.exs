@@ -89,6 +89,7 @@ defmodule EmisarWeb.AcceptInvitationLiveTest do
       # (phx-trigger-action), so the invitee gets a one-time sign-in link.
       html = lv |> form("#accept_form", params) |> render_submit()
       assert html =~ ~s|action="/sign_in/magic/start"|
+      assert html =~ ~s|name="return_to" value="/app/#{account.slug}"|
 
       # Accepting burns the token and completes the registration.
       assert Accounts.fetch_invitation_by_token(token) == {:error, :not_found}
@@ -232,9 +233,20 @@ defmodule EmisarWeb.AcceptInvitationLiveTest do
       %{owner: owner, account: account}
     end
 
-    test "the invitee accepts in place and lands in the app", %{owner: owner, account: account} do
-      # The invitee is an already-registered user, signed in.
+    test "the invitee accepts in place and lands in the invited account", %{
+      owner: owner,
+      account: account
+    } do
+      # The invitee is already signed in to a different account. Accepting must
+      # target the invitation instead of following the stale account session.
       invitee = Fixtures.Users.create_user()
+      old_account = Fixtures.Accounts.create_account()
+
+      Fixtures.Memberships.create_membership(
+        account_id: old_account.id,
+        user_id: invitee.id,
+        role: "owner"
+      )
 
       {:ok, %{invitation_token: token}} =
         Accounts.invite_user_to_account(
@@ -247,12 +259,15 @@ defmodule EmisarWeb.AcceptInvitationLiveTest do
         )
 
       {:ok, lv, html} =
-        build_conn() |> log_in_user(invitee) |> live(~p"/accept_invitation/#{token}")
+        build_conn()
+        |> log_in_user(invitee)
+        |> put_session(:current_account_id, old_account.id)
+        |> live(~p"/accept_invitation/#{token}")
 
       assert html =~ "You&#39;re signed in as"
 
       render_click(lv, "accept_existing", %{})
-      assert_redirect(lv, "/app")
+      assert_redirect(lv, "/app/#{account.slug}")
 
       # Accepted: the token is burned.
       assert Accounts.fetch_invitation_by_token(token) == {:error, :not_found}

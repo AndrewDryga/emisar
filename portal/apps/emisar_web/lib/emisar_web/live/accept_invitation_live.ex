@@ -7,7 +7,7 @@ defmodule EmisarWeb.AcceptInvitationLive do
     * Not signed in → a name form; accepting provisions the member and
       emails them a magic-link sign-in (no password to set).
     * Signed in AS the invited email → one-click accept (no password
-      re-entry); we mark the membership accepted and forward to /app.
+      re-entry); we mark the membership accepted and forward to the invited account.
     * Signed in as a DIFFERENT email → "this invite is for X, sign out
       first" with an explicit sign-out link. Previously the visitor was
       silently bounced to /app and never saw the invite.
@@ -111,6 +111,7 @@ defmodule EmisarWeb.AcceptInvitationLive do
         phx-trigger-action={@trigger_submit}
       >
         <input type="hidden" name="user[email]" value={@membership.user.email} />
+        <input type="hidden" name="return_to" value={~p"/app/#{@membership.account}"} />
 
         <%!-- Naked meta field (the detail-page key+value grammar) — the box
              around it was an island (§8.1). --%>
@@ -229,7 +230,7 @@ defmodule EmisarWeb.AcceptInvitationLive do
         {:noreply,
          socket
          |> put_flash(:info, "Welcome to #{membership.account.name}.")
-         |> push_navigate(to: ~p"/app")}
+         |> push_navigate(to: ~p"/app/#{membership.account}")}
 
       # Same race as the anonymous accept: no longer pending → terminal state.
       {:error, :not_found} ->
