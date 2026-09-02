@@ -539,5 +539,90 @@ defmodule Emisar.AdminTest do
 
       assert %{plan: "team", status: "complimentary", accounts: 1} in subscriptions
     end
+
+    test "groups terminal non-success outcomes without counting fan-out as operations" do
+      account_one = Fixtures.Accounts.create_account()
+      account_two = Fixtures.Accounts.create_account()
+      runner_one = Fixtures.Runners.create_runner(account_id: account_one.id)
+      runner_two = Fixtures.Runners.create_runner(account_id: account_two.id)
+      pack_ref = "nomad@0.4.3/sha256:" <> String.duplicate("a", 64)
+
+      shared = %{
+        action_id: "nomad.job_health_snapshot",
+        source: :mcp,
+        status: :failed,
+        pack_ref: pack_ref,
+        client_info: %{"name" => "Claude Code"}
+      }
+
+      for {account, runner, operation_id} <- [
+            {account_one, runner_one, "op_724NN9NMDZ1T76NARWCKM5A0D6"},
+            {account_one, runner_one, "op_724NN9NMDZ1T76NARWCKM5A0D6"},
+            {account_two, runner_two, "op_725NN9NMDZ1T76NARWCKM5A0D6"}
+          ] do
+        Fixtures.Runs.create_run(
+          account_id: account.id,
+          runner_id: runner.id,
+          action_id: shared.action_id,
+          source: shared.source,
+          status: shared.status
+        )
+        |> update_run_analytics!(Map.put(shared, :operation_id, operation_id))
+      end
+
+      Fixtures.Runs.create_run(
+        account_id: account_one.id,
+        runner_id: runner_one.id,
+        action_id: shared.action_id,
+        source: :mcp,
+        status: :denied
+      )
+      |> update_run_analytics!(%{
+        operation_id: "op_726NN9NMDZ1T76NARWCKM5A0D6",
+        pack_ref: pack_ref,
+        client_info: %{"name" => "Claude Code"}
+      })
+
+      Fixtures.Runs.create_run(
+        account_id: account_one.id,
+        runner_id: runner_one.id,
+        action_id: shared.action_id,
+        source: :mcp,
+        status: :success
+      )
+      |> update_run_analytics!(%{
+        operation_id: "op_727NN9NMDZ1T76NARWCKM5A0D6",
+        pack_ref: pack_ref,
+        client_info: %{"name" => "Claude Code"}
+      })
+
+      assert {:ok, report} =
+               Admin.execute("emisar.admin.runtime.recent_failures", ["days=1"], "")
+
+      failed_group = Enum.find(report.groups, &(&1.status == :failed))
+      denied_group = Enum.find(report.groups, &(&1.status == :denied))
+
+      assert failed_group.action_id == "nomad.job_health_snapshot"
+      assert failed_group.pack_ref == pack_ref
+      assert failed_group.source == :mcp
+      assert failed_group.client == "Claude Code"
+      assert failed_group.run_count == 3
+      assert failed_group.operation_count == 2
+      assert failed_group.account_count == 2
+      assert %DateTime{} = failed_group.last_seen_at
+
+      assert denied_group.status == :denied
+      assert denied_group.run_count == 1
+      assert denied_group.operation_count == 1
+      assert length(report.failures) == 3
+      assert Enum.all?(report.failures, &(&1.status == :failed))
+      assert %DateTime{} = report.since
+    end
+  end
+
+  defp update_run_analytics!(run, attrs) do
+    run
+    |> Ecto.Changeset.change(attrs)
+    |> Repo.update!()
   end
 end

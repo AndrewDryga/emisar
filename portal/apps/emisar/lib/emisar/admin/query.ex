@@ -3,6 +3,8 @@ defmodule Emisar.Admin.Query do
   use Emisar, :query
   alias Emisar.{Accounts, ApiKeys, Approvals, Audit, Runners, Runs, SSO, Users}
 
+  @non_success_outcome_statuses Runs.ActionRun.terminal_statuses() -- [:success]
+
   def accounts_matching(term, limit \\ 25) do
     pattern = "%#{term}%"
 
@@ -219,6 +221,44 @@ defmodule Emisar.Admin.Query do
       error: r.error_message,
       occurred_at: r.inserted_at
     })
+  end
+
+  def non_success_outcome_groups_since(since, limit \\ 100) do
+    Runs.ActionRun.Query.all()
+    |> where(
+      [runs: r],
+      r.inserted_at >= ^since and r.status in ^@non_success_outcome_statuses
+    )
+    |> group_by(
+      [runs: r],
+      [
+        r.action_id,
+        r.pack_ref,
+        r.status,
+        r.source,
+        fragment("COALESCE(NULLIF(?->>'name', ''), 'unknown')", r.client_info)
+      ]
+    )
+    |> select([runs: r], %{
+      action_id: r.action_id,
+      pack_ref: r.pack_ref,
+      status: r.status,
+      source: r.source,
+      client: fragment("COALESCE(NULLIF(?->>'name', ''), 'unknown')", r.client_info),
+      run_count: count(r.id),
+      operation_count: count(r.operation_id, :distinct),
+      account_count: count(r.account_id, :distinct),
+      last_seen_at: max(r.inserted_at)
+    })
+    |> order_by(
+      [runs: r],
+      desc: count(r.id),
+      asc: r.action_id,
+      asc: r.status,
+      asc: r.source,
+      asc: fragment("COALESCE(NULLIF(?->>'name', ''), 'unknown')", r.client_info)
+    )
+    |> limit(^limit)
   end
 
   def user_session_count(user_id) do

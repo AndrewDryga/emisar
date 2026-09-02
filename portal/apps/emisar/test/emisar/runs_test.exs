@@ -797,6 +797,35 @@ defmodule Emisar.RunsTest do
                limit: 15
              ) == {:error, :unauthorized}
     end
+
+    test "filters by exact statuses without widening account or credential scope" do
+      %{
+        subject: subject,
+        runners: [runner]
+      } = mcp_fanout_fixture(["low"])
+
+      :ok = Emisar.Runners.subscribe_runner_transport(runner)
+
+      assert {:ok, :created, [failed]} =
+               Runs.dispatch_mcp_action(
+                 mcp_action_facts("op_234NN9NMDZ1T76NARWCKM5A0D6", [runner]),
+                 subject
+               )
+
+      assert {:ok, :created, [successful]} =
+               Runs.dispatch_mcp_action(
+                 mcp_action_facts("op_235NN9NMDZ1T76NARWCKM5A0D6", [runner]),
+                 subject
+               )
+
+      failed |> Ecto.Changeset.change(status: :failed) |> Repo.update!()
+      successful |> Ecto.Changeset.change(status: :success) |> Repo.update!()
+
+      assert {:ok, [listed], _metadata} =
+               Runs.list_recent_mcp_runs(%{scope: :own, statuses: [:failed]}, subject, limit: 15)
+
+      assert listed.id == failed.id
+    end
   end
 
   describe "summarize_runs/1" do

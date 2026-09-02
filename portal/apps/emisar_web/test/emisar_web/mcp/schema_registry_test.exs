@@ -69,10 +69,10 @@ defmodule EmisarWeb.MCP.SchemaRegistryTest do
 
     # The wire catalog stays lean: response schemas live in the internal
     # contracts, never in tools/list. Every session pays for this in tokens, so
-    # the ceiling moves only when a tool gains real capability — it last moved
-    # for execute_runbook's draft mode, which added a second way to name what
-    # runs (slug plus content hash) and the rule that separates the two.
-    assert byte_size(Jason.encode!(tools)) <= 33_792
+    # the ceiling moves only when a tool gains real capability — this move is
+    # for recent_runs' closed status set, which lets recovery skip successful
+    # fan-out rows instead of paying to page through them.
+    assert byte_size(Jason.encode!(tools)) <= 34_304
 
     frame = %{
       jsonrpc: "2.0",

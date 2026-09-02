@@ -1,7 +1,7 @@
 schema_version: 1
 id: emisar-admin
 name: Emisar private administration
-version: 0.1.1
+version: 0.1.2
 description: >
   Private production administration for emisar itself. Every action is a
   bounded release RPC into the colocated portal; this pack is

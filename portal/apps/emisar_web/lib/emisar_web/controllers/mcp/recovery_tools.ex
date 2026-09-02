@@ -15,7 +15,7 @@ defmodule EmisarWeb.MCP.RecoveryTools do
 
   defmodule RecentInput do
     @moduledoc false
-    defstruct ~w[operation_id runbook_execution_id step_id runner_ref action_id pack_ref scope limit cursor]a
+    defstruct ~w[operation_id runbook_execution_id step_id runner_ref action_id pack_ref statuses scope limit cursor]a
   end
 
   @doc "Executes one of the three fixed recovery tools."
@@ -442,6 +442,7 @@ defmodule EmisarWeb.MCP.RecoveryTools do
       runner_ref: args["runner_ref"],
       action_id: args["action_id"],
       pack_ref: args["pack_ref"],
+      statuses: parse_run_statuses(args["statuses"]),
       scope: if(args["scope"] == "account", do: :account, else: :own),
       limit: args["limit"] || 15,
       cursor: args["cursor"]
@@ -453,7 +454,22 @@ defmodule EmisarWeb.MCP.RecoveryTools do
     |> Map.from_struct()
     |> Map.drop([:cursor])
     |> Map.update!(:scope, &Atom.to_string/1)
+    |> Map.update!(:statuses, fn
+      nil -> nil
+      statuses -> Enum.map(statuses, &Atom.to_string/1)
+    end)
     |> Map.new(fn {key, value} -> {Atom.to_string(key), value} end)
+  end
+
+  defp parse_run_statuses(nil), do: nil
+
+  # The input schema has already admitted only ActionRun's closed status set.
+  # Existing atoms avoid turning model input into atoms; sorting makes one set
+  # of filters cursor-stable regardless of the caller's array order.
+  defp parse_run_statuses(statuses) do
+    statuses
+    |> Enum.map(&String.to_existing_atom/1)
+    |> Enum.sort()
   end
 
   defp page_opts(limit, nil), do: [limit: limit]

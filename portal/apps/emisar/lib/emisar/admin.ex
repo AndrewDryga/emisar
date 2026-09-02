@@ -446,7 +446,14 @@ defmodule Emisar.Admin do
   end
 
   defp dispatch("emisar.admin.runtime.recent_failures", args, _operator_user) do
-    {:ok, %{failures: Query.recent_failures(since(args), 50) |> Repo.all()}}
+    since = since(args)
+
+    {:ok,
+     %{
+       since: since,
+       groups: Query.non_success_outcome_groups_since(since) |> Repo.all(),
+       failures: Query.recent_failures(since, 50) |> Repo.all()
+     }}
   end
 
   defp dispatch(

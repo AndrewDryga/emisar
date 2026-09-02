@@ -1320,8 +1320,9 @@ runner's local journal remain the audit record.
 ### `recent_runs`
 
 Input supports `operation_id`, `runbook_execution_id`, `runner_ref`, `action_id`,
-`pack_ref`, runbook `step_id`, `scope` (`own` by default or `account`), `limit`
-(default 15, maximum 100), and cursor. `step_id` requires
+`pack_ref`, exact `statuses`, runbook `step_id`, `scope` (`own` by default or
+`account`), `limit` (default 15, maximum 100), and cursor. `statuses` is a
+non-empty set drawn from the published run-status enum. `step_id` requires
 `runbook_execution_id`.
 It returns the same bounded run summaries as `run_action`, newest first.
 `operation_id` is mutually exclusive with other identity filters but paginates
@@ -1341,14 +1342,11 @@ targeting runners outside the caller's current scope.
 
 Every run summary carries `operation_id`, exact `action_id` and `pack_ref`,
 `runner_ref`, `status`, and `created_at`; terminal rows may add `finished_at`.
-Denied, failed, refused, and errored rows add `error_message`, so the caller
-does not have to infer the outcome from empty output or a synthetic exit code.
-It is a fixed message chosen by the run's status and classification alone — one
-of a closed set of short sentences. It never copies runner output, a runner's
-recorded failure text, a policy reason, an approver's denial reason, or the
-dispatching operator's own reason, so a cause the control plane recorded stays
-on the portal run page and in the audit record. Where the exact cause matters,
-follow `run_url`.
+Status is the closed outcome classification: a failed execution, control-plane
+error, timeout, trust refusal, policy denial, and operator cancellation remain
+distinct. The summary never copies runner output, a runner's recorded failure
+text, a policy reason, an approver's denial reason, or the dispatching
+operator's own reason. Where the exact cause matters, follow `run_url`.
 When a typed action succeeds, the summary may also carry the exact redacted
 `structured_output` object that passed the pack schema. The object is never
 partially truncated. Multi-run responses allocate a separate 64 KiB aggregate
@@ -1388,8 +1386,7 @@ A terminal failure states its outcome, not its recorded cause:
 {
   "status": "failed",
   "exit_code": -1,
-  "duration_ms": 0,
-  "error_message": "The action failed."
+  "duration_ms": 0
 }
 ```
 

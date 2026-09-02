@@ -292,6 +292,7 @@ defmodule Emisar.Runs do
       |> maybe_by_runner_ref(filters[:runner_ref])
       |> maybe_by_action_id(filters[:action_id])
       |> maybe_by_pack_ref(filters[:pack_ref])
+      |> maybe_by_statuses(filters[:statuses])
       |> Authorizer.for_subject(subject)
       |> Repo.list(ActionRun.Query, page: page_opts, count: false)
     end
@@ -325,6 +326,10 @@ defmodule Emisar.Runs do
 
   defp maybe_by_pack_ref(query, nil), do: query
   defp maybe_by_pack_ref(query, value), do: ActionRun.Query.by_pack_ref(query, value)
+
+  defp maybe_by_statuses(query, nil), do: query
+  defp maybe_by_statuses(query, []), do: query
+  defp maybe_by_statuses(query, statuses), do: ActionRun.Query.status_in(query, statuses)
 
   defp maybe_by_runner_id(query, nil), do: query
   defp maybe_by_runner_id(query, runner_id), do: ActionRun.Query.by_runner_id(query, runner_id)

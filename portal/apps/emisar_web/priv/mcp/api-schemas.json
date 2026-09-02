@@ -367,6 +367,13 @@
         "runner_ref": {"$ref": "#/$defs/runner_ref"},
         "action_id": {"$ref": "#/$defs/action_id"},
         "pack_ref": {"$ref": "#/$defs/pack_ref"},
+        "statuses": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 14,
+          "uniqueItems": true,
+          "items": {"$ref": "#/$defs/run_status"}
+        },
         "scope": {"type": "string", "enum": ["own", "account"], "default": "own"},
         "limit": {"type": "integer", "minimum": 1, "maximum": 100, "default": 15},
         "cursor": {"$ref": "#/$defs/cursor"}
@@ -1458,7 +1465,7 @@
     },
     "recent_runs": {
       "title": "Recent runs",
-      "description": "Inspect and paginate scoped run history by operation, runbook execution, step, runner, action, or pack. Use get_operation, not history absence, to reconcile an ambiguous mutation.",
+      "description": "Inspect and paginate scoped run history by operation, runbook execution, step, runner, action, pack, or exact statuses. Status preserves the distinction between a failed execution, control-plane error, timeout, trust refusal, policy denial, and operator cancellation. Use get_operation, not history absence, to reconcile an ambiguous mutation.",
       "annotations": {"readOnlyHint": true, "destructiveHint": false, "idempotentHint": true, "openWorldHint": false},
       "inputSchema": {
         "type": "object",

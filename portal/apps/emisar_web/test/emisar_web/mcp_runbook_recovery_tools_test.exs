@@ -1433,6 +1433,50 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
     assert length(runners) == 16
   end
 
+  test "recent history filters exact statuses and binds their set to the cursor", %{
+    conn: conn,
+    account: account,
+    subject: subject,
+    key: key
+  } do
+    runner = setup_runner!(account, subject, "status-history")
+    failed = create_mcp_history_run!(account, runner, key, 1, %{status: :failed})
+    refused = create_mcp_history_run!(account, runner, key, 2, %{status: :refused})
+    success = create_mcp_history_run!(account, runner, key, 3, %{status: :success})
+
+    first =
+      call(conn, "recent_runs", %{
+        "statuses" => ["refused", "failed"],
+        "limit" => 1
+      })
+
+    assert [first_run] = first["runs"]
+    assert first_run["run_id"] in [failed.id, refused.id]
+    refute first_run["run_id"] == success.id
+    assert is_binary(first["next_cursor"])
+
+    second =
+      call(conn, "recent_runs", %{
+        "statuses" => ["failed", "refused"],
+        "limit" => 1,
+        "cursor" => first["next_cursor"]
+      })
+
+    assert [second_run] = second["runs"]
+
+    assert MapSet.new([first_run["run_id"], second_run["run_id"]]) ==
+             MapSet.new([failed.id, refused.id])
+
+    mismatch =
+      call(conn, "recent_runs", %{
+        "statuses" => ["failed"],
+        "limit" => 1,
+        "cursor" => first["next_cursor"]
+      })
+
+    assert mismatch["error"]["code"] == "invalid_cursor"
+  end
+
   test "execution summaries remain complete after runner scope is narrowed", %{
     conn: conn,
     account: account,

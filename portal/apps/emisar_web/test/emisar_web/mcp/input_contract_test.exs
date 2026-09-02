@@ -86,6 +86,20 @@ defmodule EmisarWeb.MCP.InputContractTest do
              InputContract.validate("list_packs", %{"limit" => 0})
   end
 
+  test "recent_runs accepts only a non-empty unique set of published statuses" do
+    assert {:ok, %{"statuses" => ["failed", "refused"]}} =
+             InputContract.validate("recent_runs", %{"statuses" => ["failed", "refused"]})
+
+    assert {:error, [%{path: "$.statuses", code: "min"}]} =
+             InputContract.validate("recent_runs", %{"statuses" => []})
+
+    assert {:error, [%{path: "$.statuses", code: "unique"}]} =
+             InputContract.validate("recent_runs", %{"statuses" => ["failed", "failed"]})
+
+    assert {:error, [%{path: "$.statuses", code: "enum"}]} =
+             InputContract.validate("recent_runs", %{"statuses" => ["failure"]})
+  end
+
   test "unknown tools and root fields fail closed" do
     assert {:error, [%{path: "$", code: "schema"}]} =
              InputContract.validate("not_a_tool", %{})
