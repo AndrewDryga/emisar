@@ -38,16 +38,21 @@ func TestLoadReceiptRejectsUntrustedOrForeignOwnership(t *testing.T) {
 
 func TestLoadReceiptAcceptsCaseInsensitiveRepository(t *testing.T) {
 	// GitHub owner/repo slugs are case-insensitive, so a receipt an installer
-	// wrote from a display-cased EMISAR_REPO must pass the repository check. It
-	// then fails later on binary identity (no unit-test fixture matches the
-	// running binary), never on "official installer" — which is exactly what a
-	// mixed-case repo was wrongly rejected with before the fix.
+	// wrote from a display-cased EMISAR_REPO must pass the repository check
+	// rather than be rejected as unofficial — the whole of what this asserts.
+	// The fixture is otherwise valid and its binary matches the executable, so
+	// loadReceipt may legitimately accept it outright; on a host where the temp
+	// path resolves through a symlink it stops later on binary identity instead.
+	// Either way it must never draw the "official installer" rejection a
+	// mixed-case repo hit before the fix — asserting a later binary-identity
+	// failure would only be re-testing the symlink resolution of t.TempDir(),
+	// which is why this used to pass on macOS and fail on Linux CI.
 	for _, repository := range []string{"AndrewDryga/emisar", "EmisarHQ/emisar"} {
 		t.Run(repository, func(t *testing.T) {
 			executable := writeReceiptFixture(t, t.TempDir(), repository)
 			_, err := loadReceipt(executable, func(string, fs.FileInfo) error { return nil })
-			if err == nil || strings.Contains(err.Error(), "official installer") {
-				t.Fatalf("loadReceipt(%q) = %v, want accepted past the repository check", repository, err)
+			if err != nil && strings.Contains(err.Error(), "official installer") {
+				t.Fatalf("loadReceipt(%q) = %v, want the mixed-case repository accepted, not rejected as unofficial", repository, err)
 			}
 		})
 	}
