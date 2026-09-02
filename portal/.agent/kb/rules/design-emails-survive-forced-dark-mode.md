@@ -36,6 +36,54 @@ the accents and the filled CTA.
 `color-scheme` meta still tells them the body is handled — this rule is about the
 client that does not ask.
 
+## What Gmail actually does — measured, not assumed
+
+Six probe emails through a real account, read on the phone. Do not re-derive
+this from blog posts; several of them are wrong about it.
+
+| | behavior |
+|---|---|
+| Gmail web, dark theme | **does not rewrite the body at all** — our dark design renders as sent |
+| Gmail Android, rewriting | rewrites every authored color by flipping HSL lightness |
+| `background-color` | rewritten |
+| `background` attribute (image) | **exempt** |
+| `background-image: url(…)` | **exempt** |
+| `background-image: linear-gradient(…)` | **exempt** |
+| any text color | **rewritten, wherever it sits** |
+| `<img>` content | never touched |
+
+Neither removing the `color-scheme` meta nor using pure black stops the rewrite;
+both were probed and both were rewritten.
+
+### The gradient trap
+
+Those two rows together are a loaded gun: **a ground can be made immune, and the
+text on it cannot.** A `linear-gradient` ground needs no asset and survives
+untouched, which makes it look like the way to keep an email dark — and it is
+exactly how to make one unreadable. The ground stays near-black while the
+near-white heading on it flips to near-black, and the text disappears into the
+box that was supposed to protect it. Probe 6 rendered precisely that.
+
+So: **never use an image or gradient as a ground behind live text in a mail
+body.** Ground and text must be rewritten together, which means `background-color`
+— the one that is not exempt. The masthead is the sole exemption we take, and it
+is safe only because its text is baked into the image rather than sitting on it.
+
+### Why we do not force the email to stay dark
+
+A lightness flip has exactly one fixed point, 50%, so the only colors that
+survive it unchanged are the ones sitting there. Neutral grey at 50% is
+`#808080`, which is **5.0:1** on our ground and 5.3:1 on pure black — and there
+is only one of it. Staying dark in both modes therefore means every heading,
+number, body line and caption wears one tone at ~5:1, against the three the
+design has now (19:1 / 7.8:1 / 6.4:1). Saturated accents fare better at 50%
+(emerald 11.8:1, amber 12.1:1), so the palette would be one flat grey plus bright
+colors, with no white anywhere.
+
+That is the whole trade, and it is a ceiling rather than an estimate: no
+arrangement of immune grounds raises it, because the text still swings
+symmetrically around 50%. We took the two-way design instead.
+
 ## ✅ Good
 
 ```elixir
@@ -60,6 +108,14 @@ def brand, do: "#8df0ca"
 ```html
 <!-- Images are never inverted, so this is white ink on a white ground. -->
 <img src="…/emisar-status-logo-dark.png" />
+```
+
+```html
+<!-- The gradient survives the rewrite. The heading on it does not, so the
+     card keeps its dark ground and loses its text. -->
+<td style="background-image:linear-gradient(#09090b,#09090b);">
+  <div style="color:#fafafa;">12,809</div>
+</td>
 ```
 
 ## How it's enforced
