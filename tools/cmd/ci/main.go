@@ -16,7 +16,7 @@ func main() {
 		fatal(err)
 	}
 	if len(os.Args) < 2 {
-		fatal(fmt.Errorf("usage: go run ./tools/cmd/ci <select|frozen-migrations|install-mcp-publisher|normalize-mcp-private-key>"))
+		fatal(fmt.Errorf("usage: go run ./tools/cmd/ci <select|install-mcp-publisher|normalize-mcp-private-key>"))
 	}
 
 	ctx := context.Background()
@@ -26,11 +26,6 @@ func main() {
 			fatal(fmt.Errorf("usage: ci select EVENT BASE"))
 		}
 		err = ci.WriteSelection(ctx, root, os.Args[2], os.Args[3], os.Getenv("GITHUB_OUTPUT"), os.Getenv("GITHUB_STEP_SUMMARY"))
-	case "frozen-migrations":
-		if len(os.Args) != 4 {
-			fatal(fmt.Errorf("usage: ci frozen-migrations EVENT BASE"))
-		}
-		err = ci.CheckFrozenMigrations(ctx, root, os.Args[2], os.Args[3])
 	case "install-mcp-publisher":
 		if len(os.Args) > 3 {
 			fatal(fmt.Errorf("usage: ci install-mcp-publisher [destination]"))

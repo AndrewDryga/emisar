@@ -167,7 +167,7 @@ func (a *App) touchedMigrations(ctx context.Context) ([]string, error) {
 	return union, nil
 }
 
-func (a *App) stagedCheck(ctx context.Context) error {
+func (a *App) checkLocalFrozenMigrations(ctx context.Context) error {
 	migrations, err := a.touchedMigrations(ctx)
 	if err != nil {
 		return err
@@ -175,6 +175,13 @@ func (a *App) stagedCheck(ctx context.Context) error {
 	if len(migrations) != 0 {
 		return fmt.Errorf("editing or deleting a committed migration is forbidden:\n  %s\nadd a new forward migration instead",
 			strings.Join(migrations, "\n  "))
+	}
+	return nil
+}
+
+func (a *App) stagedCheck(ctx context.Context) error {
+	if err := a.checkLocalFrozenMigrations(ctx); err != nil {
+		return err
 	}
 	if err := a.checkStagedPortalFormat(ctx); err != nil {
 		return err

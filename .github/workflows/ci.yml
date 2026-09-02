@@ -89,14 +89,6 @@ jobs:
           BASE: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
         run: go run ./tools/cmd/ci select "$EVENT" "$BASE"
 
-      # CI-only by nature: the comparison needs the PR's merge-base or the
-      # push's before-SHA, which exist only in the event payload.
-      - name: Enforce frozen migration history
-        env:
-          EVENT: ${{ github.event_name }}
-          BASE: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
-        run: go run ./tools/cmd/ci frozen-migrations "$EVENT" "$BASE"
-
   portal:
     name: Portal - Test
     needs: changes
@@ -138,6 +130,9 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          # The canonical gate compares committed migrations against the PR
+          # merge-base or the push's before-SHA.
+          fetch-depth: 0
 
       - name: Set up Erlang and Elixir
         uses: erlef/setup-beam@54075bcc5e249e4758d363f27d099f55d843f124 # v1.24.1
@@ -189,6 +184,9 @@ jobs:
         # workspace-isolated dependencies automatically outside CI. The
         # dependency audit, Phoenix security scan, and compile-cycle budget
         # run inside this gate so a green local run means a green job.
+        env:
+          EMISAR_FROZEN_MIGRATIONS_EVENT: ${{ github.event_name }}
+          EMISAR_FROZEN_MIGRATIONS_BASE: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
         run: ../run gate portal
 
   mcp-listing:
