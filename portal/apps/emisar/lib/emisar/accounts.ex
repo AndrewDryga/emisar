@@ -249,12 +249,12 @@ defmodule Emisar.Accounts do
   the audit subject; this function is not exposed to ordinary account callers.
   The transition is idempotent and its audit row commits atomically.
 
-  The subject must be SCOPED TO THE TARGET account — the admin console and the
-  server mix task both build a support subject for the account being disabled —
-  and hold `manage_own_account`. The account-scope check is load-bearing, not
-  decoration: `manage_own_account` is held by every owner/admin for their OWN
-  account, so without it a future tenant-facing caller passing a foreign
-  `account_id` would fail open and disable any account by id.
+  The subject must be SCOPED TO THE TARGET account — the admin console builds a
+  support subject for the account being disabled — and hold
+  `manage_own_account`. The account-scope check is load-bearing, not decoration:
+  `manage_own_account` is held by every owner/admin for their OWN account, so
+  without it a future tenant-facing caller passing a foreign `account_id` would
+  fail open and disable any account by id.
   """
   def set_account_disabled_for_support(
         account_id,
