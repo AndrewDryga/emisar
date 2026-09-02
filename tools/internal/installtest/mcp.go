@@ -27,6 +27,7 @@ func MCP(root string, out io.Writer) error {
 		name string
 		run  func(*harness) error
 	}{
+		{"help contract", mcpHelpContract},
 		{"install directory discovery", mcpInstallDirs},
 		{"install confirmation prompt", mcpConfirmPrompt},
 		{"interactive connection handoff", mcpInteractiveConnect},
@@ -48,6 +49,17 @@ func MCP(root string, out io.Writer) error {
 		}
 	}
 	fmt.Fprintln(out, "ok: mcp installer smoke test passed")
+	return nil
+}
+
+func mcpHelpContract(h *harness) error {
+	output, err := requireOutput(h.command(h.root, nil, "bash", h.repoPath("install-mcp.sh"), "--help"))
+	if err != nil {
+		return err
+	}
+	if !strings.Contains(string(output), "EMISAR_ATTESTATION_WORKFLOW") {
+		return fmt.Errorf("installer help omits EMISAR_ATTESTATION_WORKFLOW:\n%s", output)
+	}
 	return nil
 }
 

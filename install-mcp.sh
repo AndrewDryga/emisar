@@ -108,8 +108,8 @@ Flags:
   --help              This message.
 
 Env vars accepted: VERSION, INSTALL_DIR, EMISAR_REPO, EMISAR_GITHUB_TOKEN,
-ASSUME_YES, EMISAR_URL (the portal the bridge talks to; default
-https://emisar.dev — a self-hosted portal's install command sets it).
+ASSUME_YES, EMISAR_URL, EMISAR_ATTESTATION_WORKFLOW (the portal defaults to
+https://emisar.dev — a self-hosted portal's install command sets EMISAR_URL).
 USAGE
 }
 

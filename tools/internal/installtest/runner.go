@@ -50,6 +50,7 @@ func Runner(root string, out io.Writer) error {
 
 func runnerChecks() []runnerCheck {
 	return []runnerCheck{
+		{"help contract", false, runnerHelpContract},
 		{"unattended pack selection", false, runnerUnattendedPacks},
 		{"owned directory validation", false, runnerOwnedDirectoryValidation},
 		{"GitHub token argv hygiene", false, func(h *harness) error { return githubTokenHygiene(h, "install.sh") }},
@@ -67,6 +68,17 @@ func runnerChecks() []runnerCheck {
 		{"config value validation", false, runnerConfigValueValidation},
 		{"runner id override in config skeleton", false, runnerIDOverride},
 	}
+}
+
+func runnerHelpContract(h *harness) error {
+	output, err := requireOutput(h.command(h.root, nil, "bash", h.repoPath("install.sh"), "--help"))
+	if err != nil {
+		return err
+	}
+	if !strings.Contains(string(output), "EMISAR_ATTESTATION_WORKFLOW") {
+		return fmt.Errorf("installer help omits EMISAR_ATTESTATION_WORKFLOW:\n%s", output)
+	}
+	return nil
 }
 
 func runnerAttestationReleaseEpochs(h *harness) error {
