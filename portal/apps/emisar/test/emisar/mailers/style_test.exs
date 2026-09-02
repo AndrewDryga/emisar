@@ -1,24 +1,15 @@
 defmodule Emisar.Mailers.StyleTest do
-  @moduledoc """
-  The two properties that keep an email dark in a client that rewrites colors.
-
-  Grounds are painted with a gradient, which a rewrite skips, so they never move.
-  Text is rewritten wherever it sits, so every tone has to be legible on those
-  frozen grounds twice: as authored, and after its lightness is flipped.
-  """
   use ExUnit.Case, async: true
-  alias Emisar.Mailers.MonthlyReport
   alias Emisar.Mailers.Style
-  alias Emisar.Mailers.Transactional
-  alias Emisar.Users
 
-  # Grounds are painted, never drawn on; a hairline is a separator and is
-  # deliberately below text contrast; the button fill is judged with its label.
+  # Grounds are compared against, never drawn on; a hairline is a separator and
+  # is deliberately below text contrast. Everything else in Style that returns a
+  # color is ink, and has to clear the bar in both renderings.
   @grounds [:ground, :surface]
   @chrome [:hairline, :button_fill]
 
   describe "the palette" do
-    test "every ink clears 4.5:1 on both frozen grounds, before and after a flip" do
+    test "every ink clears 4.5:1 on both grounds, as authored and after a client mirrors it" do
       for ink <- ink_tokens(), ground <- @grounds do
         color = apply(Style, ink, [])
         bg = apply(Style, ground, [])
@@ -26,92 +17,16 @@ defmodule Emisar.Mailers.StyleTest do
         assert contrast(color, bg) >= 4.5,
                "#{ink} (#{color}) on #{ground} (#{bg}) is #{contrast(color, bg)}:1"
 
-        assert contrast(mirror(color), bg) >= 4.5,
-               "#{ink} flips to #{mirror(color)}, which on #{ground} (#{bg}) " <>
-                 "is #{contrast(mirror(color), bg)}:1"
+        assert contrast(mirror(color), mirror(bg)) >= 4.5,
+               "#{ink} mirrors to #{mirror(color)} on #{mirror(bg)}, " <>
+                 "which is #{contrast(mirror(color), mirror(bg))}:1"
       end
     end
 
-    test "the button's label clears 4.5:1 on its frozen fill, before and after a flip" do
-      assert contrast(Style.brand(), Style.button_fill()) >= 4.5
-      assert contrast(mirror(Style.brand()), Style.button_fill()) >= 4.5
+    test "the button's label clears 4.5:1 on its fill, mirrored too" do
+      assert contrast(Style.ink(), Style.button_fill()) >= 4.5
+      assert contrast(mirror(Style.ink()), mirror(Style.button_fill())) >= 4.5
     end
-  end
-
-  describe "every rendered body" do
-    test "paints its grounds, so a client that rewrites colors cannot turn one light" do
-      for {name, html} <- rendered_bodies() do
-        refute html =~ "background-color",
-               "#{name}: a background-color is rewritten to its opposite, which turns " <>
-                 "this email light in Gmail's dark mode. Use Style.fill/1."
-
-        refute html =~ ~r/border(-top|-bottom|-left|-right)?:\s*1px/,
-               "#{name}: a border is not a background and cannot be frozen, so it " <>
-                 "flips to a bright line. Use Style.rule/1 or a fill inside a fill."
-      end
-    end
-
-    test "carries the Outlook ground, which renders no gradient" do
-      for {name, html} <- rendered_bodies() do
-        assert html =~ Style.mso_fallback(:open), "#{name}: no mso ground"
-        assert html =~ Style.mso_fallback(:close), "#{name}: unclosed mso ground"
-      end
-    end
-  end
-
-  defp rendered_bodies do
-    report = %{
-      period_start: ~U[2026-08-01 00:00:00Z],
-      period_end: ~U[2026-09-01 00:00:00Z],
-      runs: %{
-        total: 4,
-        success: 3,
-        failed: 1,
-        denied: 0,
-        cancelled: 0,
-        dispatched: 4,
-        distinct_runners: 1
-      },
-      approvals: %{
-        requested: 2,
-        approved: 1,
-        denied: 0,
-        expired: 0,
-        cancelled: 0,
-        pending: 1,
-        waiting_now: 1
-      },
-      runners: 1,
-      team_size: 2
-    }
-
-    monthly =
-      MonthlyReport.render(
-        %Users.User{full_name: "Olivia Owner", email: "olivia@example.com"},
-        %{name: "Fleet Ops", slug: "fleet-ops"},
-        report,
-        "https://emisar.dev/u"
-      )
-
-    transactional =
-      Transactional.render(%{
-        recipient: "Olivia Owner",
-        title: "Approval",
-        preview: "Needs approval.",
-        blocks: [
-          {:status, "This action ", "needs your approval", ".", :warning},
-          {:facts, [{"Action", "linux.uptime"}, {"Runner", "web-01"}]},
-          {:section, "Redacted arguments"},
-          {:pre, "host  web-01"},
-          {:code, "834 512"},
-          {:list, ["One", "Two"]}
-        ],
-        action: {"Review approval", "https://emisar.dev/a"},
-        secondary_action: {"Open runner", "https://emisar.dev/r"},
-        footer: "You're receiving this because you can approve actions."
-      })
-
-    [{"monthly report", monthly.html}, {"transactional", transactional.html}]
   end
 
   defp ink_tokens do
@@ -121,13 +36,14 @@ defmodule Emisar.Mailers.StyleTest do
           match?("#" <> <<_::binary-size(6)>>, apply(Style, name, [])),
           do: name
 
-    # A new color token falls under the test above the moment it is added; an
+    # A new color token is covered by the test above the moment it is added; an
     # empty list would mean the reflection stopped finding any of them.
     assert tokens != []
     tokens
   end
 
-  # A rewriting client keeps hue and saturation and flips HSL lightness.
+  # Gmail's mobile dark theme rewrites an authored color by flipping its HSL
+  # lightness and keeping hue and saturation.
   defp mirror(hex) do
     {h, l, s} = to_hsl(hex)
     to_hex(h, 1.0 - l, s)

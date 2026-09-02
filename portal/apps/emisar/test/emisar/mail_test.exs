@@ -855,8 +855,7 @@ defmodule Emisar.MailTest do
         assert email.html_body =~ ">View approval</a>"
         assert email.html_body =~ ">View run</a>"
 
-        assert email.html_body =~
-                 ~s(<td style="#{Style.fill(Style.surface())}border-radius:8px;">)
+        assert email.html_body =~ ~s(border:1px solid #{Style.hairline()};border-radius:8px;)
 
         refute email.text_body =~ "not proof that the action ran"
         # The approval page is the only place arguments are shown.

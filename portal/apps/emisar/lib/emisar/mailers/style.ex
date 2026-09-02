@@ -1,38 +1,45 @@
 defmodule Emisar.Mailers.Style do
   @moduledoc """
-  The visual constants both email bodies are built from: the palette, the ways a
-  surface and a rule are drawn, the font stack, and the inbox-snippet padding.
+  The visual constants both email bodies are built from: the palette, the font
+  stack, and the inbox-snippet padding.
 
-  ## Why this palette looks nothing like the console's
+  ## The email is designed twice, because Gmail redesigns it
 
   The Gmail apps rewrite every color an email authors, flipping its HSL lightness.
   They ignore `color-scheme`, ignore `prefers-color-scheme`, and offer no way out
   — Litmus files them under *full color inversion*, the behavior that turns a
-  dark-designed email light. Six probe emails through a real account confirmed it
-  and pinned down the two rules that matter:
+  dark-designed email light. So this palette is chosen so the rewritten rendering
+  is one we designed too: every tone below clears 4.5:1 against its ground as
+  authored, and its mirror clears 4.5:1 against the mirrored ground.
 
-    * A **background** drawn with a gradient or an image is never rewritten.
-    * **Text is always rewritten**, whatever it sits on. A dark ground under white
-      ink therefore delivers near-black ink on a dark page, and lying about the
-      background so the rewrite lands on dark does not change it either.
+  Letting the ground flip along with the text is what keeps the type crisp.
+  `ink/0` is near-white on our dark ground and mirrors to near-black on a light
+  one — 17:1 either way. The alternative was to freeze the email dark by painting
+  every surface with a gradient, which a rewrite skips; it was built and rejected,
+  because text can never be frozen, so every tone has to sit at 50% lightness
+  where a neutral tops out at 5:1. That made every client worse to fix one.
 
-  So every surface here is painted with `fill/1` rather than `background-color`,
-  which freezes the email dark in every client, and every text tone sits at 50%
-  HSL lightness — the one value a lightness flip cannot move. That is the whole
-  design, and it costs exactly one thing: at 50% lightness a neutral tops out at
-  `#808080`, so `ink/0` is the *only* neutral there is. Headings, counts, body and
-  captions all wear it, and hierarchy comes from size and weight. Saturated hues
-  are unharmed — they read 12:1 and 15:1 — which is why the accents carry more
-  weight here than they do in the console.
+  ## Why these particular brand steps
 
-  Two consequences worth naming before someone "fixes" them:
+  An accent survives the mirror when it is light and not too saturated, which
+  moves each one a step up its own scale rather than off-brand:
 
-    * A border is not a background and cannot be frozen, so there are none. Rules
-      are `rule/0` rows and cards are `fill/1` inside `fill/1`, one pixel apart.
-    * The primary button is tonal. A solid emerald fill cannot work: its label
-      flips off it in whichever mode it was not authored for, at 1.4:1.
+    * `brand/0` is **brand-200**. brand-400, the logo emerald, mirrors to 1.8:1 —
+      unreadable rather than dim, and short of even the 3:1 large-text bar.
+    * `amber/0` is **amber-200** for the same reason; amber-300 mirrors to 2.7:1.
+    * `rose/0` is **rose-300** unchanged. It is already light and desaturated
+      enough to read 10:1 and 12:1.
 
-  `Emisar.Mailers.StyleTest` holds every tone to both readings.
+  The button cannot be the console's: a bright fill under a near-black label reads
+  9.8:1 as sent and 1.4:1 mirrored. A deep **brand-800** fill under `ink/0` reads
+  6.6:1 and 15.9:1, so it stays a solid emerald button in both renderings.
+
+  An image is never rewritten, which is why the masthead is a lockup with its own
+  dark ground baked in rather than the transparent white-ink status logo: on our
+  dark ground the chip is invisible, and on a rewritten one it is a brand tile
+  instead of white ink on white.
+
+  `Emisar.Mailers.StyleTest` holds every token to both readings.
   """
 
   @doc "The page ground."
@@ -41,54 +48,26 @@ defmodule Emisar.Mailers.Style do
   @doc "A card or quoted-block ground, one step up from the page."
   def surface, do: "#111114"
 
-  @doc "Rules and card edges — a separator, deliberately below text contrast."
+  @doc "Rules and card borders — a separator, deliberately below text contrast."
   def hairline, do: "#27272a"
 
-  @doc "Every neutral: headings, counts, body copy, captions. There is only one."
-  def ink, do: "#808080"
+  @doc "Primary text, and the label on the primary button."
+  def ink, do: "#fafafa"
 
-  @doc "Links, section eyebrows, bullets, passing counts, and the button label."
-  def brand, do: "#00ffa1"
+  @doc "Body copy, labels, captions, and a count of zero."
+  def ink_soft, do: "#a1a1aa"
 
-  @doc "Failed or denied."
-  def rose, do: "#ff0020"
+  @doc "Links, section eyebrows, bullets, and passing counts — brand-200."
+  def brand, do: "#95f3cd"
 
-  @doc "Waiting on a human."
-  def amber, do: "#ffc300"
+  @doc "Failed or denied — rose-300, the console's own."
+  def rose, do: "#fda4af"
 
-  @doc "The primary button's ground — dark, so its brand-colored label carries it."
-  def button_fill, do: "#0d3a2a"
+  @doc "Waiting on a human — amber-200."
+  def amber, do: "#fde68a"
 
-  @doc """
-  A frozen background, for use anywhere `background-color` would have gone.
-
-  A gradient is the only fill a rewriting client leaves alone. Outlook cannot
-  render one, which is what `mso_fallback/1` is for.
-  """
-  def fill(color), do: "background-image:linear-gradient(#{color},#{color});"
-
-  @doc """
-  A frozen one-pixel rule row, standing in for the border that cannot be frozen.
-
-  `colspan` matches the table it is dropped into.
-  """
-  def rule(colspan \\ 1) do
-    ~s(<tr><td colspan="#{colspan}" height="1" style="#{fill(hairline())}height:1px;line-height:1px;font-size:0;">&nbsp;</td></tr>)
-  end
-
-  @doc """
-  Opens and closes a wrapper that paints the ground for Outlook alone.
-
-  Outlook renders no gradient and would otherwise show this email on white. The
-  fallback has to hide inside an mso conditional rather than ride along as a
-  `background-color`, because Gmail reads that and rewrites it.
-  """
-  def mso_fallback(:open) do
-    ~s(<!--[if mso]><table role="presentation" width="100%" cellpadding="0" ) <>
-      ~s(cellspacing="0" border="0" bgcolor="#{ground()}"><tr><td><![endif]-->)
-  end
-
-  def mso_fallback(:close), do: "<!--[if mso]></td></tr></table><![endif]-->"
+  @doc "The primary button's fill — brand-800, deep enough to carry `ink/0` both ways."
+  def button_fill, do: "#0a6749"
 
   @doc "The system stack — Inter is the product face, but no mail client has it."
   def font, do: "-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif"

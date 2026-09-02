@@ -18,15 +18,16 @@ defmodule Emisar.Mailers.MonthlyReport do
   alias Emisar.PublicUrl
   alias Emisar.Users
 
+  @ground Style.ground()
+  @surface Style.surface()
   @hairline Style.hairline()
   @ink Style.ink()
+  @ink_soft Style.ink_soft()
   @brand Style.brand()
   @rose Style.rose()
   @amber Style.amber()
   @font Style.font()
-  @ground_fill Style.fill(Style.ground())
-  @surface_fill Style.fill(Style.surface())
-  @button_fill Style.fill(Style.button_fill())
+  @button_fill Style.button_fill()
 
   # Five, because the approvals split has five outcomes. The runs split has four
   # and leaves its last track empty on purpose — a shared grid is worth more than
@@ -143,10 +144,9 @@ defmodule Emisar.Mailers.MonthlyReport do
         <!-- The report is designed dark; this tells a client that would otherwise force its own dark mode that the colors are already handled. -->
         <style>:root { color-scheme: dark; supported-color-schemes: dark; }</style>
       </head>
-      <body style="margin:0;padding:0;#{@ground_fill}">
-    #{Style.mso_fallback(:open)}
+      <body style="margin:0;padding:0;background-color:#{@ground};">
         #{preview(content.runs)}
-        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="#{@ground_fill}">
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#{@ground};">
           <tr>
             <td align="center" style="padding:40px 20px;">
               <table role="presentation" align="center" width="600" cellpadding="0" cellspacing="0" border="0" style="width:100%;max-width:600px;">
@@ -161,7 +161,6 @@ defmodule Emisar.Mailers.MonthlyReport do
             </td>
           </tr>
         </table>
-        #{Style.mso_fallback(:close)}
       </body>
     </html>
     """
@@ -192,10 +191,10 @@ defmodule Emisar.Mailers.MonthlyReport do
   defp heading(content) do
     """
     <tr>
-      <td style="padding:0 0 14px;font-family:#{@font};font-size:15px;line-height:1.6;color:#{@ink};">Hi #{HTML.escape(content.recipient)},</td>
+      <td style="padding:0 0 14px;font-family:#{@font};font-size:15px;line-height:1.6;color:#{@ink_soft};">Hi #{HTML.escape(content.recipient)},</td>
     </tr>
     <tr>
-      <td style="padding:0 0 28px;font-family:#{@font};font-size:15px;line-height:1.6;color:#{@ink};">Here's what you and your agents ran through emisar for <strong style="font-weight:600;color:#{@ink};">#{HTML.escape(content.account_name)}</strong> in #{HTML.escape(content.period)}.</td>
+      <td style="padding:0 0 28px;font-family:#{@font};font-size:15px;line-height:1.6;color:#{@ink_soft};">Here's what you and your agents ran through emisar for <strong style="font-weight:600;color:#{@ink};">#{HTML.escape(content.account_name)}</strong> in #{HTML.escape(content.period)}.</td>
     </tr>
     """
   end
@@ -209,7 +208,7 @@ defmodule Emisar.Mailers.MonthlyReport do
       {"Succeeded", runs.success, @brand},
       {"Failed", runs.failed, @rose},
       {"Denied", runs.denied, @rose},
-      {"Cancelled", runs.cancelled, @ink}
+      {"Cancelled", runs.cancelled, @ink_soft}
     ]
 
     card("Runs", number(runs.total), runs_caption(runs), stats)
@@ -223,7 +222,7 @@ defmodule Emisar.Mailers.MonthlyReport do
       {"Approved", approvals.approved, @brand},
       {"Denied", approvals.denied, @rose},
       {"Expired", approvals.expired, @amber},
-      {"Cancelled", approvals.cancelled, @ink},
+      {"Cancelled", approvals.cancelled, @ink_soft},
       {"Waiting", approvals.pending, @amber}
     ]
 
@@ -241,24 +240,19 @@ defmodule Emisar.Mailers.MonthlyReport do
     """
     <tr>
       <td style="padding:0 0 16px;">
-        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="#{Style.fill(@hairline)}border-radius:12px;">
-          <tr><td style="padding:1px;">
-        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="#{@surface_fill}border-radius:11px;">
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#{@surface};border:1px solid #{@hairline};border-radius:12px;">
           <tr>
-            <td style="padding:22px 22px 0;font-family:#{@font};font-size:11px;font-weight:600;letter-spacing:0.14em;text-transform:uppercase;color:#{@ink};">#{title}</td>
+            <td style="padding:22px 22px 0;font-family:#{@font};font-size:11px;font-weight:600;letter-spacing:0.14em;text-transform:uppercase;color:#{@ink_soft};">#{title}</td>
           </tr>
           <tr>
             <td style="padding:16px 22px 0;font-family:#{@font};font-size:40px;line-height:1;font-weight:600;letter-spacing:-0.03em;color:#{@ink};font-variant-numeric:tabular-nums;">#{headline}</td>
           </tr>
           <tr>
-            <td style="padding:10px 22px 20px;font-family:#{@font};font-size:14px;line-height:1.5;color:#{@ink};">#{caption}</td>
+            <td style="padding:10px 22px 20px;font-family:#{@font};font-size:14px;line-height:1.5;color:#{@ink_soft};">#{caption}</td>
           </tr>
-          #{Style.rule()}
           <tr>
-            <td style="padding:18px 22px 20px;">#{stat_columns(stats)}</td>
+            <td style="padding:18px 22px 20px;border-top:1px solid #{@hairline};">#{stat_columns(stats)}</td>
           </tr>
-        </table>
-          </td></tr>
         </table>
       </td>
     </tr>
@@ -289,10 +283,10 @@ defmodule Emisar.Mailers.MonthlyReport do
   defp label_cell(nil), do: "<td></td>"
 
   defp label_cell({label, _count, _color}) do
-    ~s(<td style="padding:7px 10px 0 0;font-family:#{@font};font-size:11px;line-height:1.4;letter-spacing:0.08em;text-transform:uppercase;color:#{@ink};">#{label}</td>)
+    ~s(<td style="padding:7px 10px 0 0;font-family:#{@font};font-size:11px;line-height:1.4;letter-spacing:0.08em;text-transform:uppercase;color:#{@ink_soft};">#{label}</td>)
   end
 
-  defp count_color(0, _color), do: @ink
+  defp count_color(0, _color), do: @ink_soft
   defp count_color(_count, color), do: color
 
   # Current posture, not period activity — a quieter label/value list rather
@@ -307,13 +301,12 @@ defmodule Emisar.Mailers.MonthlyReport do
 
     """
     <tr>
-      <td style="padding:14px 2px 12px;font-family:#{@font};font-size:11px;font-weight:600;letter-spacing:0.14em;text-transform:uppercase;color:#{@ink};">Right now</td>
+      <td style="padding:14px 2px 12px;font-family:#{@font};font-size:11px;font-weight:600;letter-spacing:0.14em;text-transform:uppercase;color:#{@ink_soft};">Right now</td>
     </tr>
     <tr>
-      <td>
+      <td style="border-bottom:1px solid #{@hairline};">
         <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
           #{Enum.map_join(rows, &posture_row/1)}
-          #{Style.rule(2)}
         </table>
       </td>
     </tr>
@@ -322,10 +315,9 @@ defmodule Emisar.Mailers.MonthlyReport do
 
   defp posture_row({label, count, color}) do
     """
-    #{Style.rule(2)}
     <tr>
-      <td style="padding:12px 2px;font-family:#{@font};font-size:14px;color:#{@ink};">#{label}</td>
-      <td align="right" style="padding:12px 2px;font-family:#{@font};font-size:14px;font-weight:600;color:#{color};font-variant-numeric:tabular-nums;">#{number(count)}</td>
+      <td style="padding:12px 2px;border-top:1px solid #{@hairline};font-family:#{@font};font-size:14px;color:#{@ink_soft};">#{label}</td>
+      <td align="right" style="padding:12px 2px;border-top:1px solid #{@hairline};font-family:#{@font};font-size:14px;font-weight:600;color:#{color};font-variant-numeric:tabular-nums;">#{number(count)}</td>
     </tr>
     """
   end
@@ -340,8 +332,8 @@ defmodule Emisar.Mailers.MonthlyReport do
       <td style="padding:30px 0 36px;">
         <table role="presentation" cellpadding="0" cellspacing="0" border="0">
           <tr>
-            <td style="#{@button_fill}border-radius:8px;">
-              <a href="#{HTML.escape(dashboard_url)}" style="display:inline-block;padding:13px 22px;font-family:#{@font};font-size:14px;line-height:1;font-weight:700;color:#{@brand};text-decoration:none;border-radius:8px;">Open your dashboard</a>
+            <td bgcolor="#{@button_fill}" style="border-radius:8px;">
+              <a href="#{HTML.escape(dashboard_url)}" style="display:inline-block;padding:13px 22px;font-family:#{@font};font-size:14px;line-height:1;font-weight:600;color:#{@ink};text-decoration:none;border-radius:8px;">Open your dashboard</a>
             </td>
           </tr>
         </table>
@@ -352,9 +344,8 @@ defmodule Emisar.Mailers.MonthlyReport do
 
   defp footer(content) do
     """
-    #{Style.rule()}
     <tr>
-      <td style="padding:22px 0 0;font-family:#{@font};font-size:12px;line-height:1.7;color:#{@ink};">
+      <td style="padding:22px 0 0;border-top:1px solid #{@hairline};font-family:#{@font};font-size:12px;line-height:1.7;color:#{@ink_soft};">
         You're receiving this monthly report as an owner of #{HTML.escape(content.account_name)}.<br />
         <a href="#{HTML.escape(content.unsubscribe_url)}" style="color:#{@brand};text-decoration:underline;">Unsubscribe</a>
       </td>
