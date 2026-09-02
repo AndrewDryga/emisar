@@ -1,5 +1,6 @@
 defmodule Emisar.ApiKeysTest do
   use Emisar.DataCase, async: true
+  alias Ecto.Multi
   alias Emisar.{Accounts, ApiKeys, Audit, Crypto, Repo, RequestContext}
   alias Emisar.ApiKeys.{ApiKey, DeviceGrant}
   alias Emisar.Auth.Subject
@@ -976,6 +977,22 @@ defmodule Emisar.ApiKeysTest do
       refute Repo.one(ApiKey)
     end
 
+    test "a stale admin subject cannot mint after its membership is demoted" do
+      account = Fixtures.Accounts.create_account()
+      Fixtures.Accounts.create_subscription(account, "team")
+      admin_subject = member_subject(account, :admin)
+
+      {:ok, membership} =
+        Accounts.fetch_active_membership(Repo, account.id, admin_subject.membership_id)
+
+      Fixtures.Memberships.force_role(membership, "viewer")
+
+      assert ApiKeys.create_key(%{name: "late", kind: :audit_export}, admin_subject) ==
+               {:error, :unauthorized}
+
+      refute Repo.one(ApiKey)
+    end
+
     test "a stale subject cannot create a key after the account is disabled" do
       {_user, account, subject} = owner_subject_pair()
 
@@ -1133,8 +1150,21 @@ defmodule Emisar.ApiKeysTest do
 
       # Rotating mints a FRESH export credential and hands back its secret, so
       # owning the row must not buy back a capability the demotion took away.
+      assert ApiKeys.rotate_api_key(key, admin_subject) == {:error, :unauthorized}
       assert ApiKeys.rotate_api_key(key, demoted_subject) == {:error, :unauthorized}
-      assert {:ok, _raw, _successor} = ApiKeys.rotate_api_key(key, owner_subject)
+      assert ApiKeys.rotate_api_key(key, owner_subject) == {:error, :unauthorized}
+    end
+
+    test "an owner can rotate an active admin's audit-export token" do
+      {_owner, account, owner_subject} = owner_subject_pair()
+      Fixtures.Accounts.create_subscription(account, "team")
+      admin_subject = member_subject(account, :admin)
+
+      {:ok, _raw, key} =
+        ApiKeys.create_key(%{name: "SIEM", kind: :audit_export}, admin_subject)
+
+      assert {:ok, _raw, %ApiKey{kind: :audit_export}} =
+               ApiKeys.rotate_api_key(key, owner_subject)
     end
 
     test "a membership in another account cannot rotate the key its holder minted here" do
@@ -1290,6 +1320,27 @@ defmodule Emisar.ApiKeysTest do
 
       assert ApiKeys.install_auto_rotation_successor(prefix, hash, key_subject) ==
                {:error, :not_found}
+    end
+
+    test "a key cannot auto-rotate after its originating membership is demoted" do
+      account = Fixtures.Accounts.create_account()
+      operator_subject = member_subject(account, :operator)
+      soon = DateTime.add(DateTime.utc_now(), 3, :day)
+
+      {:ok, _raw, key} =
+        ApiKeys.create_key(%{name: "stale", expires_at: soon}, operator_subject)
+
+      {:ok, membership} =
+        Accounts.fetch_active_membership(Repo, account.id, operator_subject.membership_id)
+
+      Fixtures.Memberships.force_role(membership, "viewer")
+      key_subject = Subject.for_api_key(key, account)
+      {_raw, prefix, hash} = Crypto.mint("emk-", 12)
+
+      assert ApiKeys.install_auto_rotation_successor(prefix, hash, key_subject) ==
+               {:error, :not_eligible}
+
+      assert Repo.aggregate(ApiKey, :count) == 1
     end
 
     test "a different proposal cannot replace an already-installed successor" do
@@ -1599,6 +1650,19 @@ defmodule Emisar.ApiKeysTest do
 
       assert ApiKeys.mint_quick_key(subject) == {:error, :unauthorized}
     end
+
+    test "a stale operator subject cannot mint after its membership is demoted" do
+      account = Fixtures.Accounts.create_account()
+      operator_subject = member_subject(account, :operator)
+
+      {:ok, membership} =
+        Accounts.fetch_active_membership(Repo, account.id, operator_subject.membership_id)
+
+      Fixtures.Memberships.force_role(membership, "viewer")
+
+      assert ApiKeys.mint_quick_key(operator_subject) == {:error, :unauthorized}
+      refute Repo.one(ApiKey)
+    end
   end
 
   describe "revoke_api_key/2" do
@@ -1869,7 +1933,7 @@ defmodule Emisar.ApiKeysTest do
     end
   end
 
-  describe "revoke_keys_for_membership/1" do
+  describe "revoke_credentials_for_membership/2" do
     test "revokes that membership's active keys only, idempotently" do
       account = Fixtures.Accounts.create_account()
       user = Fixtures.Users.create_user()
@@ -1900,18 +1964,18 @@ defmodule Emisar.ApiKeysTest do
       {_r3, other_key} =
         Fixtures.ApiKeys.create_api_key(account_id: account.id, created_by_id: other.id)
 
-      assert ApiKeys.revoke_keys_for_membership(membership.id) === {:ok, 2}
+      assert ApiKeys.revoke_credentials_for_membership(Repo, membership.id) ===
+               {:ok, %{api_keys: 2, device_grants: 0}}
 
       refute is_nil(Repo.reload!(key1).revoked_at)
       refute is_nil(Repo.reload!(key2).revoked_at)
       assert is_nil(Repo.reload!(other_key).revoked_at)
 
       # Already-revoked keys aren't re-counted.
-      assert ApiKeys.revoke_keys_for_membership(membership.id) === {:ok, 0}
+      assert ApiKeys.revoke_credentials_for_membership(Repo, membership.id) ===
+               {:ok, %{api_keys: 0, device_grants: 0}}
     end
-  end
 
-  describe "revoke_device_grants_for_membership/1" do
     test "denies only that membership's live approved grants, idempotently" do
       {_owner, account, subject} = owner_subject_pair()
       other_subject = member_subject(account, :operator)
@@ -1926,10 +1990,36 @@ defmodule Emisar.ApiKeysTest do
 
       {:ok, other} = ApiKeys.approve_device_grant(other_user_code, other_subject)
 
-      assert ApiKeys.revoke_device_grants_for_membership(subject.membership_id) == {:ok, 1}
+      assert ApiKeys.revoke_credentials_for_membership(Repo, subject.membership_id) ==
+               {:ok, %{api_keys: 0, device_grants: 1}}
+
       assert Repo.reload!(target).status == :denied
       assert Repo.reload!(other).status == :approved
-      assert ApiKeys.revoke_device_grants_for_membership(subject.membership_id) == {:ok, 0}
+
+      assert ApiKeys.revoke_credentials_for_membership(Repo, subject.membership_id) ==
+               {:ok, %{api_keys: 0, device_grants: 0}}
+    end
+
+    test "joins the caller's transaction so a later failure restores every credential" do
+      {_owner, _account, subject} = owner_subject_pair()
+      {:ok, _raw, key} = ApiKeys.create_key(%{name: "agent"}, subject)
+
+      {:ok, _device_code, user_code, _grant} =
+        ApiKeys.open_device_grant(["claude-code"], %RequestContext{})
+
+      {:ok, grant} = ApiKeys.approve_device_grant(user_code, subject)
+
+      result =
+        Multi.new()
+        |> Multi.run(:credentials, fn repo, _changes ->
+          ApiKeys.revoke_credentials_for_membership(repo, subject.membership_id)
+        end)
+        |> Multi.run(:forced_failure, fn _repo, _changes -> {:error, :forced_rollback} end)
+        |> Repo.commit_multi()
+
+      assert result == {:error, :forced_rollback}
+      assert is_nil(Repo.reload!(key).revoked_at)
+      assert Repo.reload!(grant).status == :approved
     end
   end
 
@@ -2002,6 +2092,79 @@ defmodule Emisar.ApiKeysTest do
 
       refute ApiKeys.peek_api_key_by_secret(raw)
       refute Repo.reload!(key).last_used_at
+    end
+
+    test "rejects a stale credential when its membership is inactive" do
+      {user, account, subject} = owner_subject_pair()
+      {:ok, raw, key} = ApiKeys.create_key(%{name: "stale"}, subject)
+      membership = Fixtures.Memberships.fetch_membership(account.id, user.id)
+
+      # Bypass Accounts' atomic revocation to model an inconsistent row left by
+      # an older process that died after committing the membership change.
+      Fixtures.Memberships.suspend_membership(membership)
+      assert is_nil(Repo.reload!(key).revoked_at)
+
+      refute ApiKeys.peek_api_key_by_secret(raw)
+      refute ApiKeys.peek_api_key_by_id(key.id)
+      refute Repo.reload!(key).last_used_at
+    end
+
+    test "rejects a surviving export key after its membership loses the required role" do
+      account = Fixtures.Accounts.create_account()
+      Fixtures.Accounts.create_subscription(account, "team")
+      admin_subject = member_subject(account, :admin)
+
+      {:ok, raw, key} =
+        ApiKeys.create_key(%{name: "stale export", kind: :audit_export}, admin_subject)
+
+      {:ok, membership} =
+        Accounts.fetch_active_membership(Repo, account.id, admin_subject.membership_id)
+
+      Fixtures.Memberships.force_role(membership, "viewer")
+      assert is_nil(Repo.reload!(key).revoked_at)
+
+      refute ApiKeys.peek_api_key_by_secret(raw)
+      refute ApiKeys.peek_api_key_by_id(key.id)
+      refute Repo.reload!(key).last_used_at
+    end
+
+    test "directory authorization pending denies a non-owner key at both auth boundaries" do
+      account = Fixtures.Accounts.create_account()
+      operator_subject = member_subject(account, :operator)
+      {:ok, raw, key} = ApiKeys.create_key(%{name: "pending"}, operator_subject)
+      provider = Fixtures.SSO.create_identity_provider(account_id: account.id)
+
+      assert {:ok, _version} =
+               Accounts.mark_directory_authorization_pending(
+                 Repo,
+                 account.id,
+                 provider.id,
+                 [operator_subject.actor.id],
+                 3
+               )
+
+      refute ApiKeys.peek_api_key_by_secret(raw)
+      refute ApiKeys.peek_api_key_by_id(key.id)
+      refute Repo.reload!(key).last_used_at
+    end
+
+    test "directory authorization pending keeps a human owner's key usable" do
+      {owner, account, subject} = owner_subject_pair()
+      {:ok, raw, key} = ApiKeys.create_key(%{name: "owner"}, subject)
+      provider = Fixtures.SSO.create_identity_provider(account_id: account.id)
+
+      assert {:ok, _version} =
+               Accounts.mark_directory_authorization_pending(
+                 Repo,
+                 account.id,
+                 provider.id,
+                 [owner.id],
+                 3
+               )
+
+      assert %ApiKey{id: id} = ApiKeys.peek_api_key_by_secret(raw)
+      assert id == key.id
+      assert %ApiKey{id: ^id} = ApiKeys.peek_api_key_by_id(key.id)
     end
 
     test "resolves a reissued live key when a soft-deleted key shares its prefix" do
@@ -2334,6 +2497,19 @@ defmodule Emisar.ApiKeysTest do
       refute ApiKeys.api_key_usable_in_account?(Repo, key.id, Ecto.UUID.generate())
 
       assert {:ok, _revoked} = ApiKeys.revoke_api_key(key, subject)
+      refute ApiKeys.api_key_usable_in_account?(Repo, key.id, account.id)
+    end
+
+    test "rejects a surviving key after its originating membership loses key authority" do
+      account = Fixtures.Accounts.create_account()
+      operator_subject = member_subject(account, :operator)
+      {:ok, _raw, key} = ApiKeys.create_key(%{name: "delayed run"}, operator_subject)
+
+      {:ok, membership} =
+        Accounts.fetch_active_membership(Repo, account.id, operator_subject.membership_id)
+
+      Fixtures.Memberships.force_role(membership, "viewer")
+      assert is_nil(Repo.reload!(key).revoked_at)
       refute ApiKeys.api_key_usable_in_account?(Repo, key.id, account.id)
     end
   end

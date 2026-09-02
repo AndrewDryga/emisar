@@ -319,8 +319,9 @@ defmodule Emisar.ApiKeys do
   @doc """
   Whether the key can still authenticate at `now`: bound to a membership, not
   revoked, not deleted, and either non-expiring or expiring strictly after
-  `now`. The single liveness gate behind MCP auth, OAuth token resolution and
-  the agents list's live/dead split.
+  `now`. This is the row-level liveness gate behind MCP auth, OAuth token
+  resolution and the agents list's live/dead split; authentication additionally
+  requires the originating membership and account to remain active.
   """
   def key_usable?(%ApiKey{} = key, %DateTime{} = now) do
     is_binary(key.created_by_membership_id) and is_nil(key.revoked_at) and
@@ -448,25 +449,38 @@ defmodule Emisar.ApiKeys do
   """
   def create_key(attrs, %Subject{account: account} = subject) do
     account_id = account.id
-    user_id = Subject.actor_id(subject)
-    membership_id = subject.membership_id
     input_changeset = change_key(attrs)
-    kind = Ecto.Changeset.get_field(input_changeset, :kind)
 
-    with :ok <- Auth.Authorizer.ensure_has_permissions(subject, permissions_for_kind(kind)),
-         {:ok, input} <- Ecto.Changeset.apply_action(input_changeset, :insert),
-         :ok <- ensure_key_kind_available(input.kind, account) do
+    with {:ok, input} <- Ecto.Changeset.apply_action(input_changeset, :insert) do
       {raw, prefix, hash} = mint_for_kind(input.kind)
-      changeset = ApiKey.Changeset.create(account_id, user_id, membership_id, prefix, hash, attrs)
 
       Multi.new()
       |> put_active_account_lock(account_id)
+      |> put_current_subject(subject)
+      |> Multi.run(:authorization, fn _repo, %{current_subject: current_subject} ->
+        case Auth.Authorizer.ensure_has_permissions(
+               current_subject,
+               permissions_for_kind(input.kind)
+             ) do
+          :ok -> {:ok, :authorized}
+          {:error, reason} -> {:error, reason}
+        end
+      end)
       |> Multi.run(:kind_available, fn repo, _changes ->
         ensure_key_kind_available(input.kind, account_id, repo)
       end)
-      |> Multi.insert(:key, changeset)
-      |> Multi.insert(:audit, fn %{key: key} ->
-        Audit.Events.api_key_created(subject, key)
+      |> Multi.insert(:key, fn %{current_subject: current_subject} ->
+        ApiKey.Changeset.create(
+          account_id,
+          Subject.actor_id(current_subject),
+          current_subject.membership_id,
+          prefix,
+          hash,
+          attrs
+        )
+      end)
+      |> Multi.insert(:audit, fn %{current_subject: current_subject, key: key} ->
+        Audit.Events.api_key_created(current_subject, key)
       end)
       |> Repo.commit_multi(after_commit: &broadcast_api_key_created(&1.key))
       |> case do
@@ -489,24 +503,39 @@ defmodule Emisar.ApiKeys do
   successor is a fresh export credential). Returns `{:ok, raw_secret, new_key}`.
   """
   def rotate_api_key(%ApiKey{} = key, %Subject{} = subject) do
-    with :ok <- ensure_can_manage_key(key, subject) do
-      source_queryable =
-        ApiKey.Query.not_deleted()
-        |> ApiKey.Query.by_id(key.id)
-        |> ApiKey.Query.lock_for_update()
-        |> Authorizer.for_subject(subject)
-
+    # Cheap snapshot checks preserve the public error contract; the locked
+    # current-subject/source checks below are the actual authorization.
+    with :ok <- ensure_can_manage_key(key, subject),
+         :ok <- Subject.ensure_in_account(subject, key.account_id, :not_found) do
       Multi.new()
       |> put_active_account_lock(subject.account.id)
-      |> Multi.run(:source, fn repo, _changes ->
+      |> put_current_subject(subject)
+      |> put_key_owner_membership(key.created_by_membership_id)
+      |> Multi.run(:source, fn repo,
+                               %{
+                                 active_account: account,
+                                 current_subject: current_subject,
+                                 key_owner_membership: owner_membership
+                               } ->
+        source_queryable =
+          ApiKey.Query.not_deleted()
+          |> ApiKey.Query.by_id(key.id)
+          |> ApiKey.Query.by_account_id(account.id)
+          |> ApiKey.Query.lock_for_update()
+
         with {:ok, source} <- repo.fetch(source_queryable, ApiKey.Query),
-             :ok <- ensure_can_manage_key(source, subject),
+             true <- source.created_by_membership_id == owner_membership.id,
+             :ok <- ensure_membership_can_use_key(owner_membership, source.kind),
+             :ok <- ensure_can_manage_key(source, current_subject),
              :ok <- ensure_rotatable(source) do
           {:ok, source}
+        else
+          false -> {:error, :not_found}
+          {:error, reason} -> {:error, reason}
         end
       end)
-      |> Multi.run(:kind_available, fn repo, %{source: source} ->
-        ensure_key_kind_available(source.kind, subject.account.id, repo)
+      |> Multi.run(:kind_available, fn repo, %{active_account: account, source: source} ->
+        ensure_key_kind_available(source.kind, account.id, repo)
       end)
       |> Multi.run(:credential, fn _repo, %{source: source} ->
         {:ok, mint_for_kind(source.kind)}
@@ -523,8 +552,8 @@ defmodule Emisar.ApiKeys do
           credential_lineage_id: source.credential_lineage_id
         )
       end)
-      |> Multi.insert(:audit, fn %{key: successor} ->
-        Audit.Events.api_key_created(subject, successor)
+      |> Multi.insert(:audit, fn %{current_subject: current_subject, key: successor} ->
+        Audit.Events.api_key_created(current_subject, successor)
       end)
       |> Repo.commit_multi(after_commit: &broadcast_api_key_created(&1.key))
       |> case do
@@ -556,13 +585,19 @@ defmodule Emisar.ApiKeys do
 
       Multi.new()
       |> put_active_account_lock(account.id)
-      |> Multi.run(:source, fn repo, _changes ->
+      |> put_key_owner_membership(key.created_by_membership_id)
+      |> Multi.run(:source, fn repo,
+                               %{
+                                 key_owner_membership: owner_membership
+                               } ->
         with {:ok, source} <- repo.fetch(source_queryable, ApiKey.Query),
+             true <- source.created_by_membership_id == owner_membership.id,
+             :ok <- ensure_membership_can_use_key(owner_membership, source.kind, :not_eligible),
              true <- auto_rotation_eligible?(source) do
           {:ok, source}
         else
-          false -> {:error, :not_eligible}
           {:error, reason} -> {:error, reason}
+          false -> {:error, :not_eligible}
         end
       end)
       |> Multi.run(:successor, fn repo, %{source: source} ->
@@ -571,8 +606,10 @@ defmodule Emisar.ApiKeys do
       |> Multi.run(:mark_rotated, fn repo, %{source: source, successor: result} ->
         mark_auto_rotation(repo, source, result)
       end)
-      |> Multi.run(:audit, fn repo, %{source: source, successor: result} ->
-        insert_auto_rotation_audit(repo, subject, source, result)
+      |> Multi.run(:audit, fn repo,
+                              %{active_account: active_account, source: source, successor: result} ->
+        current_subject = Subject.for_api_key(source, active_account, subject.context)
+        insert_auto_rotation_audit(repo, current_subject, source, result)
       end)
       |> Repo.commit_multi(after_commit: &broadcast_installed_successor/1)
       |> case do
@@ -590,6 +627,47 @@ defmodule Emisar.ApiKeys do
   defp put_active_account_lock(multi, account_id) do
     Multi.run(multi, :active_account, fn repo, _changes ->
       Accounts.fetch_and_lock_account(account_id, repo: repo)
+    end)
+  end
+
+  # A browser/session subject is a snapshot. Every key mint re-locks the seat
+  # it names and rebuilds its permissions before any key row is inserted or
+  # locked, so a concurrent suspension, removal, or demotion either lands first
+  # and refuses this request or lands second and revokes what this request made.
+  defp put_current_subject(
+         multi,
+         %Subject{actor: %Users.User{id: user_id}, membership_id: membership_id} = subject
+       )
+       when is_binary(membership_id) do
+    Multi.run(multi, :current_subject, fn repo, %{active_account: account} ->
+      with {:ok, membership} <-
+             Accounts.fetch_and_lock_membership(account.id, membership_id, repo: repo),
+           true <- membership.user_id == user_id,
+           {:ok, user} <- Users.fetch_and_lock_user_by_id(user_id, repo) do
+        {:ok,
+         Subject.for_user(user, account, membership, subject.context,
+           auth_method: subject.auth_method,
+           mfa: subject.mfa,
+           mfa_enrollment_verified_at: subject.mfa_enrollment_verified_at,
+           user_identity_id: subject.user_identity_id
+         )}
+      else
+        false -> {:error, :not_found}
+        {:error, reason} -> {:error, reason}
+      end
+    end)
+  end
+
+  defp put_current_subject(multi, %Subject{}) do
+    Multi.run(multi, :current_subject, fn _repo, _changes -> {:error, :unauthorized} end)
+  end
+
+  # The originating membership is locked before the source key. This is the
+  # same membership -> credential order used by deprovisioning and prevents a
+  # rotation racing past a role reduction or deadlocking with it.
+  defp put_key_owner_membership(multi, membership_id) do
+    Multi.run(multi, :key_owner_membership, fn repo, %{active_account: account} ->
+      Accounts.fetch_and_lock_membership(account.id, membership_id, repo: repo)
     end)
   end
 
@@ -761,18 +839,39 @@ defmodule Emisar.ApiKeys do
 
   defp permissions_for_kind(_kind), do: Authorizer.issue_quick_key_permission()
 
+  # A key never keeps more authority than its originating membership currently
+  # holds. This is checked both before minting a successor and at every auth
+  # boundary, covering old/inconsistent rows that predate atomic deprovisioning.
+  # `effective_membership_role/1` also applies the directory-sync pending fence.
+  defp ensure_membership_can_use_key(membership, kind, reason \\ :unauthorized) do
+    permissions =
+      membership
+      |> Subject.effective_membership_role()
+      |> Auth.Permissions.for_role()
+
+    if Enum.all?(List.wrap(permissions_for_kind(kind)), &MapSet.member?(permissions, &1)),
+      do: :ok,
+      else: {:error, reason}
+  end
+
+  defp fetch_authorized_key_membership(repo, %ApiKey{} = key) do
+    with {:ok, membership} <-
+           Accounts.fetch_active_membership(
+             repo,
+             key.account_id,
+             key.created_by_membership_id
+           ),
+         :ok <- ensure_membership_can_use_key(membership, key.kind, :invalid) do
+      {:ok, membership}
+    else
+      {:error, _reason} -> {:error, :invalid}
+    end
+  end
+
   # An audit-export token is the paid export surface's credential — minting one
   # (directly or as a rotation successor) requires the account's audit-export
   # entitlement. The web's plan checks are courtesy UX; this gate is
   # authoritative. MCP keys are on every plan.
-  defp ensure_key_kind_available(:audit_export, %Accounts.Account{} = account) do
-    if Billing.audit_export_available?(account),
-      do: :ok,
-      else: {:error, :audit_export_not_available}
-  end
-
-  defp ensure_key_kind_available(_kind, _account), do: :ok
-
   defp ensure_key_kind_available(:audit_export, account_id, repo) do
     if Billing.audit_export_available_for_account_id?(account_id,
          repo: repo,
@@ -859,36 +958,41 @@ defmodule Emisar.ApiKeys do
   "Custom key" form is the same mint with an operator-set name/expiry.
   """
   def mint_quick_key(%Subject{account: account} = subject, opts \\ []) do
-    with :ok <-
-           Auth.Authorizer.ensure_has_permissions(
-             subject,
+    account_id = account.id
+    cap = opts[:ring_cap] || @quick_ring_cap
+    grace_s = opts[:eviction_grace_seconds] || @quick_eviction_grace_seconds
+    name = opts[:name] || "Quick connect (auto)"
+    {raw, prefix, hash} = Crypto.mint("emk-", @prefix_size)
+
+    Multi.new()
+    |> put_active_account_lock(account_id)
+    |> put_current_subject(subject)
+    |> Multi.run(:authorization, fn _repo, %{current_subject: current_subject} ->
+      case Auth.Authorizer.ensure_has_permissions(
+             current_subject,
              Authorizer.issue_quick_key_permission()
            ) do
-      account_id = account.id
-      user_id = Subject.actor_id(subject)
-      membership_id = subject.membership_id
-      cap = opts[:ring_cap] || @quick_ring_cap
-      grace_s = opts[:eviction_grace_seconds] || @quick_eviction_grace_seconds
-      name = opts[:name] || "Quick connect (auto)"
-
-      {raw, prefix, hash} = Crypto.mint("emk-", @prefix_size)
-
-      changeset =
-        ApiKey.Changeset.mint_quick(account_id, user_id, membership_id, prefix, hash, %{
-          name: name
-        })
-
-      Multi.new()
-      |> put_active_account_lock(account_id)
-      |> Multi.insert(:key, changeset)
-      |> Multi.run(:evicted, fn _repo, %{key: key} ->
-        evict_quick_ring_overflow(account_id, cap, grace_s, key.auto_generated_at)
-      end)
-      |> Repo.commit_multi()
-      |> case do
-        {:ok, %{key: key}} -> {:ok, raw, key}
+        :ok -> {:ok, :authorized}
         {:error, reason} -> {:error, reason}
       end
+    end)
+    |> Multi.insert(:key, fn %{current_subject: current_subject} ->
+      ApiKey.Changeset.mint_quick(
+        account_id,
+        Subject.actor_id(current_subject),
+        current_subject.membership_id,
+        prefix,
+        hash,
+        %{name: name}
+      )
+    end)
+    |> Multi.run(:evicted, fn _repo, %{key: key} ->
+      evict_quick_ring_overflow(account_id, cap, grace_s, key.auto_generated_at)
+    end)
+    |> Repo.commit_multi()
+    |> case do
+      {:ok, %{key: key}} -> {:ok, raw, key}
+      {:error, reason} -> {:error, reason}
     end
   end
 
@@ -1075,44 +1179,31 @@ defmodule Emisar.ApiKeys do
   end
 
   @doc """
-  Internal — revoke every still-active key minted by `membership_id`.
-  Called by `Accounts` when a membership is removed or suspended so a
-  deprovisioned user loses the delegated execute access their keys carry:
-  account-scoped `emk-` keys (and the OAuth backing keys behind `emo-`
-  tokens) keep resolving after the user's membership is gone. Accounts
-  revokes browser sessions alongside this bulk key update. Both honor the
-  `key_usable?/2` gate, so flipping `revoked_at` kills MCP dispatch + OAuth
-  refresh at once. Bulk update — the `membership_removed`/`_suspended`
-  event is the audit anchor. Returns `{:ok, count}`.
+  Internal — atomically retire every programmatic credential bound to
+  `membership_id` through the caller's transaction `repo`.
+
+  Accounts calls this while it holds the membership lock, before a suspension,
+  removal, or permission reduction commits. That keeps the membership write,
+  its audit row, API-key revocation, and device-grant denial all-or-nothing.
+  Browser/session cleanup remains a post-commit side effect. The membership
+  lifecycle audit is the bulk-revocation audit anchor.
   """
-  def revoke_keys_for_membership(membership_id) when is_binary(membership_id) do
+  def revoke_credentials_for_membership(repo, membership_id) when is_binary(membership_id) do
     now = DateTime.utc_now()
 
-    {count, _} =
+    {key_count, _} =
       ApiKey.Query.not_deleted()
       |> ApiKey.Query.by_created_by_membership_id(membership_id)
       |> ApiKey.Query.not_revoked()
-      |> Repo.update_all(set: [revoked_at: now, updated_at: now])
+      |> repo.update_all(set: [revoked_at: now, updated_at: now])
 
-    {:ok, count}
-  end
-
-  @doc """
-  Internal — deny every live approved device grant bound to `membership_id`.
-  Membership suspension, removal, or authorization reduction calls this beside
-  key revocation so a grant approved before the change cannot mint a replacement
-  key afterwards. Returns `{:ok, count}`.
-  """
-  def revoke_device_grants_for_membership(membership_id) when is_binary(membership_id) do
-    now = DateTime.utc_now()
-
-    {count, _} =
+    {grant_count, _} =
       DeviceGrant.Query.by_approved_by_membership_id(membership_id)
       |> DeviceGrant.Query.by_status(:approved)
       |> DeviceGrant.Query.not_expired(now)
-      |> Repo.update_all(set: [status: :denied, updated_at: now])
+      |> repo.update_all(set: [status: :denied, updated_at: now])
 
-    {:ok, count}
+    {:ok, %{api_keys: key_count, device_grants: grant_count}}
   end
 
   @doc """
@@ -1149,11 +1240,8 @@ defmodule Emisar.ApiKeys do
         |> Multi.run(:candidate, fn repo, _changes ->
           authenticate_candidate(repo, queryable, hash)
         end)
-        |> Multi.run(:account, fn _repo, %{candidate: key} ->
-          case Accounts.fetch_account_by_id(key.account_id) do
-            {:ok, account} -> {:ok, account}
-            {:error, :not_found} -> {:error, :invalid}
-          end
+        |> Multi.run(:membership, fn repo, %{candidate: key} ->
+          fetch_authorized_key_membership(repo, key)
         end)
         |> Multi.run(:key, fn repo, %{candidate: key} -> record_usage(repo, key) end)
         |> Multi.run(:audit, &insert_bound_audit/2)
@@ -1351,14 +1439,18 @@ defmodule Emisar.ApiKeys do
   Internal — the API-key auth boundary: the MCP auth path uses this to
   resolve an OAuth access token to its backing key (so it runs BEFORE a
   subject exists). Loads a usable (non-revoked / non-expired /
-  non-deleted) key by id. Returns the key or `nil`.
+  non-deleted) key whose originating membership and account are still active.
+  Returns the key or `nil`.
   """
   def peek_api_key_by_id(id) when is_binary(id) do
-    # Deliberately all(): `key_usable?/2` is the single liveness gate.
+    # Deliberately all(): row liveness and active membership are checked below.
     queryable = ApiKey.Query.all() |> ApiKey.Query.by_id(id)
 
-    case Repo.peek(queryable) do
-      %ApiKey{} = key -> if key_usable?(key, DateTime.utc_now()), do: key, else: nil
+    with %ApiKey{} = key <- Repo.peek(queryable),
+         true <- key_usable?(key, DateTime.utc_now()),
+         {:ok, _membership} <- fetch_authorized_key_membership(Repo, key) do
+      key
+    else
       _ -> nil
     end
   end
@@ -1430,8 +1522,11 @@ defmodule Emisar.ApiKeys do
       |> ApiKey.Query.by_id(id)
       |> ApiKey.Query.lock_for_update()
 
-    case repo.one(queryable) do
-      %ApiKey{account_id: ^account_id} = key -> key_usable?(key, DateTime.utc_now())
+    with %ApiKey{account_id: ^account_id} = key <- repo.one(queryable),
+         true <- key_usable?(key, DateTime.utc_now()),
+         {:ok, _membership} <- fetch_authorized_key_membership(repo, key) do
+      true
+    else
       _ -> false
     end
   end

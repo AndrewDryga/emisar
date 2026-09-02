@@ -132,6 +132,33 @@ defmodule EmisarWeb.AuditExportControllerTest do
       conn = conn |> bearer(raw) |> get(~p"/api/audit")
       assert json_response(conn, 401) == %{"error" => "unauthorized"}
     end
+
+    test "401 after the member who minted the export key is suspended", %{
+      account: account,
+      subject: owner_subject
+    } do
+      member = Fixtures.Users.create_user()
+
+      membership =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          user_id: member.id,
+          role: "admin"
+        )
+
+      {raw, _key} =
+        Fixtures.ApiKeys.create_api_key(
+          account_id: account.id,
+          created_by_id: member.id,
+          kind: :audit_export
+        )
+
+      assert build_conn() |> bearer(raw) |> get(~p"/api/audit") |> response(200)
+      assert {:ok, _suspended} = Accounts.suspend_membership(membership, owner_subject)
+
+      conn = build_conn() |> bearer(raw) |> get(~p"/api/audit")
+      assert json_response(conn, 401) == %{"error" => "unauthorized"}
+    end
   end
 
   # Setting up `Fixtures.Subjects.owner_subject` + `Fixtures.ApiKeys.create_api_key` audits

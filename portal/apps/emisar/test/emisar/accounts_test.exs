@@ -3068,6 +3068,33 @@ defmodule Emisar.AccountsTest do
     end
   end
 
+  describe "fetch_active_membership/3" do
+    test "returns only the exact active membership in an active account" do
+      account = Fixtures.Accounts.create_account()
+      other_account = Fixtures.Accounts.create_account()
+      member = Fixtures.Memberships.create_membership(account_id: account.id)
+
+      assert {:ok, %Membership{id: id}} =
+               Accounts.fetch_active_membership(Repo, account.id, member.id)
+
+      assert id == member.id
+
+      assert Accounts.fetch_active_membership(Repo, other_account.id, member.id) ==
+               {:error, :not_found}
+    end
+
+    test "rejects inactive and malformed membership references" do
+      account = Fixtures.Accounts.create_account()
+      member = Fixtures.Memberships.create_membership(account_id: account.id)
+      Fixtures.Memberships.suspend_membership(member)
+
+      assert Accounts.fetch_active_membership(Repo, account.id, member.id) ==
+               {:error, :not_found}
+
+      assert Accounts.fetch_active_membership(Repo, nil, nil) == {:error, :not_found}
+    end
+  end
+
   describe "peek_sync_membership/2" do
     test "returns the membership joining the account + user" do
       account = Fixtures.Accounts.create_account()
@@ -3610,6 +3637,7 @@ defmodule Emisar.AccountsTest do
 
     test "demoting a member revokes the API keys they minted" do
       account = Fixtures.Accounts.create_account()
+      Fixtures.Accounts.create_subscription(account, "team")
       owner = Fixtures.Users.create_user()
 
       Fixtures.Memberships.create_membership(
@@ -3629,7 +3657,11 @@ defmodule Emisar.AccountsTest do
         )
 
       {_raw, key} =
-        Fixtures.ApiKeys.create_api_key(account_id: account.id, created_by_id: admin.id)
+        Fixtures.ApiKeys.create_api_key(
+          account_id: account.id,
+          created_by_id: admin.id,
+          kind: :audit_export
+        )
 
       admin_subject = Fixtures.Subjects.membership_subject(admin_membership)
 
@@ -3645,9 +3677,8 @@ defmodule Emisar.AccountsTest do
 
       assert is_nil(Repo.reload!(key).revoked_at)
 
-      # A demotion is the same loss of standing as suspension. Without this the
-      # key keeps its fixed :api_client role — which always holds dispatch_run —
-      # so a demoted admin's MCP bridge would still reach the whole fleet.
+      # A demotion is the same loss of standing as suspension. The export
+      # bearer must not retain account-wide audit access minted as an admin.
       assert {:ok, _} = Accounts.update_membership_role(unchanged, "viewer", subject)
       refute is_nil(Repo.reload!(key).revoked_at)
       assert Repo.reload!(grant).status == :denied
@@ -4070,6 +4101,7 @@ defmodule Emisar.AccountsTest do
       owner_subject: owner_subject
     } do
       admin = Fixtures.Users.create_user()
+      Fixtures.Accounts.create_subscription(account, "team")
 
       admin_membership =
         Fixtures.Memberships.create_membership(
@@ -4078,8 +4110,12 @@ defmodule Emisar.AccountsTest do
           role: "admin"
         )
 
-      {_raw, key} =
-        Fixtures.ApiKeys.create_api_key(account_id: account.id, created_by_id: admin.id)
+      {raw, key} =
+        Fixtures.ApiKeys.create_api_key(
+          account_id: account.id,
+          created_by_id: admin.id,
+          kind: :audit_export
+        )
 
       admin_subject = Fixtures.Subjects.membership_subject(admin_membership)
 
@@ -4089,13 +4125,16 @@ defmodule Emisar.AccountsTest do
       {:ok, grant} = Emisar.ApiKeys.approve_device_grant(user_code, admin_subject)
 
       assert is_nil(Emisar.Repo.reload!(key).revoked_at)
+      assert %ApiKey{kind: :audit_export} = Emisar.ApiKeys.peek_api_key_by_secret(raw)
 
       assert {:ok, _} = Accounts.suspend_membership(admin_membership, owner_subject)
 
-      # after_commit revokes the keys the suspended member minted so they
-      # can't keep dispatching via MCP / OAuth after losing access.
+      # The membership, audit row, key, and grant committed together. In
+      # particular, the account-wide audit-export credential cannot outlive
+      # the member whose authority minted it.
       refute is_nil(Emisar.Repo.reload!(key).revoked_at)
       assert Repo.reload!(grant).status == :denied
+      assert is_nil(Emisar.ApiKeys.peek_api_key_by_secret(raw))
     end
 
     test "operator cannot suspend anyone", %{account: account, target: target} do
@@ -4123,6 +4162,20 @@ defmodule Emisar.AccountsTest do
       assert Accounts.count_memberships(account.id) == 2
 
       assert {:ok, first} = Accounts.suspend_membership(target, owner_subject)
+
+      {_raw, prefix, hash} = Crypto.mint("emk-", 12)
+
+      surviving_key =
+        ApiKey.Changeset.create(
+          account.id,
+          target.user_id,
+          target.id,
+          prefix,
+          hash,
+          %{name: "legacy survivor"}
+        )
+        |> Repo.insert!()
+
       :ok = Accounts.subscribe_account_team(account.id)
       assert {:ok, repeated} = Accounts.suspend_membership(target, owner_subject)
 
@@ -4131,7 +4184,28 @@ defmodule Emisar.AccountsTest do
       assert repeated.disabled_by_id == first.disabled_by_id
       assert Membership.disabled?(Repo.reload!(target))
       assert length(Repo.all(Emisar.Audit.Event)) == 1
+      assert is_nil(Repo.reload!(surviving_key).revoked_at)
       refute_receive {:list_changed, :team, "membership.suspended", _user_id}
+    end
+
+    test "an audit failure rolls back suspension without revoking credentials", %{
+      account: account,
+      target: target,
+      owner_subject: owner_subject
+    } do
+      {_raw, key} =
+        Fixtures.ApiKeys.create_api_key(
+          account_id: account.id,
+          created_by_id: target.user_id
+        )
+
+      invalid_subject = %{owner_subject | context: %RequestContext{request_id: 123}}
+
+      assert {:error, %Ecto.Changeset{}} =
+               Accounts.suspend_membership(target, invalid_subject)
+
+      refute Membership.disabled?(Repo.reload!(target))
+      assert is_nil(Repo.reload!(key).revoked_at)
     end
 
     test "can't suspend yourself", %{owner: owner, account: account, owner_subject: owner_subject} do
@@ -4390,16 +4464,30 @@ defmodule Emisar.AccountsTest do
       member = Fixtures.Memberships.create_membership(account_id: account.id, role: "operator")
       {:ok, suspended, true} = commit_sync_lifecycle(member, provider, :suspend)
 
+      {_raw, prefix, hash} = Crypto.mint("emk-", 12)
+
+      surviving_key =
+        ApiKey.Changeset.create(
+          account.id,
+          member.user_id,
+          member.id,
+          prefix,
+          hash,
+          %{name: "legacy survivor"}
+        )
+        |> Repo.insert!()
+
       assert {:ok, %Membership{} = returned, false} =
                commit_sync_lifecycle(suspended, provider, :suspend)
 
       assert Membership.disabled?(returned)
       assert returned.directory_suspended
+      assert is_nil(Repo.reload!(surviving_key).revoked_at)
     end
   end
 
   describe "membership_suspended_effects/1" do
-    test "broadcasts the suspension and revokes the member's API keys" do
+    test "broadcasts and disconnects without mutating credentials" do
       account = Fixtures.Accounts.create_account()
       member_user = Fixtures.Users.create_user()
 
@@ -4420,7 +4508,7 @@ defmodule Emisar.AccountsTest do
 
       member_user_id = member_user.id
       assert_receive {:list_changed, :team, "membership.suspended", ^member_user_id}
-      refute is_nil(Repo.reload!(key).revoked_at)
+      assert is_nil(Repo.reload!(key).revoked_at)
     end
   end
 
@@ -4537,6 +4625,40 @@ defmodule Emisar.AccountsTest do
                |> Repo.commit_multi()
 
       assert_receive {:audit_event, %AuditEvent{event_type: "membership.deprovisioned_via_scim"}}
+    end
+
+    test "a later transaction failure rolls back the suspension, audit, key, and grant" do
+      account = Fixtures.Accounts.create_account()
+      provider = provider_fixture(account)
+      member = Fixtures.Memberships.create_membership(account_id: account.id, role: "operator")
+      member_subject = Fixtures.Subjects.membership_subject(member)
+
+      {_raw, key} =
+        Fixtures.ApiKeys.create_api_key(
+          account_id: account.id,
+          created_by_id: member.user_id
+        )
+
+      {:ok, _device_code, user_code, _grant} =
+        Emisar.ApiKeys.open_device_grant(["claude-code"], %RequestContext{})
+
+      {:ok, grant} = Emisar.ApiKeys.approve_device_grant(user_code, member_subject)
+
+      result =
+        Multi.new()
+        |> Accounts.put_sync_membership_lifecycle(member, provider, :suspend)
+        |> Multi.run(:forced_failure, fn _repo, _changes -> {:error, :forced_rollback} end)
+        |> Repo.commit_multi()
+
+      assert result == {:error, :forced_rollback}
+      refute Membership.disabled?(Repo.reload!(member))
+      assert is_nil(Repo.reload!(key).revoked_at)
+      assert Repo.reload!(grant).status == :approved
+
+      refute Enum.any?(
+               Repo.all(AuditEvent),
+               &(&1.event_type == "membership.deprovisioned_via_scim")
+             )
     end
   end
 
@@ -4679,13 +4801,42 @@ defmodule Emisar.AccountsTest do
       account: account,
       provider: provider
     } do
-      member = Fixtures.Memberships.create_membership(account_id: account.id, role: "operator")
+      member =
+        Fixtures.Memberships.create_membership(account_id: account.id, role: "operator")
+        |> Fixtures.Memberships.mark_directory_managed()
+
+      :ok = Accounts.subscribe_account_team(account.id)
 
       assert {:ok, %Membership{role: :operator} = returned} =
                Accounts.sync_set_membership_role(member, :operator, provider)
 
-      # The matching-role clause returns the caller's struct without touching the row.
       assert returned.id == member.id
+      refute_receive {:list_changed, :team, "membership.role_changed", _user_id}
+    end
+
+    test "a stale matching snapshot cannot hide a current role reduction", %{
+      account: account,
+      provider: provider
+    } do
+      Fixtures.Accounts.create_subscription(account, "team")
+
+      stale_operator =
+        Fixtures.Memberships.create_membership(account_id: account.id, role: "operator")
+        |> Fixtures.Memberships.mark_directory_managed()
+
+      assert {:ok, %Membership{role: :admin} = admin} =
+               Accounts.sync_set_membership_role(stale_operator, :admin, provider)
+
+      admin_subject = Fixtures.Subjects.membership_subject(admin)
+
+      {:ok, _raw, key} =
+        Emisar.ApiKeys.create_key(%{name: "SIEM", kind: :audit_export}, admin_subject)
+
+      assert {:ok, %Membership{role: :operator}} =
+               Accounts.sync_set_membership_role(stale_operator, :operator, provider)
+
+      assert Repo.reload!(stale_operator).role == :operator
+      refute is_nil(Repo.reload!(key).revoked_at)
     end
 
     test "refuses :owner — owner stays a deliberate human grant (defense in depth)", %{
@@ -5673,10 +5824,42 @@ defmodule Emisar.AccountsTest do
 
       assert {:ok, _} = Accounts.delete_membership(member_membership, subject)
 
-      # Removal revokes minted keys after commit, cutting off MCP / OAuth
-      # alongside the member's now-invalidated browser sessions.
+      # Removal and durable credential revocation commit together; browser
+      # session disconnection remains the post-commit side effect.
       refute is_nil(Emisar.Repo.reload!(key).revoked_at)
       assert Repo.reload!(grant).status == :denied
+    end
+
+    test "an audit failure rolls back removal without revoking credentials" do
+      account = Fixtures.Accounts.create_account()
+      owner = Fixtures.Users.create_user()
+
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        user_id: owner.id,
+        role: "owner"
+      )
+
+      member = Fixtures.Users.create_user()
+
+      membership =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          user_id: member.id,
+          role: "admin"
+        )
+
+      {_raw, key} =
+        Fixtures.ApiKeys.create_api_key(account_id: account.id, created_by_id: member.id)
+
+      subject = Fixtures.Subjects.subject_for(owner, account, role: :owner)
+      invalid_subject = %{subject | context: %RequestContext{request_id: 123}}
+
+      assert {:error, %Ecto.Changeset{}} =
+               Accounts.delete_membership(membership, invalid_subject)
+
+      refute Repo.reload!(membership).deleted_at
+      assert is_nil(Repo.reload!(key).revoked_at)
     end
 
     test "removing a member ends their access here without signing them out elsewhere" do
@@ -5853,7 +6036,7 @@ defmodule Emisar.AccountsTest do
 
       assert {:ok, _} = Accounts.delete_membership(member_membership, subject)
 
-      # After removal the key is revoked (after_commit), so the credential
+      # After removal the key is revoked atomically, so the credential
       # resolution that precedes building a Subject returns nil — no dispatch.
       assert is_nil(Emisar.ApiKeys.peek_api_key_by_secret(raw))
     end

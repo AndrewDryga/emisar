@@ -707,7 +707,7 @@ defmodule EmisarWeb.MCPCatalogToolsTest do
     refute inspect(packs) =~ "hidden"
   end
 
-  test "an already-issued API key loses runner visibility when its membership is suspended", %{
+  test "an already-issued API key is rejected when its membership is suspended", %{
     conn: conn,
     account: account,
     membership: membership
@@ -717,10 +717,14 @@ defmodule EmisarWeb.MCPCatalogToolsTest do
 
     Fixtures.Memberships.suspend_membership(membership)
 
-    result = call(conn, "list_runners", %{})
-    assert result["ok"]
-    assert result["runners"] == []
-    assert result["summary"]["matched"] == 0
+    assert %{
+             "error" => %{"code" => -32_001, "message" => "unauthorized"},
+             "id" => 1,
+             "jsonrpc" => "2.0"
+           } =
+             conn
+             |> rpc("tools/call", %{"name" => "list_runners", "arguments" => %{}})
+             |> json_response(401)
   end
 
   # The four status keys are a breakdown of `matched`. The builder used to be a
