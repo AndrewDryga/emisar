@@ -272,9 +272,13 @@ func (c *Client) Run(ctx context.Context) error {
 		// Refusing to start over unreadable at-most-once state is deliberate
 		// (a fresh empty log could double-run a redelivered mutation) — but
 		// the refusal must hand the operator the remedy, not just the cause.
+		path := c.dedup.storePath
+		if c.dedup.loadErrPath != "" {
+			path = c.dedup.loadErrPath
+		}
 		return fmt.Errorf(
 			"load durable dispatch state from %s: %w — quarantine the file (mv %s %s.corrupt) and restart to begin a clean dispatch log",
-			c.dedup.storePath, c.dedup.loadErr, c.dedup.storePath, c.dedup.storePath)
+			path, c.dedup.loadErr, path, path)
 	}
 
 	backoff := c.opts.ReconnectMin

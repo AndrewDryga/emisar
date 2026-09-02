@@ -52,14 +52,15 @@ func LegacyDispatchLogPath(dataDir string) string {
 // unrelated result. Persisted results contain hashes and byte counts, never raw
 // stdout/stderr or unmasked arguments, and the store is always mode 0600.
 type dedupRing struct {
-	mu         sync.Mutex
-	max        int
-	keys       []string // insertion order, oldest at index 0
-	records    map[string]dedupEntry
-	storePath  string // "" = in-memory only
-	legacyPath string // pre-v0.12 store location, adopted when storePath is absent
-	logger     *slog.Logger
-	loadErr    error
+	mu          sync.Mutex
+	max         int
+	keys        []string // insertion order, oldest at index 0
+	records     map[string]dedupEntry
+	storePath   string // "" = in-memory only
+	legacyPath  string // pre-v0.12 store location, adopted when storePath is absent
+	logger      *slog.Logger
+	loadErr     error
+	loadErrPath string
 }
 
 type dispatchState string
@@ -143,9 +144,8 @@ func (d *dedupRing) load() {
 
 // adoptLegacyStore migrates a pre-v0.12 dedup.jsonl (old location, possibly
 // pre-v0.10 format) into storePath the first time a runner boots without a
-// current dispatch log. An unreadable legacy file starts clean but loudly —
-// the pre-adoption behavior ignored it silently, and its at-most-once state
-// is unusable either way.
+// current dispatch log. An unreadable legacy file fails closed: it may be the
+// only record that a redelivered mutation already ran on this host.
 func (d *dedupRing) adoptLegacyStore() {
 	if d.legacyPath == "" {
 		return
@@ -153,9 +153,11 @@ func (d *dedupRing) adoptLegacyStore() {
 	entries, _, err := readDispatchLog(d.legacyPath)
 	if err != nil {
 		if !errors.Is(err, os.ErrNotExist) {
+			d.loadErr = err
+			d.loadErrPath = d.legacyPath
 			d.logger.Error("cloud.dedup_legacy_unreadable", "error", err, "path", d.legacyPath,
-				"detail", "starting a clean dispatch log; quarantine the file (mv "+
-					d.legacyPath+" "+d.legacyPath+".corrupt) to keep it for inspection")
+				"detail", "connect refuses to start; quarantine the file (mv "+
+					d.legacyPath+" "+d.legacyPath+".corrupt) to begin a clean dispatch log")
 		}
 		return
 	}

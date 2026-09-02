@@ -764,6 +764,31 @@ func TestClient_Run_CorruptDispatchLogFailsBeforeDial(t *testing.T) {
 	}
 }
 
+func TestClient_Run_CorruptLegacyDispatchLogFailsBeforeDial(t *testing.T) {
+	dir := t.TempDir()
+	storePath := filepath.Join(dir, "dispatches.jsonl")
+	legacyPath := filepath.Join(dir, "dedup.jsonl")
+	if err := os.WriteFile(legacyPath, []byte("not-json\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	dialer := &alwaysFailDialer{}
+	client := NewClient(dialer, Options{
+		DedupStorePath:       storePath,
+		DedupLegacyStorePath: legacyPath,
+	})
+
+	err := client.Run(context.Background())
+	if err == nil || !strings.Contains(err.Error(), legacyPath) || !strings.Contains(err.Error(), "invalid dispatch log entry on line 1") {
+		t.Fatalf("Run error = %v, want corrupt legacy state and its path", err)
+	}
+	if got := dialer.calls.Load(); got != 0 {
+		t.Fatalf("dial attempts = %d, want 0", got)
+	}
+	if _, err := os.Stat(legacyPath); err != nil {
+		t.Fatalf("corrupt legacy state was moved or removed: %v", err)
+	}
+}
+
 // A connected session that then fails its runner_state send returns
 // connected=true, which RESETS the reconnect backoff to the floor — the dial
 // succeeded, so any prior backoff escalation (from earlier failed dials) was a

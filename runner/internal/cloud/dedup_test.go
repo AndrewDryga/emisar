@@ -392,9 +392,9 @@ func TestDedupRing_AdoptsLegacyStorePath(t *testing.T) {
 	}
 }
 
-// An unreadable legacy store starts clean (that is what ignoring it already
-// did) but must never fail the boot — and must stay on disk for inspection.
-func TestDedupRing_UnreadableLegacyStoreStartsClean(t *testing.T) {
+// An unreadable legacy store may be the only record that a mutation already
+// ran, so adoption refuses new work and leaves the file in place for review.
+func TestDedupRing_UnreadableLegacyStoreFailsClosed(t *testing.T) {
 	dir := t.TempDir()
 	storePath := filepath.Join(dir, "dispatches.jsonl")
 	legacyPath := filepath.Join(dir, "dedup.jsonl")
@@ -403,11 +403,11 @@ func TestDedupRing_UnreadableLegacyStoreStartsClean(t *testing.T) {
 	}
 
 	d := newDedupRing(4, storePath, legacyPath, nil)
-	if d.loadErr != nil {
-		t.Fatalf("unreadable legacy store failed the boot: %v", d.loadErr)
+	if d.loadErr == nil {
+		t.Fatal("unreadable legacy store did not fail closed")
 	}
-	if decision, _, err := d.reserve("req-new", testDispatchDigest("req-new")); err != nil || decision != reservationNew {
-		t.Fatalf("clean start could not reserve: decision=%v err=%v", decision, err)
+	if _, _, err := d.reserve("req-new", testDispatchDigest("req-new")); err == nil {
+		t.Fatal("unreadable legacy store allowed a new execution")
 	}
 	if _, err := os.Stat(legacyPath); err != nil {
 		t.Fatalf("unreadable legacy store was moved or removed: %v", err)
