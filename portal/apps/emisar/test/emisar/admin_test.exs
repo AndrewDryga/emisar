@@ -3,9 +3,28 @@ defmodule Emisar.AdminTest do
   alias Emisar.Accounts.Membership
   alias Emisar.{Admin, Audit, Billing, Fixtures}
 
+  @job_supervisors [
+    Emisar.Accounts,
+    Emisar.ApiKeys,
+    Emisar.Approvals,
+    Emisar.Audit,
+    Emisar.Auth,
+    Emisar.Billing,
+    Emisar.Catalog,
+    Emisar.MCPOperations,
+    Emisar.OAuth,
+    Emisar.Runners,
+    Emisar.Runbooks,
+    Emisar.Runs,
+    Emisar.SSO
+  ]
+
   describe "job_modules/0" do
-    test "includes runner quantity reconciliation in the runtime inventory" do
-      assert Emisar.Billing.Jobs.SyncRunnerQuantities in Admin.job_modules()
+    test "exactly matches the recurrent jobs supervised by every owning context" do
+      supervised = supervised_job_modules()
+
+      assert Enum.sort(Admin.job_modules()) == Enum.sort(supervised)
+      assert length(supervised) == length(Enum.uniq(supervised))
     end
 
     test "every recurrent job is disabled in the test environment" do
@@ -17,6 +36,22 @@ defmodule Emisar.AdminTest do
   end
 
   defp job_enabled?(module), do: Emisar.Config.get_env(:emisar, module, [])[:enabled] != false
+
+  defp supervised_job_modules do
+    Enum.flat_map(@job_supervisors, fn supervisor ->
+      {:ok, {_flags, children}} = supervisor.init([])
+
+      children
+      |> Enum.map(& &1.id)
+      |> Enum.filter(&recurrent_job_module?/1)
+    end)
+  end
+
+  defp recurrent_job_module?(module) when is_atom(module) do
+    Code.ensure_loaded?(module) and function_exported?(module, :__config__, 0)
+  end
+
+  defp recurrent_job_module?(_module), do: false
 
   # These reads are DELIBERATELY cross-account — staff see the whole platform —
   # so §7's cross-account isolation path does not apply here. The denial path is

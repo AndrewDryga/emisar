@@ -41,6 +41,8 @@ defmodule Emisar.Admin do
     Emisar.MCPOperations.Jobs.ReplayRetention,
     Emisar.OAuth.Jobs.Cleanup,
     Emisar.Runners.Jobs.InactiveRunnerRetention,
+    Emisar.Runbooks.Jobs.AdvanceExecutions,
+    Emisar.Runbooks.Jobs.ExecutionRetention,
     Emisar.Runs.Jobs.ActionRunRetention,
     Emisar.Runs.Jobs.DispatchTimeout,
     Emisar.Runs.Jobs.EventRetention,
