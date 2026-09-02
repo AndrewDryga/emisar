@@ -3213,6 +3213,45 @@ defmodule EmisarWeb.MarketingTest do
       assert scrubbed.extra["nested"]["safe"] == "kept"
     end
 
+    test "the Sentry before_send scrubber drops inspected crash state" do
+      totp_seed = "JBSWY3DPEHPK3PXP"
+      recovery_code = "recovery-code-once"
+
+      socket_state =
+        inspect(%Phoenix.LiveView.Socket{
+          assigns: %{
+            mfa_secret: totp_seed,
+            mfa_recovery_codes: [recovery_code]
+          }
+        })
+
+      assert socket_state =~ totp_seed
+      assert socket_state =~ recovery_code
+
+      event = %Sentry.Event{
+        event_id: String.duplicate("a", 32),
+        timestamp: "2026-09-02T00:00:00",
+        extra: %{
+          "last_message" => socket_state,
+          "ranch_extra" => socket_state,
+          :crash_reason => socket_state,
+          :genserver_state => socket_state,
+          :safe => "kept"
+        }
+      }
+
+      scrubbed = EmisarWeb.Application.scrub_sentry_event(event)
+      encoded_extra = Jason.encode!(scrubbed.extra)
+
+      assert scrubbed.extra.safe == "kept"
+      refute Map.has_key?(scrubbed.extra, :genserver_state)
+      refute Map.has_key?(scrubbed.extra, "last_message")
+      refute Map.has_key?(scrubbed.extra, :crash_reason)
+      refute Map.has_key?(scrubbed.extra, "ranch_extra")
+      refute encoded_extra =~ totp_seed
+      refute encoded_extra =~ recovery_code
+    end
+
     test "the privacy page honestly discloses the server-side analytics posture", %{conn: conn} do
       html = conn |> get(~p"/privacy") |> html_response(200)
 

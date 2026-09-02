@@ -71,7 +71,7 @@ defmodule EmisarWeb.Application do
       | breadcrumbs: Enum.map(event.breadcrumbs, &scrub_sentry_breadcrumb(&1, redaction_keys)),
         contexts: scrub_sentry_value(event.contexts, redaction_keys),
         exception: Enum.map(event.exception, &scrub_sentry_exception(&1, redaction_keys)),
-        extra: scrub_sentry_value(event.extra, redaction_keys),
+        extra: scrub_sentry_extra(event.extra, redaction_keys),
         message: scrub_sentry_message(event.message, redaction_keys),
         request: scrub_sentry_request(event.request),
         tags: scrub_sentry_value(event.tags, redaction_keys),
@@ -178,6 +178,26 @@ defmodule EmisarWeb.Application do
   end
 
   defp scrub_sentry_threads(threads), do: threads
+
+  defp scrub_sentry_extra(extra, redaction_keys) when is_map(extra) do
+    # LoggerHandler inspects whole OTP messages and process state into these
+    # fields. A LiveView socket can carry active MFA enrollment material in its
+    # assigns, so keyed redaction cannot make those opaque strings safe.
+    extra
+    |> Map.drop([
+      :crash_reason,
+      :genserver_state,
+      :last_message,
+      :ranch_extra,
+      "crash_reason",
+      "genserver_state",
+      "last_message",
+      "ranch_extra"
+    ])
+    |> scrub_sentry_value(redaction_keys)
+  end
+
+  defp scrub_sentry_extra(extra, redaction_keys), do: scrub_sentry_value(extra, redaction_keys)
 
   # Match the LoggerJSON redaction list by key fragment so variants such as
   # `client_secret` and `password_confirmation` receive the same treatment.
