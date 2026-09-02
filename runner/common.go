@@ -31,6 +31,7 @@ type runtime struct {
 // the process lifetime: changing it is a different runner, not a reload.
 type runnerIdentity struct {
 	externalID string
+	portalURL  string
 	group      string
 	labels     map[string]string
 }
@@ -38,6 +39,7 @@ type runnerIdentity struct {
 func (r *runtime) identity() runnerIdentity {
 	return runnerIdentity{
 		externalID: r.externalID,
+		portalURL:  r.cfg.Cloud.URL,
 		group:      r.cfg.Runner.Group,
 		labels:     r.cfg.Runner.Labels,
 	}

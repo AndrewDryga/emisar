@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/andrewdryga/emisar/runner/internal/attest"
 	"github.com/andrewdryga/emisar/runner/internal/config"
 	"github.com/andrewdryga/emisar/runner/internal/signing"
 	"github.com/andrewdryga/emisar/runner/pkg/actionspec"
@@ -34,6 +35,58 @@ func TestBuildVerifierRejectsMemoryOnlyEnforcement(t *testing.T) {
 	id := runnerIdentity{externalID: "runner-1", group: "prod"}
 	if _, err := buildVerifier(cfg, id, signing.NewMemoryNonceStore()); err == nil {
 		t.Fatal("production verifier accepted memory-only replay state")
+	}
+}
+
+func TestBuildVerifierKeepsBootPortalOriginOnReload(t *testing.T) {
+	_, caKey, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	caDER, err := mintCA(caKey, "ca-prod", 365*24*time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg := &config.Config{
+		Cloud: config.Cloud{URL: "wss://portal-b.example/runner"},
+		Paths: config.Paths{DataDir: t.TempDir()},
+		Signing: config.Signing{
+			EnforceSignatures: true,
+			MaxAttestationAge: actionspec.Duration(time.Hour),
+			TrustedCAs: []config.TrustedCA{
+				{Name: "ca-prod", PEM: encodeCertPEM(caDER)},
+			},
+		},
+	}
+	store, err := openNonceStore(cfg)
+	if err != nil {
+		t.Fatalf("open nonce store: %v", err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+
+	id := runnerIdentity{
+		externalID: "runner-1",
+		portalURL:  "wss://portal-a.example/runner",
+		group:      "prod",
+	}
+	verifier, err := buildVerifier(cfg, id, store)
+	if err != nil {
+		t.Fatalf("build verifier: %v", err)
+	}
+
+	attestation := func(origin string) *signing.Attestation {
+		return &signing.Attestation{
+			Version:      attest.Version,
+			Tool:         attest.Tool,
+			PortalOrigin: origin,
+			CertChain:    []string{"present so origin is the next gate"},
+		}
+	}
+	if decision := verifier.Check(signing.Dispatch{}, attestation("https://portal-a.example")); decision.Code != "intent_mismatch" {
+		t.Fatalf("boot portal decision = %+v, want origin accepted through the intent gate", decision)
+	}
+	if decision := verifier.Check(signing.Dispatch{}, attestation("https://portal-b.example")); decision.Code != "portal_mismatch" {
+		t.Fatalf("edited portal decision = %+v, want portal_mismatch", decision)
 	}
 }
 

@@ -305,9 +305,9 @@ func restartRequiredChanges(booted, current *config.Config) []string {
 
 // buildVerifier constructs the dispatch signature verifier from config: the
 // trusted CAs, whether enforcement is on, the attestation freshness window, and
-// the runner's identity (the cert-scope ceiling). Every build receives the same
-// process-owned nonce store and the same identity; only signing policy is
-// replaced.
+// the runner's boot identity (the portal-origin and cert-scope ceilings). Every
+// build receives the same process-owned nonce store and the same identity; only
+// signing policy is replaced.
 func buildVerifier(
 	cfg *config.Config, id runnerIdentity, nonceStore *signing.NonceStore,
 ) (*signing.Verifier, error) {
@@ -327,7 +327,7 @@ func newVerifier(
 	portalOrigin := ""
 	if cfg.Signing.EnforceSignatures {
 		var err error
-		portalOrigin, err = canonicalPortalOrigin(cfg.Cloud.URL)
+		portalOrigin, err = canonicalPortalOrigin(id.portalURL)
 		if err != nil {
 			return nil, fmt.Errorf("signing: portal origin: %w", err)
 		}

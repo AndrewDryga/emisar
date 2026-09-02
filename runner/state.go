@@ -46,6 +46,7 @@ starting the runner, and to diff two hosts that should look identical.`,
 			}
 			identity := runnerIdentity{
 				externalID: externalID,
+				portalURL:  cfg.Cloud.URL,
 				group:      cfg.Runner.Group,
 				labels:     cfg.Runner.Labels,
 			}
