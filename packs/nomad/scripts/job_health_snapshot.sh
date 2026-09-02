@@ -27,24 +27,68 @@ nomad_api() {
 	fi
 }
 
-nomad_api "/v1/job/$job" >"$tmp/job.json"
-jq -e 'type == "object"' "$tmp/job.json" >/dev/null
+nomad_cli() {
+	if [ -n "$namespace" ] && [ -n "$region" ]; then
+		NOMAD_NAMESPACE=$namespace NOMAD_REGION=$region nomad "$@"
+	elif [ -n "$namespace" ]; then
+		NOMAD_NAMESPACE=$namespace nomad "$@"
+	elif [ -n "$region" ]; then
+		NOMAD_REGION=$region nomad "$@"
+	else
+		nomad "$@"
+	fi
+}
+
+run_stage() {
+	stage=$1
+	destination=$2
+	shift 2
+	if "$@" >"$destination"; then
+		return
+	else
+		status=$?
+		printf 'nomad.job_health_snapshot: %s failed\n' "$stage" >&2
+		exit "$status"
+	fi
+}
+
+require_json_type() {
+	stage=$1
+	type=$2
+	path=$3
+	if jq -e "type == \"$type\"" "$path" >/dev/null; then
+		return
+	else
+		status=$?
+		printf 'nomad.job_health_snapshot: %s returned invalid JSON; expected %s\n' "$stage" "$type" >&2
+		exit "$status"
+	fi
+}
+
+run_stage "job read" "$tmp/job.json" nomad_api "/v1/job/$job"
+require_json_type "job read" object "$tmp/job.json"
 
 # Pin subsequent list reads to the namespace returned for this exact job.
 namespace=$(jq -er '.Namespace | strings | select(length > 0)' "$tmp/job.json")
-filter="JobID == \"$job\""
+run_stage "job summary read" "$tmp/summary.json" nomad_api "/v1/job/$job/summary"
 
-nomad_api "/v1/job/$job/summary" >"$tmp/summary.json"
-nomad_api -filter "$filter" \
-	"/v1/allocations?per_page=$allocation_limit&reverse=true" \
-	>"$tmp/allocations.json"
-nomad_api -filter "$filter" \
-	"/v1/deployments?per_page=10&reverse=true" \
-	>"$tmp/deployments.json"
+# Cluster-wide list reads have broader discovery behavior on some ACL/version
+# combinations even when filtered to one exact JobID. Use the job-scoped paths
+# instead; they require only read-job on this namespace.
+run_stage "job allocations read" "$tmp/all_allocations.json" \
+	nomad_api "/v1/job/$job/allocations?all=false"
+run_stage "job deployments read" "$tmp/all_deployments.json" \
+	nomad_cli job deployments -json "$job"
 
-jq -e 'type == "object"' "$tmp/summary.json" >/dev/null
-jq -e 'type == "array"' "$tmp/allocations.json" >/dev/null
-jq -e 'type == "array"' "$tmp/deployments.json" >/dev/null
+require_json_type "job summary read" object "$tmp/summary.json"
+require_json_type "job allocations read" array "$tmp/all_allocations.json"
+require_json_type "job deployments read" array "$tmp/all_deployments.json"
+
+jq -ce --argjson limit "$allocation_limit" \
+	'sort_by(.ModifyTime // .CreateTime // 0) | reverse | .[:$limit]' \
+	"$tmp/all_allocations.json" >"$tmp/allocations.json"
+jq -ce 'sort_by(.ModifyIndex // .CreateIndex // 0) | reverse | .[:10]' \
+	"$tmp/all_deployments.json" >"$tmp/deployments.json"
 jq -r '.[].ID' "$tmp/allocations.json" >"$tmp/allocation_ids"
 : >"$tmp/checks.ndjson"
 
@@ -55,8 +99,9 @@ while IFS= read -r allocation_id; do
 			exit 1
 			;;
 	esac
-	nomad_api "/v1/allocation/$allocation_id/checks" >"$tmp/current_checks.json"
-	jq -e 'type == "object"' "$tmp/current_checks.json" >/dev/null
+	run_stage "allocation $allocation_id checks read" "$tmp/current_checks.json" \
+		nomad_api "/v1/allocation/$allocation_id/checks"
+	require_json_type "allocation $allocation_id checks read" object "$tmp/current_checks.json"
 	jq -cn \
 		--arg allocation_id "$allocation_id" \
 		--slurpfile checks "$tmp/current_checks.json" \

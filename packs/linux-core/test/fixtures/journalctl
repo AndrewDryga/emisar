@@ -1,0 +1,8 @@
+#!/bin/sh
+for arg in "$@"; do
+	if [ "$arg" = "--grep" ]; then
+		printf 'journalctl: PCRE2 support is not compiled in\n' >&2
+		exit 1
+	fi
+done
+exec /usr/bin/journalctl "$@"

@@ -56,6 +56,16 @@ cases:
         /results/0/id: "1234567891"
         /pagination/has_more: false
 
+  - name: sentry.list_issues-fits-the-structured-output-cap
+    action: sentry.list_issues
+    args: {organization: acme, project: backend, query: worst_case, limit: 5}
+    expect:
+      json:
+        /results/0/id: "1234567800"
+        /results/4/id: "1234567804"
+        /pagination/has_more: true
+        /pagination/next_cursor: "1700000000000:1:0"
+
   - action: sentry.issue_details
     args: {organization: acme, issue_id: "1234567890"}
     expect:
@@ -69,9 +79,21 @@ cases:
     args: {organization: acme, issue_id: "1234567890"}
     expect:
       json:
-        /eventID: f00dfeedf00dfeedf00dfeedf00dfeed
-        /entries/0/data/values/0/stacktrace/frames/0/function: confirm
-        /entries/1/data/values/0/message: "SELECT * FROM carts WHERE id = %s"
+        /event_id: f00dfeedf00dfeedf00dfeedf00dfeed
+        /exceptions/0/frames/0/function: confirm
+        /breadcrumbs/0/message: "SELECT * FROM carts WHERE id = %s"
+        /breadcrumbs/1/message: "Authorization: Bearer [REDACTED]"
+        /request/method: POST
+      stdout_not_contains: [quote, slash, secret]
+
+  - name: sentry.issue_latest_event-fits-the-structured-output-cap
+    action: sentry.issue_latest_event
+    args: {organization: acme, issue_id: "1234567891"}
+    expect:
+      json:
+        /event_id: f00dfeedf00dfeedf00dfeedf00dfeed
+        /exceptions/1/frames/2/line: 222
+        /breadcrumbs/3/level: info
 
   - action: sentry.issue_tags
     args: {organization: acme, issue_id: "1234567890"}

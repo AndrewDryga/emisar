@@ -2,7 +2,7 @@ schema_version: 1
 
 id: hcp-terraform
 name: HCP Terraform run review and gating
-version: 0.8.5
+version: 0.8.6
 description: >
   Review HCP Terraform (formerly Terraform Cloud) and Terraform Enterprise runs
   and gate what happens next: list workspaces and runs, project a run's plan
@@ -48,6 +48,7 @@ setup:
     - "json-output answers with a one-minute presigned redirect. curl drops the Authorization header on that cross-host hop by design; the redirect target carries its own signature."
     - "run_diagnostics downloads the failed phase's log through the presigned URL HCP returns. That URL is a credential and never appears in output or audit, but the log text itself becomes part of the governed result — which is why this read is medium risk and policy-gated."
     - "retry_run creates a standard run, so HCP requires a user or team token that can queue plans in the workspace. The new run is created with auto-apply off and still needs tfc.apply_run before anything changes."
+    - "create_plan_only_run needs a remote- or agent-execution workspace and a usable configuration already associated with it. Local-execution workspaces and never-configured workspaces cannot plan through HCP runners."
   verify: tfc.list_organizations
 
 actions:

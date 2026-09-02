@@ -7,7 +7,10 @@ description: >
   Run a range PromQL/MetricsQL query against VictoriaMetrics — evaluates one
   expression across a trailing window ending now, limited to 7 days and 10,081
   outer evaluation timestamps per returned series. Use for trends and rates
-  over time. Query cardinality and inner ranges can still make this expensive.
+  over time; use vm.query_instant for a single current value. A successful
+  range response can legitimately contain no matching series, so refine or
+  discover the selector instead of repeating an unchanged query. Query
+  cardinality and inner ranges can still make this expensive.
 side_effects:
   - One read-only HTTP GET to the VictoriaMetrics query API.
   - Reads a range of samples — may be expensive on large series.
@@ -62,3 +65,8 @@ examples:
       query: "sum(rate(vm_http_requests_total[5m]))"
       window: "1h"
       step: "60s"
+  - title: Peak memory working set by allocation over 24h
+    args:
+      query: 'max_over_time(sum by (alloc_id) (container_memory_working_set_bytes{alloc_id!=""})[24h:5m])'
+      window: "24h"
+      step: "5m"

@@ -3,13 +3,17 @@ id: nomad.job_allocations
 title: nomad job allocs <id>
 kind: script
 risk: low
-description: List all allocations for one job.
+description: >
+  List current allocations for one exact job and namespace. Job IDs are
+  namespace-scoped: use nomad.namespace_list and nomad.job_status_all first when
+  either value is unknown. Refresh this list before an allocation status or log
+  read because deployments replace allocation IDs.
 side_effects: ["One API call.", "Read-only."]
 args:
   - name: job
     type: string
     required: true
-    description: Job ID.
+    description: Exact Job ID discovered in the target namespace.
     validation:
       pattern: "^[a-zA-Z0-9][a-zA-Z0-9_\\-]{0,127}$"
   - name: namespace

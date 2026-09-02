@@ -2,18 +2,21 @@ schema_version: 1
 
 id: debugging.top_open_files
 title: Top processes by open-file count
-kind: exec
+kind: script
 risk: low
 
 description: >
-  Aggregate `lsof` by PID and return the top 20 PIDs holding the
-  most file descriptors. Use to find FD-leak candidates before
-  EMFILE breaks something. Unless the runner runs as root it sees only
-  its own user's processes, so the ranking is scoped to those. Read-only.
+  Count `/proc/<pid>/fd` entries and return the top 20 readable processes.
+  This reads directory entries without resolving every descriptor target, so
+  a process with tens of thousands of sockets does not turn the diagnostic
+  into another global lsof crawl. Use debugging.pid_fd_summary on a candidate
+  to compare its count with its own open-files limit. Unless the runner runs as
+  root it sees only permitted processes. Do not retry an unchanged timeout;
+  use the targeted summary when you already know the PID. Read-only.
 
 side_effects:
-  - One lsof invocation.
-  - Read-only; may be slow on large systems.
+  - One bounded pass over readable /proc process FD directories.
+  - Read-only; descriptor targets are not resolved.
 
 search_terms:
   - too many open files
@@ -21,18 +24,11 @@ search_terms:
 args: []
 
 execution:
-  command:
-    binary: /bin/sh
-    argv:
-      - "-c"
-      # lsof prints one permission line PER process it cannot inspect, which on
-      # a busy host buries the answer. That is per-item noise, not the reason the
-      # command failed: lsof still exits non-zero when it cannot run at all, and
-      # the pipeline is guarded by that below.
-      - |
-        lsof -F p 2>/dev/null | sort | uniq -c | sort -rn | head -20
-        exit ${PIPESTATUS:-0}
-  timeout: 30s
+  script:
+    path: scripts/open_files.sh
+    interpreter: /bin/sh
+  argv: [top]
+  timeout: 20s
 
 output:
   parser: text

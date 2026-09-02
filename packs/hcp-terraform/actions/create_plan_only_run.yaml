@@ -4,7 +4,10 @@ title: POST /runs (plan-only)
 kind: script
 risk: medium
 description: >
-  Queue a speculative plan-only run against a workspace's current configuration.
+  Queue a speculative plan-only run against a workspace's usable current or
+  previously uploaded configuration. The workspace must be configured for
+  remote or agent execution; a local-execution workspace has no remote plan
+  environment for this action to run in.
   A plan-only run can never be applied, so this asks "what would change?"
   without putting an applyable plan in front of anyone. Review the result with
   tfc.plan_summary once it finishes.
@@ -20,7 +23,7 @@ args:
   - name: workspace_id
     type: string
     required: true
-    description: Workspace to plan against (ws-…).
+    description: Remote- or agent-execution workspace with a usable configuration (ws-…).
     validation:
       pattern: "^ws-[A-Za-z0-9]{1,32}$"
       max_length: 35

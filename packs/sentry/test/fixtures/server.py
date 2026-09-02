@@ -119,7 +119,14 @@ class Handler(BaseHTTPRequestHandler):
             if "query" not in query or "statsPeriod" not in query or "sort" not in query:
                 self.send_json({"detail": "missing query parameters"}, 400)
                 return
-            ordered = [STATE["issues"][ISSUE_ONE], STATE["issues"][ISSUE_TWO]]
+            if query.get("query") == ["worst_case"]:
+                flood = ('"\\\x01pwd=x' * 200)
+                ordered = [
+                    issue(str(1234567800 + index), flood, flood, "9" * 20, "8" * 20)
+                    for index in range(8)
+                ]
+            else:
+                ordered = [STATE["issues"][ISSUE_ONE], STATE["issues"][ISSUE_TWO]]
             limit = int(query.get("limit", ["25"])[0])
             cursor = query.get("cursor", [""])[0]
             if cursor == NEXT_CURSOR:
@@ -132,7 +139,44 @@ class Handler(BaseHTTPRequestHandler):
         if path == f"/api/0/organizations/{ORG}/issues/{ISSUE_ONE}/":
             self.send_json(STATE["issues"][ISSUE_ONE])
             return
-        if path == f"/api/0/organizations/{ORG}/issues/{ISSUE_ONE}/events/latest/":
+        if path in {
+            f"/api/0/organizations/{ORG}/issues/{ISSUE_ONE}/events/latest/",
+            f"/api/0/organizations/{ORG}/issues/{ISSUE_TWO}/events/latest/",
+        }:
+            worst_case = path.endswith(f"/{ISSUE_TWO}/events/latest/")
+            flood = ('"\\\x01pwd=x' * 220) if worst_case else ""
+            exception_values = [
+                {
+                    "type": "TypeError" if not worst_case else flood,
+                    "value": "cannot read frames of undefined" if not worst_case else flood,
+                    "stacktrace": {
+                        "frames": [
+                            {
+                                "filename": "app/checkout.py" if not worst_case else flood,
+                                "function": "confirm" if not worst_case else flood,
+                                "lineNo": 218 + index,
+                            }
+                            for index in range(5 if worst_case else 2)
+                        ]
+                    },
+                }
+                for _ in range(2 if worst_case else 1)
+            ]
+            breadcrumbs = [
+                {
+                    "category": "query" if not worst_case else flood,
+                    "message": (
+                        flood
+                        if worst_case
+                        else f"Authorization: Bearer {API_TOKEN}"
+                        if index == 1
+                        else "SELECT * FROM carts WHERE id = %s"
+                    ),
+                    "level": "info",
+                    "timestamp": "2026-08-11T20:00:00Z",
+                }
+                for index in range(8 if worst_case else 2)
+            ]
             self.send_json(
                 {
                     "eventID": "f00dfeedf00dfeedf00dfeedf00dfeed",
@@ -141,28 +185,26 @@ class Handler(BaseHTTPRequestHandler):
                     "entries": [
                         {
                             "type": "exception",
-                            "data": {
-                                "values": [
-                                    {
-                                        "type": "TypeError",
-                                        "value": "cannot read frames of undefined",
-                                        "stacktrace": {
-                                            "frames": [
-                                                {"filename": "app/checkout.py", "function": "confirm", "lineNo": 218},
-                                                {"filename": "app/cart.py", "function": "total", "lineNo": 77},
-                                            ]
-                                        },
-                                    }
-                                ]
-                            },
+                            "data": {"values": exception_values},
                         },
                         {
                             "type": "breadcrumbs",
-                            "data": {"values": [{"category": "query", "message": "SELECT * FROM carts WHERE id = %s", "level": "info"}]},
+                            "data": {"values": breadcrumbs},
                         },
                     ],
+                    "request": {
+                        "method": "POST",
+                        "url": "https://shop.example.test/checkout",
+                        "query_string": "cart=42",
+                        "headers": [["Authorization", f"Bearer {API_TOKEN}"]],
+                        "data": {"password": 'quote"slash\\secret'},
+                    },
                     "contexts": {"runtime": {"name": "CPython", "version": "3.12.4"}},
-                    "tags": [{"key": "release", "value": "2.1.0"}],
+                    "tags": [
+                        {"key": "release" if not worst_case else flood, "value": "2.1.0" if not worst_case else flood}
+                        for _ in range(8 if worst_case else 1)
+                    ],
+                    "_meta": {"password": 'quote"slash\\secret'},
                 }
             )
             return

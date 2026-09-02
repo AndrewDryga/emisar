@@ -86,7 +86,8 @@ cases:
         - '"desired":2'
         - '"desired_allocations":2'
         - '"image":"busybox:1.36"'
-        - '"deployments":[{"id":"'
+        - '"deployments":[{'
+        - '"id":"'
         - '"desired_total":2'
         - '"allocations":[]'
   # The same snapshot under the jq built --with-oniguruma=no: the two event
@@ -111,9 +112,60 @@ cases:
         - '"desired":2'
         - '"desired_allocations":2'
         - '"image":"busybox:1.36"'
-        - '"deployments":[{"id":"'
+        - '"deployments":[{'
+        - '"id":"'
         - '"desired_total":2'
         - '"allocations":[]'
+  - name: nomad.job_health_snapshot-non-default-namespace
+    action: nomad.job_health_snapshot
+    args:
+      job: packtest-health
+      namespace: packtest-ns
+      allocation_limit: 5
+      events_per_task: 3
+    arrange:
+      - argv: [nomad, namespace, apply, packtest-ns]
+      - argv: [nomad, job, run, -detach, -namespace=packtest-ns, /packs/nomad/test/fixtures/health.nomad.hcl]
+    expect:
+      stdout_contains:
+        - '"id":"packtest-health"'
+        - '"namespace":"packtest-ns"'
+        - '"desired":2'
+        - '"deployments":[{'
+        - '"id":"'
+  - name: nomad.job_health_snapshot-needs-only-read-job-for-the-exact-job
+    action: nomad.job_health_snapshot
+    env:
+      NOMAD_TOKEN: "bbbbbbbb-cccc-dddd-eeee-ffffffffffff"
+    args:
+      job: packtest-health
+      allocation_limit: 5
+      events_per_task: 3
+    arrange:
+      - argv:
+          - /bin/sh
+          - -c
+          - |
+            printf '%s\n' 'namespace "default" { capabilities = ["read-job"] }' > /tmp/packtest-read-job.hcl
+            printf '%s\n' 'bbbbbbbb-cccc-dddd-eeee-ffffffffffff' > /tmp/packtest-read-job.secret
+            NOMAD_TOKEN=aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee nomad acl policy apply packtest-read-job /tmp/packtest-read-job.hcl
+            NOMAD_TOKEN=aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee nomad acl token create -accessor=cccccccc-dddd-eeee-ffff-000000000000 -policy=packtest-read-job /tmp/packtest-read-job.secret
+            NOMAD_TOKEN=aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee nomad job run -detach /packs/nomad/test/fixtures/health.nomad.hcl
+    expect:
+      stdout_contains:
+        - '"id":"packtest-health"'
+        - '"desired":2'
+        - '"deployments":[{'
+        - '"id":"'
+  - name: nomad.job_health_snapshot-names-the-failed-stage
+    action: nomad.job_health_snapshot
+    args:
+      job: missing-packtest-job
+    expect:
+      status: failure
+      exit: [5]
+      reason_contains: [process exited with code 5]
+      stderr_contains: ["nomad.job_health_snapshot: job read returned invalid JSON"]
   - action: nomad.server_members
     expect:
       stdout_contains: ['"Status":"alive"', '"ServerName"']

@@ -2,21 +2,25 @@ schema_version: 1
 id: sentry.list_issues
 title: List issues
 kind: script
-risk: low
-description: List one bounded page of a project's Sentry issues — title, culprit, event and user counts, status — filtered by a search query and sorted by date, frequency, first-seen, or affected users.
+risk: medium
+description: >
+  List one bounded page of a project's Sentry issues — title, culprit, event
+  and user counts, status — filtered by a search query and sorted by date,
+  frequency, first-seen, or affected users. Use sentry.list_organizations and
+  sentry.list_projects first; do not guess slugs after a 404.
 side_effects: [One read-only API request.]
 args:
   - name: organization
     type: string
     required: true
-    description: Organization slug.
+    description: Organization slug from sentry.list_organizations.
     validation:
       pattern: "^[a-z0-9][a-z0-9._-]{0,63}$"
       max_length: 64
   - name: project
     type: string
     required: true
-    description: Project slug.
+    description: Project slug from sentry.list_projects for this organization.
     validation:
       pattern: "^[a-z0-9][a-z0-9._-]{0,63}$"
       max_length: 64
@@ -45,9 +49,9 @@ args:
   - name: limit
     type: integer
     required: false
-    default: 25
+    default: 5
     description: Issues returned in this page.
-    validation: {min: 1, max: 100}
+    validation: {min: 1, max: 5}
   - name: cursor
     type: string
     required: false
@@ -63,7 +67,39 @@ execution:
 output:
   parser: json
   parser_required: true
-  max_stdout_bytes: 2097152
+  schema:
+    $schema: https://json-schema.org/draft/2020-12/schema
+    type: object
+    additionalProperties: false
+    required: [results, pagination]
+    properties:
+      results:
+        type: array
+        maxItems: 5
+        items:
+          type: object
+          additionalProperties: false
+          required: [id, short_id, title, culprit, level, status, count, user_count, first_seen, last_seen, project_slug]
+          properties:
+            id: {type: string, maxLength: 60}
+            short_id: {type: string, maxLength: 120}
+            title: {type: string, maxLength: 240}
+            culprit: {type: string, maxLength: 192}
+            level: {type: string, maxLength: 48}
+            status: {type: string, maxLength: 72}
+            count: {type: string, maxLength: 60}
+            user_count: {type: string, maxLength: 60}
+            first_seen: {type: string, maxLength: 96}
+            last_seen: {type: string, maxLength: 96}
+            project_slug: {type: string, maxLength: 120}
+      pagination:
+        type: object
+        additionalProperties: false
+        required: [next_cursor, has_more]
+        properties:
+          next_cursor: {type: [string, "null"], maxLength: 360}
+          has_more: {type: boolean}
+  max_stdout_bytes: 8192
   max_stderr_bytes: 8192
 examples:
   - title: Most frequent unresolved errors

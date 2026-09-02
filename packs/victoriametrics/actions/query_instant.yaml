@@ -5,7 +5,10 @@ kind: script
 risk: low
 description: >
   Run an instant PromQL/MetricsQL query against VictoriaMetrics — evaluates one
-  expression at the current time. Use to answer "what is X right now?".
+  expression at the current time. Use to answer "what is X right now?" and use
+  vm.query_range when the trend over a window matters. An empty result means no
+  matching time series at this evaluation time; discover labels or correct the
+  selector instead of repeating the same query.
 side_effects:
   - One read-only HTTP GET to the VictoriaMetrics query API.
   - Read-only — never writes or deletes series.
@@ -36,3 +39,6 @@ examples:
   - title: Total scrape targets
     args:
       query: "count(up)"
+  - title: Current memory working set by allocation
+    args:
+      query: 'sum by (alloc_id) (container_memory_working_set_bytes{alloc_id!=""})'

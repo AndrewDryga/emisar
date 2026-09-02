@@ -10,7 +10,8 @@ description: >
   did it crash" during an incident or cutover preflight, instead of a local CLI
   session. Needs the allocation ID and task name: when you only have the job
   name, call nomad.job_allocations first to list its allocations and pick the
-  running one. Use nomad.alloc_logs for the stdout stream.
+  running one. Deployments replace allocation IDs; on not found, refresh that
+  list instead of retrying a stale ID. Use nomad.alloc_logs for stdout.
 side_effects: ["One API call.", "Read-only."]
 args:
   - name: alloc_id

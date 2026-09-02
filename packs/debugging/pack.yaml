@@ -2,7 +2,7 @@ schema_version: 1
 
 id: debugging
 name: Linux debugging toolkit
-version: 0.2.20
+version: 0.2.21
 retired_below: 0.2.14
 description: >
   General-purpose Linux diagnostics + low-level remediation: process
@@ -37,6 +37,7 @@ setup:
         - debugging.pid_environ
         - debugging.pid_cwd
         - debugging.pid_fds
+        - debugging.pid_fd_summary
         - debugging.pid_status
         - debugging.pid_stack
         - debugging.pid_threads
@@ -89,6 +90,7 @@ actions:
   - actions/pid_environ.yaml
   - actions/pid_cwd.yaml
   - actions/pid_fds.yaml
+  - actions/pid_fd_summary.yaml
   - actions/pid_status.yaml
   - actions/pid_stack.yaml
   - actions/pid_threads.yaml

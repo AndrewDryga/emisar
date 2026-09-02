@@ -3,7 +3,10 @@ id: nomad.job_status_one
 title: nomad job status <id>
 kind: script
 risk: low
-description: Show one job's full status — task groups, allocations, deployment.
+description: >
+  Show one job's full status — task groups, allocations, deployment. Job IDs
+  are namespace-scoped: when either value is unknown, use nomad.namespace_list
+  and nomad.job_status_all first, then carry the exact job and namespace here.
 side_effects: ["One API call.", "Read-only."]
 search_terms:
   - pods restarting
@@ -13,14 +16,14 @@ args:
   - name: job
     type: string
     required: true
-    description: Job ID.
+    description: Exact Job ID discovered in the target namespace.
     validation:
       pattern: "^[a-zA-Z0-9][a-zA-Z0-9_\\-]{0,127}$"
   - name: namespace
     type: string
     required: false
     default: ""
-    description: Nomad namespace to target. Empty (default) keeps the runner's ambient NOMAD_NAMESPACE or the default namespace.
+    description: Exact namespace for the job. Empty keeps the runner's ambient NOMAD_NAMESPACE or the default namespace; discover it before guessing.
     validation:
       pattern: "^([a-zA-Z0-9][a-zA-Z0-9_\\-]{0,127})?$"
   - name: region

@@ -54,4 +54,6 @@ RUN useradd --create-home --shell /bin/sh deploy \
 # runner_user, so the journal reads they do to set up and verify need this
 # group — the action itself already runs as root.
 RUN usermod -aG systemd-journal packtest
+COPY fixtures/journalctl /opt/journal-without-pcre/journalctl
+RUN chmod 0755 /opt/journal-without-pcre/journalctl
 USER packtest

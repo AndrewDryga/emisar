@@ -2,7 +2,7 @@ schema_version: 1
 
 id: debugging.dmesg_tail
 title: Recent kernel messages
-kind: exec
+kind: script
 # Raw kernel ring-buffer lines, up to 5000 of them, and the fallback path IS
 # `journalctl -k` — the same content linux.journalctl serves at medium.
 risk: medium
@@ -30,14 +30,10 @@ args:
       max: 5000
 
 execution:
-  command:
-    binary: /bin/sh
-    argv:
-      - "-c"
-      # Same probe as dmesg_oom: the suppressed line is dmesg's permission error
-      # under kernel.dmesg_restrict, which the `||` fallback exists to handle.
-      # journalctl's own failures are not suppressed.
-      - "{ dmesg -T 2>/dev/null || journalctl -k --no-pager -n {{ args.lines }}; } | tail -n {{ args.lines }}"
+  script:
+    path: scripts/dmesg_read.sh
+    interpreter: /bin/sh
+  argv: [tail, "{{ args.lines }}"]
   timeout: 15s
 
 output:

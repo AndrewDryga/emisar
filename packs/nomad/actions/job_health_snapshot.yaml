@@ -8,6 +8,10 @@ description: >
   counts, configured task images, recent deployments, recent allocations,
   restart and failed-task events, and Nomad-native checks. Job environment,
   templates, variables, payloads, and other driver configuration are omitted.
+  Job IDs are namespace-scoped: if either value is unknown, list namespaces,
+  then call nomad.job_status_all in the likely namespace and carry the exact job
+  and namespace into this action. A failed result names the exact Nomad read
+  stage; do not retry it unchanged.
 side_effects:
   - Four fixed read-only Nomad API calls plus one checks read per returned allocation.
   - Allocation and event counts are bounded by validated arguments.
@@ -16,14 +20,14 @@ args:
   - name: job
     type: string
     required: true
-    description: Job ID.
+    description: Exact Job ID discovered in the target namespace.
     validation:
       pattern: "^[a-zA-Z0-9][a-zA-Z0-9_\\-]{0,127}$"
   - name: namespace
     type: string
     required: false
     default: ""
-    description: Nomad namespace to target. Empty keeps the runner's ambient namespace.
+    description: Exact namespace for the job. Empty keeps the runner's ambient namespace; use nomad.namespace_list then nomad.job_status_all when unknown.
     validation:
       pattern: "^([a-zA-Z0-9][a-zA-Z0-9_\\-]{0,127})?$"
   - name: region

@@ -1,0 +1,43 @@
+schema_version: 1
+
+id: debugging.pid_fd_summary
+title: Process open-file count and limit
+kind: script
+risk: low
+
+description: >
+  Count one process's currently open file descriptors and show its soft and
+  hard open-files limits plus soft-limit usage. Use after a process ranking,
+  socket alert, or known PID to confirm whether it is actually near EMFILE.
+  Refresh the PID from the service or process listing before retrying: a stale
+  PID may have exited or been reused. Read-only.
+
+side_effects:
+  - Reads /proc/<pid>/fd, /proc/<pid>/comm, and /proc/<pid>/limits.
+  - Descriptor targets and process environment are not read.
+
+args:
+  - name: pid
+    type: integer
+    required: true
+    description: Current PID to inspect.
+    validation:
+      min: 1
+      max: 4194304
+
+execution:
+  script:
+    path: scripts/open_files.sh
+    interpreter: /bin/sh
+  argv: [pid-summary, "{{ args.pid }}"]
+  timeout: 10s
+
+output:
+  parser: text
+  max_stdout_bytes: 4096
+  max_stderr_bytes: 4096
+
+examples:
+  - title: Compare PID 4321 with its open-files limit
+    args:
+      pid: 4321

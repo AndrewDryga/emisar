@@ -14,6 +14,31 @@ risk_accountability:
     debugging.kill_pid: requires_privileged_host
     debugging.sysctl_set: requires_privileged_host
 cases:
+  - action: debugging.top_open_files
+    arrange: &open_fd_process
+      - argv: [/bin/sh, -c, "ln -sf /usr/bin/sleep /tmp/packtest-fd-target; /bin/sh -c 'exec 3<>/dev/null 4<>/dev/null 5<>/dev/null; exec /tmp/packtest-fd-target 600' </dev/null >/dev/null 2>&1 & echo $! > /tmp/packtest-fd.pid"]
+    expect:
+      stdout_contains: ["open_fds\tpid\tprocess", packtest-fd-ta, "6\t"]
+    cleanup: &open_fd_cleanup
+      - argv: [/bin/sh, -c, "kill $(cat /tmp/packtest-fd.pid) 2>/dev/null || true"]
+
+  - action: debugging.pid_fd_summary
+    arrange: *open_fd_process
+    resolve_args:
+      pid:
+        argv: [/bin/sh, -c, "cat /tmp/packtest-fd.pid"]
+    expect:
+      stdout_contains: ["pid\tprocess\topen_fds\tsoft_limit\thard_limit\tusage_percent", packtest-fd-ta, "\t6\t"]
+    cleanup: *open_fd_cleanup
+
+  - name: debugging.pid-fd-summary-missing-process
+    action: debugging.pid_fd_summary
+    args: {pid: 4194304}
+    expect:
+      status: failure
+      exit: [1]
+      stderr_contains: [PID 4194304 does not exist]
+
   - action: debugging.pid_context
     arrange:
       - argv: [/bin/sh, -c, "/bin/sh -c 'cd /tmp; exec sleep 600' </dev/null >/dev/null 2>&1 & echo $! > /tmp/packtest-context.pid"]

@@ -3,7 +3,11 @@ id: nomad.alloc_status
 title: nomad alloc status <id>
 kind: script
 risk: low
-description: Show one allocation's full state — task states, restarts, last events.
+description: >
+  Show one current allocation's full state — task states, restarts, last
+  events. Allocation IDs are replaced during deployments; if this returns not
+  found, refresh nomad.job_allocations for the exact job and namespace instead
+  of retrying a stale ID.
 side_effects: ["One API call.", "Read-only."]
 search_terms:
   - crash loop
@@ -14,7 +18,7 @@ args:
   - name: alloc_id
     type: string
     required: true
-    description: Allocation ID or prefix.
+    description: Current allocation ID or prefix from nomad.job_allocations.
     validation:
       pattern: "^[a-fA-F0-9][a-fA-F0-9\\-]{3,35}$"
   - name: namespace

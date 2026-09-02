@@ -2,7 +2,7 @@ schema_version: 1
 
 id: debugging.dmesg_oom
 title: OOM-kill events from dmesg
-kind: exec
+kind: script
 # Stays low where its dmesg_tail sibling is medium: this is a projection, not a
 # raw read — 30 lines matched on the OOM vocabulary, never arbitrary log text.
 risk: low
@@ -25,16 +25,10 @@ search_terms:
 args: []
 
 execution:
-  command:
-    binary: /bin/sh
-    argv:
-      - "-c"
-      # The suppressed stderr is dmesg's "Operation not permitted" on a host with
-      # restricted dmesg (kernel.dmesg_restrict=1). That is the PROBE failing, and
-      # the `||` is what handles it — journalctl runs instead and reports its own
-      # errors normally. Nothing is hidden: if both sources fail, journalctl's
-      # stderr surfaces and the pipeline reports it.
-      - "{ dmesg -T 2>/dev/null || journalctl -k --no-pager; } | grep -i -E 'oom|killed process|out of memory' | tail -30"
+  script:
+    path: scripts/dmesg_read.sh
+    interpreter: /bin/sh
+  argv: [oom, "10000"]
   timeout: 15s
 
 output:

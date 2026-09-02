@@ -4,6 +4,39 @@ versions:
     digest: "@sha256:5a88c9c45479443d7be2eadc894b4ed0a9801bae03d97a5760ae13b5c2005942"
     default: true
 cases:
+  - action: net.tls_cert_expiry
+    args: {host: 127.0.0.1, port: 24443, sni: packtest.example}
+    arrange:
+      - argv: [/bin/sh, -c, "openssl req -x509 -newkey rsa:2048 -nodes -subj /CN=packtest.example -keyout /tmp/packtest-tls.key -out /tmp/packtest-tls.crt -days 1 >/dev/null 2>&1; openssl s_server -quiet -accept 24443 -cert /tmp/packtest-tls.crt -key /tmp/packtest-tls.key >/tmp/packtest-tls.log 2>&1 & echo $! >/tmp/packtest-tls.pid"]
+    expect:
+      stdout_contains: [notBefore=, notAfter=, packtest.example]
+    cleanup:
+      - argv: [/bin/sh, -c, "kill $(cat /tmp/packtest-tls.pid) 2>/dev/null || true"]
+
+  - name: net.tls_cert_expiry-closed-port-keeps-connect-error
+    action: net.tls_cert_expiry
+    args: {host: 127.0.0.1, port: 24444}
+    expect:
+      status: failure
+      stderr_contains: ["TLS connection to 127.0.0.1:24444 failed"]
+      stdout_not_contains: [notAfter=]
+
+  - name: net.tls_cert_expiry-plaintext-keeps-handshake-error
+    action: net.tls_cert_expiry
+    args: {host: tcp, port: 80}
+    expect:
+      status: failure
+      stderr_contains: ["TLS connection to tcp:80 failed", "wrong version number"]
+      stdout_not_contains: [notAfter=]
+
+  - name: net.tls_cert_expiry-dns-error-keeps-connect-error
+    action: net.tls_cert_expiry
+    args: {host: does-not-exist.invalid, port: 443}
+    expect:
+      status: failure
+      stderr_contains: ["TLS connection to does-not-exist.invalid:443 failed"]
+      stdout_not_contains: [notAfter=]
+
   - action: net.tcp_probe
     args: {host: tcp, port: 80, timeout: 3}
     expect:

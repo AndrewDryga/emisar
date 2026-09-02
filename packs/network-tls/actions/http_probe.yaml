@@ -8,7 +8,10 @@ description: >
   timings, and bytes transferred. Use as a synthetic check. Set
   insecure=true to skip TLS verification when the endpoint serves an
   internal or self-signed certificate (otherwise such a probe reports
-  http_code=000).
+  http_code=000). HTTP 4xx and 5xx responses are successful probe executions:
+  the status is the evidence, not a reason to repeat the same request. A DNS,
+  connection, or TLS failure exits unsuccessfully with curl's diagnostic; do
+  not retry it unchanged unless the target may have recovered.
 side_effects:
   - Outbound HTTP(S) to the URL.
   - Read-only.

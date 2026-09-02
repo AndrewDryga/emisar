@@ -23,6 +23,52 @@ runner:
     Changing units and reading every user's crontab are privileged operations;
     a case that ran them as anyone else would only ever assert the denial.
 cases:
+  - action: linux.journalctl_grep
+    args:
+      unit: packtest-journal.service
+      grep: "packtest-(alpha|beta)"
+      since: 1h
+      priority: info
+      entry_limit: 100
+    env:
+      PATH: /opt/journal-without-pcre:/opt/emisar/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+    arrange:
+      - argv: [systemd-run, --unit=packtest-journal, --wait, /bin/sh, -c, "echo packtest-alpha >&2"]
+      - argv: [/bin/sh, -c, "journalctl -u packtest-journal.service --no-pager | grep -Fq packtest-alpha"]
+        retry_for: 10s
+        retry_every: 200ms
+    expect:
+      stdout_contains: [packtest-alpha]
+
+  - name: linux.journalctl_grep-rejects-an-invalid-extended-regex
+    action: linux.journalctl_grep
+    args:
+      unit: cron.service
+      grep: "["
+      since: 1h
+    expect:
+      status: failure
+      exit: [2]
+      stderr_contains: [invalid extended regular expression]
+
+  - name: linux.journalctl-grep-no-match-is-successful
+    action: linux.journalctl_grep
+    args:
+      unit: packtest-journal.service
+      grep: packtest-journalctl-grep-does-not-exist
+      since: 1h
+      entry_limit: 20
+    env:
+      PATH: /opt/journal-without-pcre:/opt/emisar/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+    expect:
+      status: success
+      stdout_not_contains: [packtest-journalctl-grep-does-not-exist]
+    probes:
+      - name: the bounded source really has no matching entry
+        argv: [/bin/sh, -c, "! journalctl -u packtest-journal.service --since=-1h --no-pager -n 20 | grep -Fq packtest-journalctl-grep-does-not-exist && echo no-match"]
+        expect:
+          stdout_contains: [no-match]
+
   - action: linux.systemctl_start
     args: {unit: cron.service}
     arrange:

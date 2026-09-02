@@ -2,21 +2,21 @@ schema_version: 1
 
 id: linux.journalctl_grep
 title: Grep recent systemd journal entries
-kind: exec
+kind: script
 risk: medium
 
 description: >
-  Like linux.journalctl, but filters entries to those matching a
-  regex (via journalctl --grep). Read-only. Use when you already know
-  the rough identifier or substring you're looking for (request ID,
-  hostname, IP, error string) and don't want to download a large
-  unfiltered journal slice. Output is run through the runner's
-  redactor before leaving the host.
+  Read a bounded recent slice for one unit, then return entries matching a
+  POSIX extended regular expression. Filtering uses grep -E instead of
+  journalctl --grep, so it works when journalctl was built without PCRE2. Use
+  when you already know the rough request ID, host, IP, or error text. No match
+  is a successful empty result; an invalid expression or unreadable journal is
+  a failure. Output is redacted before leaving the host.
 
 side_effects:
   - Reads service logs which may contain operational secrets.
   - Output is run through the runner's redactor before egress.
-  - Does not modify anything.
+  - Read-only; does not modify anything.
 
 args:
   - name: unit
@@ -30,7 +30,7 @@ args:
   - name: grep
     type: string
     required: true
-    description: Regex pattern passed to journalctl --grep.
+    description: POSIX extended regular expression passed to grep -E.
     validation:
       pattern: '^.{1,512}$'
 
@@ -58,19 +58,25 @@ args:
         - alert
         - emerg
 
+  - name: entry_limit
+    type: integer
+    required: false
+    default: 2000
+    description: Maximum recent journal entries read before filtering; at most 500 matches are returned.
+    validation:
+      min: 1
+      max: 10000
+
 execution:
-  command:
-    binary: journalctl
-    argv:
-      - "-u"
-      - "{{ args.unit }}"
-      - "--since"
-      - "{{ args.since }} ago"
-      - "-p"
-      - "{{ args.priority }}"
-      - "--grep"
-      - "{{ args.grep }}"
-      - "--no-pager"
+  script:
+    path: scripts/journalctl_grep.sh
+    interpreter: /bin/sh
+  argv:
+    - "{{ args.unit }}"
+    - "{{ args.since }}"
+    - "{{ args.priority }}"
+    - "{{ args.entry_limit }}"
+    - "{{ args.grep }}"
   timeout: 30s
   timeout_min: 5s
   timeout_max: 5m
