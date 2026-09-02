@@ -1546,7 +1546,7 @@ defmodule Emisar.RunsTest do
       account = Fixtures.Accounts.create_account()
       runner = Fixtures.Runners.create_runner(account_id: account.id)
       _ = Fixtures.Catalog.create_action(runner: runner, action_id: "linux.uptime", risk: "low")
-      _ = Fixtures.Policies.create_policy(account_id: account.id)
+      policy = Fixtures.Policies.create_policy(account_id: account.id)
       subject = owner_subject_for(account)
 
       {:ok, :running, run} =
@@ -1557,8 +1557,8 @@ defmodule Emisar.RunsTest do
       {:ok, events, _} =
         Emisar.Audit.list_events(subject, page: [limit: 50])
 
-      types =
-        events |> Enum.filter(&(&1.payload["run_id"] == run.id)) |> Enum.map(& &1.event_type)
+      run_events = Enum.filter(events, &(&1.payload["run_id"] == run.id))
+      types = Enum.map(run_events, & &1.event_type)
 
       # The terminal outcome ONLY — none of the intermediate lifecycle noise
       # (pending/sent/running) and NO policy.evaluated row: the audit-logging diet
@@ -1570,7 +1570,20 @@ defmodule Emisar.RunsTest do
       refute "action_run.running" in types
       refute "policy.evaluated" in types
 
-      # The allow decision survives on the run row (where the diet relies on it).
+      [success] = Enum.filter(run_events, &(&1.event_type == "action_run.success"))
+
+      assert Map.take(success.payload, ~w[
+               dispatch_reason policy_id policy_decision policy_reason policy_version matched_rules
+             ]) == %{
+               "dispatch_reason" => "test",
+               "policy_id" => policy.id,
+               "policy_decision" => "allow",
+               "policy_reason" => run.policy_reason,
+               "policy_version" => policy.vsn,
+               "matched_rules" => []
+             }
+
+      # The allow decision survives on the run row and terminal receipt.
       assert run.policy_decision == "allow"
     end
 
@@ -1845,7 +1858,7 @@ defmodule Emisar.RunsTest do
       runner = Fixtures.Runners.create_runner(account_id: account.id)
       _ = Fixtures.Catalog.create_action(runner: runner)
 
-      _ =
+      policy =
         Fixtures.Policies.create_policy(
           account_id: account.id,
           rules: %{
@@ -1882,11 +1895,26 @@ defmodule Emisar.RunsTest do
       # `@audited_run_statuses`, so this row was silently never written.
       {:ok, events, _} = Emisar.Audit.list_events(subject, page: [limit: 50])
 
-      types =
-        events |> Enum.filter(&(&1.payload["run_id"] == run.id)) |> Enum.map(& &1.event_type)
+      run_events = Enum.filter(events, &(&1.payload["run_id"] == run.id))
+      types = Enum.map(run_events, & &1.event_type)
 
       assert "action_run.pending_approval" in types
       refute "policy.evaluated" in types
+
+      [pending] = Enum.filter(run_events, &(&1.event_type == "action_run.pending_approval"))
+
+      assert Map.take(pending.payload, ~w[
+               dispatch_reason policy_id policy_decision policy_reason policy_version matched_rules
+             ]) == %{
+               "dispatch_reason" => "test",
+               "policy_id" => policy.id,
+               "policy_decision" => "require_approval",
+               "policy_reason" => run.policy_reason,
+               "policy_version" => policy.vsn,
+               "matched_rules" => ["needs-approval"]
+             }
+
+      refute Map.has_key?(pending.payload, "reason")
     end
 
     test "corrupt approval settings block a gated dispatch before any row is created" do
@@ -1945,7 +1973,7 @@ defmodule Emisar.RunsTest do
       # Policy only allows cassandra.* actions; the dispatched
       # `linux.uptime` doesn't match, so it falls through to the
       # tier defaults — which are all `deny` here.
-      _ =
+      policy =
         Fixtures.Policies.create_policy(
           account_id: account.id,
           rules: %{
@@ -1973,8 +2001,26 @@ defmodule Emisar.RunsTest do
       assert is_binary(reason)
       # A denied run is recorded with status="denied" so operators can
       # see attempts in the audit log.
-      assert {:ok, [%{status: :denied, policy_decision: "deny"}], _meta} =
+      assert {:ok, [%{status: :denied, policy_decision: "deny"} = denied_run], _meta} =
                Runs.list_recent_runs(subject, limit: 50)
+
+      assert {:ok, [denied_event], _metadata} =
+               Audit.list_events(subject, filter: [event_type: ["action_run.denied"]])
+
+      assert denied_event.payload["run_id"] == denied_run.id
+
+      assert Map.take(denied_event.payload, ~w[
+               dispatch_reason policy_id policy_decision policy_reason policy_version matched_rules
+             ]) == %{
+               "dispatch_reason" => "test",
+               "policy_id" => policy.id,
+               "policy_decision" => "deny",
+               "policy_reason" => reason,
+               "policy_version" => policy.vsn,
+               "matched_rules" => []
+             }
+
+      refute Map.has_key?(denied_event.payload, "reason")
     end
 
     test "stamps policy_version on the dispatched run so audit can correlate vN edits" do
@@ -5108,12 +5154,24 @@ defmodule Emisar.RunsTest do
       runner = Fixtures.Runners.create_runner(account_id: account.id)
 
       {:ok, parked} =
-        Runs.create_run(base_attrs(account.id, runner.id, %{status: :pending_approval}))
+        Runs.create_run(
+          base_attrs(account.id, runner.id, %{
+            status: :pending_approval,
+            policy_decision: "require_approval"
+          })
+        )
 
       past = DateTime.add(DateTime.utc_now(), -3_600, :second)
       {:ok, parked} = Repo.update(Ecto.Changeset.change(parked, queued_at: past))
 
-      assert {:ok, %{released: %ActionRun{status: :pending, queued_at: queued_at}}} =
+      assert {:ok,
+              %{
+                released: %ActionRun{
+                  status: :pending,
+                  queued_at: queued_at,
+                  policy_decision: "require_approval"
+                }
+              }} =
                Ecto.Multi.new()
                |> Ecto.Multi.run(:locked, fn repo, _changes ->
                  Runs.fetch_and_lock_pending_approval_run(repo, parked.id)

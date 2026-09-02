@@ -560,6 +560,43 @@ defmodule EmisarWeb.AuditExportControllerTest do
       assert event["request_id"] == "req123"
     end
 
+    test "exports the run's dispatch and policy evidence separately from its terminal reason", %{
+      conn: conn,
+      account: account,
+      raw_key: raw
+    } do
+      run = Fixtures.Runs.create_run(account_id: account.id, status: :success)
+      policy_id = Ecto.UUID.generate()
+
+      audited_run = %{
+        run
+        | reason: "Check production load",
+          reason_text: "runner completed",
+          policy_id: policy_id,
+          policy_decision: "allow",
+          policy_reason: "Matched the production safety rule",
+          policy_version: 7,
+          matched_rules: ["production-safety"]
+      }
+
+      {:ok, _event} = Audit.record(Audit.run_event_changeset(audited_run))
+
+      [event] =
+        conn
+        |> bearer(raw)
+        |> get(~p"/api/audit?event_type=action_run.success")
+        |> ndjson()
+        |> parse_ndjson()
+
+      assert event["payload"]["dispatch_reason"] == "Check production load"
+      assert event["payload"]["policy_id"] == policy_id
+      assert event["payload"]["policy_decision"] == "allow"
+      assert event["payload"]["policy_reason"] == "Matched the production safety rule"
+      assert event["payload"]["policy_version"] == 7
+      assert event["payload"]["matched_rules"] == ["production-safety"]
+      assert event["payload"]["reason"] == "runner completed"
+    end
+
     test "omits auth_method / mfa / user_identity_id from the feed", %{
       conn: conn,
       account: account,

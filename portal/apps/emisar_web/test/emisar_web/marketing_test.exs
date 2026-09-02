@@ -1980,6 +1980,7 @@ defmodule EmisarWeb.MarketingTest do
 
     test "the audit-and-siem page renders the SIEM curl and journal verify", %{conn: conn} do
       html = conn |> get(~p"/docs/audit-and-siem") |> html_response(200)
+      text = html |> LazyHTML.from_document() |> LazyHTML.text()
 
       # The SIEM export contract — endpoint, params, bearer auth, cursor.
       assert html =~ "https://emisar.dev/api/audit"
@@ -1987,6 +1988,11 @@ defmodule EmisarWeb.MarketingTest do
       assert html =~ "limit="
       assert html =~ "Authorization: Bearer"
       assert html =~ "X-Next-Cursor"
+      assert text =~ ~s("dispatch_reason":"Reload after validating the new configuration")
+      assert text =~ ~s("policy_decision":"require_approval")
+      assert text =~ ~s("policy_id":"019f8a5f-7000-7000-8000-000000000007")
+      assert text =~ ~s("policy_version":7)
+      assert text =~ ~s("matched_rules":["production-change"])
 
       # The retention windows + the journal verify path.
       assert html =~ "/var/log/emisar/events.jsonl"

@@ -230,6 +230,15 @@ defmodule Emisar.Audit do
               executed_command: run.executed_command,
               executed_command_truncated: run.executed_command_truncated,
               local_audit_failed: if(run.local_audit_failed, do: true),
+              # The caller's justification and the policy snapshot explain why
+              # this dispatch was allowed, held, or denied. Keep the runner's
+              # terminal detail under `reason` so the two meanings never collide.
+              dispatch_reason: run.reason,
+              policy_id: run.policy_id,
+              policy_decision: run.policy_decision,
+              policy_reason: run.policy_reason,
+              policy_version: run.policy_version,
+              matched_rules: run.matched_rules,
               reason: run.reason_text,
               # Self-reported MCP client metadata snapshotted at dispatch, so a
               # terminal event logged long after (from the runner socket) still

@@ -348,6 +348,45 @@ defmodule Emisar.AuditTest do
       assert payload[:operation_id] == "op_724NN9NMDZ1T76NARWCKM5A0D6"
     end
 
+    test "keeps approval-time policy evidence separate from a later terminal reason" do
+      account = Fixtures.Accounts.create_account()
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
+
+      {:ok, run} =
+        Runs.create_run(%{
+          account_id: account.id,
+          runner_id: runner.id,
+          action_id: "linux.uptime",
+          source: "operator",
+          args: %{}
+        })
+
+      run = %{
+        run
+        | status: :success,
+          reason: "Check production load",
+          reason_text: "runner completed",
+          policy_id: Ecto.UUID.generate(),
+          policy_decision: "require_approval",
+          policy_reason: "Matched the production safety rule",
+          policy_version: 7,
+          matched_rules: ["production-safety"]
+      }
+
+      payload =
+        run
+        |> Audit.run_event_changeset()
+        |> Ecto.Changeset.get_field(:payload)
+
+      assert payload[:dispatch_reason] == "Check production load"
+      assert payload[:policy_id] == run.policy_id
+      assert payload[:policy_decision] == "require_approval"
+      assert payload[:policy_reason] == "Matched the production safety rule"
+      assert payload[:policy_version] == 7
+      assert payload[:matched_rules] == ["production-safety"]
+      assert payload[:reason] == "runner completed"
+    end
+
     test "carries self-reported MCP client metadata in the payload when the run has some" do
       account = Fixtures.Accounts.create_account()
       runner = Fixtures.Runners.create_runner(account_id: account.id)
