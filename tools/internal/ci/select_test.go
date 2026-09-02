@@ -466,15 +466,18 @@ func TestSelectAndFrozenMigrations(t *testing.T) {
 		}
 	})
 
-	// The bridge halves regressed once by naming a package that does not exist,
-	// which let attested-dispatch changes skip a required check.
-	t.Run("bridge signing seams select the signing scenario", func(t *testing.T) {
+	// The signing lane is the complete bridge-to-Portal-to-runner contract. Each
+	// exact seam has regressed independently, so keep the topology explicit.
+	t.Run("signing seams select the signing scenario", func(t *testing.T) {
 		for _, file := range []string{
 			"mcp/sign.go",
 			"mcp/main.go",
 			"mcp/internal/attest/attest.go",
 			"runner/internal/signing/signing.go",
 			"runner/internal/attest/attest.go",
+			"portal/apps/emisar/lib/emisar/runs.ex",
+			"portal/apps/emisar/lib/emisar/runs/attestation.ex",
+			"portal/apps/emisar_web/lib/emisar_web/controllers/mcp/action_tools.ex",
 		} {
 			writeFixture(t, root, file, "package main\n")
 			commitAll(t, root, "signing seam")
@@ -487,6 +490,20 @@ func TestSelectAndFrozenMigrations(t *testing.T) {
 			}
 			resetHard(t, root, base)
 		}
+	})
+
+	t.Run("primary SSO context selects the SSO scenario", func(t *testing.T) {
+		file := "portal/apps/emisar/lib/emisar/sso.ex"
+		writeFixture(t, root, file, "defmodule Emisar.SSO do\nend\n")
+		commitAll(t, root, "SSO context")
+		selection, err := Select(context.Background(), root, "pull_request", base)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !selection.SSOE2E {
+			t.Fatalf("%s did not select sso-e2e: %+v", file, selection)
+		}
+		resetHard(t, root, base)
 	})
 
 	t.Run("infra push publishes portal but not packs", func(t *testing.T) {

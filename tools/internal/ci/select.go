@@ -207,7 +207,16 @@ func (selection *Selection) include(file string) {
 		"runner/internal/signing/",
 		"runner/internal/attest/",
 		"mcp/internal/attest/",
-	) || sharedE2ESeed || member(file, "docker-compose.yml", "tools/internal/devtool/e2e.go", "mcp/sign.go", "mcp/main.go") {
+	) || sharedE2ESeed || member(
+		file,
+		"docker-compose.yml",
+		"tools/internal/devtool/e2e.go",
+		"mcp/sign.go",
+		"mcp/main.go",
+		"portal/apps/emisar/lib/emisar/runs.ex",
+		"portal/apps/emisar/lib/emisar/runs/attestation.ex",
+		"portal/apps/emisar_web/lib/emisar_web/controllers/mcp/action_tools.ex",
+	) {
 		selection.SigningE2E = true
 	}
 	if hasAnyPrefix(
@@ -219,7 +228,12 @@ func (selection *Selection) include(file string) {
 		"portal/apps/emisar_web/lib/emisar_web/controllers/oauth",
 		"portal/apps/emisar_web/lib/emisar_web/controllers/scim/",
 		"portal/apps/emisar_web/lib/emisar_web/live/sso",
-	) || sharedE2ESeed || member(file, "docker-compose.yml", "tools/internal/devtool/e2e.go") {
+	) || sharedE2ESeed || member(
+		file,
+		"docker-compose.yml",
+		"tools/internal/devtool/e2e.go",
+		"portal/apps/emisar/lib/emisar/sso.ex",
+	) {
 		selection.SSOE2E = true
 	}
 }
