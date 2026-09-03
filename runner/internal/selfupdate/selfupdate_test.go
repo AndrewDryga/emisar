@@ -19,7 +19,64 @@ import (
 	"sort"
 	"strings"
 	"testing"
+	"time"
 )
+
+func TestExecuteLetsInstallerRollbackBeforeCancellationReturns(t *testing.T) {
+	root := t.TempDir()
+	target := filepath.Join(root, "emisar")
+	backup := filepath.Join(root, "emisar.previous")
+	ready := filepath.Join(root, "ready")
+	restored := filepath.Join(root, "restored")
+	script := filepath.Join(root, "installer.sh")
+	if err := os.WriteFile(target, []byte("old runner\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	contents := `#!/usr/bin/env bash
+set -eu
+target=$1
+backup=$2
+ready=$3
+restored=$4
+mv "$target" "$backup"
+printf 'new runner\n' >"$target"
+trap 'mv -f "$backup" "$target"; printf done >"$restored"; exit 143' TERM INT
+printf ready >"$ready"
+while :; do sleep 1; done
+`
+	if err := os.WriteFile(script, []byte(contents), 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() {
+		done <- execute(ctx, "/bin/bash", []string{script, target, backup, ready, restored},
+			[]string{"PATH=/usr/bin:/bin"}, io.Discard, io.Discard)
+	}()
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		if _, err := os.Stat(ready); err == nil {
+			break
+		} else if !errors.Is(err, fs.ErrNotExist) {
+			t.Fatal(err)
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("installer did not reach its activation boundary")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	cancel()
+	if err := <-done; !errors.Is(err, context.Canceled) {
+		t.Fatalf("execute cancellation = %v, want context canceled", err)
+	}
+	if data, err := os.ReadFile(target); err != nil || string(data) != "old runner\n" {
+		t.Fatalf("target after cancellation = %q err=%v, want restored old runner", data, err)
+	}
+	if _, err := os.Stat(restored); err != nil {
+		t.Fatalf("installer rollback did not finish before execute returned: %v", err)
+	}
+}
 
 func TestRunVerifiesReleaseAndHandsItToInstaller(t *testing.T) {
 	root := t.TempDir()
@@ -62,7 +119,11 @@ func TestRunVerifiesReleaseAndHandsItToInstaller(t *testing.T) {
 	deps.downloadBase = server.URL
 	deps.httpClient = server.Client()
 	deps.tempRoot = root
-	deps.runCommand = func(_ context.Context, name string, args, env []string, _, _ io.Writer) error {
+	deps.runCommand = func(_ context.Context, name string, args, env []string, stdout, _ io.Writer) error {
+		if handled, err := handleSafeTargetPreflight(name, args, stdout,
+			filepath.Join(root, "etc"), filepath.Join(root, "data")); handled {
+			return err
+		}
 		commandName = name
 		commandArgs = append([]string(nil), args...)
 		commandEnv = append([]string(nil), env...)
@@ -109,6 +170,107 @@ func TestRunVerifiesReleaseAndHandsItToInstaller(t *testing.T) {
 	}
 }
 
+func TestRunRefusesTargetWithoutManagedUpdateBoundary(t *testing.T) {
+	tests := []struct {
+		name        string
+		help        string
+		contract    string
+		contractErr error
+		checkErr    error
+		wantError   string
+	}{
+		{
+			name:      "missing offline reader",
+			help:      "State commands:\n  inspect\n",
+			wantError: "cannot verify the existing durable dispatch state",
+		},
+		{
+			name:        "historical installer has no managed-update contract",
+			help:        "State commands:\n  check-dispatch-log\n",
+			contractErr: errors.New("unknown flag"),
+			wantError:   "too old for a safe managed update",
+		},
+		{
+			name:      "wrong installer contract",
+			help:      "State commands:\n  check-dispatch-log\n",
+			contract:  "different-contract\n",
+			wantError: "too old for a safe managed update",
+		},
+		{
+			name:      "reader rejects config and receipt mapping",
+			help:      "State commands:\n  check-dispatch-log\n",
+			contract:  "emisar-managed-update-v1\n",
+			checkErr:  errors.New("configured data directory mismatch"),
+			wantError: "cannot reconcile the configured and receipt-owned durable dispatch state",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			root := t.TempDir()
+			executable := writeReceiptFixture(t, root, officialRepository)
+			dataDir := filepath.Join(root, "data")
+
+			name := fmt.Sprintf("emisar-0.19.0-%s-%s", runtime.GOOS, runtime.GOARCH)
+			archive := releaseArchive(t, name, map[string]archiveEntry{
+				name + "/emisar":     {body: "runner-binary", mode: 0o755},
+				name + "/install.sh": {body: "#!/usr/bin/env bash\n", mode: 0o755},
+			})
+			digest := sha256.Sum256(archive)
+			archiveName := name + ".tar.gz"
+			checksums := hex.EncodeToString(digest[:]) + "  " + archiveName + "\n"
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				switch {
+				case r.URL.Path == "/latest.json":
+					fmt.Fprint(w, `{"schema_version":1,"component":"runner","tag":"runner-v0.19.0","version":"0.19.0","source_revision":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}`)
+				case strings.HasSuffix(r.URL.Path, "/"+archiveName):
+					_, _ = w.Write(archive)
+				case strings.HasSuffix(r.URL.Path, "/SHA256SUMS"):
+					fmt.Fprint(w, checksums)
+				default:
+					http.NotFound(w, r)
+				}
+			}))
+			defer server.Close()
+
+			installerCalled := false
+			deps := testDependencies(executable)
+			deps.releaseBase = server.URL
+			deps.apiBase = server.URL
+			deps.downloadBase = server.URL
+			deps.httpClient = server.Client()
+			deps.tempRoot = root
+			deps.runCommand = func(_ context.Context, command string, args, _ []string, stdout, _ io.Writer) error {
+				switch {
+				case command == "/bin/bash" && len(args) == 2 && args[1] == "--managed-update-contract":
+					_, _ = io.WriteString(stdout, test.contract)
+					return test.contractErr
+				case command == "/bin/bash":
+					installerCalled = true
+					return nil
+				case strings.Join(args, " ") == "state --help":
+					_, _ = io.WriteString(stdout, test.help)
+					return nil
+				case strings.Join(args, "\x00") == strings.Join([]string{
+					"--config", filepath.Join(root, "etc", "config.yaml"),
+					"state", "check-dispatch-log", "--data-dir", dataDir,
+				}, "\x00"):
+					return test.checkErr
+				default:
+					return fmt.Errorf("unexpected command %s %q", command, args)
+				}
+			}
+
+			err := run(context.Background(), Options{CurrentVersion: "0.18.0"}, deps)
+			if err == nil || !strings.Contains(err.Error(), test.wantError) {
+				t.Fatalf("error = %v, want %q", err, test.wantError)
+			}
+			if installerCalled {
+				t.Fatal("incompatible target installer was invoked")
+			}
+		})
+	}
+}
+
 // A runner's group, id and labels decide where dispatch reaches it. They are
 // install-time inputs, so an ambient value in root's environment must not
 // silently re-target the host on `sudo emisar update` — the update re-runs the
@@ -150,7 +312,11 @@ func TestRunStripsIdentityOverridesFromTheInstallerHandoff(t *testing.T) {
 	deps.downloadBase = server.URL
 	deps.httpClient = server.Client()
 	deps.tempRoot = root
-	deps.runCommand = func(_ context.Context, _ string, _, env []string, _, _ io.Writer) error {
+	deps.runCommand = func(_ context.Context, command string, args, env []string, stdout, _ io.Writer) error {
+		if handled, err := handleSafeTargetPreflight(command, args, stdout,
+			filepath.Join(root, "etc"), filepath.Join(root, "data")); handled {
+			return err
+		}
 		commandEnv = append([]string(nil), env...)
 		return nil
 	}
@@ -210,6 +376,13 @@ func TestRunFallsBackToImmutableGitHubMirrorWhenEmisarDownloadFails(t *testing.T
 	deps.downloadBase = server.URL
 	deps.httpClient = server.Client()
 	deps.tempRoot = root
+	deps.runCommand = func(_ context.Context, command string, args, _ []string, stdout, _ io.Writer) error {
+		if handled, err := handleSafeTargetPreflight(command, args, stdout,
+			filepath.Join(root, "etc"), filepath.Join(root, "data")); handled {
+			return err
+		}
+		return nil
+	}
 	var stderr bytes.Buffer
 	if err := run(context.Background(), Options{
 		CurrentVersion: "0.18.0",
@@ -364,6 +537,24 @@ func testDependencies(executable string) dependencies {
 		releaseBase:  releaseBaseURL,
 		apiBase:      apiBaseURL,
 		downloadBase: downloadBaseURL,
+	}
+}
+
+func handleSafeTargetPreflight(command string, args []string, stdout io.Writer, etcDir, dataDir string) (bool, error) {
+	switch {
+	case strings.Join(args, " ") == "state --help":
+		_, _ = io.WriteString(stdout, "  check-dispatch-log\n")
+		return true, nil
+	case command == "/bin/bash" && len(args) == 2 && args[1] == "--managed-update-contract":
+		_, _ = io.WriteString(stdout, "emisar-managed-update-v1\n")
+		return true, nil
+	case strings.Join(args, "\x00") == strings.Join([]string{
+		"--config", filepath.Join(etcDir, "config.yaml"),
+		"state", "check-dispatch-log", "--data-dir", dataDir,
+	}, "\x00"):
+		return true, nil
+	default:
+		return false, nil
 	}
 }
 

@@ -374,6 +374,10 @@ the runner reports status `failed` with reason `execution_outcome_unknown` after
 restart and never executes that tuple again automatically. This is the honest
 boundary for external side effects.
 
+Journal compaction must reconstruct exactly the same replay state. A reader
+that cannot prove the ordered durable history fails closed; it never truncates
+a torn tail or guesses the last state.
+
 Malformed or oversized messages, invalid signatures, pack mismatches, replay
 conflicts, and admission failures execute nothing and produce bounded errors
 without echoing arguments, output, credentials, certificates, or signatures to

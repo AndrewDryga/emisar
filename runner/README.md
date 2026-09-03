@@ -226,16 +226,34 @@ local evidence are preserved:
 sudo emisar update
 ```
 
-Pin a reviewed release for a canary or rollback:
+Pin a reviewed release for a canary or downgrade to a release carrying the
+current managed-update safety contract:
 
 ```sh
 sudo emisar update --version X.Y.Z
 ```
 
+The current updater requires both the selected runner and its bundled installer
+to expose the current offline dispatch-state transaction before handing over.
+The target reconciles `config.yaml` with the receipt-owned data directory and
+must read the resulting state. Releases older than that contract are refused.
+Failures before service start restore the previous installation. Once the new
+binary may have run, automatic downgrade is unsafe: the installer keeps the new
+installation and previous binary, leaves the service stopped, and explains the
+manual recovery boundary. It never restores an older journal snapshot because
+that could let a redelivered action run again.
+
 The command accepts only an official install receipt written by `install.sh`.
 Copied development binaries, container images, and infrastructure-managed
 runners have no receipt and must be updated from their deployment source. The
-selected release is downloaded from `emisar.dev`, with GitHub Releases as a
+installer also refuses to change the receipt's binary, config, data, log,
+service-user, or init mapping in place. A receiptless runner installed before
+runner 0.20 is left untouched because the installer cannot prove its live
+paths and service identity. Establish that mapping through a reviewed adoption
+procedure before using the managed updater; never move its durable journal to
+make an update pass.
+
+The selected release is downloaded from `emisar.dev`, with GitHub Releases as a
 secondary mirror when that path is unavailable. Its archive is verified against
 `SHA256SUMS`, and an installed, authenticated `gh` CLI also verifies the release
 workflow attestation before the bundled installer runs.

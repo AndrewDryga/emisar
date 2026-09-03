@@ -277,8 +277,10 @@ func (c *Client) Run(ctx context.Context) error {
 			path = c.dedup.loadErrPath
 		}
 		return fmt.Errorf(
-			"load durable dispatch state from %s: %w — quarantine the file (mv %s %s.corrupt) and restart to begin a clean dispatch log",
-			path, c.dedup.loadErr, path, path)
+			"load durable dispatch state from %s: %w — %s, then restart to begin a clean dispatch log; %s",
+			path, c.dedup.loadErr,
+			dispatchLogQuarantineGuidance(c.dedup.storePath, c.dedup.legacyPath),
+			dispatchLogQuarantineRisk)
 	}
 
 	backoff := c.opts.ReconnectMin

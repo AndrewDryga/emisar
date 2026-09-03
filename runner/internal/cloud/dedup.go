@@ -1,21 +1,18 @@
 package cloud
 
 import (
-	"bufio"
 	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"log/slog"
 	"os"
 	"path/filepath"
 	"reflect"
 	"sync"
 
-	"github.com/andrewdryga/emisar/runner/internal/fsutil"
 	"github.com/andrewdryga/emisar/runner/internal/jsonvalue"
 	"github.com/andrewdryga/emisar/runner/internal/outputschema"
 )
@@ -41,7 +38,7 @@ func LegacyDispatchLogPath(dataDir string) string {
 }
 
 // dedupRing is a bounded persistent dispatch log. A reservation is durably
-// written before execution begins, then replaced by the terminal result. This
+// written before execution begins, then followed by the terminal result. This
 // gives each runner at-most-once execution across process and host crashes:
 // after a restart, an unfinished reservation is reported as outcome-unknown
 // instead of re-running an action that may already have changed the host.
@@ -49,7 +46,7 @@ func LegacyDispatchLogPath(dataDir string) string {
 // A completed result remains non-evictable until the control plane acknowledges
 // receipt. Each request_id is also bound to a digest of every delivered execution fact.
 // Reusing an id with different facts is refused rather than replaying an
-// unrelated result. Persisted results contain hashes and byte counts, never raw
+// unrelated result. Persisted results contain byte counts, never raw
 // stdout/stderr or unmasked arguments, and the store is always mode 0600.
 type dedupRing struct {
 	mu          sync.Mutex
@@ -61,6 +58,15 @@ type dedupRing struct {
 	logger      *slog.Logger
 	loadErr     error
 	loadErrPath string
+
+	journalV2              bool
+	journalFileBytes       int64
+	journalCheckpointBytes int64
+	journalTailBytes       int64
+	journalChanges         int
+	journalLines           int
+	appendRecord           dispatchJournalAppender
+	replaceFile            dispatchJournalReplacer
 }
 
 type dispatchState string
@@ -95,24 +101,26 @@ func newDedupRing(max int, storePath, legacyPath string, logger *slog.Logger) *d
 		logger = slog.Default()
 	}
 	d := &dedupRing{
-		max:        max,
-		records:    map[string]dedupEntry{},
-		storePath:  storePath,
-		legacyPath: legacyPath,
-		logger:     logger,
+		max:          max,
+		records:      map[string]dedupEntry{},
+		storePath:    storePath,
+		legacyPath:   legacyPath,
+		logger:       logger,
+		appendRecord: appendDispatchJournalRecord,
+		replaceFile:  replaceDispatchJournal,
 	}
 	d.load()
 	return d
 }
 
-// load accepts records produced by the current runner plus the pre-v0.10
-// legacy shape, which it migrates forward in place. Corruption, impossible
-// state, and crash-torn trailing data all fail closed.
+// load accepts the current journal plus every older snapshot shape, which it
+// migrates forward before the runner can connect. Corruption, impossible state,
+// and crash-torn trailing data all fail closed.
 func (d *dedupRing) load() {
 	if d.storePath == "" {
 		return
 	}
-	entries, sawLegacy, err := readDispatchLog(d.storePath)
+	loaded, err := readDispatchLog(d.storePath)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			d.adoptLegacyStore()
@@ -122,19 +130,20 @@ func (d *dedupRing) load() {
 		d.logger.Error("cloud.dedup_load_failed", "error", d.loadErr, "path", d.storePath)
 		return
 	}
-	for _, e := range entries {
+	for _, e := range loaded.entries {
 		d.keys = append(d.keys, e.RequestID)
 		d.records[e.RequestID] = e
 	}
-	d.evictToMax()
-	if sawLegacy {
-		// Rewrite the whole store so legacy entries are persisted in the
-		// current format exactly once; read state we cannot re-persist is
-		// fail-closed (proceeding could double-run a dispatch).
-		if err := d.writeStore(); err != nil {
+	d.applyJournalMetadata(loaded)
+	trimmed := d.evictToMax()
+	if loaded.needsMigration || trimmed {
+		// Rewrite once so every old snapshot and any max-size trim becomes a
+		// canonical v2 checkpoint. State we cannot re-persist is fail-closed:
+		// proceeding could execute an already-recorded dispatch twice.
+		if err := d.rewriteJournalLocked(); err != nil {
 			d.keys = nil
 			d.records = map[string]dedupEntry{}
-			d.loadErr = fmt.Errorf("migrate legacy dispatch log: %w", err)
+			d.loadErr = fmt.Errorf("migrate dispatch log: %w", err)
 			d.logger.Error("cloud.dedup_migration_failed", "error", d.loadErr, "path", d.storePath)
 			return
 		}
@@ -148,25 +157,29 @@ func (d *dedupRing) load() {
 // only record that a redelivered mutation already ran on this host.
 func (d *dedupRing) adoptLegacyStore() {
 	if d.legacyPath == "" {
+		d.createEmptyJournal()
 		return
 	}
-	entries, _, err := readDispatchLog(d.legacyPath)
+	loaded, err := readDispatchLog(d.legacyPath)
 	if err != nil {
-		if !errors.Is(err, os.ErrNotExist) {
-			d.loadErr = err
-			d.loadErrPath = d.legacyPath
-			d.logger.Error("cloud.dedup_legacy_unreadable", "error", err, "path", d.legacyPath,
-				"detail", "connect refuses to start; quarantine the file (mv "+
-					d.legacyPath+" "+d.legacyPath+".corrupt) to begin a clean dispatch log")
+		if errors.Is(err, os.ErrNotExist) {
+			d.createEmptyJournal()
+			return
 		}
+		d.loadErr = err
+		d.loadErrPath = d.legacyPath
+		d.logger.Error("cloud.dedup_legacy_unreadable", "error", err, "path", d.legacyPath,
+			"detail", "connect refuses to start; "+
+				dispatchLogQuarantineGuidance(d.storePath, d.legacyPath)+"; "+
+				dispatchLogQuarantineRisk)
 		return
 	}
-	for _, e := range entries {
+	for _, e := range loaded.entries {
 		d.keys = append(d.keys, e.RequestID)
 		d.records[e.RequestID] = e
 	}
 	d.evictToMax()
-	if err := d.writeStore(); err != nil {
+	if err := d.rewriteJournalLocked(); err != nil {
 		d.keys = nil
 		d.records = map[string]dedupEntry{}
 		d.loadErr = fmt.Errorf("migrate legacy dispatch log: %w", err)
@@ -180,46 +193,22 @@ func (d *dedupRing) adoptLegacyStore() {
 		"from", d.legacyPath, "to", d.storePath, "entries", len(d.keys))
 }
 
-func (d *dedupRing) evictToMax() {
+func (d *dedupRing) createEmptyJournal() {
+	if err := d.rewriteJournalLocked(); err != nil {
+		d.loadErr = fmt.Errorf("create dispatch log: %w", err)
+		d.logger.Error("cloud.dedup_create_failed", "error", d.loadErr, "path", d.storePath)
+	}
+}
+
+func (d *dedupRing) evictToMax() bool {
+	trimmed := false
 	for len(d.keys) > d.max {
 		if !d.evictOldestAcknowledgedLocked() {
 			break
 		}
+		trimmed = true
 	}
-}
-
-// readDispatchLog decodes every entry of one dispatch log without mutating
-// it. sawLegacy reports whether any line used the pre-v0.10 shape (the caller
-// persists the migration). Open errors keep os.ErrNotExist reachable via
-// errors.Is.
-func readDispatchLog(path string) (entries []dedupEntry, sawLegacy bool, err error) {
-	f, err := os.Open(path)
-	if err != nil {
-		return nil, false, fmt.Errorf("open dispatch log: %w", err)
-	}
-	defer f.Close()
-
-	seen := map[string]struct{}{}
-	sc := bufio.NewScanner(f)
-	sc.Buffer(make([]byte, 0, 64*1024), 16*1024*1024)
-	lineNumber := 0
-	for sc.Scan() {
-		lineNumber++
-		e, legacy, err := decodeDedupEntry(sc.Bytes())
-		if err != nil {
-			return nil, false, fmt.Errorf("invalid dispatch log entry on line %d", lineNumber)
-		}
-		if _, exists := seen[e.RequestID]; exists {
-			return nil, false, fmt.Errorf("duplicate dispatch log entry on line %d", lineNumber)
-		}
-		seen[e.RequestID] = struct{}{}
-		entries = append(entries, e)
-		sawLegacy = sawLegacy || legacy
-	}
-	if err := sc.Err(); err != nil {
-		return nil, false, fmt.Errorf("read dispatch log: %w", err)
-	}
-	return entries, sawLegacy, nil
+	return trimmed
 }
 
 // decodeDedupEntry decodes one dispatch log line: the current shape strictly,
@@ -233,6 +222,20 @@ func decodeDedupEntry(line []byte) (dedupEntry, bool, error) {
 	if err := json.Unmarshal(line, &fields); err != nil || fields == nil {
 		return dedupEntry{}, false, fmt.Errorf("decode dispatch log entry")
 	}
+	if err := rejectKnownAliases(fields, "dispatch log entry", dispatchJournalEntryFieldNames); err != nil {
+		return dedupEntry{}, false, fmt.Errorf("decode dispatch log entry: %w", err)
+	}
+	if resultRaw, ok := fields["result"]; ok && !bytes.Equal(resultRaw, []byte("null")) {
+		resultFields, err := rawJSONObject(resultRaw, "dispatch log result")
+		if err != nil {
+			return dedupEntry{}, false, fmt.Errorf("decode dispatch log entry: %w", err)
+		}
+		if err := rejectKnownAliases(
+			resultFields, "dispatch log result", dispatchSnapshotResultFieldNames,
+		); err != nil {
+			return dedupEntry{}, false, fmt.Errorf("decode dispatch log entry: %w", err)
+		}
+	}
 	_, hasDigest := fields["dispatch_sha256"]
 	_, hasState := fields["state"]
 	if hasDigest || hasState {
@@ -240,12 +243,11 @@ func decodeDedupEntry(line []byte) (dedupEntry, bool, error) {
 		decoder := json.NewDecoder(bytes.NewReader(line))
 		decoder.DisallowUnknownFields()
 		if err := decoder.Decode(&entry); err != nil {
-			// One-shot tolerance for exactly result.redactions — the field
-			// pre-0.23 runners persisted with every redacting run and the wire
-			// message no longer carries. The line is treated as legacy so the
-			// loader rewrites the store without it; every OTHER unknown field
-			// still fails the strict decode above.
-			cleaned, stripped := stripLegacyResultRedactions(line)
+			// One-shot tolerance for the three result fields older runners
+			// persisted and the wire message has since dropped. The line is
+			// treated as legacy so the loader rewrites the store without them;
+			// every OTHER unknown field still fails the strict decode above.
+			cleaned, stripped := stripRetiredResultFields(line)
 			if !stripped {
 				return dedupEntry{}, false, fmt.Errorf("decode dispatch log entry")
 			}
@@ -268,11 +270,10 @@ func decodeDedupEntry(line []byte) (dedupEntry, bool, error) {
 	return entry, true, nil
 }
 
-// stripLegacyResultRedactions removes exactly result.redactions from a raw
-// current-format entry and reports whether the key was present. It exists so
-// a store written by a pre-0.23 runner keeps loading after the wire message
-// dropped the field; anything else unknown still fails the strict decode.
-func stripLegacyResultRedactions(line []byte) ([]byte, bool) {
+// stripRetiredResultFields removes exactly the result fields older runners
+// persisted after those fields left the wire envelope. Anything else unknown
+// still fails the strict decode.
+func stripRetiredResultFields(line []byte) ([]byte, bool) {
 	var fields map[string]json.RawMessage
 	if err := json.Unmarshal(line, &fields); err != nil || fields == nil {
 		return nil, false
@@ -285,10 +286,16 @@ func stripLegacyResultRedactions(line []byte) ([]byte, bool) {
 	if err := json.Unmarshal(resultRaw, &result); err != nil || result == nil {
 		return nil, false
 	}
-	if _, ok := result["redactions"]; !ok {
+	stripped := false
+	for _, field := range []string{"emitted_stdout_sha256", "emitted_stderr_sha256", "redactions"} {
+		if _, ok := result[field]; ok {
+			delete(result, field)
+			stripped = true
+		}
+	}
+	if !stripped {
 		return nil, false
 	}
-	delete(result, "redactions")
 	cleanedResult, err := json.Marshal(result)
 	if err != nil {
 		return nil, false
@@ -298,7 +305,7 @@ func stripLegacyResultRedactions(line []byte) ([]byte, bool) {
 	if err != nil {
 		return nil, false
 	}
-	return cleaned, true
+	return cleaned, stripped
 }
 
 // decodeLegacyDedupEntry migrates one pre-v0.10 line — {"request_id", "result"}
@@ -337,6 +344,9 @@ func decodeLegacyDedupEntry(line []byte, fields map[string]json.RawMessage) (ded
 	}
 	result.EventID = ""
 	result.LocalAuditFailed = true
+	if !validActionResult(result, legacy.RequestID) {
+		return dedupEntry{}, fmt.Errorf("decode legacy dispatch log result")
+	}
 	return dedupEntry{
 		RequestID:      legacy.RequestID,
 		DispatchSHA256: legacyDispatchDigest(legacy.RequestID),
@@ -346,6 +356,24 @@ func decodeLegacyDedupEntry(line []byte, fields map[string]json.RawMessage) (ded
 		State:  dispatchAcknowledged,
 		Result: result,
 	}, nil
+}
+
+const dispatchLogQuarantineRisk = "quarantining forgets replay history and may allow a redelivered action to run again"
+
+// DispatchLogQuarantineGuidance returns the safe manual recovery boundary for
+// a runner data directory. Both paths matter: after the current log is moved,
+// connect adopts a legacy log if one remains.
+func DispatchLogQuarantineGuidance(dataDir string) string {
+	return dispatchLogQuarantineGuidance(DispatchLogPath(dataDir), LegacyDispatchLogPath(dataDir))
+}
+
+func dispatchLogQuarantineGuidance(currentPath, legacyPath string) string {
+	paths := currentPath
+	if legacyPath != "" && legacyPath != currentPath {
+		paths += " and " + legacyPath + " (if present)"
+	}
+	return "stop the runner and prove it is idle, then move " + paths +
+		" into a new root-owned mode-0700 quarantine directory outside the runner data directory without overwriting prior evidence"
 }
 
 func validLegacyActionResult(result ActionResultMsg, requestID string) bool {
@@ -368,8 +396,8 @@ const (
 	DispatchLogAbsent DispatchLogState = "absent"
 	// DispatchLogOK — the current log loads cleanly.
 	DispatchLogOK DispatchLogState = "ok"
-	// DispatchLogLegacy — readable pre-v0.12 state (old location or old
-	// format); the next connect migrates it forward.
+	// DispatchLogLegacy — readable older state (old location or an unversioned
+	// snapshot); the next connect migrates it forward.
 	DispatchLogLegacy DispatchLogState = "legacy"
 	// DispatchLogCorrupt — unreadable; connect refuses to start over it.
 	DispatchLogCorrupt DispatchLogState = "corrupt"
@@ -385,27 +413,27 @@ type DispatchLogReport struct {
 
 // InspectDispatchLog reports the durable dispatch log's health without
 // touching it — the current store when present, otherwise the pre-v0.12
-// legacy location. Used by doctor and `emisar state check-dispatch-log` so
+// location. Used by doctor and `emisar state check-dispatch-log` so
 // an unloadable log is diagnosable (and installer-checkable) before it makes
 // connect refuse to start.
 func InspectDispatchLog(dataDir string) DispatchLogReport {
 	path := DispatchLogPath(dataDir)
-	entries, sawLegacy, err := readDispatchLog(path)
+	loaded, err := inspectDispatchLog(path)
 	switch {
 	case err == nil:
 		state := DispatchLogOK
-		if sawLegacy {
+		if loaded.needsMigration {
 			state = DispatchLogLegacy
 		}
-		return DispatchLogReport{Path: path, State: state, Entries: len(entries)}
+		return DispatchLogReport{Path: path, State: state, Entries: len(loaded.entries)}
 	case !errors.Is(err, os.ErrNotExist):
 		return DispatchLogReport{Path: path, State: DispatchLogCorrupt, Err: err}
 	}
 	legacyPath := LegacyDispatchLogPath(dataDir)
-	entries, _, err = readDispatchLog(legacyPath)
+	loaded, err = inspectDispatchLog(legacyPath)
 	switch {
 	case err == nil:
-		return DispatchLogReport{Path: legacyPath, State: DispatchLogLegacy, Entries: len(entries)}
+		return DispatchLogReport{Path: legacyPath, State: DispatchLogLegacy, Entries: len(loaded.entries)}
 	case errors.Is(err, os.ErrNotExist):
 		return DispatchLogReport{Path: path, State: DispatchLogAbsent}
 	default:
@@ -469,20 +497,37 @@ func (d *dedupRing) reserve(requestID, digest string) (reservationDecision, Acti
 		return decision, result, nil
 	}
 
-	oldKeys := append([]string(nil), d.keys...)
-	oldRecords := cloneDedupRecords(d.records)
-	if len(d.keys) >= d.max && !d.evictOldestAcknowledgedLocked() {
+	if d.shouldCompactJournalLocked() {
+		if err := d.rewriteJournalLocked(); err != nil {
+			// ReplaceFile can report an error after rename, when the directory
+			// sync fails. The visible checkpoint is state-equivalent, but its
+			// directory binding is not proven durable; appending behind it could
+			// lose a later reservation after a crash.
+			return reservationNew, ActionResultMsg{}, d.latchJournalReplacementFailureLocked("compaction", err)
+		}
+	}
+
+	evictedRequestID := ""
+	if len(d.keys) > d.max {
 		return reservationNew, ActionResultMsg{}, fmt.Errorf("cloud: dispatch log capacity reached with active or unacknowledged dispatches")
 	}
-	d.keys = append(d.keys, requestID)
-	d.records[requestID] = dedupEntry{
-		RequestID: requestID, DispatchSHA256: digest, State: dispatchReserved,
+	if len(d.keys) >= d.max {
+		_, oldest, ok := d.oldestAcknowledgedLocked()
+		if !ok {
+			return reservationNew, ActionResultMsg{}, fmt.Errorf("cloud: dispatch log capacity reached with active or unacknowledged dispatches")
+		}
+		evictedRequestID = oldest
 	}
-	if err := d.writeStore(); err != nil {
-		d.keys = oldKeys
-		d.records = oldRecords
+	transition := dispatchJournalTransition{
+		Op:               dispatchJournalReserve,
+		RequestID:        requestID,
+		DispatchSHA256:   digest,
+		EvictedRequestID: evictedRequestID,
+	}
+	if err := d.persistJournalTransitionLocked(transition); err != nil {
 		return reservationNew, ActionResultMsg{}, err
 	}
+	d.applyJournalTransitionLocked(transition)
 	return reservationNew, ActionResultMsg{}, nil
 }
 
@@ -533,29 +578,32 @@ func validDispatchDigest(digest string) bool {
 }
 
 func (d *dedupRing) evictOldestAcknowledgedLocked() bool {
+	index, key, ok := d.oldestAcknowledgedLocked()
+	if !ok {
+		return false
+	}
+	delete(d.records, key)
+	d.keys = append(d.keys[:index], d.keys[index+1:]...)
+	return true
+}
+
+func (d *dedupRing) oldestAcknowledgedLocked() (int, string, bool) {
 	for index, key := range d.keys {
 		if d.records[key].State == dispatchAcknowledged {
-			delete(d.records, key)
-			d.keys = append(d.keys[:index], d.keys[index+1:]...)
-			return true
+			return index, key, true
 		}
 	}
-	return false
+	return 0, "", false
 }
 
-func cloneDedupRecords(records map[string]dedupEntry) map[string]dedupEntry {
-	cloned := make(map[string]dedupEntry, len(records))
-	for key, entry := range records {
-		cloned[key] = entry
-	}
-	return cloned
-}
-
-// complete replaces an exact reservation with its terminal result. A digest
+// complete records the terminal result for an exact reservation. A digest
 // mismatch is a programming error: it must never overwrite another intent.
 func (d *dedupRing) complete(requestID, digest string, result ActionResultMsg) error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
+	if d.loadErr != nil {
+		return d.loadErr
+	}
 	if !validActionResult(result, requestID) {
 		return fmt.Errorf("cloud: invalid terminal result for %q", requestID)
 	}
@@ -576,15 +624,16 @@ func (d *dedupRing) complete(requestID, digest string, result ActionResultMsg) e
 	if existing.State != dispatchReserved {
 		return fmt.Errorf("cloud: complete dispatch %q with invalid state %q", requestID, existing.State)
 	}
-	existing.State = dispatchCompleted
-	existing.Result = result
-	d.records[requestID] = existing
-	if err := d.writeStore(); err != nil {
-		existing.State = dispatchReserved
-		existing.Result = ActionResultMsg{}
-		d.records[requestID] = existing
+	transition := dispatchJournalTransition{
+		Op:             dispatchJournalComplete,
+		RequestID:      requestID,
+		DispatchSHA256: digest,
+		Result:         &result,
+	}
+	if err := d.persistJournalTransitionLocked(transition); err != nil {
 		return err
 	}
+	d.applyJournalTransitionLocked(transition)
 	return nil
 }
 
@@ -593,6 +642,9 @@ func (d *dedupRing) complete(requestID, digest string, result ActionResultMsg) e
 func (d *dedupRing) acknowledge(requestID string) error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
+	if d.loadErr != nil {
+		return d.loadErr
+	}
 
 	existing, ok := d.records[requestID]
 	if !ok {
@@ -604,41 +656,24 @@ func (d *dedupRing) acknowledge(requestID string) error {
 	case dispatchAcknowledged:
 		return nil
 	case dispatchCompleted:
-		existing.State = dispatchAcknowledged
-		d.records[requestID] = existing
-		if err := d.writeStore(); err != nil {
-			existing.State = dispatchCompleted
-			d.records[requestID] = existing
+		transition := dispatchJournalTransition{
+			Op:             dispatchJournalAcknowledge,
+			RequestID:      requestID,
+			DispatchSHA256: existing.DispatchSHA256,
+		}
+		if err := d.persistJournalTransitionLocked(transition); err != nil {
 			return err
+		}
+		d.applyJournalTransitionLocked(transition)
+		if len(d.keys) > d.max && d.evictToMax() {
+			if err := d.rewriteJournalLocked(); err != nil {
+				return d.latchJournalReplacementFailureLocked("capacity trim", err)
+			}
 		}
 		return nil
 	default:
 		return fmt.Errorf("cloud: acknowledge dispatch %q with invalid state %q", requestID, existing.State)
 	}
-}
-
-func (d *dedupRing) writeStore() error {
-	if d.storePath == "" {
-		return nil
-	}
-	// fsutil.ReplaceFile uses CreateTemp, not a fixed "<path>.tmp" opened
-	// O_CREATE|O_TRUNC: the fixed name follows a symlink planted at that path,
-	// so anything able to write in data_dir could redirect the truncate.
-	return fsutil.ReplaceFile(d.storePath, func(w io.Writer) error {
-		for _, key := range d.keys {
-			line, err := json.Marshal(d.records[key])
-			if err != nil {
-				return err
-			}
-			if _, err := w.Write(line); err != nil {
-				return err
-			}
-			if _, err := w.Write([]byte("\n")); err != nil {
-				return err
-			}
-		}
-		return nil
-	})
 }
 
 func (d *dedupRing) unacknowledgedResults() []ActionResultMsg {

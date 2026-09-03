@@ -15,8 +15,13 @@ func updateCmd() *cobra.Command {
 
 The release archive is checksum-verified and, when an authenticated GitHub CLI
 is available, its workflow provenance is verified before the bundled installer
-runs. The installer preserves configuration, credentials, packs, local evidence,
-and its existing stop/swap/restart/rollback transaction.
+runs. The installer preserves configuration, credentials, packs, and local
+evidence. A failure before the selected binary can run restores the prior
+installation. A later failure keeps both binaries and leaves the service stopped
+for explicit recovery. Every selected release must expose the offline
+dispatch-state check and the current managed-installer transaction. The check
+binds the configured data directory to the installer receipt before the bundled
+installer runs.
 
 Container, copied, development, package-managed, and infrastructure-managed
 binaries have no official installer receipt and are refused; update those from

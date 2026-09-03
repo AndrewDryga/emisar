@@ -680,9 +680,37 @@ never the whole runner.
 `connect` with the quarantine remedy in the error; `emisar doctor` and
 `emisar state check-dispatch-log` report the same verdict offline, and
 `install.sh` runs the check with the staged binary before touching a running
-service. A broken installed pack loads as degraded (`packs.degraded` log
-line, doctor failure naming the directory) while every healthy pack keeps
-serving.
+service. The current dispatch format starts with
+`{"format":"emisar_dispatch_log","version":2}` and stores an ordered,
+append-only transition journal between state-equivalent atomic checkpoints.
+Existing unversioned `dispatches.jsonl` snapshots and the older `dedup.jsonl`
+path migrate atomically before the runner connects. Unknown
+versions or fields, impossible transitions, and a non-newline-terminated v2
+tail are corrupt and fail closed; the runner never guesses which writes landed.
+Snapshot-only binaries deliberately reject the v2 header.
+
+The current self-updater requires every selected target binary to expose the
+offline dispatch-state check and its bundled installer to report
+`emisar-managed-update-v1` before handoff. The target loads the receipt-owned
+`config.yaml`, verifies that its effective `paths.data_dir` equals the receipt's
+data directory, and reads that state. Releases predating either boundary are
+refused. A failure before the new binary can run restores the prior installation.
+After a service start attempt—or after binary activation under `--no-service`—
+automatic downgrade is refused: the activated installation and previous binary
+remain, the service stays stopped, and the operator gets an explicit recovery
+message. The installer never restores an older journal snapshot because doing
+so could forget an executed action.
+Managed in-place updates keep the exact install-receipt paths, service identity,
+and init manager. The installer refuses to modify a receiptless pre-v0.20
+runner because it cannot prove that installation's live mapping; a separately
+reviewed adoption flow must establish that proof before a managed update.
+Quarantining a corrupt journal is likewise an explicit loss of replay
+protection and may allow a redelivered action to run again. Future formats keep
+reading v2 or add an explicit successor version; they never reinterpret v2 in
+place.
+
+A broken installed pack loads as degraded (`packs.degraded` log line, doctor
+failure naming the directory) while every healthy pack keeps serving.
 
 ### Runner record retention
 

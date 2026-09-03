@@ -15,8 +15,8 @@ A change is done only when this is green from the repository root:
 It checks client-module boundaries and formatting, module checksums, `go vet`,
 `staticcheck`, tidy-as-a-no-op, attestation parity against the bridge's copy,
 race tests, a cross-build of every published platform, and the public
-`install.sh` shell and behavior harness. The harness runs all fifteen
-checks as root or through passwordless sudo; otherwise it runs twelve portable
+`install.sh` shell and behavior harness. The harness runs all eighteen
+checks as root or through passwordless sudo; otherwise it runs fifteen portable
 checks and names the three privileged checks left to CI. Use
 `./run test runner [go-test-args...]` for focused feedback; direct Go commands
 are diagnostic, not final verification. Run `./run gate mcp` for that

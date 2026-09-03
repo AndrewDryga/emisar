@@ -748,15 +748,23 @@ func TestClient_Run_DisabledDialFailureKeepsRetrying(t *testing.T) {
 }
 
 func TestClient_Run_CorruptDispatchLogFailsBeforeDial(t *testing.T) {
-	storePath := filepath.Join(t.TempDir(), "dispatches.jsonl")
+	dir := t.TempDir()
+	storePath := filepath.Join(dir, "dispatches.jsonl")
+	legacyPath := filepath.Join(dir, "dedup.jsonl")
 	if err := os.WriteFile(storePath, []byte("not-json\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
+	if err := os.WriteFile(legacyPath, []byte(legacyDispatchLine("stale")+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	dialer := &alwaysFailDialer{}
-	client := NewClient(dialer, Options{DedupStorePath: storePath})
+	client := NewClient(dialer, Options{DedupStorePath: storePath, DedupLegacyStorePath: legacyPath})
 
 	err := client.Run(context.Background())
-	if err == nil || !strings.Contains(err.Error(), "invalid dispatch log entry on line 1") {
+	if err == nil || !strings.Contains(err.Error(), "invalid dispatch log entry on line 1") ||
+		!strings.Contains(err.Error(), dispatchLogQuarantineRisk) ||
+		!strings.Contains(err.Error(), "stop the runner and prove it is idle") ||
+		!strings.Contains(err.Error(), legacyPath) {
 		t.Fatalf("Run error = %v, want corrupt durable state", err)
 	}
 	if got := dialer.calls.Load(); got != 0 {
@@ -778,7 +786,9 @@ func TestClient_Run_CorruptLegacyDispatchLogFailsBeforeDial(t *testing.T) {
 	})
 
 	err := client.Run(context.Background())
-	if err == nil || !strings.Contains(err.Error(), legacyPath) || !strings.Contains(err.Error(), "invalid dispatch log entry on line 1") {
+	if err == nil || !strings.Contains(err.Error(), legacyPath) ||
+		!strings.Contains(err.Error(), "invalid dispatch log entry on line 1") ||
+		!strings.Contains(err.Error(), dispatchLogQuarantineRisk) {
 		t.Fatalf("Run error = %v, want corrupt legacy state and its path", err)
 	}
 	if got := dialer.calls.Load(); got != 0 {

@@ -3,6 +3,7 @@ package selfupdate
 
 import (
 	"archive/tar"
+	"bytes"
 	"compress/gzip"
 	"context"
 	"crypto/sha256"
@@ -20,6 +21,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/andrewdryga/emisar/runner/internal/httpsecurity"
@@ -51,6 +53,7 @@ const (
 	maxArchiveBytes         = 256 << 20
 	maxInstallerBytes       = 512 << 10
 	maxBinaryBytes          = 128 << 20
+	installerRollbackGrace  = 8 * time.Minute
 )
 
 // Options are the operator choices and output streams for one update.
@@ -205,6 +208,9 @@ func run(ctx context.Context, opts Options, deps dependencies) error {
 	if err != nil {
 		return err
 	}
+	if err := targetAcceptsDispatchState(ctx, bundle, receipt, deps); err != nil {
+		return err
+	}
 
 	fmt.Fprintf(opts.Stdout, "Updating emisar %s to %s...\n", opts.CurrentVersion, targetVersion)
 	args, env := installerInvocation(bundle, target.TagName, receipt, identity)
@@ -212,6 +218,42 @@ func run(ctx context.Context, opts Options, deps dependencies) error {
 		return fmt.Errorf("release installer failed: %w", err)
 	}
 	return nil
+}
+
+// targetAcceptsDispatchState keeps the current updater authoritative across a
+// downgrade. A historical release bundles its historical installer, so the
+// current binary must reject an old target before handing control to a script
+// that cannot know about newer durable state.
+func targetAcceptsDispatchState(ctx context.Context, bundle string, receipt receipt, deps dependencies) error {
+	target := filepath.Join(bundle, "emisar")
+	installer := filepath.Join(bundle, "install.sh")
+	env := []string{"PATH=/usr/sbin:/usr/bin:/sbin:/bin"}
+	var help bytes.Buffer
+	if err := deps.runCommand(ctx, target, []string{"state", "--help"}, env, &help, io.Discard); err != nil ||
+		!commandListed(help.String(), "check-dispatch-log") {
+		return errors.New("target runner cannot verify the existing durable dispatch state")
+	}
+	var contract bytes.Buffer
+	if err := deps.runCommand(ctx, "/bin/bash", []string{installer, "--managed-update-contract"}, env, &contract, io.Discard); err != nil ||
+		strings.TrimSpace(contract.String()) != "emisar-managed-update-v1" {
+		return errors.New("target release installer is too old for a safe managed update")
+	}
+	if err := deps.runCommand(ctx, target,
+		[]string{"--config", filepath.Join(receipt.EtcDir, "config.yaml"), "state", "check-dispatch-log", "--data-dir", receipt.DataDir},
+		env, io.Discard, io.Discard); err != nil {
+		return errors.New("target runner cannot reconcile the configured and receipt-owned durable dispatch state")
+	}
+	return nil
+}
+
+func commandListed(help, command string) bool {
+	for _, line := range strings.Split(help, "\n") {
+		fields := strings.Fields(line)
+		if len(fields) > 0 && fields[0] == command {
+			return true
+		}
+	}
+	return false
 }
 
 func resolveRelease(ctx context.Context, requested string, deps dependencies) (release, error) {
@@ -720,9 +762,41 @@ func installerInvocation(bundle, tag string, receipt receipt, identity releaseId
 }
 
 func execute(ctx context.Context, name string, args, env []string, stdout, stderr io.Writer) error {
-	command := exec.CommandContext(ctx, name, args...)
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	command := exec.Command(name, args...)
 	command.Env = env
 	command.Stdout = stdout
 	command.Stderr = stderr
-	return command.Run()
+	// The installer owns a transactional rollback trap. CommandContext would
+	// SIGKILL it immediately on cancellation, which can strand a half-restored
+	// binary, service definition, or receipt. Give the whole installer process
+	// group a catchable TERM and a bounded window to finish recovery first.
+	command.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	if err := command.Start(); err != nil {
+		return err
+	}
+	done := make(chan error, 1)
+	go func() { done <- command.Wait() }()
+	select {
+	case err := <-done:
+		return err
+	case <-ctx.Done():
+		if err := syscall.Kill(-command.Process.Pid, syscall.SIGTERM); err != nil && !errors.Is(err, syscall.ESRCH) {
+			_ = command.Process.Kill()
+			<-done
+			return fmt.Errorf("signal release installer for rollback: %w", err)
+		}
+		timer := time.NewTimer(installerRollbackGrace)
+		defer timer.Stop()
+		select {
+		case <-done:
+			return ctx.Err()
+		case <-timer.C:
+			_ = syscall.Kill(-command.Process.Pid, syscall.SIGKILL)
+			<-done
+			return ctx.Err()
+		}
+	}
 }

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -8,6 +9,97 @@ import (
 	"testing"
 	"time"
 )
+
+func TestStateCheckDispatchLogCmdReportsVersionedAndOlderState(t *testing.T) {
+	tests := []struct {
+		name       string
+		contents   string
+		legacy     string
+		wantOutput string
+		wantError  string
+	}{
+		{
+			name: "older snapshot is migratable",
+			contents: `{"request_id":"req","result":{"type":"action_result","protocol_version":1,"request_id":"req","status":"success"}}` +
+				"\n",
+			wantOutput: "older dispatch state; connect migrates it forward",
+		},
+		{
+			name:       "v2 journal is healthy",
+			contents:   `{"format":"emisar_dispatch_log","version":2}` + "\n",
+			wantOutput: "ok: 0 entries",
+		},
+		{
+			name:      "torn v2 journal fails closed",
+			contents:  `{"format":"emisar_dispatch_log","version":2}`,
+			legacy:    `{"request_id":"stale","result":{"type":"action_result","protocol_version":1,"request_id":"stale","status":"success"}}` + "\n",
+			wantError: "quarantining forgets replay history and may allow a redelivered action to run again",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			dataDir := t.TempDir()
+			if err := os.WriteFile(filepath.Join(dataDir, "dispatches.jsonl"), []byte(test.contents), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			if test.legacy != "" {
+				if err := os.WriteFile(filepath.Join(dataDir, "dedup.jsonl"), []byte(test.legacy), 0o600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			var output bytes.Buffer
+			cmd := stateCheckDispatchLogCmd()
+			cmd.SetOut(&output)
+			cmd.SetArgs([]string{"--data-dir", dataDir})
+			err := cmd.Execute()
+			if test.wantError != "" {
+				if err == nil || !strings.Contains(strings.ToLower(err.Error()), test.wantError) {
+					t.Fatalf("error = %v, want %q", err, test.wantError)
+				}
+				if !strings.Contains(err.Error(), "stop the runner and prove it is idle") ||
+					!strings.Contains(err.Error(), filepath.Join(dataDir, "dedup.jsonl")) {
+					t.Fatalf("error omits safe two-path quarantine boundary: %v", err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !strings.Contains(output.String(), test.wantOutput) {
+				t.Fatalf("output = %q, want %q", output.String(), test.wantOutput)
+			}
+			if test.name == "v2 journal is healthy" && strings.Contains(output.String(), "migrates") {
+				t.Fatalf("healthy v2 output claims migration: %q", output.String())
+			}
+		})
+	}
+}
+
+func TestStateCheckDispatchLogCmdBindsExplicitDataDirToConfig(t *testing.T) {
+	withFlags(t)
+	root := t.TempDir()
+	configured := filepath.Join(root, "data")
+	other := filepath.Join(root, "other-data")
+	for _, dir := range []string{configured, other} {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	flagConfig = writeMinimalConfig(t, root, filepath.Join(root, "packs"))
+
+	cmd := stateCheckDispatchLogCmd()
+	cmd.SetArgs([]string{"--data-dir", other})
+	if err := cmd.Execute(); err == nil || !strings.Contains(err.Error(), "does not match configured paths.data_dir") {
+		t.Fatalf("mismatched config/data error = %v", err)
+	}
+
+	cmd = stateCheckDispatchLogCmd()
+	cmd.SetArgs([]string{"--data-dir", configured})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("matching config/data: %v", err)
+	}
+}
 
 // `emisar state` builds the runner_state advertisement from config + the
 // loaded registry + admission and prints it as JSON. This drives the real

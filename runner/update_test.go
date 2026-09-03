@@ -10,7 +10,14 @@ func TestUpdateCommandDocumentsVerifiedInstallerManagedBoundary(t *testing.T) {
 	if command.Use != "update" || command.Args == nil {
 		t.Fatalf("unexpected command shape: use=%q args=%v", command.Use, command.Args)
 	}
-	for _, want := range []string{"checksum-verified", "installer receipt", "Container", "rollback"} {
+	for _, want := range []string{
+		"checksum-verified",
+		"installer receipt",
+		"Container",
+		"keeps both binaries",
+		"managed-installer transaction",
+		"binds the configured data directory",
+	} {
 		if !strings.Contains(command.Long, want) {
 			t.Errorf("long help missing %q:\n%s", want, command.Long)
 		}

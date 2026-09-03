@@ -26,9 +26,9 @@ type dedupBenchmarkInput struct {
 	result    ActionResultMsg
 }
 
-// BenchmarkDedupRingDurableLifecycle measures the real replace-and-sync path.
-// The contract-max cases intentionally rewrite tens of MiB per operation; use
-// a fixed benchtime (for example, -benchtime=3x) for repeatable samples.
+// BenchmarkDedupRingDurableLifecycle measures the real append-and-sync path at
+// each retained-ring size. Use a fixed benchtime (for example, -benchtime=3x)
+// for repeatable paired samples.
 func BenchmarkDedupRingDurableLifecycle(b *testing.B) {
 	profiles := dedupBenchmarkProfiles()
 	cases := []struct {
@@ -52,7 +52,7 @@ func BenchmarkDedupRingDurableLifecycle(b *testing.B) {
 func BenchmarkDedupRingDurableLifecycleParallel(b *testing.B) {
 	profile := dedupBenchmarkProfiles()[0]
 	d := newBenchmarkDedupRing(b, 1024, profile)
-	storeBytes, replacedBytes := measureDedupLifecycleBytes(
+	storeBytes, appendedBytes := measureDedupLifecycleBytes(
 		b,
 		d,
 		newDedupBenchmarkInput(1024, profile),
@@ -66,7 +66,7 @@ func BenchmarkDedupRingDurableLifecycleParallel(b *testing.B) {
 	var failure error
 	var failureMu sync.Mutex
 	b.ReportAllocs()
-	b.SetBytes(replacedBytes)
+	b.SetBytes(appendedBytes)
 	b.ResetTimer()
 	b.RunParallel(func(worker *testing.PB) {
 		for worker.Next() {
@@ -86,12 +86,12 @@ func BenchmarkDedupRingDurableLifecycleParallel(b *testing.B) {
 		b.Fatal(failure)
 	}
 	b.ReportMetric(float64(storeBytes), "store-B")
-	b.ReportMetric(float64(replacedBytes), "replaced-B/lifecycle")
+	b.ReportMetric(float64(appendedBytes), "appended-B/lifecycle")
 }
 
 func benchmarkDedupDurableLifecycle(b *testing.B, entries int, profile dedupBenchmarkProfile) {
 	d := newBenchmarkDedupRing(b, entries, profile)
-	storeBytes, replacedBytes := measureDedupLifecycleBytes(
+	storeBytes, appendedBytes := measureDedupLifecycleBytes(
 		b,
 		d,
 		newDedupBenchmarkInput(entries, profile),
@@ -105,7 +105,7 @@ func benchmarkDedupDurableLifecycle(b *testing.B, entries int, profile dedupBenc
 	var completeElapsed time.Duration
 	var acknowledgeElapsed time.Duration
 	b.ReportAllocs()
-	b.SetBytes(replacedBytes)
+	b.SetBytes(appendedBytes)
 	b.ResetTimer()
 	for _, input := range inputs {
 		started := time.Now()
@@ -132,7 +132,55 @@ func benchmarkDedupDurableLifecycle(b *testing.B, entries int, profile dedupBenc
 	b.ReportMetric(float64(completeElapsed.Nanoseconds())/float64(b.N), "complete-ns/op")
 	b.ReportMetric(float64(acknowledgeElapsed.Nanoseconds())/float64(b.N), "acknowledge-ns/op")
 	b.ReportMetric(float64(storeBytes), "store-B")
-	b.ReportMetric(float64(replacedBytes), "replaced-B/lifecycle")
+	b.ReportMetric(float64(appendedBytes), "appended-B/lifecycle")
+}
+
+func BenchmarkDedupRingCompaction(b *testing.B) {
+	profile := dedupBenchmarkProfiles()[2]
+	d := newBenchmarkDedupRing(b, 1024, profile)
+	checkpointBytes := d.journalCheckpointBytes
+	input := newDedupBenchmarkInput(1024, profile)
+	ordinaryBytes := benchmarkDispatchTransitionBytes(b,
+		dispatchJournalTransition{
+			Op: dispatchJournalReserve, RequestID: input.requestID, DispatchSHA256: input.digest,
+			EvictedRequestID: d.keys[0],
+		},
+		dispatchJournalTransition{
+			Op: dispatchJournalComplete, RequestID: input.requestID, DispatchSHA256: input.digest,
+			Result: &input.result,
+		},
+		dispatchJournalTransition{
+			Op: dispatchJournalAcknowledge, RequestID: input.requestID, DispatchSHA256: input.digest,
+		},
+	)
+	b.ReportAllocs()
+	b.SetBytes(checkpointBytes)
+	b.ResetTimer()
+	for range b.N {
+		if err := d.rewriteJournalLocked(); err != nil {
+			b.Fatal(err)
+		}
+	}
+	b.StopTimer()
+	lifecyclesPerCompaction := (dispatchJournalCompactAfter + 2) / 3
+	b.ReportMetric(
+		float64(ordinaryBytes)+float64(checkpointBytes)/float64(lifecyclesPerCompaction),
+		"amortized-B/lifecycle",
+	)
+	b.ReportMetric(float64(checkpointBytes), "checkpoint-B")
+}
+
+func benchmarkDispatchTransitionBytes(b *testing.B, transitions ...dispatchJournalTransition) int64 {
+	b.Helper()
+	var total int64
+	for _, transition := range transitions {
+		line, err := marshalDispatchJournalLine(transition)
+		if err != nil {
+			b.Fatal(err)
+		}
+		total += int64(len(line))
+	}
+	return total
 }
 
 func newBenchmarkDedupRing(b *testing.B, entries int, profile dedupBenchmarkProfile) *dedupRing {
@@ -147,6 +195,9 @@ func newBenchmarkDedupRing(b *testing.B, entries int, profile dedupBenchmarkProf
 			State:          dispatchAcknowledged,
 			Result:         input.result,
 		}
+	}
+	if err := d.rewriteJournalLocked(); err != nil {
+		b.Fatalf("seed dispatch checkpoint: %v", err)
 	}
 	return d
 }
@@ -168,23 +219,22 @@ func measureDedupLifecycleBytes(
 	b *testing.B,
 	d *dedupRing,
 	input dedupBenchmarkInput,
-) (storeBytes int64, replacedBytes int64) {
+) (storeBytes int64, appendedBytes int64) {
 	b.Helper()
+	before := dedupBenchmarkStoreSize(b, d.storePath)
 	decision, _, err := d.reserve(input.requestID, input.digest)
 	if err != nil || decision != reservationNew {
 		b.Fatalf("measure reserve %s: decision=%v err=%v", input.requestID, decision, err)
 	}
-	replacedBytes += dedupBenchmarkStoreSize(b, d.storePath)
 	if err := d.complete(input.requestID, input.digest, input.result); err != nil {
 		b.Fatalf("measure complete %s: %v", input.requestID, err)
 	}
-	replacedBytes += dedupBenchmarkStoreSize(b, d.storePath)
 	if err := d.acknowledge(input.requestID); err != nil {
 		b.Fatalf("measure acknowledge %s: %v", input.requestID, err)
 	}
 	storeBytes = dedupBenchmarkStoreSize(b, d.storePath)
-	replacedBytes += storeBytes
-	return storeBytes, replacedBytes
+	appendedBytes = storeBytes - before
+	return storeBytes, appendedBytes
 }
 
 func dedupBenchmarkStoreSize(b *testing.B, path string) int64 {
