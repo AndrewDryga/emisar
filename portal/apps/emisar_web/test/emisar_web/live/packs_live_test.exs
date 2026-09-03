@@ -1260,11 +1260,36 @@ defmodule EmisarWeb.PacksLiveTest do
 
     test "an owner deletes a whole pack from its header control", %{
       conn: conn,
-      account: account
+      account: account,
+      user: user
     } do
-      _pack_version = observe_pending_pack!(account)
+      low_runner = Fixtures.Runners.create_runner(account_id: account.id)
+      high_runner = Fixtures.Runners.create_runner(account_id: account.id)
+
+      for {runner, version, action} <- [
+            {low_runner, "1.0", action_payload("acme.status", "acme-tools", "low")},
+            {high_runner, "2.0", action_payload("acme.wipe", "acme-tools", "high")}
+          ] do
+        {:ok, _runner} =
+          Emisar.Catalog.observe_state(runner, %{
+            "hostname" => "host-#{version}",
+            "version" => "0.1.0",
+            "labels" => %{},
+            "actions" => [action],
+            "packs" => %{
+              "acme-tools" => %{
+                "version" => version,
+                "hash" => Fixtures.Catalog.pack_hash(version)
+              }
+            }
+          })
+      end
 
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/packs")
+
+      html = filter(lv, "", "high")
+      assert html =~ "acme.wipe"
+      refute html =~ "acme.status"
 
       selector =
         ~s([phx-click="open_pack_action"][phx-value-action="delete_pack"][phx-value-pack-id="acme-tools"])
@@ -1272,10 +1297,19 @@ defmodule EmisarWeb.PacksLiveTest do
       assert has_element?(lv, selector)
 
       lv |> element(selector) |> render_click()
+      confirmation = render(lv)
+
+      assert confirmation =~ "Removes every recorded version of"
+      assert confirmation =~ "acme-tools"
+      refute confirmation =~ "Removes all 1 version"
+
       html = confirm_dialog(lv, "pack-action", "Delete pack")
 
-      assert html =~ "Deleted acme-tools (1 version)."
+      assert html =~ "Deleted acme-tools (2 versions)."
       refute has_element?(lv, "#packs li", "acme-tools")
+
+      subject = Fixtures.Subjects.subject_for(user, account)
+      assert {:ok, [], _meta} = Emisar.Catalog.list_pack_versions(subject)
     end
 
     test "a viewer sees no delete controls and their crafted delete is denied", %{

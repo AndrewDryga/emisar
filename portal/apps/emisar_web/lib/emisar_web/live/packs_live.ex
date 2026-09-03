@@ -509,12 +509,11 @@ defmodule EmisarWeb.PacksLive do
 
   defp pending_pack_action(socket, "delete_pack", %{"pack-id" => pack_id}) do
     case Map.fetch(socket.assigns.group_cache, pack_id) do
-      {:ok, group} ->
+      {:ok, _group} ->
         {:ok,
          %{
            action: "delete_pack",
            pack_id: pack_id,
-           version_count: length(group.versions),
            nonce: System.unique_integer([:positive])
          }}
 
@@ -1740,14 +1739,9 @@ defmodule EmisarWeb.PacksLive do
           <:body>
             <%= case @pending_pack_action.action do %>
               <% "delete_pack" -> %>
-                Removes all {@pending_pack_action.version_count} {if @pending_pack_action.version_count ==
-                                                                       1,
-                                                                     do: "version",
-                                                                     else: "versions"} of
-                <code>{@pending_pack_action.pack_id}</code>
-                — trust decisions and
-                advertised actions included. A runner still advertising it will re-insert it.
-                Audit history is kept.
+                Removes every recorded version of <code>{@pending_pack_action.pack_id}</code>
+                — trust decisions and advertised actions included. A runner still advertising it
+                will re-insert it. Audit history is kept.
               <% "delete_version" -> %>
                 Removes this version and its advertised actions from the catalog. If a runner
                 still advertises it, it will reappear as a fresh trust decision. Audit history
