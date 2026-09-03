@@ -1033,11 +1033,13 @@ download_release() {
   # show it in the status line. The verification itself is done by
   # sha_verify (silenced) so we print one clean line instead of the
   # tool's raw "<file>: OK".
-  local expected
-  expected="$(grep -E "  ${tarball}\$" "${tmp}/SHA256SUMS" | awk '{print $1}')"
+  local checksum_line expected
+  checksum_line="$(grep -E "  ${tarball}\$" "${tmp}/SHA256SUMS" || true)"
+  [ -n "$checksum_line" ] || die "checksum manifest does not list ${tarball}"
+  expected="$(printf '%s\n' "$checksum_line" | awk '{print $1}')"
   (
     cd "${tmp}"
-    grep -E "  ${tarball}\$" SHA256SUMS | sha_verify
+    printf '%s\n' "$checksum_line" | sha_verify
   ) || die "checksum verification failed for ${tarball}"
   log "checksum verified  sha256:${expected:0:16}…"
 

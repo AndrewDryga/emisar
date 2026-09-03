@@ -1092,6 +1092,22 @@ download_release runner-v9.9.9 "$tmp"
 		return fmt.Errorf("install continued past the checksum mismatch:\n%s", tampered.output)
 	}
 
+	missing := h.functions(h.repoPath("install.sh"), []string{"download_release", "sha_verify"}, preamble+`
+fetch_release_files() {
+  dir="$3"
+  build_tarball "$dir"
+  printf '%s  %s\n' "`+wrongDigest+`" "emisar-9.9.9-linux-arm64.tar.gz" >"${dir}/SHA256SUMS"
+}
+tmp="$(mktemp -d)"
+download_release runner-v9.9.9 "$tmp"
+`, nil)
+	if err := expectFailure(missing, "checksum manifest does not list emisar-9.9.9-linux-amd64.tar.gz"); err != nil {
+		return fmt.Errorf("a manifest missing the selected tarball was not refused: %w", err)
+	}
+	if strings.Contains(string(missing.output), "ATTESTATION REACHED") {
+		return fmt.Errorf("install continued past the missing checksum entry:\n%s", missing.output)
+	}
+
 	// The control: the identical path with an honest SHA256SUMS must succeed,
 	// so the refusal above cannot be passing for some unrelated reason.
 	honest := h.functions(h.repoPath("install.sh"), []string{"download_release", "sha_verify"}, preamble+`

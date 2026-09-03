@@ -1081,6 +1081,18 @@ printf 'CONTINUED\n' >&2
 		return fmt.Errorf("install continued past the checksum mismatch:\n%s", tampered.output)
 	}
 
+	missing := h.functions(h.repoPath("install-mcp.sh"), names, preamble+`
+printf '%s  %s\n' "`+wrongDigest+`" "emisar-mcp-9.9.9-linux-arm64.tar.gz" >"${tmp}/SHA256SUMS-MCP"
+verify_release_checksum "$tmp" "$tarball"
+printf 'CONTINUED\n' >&2
+`, nil)
+	if err := expectFailure(missing, "checksum manifest does not list emisar-mcp-9.9.9-linux-amd64.tar.gz"); err != nil {
+		return fmt.Errorf("a manifest missing the selected tarball was not refused: %w", err)
+	}
+	if bytes.Contains(missing.output, []byte("CONTINUED")) {
+		return fmt.Errorf("install continued past the missing checksum entry:\n%s", missing.output)
+	}
+
 	honest := h.functions(h.repoPath("install-mcp.sh"), names, preamble+`
 printf '%s  %s\n' "$(digest_of "${tmp}/${tarball}")" "$tarball" >"${tmp}/SHA256SUMS-MCP"
 verify_release_checksum "$tmp" "$tarball"

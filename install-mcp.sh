@@ -302,6 +302,7 @@ fetch_release_files() {
 # same reason.
 verify_release_checksum() {
   local tmp="$1" tarball="$2"
+  local checksum_line
   if command -v sha256sum >/dev/null 2>&1; then
     sha_check() { sha256sum -c -; }
   elif command -v shasum >/dev/null 2>&1; then
@@ -310,9 +311,12 @@ verify_release_checksum() {
     die "neither sha256sum nor shasum found — cannot verify download"
   fi
 
+  checksum_line="$(grep -E "  ${tarball}\$" "${tmp}/SHA256SUMS-MCP" || true)"
+  [ -n "$checksum_line" ] || die "checksum manifest does not list ${tarball}"
+
   (
     cd "${tmp}"
-    grep -E "  ${tarball}\$" SHA256SUMS-MCP | sha_check
+    printf '%s\n' "$checksum_line" | sha_check
   ) || die "checksum verification failed for ${tarball}"
 }
 
