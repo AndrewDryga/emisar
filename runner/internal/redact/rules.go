@@ -248,10 +248,20 @@ func DefaultRules() []actionspec.RedactionRule {
 			Replacement: "${1}: [REDACTED]",
 		},
 		{
-			Name:        "json-secret-field",
-			Type:        "regex",
-			Pattern:     `(?i)("` + secretField + `"\s*:\s*)"[^"\r\n]*"`,
-			Replacement: `${1}"[REDACTED]"`,
+			Name: "json-secret-field",
+			Type: "regex",
+			Pattern: `(?i)("` + secretField + `"\s*:\s*)` +
+				`("(?:\\.|[^"\\\r\n])*"|-?(?:0|[1-9][0-9]*)(?:\.[0-9]+)?(?:e[+-]?[0-9]+)?|true|false|null)` +
+				`([\s,;}\]]|$)`,
+			Replacement: `${1}"[REDACTED]"${3}`,
+		},
+		{
+			Name: "single-quoted-secret-field",
+			Type: "regex",
+			Pattern: `(?i)('` + secretField + `'\s*:\s*)` +
+				`("(?:\\.|[^"\\\r\n])*"|'(?:\\.|[^'\\\r\n])*'|-?(?:0|[1-9][0-9]*)(?:\.[0-9]+)?(?:e[+-]?[0-9]+)?|true|false|null|none)` +
+				`([\s,;}\]]|$)`,
+			Replacement: `${1}'[REDACTED]'${3}`,
 		},
 		{
 			Name:        "secret-assignment",

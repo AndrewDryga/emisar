@@ -87,12 +87,13 @@ func (e *Engine) redactJSONStrings(value any) (any, []Hit) {
 		var hits []Hit
 		for key, item := range typed {
 			redactedKey, keyHits := e.Apply(key)
-			redactedItem, itemHits := e.redactJSONStrings(item)
-			if _, ok := redactedItem.(string); ok {
-				if replacement, fieldHits, matched := e.jsonFieldReplacement(key); matched {
-					redactedItem = replacement
-					itemHits = MergeHits(itemHits, fieldHits)
-				}
+			var redactedItem any
+			var itemHits []Hit
+			if replacement, fieldHits, matched := e.jsonFieldReplacement(key); matched {
+				redactedItem = replacement
+				itemHits = fieldHits
+			} else {
+				redactedItem, itemHits = e.redactJSONStrings(item)
 			}
 			redacted[redactedKey] = redactedItem
 			hits = MergeHits(hits, keyHits, itemHits)

@@ -42,6 +42,48 @@ func TestApplyJSONPreservesEscapingWhileRedactingValuesAndSecretFields(t *testin
 	}
 }
 
+func TestApplyJSONMasksSecretFieldsRegardlessOfValueType(t *testing.T) {
+	rules, err := CompileAll(DefaultRules())
+	if err != nil {
+		t.Fatal(err)
+	}
+	input := []byte(`{
+		"password": 42,
+		"api_token": true,
+		"client_secret": null,
+		"private_key": {"material": "object-secret"},
+		"access_key": ["array-secret"],
+		"ordinary": {"nested_password": false, "count": 7}
+	}`)
+
+	output, hits, err := New(rules).ApplyJSON(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !json.Valid(output) {
+		t.Fatalf("redacted output is invalid JSON: %q", output)
+	}
+	var decoded map[string]any
+	if err := json.Unmarshal(output, &decoded); err != nil {
+		t.Fatal(err)
+	}
+	for _, key := range []string{"password", "api_token", "client_secret", "private_key", "access_key"} {
+		if decoded[key] != "[REDACTED]" {
+			t.Errorf("%s was not wholly redacted: %#v", key, decoded[key])
+		}
+	}
+	ordinary, ok := decoded["ordinary"].(map[string]any)
+	if !ok {
+		t.Fatalf("ordinary value changed shape: %#v", decoded["ordinary"])
+	}
+	if ordinary["nested_password"] != "[REDACTED]" || ordinary["count"] != float64(7) {
+		t.Fatalf("nested redaction changed unrelated data: %#v", ordinary)
+	}
+	if len(hits) == 0 {
+		t.Fatal("redactions were not reported")
+	}
+}
+
 func TestApplyJSONFailsClosedWhenWholeDocumentRuleBreaksJSON(t *testing.T) {
 	rule, err := CompileRule(actionspec.RedactionRule{
 		Name: "bad-document-rule", Type: "regex", Pattern: `"ok":true`, Replacement: `"ok`,

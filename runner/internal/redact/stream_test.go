@@ -142,6 +142,23 @@ func TestStreamRedactor_SingleLineSecretSplitAcrossChunks(t *testing.T) {
 	}
 }
 
+func TestStreamRedactor_SingleQuotedSecretFieldSplitAcrossChunks(t *testing.T) {
+	eng := defaultEngine(t)
+	sr := newSR(eng, 64)
+
+	var output []byte
+	output = append(output, sr.Write([]byte(`{'api_`))...)
+	output = append(output, sr.Write([]byte(`key': 987654321, 'ok': 1}`))...)
+	output = append(output, sr.Flush()...)
+
+	if got := string(output); got != `{'api_key': '[REDACTED]', 'ok': 1}` {
+		t.Fatalf("redacted output=%q", got)
+	}
+	if len(sr.Hits()) == 0 {
+		t.Fatal("redaction was not reported")
+	}
+}
+
 // TestStreamRedactor_EmitsBeforeFlush — benign output past the hold window must
 // stream out incrementally, not pile up until Flush (that would defeat live
 // progress) — and every inert byte must come out exactly once.

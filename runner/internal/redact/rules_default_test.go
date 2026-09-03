@@ -171,6 +171,13 @@ func TestDefaultRules_SecretFieldAndAssignment(t *testing.T) {
 		{"suffixed affix", "client_secret_v2=shhdonttell", "shhdonttell"},
 		{"single-quoted value", "refresh_token='quotedsecret'", "quotedsecret"},
 		{"json field mixed case", `{"Api_Key":"jsontokvalue","ok":1}`, "jsontokvalue"},
+		{"json field and number", `{"password":123456,"ok":1}`, "123456"},
+		{"json field and boolean", `{"client_secret":true,"ok":1}`, "true"},
+		{"json field and null", `{"private_key":null,"ok":1}`, "null"},
+		{"single-quoted field and string", `{'api_key': 'singlequotedsecret', 'ok': 1}`, "singlequotedsecret"},
+		{"single-quoted field and escaped string", `{'api_key': 'quoted\'secret', 'ok': 1}`, `quoted\'secret`},
+		{"single-quoted field and number", `{'password': 123456, 'ok': 1}`, "123456"},
+		{"single-quoted field and boolean", `{'client_secret': True, 'ok': 1}`, "True"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -253,9 +260,9 @@ func TestDefaultRules_FamiliesPresentAndCompile(t *testing.T) {
 	defs := DefaultRules()
 
 	// Pin the count: the set is the documented last-resort net; an accidental
-	// deletion (or an un-synced add) should trip this. There are 20 rules.
-	if got := len(defs); got != 20 {
-		t.Fatalf("DefaultRules count changed: got %d, want 20 (update this test deliberately if a rule was added/removed)", got)
+	// deletion (or an un-synced add) should trip this. There are 21 rules.
+	if got := len(defs); got != 21 {
+		t.Fatalf("DefaultRules count changed: got %d, want 21 (update this test deliberately if a rule was added/removed)", got)
 	}
 
 	want := []string{
@@ -264,7 +271,7 @@ func TestDefaultRules_FamiliesPresentAndCompile(t *testing.T) {
 		"stripe-secret-key", "openai-api-key", "anthropic-api-key",
 		"google-api-key", "npm-token", "sendgrid-api-key",
 		"private-key-block", "pgp-private-key-block", "url-credentials",
-		"cookie-header", "json-secret-field", "secret-assignment",
+		"cookie-header", "json-secret-field", "single-quoted-secret-field", "secret-assignment",
 	}
 	byName := make(map[string]bool, len(defs))
 	for _, r := range defs {
