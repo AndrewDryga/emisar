@@ -7,6 +7,13 @@ defmodule EmisarWeb.MCP.ToolSchema do
   primitives while retaining declared constraints.
   """
 
+  alias Emisar.Runbooks
+
+  # This module ADVERTISES the args ceiling to the model, so a private copy
+  # would publish a bound the dispatch path does not honour. The DefinitionV1
+  # schema owns the number on the Elixir side; the runner's decoder enforces it.
+  @max_action_args_bytes Runbooks.definition_limit!(:max_action_args_bytes)
+
   @doc "Builds the action-only JSON Schema exposed by `get_action`."
   @spec action_args_schema(map()) :: map()
   def action_args_schema(action) do
@@ -15,7 +22,7 @@ defmodule EmisarWeb.MCP.ToolSchema do
     required = args |> Enum.filter(& &1["required"]) |> Enum.map(& &1["name"])
 
     schema_object(properties, required, false)
-    |> Map.put("x-emisar-maxEncodedBytes", 32_768)
+    |> Map.put("x-emisar-maxEncodedBytes", @max_action_args_bytes)
   end
 
   defp schema_object(properties, required, additional_properties?) do
@@ -91,7 +98,7 @@ defmodule EmisarWeb.MCP.ToolSchema do
 
   defp apply_string_byte_limit(map, type, validation)
        when type in ["string", "path", "string_array"] do
-    Map.put(map, "x-emisar-maxUtf8Bytes", validation["max_length"] || 32_768)
+    Map.put(map, "x-emisar-maxUtf8Bytes", validation["max_length"] || @max_action_args_bytes)
   end
 
   defp apply_string_byte_limit(map, _type, _validation), do: map

@@ -14,6 +14,11 @@ defmodule EmisarWeb.MCP.CatalogTools do
   @default_limit 15
   @max_search_score 9_999
   @max_page_items_bytes 60_000
+  # Part of the find_actions cursor format: the rank is zero-padded to this
+  # fixed width so the key's byte order IS rank order on every call. Eight
+  # digits is far above any account's total candidate count (packs x 120
+  # actions).
+  @rank_width 8
 
   defmodule ListPacksArgs do
     @moduledoc false
@@ -390,13 +395,10 @@ defmodule EmisarWeb.MCP.CatalogTools do
     # head, which is an unbounded loop for a client told to follow `next`
     # verbatim. Page on the FINAL rank, which ascends by construction whatever
     # the ranking did; action_id + pack_ref keep the key naming one exact row.
-    # The width is derived from the count so the padding can never overflow.
-    width = candidates |> length() |> Integer.to_string() |> byte_size()
-
     paginate(
       "find_actions",
       candidates,
-      &search_key(&1, width),
+      &search_key/1,
       scope,
       args,
       :candidates,
@@ -835,8 +837,12 @@ defmodule EmisarWeb.MCP.CatalogTools do
     end
   end
 
-  defp search_key(candidate, width) do
-    rank = candidate.rank |> Integer.to_string() |> String.pad_leading(width, "0")
+  # A width derived from the CURRENT candidate count made page 2 compare its
+  # freshly padded keys against a cursor padded differently the moment the count
+  # crossed a power of ten — a growing result set silently skipped whole rank
+  # ranges, a shrinking one re-served them. The width is fixed for that reason.
+  defp search_key(candidate) do
+    rank = candidate.rank |> Integer.to_string() |> String.pad_leading(@rank_width, "0")
     rank <> "\0" <> candidate.action["action_id"] <> "\0" <> candidate.pack_ref
   end
 

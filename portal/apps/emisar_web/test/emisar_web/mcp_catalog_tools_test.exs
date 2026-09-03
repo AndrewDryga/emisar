@@ -286,6 +286,26 @@ defmodule EmisarWeb.MCPCatalogToolsTest do
     assert unavailable_detail["error"]["next"]["tool"] == "list_runners"
   end
 
+  test "a pack at the trusted-manifest action ceiling stays inside the published schema", %{
+    conn: conn,
+    account: account,
+    subject: subject
+  } do
+    runner = Fixtures.Runners.create_runner(account_id: account.id, name: "wide-host")
+    max_actions = Catalog.TrustedManifest.max_actions()
+    actions = Enum.map(1..max_actions, &action("wide.read#{&1}", "wide"))
+
+    observe!(runner, %{"wide" => %{"version" => "1.0.0", "hash" => @hash}}, actions)
+    trust_all!(subject)
+
+    # The action list for one ref is never split, so the widest pack ingestion
+    # accepts is what the published output schema must admit. call/3 validates
+    # the result against that schema, so reaching this assertion is the proof.
+    [pack] = call(conn, "list_packs", %{"include" => "all"})["packs"]
+
+    assert length(pack["actions"]) == max_actions
+  end
+
   test "catalog cursors survive rotation but remain bound to their credential lineage", %{
     conn: conn,
     account: account,
@@ -383,6 +403,104 @@ defmodule EmisarWeb.MCPCatalogToolsTest do
     second = call(conn, "find_actions", first["next"]["arguments"])
     assert length(second["candidates"]) == 1
     assert second["next"] == nil
+  end
+
+  test "a find_actions continuation stays exact when the candidate count crosses a power of ten",
+       %{
+         conn: conn,
+         account: account,
+         subject: subject
+       } do
+    runner = Fixtures.Runners.create_runner(account_id: account.id, name: "rank-host")
+    packs = %{"demo" => %{"version" => "1.0.0", "hash" => @hash}}
+
+    actions =
+      Enum.map(1..10, fn index ->
+        "demo.read#{String.pad_leading(Integer.to_string(index), 2, "0")}"
+        |> action("demo")
+        |> Map.put("primary_executable_available", true)
+      end)
+
+    {executable, [held_back]} = Enum.split(actions, 9)
+
+    held_back =
+      held_back
+      |> Map.put("primary_executable_available", false)
+      |> Map.put("missing_executable", "demo-tool")
+
+    observe!(runner, packs, executable ++ [held_back])
+    trust_all!(subject)
+
+    # Nine executable candidates, so the cursor names rank 7 — the eighth.
+    first = call(conn, "find_actions", %{"limit" => 8})
+
+    assert Enum.map(first["candidates"], & &1["action_id"]) ==
+             Enum.map(1..8, &"demo.read0#{&1}")
+
+    # The tenth becomes executable while the model holds that cursor. The pack
+    # ref and runner ref are unchanged, so the cursor's scope still matches and
+    # only the candidate count moved — from 9 to 10.
+    observe!(runner, packs, actions)
+
+    second = call(conn, "find_actions", first["next"]["arguments"])
+
+    assert Enum.map(second["candidates"], & &1["action_id"]) == ~w(demo.read09 demo.read10)
+  end
+
+  test "a catalog continuation survives a changed page size", %{
+    conn: conn,
+    account: account,
+    subject: subject
+  } do
+    for name <- ~w(size-a size-b size-c) do
+      runner = Fixtures.Runners.create_runner(account_id: account.id, name: name)
+
+      observe!(
+        runner,
+        %{
+          "alpha" => %{"version" => "1.0.0", "hash" => @hash},
+          "beta" => %{"version" => "1.0.0", "hash" => @hash}
+        },
+        [action("alpha.read", "alpha"), action("beta.read", "beta")]
+      )
+    end
+
+    trust_all!(subject)
+
+    # `limit` is a per-call ceiling on the next page, not part of the query, so
+    # widening it mid-read must not force a restart. Every cursor-carrying tool
+    # answers the same way; the two that bound page size into the cursor made
+    # the same client behaviour work on one tool and fail on another.
+    packs = call(conn, "list_packs", %{"include" => "all", "limit" => 1})
+    assert is_binary(packs["next_cursor"])
+
+    resumed_packs =
+      call(conn, "list_packs", %{
+        "include" => "all",
+        "limit" => 5,
+        "cursor" => packs["next_cursor"]
+      })
+
+    assert resumed_packs["ok"]
+    assert [%{"pack_ref" => "beta@" <> _rest}] = resumed_packs["packs"]
+
+    runners = call(conn, "list_runners", %{"limit" => 1})
+    assert is_binary(runners["next_cursor"])
+
+    resumed_runners =
+      call(conn, "list_runners", %{"limit" => 5, "cursor" => runners["next_cursor"]})
+
+    assert resumed_runners["ok"]
+    assert Enum.map(resumed_runners["runners"], & &1["name"]) == ["size-b", "size-c"]
+
+    found = call(conn, "find_actions", %{"limit" => 1})
+    assert [%{"action_id" => "alpha.read"}] = found["candidates"]
+
+    resumed_found =
+      call(conn, "find_actions", Map.put(found["next"]["arguments"], "limit", 5))
+
+    assert resumed_found["ok"]
+    assert [%{"action_id" => "beta.read"}] = resumed_found["candidates"]
   end
 
   test "runner catalog results identify signature enforcement", %{

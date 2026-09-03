@@ -1,6 +1,6 @@
 defmodule EmisarWeb.MCP.SchemaRegistryTest do
   use ExUnit.Case, async: true
-  alias Emisar.Runbooks
+  alias Emisar.{Catalog, Runbooks}
   alias EmisarWeb.MCP.{ResponseBudget, SchemaRegistry}
   alias EmisarWeb.MCP.SchemaRegistry.Compiler
 
@@ -66,6 +66,42 @@ defmodule EmisarWeb.MCP.SchemaRegistryTest do
     assert SchemaRegistry.error_codes() == @error_codes
     assert Enum.all?(@error_codes, &SchemaRegistry.error_code?/1)
     refute SchemaRegistry.error_code?("future_domain_error")
+  end
+
+  test "every code the MCP boundary writes is declared, and every declared code has a writer" do
+    # `error.code` freezes at 1.0 and nothing validates a response at runtime, so
+    # an undeclared literal ships unless a test happens to drive that exact
+    # branch. Walking the AST — with pipes rewritten first — counts the piped and
+    # multi-line call forms a source grep misses.
+    controllers = Path.expand("../../../lib/emisar_web/controllers", __DIR__)
+
+    sources =
+      Path.wildcard(Path.join(controllers, "mcp/*.ex")) ++
+        [Path.join(controllers, "mcp_rpc_controller.ex")]
+
+    written = sources |> Enum.flat_map(&written_error_codes/1) |> Enum.uniq() |> Enum.sort()
+
+    assert written != []
+    assert Enum.reject(written, &SchemaRegistry.error_code?/1) == []
+
+    # The rest reach the wire only through `RunbookTools.issue_error/1`, which
+    # lifts a domain issue code after checking it against this same taxonomy.
+    # Pinning the split makes a newly declared code that nothing can produce fail
+    # here instead of sitting in a frozen contract forever.
+    assert SchemaRegistry.error_codes() -- written == ~w(
+             ambiguous_output
+             ambiguous_pack_version
+             catalog_scope_too_large
+             denied_by_policy
+             fan_out_too_large
+             incompatible_action_contracts
+             invalid_binding
+             invalid_input
+             invalid_policy
+             pack_unavailable
+             unknown_target
+             unsupported_schema_version
+           )
   end
 
   test "publishes exactly the normative descriptors in contract order" do
@@ -202,6 +238,20 @@ defmodule EmisarWeb.MCP.SchemaRegistryTest do
     assert omission_rule["then"]["properties"]["next"] == %{
              "$ref" => "#/$defs/next_wait_run_immediate"
            }
+  end
+
+  test "the published pack action bound is the trusted manifest's own ceiling" do
+    # list_packs emits every action the trusted manifest holds, with no take or
+    # count guard on the path, so a lower bound here rejects a legitimate
+    # response for the widest pack we ship (cassandra declares 119 actions).
+    actions =
+      SchemaRegistry.contracts()
+      |> Enum.find(&(&1["name"] == "list_packs"))
+      |> get_in(["outputSchema", "oneOf"])
+      |> Enum.find(&(get_in(&1, ["properties", "ok"]) == %{"const" => true}))
+      |> get_in(["properties", "packs", "items", "properties", "actions"])
+
+    assert actions["maxItems"] == Catalog.TrustedManifest.max_actions()
   end
 
   test "published contracts retain self-contained input and response schemas" do
@@ -349,6 +399,30 @@ defmodule EmisarWeb.MCP.SchemaRegistryTest do
     assert_raise ArgumentError, ~r/has fields/, fn ->
       Compiler.compile!(path, ["only_tool"])
     end
+  end
+
+  defp written_error_codes(path) do
+    {_ast, codes} =
+      path
+      |> File.read!()
+      |> Code.string_to_quoted!()
+      |> Macro.prewalk(fn
+        {:|>, _meta, [left, right]} -> Macro.pipe(left, right, 0)
+        node -> node
+      end)
+      |> Macro.prewalk([], fn
+        {name, _meta, [code | _rest]} = node, codes
+        when name in [:error, :retryable_error] and is_binary(code) ->
+          {node, [code | codes]}
+
+        {:code, code} = node, codes when is_binary(code) ->
+          {node, [code | codes]}
+
+        node, codes ->
+          {node, codes}
+      end)
+
+    codes
   end
 
   defp assert_self_contained_schemas(tool) do

@@ -143,6 +143,31 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
     assert foreign["error"]["code"] == "invalid_cursor"
   end
 
+  test "a list_runbooks continuation survives a changed page size", %{
+    conn: conn,
+    account: account,
+    user: user
+  } do
+    for slug <- ~w(alpha beta gamma) do
+      Fixtures.Runbooks.create_runbook(
+        account_id: account.id,
+        created_by_id: user.id,
+        slug: slug
+      )
+    end
+
+    # `limit` bounds the next page; it is not part of the query the cursor binds,
+    # so widening it mid-read resumes instead of rejecting.
+    first = call(conn, "list_runbooks", %{"limit" => 1})
+    assert [%{"slug" => "alpha"}] = first["runbooks"]
+    assert is_binary(first["next_cursor"])
+
+    resumed = call(conn, "list_runbooks", %{"limit" => 5, "cursor" => first["next_cursor"]})
+
+    assert resumed["ok"]
+    assert Enum.map(resumed["runbooks"], & &1["slug"]) == ["beta", "gamma"]
+  end
+
   test "wait_for_run rejects a constructed runbook output cursor", %{conn: conn} do
     rejected =
       call(conn, "wait_for_run", %{
@@ -1587,6 +1612,31 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
       })
 
     assert mismatch["error"]["code"] == "invalid_cursor"
+  end
+
+  test "a recent_runs continuation survives a changed page size", %{
+    conn: conn,
+    account: account,
+    subject: subject,
+    key: key
+  } do
+    runner = setup_runner!(account, subject, "page-size-history")
+
+    for index <- 1..3 do
+      create_mcp_history_run!(account, runner, key, index)
+    end
+
+    # Same rule as the catalog and runbook reads: page size is a per-call
+    # ceiling, never part of the query the cursor binds.
+    first = call(conn, "recent_runs", %{"limit" => 1})
+    assert length(first["runs"]) == 1
+    assert is_binary(first["next_cursor"])
+
+    resumed = call(conn, "recent_runs", %{"limit" => 5, "cursor" => first["next_cursor"]})
+
+    assert resumed["ok"]
+    assert length(resumed["runs"]) == 2
+    assert resumed["next_cursor"] == nil
   end
 
   test "execution summaries remain complete after runner scope is narrowed", %{

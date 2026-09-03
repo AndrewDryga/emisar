@@ -452,7 +452,7 @@ defmodule EmisarWeb.MCP.RecoveryTools do
   defp recent_cursor_filters(input) do
     input
     |> Map.from_struct()
-    |> Map.drop([:cursor])
+    |> Map.drop([:cursor, :limit])
     |> Map.update!(:scope, &Atom.to_string/1)
     |> Map.update!(:statuses, fn
       nil -> nil

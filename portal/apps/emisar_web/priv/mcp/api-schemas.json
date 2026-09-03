@@ -1108,7 +1108,7 @@
                     "pack_ref": {"$ref": "#/$defs/pack_ref"},
                     "availability": {"type": "string", "enum": ["executable", "unavailable"]},
                     "issues": {"type": "array", "maxItems": 8, "items": {"$ref": "#/$defs/issue"}},
-                    "actions": {"type": "array", "maxItems": 80, "items": {"$ref": "#/$defs/action_summary"}}
+                    "actions": {"type": "array", "maxItems": 120, "items": {"$ref": "#/$defs/action_summary"}}
                   }
                 }
               },

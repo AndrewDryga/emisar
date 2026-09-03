@@ -3,7 +3,10 @@ defmodule EmisarWeb.MCP.CatalogCursor do
   Issues short-lived opaque cursors for MCP catalog reads.
 
   A cursor is bound to its tool, normalized filters, and authorization scope so
-  callers cannot reuse it to cross either a query or visibility boundary.
+  callers cannot reuse it to cross either a query or visibility boundary. Page
+  size is deliberately not one of those filters: `limit` is a per-call ceiling
+  on the next page, not part of the query, so changing it while paging must
+  never invalidate a continuation.
   """
 
   @salt "mcp-catalog-cursor-v1"
