@@ -167,10 +167,11 @@ use `brand-*` for accent, primary action, links, and success/allowed/healthy.
 > `text-[10px]`/`text-xs`/`text-sm` label, scope, count, or timestamp an operator has
 > to read goes `zinc-400`. `zinc-600` (~2.3–2.7:1) **fails AA at every size** — never
 > on text; a decorative glyph/icon that must stay quiet uses `zinc-500`, not
-> `zinc-600`. The resting `text-zinc-600` rule is mechanically enforced
-> (`Emisar.Checks.NoLowContrastText`, which exempts `placeholder:`/`marker:`/`hover:`
-> variants); `zinc-500` stays a review rule — a static check can't judge its
-> size-dependence. When in doubt at a small size, go `zinc-400`.
+> `zinc-600`. The resting `text-zinc-600` rule is mechanically enforced by
+> `EmisarWeb.TemplateHygieneTest` (which exempts `placeholder:`/`marker:`/`hover:`
+> variants) — it is a source-text rule whose subject includes `.heex`, and Credo
+> cannot parse those; `zinc-500` stays a review rule — a static check can't judge
+> its size-dependence. When in doubt at a small size, go `zinc-400`.
 
 > **The eyebrow is ONE shape — don't re-tune it per page.** Every small uppercase
 > label (a meta-strip key, a section eyebrow like "REASON"/"ARGUMENTS", a stat tile

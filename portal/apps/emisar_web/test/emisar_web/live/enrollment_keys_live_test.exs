@@ -571,6 +571,21 @@ defmodule EmisarWeb.EnrollmentKeysLiveTest do
     assert html =~ "Enrollment keys"
   end
 
+  test "the dead/pre-connect render shows a loading placeholder, not an empty list",
+       %{conn: conn} do
+    {conn, user, account} = register_and_log_in(conn)
+    subject = Fixtures.Subjects.subject_for(user, account, role: :owner)
+    {:ok, _raw, _key} = Runners.create_enrollment_key(%{description: "live-key"}, subject)
+
+    # A plain GET is the disconnected render: the list read is deferred (IL-18),
+    # so the page must not claim the account has no keys — it has one.
+    html = conn |> get(~p"/app/#{account}/runners/keys") |> html_response(200)
+
+    assert html =~ "Loading"
+    refute html =~ "No enrollment keys yet."
+    refute html =~ "live-key"
+  end
+
   test "re-revoking an already-revoked key is idempotent (no timestamp change)", %{conn: conn} do
     {conn, user, account} = register_and_log_in(conn)
     subject = Fixtures.Subjects.subject_for(user, account)
@@ -585,5 +600,19 @@ defmodule EmisarWeb.EnrollmentKeysLiveTest do
     render_click(lv, "revoke", %{"id" => key.id})
 
     assert Emisar.Repo.reload!(key).revoked_at == revoked_at
+  end
+
+  test "a crafted event that drops its required key is a no-op, not a crash", %{conn: conn} do
+    {conn, _user, account} = register_and_log_in(conn)
+    {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runners/keys")
+
+    # The payload is the operator's own socket, so this is self-inflicted — but
+    # a FunctionClauseError kills the view and takes any unsaved page state
+    # with it, and leaves crash noise in production error tracking.
+    for event <- ~w(validate create revoke) do
+      assert render_click(lv, event, %{})
+    end
+
+    assert Process.alive?(lv.pid)
   end
 end

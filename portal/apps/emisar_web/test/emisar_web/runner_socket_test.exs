@@ -588,7 +588,7 @@ defmodule EmisarWeb.RunnerSocketTest do
     } do
       raw = runner_frame(%{"type" => "runner_state", "packs" => "not-an-object", "actions" => []})
 
-      assert {:push, frame, ^state} = RunnerSocket.handle_in({raw, text()}, state)
+      assert {:push, frame, next} = RunnerSocket.handle_in({raw, text()}, state)
 
       assert decode(frame) == %{
                "type" => "error",
@@ -596,6 +596,34 @@ defmodule EmisarWeb.RunnerSocketTest do
                "message" => "The portal could not process the runner state.",
                "protocol_version" => 1
              }
+
+      # The parse and the ingest attempt were paid for, so a rejected frame
+      # still spends the per-connection budget.
+      assert next.runner_state_frames == 1
+      assert Map.delete(next, :runner_state_frames) == Map.delete(state, :runner_state_frames)
+    end
+
+    test "a frame nested past the wire contract's 64 levels is refused as bad_envelope", %{
+      state: state
+    } do
+      deep = Enum.reduce(1..70, "leaf", fn _, inner -> %{"n" => inner} end)
+      raw = runner_frame(%{"type" => "heartbeat", "deep" => deep})
+
+      assert {:push, frame, ^state} = RunnerSocket.handle_in({raw, text()}, state)
+
+      assert decode(frame) == %{
+               "type" => "error",
+               "code" => "bad_envelope",
+               "message" => "The portal could not read this message.",
+               "protocol_version" => 1
+             }
+    end
+
+    test "a frame nested within the contract's 64 levels is handled normally", %{state: state} do
+      deep = Enum.reduce(1..40, "leaf", fn _, inner -> %{"n" => inner} end)
+      raw = runner_frame(%{"type" => "heartbeat", "action_load" => 1, "deep" => deep})
+
+      assert {:ok, _next} = RunnerSocket.handle_in({raw, text()}, state)
     end
 
     test "unknown type is logged-and-ignored, socket stays up", %{state: state} do
@@ -1065,6 +1093,37 @@ defmodule EmisarWeb.RunnerSocketTest do
       assert duplicate.status == :pending
       assert duplicate.queued_at == requeued.queued_at
     end
+
+    test "cap refusals are exempt from the error-frame budget that closes other errors", %{
+      state: state,
+      run: run
+    } do
+      cap =
+        runner_frame(%{
+          "type" => "error",
+          "code" => "concurrency_cap_reached",
+          "request_id" => run.request_id
+        })
+
+      # One past the budget an ordinary error code closes at: a saturated runner
+      # answering the wire contract's back-pressure must not be disconnected for
+      # behaving exactly as the contract requires.
+      final =
+        Enum.reduce(1..101, state, fn _, acc ->
+          assert {:ok, next} = RunnerSocket.handle_in({cap, text()}, acc)
+          next
+        end)
+
+      assert final.error_frames == 0
+
+      spent = %{final | error_frames: 100}
+      other = runner_frame(%{"type" => "error", "code" => "exec_failed"})
+
+      assert {:stop, :normal, {1008, _reason}, _state} =
+               RunnerSocket.handle_in({other, text()}, spent)
+
+      assert {:ok, _next} = RunnerSocket.handle_in({cap, text()}, spent)
+    end
   end
 
   describe "handle_in/2 — action_started" do
@@ -1414,6 +1473,25 @@ defmodule EmisarWeb.RunnerSocketTest do
       assert {:ok, _state} = RunnerSocket.handle_in({raw, text()}, state)
 
       assert Runners.online?(account.id, runner.id)
+    end
+
+    test "a flood of runner_state frames is cut off before it can drive catalog syncs forever",
+         %{state: state} do
+      raw = runner_frame(%{"type" => "runner_state", "packs" => %{}, "actions" => []})
+
+      # Each frame parses up to 2 MiB and runs a catalog-sync transaction, so an
+      # unbounded loop is a fleet-wide availability problem from one tenant's
+      # host. A reconnect gets a fresh budget, exactly like the error path.
+      final =
+        Enum.reduce(1..100, state, fn _, acc ->
+          assert {:ok, next} = RunnerSocket.handle_in({raw, text()}, acc)
+          next
+        end)
+
+      assert final.runner_state_frames == 100
+
+      assert {:stop, :normal, {1008, "Too many runner_state frames on one connection."}, _state} =
+               RunnerSocket.handle_in({raw, text()}, final)
     end
   end
 

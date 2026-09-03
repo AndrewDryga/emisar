@@ -70,8 +70,36 @@ defmodule EmisarWeb.AgentsLive do
      |> assign_form(ApiKeys.change_key(default_params()))}
   end
 
+  # IL-18: `handle_params` runs on the dead render too, and the list renders
+  # `<.loading_state />` there — so the paginated key read (list + count) plus
+  # the per-row fact projection were paid for and thrown away on the first
+  # paint, then paid for again on connect. Same shape as runs / runners / audit.
+  #
+  # The filter bar IS part of that first paint, so its owner options are still
+  # resolved: a deep-linked `?owner=…` has to name the member, not blank out.
   def handle_params(params, _uri, socket) do
-    {:noreply, load(socket, params)}
+    if connected?(socket) do
+      {:noreply, load(socket, params)}
+    else
+      {:noreply, prepare_disconnected(socket, params)}
+    end
+  end
+
+  defp prepare_disconnected(socket, params) do
+    socket
+    |> assign(:key_rows, [])
+    |> assign(:metadata, %Emisar.Repo.Paginator.Metadata{count: 0, limit: 0})
+    |> assign(:filter_params, params)
+    |> assign(:filters, with_owner_options(socket.assigns.current_subject))
+    |> assign(:active_count, 0)
+    |> assign(:idle_count, 0)
+    |> assign(:dormant_count, 0)
+    |> assign(:never_used_count, 0)
+    |> assign(:issued_count, 0)
+    # An unread list is not an empty account: the onboarding panel waits for
+    # the socket rather than flashing at an account full of agents.
+    |> assign(:show_connect_inline?, false)
+    |> assign(:load_error?, false)
   end
 
   def handle_event("filter", params, socket) do
@@ -127,6 +155,11 @@ defmodule EmisarWeb.AgentsLive do
      |> assign(:snippet_open?, false)}
   end
 
+  # A crafted event that drops a required key would otherwise match no clause
+  # and crash the socket, taking the page's unsaved state with it. Every
+  # mutating handler on this page ends in this no-op.
+  def handle_event("select_client", _params, socket), do: {:noreply, socket}
+
   def handle_event("reveal_snippet", _params, socket) do
     # Quick-mint is the ISSUE tier (operators and above) — gating it on
     # manage broke the flow for the very role the picker rendered for.
@@ -151,6 +184,8 @@ defmodule EmisarWeb.AgentsLive do
     {:noreply, assign_form(socket, changeset)}
   end
 
+  def handle_event("validate", _params, socket), do: {:noreply, socket}
+
   def handle_event("create", %{"api_key" => params}, socket) do
     Permissions.gated(
       socket,
@@ -158,6 +193,8 @@ defmodule EmisarWeb.AgentsLive do
       &do_create(&1, params)
     )
   end
+
+  def handle_event("create", _params, socket), do: {:noreply, socket}
 
   def handle_event("confirm_typed", params, socket),
     do: {:noreply, ConfirmDialog.put_typed(socket, params)}
@@ -193,6 +230,8 @@ defmodule EmisarWeb.AgentsLive do
   def handle_event("revoke", %{"id" => id}, socket),
     do: with_manageable_key(socket, id, &do_revoke/2)
 
+  def handle_event("revoke", _params, socket), do: {:noreply, socket}
+
   def handle_event("revoke_member_keys", %{"membership-id" => membership_id}, socket) do
     # IL-15: the domain call re-checks permission; a scope reduced in another
     # tab comes back {:error, :unauthorized} and lands in the flash below.
@@ -211,8 +250,12 @@ defmodule EmisarWeb.AgentsLive do
     end
   end
 
+  def handle_event("revoke_member_keys", _params, socket), do: {:noreply, socket}
+
   def handle_event("rotate", %{"id" => id}, socket),
     do: with_manageable_key(socket, id, &do_rotate/2)
+
+  def handle_event("rotate", _params, socket), do: {:noreply, socket}
 
   def handle_info(:tick, socket) do
     Process.send_after(self(), :tick, @refresh_ms)
@@ -1491,6 +1534,10 @@ defmodule EmisarWeb.AgentsLive do
                   </.empty_state>
                 <% LiveTable.has_active_filters?(@filter_params, @filters) -> %>
                   <span class="text-zinc-400">No agents match these filters.</span>
+                <% not connected?(@socket) -> %>
+                  <%!-- Dead/pre-connect render: the list hasn't been read, so
+                       don't claim the account has no agents. --%>
+                  <.loading_state />
                 <% true -> %>
                   <.empty_state icon="product.agent" title="No agents connected yet.">
                     Pick a client above. Cloud clients use OAuth; local clients get a key +

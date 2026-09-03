@@ -157,6 +157,11 @@ defmodule EmisarWeb.AuditLive do
     end
   end
 
+  # A crafted event that drops a required key would otherwise match no clause
+  # and crash the socket, taking the page's unsaved state with it. Every
+  # mutating handler on this page ends in this no-op.
+  def handle_event("preset", _params, socket), do: {:noreply, socket}
+
   def handle_event("toggle_problems", _params, socket) do
     params = socket.assigns.filter_params
 
@@ -184,6 +189,8 @@ defmodule EmisarWeb.AuditLive do
     {:noreply,
      LiveTable.apply_filter(socket, ~p"/app/#{socket.assigns.current_account}/audit", merged)}
   end
+
+  def handle_event("category", _params, socket), do: {:noreply, socket}
 
   # The download hands over exactly what the operator is looking at — the
   # active filter params ride the href; cursors don't (the download walks the

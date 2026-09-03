@@ -97,20 +97,20 @@ unset EMISAR_ENROLLMENT_KEY</.docs_code>
       <span class="text-sky-300">labels</span>:
         <span class="text-sky-300">app</span>: emisar-runner
     <span class="text-sky-300">spec</span>:
-      <span class="text-sky-300">hostPID</span>: <span class="text-amber-300">true</span>      <span class="text-zinc-600"># see every process on the node</span>
-      <span class="text-sky-300">hostNetwork</span>: <span class="text-amber-300">true</span>  <span class="text-zinc-600"># see the node's real interfaces and ports</span>
+      <span class="text-sky-300">hostPID</span>: <span class="text-amber-300">true</span>      <span class="text-zinc-400"># see every process on the node</span>
+      <span class="text-sky-300">hostNetwork</span>: <span class="text-amber-300">true</span>  <span class="text-zinc-400"># see the node's real interfaces and ports</span>
       <span class="text-sky-300">containers</span>:
         - <span class="text-sky-300">name</span>: runner
           <span class="text-sky-300">image</span>: ghcr.io/andrewdryga/emisar-runner@sha256:&lt;image-digest&gt;
           <span class="text-sky-300">securityContext</span>:
-            <span class="text-sky-300">runAsUser</span>: <span class="text-brand-300">0</span>  <span class="text-zinc-600"># journald + /host reads are root-only; see below</span>
+            <span class="text-sky-300">runAsUser</span>: <span class="text-brand-300">0</span>  <span class="text-zinc-400"># journald + /host reads are root-only; see below</span>
           <span class="text-sky-300">env</span>:
             - <span class="text-sky-300">name</span>: EMISAR_GROUP
-              <span class="text-sky-300">value</span>: <span class="text-brand-300">"k8s-nodes"</span>  <span class="text-zinc-600"># actions can target the whole group — one per fleet</span>
+              <span class="text-sky-300">value</span>: <span class="text-brand-300">"k8s-nodes"</span>  <span class="text-zinc-400"># actions can target the whole group — one per fleet</span>
             - <span class="text-sky-300">name</span>: EMISAR_RUNNER_ID
               <span class="text-sky-300">valueFrom</span>:
                 <span class="text-sky-300">fieldRef</span>:
-                  <span class="text-sky-300">fieldPath</span>: spec.nodeName  <span class="text-zinc-600"># the node, not the pod, is the identity</span>
+                  <span class="text-sky-300">fieldPath</span>: spec.nodeName  <span class="text-zinc-400"># the node, not the pod, is the identity</span>
             - <span class="text-sky-300">name</span>: EMISAR_ENROLLMENT_KEY
               <span class="text-sky-300">valueFrom</span>:
                 <span class="text-sky-300">secretKeyRef</span>:
@@ -121,13 +121,13 @@ unset EMISAR_ENROLLMENT_KEY</.docs_code>
               <span class="text-sky-300">mountPath</span>: /var/lib/emisar
             - <span class="text-sky-300">name</span>: audit-journal
               <span class="text-sky-300">mountPath</span>: /var/log/emisar
-            - <span class="text-sky-300">name</span>: host-root      <span class="text-zinc-600"># node filesystem, read-only, for file inspection</span>
+            - <span class="text-sky-300">name</span>: host-root      <span class="text-zinc-400"># node filesystem, read-only, for file inspection</span>
               <span class="text-sky-300">mountPath</span>: /host
               <span class="text-sky-300">readOnly</span>: <span class="text-amber-300">true</span>
-            - <span class="text-sky-300">name</span>: journal        <span class="text-zinc-600"># journald logs on systemd nodes</span>
+            - <span class="text-sky-300">name</span>: journal        <span class="text-zinc-400"># journald logs on systemd nodes</span>
               <span class="text-sky-300">mountPath</span>: /var/log/journal
               <span class="text-sky-300">readOnly</span>: <span class="text-amber-300">true</span>
-            - <span class="text-sky-300">name</span>: systemd-run    <span class="text-zinc-600"># systemd state, for unit status reads</span>
+            - <span class="text-sky-300">name</span>: systemd-run    <span class="text-zinc-400"># systemd state, for unit status reads</span>
               <span class="text-sky-300">mountPath</span>: /run/systemd
               <span class="text-sky-300">readOnly</span>: <span class="text-amber-300">true</span>
       <span class="text-sky-300">volumes</span>:

@@ -1133,6 +1133,8 @@ defmodule Emisar.Runners do
   # Keep only well-shaped entries, bound their sizes, and cap the list — the
   # payload is runner-controlled display text.
   @max_degraded_packs 32
+  @max_degraded_pack_bytes 80
+  @max_degraded_reason_bytes 500
   defp normalize_degraded_packs(entries) when is_list(entries) do
     entries
     |> Enum.filter(&valid_degraded_pack?/1)
@@ -1143,9 +1145,15 @@ defmodule Emisar.Runners do
       # `list_runners` issue line the model reads plus the console's degraded
       # panel. Strip like `RunnerError`: a degraded report is a best-effort
       # diagnostic, so it must still arrive rather than fail the whole frame.
+      #
+      # Bounded in BYTES, the unit the wire contract publishes and the runner
+      # enforces (`internal/cloud/state.go`, `maxDegradedReasonBytes = 500`).
+      # `String.slice/3` counts graphemes, so 500 CJK characters were ~1,500
+      # bytes each, 32 of them, in the model-visible `list_runners` issue line.
+      # `String.byte_slice/3` cuts on a rune boundary like the peer does.
       %{
-        "pack" => pack |> SafeText.strip() |> String.slice(0, 80),
-        "reason" => reason |> SafeText.strip() |> String.slice(0, 500)
+        "pack" => pack |> SafeText.strip() |> String.byte_slice(0, @max_degraded_pack_bytes),
+        "reason" => reason |> SafeText.strip() |> String.byte_slice(0, @max_degraded_reason_bytes)
       }
     end)
   end

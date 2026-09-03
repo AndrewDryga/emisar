@@ -1613,6 +1613,35 @@ defmodule EmisarWeb.AgentsLiveTest do
     end
   end
 
+  test "the dead/pre-connect render shows a loading placeholder, not the onboarding pitch",
+       %{conn: conn} do
+    {conn, user, account} = register_and_log_in(conn)
+    subject = Fixtures.Subjects.subject_for(user, account, role: :owner)
+    {:ok, _raw, _key} = ApiKeys.create_key(%{name: "already-here", kind: :mcp}, subject)
+
+    # A plain GET is the disconnected render: the key list is deferred (IL-18),
+    # so the page must not pitch onboarding at an account that already has one.
+    html = conn |> get(~p"/app/#{account}/agents") |> html_response(200)
+
+    assert html =~ "Loading"
+    refute html =~ "No agents connected yet."
+    refute html =~ "already-here"
+  end
+
+  test "a crafted event that drops its required key is a no-op, not a crash", %{conn: conn} do
+    {conn, _user, account} = register_and_log_in(conn)
+    {:ok, lv, _html} = live(conn, ~p"/app/#{account}/agents")
+
+    # The payload is the operator's own socket, so this is self-inflicted — but
+    # a FunctionClauseError kills the view and takes any unsaved page state
+    # with it, and leaves crash noise in production error tracking.
+    for event <- ~w(select_client validate create revoke revoke_member_keys rotate) do
+      assert render_click(lv, event, %{})
+    end
+
+    assert Process.alive?(lv.pid)
+  end
+
   defp text_position(html, text) do
     {position, _length} = :binary.match(html, text)
     position

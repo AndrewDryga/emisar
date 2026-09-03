@@ -1654,6 +1654,43 @@ defmodule Emisar.RunnersTest do
       assert Runners.delete_inactive_runners(account.id, 720) == {:ok, 1}
       assert DateTime.after?(Repo.reload!(subscription).runner_quantity_sync_requested_at, old)
     end
+
+    test "sweeps only the named account's runners", %{account: account} do
+      # The recurrent retention job runs per account with NO subject, so
+      # `by_account_id/2` is the only thing standing between one account's
+      # schedule and every other tenant's disconnected hosts.
+      other_account = Fixtures.Accounts.create_account()
+      mine = offline_runner(account, 960)
+      theirs = offline_runner(other_account, 960)
+
+      assert Runners.delete_inactive_runners(account.id, 720) === {:ok, 1}
+
+      refute Repo.reload(mine).deleted_at == nil
+      assert Repo.reload(theirs).deleted_at == nil
+    end
+
+    test "a subject sweeps only the runners its access reaches", %{account: account} do
+      user = Fixtures.Users.create_user()
+
+      membership =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          user_id: user.id,
+          role: "admin"
+        )
+
+      in_reach = offline_runner(account, 960, group: "db")
+      out_of_reach = offline_runner(account, 960, group: "web")
+
+      {:ok, restricted} = RunnerAccess.restricted(["db"], [])
+      Fixtures.Memberships.force_runner_access(membership, restricted)
+      subject = Fixtures.Subjects.membership_subject(membership)
+
+      assert Runners.delete_inactive_runners(account.id, 720, subject) === {:ok, 1}
+
+      refute Repo.reload(in_reach).deleted_at == nil
+      assert Repo.reload(out_of_reach).deleted_at == nil
+    end
   end
 
   describe "list_pack_referencing_runners_for_account/2" do
@@ -1815,6 +1852,25 @@ defmodule Emisar.RunnersTest do
         })
 
       assert [%{"pack" => "cloud-init", "reason" => "parse failed"}] = updated.degraded_packs
+    end
+
+    test "bounds a multibyte degraded reason in BYTES, the unit the wire contract publishes",
+         %{account: account} do
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
+
+      # 500 CJK characters are 500 graphemes and 1,500 bytes. The runner cuts at
+      # 500 bytes and the spec says bytes, so the portal must too — otherwise 32
+      # of these carry ~48 KiB into the model-visible `list_runners` issue line.
+      {:ok, updated} =
+        Runners.apply_state(runner, %{
+          "degraded_packs" => [
+            %{"pack" => "cloud-init", "reason" => String.duplicate("\u3042", 500)}
+          ]
+        })
+
+      assert [%{"reason" => reason}] = updated.degraded_packs
+      assert byte_size(reason) == 498
+      assert String.valid?(reason)
     end
 
     test "caps advertised degraded packs at 32 entries", %{account: account} do

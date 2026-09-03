@@ -893,6 +893,20 @@ defmodule EmisarWeb.RunnersLiveTest do
     end
   end
 
+  test "a crafted event that drops its required key is a no-op, not a crash", %{conn: conn} do
+    {conn, _user, account} = register_and_log_in(conn)
+    {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runners")
+
+    # The payload is the operator's own socket, so this is self-inflicted — but
+    # a FunctionClauseError kills the view and takes any unsaved page state
+    # with it, and leaves crash noise in production error tracking.
+    for event <- ~w(set_runner_retention) do
+      assert render_click(lv, event, %{})
+    end
+
+    assert Process.alive?(lv.pid)
+  end
+
   defp text_position(html, text) do
     {position, _length} = :binary.match(html, text)
     position

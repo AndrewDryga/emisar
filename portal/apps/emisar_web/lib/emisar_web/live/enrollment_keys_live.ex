@@ -18,7 +18,6 @@ defmodule EmisarWeb.EnrollmentKeysLive do
        socket
        |> assign(:page_title, "Enrollment keys")
        |> assign(:new_secret, nil)
-       |> assign(:new_key, nil)
        |> assign(:install_command, nil)
        |> assign(:base_url, URLHelpers.derive_base_url(socket))
        # IL-18: only hit the billing read on the connected mount; the
@@ -47,8 +46,19 @@ defmodule EmisarWeb.EnrollmentKeysLive do
     end
   end
 
-  def handle_params(params, _uri, socket),
-    do: {:noreply, socket |> assign(:page_title, "Enrollment keys") |> load(params)}
+  # IL-18: `handle_params` runs on the dead render too, and the list's empty
+  # branch shows `<.loading_state />` there — so the key list plus the two
+  # access reads in `load/2` were paid for and thrown away on the first paint,
+  # then paid for again on connect. Same shape as runs / runners / audit.
+  def handle_params(params, _uri, socket) do
+    socket = assign(socket, :page_title, "Enrollment keys")
+
+    if connected?(socket) do
+      {:noreply, load(socket, params)}
+    else
+      {:noreply, prepare_disconnected(socket, params)}
+    end
+  end
 
   def handle_info({:list_changed, :enrollment_key, _event_type, _id}, socket),
     do: {:noreply, load(socket, socket.assigns[:filter_params] || %{})}
@@ -77,6 +87,11 @@ defmodule EmisarWeb.EnrollmentKeysLive do
     {:noreply, assign_form(socket, changeset)}
   end
 
+  # A crafted event that drops a required key would otherwise match no clause
+  # and crash the socket, taking the page's unsaved state with it. Every
+  # mutating handler on this page ends in this no-op.
+  def handle_event("validate", _params, socket), do: {:noreply, socket}
+
   def handle_event("create", %{"enrollment_key" => params}, socket) do
     Permissions.gated(
       socket,
@@ -85,11 +100,12 @@ defmodule EmisarWeb.EnrollmentKeysLive do
     )
   end
 
+  def handle_event("create", _params, socket), do: {:noreply, socket}
+
   def handle_event("dismiss_secret", _params, socket) do
     {:noreply,
      socket
      |> assign(:new_secret, nil)
-     |> assign(:new_key, nil)
      |> assign(:install_command, nil)}
   end
 
@@ -100,6 +116,8 @@ defmodule EmisarWeb.EnrollmentKeysLive do
       &do_revoke(&1, id)
     )
   end
+
+  def handle_event("revoke", _params, socket), do: {:noreply, socket}
 
   def handle_event("filter", params, socket) do
     {:noreply,
@@ -113,7 +131,7 @@ defmodule EmisarWeb.EnrollmentKeysLive do
 
   defp do_create(socket, params) do
     case Runners.create_enrollment_key(params, socket.assigns.current_subject) do
-      {:ok, raw, key} ->
+      {:ok, raw, _key} ->
         install_command =
           case Runners.enrollment_install_command(raw, socket.assigns.base_url) do
             {:ok, command} -> command
@@ -126,7 +144,6 @@ defmodule EmisarWeb.EnrollmentKeysLive do
         {:noreply,
          socket
          |> assign(:new_secret, raw)
-         |> assign(:new_key, key)
          |> assign(:install_command, install_command)
          |> assign_form(Runners.change_enrollment_key())}
 
@@ -154,6 +171,17 @@ defmodule EmisarWeb.EnrollmentKeysLive do
   # already on the URL — so a create or revoke doesn't bounce the
   # operator back to page 1 or wipe their filter.
   defp reload(socket), do: load(socket, socket.assigns[:filter_params] || %{})
+
+  defp prepare_disconnected(socket, params) do
+    socket
+    |> assign(:enrollment_keys, [])
+    |> assign(:metadata, %Emisar.Repo.Paginator.Metadata{count: 0, limit: 0})
+    |> assign(:can_create_keys?, false)
+    |> assign(:can_revoke_keys?, false)
+    |> assign(:filter_params, params)
+    |> assign(:filters, Runners.enrollment_key_filters())
+    |> assign(:load_error?, false)
+  end
 
   defp load(socket, params) do
     # Revoked keys hide by default via the status filter's `%Filter{default:}` —
@@ -534,22 +562,31 @@ defmodule EmisarWeb.EnrollmentKeysLive do
             </.list_row>
           </:item>
           <:empty>
+            <%!-- Dead/pre-connect render: the list hasn't been read yet, so don't
+                 claim the account has no keys. --%>
+            <.loading_state :if={not connected?(@socket)} />
             <.empty_state
-              :if={@load_error?}
+              :if={connected?(@socket) and @load_error?}
               icon="state.warning"
               title="Could not load enrollment keys."
             >
               Your permissions may have changed. Reload, or ask an owner to check your role.
             </.empty_state>
             <.empty_state
-              :if={not @load_error? and LiveTable.has_active_filters?(@filter_params, @filters)}
+              :if={
+                connected?(@socket) and not @load_error? and
+                  LiveTable.has_active_filters?(@filter_params, @filters)
+              }
               icon="action.filter"
               title="No enrollment keys match this filter."
             >
               Clear the filter to see the rest.
             </.empty_state>
             <.empty_state
-              :if={not @load_error? and not LiveTable.has_active_filters?(@filter_params, @filters)}
+              :if={
+                connected?(@socket) and not @load_error? and
+                  not LiveTable.has_active_filters?(@filter_params, @filters)
+              }
               icon="identity.credential"
               title="No enrollment keys yet."
             >

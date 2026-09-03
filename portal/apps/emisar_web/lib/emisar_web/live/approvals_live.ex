@@ -100,6 +100,8 @@ defmodule EmisarWeb.ApprovalsLive do
     )
   end
 
+  def handle_event("revoke_grant", _params, socket), do: {:noreply, socket}
+
   def handle_event("revoke_all_grants", _params, socket) do
     Permissions.gated(
       socket,

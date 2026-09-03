@@ -244,7 +244,7 @@ defmodule EmisarWeb.AuditExportController do
   # -- API-key bearer auth ----------------------------------------------
 
   defp authenticate(conn, _opts) do
-    with ["Bearer " <> raw] <- get_req_header(conn, "authorization"),
+    with {:ok, raw} <- BearerAuth.credential(get_req_header(conn, "authorization")),
          {:ok, key, account} <- BearerAuth.resolve_static_key(raw) do
       BearerAuth.assign_api_key(conn, key, account)
     else

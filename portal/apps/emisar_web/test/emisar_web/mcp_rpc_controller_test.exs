@@ -64,6 +64,16 @@ defmodule EmisarWeb.MCPRpcControllerTest do
       assert revoked["error"]["code"] == -32_001
     end
 
+    test "the auth scheme is case-insensitive, as RFC 9110 requires", %{conn: conn, raw: raw} do
+      response =
+        conn
+        |> put_req_header("authorization", "bearer " <> raw)
+        |> rpc("ping")
+        |> json_response(200)
+
+      assert response["error"] == nil
+    end
+
     test "a disabled account's static key is unauthorized without usage side effects", %{
       account: account,
       key: key,

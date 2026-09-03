@@ -23,11 +23,20 @@ defmodule EmisarWeb.RunnerSocket do
 
   @behaviour WebSock
 
-  alias Emisar.{Accounts, Catalog, Crypto, RequestContext, Runners, Runs}
+  alias Emisar.{Accounts, Catalog, Crypto, JSONValue, RequestContext, Runners, Runs}
   require Logger
 
   @protocol_version 1
   @heartbeat_timeout_ms 90_000
+
+  # The wire contract bounds JSON nesting at 64 and the runner enforces exactly
+  # that on the frames IT receives (`runner/internal/cloud/protocol.go`,
+  # `jsonvalue.Limits{MaxDepth: 64}`); this is the portal half, which decoded
+  # a runner's frame with no structural bound at all. Nodes need no bound of
+  # their own — the upgrade pins `max_frame_size` at 2 MiB and the cheapest
+  # node costs two bytes, so the peer sets none either.
+  @max_frame_depth 64
+  @max_frame_nodes 1_048_576
   @known_runner_message_types ~w(runner_state action_started action_progress action_result heartbeat error)
   @required_request_id_message_types ~w(action_started action_progress action_result)
 
@@ -85,6 +94,7 @@ defmodule EmisarWeb.RunnerSocket do
       seen_request_set: MapSet.new(),
       seen_request_count: 0,
       error_frames: 0,
+      runner_state_frames: 0,
       heartbeat_ref: schedule_heartbeat_timeout()
     }
   end
@@ -100,13 +110,22 @@ defmodule EmisarWeb.RunnerSocket do
   # budget so an honest flapping host still reports.
   @max_error_frames_per_connection 100
 
+  # Every `runner_state` frame parses up to 2 MiB and runs a multi-row catalog
+  # upsert transaction against the shared database, then resumes the runner's
+  # runs — the most expensive thing a runner can ask for, and until now the only
+  # hostile-input path on this socket with no bound at all. An honest runner
+  # sends one per connect plus one per pack reload or availability flip, so the
+  # same budget the error frames get is two orders of magnitude of headroom, and
+  # a reconnect refreshes it exactly as it does there.
+  @max_runner_state_frames_per_connection 100
+
   @impl true
   def handle_in(_frame, %{rejected?: true} = state), do: {:stop, :normal, state}
   def handle_in(_frame, %{pending_account_disabled?: true} = state), do: {:stop, :normal, state}
 
   def handle_in({raw, [opcode: :text]}, state) do
     if connection_owner?(state) do
-      case Jason.decode(raw) do
+      case decode_frame(raw) do
         {:ok, %{"type" => type} = msg} ->
           handle_versioned_envelope(type, msg, state)
 
@@ -120,6 +139,13 @@ defmodule EmisarWeb.RunnerSocket do
 
   def handle_in({_payload, [opcode: opcode]}, state) when opcode in [:binary, :ping, :pong] do
     {:ok, state}
+  end
+
+  defp decode_frame(raw) do
+    with {:ok, msg} <- Jason.decode(raw),
+         :ok <- JSONValue.validate(msg, max_depth: @max_frame_depth, max_nodes: @max_frame_nodes) do
+      {:ok, msg}
+    end
   end
 
   defp handle_versioned_envelope(type, msg, state)
@@ -289,7 +315,15 @@ defmodule EmisarWeb.RunnerSocket do
 
   # -- Envelope dispatch ----------------------------------------------
 
+  defp handle_envelope("runner_state", _msg, %{runner_state_frames: seen} = state)
+       when seen >= @max_runner_state_frames_per_connection do
+    Logger.warning("runner #{state.runner_id} exceeded the per-connection runner_state budget")
+    {:stop, :normal, {1008, "Too many runner_state frames on one connection."}, state}
+  end
+
   defp handle_envelope("runner_state", msg, state) do
+    state = %{state | runner_state_frames: state.runner_state_frames + 1}
+
     case Catalog.observe_state_from_connection(
            state.runner_id,
            msg,
@@ -431,15 +465,29 @@ defmodule EmisarWeb.RunnerSocket do
     end
   end
 
+  # `concurrency_cap_reached` is not an error report — it is the wire contract's
+  # back-pressure answer to a dispatch WE sent, and the portal requeues the run
+  # on it. A saturated runner answering exactly as the contract requires must
+  # never look like an error flood, so it is exempt from the budget below (the
+  # rate is bounded by our own dispatch rate, not by the runner).
+  defp handle_envelope("error", %{"code" => "concurrency_cap_reached"} = msg, state),
+    do: record_runner_error(msg, state)
+
   defp handle_envelope("error", _msg, %{error_frames: seen} = state)
        when seen >= @max_error_frames_per_connection do
     Logger.warning("runner #{state.runner_id} exceeded the per-connection error-frame budget")
     {:stop, :normal, {1008, "Too many error frames on one connection."}, state}
   end
 
-  defp handle_envelope("error", msg, state) do
-    state = %{state | error_frames: state.error_frames + 1}
+  defp handle_envelope("error", msg, state),
+    do: record_runner_error(msg, %{state | error_frames: state.error_frames + 1})
 
+  defp handle_envelope(type, _msg, state) do
+    Logger.debug("runner_socket unknown envelope type #{type}")
+    {:ok, state}
+  end
+
+  defp record_runner_error(msg, state) do
     runner_error =
       Runs.build_runner_error(
         state.account_id,
@@ -457,11 +505,6 @@ defmodule EmisarWeb.RunnerSocket do
         Logger.error("handle_runner_error failed for #{state.runner_id}: #{failure}")
         {:stop, {:runner_error_persist_failed, failure}, state}
     end
-  end
-
-  defp handle_envelope(type, _msg, state) do
-    Logger.debug("runner_socket unknown envelope type #{type}")
-    {:ok, state}
   end
 
   defp runner_error_failure(%Ecto.Changeset{}), do: :invalid_audit_event

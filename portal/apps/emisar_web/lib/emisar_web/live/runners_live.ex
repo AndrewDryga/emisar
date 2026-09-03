@@ -89,6 +89,11 @@ defmodule EmisarWeb.RunnersLive do
     end
   end
 
+  # A crafted event that drops a required key would otherwise match no clause
+  # and crash the socket, taking the page's unsaved state with it. Every
+  # mutating handler on this page ends in this no-op.
+  def handle_event("set_runner_retention", _params, socket), do: {:noreply, socket}
+
   def handle_event("cleanup_inactive_now", _params, socket) do
     case Runners.sweep_inactive_runners(socket.assigns.current_subject) do
       {:ok, 0} ->

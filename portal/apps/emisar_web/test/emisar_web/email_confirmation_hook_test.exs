@@ -48,6 +48,26 @@ defmodule EmisarWeb.EmailConfirmationHookTest do
     assert_email_sent(subject: "Confirm your emisar email", to: {"", user.email})
   end
 
+  test "a resend loop is capped, so the button can't bomb an inbox or the sending domain", %{
+    conn: conn
+  } do
+    # Each push deletes the prior confirm token, mints a new one, and sends —
+    # so an unconfirmed member holding the button down is real provider spend
+    # and a deliverability hit on the domain every other email shares.
+    Emisar.Config.put_override(:emisar, :rate_limit_enabled, true)
+    {conn, user, account} = unconfirmed_member(conn)
+
+    {:ok, lv, _html} = live(conn, ~p"/app/#{account}")
+
+    for _ <- 1..5 do
+      assert render_click(lv, "resend_confirmation", %{}) =~ "Confirmation email sent"
+      assert_email_sent(to: {"", user.email})
+    end
+
+    assert render_click(lv, "resend_confirmation", %{}) =~ "Too many confirmation emails"
+    assert_no_email_sent()
+  end
+
   test "resending while already confirmed sends nothing and says so", %{conn: conn} do
     # once confirmed, the same handler is a
     # no-op on the mail side: it flashes "already confirmed" and delivers no email

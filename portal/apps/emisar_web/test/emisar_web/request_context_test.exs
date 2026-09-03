@@ -43,6 +43,18 @@ defmodule EmisarWeb.RequestContextTest do
       assert context.ip_address == "198.51.100.4"
     end
 
+    test "joins repeated forwarded header lines, so a caller's line cannot win" do
+      # `put_req_header/3` replaces, so the duplicate line is set directly.
+      req_headers = [
+        {"x-forwarded-for", "forged, 198.51.100.7, 192.0.2.1"},
+        {"x-forwarded-for", "203.0.113.9, 8.233.97.247"}
+      ]
+
+      context = Builder.from_conn(%{conn() | req_headers: req_headers})
+
+      assert context.ip_address == "203.0.113.9"
+    end
+
     test "strips the ::ffff: IPv4-mapped wrapper an IPv6 listener surfaces" do
       context =
         conn()
@@ -58,5 +70,31 @@ defmodule EmisarWeb.RequestContextTest do
       context = Builder.from_conn(%{conn() | remote_ip: nil})
       assert context == %RequestContext{}
     end
+  end
+
+  describe "from_socket/1" do
+    test "joins repeated forwarded header lines like the HTTP path" do
+      req_headers = [
+        {"x-forwarded-for", "forged, 198.51.100.7, 192.0.2.1"},
+        {"x-forwarded-for", "203.0.113.9, 8.233.97.247"}
+      ]
+
+      context = Builder.from_socket(socket_with_headers(req_headers))
+
+      assert context.ip_address == "203.0.113.9"
+    end
+
+    test "falls back to the socket peer when no forwarded header is present" do
+      context = Builder.from_socket(socket_with_headers([]))
+
+      assert context.ip_address == "127.0.0.1"
+    end
+  end
+
+  # LiveView's mount-time `connect_info` may be the request `%Plug.Conn{}`
+  # itself, and it derives `:x_headers` from that conn's headers in order —
+  # duplicates included.
+  defp socket_with_headers(req_headers) do
+    %Phoenix.LiveView.Socket{private: %{connect_info: %{conn() | req_headers: req_headers}}}
   end
 end

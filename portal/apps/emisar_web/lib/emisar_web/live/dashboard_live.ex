@@ -132,6 +132,18 @@ defmodule EmisarWeb.DashboardLive do
   defp refresh_domain(:approvals, socket), do: refresh_approvals(socket)
 
   defp refresh_runners(socket) do
+    if socket.assigns[:recent_runs] in [nil, []] do
+      refresh_setup_fleet(socket)
+    else
+      refresh_fleet_counts(socket)
+    end
+  end
+
+  # First run only. The checklist's "ask your agent to run an action" step needs
+  # the ONLINE runners' advertised actions, so this path reads the scoped fleet
+  # — one read serving both the pillar's counts and the ids the catalog lookup
+  # needs.
+  defp refresh_setup_fleet(socket) do
     subject = socket.assigns.current_subject
     runners_read = Runners.list_all_runners_for_account(subject, preload: [:online?])
     runners = list_or_empty(runners_read)
@@ -152,12 +164,35 @@ defmodule EmisarWeb.DashboardLive do
       end
 
     socket
-    |> assign(:runners_total, length(runners))
-    |> assign(:runners_connected, length(online_runner_ids))
-    |> assign(:runners_error?, not read_ok?(runners_read))
+    |> assign_fleet_counts(Runners.fleet_status(runners).counts, read_ok?(runners_read))
     |> assign(:actions_advertised?, actions_advertised?)
     |> put_setup_read(:runners, runners_read)
     |> put_setup_read(:actions, actions_read)
+  end
+
+  # Past the first run the checklist can never render (`show_setup?` requires an
+  # empty `recent_runs`), so neither of its inputs is read: the pillar's two
+  # integers are counted in the DATABASE, the way the runners index asks, rather
+  # than materializing the whole scoped fleet and then reading one catalog row
+  # per (online runner x advertised action) to answer a boolean nobody displays
+  # — on every dashboard load and every debounced topology burst, per socket.
+  defp refresh_fleet_counts(socket) do
+    fleet_read = Runners.fetch_fleet_status(socket.assigns.current_subject)
+    counts = fleet_counts_or_zero(fleet_read)
+
+    socket
+    |> assign_fleet_counts(counts, read_ok?(fleet_read))
+    |> put_setup_read(:runners, fleet_read)
+  end
+
+  defp fleet_counts_or_zero({:ok, fleet}), do: fleet.counts
+  defp fleet_counts_or_zero(_error), do: %{total: 0, online: 0}
+
+  defp assign_fleet_counts(socket, counts, read_ok?) do
+    socket
+    |> assign(:runners_total, counts.total)
+    |> assign(:runners_connected, counts.online)
+    |> assign(:runners_error?, not read_ok?)
   end
 
   defp refresh_runs(socket) do

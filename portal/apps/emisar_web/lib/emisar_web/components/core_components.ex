@@ -115,11 +115,10 @@ defmodule EmisarWeb.CoreComponents do
       <.flash_group flash={@flash} />
   """
   attr :flash, :map, required: true, doc: "the map of flash messages"
-  attr :id, :string, default: "flash-group", doc: "the optional id of flash container"
 
   def flash_group(assigns) do
     ~H"""
-    <div id={@id}>
+    <div id="flash-group">
       <.flash kind={:info} title={gettext("Done")} flash={@flash} />
       <.flash kind={:error} title={gettext("Something went wrong")} flash={@flash} />
       <.flash
@@ -165,7 +164,6 @@ defmodule EmisarWeb.CoreComponents do
       </.simple_form>
   """
   attr :for, :any, required: true, doc: "the data structure for the form"
-  attr :as, :any, default: nil, doc: "the server side parameter to collect all input under"
 
   attr :rest, :global,
     include: ~w(autocomplete name rel action enctype method novalidate target multipart),
@@ -176,7 +174,7 @@ defmodule EmisarWeb.CoreComponents do
 
   def simple_form(assigns) do
     ~H"""
-    <.form :let={f} for={@for} as={@as} {@rest}>
+    <.form :let={f} for={@for} {@rest}>
       <div class="space-y-5">
         {render_slot(@inner_block, f)}
         <%!-- Grouped, not justify-between: a primary + its quiet cancel stay
@@ -858,11 +856,6 @@ defmodule EmisarWeb.CoreComponents do
   attr :label_variant, :atom, default: :default, values: [:default, :eyebrow]
   attr :value, :any
 
-  attr :tone, :atom,
-    default: :neutral,
-    values: [:neutral, :rose],
-    doc: ~s(tints the focus ring rose for a destructive field — e.g. a deny reason)
-
   attr :type, :string,
     default: "text",
     values: ~w(checkbox color date datetime-local email file month number password
@@ -872,10 +865,8 @@ defmodule EmisarWeb.CoreComponents do
     doc: "a form field struct retrieved from the form, for example: @form[:email]"
 
   attr :errors, :list, default: []
-  attr :checked, :boolean, doc: "the checked flag for checkbox inputs"
   attr :prompt, :string, default: nil, doc: "the prompt for select inputs"
   attr :options, :list, doc: "the options to pass to Phoenix.HTML.Form.options_for_select/2"
-  attr :multiple, :boolean, default: false, doc: "the multiple flag for select inputs"
 
   attr :size, :atom,
     default: :default,
@@ -896,7 +887,7 @@ defmodule EmisarWeb.CoreComponents do
     assigns
     |> assign(field: nil, id: assigns.id || field.id)
     |> assign(:errors, Enum.map(errors, &translate_error(&1)))
-    |> assign_new(:name, fn -> if assigns.multiple, do: field.name <> "[]", else: field.name end)
+    |> assign_new(:name, fn -> field.name end)
     |> assign_new(:value, fn -> field.value end)
     |> input()
   end
@@ -946,10 +937,9 @@ defmodule EmisarWeb.CoreComponents do
           select_chevron_room(@size),
           "ring-1 ring-inset placeholder:text-zinc-600",
           "focus:ring-2 focus:ring-inset",
-          input_ring(@errors, @tone),
+          input_ring(@errors),
           @class
         ]}
-        multiple={@multiple}
         {@rest}
       >
         <option :if={@prompt} value="">{@prompt}</option>
@@ -972,7 +962,7 @@ defmodule EmisarWeb.CoreComponents do
           input_size(@size),
           "min-h-[6rem] ring-1 ring-inset placeholder:text-zinc-600",
           "focus:ring-2 focus:ring-inset",
-          input_ring(@errors, @tone),
+          input_ring(@errors),
           @class
         ]}
         {@rest}
@@ -997,7 +987,7 @@ defmodule EmisarWeb.CoreComponents do
           input_size(@size),
           "ring-1 ring-inset placeholder:text-zinc-600",
           "focus:ring-2 focus:ring-inset",
-          input_ring(@errors, @tone),
+          input_ring(@errors),
           @class
         ]}
         {@rest}
@@ -1007,13 +997,10 @@ defmodule EmisarWeb.CoreComponents do
     """
   end
 
-  # Resting + focus ring for an input/select/textarea. An actual validation
-  # error always wins with the rose ring; absent errors, `tone={:rose}` tints
-  # only the FOCUS ring rose (a destructive field, e.g. a deny reason) while
-  # neutral keeps the brand focus.
-  defp input_ring([], :rose), do: "ring-zinc-800 focus:ring-rose-500"
-  defp input_ring([], :neutral), do: "ring-zinc-800 focus:ring-brand-500"
-  defp input_ring(_errors, _tone), do: "ring-rose-500/50 focus:ring-rose-500"
+  # Resting + focus ring for an input/select/textarea: a validation error wins
+  # with the rose ring, otherwise the resting zinc ring with the brand focus.
+  defp input_ring([]), do: "ring-zinc-800 focus:ring-brand-500"
+  defp input_ring(_errors), do: "ring-rose-500/50 focus:ring-rose-500"
 
   # Box metrics for an input/select/textarea. `:compact` tightens the padding
   # and label gap for a dense grid (the runbook editor's arg rows); `:default`
@@ -1042,8 +1029,7 @@ defmodule EmisarWeb.CoreComponents do
   `type="select"`) can't express. Each option is a map
   `%{value:, label:, disabled:, selected:}`. For a plain single-value picker
   bound to a form field, reach for `<.input type="select">` instead; this is
-  for per-option control (a disabled "already taken" target, a tier floor) and
-  multi-selects with computed per-option selection.
+  for per-option control — a disabled "already taken" target, a tier floor.
 
   An entry carrying its own `:options` renders as an `<optgroup>` labelled by its
   `:label` — the grouped catalogs a filter bar offers.
@@ -1052,18 +1038,15 @@ defmodule EmisarWeb.CoreComponents do
   metrics, `:filter` is the filter-bar control (dark ground, hairline border,
   compact text) that `searchable_select/1`'s trigger also wears — so a bar mixing
   the two pickers reads as one family, with `active?` carrying the brand tint that
-  says this filter is narrowing the list. The optional rose ring renders when
-  `errors` is non-empty. Labels and values render escaped through HEEx (IL-16) —
-  option text includes account data.
+  says this filter is narrowing the list. Labels and values render escaped
+  through HEEx (IL-16) — option text includes account data.
   """
-  attr :id, :any, default: nil
+  attr :id, :any, default: nil, doc: "defaults to the field name where a label renders"
   attr :name, :any, required: true
   attr :label, :string, default: nil
   attr :label_variant, :atom, default: :default, values: [:default, :eyebrow]
   attr :prompt, :string, default: nil, doc: "a leading empty-value option"
   attr :prompt_selected, :boolean, default: false, doc: "marks the prompt option selected"
-  attr :multiple, :boolean, default: false
-  attr :errors, :list, default: []
   attr :size, :atom, default: :default, values: [:default, :compact, :filter]
   attr :class, :string, default: nil
 
@@ -1080,6 +1063,8 @@ defmodule EmisarWeb.CoreComponents do
   attr :rest, :global, include: ~w(disabled form)
 
   def select(assigns) do
+    assigns = assign(assigns, :id, select_id(assigns))
+
     ~H"""
     <div>
       <.label :if={@label} for={@id} variant={@label_variant}>{@label}</.label>
@@ -1092,12 +1077,11 @@ defmodule EmisarWeb.CoreComponents do
             # callers) must sit flush, or it reads vertically misaligned beside
             # sibling controls in the same row.
             @label && select_label_gap(@size),
-            select_box_class(@size, @active?, @errors),
+            select_box_class(@size, @active?),
             select_chevron_room(@size),
             @class
           ]
         }
-        multiple={@multiple}
         {@rest}
       >
         <option :if={@prompt} value="" selected={@prompt_selected}>{@prompt}</option>
@@ -1108,10 +1092,21 @@ defmodule EmisarWeb.CoreComponents do
           <.select_option :if={is_nil(entry[:options])} option={entry} />
         <% end %>
       </select>
-      <.error :for={msg <- @errors}>{msg}</.error>
     </div>
     """
   end
+
+  # The id exists only to tie `<label for>` to the box, and no caller passed
+  # one — so the single labelled select shipped a combo box with no accessible
+  # name. Default it to the field name where a label actually renders; an
+  # UNLABELLED select repeats (four tier pickers per policy editor share one
+  # name), so stamping those with a derived id would duplicate it.
+  defp select_id(%{id: id}) when not is_nil(id), do: id
+
+  defp select_id(%{label: label, name: name}) when is_binary(label) and is_binary(name),
+    do: input_id(name)
+
+  defp select_id(_assigns), do: nil
 
   attr :option, :map, required: true
 
@@ -1128,13 +1123,13 @@ defmodule EmisarWeb.CoreComponents do
 
   # The form-field box, mirroring `input/1` so a `<.select>` and an `<.input>` in
   # one row are the same control.
-  defp select_box_class(size, _active?, errors) when size in [:default, :compact] do
+  defp select_box_class(size, _active?) when size in [:default, :compact] do
     [
       "block w-full rounded-lg border-0 bg-zinc-900 text-zinc-100",
       if(size == :compact, do: "px-2 py-1.5", else: "px-3 py-2.5"),
       "text-sm leading-5 ring-1 ring-inset",
       "focus:ring-2 focus:ring-inset",
-      input_ring(errors, :neutral)
+      input_ring([])
     ]
   end
 
@@ -1142,7 +1137,7 @@ defmodule EmisarWeb.CoreComponents do
   # border that turns brand while the filter is narrowing the list. A filter at
   # its default value is not an active filter, so it stays muted like the
   # searchable picker's blank face.
-  defp select_box_class(:filter, active?, _errors) do
+  defp select_box_class(:filter, active?) do
     [
       "w-full rounded-lg border bg-zinc-950 py-1.5 pl-2.5 text-xs disabled:cursor-not-allowed",
       if(active?,
@@ -1565,9 +1560,8 @@ defmodule EmisarWeb.CoreComponents do
   registry's accent parts stay brand/amber/rose so no icon depends on color
   alone.
 
-  Size decides the master and the stroke weight, and every call site already
-  states it in Tailwind's `h-*` scale, so that is where the component reads it.
-  Pass `size` (in pixels) only where no `h-*` class does.
+  Size decides the master and the stroke weight, and every call site states it
+  in Tailwind's `h-*` scale, so that is where the component reads it.
 
   ## Examples
 
@@ -1576,10 +1570,9 @@ defmodule EmisarWeb.CoreComponents do
   """
   attr :name, :string, required: true
   attr :class, :string, default: nil
-  attr :size, :integer, default: nil, doc: "pixel size, when no `h-*` class states one"
 
   def icon(assigns) do
-    size = assigns.size || icon_size_from_class(assigns.class)
+    size = icon_size_from_class(assigns.class)
     grid = Icons.grid(size)
     units = Icons.units(assigns.name, size)
 
@@ -3201,7 +3194,6 @@ defmodule EmisarWeb.CoreComponents do
 
   attr :class, :string, default: nil
   attr :rest, :global
-  slot :badge, doc: "header extras next to the label (e.g. a streaming pill)"
 
   def code_panel(assigns) do
     ~H"""
@@ -3230,7 +3222,6 @@ defmodule EmisarWeb.CoreComponents do
           <h3 class="font-display text-base font-semibold tracking-[-0.012em] text-zinc-100">
             {@label}
           </h3>
-          {render_slot(@badge)}
         </div>
         <div class="flex min-w-0 items-center gap-2">
           <span
@@ -3697,7 +3688,6 @@ defmodule EmisarWeb.CoreComponents do
     doc:
       "Drop the `:meta` slot's mobile clamp — for a meta line carrying a `<.tooltip>`, whose bubble the clamp's overflow would otherwise clip away on a phone."
 
-  slot :leading, doc: "a custom leading element (avatar, connection dot) — replaces the icon disc"
   slot :title, required: true
   slot :chips
   slot :meta
@@ -3712,9 +3702,8 @@ defmodule EmisarWeb.CoreComponents do
     ~H"""
     <li id={@id} class={[@padding, @class]}>
       <div class="flex flex-wrap items-start gap-4 sm:flex-nowrap">
-        <div :if={@leading != []} class="shrink-0">{render_slot(@leading)}</div>
         <span
-          :if={@leading == [] && @icon}
+          :if={@icon}
           class="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-zinc-900 text-zinc-400"
         >
           <.icon name={@icon} class="h-4 w-4" />
@@ -3832,7 +3821,6 @@ defmodule EmisarWeb.CoreComponents do
   attr :id, :string, required: true
   attr :items, :list, required: true
   attr :expanded?, :boolean, default: false
-  attr :limit, :integer, default: 3, doc: "chips shown before the +N toggle"
   attr :toggle, :string, required: true, doc: "phx-click event that flips expanded?"
   attr :toggle_value, :any, required: true, doc: "phx-value-id sent with the toggle"
 
@@ -3847,7 +3835,8 @@ defmodule EmisarWeb.CoreComponents do
     # Clip only when the toggle earns its slot: at exactly limit + 1 items a
     # "+1" control would occupy the very space the one hidden chip needs, so
     # the row just shows all of them.
-    hidden = length(assigns.items) - assigns.limit
+    limit = 3
+    hidden = length(assigns.items) - limit
     clip? = hidden > 1
 
     assigns =
@@ -3856,7 +3845,7 @@ defmodule EmisarWeb.CoreComponents do
       |> assign(
         :shown,
         if(clip? and not assigns.expanded?,
-          do: Enum.take(assigns.items, assigns.limit),
+          do: Enum.take(assigns.items, limit),
           else: assigns.items
         )
       )

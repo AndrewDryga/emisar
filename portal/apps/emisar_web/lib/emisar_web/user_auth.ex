@@ -8,7 +8,7 @@ defmodule EmisarWeb.UserAuth do
   use EmisarWeb, :verified_routes
   import Plug.Conn
   import Phoenix.Controller
-  alias Emisar.{Accounts, ApiKeys, Approvals, Auth, Catalog, Marketing, Runners, SSO}
+  alias Emisar.{Accounts, ApiKeys, Approvals, Auth, Catalog, Marketing, Runners, SSO, Throttle}
   alias Emisar.Auth.Subject
   alias EmisarWeb.{Analytics, BillingIntent, MarketingAttribution, ShellChrome}
   alias EmisarWeb.RequestContext
@@ -790,9 +790,7 @@ defmodule EmisarWeb.UserAuth do
     socket =
       case socket.assigns[:current_user] do
         %{confirmed_at: nil} = user ->
-          subject = socket.assigns.current_subject
-          :ok = Auth.deliver_confirmation_instructions(user, subject.account, subject.context)
-          Phoenix.LiveView.put_flash(socket, :info, "Confirmation email sent to #{user.email}.")
+          deliver_confirmation(socket, user)
 
         %{} ->
           Phoenix.LiveView.put_flash(socket, :info, "Your email is already confirmed.")
@@ -805,6 +803,27 @@ defmodule EmisarWeb.UserAuth do
   end
 
   defp resend_confirmation_email(_event, _params, socket), do: {:cont, socket}
+
+  # This was the one socket-reachable mail trigger with no budget: every push
+  # deletes the prior confirm token, mints a new one, and sends. A loop is real
+  # provider spend plus a bounce/complaint hit on the shared sending domain
+  # every OTHER email depends on. Same 5-per-15-minutes shape as the magic-link
+  # start, keyed on the recipient — a member can only resend to their own address.
+  defp deliver_confirmation(socket, user) do
+    case Throttle.check("confirmation_resend", user.id, 5, 900_000) do
+      :ok ->
+        subject = socket.assigns.current_subject
+        :ok = Auth.deliver_confirmation_instructions(user, subject.account, subject.context)
+        Phoenix.LiveView.put_flash(socket, :info, "Confirmation email sent to #{user.email}.")
+
+      {:error, :rate_limited} ->
+        Phoenix.LiveView.put_flash(
+          socket,
+          :error,
+          "Too many confirmation emails. Wait up to 15 minutes, then try again."
+        )
+    end
+  end
 
   defp approval_count_for(nil), do: 0
   defp approval_count_for(subject), do: Approvals.count_pending_approval_requests(subject)

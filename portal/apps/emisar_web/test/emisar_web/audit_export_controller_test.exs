@@ -97,6 +97,18 @@ defmodule EmisarWeb.AuditExportControllerTest do
       assert json_response(conn, 401)["error"] == "unauthorized"
     end
 
+    test "the auth scheme is case-insensitive, as RFC 9110 requires", %{
+      conn: conn,
+      raw_key: raw
+    } do
+      conn =
+        conn
+        |> put_req_header("authorization", "bearer #{raw}")
+        |> get(~p"/api/audit")
+
+      assert response(conn, 200)
+    end
+
     test "403 when an mcp key hits the audit stream (wrong kind)", %{
       conn: conn,
       account: account,

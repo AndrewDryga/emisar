@@ -59,18 +59,28 @@ defmodule EmisarWeb.MagicLinkLive do
       handoff = MagicLinkHandoff.sign(user.id, token_id)
       {:noreply, redirect(socket, to: ~p"/sign_in/magic/complete?#{[handoff: handoff]}")}
     else
+      # The cap is per IP, so one NAT egress trips it for a whole team at once.
+      # Told "that code didn't match", every one of them retypes a code that was
+      # never wrong and then spends the separate resend budget burning it.
+      {:error, :rate_limited} ->
+        {:noreply, reject_code(socket, "Too many attempts. Wait a few minutes and try again.")}
+
       _ ->
-        # Empty the boxes and refocus: a rejected code left in place meant fixing
-        # one character refilled all six, which auto-submits and spends another of
-        # the five attempts on a code the operator was still correcting.
         {:noreply,
-         socket
-         |> assign(
-           :code_error,
+         reject_code(
+           socket,
            "That code didn't match or has expired. Check it and try again, or resend below."
-         )
-         |> push_event("code:reset", %{id: socket.assigns.code_input_id})}
+         )}
     end
+  end
+
+  # Empty the boxes and refocus: a rejected code left in place meant fixing
+  # one character refilled all six, which auto-submits and spends another of
+  # the five attempts on a code the operator was still correcting.
+  defp reject_code(socket, message) do
+    socket
+    |> assign(:code_error, message)
+    |> push_event("code:reset", %{id: socket.assigns.code_input_id})
   end
 
   defp sent_to(session) do

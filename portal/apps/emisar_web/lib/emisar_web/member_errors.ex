@@ -8,10 +8,6 @@ defmodule EmisarWeb.MemberErrors do
   # is `for_role(role) ⊆ subject.permissions`, a permission-subset check, so
   # "a member whose role is equal to or above yours" described a rank comparison
   # the domain does not implement.
-  #
-  # message/1 raises on an unmapped atom, so a new domain error cannot reach an
-  # operator as a generic "that didn't apply" from one page and a real sentence
-  # from the other.
   @messages %{
     unauthorized: "Only owners and admins can manage members.",
     insufficient_privileges:

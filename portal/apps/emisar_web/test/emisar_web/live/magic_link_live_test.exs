@@ -156,7 +156,7 @@ defmodule EmisarWeb.MagicLinkLiveTest do
       refute inspect(exported) =~ nonce
     end
 
-    test "the socket IP cap rejects before touching even a correct factor", %{
+    test "the socket IP cap rejects before touching even a correct factor, and says so", %{
       conn: conn,
       token_id: token_id,
       secret: secret
@@ -169,7 +169,12 @@ defmodule EmisarWeb.MagicLinkLiveTest do
       end
 
       {:ok, live, _html} = live(conn, ~p"/sign_in/magic?sent=1")
-      assert render_hook(live, "verify_code", %{"code" => secret}) =~ "match or has expired"
+      html = render_hook(live, "verify_code", %{"code" => secret})
+
+      # The code was correct — telling the operator it wasn't sends them to
+      # Resend, which spends the separate send budget on a live code.
+      assert html =~ "Too many attempts"
+      refute html =~ "match or has expired"
 
       assert %UserToken{context: "magic_link", remaining_attempts: 5} =
                Repo.get!(UserToken, token_id)

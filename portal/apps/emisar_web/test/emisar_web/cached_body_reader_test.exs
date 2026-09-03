@@ -47,6 +47,40 @@ defmodule EmisarWeb.CachedBodyReaderTest do
     refute Map.has_key?(conn.assigns, :raw_body)
   end
 
+  test "refuses a device-grant body above 8 KiB" do
+    body = String.duplicate("x", 8 * 1024 + 1)
+    conn = build_conn(:post, "/api/mcp/device_token", body)
+
+    assert {:more, _partial, conn} = CachedBodyReader.read_body(conn, [])
+    refute Map.has_key?(conn.assigns, :raw_body)
+  end
+
+  test "refuses an OAuth body above 64 KiB" do
+    body = String.duplicate("x", 64 * 1024 + 1)
+    conn = build_conn(:post, "/oauth/token", body)
+
+    assert {:more, _partial, conn} = CachedBodyReader.read_body(conn, [])
+    refute Map.has_key?(conn.assigns, :raw_body)
+  end
+
+  test "refuses a runner enrollment body above 128 KiB" do
+    body = String.duplicate("x", 128 * 1024 + 1)
+    conn = build_conn(:post, "/runner/register", body)
+
+    assert {:more, _partial, conn} = CachedBodyReader.read_body(conn, [])
+    refute Map.has_key?(conn.assigns, :raw_body)
+  end
+
+  test "reads a runner enrollment carrying the domain's largest legal labels map" do
+    # The runner changeset admits 64 KiB of `labels`, so the transport bound has
+    # to clear it — a body the domain would accept must not die at the parser.
+    body = String.duplicate("x", 64 * 1024)
+    conn = build_conn(:post, "/runner/register", body)
+
+    assert {:ok, ^body, conn} = CachedBodyReader.read_body(conn, [])
+    refute Map.has_key?(conn.assigns, :raw_body)
+  end
+
   test "does not cache bodies for other routes" do
     conn = build_conn(:post, "/api/other", "{}")
 

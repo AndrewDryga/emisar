@@ -1294,6 +1294,20 @@ defmodule EmisarWeb.AuditLiveTest do
   # test-fixture shape (§7).
   # {"when-<event_id>" => datetime attr} for every relative WHEN cell in the
   # rendered list — the pairing the cross-row bleed test asserts on.
+  test "a crafted event that drops its required key is a no-op, not a crash", %{conn: conn} do
+    {conn, _user, account} = register_and_log_in(conn)
+    {:ok, lv, _html} = live(conn, ~p"/app/#{account}/audit")
+
+    # The payload is the operator's own socket, so this is self-inflicted — but
+    # a FunctionClauseError kills the view and takes any unsaved page state
+    # with it, and leaves crash noise in production error tracking.
+    for event <- ~w(preset category) do
+      assert render_click(lv, event, %{})
+    end
+
+    assert Process.alive?(lv.pid)
+  end
+
   defp when_pairs(html) do
     ~r/<time id="(when-[^"]+)"[^>]*?datetime="([^"]+)"/
     |> Regex.scan(html)

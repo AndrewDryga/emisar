@@ -71,6 +71,60 @@ defmodule EmisarWeb.RunbookImportLiveTest do
     assert runbook.draft_definition == Fixtures.Runbooks.default_definition()
   end
 
+  test "a Remove click carrying a stale ref clears the file instead of killing the socket", %{
+    conn: conn
+  } do
+    {conn, _user, account} = register_and_log_in(conn)
+    encoded = Jason.encode!(Emisar.Fixtures.Runbooks.default_definition())
+    {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runbooks/import")
+
+    upload =
+      file_input(lv, "#runbook-import-form", :runbook_json, [
+        %{
+          name: "runbook.json",
+          content: encoded,
+          size: byte_size(encoded),
+          type: "application/json"
+        }
+      ])
+
+    render_upload(upload, "runbook.json")
+    assert has_element?(lv, "#selected-runbook-json")
+
+    # The ref-carrying Remove button only renders while the upload is in flight,
+    # so a click landing the tick it completes carries a ref with no entry —
+    # and `cancel_upload/3` raises on that.
+    html = render_click(lv, "clear_import_file", %{"ref" => "0"})
+
+    refute html =~ "runbook.json"
+    refute has_element?(lv, "#selected-runbook-json")
+  end
+
+  test "Remove cancels an upload still in flight", %{conn: conn} do
+    {conn, _user, account} = register_and_log_in(conn)
+    encoded = Jason.encode!(Emisar.Fixtures.Runbooks.default_definition())
+    {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runbooks/import")
+
+    upload =
+      file_input(lv, "#runbook-import-form", :runbook_json, [
+        %{
+          name: "runbook.json",
+          content: encoded,
+          size: byte_size(encoded),
+          type: "application/json"
+        }
+      ])
+
+    render_upload(upload, "runbook.json", 50)
+    assert has_element?(lv, ~s(button[phx-click="clear_import_file"][phx-value-ref]))
+
+    lv
+    |> element(~s(button[phx-click="clear_import_file"][phx-value-ref]))
+    |> render_click()
+
+    refute has_element?(lv, ~s(button[phx-click="clear_import_file"][phx-value-ref]))
+  end
+
   test "keeps pasted input and shows actionable inline errors", %{conn: conn} do
     {conn, _user, account} = register_and_log_in(conn)
     {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runbooks/import")

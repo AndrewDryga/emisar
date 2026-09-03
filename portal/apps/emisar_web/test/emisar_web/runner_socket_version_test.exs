@@ -14,8 +14,11 @@ defmodule EmisarWeb.RunnerSocketVersionTest do
          %{state: state, runner: runner, subject: subject} do
       enforce_runner_versions(true)
 
-      assert {:push, frame, ^state} =
+      assert {:push, frame, next} =
                RunnerSocket.handle_in({runner_state_frame("0.0.0"), text()}, state)
+
+      assert Map.delete(next, :runner_state_frames) ==
+               Map.delete(state, :runner_state_frames)
 
       assert %{
                "type" => "shutdown",

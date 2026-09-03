@@ -6,7 +6,7 @@ defmodule EmisarWeb.MfaDisableDisconnectTest do
   Sessions deliberately survive a self-service disable, so the cookie is not what
   carries the stale decision — the mounted SOCKETS are. Each one decided its
   gates at mount and holds a `%Subject{}` whose bound `mfa` was true, so an
-  already-open `/admin/live` would stay usable until its next mount and later
+  already-open `/ops/live` would stay usable until its next mount and later
   audit rows would be stamped from the old claim. Dropping the sockets makes each
   reconnect, remount, and re-decide.
 

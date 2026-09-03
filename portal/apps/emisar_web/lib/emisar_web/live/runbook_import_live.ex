@@ -50,20 +50,19 @@ defmodule EmisarWeb.RunbookImportLive do
     {:noreply, assign_form(socket, @empty_params)}
   end
 
+  # `cancel_upload/3` RAISES on a ref with no matching entry, and the ref-carrying
+  # Remove button only renders while the auto-upload is in flight — so a click
+  # landing on the tick the entry completes, or a crafted event carrying any
+  # string, killed the LiveView. An unknown ref falls through to the plain clear.
   def handle_event("clear_import_file", %{"ref" => ref}, socket) do
-    {:noreply,
-     socket
-     |> cancel_upload(:runbook_json, ref)
-     |> assign(:import_file, nil)
-     |> assign(:source_errors, [])}
+    socket =
+      if uploading?(socket, ref), do: cancel_upload(socket, :runbook_json, ref), else: socket
+
+    {:noreply, clear_import_source(socket)}
   end
 
-  def handle_event("clear_import_file", _params, socket) do
-    {:noreply,
-     socket
-     |> assign(:import_file, nil)
-     |> assign(:source_errors, [])}
-  end
+  def handle_event("clear_import_file", _params, socket),
+    do: {:noreply, clear_import_source(socket)}
 
   # Mount redirects a role that may not author, but a mounted socket whose role
   # was narrowed in another tab must not import on a crafted event (IL-15).
@@ -116,33 +115,51 @@ defmodule EmisarWeb.RunbookImportLive do
   # sobelow_skip ["Traversal.FileModule"]
   defp handle_upload_progress(:runbook_json, entry, socket) do
     if entry.done? do
-      content =
-        consume_uploaded_entry(socket, entry, fn %{path: path} ->
-          File.read(path)
-        end)
+      # `consume_uploaded_entry/3`'s contract is `{:ok, value} | {:postpone, value}`
+      # and `File.read/1`'s failure shape is neither — LiveView `IO.warn`s and hands
+      # the `{:error, posix}` tuple back AS the content, which then travels into
+      # `Runbooks.import_runbook/3` where a binary is expected.
+      case consume_uploaded_entry(socket, entry, fn %{path: path} -> {:ok, File.read(path)} end) do
+        {:ok, content} ->
+          {:noreply, accept_uploaded_file(socket, entry, content)}
 
-      params = socket.assigns.import_form.params
-      title = params["title"] || ""
-
-      params =
-        if String.trim(title) == "" do
-          Map.put(params, "title", title_from_filename(entry.client_name))
-        else
-          params
-        end
-
-      {:noreply,
-       socket
-       |> assign_form(params)
-       |> assign(:import_file, %{name: entry.client_name, content: content})
-       |> assign(:json_errors, [])
-       |> assign(
-         :source_errors,
-         conflicting_source_errors(%{name: entry.client_name}, params["json"] || "")
-       )}
+        {:error, _posix} ->
+          {:noreply,
+           assign(socket, :json_errors, ["The JSON file could not be read. Try again."])}
+      end
     else
       {:noreply, socket}
     end
+  end
+
+  defp accept_uploaded_file(socket, entry, content) do
+    params = socket.assigns.import_form.params
+    title = params["title"] || ""
+
+    params =
+      if String.trim(title) == "" do
+        Map.put(params, "title", title_from_filename(entry.client_name))
+      else
+        params
+      end
+
+    socket
+    |> assign_form(params)
+    |> assign(:import_file, %{name: entry.client_name, content: content})
+    |> assign(:json_errors, [])
+    |> assign(
+      :source_errors,
+      conflicting_source_errors(%{name: entry.client_name}, params["json"] || "")
+    )
+  end
+
+  defp uploading?(socket, ref),
+    do: Enum.any?(socket.assigns.uploads.runbook_json.entries, &(&1.ref == ref))
+
+  defp clear_import_source(socket) do
+    socket
+    |> assign(:import_file, nil)
+    |> assign(:source_errors, [])
   end
 
   defp import(socket, title, encoded_definition) do

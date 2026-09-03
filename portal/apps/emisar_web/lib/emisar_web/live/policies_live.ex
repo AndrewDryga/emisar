@@ -199,6 +199,9 @@ defmodule EmisarWeb.PoliciesLive do
   def handle_event("form_change", %{"editor" => editor_id, "policy" => params}, socket),
     do: {:noreply, apply_policy_params(socket, editor_id, params)}
 
+  # A crafted event that drops a required key would otherwise match no clause
+  # and crash the socket, taking the page's unsaved state with it. Every
+  # mutating handler on this page ends in this no-op.
   def handle_event("form_change", _params, socket), do: {:noreply, socket}
 
   def handle_event("add_override", %{"editor" => editor_id}, socket) do
@@ -207,6 +210,8 @@ defmodule EmisarWeb.PoliciesLive do
        %{editor | overrides: editor.overrides ++ [Policies.empty_override()]}
      end)}
   end
+
+  def handle_event("add_override", _params, socket), do: {:noreply, socket}
 
   def handle_event("remove_override", %{"editor" => editor_id, "index" => idx}, socket)
       when is_binary(editor_id) and is_binary(idx) do
@@ -275,6 +280,8 @@ defmodule EmisarWeb.PoliciesLive do
         {:noreply, socket}
     end
   end
+
+  def handle_event("remove_ruleset", _params, socket), do: {:noreply, socket}
 
   def handle_event("save", %{"editor" => editor_id} = params, socket) do
     Permissions.gated(
@@ -1089,6 +1096,7 @@ defmodule EmisarWeb.PoliciesLive do
                so groups are plain options; a target another ruleset already
                claims is shown disabled. --%>
               <.select
+                id={"policy-target-#{@ruleset.uid}"}
                 name="target"
                 label="Apply this ruleset to"
                 label_variant={:eyebrow}

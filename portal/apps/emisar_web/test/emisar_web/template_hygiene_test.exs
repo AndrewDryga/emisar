@@ -47,6 +47,15 @@ defmodule EmisarWeb.TemplateHygieneTest do
   # all hand-rolled copies of the button face on the consent cards.
   @white_on_accent_fill ~r{bg-(?:brand|amber|emerald)-[456]00(?![/\w])[^"]*text-white|text-white[^"]*bg-(?:brand|amber|emerald)-[456]00(?![/\w])}
 
+  # `text-zinc-600` (#52525b) is 2.3-2.7:1 on the console's near-black grounds, so
+  # it fails WCAG AA for BOTH normal and large text — there is no size at which it
+  # clears the bar. Only the RESTING color is flagged; the lookbehind skips a
+  # `placeholder:`/`hover:`/`marker:` variant, which is decorative or supplementary
+  # rather than the resting foreground. `text-zinc-500` (~4:1) is deliberately NOT
+  # flagged: it fails AA for normal text but passes AA-large, and no class string
+  # says which it is.
+  @resting_zinc_600 ~r/(?<![:\w-])text-zinc-600(?![\w-])/
+
   # An icon names a MEANING from `EmisarWeb.Icons`. A literal that names nothing
   # raises at render — on the one page that renders it, in whatever environment
   # first reaches it — so the names are reconciled against the registry here
@@ -195,6 +204,33 @@ defmodule EmisarWeb.TemplateHygieneTest do
 
            `clip` clamps the same axis and leaves the other `visible`. Both axes really
            needing containment is a different thing — plain `overflow-hidden` stays.
+
+           Offending lines (relative to apps/emisar_web/lib):
+           #{Enum.map_join(offenders, "\n", &"  #{&1}")}
+           """
+  end
+
+  test "resting text clears WCAG AA — no text-zinc-600 on the near-black grounds" do
+    offenders = offending_source_matches(@resting_zinc_600)
+
+    assert offenders == [],
+           """
+           `text-zinc-600` is 2.3-2.7:1 on zinc-950 / black / zinc-900 — below the 4.5:1
+           AA floor at every size, and below the 3:1 non-text floor too.
+
+               ✅  <p class="text-xs text-zinc-400">…</p>            essential text
+               ✅  <span class="select-none text-zinc-500">$</span>  decorative glyph
+               ❌  <p class="text-xs text-zinc-600">…</p>
+
+           `text-zinc-400` (~7.8:1) is the AA-safe muted tier and stays quieter than the
+           zinc-300 body and zinc-100 headings, so raising the token keeps the
+           de-emphasis register. A genuinely decorative glyph or icon is non-text and
+           clears its 3:1 bar at zinc-500. See .agent/kb/rules/design-system.md,
+           "Contrast (WCAG AA)".
+
+           This rule lived in `credo/checks/no_low_contrast_text.ex`, which could not
+           see a single `.heex` file — 18 violations sat in five of them, most carrying
+           the setup advice their docs page exists to give.
 
            Offending lines (relative to apps/emisar_web/lib):
            #{Enum.map_join(offenders, "\n", &"  #{&1}")}

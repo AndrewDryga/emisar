@@ -12,6 +12,20 @@ defmodule EmisarWeb.ApprovalsLiveTest do
   @grant_pack_hash "sha256:" <> String.duplicate("a", 64)
   @grant_pack_ref "linux-core@1.0.0/" <> @grant_pack_hash
 
+  test "a crafted event that drops its required key is a no-op, not a crash", %{conn: conn} do
+    {conn, _user, account} = register_and_log_in(conn)
+    {:ok, lv, _html} = live(conn, ~p"/app/#{account}/approvals")
+
+    # The payload is the operator's own socket, so this is self-inflicted — but
+    # a FunctionClauseError kills the view and takes any unsaved page state
+    # with it, and leaves crash noise in production error tracking.
+    for event <- ~w(revoke_grant) do
+      assert render_click(lv, event, %{})
+    end
+
+    assert Process.alive?(lv.pid)
+  end
+
   defp pending_request!(account, requester_id, reason) do
     runner = Fixtures.Runners.create_runner(account_id: account.id)
     Fixtures.Catalog.create_action(runner: runner, action_id: "linux.reboot")

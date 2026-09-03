@@ -27,10 +27,10 @@ defmodule EmisarWeb.TeamLive do
        :can_manage_team?,
        Accounts.subject_can_manage_team?(socket.assigns.current_subject)
      )
-     |> assign(
-       :pack_access_restricted?,
-       socket.assigns.current_membership.pack_access_mode == :restricted
-     )
+     # The copy describes what the scope editors below it may grant, so it is
+     # derived where they are loaded — both load paths re-read current access.
+     # The dead render has no editor yet, so it makes no claim about one.
+     |> assign(:pack_access_restricted?, false)
      |> assign(:roles, @roles)
      # The roster, its security stats, and the pending-request queue are read by
      # the :index route only, but a crafted event reaches their handlers from any
@@ -1015,7 +1015,18 @@ defmodule EmisarWeb.TeamLive do
 
   defp current_session_token_digest(_socket), do: nil
 
+  # Read from the access projection the scope editors are themselves bounded by,
+  # never the mount-time membership struct: a member whose pack access is
+  # narrowed (or widened) mid-session otherwise keeps reading the wrong rule for
+  # a picker that has already changed underneath them. Same spelling as
+  # `approvals_live` and `runner_detail_live`.
+  defp assign_pack_access_restricted(socket) do
+    access = Accounts.runner_access_for_subject(socket.assigns.current_subject)
+    assign(socket, :pack_access_restricted?, access.pack_mode == :restricted)
+  end
+
   defp load(socket, params) do
+    socket = assign_pack_access_restricted(socket)
     opts = LiveTable.params_to_opts(params, socket.assigns.filters)
 
     case Accounts.list_team_member_facts(
@@ -1107,6 +1118,7 @@ defmodule EmisarWeb.TeamLive do
   end
 
   defp load_invite_runners(socket) do
+    socket = assign_pack_access_restricted(socket)
     {advertisements, pack_load_error?} = account_pack_advertisements(socket)
 
     case Runners.list_all_runners_for_account(socket.assigns.current_subject) do

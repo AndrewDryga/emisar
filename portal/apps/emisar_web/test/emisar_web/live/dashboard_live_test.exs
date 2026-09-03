@@ -704,6 +704,21 @@ defmodule EmisarWeb.DashboardLiveTest do
 
       assert refresh_query_count(lv, event) == 3
     end
+
+    test "past the first run a topology event reads no row per runner or advertised action", %{
+      conn: conn
+    } do
+      # `actions_advertised?` has ONE consumer, the setup checklist, which cannot
+      # render once a run exists — so past the first run neither the whole scoped
+      # fleet nor the (runner x advertised action) catalog is read, and the two
+      # integers the pillar renders are counted in the database instead. The
+      # tell is that the refresh reads the SAME number of rows whatever the
+      # fleet's size; before, it grew with runners x actions.
+      small = fleet_refresh_rows(conn, 1)
+      large = fleet_refresh_rows(conn, 4)
+
+      assert small == large
+    end
   end
 
   describe "billing-status banner" do
@@ -904,6 +919,68 @@ defmodule EmisarWeb.DashboardLiveTest do
         reason: "first run",
         source: "operator"
       })
+  end
+
+  # Rows the debounced runner refresh reads, for an account past its first run
+  # whose fleet holds `runner_count` runners, each advertising one action.
+  defp fleet_refresh_rows(conn, runner_count) do
+    {conn, _user, account} = register_and_log_in(conn)
+
+    runners =
+      for index <- 1..runner_count do
+        runner =
+          Fixtures.Runners.create_runner(account_id: account.id, external_id: "host-#{index}")
+
+        Fixtures.Catalog.create_action(runner: runner, action_id: "linux.uptime")
+        runner
+      end
+
+    first_run(account, hd(runners))
+
+    {:ok, lv, _html} = live(conn, ~p"/app/#{account}")
+
+    refresh_row_count(lv, %{
+      event: "presence_diff",
+      payload: %{joins: %{Ecto.UUID.generate() => %{metas: [%{}]}}, leaves: %{}}
+    })
+  end
+
+  defp refresh_row_count(lv, event) do
+    test_pid = self()
+    handler = make_ref()
+
+    :telemetry.attach(
+      handler,
+      [:emisar, :repo, :query],
+      fn _event, _measurements, metadata, _config ->
+        send(test_pid, {:repo_rows, self(), rows_in(metadata.result)})
+      end,
+      nil
+    )
+
+    on_exit(fn -> :telemetry.detach(handler) end)
+
+    send(lv.pid, event)
+    _ = render(lv)
+    _ = drain_repo_row_count(lv.pid)
+
+    send(lv.pid, :refresh_dashboard)
+    _ = render(lv)
+    rows = drain_repo_row_count(lv.pid)
+    :ok = :telemetry.detach(handler)
+    rows
+  end
+
+  defp rows_in({:ok, %{num_rows: rows}}) when is_integer(rows), do: rows
+  defp rows_in(_result), do: 0
+
+  defp drain_repo_row_count(pid, rows \\ 0) do
+    receive do
+      {:repo_rows, ^pid, count} -> drain_repo_row_count(pid, rows + count)
+      {:repo_rows, _other_pid, _count} -> drain_repo_row_count(pid, rows)
+    after
+      0 -> rows
+    end
   end
 
   defp refresh_query_count(lv, event) do

@@ -31,9 +31,9 @@ defmodule EmisarWeb.MCP.Auth do
   def resource, do: EmisarWeb.Endpoint.url() <> "/api/mcp/rpc"
 
   defp resolve_bearer(conn) do
-    case get_req_header(conn, "authorization") do
-      ["Bearer " <> raw] -> resolve_token(raw)
-      _ -> :error
+    case BearerAuth.credential(get_req_header(conn, "authorization")) do
+      {:ok, raw} -> resolve_token(raw)
+      :error -> :error
     end
   end
 

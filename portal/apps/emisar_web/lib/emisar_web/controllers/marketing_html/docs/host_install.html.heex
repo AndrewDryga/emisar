@@ -116,20 +116,20 @@
       </p>
       <.docs_code phx-no-format label="/etc/emisar/config.yaml"><span class="text-sky-300">schema_version</span>: <span class="text-amber-300">1</span>
 <span class="text-sky-300">runner</span>:
-  <span class="text-sky-300">group</span>: <span class="text-brand-300">"web"</span>              <span class="text-zinc-600"># the fleet tier this host belongs to (targeted by runbooks + scopes)</span>
-  <span class="text-sky-300">labels</span>:                    <span class="text-zinc-600"># free-form, for finer targeting</span>
+  <span class="text-sky-300">group</span>: <span class="text-brand-300">"web"</span>              <span class="text-zinc-400"># the fleet tier this host belongs to (targeted by runbooks + scopes)</span>
+  <span class="text-sky-300">labels</span>:                    <span class="text-zinc-400"># free-form, for finer targeting</span>
     <span class="text-sky-300">role</span>: <span class="text-brand-300">"frontend"</span>
     <span class="text-sky-300">region</span>: <span class="text-brand-300">"us-east-1"</span>
-  <span class="text-zinc-600"># id: "web-01"           # optional — the runner's declared name + identity; defaults to the hostname</span>
+  <span class="text-zinc-400"># id: "web-01"           # optional — the runner's declared name + identity; defaults to the hostname</span>
 <span class="text-sky-300">cloud</span>:
   <span class="text-sky-300">url</span>: <span class="text-brand-300">"https://emisar.dev"</span>
   <span class="text-sky-300">enrollment_key_env</span>: <span class="text-brand-300">"EMISAR_ENROLLMENT_KEY"</span>
 <span class="text-sky-300">execution</span>:
-  <span class="text-sky-300">inherit_env</span>:              <span class="text-zinc-600"># env-var names a pack can read for credentials</span>
+  <span class="text-sky-300">inherit_env</span>:              <span class="text-zinc-400"># env-var names a pack can read for credentials</span>
     - <span class="text-brand-300">NOMAD_ADDR</span>
     - <span class="text-brand-300">NOMAD_TOKEN</span>
-<span class="text-zinc-600"># admission:               # optional local defense-in-depth — see the security model</span>
-<span class="text-zinc-600"># signing:                 # optional signed-dispatch enforcement — see signed dispatch</span></.docs_code>
+<span class="text-zinc-400"># admission:               # optional local defense-in-depth — see the security model</span>
+<span class="text-zinc-400"># signing:                 # optional signed-dispatch enforcement — see signed dispatch</span></.docs_code>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         Restart the service after editing (<.docs_inline_code>sudo systemctl restart emisar</.docs_inline_code>,
         or SIGHUP to reload packs without dropping runs).

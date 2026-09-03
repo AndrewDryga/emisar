@@ -11,10 +11,11 @@ defmodule EmisarWeb.MCP.ClientMetadata do
   The limits mirror the Go bridge's `parseClientMetadata` — both boundaries
   enforce them independently because the header is untrusted (a direct HTTP
   caller, or a modified bridge, can send anything): a JSON object of at most 10
-  string keys to string-or-number values, keys ≤ 128 and values ≤ 512
-  characters. Numeric values are stored as their string form. Any malformed
-  input, disallowed value type, or exceeded limit fails closed — the request is
-  rejected and nothing partial is stored.
+  string keys to string-or-number values, keys ≤ 128 and values ≤ 512 CODE
+  POINTS — the unit `utf8.RuneCountInString` counts on the bridge side. Numeric
+  values are stored as their string form. Any malformed input, disallowed value
+  type, or exceeded limit fails closed — the request is rejected and nothing
+  partial is stored.
   """
 
   @max_keys 10
@@ -67,7 +68,7 @@ defmodule EmisarWeb.MCP.ClientMetadata do
 
   defp validate_key(key) when is_binary(key) do
     cond do
-      String.length(key) > @max_key_length ->
+      codepoint_length(key) > @max_key_length ->
         {:error, "client metadata key #{inspect(key)} exceeds #{@max_key_length} characters"}
 
       Emisar.SafeText.unsafe?(key) ->
@@ -80,7 +81,7 @@ defmodule EmisarWeb.MCP.ClientMetadata do
 
   defp validate_value(key, value) when is_binary(value) do
     cond do
-      String.length(value) > @max_value_length ->
+      codepoint_length(value) > @max_value_length ->
         {:error,
          "client metadata value for #{inspect(key)} exceeds #{@max_value_length} characters"}
 
@@ -95,7 +96,7 @@ defmodule EmisarWeb.MCP.ClientMetadata do
   defp validate_value(key, value) when is_number(value) do
     string = to_string(value)
 
-    if String.length(string) > @max_value_length do
+    if codepoint_length(string) > @max_value_length do
       {:error,
        "client metadata value for #{inspect(key)} exceeds #{@max_value_length} characters"}
     else
@@ -105,4 +106,11 @@ defmodule EmisarWeb.MCP.ClientMetadata do
 
   defp validate_value(key, _value),
     do: {:error, "client metadata value for #{inspect(key)} must be a string or number"}
+
+  # The bridge counts CODE POINTS (`utf8.RuneCountInString`) and `String.length/1`
+  # counts grapheme CLUSTERS, so one base character plus N combining marks is 1
+  # here and N+1 there: the portal accepted values its own peer rejects, and the
+  # "512 characters" this module promises bounded neither the stored audit
+  # payload nor the SIEM field. Count what the peer counts.
+  defp codepoint_length(value), do: value |> String.codepoints() |> length()
 end

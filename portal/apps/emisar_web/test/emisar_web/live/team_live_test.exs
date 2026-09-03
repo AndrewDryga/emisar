@@ -9,6 +9,14 @@ defmodule EmisarWeb.TeamLiveTest do
   use EmisarWeb.ConnCase, async: true
   import Swoosh.TestAssertions
 
+  # The pack-grant fields render only once a runner scope is chosen, so the
+  # notice is read from the form's own change render.
+  defp reveal_pack_grant(lv) do
+    lv
+    |> form("#invite_form", %{"invite" => %{"runner_access_mode" => "all"}})
+    |> render_change()
+  end
+
   defp subscribe_team(account) do
     assert Emisar.Accounts.subscribe_account_team(account.id) == :ok
   end
@@ -137,6 +145,33 @@ defmodule EmisarWeb.TeamLiveTest do
       assert has_element?(lv, "#members-filter select[name='status']")
       assert has_element?(lv, "a", "Clear filters")
       refute html =~ "No team members yet."
+    end
+
+    test "the pack-grant notice follows current access, not the mount snapshot", %{conn: conn} do
+      {_owner_conn, _owner, account} = register_and_log_in(conn)
+      admin = Fixtures.Users.create_user()
+
+      membership =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          user_id: admin.id,
+          role: "admin"
+        )
+
+      {:ok, lv, _html} =
+        build_conn()
+        |> log_in_user(admin)
+        |> live(~p"/app/#{account}/settings/team/invite")
+
+      refute reveal_pack_grant(lv) =~ "You can grant only packs within your own access."
+
+      {:ok, restricted} =
+        Emisar.Accounts.RunnerAccess.new(:all, [], [], :restricted, ["postgres"])
+
+      Fixtures.Memberships.force_runner_access(membership, restricted)
+      render_patch(lv, ~p"/app/#{account}/settings/team/invite")
+
+      assert reveal_pack_grant(lv) =~ "You can grant only packs within your own access."
     end
 
     test "pack grant fields explain when the admin's own pack access is limited", %{conn: conn} do

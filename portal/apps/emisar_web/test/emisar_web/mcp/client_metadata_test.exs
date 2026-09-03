@@ -83,6 +83,17 @@ defmodule EmisarWeb.MCP.ClientMetadataTest do
       assert message =~ "exceeds 512 characters"
     end
 
+    test "counts code points, the unit the bridge counts, not grapheme clusters" do
+      # `e` plus a combining acute is ONE grapheme and TWO code points, so 300
+      # of them are 300 characters here and 600 runes on the bridge. The portal
+      # must not accept a value its own peer refuses.
+      combining = String.duplicate("e\u0301", 300)
+      assert String.length(combining) == 300
+
+      assert {:error, message} = ClientMetadata.parse(Jason.encode!(%{"a" => combining}))
+      assert message =~ "exceeds 512 characters"
+    end
+
     test "rejects disallowed value types" do
       for value <- [~s(["x"]), ~s({"b":"c"}), "true", "null"] do
         assert {:error, message} = ClientMetadata.parse(~s({"a":#{value}}))

@@ -20,7 +20,16 @@ defmodule EmisarWeb.CachedBodyReader do
   # Postmark authenticates with Basic Auth, not a body signature, and its
   # bounce/complaint events are a few hundred bytes; 64 KiB is generous headroom
   # for an unsigned endpoint anyone on the internet can POST to.
-  @bounded_body_limits %{"/webhooks/postmark" => 64 * 1024}
+  #
+  # The device-grant pair is unauthenticated by design (acquiring a credential
+  # is the point) and carries the largest anonymous per-IP allowance in the app
+  # (600/min on the poll). Both bodies are a short client-id list or one device
+  # code, so 8 KiB is already orders of magnitude of headroom.
+  @bounded_body_limits %{
+    "/webhooks/postmark" => 64 * 1024,
+    "/api/mcp/device_authorization" => 8 * 1024,
+    "/api/mcp/device_token" => 8 * 1024
+  }
 
   # SCIM is unauthenticated until the controller pipeline runs, so Plug's ~8 MB
   # default was parsed before the bearer was even looked at — the rate limiter's
@@ -28,7 +37,17 @@ defmodule EmisarWeb.CachedBodyReader do
   # caller can make us hold. The largest legitimate SCIM body is a group
   # replace, which the domain already caps at 5,000 member ids; 2 MB clears that
   # with room to spare.
-  @bounded_body_prefixes %{"/scim/v2/" => 2 * 1024 * 1024}
+  #
+  # `/oauth/` and `/runner/` are the same shape: parsed before any credential is
+  # looked at, behind 60/min and 120/min anonymous IP allowances. An OAuth
+  # registration or token request is a handful of short strings; a runner
+  # enrollment is bounded by the domain's own 64 KiB `labels` cap, so 128 KiB
+  # clears the largest legitimate one.
+  @bounded_body_prefixes %{
+    "/scim/v2/" => 2 * 1024 * 1024,
+    "/oauth/" => 64 * 1024,
+    "/runner/" => 128 * 1024
+  }
 
   def read_body(conn, opts) do
     opts = bound_length(opts, body_limit(conn.request_path))

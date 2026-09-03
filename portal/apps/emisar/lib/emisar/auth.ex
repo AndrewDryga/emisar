@@ -2307,7 +2307,7 @@ defmodule Emisar.Auth do
 
   Their live SOCKETS do not survive, because a mounted socket decided its gates
   once and holds a `%Subject{}` built from the old enrollment: an already-open
-  `/admin/live` would stay usable until its next mount, and the profile socket
+  `/ops/live` would stay usable until its next mount, and the profile socket
   that initiated this would keep stamping a stale `mfa` onto later audit rows.
   Dropping the sockets makes each one reconnect, remount, and re-decide against
   the rebuilt Subject — the cookie is still valid, so nobody is signed out.

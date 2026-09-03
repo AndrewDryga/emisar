@@ -429,4 +429,18 @@ defmodule EmisarWeb.AuditExportLiveTest do
       refute agents_html =~ "ZZ-siem-export-token"
     end
   end
+
+  test "a crafted event that drops its required key is a no-op, not a crash", %{conn: conn} do
+    {conn, _user, account} = register_and_log_in(conn)
+    {:ok, lv, _html} = live(conn, ~p"/app/#{account}/audit/export")
+
+    # The payload is the operator's own socket, so this is self-inflicted — but
+    # a FunctionClauseError kills the view and takes any unsaved page state
+    # with it, and leaves crash noise in production error tracking.
+    for event <- ~w(revoke_export_key) do
+      assert render_click(lv, event, %{})
+    end
+
+    assert Process.alive?(lv.pid)
+  end
 end

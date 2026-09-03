@@ -46,20 +46,13 @@ defmodule EmisarWeb.RequestContext do
     })
   end
 
-  defp forwarded_for(conn) do
-    case get_req_header(conn, "x-forwarded-for") do
-      [value | _] -> forwarded_client_ip(value)
-      [] -> nil
-    end
-  end
+  defp forwarded_for(conn), do: forwarded_client_ip(get_req_header(conn, "x-forwarded-for"))
 
   defp forwarded_for_socket(socket) do
     case Phoenix.LiveView.get_connect_info(socket, :x_headers) do
       headers when is_list(headers) ->
-        case List.keyfind(headers, "x-forwarded-for", 0) do
-          {_name, value} -> forwarded_client_ip(value)
-          nil -> nil
-        end
+        values = for {"x-forwarded-for", value} <- headers, do: value
+        forwarded_client_ip(values)
 
       _ ->
         nil
@@ -69,8 +62,11 @@ defmodule EmisarWeb.RequestContext do
   # GCP emits `[untrusted-prefix,]client-ip,load-balancer-ip`. The production
   # firewall admits backend HTTP only from Google proxy ranges, so anchoring at
   # the right ignores any caller-controlled prefix without trusting a hop count.
-  defp forwarded_client_ip(value) do
-    parts = String.split(value, ",", trim: true)
+  # RFC 9110 §5.3 makes repeated header LINES one comma-joined list, so every
+  # line is joined before anchoring: reading only the first would let a line the
+  # caller placed — rather than the load balancer's — decide the tail.
+  defp forwarded_client_ip(values) do
+    parts = values |> Enum.join(",") |> String.split(",", trim: true)
 
     case Enum.reverse(parts) do
       [_load_balancer_ip, client_ip | _untrusted_prefix] -> String.trim(client_ip)

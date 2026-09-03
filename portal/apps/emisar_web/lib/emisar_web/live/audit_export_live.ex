@@ -64,6 +64,11 @@ defmodule EmisarWeb.AuditExportLive do
     )
   end
 
+  # A crafted event that drops a required key would otherwise match no clause
+  # and crash the socket, taking the page's unsaved state with it. Every
+  # mutating handler on this page ends in this no-op.
+  def handle_event("revoke_export_key", _params, socket), do: {:noreply, socket}
+
   def handle_event("create_export_key", _params, socket) do
     # Audit-export keys are admin-only AND a distinct credential KIND from MCP
     # keys: `kind: :audit_export` is what authorizes `/api/audit` (an agent key
