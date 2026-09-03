@@ -80,7 +80,7 @@ defmodule EmisarWeb.MCP.CatalogTools do
     case Catalog.model_catalog(subject) do
       {:ok, snapshot} ->
         scope =
-          [subject.account.id, api_key.id] ++
+          [subject.account.id, api_key.credential_lineage_id] ++
             Enum.map(snapshot.runners, & &1.runner_ref) ++
             Enum.map(snapshot.packs, & &1.pack_ref)
 

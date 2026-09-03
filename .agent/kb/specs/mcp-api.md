@@ -338,6 +338,9 @@ capabilities.
 - Cursors are authenticated, opaque, expire after 15 minutes, and bind the
   caller's scope fingerprint, normalized filters, ordering version, and last
   composite key.
+- Credential identity in that fingerprint is the account plus the
+  rotation-stable credential lineage, so a legitimate successor can resume a
+  page while an unrelated key cannot.
 - Ordering ends in a unique stable key: `pack_ref`,
   `(action_id, pack_ref)`, or `runner_ref`.
 - Pagination is a live keyset view, not a database snapshot. Concurrent catalog
@@ -1460,8 +1463,10 @@ advertisements, and are returned verbatim once the runbook is visible.
 
 Input accepts `query` (case-insensitive words matched against slug, title, and
 summary), `limit` (1 through 50, default 15), and cursor. The cursor is bound to
-`query` and `limit`. Results order by slug, one entry per runbook — there is no
-status filter, because one entry states both sides.
+`query`, `limit`, the account, and the rotation-stable credential lineage. A
+legitimate successor key can resume the page; an unrelated key cannot. Results
+order by slug, one entry per runbook — there is no status filter, because one
+entry states both sides.
 
 ```json
 {

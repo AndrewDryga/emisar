@@ -286,6 +286,63 @@ defmodule EmisarWeb.MCPCatalogToolsTest do
     assert unavailable_detail["error"]["next"]["tool"] == "list_runners"
   end
 
+  test "catalog cursors survive rotation but remain bound to their credential lineage", %{
+    conn: conn,
+    account: account,
+    subject: subject,
+    key: key
+  } do
+    runner = Fixtures.Runners.create_runner(account_id: account.id, name: "paged-catalog")
+
+    observe!(
+      runner,
+      %{
+        "alpha" => %{"version" => "1.0.0", "hash" => @hash},
+        "beta" => %{"version" => "1.0.0", "hash" => @hash}
+      },
+      [action("alpha.read", "alpha"), action("beta.read", "beta")]
+    )
+
+    trust_all!(subject)
+
+    first = call(conn, "list_packs", %{"include" => "all", "limit" => 1})
+    assert [%{"pack_ref" => "alpha@" <> _rest}] = first["packs"]
+    assert is_binary(first["next_cursor"])
+
+    {:ok, successor_raw, _successor} = ApiKeys.rotate_api_key(key, subject)
+    successor_conn = authorize(build_conn(), successor_raw)
+
+    second =
+      call(successor_conn, "list_packs", %{
+        "include" => "all",
+        "limit" => 1,
+        "cursor" => first["next_cursor"]
+      })
+
+    assert [%{"pack_ref" => "beta@" <> _rest}] = second["packs"]
+
+    {:ok, independent_raw, _independent} =
+      ApiKeys.create_key(%{name: "independent-catalog", kind: :mcp}, subject)
+
+    independent =
+      call(authorize(build_conn(), independent_raw), "list_packs", %{
+        "include" => "all",
+        "limit" => 1,
+        "cursor" => first["next_cursor"]
+      })
+
+    assert independent["error"]["code"] == "invalid_cursor"
+
+    foreign =
+      call(foreign_key_conn(), "list_packs", %{
+        "include" => "all",
+        "limit" => 1,
+        "cursor" => first["next_cursor"]
+      })
+
+    assert foreign["error"]["code"] == "invalid_cursor"
+  end
+
   test "find_actions hands the next page back as a copy-ready continuation", %{
     conn: conn,
     account: account,
@@ -1234,6 +1291,23 @@ defmodule EmisarWeb.MCPCatalogToolsTest do
       |> get_in(["result", "structuredContent"])
 
     assert_valid_tool_result(name, result)
+  end
+
+  defp authorize(conn, raw), do: put_req_header(conn, "authorization", "Bearer " <> raw)
+
+  defp foreign_key_conn do
+    account = Fixtures.Accounts.create_account()
+    user = Fixtures.Users.create_user()
+
+    Fixtures.Memberships.create_membership(
+      account_id: account.id,
+      user_id: user.id,
+      role: "owner"
+    )
+
+    subject = Fixtures.Subjects.subject_for(user, account, role: :owner)
+    {:ok, raw, _key} = ApiKeys.create_key(%{name: "foreign-catalog", kind: :mcp}, subject)
+    authorize(build_conn(), raw)
   end
 
   defp raw_action(conn, body, operation_id \\ nil, attestation \\ nil) do

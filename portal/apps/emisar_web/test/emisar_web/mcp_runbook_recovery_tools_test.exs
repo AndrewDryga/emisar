@@ -80,6 +80,69 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
              "call list_runbooks again with the same arguments and no cursor"
   end
 
+  test "runbook cursors survive rotation but remain bound to their credential lineage", %{
+    conn: conn,
+    account: account,
+    user: user,
+    subject: subject,
+    key: key
+  } do
+    Fixtures.Runbooks.create_runbook(
+      account_id: account.id,
+      created_by_id: user.id,
+      slug: "alpha"
+    )
+
+    Fixtures.Runbooks.create_runbook(
+      account_id: account.id,
+      created_by_id: user.id,
+      slug: "beta"
+    )
+
+    first = call(conn, "list_runbooks", %{"limit" => 1})
+    assert [%{"slug" => "alpha"}] = first["runbooks"]
+    assert is_binary(first["next_cursor"])
+
+    {:ok, successor_raw, _successor} = ApiKeys.rotate_api_key(key, subject)
+    successor_conn = authorize(build_conn(), successor_raw)
+
+    second =
+      call(successor_conn, "list_runbooks", %{
+        "limit" => 1,
+        "cursor" => first["next_cursor"]
+      })
+
+    assert [%{"slug" => "beta"}] = second["runbooks"]
+
+    wrong_filter =
+      call(successor_conn, "list_runbooks", %{
+        "query" => "beta",
+        "limit" => 1,
+        "cursor" => first["next_cursor"]
+      })
+
+    assert wrong_filter["error"]["code"] == "invalid_cursor"
+
+    {:ok, independent_raw, _independent} =
+      ApiKeys.create_key(%{name: "independent-runbooks", kind: :mcp}, subject)
+
+    independent =
+      call(authorize(build_conn(), independent_raw), "list_runbooks", %{
+        "limit" => 1,
+        "cursor" => first["next_cursor"]
+      })
+
+    assert independent["error"]["code"] == "invalid_cursor"
+
+    foreign =
+      call(foreign_key_conn(), "list_runbooks", %{
+        "limit" => 1,
+        "cursor" => first["next_cursor"]
+      })
+
+    assert foreign["error"]["code"] == "invalid_cursor"
+  end
+
   test "wait_for_run rejects a constructed runbook output cursor", %{conn: conn} do
     rejected =
       call(conn, "wait_for_run", %{

@@ -47,7 +47,7 @@ defmodule EmisarWeb.MCP.RunbookTools do
     limit = args["limit"] || @default_limit
 
     with {:ok, summaries} <- runbook_summaries(conn, query),
-         scope <- cursor_scope(conn),
+         scope <- Service.cursor_scope(conn),
          filters <- %{"query" => query, "limit" => limit},
          {:ok, after_key} <-
            CatalogCursor.decode(args["cursor"], "list_runbooks", scope, filters) do
@@ -822,10 +822,6 @@ defmodule EmisarWeb.MCP.RunbookTools do
 
   defp drop_through(items, nil), do: items
   defp drop_through(items, key), do: Enum.drop_while(items, &(&1.slug <= key))
-
-  defp cursor_scope(conn) do
-    Crypto.hash_hex(conn.assigns.current_subject.account.id <> "\0" <> conn.assigns.api_key.id)
-  end
 
   defp changeset_errors(changeset) do
     Ecto.Changeset.traverse_errors(changeset, fn {message, opts} ->
