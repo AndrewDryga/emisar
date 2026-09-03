@@ -2,7 +2,11 @@ schema_version: 1
 
 id: apache-httpd
 name: Apache HTTPD operations
-version: 0.1.16
+version: 0.1.17
+# 0.1.16 and below tallied verbatim request URIs including their query strings,
+# so access_top_urls returned one-shot reset/callback tokens to the model at a
+# no-approval tier.
+retired_below: 0.1.17
 description: >
   Apache version, modules, mod_status snapshot, config syntax check,
   vhost dump, error/access log tails, plus narrow mutators (graceful

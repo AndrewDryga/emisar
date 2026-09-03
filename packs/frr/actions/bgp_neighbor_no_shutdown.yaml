@@ -1,0 +1,55 @@
+schema_version: 1
+id: frr.bgp_neighbor_no_shutdown
+title: vtysh -c "router bgp <asn>" -c "no neighbor <peer> shutdown"
+kind: exec
+risk: medium
+description: >
+  Re-advertise to an administratively shut BGP neighbor via vtysh, bringing this
+  node's prefixes back to that peer — the reverse of frr.bgp_neighbor_shutdown,
+  and how a drained node rejoins an anycast VIP once it is healthy. The change is
+  to the running config only (not persisted). Pair with frr.bgp_summary to
+  confirm the session reaches Established and PfxSnt returns.
+side_effects:
+  - Clears the administrative shutdown on the session to the named peer; this node advertises its prefixes to it again.
+  - For an anycast VIP, upstream ECMP starts sending traffic to this node again — run it only once the node is healthy.
+  - Running-config only — not written to startup-config.
+search_terms:
+  - undrain traffic
+  - return node to rotation
+  - end maintenance drain
+args:
+  # Same contract as frr.bgp_neighbor_shutdown — the pair addresses one session,
+  # so an argument accepted by one must be accepted by the other.
+  - name: asn
+    type: integer
+    required: true
+    description: Local BGP autonomous system number (the `router bgp <asn>` this neighbor lives under).
+    validation:
+      min: 1
+      max: 4294967295
+  - name: peer
+    type: string
+    required: true
+    description: Neighbor to re-advertise to — an IPv4/IPv6 address, peer-group, or interface name.
+    validation:
+      pattern: "^[A-Za-z0-9][A-Za-z0-9._:\\-]{0,63}$"
+execution:
+  command:
+    binary: vtysh
+    argv:
+      - "-c"
+      - "configure terminal"
+      - "-c"
+      - "router bgp {{ args.asn }}"
+      - "-c"
+      - "no neighbor {{ args.peer }} shutdown"
+  timeout: 15s
+output:
+  parser: text
+  max_stdout_bytes: 8192
+  max_stderr_bytes: 8192
+examples:
+  - title: Return this node to the anycast VIP
+    args:
+      asn: 65010
+      peer: "10.0.0.1"

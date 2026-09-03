@@ -143,7 +143,7 @@ cases:
   # neither leaves the host.
   - action: airflow.connections
     expect:
-      stdout_contains: [packtest_conn, warehouse.packtest.invalid, '"has_password":true', '"has_extra":true']
+      stdout_contains: [packtest_conn, warehouse.packtest.invalid, '"has_auth":true', '"has_extra":true']
 
   - action: airflow.variables
     expect:

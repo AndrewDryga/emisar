@@ -1,6 +1,6 @@
 schema_version: 1
-id: dnf.reinstall_pkg
-title: dnf reinstall -y <pkg>
+id: rpm.dnf_reinstall
+title: dnf reinstall -y <package>
 kind: exec
 risk: medium
 description: >
@@ -11,7 +11,7 @@ side_effects:
   - Marked config files (rpmnoreplace) preserved.
   - Service may restart if scriptlets do that.
 args:
-  - name: pkg
+  - name: package
     type: string
     required: true
     description: Package name.
@@ -20,7 +20,7 @@ args:
 execution:
   command:
     binary: dnf
-    argv: ["reinstall", "-y", "{{ args.pkg }}"]
+    argv: ["reinstall", "-y", "{{ args.package }}"]
   timeout: 600s
   cancel_grace: 60s
 output:
@@ -30,4 +30,4 @@ output:
 examples:
   - title: Repair a package
     args:
-      pkg: "httpd"
+      package: "httpd"

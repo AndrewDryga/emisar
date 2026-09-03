@@ -3,7 +3,7 @@ id: f2b.unban_ip
 title: set <jail> unbanip <ip>
 kind: exec
 risk: medium
-description: Remove one IP's ban from one jail. Counter is reset; IP may be banned again on next failure.
+description: Remove one IP's or subnet's ban from one jail. Counter is reset; the address may be banned again on next failure.
 side_effects:
   - IP removed from the jail's banned set.
   - Future failures will re-ban according to the jail's policy.
@@ -17,9 +17,12 @@ args:
   - name: ip
     type: string
     required: true
-    description: IPv4 or IPv6 address.
+    description: IP address or CIDR.
     validation:
-      pattern: "^[a-fA-F0-9:.]{2,45}$"
+      # Same pattern as f2b.banip — a subnet ban it accepts must be liftable
+      # here. fail2ban's own removeBannedIP expands a mask/CIDR to the matching
+      # entries, so the tool takes what the pattern now allows.
+      pattern: "^[0-9a-fA-F:.\\/]{1,43}$"
 execution:
   command:
     binary: fail2ban-client

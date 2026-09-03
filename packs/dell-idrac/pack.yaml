@@ -2,10 +2,13 @@ schema_version: 1
 
 id: dell-idrac
 name: Dell iDRAC (Redfish)
-version: 0.2.6
-# Older versions could send runner-held credentials to a caller-chosen target;
-# 0.1.0 also skipped TLS verification by default.
-retired_below: 0.2.5
+version: 0.2.7
+# Through 0.2.6 idrac.get accepted a ".." path and curl squashed it before
+# sending, so a low-risk read escaped /redfish/v1 into the rest of the
+# authenticated BMC surface. Older versions could also send runner-held
+# credentials to a caller-chosen target; 0.1.0 skipped TLS verification by
+# default.
+retired_below: 0.2.7
 description: >
   Monitor and operate a Dell iDRAC over its Redfish REST API with curl — system
   identity and health rollup, the Dell subsystem rollup, storage controllers

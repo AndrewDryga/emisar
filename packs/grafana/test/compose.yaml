@@ -4,6 +4,8 @@ services:
     environment:
       GF_AUTH_ANONYMOUS_ENABLED: "false"
       GF_SECURITY_ADMIN_PASSWORD: packtest-canary-grafana-61df
+    volumes:
+      - ${EMISAR_ROOT}/packs/grafana/test/fixtures/datasource.yaml:/etc/grafana/provisioning/datasources/packtest.yaml:ro
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://localhost:3000/api/health"]
       interval: 2s

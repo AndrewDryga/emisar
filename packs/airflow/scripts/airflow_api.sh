@@ -187,6 +187,11 @@ providers() {
 # routinely carries service-account JSON, tokens, and TLS keys that no
 # redaction pattern can be relied on to catch. Only the routing metadata an
 # operator needs to identify a connection leaves the runner.
+#
+# The password flag is named has_auth, not has_password: the runner's default
+# json-secret-field rule rewrites the value under any key in its secret
+# vocabulary — "has_password" included, and since it covers non-string values
+# it would report "[REDACTED]" for both true and false.
 connections() {
   reset_query
   add_param connection_id_pattern "$1"
@@ -196,7 +201,7 @@ connections() {
       total_entries,
       connections: [.connections[]? | {
         connection_id, conn_type, description, host, port, schema, login,
-        has_password: ((.password // "") != ""),
+        has_auth: ((.password // "") != ""),
         has_extra: ((.extra // "") != "")
       }]
     }'

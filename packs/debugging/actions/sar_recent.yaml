@@ -6,7 +6,7 @@ kind: exec
 risk: low
 
 description: >
-  `sar -u 5 3` — three 5-second CPU utilization samples. Surfaces
+  Sample CPU utilization with `sar -u 5 3` — three 5-second samples. Surfaces
   user/system/iowait/steal/idle split with statistical smoothing.
   Use when `vmstat`'s noise hides the signal. Requires the sysstat
   package.

@@ -4,7 +4,7 @@ title: docker info
 kind: exec
 risk: low
 description: >
-  `docker info` — daemon version, storage driver, total containers/images, host resources. Read-only.
+  Show daemon info with `docker info` — daemon version, storage driver, total containers/images, host resources. Read-only.
 side_effects:
   - One docker info invocation.
   - Read-only.

@@ -41,10 +41,46 @@ request() {
     --max-filesize 4194304 "$@"
 }
 
+# GET /api/datasources returns each datasource as configured, and two of its
+# fields are operator- and plugin-authored: jsonData, whose keys a community
+# plugin invents, and url, which may carry basic-auth userinfo. Neither key
+# space is enumerable, so no redaction rule can cover them — the projection
+# picks the fields instead. strip_userinfo is bunnycdn's sanitize_origin
+# verbatim (packs/bunnycdn/scripts/bunny_api.sh): the obvious spelling needs
+# test()/capture(), which exist only in a jq linked against Oniguruma.
+safe_datasources() {
+  jq -ce '
+    def strip_userinfo($scheme):
+      ltrimstr($scheme) as $rest
+      | if $rest == . then null
+        else ($rest | split("@")) as $parts
+          | if ($parts | length) < 2 or ($parts[0] | length) == 0 or
+               ($parts[0] | contains("/"))
+            then null
+            else $scheme + ($parts[1:] | join("@"))
+            end
+        end;
+    def sanitize_origin:
+      if type == "string" then
+        strip_userinfo("https://") // strip_userinfo("http://") // .
+      else . end;
+    [ .[]? | {
+        id, uid, name, type, access, database, basicAuth, isDefault, readOnly,
+        url: (.url | sanitize_origin),
+        json_data_keys: ((.jsonData // {}) | keys)
+      } ]
+  '
+}
+
 case "$mode" in
   alerting-rules) request "$api_base/api/prometheus/grafana/api/v1/rules" ;;
   alerting-state) request "$api_base/api/alertmanager/grafana/api/v2/alerts" ;;
-  datasources) request "$api_base/api/datasources" ;;
+  # Captured, not piped live: a pipeline exits with jq's status, so a 401 from
+  # curl would be projected into an empty array and read as "no datasources".
+  datasources)
+    datasources_response=$(request "$api_base/api/datasources")
+    printf '%s' "$datasources_response" | safe_datasources
+    ;;
   health) request "$api_base/api/health" ;;
   orgs) request "$api_base/api/orgs" ;;
   settings) request "$api_base/api/admin/settings" ;;

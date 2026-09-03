@@ -3,8 +3,15 @@ id: grafana.datasources
 title: GET /api/datasources
 kind: script
 risk: low
-description: List all datasources with type + URL + access mode.
-side_effects: ["One API call.", "Read-only."]
+description: >
+  List all datasources with type, URL, access mode, and which one is the
+  default. The URL's basic-auth userinfo is cut and the plugin-authored
+  jsonData object is reduced to its key names, so a credential the operator
+  configured into either one stays on the host.
+side_effects:
+  - One API call.
+  - Read-only.
+  - Returns datasource metadata only; URL credentials and jsonData values are removed on the host.
 args: []
 execution:
   script:

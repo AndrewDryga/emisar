@@ -2,7 +2,7 @@ schema_version: 1
 
 id: airflow
 name: Apache Airflow
-version: 0.1.4
+version: 0.1.5
 # 0.1.0 shipped task_log as low risk, so it auto-ran with no approval while
 # returning whatever a task printed — including secrets Airflow's masker does
 # not recognize. A mislabelled tier that skipped the gate is a security fix.

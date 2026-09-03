@@ -1,7 +1,7 @@
 schema_version: 1
 id: aws-iam
 name: AWS IAM operations
-version: 0.1.8
+version: 0.1.9
 description: >
   IAM introspection — users, roles, policies, attached policies, access
   keys — plus incident-response mutators: deactivate access key,
@@ -30,6 +30,7 @@ setup:
     - name: AWS_SESSION_TOKEN
       description: Session token for temporary (STS) credentials.
   notes:
+    - "An EC2 instance role or ECS task role needs no key at all and is the shape to prefer; a static pair is minted from [the IAM users console](https://console.aws.amazon.com/iam/home#/users) → the user → Security credentials → Create access key."
     - "IAM is a global service, so no region is required (AWS_REGION is harmless if set)."
     - "Read actions need iam:Get*/List*. The mutators deactivate_access_key / delete_access_key / detach_user_policy additionally need iam:UpdateAccessKey / DeleteAccessKey / DetachUserPolicy."
     - "Alternative to env keys: an `~/.aws/credentials` profile (read from disk, no `inherit_env` entry) or, on EC2/ECS, the instance/task role from instance metadata (no credentials needed at all)."

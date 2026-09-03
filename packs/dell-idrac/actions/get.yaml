@@ -2,7 +2,7 @@ schema_version: 1
 id: idrac.get
 title: GET an arbitrary Redfish resource
 kind: script
-risk: low
+risk: medium
 description: >
   Get any Redfish resource by path — a read-only GET under /redfish/v1 that the
   curated reads do not cover. Give a path like
@@ -11,7 +11,9 @@ description: >
   string ($expand, $skip, $filter). Use it to reach newer subsystems
   (/PowerSubsystem, /ThermalSubsystem), page a long log (?$skip=50), or read a
   single job (/Managers/iDRAC.Embedded.1/Jobs/JID_xx…). Read-only — it only ever
-  issues a GET.
+  issues a GET, and the path cannot leave /redfish/v1. The caller picks the
+  resource, so the response can carry BMC configuration the curated reads never
+  return; it is rated medium for that reason.
 side_effects:
   - One read-only Redfish GET of the supplied path.
   - Read-only.
@@ -28,7 +30,8 @@ args:
     required: true
     description: >
       Resource path under /redfish/v1, starting with /. May include a query
-      string; URL-encode any spaces (e.g. %20 inside a $filter).
+      string; URL-encode any spaces (e.g. %20 inside a $filter). A path
+      containing ".." is refused before the request is built.
     validation:
       pattern: "^/[A-Za-z0-9._~:/?$()*,=&%@'+-]{1,256}$"
       max_length: 256
@@ -45,6 +48,16 @@ output:
   parser: json
   max_stdout_bytes: 1048576
   max_stderr_bytes: 8192
+  redact:
+    # The caller chooses the resource, so this action can reach the iDRAC
+    # attribute set where the SNMP community string is a plain String value
+    # (SNMP.1.AgentCommunity) — the same secret dell-ipmi's lan_print redacts
+    # out of `ipmitool lan print`. The runner's default json-secret-field
+    # vocabulary covers password/passphrase keys but not "community".
+    - name: snmp-community
+      type: regex
+      pattern: '(?i)("[A-Za-z0-9._]*community[A-Za-z0-9._]*"\s*:\s*)"[^"]*"'
+      replacement: '${1}"[REDACTED]"'
 examples:
   - title: Read the flat Sensors collection (newer firmware)
     args:

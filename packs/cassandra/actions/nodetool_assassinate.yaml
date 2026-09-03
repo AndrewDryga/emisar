@@ -3,7 +3,7 @@ id: cassandra.nodetool_assassinate
 title: nodetool assassinate <address>
 kind: exec
 risk: critical
-description: 'Forcibly removes a dead node from gossip without streaming data. ONLY use when the node is permanently gone AND removenode failed. Risks: orphaned data, hint bleed, token misownership.'
+description: 'Assassinate a dead node — forcibly remove it from gossip without streaming data. ONLY use when the node is permanently gone AND removenode failed. Risks: orphaned data, hint bleed, token misownership.'
 side_effects:
   - Node entry purged from gossip.
   - No data streaming — data that was on the node is gone.

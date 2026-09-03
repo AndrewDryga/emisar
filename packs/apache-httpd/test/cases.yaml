@@ -45,12 +45,16 @@ cases:
       - argv: [curl, -fsS, http://127.0.0.1/]
     expect:
       stdout_contains: [127.0.0.1]
+  # The arranged request carries a query string, because the tally groups on
+  # the log's request field and that field holds the query verbatim. The path
+  # must survive; the token must not.
   - action: httpd.access_top_urls
     args: {lines: 100}
     arrange:
-      - argv: [curl, -sS, -o, /dev/null, http://127.0.0.1/packtest]
+      - argv: [curl, -sS, -o, /dev/null, "http://127.0.0.1/packtest?token=packtest-canary-httpd-url-3b71"]
     expect:
       stdout_contains: [/packtest]
+      stdout_not_contains: [packtest-canary-httpd-url-3b71]
   - action: httpd.graceful_reload
     runner_user: root
     runner_reason: apachectl signals the root-owned httpd master; the kernel rejects SIGUSR1 from the non-root runner.

@@ -52,6 +52,18 @@ if [ "$allowed" != "true" ]; then
 	exit 1
 fi
 
+# curl squashes /../ out of a URL before sending, so a dotted segment in the
+# generic get action's path argument would climb out of /redfish/v1 and reach
+# the rest of the BMC's authenticated HTTP surface. The path pattern has to
+# keep '.' for resource ids like System.Embedded.1, so the confinement lives
+# here. Same guard as artifactory_api.sh's reject_dotdot, same reason.
+case "$path" in
+*..*)
+	echo "dell-idrac: path may not contain '..' — reads are confined to /redfish/v1" >&2
+	exit 1
+	;;
+esac
+
 if [ -z "${IDRAC_USER:-}" ] || [ -z "${IDRAC_PASSWORD:-}" ]; then
 	echo "dell-idrac: set IDRAC_USER and IDRAC_PASSWORD in the runner environment (and allowlist them in inherit_env)" >&2
 	exit 1
@@ -60,8 +72,10 @@ fi
 auth=$(printf '%s:%s' "$IDRAC_USER" "$IDRAC_PASSWORD" | base64 | tr -d '\n')
 
 # Assemble curl's argument list. -H @- reads the auth header from the stdin
-# piped in below, so the credential stays out of argv.
-set -- --globoff --proto '=https' -sS -X "$method" -H @- "https://$host/redfish/v1$path"
+# piped in below, so the credential stays out of argv. --path-as-is keeps curl
+# from rewriting the path at all, so the /redfish/v1 prefix survives into the
+# request line even if a dot segment ever gets past the guard above.
+set -- --globoff --path-as-is --proto '=https' -sS -X "$method" -H @- "https://$host/redfish/v1$path"
 [ "${IDRAC_INSECURE:-}" = "true" ] && set -- -k "$@"
 if [ -n "$body" ]; then
 	set -- "$@" -H "Content-Type: application/json" --data "$body"

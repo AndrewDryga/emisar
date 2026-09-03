@@ -2,7 +2,7 @@ schema_version: 1
 id: git.show_commit
 title: git show <ref>
 kind: exec
-risk: low
+risk: medium
 description: Show the commit message + diff for one commit ref.
 side_effects:
   - One git show.

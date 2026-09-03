@@ -1,7 +1,7 @@
 schema_version: 1
 id: aws-cost
 name: AWS Cost Explorer operations
-version: 0.1.7
+version: 0.1.8
 description: >
   Read-only AWS spend introspection — month-to-date by service, by
   account, forecast. Auth via AWS_PROFILE with ce:* permissions. Cost
@@ -29,6 +29,7 @@ setup:
     - name: AWS_SESSION_TOKEN
       description: Session token for temporary (STS) credentials.
   notes:
+    - "An EC2 instance role or ECS task role needs no key at all and is the shape to prefer; a static pair is minted from [the IAM users console](https://console.aws.amazon.com/iam/home#/users) → the user → Security credentials → Create access key."
     - "Cost Explorer is a global service, so no region is required."
     - "Cost Explorer must be enabled for the account, and the principal needs Cost Explorer read permissions (ce:GetCostAndUsage, ce:GetCostForecast, ce:GetSavingsPlansCoverage)."
     - "Alternative to env keys: an `~/.aws/credentials` profile (read from disk, no `inherit_env` entry) or, on EC2/ECS, the instance/task role from instance metadata (no credentials needed at all)."

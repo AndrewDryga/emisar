@@ -2,7 +2,7 @@ schema_version: 1
 id: git.diff_head
 title: git diff HEAD
 kind: exec
-risk: low
+risk: medium
 description: Show uncommitted changes against HEAD. Capped at 1MB of output.
 side_effects:
   - One git diff.

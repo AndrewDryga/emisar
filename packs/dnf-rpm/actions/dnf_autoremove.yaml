@@ -1,5 +1,5 @@
 schema_version: 1
-id: dnf.autoremove
+id: rpm.dnf_autoremove
 title: dnf autoremove -y
 kind: exec
 risk: high

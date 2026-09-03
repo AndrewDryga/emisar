@@ -1,6 +1,6 @@
 schema_version: 1
-id: dnf.upgrade_pkg
-title: dnf upgrade -y <pkg>
+id: rpm.dnf_upgrade
+title: dnf upgrade -y <package>
 kind: exec
 risk: high
 description: >
@@ -12,7 +12,7 @@ side_effects:
   - Service backed by the package may restart (depending on the package).
   - System briefly inconsistent until upgrade completes.
 args:
-  - name: pkg
+  - name: package
     type: string
     required: true
     description: Package name.
@@ -21,7 +21,7 @@ args:
 execution:
   command:
     binary: dnf
-    argv: ["upgrade", "-y", "{{ args.pkg }}"]
+    argv: ["upgrade", "-y", "{{ args.package }}"]
   timeout: 600s
   cancel_grace: 60s
 output:
@@ -31,4 +31,4 @@ output:
 examples:
   - title: Upgrade openssl
     args:
-      pkg: "openssl"
+      package: "openssl"

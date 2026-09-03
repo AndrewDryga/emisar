@@ -26,6 +26,18 @@ SYSTEM = {
     "MemorySummary": {"TotalSystemMemoryGiB": 256, "Status": {"Health": "OK"}},
 }
 
+# The iDRAC attribute set, which only the generic get action can reach. Dell
+# returns the SNMP community string here as a plain String attribute, so this
+# document is what idrac.get's snmp-community redaction has to cover.
+MANAGER_ATTRIBUTES = {
+    "@odata.id": "/redfish/v1/Managers/iDRAC.Embedded.1/Attributes",
+    "Id": "iDRACAttributes",
+    "Attributes": {
+        "SNMP.1.AgentEnable": "Enabled",
+        "SNMP.1.AgentCommunity": "packtest-canary-idrac-community-4a1c",
+    },
+}
+
 
 # Every accepted POST is recorded and served back at /packtest/posted, so a case
 # can PROBE what the action did rather than only reading the action's own
@@ -53,6 +65,9 @@ class Handler(BaseHTTPRequestHandler):
             return
         if self.path == "/redfish/v1/Systems/System.Embedded.1":
             self.reply(200, SYSTEM)
+            return
+        if self.path == "/redfish/v1/Managers/iDRAC.Embedded.1/Attributes":
+            self.reply(200, MANAGER_ATTRIBUTES)
             return
         self.reply(404, redfish_error("Resource not found"))
 

@@ -1,0 +1,37 @@
+schema_version: 1
+id: consul.service_maintenance_disable
+title: consul maint -disable -service <svc>
+kind: exec
+risk: medium
+description: >
+  Disable maintenance mode for one local-agent service, so its checks report
+  normally and discovery routes to it again — the reverse of
+  consul.service_maintenance. Consul persists maintenance mode across an agent
+  restart, so this is the only thing that clears it.
+side_effects:
+  - Removes the service's synthetic _service_maintenance critical check.
+  - Service discovery starts routing traffic to this service again.
+  - Other agents' services unaffected.
+args:
+  # Same contract as consul.service_maintenance — the pair addresses one
+  # service, so an id accepted by one must be accepted by the other.
+  - name: service_id
+    type: string
+    required: true
+    description: Service ID.
+    validation:
+      # First char is non-dash so the value can't be parsed as a flag by consul's argv flag parser.
+      pattern: "^[a-zA-Z0-9_.:][a-zA-Z0-9_.\\-:]{0,127}$"
+execution:
+  command:
+    binary: consul
+    argv: ["maint", "-disable", "-service", "{{ args.service_id }}"]
+  timeout: 15s
+output:
+  parser: text
+  max_stdout_bytes: 4096
+  max_stderr_bytes: 8192
+examples:
+  - title: Return one service to rotation
+    args:
+      service_id: "api-1"

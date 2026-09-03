@@ -23,6 +23,9 @@ args:
     required: true
     description: IP address or CIDR.
     validation:
+      # Same pattern as f2b.unban_ip — whatever this bans, that must be able to
+      # unban. 43 chars is a full IPv6 address plus /128. Also the spelling
+      # firewall's iptables_block_ip / iptables_unblock_ip use.
       pattern: "^[0-9a-fA-F:.\\/]{1,43}$"
 execution:
   command:

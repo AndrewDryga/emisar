@@ -5,7 +5,7 @@
 risk_accountability:
   mode: complete
   exceptions:
-    dnf.autoremove: requires_privileged_host
+    rpm.dnf_autoremove: requires_privileged_host
     rpm.dnf_install: requires_privileged_host
     rpm.dnf_remove: requires_privileged_host
-    dnf.upgrade_pkg: requires_privileged_host
+    rpm.dnf_upgrade: requires_privileged_host

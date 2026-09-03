@@ -11,18 +11,13 @@ side_effects:
   - All Envoy counters zero.
   - Histograms and gauges unaffected.
   - In-flight diagnostics referencing old counter values lose context.
-args:
-  - name: admin
-    type: string
-    required: false
-    default: "http://127.0.0.1:9901"
-    description: Envoy admin URL.
-    validation:
-      pattern: "^https?://[a-zA-Z0-9._:\\-]{1,253}(:[0-9]{1,5})?$"
+args: []
 execution:
   command:
-    binary: curl
-    argv: ["-sSfX", "POST", "--globoff", "--proto", "=http,https", "{{ args.admin }}/reset_counters"]
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "curl -q -fsS --globoff --proto =http,https -XPOST \"${ENVOY_ADMIN:-http://127.0.0.1:9901}/reset_counters\""
   timeout: 10s
 output:
   parser: text

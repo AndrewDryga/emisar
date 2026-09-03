@@ -3,7 +3,10 @@ id: httpd.access_top_urls
 title: Top URLs from access log
 kind: exec
 risk: low
-description: Show a tally of request URLs from the last N access log lines.
+description: >
+  Show a tally of request paths from the last N access log lines. The query
+  string is stripped before the tally, so a one-shot credential in a
+  password-reset, magic-link, or OAuth callback URL never leaves the host.
 side_effects:
   - One file read.
   - Read-only.
@@ -26,7 +29,7 @@ execution:
       - |
         log="${HTTPD_ACCESS_LOG:-/var/log/apache2/access.log}"
         [ -r "$log" ] || { echo "access log not readable: $log" >&2; exit 1; }
-        tail -n {{ args.lines }} "$log" | awk '{print $7}' | sort | uniq -c | sort -rn | head -50
+        tail -n {{ args.lines }} "$log" | awk '{split($7, u, "?"); print u[1]}' | sort | uniq -c | sort -rn | head -50
   timeout: 30s
 output:
   parser: text

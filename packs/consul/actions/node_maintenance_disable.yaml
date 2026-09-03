@@ -1,0 +1,28 @@
+schema_version: 1
+id: consul.node_maintenance_disable
+title: consul maint -disable
+kind: exec
+risk: medium
+description: >
+  Disable maintenance mode on this agent's node, so its health checks report
+  normally and service discovery routes to it again — the reverse of
+  consul.node_maintenance. Consul persists maintenance mode across an agent
+  restart, so this is the only thing that clears it.
+side_effects:
+  - Removes the node's synthetic _node_maintenance critical check.
+  - Service discovery starts routing traffic to this node again.
+args: []
+execution:
+  command:
+    binary: consul
+    argv:
+      - "maint"
+      - "-disable"
+  timeout: 15s
+output:
+  parser: text
+  max_stdout_bytes: 4096
+  max_stderr_bytes: 8192
+examples:
+  - title: Return the node to rotation
+    args: {}

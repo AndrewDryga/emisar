@@ -6,8 +6,8 @@ kind: exec
 risk: low
 
 description: >
-  `slabtop -o -s c | head -40` — top 40 kernel slab caches by cache
-  size. Use when /proc/meminfo shows high `Slab` but no userland
+  List the top 40 kernel slab caches by cache size (`slabtop -o -s c |
+  head -40`). Use when /proc/meminfo shows high `Slab` but no userland
   process accounts for the memory. dentry / inode pressure is the
   usual answer.
 

@@ -696,7 +696,8 @@ func TestDispatch_DnfRpmPackage_NoLeadingDashFlag(t *testing.T) {
 		id, arg string
 	}{
 		{"rpm.dnf_remove", "package"},
-		{"dnf.upgrade_pkg", "pkg"},
+		{"rpm.dnf_upgrade", "package"},
+		{"rpm.dnf_reinstall", "package"},
 		{"rpm.dnf_install", "package"},
 		{"rpm.rpm_qi", "package"},
 		{"rpm.rpm_ql", "package"},

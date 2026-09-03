@@ -28,8 +28,9 @@ art_api="$api_base/artifactory/api"
 
 # curl collapses /../ before sending, so a dotted segment in a repository key
 # or artifact path would climb out of the storage API into an arbitrary
-# endpoint on the same host. The arg patterns already exclude it; refuse here
-# too as defense-in-depth.
+# endpoint on the same host. The arg patterns do NOT exclude it — `.` and `/`
+# are both members of their character class — so this guard is the containment,
+# not a second layer. Same guard, same reason, in dell-idrac's idracreq.sh.
 reject_dotdot() {
   case "$1" in
     *..*)

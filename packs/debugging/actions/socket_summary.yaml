@@ -6,7 +6,8 @@ kind: exec
 risk: low
 
 description: >
-  `ss -s` — aggregate counts: TCP/UDP/raw/frag, timewait, by state.
+  Show socket usage totals with `ss -s` — aggregate counts: TCP/UDP/raw/frag,
+  timewait, by state.
   Cheaper than the per-connection enumeration. Use as a one-shot
   "are we close to a port-tuple exhaustion?" check.
 

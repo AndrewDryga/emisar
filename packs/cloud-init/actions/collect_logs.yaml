@@ -14,7 +14,11 @@ args: []
 execution:
   command:
     binary: cloud-init
-    argv: ["collect-logs"]
+    # --tarfile is explicit because its default is the RELATIVE name
+    # cloud-init.tar.gz and the runner runs every action child with cwd "/",
+    # so the bundle would land at /cloud-init.tar.gz — not where side_effects
+    # says to look for it.
+    argv: ["collect-logs", "--tarfile", "/tmp/cloud-init.tar.gz"]
   timeout: 120s
 output:
   parser: text

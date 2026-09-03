@@ -2,11 +2,13 @@ schema_version: 1
 
 id: grafana
 name: Grafana
-version: 0.1.16
-# 0.1.13 and below shipped settings as low risk, so the admin-settings dump —
-# which carries whatever credentials Grafana did not mask — auto-ran with no
-# approval. A mislabelled tier that skipped the gate is a security fix.
-retired_below: 0.1.14
+version: 0.1.17
+# 0.1.16 and below returned the datasource document verbatim, so a URL's
+# basic-auth userinfo and the plugin-authored jsonData object reached the model
+# at a no-approval tier. 0.1.13 and below shipped settings as low risk, so the
+# admin-settings dump — which carries whatever credentials Grafana did not mask
+# — auto-ran with no approval.
+retired_below: 0.1.17
 description: >
   Grafana admin-API ops — datasource health, dashboard listings, alert
   state, user list, version, settings. Read-only. Auth via a bearer token
@@ -19,6 +21,7 @@ requires:
     - linux
   binaries:
     - curl
+    - jq
 
 # Suggestion signal for `emisar pack suggest`: Grafana runs locally on its
 # own process and port; the curl above is only how the read actions reach

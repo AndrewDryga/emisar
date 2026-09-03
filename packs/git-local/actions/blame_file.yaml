@@ -2,7 +2,7 @@ schema_version: 1
 id: git.blame_file
 title: git blame -- <path>
 kind: exec
-risk: low
+risk: medium
 description: 'Show per-line authorship for one file. Path is relative to repo root.'
 side_effects:
   - One git blame.

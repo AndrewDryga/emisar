@@ -3,7 +3,7 @@ id: ec2.terminate_instance
 title: aws ec2 terminate-instances
 kind: exec
 risk: critical
-description: Permanently destroys one instance + its ephemeral storage. Cannot be undone.
+description: Terminate one instance permanently, destroying its ephemeral storage. Cannot be undone.
 side_effects:
   - Instance is shutdown then DELETED.
   - All non-EBS storage (instance store) is lost.

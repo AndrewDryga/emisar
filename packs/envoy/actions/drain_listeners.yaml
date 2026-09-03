@@ -15,13 +15,6 @@ side_effects:
 search_terms:
   - graceful shutdown
 args:
-  - name: admin
-    type: string
-    required: false
-    default: "http://127.0.0.1:9901"
-    description: Envoy admin URL.
-    validation:
-      pattern: "^https?://[a-zA-Z0-9._:\\-]{1,253}(:[0-9]{1,5})?$"
   - name: inboundonly
     type: boolean
     required: false
@@ -32,9 +25,7 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
-      - "if [ '{{ args.inboundonly }}' = 'true' ]; then curl -q -sSf --globoff --proto =http,https -X POST ''\"$1\"'/drain_listeners?inboundonly'; else curl -q -sSf --globoff --proto =http,https -X POST ''\"$1\"'/drain_listeners'; fi"
-      - "emisar"
-      - "{{ args.admin }}"
+      - "if [ '{{ args.inboundonly }}' = 'true' ]; then curl -q -fsS --globoff --proto =http,https -XPOST \"${ENVOY_ADMIN:-http://127.0.0.1:9901}/drain_listeners?inboundonly\"; else curl -q -fsS --globoff --proto =http,https -XPOST \"${ENVOY_ADMIN:-http://127.0.0.1:9901}/drain_listeners\"; fi"
   timeout: 30s
 output:
   parser: text

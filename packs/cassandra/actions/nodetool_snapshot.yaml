@@ -3,7 +3,7 @@ id: cassandra.nodetool_snapshot
 title: nodetool snapshot -t <name> [ks]
 kind: exec
 risk: medium
-description: Atomic hard-link snapshot of SSTables. Cheap to take, expensive if left around.
+description: Take an atomic hard-link snapshot of SSTables. Cheap to take, expensive if left around.
 side_effects:
   - Hard links created in each table's snapshots/<name>/ dir.
   - Disk usage grows as SSTables roll over (snapshot pins originals).

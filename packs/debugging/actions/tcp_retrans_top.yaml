@@ -6,8 +6,8 @@ kind: exec
 risk: low
 
 description: >
-  `ss -i state established` filtered to flows showing retrans
-  counters. Use when network latency is high — surfaces which
+  List established TCP flows with retransmission counters (`ss -i state
+  established`, filtered). Use when network latency is high — surfaces which
   peers are seeing TCP loss without a tcpdump. Read-only.
 
 side_effects:

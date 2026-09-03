@@ -1,0 +1,18 @@
+apiVersion: 1
+
+# One provisioned datasource so grafana.datasources is read against a populated
+# response. Both operator-authored dimensions of that response carry a canary:
+# the URL's basic-auth userinfo and a plugin-defined jsonData value. Neither may
+# leave the host, and the case asserts exactly that.
+datasources:
+  - name: packtest-prometheus
+    uid: packtestds
+    type: prometheus
+    access: proxy
+    url: http://packtest:packtest-canary-grafana-dsurl-7c31@prometheus.packtest.invalid:9090
+    isDefault: true
+    basicAuth: true
+    basicAuthUser: packtest
+    jsonData:
+      httpMethod: POST
+      packtestNote: packtest-canary-grafana-jsondata-2e58

@@ -2,8 +2,11 @@ schema_version: 1
 
 id: git-local
 name: Host-side git
-version: 0.1.10
-retired_below: 0.1.4
+version: 0.1.11
+# 0.1.10 and below rated blame_file, diff_head and show_commit low while they
+# return whole-file contents and patches, so an operator who gates medium had
+# `git.blame_file path=.env` auto-run.
+retired_below: 0.1.11
 description: >
   Read-only git operations against a checkout living on the runner host
   (e.g. /opt/myapp). For remote-GitHub-API work, see the `github-cli`

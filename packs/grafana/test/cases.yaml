@@ -23,9 +23,18 @@ cases:
   - action: grafana.dashboards_search
     expect:
       stdout_contains: ["[]"]
+  # Read against the provisioned datasource, not an empty list: the two fields
+  # an operator can put a credential in — the URL's userinfo and a plugin's
+  # jsonData value — only exist once a datasource does.
   - action: grafana.datasources
     expect:
-      stdout_contains: ["[]"]
+      stdout_contains:
+        - packtest-prometheus
+        - prometheus.packtest.invalid:9090
+        - packtestNote
+      stdout_not_contains:
+        - packtest-canary-grafana-dsurl-7c31
+        - packtest-canary-grafana-jsondata-2e58
   - action: grafana.health
     expect:
       json:

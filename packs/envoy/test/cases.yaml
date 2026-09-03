@@ -12,7 +12,6 @@ cases:
   # healthcheck_fail flips the admin's health flag, which /ready then reports —
   # so the probe reads the state the action changed, not the action's own reply.
   - action: envoy.healthcheck_fail
-    args: {admin: "http://envoy:9901"}
     probes:
       - name: envoy now reports itself draining
         argv: [/bin/sh, -c, "curl -s -o /dev/null -w %{http_code} http://envoy:9901/ready"]
@@ -63,7 +62,6 @@ cases:
   # one case can only ever prove one of them. The data-plane port is the state
   # each drains — it serves "pack-test ok" until the listener stops accepting.
   - action: envoy.drain_listeners
-    args: {admin: "http://envoy:9901"}
     expect:
       stdout_contains: [OK]
     probes:
@@ -77,7 +75,7 @@ cases:
 
   - name: envoy.drain-listeners-inbound-only
     action: envoy.drain_listeners
-    args: {admin: "http://envoy:9901", inboundonly: true}
+    args: {inboundonly: true}
     expect:
       stdout_contains: [OK]
     probes:

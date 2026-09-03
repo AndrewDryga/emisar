@@ -5,7 +5,8 @@ kind: script
 risk: low
 description: >
   List Airflow connections by id, type, host, port, schema, and login, plus
-  whether each one carries a password and an extra document. Secrets never
+  whether each one carries a password (has_auth) and an extra document
+  (has_extra). Secrets never
   leave the runner: the password and the whole extra field — where service
   account JSON, tokens, and TLS keys live — are dropped before the result is
   returned, so this answers "does this connection exist and where does it

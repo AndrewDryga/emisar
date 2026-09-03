@@ -2,12 +2,13 @@ schema_version: 1
 
 id: frr
 name: FRRouting (FRR)
-version: 0.1.6
+version: 0.1.7
 description: >
   Query the local FRRouting daemons via vtysh — BGP summary + neighbors,
   BFD peers, IP route summary, and interface state — plus one gated mutation:
-  shut a BGP neighbor to drain a node from an anycast VIP. Reads are `show`
-  commands; the drain is policy-gated (risk: high).
+  shut a BGP neighbor to drain a node from an anycast VIP and re-advertise to
+  it afterwards. Reads are `show` commands; the drain is policy-gated
+  (risk: high) and its reversal ships beside it.
 vendor: emisar
 homepage: https://emisar.dev/packs/frr
 
@@ -30,7 +31,7 @@ setup:
     vtysh needs root or membership in the frrvty group to reach the
     daemon vty sockets.
   notes:
-    - "The `show` actions are read-only; an unconfigured protocol (no BGP, no BFD) returns an empty / 'no process' result rather than failing. bgp_neighbor_shutdown is the one mutation — risk: high, policy-gated, and reversible (`no neighbor <peer> shutdown`)."
+    - "The `show` actions are read-only; an unconfigured protocol (no BGP, no BFD) returns an empty / 'no process' result rather than failing. bgp_neighbor_shutdown is the drain — risk: high, policy-gated — and bgp_neighbor_no_shutdown reverses it."
   host_access:
     - actions:
         - frr.bgp_summary
@@ -39,6 +40,7 @@ setup:
         - frr.route_summary
         - frr.interfaces
         - frr.bgp_neighbor_shutdown
+        - frr.bgp_neighbor_no_shutdown
       requirement: Reach FRR's VTY sockets. The operating-system boundary does not distinguish show from configuration commands.
       recipes:
         - name: Add the Emisar service user to frrvty
@@ -60,3 +62,4 @@ actions:
   - actions/route_summary.yaml
   - actions/interfaces.yaml
   - actions/bgp_neighbor_shutdown.yaml
+  - actions/bgp_neighbor_no_shutdown.yaml

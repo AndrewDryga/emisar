@@ -86,6 +86,30 @@ cases:
       reason_contains: [process exited with code 60]
       stderr_contains: ["curl failed (exit 60)"]
 
+  # idrac.get is the one action whose path the caller chooses, so both halves of
+  # its containment are pinned here: curl squashes dot segments before sending,
+  # so a rejected path must never reach it, and the attribute set it can now
+  # reach carries the SNMP community string.
+  - name: idrac.get-refuses-a-traversal-path
+    action: idrac.get
+    args: {host: idrac, path: "/../../data?get=sysinfo"}
+    env:
+      IDRAC_INSECURE: "true"
+    expect:
+      status: failure
+      exit: [1]
+      reason_contains: [process exited with code 1]
+      stderr_contains: ["may not contain '..'", /redfish/v1]
+
+  - name: idrac.get-redacts-the-snmp-community-string
+    action: idrac.get
+    args: {host: idrac, path: "/Managers/iDRAC.Embedded.1/Attributes"}
+    env:
+      IDRAC_INSECURE: "true"
+    expect:
+      stdout_contains: ["SNMP.1.AgentEnable", Enabled, "[REDACTED]"]
+      stdout_not_contains: [packtest-canary-idrac-community-4a1c]
+
   - name: idrac.system-missing-credentials
     action: idrac.system
     args: {host: idrac}

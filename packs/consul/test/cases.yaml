@@ -234,6 +234,15 @@ cases:
       - argv: [/bin/sh, -c, 'curl -fsS "$CONSUL_HTTP_ADDR/v1/agent/checks" | grep -q _node_maintenance && echo maintenance']
         expect:
           stdout_contains: [maintenance]
+  # The reverse. Consul persists maintenance across an agent restart, so the
+  # probe reads the synthetic check going away, not the command's own reply.
+  - action: consul.node_maintenance_disable
+    arrange:
+      - argv: [consul, maint, -enable, -reason, packtest-maintenance]
+    probes:
+      - argv: [/bin/sh, -c, 'checks=$(curl -fsS "$CONSUL_HTTP_ADDR/v1/agent/checks") || exit 1; printf %s "$checks" | grep -q _node_maintenance || echo not-in-maintenance']
+        expect:
+          stdout_contains: [not-in-maintenance]
   - action: consul.reload
     expect:
       stdout_contains: [Configuration reload triggered]
@@ -249,6 +258,15 @@ cases:
       - argv: [/bin/sh, -c, 'curl -fsS "$CONSUL_HTTP_ADDR/v1/agent/checks" | grep -q _service_maintenance:packtest-service && echo maintenance']
         expect:
           stdout_contains: [maintenance]
+  - action: consul.service_maintenance_disable
+    args: {service_id: packtest-service}
+    arrange:
+      - argv: [/bin/sh, -c, 'curl -fsS -X PUT --data ''{"ID":"packtest-service","Name":"packtest-service"}'' "$CONSUL_HTTP_ADDR/v1/agent/service/register"']
+      - argv: [consul, maint, -enable, -service, packtest-service, -reason, packtest-maintenance]
+    probes:
+      - argv: [/bin/sh, -c, 'checks=$(curl -fsS "$CONSUL_HTTP_ADDR/v1/agent/checks") || exit 1; printf %s "$checks" | grep -q _service_maintenance:packtest-service || echo not-in-maintenance']
+        expect:
+          stdout_contains: [not-in-maintenance]
   - action: consul.snapshot_restore
     args: {path: /tmp/packtest.snap}
     arrange:
