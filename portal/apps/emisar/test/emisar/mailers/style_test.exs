@@ -122,8 +122,7 @@ defmodule Emisar.Mailers.StyleTest do
           {:facts, [{"Action", "linux.uptime"}, {"Runner", "web-01"}]},
           {:section, "Redacted arguments"},
           {:pre, "host  web-01"},
-          {:code, "834 512"},
-          {:list, ["One", "Two"]}
+          {:code, "834 512"}
         ],
         action: {"Review approval", "https://emisar.dev/a"},
         secondary_action: {"Open runner", "https://emisar.dev/r"},

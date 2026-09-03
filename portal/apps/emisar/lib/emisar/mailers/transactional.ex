@@ -34,7 +34,6 @@ defmodule Emisar.Mailers.Transactional do
           | {:section, binary()}
           | {:code, binary()}
           | {:pre, binary()}
-          | {:list, [binary()]}
 
   @doc """
   Renders `%{text: binary, html: binary}` from a recipient, title, preview,
@@ -84,7 +83,6 @@ defmodule Emisar.Mailers.Transactional do
   defp text_block({:section, title}), do: String.upcase(title)
   defp text_block({:code, code}), do: "    #{code}"
   defp text_block({:pre, value}), do: indent(value)
-  defp text_block({:list, items}), do: Enum.map_join(items, "\n", &("  • " <> &1))
   defp text_block({:facts, []}), do: nil
 
   defp text_block({:facts, facts}) do
@@ -211,12 +209,6 @@ defmodule Emisar.Mailers.Transactional do
     """
   end
 
-  defp html_block({:list, items}) do
-    list = Enum.map_join(items, "", &list_item/1)
-
-    ~s(<tr><td style="padding:0 0 18px;"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">#{list}</table></td></tr>)
-  end
-
   defp fact_row(label, value) do
     """
     <tr>
@@ -232,10 +224,6 @@ defmodule Emisar.Mailers.Transactional do
   end
 
   defp html_fact_value(value), do: Style.blend(HTML.escape(value))
-
-  defp list_item(item) do
-    ~s(<tr><td valign="top" width="18" style="padding:3px 0;font-family:#{@font};font-size:15px;line-height:1.55;color:#{@brand};">•</td><td style="padding:3px 0;font-family:#{@font};font-size:14px;line-height:1.55;color:#{@ink_soft};">#{Style.blend(HTML.escape(item))}</td></tr>)
-  end
 
   defp html_actions(nil, nil), do: ""
 
