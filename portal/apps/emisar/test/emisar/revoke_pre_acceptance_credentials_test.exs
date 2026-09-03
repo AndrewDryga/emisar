@@ -1,6 +1,6 @@
 defmodule Emisar.RevokePreAcceptanceCredentialsTest do
   use Emisar.DataCase, async: true
-  alias Emisar.{Accounts, ApiKeys, Crypto, Fixtures, Repo, RequestContext}
+  alias Emisar.{Accounts, ApiKeys, Audit, Crypto, Fixtures, Repo, RequestContext}
   alias Emisar.ApiKeys.{ApiKey, DeviceGrant}
   alias Emisar.Repo.Migrations.RevokeInvitationCredentials
 
@@ -13,7 +13,7 @@ defmodule Emisar.RevokePreAcceptanceCredentialsTest do
     )
   end
 
-  test "the forward repair revokes every ambiguous credential on an accepted invitation" do
+  test "the forward repair revokes only credentials that predate invitation acceptance" do
     user = Fixtures.Users.create_user()
     account = Fixtures.Accounts.create_account()
 
@@ -25,15 +25,23 @@ defmodule Emisar.RevokePreAcceptanceCredentialsTest do
       )
 
     subject = Fixtures.Subjects.membership_subject(membership)
+    accepted_at = DateTime.add(DateTime.utc_now(), -3600, :second)
+    before_acceptance = DateTime.add(accepted_at, -3600, :second)
 
-    {_bad_raw, bad_key} =
+    {_old_raw, old_key} =
       Fixtures.ApiKeys.create_api_key(account_id: account.id, created_by_id: user.id)
 
-    {_good_raw, good_key} =
+    {_new_raw, new_key} =
       Fixtures.ApiKeys.create_api_key(account_id: account.id, created_by_id: user.id)
 
-    bad_grant = approved_grant(subject, "claude-code")
-    good_grant = approved_grant(subject, "cursor")
+    old_grant = approved_grant(subject, "claude-code")
+    new_grant = approved_grant(subject, "cursor")
+    backdate(old_key, inserted_at: before_acceptance)
+    backdate(old_grant, updated_at: before_acceptance)
+
+    membership
+    |> Ecto.Changeset.change(invitation_accepted_at: accepted_at)
+    |> Repo.update!()
 
     pending_user = Fixtures.Users.create_user()
 
@@ -74,25 +82,36 @@ defmodule Emisar.RevokePreAcceptanceCredentialsTest do
       )
 
     direct_grant = approved_grant(direct_subject, "codex")
-    accepted_at = DateTime.utc_now()
 
-    membership
-    |> Ecto.Changeset.change(invitation_accepted_at: accepted_at)
-    |> Repo.update!()
+    assert %{num_rows: 2} = Repo.query!(RevokeInvitationCredentials.api_key_repair_sql())
 
-    assert %{num_rows: 3} = Repo.query!(RevokeInvitationCredentials.api_key_repair_sql())
-
-    assert %{num_rows: 3} =
+    assert %{num_rows: 2} =
              Repo.query!(RevokeInvitationCredentials.device_grant_repair_sql())
 
-    assert Repo.reload!(bad_key).revoked_at
-    assert Repo.reload!(good_key).revoked_at
+    assert Repo.reload!(old_key).revoked_at
     assert Repo.reload!(pending_key).revoked_at
+    assert is_nil(Repo.reload!(new_key).revoked_at)
     assert is_nil(Repo.reload!(direct_key).revoked_at)
-    assert Repo.reload!(bad_grant).status == :denied
-    assert Repo.reload!(good_grant).status == :denied
+    assert Repo.reload!(old_grant).status == :denied
     assert Repo.reload!(pending_grant).status == :denied
+    assert Repo.reload!(new_grant).status == :approved
     assert Repo.reload!(direct_grant).status == :approved
+
+    revoked_events = audit_events("api_key.revoked")
+    denied_events = audit_events("api_key.device_grant_denied")
+
+    assert Enum.map(revoked_events, & &1.target_id) |> Enum.sort() ==
+             Enum.sort([old_key.id, pending_key.id])
+
+    assert Enum.map(denied_events, & &1.target_id) |> Enum.sort() ==
+             Enum.sort([old_grant.id, pending_grant.id])
+
+    for event <- revoked_events ++ denied_events do
+      assert event.account_id == account.id
+      assert event.actor_kind == "system"
+      assert event.retain_until
+      assert event.payload["reason"]
+    end
 
     assert %{num_rows: 0} = Repo.query!(RevokeInvitationCredentials.api_key_repair_sql())
 
@@ -165,6 +184,18 @@ defmodule Emisar.RevokePreAcceptanceCredentialsTest do
 
     {:ok, grant} = ApiKeys.approve_device_grant(pending_grant, subject)
     grant
+  end
+
+  defp audit_events(event_type) do
+    Audit.Event
+    |> Repo.all()
+    |> Enum.filter(&(&1.event_type == event_type))
+  end
+
+  defp backdate(row, changes) do
+    row
+    |> Ecto.Changeset.change(changes)
+    |> Repo.update!()
   end
 
   defp member_with_subject do
