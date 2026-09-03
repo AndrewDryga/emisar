@@ -319,6 +319,7 @@ defmodule Emisar.Auth.SubjectTest do
       assert Subject.user_id(key_subject) == nil
       assert Subject.user_id(runner_subject) == nil
       assert Subject.user_id(%Subject{}) == nil
+      assert Subject.user_id(%Subject{staff_operator_id: "s1"}) == nil
     end
   end
 

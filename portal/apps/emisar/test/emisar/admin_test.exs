@@ -425,8 +425,8 @@ defmodule Emisar.AdminTest do
       account = Fixtures.Accounts.create_account()
       Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
 
-      user =
-        Fixtures.Users.create_user()
+      staff_operator =
+        staff_operator
         |> Fixtures.Users.set_mfa_state(
           mfa_secret: "JBSWY3DPEHPK3PXP",
           mfa_enabled_at: DateTime.utc_now(),
@@ -436,11 +436,12 @@ defmodule Emisar.AdminTest do
       membership =
         Fixtures.Memberships.create_membership(
           account_id: account.id,
-          user_id: user.id,
+          user_id: staff_operator.id,
           role: "operator"
         )
 
-      args = ["account=#{account.slug}", "member=#{user.email}"]
+      session_token = Fixtures.Auth.create_session_token!(staff_operator, :magic_link, nil)
+      args = ["account=#{account.slug}", "member=#{staff_operator.email}"]
 
       assert {:ok, suspended} =
                Admin.execute("emisar.admin.member.suspend", args, staff_operator.email)
@@ -450,10 +451,13 @@ defmodule Emisar.AdminTest do
 
       # The written row carries no :user preload, so the email has to come from
       # the membership the dispatcher already fetched.
-      assert suspended.email == user.email
+      assert suspended.email == staff_operator.email
 
       assert {:ok, _} = Admin.execute("emisar.admin.member.reinstate", args, staff_operator.email)
       assert {:ok, _} = Admin.execute("emisar.admin.sessions.revoke", args, staff_operator.email)
+
+      assert Emisar.Auth.fetch_user_and_token_by_session_token(session_token) ==
+               {:error, :not_found}
 
       assert {:ok, _} =
                Admin.execute(
@@ -463,6 +467,11 @@ defmodule Emisar.AdminTest do
                )
 
       assert {:ok, _} = Admin.execute("emisar.admin.mfa.reset", args, staff_operator.email)
+
+      reset_staff_operator = Repo.reload!(staff_operator)
+      assert is_nil(reset_staff_operator.mfa_secret)
+      assert is_nil(reset_staff_operator.mfa_enabled_at)
+      assert reset_staff_operator.mfa_recovery_codes == []
     end
 
     test "invites a member with full runner access as the staff operator",

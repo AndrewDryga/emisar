@@ -3838,12 +3838,9 @@ defmodule Emisar.Accounts do
   # around a superior).
   defp ensure_can_modify_membership(%Membership{} = membership, %Subject{} = subject) do
     cond do
-      # `Subject.actor_id/1` rather than `subject.actor.id`: the break-glass
-      # support subject minted by `Emisar.Admin` has no actor, and dereferencing
-      # nil crashed member.suspend, member.reinstate, sessions.revoke, and
-      # mfa.reset — the four verbs an operator reaches for during an incident.
-      # A subject with no actor cannot be modifying itself.
-      membership.user_id == Subject.actor_id(subject) ->
+      # The staff id on an actorless support subject is audit attribution, not
+      # a browser user identity. Such a subject cannot be modifying itself.
+      membership.user_id == Subject.user_id(subject) ->
         {:error, :cannot_modify_self}
 
       not Auth.Permissions.covers_role?(subject, membership.role) ->
