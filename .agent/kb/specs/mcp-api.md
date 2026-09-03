@@ -349,7 +349,8 @@ capabilities.
 - A changed scope, expired cursor, or cursor/filter mismatch returns
   `invalid_cursor`; the caller restarts the same read.
 - A response stops before the next complete item would exceed that tool's
-  64/128 KiB semantic budget and returns `next_cursor`. It never truncates an
+  semantic budget and returns `next_cursor` — 64 KiB for a model-facing
+  continuation page, 512 KiB for a final framed result. It never truncates an
   item or string silently.
 - Ingestion bounds guarantee one encoded compact pack object is at most 56 KiB,
   one full action object is at most 32 KiB, and one compatible-runner brief is at

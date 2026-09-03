@@ -214,14 +214,29 @@ security team runs before installing — keep it in sync with what
 
 ```sh
 # provenance — proves the artifact was built by our workflow, from our source
-gh attestation verify emisar-<version>-linux-amd64.tar.gz --owner andrewdryga
+gh attestation verify emisar-<version>-linux-amd64.tar.gz \
+  --repo andrewdryga/emisar \
+  --signer-workflow AndrewDryga/emisar/.github/workflows/runner-release-trusted.yml \
+  --source-ref refs/tags/runner-v<version> \
+  --deny-self-hosted-runners
 
 # checksum — proves the bytes match what we published
 sha256sum -c SHA256SUMS                 # SHA256SUMS-MCP for the bridge
 
 # the container image carries the same provenance
-gh attestation verify oci://ghcr.io/andrewdryga/emisar-runner:<version> --owner andrewdryga
+gh attestation verify oci://ghcr.io/andrewdryga/emisar-runner:<version> \
+  --repo andrewdryga/emisar \
+  --signer-workflow AndrewDryga/emisar/.github/workflows/runner-release-trusted.yml \
+  --source-ref refs/tags/runner-v<version> \
+  --deny-self-hosted-runners
 ```
+
+The bridge substitutes `mcp-release-trusted.yml` and `refs/tags/mcp-v<version>`.
+The flags are not optional: `--owner` alone accepts an attestation minted by any
+workflow in any repository the owner controls, which is why `install.sh` and
+`install-mcp.sh` pin the repository, the exact release workflow, and the tag in
+`select_attestation_policy`. The signer-workflow owner casing is the
+certificate's; `--repo` takes the lowercase spelling.
 
 The runner and MCP release workflows execute the same checksum and provenance
 verification before publication. The portal `/trust` "Release integrity"

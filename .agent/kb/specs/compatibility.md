@@ -275,8 +275,8 @@ response fields (`device_code`, `user_code`, `verification_uri`,
 emisar-specific success payload — a `client_keys` map of per-client API keys,
 plus `account_id`, `account_slug`, and `account_name` for the approved account,
 not an OAuth token response — are frozen; today's poll errors are
-`authorization_pending`, `access_denied`, `expired_token`, and
-`invalid_grant`, and `slow_down` is never emitted.
+`authorization_pending`, `access_denied`, `expired_token`, `invalid_grant`, and
+`invalid_request` for a missing `device_code`, and `slow_down` is never emitted.
 
 **What happens on skew.** An unknown grant type fails with
 `unsupported_grant_type`, a wrong `resource` with `invalid_target`, and an
@@ -324,21 +324,28 @@ use the returned `id`; Group `members[].value` entries use the returned User
 honor RFC 7644's one-based `startIndex` and `count`, return at most 100 resources
 per page, and report the filtered collection's full count in `totalResults`;
 malformed pagination values fail with 400 `invalidValue`. Users support idempotent
-create/reconcile, `userName eq`/`externalId eq` filters only, PATCH limited to
-`active` and rename attributes, PUT limited to `displayName` plus `active`,
-and DELETE as membership suspension plus wire-resource retirement: the User is
+create/reconcile and `userName eq`/`externalId eq` filters only. PATCH accepts
+`replace` and `add` on exactly five paths, matched case-insensitively — `active`,
+`displayName`, `name.formatted`, `name.givenName`, `name.familyName` — plus
+Entra's pathless form, whose value object may carry `active` and `displayName`
+and nothing else. PUT requires a boolean `active` and takes the name from
+`displayName`, else `name.givenName` and `name.familyName` joined, else
+`name.formatted`.
+Users also support DELETE as membership suspension plus wire-resource retirement: the User is
 omitted from lists and its GET/PATCH/PUT/DELETE routes return 404, while a later
 POST with the same `externalId` restores the same resource and person. An
 `active:true` update restores only an addressable `active:false` resource; it
 does not restore a DELETEd one. Groups reconcile POSTs by `externalId` when one is supplied. A POST without `externalId`
 creates a fresh resource with a new server `id`; the display name is never
-identity. Groups support membership `add`/`remove`/`replace` including Okta's filtered removal form, a
-`displayName eq` filter, and DELETE removes the Group resource, clears its
+identity. Groups support membership `add`/`remove`/`replace` including Okta's filtered removal form,
+`displayName eq` and `externalId eq` filters, and DELETE removes the Group resource, clears its
 members, and revokes authorization derived from its mappings. Several tolerant
 parses are load-bearing for specific IdPs and are part of the contract: the
 case-insensitive and schemeless `Authorization` header (Okta header-auth
-apps), unquoted `eq` filter values, and the externalId-less Group create used by
-JumpCloud's activation probe. An unsupported Users filter fails with 400 `invalidFilter`;
+apps), unquoted `eq` filter values, the externalId-less Group create used by
+JumpCloud's activation probe, and the Users name precedence above, which puts
+`displayName` first because Okta sends a stale `name.formatted` beside a fresh
+`displayName` and preferring the formatted value silently kept the old name. An unsupported Users filter fails with 400 `invalidFilter`;
 unsupported or unparseable Group filters fail with the same 400 `invalidFilter` response.
 
 **What happens on skew.** An IdP sending an unsupported operation gets an
@@ -469,10 +476,12 @@ the arguable one — but moving it would break every installed host for a tidine
 that no operator asked for. `emisar pack list` prints the resolved directory, so
 the answer to "where do packs live" is a command rather than a memorized path.
 
-**Ten of install.sh's environment variables carry no `EMISAR_` prefix, and they
-freeze that way.** `VERSION`, `BIN_DIR`, `ETC_DIR`, `DATA_DIR`, `LOG_DIR`,
-`SERVICE_USER`, `SERVICE_GROUP`, `ASSUME_YES`, `NO_START`, and `NO_SERVICE` are
-the conventional spellings for a shell installer, and `VERSION` in particular is
+**Eleven of install.sh's environment variables carry no `EMISAR_` prefix, and
+they freeze that way.** `VERSION`, `BIN_DIR`, `ETC_DIR`, `DATA_DIR`, `LOG_DIR`,
+`SERVICE_USER`, `SERVICE_GROUP`, `ASSUME_YES`, `NO_START`, `NO_SERVICE`, and
+`QUARANTINE_DISPATCH_LOG` (set to the literal `1`, it moves the durable dispatch
+log aside so the runner boots on a clean one — the destructive knob of the set)
+are the conventional spellings for a shell installer, and `VERSION` in particular is
 set by GitLab CI and most Makefiles — which is exactly why `emisar update`
 maintains a denylist that strips all of them before re-running the installer
 under sudo (see `selfupdate.go`, and the test that pins the runner-identity half
@@ -517,14 +526,25 @@ things: `--key` is an ALGORITHM, `--ca-key`/`--ca-key-file` are key MATERIAL,
 and `--key-name` is a certificate common name. They freeze as they are.
 
 The runner BINARY reads exactly `EMISAR_CONFIG` (selects the config file),
-`EMISAR_URL`, `EMISAR_GROUP`, `EMISAR_RUNNER_ID`, `EMISAR_PACKS_REGISTRY`, and
-`EMISAR_GITHUB_TOKEN`, which `emisar update` sends with its release lookups.
-That last one is credential-bearing and was listed only under install-mcp.sh,
-though the runner reads it directly. `EMISAR_REPO` and
+`EMISAR_URL`, `EMISAR_GROUP`, `EMISAR_RUNNER_ID`, `EMISAR_PACKS_REGISTRY`,
+`EMISAR_GITHUB_TOKEN`, `GH_TOKEN`, `GITHUB_TOKEN`, `NO_COLOR`, and `TERM`.
+`EMISAR_GITHUB_TOKEN` is credential-bearing, was listed only under
+install-mcp.sh though the runner reads it directly, and is what `emisar update`
+sends with its release lookups. `GH_TOKEN` and `GITHUB_TOKEN` are the GitHub
+CLI's own spellings, which `emisar update` honours when it shells out to verify
+the release attestation: an exported `GH_TOKEN` or `GITHUB_TOKEN` wins, and
+`EMISAR_GITHUB_TOKEN` only fills the gap when neither is set — so a CI host that
+already exports one gets that token used, and setting ours changes nothing.
+`NO_COLOR` set to any value, and `TERM=dumb`, turn ANSI color off in every
+command's output; that is the pair a log pipeline or CI job configures, and
+`NO_COLOR` is a published cross-vendor convention we honour rather than own.
+`EMISAR_REPO` and
 `EMISAR_ATTESTATION_WORKFLOW` reach the runner's update path only by being
 inherited by the installer it re-runs, so they are install.sh's contract rather
-than the binary's. The surface golden covers flags, not environment, so this
-list is the only review any of them get.
+than the binary's. `PATH` (host action discovery) and the publisher-only
+`GOOGLE_OAUTH_ACCESS_TOKEN` in `packctl` are not runner product surfaces. The
+surface golden covers flags, not environment, so this list is the only review
+any of them get.
 
 The runner reads per-user config from the platform's own config directory —
 `os.UserConfigDir()`, which honours `$XDG_CONFIG_HOME` on Unix and is
@@ -646,7 +666,19 @@ EMISAR_CLIENT_METADATA  optional untrusted audit metadata
 EMISAR_ALLOW_INSECURE   development-only cleartext opt-in
 EMISAR_SIGNING_KEY      optional local signing key
 EMISAR_SIGNING_CERT     optional certificate for that key
+NO_COLOR                set to anything: no ANSI color in CLI output
+CLICOLOR                set to `0`: same
+TERM                    `dumb`: same
+XDG_CONFIG_HOME         Unix config root the bridge reads and rewrites
+APPDATA                 the Windows equivalent
 ```
+
+The last five are conventions the bridge honours rather than names it owns, and
+they freeze as honoured. The config-root pair is the load-bearing one:
+`XDG_CONFIG_HOME` and `APPDATA` decide which files `connect` and `disconnect`
+edit in the operator's home directory, and which directory holds the bridge's own
+stored credentials — so a change to how they are resolved changes where an
+already-connected operator's configuration lives.
 
 With no command, it reads and writes line-delimited JSON-RPC 2.0 over stdio. In
 stdio mode both authentication variables are required. Direct commands use the
@@ -755,7 +787,15 @@ redirects.
 environment-based, not protocol-negotiated. `install.sh` accepts runner tags
 in `runner-vX.Y.Z`, `vX.Y.Z`, or `X.Y.Z` form and flags including `--yes`,
 `--uninstall`, `--purge`, `--no-start`, `--no-service`,
-`--bin-dir`, `--etc-dir`, `--data-dir`, `--log-dir`, `--user`, and `--packs`. Its
+`--bin-dir`, `--etc-dir`, `--data-dir`, `--log-dir`, `--user`, `--packs`, and
+`--preverified-bundle`. That last one is internal and absent from `--help`, but
+it freezes hardest of all: `emisar update` verifies a release bundle on the host
+and then re-runs the installer with `--preverified-bundle <dir> --version <tag>`,
+which makes install.sh use those extracted bytes and skip the download, the
+`SHA256SUMS` check, and the attestation check that already ran. The installer
+being handed the flag is whatever emisar.dev serves today; the binary composing
+it can be any deployed version, so renaming or re-scoping the flag breaks
+`emisar update` on every fielded runner at once. Its
 environment is `VERSION`, `BIN_DIR`, `ETC_DIR`, `DATA_DIR`, `LOG_DIR`,
 `SERVICE_USER`, `SERVICE_GROUP`, `ASSUME_YES`, `NO_START`, `NO_SERVICE`,
 `EMISAR_PACKS`, `EMISAR_URL`, `EMISAR_ENROLLMENT_KEY`, `EMISAR_REPO`,
@@ -884,6 +924,41 @@ state path, or changed uid breaks deployed pull specs, mounted configs,
 volume ownership, and extension Dockerfiles with no negotiation layer. At 1.0
 these freeze like the install scripts: a breaking change needs a new image
 name or a major release, following the deprecation path.
+
+### Release mirror layout
+
+**What it is.** The origin the install scripts and `emisar update` read release
+metadata and binaries from: `https://emisar.dev/releases/runner` and
+`https://emisar.dev/releases/mcp`. Each component serves `/latest.json`, a
+per-release `/<tag>/manifest.json`, and that release's artifacts beside its
+manifest at `/<tag>/<artifact>` — the platform archives, a `.sha256` sidecar for
+each, `SHA256SUMS` (`SHA256SUMS-MCP` for the bridge), and the checksum file's
+`.sigstore.jsonl` attestation bundle. `install.sh`, `install-mcp.sh`,
+`install-mcp.ps1`, and the runner's `emisar update` each hard-code the origin and
+all three path shapes.
+
+**How it is versioned today.** A manifest is JSON with five keys every consumer
+reads by name: `schema_version`, `component`, `tag`, `version`, and
+`source_revision`. `schema_version` is gated on an exact match with `1`,
+`component` must be `runner` or `mcp`, `tag` must be `runner-vX.Y.Z` or
+`mcp-vX.Y.Z`, `version` must be that tag's semver with the prefix stripped, and
+`source_revision` must be 40 lowercase hex characters. A manifest that fails any
+of those checks fails the install or update with the mirror named as the invalid
+party, rather than being read as far as it parses. `latest.json` is a byte copy
+of the newest release's `manifest.json`, so both files answer the same five
+questions. The publisher also writes an `artifacts` array of `name`/`sha256`
+pairs that no shipped consumer reads; `SHA256SUMS` is the checksum of record.
+Every `/<tag>/` object is published once and never rewritten, so a release
+address is immutable.
+
+**What happens on skew.** There is no negotiation layer and no fallback for the
+layout itself — the GitHub Releases fallback covers the mirror being DOWN, not
+the mirror having MOVED. Moving a path, renaming a manifest key, or serving
+`schema_version: 2` breaks `emisar update` on every deployed runner at once, and
+breaks every bootstrap line an operator saved, since a deployed consumer rejects
+a version it does not recognize instead of degrading. A new manifest shape
+therefore needs a new `schema_version` at a new path, with the current paths
+still serving version 1 through the deprecation window.
 
 ### Registry URL layout
 

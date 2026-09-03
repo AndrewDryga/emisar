@@ -30,7 +30,7 @@
 5. **Double validation.** The control plane pre-validates every request and
    applies policy; the runner still re-checks every arg against the action's
    declared schema before executing.
-6. **Clamped opts.** Per-call opts (`timeout`, `max_*_bytes`) are clamped
+6. **Clamped opts.** Per-call opts (`timeout_ms`, `max_*_bytes`) are clamped
    to the action's declared min/max envelope. A misbehaving cloud cannot
    ask for a 100h timeout on an action that declares a 30s ceiling.
 7. **Output redaction.** Bearer tokens, AWS keys, GitHub tokens,
@@ -51,10 +51,15 @@
    try to set hijack-vector variables (`LD_*`, `DYLD_*`, `BASH_ENV`)
    are rejected at validation time.
 10. **Process containment on exit.** Children run in their own process
-    group (`Setpgid`); cancel/timeout SIGTERMs the whole group, then
-    SIGKILLs after the grace window. On Linux `Pdeathsig: SIGKILL` makes
-    the kernel reap the child if the runner itself dies — no orphaned
-    actions outliving their supervisor.
+    group (`Setpgid`), and the runner signals the whole group — SIGTERM,
+    then SIGKILL after the grace window — on cancel, on timeout, and when
+    the runner itself exits. On Linux `Pdeathsig: SIGKILL` is the kernel
+    backstop for a runner that cannot run that shutdown path at all (OOM
+    kill, SIGKILL, panic). It reaches the direct child only, so a wrapper
+    script that forks a worker and exits still orphans that worker to
+    init: pack authors `exec` the target binary, or `trap` and forward
+    signals. Losing the websocket is deliberately not an exit — in-flight
+    actions keep running and replay their result on the next connection.
 11. **Local admission control.** An optional `admission:` block in
     `config.yaml` filters what this host will even advertise — by action
     id (allow/deny globs) and by a `max_risk` ceiling (one flag turns a
@@ -168,7 +173,7 @@ its actions from itself:
 | An approval quorum is bypassed without accountable evidence | A current account owner or admin may deliberately use break-glass approval. Their active membership and role are rechecked under lock; a non-blank reason is mandatory; and one `approval.overridden` event records the actor, reason, approvals present, required quorum, reviews waived, and whether requester separation was waived. The operation creates neither an approval vote nor a standing grant. Target scope, expiry, cancellation, pack trust, dispatch-signature freshness, initiating-member authorization, and runner admission still apply. This is explicit owner/admin authority: quorum and self-approval rules do not protect against a malicious or compromised owner/admin. |
 | Pack swapped on disk after trust         | Runner recomputes the cloud-pinned trusted hash before execution. |
 | Pack sets `LD_PRELOAD`/`BASH_ENV`        | Hijack-vector env vars rejected at pack validation.           |
-| Action outlives a dying runner           | `Pdeathsig` (Linux) + process-group SIGTERM/SIGKILL on cancel/timeout. |
+| Action outlives a dying runner           | Process-group SIGTERM/SIGKILL on cancel, timeout, and runner exit, with `Pdeathsig` (Linux) as the backstop for a hard kill. `Pdeathsig` reaches the direct child only, so a wrapper script that forks and exits orphans its worker unless it `exec`s or forwards signals. |
 | Inbound surface attacked                 | There is none.                                                |
 | Compromised runner declares a looser policy `group` | Accepted: `group` is runner-declared and the host is the trust anchor — a host that can forge it already owns the box the runner executes on, so widening its own policy buys nothing. Pin `group` to the auth key for operator-authoritative scoping. |
 | TOFU pack understates an action's `risk`/`kind`     | Accepted: those are runner-declared, so trusting a pack's *hash* = trusting its declared risk. A pack whose hash matches the configured published catalog carries its risk inside the hash that catalog authorized; a TOFU pack (no catalog entry) has no such anchor. Pin risk at trust-time if you need it author-independent. |
@@ -219,6 +224,15 @@ The runner-side guarantees above pair with the control plane's own model:
   access transparency, not an internal-only log. Support mutations are
   not on that console at all — they run through a private, colocated
   action pack over release RPC, so each one is an ordinary audited run.
+- The BEAM operational dashboard at `/ops/live` is a separate surface
+  behind the same `is_admin` and proven-MFA gate, and it does not share
+  the staff console's two properties. It is not read-only: it can
+  terminate a process on the running node, which on this product may be a
+  customer's runner websocket or an in-flight approval transaction. And it
+  is not account-attributed: it reads live node state across every tenant
+  at once and writes no `staff.*` event, so nothing it shows or does
+  reaches a customer's audit trail. Treat reaching it as an insider-risk
+  action gated by the platform admin flag, not as customer-visible access.
 
 Runbook definitions, typed inputs, bindings, extractor patterns, action output,
 and runner/catalog state are all untrusted input. Static validation happens

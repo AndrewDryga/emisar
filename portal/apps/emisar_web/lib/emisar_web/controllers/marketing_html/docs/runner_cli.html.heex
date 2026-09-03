@@ -401,7 +401,7 @@ systemd-deep  0.1.10   24       sha256:84f814476179  Deeper systemd state + oper
               {"emisar doctor", "Offline preflight: config, credential, dispatch log, pack dirs, packs, action binaries, service, and control-plane reachability. Exits nonzero if any check fails. --probe adds the pack verify run.", "Reads only"},
               {"emisar state", "Print the runner_state JSON this host advertises to the control plane.", "Reads only"},
               {"emisar events tail", "Print recent journal events. -f follows new events. --lines sets the count and defaults to 50.", "Reads only"},
-              {"emisar events cat / grep", "Dump the whole journal, or filter it by --action, --caller, or --event.", "Reads only"},
+              {"emisar events cat / grep", "Dump the whole journal, or filter it by --action, --type, --event-id, or --request-id. --type is the event_type a SIEM alerts on.", "Reads only"},
               {"emisar audit verify [path]", "Re-derive a journal file's SHA-256 hash chain and report breaks. --all checks rotated siblings.", "Reads only"},
               {"emisar version", "The runner version and build info.", "Reads only"}
             ] do %>

@@ -204,7 +204,11 @@
         binary, container image, or infrastructure-managed runner is refused — update that
         deployment at its source instead of letting the host drift from it.
       </p>
-      <.docs_verify_download tarball="emisar-<version>-linux-amd64.tar.gz" checksums="SHA256SUMS" />
+      <.docs_verify_download
+        tarball="emisar-<version>-linux-amd64.tar.gz"
+        checksums="SHA256SUMS"
+        component="runner"
+      />
       <p class="mt-5 text-base leading-7 text-zinc-400">
         The update touches only the binary: <.docs_inline_code>config.yaml</.docs_inline_code>, <.docs_inline_code>runner.env</.docs_inline_code>, the cached token, installed packs, the dispatch log, and the local
         audit journal all stay as they are. Before the service stops, it verifies the release and

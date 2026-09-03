@@ -8,9 +8,15 @@ defmodule Emisar.RateLimiter do
   drops expired windows so the table stays bounded.
 
   This is coarse abuse prevention (a fixed window can allow a brief burst
-  across a window boundary), not a precise quota. It backs the domain's MFA
-  challenge cap and, via `EmisarWeb.Plugs.RateLimit`, the unauthenticated
-  OAuth endpoints and the MCP surface — all through `Emisar.Throttle`.
+  across a window boundary), not a precise quota. Via `Emisar.Throttle` it backs
+  the SSO discovery calls, the unauthenticated OAuth endpoints, the MCP surface,
+  and the sign-in LiveViews that cannot sit behind a plug.
+
+  The window is per node: the table is local, so a clustered deployment
+  multiplies every configured limit by the node count. A cap that must hold
+  exactly across the fleet belongs on a durable row instead — see
+  `Emisar.Auth.SecurityAttemptWindow`, which is what the MFA and step-up caps
+  use.
   """
   use GenServer
 

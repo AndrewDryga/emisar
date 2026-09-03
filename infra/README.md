@@ -160,8 +160,9 @@ colocated release, so compromising the runner is equivalent to compromising the
 portal VM. The fixed pack passes its already-validated action arguments to one
 private Elixir entrypoint; the normal action run remains the audit record.
 
-After the first rollout, trust the exact `emisar-admin@0.1.1` hash advertised by
-the new runners in the management account. Critical erasure actions remain
+After the first rollout, trust the exact `emisar-admin` hash the new runners in
+the management account advertise — the version travels with the pack, so read it
+off the advertisement rather than from here. Critical erasure actions remain
 subject to the management account's normal policy and approval rules.
 
 The pinned `runner-v0.23.1` release understands the current pack setup and

@@ -154,10 +154,11 @@ the repository-confirmed revocation path is replacing the live domain proof.
 
 The application receives these values from sensitive HCP Terraform workspace
 variables. Terraform writes exact Secret Manager versions, and the rendered
-cloud-init names the version explicitly. A variable edit without incrementing
-the matching `local.secret_generations` entry is not a reliable rotation.
-Follow [infra's Secrets procedure](../../../infra/README.md#secrets): update one
-credential's generation, review the HCP plan, apply it, and watch the managed
+cloud-init names the version explicitly. Every externally-issued credential
+derives its rotation trigger from a hash of the payload, so editing the
+workspace variable IS the rotation — nothing else has to be incremented. Follow
+[infra's Secrets procedure](../../../infra/README.md#secrets): change one
+credential's value, review the HCP plan, apply it, and watch the managed
 instance group roll to healthy VMs.
 
 The ordering for every provider credential is **provider first, application
@@ -166,12 +167,16 @@ second**:
 1. At the provider, revoke, replace, or regenerate the exposed credential.
    Confirm the provider accepted the new value and note any delivery overlap
    window.
-2. Update the matching sensitive HCP Terraform variable.
-3. Increment only that secret's generation in `infra/secrets.tf`, then run the
-   reviewed infrastructure plan and apply.
-4. Verify the provider path against the new app version. After the overlap
+2. Update the matching sensitive HCP Terraform variable, then run the reviewed
+   infrastructure plan and apply. The plan should show a new secret version and
+   a new instance template; if it shows neither, the value did not change.
+3. Verify the provider path against the new app version. After the overlap
    window and delivery backlog are clear, revoke the old provider value if the
    provider did not revoke it as part of replacement.
+
+Only `emisar-secret-key-base` and `emisar-release-cookie` still use the
+hand-maintained `local.secret_generations` counter, and they have their own
+procedure linked at the end of this page.
 
 ### Paddle webhook secret
 
@@ -201,7 +206,7 @@ bounce/complaint webhook; an attacker with the latter can submit authenticated
 suppression events.
 
 **Containment and rotation.** Rotate the exposed token or webhook password in
-Postmark first, then update the corresponding HCP variable and generation.
+Postmark first, then update the corresponding HCP variable.
 Verify both a real mail send and the webhook behavior.
 
 The app currently has one `POSTMARK_WEBHOOK_SECRET` value and does not expose a
@@ -215,7 +220,7 @@ can inject noise or false errors into the configured Sentry project; the DSN
 alone is not the project's administrative credential.
 
 **Containment and rotation.** Rotate or disable the DSN in Sentry first, then
-update `sentry_dsn` and its generation. Verify that a controlled error is
+update `sentry_dsn`. Verify that a controlled error is
 accepted under the new DSN and that the old DSN no longer ingests, if Sentry's
 credential model supports that check.
 
@@ -226,7 +231,7 @@ and group writes. An attacker can poison product analytics with forged data;
 the token is not a portal login.
 
 **Containment and rotation.** Rotate or revoke it in Mixpanel first, then
-update `mixpanel_token` and its generation. Verify one controlled event and
+update `mixpanel_token`. Verify one controlled event and
 that the old token is no longer accepted where the provider exposes that
 signal.
 

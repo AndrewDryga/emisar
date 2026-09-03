@@ -73,7 +73,11 @@
         copy_text="curl -fsSL https://emisar.dev/install.sh | sudo EMISAR_ENROLLMENT_KEY=emkey-enroll-… bash"
       ><span class="text-zinc-500">$</span> curl -fsSL https://emisar.dev/install.sh \
     | sudo EMISAR_ENROLLMENT_KEY=emkey-enroll-… bash</.docs_code>
-      <.docs_verify_download tarball="emisar-<version>-linux-amd64.tar.gz" checksums="SHA256SUMS" />
+      <.docs_verify_download
+        tarball="emisar-<version>-linux-amd64.tar.gz"
+        checksums="SHA256SUMS"
+        component="runner"
+      />
       <.docs_install_script_details />
 
       <.docs_h2 id="confirm">Confirm it connected</.docs_h2>

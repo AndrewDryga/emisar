@@ -531,20 +531,45 @@ defmodule EmisarWeb.DocsComponents do
   defp docs_risk_classes("high"), do: "bg-rose-500/10 text-rose-300 ring-rose-500/30"
   defp docs_risk_classes("critical"), do: "bg-rose-600/15 text-rose-200 ring-rose-500/40"
 
+  # The identity `install.sh` and `install-mcp.sh` verify against in
+  # `select_attestation_policy`. `--owner` on its own accepts an attestation
+  # minted by ANY workflow in ANY repository that owner controls, so a published
+  # recipe has to pin the same facts the installer does or it proves less than
+  # the install it precedes. The signer-workflow owner casing is the
+  # certificate's; `--repo` takes the lowercase spelling.
+  @attestation_repo "andrewdryga/emisar"
+  @runner_attestation_workflow "AndrewDryga/emisar/.github/workflows/runner-release-trusted.yml"
+  @mcp_attestation_workflow "AndrewDryga/emisar/.github/workflows/mcp-release-trusted.yml"
+
+  @doc "The release workflow a component's Sigstore attestation must name."
+  def attestation_workflow("runner"), do: @runner_attestation_workflow
+  def attestation_workflow("mcp"), do: @mcp_attestation_workflow
+
+  @doc "The repository a release attestation must name."
+  def attestation_repo, do: @attestation_repo
+
   @doc """
   A collapsible "Verify this download" block placed under an install command:
   the download-then-verify commands (SLSA provenance + checksum) with THIS
   release's artifact names, so a security team can prove the binary before it
   runs as sudo. `tarball`/`checksums` differ between the runner and the
-  emisar-mcp bridge, so each install surface passes its own.
+  emisar-mcp bridge, so each install surface passes its own; `component`
+  selects the release workflow and tag prefix the attestation must carry.
   """
   attr :tarball, :string, required: true
   attr :checksums, :string, required: true
+  attr :component, :string, required: true, values: ~w(runner mcp)
 
   def docs_verify_download(assigns) do
+    tag_prefix = if assigns.component == "mcp", do: "mcp-v", else: "runner-v"
+
     commands = """
-    # provenance — built by our workflow, from our source
-    $ gh attestation verify #{assigns.tarball} --owner andrewdryga
+    # provenance — built by our workflow, from our source, at this tag
+    $ gh attestation verify #{assigns.tarball} \\
+        --repo #{@attestation_repo} \\
+        --signer-workflow #{attestation_workflow(assigns.component)} \\
+        --source-ref refs/tags/#{tag_prefix}<version> \\
+        --deny-self-hosted-runners
     # checksums — the bytes match what we published
     $ sha256sum -c #{assigns.checksums}\
     """
@@ -565,7 +590,7 @@ defmodule EmisarWeb.DocsComponents do
       <div class="border-t border-zinc-900 px-5 pb-5 pt-4">
         <p class="text-sm leading-7 text-zinc-400">
           The installer checks the checksums for you. emisar also publishes a signed attestation for every release, so you can prove the binary came from our source before it runs as <.docs_inline_code>sudo</.docs_inline_code>.
-          Download the release and run both checks — the attestation names our source repository and the release workflow that built it.
+          Download the release and run both checks. Keep every flag: without <.docs_inline_code>--signer-workflow</.docs_inline_code>, an attestation from any workflow in the repository passes.
         </p>
         <.docs_code phx-no-format label="shell">{@commands}</.docs_code>
         <p class="mt-3 text-xs leading-5 text-zinc-400">

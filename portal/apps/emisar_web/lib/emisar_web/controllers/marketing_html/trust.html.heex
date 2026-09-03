@@ -275,19 +275,31 @@
         </p>
         <div class="mt-4 overflow-hidden rounded-lg border border-zinc-900 bg-black/60">
           <pre class="overflow-x-auto p-4 font-mono text-xs leading-6 text-zinc-300"><span class="text-zinc-500"># provenance — built by our workflow, from our source</span>
-<span class="text-zinc-500">$</span> gh attestation verify emisar-&lt;version&gt;-linux-amd64.tar.gz --owner andrewdryga
+<span class="text-zinc-500">$</span> gh attestation verify emisar-&lt;version&gt;-linux-amd64.tar.gz \
+    --repo andrewdryga/emisar \
+    --signer-workflow AndrewDryga/emisar/.github/workflows/runner-release-trusted.yml \
+    --source-ref refs/tags/runner-v&lt;version&gt; \
+    --deny-self-hosted-runners
 
 <span class="text-zinc-500"># checksums — the bytes match what we published (SHA256SUMS-MCP for the bridge)</span>
 <span class="text-zinc-500">$</span> sha256sum -c SHA256SUMS
 
 <span class="text-zinc-500"># the official runner container image carries the same provenance + an SBOM</span>
-<span class="text-zinc-500">$</span> gh attestation verify oci://ghcr.io/andrewdryga/emisar-runner:&lt;version&gt; --owner andrewdryga</pre>
+<span class="text-zinc-500">$</span> gh attestation verify oci://ghcr.io/andrewdryga/emisar-runner:&lt;version&gt; \
+    --repo andrewdryga/emisar \
+    --signer-workflow AndrewDryga/emisar/.github/workflows/runner-release-trusted.yml \
+    --source-ref refs/tags/runner-v&lt;version&gt; \
+    --deny-self-hosted-runners</pre>
         </div>
         <p class="mt-4 text-base leading-relaxed text-zinc-400">
-          A green check shows the source repository and the release workflow, so it means the
-          artifact is exactly the one our pipeline produced from a tag you can read. The install
-          script verifies the checksum itself; running these first is the download-then-verify path
-          for a security team that inspects before it trusts.
+          A green check shows the source repository, the release workflow, and the tag, so it
+          means the artifact is exactly the one our pipeline produced from a tag you can read. Keep
+          every flag — <code class="font-mono text-zinc-300">--owner</code>
+          alone would accept an attestation from any workflow we run. The install script verifies
+          the checksum and the same attestation itself; running these first is the
+          download-then-verify path for a security team that inspects before it trusts. The bridge
+          uses <code class="font-mono text-zinc-300">mcp-release-trusted.yml</code>
+          and <code class="font-mono text-zinc-300">refs/tags/mcp-v&lt;version&gt;</code>.
         </p>
       </div>
 

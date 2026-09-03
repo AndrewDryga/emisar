@@ -198,9 +198,15 @@ the CA **private** key to store offline, and the two MCP env vars.
   change at all.
 
   ```sh
-  emisar signing new-cert --ca-key <CA private key> --ca-cert <CA certificate> \
-    --key-name op-alice --scope group=prod --ttl 24h
+  emisar signing new-cert --ca-key-file <path to the CA private key> \
+    --ca-cert <CA certificate> --key-name op-alice --scope group=prod --ttl 24h
   ```
+
+  Pass the CA private key as a file. The `--ca-key` flag takes the key material
+  itself, which puts the root of trust for signed dispatch into shell history and
+  into `/proc/<pid>/cmdline`, where any other user on the host can read it while
+  the command runs. It stays for the scripts that already use it, and passing both
+  is refused rather than resolved.
 
   It mints a new leaf key and prints `EMISAR_SIGNING_KEY` +
   `EMISAR_SIGNING_CERT` for that operator. To certify an existing or HSM-held

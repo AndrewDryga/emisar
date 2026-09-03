@@ -139,8 +139,12 @@
       <.docs_code
         phx-no-format
         label="shell"
-        copy_text="gh attestation verify oci://ghcr.io/andrewdryga/emisar-runner:X.Y.Z --owner andrewdryga"
-      ><span class="text-zinc-500">$</span> gh attestation verify oci://ghcr.io/andrewdryga/emisar-runner:X.Y.Z --owner andrewdryga</.docs_code>
+        copy_text="gh attestation verify oci://ghcr.io/andrewdryga/emisar-runner:X.Y.Z --repo andrewdryga/emisar --signer-workflow AndrewDryga/emisar/.github/workflows/runner-release-trusted.yml --source-ref refs/tags/runner-vX.Y.Z --deny-self-hosted-runners"
+      ><span class="text-zinc-500">$</span> gh attestation verify oci://ghcr.io/andrewdryga/emisar-runner:X.Y.Z \
+    --repo andrewdryga/emisar \
+    --signer-workflow AndrewDryga/emisar/.github/workflows/runner-release-trusted.yml \
+    --source-ref refs/tags/runner-vX.Y.Z \
+    --deny-self-hosted-runners</.docs_code>
 
       <.docs_h2 id="building-blocks">Identity and state</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">

@@ -176,9 +176,14 @@ docker build -f portal/Dockerfile -t emisar/portal:local .
 ```
 
 The release contains `bin/migrate`, `bin/server`, the remote console, compiled
-assets, and runtime diagnostics. Cloud-init pulls the reviewed digest, runs
-`/app/bin/migrate`, and starts the container under `emisar.service`. Ecto's
-advisory migration lock serializes concurrent instance boots.
+assets, and runtime diagnostics. Cloud-init pulls the reviewed digest and starts
+the container under `emisar.service`; the image's `bin/server` entry point runs
+`bin/migrate` before booting the endpoint, so a failed migration aborts the
+container and the previous version keeps serving. There is no separate migrate
+step and no separate log — `emisar.service` is `Restart=always RestartSec=5`, so
+a migration that keeps failing shows up as the unit restarting every five
+seconds and retrying it. Ecto's advisory migration lock serializes concurrent
+instance boots.
 
 ## Schema changes and rollback
 

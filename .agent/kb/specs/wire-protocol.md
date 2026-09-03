@@ -114,8 +114,9 @@ exceed 2 MiB (2,097,152 bytes); runners validate that before sending. The
 message contains the runner version, hostname, group, labels, complete
 pack/action advertisement, signature-enforcement state, trusted CA IDs, and
 maximum attestation age. `enforce_signatures` and `max_attestation_age_seconds`
-are persisted; `signing_ca_ids` currently is not, so an operator confirms which
-CA a runner trusts on the host (`emisar doctor`) rather than in the console.
+are persisted; `signing_ca_ids` currently is not, so the console cannot answer
+which CA a runner trusts. Ask the host: `emisar state` prints the exact
+`runner_state` this runner would advertise, `signing_ca_ids` included.
 
 Every action descriptor includes `primary_executable_available`. A new runner
 sets it to `false` and includes the bounded `missing_executable` name when the
@@ -316,7 +317,7 @@ load-bearing: `concurrency_cap_reached` means the runner is already at
 `MaxConcurrentRuns` and did not start the dispatch, so the portal REQUEUES that
 run rather than failing it. Treat it as a contract, not a diagnostic — the wire
 golden pins it. The portal finalizes it idempotently. It carries terminal status, exit code,
-duration, emitted stream hashes/counts, total and dropped progress-chunk counts,
+duration, emitted stream byte counts, total and dropped progress-chunk counts,
 truncation flags, masked executed command, reason, and the
 local audit event ID. Per-rule redaction hit counts exist in the runner's
 local journal only — they are not on the wire — so "was anything masked in
@@ -329,10 +330,13 @@ and `local_audit_failed` is true; the action's actual status does not change.
 The remote executed command is at most 16 KiB of valid UTF-8 and sets
 `executed_command_truncated` when shortened; the local runner audit keeps the
 full masked command.
-Raw output bytes are not repeated in the terminal message. Emitted hashes describe
-every normalized, redacted byte admitted by the action's output caps; truncation
-flags disclose bytes omitted at those caps. The hashes do not claim that every
-emitted chunk reached the portal. The portal accepts unique chunks idempotently,
+Raw output bytes are not repeated in the terminal message, and neither are
+digests of them: the wire carries counts only. The emitted byte counts cover
+every normalized, redacted byte admitted by the action's output caps, and
+truncation flags disclose bytes omitted at those caps. Neither says that every
+emitted chunk reached the portal — that is the `output_complete` question below.
+Output digests live in the runner's local journal, which is the only place a
+byte-level integrity question can be answered. The portal accepts unique chunks idempotently,
 keeps later chunks even when an earlier one was lost, and persists
 `output_complete` only when its accepted count matches the runner's total and
 the runner reports no local drops.
@@ -389,6 +393,8 @@ yield a `request_id` is dropped silently.
 
 ## Limits
 
+The runner enforces these:
+
 | Item | Limit |
 | --- | ---: |
 | Complete `run_action` message | 128 KiB |
@@ -397,7 +403,46 @@ yield a `request_id` is dropped silently.
 | JSON nesting | 64 levels |
 | Runner refs in one signed action | 16 |
 | `Emisar-Attestation` HTTP header | 16384 encoded bytes |
-| Concurrent actions per runner | 8 by default |
+| Concurrent actions per runner | 8 (fixed) |
+
+The concurrency cap is a compiled constant: no config key, flag, or environment
+variable changes it.
+
+The portal enforces its own bounds on the same wire, and several of them decide
+what a runner's peer really accepts:
+
+| Item | Limit | Past it |
+| --- | ---: | --- |
+| Any inbound frame | 2 MiB | the transport closes the connection |
+| `request_id` on `action_started`, `action_progress`, `action_result`, and any `error` that carries one | exactly `req_` + 22 base64url characters | close 1002 |
+| `error` frames per connection | 100 | close 1008 |
+| Silence between heartbeats | 90 s | close 1008 |
+| Progress rows per run | 50,000 | chunk refused; the run continues |
+| Progress bytes per run | 64 MiB | chunk refused; the run continues |
+| One `action_progress` payload | 256 KiB | frame rejected |
+| `degraded_packs` entries per `runner_state` | 32, `pack` cut to 80 characters, `reason` to 500 | extra entries dropped |
+| Acknowledgement dedup window per socket | 5,000 request IDs | oldest IDs evicted |
+
+The `request_id` shape is the sharp one: the documented boundary above is what
+the runner will accept from any portal, but the portal only ever mints `req_`
+plus 22 base64url characters and closes the socket on anything else, so an
+independent implementation must echo the ID it was given rather than normalize
+it. `concurrency_cap_reached` is exempt from the error-frame budget — a
+saturated runner reporting honest back-pressure is following the contract, while
+the budget exists for a runner looping errors into the account's audit trail.
+
+Close codes are the only verdict a runner gets, so the vocabulary is contract:
+
+| Code | Meaning |
+| ---: | --- |
+| 1002 | unsupported `protocol_version`, or a `request_id` outside the portal's shape |
+| 1008 | connection lease superseded, heartbeat lease expired, the identity connected from another process, or the error-frame budget exhausted |
+| 1011 | the portal could not establish connection ownership |
+| 1013 | this runner identity already has a live connection (typically a cloned data directory) |
+
+The runner treats every close as reconnectable and backs off; a terminal verdict
+reaches it only through a `shutdown` frame's `reason`. So a 1013 repeats until
+one of the two hosts sharing the identity is given its own data directory.
 
 The code and fixed vectors in `mcp/internal/attest` and
 `runner/internal/attest` are byte-identical and checked from repository CI.

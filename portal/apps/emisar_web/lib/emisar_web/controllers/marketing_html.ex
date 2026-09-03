@@ -129,6 +129,11 @@ defmodule EmisarWeb.MarketingHTML do
   # spinner shows.
   @mcp_tool_count EmisarWeb.MCP.SchemaRegistry.tool_count()
 
+  # The hero installs a real runner, so the version it installs comes from the
+  # same release policy the console's update hints read. It was a literal and
+  # sat eight minors behind the tip.
+  @runner_current Application.compile_env(:emisar, [Emisar.Compat, :runner_current])
+
   @doc "How many tools the MCP surface exposes. See `SchemaRegistry.tool_count/0`."
   def mcp_tool_count, do: @mcp_tool_count
 
@@ -246,8 +251,9 @@ defmodule EmisarWeb.MarketingHTML do
     {1, "server", "srv-comment",
      "# nomad-hvn03 · Dell R640 · Pure FlashArray over iSCSI multipath · democratic-csi v1.9.5"},
     {2, "server", "srv-prompt", "curl -fsSL https://emisar.dev/install.sh | sudo bash"},
-    {3, "server", "srv-install", "downloading emisar-0.16.0-linux-amd64.tar.gz"},
-    {4, "server", "srv-install", "checksum verified  sha256:9f2c1e7b4a0d…  ·  installed v0.16.0"},
+    {3, "server", "srv-install", "downloading emisar-#{@runner_current}-linux-amd64.tar.gz"},
+    {4, "server", "srv-install",
+     "checksum verified  sha256:9f2c1e7b4a0d…  ·  installed v#{@runner_current}"},
     {5, "server", "srv-banner",
      "emisar connecting to wss://emisar.dev/runner/socket/websocket (group=storage packs=multipath,iscsi,pure,nomad,debugging,docker)"},
     {6, "server", "srv-ok",
