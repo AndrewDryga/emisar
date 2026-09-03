@@ -426,10 +426,10 @@ type ActionProgressMsg struct {
 }
 
 // ActionResultMsg is the terminal message for an action call. Stdout/stderr
-// content is not repeated here. Emitted-output byte counts cover every
-// normalized, redacted byte admitted by the action's output caps; the progress
-// counters let the portal distinguish those facts from the subset it durably
-// received. Local audit records own any output hashes.
+// content is not repeated here. Emitted-output hashes and byte counts cover
+// every normalized, redacted byte admitted by the action's output caps; the
+// progress counters let the portal distinguish those facts from the subset it
+// durably received.
 type ActionResultMsg struct {
 	Envelope
 	Status                string          `json:"status"`

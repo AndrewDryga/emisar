@@ -101,16 +101,12 @@ func loadReceipt(executable string, trustPath func(string, fs.FileInfo) error) (
 			return receipt{}, errorsForPath(receiptPath, "is missing "+key)
 		}
 	}
-	// A receipt names the repository its installer served, which during the
-	// EmisarHQ transfer window is either spelling of the same repository.
 	// GitHub owner/repo slugs are case-insensitive, so an installer run with a
 	// display-cased EMISAR_REPO wrote that casing here; compare lowercased so a
 	// receipt from AndrewDryga/emisar still self-updates (newer installers
 	// already lowercase it — this covers receipts they left behind).
 	repository := strings.ToLower(values["repository"])
-	repositoryOK := repository == officialRepository ||
-		repository == successorRepository
-	if values["schema"] != "1" || values["manager"] != "install.sh" || !repositoryOK {
+	if values["schema"] != "1" || values["manager"] != "install.sh" || repository != officialRepository {
 		return receipt{}, errorsForPath(receiptPath, "was not written by the official installer")
 	}
 	for _, key := range []string{"binary", "etc_dir", "data_dir", "log_dir"} {

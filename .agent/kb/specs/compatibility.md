@@ -692,38 +692,10 @@ both — legacy entries and the legacy path migrate with an audit-visible log
 line); a per-item fault (one pack, one file) degrades that item loudly and
 never the whole runner.
 
-**What happens on skew.** A dispatch log the runner cannot read refuses
-`connect` with the quarantine remedy in the error; `emisar doctor` and
-`emisar state check-dispatch-log` report the same verdict offline, and
-`install.sh` runs the check with the staged binary before touching a running
-service. The current dispatch format starts with
-`{"format":"emisar_dispatch_log","version":2}` and stores an ordered,
-append-only transition journal between state-equivalent atomic checkpoints.
-Existing unversioned `dispatches.jsonl` snapshots and the older `dedup.jsonl`
-path migrate atomically before the runner connects. Unknown
-versions or fields, impossible transitions, and a non-newline-terminated v2
-tail are corrupt and fail closed; the runner never guesses which writes landed.
-Snapshot-only binaries deliberately reject the v2 header.
-
-The current self-updater requires every selected target binary to expose the
-offline dispatch-state check and its bundled installer to report
-`emisar-managed-update-v1` before handoff. The target loads the receipt-owned
-`config.yaml`, verifies that its effective `paths.data_dir` equals the receipt's
-data directory, and reads that state. Releases predating either boundary are
-refused. A failure before the new binary can run restores the prior installation.
-After a service start attempt—or after binary activation under `--no-service`—
-automatic downgrade is refused: the activated installation and previous binary
-remain, the service stays stopped, and the operator gets an explicit recovery
-message. The installer never restores an older journal snapshot because doing
-so could forget an executed action.
-Managed in-place updates keep the exact install-receipt paths, service identity,
-and init manager. The installer refuses to modify a receiptless pre-v0.20
-runner because it cannot prove that installation's live mapping; a separately
-reviewed adoption flow must establish that proof before a managed update.
-Quarantining a corrupt journal is likewise an explicit loss of replay
-protection and may allow a redelivered action to run again. Future formats keep
-reading v2 or add an explicit successor version; they never reinterpret v2 in
-place.
+**What happens on skew.** The runner reads the atomic dispatch snapshot written
+by earlier releases and migrates the old `dedup.jsonl` path when needed. A file
+it cannot read refuses `connect`; `emisar doctor` and
+`emisar state check-dispatch-log` report the same problem offline.
 
 A broken installed pack loads as degraded (`packs.degraded` log line, doctor
 failure naming the directory) while every healthy pack keeps serving.
@@ -760,8 +732,7 @@ environment is `VERSION`, `BIN_DIR`, `ETC_DIR`, `DATA_DIR`, `LOG_DIR`,
 `SERVICE_USER`, `SERVICE_GROUP`, `ASSUME_YES`, `NO_START`, `NO_SERVICE`,
 `EMISAR_PACKS`, `EMISAR_URL`, `EMISAR_ENROLLMENT_KEY`, `EMISAR_REPO`,
 `EMISAR_GITHUB_TOKEN`, `EMISAR_GROUP`, `EMISAR_RUNNER_ID`,
-`EMISAR_RUNNER_LABEL_<KEY>`, `EMISAR_ATTESTATION_WORKFLOW`, and
-`QUARANTINE_DISPATCH_LOG`. Every one is
+`EMISAR_RUNNER_LABEL_<KEY>`, and `EMISAR_ATTESTATION_WORKFLOW`. Every one is
 named rather than summarized, because a variable this inventory does not name
 is a variable nobody reviews before it freezes.
 
@@ -778,8 +749,6 @@ archive digest and fail when the bundle, GitHub CLI, or signature is
 unavailable. Older releases without signed checksum metadata are unsupported.
 A fork or mirror sets its own workflow or retains its operator-owned checksum
 policy.
-`QUARANTINE_DISPATCH_LOG` is advertised in the installer's own output, not its
-`--help`, and is frozen on the same footing.
 An unattended runner install requires `--yes` plus an explicit
 `--packs`/`EMISAR_PACKS` value; an explicitly empty value installs no new packs
 and preserves existing ones. A caller without a controlling terminal is refused

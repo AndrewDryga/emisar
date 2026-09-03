@@ -436,10 +436,7 @@ systemd-deep  0.1.10   24       sha256:84f814476179  Deeper systemd state + oper
         <.docs_inline_code>--all</.docs_inline_code>
         walks the active file plus every rotated
         <.docs_inline_code>.N</.docs_inline_code>
-        sibling, verifying each chain independently. Before an upgrade, the installer also
-        runs
-        <.docs_inline_code>emisar state check-dispatch-log</.docs_inline_code>
-        to confirm the durable dispatch log still loads.
+        sibling, verifying each chain independently.
       </p>
       <.docs_callout kind={:note} title="Tamper-evident, not tamper-proof.">
         <.docs_inline_code>audit verify</.docs_inline_code>

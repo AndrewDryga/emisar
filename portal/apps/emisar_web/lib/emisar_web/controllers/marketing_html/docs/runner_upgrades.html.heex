@@ -222,13 +222,11 @@
       <p class="mt-5 text-base leading-7 text-zinc-400">
         The update touches only the binary: <.docs_inline_code>config.yaml</.docs_inline_code>, <.docs_inline_code>runner.env</.docs_inline_code>, the cached token, installed packs, the dispatch log, and the local
         audit journal all stay as they are. Before the service stops, it authenticates the signed
-        checksum metadata and verifies the archive against it. It then stages the binary, checks its version, and
-        confirms the new binary accepts the current config and can read the current dispatch
-        state.
+        checksum metadata, verifies the archive against it, and checks the staged binary's version.
       </p>
       <.docs_callout kind={:warn} title="The service does stop">
         <p>
-          Once the preflight passes, the installer stops the service, swaps the binary, and
+          The installer stops the service, swaps the binary, and
           starts it again. A runner kills its children when it exits, so an action in flight on
           that host is interrupted — let running work finish first.
         </p>

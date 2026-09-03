@@ -202,7 +202,6 @@ goes through `coop fork` (each fork is its own clone) — never two writers in o
 - **Shared:** [a capture rig owns what it creates](.agent/kb/rules/shared-capture-rigs-own-what-they-create.md) — a tool that creates an app, client, project or user in someone's tenant must be able to list and remove it, and must never report a tenant clean from a filter that could fail to match.
 - **Shared:** [CI decides what a workstation cannot](.agent/kb/rules/shared-ci-decides-what-a-workstation-cannot.md) — pack fixtures, workflows, and the behavior harness hide uid ownership, AppArmor, startup races, and registry limits from a workstation, so treat a local pass as iteration feedback and expect the Linux matrix to be the judge of that class.
 - **Shared:** [every blocking check lives inside the canonical gate](.agent/kb/rules/shared-checks-live-in-the-canonical-gate.md) — CI reaches a check by invoking `./run gate`, never by running the tool in its own step; a CI-only check makes a green gate a false promise and hides findings until someone pushes.
-- **Shared:** [handoff contracts run the real consumer](.agent/kb/rules/shared-handoff-contracts-run-the-real-consumer.md) — when one component builds an invocation another parses, a test feeds the real producer output to the real consumer and pins every argv shape fielded versions still send; a fake that only records argv mirrors the bug.
 
 When the user corrects something — a naming call, a "use X not Y," a structural nit — it is a **rule**, not a one-off fix. In the **same change**:
 

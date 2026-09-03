@@ -3,7 +3,6 @@ package main
 import (
 	"fmt"
 	"os"
-	"path/filepath"
 
 	"github.com/spf13/cobra"
 
@@ -81,17 +80,7 @@ func stateCheckDispatchLogCmd() *cobra.Command {
 		Short: "Verify the durable dispatch log loads; exit nonzero if it is corrupt",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			if dataDir != "" && (flagConfig != "" || os.Getenv("EMISAR_CONFIG") != "") {
-				cfg, err := loadConfig()
-				if err != nil {
-					return err
-				}
-				if filepath.Clean(cfg.Paths.DataDir) != filepath.Clean(dataDir) {
-					return fmt.Errorf(
-						"explicit data directory %s does not match configured paths.data_dir %s",
-						dataDir, cfg.Paths.DataDir)
-				}
-			} else if dataDir == "" {
+			if dataDir == "" {
 				cfg, err := loadConfig()
 				if err != nil {
 					return err
@@ -102,11 +91,11 @@ func stateCheckDispatchLogCmd() *cobra.Command {
 			switch report.State {
 			case cloud.DispatchLogCorrupt:
 				return fmt.Errorf(
-					"dispatch log %s is unreadable: %v\nrecovery: %s\nwarning: quarantining forgets replay history and may allow a redelivered action to run again",
-					report.Path, report.Err, cloud.DispatchLogQuarantineGuidance(dataDir))
+					"dispatch log %s is unreadable: %v\nquarantine it to start a clean log: mv %s %s.corrupt",
+					report.Path, report.Err, report.Path, report.Path)
 			case cloud.DispatchLogLegacy:
 				fmt.Fprintf(cmd.OutOrStdout(),
-					"ok: %d entries at %s (older dispatch state; connect migrates it forward)\n",
+					"ok: %d entries at %s (pre-v0.12 state; connect migrates it forward)\n",
 					report.Entries, report.Path)
 			case cloud.DispatchLogAbsent:
 				fmt.Fprintln(cmd.OutOrStdout(), "ok: no dispatch log yet")

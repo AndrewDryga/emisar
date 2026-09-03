@@ -221,72 +221,31 @@ runner's reconnect backoff does not bypass that safety window.
 
 ## Upgrade and remove
 
-An installer-managed runner updates itself through the same staged installer
-transaction that created it. Existing configuration, credentials, packs, and
-local evidence are preserved:
+An installer-managed runner updates itself without changing its configuration,
+credentials, packs, or local evidence:
 
 ```sh
 sudo emisar update
 ```
 
-Pin a reviewed release for a canary or downgrade to a release carrying the
-current managed-update safety contract:
+Pin a reviewed release when needed:
 
 ```sh
 sudo emisar update --version X.Y.Z
 ```
 
-The current updater requires both the selected runner and its bundled installer
-to expose the current offline dispatch-state transaction before handing over.
-The target reconciles `config.yaml` with the receipt-owned data directory and
-must read the resulting state. Releases older than that contract are refused.
-Failures before service start restore the previous installation. Once the new
-binary may have run, automatic downgrade is unsafe: the installer keeps the new
-installation and previous binary, leaves the service stopped, and explains the
-manual recovery boundary. It never restores an older journal snapshot because
-that could let a redelivered action run again.
+The command works only for runners installed by `install.sh`. Copied binaries,
+containers, packages, and infrastructure-managed runners must be updated by
+their deployment system. The updater downloads the release, verifies the signed
+`SHA256SUMS` metadata and archive checksum, then runs the installer bundled in
+that release.
 
-The command accepts only an official install receipt written by `install.sh`.
-Copied development binaries, container images, and infrastructure-managed
-runners have no receipt and must be updated from their deployment source. The
-installer also refuses to change the receipt's binary, config, data, log,
-service-user, or init mapping in place. A receiptless runner installed before
-runner 0.20 is left untouched because the installer cannot prove its live
-paths and service identity. Establish that mapping through a reviewed adoption
-procedure before using the managed updater; never move its durable journal to
-make an update pass.
-
-The selected release is downloaded from `emisar.dev`, with GitHub Releases as a
-secondary mirror when that path is unavailable. GitHub CLI verifies the
-downloaded `SHA256SUMS.sigstore.jsonl` bundle against the exact release tag,
-trusted workflow, and GitHub-hosted runner; it needs no GitHub login but fetches
-public trust roots from `tuf-repo-cdn.sigstore.dev:443` and
-`tuf-repo.github.com:443` on a fresh cache. The archive is then verified against
-those authenticated checksum bytes. A missing verifier, bundle, or valid
-signature refuses a runner 0.23.1 or newer. Runner 0.22.1 is the only accepted
-pre-bundle rollback target; it requires an authenticated GitHub CLI to verify
-the archive against its pinned legacy workflow identity. Earlier tags have no
-accepted pinned identity and fail authenticated verification. If GitHub CLI is
-missing or not authenticated, the standalone installer's
-explicit `--allow-unsigned-checksum` break glass retains the archive checksum
-but accepts that a compromised release origin could replace both it and the
-archive. A negative online provenance result always refuses the install, and
-`emisar update` has no break-glass path.
-
-Fresh unattended installs still require an explicit pack set. Pass reviewed
-pack IDs when provisioning a host, or set an empty value to add none:
+Fresh unattended installs require an explicit pack set. Pass reviewed pack IDs
+or set an empty value to add none:
 
 ```sh
 curl -fsSL https://emisar.dev/install.sh | sudo EMISAR_PACKS="" bash -s -- --yes
 ```
-
-The installer bundled in a release tarball pins itself to that release. For a
-disconnected verification, obtain `trusted_root.jsonl` on a connected staging
-machine with `gh attestation trusted-root`, transfer it with the archive,
-`SHA256SUMS`, and `SHA256SUMS.sigstore.jsonl`, then run the manual verification
-with `gh attestation verify --custom-trusted-root`. The installer does not take
-a custom trusted-root path, so complete this check and place the binary
-manually rather than piping the installer in a disconnected environment.
 
 To remove the service while retaining configuration and local evidence:
 
@@ -294,18 +253,8 @@ To remove the service while retaining configuration and local evidence:
 sudo bash install.sh --uninstall
 ```
 
-The default uninstall deletes the cached runner token. It keeps `/etc/emisar`,
-the dispatch journal and signing nonces in `/var/lib/emisar`, and
-`/var/log/emisar`. Add `--purge` only when those retained files should also be
-deleted. The enrollment key and pack secrets in `runner.env` are therefore
-retained without `--purge`. Preserve or export the local journal first.
-
-When an upgrade supplies a different `EMISAR_ENROLLMENT_KEY`, the installer
-updates that line in `runner.env`. The token fingerprint makes the runner
-re-register its configured `runner.id`, or the current hostname by default,
-and replace the cached token on its next connection. Replacing an ephemeral
-host gives it the replacement host's new hostname and therefore a new runner
-identity without any disk-backed identity state.
+The default uninstall deletes the cached runner token but keeps `/etc/emisar`,
+`/var/lib/emisar`, and `/var/log/emisar`. Add `--purge` to delete them too.
 
 ## Signed dispatch (optional)
 
