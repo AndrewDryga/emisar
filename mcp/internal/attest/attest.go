@@ -25,7 +25,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"net/url"
 	"sort"
 	"strings"
 	"time"
@@ -509,24 +508,25 @@ func VerifyChain(roots *x509.CertPool, chain [][]byte, now time.Time) (*x509.Cer
 	return leaf, scope, nil
 }
 
-// leafScope returns the scope from the leaf's single emisar URI SAN. Exactly
-// one is required: zero means the certificate was not issued for emisar, and
-// several would leave the effective scope ambiguous.
+// leafScope returns the scope from the leaf's one URI SAN. The profile requires
+// EXACTLY ONE URI SAN in total, not merely one emisar URI: zero means the
+// certificate was not issued for emisar, several emisar URIs leave the
+// effective scope ambiguous, and a dual-purpose certificate that pairs the
+// emisar scope with another service identity (spiffe://…, an https:// SPIFFE-ish
+// id) means compromise through that OTHER use also compromises dispatch
+// signing. Purpose separation is the whole reason the SAN — not an EKU — is
+// what marks a certificate as ours.
 func leafScope(leaf *x509.Certificate) (Scope, error) {
-	var found *url.URL
-	for _, uri := range leaf.URIs {
-		if uri.Scheme != "emisar" {
-			continue
-		}
-		if found != nil {
-			return Scope{}, certErr(CodeCertProfile, "certificate carries several emisar scope URIs")
-		}
-		found = uri
-	}
-	if found == nil {
+	if len(leaf.URIs) == 0 {
 		return Scope{}, certErr(CodeCertProfile, "certificate carries no %s scope URI", ScopeURI)
 	}
-	return ParseScopeURI(found.String())
+	if len(leaf.URIs) > 1 {
+		return Scope{}, certErr(CodeCertProfile, "certificate carries %d URI SANs; the profile allows exactly one", len(leaf.URIs))
+	}
+	if leaf.URIs[0].Scheme != "emisar" {
+		return Scope{}, certErr(CodeCertProfile, "certificate carries no %s scope URI", ScopeURI)
+	}
+	return ParseScopeURI(leaf.URIs[0].String())
 }
 
 func checkLeafProfile(leaf *x509.Certificate) error {

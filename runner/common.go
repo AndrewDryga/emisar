@@ -45,6 +45,27 @@ func (r *runtime) identity() runnerIdentity {
 	}
 }
 
+// configIdentity resolves the identity a connect would register with, without
+// booting one — the commands that render or inspect signing trust offline need
+// the same externalID/group/labels the verifier enforces certificate scope
+// against.
+func configIdentity(cfg *config.Config) (runnerIdentity, error) {
+	hostname, err := os.Hostname()
+	if err != nil {
+		return runnerIdentity{}, fmt.Errorf("read hostname: %w", err)
+	}
+	externalID, err := resolveExternalID(cfg.Runner.ID, hostname)
+	if err != nil {
+		return runnerIdentity{}, err
+	}
+	return runnerIdentity{
+		externalID: externalID,
+		portalURL:  cfg.Cloud.URL,
+		group:      cfg.Runner.Group,
+		labels:     cfg.Runner.Labels,
+	}, nil
+}
+
 // registry returns the current pack registry from the engine. After a
 // SIGHUP reload, this reflects the new registry.
 func (r *runtime) registry() *packs.Registry { return r.engine.Registry() }
@@ -115,6 +136,18 @@ func resolveConfigPath() (string, error) {
 func isRegularFile(p string) bool {
 	info, err := os.Stat(p)
 	return err == nil && info.Mode().IsRegular()
+}
+
+// resolveTokenPath is the file the control-plane token lives in: cloud.token_path
+// when the config sets it, otherwise token.json under the data dir. Every command
+// that judges or names the credential must resolve it the same way — doctor read
+// the raw key and reported "no credential" on a hand-written config that omits it
+// while connect was happily using the default.
+func resolveTokenPath(cfg *config.Config) string {
+	if cfg.Cloud.TokenPath != "" {
+		return cfg.Cloud.TokenPath
+	}
+	return filepath.Join(cfg.Paths.DataDir, "token.json")
 }
 
 func loadConfig() (*config.Config, error) {

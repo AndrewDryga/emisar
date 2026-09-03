@@ -28,8 +28,9 @@ func packCatalogCmd() *cobra.Command {
 		Long: `Build a publishable pack registry from a packs directory, and upload it.
 
 Works for ANY registry, not just emisar's: point --base-url at wherever you
-host it and 'publish' to your own GCS bucket — or skip 'publish' and sync the
-built tree to S3, MinIO, or any static file host (it is plain files). Runners
+host it, --repo-url at your source repository, and 'publish' to your own GCS
+bucket — or skip 'publish' and sync the built tree to S3, MinIO, or any static
+file host (it is plain files). Runners
 install the exact immutable tarball URL listed in v1/catalog.json. The
 name-based '--registry' install flow uses a different URL layout.
 Guide: https://emisar.dev/docs/pack-registry
@@ -125,16 +126,16 @@ or drop an already-published one.
 	cmd.Flags().StringVar(&packsDir, "packs", "packs", "packs directory to build from")
 	cmd.Flags().StringVar(&outDir, "out", "dist", "output directory for the artifact tree")
 	cmd.Flags().StringVar(&baseURL, "base-url", defaultRegistryBaseURL, "public base URL tarball URLs join onto")
+	cmd.Flags().StringVar(&repoURL, "repo-url", "", "source repository each pack's source_url and default homepage link at (default: emisar's)")
 	cmd.Flags().StringVar(&previous, "previous", "", "currently-published catalog.json to check version/hash drift against and carry version history forward from")
 	return cmd
 }
 
 func packCatalogPublishCmd() *cobra.Command {
 	var (
-		dir      string
-		bucket   string
-		endpoint string
-		dryRun   bool
+		dir    string
+		bucket string
+		dryRun bool
 	)
 	cmd := &cobra.Command{
 		Use:   "publish",
@@ -162,11 +163,10 @@ Authentication uses an OAuth2 access token from GOOGLE_OAUTH_ACCESS_TOKEN
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			opts := catalog.PublishOptions{
-				Bucket:   bucket,
-				Token:    os.Getenv("GOOGLE_OAUTH_ACCESS_TOKEN"),
-				Endpoint: endpoint,
-				DryRun:   dryRun,
-				Logf:     banner,
+				Bucket: bucket,
+				Token:  os.Getenv("GOOGLE_OAUTH_ACCESS_TOKEN"),
+				DryRun: dryRun,
+				Logf:   banner,
 			}
 			res, err := catalog.Publish(cmd.Context(), dir, opts)
 			if err != nil {

@@ -47,6 +47,48 @@ func TestPackCatalogBuildCmd(t *testing.T) {
 	}
 }
 
+// The catalog schema requires source_url and homepage, and both are frozen at
+// 1.0. A self-hosted registry must be able to set them: without --repo-url
+// every pack in a third-party catalog links at emisar's GitHub repo, at a path
+// that does not exist there.
+func TestPackCatalogBuildCmd_RepoURLSetsSourceLinks(t *testing.T) {
+	packsDir := t.TempDir()
+	writeValidPack(t, packsDir, "redis")
+	out := filepath.Join(t.TempDir(), "dist")
+	withJSONOut(t, true)
+
+	cmd := packCatalogBuildCmd()
+	cmd.SilenceUsage, cmd.SilenceErrors = true, true
+	cmd.SetArgs([]string{
+		"--packs", packsDir, "--out", out,
+		"--base-url", "https://cdn.example", "--repo-url", "https://git.example/infra/packs",
+	})
+	var execErr error
+	captureStdout(t, func() { execErr = cmd.Execute() })
+	if execErr != nil {
+		t.Fatalf("catalog build: %v", execErr)
+	}
+
+	body, err := os.ReadFile(filepath.Join(out, "v1/catalog.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var cat catalog.Catalog
+	if err := json.Unmarshal(body, &cat); err != nil {
+		t.Fatalf("catalog JSON: %v", err)
+	}
+	if len(cat.Packs) != 1 {
+		t.Fatalf("packs = %d, want 1", len(cat.Packs))
+	}
+	got := cat.Packs[0]
+	if want := "https://git.example/infra/packs/tree/main/packs/redis"; got.SourceURL != want {
+		t.Errorf("source_url = %q, want %q", got.SourceURL, want)
+	}
+	if want := "https://git.example/infra/packs"; got.Homepage != want {
+		t.Errorf("homepage = %q, want %q", got.Homepage, want)
+	}
+}
+
 // `catalog build` errors clearly when the packs dir has no packs.
 func TestPackCatalogBuildCmd_NoPacks(t *testing.T) {
 	empty := t.TempDir()

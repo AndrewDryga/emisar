@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"math/rand/v2"
 	"os"
 	"strings"
 	"sync"
@@ -46,6 +47,21 @@ type Conn interface {
 // Dialer establishes a Conn authenticated as the runner configured on it.
 type Dialer interface {
 	Dial(ctx context.Context) (Conn, error)
+}
+
+// credentialRotator is the optional capability the real dialer has: it knows
+// when the credential this session dialed with becomes eligible for rotation.
+//
+// A token refreshes only at dial time, so a session that never ends never
+// refreshes. The portal expires a runner token 30 days after it becomes
+// refreshable, so a runner on a stable link against a rarely-redeployed control
+// plane eventually presents an expired token, gets 401, drops its cache, and
+// needs an enrollment key its operator was told they could unset. Ending the
+// session is the whole fix — Run redials and the existing refresh path runs. A
+// dialer without this capability (every in-memory test transport) simply keeps
+// its session.
+type credentialRotator interface {
+	CredentialRotationDue(now time.Time) bool
 }
 
 // Options configure the Client behaviour.
@@ -269,18 +285,7 @@ func (c *Client) Run(ctx context.Context) error {
 	defer c.stopRuntimeStatus()
 
 	if c.dedup.loadErr != nil {
-		// Refusing to start over unreadable at-most-once state is deliberate
-		// (a fresh empty log could double-run a redelivered mutation) — but
-		// the refusal must hand the operator the remedy, not just the cause.
-		path := c.dedup.storePath
-		if c.dedup.loadErrPath != "" {
-			path = c.dedup.loadErrPath
-		}
-		return fmt.Errorf(
-			"load durable dispatch state from %s: %w — %s, then restart to begin a clean dispatch log; %s",
-			path, c.dedup.loadErr,
-			dispatchLogQuarantineGuidance(c.dedup.storePath, c.dedup.legacyPath),
-			dispatchLogQuarantineRisk)
+		return c.dedup.startupRefusal()
 	}
 
 	backoff := c.opts.ReconnectMin
@@ -324,9 +329,10 @@ func (c *Client) Run(ctx context.Context) error {
 		if connected {
 			backoff = c.opts.ReconnectMin
 		}
-		c.opts.Logger.Warn("cloud.session_ended", "error", err, "backoff", backoff)
+		wait := jitterBackoff(backoff)
+		c.opts.Logger.Warn("cloud.session_ended", "error", err, "backoff", wait)
 		select {
-		case <-time.After(backoff):
+		case <-time.After(wait):
 		case <-ctx.Done():
 			return c.shutdown(ctx.Err())
 		}
@@ -335,6 +341,20 @@ func (c *Client) Run(ctx context.Context) error {
 			backoff = c.opts.ReconnectMax
 		}
 	}
+}
+
+// jitterBackoff spreads one reconnect delay uniformly over [d/2, d).
+//
+// A portal deploy drops the whole fleet in the same instant. Without this every
+// runner waits the identical 1s, 2s, 4s … and the just-booting control plane
+// takes N TLS handshakes plus N runner_state frames inside one millisecond,
+// wave after wave — and the successful-connect backoff reset keeps the herd
+// tight. The doubling and the cap are unchanged; only the sleep is randomised.
+func jitterBackoff(d time.Duration) time.Duration {
+	if d <= 0 {
+		return d
+	}
+	return d/2 + time.Duration(rand.Int64N(int64(d-d/2)))
 }
 
 // runSession dials, advertises state, runs the sender + heartbeat +
@@ -516,6 +536,14 @@ func (c *Client) dispatch(parent context.Context, raw []byte) error {
 		if err := c.requireProtocolVersion(envelope); err != nil {
 			return err
 		}
+	}
+	// The spec freezes the exact lowercase field names for EVERY inbound
+	// message, not just run_action, which owns its own (deeper) check inside
+	// UnmarshalJSON. A dropped frame matches how each of these types already
+	// handles a malformed body: warn and ignore, never act on it.
+	if err := rejectInboundAliases(raw, envelope.Type); err != nil {
+		c.opts.Logger.Warn("cloud.field_name_alias", "type", envelope.Type, "error", err)
+		return nil
 	}
 	switch envelope.Type {
 	case MsgRunAction:
@@ -1460,6 +1488,13 @@ func (c *Client) heartbeatLoop(ctx context.Context, sessionCancel context.Cancel
 		case <-t.C:
 			load := c.countInflight()
 			now := time.Now().UTC()
+			if rotator, ok := c.dialer.(credentialRotator); ok && rotator.CredentialRotationDue(now) {
+				// The dial is the only place the credential rotates, so the
+				// session has to end for rotation to happen at all.
+				c.opts.Logger.Info("cloud.credential_rotation_due",
+					"detail", "ending the session so the reconnect can refresh the runner token")
+				return
+			}
 			err := conn.Send(ctx, HeartbeatMsg{
 				Envelope:   Envelope{Type: MsgHeartbeat, ProtocolVersion: ProtocolVersion},
 				ActionLoad: load,

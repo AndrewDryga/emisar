@@ -296,6 +296,56 @@ func TestInstallerInvocationCarriesTheVerifiedIdentity(t *testing.T) {
 	}
 }
 
+// `emisar update` re-execs install.sh as root, so nothing the ambient
+// environment says may reach it: not the installer's own options (which the
+// updater reconstructs from the receipt), and not a code-injection vector that
+// would land inside a root bash. The table is the denylist itself plus the
+// prefix families, so a name added to installerEnvNames is covered the day it
+// is added.
+func TestInstallerEnvironmentStripsEveryDeniedVariable(t *testing.T) {
+	receipt := receipt{
+		Binary: "/usr/local/bin/emisar", EtcDir: "/etc/emisar",
+		DataDir: "/var/lib/emisar", LogDir: "/var/log/emisar",
+		ServiceUser: "emisar", ServiceGroup: "emisar", Init: "systemd",
+	}
+	denied := make([]string, 0, len(installerEnvNames)+16)
+	for name := range installerEnvNames {
+		denied = append(denied, name)
+	}
+	denied = append(denied,
+		// The prefix families the repo's canonical hijack test covers, each
+		// spelled with a name the old enumerated list missed.
+		"LD_AUDIT", "LD_PRELOAD", "LD_LIBRARY_PATH",
+		"DYLD_INSERT_LIBRARIES", "DYLD_FRAMEWORK_PATH", "DYLD_FALLBACK_LIBRARY_PATH",
+		// The interpreter-option set, shared with packs and inherit_env.
+		"BASH_ENV", "NODE_OPTIONS", "RUBYOPT", "PERL5OPT", "GIT_SSH_COMMAND",
+		// Runner identity: the updater upgrades the install on THIS host.
+		"EMISAR_GROUP", "EMISAR_RUNNER_ID", "EMISAR_RUNNER_LABEL_ROLE",
+	)
+	for _, name := range denied {
+		t.Setenv(name, "hostile-"+name)
+	}
+
+	_, env := installerInvocation("/tmp/bundle", "runner-v0.23.0", receipt, testSuccessorIdentity)
+	for _, name := range denied {
+		if containsEnvironment(env, name+"=hostile-"+name) {
+			t.Errorf("%s reached the root installer environment", name)
+		}
+	}
+	// The four values the updater sets itself must still arrive, so the sweep
+	// above cannot pass by stripping everything.
+	for _, want := range []string{
+		"PATH=/usr/sbin:/usr/bin:/sbin:/bin",
+		"EMISAR_REPO=" + testSuccessorIdentity.repository,
+		"EMISAR_ATTESTATION_WORKFLOW=" + testSuccessorIdentity.workflow,
+		"EMISAR_PACKS=",
+	} {
+		if !containsEnvironment(env, want) {
+			t.Errorf("installer environment is missing %q", want)
+		}
+	}
+}
+
 func TestVerifyProvenanceUsesUpdateTokenWithoutPuttingItInArguments(t *testing.T) {
 	t.Setenv("GH_TOKEN", "")
 	t.Setenv("GITHUB_TOKEN", "")

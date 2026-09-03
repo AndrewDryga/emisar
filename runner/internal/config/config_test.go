@@ -309,6 +309,28 @@ func TestValidate_RejectsMaxAttestationAgeAboveCeiling(t *testing.T) {
 	}
 }
 
+// TestValidate_RejectsHeartbeatAboveWatchdog covers the upper bound on
+// cloud.heartbeat_every: the control plane closes the socket 90s after the last
+// heartbeat, so a wider interval is a permanent reconnect loop that names
+// nothing. The value at the ceiling stays accepted.
+func TestValidate_RejectsHeartbeatAboveWatchdog(t *testing.T) {
+	cfg := validConfig()
+	cfg.Cloud.HeartbeatEvery = MaxHeartbeatEveryLimit + 1
+	err := cfg.Validate()
+	if err == nil {
+		t.Fatal("heartbeat_every above the ceiling must be rejected")
+	}
+	if !strings.Contains(err.Error(), "cloud.heartbeat_every") {
+		t.Errorf("error must name the key, got %v", err)
+	}
+
+	cfg = validConfig()
+	cfg.Cloud.HeartbeatEvery = MaxHeartbeatEveryLimit
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("heartbeat_every at the ceiling must be accepted: %v", err)
+	}
+}
+
 // TestValidate_RejectsWrongSchemaVersion covers: schema_version
 // must equal the supported version (config.go:145-147). Zero (the field unset)
 // and any other value are both rejected.

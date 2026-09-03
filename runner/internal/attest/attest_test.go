@@ -566,17 +566,35 @@ func TestVerifyChainRejectsProfileViolations(t *testing.T) {
 	nonCanonical := withOptions(func(o *leafOptions) {
 		o.scopeURIs = []string{"emisar://dispatch/v1?label.env=prod&group=edge"}
 	})
+	// A dual-purpose certificate: a valid emisar scope PLUS another service
+	// identity. The profile requires exactly one URI SAN, because compromise
+	// through the certificate's other use would otherwise compromise dispatch
+	// signing too.
+	dualPurpose := withOptions(func(o *leafOptions) {
+		o.scopeURIs = []string{
+			"emisar://dispatch/v1?group=edge&label.env=prod&label.region=us",
+			"https://mesh.example.com/ns/prod/sa/relay",
+		}
+	})
+	dualPurposeReversed := withOptions(func(o *leafOptions) {
+		o.scopeURIs = []string{
+			"spiffe://mesh.example.com/ns/prod/sa/relay",
+			"emisar://dispatch/v1?group=edge&label.env=prod&label.region=us",
+		}
+	})
 	expired := withOptions(func(o *leafOptions) { o.ttl = 30 * time.Minute })
 
 	for name, testCase := range map[string]struct {
 		chain [][]byte
 		code  string
 	}{
-		"no emisar SAN (a TLS-shaped certificate)": {[][]byte{tlsShaped}, CodeCertProfile},
-		"several emisar SANs":                      {[][]byte{twoScopes}, CodeCertProfile},
-		"CA certificate used as a leaf":            {[][]byte{caLeaf}, CodeCertProfile},
-		"key usage without digital signature":      {[][]byte{wrongUsage}, CodeCertProfile},
-		"non-canonical scope URI":                  {[][]byte{nonCanonical}, CodeCertProfile},
+		"no emisar SAN (a TLS-shaped certificate)":           {[][]byte{tlsShaped}, CodeCertProfile},
+		"several emisar SANs":                                {[][]byte{twoScopes}, CodeCertProfile},
+		"CA certificate used as a leaf":                      {[][]byte{caLeaf}, CodeCertProfile},
+		"key usage without digital signature":                {[][]byte{wrongUsage}, CodeCertProfile},
+		"non-canonical scope URI":                            {[][]byte{nonCanonical}, CodeCertProfile},
+		"emisar scope plus another service identity":         {[][]byte{dualPurpose}, CodeCertProfile},
+		"another service identity ahead of the emisar scope": {[][]byte{dualPurposeReversed}, CodeCertProfile},
 		"chain deeper than one intermediate": {
 			[][]byte{withOptions(func(*leafOptions) {}), caCert.Raw, caCert.Raw}, CodeCertProfile,
 		},

@@ -10,6 +10,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/andrewdryga/emisar/runner/internal/fsutil"
 )
@@ -27,7 +29,37 @@ const ReasonProtocolVersionUnsupported = "protocol_version_unsupported"
 const (
 	terminalShutdownStateFilename = "terminal_shutdown.json"
 	maxTerminalShutdownStateBytes = 16 << 10
+	// maxShutdownMessageBytes bounds the peer's free-text explanation. The
+	// record as a whole may be 16 KiB, which is still a wall of text on one
+	// aligned line of the doctor report.
+	maxShutdownMessageBytes = 300
 )
+
+// terminalSafeLine makes control-plane free text safe to print on an operator's
+// terminal, collapsed onto one line. Reason is checked against a fixed set;
+// Message is whatever the peer chose, and doctor renders it into the terminal —
+// so a message carrying ESC sequences could clear the screen and paint a
+// fabricated all-green report over the very rejection the operator ran doctor
+// to read. Controls become spaces rather than vanishing, so tampered text still
+// reads as tampered. (Same shape as the MCP bridge's renderer; separate
+// modules, no shared import.)
+func terminalSafeLine(value string) string {
+	safe := strings.Map(func(r rune) rune {
+		if unicode.IsControl(r) || unicode.Is(unicode.Bidi_Control, r) || r == '\u2028' || r == '\u2029' {
+			return ' '
+		}
+		return r
+	}, value)
+	safe = strings.Join(strings.Fields(safe), " ")
+	if len(safe) <= maxShutdownMessageBytes {
+		return safe
+	}
+	cut := maxShutdownMessageBytes
+	for cut > 0 && !utf8.RuneStart(safe[cut]) {
+		cut--
+	}
+	return safe[:cut] + "…"
+}
 
 // TerminalShutdownState is the small durable record written when the cloud
 // tells this runner it must stop until an operator changes its state.
@@ -67,7 +99,7 @@ func WriteTerminalShutdown(path, reason, message string) error {
 
 	body, err := json.Marshal(TerminalShutdownState{
 		Reason:    reason,
-		Message:   message,
+		Message:   terminalSafeLine(message),
 		Timestamp: time.Now().UTC(),
 	})
 	if err != nil {

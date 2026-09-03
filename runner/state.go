@@ -37,19 +37,9 @@ starting the runner, and to diff two hosts that should look identical.`,
 			if err != nil {
 				return err
 			}
-			hostname, err := os.Hostname()
-			if err != nil {
-				return fmt.Errorf("read hostname: %w", err)
-			}
-			externalID, err := resolveExternalID(cfg.Runner.ID, hostname)
+			identity, err := configIdentity(cfg)
 			if err != nil {
 				return err
-			}
-			identity := runnerIdentity{
-				externalID: externalID,
-				portalURL:  cfg.Cloud.URL,
-				group:      cfg.Runner.Group,
-				labels:     cfg.Runner.Labels,
 			}
 			verifier, err := buildStateVerifier(cfg, identity)
 			if err != nil {

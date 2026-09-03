@@ -64,82 +64,138 @@ func OpenJSONL(path string, opts JSONLOptions) (*JSONLSink, error) {
 			return nil, fmt.Errorf("audit: create dir: %w", err)
 		}
 	}
-	// Heal a torn final write before appending. A crash between writing an
-	// event's bytes and its trailing newline leaves a partial line; O_APPEND
-	// would then glue the next event onto those bytes (one corrupt line) and
-	// seedLastHashLocked would seed the chain from garbage, so `audit verify`
-	// fails forever. Drop the partial tail so we resume from a clean line.
-	if err := healTornTail(path); err != nil {
+	// Heal a torn final write before appending, and take the chain head from
+	// the same bytes. A crash between writing an event's bytes and its trailing
+	// newline leaves a partial line; O_APPEND would then glue the next event
+	// onto those bytes (one corrupt line) and the chain would seed from
+	// garbage, so `audit verify` fails forever.
+	lastHash, err := healAndSeed(path)
+	if err != nil {
 		return nil, fmt.Errorf("audit: heal torn tail: %w", err)
 	}
 	f, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
 	if err != nil {
 		return nil, fmt.Errorf("audit: open jsonl: %w", err)
 	}
-	sink := &JSONLSink{
+	return &JSONLSink{
 		path:         path,
 		maxSizeBytes: opts.MaxSizeBytes,
 		maxBackups:   opts.MaxBackups,
 		f:            f,
-	}
-	// Seed lastHash from the file so the chain continues across process
-	// restarts. Empty file → empty seed → first new event has prev_hash="".
-	if err := sink.seedLastHashLocked(); err != nil {
-		_ = f.Close()
-		return nil, fmt.Errorf("audit: seed chain: %w", err)
-	}
-	return sink, nil
+		lastHash:     lastHash,
+	}, nil
 }
 
-// healTornTail truncates a non-newline-terminated final line (a torn write
-// from a crash) back to the last complete line, so the append-only chain
-// resumes from valid bytes. No-op for a missing, empty, or cleanly-terminated
-// file. The log is size-bounded by rotation, so reading it whole is fine.
-func healTornTail(path string) error {
-	data, err := os.ReadFile(path)
+// tailWindow is how many trailing bytes healAndSeed reads. Both facts it needs
+// live in the journal's final line: MaxLineBytes bounds a line this package can
+// read back, +1 covers that line's terminating newline, and +1 more puts the
+// newline that ENDS THE PREVIOUS line inside the window, which is what makes
+// the final line findable.
+const tailWindow = MaxLineBytes + 2
+
+// healAndSeed drops a torn final write and returns the chain head to continue
+// from, reading only the journal's tail. Both answers are properties of the
+// last line, and the default rotation threshold is 100 MiB — reading the whole
+// file twice for them cost that allocation on every emisar connect, action run,
+// doctor, and pack verify.
+//
+// A missing or empty journal seeds an empty chain: the first event then carries
+// prev_hash="", which is what VerifyChain expects at the head of a file.
+func healAndSeed(path string) (string, error) {
+	f, err := os.Open(path)
 	if os.IsNotExist(err) {
-		return nil
+		return "", nil
 	}
 	if err != nil {
-		return err
+		return "", err
 	}
-	if len(data) == 0 || data[len(data)-1] == '\n' {
-		return nil
+	info, err := f.Stat()
+	if err != nil {
+		_ = f.Close()
+		return "", err
 	}
-	// LastIndexByte returns -1 when there's no newline (the whole file is one
-	// torn line); +1 then truncates to 0 — dropping it entirely.
-	cut := bytes.LastIndexByte(data, '\n') + 1
-	return os.Truncate(path, int64(cut))
+	size := info.Size()
+	if size == 0 {
+		return "", f.Close()
+	}
+	window := int64(tailWindow)
+	if window > size {
+		window = size
+	}
+	tail := make([]byte, window)
+	if _, err := f.ReadAt(tail, size-window); err != nil {
+		_ = f.Close()
+		return "", err
+	}
+	if err := f.Close(); err != nil {
+		return "", err
+	}
+	partial := window < size
+
+	if tail[len(tail)-1] != '\n' {
+		cut := bytes.LastIndexByte(tail, '\n')
+		if cut < 0 && partial {
+			// The torn line overruns the window, so it also overruns
+			// MaxLineBytes and no reader here could parse it either way. Cutting
+			// at a guessed offset would destroy complete events in the
+			// tamper-evident trail, so pay for the whole file instead.
+			return healAndSeedWholeFile(path)
+		}
+		// cut < 0 on a complete file means the file is one torn line: +1
+		// truncates to 0, dropping it.
+		if err := os.Truncate(path, size-window+int64(cut+1)); err != nil {
+			return "", err
+		}
+		tail = tail[:cut+1]
+	}
+
+	last := lastNonEmptyLine(tail)
+	if last == nil && partial {
+		// Only blank lines in the window — corruption or a hand-edit, never
+		// something Write produces. The real chain head is further back.
+		return healAndSeedWholeFile(path)
+	}
+	return lineHash(last), nil
 }
 
-// seedLastHashLocked reads the file and computes the sha256 of the last
-// non-empty line. Called once at Open; mu is not yet shared so no lock
-// is needed, but the name preserves the convention.
-func (s *JSONLSink) seedLastHashLocked() error {
-	f, err := os.Open(s.path)
+// healAndSeedWholeFile is the exact-but-slow path for a journal whose final
+// line does not fit the tail window. Never reached by a file this package
+// wrote; kept because a wrong truncation here is unrecoverable.
+func healAndSeedWholeFile(path string) (string, error) {
+	data, err := os.ReadFile(path)
 	if err != nil {
-		return err
+		return "", err
 	}
-	defer f.Close()
-	scanner := bufio.NewScanner(f)
-	scanner.Buffer(make([]byte, 64*1024), MaxLineBytes)
-	var lastLine []byte
-	for scanner.Scan() {
-		line := scanner.Bytes()
-		if len(line) == 0 {
-			continue
+	if len(data) > 0 && data[len(data)-1] != '\n' {
+		cut := bytes.LastIndexByte(data, '\n') + 1
+		if err := os.Truncate(path, int64(cut)); err != nil {
+			return "", err
 		}
-		// Copy — Scanner reuses its buffer.
-		lastLine = append(lastLine[:0], line...)
+		data = data[:cut]
 	}
-	if err := scanner.Err(); err != nil {
-		return err
-	}
-	if len(lastLine) > 0 {
-		h := sha256.Sum256(lastLine)
-		s.lastHash = hex.EncodeToString(h[:])
+	return lineHash(lastNonEmptyLine(data)), nil
+}
+
+// lastNonEmptyLine returns the final non-empty newline-terminated line in data,
+// without its newline, or nil when there is none.
+func lastNonEmptyLine(data []byte) []byte {
+	for len(data) > 0 {
+		end := len(data) - 1 // data always ends on the newline we cut to
+		start := bytes.LastIndexByte(data[:end], '\n') + 1
+		if end > start {
+			return data[start:end]
+		}
+		data = data[:end]
 	}
 	return nil
+}
+
+func lineHash(line []byte) string {
+	if len(line) == 0 {
+		return ""
+	}
+	h := sha256.Sum256(line)
+	return hex.EncodeToString(h[:])
 }
 
 // Write appends one JSON-encoded event followed by a newline, rotating

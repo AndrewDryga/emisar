@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -799,6 +800,63 @@ func TestClient_Run_CorruptLegacyDispatchLogFailsBeforeDial(t *testing.T) {
 	}
 }
 
+// A dispatch log the runner cannot WRITE is still fail-closed, but the remedy
+// is the opposite one: quarantining a file that was never created cannot help,
+// and the operator needs the file named and the data directory blamed. Covers
+// both boot branches that persist — the first-boot create and the legacy
+// migration — plus the read-failure branch, which keeps the quarantine remedy.
+func TestClient_Run_UnwritableDispatchLogNamesTheFileAndTheCause(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root writes into a mode-0500 directory")
+	}
+	tests := map[string]func(t *testing.T, dir string) (storePath, legacyPath string){
+		"create fails": func(_ *testing.T, dir string) (string, string) {
+			return filepath.Join(dir, "dispatches.jsonl"), ""
+		},
+		"legacy migration fails": func(t *testing.T, dir string) (string, string) {
+			t.Helper()
+			// The legacy file must live outside the unwritable directory so it
+			// READS fine and only the rewrite into storePath fails.
+			legacy := filepath.Join(t.TempDir(), "dedup.jsonl")
+			if err := os.WriteFile(legacy, []byte(legacyDispatchLine("req_legacy")+"\n"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			return filepath.Join(dir, "dispatches.jsonl"), legacy
+		},
+	}
+	for name, setup := range tests {
+		t.Run(name, func(t *testing.T) {
+			dir := filepath.Join(t.TempDir(), "state")
+			if err := os.Mkdir(dir, 0o500); err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { _ = os.Chmod(dir, 0o700) })
+			storePath, legacyPath := setup(t, dir)
+
+			dialer := &alwaysFailDialer{}
+			client := NewClient(dialer, Options{DedupStorePath: storePath, DedupLegacyStorePath: legacyPath})
+			err := client.Run(context.Background())
+			if err == nil {
+				t.Fatal("an unwritable dispatch log must refuse to connect")
+			}
+			if !strings.Contains(err.Error(), storePath) {
+				t.Errorf("refusal must name the file it could not write: %v", err)
+			}
+			if !strings.Contains(err.Error(), "fix the data directory") {
+				t.Errorf("refusal must blame the data directory: %v", err)
+			}
+			// The remedy that cannot be performed must be gone.
+			if strings.Contains(err.Error(), dispatchLogQuarantineRisk) ||
+				strings.Contains(err.Error(), "stop the runner and prove it is idle") {
+				t.Errorf("refusal still prescribes quarantining a file that was never written: %v", err)
+			}
+			if got := dialer.calls.Load(); got != 0 {
+				t.Fatalf("dial attempts = %d, want 0", got)
+			}
+		})
+	}
+}
+
 // A connected session that then fails its runner_state send returns
 // connected=true, which RESETS the reconnect backoff to the floor — the dial
 // succeeded, so any prior backoff escalation (from earlier failed dials) was a
@@ -831,12 +889,44 @@ func TestClient_Run_SendStateFailureResetsBackoff(t *testing.T) {
 	if !(got[1] > got[0]) {
 		t.Fatalf("expected backoff to escalate across the two failed dials, got %v", got)
 	}
-	if got[2] != cli.opts.ReconnectMin {
-		t.Fatalf("a connected session whose state-send failed must reset backoff to the floor: got[2]=%v want %v (full %v)",
-			got[2], cli.opts.ReconnectMin, got)
+	// The logged value is the jittered sleep, so the floor is a band.
+	if got[2] < cli.opts.ReconnectMin/2 || got[2] >= cli.opts.ReconnectMin {
+		t.Fatalf("a connected session whose state-send failed must reset backoff to the floor: got[2]=%v want [%v,%v) (full %v)",
+			got[2], cli.opts.ReconnectMin/2, cli.opts.ReconnectMin, got)
 	}
 	if !stateFailing.stateFailed.Load() {
 		t.Fatal("the state-failing conn never actually rejected a send")
+	}
+}
+
+// Every reconnect sleep is spread over [d/2, d) so a portal restart does not
+// re-synchronise the fleet into lockstep retry waves. The band matters in both
+// directions: below d/2 the fleet retries faster than the operator configured,
+// and at exactly d there is no spread at all. It must also stay strictly under
+// the next rung, so the doubling is still observable through the jitter.
+func TestClient_JitterBackoffStaysInBand(t *testing.T) {
+	for _, d := range []time.Duration{0, time.Nanosecond, time.Millisecond, time.Second, 60 * time.Second} {
+		if d == 0 {
+			if got := jitterBackoff(0); got != 0 {
+				t.Fatalf("jitterBackoff(0) = %v, want 0", got)
+			}
+			continue
+		}
+		distinct := map[time.Duration]bool{}
+		for range 200 {
+			got := jitterBackoff(d)
+			if got < d/2 || got >= d {
+				t.Fatalf("jitterBackoff(%v) = %v, want [%v,%v)", d, got, d/2, d)
+			}
+			distinct[got] = true
+		}
+		// One rung of doubling must remain distinguishable through the jitter.
+		if got := jitterBackoff(2 * d); got < d {
+			t.Fatalf("jitterBackoff(%v) = %v, want >= %v so the doubling stays visible", 2*d, got, d)
+		}
+		if d >= time.Millisecond && len(distinct) < 2 {
+			t.Fatalf("jitterBackoff(%v) returned one value across 200 draws — no spread", d)
+		}
 	}
 }
 
@@ -956,4 +1046,91 @@ func (d *failThenConnDialer) Dial(context.Context) (Conn, error) {
 		return d.conn, nil
 	}
 	return nil, io.ErrUnexpectedEOF
+}
+
+// rotatingDialer hands out conns like queuedDialer and reports the credential
+// rotation deadline the real WebsocketDialer reports, so the client's session
+// watchdog can be exercised without a portal.
+type rotatingDialer struct {
+	mu    sync.Mutex
+	conns []*fakeConn
+	due   bool
+	asked int
+}
+
+func (d *rotatingDialer) Dial(context.Context) (Conn, error) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if len(d.conns) == 0 {
+		return nil, errors.New("no more conns")
+	}
+	c := d.conns[0]
+	d.conns = d.conns[1:]
+	return c, nil
+}
+
+func (d *rotatingDialer) CredentialRotationDue(time.Time) bool {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.asked++
+	return d.due
+}
+
+func (d *rotatingDialer) rotationChecks() int {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return d.asked
+}
+
+// A runner token refreshes only at dial time, so a session that outlives its
+// token's rotation window never refreshes — and the portal expires the token 30
+// days later, stranding a runner whose operator was told the enrollment key
+// could be unset. The connected session must end itself once the credential is
+// due so the reconnect performs the refresh.
+func TestClient_Run_EndsTheSessionWhenTheCredentialIsDueForRotation(t *testing.T) {
+	first, second := newFakeConn(), newFakeConn()
+	d := &rotatingDialer{conns: []*fakeConn{first, second}, due: true}
+	cli := buildClient(t, d)
+	cli.opts.ReconnectMin = 10 * time.Millisecond
+	cli.opts.ReconnectMax = 10 * time.Millisecond
+	cli.opts.HeartbeatEvery = 10 * time.Millisecond
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- cli.Run(ctx) }()
+	t.Cleanup(func() { cancel(); <-done })
+
+	// The session ends without the conn breaking, and Run redials — which is
+	// where the token refresh lives.
+	waitUntil(t, 3*time.Second, func() bool { return len(second.sentByType(MsgRunnerState)) > 0 })
+	if !first.closed.Load() {
+		t.Fatal("the first session's conn was not closed")
+	}
+	if d.rotationChecks() == 0 {
+		t.Fatal("the client never asked the dialer whether rotation was due")
+	}
+}
+
+// The mirror case: a credential that is NOT due leaves the session alone. A
+// watchdog that recycled a healthy session would be the reconnect storm the
+// backoff exists to prevent.
+func TestClient_Run_KeepsTheSessionWhenTheCredentialIsNotDue(t *testing.T) {
+	conn := newFakeConn()
+	d := &rotatingDialer{conns: []*fakeConn{conn}, due: false}
+	cli := buildClient(t, d)
+	cli.opts.HeartbeatEvery = 10 * time.Millisecond
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- cli.Run(ctx) }()
+	t.Cleanup(func() { cancel(); <-done })
+
+	// Several heartbeats prove the watchdog is running and declining to act.
+	waitUntil(t, 3*time.Second, func() bool { return len(conn.sentByType(MsgHeartbeat)) >= 3 })
+	if d.rotationChecks() < 3 {
+		t.Fatalf("rotation checks = %d, want one per heartbeat", d.rotationChecks())
+	}
+	if conn.closed.Load() {
+		t.Fatal("a session whose credential is not due was recycled")
+	}
 }

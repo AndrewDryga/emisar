@@ -62,10 +62,7 @@ env var can be unset after the first successful connect.`,
 			defer rt.journal.Close()
 
 			enrollmentKey := os.Getenv(rt.cfg.Cloud.EnrollmentKeyEnv)
-			tokenPath := rt.cfg.Cloud.TokenPath
-			if tokenPath == "" {
-				tokenPath = filepath.Join(rt.cfg.Paths.DataDir, "token.json")
-			}
+			tokenPath := resolveTokenPath(rt.cfg)
 
 			// EnrollmentKey is only required on first connect (when no token
 			// file exists yet). Subsequent boots reuse the persisted

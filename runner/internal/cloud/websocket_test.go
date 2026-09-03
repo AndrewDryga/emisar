@@ -1061,3 +1061,66 @@ func TestMaybeRefreshTokenAdoptsAPersistedSuccessor(t *testing.T) {
 		t.Fatalf("persisted token = %q, want the successor", reloaded.Raw)
 	}
 }
+
+// The dialer is what knows when the session's credential becomes rotatable.
+// The bookkeeping has to survive the case that actually strands a runner: a
+// portal that will not grant the refresh. A deadline left in the past would
+// make the client end the session on every heartbeat, so a declined refresh
+// buys rotationRetryInterval instead — there are 30 days between eligibility
+// and expiry, so hourly retries are ample margin.
+func TestWebsocketDialerTracksTheSessionCredentialRotationDeadline(t *testing.T) {
+	now := time.Date(2026, 9, 3, 12, 0, 0, 0, time.UTC)
+	rfc := func(at time.Time) string { return at.UTC().Format(time.RFC3339) }
+
+	tests := map[string]struct {
+		token       runnerToken
+		wantDueAt   time.Time
+		wantDueNow  bool
+		wantRetried bool
+	}{
+		"fresh token is not due until the portal's instant": {
+			token:     runnerToken{Raw: "rnrtok-a", RefreshAfter: rfc(now.Add(60 * 24 * time.Hour))},
+			wantDueAt: now.Add(60 * 24 * time.Hour),
+		},
+		"a refresh the portal declined retries after the interval": {
+			token:       runnerToken{Raw: "rnrtok-a", RefreshAfter: rfc(now.Add(-time.Hour))},
+			wantDueAt:   now.Add(rotationRetryInterval),
+			wantRetried: true,
+		},
+		"a pre-rotation token retries after the interval": {
+			token:       runnerToken{Raw: "rnrtok-a"},
+			wantDueAt:   now.Add(rotationRetryInterval),
+			wantRetried: true,
+		},
+		"a corrupt deadline retries after the interval": {
+			token:       runnerToken{Raw: "rnrtok-a", RefreshAfter: "not-a-time"},
+			wantDueAt:   now.Add(rotationRetryInterval),
+			wantRetried: true,
+		},
+	}
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			d := &WebsocketDialer{}
+			// Before any dial there is no session credential to judge.
+			if d.CredentialRotationDue(now) {
+				t.Fatal("rotation reported due before the first dial")
+			}
+			d.noteSessionCredential(tc.token, now)
+
+			if d.CredentialRotationDue(now) {
+				t.Errorf("rotation is due at the instant of the dial: deadline %s", d.rotateAfter)
+			}
+			if !d.rotateAfter.Equal(tc.wantDueAt) {
+				t.Errorf("deadline = %s, want %s", d.rotateAfter, tc.wantDueAt)
+			}
+			if !d.CredentialRotationDue(tc.wantDueAt) {
+				t.Errorf("rotation is not due at its own deadline %s", tc.wantDueAt)
+			}
+			// A declined refresh must not make the very next heartbeat recycle
+			// the session — that is the reconnect storm this bound prevents.
+			if tc.wantRetried && d.CredentialRotationDue(now.Add(time.Minute)) {
+				t.Error("a declined refresh recycles the session a minute later")
+			}
+		})
+	}
+}

@@ -14,6 +14,7 @@ import (
 	"net/url"
 	"os"
 	"strings"
+	"sync"
 	"time"
 	"unicode/utf8"
 
@@ -69,6 +70,42 @@ type WebsocketDialer struct {
 
 	// Logger; defaults to slog.Default().
 	Logger *slog.Logger
+
+	// rotateMu guards rotateAfter, which the connected session's heartbeat
+	// goroutine polls while Run's goroutine owns the dials.
+	rotateMu    sync.Mutex
+	rotateAfter time.Time
+}
+
+// rotationRetryInterval is how long a session runs before retrying a refresh
+// the portal would not grant. The portal leaves 30 days between a token
+// becoming refreshable and expiring, so hourly retries are ample margin — and
+// bounding them is what keeps a portal that refuses refreshes from turning
+// credential rotation into a reconnect storm.
+const rotationRetryInterval = time.Hour
+
+// CredentialRotationDue reports whether the credential this session dialed with
+// has become eligible for rotation. The client ends the session when it has:
+// a dial is the only place a token refreshes, so a session that outlives its
+// token's rotation window never gets the chance.
+func (d *WebsocketDialer) CredentialRotationDue(now time.Time) bool {
+	d.rotateMu.Lock()
+	defer d.rotateMu.Unlock()
+	return !d.rotateAfter.IsZero() && !now.Before(d.rotateAfter)
+}
+
+// noteSessionCredential records when the token a dial is about to use becomes
+// eligible for rotation. A token the portal declined to refresh is still due,
+// so the deadline is pushed out by rotationRetryInterval rather than left in
+// the past — otherwise every heartbeat would end the session.
+func (d *WebsocketDialer) noteSessionCredential(token runnerToken, now time.Time) {
+	at, ok := token.rotateAt()
+	if !ok || !now.Before(at) {
+		at = now.Add(rotationRetryInterval)
+	}
+	d.rotateMu.Lock()
+	d.rotateAfter = at
+	d.rotateMu.Unlock()
 }
 
 var (
@@ -114,9 +151,11 @@ func (d *WebsocketDialer) Dial(ctx context.Context) (Conn, error) {
 	// costs no extra round-trip. Before the dial, so the connection uses
 	// whichever token we end up with — and never blocking it: maybeRefreshToken
 	// returns the token it was given on every failure path.
-	if token.refreshDue(time.Now()) {
+	now := time.Now()
+	if token.refreshDue(now) {
 		token = d.maybeRefreshToken(ctx, token)
 	}
+	d.noteSessionCredential(token, now)
 
 	wsURL, err := d.deriveWSURL()
 	if err != nil {
@@ -193,11 +232,23 @@ func (t runnerToken) refreshDue(now time.Time) bool {
 	if t.RefreshAfter == "" {
 		return true
 	}
+	at, ok := t.rotateAt()
+	return ok && !now.Before(at)
+}
+
+// rotateAt is the instant the portal stated this token becomes eligible for
+// rotation. Absent means a pre-rotation token or a corrupt value: refreshDue
+// tells those apart, while the live-session watchdog treats both the same way
+// and just waits out rotationRetryInterval.
+func (t runnerToken) rotateAt() (time.Time, bool) {
+	if t.RefreshAfter == "" {
+		return time.Time{}, false
+	}
 	at, err := time.Parse(time.RFC3339, t.RefreshAfter)
 	if err != nil {
-		return false
+		return time.Time{}, false
 	}
-	return !now.Before(at)
+	return at, true
 }
 
 func (d *WebsocketDialer) loadOrMintToken(ctx context.Context) (runnerToken, error) {

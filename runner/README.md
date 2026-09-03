@@ -212,9 +212,12 @@ credential from causing an endless authentication loop. The shutdown window
 covers the longest bundled cancellation grace.
 
 The default 30-second heartbeat pairs with the portal's stale-socket watchdog
-and connection lease. A half-open network path can take roughly 90-120 seconds
-to release ownership before a replacement connection is accepted. Reducing the
-runner's reconnect backoff does not bypass that safety window.
+and connection lease. The portal closes a connection 90 seconds after the last
+heartbeat, so `cloud.heartbeat_every` is capped at 45 seconds and a wider value
+is refused at load rather than becoming a silent reconnect loop. A half-open
+network path can take roughly 90-120 seconds to release ownership before a
+replacement connection is accepted. Reducing the runner's reconnect backoff
+does not bypass that safety window.
 
 ## Upgrade and remove
 

@@ -238,6 +238,38 @@ var (
 	attestationFieldNames = canonicalJSONFieldNames(reflect.TypeOf(attest.Envelope{}))
 )
 
+// inboundFieldNames is the canonical JSON field set of each cloud→runner
+// message. run_action is absent on purpose: its UnmarshalJSON validates its own
+// names plus its nested opts/attestation objects, and owns the refusal path for
+// a frame it rejects.
+var inboundFieldNames = map[MessageType][]string{
+	MsgCancel:    canonicalJSONFieldNames(reflect.TypeOf(CancelMsg{})),
+	MsgAckResult: canonicalJSONFieldNames(reflect.TypeOf(AckResultMsg{})),
+	MsgShutdown:  canonicalJSONFieldNames(reflect.TypeOf(ShutdownMsg{})),
+	MsgError:     canonicalJSONFieldNames(reflect.TypeOf(ErrorMsg{})),
+}
+
+// rejectInboundAliases enforces the wire spec's "case aliases are rejected" on
+// every inbound message that carries known fields, not just run_action. Go
+// matches JSON field names case-insensitively, so {"TYPE":"ack_result",
+// "Request_ID":"…"} decodes exactly like the canonical spelling. The
+// TLS-authenticated portal gains no capability that way — it can send the
+// canonical spelling anyway — but two implementations of a frozen protocol
+// could disagree about whether Request_Id is a request_id, and the spec says
+// they cannot. An unknown message type stays ignorable so an additive message
+// family cannot break a peer.
+func rejectInboundAliases(raw []byte, messageType MessageType) error {
+	canonical, ok := inboundFieldNames[messageType]
+	if !ok {
+		return nil
+	}
+	object, err := rawJSONObject(raw, string(messageType))
+	if err != nil {
+		return err
+	}
+	return rejectKnownAliases(object, string(messageType), canonical)
+}
+
 func canonicalJSONFieldNames(value reflect.Type) []string {
 	fields := make([]string, 0, value.NumField())
 	for i := 0; i < value.NumField(); i++ {

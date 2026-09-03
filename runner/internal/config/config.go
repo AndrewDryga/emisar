@@ -24,6 +24,19 @@ import (
 // is the audit trail of a security product. Fail at load, say why.
 const MaxPreviewBytesLimit = 64 * 1024
 
+// MaxHeartbeatEveryLimit caps cloud.heartbeat_every at 45 seconds.
+//
+// The control plane closes a socket 90 seconds after the last heartbeat frame,
+// and nothing else on the wire refreshes that watchdog. A wider interval means
+// the runner connects, is closed mid-session, reconnects, and is closed again —
+// forever, with no message on either end naming the config key. 45s keeps the
+// paired 30s default plus a missed frame inside the watchdog.
+//
+// Refused rather than clamped, like events.max_preview_bytes: an operator who
+// widened this on a metered link is asking for something that never connects,
+// so say it at load.
+const MaxHeartbeatEveryLimit = actionspec.Duration(45e9)
+
 // MaxAttestationAgeLimit caps signing.max_attestation_age at one week.
 //
 // The window is the replay exposure of a signed dispatch AND the retention of
@@ -272,6 +285,12 @@ func (c *Config) Validate() error {
 	}
 	if c.Cloud.HeartbeatEvery <= 0 {
 		c.Cloud.HeartbeatEvery = actionspec.Duration(30e9) // 30s
+	}
+	if c.Cloud.HeartbeatEvery > MaxHeartbeatEveryLimit {
+		return fmt.Errorf(
+			"config: cloud.heartbeat_every must not exceed %s (the control plane's stale-socket watchdog closes the connection 90s after the last heartbeat, so a wider interval reconnects forever)",
+			MaxHeartbeatEveryLimit.Std(),
+		)
 	}
 	if c.Execution.CancelGrace <= 0 {
 		c.Execution.CancelGrace = actionspec.Duration(30e9) // 30s

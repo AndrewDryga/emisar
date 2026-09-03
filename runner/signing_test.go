@@ -250,11 +250,18 @@ func TestSigningNewCACmd_HumanOutput(t *testing.T) {
 	}
 	for _, want := range []string{
 		"enforce_signatures: true", "trusted_cas:", "name: ca-prod", "pem: |",
-		"BEGIN CERTIFICATE", "OFFLINE", "emisar signing new-cert", "--ca-key", "--ca-cert",
+		"BEGIN CERTIFICATE", "OFFLINE", "emisar signing new-cert", "--ca-key-file", "--ca-cert",
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("signing new-ca guide missing %q\n--- output ---\n%s", want, out)
 		}
+	}
+	// The CA private key is the one secret whose compromise reproduces the exact
+	// threat signed dispatch exists to stop. The guide must not teach the argv
+	// form that writes it to shell history and /proc/<pid>/cmdline — the operator
+	// is following our own printed instruction at the moment the CA is created.
+	if strings.Contains(out, "--ca-key ") || strings.Contains(out, "--ca-key=") {
+		t.Errorf("signing new-ca guide still teaches the argv key form\n--- output ---\n%s", out)
 	}
 }
 

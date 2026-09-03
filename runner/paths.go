@@ -36,7 +36,7 @@ func writePaths(w io.Writer) {
 	writePathLine(w, "config", path)
 	writePathLine(w, "packs", strings.Join(packDirs, ", "))
 	writePathLine(w, "data dir", cfg.Paths.DataDir)
-	writePathLine(w, "token", cfg.Cloud.TokenPath)
+	writePathLine(w, "token", resolveTokenPath(cfg))
 	writePathLine(w, "dispatch log", cloud.DispatchLogPath(cfg.Paths.DataDir))
 	writePathLine(w, "events journal", cfg.Events.JSONLPath)
 }

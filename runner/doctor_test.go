@@ -65,6 +65,121 @@ func TestCheckCredential(t *testing.T) {
 			t.Fatalf("status = %v, want fail (%s)", got.status, got.detail)
 		}
 	})
+
+	// A hand-written config (a Kubernetes ConfigMap, anything not written by
+	// install.sh) may omit cloud.token_path. connect still opens
+	// <data_dir>/token.json, so doctor must judge that same file rather than
+	// report "no credential" on a runner that connects fine.
+	t.Run("token at the data-dir default, no cloud.token_path", func(t *testing.T) {
+		t.Setenv("EMISAR_ENROLLMENT_KEY", "")
+		dataDir := t.TempDir()
+		writeTokenAt(t, filepath.Join(dataDir, "token.json"), validTokenFile, 0o600)
+		got := checkCredential(&config.Config{
+			Paths: config.Paths{DataDir: dataDir},
+			Cloud: config.Cloud{EnrollmentKeyEnv: "EMISAR_ENROLLMENT_KEY"},
+		})
+		if got.status != checkOK {
+			t.Fatalf("status = %v, want ok (%s)", got.status, got.detail)
+		}
+		if !strings.Contains(got.detail, filepath.Join(dataDir, "token.json")) {
+			t.Errorf("detail %q should name the default token path", got.detail)
+		}
+	})
+
+	// The mirror case: no token anywhere and no enrollment key is still a
+	// failure, but it must name the file connect will look for.
+	t.Run("no token at the default and no enrollment key", func(t *testing.T) {
+		t.Setenv("EMISAR_ENROLLMENT_KEY", "")
+		dataDir := t.TempDir()
+		got := checkCredential(&config.Config{
+			Paths: config.Paths{DataDir: dataDir},
+			Cloud: config.Cloud{EnrollmentKeyEnv: "EMISAR_ENROLLMENT_KEY"},
+		})
+		if got.status != checkFail {
+			t.Fatalf("status = %v, want fail (%s)", got.status, got.detail)
+		}
+		if !strings.Contains(got.detail, filepath.Join(dataDir, "token.json")) {
+			t.Errorf("detail %q should name the default token path", got.detail)
+		}
+	})
+}
+
+// The control plane does not persist signing_ca_ids, so the console cannot
+// answer which CA a runner trusts. doctor is the first-response command, so it
+// has to — naming the anchors, whether enforcement is on, and the freshness
+// window, and failing loudly if the configured anchor does not parse.
+func TestCheckSigning(t *testing.T) {
+	withJSONOut(t, true)
+	caName, caPEM, _ := runNewCA(t)
+
+	t.Run("no signing configured", func(t *testing.T) {
+		got := checkSigning(&config.Config{})
+		if got.status != checkOK || !strings.Contains(got.detail, "not enforced") {
+			t.Fatalf("check = %v %q, want ok/not enforced", got.status, got.detail)
+		}
+	})
+
+	t.Run("enforced names the anchors and the window", func(t *testing.T) {
+		cfg := &config.Config{
+			Runner: config.Runner{ID: "runner-a", Group: "prod"},
+			Cloud:  config.Cloud{URL: "wss://cloud.example.com/runner/v1"},
+			Paths:  config.Paths{DataDir: t.TempDir()},
+			Signing: config.Signing{
+				EnforceSignatures: true,
+				TrustedCAs:        []config.TrustedCA{{Name: caName, PEM: caPEM}},
+				MaxAttestationAge: actionspec.Duration(2 * time.Hour),
+			},
+		}
+		got := checkSigning(cfg)
+		if got.status != checkOK {
+			t.Fatalf("status = %v, want ok (%s)", got.status, got.detail)
+		}
+		for _, want := range []string{"enforced", caName, "2h0m0s"} {
+			if !strings.Contains(got.detail, want) {
+				t.Errorf("detail %q should contain %q", got.detail, want)
+			}
+		}
+	})
+
+	// Anchors present but enforcement off is the half-configured state an
+	// operator reaches by pasting the guide's trusted_cas and forgetting the
+	// flag: the runner still accepts unsigned dispatch from the control plane.
+	t.Run("anchors configured but enforcement off warns", func(t *testing.T) {
+		cfg := &config.Config{
+			Runner:  config.Runner{ID: "runner-a", Group: "prod"},
+			Signing: config.Signing{TrustedCAs: []config.TrustedCA{{Name: caName, PEM: caPEM}}, MaxAttestationAge: actionspec.Duration(time.Hour)},
+		}
+		got := checkSigning(cfg)
+		if got.status != checkWarn || !strings.Contains(got.detail, "enforce_signatures is off") {
+			t.Fatalf("check = %v %q, want a warning naming enforce_signatures", got.status, got.detail)
+		}
+	})
+
+	t.Run("unparseable anchor fails", func(t *testing.T) {
+		cfg := &config.Config{
+			Runner:  config.Runner{ID: "runner-a", Group: "prod"},
+			Signing: config.Signing{TrustedCAs: []config.TrustedCA{{Name: "bad", PEM: "not a pem"}}, MaxAttestationAge: actionspec.Duration(time.Hour)},
+		}
+		if got := checkSigning(cfg); got.status != checkFail {
+			t.Fatalf("status = %v, want fail (%s)", got.status, got.detail)
+		}
+	})
+}
+
+// connect, doctor and `emisar paths` must all name the same file, so a fix in
+// one is a fix in all three.
+func TestResolveTokenPath(t *testing.T) {
+	explicit := &config.Config{
+		Paths: config.Paths{DataDir: "/var/lib/emisar"},
+		Cloud: config.Cloud{TokenPath: "/etc/emisar/token"},
+	}
+	if got := resolveTokenPath(explicit); got != "/etc/emisar/token" {
+		t.Errorf("configured cloud.token_path = %q, want /etc/emisar/token", got)
+	}
+	defaulted := &config.Config{Paths: config.Paths{DataDir: "/var/lib/emisar"}}
+	if got := resolveTokenPath(defaulted); got != filepath.Join("/var/lib/emisar", "token.json") {
+		t.Errorf("default token path = %q, want /var/lib/emisar/token.json", got)
+	}
 }
 
 // A cached token file connect would REJECT is never rescued by an enrollment
@@ -151,6 +266,12 @@ const validTokenFile = `{"token":"tok"}`
 func writeToken(t *testing.T, body string, perm os.FileMode) string {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "token")
+	writeTokenAt(t, path, body, perm)
+	return path
+}
+
+func writeTokenAt(t *testing.T, path, body string, perm os.FileMode) {
+	t.Helper()
 	if err := os.WriteFile(path, []byte(body), perm); err != nil {
 		t.Fatal(err)
 	}
@@ -158,7 +279,6 @@ func writeToken(t *testing.T, body string, perm os.FileMode) string {
 	if err := os.Chmod(path, perm); err != nil {
 		t.Fatal(err)
 	}
-	return path
 }
 
 func TestCheckPackDirs(t *testing.T) {
@@ -809,6 +929,34 @@ func findDoctorCheck(report doctorReport, name string) (doctorCheck, bool) {
 		}
 	}
 	return doctorCheck{}, false
+}
+
+// A heartbeat wider than the control plane's stale-socket watchdog used to be a
+// silent forever-reconnect; config.Validate now refuses it, and doctor — the
+// command an operator runs when a runner flaps — is where they read that. This
+// is why there is no separate heartbeat rule: the config check already carries
+// the diagnosis, and a second one could never fire.
+func TestCheckConfig_FailsOnHeartbeatAboveTheWatchdog(t *testing.T) {
+	withFlags(t)
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+	body := "schema_version: 1\nrunner:\n  group: test-group\ncloud:\n  url: wss://cloud/runner\n" +
+		"  enrollment_key_env: EMISAR_ENROLLMENT_KEY\n  heartbeat_every: 2m\npaths:\n  data_dir: " + dir + "\n" +
+		"  packs:\n    - " + dir + "/packs\nevents:\n  jsonl_path: " + dir + "/events.jsonl\n"
+	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	flagConfig = path
+
+	cfg, result := checkConfig()
+	if cfg != nil || result.status != checkFail {
+		t.Fatalf("config check = %v %q, want fail", result.status, result.detail)
+	}
+	for _, want := range []string{"cloud.heartbeat_every", "45s", "90s"} {
+		if !strings.Contains(result.detail, want) {
+			t.Errorf("detail %q should contain %q", result.detail, want)
+		}
+	}
 }
 
 // A config line an earlier installer wrote and the runner ignores is reported

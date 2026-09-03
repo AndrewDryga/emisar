@@ -58,6 +58,10 @@ type dedupRing struct {
 	logger      *slog.Logger
 	loadErr     error
 	loadErrPath string
+	// loadErrWrite marks a boot failure the runner could not WRITE rather than
+	// could not READ. The remedies are opposite: quarantining a file we just
+	// failed to create cannot help, and the real cause is the data directory.
+	loadErrWrite bool
 
 	journalV2              bool
 	journalFileBytes       int64
@@ -127,6 +131,7 @@ func (d *dedupRing) load() {
 			return
 		}
 		d.loadErr = err
+		d.loadErrPath = d.storePath
 		d.logger.Error("cloud.dedup_load_failed", "error", d.loadErr, "path", d.storePath)
 		return
 	}
@@ -143,7 +148,7 @@ func (d *dedupRing) load() {
 		if err := d.rewriteJournalLocked(); err != nil {
 			d.keys = nil
 			d.records = map[string]dedupEntry{}
-			d.loadErr = fmt.Errorf("migrate dispatch log: %w", err)
+			d.failedWrite(fmt.Errorf("migrate dispatch log: %w", err))
 			d.logger.Error("cloud.dedup_migration_failed", "error", d.loadErr, "path", d.storePath)
 			return
 		}
@@ -182,8 +187,8 @@ func (d *dedupRing) adoptLegacyStore() {
 	if err := d.rewriteJournalLocked(); err != nil {
 		d.keys = nil
 		d.records = map[string]dedupEntry{}
-		d.loadErr = fmt.Errorf("migrate legacy dispatch log: %w", err)
-		d.logger.Error("cloud.dedup_migration_failed", "error", d.loadErr, "path", d.legacyPath)
+		d.failedWrite(fmt.Errorf("migrate legacy dispatch log: %w", err))
+		d.logger.Error("cloud.dedup_migration_failed", "error", d.loadErr, "path", d.storePath)
 		return
 	}
 	if err := os.Rename(d.legacyPath, d.legacyPath+".migrated"); err != nil {
@@ -193,9 +198,38 @@ func (d *dedupRing) adoptLegacyStore() {
 		"from", d.legacyPath, "to", d.storePath, "entries", len(d.keys))
 }
 
+// failedWrite records a boot failure that could not persist state, always
+// naming the file the runner tried to write.
+func (d *dedupRing) failedWrite(err error) {
+	d.keys = nil
+	d.records = map[string]dedupEntry{}
+	d.loadErr = err
+	d.loadErrPath = d.storePath
+	d.loadErrWrite = true
+}
+
+// startupRefusal is why connect will not start, plus the remedy that actually
+// applies. Refusing over unusable at-most-once state is deliberate — a fresh
+// empty log could double-run a redelivered mutation — but the operator must be
+// handed a remedy they can perform: quarantining a file the runner just failed
+// to WRITE cannot help, and the real cause (a full, read-only, or wrongly-owned
+// data directory) is in the wrapped error.
+func (d *dedupRing) startupRefusal() error {
+	if d.loadErrWrite {
+		return fmt.Errorf(
+			"persist durable dispatch state to %s: %w — the runner cannot write its at-most-once record; fix the data directory (free space, permissions, ownership) and restart",
+			d.loadErrPath, d.loadErr)
+	}
+	return fmt.Errorf(
+		"load durable dispatch state from %s: %w — %s, then restart to begin a clean dispatch log; %s",
+		d.loadErrPath, d.loadErr,
+		dispatchLogQuarantineGuidance(d.storePath, d.legacyPath),
+		dispatchLogQuarantineRisk)
+}
+
 func (d *dedupRing) createEmptyJournal() {
 	if err := d.rewriteJournalLocked(); err != nil {
-		d.loadErr = fmt.Errorf("create dispatch log: %w", err)
+		d.failedWrite(fmt.Errorf("create dispatch log: %w", err))
 		d.logger.Error("cloud.dedup_create_failed", "error", d.loadErr, "path", d.storePath)
 	}
 }
@@ -577,6 +611,18 @@ func validDispatchDigest(digest string) bool {
 	return err == nil
 }
 
+// evictOldestAcknowledgedLocked frees a ring slot. Only an ACKNOWLEDGED entry
+// may go: the portal has the result, so forgetting it cannot lose one.
+//
+// Adopted pre-v0.10 entries enter acknowledged (decodeDedupEntry) and are
+// therefore evictable, which in theory allows a second execution if the portal
+// redelivered that request id after eviction. It cannot: the portal only
+// redelivers a run still in sent/running/cancelling, and its DispatchTimeout
+// sweep resolves those within a two-minute grace — while eviction needs 1024
+// newer dispatches to arrive first. Until eviction, the legacy entry's sentinel
+// digest refuses the redelivery outright. Making legacy entries non-evictable
+// would mean importing them as completed, which resends every ancient result on
+// the next connect — a worse trade for a window that cannot open.
 func (d *dedupRing) evictOldestAcknowledgedLocked() bool {
 	index, key, ok := d.oldestAcknowledgedLocked()
 	if !ok {

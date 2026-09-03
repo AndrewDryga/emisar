@@ -83,22 +83,22 @@ func encodePrivateKey(key crypto.Signer) (string, error) {
 func parsePrivateKey(encoded string) (crypto.Signer, error) {
 	der, err := base64.StdEncoding.DecodeString(strings.TrimSpace(encoded))
 	if err != nil {
-		return nil, fmt.Errorf("--ca-key is not valid base64: %w", err)
+		return nil, fmt.Errorf("the CA key is not valid base64: %w", err)
 	}
 	parsed, err := x509.ParsePKCS8PrivateKey(der)
 	if err != nil {
-		return nil, fmt.Errorf("--ca-key is not a PKCS#8 private key: %w", err)
+		return nil, fmt.Errorf("the CA key is not a PKCS#8 private key: %w", err)
 	}
 	switch key := parsed.(type) {
 	case ed25519.PrivateKey:
 		return key, nil
 	case *ecdsa.PrivateKey:
 		if key.Curve != elliptic.P256() {
-			return nil, fmt.Errorf("--ca-key is an ECDSA key on %s, only P-256 is accepted", key.Curve.Params().Name)
+			return nil, fmt.Errorf("the CA key is an ECDSA key on %s, only P-256 is accepted", key.Curve.Params().Name)
 		}
 		return key, nil
 	default:
-		return nil, fmt.Errorf("--ca-key algorithm %T is not accepted for dispatch signing", parsed)
+		return nil, fmt.Errorf("CA key algorithm %T is not accepted for dispatch signing", parsed)
 	}
 }
 
@@ -313,7 +313,7 @@ The CERTIFICATE goes in every runner's config under signing.trusted_cas (safe to
 commit). The PRIVATE key stays OFFLINE — keep it on an operator's machine or a
 vault, never on a runner and never on the control plane. You issue short-lived
 operator certificates with it via
-"emisar signing new-cert --ca-key <private-key> --ca-cert <certificate>".
+"emisar signing new-cert --ca-key-file <key-file> --ca-cert <certificate>".
 
 To issue from your own PKI instead, see the certificate profile in
 https://emisar.dev/docs/signed-dispatch.`,
@@ -352,8 +352,9 @@ https://emisar.dev/docs/signed-dispatch.`,
 			printTrustBlock(caName, caPEM)
 			fmt.Print("2. CA PRIVATE key — store this OFFLINE (never on a runner or the control plane):\n\n")
 			fmt.Printf("   %s\n\n", caKeyEncoded)
-			fmt.Print("Issue operator certificates with:\n")
-			fmt.Print("   emisar signing new-cert --ca-key <the-private-key-above> --ca-cert <the-certificate-above> --scope group=<g> --ttl 24h\n")
+			fmt.Print("Issue operator certificates with the key in a FILE — on the command line it\n")
+			fmt.Print("lands in shell history and in the process table:\n")
+			fmt.Print("   emisar signing new-cert --ca-key-file <file-holding-the-key-above> --ca-cert <the-certificate-above> --scope group=<g> --ttl 24h\n")
 			return nil
 		},
 	}
@@ -374,9 +375,12 @@ func signingNewCertCmd() *cobra.Command {
 the offline CA, producing the two env vars the MCP bridge carries:
 EMISAR_SIGNING_KEY and EMISAR_SIGNING_CERT.
 
-The CA private key is read locally from --ca-key and used only to sign; it is
-never transmitted. Prefer short --ttl values (24h): expiry is the only
-revocation, so a long TTL keeps a leaked certificate usable longer.`,
+The CA private key is read locally and used only to sign; it is never
+transmitted. Pass it as a file (--ca-key-file): --ca-key takes the key material
+itself, which writes the root of trust into shell history and exposes it in
+/proc/<pid>/cmdline to every other user on the host while the command runs.
+Prefer short --ttl values (24h): expiry is the only revocation, so a long TTL
+keeps a leaked certificate usable longer.`,
 		Args: cobra.NoArgs,
 		RunE: func(_ *cobra.Command, _ []string) error {
 			material, err := caKeyMaterial(caKey, caKeyFile)
@@ -562,7 +566,8 @@ this, issue fresh certificates as they expire with "emisar signing new-cert".`,
 				caName, leaf.NotAfter.UTC().Format(time.RFC3339))
 			fmt.Print("1. Runner config — add under signing on every runner (PUBLIC, safe to commit):\n\n")
 			printTrustBlock(caName, caPEM)
-			fmt.Print("2. CA PRIVATE key — store OFFLINE; you re-issue certificates with it as they expire:\n\n")
+			fmt.Print("2. CA PRIVATE key — store OFFLINE in a file; you re-issue certificates with it as\n")
+			fmt.Print("   they expire (emisar signing new-cert --ca-key-file <that file>):\n\n")
 			fmt.Printf("   %s\n\n", caKeyEncoded)
 			fmt.Print("3. MCP client — set these env vars (keep the private key SECRET):\n\n")
 			fmt.Printf("   EMISAR_SIGNING_KEY=%s\n", leafKeyEncoded)

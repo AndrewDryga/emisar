@@ -1592,8 +1592,9 @@ func TestClient_BackoffResetsAfterSuccessfulSession(t *testing.T) {
 	if !(got[1] > got[0]) {
 		t.Fatalf("expected backoff to escalate across failed dials, got %v", got)
 	}
-	if got[2] != cli.opts.ReconnectMin {
-		t.Fatalf("backoff not reset after a successful session: got[2]=%v want %v (full sequence %v)",
-			got[2], cli.opts.ReconnectMin, got)
+	// The logged value is the jittered sleep, so the floor is a band.
+	if got[2] < cli.opts.ReconnectMin/2 || got[2] >= cli.opts.ReconnectMin {
+		t.Fatalf("backoff not reset after a successful session: got[2]=%v want [%v,%v) (full sequence %v)",
+			got[2], cli.opts.ReconnectMin/2, cli.opts.ReconnectMin, got)
 	}
 }

@@ -172,6 +172,7 @@ func runDoctorChecks(ctx context.Context, probe, includeCloud bool) []checkResul
 	}
 
 	results = append(results, checkCredential(cfg))
+	results = append(results, checkSigning(cfg))
 	results = append(results, checkDispatchLog(cfg))
 
 	packDirs := cfg.Paths.Packs
@@ -236,19 +237,17 @@ func checkConfig() (*config.Config, checkResult) {
 // key does not rescue it: connect refuses to register over a rejected cache
 // rather than mint a fresh token over the evidence.
 func checkCredential(cfg *config.Config) checkResult {
-	tokenPath := cfg.Cloud.TokenPath
+	tokenPath := resolveTokenPath(cfg)
 	envName := cfg.Cloud.EnrollmentKeyEnv
 
-	if tokenPath != "" {
-		err := cloud.ValidateTokenFile(tokenPath)
-		switch {
-		case err == nil:
-			return checkResult{"credential", checkOK, fmt.Sprintf("token present at %s", tokenPath)}
-		case !errors.Is(err, os.ErrNotExist):
-			return checkResult{"credential", checkFail, fmt.Sprintf(
-				"token %s is unusable: %v — connect refuses it, so the runner stays down until it's fixed",
-				tokenPath, err)}
-		}
+	err := cloud.ValidateTokenFile(tokenPath)
+	switch {
+	case err == nil:
+		return checkResult{"credential", checkOK, fmt.Sprintf("token present at %s", tokenPath)}
+	case !errors.Is(err, os.ErrNotExist):
+		return checkResult{"credential", checkFail, fmt.Sprintf(
+			"token %s is unusable: %v — connect refuses it, so the runner stays down until it's fixed",
+			tokenPath, err)}
 	}
 
 	if envName != "" && os.Getenv(envName) != "" {
@@ -256,18 +255,44 @@ func checkCredential(cfg *config.Config) checkResult {
 			fmt.Sprintf("$%s set — registers a token on first connect", envName)}
 	}
 
-	return checkResult{"credential", checkFail, credentialMissingDetail(tokenPath, envName)}
+	if envName == "" {
+		return checkResult{"credential", checkFail,
+			fmt.Sprintf("no token at %s and cloud.enrollment_key_env is not configured", tokenPath)}
+	}
+	return checkResult{"credential", checkFail,
+		fmt.Sprintf("no token at %s and $%s is unset — set the enrollment key", tokenPath, envName)}
 }
 
-func credentialMissingDetail(tokenPath, envName string) string {
-	switch {
-	case tokenPath != "" && envName != "":
-		return fmt.Sprintf("no token at %s and $%s is unset — set the enrollment key", tokenPath, envName)
-	case envName != "":
-		return fmt.Sprintf("$%s is unset and no cloud.token_path is configured", envName)
-	default:
-		return "neither cloud.enrollment_key_env nor cloud.token_path is configured"
+// checkSigning names the signed-dispatch trust anchors this host actually
+// holds. The control plane does not persist signing_ca_ids, so the console
+// cannot answer which CA a runner trusts — on the one feature whose point is
+// not trusting the console, the host is the only authority and doctor is what
+// an operator runs first. Building the verifier also proves the configured
+// anchors parse and that enforcement's preconditions hold, which connect would
+// otherwise be the first to discover.
+func checkSigning(cfg *config.Config) checkResult {
+	if !cfg.Signing.EnforceSignatures && len(cfg.Signing.TrustedCAs) == 0 {
+		return checkResult{"signing", checkOK,
+			"not enforced — the control plane dispatches to this runner without an attestation"}
 	}
+	identity, err := configIdentity(cfg)
+	if err != nil {
+		return checkResult{"signing", checkFail, err.Error()}
+	}
+	verifier, err := buildStateVerifier(cfg, identity)
+	if err != nil {
+		return checkResult{"signing", checkFail, err.Error()}
+	}
+	// NewVerifier refuses enforcement without an anchor and config.Validate
+	// refuses it without trusted_cas, so a built verifier that enforces always
+	// names at least one CA.
+	anchors := strings.Join(verifier.CAIDs(), ", ")
+	if !verifier.Enforces() {
+		return checkResult{"signing", checkWarn, fmt.Sprintf(
+			"trusts %s, but signing.enforce_signatures is off — the control plane may still dispatch unsigned", anchors)}
+	}
+	return checkResult{"signing", checkOK, fmt.Sprintf(
+		"enforced, trusts %s, attestations valid for %s", anchors, verifier.MaxAge())}
 }
 
 // checkPackDirs flags configured pack dirs that don't exist — LoadAll skips a

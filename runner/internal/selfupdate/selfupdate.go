@@ -25,6 +25,7 @@ import (
 	"time"
 
 	"github.com/andrewdryga/emisar/runner/internal/httpsecurity"
+	"github.com/andrewdryga/emisar/runner/pkg/actionspec"
 )
 
 const (
@@ -712,6 +713,38 @@ func extractBundle(archivePath, destination, name string) (string, error) {
 	return bundle, nil
 }
 
+// installerEnvNames is every environment variable install.sh reads that the
+// updater must decide, not the ambient environment: the installer's own
+// options, the runner identity and enrollment secret, and the release-lookup
+// credentials. `emisar update` reconstructs each one from the on-disk receipt,
+// so an inherited value could only redirect the installer away from the
+// install it is upgrading.
+var installerEnvNames = map[string]bool{
+	"ASSUME_YES": true, "BASHOPTS": true, "BIN_DIR": true, "CDPATH": true,
+	"DATA_DIR": true, "EMISAR_ATTESTATION_WORKFLOW": true,
+	"EMISAR_ENROLLMENT_KEY": true, "EMISAR_GITHUB_TOKEN": true,
+	"EMISAR_PACKS": true, "EMISAR_REPO": true, "EMISAR_URL": true,
+	"ENV": true, "ETC_DIR": true, "GH_TOKEN": true, "GITHUB_TOKEN": true,
+	"LOG_DIR": true, "NO_SERVICE": true, "NO_START": true, "PATH": true,
+	"QUARANTINE_DISPATCH_LOG": true, "SERVICE_GROUP": true,
+	"SERVICE_USER": true, "SHELLOPTS": true, "VERSION": true,
+}
+
+// installerEnvBlocked reports whether a variable must be stripped before
+// `emisar update` re-execs install.sh as root. Beyond the installer's own
+// surface it applies the repo's canonical hijack test — the PREFIX pair plus
+// the interpreter-option set, the same spelling config.Validate and
+// actionspec.validateExecutionEnv use — so LD_AUDIT and the DYLD_*_PATH family
+// cannot ride an inherited environment into a root bash. Bash resets IFS at
+// startup, so that one is inert here.
+func installerEnvBlocked(key string) bool {
+	return installerEnvNames[key] ||
+		strings.HasPrefix(key, "LD_") || strings.HasPrefix(key, "DYLD_") ||
+		actionspec.IsInterpreterHijackEnvVar(key) ||
+		strings.HasPrefix(key, "EMISAR_RUNNER_LABEL_") ||
+		key == "EMISAR_GROUP" || key == "EMISAR_RUNNER_ID"
+}
+
 func installerInvocation(bundle, tag string, receipt receipt, identity releaseIdentity) ([]string, []string) {
 	args := []string{
 		filepath.Join(bundle, "install.sh"),
@@ -727,24 +760,10 @@ func installerInvocation(bundle, tag string, receipt receipt, identity releaseId
 		args = append(args, "--no-service")
 	}
 
-	blocked := map[string]bool{
-		"ASSUME_YES": true, "BIN_DIR": true, "DATA_DIR": true,
-		"BASH_ENV": true, "BASHOPTS": true, "CDPATH": true,
-		"DYLD_INSERT_LIBRARIES": true, "DYLD_LIBRARY_PATH": true,
-		"EMISAR_ATTESTATION_WORKFLOW": true, "EMISAR_ENROLLMENT_KEY": true,
-		"EMISAR_GITHUB_TOKEN": true, "EMISAR_PACKS": true, "EMISAR_REPO": true,
-		"ENV": true, "ETC_DIR": true, "GITHUB_TOKEN": true, "GH_TOKEN": true,
-		"LD_LIBRARY_PATH": true, "LD_PRELOAD": true,
-		"LOG_DIR": true, "NO_SERVICE": true, "NO_START": true,
-		"PATH": true, "QUARANTINE_DISPATCH_LOG": true, "SERVICE_GROUP": true,
-		"SERVICE_USER": true, "VERSION": true,
-		"SHELLOPTS": true,
-	}
 	env := make([]string, 0, len(os.Environ())+8)
 	for _, item := range os.Environ() {
 		key, _, _ := strings.Cut(item, "=")
-		if blocked[key] || strings.HasPrefix(key, "EMISAR_RUNNER_LABEL_") ||
-			key == "EMISAR_GROUP" || key == "EMISAR_RUNNER_ID" {
+		if installerEnvBlocked(key) {
 			continue
 		}
 		env = append(env, item)
