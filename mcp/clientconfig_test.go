@@ -790,3 +790,102 @@ func TestYAMLRemovalDropsAnEmptiedTopLevelKey(t *testing.T) {
 		t.Errorf("removal dropped an unrelated key:\n%s", edited)
 	}
 }
+
+// An editor saving between the render and the write used to be silently
+// reverted: the render was built from the old bytes, the backup captured the
+// editor's save, and then the stale render replaced it.
+func TestConfigWriteRefusesToClobberAConcurrentSave(t *testing.T) {
+	adapter, _ := lookupClientAdapter("cursor")
+	client := adapter.resolve(testConfigRoots(t))
+	if err := os.MkdirAll(filepath.Dir(client.ConfigFile), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(client.ConfigFile, []byte("{\n  \"mcpServers\": {}\n}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	source, err := readConfigSource(client.ConfigFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	edited, err := client.renderConfig(testEntryRequest("/usr/local/bin/emisar-mcp", "cursor"), source)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	saved := "{\n  \"mcpServers\": {},\n  \"editorSetting\": true\n}\n"
+	if err := os.WriteFile(client.ConfigFile, []byte(saved), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := replaceConfigFile(client.ConfigFile, source, edited); err == nil {
+		t.Fatal("a stale render replaced a concurrent save")
+	}
+	after, err := readConfigFile(client.ConfigFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if after != saved {
+		t.Errorf("the concurrent save was lost:\n%s", after)
+	}
+
+	// The same edit still applies to the file it was rendered from.
+	if err := os.WriteFile(client.ConfigFile, []byte(source), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := replaceConfigFile(client.ConfigFile, source, edited); err != nil {
+		t.Fatalf("an unchanged file must still take the edit: %v", err)
+	}
+	final, err := readConfigFile(client.ConfigFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if final != edited {
+		t.Errorf("the edit did not land:\n%s", final)
+	}
+}
+
+// A BOM and a bare trailing comma are both spellings VS Code and Cursor load
+// without complaint. The bridge used to fail closed on either, so an operator
+// whose editor wrote one could never be connected automatically.
+func TestInstallEditsTheJSONCSpellingsAClientAccepts(t *testing.T) {
+	cases := map[string]string{
+		"trailing comma, no comments": "{\n  \"editorSetting\": true,\n}\n",
+		"byte order mark":             "\ufeff{\n  \"editorSetting\": true\n}\n",
+		"both, with a comment":        "\ufeff{\n  // keep me\n  \"editorSetting\": true,\n}\n",
+	}
+	for name, existing := range cases {
+		t.Run(name, func(t *testing.T) {
+			adapter, _ := lookupClientAdapter("cursor")
+			client := adapter.resolve(testConfigRoots(t))
+			if err := os.MkdirAll(filepath.Dir(client.ConfigFile), 0o700); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(client.ConfigFile, []byte(existing), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			if err := client.install(testEntryRequest("/usr/local/bin/emisar-mcp", "cursor")); err != nil {
+				t.Fatalf("install: %v", err)
+			}
+			written, err := os.ReadFile(client.ConfigFile)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if strings.HasPrefix(string(written), "\ufeff") {
+				t.Error("the bridge wrote a byte order mark back")
+			}
+			raw := string(written)
+			if !strings.Contains(raw, "\"emisar\"") {
+				t.Errorf("the entry was not written:\n%s", raw)
+			}
+			if !strings.Contains(raw, "editorSetting") {
+				t.Errorf("the operator's own setting was dropped:\n%s", raw)
+			}
+			if !client.configured(client.ConfigFile) {
+				t.Errorf("the entry is not detectable:\n%s", raw)
+			}
+			if _, err := parseJSONConfig(raw); err != nil {
+				t.Errorf("the edited document does not parse: %v\n%s", err, raw)
+			}
+		})
+	}
+}

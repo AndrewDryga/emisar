@@ -60,6 +60,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+	"unicode"
 	"unicode/utf8"
 )
 
@@ -92,6 +93,10 @@ const (
 	protocolVersionMetaKey   = "io.modelcontextprotocol/protocolVersion"
 	headerBase64SentinelHead = "=?base64?"
 	headerBase64SentinelTail = "?="
+	// The portal's HTTP server caps one header line at 24,000 bytes and answers
+	// before Phoenix, so a mirrored value has to stay well inside that with room
+	// for the field name and the rest of the request's headers.
+	maxRoutingHeaderBytes = 4096
 )
 
 // maxResponseBytes caps one portal response at the MCP API's complete semantic
@@ -114,6 +119,13 @@ const (
 	maxClientMetadataKeys  = 10
 	maxClientMetadataKey   = 128
 	maxClientMetadataValue = 512
+	// The per-key and per-value limits are counted in RUNES, so the documented
+	// maximum map can still encode to ~38 KB once json.Marshal escapes it —
+	// past the portal's 24,000-byte cap on one header line, where Bandit
+	// answers before Phoenix and the operator sees "upstream transport error"
+	// instead of a cause. Bound the encoded header too, well under that cap and
+	// still above the full documented maximum in plain ASCII.
+	maxClientMetadataBytes = 8 << 10
 )
 
 // newHTTPClient builds the bridge's HTTP client: a hard request timeout plus a
@@ -282,9 +294,10 @@ ENVIRONMENT
     Self-reported client metadata as a JSON object whose values are strings or
     numbers. Example: {"asset_tag":"LT-4417","device_id":"laptop-7"}
     Emisar snapshots it onto MCP action runs for audit and SIEM correlation.
-    Maximum 10 keys; keys are limited to 128 characters and values to 512.
-    This data is untrusted and is never used for authorization, posture, or
-    approval. Invalid metadata is a startup error.
+    Maximum 10 keys; keys are limited to 128 characters and values to 512,
+    and neither may carry control or formatting characters. This data is
+    untrusted and is never used for authorization, posture, or approval.
+    Invalid metadata is a startup error.
 
   EMISAR_ALLOW_INSECURE (optional)
     Set to 1 only for cleartext HTTP to a non-loopback development endpoint.
@@ -721,7 +734,6 @@ type inflightRequest struct {
 	idKey                 string
 	operationID           string
 	frameBytes            int
-	protocolVersion       string
 	cancel                context.CancelFunc
 	cancelled             bool
 	cancellationForwarded bool
@@ -836,12 +848,11 @@ func (b *bridge) handleFrame(
 	apiKey, protocolVersion := b.transportState()
 	operationID := toolCallOperationID(meta, token)
 	state.inflight[token] = &inflightRequest{
-		meta:            meta,
-		idKey:           idKey,
-		operationID:     operationID,
-		frameBytes:      len(frame.line),
-		protocolVersion: protocolVersion,
-		cancel:          cancel,
+		meta:        meta,
+		idKey:       idKey,
+		operationID: operationID,
+		frameBytes:  len(frame.line),
+		cancel:      cancel,
 	}
 	state.inflightBytes += len(frame.line)
 	if idKey != "" {
@@ -896,10 +907,9 @@ func (b *bridge) handleCancellation(
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), cancellationForwardTimeout)
 		defer cancel()
-		_, _ = b.forwardRequestContext(ctx, frame, meta, requestHeaders{
-			protocolVersion: request.protocolVersion,
-			cancelToken:     token,
-		})
+		// No API key here: forwardRequestContext therefore re-reads the live
+		// transport state, which carries the negotiated protocol version too.
+		_, _ = b.forwardRequestContext(ctx, frame, meta, requestHeaders{cancelToken: token})
 		cancelResults <- struct{}{}
 	}()
 }
@@ -1594,13 +1604,21 @@ func validRPCError(raw json.RawMessage) bool {
 // body, so the portal answers with its own protocol error instead of the bridge
 // inventing a header the body does not support.
 func setModernRoutingHeaders(header http.Header, meta requestMeta) bool {
-	if !validProtocolVersion(meta.protocolVersion) || !headerSafeValue(meta.method) {
+	if !validProtocolVersion(meta.protocolVersion) || !headerSafeValue(meta.method) ||
+		len(meta.method) > maxRoutingHeaderBytes {
 		return false
 	}
 	header.Set(protocolVersionHeader, meta.protocolVersion)
 	header.Set(methodHeader, meta.method)
-	if meta.routingName != "" {
-		header.Set(nameHeader, encodeHeaderValue(meta.routingName))
+	// A frame may carry 128 KiB of visible ASCII in params.name. Mirroring it
+	// verbatim produces a request the portal's HTTP server rejects before
+	// Phoenix ever sees it, so the client gets an "upstream transport error"
+	// carrying an operation ID for a request that never reached the JSON-RPC
+	// boundary. Leaving it unmirrored is the documented fallback: the portal
+	// answers -32020 for the missing Mcp-Name.
+	if encoded := encodeHeaderValue(meta.routingName); meta.routingName != "" &&
+		len(encoded) <= maxRoutingHeaderBytes {
+		header.Set(nameHeader, encoded)
 	}
 	return true
 }
@@ -1720,11 +1738,14 @@ func encodeCrockford128(value [16]byte) string {
 // parseClientMetadata validates the operator's EMISAR_CLIENT_METADATA (a JSON
 // object of string keys to string-or-number values) and returns the canonical
 // JSON to forward in the clientMetadataHeader. It FAILS CLOSED: any malformed
-// input, disallowed value type (array/object/bool/null), or exceeded limit is a
-// startup error, never a partially-applied map. An empty/unset value — or an
-// empty object — yields "" (no header). The limits mirror the portal's boundary
-// check; both sides enforce them independently because the header is untrusted
-// (a direct HTTP caller or a modified bridge can send anything).
+// input, disallowed value type (array/object/bool/null), unsafe character, or
+// exceeded limit is a startup error, never a partially-applied map. An
+// empty/unset value — or an empty object — yields "" (no header). The rules
+// mirror the portal's boundary check; both sides enforce them independently
+// because the header is untrusted (a direct HTTP caller or a modified bridge
+// can send anything). What the bridge accepts at startup must be exactly what
+// the portal accepts per request, or the operator gets a clean start followed
+// by a -32602 on every single call.
 func parseClientMetadata(raw string) (string, error) {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
@@ -1747,15 +1768,20 @@ func parseClientMetadata(raw string) (string, error) {
 		return "", fmt.Errorf("EMISAR_CLIENT_METADATA has %d keys, the maximum is %d", len(m), maxClientMetadataKeys)
 	}
 
-	clean := make(map[string]any, len(m))
 	for key, val := range m {
 		if utf8.RuneCountInString(key) > maxClientMetadataKey {
 			return "", fmt.Errorf("EMISAR_CLIENT_METADATA key %q exceeds %d characters", key, maxClientMetadataKey)
+		}
+		if !safeMetadataText(key) {
+			return "", fmt.Errorf("EMISAR_CLIENT_METADATA key %q has control or formatting characters", key)
 		}
 		switch v := val.(type) {
 		case string:
 			if utf8.RuneCountInString(v) > maxClientMetadataValue {
 				return "", fmt.Errorf("EMISAR_CLIENT_METADATA value for key %q exceeds %d characters", key, maxClientMetadataValue)
+			}
+			if !safeMetadataText(v) {
+				return "", fmt.Errorf("EMISAR_CLIENT_METADATA value for key %q has control or formatting characters", key)
 			}
 		case json.Number:
 			if utf8.RuneCountInString(v.String()) > maxClientMetadataValue {
@@ -1767,20 +1793,39 @@ func parseClientMetadata(raw string) (string, error) {
 		default:
 			return "", fmt.Errorf("EMISAR_CLIENT_METADATA value for key %q must be a string or number", key)
 		}
-		clean[key] = val
 	}
 
-	if len(clean) == 0 {
+	if len(m) == 0 {
 		return "", nil
 	}
 
 	// Re-marshal so the header is canonical (json.Marshal sorts object keys),
 	// dropping any formatting the operator's raw value carried.
-	canonical, err := json.Marshal(clean)
+	canonical, err := json.Marshal(m)
 	if err != nil {
 		return "", fmt.Errorf("EMISAR_CLIENT_METADATA could not be encoded: %w", err)
 	}
+	if len(canonical) > maxClientMetadataBytes {
+		return "", fmt.Errorf("EMISAR_CLIENT_METADATA encodes to %d bytes, the maximum is %d", len(canonical), maxClientMetadataBytes)
+	}
 	return string(canonical), nil
+}
+
+// safeMetadataText mirrors the portal's Emisar.SafeText: invalid UTF-8 and any
+// control (Cc) or format (Cf) code point — a tab, a newline, a soft hyphen, a
+// zero-width space, a BOM, a bidi override — are refused because they enable
+// deception in the audit trail and its exports. Surrogates (Cs) need no case of
+// their own: they cannot survive utf8.ValidString.
+func safeMetadataText(value string) bool {
+	if !utf8.ValidString(value) {
+		return false
+	}
+	for _, r := range value {
+		if unicode.IsControl(r) || unicode.Is(unicode.Cf, r) {
+			return false
+		}
+	}
+	return true
 }
 
 func portalCompatibleFloat(value string) bool {

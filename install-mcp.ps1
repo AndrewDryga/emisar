@@ -40,6 +40,8 @@ $script:AttestationSignerDigest = ""
 $script:AttestationSourceRef = ""
 $script:AttestationDenySelfHosted = $false
 $script:Utf8NoBom = New-Object Text.UTF8Encoding($false)
+# Redirect hops the download helper will follow before giving up.
+$script:MaximumRedirects = 5
 
 function Write-Info([string]$Message) {
     Write-Host "[install-mcp] $Message" -ForegroundColor Blue
@@ -134,7 +136,12 @@ function Test-TrustedWebUri([Uri]$Uri) {
 
 function New-WebClient([hashtable]$Headers = @{}) {
     $handler = New-Object Net.Http.HttpClientHandler
-    $handler.AllowAutoRedirect = $true
+    # Redirects are followed by hand in Get-WebBytes so EVERY hop is validated.
+    # Windows PowerShell runs on .NET Framework, where an automatic HTTPS ->
+    # HTTP redirect is followed silently; checking only the first and the final
+    # URI let an on-path attacker rewrite the cleartext hop to a destination of
+    # their own choosing and still satisfy the final check.
+    $handler.AllowAutoRedirect = $false
     $client = New-Object Net.Http.HttpClient($handler)
     $client.Timeout = [TimeSpan]::FromMinutes(5)
     foreach ($name in $Headers.Keys) {
@@ -148,12 +155,33 @@ function Get-WebBytes([string]$Url, [hashtable]$Headers = @{}) {
     Test-TrustedWebUri $uri
     $client = New-WebClient $Headers
     try {
-        $response = $client.GetAsync($uri).GetAwaiter().GetResult()
-        Test-TrustedWebUri $response.RequestMessage.RequestUri
-        if (-not $response.IsSuccessStatusCode) {
-            throw "HTTP $([int]$response.StatusCode)"
+        for ($hop = 0; $hop -le $script:MaximumRedirects; $hop++) {
+            $response = $client.GetAsync($uri).GetAwaiter().GetResult()
+            $status = [int]$response.StatusCode
+            if (@(301, 302, 303, 307, 308) -notcontains $status) {
+                if (-not $response.IsSuccessStatusCode) { throw "HTTP $status" }
+                return ,$response.Content.ReadAsByteArrayAsync().GetAwaiter().GetResult()
+            }
+            $location = $response.Headers.Location
+            if (-not $location) { throw "HTTP $status without a Location header" }
+            if (-not $location.IsAbsoluteUri) { $location = New-Object Uri($uri, $location) }
+            Test-TrustedWebUri $location
+            # curl drops a custom Authorization header when a redirect changes
+            # host, and the shell installers rely on that; without it the GitHub
+            # token rides to whatever host the redirect names.
+            if ($Headers.ContainsKey("Authorization") -and
+                $location.GetLeftPart([UriPartial]::Authority) -ne $uri.GetLeftPart([UriPartial]::Authority)) {
+                $carried = @{}
+                foreach ($name in $Headers.Keys) {
+                    if ($name -ne "Authorization") { $carried[$name] = $Headers[$name] }
+                }
+                $Headers = $carried
+                $client.Dispose()
+                $client = New-WebClient $Headers
+            }
+            $uri = $location
         }
-        return ,$response.Content.ReadAsByteArrayAsync().GetAwaiter().GetResult()
+        Stop-Install "too many redirects fetching $Url"
     } finally {
         $client.Dispose()
     }
@@ -325,7 +353,7 @@ function Add-UserPath([string]$Directory) {
         [IO.File]::WriteAllText($marker, "added by install-mcp.ps1`r`n", $script:Utf8NoBom)
         Set-PrivateFileACL $marker
     }
-    if (-not ($env:Path.Split(';') | Where-Object { $_.TrimEnd('\\') -ieq $Directory.TrimEnd('\\') })) {
+    if (-not ($env:Path.Split(';') | Where-Object { $_.TrimEnd('\') -ieq $Directory.TrimEnd('\') })) {
         $env:Path = "$Directory;$($env:Path)"
     }
 }
@@ -335,7 +363,7 @@ function Remove-UserPath([string]$Directory) {
     if (-not (Test-Path -LiteralPath $marker -PathType Leaf)) { return }
     $current = [Environment]::GetEnvironmentVariable("Path", "User")
     if ($current) {
-        $entries = @($current.Split(';') | Where-Object { $_ -and $_.TrimEnd('\\') -ine $Directory.TrimEnd('\\') })
+        $entries = @($current.Split(';') | Where-Object { $_ -and $_.TrimEnd('\') -ine $Directory.TrimEnd('\') })
         [Environment]::SetEnvironmentVariable("Path", ($entries -join ';'), "User")
     }
     Remove-Item -LiteralPath $marker -Force
@@ -346,7 +374,11 @@ function Assert-SafeArchive([string]$ArchivePath, [string]$ExpectedRoot) {
     $archive = [IO.Compression.ZipFile]::OpenRead($ArchivePath)
     try {
         foreach ($entry in $archive.Entries) {
-            $name = $entry.FullName.Replace('\\', '/')
+            # A single-quoted PowerShell string escapes nothing, so '\\' is the
+            # TWO-character string and a lone separator survived normalization:
+            # `root/..\..\x.exe` cleared every clause below and reached
+            # Expand-Archive.
+            $name = $entry.FullName.Replace('\', '/')
             if ($name.StartsWith('/') -or $name.Contains(':') -or
                 @($name.Split('/') | Where-Object { $_ -eq '..' }).Count -gt 0 -or
                 -not $name.StartsWith("$ExpectedRoot/")) {
@@ -438,6 +470,21 @@ function Install-Bridge([string]$Destination, [string]$Source, [string]$Expected
 # direct-CLI accounts and rotation state; then the executable goes. That order
 # is load-bearing: once the executable is gone nothing can clean a client
 # config, so a missing or older bridge is reported, never skipped.
+# The version an already-installed bridge reports (`emisar-mcp X.Y.Z`), or
+# $null when none is installed or it cannot answer.
+function Get-InstalledVersion([string]$Executable) {
+    if (-not (Test-Path -LiteralPath $Executable -PathType Leaf)) { return $null }
+    Assert-NoReparsePoint $Executable "emisar-mcp executable"
+    $reported = & {
+        $ErrorActionPreference = "Continue"
+        $output = (& $Executable --version 2>&1 | Out-String).Trim()
+        if ($LASTEXITCODE -ne 0) { return "" }
+        return $output
+    }
+    if ($reported -notmatch '^emisar-mcp ([0-9]+\.[0-9]+\.[0-9]+)$') { return $null }
+    return [Version]$Matches[1]
+}
+
 function Uninstall-Bridge([string]$Executable, [string]$AppDataDirectory) {
     $credentials = Join-Path $AppDataDirectory "emisar\credentials"
     if (Test-Path -LiteralPath $credentials) {
@@ -497,6 +544,22 @@ $script:AttestationSignerDigest = $attestationPolicy.SignerDigest
 $script:AttestationSourceRef = $attestationPolicy.SourceRef
 $script:AttestationDenySelfHosted = $attestationPolicy.DenySelfHosted
 $versionNumber = $release.Tag.Substring(5)
+
+# An unpinned install takes the newest release the metadata offers, and stale or
+# rolled-back metadata can offer a real, correctly attested OLDER one. Nobody
+# asked to go backwards here, so refuse — install-mcp.sh and `emisar update`
+# apply the same rule. An explicit -Version stays the deliberate rollback route.
+$installedVersion = Get-InstalledVersion $executable
+if ($null -ne $installedVersion) {
+    if (-not $Version -and $installedVersion -ge [Version]$versionNumber) {
+        Write-Info "emisar-mcp $installedVersion is already current"
+        return
+    }
+    if ($installedVersion -gt [Version]$versionNumber) {
+        Write-WarningLine "installing emisar-mcp $versionNumber over the newer $installedVersion because -Version asked for it"
+    }
+}
+
 $archiveRoot = "emisar-mcp-$versionNumber-windows-$releaseArchitecture"
 $archiveName = "$archiveRoot.zip"
 Write-Info "install target: windows/$releaseArchitecture"

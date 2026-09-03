@@ -426,35 +426,15 @@ func dropTrailingCommas(raw string) string {
 	return out.String()
 }
 
-func jsonHasComments(raw string) bool {
-	index := 0
-	for index < len(raw) {
-		current := raw[index]
-		if current == '"' {
-			end := jsonStringEnd(raw, index)
-			if end < 0 {
-				return false
-			}
-			index = end
-			continue
-		}
-		if current == '/' && index+1 < len(raw) && (raw[index+1] == '/' || raw[index+1] == '*') {
-			return true
-		}
-		index++
-	}
-	return false
-}
-
 // parseJSONConfig decodes a document that may be JSONC, for validation only.
+// The strip is unconditional: VS Code and Cursor accept a trailing comma in a
+// file with no comments in it at all, so gating it on a `//` made the bridge
+// refuse to edit a config its own client loads without complaint.
 func parseJSONConfig(raw string) (map[string]any, error) {
 	if strings.TrimSpace(raw) == "" {
 		return map[string]any{}, nil
 	}
-	text := raw
-	if jsonHasComments(raw) {
-		text = stripJSONC(raw)
-	}
+	text := stripJSONC(raw)
 	var document map[string]any
 	if err := json.Unmarshal([]byte(text), &document); err != nil {
 		return nil, err

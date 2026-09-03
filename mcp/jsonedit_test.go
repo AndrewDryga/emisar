@@ -154,7 +154,7 @@ func TestRemoveJSONMemberLeavesValidJSON(t *testing.T) {
 			// The document must parse STRICTLY when it carried no comments: a
 			// dangling separator comma is legal JSONC but breaks a plain JSON
 			// client such as Claude Code.
-			if !jsonHasComments(testCase.raw) {
+			if !strings.Contains(testCase.raw, "//") {
 				var document map[string]any
 				if err := json.Unmarshal([]byte(edited), &document); err != nil {
 					t.Fatalf("edited document is not strict JSON: %v\n%s", err, edited)
@@ -207,18 +207,6 @@ func TestStripJSONCKeepsStringContent(t *testing.T) {
 	}
 }
 
-func TestJSONHasCommentsIgnoresStrings(t *testing.T) {
-	if jsonHasComments(`{"url": "https://emisar.dev"}`) {
-		t.Error("a URL inside a string is not a comment")
-	}
-	if !jsonHasComments("{\n  // real\n}") {
-		t.Error("expected a line comment to be detected")
-	}
-	if !jsonHasComments("{\n  /* real */\n}") {
-		t.Error("expected a block comment to be detected")
-	}
-}
-
 // A config we create is a file the operator will open and read, so an empty
 // object must not leave its closing brace stranded on the member's line.
 func TestInsertJSONMemberFormatsAnEmptyObject(t *testing.T) {
@@ -239,5 +227,23 @@ func TestInsertJSONMemberFormatsAnEmptyObject(t *testing.T) {
 		if strings.Contains(edited, "}}") {
 			t.Errorf("insertJSONMember(%q) left a stranded brace:\n%s", raw, edited)
 		}
+	}
+}
+
+// VS Code and Cursor load a config whose only JSONC spelling is a trailing
+// comma, so gating the strip on a `//` made the bridge refuse to edit a file
+// its own client accepts. (A UTF-8 BOM is dropped one layer up, by
+// readConfigFile, so every format's editor sees the document itself.)
+func TestParseJSONConfigAcceptsATrailingCommaWithoutComments(t *testing.T) {
+	cases := map[string]string{
+		"object": "{\n  \"servers\": {},\n}\n",
+		"array":  "{\n  \"list\": [1, 2,]\n}\n",
+	}
+	for name, raw := range cases {
+		t.Run(name, func(t *testing.T) {
+			if _, err := parseJSONConfig(raw); err != nil {
+				t.Fatalf("parseJSONConfig: %v", err)
+			}
+		})
 	}
 }

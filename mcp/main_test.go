@@ -1080,6 +1080,33 @@ func TestSetModernRoutingHeaders(t *testing.T) {
 			wantSet: false,
 		},
 		{
+			// Mirrored verbatim this became a 431 from the portal's HTTP server;
+			// unmirrored, the portal answers its own -32020 for the missing name.
+			name: "a name too long for a header line is left to the portal",
+			frame: `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"` +
+				strings.Repeat("n", maxRoutingHeaderBytes+1) +
+				`","_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28"}}}`,
+			wantSet:      true,
+			wantProtocol: "2026-07-28",
+			wantMethod:   "tools/call",
+		},
+		{
+			name: "a name that only base64 expansion pushes over stays unmirrored",
+			frame: `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"` +
+				strings.Repeat("é", maxRoutingHeaderBytes/2) +
+				`","_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28"}}}`,
+			wantSet:      true,
+			wantProtocol: "2026-07-28",
+			wantMethod:   "tools/call",
+		},
+		{
+			name: "a method too long for a header line mirrors nothing",
+			frame: `{"jsonrpc":"2.0","id":1,"method":"` +
+				strings.Repeat("m", maxRoutingHeaderBytes+1) +
+				`","params":{"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28"}}}`,
+			wantSet: false,
+		},
+		{
 			name:         "a future revision mirrors through unchanged",
 			frame:        `{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{"_meta":{"io.modelcontextprotocol/protocolVersion":"2030-01-01"}}}`,
 			wantSet:      true,
@@ -2692,6 +2719,21 @@ func TestParseClientMetadata_FailsClosed(t *testing.T) {
 		{"bool value", `{"a":true}`, "must be a string or number"},
 		{"null value", `{"a":null}`, "must be a string or number"},
 		{"float overflow", `{"a":1e309}`, "control plane's numeric range"},
+		// Every case below started the bridge cleanly and then made the portal
+		// answer -32602 on every request: the startup gate must refuse exactly
+		// what Emisar.SafeText refuses.
+		{"tab in a value", `{"note":"host\tLT-4417"}`, "control or formatting characters"},
+		{"newline in a value", `{"note":"a\nb"}`, "control or formatting characters"},
+		{"escape in a value", `{"note":"a\u001bb"}`, "control or formatting characters"},
+		{"soft hyphen in a value", `{"note":"a\u00adb"}`, "control or formatting characters"},
+		{"zero-width space in a value", `{"note":"a\u200bb"}`, "control or formatting characters"},
+		{"byte order mark in a value", `{"note":"\ufeffLT-4417"}`, "control or formatting characters"},
+		{"bidi override in a value", `{"note":"a\u202eb"}`, "control or formatting characters"},
+		{"control character in a key", `{"a\tb":"v"}`, "control or formatting characters"},
+		{"zero-width space in a key", `{"a\u200bb":"v"}`, "control or formatting characters"},
+		// Ten 512-char values of `<` encode to six bytes each, so a map that is
+		// legal rune-for-rune still cannot ride one HTTP header line.
+		{"escaping blows the header budget", escapedHeaderBudgetObject(), "the maximum is 8192"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -2776,6 +2818,16 @@ func elevenKeyObject() string {
 	pairs := make([]string, 11)
 	for i := range pairs {
 		pairs[i] = `"k` + string(rune('a'+i)) + `":"v"`
+	}
+	return "{" + strings.Join(pairs, ",") + "}"
+}
+
+// The documented maximum map, spelled with the one character json.Marshal
+// expands sixfold: legal by every rune limit, far too big for a header line.
+func escapedHeaderBudgetObject() string {
+	pairs := make([]string, maxClientMetadataKeys)
+	for i := range pairs {
+		pairs[i] = `"k` + string(rune('0'+i)) + `":"` + strings.Repeat("<", maxClientMetadataValue) + `"`
 	}
 	return "{" + strings.Join(pairs, ",") + "}"
 }

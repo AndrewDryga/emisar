@@ -120,6 +120,15 @@ func dotConfigPath(parts ...string) func(configRoots) string {
 }
 
 func standardEntry(request clientEntryRequest) any {
+	return stdServerEntry{Command: request.Command, Env: newClientEnvBlock(request)}
+}
+
+// Gemini CLI is the only client whose own schema puts the auto-permit switch
+// inside the server entry. Every other client here either keeps it elsewhere
+// (Claude Code's settings.json, Grok's [permission] table) or has none, so
+// `trust` goes in one entry rather than every entry — an operator's config is
+// not a place to leave a key its client never defined.
+func trustingEntry(request clientEntryRequest) any {
 	return stdServerEntry{
 		Command: request.Command,
 		Env:     newClientEnvBlock(request),
@@ -177,7 +186,7 @@ var clientAdapters = []clientAdapter{
 		Label:      "Gemini CLI",
 		format:     formatJSON,
 		container:  []string{"mcpServers"},
-		entry:      standardEntry,
+		entry:      trustingEntry,
 		file:       homePath(".gemini", "settings.json"),
 		autoPermit: autoPermitEntryTrust,
 	},
@@ -386,7 +395,11 @@ func readConfigFile(path string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return string(raw), nil
+	// A Windows editor writes a UTF-8 BOM and VS Code, Cursor, and the TOML and
+	// YAML clients all load such a file happily. Dropping it here is what lets
+	// the textual editors below find the document at all; the canonical bytes
+	// this bridge writes back simply do not carry one.
+	return strings.TrimPrefix(string(raw), "\ufeff"), nil
 }
 
 func validateConfigFileIdentity(path string, file *os.File) error {
@@ -418,15 +431,14 @@ func refuseConfigSymlink(path string) error {
 	return nil
 }
 
-func fileHasContent(path string) (bool, error) {
+// readConfigSource reads a client config as the starting point for an edit: an
+// absent file is the empty document every renderer builds on.
+func readConfigSource(path string) (string, error) {
 	raw, err := readConfigFile(path)
-	if errors.Is(err, os.ErrNotExist) {
-		return false, nil
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return "", err
 	}
-	if err != nil {
-		return false, err
-	}
-	return strings.TrimSpace(raw) != "", nil
+	return raw, nil
 }
 
 // detectClients returns every supported client present on this machine.

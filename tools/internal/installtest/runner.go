@@ -639,6 +639,7 @@ func runnerDispatchStateRollback(h *harness) error {
 	installer := h.repoPath("install.sh")
 	names := []string{
 		"cleanup_staged_binary",
+		"cleanup_stage_dir",
 		"rollback_binary",
 		"quiesce_attempted_service",
 		"restore_previous_service",
@@ -772,8 +773,9 @@ finish_install 23
 		return fmt.Errorf("externally supervised failure unexpectedly invoked a service manager:\n%s", externalTrace)
 	}
 
-	// If activation fails after moving the old target aside, rollback follows
-	// the backup rather than a flag assignment that may not have happened yet.
+	// If activation fails after the previous binary was copied aside, rollback
+	// follows the backup rather than a flag assignment that may not have
+	// happened yet.
 	activationRoot := h.path("dispatch-rollback-activation-seam")
 	activationBin := filepath.Join(activationRoot, "bin")
 	activationFakeBin := filepath.Join(activationRoot, "fake-bin")
@@ -790,18 +792,20 @@ finish_install 23
 	if err := writeFile(activationStaged, "new runner\n", 0o755); err != nil {
 		return err
 	}
+	// Activation is ONE rename over a target that never stops existing, so the
+	// failure to inject is the first mv; the second is rollback's own restore.
 	if err := fakeExecutable(filepath.Join(activationFakeBin, "mv"), `
 count=0
 [ ! -f "$MV_CALLS" ] || count=$(cat "$MV_CALLS")
 count=$((count + 1))
 printf '%s\n' "$count" >"$MV_CALLS"
-if [ "$count" = 2 ]; then exit 71; fi
+if [ "$count" = 1 ]; then exit 71; fi
 exec /bin/mv "$@"
 `); err != nil {
 		return err
 	}
 	activationResult := h.functions(installer, []string{
-		"activate_binary", "cleanup_staged_binary", "rollback_binary",
+		"activate_binary", "cleanup_staged_binary", "cleanup_stage_dir", "rollback_binary",
 		"quiesce_attempted_service",
 		"restore_previous_service", "finish_install",
 	}, `
@@ -850,6 +854,71 @@ finish_install "$rc"
 		return fmt.Errorf("activation reused a predictable stale backup path: %w", err)
 	}
 
+	// An upgrade replaces the live binary with ONE rename, so there is no
+	// instant where BIN_DIR/emisar does not exist. Two renames left a window
+	// where power loss took the host's runner away entirely.
+	atomicRoot := h.path("activation-single-rename")
+	atomicBin := filepath.Join(atomicRoot, "bin")
+	atomicFakeBin := filepath.Join(atomicRoot, "fake-bin")
+	if err := h.mkdir(atomicBin, atomicFakeBin); err != nil {
+		return err
+	}
+	atomicTarget := filepath.Join(atomicBin, "emisar")
+	atomicStage := filepath.Join(atomicBin, ".emisar-stage.test")
+	atomicCalls := filepath.Join(atomicRoot, "mv-calls")
+	if err := h.mkdir(atomicStage); err != nil {
+		return err
+	}
+	if err := writeFile(atomicTarget, "old runner\n", 0o755); err != nil {
+		return err
+	}
+	if err := writeFile(filepath.Join(atomicStage, "emisar"), "new runner\n", 0o755); err != nil {
+		return err
+	}
+	if err := fakeExecutable(filepath.Join(atomicFakeBin, "mv"), `
+printf 'mv %s\n' "$*" >>"$MV_CALLS"
+exec /bin/mv "$@"
+`); err != nil {
+		return err
+	}
+	atomicResult := h.functions(installer, []string{
+		"activate_binary", "cleanup_staged_binary", "cleanup_stage_dir",
+	}, `
+warn() { printf 'WARN: %s\n' "$*" >&2; }
+log() { :; }
+BINARY_ACTIVATED=0
+BACKUP_BINARY=""
+BACKUP_BINARY_DIR=""
+STAGE_DIR="$STAGE"
+STAGED_BINARY="$STAGE/emisar"
+BIN_DIR="$BIN"
+activate_binary
+printf '%s\n' "$BACKUP_BINARY"
+`, map[string]string{
+		"PATH": atomicFakeBin + string(os.PathListSeparator) + os.Getenv("PATH"),
+		"BIN":  atomicBin, "STAGE": atomicStage, "MV_CALLS": atomicCalls,
+	})
+	atomicOutput, err := requireOutput(atomicResult)
+	if err != nil {
+		return fmt.Errorf("single-rename activation failed: %w", err)
+	}
+	if err := exactFile(atomicTarget, "new runner\n"); err != nil {
+		return fmt.Errorf("single-rename activation did not install the staged binary: %w", err)
+	}
+	renames, err := os.ReadFile(atomicCalls)
+	if err != nil {
+		return fmt.Errorf("single-rename activation recorded no rename: %w", err)
+	}
+	if got := strings.Count(string(renames), "\n"); got != 1 {
+		return fmt.Errorf("activation used %d renames, want 1:\n%s", got, renames)
+	}
+	if err := exactFile(strings.TrimSpace(string(atomicOutput)), "old runner\n"); err != nil {
+		return fmt.Errorf("activation did not keep a recovery copy of the previous binary: %w", err)
+	}
+	if err := requireAbsent(atomicStage); err != nil {
+		return fmt.Errorf("activation left its staging directory behind: %w", err)
+	}
+
 	// On a fresh externally supervised install, an mv that completed but
 	// returned failure is ambiguous. Preserve the activated target because an
 	// external process may already have executed it.
@@ -869,7 +938,7 @@ exit 71`); err != nil {
 		return err
 	}
 	freshResult := h.functions(installer, []string{
-		"activate_binary", "cleanup_staged_binary", "rollback_binary",
+		"activate_binary", "cleanup_staged_binary", "cleanup_stage_dir", "rollback_binary",
 		"quiesce_attempted_service",
 		"restore_previous_service", "finish_install",
 	}, `
@@ -996,7 +1065,7 @@ finish_install 23
 	if err := writeFile(commitBackup, "old runner\n", 0o755); err != nil {
 		return err
 	}
-	commitResult := h.functions(installer, []string{"cleanup_staged_binary", "finish_install"}, `
+	commitResult := h.functions(installer, []string{"cleanup_staged_binary", "cleanup_stage_dir", "finish_install"}, `
 warn() { :; }
 INSTALL_TRANSACTION=0
 BINARY_ACTIVATED=1
@@ -1766,7 +1835,7 @@ exit 2
 	}
 	raceResult := h.functions(installer, []string{
 		"runner_installation_present", "check_dispatch_log", "stop_systemd_service_if_running",
-		"cleanup_staged_binary", "rollback_binary", "quiesce_attempted_service",
+		"cleanup_staged_binary", "cleanup_stage_dir", "rollback_binary", "quiesce_attempted_service",
 		"restore_previous_service", "finish_install",
 	}, `
 die() { printf '%s\n' "$*" >&2; exit 1; }

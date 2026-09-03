@@ -150,6 +150,8 @@ the direct CLI's stored credential:
 | `EMISAR_ALLOW_INSECURE` | no | Set to `1`, `true`, `yes`, `y`, or `on` (in any case) for an intentional non-loopback HTTP development endpoint; loopback HTTP already works |
 | `EMISAR_SIGNING_KEY` | no | Ed25519 or ECDSA P-256 leaf private key (base64 PKCS#8) for bridge-attested dispatch |
 | `EMISAR_SIGNING_CERT` | no | X.509 certificate chain for `EMISAR_SIGNING_KEY` (base64 PEM); required with it |
+| `NO_COLOR`, `CLICOLOR`, `TERM` | no | Output conventions the direct CLI honours: `NO_COLOR` set or `TERM=dumb` disables colour, and `CLICOLOR=0` does too |
+| `XDG_CONFIG_HOME` (Unix), `APPDATA` (Windows) | no | Where `connect`/`disconnect` look for and rewrite client configuration, and where the bridge keeps its own credential store |
 
 Client metadata is untrusted enrichment. It is never used for authorization,
 posture, policy, or approval. Keys are limited to 128 characters, values to 512

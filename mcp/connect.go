@@ -154,6 +154,20 @@ func connectClients(
 	cliNeeded := !storedCLICredentialWorks(origin)
 	printConnectionTable(stdout, clients, cliNeeded, origin)
 
+	// --client names a client the operator expects to be configured. Selection
+	// is an intersection with what was detected, so a known id that is not
+	// installed here would otherwise configure nothing and still exit 0 — a
+	// scripted install that checks $? would record a connection that never
+	// happened.
+	if missing, paths := undetectedClients(options.clientIDs, clients, roots); len(missing) > 0 {
+		return cliCommandError(
+			stderr,
+			"Not installed on this machine: "+strings.Join(missing, ", "),
+			paths,
+			"Install the client first, or run `emisar-mcp connect` to pick from what was detected.",
+		)
+	}
+
 	selection, ok := selectClients(options, clients, cliNeeded, stdin, stdout)
 	if !ok {
 		fmt.Fprintln(stdout, "Nothing selected. Connect a client later with `emisar-mcp connect`.")
@@ -344,6 +358,30 @@ func disconnectClients(options connectOptions, stdin io.Reader, stdout, stderr i
 		return 1
 	}
 	return 0
+}
+
+// undetectedClients returns the ids the operator named that are not installed
+// here, each with the path detection looked at. parseConnectArgs has already
+// rejected any id the adapter table does not know.
+func undetectedClients(ids []string, clients []detectedClient, roots configRoots) (missing, paths []string) {
+	for _, id := range ids {
+		adapter, known := lookupClientAdapter(id)
+		if !known || containsClientID(clients, id) {
+			continue
+		}
+		missing = append(missing, id)
+		paths = append(paths, adapter.Label+": no configuration at "+adapter.file(roots))
+	}
+	return missing, paths
+}
+
+func containsClientID(clients []detectedClient, id string) bool {
+	for _, client := range clients {
+		if client.ID == id {
+			return true
+		}
+	}
+	return false
 }
 
 // selectClients resolves flags and prompts into the set to configure. The

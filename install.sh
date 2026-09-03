@@ -137,6 +137,19 @@ Flags:
                      For unattended provisioning.
   --help             This message.
 
+Internal flags. `emisar update` passes these; they are not for hand use, and
+an already-installed runner of any age calls whatever install.sh emisar.dev
+serves today, so their meaning is a live contract between two artifacts:
+  --preverified-bundle DIR
+                     Install from an absolute DIR that `emisar update` has
+                     already downloaded, checksum-verified, and attested.
+                     Skips the download, SHA256SUMS, and attestation steps
+                     entirely, so the bytes in DIR are installed as given.
+                     Requires --version and preserves the installed packs.
+  --managed-update-contract
+                     Print the contract version this script implements and
+                     exit, so `emisar update` can tell before it commits.
+
 Env vars accepted: VERSION, BIN_DIR, ETC_DIR, DATA_DIR, LOG_DIR,
 SERVICE_USER, SERVICE_GROUP, ASSUME_YES, EMISAR_PACKS, NO_START,
 NO_SERVICE, EMISAR_REPO, EMISAR_GITHUB_TOKEN, EMISAR_URL,
@@ -1221,7 +1234,7 @@ drop_config_skeleton() {
   if [ ! -f "${cfg}" ]; then
     # If the install command supplied EMISAR_URL + EMISAR_ENROLLMENT_KEY, the
     # generated config + env are complete and the runner can boot. Only
-    # flag NEEDS_CONFIGURATION when an operator-edit is actually needed.
+    # flag needs_configuration when an operator-edit is actually needed.
     local needs=0
     if [ -z "${EMISAR_ENROLLMENT_KEY:-}" ]; then
       needs=1
@@ -1243,7 +1256,7 @@ drop_config_skeleton() {
     mv -f "${cfg_staged}" "${cfg}"
     chmod 640 "${cfg}"
     chown "root:${SERVICE_GROUP}" "${cfg}" 2>/dev/null || true
-    NEEDS_CONFIGURATION="${needs}"
+    needs_configuration="${needs}"
   else
     # Config exists — preserve the operator's file. But an explicitly
     # passed EMISAR_GROUP is a deliberate provisioning instruction, so
@@ -1284,7 +1297,7 @@ drop_config_skeleton() {
       warn "EMISAR_URL='${EMISAR_URL}' was NOT applied: ${cfg} already exists and keeps its"
       warn "current cloud.url. Edit it by hand, or move the file aside and re-run."
     fi
-    NEEDS_CONFIGURATION=0
+    needs_configuration=0
   fi
   chmod 640 "${cfg}"
   chown "root:${SERVICE_GROUP}" "${cfg}" 2>/dev/null || chown root:root "${cfg}"
@@ -1307,10 +1320,16 @@ drop_config_skeleton() {
 
 }
 
+STAGE_DIR=""
 STAGED_BINARY=""
 BACKUP_BINARY=""
 BACKUP_BINARY_DIR=""
 BINARY_ACTIVATED=0
+# Set by drop_config_skeleton, read by start_service and print_next_steps.
+# Lowercase like the rest of this script's own state: it is not a knob, and a
+# `${NEEDS_CONFIGURATION:-…}` default let an exported value decide whether the
+# installer started the service.
+needs_configuration=0
 SERVICE_WAS_RUNNING=0
 SERVICE_START_ATTEMPTED=0
 # Set when THIS run created the service unit — a fresh install, not an upgrade.
@@ -1635,7 +1654,15 @@ stage_binary() {
   fi
   mkdir -p "${BIN_DIR}"
   chmod 755 "${BIN_DIR}"
-  STAGED_BINARY="${BIN_DIR}/.emisar.new.$$"
+  # The staged binary is executed AS ROOT before it is activated, so it lives in
+  # a root-owned 0700 directory rather than at a predictable `.emisar.new.$$`
+  # inside BIN_DIR: --bin-dir is only checked lexically, so an administrator may
+  # point it at a directory another local user can write, and that user could
+  # replace the staged file between the copy and the run. The directory sits
+  # inside BIN_DIR so activation stays a rename on one filesystem.
+  STAGE_DIR="$(mktemp -d "${BIN_DIR}/.emisar-stage.XXXXXX")" || die "could not create a staging directory in ${BIN_DIR}"
+  chmod 700 "${STAGE_DIR}" || die "could not secure the staging directory ${STAGE_DIR}"
+  STAGED_BINARY="${STAGE_DIR}/emisar"
   log "staging binary at ${STAGED_BINARY}"
   install -m 0755 "${src}" "${STAGED_BINARY}"
   # Use the one-line machine contract the release workflow verifies. The
@@ -1754,19 +1781,33 @@ activate_binary() {
   if [ -e "${target}" ] || [ -L "${target}" ]; then
     BACKUP_BINARY_DIR="$(mktemp -d "${BIN_DIR}/.emisar.previous.XXXXXX")" || return 1
     BACKUP_BINARY="${BACKUP_BINARY_DIR}/emisar"
-    if ! mv "${target}" "${BACKUP_BINARY}"; then
+    # COPY the previous binary aside rather than moving it. Activation below is
+    # then a single rename over a target that never stops existing, so power
+    # loss mid-upgrade leaves either the old binary or the new one — never a
+    # host with no emisar at all, which two renames could.
+    if ! cp -pP "${target}" "${BACKUP_BINARY}"; then
+      rm -f "${BACKUP_BINARY}"
       BACKUP_BINARY=""
       rmdir "${BACKUP_BINARY_DIR}" 2>/dev/null || true
       BACKUP_BINARY_DIR=""
       return 1
     fi
   fi
-  # From this point the transaction owns restoring the displaced target (or
-  # removing a fresh target), even if the move fails or a signal arrives
-  # before its result can be observed.
+  # From this point the transaction owns the target, even if a signal arrives
+  # before the rename's result can be observed: mv may have completed and still
+  # reported failure, and on an externally supervised host something may already
+  # have executed the new binary.
   BINARY_ACTIVATED=1
-  mv "${STAGED_BINARY}" "${target}" || return 1
+  if ! mv "${STAGED_BINARY}" "${target}"; then
+    # The staged file still sitting where it was put is proof the rename did
+    # NOT take effect, so the target is untouched and this was no activation.
+    if [ -e "${STAGED_BINARY}" ] || [ -L "${STAGED_BINARY}" ]; then
+      BINARY_ACTIVATED=0
+    fi
+    return 1
+  fi
   STAGED_BINARY=""
+  cleanup_stage_dir || warn "could not remove the staging directory ${STAGE_DIR}"
   log "installed binary to ${target}"
 }
 
@@ -1774,9 +1815,9 @@ rollback_binary() {
   local target="${BIN_DIR}/emisar"
   cleanup_staged_binary || return 1
   if [ -n "${BACKUP_BINARY}" ]; then
-    # activate_binary may already have moved the previous target aside when
-    # activating the staged binary fails or a signal arrives. The backup, not
-    # BINARY_ACTIVATED, is the durable proof that restoration is required.
+    # The backup, not BINARY_ACTIVATED, is the durable proof that restoration
+    # is required: it is written before the activating rename, so a signal
+    # between the two lands here with the target still intact.
     if ! { [ -e "${BACKUP_BINARY}" ] || [ -L "${BACKUP_BINARY}" ]; }; then
       if [ "${BINARY_ACTIVATED}" = "0" ] && { [ -e "${target}" ] || [ -L "${target}" ]; }; then
         BACKUP_BINARY=""
@@ -1811,9 +1852,17 @@ rollback_binary() {
 }
 
 cleanup_staged_binary() {
-  [ -n "${STAGED_BINARY}" ] || return 0
-  rm -f "${STAGED_BINARY}" || return 1
-  STAGED_BINARY=""
+  if [ -n "${STAGED_BINARY}" ]; then
+    rm -f "${STAGED_BINARY}" || return 1
+    STAGED_BINARY=""
+  fi
+  cleanup_stage_dir
+}
+
+cleanup_stage_dir() {
+  [ -n "${STAGE_DIR:-}" ] || return 0
+  rmdir "${STAGE_DIR}" || return 1
+  STAGE_DIR=""
 }
 
 discard_binary_backup() {
@@ -2057,7 +2106,7 @@ start_service() {
     # No service unit to start — the operator runs the binary directly.
     return 0
   fi
-  if [ "${NEEDS_CONFIGURATION:-0}" = "1" ]; then
+  if [ "${needs_configuration}" = "1" ]; then
     warn "skipping service start — edit ${ETC_DIR}/config.yaml and ${ETC_DIR}/runner.env first"
     return 0
   fi
@@ -2438,7 +2487,7 @@ EOF
 
   # If EMISAR_URL + EMISAR_ENROLLMENT_KEY came in via env, drop_config_skeleton
   # already wrote them — no manual edit needed. Otherwise prompt for it.
-  if [ "${NEEDS_CONFIGURATION:-1}" = "1" ]; then
+  if [ "${needs_configuration}" = "1" ]; then
     cat <<EOF
 
 Next steps:
@@ -2473,7 +2522,7 @@ EOF
       fi
       ;;
     none)
-      if [ "${NEEDS_CONFIGURATION:-1}" = "1" ]; then
+      if [ "${needs_configuration}" = "1" ]; then
         cat <<EOF
   3. Run the binary directly (no service was installed):
        ${BIN_DIR}/emisar connect --config ${ETC_DIR}/config.yaml

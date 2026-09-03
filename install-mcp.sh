@@ -149,6 +149,15 @@ normalize_version() {
   esac
 }
 
+# newer_version A B — true when semver A is strictly newer than B. Sorted
+# numerically field by field, the same way resolve_latest_from_github picks the
+# highest tag: `sort -V` is not on every host this runs on, and a lexical
+# compare puts 0.9.0 above 0.10.0.
+newer_version() {
+  [ "$1" != "$2" ] || return 1
+  [ "$(printf '%s\n%s\n' "$1" "$2" | sort -t. -k1,1n -k2,2n -k3,3n | tail -1)" = "$1" ]
+}
+
 # The supported pre-split release tip keeps its immutable original provenance.
 # Pin that exact tag to its workflow commit;
 # every other official tag uses the trusted workflow, with no fallback.
@@ -479,6 +488,19 @@ installed_bridge() {
   return 1
 }
 
+# The version an already-installed bridge reports, or "" when none is installed
+# or it cannot answer. Runs as the invoking user like every other call into an
+# already-installed bridge, so a sudo install never executes a user-owned
+# binary as root. `first_bin` is what run_cli_as_invoking_user invokes.
+installed_bridge_version() {
+  local first_bin reported
+  first_bin=$(installed_bridge) || return 0
+  reported=$(run_cli_as_invoking_user --version 2>/dev/null) || return 0
+  case "${reported}" in
+    "emisar-mcp "[0-9]*.[0-9]*.[0-9]*) printf '%s\n' "${reported#emisar-mcp }" ;;
+  esac
+}
+
 do_uninstall() {
   local dir bin_dst bridge
 
@@ -548,7 +570,9 @@ done <<<"${install_dirs}"
 # Resolve version
 # ---------------------------------------------------------------------
 
+version_pinned=1
 if [ -z "${VERSION}" ]; then
+  version_pinned=0
   log "querying latest mcp-v* release"
   # Take the HIGHEST version, not the first. The API orders by CREATION, so a
   # patch backported to an older line after a newer minor shipped sat at the top
@@ -568,6 +592,21 @@ else
 fi
 [[ "${VERSION}" =~ ^mcp-v[0-9]+\.[0-9]+\.[0-9]+$ ]] || \
   die "release version must match mcp-vMAJOR.MINOR.PATCH (got '${VERSION}')"
+
+# An unpinned install takes the newest release the metadata offers, and stale or
+# rolled-back metadata can offer a real, correctly attested OLDER one. Nobody
+# asked to go backwards here, so refuse — `emisar update` applies the same rule
+# for the runner. An explicit --version stays the deliberate rollback route.
+current_version=$(installed_bridge_version)
+if [ -n "${current_version}" ]; then
+  if [ "${version_pinned}" = "0" ] && ! newer_version "${VERSION#mcp-v}" "${current_version}"; then
+    log "emisar-mcp ${current_version} is already current"
+    exit 0
+  fi
+  if newer_version "${current_version}" "${VERSION#mcp-v}"; then
+    warn "installing emisar-mcp ${VERSION#mcp-v} over the newer ${current_version} because --version asked for it"
+  fi
+fi
 select_attestation_policy
 
 VERSION_NUM="${VERSION#mcp-v}"

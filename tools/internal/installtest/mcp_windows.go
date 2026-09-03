@@ -18,6 +18,7 @@ import (
 	"runtime"
 	"strings"
 	"sync"
+	"sync/atomic"
 )
 
 func environmentWithout(overrides map[string]string, names ...string) []string {
@@ -110,6 +111,12 @@ func testWindowsMCPInstaller(root, shell string) error {
 		return err
 	}
 	if err := testWindowsAttestationPolicies(root, shell, temp); err != nil {
+		return err
+	}
+	if err := testWindowsArchivePathGuard(root, shell, temp); err != nil {
+		return err
+	}
+	if err := testWindowsRedirectChain(root, shell, temp); err != nil {
 		return err
 	}
 
@@ -592,6 +599,161 @@ Test-Attestation "C:\verified\mcp.zip" $false
 		return fmt.Errorf("attestation argv = %q, want %q", traceData, expectedTrace)
 	}
 	return nil
+}
+
+// The archive guard is the layer that still holds when the release itself is
+// the thing that is wrong, so it is tested against the separator spellings a
+// hostile zip actually carries — including the mixed form that survived a
+// single-quoted '\\' normalization and reached Expand-Archive.
+func testWindowsArchivePathGuard(root, shell, temp string) error {
+	installer := filepath.Join(root, "install-mcp.ps1")
+	guard, err := powershellFunction(installer, "Assert-SafeArchive")
+	if err != nil {
+		return err
+	}
+	const expectedRoot = "emisar-mcp-1.2.3-windows-amd64"
+	unsafe := []string{
+		expectedRoot + `/..\..\evil.exe`,
+		expectedRoot + `\..\evil.exe`,
+		expectedRoot + "/../evil.exe",
+		"/" + expectedRoot + "/emisar-mcp.exe",
+		"C:/evil.exe",
+		"other-root/emisar-mcp.exe",
+	}
+	archives := map[string]string{}
+	for index, name := range unsafe {
+		archivePath := filepath.Join(temp, fmt.Sprintf("unsafe-%d.zip", index))
+		if err := zipWindowsEntryNames(archivePath, name); err != nil {
+			return err
+		}
+		archives[archivePath] = name
+	}
+	safePath := filepath.Join(temp, "safe.zip")
+	if err := zipWindowsEntryNames(safePath, expectedRoot+"/emisar-mcp.exe"); err != nil {
+		return err
+	}
+
+	var script strings.Builder
+	script.WriteString("function Stop-Install([string]$Message) { throw $Message }\n")
+	script.WriteString(guard)
+	for archivePath, name := range archives {
+		fmt.Fprintf(&script, `
+$refused = $false
+try { Assert-SafeArchive %s %s } catch { $refused = $true }
+if (-not $refused) { throw ('unsafe archive entry accepted: ' + %s) }
+`, powershellLiteral(archivePath), powershellLiteral(expectedRoot), powershellLiteral(name))
+	}
+	fmt.Fprintf(&script, "\nAssert-SafeArchive %s %s\n",
+		powershellLiteral(safePath), powershellLiteral(expectedRoot))
+
+	scriptPath := filepath.Join(temp, "archive-path-guard.ps1")
+	if err := os.WriteFile(scriptPath, []byte(script.String()), 0o600); err != nil {
+		return err
+	}
+	output, err := runPowerShellInstaller(shell, scriptPath, environment(nil))
+	if err != nil {
+		return fmt.Errorf("archive path guard: %w\n%s", err, output)
+	}
+	return nil
+}
+
+// Only the first and the final URI were checked while the handler followed the
+// chain itself, so an intermediate cleartext hop was never seen. Redirects are
+// followed by hand now: every hop faces the same trust check, and the chain is
+// bounded.
+func testWindowsRedirectChain(root, shell, temp string) error {
+	installer := filepath.Join(root, "install-mcp.ps1")
+	var parts strings.Builder
+	for _, name := range []string{"Test-Truthy", "Test-TrustedWebUri", "New-WebClient", "Get-WebBytes"} {
+		function, err := powershellFunction(installer, name)
+		if err != nil {
+			return err
+		}
+		parts.WriteString(function)
+	}
+
+	var loops int32
+	mux := http.NewServeMux()
+	mux.HandleFunc("/payload", func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte("payload"))
+	})
+	mux.HandleFunc("/one-hop", func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "/payload", http.StatusFound)
+	})
+	// A trusted origin redirecting off-loopback in cleartext: the hop an
+	// on-path attacker rewrites, and the one the old code never validated.
+	mux.HandleFunc("/offsite", func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "http://198.51.100.7/evil", http.StatusFound)
+	})
+	mux.HandleFunc("/loop", func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&loops, 1)
+		http.Redirect(w, r, "/loop", http.StatusFound)
+	})
+	server := httptest.NewServer(mux)
+	defer server.Close()
+
+	script := parts.String() + fmt.Sprintf(`
+$script:MaximumRedirects = 5
+function Stop-Install([string]$Message) { throw $Message }
+$env:EMISAR_ALLOW_INSECURE = "1"
+
+$bytes = Get-WebBytes "%[1]s/one-hop"
+if ([Text.Encoding]::UTF8.GetString($bytes) -ne "payload") { throw "a loopback redirect was not followed" }
+
+$refused = $false
+try { [void](Get-WebBytes "%[1]s/offsite") } catch { $refused = $true }
+if (-not $refused) { throw "an intermediate redirect to a non-loopback cleartext host was followed" }
+
+$bounded = $false
+try { [void](Get-WebBytes "%[1]s/loop") } catch { $bounded = $true }
+if (-not $bounded) { throw "a redirect loop was not bounded" }
+`, server.URL)
+
+	scriptPath := filepath.Join(temp, "redirect-chain.ps1")
+	if err := os.WriteFile(scriptPath, []byte(script), 0o600); err != nil {
+		return err
+	}
+	output, err := runPowerShellInstaller(shell, scriptPath, environment(nil))
+	if err != nil {
+		return fmt.Errorf("redirect chain: %w\n%s", err, output)
+	}
+	if got := atomic.LoadInt32(&loops); got > int32(8) {
+		return fmt.Errorf("redirect loop was followed %d times, want a bounded chain", got)
+	}
+	return nil
+}
+
+// powershellLiteral renders a value as a single-quoted PowerShell string, where
+// nothing is an escape except a doubled quote. Go's %q would emit Go escapes,
+// and a Windows path's backslashes would arrive doubled.
+func powershellLiteral(value string) string {
+	return "'" + strings.ReplaceAll(value, "'", "''") + "'"
+}
+
+func zipWindowsEntryNames(destination string, names ...string) error {
+	output, err := os.Create(destination)
+	if err != nil {
+		return err
+	}
+	archive := zip.NewWriter(output)
+	for _, name := range names {
+		var entry io.Writer
+		// Create sanitizes nothing, which is the point: the guard must judge the
+		// exact bytes a hostile producer wrote into the central directory.
+		if entry, err = archive.CreateHeader(&zip.FileHeader{Name: name}); err != nil {
+			break
+		}
+		if _, err = entry.Write([]byte("x")); err != nil {
+			break
+		}
+	}
+	if closeErr := archive.Close(); err == nil {
+		err = closeErr
+	}
+	if closeErr := output.Close(); err == nil {
+		err = closeErr
+	}
+	return err
 }
 
 func powershellFunction(path, name string) (string, error) {

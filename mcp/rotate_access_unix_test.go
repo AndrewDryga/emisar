@@ -3,10 +3,35 @@
 package main
 
 import (
+	"fmt"
 	"os"
 	"syscall"
 	"testing"
 )
+
+// The Windows classifier carries the same table for its own contention errno;
+// the two platforms must agree on what degrades, or one of them fails startup
+// and every request over a peer bridge holding the lock.
+func TestIsCredentialWriteUnavailable_Unix(t *testing.T) {
+	tests := []struct {
+		name string
+		err  error
+		want bool
+	}{
+		{name: "peer holds the lock past credentialLockWait", err: syscall.EWOULDBLOCK, want: true},
+		{name: "wrapped contention", err: fmt.Errorf("lock credential state: %w", syscall.EWOULDBLOCK), want: true},
+		{name: "permission denied", err: os.ErrPermission, want: true},
+		{name: "network home directory without flock", err: syscall.ENOLCK, want: true},
+		{name: "a real persistence failure is not degradable", err: os.ErrInvalid, want: false},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := isCredentialWriteUnavailable(test.err); got != test.want {
+				t.Fatalf("isCredentialWriteUnavailable(%v) = %t, want %t", test.err, got, test.want)
+			}
+		})
+	}
+}
 
 func TestInitializeCredentialState_ReadOnlyFilesystemFallback(t *testing.T) {
 	current := testAPIKey(37)

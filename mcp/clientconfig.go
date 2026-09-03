@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strings"
 )
 
@@ -113,17 +114,17 @@ func (client detectedClient) preflight(request clientEntryRequest) error {
 	if err := prepareConfigPath(client.ConfigFile); err != nil {
 		return err
 	}
-	if _, err := client.renderConfig(request); err != nil {
+	source, err := readConfigSource(client.ConfigFile)
+	if err != nil {
+		return err
+	}
+	if _, err := client.renderConfig(request, source); err != nil {
 		return err
 	}
 	if err := probeConfigWrite(client.ConfigFile); err != nil {
 		return err
 	}
-	hasContent, err := fileHasContent(client.ConfigFile)
-	if err != nil {
-		return err
-	}
-	if hasContent {
+	if strings.TrimSpace(source) != "" {
 		if err := validateReplaceableTarget(client.ConfigFile+configBackupSuffix, true); err != nil {
 			return err
 		}
@@ -150,19 +151,22 @@ func (client detectedClient) install(request clientEntryRequest) error {
 	if err := prepareConfigPath(client.ConfigFile); err != nil {
 		return err
 	}
-	edited, err := client.renderConfig(request)
+	// One read feeds the render, the backup, and the pre-write comparison. Three
+	// separate reads meant the backup could capture an editor's save that the
+	// render never saw, and then the stale render replaced it.
+	source, err := readConfigSource(client.ConfigFile)
 	if err != nil {
 		return err
 	}
-	hasContent, err := fileHasContent(client.ConfigFile)
+	edited, err := client.renderConfig(request, source)
 	if err != nil {
 		return err
 	}
-	if hasContent {
+	if strings.TrimSpace(source) != "" {
 		if err := validateReplaceableTarget(client.ConfigFile+configBackupSuffix, true); err != nil {
 			return err
 		}
-		if err := backupConfigFile(client.ConfigFile); err != nil {
+		if err := writeConfigFile(client.ConfigFile+configBackupSuffix, source); err != nil {
 			return err
 		}
 	}
@@ -171,7 +175,7 @@ func (client detectedClient) install(request clientEntryRequest) error {
 			return err
 		}
 	}
-	return writeConfigFile(client.ConfigFile, edited)
+	return replaceConfigFile(client.ConfigFile, source, edited)
 }
 
 func prepareConfigPath(path string) error {
@@ -208,22 +212,20 @@ func validateReplaceableTarget(path string, allowSymlink bool) error {
 	return fmt.Errorf("%s is not a replaceable file", path)
 }
 
-func (client detectedClient) renderConfig(request clientEntryRequest) (string, error) {
+// renderConfig edits raw — the bytes the caller read and will compare against
+// before replacing the file — rather than reading the file again itself.
+func (client detectedClient) renderConfig(request clientEntryRequest, raw string) (string, error) {
 	switch client.format {
 	case formatTOML:
-		return client.renderTOML(request)
+		return client.renderTOML(request, raw)
 	case formatYAML:
-		return client.renderYAML(request)
+		return client.renderYAML(request, raw)
 	default:
-		return client.renderJSON(request)
+		return client.renderJSON(request, raw)
 	}
 }
 
-func (client detectedClient) renderJSON(request clientEntryRequest) (string, error) {
-	raw, err := readConfigFile(client.ConfigFile)
-	if err != nil && !errors.Is(err, os.ErrNotExist) {
-		return "", err
-	}
+func (client detectedClient) renderJSON(request clientEntryRequest, raw string) (string, error) {
 	entry := client.entry(request)
 	edited, err := insertJSONMember(raw, client.container, emisarServerName, entry)
 	if err != nil {
@@ -240,11 +242,7 @@ func (client detectedClient) renderJSON(request clientEntryRequest) (string, err
 	return edited, nil
 }
 
-func (client detectedClient) renderTOML(request clientEntryRequest) (string, error) {
-	raw, err := readConfigFile(client.ConfigFile)
-	if err != nil && !errors.Is(err, os.ErrNotExist) {
-		return "", err
-	}
+func (client detectedClient) renderTOML(request clientEntryRequest, raw string) (string, error) {
 	withoutEmisar := removeTOMLTable(raw)
 	if tomlEmisarReference.MatchString(withoutEmisar) {
 		return "", errors.New("this config uses an unsupported TOML spelling for emisar")
@@ -275,11 +273,7 @@ func (client detectedClient) renderTOML(request clientEntryRequest) (string, err
 	return appendConfigBlock(withoutEmisar, block.String()), nil
 }
 
-func (client detectedClient) renderYAML(request clientEntryRequest) (string, error) {
-	raw, err := readConfigFile(client.ConfigFile)
-	if err != nil && !errors.Is(err, os.ErrNotExist) {
-		return "", err
-	}
+func (client detectedClient) renderYAML(request clientEntryRequest, raw string) (string, error) {
 	command, err := quoteConfigString(request.Command)
 	if err != nil {
 		return "", err
@@ -436,7 +430,7 @@ func (client detectedClient) remove() error {
 		}
 	}
 	if edited != raw {
-		if err := writeConfigFile(client.ConfigFile, edited); err != nil {
+		if err := replaceConfigFile(client.ConfigFile, raw, edited); err != nil {
 			return err
 		}
 	}
@@ -569,7 +563,7 @@ func editClaudePermission(path string, allow bool) error {
 			return err
 		}
 		if strings.TrimSpace(raw) != "" {
-			if err := backupConfigFile(path); err != nil {
+			if err := writeConfigFile(path+configBackupSuffix, raw); err != nil {
 				return err
 			}
 		}
@@ -603,7 +597,7 @@ func editClaudePermission(path string, allow bool) error {
 	if err != nil {
 		return err
 	}
-	return writeConfigFile(path, edited)
+	return replaceConfigFile(path, raw, edited)
 }
 
 func claudeAllowList(document map[string]any) ([]string, error) {
@@ -652,7 +646,7 @@ func addGrokPermission(path string) error {
 		return errors.New("this config already defines [permission]")
 	}
 	block := fmt.Sprintf("[permission]\nallow = [%q]\n", grokToolPermission)
-	return writeConfigFile(path, appendConfigBlock(raw, block))
+	return replaceConfigFile(path, raw, appendConfigBlock(raw, block))
 }
 
 func removeGrokPermission(path string) error {
@@ -684,7 +678,7 @@ func removeGrokPermission(path string) error {
 	if strings.Contains(edited, grokToolPermission) {
 		return errors.New("the [permission] table carries other rules")
 	}
-	return writeConfigFile(path, edited)
+	return replaceConfigFile(path, raw, edited)
 }
 
 // writeClientEnvFile keeps a syncable editor config free of the API key: the
@@ -744,13 +738,36 @@ func writeConfigFile(path, contents string) error {
 	if err := staged.Close(); err != nil {
 		return err
 	}
-	return os.Rename(stagedPath, path)
+	if err := os.Rename(stagedPath, path); err != nil {
+		return err
+	}
+	return syncConfigDirectory(directory)
 }
 
-func backupConfigFile(path string) error {
-	raw, err := readConfigFile(path)
+// replaceConfigFile writes contents over path only while it still holds the
+// bytes the edit was rendered from. An operator's editor saving between the
+// render and the rename would otherwise be silently reverted.
+func replaceConfigFile(path, expected, contents string) error {
+	current, err := readConfigSource(path)
 	if err != nil {
 		return err
 	}
-	return writeConfigFile(path+configBackupSuffix, raw)
+	if current != expected {
+		return fmt.Errorf("%s changed while emisar was updating it", path)
+	}
+	return writeConfigFile(path, contents)
+}
+
+// syncConfigDirectory makes the rename itself durable. Windows has no
+// equivalent directory handle to sync.
+func syncConfigDirectory(path string) error {
+	if runtime.GOOS == "windows" {
+		return nil
+	}
+	directory, err := os.Open(path)
+	if err != nil {
+		return err
+	}
+	defer directory.Close()
+	return directory.Sync()
 }

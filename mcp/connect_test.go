@@ -242,6 +242,64 @@ func TestConnectPreflightChecksEveryActualDestination(t *testing.T) {
 	}
 }
 
+// `--client cursor` before Cursor is installed configured nothing and exited 0,
+// so a scripted install checking $? recorded a connection that never happened.
+func TestConnectFailsWhenANamedClientIsNotInstalled(t *testing.T) {
+	useConnectTestHome(t)
+	requests := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		requests++
+		http.Error(w, "authorization must not start", http.StatusInternalServerError)
+	}))
+	defer server.Close()
+
+	var stdout, stderr bytes.Buffer
+	code := connectClients(
+		connectOptions{origin: server.URL, clientIDs: []string{"cursor", "zed"}},
+		strings.NewReader(""),
+		&stdout,
+		&stderr,
+		testConnectAuthenticator(server),
+	)
+	if code == 0 {
+		t.Fatalf("exit = 0, want non-zero\nstdout:\n%s\nstderr:\n%s", stdout.String(), stderr.String())
+	}
+	if requests != 0 {
+		t.Fatalf("authorization requests = %d, want 0", requests)
+	}
+	for _, want := range []string{"cursor", "zed", "mcp.json", "settings.json"} {
+		if !strings.Contains(stderr.String(), want) {
+			t.Errorf("the refusal never named %q:\n%s", want, stderr.String())
+		}
+	}
+}
+
+func TestConnectAcceptsANamedClientThatIsInstalled(t *testing.T) {
+	roots := useConnectTestHome(t)
+	adapter, _ := lookupClientAdapter("cursor")
+	if err := os.MkdirAll(filepath.Dir(adapter.file(roots)), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	server := newConnectAuthServer(t, "cursor", testAPIKey(0x51), testAPIKey(0x52))
+	defer server.Close()
+
+	var stdout, stderr bytes.Buffer
+	code := connectClients(
+		connectOptions{origin: server.URL, clientIDs: []string{"cursor"}},
+		strings.NewReader(""),
+		&stdout,
+		&stderr,
+		testConnectAuthenticator(server),
+	)
+	if code != 0 {
+		t.Fatalf("exit = %d, want 0\nstdout:\n%s\nstderr:\n%s", code, stdout.String(), stderr.String())
+	}
+	raw, err := readConfigFile(adapter.file(roots))
+	if err != nil || !strings.Contains(raw, "emisar") {
+		t.Fatalf("cursor config = %q, err = %v", raw, err)
+	}
+}
+
 func TestExplicitReconnectRotatesKeyAndRepointsURL(t *testing.T) {
 	roots := useConnectTestHome(t)
 	adapter, _ := lookupClientAdapter("codex")
@@ -436,6 +494,30 @@ func TestAutoPermitLandsInsideTheEntry(t *testing.T) {
 			}
 			if strings.Contains(after, testCase.marker) {
 				t.Errorf("the auto-permit setting survived removal:\n%s", after)
+			}
+		})
+	}
+}
+
+// Only Gemini's schema defines `trust` inside the server entry. Claude Code
+// keeps its auto-permit in settings.json, so an opted-in run must not also leave
+// a key Claude Code never defined inside the operator's ~/.claude.json.
+func TestAutoPermitNeverWritesTrustIntoAClientWithoutIt(t *testing.T) {
+	for _, id := range []string{"claude-code", "cursor"} {
+		t.Run(id, func(t *testing.T) {
+			adapter, _ := lookupClientAdapter(id)
+			client := adapter.resolve(testConfigRoots(t))
+			request := testEntryRequest("/usr/local/bin/emisar-mcp", id)
+			request.AutoPermit = true
+			if err := client.install(request); err != nil {
+				t.Fatalf("install: %v", err)
+			}
+			raw, err := readConfigFile(client.ConfigFile)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if strings.Contains(raw, "trust") {
+				t.Errorf("%s got a trust key its schema does not define:\n%s", id, raw)
 			}
 		})
 	}
