@@ -12,7 +12,7 @@ import (
 	"testing"
 )
 
-func TestSelectAndFrozenMigrations(t *testing.T) {
+func TestSelect(t *testing.T) {
 	root := newGitRepo(t)
 	migration := "portal/apps/emisar/priv/repo/migrations/20260101000000_old.exs"
 	writeFixture(t, root, migration, "defmodule Old do\nend\n")
@@ -28,7 +28,7 @@ func TestSelectAndFrozenMigrations(t *testing.T) {
 	commitAll(t, root, "base")
 	base := gitText(t, root, "rev-parse", "HEAD")
 
-	t.Run("migration rename selects portal and fails freeze", func(t *testing.T) {
+	t.Run("migration rename selects portal", func(t *testing.T) {
 		runGit(t, root, "mv", migration, "old.exs")
 		commitAll(t, root, "rename")
 		selection, err := Select(context.Background(), root, "push", base)
@@ -37,9 +37,6 @@ func TestSelectAndFrozenMigrations(t *testing.T) {
 		}
 		if !selection.Portal {
 			t.Fatal("deleted portal migration did not select portal")
-		}
-		if err := CheckFrozenMigrations(context.Background(), root, "push", base); err == nil {
-			t.Fatal("migration rename passed frozen migration check")
 		}
 		resetHard(t, root, base)
 	})
@@ -53,15 +50,6 @@ func TestSelectAndFrozenMigrations(t *testing.T) {
 		}
 		if got := selection.GoModules(); len(got) != 1 || got[0] != "runner" {
 			t.Fatalf("GoModules() = %q, want runner only", got)
-		}
-		resetHard(t, root, base)
-	})
-
-	t.Run("new migration is allowed", func(t *testing.T) {
-		writeFixture(t, root, "portal/apps/emisar/priv/repo/migrations/20260102000000_new.exs", "defmodule New do\nend\n")
-		commitAll(t, root, "new migration")
-		if err := CheckFrozenMigrations(context.Background(), root, "push", base); err != nil {
-			t.Fatal(err)
 		}
 		resetHard(t, root, base)
 	})

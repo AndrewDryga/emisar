@@ -169,7 +169,7 @@ advisory migration lock serializes concurrent instance boots.
 
 ## Schema changes and rollback
 
-Committed migrations are immutable. Rolling deployments overlap old and new
+Applied migrations are immutable. Rolling deployments overlap old and new
 application versions, so schema work uses expand/contract sequencing: add a
 compatible shape, deploy code that tolerates both versions and backfill, then
 remove the old shape in a later release after the earlier version no longer runs.

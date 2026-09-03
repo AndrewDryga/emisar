@@ -22,7 +22,7 @@ those files instead of relying on memory.
 
 - **Commit and CI** - the intended commit is current and the complete required CI
   workflow is green.
-- **Migrations** - committed migrations are untouched; new migrations are
+- **Migrations** - migrations already applied in production are untouched; new migrations are
   forward-only and compatible with old and new images during the rolling overlap.
 - **Secrets** - every required runtime value has a Secret Manager source or an
   explicit non-secret cloud-init value. No secret is committed or printed.

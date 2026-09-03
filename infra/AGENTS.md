@@ -55,7 +55,7 @@ is the separate, credentials-gated deploy step.
 7. **DMARC / MTA-STS ramp, never jump.** `none → quarantine → reject` and
    `testing → enforce`, gated on clean reports.
 8. **Migrations run on boot under Ecto's advisory lock** (the release server entrypoint), so concurrent
-   instances are safe. Committed portal migrations stay frozen (portal AGENTS.md §8).
+   instances are safe. Applied portal migrations stay frozen (portal AGENTS.md §8).
 9. **Portal rollouts preserve serving capacity.** Reserve exactly the steady-state
    fleet with automatic consumption and let the rollout surge use on-demand
    capacity; a stockout may delay deployment but must not remove a serving VM.

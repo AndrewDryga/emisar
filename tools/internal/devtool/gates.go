@@ -425,11 +425,6 @@ func (a *App) portalGate(ctx context.Context) error {
 	if os.Getenv("CI") != "" && os.Getenv("DATABASE_URL") == "" {
 		return fmt.Errorf("CI portal gate requires DATABASE_URL")
 	}
-	if err := a.gatePhase("portal frozen migration history", func() error {
-		return a.checkFrozenMigrations(ctx)
-	}); err != nil {
-		return err
-	}
 	// Fetching a locked dependency graph and checking source format are the
 	// cheapest deterministic failures. Run them before starting services or
 	// compiling the umbrella so a bad candidate fails in seconds.
@@ -499,21 +494,6 @@ func (a *App) portalGate(ctx context.Context) error {
 	return a.gatePhase("portal test suites", func() error {
 		return a.portalTestOutput(ctx, env)
 	})
-}
-
-func (a *App) checkFrozenMigrations(ctx context.Context) error {
-	event := os.Getenv("EMISAR_FROZEN_MIGRATIONS_EVENT")
-	base := os.Getenv("EMISAR_FROZEN_MIGRATIONS_BASE")
-	if (event == "") != (base == "") {
-		return fmt.Errorf("frozen migration range requires both EMISAR_FROZEN_MIGRATIONS_EVENT and EMISAR_FROZEN_MIGRATIONS_BASE")
-	}
-	if event != "" {
-		return ci.CheckFrozenMigrations(ctx, a.Root, event, base)
-	}
-	if os.Getenv("CI") != "" {
-		return fmt.Errorf("CI portal gate requires EMISAR_FROZEN_MIGRATIONS_EVENT and EMISAR_FROZEN_MIGRATIONS_BASE")
-	}
-	return a.checkLocalFrozenMigrations(ctx)
 }
 
 func (a *App) portalTestEnv(ctx context.Context) (map[string]string, error) {
