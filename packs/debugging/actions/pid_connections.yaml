@@ -14,7 +14,7 @@ description: >
 side_effects:
   - One read-only ss inventory filtered locally to the requested PID.
   - Output is capped by the validated line limit.
-  - Socket ownership for another user's process normally requires root.
+  - Socket ownership for another user's process normally requires root or the process-inspection capabilities in this pack's host-access recipe.
 
 search_terms:
   - process remote connections

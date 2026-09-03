@@ -2,6 +2,49 @@ recipes:
   - access: 0
     recipe: 0
     fixture: debian
-    action: debugging.pid_context
+    action: debugging.pid_environ
+    prepare:
+      - useradd --uid 60001 --user-group --no-create-home --shell /usr/sbin/nologin packtest-debug-process
+      - systemd-run --unit=packtest-debug-process --property=User=packtest-debug-process /bin/sleep infinity
+      - systemctl show packtest-debug-process.service --property=MainPID --value > /run/packtest-debug-process.pid
+    probe: pid=$(cat /run/packtest-debug-process.pid) && test "$pid" -gt 1 && head -c 1 "/proc/$pid/environ" >/dev/null && ls "/proc/$pid/fd" >/dev/null
+  - access: 1
+    recipe: 0
+    fixture: debian
+    action: debugging.slabtop
+    prepare:
+      # Docker Desktop does not expose /proc/slabinfo even to root. A root-only
+      # stand-in proves the same file-read capability without claiming the
+      # container has host slab metadata.
+      - install -o root -g root -m 0400 /dev/null /run/packtest-slabinfo
+    probe: head -n 1 /run/packtest-slabinfo >/dev/null
+  - access: 2
+    recipe: 0
+    fixture: debian
+    action: debugging.dmesg_tail
     prepare: ["true"]
-    probe: test "$(id -u)" = 0
+    probe: dmesg >/dev/null
+  - access: 3
+    recipe: 0
+    fixture: debian
+    action: debugging.kill_pid
+    prepare:
+      - useradd --uid 60002 --user-group --no-create-home --shell /usr/sbin/nologin packtest-debug-signal
+      - systemd-run --unit=packtest-debug-signal --property=User=packtest-debug-signal /bin/sleep infinity
+      - systemctl show packtest-debug-signal.service --property=MainPID --value > /run/packtest-debug-signal.pid
+    probe: kill -0 "$(cat /run/packtest-debug-signal.pid)"
+  - access: 5
+    recipe: 0
+    fixture: debian
+    action: debugging.pid_stack
+    prepare:
+      - useradd --uid 60003 --user-group --no-create-home --shell /usr/sbin/nologin packtest-debug-stack
+      - systemd-run --unit=packtest-debug-stack --property=User=packtest-debug-stack /bin/sleep infinity
+      - systemctl show packtest-debug-stack.service --property=MainPID --value > /run/packtest-debug-stack.pid
+    probe: test "$(id -u)" = 0 && cat "/proc/$(cat /run/packtest-debug-stack.pid)/stack" >/dev/null
+  - access: 4
+    recipe: 0
+    fixture: debian
+    action: debugging.ping_host
+    prepare: ["printf '1 0' > /proc/sys/net/ipv4/ping_group_range"]
+    probe: ping -c 1 -W 1 127.0.0.1

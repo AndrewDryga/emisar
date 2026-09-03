@@ -16,7 +16,7 @@ description: >
   miss a bespoke secret whose name and value match no rule.
 
 side_effects:
-  - Reads /proc/<pid>/environ — requires runner uid to match or root.
+  - Reads /proc/<pid>/environ — requires a matching uid, root, or the process-inspection capabilities in this pack's host-access recipe.
   - Read-only, but exposes the process's full environment (may include secrets).
 
 args:

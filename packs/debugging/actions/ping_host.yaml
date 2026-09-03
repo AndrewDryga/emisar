@@ -9,11 +9,14 @@ description: >
   Send N ICMP echo requests to a target. Use to confirm L3
   reachability when a higher-layer probe (TCP/HTTP) fails. Target is
   pattern-restricted to safe hostname/IPv4 characters to prevent
-  argument injection.
+  argument injection. Needs CAP_NET_RAW on the runner identity where the
+  host does not open net.ipv4.ping_group_range: the runner's no_new_privs
+  setting blocks ping's own setuid or file-capability elevation.
 
 side_effects:
   - One ping process running for ~N seconds.
   - Outgoing ICMP to the target.
+  - Opens an ICMP socket, so it fails without CAP_NET_RAW on a host with a closed ping group range.
 
 search_terms:
   - unreachable

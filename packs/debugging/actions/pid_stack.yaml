@@ -8,7 +8,8 @@ risk: low
 description: >
   Read /proc/<pid>/stack — the current kernel-side stack trace.
   Use to find what syscall a stuck process is hung in (futex,
-  read, write, lock_kernel). Needs CAP_SYS_ADMIN or root to read.
+  read, write, lock_kernel). This pack requires the runner service to run as
+  root because the read crosses kernel, process, and file-permission checks.
 
 side_effects:
   - One /proc read.

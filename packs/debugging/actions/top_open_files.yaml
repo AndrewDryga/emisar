@@ -10,9 +10,10 @@ description: >
   This reads directory entries without resolving every descriptor target, so
   a process with tens of thousands of sockets does not turn the diagnostic
   into another global lsof crawl. Use debugging.pid_fd_summary on a candidate
-  to compare its count with its own open-files limit. Unless the runner runs as
-  root it sees only permitted processes. Do not retry an unchanged timeout;
-  use the targeted summary when you already know the PID. Read-only.
+  to compare its count with its own open-files limit. Without the
+  process-inspection host-access recipe it sees only permitted processes. Do
+  not retry an unchanged timeout; use the targeted summary when you already
+  know the PID. Read-only.
 
 side_effects:
   - One bounded pass over readable /proc process FD directories.

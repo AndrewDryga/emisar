@@ -2,7 +2,7 @@ schema_version: 1
 
 id: debugging
 name: Linux debugging toolkit
-version: 0.2.21
+version: 0.2.22
 retired_below: 0.2.14
 description: >
   General-purpose Linux diagnostics + low-level remediation: process
@@ -24,7 +24,8 @@ setup:
   summary: >
     Operates on the local runner host — no credentials needed.
   notes:
-    - "Basic diagnostics such as vmstat, loadavg, ping, and host-permitted process reads work unprivileged. Protected process and kernel state is mapped below."
+    - "Basic diagnostics such as vmstat, loadavg, and host-permitted process reads work unprivileged. Protected process, network, and kernel state is mapped below."
+    - Apply every host-access recipe that covers an action you enable. The recipes are additive and remove the retired blanket-root drop-in when first applied.
   host_access:
     - actions:
         - debugging.netstat_listen
@@ -39,22 +40,106 @@ setup:
         - debugging.pid_fds
         - debugging.pid_fd_summary
         - debugging.pid_status
-        - debugging.pid_stack
         - debugging.pid_threads
         - debugging.pid_limits
         - debugging.pid_io
+        - debugging.tcp_retrans_top
+      requirement: Inspect protected process state owned by other users.
+      recipes:
+        - name: Grant process-inspection capabilities to the Emisar service
+          commands:
+            - "sudo install -d -m 0755 /etc/systemd/system/emisar.service.d"
+            - "sudo rm -f /etc/systemd/system/emisar.service.d/10-debugging-host-access.conf"
+            - "printf '%s\\n' '[Service]' 'AmbientCapabilities=CAP_SYS_PTRACE CAP_DAC_READ_SEARCH' | sudo tee /etc/systemd/system/emisar.service.d/20-debugging-process-inspection.conf >/dev/null"
+            - "sudo systemctl daemon-reload"
+            - "sudo systemctl restart emisar"
+          verify:
+            - "systemctl show emisar --property=AmbientCapabilities --value | grep -Fwi cap_sys_ptrace"
+            - "systemctl show emisar --property=AmbientCapabilities --value | grep -Fwi cap_dac_read_search"
+          impact: >
+            Every Emisar action on this runner can inspect, attach to, and modify
+            processes outside the runner user, including their arguments,
+            environments, file descriptors, memory-related metadata, and secrets,
+            and bypass host file read and directory search permissions.
+    - actions:
+        - debugging.slabtop
+      requirement: Read protected kernel slab metadata from /proc/slabinfo.
+      recipes:
+        - name: Grant protected-file read access to the Emisar service
+          commands:
+            - "sudo install -d -m 0755 /etc/systemd/system/emisar.service.d"
+            - "sudo rm -f /etc/systemd/system/emisar.service.d/10-debugging-host-access.conf"
+            - "printf '%s\\n' '[Service]' 'AmbientCapabilities=CAP_DAC_READ_SEARCH' | sudo tee /etc/systemd/system/emisar.service.d/21-debugging-kernel-files.conf >/dev/null"
+            - "sudo systemctl daemon-reload"
+            - "sudo systemctl restart emisar"
+          verify:
+            - "systemctl show emisar --property=AmbientCapabilities --value | grep -Fwi cap_dac_read_search"
+          impact: >
+            Every Emisar action on this runner can bypass file read and directory
+            search permissions across the host, including files unrelated to slab
+            diagnostics.
+    - actions:
         - debugging.dmesg_tail
         - debugging.dmesg_oom
-        - debugging.slabtop
-        - debugging.drop_caches
+      requirement: Read the protected kernel message ring buffer.
+      recipes:
+        - name: Grant kernel-log access to the Emisar service
+          commands:
+            - "sudo install -d -m 0755 /etc/systemd/system/emisar.service.d"
+            - "sudo rm -f /etc/systemd/system/emisar.service.d/10-debugging-host-access.conf"
+            - "printf '%s\\n' '[Service]' 'AmbientCapabilities=CAP_SYSLOG' | sudo tee /etc/systemd/system/emisar.service.d/22-debugging-kernel-log.conf >/dev/null"
+            - "sudo systemctl daemon-reload"
+            - "sudo systemctl restart emisar"
+          verify:
+            - "systemctl show emisar --property=AmbientCapabilities --value | grep -Fwi cap_syslog"
+          impact: >
+            Every Emisar action on this runner can read or clear the host kernel
+            message ring buffer, change console logging, and view restricted kernel
+            addresses. Kernel logs may contain device, process, address, and failure
+            details.
+    - actions:
         - debugging.kill_pid
+      requirement: Signal processes owned by other users.
+      recipes:
+        - name: Grant process-signalling access to the Emisar service
+          commands:
+            - "sudo install -d -m 0755 /etc/systemd/system/emisar.service.d"
+            - "sudo rm -f /etc/systemd/system/emisar.service.d/10-debugging-host-access.conf"
+            - "printf '%s\\n' '[Service]' 'AmbientCapabilities=CAP_KILL' | sudo tee /etc/systemd/system/emisar.service.d/23-debugging-process-signal.conf >/dev/null"
+            - "sudo systemctl daemon-reload"
+            - "sudo systemctl restart emisar"
+          verify:
+            - "systemctl show emisar --property=AmbientCapabilities --value | grep -Fwi cap_kill"
+          impact: >
+            Every Emisar action on this runner can signal processes owned by other
+            users, including terminating or force-killing them.
+    - actions:
+        - debugging.ping_host
+      requirement: Open ICMP sockets where the host has a closed ping group range.
+      recipes:
+        - name: Grant raw-socket access to the Emisar service
+          commands:
+            - "sudo install -d -m 0755 /etc/systemd/system/emisar.service.d"
+            - "sudo rm -f /etc/systemd/system/emisar.service.d/10-debugging-host-access.conf"
+            - "printf '%s\\n' '[Service]' 'AmbientCapabilities=CAP_NET_RAW' | sudo tee /etc/systemd/system/emisar.service.d/24-debugging-network.conf >/dev/null"
+            - "sudo systemctl daemon-reload"
+            - "sudo systemctl restart emisar"
+          verify:
+            - "systemctl show emisar --property=AmbientCapabilities --value | grep -Fwi cap_net_raw"
+          impact: >
+            Every Emisar action on this runner can open raw sockets, including
+            sending crafted packets and reading traffic on this host's interfaces.
+    - actions:
+        - debugging.pid_stack
+        - debugging.drop_caches
         - debugging.sysctl_set
-      requirement: Inspect other users' processes and protected kernel state, or change host process and kernel state.
+      requirement: Read privileged kernel stacks or change protected kernel state.
       recipes:
         - name: Run the Emisar service as root
           commands:
             - "sudo install -d -m 0755 /etc/systemd/system/emisar.service.d"
-            - "printf '%s\\n' '[Service]' 'User=root' 'Group=root' | sudo tee /etc/systemd/system/emisar.service.d/10-debugging-host-access.conf >/dev/null"
+            - "sudo rm -f /etc/systemd/system/emisar.service.d/10-debugging-host-access.conf"
+            - "printf '%s\\n' '[Service]' 'User=root' 'Group=root' | sudo tee /etc/systemd/system/emisar.service.d/30-debugging-root.conf >/dev/null"
             - "sudo systemctl daemon-reload"
             - "sudo systemctl restart emisar"
           verify:

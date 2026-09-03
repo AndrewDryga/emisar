@@ -14,7 +14,7 @@ description: >
 side_effects:
   - Reads /proc/<pid>/environ but emits only names matching shell variable syntax.
   - Environment values are never written to stdout, stderr, or a temporary file.
-  - Read-only; inspecting another user's process normally requires root or CAP_SYS_PTRACE.
+  - Read-only; inspecting another user's process normally requires root or CAP_SYS_PTRACE plus CAP_DAC_READ_SEARCH.
 
 search_terms:
   - inherited environment
