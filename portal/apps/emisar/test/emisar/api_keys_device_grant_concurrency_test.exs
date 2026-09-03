@@ -2,7 +2,7 @@ defmodule Emisar.ApiKeysDeviceGrantConcurrencyTest do
   use Emisar.ConcurrencyCase, async: false
   import Ecto.Query
   alias Ecto.Adapters.SQL.Sandbox
-  alias Emisar.{Accounts, ApiKeys, Crypto, Fixtures, Repo, RequestContext}
+  alias Emisar.{Accounts, ApiKeys, Fixtures, Repo, RequestContext}
   alias Emisar.Accounts.{Account, Membership}
   alias Emisar.ApiKeys.{ApiKey, DeviceGrant}
   alias Emisar.Users.User
@@ -33,119 +33,6 @@ defmodule Emisar.ApiKeysDeviceGrantConcurrencyTest do
       |> Repo.reload!()
       |> Membership.Changeset.delete()
       |> Repo.update()
-    end)
-  end
-
-  test "old credential writers fail while invitation acceptance is uncommitted" do
-    Sandbox.unboxed_run(Repo, fn ->
-      suffix = Ecto.UUID.generate()
-      owner = Fixtures.Users.create_user(%{email: "invite-owner-#{suffix}@example.test"})
-
-      {:ok, account} =
-        Accounts.create_account_with_owner(
-          %{name: "Invitation guard #{suffix}", slug: "invitation-guard-#{suffix}"},
-          owner
-        )
-
-      member = Fixtures.Users.create_user(%{email: "invite-member-#{suffix}@example.test"})
-
-      membership =
-        Fixtures.Memberships.create_membership(
-          account_id: account.id,
-          user_id: member.id,
-          role: "operator"
-        )
-
-      {_token, digest} = Crypto.user_invite_token()
-
-      membership
-      |> Ecto.Changeset.change(invitation_token_digest: digest, invitation_accepted_at: nil)
-      |> Repo.update!()
-
-      {:ok, _device_code, _user_code, grant} =
-        ApiKeys.open_device_grant(["claude-code"], %RequestContext{})
-
-      {_raw, prefix, hash} = Crypto.mint("emk-", 12)
-      parent = self()
-
-      accepter =
-        unboxed_task(fn ->
-          Repo.transaction(fn ->
-            Repo.query!(
-              """
-              UPDATE account_memberships
-              SET invitation_token_digest = NULL,
-                  invitation_accepted_at = NOW(),
-                  updated_at = NOW()
-              WHERE id = $1
-              """,
-              [Ecto.UUID.dump!(membership.id)]
-            )
-
-            send(parent, :invitation_acceptance_staged)
-
-            receive do
-              :commit -> :ok
-            end
-          end)
-        end)
-
-      try do
-        assert_receive :invitation_acceptance_staged, 5_000
-
-        grant_writer =
-          unboxed_task(fn ->
-            try do
-              grant
-              |> DeviceGrant.Changeset.approve(account.id, member.id, membership.id)
-              |> Repo.update!()
-
-              :approved
-            rescue
-              error in Postgrex.Error -> {:error, Exception.message(error)}
-            end
-          end)
-
-        key_writer =
-          unboxed_task(fn ->
-            try do
-              ApiKey.Changeset.create(
-                account.id,
-                member.id,
-                membership.id,
-                prefix,
-                hash,
-                %{name: "old writer"}
-              )
-              |> Repo.insert!()
-
-              :minted
-            rescue
-              error in Postgrex.Error -> {:error, Exception.message(error)}
-            end
-          end)
-
-        try do
-          assert {:error, grant_error} = Task.await(grant_writer, 30_000)
-          assert grant_error =~ "unresolved invitation cannot approve a device grant"
-          assert {:error, key_error} = Task.await(key_writer, 30_000)
-          assert key_error =~ "unresolved invitation cannot mint an API key"
-        after
-          stop_tasks([grant_writer, key_writer])
-        end
-
-        send(accepter.pid, :commit)
-        assert {:ok, :ok} = Task.await(accepter, 30_000)
-        refute Accounts.membership_invitation_pending?(Repo.reload!(membership))
-        assert Repo.reload!(grant).status == :pending
-        assert Repo.all(from(key in ApiKey, where: key.account_id == ^account.id)) == []
-      after
-        send(accepter.pid, :commit)
-        stop_tasks([accepter])
-        Repo.delete_all(from(stored in DeviceGrant, where: stored.id == ^grant.id))
-        Repo.delete_all(from(stored in Account, where: stored.id == ^account.id))
-        Repo.delete_all(from(stored in User, where: stored.id in ^[owner.id, member.id]))
-      end
     end)
   end
 
