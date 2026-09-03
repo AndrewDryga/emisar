@@ -82,7 +82,7 @@ while :; do sleep 1; done
 func TestRunVerifiesReleaseAndHandsItToInstaller(t *testing.T) {
 	root := t.TempDir()
 	executable := writeReceiptFixture(t, root, officialRepository)
-	name := fmt.Sprintf("emisar-0.19.0-%s-%s", runtime.GOOS, runtime.GOARCH)
+	name := fmt.Sprintf("emisar-0.24.1-%s-%s", runtime.GOOS, runtime.GOARCH)
 	archive := releaseArchive(t, name, map[string]archiveEntry{
 		name + "/emisar":     {body: "runner-binary", mode: 0o755},
 		name + "/install.sh": {body: "#!/usr/bin/env bash\n", mode: 0o755},
@@ -95,11 +95,13 @@ func TestRunVerifiesReleaseAndHandsItToInstaller(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case r.URL.Path == "/latest.json":
-			fmt.Fprint(w, `{"schema_version":1,"component":"runner","tag":"runner-v0.19.0","version":"0.19.0","source_revision":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}`)
+			fmt.Fprint(w, `{"schema_version":1,"component":"runner","tag":"runner-v0.24.1","version":"0.24.1","source_revision":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}`)
 		case strings.HasSuffix(r.URL.Path, "/"+archiveName):
 			w.Write(archive)
 		case strings.HasSuffix(r.URL.Path, "/SHA256SUMS"):
 			fmt.Fprint(w, checksums)
+		case strings.HasSuffix(r.URL.Path, "/SHA256SUMS.sigstore.jsonl"):
+			fmt.Fprint(w, "signed checksum bundle")
 		case strings.Contains(r.URL.Path, "/repos/"):
 			githubCalls++
 			http.Error(w, "GitHub fallback must not run", http.StatusInternalServerError)
@@ -114,6 +116,7 @@ func TestRunVerifiesReleaseAndHandsItToInstaller(t *testing.T) {
 	t.Setenv("BASH_ENV", "/tmp/must-not-reach-installer")
 	var commandName string
 	var commandArgs, commandEnv []string
+	var attestationSubjects []string
 	deps := testDependencies(executable)
 	deps.releaseBase = server.URL
 	deps.apiBase = server.URL
@@ -121,6 +124,10 @@ func TestRunVerifiesReleaseAndHandsItToInstaller(t *testing.T) {
 	deps.httpClient = server.Client()
 	deps.tempRoot = root
 	deps.runCommand = func(_ context.Context, name string, args, env []string, stdout, _ io.Writer) error {
+		if len(args) > 2 && args[0] == "attestation" && args[1] == "verify" {
+			attestationSubjects = append(attestationSubjects, args[2])
+			return nil
+		}
 		if handled, err := handleSafeTargetPreflight(name, args, stdout,
 			filepath.Join(root, "etc"), filepath.Join(root, "data")); handled {
 			return err
@@ -133,7 +140,7 @@ func TestRunVerifiesReleaseAndHandsItToInstaller(t *testing.T) {
 
 	var stdout, stderr bytes.Buffer
 	err := run(context.Background(), Options{
-		CurrentVersion: "0.18.0",
+		CurrentVersion: "0.24.0",
 		Stdout:         &stdout,
 		Stderr:         &stderr,
 	}, deps)
@@ -148,7 +155,7 @@ func TestRunVerifiesReleaseAndHandsItToInstaller(t *testing.T) {
 	}
 	joined := strings.Join(commandArgs, "\n")
 	for _, want := range []string{
-		"--version\nrunner-v0.19.0", "--bin-dir\n" + filepath.Dir(executable),
+		"--version\nrunner-v0.24.1", "--bin-dir\n" + filepath.Dir(executable),
 		"--etc-dir\n" + filepath.Join(root, "etc"), "--preverified-bundle",
 	} {
 		if !strings.Contains(joined, want) {
@@ -169,11 +176,16 @@ func TestRunVerifiesReleaseAndHandsItToInstaller(t *testing.T) {
 	if !containsEnvironment(commandEnv, "PATH=/usr/sbin:/usr/bin:/sbin:/bin") {
 		t.Errorf("installer environment does not pin a system PATH: %q", commandEnv)
 	}
-	if !strings.Contains(stdout.String(), "Verified checksum") || !strings.Contains(stdout.String(), "Updating emisar 0.18.0 to 0.19.0") {
+	if !strings.Contains(stdout.String(), "Verified checksum") || !strings.Contains(stdout.String(), "Updating emisar 0.24.0 to 0.24.1") {
 		t.Errorf("stdout does not explain the verified update:\n%s", stdout.String())
 	}
-	if !strings.Contains(stderr.String(), "provenance was not checked") {
-		t.Errorf("missing verifier warning not surfaced: %s", stderr.String())
+	if !strings.Contains(stdout.String(), "Verified release checksum signature") ||
+		!strings.Contains(stdout.String(), "Verified GitHub build provenance") {
+		t.Errorf("both checksum and archive provenance were not surfaced: %s", stdout.String())
+	}
+	if len(attestationSubjects) != 2 || !strings.HasSuffix(attestationSubjects[0], "/SHA256SUMS") ||
+		!strings.HasSuffix(attestationSubjects[1], "/"+archiveName) {
+		t.Errorf("attestation subjects = %q, want checksum then archive", attestationSubjects)
 	}
 }
 
@@ -233,6 +245,8 @@ func TestRunRefusesTargetWithoutManagedUpdateBoundary(t *testing.T) {
 					_, _ = w.Write(archive)
 				case strings.HasSuffix(r.URL.Path, "/SHA256SUMS"):
 					fmt.Fprint(w, checksums)
+				case strings.HasSuffix(r.URL.Path, "/SHA256SUMS.sigstore.jsonl"):
+					fmt.Fprint(w, "signed checksum bundle")
 				default:
 					http.NotFound(w, r)
 				}
@@ -248,6 +262,10 @@ func TestRunRefusesTargetWithoutManagedUpdateBoundary(t *testing.T) {
 			deps.tempRoot = root
 			deps.runCommand = func(_ context.Context, command string, args, _ []string, stdout, _ io.Writer) error {
 				switch {
+				case strings.Join(args, " ") == "auth status":
+					return nil
+				case len(args) > 1 && args[0] == "attestation" && args[1] == "verify":
+					return nil
 				case command == "/bin/bash" && len(args) == 2 && args[1] == "--managed-update-contract":
 					_, _ = io.WriteString(stdout, test.contract)
 					return test.contractErr
@@ -302,6 +320,8 @@ func TestRunStripsIdentityOverridesFromTheInstallerHandoff(t *testing.T) {
 			w.Write(archive)
 		case strings.HasSuffix(r.URL.Path, "/SHA256SUMS"):
 			fmt.Fprint(w, checksums)
+		case strings.HasSuffix(r.URL.Path, "/SHA256SUMS.sigstore.jsonl"):
+			fmt.Fprint(w, "signed checksum bundle")
 		default:
 			http.NotFound(w, r)
 		}
@@ -368,6 +388,8 @@ func TestRunFallsBackToImmutableGitHubMirrorWhenEmisarDownloadFails(t *testing.T
 			_, _ = w.Write(archive)
 		case strings.Contains(r.URL.Path, "/releases/download/") && strings.HasSuffix(r.URL.Path, "/SHA256SUMS"):
 			fmt.Fprint(w, checksums)
+		case strings.Contains(r.URL.Path, "/releases/download/") && strings.HasSuffix(r.URL.Path, "/SHA256SUMS.sigstore.jsonl"):
+			fmt.Fprint(w, "signed checksum bundle")
 		case strings.HasSuffix(r.URL.Path, "/"+archiveName):
 			http.Error(w, "mirror unavailable", http.StatusServiceUnavailable)
 		default:
@@ -402,6 +424,100 @@ func TestRunFallsBackToImmutableGitHubMirrorWhenEmisarDownloadFails(t *testing.T
 	}
 	if !strings.Contains(stderr.String(), "GitHub release mirror") {
 		t.Fatalf("fallback was not surfaced: %s", stderr.String())
+	}
+}
+
+func TestRunRetriesAnInvalidChecksumSidecarAndFailsClosedWhenBothMirrorsFail(t *testing.T) {
+	for _, test := range []struct {
+		name              string
+		fallbackAvailable bool
+		wantError         string
+	}{
+		{name: "fallback accepts the publisher size limit", fallbackAvailable: true},
+		{name: "both mirrors fail", wantError: "release checksum signature is required"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			root := t.TempDir()
+			executable := writeReceiptFixture(t, root, officialRepository)
+			name := fmt.Sprintf("emisar-0.24.1-%s-%s", runtime.GOOS, runtime.GOARCH)
+			archive := releaseArchive(t, name, map[string]archiveEntry{
+				name + "/emisar":     {body: "runner-binary", mode: 0o755},
+				name + "/install.sh": {body: "#!/usr/bin/env bash\n", mode: 0o755},
+			})
+			digest := sha256.Sum256(archive)
+			archiveName := name + ".tar.gz"
+			checksums := hex.EncodeToString(digest[:]) + "  " + archiveName + "\n"
+
+			var bundleRequests int
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				switch {
+				case r.URL.Path == "/latest.json":
+					fmt.Fprint(w, `{"schema_version":1,"component":"runner","tag":"runner-v0.24.1","version":"0.24.1","source_revision":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}`)
+				case strings.HasSuffix(r.URL.Path, "/"+archiveName):
+					_, _ = w.Write(archive)
+				case strings.HasSuffix(r.URL.Path, "/SHA256SUMS"):
+					fmt.Fprint(w, checksums)
+				case strings.HasSuffix(r.URL.Path, "/SHA256SUMS.sigstore.jsonl"):
+					bundleRequests++
+					if strings.Contains(r.URL.Path, "/releases/download/") {
+						if !test.fallbackAvailable {
+							http.Error(w, "fallback unavailable", http.StatusServiceUnavailable)
+							return
+						}
+						_, _ = w.Write(bytes.Repeat([]byte{'b'}, int(maxChecksumBundleBytes)))
+						return
+					}
+					// A 200 response that overruns the limit creates a partial file;
+					// fallback must remove it before opening the same path again.
+					_, _ = w.Write(bytes.Repeat([]byte{'a'}, int(maxChecksumBundleBytes+1)))
+				default:
+					http.NotFound(w, r)
+				}
+			}))
+			defer server.Close()
+
+			installerCalled := false
+			deps := testDependencies(executable)
+			deps.releaseBase = server.URL
+			deps.apiBase = server.URL
+			deps.downloadBase = server.URL
+			deps.httpClient = server.Client()
+			deps.tempRoot = root
+			deps.runCommand = func(_ context.Context, command string, args, _ []string, stdout, _ io.Writer) error {
+				if handled, err := handleSafeTargetPreflight(command, args, stdout,
+					filepath.Join(root, "etc"), filepath.Join(root, "data")); handled {
+					return err
+				}
+				if command == "/bin/bash" {
+					installerCalled = true
+				}
+				return nil
+			}
+
+			var stderr bytes.Buffer
+			err := run(context.Background(), Options{
+				CurrentVersion: "0.24.0",
+				Stderr:         &stderr,
+			}, deps)
+			if test.wantError != "" {
+				if err == nil || !strings.Contains(err.Error(), test.wantError) {
+					t.Fatalf("error = %v, want %q", err, test.wantError)
+				}
+				if installerCalled {
+					t.Fatal("installer ran without a verified checksum signature")
+				}
+			} else if err != nil {
+				t.Fatalf("run: %v", err)
+			} else if !installerCalled {
+				t.Fatal("installer did not run after verified sidecar fallback")
+			}
+			if bundleRequests != 2 {
+				t.Fatalf("bundle requests = %d, want primary plus fallback", bundleRequests)
+			}
+			if !strings.Contains(stderr.String(), "checksum signature unavailable") {
+				t.Fatalf("sidecar fallback was not surfaced: %s", stderr.String())
+			}
+		})
 	}
 }
 
@@ -538,7 +654,7 @@ func testDependencies(executable string) dependencies {
 		executable:   func() (string, error) { return executable, nil },
 		effectiveID:  func() int { return 0 },
 		trustPath:    func(string, fs.FileInfo) error { return nil },
-		lookPath:     func(string) (string, error) { return "", fs.ErrNotExist },
+		lookPath:     func(string) (string, error) { return "/usr/bin/gh", nil },
 		runCommand:   func(context.Context, string, []string, []string, io.Writer, io.Writer) error { return nil },
 		httpClient:   http.DefaultClient,
 		releaseBase:  releaseBaseURL,
@@ -549,6 +665,10 @@ func testDependencies(executable string) dependencies {
 
 func handleSafeTargetPreflight(command string, args []string, stdout io.Writer, etcDir, dataDir string) (bool, error) {
 	switch {
+	case strings.Join(args, " ") == "auth status":
+		return true, nil
+	case len(args) > 1 && args[0] == "attestation" && args[1] == "verify":
+		return true, nil
 	case strings.Join(args, " ") == "state --help":
 		_, _ = io.WriteString(stdout, "  check-dispatch-log\n")
 		return true, nil

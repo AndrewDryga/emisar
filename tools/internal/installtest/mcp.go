@@ -58,15 +58,175 @@ func mcpHelpContract(h *harness) error {
 	if err != nil {
 		return err
 	}
-	if !strings.Contains(string(output), "EMISAR_ATTESTATION_WORKFLOW") {
-		return fmt.Errorf("installer help omits EMISAR_ATTESTATION_WORKFLOW:\n%s", output)
+	for _, want := range []string{"EMISAR_ATTESTATION_WORKFLOW", "EMISAR_ALLOW_UNSIGNED_CHECKSUM", "--allow-unsigned-checksum"} {
+		if !strings.Contains(string(output), want) {
+			return fmt.Errorf("installer help omits %s:\n%s", want, output)
+		}
+	}
+	return nil
+}
+
+func mcpChecksumSignature(h *harness) error {
+	return checksumSignatureContract(h, "install-mcp.sh", "SHA256SUMS-MCP", "mcp-v0.11.0",
+		"AndrewDryga/emisar/.github/workflows/mcp-release-trusted.yml")
+}
+
+func checksumSignatureContract(h *harness, installer, checksums, version, workflow string) error {
+	path := h.repoPath(installer)
+	trace := h.path(installer + "-checksum-signature-argv")
+	bundlePath := trace + ".bundle"
+	names := []string{"continue_without_checksum_signature", "download_checksum_bundle", "verify_checksum_attestation"}
+	preamble := `
+log() { printf '%s\n' "$*"; }
+warn() { printf '%s\n' "$*" >&2; }
+die() { printf '%s\n' "$*" >&2; exit 1; }
+curl() {
+  [ "$BUNDLE_DOWNLOAD_FAIL" = "0" ] || return 1
+  local max_filesize= output= url=
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      --max-filesize) max_filesize="$2"; shift 2 ;;
+      -o) output="$2"; shift 2 ;;
+      http://*|https://*) url="$1"; shift ;;
+      *) shift ;;
+    esac
+  done
+  [ "$max_filesize" = "$MAX_ATTESTATION_BUNDLE_BYTES" ] || return 1
+  [ -n "$output" ] || return 1
+  if [ "$PRIMARY_BUNDLE_DOWNLOAD_FAIL" = "1" ] && [ "$url" = "https://primary.invalid/signature" ]; then
+    return 1
+  fi
+  if [ "$BUNDLE_OVERSIZE" = "1" ] || { [ "$PRIMARY_BUNDLE_OVERSIZE" = "1" ] && [ "$url" = "https://primary.invalid/signature" ]; }; then
+    dd if=/dev/zero of="$output" bs=1048576 count=4 2>/dev/null
+    printf x >>"$output"
+    return 0
+  fi
+  if [ "$BUNDLE_EXACT_LIMIT" = "1" ]; then
+    dd if=/dev/zero of="$output" bs=1048576 count=4 2>/dev/null
+    return 0
+  fi
+  printf 'bundle\n' >"$output"
+}
+gh() {
+  printf '%s' "$1" >>"$TRACE"
+  shift
+  printf '|%s' "$@" >>"$TRACE"
+  printf '\n' >>"$TRACE"
+  [ "$VERIFY_FAIL" = "0" ]
+}
+command() {
+  if [ "${1:-}" = "-v" ] && [ "${2:-}" = "gh" ] && [ "$MISSING_GH" = "1" ]; then
+    return 1
+  fi
+  builtin command "$@"
+}
+REPO=andrewdryga/emisar
+VERSION=` + version + `
+ATTESTATION_WORKFLOW=` + workflow + `
+ATTESTATION_SIGNER_DIGEST=
+ATTESTATION_SOURCE_REF=refs/tags/` + version + `
+ATTESTATION_DENY_SELF_HOSTED=1
+REQUIRE_ARCHIVE_ATTESTATION=0
+ALLOW_UNSIGNED_CHECKSUM=0
+MAX_ATTESTATION_BUNDLE_BYTES=4194304
+BUNDLE_DOWNLOAD_FAIL=0
+PRIMARY_BUNDLE_DOWNLOAD_FAIL=0
+PRIMARY_BUNDLE_OVERSIZE=0
+BUNDLE_OVERSIZE=0
+BUNDLE_EXACT_LIMIT=0
+MISSING_GH=0
+VERIFY_FAIL=0
+BUNDLE_PATH="$TRACE.bundle"
+`
+	invoke := `verify_checksum_attestation /verified/` + checksums + ` https://example.invalid/` + checksums + `.sigstore.jsonl "$BUNDLE_PATH"
+`
+
+	success := h.functions(path, names, preamble+invoke, map[string]string{"TRACE": trace})
+	output, err := requireOutput(success)
+	if err != nil {
+		return fmt.Errorf("valid downloaded signature: %w", err)
+	}
+	if !strings.Contains(string(output), "checksum signature verified") {
+		return fmt.Errorf("successful downloaded signature was not surfaced:\n%s", output)
+	}
+	expectedTrace := "attestation|verify|/verified/" + checksums + "|--bundle|" + bundlePath +
+		"|--repo|andrewdryga/emisar|--signer-workflow|" + workflow +
+		"|--source-ref|refs/tags/" + version + "|--deny-self-hosted-runners\n"
+	if err := exactFile(trace, expectedTrace); err != nil {
+		return err
+	}
+
+	badSignature := h.functions(path, names, preamble+"VERIFY_FAIL=1\n"+invoke, map[string]string{"TRACE": trace})
+	if err := expectFailure(badSignature, "refusing to trust a same-origin checksum"); err != nil {
+		return fmt.Errorf("bad checksum signature did not fail closed: %w", err)
+	}
+	missingVerifier := h.functions(path, names, preamble+"MISSING_GH=1\n"+invoke, map[string]string{"TRACE": trace})
+	if err := expectFailure(missingVerifier, "gh is not installed"); err != nil {
+		return fmt.Errorf("missing verifier did not fail closed: %w", err)
+	}
+	missingBundle := h.functions(path, names, preamble+"BUNDLE_DOWNLOAD_FAIL=1\n"+invoke, map[string]string{"TRACE": trace})
+	if err := expectFailure(missingBundle, "could not download the checksum signature"); err != nil {
+		return fmt.Errorf("missing checksum signature did not fail closed: %w", err)
+	}
+	fallbackInvoke := `verify_checksum_attestation /verified/` + checksums + ` https://primary.invalid/signature "$BUNDLE_PATH" https://fallback.invalid/signature
+`
+	fallback := h.functions(path, names, preamble+"PRIMARY_BUNDLE_DOWNLOAD_FAIL=1\n"+fallbackInvoke, map[string]string{"TRACE": trace})
+	output, err = requireOutput(fallback)
+	if err != nil {
+		return fmt.Errorf("checksum signature mirror fallback: %w", err)
+	}
+	if !strings.Contains(string(output), "using the GitHub release mirror") ||
+		!strings.Contains(string(output), "checksum signature verified") {
+		return fmt.Errorf("checksum signature mirror fallback was not surfaced:\n%s", output)
+	}
+	oversizedPrimary := h.functions(path, names, preamble+"PRIMARY_BUNDLE_OVERSIZE=1\n"+fallbackInvoke, map[string]string{"TRACE": trace})
+	if _, err := requireOutput(oversizedPrimary); err != nil {
+		return fmt.Errorf("oversized primary checksum signature fallback: %w", err)
+	}
+	if err := exactFile(bundlePath, "bundle\n"); err != nil {
+		return fmt.Errorf("oversized primary checksum signature left partial bytes: %w", err)
+	}
+	oversized := h.functions(path, names, preamble+"BUNDLE_OVERSIZE=1\n"+invoke, map[string]string{"TRACE": trace})
+	if err := expectFailure(oversized, "could not download the checksum signature"); err != nil {
+		return fmt.Errorf("oversized checksum signature did not fail closed: %w", err)
+	}
+	if err := requireAbsent(bundlePath); err != nil {
+		return fmt.Errorf("oversized checksum signature left a partial file: %w", err)
+	}
+	exactLimit := h.functions(path, names, preamble+"BUNDLE_EXACT_LIMIT=1\n"+invoke, map[string]string{"TRACE": trace})
+	if _, err := requireOutput(exactLimit); err != nil {
+		return fmt.Errorf("maximum-size checksum signature: %w", err)
+	}
+	info, err := os.Stat(bundlePath)
+	if err != nil {
+		return fmt.Errorf("stat maximum-size checksum signature: %w", err)
+	}
+	if info.Size() != 4*1024*1024 {
+		return fmt.Errorf("maximum-size checksum signature = %d bytes, want %d", info.Size(), 4*1024*1024)
+	}
+	breakGlass := h.functions(path, names, preamble+"VERIFY_FAIL=1\nALLOW_UNSIGNED_CHECKSUM=yes\n"+invoke, map[string]string{"TRACE": trace})
+	output, err = requireOutput(breakGlass)
+	if err != nil {
+		return fmt.Errorf("explicit checksum break glass: %w", err)
+	}
+	if !strings.Contains(string(output), "SECURITY BREAK GLASS") ||
+		!strings.Contains(string(output), "same-origin checksum is the only remaining download control") {
+		return fmt.Errorf("checksum break glass was not conspicuous:\n%s", output)
+	}
+	fork := h.functions(path, names, preamble+"REPO=example/emisar\nATTESTATION_WORKFLOW=\n"+invoke, map[string]string{"TRACE": trace})
+	output, err = requireOutput(fork)
+	if err != nil {
+		return fmt.Errorf("fork checksum policy: %w", err)
+	}
+	if !strings.Contains(string(output), "operator-selected repository's checksum policy") {
+		return fmt.Errorf("fork checksum policy was not surfaced:\n%s", output)
 	}
 	return nil
 }
 
 func mcpAttestationReleaseEpochs(h *harness) error {
 	trace := h.path("mcp-attestation-argv")
-	result := h.functions(h.repoPath("install-mcp.sh"), []string{"select_attestation_policy", "verify_attestation"}, `
+	result := h.functions(h.repoPath("install-mcp.sh"), []string{"signed_checksum_published", "select_attestation_policy", "verify_attestation"}, `
 log() { :; }
 warn() { :; }
 die() { printf '%s\n' "$*" >&2; exit 1; }
@@ -85,18 +245,18 @@ REPO=$OFFICIAL_REPO
 for VERSION in mcp-v0.10.1 mcp-v0.10.2 mcp-v0.9.99; do
   ATTESTATION_WORKFLOW=
   select_attestation_policy
-  printf '%s|%s|%s|%s\n' "$ATTESTATION_WORKFLOW" "$ATTESTATION_SIGNER_DIGEST" "$ATTESTATION_SOURCE_REF" "$ATTESTATION_DENY_SELF_HOSTED"
+  printf '%s|%s|%s|%s|%s\n' "$ATTESTATION_WORKFLOW" "$ATTESTATION_SIGNER_DIGEST" "$ATTESTATION_SOURCE_REF" "$ATTESTATION_DENY_SELF_HOSTED" "$REQUIRE_ARCHIVE_ATTESTATION"
 done
 REPO=example/emisar
 VERSION=mcp-v0.10.1
 ATTESTATION_WORKFLOW=
 select_attestation_policy
-printf '%s|%s|%s|%s\n' "$ATTESTATION_WORKFLOW" "$ATTESTATION_SIGNER_DIGEST" "$ATTESTATION_SOURCE_REF" "$ATTESTATION_DENY_SELF_HOSTED"
+printf '%s|%s|%s|%s|%s\n' "$ATTESTATION_WORKFLOW" "$ATTESTATION_SIGNER_DIGEST" "$ATTESTATION_SOURCE_REF" "$ATTESTATION_DENY_SELF_HOSTED" "$REQUIRE_ARCHIVE_ATTESTATION"
 
 VERSION=mcp-v0.10.1
 ATTESTATION_WORKFLOW=example/emisar/.github/workflows/release.yml
 select_attestation_policy
-printf '%s|%s|%s|%s\n' "$ATTESTATION_WORKFLOW" "$ATTESTATION_SIGNER_DIGEST" "$ATTESTATION_SOURCE_REF" "$ATTESTATION_DENY_SELF_HOSTED"
+printf '%s|%s|%s|%s|%s\n' "$ATTESTATION_WORKFLOW" "$ATTESTATION_SIGNER_DIGEST" "$ATTESTATION_SOURCE_REF" "$ATTESTATION_DENY_SELF_HOSTED" "$REQUIRE_ARCHIVE_ATTESTATION"
 
 REPO=$OFFICIAL_REPO
 for VERSION in mcp-v0.10.1 mcp-v0.10.2; do
@@ -114,18 +274,21 @@ verify_attestation /verified/mcp.tar.gz mcp.tar.gz
 	if err != nil {
 		return err
 	}
-	const expected = "AndrewDryga/emisar/.github/workflows/mcp-release.yml|642128eb48205405fd44ce845118e6a68737eea2|refs/tags/mcp-v0.10.1|1\n" +
-		"AndrewDryga/emisar/.github/workflows/mcp-release-trusted.yml||refs/tags/mcp-v0.10.2|1\n" +
-		"AndrewDryga/emisar/.github/workflows/mcp-release-trusted.yml||refs/tags/mcp-v0.9.99|1\n" +
-		"|||0\n" +
-		"example/emisar/.github/workflows/release.yml|||0\n"
+	const expected = "AndrewDryga/emisar/.github/workflows/mcp-release.yml|642128eb48205405fd44ce845118e6a68737eea2|refs/tags/mcp-v0.10.1|1|1\n" +
+		"AndrewDryga/emisar/.github/workflows/mcp-release-trusted.yml||refs/tags/mcp-v0.10.2|1|1\n" +
+		"AndrewDryga/emisar/.github/workflows/mcp-release-trusted.yml||refs/tags/mcp-v0.9.99|1|1\n" +
+		"|||0|0\n" +
+		"example/emisar/.github/workflows/release.yml|||0|0\n"
 	if string(output) != expected {
 		return fmt.Errorf("attestation policies = %q, want %q", output, expected)
 	}
 	const expectedTrace = "attestation|verify|/verified/mcp.tar.gz|--repo|andrewdryga/emisar|--signer-workflow|AndrewDryga/emisar/.github/workflows/mcp-release.yml|--source-ref|refs/tags/mcp-v0.10.1|--signer-digest|642128eb48205405fd44ce845118e6a68737eea2|--deny-self-hosted-runners\n" +
 		"attestation|verify|/verified/mcp.tar.gz|--repo|andrewdryga/emisar|--signer-workflow|AndrewDryga/emisar/.github/workflows/mcp-release-trusted.yml|--source-ref|refs/tags/mcp-v0.10.2|--deny-self-hosted-runners\n" +
 		"attestation|verify|/verified/mcp.tar.gz|--repo|example/emisar|--signer-workflow|example/emisar/.github/workflows/release.yml\n"
-	return exactFile(trace, expectedTrace)
+	if err := exactFile(trace, expectedTrace); err != nil {
+		return err
+	}
+	return mcpChecksumSignature(h)
 }
 
 func mcpLatestRelease(h *harness) error {

@@ -755,25 +755,43 @@ redirects.
 environment-based, not protocol-negotiated. `install.sh` accepts runner tags
 in `runner-vX.Y.Z`, `vX.Y.Z`, or `X.Y.Z` form and flags including `--yes`,
 `--uninstall`, `--purge`, `--no-start`, `--no-service`,
-`--bin-dir`, `--etc-dir`, `--data-dir`, `--log-dir`, `--user`, and `--packs`. Its
+`--bin-dir`, `--etc-dir`, `--data-dir`, `--log-dir`, `--user`, `--packs`, and
+the explicit recovery flag `--allow-unsigned-checksum`. Its
 environment is `VERSION`, `BIN_DIR`, `ETC_DIR`, `DATA_DIR`, `LOG_DIR`,
 `SERVICE_USER`, `SERVICE_GROUP`, `ASSUME_YES`, `NO_START`, `NO_SERVICE`,
 `EMISAR_PACKS`, `EMISAR_URL`, `EMISAR_ENROLLMENT_KEY`, `EMISAR_REPO`,
 `EMISAR_GITHUB_TOKEN`, `EMISAR_GROUP`, `EMISAR_RUNNER_ID`,
-`EMISAR_RUNNER_LABEL_<KEY>`, `EMISAR_ATTESTATION_WORKFLOW`, and
-`QUARANTINE_DISPATCH_LOG`. Every one is named rather than summarized, because a
-variable this inventory does not name is a variable nobody reviews before it
-freezes.
+`EMISAR_RUNNER_LABEL_<KEY>`, `EMISAR_ATTESTATION_WORKFLOW`,
+`EMISAR_ALLOW_UNSIGNED_CHECKSUM`, and `QUARANTINE_DISPATCH_LOG`. Every one is
+named rather than summarized, because a variable this inventory does not name
+is a variable nobody reviews before it freezes.
 
 A yes/no variable here — `ASSUME_YES`, `NO_START`, `NO_SERVICE`, and
-`EMISAR_ALLOW_INSECURE` in both the bridge and PowerShell installer — accepts
-`1`, `true`, `yes`, `y` or `on`, in any case. They previously required the
-literal `1`, so `ASSUME_YES=true` left
+`EMISAR_ALLOW_UNSIGNED_CHECKSUM` in both shell installers, plus
+`EMISAR_ALLOW_INSECURE` in the bridge and PowerShell installer — accepts `1`,
+`true`, `yes`, `y` or `on`, in any case. They previously required the literal
+`1`, so `ASSUME_YES=true` left
 the installer interactive, hit a prompt with no terminal and died, and
 `EMISAR_ALLOW_INSECURE=true` silently kept the safety on. Anything unrecognised
-is false, so an unknown value never fails open. `EMISAR_ATTESTATION_WORKFLOW` is the supply-chain-relevant one: it
-selects the workflow identity Sigstore provenance is matched against, and a fork
-or mirror must set it or fall back to the checksum alone.
+is false, so an unknown value never fails open. `EMISAR_ATTESTATION_WORKFLOW`
+selects the workflow identity Sigstore provenance is matched against. An
+official runner 0.23.1 or newer, or MCP bridge 0.11.0 or newer, authenticates
+the combined checksum with its downloaded Sigstore bundle before trusting an
+archive digest and fails closed when the bundle, verifier, or signature is
+unavailable. Those are the first releases that publish combined-checksum
+bundles. A downloaded attestation bundle is capped at 4 MiB; a failed or
+oversized download is removed before the other release mirror is tried. The
+only authenticated pre-bundle rollback targets are runner 0.22.1 and MCP
+0.10.1. Each requires an authenticated GitHub CLI to verify the archive against
+its exact legacy workflow, workflow digest, and release tag. Earlier official
+tags have no accepted pinned legacy workflow identity and fail authenticated
+verification. The standalone installer break glass may accept the checksum
+when GitHub CLI is missing or unauthenticated; a negative online verification
+always refuses the install. `emisar update` has no break glass. A fork or mirror sets its own
+workflow or retains its operator-owned checksum policy. The
+`--allow-unsigned-checksum`/`EMISAR_ALLOW_UNSIGNED_CHECKSUM` recovery path is
+the only official checksum-only fallback; it prints a security warning that the
+release origin can replace both checksum and archive.
 `QUARANTINE_DISPATCH_LOG` is advertised in the installer's own output, not its
 `--help`, and is frozen on the same footing.
 An unattended runner install requires `--yes` plus an explicit
@@ -782,10 +800,10 @@ and preserves existing ones. A caller without a controlling terminal is refused
 without `--yes`. Interactive installs may leave pack selection unset to review
 host-matched recommendations.
 
-`install-mcp.sh` accepts `--version`, `--install-dir`, `--uninstall`, and
-`--yes`. It accepts
+`install-mcp.sh` accepts `--version`, `--install-dir`, `--uninstall`, `--yes`,
+and `--allow-unsigned-checksum`. It accepts
 `VERSION`, `INSTALL_DIR`, `EMISAR_REPO`, `EMISAR_GITHUB_TOKEN`, `ASSUME_YES`,
-`EMISAR_ATTESTATION_WORKFLOW`,
+`EMISAR_ATTESTATION_WORKFLOW`, `EMISAR_ALLOW_UNSIGNED_CHECKSUM`,
 and `EMISAR_URL` (the portal the connection phase talks to and writes into
 configs; default `https://emisar.dev`). The bridge installer also requires the
 selected GitHub release to be marked immutable. The current release tags are
@@ -802,18 +820,27 @@ were left in place when the bridge predates it, rather than reporting a
 removal that did not happen.
 
 `install-mcp.ps1` accepts `-Version`, `-InstallDir`,
-`-PortalOrigin`, `-Uninstall`, `-Yes`, and `-ConnectAll`. Its environment is
+`-PortalOrigin`, `-Uninstall`, `-Yes`, `-ConnectAll`, and the explicit recovery
+parameter `-AllowUnsignedChecksum`. Its environment is
 `EMISAR_URL`, `EMISAR_REPO`, `EMISAR_GITHUB_TOKEN`,
-`EMISAR_ATTESTATION_WORKFLOW`, `EMISAR_ALLOW_INSECURE`, and
-`EMISAR_MCP_TEST_BASE_URL`. The last is the one test-only read in any shipped
-installer, kept because the release origin has no operator-facing equivalent,
-and accepted only for a loopback origin with an affirmative
-`EMISAR_ALLOW_INSECURE` value described above. Install
+`EMISAR_ATTESTATION_WORKFLOW`, `EMISAR_ALLOW_UNSIGNED_CHECKSUM`,
+`EMISAR_ALLOW_INSECURE`, and `EMISAR_MCP_TEST_BASE_URL`. The last is the one
+test-only read in any shipped installer, kept because the release origin has no
+operator-facing equivalent, and accepted only for a loopback origin with an
+affirmative `EMISAR_ALLOW_INSECURE` value described above. Install
 locations are never redirected by a test variable: the installer reads the real
 `APPDATA` and `LOCALAPPDATA`, so its harness sets those the way the Unix
 harness sets real variables and PATH shims. It installs the native
-`windows-amd64` or `windows-arm64` zip per user, verifies `SHA256SUMS-MCP`, and
-checks Sigstore provenance when an authenticated GitHub CLI is available. It
+`windows-amd64` or `windows-arm64` zip per user. For MCP 0.11.0 or newer it
+authenticates `SHA256SUMS-MCP` from its downloaded Sigstore bundle without a
+GitHub login, then checks the archive digest. The bundle is capped at 4 MiB and
+a failed download leaves no partial file. MCP 0.10.1 is the only accepted
+pre-bundle rollback target and requires authenticated online archive
+provenance; earlier tags have no accepted pinned legacy workflow identity. A
+missing or invalid required checksum-bundle signature can use the deliberately
+selected checksum-only recovery path. On the pre-bundle path, that recovery is
+available only when GitHub CLI is missing or unauthenticated; a negative online
+verification always refuses the install. It
 uses protected Windows DACLs for the binary directory and direct-CLI
 credentials, and delegates the connection phase to the same `connect` and
 `disconnect` commands.

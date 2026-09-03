@@ -174,17 +174,19 @@ func sandboxConfigHome(overrides map[string]string) map[string]string {
 	return sandboxedOverrides
 }
 
-// requireAttestationOutcome holds the installers to one of two stated outcomes
-// for the release provenance check, so it can never pass by doing nothing.
+// requireAttestationOutcome requires the downloaded checksum signature on every
+// official install, then holds the additional per-archive provenance check to
+// one of two stated outcomes so it can never pass by doing nothing.
 //
-// Which one is correct depends on the machine: with an authenticated gh the
-// release must verify, and without one the installer must say why it skipped.
-// A contributor's laptop usually takes the skip branch and CI takes the verify
-// branch, so asserting only one of them would leave the other unguarded — and
-// the skip branch is exactly where a broken signer pin hides, because a failure
-// to check looks identical to nothing to check.
+// Which archive outcome is correct depends on the machine: with an
+// authenticated gh the release must verify, and without one the installer must
+// say why it skipped. The checksum signature itself needs no authentication and
+// may never skip.
 func (h *harness) requireAttestationOutcome(env map[string]string, output []byte) error {
 	text := string(output)
+	if !strings.Contains(text, "checksum signature verified") {
+		return fmt.Errorf("the installer did not verify the downloaded checksum signature:\n%s", text)
+	}
 	if h.attestationVerifierReady(env) {
 		if !strings.Contains(text, "attestation verified") {
 			return fmt.Errorf("an authenticated gh is available but the installer did not verify the release attestation:\n%s", text)

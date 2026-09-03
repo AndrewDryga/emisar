@@ -42,7 +42,19 @@ Windows PowerShell:
 irm https://emisar.dev/install-mcp.ps1 | iex
 ```
 
-Both installers resolve the latest tagged release and verify its checksum. The
+Both installers resolve the latest tagged release. GitHub CLI verifies the
+release's downloaded `SHA256SUMS-MCP.sigstore.jsonl` bundle against the exact
+tag, trusted workflow, and GitHub-hosted runner. It needs no GitHub login, but a
+fresh cache must reach `tuf-repo-cdn.sigstore.dev:443` and
+`tuf-repo.github.com:443` for the public trust roots. Only then do the installers
+trust the checksum used for the archive. A missing verifier, bundle, or valid
+signature refuses MCP 0.11.0 or newer unless the operator explicitly uses the
+`--allow-unsigned-checksum`/`-AllowUnsignedChecksum` break glass. MCP 0.10.1 is
+the only accepted pre-bundle rollback target; it requires an authenticated
+GitHub CLI to verify the archive against its pinned legacy workflow identity.
+Earlier tags have no accepted pinned identity and fail authenticated
+verification. The same break glass can continue only when GitHub CLI is missing
+or unauthenticated; a negative online provenance result always refuses the install. The
 Unix installer puts `emisar-mcp` in `/usr/local/bin`; set
 `INSTALL_DIR="$HOME/.local/bin"` for a no-sudo installation. The Windows
 installer puts `emisar-mcp.exe` in the current user's Programs directory and

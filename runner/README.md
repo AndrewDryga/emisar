@@ -13,7 +13,10 @@ permitted command into a sandbox.
 ## Install and prove it works
 
 The supported production target is Linux with systemd. macOS with launchd is
-available for development and evaluation.
+available for development and evaluation. Install GitHub CLI with
+`gh attestation verify --bundle`, and allow HTTPS to
+`tuf-repo-cdn.sigstore.dev:443` and `tuf-repo.github.com:443` so it can load the
+public trust roots. Release verification does not require a GitHub login.
 
 1. In the emisar console, choose **Connect a runner**. The generated command
    contains the control-plane URL and a fresh, single-use enrollment key.
@@ -24,9 +27,9 @@ available for development and evaluation.
      | sudo EMISAR_ENROLLMENT_KEY=emkey-enroll-... EMISAR_URL=https://emisar.dev bash
    ```
 
-   The installer verifies the release checksum, creates a dedicated `emisar`
-   user on Linux, installs the service, adds host-matched starter packs, and
-   starts the runner.
+   The installer authenticates the signed release checksum, verifies the
+   archive against it, creates a dedicated `emisar` user on Linux, installs the
+   service, adds host-matched starter packs, and starts the runner.
 3. Verify the host and the control-plane connection:
 
    ```sh
@@ -254,9 +257,21 @@ procedure before using the managed updater; never move its durable journal to
 make an update pass.
 
 The selected release is downloaded from `emisar.dev`, with GitHub Releases as a
-secondary mirror when that path is unavailable. Its archive is verified against
-`SHA256SUMS`, and an installed, authenticated `gh` CLI also verifies the release
-workflow attestation before the bundled installer runs.
+secondary mirror when that path is unavailable. GitHub CLI verifies the
+downloaded `SHA256SUMS.sigstore.jsonl` bundle against the exact release tag,
+trusted workflow, and GitHub-hosted runner; it needs no GitHub login but fetches
+public trust roots from `tuf-repo-cdn.sigstore.dev:443` and
+`tuf-repo.github.com:443` on a fresh cache. The archive is then verified against
+those authenticated checksum bytes. A missing verifier, bundle, or valid
+signature refuses a runner 0.23.1 or newer. Runner 0.22.1 is the only accepted
+pre-bundle rollback target; it requires an authenticated GitHub CLI to verify
+the archive against its pinned legacy workflow identity. Earlier tags have no
+accepted pinned identity and fail authenticated verification. If GitHub CLI is
+missing or not authenticated, the standalone installer's
+explicit `--allow-unsigned-checksum` break glass retains the archive checksum
+but accepts that a compromised release origin could replace both it and the
+archive. A negative online provenance result always refuses the install, and
+`emisar update` has no break-glass path.
 
 Fresh unattended installs still require an explicit pack set. Pass reviewed
 pack IDs when provisioning a host, or set an empty value to add none:
@@ -265,8 +280,13 @@ pack IDs when provisioning a host, or set an empty value to add none:
 curl -fsSL https://emisar.dev/install.sh | sudo EMISAR_PACKS="" bash -s -- --yes
 ```
 
-The installer bundled in a release tarball pins itself to that release and can
-be moved to an offline host with the tarball and `SHA256SUMS` file.
+The installer bundled in a release tarball pins itself to that release. For a
+disconnected verification, obtain `trusted_root.jsonl` on a connected staging
+machine with `gh attestation trusted-root`, transfer it with the archive,
+`SHA256SUMS`, and `SHA256SUMS.sigstore.jsonl`, then run the manual verification
+with `gh attestation verify --custom-trusted-root`. The installer does not take
+a custom trusted-root path, so complete this check and place the binary
+manually rather than piping the installer in a disconnected environment.
 
 To remove the service while retaining configuration and local evidence:
 

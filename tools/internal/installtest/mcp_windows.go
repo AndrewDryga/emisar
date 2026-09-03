@@ -112,6 +112,9 @@ func testWindowsMCPInstaller(root, shell string) error {
 	if err := testWindowsAttestationPolicies(root, shell, temp); err != nil {
 		return err
 	}
+	if err := testWindowsBundleDownloadLimit(root, shell, temp); err != nil {
+		return err
+	}
 
 	releaseDir := filepath.Join(temp, "release")
 	archiveRoot := "emisar-mcp-" + windowsMCPVersion + "-windows-" + runtime.GOARCH
@@ -516,6 +519,87 @@ if (Test-SafePortalOrigin "http://portal.example/path") { throw "HTTP origin wit
 	return nil
 }
 
+func testWindowsBundleDownloadLimit(root, shell, temp string) error {
+	installer := filepath.Join(root, "install-mcp.ps1")
+	functionNames := []string{"Test-Truthy", "Test-TrustedWebUri", "New-WebClient", "Save-WebFile"}
+	var functions strings.Builder
+	for _, name := range functionNames {
+		function, err := powershellFunction(installer, name)
+		if err != nil {
+			return err
+		}
+		functions.WriteString(function)
+	}
+
+	const maximum = 4 * 1024 * 1024
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		size := maximum
+		if request.URL.Path == "/oversized" {
+			size++
+		} else if request.URL.Path != "/maximum" {
+			http.NotFound(writer, request)
+			return
+		}
+		writer.Header().Set("Content-Type", "application/octet-stream")
+		if flusher, ok := writer.(http.Flusher); ok {
+			flusher.Flush()
+		}
+		chunk := bytes.Repeat([]byte{'x'}, 32*1024)
+		for written := 0; written < size; {
+			remaining := size - written
+			if remaining > len(chunk) {
+				remaining = len(chunk)
+			}
+			count, err := writer.Write(chunk[:remaining])
+			if err != nil {
+				return
+			}
+			written += count
+		}
+	}))
+	defer server.Close()
+
+	destination := filepath.Join(temp, "bounded-attestation.sigstore.jsonl")
+	script := `
+Set-StrictMode -Version 2.0
+$ErrorActionPreference = "Stop"
+[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+Add-Type -AssemblyName System.Net.Http
+function Stop-Install([string]$Message) { throw $Message }
+` + functions.String() + `
+$env:EMISAR_ALLOW_INSECURE = "yes"
+try {
+    Save-WebFile $env:EMISAR_OVERSIZED_BUNDLE $env:EMISAR_BUNDLE_PATH 4194304
+    throw "oversized bundle was accepted"
+} catch {
+    if ($_.Exception.Message -notmatch "exceeds") { throw }
+}
+if (Test-Path -LiteralPath $env:EMISAR_BUNDLE_PATH) {
+    throw "oversized bundle left a partial file"
+}
+Save-WebFile $env:EMISAR_MAXIMUM_BUNDLE $env:EMISAR_BUNDLE_PATH 4194304
+if ((Get-Item -LiteralPath $env:EMISAR_BUNDLE_PATH).Length -ne 4194304) {
+    throw "maximum-size bundle was not preserved"
+}
+`
+	path := filepath.Join(temp, "bundle-download-limit.ps1")
+	if err := os.WriteFile(path, []byte(script), 0o600); err != nil {
+		return err
+	}
+	output, err := runPowerShellInstaller(shell, path, environment(map[string]string{
+		"EMISAR_OVERSIZED_BUNDLE": server.URL + "/oversized",
+		"EMISAR_MAXIMUM_BUNDLE":   server.URL + "/maximum",
+		"EMISAR_BUNDLE_PATH":      destination,
+	}))
+	if err != nil {
+		return fmt.Errorf("bundle download limit: %w\n%s", err, output)
+	}
+	if len(bytes.TrimSpace(output)) != 0 {
+		return fmt.Errorf("bundle download limit wrote unexpected output: %q", output)
+	}
+	return nil
+}
+
 func testWindowsAttestationPolicies(root, shell, temp string) error {
 	installer := filepath.Join(root, "install-mcp.ps1")
 	policyFunction, err := powershellFunction(installer, "Get-AttestationPolicy")
@@ -526,14 +610,33 @@ func testWindowsAttestationPolicies(root, shell, temp string) error {
 	if err != nil {
 		return err
 	}
+	truthyFunction, err := powershellFunction(installer, "Test-Truthy")
+	if err != nil {
+		return err
+	}
+	breakGlassFunction, err := powershellFunction(installer, "Use-UnverifiedChecksum")
+	if err != nil {
+		return err
+	}
+	checksumFunction, err := powershellFunction(installer, "Test-ChecksumAttestation")
+	if err != nil {
+		return err
+	}
 	trace := filepath.Join(temp, "attestation-argv.txt")
-	script := policyFunction + verifyFunction + `
-function Write-WarningLine([string]$Message) {}
+	warnings := filepath.Join(temp, "attestation-warnings.txt")
+	script := policyFunction + verifyFunction + truthyFunction + breakGlassFunction + checksumFunction + `
+function Write-WarningLine([string]$Message) {
+    [IO.File]::AppendAllText($env:EMISAR_ATTESTATION_WARNINGS, ($Message + [Environment]::NewLine))
+}
 function Write-Info([string]$Message) {}
 function Stop-Install([string]$Message) { throw $Message }
+function Get-Command {
+    if ($global:MissingGh) { return $null }
+    return "gh"
+}
 function gh {
     $commandArgs = @($args)
-    $global:LASTEXITCODE = 0
+    $global:LASTEXITCODE = if ($global:VerifierFails) { 1 } else { 0 }
     if ($commandArgs.Count -gt 0 -and $commandArgs[0] -eq "auth") { return }
     [IO.File]::AppendAllText($env:EMISAR_ATTESTATION_TRACE, (($commandArgs -join "|") + [Environment]::NewLine))
 }
@@ -545,6 +648,10 @@ function Set-TestAttestationPolicy($Policy) {
 }
 
 $script:Repository = "andrewdryga/emisar"
+$AllowUnsignedChecksum = $false
+$script:RequireArchiveAttestation = $false
+$global:MissingGh = $false
+$global:VerifierFails = $false
 foreach ($tag in @("mcp-v0.10.1", "mcp-v0.10.2", "mcp-v0.9.99", "MCP-V0.10.1")) {
     $policy = Get-AttestationPolicy "andrewdryga/emisar" $tag ""
     Write-Output ("{0}|{1}|{2}|{3}" -f $policy.Workflow, $policy.SignerDigest, $policy.SourceRef, $policy.DenySelfHosted)
@@ -561,12 +668,50 @@ foreach ($tag in @("mcp-v0.10.1", "mcp-v0.10.2")) {
 $script:Repository = "example/emisar"
 Set-TestAttestationPolicy (Get-AttestationPolicy "example/emisar" "mcp-v0.10.1" "example/emisar/.github/workflows/release.yml")
 Test-Attestation "C:\verified\mcp.zip" $false
+
+$script:Repository = "andrewdryga/emisar"
+Set-TestAttestationPolicy (Get-AttestationPolicy "andrewdryga/emisar" "mcp-v0.11.0" "")
+Test-ChecksumAttestation "C:\verified\SHA256SUMS-MCP" "C:\verified\SHA256SUMS-MCP.sigstore.jsonl" $false
+$script:Repository = "example/emisar"
+Set-TestAttestationPolicy (Get-AttestationPolicy "example/emisar" "mcp-v0.11.0" "")
+Test-ChecksumAttestation "C:\verified\SHA256SUMS-MCP" "C:\verified\SHA256SUMS-MCP.sigstore.jsonl" $false
+$script:Repository = "andrewdryga/emisar"
+Set-TestAttestationPolicy (Get-AttestationPolicy "andrewdryga/emisar" "mcp-v0.11.0" "")
+$global:VerifierFails = $true
+try {
+    Test-ChecksumAttestation "C:\verified\SHA256SUMS-MCP" "C:\verified\SHA256SUMS-MCP.sigstore.jsonl" $false
+    throw "bad checksum signature was accepted"
+} catch {
+    if ($_.Exception.Message -notmatch "refusing to trust a same-origin checksum") { throw }
+}
+$global:VerifierFails = $false
+$global:MissingGh = $true
+try {
+    Test-ChecksumAttestation "C:\verified\SHA256SUMS-MCP" "C:\verified\SHA256SUMS-MCP.sigstore.jsonl" $false
+    throw "missing checksum verifier was accepted"
+} catch {
+    if ($_.Exception.Message -notmatch "gh is not installed") { throw }
+}
+$script:RequireArchiveAttestation = $true
+try {
+    Test-Attestation "C:\verified\mcp.zip" $false
+    throw "legacy release without verifier was accepted"
+} catch {
+    if ($_.Exception.Message -notmatch "predates signed checksums") { throw }
+}
+$script:RequireArchiveAttestation = $false
+$global:MissingGh = $false
+$global:VerifierFails = $true
+$AllowUnsignedChecksum = $true
+Test-ChecksumAttestation "C:\verified\SHA256SUMS-MCP" "C:\verified\SHA256SUMS-MCP.sigstore.jsonl" $false
 `
 	path := filepath.Join(temp, "attestation-policy.ps1")
 	if err := os.WriteFile(path, []byte(script), 0o600); err != nil {
 		return err
 	}
-	output, err := runPowerShellInstaller(shell, path, environment(map[string]string{"EMISAR_ATTESTATION_TRACE": trace}))
+	output, err := runPowerShellInstaller(shell, path, environment(map[string]string{
+		"EMISAR_ATTESTATION_TRACE": trace, "EMISAR_ATTESTATION_WARNINGS": warnings,
+	}))
 	if err != nil {
 		return fmt.Errorf("attestation policy: %w\n%s", err, output)
 	}
@@ -586,10 +731,21 @@ Test-Attestation "C:\verified\mcp.zip" $false
 	}
 	expectedTrace := "attestation|verify|C:\\verified\\mcp.zip|--repo|andrewdryga/emisar|--signer-workflow|AndrewDryga/emisar/.github/workflows/mcp-release.yml|--source-ref|refs/tags/mcp-v0.10.1|--signer-digest|642128eb48205405fd44ce845118e6a68737eea2|--deny-self-hosted-runners\n" +
 		"attestation|verify|C:\\verified\\mcp.zip|--repo|andrewdryga/emisar|--signer-workflow|AndrewDryga/emisar/.github/workflows/mcp-release-trusted.yml|--source-ref|refs/tags/mcp-v0.10.2|--deny-self-hosted-runners\n" +
-		"attestation|verify|C:\\verified\\mcp.zip|--repo|example/emisar|--signer-workflow|example/emisar/.github/workflows/release.yml\n"
+		"attestation|verify|C:\\verified\\mcp.zip|--repo|example/emisar|--signer-workflow|example/emisar/.github/workflows/release.yml\n" +
+		"attestation|verify|C:\\verified\\SHA256SUMS-MCP|--bundle|C:\\verified\\SHA256SUMS-MCP.sigstore.jsonl|--repo|andrewdryga/emisar|--signer-workflow|AndrewDryga/emisar/.github/workflows/mcp-release-trusted.yml|--source-ref|refs/tags/mcp-v0.11.0|--deny-self-hosted-runners\n" +
+		"attestation|verify|C:\\verified\\SHA256SUMS-MCP|--bundle|C:\\verified\\SHA256SUMS-MCP.sigstore.jsonl|--repo|andrewdryga/emisar|--signer-workflow|AndrewDryga/emisar/.github/workflows/mcp-release-trusted.yml|--source-ref|refs/tags/mcp-v0.11.0|--deny-self-hosted-runners\n" +
+		"attestation|verify|C:\\verified\\SHA256SUMS-MCP|--bundle|C:\\verified\\SHA256SUMS-MCP.sigstore.jsonl|--repo|andrewdryga/emisar|--signer-workflow|AndrewDryga/emisar/.github/workflows/mcp-release-trusted.yml|--source-ref|refs/tags/mcp-v0.11.0|--deny-self-hosted-runners\n"
 	actualTrace := strings.ReplaceAll(string(traceData), "\r\n", "\n")
 	if actualTrace != expectedTrace {
 		return fmt.Errorf("attestation argv = %q, want %q", traceData, expectedTrace)
+	}
+	warningData, err := os.ReadFile(warnings)
+	if err != nil {
+		return fmt.Errorf("read checksum break-glass warnings: %w", err)
+	}
+	if !bytes.Contains(warningData, []byte("SECURITY BREAK GLASS")) ||
+		!bytes.Contains(warningData, []byte("same-origin checksum is the only remaining download control")) {
+		return fmt.Errorf("checksum break glass was not conspicuous: %q", warningData)
 	}
 	return nil
 }

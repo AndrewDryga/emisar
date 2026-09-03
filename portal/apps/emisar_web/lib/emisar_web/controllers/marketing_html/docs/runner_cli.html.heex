@@ -4,7 +4,7 @@
   <section class="py-12 sm:py-16">
     <.docs_layout
       current="runner-cli"
-      updated="August 26, 2026"
+      updated="September 3, 2026"
       toc={[
         {"running", "Running the CLI"},
         {"connect", "The connect daemon"},
@@ -574,6 +574,7 @@ systemd-deep  0.1.10   24       sha256:84f814476179  Deeper systemd state + oper
         containerized, development, and infrastructure-managed binaries. Update those from the
         system that deployed them.
       </p>
+      <.docs_release_verifier_prerequisite />
       <.docs_code phx-no-format label="shell"><span class="text-zinc-500"># update an official installer-managed runner</span>
 <span class="text-zinc-500">$</span> sudo emisar update
 <span class="text-zinc-500">$</span> sudo emisar update --version X.Y.Z

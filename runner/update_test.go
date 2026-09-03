@@ -11,7 +11,13 @@ func TestUpdateCommandDocumentsVerifiedInstallerManagedBoundary(t *testing.T) {
 		t.Fatalf("unexpected command shape: use=%q args=%v", command.Use, command.Args)
 	}
 	for _, want := range []string{
-		"checksum-verified",
+		"checksum is authenticated",
+		"downloaded Sigstore bundle",
+		"GitHub login is not required",
+		"public Sigstore trust-root services",
+		"online archive provenance",
+		"only accepted pre-bundle rollback target",
+		"earlier tags have no accepted",
 		"installer receipt",
 		"Container",
 		"keeps both binaries",

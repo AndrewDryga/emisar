@@ -4,7 +4,7 @@
   <section class="py-12 sm:py-16">
     <.docs_layout
       current="host-install"
-      updated="August 19, 2026"
+      updated="September 3, 2026"
       toc={[
         {"install", "The install command"},
         {"confirm", "Confirm it connected"},
@@ -39,15 +39,21 @@
         </:item>
         <:item><code class="text-zinc-300">sudo</code> on that host.</:item>
         <:item>
+          GitHub CLI with <.docs_inline_code>gh attestation verify --bundle</.docs_inline_code>. A GitHub login is
+          not required.
+        </:item>
+        <:item>
           Outbound HTTPS to <code class="text-zinc-300">emisar.dev:443</code>
           for the control plane, installer, and release files, plus
           <code class="text-zinc-300">registry.emisar.dev:443</code>
-          for action packs. See
+          for action packs, <code class="text-zinc-300">tuf-repo-cdn.sigstore.dev:443</code>, and
+          <code class="text-zinc-300">tuf-repo.github.com:443</code>
+          for release verification. See
           <.link
             navigate={~p"/docs/network-requirements"}
             class="text-brand-400 hover:text-brand-300"
           >Network requirements</.link>
-          for the optional GitHub fallback domains.
+          for the required public trust-root hosts and optional GitHub fallback domains.
         </:item>
       </.docs_prerequisites>
 
@@ -73,7 +79,13 @@
         copy_text="curl -fsSL https://emisar.dev/install.sh | sudo EMISAR_ENROLLMENT_KEY=emkey-enroll-… bash"
       ><span class="text-zinc-500">$</span> curl -fsSL https://emisar.dev/install.sh \
     | sudo EMISAR_ENROLLMENT_KEY=emkey-enroll-… bash</.docs_code>
-      <.docs_verify_download tarball="emisar-<version>-linux-amd64.tar.gz" checksums="SHA256SUMS" />
+      <.docs_verify_download
+        tarball="emisar-<version>-linux-amd64.tar.gz"
+        checksums="SHA256SUMS"
+        bundle="SHA256SUMS.sigstore.jsonl"
+        tag="runner-v<version>"
+        workflow="AndrewDryga/emisar/.github/workflows/runner-release-trusted.yml"
+      />
       <.docs_install_script_details />
 
       <.docs_h2 id="confirm">Confirm it connected</.docs_h2>

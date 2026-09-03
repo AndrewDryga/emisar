@@ -9,7 +9,7 @@
   <section class="py-12 sm:py-16">
     <.docs_layout
       current="publishing-packs"
-      updated="August 26, 2026"
+      updated="September 3, 2026"
       toc={[
         {"layout", "1. Lay out the pack directory"},
         {"manifest", "2. Write pack.yaml"},
@@ -192,6 +192,7 @@ sudo emisar pack install ./my-pack</.docs_code>
         reads only the directory you point it at, and it does not need a config, a service,
         or an account. On a laptop — Linux or macOS — or in CI, install just the binary:
       </p>
+      <.docs_release_verifier_prerequisite />
       <.docs_code phx-no-format label="shell"><span class="text-zinc-500"># binary-only install — skips the service, needs no enrollment key</span>
 <span class="text-zinc-500">$</span> curl -fsSL https://emisar.dev/install.sh | sudo bash -s -- --no-service
 <span class="text-zinc-500">$</span> emisar pack validate ./my-pack

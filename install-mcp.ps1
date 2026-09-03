@@ -16,7 +16,9 @@ param(
     [string]$PortalOrigin = "",
     [switch]$Uninstall,
     [switch]$Yes,
-    [switch]$ConnectAll
+    [switch]$ConnectAll,
+    # BREAK GLASS: accept a same-origin checksum when its Sigstore bundle cannot verify.
+    [switch]$AllowUnsignedChecksum
 )
 
 Set-StrictMode -Version 2.0
@@ -39,7 +41,9 @@ $script:AttestationWorkflow = ""
 $script:AttestationSignerDigest = ""
 $script:AttestationSourceRef = ""
 $script:AttestationDenySelfHosted = $false
+$script:RequireArchiveAttestation = $false
 $script:Utf8NoBom = New-Object Text.UTF8Encoding($false)
+$script:MaxAttestationBundleBytes = 4 * 1024 * 1024
 
 function Write-Info([string]$Message) {
     Write-Host "[install-mcp] $Message" -ForegroundColor Blue
@@ -165,9 +169,44 @@ function Get-WebJson([string]$Url, [hashtable]$Headers = @{}) {
     return $text | ConvertFrom-Json
 }
 
-function Save-WebFile([string]$Url, [string]$Path) {
-    $bytes = Get-WebBytes $Url
-    [IO.File]::WriteAllBytes($Path, $bytes)
+function Save-WebFile([string]$Url, [string]$Path, [long]$MaxBytes = 0) {
+    $uri = [Uri]$Url
+    Test-TrustedWebUri $uri
+    $client = New-WebClient
+    $response = $null
+    $inputStream = $null
+    $outputStream = $null
+    try {
+        $response = $client.GetAsync($uri, [Net.Http.HttpCompletionOption]::ResponseHeadersRead).GetAwaiter().GetResult()
+        Test-TrustedWebUri $response.RequestMessage.RequestUri
+        if (-not $response.IsSuccessStatusCode) {
+            throw "HTTP $([int]$response.StatusCode)"
+        }
+        $contentLength = $response.Content.Headers.ContentLength
+        if ($MaxBytes -gt 0 -and $null -ne $contentLength -and $contentLength -gt $MaxBytes) {
+            throw "download exceeds the $MaxBytes byte limit"
+        }
+        $inputStream = $response.Content.ReadAsStreamAsync().GetAwaiter().GetResult()
+        $outputStream = [IO.File]::Open($Path, [IO.FileMode]::CreateNew, [IO.FileAccess]::Write, [IO.FileShare]::None)
+        $buffer = New-Object byte[] 81920
+        [long]$total = 0
+        while (($read = $inputStream.Read($buffer, 0, $buffer.Length)) -gt 0) {
+            if ($MaxBytes -gt 0 -and $total + $read -gt $MaxBytes) {
+                throw "download exceeds the $MaxBytes byte limit"
+            }
+            $outputStream.Write($buffer, 0, $read)
+            $total += $read
+        }
+    } catch {
+        if ($outputStream) { $outputStream.Dispose(); $outputStream = $null }
+        Remove-Item -LiteralPath $Path -Force -ErrorAction SilentlyContinue
+        throw
+    } finally {
+        if ($outputStream) { $outputStream.Dispose() }
+        if ($inputStream) { $inputStream.Dispose() }
+        if ($response) { $response.Dispose() }
+        $client.Dispose()
+    }
 }
 
 function Get-GitHubHeaders {
@@ -368,11 +407,19 @@ function Test-Attestation([string]$ArchivePath, [bool]$TestRelease) {
         return
     }
     if (-not (Get-Command gh -ErrorAction SilentlyContinue)) {
+        if ($script:RequireArchiveAttestation) {
+            Use-UnverifiedChecksum "the selected release predates signed checksums and gh is not installed, so its archive attestation cannot be verified"
+            return
+        }
         Write-WarningLine "gh not installed; skipping release attestation check"
         return
     }
     & gh auth status *> $null
     if ($LASTEXITCODE -ne 0) {
+        if ($script:RequireArchiveAttestation) {
+            Use-UnverifiedChecksum "the selected release predates signed checksums and gh is not authenticated, so its archive attestation cannot be verified"
+            return
+        }
         Write-WarningLine "gh is not authenticated; skipping release attestation check"
         return
     }
@@ -389,6 +436,48 @@ function Test-Attestation([string]$ArchivePath, [bool]$TestRelease) {
         Stop-Install "release attestation did not verify against $($script:AttestationWorkflow)"
     }
     Write-Info "release attestation verified"
+}
+
+function Use-UnverifiedChecksum([string]$Reason) {
+    if (-not $AllowUnsignedChecksum -and -not (Test-Truthy $env:EMISAR_ALLOW_UNSIGNED_CHECKSUM)) {
+        Stop-Install "$Reason; refusing to trust a same-origin checksum. Install GitHub CLI (authentication is not required), or use -AllowUnsignedChecksum only for an explicit break-glass recovery"
+    }
+    Write-WarningLine "SECURITY BREAK GLASS: $Reason"
+    Write-WarningLine "continuing because -AllowUnsignedChecksum or EMISAR_ALLOW_UNSIGNED_CHECKSUM was set; the same-origin checksum is the only remaining download control"
+}
+
+function Test-ChecksumAttestation([string]$ChecksumsPath, [string]$BundlePath, [bool]$TestRelease) {
+    if ($TestRelease) {
+        Write-WarningLine "test release; skipping checksum-signature verification"
+        return
+    }
+    if (-not $script:AttestationWorkflow) {
+        Write-WarningLine "no checksum-signature workflow configured; trusting the operator-selected repository's checksum policy"
+        return
+    }
+    if ($script:RequireArchiveAttestation) {
+        Write-Info "the selected release predates signed checksums; requiring its online archive attestation"
+        return
+    }
+    if (-not (Get-Command gh -ErrorAction SilentlyContinue)) {
+        Use-UnverifiedChecksum "gh is not installed, so the checksum signature cannot be verified"
+        return
+    }
+    $arguments = @(
+        "attestation", "verify", $ChecksumsPath,
+        "--bundle", $BundlePath,
+        "--repo", $script:Repository,
+        "--signer-workflow", $script:AttestationWorkflow
+    )
+    if ($script:AttestationSourceRef) { $arguments += @("--source-ref", $script:AttestationSourceRef) }
+    if ($script:AttestationSignerDigest) { $arguments += @("--signer-digest", $script:AttestationSignerDigest) }
+    if ($script:AttestationDenySelfHosted) { $arguments += "--deny-self-hosted-runners" }
+    & gh @arguments *> $null
+    if ($LASTEXITCODE -ne 0) {
+        Use-UnverifiedChecksum "the checksum signature for the selected release did not verify against $($script:AttestationWorkflow)"
+        return
+    }
+    Write-Info "checksum signature verified"
 }
 
 function Confirm-Install([string]$Prompt) {
@@ -496,6 +585,11 @@ $script:AttestationWorkflow = $attestationPolicy.Workflow
 $script:AttestationSignerDigest = $attestationPolicy.SignerDigest
 $script:AttestationSourceRef = $attestationPolicy.SourceRef
 $script:AttestationDenySelfHosted = $attestationPolicy.DenySelfHosted
+$script:RequireArchiveAttestation = (
+    -not $release.Test -and
+    $script:Repository -ieq $script:OfficialRepository -and
+    ([Version]$release.Tag.Substring(5)) -lt [Version]"0.11.0"
+)
 $versionNumber = $release.Tag.Substring(5)
 $archiveRoot = "emisar-mcp-$versionNumber-windows-$releaseArchitecture"
 $archiveName = "$archiveRoot.zip"
@@ -510,9 +604,31 @@ Set-PrivateDirectoryACL $temporaryRoot
 try {
     $archivePath = Join-Path $temporaryRoot $archiveName
     $checksumsPath = Join-Path $temporaryRoot "SHA256SUMS-MCP"
+    $checksumBundlePath = Join-Path $temporaryRoot "SHA256SUMS-MCP.sigstore.jsonl"
     Write-Info "downloading $archiveName"
     Save-WebFile "$($release.Base)/$archiveName" $archivePath
     Save-WebFile "$($release.Base)/SHA256SUMS-MCP" $checksumsPath
+    if (-not $release.Test -and $script:AttestationWorkflow -and -not $script:RequireArchiveAttestation) {
+        try {
+            Save-WebFile "$($release.Base)/SHA256SUMS-MCP.sigstore.jsonl" $checksumBundlePath $script:MaxAttestationBundleBytes
+        } catch {
+            if ($release.Source -eq "Emisar release mirror") {
+                Write-WarningLine "Emisar checksum signature unavailable; using the GitHub release mirror"
+                try {
+                    Save-WebFile "https://github.com/$($script:Repository)/releases/download/$($release.Tag)/SHA256SUMS-MCP.sigstore.jsonl" $checksumBundlePath $script:MaxAttestationBundleBytes
+                } catch {
+                    Use-UnverifiedChecksum "could not download the checksum signature for $($release.Tag) from either release mirror"
+                }
+            } else {
+                Use-UnverifiedChecksum "could not download the checksum signature for $($release.Tag)"
+            }
+        }
+        if (Test-Path -LiteralPath $checksumBundlePath -PathType Leaf) {
+            Test-ChecksumAttestation $checksumsPath $checksumBundlePath $false
+        }
+    } else {
+        Test-ChecksumAttestation $checksumsPath $checksumBundlePath ([bool]$release.Test)
+    }
     $checksums = [IO.File]::ReadAllText($checksumsPath)
     $match = [regex]::Match($checksums, "(?im)^([0-9a-f]{64})\s+\*?" + [regex]::Escape($archiveName) + "\s*$")
     if (-not $match.Success) { Stop-Install "SHA256SUMS-MCP does not list $archiveName" }

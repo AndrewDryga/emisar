@@ -50,10 +50,13 @@ const (
 	maxAPIBytes             = 4 << 20
 	maxManifestBytes        = 1 << 20
 	maxChecksumsBytes       = 1 << 20
-	maxArchiveBytes         = 256 << 20
-	maxInstallerBytes       = 512 << 10
-	maxBinaryBytes          = 128 << 20
-	installerRollbackGrace  = 8 * time.Minute
+	// Keep this equal to releasepublish's accepted attestation-bundle limit: a
+	// bundle the publisher admits must never brick every managed updater.
+	maxChecksumBundleBytes = 4 << 20
+	maxArchiveBytes        = 256 << 20
+	maxInstallerBytes      = 512 << 10
+	maxBinaryBytes         = 128 << 20
+	installerRollbackGrace = 8 * time.Minute
 )
 
 // Options are the operator choices and output streams for one update.
@@ -172,6 +175,7 @@ func run(ctx context.Context, opts Options, deps dependencies) error {
 	archiveName := name + ".tar.gz"
 	archivePath := filepath.Join(temp, archiveName)
 	checksumsPath := filepath.Join(temp, "SHA256SUMS")
+	checksumBundlePath := filepath.Join(temp, "SHA256SUMS.sigstore.jsonl")
 	base := target.BaseURL
 
 	fmt.Fprintf(opts.Stdout, "Downloading emisar %s for %s/%s...\n", targetVersion, runtime.GOOS, runtime.GOARCH)
@@ -193,17 +197,38 @@ func run(ctx context.Context, opts Options, deps dependencies) error {
 		if err := downloadReleaseFiles(ctx, deps.httpClient, fallback.BaseURL, archiveName, archivePath, checksumsPath); err != nil {
 			return fmt.Errorf("both release mirrors failed: %w", err)
 		}
+		base = fallback.BaseURL
+	}
+	identity := acceptedIdentities(target.TagName)[0]
+	requireArchiveProvenance := !signedChecksumPublished(target.TagName)
+	if !requireArchiveProvenance {
+		provenanceErr := download(ctx, deps.httpClient, base+"/SHA256SUMS.sigstore.jsonl", checksumBundlePath, maxChecksumBundleBytes)
+		githubBase := githubDownloadBase(deps, target.TagName)
+		if provenanceErr != nil && base != githubBase {
+			fmt.Fprintln(opts.Stderr, "warning: Emisar checksum signature unavailable; using the GitHub release mirror")
+			if err := os.Remove(checksumBundlePath); err != nil && !errors.Is(err, fs.ErrNotExist) {
+				return fmt.Errorf("remove partial release checksum signature: %w", err)
+			}
+			provenanceErr = download(ctx, deps.httpClient, githubBase+"/SHA256SUMS.sigstore.jsonl", checksumBundlePath, maxChecksumBundleBytes)
+		}
+		if provenanceErr == nil {
+			identity, provenanceErr = verifyChecksumProvenance(ctx, checksumsPath, checksumBundlePath, target.TagName, deps, opts.Stdout)
+		}
+		if provenanceErr != nil {
+			return fmt.Errorf("release checksum signature is required; install GitHub CLI (authentication is not required), or use the standalone installer's explicit break glass for recovery: %w", provenanceErr)
+		}
+	} else {
+		fmt.Fprintln(opts.Stdout, "Selected release predates signed checksums; requiring its online archive attestation.")
 	}
 	digest, err := verifyChecksum(archivePath, checksumsPath, archiveName)
 	if err != nil {
 		return err
 	}
 	fmt.Fprintf(opts.Stdout, "Verified checksum sha256:%s…\n", digest[:16])
-
-	identity, err := verifyProvenance(ctx, archivePath, target.TagName, deps, opts.Stdout, opts.Stderr)
-	if err != nil {
+	if err := verifyArtifactProvenance(ctx, archivePath, target.TagName, identity, requireArchiveProvenance, deps, opts.Stdout, opts.Stderr); err != nil {
 		return err
 	}
+
 	bundle, err := extractBundle(archivePath, temp, name)
 	if err != nil {
 		return err
@@ -569,26 +594,27 @@ func acceptedIdentities(tag string) []releaseIdentity {
 	}
 }
 
-// verifyProvenance returns the identity the archive verified against, so the
-// installer invocation re-checks the same pair rather than a hardcoded one.
-// When verification is skipped it returns the first accepted identity — the
-// same spelling the skip warning tells the operator to verify by hand.
-func verifyProvenance(ctx context.Context, archive, tag string, deps dependencies, stdout, stderr io.Writer) (releaseIdentity, error) {
+func signedChecksumPublished(tag string) bool {
+	version, ok := parseTag(tag)
+	return ok && compare(version, semver{major: 0, minor: 23, patch: 1}) >= 0
+}
+
+// verifyChecksumProvenance authenticates the checksum metadata with its downloaded
+// Sigstore bundle. No GitHub login is needed and no same-origin checksum is
+// trusted before this succeeds. gh may still fetch public trust roots. The
+// certificate identity is passed to the release's installer.
+func verifyChecksumProvenance(ctx context.Context, checksums, bundle, tag string, deps dependencies, stdout io.Writer) (releaseIdentity, error) {
 	identities := acceptedIdentities(tag)
 	gh, err := deps.lookPath("gh")
 	if err != nil {
-		fmt.Fprintln(stderr, "warning: gh is not installed; release provenance was not checked")
-		return identities[0], nil
+		return releaseIdentity{}, errors.New("gh is not installed")
 	}
-	env := verifierEnvironment()
-	if err := deps.runCommand(ctx, gh, []string{"auth", "status"}, env, io.Discard, io.Discard); err != nil {
-		fmt.Fprintln(stderr, "warning: gh is not authenticated; release provenance was not checked")
-		return identities[0], nil
-	}
+	env := bundleVerifierEnvironment()
 	var lastErr error
 	for _, identity := range identities {
 		args := []string{
-			"attestation", "verify", archive,
+			"attestation", "verify", checksums,
+			"--bundle", bundle,
 			"--repo", identity.repository,
 			"--signer-workflow", identity.workflow,
 			"--source-ref", "refs/tags/" + tag,
@@ -601,7 +627,7 @@ func verifyProvenance(ctx context.Context, archive, tag string, deps dependencie
 			lastErr = err
 			continue
 		}
-		fmt.Fprintln(stdout, "Verified GitHub build provenance.")
+		fmt.Fprintln(stdout, "Verified release checksum signature.")
 		return identity, nil
 	}
 	workflows := make([]string, 0, len(identities))
@@ -614,7 +640,68 @@ func verifyProvenance(ctx context.Context, archive, tag string, deps dependencie
 	)
 }
 
-func verifierEnvironment() []string {
+// verifyArtifactProvenance keeps the online archive attestation as a second,
+// independent check for current releases and the required trust path for
+// releases that predate signed checksums. The optional check may skip when
+// GitHub authentication is unavailable, but a negative result is always a
+// refusal. Current releases reuse the identity proven by the checksum bundle.
+func verifyArtifactProvenance(
+	ctx context.Context,
+	archive, tag string,
+	identity releaseIdentity,
+	required bool,
+	deps dependencies,
+	stdout, stderr io.Writer,
+) error {
+	gh, err := deps.lookPath("gh")
+	if err != nil {
+		if required {
+			return errors.New("release archive attestation is required for releases that predate signed checksums, but gh is not installed")
+		}
+		fmt.Fprintln(stderr, "warning: gh is not installed; release archive provenance was not checked")
+		return nil
+	}
+	env := onlineVerifierEnvironment()
+	if err := deps.runCommand(ctx, gh, []string{"auth", "status"}, env, io.Discard, io.Discard); err != nil {
+		if required {
+			return errors.New("release archive attestation is required for releases that predate signed checksums, but gh is not authenticated")
+		}
+		fmt.Fprintln(stderr, "warning: gh is not authenticated; release archive provenance was not checked")
+		return nil
+	}
+	args := []string{
+		"attestation", "verify", archive,
+		"--repo", identity.repository,
+		"--signer-workflow", identity.workflow,
+		"--source-ref", "refs/tags/" + tag,
+	}
+	if identity.digest != "" {
+		args = append(args, "--signer-digest", identity.digest)
+	}
+	args = append(args, "--deny-self-hosted-runners")
+	if err := deps.runCommand(ctx, gh, args, env, io.Discard, io.Discard); err != nil {
+		return fmt.Errorf("release attestation did not verify against %s: %w", identity.workflow, err)
+	}
+	fmt.Fprintln(stdout, "Verified GitHub build provenance.")
+	return nil
+}
+
+func bundleVerifierEnvironment() []string {
+	// Bundle verification is intentionally independent of GitHub API access.
+	// Do not hand an ambient publisher/operator token to a verifier that needs no
+	// credential, even though gh would normally prefer one when present.
+	env := make([]string, 0, len(os.Environ()))
+	for _, item := range os.Environ() {
+		key, _, _ := strings.Cut(item, "=")
+		if key == "GH_TOKEN" || key == "GITHUB_TOKEN" || key == "EMISAR_GITHUB_TOKEN" {
+			continue
+		}
+		env = append(env, item)
+	}
+	return env
+}
+
+func onlineVerifierEnvironment() []string {
 	env := os.Environ()
 	if os.Getenv("GH_TOKEN") == "" && os.Getenv("GITHUB_TOKEN") == "" {
 		if token := os.Getenv("EMISAR_GITHUB_TOKEN"); token != "" {
@@ -731,7 +818,8 @@ func installerInvocation(bundle, tag string, receipt receipt, identity releaseId
 		"ASSUME_YES": true, "BIN_DIR": true, "DATA_DIR": true,
 		"BASH_ENV": true, "BASHOPTS": true, "CDPATH": true,
 		"DYLD_INSERT_LIBRARIES": true, "DYLD_LIBRARY_PATH": true,
-		"EMISAR_ATTESTATION_WORKFLOW": true, "EMISAR_ENROLLMENT_KEY": true,
+		"EMISAR_ALLOW_UNSIGNED_CHECKSUM": true,
+		"EMISAR_ATTESTATION_WORKFLOW":    true, "EMISAR_ENROLLMENT_KEY": true,
 		"EMISAR_GITHUB_TOKEN": true, "EMISAR_PACKS": true, "EMISAR_REPO": true,
 		"ENV": true, "ETC_DIR": true, "GITHUB_TOKEN": true, "GH_TOKEN": true,
 		"LD_LIBRARY_PATH": true, "LD_PRELOAD": true,

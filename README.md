@@ -14,9 +14,11 @@ client.
 ## Start with one host
 
 You need an [emisar account](https://emisar.dev/sign_up), a Linux host with
-systemd and `sudo`, and outbound HTTPS access to `emisar.dev:443` and
-`registry.emisar.dev:443`. The first host serves the control plane, installer,
-and release archives; the second serves action packs.
+systemd, `sudo`, and GitHub CLI with `gh attestation verify --bundle`. Allow
+outbound HTTPS to `emisar.dev:443`, `registry.emisar.dev:443`,
+`tuf-repo-cdn.sigstore.dev:443`, and `tuf-repo.github.com:443`. The last two
+serve the public trust roots used to authenticate release checksums; no GitHub
+login is required.
 
 GitHub is the optional release fallback. To permit that fallback, also allow
 `api.github.com:443`, `github.com:443`, and
@@ -31,8 +33,9 @@ GitHub is the optional release fallback. To permit that fallback, also allow
      | sudo EMISAR_ENROLLMENT_KEY=emkey-enroll-... bash
    ```
 
-   The installer verifies the release checksum, creates the service, installs
-   host-matched starter packs, and starts the runner.
+   The installer authenticates the signed release checksum, verifies the
+   archive against it, creates the service, installs host-matched starter
+   packs, and starts the runner.
 3. Confirm the runner is online in the console, then dispatch
    `linux.uptime` with a reason. You are done when the output appears and the
    run is present in the audit trail.

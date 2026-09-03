@@ -4,7 +4,7 @@
   <section class="py-12 sm:py-16">
     <.docs_layout
       current="autoscaling-fleets"
-      updated="August 4, 2026"
+      updated="September 3, 2026"
       toc={[
         {"model", "How it works"},
         {"key", "Create a reusable enrollment key"},
@@ -38,13 +38,16 @@
         </:item>
         <:item>A secret manager the boot script can read the enrollment key from.</:item>
         <:item>
+          A launch image with GitHub CLI support for <.docs_inline_code>gh attestation verify --bundle</.docs_inline_code>.
+        </:item>
+        <:item>
           Outbound HTTPS from every instance to <code class="text-zinc-300">emisar.dev:443</code>
           and <code class="text-zinc-300">registry.emisar.dev:443</code>. See
           <.link
             navigate={~p"/docs/network-requirements"}
             class="text-brand-400 hover:text-brand-300"
           >Network requirements</.link>
-          for the optional GitHub fallback domains.
+          for the required public trust-root hosts and optional GitHub fallback domains.
         </:item>
       </.docs_prerequisites>
 
@@ -129,9 +132,15 @@
       <.docs_code
         phx-no-format
         label="emisar-boot.sh"
-        copy_text="export EMISAR_ENROLLMENT_KEY=&quot;$(your-secret-tool read emisar/enrollment-key)&quot;
+        copy_text="gh attestation verify --help 2>&amp;1 | grep -q -- '--bundle' || { echo 'GitHub CLI with attestation bundle verification is required' &gt;&amp;2; exit 1; }
+export EMISAR_ENROLLMENT_KEY=&quot;$(your-secret-tool read emisar/enrollment-key)&quot;
 curl -fsSL https://emisar.dev/install.sh | sudo -E env EMISAR_GROUP=web bash -s -- --yes --packs linux-core"
       ><span class="text-zinc-500">#!/usr/bin/env bash</span>
+gh attestation verify --help 2&gt;&amp;1 | grep -q -- '--bundle' || &#123;
+  echo 'GitHub CLI with attestation bundle verification is required' &gt;&amp;2
+  exit 1
+&#125;
+
 <span class="text-zinc-500"># the key reaches the environment, never argv</span>
 export EMISAR_ENROLLMENT_KEY="<span class="text-brand-300">$(your-secret-tool read emisar/enrollment-key)</span>"
 

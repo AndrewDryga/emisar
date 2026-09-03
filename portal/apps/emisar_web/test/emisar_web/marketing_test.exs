@@ -1174,17 +1174,21 @@ defmodule EmisarWeb.MarketingTest do
 
     test "the /trust page surfaces release integrity with the real verify commands", %{conn: conn} do
       # The procurement-facing answer to "how do I verify the binary I pipe into
-      # sudo bash" — SLSA provenance + checksums, with the ACTUAL commands that
-      # verify against our published releases (gh attestation verify succeeds for
-      # runner-v0.7.4 --owner andrewdryga; sha256sum -c SHA256SUMS passes).
+      # sudo bash" — signed checksum provenance followed by an exact-archive
+      # checksum, with the actual identity constraints the installer applies.
       html = conn |> get(~p"/trust") |> html_response(200)
 
       assert html =~ "Release integrity"
       assert html =~ "SLSA Build Level 2 provenance"
       refute html =~ "SLSA-3 build provenance"
-      assert html =~ "gh attestation verify"
-      assert html =~ "--owner andrewdryga"
-      assert html =~ "sha256sum -c SHA256SUMS"
+      assert html =~ "gh attestation verify SHA256SUMS --bundle SHA256SUMS.sigstore.jsonl"
+
+      assert html =~
+               "--signer-workflow AndrewDryga/emisar/.github/workflows/runner-release-trusted.yml"
+
+      assert html =~ "--source-ref refs/tags/runner-v&lt;version&gt;"
+      assert html =~ "awk -v file='emisar-&lt;version&gt;-linux-amd64.tar.gz'"
+      assert html =~ "sha256sum -c -"
     end
 
     test "the /trust page distinguishes Portal audit, run storage, and the runner journal", %{
@@ -2258,6 +2262,8 @@ defmodule EmisarWeb.MarketingTest do
       bridge = conn |> get(~p"/docs/bridge-upgrades") |> html_response(200) |> squish()
       assert bridge =~ "A running client keeps the binary it already loaded"
       assert bridge =~ "Client config and API key are untouched"
+      assert bridge =~ "oldest authenticated rollback target is MCP 0.10.1"
+      assert bridge =~ "Earlier tags fail authenticated verification"
     end
 
     test "credentials opens with a matrix carrying every field the reader compares on",
@@ -2386,6 +2392,8 @@ defmodule EmisarWeb.MarketingTest do
       assert html =~ "api.github.com"
       assert html =~ "github.com"
       assert html =~ "release-assets.githubusercontent.com"
+      assert html =~ "tuf-repo-cdn.sigstore.dev"
+      assert html =~ "tuf-repo.github.com"
       assert html =~ "To permit the optional GitHub release fallback"
       refute html =~ "GCS"
       refute html =~ "Google Storage"
@@ -2399,6 +2407,13 @@ defmodule EmisarWeb.MarketingTest do
 
         assert html =~ "emisar.dev:443", "#{path} is missing the primary Emisar domain"
         assert html =~ "registry.emisar.dev:443", "#{path} is missing the pack registry domain"
+
+        assert html =~ "tuf-repo-cdn.sigstore.dev:443",
+               "#{path} is missing the public trust-root domain"
+
+        assert html =~ "tuf-repo.github.com:443",
+               "#{path} is missing the GitHub trust-root domain"
+
         refute html =~ "api.github.com", "#{path} still presents GitHub as normal egress"
         refute html =~ "GCS", "#{path} exposes the release backing store"
         refute html =~ "inbound port", "#{path} adds an unsolicited non-requirement"

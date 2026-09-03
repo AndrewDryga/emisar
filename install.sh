@@ -61,6 +61,9 @@ ATTESTATION_WORKFLOW="${EMISAR_ATTESTATION_WORKFLOW:-}"
 ATTESTATION_SIGNER_DIGEST=""
 ATTESTATION_SOURCE_REF=""
 ATTESTATION_DENY_SELF_HOSTED=0
+REQUIRE_ARCHIVE_ATTESTATION=0
+ALLOW_UNSIGNED_CHECKSUM="${EMISAR_ALLOW_UNSIGNED_CHECKSUM:-0}"
+MAX_ATTESTATION_BUNDLE_BYTES=4194304
 VERSION="${VERSION:-}"            # empty = latest stable
 BIN_DIR="${BIN_DIR:-/usr/local/bin}"
 ETC_DIR="${ETC_DIR:-/etc/emisar}"
@@ -135,12 +138,17 @@ Flags:
                      host detection, no prompt — from the bundle if present,
                      else the registry. An empty LIST installs no new packs.
                      For unattended provisioning.
+  --allow-unsigned-checksum
+                     BREAK GLASS: install when the release checksum signature
+                     cannot be verified. The archive checksum is still checked,
+                     but a compromised release origin could replace both files.
   --help             This message.
 
 Env vars accepted: VERSION, BIN_DIR, ETC_DIR, DATA_DIR, LOG_DIR,
 SERVICE_USER, SERVICE_GROUP, ASSUME_YES, EMISAR_PACKS, NO_START,
 NO_SERVICE, EMISAR_REPO, EMISAR_GITHUB_TOKEN, EMISAR_URL,
-EMISAR_ENROLLMENT_KEY, EMISAR_ATTESTATION_WORKFLOW, EMISAR_GROUP,
+EMISAR_ENROLLMENT_KEY, EMISAR_ATTESTATION_WORKFLOW,
+EMISAR_ALLOW_UNSIGNED_CHECKSUM, EMISAR_GROUP,
 EMISAR_RUNNER_ID, EMISAR_RUNNER_LABEL_<KEY>.
 
 EMISAR_URL + EMISAR_ENROLLMENT_KEY are baked into config.yaml + runner.env
@@ -180,10 +188,20 @@ normalize_version() {
 # provenance. Admit only that exact tag, pinned to its
 # workflow commit and source tag. Every other official tag must come from the
 # trusted workflow; never retry the legacy signer after a trusted failure.
+signed_checksum_published() {
+  local version="${1#runner-v}" major minor patch
+  IFS=. read -r major minor patch <<<"${version}"
+  (( 10#${major} > 0 || 10#${minor} > 23 || (10#${minor} == 23 && 10#${patch} >= 1) ))
+}
+
 select_attestation_policy() {
   ATTESTATION_SIGNER_DIGEST=""
   ATTESTATION_SOURCE_REF=""
   ATTESTATION_DENY_SELF_HOSTED=0
+  REQUIRE_ARCHIVE_ATTESTATION=0
+  if [ "${REPO}" = "${OFFICIAL_REPO}" ] && ! signed_checksum_published "${VERSION}"; then
+    REQUIRE_ARCHIVE_ATTESTATION=1
+  fi
   if [ -n "${ATTESTATION_WORKFLOW}" ] || [ "${REPO}" != "${OFFICIAL_REPO}" ]; then
     return 0
   fi
@@ -277,6 +295,7 @@ while [ $# -gt 0 ]; do
     --user) require_value "$@"; SERVICE_USER="$2"; SERVICE_GROUP="$2"; shift 2;;
     --yes|-y) ASSUME_YES=1; shift;;
     --packs) require_present "$@"; PRE_PACKS="$2"; PACKS_EXPLICIT=1; shift 2;;
+    --allow-unsigned-checksum) ALLOW_UNSIGNED_CHECKSUM=1; shift;;
     --preverified-bundle) require_value "$@"; PREVERIFIED_BUNDLE="$2"; shift 2;;
     --managed-update-contract) printf '%s\n' emisar-managed-update-v1; exit 0;;
     --help|-h) usage; exit 0;;
@@ -1055,6 +1074,12 @@ download_release() {
     fetch_release_files "$base" "$tarball" "$tmp" || die "failed to download ${version} from both release mirrors"
   fi
 
+  verify_checksum_attestation \
+    "${tmp}/SHA256SUMS" \
+    "${base}/SHA256SUMS.sigstore.jsonl" \
+    "${tmp}/SHA256SUMS.sigstore.jsonl" \
+    "https://github.com/${REPO}/releases/download/${version}/SHA256SUMS.sigstore.jsonl"
+
   # Pull the expected hash for our tarball out of SHA256SUMS so we can
   # show it in the status line. The verification itself is done by
   # sha_verify (silenced) so we print one clean line instead of the
@@ -1079,16 +1104,89 @@ download_release() {
   printf '%s\n' "${tmp}/${name}"
 }
 
-# The checksum proves the tarball matches SHA256SUMS; it says nothing about who
-# produced either, since both come from the same release. The Sigstore build
-# provenance does: it binds these bytes to a run of our release workflow on a
-# GitHub-hosted runner. Pinning --signer-workflow is what makes that a real
-# check — without it, any attestation from any workflow in the repo passes.
-#
-# Verification runs only when a verifier is installed. Requiring one would break
-# `curl | sudo bash` on a bare host, which is the path most operators take, so a
-# missing verifier warns and continues on the checksum alone. A verifier that IS
-# present and says no fails the install.
+# SHA256SUMS and its bundle come from the same mirror, but the bundle's
+# certificate and transparency-log proof do not: `gh ... --bundle` verifies the
+# checksum bytes against GitHub's public-good Sigstore trust root without a
+# GitHub login. Only after that succeeds may the manifest authenticate a
+# release archive. A fork with no configured workflow keeps its operator-owned
+# checksum policy; official releases always select a workflow above.
+continue_without_checksum_signature() {
+  local reason="$1"
+  if ! truthy "${ALLOW_UNSIGNED_CHECKSUM}"; then
+    die "${reason}; refusing to trust a same-origin checksum. Install GitHub CLI (authentication is not required), or use --allow-unsigned-checksum only for an explicit break-glass recovery"
+  fi
+  warn "SECURITY BREAK GLASS: ${reason}"
+  warn "continuing because --allow-unsigned-checksum or EMISAR_ALLOW_UNSIGNED_CHECKSUM was set; the same-origin checksum is the only remaining download control"
+}
+
+download_checksum_bundle() {
+  local url="$1" path="$2" bytes
+  rm -f -- "${path}"
+  if ! curl --proto '=https' --proto-redir '=https' --tlsv1.2 \
+    --connect-timeout 15 --max-time 120 --retry 2 \
+    --max-filesize "${MAX_ATTESTATION_BUNDLE_BYTES}" -fsSL \
+    -o "${path}" "${url}"; then
+    rm -f -- "${path}"
+    return 1
+  fi
+  bytes="$(wc -c <"${path}")" || {
+    rm -f -- "${path}"
+    return 1
+  }
+  if (( bytes > MAX_ATTESTATION_BUNDLE_BYTES )); then
+    rm -f -- "${path}"
+    return 1
+  fi
+  return 0
+}
+
+verify_checksum_attestation() {
+  local checksums="$1" bundle_url="$2" bundle="$3" fallback_bundle_url="${4:-}"
+  if [ -z "${ATTESTATION_WORKFLOW}" ]; then
+    warn "no checksum-signature workflow configured for ${REPO}; trusting the operator-selected repository's checksum policy"
+    return 0
+  fi
+  if [ "${REQUIRE_ARCHIVE_ATTESTATION}" = "1" ]; then
+    log "${VERSION} predates signed checksums; requiring its online archive attestation"
+    return 0
+  fi
+  if ! download_checksum_bundle "${bundle_url}" "${bundle}"; then
+    if [ -n "${fallback_bundle_url}" ] && [ "${fallback_bundle_url}" != "${bundle_url}" ]; then
+      warn "Emisar checksum signature unavailable — using the GitHub release mirror"
+      if download_checksum_bundle "${fallback_bundle_url}" "${bundle}"; then
+        bundle_url="${fallback_bundle_url}"
+      else
+        continue_without_checksum_signature "could not download the checksum signature for ${VERSION} from either release mirror"
+        return 0
+      fi
+    else
+      continue_without_checksum_signature "could not download the checksum signature for ${VERSION}"
+      return 0
+    fi
+  fi
+  if ! command -v gh >/dev/null 2>&1; then
+    continue_without_checksum_signature "gh is not installed, so the checksum signature cannot be verified"
+    return 0
+  fi
+  local -a verify_args=(
+    attestation verify "${checksums}"
+    --bundle "${bundle}"
+    --repo "${REPO}"
+    --signer-workflow "${ATTESTATION_WORKFLOW}"
+  )
+  [ -z "${ATTESTATION_SOURCE_REF}" ] || verify_args+=(--source-ref "${ATTESTATION_SOURCE_REF}")
+  [ -z "${ATTESTATION_SIGNER_DIGEST}" ] || verify_args+=(--signer-digest "${ATTESTATION_SIGNER_DIGEST}")
+  [ "${ATTESTATION_DENY_SELF_HOSTED}" = "0" ] || verify_args+=(--deny-self-hosted-runners)
+  if ! gh "${verify_args[@]}" >/dev/null 2>&1; then
+    continue_without_checksum_signature "the checksum signature for ${VERSION} did not verify against ${ATTESTATION_WORKFLOW}"
+    return 0
+  fi
+  log "checksum signature verified  ${ATTESTATION_WORKFLOW}"
+}
+
+# The per-archive GitHub attestation is additional online evidence. The signed
+# checksum above is the required independent trust path; this check may still
+# skip when the GitHub API cannot be queried, but a negative result fails.
 verify_attestation() {
   local path="$1" name="$2"
   if [ -z "${ATTESTATION_WORKFLOW}" ]; then
@@ -1100,6 +1198,10 @@ verify_attestation() {
   [ -z "${ATTESTATION_SIGNER_DIGEST}" ] || hint="${hint} --signer-digest ${ATTESTATION_SIGNER_DIGEST}"
   [ "${ATTESTATION_DENY_SELF_HOSTED}" = "0" ] || hint="${hint} --deny-self-hosted-runners"
   if ! command -v gh >/dev/null 2>&1; then
+    if [ "${REQUIRE_ARCHIVE_ATTESTATION}" = "1" ]; then
+      continue_without_checksum_signature "${VERSION} predates signed checksums and gh is not installed, so its archive attestation cannot be verified"
+      return 0
+    fi
     warn "gh not installed — skipping release attestation check for ${name}"
     warn "verify it yourself: ${hint}"
     return 0
@@ -1109,6 +1211,10 @@ verify_attestation() {
   # verification would make a GitHub login a prerequisite for installing the
   # runner, so an unauthenticated CLI skips exactly like a missing one.
   if ! gh auth status >/dev/null 2>&1; then
+    if [ "${REQUIRE_ARCHIVE_ATTESTATION}" = "1" ]; then
+      continue_without_checksum_signature "${VERSION} predates signed checksums and gh is not authenticated, so its archive attestation cannot be verified"
+      return 0
+    fi
     warn "gh is not authenticated — skipping release attestation check for ${name}"
     warn "verify it yourself: ${hint}"
     return 0
