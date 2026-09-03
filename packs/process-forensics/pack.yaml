@@ -2,7 +2,7 @@ schema_version: 1
 
 id: process-forensics
 name: Process forensics
-version: 0.1.8
+version: 0.1.9
 description: >
   Deep per-process diagnostics for "why is this process stuck / slow /
   leaking?" — strace (HIGH RISK; slows the target), pid memory maps,
@@ -31,19 +31,22 @@ setup:
         - forensics.strace_pid_short
         - forensics.gdb_backtrace
         - forensics.strace_summary
-      requirement: Inspect and attach to processes owned by other users.
+      requirement: Inspect protected process files and attach to processes owned by other users.
       recipes:
-        - name: Grant CAP_SYS_PTRACE to the Emisar service
+        - name: Grant process-inspection capabilities to the Emisar service
           commands:
             - "sudo install -d -m 0755 /etc/systemd/system/emisar.service.d"
-            - "printf '%s\\n' '[Service]' 'AmbientCapabilities=CAP_SYS_PTRACE' | sudo tee /etc/systemd/system/emisar.service.d/10-process-forensics-host-access.conf >/dev/null"
+            - "printf '%s\\n' '[Service]' 'AmbientCapabilities=CAP_SYS_PTRACE CAP_DAC_READ_SEARCH' | sudo tee /etc/systemd/system/emisar.service.d/10-process-forensics-host-access.conf >/dev/null"
             - "sudo systemctl daemon-reload"
             - "sudo systemctl restart emisar"
           verify:
             - "systemctl show emisar --property=AmbientCapabilities --value | grep -Fwi cap_sys_ptrace"
+            - "systemctl show emisar --property=AmbientCapabilities --value | grep -Fwi cap_dac_read_search"
           impact: >
-            Every Emisar action on this runner inherits CAP_SYS_PTRACE and can inspect or
-            attach to processes outside the runner user, including their memory and secrets.
+            Every Emisar action on this runner inherits CAP_SYS_PTRACE and
+            CAP_DAC_READ_SEARCH. It can inspect or attach to processes outside the
+            runner user, including their memory and secrets, and bypass file read and
+            directory search permissions across the host.
   verify: forensics.pid_status
 
 actions:

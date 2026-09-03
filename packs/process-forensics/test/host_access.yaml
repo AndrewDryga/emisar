@@ -2,6 +2,9 @@ recipes:
   - access: 0
     recipe: 0
     fixture: debian
-    action: forensics.strace_pid_short
-    prepare: ["true"]
-    probe: awk '$1 == "CapAmb:" { exit !($2 != "0000000000000000") }' /proc/self/status
+    action: forensics.pid_io
+    prepare:
+      - useradd --uid 60001 --user-group --no-create-home --shell /usr/sbin/nologin packtest-process-victim
+      - systemd-run --unit=packtest-process-victim --property=User=packtest-process-victim /bin/sleep infinity
+      - systemctl show packtest-process-victim.service --property=MainPID --value > /run/packtest-process-victim.pid
+    probe: pid=$(cat /run/packtest-process-victim.pid); test "$pid" -gt 1; head -n 1 "/proc/$pid/io" >/dev/null; test -r "/proc/$pid/fd"; ls "/proc/$pid/fd" >/dev/null
