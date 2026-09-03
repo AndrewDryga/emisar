@@ -11,7 +11,7 @@ current list.
 | `linux.memory`             | none            | low      | `free -m`                          |
 | `linux.uptime`             | none            | low      | `uptime`                           |
 | `linux.journalctl`         | none            | medium   | `journalctl -u <unit>` w/ window   |
-| `linux.systemctl_status`   | none            | low      | `systemctl status <unit>`          |
+| `linux.systemctl_status`   | none            | medium   | status + recent journal lines      |
 | `linux.systemctl_restart`  | service_state   | high     | `systemctl restart <unit>`         |
 
 The runner advertises these actions to the control plane on connect. Cloud

@@ -3,15 +3,17 @@ schema_version: 1
 id: linux.systemctl_status
 title: Systemd unit status
 kind: exec
-risk: low
+risk: medium
 
 description: >
-  Report the current systemd unit status for a named service. Read-only.
-  Use to confirm whether a service is active before recommending diagnostic
-  or remediation actions.
+  Show a named systemd unit's runtime state and processes plus up to 10 recent
+  journal lines. Those lines can carry application, request, or personal
+  data no redaction list can enumerate. Use to confirm whether a service is
+  active before recommending diagnostic or remediation actions.
 
 side_effects:
-  - Reads systemd state.
+  - Reads systemd state and recent journal entries.
+  - May expose application, request, or personal data written to the journal.
   - Touches no files.
 
 search_terms:
@@ -40,6 +42,7 @@ execution:
       - "status"
       - "{{ args.unit }}"
       - "--no-pager"
+      - "--lines=10"
   timeout: 10s
   cwd: /
 

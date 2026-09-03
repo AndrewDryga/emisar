@@ -69,6 +69,25 @@ cases:
         expect:
           stdout_contains: [no-match]
 
+  - action: linux.systemctl_status
+    args: {unit: packtest-status.service}
+    arrange:
+      - argv: [/bin/sh, -c, "printf '%s\n' packtest-status-journal-line > /run/packtest-status-message"]
+      - argv: [systemd-run, --unit=packtest-status, --property=RemainAfterExit=yes, /bin/sh, -c, "cat /run/packtest-status-message"]
+      - argv: [systemctl, is-active, packtest-status.service]
+        retry_for: 10s
+        retry_every: 200ms
+      - argv: [/bin/sh, -c, "journalctl -u packtest-status.service --no-pager | grep -Fq packtest-status-journal-line"]
+        retry_for: 10s
+        retry_every: 200ms
+    expect:
+      stdout_contains: ["Active: active", packtest-status-journal-line]
+    probes:
+      - name: reading status leaves the unit active
+        argv: [systemctl, is-active, packtest-status.service]
+        expect:
+          stdout_contains: [active]
+
   - action: linux.systemctl_start
     args: {unit: cron.service}
     arrange:

@@ -2,7 +2,7 @@ schema_version: 1
 
 id: linux-core
 name: Linux core operations pack
-version: 0.4.8
+version: 0.4.9
 retired_below: 0.3.22
 description: >
   Read-only Linux diagnostics plus narrow service control. Disk, mem,
@@ -53,6 +53,7 @@ setup:
     - actions:
         - linux.journalctl
         - linux.journalctl_grep
+        - linux.systemctl_status
         - linux.grep_log
         - linux.tail_log
         - linux.failed_logins
