@@ -16,6 +16,8 @@ import (
 
 	"github.com/andrewdryga/emisar/tools/internal/ci"
 	"github.com/andrewdryga/emisar/tools/internal/packtest"
+	"github.com/andrewdryga/emisar/tools/internal/repo"
+	"go.yaml.in/yaml/v3"
 )
 
 func TestServeLockRejectsSecondOwnerAndReleases(t *testing.T) {
@@ -444,6 +446,42 @@ func TestPackTestComposeProjectIsInvocationAndCaseSpecific(t *testing.T) {
 		first == packTestComposeProject("/tmp/a", "run-1", "mysql", "uptime") ||
 		first == packTestComposeProject("/tmp/a", "run-1", "postgres", "connections") {
 		t.Fatalf("compose projects are not stable and distinct: %q", first)
+	}
+}
+
+func TestPackTestRunnerToolsMountsOnlyRequiredDevelopmentFiles(t *testing.T) {
+	root, err := repo.Root()
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(filepath.Join(root, "dev", "test-packs", "compose.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var compose struct {
+		Services map[string]struct {
+			Volumes []string `yaml:"volumes"`
+		} `yaml:"services"`
+	}
+	if err := yaml.Unmarshal(data, &compose); err != nil {
+		t.Fatal(err)
+	}
+
+	wantConfig := "${EMISAR_ROOT}/dev/test-packs/test-config.yaml:/workspace/test-packs/test-config.yaml:ro"
+	allowedDevelopmentSources := map[string]bool{
+		"${EMISAR_ROOT}/dev/test-packs/test-config.yaml": true,
+		"${EMISAR_ROOT}/dev/test-packs/bin":              true,
+		"${EMISAR_ROOT}/dev/test-packs/reports":          true,
+	}
+	volumes := compose.Services["runner-tools"].Volumes
+	if !slices.Contains(volumes, wantConfig) {
+		t.Fatalf("runner-tools volumes = %q, missing the read-only harness config", volumes)
+	}
+	for _, volume := range volumes {
+		source, _, _ := strings.Cut(volume, ":")
+		if strings.HasPrefix(source, "${EMISAR_ROOT}/dev") && !allowedDevelopmentSources[source] {
+			t.Fatalf("runner-tools exposes unrelated development path %q", source)
+		}
 	}
 }
 

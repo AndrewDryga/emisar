@@ -701,8 +701,8 @@ func withDefaults(config Config) Config {
 // The runner refuses a config owned by neither root nor itself, and one that is
 // group- or world-writable, because whoever holds that write bit chooses the
 // packs it loads. That check is the product working. But the harness reads its
-// config from /workspace, a read-only bind mount of the repository checkout,
-// which carries the HOST's ownership: on CI that is the job user, so the runner
+// config from /workspace, a read-only bind mount of the host config file, which
+// carries the HOST's ownership: on CI that is the job user, so the runner
 // correctly refused every action and all 42 behavior packs failed at once.
 // Docker Desktop remaps bind-mount ownership to the container user, so a
 // workstation never sees it — the Linux matrix is the only judge of this class.

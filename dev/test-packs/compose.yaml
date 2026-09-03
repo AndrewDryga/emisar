@@ -12,7 +12,7 @@ services:
     environment:
       HOME: /tmp/packtest
     volumes:
-      - ${EMISAR_ROOT}/dev:/workspace:ro
+      - ${EMISAR_ROOT}/dev/test-packs/test-config.yaml:/workspace/test-packs/test-config.yaml:ro
       - ${EMISAR_ROOT}/packs:/packs:ro
       - ${EMISAR_ROOT}/dev/test-packs/bin:/opt/emisar/bin:ro
       - ${EMISAR_ROOT}/dev/test-packs/reports:/reports
