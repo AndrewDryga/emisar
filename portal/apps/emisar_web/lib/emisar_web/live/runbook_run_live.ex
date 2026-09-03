@@ -112,14 +112,6 @@ defmodule EmisarWeb.RunbookRunLive do
      |> assign(:loaded?, true)}
   end
 
-  def handle_params(%{"new" => "true"}, _uri, socket) do
-    {:noreply,
-     socket
-     |> reset_run_form()
-     |> load_recent_executions()
-     |> assign(:loaded?, true)}
-  end
-
   def handle_params(_params, _uri, socket) do
     {:noreply,
      socket
