@@ -97,6 +97,36 @@ defmodule EmisarWeb.MCPRunbookRejectionLogTest do
     refute log =~ sentinel
   end
 
+  # The published input schema bounds `reason` by length and non-blankness only,
+  # so a bidi override reaches the domain — which copies the reason verbatim onto
+  # the approval card an approver reads. The refusal has to name the argument:
+  # an LLM retries, and the generic execution_failed would loop it forever.
+  test "a reason carrying a bidi override is refused as invalid_args", %{
+    conn: conn,
+    account: account,
+    subject: subject
+  } do
+    runner = Fixtures.Runners.create_runner(account_id: account.id, group: "fleet")
+    observe_catalog!(runner, [action()])
+    trust_all!(subject)
+
+    _runbook =
+      publish_runbook!(
+        subject,
+        "fleet-health",
+        %{"selection" => "all", "refs" => ["group:fleet"]}
+      )
+
+    result =
+      call(conn, %{
+        "runbook_ref" => "fleet-health@1",
+        "reason" => "release the \u202Ehctiws window"
+      })
+
+    assert result["error"]["code"] == "invalid_args"
+    assert result["error"]["message"] =~ "control or formatting characters"
+  end
+
   defp authorize(conn, raw), do: put_req_header(conn, "authorization", "Bearer " <> raw)
 
   defp call(conn, arguments) do

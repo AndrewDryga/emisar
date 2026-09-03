@@ -47,7 +47,7 @@ defmodule EmisarWeb.MCP.RunbookTools do
 
     with {:ok, summaries} <- runbook_summaries(conn, query),
          scope <- Service.cursor_scope(conn),
-         filters <- %{"query" => query, "limit" => limit},
+         filters <- %{"query" => query},
          {:ok, after_key} <-
            CatalogCursor.decode(args["cursor"], "list_runbooks", scope, filters) do
       page = drop_through(summaries, after_key) |> Enum.take(limit + 1)
@@ -327,6 +327,15 @@ defmodule EmisarWeb.MCP.RunbookTools do
     error(
       "not_live",
       "That release is not the live version of this runbook. list_runbooks shows what is."
+    )
+  end
+
+  # An LLM caller retries, so the generic execution_failed would loop it on the
+  # same rejected text forever. Name the argument and what is wrong with it.
+  defp execution_failure(:reason_unsafe_text, _allow_draft) do
+    error(
+      "invalid_args",
+      "reason contains control or formatting characters. Send plain text and retry."
     )
   end
 

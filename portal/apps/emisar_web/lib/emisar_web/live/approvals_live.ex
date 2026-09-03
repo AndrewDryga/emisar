@@ -14,7 +14,7 @@ defmodule EmisarWeb.ApprovalsLive do
     3. **Recent decisions** — last 25 approve/deny calls for history.
   """
   use EmisarWeb, :live_view
-  alias Emisar.{Approvals, Audit, Runners}
+  alias Emisar.{Accounts, Approvals, Audit, Runners}
   alias EmisarWeb.{ConfirmDialog, LiveTable, Permissions}
   alias Phoenix.LiveView.JS
 
@@ -25,10 +25,10 @@ defmodule EmisarWeb.ApprovalsLive do
      socket
      |> ConfirmDialog.init()
      |> assign(:page_title, "Approvals")
-     |> assign(
-       :pack_access_restricted?,
-       socket.assigns.current_membership.pack_access_mode == :restricted
-     )
+     # The notice describes the list, so it is derived where the list is —
+     # `load/2` re-reads current access on every load and debounced refresh. The
+     # dead render has no rows yet, so it makes no claim about them.
+     |> assign(:pack_access_restricted?, false)
      |> assign(:reload_scheduled?, false)}
   end
 
@@ -215,6 +215,15 @@ defmodule EmisarWeb.ApprovalsLive do
     approval_event_refs = approval_event_refs(grants, subject)
 
     socket
+    # The rows above were narrowed by CURRENT pack access, read fresh inside
+    # each list call. Derive the notice from the same projection rather than the
+    # mount-time membership snapshot, or a member whose access is narrowed (or
+    # widened) mid-session keeps reading the wrong explanation for a list that
+    # already changed underneath them.
+    |> assign(
+      :pack_access_restricted?,
+      Accounts.runner_access_for_subject(subject).pack_mode == :restricted
+    )
     |> assign(:pending, pending)
     |> assign(:pending_request_facts, pending_facts)
     |> assign(:pending_metadata, pending_meta)

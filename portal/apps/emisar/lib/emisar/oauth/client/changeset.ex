@@ -1,6 +1,7 @@
 defmodule Emisar.OAuth.Client.Changeset do
   use Emisar, :changeset
   alias Emisar.OAuth.Client
+  alias Emisar.SafeText
 
   @cast_fields ~w(client_name redirect_uris grant_types response_types scope metadata)a
 
@@ -76,11 +77,25 @@ defmodule Emisar.OAuth.Client.Changeset do
   # INSERT and raised `Postgrex.Error` past the controller's changeset-only error
   # branch: a 500 with database internals in it, for any anonymous caller. Reject
   # it here, as the rest of the codebase already does at its own edges.
+  #
+  # `client_name` needs more than that: it is the value the consent page renders
+  # prominently ("Authorize <name>"), so a bidi override or zero-width joiner
+  # lets an anonymous registrant dress its client up as a trusted one. It is a
+  # single-line identity, so it takes the strict SafeText policy — which
+  # subsumes the NUL check.
   defp validate_storable_text(changeset) do
     changeset
-    |> validate_no_null_bytes(:client_name)
+    |> validate_safe_text(:client_name)
     |> validate_no_null_bytes(:scope)
     |> validate_uri_list_no_null_bytes(:redirect_uris)
+  end
+
+  defp validate_safe_text(changeset, field) do
+    validate_change(changeset, field, fn ^field, value ->
+      if SafeText.unsafe?(value),
+        do: [{field, "must not contain control or formatting characters"}],
+        else: []
+    end)
   end
 
   defp validate_no_null_bytes(changeset, field) do

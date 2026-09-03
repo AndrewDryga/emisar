@@ -5608,6 +5608,20 @@ defmodule Emisar.RunsTest do
       assert Runs.list_recent_events_for_runs([run.id], 2, no_permissions_subject(account)) ==
                {:error, :unauthorized}
     end
+
+    test "refuses more run ids than the cap instead of raising", %{
+      account: account,
+      runner: runner,
+      subject: subject
+    } do
+      {:ok, run} = Runs.create_run(base_attrs(account.id, runner.id))
+      at_cap = List.duplicate(run.id, 256)
+
+      assert {:ok, %{}} = Runs.list_recent_events_for_runs(at_cap, 2, subject)
+
+      assert Runs.list_recent_events_for_runs([run.id | at_cap], 2, subject) ==
+               {:error, :too_many_run_ids}
+    end
   end
 
   describe "list_events_for_run_since/4" do
@@ -5653,16 +5667,40 @@ defmodule Emisar.RunsTest do
           })
       end
 
-      # An 8-byte budget fits two 4-byte chunks; `more?` flags the cut.
+      # The budget is charged on the stored payload, not the chunk string, so
+      # 32 bytes fits two 16-byte `{"chunk":"aaaa"}` rows; `more?` flags the cut.
       assert {:ok, [%RunEvent{seq: 1}, %RunEvent{seq: 2}], true} =
-               Runs.list_events_for_run_since(run.id, 1, 8, subject)
+               Runs.list_events_for_run_since(run.id, 1, 32, subject)
 
       assert {:ok, [%RunEvent{seq: 3}, %RunEvent{seq: 4}], true} =
-               Runs.list_events_for_run_since(run.id, 3, 8, subject)
+               Runs.list_events_for_run_since(run.id, 3, 32, subject)
 
       # The tail exhausts without repeating or skipping anything.
       assert {:ok, [%RunEvent{seq: 5}], false} =
-               Runs.list_events_for_run_since(run.id, 5, 8, subject)
+               Runs.list_events_for_run_since(run.id, 5, 32, subject)
+    end
+
+    test "charges the payload, so a non-string chunk cannot make a page free", %{
+      account: account,
+      runner: runner,
+      subject: subject
+    } do
+      {:ok, run} = Runs.create_run(base_attrs(account.id, runner.id))
+
+      for seq <- 1..3 do
+        {:ok, _} =
+          Runs.append_event(run, %{
+            seq: seq,
+            kind: "progress",
+            payload: %{"chunk" => %{"blob" => String.duplicate("a", 64)}}
+          })
+      end
+
+      # Nothing requires the stored chunk to be a string. Charged on the decoded
+      # chunk it read 0 bytes per event, so one page handed back every row a
+      # hostile runner had banked.
+      assert {:ok, [%RunEvent{seq: 1}], true} =
+               Runs.list_events_for_run_since(run.id, 1, 32, subject)
     end
 
     test "always returns the first event, even past the budget", %{

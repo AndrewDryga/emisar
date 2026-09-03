@@ -177,6 +177,38 @@ defmodule EmisarWeb.RunDetailLiveTest do
            )
   end
 
+  test "the first paint omits the Approval row instead of naming a former member",
+       %{conn: conn} do
+    {conn, _user, account} = register_and_log_in(conn)
+
+    run =
+      run_with(account, %{
+        status: "success",
+        requires_approval: true,
+        policy_decision: "require_approval",
+        policy_reason: "High-risk config reload requires an admin approval"
+      })
+
+    approver = Fixtures.Users.create_user(full_name: "Jordan Approver")
+
+    _request =
+      Fixtures.Approvals.create_request(
+        run_id: run.id,
+        account_id: account.id,
+        status: :approved,
+        decided_by_id: approver.id,
+        decision_reason: "window open, config validated"
+      )
+
+    static = conn |> get(~p"/app/#{account}/runs/#{run.id}") |> html_response(200)
+
+    refute static =~ "a former member"
+
+    {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runs/#{run.id}")
+
+    assert html =~ "Approved by Jordan Approver"
+  end
+
   test "the Why cluster renders the optional evidence/expected chain, only when present",
        %{conn: conn} do
     {conn, _user, account} = register_and_log_in(conn)

@@ -133,7 +133,9 @@ defmodule Emisar.OAuthTest do
                  "redirect_uris" => [@redirect]
                })
 
-      assert "must not contain null bytes" in errors_on(changeset).client_name
+      # `client_name` takes the stricter single-line SafeText policy, which
+      # subsumes the NUL check — see the bidi case below.
+      assert "must not contain control or formatting characters" in errors_on(changeset).client_name
 
       assert {:error, changeset} =
                OAuth.register_client(%{
@@ -151,6 +153,24 @@ defmodule Emisar.OAuthTest do
                })
 
       assert "must not contain null bytes" in errors_on(changeset).redirect_uris
+    end
+
+    test "rejects a bidi override in the client name the consent page renders" do
+      assert {:error, changeset} =
+               OAuth.register_client(%{
+                 "client_name" => "Emisar \u202Elive-runner",
+                 "redirect_uris" => [@redirect]
+               })
+
+      assert "must not contain control or formatting characters" in errors_on(changeset).client_name
+
+      assert {:ok, client} =
+               OAuth.register_client(%{
+                 "client_name" => "Emisar live-runner",
+                 "redirect_uris" => [@redirect]
+               })
+
+      assert client.client_name == "Emisar live-runner"
     end
 
     test "rejects a non-https / non-localhost redirect uri" do

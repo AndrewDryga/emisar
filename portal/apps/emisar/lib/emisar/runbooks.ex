@@ -16,6 +16,7 @@ defmodule Emisar.Runbooks do
   alias Emisar.Runbooks.{Authoring, Authorizer, Compiler, Definition, DefinitionDiff}
   alias Emisar.Runbooks.{EditorProjection, ExecutionItem, ExecutionProjection, Naming, Release}
   alias Emisar.Runbooks.{Runbook, RunbookExecution, Scheduler}
+  alias Emisar.SafeText
   alias Emisar.Users
 
   # One runbook list page is 35 rows; 64 bounds the batch without capping the
@@ -1654,8 +1655,18 @@ defmodule Emisar.Runbooks do
   defp ensure_membership(%Subject{membership_id: id}) when is_binary(id), do: :ok
   defp ensure_membership(_), do: {:error, :membership_required}
 
+  # The reason is copied verbatim onto the approval request an approver reads
+  # before releasing the whole execution, and into the audit trail and its
+  # exports. A model composes it from runner output this product tells it to
+  # distrust, so a bidi override there reverses the rendered line — the same
+  # threat `ActionRun.Changeset.create/1` rejects for a direct run's `reason`.
+  # Reject, don't strip: the caller can retry with clean text.
   defp ensure_reason(reason) when is_binary(reason) do
-    if String.trim(reason) == "", do: {:error, :reason_required}, else: :ok
+    cond do
+      String.trim(reason) == "" -> {:error, :reason_required}
+      SafeText.unsafe_multiline?(reason) -> {:error, :reason_unsafe_text}
+      true -> :ok
+    end
   end
 
   defp fetch_runbook_by_slug(slug, %Subject{} = subject) when is_binary(slug) do

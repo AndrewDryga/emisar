@@ -64,7 +64,14 @@ defmodule EmisarWeb.RunDetailLive do
             {[], :loading}
           end
 
-        approval_request = lookup_approval(subject, run)
+        # All three approval reads are deferred together. Deferring only the
+        # decider left the dead render holding a real request and a nil decider,
+        # which falls through to `decider_label/2`'s deleted-user clause — so the
+        # static HTML of EVERY approved run said "Approved by a former member",
+        # on the page an auditor opens to answer exactly that question. Omitting
+        # the row until the socket connects states nothing instead of stating
+        # something false.
+        approval_request = if connected?(socket), do: lookup_approval(subject, run)
         approval_decider = if connected?(socket), do: approval_decider(approval_request)
 
         approval_event_id =

@@ -13,6 +13,9 @@ defmodule Emisar.Approvals.Grant.Query do
   def by_api_key_id(queryable, api_key_id),
     do: where(queryable, [grants: g], g.api_key_id == ^api_key_id)
 
+  def by_granted_by_user_id(queryable, user_id),
+    do: where(queryable, [grants: g], g.granted_by_id == ^user_id)
+
   def not_revoked(queryable \\ all()),
     do: where(queryable, [grants: g], is_nil(g.revoked_at))
 
@@ -24,6 +27,13 @@ defmodule Emisar.Approvals.Grant.Query do
 
   def ordered_by_granted(queryable),
     do: order_by(queryable, [grants: g], asc: g.granted_at)
+
+  @doc """
+  Selects the whole row so `Repo.update_all/3` can RETURN what it changed — the
+  membership cascade audits one row per revoked grant, and a read followed by an
+  update would miss a grant minted between the two statements.
+  """
+  def select_all(queryable), do: select(queryable, [grants: g], g)
 
   @doc "Audit label-lookup helper for standing-grant targets."
   def select_labels(queryable, ids, field) do

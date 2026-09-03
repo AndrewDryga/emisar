@@ -9,6 +9,7 @@ defmodule Emisar.ActionContract do
   """
 
   alias Emisar.JSONNumber
+  alias Emisar.SafeText
 
   @default_max_string_bytes 32_768
   @duration ~r/\A[+-]?(?:0|(?:(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)(?:ns|us|µs|μs|ms|s|m|h))+)\z/u
@@ -128,7 +129,8 @@ defmodule Emisar.ActionContract do
 
   defp validate_value(spec, value) do
     with {:ok, normalized} <- coerce(spec, value),
-         :ok <- validate_string_bytes(spec, normalized) do
+         :ok <- validate_string_bytes(spec, normalized),
+         :ok <- validate_safe_strings(spec, normalized) do
       validate_constraints(spec, normalized)
     end
   end
@@ -224,6 +226,43 @@ defmodule Emisar.ActionContract do
       :ok
     end
   end
+
+  # At approval time nothing has executed yet, so these values ARE the artifact
+  # the human checks. Jason emits U+202E verbatim and HEEx escaping does not
+  # touch `\p{Cf}`, so a bidi override reverses the argument line the approver
+  # reads while the runner receives the true bytes. Reject rather than strip —
+  # the caller is an LLM that can retry, and stripping at the projection would
+  # make the rendered args disagree with the `args_sha256` the approver is told
+  # to verify. `unsafe_multiline?` because 48 shipped actions take a multi-line
+  # shell program.
+  defp validate_safe_strings(spec, value) do
+    if spec["type"] in ["string", "path", "string_array"] do
+      values = if is_list(value), do: value, else: [value]
+
+      unsafe =
+        values
+        |> Enum.with_index()
+        |> Enum.find(fn {item, _index} -> SafeText.unsafe_multiline?(item) end)
+
+      safe_string_result(spec, value, unsafe)
+    else
+      :ok
+    end
+  end
+
+  defp safe_string_result(_spec, _value, nil), do: :ok
+
+  defp safe_string_result(spec, value, {_item, index}) when is_list(value) do
+    element_issue(
+      spec["name"],
+      index,
+      "format",
+      "element #{index} contains control or formatting characters"
+    )
+  end
+
+  defp safe_string_result(spec, _value, _unsafe),
+    do: issue(spec["name"], "format", "contains control or formatting characters")
 
   defp validate_constraints(spec, value) do
     validation = validation(spec)

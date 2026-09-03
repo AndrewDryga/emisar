@@ -2675,6 +2675,11 @@ defmodule Emisar.Runs do
          do: {:ok, run_action_payload(run)}
   end
 
+  # This is the authoritative trust check, not a second opinion: approval's own
+  # preflight runs before its transaction opens, so trust can move between the
+  # decision committing and the run being released. Accepted by decision — the
+  # cost is an approved request whose run is then refused here, never changed
+  # bytes executing, because delivery compares the run's SNAPSHOTTED pack hash.
   defp recheck_snapshotted_pack_trust(%ActionRun{} = run) do
     with {:ok, contract} <-
            fetch_dispatch_contract(
@@ -3141,6 +3146,7 @@ defmodule Emisar.Runs do
     else
       Multi.new()
       |> put_connection_guard(connection)
+      |> put_dispatch_account_lock(run, expected_status, status)
       |> Multi.run(:run, fn repo, _changes ->
         # The caller's struct can be stale: a runner result, an operator
         # cancel, and the timeout sweep race on the same row, and a late
@@ -3189,11 +3195,22 @@ defmodule Emisar.Runs do
     end
   end
 
-  defp authorize_dispatch_transition(repo, run, :pending, :sent) do
-    with {:ok, _account} <- Accounts.fetch_and_lock_account(run.account_id, repo: repo) do
-      ensure_run_initiator_authorized(repo, run)
-    end
-  end
+  # Every approval / dispatch / cancellation writer takes the ACCOUNT row first;
+  # that one lock is the total order over their different targets (whole
+  # executions and individual runs). The dispatch claim is the only transition
+  # that needs the account at all — it re-checks the initiator's membership — and
+  # it used to take it INSIDE the run's own lock, which is the reversed order:
+  # an operator cancel holding the account and waiting on the run deadlocked
+  # against a dispatcher holding the run and waiting on the account (40P01,
+  # rescued nowhere). Hoisted here so the dispatch matches every sibling, while
+  # the other transitions keep their cheaper account-free shape.
+  defp put_dispatch_account_lock(multi, %ActionRun{account_id: account_id}, :pending, :sent),
+    do: put_active_account_lock(multi, account_id, :active_account)
+
+  defp put_dispatch_account_lock(multi, _run, _expected_status, _status), do: multi
+
+  defp authorize_dispatch_transition(repo, run, :pending, :sent),
+    do: ensure_run_initiator_authorized(repo, run)
 
   defp authorize_dispatch_transition(_repo, _run, _expected_status, _status), do: :ok
 
@@ -3324,7 +3341,7 @@ defmodule Emisar.Runs do
 
   defp append_event(%ActionRun{} = run, attrs, connection) do
     attrs = attrs |> Map.put(:run_id, run.id) |> Map.put(:account_id, run.account_id)
-    event_bytes = progress_payload_bytes(attrs)
+    event_bytes = progress_payload_bytes(Map.get(attrs, :payload))
 
     Multi.new()
     |> put_connection_guard(connection)
@@ -3418,15 +3435,22 @@ defmodule Emisar.Runs do
     end
   end
 
-  # Serialized byte size of a progress event's payload — what the budget charges
-  # (matching the per-event 256 KiB cap's measure). An absent/unencodable
-  # payload charges 0; the changeset rejects a malformed one separately.
-  defp progress_payload_bytes(attrs) do
-    with payload when not is_nil(payload) <- Map.get(attrs, :payload),
-         {:ok, json} <- Jason.encode(payload) do
-      byte_size(json)
-    else
-      _ -> 0
+  # Serialized byte size of a progress event's payload — the ONE measure both
+  # the durable per-run budget and the MCP output tail charge (matching the
+  # per-event 256 KiB cap's measure), so a row either budget holds can never be
+  # accounted at zero. The tail used to charge the DECODED CHUNK STRING instead:
+  # nothing requires `payload["chunk"]` to be a string, so a runner sending a
+  # JSON object charged 0 bytes per event and one `wait_for_run` could
+  # materialize a run's entire 64 MiB of output in a single page.
+  #
+  # A payload read back from jsonb always re-encodes, so the 0 fallback is
+  # reachable only on the ingest side, where the changeset rejects the row.
+  defp progress_payload_bytes(nil), do: 0
+
+  defp progress_payload_bytes(payload) do
+    case Jason.encode(payload) do
+      {:ok, json} -> byte_size(json)
+      {:error, _reason} -> 0
     end
   end
 
@@ -3583,13 +3607,22 @@ defmodule Emisar.Runs do
     end
   end
 
+  # One runbook execution's attempts are the whole caller here, and the runbook
+  # schema caps an execution at 256 items (`max_execution_items`). The bound was
+  # spelled as a bare guard literal with no second clause, so it was an unwritten
+  # equality with that constant: raising the item cap turned every render of an
+  # execution's run page into a FunctionClauseError on mount, past the caller's
+  # own `{:error, _}` branch. Named, and refused rather than raised.
+  @max_tail_run_ids 256
+
   @doc """
-  Returns a bounded output tail for each visible run id. The entire id set must
-  be visible to the subject; a mixed visible/hidden request fails closed.
+  Returns a bounded output tail for at most #{@max_tail_run_ids} visible run ids.
+  The entire id set must be visible to the subject; a mixed visible/hidden
+  request fails closed. Over the cap it is `{:error, :too_many_run_ids}`.
   """
   def list_recent_events_for_runs(run_ids, limit, %Subject{} = subject)
-      when is_list(run_ids) and length(run_ids) <= 256 and is_integer(limit) and limit >= 1 and
-             limit <= 64 do
+      when is_list(run_ids) and length(run_ids) <= @max_tail_run_ids and is_integer(limit) and
+             limit >= 1 and limit <= 64 do
     run_ids = Enum.uniq(run_ids)
 
     with :ok <- validate_run_ids(run_ids),
@@ -3605,6 +3638,10 @@ defmodule Emisar.Runs do
       {:ok, events}
     end
   end
+
+  def list_recent_events_for_runs(run_ids, _limit, %Subject{})
+      when is_list(run_ids) and length(run_ids) > @max_tail_run_ids,
+      do: {:error, :too_many_run_ids}
 
   defp validate_run_ids(run_ids) do
     if Enum.all?(run_ids, &Repo.valid_uuid?/1), do: :ok, else: {:error, :not_found}
@@ -3655,10 +3692,12 @@ defmodule Emisar.Runs do
     # 64 rows/batch bounds the stream's in-flight buffer; the 2_000-event cap
     # keeps a frame of tiny chunks from becoming thousands of DB round-trips. The
     # first event always ships so the cursor advances even past a huge chunk.
+    # The accumulator holds whole rows, so the budget is charged on the stored
+    # PAYLOAD, never on the decoded chunk string.
     queryable
     |> Repo.stream(max_rows: 64)
     |> Enum.reduce_while({[], 0, 0, false}, fn event, {acc, bytes, count, _more} ->
-      next_bytes = bytes + byte_size(progress_chunk(event))
+      next_bytes = bytes + progress_payload_bytes(event.payload)
       next_count = count + 1
 
       cond do
@@ -3669,9 +3708,6 @@ defmodule Emisar.Runs do
     end)
     |> then(fn {acc, _bytes, _count, more?} -> {Enum.reverse(acc), more?} end)
   end
-
-  defp progress_chunk(%RunEvent{payload: %{"chunk" => chunk}}) when is_binary(chunk), do: chunk
-  defp progress_chunk(_event), do: ""
 
   @doc """
   The number of progress chunks currently persisted for a run. Backs the MCP
@@ -3782,6 +3818,13 @@ defmodule Emisar.Runs do
 
     result
   end
+
+  # The output text this materializer concatenates — so here the chunk string IS
+  # what accumulates, and it is the right thing to charge. A byte BUDGET over
+  # rows we merely hold is charged on the payload instead (see
+  # `progress_payload_bytes/1`).
+  defp progress_chunk(%RunEvent{payload: %{"chunk" => chunk}}) when is_binary(chunk), do: chunk
+  defp progress_chunk(_event), do: ""
 
   @doc """
   The most recent `limit` progress chunks before `before_seq`, in chronological

@@ -118,6 +118,26 @@ defmodule EmisarWeb.MCP.ActionContractTest do
     assert ActionContract.validate(%{"delay" => "1h", "file" => "/var/log/app"}, action) == :ok
   end
 
+  test "rejects control and formatting characters in string, path, and array arguments" do
+    action =
+      action([
+        arg("name", "string"),
+        arg("file", "path"),
+        arg("tags", "string_array"),
+        arg("script", "string")
+      ])
+
+    bidi = "systemctl stop \u202Ehctiws-esaeler"
+
+    assert_issue(%{"name" => bidi}, action, "name", "format")
+    assert_issue(%{"file" => "/var/log/\u200Bapp.log"}, action, "file", "format")
+
+    assert {:error, %{arg: "tags", code: "format", path: ["tags", 1]}} =
+             ActionContract.validate(%{"tags" => ["ok", bidi]}, action)
+
+    assert ActionContract.validate(%{"script" => "set -e\n\tls /var/log\n"}, action) == :ok
+  end
+
   test "defers patterns to the runner and matches Go duration range semantics" do
     action =
       action([

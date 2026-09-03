@@ -206,6 +206,12 @@ defmodule Emisar.Approvals.Request.Query do
   def ordered_by_id(queryable \\ all()),
     do: order_by(queryable, [requests: r], asc: r.id)
 
+  # Oldest deadline first, so a batched expiry sweep drains its backlog in the
+  # order the requests lapsed. Matches the partial index the sweep's predicate
+  # already uses (`approval_requests_pending_expires_at_idx`).
+  def ordered_by_expires_at(queryable \\ all()),
+    do: order_by(queryable, [requests: r], asc: r.expires_at)
+
   def requested_in_window(queryable, %DateTime{} = from, %DateTime{} = to),
     do: where(queryable, [requests: r], r.requested_at >= ^from and r.requested_at < ^to)
 

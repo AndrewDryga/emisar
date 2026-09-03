@@ -270,6 +270,24 @@ defmodule Emisar.Fixtures.Approvals do
   end
 
   @doc """
+  Persists a standing approval grant. Caller supplies `:account_id` and
+  `:api_key_id`; `:granted_by_id` defaults to a fresh user, and every other
+  field to a usable, never-expiring grant.
+  """
+  def create_grant(attrs \\ %{}) do
+    attrs = Map.new(attrs)
+
+    defaults = %{
+      action_id: "linux.uptime",
+      pack_ref: "linux-core@1.0.0",
+      granted_by_id: attrs[:granted_by_id] || Fixtures.Users.create_user().id,
+      granted_at: DateTime.utc_now()
+    }
+
+    defaults |> Map.merge(attrs) |> Approvals.Grant.Changeset.create() |> Repo.insert!()
+  end
+
+  @doc """
   Test-side inspector: the unrevoked grants minted against an API key,
   newest first. Verifies `approve_request/4` side effects without
   rebuilding the Subject-gated operator surface in test setup.

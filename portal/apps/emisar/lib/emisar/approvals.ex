@@ -26,11 +26,23 @@ defmodule Emisar.Approvals do
   alias Emisar.Approvals.{Authorizer, Decision, DecisionInput, Grant, GrantLifetimeInput, Request}
   alias Emisar.{Audit, Auth, Catalog, Repo, Runbooks, Runners, Runs, Users}
   alias Emisar.Auth.Subject
+  alias Emisar.SafeText
   require Logger
 
   # The approvals queue renders at most one 15-row page at a time; 64 leaves
   # room for a fuller page without letting a caller ask for an unbounded batch.
   @max_risk_request_ids 64
+
+  # Its only caller asks about one execution; the bound exists so a future
+  # batching caller cannot hand this an unbounded `IN` list.
+  @max_execution_request_ids 64
+
+  # The expiry sweep loaded every overdue request fleet-wide, and each row
+  # carries its `context` jsonb — for a runbook execution that is the whole
+  # frozen plan (up to 1 MiB). A backlog of parked executions therefore pulled
+  # megabytes into memory before the first transaction ran. Bound the batch like
+  # the `Runs` dispatch sweeps; a backlog drains over consecutive 5-minute ticks.
+  @sweep_batch 2_000
 
   # The approver's decision note is free text typed into a textarea. Nothing
   # bounded it: decide_pending/5 writes through a bare update_all, so there is no
@@ -40,6 +52,14 @@ defmodule Emisar.Approvals do
   # audit row. The column is :text now; this is the product bound, matching the
   # dispatch reason's cap so both justification surfaces accept the same length.
   @max_decision_reason 2000
+
+  # A deny also writes a terminal reason onto the held work, and those columns
+  # are much smaller than the note: `action_runs.reason_text` is varchar(255)
+  # validated in CODE POINTS, and a halted runbook execution's
+  # `terminal_message` is 1_024. Budget the excerpt against the tighter of the
+  # two so `denial_reason/1` can never abort the decision transaction.
+  @denial_prefix "approval denied"
+  @max_denial_excerpt 255 - String.length(@denial_prefix <> ": ")
 
   def start_link(opts) do
     Supervisor.start_link(__MODULE__, opts, name: __MODULE__.Supervisor)
@@ -215,9 +235,12 @@ defmodule Emisar.Approvals do
     end
   end
 
-  @doc "Lists visible approval requests for a bounded set of runbook executions."
+  @doc """
+  Lists visible approval requests for at most #{@max_execution_request_ids}
+  runbook executions. Over the cap it is `{:error, :too_many_execution_ids}`.
+  """
   def list_requests_for_runbook_executions(execution_ids, %Subject{} = subject)
-      when is_list(execution_ids) and length(execution_ids) <= 64 do
+      when is_list(execution_ids) and length(execution_ids) <= @max_execution_request_ids do
     with :ok <-
            Auth.Authorizer.ensure_has_permissions(
              subject,
@@ -233,6 +256,10 @@ defmodule Emisar.Approvals do
       {:ok, requests}
     end
   end
+
+  def list_requests_for_runbook_executions(execution_ids, %Subject{})
+      when is_list(execution_ids) and length(execution_ids) > @max_execution_request_ids,
+      do: {:error, :too_many_execution_ids}
 
   @doc """
   `%{request_id => risk}` for at most #{@max_risk_request_ids} approval request
@@ -1024,7 +1051,7 @@ defmodule Emisar.Approvals do
   `{:ok, {request, :pending}}` when recorded but below the distinct-approver
   threshold, or `{:error, %Ecto.Changeset{} | :self_approval_forbidden |
   :already_decided | :expired | :unauthorized | :not_found |
-  :decision_reason_too_long |
+  :decision_reason_too_long | :decision_reason_unsafe_text |
   {:grant_failed, changeset}}`. Rejected input records nothing.
   """
   def approve_request(%Request{} = request, %Subject{} = subject, reason \\ nil, attrs \\ []) do
@@ -1051,8 +1078,8 @@ defmodule Emisar.Approvals do
 
   Returns the same final release shapes as `approve_request/4`, or
   `{:error, :override_reason_required | :decision_reason_too_long |
-  :unauthorized | :not_found | :expired | :run_cancelled |
-  :already_decided | :quorum_already_met | ...}`.
+  :decision_reason_unsafe_text | :unauthorized | :not_found | :expired |
+  :run_cancelled | :already_decided | :quorum_already_met | ...}`.
   """
   def override_request(%Request{} = supplied_request, reason, %Subject{} = subject) do
     with :ok <-
@@ -1133,7 +1160,8 @@ defmodule Emisar.Approvals do
   Deny a pending request — one deny finalizes DENIED, cancels the run, and no
   later approve can out-vote it. Requires `decide`; scoped to the account.
   Returns `{:ok, {request, run}}` or `{:error, :already_decided | :expired |
-  :unauthorized | :not_found | :decision_reason_too_long}`.
+  :unauthorized | :not_found | :decision_reason_too_long |
+  :decision_reason_unsafe_text}`.
   """
   def deny_request(%Request{} = request, %Subject{} = subject, reason \\ nil) do
     with :ok <-
@@ -1147,19 +1175,25 @@ defmodule Emisar.Approvals do
     end
   end
 
-  # The single decision path — both entry points run the decide permission gate
-  defp ensure_decision_reason_within_limit(nil), do: :ok
+  # The single decision path — both entry points run the decide permission gate.
+  # The note is rendered back on the approval detail, quoted in the outcome
+  # email, and exported with the audit trail, so it carries the same bidi
+  # deception surface the dispatch justification is rejected for; reject rather
+  # than strip, because the approver can retype it.
+  defp ensure_decision_reason_storable(nil), do: :ok
 
-  defp ensure_decision_reason_within_limit(reason) when is_binary(reason) do
-    if String.length(reason) <= @max_decision_reason,
-      do: :ok,
-      else: {:error, :decision_reason_too_long}
+  defp ensure_decision_reason_storable(reason) when is_binary(reason) do
+    cond do
+      String.length(reason) > @max_decision_reason -> {:error, :decision_reason_too_long}
+      SafeText.unsafe_multiline?(reason) -> {:error, :decision_reason_unsafe_text}
+      true -> :ok
+    end
   end
 
   defp normalize_override_reason(reason) when is_binary(reason) do
     case String.trim(reason) do
       "" -> {:error, :override_reason_required}
-      trimmed -> with :ok <- ensure_decision_reason_within_limit(trimmed), do: {:ok, trimmed}
+      trimmed -> with :ok <- ensure_decision_reason_storable(trimmed), do: {:ok, trimmed}
     end
   end
 
@@ -1218,7 +1252,7 @@ defmodule Emisar.Approvals do
          reason,
          %DecisionInput{} = input
        ) do
-    with :ok <- ensure_decision_reason_within_limit(reason),
+    with :ok <- ensure_decision_reason_storable(reason),
          {:ok, request} <- fetch_approval_request_for_decision(supplied_request.id, subject),
          :ok <- ensure_request_pending(request),
          :ok <- check_self_approval(decision, request, subject),
@@ -2040,8 +2074,25 @@ defmodule Emisar.Approvals do
   defp run_from_cancel({:cancelled, %Runs.ActionRun{} = run}), do: run
   defp run_from_cancel({:noop, %Runs.ActionRun{} = run}), do: run
 
-  defp denial_reason(nil), do: "approval denied"
-  defp denial_reason(reason), do: "approval denied: " <> reason
+  defp denial_reason(nil), do: @denial_prefix
+  defp denial_reason(reason), do: @denial_prefix <> ": " <> denial_excerpt(reason)
+
+  # The approver's full note stays on the request (`decision_reason` is :text);
+  # the held work gets an excerpt. Before this, an ordinary three-sentence note
+  # failed the run changeset, aborted the whole decision transaction, and left
+  # the run parked while the page said "try again" — which never worked. Count
+  # in the sink's own unit (code points) and mark the cut, so the excerpt can
+  # never be mistaken for the whole note.
+  defp denial_excerpt(reason) do
+    points = String.to_charlist(reason)
+
+    if length(points) <= @max_denial_excerpt do
+      reason
+    else
+      excerpt = points |> Enum.take(@max_denial_excerpt - 1) |> List.to_string()
+      excerpt <> "…"
+    end
+  end
 
   defp claim_blocked_reason(request_id, now) do
     query = Request.Query.all() |> Request.Query.by_id(request_id)
@@ -2439,6 +2490,46 @@ defmodule Emisar.Approvals do
   end
 
   @doc """
+  Internal — revoke every still-usable standing grant this membership's holder
+  issued, through the caller's transaction `repo`, writing one
+  `approval.grant_revoked` row per grant. Returns `{:ok, count}`.
+
+  Accounts calls it while it holds the membership lock, on every transition
+  that ends a member's authority — suspension, removal, directory deprovision,
+  permission reduction — beside the API-key and device-grant retirement. A
+  grant is a standing delegation of the APPROVER's judgment, but it is bound to
+  whichever API key asked, which is usually somebody else's: retiring the
+  approver's own credentials therefore does not reach it, and a ninety-day
+  grant kept bypassing the human prompt long after its approver was gone.
+
+  Grants record `granted_by_id` as a USER, so the membership's
+  `(account_id, user_id)` pair is the match and no grant column has to change.
+  Already-expired grants are inert and stay historical rows. `revoked_by_id`
+  stays nil — nobody revoked this one by hand; the audit row says why.
+  """
+  def revoke_grants_granted_by_membership(repo, %Accounts.Membership{} = membership) do
+    now = DateTime.utc_now()
+
+    queryable =
+      Grant.Query.not_revoked()
+      |> Grant.Query.by_account_id(membership.account_id)
+      |> Grant.Query.by_granted_by_user_id(membership.user_id)
+      |> Grant.Query.not_expired(now)
+      |> Grant.Query.select_all()
+
+    # RETURNING, not read-then-update: a grant minted between the two statements
+    # would be revoked with no audit row explaining it.
+    {_count, revoked} = repo.update_all(queryable, set: [revoked_at: now, updated_at: now])
+
+    Enum.reduce_while(revoked, {:ok, 0}, fn grant, {:ok, count} ->
+      case repo.insert(Audit.Events.approval_grant_revoked(grant)) do
+        {:ok, _event} -> {:cont, {:ok, count + 1}}
+        {:error, reason} -> {:halt, {:error, reason}}
+      end
+    end)
+  end
+
+  @doc """
   Changeset for the account's standing-grant guardrail — the raw `seconds` cap,
   where a blank value means no cap and `0` disables standing grants entirely.
   Accepts the rail form's string keys or an atom-keyed map / keyword list; a
@@ -2620,15 +2711,18 @@ defmodule Emisar.Approvals do
 
   @doc """
   Internal — the approval expiry job, system, no subject. Atomically
-  transitions every pending request whose
+  transitions a bounded batch of pending requests whose
   `expires_at` has passed into `"expired"`, cancels the held action or execution,
-  and writes an audit row per expiry. Returns the count expired.
+  and writes an audit row per expiry. Returns the count expired. A backlog past
+  the batch drains over consecutive ticks.
   Idempotent — runs every 5 minutes.
   """
   def expire_overdue_requests(now \\ DateTime.utc_now()) do
     expiring =
       Request.Query.pending()
       |> Request.Query.expired_at_at_or_before(now)
+      |> Request.Query.ordered_by_expires_at()
+      |> Request.Query.limit_to(@sweep_batch)
       |> Repo.all()
 
     Enum.count(expiring, &expired?(&1, now))

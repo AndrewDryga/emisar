@@ -138,6 +138,29 @@ defmodule EmisarWeb.ApprovalsLiveTest do
              "Your pack access limits this page to approvals and grants for packs you can use."
   end
 
+  test "the pack-access notice follows current access, not the mount snapshot", %{conn: conn} do
+    {_owner_conn, _owner, account} = register_and_log_in(conn)
+    admin = Fixtures.Users.create_user()
+
+    membership =
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        user_id: admin.id,
+        role: "admin"
+      )
+
+    admin_conn = build_conn() |> log_in_user(admin)
+    {:ok, lv, html} = live(admin_conn, ~p"/app/#{account}/approvals")
+
+    refute html =~ "Your pack access limits this page"
+
+    {:ok, restricted} = Accounts.RunnerAccess.new(:all, [], [], :restricted, ["postgres"])
+    Fixtures.Memberships.force_runner_access(membership, restricted)
+
+    assert render_patch(lv, ~p"/app/#{account}/approvals") =~
+             "Your pack access limits this page to approvals and grants for packs you can use."
+  end
+
   test "labels a requester with this account's directory name", %{conn: conn} do
     {conn, user, account} = register_and_log_in(conn)
     other_account = Fixtures.Accounts.create_account()

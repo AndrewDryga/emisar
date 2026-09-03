@@ -120,20 +120,12 @@ defmodule Emisar.ApprovalsTest do
   # -- Grants ---------------------------------------------------------
 
   defp insert_grant(account, key, opts) do
-    Grant.Changeset.create(
+    Fixtures.Approvals.create_grant(
       Map.merge(
-        %{
-          account_id: account.id,
-          api_key_id: key.id,
-          action_id: "linux.uptime",
-          pack_ref: @grant_pack_ref,
-          granted_by_id: opts[:granted_by_id] || Fixtures.Users.create_user().id,
-          granted_at: DateTime.utc_now()
-        },
+        %{account_id: account.id, api_key_id: key.id, pack_ref: @grant_pack_ref},
         Map.new(opts)
       )
     )
-    |> Repo.insert!()
   end
 
   defp observe_trusted_grant_action(account, user, runner, risk, action_id \\ "linux.uptime") do
@@ -938,6 +930,18 @@ defmodule Emisar.ApprovalsTest do
       other_account = Fixtures.Accounts.create_account()
       other_subject = operator_subject(other_account)
       assert Approvals.list_requests_for_runbook_executions([], other_subject) == {:ok, []}
+    end
+
+    test "accepts a full batch and refuses anything larger" do
+      account = Fixtures.Accounts.create_account()
+      subject = operator_subject(account)
+      id = Ecto.UUID.generate()
+
+      assert Approvals.list_requests_for_runbook_executions(List.duplicate(id, 64), subject) ==
+               {:ok, []}
+
+      assert Approvals.list_requests_for_runbook_executions(List.duplicate(id, 65), subject) ==
+               {:error, :too_many_execution_ids}
     end
   end
 
@@ -2027,6 +2031,19 @@ defmodule Emisar.ApprovalsTest do
       assert decided.decision_reason == at_limit
     end
 
+    test "rejects a decision note carrying a bidi override", %{run: run, subject: subject} do
+      {:ok, request} = Approvals.create_request(run, subject.actor.id, "needs approve")
+
+      assert Approvals.approve_request(request, subject, "reviewed \u202Ednetxe-emit") ==
+               {:error, :decision_reason_unsafe_text}
+
+      assert %Request{status: :pending} = Repo.reload!(request)
+
+      # Line breaks stay legal — the note is a multi-line textarea.
+      assert {:ok, {%Request{status: :approved}, _run}} =
+               Approvals.approve_request(request, subject, "reviewed\nlooks fine")
+    end
+
     test "emails the requester the outcome, without argument values", %{
       account: account,
       run: run,
@@ -3005,6 +3022,9 @@ defmodule Emisar.ApprovalsTest do
       assert Approvals.override_request(request, too_long, owner) ==
                {:error, :decision_reason_too_long}
 
+      assert Approvals.override_request(request, "urgent \u202Essap-yssalg", owner) ==
+               {:error, :decision_reason_unsafe_text}
+
       assert %Request{status: :pending} = Repo.reload!(request)
       assert approved_count(request.id) == 0
     end
@@ -3546,6 +3566,42 @@ defmodule Emisar.ApprovalsTest do
                Approvals.deny_request(request, subject)
 
       assert cancelled_run.status == :cancelled
+    end
+
+    test "a note at the maximum length records the denial and cancels the run", %{
+      run: run,
+      subject: subject
+    } do
+      {:ok, request} = Approvals.create_request(run, subject.actor.id, "needs approve")
+      at_limit = String.duplicate("a", Approvals.max_decision_reason_length())
+
+      assert {:ok, {%Request{status: :denied} = decided, cancelled_run}} =
+               Approvals.deny_request(request, subject, at_limit)
+
+      assert decided.decision_reason == at_limit
+      assert cancelled_run.status == :cancelled
+      assert String.starts_with?(cancelled_run.reason_text, "approval denied: aaa")
+      assert String.ends_with?(cancelled_run.reason_text, "…")
+      # `action_runs.reason_text` is varchar(255) and its changeset counts CODE
+      # POINTS, so the excerpt is measured in the same unit the column is.
+      assert length(String.to_charlist(cancelled_run.reason_text)) == 255
+    end
+
+    test "a note at the maximum length halts a runbook execution" do
+      {requester, account, subject} = Fixtures.Subjects.owner_subject()
+      request = Fixtures.Approvals.create_execution_request(account, requester)
+      at_limit = String.duplicate("a", Approvals.max_decision_reason_length())
+
+      assert {:ok, {%Request{status: :denied} = decided, :runbook_execution}} =
+               Approvals.deny_request(request, subject, at_limit)
+
+      assert decided.decision_reason == at_limit
+
+      execution =
+        Runbooks.RunbookExecution.Query.by_id(request.runbook_execution_id) |> Repo.one()
+
+      assert execution.status == :halted
+      assert String.ends_with?(execution.terminal_message, "…")
     end
 
     test "a viewer (cannot decide) is refused with :unauthorized", %{account: account, run: run} do
@@ -4706,6 +4762,96 @@ defmodule Emisar.ApprovalsTest do
       operator_subject = Fixtures.Subjects.subject_for(operator, account, role: :operator)
 
       assert Approvals.revoke_all_grants(operator_subject) == {:error, :unauthorized}
+    end
+  end
+
+  describe "revoke_grants_granted_by_membership/2" do
+    test "revokes exactly the approver's own live grants, each with an audit row" do
+      account = Fixtures.Accounts.create_account()
+      approver = Fixtures.Users.create_user()
+
+      approver_membership =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          user_id: approver.id,
+          role: "admin"
+        )
+
+      other_approver = Fixtures.Users.create_user()
+
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        user_id: other_approver.id,
+        role: "admin"
+      )
+
+      # The grants ride ANOTHER member's key — that is the whole exposure:
+      # revoking the approver's own credentials never reaches them.
+      requester = Fixtures.Users.create_user()
+
+      {_raw, key} =
+        Fixtures.ApiKeys.create_api_key(account_id: account.id, created_by_id: requester.id)
+
+      mine = insert_grant(account, key, action_id: "a.one", granted_by_id: approver.id)
+      theirs = insert_grant(account, key, action_id: "a.two", granted_by_id: other_approver.id)
+
+      expired =
+        insert_grant(account, key,
+          action_id: "a.expired",
+          granted_by_id: approver.id,
+          expires_at: DateTime.add(DateTime.utc_now(), -1, :hour)
+        )
+
+      assert {:ok, %{revoked: 1}} =
+               Repo.commit_multi(
+                 Multi.run(Multi.new(), :revoked, fn repo, _changes ->
+                   Approvals.revoke_grants_granted_by_membership(repo, approver_membership)
+                 end)
+               )
+
+      assert Repo.reload!(mine).revoked_at
+      refute Repo.reload!(theirs).revoked_at
+      refute Repo.reload!(expired).revoked_at
+
+      event =
+        Audit.Event.Query.all()
+        |> Audit.Event.Query.by_account_id(account.id)
+        |> Audit.Event.Query.by_event_type("approval.grant_revoked")
+        |> Repo.one()
+
+      assert event.actor_kind == "system"
+      assert event.target_id == mine.id
+      assert event.payload["granted_by_id"] == approver.id
+    end
+
+    test "a membership in another account revokes nothing" do
+      account = Fixtures.Accounts.create_account()
+      approver = Fixtures.Users.create_user()
+
+      {_raw, key} =
+        Fixtures.ApiKeys.create_api_key(account_id: account.id, created_by_id: approver.id)
+
+      grant = insert_grant(account, key, action_id: "a.one", granted_by_id: approver.id)
+
+      # Same person, a membership somewhere else: `granted_by_id` alone is not
+      # the match — the account is half of it.
+      other_account = Fixtures.Accounts.create_account()
+
+      elsewhere =
+        Fixtures.Memberships.create_membership(
+          account_id: other_account.id,
+          user_id: approver.id,
+          role: "admin"
+        )
+
+      assert {:ok, %{revoked: 0}} =
+               Repo.commit_multi(
+                 Multi.run(Multi.new(), :revoked, fn repo, _changes ->
+                   Approvals.revoke_grants_granted_by_membership(repo, elsewhere)
+                 end)
+               )
+
+      refute Repo.reload!(grant).revoked_at
     end
   end
 
