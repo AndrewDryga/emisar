@@ -36,10 +36,10 @@ curl -sS -H @- "$API_URL/resource"
 This exits zero after a 401, 403, 404, or 500 response.
 
 **Sweep.** Inspect `execution.command` and every referenced `execution.script`
-under `packs/*/actions/`. Look for curl invocations without a short option
-containing `f`, `--fail`, or an explicit 2xx status check. For credentialed
-packs, exercise one invalid credential in the pack behavior plan when a
-disposable service model exists.
+for each action path declared by `pack.yaml`. Look for curl invocations without
+a short option containing `f`, `--fail`, or an explicit 2xx status check. For
+credentialed packs, exercise one invalid credential in the pack behavior plan
+when a disposable service model exists.
 
 **Enforced.** `./run check packs`, `./run pack check <name>`, and
 `./run gate packs` reject curl-backed actions that neither fail on HTTP errors

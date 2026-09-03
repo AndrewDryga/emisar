@@ -100,7 +100,7 @@ func TestValidatePackScriptSyntax(t *testing.T) {
 				t.Fatal(err)
 			}
 
-			err := validatePackScriptSyntax(t.Context(), packDir)
+			err := validatePackScriptSyntax(t.Context(), fixturePackActionLintInput(t, packDir))
 			if test.wantErr {
 				if err == nil || !strings.Contains(err.Error(), test.wantErrMsg) {
 					t.Fatalf("error = %v, want containing %q", err, test.wantErrMsg)
@@ -132,7 +132,7 @@ func TestPackScriptSyntaxNamesASharedScript(t *testing.T) {
 		}
 	}
 
-	err := validatePackScriptSyntax(t.Context(), packDir)
+	err := validatePackScriptSyntax(t.Context(), fixturePackActionLintInput(t, packDir))
 	if err == nil || !strings.Contains(err.Error(), "fixture.shared_one and 1 more") {
 		t.Fatalf("error = %v, want containing %q", err, "fixture.shared_one and 1 more")
 	}
@@ -153,7 +153,7 @@ func TestScriptSyntaxLintCoversTheShippedCatalog(t *testing.T) {
 	}
 	for _, manifest := range manifests {
 		packDir := filepath.Dir(manifest)
-		if err := validatePackScriptSyntax(t.Context(), packDir); err != nil {
+		if err := validatePackScriptSyntax(t.Context(), mustLoadPackActionLintInput(t, packDir)); err != nil {
 			t.Errorf("%s: %v", filepath.Base(packDir), err)
 		}
 	}

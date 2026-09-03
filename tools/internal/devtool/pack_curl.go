@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"sort"
 	"strings"
 
 	"go.yaml.in/yaml/v3"
@@ -21,17 +20,11 @@ import (
 // influenced" from the YAML means reasoning about env defaults, arg
 // interpolation, and redirect targets — the exact judgment that produced the
 // drift. Requiring them everywhere costs a fixed-URL call nothing.
-func validatePackCurlURLSafety(packDir string) error {
-	paths, err := filepath.Glob(filepath.Join(packDir, "actions", "*.yaml"))
-	if err != nil {
-		return err
-	}
-	sort.Strings(paths)
-
+func validatePackCurlURLSafety(input packActionLintInput) error {
 	var failures []string
 	note := func(id, reason string) { failures = append(failures, id+" ("+reason+")") }
 
-	for _, path := range paths {
+	for _, path := range input.actionPaths {
 		data, err := os.ReadFile(path)
 		if err != nil {
 			return err
@@ -49,7 +42,7 @@ func validatePackCurlURLSafety(packDir string) error {
 			sources = append(sources, strings.Join(command.Argv, "\n"))
 		}
 		if action.Execution.Script.Path != "" {
-			script, err := os.ReadFile(filepath.Join(packDir, filepath.Clean(action.Execution.Script.Path)))
+			script, err := os.ReadFile(filepath.Join(input.packDir, filepath.Clean(action.Execution.Script.Path)))
 			if err != nil {
 				return err
 			}

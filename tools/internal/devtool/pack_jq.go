@@ -3,7 +3,6 @@ package devtool
 import (
 	"fmt"
 	"os"
-	"path/filepath"
 	"sort"
 	"strings"
 
@@ -44,15 +43,9 @@ var jqForeignProgramCommands = map[string]bool{
 	"sed":  true,
 }
 
-func validatePackJQFilters(packDir string) error {
-	paths, err := filepath.Glob(filepath.Join(packDir, "actions", "*.yaml"))
-	if err != nil {
-		return err
-	}
-	sort.Strings(paths)
-
+func validatePackJQFilters(input packActionLintInput) error {
 	var failures []string
-	for _, path := range paths {
+	for _, path := range input.actionPaths {
 		data, err := os.ReadFile(path)
 		if err != nil {
 			return err
@@ -61,7 +54,7 @@ func validatePackJQFilters(packDir string) error {
 		if err := yaml.Unmarshal(data, &action); err != nil {
 			return fmt.Errorf("parse %s: %w", path, err)
 		}
-		source, ok, err := actionShellSource(packDir, action)
+		source, ok, err := actionShellSource(input.packDir, action)
 		if err != nil {
 			return err
 		}

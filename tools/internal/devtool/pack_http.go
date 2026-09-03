@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"sort"
 	"strings"
 
 	"go.yaml.in/yaml/v3"
@@ -28,15 +27,9 @@ type packHTTPAction struct {
 	} `yaml:"execution"`
 }
 
-func validatePackHTTPFailures(packDir string) error {
-	paths, err := filepath.Glob(filepath.Join(packDir, "actions", "*.yaml"))
-	if err != nil {
-		return err
-	}
-	sort.Strings(paths)
-
+func validatePackHTTPFailures(input packActionLintInput) error {
 	var failures []string
-	for _, path := range paths {
+	for _, path := range input.actionPaths {
 		data, err := os.ReadFile(path)
 		if err != nil {
 			return err
@@ -60,7 +53,7 @@ func validatePackHTTPFailures(packDir string) error {
 				failures = append(failures, action.ID)
 			}
 		case action.Execution.Script.Path != "":
-			scriptPath := filepath.Join(packDir, filepath.Clean(action.Execution.Script.Path))
+			scriptPath := filepath.Join(input.packDir, filepath.Clean(action.Execution.Script.Path))
 			script, err := os.ReadFile(scriptPath)
 			if err != nil {
 				return err

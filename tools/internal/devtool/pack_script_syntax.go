@@ -53,15 +53,9 @@ type packScriptRef struct {
 	path        string
 }
 
-func validatePackScriptSyntax(ctx context.Context, packDir string) error {
-	paths, err := filepath.Glob(filepath.Join(packDir, "actions", "*.yaml"))
-	if err != nil {
-		return err
-	}
-	sort.Strings(paths)
-
+func validatePackScriptSyntax(ctx context.Context, input packActionLintInput) error {
 	scripts := make(map[packScriptRef][]string)
-	for _, path := range paths {
+	for _, path := range input.actionPaths {
 		data, err := os.ReadFile(path)
 		if err != nil {
 			return err
@@ -104,7 +98,7 @@ func validatePackScriptSyntax(ctx context.Context, packDir string) error {
 		// The shell's own diagnostic names the line and what it was looking for,
 		// so it is carried in the error rather than printed: this runs per pack
 		// inside a gate that already owns what reaches the operator.
-		command := exec.CommandContext(ctx, ref.interpreter, "-n", filepath.Join(packDir, ref.path))
+		command := exec.CommandContext(ctx, ref.interpreter, "-n", filepath.Join(input.packDir, ref.path))
 		output, err := command.CombinedOutput()
 		if err == nil {
 			continue

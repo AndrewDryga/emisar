@@ -190,7 +190,7 @@ func TestValidatePackJQFilters(t *testing.T) {
 				t.Fatal(err)
 			}
 
-			err := validatePackJQFilters(packDir)
+			err := validatePackJQFilters(fixturePackActionLintInput(t, packDir))
 			if test.wantErr {
 				if err == nil || !strings.Contains(err.Error(), test.wantErrMsg) {
 					t.Fatalf("error = %v, want containing %q", err, test.wantErrMsg)
@@ -212,7 +212,7 @@ func TestJQLintCoversTheShippedCatalog(t *testing.T) {
 	}
 	for _, manifest := range manifests {
 		packDir := filepath.Dir(manifest)
-		if err := validatePackJQFilters(packDir); err != nil {
+		if err := validatePackJQFilters(mustLoadPackActionLintInput(t, packDir)); err != nil {
 			t.Errorf("%s: %v", filepath.Base(packDir), err)
 		}
 	}

@@ -108,11 +108,13 @@ rather than shipping a guard that enforces nothing:
 **How it's enforced.** `validatePackPipelineFailures` in
 `tools/internal/devtool/pack_pipeline.go`, run per pack by both
 `./run gate packs` and `./run pack check <name>`, alongside the curl-side check
-in [the HTTP response rule](packs-http-actions-fail-on-response-errors.md). It
-flags a pipeline led by a path reader (`pipelineFileReaders`) or a
-target-dependent command (`pipelineRemoteSources`) with no preceding guard.
-Exemptions are listed by action ID in `pipelineSourceExemptActions` with a
-stated reason.
+in [the HTTP response rule](packs-http-actions-fail-on-response-errors.md). The
+shared lint loader follows the action paths declared by `pack.yaml`; a nested
+or renamed action cannot fall outside this check, and an unreferenced YAML file
+is not executable input. The pipeline lint flags a source led by a path reader
+(`pipelineFileReaders`) or a target-dependent command
+(`pipelineRemoteSources`) with no preceding guard. Exemptions are listed by
+action ID in `pipelineSourceExemptActions` with a stated reason.
 
 Two things the checker learned the hard way, both worth keeping:
 
@@ -127,6 +129,7 @@ Two things the checker learned the hard way, both worth keeping:
   the group is still one fallible pipeline source. A successful `tail` must not
   turn failure of both producers into an empty all-clear.
 
-**Sweep.** `rg -l '\| *tail |\| *head ' packs/*/actions/*.yaml`, then read each
-program's first segment: does it open a file or contact a remote, and can that
-fail without failing the action?
+**Sweep.** The manifest-driven lint is authoritative. As a quick review aid for
+the repository's conventional layout, run `rg -l '\| *tail |\| *head '
+packs/*/actions/*.yaml`, then read each program's first segment: does it open a
+file or contact a remote, and can that fail without failing the action?

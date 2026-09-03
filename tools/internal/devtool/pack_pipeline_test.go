@@ -197,7 +197,7 @@ func TestValidatePackPipelineFailures(t *testing.T) {
 				t.Fatal(err)
 			}
 
-			err := validatePackPipelineFailures(packDir)
+			err := validatePackPipelineFailures(fixturePackActionLintInput(t, packDir))
 			if test.wantErr {
 				if err == nil || !strings.Contains(err.Error(), test.wantErrMsg) {
 					t.Fatalf("error = %v, want containing %q", err, test.wantErrMsg)
@@ -219,7 +219,7 @@ func TestPipelineLintCoversTheShippedCatalog(t *testing.T) {
 	}
 	for _, manifest := range manifests {
 		packDir := filepath.Dir(manifest)
-		if err := validatePackPipelineFailures(packDir); err != nil {
+		if err := validatePackPipelineFailures(mustLoadPackActionLintInput(t, packDir)); err != nil {
 			t.Errorf("%s: %v", filepath.Base(packDir), err)
 		}
 	}

@@ -64,8 +64,10 @@ or a referenced `scripts/*.sh` — lacking `--globoff` (short form `-g`) or
 `--proto`, or following redirects (`-L`) without `--proto-redir`.
 
 **Enforced.** `validatePackCurlURLSafety` in
-`tools/internal/devtool/pack_curl.go`, reached through `./run check packs` and
-the packs gate, beside the response-error, pipeline, and jq lints.
+`tools/internal/devtool/pack_curl.go`, reached through `./run check packs`,
+`./run pack check <name>`, and the packs gate, beside the response-error,
+pipeline, and jq lints. The shared loader follows the action paths declared by
+`pack.yaml`, not a filesystem glob.
 
 Both flags are required of **every** curl invocation, not only the ones whose
 URL is visibly response-supplied. Deciding that from the YAML means reasoning

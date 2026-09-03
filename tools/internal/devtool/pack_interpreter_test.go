@@ -43,7 +43,7 @@ func TestValidatePackInterpreterBinaries_FlagsUndeclaredBash(t *testing.T) {
 		"requires:\n  binaries:\n    - curl\n",
 		map[string]string{"a.yaml": bashAction})
 
-	err := validatePackInterpreterBinaries(dir)
+	err := validatePackInterpreterBinaries(fixturePackActionLintInput(t, dir))
 	if err == nil {
 		t.Fatal("an action running /bin/bash with bash undeclared must fail")
 	}
@@ -57,7 +57,7 @@ func TestValidatePackInterpreterBinaries_AcceptsDeclaredBash(t *testing.T) {
 		"requires:\n  binaries:\n    - curl\n    - bash\n",
 		map[string]string{"a.yaml": bashAction})
 
-	if err := validatePackInterpreterBinaries(dir); err != nil {
+	if err := validatePackInterpreterBinaries(fixturePackActionLintInput(t, dir, "bash")); err != nil {
 		t.Fatalf("declared bash should pass, got %v", err)
 	}
 }
@@ -69,7 +69,7 @@ func TestValidatePackInterpreterBinaries_PosixShellNeedsNoDeclaration(t *testing
 		"requires:\n  binaries:\n    - curl\n",
 		map[string]string{"b.yaml": shAction})
 
-	if err := validatePackInterpreterBinaries(dir); err != nil {
+	if err := validatePackInterpreterBinaries(fixturePackActionLintInput(t, dir)); err != nil {
 		t.Fatalf("/bin/sh should need no declaration, got %v", err)
 	}
 }

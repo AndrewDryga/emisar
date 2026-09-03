@@ -103,7 +103,7 @@ func TestValidatePackCurlURLSafety(t *testing.T) {
 				}
 			}
 
-			err := validatePackCurlURLSafety(packDir)
+			err := validatePackCurlURLSafety(fixturePackActionLintInput(t, packDir))
 			if test.wantErr {
 				if err == nil || !strings.Contains(err.Error(), test.wantErrMsg) {
 					t.Fatalf("error = %v, want containing %q", err, test.wantErrMsg)

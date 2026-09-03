@@ -93,14 +93,15 @@ made it necessary.
 branches it cannot execute.
 
 `./run pack check <name>` and `./run gate packs` run `validatePackJQFilters`
-(`tools/internal/devtool/pack_jq.go`), which reads every jq program a pack can
-actually execute — an action's `/bin/sh -c` argv and each packaged
-`scripts/*.sh` — and fails on a call to the regex family or `split/2`, naming
-the action and the builtin. It skips comments in both languages, strings (so a
-`"x5t#S256"` key stays a key), and the `awk`/`sed`/`perl` spans that have their
-own `match`/`sub`/`gsub`. That is what closes every executable path in the
-catalog, which a case cannot: the failure is raised when the builtin is
-*reached*, so a case only ever proves the paths it runs.
+(`tools/internal/devtool/pack_jq.go`), which follows every action path declared
+by `pack.yaml` and reads each jq program the pack can actually execute — an
+action's `/bin/sh -c` argv and each packaged `scripts/*.sh` — then fails on a
+call to the regex family or `split/2`, naming the action and the builtin. It
+skips comments in both languages, strings (so a `"x5t#S256"` key stays a key),
+and the `awk`/`sed`/`perl` spans that have their own `match`/`sub`/`gsub`. That
+is what closes every executable path in the catalog, which a case cannot: the
+failure is raised when the builtin is *reached*, so a case only ever proves the
+paths it runs.
 
 The cases prove the other half — that the core-jq rewrite still answers the way
 the regex spelling did on the host where the regex spelling never ran.
@@ -125,7 +126,8 @@ copied into the final image silently resolves Debian's libjq — Oniguruma and a
 regex builtin: a control-collapsing clip, a plan-format gate, a numeric-string
 port operand, a case-insensitive event match, a credential strip.
 
-**Sweep.**
+**Sweep.** The manifest-driven lint is authoritative. For a quick scan of the
+conventional repository layout, run
 `rg -n 'gsub|\btest\(|\bmatch\(|capture\(|scan\(|splits\(|\bsub\(' packs/*/scripts/*.sh packs/*/actions/*.yaml`,
 then read each hit: jq, or the `awk`/`sed` in the same pipeline (both have their
 own `match`/`sub`/`gsub` and are unaffected). The lint is the mechanical version

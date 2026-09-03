@@ -30,34 +30,9 @@ var packDeclaredInterpreters = map[string]string{
 	"/usr/bin/env bash": "bash",
 }
 
-type packInterpreterManifest struct {
-	Requires struct {
-		Binaries []string `yaml:"binaries"`
-	} `yaml:"requires"`
-}
-
-func validatePackInterpreterBinaries(packDir string) error {
-	manifestData, err := os.ReadFile(filepath.Join(packDir, "pack.yaml"))
-	if err != nil {
-		return err
-	}
-	var manifest packInterpreterManifest
-	if err := yaml.Unmarshal(manifestData, &manifest); err != nil {
-		return fmt.Errorf("%s/pack.yaml: %w", filepath.Base(packDir), err)
-	}
-	declared := make(map[string]bool, len(manifest.Requires.Binaries))
-	for _, binary := range manifest.Requires.Binaries {
-		declared[binary] = true
-	}
-
-	paths, err := filepath.Glob(filepath.Join(packDir, "actions", "*.yaml"))
-	if err != nil {
-		return err
-	}
-	sort.Strings(paths)
-
+func validatePackInterpreterBinaries(input packActionLintInput) error {
 	missing := make(map[string][]string)
-	for _, path := range paths {
+	for _, path := range input.actionPaths {
 		data, err := os.ReadFile(path)
 		if err != nil {
 			return err
@@ -67,7 +42,7 @@ func validatePackInterpreterBinaries(packDir string) error {
 			return fmt.Errorf("%s: %w", path, err)
 		}
 		binary, needed := packDeclaredInterpreters[action.Execution.Script.Interpreter]
-		if !needed || declared[binary] {
+		if !needed || input.requiredBinaries[binary] {
 			continue
 		}
 		missing[binary] = append(missing[binary], filepath.Base(path))
@@ -89,5 +64,5 @@ func validatePackInterpreterBinaries(packDir string) error {
 	}
 	return fmt.Errorf(
 		"%s: script interpreter not declared in requires.binaries: %s",
-		filepath.Base(packDir), strings.Join(reports, "; "))
+		filepath.Base(input.packDir), strings.Join(reports, "; "))
 }
