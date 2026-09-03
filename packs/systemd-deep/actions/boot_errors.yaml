@@ -3,17 +3,21 @@ id: systemd.boot_errors
 title: Boot-time journal errors
 kind: exec
 risk: medium
-description: '`journalctl -b -p err` — every error-priority log line from the current boot. Use to triage a "is everything healthy?" check.'
+description: '`journalctl -b -p err` — the most recent 100 error-priority log lines from the current boot. Use to triage an "is everything healthy?" check.'
 side_effects:
   - One journalctl invocation.
   - Read-only.
 args: []
 execution:
   command:
-    binary: /bin/sh
+    binary: journalctl
     argv:
-      - "-c"
-      - "journalctl -b -p err --no-pager | tail -100"
+      - -b
+      - -p
+      - err
+      - --no-pager
+      - -n
+      - "100"
   timeout: 30s
 output:
   parser: text

@@ -37,4 +37,6 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends systemd \
     && rm -rf /var/lib/apt/lists/*
 RUN printf '0123456789abcdef0123456789abcdef\n' > /etc/machine-id
+COPY fixtures/journalctl-failure/ /opt/packtest-journalctl-failure/
+RUN chmod 0755 /opt/packtest-journalctl-failure/*
 USER packtest

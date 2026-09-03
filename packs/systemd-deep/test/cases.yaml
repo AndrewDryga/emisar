@@ -19,6 +19,25 @@ runner:
     systemctl's mutating verbs are privileged operations on the service manager;
     a case that ran them as anyone else would only ever assert the denial.
 cases:
+  - name: systemd.boot-errors-reads-current-boot
+    action: systemd.boot_errors
+    arrange:
+      - argv: [systemd-cat, -t, packtest-boot-errors, -p, err, echo, packtest-boot-error-marker]
+      - argv: [/bin/sh, -c, "journalctl -b -p err --no-pager -n 100 | grep -Fq packtest-boot-error-marker"]
+        retry_for: 10s
+        retry_every: 200ms
+    expect:
+      stdout_contains: [packtest-boot-error-marker]
+
+  - name: systemd.boot-errors-fails-when-journal-is-unreadable
+    action: systemd.boot_errors
+    env:
+      PATH: /opt/packtest-journalctl-failure:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+    expect:
+      status: failure
+      exit: [13]
+      stderr_contains: [journal is not readable]
+
   - action: systemd.unit_show
     args: {unit: cron.service}
     expect:

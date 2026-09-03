@@ -14,6 +14,41 @@ risk_accountability:
     debugging.kill_pid: requires_privileged_host
     debugging.sysctl_set: requires_privileged_host
 cases:
+  - name: debugging.dmesg-tail-falls-back-and-truncates
+    action: debugging.dmesg_tail
+    args: {lines: 2}
+    env:
+      PATH: /opt/packtest-dmesg-fallback:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+    expect:
+      stdout_contains: ["Out of memory", "Killed process 4242"]
+      stdout_not_contains: [packtest-kernel-oldest, packtest-kernel-benign]
+
+  - name: debugging.dmesg-oom-falls-back-and-filters
+    action: debugging.dmesg_oom
+    env:
+      PATH: /opt/packtest-dmesg-fallback:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+    expect:
+      stdout_contains: ["Out of memory", "Killed process 4242"]
+      stdout_not_contains: [packtest-kernel-oldest, packtest-kernel-benign]
+
+  - name: debugging.dmesg-tail-fails-when-neither-source-is-readable
+    action: debugging.dmesg_tail
+    env:
+      PATH: /opt/packtest-dmesg-failure:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+    expect:
+      status: failure
+      exit: [13]
+      stderr_contains: [journal is not readable]
+
+  - name: debugging.dmesg-oom-fails-when-neither-source-is-readable
+    action: debugging.dmesg_oom
+    env:
+      PATH: /opt/packtest-dmesg-failure:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+    expect:
+      status: failure
+      exit: [13]
+      stderr_contains: [journal is not readable]
+
   - action: debugging.top_open_files
     arrange: &open_fd_process
       - argv: [/bin/sh, -c, "ln -sf /usr/bin/sleep /tmp/packtest-fd-target; /bin/sh -c 'exec 3<>/dev/null 4<>/dev/null 5<>/dev/null; exec /tmp/packtest-fd-target 600' </dev/null >/dev/null 2>&1 & echo $! > /tmp/packtest-fd.pid"]

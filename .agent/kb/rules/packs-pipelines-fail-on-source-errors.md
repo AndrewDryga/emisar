@@ -88,9 +88,11 @@ being lost. Nor should a source's stderr be discarded: `conntrack -L
 2>/dev/null` hid the one line that separates "this host has no NAT entries"
 from "the runner lacks CAP_NET_ADMIN".
 
-Pipelines fed by a local always-present enumerator (`ps`, `lsmod`, `ss`,
-`journalctl`) need nothing: there is no meaningful failure to mask, and their
-empty output is self-evident.
+Pipelines fed by a local always-present enumerator (`ps`, `lsmod`, `ss`) need
+nothing: there is no meaningful failure to mask, and their empty output is
+self-evident. `dmesg` and `journalctl` are not in that class: kernel policy,
+journal ACLs, or an unavailable journal can make them fail, so capture their
+output successfully before filtering or use the tool's native limit flag.
 
 **When propagation genuinely cannot work,** record an exemption with the reason
 rather than shipping a guard that enforces nothing:
@@ -121,6 +123,9 @@ Two things the checker learned the hard way, both worth keeping:
   through `./run pack check` did.
 - **It reads packaged scripts, not just `-c` programs.** `nomad.event_snapshot`
   hid in a `kind: script` file through the first pass.
+- **It unwraps grouped source fallbacks.** In `{ dmesg || journalctl; } | tail`,
+  the group is still one fallible pipeline source. A successful `tail` must not
+  turn failure of both producers into an empty all-clear.
 
 **Sweep.** `rg -l '\| *tail |\| *head ' packs/*/actions/*.yaml`, then read each
 program's first segment: does it open a file or contact a remote, and can that

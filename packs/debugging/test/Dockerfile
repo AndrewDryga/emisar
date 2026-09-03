@@ -7,4 +7,7 @@ USER root
 RUN apt-get update \
     && apt-get install -y --no-install-recommends iproute2 procps \
     && rm -rf /var/lib/apt/lists/*
+COPY fixtures/dmesg-fallback/ /opt/packtest-dmesg-fallback/
+COPY fixtures/dmesg-failure/ /opt/packtest-dmesg-failure/
+RUN chmod 0755 /opt/packtest-dmesg-fallback/* /opt/packtest-dmesg-failure/*
 USER packtest

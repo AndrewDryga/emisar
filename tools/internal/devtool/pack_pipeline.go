@@ -32,10 +32,13 @@ var pipelineSourceExemptActions = map[string]string{
 	"fw.conntrack_count": "already a precondition check: `conntrack -C` needs the same netlink " +
 		"privileges as -L and runs first under `set -e`, so every module/privilege failure " +
 		"aborts before the pipeline.",
+	"fw.conntrack_list": "capture would buffer an unbounded table and head deliberately SIGPIPEs " +
+		"conntrack after 1000 rows; a preceding `conntrack -C` probe needs the same netlink " +
+		"privileges as -L and aborts before the pipeline.",
 }
 
 // Commands that open a path. A pipeline led by a local enumerator (ps, lsmod,
-// ss, journalctl) has no meaningful failure to mask and is not checked here.
+// ss) has no meaningful failure to mask and is not checked here.
 // awk and sort are deliberately absent: `awk '{print $1}'` reads as a path
 // operand and they never lead a source-reading pipeline in this catalog.
 var pipelineFileReaders = map[string]bool{
@@ -57,11 +60,13 @@ var pipelineFileReaders = map[string]bool{
 // report". Their own exit status is the truth, so the pipe is the only thing
 // discarding it — unlike a file reader, there is no path to test first.
 var pipelineRemoteSources = map[string]bool{
+	"dmesg":                        true,
 	"gdb":                          true,
 	"jcmd":                         true,
 	"jinfo":                        true,
 	"jmap":                         true,
 	"jstack":                       true,
+	"journalctl":                   true,
 	"kafka-broker-api-versions.sh": true,
 	"kafka-configs.sh":             true,
 	"kafka-consumer-groups.sh":     true,
@@ -87,7 +92,7 @@ var pipelineRemoteSources = map[string]bool{
 var pipelineSourceGuards = []string{
 	"[ -r", "[ -f", "[ -d", "[ -e", "[ -s",
 	"test -r", "test -f", "test -d", "test -e",
-	"exit $status", "exit $?", "pipefail",
+	"exit $status", "exit $?",
 	// A precondition probe that aborts before the pipeline runs.
 	"|| exit", "|| {",
 }
@@ -182,19 +187,74 @@ func shellDashCProgram(argv []string) (string, bool) {
 }
 
 func pipelineMasksSourceFailure(program string) bool {
-	if pipelineGuardsItsSource(program) {
-		return false
-	}
+	// A guard text inside a grouped producer does not protect the outer pipe:
+	// `{ source || exit 1; } | tail` still exits with tail's status. Inspect
+	// those groups before applying the legacy whole-program guard heuristic.
+	// A real pipefail setup is the one global guard that protects the pipe.
+	pipefail := false
+	guarded := pipelineGuardsItsSource(program)
 	for _, line := range strings.Split(program, "\n") {
 		line = strings.TrimSpace(line)
 		if line == "" || strings.HasPrefix(line, "#") {
 			continue
 		}
 		index := firstPipeIndex(line)
-		if index < 0 {
+		if index >= 0 && pipelineSourceReadsPath(line[:index]) {
+			if !pipefail && (pipelineSourceIsRemote(line[:index]) ||
+				bracedPipelineSource(line[:index]) || !guarded) {
+				return true
+			}
+		}
+		if lineEnablesPipefail(line) {
+			pipefail = true
+		}
+	}
+	return false
+}
+
+func bracedPipelineSource(segment string) bool {
+	segment = strings.TrimSpace(segment)
+	return strings.HasPrefix(segment, "{") && strings.HasSuffix(segment, "}")
+}
+
+func pipelineSourceIsRemote(segment string) bool {
+	segment = strings.TrimSpace(segment)
+	if bracedPipelineSource(segment) {
+		group := strings.TrimSpace(segment[1 : len(segment)-1])
+		group = strings.TrimSpace(strings.TrimSuffix(group, ";"))
+		for _, source := range splitUnquotedOr(group) {
+			if pipelineSourceIsRemote(source) {
+				return true
+			}
+		}
+		return false
+	}
+	fields := strings.Fields(strings.TrimSpace(lastUnquotedStatement(segment)))
+	for len(fields) > 0 && strings.Contains(fields[0], "=") &&
+		!strings.HasPrefix(fields[0], "-") {
+		fields = fields[1:]
+	}
+	return len(fields) > 0 && pipelineRemoteSources[fields[0]]
+}
+
+func lineEnablesPipefail(line string) bool {
+	comment := indexUnquoted(line, func(line string, index int) bool {
+		return line[index] == '#'
+	})
+	if comment >= 0 {
+		line = line[:comment]
+	}
+	fields := strings.Fields(line)
+	if len(fields) < 3 || fields[0] != "set" {
+		return false
+	}
+	for index := 1; index < len(fields); index++ {
+		if strings.TrimSuffix(fields[index], ";") != "pipefail" {
 			continue
 		}
-		if pipelineSourceReadsPath(line[:index]) {
+		option := fields[index-1]
+		if option == "-o" ||
+			(strings.HasPrefix(option, "-") && strings.Contains(option[1:], "o")) {
 			return true
 		}
 	}
@@ -280,6 +340,17 @@ func pipelineGuardsItsSource(program string) bool {
 // pipelineSourceReadsPath reports whether the leading segment of a pipeline
 // runs a file-reading command against a path operand.
 func pipelineSourceReadsPath(segment string) bool {
+	segment = strings.TrimSpace(segment)
+	if strings.HasPrefix(segment, "{") && strings.HasSuffix(segment, "}") {
+		group := strings.TrimSpace(segment[1 : len(segment)-1])
+		group = strings.TrimSpace(strings.TrimSuffix(group, ";"))
+		for _, source := range splitUnquotedOr(group) {
+			if pipelineSourceReadsPath(source) {
+				return true
+			}
+		}
+		return false
+	}
 	fields := strings.Fields(strings.TrimSpace(lastUnquotedStatement(segment)))
 
 	for len(fields) > 0 && strings.Contains(fields[0], "=") &&
@@ -301,6 +372,21 @@ func pipelineSourceReadsPath(segment string) bool {
 		}
 	}
 	return false
+}
+
+func splitUnquotedOr(segment string) []string {
+	var parts []string
+	start := 0
+	for {
+		index := indexUnquotedFrom(segment, start, func(line string, index int) bool {
+			return line[index] == '|' && index+1 < len(line) && line[index+1] == '|'
+		})
+		if index < 0 {
+			return append(parts, segment[start:])
+		}
+		parts = append(parts, segment[start:index])
+		start = index + 2
+	}
 }
 
 func shellOperandIsPath(operand string) bool {
