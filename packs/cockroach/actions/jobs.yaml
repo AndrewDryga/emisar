@@ -2,14 +2,17 @@ schema_version: 1
 id: cockroach.jobs
 title: Show recent / running jobs
 kind: exec
-risk: low
+risk: medium
 description: >
-  Show cluster jobs (schema changes, backups, restores, imports, row-TTL) from
-  crdb_internal.jobs — id, type, status, running status, timing, fraction
-  complete, description, and any error. Optionally filter by status. Use to
-  find a stuck or failed job.
+  Show running cluster jobs and jobs completed in the past 12 hours (schema
+  changes, backups, restores, imports, row-TTL) from SHOW JOBS — id, type,
+  status, running status, timing, fraction complete, description, and any
+  error. Optionally filter by status. Use to find a stuck or failed job. Rated
+  medium because job descriptions and error text can contain operator-authored
+  values no redaction list can enumerate.
 side_effects:
-  - One read-only SELECT on crdb_internal.jobs.
+  - One read-only SHOW JOBS query.
+  - May expose operator-authored job descriptions and error text.
   - Read-only.
 args:
   - name: status
@@ -32,7 +35,7 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
-      - "cockroach sql --url \"$COCKROACH_URL\" --format=tsv -e \"SELECT job_id, job_type, status, running_status, created, finished, fraction_completed, left(coalesce(description,''),120) AS description, left(coalesce(error,''),200) AS error FROM crdb_internal.jobs WHERE ('${1}' = '' OR status = '${1}') ORDER BY created DESC LIMIT {{ args.limit }}\""
+      - "cockroach sql --url \"$COCKROACH_URL\" --format=tsv -e \"SELECT job_id, job_type, status, running_status, created, finished, fraction_completed, left(coalesce(description,''),120) AS description, left(coalesce(error,''),200) AS error FROM [SHOW JOBS] WHERE ('${1}' = '' OR status = '${1}') ORDER BY created DESC LIMIT {{ args.limit }}\""
       - "emisar"
       - "{{ args.status }}"
   timeout: 20s

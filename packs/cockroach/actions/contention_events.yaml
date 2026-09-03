@@ -2,14 +2,16 @@ schema_version: 1
 id: cockroach.contention_events
 title: Show who is blocking whom (contention events)
 kind: exec
-risk: low
+risk: medium
 description: >
   Show recent transaction-contention events — blocking vs waiting txn, how
   long the wait was, and the object (database / table / index) and key
   contended, from crdb_internal.transaction_contention_events. The core
-  "what's blocking my writes" view.
+  "what's blocking my writes" view. Rated medium because the pretty key can
+  contain real row-key values no redaction list can enumerate.
 side_effects:
   - One read-only SELECT on crdb_internal.transaction_contention_events.
+  - May expose row-key values in the contended key.
   - Read-only.
 args:
   - name: limit

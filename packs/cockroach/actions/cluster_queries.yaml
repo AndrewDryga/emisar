@@ -2,13 +2,16 @@ schema_version: 1
 id: cockroach.cluster_queries
 title: Show running queries cluster-wide
 kind: exec
-risk: low
+risk: medium
 description: >
   Show in-flight queries across all nodes (the SHOW CLUSTER QUERIES surface) —
   query id, node, user, start time, client address, application, and the
-  query text (truncated). Use to find a long-running or runaway query.
+  query text (truncated). Use to find a long-running or runaway query. Rated
+  medium because live query text can contain literal request values no
+  redaction list can enumerate.
 side_effects:
   - One read-only SELECT on crdb_internal.cluster_queries.
+  - May expose literal request values carried in live query text.
   - Read-only.
 args:
   - name: limit

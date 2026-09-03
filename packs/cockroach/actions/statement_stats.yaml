@@ -5,9 +5,11 @@ kind: exec
 risk: low
 description: >
   Show the busiest statement fingerprints — application, execution count, mean
-  service latency, and the query text — from crdb_internal.statement_statistics
-  (the data behind the DB Console's Statements page). Use to find the
-  highest-volume or slowest statements.
+  service latency, and normalized query shape — from
+  crdb_internal.statement_statistics (the data behind the DB Console's
+  Statements page). Stays low because CockroachDB fingerprints replace literal
+  values with placeholders, so this returns query shape rather than request
+  data. Use to find the highest-volume or slowest statements.
 side_effects:
   - One read-only SELECT on crdb_internal.statement_statistics.
   - Read-only.

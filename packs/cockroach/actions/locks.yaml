@@ -2,13 +2,16 @@ schema_version: 1
 id: cockroach.locks
 title: Show contended locks (lock table)
 kind: exec
-risk: low
+risk: medium
 description: >
   Show contended entries in the lock table — range, object, the pretty key,
   holding txn, lock strength, and how long it's been held, from
-  crdb_internal.cluster_locks. Use to find the lock behind a stall.
+  crdb_internal.cluster_locks. Use to find the lock behind a stall. Rated
+  medium because the pretty key can contain real row-key values no redaction
+  list can enumerate.
 side_effects:
   - One read-only SELECT on crdb_internal.cluster_locks.
+  - May expose row-key values in the lock key.
   - Read-only.
 args: []
 execution:

@@ -23,6 +23,15 @@ cases:
   - action: cockroach.cluster_sessions
     expect:
       stdout_contains: [session_id, root]
+  - action: cockroach.contention_events
+    expect:
+      stdout_contains: [collection_ts, contending_pretty_key]
+  - action: cockroach.locks
+    expect:
+      stdout_contains: [range_id, lock_key_pretty]
+  - action: cockroach.jobs
+    expect:
+      stdout_contains: [job_id, description, error]
   # Proves the redaction, not just the read: arrange a real OIDC client secret,
   # then assert the placeholder is present AND the secret's own bytes are gone.
   # Without the rule the value prints in cleartext — CockroachDB does not mask
@@ -55,9 +64,10 @@ cases:
       stdout_contains: [total, under_replicated, unavailable]
   - action: cockroach.statement_stats
     arrange:
-      - argv: [cockroach, sql, --url, "postgresql://root@cockroach:26257/defaultdb?sslmode=disable", -e, "SELECT 424242"]
+      - argv: [/bin/sh, -c, "i=0; while [ $i -lt 40 ]; do cockroach sql --url 'postgresql://root@cockroach:26257/defaultdb?sslmode=disable&application_name=packtest-statement-fingerprint' -e 'SELECT 424242 AS packtest_statement_fingerprint_probe' >/dev/null || exit $?; i=$((i + 1)); done"]
     expect:
-      stdout_contains: [app_name, count, query]
+      stdout_contains: [app_name, count, query, packtest-statement-fingerprint, packtest_statement_fingerprint_probe]
+      stdout_not_contains: ["424242"]
   - action: cockroach.store_status
     expect:
       stdout_contains: [node_id, store_id, capacity]

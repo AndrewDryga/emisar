@@ -2,13 +2,16 @@ schema_version: 1
 id: cockroach.cluster_sessions
 title: Show open sessions cluster-wide
 kind: exec
-risk: low
+risk: medium
 description: >
   Show open SQL sessions across all nodes (the SHOW CLUSTER SESSIONS surface)
   — session id, node, user, client address, application, active queries, and
-  session start. Use to see who is connected and from where.
+  session start. Use to see who is connected and from where. Rated medium
+  because active queries can contain literal request values no redaction list
+  can enumerate.
 side_effects:
   - One read-only SELECT on crdb_internal.cluster_sessions.
+  - May expose literal request values carried in active queries.
   - Read-only.
 args:
   - name: limit

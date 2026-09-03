@@ -2,7 +2,7 @@ schema_version: 1
 
 id: cockroach
 name: CockroachDB
-version: 0.1.9
+version: 0.1.10
 description: >
   Investigate a CockroachDB cluster over the `cockroach` CLI — node liveness /
   store capacity, under-replicated & unavailable ranges, running queries /
@@ -45,7 +45,7 @@ setup:
     - "Create the SQL user, then mint its client cert with cockroach cert create-client <user> --certs-dir=<dir> --ca-key=<ca.key>; point sslcert and sslkey in `COCKROACH_URL` at the pair that writes."
     - "`COCKROACH_URL` must be allowlisted in the runner's `execution.inherit_env` — the action env is scrubbed to PATH/LANG/LC_ALL/TERM by default, so without it cockroach can't find the cluster."
     - "Use client-cert auth in the URL (no embedded password): the URL appears in the action's command line / audit record, so a password there would leak. The client key file (referenced by path) stays on the host and is the actual credential."
-    - "The SQL user needs VIEWACTIVITY + VIEWCLUSTERMETADATA for the reads, and CANCELQUERY / CANCELSESSION / CONTROLJOB (or admin) for the matching mutators. node decommission/recommission need admin."
+    - "The SQL user needs VIEWACTIVITY + VIEWCLUSTERMETADATA for the general reads, VIEWJOB for cockroach.jobs, and CANCELQUERY / CANCELSESSION / CONTROLJOB (or admin) for the matching mutators. node decommission/recommission need admin."
     - "Reads use --format=tsv (parsed as text). There is no SQL surface for hot ranges, per-range QPS, replication lag, or clock offset — those live in the DB Console / Prometheus, so this pack deliberately omits them."
   verify: cockroach.databases
 
