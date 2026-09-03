@@ -1131,7 +1131,7 @@ defmodule EmisarWeb.MarketingTest do
       assert html =~ "approved"
 
       # The concrete claims a security reviewer scans for.
-      assert html =~ "20 built-in patterns"
+      assert html =~ "21 built-in patterns"
       assert html =~ "TOTP MFA is available on every plan"
       assert html =~ "dedicated read-only credential"
 
@@ -1174,16 +1174,23 @@ defmodule EmisarWeb.MarketingTest do
 
     test "the /trust page surfaces release integrity with the real verify commands", %{conn: conn} do
       # The procurement-facing answer to "how do I verify the binary I pipe into
-      # sudo bash" — SLSA provenance + checksums, with the ACTUAL commands that
-      # verify against our published releases (gh attestation verify succeeds for
-      # runner-v0.7.4 --owner andrewdryga; sha256sum -c SHA256SUMS passes).
+      # sudo bash" — SLSA provenance + checksums, with the ACTUAL commands the
+      # installers run. `--owner` alone proves only that SOME workflow in SOME
+      # repository the owner controls signed it, so the published recipe must
+      # carry the same pins install.sh does and this test refuses the weak form.
       html = conn |> get(~p"/trust") |> html_response(200)
 
       assert html =~ "Release integrity"
       assert html =~ "SLSA Build Level 2 provenance"
       refute html =~ "SLSA-3 build provenance"
       assert html =~ "gh attestation verify"
-      assert html =~ "--owner andrewdryga"
+      assert html =~ "--repo andrewdryga/emisar"
+
+      assert html =~
+               "--signer-workflow AndrewDryga/emisar/.github/workflows/runner-release-trusted.yml"
+
+      assert html =~ "--deny-self-hosted-runners"
+      refute html =~ "--owner andrewdryga"
       assert html =~ "sha256sum -c SHA256SUMS"
     end
 
