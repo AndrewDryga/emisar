@@ -47,6 +47,16 @@ defmodule Emisar.SSO.OIDC.Oidcc do
   # `client_id`, leaving exactly one. Every IdP that supports basic supports
   # post, so preferring it costs nothing elsewhere.
   @secret_auth_methods [:client_secret_post, :client_secret_basic]
+  # An ID token must be signed by a key only the IdP holds. oidcc takes the
+  # accepted algorithms verbatim from the discovery document, and the moment that
+  # list names HS256/384/512 it merges our stored `client_secret` into the
+  # verification key set as an `oct` key — so anyone who can read that secret
+  # (plaintext at rest by design, like every emisar secret) could mint an ID token
+  # that verifies without ever touching the IdP's signing keys. Keycloak's default
+  # document advertises the HS family, and oidcc does not strip `none` from this
+  # one field at parse time either. An ALLOWLIST, so an alg nobody has reviewed
+  # cannot arrive by being absent from a denylist.
+  @id_token_signing_algs ~w[RS256 RS384 RS512 PS256 PS384 PS512 ES256 ES384 ES512 EdDSA]
   @request_timeout 15_000
 
   @impl Emisar.SSO.OIDC
@@ -99,8 +109,9 @@ defmodule Emisar.SSO.OIDC.Oidcc do
          {:ok, code} <- fetch_code(params),
          {:ok, context} <- client_context(provider),
          {:ok, token} <- Oidcc.Token.retrieve(code, context, token_opts),
-         {:ok, identifier} <- extract_identifier(token, provider) do
-      {:ok, %{identifier: identifier, claims: token.id.claims}}
+         {:ok, claims} <- fetch_id_token_claims(token),
+         {:ok, identifier} <- extract_identifier(claims, provider) do
+      {:ok, %{identifier: identifier, claims: claims}}
     end
   end
 
@@ -128,30 +139,51 @@ defmodule Emisar.SSO.OIDC.Oidcc do
   end
 
   @impl Emisar.SSO.OIDC
-  def discover(%IdentityProvider{issuer: issuer} = provider) do
-    # One-shot discovery (no worker lifecycle) over the SAME TLS verification as
-    # the login flow, so a passing test truly predicts a reachable IdP. Fetches
-    # `<issuer>/.well-known/openid-configuration`; the issuer is SSRF-validated
-    # upstream in the context.
-    case Oidcc.ProviderConfiguration.load_configuration(issuer, configuration_opts(provider)) do
-      {:ok, {config, _expiry}} ->
-        with :ok <- validate_discovered_configuration(config) do
-          {:ok,
-           %{
-             authorization_endpoint: present(config.authorization_endpoint),
-             token_endpoint: present(config.token_endpoint),
-             userinfo_endpoint: present(config.userinfo_endpoint),
-             jwks_uri: present(config.jwks_uri)
-           }}
-        end
-
-      {:error, reason} ->
-        {:error, reason}
+  def discover(%IdentityProvider{} = provider) do
+    # One-shot discovery (no worker lifecycle) over the SAME load the login flow
+    # uses, so a passing test truly predicts a usable IdP — same TLS verification,
+    # same signing-algorithm narrowing, same endpoint policy.
+    with {:ok, config} <- load_configuration(provider),
+         {:ok, judged} <- judge_discovered_configuration(config) do
+      {:ok,
+       %{
+         authorization_endpoint: present(judged.authorization_endpoint),
+         token_endpoint: present(judged.token_endpoint),
+         userinfo_endpoint: present(judged.userinfo_endpoint),
+         jwks_uri: present(judged.jwks_uri)
+       }}
     end
   end
 
-  @doc "Internal — validate every network endpoint parsed from the discovery document."
-  def validate_discovered_configuration(config) do
+  @doc """
+  Internal — judge a parsed discovery document and return the configuration we
+  will act on: every network endpoint must pass the SSRF policy, and the accepted
+  ID-token signing algorithms are narrowed to `@id_token_signing_algs`. Returns
+  `{:ok, config} | {:error, :blocked_discovery_endpoint |
+  :no_supported_id_token_signing_alg}`.
+  """
+  def judge_discovered_configuration(config) do
+    with :ok <- validate_discovered_endpoints(config) do
+      narrow_id_token_signing_algs(config)
+    end
+  end
+
+  # oidcc merges the document's list into its validation options AFTER the
+  # caller's (`oidcc_token.erl`: `maps:merge(Opts, #{signing_algs => …})`), so no
+  # opt can override it — the narrowing has to happen in the document, and this
+  # is the one place a document becomes a configuration we act on. An empty result
+  # means the IdP signs with nothing we can verify: refuse now, so "Test
+  # connection" says so instead of every sign-in failing an unexplained
+  # signature check later.
+  defp narrow_id_token_signing_algs(%{id_token_signing_alg_values_supported: algs} = config)
+       when is_list(algs) do
+    case Enum.filter(algs, &(&1 in @id_token_signing_algs)) do
+      [] -> {:error, :no_supported_id_token_signing_alg}
+      accepted -> {:ok, %{config | id_token_signing_alg_values_supported: accepted}}
+    end
+  end
+
+  defp validate_discovered_endpoints(config) do
     # The PAR endpoint is a POST we make before the browser ever leaves, so it is
     # as much an SSRF sink as the token endpoint and belongs under the same
     # policy. Leaving it out meant a document could keep every other endpoint
@@ -224,9 +256,18 @@ defmodule Emisar.SSO.OIDC.Oidcc do
   defp fetch_code(%{"code" => code}) when is_binary(code) and code != "", do: {:ok, code}
   defp fetch_code(_params), do: {:error, :missing_code}
 
-  defp extract_identifier(token, %IdentityProvider{identifier_claim: claim}) do
+  # A token endpoint may answer 200 with no `id_token` — an OAuth2-only endpoint,
+  # or an app registration whose `openid` scope was dropped (Keycloak and Auth0
+  # both do this). oidcc calls that SUCCESS and leaves the field as the atom
+  # `:none`, and `token.id.claims` on an atom is a remote call, so the public
+  # callback route raised `UndefinedFunctionError` instead of taking the shaped
+  # error path `sso_controller` already words.
+  defp fetch_id_token_claims(%Oidcc.Token{id: %Oidcc.Token.Id{claims: claims}}), do: {:ok, claims}
+  defp fetch_id_token_claims(%Oidcc.Token{id: :none}), do: {:error, :missing_id_token}
+
+  defp extract_identifier(claims, %IdentityProvider{identifier_claim: claim}) do
     # `identifier_claim` is an Ecto.Enum (atom); ID-token claim keys are strings.
-    case Map.get(token.id.claims, to_string(claim)) do
+    case Map.get(claims, to_string(claim)) do
       identifier when is_binary(identifier) and identifier != "" -> {:ok, identifier}
       _ -> {:error, :missing_identifier_claim}
     end
@@ -241,11 +282,11 @@ defmodule Emisar.SSO.OIDC.Oidcc do
   # is refused before anything connects to it.
   defp client_context(%IdentityProvider{} = provider) do
     with {:ok, config} <- load_configuration(provider),
-         :ok <- validate_discovered_configuration(config),
-         {:ok, jwks} <- load_jwks(config, provider) do
+         {:ok, judged} <- judge_discovered_configuration(config),
+         {:ok, jwks} <- load_jwks(judged, provider) do
       {:ok,
        Oidcc.ClientContext.from_manual(
-         config,
+         judged,
          jwks,
          provider.client_id,
          client_secret(provider)
@@ -259,8 +300,8 @@ defmodule Emisar.SSO.OIDC.Oidcc do
   defp refresh_jwks(%IdentityProvider{} = provider) do
     fn _jwks, _kid ->
       with {:ok, config} <- load_configuration(provider),
-           :ok <- validate_discovered_configuration(config) do
-        load_jwks(config, provider)
+           {:ok, judged} <- judge_discovered_configuration(config) do
+        load_jwks(judged, provider)
       end
     end
   end

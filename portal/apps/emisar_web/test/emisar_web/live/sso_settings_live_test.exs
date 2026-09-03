@@ -1556,6 +1556,40 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
       refute has_element?(lv, "#{trigger} button[phx-click]")
     end
 
+    test "a large directory renders one page with a pager, not the whole roster", %{
+      conn: conn,
+      account: account,
+      provider: provider
+    } do
+      # Directory sync is precisely what makes this list long, and the page used
+      # to hold EVERY identity — each with a preloaded user and membership — in
+      # one socket's assigns, re-diffed on every update.
+      for n <- 1..20 do
+        {:ok, _provisioned} =
+          SSO.scim_provision_user(provider, %{
+            external_id: "kc|bulk-#{n}",
+            email: "bulk-#{n}@northstar.example",
+            full_name: "Bulk Person #{n}"
+          })
+      end
+
+      {:ok, lv, html} = live(conn, ~p"/app/#{account}/settings/sso/#{provider.id}")
+
+      # The header count is the whole roster; the pager says how much of it is here.
+      assert has_element?(lv, "#synced-members-#{provider.id}-pager", "20 / 21 total")
+      assert html =~ "Bulk Person 20"
+      refute html =~ "Dana Sync"
+
+      html =
+        lv
+        |> element("#synced-members-#{provider.id}-pager a", "Next →")
+        |> render_click()
+
+      assert html =~ "Dana Sync"
+      refute html =~ "Bulk Person 20"
+      refute html =~ "No one has been provisioned through this connection yet"
+    end
+
     test "a connection with nobody provisioned keeps the confident empty copy", %{
       conn: conn,
       account: account

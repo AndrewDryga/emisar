@@ -103,8 +103,10 @@ defmodule Emisar.SSO.IdentityProvider.Changeset do
     |> unique_constraint([:account_id, :kind],
       name: :sso_identity_providers_account_kind_enabled_index
     )
+    # Named for the (account_id, allowed_email_domain) index, but reported on the
+    # domain field the operator typed — `account_id` is not on the form.
     |> unique_constraint(:allowed_email_domain,
-      name: :sso_identity_providers_allowed_email_domain_enabled_index
+      name: :sso_identity_providers_account_email_domain_enabled_index
     )
   end
 

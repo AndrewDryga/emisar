@@ -189,7 +189,7 @@ defmodule Emisar.SSO.OIDC.OidccTest do
     refute_receive {:oidc_request, "POST", "/token", _body}, 50
   end
 
-  describe "validate_discovered_configuration/1" do
+  describe "judge_discovered_configuration/1" do
     test "rejects credentials and fragments even on the issuer's own origin" do
       for endpoint <- [
             "https://user:CLIENT_SECRET_SENTINEL@idp.example/token",
@@ -197,7 +197,7 @@ defmodule Emisar.SSO.OIDC.OidccTest do
           ] do
         config = configuration(%{token_endpoint: endpoint})
 
-        assert Oidcc.validate_discovered_configuration(config) ==
+        assert Oidcc.judge_discovered_configuration(config) ==
                  {:error, :blocked_discovery_endpoint}
       end
     end
@@ -208,7 +208,7 @@ defmodule Emisar.SSO.OIDC.OidccTest do
           token_endpoint: "https://tokens.other-idp.test/oauth/token?tenant=acme&version=2"
         })
 
-      assert Oidcc.validate_discovered_configuration(config) == :ok
+      assert {:ok, _judged} = Oidcc.judge_discovered_configuration(config)
     end
 
     test "allows only structurally safe endpoints on an exactly declared private IdP" do
@@ -219,7 +219,7 @@ defmodule Emisar.SSO.OIDC.OidccTest do
           token_endpoint: "https://localhost:8443/token?tenant=acme"
         })
 
-      assert Oidcc.validate_discovered_configuration(allowed) == :ok
+      assert {:ok, _judged} = Oidcc.judge_discovered_configuration(allowed)
 
       for endpoint <- [
             "https://localhost:8444/token",
@@ -229,10 +229,78 @@ defmodule Emisar.SSO.OIDC.OidccTest do
           ] do
         config = configuration(%{token_endpoint: endpoint})
 
-        assert Oidcc.validate_discovered_configuration(config) ==
+        assert Oidcc.judge_discovered_configuration(config) ==
                  {:error, :blocked_discovery_endpoint}
       end
     end
+
+    test "drops the symmetric and `none` algorithms the document advertises" do
+      config =
+        configuration(%{
+          id_token_signing_alg_values_supported: ["HS256", "RS256", "none", "ES256", "HS512"]
+        })
+
+      assert {:ok, judged} = Oidcc.judge_discovered_configuration(config)
+      assert judged.id_token_signing_alg_values_supported == ["RS256", "ES256"]
+    end
+
+    test "refuses an IdP that signs ID tokens only with our own client secret" do
+      config = configuration(%{id_token_signing_alg_values_supported: ["HS256", "HS512"]})
+
+      assert Oidcc.judge_discovered_configuration(config) ==
+               {:error, :no_supported_id_token_signing_alg}
+    end
+  end
+
+  test "an ID token signed with the client secret is refused once the document is judged" do
+    # oidcc merges the client secret into the verification key set as an `oct`
+    # key the moment the document advertises HS*, so the secret — plaintext at
+    # rest by design — becomes a signing key for tokens we accept. The two halves
+    # of this test are the same token against the raw and the judged document.
+    provider = provider()
+    opts = Oidcc.callback_token_options(provider, stashed())
+
+    claims = %{
+      "iss" => provider.issuer,
+      "sub" => "subject",
+      "aud" => provider.client_id,
+      "exp" => System.system_time(:second) + 60,
+      "iat" => System.system_time(:second),
+      "nonce" => stashed().nonce
+    }
+
+    forged =
+      provider.client_secret
+      |> JOSE.JWK.from_oct()
+      |> JOSE.JWT.sign(%{"alg" => "HS256"}, claims)
+      |> JOSE.JWS.compact()
+      |> elem(1)
+
+    advertised = configuration(%{id_token_signing_alg_values_supported: ["RS256", "HS256"]})
+    assert {:ok, judged} = Oidcc.judge_discovered_configuration(advertised)
+
+    key = JOSE.JWK.generate_key({:rsa, 2048}) |> JOSE.JWK.to_public()
+
+    raw_context =
+      Elixir.Oidcc.ClientContext.from_manual(
+        advertised,
+        key,
+        provider.client_id,
+        provider.client_secret
+      )
+
+    judged_context =
+      Elixir.Oidcc.ClientContext.from_manual(
+        judged,
+        key,
+        provider.client_id,
+        provider.client_secret
+      )
+
+    assert {:ok, %{"sub" => "subject"}} =
+             Elixir.Oidcc.Token.validate_id_token(forged, raw_context, opts)
+
+    assert {:error, _reason} = Elixir.Oidcc.Token.validate_id_token(forged, judged_context, opts)
   end
 
   defp provider(attrs \\ %{}) do
@@ -253,7 +321,8 @@ defmodule Emisar.SSO.OIDC.OidccTest do
       token_endpoint: "https://idp.example/token",
       userinfo_endpoint: :undefined,
       jwks_uri: "https://idp.example/jwks",
-      pushed_authorization_request_endpoint: :undefined
+      pushed_authorization_request_endpoint: :undefined,
+      id_token_signing_alg_values_supported: ["RS256"]
     }
 
     struct!(Elixir.Oidcc.ProviderConfiguration, Map.merge(defaults, attrs))

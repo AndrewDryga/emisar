@@ -220,6 +220,23 @@ defmodule EmisarWeb.SCIM.UserController do
     )
   end
 
+  # The person holds an unresolved invitation to this account, which grants
+  # nothing until they accept it. Provisioning them would hand the directory a
+  # seat that cannot sign in, so the create is refused with the remedy: the 409
+  # lands in the IdP's provisioning log, where an admin reads it.
+  defp render_error(conn, :invitation_pending) do
+    conn
+    |> put_status(:conflict)
+    |> json(
+      Resource.error(
+        409,
+        "mutability",
+        "That person has an unresolved invitation to this account and must accept it " <>
+          "before the directory can provision them."
+      )
+    )
+  end
+
   # The email uniqueness this reports is GLOBAL, not per-account, so saying "in
   # the account" told an account's bearer something false about an address that
   # may belong to a workspace it cannot see. The 409 itself is unavoidable — the
@@ -270,7 +287,8 @@ defmodule EmisarWeb.SCIM.UserController do
       conn,
       "invalidPath",
       "This PATCH targets an attribute the directory connection does not support. " <>
-        "Only the `active` flag is patchable."
+        "Only `active`, `displayName`, `name.formatted`, `name.givenName` and " <>
+        "`name.familyName` are supported on a User."
     )
   end
 

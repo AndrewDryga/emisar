@@ -59,6 +59,22 @@ defmodule EmisarWeb.SSOControllerTest do
     def verify_callback(_provider, _params, _stashed), do: {:error, :token_endpoint_unreachable}
   end
 
+  # The token endpoint answered 200 with no `id_token` — an OAuth2-only endpoint,
+  # or an app registration that dropped the `openid` scope. oidcc calls that a
+  # success and leaves the field as `:none`, which the seam turns into this
+  # shaped error instead of raising on `:none.claims()`.
+  defmodule NoIdTokenOIDC do
+    @behaviour Emisar.SSO.OIDC
+
+    @impl Emisar.SSO.OIDC
+    def begin_authorization(_provider, _opts) do
+      {:ok, %{authorize_url: "https://idp.test/auth", state: "s", nonce: "n", pkce_verifier: "v"}}
+    end
+
+    @impl Emisar.SSO.OIDC
+    def verify_callback(_provider, _params, _stashed), do: {:error, :missing_id_token}
+  end
+
   # A stub whose BEGIN step fails — a misconfigured provider whose discovery
   # document can't be fetched. Drives the `begin/2` controller's `with` else.
   defmodule FailingBeginOIDC do
@@ -1079,6 +1095,25 @@ defmodule EmisarWeb.SSOControllerTest do
       assert redirected_to(conn) == ~p"/sign_in"
       assert Phoenix.Flash.get(conn.assigns.flash, :error) =~ "Single sign-on failed"
       refute get_session(conn, :user_token)
+    end
+
+    test "a token response with no id_token is a shaped failure, not a crash", %{conn: conn} do
+      Emisar.Config.put_override(:emisar, :sso_oidc_impl, NoIdTokenOIDC)
+      provider = provider_fixture(enterprise_account())
+
+      log =
+        capture_log(fn ->
+          failed =
+            conn
+            |> stash_callback(provider)
+            |> get(~p"/sign_in/sso/callback", %{"code" => "AUTH_CODE_SENTINEL"})
+
+          assert redirected_to(failed) == ~p"/sign_in"
+          assert Phoenix.Flash.get(failed.assigns.flash, :error) =~ "Single sign-on failed"
+          refute get_session(failed, :user_token)
+        end)
+
+      assert log =~ "sso_callback_failed reason=token_response_invalid"
     end
 
     test "callback logs one bounded reason without tokens, claims, body, or TLS material", %{

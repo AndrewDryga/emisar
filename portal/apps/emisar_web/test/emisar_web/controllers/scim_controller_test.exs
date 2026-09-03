@@ -332,6 +332,30 @@ defmodule EmisarWeb.SCIMControllerTest do
       assert Enum.count(scim_users, &(&1.external_id == "okta|dup")) == 1
     end
 
+    test "a person holding an unresolved invitation is refused with 409, not provisioned", %{
+      conn: conn,
+      token: token,
+      account: account,
+      subject: subject
+    } do
+      payload = user_payload("okta|reinvited", email: "reinvited@acme.test")
+      assert conn |> scim_post(token, ~p"/scim/v2/Users", payload) |> json_response(201)
+
+      {:ok, user} = Users.fetch_user_by_email("reinvited@acme.test")
+      membership = Accounts.peek_sync_membership(account.id, user.id)
+      assert {:ok, _removed} = Accounts.delete_membership(membership, subject)
+
+      invitation_attrs = Fixtures.Accounts.invitation_attrs(email: user.email)
+      assert {:ok, _invited} = Accounts.invite_user_to_account(invitation_attrs, subject)
+
+      # The seat grants nothing until the invitation is accepted, so the answer
+      # names the remedy instead of reporting a provisioned, active user.
+      body = conn |> scim_post(token, ~p"/scim/v2/Users", payload) |> json_response(409)
+
+      assert body["scimType"] == "mutability"
+      assert body["detail"] =~ "unresolved invitation"
+    end
+
     test "a payload with no externalId or userName → 400 SCIM error", %{conn: conn, token: token} do
       body =
         conn
@@ -610,6 +634,14 @@ defmodule EmisarWeb.SCIMControllerTest do
         |> json_response(400)
 
       assert body["scimType"] == "invalidPath"
+
+      # The IdP admin reads this while debugging a failed push. It used to say
+      # only `active` was patchable, so the natural next step was turning off
+      # the name sync this endpoint has supported all along.
+      assert body["detail"] ==
+               "This PATCH targets an attribute the directory connection does not support. " <>
+                 "Only `active`, `displayName`, `name.formatted`, `name.givenName` and " <>
+                 "`name.familyName` are supported on a User."
     end
 
     test "a displayName-only PATCH renames the synced user", %{

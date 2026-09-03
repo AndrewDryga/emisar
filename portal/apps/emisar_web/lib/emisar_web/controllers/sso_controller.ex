@@ -238,7 +238,8 @@ defmodule EmisarWeb.SSOController do
               :no_supported_code_challenge,
               :no_supported_auth_method,
               :provider_not_ready,
-              :blocked_discovery_endpoint
+              :blocked_discovery_endpoint,
+              :no_supported_id_token_signing_alg
             ],
        do: "provider_config_invalid"
 
@@ -250,6 +251,7 @@ defmodule EmisarWeb.SSOController do
   defp failure_reason(:missing_code), do: "authorization_code_missing"
   defp failure_reason(:missing_identifier_claim), do: "token_claims_invalid"
   defp failure_reason({:missing_claim, _claim, _claims}), do: "token_claims_invalid"
+  defp failure_reason(:missing_id_token), do: "token_response_invalid"
   defp failure_reason({:invalid_property, _property}), do: "token_response_invalid"
   defp failure_reason({:no_matching_key_with_kid, _kid}), do: "token_validation_failed"
   defp failure_reason({:none_alg_used, _token}), do: "token_validation_failed"

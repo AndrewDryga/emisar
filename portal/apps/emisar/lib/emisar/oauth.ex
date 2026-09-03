@@ -632,7 +632,7 @@ defmodule Emisar.OAuth do
     end)
   end
 
-  # Both sweeps page like the audit and run retention jobs. An unbounded
+  # All three sweeps page like the audit and run retention jobs. An unbounded
   # `delete_all` takes row locks on everything it matches in ONE statement, so a
   # backlog — an outage, a disabled job, a burst of drive-by registrations —
   # turns the cleanup into a long lock on a table the authorization path reads.
@@ -656,11 +656,14 @@ defmodule Emisar.OAuth do
   def delete_unused_clients(now \\ DateTime.utc_now()) do
     cutoff = DateTime.add(now, -@unused_client_ttl_s, :second)
 
-    {count, _} =
-      Client.Query.never_authorized_before(cutoff)
-      |> Repo.delete_all()
-
-    count
+    # Paged like its two siblings, and for their exact reason: this is the sweep
+    # that exists FOR drive-by registrations, on the one table `fetch_client/1`
+    # reads on every `/oauth/authorize`.
+    sweep_in_batches(fn ->
+      ids = Client.Query.prunable_ids(cutoff, @sweep_batch) |> Repo.all()
+      {count, _} = ids |> Client.Query.by_ids() |> Repo.delete_all()
+      {count, length(ids)}
+    end)
   end
 
   @doc "Scopes this AS advertises in its metadata."

@@ -7,6 +7,7 @@ defmodule EmisarWeb.SSOSettingsLive do
 
   @role_mapping_prefix "role_mappings_"
   @runner_access_mapping_prefix "runner_access_mappings_"
+  @synced_member_prefix "synced_members_"
 
   # Humanized provider-kind labels for the select + the row badge — the enum's
   # atoms don't title-case cleanly ("openid_connect" → "OpenID Connect").
@@ -81,8 +82,10 @@ defmodule EmisarWeb.SSOSettingsLive do
         :can_manage_team?,
         Accounts.subject_can_manage_team?(socket.assigns.current_subject)
       )
-      # The connection's synced members (identity + membership), loaded on :show.
+      # The connection's synced members (identity + membership), loaded on :show —
+      # one page of them, since a directory is what makes this list long.
       |> assign(:synced_members, [])
+      |> assign(:synced_member_metadata, empty_metadata())
       |> assign(:synced_members_load_error?, false)
       |> assign(:edit_form, nil)
       # The :new/:show create form. Only those actions assign it, but test_connection
@@ -210,7 +213,7 @@ defmodule EmisarWeb.SSOSettingsLive do
         |> assign(:adding_mapping, false)
         |> assign(:adding_runner_access_mapping, false)
         |> load_group_mappings([provider], params)
-        |> load_synced_members(provider)
+        |> load_synced_members(provider, params)
         |> load_runners()
         |> load_sign_in_verification(provider)
         |> assign_form(SSO.change_provider(socket.assigns.current_subject))
@@ -234,10 +237,11 @@ defmodule EmisarWeb.SSOSettingsLive do
   # the "Synced members" card can show state and act on the membership. Two reads
   # (SSO identities + Accounts memberships), zipped by user id; either failing
   # keeps uncertainty explicit instead of asserting that nobody was provisioned.
-  defp load_synced_members(socket, provider) do
+  defp load_synced_members(socket, provider, params) do
     subject = socket.assigns.current_subject
+    opts = LiveTable.params_to_opts(params, [], prefix: @synced_member_prefix)
 
-    with {:ok, identities} <- SSO.list_synced_users(provider, subject),
+    with {:ok, identities, metadata} <- SSO.list_synced_users(provider, subject, opts),
          user_ids = Enum.map(identities, & &1.user_id),
          {:ok, memberships} <-
            Accounts.list_memberships_for_users(
@@ -255,11 +259,13 @@ defmodule EmisarWeb.SSOSettingsLive do
 
       socket
       |> assign(:synced_members, members)
+      |> assign(:synced_member_metadata, metadata)
       |> assign(:synced_members_load_error?, false)
     else
       _ ->
         socket
         |> assign(:synced_members, [])
+        |> assign(:synced_member_metadata, empty_metadata())
         |> assign(:synced_members_load_error?, true)
     end
   end
@@ -2076,7 +2082,10 @@ defmodule EmisarWeb.SSOSettingsLive do
 
             <.synced_members_section
               id={"synced-members-#{provider.id}"}
+              path={~p"/app/#{@current_account}/settings/sso/#{provider.id}"}
               members={@synced_members}
+              metadata={@synced_member_metadata}
+              filter_params={@mapping_filter_params}
               load_error?={@synced_members_load_error?}
               member_role_options={@member_role_options}
               can_manage_team?={@can_manage_team?}
@@ -2316,6 +2325,10 @@ defmodule EmisarWeb.SSOSettingsLive do
 
   defp test_error_message(:rate_limited),
     do: "Too many connection tests. Wait a minute and try again."
+
+  defp test_error_message(:no_supported_id_token_signing_alg) do
+    "That issuer only signs ID tokens with algorithms emisar won't accept. Configure it to sign with RS256 (or another public-key algorithm) and test again."
+  end
 
   defp test_error_message(_reason) do
     "Couldn't load the issuer's OIDC discovery document. Check the issuer URL and that the IdP is reachable from the internet."
@@ -2560,8 +2573,8 @@ defmodule EmisarWeb.SSOSettingsLive do
               placeholder="acme.com"
             />
             <p class="mt-1 text-[11px] leading-relaxed text-zinc-400">
-              Restricts sign-in to verified emails on this domain and routes that domain's
-              sign-ins here. Leave blank to accept any address the provider returns.
+              Restricts sign-in to verified emails on this domain. Leave blank to accept any
+              address the provider returns.
             </p>
           </div>
         </div>
@@ -3740,7 +3753,10 @@ defmodule EmisarWeb.SSOSettingsLive do
     do: "emisar group #{id}"
 
   attr :id, :string, required: true
+  attr :path, :any, required: true
   attr :members, :list, required: true
+  attr :metadata, :any, required: true
+  attr :filter_params, :map, required: true
   attr :load_error?, :boolean, required: true
   attr :member_role_options, :list, required: true
   attr :can_manage_team?, :boolean, required: true
@@ -3758,9 +3774,11 @@ defmodule EmisarWeb.SSOSettingsLive do
     ~H"""
     <.section_with_note id={@id}>
       <:header>
+        <%!-- The count is the directory's whole roster, from the page metadata —
+             `length(@members)` would report one page as the roster size. --%>
         <.section_header
           title="Synced members"
-          count={if @load_error?, do: nil, else: length(@members)}
+          count={if @load_error?, do: nil, else: @metadata.count}
           count_tone={:neutral}
         />
       </:header>
@@ -3915,6 +3933,17 @@ defmodule EmisarWeb.SSOSettingsLive do
         </li>
       </ul>
 
+      <div class="mt-4">
+        <LiveTable.paginator
+          id={@id}
+          path={@path}
+          metadata={@metadata}
+          filter_params={@filter_params}
+          prefix="synced_members_"
+          page_count={length(@members)}
+        />
+      </div>
+
       <.empty_state
         :if={@load_error?}
         variant={:hint}
@@ -3925,7 +3954,16 @@ defmodule EmisarWeb.SSOSettingsLive do
       >
         Refresh the page to try again. This connection may still have provisioned members.
       </.empty_state>
-      <.empty_state :if={@members == [] and not @load_error?} variant={:hint} class="mt-4">
+      <%!-- Never say "nobody yet" for a cursor that simply ran past the end —
+           the pager owns that state and offers the way back. --%>
+      <.empty_state
+        :if={
+          @members == [] and not @load_error? and
+            not LiveTable.stale_page?(0, @metadata, @filter_params, "synced_members_")
+        }
+        variant={:hint}
+        class="mt-4"
+      >
         No one has been provisioned through this connection yet. Members appear here after they sign in
         through it, or after directory sync provisions them.
       </.empty_state>

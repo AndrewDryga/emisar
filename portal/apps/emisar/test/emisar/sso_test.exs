@@ -582,8 +582,6 @@ defmodule Emisar.SSOTest do
     end
   end
 
-  # -- list_synced_users/2 --------------------------------------------
-
   describe "user_profile_directory_managed?/2" do
     test "true for a member synced under a SCIM-enabled provider" do
       %{provider: provider, account: account} = scim_provider()
@@ -609,14 +607,42 @@ defmodule Emisar.SSOTest do
     end
   end
 
-  describe "list_synced_users/2" do
+  # -- list_synced_users/3 --------------------------------------------
+
+  describe "list_synced_users/3" do
     test "returns the provider's provisioned users with the user preloaded" do
       %{provider: provider, subject: subject} = scim_provider()
       %{identity: identity} = provision(provider, "okta|alice")
 
-      assert {:ok, [synced]} = SSO.list_synced_users(provider, subject)
+      assert {:ok, [synced], metadata} = SSO.list_synced_users(provider, subject)
       assert synced.id == identity.id
       assert synced.user.id == identity.user_id
+      assert metadata.count == 1
+    end
+
+    test "pages the roster, newest first, with the whole count in the metadata" do
+      # A directory is exactly what makes this list long, so it cannot come back
+      # whole: the connection page held every identity plus a preloaded user in
+      # one socket's assigns.
+      %{provider: provider, subject: subject} = scim_provider()
+
+      for n <- 1..5, do: provision(provider, "okta|paged-#{n}")
+
+      assert {:ok, first_page, metadata} =
+               SSO.list_synced_users(provider, subject, page: [limit: 2])
+
+      assert length(first_page) == 2
+      assert metadata.count == 5
+
+      assert {:ok, second_page, _metadata} =
+               SSO.list_synced_users(provider, subject, page: [cursor: metadata.next_page_cursor])
+
+      assert length(second_page) == 3
+      assert hd(first_page).scim_external_id == "okta|paged-5"
+      assert List.last(second_page).scim_external_id == "okta|paged-1"
+
+      all_ids = Enum.map(first_page ++ second_page, & &1.id)
+      assert length(Enum.uniq(all_ids)) == 5
     end
 
     test "a viewer (no manage_sso) is denied" do
@@ -1674,6 +1700,34 @@ defmodule Emisar.SSOTest do
       refute Repo.reload!(provider).enabled
     end
 
+    test "another account may claim the same allowed email domain" do
+      # The domain gate is a per-provider sign-in restriction, not a route, so
+      # nothing needs it unique across tenants — and global uniqueness let one
+      # account squat a domain the real owner could then never set, refused by a
+      # constraint naming a row in a workspace they cannot see.
+      {_ua, account_a, _sa} = enterprise_owner()
+      {_ub, account_b, sb} = enterprise_owner()
+      _squatter = provider_fixture(account_a, %{allowed_email_domain: "bigcorp.test"})
+      provider_b = provider_fixture(account_b)
+
+      assert {:ok, updated} =
+               SSO.update_provider(provider_b, %{allowed_email_domain: "bigcorp.test"}, sb)
+
+      assert updated.allowed_email_domain == "bigcorp.test"
+    end
+
+    test "two enabled connections in ONE account cannot share an allowed email domain" do
+      {_user, account, subject} = enterprise_owner()
+      _okta = provider_fixture(account, %{kind: :okta, allowed_email_domain: "acme.test"})
+      keycloak = provider_fixture(account, %{kind: :keycloak, name: "Keycloak"})
+
+      assert {:error, changeset} =
+               SSO.update_provider(keycloak, %{allowed_email_domain: "acme.test"}, subject)
+
+      assert "has already been taken" in errors_on(changeset).allowed_email_domain
+      refute Repo.reload!(keycloak).allowed_email_domain
+    end
+
     test "changing the issuer to a non-https URL is rejected on update" do
       {_user, account, subject} = enterprise_owner()
       provider = provider_fixture(account)
@@ -2100,6 +2154,28 @@ defmodule Emisar.SSOTest do
       request_id = request.id
       assert_receive {:sso_link_request, :dismissed, %{id: ^request_id}}
       assert link_requests(provider.id) == []
+    end
+
+    test "returns role control to operators, so a synced member is editable again" do
+      # `directory_managed: true` makes the role read-only, and the delete cannot
+      # be re-driven — the tombstoned connection reads back `:not_found`. Run
+      # after the commit, this repair had one unretryable chance at the flag.
+      %{provider: provider, subject: subject} = scim_provider()
+      %{membership: membership} = provision(provider, "okta|synced")
+
+      assert membership.directory_managed
+
+      assert Accounts.update_membership_role(membership, "admin", subject) ==
+               {:error, :role_managed_by_directory}
+
+      assert {:ok, _deleted} = SSO.delete_provider(provider, subject)
+
+      released = Repo.reload!(membership)
+      refute released.directory_managed
+      refute released.directory_provider_id
+
+      assert {:ok, %Accounts.Membership{role: :admin}} =
+               Accounts.update_membership_role(released, "admin", subject)
     end
 
     test "a viewer (no manage_sso) is denied" do
@@ -3992,6 +4068,41 @@ defmodule Emisar.SSOTest do
       assert reprovisioned.disabled_at
     end
 
+    test "a re-POST refuses while the person's account invitation is unresolved", %{
+      provider: provider,
+      subject: subject
+    } do
+      attrs = scim_attrs(%{external_id: "okta|reinvited", email: "reinvited@acme.test"})
+
+      assert {:ok, %{user: user, membership: membership}} =
+               SSO.scim_provision_user(provider, attrs)
+
+      # Removed from the account, then invited back by hand — the identity
+      # survives both, so the directory's next push lands on a seat that is
+      # nothing but an unresolved invitation.
+      assert {:ok, _removed} = Accounts.delete_membership(membership, subject)
+
+      invitation_attrs = Fixtures.Accounts.invitation_attrs(email: user.email)
+
+      assert {:ok, %{membership: invitation, invitation_token: invitation_token}} =
+               Accounts.invite_user_to_account(invitation_attrs, subject)
+
+      # An unresolved invitation grants nothing, so answering "provisioned,
+      # active" handed the directory a seat that cannot sign in.
+      assert SSO.scim_provision_user(provider, attrs) == {:error, :invitation_pending}
+      assert Accounts.membership_invitation_pending?(Repo.reload!(invitation))
+
+      resource_id = user_resource_id(provider, "okta|reinvited")
+      assert {:ok, scim_user} = SSO.scim_fetch_user(provider, resource_id)
+      refute scim_user.active
+
+      assert {:ok, _accepted} =
+               Accounts.mark_invitation_accepted(invitation, invitation_token, user)
+
+      assert {:ok, %{membership: reprovisioned}} = SSO.scim_provision_user(provider, attrs)
+      refute reprovisioned.disabled_at
+    end
+
     test "a colliding email fails :email_taken — never merges onto the existing user", %{
       provider: provider
     } do
@@ -5089,6 +5200,34 @@ defmodule Emisar.SSOTest do
       assert SSO.scim_list_groups(provider, display_name: "Stale mapping name") === {:ok, [], 0}
 
       assert SSO.scim_list_groups(provider, display_name: "grp-unmapped") === {:ok, [], 0}
+    end
+
+    test "a filter naming BOTH attributes is honored as their intersection", %{
+      provider: provider
+    } do
+      # The domain takes a plain keyword list, so the "only one key ever arrives"
+      # guarantee lived in the controller's regex. Both narrowings now compose,
+      # and answering nothing instead would read as "no such group" to an IdP's
+      # existence probe — which then re-creates the group as a duplicate.
+      {:ok, _ops} =
+        SSO.scim_upsert_group(provider, %{
+          external_id: "grp-ops",
+          display: "Operations",
+          member_ids: []
+        })
+
+      {:ok, _security} =
+        SSO.scim_upsert_group(provider, %{
+          external_id: "grp-sec",
+          display: "Security Review",
+          member_ids: []
+        })
+
+      assert {:ok, [%{external_group_id: "grp-ops"}], 1} =
+               SSO.scim_list_groups(provider, display_name: "Operations", external_id: "grp-ops")
+
+      assert SSO.scim_list_groups(provider, display_name: "Operations", external_id: "grp-sec") ===
+               {:ok, [], 0}
     end
 
     test "a group whose display was cleared still answers on its id", %{provider: provider} do
@@ -7148,6 +7287,48 @@ defmodule Emisar.SSOTest do
                %RunnerAccess{mode: :none, groups: [], runner_ids: []},
                admin
              ) == {:error, :link_target_outranks_approver}
+    end
+
+    test "an admin can't link an identity onto a SUSPENDED owner", %{
+      account: account,
+      provider: provider
+    } do
+      owner_user = Fixtures.Users.create_user(email: "held-owner@acme.test")
+
+      owner_membership =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          user_id: owner_user.id,
+          role: "owner"
+        )
+
+      # An offboarding hold is exactly when the credential must not be rebound:
+      # approving a directory suspension reinstates the membership in the same
+      # transaction, so the escalation would complete unattended.
+      Fixtures.Memberships.suspend_membership(owner_membership)
+
+      admin_membership =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          user_id: Fixtures.Users.create_user().id,
+          role: "admin"
+        )
+
+      admin = Fixtures.Subjects.membership_subject(admin_membership)
+
+      request =
+        capture_request(provider, %{
+          "sub" => "okta|held-owner-impersonator",
+          "email" => owner_user.email,
+          "email_verified" => true
+        })
+
+      assert request.matched_user_id == owner_user.id
+
+      assert SSO.approve_link_request(request, RunnerAccess.none(), admin) ==
+               {:error, :link_target_outranks_approver}
+
+      refute Repo.one(UserIdentity)
     end
 
     test "an admin can't bind an identity before an owner accepts their invitation", %{

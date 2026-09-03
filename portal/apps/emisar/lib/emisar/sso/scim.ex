@@ -409,20 +409,8 @@ defmodule Emisar.SSO.SCIM do
          authorization
        ) do
     case Accounts.peek_sync_membership(provider.account_id, user.id) do
-      %Accounts.Membership{disabled_at: nil} = membership ->
-        unchanged_membership_transition(membership)
-
       %Accounts.Membership{} = membership ->
-        if identity.scim_active do
-          unchanged_membership_transition(membership)
-        else
-          Accounts.put_sync_membership_lifecycle(
-            Multi.new(),
-            membership,
-            provider,
-            :reinstate
-          )
-        end
+        put_reconciled_membership_multi(provider, identity, membership)
 
       nil ->
         {role, access} = repost_authorization(provider, authorization)
@@ -462,6 +450,31 @@ defmodule Emisar.SSO.SCIM do
         Multi.run(Multi.new(), :membership_transition, fn _repo, _changes ->
           {:ok, %{membership: nil, effect: nil}}
         end)
+    end
+  end
+
+  # Every seat read judges `Membership.authorizable?/1`, so an unresolved
+  # invitation grants nothing: calling one an active seat answered the directory
+  # "provisioned, active" for a person who cannot sign in, and gave the admin no
+  # surface saying why. A directory assertion does not burn the possession proof
+  # the emailed link is — the manual link approval refuses the same state — and
+  # the IdP's next re-POST succeeds the moment the invitee accepts.
+  defp put_reconciled_membership_multi(
+         %IdentityProvider{} = provider,
+         %UserIdentity{} = identity,
+         %Accounts.Membership{} = membership
+       ) do
+    cond do
+      Accounts.membership_invitation_pending?(membership) ->
+        Multi.error(Multi.new(), :membership_transition, :invitation_pending)
+
+      Accounts.membership_authorized?(membership) or identity.scim_active ->
+        unchanged_membership_transition(membership)
+
+      # A directory suspension is the directory's to lift; a MANUAL hold still
+      # stands (`put_sync_membership_lifecycle` judges that under the lock).
+      true ->
+        Accounts.put_sync_membership_lifecycle(Multi.new(), membership, provider, :reinstate)
     end
   end
 
@@ -1118,15 +1131,35 @@ defmodule Emisar.SSO.SCIM do
     end
   end
 
-  defp apply_scim_group_filter(queryable, _provider, nil, nil), do: queryable
+  # Total by construction: one narrowing per attribute, composed. The four heads
+  # this replaces covered every combination EXCEPT both-at-once, so a filter
+  # naming both raised a FunctionClauseError — a 500 on an authenticated SCIM
+  # route, held off only by a regex in a different module. Composing is also the
+  # honest answer to an `and` filter: returning nothing instead would read as
+  # "no such group" to an IdP's existence probe, which then creates a duplicate.
+  defp apply_scim_group_filter(queryable, provider, display_name, external_id) do
+    queryable
+    |> apply_scim_group_display_filter(display_name)
+    |> apply_scim_group_external_id_filter(provider, external_id)
+  end
 
-  defp apply_scim_group_filter(queryable, _provider, display_name, nil),
+  defp apply_scim_group_display_filter(queryable, nil), do: queryable
+
+  defp apply_scim_group_display_filter(queryable, display_name),
     do: DirectoryGroup.Query.by_display(queryable, display_name)
 
-  defp apply_scim_group_filter(queryable, %IdentityProvider{kind: :okta}, nil, external_id),
-    do: DirectoryGroup.Query.by_external_group_id_or_unset_resource_id(queryable, external_id)
+  defp apply_scim_group_external_id_filter(queryable, _provider, nil), do: queryable
 
-  defp apply_scim_group_filter(queryable, _provider, nil, external_id),
+  # Okta omits externalId on create and then probes our returned resource id as
+  # externalId, so for Okta only an unset externalId matches that exact id.
+  defp apply_scim_group_external_id_filter(
+         queryable,
+         %IdentityProvider{kind: :okta},
+         external_id
+       ),
+       do: DirectoryGroup.Query.by_external_group_id_or_unset_resource_id(queryable, external_id)
+
+  defp apply_scim_group_external_id_filter(queryable, _provider, external_id),
     do: DirectoryGroup.Query.by_external_group_id(queryable, external_id)
 
   defp apply_scim_filter(queryable, {:user_name, value}),
@@ -1179,10 +1212,10 @@ defmodule Emisar.SSO.SCIM do
   # `active: true` deliberately does NOT lift a manual break-glass hold, so
   # reporting the identity's flag answered "active" for someone who cannot sign
   # in. The IdP acts on that — it stops flagging them — and nobody finds out.
-  defp scim_effective_active?(%UserIdentity{} = identity, %Accounts.Membership{disabled_at: nil}),
-    do: identity.scim_active
-
-  defp scim_effective_active?(%UserIdentity{}, %Accounts.Membership{}), do: false
+  # An unresolved invitation is the same class, which is why this asks the one
+  # seat predicate (`Membership.authorizable?/1`) rather than reading a column.
+  defp scim_effective_active?(%UserIdentity{} = identity, %Accounts.Membership{} = membership),
+    do: identity.scim_active and Accounts.membership_authorized?(membership)
 
   # No membership at all — an operator removed them from the account while the
   # identity survived. They are not active here, and saying otherwise left the

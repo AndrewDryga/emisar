@@ -40,9 +40,11 @@ defmodule Emisar.SSO.GroupRoleMapping.Changeset do
   defp changeset(changeset) do
     changeset
     # Directory sync can never grant owner — owner stays a deliberate human
-    # assignment (decision 7). Defense in depth: `Accounts.sync_set_membership_role/3`
-    # also refuses `:owner`, but rejecting it here keeps an owner mapping from
-    # ever being stored in the first place.
+    # assignment (decision 7). Defense in depth: the synced write path also
+    # refuses `:owner` under the row lock
+    # (`Accounts.put_sync_membership_authorization/5` →
+    # `ensure_sync_role_assignable/1`), but rejecting it here keeps an owner
+    # mapping from ever being stored in the first place.
     |> validate_length(:external_group_display, max: @max_string_length, count: :codepoints)
     |> validate_exclusion(:role, [:owner], message: "directory sync cannot grant owner")
     |> unique_constraint([:provider_id, :directory_group_id],

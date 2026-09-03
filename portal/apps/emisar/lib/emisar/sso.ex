@@ -161,21 +161,20 @@ defmodule Emisar.SSO do
   @doc """
   The users provisioned through `provider` — its `UserIdentity` rows (SCIM sync,
   SSO first-login, or approved link), each preloaded with the user, most-recent
-  first. Powers the connection page's "Synced members" list. Requires `manage_sso`;
-  scoped to the account. Returns `{:ok, [%UserIdentity{}]}`.
+  first. Powers the connection page's "Synced members" list. Paginated, because a
+  directory is exactly what makes this set large. Requires `manage_sso`; scoped to
+  the account. Returns `{:ok, [%UserIdentity{}], %Paginator.Metadata{}}`.
   """
-  def list_synced_users(%IdentityProvider{} = provider, %Subject{} = subject) do
+  def list_synced_users(%IdentityProvider{} = provider, %Subject{} = subject, opts \\ []) do
     with :ok <- ensure_can_manage_sso(subject),
          {:ok, provider} <- fetch_provider_by_id(provider.id, subject) do
-      identities =
-        UserIdentity.Query.not_deleted()
-        |> UserIdentity.Query.by_provider_id(provider.id)
-        |> UserIdentity.Query.with_preloaded_user()
-        |> UserIdentity.Query.ordered_by_recent()
-        |> Authorizer.for_subject(subject)
-        |> Repo.all()
-
-      {:ok, identities}
+      # No `ordered_by_recent/1`: the query module's `cursor_fields/0` is that
+      # same order, and `Repo.list/3` applies it.
+      UserIdentity.Query.not_deleted()
+      |> UserIdentity.Query.by_provider_id(provider.id)
+      |> UserIdentity.Query.with_preloaded_user()
+      |> Authorizer.for_subject(subject)
+      |> Repo.list(UserIdentity.Query, opts)
     end
   end
 
@@ -1033,11 +1032,24 @@ defmodule Emisar.SSO do
       |> Multi.insert(:audit, fn %{provider: provider} ->
         Audit.Events.identity_provider_deleted(subject, provider)
       end)
+      # Both repairs commit WITH the tombstone. Post-commit they could not be
+      # re-driven — `fetch_provider_by_id/2` starts at `not_deleted()`, so a
+      # second "Delete connection" answers `:not_found` — and a failure there
+      # froze every synced member's role behind `directory_managed: true`
+      # pointing at a provider nobody can name again. (The sibling
+      # `disable_scim/2` keeps its repair post-commit precisely because its row
+      # stays fetchable, so a retry repeats it.) Session revocation stays after
+      # the commit: it disconnects live sockets, which a rollback cannot undo.
+      |> Multi.run(:role_control, fn _repo, %{provider: provider} ->
+        {:ok, return_role_control_to_operators(provider)}
+      end)
+      |> Multi.run(:dismissed_requests, fn _repo, %{provider: provider} ->
+        {:ok, delete_pending_link_requests(provider)}
+      end)
       |> Repo.commit_multi(
-        after_commit: fn %{provider: provider} ->
+        after_commit: fn %{provider: provider, dismissed_requests: dismissed} ->
           end_sessions_signed_in_through(provider)
-          _ = return_role_control_to_operators(provider)
-          _ = dismiss_pending_link_requests(provider)
+          Enum.each(dismissed, &broadcast_link_request_dismissed/1)
         end
       )
       |> case do
@@ -1517,17 +1529,20 @@ defmodule Emisar.SSO do
   # arrived through is gone, approval is impossible — `approve_link_request` can
   # no longer fetch the provider — so leaving them queued showed admins a
   # decision they could not make and left the waiting browsers on a page that
-  # would never resolve. Each one is dismissed and told.
-  defp dismiss_pending_link_requests(%IdentityProvider{} = provider) do
+  # would never resolve. The caller broadcasts the returned rows once its
+  # transaction commits, so every waiting browser is still told.
+  #
+  # RETURNING, not read-then-delete: a request created between the two statements
+  # was deleted WITHOUT a broadcast, leaving exactly the waiting browser on a
+  # never-resolving page this exists to prevent.
+  defp delete_pending_link_requests(%IdentityProvider{} = provider) do
     queryable =
       LinkRequest.Query.all()
       |> LinkRequest.Query.by_provider_id(provider.id)
+      |> LinkRequest.Query.select_all()
 
-    # RETURNING, not read-then-delete: a request created between the two
-    # statements was deleted WITHOUT a broadcast, leaving exactly the waiting
-    # browser on a never-resolving page that this function exists to prevent.
-    {_count, dismissed} = queryable |> LinkRequest.Query.select_all() |> Repo.delete_all()
-    Enum.each(dismissed, &broadcast_link_request_dismissed/1)
+    {_count, dismissed} = Repo.delete_all(queryable)
+    dismissed
   end
 
   defp end_sessions_signed_in_through(%IdentityProvider{} = provider) do
@@ -2535,7 +2550,7 @@ defmodule Emisar.SSO do
   Internal — recompute one identity's role from its synced group memberships:
   the HIGHEST mapped role over the groups it belongs to (`:admin > :operator >
   :viewer`; never `:owner`), applied to its membership in the provider's account
-  via `Accounts.sync_set_membership_role/3`. An identity in NO mapped group
+  via `Accounts.sync_set_membership_authorization/4`. An identity in NO mapped group
   resets to the provider's `default_role` (least-privilege on directory
   removal); a member who is currently an account `:owner` is left untouched.
   `{:ok, membership} | {:error, reason}`.
@@ -3418,7 +3433,7 @@ defmodule Emisar.SSO do
          # in another account, from committing in the gap — leaving the approver's
          # IdP credential bound to someone they have no authority over.
          {:ok, memberships} <- Accounts.fetch_and_lock_active_memberships_for_user(user, repo) do
-      {here, elsewhere} = Enum.split_with(memberships, &(&1.account_id == provider.account_id))
+      elsewhere = Enum.reject(memberships, &(&1.account_id == provider.account_id))
       matched_membership = Accounts.peek_sync_membership(provider.account_id, user.id)
 
       cond do
@@ -3433,8 +3448,11 @@ defmodule Emisar.SSO do
 
         # Against the role read under lock, not the session's. An owner demoted to
         # admin keeps manage_sso, so the check above still passes — but they no
-        # longer cover an owner, and the cached subject said they did.
-        Enum.any?(here, &(not Auth.Permissions.role_covers_role?(approver_role, &1.role))) ->
+        # longer cover an owner, and the cached subject said they did. Judged on
+        # the MATCHED row: `memberships` drops a suspended one, so reading the
+        # role from there waved a suspended owner through — a target this
+        # approval may itself reinstate.
+        not Auth.Permissions.role_covers_role?(approver_role, matched_membership.role) ->
           {:error, :link_target_outranks_approver}
 
         true ->
