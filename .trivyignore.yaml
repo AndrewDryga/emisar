@@ -52,3 +52,18 @@ vulnerabilities:
   - id: CVE-2026-53613
     statement: the non-root portal cannot gain mount's SUID privileges under no-new-privileges, drops all capabilities, and has no user-mount fstab entry.
     expired_at: 2027-01-06
+  - id: CVE-2026-16742
+    statement: systemd-homed is absent from the image; the portal runs as nobody, not as a local homed-managed login.
+    expired_at: 2027-01-06
+  - id: CVE-2026-76642
+    statement: the portal has no user-mount fstab entry and runs with all capabilities dropped and no-new-privileges, so mount cannot run privileged post-hooks.
+    expired_at: 2027-01-06
+  - id: CVE-2026-78408
+    statement: the portal never invokes nsenter and runs with all capabilities dropped and no-new-privileges, so it cannot open cgroup.procs as root.
+    expired_at: 2027-02-03
+  - id: CVE-2026-78409
+    statement: the portal has no user-mount fstab entry and runs with all capabilities dropped and no-new-privileges, so X-mount.subdir is unreachable.
+    expired_at: 2027-02-03
+  - id: CVE-2026-78410
+    statement: the portal has no user-mount fstab entry and runs with all capabilities dropped and no-new-privileges, so restricted bind mounts are unreachable.
+    expired_at: 2027-02-03
