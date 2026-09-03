@@ -1,9 +1,0 @@
-# The clock is kernel state a container shares with its host, so stepping it
-# would move time for the CI machine and every case running beside this one.
-# A privileged lane does not help; this stays uncovered by choice.
-# See .agent/kb/pack-behavior-environment-limits.md for what was measured.
-risk_accountability:
-  mode: complete
-  exceptions:
-    time.chronyc_makestep: requires_privileged_host
-    time.timedatectl_set_ntp: requires_privileged_host

@@ -5,8 +5,6 @@
 # the database SUTs other packs run, and `privileged` lands on it rather than on
 # the runner. So every one of them is a real case now, driving a real daemon,
 # with a probe for what it actually changed.
-risk_accountability:
-  mode: complete
 services: [docker-cli, docker-dind]
 env:
   DOCKER_HOST: tcp://docker-dind:2375

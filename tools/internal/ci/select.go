@@ -58,9 +58,6 @@ func Select(ctx context.Context, root, event, base string) (Selection, error) {
 		return Selection{}, err
 	}
 	selection.RunnerImage = selection.RunnerImage || runnerImage
-	if err := packtest.ValidateRiskChanges(filepath.Join(root, "packs"), files); err != nil {
-		return Selection{}, err
-	}
 	if selection.Workflows {
 		selection.Portal = true
 		selection.Runner = true

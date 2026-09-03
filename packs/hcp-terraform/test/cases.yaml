@@ -502,9 +502,8 @@ cases:
         expect:
           stdout_contains: ['"locked": false']
 
-  # Force-unlock is the high-risk verb, so its accounting is a successful case
-  # rather than an exception: it takes a lock the caller does not hold, which
-  # the fixture models by having a run hold it.
+  # The fixture models a lock held by another run so force-unlock exercises the
+  # real conflict rather than an already-unlocked workspace.
   - action: tfc.force_unlock_workspace
     args: {workspace_id: ws-8Rp2nKcQvWxYzA1b}
     arrange:

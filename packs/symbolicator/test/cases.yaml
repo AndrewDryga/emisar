@@ -3,8 +3,6 @@ versions:
   - version: "25.9.0"
     digest: "@sha256:ff16ec0110c73c0ce644f2a56f8e5ff6ed31adc9a3cf731788d425e1dc5f8ecb"
     default: true
-risk_accountability:
-  mode: complete
 env:
   SYMBOLICATOR_URL: http://127.0.0.1:3021
   SYMBOLICATOR_CONFIG: /etc/symbolicator/config.yml

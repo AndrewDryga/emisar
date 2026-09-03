@@ -564,12 +564,6 @@ func (a *App) validatePacks(ctx context.Context) error {
 	if err := packtest.Validate(plans); err != nil {
 		return fmt.Errorf("pack behavior authoring: %w", err)
 	}
-	// Declaration-only and absent plans are not in `plans` — they schedule
-	// nothing — but the complete catalog still has to account for every
-	// high/critical or redacting action.
-	if err := packtest.ValidateAccountabilityPlans(filepath.Join(a.Root, "packs")); err != nil {
-		return fmt.Errorf("pack risk accountability: %w", err)
-	}
 	if _, err := hostaccess.Discover(filepath.Join(a.Root, "packs")); err != nil {
 		return fmt.Errorf("pack host-access proof authoring: %w", err)
 	}

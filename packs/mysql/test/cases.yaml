@@ -5,8 +5,6 @@ versions:
     default: true
   - version: "8.4.6"
     digest: "@sha256:869218921e61d6c3c89820955d63cca42971f0e3e6c1e2792247bbd944ebc6e9"
-risk_accountability:
-  mode: complete
 secret_env: [MYSQL_PWD]
 env:
   MYSQL_HOST: mysql

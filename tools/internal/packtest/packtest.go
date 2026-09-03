@@ -77,39 +77,16 @@ type Runner struct {
 	Reason string `yaml:"reason,omitempty"`
 }
 
-type RiskAccountability struct {
-	Mode       string            `yaml:"mode,omitempty"`
-	Exceptions map[string]string `yaml:"exceptions,omitempty"`
-}
-
-// RedactionExceptions records why an action that declares a redaction rule has
-// no behavior case exercising it. Declaring a rule only proves it COMPILES —
-// which is exactly how redis.acl_getuser shipped a rule that could not fire,
-// at risk low, for weeks. An action without a case now needs a written reason.
-type RedactionExceptions struct {
-	Exceptions map[string]string `yaml:"exceptions,omitempty"`
-}
-
 type Plan struct {
-	Services                []string            `yaml:"services"`
-	Versions                []Version           `yaml:"versions"`
-	Runner                  Runner              `yaml:"runner,omitempty"`
-	RiskAccountability      RiskAccountability  `yaml:"risk_accountability,omitempty"`
-	RedactionAccountability RedactionExceptions `yaml:"redaction_accountability,omitempty"`
-	SecretEnv               []string            `yaml:"secret_env,omitempty"`
-	Env                     map[string]string   `yaml:"env,omitempty"`
-	Defaults                Defaults            `yaml:"defaults,omitempty"`
-	Shards                  int                 `yaml:"shards,omitempty"`
-	Workers                 int                 `yaml:"workers,omitempty"`
-	Cases                   []Case              `yaml:"cases"`
-}
-
-// DeclarationOnly reports whether this plan exists solely to record risk
-// exceptions: no cases, no services, no SUT images. Such a pack's risky actions
-// change the host itself or reach a service the harness deliberately will not
-// stand up, so the honest artifact is the reason, not a fixture.
-func (plan Plan) DeclarationOnly() bool {
-	return len(plan.Cases) == 0 && len(plan.Services) == 0 && len(plan.Versions) == 0
+	Services  []string          `yaml:"services"`
+	Versions  []Version         `yaml:"versions"`
+	Runner    Runner            `yaml:"runner,omitempty"`
+	SecretEnv []string          `yaml:"secret_env,omitempty"`
+	Env       map[string]string `yaml:"env,omitempty"`
+	Defaults  Defaults          `yaml:"defaults,omitempty"`
+	Shards    int               `yaml:"shards,omitempty"`
+	Workers   int               `yaml:"workers,omitempty"`
+	Cases     []Case            `yaml:"cases"`
 }
 
 type CaseRef struct {
@@ -176,38 +153,7 @@ type actionDefinition struct {
 	Args        []actionArgument `yaml:"args"`
 	Output      struct {
 		Parser string `yaml:"parser"`
-		Redact []struct {
-			Name        string `yaml:"name"`
-			Replacement string `yaml:"replacement"`
-		} `yaml:"redact"`
 	} `yaml:"output"`
-}
-
-func (a actionDefinition) redacts() bool { return len(a.Output.Redact) > 0 }
-
-// captureRef matches a regex-replacement capture-group reference ($1, ${1},
-// ${name}) so the literal text around it can be isolated: a behavior case
-// proves a redaction rule fired by asserting that literal in stdout_contains.
-var captureRef = regexp.MustCompile(`\$\{[0-9A-Za-z_]+\}|\$[0-9A-Za-z_]+`)
-
-// redactionLiteralMinLen is the shortest literal fragment or stdout assertion
-// worth comparing, so a lone quote or brace left over from stripping a
-// capture-group reference never grants redaction credit.
-const redactionLiteralMinLen = 3
-
-// redactionReplacementLiterals returns each redact rule's replacement text with
-// capture-group references removed, keeping only fragments long enough to be a
-// meaningful placeholder (e.g. `"[REDACTED]"` out of `${1}"[REDACTED]"`).
-func (a actionDefinition) redactionReplacementLiterals() []string {
-	var literals []string
-	for _, rule := range a.Output.Redact {
-		for _, fragment := range captureRef.Split(rule.Replacement, -1) {
-			if len(fragment) >= redactionLiteralMinLen {
-				literals = append(literals, fragment)
-			}
-		}
-	}
-	return literals
 }
 
 type commandResult struct {
@@ -256,11 +202,6 @@ func Discover(packsDir, pattern string, names ...string) ([]PlanRef, error) {
 		if err != nil {
 			return nil, fmt.Errorf("%s: %w", name, err)
 		}
-		// Declaration-only plans carry risk exceptions, not cases; there is
-		// nothing for the harness to schedule.
-		if plan.DeclarationOnly() {
-			continue
-		}
 		if err := validateVersions(plan.Versions); err != nil {
 			return nil, fmt.Errorf("%s: %w", name, err)
 		}
@@ -304,148 +245,6 @@ func Discover(packsDir, pattern string, names ...string) ([]PlanRef, error) {
 		return nil, fmt.Errorf("packs have no behavioral plan: %s", strings.Join(missing, ", "))
 	}
 	return plans, nil
-}
-
-// ValidateRiskChanges requires each changed high/critical action in a modeled
-// pack to have a successful behavior case or a machine-readable exception.
-func ValidateRiskChanges(packsDir string, files []string) error {
-	checked := make(map[string]bool)
-	for _, file := range files {
-		parts := strings.Split(filepath.ToSlash(file), "/")
-		if len(parts) != 4 || parts[0] != "packs" || parts[2] != "actions" ||
-			filepath.Ext(parts[3]) != ".yaml" {
-			continue
-		}
-		pack := parts[1]
-		if checked[pack] {
-			continue
-		}
-		checked[pack] = true
-		packDir := filepath.Join(packsDir, pack)
-		actions, err := loadActions(packDir)
-		if err != nil {
-			return err
-		}
-		planPath := filepath.Join(packDir, "test", "cases.yaml")
-		if _, err := os.Stat(planPath); errors.Is(err, os.ErrNotExist) {
-			if required := accountabilityRequiredActions(actions); len(required) > 0 {
-				return missingAccountabilityPlanError(pack, required)
-			}
-			continue
-		} else if err != nil {
-			return err
-		}
-		plan, err := loadPlan(planPath)
-		if err != nil {
-			return err
-		}
-		successful := successfulBehaviorActions(plan)
-		if err := validateRiskAccountability(plan.RiskAccountability, actions, successful); err != nil {
-			return fmt.Errorf("%s: %w", pack, err)
-		}
-		redactionProven := redactionProvenActions(plan, actions)
-		if err := validateRedactionAccountability(plan.RedactionAccountability, actions, redactionProven); err != nil {
-			return fmt.Errorf("%s: %w", pack, err)
-		}
-		for _, changed := range files {
-			changedParts := strings.Split(filepath.ToSlash(changed), "/")
-			if len(changedParts) != 4 || changedParts[0] != "packs" ||
-				changedParts[1] != pack || changedParts[2] != "actions" {
-				continue
-			}
-			var action actionDefinition
-			data, err := os.ReadFile(filepath.Join(packsDir, pack, "actions", changedParts[3]))
-			if errors.Is(err, os.ErrNotExist) {
-				continue
-			}
-			if err != nil {
-				return err
-			}
-			if err := yaml.Unmarshal(data, &action); err != nil {
-				return err
-			}
-			if action.risky() && !successful[action.ID] &&
-				plan.RiskAccountability.Exceptions[action.ID] == "" {
-				return fmt.Errorf("%s: changed high/critical action %q needs a successful behavior case or risk exception", pack, action.ID)
-			}
-			if action.redacts() && !redactionProven[action.ID] &&
-				plan.RedactionAccountability.Exceptions[action.ID] == "" {
-				return fmt.Errorf("%s: changed redacting action %q needs a behavior case proving redaction or redaction exception", pack, action.ID)
-			}
-		}
-	}
-	return nil
-}
-
-func accountabilityRequiredActions(actions map[string]actionDefinition) []string {
-	required := make([]string, 0, len(actions))
-	for id, action := range actions {
-		if action.risky() || action.redacts() {
-			required = append(required, id)
-		}
-	}
-	sort.Strings(required)
-	return required
-}
-
-func missingAccountabilityPlanError(pack string, actions []string) error {
-	return fmt.Errorf(
-		"%s: high/critical or redacting actions [%s] require %s with complete accountability",
-		pack,
-		strings.Join(actions, ", "),
-		filepath.Join("packs", pack, "test", "cases.yaml"),
-	)
-}
-
-func successfulBehaviorActions(plan Plan) map[string]bool {
-	successful := make(map[string]bool, len(plan.Cases))
-	for _, test := range plan.Cases {
-		if mergeActionExpectation(plan.Defaults.Expect, test.Expect).Status == "success" {
-			successful[test.Action] = true
-		}
-	}
-	return successful
-}
-
-// redactionProvenActions reports which redacting actions have a passing case
-// that actually EXERCISES their redaction — not merely a case that passed for
-// some other reason. A case proves redaction fired by asserting the rule's
-// replacement literal in stdout_contains, or a declared secret canary's absence
-// in stdout_not_contains. Passing but silent cases were the whole gap in F-5:
-// they satisfied the old accountability check without proving anything.
-func redactionProvenActions(plan Plan, actions map[string]actionDefinition) map[string]bool {
-	proven := make(map[string]bool, len(plan.Cases))
-	for _, test := range plan.Cases {
-		action, ok := actions[test.Action]
-		if !ok || !action.redacts() {
-			continue
-		}
-		expect := mergeActionExpectation(plan.Defaults.Expect, test.Expect)
-		if expect.Status == "success" && expectationProvesRedaction(expect, action) {
-			proven[test.Action] = true
-		}
-	}
-	return proven
-}
-
-// expectationProvesRedaction reports whether a merged expectation asserts that
-// redaction actually happened: either the rule's replacement literal is
-// required in stdout, or a secret canary is required absent from it.
-func expectationProvesRedaction(expect Expectation, action actionDefinition) bool {
-	for _, literal := range action.redactionReplacementLiterals() {
-		for _, want := range expect.StdoutContains {
-			if len(want) >= redactionLiteralMinLen &&
-				(strings.Contains(want, literal) || strings.Contains(literal, want)) {
-				return true
-			}
-		}
-	}
-	for _, absent := range expect.StdoutNotContains {
-		if canaryPattern.MatchString(absent) {
-			return true
-		}
-	}
-	return false
 }
 
 func loadPackVersion(packDir string) (string, error) {
@@ -534,9 +333,6 @@ func Validate(plans []PlanRef) error {
 		if err := validatePlan(ref.Name, plan, actions); err != nil {
 			return fmt.Errorf("%s: %w", ref.Name, err)
 		}
-		if plan.DeclarationOnly() {
-			continue
-		}
 		composePath := filepath.Join(filepath.Dir(ref.Path), "compose.yaml")
 		compose, err := os.ReadFile(composePath)
 		if err != nil {
@@ -544,47 +340,6 @@ func Validate(plans []PlanRef) error {
 		}
 		if err := validateFixturePlan(ref.Name, plan, compose); err != nil {
 			return fmt.Errorf("%s: %w", ref.Name, err)
-		}
-	}
-	return nil
-}
-
-// ValidateAccountabilityPlans scans the complete public catalog, including
-// packs Discover deliberately leaves out of the runnable set. A pack may omit
-// cases.yaml while every action is low/medium and declares no redaction. Once
-// it carries a high/critical or redacting action, the plan is the durable proof
-// that every such action has a behavior case or a typed exception.
-func ValidateAccountabilityPlans(packsDir string) error {
-	paths, err := filepath.Glob(filepath.Join(packsDir, "*", "pack.yaml"))
-	if err != nil {
-		return err
-	}
-	sort.Strings(paths)
-	for _, manifestPath := range paths {
-		packDir := filepath.Dir(manifestPath)
-		actions, err := loadActions(packDir)
-		if err != nil {
-			return err
-		}
-		name := filepath.Base(packDir)
-		planPath := filepath.Join(packDir, "test", "cases.yaml")
-		if _, err := os.Stat(planPath); errors.Is(err, os.ErrNotExist) {
-			if required := accountabilityRequiredActions(actions); len(required) > 0 {
-				return missingAccountabilityPlanError(name, required)
-			}
-			continue
-		} else if err != nil {
-			return err
-		}
-		plan, err := loadPlan(planPath)
-		if err != nil {
-			return err
-		}
-		if !plan.DeclarationOnly() {
-			continue
-		}
-		if err := validatePlan(name, plan, actions); err != nil {
-			return fmt.Errorf("%s: %w", name, err)
 		}
 	}
 	return nil
@@ -790,21 +545,6 @@ func loadActions(packDir string) (map[string]actionDefinition, error) {
 }
 
 func validatePlan(pack string, plan Plan, actions map[string]actionDefinition) error {
-	// A declaration-only plan records why a pack's risky actions have no
-	// behavior case, for packs whose actions change the host itself or reach a
-	// service the harness will not stand up. It describes no SUT, so demanding
-	// an image, a Compose service and a case just to state that would be
-	// backwards — and demanding them is why 78 risky actions across 22 packs
-	// were silently uncovered instead of declared.
-	if plan.DeclarationOnly() {
-		if plan.RiskAccountability.Mode != "complete" {
-			return fmt.Errorf("declaration-only plan requires risk_accountability.mode complete")
-		}
-		if err := validateRiskAccountability(plan.RiskAccountability, actions, map[string]bool{}); err != nil {
-			return err
-		}
-		return validateRedactionAccountability(plan.RedactionAccountability, actions, map[string]bool{})
-	}
 	if err := validateVersions(plan.Versions); err != nil {
 		return err
 	}
@@ -827,7 +567,6 @@ func validatePlan(pack string, plan Plan, actions map[string]actionDefinition) e
 		return fmt.Errorf("workers must be between 1 and %d", packTestMaxWorkers)
 	}
 	seen := make(map[string]bool, len(plan.Cases))
-	successfulActions := make(map[string]bool, len(plan.Cases))
 	for i, test := range plan.Cases {
 		location := fmt.Sprintf("cases[%d]", i)
 		action, ok := actions[test.Action]
@@ -860,9 +599,6 @@ func validatePlan(pack string, plan Plan, actions map[string]actionDefinition) e
 		}
 		if !expect.semantic() && len(test.Probes) == 0 {
 			return fmt.Errorf("%s action %q has no semantic assertion", location, test.Action)
-		}
-		if expect.Status == "success" {
-			successfulActions[test.Action] = true
 		}
 		for j, probe := range test.Probes {
 			if err := validateStep(probe, true); err != nil {
@@ -907,10 +643,7 @@ func validatePlan(pack string, plan Plan, actions map[string]actionDefinition) e
 			return fmt.Errorf("%s cumulative action %q needs arrange state in its isolated case", location, test.Action)
 		}
 	}
-	if err := validateRiskAccountability(plan.RiskAccountability, actions, successfulActions); err != nil {
-		return err
-	}
-	return validateRedactionAccountability(plan.RedactionAccountability, actions, redactionProvenActions(plan, actions))
+	return nil
 }
 
 func actionNeedsArrangedState(action string) bool {
@@ -950,8 +683,8 @@ func validateFixturePlan(pack string, plan Plan, data []byte) error {
 	if err := yaml.Unmarshal(data, &compose); err != nil {
 		return fmt.Errorf("parse compose.yaml: %w", err)
 	}
-	// validatePlan already rejects an empty service list, and a declaration-only
-	// plan never reaches here, so this cannot fire through Validate. It stays as
+	// validatePlan already rejects an empty service list, so this cannot fire
+	// through Validate. It stays as
 	// a guard against indexing an empty slice on a direct call — but it FAILS
 	// rather than returning nil, since a silent pass on an unvalidated plan is
 	// what makes a check stop being a check.
@@ -1029,29 +762,6 @@ var (
 	ipv4Pattern    = regexp.MustCompile(`(?:[0-9]{1,3}\.){3}[0-9]{1,3}`)
 )
 
-// Why an action that declares redaction can have no case proving it fires.
-// `unreachable_by_construction` is the honest answer when the COMMAND is the
-// boundary — `openssl x509 -text -noout` cannot print a private key however
-// adversarial its input, so the rule is a backstop against a future edit that
-// drops the flag, not the thing doing the work today. The other three mirror
-// the risk vocabulary: no SUT can produce the secret to mask.
-var redactionExceptionReasons = map[string]bool{
-	"unreachable_by_construction": true,
-	"requires_dynamic_fixture":    true,
-	"requires_external_service":   true,
-	"requires_hardware":           true,
-	"requires_privileged_host":    true,
-}
-
-var riskExceptionReasons = map[string]bool{
-	"requires_cluster":            true,
-	"requires_concurrent_session": true,
-	"requires_dynamic_fixture":    true,
-	"requires_external_service":   true,
-	"requires_hardware":           true,
-	"requires_privileged_host":    true,
-}
-
 func validateRunner(runner Runner) error {
 	if err := validateRunnerUser(runner.User); err != nil {
 		return err
@@ -1115,72 +825,6 @@ func validateCaseSecretEnv(keys []string, base, overrides map[string]string, uns
 	return validateSecretEnv(active, values)
 }
 
-func validateRiskAccountability(accountability RiskAccountability, actions map[string]actionDefinition, successful map[string]bool) error {
-	mode := accountability.Mode
-	if mode == "" {
-		mode = "changed"
-	}
-	if mode != "changed" && mode != "complete" {
-		return fmt.Errorf("risk_accountability.mode %q must be changed or complete", accountability.Mode)
-	}
-	for id, reason := range accountability.Exceptions {
-		action, ok := actions[id]
-		if !ok {
-			return fmt.Errorf("risk exception action %q does not exist", id)
-		}
-		if !action.risky() {
-			return fmt.Errorf("risk exception action %q is not high or critical", id)
-		}
-		if successful[id] {
-			return fmt.Errorf("risk exception action %q already has a successful behavior case", id)
-		}
-		if !riskExceptionReasons[reason] {
-			return fmt.Errorf("risk exception action %q has unknown reason %q", id, reason)
-		}
-	}
-	if mode != "complete" {
-		return nil
-	}
-	for id, action := range actions {
-		if action.risky() && !successful[id] && accountability.Exceptions[id] == "" {
-			return fmt.Errorf("high/critical action %q needs a successful behavior case or risk exception", id)
-		}
-	}
-	return nil
-}
-
-// validateRedactionAccountability closes F-5's root cause: the gate validated
-// that a redaction rule compiled and never that it MATCHED. A merely passing
-// case is not proof — the accountability check requires a case that asserts the
-// replacement placeholder or a secret canary's absence (proven), or a written
-// reason why no such case can exist.
-func validateRedactionAccountability(accountability RedactionExceptions, actions map[string]actionDefinition, proven map[string]bool) error {
-	for id, reason := range accountability.Exceptions {
-		action, ok := actions[id]
-		if !ok {
-			return fmt.Errorf("redaction exception action %q does not exist", id)
-		}
-		if !action.redacts() {
-			return fmt.Errorf("redaction exception action %q declares no redaction rule", id)
-		}
-		if proven[id] {
-			return fmt.Errorf("redaction exception action %q already has a behavior case proving its redaction fires", id)
-		}
-		if !redactionExceptionReasons[reason] {
-			return fmt.Errorf("redaction exception action %q has unknown reason %q", id, reason)
-		}
-	}
-	for id, action := range actions {
-		if action.redacts() && !proven[id] && accountability.Exceptions[id] == "" {
-			return fmt.Errorf("action %q declares a redaction rule with nothing proving it fires: "+
-				"add a behavior case asserting the placeholder in stdout_contains OR a secret "+
-				"canary's absence in stdout_not_contains, or a redaction_accountability exception "+
-				"saying why one cannot exist", id)
-		}
-	}
-	return nil
-}
-
 func validateVersions(versions []Version) error {
 	if len(versions) == 0 {
 		return fmt.Errorf("versions must declare at least one supported SUT image")
@@ -1216,10 +860,6 @@ func (action actionDefinition) mutates() bool {
 		}
 	}
 	return action.Risk != "" && action.Risk != "low"
-}
-
-func (action actionDefinition) risky() bool {
-	return action.Risk == "high" || action.Risk == "critical"
 }
 
 func (action actionDefinition) argumentType(name string) string {

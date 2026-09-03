@@ -1,12 +1,4 @@
 services: [cockroach]
-risk_accountability:
-  exceptions:
-    cockroach.set_cluster_setting: requires_cluster
-    # Decommission moves replicas to OTHER nodes and is irreversible once it
-    # completes; recommission only means anything against a node that was
-    # decommissioned. Neither says anything on a single-node SUT.
-    cockroach.node_decommission: requires_cluster
-    cockroach.node_recommission: requires_cluster
 versions:
   - version: v26.2.4
     digest: "@sha256:85417da0fd2f57e4f1b01ae8a4125402c977a38a56b43d0902db93dc2669ab09"

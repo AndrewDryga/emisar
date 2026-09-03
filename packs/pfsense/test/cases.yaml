@@ -9,22 +9,11 @@ env:
   # treats it as a secret and would catch it being echoed into output.
   PFSENSE_API_KEY: packtest-canary-pfsense-apikey-2d84
 secret_env: [PFSENSE_API_KEY]
-# A pfSense appliance is FreeBSD and does not containerise, so the mutators
-# cannot be proven here and stay declared exceptions — the gap is a decision in
-# the plan rather than an absence nobody sees.
-#
-# What CAN be proven is the thing that matters most about the certificate
-# reads: that their jq allowlist projection never emits the private-key
+# Prove the important boundary on secret-bearing reads: their jq allowlist
+# projection never emits the private-key
 # material the endpoint returns. The SUT is an nginx serving real-shaped API
 # bodies with a planted canary secret, which tests the projection completely
 # without needing the appliance's behaviour at all.
-risk_accountability:
-  mode: complete
-  exceptions:
-    pfsense.flush_states: requires_privileged_host
-    pfsense.reboot: requires_privileged_host
-    pfsense.restart_service: requires_privileged_host
-
 # These endpoints return a secret beside the facts an operator wants: a
 # certificate's private key, an NTP peer's authentication key, a WireGuard
 # peer's pre-shared key, a resolver's free-text custom options. Each action
@@ -32,12 +21,6 @@ risk_accountability:
 # field, so it cannot be emitted; these cases prove that against a body which
 # actually carries one. The canary is what must not appear — asserting the safe
 # fields alone would pass even if the secret leaked alongside them.
-redaction_accountability:
-  exceptions:
-    # Both read a pfSense appliance's configuration. The fixture is a recorded
-    # shape, not a firewall that can hold an interface or CARP password.
-    pfsense.interface_config: requires_external_service
-    pfsense.virtual_ips: requires_external_service
 cases:
   - action: pfsense.certificates
     expect:

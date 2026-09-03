@@ -13,8 +13,6 @@ env:
   # This lives in the emisar parent process. A regression that reads
   # /proc/self/environ exposes it even though the action does not inherit it.
   FS_SEARCH_PACKTEST_CANARY: packtest-canary-fs-search-environ-7d934b
-risk_accountability:
-  mode: complete
 cases:
   # The pack's headline read, and the one shape a glob got wrong: `.cache` holds
   # more than any visible sibling and has to rank first, `toplevel.bin` proves a

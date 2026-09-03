@@ -1,9 +1,0 @@
-# Merging a pull request and dispatching a workflow act on GitHub through an
-# authenticated account.
-# Declared rather than left silently uncovered, so the gap is a decision in
-# the plan instead of an absence nobody sees.
-risk_accountability:
-  mode: complete
-  exceptions:
-    gh.pr_merge: requires_external_service
-    gh.workflow_dispatch: requires_external_service

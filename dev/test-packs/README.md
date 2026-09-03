@@ -23,7 +23,7 @@ packs/<pack>/
 ├── pack.yaml
 ├── actions/*.yaml
 └── test/
-    ├── cases.yaml          # cases, assertions, risk accounting, SUT versions
+    ├── cases.yaml          # cases, assertions, SUT versions
     ├── compose.yaml        # this pack's disposable SUT
     ├── Dockerfile          # optional pack-specific client or SUT image
     └── fixtures/           # optional seeded state and service configuration
@@ -68,11 +68,6 @@ versions:
   - version: "18.4"
     digest: "@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
     default: true
-
-risk_accountability:
-  mode: complete
-  exceptions:
-    postgres.kill_idle: requires_concurrent_session
 
 secret_env: [PGPASSWORD]
 env:
@@ -125,22 +120,8 @@ resolve_args:
 Keep this for identifiers created by the isolated case. Static inputs belong in
 `args`; complex fixture lifecycles do not belong in the harness.
 
-## Risk accountability
-
-When a modeled pack adds or changes a `high` or `critical` action, that action
-must have either:
-
-- A successful behavior case, or
-- A machine-readable exception in `risk_accountability.exceptions`.
-
-Known exception values are `requires_cluster`, `requires_concurrent_session`,
-`requires_dynamic_fixture`, `requires_external_service`, `requires_hardware`,
-and `requires_privileged_host`.
-
-`mode: changed` is the default and enforces changed risky actions in selective
-CI. `mode: complete` accounts for every risky action in the pack. Exceptions
-cannot hide an action that already has a successful case. There is deliberately
-no coverage percentage.
+Only add `test/cases.yaml` when it runs real cases against a disposable SUT.
+Do not create an empty plan to list actions the harness cannot exercise.
 
 ## Assertions
 

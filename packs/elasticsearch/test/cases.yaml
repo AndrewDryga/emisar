@@ -90,10 +90,8 @@ cases:
     expect:
       stdout_contains: ['"tasks"']
 
-  # The three actions below spent their lives excused as requires_external_service
-  # while a live Elasticsearch SUT ran the other thirteen cases in this file.
-  # B-1 proved that class hides broken high/critical actions from the only gate
-  # that executes them — so they execute now.
+  # Run these mutations against the live Elasticsearch SUT and probe their
+  # resulting state.
   - action: es.close_index
     args: {index: packtest-close}
     arrange:

@@ -3,8 +3,6 @@ versions:
   - version: "4.14.0"
     digest: "@sha256:3ebc37595918b8accb852f8048fef2aff047d465167edd655528065b07bc364a"
     default: true
-risk_accountability:
-  mode: complete
 secret_env: [AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY]
 env:
   AWS_ACCESS_KEY_ID: packtest-canary-aws-s3-access-924e

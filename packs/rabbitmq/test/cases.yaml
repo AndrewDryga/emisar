@@ -11,8 +11,6 @@ env:
 defaults:
   expect:
     stdout_not_empty: true
-risk_accountability:
-  exceptions: {}
 cases:
   # stop_app stops the RabbitMQ application while leaving the node running, so
   # the probe asks the node itself — the shape redis.shutdown_nosave uses. Its

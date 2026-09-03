@@ -5,11 +5,6 @@ versions:
     default: true
   - version: 25.8.28.1-alpine
     digest: "@sha256:f40cd6034fb8c54dce6a85338750fbad79f387e2705e1991a85f2e7086b5b9ea"
-risk_accountability:
-  mode: complete
-  exceptions:
-    ch.system_drop_replica: requires_cluster
-    ch.system_restart_replica: requires_cluster
 secret_env: [CH_PASSWORD]
 env:
   CH_HOST: clickhouse

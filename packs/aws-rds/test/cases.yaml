@@ -3,8 +3,6 @@ versions:
   - version: "2.36.8"
     digest: "@sha256:7e1b11a3c93bc5af81f496de0662f666b2352a4a6666e8ebae904fe102b131b6"
     default: true
-risk_accountability:
-  mode: complete
 secret_env: [AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY]
 env:
   AWS_ACCESS_KEY_ID: packtest-canary-aws-rds-access-b664

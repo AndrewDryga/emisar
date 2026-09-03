@@ -3,8 +3,6 @@ versions:
   - version: "1.6.45"
     digest: "@sha256:dc561d52bb8ad3c038867123ed2dc8357c4c128f047cdbd526cd65cf39408cbd"
     default: true
-risk_accountability:
-  mode: complete
 env:
   MEMCACHED_HOST: memcached
   MEMCACHED_PORT: "11211"

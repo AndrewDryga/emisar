@@ -3,12 +3,6 @@ versions:
   - version: "13-slim"
     digest: "@sha256:020c0d20b9880058cbe785a9db107156c3c75c2ac944a6aa7ab59f2add76a7bd"
     default: true
-risk_accountability:
-  mode: complete
-  exceptions:
-    # A container ban changes only its disposable netfilter namespace, so it
-    # cannot prove the action protects the host that runs the container.
-    f2b.banip: requires_privileged_host
 workers: 1
 cases:
   - name: status-uses-the-recipe-granted-socket

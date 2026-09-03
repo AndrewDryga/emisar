@@ -1,8 +1,7 @@
 # Every action here declares a `private-key-pem` redaction rule as a BACKSTOP.
 # None of these commands can print a private key: the openssl reads all pass
 # `-noout`/`-nokeys` (x509, pkcs12) and never emit the key even from a combined
-# cert+key bundle, and find_certs prints file paths, not contents. So the rule
-# cannot be made to fire, and each action is accounted for as unreachable below.
+# cert+key bundle, and find_certs prints file paths, not contents.
 # The fixture still mints a real CA, leaf, PKCS#12 bundle, and a combined.pem
 # (leaf certificate AND its private key), and each case asserts the command's
 # real output while proving the key's own bytes never come back — the boundary
@@ -14,21 +13,6 @@ versions:
     default: true
 env:
   PK12_PASSWORD: packtest-p12-pass
-redaction_accountability:
-  exceptions:
-    # The command is the boundary on every action here: openssl x509/pkcs12 run
-    # with -noout/-nokeys never print a key (even from the combined cert+key
-    # bundle), key_modulus prints a digest of the modulus, and find_certs prints
-    # paths. So the private-key-pem rule cannot fire — it is a backstop against a
-    # future edit that makes one of these print certificate material. Measured,
-    # not assumed: removing the rule leaves every case here green.
-    ssl.cert_text: unreachable_by_construction
-    ssl.cert_expiry: unreachable_by_construction
-    ssl.cert_fingerprint: unreachable_by_construction
-    ssl.find_certs: unreachable_by_construction
-    ssl.key_modulus: unreachable_by_construction
-    ssl.pkcs12_info: unreachable_by_construction
-    ssl.verify_chain: unreachable_by_construction
 defaults:
   expect:
     stdout_not_empty: true

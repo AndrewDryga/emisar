@@ -1,7 +1,4 @@
 services: [k3s, k3s-kubeconfig]
-risk_accountability:
-  exceptions:
-    kubernetes.drain: requires_cluster
 versions:
   - version: v1.36.2-k3s1
     digest: "@sha256:6a47cea22c4b834d4ba72c89d291696b79ebe406251f90b446e4dff03513dd87"
