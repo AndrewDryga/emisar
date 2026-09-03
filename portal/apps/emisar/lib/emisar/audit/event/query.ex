@@ -599,8 +599,9 @@ defmodule Emisar.Audit.Event.Query do
   end
 
   # Retention: a row is prunable once it reaches its stamped `retain_until`.
-  # A null horizon (only pre-migration edge rows) never matches, so it is never
-  # pruned.
+  # A null horizon never matches, so such a row would never be pruned — which is
+  # why the changeset REQUIRES the stamp rather than leaving it to the builder,
+  # and why the sweep's index can stay partial on `retain_until IS NOT NULL`.
   def retention_expired(queryable, %DateTime{} = now),
     do: where(queryable, [events: e], e.retain_until <= ^now)
 

@@ -42,7 +42,7 @@ defmodule EmisarWeb.Router do
 
   defp put_noindex(conn, _opts), do: Plug.Conn.assign(conn, :noindex, true)
 
-  # Admin-only gate (separate from role-based perms). Used by /admin/live so a
+  # Admin-only gate (separate from role-based perms). Used by /ops/live so a
   # leaked operator session cannot reach the LiveDashboard. The plug lives in
   # `UserAuth` (imported above) beside the `:ensure_admin` on_mount it shares its
   # decision with, so the request and socket gates cannot drift.
@@ -656,10 +656,10 @@ defmodule EmisarWeb.Router do
     end
   end
 
-  # Emisar staff surfaces. Guarded by the regular auth pipeline AND `:is_admin`
-  # on the user record (separate from per-account role) AND a second factor this
-  # session verified — with `:ensure_admin` re-deciding all three on the socket,
-  # so the request and mount gates cannot drift. The staff console reads across
+  # The Emisar staff console. Guarded by the regular auth pipeline AND
+  # `:is_admin` on the user record (separate from per-account role) AND a second
+  # factor this session verified — with `:ensure_admin` re-deciding all three on
+  # the socket, so the request and mount gates cannot drift. It reads across
   # tenants and mutates nothing; every account view it renders writes a
   # customer-visible `staff.account_viewed` audit row. Mutations stay on the
   # private emisar-admin pack (release RPC), never here.
@@ -671,18 +671,26 @@ defmodule EmisarWeb.Router do
       live "/", AdminSearchLive
       live "/accounts/:id", AdminAccountLive
     end
+  end
 
-    scope "/" do
-      pipe_through :live_dashboard_csp
+  # BEAM operational telemetry, behind the same gate but deliberately NOT under
+  # `/admin`: LiveDashboard can terminate a process on the running node — which
+  # here may be a customer's runner websocket — and writes no `staff.*` audit
+  # row, so it shares neither of the staff console's two published properties
+  # (read-only, account-attributed). Keeping it at its own path is what lets the
+  # security model state those two properties about `/admin` without qualifying
+  # them. See `.agent/kb/specs/security-model.md`.
+  scope "/ops" do
+    pipe_through [:browser, :noindex, :require_authenticated_user, :require_admin]
+    pipe_through :live_dashboard_csp
 
-      # A distinct `live_session_name` keeps the LiveDashboard isolated from the
-      # console mount above and from the dev-routes mount.
-      live_dashboard "/live",
-        metrics: EmisarWeb.Telemetry,
-        ecto_repos: [Emisar.Repo],
-        csp_nonce_assign_key: :csp_nonce,
-        live_session_name: :admin_dashboard,
-        on_mount: [{EmisarWeb.UserAuth, :ensure_admin}]
-    end
+    # A distinct `live_session_name` keeps the LiveDashboard isolated from the
+    # console mount above and from the dev-routes mount.
+    live_dashboard "/live",
+      metrics: EmisarWeb.Telemetry,
+      ecto_repos: [Emisar.Repo],
+      csp_nonce_assign_key: :csp_nonce,
+      live_session_name: :admin_dashboard,
+      on_mount: [{EmisarWeb.UserAuth, :ensure_admin}]
   end
 end

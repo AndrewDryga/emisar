@@ -432,8 +432,11 @@ defmodule Emisar.Billing.Jobs.SyncSubscriptionsVendorFailTest do
         assert SyncSubscriptions.execute(limit: 1) == :ok
       end)
 
-    assert log =~ "billing_sync.crashed"
-    assert log =~ "sub_fail_row"
+    # The per-row rescue lives in `Jobs.Sweep`, shared by every sweep, and names
+    # the job plus the row it skipped — never the exception's message, which can
+    # carry the vendor payload.
+    assert log =~ "sweep.row_failed row=#{failing.id}"
+    assert log =~ "job=Emisar.Billing.Jobs.SyncSubscriptions"
     refute log =~ "sensitive Paddle payload marker"
     assert %Subscription{status: "past_due", current_period_end: nil} = Repo.reload!(failing)
     assert %Subscription{status: "active"} = Repo.reload!(ok_row)

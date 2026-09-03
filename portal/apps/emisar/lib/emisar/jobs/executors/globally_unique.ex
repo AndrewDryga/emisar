@@ -19,7 +19,14 @@ defmodule Emisar.Jobs.Executors.GloballyUnique do
   @impl true
   def init({module, interval, config}) do
     if Keyword.get(config, :enabled, true) do
-      state = %{module: module, interval: interval, config: config, role: :pending}
+      state = %{
+        module: module,
+        interval: interval,
+        config: config,
+        role: :pending,
+        tick_ref: nil
+      }
+
       {:ok, claim_or_follow(state)}
     else
       :ignore
@@ -51,17 +58,18 @@ defmodule Emisar.Jobs.Executors.GloballyUnique do
 
   def handle_info(:tick, %{role: :leader} = state) do
     execute_job(state.module, state.config)
-    schedule_tick(state.interval)
-    {:noreply, state}
+    {:noreply, schedule_tick(state, state.interval)}
   end
 
-  def handle_info(:tick, state), do: {:noreply, state}
+  # The timer that delivered this tick is spent, and this process is no longer
+  # the leader, so nothing replaces it.
+  def handle_info(:tick, state), do: {:noreply, %{state | tick_ref: nil}}
 
   defp claim_or_follow(%{module: module} = state) do
     case :global.register_name(global_name(module), self(), &:global.random_notify_name/3) do
       :yes ->
         Logger.debug("job leader acquired job=#{inspect(module)}")
-        schedule_tick(Keyword.get(state.config, :initial_delay, 0))
+        state = schedule_tick(state, Keyword.get(state.config, :initial_delay, 0))
         %{state | role: :leader}
 
       :no ->
@@ -70,6 +78,8 @@ defmodule Emisar.Jobs.Executors.GloballyUnique do
   end
 
   defp follow_current_leader(%{module: module} = state) do
+    state = cancel_tick(state)
+
     case :global.whereis_name(global_name(module)) do
       pid when is_pid(pid) ->
         follow_pid(pid, state)
@@ -99,9 +109,21 @@ defmodule Emisar.Jobs.Executors.GloballyUnique do
     %{state | role: {:fallback, pid, monitor_ref}}
   end
 
-  defp schedule_tick(delay_ms) do
-    _ = Process.send_after(self(), :tick, delay_ms)
-    :ok
+  # Exactly one tick timer may be outstanding, so the reference is kept and
+  # every scheduling point cancels the previous one first. Throwing the
+  # reference away meant a leader that flapped — lost the name, then re-claimed
+  # it — kept its old timer AND started a new chain, permanently doubling the
+  # job's cadence on that node with no way back.
+  defp schedule_tick(state, delay_ms) do
+    state = cancel_tick(state)
+    %{state | tick_ref: Process.send_after(self(), :tick, delay_ms)}
+  end
+
+  defp cancel_tick(%{tick_ref: nil} = state), do: state
+
+  defp cancel_tick(%{tick_ref: tick_ref} = state) do
+    _ = Process.cancel_timer(tick_ref)
+    %{state | tick_ref: nil}
   end
 
   defp execute_job(module, config) do

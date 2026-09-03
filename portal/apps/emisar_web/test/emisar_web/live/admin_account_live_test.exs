@@ -104,8 +104,7 @@ defmodule EmisarWeb.AdminAccountLiveTest do
 
     test "a connected mount writes exactly one staff.account_viewed row", %{
       conn: conn,
-      account: account,
-      staff_user: staff_user
+      account: account
     } do
       # The dead render mounts too, so anything less careful than a `connected?`
       # guard bills the customer's trail twice for one look.
@@ -113,9 +112,9 @@ defmodule EmisarWeb.AdminAccountLiveTest do
 
       assert [event] = staff_view_events()
       assert event.account_id == account.id
-      assert event.actor_id == staff_user.id
       assert event.actor_label == "Emisar staff"
       # The customer reads this row; the acting employee stays out of it.
+      assert is_nil(event.actor_id)
       assert event.payload == %{}
     end
 

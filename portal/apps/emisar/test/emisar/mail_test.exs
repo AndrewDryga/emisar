@@ -222,6 +222,23 @@ defmodule Emisar.MailTest do
     end
   end
 
+  describe "erase_suppression/2" do
+    test "removes the address so an erased person is not kept on the list" do
+      {:ok, _suppression} = Mail.suppress("gone@example.com", :hard_bounce, "HardBounce")
+      {:ok, _other} = Mail.suppress("stays@example.com", :spam_complaint, "complaint")
+
+      assert Mail.erase_suppression("  gone@example.com  ") == :ok
+
+      refute Mail.suppressed?("gone@example.com")
+      assert Mail.suppressed?("stays@example.com")
+    end
+
+    test "an address that was never suppressed is a no-op" do
+      assert Mail.erase_suppression("never@example.com") == :ok
+      refute Repo.exists?(Mail.Suppression.Query.all())
+    end
+  end
+
   describe "the mailer skips suppressed recipients" do
     setup do
       %{user: Fixtures.Users.create_user()}

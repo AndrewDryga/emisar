@@ -27,23 +27,27 @@ defmodule Emisar.Admin do
   alias Emisar.{Repo, Users}
 
   @arg_name ~r/^[a-z][a-z0-9_]*$/
-  @mutation_actions ~w(
-    emisar.admin.account.create
-    emisar.admin.account.disable
-    emisar.admin.account.enable
-    emisar.admin.account.erase
-    emisar.admin.user.erase
-    emisar.admin.plan.grant
-    emisar.admin.plan.revoke
-    emisar.admin.invitation.resend
-    emisar.admin.member.invite
-    emisar.admin.member.suspend
-    emisar.admin.member.reinstate
-    emisar.admin.member.set_role
-    emisar.admin.sessions.revoke
-    emisar.admin.mfa.reset
-    emisar.admin.owner.transfer
-    emisar.admin.billing.sync
+  # The staff-label gate is an allowlist of the READS, and this is its one
+  # definition. Listing the mutations instead made a new admin action fail
+  # OPEN: the pack is authored in `infra/packs/emisar-admin/` by a different
+  # change than this module, so a mutation whose author never touched the list
+  # would have run with no staff label at all. Inverted, the default is closed
+  # and adding a read is the change that has to be declared here.
+  @read_actions ~w(
+    emisar.admin.access.diagnose
+    emisar.admin.account.find
+    emisar.admin.account.show
+    emisar.admin.analytics.data_quality
+    emisar.admin.analytics.engagement
+    emisar.admin.analytics.executive
+    emisar.admin.analytics.mcp
+    emisar.admin.analytics.reliability
+    emisar.admin.analytics.revenue
+    emisar.admin.analytics.security
+    emisar.admin.runtime.database
+    emisar.admin.runtime.jobs
+    emisar.admin.runtime.recent_failures
+    emisar.admin.runtime.status
   )
   @job_modules [
     Emisar.Accounts.Jobs.MonthlyReports,
@@ -230,7 +234,7 @@ defmodule Emisar.Admin do
       else: Users.fetch_user_by_email(reference)
   end
 
-  defp ensure_mutation_operator(action_id, nil) when action_id in @mutation_actions,
+  defp ensure_mutation_operator(action_id, nil) when action_id not in @read_actions,
     do: {:error, :operator_required}
 
   defp ensure_mutation_operator(_action_id, _operator_user), do: :ok

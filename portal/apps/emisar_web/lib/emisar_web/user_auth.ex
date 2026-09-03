@@ -202,7 +202,7 @@ defmodule EmisarWeb.UserAuth do
   defp maybe_store_return_to(conn), do: conn
 
   @doc """
-  Used in router: the platform-admin gate on `/admin/live`. `is_admin` is a
+  Used in router: the platform-admin gate on `/ops/live`. `is_admin` is a
   global flag set out-of-band, so it is never the whole gate — the admin must
   also hold an enrolled second factor that THIS session proved against the
   CURRENT enrollment, which keeps a cookie minted before enrollment, one whose

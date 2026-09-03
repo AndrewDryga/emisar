@@ -3,28 +3,22 @@ defmodule Emisar.AdminTest do
   alias Emisar.Accounts.Membership
   alias Emisar.{Admin, Audit, Billing, Fixtures}
 
-  @job_supervisors [
-    Emisar.Accounts,
-    Emisar.ApiKeys,
-    Emisar.Approvals,
-    Emisar.Audit,
-    Emisar.Auth,
-    Emisar.Billing,
-    Emisar.Catalog,
-    Emisar.MCPOperations,
-    Emisar.OAuth,
-    Emisar.Runners,
-    Emisar.Runbooks,
-    Emisar.Runs,
-    Emisar.SSO
-  ]
-
   describe "job_modules/0" do
-    test "exactly matches the recurrent jobs supervised by every owning context" do
-      supervised = supervised_job_modules()
+    test "lists every recurrent job the application declares" do
+      declared = declared_job_modules()
 
-      assert Enum.sort(Admin.job_modules()) == Enum.sort(supervised)
-      assert length(supervised) == length(Enum.uniq(supervised))
+      assert Enum.sort(Admin.job_modules()) == Enum.sort(declared)
+      assert length(declared) == length(Enum.uniq(declared))
+    end
+
+    test "every declared job is supervised by the context that owns it" do
+      for module <- declared_job_modules() do
+        owning_context = module |> Module.split() |> Enum.take(2) |> Module.safe_concat()
+        {:ok, {_flags, children}} = owning_context.init([])
+
+        assert module in Enum.map(children, & &1.id),
+               "#{inspect(module)} is not a child of #{inspect(owning_context)}"
+      end
     end
 
     test "every recurrent job is disabled in the test environment" do
@@ -37,21 +31,17 @@ defmodule Emisar.AdminTest do
 
   defp job_enabled?(module), do: Emisar.Config.get_env(:emisar, module, [])[:enabled] != false
 
-  defp supervised_job_modules do
-    Enum.flat_map(@job_supervisors, fn supervisor ->
-      {:ok, {_flags, children}} = supervisor.init([])
-
-      children
-      |> Enum.map(& &1.id)
-      |> Enum.filter(&recurrent_job_module?/1)
-    end)
+  # Derived from the compiled application rather than a second hand-typed
+  # registry: `__config__/0` is generated only by `use Emisar.Jobs.Job`, so a
+  # new job cannot be declared without this list seeing it.
+  defp declared_job_modules do
+    {:ok, modules} = :application.get_key(:emisar, :modules)
+    Enum.filter(modules, &recurrent_job_module?/1)
   end
 
   defp recurrent_job_module?(module) when is_atom(module) do
     Code.ensure_loaded?(module) and function_exported?(module, :__config__, 0)
   end
-
-  defp recurrent_job_module?(_module), do: false
 
   # These reads are DELIBERATELY cross-account — staff see the whole platform —
   # so §7's cross-account isolation path does not apply here. The denial path is
@@ -77,6 +67,18 @@ defmodule Emisar.AdminTest do
 
       assert {:ok, [found]} = Admin.search_accounts(member.email, staff_user)
       assert found.id == account.id
+    end
+
+    test "matches a typed LIKE wildcard literally", %{staff_user: staff_user} do
+      account = Fixtures.Accounts.create_account(name: "Acme_One")
+      Fixtures.Accounts.create_account(name: "AcmeXOne")
+
+      # Unescaped, `_` matches any character and a bare `%` matches every row —
+      # a support operator would act on the wrong tenant.
+      assert {:ok, [found]} = Admin.search_accounts("Acme_One", staff_user)
+      assert found.id == account.id
+
+      assert Admin.search_accounts("%", staff_user) == {:ok, []}
     end
 
     test "a blank query lists the most recently created accounts", %{staff_user: staff_user} do
@@ -237,14 +239,17 @@ defmodule Emisar.AdminTest do
       assert event.account_id == account.id
       assert event.event_type == "staff.account_viewed"
       assert event.actor_kind == "staff"
-      assert event.actor_id == staff_user.id
       assert event.actor_label == "Emisar staff"
       assert event.target_kind == "account"
       assert event.target_id == account.id
       assert event.target_label == account.name
-      # The customer's own audit detail card renders payload pairs, so the row
-      # names the team and nothing else; `actor_id` is the internal trace.
       assert event.payload == %{}
+
+      # The row names the team and nothing else. A bare employee id here reaches
+      # the console, the CSV export and the SIEM feed with no resolver, so a
+      # customer could count staff and correlate one across tenants — the same
+      # call every staff MUTATION already makes.
+      assert is_nil(event.actor_id)
     end
 
     test "the account's own owner reads it back from their audit trail", %{
@@ -277,35 +282,20 @@ defmodule Emisar.AdminTest do
       %{staff_operator: Fixtures.Users.create_user() |> Fixtures.Users.mark_user_as_staff()}
     end
 
-    test "every private mutation requires an operator label" do
-      id = Ecto.UUID.generate()
+    test "requires an operator label for any action outside the declared reads", %{
+      staff_operator: staff_operator
+    } do
+      # The gate is an allowlist of the reads, so an admin action added to the
+      # private pack without touching `Emisar.Admin` is refused rather than
+      # running unlabelled — a mutation cannot fail open by omission.
+      unlisted = "emisar.admin.account.freeze"
 
-      mutations = [
-        {"emisar.admin.account.create",
-         ["email=owner@example.com", "name=Example", "slug=example"]},
-        {"emisar.admin.account.disable", ["account=example", "reason=support"]},
-        {"emisar.admin.account.enable", ["account=example", "reason=support"]},
-        {"emisar.admin.account.erase",
-         ["account_id=#{id}", "confirmation=#{id}", "reason=request"]},
-        {"emisar.admin.user.erase", ["user_id=#{id}", "confirmation=#{id}", "reason=request"]},
-        {"emisar.admin.plan.grant", ["account=example", "plan=team", "reason=partner"]},
-        {"emisar.admin.plan.revoke", ["account=example", "reason=ended"]},
-        {"emisar.admin.invitation.resend", ["account=example", "member=person@example.com"]},
-        {"emisar.admin.member.invite",
-         ["account=example", "email=person@example.com", "role=viewer"]},
-        {"emisar.admin.member.suspend", ["account=example", "member=person@example.com"]},
-        {"emisar.admin.member.reinstate", ["account=example", "member=person@example.com"]},
-        {"emisar.admin.member.set_role",
-         ["account=example", "member=person@example.com", "role=viewer"]},
-        {"emisar.admin.sessions.revoke", ["account=example", "member=person@example.com"]},
-        {"emisar.admin.mfa.reset", ["account=example", "member=person@example.com"]},
-        {"emisar.admin.owner.transfer", ["account=example", "new_owner=person@example.com"]},
-        {"emisar.admin.billing.sync", ["account=example"]}
-      ]
+      assert Admin.execute(unlisted, ["account=example"], "") == {:error, :operator_required}
 
-      for {action_id, args} <- mutations do
-        assert Admin.execute(action_id, args, "") == {:error, :operator_required}, action_id
-      end
+      # With a resolved staff operator the gate steps aside and the action is
+      # reported as unsupported, so the allowlist never masks a typo.
+      assert Admin.execute(unlisted, ["account=example"], staff_operator.email) ==
+               {:error, {:unsupported_admin_action, unlisted}}
     end
 
     test "erases a user only when the confirmation matches the user id", %{
@@ -693,8 +683,13 @@ defmodule Emisar.AdminTest do
       assert denied_group.status == :denied
       assert denied_group.run_count == 1
       assert denied_group.operation_count == 1
-      assert length(report.failures) == 3
-      assert Enum.all?(report.failures, &(&1.status == :failed))
+      # Both halves of the response answer "what is failing?" with one status
+      # set, so the denied run the groups count is in the recent sample too —
+      # a group with no matching sample row reads as a broken sample. The
+      # success is in neither.
+      assert report.failures |> Enum.map(& &1.status) |> Enum.frequencies() ==
+               %{failed: 3, denied: 1}
+
       assert %DateTime{} = report.since
     end
   end

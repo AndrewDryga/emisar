@@ -19,7 +19,7 @@ defmodule Emisar.Billing.Jobs.SyncRunnerQuantities do
   @impl Emisar.Jobs.Executors.GloballyUnique
   def execute(config) do
     limit = Keyword.get(config, :limit, @subscriptions_per_page)
-    Jobs.Sweep.each_row(limit, &list_subscriptions/2, &sync_safely/1)
+    Jobs.Sweep.each_row(limit, &list_subscriptions/2, &sync/1)
   end
 
   defp after_subscription(queryable, id) when is_binary(id),
@@ -27,7 +27,9 @@ defmodule Emisar.Billing.Jobs.SyncRunnerQuantities do
 
   defp after_subscription(queryable, _id), do: queryable
 
-  defp sync_safely(%Billing.Subscription{} = subscription) do
+  # A raising subscription is isolated by `Jobs.Sweep`, which logs
+  # `sweep.row_failed` and carries on to the next one.
+  defp sync(%Billing.Subscription{} = subscription) do
     case Billing.reconcile_runner_quantity(subscription.id) do
       {:ok, _result} ->
         :ok
@@ -39,15 +41,6 @@ defmodule Emisar.Billing.Jobs.SyncRunnerQuantities do
           error: inspect(Billing.redacted_paddle_error(reason))
         )
     end
-  rescue
-    error ->
-      Logger.warning("billing_runner_quantity_sync.crashed",
-        paddle_subscription_id: subscription.paddle_subscription_id,
-        account_id: subscription.account_id,
-        error: inspect(error.__struct__)
-      )
-
-      :ok
   end
 
   defp list_subscriptions(limit, cursor) do

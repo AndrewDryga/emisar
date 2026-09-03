@@ -11,9 +11,10 @@ defmodule Emisar.Accounts.Jobs.MonthlyReports do
 
   Idempotency (IL-13): the work set is derived each tick from
   `accounts.last_report_sent_at` (never sent, or sent in an earlier month), and
-  the stamp is written under a row lock only after the mailer accepts the email
-  and only while the account is still due, so a repeated tick can't double-send
-  and a delivery failure leaves the timestamp unchanged for the next sweep.
+  the month is CLAIMED — the stamp written under a row lock, only while the
+  account is still due — before the mailer is called, so a repeated or
+  concurrent tick can't double-send. A delivery failure after a won claim skips
+  that month, which beats a duplicate report to a paying owner.
   """
   use Emisar.Jobs.Job,
     otp_app: :emisar,
@@ -44,7 +45,8 @@ defmodule Emisar.Accounts.Jobs.MonthlyReports do
   defp list_accounts(cutoff, limit, cursor),
     do: Accounts.list_accounts_due_for_report(cutoff, limit: limit, after_account_id: cursor)
 
-  # One bad account or delivery failure is logged and never stops the sweep.
+  # A raising account is isolated by `Jobs.Sweep`, which logs `sweep.row_failed`
+  # and carries on; a delivery failure is an error VALUE, handled below.
   defp report_account(%Account{} = account, cutoff, period_start, period_end) do
     case Accounts.fetch_account_report_recipient(account) do
       {:ok, recipient} ->
@@ -53,14 +55,6 @@ defmodule Emisar.Accounts.Jobs.MonthlyReports do
       {:error, :no_recipient} ->
         :ok
     end
-  rescue
-    error ->
-      Logger.warning("account_report.crashed",
-        account_id: account.id,
-        error: inspect(error)
-      )
-
-      :ok
   end
 
   # An account that used the email's List-Unsubscribe link gets nothing —
@@ -83,15 +77,18 @@ defmodule Emisar.Accounts.Jobs.MonthlyReports do
       report = build_report(account, period_start, period_end)
 
       if reportable?(report),
-        do: send_and_stamp(account, recipient, report, cutoff),
+        do: claim_and_send(account, recipient, report, cutoff),
         else: :ok
     end
   end
 
-  defp send_and_stamp(%Account{} = account, recipient, report, cutoff) do
-    with {:ok, _} <-
-           Emisar.Mailers.UserNotifier.deliver_monthly_account_report(recipient, account, report),
-         {:ok, _} <- Accounts.mark_account_report_sent(account, cutoff) do
+  # The stamp is the claim, so it is taken first: two ticks that both delivered
+  # before stamping would each send the same report, and the loser would only
+  # learn it one email too late.
+  defp claim_and_send(%Account{} = account, recipient, report, cutoff) do
+    with {:ok, _} <- Accounts.mark_account_report_sent(account, cutoff),
+         {:ok, _} <-
+           Emisar.Mailers.UserNotifier.deliver_monthly_account_report(recipient, account, report) do
       Logger.info("account_report.sent", account_id: account.id)
       :ok
     else

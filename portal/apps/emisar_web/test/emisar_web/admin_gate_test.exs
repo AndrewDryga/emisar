@@ -1,10 +1,10 @@
 defmodule EmisarWeb.AdminGateTest do
   @moduledoc """
-  The platform-admin gate on `/admin/live` (LiveDashboard) and the
+  The platform-admin gate on `/ops/live` (LiveDashboard) and the
   dev-only `/dev/*` mounts — both are pure router/endpoint gate behaviour
   for a security product, so they live together here.
 
-  `/admin/live` rides `[:browser, :noindex, :require_authenticated_user,
+  `/ops/live` rides `[:browser, :noindex, :require_authenticated_user,
   :require_admin]`: three independent gates (signed in AND `is_admin` AND a
   second factor this session proved against the CURRENT enrollment), plus the
   `:ensure_admin` on_mount that re-decides all three on the socket. `is_admin` is
@@ -34,7 +34,7 @@ defmodule EmisarWeb.AdminGateTest do
   # a socket carrying the flash assign `put_flash/3` writes into.
   defp mount_socket, do: %Phoenix.LiveView.Socket{assigns: %{__changed__: %{}, flash: %{}}}
 
-  describe "the /admin/live admin gate" do
+  describe "the /ops/live admin gate" do
     test "an admin who verified a second factor this session reaches the LiveDashboard", %{
       conn: conn
     } do
@@ -42,13 +42,13 @@ defmodule EmisarWeb.AdminGateTest do
       Fixtures.Users.enable_mfa!(Auth.generate_mfa_secret(), owner_subject(user, account))
       Fixtures.Users.mark_user_as_staff(user)
 
-      conn = conn |> complete_mfa_challenge(user) |> get("/admin/live")
+      conn = conn |> complete_mfa_challenge(user) |> get("/ops/live")
 
-      # LiveDashboard 302-redirects "/admin/live" to its first page
-      # ("/admin/live/home"); a denied user would be sent to "/app",
-      # "/app/mfa_setup", or "/sign_in" instead, so reaching a /admin/live/*
+      # LiveDashboard 302-redirects "/ops/live" to its first page
+      # ("/ops/live/home"); a denied user would be sent to "/app",
+      # "/app/mfa_setup", or "/sign_in" instead, so reaching a /ops/live/*
       # page is the pass signal.
-      assert redirected_to(conn) =~ "/admin/live"
+      assert redirected_to(conn) =~ "/ops/live"
     end
 
     test "the dashboard reuses the CSP nonce and enables Ecto Stats", %{conn: conn} do
@@ -56,7 +56,7 @@ defmodule EmisarWeb.AdminGateTest do
       Fixtures.Users.enable_mfa!(Auth.generate_mfa_secret(), owner_subject(user, account))
       Fixtures.Users.mark_user_as_staff(user)
 
-      conn = conn |> complete_mfa_challenge(user) |> get("/admin/live/ecto_stats")
+      conn = conn |> complete_mfa_challenge(user) |> get("/ops/live/ecto_stats")
       html = html_response(conn, 200)
       [csp] = get_resp_header(conn, "content-security-policy")
       [_, nonce] = Regex.run(~r/'nonce-([^']+)'/, csp)
@@ -71,7 +71,7 @@ defmodule EmisarWeb.AdminGateTest do
       {conn, user, _account} = register_and_log_in(conn)
       Fixtures.Users.mark_user_as_staff(user)
 
-      conn = get(conn, "/admin/live")
+      conn = get(conn, "/ops/live")
 
       assert redirected_to(conn) == ~p"/app/mfa_setup"
 
@@ -88,7 +88,7 @@ defmodule EmisarWeb.AdminGateTest do
       Fixtures.Users.enable_mfa!(Auth.generate_mfa_secret(), owner_subject(user, account))
       Fixtures.Users.mark_user_as_staff(user)
 
-      conn = get(conn, "/admin/live")
+      conn = get(conn, "/ops/live")
 
       assert redirected_to(conn) == ~p"/sign_in"
       assert get_session(conn, :user_token) == nil
@@ -101,7 +101,7 @@ defmodule EmisarWeb.AdminGateTest do
       # /T02
       {conn, _user, _account} = register_and_log_in(conn)
 
-      conn = get(conn, "/admin/live")
+      conn = get(conn, "/ops/live")
 
       assert redirected_to(conn) == "/app"
       assert Phoenix.Flash.get(conn.assigns.flash, :error) == "Not authorized."
@@ -114,7 +114,7 @@ defmodule EmisarWeb.AdminGateTest do
       {conn, user, _account} = register_and_log_in(conn)
       refute user.is_admin
 
-      conn = get(conn, "/admin/live")
+      conn = get(conn, "/ops/live")
 
       assert redirected_to(conn) == "/app"
       assert Phoenix.Flash.get(conn.assigns.flash, :error) == "Not authorized."
@@ -122,7 +122,7 @@ defmodule EmisarWeb.AdminGateTest do
 
     test "an anonymous user is bounced to sign-in before the admin gate", %{conn: conn} do
       # /T06
-      conn = get(conn, "/admin/live")
+      conn = get(conn, "/ops/live")
 
       # :require_authenticated_user runs before :require_admin, so an
       # unauthenticated request lands on sign-in, never the "Not authorized."
@@ -135,14 +135,14 @@ defmodule EmisarWeb.AdminGateTest do
 
     test "the admin mount rides the :noindex pipeline (platform observability isn't crawled)",
          %{conn: conn} do
-      # /admin/live pipes through :noindex, which sets the conn assign the root
+      # /ops/live pipes through :noindex, which sets the conn assign the root
       # layout turns into `<meta name="robots" content="noindex,nofollow">`.
       # The assign is set before the dashboard 302s, so it's observable here.
       {conn, user, account} = register_and_log_in(conn)
       Fixtures.Users.enable_mfa!(Auth.generate_mfa_secret(), owner_subject(user, account))
       Fixtures.Users.mark_user_as_staff(user)
 
-      conn = conn |> complete_mfa_challenge(user) |> get("/admin/live")
+      conn = conn |> complete_mfa_challenge(user) |> get("/ops/live")
 
       assert conn.assigns[:noindex] == true
     end
@@ -156,7 +156,7 @@ defmodule EmisarWeb.AdminGateTest do
 
       # Add the forged key to the EXISTING signed-in session (don't reset it —
       # that would drop the user_token and make this an anonymous request).
-      conn = conn |> put_session(:is_admin, true) |> get("/admin/live")
+      conn = conn |> put_session(:is_admin, true) |> get("/ops/live")
 
       assert redirected_to(conn) == "/app"
       assert Phoenix.Flash.get(conn.assigns.flash, :error) == "Not authorized."
@@ -172,7 +172,7 @@ defmodule EmisarWeb.AdminGateTest do
       Fixtures.Users.enable_mfa!(Auth.generate_mfa_secret(), owner_subject(user, account))
       Fixtures.Users.mark_user_as_staff(user)
 
-      conn = conn |> put_session(:mfa_verified_at, DateTime.utc_now()) |> get("/admin/live")
+      conn = conn |> put_session(:mfa_verified_at, DateTime.utc_now()) |> get("/ops/live")
 
       assert redirected_to(conn) == ~p"/sign_in"
     end
@@ -188,7 +188,7 @@ defmodule EmisarWeb.AdminGateTest do
 
       conn = complete_mfa_challenge(conn, user)
       session_token = get_session(conn, :user_token)
-      assert redirected_to(get(conn, "/admin/live")) =~ "/admin/live"
+      assert redirected_to(get(conn, "/ops/live")) =~ "/ops/live"
 
       {:ok, _disabled} = Auth.disable_mfa(recovery_code, subject)
       Fixtures.Users.enable_mfa!(Auth.generate_mfa_secret(), subject)
@@ -198,7 +198,7 @@ defmodule EmisarWeb.AdminGateTest do
       # staff surface is its local proof naming the replaced enrollment.
       assert {:ok, _user, _session} = Auth.fetch_user_and_token_by_session_token(session_token)
 
-      conn = get(conn, "/admin/live")
+      conn = get(conn, "/ops/live")
 
       assert redirected_to(conn) == ~p"/sign_in"
       assert get_session(conn, :user_token) == nil
@@ -265,7 +265,7 @@ defmodule EmisarWeb.AdminGateTest do
     end
   end
 
-  describe "the /admin/live socket gate" do
+  describe "the /ops/live socket gate" do
     test "an admin who verified a second factor this session mounts" do
       {user, _account, subject} = Fixtures.Subjects.owner_subject()
       {enrolled, _codes} = Fixtures.Users.enable_mfa!(Auth.generate_mfa_secret(), subject)

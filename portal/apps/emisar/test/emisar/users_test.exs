@@ -3,6 +3,8 @@ defmodule Emisar.UsersTest do
   alias Emisar.Audit
   alias Emisar.Crypto
   alias Emisar.Fixtures
+  alias Emisar.Mail
+  alias Emisar.Marketing
   alias Emisar.Users
   alias Emisar.Users.User
 
@@ -802,6 +804,20 @@ defmodule Emisar.UsersTest do
                Emisar.Accounts.Membership.Query.all()
                |> Emisar.Accounts.Membership.Query.by_user_id(user_id)
              ) == nil
+    end
+
+    test "erases the address from the suppression and marketing lists too" do
+      user = Fixtures.Users.create_user()
+      {:ok, _suppression} = Mail.suppress(user.email, :hard_bounce, "HardBounce")
+      {:ok, _signup} = Marketing.capture_signup(%{email: user.email, source: "pricing"})
+
+      assert {:ok, _deleted} = Users.delete_by_id(user.id, repo: Repo)
+
+      # Neither table has an account foreign key, so the row cascade cannot
+      # reach them and no retention sweep ages them out — an erasure that left
+      # them behind would keep the person's address forever.
+      refute Mail.suppressed?(user.email)
+      refute Repo.one(Marketing.Signup.Query.by_email(user.email))
     end
 
     test "returns not_found for malformed or unknown ids" do

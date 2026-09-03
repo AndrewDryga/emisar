@@ -146,17 +146,19 @@ defmodule Emisar.Audit.Events do
 
   Written into the CUSTOMER's own trail on purpose — access transparency: an
   account sees every staff read of its workspace, the same way it sees its own
-  members' activity. `actor_label` is the team, not the person, so the row
-  reads as an Emisar-side access rather than naming an employee to the
-  customer; the audit detail card renders payload pairs to that customer, so
-  the acting employee stays out of it and `actor_id` carries the internal
-  traceability an access reconstruction needs. Staff hold no membership in the
-  account, so there is no `%Subject{}` to derive the actor from.
+  members' activity. The row names the TEAM and nothing else: like every staff
+  MUTATION (see `audit_actor_id/1`), it carries no `actor_id`, because a bare
+  employee id in a customer's trail — and in their CSV and SIEM exports, where
+  nothing ever resolves it to a name — lets a customer count the individual
+  employees who opened their workspace and correlate the same one across
+  tenants. The acting employee is authenticated and stays accountable in
+  Emisar's own logs. Staff hold no membership in the account, so there is no
+  `%Subject{}` to derive the actor from; the `%Users.User{}` head still holds so
+  a caller cannot record a view without a resolved staff user.
   """
-  def staff_account_viewed(%Users.User{} = staff_user, %Accounts.Account{} = account) do
+  def staff_account_viewed(%Users.User{}, %Accounts.Account{} = account) do
     Audit.changeset(account.id, "staff.account_viewed",
       actor_kind: "staff",
-      actor_id: staff_user.id,
       actor_label: @staff_actor_label,
       target_kind: "account",
       target_id: account.id,

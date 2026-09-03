@@ -306,6 +306,58 @@ defmodule Emisar.Billing.RunnerQuantityTest do
       refute_received {:update_subscription, "sub_timeout", _attrs}
     end
 
+    test "a sync request stamped while Paddle is called survives the convergence", %{
+      account: account
+    } do
+      remote = subscription_payload(id: "sub_midflight_marker", team_quantity: 4)
+      subscription = create_subscription(account, "sub_midflight_marker")
+      configure_responses(%{"sub_midflight_marker" => remote})
+
+      Emisar.Config.put_override(:emisar, :runner_quantity_test_update, fn id, attrs ->
+        # The row is not locked across the Paddle calls, so a runner transition
+        # can land here and stamp a fresh marker.
+        {:ok, :requested} = Billing.request_runner_quantity_sync(account.id, repo: Repo)
+        {:ok, apply_update(remote, id, attrs, @t2)}
+      end)
+
+      assert Billing.reconcile_runner_quantity(subscription.id) == {:ok, :updated}
+
+      synced = Repo.reload!(subscription)
+      assert synced.quantity == 1
+      assert synced.paddle_updated_at == parse_time(@t2)
+
+      # Clearing a marker this pass never acted on would lose that transition's
+      # quantity until the next hourly sweep, so only the read marker is cleared.
+      assert %DateTime{} = synced.runner_quantity_sync_requested_at
+
+      refute synced.runner_quantity_sync_requested_at ==
+               subscription.runner_quantity_sync_requested_at
+    end
+
+    test "a newer stored timestamp landing mid-PATCH is not rewound", %{account: account} do
+      remote = subscription_payload(id: "sub_midflight_webhook", team_quantity: 4)
+      subscription = create_subscription(account, "sub_midflight_webhook")
+      configure_responses(%{"sub_midflight_webhook" => remote})
+
+      Emisar.Config.put_override(:emisar, :runner_quantity_test_update, fn id, attrs ->
+        {:ok, _mirrored} =
+          Billing.reconcile_subscription_data(
+            subscription_payload(id: id, team_quantity: 3, updated_at: @t3),
+            expected_subscription: subscription
+          )
+
+        {:ok, apply_update(remote, id, attrs, @t2)}
+      end)
+
+      assert Billing.reconcile_runner_quantity(subscription.id) ==
+               {:error, :stale_subscription_snapshot}
+
+      synced = Repo.reload!(subscription)
+      assert synced.quantity == 3
+      assert synced.paddle_updated_at == parse_time(@t3)
+      assert %DateTime{} = synced.runner_quantity_sync_requested_at
+    end
+
     test "a delayed webhook cannot rewind quantity after a successful PATCH", %{account: account} do
       remote = subscription_payload(team_quantity: 4)
       subscription = create_subscription(account, "sub_ordered")

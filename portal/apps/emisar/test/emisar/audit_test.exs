@@ -123,6 +123,16 @@ defmodule Emisar.AuditTest do
 
       assert expired.id == event.id
     end
+
+    test "an event with no retention horizon cannot be written at all" do
+      account = Fixtures.Accounts.create_account()
+
+      # A null horizon never matches `retain_until <= now`, so the row would be
+      # immortal and invisible to every retention surface. The changeset refuses
+      # it instead of leaving the promise to whoever built the attrs.
+      assert {:error, changeset} = Audit.log(account.id, "audit.test", retain_until: nil)
+      assert "can't be blank" in errors_on(changeset).retain_until
+    end
   end
 
   describe "record/1" do

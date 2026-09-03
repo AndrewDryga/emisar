@@ -2,11 +2,12 @@ defmodule Emisar.Admin.Query do
   @moduledoc false
   use Emisar, :query
   alias Emisar.{Accounts, ApiKeys, Approvals, Audit, Runners, Runs, SSO, Users}
+  alias Emisar.Repo.Like
 
   @non_success_outcome_statuses Runs.ActionRun.terminal_statuses() -- [:success]
 
   def accounts_matching(term, limit \\ 25) do
-    pattern = "%#{term}%"
+    pattern = Like.contains(term)
 
     Accounts.Account.Query.not_deleted()
     |> join(:left, [accounts: a], membership in ^Accounts.Membership.Query.not_deleted(),
@@ -202,12 +203,16 @@ defmodule Emisar.Admin.Query do
     |> limit(^limit)
   end
 
+  # The recent sample and `non_success_outcome_groups_since/2` are returned by
+  # one RPC and must answer "what is failing?" with one definition: a group
+  # counting 412 `:denied` runs the sample can never contain reads as a broken
+  # sample. Both derive their set from `terminal_statuses/0`, so a new terminal
+  # status reaches both halves at once.
   def recent_failures(since, limit \\ 50) do
     Runs.ActionRun.Query.all()
     |> where(
       [runs: r],
-      r.inserted_at >= ^since and
-        r.status in [:failed, :error, :validation_failed, :unknown_action, :timed_out, :refused]
+      r.inserted_at >= ^since and r.status in ^@non_success_outcome_statuses
     )
     |> order_by([runs: r], desc: r.inserted_at, desc: r.id)
     |> limit(^limit)

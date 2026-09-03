@@ -41,7 +41,12 @@ defmodule Emisar.Audit.Event.Changeset do
     |> strip_unsafe_request_meta()
     |> truncate_request_meta()
     |> truncate_payload()
-    |> validate_required([:account_id, :occurred_at, :event_type])
+    # `retain_until` is required, not merely stamped by convention: the retention
+    # sweep matches `retain_until <= now`, so a row written without a horizon is
+    # invisible to every retention surface at once and never expires. Requiring
+    # it here is what makes the plan's retention promise structural rather than
+    # a property of the one builder that happens to stamp it.
+    |> validate_required([:account_id, :occurred_at, :event_type, :retain_until])
   end
 
   defp strip_unsafe_request_meta(changeset) do

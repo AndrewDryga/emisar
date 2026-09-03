@@ -131,14 +131,18 @@ defmodule Emisar.Accounts.Jobs.MonthlyReportsTest do
       refute Repo.reload(account).last_report_sent_at
     end
 
-    test "a delivery failure leaves last_report_sent_at unchanged for the next sweep" do
+    test "a delivery failure keeps the claimed month, so a doubled tick cannot double-send" do
       %{account: account} = active_account()
 
       Emisar.Config.put_override(:emisar, :mailer_deliver_error, {:error, {:failed, :boom}})
 
       assert MonthlyReports.execute([]) == :ok
 
-      refute Repo.reload(account).last_report_sent_at
+      # The stamp is the claim and is taken under the row lock BEFORE the mailer
+      # runs, so its presence after a failed delivery is what proves the order.
+      # Two ticks that both delivered first would each send this report; the
+      # cost of claiming first is one skipped month.
+      assert Repo.reload(account).last_report_sent_at
     end
 
     test "each account's report carries only its own numbers (cross-account isolation)" do

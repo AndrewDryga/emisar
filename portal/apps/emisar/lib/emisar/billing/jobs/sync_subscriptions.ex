@@ -16,7 +16,7 @@ defmodule Emisar.Billing.Jobs.SyncSubscriptions do
   @impl Emisar.Jobs.Executors.GloballyUnique
   def execute(config) do
     limit = Keyword.get(config, :limit, @subscriptions_per_page)
-    :ok = Jobs.Sweep.each_row(limit, &list_subscriptions/2, &sync_safely/1)
+    :ok = Jobs.Sweep.each_row(limit, &list_subscriptions/2, &sync/1)
     discover_page(limit, nil)
   end
 
@@ -25,19 +25,9 @@ defmodule Emisar.Billing.Jobs.SyncSubscriptions do
 
   defp after_subscription(queryable, _id), do: queryable
 
-  defp sync_safely(%Billing.Subscription{} = subscription) do
-    sync(subscription)
-  rescue
-    error ->
-      Logger.warning("billing_sync.crashed",
-        paddle_subscription_id: subscription.paddle_subscription_id,
-        account_id: subscription.account_id,
-        error: inspect(error.__struct__)
-      )
-
-      :ok
-  end
-
+  # A raising subscription is isolated by `Jobs.Sweep`, which logs
+  # `sweep.row_failed` and carries on; the discovery pass below is not a sweep
+  # loop and keeps its own rescue.
   defp sync(%Billing.Subscription{paddle_subscription_id: nil}), do: :ok
 
   defp sync(

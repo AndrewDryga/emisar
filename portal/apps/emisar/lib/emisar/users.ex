@@ -14,7 +14,7 @@ defmodule Emisar.Users do
   `Emisar.Accounts`.
   """
   alias Ecto.Multi
-  alias Emisar.{Audit, Crypto, Repo, RequestContext}
+  alias Emisar.{Audit, Crypto, Mail, Marketing, Repo, RequestContext}
   alias Emisar.Auth.Subject
   alias Emisar.Users.User
 
@@ -540,8 +540,18 @@ defmodule Emisar.Users do
       |> User.Query.by_id(user_id)
       |> repo.fetch(User.Query)
       |> case do
-        {:ok, user} -> repo.delete(user)
-        {:error, :not_found} -> {:error, :not_found}
+        {:ok, user} ->
+          # The person's address also lives OUTSIDE every tenant: the
+          # deliverability suppression list and the marketing capture list have
+          # no account foreign key, so the row cascade cannot reach them and no
+          # retention sweep ages them out. Each owning context erases its own
+          # row in this transaction, so an erasure really removes the address.
+          :ok = Mail.erase_suppression(user.email, repo: repo)
+          :ok = Marketing.erase_signup(user.email, repo: repo)
+          repo.delete(user)
+
+        {:error, :not_found} ->
+          {:error, :not_found}
       end
     else
       {:error, :not_found}

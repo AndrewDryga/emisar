@@ -79,73 +79,31 @@ defmodule Emisar.Billing.RunnerQuantityConcurrencyTest do
 
   @moduletag timeout: 60_000
 
-  test "a runner transition blocked behind convergence leaves a fresh dirty marker" do
+  test "a runner transition runs to completion while convergence waits on Paddle" do
     unboxed_quantity(fn state ->
-      parent = self()
       worker = unboxed_task(fn -> Billing.reconcile_runner_quantity(state.subscription.id) end)
 
       try do
         assert_receive {:quantity_retrieve, worker_pid, "sub_quantity_transition"}, 5_000
 
-        transition =
-          unboxed_task(fn ->
-            send(parent, {:transition_started, backend_pid()})
-            Runners.disable_runner(state.runner, state.subject)
-          end)
+        # The transition ends by stamping the very subscription row the
+        # reconciler is converging. It must not wait on Paddle: this call runs
+        # in the test process, so a held row lock would stall it until Ecto's
+        # default timeout and raise rather than return.
+        assert {:ok, _disabled} = Runners.disable_runner(state.runner, state.subject)
+        transition_marker = Repo.reload!(state.subscription).runner_quantity_sync_requested_at
+        assert %DateTime{} = transition_marker
 
-        try do
-          assert_receive {:transition_started, transition_backend}, 5_000
-          await_blocked(transition_backend)
+        send(worker_pid, :release_quantity_retrieve)
+        assert Task.await(worker, 30_000) == {:ok, :converged}
 
-          send(worker_pid, :release_quantity_retrieve)
-          assert Task.await(worker, 30_000) == {:ok, :converged}
-          assert {:ok, _disabled} = Task.await(transition, 30_000)
-
-          assert %DateTime{} =
-                   Repo.reload!(state.subscription).runner_quantity_sync_requested_at
-        after
-          stop_tasks([transition])
-        end
+        # The marker the transition stamped mid-flight is still standing, so the
+        # next tick converges its quantity instead of losing it.
+        assert Repo.reload!(state.subscription).runner_quantity_sync_requested_at ==
+                 transition_marker
       after
         send(worker.pid, :release_quantity_retrieve)
         stop_tasks([worker])
-      end
-    end)
-  end
-
-  test "two reconcilers serialize and issue only one effective PATCH" do
-    unboxed_quantity([team_quantity: 2, runner?: false], fn state ->
-      parent = self()
-      first = unboxed_task(fn -> Billing.reconcile_runner_quantity(state.subscription.id) end)
-
-      try do
-        assert_receive {:quantity_retrieve, first_pid, "sub_quantity_workers"}, 5_000
-
-        second =
-          unboxed_task(fn ->
-            send(parent, {:second_started, backend_pid()})
-            Billing.reconcile_runner_quantity(state.subscription.id)
-          end)
-
-        try do
-          assert_receive {:second_started, second_backend}, 5_000
-          await_blocked(second_backend)
-
-          send(first_pid, :release_quantity_retrieve)
-          assert Task.await(first, 30_000) == {:ok, :updated}
-          assert_receive {:quantity_update, ^first_pid, "sub_quantity_workers", _attrs}, 5_000
-
-          assert_receive {:quantity_retrieve, second_pid, "sub_quantity_workers"}, 5_000
-          send(second_pid, :release_quantity_retrieve)
-          assert Task.await(second, 30_000) == {:ok, :converged}
-          refute_receive {:quantity_update, ^second_pid, "sub_quantity_workers", _attrs}, 100
-        after
-          send(second.pid, :release_quantity_retrieve)
-          stop_tasks([second])
-        end
-      after
-        send(first.pid, :release_quantity_retrieve)
-        stop_tasks([first])
       end
     end)
   end

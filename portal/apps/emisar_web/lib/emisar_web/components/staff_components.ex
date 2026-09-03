@@ -59,10 +59,10 @@ defmodule EmisarWeb.StaffComponents do
             >
               Accounts
             </.link>
-            <%!-- href, not navigate: /admin/live is a different live_session, so
+            <%!-- href, not navigate: /ops/live is a different live_session, so
                  a live navigation would only fall back to a full page load. --%>
             <.link
-              href={~p"/admin/live"}
+              href={~p"/ops/live"}
               class="rounded-lg px-3 py-1.5 text-zinc-400 transition hover:bg-white/[0.04] hover:text-zinc-100"
             >
               LiveDashboard

@@ -24,6 +24,16 @@ defmodule Emisar.Jobs.Executors.GloballyUniqueTest do
     end
   end
 
+  defmodule ReclaimingJob do
+    @behaviour GloballyUnique
+
+    @impl GloballyUnique
+    def execute(config) do
+      send(Keyword.fetch!(config, :test_pid), :executed)
+      :ok
+    end
+  end
+
   defmodule FailingJob do
     @behaviour GloballyUnique
 
@@ -54,6 +64,31 @@ defmodule Emisar.Jobs.Executors.GloballyUniqueTest do
     assert GloballyUnique.start_link(
              {ExecutingJob, :timer.hours(1), enabled: false, test_pid: self()}
            ) == :ignore
+  end
+
+  test "re-acquiring leadership replaces the tick timer instead of adding a second chain" do
+    start_supervised!(
+      {GloballyUnique, {ReclaimingJob, :timer.hours(1), initial_delay: 0, test_pid: self()}}
+    )
+
+    assert_receive :executed, 500
+    leader = :global.whereis_name({GloballyUnique, ReclaimingJob})
+    %{role: :leader, tick_ref: leader_ref} = :sys.get_state(leader)
+    assert is_integer(Process.read_timer(leader_ref))
+
+    # The flap the module's own comment says it has seen in production: the name
+    # goes, then this process claims it back.
+    :global.unregister_name({GloballyUnique, ReclaimingJob})
+    send(leader, :claim)
+
+    assert_receive :executed, 500
+    %{role: :leader, tick_ref: reclaimed_ref} = :sys.get_state(leader)
+
+    # One chain, not two: the pre-flap timer is cancelled rather than left
+    # running beside the new one, which is what permanently doubled the job's
+    # cadence on that node.
+    assert Process.read_timer(leader_ref) == false
+    assert is_integer(Process.read_timer(reclaimed_ref))
   end
 
   test "a failed tick emits a stable redacted operator signal" do

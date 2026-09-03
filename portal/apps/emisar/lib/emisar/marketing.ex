@@ -36,4 +36,18 @@ defmodule Emisar.Marketing do
   """
   def account_signed_up(%Users.User{} = user, attribution),
     do: Conversions.account_signed_up(user, attribution)
+
+  @doc """
+  Internal — erases the captured signup for `email`, for the user/account
+  erasure flow. Takes the caller's transaction repo through `:repo` so it
+  commits with the identity it belongs to. The capture list has no account and
+  no retention sweep, so an erased person's address would otherwise sit here
+  forever.
+  """
+  def erase_signup(email, opts \\ []) when is_binary(email) do
+    repo = Keyword.get(opts, :repo, Repo)
+    trimmed = String.trim(email)
+    _ = Signup.Query.by_email(trimmed) |> repo.delete_all()
+    :ok
+  end
 end

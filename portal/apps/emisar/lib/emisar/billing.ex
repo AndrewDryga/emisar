@@ -689,41 +689,31 @@ defmodule Emisar.Billing do
 
   @doc false
   def reconcile_runner_quantity(subscription_id) when is_binary(subscription_id) do
-    Multi.new()
-    |> Multi.run(:subscription, fn repo, _changes ->
-      subscription =
-        Subscription.Query.all()
-        |> Subscription.Query.by_id(subscription_id)
-        |> Subscription.Query.lock_for_update()
-        |> repo.peek()
-
-      {:ok, subscription}
-    end)
-    |> Multi.run(:quantity_sync, fn repo, %{subscription: subscription} ->
-      reconcile_locked_runner_quantity(repo, subscription)
-    end)
-    # A converging update makes one GET and at most one PATCH. Paddle's update
-    # response may wait on an immediate final-period charge, so leave headroom
-    # above the two eight-second HTTP receive timeouts while holding the row.
-    |> Repo.commit_multi(timeout: 25_000)
-    |> case do
-      {:ok, %{quantity_sync: result}} -> {:ok, result}
-      {:error, reason} -> {:error, reason}
-    end
+    Subscription.Query.all()
+    |> Subscription.Query.by_id(subscription_id)
+    |> Repo.peek()
+    |> reconcile_unlocked_runner_quantity()
   end
 
-  defp reconcile_locked_runner_quantity(_repo, nil), do: {:ok, :missing}
+  # The Paddle round-trips deliberately hold NO lock on the subscription row.
+  # Every runner enrollment, enable, disable and delete ends by stamping
+  # `runner_quantity_sync_requested_at` on exactly this row, and that UPDATE
+  # takes the same `FOR NO KEY UPDATE` the reconciler used to hold — so an
+  # installer enrolling while Paddle was slow waited past Ecto's 15s default and
+  # failed with nothing actually wrong. The convergence is persisted afterwards,
+  # under a short lock that compares against the row this pass read.
+  defp reconcile_unlocked_runner_quantity(nil), do: {:ok, :missing}
 
-  defp reconcile_locked_runner_quantity(_repo, %Subscription{paddle_subscription_id: nil}),
+  defp reconcile_unlocked_runner_quantity(%Subscription{paddle_subscription_id: nil}),
     do: {:ok, :not_paddle_managed}
 
-  defp reconcile_locked_runner_quantity(repo, %Subscription{} = subscription) do
+  defp reconcile_unlocked_runner_quantity(%Subscription{} = subscription) do
     with {:ok, _account} <-
            Accounts.fetch_account_by_id_or_slug_including_disabled(subscription.account_id),
          {:ok, subscription_data} <-
            PaddleClient.retrieve_subscription(subscription.paddle_subscription_id),
          {:ok, action} <- runner_quantity_action(subscription_data) do
-      apply_runner_quantity_action(repo, subscription, subscription_data, action)
+      apply_runner_quantity_action(subscription, subscription_data, action)
     else
       {:error, :not_found} -> {:ok, :account_closed}
       {:error, reason} -> {:error, reason}
@@ -765,26 +755,20 @@ defmodule Emisar.Billing do
 
   defp runner_quantity_action(_subscription_data), do: {:error, :malformed_subscription}
 
-  defp apply_runner_quantity_action(repo, subscription, subscription_data, :stop) do
-    persist_runner_quantity_convergence(
-      repo,
-      subscription,
-      subscription_data,
-      subscription.quantity
-    )
+  defp apply_runner_quantity_action(subscription, subscription_data, :stop) do
+    persist_runner_quantity_convergence(subscription, subscription_data, subscription.quantity)
     |> then(fn
       {:ok, _subscription} -> {:ok, :stopped}
       {:error, reason} -> {:error, reason}
     end)
   end
 
-  defp apply_runner_quantity_action(repo, subscription, _subscription_data, :defer) do
-    request_deferred_runner_quantity_sync(repo, subscription)
+  defp apply_runner_quantity_action(subscription, _subscription_data, :defer) do
+    request_deferred_runner_quantity_sync(subscription)
     {:ok, :deferred}
   end
 
   defp apply_runner_quantity_action(
-         repo,
          %Subscription{} = subscription,
          subscription_data,
          {:update, proration_mode}
@@ -794,12 +778,7 @@ defmodule Emisar.Billing do
     with {:ok, items, _target_price_id, remote_quantity} <-
            runner_quantity_items(subscription_data, desired_quantity) do
       if remote_quantity == desired_quantity do
-        persist_runner_quantity_convergence(
-          repo,
-          subscription,
-          subscription_data,
-          desired_quantity
-        )
+        persist_runner_quantity_convergence(subscription, subscription_data, desired_quantity)
         |> then(fn
           {:ok, _subscription} -> {:ok, :converged}
           {:error, reason} -> {:error, reason}
@@ -815,57 +794,91 @@ defmodule Emisar.Billing do
                PaddleClient.update_subscription(subscription.paddle_subscription_id, attrs),
              :ok <- verify_runner_quantity_update(updated, items),
              {:ok, _subscription} <-
-               persist_runner_quantity_convergence(
-                 repo,
-                 subscription,
-                 updated,
-                 desired_quantity
-               ) do
+               persist_runner_quantity_convergence(subscription, updated, desired_quantity) do
           {:ok, :updated}
         end
       end
     end
   end
 
-  defp request_deferred_runner_quantity_sync(repo, subscription) do
+  defp request_deferred_runner_quantity_sync(subscription) do
     Subscription.Query.all()
     |> Subscription.Query.by_id(subscription.id)
     |> Subscription.Query.runner_quantity_sync_not_requested()
-    |> repo.update_all(set: [runner_quantity_sync_requested_at: DateTime.utc_now()])
+    |> Repo.update_all(set: [runner_quantity_sync_requested_at: DateTime.utc_now()])
   end
 
-  defp persist_runner_quantity_convergence(repo, subscription, subscription_data, quantity) do
+  defp persist_runner_quantity_convergence(subscription, subscription_data, quantity) do
     case extract_paddle_updated_at(subscription_data) do
       %DateTime{} = paddle_updated_at ->
-        result =
-          subscription
-          |> Subscription.Changeset.upsert(%{
-            quantity: quantity,
-            paddle_updated_at: paddle_updated_at,
-            runner_quantity_sync_requested_at: nil
-          })
-          |> repo.update()
-
-        case result do
-          {:ok,
-           %Subscription{
-             quantity: ^quantity,
-             paddle_updated_at: ^paddle_updated_at,
-             runner_quantity_sync_requested_at: nil
-           } = updated} ->
-            {:ok, updated}
-
-          {:ok, %Subscription{}} ->
-            {:error, :stale_subscription_snapshot}
-
-          {:error, reason} ->
-            {:error, reason}
-        end
+        commit_runner_quantity_convergence(subscription, quantity, paddle_updated_at)
 
       nil ->
         {:error, :missing_subscription_updated_at}
     end
   end
+
+  # The write goes to the row re-read under the lock, not the one this pass read
+  # before calling Paddle. A webhook may have stored a NEWER `paddle_updated_at`
+  # in between, which `Changeset.upsert/2` refuses to rewind — the row comes back
+  # unchanged and the verification below reports a stale snapshot, leaving the
+  # marker for the next tick.
+  defp commit_runner_quantity_convergence(subscription, quantity, paddle_updated_at) do
+    queryable = Subscription.Query.all() |> Subscription.Query.by_id(subscription.id)
+
+    result =
+      Repo.fetch_and_update(queryable, Subscription.Query,
+        with: &converged_runner_quantity_changeset(&1, subscription, quantity, paddle_updated_at)
+      )
+
+    case result do
+      {:ok, converged} ->
+        verify_runner_quantity_convergence(converged, quantity, paddle_updated_at)
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
+  # The outbox marker this pass read is still standing on the locked row, so
+  # clear it: the work it asked for is exactly what just converged.
+  defp converged_runner_quantity_changeset(
+         %Subscription{runner_quantity_sync_requested_at: marker} = loaded_subscription,
+         %Subscription{runner_quantity_sync_requested_at: marker},
+         quantity,
+         paddle_updated_at
+       ) do
+    Subscription.Changeset.upsert(loaded_subscription, %{
+      quantity: quantity,
+      paddle_updated_at: paddle_updated_at,
+      runner_quantity_sync_requested_at: nil
+    })
+  end
+
+  # A runner transition stamped a FRESH marker while this pass was out at
+  # Paddle. Clearing it would lose that transition's quantity until the next
+  # full sweep, so leave it standing for the next tick.
+  defp converged_runner_quantity_changeset(
+         %Subscription{} = loaded_subscription,
+         %Subscription{},
+         quantity,
+         paddle_updated_at
+       ) do
+    Subscription.Changeset.upsert(loaded_subscription, %{
+      quantity: quantity,
+      paddle_updated_at: paddle_updated_at
+    })
+  end
+
+  defp verify_runner_quantity_convergence(
+         %Subscription{quantity: quantity, paddle_updated_at: paddle_updated_at} = subscription,
+         quantity,
+         paddle_updated_at
+       ),
+       do: {:ok, subscription}
+
+  defp verify_runner_quantity_convergence(%Subscription{}, _quantity, _paddle_updated_at),
+    do: {:error, :stale_subscription_snapshot}
 
   defp runner_quantity_items(%{"items" => items}, desired_quantity)
        when is_list(items) do
@@ -1124,13 +1137,6 @@ defmodule Emisar.Billing do
   # falling back to its normalized display name when that matches a plan we
   # sell (the dashboard products are literally named "team"/"enterprise").
   defp product_plan_slug(product), do: Entitlements.plan_identity_of_product(product)
-
-  defp known_plan_from_name(name) when is_binary(name) do
-    slug = name |> String.trim() |> String.downcase()
-    if Map.has_key?(@plans, slug), do: slug
-  end
-
-  defp known_plan_from_name(_name), do: nil
 
   # Select ONLY a one-period active price for the requested cycle. Falling back
   # to another cadence—or accepting "every 2 years" as annual—would change the
@@ -1589,8 +1595,8 @@ defmodule Emisar.Billing do
     # :nothing` → 0 rows means this Paddle event id was already processed
     # (Paddle re-delivers); 1 row means it's new. A duplicate aborts the
     # whole transaction so the side effects below never re-run.
-    |> Multi.run(:dedup, fn _repo, _changes ->
-      case Repo.insert_all("paddle_processed_events", [row], on_conflict: :nothing) do
+    |> Multi.run(:dedup, fn repo, _changes ->
+      case repo.insert_all("paddle_processed_events", [row], on_conflict: :nothing) do
         {1, _} -> {:ok, :new}
         {0, _} -> {:error, {:duplicate, event_id}}
       end
@@ -1832,7 +1838,7 @@ defmodule Emisar.Billing do
 
     plan =
       Entitlements.plan_slug(subscription_data) ||
-        known_plan_from_name(Entitlements.product_name(subscription_data)) ||
+        Entitlements.known_plan_from_name(Entitlements.product_name(subscription_data)) ||
         stored_plan_from_subscription(existing)
 
     attrs =

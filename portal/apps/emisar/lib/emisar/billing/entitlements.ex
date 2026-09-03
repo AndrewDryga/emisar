@@ -135,12 +135,21 @@ defmodule Emisar.Billing.Entitlements do
     end
   end
 
-  defp known_plan_from_name(name) when is_binary(name) do
+  @doc """
+  Internal — the plan slug a catalog product's display NAME identifies, or nil.
+
+  The fallback when a Paddle product carries no `custom_data.plan`: the
+  dashboard products are literally named "Team" and "Enterprise". Free is
+  deliberately absent — it is not a Paddle product, so no catalog product or
+  subscription payload can ever be named it, and accepting the name would let a
+  paid subscription mirror itself onto the free tier.
+  """
+  def known_plan_from_name(name) when is_binary(name) do
     slug = name |> String.trim() |> String.downcase()
     if slug in @known_plan_slugs, do: slug
   end
 
-  defp known_plan_from_name(_name), do: nil
+  def known_plan_from_name(_name), do: nil
 
   defp normalized_entry({key, raw}) when key in @limit_keys do
     case parse_limit(raw) do

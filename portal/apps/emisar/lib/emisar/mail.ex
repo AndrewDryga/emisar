@@ -115,6 +115,21 @@ defmodule Emisar.Mail do
     )
   end
 
+  @doc """
+  Internal — erases the suppression row for `email`, for the user/account
+  erasure flow. Takes the caller's transaction repo through `:repo` so it
+  commits with the identity it belongs to. Suppression is operational
+  deliverability state rather than a record we retain: the list re-learns the
+  address from the next bounce, and keeping it would leave an erased person's
+  address in a table that has no account and no retention sweep.
+  """
+  def erase_suppression(email, opts \\ []) when is_binary(email) do
+    repo = Keyword.get(opts, :repo, Repo)
+    trimmed = String.trim(email)
+    _ = Suppression.Query.by_email(trimmed) |> repo.delete_all()
+    :ok
+  end
+
   defp suppress_reported(%DeliverabilityEvent{} = event, reason) do
     case suppress(event.email, reason, detail(event)) do
       {:ok, _suppression} -> {:ok, :suppressed}

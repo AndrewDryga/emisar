@@ -215,7 +215,7 @@ change with an application rollback.
   repository is public, so the exact deployed Git SHA would map production to any
   known advisory in that tree).
 - `/metrics` on `METRICS_PORT` (default 9091) is private.
-- `/admin/live` is the admin-gated Phoenix LiveDashboard.
+- `/ops/live` is the admin-gated Phoenix LiveDashboard.
 - Production logs use structured Google Cloud JSON with secret-shaped metadata
   keys redacted.
 - Sentry activates only when `SENTRY_DSN` is configured.

@@ -99,4 +99,21 @@ defmodule Emisar.MarketingTest do
       refute_receive {:x_ads_signup, _event}
     end
   end
+
+  describe "erase_signup/2" do
+    test "removes the captured address so an erased person is not kept on the list" do
+      {:ok, _gone} = Marketing.capture_signup(%{email: "gone@example.com", source: "footer"})
+      {:ok, _stays} = Marketing.capture_signup(%{email: "stays@example.com", source: "footer"})
+
+      assert Marketing.erase_signup("  gone@example.com  ") == :ok
+
+      refute Repo.one(Signup.Query.by_email("gone@example.com"))
+      assert Repo.one(Signup.Query.by_email("stays@example.com"))
+    end
+
+    test "an address that was never captured is a no-op" do
+      assert Marketing.erase_signup("never@example.com") == :ok
+      refute Repo.exists?(Signup.Query.all())
+    end
+  end
 end
