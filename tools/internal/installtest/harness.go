@@ -174,40 +174,12 @@ func sandboxConfigHome(overrides map[string]string) map[string]string {
 	return sandboxedOverrides
 }
 
-// requireAttestationOutcome requires the downloaded checksum signature on every
-// official install, then holds the additional per-archive provenance check to
-// one of two stated outcomes so it can never pass by doing nothing.
-//
-// Which archive outcome is correct depends on the machine: with an
-// authenticated gh the release must verify, and without one the installer must
-// say why it skipped. The checksum signature itself needs no authentication and
-// may never skip.
-func (h *harness) requireAttestationOutcome(env map[string]string, output []byte) error {
+func requireChecksumVerification(output []byte) error {
 	text := string(output)
 	if !strings.Contains(text, "checksum signature verified") {
 		return fmt.Errorf("the installer did not verify the downloaded checksum signature:\n%s", text)
 	}
-	if h.attestationVerifierReady(env) {
-		if !strings.Contains(text, "attestation verified") {
-			return fmt.Errorf("an authenticated gh is available but the installer did not verify the release attestation:\n%s", text)
-		}
-		return nil
-	}
-	if !strings.Contains(text, "skipping release attestation check") &&
-		!strings.Contains(text, "skipping provenance check") {
-		return fmt.Errorf("the installer neither verified the release attestation nor explained skipping it:\n%s", text)
-	}
 	return nil
-}
-
-// attestationVerifierReady answers the installers' own gate — gh present AND
-// authenticated — in the environment the installer will actually run in, not
-// this process's. The MCP check hands the installer a throwaway HOME, so a gh
-// that authenticates from the real user's config is unauthenticated there while
-// one holding GH_TOKEN in the inherited environment, as CI does, is not.
-// Asking on our own behalf gets the answer wrong in exactly that case.
-func (h *harness) attestationVerifierReady(env map[string]string) bool {
-	return h.command(h.root, env, "gh", "auth", "status").err == nil
 }
 
 type commandResult struct {

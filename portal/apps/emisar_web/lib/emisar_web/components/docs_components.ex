@@ -629,7 +629,7 @@ defmodule EmisarWeb.DocsComponents do
           The installer runs these checks before the binary can run as <.docs_inline_code>sudo</.docs_inline_code>. Bundle verification requires GitHub CLI with <.docs_inline_code>gh attestation verify --bundle</.docs_inline_code>. It needs no GitHub login, but a fresh cache loads public trust roots from the hosts listed under <.link
             href="/docs/network-requirements#installers"
             class="text-brand-400 hover:text-brand-300"
-          >Network requirements</.link>. An authenticated GitHub CLI also checks the archive's online build provenance.
+          >Network requirements</.link>.
         </p>
         <.os_docs_code :if={@detected_os} detected={@detected_os}>
           <:tab os={:linux} label="Linux" copy_text={@linux_commands}>{@linux_transcript}</:tab>

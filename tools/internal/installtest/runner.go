@@ -56,7 +56,7 @@ func runnerChecks() []runnerCheck {
 		{"staged binary rejects the config", false, runnerStagedConfigPreflight},
 		{"owned directory validation", false, runnerOwnedDirectoryValidation},
 		{"GitHub token argv hygiene", false, func(h *harness) error { return githubTokenHygiene(h, "install.sh") }},
-		{"attestation release epochs", false, runnerAttestationReleaseEpochs},
+		{"signed checksum", false, runnerChecksumSignature},
 		{"download checksum mismatch", false, runnerDownloadChecksum},
 		{"enrollment state transitions", true, runnerEnrollmentState},
 		{"binary installation rollback", true, runnerInstallRollback},
@@ -78,7 +78,7 @@ func runnerHelpContract(h *harness) error {
 	if err != nil {
 		return err
 	}
-	for _, want := range []string{"EMISAR_ATTESTATION_WORKFLOW", "EMISAR_ALLOW_UNSIGNED_CHECKSUM", "--allow-unsigned-checksum"} {
+	for _, want := range []string{"EMISAR_ATTESTATION_WORKFLOW"} {
 		if !strings.Contains(string(output), want) {
 			return fmt.Errorf("installer help omits %s:\n%s", want, output)
 		}
@@ -96,74 +96,6 @@ func runnerHelpContract(h *harness) error {
 func runnerChecksumSignature(h *harness) error {
 	return checksumSignatureContract(h, "install.sh", "SHA256SUMS", "runner-v0.23.1",
 		"AndrewDryga/emisar/.github/workflows/runner-release-trusted.yml")
-}
-
-func runnerAttestationReleaseEpochs(h *harness) error {
-	trace := h.path("runner-attestation-argv")
-	result := h.functions(h.repoPath("install.sh"), []string{"signed_checksum_published", "select_attestation_policy", "verify_attestation"}, `
-log() { :; }
-warn() { :; }
-die() { printf '%s\n' "$*" >&2; exit 1; }
-gh() {
-  if [ "${1:-}" = "auth" ]; then
-    return 0
-  fi
-  printf '%s' "$1" >>"$TRACE"
-  shift
-  printf '|%s' "$@" >>"$TRACE"
-  printf '\n' >>"$TRACE"
-}
-
-OFFICIAL_REPO=andrewdryga/emisar
-REPO=$OFFICIAL_REPO
-for VERSION in runner-v0.22.1 runner-v0.23.0 runner-v0.23.1 runner-v0.21.99; do
-  ATTESTATION_WORKFLOW=
-  select_attestation_policy
-  printf '%s|%s|%s|%s|%s\n' "$ATTESTATION_WORKFLOW" "$ATTESTATION_SIGNER_DIGEST" "$ATTESTATION_SOURCE_REF" "$ATTESTATION_DENY_SELF_HOSTED" "$REQUIRE_ARCHIVE_ATTESTATION"
-done
-REPO=example/emisar
-VERSION=runner-v0.22.1
-ATTESTATION_WORKFLOW=
-select_attestation_policy
-printf '%s|%s|%s|%s|%s\n' "$ATTESTATION_WORKFLOW" "$ATTESTATION_SIGNER_DIGEST" "$ATTESTATION_SOURCE_REF" "$ATTESTATION_DENY_SELF_HOSTED" "$REQUIRE_ARCHIVE_ATTESTATION"
-
-VERSION=runner-v0.22.1
-ATTESTATION_WORKFLOW=example/emisar/.github/workflows/release.yml
-select_attestation_policy
-printf '%s|%s|%s|%s|%s\n' "$ATTESTATION_WORKFLOW" "$ATTESTATION_SIGNER_DIGEST" "$ATTESTATION_SOURCE_REF" "$ATTESTATION_DENY_SELF_HOSTED" "$REQUIRE_ARCHIVE_ATTESTATION"
-
-REPO=$OFFICIAL_REPO
-for VERSION in runner-v0.22.1 runner-v0.22.2; do
-  ATTESTATION_WORKFLOW=
-  select_attestation_policy
-  verify_attestation /verified/runner.tar.gz runner.tar.gz
-done
-REPO=example/emisar
-VERSION=runner-v0.22.1
-ATTESTATION_WORKFLOW=example/emisar/.github/workflows/release.yml
-select_attestation_policy
-verify_attestation /verified/runner.tar.gz runner.tar.gz
-`, map[string]string{"TRACE": trace})
-	output, err := requireOutput(result)
-	if err != nil {
-		return err
-	}
-	const expected = "AndrewDryga/emisar/.github/workflows/runner-release.yml|642128eb48205405fd44ce845118e6a68737eea2|refs/tags/runner-v0.22.1|1|1\n" +
-		"AndrewDryga/emisar/.github/workflows/runner-release-trusted.yml||refs/tags/runner-v0.23.0|1|1\n" +
-		"AndrewDryga/emisar/.github/workflows/runner-release-trusted.yml||refs/tags/runner-v0.23.1|1|0\n" +
-		"AndrewDryga/emisar/.github/workflows/runner-release-trusted.yml||refs/tags/runner-v0.21.99|1|1\n" +
-		"|||0|0\n" +
-		"example/emisar/.github/workflows/release.yml|||0|0\n"
-	if string(output) != expected {
-		return fmt.Errorf("attestation policies = %q, want %q", output, expected)
-	}
-	const expectedTrace = "attestation|verify|/verified/runner.tar.gz|--repo|andrewdryga/emisar|--signer-workflow|AndrewDryga/emisar/.github/workflows/runner-release.yml|--source-ref|refs/tags/runner-v0.22.1|--signer-digest|642128eb48205405fd44ce845118e6a68737eea2|--deny-self-hosted-runners\n" +
-		"attestation|verify|/verified/runner.tar.gz|--repo|andrewdryga/emisar|--signer-workflow|AndrewDryga/emisar/.github/workflows/runner-release-trusted.yml|--source-ref|refs/tags/runner-v0.22.2|--deny-self-hosted-runners\n" +
-		"attestation|verify|/verified/runner.tar.gz|--repo|example/emisar|--signer-workflow|example/emisar/.github/workflows/release.yml\n"
-	if err := exactFile(trace, expectedTrace); err != nil {
-		return err
-	}
-	return runnerChecksumSignature(h)
 }
 
 func runnerOwnedDirectoryValidation(h *harness) error {
@@ -540,7 +472,7 @@ func runnerInstallRollback(h *harness) error {
 	if err != nil {
 		return err
 	}
-	if err := h.requireAttestationOutcome(map[string]string{"EMISAR_PACKS": ""}, installed); err != nil {
+	if err := requireChecksumVerification(installed); err != nil {
 		return err
 	}
 	versionOutput, err := h.successful(h.root, nil, filepath.Join(bin, "emisar"), "--version")
@@ -2300,12 +2232,7 @@ func runnerConfigValueValidation(h *harness) error {
 	return nil
 }
 
-// The download checksum is the ONLY integrity control on a host without `gh`:
-// verify_attestation degrades to a warning there, so a tampered tarball is
-// stopped by this comparison or not at all. Nothing exercised the mismatch,
-// which meant a regression that let a bad tarball through — a dropped `|| die`,
-// a grep that stopped matching — would have left every gate green. Drive the
-// real download_release, with only the network and the attestation stubbed.
+// Drive the real download path and prove the authenticated checksum is enforced.
 func runnerDownloadChecksum(h *harness) error {
 	// A digest of the right shape that cannot be the tarball's.
 	const wrongDigest = "0000000000000000000000000000000000000000000000000000000000000000"
@@ -2320,7 +2247,6 @@ warn() { :; }
 die() { printf '%s\n' "$*" >&2; exit 1; }
 github_release_base() { printf 'https://example.invalid/%s\n' "$1"; }
 verify_checksum_attestation() { printf 'CHECKSUM SIGNATURE REACHED\n' >&2; }
-verify_attestation() { printf 'ARTIFACT ATTESTATION REACHED\n' >&2; }
 digest_of() {
   if command -v sha256sum >/dev/null 2>&1; then
     sha256sum "$1" | awk '{print $1}'
@@ -2348,12 +2274,6 @@ download_release runner-v9.9.9 "$tmp"
 	if err := expectFailure(tampered, "checksum verification failed"); err != nil {
 		return fmt.Errorf("a tampered tarball was not refused: %w", err)
 	}
-	// The checksum metadata is authenticated first. A bad archive is then
-	// refused before its own provenance check and before anything is unpacked.
-	if strings.Contains(string(tampered.output), "ARTIFACT ATTESTATION REACHED") {
-		return fmt.Errorf("install continued past the checksum mismatch:\n%s", tampered.output)
-	}
-
 	missing := h.functions(h.repoPath("install.sh"), []string{"download_release", "sha_verify"}, preamble+`
 fetch_release_files() {
   dir="$3"
@@ -2366,10 +2286,6 @@ download_release runner-v9.9.9 "$tmp"
 	if err := expectFailure(missing, "checksum manifest does not list emisar-9.9.9-linux-amd64.tar.gz"); err != nil {
 		return fmt.Errorf("a manifest missing the selected tarball was not refused: %w", err)
 	}
-	if strings.Contains(string(missing.output), "ARTIFACT ATTESTATION REACHED") {
-		return fmt.Errorf("install continued past the missing checksum entry:\n%s", missing.output)
-	}
-
 	// The control: the identical path with an honest SHA256SUMS must succeed,
 	// so the refusal above cannot be passing for some unrelated reason.
 	honest := h.functions(h.repoPath("install.sh"), []string{"download_release", "sha_verify"}, preamble+`
@@ -2385,9 +2301,8 @@ download_release runner-v9.9.9 "$tmp"
 	if err != nil {
 		return fmt.Errorf("a matching checksum did not install: %w", err)
 	}
-	if !strings.Contains(string(output), "CHECKSUM SIGNATURE REACHED") ||
-		!strings.Contains(string(output), "ARTIFACT ATTESTATION REACHED") {
-		return fmt.Errorf("the verified path never reached attestation:\n%s", output)
+	if !strings.Contains(string(output), "CHECKSUM SIGNATURE REACHED") {
+		return fmt.Errorf("the verified path never authenticated the checksum:\n%s", output)
 	}
 	return nil
 }

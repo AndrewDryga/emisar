@@ -2262,8 +2262,7 @@ defmodule EmisarWeb.MarketingTest do
       bridge = conn |> get(~p"/docs/bridge-upgrades") |> html_response(200) |> squish()
       assert bridge =~ "A running client keeps the binary it already loaded"
       assert bridge =~ "Client config and API key are untouched"
-      assert bridge =~ "oldest authenticated rollback target is MCP 0.10.1"
-      assert bridge =~ "Earlier tags fail authenticated verification"
+      assert bridge =~ "Only immutable releases with signed checksum metadata install"
     end
 
     test "credentials opens with a matrix carrying every field the reader compares on",

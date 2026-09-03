@@ -222,8 +222,7 @@
       <p class="mt-5 text-base leading-7 text-zinc-400">
         The update touches only the binary: <.docs_inline_code>config.yaml</.docs_inline_code>, <.docs_inline_code>runner.env</.docs_inline_code>, the cached token, installed packs, the dispatch log, and the local
         audit journal all stay as they are. Before the service stops, it authenticates the signed
-        checksum metadata, verifies the archive against it, and, when GitHub CLI is authenticated,
-        checks the archive's online build provenance. It then stages the binary, checks its version, and
+        checksum metadata and verifies the archive against it. It then stages the binary, checks its version, and
         confirms the new binary accepts the current config and can read the current dispatch
         state.
       </p>

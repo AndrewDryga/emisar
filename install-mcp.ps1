@@ -16,9 +16,7 @@ param(
     [string]$PortalOrigin = "",
     [switch]$Uninstall,
     [switch]$Yes,
-    [switch]$ConnectAll,
-    # BREAK GLASS: accept a same-origin checksum when its Sigstore bundle cannot verify.
-    [switch]$AllowUnsignedChecksum
+    [switch]$ConnectAll
 )
 
 Set-StrictMode -Version 2.0
@@ -38,12 +36,9 @@ $script:PortalOrigin = if ($PortalOrigin) {
 $script:ReleaseMirror = "https://emisar.dev/releases/mcp"
 $script:AttestationWorkflowOverride = if ($env:EMISAR_ATTESTATION_WORKFLOW) { $env:EMISAR_ATTESTATION_WORKFLOW } else { "" }
 $script:AttestationWorkflow = ""
-$script:AttestationSignerDigest = ""
 $script:AttestationSourceRef = ""
 $script:AttestationDenySelfHosted = $false
-$script:RequireArchiveAttestation = $false
 $script:Utf8NoBom = New-Object Text.UTF8Encoding($false)
-$script:MaxAttestationBundleBytes = 4 * 1024 * 1024
 
 function Write-Info([string]$Message) {
     Write-Host "[install-mcp] $Message" -ForegroundColor Blue
@@ -95,14 +90,10 @@ function Normalize-Version([string]$Value) {
     return "mcp-v$Value"
 }
 
-# The supported pre-split release tip keeps its immutable original provenance.
-# Every other official tag uses the trusted
-# workflow; an explicit fork/operator override keeps its existing semantics.
 function Get-AttestationPolicy([string]$Repository, [string]$Tag, [string]$WorkflowOverride) {
     if ($WorkflowOverride) {
         return [pscustomobject]@{
             Workflow = $WorkflowOverride
-            SignerDigest = ""
             SourceRef = ""
             DenySelfHosted = $false
         }
@@ -110,21 +101,13 @@ function Get-AttestationPolicy([string]$Repository, [string]$Tag, [string]$Workf
     if ($Repository -ne "andrewdryga/emisar") {
         return [pscustomobject]@{
             Workflow = ""
-            SignerDigest = ""
             SourceRef = ""
             DenySelfHosted = $false
         }
     }
 
-    $workflow = "AndrewDryga/emisar/.github/workflows/mcp-release-trusted.yml"
-    $signerDigest = ""
-    if ($Tag -ceq "mcp-v0.10.1") {
-        $workflow = "AndrewDryga/emisar/.github/workflows/mcp-release.yml"
-        $signerDigest = "642128eb48205405fd44ce845118e6a68737eea2"
-    }
     return [pscustomobject]@{
-        Workflow = $workflow
-        SignerDigest = $signerDigest
+        Workflow = "AndrewDryga/emisar/.github/workflows/mcp-release-trusted.yml"
         SourceRef = "refs/tags/$Tag"
         DenySelfHosted = $true
     }
@@ -169,7 +152,7 @@ function Get-WebJson([string]$Url, [hashtable]$Headers = @{}) {
     return $text | ConvertFrom-Json
 }
 
-function Save-WebFile([string]$Url, [string]$Path, [long]$MaxBytes = 0) {
+function Save-WebFile([string]$Url, [string]$Path) {
     $uri = [Uri]$Url
     Test-TrustedWebUri $uri
     $client = New-WebClient
@@ -182,20 +165,11 @@ function Save-WebFile([string]$Url, [string]$Path, [long]$MaxBytes = 0) {
         if (-not $response.IsSuccessStatusCode) {
             throw "HTTP $([int]$response.StatusCode)"
         }
-        $contentLength = $response.Content.Headers.ContentLength
-        if ($MaxBytes -gt 0 -and $null -ne $contentLength -and $contentLength -gt $MaxBytes) {
-            throw "download exceeds the $MaxBytes byte limit"
-        }
         $inputStream = $response.Content.ReadAsStreamAsync().GetAwaiter().GetResult()
         $outputStream = [IO.File]::Open($Path, [IO.FileMode]::CreateNew, [IO.FileAccess]::Write, [IO.FileShare]::None)
         $buffer = New-Object byte[] 81920
-        [long]$total = 0
         while (($read = $inputStream.Read($buffer, 0, $buffer.Length)) -gt 0) {
-            if ($MaxBytes -gt 0 -and $total + $read -gt $MaxBytes) {
-                throw "download exceeds the $MaxBytes byte limit"
-            }
             $outputStream.Write($buffer, 0, $read)
-            $total += $read
         }
     } catch {
         if ($outputStream) { $outputStream.Dispose(); $outputStream = $null }
@@ -397,55 +371,6 @@ function Assert-SafeArchive([string]$ArchivePath, [string]$ExpectedRoot) {
     }
 }
 
-function Test-Attestation([string]$ArchivePath, [bool]$TestRelease) {
-    if ($TestRelease) {
-        Write-WarningLine "test release; skipping provenance verification"
-        return
-    }
-    if (-not $script:AttestationWorkflow) {
-        Write-WarningLine "no attestation workflow configured; skipping provenance check"
-        return
-    }
-    if (-not (Get-Command gh -ErrorAction SilentlyContinue)) {
-        if ($script:RequireArchiveAttestation) {
-            Use-UnverifiedChecksum "the selected release predates signed checksums and gh is not installed, so its archive attestation cannot be verified"
-            return
-        }
-        Write-WarningLine "gh not installed; skipping release attestation check"
-        return
-    }
-    & gh auth status *> $null
-    if ($LASTEXITCODE -ne 0) {
-        if ($script:RequireArchiveAttestation) {
-            Use-UnverifiedChecksum "the selected release predates signed checksums and gh is not authenticated, so its archive attestation cannot be verified"
-            return
-        }
-        Write-WarningLine "gh is not authenticated; skipping release attestation check"
-        return
-    }
-    $arguments = @(
-        "attestation", "verify", $ArchivePath,
-        "--repo", $script:Repository,
-        "--signer-workflow", $script:AttestationWorkflow
-    )
-    if ($script:AttestationSourceRef) { $arguments += @("--source-ref", $script:AttestationSourceRef) }
-    if ($script:AttestationSignerDigest) { $arguments += @("--signer-digest", $script:AttestationSignerDigest) }
-    if ($script:AttestationDenySelfHosted) { $arguments += "--deny-self-hosted-runners" }
-    & gh @arguments *> $null
-    if ($LASTEXITCODE -ne 0) {
-        Stop-Install "release attestation did not verify against $($script:AttestationWorkflow)"
-    }
-    Write-Info "release attestation verified"
-}
-
-function Use-UnverifiedChecksum([string]$Reason) {
-    if (-not $AllowUnsignedChecksum -and -not (Test-Truthy $env:EMISAR_ALLOW_UNSIGNED_CHECKSUM)) {
-        Stop-Install "$Reason; refusing to trust a same-origin checksum. Install GitHub CLI (authentication is not required), or use -AllowUnsignedChecksum only for an explicit break-glass recovery"
-    }
-    Write-WarningLine "SECURITY BREAK GLASS: $Reason"
-    Write-WarningLine "continuing because -AllowUnsignedChecksum or EMISAR_ALLOW_UNSIGNED_CHECKSUM was set; the same-origin checksum is the only remaining download control"
-}
-
 function Test-ChecksumAttestation([string]$ChecksumsPath, [string]$BundlePath, [bool]$TestRelease) {
     if ($TestRelease) {
         Write-WarningLine "test release; skipping checksum-signature verification"
@@ -455,13 +380,8 @@ function Test-ChecksumAttestation([string]$ChecksumsPath, [string]$BundlePath, [
         Write-WarningLine "no checksum-signature workflow configured; trusting the operator-selected repository's checksum policy"
         return
     }
-    if ($script:RequireArchiveAttestation) {
-        Write-Info "the selected release predates signed checksums; requiring its online archive attestation"
-        return
-    }
     if (-not (Get-Command gh -ErrorAction SilentlyContinue)) {
-        Use-UnverifiedChecksum "gh is not installed, so the checksum signature cannot be verified"
-        return
+        Stop-Install "GitHub CLI is required to verify the checksum signature"
     }
     $arguments = @(
         "attestation", "verify", $ChecksumsPath,
@@ -470,12 +390,10 @@ function Test-ChecksumAttestation([string]$ChecksumsPath, [string]$BundlePath, [
         "--signer-workflow", $script:AttestationWorkflow
     )
     if ($script:AttestationSourceRef) { $arguments += @("--source-ref", $script:AttestationSourceRef) }
-    if ($script:AttestationSignerDigest) { $arguments += @("--signer-digest", $script:AttestationSignerDigest) }
     if ($script:AttestationDenySelfHosted) { $arguments += "--deny-self-hosted-runners" }
     & gh @arguments *> $null
     if ($LASTEXITCODE -ne 0) {
-        Use-UnverifiedChecksum "the checksum signature for the selected release did not verify against $($script:AttestationWorkflow)"
-        return
+        Stop-Install "the checksum signature for the selected release did not verify against $($script:AttestationWorkflow)"
     }
     Write-Info "checksum signature verified"
 }
@@ -582,14 +500,8 @@ if ($Version) { $Version = Normalize-Version $Version }
 $release = Resolve-Release $Version
 $attestationPolicy = Get-AttestationPolicy $script:Repository $release.Tag $script:AttestationWorkflowOverride
 $script:AttestationWorkflow = $attestationPolicy.Workflow
-$script:AttestationSignerDigest = $attestationPolicy.SignerDigest
 $script:AttestationSourceRef = $attestationPolicy.SourceRef
 $script:AttestationDenySelfHosted = $attestationPolicy.DenySelfHosted
-$script:RequireArchiveAttestation = (
-    -not $release.Test -and
-    $script:Repository -ieq $script:OfficialRepository -and
-    ([Version]$release.Tag.Substring(5)) -lt [Version]"0.11.0"
-)
 $versionNumber = $release.Tag.Substring(5)
 $archiveRoot = "emisar-mcp-$versionNumber-windows-$releaseArchitecture"
 $archiveName = "$archiveRoot.zip"
@@ -608,34 +520,16 @@ try {
     Write-Info "downloading $archiveName"
     Save-WebFile "$($release.Base)/$archiveName" $archivePath
     Save-WebFile "$($release.Base)/SHA256SUMS-MCP" $checksumsPath
-    if (-not $release.Test -and $script:AttestationWorkflow -and -not $script:RequireArchiveAttestation) {
-        try {
-            Save-WebFile "$($release.Base)/SHA256SUMS-MCP.sigstore.jsonl" $checksumBundlePath $script:MaxAttestationBundleBytes
-        } catch {
-            if ($release.Source -eq "Emisar release mirror") {
-                Write-WarningLine "Emisar checksum signature unavailable; using the GitHub release mirror"
-                try {
-                    Save-WebFile "https://github.com/$($script:Repository)/releases/download/$($release.Tag)/SHA256SUMS-MCP.sigstore.jsonl" $checksumBundlePath $script:MaxAttestationBundleBytes
-                } catch {
-                    Use-UnverifiedChecksum "could not download the checksum signature for $($release.Tag) from either release mirror"
-                }
-            } else {
-                Use-UnverifiedChecksum "could not download the checksum signature for $($release.Tag)"
-            }
-        }
-        if (Test-Path -LiteralPath $checksumBundlePath -PathType Leaf) {
-            Test-ChecksumAttestation $checksumsPath $checksumBundlePath $false
-        }
-    } else {
-        Test-ChecksumAttestation $checksumsPath $checksumBundlePath ([bool]$release.Test)
+    if (-not $release.Test -and $script:AttestationWorkflow) {
+        Save-WebFile "$($release.Base)/SHA256SUMS-MCP.sigstore.jsonl" $checksumBundlePath
     }
+    Test-ChecksumAttestation $checksumsPath $checksumBundlePath ([bool]$release.Test)
     $checksums = [IO.File]::ReadAllText($checksumsPath)
     $match = [regex]::Match($checksums, "(?im)^([0-9a-f]{64})\s+\*?" + [regex]::Escape($archiveName) + "\s*$")
     if (-not $match.Success) { Stop-Install "SHA256SUMS-MCP does not list $archiveName" }
     $actualArchiveHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $archivePath).Hash
     if ($actualArchiveHash -ine $match.Groups[1].Value) { Stop-Install "checksum verification failed for $archiveName" }
     Write-Info "checksum verified"
-    Test-Attestation $archivePath ([bool]$release.Test)
     Assert-SafeArchive $archivePath $archiveRoot
     Expand-Archive -LiteralPath $archivePath -DestinationPath $temporaryRoot
     $sourceExecutable = Join-Path $temporaryRoot "$archiveRoot\emisar-mcp.exe"
