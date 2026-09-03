@@ -36,6 +36,7 @@ func MCP(root string, out io.Writer) error {
 		{"download checksum mismatch", mcpDownloadChecksum},
 		{"latest release resolution", mcpLatestRelease},
 		{"installation and rollback", mcpInstallRollback},
+		{"temporary directory privilege boundary", mcpTempDirectoryPrivilegeBoundary},
 		{"staging integrity", mcpStagingIntegrity},
 		{"atomic multi-target activation", mcpActivationTransaction},
 		{"bridge runs as the invoking user", mcpCLISudoCredentialBoundary},
@@ -432,22 +433,54 @@ chmod +x "$destination"
 	if err := requireAbsent(hostileExecuted); err != nil {
 		return err
 	}
+	return nil
+}
 
-	if os.Geteuid() == 0 {
-		userTemp := h.path("user-controlled-tmp")
-		if err := h.mkdir(userTemp); err != nil {
-			return err
-		}
-		result = h.functions(h.repoPath("install-mcp.sh"), []string{"make_temp_dir"},
-			`make_temp_dir`+"\n", map[string]string{"TMPDIR": userTemp})
+func mcpTempDirectoryPrivilegeBoundary(h *harness) error {
+	callerTemp := h.path("user-controlled-tmp")
+	if err := h.mkdir(callerTemp); err != nil {
+		return err
+	}
+
+	cases := []struct {
+		name       string
+		uid        string
+		wantParent string
+	}{
+		{name: "root", uid: "0", wantParent: "/tmp"},
+		{name: "non-root", uid: "1000", wantParent: callerTemp},
+	}
+	for _, test := range cases {
+		result := h.functions(h.repoPath("install-mcp.sh"), []string{"make_temp_dir"}, `
+id() {
+  [ "${1:-}" = -u ] || return 9
+  printf '%s\n' "$FIXTURE_UID"
+}
+make_temp_dir
+`, map[string]string{
+			"FIXTURE_UID": test.uid,
+			"TMPDIR":      callerTemp,
+		})
 		output, err := requireOutput(result)
 		if err != nil {
-			return err
+			return fmt.Errorf("%s case: %w", test.name, err)
 		}
-		trusted := strings.TrimSpace(string(output))
-		defer os.RemoveAll(trusted)
-		if !strings.HasPrefix(trusted, "/tmp/emisar-mcp-install.") {
-			return fmt.Errorf("privileged temp directory is %s, expected /tmp", trusted)
+		path := strings.TrimSpace(string(output))
+		if filepath.Dir(path) != test.wantParent {
+			return fmt.Errorf("%s case: temporary directory parent = %q, want %q", test.name, filepath.Dir(path), test.wantParent)
+		}
+		if !strings.HasPrefix(filepath.Base(path), "emisar-mcp-install.") {
+			return fmt.Errorf("%s case: temporary directory basename = %q", test.name, filepath.Base(path))
+		}
+		info, err := os.Lstat(path)
+		if err != nil {
+			return fmt.Errorf("%s case: inspect temporary directory: %w", test.name, err)
+		}
+		if !info.IsDir() {
+			return fmt.Errorf("%s case: temporary path is not a directory: %s", test.name, path)
+		}
+		if err := os.Remove(path); err != nil {
+			return fmt.Errorf("%s case: remove temporary directory: %w", test.name, err)
 		}
 	}
 	return nil
