@@ -61,9 +61,9 @@ defmodule Emisar.Mailers.MonthlyReportTest do
       assert rendered.text =~ "/app/fleet-ops"
       assert rendered.text =~ "Unsubscribe: https://emisar.dev/unsubscribe/monthly-report/token"
 
-      assert rendered.html =~ Style.blend("18") <> "</td>"
+      assert rendered.html =~ ">18</td>"
       assert rendered.html =~ ">17</td>"
-      assert rendered.html =~ Style.blend("Denied") <> "</td>"
+      assert rendered.html =~ ">Denied</td>"
       assert rendered.html =~ ~s(href="#{Emisar.PublicUrl.url("/app/fleet-ops")}")
       assert rendered.html =~ ~s(href="https://emisar.dev/unsubscribe/monthly-report/token")
 
@@ -159,7 +159,7 @@ defmodule Emisar.Mailers.MonthlyReportTest do
 
       assert rendered.text =~ "12,018 runs recorded"
       assert rendered.text =~ "11,976 dispatched across 9 runners"
-      assert rendered.html =~ Style.blend("12,018") <> "</td>"
+      assert rendered.html =~ ">12,018</td>"
       assert rendered.html =~ ">11,902</td>"
     end
 

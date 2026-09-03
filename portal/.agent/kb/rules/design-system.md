@@ -78,7 +78,7 @@ passing the gate). Plus a **custom geometric wordmark** "emisar".
 | Lockup (icon+wordmark) | `images/brand/emisar-logo.svg` | nav, default `<.brand>` |
 | Lockup PNG (dark bg) | `images/brand/emisar-logo.png` | JSON-LD `logo` (SERP-safe) |
 | Status lockups | `images/brand/emisar-status-logo-{light,dark}.png` | Better Stack's 200x29 header slot; never substitute the square icon |
-| Email lockup | `images/brand/emisar-email-logo.png` | email mastheads only — the dark ground is baked in, because a client that force-inverts the body cannot invert an image with it (`design-emails-survive-forced-dark-mode.md`) |
+| Email lockup | `images/brand/emisar-email-logo.png` | email mastheads only — rasterized on its dark ground so it stays legible when a mail client changes the body background |
 | Favicon glyph (tile) | `/favicon.svg`, `/favicon.ico` | browser tab |
 | App icons | `/apple-touch-icon.png`, `/android-chrome-{192,512}.png` | iOS/Android/PWA |
 | OG card | `images/og/emisar-og.webp` | social share |
