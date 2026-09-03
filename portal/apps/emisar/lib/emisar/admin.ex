@@ -3,15 +3,11 @@ defmodule Emisar.Admin do
   Emisar staff operations. Two entries, both gated on the global `is_admin`
   flag; neither is a tenant's own surface, so neither carries a `%Subject{}`.
 
-  `execute/3` is the private administrative command boundary invoked through
+  `execute/2` is the private administrative command boundary invoked through
   release RPC. The public web and MCP routers never call it; the colocated
   private pack is the only caller, its arguments have already passed runner
-  validation, and the action run is the durable audit record. Every mutation
-  lives there. Its third argument is the dispatching staff operator (id or
-  email) — a self-reported argv label, not authentication. Every mutation
-  requires that label to resolve to a current staff user. Subject-aware writes
-  use it for the customer's staff audit attribution; the action run remains the
-  authoritative record of who dispatched the private action.
+  validation, and the action run is the authenticated audit record. Mutations
+  use an actorless platform subject because the RPC carries no user credential.
 
   The staff-console reads — `search_accounts/2`, `account_overview/2`,
   `record_account_view/2` — back the web `/admin` LiveViews. Each takes the
@@ -27,24 +23,6 @@ defmodule Emisar.Admin do
   alias Emisar.{Repo, Users}
 
   @arg_name ~r/^[a-z][a-z0-9_]*$/
-  @mutation_actions ~w(
-    emisar.admin.account.create
-    emisar.admin.account.disable
-    emisar.admin.account.enable
-    emisar.admin.account.erase
-    emisar.admin.user.erase
-    emisar.admin.plan.grant
-    emisar.admin.plan.revoke
-    emisar.admin.invitation.resend
-    emisar.admin.member.invite
-    emisar.admin.member.suspend
-    emisar.admin.member.reinstate
-    emisar.admin.member.set_role
-    emisar.admin.sessions.revoke
-    emisar.admin.mfa.reset
-    emisar.admin.owner.transfer
-    emisar.admin.billing.sync
-  )
   @job_modules [
     Emisar.Accounts.Jobs.MonthlyReports,
     Emisar.ApiKeys.Jobs.DeviceGrantCleanup,
@@ -191,49 +169,14 @@ defmodule Emisar.Admin do
   # -- Private pack RPC ------------------------------------------------
 
   @doc "Execute one action from the trusted, colocated private admin pack."
-  def execute("emisar.admin." <> _ = action_id, encoded_args, operator)
-      when is_list(encoded_args) and length(encoded_args) <= 3 and is_binary(operator) do
-    with {:ok, args} <- decode_args(encoded_args),
-         {:ok, operator_user} <- resolve_operator(operator),
-         :ok <- ensure_mutation_operator(action_id, operator_user) do
-      dispatch(action_id, args, operator_user)
+  def execute("emisar.admin." <> _ = action_id, encoded_args)
+      when is_list(encoded_args) and length(encoded_args) <= 3 do
+    with {:ok, args} <- decode_args(encoded_args) do
+      dispatch(action_id, args)
     end
   end
 
-  def execute(_action_id, _encoded_args, _operator), do: {:error, :invalid_admin_request}
-
-  # The operator is the dispatching staff member's self-reported id or email — an
-  # unauthenticated argv claim. Resolve it to a real user and `ensure_staff/1` it
-  # so a staff mutation is only ever stamped to a genuine staff actor. A blank
-  # operator resolves to nil, which read actions carry and the central mutation
-  # boundary refuses; a claim naming no live staff user fails closed rather
-  # than attributing a customer's mutation to a stranger.
-  defp resolve_operator(operator) when is_binary(operator) do
-    case String.trim(operator) do
-      "" ->
-        {:ok, nil}
-
-      reference ->
-        with {:ok, operator_user} <- fetch_operator_user(reference),
-             :ok <- ensure_staff(operator_user) do
-          {:ok, operator_user}
-        else
-          {:error, :not_found} -> {:error, :unknown_operator}
-          {:error, :unauthorized} -> {:error, :operator_not_staff}
-        end
-    end
-  end
-
-  defp fetch_operator_user(reference) do
-    if Repo.valid_uuid?(reference),
-      do: Users.fetch_user_by_id(reference),
-      else: Users.fetch_user_by_email(reference)
-  end
-
-  defp ensure_mutation_operator(action_id, nil) when action_id in @mutation_actions,
-    do: {:error, :operator_required}
-
-  defp ensure_mutation_operator(_action_id, _operator_user), do: :ok
+  def execute(_action_id, _encoded_args), do: {:error, :invalid_admin_request}
 
   defp decode_args(encoded_args) do
     Enum.reduce_while(encoded_args, {:ok, %{}}, fn encoded, {:ok, args} ->
@@ -249,12 +192,12 @@ defmodule Emisar.Admin do
     end)
   end
 
-  defp dispatch("emisar.admin.account.find", %{"query" => term}, _operator_user) do
+  defp dispatch("emisar.admin.account.find", %{"query" => term}) do
     accounts = term |> String.trim() |> Query.accounts_matching() |> Repo.all()
     {:ok, %{accounts: Enum.map(accounts, &account_result/1)}}
   end
 
-  defp dispatch("emisar.admin.account.show", args, _operator_user) do
+  defp dispatch("emisar.admin.account.show", args) do
     with {:ok, account} <- fetch_account(args),
          {:ok, plan} <- Billing.support_plan(account) do
       result = account |> account_result() |> Map.put(:billing, plan)
@@ -264,8 +207,7 @@ defmodule Emisar.Admin do
 
   defp dispatch(
          "emisar.admin.account.create",
-         %{"email" => email, "name" => name, "slug" => slug},
-         _operator_user
+         %{"email" => email, "name" => name, "slug" => slug}
        ) do
     case Accounts.fetch_account_by_id_or_slug_including_disabled(slug) do
       {:ok, account} ->
@@ -284,8 +226,7 @@ defmodule Emisar.Admin do
 
   defp dispatch(
          "emisar.admin.plan.grant",
-         %{"plan" => plan, "reason" => _reason} = args,
-         _operator_user
+         %{"plan" => plan, "reason" => _reason} = args
        ) do
     with {:ok, account} <- fetch_account(args),
          {:ok, _subscription} <- Billing.grant_complimentary_plan(account, plan) do
@@ -295,8 +236,7 @@ defmodule Emisar.Admin do
 
   defp dispatch(
          "emisar.admin.plan.revoke",
-         %{"reason" => _reason} = args,
-         _operator_user
+         %{"reason" => _reason} = args
        ) do
     with {:ok, account} <- fetch_account(args),
          {:ok, _subscription} <- Billing.revoke_complimentary_plan(account) do
@@ -306,22 +246,19 @@ defmodule Emisar.Admin do
 
   defp dispatch(
          "emisar.admin.account.disable",
-         %{"reason" => reason} = args,
-         operator_user
+         %{"reason" => reason} = args
        ),
-       do: set_account_disabled(args, true, reason, operator_user)
+       do: set_account_disabled(args, true, reason)
 
   defp dispatch(
          "emisar.admin.account.enable",
-         %{"reason" => reason} = args,
-         operator_user
+         %{"reason" => reason} = args
        ),
-       do: set_account_disabled(args, false, reason, operator_user)
+       do: set_account_disabled(args, false, reason)
 
   defp dispatch(
          "emisar.admin.access.diagnose",
-         %{"member" => member} = args,
-         _operator_user
+         %{"member" => member} = args
        ) do
     with {:ok, account} <- fetch_account(args),
          {:ok, membership} <- fetch_membership(account.id, member) do
@@ -339,12 +276,11 @@ defmodule Emisar.Admin do
 
   defp dispatch(
          "emisar.admin.invitation.resend",
-         %{"member" => member} = args,
-         operator_user
+         %{"member" => member} = args
        ) do
     with {:ok, account} <- fetch_account(args),
          {:ok, membership} <- fetch_membership(account.id, member),
-         {:ok, target_subject} <- support_subject(account, operator_user),
+         target_subject = support_subject(account),
          {:ok, result} <-
            Accounts.resend_account_invitation_and_deliver(membership, inviter(), target_subject) do
       {:ok, membership_result(result.membership)}
@@ -353,11 +289,10 @@ defmodule Emisar.Admin do
 
   defp dispatch(
          "emisar.admin.member.invite",
-         %{"email" => email, "role" => role} = args,
-         operator_user
+         %{"email" => email, "role" => role} = args
        ) do
     with {:ok, account} <- fetch_account(args),
-         {:ok, target_subject} <- support_subject(account, operator_user),
+         target_subject = support_subject(account),
          {:ok, result} <-
            Accounts.invite_user_to_account_and_deliver(
              %{"email" => email, "role" => role, "runner_access_mode" => "all"},
@@ -370,33 +305,31 @@ defmodule Emisar.Admin do
     end
   end
 
-  defp dispatch("emisar.admin.member.suspend", args, operator_user),
-    do: mutate_member(args, &Accounts.suspend_membership/2, operator_user)
+  defp dispatch("emisar.admin.member.suspend", args),
+    do: mutate_member(args, &Accounts.suspend_membership/2)
 
-  defp dispatch("emisar.admin.member.reinstate", args, operator_user),
-    do: mutate_member(args, &Accounts.reinstate_membership/2, operator_user)
+  defp dispatch("emisar.admin.member.reinstate", args),
+    do: mutate_member(args, &Accounts.reinstate_membership/2)
 
   defp dispatch(
          "emisar.admin.member.set_role",
-         %{"role" => role} = args,
-         operator_user
+         %{"role" => role} = args
        ) do
-    mutate_member(args, &Accounts.update_membership_role(&1, role, &2), operator_user)
+    mutate_member(args, &Accounts.update_membership_role(&1, role, &2))
   end
 
-  defp dispatch("emisar.admin.sessions.revoke", args, operator_user),
-    do: mutate_member(args, &Accounts.end_all_sessions_for/2, operator_user)
+  defp dispatch("emisar.admin.sessions.revoke", args),
+    do: mutate_member(args, &Accounts.end_all_sessions_for/2)
 
-  defp dispatch("emisar.admin.mfa.reset", args, operator_user),
-    do: mutate_member(args, &Accounts.reset_member_mfa_for_support/2, operator_user)
+  defp dispatch("emisar.admin.mfa.reset", args),
+    do: mutate_member(args, &Accounts.reset_member_mfa_for_support/2)
 
   defp dispatch(
          "emisar.admin.owner.transfer",
-         %{"new_owner" => new_owner} = args,
-         operator_user
+         %{"new_owner" => new_owner} = args
        ) do
     with {:ok, account} <- fetch_account(args),
-         {:ok, target_subject} <- support_subject(account, operator_user),
+         target_subject = support_subject(account),
          {:ok, next_owner} <- fetch_membership(account.id, new_owner),
          {:ok, promoted} <- Accounts.update_membership_role(next_owner, "owner", target_subject),
          :ok <- maybe_demote_previous_owner(account, args["previous_owner"], target_subject) do
@@ -405,37 +338,37 @@ defmodule Emisar.Admin do
     end
   end
 
-  defp dispatch("emisar.admin.billing.sync", args, _operator_user) do
+  defp dispatch("emisar.admin.billing.sync", args) do
     with {:ok, account} <- fetch_account(args),
          {:ok, _subscription} <- Billing.sync_subscription_for_support(account) do
       Billing.support_plan(account)
     end
   end
 
-  defp dispatch("emisar.admin.analytics.executive", args, _operator_user),
+  defp dispatch("emisar.admin.analytics.executive", args),
     do: analytics_executive(args)
 
-  defp dispatch("emisar.admin.analytics.revenue", _args, _operator_user) do
+  defp dispatch("emisar.admin.analytics.revenue", _args) do
     {:ok, %{subscriptions: Query.subscription_posture() |> Repo.all()}}
   end
 
-  defp dispatch("emisar.admin.analytics.engagement", args, _operator_user),
+  defp dispatch("emisar.admin.analytics.engagement", args),
     do: analytics_engagement(args)
 
-  defp dispatch("emisar.admin.analytics.reliability", args, _operator_user),
+  defp dispatch("emisar.admin.analytics.reliability", args),
     do: analytics_reliability(args)
 
-  defp dispatch("emisar.admin.analytics.mcp", args, _operator_user),
+  defp dispatch("emisar.admin.analytics.mcp", args),
     do: analytics_mcp(args)
 
-  defp dispatch("emisar.admin.analytics.security", args, _operator_user),
+  defp dispatch("emisar.admin.analytics.security", args),
     do: analytics_security(args)
 
-  defp dispatch("emisar.admin.analytics.data_quality", _args, _operator_user) do
+  defp dispatch("emisar.admin.analytics.data_quality", _args) do
     {:ok, %{row_counts: Query.table_counts() |> Repo.one()}}
   end
 
-  defp dispatch("emisar.admin.runtime.status", _args, _operator_user) do
+  defp dispatch("emisar.admin.runtime.status", _args) do
     {:ok,
      %{
        node: Atom.to_string(node()),
@@ -446,7 +379,7 @@ defmodule Emisar.Admin do
      }}
   end
 
-  defp dispatch("emisar.admin.runtime.jobs", _args, _operator_user) do
+  defp dispatch("emisar.admin.runtime.jobs", _args) do
     jobs =
       Enum.map(@job_modules, fn module ->
         pid = :global.whereis_name({Emisar.Jobs.Executors.GloballyUnique, module})
@@ -456,7 +389,7 @@ defmodule Emisar.Admin do
     {:ok, %{jobs: jobs}}
   end
 
-  defp dispatch("emisar.admin.runtime.database", _args, _operator_user) do
+  defp dispatch("emisar.admin.runtime.database", _args) do
     started = System.monotonic_time()
 
     case Ecto.Adapters.SQL.query(Repo, "SELECT current_database(), pg_is_in_recovery()", []) do
@@ -471,7 +404,7 @@ defmodule Emisar.Admin do
     end
   end
 
-  defp dispatch("emisar.admin.runtime.recent_failures", args, _operator_user) do
+  defp dispatch("emisar.admin.runtime.recent_failures", args) do
     since = since(args)
 
     {:ok,
@@ -484,8 +417,7 @@ defmodule Emisar.Admin do
 
   defp dispatch(
          "emisar.admin.account.erase",
-         %{"account_id" => account_id, "confirmation" => confirmation, "reason" => _reason},
-         _operator_user
+         %{"account_id" => account_id, "confirmation" => confirmation, "reason" => _reason}
        )
        when account_id == confirmation do
     with {:ok, account} <- Accounts.delete_by_id(account_id) do
@@ -495,8 +427,7 @@ defmodule Emisar.Admin do
 
   defp dispatch(
          "emisar.admin.user.erase",
-         %{"user_id" => user_id, "confirmation" => confirmation, "reason" => _reason},
-         _operator_user
+         %{"user_id" => user_id, "confirmation" => confirmation, "reason" => _reason}
        )
        when user_id == confirmation do
     with {:ok, user} <- Accounts.erase_user_and_owned_accounts(user_id) do
@@ -504,12 +435,12 @@ defmodule Emisar.Admin do
     end
   end
 
-  defp dispatch(action_id, _args, _operator_user),
+  defp dispatch(action_id, _args),
     do: {:error, {:unsupported_admin_action, action_id}}
 
-  defp set_account_disabled(args, disabled?, reason, operator_user) do
+  defp set_account_disabled(args, disabled?, reason) do
     with {:ok, account} <- fetch_account(args),
-         {:ok, target_subject} <- support_subject(account, operator_user),
+         target_subject = support_subject(account),
          {:ok, account} <-
            Accounts.set_account_disabled_for_support(
              account.id,
@@ -521,12 +452,11 @@ defmodule Emisar.Admin do
     end
   end
 
-  defp mutate_member(%{"member" => member} = args, mutation, operator_user) do
+  defp mutate_member(%{"member" => member} = args, mutation) do
     with {:ok, account} <- fetch_account(args),
-         {:ok, membership} <- fetch_membership(account.id, member),
-         {:ok, target_subject} <- support_subject(account, operator_user) do
+         {:ok, membership} <- fetch_membership(account.id, member) do
       membership
-      |> mutation.(target_subject)
+      |> mutation.(support_subject(account))
       |> normalize_member_mutation(membership)
     end
   end
@@ -567,25 +497,16 @@ defmodule Emisar.Admin do
     Repo.fetch(queryable, Accounts.Membership.Query)
   end
 
-  # A platform subject that acts AS Emisar: owner permissions, no actor or
-  # membership of its own, and the resolved staff operator's id so every mutation
-  # it authorizes is labelled `"staff"` (never `"system"`). Customer-visible
-  # events deliberately hide the self-reported person's id; the authenticated
-  # dispatcher remains in the action-run audit.
-  # Keeping actor/membership nil preserves the break-glass exemptions in Accounts
-  # that key on that shape. A mutation dispatched with no operator is refused here
-  # rather than silently falling back to an anonymous actor.
-  defp support_subject(account, %Users.User{} = operator) do
-    {:ok,
-     %Subject{
-       account: account,
-       staff_operator_id: operator.id,
-       role: :owner,
-       permissions: Auth.Permissions.for_role(:owner)
-     }}
+  # Platform support work has no user credential at this RPC boundary. The
+  # authenticated action run records who dispatched it; domain audit records it
+  # as system work.
+  defp support_subject(account) do
+    %Subject{
+      account: account,
+      role: :owner,
+      permissions: Auth.Permissions.for_role(:owner)
+    }
   end
-
-  defp support_subject(_account, nil), do: {:error, :operator_required}
 
   defp account_result(account) do
     %{

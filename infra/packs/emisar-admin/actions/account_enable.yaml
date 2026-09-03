@@ -16,17 +16,11 @@ args:
     required: true
     description: Support reason recorded in audit.
     validation: {max_length: 500}
-  - name: operator
-    type: string
-    required: true
-    description: Self-reported staff operator label (user UUID or email); must resolve to a current Emisar staff user.
-    validation: {max_length: 320}
 execution:
   script: {path: scripts/callback.sh, interpreter: /bin/sh}
   argv:
     - "emisar.admin.account.enable"
     - "account={{ args.account }}"
     - "reason={{ args.reason }}"
-    - "operator={{ args.operator }}"
   timeout: 60s
 output: {parser: json, parser_required: true, max_stdout_bytes: 65536, max_stderr_bytes: 8192}

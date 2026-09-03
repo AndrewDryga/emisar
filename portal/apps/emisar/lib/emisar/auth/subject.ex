@@ -33,15 +33,6 @@ defmodule Emisar.Auth.Subject do
       re-read reject a disable/re-enroll race.
     * `user_identity_id` — the `%SSO.UserIdentity{}` behind an `:sso`
       session; nil otherwise.
-    * `staff_operator_id` — the id of the Emisar staff operator behind a
-      platform/support subject (the private admin console / release-RPC support
-      path), or nil. That subject holds no `actor` or membership of its own — it
-      acts as the platform — so `actor_kind/1` reads this field to mark a staff
-      mutation as `"staff"` (labeled "Emisar staff") rather than an anonymous
-      `"system"` job. On the RELEASE-RPC path the id is a self-reported argv
-      claim, so `Audit.Events.audit_actor_id/1` deliberately keeps it OUT of the
-      customer's `actor_id`; the specific operator stays accountable in Emisar's
-      own authenticated dispatch audit. nil for every ordinary caller.
   """
   alias Emisar.{Accounts, RequestContext, Users}
   alias Emisar.Auth.Role
@@ -64,8 +55,7 @@ defmodule Emisar.Auth.Subject do
           auth_method: auth_method() | nil,
           mfa: boolean() | nil,
           mfa_enrollment_verified_at: DateTime.t() | nil,
-          user_identity_id: binary() | nil,
-          staff_operator_id: binary() | nil
+          user_identity_id: binary() | nil
         }
 
   defstruct account: nil,
@@ -77,8 +67,7 @@ defmodule Emisar.Auth.Subject do
             auth_method: nil,
             mfa: nil,
             mfa_enrollment_verified_at: nil,
-            user_identity_id: nil,
-            staff_operator_id: nil
+            user_identity_id: nil
 
   @doc """
   Build a subject from a `%Users.User{}` + their `%Accounts.Membership{}`.
@@ -163,11 +152,6 @@ defmodule Emisar.Auth.Subject do
   String label for the subject's actor kind. Used by `Audit.log/3`
   callers to stamp the `actor_kind` field consistently.
   """
-  # A platform/support subject carries the staff operator's id but no actor of
-  # its own (it acts AS the platform). It is its own actor class — never an
-  # anonymous `"system"` job, never an ordinary member `"user"` — so a staff
-  # mutation is attributed to that operator.
-  def actor_kind(%__MODULE__{staff_operator_id: id}) when is_binary(id), do: "staff"
   def actor_kind(%__MODULE__{actor: %Users.User{}}), do: "user"
   def actor_kind(%__MODULE__{actor: %Emisar.ApiKeys.ApiKey{}}), do: "api_key"
   def actor_kind(%__MODULE__{actor: %Emisar.Runners.Runner{}}), do: "runner"
@@ -176,10 +160,8 @@ defmodule Emisar.Auth.Subject do
   def actor_kind(%__MODULE__{}), do: "system"
 
   @doc """
-  The actor's id — the staff operator on a platform/support subject, else the
-  actor's own id, or `nil` for an actor-less subject.
+  The actor's id, or `nil` for an actor-less subject.
   """
-  def actor_id(%__MODULE__{staff_operator_id: id}) when is_binary(id), do: id
   def actor_id(%__MODULE__{actor: %{id: id}}), do: id
   def actor_id(%__MODULE__{}), do: nil
 

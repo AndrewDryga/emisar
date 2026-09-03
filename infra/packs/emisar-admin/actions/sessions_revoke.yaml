@@ -16,17 +16,11 @@ args:
     required: true
     description: Exact membership UUID or member email.
     validation: {max_length: 320}
-  - name: operator
-    type: string
-    required: true
-    description: Self-reported staff operator label (user UUID or email); must resolve to a current Emisar staff user.
-    validation: {max_length: 320}
 execution:
   script: {path: scripts/callback.sh, interpreter: /bin/sh}
   argv:
     - "emisar.admin.sessions.revoke"
     - "account={{ args.account }}"
     - "member={{ args.member }}"
-    - "operator={{ args.operator }}"
   timeout: 60s
 output: {parser: json, parser_required: true, max_stdout_bytes: 65536, max_stderr_bytes: 8192}
