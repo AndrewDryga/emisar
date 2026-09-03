@@ -2,11 +2,16 @@ schema_version: 1
 id: haproxy.show_errors
 title: show errors
 kind: exec
-risk: low
-description: List recent request/response errors captured by HAProxy. Use to debug 503s.
+risk: high
+description: >
+  List recent request/response errors captured by HAProxy. Use to debug 503s.
+  Each entry is the verbatim captured buffer of the failing transaction — the
+  request line and every header, so cookies, `Authorization` headers, and the
+  leading body bytes come back as-is. That content is client-supplied and no
+  redaction list enumerates it, so this is approval-gated. Read-only.
 side_effects:
   - One admin socket command.
-  - Read-only.
+  - Read-only, but returns raw request/response bytes (may include credentials).
 args: []
 execution:
   command:

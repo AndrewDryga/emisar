@@ -1,6 +1,26 @@
 recipes:
+  # The venv starts owner-only, so group membership alone is not enough — the
+  # recipe's chmod is load-bearing and the probe proves it.
   - access: 0
     recipe: 0
+    fixture: debian
+    action: py.venv_python_version
+    prepare:
+      - groupadd packtest-deploy
+      - useradd --no-create-home --gid packtest-deploy --shell /usr/sbin/nologin packtest-deploy
+      - install -d -o packtest-deploy -g packtest-deploy -m 0755 /opt/app
+      - install -d -o packtest-deploy -g packtest-deploy -m 0700 /opt/app/venv
+      - install -d -o packtest-deploy -g packtest-deploy -m 0700 /opt/app/venv/bin
+      - install -o packtest-deploy -g packtest-deploy -m 0600 /dev/null /opt/app/venv/bin/python
+    # A redeploy recreates the tree under the deployment's own umask; the group
+    # membership is what has to survive it.
+    recreate:
+      - rm -rf /opt/app/venv/bin
+      - install -d -o packtest-deploy -g packtest-deploy -m 0755 /opt/app/venv/bin
+      - install -o packtest-deploy -g packtest-deploy -m 0644 /dev/null /opt/app/venv/bin/python
+    probe: test -r /opt/app/venv/bin/python
+  - access: 0
+    recipe: 1
     fixture: debian
     action: py.venv_python_version
     prepare: ["true"]

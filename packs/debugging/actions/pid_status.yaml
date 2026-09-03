@@ -24,6 +24,8 @@ args:
       max: 4194304
 
 execution:
+  # The execution contract matches forensics.pid_status — same command, same deadline
+  # and caps, whichever pack the operator installed.
   command:
     binary: cat
     argv:

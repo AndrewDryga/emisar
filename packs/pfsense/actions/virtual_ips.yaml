@@ -24,9 +24,15 @@ output:
   max_stdout_bytes: 1048576
   max_stderr_bytes: 8192
   redact:
+    # `[^"]*` stopped at the first quote, so this rule alone replaced only up to
+    # an escaped one and emitted the password's tail. Nothing leaked in
+    # production — the runner's own `json-secret-field` default matches
+    # `"password"` too and catches that shape — but a pack rule must not be
+    # weaker than the backstop it duplicates, so it now consumes `\.` the same
+    # way. The twin rule in interface_config.yaml is identical — keep them that way.
     - name: carp-vip-password
       type: regex
-      pattern: '("password"\s*:\s*)"[^"]*"'
+      pattern: '("password"\s*:\s*)"(?:\\.|[^"\\])*"'
       replacement: '${1}"[REDACTED]"'
 examples:
   - title: All virtual IPs

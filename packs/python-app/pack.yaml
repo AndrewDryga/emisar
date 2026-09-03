@@ -2,7 +2,7 @@ schema_version: 1
 
 id: python-app
 name: Python application runtime
-version: 0.1.11
+version: 0.1.12
 description: >
   Inspect a Python deployment — interpreter + venv state, pip
   inventory + freeze, dependency conflicts, outdated packages, sys.path.
@@ -38,7 +38,20 @@ setup:
         - py.pip_cache_info
       requirement: Read a virtual environment owned by another operating-system user.
       recipes:
-        - name: Run the Emisar service as root
+        - name: Add the Emisar service user to the group that owns the venv
+          commands:
+            - "sudo usermod -aG \"$(stat -c %G /opt/app/venv)\" emisar"
+            - "sudo chmod -R g+rX /opt/app/venv"
+            - "sudo systemctl restart emisar"
+          verify:
+            - "id -nG emisar | tr ' ' '\\n' | grep -Fx \"$(stat -c %G /opt/app/venv)\""
+            - "sudo -u emisar test -r /opt/app/venv/bin/python"
+          impact: >
+            Every process running as emisar can read whatever the deployment group grants on
+            this host, not only the virtual environment. It gets no write access and no other
+            user's files. Substitute your own `PY_VENV` for `/opt/app/venv`, and note that an
+            action declaring `execution.user` replaces these inherited supplementary groups.
+        - name: Run the Emisar service as root (last resort)
           commands:
             - "sudo install -d -m 0755 /etc/systemd/system/emisar.service.d"
             - "printf '%s\\n' '[Service]' 'User=root' 'Group=root' | sudo tee /etc/systemd/system/emisar.service.d/10-python-app-host-access.conf >/dev/null"
@@ -49,6 +62,8 @@ setup:
           impact: >
             Every Emisar action on this runner executes as root and can read application code,
             installed packages, and any credentials stored beside the virtual environment.
+            Reading a venv is a filesystem-permission problem, so take the group grant above
+            unless the venv's owner genuinely cannot share a group.
   verify: py.python_version_system
 
 actions:

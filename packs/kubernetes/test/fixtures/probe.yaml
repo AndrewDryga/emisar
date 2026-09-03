@@ -11,6 +11,11 @@ spec:
     - name: probe
       image: busybox:1.38.0
       command: [sh, -c, "echo harness-probe-log; sleep 3600"]
+      # A plain env literal, so pod_describe's own case proves the exposure its
+      # `high` tier is for. harness-deployment carries the same one for get_yaml.
+      env:
+        - name: PACKTEST_ENV_LITERAL
+          value: packtest-env-literal-visible
   restartPolicy: Never
 ---
 apiVersion: v1
@@ -42,6 +47,9 @@ spec:
         - name: probe
           image: busybox:1.38.0
           command: [sh, -c, "echo harness-deployment-log; sleep 3600"]
+          env:
+            - name: PACKTEST_ENV_LITERAL
+              value: packtest-env-literal-visible
 ---
 apiVersion: v1
 kind: Service

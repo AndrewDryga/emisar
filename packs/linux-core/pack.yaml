@@ -2,8 +2,11 @@ schema_version: 1
 
 id: linux-core
 name: Linux core operations pack
-version: 0.4.9
-retired_below: 0.3.22
+version: 0.4.10
+# 0.4.9 and below let journalctl_grep answer a truncated slice exactly like a
+# clean window, so "that error never appeared" was indistinguishable from
+# "we only searched the last 2,000 entries".
+retired_below: 0.4.10
 description: >
   Read-only Linux diagnostics plus narrow service control. Disk, mem,
   uptime, journalctl, log grep + tail, users/auth introspection, cron

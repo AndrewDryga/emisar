@@ -21,6 +21,17 @@ else
 	exit "$status"
 fi
 
+# -n returns the LAST entry_limit entries INSIDE the window, so on a busy unit a
+# 24h window is really the last few minutes. Without this line a truncated
+# no-match is byte-identical to a real all-clear, which is the answer an
+# operator acts on during an incident. stderr keeps the stdout contract intact
+# and the runner records it on the run. The comparison is on lines rather than
+# entries, so a multi-line message can warn early — the safe direction.
+if [ "$(wc -l <"$tmp/journal")" -ge "$entry_limit" ]; then
+	printf 'journal slice hit the %s-entry limit; older entries in the %s window were not searched\n' \
+		"$entry_limit" "$since" >&2
+fi
+
 if grep -E -- "$pattern" "$tmp/journal" >"$tmp/matches"; then
 	tail -n 500 "$tmp/matches"
 else

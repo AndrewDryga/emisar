@@ -10,7 +10,6 @@ cases:
   # delete_series first and then probes that the TSDB accepted the cleanup —
   # the admin API answers 204 with an empty body, so `status` is the evidence.
   - action: prom.clean_tombstones
-    args: {target: "http://prometheus:9090"}
     arrange:
       - name: a deletion leaves a tombstone behind
         argv: [/bin/sh, -c, "curl -sSf -X POST 'http://prometheus:9090/api/v1/admin/tsdb/delete_series?match[]=up'"]
@@ -108,7 +107,7 @@ cases:
   # The admin API answers 204 with an empty body, so the tombstone the delete
   # left behind is the evidence rather than the action's own output.
   - action: prom.delete_series
-    args: {target: "http://prometheus:9090", matcher: '{__name__="up"}'}
+    args: {matcher: '{__name__="up"}'}
     probes:
       - name: the tombstoned series stops answering queries
         argv: [/bin/sh, -c, "curl -sSf 'http://prometheus:9090/api/v1/query?query=up'"]
@@ -118,7 +117,6 @@ cases:
           stdout_contains: ['"result":[]']
 
   - action: prom.snapshot
-    args: {target: "http://prometheus:9090"}
     expect:
       stdout_contains: ['"status":"success"', '"name"']
     probes:
@@ -130,7 +128,6 @@ cases:
           stdout_contains: [snapshot-created]
 
   - action: prom.reload_config
-    args: {target: "http://prometheus:9090"}
     probes:
       - argv: [/bin/sh, -c, 'curl -fsS "$PROM_URL/api/v1/status/config" | grep -q ''"status":"success"'' && echo reloaded']
         expect:

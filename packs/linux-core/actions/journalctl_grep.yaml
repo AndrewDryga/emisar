@@ -9,9 +9,11 @@ description: >
   Read a bounded recent slice for one unit, then return entries matching a
   POSIX extended regular expression. Filtering uses grep -E instead of
   journalctl --grep, so it works when journalctl was built without PCRE2. Use
-  when you already know the rough request ID, host, IP, or error text. No match
-  is a successful empty result; an invalid expression or unreadable journal is
-  a failure. Output is redacted before leaving the host.
+  when you already know the rough request ID, host, IP, or error text. Only the
+  most recent `entry_limit` entries in the window are read, and stderr says so
+  when that limit was hit — a no-match is a successful empty result, conclusive
+  only for the slice that was searched. An invalid expression or unreadable
+  journal is a failure. Output is redacted before leaving the host.
 
 side_effects:
   - Reads service logs which may contain operational secrets.

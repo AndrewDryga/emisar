@@ -382,58 +382,26 @@ func TestDispatch_Ec2TerminateInstance_InstanceIdBounded(t *testing.T) {
 }
 
 // a runtime pid arg is bounded at dispatch. Grounded in
-// jvm.heap_dump (a critical that pauses the JVM and writes live heap, incl.
-// secrets, to disk). Its pid arg is range-bounded; a non-numeric and an
-// out-of-range value are rejected, a real pid passes. Read the real arg's
-// bounds from the loaded spec so the boundary tracks the author's numbers.
+// jvm.heap_dump (a critical that pauses the JVM and writes the live heap,
+// secrets included, to disk). Its `pid` is bounded `min: 1, max: 4194304` —
+// the Linux pid_max ceiling, the same bound postgres.terminate_backend carries.
+//
+// The numbers are spelled literally, like the postgres sibling, rather than
+// read back from the loaded spec. A test that derives its boundary from the
+// action can only check the arg against itself: DELETING min/max from
+// packs/java-jvm/actions/heap_dump.yaml — the regression this test exists to
+// catch — used to make it report SKIP while an unbounded integer reached
+// `jmap -dump:live,format=b,file=/tmp/<pid>-heap.hprof`.
 func TestDispatch_JvmHeapDump_PidBounded(t *testing.T) {
 	reg := loadRealLibrary(t)
 	const id = "jvm.heap_dump"
-	act, ok := reg.Action(id)
-	if !ok {
-		t.Skipf("%s not in library", id)
-	}
 
-	// Find the pid-style integer arg + its declared min/max from the real spec.
-	var pidArg string
-	var min, max int64
-	for _, a := range act.Args {
-		if a.Type == "integer" && a.Validation != nil && a.Validation.Min != nil && a.Validation.Max != nil {
-			pidArg = a.Name
-			min = int64(*a.Validation.Min)
-			max = int64(*a.Validation.Max)
-			break
-		}
-	}
-	if pidArg == "" {
-		t.Skipf("%s declares no range-bounded integer arg to exercise", id)
-	}
+	accepted(t, dispatchValidate(t, reg, id, map[string]any{"pid": 1}))
+	accepted(t, dispatchValidate(t, reg, id, map[string]any{"pid": 4194304}))
 
-	// A valid pid at the declared floor passes its own bound check; a value
-	// below min and a non-numeric value are rejected on that arg.
-	if err := dispatchValidate(t, reg, id, map[string]any{pidArg: min - 1}); err != nil {
-		if ve, ok := err.(*validation.Error); ok && ve.Arg == pidArg {
-			if ve.Code != "min" {
-				t.Fatalf("below-min %s: code %q, want min (err: %v)", pidArg, ve.Code, err)
-			}
-		}
-	} else {
-		t.Fatalf("%s = %d (below declared min %d) should be rejected", pidArg, min-1, min)
-	}
-	if err := dispatchValidate(t, reg, id, map[string]any{pidArg: max + 1}); err != nil {
-		if ve, ok := err.(*validation.Error); ok && ve.Arg == pidArg && ve.Code != "max" {
-			t.Fatalf("above-max %s: code %q, want max (err: %v)", pidArg, ve.Code, err)
-		}
-	} else {
-		t.Fatalf("%s = %d (above declared max %d) should be rejected", pidArg, max+1, max)
-	}
-	if err := dispatchValidate(t, reg, id, map[string]any{pidArg: "lots"}); err != nil {
-		if ve, ok := err.(*validation.Error); ok && ve.Arg == pidArg && ve.Code != "type" {
-			t.Fatalf("non-numeric %s: code %q, want type (err: %v)", pidArg, ve.Code, err)
-		}
-	} else {
-		t.Fatalf("non-numeric %s should be rejected on type", pidArg)
-	}
+	rejected(t, dispatchValidate(t, reg, id, map[string]any{"pid": 0}), "pid", "min")
+	rejected(t, dispatchValidate(t, reg, id, map[string]any{"pid": 4194305}), "pid", "max")
+	rejected(t, dispatchValidate(t, reg, id, map[string]any{"pid": "lots"}), "pid", "type")
 }
 
 // a datastore arg is bounded at dispatch AND the boolean

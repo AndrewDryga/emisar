@@ -2,7 +2,11 @@ schema_version: 1
 
 id: process-forensics
 name: Process forensics
-version: 0.1.9
+version: 0.1.10
+# 0.1.9 and below answered "this process has no threads" for a pid that had
+# exited or that hidepid keeps from the runner — an empty success on a low,
+# auto-running diagnostic.
+retired_below: 0.1.10
 description: >
   Deep per-process diagnostics for "why is this process stuck / slow /
   leaking?" — strace (HIGH RISK; slows the target), pid memory maps,

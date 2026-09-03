@@ -2,7 +2,10 @@ schema_version: 1
 
 id: haproxy
 name: HAProxy operations
-version: 0.1.13
+version: 0.1.14
+# 0.1.13 and below rated show_errors `low`, so HAProxy's verbatim capture of a
+# failing request — cookies and Authorization headers included — auto-ran.
+retired_below: 0.1.14
 description: >
   Stats, server state, frontends/backends, session inventory, plus narrow
   mutators to enable/disable backend servers. Talks to the HAProxy admin
@@ -32,7 +35,7 @@ setup:
       description: Path to the HAProxy admin/stats UNIX socket (the `stats socket` from haproxy.cfg).
       example: /run/haproxy/admin.sock
   notes:
-    - "`HAPROXY_SOCK` only reaches an action when the runner allowlists it in `execution.inherit_env` — the action env is scrubbed to PATH/LANG/LC_ALL/TERM by default. Unset, the actions fall back to the conventional socket path, so a non-default runtime socket reads the wrong one or is simply absent."
+    - "`HAPROXY_SOCK` only reaches an action when the runner allowlists it in `execution.inherit_env` — the action env is scrubbed to PATH/LANG/LC_ALL/TERM by default. There is NO fallback: unset, every action hands socat an empty address and fails with an `unknown device/address` error rather than naming the missing allowlist entry."
     - "The socket must be declared with `level admin` in haproxy.cfg for the enable/disable/set mutators to work."
   host_access:
     - actions:

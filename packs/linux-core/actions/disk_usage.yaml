@@ -29,13 +29,12 @@ args:
     description: One or more paths to inspect. Each path is passed to df -P -h.
     validation:
       max_items: 8
+      # The single "/" entry is not a restriction — underPrefix short-circuits
+      # root to true for every absolute path, so any sibling entry beside it is
+      # dead. It is here to switch ON path validation at all: that is what
+      # activates Clean + EvalSymlinks and the runner's protected-path refusal.
       allowed_prefixes:
         - /
-        - /var
-        - /tmp
-        - /home
-        - /usr
-        - /opt
 
 execution:
   command:

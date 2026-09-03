@@ -4,7 +4,7 @@ title: dig +trace (full delegation chain)
 kind: exec
 risk: low
 description: >
-  `dig +trace` — follow the DNS delegation chain from the root to the authoritative server. Use to debug "the wrong nameservers are answering."
+  Trace the DNS delegation chain from the root to the authoritative server (`dig +trace`). Use to debug "the wrong nameservers are answering."
 side_effects:
   - Multiple DNS queries down the delegation tree.
   - Read-only.

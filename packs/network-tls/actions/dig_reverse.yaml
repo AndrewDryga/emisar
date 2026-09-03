@@ -3,7 +3,7 @@ id: net.dig_reverse
 title: dig -x (reverse DNS)
 kind: exec
 risk: low
-description: '`dig -x <ip>` — reverse PTR lookup for an IPv4 or IPv6 address.'
+description: 'Look up the reverse PTR record for an IPv4 or IPv6 address (`dig -x <ip>`).'
 side_effects:
   - One DNS query.
   - Read-only.

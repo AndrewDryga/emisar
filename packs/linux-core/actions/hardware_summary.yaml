@@ -6,9 +6,9 @@ kind: exec
 risk: low
 
 description: >
-  `dmidecode` system + bios + chassis sections. Vendor, model,
-  serial, BIOS version, manufacturing date. Required root (read-only
-  on SMBIOS). Useful when correlating hardware-class to OS-class
+  Show hardware identity (`dmidecode` system + bios + chassis sections) —
+  vendor, model, serial, BIOS version, manufacturing date. Required root
+  (read-only on SMBIOS). Useful when correlating hardware-class to OS-class
   incidents. dmidecode reads SMBIOS — absent on containers and many
   cloud VMs, where this fails command-not-found; expect it on bare metal
   or VMs with SMBIOS passthrough.

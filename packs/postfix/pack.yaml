@@ -2,8 +2,11 @@ schema_version: 1
 
 id: postfix
 name: Postfix mail server
-version: 0.1.17
-retired_below: 0.1.11
+version: 0.1.18
+# 0.1.17 and below answered "every queue is 0" when the runner could not read
+# the spool — the default for a non-root runner — so a backed-up queue read as
+# healthy on a low, auto-running action.
+retired_below: 0.1.18
 description: >
   Queue inspection, config dump, log tailing, plus narrow operator
   actions (flush, requeue, delete-by-queue-id). These mutators are high-

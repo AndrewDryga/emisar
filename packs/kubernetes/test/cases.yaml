@@ -74,7 +74,7 @@ cases:
   - action: kubernetes.get_yaml
     args: {namespace: default, kind: deployment, name: harness-deployment}
     expect:
-      stdout_contains: ["kind: Deployment", "name: harness-deployment"]
+      stdout_contains: ["kind: Deployment", "name: harness-deployment", packtest-env-literal-visible]
   - action: kubernetes.hpa_list
     expect:
       stdout_contains: [harness-hpa, harness-deployment]
@@ -108,7 +108,7 @@ cases:
   - action: kubernetes.pod_describe
     args: {namespace: default, name: probe}
     expect:
-      stdout_contains: ["Name:", probe, Running]
+      stdout_contains: ["Name:", probe, Running, packtest-env-literal-visible]
   - action: kubernetes.pod_logs
     args: {namespace: default, name: probe, lines: 10}
     expect:

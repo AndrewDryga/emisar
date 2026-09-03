@@ -6,9 +6,9 @@ kind: exec
 risk: low
 
 description: >
-  `who` + `w` — usernames, terminals, login times, source IPs, and
-  what each session is currently running. Use to confirm whether a
-  human is on the box during an incident. Read-only.
+  List logged-in sessions (`who` + `w`) — usernames, terminals, login times,
+  source IPs, and what each session is currently running. Use to confirm
+  whether a human is on the box during an incident. Read-only.
 
 side_effects:
   - Two utility invocations.

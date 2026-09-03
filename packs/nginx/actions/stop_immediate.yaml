@@ -4,7 +4,7 @@ title: nginx stop (immediate)
 kind: exec
 risk: critical
 description: >
-  `nginx -s stop` — workers stop NOW. In-flight requests are dropped mid-byte. Prefer `nginx.quit_graceful` unless the server is hung.
+  Stop nginx immediately (`nginx -s stop`) — workers stop NOW. In-flight requests are dropped mid-byte. Prefer `nginx.quit_graceful` unless the server is hung.
 side_effects:
   - Workers SIGTERM immediately.
   - In-flight requests dropped.

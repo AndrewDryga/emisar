@@ -2,12 +2,18 @@ schema_version: 1
 id: kubernetes.get_yaml
 title: Get resource YAML
 kind: exec
-risk: low
+risk: high
 description: >
-  Return the full YAML definition of one resource. Kind is restricted to a safe enum that excludes secrets and configmaps (their .data carries credentials) and arbitrary CRDs of unknown size — read those via a dedicated higher-risk action, not this auto-allowed one.
+  Return the full YAML definition of one resource. The kind enum keeps secrets,
+  configmaps and arbitrary CRDs of unknown size out, but that does not make the
+  read safe: every workload kind serialises its pod template, so
+  `containers[].env[].value` literals and the
+  `kubectl.kubernetes.io/last-applied-configuration` annotation come back
+  verbatim — injected credentials with them. Approval-gated for that reason;
+  the runner's redaction is a pattern-bound backstop, not a guarantee.
 side_effects:
   - One kubectl get invocation.
-  - Read-only.
+  - Read-only, but exposes container env literals (may include secrets).
 args:
   - name: namespace
     type: string

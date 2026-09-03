@@ -69,6 +69,28 @@ cases:
         expect:
           stdout_contains: [no-match]
 
+  # A truncated slice used to answer exactly like a clean one. The marker is on
+  # stderr, so a no-match still returns the empty stdout the contract promises.
+  - name: linux.journalctl-grep-marks-a-truncated-slice
+    action: linux.journalctl_grep
+    args:
+      unit: packtest-journal-truncated.service
+      grep: packtest-journalctl-grep-does-not-exist
+      since: 1h
+      priority: info
+      entry_limit: 2
+    env:
+      PATH: /opt/journal-without-pcre:/opt/emisar/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+    arrange:
+      - argv: [systemd-run, --unit=packtest-journal-truncated, --wait, /bin/sh, -c, "for i in 1 2 3 4 5; do echo packtest-truncation-line-$i >&2; done"]
+      - argv: [/bin/sh, -c, "journalctl -u packtest-journal-truncated.service --no-pager | grep -Fq packtest-truncation-line-5"]
+        retry_for: 10s
+        retry_every: 200ms
+    expect:
+      status: success
+      stderr_contains: ["journal slice hit the 2-entry limit"]
+      stdout_not_contains: [packtest-journalctl-grep-does-not-exist]
+
   - action: linux.systemctl_status
     args: {unit: packtest-status.service}
     arrange:

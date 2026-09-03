@@ -2,8 +2,12 @@ schema_version: 1
 id: phpfpm.fpm_status_full
 title: GET /status?full (FPM per-process)
 kind: exec
-risk: low
-description: 'Show per-process detail: pid, state, last request URI, current memory peak.'
+risk: medium
+description: >
+  Show per-process detail: pid, state, last request URI, current memory peak.
+  The request URI is live client-supplied request data — query strings included
+  — so it is rated with the pack's log tails rather than with the summary
+  counters in `phpfpm.fpm_status`.
 side_effects: ["One HTTP GET.", "Read-only."]
 args: []
 execution:

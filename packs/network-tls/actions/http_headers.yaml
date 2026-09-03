@@ -27,7 +27,9 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
-      - 'set --; [ "$INSECURE" = "true" ] && set -- -k; exec curl -q -sSIL --globoff --proto =http,https --proto-redir =http,https "$@" --max-time 10 "$URL"'
+      # --max-redirs bounds the chain the response gets to steer: -L without it
+      # follows curl's built-in 50. oidc.sh is the sibling that already pins it.
+      - 'set --; [ "$INSECURE" = "true" ] && set -- -k; exec curl -q -sSIL --globoff --proto =http,https --proto-redir =http,https --max-redirs 5 "$@" --max-time 10 "$URL"'
   env:
     URL: "{{ args.url }}"
     INSECURE: "{{ args.insecure }}"

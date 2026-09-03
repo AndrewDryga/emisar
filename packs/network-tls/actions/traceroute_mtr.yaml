@@ -4,7 +4,7 @@ title: mtr report (route + loss statistics)
 kind: exec
 risk: low
 description: >
-  `mtr --report` — 5 cycles of traceroute with per-hop packet loss and latency. The combined traceroute + ping report. Needs CAP_NET_RAW on the runner identity: mtr ships setuid or file-capability elevation, and the runner's `no_new_privs` blocks both, so grant the capability from this pack's setup before enabling the action.
+  Trace the network path to a host with per-hop packet loss and latency (`mtr --report`, 5 cycles) — the combined traceroute + ping report. Needs CAP_NET_RAW on the runner identity: mtr ships setuid or file-capability elevation, and the runner's `no_new_privs` blocks both, so grant the capability from this pack's setup before enabling the action.
 side_effects:
   - Outbound ICMP/UDP probes.
   - Read-only.

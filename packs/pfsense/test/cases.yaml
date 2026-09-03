@@ -32,12 +32,12 @@ risk_accountability:
 # field, so it cannot be emitted; these cases prove that against a body which
 # actually carries one. The canary is what must not appear — asserting the safe
 # fields alone would pass even if the secret leaked alongside them.
-redaction_accountability:
-  exceptions:
-    # Both read a pfSense appliance's configuration. The fixture is a recorded
-    # shape, not a firewall that can hold an interface or CARP password.
-    pfsense.interface_config: requires_external_service
-    pfsense.virtual_ips: requires_external_service
+#
+# interface_config and virtual_ips are the only two reads that keep the raw
+# body, with a regex redaction over the `"password"` key instead of a
+# projection. The fixture holds that key on both endpoints — once plainly and
+# once with an embedded escaped quote, the shape the old `[^"]*` rule stopped
+# short of — so the rule is proven rather than excused.
 cases:
   - action: pfsense.certificates
     expect:
@@ -63,6 +63,20 @@ cases:
     expect:
       stdout_contains: [packtest-peer, allowedips]
       stdout_not_contains: [packtest-canary-pfsense-wgpsk-8a47]
+  - action: pfsense.interface_config
+    expect:
+      stdout_contains: [packtest-wan, '"[REDACTED]"']
+      stdout_not_contains:
+        - packtest-canary-pfsense-ifpassword-5e13
+        - packtest-canary-pfsense-ifquoted-4b82
+        - packtest-canary-pfsense-iftail-3d70
+  - action: pfsense.virtual_ips
+    expect:
+      stdout_contains: [packtest-carp-vip, '"[REDACTED]"']
+      stdout_not_contains:
+        - packtest-canary-pfsense-vippassword-6c47
+        - packtest-canary-pfsense-vipquoted-9a05
+        - packtest-canary-pfsense-viptail-2f18
   - action: pfsense.dhcp_static_mappings
     args: {interface: lan}
     expect:

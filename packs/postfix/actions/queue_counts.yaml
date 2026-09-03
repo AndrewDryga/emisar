@@ -11,13 +11,21 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
-      # Without the spool check, a host with no postfix at all reported every
-      # queue as 0 — indistinguishable from "the queues are empty", which is the
-      # healthy answer. The per-queue 2>/dev/null stays: it covers the normal
-      # race of a message being delivered mid-walk.
+      # Both guards exist because "0" is also the healthy answer. Without the
+      # spool check, a host with no postfix at all reported every queue as 0.
+      # Without the per-queue readability check, so did the normal case: postfix
+      # keeps these directories mode 0700, so an unprivileged runner counted 0
+      # deferred on a host with thousands of stuck messages. Testing readability
+      # rather than propagating find's status keeps the mid-walk delivery race
+      # tolerated — that is what the remaining 2>/dev/null covers.
       - |
         [ -d /var/spool/postfix ] || { echo "no postfix spool at /var/spool/postfix" >&2; exit 1; }
-        for q in incoming active deferred hold; do n=$(find /var/spool/postfix/$q -type f 2>/dev/null | wc -l); echo "$q: $n"; done
+        for q in incoming active deferred hold; do
+          d=/var/spool/postfix/$q
+          [ -r "$d" ] && [ -x "$d" ] || { echo "cannot read $d — grant the runner queue access (see this pack's setup)" >&2; exit 1; }
+          n=$(find "$d" -type f 2>/dev/null | wc -l)
+          echo "$q: $n"
+        done
   timeout: 30s
 output:
   parser: text

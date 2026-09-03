@@ -2,12 +2,17 @@ schema_version: 1
 id: kubernetes.pod_describe
 title: kubectl describe pod
 kind: exec
-risk: low
+risk: high
 description: >
-  Show the full describe output — events, container states, conditions, volume mounts, scheduled node. The canonical "why isn't this pod running?" answer.
+  Show the full describe output — events, container states, conditions, volume
+  mounts, scheduled node. The canonical "why isn't this pod running?" answer.
+  The `Environment:` block prints plain `env` values verbatim — only
+  `valueFrom` references render as a placeholder — so injected credentials come
+  back with them, the same exposure `kubernetes.get_yaml` carries.
+  Approval-gated for that reason.
 side_effects:
   - One kubectl describe invocation.
-  - Read-only.
+  - Read-only, but exposes container env literals (may include secrets).
 args:
   - name: namespace
     type: string

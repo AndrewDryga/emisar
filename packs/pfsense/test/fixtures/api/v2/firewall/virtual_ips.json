@@ -1,0 +1,27 @@
+{
+  "code": 200,
+  "status": "ok",
+  "data": [
+    {
+      "id": 0,
+      "mode": "carp",
+      "interface": "lan",
+      "subnet": "192.168.1.250",
+      "subnet_bits": 24,
+      "descr": "packtest-carp-vip",
+      "vhid": 12,
+      "advbase": 1,
+      "advskew": 0,
+      "password": "packtest-canary-pfsense-vippassword-6c47"
+    },
+    {
+      "id": 1,
+      "mode": "ipalias",
+      "interface": "lan",
+      "subnet": "192.168.1.251",
+      "subnet_bits": 24,
+      "descr": "packtest-alias-vip",
+      "password": "packtest-canary-pfsense-vipquoted-9a05\"packtest-canary-pfsense-viptail-2f18"
+    }
+  ]
+}

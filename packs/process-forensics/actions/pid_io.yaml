@@ -19,15 +19,17 @@ args:
       min: 1
       max: 4194304
 execution:
+  # The execution contract matches debugging.pid_io — same command, same deadline
+  # and caps, whichever pack the operator installed.
   command:
     binary: cat
     argv:
       - "/proc/{{ args.pid }}/io"
-  timeout: 15s
+  timeout: 5s
 output:
   parser: text
   max_stdout_bytes: 4096
-  max_stderr_bytes: 8192
+  max_stderr_bytes: 4096
 examples:
   - title: IO of PID 1
     args:

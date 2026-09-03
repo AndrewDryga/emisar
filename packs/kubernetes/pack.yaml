@@ -2,7 +2,10 @@ schema_version: 1
 
 id: kubernetes
 name: Kubernetes operations pack
-version: 0.2.9
+version: 0.2.10
+# 0.2.9 and below rated get_yaml and pod_describe `low`, so a pod template's
+# env literals — injected credentials included — auto-ran without approval.
+retired_below: 0.2.10
 description: >
   Operator pack for Kubernetes clusters: discovery (pods, nodes,
   services, deployments), deep introspection (describe, logs, events),

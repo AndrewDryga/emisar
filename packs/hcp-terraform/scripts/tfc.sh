@@ -53,11 +53,13 @@ api_get() {
 
 # The json-output endpoint answers with a one-minute redirect to blob storage.
 # curl drops the Authorization header on a cross-host redirect by default, which
-# is what we want: the redirect target is already presigned.
+# is what we want: the redirect target is already presigned. It is exactly one
+# hop, so --max-redirs 1 bounds what the response gets to steer — without it
+# curl follows its built-in 50.
 api_get_following_redirect() {
   printf 'Authorization: Bearer %s\n' "${TFE_TOKEN:-}" |
     curl -q --globoff --proto "$(api_protocols)" --proto-redir "$(api_protocols)" \
-      --fail-with-body -sSL -H @- "$(api_base)$1"
+      --max-redirs 1 --fail-with-body -sSL -H @- "$(api_base)$1"
 }
 
 # The unlock and force-unlock endpoints take no request body — their documented

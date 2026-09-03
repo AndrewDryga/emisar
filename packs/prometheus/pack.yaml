@@ -2,9 +2,11 @@ schema_version: 1
 
 id: prometheus
 name: Prometheus operations
-version: 0.1.18
-# Older versions allowed low-risk range queries with unbounded evaluation cost.
-retired_below: 0.1.16
+version: 0.1.19
+# Older versions allowed low-risk range queries with unbounded evaluation cost,
+# and let the caller pick the admin mutators' base URL instead of `PROM_URL` —
+# a delete against the wrong server, and a POST at any host the model named.
+retired_below: 0.1.19
 description: >
   Server status, target health, alertmanager linkage, instant + range
   queries, rule listing, TSDB stats, plus admin-API actions for
@@ -38,7 +40,7 @@ setup:
       description: Prometheus base URL (scheme + host + port, no trailing path). Defaults to a local Prometheus.
       example: http://prometheus.internal:9090
   notes:
-    - "Any of `PROM_URL` you set must also be allowlisted in the runner's `execution.inherit_env` — the action env is scrubbed to PATH/LANG/LC_ALL/TERM by default, so an env present on the host but not allowlisted is silently dropped (the action falls back to its local default or fails auth)."
+    - "`PROM_URL` only reaches an action when the runner allowlists it in `execution.inherit_env` — the action env is scrubbed to PATH/LANG/LC_ALL/TERM by default, so an env present on the host but not allowlisted is silently dropped and every action, read and admin alike, falls back to `http://127.0.0.1:9090`."
     - "No credentials are sent. If your Prometheus sits behind an auth proxy, expose it to the runner on a network path that does not require a header, or point `PROM_URL` at a trusted side door."
     - "Admin actions (reload_config, snapshot, clean_tombstones, delete_series) only work if Prometheus was started with --web.enable-admin-api and --web.enable-lifecycle."
     - "Range queries are limited to 7 days and 10,081 outer evaluation timestamps per returned series, with a 30-second provider-side timeout. This preserves a full week at one-minute resolution; query cardinality, range-vector lookbacks, and subqueries can still add cost."

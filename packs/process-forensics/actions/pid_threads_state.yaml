@@ -24,7 +24,12 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
-      - "for f in /proc/{{ args.pid }}/task/*/status; do tid=$(basename $(dirname $f)); awk -v tid=$tid '/^State:/ {print tid, $2, $3}' $f; done | sort -k2"
+      # sort ends the pipeline, so without this guard a pid that has exited —
+      # or one hidepid keeps from this runner — produced an empty stdout and
+      # exit 0, which reads as "this process has no threads". The guard covers
+      # all three shapes: a gone pid has no /proc entry, hidepid=2 hides it,
+      # and hidepid=1 makes /proc/<pid> unreadable to a non-owner.
+      - "[ -d /proc/{{ args.pid }}/task ] || { echo 'no such process: {{ args.pid }} (or /proc hides it from this runner)' >&2; exit 1; }; for f in /proc/{{ args.pid }}/task/*/status; do tid=$(basename $(dirname $f)); awk -v tid=$tid '/^State:/ {print tid, $2, $3}' $f; done | sort -k2"
   timeout: 30s
 output:
   parser: text

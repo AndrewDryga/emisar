@@ -13,13 +13,6 @@ side_effects:
   - Brief I/O spike.
   - Disk usage grows as blocks change over time.
 args:
-  - name: target
-    type: string
-    required: false
-    default: "http://localhost:9090"
-    description: Prometheus base URL.
-    validation:
-      pattern: "^https?://[a-zA-Z0-9._:\\-]{1,253}(:[0-9]{1,5})?$"
   - name: skip_head
     type: boolean
     required: false
@@ -30,9 +23,7 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
-      - "curl -q -sSf --globoff --proto =http,https -X POST ''\"$1\"'/api/v1/admin/tsdb/snapshot?skip_head={{ args.skip_head }}'"
-      - "emisar"
-      - "{{ args.target }}"
+      - "curl -q -fsS --globoff --proto =http,https -X POST \"${PROM_URL:-http://127.0.0.1:9090}/api/v1/admin/tsdb/snapshot?skip_head={{ args.skip_head }}\""
   timeout: 60s
 output:
   parser: json

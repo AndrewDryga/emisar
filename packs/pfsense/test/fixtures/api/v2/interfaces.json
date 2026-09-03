@@ -1,0 +1,29 @@
+{
+  "code": 200,
+  "status": "ok",
+  "data": [
+    {
+      "id": 0,
+      "if": "em0",
+      "descr": "packtest-wan",
+      "enable": true,
+      "typev4": "pppoe",
+      "ipaddr": "pppoe",
+      "mtu": 1492,
+      "blockbogons": true,
+      "username": "packtest-pppoe",
+      "password": "packtest-canary-pfsense-ifpassword-5e13"
+    },
+    {
+      "id": 1,
+      "if": "em1",
+      "descr": "packtest-lan",
+      "enable": true,
+      "typev4": "static",
+      "ipaddr": "192.168.1.1",
+      "subnet": 24,
+      "mtu": 1500,
+      "password": "packtest-canary-pfsense-ifquoted-4b82\"packtest-canary-pfsense-iftail-3d70"
+    }
+  ]
+}

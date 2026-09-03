@@ -68,6 +68,28 @@ cases:
         expect:
           stdout_contains: [running]
 
+  # A gone pid used to answer "no threads" — an empty success on a low,
+  # auto-running diagnostic. The pair proves both directions.
+  - action: forensics.pid_threads_state
+    arrange:
+      - argv: [/bin/sh, -c, "setsid sleep 600 < /dev/null > /dev/null 2>&1 &"]
+      - argv: [/bin/sh, -c, "pgrep -o -x sleep > /dev/null"]
+        retry_for: 10s
+        retry_every: 200ms
+    resolve_args:
+      pid:
+        argv: [/bin/sh, -c, "pgrep -o -x sleep"]
+    expect:
+      stdout_contains: ["(sleeping)"]
+  - name: forensics.pid-threads-state-refuses-a-pid-it-cannot-see
+    action: forensics.pid_threads_state
+    args: {pid: 4194304}
+    expect:
+      status: failure
+      exit: [1]
+      reason_contains: [process exited with code 1]
+      stderr_contains: ["no such process: 4194304"]
+
   - action: forensics.gdb_backtrace
     arrange:
       - argv: [/bin/sh, -c, "setsid packtest-busy < /dev/null > /dev/null 2>&1 &"]

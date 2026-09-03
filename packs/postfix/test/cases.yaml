@@ -19,9 +19,33 @@ cases:
   - action: postfix.qshape
     expect:
       stdout_contains: [TOTAL]
+  # A count is only worth reading if an unreadable queue cannot answer "0", so
+  # this pair proves both halves: the real count as root, and the refusal as the
+  # unprivileged identity a default install actually runs.
   - action: postfix.queue_counts
+    runner_user: root
+    runner_reason: >-
+      Postfix keeps its queue directories mode 0700 under the postfix user, and
+      the runner sets no_new_privs on every action child, so only a root runner
+      can count them.
+    arrange:
+      - argv: [/bin/sh, -c, "postconf -e 'defer_transports = smtp relay' 'enable_long_queue_ids = no' && postfix reload"]
+      - argv: [/bin/sh, -c, "printf 'Subject: packtest queue counts\n\npacktest queue counts body\n' | sendmail -f sender@example.test recipient@undeliverable.example"]
+      - name: wait for the message to settle in the deferred queue
+        argv: [/bin/sh, -c, "find /var/spool/postfix/deferred -type f | grep -q . && echo deferred-present"]
+        expect:
+          stdout_contains: [deferred-present]
+        retry_for: 20s
+        retry_every: 500ms
     expect:
-      stdout_contains: [active, deferred, hold]
+      stdout_contains: ["deferred: 1"]
+  - name: postfix.queue-counts-denied-nonroot
+    action: postfix.queue_counts
+    expect:
+      status: failure
+      exit: [1]
+      reason_contains: [process exited with code 1]
+      stderr_contains: [cannot read /var/spool/postfix/incoming]
   - action: postfix.postconf
     expect:
       stdout_contains: [myhostname, postfix.example.test]

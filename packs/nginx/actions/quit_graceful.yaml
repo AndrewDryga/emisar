@@ -4,7 +4,7 @@ title: nginx graceful quit
 kind: exec
 risk: high
 description: >
-  `nginx -s quit` — workers finish in-flight requests, then exit. No new connections accepted. Use to drain before host shutdown.
+  Stop nginx gracefully (`nginx -s quit`) — workers finish in-flight requests, then exit. No new connections accepted. Use to drain before host shutdown.
 side_effects:
   - Workers stop accepting new connections.
   - In-flight requests complete; workers exit when done.

@@ -6,9 +6,9 @@ kind: exec
 risk: low
 
 description: >
-  `lsmod` sorted by size, top 30. Useful to spot unexpected modules
-  loaded on a production host (rootkits, debug tooling, vendor
-  drivers). Read-only.
+  List loaded kernel modules (`lsmod`), sorted by size, top 30. Useful to
+  spot unexpected modules loaded on a production host (rootkits, debug
+  tooling, vendor drivers). Read-only.
 
 side_effects:
   - One lsmod invocation.
