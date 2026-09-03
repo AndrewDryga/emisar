@@ -1031,6 +1031,15 @@ defmodule Emisar.PoliciesTest do
       refute Repo.reload!(policy_a).deleted_at
       assert {:ok, [_]} = Policies.list_scoped_policies(subject_a)
     end
+
+    test "a forged scoped snapshot cannot delete the account default" do
+      {_user, _account, subject} = Fixtures.Subjects.owner_subject()
+      {:ok, default} = Policies.fetch_policy(subject)
+      forged = %{default | scope_type: :group, scope_value: "anything"}
+
+      assert Policies.delete_scoped_policy(forged, subject) == {:error, :not_found}
+      refute Repo.reload!(default).deleted_at
+    end
   end
 
   describe "save_scoped_rules/4" do

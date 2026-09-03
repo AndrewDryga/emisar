@@ -511,14 +511,12 @@ defmodule Emisar.Policies do
   an open page whose access has since narrowed cannot spend the row it still
   holds.
   """
-  def delete_scoped_policy(%Policy{scope_type: scope_type} = policy, %Subject{} = subject)
-      when scope_type in [:runner, :group] do
+  def delete_scoped_policy(%Policy{} = policy, %Subject{} = subject) do
     with :ok <-
            Auth.Authorizer.ensure_has_permissions(
              subject,
              Authorizer.manage_policies_permission()
-           ),
-         :ok <- ensure_policy_mutation_access(scope_type, subject) do
+           ) do
       Multi.new()
       |> Multi.run(:active_account, fn repo, _changes ->
         Accounts.fetch_and_lock_account(subject.account.id, repo: repo)
@@ -529,11 +527,13 @@ defmodule Emisar.Policies do
       |> Multi.run(:loaded_policy, fn repo, _changes ->
         query =
           Policy.Query.not_deleted()
+          |> Policy.Query.scoped_overrides()
           |> Policy.Query.by_id(policy.id)
           |> Policy.Query.lock_for_update()
           |> Authorizer.for_subject(subject)
 
         with {:ok, loaded_policy} <- repo.fetch(query, Policy.Query),
+             :ok <- ensure_policy_mutation_access(loaded_policy.scope_type, subject),
              :ok <-
                ensure_scope_in_reach(
                  loaded_policy.scope_type,
