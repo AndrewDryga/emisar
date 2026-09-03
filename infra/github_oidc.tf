@@ -10,7 +10,7 @@ locals {
   # authority (or, worse, an unreviewed commit keeps it). One definition makes
   # the rotation a single edit. See the rotation note on
   # google_iam_workload_identity_pool_provider.github_releases below.
-  trusted_job_workflow_sha = "ff1dd7f5902589a61a308f1805c905b4a8f6ac8f"
+  trusted_job_workflow_sha = "92137bddb17a82c33f44db43948ce6b5186302f0"
 
   # Workflow identities carry the repository path, so during the transfer
   # window every path in var.github_repositories yields one accepted spelling.

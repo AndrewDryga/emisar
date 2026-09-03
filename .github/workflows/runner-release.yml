@@ -28,4 +28,4 @@ jobs:
       contents: write
       id-token: write
       packages: write
-    uses: AndrewDryga/emisar/.github/workflows/runner-release-trusted.yml@ff1dd7f5902589a61a308f1805c905b4a8f6ac8f
+    uses: AndrewDryga/emisar/.github/workflows/runner-release-trusted.yml@92137bddb17a82c33f44db43948ce6b5186302f0
