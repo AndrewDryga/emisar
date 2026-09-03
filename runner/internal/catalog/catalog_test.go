@@ -1,8 +1,6 @@
 package catalog
 
 import (
-	"bytes"
-	"encoding/json"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -106,9 +104,6 @@ func TestBuild(t *testing.T) {
 	if cat.SchemaVersion != SchemaVersion {
 		t.Errorf("schema_version = %d, want %d", cat.SchemaVersion, SchemaVersion)
 	}
-	if cat.Generation != 1 {
-		t.Errorf("generation = %d, want 1", cat.Generation)
-	}
 	if len(cat.Packs) != 3 {
 		t.Fatalf("got %d packs, want 3", len(cat.Packs))
 	}
@@ -161,83 +156,6 @@ func TestBuild_MissingBaseURL(t *testing.T) {
 	reg := loadReg(t, threePackRoot(t))
 	if _, err := Build(reg, BuildOptions{}); err == nil {
 		t.Fatal("expected error when BaseURL is empty")
-	}
-}
-
-func TestBuild_GenerationAdvancesOnlyWhenCatalogContentChanges(t *testing.T) {
-	root := threePackRoot(t)
-	first, err := Build(loadReg(t, root), BuildOptions{BaseURL: testBaseURL})
-	if err != nil {
-		t.Fatalf("first build: %v", err)
-	}
-	if first.Generation != 1 {
-		t.Fatalf("first generation = %d, want 1", first.Generation)
-	}
-
-	publishedBytes, err := json.Marshal(first)
-	if err != nil {
-		t.Fatalf("serialize first build: %v", err)
-	}
-	var published Catalog
-	decoder := json.NewDecoder(bytes.NewReader(publishedBytes))
-	decoder.UseNumber()
-	if err := decoder.Decode(&published); err != nil {
-		t.Fatalf("reload first build: %v", err)
-	}
-
-	unchanged, err := Build(loadReg(t, root), BuildOptions{BaseURL: testBaseURL, Previous: &published})
-	if err != nil {
-		t.Fatalf("unchanged build: %v", err)
-	}
-	if unchanged.Generation != first.Generation {
-		t.Errorf("unchanged generation = %d, want %d", unchanged.Generation, first.Generation)
-	}
-
-	writePack(t, root, "alpha", map[string]string{
-		"pack.yaml": packYAML(
-			"alpha",
-			"1.0.1",
-			"requires:\n  os: [linux]\n  binaries: [git, timeout, base64, alpha-tool]\n",
-		),
-		"actions/a.yaml": execAction("alpha"),
-	})
-	changed, err := Build(loadReg(t, root), BuildOptions{BaseURL: testBaseURL, Previous: unchanged})
-	if err != nil {
-		t.Fatalf("changed build: %v", err)
-	}
-	if changed.Generation != unchanged.Generation+1 {
-		t.Errorf("changed generation = %d, want %d", changed.Generation, unchanged.Generation+1)
-	}
-
-	legacy := *unchanged
-	legacy.Generation = 0
-	fromLegacy, err := Build(loadReg(t, root), BuildOptions{BaseURL: testBaseURL, Previous: &legacy})
-	if err != nil {
-		t.Fatalf("legacy transition build: %v", err)
-	}
-	if fromLegacy.Generation != 1 {
-		t.Errorf("legacy successor generation = %d, want 1", fromLegacy.Generation)
-	}
-}
-
-func TestBuild_RejectsChangedCatalogAfterMaximumGeneration(t *testing.T) {
-	root := threePackRoot(t)
-	previous, err := Build(loadReg(t, root), BuildOptions{BaseURL: testBaseURL})
-	if err != nil {
-		t.Fatalf("build previous: %v", err)
-	}
-	previous.Generation = MaxGeneration
-
-	writePack(t, root, "alpha", map[string]string{
-		"pack.yaml": packYAML(
-			"alpha",
-			"1.0.1",
-			"requires:\n  os: [linux]\n  binaries: [git, timeout, base64, alpha-tool]\n",
-		),
-		"actions/a.yaml": execAction("alpha"),
-	})
-	if _, err := Build(loadReg(t, root), BuildOptions{BaseURL: testBaseURL, Previous: previous}); err == nil {
-		t.Fatal("changed catalog should not advance beyond the maximum generation")
 	}
 }
 

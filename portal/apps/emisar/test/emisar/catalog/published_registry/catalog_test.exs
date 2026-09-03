@@ -8,7 +8,6 @@ defmodule Emisar.Catalog.PublishedRegistry.CatalogTest do
   defp valid_catalog do
     %{
       "schema_version" => 1,
-      "generation" => 7,
       "packs" => [pack("redis"), pack("nginx")]
     }
   end
@@ -81,7 +80,7 @@ defmodule Emisar.Catalog.PublishedRegistry.CatalogTest do
 
   describe "parse/1" do
     test "decodes a valid catalog into packs sorted by id" do
-      assert {:ok, %{generation: 7, packs: packs}} = Catalog.parse(valid_catalog())
+      assert {:ok, %{packs: packs}} = Catalog.parse(valid_catalog())
       assert Enum.map(packs, & &1.id) == ["nginx", "redis"]
 
       redis = Enum.find(packs, &(&1.id == "redis"))
@@ -91,21 +90,6 @@ defmodule Emisar.Catalog.PublishedRegistry.CatalogTest do
       assert redis.source_url =~ "/packs/redis"
       assert redis.detect == %{binaries: ["redisctl"], processes: ["redis"], ports: [6379]}
       assert [%{id: "redis.info", command: %{binary: "redis"}}] = redis.actions
-    end
-
-    test "rejects a legacy catalog without a generation" do
-      legacy = Map.delete(valid_catalog(), "generation")
-      assert {:error, "catalog missing generation"} = Catalog.parse(legacy)
-    end
-
-    test "rejects a generation outside the shared exact-integer range" do
-      for generation <- [0, 9_007_199_254_740_992] do
-        assert {:error, message} = Catalog.parse(%{valid_catalog() | "generation" => generation})
-        assert message =~ "generation must be an integer between 1 and"
-      end
-
-      assert {:ok, %{generation: 9_007_199_254_740_991}} =
-               Catalog.parse(%{valid_catalog() | "generation" => 9_007_199_254_740_991})
     end
 
     test "a pack with no version window carries an empty history and no watermark" do

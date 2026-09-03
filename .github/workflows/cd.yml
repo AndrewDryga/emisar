@@ -210,13 +210,11 @@ jobs:
               # from the committed catalog exactly like the empty-registry
               # bootstrap below (immutable content-addressed objects stay
               # protected by publish's if-generation-match:0 either way).
-              # Validate the current published schema. A legacy catalog that
-              # predates generation intentionally takes the committed fallback;
-              # that artifact was already rebuilt against live history before
-              # this change. A shallow jq predicate here previously accepted
-              # catalogs packctl would carry forward with amputated history.
+              # Validate the current published schema. A shallow jq predicate
+              # here previously accepted catalogs packctl would carry forward
+              # with amputated history.
               if /tmp/packctl catalog validate /tmp/previous.json >/dev/null; then
-                echo "using published catalog history from generation $(jq -r .generation /tmp/catalog-metadata.json)"
+                echo "using published catalog history"
               else
                 echo "::warning::published catalog is malformed; repairing its history from the committed catalog"
                 cp portal/apps/emisar/priv/packs/catalog.json /tmp/previous.json

@@ -1,10 +1,8 @@
 package main
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
-	"io"
 	"os"
 
 	"github.com/spf13/cobra"
@@ -202,60 +200,25 @@ func loadPreviousCatalog(path string) (*catalog.Catalog, error) {
 	// truncated — still unmarshals cleanly, and carryForward then hands the
 	// missing packs an empty history while checkDrift permits versions to
 	// vanish. The result is a silently amputated version window.
-	if err := validatePreviousCatalog(data); err != nil {
+	if err := catalog.ValidateCatalogDocument(data); err != nil {
 		return nil, fmt.Errorf("previous catalog %s: %w", path, err)
 	}
 
 	var prev catalog.Catalog
-	decoder := json.NewDecoder(bytes.NewReader(data))
-	decoder.UseNumber()
-	if err := decoder.Decode(&prev); err != nil {
+	if err := json.Unmarshal(data, &prev); err != nil {
 		return nil, fmt.Errorf("parse previous catalog %s: %w", path, err)
 	}
 	return &prev, nil
 }
 
-// validatePreviousCatalog keeps the one-time legacy transition out of the
-// current published schema. A predecessor that predates generation may seed
-// generation one, but an emitted/current v7 catalog is never valid without it.
-func validatePreviousCatalog(data []byte) error {
-	validationErr := catalog.ValidateCatalogDocument(data)
-	if validationErr == nil {
-		return nil
-	}
-
-	decoder := json.NewDecoder(bytes.NewReader(data))
-	decoder.UseNumber()
-	var document map[string]any
-	if err := decoder.Decode(&document); err != nil {
-		return validationErr
-	}
-	if err := decoder.Decode(&struct{}{}); err != io.EOF {
-		return validationErr
-	}
-	if _, exists := document["generation"]; exists {
-		return validationErr
-	}
-	document["generation"] = json.Number("1")
-	withGeneration, err := json.Marshal(document)
-	if err != nil {
-		return err
-	}
-	return catalog.ValidateCatalogDocument(withGeneration)
-}
-
-// packCatalogValidateCmd lets CI enforce the current published schema. Before
-// it, cd.yml decided whether a downloaded catalog was usable with a shallow jq
-// predicate while packctl accepted anything that unmarshalled. Build has one
-// deliberately narrower exception: a structurally valid legacy --previous may
-// omit generation so the first generated successor remains possible.
+// packCatalogValidateCmd lets CI enforce the same schema `build --previous`
+// accepts instead of maintaining a weaker validation path in the workflow.
 func packCatalogValidateCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "validate <catalog.json>",
 		Short: "Check a catalog document against the published catalog schema",
-		Long: `Validate a current catalog.json against the schema published alongside it.
-'build --previous' applies the same structural checks plus the explicit legacy
-transition for a predecessor that predates the generation field.
+		Long: `Validate a catalog.json against the schema published alongside it.
+'build --previous' applies the same structural check.
 
 Use it in automation to decide whether a downloaded catalog is usable before
 passing it as --previous. Exits non-zero with the schema violation on stderr.

@@ -15,10 +15,8 @@
 package catalog
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
-	"reflect"
 	"sort"
 	"strconv"
 	"strings"
@@ -31,12 +29,6 @@ import (
 // SchemaVersion is the catalog.json document schema version. It is
 // independent of the pack/action on-disk schema versions.
 const SchemaVersion = 1
-
-// MaxGeneration is the largest catalog generation every consumer can compare
-// exactly, including implementations that decode JSON numbers as IEEE-754
-// doubles. Keeping this boundary in the public contract prevents a valid
-// catalog from stranding a future publisher that cannot load its predecessor.
-const MaxGeneration uint64 = 1<<53 - 1
 
 // DefaultPreviousKept is how many prior versions of each pack the catalog
 // carries in previous_versions — "the last few" the portal trust window
@@ -54,7 +46,6 @@ const DefaultRepoURL = "https://github.com/andrewdryga/emisar"
 // Catalog is the full published catalog.json document.
 type Catalog struct {
 	SchemaVersion int    `json:"schema_version"`
-	Generation    uint64 `json:"generation"`
 	Packs         []Pack `json:"packs"`
 }
 
@@ -213,60 +204,7 @@ func Build(reg *packs.Registry, opts BuildOptions) (*Catalog, error) {
 	if err := cat.checkDrift(opts.Previous); err != nil {
 		return nil, err
 	}
-	if err := cat.assignGeneration(opts.Previous); err != nil {
-		return nil, err
-	}
 	return cat, nil
-}
-
-// assignGeneration gives the mutable catalog pointer a monotonic identity
-// without making identical rebuilds churn. A legacy previous catalog decodes
-// to generation zero, so its first replacement starts at one.
-func (c *Catalog) assignGeneration(prev *Catalog) error {
-	if prev == nil || prev.Generation == 0 {
-		c.Generation = 1
-		return nil
-	}
-	same, err := sameCatalogContent(c, prev)
-	if err != nil {
-		return fmt.Errorf("catalog: compare generation content: %w", err)
-	}
-	if same {
-		c.Generation = prev.Generation
-		return nil
-	}
-	if prev.Generation >= MaxGeneration {
-		return fmt.Errorf("catalog: generation cannot advance past %d", prev.Generation)
-	}
-	c.Generation = prev.Generation + 1
-	return nil
-}
-
-func sameCatalogContent(current, previous *Catalog) (bool, error) {
-	currentDocument, err := comparableCatalogDocument(current)
-	if err != nil {
-		return false, err
-	}
-	previousDocument, err := comparableCatalogDocument(previous)
-	if err != nil {
-		return false, err
-	}
-	return reflect.DeepEqual(currentDocument, previousDocument), nil
-}
-
-func comparableCatalogDocument(cat *Catalog) (map[string]any, error) {
-	data, err := json.Marshal(cat)
-	if err != nil {
-		return nil, err
-	}
-	decoder := json.NewDecoder(bytes.NewReader(data))
-	decoder.UseNumber()
-	var document map[string]any
-	if err := decoder.Decode(&document); err != nil {
-		return nil, err
-	}
-	delete(document, "generation")
-	return document, nil
 }
 
 // carryForward fills each pack's previous_versions history and enforces its

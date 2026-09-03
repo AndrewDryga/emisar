@@ -12,7 +12,6 @@ func minimalCatalog(t *testing.T) map[string]any {
 	t.Helper()
 	const doc = `{
 	  "schema_version": 1,
-	  "generation": 1,
 	  "packs": [{
 	    "id": "redis",
 	    "name": "Redis operations",
@@ -47,32 +46,6 @@ func encode(t *testing.T, doc any) []byte {
 func TestValidateCatalogDocument_AcceptsAMinimalCatalog(t *testing.T) {
 	if err := ValidateCatalogDocument(encode(t, minimalCatalog(t))); err != nil {
 		t.Fatalf("minimal catalog should validate: %v", err)
-	}
-}
-
-func TestValidateCatalogDocument_RejectsCatalogWithoutGeneration(t *testing.T) {
-	doc := minimalCatalog(t)
-	delete(doc, "generation")
-	if err := ValidateCatalogDocument(encode(t, doc)); err == nil {
-		t.Fatal("published v7 catalog without a generation should be rejected")
-	}
-}
-
-func TestValidateCatalogDocument_RejectsInvalidGeneration(t *testing.T) {
-	for _, generation := range []any{0, -1, "1", float64(MaxGeneration) + 1} {
-		doc := minimalCatalog(t)
-		doc["generation"] = generation
-		if err := ValidateCatalogDocument(encode(t, doc)); err == nil {
-			t.Errorf("generation %#v should be rejected", generation)
-		}
-	}
-}
-
-func TestValidateCatalogDocument_AcceptsMaximumGeneration(t *testing.T) {
-	doc := minimalCatalog(t)
-	doc["generation"] = MaxGeneration
-	if err := ValidateCatalogDocument(encode(t, doc)); err != nil {
-		t.Fatalf("maximum generation should validate: %v", err)
 	}
 }
 
