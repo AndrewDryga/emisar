@@ -272,10 +272,10 @@ defmodule Emisar.ApiKeysDeviceGrantConcurrencyTest do
       owner_subject = Fixtures.Subjects.subject_for(owner, account)
       member_subject = Fixtures.Subjects.membership_subject(membership)
 
-      {:ok, device_code, user_code, _grant} =
+      {:ok, device_code, _user_code, pending_grant} =
         ApiKeys.open_device_grant(["claude-code"], %RequestContext{})
 
-      {:ok, grant} = ApiKeys.approve_device_grant(user_code, member_subject)
+      {:ok, grant} = ApiKeys.approve_device_grant(pending_grant, member_subject)
 
       try do
         fun.(%{

@@ -3817,10 +3817,10 @@ defmodule Emisar.AccountsTest do
 
       admin_subject = Fixtures.Subjects.membership_subject(admin_membership)
 
-      {:ok, _device_code, user_code, _grant} =
+      {:ok, _device_code, _user_code, pending_grant} =
         Emisar.ApiKeys.open_device_grant(["claude-code"], %RequestContext{})
 
-      {:ok, grant} = Emisar.ApiKeys.approve_device_grant(user_code, admin_subject)
+      {:ok, grant} = Emisar.ApiKeys.approve_device_grant(pending_grant, admin_subject)
 
       # Re-applying the same role is a no-op (a SCIM reconcile does this), so
       # the delegation survives.
@@ -4271,10 +4271,10 @@ defmodule Emisar.AccountsTest do
 
       admin_subject = Fixtures.Subjects.membership_subject(admin_membership)
 
-      {:ok, _device_code, user_code, _grant} =
+      {:ok, _device_code, _user_code, pending_grant} =
         Emisar.ApiKeys.open_device_grant(["claude-code"], %RequestContext{})
 
-      {:ok, grant} = Emisar.ApiKeys.approve_device_grant(user_code, admin_subject)
+      {:ok, grant} = Emisar.ApiKeys.approve_device_grant(pending_grant, admin_subject)
 
       assert is_nil(Emisar.Repo.reload!(key).revoked_at)
       assert %ApiKey{kind: :audit_export} = Emisar.ApiKeys.peek_api_key_by_secret(raw)
@@ -4806,10 +4806,10 @@ defmodule Emisar.AccountsTest do
           created_by_id: member.user_id
         )
 
-      {:ok, _device_code, user_code, _grant} =
+      {:ok, _device_code, _user_code, pending_grant} =
         Emisar.ApiKeys.open_device_grant(["claude-code"], %RequestContext{})
 
-      {:ok, grant} = Emisar.ApiKeys.approve_device_grant(user_code, member_subject)
+      {:ok, grant} = Emisar.ApiKeys.approve_device_grant(pending_grant, member_subject)
 
       result =
         Multi.new()
@@ -5998,10 +5998,10 @@ defmodule Emisar.AccountsTest do
 
       member_subject = Fixtures.Subjects.membership_subject(member_membership)
 
-      {:ok, _device_code, user_code, _grant} =
+      {:ok, _device_code, _user_code, pending_grant} =
         Emisar.ApiKeys.open_device_grant(["claude-code"], %RequestContext{})
 
-      {:ok, grant} = Emisar.ApiKeys.approve_device_grant(user_code, member_subject)
+      {:ok, grant} = Emisar.ApiKeys.approve_device_grant(pending_grant, member_subject)
 
       assert {:ok, _} = Accounts.delete_membership(member_membership, subject)
 
@@ -6931,10 +6931,10 @@ defmodule Emisar.AccountsTest do
       {_raw, key} =
         Fixtures.ApiKeys.create_api_key(account_id: account.id, created_by_id: user.id)
 
-      {:ok, _device_code, user_code, _grant} =
+      {:ok, _device_code, _user_code, pending_grant} =
         Emisar.ApiKeys.open_device_grant(["claude-code"], %RequestContext{})
 
-      {:ok, grant} = Emisar.ApiKeys.approve_device_grant(user_code, subject)
+      {:ok, grant} = Emisar.ApiKeys.approve_device_grant(pending_grant, subject)
       {token, digest} = Crypto.user_invite_token()
 
       pending =
@@ -7064,10 +7064,10 @@ defmodule Emisar.AccountsTest do
       {:ok, _raw, key} =
         Emisar.ApiKeys.create_key(%{name: "legacy pending key"}, legacy_subject)
 
-      {:ok, _device_code, user_code, _grant} =
+      {:ok, _device_code, _user_code, pending_grant} =
         Emisar.ApiKeys.open_device_grant(["claude-code"], %RequestContext{})
 
-      {:ok, grant} = Emisar.ApiKeys.approve_device_grant(user_code, legacy_subject)
+      {:ok, grant} = Emisar.ApiKeys.approve_device_grant(pending_grant, legacy_subject)
 
       pending =
         temporarily_authorized

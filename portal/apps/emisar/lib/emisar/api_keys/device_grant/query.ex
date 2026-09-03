@@ -4,6 +4,9 @@ defmodule Emisar.ApiKeys.DeviceGrant.Query do
 
   def all, do: from(g in DeviceGrant, as: :device_grants)
 
+  def by_id(queryable \\ all(), id),
+    do: where(queryable, [device_grants: g], g.id == ^id)
+
   def by_device_code_digest(queryable \\ all(), digest),
     do: where(queryable, [device_grants: g], g.device_code_digest == ^digest)
 

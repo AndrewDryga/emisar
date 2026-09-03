@@ -4,7 +4,7 @@ defmodule EmisarWeb.ActivateLiveTest do
   destination, approve/deny, and the honest states for viewers and dead codes.
   """
   use EmisarWeb.ConnCase, async: true
-  alias Emisar.{ApiKeys, RequestContext}
+  alias Emisar.{ApiKeys, RequestContext, Throttle}
   alias Emisar.ApiKeys.ApiKey
   alias Emisar.{Fixtures, Repo}
 
@@ -119,6 +119,38 @@ defmodule EmisarWeb.ActivateLiveTest do
 
       assert ApiKeys.claim_device_grant(device_code) == {:error, :access_denied}
       assert Repo.all(ApiKey) == []
+    end
+
+    test "a crafted approve event cannot bypass a throttled lookup", %{conn: conn} do
+      Emisar.Config.put_override(:emisar, :rate_limit_enabled, true)
+      {conn, user, account} = register_and_log_in(conn)
+      {_device_code, user_code, grant} = open_grant()
+
+      for _attempt <- 1..20 do
+        assert Throttle.check("device_code_lookup", user.id, 20, 900_000) == :ok
+      end
+
+      {:ok, lv, html} = live(conn, ~p"/app/#{account}/activate?code=#{user_code}")
+      assert html =~ "Too many attempts"
+
+      render_click(lv, "approve", %{})
+      assert Repo.reload!(grant).status == :pending
+    end
+
+    test "a crafted deny event cannot bypass a throttled lookup", %{conn: conn} do
+      Emisar.Config.put_override(:emisar, :rate_limit_enabled, true)
+      {conn, user, account} = register_and_log_in(conn)
+      {_device_code, user_code, grant} = open_grant()
+
+      for _attempt <- 1..20 do
+        assert Throttle.check("device_code_lookup", user.id, 20, 900_000) == :ok
+      end
+
+      {:ok, lv, html} = live(conn, ~p"/app/#{account}/activate?code=#{user_code}")
+      assert html =~ "Too many attempts"
+
+      render_click(lv, "deny", %{})
+      assert Repo.reload!(grant).status == :pending
     end
 
     test "a viewer gets the honest role note and no approval card", %{conn: conn} do

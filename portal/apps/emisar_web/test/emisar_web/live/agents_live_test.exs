@@ -404,10 +404,10 @@ defmodule EmisarWeb.AgentsLiveTest do
 
       # The installer's device grant mints the key on approval; its first MCP
       # call promotes it and broadcasts to this page.
-      {:ok, device_code, user_code, _grant} =
+      {:ok, device_code, _user_code, grant} =
         ApiKeys.open_device_grant(["claude-code"], %Emisar.RequestContext{})
 
-      {:ok, _approved} = ApiKeys.approve_device_grant(user_code, subject)
+      {:ok, _approved} = ApiKeys.approve_device_grant(grant, subject)
       {:ok, %{client_keys: client_keys}} = ApiKeys.claim_device_grant(device_code)
       assert %ApiKey{} = ApiKeys.peek_api_key_by_secret(client_keys["claude-code"])
 

@@ -1668,21 +1668,36 @@ defmodule Emisar.ApiKeys do
   end
 
   @doc """
-  Approves a pending grant into the subject's CURRENT account: binds the
-  approver's identity — which is what later authorizes the claim-time mint —
-  and flips the grant to `approved` under a row lock, so a concurrent
-  approve/deny/sweep loses cleanly as `:not_found`. Requires
-  `issue_quick_key`. Returns `{:ok, grant}` or
+  Approves the supplied pending grant into the subject's CURRENT account:
+  binds the approver's identity — which is what later authorizes the claim-time
+  mint — and refetches that exact row by id before flipping it to `approved`
+  under a row lock, so a concurrent approve/deny/sweep loses cleanly as
+  `:not_found`. Requires `issue_quick_key`. Returns `{:ok, grant}` or
   `{:error, :unauthorized | :not_found}`.
   """
-  def approve_device_grant(user_code, %Subject{account: account} = subject) do
+  def approve_device_grant(%DeviceGrant{} = grant, %Subject{} = subject),
+    do: decide_device_grant(grant, subject, :approved)
+
+  @doc """
+  Denies the supplied pending grant — the poll then reports `access_denied` and
+  the installer stops. Refetches that exact row by id and records the denier for
+  the audit trail. Requires `issue_quick_key`. Returns `{:ok, grant}` or
+  `{:error, :unauthorized | :not_found}`.
+  """
+  def deny_device_grant(%DeviceGrant{} = grant, %Subject{} = subject),
+    do: decide_device_grant(grant, subject, :denied)
+
+  defp decide_device_grant(
+         %DeviceGrant{id: grant_id},
+         %Subject{account: account} = subject,
+         decision
+       )
+       when decision in [:approved, :denied] do
     with :ok <-
            Auth.Authorizer.ensure_has_permissions(
              subject,
              Authorizer.issue_quick_key_permission()
            ) do
-      digest = Crypto.mcp_device_user_code_digest(user_code)
-
       Multi.new()
       |> put_active_account_lock(account.id)
       |> put_current_subject(subject)
@@ -1698,23 +1713,19 @@ defmodule Emisar.ApiKeys do
       |> Multi.run(:grant, fn repo,
                               %{active_account: active_account, current_subject: current_subject} ->
         queryable =
-          DeviceGrant.Query.by_user_code_digest(digest)
+          DeviceGrant.Query.by_id(grant_id)
           |> DeviceGrant.Query.by_status(:pending)
           |> DeviceGrant.Query.not_expired(DateTime.utc_now())
           |> DeviceGrant.Query.lock_for_update()
 
         with {:ok, grant} <- repo.fetch(queryable, DeviceGrant.Query) do
           grant
-          |> DeviceGrant.Changeset.approve(
-            active_account.id,
-            Subject.actor_id(current_subject),
-            current_subject.membership_id
-          )
+          |> device_grant_decision_changeset(decision, active_account, current_subject)
           |> repo.update()
         end
       end)
       |> Multi.insert(:audit, fn %{current_subject: current_subject, grant: grant} ->
-        Audit.Events.device_grant_approved(current_subject, grant)
+        device_grant_decision_event(decision, current_subject, grant)
       end)
       |> Repo.commit_multi()
       |> case do
@@ -1724,33 +1735,34 @@ defmodule Emisar.ApiKeys do
     end
   end
 
-  @doc """
-  Denies a pending grant — the poll then reports `access_denied` and the
-  installer stops. Records the denier for the audit trail. Requires
-  `issue_quick_key`. Returns `{:ok, grant}` or
-  `{:error, :unauthorized | :not_found}`.
-  """
-  def deny_device_grant(user_code, %Subject{account: account} = subject) do
-    with :ok <-
-           Auth.Authorizer.ensure_has_permissions(
-             subject,
-             Authorizer.issue_quick_key_permission()
-           ) do
-      account_id = account.id
-      user_id = Subject.actor_id(subject)
-      membership_id = subject.membership_id
-      digest = Crypto.mcp_device_user_code_digest(user_code)
-
-      DeviceGrant.Query.by_user_code_digest(digest)
-      |> DeviceGrant.Query.by_status(:pending)
-      |> DeviceGrant.Query.not_expired(DateTime.utc_now())
-      |> DeviceGrant.Query.lock_for_update()
-      |> Repo.fetch_and_update(DeviceGrant.Query,
-        with: &DeviceGrant.Changeset.deny(&1, account_id, user_id, membership_id),
-        audit: &Audit.Events.device_grant_denied(subject, &1)
-      )
-    end
+  defp device_grant_decision_changeset(
+         grant,
+         :approved,
+         account,
+         current_subject
+       ) do
+    DeviceGrant.Changeset.approve(
+      grant,
+      account.id,
+      Subject.actor_id(current_subject),
+      current_subject.membership_id
+    )
   end
+
+  defp device_grant_decision_changeset(grant, :denied, account, current_subject) do
+    DeviceGrant.Changeset.deny(
+      grant,
+      account.id,
+      Subject.actor_id(current_subject),
+      current_subject.membership_id
+    )
+  end
+
+  defp device_grant_decision_event(:approved, subject, grant),
+    do: Audit.Events.device_grant_approved(subject, grant)
+
+  defp device_grant_decision_event(:denied, subject, grant),
+    do: Audit.Events.device_grant_denied(subject, grant)
 
   @doc """
   Internal — the device-token poll (RFC 8628 semantics). Redeems an approved

@@ -79,10 +79,10 @@ defmodule EmisarWeb.MCPDeviceGrantControllerTest do
     test "an approved grant delivers the per-client keys exactly once", %{conn: conn} do
       subject = approver_subject()
 
-      {:ok, device_code, user_code, _grant} =
+      {:ok, device_code, _user_code, grant} =
         ApiKeys.open_device_grant(["emisar-mcp-cli", "codex"], %Emisar.RequestContext{})
 
-      {:ok, _approved} = ApiKeys.approve_device_grant(user_code, subject)
+      {:ok, _approved} = ApiKeys.approve_device_grant(grant, subject)
 
       first = post(conn, ~p"/api/mcp/device_token", %{"device_code" => device_code})
       body = json_response(first, 200)
@@ -101,10 +101,10 @@ defmodule EmisarWeb.MCPDeviceGrantControllerTest do
     test "a denied grant polls as access_denied", %{conn: conn} do
       subject = approver_subject()
 
-      {:ok, device_code, user_code, _grant} =
+      {:ok, device_code, _user_code, grant} =
         ApiKeys.open_device_grant(["claude-code"], %Emisar.RequestContext{})
 
-      {:ok, _denied} = ApiKeys.deny_device_grant(user_code, subject)
+      {:ok, _denied} = ApiKeys.deny_device_grant(grant, subject)
 
       conn = post(conn, ~p"/api/mcp/device_token", %{"device_code" => device_code})
       assert json_response(conn, 400) == %{"error" => "access_denied"}

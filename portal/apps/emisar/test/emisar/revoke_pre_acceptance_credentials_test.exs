@@ -160,10 +160,10 @@ defmodule Emisar.RevokePreAcceptanceCredentialsTest do
   end
 
   defp approved_grant(subject, client) do
-    {:ok, _device_code, user_code, _grant} =
+    {:ok, _device_code, _user_code, pending_grant} =
       ApiKeys.open_device_grant([client], %RequestContext{})
 
-    {:ok, grant} = ApiKeys.approve_device_grant(user_code, subject)
+    {:ok, grant} = ApiKeys.approve_device_grant(pending_grant, subject)
     grant
   end
 

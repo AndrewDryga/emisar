@@ -63,11 +63,15 @@ defmodule EmisarWeb.ActivateLive do
     {:noreply, push_navigate(socket, to: ~p"/app/#{slug}/activate?code=#{socket.assigns.code}")}
   end
 
-  def handle_event("approve", _params, socket) do
+  def handle_event(
+        "approve",
+        _params,
+        %{assigns: %{grant: %ApiKeys.DeviceGrant{} = grant}} = socket
+      ) do
     subject = socket.assigns.current_subject
 
     Permissions.gated(socket, ApiKeys.subject_can_issue_quick_key?(subject), fn socket ->
-      case ApiKeys.approve_device_grant(socket.assigns.code, subject) do
+      case ApiKeys.approve_device_grant(grant, subject) do
         {:ok, grant} ->
           {:noreply, socket |> assign(:grant, grant) |> assign(:decision, :approved)}
 
@@ -80,11 +84,13 @@ defmodule EmisarWeb.ActivateLive do
     end)
   end
 
-  def handle_event("deny", _params, socket) do
+  def handle_event("approve", _params, socket), do: {:noreply, socket}
+
+  def handle_event("deny", _params, %{assigns: %{grant: %ApiKeys.DeviceGrant{} = grant}} = socket) do
     subject = socket.assigns.current_subject
 
     Permissions.gated(socket, ApiKeys.subject_can_issue_quick_key?(subject), fn socket ->
-      case ApiKeys.deny_device_grant(socket.assigns.code, subject) do
+      case ApiKeys.deny_device_grant(grant, subject) do
         {:ok, grant} ->
           {:noreply, socket |> assign(:grant, grant) |> assign(:decision, :denied)}
 
@@ -96,6 +102,8 @@ defmodule EmisarWeb.ActivateLive do
       end
     end)
   end
+
+  def handle_event("deny", _params, socket), do: {:noreply, socket}
 
   defp lookup(socket, code) do
     # Re-render the code that was looked up, not the one `handle_params` last saw

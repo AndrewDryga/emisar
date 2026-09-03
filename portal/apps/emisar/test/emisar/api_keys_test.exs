@@ -1980,15 +1980,15 @@ defmodule Emisar.ApiKeysTest do
       {_owner, account, subject} = owner_subject_pair()
       other_subject = member_subject(account, :operator)
 
-      {:ok, _device_code, target_user_code, _grant} =
+      {:ok, _device_code, _target_user_code, target_grant} =
         ApiKeys.open_device_grant(["claude-code"], %RequestContext{})
 
-      {:ok, target} = ApiKeys.approve_device_grant(target_user_code, subject)
+      {:ok, target} = ApiKeys.approve_device_grant(target_grant, subject)
 
-      {:ok, _device_code, other_user_code, _grant} =
+      {:ok, _device_code, _other_user_code, other_grant} =
         ApiKeys.open_device_grant(["cursor"], %RequestContext{})
 
-      {:ok, other} = ApiKeys.approve_device_grant(other_user_code, other_subject)
+      {:ok, other} = ApiKeys.approve_device_grant(other_grant, other_subject)
 
       assert ApiKeys.revoke_credentials_for_membership(Repo, subject.membership_id) ==
                {:ok, %{api_keys: 0, device_grants: 1}}
@@ -2004,10 +2004,10 @@ defmodule Emisar.ApiKeysTest do
       {_owner, _account, subject} = owner_subject_pair()
       {:ok, _raw, key} = ApiKeys.create_key(%{name: "agent"}, subject)
 
-      {:ok, _device_code, user_code, _grant} =
+      {:ok, _device_code, _user_code, pending_grant} =
         ApiKeys.open_device_grant(["claude-code"], %RequestContext{})
 
-      {:ok, grant} = ApiKeys.approve_device_grant(user_code, subject)
+      {:ok, grant} = ApiKeys.approve_device_grant(pending_grant, subject)
 
       result =
         Multi.new()
@@ -2741,10 +2741,10 @@ defmodule Emisar.ApiKeysTest do
     test "binds the approver's account + identity and writes the audit event" do
       {user, account, subject} = owner_subject_pair()
 
-      {:ok, _device_code, user_code, _grant} =
+      {:ok, _device_code, _user_code, grant} =
         ApiKeys.open_device_grant(["claude-code"], %RequestContext{})
 
-      assert {:ok, approved} = ApiKeys.approve_device_grant(user_code, subject)
+      assert {:ok, approved} = ApiKeys.approve_device_grant(grant, subject)
       assert approved.status == :approved
       assert approved.account_id == account.id
       assert approved.approved_by_id == user.id
@@ -2763,22 +2763,22 @@ defmodule Emisar.ApiKeysTest do
     test "a grant approves exactly once — a second approve (or after deny) is :not_found" do
       {_user, _account, subject} = owner_subject_pair()
 
-      {:ok, _device_code, user_code, _grant} =
+      {:ok, _device_code, _user_code, grant} =
         ApiKeys.open_device_grant(["claude-code"], %RequestContext{})
 
-      assert {:ok, _approved} = ApiKeys.approve_device_grant(user_code, subject)
-      assert ApiKeys.approve_device_grant(user_code, subject) == {:error, :not_found}
+      assert {:ok, _approved} = ApiKeys.approve_device_grant(grant, subject)
+      assert ApiKeys.approve_device_grant(grant, subject) == {:error, :not_found}
     end
 
     test "an expired grant cannot be approved" do
       {_user, _account, subject} = owner_subject_pair()
 
-      {:ok, _device_code, user_code, grant} =
+      {:ok, _device_code, _user_code, grant} =
         ApiKeys.open_device_grant(["claude-code"], %RequestContext{})
 
       Fixtures.ApiKeys.backdate_device_grant_expiry(grant)
 
-      assert ApiKeys.approve_device_grant(user_code, subject) == {:error, :not_found}
+      assert ApiKeys.approve_device_grant(grant, subject) == {:error, :not_found}
     end
 
     test "a viewer (no issue_quick_key permission) is refused with :unauthorized" do
@@ -2793,13 +2793,13 @@ defmodule Emisar.ApiKeysTest do
 
       subject = Fixtures.Subjects.subject_for(viewer, account, role: :viewer)
 
-      assert ApiKeys.approve_device_grant("XXXX-XXXX", subject) == {:error, :unauthorized}
+      assert ApiKeys.approve_device_grant(%DeviceGrant{}, subject) == {:error, :unauthorized}
     end
 
     test "an unresolved invitation cannot approve a device grant from a stale subject" do
       {user, account, subject} = owner_subject_pair()
 
-      {:ok, _device_code, user_code, grant} =
+      {:ok, _device_code, _user_code, grant} =
         ApiKeys.open_device_grant(["claude-code"], %RequestContext{})
 
       membership = Fixtures.Memberships.fetch_membership(account.id, user.id)
@@ -2809,7 +2809,7 @@ defmodule Emisar.ApiKeysTest do
       |> Ecto.Changeset.change(invitation_token_digest: digest, invitation_accepted_at: nil)
       |> Repo.update!()
 
-      assert ApiKeys.approve_device_grant(user_code, subject) == {:error, :not_found}
+      assert ApiKeys.approve_device_grant(grant, subject) == {:error, :not_found}
       assert Repo.reload!(grant).status == :pending
       refute Repo.one(Audit.Event)
     end
@@ -2819,10 +2819,10 @@ defmodule Emisar.ApiKeysTest do
     test "records the denier and writes the audit event" do
       {user, account, subject} = owner_subject_pair()
 
-      {:ok, _device_code, user_code, _grant} =
+      {:ok, _device_code, _user_code, grant} =
         ApiKeys.open_device_grant(["cursor"], %RequestContext{})
 
-      assert {:ok, denied} = ApiKeys.deny_device_grant(user_code, subject)
+      assert {:ok, denied} = ApiKeys.deny_device_grant(grant, subject)
       assert denied.status == :denied
       assert denied.account_id == account.id
       assert denied.approved_by_id == user.id
@@ -2838,11 +2838,11 @@ defmodule Emisar.ApiKeysTest do
     test "a denied grant cannot then be approved" do
       {_user, _account, subject} = owner_subject_pair()
 
-      {:ok, _device_code, user_code, _grant} =
+      {:ok, _device_code, _user_code, grant} =
         ApiKeys.open_device_grant(["cursor"], %RequestContext{})
 
-      assert {:ok, _denied} = ApiKeys.deny_device_grant(user_code, subject)
-      assert ApiKeys.approve_device_grant(user_code, subject) == {:error, :not_found}
+      assert {:ok, _denied} = ApiKeys.deny_device_grant(grant, subject)
+      assert ApiKeys.approve_device_grant(grant, subject) == {:error, :not_found}
     end
 
     test "a viewer (no issue_quick_key permission) is refused with :unauthorized" do
@@ -2857,7 +2857,25 @@ defmodule Emisar.ApiKeysTest do
 
       subject = Fixtures.Subjects.subject_for(viewer, account, role: :viewer)
 
-      assert ApiKeys.deny_device_grant("XXXX-XXXX", subject) == {:error, :unauthorized}
+      assert ApiKeys.deny_device_grant(%DeviceGrant{}, subject) == {:error, :unauthorized}
+    end
+
+    test "an unresolved invitation cannot deny a device grant from a stale subject" do
+      {user, account, subject} = owner_subject_pair()
+
+      {:ok, _device_code, _user_code, grant} =
+        ApiKeys.open_device_grant(["claude-code"], %RequestContext{})
+
+      membership = Fixtures.Memberships.fetch_membership(account.id, user.id)
+      {_token, digest} = Crypto.user_invite_token()
+
+      membership
+      |> Ecto.Changeset.change(invitation_token_digest: digest, invitation_accepted_at: nil)
+      |> Repo.update!()
+
+      assert ApiKeys.deny_device_grant(grant, subject) == {:error, :not_found}
+      assert Repo.reload!(grant).status == :pending
+      refute Repo.one(Audit.Event)
     end
   end
 
@@ -2867,10 +2885,10 @@ defmodule Emisar.ApiKeysTest do
       # A second tenant proves account scoping: nothing may land there.
       other_account = Fixtures.Accounts.create_account()
 
-      {:ok, device_code, user_code, _grant} =
+      {:ok, device_code, _user_code, grant} =
         ApiKeys.open_device_grant(["emisar-mcp-cli", "cursor"], %RequestContext{})
 
-      {:ok, _approved} = ApiKeys.approve_device_grant(user_code, subject)
+      {:ok, _approved} = ApiKeys.approve_device_grant(grant, subject)
 
       assert {:ok,
               %{
@@ -2904,10 +2922,10 @@ defmodule Emisar.ApiKeysTest do
       {user, _account, subject} = owner_subject_pair()
       context = %RequestContext{ip_address: "203.0.113.9"}
 
-      {:ok, device_code, user_code, _grant} =
+      {:ok, device_code, _user_code, grant} =
         ApiKeys.open_device_grant(["claude-code", "cursor"], context)
 
-      {:ok, approved} = ApiKeys.approve_device_grant(user_code, subject)
+      {:ok, approved} = ApiKeys.approve_device_grant(grant, subject)
       assert {:ok, %{client_keys: _client_keys}} = ApiKeys.claim_device_grant(device_code)
 
       {:ok, events, _meta} =
@@ -2939,10 +2957,10 @@ defmodule Emisar.ApiKeysTest do
     test "a denied grant polls as :access_denied" do
       {_user, _account, subject} = owner_subject_pair()
 
-      {:ok, device_code, user_code, _grant} =
+      {:ok, device_code, _user_code, grant} =
         ApiKeys.open_device_grant(["claude-code"], %RequestContext{})
 
-      {:ok, _denied} = ApiKeys.deny_device_grant(user_code, subject)
+      {:ok, _denied} = ApiKeys.deny_device_grant(grant, subject)
 
       assert ApiKeys.claim_device_grant(device_code) == {:error, :access_denied}
     end
@@ -2950,10 +2968,10 @@ defmodule Emisar.ApiKeysTest do
     test "an expired grant polls as :expired_token — even after approval" do
       {_user, _account, subject} = owner_subject_pair()
 
-      {:ok, device_code, user_code, _grant} =
+      {:ok, device_code, _user_code, grant} =
         ApiKeys.open_device_grant(["claude-code"], %RequestContext{})
 
-      {:ok, approved} = ApiKeys.approve_device_grant(user_code, subject)
+      {:ok, approved} = ApiKeys.approve_device_grant(grant, subject)
       Fixtures.ApiKeys.backdate_device_grant_expiry(approved)
 
       assert ApiKeys.claim_device_grant(device_code) == {:error, :expired_token}
@@ -2974,10 +2992,10 @@ defmodule Emisar.ApiKeysTest do
 
       subject = Fixtures.Subjects.membership_subject(membership)
 
-      {:ok, device_code, user_code, _grant} =
+      {:ok, device_code, _user_code, grant} =
         ApiKeys.open_device_grant(["claude-code"], %RequestContext{})
 
-      {:ok, approved} = ApiKeys.approve_device_grant(user_code, subject)
+      {:ok, approved} = ApiKeys.approve_device_grant(grant, subject)
       Fixtures.Memberships.force_role(membership, "viewer")
 
       # The direct fixture change deliberately skips the normal after-commit
@@ -3000,10 +3018,10 @@ defmodule Emisar.ApiKeysTest do
 
       subject = Fixtures.Subjects.membership_subject(membership)
 
-      {:ok, device_code, user_code, _grant} =
+      {:ok, device_code, _user_code, grant} =
         ApiKeys.open_device_grant(["claude-code"], %RequestContext{})
 
-      {:ok, approved} = ApiKeys.approve_device_grant(user_code, subject)
+      {:ok, approved} = ApiKeys.approve_device_grant(grant, subject)
       provider = Fixtures.SSO.create_identity_provider(account_id: account.id)
 
       assert {:ok, _version} =
@@ -3025,10 +3043,10 @@ defmodule Emisar.ApiKeysTest do
     test "an unresolved invitation fails closed at claim" do
       {user, account, subject} = owner_subject_pair()
 
-      {:ok, device_code, user_code, _grant} =
+      {:ok, device_code, _user_code, grant} =
         ApiKeys.open_device_grant(["claude-code"], %RequestContext{})
 
-      {:ok, approved} = ApiKeys.approve_device_grant(user_code, subject)
+      {:ok, approved} = ApiKeys.approve_device_grant(grant, subject)
       membership = Fixtures.Memberships.fetch_membership(account.id, user.id)
       {_token, digest} = Crypto.user_invite_token()
 
@@ -3046,10 +3064,10 @@ defmodule Emisar.ApiKeysTest do
     test "pending directory authorization does not demote a human owner at claim" do
       {user, account, subject} = owner_subject_pair()
 
-      {:ok, device_code, user_code, _grant} =
+      {:ok, device_code, _user_code, grant} =
         ApiKeys.open_device_grant(["claude-code"], %RequestContext{})
 
-      {:ok, _approved} = ApiKeys.approve_device_grant(user_code, subject)
+      {:ok, _approved} = ApiKeys.approve_device_grant(grant, subject)
       provider = Fixtures.SSO.create_identity_provider(account_id: account.id)
 
       assert {:ok, _version} =
@@ -3078,10 +3096,10 @@ defmodule Emisar.ApiKeysTest do
 
       subject = Fixtures.Subjects.membership_subject(membership)
 
-      {:ok, device_code, user_code, _grant} =
+      {:ok, device_code, _user_code, grant} =
         ApiKeys.open_device_grant(["claude-code"], %RequestContext{})
 
-      {:ok, approved} = ApiKeys.approve_device_grant(user_code, subject)
+      {:ok, approved} = ApiKeys.approve_device_grant(grant, subject)
       Fixtures.Memberships.suspend_membership(membership)
 
       assert Repo.reload!(approved).status == :approved
@@ -3102,10 +3120,10 @@ defmodule Emisar.ApiKeysTest do
 
       subject = Fixtures.Subjects.membership_subject(membership)
 
-      {:ok, device_code, user_code, _grant} =
+      {:ok, device_code, _user_code, grant} =
         ApiKeys.open_device_grant(["claude-code"], %RequestContext{})
 
-      {:ok, _approved} = ApiKeys.approve_device_grant(user_code, subject)
+      {:ok, _approved} = ApiKeys.approve_device_grant(grant, subject)
       Fixtures.Memberships.mark_membership_as_deleted(membership)
 
       assert ApiKeys.claim_device_grant(device_code) == {:error, :access_denied}
@@ -3115,10 +3133,10 @@ defmodule Emisar.ApiKeysTest do
     test "a disabled account cannot claim, and re-enable preserves the approved grant" do
       {_user, account, subject} = owner_subject_pair()
 
-      {:ok, device_code, user_code, _grant} =
+      {:ok, device_code, _user_code, grant} =
         ApiKeys.open_device_grant(["claude-code"], %RequestContext{})
 
-      assert {:ok, _approved} = ApiKeys.approve_device_grant(user_code, subject)
+      assert {:ok, _approved} = ApiKeys.approve_device_grant(grant, subject)
 
       assert {:ok, _account} =
                Emisar.Accounts.set_account_disabled_for_support(
