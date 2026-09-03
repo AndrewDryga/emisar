@@ -891,8 +891,19 @@ name or a major release, following the deprecation path.
   A published schema object's `$id` names the host that serves it,
   `registry.emisar.dev`. The v2 through v5 suites shipped naming `emisar.dev`,
   which serves nothing at that path; those objects are immutable and stay
-  wrong. v6 was corrected before publication and `TestSchemaIDsNameTheHostThatServesThem`
-  pins it.
+  wrong. v6 corrected the host, v7 added the catalog's monotonic generation,
+  and `TestSchemaIDsNameTheHostThatServesThem` pins the serving host.
+
+  `catalog.json` carries a top-level `generation` from 1 through
+  9,007,199,254,740,991 (the largest integer all JSON consumers compare
+  exactly). A build retains it when the catalog is unchanged and increments it
+  for changed content. Portal
+  caches compare generations within the exact configured catalog URL, reject
+  lower generations, reject different content reusing one generation, and
+  reject unchanged content that skips a generation. A legacy document without
+  the field is not valid under the current v7 schema; the builder alone accepts
+  that omission as the generation-zero predecessor that mints its first
+  generated successor.
 - The runner's default registry is currently the facade
   `https://emisar.dev`. The facade serves `/packs.json`,
   `/packs/suggest.json`, `/packs/<id>/pack.tar.gz`, and

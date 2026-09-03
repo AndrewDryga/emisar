@@ -16,7 +16,9 @@ defmodule Emisar.Catalog.PublishedRegistry.Cache do
   A crash-and-restart of THIS process finds a snapshot already installed and
   leaves it alone: rolling a supervisor back to the release's bundled bytes
   would silently drop a retirement watermark we have since published, which
-  is the one thing that must never regress on its own.
+  is the one thing that must never regress on its own. The configured catalog
+  URL names the generation lineage, so the bundled official generation never
+  blocks a private registry starting its own history.
 
   Packs and trust live under ONE `:persistent_term` key so a reader can
   never observe new packs against stale trust maps mid-refresh, and every
@@ -48,8 +50,14 @@ defmodule Emisar.Catalog.PublishedRegistry.Cache do
 
   @term_key {__MODULE__, :catalog}
   @refresh_interval :timer.minutes(10)
+  @canonical_catalog_url "https://registry.emisar.dev/v1/catalog.json"
 
-  @type snapshot :: %{packs: [Pack.t()], trust: Catalog.trust()}
+  @type snapshot :: %{
+          generation: non_neg_integer(),
+          source_url: String.t(),
+          packs: [Pack.t()],
+          trust: Catalog.trust()
+        }
 
   def start_link(opts), do: GenServer.start_link(__MODULE__, opts, name: __MODULE__)
 
@@ -85,6 +93,7 @@ defmodule Emisar.Catalog.PublishedRegistry.Cache do
   """
   @spec status() :: %{
           source: :bundled | :remote,
+          generation: non_neg_integer(),
           checked_at: DateTime.t() | nil,
           loaded_at: DateTime.t(),
           count: non_neg_integer()
@@ -148,6 +157,7 @@ defmodule Emisar.Catalog.PublishedRegistry.Cache do
   def handle_call(:status, _from, state) do
     status = %{
       source: state.source,
+      generation: snapshot().generation,
       checked_at: state.checked_at,
       loaded_at: state.loaded_at,
       count: length(current())
@@ -203,7 +213,7 @@ defmodule Emisar.Catalog.PublishedRegistry.Cache do
       # publish. Treat it as a bad document and hold the last-good catalog
       # rather than serving nothing.
       {:ok, %{packs: []}} -> {:keep, "rejected published catalog: no packs"}
-      {:ok, snapshot} -> pin_tarballs(snapshot, tarball_base(catalog_url))
+      {:ok, snapshot} -> bind_remote_source(snapshot, catalog_url)
       {:error, reason} -> {:keep, "rejected published catalog: #{reason}"}
     end
   end
@@ -218,22 +228,66 @@ defmodule Emisar.Catalog.PublishedRegistry.Cache do
     state
   end
 
-  # Stage 2 of the change guard: the body moved, so record the digest and the
-  # check either way, but swap only when the document actually means something
-  # different — a builder emitting cosmetically different bytes must not cost a
-  # global literal-area GC.
+  # Stage 2 of the change guard: the body moved, so reject a pointer rollback
+  # before replacing last-good. Equal generations are idempotent only when the
+  # parsed snapshot is equal too; reusing one number for different content is
+  # an ambiguous fork, not forward progress. A different configured URL starts
+  # a separate lineage instead of comparing an unrelated private registry to
+  # the bundled official counter.
   defp install(state, incoming, digest) do
-    now = DateTime.utc_now()
-    state = %{state | source: :remote, checked_at: now, digest: digest}
     installed = snapshot()
 
-    if incoming == installed do
-      state
-    else
-      warn_dropped_watermarks(installed.trust, incoming.trust)
-      state.put.(incoming)
-      %{state | loaded_at: now}
+    cond do
+      incoming.source_url != Map.get(installed, :source_url, @canonical_catalog_url) ->
+        install_forward(state, installed, incoming, digest)
+
+      incoming.generation < installed.generation ->
+        reject_generation(
+          state,
+          "rejected published catalog generation #{incoming.generation}: " <>
+            "last-good generation is #{installed.generation}"
+        )
+
+      incoming.generation == installed.generation and incoming != installed ->
+        reject_generation(
+          state,
+          "rejected published catalog generation #{incoming.generation}: " <>
+            "that generation already names different content"
+        )
+
+      incoming.generation > installed.generation and same_generation_content?(incoming, installed) ->
+        reject_generation(
+          state,
+          "rejected published catalog generation #{incoming.generation}: " <>
+            "unchanged content must retain generation #{installed.generation}"
+        )
+
+      incoming == installed ->
+        %{state | source: :remote, checked_at: DateTime.utc_now(), digest: digest}
+
+      true ->
+        install_forward(state, installed, incoming, digest)
     end
+  end
+
+  defp install_forward(state, installed, incoming, digest) do
+    now = DateTime.utc_now()
+
+    if incoming.source_url == Map.get(installed, :source_url, @canonical_catalog_url) do
+      warn_dropped_watermarks(installed.trust, incoming.trust)
+    end
+
+    state.put.(incoming)
+    %{state | source: :remote, checked_at: now, loaded_at: now, digest: digest}
+  end
+
+  defp same_generation_content?(left, right) do
+    Map.drop(left, [:generation]) == Map.drop(right, [:generation])
+  end
+
+  defp reject_generation(state, message) do
+    Logger.warning("PublishedRegistry.Cache: #{message}; serving last-good catalog")
+    state
   end
 
   # Detection, not enforcement. `packctl catalog build` refuses to lower or
@@ -276,6 +330,24 @@ defmodule Emisar.Catalog.PublishedRegistry.Cache do
     end
   end
 
+  defp bind_remote_source(snapshot, catalog_url) do
+    case pin_tarballs(snapshot, tarball_base(catalog_url)) do
+      {:ok, pinned} -> {:ok, Map.put(pinned, :source_url, lineage_url(catalog_url))}
+      {:keep, _message} = keep -> keep
+    end
+  end
+
+  defp lineage_url(catalog_url) do
+    uri = URI.parse(catalog_url)
+
+    URI.to_string(%{
+      uri
+      | scheme: uri.scheme && String.downcase(uri.scheme),
+        host: uri.host && String.downcase(uri.host),
+        fragment: nil
+    })
+  end
+
   defp find_off_base_tarball(packs, base) do
     Enum.find_value(packs, fn pack ->
       urls = [pack.tarball_url | Enum.map(pack.previous_versions, & &1.tarball_url)]
@@ -307,7 +379,7 @@ defmodule Emisar.Catalog.PublishedRegistry.Cache do
 
     case Catalog.parse(body) do
       {:ok, snapshot} ->
-        {body, snapshot}
+        {body, Map.put(snapshot, :source_url, @canonical_catalog_url)}
 
       {:error, reason} ->
         raise "PublishedRegistry.Cache: bundled catalog at #{path} is invalid: #{reason}"

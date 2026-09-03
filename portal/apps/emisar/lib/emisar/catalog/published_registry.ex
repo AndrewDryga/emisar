@@ -37,7 +37,8 @@ defmodule Emisar.Catalog.PublishedRegistry do
   def pack_count, do: length(list())
 
   @doc """
-  Freshness of the served catalog: `%{source:, checked_at:, loaded_at:, count:}`.
+  Freshness of the served catalog:
+  `%{source:, generation:, checked_at:, loaded_at:, count:}`.
 
   `checked_at` is the last body the registry served that VALIDATED — nil until
   one has. A portal that cannot refresh keeps serving its last-good document, so
@@ -45,6 +46,7 @@ defmodule Emisar.Catalog.PublishedRegistry do
   """
   @spec status() :: %{
           source: atom(),
+          generation: non_neg_integer(),
           checked_at: DateTime.t() | nil,
           loaded_at: DateTime.t(),
           count: non_neg_integer()

@@ -16,6 +16,7 @@ defmodule Emisar.Catalog.PackBaselineTest do
   defp published_catalog do
     %{
       "schema_version" => 1,
+      "generation" => 2,
       "packs" => [
         pack("redis", %{
           "version" => "0.3.0",
@@ -302,6 +303,7 @@ defmodule Emisar.Catalog.PackBaselineTest do
 
       refreshed = %{
         "schema_version" => 1,
+        "generation" => 3,
         "packs" => [pack("nginx", %{"version" => "2.0.0", "retired_below" => "1.0.0"})]
       }
 

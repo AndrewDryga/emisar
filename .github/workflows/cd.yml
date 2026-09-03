@@ -272,10 +272,11 @@ jobs:
               # from the committed catalog exactly like the empty-registry
               # bootstrap below (immutable content-addressed objects stay
               # protected by publish's if-generation-match:0 either way).
-              # The SAME check `catalog build --previous` applies, so this
-              # decision and packctl's acceptance cannot drift. A jq predicate
-              # here accepted catalogs packctl would carry forward with an
-              # amputated history.
+              # Validate the current published schema. A legacy catalog that
+              # predates generation intentionally takes the committed fallback;
+              # that artifact was already rebuilt against live history before
+              # this change. A shallow jq predicate here previously accepted
+              # catalogs packctl would carry forward with amputated history.
               if /tmp/packctl catalog validate /tmp/previous.json >/dev/null; then
                 echo "using published catalog history from generation $(jq -r .generation /tmp/catalog-metadata.json)"
               else

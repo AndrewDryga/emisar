@@ -27,6 +27,7 @@ defmodule Emisar.Catalog.PublishedRegistry.CacheTest do
 
     %{
       "schema_version" => 1,
+      "generation" => Keyword.get(opts, :generation, 2),
       "packs" => [
         %{
           "id" => id,
@@ -68,7 +69,7 @@ defmodule Emisar.Catalog.PublishedRegistry.CacheTest do
     end
 
     test "a valid but empty published catalog keeps the last-good catalog" do
-      empty = Jason.encode!(%{"schema_version" => 1, "packs" => []})
+      empty = Jason.encode!(%{"schema_version" => 1, "generation" => 2, "packs" => []})
       assert {:keep, message} = Cache.evaluate({:ok, empty}, @catalog_url)
       assert message =~ "no packs"
     end
@@ -108,6 +109,19 @@ defmodule Emisar.Catalog.PublishedRegistry.CacheTest do
 
       assert {:keep, message} = Cache.evaluate({:ok, off_base}, self_host_url)
       assert message =~ "not under the registry base"
+    end
+
+    test "a private registry cannot use the builder-only legacy omission" do
+      self_host_url = "https://packs.acme.internal/registry/catalog.json"
+
+      legacy =
+        "redis"
+        |> catalog_document(tarball_url: "https://packs.acme.internal/registry/redis.tar.gz")
+        |> Map.delete("generation")
+        |> Jason.encode!()
+
+      assert {:keep, message} = Cache.evaluate({:ok, legacy}, self_host_url)
+      assert message =~ "catalog missing generation"
     end
   end
 
@@ -153,6 +167,7 @@ defmodule Emisar.Catalog.PublishedRegistry.CacheTest do
       # No digest: the preserved snapshot came from bytes this process never
       # saw, so the next body must be parsed and compared, not byte-matched.
       assert state.digest == nil
+      assert Cache.snapshot().generation == 2
       assert Cache.trust_snapshot().retired_below == %{"redis" => "0.2.0"}
 
       kept = Cache.refresh(state, {:error, :nxdomain})
@@ -185,7 +200,7 @@ defmodule Emisar.Catalog.PublishedRegistry.CacheTest do
     end
 
     test "a byte-identical body is not swapped in twice", %{state: state} do
-      body = catalog_json("nginx")
+      body = catalog_json("nginx", generation: 3)
 
       loaded = Cache.refresh(state, {:ok, body})
       assert_received :installed
@@ -200,7 +215,7 @@ defmodule Emisar.Catalog.PublishedRegistry.CacheTest do
     end
 
     test "a body that re-encodes to the same catalog is not swapped in", %{state: state} do
-      document = catalog_document("nginx", [])
+      document = catalog_document("nginx", generation: 3)
 
       loaded = Cache.refresh(state, {:ok, Jason.encode!(document)})
       assert_received :installed
@@ -223,12 +238,79 @@ defmodule Emisar.Catalog.PublishedRegistry.CacheTest do
       assert Enum.map(Cache.current(), & &1.id) == ["redis"]
     end
 
+    test "a lower generation holds the last-good catalog", %{state: state} do
+      loaded = Cache.refresh(state, {:ok, catalog_json("nginx", generation: 4)})
+      assert_received :installed
+
+      log =
+        capture_log(fn ->
+          kept = Cache.refresh(loaded, {:ok, catalog_json("redis", generation: 3)})
+          assert kept.digest == loaded.digest
+          assert kept.checked_at == loaded.checked_at
+          assert kept.loaded_at == loaded.loaded_at
+        end)
+
+      refute_received :installed
+      assert log =~ "generation 3"
+      assert log =~ "last-good generation is 4"
+      assert Enum.map(Cache.current(), & &1.id) == ["nginx"]
+    end
+
+    test "different content cannot reuse an accepted generation", %{state: state} do
+      log =
+        capture_log(fn ->
+          kept = Cache.refresh(state, {:ok, catalog_json("nginx", generation: 2)})
+          assert kept.digest == state.digest
+          assert kept.checked_at == state.checked_at
+          assert kept.loaded_at == state.loaded_at
+        end)
+
+      refute_received :installed
+      assert log =~ "generation 2"
+      assert log =~ "already names different content"
+      assert Enum.map(Cache.current(), & &1.id) == ["redis"]
+    end
+
+    test "a different registry source establishes an independent generation lineage", %{
+      state: state
+    } do
+      private_url = "https://packs.acme.internal/v1/catalog.json#ignored"
+
+      private =
+        catalog_json("nginx",
+          generation: 1,
+          tarball_url: "https://packs.acme.internal/v1/nginx.tar.gz"
+        )
+
+      replaced = Cache.refresh(%{state | url: private_url}, {:ok, private})
+
+      assert_received :installed
+      assert replaced.source == :remote
+      assert Cache.snapshot().source_url == "https://packs.acme.internal/v1/catalog.json"
+      assert Cache.snapshot().generation == 1
+      assert Enum.map(Cache.current(), & &1.id) == ["nginx"]
+    end
+
+    test "unchanged content cannot skip generations", %{state: state} do
+      same_content = catalog_json("redis", generation: 3)
+
+      log = capture_log(fn -> Cache.refresh(state, {:ok, same_content}) end)
+
+      refute_received :installed
+      assert log =~ "unchanged content must retain generation 2"
+      assert Cache.snapshot().generation == 2
+    end
+
     test "a publish that lowers a retirement watermark is served and alerted", %{state: state} do
-      retired = catalog_json("redis", version: "0.3.0", retired_below: "0.2.0")
+      retired =
+        catalog_json("redis", generation: 3, version: "0.3.0", retired_below: "0.2.0")
+
       loaded = Cache.refresh(state, {:ok, retired})
       assert_received :installed
 
-      lowered = catalog_json("redis", version: "0.3.0", retired_below: "0.1.0")
+      lowered =
+        catalog_json("redis", generation: 4, version: "0.3.0", retired_below: "0.1.0")
+
       log = capture_log(fn -> Cache.refresh(loaded, {:ok, lowered}) end)
 
       assert_received :installed
@@ -237,20 +319,26 @@ defmodule Emisar.Catalog.PublishedRegistry.CacheTest do
     end
 
     test "a publish that drops a retirement watermark is alerted", %{state: state} do
-      retired = catalog_json("redis", version: "0.3.0", retired_below: "0.2.0")
+      retired =
+        catalog_json("redis", generation: 3, version: "0.3.0", retired_below: "0.2.0")
+
       loaded = Cache.refresh(state, {:ok, retired})
 
-      dropped = catalog_json("redis", version: "0.3.0")
+      dropped = catalog_json("redis", generation: 4, version: "0.3.0")
       log = capture_log(fn -> Cache.refresh(loaded, {:ok, dropped}) end)
 
       assert log =~ ~s(lowers or drops the retirement watermark for pack "redis")
     end
 
     test "a publish that raises a retirement watermark is not alerted", %{state: state} do
-      retired = catalog_json("redis", version: "0.3.0", retired_below: "0.2.0")
+      retired =
+        catalog_json("redis", generation: 3, version: "0.3.0", retired_below: "0.2.0")
+
       loaded = Cache.refresh(state, {:ok, retired})
 
-      raised = catalog_json("redis", version: "0.3.0", retired_below: "0.3.0")
+      raised =
+        catalog_json("redis", generation: 4, version: "0.3.0", retired_below: "0.3.0")
+
       log = capture_log(fn -> Cache.refresh(loaded, {:ok, raised}) end)
 
       refute log =~ "retirement watermark"
@@ -261,10 +349,16 @@ defmodule Emisar.Catalog.PublishedRegistry.CacheTest do
     test "the running cache is populated from the bundled catalog" do
       # checked_at stays nil until a registry body validates — boot reached no
       # registry, so an alert on its staleness must not fire on a fresh node.
-      assert %{source: :bundled, checked_at: nil, loaded_at: %DateTime{}, count: count} =
-               Cache.status()
+      assert %{
+               source: :bundled,
+               generation: generation,
+               checked_at: nil,
+               loaded_at: %DateTime{},
+               count: count
+             } = Cache.status()
 
       assert count > 0
+      assert generation > 0
       assert Cache.current() != []
       assert map_size(Cache.trust_snapshot().baseline) > 0
     end

@@ -33,6 +33,7 @@ defmodule Emisar.Catalog.PublishedRegistry.Catalog do
   alias Emisar.Catalog.TrustedManifest
 
   @schema_version 1
+  @max_generation 9_007_199_254_740_991
   @hash_regex ~r/\Asha256:[0-9a-f]{64}\z/
   @risks ~w(low medium high critical)
   @kinds ~w(exec script)
@@ -63,7 +64,8 @@ defmodule Emisar.Catalog.PublishedRegistry.Catalog do
   descriptor.
   """
   @spec parse(binary() | map()) ::
-          {:ok, %{packs: [Pack.t()], trust: trust()}} | {:error, String.t()}
+          {:ok, %{generation: non_neg_integer(), packs: [Pack.t()], trust: trust()}}
+          | {:error, String.t()}
   def parse(json) when is_binary(json) do
     case Jason.decode(json) do
       {:ok, data} -> parse(data)
@@ -71,10 +73,12 @@ defmodule Emisar.Catalog.PublishedRegistry.Catalog do
     end
   end
 
-  def parse(%{"schema_version" => @schema_version, "packs" => packs}) when is_list(packs) do
-    with {:ok, parsed} <- parse_packs(packs),
+  def parse(%{"schema_version" => @schema_version, "packs" => packs} = catalog)
+      when is_list(packs) do
+    with {:ok, generation} <- fetch_generation(catalog),
+         {:ok, parsed} <- parse_packs(packs),
          {:ok, trust} <- parse_trust(packs) do
-      {:ok, %{packs: Enum.sort_by(parsed, & &1.id), trust: trust}}
+      {:ok, %{generation: generation, packs: Enum.sort_by(parsed, & &1.id), trust: trust}}
     end
   end
 
@@ -83,6 +87,15 @@ defmodule Emisar.Catalog.PublishedRegistry.Catalog do
   end
 
   def parse(_data), do: {:error, "catalog missing schema_version or packs"}
+
+  defp fetch_generation(%{"generation" => generation})
+       when is_integer(generation) and generation > 0 and generation <= @max_generation,
+       do: {:ok, generation}
+
+  defp fetch_generation(%{"generation" => _generation}),
+    do: {:error, "catalog generation must be an integer between 1 and #{@max_generation}"}
+
+  defp fetch_generation(_catalog), do: {:error, "catalog missing generation"}
 
   defp parse_packs(packs) do
     acc = {[], MapSet.new(), MapSet.new()}
