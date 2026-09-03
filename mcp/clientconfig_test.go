@@ -566,7 +566,7 @@ func TestJSONEntryExpectationSurvivesAWindowsPath(t *testing.T) {
 		`{"command":"BIN","args":[]}`, "BIN", jsonStringBody(t, windowsCommand))
 
 	var want map[string]any
-	if err := decodeJSON([]byte(expected), &want); err != nil {
+	if err := json.Unmarshal([]byte(expected), &want); err != nil {
 		t.Fatalf("a Windows path must not break the expectation: %v", err)
 	}
 	if want["command"] != windowsCommand {
@@ -603,7 +603,7 @@ func assertJSONEntry(t *testing.T, client detectedClient, raw, expected, command
 	expected = strings.ReplaceAll(expected, "BIN", jsonStringBody(t, command))
 	expected = strings.ReplaceAll(expected, "ENVFILE", jsonStringBody(t, client.EnvFilePath))
 	var want any
-	if err := decodeJSON([]byte(expected), &want); err != nil {
+	if err := json.Unmarshal([]byte(expected), &want); err != nil {
 		t.Fatalf("bad expectation: %v", err)
 	}
 	if !sameJSONValue(written, want) {

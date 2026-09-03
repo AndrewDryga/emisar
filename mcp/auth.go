@@ -238,14 +238,6 @@ func decodeStrictJSON(data []byte, target any) error {
 	return ensureJSONEOF(decoder)
 }
 
-func decodeJSON(data []byte, target any) error {
-	decoder := json.NewDecoder(bytes.NewReader(data))
-	if err := decoder.Decode(target); err != nil {
-		return err
-	}
-	return ensureJSONEOF(decoder)
-}
-
 func storeCLIAccountCredential(
 	origin string,
 	credential deviceCredential,
