@@ -6,6 +6,7 @@ risk: low
 description: Show Linux resource limits for a BEAM process.
 side_effects:
   - One /proc limits read.
+  - Inspecting a protected process owned by another user needs this pack's process-inspection recipe.
   - Read-only.
 args:
   - name: pid

@@ -6,6 +6,7 @@ risk: low
 description: Show ancestors and descendants for a BEAM OS process without command-line arguments.
 side_effects:
   - Reads the process table.
+  - Inspecting a protected process owned by another user needs this pack's process-inspection recipe.
   - Does not print command-line arguments or environment variables.
   - Read-only.
 args:

@@ -2,7 +2,7 @@ schema_version: 1
 
 id: elixir-beam
 name: Elixir / BEAM runtime
-version: 0.1.9
+version: 0.1.10
 retired_below: 0.1.9
 description: >
   Diagnostics for Elixir and Erlang/BEAM applications on the runner host or
@@ -42,6 +42,7 @@ setup:
   notes:
     - "Release actions discover running releases from BEAM process command lines and only ever execute <release_root>/bin/<release_name> of a release that is already running — callers select among live releases but cannot point actions at arbitrary binaries."
     - "When several releases run on one target, pass the release argument (names come from beam.release_targets). For a release inside Docker, pass the container argument."
+    - "For a host release, or a runner that diagnoses both host and rootful-Docker releases, apply only the root host-release recipe. For a container-only runner, apply only the Docker-socket recipe; it removes this pack's root override and restores the service's configured emisar user."
     - "Release RPC actions execute fixed, pack-authored expressions only; callers cannot supply arbitrary Elixir code."
     - "If the release control script evaluates runtime config during rpc, the runner service must inherit the same runtime env the release script needs, or those actions will fail before connecting. With the container argument this usually just works: docker exec runs with the container's configured environment."
     - "beam.release_pid reports the PID inside the container's namespace when container is set, not the host PID (find the host PID with beam.processes)."
@@ -53,6 +54,23 @@ setup:
         - beam.process_limits
         - beam.process_memory
         - beam.process_tree
+      requirement: Inspect protected process state owned by another user.
+      recipes:
+        - name: Grant process-inspection capabilities to the Emisar service
+          commands:
+            - "sudo install -d -m 0755 /etc/systemd/system/emisar.service.d"
+            - "sudo rm -f /etc/systemd/system/emisar.service.d/10-elixir-beam-host-access.conf"
+            - "printf '%s\\n' '[Service]' 'AmbientCapabilities=CAP_SYS_PTRACE CAP_DAC_READ_SEARCH' | sudo tee /etc/systemd/system/emisar.service.d/20-elixir-beam-process-inspection.conf >/dev/null"
+            - "sudo systemctl daemon-reload"
+            - "sudo systemctl restart emisar"
+          verify:
+            - "systemctl show emisar --property=AmbientCapabilities --value | grep -Fwi cap_sys_ptrace"
+            - "systemctl show emisar --property=AmbientCapabilities --value | grep -Fwi cap_dac_read_search"
+          impact: >
+            Every Emisar action on this runner can inspect, attach to, and modify
+            processes outside the runner user, and bypass host file read and
+            directory search permissions.
+    - actions:
         - beam.release_targets
         - beam.release_pid
         - beam.release_runtime
@@ -70,19 +88,35 @@ setup:
         - beam.release_ports
         - beam.recon_trace_calls
         - beam.recon_trace_clear
-      requirement: Inspect BEAM processes owned by another user and reach release control scripts or Docker containers.
+      requirement: Reach another user's host release control files or the Docker daemon for a containerized release.
       recipes:
-        - name: Run the Emisar service as root
+        - name: Run the Emisar service as root for host releases
           commands:
             - "sudo install -d -m 0755 /etc/systemd/system/emisar.service.d"
-            - "printf '%s\\n' '[Service]' 'User=root' 'Group=root' | sudo tee /etc/systemd/system/emisar.service.d/10-elixir-beam-host-access.conf >/dev/null"
+            - "sudo rm -f /etc/systemd/system/emisar.service.d/10-elixir-beam-host-access.conf"
+            - "printf '%s\\n' '[Service]' 'User=root' 'Group=root' | sudo tee /etc/systemd/system/emisar.service.d/30-elixir-beam-host-release.conf >/dev/null"
             - "sudo systemctl daemon-reload"
             - "sudo systemctl restart emisar"
           verify:
             - "test \"$(systemctl show emisar --property=User --value)\" = root"
           impact: >
-            Every Emisar action on this runner executes as root. Release RPC can inspect
-            application state, and root can reach every host process and rootful Docker container.
+            Every Emisar action on this runner executes as root and can read or change
+            any host file, process, secret, and kernel or service state. Release RPC
+            can inspect and change the selected application's runtime state.
+        - name: Add the Emisar service user to the docker group for containerized releases
+          commands:
+            - "sudo rm -f /etc/systemd/system/emisar.service.d/10-elixir-beam-host-access.conf"
+            - "sudo rm -f /etc/systemd/system/emisar.service.d/30-elixir-beam-host-release.conf"
+            - "sudo systemctl daemon-reload"
+            - "sudo usermod -aG docker emisar"
+            - "sudo systemctl restart emisar"
+          verify:
+            - "test \"$(systemctl show emisar --property=User --value)\" = emisar"
+            - "id -nG emisar | tr ' ' '\\n' | grep -Fx docker"
+            - "sudo -u emisar docker info >/dev/null"
+          impact: >
+            Every process running as emisar can control Docker. Docker socket access is
+            effectively root-equivalent because containers can mount and write the host.
   verify: beam.release_targets
 
 actions:

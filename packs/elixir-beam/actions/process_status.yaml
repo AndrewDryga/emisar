@@ -6,6 +6,7 @@ risk: low
 description: Show selected /proc/PID/status fields for a BEAM process.
 side_effects:
   - One /proc status read.
+  - Inspecting a protected process owned by another user needs this pack's process-inspection recipe.
   - Read-only.
 args:
   - name: pid

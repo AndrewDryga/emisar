@@ -2,6 +2,30 @@ recipes:
   - access: 0
     recipe: 0
     fixture: debian
-    action: beam.process_status
-    prepare: ["true"]
-    probe: test "$(id -u)" = 0
+    action: beam.process_memory
+    prepare:
+      - useradd --uid 60011 --user-group --no-create-home --shell /usr/sbin/nologin packtest-beam-process
+      - systemd-run --unit=packtest-beam-process --property=User=packtest-beam-process /bin/sleep infinity
+      - systemctl show packtest-beam-process.service --property=MainPID --value > /run/packtest-beam-process.pid
+    probe: pid=$(cat /run/packtest-beam-process.pid) && test "$pid" -gt 1 && head -n 1 "/proc/$pid/smaps_rollup" >/dev/null && ls "/proc/$pid/fd" >/dev/null
+  - access: 1
+    recipe: 0
+    fixture: debian
+    action: beam.release_runtime
+    prepare:
+      - useradd --uid 60012 --user-group --no-create-home --shell /usr/sbin/nologin packtest-beam-release
+      - install -d -o packtest-beam-release -g packtest-beam-release -m 0700 /opt/packtest-beam-release/bin /opt/packtest-beam-release/releases/1
+      - printf '#!/bin/sh\ntest "$1" = rpc && test -r /opt/packtest-beam-release/.erlang.cookie\n' > /opt/packtest-beam-release/bin/sample
+      - chown packtest-beam-release:packtest-beam-release /opt/packtest-beam-release/bin/sample
+      - chmod 0700 /opt/packtest-beam-release/bin/sample
+      - install -o packtest-beam-release -g packtest-beam-release -m 0400 /dev/null /opt/packtest-beam-release/.erlang.cookie
+    probe: test "$(id -u)" = 0 && /opt/packtest-beam-release/bin/sample rpc
+  - access: 1
+    recipe: 1
+    fixture: debian
+    action: beam.release_targets
+    prepare:
+      - install -d -m 0755 /var/run && install -o root -g docker -m 0660 /dev/null /var/run/docker.sock
+    recreate:
+      - rm -f /var/run/docker.sock && install -o root -g docker -m 0660 /dev/null /var/run/docker.sock
+    probe: docker info

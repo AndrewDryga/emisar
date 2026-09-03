@@ -6,6 +6,7 @@ risk: low
 description: Show Linux /proc memory, fd, thread, and mapping counts for a BEAM process.
 side_effects:
   - Reads selected /proc files for one PID.
+  - Inspecting a protected process owned by another user needs this pack's process-inspection recipe.
   - Does not read process argv, environment, memory contents, or file descriptor targets.
   - Read-only.
 args:
