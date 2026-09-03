@@ -42,6 +42,11 @@ func TestDecodeBridgeResult(t *testing.T) {
 			response:  `<html>bad gateway</html>`,
 			wantError: true,
 		},
+		{
+			name:      "empty response",
+			response:  "\n\t ",
+			wantError: true,
+		},
 	}
 
 	for _, tt := range tests {

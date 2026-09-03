@@ -208,7 +208,7 @@ type bridgeResult struct {
 
 func decodeBridgeResult(output string) (bridgeResult, error) {
 	lines := strings.Split(strings.TrimSpace(output), "\n")
-	if len(lines) == 0 || lines[len(lines)-1] == "" {
+	if lines[len(lines)-1] == "" {
 		return bridgeResult{}, errors.New("empty bridge response")
 	}
 
