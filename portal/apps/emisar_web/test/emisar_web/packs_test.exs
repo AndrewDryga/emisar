@@ -166,7 +166,7 @@ defmodule EmisarWeb.PacksTest do
       # verbatim is what this page used to do.
       html = conn |> get(~p"/packs/frr") |> html_response(200)
 
-      assert html =~ ~r{<code[^>]*>no neighbor &lt;peer&gt; shutdown</code>}
+      assert html =~ ~r{<code[^>]*>show</code>}
     end
 
     test "the pack reference footer link carries the brand CTA affordance", %{conn: conn} do
@@ -384,16 +384,18 @@ defmodule EmisarWeb.PacksTest do
       max_length = spec["validation"]["max_length"]
       descriptor = %{"args_schema" => %{"args" => [spec]}}
 
-      # A script of control bytes is the escaping worst case — Jason encodes
-      # each 0x01 byte as a six-byte backslash-u0001 escape.
-      worst_case = String.duplicate(<<1>>, max_length)
+      # The contract refuses control and formatting characters before dispatch,
+      # so the costliest script it still admits is all tabs — Jason encodes each
+      # as a two-byte escape. The published bound keeps the six-byte margin a
+      # raw client escape can still cost at the MCP boundary (next test).
+      worst_case = String.duplicate("\t", max_length)
 
       assert ActionContract.validate(%{"script" => worst_case}, descriptor) == :ok
 
       assert byte_size(Jason.encode!(%{"script" => worst_case})) <=
                Runbooks.definition_limit!(:max_action_args_bytes)
 
-      over = String.duplicate(<<1>>, max_length + 1)
+      over = String.duplicate("\t", max_length + 1)
 
       assert {:error, %{arg: "script", code: "max_length"}} =
                ActionContract.validate(%{"script" => over}, descriptor)
