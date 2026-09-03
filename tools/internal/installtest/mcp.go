@@ -303,6 +303,13 @@ func installMCP(h *harness, bin string) (string, error) {
 	return matchedVersion(mcpVersion, output)
 }
 
+func mcpUserConfigDir(home string) string {
+	if runtime.GOOS == "darwin" {
+		return filepath.Join(home, "Library", "Application Support")
+	}
+	return filepath.Join(home, ".config")
+}
+
 func mcpInstallRollback(h *harness) error {
 	bin := h.path("bin")
 	version, err := installMCP(h, bin)
@@ -330,7 +337,7 @@ func mcpInstallRollback(h *harness) error {
 		!strings.Contains(string(result.output), "flag --version requires a value") {
 		return fmt.Errorf("ambiguous --version parsing was accepted:\n%s", result.output)
 	}
-	credential := h.path("home", ".config", "emisar", "mcp-credentials.json")
+	credential := filepath.Join(mcpUserConfigDir(h.path("home")), "emisar", "credentials", "rollback-proof.json")
 	if err := h.mkdir(filepath.Dir(credential)); err != nil {
 		return err
 	}
@@ -699,10 +706,7 @@ func mcpConnectCommand(h *harness) error {
 		return err
 	}
 	home := h.path("connect-home")
-	appConfig := filepath.Join(home, ".config")
-	if runtime.GOOS == "darwin" {
-		appConfig = filepath.Join(home, "Library", "Application Support")
-	}
+	appConfig := mcpUserConfigDir(home)
 	// One marker directory per client, which is how the bridge decides a client
 	// is installed. Every advertised client is present, so a client dropped from
 	// the table stops being connected here.
@@ -867,10 +871,9 @@ func mcpUninstall(h *harness) error {
 	// os.UserConfigDir (mcp/rotate.go), which ignores XDG on darwin — the fixture must live
 	// where the script's darwin branch actually looks, or the removal is
 	// only ever tested on Linux.
-	credentials := filepath.Join(home, ".config", "emisar", "credentials")
+	credentials := filepath.Join(mcpUserConfigDir(home), "emisar", "credentials")
 	vscodeConfig := filepath.Join(home, ".config", "Code", "User", "mcp.json")
 	if runtime.GOOS == "darwin" {
-		credentials = filepath.Join(home, "Library", "Application Support", "emisar", "credentials")
 		vscodeConfig = filepath.Join(home, "Library", "Application Support", "Code", "User", "mcp.json")
 	}
 	if err := h.mkdir(bin, credentials, filepath.Dir(vscodeConfig),
