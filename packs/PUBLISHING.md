@@ -103,9 +103,10 @@ sets `packs_release` (`tools/internal/ci/select.go`) when its diff changes
 pack sources or the pack toolchain — or, failing that fast path, when the live
 `v1/catalog.json` no longer byte-matches the committed
 `portal/apps/emisar/priv/packs/catalog.json` (or cannot be read at all). After
-a human approves the `pack-registry-approval` environment gate,
-`packs-publish` in `.github/workflows/cd.yml` builds against the live catalog
-and publishes.
+exact-head CI passes, `packs-publish` in `.github/workflows/cd.yml` builds
+against the live catalog and publishes through the protected-main
+`pack-registry-production` environment. Pushing the signed commit is the
+publication decision; the environment has no second reviewer.
 
 The drift probe makes publication level-triggered on registry state rather
 than edge-triggered on one push's diff: when a pack-changing push's CD run
@@ -124,8 +125,7 @@ done | sort | diff /tmp/live-versions.txt -
 ```
 
 A non-empty diff means the registry is stale: any main push (or a manual
-publish, above) republishes it — watch the CD run through approval to
-publication.
+publish, above) republishes it — watch the CD run through publication.
 
 ## Verify
 

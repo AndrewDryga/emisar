@@ -474,8 +474,10 @@ gcloud storage ls -a gs://$(terraform output -raw pack_registry_bucket)/v1/catal
 gcloud storage ls -a gs://$(terraform output -raw pack_registry_bucket)/packs.json
 ```
 
-Pack publication has a separate GitHub environment approval and is serialized
-so an active publication cannot be canceled halfway through.
+Pack publication runs after exact-head CI through the protected-main
+`pack-registry-production` environment. It has no second reviewer in the
+solo-founder release flow, is serialized, and refuses a commit superseded by
+newer `main`, so an active publication cannot be canceled halfway through.
 
 ## Release artifacts
 
