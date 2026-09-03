@@ -13,7 +13,7 @@ defmodule Emisar.Accounts do
   alias Ecto.Multi
   alias Emisar.Accounts.{Account, Authorizer, InvitationInput, Membership}
   alias Emisar.Accounts.{MembershipRunnerScope, RunnerAccess}
-  alias Emisar.{ApiKeys, Audit, Auth, Billing, Crypto, Mail, Repo, Slug, SSO, Users}
+  alias Emisar.{ApiKeys, Approvals, Audit, Auth, Billing, Crypto, Mail, Repo, Slug, SSO, Users}
   alias Emisar.Auth.Subject
 
   def start_link(opts) do
@@ -295,8 +295,10 @@ defmodule Emisar.Accounts do
   account disappears while its run history and audit rows stay intact.
 
   No console surface — this is reachable from a remote shell. It takes a
-  `%Subject{}` and gates on the same permission as the other support writes so
-  exposing it later is wiring, not a rewrite.
+  `%Subject{}` and gates on the same permission AND the same account scope as
+  `set_account_disabled_for_support/4`: `manage_own_account` is held by every
+  owner/admin for their OWN account, so without the scope check any of them
+  could cancel the subscription of and tombstone any tenant by id.
 
   `{:ok, account} | {:error, :invalid_reason | :not_found | term()}`.
   """
@@ -306,7 +308,8 @@ defmodule Emisar.Accounts do
            Auth.Authorizer.ensure_has_permissions(
              subject,
              Authorizer.manage_own_account_permission()
-           ) do
+           ),
+         :ok <- Subject.ensure_in_account(subject, account_id) do
       Multi.new()
       |> Multi.run(:account, fn repo, _changes ->
         Account.Query.not_deleted()
@@ -2297,6 +2300,7 @@ defmodule Emisar.Accounts do
       # and needs a Multi: the nested `fetch_and_update` joins this transaction
       # and keeps only its `:audit`, and the side effects ride the outer commit.
       Multi.new()
+      |> put_membership_account_lock(membership.account_id)
       |> Multi.run(:target, fn repo, _changes ->
         lock_runner_access_membership(repo, membership.id, membership.account_id)
       end)
@@ -2342,10 +2346,14 @@ defmodule Emisar.Accounts do
         end
       end,
       # `changeset.data` is the locked pre-update row — the audit
-      # payload records the role that was actually replaced. (A capture
-      # can't skip &1, so this stays a fn.)
+      # payload records the role that was actually replaced. Re-submitting the
+      # role the member already holds leaves the changeset empty, and a
+      # `from: :admin, to: :admin` row would make the trail unreadable, so a
+      # no-op writes nothing. (A capture can't skip &1, so this stays a fn.)
       audit: fn _updated, changeset ->
-        Audit.Events.membership_role_changed(subject, changeset.data, new_role)
+        if changeset.changes == %{},
+          do: nil,
+          else: Audit.Events.membership_role_changed(subject, changeset.data, new_role)
       end
     )
   end
@@ -2381,15 +2389,6 @@ defmodule Emisar.Accounts do
     )
   end
 
-  # after_commit for the SCIM role sync, whose `fetch_and_update` hands back the
-  # changeset: refresh the team list and the member's stale web subject, then on
-  # a privilege REDUCTION cut their standing API-key delegations.
-  # `changeset.data.role` is the locked pre-update role.
-  defp on_membership_role_changed(%Membership{} = membership, %Ecto.Changeset{} = changeset) do
-    broadcast_membership_role_changed(membership)
-    refresh_member_sessions_if_role_changed(changeset.data.role, membership)
-  end
-
   # after_commit for the operator role change, whose Multi carries the locked
   # pre-update row as `:target`. Refresh once when either the role or its carried
   # reach changed, then broadcast the access reset separately for other mounted
@@ -2417,11 +2416,18 @@ defmodule Emisar.Accounts do
   # pack access change disconnects the affected user's sockets after commit.
   # The session rows stay intact: the browser reconnects and rebuilds the
   # subject from current membership state.
-  defp refresh_member_sessions_if_role_changed(role, %Membership{role: role}), do: :ok
-
-  defp refresh_member_sessions_if_role_changed(_previous_role, %Membership{} = membership),
-    do: refresh_member_sessions(membership)
-
+  #
+  # The gap between COMMIT and that disconnect is a knowingly ACCEPTED window,
+  # not an oversight (round-9 CX1-SEC-01): for the seconds it lasts, an
+  # already-mounted socket can still spend the authority it mounted with. We
+  # accept it because the disconnect closes it without operator action and the
+  # alternative — re-locking and rebuilding the ACTOR's membership inside every
+  # security-sensitive mutation across five contexts — buys a few seconds of
+  # exposure at the price of a second authorization path that can drift from
+  # this one. Durable credentials do NOT ride on the window: keys, device
+  # grants, and standing approval grants are revoked inside the same
+  # transaction as the membership change. Do not "fix" this by hiding UI; the
+  # target-side scope checks are what actually stop cross-tenant work.
   defp refresh_member_sessions_if_access_changed(access, access, %Membership{}), do: :ok
 
   defp refresh_member_sessions_if_access_changed(
@@ -2448,10 +2454,25 @@ defmodule Emisar.Accounts do
        ),
        do: refresh_member_sessions(membership)
 
-  # A reduced role must retire credentials minted under the old authority. Run
+  # Everything a membership DELEGATED dies with its authority, in the same
+  # transaction as the membership write. Two kinds, and the second is the one
+  # that hides: the API keys and device grants the member minted are bound to
+  # the member, but a standing approval grant is bound to whichever API key
+  # asked — usually somebody else's — so retiring the member's own credentials
+  # never reaches it, and a ninety-day grant kept bypassing the human prompt
+  # long after its approver was suspended, removed, or deprovisioned.
+  defp revoke_membership_delegations(repo, %Membership{} = membership) do
+    with {:ok, credentials} <- ApiKeys.revoke_credentials_for_membership(repo, membership.id),
+         {:ok, grants} <- Approvals.revoke_grants_granted_by_membership(repo, membership) do
+      {:ok, Map.put(credentials, :approval_grants, grants)}
+    end
+  end
+
+  # A reduced role must retire what it delegated under the old authority. Run
   # dispatch rechecks membership access, but an `:audit_export` bearer otherwise
   # remains usable at authentication and can keep reading the account audit
-  # stream. Suspension and removal revoke for the same reason.
+  # stream, and a standing grant keeps skipping approval. Suspension and removal
+  # revoke for the same reason.
   #
   # Authz here is permission-based, not rank-based (`Auth.Role` deliberately has
   # no rank), so "reduction" is a permission-subset test — the new role losing a
@@ -2462,9 +2483,9 @@ defmodule Emisar.Accounts do
          %Membership{role: new_role} = membership
        ) do
     if reduced_permissions?(old_role, new_role) do
-      ApiKeys.revoke_credentials_for_membership(repo, membership.id)
+      revoke_membership_delegations(repo, membership)
     else
-      {:ok, %{api_keys: 0, device_grants: 0}}
+      {:ok, %{api_keys: 0, device_grants: 0, approval_grants: 0}}
     end
   end
 
@@ -2611,26 +2632,26 @@ defmodule Emisar.Accounts do
   # and runs the hierarchy guard against the fresh copy — the caller's
   # struct is a stale socket snapshot. Mutations that write the
   # membership row itself use `Repo.fetch_and_update/3` instead.
-  defp lock_target_membership(multi, %Membership{} = membership, guard) do
+  defp lock_target_membership(multi, %Membership{} = membership, %Subject{} = subject, guard) do
     Multi.run(multi, :target, fn repo, _changes ->
-      with {:ok, loaded_membership} <- lock_membership(repo, membership),
+      with {:ok, loaded_membership} <- lock_membership(repo, membership, subject),
            :ok <- guard.(loaded_membership) do
         {:ok, loaded_membership}
       end
     end)
   end
 
-  # `nil` means the member vanished mid-flight.
-  defp lock_membership(repo, %Membership{} = membership) do
-    loaded_membership =
-      Membership.Query.not_deleted()
-      |> Membership.Query.by_id(membership.id)
-      |> Membership.Query.lock_for_update()
-      |> repo.one()
-
-    if loaded_membership,
-      do: {:ok, loaded_membership},
-      else: {:error, :not_found}
+  # Scoped like every sibling lock: the account filter and `for_subject/2`
+  # narrow the QUERY, so a caller-supplied struct whose `account_id` is the
+  # subject's own but whose `id` names a foreign membership finds no row
+  # rather than passing a guard read off that struct.
+  defp lock_membership(repo, %Membership{} = membership, %Subject{} = subject) do
+    Membership.Query.not_deleted()
+    |> Membership.Query.by_id(membership.id)
+    |> Membership.Query.by_account_id(membership.account_id)
+    |> Membership.Query.lock_for_update()
+    |> Authorizer.for_subject(subject)
+    |> repo.fetch(Membership.Query)
   end
 
   # Refuses to take the account's last ACTIVE owner out of play. Runs
@@ -2684,6 +2705,7 @@ defmodule Emisar.Accounts do
          :ok <- ensure_subject_in_account(subject, membership.account_id) do
       result =
         Multi.new()
+        |> put_membership_account_lock(membership.account_id)
         |> Multi.run(:target, fn repo, _changes ->
           loaded =
             Membership.Query.not_deleted()
@@ -2715,7 +2737,7 @@ defmodule Emisar.Accounts do
           Audit.Events.membership_suspended(subject, suspended)
         end)
         |> Multi.run(:credential_revocation, fn repo, %{membership: suspended} ->
-          ApiKeys.revoke_credentials_for_membership(repo, suspended.id)
+          revoke_membership_delegations(repo, suspended)
         end)
         |> Repo.commit_multi(
           after_commit: fn %{membership: suspended} ->
@@ -2760,8 +2782,13 @@ defmodule Emisar.Accounts do
 
         case loaded do
           %Membership{} = loaded_membership ->
+            # `ensure_suspended/1` runs last, mirroring suspend: an already-active
+            # member is the same `{:ok, membership}` no-op, so a repeated or racing
+            # submit cannot write a `membership.reinstated` row for a member who
+            # was never suspended, nor re-run the activation consequence.
             with :ok <- ensure_not_deactivated_in_idp(loaded_membership),
-                 :ok <- ensure_can_modify_membership(loaded_membership, subject) do
+                 :ok <- ensure_can_modify_membership(loaded_membership, subject),
+                 :ok <- ensure_suspended(loaded_membership) do
               {:ok, loaded_membership}
             end
 
@@ -2780,6 +2807,7 @@ defmodule Emisar.Accounts do
       end)
       |> Repo.commit_multi(after_commit: &manual_membership_reinstated_effects/1)
       |> case do
+        {:error, {:noop, %Membership{} = loaded_membership}} -> {:ok, loaded_membership}
         {:ok, %{membership: reinstated}} -> {:ok, reinstated}
         {:error, reason} -> {:error, reason}
       end
@@ -2829,6 +2857,11 @@ defmodule Emisar.Accounts do
 
   defp ensure_not_suspended(%Membership{disabled_at: nil}), do: :ok
   defp ensure_not_suspended(%Membership{} = membership), do: {:error, {:noop, membership}}
+
+  defp ensure_suspended(%Membership{disabled_at: nil} = membership),
+    do: {:error, {:noop, membership}}
+
+  defp ensure_suspended(%Membership{}), do: :ok
 
   defp sync_reinstate_change(%Membership{} = membership, provider) do
     # The locked row must live in the provider's account before we write, and
@@ -2889,10 +2922,10 @@ defmodule Emisar.Accounts do
                                                       %{membership_transition: transition} ->
       case transition.effect do
         {:suspended, %Membership{} = suspended} ->
-          ApiKeys.revoke_credentials_for_membership(repo, suspended.id)
+          revoke_membership_delegations(repo, suspended)
 
         _ ->
-          {:ok, %{api_keys: 0, device_grants: 0}}
+          {:ok, %{api_keys: 0, device_grants: 0, approval_grants: 0}}
       end
     end)
     |> Multi.merge(fn %{membership_transition: transition} ->
@@ -3110,80 +3143,6 @@ defmodule Emisar.Accounts do
         previous_access,
         access
       )
-    end
-  end
-
-  @doc """
-  Internal — directory sync: set a member's role from their mapped IdP groups
-  (Slice 2b). No `%Subject{}` — the SCIM bearer's provider-scope is the
-  authorization, validated at the web boundary; the `provider` is threaded
-  only to attribute the audit to the directory.
-
-  Defense in depth even though group→role mappings already exclude `:owner`
-  (decision 7): the `:with` **refuses `:owner`** under the lock, and it **never
-  demotes the account's last active owner** (`ensure_not_last_active_owner` when
-  the CURRENT role is `:owner` and the new role isn't — §9 N5). Marks the role
-  `directory_managed` (the domain-owned synced-role lock). Idempotent: when the
-  role AND the directory-managed mark already match, returns `{:ok, membership}`
-  with no write or audit — but a role that matches while still unmarked falls
-  through so the mark gets set. Returns `{:ok, membership} | {:error,
-  :owner_not_assignable | :last_owner | :not_found | %Ecto.Changeset{}}`.
-  """
-  def sync_set_membership_role(
-        %Membership{} = membership,
-        role,
-        %SSO.IdentityProvider{} = provider
-      ) do
-    Multi.new()
-    |> Multi.run(:target, fn repo, _changes ->
-      loaded =
-        Membership.Query.not_deleted()
-        |> Membership.Query.by_id(membership.id)
-        |> Membership.Query.lock_for_update()
-        |> repo.peek()
-
-      case loaded do
-        %Membership{} = loaded_membership ->
-          # The guards judge the locked row — the caller's struct is a stale
-          # snapshot. It must live in the provider's account, owner stays a
-          # human assignment, and we never demote the account's last owner.
-          with :ok <- ensure_membership_in_provider_account(loaded_membership, provider),
-               :ok <- ensure_sync_role_assignable(role),
-               :ok <- ensure_demotion_keeps_an_owner(loaded_membership, role) do
-            {:ok, loaded_membership}
-          end
-
-        nil ->
-          {:error, :not_found}
-      end
-    end)
-    |> Multi.update(:membership, fn %{target: loaded_membership} ->
-      Membership.Changeset.sync_role(loaded_membership, role)
-    end)
-    |> Multi.run(:audit, fn repo, %{target: target, membership: updated} ->
-      if target.role == updated.role do
-        {:ok, nil}
-      else
-        target
-        |> Audit.Events.membership_role_synced_via_scim(provider, updated.role)
-        |> repo.insert()
-      end
-    end)
-    |> Multi.run(:credential_revocation, fn repo, %{target: target, membership: updated} ->
-      maybe_revoke_reduced_member_credentials(repo, target.role, updated)
-    end)
-    |> Repo.commit_multi(after_commit: &after_sync_membership_role_committed/1)
-    |> case do
-      {:ok, %{membership: updated}} -> {:ok, updated}
-      {:error, reason} -> {:error, reason}
-    end
-  end
-
-  defp after_sync_membership_role_committed(%{target: target, membership: updated}) do
-    if target.role != updated.role or target.directory_managed != updated.directory_managed do
-      on_membership_role_changed(updated, Ecto.Changeset.change(target, role: updated.role))
-    else
-      :ok
     end
   end
 
@@ -3414,10 +3373,8 @@ defmodule Emisar.Accounts do
       ) do
     with :ok <- ensure_member_mfa_reset_subject(membership, subject) do
       Multi.new()
-      |> Multi.run(:account, fn repo, _changes ->
-        lock_support_account(repo, membership.account_id)
-      end)
-      |> lock_target_membership(membership, fn target ->
+      |> put_membership_account_lock(membership.account_id)
+      |> lock_target_membership(membership, subject, fn target ->
         case ensure_can_modify_membership(target, subject) do
           :ok -> ensure_member_mfa_reset_target(target)
           {:error, reason} -> {:error, reason}
@@ -3431,18 +3388,24 @@ defmodule Emisar.Accounts do
   def reset_member_mfa_for_support(%Membership{}, %Subject{}),
     do: {:error, :unauthorized}
 
-  # Break-glass administration deliberately reaches disabled accounts. The
-  # browser path keeps using the active-account lock above; support still
-  # refuses a deleted account while serializing on the same row.
-  defp lock_support_account(repo, account_id) do
-    if Repo.valid_uuid?(account_id) do
-      Account.Query.not_deleted()
-      |> Account.Query.by_id(account_id)
-      |> Account.Query.lock_for_update()
-      |> repo.fetch(Account.Query)
-    else
-      {:error, :not_found}
-    end
+  # The serialization fence for per-account membership work. Every membership
+  # transition takes this row FIRST, so two concurrent transitions on two
+  # different members of one account queue on the same lock instead of
+  # deadlocking against the last-owner guard's owner-set lock, which has no
+  # order of its own. Break-glass administration reaches a DISABLED account, so
+  # only a deleted one is refused; the browser MFA reset keeps the stricter
+  # active-account lock.
+  defp put_membership_account_lock(multi, account_id) do
+    Multi.run(multi, :account, fn repo, _changes ->
+      if Repo.valid_uuid?(account_id) do
+        Account.Query.not_deleted()
+        |> Account.Query.by_id(account_id)
+        |> Account.Query.lock_for_update()
+        |> repo.fetch(Account.Query)
+      else
+        {:error, :not_found}
+      end
+    end)
   end
 
   defp prepare_member_mfa_reset(%Membership{} = membership, %Subject{} = subject) do
@@ -3753,7 +3716,7 @@ defmodule Emisar.Accounts do
       # membership guard re-reads under its own lock in the same
       # transaction so the hierarchy is judged on the CURRENT role.
       Multi.new()
-      |> lock_target_membership(membership, &ensure_can_modify_membership(&1, subject))
+      |> lock_target_membership(membership, subject, &ensure_can_modify_membership(&1, subject))
       |> Multi.run(:profile_ownership, fn _repo, %{target: loaded_membership} ->
         # A directory-synced member's profile is the IdP's (same scim_enabled
         # boundary as the role lock) — an edit here would just fight the sync.
@@ -3800,7 +3763,7 @@ defmodule Emisar.Accounts do
       # silently disconnects no one — the member's cookie dies while their open
       # LiveView keeps working.
       Multi.new()
-      |> lock_target_membership(membership, &ensure_can_modify_membership(&1, subject))
+      |> lock_target_membership(membership, subject, &ensure_can_modify_membership(&1, subject))
       |> Multi.run(:user, fn _repo, %{target: loaded_membership} ->
         Users.fetch_user_by_id(loaded_membership.user_id)
       end)
@@ -3868,6 +3831,7 @@ defmodule Emisar.Accounts do
            Auth.Authorizer.ensure_has_permissions(subject, Authorizer.manage_team_permission()),
          :ok <- ensure_subject_in_account(subject, membership.account_id) do
       Multi.new()
+      |> put_membership_account_lock(membership.account_id)
       |> Multi.run(:target, fn repo, _changes ->
         loaded =
           Membership.Query.not_deleted()
@@ -3896,7 +3860,7 @@ defmodule Emisar.Accounts do
         Audit.Events.membership_removed(subject, removed)
       end)
       |> Multi.run(:credential_revocation, fn repo, %{membership: removed} ->
-        ApiKeys.revoke_credentials_for_membership(repo, removed.id)
+        revoke_membership_delegations(repo, removed)
       end)
       |> Repo.commit_multi(
         after_commit: fn %{membership: removed} ->
@@ -4623,7 +4587,12 @@ defmodule Emisar.Accounts do
       Account.Query.not_deleted()
       |> Account.Query.by_id(account.id)
       |> Repo.fetch_and_update(Account.Query,
-        with: &Account.Changeset.update(&1, %{settings: %{monthly_report_opt_out: true}})
+        with: &Account.Changeset.update(&1, %{settings: %{monthly_report_opt_out: true}}),
+        # An unauthenticated bearer changes account configuration here, so the
+        # owner needs the row; a repeat click changes nothing and writes none.
+        audit: fn updated, changeset ->
+          if changeset.changes == %{}, do: nil, else: Audit.Events.account_updated(updated)
+        end
       )
     end
   end

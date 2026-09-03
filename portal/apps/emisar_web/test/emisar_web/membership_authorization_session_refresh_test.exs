@@ -161,20 +161,6 @@ defmodule EmisarWeb.MembershipAuthorizationSessionRefreshTest do
     refute_receive %Phoenix.Socket.Broadcast{topic: ^topic, event: "disconnect"}, 100
   end
 
-  test "directory role sync reconnects on change but not on reconciliation", %{
-    account: account,
-    membership: membership,
-    topic: topic
-  } do
-    provider = Fixtures.SSO.create_identity_provider(account_id: account.id)
-
-    assert {:ok, updated} = Accounts.sync_set_membership_role(membership, :admin, provider)
-    assert_receive %Phoenix.Socket.Broadcast{topic: ^topic, event: "disconnect"}, 500
-
-    assert {:ok, _unchanged} = Accounts.sync_set_membership_role(updated, :admin, provider)
-    refute_receive %Phoenix.Socket.Broadcast{topic: ^topic, event: "disconnect"}, 100
-  end
-
   test "directory reconciliation reconnects once when role and scope change together", %{
     account: account,
     membership: membership,

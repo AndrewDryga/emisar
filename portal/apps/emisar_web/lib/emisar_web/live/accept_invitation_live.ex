@@ -183,7 +183,16 @@ defmodule EmisarWeb.AcceptInvitationLive do
     """
   end
 
-  def handle_event("validate", %{"user" => params} = event, socket) do
+  # IL-15: the rendered branch is not the gate. A crafted push can name any
+  # event from any state, so each handler declares the state it belongs to and
+  # everything else is a no-op — an unavailable invitation has no `membership`,
+  # `token` or `form` assigned at all, and a signed-in stranger must not be able
+  # to burn a forwarded link past `mark_invitation_accepted/3`'s same-user head.
+  def handle_event(
+        "validate",
+        %{"user" => params} = event,
+        %{assigns: %{state: :anonymous}} = socket
+      ) do
     changeset =
       socket.assigns.membership.user
       |> Users.change_user(%{"full_name" => params["full_name"] || ""})
@@ -192,7 +201,7 @@ defmodule EmisarWeb.AcceptInvitationLive do
     {:noreply, assign_form(socket, changeset)}
   end
 
-  def handle_event("accept", %{"user" => user_params}, socket) do
+  def handle_event("accept", %{"user" => user_params}, %{assigns: %{state: :anonymous}} = socket) do
     attrs = %{"full_name" => user_params["full_name"] || ""}
 
     case Accounts.accept_invitation(socket.assigns.membership, socket.assigns.token, attrs) do
@@ -218,7 +227,7 @@ defmodule EmisarWeb.AcceptInvitationLive do
   # Signed-in user accepting their own invitation: the user record
   # already exists + confirmed, so we skip provisioning entirely and
   # just mark the membership accepted in-place.
-  def handle_event("accept_existing", _params, socket) do
+  def handle_event("accept_existing", _params, %{assigns: %{state: :signed_in_match}} = socket) do
     membership = socket.assigns.membership
 
     case Accounts.mark_invitation_accepted(
@@ -240,6 +249,8 @@ defmodule EmisarWeb.AcceptInvitationLive do
         {:noreply, put_flash(socket, :error, "Could not accept the invitation.")}
     end
   end
+
+  def handle_event(_event, _params, socket), do: {:noreply, socket}
 
   defp assign_form(socket, %Ecto.Changeset{} = changeset),
     do: assign(socket, :form, to_form(changeset, as: "user"))

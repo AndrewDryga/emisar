@@ -63,6 +63,21 @@ defmodule Emisar.Audit.Events do
     )
   end
 
+  @doc """
+  The emailed `List-Unsubscribe` link flipped a report preference. The signed
+  token IS the authorization on that path, so there is no actor to name — the
+  row is `system`, like the sweepers'.
+  """
+  def account_updated(%Accounts.Account{} = account) do
+    Audit.changeset(account.id, "account.updated",
+      actor_kind: "system",
+      target_kind: "account",
+      target_id: account.id,
+      target_label: account.name,
+      payload: %{name: account.name, slug: account.slug}
+    )
+  end
+
   def account_require_mfa_set(%Subject{} = subject, %Accounts.Account{} = account) do
     Audit.changeset(
       account.id,
@@ -1225,6 +1240,30 @@ defmodule Emisar.Audit.Events do
           target_id: grant.id,
           payload: %{action_id: grant.action_id, api_key_id: grant.api_key_id}
         ]
+    )
+  end
+
+  @doc """
+  A membership lifecycle change retired a standing grant its approver had
+  issued. One row per revoked grant, so the trail names every capability the
+  change actually cut.
+
+  System actor: the SCIM deprovision branch has no `%Subject{}`, and on the
+  operator branches the `membership.*` event committed in the same transaction
+  already names who acted. The payload names the approver whose authority ended
+  and the key that stops bypassing the prompt — which is usually somebody
+  else's.
+  """
+  def approval_grant_revoked(%Approvals.Grant{} = grant) do
+    Audit.changeset(grant.account_id, "approval.grant_revoked",
+      actor_kind: "system",
+      target_kind: "approval_grant",
+      target_id: grant.id,
+      payload: %{
+        action_id: grant.action_id,
+        api_key_id: grant.api_key_id,
+        granted_by_id: grant.granted_by_id
+      }
     )
   end
 

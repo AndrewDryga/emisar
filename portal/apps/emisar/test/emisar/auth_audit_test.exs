@@ -138,6 +138,70 @@ defmodule Emisar.AuthAuditTest do
       assert event.payload["reason"] == "invalid_otp"
     end
 
+    test "verify_mfa_challenge TOTP success audits user.mfa_verified", %{
+      account: account,
+      secret: secret,
+      subject: subject,
+      proof: proof,
+      session_token: session_token
+    } do
+      {:ok, enabled, _} =
+        Auth.enable_mfa(
+          secret,
+          NimbleTOTP.verification_code(secret),
+          proof,
+          Crypto.hash(session_token),
+          subject
+        )
+
+      assert {:ok, _proof} =
+               Auth.verify_mfa_challenge(
+                 enabled,
+                 {:totp, NimbleTOTP.verification_code(secret)}
+               )
+
+      assert [event] = events_of(account, "user.mfa_verified")
+      assert event.actor_id == enabled.id
+      assert event.payload["factor"] == "totp"
+    end
+
+    test "completing a session step-up audits when the session became MFA-verified", %{
+      account: account,
+      secret: secret,
+      subject: subject,
+      proof: proof,
+      session_token: session_token
+    } do
+      {:ok, enabled, _} =
+        Auth.enable_mfa(
+          secret,
+          NimbleTOTP.verification_code(secret),
+          proof,
+          Crypto.hash(session_token),
+          subject
+        )
+
+      assert {:ok, mfa_proof} =
+               Auth.verify_mfa_challenge(
+                 enabled,
+                 {:totp, NimbleTOTP.verification_code(secret)}
+               )
+
+      assert {:ok, _session} =
+               Auth.complete_current_session_mfa(
+                 mfa_proof,
+                 Crypto.hash(session_token),
+                 %{subject | actor: enabled}
+               )
+
+      # Two rows: the factor was accepted, then the live session's assurance
+      # was actually upgraded. The stamp lives on a session row the retention
+      # sweep deletes, so the trail is the only durable record of the second.
+      assert [session_event, factor_event] = events_of(account, "user.mfa_verified")
+      assert factor_event.payload["factor"] == "totp"
+      assert session_event.payload["session_verified"] == true
+    end
+
     test "verify_mfa_challenge recovery success audits with remaining count", %{
       account: account,
       secret: secret,

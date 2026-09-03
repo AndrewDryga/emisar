@@ -99,6 +99,20 @@ defmodule EmisarWeb.AcceptInvitationLiveTest do
       assert user.confirmed_at
     end
 
+    test "a signed-out visitor pushing accept_existing is a no-op, not a crash", %{conn: conn} do
+      {_conn, owner, account} = register_and_log_in(conn)
+      token = invitation_token(account, owner)
+
+      {:ok, lv, _html} = live(build_conn(), ~p"/accept_invitation/#{token}")
+
+      # `mark_invitation_accepted/3` requires a `%Users.User{}`; with no signed-in
+      # user this push used to raise FunctionClauseError and kill the socket.
+      render_click(lv, "accept_existing", %{})
+
+      assert render(lv) =~ "accept_form"
+      assert {:ok, _membership} = Accounts.fetch_invitation_by_token(token)
+    end
+
     test "an accept that lost the race to a second link-holder lands on the terminal state", %{
       conn: conn
     } do
@@ -317,6 +331,26 @@ defmodule EmisarWeb.AcceptInvitationLiveTest do
       assert html =~ "Wrong account"
       assert html =~ "Sign out"
       refute html =~ "phx-click=\"accept_existing\""
+    end
+
+    test "a signed-in stranger cannot burn the invitation with a crafted accept", %{
+      owner: owner,
+      account: account
+    } do
+      token = invitation_token(account, owner)
+      {:ok, pending_membership} = Accounts.fetch_invitation_by_token(token, preload: [:user])
+      bystander = Fixtures.Users.create_user()
+
+      {:ok, lv, _html} =
+        build_conn() |> log_in_user(bystander) |> live(~p"/accept_invitation/#{token}")
+
+      # The wrong-account screen renders no accept control, but the HANDLER is
+      # the gate: the anonymous branch would otherwise provision the invitee
+      # and write the bystander's `full_name` onto their cross-account identity.
+      render_click(lv, "accept", %{"user" => %{"full_name" => "Bystander"}})
+
+      assert {:ok, _still_pending} = Accounts.fetch_invitation_by_token(token)
+      assert Emisar.Repo.reload!(pending_membership.user).full_name == nil
     end
   end
 end

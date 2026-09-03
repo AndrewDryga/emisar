@@ -2822,7 +2822,7 @@ defmodule Emisar.Auth do
   def complete_current_session_mfa(
         proof,
         presented_digest,
-        %Subject{actor: %Users.User{id: subject_user_id}}
+        %Subject{actor: %Users.User{id: subject_user_id}, context: context}
       )
       when is_binary(proof) and is_binary(presented_digest) do
     case mfa_proof_user_id(proof) do
@@ -2837,6 +2837,14 @@ defmodule Emisar.Auth do
         |> Multi.update(:mfa_session, fn %{user: user, session: session} ->
           UserToken.Changeset.local_mfa_verified(session, user.mfa_enabled_at)
         end)
+        # A step-up upgrades a LIVE session's assurance and used to leave no
+        # trace: "when did this session become MFA-verified" was answerable only
+        # from the `auth_user_tokens` row, which the retention sweep deletes.
+        # The row commits with the stamp, so a rolled-back stamp claims nothing.
+        |> Audit.Multi.log_for_user(:audit, nil, "user.mfa_verified",
+          user_fn: & &1.user,
+          extra: [context: context, payload: %{session_verified: true}]
+        )
         |> Repo.commit_multi()
         |> case do
           {:ok, %{mfa_session: session}} -> {:ok, session}
@@ -3002,6 +3010,15 @@ defmodule Emisar.Auth do
       # code through. We only AUDIT here from the caller's user.
       case Users.verify_and_consume_mfa(user.id, otp, []) do
         {:ok, %Users.User{} = verified} ->
+          # Both misses below are audited. Without this the trail carried every
+          # FAILED second factor and none of the accepted ones, so an
+          # investigator could not answer "did this person actually pass MFA,
+          # and when" from the log at all.
+          Audit.log_for_user(user, "user.mfa_verified",
+            context: context,
+            payload: %{factor: "totp"}
+          )
+
           {:ok, verified}
 
         {:error, :replay} ->

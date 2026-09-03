@@ -603,6 +603,28 @@ defmodule Emisar.RunnerAccessTest do
       unbound = Fixtures.Subjects.build_subject(account: account, membership_id: nil)
       assert Accounts.runner_access_for_subject(unbound) == RunnerAccess.none()
     end
+
+    test "a membership id from another account resolves to no reach" do
+      {account, _owner, _subject} = account_with_owner()
+      {other_account, other_owner, _other_subject} = account_with_owner()
+      {:ok, other_membership} = Accounts.fetch_membership_for_session(other_owner, nil)
+
+      assert Accounts.runner_access_for_membership(
+               other_account.id,
+               other_membership.id
+             ) == RunnerAccess.all()
+
+      # The read is scoped by account AND membership, so a subject pointing at a
+      # foreign membership falls closed rather than inheriting its reach.
+      foreign =
+        Fixtures.Subjects.build_subject(
+          account: account,
+          role: :owner,
+          membership_id: other_membership.id
+        )
+
+      assert Accounts.runner_access_for_subject(foreign) == RunnerAccess.none()
+    end
   end
 
   describe "runner_access_for_membership/2" do
@@ -775,6 +797,24 @@ defmodule Emisar.RunnerAccessTest do
 
       assert Accounts.ensure_runner_access_grant_allowed(platform_subject, RunnerAccess.all()) ==
                :ok
+    end
+
+    test "a subject pointing at a foreign membership grants nothing" do
+      {account, _owner, _subject} = account_with_owner()
+      {_other_account, other_owner, _other_subject} = account_with_owner()
+      {:ok, other_membership} = Accounts.fetch_membership_for_session(other_owner, nil)
+
+      # The other account's owner holds full reach; borrowing their membership
+      # id must not lend it across the tenant boundary.
+      foreign =
+        Fixtures.Subjects.build_subject(
+          account: account,
+          role: :owner,
+          membership_id: other_membership.id
+        )
+
+      assert Accounts.ensure_runner_access_grant_allowed(foreign, RunnerAccess.all()) ==
+               {:error, :runner_access_exceeds_subject}
     end
 
     # Both nils are the guard, so an ordinary member can never reach the

@@ -79,6 +79,7 @@ defmodule Emisar.Audit.Event.Query do
     {"user.mfa_enrollment_failed", "MFA enrollment confirmation failed"},
     {"user.mfa_enabled", "MFA enabled"},
     {"user.mfa_disabled", "MFA disabled"},
+    {"user.mfa_verified", "MFA verified"},
     {"user.mfa_failed", "MFA failed"},
     {"user.mfa_rate_limited", "MFA rate limited"},
     {"user.mfa_recovery_code_used", "MFA recovery code used"},
@@ -273,6 +274,7 @@ defmodule Emisar.Audit.Event.Query do
        {"user.mfa_enrollment_failed", "MFA enrollment confirmation failed"},
        {"user.mfa_enabled", "MFA enabled"},
        {"user.mfa_disabled", "MFA disabled"},
+       {"user.mfa_verified", "MFA verified"},
        {"user.mfa_failed", "MFA failed"},
        {"user.mfa_rate_limited", "MFA rate limited"},
        {"user.mfa_recovery_code_used", "MFA recovery code used"},
@@ -980,6 +982,9 @@ defmodule Emisar.Audit.Event.Query do
     "user.mfa_enabled" => {true, true, false, "A user enrolled a second factor."},
     "user.mfa_disabled" =>
       {true, true, false, "A user (or admin) removed a second-factor enrollment."},
+    "user.mfa_verified" =>
+      {true, true, false,
+       "A second factor was accepted — `factor` names it, and `session_verified` marks the row where a live session's assurance was upgraded."},
     "user.mfa_failed" => {true, false, false, "A second-factor challenge failed during sign-in."},
     "user.mfa_rate_limited" =>
       {true, false, false,

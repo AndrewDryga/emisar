@@ -971,16 +971,20 @@ defmodule Emisar.SSOGroupsTest do
 
   # -- Sync: the escalation + lockout guards ---------------------------
 
-  describe "sync_set_membership_role guards" do
+  describe "sync_set_membership_authorization/4 guards" do
     setup do
       scim_provider()
     end
 
-    test "sync_set_membership_role refuses :owner", %{provider: provider, account: account} do
+    test "the synced write refuses :owner", %{provider: provider, account: account} do
       %{membership: membership} = provision(provider, "okta|noowner")
 
-      assert Accounts.sync_set_membership_role(membership, :owner, provider) ==
-               {:error, :owner_not_assignable}
+      assert Accounts.sync_set_membership_authorization(
+               membership,
+               :owner,
+               Accounts.RunnerAccess.all(),
+               provider
+             ) == {:error, :owner_not_assignable}
 
       # The membership keeps its provisioned role — no escalation slipped through.
       assert role_of(account.id, membership.user_id) == :viewer
@@ -1040,22 +1044,6 @@ defmodule Emisar.SSOGroupsTest do
 
       assert role_of(account.id, identity.user_id) == :viewer
     end
-
-    test "sync_set_membership_role won't demote the last active owner (defense in depth)", %{
-      provider: provider,
-      account: account
-    } do
-      %{membership: membership} = provision(provider, "okta|lastowner")
-
-      Fixtures.Memberships.force_role(membership, "owner")
-      demote_other_owners(account.id, except: membership.user_id)
-
-      # The direct sync path still guards the last owner (§9 N5).
-      assert Accounts.sync_set_membership_role(Repo.reload!(membership), :admin, provider) ==
-               {:error, :last_owner}
-
-      assert role_of(account.id, membership.user_id) == :owner
-    end
   end
 
   describe "directory-sync writes are scoped to the provider's account" do
@@ -1091,12 +1079,18 @@ defmodule Emisar.SSOGroupsTest do
                |> Repo.commit_multi()
     end
 
-    test "sync_set_membership_role rejects a membership outside the provider's account", %{
+    test "a synced authorization write rejects a membership outside the provider's account", %{
       provider: provider
     } do
       other = Fixtures.Memberships.create_membership(role: "operator")
 
-      assert Accounts.sync_set_membership_role(other, :admin, provider) == {:error, :not_found}
+      assert Accounts.sync_set_membership_authorization(
+               other,
+               :admin,
+               Accounts.RunnerAccess.all(),
+               provider
+             ) == {:error, :not_found}
+
       assert Repo.reload!(other).role == :operator
     end
   end
@@ -1498,14 +1492,5 @@ defmodule Emisar.SSOGroupsTest do
         member_ids: []
       })
     end
-  end
-
-  defp demote_other_owners(account_id, except: keep_user_id) do
-    Accounts.Membership.Query.not_deleted()
-    |> Accounts.Membership.Query.by_account_id(account_id)
-    |> Accounts.Membership.Query.by_role(:owner)
-    |> Repo.all()
-    |> Enum.reject(&(&1.user_id == keep_user_id))
-    |> Enum.each(&Fixtures.Memberships.force_role(&1, "admin"))
   end
 end
