@@ -59,8 +59,9 @@ config :emisar_web, EmisarWeb.Endpoint,
 # /dev/*. The matching in-memory mailer is switched on at runtime (runtime.exs).
 config :emisar_web, dev_routes: System.get_env("EMISAR_DEV_ROUTES") == "1"
 
-# Configures Swoosh API Client
-config :swoosh, :api_client, Emisar.Finch
+# API-backed adapters opt in at runtime. Logger/local releases do not need an
+# HTTP client, and Swoosh's default Hackney client is not a project dependency.
+config :swoosh, :api_client, false
 
 # Disable Swoosh Local Memory Storage
 config :swoosh, local: false
