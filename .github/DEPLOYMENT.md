@@ -39,10 +39,10 @@ Configure these environments with the ref policies shown below:
 | Environment | Approval | Secret | Required scope |
 |---|---|---|---|
 | `portal-production-plan` | Protected `main` only (no reviewer) | `TFC_PLAN_TOKEN` | Uploads the reviewed configuration and creates the saved production plan. Workspace auto-apply stays disabled and apply remains manual — the HCP Confirm & Apply is the human gate, so a second GitHub approval here would be redundant. |
-| `pack-registry-approval` | Required reviewer + protected `main` | None | Cancellable approval-only gate. This is the single human release decision for a pack publication; a newer selected pack release supersedes an older waiting approval. |
+| `pack-registry-approval` | Exactly one required reviewer + protected `main` | None | Cancellable approval-only gate. This is the single human release decision for a pack publication; a newer selected pack release supersedes an older waiting approval. |
 | `pack-registry-production` | Protected `main` only (no reviewer) | None | Non-cancellable serialized publication through short-lived, environment-bound GCP WIF credentials. The release decision lives on `pack-registry-approval`; a bare rerun of an old publication job is refused by the workflow's superseded-release check when a newer release has since published. |
 | `public-releases` | Independent required reviewer; prevent self-review; block admin bypass; `runner-v*` and `mcp-v*` tag policies | None | Signed runner and MCP bridge builds plus GCS publication through short-lived WIF credentials bound to the called workflow's exact path and SHA. The tag creator and environment reviewer must be different people. After source verification passes, recover a downstream failure with **Re-run failed jobs**; source verification always requires current main and a full rerun after main advances fails closed. |
-| `mcp-registry-publication` | `v*` and `main` recovery policies (no reviewer) | `MCP_PRIVATE_KEY` | Publishes the hosted server listing. The workflow verifies the signed tag, its green Required - CI, and the live publisher-key proof before the secret is used. `main` is allowed only so the current hardened publisher can recover an existing immutable product release. |
+| `mcp-registry-publication` | Exact `main` branch policy; block admin bypass; no reviewer | `MCP_PRIVATE_KEY` | Publishes the hosted server listing. Only the scheduled or manually dispatched workflow on protected `main` can receive the key. It independently verifies the selected signed release tag, its green Required - CI, and the live publisher-key proof before the secret is used. |
 
 `pack-registry-approval` is the pack publication decision. `public-releases`
 deliberately adds a second person after the signed component tag: its reviewer
@@ -51,9 +51,11 @@ bypass the wait as an administrator. Do not cut another runner or MCP release
 until this independent reviewer exists. HCP's Confirm & Apply remains the
 portal deployment decision.
 
-Run `./run check pack-environment` and retain the green output before
-enabling pack publication — it confirms the publisher's WIF credentials stay bound
-to protected `main` with no admin bypass.
+The pack publication path and hosted MCP Registry publication job run `./run
+check release-environment AndrewDryga/emisar <environment>` before using their
+authority. Retain the green output when qualifying a release; the check compares
+the reviewer and ref settings, plus no-admin-bypass where that named environment
+requires it.
 
 Keep HCP Terraform workspace auto-apply disabled. Never store an HCP token as a
 repository secret. The token remains organization-owner-equivalent because Free
@@ -98,8 +100,11 @@ called workflows, then updating both callers and Terraform in one reviewed
 plan. Once verification succeeds, a runner or MCP bridge recovery after `main`
 advances uses **Re-run failed jobs**, preserving the successful verifier and
 the original tag/source SHA; a full rerun deliberately fails instead of
-weakening the current-main check. Product `v*` tags publish only the hosted MCP
-Registry listing; infrastructure deploys only from reviewed `main` plans.
+weakening the current-main check. Product `v*` tags identify immutable source
+for the hosted MCP Registry listing, but do not trigger its key-bearing workflow.
+That workflow runs from protected `main` on its schedule or by manual dispatch
+and verifies the selected tag before publication. Infrastructure deploys only
+from reviewed `main` plans.
 
 Use two release-tag rulesets. The creation-only ruleset matches `runner-v*` and
 `mcp-v*` and grants bypass only to the named release tagger (user or dedicated
@@ -120,7 +125,7 @@ repository.
 |---|---|---|
 | `Release - Runner` | `runner-vX.Y.Z` | On-host runner binaries, checksums, and manifests under `emisar.dev/releases`, the identical files on GitHub Releases as a secondary mirror, and GitHub provenance. |
 | `Release - MCP Bridge` | `mcp-vX.Y.Z` | Local stdio-to-HTTP bridge binaries, checksums, and manifests under `emisar.dev/releases`, the identical files on GitHub Releases as a secondary mirror, and GitHub provenance. |
-| `Portal - Publish MCP Registry Listing` | `vX.Y.Z`, manual reconcile after apply, + a six-hour schedule | The hosted server's signed `server.json` listing; no binary artifact. Reconciles against the LIVE deploy: it publishes a version only once `/healthz` on emisar.dev reports it (applies are founder-gated, so the tag can precede its deploy by days — the listing follows the apply, not the tag). |
+| `Portal - Publish MCP Registry Listing` | `vX.Y.Z` source selected by a manual or scheduled `main` workflow | The hosted server's signed `server.json` listing; no binary artifact. Reconciles against the LIVE deploy: it publishes a version only once `/healthz` on emisar.dev reports it (applies are founder-gated, so the tag can precede its deploy by days — the listing follows the apply, not the tag). |
 
 ## Apply and verify a production plan
 

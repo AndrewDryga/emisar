@@ -8,15 +8,11 @@ run-name: MCP Registry reconcile ${{ inputs.release_tag || github.ref_name }}
 # tag alone advertised versions emisar.dev did not serve yet. Every trigger
 # runs the same reconcile: read the live version from /healthz, and publish
 # its listing only when the registry does not list it as latest, guarded by
-# the same signed-tag + CI checks as before. The tag push gives an immediate
-# tick (a no-op until the apply lands); the schedule converges within one
-# tick after the founder confirms the apply.
+# the same signed-tag + CI checks as before. A manual tick follows an apply;
+# the schedule is the convergence safety net.
 #
 # Binary bridge releases use mcp-v* and are handled by mcp-release.yml.
 on:
-  push:
-    tags:
-      - "v*.*.*"
   schedule:
     # Every 6 hours (offset from :00 — GitHub delays top-of-hour scheduled
     # workflows). A deploy is a manual HCP Confirm & Apply, so this is the
@@ -176,6 +172,8 @@ jobs:
       name: mcp-registry-publication
     permissions:
       contents: read
+      # "Get an environment" and its branch policies need actions:read.
+      actions: read
     env:
       LISTING_VERSION: ${{ needs.reconcile.outputs.version }}
       GOTOOLCHAIN: local
@@ -198,6 +196,11 @@ jobs:
           go-version-file: tools/go.mod
           cache: true
           cache-dependency-path: tools/go.*
+
+      - name: Verify the publishing environment's protection rules
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: ./run check release-environment "$GITHUB_REPOSITORY" mcp-registry-publication
 
       - name: Normalize and verify publisher key
         env:

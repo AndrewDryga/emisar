@@ -139,7 +139,7 @@ old key while preparing the replacement.
    The returned `p=` value must be the new public key. This proof deployment is
    the boundary that stops the old key from publishing a listing.
 4. Replace the protected GitHub environment secret with the new private key.
-   Keep the environment approval gate enabled.
+   Keep its no-reviewer, no-admin-bypass, exact-`main` policy enabled.
 5. Run the workflow's manual recovery path for an existing immutable `vX.Y.Z`
    release. It revalidates the live proof, validates the listing, and republishes
    the known release source. Verify the registry listing's URL, version, and

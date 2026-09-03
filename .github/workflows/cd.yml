@@ -142,7 +142,28 @@ jobs:
       name: pack-registry-approval
     permissions:
       contents: read
+      # "Get an environment" is documented as needing actions:read.
+      actions: read
+    env:
+      GOTOOLCHAIN: local
     steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: tools/go.mod
+          cache: true
+          cache-dependency-path: tools/go.*
+
+      - name: Verify the approval environment's protection rules
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: ./run check release-environment "$GITHUB_REPOSITORY" pack-registry-approval
+
       - name: Record approved release
         run: |
           {
@@ -198,7 +219,7 @@ jobs:
       - name: Verify the publishing environment's protection rules
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: ./run check pack-environment "$GITHUB_REPOSITORY" pack-registry-production
+        run: ./run check release-environment "$GITHUB_REPOSITORY" pack-registry-production
 
       - name: Build pack publisher
         run: cd runner && go build -trimpath -o /tmp/packctl ./cmd/packctl

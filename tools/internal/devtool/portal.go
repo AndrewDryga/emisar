@@ -379,11 +379,11 @@ func (a *App) check(ctx context.Context, args []string) error {
 			return usage("usage: ./run check infra-templates")
 		}
 		return a.infraOps(ctx, []string{"validate-templates"})
-	case "pack-environment":
-		if len(rest) > 2 {
-			return usage("usage: ./run check pack-environment [repo] [environment]")
+	case "release-environment":
+		if len(rest) != 2 {
+			return usage("usage: ./run check release-environment <repo> <environment>")
 		}
-		return a.infraOps(ctx, append([]string{"verify-pack-environment"}, rest...))
+		return a.infraOps(ctx, append([]string{"verify-release-environment"}, rest...))
 	case "packs":
 		if len(rest) != 0 {
 			return usage("usage: ./run check packs")
