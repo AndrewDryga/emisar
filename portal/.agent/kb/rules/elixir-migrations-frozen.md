@@ -48,11 +48,16 @@ end
 #   conflict_target: {:unsafe_fragment, "(account_id, slug) WHERE deleted_at IS NULL"}
 ```
 
-Removing/renaming an enum value or adding `NOT NULL`? Backfill or clean the rows
-**in the same change**, before the schema constraint can reject them:
+Removing/renaming an enum value or adding `NOT NULL` is an expand/contract
+sequence. First deploy code that stops writing the old value or `NULL` while it
+still reads both shapes. Verify every old instance is gone, then backfill or
+clean the rows before the schema constraint can reject them. Only a later
+release narrows the Ecto read contract. An in-migration cleanup is acceptable
+only when a production count proves it is small and bounded:
 
 ```elixir
 def change do
+  # The release check proved this table has only a bounded number of old tokens.
   execute("DELETE FROM user_sessions WHERE auth_method = 'password'", "")
   # ...then the enum/column change
 end
@@ -103,6 +108,14 @@ largest table (`20260812000000`, `UPDATE action_runs SET args_raw = …` then
 `modify :args_raw, null: false`). Those are committed and frozen. The rule is
 for the next one.
 
+**Any strong-lock DDL on a populated table** — fail fast if the lock is not
+immediately available. Set a transaction-local `lock_timeout` below the maximum
+write stall accepted for that rollout. An `ACCESS EXCLUSIVE` request queued
+behind an old transaction can make later traffic queue behind it; a failed
+migration that can retry is safer than an unbounded traffic stall. The timeout
+only bounds lock acquisition, not the work after acquisition, so it never makes
+a table scan or rewrite safe by itself.
+
 **Index on a table that already holds production rows** — build it
 concurrently, which requires leaving the migration's transaction:
 
@@ -120,15 +133,76 @@ and the migration lock holds one open. A concurrent build can leave an
 `INVALID` index behind if it fails — that is recoverable (drop it, re-run), a
 locked-out fleet is not.
 
-**Backfilling an existing column** — batch by primary key with the write outside
-the transaction, and put the `SET NOT NULL` in a *later* migration once the
+**Backfilling an existing column** — batch by primary key outside the migration
+transaction, and put the schema constraint in a *later* migration once the
 backfill has drained. A single `UPDATE` over the whole table holds row locks on
 every row it touches until commit.
 
+**Adding a CHECK or foreign key to a populated table** — use
+`constraint(..., validate: false)` for a CHECK or
+`references(..., validate: false)` for a foreign key, commit, then validate it
+in a later migration:
+
+```elixir
+# First migration: a lock-timeout-bounded ACCESS EXCLUSIVE lock installs the
+# constraint; PostgreSQL enforces it for every new or changed row immediately.
+def up do
+  execute("SET LOCAL lock_timeout = '2s'")
+
+  create constraint(
+    :action_run_events,
+    :action_run_events_kind_check,
+    check: "kind IN ('progress', 'transition', 'error')",
+    validate: false
+  )
+end
+
+def down do
+  execute("SET LOCAL lock_timeout = '2s'")
+  drop constraint(:action_run_events, :action_run_events_kind_check)
+end
+
+# Later migration: the table scan uses SHARE UPDATE EXCLUSIVE, so ordinary
+# inserts and updates continue while existing rows are checked.
+def change do
+  execute(
+    "ALTER TABLE action_run_events " <>
+      "VALIDATE CONSTRAINT action_run_events_kind_check",
+    ""
+  )
+end
+```
+
+Do not add `NOT VALID` and validate it in the same ordinary Ecto migration. The
+outer transaction keeps the first command's stronger lock until the validation
+and the migration commit, which defeats the split.
+
+**Setting `NOT NULL` on a populated table** — assume a full table scan under the
+`ALTER TABLE` lock. Complete the rolling writer change and backfill first, add
+`CHECK (column IS NOT NULL) NOT VALID`, validate that check in a later migration,
+then set `NOT NULL` in one final short, lock-timeout-bounded migration. PostgreSQL
+can skip the `SET NOT NULL` scan when the valid check still exists; do not drop
+the proof before that command commits.
+
+**Deleting existing rows** — count the exact predicate in production before
+putting a `DELETE` in the deploy path. A large or unknown delete belongs in a
+resumable, primary-key-batched cleanup outside the migration transaction. Each
+batch bounds row-lock time, WAL volume, replica pressure, and the dead tuples
+left for vacuum. The later schema migration should find zero invalid rows and do
+only the short schema change.
+
+**Qualifying an unavoidable populated-table scan** — use current production row
+counts and relation sizes, replay the exact migration on the production
+PostgreSQL major version with at least that much representative data, and keep a
+measured writer active throughout. Record both migration duration and maximum
+writer stall. A local rehearsal establishes the lock shape and catches an
+unbounded operation; its timing is not a production latency guarantee.
+
 **Sweep target.** Any migration touching a table that already has production
-rows — `action_runs`, `audit_events`, `runner_actions`, `memberships` — where
-the body contains `create index`, `create unique_index`, `modify … null: false`,
-or a bare `execute("UPDATE …")`, and the file has no `@disable_ddl_transaction`.
+rows where the body contains a non-concurrent index build, an immediately
+validated CHECK or foreign key, `modify … null: false`, `SET NOT NULL`, or an
+unbounded `UPDATE` or `DELETE`. Review the transaction boundary, table size,
+lock level, and concurrent-writer evidence before the migration commits.
 
 **Not enforced by a check.** Whether a table is big enough to matter is a
 deployment fact, not an AST property, and a blanket "every index is concurrent"
