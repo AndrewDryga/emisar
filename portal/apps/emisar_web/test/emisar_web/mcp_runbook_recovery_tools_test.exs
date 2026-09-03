@@ -196,6 +196,55 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
     assert capacity.error.message =~ "1,024 active runbook items"
   end
 
+  test "dynamic runbook issue codes stay inside the published error taxonomy" do
+    for code <- ~w(
+          ambiguous_output
+          ambiguous_pack_version
+          catalog_scope_too_large
+          denied_by_policy
+          fan_out_too_large
+          incompatible_action_contracts
+          invalid_binding
+          invalid_definition
+          invalid_input
+          invalid_policy
+          pack_unavailable
+          signed_runbook_unsupported
+          unknown_target
+          unsupported_schema_version
+        ) do
+      issue = %{code: code, message: "Bounded compiler issue.", path: "/stages/0"}
+
+      result =
+        [issue]
+        |> RunbookTools.execution_failure()
+        |> Jason.encode!()
+        |> Jason.decode!()
+
+      assert result["error"]["code"] == code
+      assert result["error"]["path"] == "/stages/0"
+      assert_valid_tool_result("execute_runbook", result)
+    end
+
+    contained =
+      [
+        %{code: "invalid_binding", message: "Known issue.", path: "/stages/0"},
+        %{code: "future_domain_error", message: "Do not expose me.", path: "/sentinel"}
+      ]
+      |> RunbookTools.execution_failure()
+      |> Jason.encode!()
+      |> Jason.decode!()
+
+    assert contained["error"] == %{
+             "code" => "execution_failed",
+             "message" => "The runbook could not be started.",
+             "retryable" => false
+           }
+
+    refute Jason.encode!(contained) =~ "future_domain_error"
+    assert_valid_tool_result("execute_runbook", contained)
+  end
+
   test "every recent_runs schema fault identifies its kind and field", %{
     conn: conn
   } do

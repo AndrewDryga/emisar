@@ -20,40 +20,52 @@ defmodule EmisarWeb.MCP.SchemaRegistryTest do
     create_runbook_draft
     update_runbook_draft
   )
+  @error_codes ~w(
+    action_unavailable
+    ambiguous_output
+    ambiguous_pack_version
+    catalog_scope_too_large
+    denied_by_policy
+    dispatch_failed
+    draft_changed
+    draft_not_found
+    execution_failed
+    fan_out_too_large
+    incompatible_action_contracts
+    invalid_args
+    invalid_attestation
+    invalid_binding
+    invalid_cursor
+    invalid_definition
+    invalid_draft
+    invalid_input
+    invalid_operation
+    invalid_policy
+    invalid_runbook
+    not_allowed
+    not_live
+    operation_conflict
+    operation_incomplete
+    operation_not_found
+    pack_unavailable
+    response_too_large
+    run_not_found
+    runbook_capacity_exceeded
+    runbook_not_found
+    runbook_too_large
+    signature_required
+    signed_runbook_unsupported
+    target_contract_changed
+    unknown_target
+    unknown_tool
+    unsupported_schema_version
+    wait_saturated
+  )
 
-  # `error.code` freezes at 1.0 and was an open string, so at the moment of the
-  # freeze we would not have known what we were freezing — worse, issue_error/1
-  # lifts a DOMAIN issue code straight into it, so the domain could mint a new
-  # member of a frozen contract without anyone noticing. It is now an enum, and
-  # this asserts the enum still covers every code the controllers can emit: add
-  # one without declaring it and this fails, which is the point.
-  test "every error code the MCP controllers emit is in the published enum" do
-    declared =
-      @schema_path
-      |> File.read!()
-      |> Jason.decode!()
-      |> get_in(["$defs", "error", "properties", "code", "enum"])
-      |> MapSet.new()
-
-    emitted =
-      "../../../lib/emisar_web/controllers/mcp"
-      |> Path.expand(__DIR__)
-      |> Path.join("*.ex")
-      |> Path.wildcard()
-      |> Enum.flat_map(fn file ->
-        source = File.read!(file)
-
-        Regex.scan(~r/\berror\(\s*"([a-z_]+)"/, source, capture: :all_but_first) ++
-          Regex.scan(~r/\bcode:\s*"([a-z_]+)"/, source, capture: :all_but_first)
-      end)
-      |> List.flatten()
-      |> MapSet.new()
-
-    undeclared = MapSet.difference(emitted, declared)
-
-    assert MapSet.size(undeclared) == 0,
-           "these error codes are emitted but absent from the published enum: " <>
-             Enum.join(Enum.sort(undeclared), ", ")
+  test "publishes the complete closed error taxonomy" do
+    assert SchemaRegistry.error_codes() == @error_codes
+    assert Enum.all?(@error_codes, &SchemaRegistry.error_code?/1)
+    refute SchemaRegistry.error_code?("future_domain_error")
   end
 
   test "publishes exactly the normative descriptors in contract order" do

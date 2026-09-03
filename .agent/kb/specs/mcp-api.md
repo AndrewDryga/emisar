@@ -2042,36 +2042,44 @@ Tool-domain errors use the common structured error shape. Initial stable codes:
 | Code | Meaning | Automatic action |
 | --- | --- | --- |
 | `action_unavailable` | Exact visible contract is not executable. | Follow returned diagnostics. |
+| `ambiguous_output` | An output binding does not have exactly one producer for the selected runner. | Make the producer unambiguous for each target. |
+| `ambiguous_pack_version` | The selected pack version has conflicting trusted hashes. | Resolve catalog trust; do not choose a hash client-side. |
+| `catalog_scope_too_large` | The selected deployments exceed the bounded catalog-resolution limit. | Narrow the target set or split the runbook. |
+| `denied_by_policy` | Current policy blocks at least one planned action. | Change the plan or policy; do not retry unchanged. |
 | `dispatch_failed` | The atomic action operation did not commit. | Safe to retry with the same operation ID. |
 | `draft_changed` | The supplied `definition_sha256` is not what this runbook holds now. | Re-read it with `get_runbook status=draft`, then retry carrying the returned digest. |
 | `draft_not_found` | The runbook carries no unpublished change, or none this caller may see. | `list_runbooks` shows which runbooks carry one; do not substitute the live release. |
 | `execution_failed` | The atomic runbook operation did not commit. | Safe to retry with the same operation ID. |
-| `ambiguous_pack_version` | The selected pack version has conflicting trusted hashes. | Resolve catalog trust; do not choose a hash client-side. |
 | `fan_out_too_large` | Target expansion exceeds the 256-item execution cap. | Narrow targets or split the reviewed runbook. |
+| `incompatible_action_contracts` | Selected trusted packs disagree on the action contract. | Align target deployments or edit the target selection. |
 | `invalid_args` | Arguments fail fixed input or portable action validation. | Correct returned paths. |
 | `invalid_attestation` | The action signature is malformed or disagrees with the call. | Do not dispatch; refresh or fix bridge signing. |
 | `invalid_binding` | A runbook binding is unknown, sensitive in the wrong place, type-incompatible, or ambiguous after fan-out. | Correct the returned definition path. |
 | `invalid_cursor` | Cursor expired, mismatched, or scope changed. | Restart the same read. |
-| `invalid_draft` | Draft title, slug, or description failed persistence validation. | Correct the returned fields. |
 | `invalid_definition` | DefinitionV1 shape or semantics are invalid. | Correct the returned definition path. |
+| `invalid_draft` | Draft title, slug, or description failed persistence validation. | Correct the returned fields. |
 | `invalid_input` | Supplied run-time inputs do not satisfy the declaration. | Correct `input_values` at the returned path. |
 | `invalid_operation` | Transport operation identity is malformed or ambiguous. | Fix the transport; do not invent an ID. |
+| `invalid_policy` | The governing policy cannot authorize at least one planned action. | Repair the policy before retrying. |
 | `invalid_runbook` | A proposed DefinitionV1 document is invalid. | Correct every returned issue path; repeat if `issues_truncated` is true. |
-| `incompatible_action_contracts` | Selected trusted packs disagree on the action contract. | Align target deployments or edit the target selection. |
-| `pack_unavailable` | A target has no current trusted pack exposing the declared action. | Deploy or trust the pack, or edit the runbook; do not substitute one silently. |
 | `not_allowed` | Current scope does not permit the request. | Do not probe. |
 | `not_live` | The named release is not the runbook's live release. | `list_runbooks` names the live release; execute that ref, never an older number. |
 | `operation_conflict` | Reused operation ID has different facts. | Security error; do not retry. |
 | `operation_incomplete` | A durable operation lacks its expected resource. | Reconcile; do not repeat the mutation. |
 | `operation_not_found` | Exact operation is absent or belongs to another credential lineage. | Keep ambiguous mutations unresolved. |
+| `pack_unavailable` | A target has no current trusted pack exposing the declared action. | Deploy or trust the pack, or edit the runbook; do not substitute one silently. |
+| `response_too_large` | One result item cannot fit the bounded MCP response. | Read it in the console or reduce the output; retrying unchanged will not help. |
 | `run_not_found` | Exact visible run or execution is absent. | Check the ID; do not probe other scopes. |
+| `runbook_capacity_exceeded` | The account already has the maximum 1,024 active runbook items. | Wait for work to finish or cancel an execution, then retry. |
 | `runbook_not_found` | No live release answers that slug or ref in current scope. | `list_runbooks` names every visible runbook; do not probe other slugs. |
 | `runbook_too_large` | The runbook exists but does not fit one MCP response. | Open it in the console; do not retry or substitute another runbook. |
 | `signature_required` | A selected runner requires a customer-CA action attestation; `details.runner_refs` names the enforcing runners. | Use a signing-enabled bridge or select only non-enforcing runners. |
 | `signed_runbook_unsupported` | Runbook includes enforcing runners. | Use signed actions or await plan signing. |
 | `target_contract_changed` | The selected runner's exact pack/action contract is stale or invalid. | Call the supplied `get_action`, inspect the new result, then retry once. |
 | `unknown_target` | A declared runner or group target does not resolve in current scope. | Correct the target; do not probe hidden refs. |
+| `unknown_tool` | The requested name is not one of the fixed MCP tools. | Refresh `tools/list`; discover actions with `find_actions` and dispatch them through `run_action`. |
 | `unsupported_schema_version` | The definition schema version is not supported. | Produce the advertised DefinitionV1 shape. |
+| `wait_saturated` | This credential already holds all eight concurrent wait slots. | Retry after one active wait finishes. |
 
 Descriptor mismatch, missing executables, connectivity, partial deployment, and
 version skew are stable catalog issue codes inside read results for trusted
@@ -2093,8 +2101,10 @@ not instructions to repeat the mutation.
 ## Agent instructions
 
 `initialize.instructions` does not duplicate tool order, input schemas, output
-fields, or the error catalog. Those contracts travel with `tools/list`. It keeps
-only semantics that span tools and cannot be enforced by one JSON Schema:
+fields, or the error catalog. Tool descriptors and input schemas travel with
+`tools/list`; the registry and this specification own output and error
+contracts. The instructions keep only semantics that span tools and cannot be
+enforced by one JSON Schema:
 
 - Emisar remains the authorized path for reads and mutations; clients do not
   bypass scope, trust, policy, approval, signing, redaction, or audit controls.

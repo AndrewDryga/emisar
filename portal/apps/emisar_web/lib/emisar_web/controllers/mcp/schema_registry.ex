@@ -284,7 +284,9 @@ defmodule EmisarWeb.MCP.SchemaRegistry do
 
   @schema_path Path.expand("../../../../priv/mcp/api-schemas.json", __DIR__)
   @external_resource @schema_path
-  @schema_version @schema_path |> File.read!() |> Jason.decode!() |> Map.fetch!("schema_version")
+  @registry @schema_path |> File.read!() |> Jason.decode!()
+  @schema_version Map.fetch!(@registry, "schema_version")
+  @error_codes get_in(@registry, ["$defs", "error", "properties", "code", "enum"])
   @runbook_definition Runbooks.definition_schema()
   @external_schemas %{
     @runbook_definition["$id"] => {"runbook_definition_v1", @runbook_definition}
@@ -313,4 +315,13 @@ defmodule EmisarWeb.MCP.SchemaRegistry do
 
   @spec schema_version() :: pos_integer()
   def schema_version, do: @schema_version
+
+  @doc "Returns the closed top-level tool error-code taxonomy."
+  @spec error_codes() :: [String.t()]
+  def error_codes, do: @error_codes
+
+  @doc "Whether a code belongs to the published top-level tool error taxonomy."
+  @spec error_code?(term()) :: boolean()
+  def error_code?(code) when is_binary(code), do: code in @error_codes
+  def error_code?(_code), do: false
 end

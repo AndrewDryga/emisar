@@ -9,9 +9,8 @@ defmodule EmisarWeb.MCP.RunbookTools do
 
   alias Emisar.{Approvals, Crypto, Runbooks}
   alias Emisar.Auth.Subject
-  alias EmisarWeb.MCP.{CatalogCursor, ResponseBudget, RunbookContract, RunbookOutputCursor}
-  alias EmisarWeb.MCP.Service
-  alias EmisarWeb.MCP.ValidationError
+  alias EmisarWeb.MCP.{CatalogCursor, ResponseBudget, RunbookContract}
+  alias EmisarWeb.MCP.{RunbookOutputCursor, SchemaRegistry, Service, ValidationError}
 
   @default_limit 15
   @max_definition_issues 64
@@ -832,11 +831,15 @@ defmodule EmisarWeb.MCP.RunbookTools do
   end
 
   defp issue_error([first | _rest] = issues) do
-    details = %{issues: Enum.take(issues, 8)}
+    if Enum.all?(issues, &SchemaRegistry.error_code?(&1.code)) do
+      details = %{issues: Enum.take(issues, 8)}
 
-    first.code
-    |> error(first.message, false, details)
-    |> update_in([:error], &Map.put(&1, :path, first.path))
+      first.code
+      |> error(first.message, false, details)
+      |> update_in([:error], &Map.put(&1, :path, first.path))
+    else
+      error("execution_failed", "The runbook could not be started.")
+    end
   end
 
   defp definition_issue_error(issues) do
