@@ -46,6 +46,10 @@ jobs:
     name: Verify release source
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    permissions:
+      actions: read
+      checks: read
+      contents: read
     env:
       GOTOOLCHAIN: local
       RELEASE_TAG: ${{ github.ref_name }}
@@ -59,9 +63,9 @@ jobs:
 
       # The shared prologue of both trusted releases — the signed-tag check,
       # the Required - CI wait, and the advisory scan — lives once in the
-      # repo-local composite, which executes at this workflow's pinned commit
-      # and is covered by the same drift check as this file.
-      - uses: ./.github/actions/verify-release-tag
+      # self-repository composite, which executes at this workflow's pinned
+      # commit even though the workspace above contains the release tag.
+      - uses: $/.github/actions/verify-release-tag
         with:
           module: runner
           tag-prefix: runner-v

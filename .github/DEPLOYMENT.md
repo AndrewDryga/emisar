@@ -51,11 +51,12 @@ bypass the wait as an administrator. Do not cut another runner or MCP release
 until this independent reviewer exists. HCP's Confirm & Apply remains the
 portal deployment decision.
 
-The pack publication path and hosted MCP Registry publication job run `./run
-check release-environment AndrewDryga/emisar <environment>` before using their
-authority. Retain the green output when qualifying a release; the check compares
-the reviewer and ref settings, plus no-admin-bypass where that named environment
-requires it.
+The pack publication path, hosted MCP Registry publication job, and component
+release verifier check the named GitHub environment before using release
+authority. Contributors can run the same check as `./run check
+release-environment AndrewDryga/emisar <environment>`. Retain the green output
+when qualifying a release; it compares the reviewer and ref settings, plus
+no-admin-bypass where that named environment requires it.
 
 Keep HCP Terraform workspace auto-apply disabled. Never store an HCP token as a
 repository secret. The token remains organization-owner-equivalent because Free
@@ -97,7 +98,11 @@ tag workflows call component-specific, no-input reusable workflows at one exact
 commit SHA; the release WIF provider and service-account binding admit only
 those called workflow identities. Rotate the pin only by first landing the new
 called workflows, then updating both callers and Terraform in one reviewed
-plan. Once verification succeeds, a runner or MCP bridge recovery after `main`
+plan. Inside each reusable workflow, GitHub's `$/` self-repository reference
+loads the shared verifier from that pinned commit even though the workspace
+contains the release tag; the verifier also runs the environment-policy check
+from its own trusted repository copy. Once verification succeeds, a runner or
+MCP bridge recovery after `main`
 advances uses **Re-run failed jobs**, preserving the successful verifier and
 the original tag/source SHA; a full rerun deliberately fails instead of
 weakening the current-main check. Product `v*` tags identify immutable source

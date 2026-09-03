@@ -22,7 +22,9 @@ jobs:
   release:
     name: Trusted runner release
     permissions:
+      actions: read
       attestations: write
+      checks: read
       contents: write
       id-token: write
       packages: write

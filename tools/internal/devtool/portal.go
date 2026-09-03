@@ -257,10 +257,7 @@ func (a *App) toolingGate(ctx context.Context, coverage string) error {
 	// actionlint release cannot fail an unchanged tree; `go run` keeps it off
 	// the contributor's PATH, same as staticcheck.
 	if err := a.gatePhase("tooling workflow lint", func() error {
-		if err := a.run(ctx, a.Root, nil, "go", "run", actionlintVersion, "-color"); err != nil {
-			return fmt.Errorf("workflow lint findings: %w", err)
-		}
-		return nil
+		return a.lintWorkflows(ctx)
 	}); err != nil {
 		return err
 	}
@@ -309,6 +306,50 @@ func (a *App) toolingGate(ctx context.Context, coverage string) error {
 	}
 	fmt.Fprintln(a.Out, "development tooling checks passed")
 	return nil
+}
+
+func (a *App) lintWorkflows(ctx context.Context) error {
+	regular, selfReferenced, err := workflowLintPaths(a.Root)
+	if err != nil {
+		return err
+	}
+	if len(regular) != 0 {
+		args := append([]string{"run", actionlintVersion, "-color"}, regular...)
+		if err := a.run(ctx, a.Root, nil, "go", args...); err != nil {
+			return fmt.Errorf("workflow lint findings: %w", err)
+		}
+	}
+	if len(selfReferenced) != 0 {
+		args := []string{
+			"run", actionlintVersion, "-color",
+			"-ignore", actionlintSelfReferenceFalsePositive,
+		}
+		args = append(args, selfReferenced...)
+		if err := a.run(ctx, a.Root, nil, "go", args...); err != nil {
+			return fmt.Errorf("trusted workflow lint findings: %w", err)
+		}
+	}
+	return nil
+}
+
+func workflowLintPaths(root string) (regular, selfReferenced []string, err error) {
+	var paths []string
+	for _, pattern := range []string{"*.yml", "*.yaml"} {
+		matched, globErr := filepath.Glob(filepath.Join(root, ".github", "workflows", pattern))
+		if globErr != nil {
+			return nil, nil, globErr
+		}
+		paths = append(paths, matched...)
+	}
+	sort.Strings(paths)
+	for _, path := range paths {
+		if trustedReleaseWorkflowNames[filepath.Base(path)] {
+			selfReferenced = append(selfReferenced, path)
+		} else {
+			regular = append(regular, path)
+		}
+	}
+	return regular, selfReferenced, nil
 }
 
 // trackedShellFiles is the repo's own shell scripts that no other gate covers.

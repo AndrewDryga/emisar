@@ -43,6 +43,16 @@ const staticcheckVersion = "honnef.co/go/tools/cmd/staticcheck@2026.1"
 // Keep this in step with the version any workflow installs directly.
 const actionlintVersion = "github.com/rhysd/actionlint/cmd/actionlint@v1.7.12"
 
+// GitHub's $/ self-repository action reference is newer than the latest
+// actionlint release. Keep the exception exact and restricted to the two
+// trusted workflows; release-pin verification separately requires this form.
+const actionlintSelfReferenceFalsePositive = `^specifying action "\$/\.github/actions/verify-release-tag" in invalid format because ref is missing\.`
+
+var trustedReleaseWorkflowNames = map[string]bool{
+	"mcp-release-trusted.yml":    true,
+	"runner-release-trusted.yml": true,
+}
+
 // The platforms each module publishes. Keep this in step with the release
 // workflows: a target that ships without compiling here is a broken release.
 // The runner remains Unix-only; the Windows targets are the local MCP bridge

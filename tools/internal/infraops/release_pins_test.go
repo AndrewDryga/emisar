@@ -43,6 +43,10 @@ func writeTrustedReleaseRepo(t *testing.T, trustedBody string) (root, sha string
 	git("init", "--quiet")
 	write(".github/workflows/runner-release-trusted.yml", trustedBody)
 	write(".github/actions/verify-release-tag/action.yml", "name: verify\nruns:\n  using: composite\n")
+	write("tools/cmd/releaseenv/main.go", "package main\n")
+	write("tools/internal/releaseenv/releaseenv.go", "package releaseenv\n")
+	write("tools/go.mod", "module example.invalid/tools\n\ngo 1.26.6\n")
+	write("tools/go.sum", "")
 	git("add", "-A")
 	git("commit", "--quiet", "-m", "trusted workflow")
 	sha = git("rev-parse", "HEAD")
@@ -54,7 +58,7 @@ func writeTrustedReleaseRepo(t *testing.T, trustedBody string) (root, sha string
 }
 
 func TestCheckTrustedReleasePins(t *testing.T) {
-	const trusted = "name: trusted\njobs:\n  publish:\n    runs-on: ubuntu-latest\n"
+	const trusted = "name: trusted\njobs:\n  publish:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: $/.github/actions/verify-release-tag\n"
 
 	t.Run("agreeing pins pass", func(t *testing.T) {
 		root, sha := writeTrustedReleaseRepo(t, trusted)
@@ -118,6 +122,29 @@ func TestCheckTrustedReleasePins(t *testing.T) {
 		}
 	})
 
+	t.Run("a tag-workspace composite reference fails", func(t *testing.T) {
+		root, _ := writeTrustedReleaseRepo(t, strings.Replace(trusted,
+			"uses: $/.github/actions/verify-release-tag",
+			"uses: ./.github/actions/verify-release-tag", 1))
+		var out bytes.Buffer
+		app := New(root, strings.NewReader(""), &out, &out)
+		err := app.checkTrustedReleasePins(context.Background())
+		if err == nil || !strings.Contains(err.Error(), "tag-selected workspace") {
+			t.Fatalf("workspace-relative verifier error = %v", err)
+		}
+	})
+
+	t.Run("a missing composite reference fails", func(t *testing.T) {
+		root, _ := writeTrustedReleaseRepo(t, strings.Replace(trusted,
+			"      - uses: $/.github/actions/verify-release-tag\n", "", 1))
+		var out bytes.Buffer
+		app := New(root, strings.NewReader(""), &out, &out)
+		err := app.checkTrustedReleasePins(context.Background())
+		if err == nil || !strings.Contains(err.Error(), "exactly once") {
+			t.Fatalf("missing verifier error = %v", err)
+		}
+	})
+
 	// A repo-local composite executes at the pinned commit too, so editing one
 	// without re-pinning is the same silent failure one directory over.
 	t.Run("an edited composite with a stale pin fails", func(t *testing.T) {
@@ -145,6 +172,48 @@ func TestCheckTrustedReleasePins(t *testing.T) {
 		err := app.checkTrustedReleasePins(context.Background())
 		if err == nil || !strings.Contains(err.Error(), "silently run the old steps") {
 			t.Fatalf("case-only composite drift not reported: %v", err)
+		}
+	})
+
+	t.Run("an edited verifier source with a stale pin fails", func(t *testing.T) {
+		root, _ := writeTrustedReleaseRepo(t, trusted)
+		path := filepath.Join(root, "tools", "internal", "releaseenv", "releaseenv.go")
+		if err := os.WriteFile(path, []byte("package releaseenv\n\nconst drift = true\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		var out bytes.Buffer
+		app := New(root, strings.NewReader(""), &out, &out)
+		err := app.checkTrustedReleasePins(context.Background())
+		if err == nil || !strings.Contains(err.Error(), "silently run the old steps") {
+			t.Fatalf("stale verifier pin not reported: %v", err)
+		}
+	})
+
+	t.Run("an added verifier source file with a stale pin fails", func(t *testing.T) {
+		root, _ := writeTrustedReleaseRepo(t, trusted)
+		path := filepath.Join(root, "tools", "internal", "releaseenv", "extra.go")
+		if err := os.WriteFile(path, []byte("package releaseenv\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		var out bytes.Buffer
+		app := New(root, strings.NewReader(""), &out, &out)
+		err := app.checkTrustedReleasePins(context.Background())
+		if err == nil || !strings.Contains(err.Error(), "does not exist at the pinned commit") {
+			t.Fatalf("added verifier source not reported: %v", err)
+		}
+	})
+
+	t.Run("a deleted verifier source file with a stale pin fails", func(t *testing.T) {
+		root, _ := writeTrustedReleaseRepo(t, trusted)
+		path := filepath.Join(root, "tools", "internal", "releaseenv", "releaseenv.go")
+		if err := os.Remove(path); err != nil {
+			t.Fatal(err)
+		}
+		var out bytes.Buffer
+		app := New(root, strings.NewReader(""), &out, &out)
+		err := app.checkTrustedReleasePins(context.Background())
+		if err == nil || !strings.Contains(err.Error(), "missing from the working tree") {
+			t.Fatalf("deleted verifier source not reported: %v", err)
 		}
 	})
 
