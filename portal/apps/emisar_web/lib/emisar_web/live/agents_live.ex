@@ -79,7 +79,8 @@ defmodule EmisarWeb.AgentsLive do
      LiveTable.apply_filter(
        socket,
        ~p"/app/#{socket.assigns.current_account}/agents",
-       params
+       params,
+       socket.assigns.filters
      )}
   end
 

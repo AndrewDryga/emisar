@@ -212,23 +212,39 @@ defmodule EmisarWeb.AgentsLiveTest do
 
     test "the default status filter is the baseline — no clear-× until moved off it",
          %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
+      {conn, user, account} = register_and_log_in(conn)
+      subject = owner_subject(user, account)
+      {:ok, _raw, _live_key} = ApiKeys.create_key(%{name: "Live bot"}, subject)
+      {:ok, _raw, revoked_key} = ApiKeys.create_key(%{name: "Retired bot"}, subject)
+      {:ok, _revoked_key} = ApiKeys.revoke_api_key(revoked_key, subject)
 
       # Default view (status=live) is the baseline, not an operator-applied filter,
       # so it doesn't raise the clear-filters link.
-      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/agents")
+      {:ok, lv, html} = live(conn, ~p"/app/#{account}/agents")
+      assert html =~ "Live bot"
+      refute html =~ "Retired bot"
       refute has_element?(lv, "a", "Clear filters")
 
       # Moving Status off its default surfaces the clear link.
       {:ok, filtered, _html} = live(conn, ~p"/app/#{account}/agents?status=revoked")
       assert has_element?(filtered, "a", "Clear filters")
 
-      # Picking "All" (a blank value) is ALSO a deviation from the default
-      # "live", so it reads active — the control gets the brand accent and the
-      # clear link appears. (Blank ≠ inactive when the default isn't blank.)
-      {:ok, all, all_html} = live(conn, "/app/#{account.slug}/agents?status=")
-      assert has_element?(all, "a", "Clear filters")
-      assert all_html =~ "border-brand-500/60"
+      # Picking "All" (a blank value) through the real filter event is ALSO a
+      # deviation from the default "live". The explicit blank must stay in the
+      # URL or the next load resolves back to the default and snaps the control
+      # away from the operator's choice.
+      lv |> form("#agents-filter", %{"status" => ""}) |> render_change()
+      assert_patched(lv, ~p"/app/#{account}/agents?status=")
+
+      refute has_element?(
+               lv,
+               "#agents-filter select[name='status'] option[value='live'][selected]"
+             )
+
+      assert has_element?(lv, "a", "Clear filters")
+      html = render(lv)
+      assert html =~ "Live bot"
+      assert html =~ "Retired bot"
     end
 
     test "a search miss keeps the list controls without opening onboarding", %{conn: conn} do
