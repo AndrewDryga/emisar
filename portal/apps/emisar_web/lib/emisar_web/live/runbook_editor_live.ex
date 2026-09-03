@@ -695,42 +695,27 @@ defmodule EmisarWeb.RunbookEditorLive do
              )
              |> push_navigate(to: ~p"/app/#{socket.assigns.current_account}/runbooks")}
 
-          {:error, %Ecto.Changeset{} = changeset} ->
-            {:noreply, assign_form(socket, Map.put(changeset, :action, :insert))}
+          {:error, reason, runbook} ->
+            socket
+            |> assign_editing_runbook(runbook)
+            |> present_persist_error(reason)
 
-          # The domain refused publication against current state — the delayed
-          # preview was a stale courtesy; show the authoritative issues where
-          # the preview renders them.
-          {:error, issues} when is_list(issues) ->
-            {:noreply,
-             socket
-             |> assign(:preview, %{
-               state: :blocked,
-               plan: nil,
-               issues: issues,
-               checked_at: DateTime.utc_now()
-             })
-             |> put_flash(:error, "Current preflight must pass before publishing.")}
-
-          {:error, :draft_changed} ->
-            {:noreply,
-             put_flash(
-               socket,
-               :error,
-               "Changed elsewhere since you opened it — reload to pick up the latest draft."
-             )}
-
-          {:error, _reason} ->
-            {:noreply, put_flash(socket, :error, "Could not save this runbook.")}
+          {:error, reason} ->
+            present_persist_error(socket, reason)
         end
     end
   end
 
   defp persist(%{assigns: %{runbook: nil}} = socket, attrs, publish?) do
     with {:ok, runbook} <- Runbooks.create_runbook(attrs, socket.assigns.current_subject) do
-      if publish?,
-        do: Runbooks.publish_draft(runbook, socket.assigns.current_subject),
-        else: {:ok, runbook}
+      if publish? do
+        case Runbooks.publish_draft(runbook, socket.assigns.current_subject) do
+          {:ok, published} -> {:ok, published}
+          {:error, reason} -> {:error, reason, runbook}
+        end
+      else
+        {:ok, runbook}
+      end
     end
   end
 
@@ -738,8 +723,46 @@ defmodule EmisarWeb.RunbookEditorLive do
     subject = socket.assigns.current_subject
 
     with {:ok, saved} <- Runbooks.save_draft(runbook, attrs, socket.assigns.base_sha, subject) do
-      if publish?, do: Runbooks.publish_draft(saved, subject), else: {:ok, saved}
+      if publish? do
+        case Runbooks.publish_draft(saved, subject) do
+          {:ok, published} -> {:ok, published}
+          {:error, reason} -> {:error, reason, saved}
+        end
+      else
+        {:ok, saved}
+      end
     end
+  end
+
+  defp present_persist_error(socket, %Ecto.Changeset{} = changeset) do
+    {:noreply, assign_form(socket, Map.put(changeset, :action, :insert))}
+  end
+
+  # The domain refused publication against current state — the delayed preview
+  # was a stale courtesy; show the authoritative issues where it rendered them.
+  defp present_persist_error(socket, issues) when is_list(issues) do
+    {:noreply,
+     socket
+     |> assign(:preview, %{
+       state: :blocked,
+       plan: nil,
+       issues: issues,
+       checked_at: DateTime.utc_now()
+     })
+     |> put_flash(:error, "Current preflight must pass before publishing.")}
+  end
+
+  defp present_persist_error(socket, :draft_changed) do
+    {:noreply,
+     put_flash(
+       socket,
+       :error,
+       "Changed elsewhere since you opened it — reload to pick up the latest draft."
+     )}
+  end
+
+  defp present_persist_error(socket, _reason) do
+    {:noreply, put_flash(socket, :error, "Could not save this runbook.")}
   end
 
   defp draft_message(%{live_version: nil}), do: "Draft saved."

@@ -1302,7 +1302,19 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
 
       # Publishing is save-then-publish, so the work is kept — only the release
       # is refused.
-      assert %Runbook{live_version: nil, definition: nil} = Repo.one!(Runbook)
+      assert %Runbook{live_version: nil, definition: nil} = created = Repo.one!(Runbook)
+      refute Repo.exists?(Release)
+
+      edited = valid_draft(title: "Fleet health follow-up")
+      change(lv, edited)
+
+      destination = ~p"/app/#{account}/runbooks"
+      assert {:error, {:live_redirect, %{to: ^destination}}} = render_click(lv, "save", %{})
+
+      assert %Runbook{} = saved = Repo.one!(Runbook)
+      assert saved.id == created.id
+      assert saved.title == "Fleet health follow-up"
+      assert saved.draft_definition == canonical_definition(edited)
       refute Repo.exists?(Release)
     end
 
@@ -1336,6 +1348,18 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
       assert saved.title == "Fleet health v2"
       assert saved.live_version == nil
       assert saved.definition == nil
+      refute Repo.exists?(Release)
+
+      edited_again = valid_draft(title: "Fleet health v3")
+      change(lv, edited_again)
+
+      destination = ~p"/app/#{account}/runbooks"
+      assert {:error, {:live_redirect, %{to: ^destination}}} = render_click(lv, "save", %{})
+
+      assert %Runbook{} = saved_again = Repo.one!(Runbook)
+      assert saved_again.id == saved.id
+      assert saved_again.title == "Fleet health v3"
+      assert saved_again.draft_definition == canonical_definition(edited_again)
       refute Repo.exists?(Release)
     end
 
