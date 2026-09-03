@@ -48,7 +48,7 @@ defmodule EmisarWeb.AgentsLiveTest do
          %{conn: conn} do
       {conn, user, account} = register_and_log_in(conn)
 
-      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/agents/connect")
+      {:ok, lv, html} = live(conn, ~p"/app/#{account}/agents/connect")
       assert html =~ "Cloud clients use OAuth"
       assert html =~ "Connect an agent"
 
@@ -57,6 +57,8 @@ defmodule EmisarWeb.AgentsLiveTest do
       assert html =~ "uses the stdio bridge"
       assert html =~ "CLI agents"
       assert html =~ "Editors &amp; desktop apps"
+      assert has_element?(lv, "#client-kind-cli.text-zinc-400")
+      assert has_element?(lv, "#client-kind-editors.text-zinc-400")
 
       # With a live key the index collapses to the list + a title-row CTA
       # into the flow (the Runners "Connect a runner" pattern).

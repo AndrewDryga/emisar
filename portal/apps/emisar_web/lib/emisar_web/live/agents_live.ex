@@ -1674,12 +1674,15 @@ defmodule EmisarWeb.AgentsLive do
               — uses the stdio bridge
             </span>
           </p>
-          <%!-- Kind sub-labels are the quieter member of the group-label
+          <%!-- Kind sub-labels are the smaller member of the group-label
              family (the docs rail's subgroup grammar): the transport fact
              stays once on the parent, the sub-label only partitions the
              scan. Tighter mt-4 between subgroups than the mt-6 between
              transport groups, so the hierarchy reads from distance. --%>
-          <p class="mt-2.5 text-[10px] font-medium uppercase tracking-wide text-zinc-500">
+          <p
+            id="client-kind-cli"
+            class="mt-2.5 text-[10px] font-medium uppercase tracking-wide text-zinc-400"
+          >
             CLI agents
           </p>
           <div class="mt-1.5 flex flex-wrap gap-1.5">
@@ -1690,7 +1693,10 @@ defmodule EmisarWeb.AgentsLive do
               selected={id == @selected_client}
             />
           </div>
-          <p class="mt-4 text-[10px] font-medium uppercase tracking-wide text-zinc-500">
+          <p
+            id="client-kind-editors"
+            class="mt-4 text-[10px] font-medium uppercase tracking-wide text-zinc-400"
+          >
             Editors &amp; desktop apps
           </p>
           <div class="mt-1.5 flex flex-wrap gap-1.5">

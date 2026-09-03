@@ -842,8 +842,8 @@ the commit button, where the operator can reach the action before reading what i
     editor" still had to scan every terminal agent to find Cursor. Split the cluster into
     labeled subgroups by the kind the reader can self-select into (terminal agent vs
     editor/desktop app) — never by vendor or by when we shipped support. The subgroup label
-    is the QUIETER member of the group-label family (the docs rail's subgroup grammar: same
-    uppercase treatment one tier down — 10px, `text-zinc-500` — never a new heading level or
+    is the SMALLER member of the group-label family (the docs rail's subgroup grammar: same
+    uppercase treatment one tier down — 10px, `text-zinc-400` — never a new heading level or
     a box). A fact shared by every subgroup (the transport, "uses the stdio bridge") stays
     ONCE on the parent group's annotation; subgroups never repeat it. Order within each
     subgroup is still popularity (§7.64), derived by filtering the ONE master id list — the
