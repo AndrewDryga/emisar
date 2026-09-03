@@ -11,6 +11,7 @@ services:
 
   mongodb:
     image: mongo:${PACKTEST_VERSION:-8.2.5}${PACKTEST_DIGEST-}
+    command: ["mongod", "--setParameter", "enableTestCommands=1"]
     environment:
       MONGO_INITDB_ROOT_USERNAME: root
       MONGO_INITDB_ROOT_PASSWORD: packtest-canary-mongodb-c936

@@ -2,8 +2,11 @@ schema_version: 1
 id: mongo.current_op
 title: db.currentOp()
 kind: exec
-risk: low
-description: 'List in-flight operations. The canonical "what is the server doing right now?" check.'
+risk: medium
+description: >
+  List in-flight operations. The canonical "what is the server doing right now?"
+  check. Rated medium because an operation can include full command arguments
+  and literal query values that no redaction list can enumerate.
 side_effects:
   - One currentOp command.
   - Read-only.

@@ -75,6 +75,29 @@ cases:
     args: {database: packtest, collection: orders}
     expect:
       stdout_contains: [customer_1, status_1]
+  - name: mongo.index_builds-shows-another-users-build
+    action: mongo.index_builds
+    arrange:
+      - argv: [mongosh, --nodb, --quiet, --eval, 'db=new Mongo(process.env.MONGO_URI).getDB("admin");db.adminCommand({configureFailPoint:"hangAfterInitializingIndexBuild",mode:"alwaysOn"})']
+      - argv: [/bin/sh, -c, 'nohup mongosh "mongodb://packtest-index-builder:packtest-index-builder-734a@mongodb:27017/packtest?authSource=packtest" --quiet --eval ''db.runCommand({createIndexes:"orders",indexes:[{key:{packtest_cross_user:1},name:"packtest_cross_user_1"}],comment:"packtest-index-build-cross-user"})'' >/tmp/packtest-index-build.log 2>&1 &']
+      - argv: [mongosh, --nodb, --quiet, --eval, 'db=new Mongo(process.env.MONGO_URI).getDB("admin");var visible=db.aggregate([{$currentOp:{allUsers:true,idleConnections:true}},{$match:{"command.comment":"packtest-index-build-cross-user"}}]).toArray().length>0;print(visible?"visible":"")']
+        expect:
+          stdout_contains: [visible]
+        retry_for: 15s
+        retry_every: 250ms
+    expect:
+      stdout_contains: [packtest-index-build-cross-user]
+    probes:
+      - name: release the held index build
+        argv: [mongosh, --nodb, --quiet, --eval, 'db=new Mongo(process.env.MONGO_URI).getDB("admin");db.adminCommand({configureFailPoint:"hangAfterInitializingIndexBuild",mode:"off"})']
+        expect:
+          stdout_contains: ["ok: 1"]
+      - name: the other users index completes
+        argv: [mongosh, --nodb, --quiet, --eval, 'db=new Mongo(process.env.MONGO_URI).getDB("admin");print(db.getSiblingDB("packtest").orders.getIndexes().filter(function(index){return index.name==="packtest_cross_user_1"}).length)']
+        expect:
+          stdout_contains: ["1"]
+        retry_for: 15s
+        retry_every: 250ms
   - action: mongo.drop_index
     # Create a throwaway index, drop it by name, and confirm it's gone.
     args:

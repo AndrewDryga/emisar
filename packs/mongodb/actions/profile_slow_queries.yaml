@@ -2,11 +2,13 @@ schema_version: 1
 id: mongo.profile_slow_queries
 title: Read slow ops from the profiler (system.profile)
 kind: exec
-risk: low
+risk: medium
 description: >
   Read the database profiler collection (system.profile) for the slowest
   recent ops over a millis threshold, newest first. Requires profiling to be
   enabled on the database already (see profiler_status); does not change it.
+  Rated medium because a profiler document can include the full command and
+  literal query values that no redaction list can enumerate.
 side_effects:
   - Reads system.profile (a capped collection).
   - Read-only.

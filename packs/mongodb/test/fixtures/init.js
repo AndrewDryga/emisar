@@ -7,3 +7,9 @@ packtest.orders.insertMany([
 ]);
 packtest.orders.createIndex({customer: 1}, {name: "customer_1"});
 packtest.orders.createIndex({status: 1}, {name: "status_1"});
+
+packtest.createUser({
+  user: "packtest-index-builder",
+  pwd: "packtest-index-builder-734a",
+  roles: [{role: "readWrite", db: "packtest"}],
+});

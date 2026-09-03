@@ -2,11 +2,13 @@ schema_version: 1
 id: mongo.index_builds
 title: In-progress index builds (with progress)
 kind: exec
-risk: low
+risk: medium
 description: >
   List active index-build operations with progress (done/total), via $currentOp.
   The canonical "is an index build stuck / how far along is it" check across
-  the deployment.
+  the deployment. Rated medium because the full operation document can include
+  partial-index filter values and arbitrary command comments that no redaction
+  list can enumerate.
 side_effects:
   - One $currentOp aggregation on admin.
   - Read-only.
@@ -16,7 +18,7 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
-      - "mongosh '--nodb' '--quiet' '--eval' 'db=new Mongo(process.env.MONGO_URI).getDB(\"admin\");JSON.stringify(db.getSiblingDB(\"admin\").aggregate([{$currentOp:{idleConnections:true}},{$match:{$or:[{op:\"command\",\"command.createIndexes\":{$exists:true}},{op:\"none\",msg:{$regex:\"^Index Build\"}}]}}]).toArray())'"
+      - "mongosh '--nodb' '--quiet' '--eval' 'db=new Mongo(process.env.MONGO_URI).getDB(\"admin\");JSON.stringify(db.getSiblingDB(\"admin\").aggregate([{$currentOp:{allUsers:true,idleConnections:true}},{$match:{$or:[{op:\"command\",\"command.createIndexes\":{$exists:true}},{op:\"none\",msg:{$regex:\"^Index Build\"}}]}}]).toArray())'"
   timeout: 30s
 output:
   parser: json

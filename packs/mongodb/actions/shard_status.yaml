@@ -2,8 +2,11 @@ schema_version: 1
 id: mongo.shard_status
 title: sh.status()
 kind: exec
-risk: low
-description: Show sharded cluster summary — shards, databases, chunk distribution.
+risk: medium
+description: >
+  Show sharded cluster summary — shards, databases, and chunk distribution.
+  Rated medium because verbose chunk ranges can include real shard-key values
+  from application data.
 side_effects:
   - Reads sharding metadata.
   - Read-only.

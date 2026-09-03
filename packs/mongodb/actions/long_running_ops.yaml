@@ -2,10 +2,12 @@ schema_version: 1
 id: mongo.long_running_ops
 title: Long-running active ops (currentOp, secs_running >= N)
 kind: exec
-risk: low
+risk: medium
 description: >
   List active operations that have been running at least N seconds — the canonical
-  hunt for a hung or blocked op. Filters currentOp by secs_running.
+  hunt for a hung or blocked op. Filters currentOp by secs_running. Rated medium
+  because an operation can include full command arguments and literal query
+  values that no redaction list can enumerate.
 side_effects:
   - One currentOp command.
   - Read-only.
