@@ -6,6 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
+
+	"github.com/andrewdryga/emisar/runner/internal/jsonvalue"
 )
 
 var (
@@ -52,7 +54,17 @@ func (e *Engine) ApplyJSON(input []byte) ([]byte, []Hit, error) {
 	return encoded, hits, nil
 }
 
+// decodeOneJSON validates before it decodes. Decoding straight into `any`
+// collapses duplicate object keys, and re-encoding then hands the strict
+// output-schema validator a document that no longer contains the defect it
+// exists to catch: {"name":"alice","name":"bob"} would arrive as unique-key
+// JSON and validate. jsonvalue.Validate rejects duplicate keys, unpaired
+// surrogates, invalid UTF-8 and trailing tokens on the original bytes; the
+// caller text-redacts what it refuses.
 func decodeOneJSON(input []byte) (any, error) {
+	if err := jsonvalue.Validate(input, jsonvalue.Limits{}); err != nil {
+		return nil, err
+	}
 	decoder := json.NewDecoder(bytes.NewReader(input))
 	decoder.UseNumber()
 	var value any

@@ -161,8 +161,9 @@ func TestLoad_EnforcesSafeShellArgumentChannels(t *testing.T) {
 
 func TestLoad_ExecWrappersRejectOpenEndedArguments(t *testing.T) {
 	wrappers := []string{
-		"env", "timeout", "gtimeout", "time", "nice", "setsid", "stdbuf", "nohup",
-		"xargs", "gxargs", "flock", "script", "busybox", "runuser", "sudo", "su", "doas",
+		"env", "timeout", "gtimeout", "time", "nice", "ionice", "taskset", "setsid",
+		"stdbuf", "nohup", "xargs", "gxargs", "flock", "script", "busybox", "runuser",
+		"sudo", "su", "doas", "chroot", "nsenter", "unshare", "setpriv", "systemd-run",
 	}
 	for _, binary := range wrappers {
 		t.Run(binary, func(t *testing.T) {
@@ -235,12 +236,29 @@ func TestLoad_CodeInterpretersRejectOpenEndedArguments(t *testing.T) {
 		{binary: "gawk", argv: `argv: ["-F", ":", "--source", "{{ args.code }}"]`},
 		{binary: "mawk", argv: `argv: ["{{ args.code }}"]`},
 		{binary: "php", argv: `argv: ["-nr{{ args.code }}"]`},
+		// Recognizing an interpreter is what makes the lint fire at all, so an
+		// unlisted one was accepted with no argv inspection whatsoever. A
+		// version suffix is the same program (node22, gawk5 used to escape:
+		// only python/perl/ruby/php had versioned spellings).
+		{binary: "node22", argv: `argv: ["-e", "{{ args.code }}"]`},
+		{binary: "gawk5", argv: `argv: ["--source", "{{ args.code }}"]`},
+		{binary: "lua", argv: `argv: ["-e", "{{ args.code }}"]`},
+		{binary: "lua5.4", argv: `argv: ["-e", "{{ args.code }}"]`},
+		{binary: "luajit", argv: `argv: ["-e", "{{ args.code }}"]`},
+		{binary: "deno", argv: `argv: ["eval", "{{ args.code }}"]`},
+		{binary: "bun", argv: `argv: ["-e", "{{ args.code }}"]`},
+		{binary: "Rscript", argv: `argv: ["-e", "{{ args.code }}"]`},
+		{binary: "tclsh", argv: `argv: ["{{ args.code }}"]`},
+		{binary: "wish", argv: `argv: ["{{ args.code }}"]`},
+		{binary: "pwsh", argv: `argv: ["-Command", "{{ args.code }}"]`},
+		{binary: "powershell", argv: `argv: ["-Command", "{{ args.code }}"]`},
+		{binary: "osascript", argv: `argv: ["-e", "{{ args.code }}"]`},
 	}
 	for _, tc := range tests {
 		t.Run(tc.binary, func(t *testing.T) {
 			assertActionLoad(
 				t,
-				"testpack."+strings.NewReplacer(".", "_", "/", "_").Replace(tc.binary)+"_code",
+				"testpack."+strings.ToLower(strings.NewReplacer(".", "_", "/", "_").Replace(tc.binary))+"_code",
 				tc.binary,
 				freeStringArg("code"),
 				tc.argv,
@@ -257,7 +275,7 @@ func TestLoad_ShellAliasesRejectOpenEndedPrograms(t *testing.T) {
 		t.Run(binary, func(t *testing.T) {
 			assertActionLoad(
 				t,
-				"testpack."+binary+"_code",
+				"testpack."+strings.ToLower(binary)+"_code",
 				binary,
 				freeStringArg("code"),
 				`argv: ["-c", "{{ args.code }}"]`,
@@ -369,6 +387,15 @@ func TestLoad_DirectInterpretersRejectDynamicModuleSearchEnvironment(t *testing.
 		{binary: "zsh", name: "HOME"},
 		{binary: "gawk", name: "AWKPATH"},
 		{binary: "php", name: "PHPRC"},
+		// GEM_HOME/GEM_PATH point ruby at a gem tree the caller controls —
+		// the same "select the code I load" shape as RUBYLIB, and not covered
+		// by actionspec's exact-name hijack list either.
+		{binary: "ruby", name: "GEM_HOME"},
+		{binary: "ruby", name: "GEM_PATH"},
+		{binary: "lua", name: "LUA_INIT"},
+		{binary: "Rscript", name: "R_PROFILE"},
+		{binary: "tclsh", name: "TCLLIBPATH"},
+		{binary: "pwsh", name: "PSModulePath"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.binary+"_"+tc.name, func(t *testing.T) {

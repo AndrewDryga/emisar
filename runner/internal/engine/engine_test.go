@@ -647,6 +647,62 @@ output:
 	}
 }
 
+// A `parser: json` action that declares neither parser_required nor a schema
+// still gets structure-preserving redaction. The secret-assignment default
+// rule's value alternative runs to the end of the JSON string, taking the
+// closing quote with it, so text redaction turned exactly the runs whose
+// output held a credential into `output: null` plus a parser error.
+func TestEngine_JSONRedactionPreservesDocumentWithoutParserRequired(t *testing.T) {
+	const yaml = `
+schema_version: 1
+id: t.json_secret
+title: JSON secret
+kind: exec
+risk: low
+description: d
+side_effects: [none]
+args: []
+execution:
+  command:
+    binary: echo
+    argv: ['{"line":"password=\"hunter2\""}']
+  timeout: 5s
+output:
+  parser: json
+  max_stdout_bytes: 1024
+  max_stderr_bytes: 1024
+`
+	e, j, _ := setupEngineExtra(t, map[string]string{"json_secret.yaml": yaml})
+	defer j.Close()
+	defaults, err := redact.CompileAll(redact.DefaultRules())
+	if err != nil {
+		t.Fatalf("CompileAll: %v", err)
+	}
+	e.SetRedactor(redact.New(defaults))
+
+	res, err := e.Run(context.Background(), Request{ActionID: "t.json_secret", Reason: "test"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Status != StatusSuccess {
+		t.Fatalf("status=%s reason=%s", res.Status, res.Reason)
+	}
+	if res.ParserError != "" {
+		t.Fatalf("redaction broke the document: %s (stdout=%s)", res.ParserError, res.Stdout)
+	}
+	if strings.Contains(res.Stdout, "hunter2") {
+		t.Fatalf("the credential survived redaction: %s", res.Stdout)
+	}
+	parsed, ok := res.Output.(map[string]any)
+	if !ok {
+		t.Fatalf("output = %#v, want a decoded object", res.Output)
+	}
+	line, _ := parsed["line"].(string)
+	if !strings.Contains(line, "[REDACTED]") {
+		t.Fatalf("line = %q, want the masked assignment", line)
+	}
+}
+
 // Regression for a silent bug: when the caller requested streaming
 // (cloud-side dispatch ALWAYS does), the engine used to leave the
 // captured stdout empty after the run, then run `parser: json` on the

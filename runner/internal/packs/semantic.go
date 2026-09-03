@@ -62,25 +62,30 @@ var shellInterpreters = map[string]bool{
 // codeInterpreters execute source, modules, or scripts selected by their argv.
 // Their option grammars vary by implementation and version, so an open-ended
 // model value is never a safe argv channel. Finite choices remain pack-authored.
-var codeInterpreters = map[string]rune{
-	"python":  'c',
-	"python3": 'c',
-	"perl":    'e',
-	"ruby":    'e',
-	"node":    'e',
-	"nodejs":  'e',
-	"awk":     'e',
-	"gawk":    'e',
-	"mawk":    'e',
-	"nawk":    'e',
-	"php":     'r',
-}
-
-var versionedCodeInterpreterPrefixes = map[string]rune{
-	"python": 'c',
-	"perl":   'e',
-	"ruby":   'e',
-	"php":    'r',
+// A version suffix counts as the same interpreter (see codeInterpreter), which
+// is why node22 and gawk5 are not spelled out.
+var codeInterpreters = map[string]bool{
+	"python":     true,
+	"python3":    true,
+	"perl":       true,
+	"ruby":       true,
+	"node":       true,
+	"nodejs":     true,
+	"deno":       true,
+	"bun":        true,
+	"awk":        true,
+	"gawk":       true,
+	"mawk":       true,
+	"nawk":       true,
+	"php":        true,
+	"lua":        true,
+	"luajit":     true,
+	"Rscript":    true,
+	"tclsh":      true,
+	"wish":       true,
+	"pwsh":       true,
+	"powershell": true,
+	"osascript":  true,
 }
 
 // These variables select startup files, modules, or runtime configuration that
@@ -100,11 +105,21 @@ var indirectCodeSelectionEnvVars = map[string]bool{
 	"PERL5LIB":         true,
 	"RUBYLIB":          true,
 	"RUBYGEMS_GEMDEPS": true,
+	"GEM_HOME":         true,
+	"GEM_PATH":         true,
 	"NODE_PATH":        true,
 	"AWKPATH":          true,
 	"AWKLIBPATH":       true,
 	"PHPRC":            true,
 	"PHP_INI_SCAN_DIR": true,
+	"LUA_INIT":         true,
+	"LUA_PATH":         true,
+	"LUA_CPATH":        true,
+	"R_PROFILE":        true,
+	"R_PROFILE_USER":   true,
+	"R_LIBS":           true,
+	"TCLLIBPATH":       true,
+	"PSModulePath":     true,
 }
 
 // execWrappers reinterpret their own argv as another executable, shell source,
@@ -113,23 +128,30 @@ var indirectCodeSelectionEnvVars = map[string]bool{
 // boundary intentionally small: wrapper argv may contain only fixed or finite
 // pack-authored choices. Shipped packs use no wrapper command binaries.
 var execWrappers = map[string]bool{
-	"env":      true,
-	"timeout":  true,
-	"gtimeout": true,
-	"time":     true,
-	"nice":     true,
-	"setsid":   true,
-	"stdbuf":   true,
-	"nohup":    true,
-	"xargs":    true,
-	"gxargs":   true,
-	"flock":    true,
-	"script":   true,
-	"busybox":  true,
-	"runuser":  true,
-	"sudo":     true,
-	"su":       true,
-	"doas":     true,
+	"env":         true,
+	"timeout":     true,
+	"gtimeout":    true,
+	"time":        true,
+	"nice":        true,
+	"ionice":      true,
+	"taskset":     true,
+	"setsid":      true,
+	"stdbuf":      true,
+	"nohup":       true,
+	"xargs":       true,
+	"gxargs":      true,
+	"flock":       true,
+	"script":      true,
+	"busybox":     true,
+	"runuser":     true,
+	"sudo":        true,
+	"su":          true,
+	"doas":        true,
+	"chroot":      true,
+	"nsenter":     true,
+	"unshare":     true,
+	"setpriv":     true,
+	"systemd-run": true,
 }
 
 // validateShellProgramReferences keeps caller-controlled values out of source
@@ -187,14 +209,13 @@ func validateShellProgramReferences(action *actionspec.Action, argv []string) er
 		}
 		return nil
 	}
-	if flag, ok := codeInterpreterFlag(base); ok {
+	if codeInterpreter(base) {
 		if name, ok := firstUnboundedArgumentReference(argv, args); ok {
 			return fmt.Errorf(
-				"action %s: arg %s must not be passed through %s -%c interpreter argv; pass open-ended data through execution.env",
+				"action %s: arg %s must not be passed through %s interpreter argv; pass open-ended data through execution.env",
 				action.ID,
 				name,
 				base,
-				flag,
 			)
 		}
 		return nil
@@ -225,61 +246,59 @@ func validateShellProgramReferences(action *actionspec.Action, argv []string) er
 	return nil
 }
 
-func codeInterpreterFlag(base string) (rune, bool) {
-	if flag, ok := codeInterpreters[base]; ok {
-		return flag, true
+// codeInterpreter reports whether base names a source-executing interpreter,
+// accepting a bare version suffix (python3.12, node22, gawk5) as the same
+// program. The version forms used to live in a second, shorter table that
+// omitted node and awk, so exactly those two escaped the check.
+func codeInterpreter(base string) bool {
+	if codeInterpreters[base] {
+		return true
 	}
-	for prefix, flag := range versionedCodeInterpreterPrefixes {
-		suffix, found := strings.CutPrefix(base, prefix)
+	for name := range codeInterpreters {
+		suffix, found := strings.CutPrefix(base, name)
 		if !found || suffix == "" {
 			continue
 		}
-		validVersion := true
-		for _, char := range suffix {
-			if (char < '0' || char > '9') && char != '.' {
-				validVersion = false
-				break
-			}
-		}
-		if validVersion {
-			return flag, true
+		if strings.Trim(suffix, "0123456789.") == "" {
+			return true
 		}
 	}
-	return 0, false
+	return false
 }
 
 func environmentSelectsCode(base, name string) bool {
 	if name == "PATH" || name == "SHELL" {
 		return true
 	}
-	indirectCommand := shellInterpreters[base] || execWrappers[base]
-	if indirectCommand && indirectCodeSelectionEnvVars[name] {
+	if (shellInterpreters[base] || execWrappers[base]) && indirectCodeSelectionEnvVars[name] {
 		return true
 	}
-	if strings.HasPrefix(base, "python") {
+	switch {
+	case strings.HasPrefix(base, "python"):
 		return name == "HOME" || name == "PYTHONHOME" || name == "PYTHONPATH" || name == "PYTHONUSERBASE"
-	}
-	if strings.HasPrefix(base, "perl") {
+	case strings.HasPrefix(base, "perl"):
 		return name == "PERLLIB" || name == "PERL5LIB"
-	}
-	if strings.HasPrefix(base, "ruby") {
-		return name == "RUBYLIB" || name == "RUBYGEMS_GEMDEPS"
-	}
-	if base == "node" || base == "nodejs" {
+	case strings.HasPrefix(base, "ruby"):
+		return name == "RUBYLIB" || name == "RUBYGEMS_GEMDEPS" || name == "GEM_HOME" || name == "GEM_PATH"
+	case base == "node" || base == "nodejs" || base == "deno" || base == "bun":
 		return name == "NODE_PATH"
-	}
-	if strings.HasSuffix(base, "awk") {
+	case strings.HasSuffix(base, "awk"):
 		return name == "AWKPATH" || name == "AWKLIBPATH"
-	}
-	if strings.HasPrefix(base, "php") {
+	case strings.HasPrefix(base, "php"):
 		return name == "PHPRC" || name == "PHP_INI_SCAN_DIR"
+	case strings.HasPrefix(base, "lua"):
+		return name == "LUA_INIT" || name == "LUA_PATH" || name == "LUA_CPATH"
+	case base == "Rscript":
+		return name == "R_PROFILE" || name == "R_PROFILE_USER" || name == "R_LIBS"
+	case base == "tclsh" || base == "wish":
+		return name == "TCLLIBPATH"
+	case base == "pwsh" || base == "powershell":
+		return name == "PSModulePath"
 	}
-	if base == "fish" {
-		return name == "HOME" || name == "XDG_CONFIG_HOME"
-	}
-	if base == "csh" || base == "tcsh" || base == "zsh" {
-		return name == "HOME"
-	}
+	// An ordinary command keeps its application environment: ENV and HOME are
+	// real configuration for tools that are not interpreters, and refusing
+	// them everywhere buries authors in false positives
+	// (TestLoad_OrdinaryBinaryKeepsApplicationEnvironment).
 	return false
 }
 

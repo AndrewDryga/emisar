@@ -79,3 +79,29 @@ func waitForDarwinProcessExit(t *testing.T, pid int, timeout time.Duration) {
 	}
 	t.Fatalf("descendant process %d survived", pid)
 }
+
+// Mirror of the Linux case: a successful action must not leave a descendant
+// that detached its stdio running under the runner. The reap is
+// platform-neutral (Setpgid + killGroup exist on both), so this darwin twin is
+// what a maintainer on a Mac can actually run.
+func TestExecutorDarwinSuccessfulActionReapsDetachedDescendant(t *testing.T) {
+	pidPath := filepath.Join(t.TempDir(), "child.pid")
+	res, err := New().Execute(context.Background(), Plan{
+		Binary: "/bin/sh",
+		Argv: []string{"-c", fmt.Sprintf(
+			`(trap '' TERM HUP; exec >/dev/null 2>&1; while :; do sleep 1; done) & echo $! > %q`,
+			pidPath,
+		)},
+		Limits:      Limits{Timeout: 10 * time.Second, MaxStdoutBytes: 1024, MaxStderrBytes: 1024},
+		CancelGrace: time.Second,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Status != StatusOK {
+		t.Fatalf("status = %s, want ok", res.Status)
+	}
+	pid := readDarwinProcessID(t, pidPath)
+	t.Cleanup(func() { _ = syscall.Kill(pid, syscall.SIGKILL) })
+	waitForDarwinProcessExit(t, pid, 3*time.Second)
+}

@@ -270,6 +270,11 @@ func validateSetupText(field, value string, prose bool) error {
 	return nil
 }
 
+// ValidEnvName exposes the environment-variable name charset so an action's
+// execution.env is held to the same shape as a pack's setup.env, rather than
+// mirroring a copy that could drift.
+func ValidEnvName(s string) bool { return validEnvName(s) }
+
 // validEnvName reports whether s is a POSIX-shaped environment variable
 // name (first char a letter or underscore, rest alphanumeric/underscore).
 func validEnvName(s string) bool {

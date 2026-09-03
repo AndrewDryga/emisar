@@ -162,6 +162,7 @@ func loadPackInto(reg *Registry, root string, opts LoadOptions) (err error) {
 		{rel: "pack.yaml", data: data},
 	}
 
+	var scriptRels []string
 	for _, relPath := range pack.Actions {
 		action, data, err := loadActionFile(absRoot, relPath, pack.ID, pack.AllowSymlinks)
 		if err != nil {
@@ -192,12 +193,16 @@ func loadPackInto(reg *Registry, root string, opts LoadOptions) (err error) {
 				return err
 			}
 			reg.scripts[action.ID] = si
+			scriptRels = append(scriptRels, action.Execution.Script.Path)
 			reg.packHashInputs[pack.ID] = append(reg.packHashInputs[pack.ID],
 				hashEntry{rel: action.Execution.Script.Path, data: scriptBytes})
 		}
 		reg.actions[action.ID] = action
 		reg.packHashInputs[pack.ID] = append(reg.packHashInputs[pack.ID],
 			hashEntry{rel: relPath, data: data})
+	}
+	if err := refuseUndeclaredScriptSiblings(pack.ID, absRoot, scriptRels); err != nil {
+		return err
 	}
 	// setup.verify must name one of this pack's own actions — a typo here
 	// would otherwise ship a broken "run this to verify" hint.
@@ -219,6 +224,49 @@ func loadPackInto(reg *Registry, root string, opts LoadOptions) (err error) {
 		}
 	}
 	reg.packHashes[pack.ID] = computePackHash(reg.packHashInputs[pack.ID])
+	return nil
+}
+
+// refuseUndeclaredScriptSiblings keeps a script's own directory closed over the
+// pack hash. The hash covers pack.yaml, the declared action YAMLs and each
+// action's script — nothing else — so a helper sitting beside a trusted script
+// and sourced by it executes with the pack's authority while contributing
+// nothing to the hash the control plane pins: change the helper after the
+// operator trusted the pack and both RecomputePackHash and the pre-exec script
+// SHA still pass. A published tarball is built from the hash set and can never
+// carry one; this refuses the locally installed or private pack that can.
+//
+// The residue this does NOT close is a script sourcing something further away
+// (../test/helper.sh). Closing that needs the hash to cover the whole tree,
+// which would change every shipped pack's hash.
+func refuseUndeclaredScriptSiblings(packID, root string, scriptRels []string) error {
+	declared := map[string]map[string]struct{}{}
+	for _, rel := range scriptRels {
+		dir := filepath.Dir(rel)
+		if dir == "." {
+			return fmt.Errorf(
+				"packs: pack %s: script %s must live in its own directory (conventionally scripts/), because every file beside a script has to be part of the pack hash",
+				packID, rel)
+		}
+		if declared[dir] == nil {
+			declared[dir] = map[string]struct{}{}
+		}
+		declared[dir][filepath.Base(rel)] = struct{}{}
+	}
+	for dir, names := range declared {
+		entries, err := os.ReadDir(filepath.Join(root, dir))
+		if err != nil {
+			return fmt.Errorf("packs: pack %s: read script directory %s: %w", packID, dir, err)
+		}
+		for _, entry := range entries {
+			if _, ok := names[entry.Name()]; ok {
+				continue
+			}
+			return fmt.Errorf(
+				"packs: pack %s: %s is not declared by any action; a script directory may hold nothing outside the pack hash",
+				packID, filepath.Join(dir, entry.Name()))
+		}
+	}
 	return nil
 }
 

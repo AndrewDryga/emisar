@@ -51,12 +51,15 @@ type fakeGCS struct {
 	requests map[string]string // object name -> ifGenerationMatch value ("" if absent)
 	auth     map[string]string // object name -> Authorization header
 	readAuth map[string]string // object name -> Authorization header on collision verification
-	cache    map[string]string // object name -> Cache-Control metadata
-	encoding map[string]string // object name -> Content-Encoding metadata ("" if absent)
-	stored   map[string][]byte // object name -> uploaded data-part bytes
-	status   map[string]int    // object name -> forced status
-	objects  map[string][]byte // bytes returned when an existing object is verified
-	order    []string          // object names in the order they were uploaded
+	// privateReads makes the fake refuse an unauthenticated GET like a private
+	// self-hosted bucket does; the public registry serves reads to anyone.
+	privateReads bool
+	cache        map[string]string // object name -> Cache-Control metadata
+	encoding     map[string]string // object name -> Content-Encoding metadata ("" if absent)
+	stored       map[string][]byte // object name -> uploaded data-part bytes
+	status       map[string]int    // object name -> forced status
+	objects      map[string][]byte // bytes returned when an existing object is verified
+	order        []string          // object names in the order they were uploaded
 }
 
 func newFakeGCS() *fakeGCS {
@@ -89,7 +92,12 @@ func (f *fakeGCS) server(t *testing.T) *httptest.Server {
 			f.mu.Lock()
 			data, ok := f.objects[name]
 			f.readAuth[name] = r.Header.Get("Authorization")
+			private := f.privateReads
 			f.mu.Unlock()
+			if private && r.Header.Get("Authorization") == "" {
+				w.WriteHeader(http.StatusUnauthorized)
+				return
+			}
 			if !ok {
 				w.WriteHeader(http.StatusNotFound)
 				return
@@ -356,6 +364,43 @@ func TestPublish_ExistingImmutableIsSkipped(t *testing.T) {
 	}
 	if got := f.readAuth[name]; got != "" {
 		t.Errorf("immutable collision verification used publisher credentials: %q", got)
+	}
+}
+
+// A private bucket answers the collision read with 401, and before the retry
+// every second publish to one failed at exactly this path (RC-L).
+func TestPublish_ExistingImmutableOnPrivateBucketRetriesWithCredentials(t *testing.T) {
+	dir := buildTree(t)
+	f := newFakeGCS()
+	f.privateReads = true
+	const name = "v1/schemas/catalog.v7.schema.json"
+	f.status[name] = http.StatusPreconditionFailed
+	existing, err := os.ReadFile(filepath.Join(dir, filepath.FromSlash(name)))
+	if err != nil {
+		t.Fatalf("read existing immutable fixture: %v", err)
+	}
+	f.objects[name] = existing
+	srv := f.server(t)
+
+	res, err := Publish(context.Background(), dir, PublishOptions{
+		Bucket:   "test-bucket",
+		Token:    "tok",
+		Endpoint: srv.URL,
+	})
+	if err != nil {
+		t.Fatalf("Publish should verify a private bucket's existing object with its credential: %v", err)
+	}
+	found := false
+	for _, s := range res.Skipped {
+		if s == name {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("existing immutable object not reported as skipped: %v", res.Skipped)
+	}
+	if got := f.readAuth[name]; got != "Bearer tok" {
+		t.Errorf("private collision verification Authorization = %q, want the publisher token", got)
 	}
 }
 

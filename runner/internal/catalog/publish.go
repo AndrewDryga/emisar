@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"mime/multipart"
@@ -203,7 +204,10 @@ func putObject(ctx context.Context, client *http.Client, endpoint, token, bucket
 	case resp.StatusCode >= 200 && resp.StatusCode < 300:
 		return true, nil
 	case resp.StatusCode == http.StatusPreconditionFailed && obj.Immutable:
-		stored, err := getObject(ctx, client, endpoint, bucket, obj.Path, len(data))
+		stored, err := getObject(ctx, client, endpoint, "", bucket, obj.Path, len(data))
+		if errors.Is(err, errPrivateRead) {
+			stored, err = getObject(ctx, client, endpoint, token, bucket, obj.Path, len(data))
+		}
 		if err != nil {
 			return false, fmt.Errorf("catalog: verify existing immutable object %s: %w", obj.Path, err)
 		}
@@ -237,18 +241,31 @@ func gzipBytes(data []byte) ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
-func getObject(ctx context.Context, client *http.Client, endpoint, bucket, name string, expectedSize int) ([]byte, error) {
+// errPrivateRead marks a collision read the bucket refused without credentials.
+var errPrivateRead = errors.New("catalog: bucket refuses unauthenticated reads")
+
+func getObject(ctx context.Context, client *http.Client, endpoint, token, bucket, name string, expectedSize int) ([]byte, error) {
 	objectURL := fmt.Sprintf("%s/storage/v1/b/%s/o/%s?alt=media",
 		endpoint, url.PathEscape(bucket), url.PathEscape(name))
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, objectURL, nil)
 	if err != nil {
 		return nil, fmt.Errorf("build GET request: %w", err)
 	}
+	// The public registry serves unauthenticated reads, and verifying the
+	// collision without the publisher's credential proves the bytes the PUBLIC
+	// sees. A private self-hosted bucket refuses that read, which used to fail
+	// every re-publish at its precondition path; only then does the token go on.
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("GET: %w", err)
 	}
 	defer resp.Body.Close()
+	if token == "" && (resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden) {
+		return nil, errPrivateRead
+	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 4<<10))
 		return nil, fmt.Errorf("GET returned HTTP %d: %s", resp.StatusCode, string(body))

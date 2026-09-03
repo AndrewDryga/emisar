@@ -136,6 +136,108 @@ func TestProtected_CoversStringArrayArgsCarryingPaths(t *testing.T) {
 	}
 }
 
+// A pack that spells a host path `type: string` with only a pattern loses
+// applyPathValidation; it must not also lose the runner-identity refusal. The
+// registry ships third-party packs, and `cat {{ args.file }}` at risk: low is
+// auto-run with no approval.
+func TestProtected_CoversPlainStringArgsCarryingPaths(t *testing.T) {
+	config := t.TempDir()
+	schema := []actionspec.Arg{{
+		Name:       "file",
+		Type:       actionspec.ArgString,
+		Required:   true,
+		Validation: &actionspec.Validation{Pattern: `^/[A-Za-z0-9._/-]{1,256}$`},
+	}}
+
+	_, err := Validate(schema, map[string]any{"file": filepath.Join(config, "runner.env")}, []string{config})
+	if err == nil {
+		t.Fatal("a string arg naming the runner's config must be refused")
+	}
+	assertProtected(t, err)
+}
+
+// A string arg that merely looks like a path — a CloudWatch log group, a
+// ZooKeeper znode — must still validate. Extending the refusal to every
+// string-shaped arg must not turn a remote identifier into a run failure,
+// including one whose leading component is a local directory this process
+// cannot read.
+func TestProtected_AllowsRemoteIdentifiersShapedLikePaths(t *testing.T) {
+	dir := t.TempDir()
+	unreadable := filepath.Join(dir, "sealed")
+	if err := os.MkdirAll(unreadable, 0o000); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(unreadable, 0o700) })
+	if _, err := os.Lstat(filepath.Join(unreadable, "probe")); !os.IsPermission(err) {
+		t.Skipf("this process can traverse a 0000 directory (running as root?): %v", err)
+	}
+
+	schema := []actionspec.Arg{{Name: "group", Type: actionspec.ArgString, Required: true}}
+	for _, target := range []string{
+		"/aws/lambda/checkout",
+		"relative/identifier",
+		filepath.Join(unreadable, "znode"),
+	} {
+		if _, err := Validate(schema, map[string]any{"group": target}, []string{t.TempDir()}); err != nil {
+			t.Fatalf("identifier %s must still validate: %v", target, err)
+		}
+	}
+}
+
+// Deny rules and the protected roots must hold on a case-insensitive
+// filesystem. filepath.EvalSymlinks does not normalize case, so before the
+// fold compare `/etc/EMISAR/runner.env` matched neither the pack's
+// denied_prefixes nor the runner's own roots — and opened the same file.
+func TestProtected_RefusesCaseVariantsOfTheRoot(t *testing.T) {
+	config := filepath.Join(t.TempDir(), "emisar")
+	if err := os.MkdirAll(config, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	variant := filepath.Join(filepath.Dir(config), "EMISAR", "runner.env")
+
+	schema := []actionspec.Arg{{Name: "path", Type: actionspec.ArgPath, Required: true}}
+	_, err := Validate(schema, map[string]any{"path": variant}, []string{config})
+	if err == nil {
+		t.Fatalf("case variant %s of the runner's config root must be refused", variant)
+	}
+	assertProtected(t, err)
+
+	// On a case-insensitive volume the variant really is the same directory,
+	// which is what makes the exact compare a bypass rather than a nicety.
+	if err := os.WriteFile(filepath.Join(config, "runner.env"), []byte("emkey-enroll-x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(variant); err != nil {
+		t.Skipf("filesystem is case-sensitive; the fold compare is proven above: %v", err)
+	}
+}
+
+func TestDeniedPaths_RefuseCaseVariants(t *testing.T) {
+	dir := t.TempDir()
+	secret := filepath.Join(dir, "shadow")
+	if err := os.WriteFile(secret, []byte("root:!:"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	schema := []actionspec.Arg{{
+		Name:     "path",
+		Type:     actionspec.ArgPath,
+		Required: true,
+		Validation: &actionspec.Validation{
+			DeniedPaths:    []string{secret},
+			DeniedPrefixes: []string{filepath.Join(dir, "private")},
+		},
+	}}
+
+	for _, target := range []string{
+		filepath.Join(dir, "SHADOW"),
+		filepath.Join(dir, "PRIVATE", "server.key"),
+	} {
+		if _, err := Validate(schema, map[string]any{"path": target}, nil); err == nil {
+			t.Fatalf("case variant %s must not slip past the deny rules", target)
+		}
+	}
+}
+
 func TestProtected_EmptyListLeavesValidationUnchanged(t *testing.T) {
 	state := t.TempDir()
 	schema := []actionspec.Arg{{Name: "path", Type: actionspec.ArgPath, Required: true}}

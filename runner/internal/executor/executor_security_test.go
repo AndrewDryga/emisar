@@ -105,8 +105,10 @@ func TestExecutor_AllowlistedParentEnvPassesThrough(t *testing.T) {
 // TestStreamPipe_BoundsUnboundedLine: a child that emits a huge line with NO
 // newline must not force streamPipe to buffer the whole line in RAM — the old
 // ReadBytes('\n') accumulated the entire line before the size limit applied (an
-// output-OOM vector, ×MaxConcurrentRuns). The limit still caps what's captured;
-// the full stream is still counted; truncated is set.
+// output-OOM vector, ×MaxConcurrentRuns). The full stream is still counted and
+// truncated is set. What is retained is bounded by the limit plus at most ONE
+// read-buffer piece: the limit is enforced whole pieces at a time so a
+// sensitive value is never cut in half before redaction sees it.
 func TestStreamPipe_BoundsUnboundedLine(t *testing.T) {
 	const limit = 1024
 	// Far larger than the 64 KiB read buffer, no newline — forces the bounded
@@ -120,8 +122,9 @@ func TestStreamPipe_BoundsUnboundedLine(t *testing.T) {
 	if !res.truncated {
 		t.Error("want truncated=true for a blob over the limit")
 	}
-	if len(res.captured) != limit {
-		t.Errorf("captured %d bytes, want it bounded to the limit %d", len(res.captured), limit)
+	if len(res.captured) > limit+streamReaderBuf {
+		t.Errorf("captured %d bytes, want at most the limit plus one read buffer (%d)",
+			len(res.captured), limit+streamReaderBuf)
 	}
 	if res.totalBytes != len(blob) {
 		t.Errorf("totalBytes %d, want the full stream %d (counted past the limit)", res.totalBytes, len(blob))

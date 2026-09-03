@@ -155,12 +155,13 @@ func DefaultRules() []actionspec.RedactionRule {
 			//   emk-          — operator API keys (MCP / programmatic)
 			//   rnrtok-       — per-runner tokens minted at registration
 			//   emkey-enroll- — runner enrollment keys
+			//   ems-          — SCIM provisioning bearer tokens
 			//   emo- / emor- / emoc- — OAuth access / refresh token and
 			//                          authorization code
 			// emkey-auth- (the enrollment keys' pre-rename prefix) and
 			// tskey-auth- (pre-rebrand) are kept as legacy matches so keys
 			// surfaced in old logs and host files still get redacted.
-			Pattern:     `\b(?:(?:emk|rnrtok)-[A-Za-z0-9_-]{30,}|emo[rc]?-[A-Za-z0-9_-]{30,}|emkey-enroll-[A-Za-z0-9_-]{30,}|(?:emkey|tskey)-auth-[A-Za-z0-9_-]{30,})\b`,
+			Pattern:     `\b(?:(?:emk|ems|rnrtok)-[A-Za-z0-9_-]{30,}|emo[rc]?-[A-Za-z0-9_-]{30,}|emkey-enroll-[A-Za-z0-9_-]{30,}|(?:emkey|tskey)-auth-[A-Za-z0-9_-]{30,})\b`,
 			Replacement: "[REDACTED_EMISAR_TOKEN]",
 		},
 		{

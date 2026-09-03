@@ -63,24 +63,28 @@ func TestExecutor_Timeout(t *testing.T) {
 	}
 }
 
-func TestExecutor_StdoutLimit(t *testing.T) {
+// The limit stops the stream at a LINE boundary: the line that crosses it is
+// delivered whole and every later line is dropped. Cutting mid-line would hand
+// redaction half a sensitive value, whose literal rule then matches nothing —
+// so the caller applies the visible cap to the redacted bytes instead.
+func TestExecutor_StdoutLimitStopsAtALineBoundary(t *testing.T) {
 	e := New()
 	res, err := e.Execute(context.Background(), Plan{
 		Binary: "/bin/sh",
-		Argv:   []string{"-c", "printf '%s' AAAAAAAAAA"},
+		Argv:   []string{"-c", "printf 'AAAAAAAAAA\\nBBBBBBBBBB\\n'"},
 		Limits: Limits{Timeout: 5 * time.Second, MaxStdoutBytes: 3, MaxStderrBytes: 1024},
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(res.Stdout) != 3 {
-		t.Fatalf("stdout len=%d (want 3): %q", len(res.Stdout), res.Stdout)
+	if res.Stdout != "AAAAAAAAAA\n" {
+		t.Fatalf("stdout=%q, want the crossing line whole and nothing after it", res.Stdout)
 	}
 	if !res.Truncated.Stdout {
-		t.Fatal("expected stdout truncated flag")
+		t.Fatal("expected stdout truncated flag for the dropped second line")
 	}
-	if res.StdoutBytes < 10 {
-		t.Fatalf("StdoutBytes (total seen) should reflect 10, got %d", res.StdoutBytes)
+	if res.StdoutBytes != 22 {
+		t.Fatalf("StdoutBytes (total seen) should reflect 22, got %d", res.StdoutBytes)
 	}
 }
 
@@ -241,12 +245,12 @@ func TestExecutor_HardKillAfterGracePeriod(t *testing.T) {
 	}
 }
 
-func TestExecutor_StreamingTruncatesAtLimit(t *testing.T) {
+func TestExecutor_StreamingStopsAtALineBoundary(t *testing.T) {
 	var chunks []string
 	e := New()
 	res, err := e.Execute(context.Background(), Plan{
 		Binary: "/bin/sh",
-		Argv:   []string{"-c", "printf 'aaaaaaaaaa'"},
+		Argv:   []string{"-c", "printf 'aaaaaaaaaa\\nbbbbbbbbbb\\n'"},
 		Limits: Limits{Timeout: 5 * time.Second, MaxStdoutBytes: 3, MaxStderrBytes: 1024},
 		OnChunk: func(_ Stream, data []byte) {
 			chunks = append(chunks, string(data))
@@ -256,13 +260,13 @@ func TestExecutor_StreamingTruncatesAtLimit(t *testing.T) {
 		t.Fatal(err)
 	}
 	got := strings.Join(chunks, "")
-	if got != "aaa" {
-		t.Fatalf("streamed bytes: %q", got)
+	if got != "aaaaaaaaaa\n" {
+		t.Fatalf("streamed bytes: %q, want the crossing line whole and nothing after it", got)
 	}
 	if !res.Truncated.Stdout {
 		t.Fatal("expected truncated flag")
 	}
-	if res.StdoutBytes != 10 {
+	if res.StdoutBytes != 22 {
 		t.Fatalf("StdoutBytes should reflect full output, got %d", res.StdoutBytes)
 	}
 }

@@ -1,6 +1,7 @@
 package packs
 
 import (
+	"maps"
 	"os"
 	"path/filepath"
 	"strings"
@@ -345,4 +346,66 @@ func TestLoad_ScriptChecksumStamped(t *testing.T) {
 	if si.SHA256 == "" {
 		t.Fatal("expected a script SHA256 to be stamped at load")
 	}
+}
+
+// A helper sitting beside a trusted script executes with the pack's authority
+// but is not in the pack hash, so it can be swapped after the operator trusted
+// the pack and both the tamper rehash and the pre-exec script SHA still pass.
+// The script directory is therefore closed over the hash: nothing undeclared
+// may sit in it.
+func TestLoad_RefusesUndeclaredFileBesideAScript(t *testing.T) {
+	base := map[string]string{
+		"pack.yaml":      packYAML("scr"),
+		"actions/a.yaml": strings.Replace(scriptActionYAML, "%s", "scr.run", 1),
+		"scripts/run.sh": "#!/bin/sh\n. \"$(dirname \"$0\")/helper.sh\"\n",
+	}
+
+	t.Run("undeclared sibling", func(t *testing.T) {
+		files := maps.Clone(base)
+		files["scripts/helper.sh"] = "#!/bin/sh\necho helper\n"
+		root := writePack(t, t.TempDir(), "p", files)
+		_, err := LoadOne(root, LoadOptions{})
+		want := "scripts/helper.sh is not declared by any action"
+		if err == nil || !strings.Contains(err.Error(), want) {
+			t.Fatalf("LoadOne() error = %v, want containing %q", err, want)
+		}
+	})
+
+	t.Run("undeclared subdirectory", func(t *testing.T) {
+		files := maps.Clone(base)
+		files["scripts/lib/common.sh"] = "#!/bin/sh\n"
+		root := writePack(t, t.TempDir(), "p", files)
+		_, err := LoadOne(root, LoadOptions{})
+		want := "scripts/lib is not declared by any action"
+		if err == nil || !strings.Contains(err.Error(), want) {
+			t.Fatalf("LoadOne() error = %v, want containing %q", err, want)
+		}
+	})
+
+	t.Run("script at the pack root", func(t *testing.T) {
+		files := maps.Clone(base)
+		delete(files, "scripts/run.sh")
+		files["run.sh"] = "#!/bin/sh\necho hi\n"
+		files["actions/a.yaml"] = strings.Replace(
+			strings.Replace(scriptActionYAML, "%s", "scr.run", 1), "scripts/run.sh", "run.sh", 1)
+		root := writePack(t, t.TempDir(), "p", files)
+		_, err := LoadOne(root, LoadOptions{})
+		want := "must live in its own directory"
+		if err == nil || !strings.Contains(err.Error(), want) {
+			t.Fatalf("LoadOne() error = %v, want containing %q", err, want)
+		}
+	})
+
+	t.Run("declared sibling loads", func(t *testing.T) {
+		files := maps.Clone(base)
+		files["scripts/helper.sh"] = "#!/bin/sh\necho helper\n"
+		files["actions/b.yaml"] = strings.Replace(
+			strings.Replace(scriptActionYAML, "%s", "scr.helper", 1), "scripts/run.sh", "scripts/helper.sh", 1)
+		files["pack.yaml"] = strings.Replace(packYAML("scr"), "  - actions/a.yaml\n",
+			"  - actions/a.yaml\n  - actions/b.yaml\n", 1)
+		root := writePack(t, t.TempDir(), "p", files)
+		if _, err := LoadOne(root, LoadOptions{}); err != nil {
+			t.Fatalf("declaring the helper as its own action's script must load: %v", err)
+		}
+	})
 }

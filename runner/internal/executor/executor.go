@@ -200,11 +200,18 @@ func (e *Executor) Execute(ctx context.Context, p Plan) (*Result, error) {
 
 	runErr := cmd.Wait()
 	contextErr := tctx.Err()
-	if contextErr != nil || errors.Is(runErr, exec.ErrWaitDelay) {
-		// The leader may exit before descendants that ignored SIGTERM. Remove
-		// the group synchronously, before finish suppresses the delayed kill.
-		lifecycle.signal(syscall.SIGKILL)
-	}
+	// Remove the whole group unconditionally, synchronously, before finish
+	// suppresses the delayed kill. On the cancel and timeout paths the leader
+	// may exit before descendants that ignored SIGTERM. On the ORDINARY path a
+	// descendant that closed its stdio and outlived the leader is invisible to
+	// both Wait and WaitDelay, so nothing else reaches it: the security model
+	// promises no action process outlives its action, and this is what keeps
+	// that true while the runner is up. (Runner shutdown is the same
+	// mechanism from the other end: SIGTERM cancels the root context in
+	// main.go, the cloud client cancels every in-flight run, and the watcher
+	// above signals the group. A socket drop deliberately cancels nothing, so
+	// a reconnect finds its actions still running.)
+	lifecycle.signal(syscall.SIGKILL)
 	lifecycle.finish()
 	close(processFinished)
 	<-watcherDone
@@ -323,6 +330,13 @@ const streamReaderBuf = 64 * 1024
 // A final partial line (no trailing newline at EOF) is still shipped. A line
 // longer than the read buffer is processed in buffer-sized pieces, so a child
 // emitting a huge newline-free blob can't force one unbounded allocation.
+//
+// The limit is enforced WHOLE LINES at a time, so the stream may overshoot it
+// by at most one piece. Redaction runs downstream of this reader: cutting a
+// line at an arbitrary byte offset can split a sensitive value in half, and a
+// literal rule that never sees the whole value cannot match it — the prefix
+// then leaves the host unmasked. The consumer applies the action's visible cap
+// to the redacted bytes instead.
 func streamPipe(r io.Reader, limit int, stream Stream, onChunk func(Stream, []byte)) (streamResult, error) {
 	br := bufio.NewReaderSize(r, streamReaderBuf)
 	var captured []byte
@@ -343,15 +357,9 @@ func streamPipe(r io.Reader, limit int, stream Stream, onChunk func(Stream, []by
 		}
 		if len(line) > 0 {
 			total += len(line)
-			remaining := limit - written
-			switch {
-			case remaining <= 0:
+			if written >= limit {
 				truncated = true
-			case len(line) > remaining:
-				ship(line[:remaining], stream, onChunk, &captured)
-				written += remaining
-				truncated = true
-			default:
+			} else {
 				ship(line, stream, onChunk, &captured)
 				written += len(line)
 			}

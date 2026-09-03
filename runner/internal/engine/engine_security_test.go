@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/andrewdryga/emisar/runner/internal/admission"
+	"github.com/andrewdryga/emisar/runner/internal/executor"
 	"github.com/andrewdryga/emisar/runner/internal/expressions"
 	"github.com/andrewdryga/emisar/runner/internal/redact"
 	"github.com/andrewdryga/emisar/runner/pkg/actionspec"
@@ -384,6 +385,38 @@ func TestEngine_UnflaggedCredentialMaskedInExecutedCommand(t *testing.T) {
 	}
 }
 
+// validation.Validate hands a string_array arg to the engine as []string, and
+// its elements land in argv exactly like a scalar's. Masking only the scalar
+// wrote the same credential to events.jsonl masked in executed_command and in
+// the clear in args_redacted — the journal operators export with
+// `emisar audit`.
+func TestEngine_UnflaggedCredentialInArrayArgMaskedInJournal(t *testing.T) {
+	defaults, err := redact.CompileAll(redact.DefaultRules())
+	if err != nil {
+		t.Fatalf("CompileAll: %v", err)
+	}
+	engine := New(Config{Redactor: redact.New(defaults)})
+	act := &actionspec.Action{
+		ID:   "databricks.job_run_now",
+		Args: []actionspec.Arg{{Name: "job_params", Type: actionspec.ArgStringArray}},
+	}
+	const secret = "ghp_AAAAAAAAAAAAAAAAAAAAAAAA"
+	args := map[string]any{"job_params": []string{"env=prod", "api_token=" + secret}}
+	redactor := engine.combinedRedactor(act, args)
+
+	redactedArgs := redactArgs(redactor, args, act.Args)
+	params, ok := redactedArgs["job_params"].([]string)
+	if !ok {
+		t.Fatalf("job_params = %T, want []string", redactedArgs["job_params"])
+	}
+	if strings.Contains(strings.Join(params, " "), secret) {
+		t.Fatalf("args_redacted leaked a credential in a string_array arg: %v", params)
+	}
+	if params[0] != "env=prod" {
+		t.Fatalf("an ordinary element must survive unchanged, got %q", params[0])
+	}
+}
+
 // A pack may legally name a redaction rule the same thing the synthesized
 // sensitive-argument set is named. Compiled in one batch with it, CompileAll's
 // first-wins dedupe silently dropped the pack's rule — and with it whatever else
@@ -481,5 +514,72 @@ func TestEngine_AuthoredRuleCompileFailureKeepsSensitiveMasking(t *testing.T) {
 	got, _ := redactor.Apply("saw arg-secret")
 	if strings.Contains(got, "arg-secret") {
 		t.Fatalf("a broken authored rule dropped sensitive-argument masking: %s", got)
+	}
+}
+
+// A sensitive argument echoed near the action's byte cap must never ship its
+// prefix. The executor used to cut the raw stream at exactly max_stdout_bytes,
+// so a value straddling that offset reached redaction already split in half —
+// the literal rule synthesized for it matched nothing and the leading bytes
+// left the host in the clear. The cap now applies to redacted bytes.
+func TestEngine_SecretStraddlingTheOutputCapIsMasked(t *testing.T) {
+	const secret = "s3cr3t-value-that-must-never-ship-in-part"
+	const yaml = `
+schema_version: 1
+id: t.cap_secret
+title: Cap secret
+kind: exec
+risk: low
+description: d
+side_effects: [none]
+args:
+  - {name: token, type: string, required: true, sensitive: true}
+execution:
+  command:
+    binary: /bin/sh
+    argv: ["-c", "printf 'pad%s\n' \"$PAD\"; printf 'tok=%s\n' \"$TOKEN\"", "emisar", "{{ args.token }}"]
+    # PAD fills the stream so the cap lands inside the token on the next line.
+  env:
+    PAD: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    TOKEN: "{{ args.token }}"
+  timeout: 5s
+output:
+  max_stdout_bytes: 74
+  max_stderr_bytes: 1024
+`
+	e, j, _ := setupEngineExtra(t, map[string]string{"cap_secret.yaml": yaml})
+	defer j.Close()
+
+	for _, streaming := range []bool{false, true} {
+		name := "buffered"
+		req := Request{ActionID: "t.cap_secret", Args: map[string]any{"token": secret}, Reason: "test"}
+		if streaming {
+			name = "streaming"
+			req.OnProgress = func(executor.Stream, []byte) {}
+		}
+		t.Run(name, func(t *testing.T) {
+			var streamed strings.Builder
+			if streaming {
+				req.OnProgress = func(_ executor.Stream, data []byte) { streamed.Write(data) }
+			}
+			res, err := e.Run(context.Background(), req)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if res.Status != StatusSuccess {
+				t.Fatalf("status=%s reason=%s", res.Status, res.Reason)
+			}
+			if len(res.Stdout) > 74 {
+				t.Fatalf("stdout is %d bytes, over the declared 74: %q", len(res.Stdout), res.Stdout)
+			}
+			// Any prefix of the secret long enough to be recognizable must be
+			// absent — the leak was the first N bytes, not the whole value.
+			if strings.Contains(res.Stdout, secret[:20]) {
+				t.Fatalf("stdout leaked the start of a sensitive argument: %q", res.Stdout)
+			}
+			if streaming && strings.Contains(streamed.String(), secret[:20]) {
+				t.Fatalf("a progress chunk leaked the start of a sensitive argument: %q", streamed.String())
+			}
+		})
 	}
 }

@@ -132,3 +132,30 @@ func waitForProcessExit(t *testing.T, pid int, timeout time.Duration) {
 	}
 	t.Fatalf("descendant process %d survived", pid)
 }
+
+// A descendant that closed its stdio and outlived the leader is invisible to
+// Wait and to WaitDelay, so an action could exit 0 and leave a worker running
+// under the runner's own session — the orphan the security model says cannot
+// exist. The group is reaped on every completion path, not only on cancel.
+//
+// Linux-only by build tag: CI's Linux lane judges this, together with the
+// Pdeathsig behaviour a darwin box cannot exercise at all.
+func TestExecutor_SuccessfulActionReapsDetachedDescendant(t *testing.T) {
+	pidPath := filepath.Join(t.TempDir(), "child.pid")
+	res, err := New().Execute(context.Background(), Plan{
+		Binary: "/bin/sh",
+		Argv: []string{"-c", fmt.Sprintf(
+			`(trap '' TERM HUP; exec >/dev/null 2>&1; while :; do sleep 1; done) & echo $! > %q`,
+			pidPath,
+		)},
+		Limits:      Limits{Timeout: 10 * time.Second, MaxStdoutBytes: 1024, MaxStderrBytes: 1024},
+		CancelGrace: time.Second,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Status != StatusOK {
+		t.Fatalf("status = %s, want ok", res.Status)
+	}
+	waitForProcessExit(t, readProcessID(t, pidPath), 3*time.Second)
+}

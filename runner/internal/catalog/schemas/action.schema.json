@@ -8,7 +8,7 @@
   "additionalProperties": false,
   "properties": {
     "schema_version": {"type": "integer", "const": 1},
-    "id": {"type": "string", "maxLength": 128, "pattern": "^[a-z][a-z0-9_]*\\.[a-z][a-z0-9_]*", "description": "<namespace>.<name>."},
+    "id": {"type": "string", "maxLength": 128, "pattern": "^[a-z][a-z0-9_-]*(\\.[a-z][a-z0-9_-]*)+$", "description": "<namespace>.<name>."},
     "title": {"type": "string", "minLength": 1, "maxLength": 160},
     "summary": {"type": "string", "minLength": 1, "maxLength": 512},
     "kind": {"type": "string", "enum": ["exec", "script"]},

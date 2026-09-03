@@ -102,3 +102,15 @@ func TestApplyJSONFailsClosedWhenWholeDocumentRuleBreaksJSON(t *testing.T) {
 		t.Fatalf("hits=%+v", hits)
 	}
 }
+
+// A duplicate object key must survive redaction as a defect, not be normalized
+// away by it. ApplyJSON decodes into map[string]any and re-encodes, so the
+// strict output-schema validator downstream would otherwise never see the
+// second "name" — the document it rejects would already have been rewritten
+// into one it accepts.
+func TestApplyJSONRefusesDuplicateObjectKeys(t *testing.T) {
+	_, _, err := Empty().ApplyJSON([]byte(`{"name":"alice","name":"bob","count":2}`))
+	if !errors.Is(err, ErrInvalidJSON) {
+		t.Fatalf("error=%v, want ErrInvalidJSON", err)
+	}
+}

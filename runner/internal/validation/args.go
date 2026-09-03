@@ -338,10 +338,10 @@ func applyPathValidation(a actionspec.Arg, val *actionspec.Validation, v any) (a
 		// Reject lexical deny matches before resolving the request. Protected
 		// trees such as /root/.ssh are deliberately unreadable to a non-root
 		// runner, but a direct or dot-dot path into them is still an exact deny.
-		if pathInList(cleaned, lexicalDeniedPaths) {
+		if pathInDenyList(cleaned, lexicalDeniedPaths) {
 			return nil, newError(a.Name, "denied_paths", "path %s is denied", cleaned)
 		}
-		if prefixInList(cleaned, lexicalDeniedPrefixes) {
+		if prefixInDenyList(cleaned, lexicalDeniedPrefixes) {
 			return nil, newError(a.Name, "denied_prefixes", "path %s under denied prefix", cleaned)
 		}
 		resolved, err := resolveForCheck(s)
@@ -359,13 +359,13 @@ func applyPathValidation(a actionspec.Arg, val *actionspec.Validation, v any) (a
 		if len(allowedPaths) > 0 && !pathInList(resolved, allowedPaths) {
 			return nil, newError(a.Name, "allowed_paths", "path %s not in allowlist", resolved)
 		}
-		if pathInList(resolved, deniedPaths) {
+		if pathInDenyList(resolved, deniedPaths) {
 			return nil, newError(a.Name, "denied_paths", "path %s is denied", resolved)
 		}
 		if len(allowedPrefixes) > 0 && !prefixInList(resolved, allowedPrefixes) {
 			return nil, newError(a.Name, "allowed_prefixes", "path %s not in allowed prefixes", resolved)
 		}
-		if prefixInList(resolved, deniedPrefixes) {
+		if prefixInDenyList(resolved, deniedPrefixes) {
 			return nil, newError(a.Name, "denied_prefixes", "path %s under denied prefix", resolved)
 		}
 		resolvedValues = append(resolvedValues, resolved)
@@ -389,13 +389,25 @@ func applyPathValidation(a actionspec.Arg, val *actionspec.Validation, v any) (a
 // token that authenticates this runner to the control plane. Reading either
 // impersonates the runner, so it must not depend on a pack getting its
 // denylist right.
+//
+// Every string-shaped value is checked, whatever type the pack gave it. Keying
+// this on `type: path` (or on a declared path rule) meant an author who wrote
+// `type: string` with only an anchored pattern — the mistake packs/AGENTS.md
+// already warns about for containment — silently lost the runner-identity
+// refusal as well. A value that is not an absolute path costs one Clean here
+// and resolves no further.
 func refuseProtectedPaths(a actionspec.Arg, v any, protected []string) error {
-	if len(protected) == 0 || !carriesPaths(a) {
+	if len(protected) == 0 {
 		return nil
 	}
-	values, err := stringsFor(a, v)
-	if err != nil {
-		return err
+	var values []string
+	switch typed := v.(type) {
+	case string:
+		values = []string{typed}
+	case []string:
+		values = typed
+	default:
+		return nil
 	}
 	// Resolve the roots the same way declared rules are resolved, so a host
 	// where /var is a symlink still compares like with like.
@@ -407,14 +419,18 @@ func refuseProtectedPaths(a actionspec.Arg, v any, protected []string) error {
 	for _, s := range values {
 		// Lexically first: the store is normally unreadable to the service
 		// user, but a direct or dot-dot path into it is still an exact refusal.
-		if prefixInList(filepath.Clean(s), lexical) {
+		if prefixInDenyList(filepath.Clean(s), lexical) {
 			return protectedPathError(a, s)
 		}
-		target, err := resolveForCheck(s)
+		// An identifier that merely looks like a path (a log group, a znode)
+		// never reaches an existing component, so tolerating an unreadable one
+		// keeps those args working; the refusal below is a denial check, and
+		// applyPathValidation still resolves a real path arg strictly.
+		target, err := resolveRuleForCheck(s)
 		if err != nil {
 			return newError(a.Name, "path", "cannot safely resolve path %s: %v", s, err)
 		}
-		if prefixInList(target, resolved) {
+		if prefixInDenyList(target, resolved) {
 			return protectedPathError(a, target)
 		}
 	}
@@ -424,22 +440,6 @@ func refuseProtectedPaths(a actionspec.Arg, v any, protected []string) error {
 func protectedPathError(a actionspec.Arg, path string) error {
 	return newError(a.Name, "protected_path",
 		"path %s is inside the runner's own configuration or state", path)
-}
-
-// carriesPaths reports whether an arg's value is a filesystem path the
-// executor will hand to a command. A declared path rule is the same signal
-// applyPathValidation keys on, so a string/string_array arg carrying paths is
-// covered too — but a `path` arg counts even with no validation block, which
-// is exactly the case that would otherwise skip every path check.
-func carriesPaths(a actionspec.Arg) bool {
-	if a.Type == actionspec.ArgPath {
-		return true
-	}
-	if a.Validation == nil {
-		return false
-	}
-	return len(a.Validation.AllowedPaths) > 0 || len(a.Validation.DeniedPaths) > 0 ||
-		len(a.Validation.AllowedPrefixes) > 0 || len(a.Validation.DeniedPrefixes) > 0
 }
 
 func cleanMany(in []string) []string {
@@ -475,12 +475,15 @@ func resolveForCheck(p string) (string, error) {
 	return resolvePathForCheck(p, false)
 }
 
-// resolveRuleForCheck is the same walk for a PROTECTED-RULE path, which may
-// legitimately sit somewhere this process cannot read. It canonicalizes every
-// inspectable ancestor and lets an unreadable tail stay lexical, so one
-// unreadable rule cannot poison every otherwise-benign action on a non-root
-// runner. Request paths keep resolveForCheck and still reject an unreadable
-// component, so this cannot turn an uninspectable input into an executable path.
+// resolveRuleForCheck is the same walk for a path that may legitimately sit
+// somewhere this process cannot read: a declared allow/deny rule, or a value
+// refuseProtectedPaths is only comparing against the runner's own roots. It
+// canonicalizes every inspectable ancestor and lets an unreadable tail stay
+// lexical, so one unreadable rule cannot poison every otherwise-benign action
+// on a non-root runner. Neither caller grants execution — applyPathValidation
+// resolves the value it returns with resolveForCheck, which still rejects an
+// unreadable component — so this cannot turn an uninspectable input into an
+// executable path.
 func resolveRuleForCheck(p string) (string, error) {
 	return resolvePathForCheck(p, true)
 }
@@ -679,19 +682,60 @@ func pathInList(path string, list []string) bool {
 	return false
 }
 
-func prefixInList(path string, prefixes []string) bool {
-	for _, p := range prefixes {
-		clean := filepath.Clean(p)
-		// Root covers every absolute path; clean+separator would be "//",
-		// which never prefixes a cleaned path, so special-case it.
-		if clean == string(filepath.Separator) {
-			return true
-		}
-		if path == clean || strings.HasPrefix(path, clean+string(filepath.Separator)) {
+// pathInDenyList and prefixInDenyList fold case. EvalSymlinks resolves links
+// but never normalizes case, so on a case-insensitive filesystem — APFS by
+// default on macOS, a published runner platform, and ext4 casefold / CIFS /
+// vfat subtrees on Linux — /etc/EMISAR/runner.env opens the same file as
+// /etc/emisar/runner.env and an exact compare waves it straight past a
+// deny-only pack rule and past the runner's own protected roots. Refusing a
+// case variant on a case-sensitive host is the fail-closed error and no
+// shipped rule distinguishes two paths by case alone. The ALLOW direction
+// keeps the exact compare: there the same fold would widen access instead, and
+// a case variant that misses an allowlist is already refused.
+func pathInDenyList(path string, list []string) bool {
+	for _, p := range list {
+		if strings.EqualFold(filepath.Clean(p), path) {
 			return true
 		}
 	}
 	return false
+}
+
+func prefixInList(path string, prefixes []string) bool {
+	for _, p := range prefixes {
+		if underPrefix(path, filepath.Clean(p), false) {
+			return true
+		}
+	}
+	return false
+}
+
+func prefixInDenyList(path string, prefixes []string) bool {
+	for _, p := range prefixes {
+		if underPrefix(path, filepath.Clean(p), true) {
+			return true
+		}
+	}
+	return false
+}
+
+func underPrefix(path, prefix string, fold bool) bool {
+	// Root covers every absolute path; prefix+separator would be "//",
+	// which never prefixes a cleaned path, so special-case it.
+	if prefix == string(filepath.Separator) {
+		return true
+	}
+	if len(path) < len(prefix) {
+		return false
+	}
+	if len(path) > len(prefix) && path[len(prefix)] != filepath.Separator {
+		return false
+	}
+	head := path[:len(prefix)]
+	if fold {
+		return strings.EqualFold(head, prefix)
+	}
+	return head == prefix
 }
 
 func toString(v any) (string, bool) {

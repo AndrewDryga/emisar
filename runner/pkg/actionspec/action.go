@@ -6,6 +6,8 @@ import (
 	"strings"
 	"unicode"
 	"unicode/utf8"
+
+	"github.com/andrewdryga/emisar/runner/pkg/packspec"
 )
 
 // SchemaVersion is the currently supported action schema version.
@@ -360,8 +362,16 @@ func IsInterpreterHijackEnvVar(name string) bool {
 // the system, not a per-action env injection. Matched case-sensitively — the
 // loader only honors the canonical uppercase forms, so a lowercased variant
 // would be inert anyway.
+// Every key must first BE an environment-variable name. The executor
+// serializes each entry as "key=value", so a key spelled "NODE_OPTIONS=--require"
+// passes the exact-name checks here and in packs.environmentSelectsCode, then
+// reaches the child as a real NODE_OPTIONS assignment carrying whatever the
+// action rendered after it.
 func validateExecutionEnv(a *Action) error {
 	for k := range a.Execution.Env {
+		if !packspec.ValidEnvName(k) {
+			return fmt.Errorf("action %s: execution.env key %q is not an environment variable name", a.ID, k)
+		}
 		if strings.HasPrefix(k, "LD_") || strings.HasPrefix(k, "DYLD_") || IsInterpreterHijackEnvVar(k) {
 			return fmt.Errorf("action %s: execution.env must not set %q (dynamic-linker/shell-init/interpreter-option hijack vector)", a.ID, k)
 		}

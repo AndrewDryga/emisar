@@ -30,6 +30,7 @@ func TestDefaultRules_EmisarCredentialPrefixes(t *testing.T) {
 		value string
 	}{
 		{"operator api key (emk-)", "emk-" + tail},
+		{"scim bearer token (ems-)", "ems-" + tail},
 		{"runner token (rnrtok-)", "rnrtok-" + tail},
 		{"oauth access token (emo-)", "emo-" + tail},
 		{"oauth refresh token (emor-)", "emor-" + tail},
