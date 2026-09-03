@@ -102,6 +102,10 @@ env var can be unset after the first successful connect.`,
 				logger.Error("packs.degraded",
 					"pack_dir", degraded.Dir, "error", degraded.Reason)
 			}
+			for _, key := range rt.cfg.IgnoredKeys() {
+				logger.Warn("config.ignored_key", "key", key,
+					"detail", "an earlier installer wrote this line and the runner does not read it; delete it from "+rt.cfg.Source)
+			}
 			dialer := &cloud.WebsocketDialer{
 				URL:           rt.cfg.Cloud.URL,
 				EnrollmentKey: enrollmentKey,

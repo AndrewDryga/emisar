@@ -14,6 +14,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"sort"
@@ -147,12 +148,18 @@ func TestRunVerifiesReleaseAndHandsItToInstaller(t *testing.T) {
 	}
 	joined := strings.Join(commandArgs, "\n")
 	for _, want := range []string{
-		"--version\nrunner-v0.19.0", "--packs\n\n", "--bin-dir\n" + filepath.Dir(executable),
+		"--version\nrunner-v0.19.0", "--bin-dir\n" + filepath.Dir(executable),
 		"--etc-dir\n" + filepath.Join(root, "etc"), "--preverified-bundle",
 	} {
 		if !strings.Contains(joined, want) {
 			t.Errorf("installer arguments missing %q:\n%s", want, joined)
 		}
+	}
+	if strings.Contains(joined, "--packs") {
+		t.Errorf("installer arguments carry --packs; the pack set travels as EMISAR_PACKS:\n%s", joined)
+	}
+	if !containsEnvironment(commandEnv, "EMISAR_PACKS=") {
+		t.Errorf("installer environment does not make the empty pack set explicit: %q", commandEnv)
 	}
 	for _, item := range append(commandArgs, commandEnv...) {
 		if strings.Contains(item, "secret-update-token") || strings.Contains(item, "must-not-reach-installer") {
@@ -640,4 +647,71 @@ type roundTripFunc func(*http.Request) (*http.Response, error)
 
 func (fn roundTripFunc) RoundTrip(request *http.Request) (*http.Response, error) {
 	return fn(request)
+}
+
+// repoInstaller is the install.sh this checkout ships in every release bundle.
+// The runner module also builds outside the repository, where there is nothing
+// to parse against, so the test skips there rather than fail.
+func repoInstaller(t *testing.T) string {
+	t.Helper()
+	path, err := filepath.Abs(filepath.Join("..", "..", "..", "install.sh"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(path); err != nil {
+		t.Skipf("install.sh is not in this tree: %v", err)
+	}
+	if _, err := os.Stat("/bin/bash"); err != nil {
+		t.Skipf("/bin/bash is unavailable: %v", err)
+	}
+	return path
+}
+
+// The installer that parses the handoff ships inside the release bundle, and a
+// fake that only records argv cannot see a flag the real script rejects: the
+// runner passed `--packs ""` for four releases while install.sh answered
+// "flag --packs requires a value" to every update. So the real script parses
+// the real argv here. --managed-update-contract goes last on purpose:
+// install.sh parses flags in order and answers the probe only once every flag
+// before it has been accepted, so the answer proves the whole handoff parses
+// without installing anything.
+func TestReleaseInstallerParsesTheHandoff(t *testing.T) {
+	installer := repoInstaller(t)
+	root := t.TempDir()
+	executable := writeReceiptFixture(t, root, officialRepository)
+	bundle := filepath.Join(root, "bundle")
+	if err := os.MkdirAll(bundle, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	script, err := os.ReadFile(installer)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(bundle, "install.sh"), script, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	current := receipt{
+		Binary: executable, EtcDir: filepath.Join(root, "etc"), DataDir: filepath.Join(root, "data"),
+		LogDir: filepath.Join(root, "log"), ServiceUser: "emisar", ServiceGroup: "emisar", Init: "systemd",
+	}
+	args, env := installerInvocation(bundle, "runner-v0.24.1", current, acceptedIdentities("runner-v0.24.1")[0])
+
+	// Runners 0.20.0 through 0.24.0 add `--packs ""` after --yes, and every one
+	// of them downloads the current installer, so that shape must parse too.
+	fielded := make([]string, 0, len(args)+2)
+	for _, arg := range args {
+		fielded = append(fielded, arg)
+		if arg == "--yes" {
+			fielded = append(fielded, "--packs", "")
+		}
+	}
+	for name, argv := range map[string][]string{"current runner": args, "runners 0.20.0 through 0.24.0": fielded} {
+		probe := append(append([]string(nil), argv...), "--managed-update-contract")
+		cmd := exec.Command("/bin/bash", probe...)
+		cmd.Env = env
+		output, err := cmd.CombinedOutput()
+		if err != nil || strings.TrimSpace(string(output)) != "emisar-managed-update-v1" {
+			t.Errorf("%s handoff was not parsed by install.sh: err=%v\n%s", name, err, output)
+		}
+	}
 }

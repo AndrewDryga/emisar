@@ -810,3 +810,28 @@ func findDoctorCheck(report doctorReport, name string) (doctorCheck, bool) {
 	}
 	return doctorCheck{}, false
 }
+
+// A config line an earlier installer wrote and the runner ignores is reported
+// as a warning that names the key, so the operator learns which line to delete
+// without the runner ever refusing the file.
+func TestCheckConfig_WarnsAboutIgnoredKeys(t *testing.T) {
+	withFlags(t)
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+	body := "schema_version: 1\nrunner:\n  group: test-group\ncloud:\n  url: wss://cloud/runner\n" +
+		"  enrollment_key_env: EMISAR_ENROLLMENT_KEY\npaths:\n  data_dir: " + dir + "\n" +
+		"  work_dir: " + dir + "/work\n  packs:\n    - " + dir + "/packs\nevents:\n" +
+		"  jsonl_path: " + dir + "/events.jsonl\n"
+	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	flagConfig = path
+
+	cfg, result := checkConfig()
+	if cfg == nil {
+		t.Fatalf("config with an ignored key must still load: %s", result.detail)
+	}
+	if result.status != checkWarn || !strings.Contains(result.detail, "paths.work_dir") {
+		t.Fatalf("config check = %v %q, want a warning naming paths.work_dir", result.status, result.detail)
+	}
+}

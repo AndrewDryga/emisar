@@ -139,8 +139,28 @@ type Cloud struct {
 
 // Paths configures filesystem locations.
 type Paths struct {
-	DataDir string   `yaml:"data_dir"`
+	DataDir string `yaml:"data_dir"`
+	// WorkDir is accepted and ignored. Nothing has ever read it — an action's
+	// working directory comes from its own spec (execution.cwd) — but
+	// install.sh wrote `work_dir:` into every host's config until 2026-08-06
+	// and the loader uses KnownFields(true), so this field is what keeps those
+	// configs loading. Deleting it shipped in runner 0.24.0 and crash-looped
+	// every host installed before that date until the installer rolled each
+	// one back. It leaves only through the deprecation path in
+	// .agent/kb/specs/compatibility.md; IgnoredKeys names it so the runner
+	// can tell the operator which line to delete.
+	WorkDir string   `yaml:"work_dir,omitempty"`
 	Packs   []string `yaml:"packs"`
+}
+
+// IgnoredKeys names the config keys this runner accepts but never reads — the
+// lines an operator can delete. Empty for a config the current installer wrote.
+func (c *Config) IgnoredKeys() []string {
+	var keys []string
+	if c.Paths.WorkDir != "" {
+		keys = append(keys, "paths.work_dir")
+	}
+	return keys
 }
 
 // Execution sets default execution behaviour (per-action limits are still

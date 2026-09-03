@@ -51,7 +51,9 @@ func Runner(root string, out io.Writer) error {
 func runnerChecks() []runnerCheck {
 	return []runnerCheck{
 		{"help contract", false, runnerHelpContract},
+		{"managed-update handoff flags", false, runnerManagedHandoffFlags},
 		{"unattended pack selection", false, runnerUnattendedPacks},
+		{"staged binary rejects the config", false, runnerStagedConfigPreflight},
 		{"owned directory validation", false, runnerOwnedDirectoryValidation},
 		{"GitHub token argv hygiene", false, func(h *harness) error { return githubTokenHygiene(h, "install.sh") }},
 		{"attestation release epochs", false, runnerAttestationReleaseEpochs},
@@ -584,8 +586,10 @@ func runnerInstallRollback(h *harness) error {
 			return writeErr
 		}
 	}
+	// `--packs ""` is what runners 0.20.0 through 0.24.0 hand this script; the
+	// current runner sends only EMISAR_PACKS, and both must keep working.
 	handoff, err := h.successful(h.root, map[string]string{"EMISAR_PACKS": ""}, "bash",
-		filepath.Join(bundle, "install.sh"), "--yes", "--no-service",
+		filepath.Join(bundle, "install.sh"), "--yes", "--packs", "", "--no-service",
 		"--version", "runner-v"+version,
 		"--bin-dir", bin, "--etc-dir", etc, "--data-dir", data, "--log-dir", logDir,
 		"--preverified-bundle", bundle)
@@ -2371,6 +2375,108 @@ download_release runner-v9.9.9 "$tmp"
 	}
 	if !strings.Contains(string(output), "ATTESTATION REACHED") {
 		return fmt.Errorf("the verified path never reached attestation:\n%s", output)
+	}
+	return nil
+}
+
+// runnerManagedHandoffFlags parses the argv `emisar update` hands this script
+// with the real parser. Runners 0.20.0 through 0.24.0 pass `--packs ""`, and
+// every one of them downloads the current installer, so the empty value stays
+// accepted; a value that is genuinely missing still fails closed. The contract
+// probe goes last because flags parse in order: its answer proves every flag
+// before it was accepted, without installing anything.
+func runnerManagedHandoffFlags(h *harness) error {
+	root := h.path("managed-handoff")
+	bundle := filepath.Join(root, "bundle")
+	if err := h.mkdir(bundle); err != nil {
+		return err
+	}
+	handoff := []string{
+		h.repoPath("install.sh"), "--version", "runner-v0.24.0", "--yes", "--packs", "",
+		"--bin-dir", filepath.Join(root, "bin"), "--etc-dir", filepath.Join(root, "etc"),
+		"--data-dir", filepath.Join(root, "data"), "--log-dir", filepath.Join(root, "log"),
+		"--preverified-bundle", bundle, "--managed-update-contract",
+	}
+	output, err := requireOutput(h.command(h.root, map[string]string{"EMISAR_PACKS": ""}, "bash", handoff...))
+	if err != nil {
+		return fmt.Errorf("fielded handoff argv: %w", err)
+	}
+	if strings.TrimSpace(string(output)) != "emisar-managed-update-v1" {
+		return fmt.Errorf("fielded handoff argv answered %q", output)
+	}
+	missing := h.command(h.root, nil, "bash", h.repoPath("install.sh"), "--packs", "--yes")
+	if err := expectFailure(missing, "flag --packs requires a value"); err != nil {
+		return fmt.Errorf("missing --packs value: %w", err)
+	}
+	return nil
+}
+
+// runnerStagedConfigPreflight proves a staged binary that rejects the existing
+// config stops the upgrade before the running service is touched, in the
+// binary's own words, and is not mistaken for a corrupt dispatch log.
+func runnerStagedConfigPreflight(h *harness) error {
+	root := h.path("staged-config-preflight")
+	data := filepath.Join(root, "data")
+	etc := filepath.Join(root, "etc")
+	if err := h.mkdir(data, etc); err != nil {
+		return err
+	}
+	if err := writeFile(filepath.Join(etc, "config.yaml"),
+		"paths:\n  data_dir: "+data+"\n  work_dir: "+data+"/work\n", 0o600); err != nil {
+		return err
+	}
+	staged := filepath.Join(root, "staged-runner")
+	if err := fakeExecutable(staged, `
+if [ "$1 $2" = "state --help" ]; then
+  printf '  check-dispatch-log\n'
+  exit 0
+fi
+case "$FAKE_STAGED_MODE" in
+  rejects-config)
+    if [ "$1" = "--config" ]; then
+      printf 'error: config: parse %s: yaml: unmarshal errors:\n  line 3: field work_dir not found in type config.Paths\n' "$2" >&2
+      exit 1
+    fi
+    exit 0
+    ;;
+  corrupt-log)
+    printf 'error: dispatch log %s/dispatches.jsonl is unreadable\n' "$DATA_DIR" >&2
+    exit 1
+    ;;
+esac
+exit 0
+`); err != nil {
+		return err
+	}
+	body := `
+die() { printf 'DIE: %s\n' "$*" >&2; exit 1; }
+warn() { printf 'WARN: %s\n' "$*" >&2; }
+VERSION=runner-v0.24.0
+INIT=systemd
+DISPATCH_LOG_QUIESCED=0
+check_dispatch_log pre-stop
+`
+	env := map[string]string{"STAGED_BINARY": staged, "DATA_DIR": data, "ETC_DIR": etc}
+
+	env["FAKE_STAGED_MODE"] = "rejects-config"
+	rejected := h.functions(h.repoPath("install.sh"), []string{"check_dispatch_log"}, body, env)
+	if err := expectFailure(rejected, "refuses the existing "+etc+"/config.yaml"); err != nil {
+		return fmt.Errorf("rejected config: %w", err)
+	}
+	if !strings.Contains(string(rejected.output), "field work_dir not found") {
+		return fmt.Errorf("rejected config hid the binary's own error:\n%s", rejected.output)
+	}
+	if strings.Contains(string(rejected.output), "dispatch log") {
+		return fmt.Errorf("rejected config was blamed on the dispatch log:\n%s", rejected.output)
+	}
+
+	env["FAKE_STAGED_MODE"] = "corrupt-log"
+	corrupt := h.functions(h.repoPath("install.sh"), []string{"check_dispatch_log"}, body, env)
+	if err := expectFailure(corrupt, "refusing to upgrade over unreadable dispatch state"); err != nil {
+		return fmt.Errorf("corrupt dispatch log: %w", err)
+	}
+	if !strings.Contains(string(corrupt.output), "dispatches.jsonl is unreadable") {
+		return fmt.Errorf("corrupt dispatch log hid the binary's own error:\n%s", corrupt.output)
 	}
 	return nil
 }

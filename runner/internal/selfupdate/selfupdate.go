@@ -717,7 +717,6 @@ func installerInvocation(bundle, tag string, receipt receipt, identity releaseId
 		filepath.Join(bundle, "install.sh"),
 		"--version", tag,
 		"--yes",
-		"--packs", "",
 		"--bin-dir", filepath.Dir(receipt.Binary),
 		"--etc-dir", receipt.EtcDir,
 		"--data-dir", receipt.DataDir,
@@ -750,6 +749,11 @@ func installerInvocation(bundle, tag string, receipt receipt, identity releaseId
 		}
 		env = append(env, item)
 	}
+	// EMISAR_PACKS set-but-empty is the installer's explicit "no new packs"; it
+	// satisfies --yes on every installer that ever shipped. Runners 0.20.0
+	// through 0.24.0 also passed `--packs ""`, which install.sh rejected as a
+	// missing value — every update failed — so the pack set travels only here
+	// now, and the installer keeps accepting the empty flag for those runners.
 	env = append(env,
 		"PATH=/usr/sbin:/usr/bin:/sbin:/bin",
 		"EMISAR_REPO="+identity.repository,

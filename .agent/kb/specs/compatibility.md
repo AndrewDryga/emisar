@@ -480,6 +480,22 @@ of it). The prefix would have been better from the start; renaming them now
 breaks every bootstrap line and every automation that sets one, for no
 capability. The denylist is the mitigation and it is tested.
 
+**The managed-update handoff is an argv contract between two shipped
+versions.** `emisar update` composes the flags it passes to the `install.sh`
+inside the bundle it just downloaded, so the script parsing the flags is always
+at least as new as the binary composing them. Runners 0.20.0 through 0.24.0
+pass `--packs ""` after `--yes`; the installer keeps accepting the empty value
+for as long as any of them can still update, and the pack set otherwise
+travels as `EMISAR_PACKS` set-but-empty. Both shapes are parsed by the real
+script in the runner and installer test suites.
+
+**`paths.work_dir` in the runner config is accepted and ignored.** `install.sh`
+wrote it into every host's config until 2026-08-06 and nothing has ever read
+it. The loader rejects unknown keys, so the field stays until this document's
+deprecation path retires it — runner 0.24.0 removed it and refused to start on
+every host installed before that date. `connect` warns about the line at boot
+and `doctor` reports it.
+
 A duration on the runner CLI, in the runner config, and in pack action YAML is
 ONE spelling: Go's syntax extended with whole-value `d` and `w` suffixes, plus
 `y` where `signing --ttl` accepts it. `--ttl` and the config used to be parsed by

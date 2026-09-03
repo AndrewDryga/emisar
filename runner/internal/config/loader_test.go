@@ -360,3 +360,72 @@ func TestLoad_RefusesAWritableConfig(t *testing.T) {
 		}
 	}
 }
+
+// legacyInstallerConfig is the config install.sh wrote until 2026-08-06,
+// rendered with its defaults. Every key in it must keep loading: the loader
+// rejects unknown keys, so dropping a field an earlier installer wrote turns
+// the next update into a crash loop on every host that still carries the
+// line — runner 0.24.0 did exactly that over paths.work_dir.
+const legacyInstallerConfig = `schema_version: 1
+
+runner:
+  group: cassandra-dbcas101
+  labels:
+    # role: web
+    # environment: prod
+
+cloud:
+  url: "wss://emisar.dev"
+  enrollment_key_env: EMISAR_ENROLLMENT_KEY
+  token_path: /var/lib/emisar/token
+  heartbeat_every: 30s
+  reconnect_min: 1s
+  reconnect_max: 60s
+
+paths:
+  data_dir: /var/lib/emisar
+  work_dir: /var/lib/emisar/work
+  packs:
+    - /etc/emisar/packs
+
+execution:
+  cancel_grace: 30s
+
+events:
+  jsonl_path: /var/log/emisar/events.jsonl
+  max_preview_bytes: 4096
+  max_size_bytes: 104857600     # 100 MiB
+  max_backups: 5
+
+redaction:
+  rules: []
+`
+
+func TestLoad_AcceptsEveryKeyAnEarlierInstallerWrote(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	writeYAML(t, path, legacyInstallerConfig)
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	if got := cfg.IgnoredKeys(); len(got) != 1 || got[0] != "paths.work_dir" {
+		t.Errorf("IgnoredKeys() = %q, want [paths.work_dir]", got)
+	}
+	if cfg.Paths.DataDir != "/var/lib/emisar" {
+		t.Errorf("data_dir = %q, want /var/lib/emisar", cfg.Paths.DataDir)
+	}
+}
+
+func TestIgnoredKeys_EmptyForACurrentConfig(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	writeYAML(t, path, minimalConfig)
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	if got := cfg.IgnoredKeys(); len(got) != 0 {
+		t.Errorf("IgnoredKeys() = %q, want none", got)
+	}
+}

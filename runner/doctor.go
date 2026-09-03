@@ -218,6 +218,11 @@ func checkConfig() (*config.Config, checkResult) {
 	if cfg.Runner.ID != "" {
 		detail += fmt.Sprintf(", runner %q", cfg.Runner.ID)
 	}
+	if ignored := cfg.IgnoredKeys(); len(ignored) > 0 {
+		return cfg, checkResult{"config", checkWarn, fmt.Sprintf(
+			"%s; %s was written by an earlier installer and is ignored — delete the line",
+			detail, strings.Join(ignored, ", "))}
+	}
 	return cfg, checkResult{"config", checkOK, detail}
 }
 

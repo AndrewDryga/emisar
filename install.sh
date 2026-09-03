@@ -133,7 +133,8 @@ Flags:
   --packs LIST       Comma/space-separated packs to install up front, e.g.
                      --packs redis,postgres. Installs exactly these — no
                      host detection, no prompt — from the bundle if present,
-                     else the registry. For unattended provisioning.
+                     else the registry. An empty LIST installs no new packs.
+                     For unattended provisioning.
   --help             This message.
 
 Env vars accepted: VERSION, BIN_DIR, ETC_DIR, DATA_DIR, LOG_DIR,
@@ -208,6 +209,20 @@ require_value() {
   fi
 }
 
+# --packs is the one flag whose value may be empty: `--packs ''` is the argv
+# spelling of EMISAR_PACKS='' — an explicit "no new packs" — and `emisar
+# update` on runners 0.20.0 through 0.24.0 passes exactly that to the installer
+# it downloads, so this script must keep accepting it or those hosts can never
+# update. The value still has to be present and must not be the next flag.
+require_present() {
+  local flag="$1"
+  if [ "$#" -lt 2 ] || [[ "$2" == -* ]]; then
+    printf 'flag %s requires a value\n' "$flag" >&2
+    usage >&2
+    exit 2
+  fi
+}
+
 # --data-dir/--log-dir feed `chown -R`, and under --purge they feed `rm -rf`.
 # Neither was validated, so `--data-dir /var/lib` recursively chowned the host's
 # whole /var/lib to the service user, and `--data-dir / --purge` was `rm -rf /`.
@@ -261,7 +276,7 @@ while [ $# -gt 0 ]; do
     --log-dir) require_value "$@"; LOG_DIR="$2"; shift 2;;
     --user) require_value "$@"; SERVICE_USER="$2"; SERVICE_GROUP="$2"; shift 2;;
     --yes|-y) ASSUME_YES=1; shift;;
-    --packs) require_value "$@"; PRE_PACKS="$2"; PACKS_EXPLICIT=1; shift 2;;
+    --packs) require_present "$@"; PRE_PACKS="$2"; PACKS_EXPLICIT=1; shift 2;;
     --preverified-bundle) require_value "$@"; PREVERIFIED_BUNDLE="$2"; shift 2;;
     --managed-update-contract) printf '%s\n' emisar-managed-update-v1; exit 0;;
     --help|-h) usage; exit 0;;
@@ -1669,9 +1684,22 @@ check_dispatch_log() {
     fi
     return 0
   fi
-  if "${STAGED_BINARY}" --config "${ETC_DIR}/config.yaml" \
-       state check-dispatch-log --data-dir "${DATA_DIR}" >/dev/null 2>&1; then
+  local refusal line
+  if refusal="$({ "${STAGED_BINARY}" --config "${ETC_DIR}/config.yaml" \
+       state check-dispatch-log --data-dir "${DATA_DIR}" >/dev/null; } 2>&1)"; then
     return 0
+  fi
+  # The check reads the config before the log, so a binary that rejects the
+  # existing config fails here too — and it would crash-loop the service the
+  # moment it started (runner 0.24.0 did, over a config key it had dropped).
+  # Re-read the log alone to tell the two apart, and always repeat the
+  # binary's own words: discarding them is how a rejected config was once
+  # reported as a corrupt dispatch log.
+  if [ -n "${refusal}" ]; then
+    while IFS= read -r line; do warn "  ${line}"; done <<<"${refusal}"
+  fi
+  if "${STAGED_BINARY}" state check-dispatch-log --data-dir "${DATA_DIR}" >/dev/null 2>&1; then
+    die "runner ${VERSION#runner-v} refuses the existing ${ETC_DIR}/config.yaml (see above); the current install is untouched"
   fi
   local logfile="${DATA_DIR}/dispatches.jsonl"
   [ -e "${logfile}" ] || [ -L "${logfile}" ] || logfile="${DATA_DIR}/dedup.jsonl"
@@ -2083,6 +2111,12 @@ require_systemd_service_active() {
   state="$(systemctl is-active emisar.service 2>/dev/null || true)"
   if [ "${state}" != "active" ]; then
     systemctl --no-pager --full status emisar.service || true
+    # `status` shows a few journal lines at best and none while the unit is
+    # auto-restarting — exactly when the runner's exit message is the one
+    # thing worth reading.
+    if command -v journalctl >/dev/null 2>&1; then
+      journalctl --no-pager -n 20 -u emisar.service 2>/dev/null || true
+    fi
     die "emisar.service did not stay active (systemd state: ${state:-unknown})"
   fi
   SERVICE_STARTED=1
