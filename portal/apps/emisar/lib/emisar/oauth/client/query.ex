@@ -26,4 +26,16 @@ defmodule Emisar.OAuth.Client.Query do
       is_nil(c.last_authorized_at) and c.inserted_at < ^cutoff
     )
   end
+
+  @doc "Internal — the id page the abandoned-registration sweep deletes next. See `AuthorizationCode.Query.prunable_ids/2`."
+  def prunable_ids(%DateTime{} = cutoff, limit) do
+    all()
+    |> never_authorized_before(cutoff)
+    |> order_by([clients: c], asc: c.id)
+    |> limit(^limit)
+    |> select([clients: c], c.id)
+  end
+
+  def by_ids(queryable \\ all(), ids) when is_list(ids),
+    do: where(queryable, [clients: c], c.id in ^ids)
 end
