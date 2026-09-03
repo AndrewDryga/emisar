@@ -23,8 +23,6 @@ const usageText = `usage: ./run ops <command> [args]
   drill cleanup [--apply [ID]]       list or clean recovery drill resources
   validate-templates                 render and validate production cloud-init
   verify-release-pins                verify trusted release workflow commit pins
-  verify-release-environment <repo> <environment>
-                                     verify an exact release environment policy
 `
 
 type usageError struct{ message string }
@@ -92,11 +90,6 @@ func (a *App) Run(ctx context.Context, args []string) error {
 			return usage("usage: ./run ops verify-release-pins")
 		}
 		return a.checkTrustedReleasePins(ctx)
-	case "verify-release-environment":
-		if len(args) != 3 {
-			return usage("usage: ./run ops verify-release-environment <repo> <environment>")
-		}
-		return a.verifyReleaseEnvironment(ctx, args[1], args[2])
 	case "help", "-h", "--help":
 		fmt.Fprint(a.Out, usageText)
 		return nil

@@ -172,8 +172,6 @@ jobs:
       name: mcp-registry-publication
     permissions:
       contents: read
-      # "Get an environment" and its branch policies need actions:read.
-      actions: read
     env:
       LISTING_VERSION: ${{ needs.reconcile.outputs.version }}
       GOTOOLCHAIN: local
@@ -196,11 +194,6 @@ jobs:
           go-version-file: tools/go.mod
           cache: true
           cache-dependency-path: tools/go.*
-
-      - name: Verify the publishing environment's protection rules
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: ./run check release-environment "$GITHUB_REPOSITORY" mcp-registry-publication
 
       - name: Normalize and verify publisher key
         env:

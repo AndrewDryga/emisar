@@ -4,8 +4,8 @@ description: >
   signed annotated tag on current main, the tagged commit's green Required -
   CI, and a release-time advisory scan. This file executes at the trusted
   workflow's pinned commit through GitHub's self-repository reference, and
-  `./run ops verify-release-pins` diffs it and its narrow verifier runtime
-  against that pin — editing either requires the same two-commit SHA rotation.
+  `./run ops verify-release-pins` diffs it against that pin — editing it
+  requires the same two-commit SHA rotation.
 
 inputs:
   module:
@@ -28,18 +28,6 @@ runs:
         # check ran. go.* matches go.mod in both modules and adds go.sum where it
         # exists (runner).
         cache-dependency-path: ${{ inputs.module }}/go.*
-
-    - name: Verify public release environment
-      shell: bash
-      run: |
-        # The workspace contains the tag. GITHUB_ACTION_PATH belongs to this
-        # self-referenced action at the pinned reusable-workflow commit, so the
-        # tag cannot replace the policy verifier it is about to face.
-        trusted_root=$(cd "$GITHUB_ACTION_PATH/../../.." && pwd -P)
-        (
-          cd "$trusted_root/tools"
-          GOWORK=off go run ./cmd/releaseenv "$GITHUB_REPOSITORY" public-releases
-        )
 
     - name: Verify exact signed annotated tag
       shell: bash

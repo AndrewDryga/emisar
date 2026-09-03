@@ -69,8 +69,6 @@ const (
   portal                     compile, format-check, and run Credo
   staged                     validate staged migrations and source formatting
   infra-templates            render and validate production cloud-init
-  release-environment <repo> <environment>
-                             verify an exact release environment policy
   packs                      validate every pack and cross-language hash golden
   agent-setup                validate manuals, skills, tasks, hooks, and Coop verbs
   deps [--base <git ref>]    enforce dependency release age and source policy

@@ -28,12 +28,6 @@ var (
 var (
 	trustedReleaseControlDirectories = []string{
 		".github/actions/verify-release-tag",
-		"tools/cmd/releaseenv",
-		"tools/internal/releaseenv",
-	}
-	trustedReleaseControlFiles = []string{
-		"tools/go.mod",
-		"tools/go.sum",
 	}
 )
 
@@ -96,10 +90,8 @@ func (a *App) checkTrustedReleasePins(ctx context.Context) error {
 	}
 
 	// The $/ self-repository reference resolves the composite at the reusable
-	// workflow's pinned commit. That action runs only the narrow releaseenv
-	// command, whose complete source and module inputs are tracked here too.
-	// Including both pinned and current path sets catches added and deleted
-	// files, not merely edits to a known filename.
+	// workflow's pinned commit. Compare every file in that action so additions
+	// and deletions cannot hide behind the pin.
 	controls, err := a.trustedReleaseControlPaths(ctx, trusted)
 	if err != nil {
 		return err
@@ -125,15 +117,13 @@ func (a *App) checkTrustedReleasePins(ctx context.Context) error {
 }
 
 func (a *App) trustedReleaseControlPaths(ctx context.Context, trusted string) ([]string, error) {
-	pathspecs := append(append([]string{}, trustedReleaseControlDirectories...), trustedReleaseControlFiles...)
-
 	currentArgs := []string{"ls-files", "--cached", "--others", "--exclude-standard", "--"}
-	current, err := a.output(ctx, a.Root, nil, "git", append(currentArgs, pathspecs...)...)
+	current, err := a.output(ctx, a.Root, nil, "git", append(currentArgs, trustedReleaseControlDirectories...)...)
 	if err != nil {
 		return nil, fmt.Errorf("listing current trusted release controls: %w", err)
 	}
 	pinnedArgs := []string{"ls-tree", "-r", "--name-only", trusted, "--"}
-	pinned, err := a.output(ctx, a.Root, nil, "git", append(pinnedArgs, pathspecs...)...)
+	pinned, err := a.output(ctx, a.Root, nil, "git", append(pinnedArgs, trustedReleaseControlDirectories...)...)
 	if err != nil {
 		return nil, fmt.Errorf("listing trusted release controls at %s: %w", trusted[:12], err)
 	}

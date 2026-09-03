@@ -39,24 +39,13 @@ Configure these environments with the ref policies shown below:
 | Environment | Approval | Secret | Required scope |
 |---|---|---|---|
 | `portal-production-plan` | Protected `main` only (no reviewer) | `TFC_PLAN_TOKEN` | Uploads the reviewed configuration and creates the saved production plan. Workspace auto-apply stays disabled and apply remains manual — the HCP Confirm & Apply is the human gate, so a second GitHub approval here would be redundant. |
-| `pack-registry-approval` | Exactly one required reviewer + protected `main` | None | Cancellable approval-only gate. This is the single human release decision for a pack publication; a newer selected pack release supersedes an older waiting approval. |
-| `pack-registry-production` | Protected `main` only (no reviewer) | None | Non-cancellable serialized publication through short-lived, environment-bound GCP WIF credentials. The release decision lives on `pack-registry-approval`; a bare rerun of an old publication job is refused by the workflow's superseded-release check when a newer release has since published. |
-| `public-releases` | Independent required reviewer; prevent self-review; block admin bypass; `runner-v*` and `mcp-v*` tag policies | None | Signed runner and MCP bridge builds plus GCS publication through short-lived WIF credentials bound to the called workflow's exact path and SHA. The tag creator and environment reviewer must be different people. After source verification passes, recover a downstream failure with **Re-run failed jobs**; source verification always requires current main and a full rerun after main advances fails closed. |
+| `pack-registry-production` | Protected `main` only; block admin bypass; no reviewer | None | Publishes a changed pack catalog after CI through short-lived, environment-bound GCP WIF credentials. Publication is serialized and refuses a commit superseded by newer `main`. |
+| `public-releases` | No reviewer; block admin bypass; `runner-v*` and `mcp-v*` tag policies | None | Publishes signed runner and MCP releases through short-lived WIF credentials bound to the trusted workflow's exact path and SHA. After source verification passes, recover a downstream failure with **Re-run failed jobs**; a full rerun after `main` advances fails closed. |
 | `mcp-registry-publication` | Exact `main` branch policy; block admin bypass; no reviewer | `MCP_PRIVATE_KEY` | Publishes the hosted server listing. Only the scheduled or manually dispatched workflow on protected `main` can receive the key. It independently verifies the selected signed release tag, its green Required - CI, and the live publisher-key proof before the secret is used. |
 
-`pack-registry-approval` is the pack publication decision. `public-releases`
-deliberately adds a second person after the signed component tag: its reviewer
-must have repository read access, must not be the tag creator, and cannot
-bypass the wait as an administrator. Do not cut another runner or MCP release
-until this independent reviewer exists. HCP's Confirm & Apply remains the
+The signed tag is the founder's component-release decision; green CI and the
+workflow checks prove the source. HCP's Confirm & Apply remains the separate
 portal deployment decision.
-
-The pack publication path, hosted MCP Registry publication job, and component
-release verifier check the named GitHub environment before using release
-authority. Contributors can run the same check as `./run check
-release-environment AndrewDryga/emisar <environment>`. Retain the green output
-when qualifying a release; it compares the reviewer and ref settings, plus
-no-admin-bypass where that named environment requires it.
 
 Keep HCP Terraform workspace auto-apply disabled. Never store an HCP token as a
 repository secret. The token remains organization-owner-equivalent because Free
@@ -81,13 +70,11 @@ credentials.
 
 ## Repository rules
 
-Protect `main` with pull requests and the single required check `Required - CI`.
-Require signed commits, linear history, resolved conversations, and include
-administrators. Force pushes and branch deletion stay disabled. Require one
-approval of the latest push from the second maintainer used for independent
-release review. Do not require area-specific jobs: unchanged areas
-intentionally report `skipped`, while `Required - CI` is stable and always
-reports a conclusion.
+Protect `main` with signed commits and the single required check `Required - CI`.
+Keep linear history; disable force pushes and branch deletion. Do not require a
+second reviewer in a one-person company. Do not require area-specific jobs:
+unchanged areas intentionally report `skipped`, while `Required - CI` is stable
+and always reports a conclusion.
 
 ## Release tags
 

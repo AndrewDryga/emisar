@@ -12,10 +12,9 @@ name: Trusted - MCP Bridge Release
 # A non-release caller cannot reach release authority: the verify job accepts
 # only an exact signed MCP release tag, every authority-bearing job depends on
 # it, and the `public-releases` environment's tag patterns bound which refs may
-# mint attestations. Its independent reviewer approves publication with
-# self-review disabled, and GCP accepts only this reusable workflow's path and
-# exact commit SHA. The thin caller grants the maximum permissions this file
-# may use, and individual jobs below narrow them to the scopes they need.
+# mint attestations. GCP accepts only this reusable workflow's path and exact
+# commit SHA. The thin caller grants the maximum permissions this file may use,
+# and individual jobs below narrow them to the scopes they need.
 #
 # Asset naming:
 #
@@ -73,8 +72,7 @@ jobs:
     # `public-releases` environment gate at BUILD so the Sigstore OIDC token
     # used to sign the attestation is minted only for a ref the environment's
     # tag patterns admit — an arbitrary branch can never produce an
-    # attested-by-our-workflow artefact. The independent reviewer is the
-    # publication decision after the signed tag.
+    # attested-by-our-workflow artefact.
     environment:
       name: public-releases
     strategy:

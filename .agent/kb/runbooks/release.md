@@ -88,7 +88,7 @@ move or delete them. Cut component tags with `-s` as well:
 ```sh
 git tag -s runner-vX.Y.Z <commit> -m "runner vX.Y.Z"
 git tag -v runner-vX.Y.Z          # "Good signature"
-git push origin runner-vX.Y.Z     # independent reviewer approves the release jobs
+git push origin runner-vX.Y.Z     # starts the release jobs
 ```
 
 `git config --local tag.gpgsign true` (above) covers these too. Release workflows
