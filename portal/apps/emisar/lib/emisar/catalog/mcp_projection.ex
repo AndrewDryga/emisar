@@ -483,19 +483,34 @@ defmodule Emisar.Catalog.MCPProjection do
   # connection story.
   defp degraded_pack_issues(%Runners.Runner{} = runner) do
     if runner_status(runner) == "connected" do
-      Enum.map(runner.degraded_packs || [], fn %{"pack" => pack, "reason" => reason} ->
-        # Ingest strips these now, but a row advertised before that still holds
-        # whatever the runner sent, and this string is read by the model.
-        issue(
-          "pack_load_failed",
-          "Pack #{Emisar.SafeText.strip(pack)} failed to load on this runner: " <>
-            Emisar.SafeText.strip(reason)
-        )
-      end)
+      Enum.map(runner.degraded_packs || [], &degraded_pack_issue/1)
     else
       []
     end
   end
+
+  # Ingest strips these now, but a row advertised before that still holds
+  # whatever the runner sent, and this string is read by the model. The sibling
+  # filters that count the same list require only `"pack"`, so an entry missing
+  # its reason still reports the failure, and a shapeless one is dropped (the
+  # caller rejects nil) rather than raising on the whole projection.
+  defp degraded_pack_issue(%{"pack" => pack, "reason" => reason})
+       when is_binary(pack) and is_binary(reason) do
+    issue(
+      "pack_load_failed",
+      "Pack #{Emisar.SafeText.strip(pack)} failed to load on this runner: " <>
+        Emisar.SafeText.strip(reason)
+    )
+  end
+
+  defp degraded_pack_issue(%{"pack" => pack}) when is_binary(pack) do
+    issue(
+      "pack_load_failed",
+      "Pack #{Emisar.SafeText.strip(pack)} failed to load on this runner."
+    )
+  end
+
+  defp degraded_pack_issue(_entry), do: nil
 
   defp metadata_issue(true), do: nil
 

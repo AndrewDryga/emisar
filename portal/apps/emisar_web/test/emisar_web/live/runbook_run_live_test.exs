@@ -242,6 +242,34 @@ defmodule EmisarWeb.RunbookRunLiveTest do
       assert user.id != viewer.id
     end
 
+    # The reason is copied onto the approval card and the audit trail, so the
+    # domain rejects a bidi override rather than stripping it. The flash has to
+    # name the field: the generic "re-run preflight and try again" sent the
+    # operator round a loop that fails identically every time.
+    test "a reason carrying a bidi override names the field to fix", %{
+      conn: conn,
+      account: account,
+      subject: subject
+    } do
+      runner = trusted_runner(account, subject)
+      runbook = published_runbook(subject, runner)
+
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runbooks/#{runbook.id}/run")
+      send(lv.pid, {:run_preflight, 1})
+
+      render_change(lv, "run_form_changed", %{
+        "reason" => "release the \u202Ehctiws window",
+        "inputs" => %{}
+      })
+
+      render_click(lv, "start", %{})
+
+      assert render(lv) =~
+               "The reason contains control or formatting characters. Use plain text and start again."
+
+      refute Repo.exists?(RunbookExecution)
+    end
+
     test "a never-published runbook sends the operator to the editor, not the run page", %{
       conn: conn,
       user: user,

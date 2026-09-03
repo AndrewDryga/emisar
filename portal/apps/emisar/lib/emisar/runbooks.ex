@@ -188,8 +188,8 @@ defmodule Emisar.Runbooks do
 
     Runbook.Query.not_deleted()
     |> Runbook.Query.by_ids(ids)
-    |> Authorizer.for_subject(subject)
     |> Runbook.Query.select_ids()
+    |> Authorizer.for_subject(subject)
     |> Repo.all()
     |> MapSet.new()
   end
@@ -225,9 +225,18 @@ defmodule Emisar.Runbooks do
         |> Authorizer.for_subject(subject)
         |> Repo.all()
 
-      {:ok, Enum.filter(runbooks, &model_visible?(&1, subject))}
+      # One batched compile for the whole page: the fleet, trust and contract
+      # facts are account-wide, so asking per runbook made discovery cost a
+      # fleet read and a catalog resolution for every row it listed.
+      with {:ok, verdicts} <-
+             Compiler.validate_availability_all(Enum.map(runbooks, & &1.definition), subject) do
+        {:ok, runbooks |> Enum.zip(verdicts) |> Enum.flat_map(&model_visible_runbook/1)}
+      end
     end
   end
+
+  defp model_visible_runbook({%Runbook{} = runbook, :ok}), do: [runbook]
+  defp model_visible_runbook({%Runbook{}, {:error, _issues}}), do: []
 
   @doc """
   Lists every runbook carrying an unpublished change a model may revise.
@@ -468,14 +477,16 @@ defmodule Emisar.Runbooks do
 
   `facts` carries the model's exact authoring intent: `:operation_id`,
   `:title`, the already-normalized `:slug`, `:description`, and `:definition`.
-  Requires manage or draft runbooks.
+  Requires manage or draft runbooks, and every step must sit inside the
+  minting member's own runner and pack access.
 
   The operation is reserved first; only the fresh winner validates the
   definition and writes the draft, so a rejected definition rolls the
   reservation back with it and an exact replay re-reads the committed draft
   without revalidating. Returns `{:ok, :created | :replay, runbook}`,
   `{:error, :operation_conflict}`, `{:error, :operation_incomplete}`, the
-  ordered definition issues, or `{:error, :unauthorized}`.
+  ordered definition issues, or
+  `{:error, :target_out_of_scope | :pack_out_of_scope | :unauthorized}`.
   """
   def create_or_replay_mcp_draft(
         %{operation_id: operation_id} = facts,
@@ -523,7 +534,7 @@ defmodule Emisar.Runbooks do
              %{mcp_operation: %{fresh?: true}} ->
                Multi.new()
                |> Multi.run(:definition, fn _repo, _changes ->
-                 Definition.validate(facts.definition)
+                 facts.definition |> Definition.validate() |> authored_definition(subject)
                end)
                |> Multi.insert(:runbook, fn %{definition: definition} ->
                  attrs = mcp_draft_attrs(facts, definition, id)
@@ -588,11 +599,13 @@ defmodule Emisar.Runbooks do
   lock), `:title`, `:description`, and `:definition`. The runbook itself owns
   the operation's resource identity, so a replay re-reads the same row.
 
-  Requires manage or draft runbooks. Publishing remains a separate human-only
-  transition. Returns `{:ok, :created | :replay, runbook}`,
+  Requires manage or draft runbooks, and every step the update writes must sit
+  inside the minting member's own runner and pack access. Publishing remains a
+  separate human-only transition. Returns `{:ok, :created | :replay, runbook}`,
   `{:error, :draft_changed}`, `{:error, :not_found}`,
   `{:error, :operation_conflict}`, `{:error, :operation_incomplete}`, the
-  ordered definition issues, or `{:error, :unauthorized}`.
+  ordered definition issues, or
+  `{:error, :target_out_of_scope | :pack_out_of_scope | :unauthorized}`.
   """
   def create_or_replay_mcp_draft_update(
         %{operation_id: operation_id} = facts,
@@ -655,7 +668,7 @@ defmodule Emisar.Runbooks do
       fetch_locked_draft_source(facts, id, subject, repo)
     end)
     |> Multi.run(:definition, fn _repo, _changes ->
-      Definition.validate_draft(facts.definition)
+      facts.definition |> Definition.validate_draft() |> authored_definition(subject)
     end)
     |> Multi.update(:runbook, fn %{source_runbook: source, definition: definition} ->
       attrs = %{
@@ -1719,6 +1732,16 @@ defmodule Emisar.Runbooks do
     definition = Ecto.Changeset.get_field(changeset, :draft_definition)
     ensure_definition_in_author_access(definition, subject)
   end
+
+  # The MCP writes reserve their operation before the definition is judged, so
+  # the author-scope gate runs inside that same transaction: a refusal rolls the
+  # reservation back exactly as a rejected definition does, leaving the model
+  # free to retry the operation with an in-scope step.
+  defp authored_definition({:ok, definition}, %Subject{} = subject) do
+    with :ok <- ensure_definition_in_author_access(definition, subject), do: {:ok, definition}
+  end
+
+  defp authored_definition({:error, reason}, %Subject{}), do: {:error, reason}
 
   # Every step a member authors must name only runners, groups and packs that
   # member can already reach. Without this, a narrowly-scoped author could write

@@ -32,7 +32,7 @@ func (e *Engine) ApplyJSON(input []byte) ([]byte, []Hit, error) {
 	}
 
 	value, scalarHits := e.redactJSONStrings(value)
-	encoded, err := json.Marshal(value)
+	encoded, err := encodeJSONValue(value)
 	if err != nil {
 		return nil, scalarHits, fmt.Errorf("redact: encode JSON: %w", err)
 	}
@@ -47,11 +47,28 @@ func (e *Engine) ApplyJSON(input []byte) ([]byte, []Hit, error) {
 	if err != nil {
 		return []byte("null"), hits, ErrUnsafeJSONRedaction
 	}
-	encoded, err = json.Marshal(canonical)
+	encoded, err = encodeJSONValue(canonical)
 	if err != nil {
 		return nil, hits, fmt.Errorf("redact: encode redacted JSON: %w", err)
 	}
 	return encoded, hits, nil
+}
+
+// encodeJSONValue re-encodes a decoded document WITHOUT HTML escaping.
+// json.Marshal always rewrites <, >, & and U+2028/9 as six-byte \uXXXX escapes,
+// so a URL- or markup-bearing document that the action already proved against
+// its max_stdout_bytes grew past the cap the engine re-checks AFTER redaction:
+// the operator got an empty output_redaction_exceeded_limit failure for a run
+// that fit. Encode appends a newline, which is not part of the one JSON value
+// the caller returns.
+func encodeJSONValue(value any) ([]byte, error) {
+	var buf bytes.Buffer
+	encoder := json.NewEncoder(&buf)
+	encoder.SetEscapeHTML(false)
+	if err := encoder.Encode(value); err != nil {
+		return nil, err
+	}
+	return bytes.TrimSuffix(buf.Bytes(), []byte("\n")), nil
 }
 
 // decodeOneJSON validates before it decodes. Decoding straight into `any`

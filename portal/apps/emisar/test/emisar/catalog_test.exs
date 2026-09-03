@@ -1,7 +1,8 @@
 defmodule Emisar.CatalogTest do
   use Emisar.DataCase, async: true
   alias Emisar.{Accounts, Audit, Catalog, Repo, Runners}
-  alias Emisar.Catalog.{PackVersion, PublishedRegistry, RunnerAction, TrustedManifest}
+  alias Emisar.Catalog.{ConsoleProjection, PackVersion, PublishedRegistry}
+  alias Emisar.Catalog.{RunnerAction, TrustedManifest}
   alias Emisar.Fixtures
 
   @dispatch_hash "sha256:" <> String.duplicate("d", 64)
@@ -1103,7 +1104,7 @@ defmodule Emisar.CatalogTest do
 
       assert {:ok, [pack_version], _} = Catalog.list_pack_versions(subject)
       assert pack_version.trust_state == :trusted
-      assert {:ok, manifest} = Catalog.trusted_manifest_for_static_reads(pack_version)
+      assert {:ok, manifest} = ConsoleProjection.trusted_manifest_for_static_reads(pack_version)
 
       descriptor = manifest["actions"][catalog_action["id"]]
       assert descriptor["description"] == catalog_action["description"]
@@ -1140,7 +1141,7 @@ defmodule Emisar.CatalogTest do
 
       assert {:ok, _} = Catalog.observe_state(runner, payload)
       assert {:ok, [repaired], _} = Catalog.list_pack_versions(subject)
-      assert {:ok, manifest} = Catalog.trusted_manifest_for_static_reads(repaired)
+      assert {:ok, manifest} = ConsoleProjection.trusted_manifest_for_static_reads(repaired)
       assert map_size(manifest["actions"]) == length(pack["actions"])
     end
 
@@ -1191,7 +1192,7 @@ defmodule Emisar.CatalogTest do
       assert {:ok, _} = Catalog.observe_state(runner, payload)
 
       assert {:ok, [pack_version], _} = Catalog.list_pack_versions(subject)
-      assert {:ok, manifest} = Catalog.trusted_manifest_for_static_reads(pack_version)
+      assert {:ok, manifest} = ConsoleProjection.trusted_manifest_for_static_reads(pack_version)
       assert map_size(manifest["actions"]) == length(pack["actions"])
 
       descriptor = manifest["actions"][catalog_action["id"]]
@@ -3209,13 +3210,13 @@ defmodule Emisar.CatalogTest do
       {{pack_id, version}, _hash} = Emisar.Catalog.PackBaseline.all() |> Enum.at(0)
       pack_version = %PackVersion{pack_id: pack_id, version: version}
 
-      assert Catalog.pack_version_retirement(pack_version) == :active
+      assert ConsoleProjection.pack_version_retirement(pack_version) == :active
     end
 
     test "is :active for a custom pack the release does not ship" do
       pack_version = %PackVersion{pack_id: "definitely-not-a-real-pack", version: "9.9.9"}
 
-      assert Catalog.pack_version_retirement(pack_version) == :active
+      assert ConsoleProjection.pack_version_retirement(pack_version) == :active
     end
 
     test "is {:retired, current} for a shipped version below its pack's watermark" do
@@ -3224,7 +3225,7 @@ defmodule Emisar.CatalogTest do
 
       pack_version = %PackVersion{pack_id: pack_id, version: "0.0.0"}
 
-      assert Catalog.pack_version_retirement(pack_version) ==
+      assert ConsoleProjection.pack_version_retirement(pack_version) ==
                {:retired, Emisar.Catalog.PackBaseline.current_version(pack_id)}
     end
   end
@@ -3243,7 +3244,7 @@ defmodule Emisar.CatalogTest do
       current = Emisar.Catalog.PackBaseline.current_version(pack_id)
       pack_version = %PackVersion{pack_id: pack_id, version: "0.0.0", trust_state: :trusted}
 
-      assert Catalog.pack_version_outdated(pack_version) == {:outdated, current}
+      assert ConsoleProjection.pack_version_outdated(pack_version) == {:outdated, current}
     end
 
     test "is :current for a version that already is the shipped current" do
@@ -3251,13 +3252,13 @@ defmodule Emisar.CatalogTest do
       current = Emisar.Catalog.PackBaseline.current_version(pack_id)
       pack_version = %PackVersion{pack_id: pack_id, version: current, trust_state: :trusted}
 
-      assert Catalog.pack_version_outdated(pack_version) == :current
+      assert ConsoleProjection.pack_version_outdated(pack_version) == :current
     end
 
     test "is :current for a custom pack the release does not ship" do
       pack_version = %PackVersion{pack_id: "definitely-not-a-real-pack", version: "0.0.0"}
 
-      assert Catalog.pack_version_outdated(pack_version) == :current
+      assert ConsoleProjection.pack_version_outdated(pack_version) == :current
     end
 
     test "is :current for a retired version — retirement takes precedence over the hint" do
@@ -3267,9 +3268,9 @@ defmodule Emisar.CatalogTest do
       pack_version = %PackVersion{pack_id: pack_id, version: "0.0.0"}
 
       # The same version reads {:retired, _} from pack_version_retirement...
-      assert {:retired, _} = Catalog.pack_version_retirement(pack_version)
+      assert {:retired, _} = ConsoleProjection.pack_version_retirement(pack_version)
       # ...so the gentle "update available" hint stays silent under the rose block.
-      assert Catalog.pack_version_outdated(pack_version) == :current
+      assert ConsoleProjection.pack_version_outdated(pack_version) == :current
     end
   end
 
@@ -3277,23 +3278,23 @@ defmodule Emisar.CatalogTest do
     test "returns the release's content hash for a shipped (pack_id, version)" do
       {{pack_id, version}, hash} = Emisar.Catalog.PackBaseline.all() |> Enum.at(0)
 
-      assert Catalog.shipped_hash(pack_id, version) == hash
+      assert ConsoleProjection.shipped_hash(pack_id, version) == hash
     end
 
     test "returns nil for a pack the release does not ship" do
-      assert Catalog.shipped_hash("definitely-not-a-real-pack", "9.9.9") == nil
+      assert ConsoleProjection.shipped_hash("definitely-not-a-real-pack", "9.9.9") == nil
     end
 
     test "returns nil for non-binary arguments" do
-      assert Catalog.shipped_hash(nil, "0.1.0") == nil
-      assert Catalog.shipped_hash("redis", nil) == nil
+      assert ConsoleProjection.shipped_hash(nil, "0.1.0") == nil
+      assert ConsoleProjection.shipped_hash("redis", nil) == nil
     end
   end
 
   describe "pack_version_needs_decision?/1" do
     test "pending needs one; trusted+active, rejected, and overridden do not" do
       pending = %Emisar.Catalog.PackVersion{trust_state: :pending, pack_id: "x", version: "1.0"}
-      assert Catalog.pack_version_needs_decision?(pending)
+      assert ConsoleProjection.pack_version_needs_decision?(pending)
 
       # A custom pack has no watermark, so a trusted row is active — decided.
       trusted_active = %Emisar.Catalog.PackVersion{
@@ -3303,10 +3304,10 @@ defmodule Emisar.CatalogTest do
         version: "1.0"
       }
 
-      refute Catalog.pack_version_needs_decision?(trusted_active)
+      refute ConsoleProjection.pack_version_needs_decision?(trusted_active)
 
       rejected = %Emisar.Catalog.PackVersion{trust_state: :rejected, pack_id: "x", version: "1.0"}
-      refute Catalog.pack_version_needs_decision?(rejected)
+      refute ConsoleProjection.pack_version_needs_decision?(rejected)
 
       {pack_id, _watermark} =
         Emisar.Catalog.PackBaseline.retired_below() |> Enum.sort() |> List.first()
@@ -3318,10 +3319,10 @@ defmodule Emisar.CatalogTest do
         version: "0.0.0"
       }
 
-      assert Catalog.pack_version_needs_decision?(retired_blocked)
+      assert ConsoleProjection.pack_version_needs_decision?(retired_blocked)
 
       retired_overridden = %{retired_blocked | retirement_overridden_at: DateTime.utc_now()}
-      refute Catalog.pack_version_needs_decision?(retired_overridden)
+      refute ConsoleProjection.pack_version_needs_decision?(retired_overridden)
     end
   end
 
@@ -3987,6 +3988,16 @@ defmodule Emisar.CatalogTest do
     end
   end
 
+  describe "max_candidate_requests/0" do
+    test "publishes the bound resolve_runbook_candidates/3 refuses past" do
+      requests = List.duplicate(%{}, Catalog.max_candidate_requests() + 1)
+      {_account, subject} = account_with_owner()
+
+      assert Catalog.resolve_runbook_candidates(requests, [], subject) ==
+               {:error, :fan_out_too_large}
+    end
+  end
+
   describe "resolve_runbook_candidates/3" do
     test "returns only trusted exact candidates for the requested runner deployment" do
       {account, subject} = account_with_owner()
@@ -4030,6 +4041,87 @@ defmodule Emisar.CatalogTest do
                [runner],
                subject
              ) == {:error, :fan_out_too_large}
+    end
+
+    # The projection and the pack-version changeset both accept a bare `1` /
+    # `1.4` — a runner may advertise any dot-numeric version for a TOFU pack —
+    # so ordering candidates must not require strict MAJOR.MINOR.PATCH.
+    test "resolves a candidate whose pack version has no patch component" do
+      {account, subject} = account_with_owner()
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
+
+      assert {:ok, _observed} =
+               Catalog.observe_state(
+                 runner,
+                 state_payload(
+                   packs: %{"demo" => %{"version" => "1.4", "hash" => "short-candidate"}},
+                   actions: [action("demo.inspect", pack_id: "demo")]
+                 )
+               )
+
+      assert {:ok, [pack_version], _metadata} = Catalog.list_pack_versions(subject)
+      assert {:ok, _trusted} = Catalog.trust_pack_version(pack_version.id, subject)
+
+      assert {:ok, [runner]} =
+               Runners.list_all_runners_for_account(subject, preload: [:online?])
+
+      assert {:ok, runner_ref} = Runners.public_ref(runner)
+
+      request = %{
+        runner_id: runner.id,
+        runner_ref: runner_ref,
+        pack_id: "demo",
+        action_id: "demo.inspect"
+      }
+
+      assert {:ok, candidates} =
+               Catalog.resolve_runbook_candidates([request], [runner], subject)
+
+      assert [%{version: "1.4"}] = candidates[{runner.id, "demo", "demo.inspect"}]
+    end
+
+    test "denies a subject without catalog permission" do
+      {_account, subject} = account_with_owner()
+      narrowed = %{subject | permissions: MapSet.new()}
+
+      assert Catalog.resolve_runbook_candidates([], [], narrowed) == {:error, :unauthorized}
+    end
+
+    # Both scoped reads behind this resolver are account-filtered, so a foreign
+    # subject gets the empty candidate list — the fail-closed answer for a
+    # request whose runner it may not see, not a leak and not a raise.
+    test "resolves no candidate for a subject in another account" do
+      {account, subject} = account_with_owner()
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
+
+      assert {:ok, _observed} =
+               Catalog.observe_state(
+                 runner,
+                 state_payload(
+                   packs: %{"demo" => %{"version" => "1.2.3", "hash" => "candidate"}},
+                   actions: [action("demo.inspect", pack_id: "demo")]
+                 )
+               )
+
+      assert {:ok, [pack_version], _metadata} = Catalog.list_pack_versions(subject)
+      assert {:ok, _trusted} = Catalog.trust_pack_version(pack_version.id, subject)
+
+      assert {:ok, [runner]} =
+               Runners.list_all_runners_for_account(subject, preload: [:online?])
+
+      assert {:ok, runner_ref} = Runners.public_ref(runner)
+
+      request = %{
+        runner_id: runner.id,
+        runner_ref: runner_ref,
+        pack_id: "demo",
+        action_id: "demo.inspect"
+      }
+
+      {_other_account, other_subject} = account_with_owner()
+
+      assert Catalog.resolve_runbook_candidates([request], [runner], other_subject) ==
+               {:ok, %{{runner.id, "demo", "demo.inspect"} => []}}
     end
   end
 
@@ -5022,6 +5114,25 @@ defmodule Emisar.CatalogTest do
       assert projection.decision_count == 0
     end
 
+    # A pending row's blast radius is a fleet read, and that read carries its own
+    # permission. Today every role holding view_catalog also holds view_runners,
+    # so this only fires if those grants are ever split — and then the page must
+    # refuse, not raise.
+    test "refuses when the caller may read the catalog but not the fleet", %{
+      subject: subject,
+      runner: runner
+    } do
+      observe_console_catalog(runner)
+
+      no_fleet = %{
+        subject
+        | permissions:
+            MapSet.delete(subject.permissions, Runners.Authorizer.view_runners_permission())
+      }
+
+      assert Catalog.list_console_packs(%{}, no_fleet) == {:error, :unauthorized}
+    end
+
     test "with no filters every version is kept and nothing is matched", %{
       subject: subject,
       runner: runner
@@ -5723,7 +5834,10 @@ defmodule Emisar.CatalogTest do
       assert fact.retirement_blocked?
       assert fact.needs_decision?
       assert fact.retirement_successor == Catalog.PackBaseline.current_version(pack_id)
-      assert fact.retirement_successor_hash == Catalog.shipped_hash(pack_id, fact.current_version)
+
+      assert fact.retirement_successor_hash ==
+               ConsoleProjection.shipped_hash(pack_id, fact.current_version)
+
       assert fact.retirement_remedy == :update_or_override
       assert Enum.map(fact.advertising.runners, & &1.id) == [runner.id]
       # Retirement outranks the gentle update nudge on the same row.
@@ -5938,7 +6052,7 @@ defmodule Emisar.CatalogTest do
 
       assert group_update(projection, pack_id) == %{
                version: current,
-               hash: Catalog.shipped_hash(pack_id, current)
+               hash: ConsoleProjection.shipped_hash(pack_id, current)
              }
 
       assert version_fact(projection, pack_id, "0.0.0").update_successor == current
@@ -6134,7 +6248,7 @@ defmodule Emisar.CatalogTest do
       # summary-column read like `list_pack_actions/3`.
       advertised = Repo.all(RunnerAction)
 
-      diff = Catalog.action_set_changes(pending, advertised)
+      diff = ConsoleProjection.action_set_changes(pending, advertised)
       assert [%{action_id: "acme.wipe", risk: "critical"}] = diff.added
       assert diff.removed == []
       assert diff.changed == []
@@ -6162,7 +6276,7 @@ defmodule Emisar.CatalogTest do
 
       {:ok, [pending], _} = Catalog.list_pack_versions(subject)
       advertised = Repo.all(RunnerAction)
-      diff = Catalog.action_set_changes(pending, advertised)
+      diff = ConsoleProjection.action_set_changes(pending, advertised)
 
       assert [%{action_id: "acme.gone", risk: "medium"}] = diff.removed
       assert diff.added == []
@@ -6195,7 +6309,7 @@ defmodule Emisar.CatalogTest do
       assert pending.trusted_manifest == nil
       advertised = Repo.all(RunnerAction)
 
-      assert Catalog.action_set_changes(pending, advertised) == %{
+      assert ConsoleProjection.action_set_changes(pending, advertised) == %{
                added: [],
                removed: [],
                changed: []
@@ -6276,19 +6390,19 @@ defmodule Emisar.CatalogTest do
         ])
 
       assert {:ok, ^manifest} =
-               Catalog.trusted_manifest_for_static_reads(%PackVersion{
+               ConsoleProjection.trusted_manifest_for_static_reads(%PackVersion{
                  trust_state: :trusted,
                  trusted_manifest: manifest
                })
 
-      assert Catalog.trusted_manifest_for_static_reads(%PackVersion{
+      assert ConsoleProjection.trusted_manifest_for_static_reads(%PackVersion{
                trust_state: :trusted,
                trusted_manifest: %{
                  "custom.inspect" => %{"risk" => "low", "kind" => "exec"}
                }
              }) == {:error, :incomplete_manifest}
 
-      assert Catalog.trusted_manifest_for_static_reads(%PackVersion{
+      assert ConsoleProjection.trusted_manifest_for_static_reads(%PackVersion{
                trust_state: :pending,
                trusted_manifest: manifest
              }) == {:error, :pack_untrusted}

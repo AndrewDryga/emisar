@@ -1432,6 +1432,64 @@ defmodule EmisarWeb.PacksLiveTest do
       assert html =~ "critical"
     end
 
+    # A rewrite the risk pills cannot show — the model-facing description and the
+    # output contract a runbook binds to — is exactly what the operator is being
+    # asked to re-trust, so the changed row has to name the fields that moved.
+    test "a changed row names the descriptor fields that moved, beyond risk and kind",
+         %{conn: conn, user: user, account: account} do
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
+      subject = Fixtures.Subjects.subject_for(user, account)
+
+      {:ok, _observed} =
+        Emisar.Catalog.observe_state(
+          runner,
+          drift_state("Read current service status.", nil, "v1")
+        )
+
+      {:ok, [pack_version], _metadata} = Emisar.Catalog.list_pack_versions(subject)
+      {:ok, _trusted} = Emisar.Catalog.trust_pack_version(pack_version.id, subject)
+
+      output_schema = %{"type" => "object", "properties" => %{"up" => %{"type" => "boolean"}}}
+
+      {:ok, _redvertised} =
+        Emisar.Catalog.observe_state(
+          runner,
+          drift_state("Now also reads the queue.", output_schema, "v2")
+        )
+
+      {:ok, lv, _dead} = live(conn, ~p"/app/#{account}/packs")
+
+      changed =
+        lv |> render() |> LazyHTML.from_fragment() |> LazyHTML.query("li") |> LazyHTML.text()
+
+      assert changed =~ "~ changed"
+      assert changed =~ "description, output_schema, summary"
+      refute changed =~ "risk,"
+    end
+
+    defp drift_state(description, output_schema, hash) do
+      %{
+        "hostname" => "h",
+        "version" => "0.1.0",
+        "labels" => %{},
+        "actions" => [
+          %{
+            "id" => "acme.status",
+            "pack_id" => "acme-tools",
+            "title" => "Status",
+            "description" => description,
+            "output_schema" => output_schema,
+            "risk" => "low",
+            "kind" => "exec",
+            "args" => []
+          }
+        ],
+        "packs" => %{
+          "acme-tools" => %{"version" => "9.9", "hash" => Fixtures.Catalog.pack_hash(hash)}
+        }
+      }
+    end
+
     test "a viewer sees the pack but no Trust/Reject controls", %{account: account} do
       _ = observe_pending_pack!(account)
 
@@ -2188,6 +2246,21 @@ defmodule EmisarWeb.PacksLiveTest do
       assert html =~ "No packs advertise a critical-risk action."
       refute html =~ "No packs reported yet."
     end
+  end
+
+  test "a crafted event that drops its required key is a no-op, not a crash", %{conn: conn} do
+    {conn, _user, account} = register_and_log_in(conn)
+    {:ok, lv, _html} = live(conn, ~p"/app/#{account}/packs")
+
+    # The payload is the operator's own socket, so this is self-inflicted — but
+    # a FunctionClauseError kills the view and takes any unsaved page state
+    # with it, and leaves crash noise in production error tracking.
+    for event <-
+          ~w(trust reject revoke_trust delete_version delete_pack set_pack_retention override_retirement open_reject open_pack_action inspect_pack) do
+      assert render_click(lv, event, %{})
+    end
+
+    assert Process.alive?(lv.pid)
   end
 
   defp drain_repo_query_count(count \\ 0) do

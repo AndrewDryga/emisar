@@ -379,6 +379,45 @@ defmodule Emisar.RunbooksTest do
              ) ==
                {:error, :unauthorized}
     end
+
+    # Discovery is the model's entry point and an LLM calls it routinely, so the
+    # fleet and catalog reads behind it are shared across the whole page: eight
+    # runbooks must not cost eight compiles.
+    test "reads the fleet and catalog once for the whole page, not once per runbook" do
+      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      runner = trusted_runner(account, subject)
+
+      Enum.each(1..8, fn index ->
+        subject
+        |> create_runbook(slug: "runbook-#{index}", definition: definition(runner.group))
+        |> Fixtures.Runbooks.publish_runbook()
+      end)
+
+      test_pid = self()
+      handler = make_ref()
+
+      :telemetry.attach(
+        handler,
+        [:emisar, :repo, :query],
+        fn _event, _measurements, _metadata, _config ->
+          if self() == test_pid, do: send(test_pid, :repo_query)
+        end,
+        nil
+      )
+
+      on_exit(fn -> :telemetry.detach(handler) end)
+
+      _ = drain_repo_query_count()
+      assert {:ok, runbooks} = Runbooks.list_model_visible_runbooks(subject)
+      queries = drain_repo_query_count()
+      :telemetry.detach(handler)
+
+      assert length(runbooks) == 8
+      # One row read, one fleet read (membership + scope + runners), and one
+      # catalog resolution (access + actions + pack versions). Compiling each
+      # runbook on its own cost 57 queries for this same page.
+      assert queries <= 8
+    end
   end
 
   describe "list_model_draft_runbooks/1" do
@@ -1345,6 +1384,42 @@ defmodule Emisar.RunbooksTest do
       refute Repo.exists?(MCPOperations.Operation)
     end
 
+    test "refuses a step targeting a runner group outside the minting member's access" do
+      {_user, account, owner} = Fixtures.Subjects.owner_subject()
+      trusted_runner(account, owner, group: "database")
+      trusted_runner(account, owner, group: "web")
+
+      {:ok, access} = Emisar.Accounts.RunnerAccess.new(:restricted, ["database"], [])
+      operator = scoped_membership_subject(account, "operator", access)
+      subject = api_client_subject(account, operator, "restricted draft")
+
+      out_of_scope = mcp_draft_facts(definition: definition("web"))
+
+      assert Runbooks.create_or_replay_mcp_draft(out_of_scope, subject) ==
+               {:error, :target_out_of_scope}
+
+      refute Repo.exists?(Runbooks.Runbook)
+      refute Repo.exists?(MCPOperations.Operation)
+
+      in_scope = mcp_draft_facts(definition: definition("database"))
+
+      assert {:ok, :created, _created} = Runbooks.create_or_replay_mcp_draft(in_scope, subject)
+    end
+
+    test "refuses a step naming a pack outside the minting member's access" do
+      {_user, account, _owner} = Fixtures.Subjects.owner_subject()
+
+      {:ok, access} = Emisar.Accounts.RunnerAccess.new(:all, [], [], :restricted, ["other-pack"])
+      operator = scoped_membership_subject(account, "operator", access)
+      subject = api_client_subject(account, operator, "pack restricted draft")
+
+      assert Runbooks.create_or_replay_mcp_draft(mcp_draft_facts(), subject) ==
+               {:error, :pack_out_of_scope}
+
+      refute Repo.exists?(Runbooks.Runbook)
+      refute Repo.exists?(MCPOperations.Operation)
+    end
+
     test "isolates the same operation id across lineages and accounts" do
       {_user, account, owner} = Fixtures.Subjects.owner_subject()
       subject = api_client_subject(account, owner, "own draft")
@@ -1505,6 +1580,38 @@ defmodule Emisar.RunbooksTest do
       # is a separate, human-only transition.
       assert {:ok, _draft} = Runbooks.Definition.validate_draft(revised.draft_definition)
       assert {:error, _issues} = Runbooks.Definition.validate(revised.draft_definition)
+    end
+
+    test "refuses a restricted key rewriting someone else's draft with an out-of-scope step" do
+      {_user, account, owner} = Fixtures.Subjects.owner_subject()
+      trusted_runner(account, owner, group: "database")
+      trusted_runner(account, owner, group: "web")
+      source = create_runbook(owner, slug: "health-review", definition: definition("database"))
+
+      {:ok, access} = Emisar.Accounts.RunnerAccess.new(:restricted, ["database"], [])
+      operator = scoped_membership_subject(account, "operator", access)
+      subject = api_client_subject(account, operator, "restricted draft update")
+      facts = mcp_draft_update_facts(source, definition: definition("web"))
+
+      assert Runbooks.create_or_replay_mcp_draft_update(facts, subject) ==
+               {:error, :target_out_of_scope}
+
+      assert Repo.reload!(source).draft_definition == definition("database")
+      refute Repo.exists?(MCPOperations.Operation)
+    end
+
+    test "refuses a step naming a pack outside the minting member's access" do
+      {_user, account, owner} = Fixtures.Subjects.owner_subject()
+      source = create_runbook(owner, slug: "health-review")
+
+      {:ok, access} = Emisar.Accounts.RunnerAccess.new(:all, [], [], :restricted, ["other-pack"])
+      operator = scoped_membership_subject(account, "operator", access)
+      subject = api_client_subject(account, operator, "pack restricted draft update")
+
+      assert Runbooks.create_or_replay_mcp_draft_update(mcp_draft_update_facts(source), subject) ==
+               {:error, :pack_out_of_scope}
+
+      refute Repo.exists?(MCPOperations.Operation)
     end
   end
 
@@ -2487,6 +2594,36 @@ defmodule Emisar.RunbooksTest do
       assert %{target_selection: "random_one", target_group: "workers"} =
                ExecutionItem.Query.by_execution_id(result.execution_id) |> Repo.one!()
     end
+
+    test "denies a member who may read runbooks but not dispatch one" do
+      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      runner = trusted_runner(account, subject)
+
+      runbook =
+        subject
+        |> create_runbook(definition: definition(runner.group))
+        |> Fixtures.Runbooks.publish_runbook()
+
+      viewer = membership_subject(account, "viewer")
+      seed = Runbooks.new_target_selection_seed()
+
+      assert Runbooks.resolve_plan(runbook, %{}, seed, viewer) == {:error, :unauthorized}
+    end
+
+    test "refuses a runbook from another account, blast radius and all" do
+      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      runner = trusted_runner(account, subject)
+
+      runbook =
+        subject
+        |> create_runbook(definition: definition(runner.group))
+        |> Fixtures.Runbooks.publish_runbook()
+
+      {_other_user, _other_account, other_subject} = Fixtures.Subjects.owner_subject()
+      seed = Runbooks.new_target_selection_seed()
+
+      assert Runbooks.resolve_plan(runbook, %{}, seed, other_subject) == {:error, :not_found}
+    end
   end
 
   describe "new_target_selection_seed/0" do
@@ -3228,6 +3365,14 @@ defmodule Emisar.RunbooksTest do
       "description" => Keyword.get(opts, :description),
       "draft_definition" => Keyword.get(opts, :definition, definition())
     }
+  end
+
+  defp drain_repo_query_count(count \\ 0) do
+    receive do
+      :repo_query -> drain_repo_query_count(count + 1)
+    after
+      0 -> count
+    end
   end
 
   # The digest a save must carry back: the unpublished change when there is one,

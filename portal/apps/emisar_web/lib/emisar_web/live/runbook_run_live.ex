@@ -253,6 +253,16 @@ defmodule EmisarWeb.RunbookRunLive do
            "This account already has 1,024 active runbook items. Wait for an execution to finish or cancel one, then try again."
          )}
 
+      # Retrying the same text fails identically, so this one names the argument
+      # to fix — the same fact the MCP surface reports as invalid_args.
+      {:error, :reason_unsafe_text} ->
+        {:noreply,
+         put_flash(
+           socket,
+           :error,
+           "The reason contains control or formatting characters. Use plain text and start again."
+         )}
+
       {:error, _reason} ->
         {:noreply,
          put_flash(socket, :error, "The runbook did not start. Re-run preflight and try again.")}

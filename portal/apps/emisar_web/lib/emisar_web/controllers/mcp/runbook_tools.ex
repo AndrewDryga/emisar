@@ -140,6 +140,9 @@ defmodule EmisarWeb.MCP.RunbookTools do
       {:error, :unauthorized} ->
         {:error, error("not_allowed", "This key cannot create runbook drafts.")}
 
+      {:error, reason} when reason in [:target_out_of_scope, :pack_out_of_scope] ->
+        {:error, out_of_author_scope(reason)}
+
       {:error, %{} = payload} ->
         {:error, payload}
     end
@@ -197,6 +200,9 @@ defmodule EmisarWeb.MCP.RunbookTools do
 
       {:error, :unauthorized} ->
         {:error, error("not_allowed", "This key cannot update runbook drafts.")}
+
+      {:error, reason} when reason in [:target_out_of_scope, :pack_out_of_scope] ->
+        {:error, out_of_author_scope(reason)}
     end
   end
 
@@ -205,6 +211,14 @@ defmodule EmisarWeb.MCP.RunbookTools do
       Runbooks.create_or_replay_mcp_draft_update(facts, conn.assigns.current_subject)
     end
   end
+
+  # The refusal names the DIMENSION, never the runner, group or pack that was
+  # out of reach — a key restricted away from a host must not learn it exists.
+  defp out_of_author_scope(:target_out_of_scope),
+    do: error("not_allowed", "This draft targets a runner or group outside this key's access.")
+
+  defp out_of_author_scope(:pack_out_of_scope),
+    do: error("not_allowed", "This draft uses a pack outside this key's access.")
 
   defp execute_runbook(conn, args, operation_id) do
     allow_draft? = args["allow_draft"] || false

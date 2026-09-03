@@ -74,8 +74,23 @@ defmodule EmisarWeb.PacksLive do
        |> assign(:out_of_scope_pack_ids, [])
        |> assign(:version_facts, %{})
        |> assign(:group_cache, %{})
+       |> assign(:can_manage_pack_retention?, false)
        |> stream(:packs, [])}
     end
+  end
+
+  # `subject_can_manage_pack_retention?/1` composes the permission with the
+  # member's CURRENT pack access, so it costs a membership + access read. Resolve
+  # it here rather than in the template, which re-runs on every render — and this
+  # page re-renders on every search keystroke, every contents toggle, every trust
+  # decision and every debounced catalog broadcast. Every load and every restream
+  # lands here, so a scope narrowed mid-session still takes the control away.
+  defp assign_pack_retention_access(socket) do
+    assign(
+      socket,
+      :can_manage_pack_retention?,
+      Catalog.subject_can_manage_pack_retention?(socket.assigns.current_subject)
+    )
   end
 
   # Each stream entry is one pack group: `%{id: pack_id, versions: [...]}`.
@@ -84,6 +99,8 @@ defmodule EmisarWeb.PacksLive do
   # after a mutation reload; targeted Trust/Reject updates a single group
   # via `stream_insert`/`stream_delete` (see `restream_pack/2`).
   defp load_packs(socket) do
+    socket = assign_pack_retention_access(socket)
+
     case console_projection(socket) do
       {:ok, projection} ->
         # What the PREVIOUS filter opened on its own — read before the new match
@@ -102,8 +119,6 @@ defmodule EmisarWeb.PacksLive do
         # amber callout stays trust-review-only — retired versions carry
         # their own rose notice per row.
         |> assign(:pending_count, projection.pending_count)
-        # Keep the sidebar badge in step after a decision on this page.
-        |> assign(:pending_packs_count, projection.decision_count)
         # Discovery only — the Catalog hands this list pack IDS and nothing
         # else, so the section below has no fact to render and no row to act on.
         |> assign(:out_of_scope_pack_ids, projection.out_of_scope_pack_ids)
@@ -256,6 +271,11 @@ defmodule EmisarWeb.PacksLive do
     end
   end
 
+  # A crafted event that drops a required key would otherwise match no clause
+  # and crash the socket, taking the page's unsaved state with it. Every
+  # mutating handler on this page ends in this no-op.
+  def handle_event("trust", _params, socket), do: {:noreply, socket}
+
   def handle_event("reject", %{"id" => id}, socket) do
     case Catalog.reject_pack_version(id, socket.assigns.current_subject) do
       {:ok, pack_version} ->
@@ -274,6 +294,8 @@ defmodule EmisarWeb.PacksLive do
         {:noreply, put_flash(socket, :error, "Could not reject pack — try again.")}
     end
   end
+
+  def handle_event("reject", _params, socket), do: {:noreply, socket}
 
   def handle_event("revoke_trust", %{"id" => id}, socket) do
     case Catalog.revoke_pack_version_trust(id, socket.assigns.current_subject) do
@@ -300,6 +322,8 @@ defmodule EmisarWeb.PacksLive do
     end
   end
 
+  def handle_event("revoke_trust", _params, socket), do: {:noreply, socket}
+
   def handle_event("delete_version", %{"id" => id}, socket) do
     case Catalog.delete_pack_version(id, socket.assigns.current_subject) do
       {:ok, pack_version} ->
@@ -322,6 +346,8 @@ defmodule EmisarWeb.PacksLive do
     end
   end
 
+  def handle_event("delete_version", _params, socket), do: {:noreply, socket}
+
   def handle_event("delete_pack", %{"pack_id" => pack_id}, socket) do
     case Catalog.delete_pack(pack_id, socket.assigns.current_subject) do
       {:ok, versions} ->
@@ -343,6 +369,8 @@ defmodule EmisarWeb.PacksLive do
         {:noreply, put_flash(socket, :error, "Could not delete the pack — try again.")}
     end
   end
+
+  def handle_event("delete_pack", _params, socket), do: {:noreply, socket}
 
   # Catalog owns the cleanup contract — it re-checks manage_catalog plus current
   # unrestricted pack access (IL-15) and validates the raw period, so a crafted
@@ -376,6 +404,8 @@ defmodule EmisarWeb.PacksLive do
         {:noreply, put_flash(socket, :error, "Could not update automatic cleanup.")}
     end
   end
+
+  def handle_event("set_pack_retention", _params, socket), do: {:noreply, socket}
 
   def handle_event("cleanup_now", _params, socket) do
     case Catalog.sweep_unseen_pack_versions(socket.assigns.current_subject) do
@@ -433,6 +463,8 @@ defmodule EmisarWeb.PacksLive do
     end
   end
 
+  def handle_event("override_retirement", _params, socket), do: {:noreply, socket}
+
   # Stash which pack version the reject dialog targets (the rows are a stream,
   # so the dialog is page-level and reads this assign). Typed-confirm is UX
   # friction only — `reject` above stays the server gate.
@@ -444,6 +476,8 @@ defmodule EmisarWeb.PacksLive do
     target = %{id: id, token: "#{pack_id} v#{version}"}
     {:noreply, socket |> assign(:reject_target, target) |> ConfirmDialog.reset()}
   end
+
+  def handle_event("open_reject", _params, socket), do: {:noreply, socket}
 
   def handle_event("confirm_typed", params, socket),
     do: {:noreply, ConfirmDialog.put_typed(socket, params)}
@@ -461,6 +495,8 @@ defmodule EmisarWeb.PacksLive do
       {:noreply, socket}
     end
   end
+
+  def handle_event("open_pack_action", _params, socket), do: {:noreply, socket}
 
   # The "View contents" disclosure toggled. Track the open state server-side so
   # the pack group's re-insert (a stream child is static once pushed) renders
@@ -488,6 +524,8 @@ defmodule EmisarWeb.PacksLive do
 
     {:noreply, reinsert_pack_group(socket, pack_id)}
   end
+
+  def handle_event("inspect_pack", _params, socket), do: {:noreply, socket}
 
   defp maybe_load_actions(socket, id, pack_id, version) do
     if Map.has_key?(socket.assigns.inspected_actions, id) do
@@ -637,6 +675,8 @@ defmodule EmisarWeb.PacksLive do
   # `stream_insert` the regrouped versions. The `pending_count` (and sidebar
   # badge) are recomputed from the full set.
   defp restream_pack(socket, pack_id) do
+    socket = assign_pack_retention_access(socket)
+
     case console_projection(socket) do
       {:ok, projection} ->
         socket =
@@ -644,7 +684,6 @@ defmodule EmisarWeb.PacksLive do
           |> assign(:pack_count, projection.pack_count)
           |> assign(:version_count, projection.version_count)
           |> assign(:pending_count, projection.pending_count)
-          |> assign(:pending_packs_count, projection.decision_count)
           |> assign(:version_facts, projection.version_facts)
           |> assign(:matched_actions, projection.matched_action_ids)
           |> assign(:group_cache, group_cache(projection.groups))
@@ -1109,6 +1148,9 @@ defmodule EmisarWeb.PacksLive do
             <span class="truncate font-mono text-zinc-200">{c.action_id}</span>
             <span :if={c.old_kind != c.new_kind} class="flex-none text-zinc-500">
               {c.old_kind} → {c.new_kind}
+            </span>
+            <span :if={other_changed_fields(c) != []} class="flex-none text-zinc-500">
+              {Enum.join(other_changed_fields(c), ", ")}
             </span>
           </li>
           <li
@@ -1679,7 +1721,7 @@ defmodule EmisarWeb.PacksLive do
               </p>
               <.gated_setting
                 id="pack-retention"
-                can_change?={Catalog.subject_can_manage_pack_retention?(@current_subject)}
+                can_change?={@can_manage_pack_retention?}
                 value={
                   pack_retention_value_label(@current_account.settings.pack_unseen_retention_days)
                 }
@@ -1881,4 +1923,10 @@ defmodule EmisarWeb.PacksLive do
   defp diff_has_changes?(%{added: [], removed: [], changed: []}), do: false
   defp diff_has_changes?(%{added: _, removed: _, changed: _}), do: true
   defp diff_has_changes?(nil), do: false
+
+  # Which descriptor fields moved, minus the two the row already shows as
+  # values: risk in the pills, kind in the arrow beside them. Without this the
+  # operator is asked to re-trust a rewritten description, args_schema or
+  # output_schema that the card never names.
+  defp other_changed_fields(%{changed_fields: fields}), do: fields -- ["kind", "risk"]
 end

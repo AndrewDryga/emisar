@@ -481,6 +481,55 @@ defmodule Emisar.RunnersTest do
                subject
              ) == {:error, {:unknown_target, 1}}
     end
+
+    test "denies a member who may not read the fleet at all" do
+      {account, _user, _subject} = account_with_owner_subject()
+      Fixtures.Runners.create_runner(account_id: account.id, group: "database")
+      targets = [%{"selection" => "all", "refs" => ["group:database"]}]
+
+      assert Runners.resolve_runbook_target_sets(
+               targets,
+               Fixtures.Subjects.permissionless_subject(account)
+             ) == {:error, :unauthorized}
+    end
+
+    # The scoped fleet read inside is the only thing keeping a restricted
+    # member's runbook off a runner they cannot reach; swap it for an unscoped
+    # one and this is what notices.
+    test "a group outside the member's runner access does not resolve" do
+      {account, user, _subject} = account_with_owner_subject()
+      Fixtures.Runners.create_runner(account_id: account.id, group: "database")
+      Fixtures.Runners.create_runner(account_id: account.id, group: "web")
+
+      membership = Fixtures.Memberships.fetch_membership(account.id, user.id)
+      {:ok, access} = Accounts.RunnerAccess.restricted(["database"], [])
+      Fixtures.Memberships.force_runner_access(membership, access)
+      subject = Fixtures.Subjects.membership_subject(membership)
+
+      assert {:ok, [%{selection: "all", runners: [_database]}]} =
+               Runners.resolve_runbook_target_sets(
+                 [%{"selection" => "all", "refs" => ["group:database"]}],
+                 subject
+               )
+
+      assert Runners.resolve_runbook_target_sets(
+               [%{"selection" => "all", "refs" => ["group:web"]}],
+               subject
+             ) == {:error, {:unknown_target, 0}}
+    end
+
+    test "another account's runner is an unknown target, not a resolvable one" do
+      {account, _user, _subject} = account_with_owner_subject()
+      foreign = Fixtures.Runners.create_runner(account_id: account.id, group: "database")
+      {:ok, foreign_ref} = Runners.public_ref(foreign)
+
+      {_other_account, _other_user, other_subject} = account_with_owner_subject()
+
+      assert Runners.resolve_runbook_target_sets(
+               [%{"selection" => "all", "refs" => ["runner:#{foreign_ref}"]}],
+               other_subject
+             ) == {:error, {:unknown_target, 0}}
+    end
   end
 
   describe "reachable_scope_values/2" do

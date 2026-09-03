@@ -69,6 +69,23 @@ defmodule Emisar.Runbooks.Runbook.ChangesetTest do
     end
   end
 
+  describe "create/3" do
+    test "takes the caller's id, which the MCP path derives from its operation" do
+      id = Ecto.UUID.generate()
+
+      assert create(%{id: id}).changes.id == id
+    end
+  end
+
+  describe "draft/2" do
+    test "ignores an id, so no save can rewrite the runbook it edits" do
+      runbook = %Runbook{id: Ecto.UUID.generate(), title: "Inspect fleet", slug: "inspect-fleet"}
+      changeset = Runbook.Changeset.draft(runbook, %{id: Ecto.UUID.generate(), title: "Renamed"})
+
+      assert changeset.changes == %{name: "Renamed", title: "Renamed"}
+    end
+  end
+
   defp valid_definition do
     %{
       "schema_version" => 1,

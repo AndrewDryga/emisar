@@ -5,7 +5,10 @@ defmodule Emisar.Runbooks.Runbook.Changeset do
   # `definition` and `live_version` are never cast: both are decided by
   # `publish/3`, so a client-supplied live definition or version is ignored
   # everywhere. Metadata is not versioned; the DEFINITION is the gated artifact.
-  @detail_fields ~w[id slug title description]a
+  # `id` is castable only on CREATE, where the MCP path supplies the operation's
+  # derived identity; a later save must never be able to rewrite a runbook's PK.
+  @create_fields ~w[id slug title description]a
+  @update_fields ~w[slug title description]a
 
   # Character counts are the operator's promise; byte ceilings are what the MCP
   # projection budget is derived from. Both are needed: `validate_length/3`
@@ -38,7 +41,7 @@ defmodule Emisar.Runbooks.Runbook.Changeset do
   @doc "Creates a runbook whose whole content is its first, never-published draft."
   def create(account_id, user_id, attrs) do
     %Runbook{}
-    |> cast_details(attrs)
+    |> cast_details(attrs, @create_fields)
     |> put_change(:account_id, account_id)
     |> put_change(:created_by_id, user_id)
     |> cast(attrs, [:draft_definition])
@@ -63,7 +66,7 @@ defmodule Emisar.Runbooks.Runbook.Changeset do
   """
   def draft(%Runbook{} = runbook, attrs) do
     runbook
-    |> cast_details(attrs)
+    |> cast_details(attrs, @update_fields)
     |> validate_slug_unchanged_after_release()
     |> cast(attrs, [:draft_definition])
     |> validate_draft_definition()
@@ -84,9 +87,9 @@ defmodule Emisar.Runbooks.Runbook.Changeset do
   def delete(%Runbook{} = runbook),
     do: change(runbook, deleted_at: DateTime.utc_now())
 
-  defp cast_details(runbook_or_changeset, attrs) do
+  defp cast_details(runbook_or_changeset, attrs, fields) do
     runbook_or_changeset
-    |> cast(attrs, @detail_fields)
+    |> cast(attrs, fields)
     |> put_name_from_title()
     |> put_slug_from_title()
   end

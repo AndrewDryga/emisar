@@ -110,9 +110,14 @@ defmodule Emisar.Catalog.TrustedManifest do
     with {:ok, %{"actions" => actions}} <- validate(manifest), do: {:ok, actions}
   end
 
-  @doc "The deterministic field list compared when a trusted descriptor drifts."
+  @doc """
+  Every field a complete descriptor can carry, in deterministic order — what a
+  trust review compares when a descriptor drifts. `output_schema` is optional on
+  a descriptor, so it is absent from the required key set the validator accepts
+  but is still part of what an operator is asked to re-trust.
+  """
   @spec descriptor_fields() :: [String.t()]
-  def descriptor_fields, do: @descriptor_fields
+  def descriptor_fields, do: @descriptor_fields_with_output_schema
 
   @doc """
   Content digest of one complete descriptor — what a catalog listing compares

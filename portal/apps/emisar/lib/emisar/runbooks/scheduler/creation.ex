@@ -189,24 +189,49 @@ defmodule Emisar.Runbooks.Scheduler.Creation do
     end)
   end
 
+  # The definition schema allows 16 stages and 256 items, so a wide fan-out wrote
+  # 272 statements inside the account lock this transaction already holds. Two
+  # statements instead — one bad row still aborts the whole dispatch, which is
+  # what a runbook wants.
   defp insert_stages(multi, stages) do
-    Enum.reduce(stages, multi, fn stage, multi ->
-      Multi.insert(
-        multi,
-        {:runbook_stage, stage.id},
-        ExecutionStage.Changeset.create(stage)
-      )
+    Multi.run(multi, :runbook_stages, fn repo, _changes ->
+      insert_validated_rows(repo, ExecutionStage, stages, &ExecutionStage.Changeset.create/1)
     end)
   end
 
   defp insert_items(multi, items) do
-    Enum.reduce(items, multi, fn item, multi ->
-      Multi.insert(
-        multi,
-        {:runbook_item, item.id},
-        ExecutionItem.Changeset.create(item)
-      )
+    Multi.run(multi, :runbook_items, fn repo, _changes ->
+      insert_validated_rows(repo, ExecutionItem, items, &ExecutionItem.Changeset.create/1)
     end)
+  end
+
+  # `insert_all` skips changesets, so every row is validated first and the first
+  # invalid one is returned as the step's error — the same `{:error, changeset}`
+  # a per-row insert produced. Timestamps are supplied because `insert_all` does
+  # not autogenerate them; every other column the changeset leaves out carries a
+  # database default.
+  defp insert_validated_rows(repo, schema, rows, build_changeset) do
+    now = DateTime.utc_now()
+
+    rows
+    |> Enum.reduce_while({:ok, []}, fn row, {:ok, entries} ->
+      changeset = build_changeset.(row)
+
+      if changeset.valid? do
+        entry = Map.merge(changeset.changes, %{inserted_at: now, updated_at: now})
+        {:cont, {:ok, [entry | entries]}}
+      else
+        {:halt, {:error, changeset}}
+      end
+    end)
+    |> case do
+      {:ok, entries} ->
+        {count, nil} = repo.insert_all(schema, Enum.reverse(entries))
+        {:ok, count}
+
+      {:error, changeset} ->
+        {:error, changeset}
+    end
   end
 
   defp approval_posture(items) do

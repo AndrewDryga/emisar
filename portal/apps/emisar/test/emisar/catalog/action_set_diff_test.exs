@@ -126,6 +126,16 @@ defmodule Emisar.Catalog.ActionSetDiffTest do
       assert fields == TrustedManifest.descriptor_fields()
     end
 
+    # An output contract a runbook binds to is part of what an operator
+    # re-trusts, so a version that only rewrites it must still name the field.
+    test "an output contract rewritten on its own is the reported changed field" do
+      trusted = manifest([act("a.read", :low)])
+      schema = %{"type" => "object", "properties" => %{"ok" => %{"type" => "boolean"}}}
+
+      assert [%{changed_fields: ["output_schema"], risk_escalated?: false}] =
+               ActionSetDiff.changes([act("a.read", :low, :exec, output_schema: schema)], trusted).changed
+    end
+
     test "a risk de-escalation is changed but not flagged as an escalation" do
       trusted = manifest([act("a.read", :high)])
 

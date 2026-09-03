@@ -93,6 +93,11 @@ defmodule Emisar.Catalog do
   # list into "no runner is on it".
   @console_advertising_runner_limit 100
 
+  # One runbook's execution items are capped at this same number, so a single
+  # compile always fits; a caller resolving several runbooks at once splits its
+  # requests into reads of this size.
+  @max_candidate_requests 256
+
   @doc """
   Observe the full `runner_state` payload: upsert pack_versions and
   the runner's actions, prune actions that disappeared from the
@@ -1338,9 +1343,10 @@ defmodule Emisar.Catalog do
   Internal inspection surface with no production caller — kept by decision
   (`@intended_api_surface` in `test/emisar/context_coverage_test.exs`) because
   its trust-matrix tests are the coverage of this classification. The live
-  dispatch gate is `fetch_dispatch_contract/5`. Returns `:ok` if the action's
-  `(pack_id, pack_version)` is trusted, `{:error, :pack_untrusted, info}`
-  otherwise.
+  dispatch gate is `fetch_dispatch_contract/5`. Returns `{:ok, hash}` — the
+  trusted hash a run snapshots — when the action's `(pack_id, pack_version)` is
+  trusted, `{:error, :pack_untrusted, info}` or
+  `{:error, :pack_retired, pack_version}` otherwise.
 
   The action carries `pack_version` populated by `observe_action`
   based on the runner's last-reported `runner_state.packs` payload.
@@ -2050,6 +2056,13 @@ defmodule Emisar.Catalog do
   end
 
   @doc """
+  The most requests one candidate resolution answers. A caller resolving for
+  SEVERAL runbooks at once batches within this bound rather than re-deriving it.
+  """
+  @spec max_candidate_requests() :: pos_integer()
+  def max_candidate_requests, do: @max_candidate_requests
+
+  @doc """
   Returns bounded trusted exact pack/action candidates for already scoped
   runbook runners. The caller owns requirement matching; this context owns the
   trusted-manifest projection and hides untrusted, retired, drifted, offline,
@@ -2057,7 +2070,7 @@ defmodule Emisar.Catalog do
   """
   def resolve_runbook_candidates(requests, runners, %Subject{} = subject)
       when is_list(requests) and is_list(runners) do
-    with true <- length(requests) <= 256,
+    with true <- length(requests) <= @max_candidate_requests,
          :ok <-
            Auth.Authorizer.ensure_has_permissions(
              subject,
@@ -2322,8 +2335,8 @@ defmodule Emisar.Catalog do
       |> RunnerAction.Query.by_deployments(deployments)
       |> RunnerAction.Query.select_manifest_match_columns()
       |> scope_actions_to_pack_access(subject)
-      |> Authorizer.for_subject(subject)
       |> RunnerAction.Query.limit_to(max_actions + 1)
+      |> Authorizer.for_subject(subject)
       |> Repo.all()
 
     oversized_deployment? =
@@ -2347,8 +2360,8 @@ defmodule Emisar.Catalog do
     pack_versions =
       PackVersion.Query.all()
       |> PackVersion.Query.by_pack_refs(pack_refs)
-      |> Authorizer.for_subject(subject)
       |> PackVersion.Query.limit_to(length(pack_refs) + 1)
+      |> Authorizer.for_subject(subject)
       |> Repo.all()
 
     if length(pack_versions) <= length(pack_refs),
@@ -2382,7 +2395,7 @@ defmodule Emisar.Catalog do
           []
       end
     end)
-    |> Enum.sort_by(&Version.parse!(&1.version), :desc)
+    |> Enum.sort(&(compare_versions(&1.version, &2.version) != :lt))
   end
 
   @doc """
@@ -2629,7 +2642,7 @@ defmodule Emisar.Catalog do
   end
 
   @doc """
-  Same as `action_risks_for_account/1` but scoped to a set of runners — the
+  Same as `action_risk_index_for_account/1` but scoped to a set of runners — the
   policy page uses it per targeted ruleset (a group resolves to its runners'
   ids at the call site) so the rail speaks for THAT runner or group.
   `view_catalog` gated + account-scoped (`for_subject`, so a foreign runner id
@@ -2951,13 +2964,16 @@ defmodule Emisar.Catalog do
   # any host is still running it). A plain trusted row pays for nothing.
   defp console_advertising(pack_versions, %Subject{} = subject) do
     if Enum.any?(pack_versions, &ConsoleProjection.advertiser_facts_needed?/1) do
-      {:ok, facts, %{coverage: coverage}} =
-        Runners.list_pack_advertisement_facts(@console_advertising_runner_limit, subject)
-
-      {index, malformed?} = ConsoleProjection.advertising_index(facts)
-      # A fact we couldn't read is a runner we can't rule out, so it degrades
-      # coverage rather than vanishing from the answer.
-      {:ok, {index, (malformed? && :partial) || coverage}}
+      # The fleet read carries its own permission gate, so a role that may read
+      # the catalog but not the fleet refuses here rather than raising a
+      # MatchError on the page.
+      with {:ok, facts, %{coverage: coverage}} <-
+             Runners.list_pack_advertisement_facts(@console_advertising_runner_limit, subject) do
+        {index, malformed?} = ConsoleProjection.advertising_index(facts)
+        # A fact we couldn't read is a runner we can't rule out, so it degrades
+        # coverage rather than vanishing from the answer.
+        {:ok, {index, (malformed? && :partial) || coverage}}
+      end
     else
       {:ok, :not_needed}
     end
@@ -3131,18 +3147,6 @@ defmodule Emisar.Catalog do
   defp broadcast_pack_trust(account_id) when is_binary(account_id) do
     Emisar.PubSub.broadcast(account_packs_topic(account_id), {:pack_trust_changed, account_id})
   end
-
-  # -- Console projection --------------------------------------------------
-
-  # The Packs page's projection is pure and lives in its own module so it can be
-  # tested without a database. These six are the part the web already calls, so
-  # the context keeps exposing them.
-  defdelegate pack_version_retirement(a1), to: ConsoleProjection
-  defdelegate pack_version_outdated(a1), to: ConsoleProjection
-  defdelegate pack_version_needs_decision?(a1), to: ConsoleProjection
-  defdelegate action_set_changes(a1, a2), to: ConsoleProjection
-  defdelegate shipped_hash(a1, a2), to: ConsoleProjection
-  defdelegate trusted_manifest_for_static_reads(a1), to: ConsoleProjection
 
   # -- Authorization ---------------------------------------------------
 

@@ -55,18 +55,139 @@ defmodule Emisar.Runbooks.Compiler do
   @spec validate_availability(map(), Subject.t()) ::
           :ok | {:error, [issue()]} | {:error, :unauthorized}
   def validate_availability(definition, %Subject{} = subject) do
-    with {:ok, definition} <- Definition.validate(definition),
-         steps = indexed_steps(definition),
-         {:ok, target_sets} <- resolve_targets(steps, subject),
-         :ok <- validate_fan_out(target_sets),
-         :ok <- validate_unsigned_targets(steps, target_sets),
-         requests = candidate_requests(steps, target_sets),
-         runners = requests |> Enum.map(& &1.runner) |> Enum.uniq_by(& &1.id),
-         {:ok, candidates} <- resolve_candidates(requests, runners, subject),
-         {:ok, _selected} <- select_candidates(steps, target_sets, candidates, "availability") do
+    with {:ok, [verdict]} <- validate_availability_all([definition], subject), do: verdict
+  end
+
+  @doc """
+  The same availability verdict as `validate_availability/2`, for several
+  definitions, in order.
+
+  Discovery asks the identical question of every live runbook, and the fleet,
+  trust and contract facts behind the answer are account-wide — so the fleet is
+  read ONCE and the catalog is resolved in reads bounded by
+  `Catalog.max_candidate_requests/0`, rather than per runbook. Each definition
+  still gets its own verdict: one that names an offline runner or an untrusted
+  pack never hides its healthy siblings.
+  """
+  @spec validate_availability_all([map()], Subject.t()) ::
+          {:ok, [:ok | {:error, [issue()]}]} | {:error, :unauthorized}
+  def validate_availability_all(definitions, %Subject{} = subject) when is_list(definitions) do
+    prepared = Enum.map(definitions, &prepare_availability/1)
+
+    with {:ok, resolved_targets} <- resolve_shared_targets(prepared, subject) do
+      staged = Enum.map(prepared, &stage_availability(&1, resolved_targets))
+
+      with {:ok, candidates_by_stage} <- resolve_shared_candidates(staged, subject) do
+        {:ok, Enum.zip_with(staged, candidates_by_stage, &availability_verdict/2)}
+      end
+    end
+  end
+
+  defp prepare_availability(definition) do
+    with {:ok, definition} <- Definition.validate(definition) do
+      {:ok, indexed_steps(definition)}
+    end
+  end
+
+  # One fleet read answers every definition's targets. A single unresolvable ref
+  # halts that shared pass, so it is recorded as unresolved and the rest are
+  # resolved again — an offline-targeting runbook must not hide the healthy
+  # ones, while a fleet that resolves cleanly pays exactly one read.
+  defp resolve_shared_targets(prepared, %Subject{} = subject) do
+    prepared
+    |> Enum.flat_map(&step_targets/1)
+    |> Enum.uniq()
+    |> resolve_shared_targets(%{}, subject)
+  end
+
+  defp resolve_shared_targets([], resolved, %Subject{}), do: {:ok, resolved}
+
+  defp resolve_shared_targets(targets, resolved, %Subject{} = subject) do
+    case Runners.resolve_runbook_target_sets(targets, subject) do
+      {:ok, target_sets} ->
+        {:ok, Map.merge(resolved, Map.new(Enum.zip(targets, target_sets)))}
+
+      {:error, {:unknown_target, index}} ->
+        {unknown, rest} = List.pop_at(targets, index)
+        resolve_shared_targets(rest, Map.put(resolved, unknown, :unknown_target), subject)
+
+      {:error, :unauthorized} ->
+        {:error, :unauthorized}
+    end
+  end
+
+  defp step_targets({:ok, steps}), do: Enum.map(steps, & &1.step["targets"])
+  defp step_targets({:error, _issues}), do: []
+
+  # Everything a definition's verdict needs that does NOT touch the catalog:
+  # its resolved target sets and the requests they imply, or the issues that
+  # already decide it.
+  defp stage_availability({:error, issues}, _resolved), do: {:error, issues}
+
+  defp stage_availability({:ok, steps}, resolved) do
+    target_sets = Enum.map(steps, &Map.fetch!(resolved, &1.step["targets"]))
+
+    case Enum.find_index(target_sets, &(&1 == :unknown_target)) do
+      nil -> staged_requests(steps, target_sets)
+      index -> {:error, [unknown_target_issue(Enum.fetch!(steps, index))]}
+    end
+  end
+
+  defp staged_requests(steps, target_sets) do
+    with :ok <- validate_fan_out(target_sets),
+         :ok <- validate_unsigned_targets(steps, target_sets) do
+      {:ok, steps, target_sets, candidate_requests(steps, target_sets)}
+    end
+  end
+
+  # Resolve the staged requests in reads bounded by the catalog's own limit,
+  # never splitting one definition across two reads, so a read that refuses
+  # answers for exactly the definitions it covered.
+  defp resolve_shared_candidates(staged, %Subject{} = subject) do
+    staged
+    |> Enum.chunk_while(
+      {[], 0},
+      &chunk_by_request_budget/2,
+      fn {batch, _count} -> {:cont, Enum.reverse(batch), {[], 0}} end
+    )
+    |> Enum.reduce_while({:ok, []}, fn batch, {:ok, resolved} ->
+      case resolve_batch_candidates(batch, subject) do
+        {:error, :unauthorized} -> {:halt, {:error, :unauthorized}}
+        answer -> {:cont, {:ok, resolved ++ List.duplicate(answer, length(batch))}}
+      end
+    end)
+  end
+
+  defp chunk_by_request_budget(stage, {batch, count}) do
+    stage_count = length(stage_requests(stage))
+
+    if batch != [] and count + stage_count > Catalog.max_candidate_requests() do
+      {:cont, Enum.reverse(batch), {[stage], stage_count}}
+    else
+      {:cont, {[stage | batch], count + stage_count}}
+    end
+  end
+
+  defp resolve_batch_candidates(batch, %Subject{} = subject) do
+    requests = batch |> Enum.flat_map(&stage_requests/1) |> Enum.uniq()
+    runners = requests |> Enum.map(& &1.runner) |> Enum.uniq_by(& &1.id)
+
+    resolve_candidates(requests, runners, subject)
+  end
+
+  defp stage_requests({:ok, _steps, _target_sets, requests}), do: requests
+  defp stage_requests({:error, _issues}), do: []
+
+  defp availability_verdict({:error, issues}, _candidates), do: {:error, issues}
+
+  defp availability_verdict({:ok, steps, target_sets, _requests}, {:ok, candidates}) do
+    with {:ok, _selected} <- select_candidates(steps, target_sets, candidates, "availability") do
       :ok
     end
   end
+
+  defp availability_verdict({:ok, _steps, _target_sets, _requests}, {:error, issues}),
+    do: {:error, issues}
 
   @doc """
   Casts one browser form's raw input strings against a canonical definition.
@@ -240,20 +361,19 @@ defmodule Emisar.Runbooks.Compiler do
         {:ok, target_sets}
 
       {:error, {:unknown_target, index}} ->
-        step = Enum.fetch!(steps, index)
-
-        {:error,
-         [
-           issue(
-             "unknown_target",
-             "#{step.path}/targets",
-             "One or more target refs do not resolve to current in-scope runners."
-           )
-         ]}
+        {:error, [unknown_target_issue(Enum.fetch!(steps, index))]}
 
       {:error, :unauthorized} ->
         {:error, :unauthorized}
     end
+  end
+
+  defp unknown_target_issue(step) do
+    issue(
+      "unknown_target",
+      "#{step.path}/targets",
+      "One or more target refs do not resolve to current in-scope runners."
+    )
   end
 
   defp resolve_candidates(requests, runners, subject) do

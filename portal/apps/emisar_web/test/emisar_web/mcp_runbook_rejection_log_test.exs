@@ -127,6 +127,49 @@ defmodule EmisarWeb.MCPRunbookRejectionLogTest do
     assert result["error"]["message"] =~ "control or formatting characters"
   end
 
+  # A key inherits the minting member's runner scope, so a draft naming a group
+  # that member cannot reach is the laundering path the console closes at write
+  # time. The refusal must name the dimension without naming the group.
+  test "a draft step outside the key's runner access is refused as not_allowed", %{
+    conn: conn,
+    account: account
+  } do
+    user = Fixtures.Users.create_user()
+
+    membership =
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        user_id: user.id,
+        role: "operator"
+      )
+
+    {:ok, access} = Emisar.Accounts.RunnerAccess.new(:restricted, ["database"], [])
+    Fixtures.Memberships.force_runner_access(membership, access)
+    restricted = Fixtures.Subjects.membership_subject(membership)
+    {:ok, _raw, key} = ApiKeys.create_key(%{name: "restricted-author", kind: :mcp}, restricted)
+    conn = Plug.Conn.assign(conn, :current_subject, Subject.for_api_key(key, account))
+
+    args = %{
+      "title" => "Fleet health",
+      "definition" => definition(%{"selection" => "all", "refs" => ["group:fleet"]})
+    }
+
+    assert {:error, payload} =
+             RunbookTools.call(
+               conn,
+               "create_runbook_draft",
+               args,
+               "op_424NN9NMDZ1T76NARWCKM5A0D6"
+             )
+
+    assert payload.error.code == "not_allowed"
+
+    assert payload.error.message ==
+             "This draft targets a runner or group outside this key's access."
+
+    refute Emisar.Repo.exists?(Runbooks.Runbook)
+  end
+
   defp authorize(conn, raw), do: put_req_header(conn, "authorization", "Bearer " <> raw)
 
   defp call(conn, arguments) do
@@ -173,41 +216,43 @@ defmodule EmisarWeb.MCPRunbookRejectionLogTest do
   end
 
   defp publish_runbook!(subject, slug, selector) do
-    {:ok, draft} =
-      Runbooks.create_runbook(
-        %{
-          "title" => String.replace(slug, "-", " "),
-          "slug" => slug,
-          "draft_definition" => %{
-            "schema_version" => 1,
-            "context_markdown" => "Verify the selected fleet.",
-            "inputs" => [],
-            "stages" => [
-              %{
-                "id" => "inspect",
-                "title" => "Inspect",
-                "mode" => "parallel",
-                "max_parallel" => 16,
-                "steps" => [
-                  %{
-                    "id" => "check",
-                    "pack" => %{"id" => "operations"},
-                    "action" => "operations.health",
-                    "targets" => selector,
-                    "args" => %{},
-                    "outputs" => [],
-                    "success" => [],
-                    "wait" => nil
-                  }
-                ]
-              }
-            ]
-          }
-        },
-        subject
-      )
+    attrs = %{
+      "title" => String.replace(slug, "-", " "),
+      "slug" => slug,
+      "draft_definition" => definition(selector)
+    }
+
+    {:ok, draft} = Runbooks.create_runbook(attrs, subject)
 
     Fixtures.Runbooks.publish_runbook(draft)
+  end
+
+  defp definition(selector) do
+    %{
+      "schema_version" => 1,
+      "context_markdown" => "Verify the selected fleet.",
+      "inputs" => [],
+      "stages" => [
+        %{
+          "id" => "inspect",
+          "title" => "Inspect",
+          "mode" => "parallel",
+          "max_parallel" => 16,
+          "steps" => [
+            %{
+              "id" => "check",
+              "pack" => %{"id" => "operations"},
+              "action" => "operations.health",
+              "targets" => selector,
+              "args" => %{},
+              "outputs" => [],
+              "success" => [],
+              "wait" => nil
+            }
+          ]
+        }
+      ]
+    }
   end
 
   defp action do

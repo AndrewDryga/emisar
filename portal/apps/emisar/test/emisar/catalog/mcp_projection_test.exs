@@ -182,6 +182,31 @@ defmodule Emisar.Catalog.MCPProjectionTest do
     assert "runner_metadata_invalid" in Enum.map(projected.issues, & &1.code)
   end
 
+  # Today's ingest guarantees both keys, but the sibling filters that read the
+  # same list require only "pack", so a row written before that normalizer must
+  # still project rather than take the whole account's snapshot down.
+  test "a degraded pack entry from before the ingest normalizer still reports" do
+    runner = %Runner{
+      id: Ecto.UUID.generate(),
+      account_id: Ecto.UUID.generate(),
+      name: "runner",
+      external_id: Ecto.UUID.generate(),
+      hostname: "db-prod",
+      group: "default",
+      labels: %{},
+      packs: %{},
+      degraded_packs: [%{"pack" => "acme"}, %{"reason" => "no pack named"}],
+      online?: true,
+      enforce_signatures: false
+    }
+
+    assert %{runners: [projected]} = MCPProjection.build([], [], [runner])
+
+    assert Enum.filter(projected.issues, &(&1.code == "pack_load_failed")) == [
+             %{code: "pack_load_failed", message: "Pack acme failed to load on this runner."}
+           ]
+  end
+
   defp deployment(pack_id, version, hash) do
     runner_id = Ecto.UUID.generate()
 

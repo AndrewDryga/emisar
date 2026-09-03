@@ -114,3 +114,37 @@ func TestApplyJSONRefusesDuplicateObjectKeys(t *testing.T) {
 		t.Fatalf("error=%v, want ErrInvalidJSON", err)
 	}
 }
+
+// json.Marshal escapes <, >, and & unconditionally, six bytes for one, and the
+// engine re-checks the REDACTED document against the same max_stdout_bytes the
+// action proved against - so a URL- or markup-bearing result that fit came back
+// as an empty output_redaction_exceeded_limit failure. The bytes an action
+// emits must survive redaction unchanged.
+func TestApplyJSONKeepsMarkupAndURLBytesUnescaped(t *testing.T) {
+	rules, err := CompileAll(DefaultRules())
+	if err != nil {
+		t.Fatal(err)
+	}
+	engine := New(rules)
+	input := []byte(`{"html":"<b>a&b</b>","url":"https://x/y?a=1&b=2"}`)
+
+	output, _, err := engine.ApplyJSON(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{`"<b>a&b</b>"`, `"https://x/y?a=1&b=2"`} {
+		if !strings.Contains(string(output), want) {
+			t.Fatalf("expected %s to survive re-encoding, got %s", want, output)
+		}
+	}
+	for _, escaped := range []string{`\u003c`, `\u003e`, `\u0026`} {
+		if strings.Contains(string(output), escaped) {
+			t.Fatalf("output carries the HTML escape %s: %s", escaped, output)
+		}
+	}
+	// A document already at its cap must still fit once redaction has touched
+	// nothing in it; the reported failure grew 102 bytes into 132.
+	if len(output) > len(input) {
+		t.Fatalf("redaction inflated the document: %d -> %d bytes", len(input), len(output))
+	}
+}
