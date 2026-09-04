@@ -71,10 +71,9 @@ defmodule Emisar.ContextCoverageTest do
   # and fires the side effects in one step, so neither can prove the negative.
   #
   # `close_account/3` is the staff account-closure verb, run from a release
-  # shell until the console grows a surface for it. It was kept on 2026-09-04
-  # when the caller walk stopped counting prose: its scope and denial tests are
-  # the security coverage the audit just tightened (AC-1). Wire it or delete it
-  # at 1.0 — that is a product call, recorded in the round-9 report.
+  # shell. The founder kept it on 2026-09-04 when the caller walk stopped
+  # counting prose: its scope and denial tests are the security coverage the
+  # audit tightened (AC-1), and a console surface is a later product decision.
   #
   # Do NOT add to this list to silence a new failure. A newly written function
   # with no caller is dead on arrival; this list is a decision that was made
