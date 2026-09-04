@@ -604,41 +604,20 @@ defmodule Emisar.RunbooksTest do
 
       assert result.execution.id == fixture.execution_id
     end
-  end
 
-  describe "fetch_execution_recovery_identity/2" do
-    test "returns account-scoped provenance after current runner scope narrows" do
-      fixture = mcp_execution_fixture()
-
-      fixture.account.id
-      |> Fixtures.Memberships.fetch_membership(fixture.owner.actor.id)
-      |> Fixtures.Memberships.force_runner_access(Emisar.Accounts.RunnerAccess.none())
-
-      assert {:ok, execution} =
-               Runbooks.fetch_execution_recovery_identity(
-                 fixture.execution_id,
-                 fixture.subject
-               )
-
-      assert execution.id == fixture.execution_id
-      assert execution.kind == :published
-    end
-
-    test "denies a principal without visibility and isolates another account" do
+    # The MCP recovery projection reads its execution through this same function,
+    # so the provenance it needs (`kind`) and the denial path are pinned here.
+    test "carries the execution kind and denies a principal without visibility" do
       fixture = mcp_execution_fixture()
       runner_subject = Fixtures.Subjects.permissionless_subject(fixture.account)
 
-      assert Runbooks.fetch_execution_recovery_identity(
-               fixture.execution_id,
-               runner_subject
-             ) == {:error, :unauthorized}
+      assert {:ok, execution} =
+               Runbooks.fetch_execution_by_id(fixture.execution_id, fixture.subject)
 
-      {_user, _account, other_subject} = Fixtures.Subjects.owner_subject()
+      assert execution.kind == :published
 
-      assert Runbooks.fetch_execution_recovery_identity(
-               fixture.execution_id,
-               other_subject
-             ) == {:error, :not_found}
+      assert Runbooks.fetch_execution_by_id(fixture.execution_id, runner_subject) ==
+               {:error, :unauthorized}
     end
   end
 

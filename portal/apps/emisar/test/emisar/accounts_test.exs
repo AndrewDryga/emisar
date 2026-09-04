@@ -247,6 +247,63 @@ defmodule Emisar.AccountsTest do
              ).user_id == other_owner.id
     end
 
+    test "audits the seat each SURVIVING account loses, and only those" do
+      user = Fixtures.Users.create_user()
+      other_owner = Fixtures.Users.create_user()
+      sole_owned = Fixtures.Accounts.create_account()
+      co_owned = Fixtures.Accounts.create_account()
+
+      Fixtures.Memberships.create_membership(
+        account_id: sole_owned.id,
+        user_id: user.id,
+        role: "owner"
+      )
+
+      Fixtures.Memberships.create_membership(
+        account_id: co_owned.id,
+        user_id: user.id,
+        role: "operator"
+      )
+
+      Fixtures.Memberships.create_membership(
+        account_id: co_owned.id,
+        user_id: other_owner.id,
+        role: "owner"
+      )
+
+      user_id = user.id
+      user_email = user.email
+      co_owned_id = co_owned.id
+
+      assert {:ok, %User{id: ^user_id}} = Accounts.erase_user_and_owned_accounts(user_id)
+
+      # The erased account is gone, so its rows cascaded with it; only the account
+      # whose roster actually lost a seat keeps a record of it.
+      assert %AuditEvent{} = event = Repo.one(AuditEvent)
+      assert event.event_type == "membership.erased"
+      assert event.account_id == co_owned_id
+      assert event.actor_kind == "staff"
+      assert event.target_kind == "user"
+      assert event.target_id == user_id
+      assert event.target_label == user_email
+      assert event.payload["role"] == "operator"
+    end
+
+    test "writes nothing when the user's only account is erased with them" do
+      user = Fixtures.Users.create_user()
+      account = Fixtures.Accounts.create_account()
+
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        user_id: user.id,
+        role: "owner"
+      )
+
+      assert {:ok, %User{}} = Accounts.erase_user_and_owned_accounts(user.id)
+
+      refute Repo.one(AuditEvent)
+    end
+
     test "counts only non-deleted owner memberships" do
       user = Fixtures.Users.create_user()
       former_owner = Fixtures.Users.create_user()
@@ -2423,6 +2480,51 @@ defmodule Emisar.AccountsTest do
 
       assert Accounts.fetch_team_member_facts(membership.id, other_subject) ==
                {:error, :not_found}
+    end
+  end
+
+  describe "membership_invitation_pending?/1" do
+    test "true only for a membership whose invitation is still unaccepted" do
+      account = Fixtures.Accounts.create_account()
+
+      invited =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          invitation_token_digest: "pending-invite"
+        )
+
+      accepted = Fixtures.Memberships.create_membership(account_id: account.id)
+
+      assert Accounts.membership_invitation_pending?(invited)
+      refute Accounts.membership_invitation_pending?(accepted)
+    end
+  end
+
+  describe "membership_authorized?/1" do
+    test "true only while the seat is accepted, live, and not suspended" do
+      account = Fixtures.Accounts.create_account()
+      member = Fixtures.Memberships.create_membership(account_id: account.id)
+
+      invited =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          invitation_token_digest: "pending-invite"
+        )
+
+      suspended =
+        [account_id: account.id]
+        |> Fixtures.Memberships.create_membership()
+        |> Fixtures.Memberships.suspend_membership()
+
+      removed =
+        [account_id: account.id]
+        |> Fixtures.Memberships.create_membership()
+        |> Fixtures.Memberships.mark_membership_as_deleted()
+
+      assert Accounts.membership_authorized?(member)
+      refute Accounts.membership_authorized?(invited)
+      refute Accounts.membership_authorized?(suspended)
+      refute Accounts.membership_authorized?(removed)
     end
   end
 

@@ -121,16 +121,7 @@ defmodule Emisar.Repo do
     {audit_fun, opts} = Keyword.pop(opts, :audit)
     {changeset_fun, repo_opts} = Keyword.pop!(opts, :with)
 
-    # Inside an already-open transaction this call JOINS it, so its
-    # "after commit" would fire before the OUTER commit — side effects
-    # would escape a later rollback. Hoist them to the outer
-    # commit_multi(after_commit: …) instead.
-    if after_commit != [] and in_transaction?() do
-      raise ArgumentError,
-            "fetch_and_update :after_commit inside an open transaction fires before " <>
-              "the outer commit — pass the side effects to the outer " <>
-              "Repo.commit_multi(after_commit: …) instead"
-    end
+    :ok = refuse_nested_after_commit!(after_commit, "fetch_and_update")
 
     # Unlike :after_commit, `:audit` stays legal nested — composing an audited
     # fetch_and_update into an outer Multi is the intended shape, and the audit
@@ -264,18 +255,7 @@ defmodule Emisar.Repo do
   def commit_multi(multi, opts \\ []) do
     {after_commit, repo_opts} = Keyword.pop(opts, :after_commit, [])
 
-    # Inside an already-open transaction this multi JOINS it, so its
-    # "after commit" fires when the INNER transaction returns — before the
-    # OUTER commit — letting side effects (broadcasts, email) escape a later
-    # outer rollback. Compose the steps into the outer Multi and hoist the
-    # side effects to the outer commit_multi(after_commit: …) instead
-    # (mirrors the fetch_and_update/3 guard above).
-    if after_commit != [] and in_transaction?() do
-      raise ArgumentError,
-            "commit_multi :after_commit inside an open transaction fires before " <>
-              "the outer commit — compose the steps into the outer Multi and pass " <>
-              "the side effects to its Repo.commit_multi(after_commit: …) instead"
-    end
+    :ok = refuse_nested_after_commit!(after_commit, "commit_multi")
 
     # Same reason the audited fetch_and_update holds its broadcast when nested:
     # the rows commit with the outer transaction, but announcing them now would
@@ -297,6 +277,23 @@ defmodule Emisar.Repo do
       {:error, reason} ->
         {:error, reason}
     end
+  end
+
+  # Inside an already-open transaction this call JOINS it, so its "after commit"
+  # fires when the INNER transaction returns — before the OUTER commit — letting
+  # side effects (broadcasts, email) escape a later outer rollback. Compose the
+  # work into the outer Multi and hoist the side effects to its after_commit.
+  defp refuse_nested_after_commit!([], _caller), do: :ok
+
+  defp refuse_nested_after_commit!(_after_commit, caller) do
+    if in_transaction?() do
+      raise ArgumentError,
+            "#{caller} :after_commit inside an open transaction fires before the outer " <>
+              "commit — compose the work into the outer Multi and pass the side effects " <>
+              "to its Repo.commit_multi(after_commit: …) instead"
+    end
+
+    :ok
   end
 
   defp execute_changes_after_commit(changes, after_commit) do

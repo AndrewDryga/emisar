@@ -552,6 +552,22 @@ defmodule Emisar.RunsTest do
       assert {:ok, [listed], _meta} = Runs.list_runs(subject, filter: [runbook_id: runbook.id])
       assert listed.id == runbook_run.id
     end
+
+    # These four filters are deep-link entry points (a runner's "View all runs",
+    # an agent's "View activity"), so a mangled URL reaches them. Their options are
+    # filled in at render time and never validated, so the declared TYPE is the
+    # only boundary: a non-UUID must come back as a bad filter, not as an
+    # `Ecto.Query.CastError` 500 from a `binary_id` comparison.
+    for name <- [:runner_id, :api_key_id, :requested_by_id, :runbook_id] do
+      test "the #{name} filter rejects a non-UUID instead of raising" do
+        {_user, _account, subject} = Fixtures.Subjects.owner_subject()
+
+        assert {:error, {:invalid_type, metadata}} =
+                 Runs.list_runs(subject, filter: [{unquote(name), "zzz"}])
+
+        assert metadata[:name] == unquote(name)
+      end
+    end
   end
 
   describe "list_runs_by_runbook_execution/2" do

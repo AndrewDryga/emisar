@@ -2475,46 +2475,92 @@ defmodule Emisar.AuditTest do
     end
   end
 
-  describe "builder-vs-known event-type drift" do
-    # several types are EMITTED by a builder but are NOT in
-    # `known_event_type_values/0` / `grouped_event_type_values/0`, so they render
-    # + humanize + pass filters, yet can't be picked from the Type dropdown. We
-    # ground both halves in source: the emitted set (every literal a builder
-    # passes) and the dropdown set. If a drift type is later added to the
-    # dropdown, this fails loudly — which is correct (it closed the gap then).
-    test "builder-only types are emitted but absent from the Type dropdown" do
-      # account.require_sso_set was promoted INTO the dropdown alongside
-      # require_mfa_set (the account-security toggles filter as a set), so it's no
-      # longer drift.
-      drift = ~w[
-        user.mfa_reset_by_admin sso.existing_user_linked
-      ]
+  describe "the emitted event types ARE the Type vocabulary" do
+    setup do
+      account = Fixtures.Accounts.create_account()
+      subject = Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account, role: :owner)
+      %{account: account, subject: subject}
+    end
 
-      emitted = emitted_event_types()
+    # The Severity and Category facets resolve to a literal `event_type IN (…)`
+    # built from these lists, so a type that is emitted but unlisted is a row the
+    # operator's filter silently withholds. Eight had drifted that way — the six
+    # BA-1 found plus the two run outcomes (FL-1) — and the test that used to sit
+    # here pinned two of them as EXPECTED. Assert the set relation instead, so the
+    # next builder cannot ship a type the audit page cannot narrow to.
+    test "every type a builder can emit is selectable, with a severity and a category" do
       known = Audit.Event.Query.known_event_type_values() |> Enum.map(&elem(&1, 0))
 
-      grouped =
-        Audit.Event.Query.grouped_event_type_values()
-        |> Enum.flat_map(fn {_group, items} -> Enum.map(items, &elem(&1, 0)) end)
+      group_of_type =
+        for {group, options} <- Audit.Event.Query.grouped_event_type_values(),
+            {type, _label} <- options,
+            into: %{},
+            do: {type, group}
 
-      for type <- drift do
-        # A real builder produces it…
-        assert type in emitted, "#{type} expected to be emitted by a builder"
-        # …but it isn't selectable from either the flat or grouped dropdown.
-        refute type in known, "#{type} unexpectedly IN known_event_type_values/0"
-        refute type in grouped, "#{type} unexpectedly IN grouped_event_type_values/0"
+      unselectable = Enum.reject(emitted_event_types(), &(&1 in known))
+      assert unselectable == []
+
+      ungrouped = Enum.reject(emitted_event_types(), &Map.has_key?(group_of_type, &1))
+      assert ungrouped == []
+    end
+
+    test "the Category and Severity facets return the types they used to drop", %{
+      account: account,
+      subject: subject
+    } do
+      closed = ~w[
+        action_run.validation_failed action_run.unknown_action
+        account.disabled account.enabled account.closed
+        runbook.deleted user.mfa_reset_by_admin sso.existing_user_linked
+      ]
+
+      for type <- closed do
+        {:ok, event} = Audit.log(account.id, type, actor_kind: "user")
+
+        categories = Enum.map(Audit.Event.Query.category_values(), &elem(&1, 0))
+
+        reachable =
+          Enum.filter(categories, fn category ->
+            {:ok, rows, _meta} = Audit.list_events(subject, filter: [category: [category]])
+            Enum.any?(rows, &(&1.id == event.id))
+          end)
+
+        assert length(reachable) == 1, "#{type} is in #{length(reachable)} categories"
+
+        outcome = Audit.Event.Query.outcome(type)
+
+        if outcome != :neutral do
+          {:ok, rows, _meta} =
+            Audit.list_events(subject, filter: [outcome: [Atom.to_string(outcome)]])
+
+          assert Enum.any?(rows, &(&1.id == event.id)),
+                 "#{type} is not returned by Severity=#{outcome}"
+        end
       end
     end
 
-    # (humanization half) — a drift type still renders a
-    # human label via format_event_type/1's fallback humanizer, so a row of one
-    # isn't a blank/raw machine code even though the dropdown can't offer it.
-    test "a drift type still humanizes for the row label" do
-      # format_event_type lives in the web app; assert the humanization contract
-      # the dropdown-absent types rely on the same way the web test does, here
-      # via the known-list lookup miss → title-cased fallback.
-      refute "user.mfa_reset_by_admin" in (Audit.Event.Query.known_event_type_values()
-                                           |> Enum.map(&elem(&1, 0)))
+    test "the two run outcomes and the six lifecycle types the filters used to drop are listed" do
+      known = Audit.Event.Query.known_event_type_values() |> Enum.map(&elem(&1, 0))
+
+      closed = ~w[
+        action_run.validation_failed action_run.unknown_action
+        account.disabled account.enabled account.closed
+        runbook.deleted user.mfa_reset_by_admin sso.existing_user_linked
+      ]
+
+      for type <- closed do
+        assert type in known, "#{type} missing from known_event_type_values/0"
+      end
+
+      # A run whose structured output was rejected, or whose action the runner does
+      # not have, is a FAILED run: "Removals & limits" is not where an investigator
+      # looks for it, and neutral would paint it as routine activity.
+      assert Audit.Event.Query.outcome("action_run.validation_failed") == :danger
+      assert Audit.Event.Query.outcome("action_run.unknown_action") == :danger
+      # A closed workspace is tombstoned — the same "taken away" tone as a delete.
+      assert Audit.Event.Query.outcome("account.closed") == :warn
+      assert Audit.Event.Query.outcome("account.disabled") == :warn
+      assert Audit.Event.Query.outcome("runbook.deleted") == :warn
     end
   end
 
@@ -2554,7 +2600,10 @@ defmodule Emisar.AuditTest do
     test "directory_sync is not an Actor-type filter value" do
       refute "directory_sync" in filter_values(:actor_kind)
       # The builders really do stamp it (grounds "distinct class" in source).
-      assert "directory_sync" in emitted_event_types()
+      # `emitted_event_types/0` cannot answer this — an actor kind is not an
+      # event type — so read the builder module for the literal itself.
+      events = File.read!(Path.join(File.cwd!(), "lib/emisar/audit/events.ex"))
+      assert events =~ ~s(actor_kind: "directory_sync")
     end
   end
 
@@ -2682,13 +2731,33 @@ defmodule Emisar.AuditTest do
   # Every event_type string literal a builder passes to `Audit.changeset/3`,
   # read from the Audit.Events source. Grounds builder-vs-dropdown assertions in
   # actual builder code instead of hand-copied event lists.
+  # Every builder in `Audit.Events` names its type as a literal — either directly
+  # to `Audit.changeset/3` or through one of the module's own `*_event` wrappers,
+  # so a scan of that file catches both. A DOTTED literal is unambiguous; the
+  # dotless pack/dispatch families are matched by their exact prefixes, because a
+  # bare `pack_version` there is a `target_kind`, not an event type. Run outcomes
+  # are interpolated (`"action_run.#{run.status}"`, `audit.ex`), so they come from
+  # `Runs.@audited_run_statuses`, the list that decides which ones get a row.
   defp emitted_event_types do
-    path = Path.join(File.cwd!(), "lib/emisar/audit/events.ex")
+    events = File.read!(Path.join(File.cwd!(), "lib/emisar/audit/events.ex"))
+    runs = File.read!(Path.join(File.cwd!(), "lib/emisar/runs.ex"))
 
-    ~r/"([a-z_]+(?:\.[a-z_]+)?)"/
-    |> Regex.scan(File.read!(path), capture: :all_but_first)
-    |> List.flatten()
-    |> Enum.uniq()
+    dotted = scan(~r/"([a-z][a-z0-9_]*\.[a-z0-9_]+)"/, events)
+
+    dotless =
+      scan(
+        ~r/"((?:pack_trust_|pack_retirement_|pack_retention_|pack_version_|dispatch_blocked_)[a-z0-9_]+|pack_deleted)"/,
+        events
+      )
+
+    [_, statuses] = Regex.run(~r/@audited_run_statuses \[(.*?)\]/s, runs)
+    run_types = Enum.map(scan(~r/:([a-z_]+)/, statuses), &("action_run." <> &1))
+
+    Enum.uniq(dotted ++ dotless ++ run_types)
+  end
+
+  defp scan(regex, source) do
+    regex |> Regex.scan(source, capture: :all_but_first) |> List.flatten()
   end
 
   describe "subject_can_view_audit?/1" do

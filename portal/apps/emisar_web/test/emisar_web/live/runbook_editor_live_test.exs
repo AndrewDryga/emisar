@@ -1318,6 +1318,43 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
       refute Repo.exists?(Release)
     end
 
+    # A publish refused ON CREATE leaves a saved draft behind, so the retry has to
+    # land on THAT row: a second runbook (or a slug collision) would be the
+    # operator paying for an environment problem they already fixed.
+    test "retrying a refused publish-on-create mints the release on the same runbook", %{
+      conn: conn,
+      user: user,
+      account: account
+    } do
+      runner = arrange_current_action(account, user)
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runbooks/new")
+
+      change(lv, valid_draft())
+      send(lv.pid, {:runbook_preview, 1})
+      render_click(lv, "review_publish", %{})
+
+      Fixtures.Catalog.delete_actions_for_runner(runner.id)
+      html = render_click(lv, "publish", %{})
+      assert html =~ "Current preflight must pass before publishing."
+
+      assert %Runbook{live_version: nil} = created = Repo.one!(Runbook)
+      # The operator's work is still on the page, not just in the row.
+      assert html =~ created.title
+
+      # The environment recovers; the operator publishes again without re-typing.
+      arrange_current_action(account, user)
+      send(lv.pid, {:runbook_preview, 1})
+      render_click(lv, "review_publish", %{})
+
+      destination = ~p"/app/#{account}/runbooks"
+      assert {:error, {:live_redirect, %{to: ^destination}}} = render_click(lv, "publish", %{})
+
+      assert %Runbook{} = published = Repo.one!(Runbook)
+      assert published.id == created.id
+      assert published.live_version == 1
+      assert Repo.one!(Release).version == 1
+    end
+
     test "save-and-publish of an edited runbook commits nothing when readiness fails", %{
       conn: conn,
       user: user,

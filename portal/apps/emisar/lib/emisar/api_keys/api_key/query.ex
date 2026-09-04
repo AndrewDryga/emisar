@@ -229,11 +229,15 @@ defmodule Emisar.ApiKeys.ApiKey.Query do
         fun: fn queryable, statuses -> {queryable, status_dynamic(statuses)} end
       },
       # Filter by who created the key. `values` are filled in by the LiveView
-      # from `owner_options/1` (only owners who actually have keys).
+      # from `owner_options/1` (only owners who actually have keys) — at RENDER
+      # time, so `Repo.Filter` never sees them and the declared TYPE is the only
+      # boundary check a URL-supplied id passes. `{:string, :uuid}` is that check:
+      # a mangled deep link is rejected as a bad filter instead of reaching a
+      # `binary_id` comparison and raising `Ecto.Query.CastError`.
       %Filter{
         name: :owner,
         title: "Owner",
-        type: {:list, :string},
+        type: {:list, {:string, :uuid}},
         values: [],
         fun: fn queryable, ids -> {queryable, dynamic([api_keys: k], k.created_by_id in ^ids)} end
       }

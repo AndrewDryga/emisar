@@ -196,6 +196,27 @@ defmodule Emisar.Audit.Events do
     )
   end
 
+  @doc """
+  Emisar staff erased a user, and the FK cascade took their seat out of THIS
+  surviving account with it. Written into the account's own trail because a seat
+  that just vanishes is indistinguishable from a tampered trail on an access
+  review. Subject-less on purpose: the staff erasure path has no `%Subject{}`,
+  and a forged one is not a thing this codebase has (see the staff read event).
+  """
+  def membership_erased_by_support(
+        %Accounts.Membership{} = membership,
+        %Users.User{} = user
+      ) do
+    Audit.changeset(membership.account_id, "membership.erased",
+      actor_kind: "staff",
+      actor_label: @staff_actor_label,
+      target_kind: "user",
+      target_id: membership.user_id,
+      target_label: user.email,
+      payload: %{role: membership.role}
+    )
+  end
+
   def membership_runner_access_changed(
         %Subject{} = subject,
         %Accounts.Membership{} = membership,

@@ -99,8 +99,9 @@ defmodule Emisar.Repo.Filter do
     end
   end
 
+  # `definitions` is always a MAP — `filter/3` builds it `into: %{}` and the only
+  # other caller passes one — so there is no empty-definitions clause to match.
   @doc false
-  def build_dynamic(queryable, _filters, [], acc), do: {queryable, acc}
   def build_dynamic(queryable, [], _definitions, acc), do: {queryable, acc}
 
   def build_dynamic(queryable, [{name, value} | rest], definitions, acc) do

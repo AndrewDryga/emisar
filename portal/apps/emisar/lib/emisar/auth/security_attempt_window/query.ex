@@ -17,8 +17,5 @@ defmodule Emisar.Auth.SecurityAttemptWindow.Query do
     do: select(queryable, type(fragment("clock_timestamp()"), :utc_datetime_usec))
 
   @impl Emisar.Repo.Query
-  def cursor_fields, do: [{:windows, :asc, :id}]
-
-  @impl Emisar.Repo.Query
   def preloads, do: []
 end

@@ -116,10 +116,4 @@ defmodule Emisar.Runs.RunEvent.Query do
       }
     )
   end
-
-  # -- Pagination ------------------------------------------------------
-
-  @impl Emisar.Repo.Query
-  def cursor_fields,
-    do: [{:events, :asc, :seq}, {:events, :asc, :id}]
 end

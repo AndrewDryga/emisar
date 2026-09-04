@@ -17,25 +17,6 @@ defmodule Emisar.Runs.ActionRun.Query do
   def by_runner_id(queryable, runner_id),
     do: where(queryable, [runs: r], r.runner_id == ^runner_id)
 
-  @doc "Restricts runs to runner ids or groups granted by one membership scope set."
-  def by_runner_scope_values(queryable, runner_ids, groups) do
-    queryable
-    |> with_named_binding(:scope_runner, fn queryable, binding ->
-      join(
-        queryable,
-        :inner,
-        [runs: r],
-        runner in ^Runners.Runner.Query.all(),
-        on: r.runner_id == runner.id,
-        as: ^binding
-      )
-    end)
-    |> where(
-      [scope_runner: runner],
-      runner.id in ^runner_ids or runner.group in ^groups
-    )
-  end
-
   def by_request_id(queryable, request_id),
     do: where(queryable, [runs: r], r.request_id == ^request_id)
 
@@ -405,7 +386,10 @@ defmodule Emisar.Runs.ActionRun.Query do
       %Filter{
         name: :runner_id,
         title: "Runner",
-        type: :string,
+        # `values` are filled in at RENDER time, so the declared type is the only
+        # boundary check this URL-supplied id passes — see `:owner` in
+        # `ApiKeys.ApiKey.Query.filters/0` for the same contract.
+        type: {:string, :uuid},
         search: true,
         values: [],
         fun: fn queryable, runner_id ->
@@ -438,7 +422,7 @@ defmodule Emisar.Runs.ActionRun.Query do
       %Filter{
         name: :api_key_id,
         title: "Agent",
-        type: :string,
+        type: {:string, :uuid},
         search: true,
         values: [],
         fun: fn queryable, api_key_id ->
@@ -448,7 +432,7 @@ defmodule Emisar.Runs.ActionRun.Query do
       %Filter{
         name: :requested_by_id,
         title: "Operator",
-        type: :string,
+        type: {:string, :uuid},
         search: true,
         values: [],
         fun: fn queryable, user_id ->
@@ -458,7 +442,7 @@ defmodule Emisar.Runs.ActionRun.Query do
       %Filter{
         name: :runbook_id,
         title: "Runbook",
-        type: :string,
+        type: {:string, :uuid},
         search: true,
         values: [],
         fun: fn queryable, runbook_id ->

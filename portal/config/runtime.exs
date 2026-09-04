@@ -58,6 +58,17 @@ import Config
 #                            JSON with consumer_key, consumer_secret, access_token,
 #                            access_token_secret, pixel_id, and event_id
 
+# Blank counts as absent for EVERY optional variable below. Terraform templates
+# and the docker-compose e2e stack pass optionals through as "${VAR:-}", and ""
+# is truthy in Elixir — so a blank must select the default branch, never a live
+# client holding an empty credential or a URL built from an empty host.
+env = fn name ->
+  case System.get_env(name) do
+    "" -> nil
+    value -> value
+  end
+end
+
 if config_env() == :prod do
   # Google Cloud's structured payload recognizes severity, request context,
   # source locations, traces, and Error Reporting events. The project ID is
@@ -68,7 +79,7 @@ if config_env() == :prod do
   # (infra/runtime/portal/start.sh). Nothing ever set them, so they were three
   # ways to be surprised by an inherited value rather than three ways to
   # configure it.
-  gcp_project_id = System.get_env("EMISAR_CLUSTER_PROJECT")
+  gcp_project_id = env.("EMISAR_CLUSTER_PROJECT")
 
   # Keep application metadata queryable, but never serialize the request and
   # socket structs. GoogleCloud handles :crash_reason separately so caught
@@ -83,7 +94,7 @@ if config_env() == :prod do
         project_id: gcp_project_id,
         service_context: %{
           service: "emisar",
-          version: System.get_env("RELEASE_VSN") || "unknown"
+          version: env.("RELEASE_VSN") || "unknown"
         },
         reported_levels: [:emergency, :alert, :critical, :error],
         metadata: {:all_except, [:conn, :socket, :crash_reason]},
@@ -107,7 +118,7 @@ if config_env() == :prod do
   # spelling of something the URL says in the standard way. What the URL cannot
   # express is a private CA, which is the only reason this stays.
   database_ssl =
-    case System.get_env("DATABASE_SSL_CACERTFILE") do
+    case env.("DATABASE_SSL_CACERTFILE") do
       nil ->
         false
 
@@ -120,37 +131,37 @@ if config_env() == :prod do
     end
 
   database_connection =
-    case System.get_env("DATABASE_URL") do
-      url when is_binary(url) and url != "" ->
+    case env.("DATABASE_URL") do
+      url when is_binary(url) ->
         [url: url, ssl: database_ssl]
 
-      _ ->
+      nil ->
         [
-          hostname: System.fetch_env!("DATABASE_HOST"),
-          username: System.fetch_env!("DATABASE_USER"),
-          database: System.fetch_env!("DATABASE_NAME"),
-          port: String.to_integer(System.get_env("DATABASE_PORT") || "5432"),
+          hostname: env.("DATABASE_HOST") || raise("DATABASE_HOST is missing"),
+          username: env.("DATABASE_USER") || raise("DATABASE_USER is missing"),
+          database: env.("DATABASE_NAME") || raise("DATABASE_NAME is missing"),
+          port: String.to_integer(env.("DATABASE_PORT") || "5432"),
           ssl: false
         ]
     end
 
   database_parameters =
-    case System.get_env("DATABASE_ROLE") do
-      role when is_binary(role) and role != "" -> [role: role]
-      _ -> []
+    case env.("DATABASE_ROLE") do
+      role when is_binary(role) -> [role: role]
+      nil -> []
     end
 
   repo_config =
     database_connection ++
       [
-        pool_size: String.to_integer(System.get_env("POOL_SIZE") || "10"),
+        pool_size: String.to_integer(env.("POOL_SIZE") || "10"),
         parameters: database_parameters
       ]
 
   config :emisar, Emisar.Repo, repo_config
 
   secret_key_base =
-    System.get_env("SECRET_KEY_BASE") ||
+    env.("SECRET_KEY_BASE") ||
       raise "SECRET_KEY_BASE is missing (generate with: mix phx.gen.secret)"
 
   # Salt for the cookieless daily anonymous-visitor hash — reuse the app secret
@@ -159,14 +170,14 @@ if config_env() == :prod do
   config :emisar, :email_link_secret, secret_key_base
   config :emisar, :mcp_telemetry_salt, secret_key_base
 
-  host = System.get_env("PHX_HOST") || "emisar.dev"
+  host = env.("PHX_HOST") || "emisar.dev"
 
   # FORCE_SSL marks this deployment as HTTPS-fronted: it drives the public
   # URL scheme/port and the secure-cookie pin below. The actual HTTP→HTTPS
   # redirect + HSTS is the compile-time `force_ssl` in prod.exs (Phoenix 1.8
   # requires it at compile time), NOT this knob. docker-compose sets it
   # false for plain-HTTP localhost. Defaults to true.
-  https_fronted? = System.get_env("FORCE_SSL", "true") in ~w(true 1)
+  https_fronted? = (env.("FORCE_SSL") || "true") in ~w(true 1)
   url_scheme = if https_fronted?, do: "https", else: "http"
 
   # HTTPS-fronted → 443. Otherwise URL_PORT (if set) overrides the listen PORT
@@ -177,7 +188,7 @@ if config_env() == :prod do
     if https_fronted? do
       443
     else
-      String.to_integer(System.get_env("URL_PORT") || System.get_env("PORT") || "4000")
+      String.to_integer(env.("URL_PORT") || env.("PORT") || "4000")
     end
 
   # One shared origin binding for the endpoint's `url:` and the domain's
@@ -190,7 +201,7 @@ if config_env() == :prod do
     url: public_url,
     http: [
       ip: {0, 0, 0, 0},
-      port: String.to_integer(System.get_env("PORT") || "4000")
+      port: String.to_integer(env.("PORT") || "4000")
     ],
     secret_key_base: secret_key_base,
     server: true
@@ -211,28 +222,30 @@ if config_env() == :prod do
   # (rel/env.sh.eex names the node). Unset in local and single-node releases, the
   # topology stays empty and the cluster supervisor is inert.
   cluster_topologies =
-    case System.get_env("EMISAR_CLUSTER_PROJECT") do
-      project when is_binary(project) and project != "" ->
+    case env.("EMISAR_CLUSTER_PROJECT") do
+      project when is_binary(project) ->
         [
           emisar: [
             strategy: Emisar.Cluster.GCE,
             config: [
               project_id: project,
-              cluster_value: System.get_env("EMISAR_CLUSTER_VALUE") || "emisar"
+              cluster_value: env.("EMISAR_CLUSTER_VALUE") || "emisar"
             ]
           ]
         ]
 
-      _ ->
+      nil ->
         []
     end
 
   config :emisar, :cluster_topologies, cluster_topologies
 
-  if url = System.get_env("STATUS_PAGE_URL") do
+  if url = env.("STATUS_PAGE_URL") do
     config :emisar_web, status_page_url: url
   end
 
+  # The one variable that does NOT go through `env` above: blank is a third,
+  # deliberate value here (pin the bundled snapshot), not "unset".
   pack_catalog_url =
     case System.get_env("EMISAR_PACK_CATALOG_URL") do
       nil -> "https://registry.emisar.dev/v1/catalog.json"
@@ -260,10 +273,10 @@ if config_env() == :prod do
       config :emisar, Emisar.Mailer, adapter: Swoosh.Adapters.Local
       config :swoosh, local: true
 
-    System.get_env("POSTMARK_API_TOKEN") ->
+    postmark_api_token = env.("POSTMARK_API_TOKEN") ->
       config :emisar, Emisar.Mailer,
         adapter: Swoosh.Adapters.Postmark,
-        api_key: System.fetch_env!("POSTMARK_API_TOKEN")
+        api_key: postmark_api_token
 
       config :swoosh, api_client: Swoosh.ApiClient.Finch, finch_name: Emisar.Finch
 
@@ -277,28 +290,28 @@ if config_env() == :prod do
 
   # Postmark bounce/complaint webhook auth (optional — unset or blank disables
   # the endpoint with a 503; the mailer still works, suppression just won't fill).
-  config :emisar, postmark_webhook_secret: System.get_env("POSTMARK_WEBHOOK_SECRET")
+  config :emisar, postmark_webhook_secret: env.("POSTMARK_WEBHOOK_SECRET")
 
   # -- Sentry --------------------------------------------------------
   # Sentry DSN is opt-in via env. Leaving it unset disables uploads
   # (the client short-circuits before any HTTP call). config.exs
   # ships a nil default so a fork never accidentally posts errors to
   # the upstream project's bucket.
-  if dsn = System.get_env("SENTRY_DSN") do
+  if dsn = env.("SENTRY_DSN") do
     config :sentry,
       dsn: dsn,
-      environment_name: System.get_env("SENTRY_ENVIRONMENT") || "production",
-      release: System.get_env("RELEASE_VSN")
+      environment_name: env.("SENTRY_ENVIRONMENT") || "production",
+      release: env.("RELEASE_VSN")
   end
 
   # -- Mailer From -----------------------------------------------------
   # `MAILER_FROM_EMAIL` / `MAILER_FROM_NAME` let self-hosters use their
   # own domain without forking. Skipping either falls back to the
   # config.exs default.
-  if email = System.get_env("MAILER_FROM_EMAIL"),
+  if email = env.("MAILER_FROM_EMAIL"),
     do: config(:emisar, :mailer_from_email, email)
 
-  if name = System.get_env("MAILER_FROM_NAME"),
+  if name = env.("MAILER_FROM_NAME"),
     do: config(:emisar, :mailer_from_name, name)
 
   # -- Paddle --------------------------------------------------------
@@ -307,27 +320,16 @@ if config_env() == :prod do
   # revenue events would land). To run a prod build with billing
   # disabled (e.g. an internal staging tier), set
   # `EMISAR_DISABLE_BILLING=1` — that's the only way to skip Paddle.
-  #
-  # Blank values count as absent: the docker-compose e2e stack passes
-  # PADDLE_* through as "${VAR:-}", so an unset host env must mean "stub",
-  # never a live client holding an empty credential.
-  paddle_env = fn name ->
-    case System.get_env(name) do
-      "" -> nil
-      value -> value
-    end
-  end
-
   cond do
-    paddle_api_key = paddle_env.("PADDLE_API_KEY") ->
+    paddle_api_key = env.("PADDLE_API_KEY") ->
       config :emisar,
         paddle_client: Emisar.Billing.PaddleClient.Live,
         paddle_api_key: paddle_api_key,
         paddle_webhook_secret:
-          paddle_env.("PADDLE_WEBHOOK_SECRET") ||
+          env.("PADDLE_WEBHOOK_SECRET") ||
             raise("PADDLE_WEBHOOK_SECRET is required whenever PADDLE_API_KEY is set."),
         paddle_client_token:
-          paddle_env.("PADDLE_CLIENT_TOKEN") ||
+          env.("PADDLE_CLIENT_TOKEN") ||
             raise("""
             PADDLE_CLIENT_TOKEN is missing. The /checkout page needs a Paddle
             client-side token to open Paddle Checkout — create one in the Paddle
@@ -335,7 +337,7 @@ if config_env() == :prod do
             PADDLE_API_KEY (or set EMISAR_DISABLE_BILLING=1 to ship the stub).
             """)
 
-    System.get_env("EMISAR_DISABLE_BILLING") in ~w(true 1) ->
+    env.("EMISAR_DISABLE_BILLING") in ~w(true 1) ->
       config :emisar, paddle_client: Emisar.Billing.PaddleClient.Stub
 
     true ->
@@ -349,18 +351,18 @@ if config_env() == :prod do
   # -- Mixpanel (product analytics) ----------------------------------
   # Optional and quiet: no `MIXPANEL_TOKEN` means analytics stays off
   # (the `Emisar.Analytics` no-op path) — no third-party script ships.
-  if token = System.get_env("MIXPANEL_TOKEN") do
+  if token = env.("MIXPANEL_TOKEN") do
     config :emisar,
       mixpanel_client: Emisar.Analytics.MixpanelClient.Live,
       mixpanel_token: token,
       mixpanel_enabled: true
 
     # EU data residency: set https://api-eu.mixpanel.com.
-    if host = System.get_env("MIXPANEL_API_HOST"),
+    if host = env.("MIXPANEL_API_HOST"),
       do: config(:emisar, :mixpanel_api_host, host)
 
     # Mixpanel Group Analytics is a paid add-on — opt in explicitly.
-    if System.get_env("MIXPANEL_GROUPS") in ~w(1 true),
+    if env.("MIXPANEL_GROUPS") in ~w(1 true),
       do: config(:emisar, :mixpanel_groups_enabled, true)
   end
 
@@ -370,7 +372,7 @@ if config_env() == :prod do
   # or /dpa, which between them carry the one processor list we publish. Add X to
   # all three (and the marketing test that pins them) in the same change that
   # populates this variable, or the pages become false the moment it is set.
-  if encoded = System.get_env("X_ADS_CONVERSIONS_JSON") do
+  if encoded = env.("X_ADS_CONVERSIONS_JSON") do
     credentials = Jason.decode!(encoded)
 
     config :emisar,
@@ -390,13 +392,12 @@ end
 # Keycloak cannot have a public address. The build-time dev-routes flag separates
 # the packaged local stack from a production image even if the same runtime env
 # variables are injected into both.
-allowed_idp_hosts_env = System.get_env("EMISAR_SSO_ALLOWED_IDP_HOSTS")
+allowed_idp_hosts_env = env.("EMISAR_SSO_ALLOWED_IDP_HOSTS")
 
 development_or_test_build? =
   config_env() in [:dev, :test] or EmisarWeb.Router.dev_routes?()
 
-if is_binary(allowed_idp_hosts_env) and allowed_idp_hosts_env != "" and
-     not development_or_test_build? do
+if is_binary(allowed_idp_hosts_env) and not development_or_test_build? do
   IO.warn(
     "EMISAR_SSO_ALLOWED_IDP_HOSTS is ignored outside development and test builds",
     []
@@ -416,20 +417,13 @@ config :emisar, :sso_allowed_idp_hosts, sso_allowed_idp_hosts
 
 # Always use the stub Paddle client in dev / test unless a real key was set
 # (the sandbox e2e harness exports one via `./run e2e billing`).
-# Blank values count as absent, matching the prod branch.
 if config_env() in [:dev, :test] do
-  dev_paddle_api_key =
-    case System.get_env("PADDLE_API_KEY") do
-      "" -> nil
-      value -> value
-    end
-
-  if dev_paddle_api_key do
+  if dev_paddle_api_key = env.("PADDLE_API_KEY") do
     config :emisar,
       paddle_client: Emisar.Billing.PaddleClient.Live,
       paddle_api_key: dev_paddle_api_key,
-      paddle_webhook_secret: System.get_env("PADDLE_WEBHOOK_SECRET") || "pdl_ntfset_test",
-      paddle_client_token: System.get_env("PADDLE_CLIENT_TOKEN")
+      paddle_webhook_secret: env.("PADDLE_WEBHOOK_SECRET") || "pdl_ntfset_test",
+      paddle_client_token: env.("PADDLE_CLIENT_TOKEN")
   else
     config :emisar, paddle_client: Emisar.Billing.PaddleClient.Stub
   end

@@ -52,12 +52,6 @@ defmodule Emisar.Approvals.Decision.Query do
     |> preload([decider: decider], decider: decider)
   end
 
-  # -- Pagination ------------------------------------------------------
-
-  @impl Emisar.Repo.Query
-  def cursor_fields,
-    do: [{:approval_decisions, :asc, :decided_at}, {:approval_decisions, :asc, :id}]
-
   @impl Emisar.Repo.Query
   def preloads,
     do: [decider: {Emisar.Users.User.Query.not_deleted(), Emisar.Users.User.Query.preloads()}]

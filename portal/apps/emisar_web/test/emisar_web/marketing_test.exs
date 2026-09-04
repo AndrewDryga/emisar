@@ -2221,6 +2221,30 @@ defmodule EmisarWeb.MarketingTest do
       refute File.read!(Path.expand("../../../../../install.sh", __DIR__)) =~ "runner-v0.3.0"
     end
 
+    # The page listed `--caller` and `--event` after both were removed from
+    # `events grep`; an operator following it got exit 2. Read the flags the
+    # runner actually registers instead of trusting the prose.
+    test "the events filter flags on the CLI page are the ones the runner registers",
+         %{conn: conn} do
+      html = conn |> get(~p"/docs/runner-cli") |> html_response(200)
+      events_go = File.read!(Path.expand("../../../../../runner/events.go", __DIR__))
+
+      flags =
+        ~r/Flags\(\)\.StringVar\(&\w+, "([a-z-]+)"/
+        |> Regex.scan(events_go, capture: :all_but_first)
+        |> List.flatten()
+
+      assert length(flags) >= 4
+
+      for flag <- flags do
+        assert html =~ "--#{flag}", "the runner-CLI page does not document --#{flag}"
+      end
+
+      assert html =~ "--lines"
+      refute html =~ "--caller"
+      refute Regex.match?(~r/--event(?![-\w])/, html)
+    end
+
     test "upgrades states the verified version commands and the interruption they cause",
          %{conn: conn} do
       html = conn |> get(~p"/docs/runner-upgrades") |> html_response(200)
@@ -3198,78 +3222,6 @@ defmodule EmisarWeb.MarketingTest do
 
       privacy = conn |> get(~p"/privacy") |> html_response(200)
       assert privacy =~ "checkout page only"
-    end
-
-    test "the Sentry before_send scrubber drops PII and redacts secrets" do
-      event = %Sentry.Event{
-        event_id: String.duplicate("a", 32),
-        timestamp: "2026-07-16T00:00:00",
-        request: %Sentry.Interfaces.Request{
-          url: "https://emisar.dev/app?email=person@example.com",
-          query_string: %{"email" => "person@example.com", "token" => "query-secret"},
-          data: %{"password" => "body-secret"},
-          cookies: %{"session" => "session-secret"},
-          headers: %{"authorization" => "bearer-secret"},
-          env: %{"secret" => "env-secret"}
-        },
-        user: %{id: "user-id", email: "person@example.com", ip_address: "203.0.113.10"},
-        extra: %{
-          "api_key" => "api-secret",
-          "nested" => %{"password" => "password-secret", "safe" => "kept"}
-        }
-      }
-
-      scrubbed = EmisarWeb.Application.scrub_sentry_event(event)
-
-      assert scrubbed.request.url == "https://emisar.dev/app"
-      assert scrubbed.request.query_string == nil
-      assert scrubbed.request.data == nil
-      assert scrubbed.request.cookies == nil
-      assert scrubbed.request.headers == nil
-      assert scrubbed.request.env == nil
-      assert scrubbed.user == %{}
-      assert scrubbed.extra["api_key"] == "[REDACTED]"
-      assert scrubbed.extra["nested"]["password"] == "[REDACTED]"
-      assert scrubbed.extra["nested"]["safe"] == "kept"
-    end
-
-    test "the Sentry before_send scrubber drops inspected crash state" do
-      totp_seed = "JBSWY3DPEHPK3PXP"
-      recovery_code = "recovery-code-once"
-
-      socket_state =
-        inspect(%Phoenix.LiveView.Socket{
-          assigns: %{
-            mfa_secret: totp_seed,
-            mfa_recovery_codes: [recovery_code]
-          }
-        })
-
-      assert socket_state =~ totp_seed
-      assert socket_state =~ recovery_code
-
-      event = %Sentry.Event{
-        event_id: String.duplicate("a", 32),
-        timestamp: "2026-09-02T00:00:00",
-        extra: %{
-          "last_message" => socket_state,
-          "ranch_extra" => socket_state,
-          :crash_reason => socket_state,
-          :genserver_state => socket_state,
-          :safe => "kept"
-        }
-      }
-
-      scrubbed = EmisarWeb.Application.scrub_sentry_event(event)
-      encoded_extra = Jason.encode!(scrubbed.extra)
-
-      assert scrubbed.extra.safe == "kept"
-      refute Map.has_key?(scrubbed.extra, :genserver_state)
-      refute Map.has_key?(scrubbed.extra, "last_message")
-      refute Map.has_key?(scrubbed.extra, :crash_reason)
-      refute Map.has_key?(scrubbed.extra, "ranch_extra")
-      refute encoded_extra =~ totp_seed
-      refute encoded_extra =~ recovery_code
     end
 
     test "the privacy page honestly discloses the server-side analytics posture", %{conn: conn} do

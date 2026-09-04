@@ -454,6 +454,10 @@ defmodule Emisar.Accounts do
       |> Multi.run(:user, fn repo, _changes ->
         Users.delete_by_id(user_id, repo: repo)
       end)
+      |> Multi.run(:audit, fn repo, changes ->
+        %{memberships: memberships, accounts: erased_accounts, user: user} = changes
+        record_membership_erasures(repo, memberships, erased_accounts, user)
+      end)
       |> Repo.commit_multi()
       |> case do
         {:ok, %{user: user}} -> {:ok, user}
@@ -1263,6 +1267,25 @@ defmodule Emisar.Accounts do
         end
       else
         {:cont, {:ok, deleted_accounts}}
+      end
+    end)
+  end
+
+  # The user row's FK cascade takes the erased user's seat out of every SURVIVING
+  # account too, and a seat that just vanishes is indistinguishable from a
+  # tampered trail on an access review. The sole-owned accounts are already gone,
+  # so a membership whose account survived is a roster someone else still reads.
+  # A deliberate per-row insert (N = the user's membership count), in the
+  # erasure's own transaction so the rows commit with it or not at all.
+  defp record_membership_erasures(repo, memberships, erased_accounts, user) do
+    erased_account_ids = MapSet.new(erased_accounts, & &1.id)
+
+    memberships
+    |> Enum.reject(&MapSet.member?(erased_account_ids, &1.account_id))
+    |> Enum.reduce_while({:ok, []}, fn membership, {:ok, events} ->
+      case repo.insert(Audit.Events.membership_erased_by_support(membership, user)) do
+        {:ok, event} -> {:cont, {:ok, [event | events]}}
+        {:error, reason} -> {:halt, {:error, reason}}
       end
     end)
   end

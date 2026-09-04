@@ -63,7 +63,7 @@ defmodule EmisarWeb.MCP.RecoveryTools do
   end
 
   defp operation_projection(conn, %{tool: :execute_runbook} = operation) do
-    case Runbooks.fetch_execution_recovery_identity(
+    case Runbooks.fetch_execution_by_id(
            operation.resource_id,
            conn.assigns.current_subject
          ) do

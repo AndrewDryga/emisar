@@ -333,21 +333,6 @@ defmodule Emisar.Runbooks do
     end
   end
 
-  @doc "Fetches account-scoped execution identity for recovery. Requires `view_runbooks`."
-  def fetch_execution_recovery_identity(execution_id, %Subject{} = subject)
-      when is_binary(execution_id) do
-    with :ok <-
-           Auth.Authorizer.ensure_has_permissions(subject, Authorizer.view_runbooks_permission()),
-         true <- Repo.valid_uuid?(execution_id) do
-      RunbookExecution.Query.by_id(execution_id)
-      |> Authorizer.for_subject(subject)
-      |> Repo.fetch(RunbookExecution.Query)
-    else
-      false -> {:error, :not_found}
-      other -> other
-    end
-  end
-
   @doc """
   Fetches the bounded execution result needed by console and MCP projections.
 
@@ -1189,7 +1174,7 @@ defmodule Emisar.Runbooks do
         _ -> :ok
       end
 
-    case fetch_execution_recovery_identity(execution_id, subject) do
+    case fetch_execution_by_id(execution_id, subject) do
       {:ok, execution} ->
         {:ok, if(reservation.fresh?, do: :created, else: :replay), execution}
 

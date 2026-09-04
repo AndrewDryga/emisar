@@ -293,12 +293,7 @@ defmodule Emisar.Auth do
   def revoke_identity_sessions(%Users.User{} = user, identity_ids) when is_list(identity_ids) do
     topics = live_socket_topics_for_user(user)
 
-    queryable =
-      UserToken.Query.by_user_id(user.id)
-      |> UserToken.Query.by_context("session")
-      |> UserToken.Query.by_user_identity_ids(identity_ids)
-
-    Repo.delete_all(queryable)
+    Repo.delete_all(identity_session_tokens_query(user.id, identity_ids))
     disconnect_live_sessions(topics)
     :ok
   end
@@ -317,14 +312,21 @@ defmodule Emisar.Auth do
   def delete_identity_session_tokens(user_id, identity_ids, repo)
       when is_binary(user_id) and is_list(identity_ids) do
     queryable =
-      UserToken.Query.by_user_id(user_id)
-      |> UserToken.Query.by_context("session")
-      |> UserToken.Query.by_user_identity_ids(identity_ids)
+      user_id
+      |> identity_session_tokens_query(identity_ids)
       |> UserToken.Query.select_token_digests()
 
     {count, digests} = repo.delete_all(queryable)
 
     {:ok, %{count: count, socket_topics: Enum.map(digests, &live_socket_topic/1)}}
+  end
+
+  # The one definition of "the session credentials minted through these
+  # identities" — three callers delete exactly this set, and they must not drift.
+  defp identity_session_tokens_query(user_id, identity_ids) do
+    UserToken.Query.by_user_id(user_id)
+    |> UserToken.Query.by_context("session")
+    |> UserToken.Query.by_user_identity_ids(identity_ids)
   end
 
   @doc """
@@ -333,14 +335,8 @@ defmodule Emisar.Auth do
   boundary; unrelated magic-link and other-provider sessions remain untouched.
   """
   def revoke_provider_sessions(%Users.User{} = user, identity_ids) when is_list(identity_ids) do
-    queryable =
-      UserToken.Query.by_user_id(user.id)
-      |> UserToken.Query.by_context("session")
-      |> UserToken.Query.by_user_identity_ids(identity_ids)
-      |> UserToken.Query.select_token_digests()
-
-    {_count, digests} = Repo.delete_all(queryable)
-    digests |> Enum.map(&live_socket_topic/1) |> disconnect_live_sessions()
+    {:ok, %{socket_topics: topics}} = delete_identity_session_tokens(user, identity_ids, Repo)
+    disconnect_live_sessions(topics)
     :ok
   end
 

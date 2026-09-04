@@ -133,6 +133,19 @@ defmodule Emisar.ApiKeysTest do
       assert ApiKeys.list_key_owner_options(subject_b) == {:ok, []}
     end
 
+    # The owner options are filled in at render time and never validated, so the
+    # declared TYPE is the only boundary a URL-supplied id passes. A mangled
+    # `?owner[]=…` must come back as a bad filter, not as an `Ecto.Query.CastError`
+    # 500 from a `binary_id` comparison.
+    test "the owner filter rejects a non-UUID instead of raising" do
+      {_user, _account, subject} = owner_subject_pair()
+
+      assert {:error, {:invalid_type, metadata}} =
+               ApiKeys.list_api_keys_for_account(subject, filter: [owner: ["zzz"]])
+
+      assert metadata[:name] == :owner
+    end
+
     test "a subject without view_api_keys permission is refused" do
       account = Fixtures.Accounts.create_account()
       subject = Fixtures.Subjects.permissionless_subject(account)

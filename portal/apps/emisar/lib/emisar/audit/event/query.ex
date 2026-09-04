@@ -20,6 +20,9 @@ defmodule Emisar.Audit.Event.Query do
     {"account.require_mfa_set", "MFA enforcement toggled"},
     {"account.require_sso_set", "SSO enforcement toggled"},
     {"account.max_grant_lifetime_set", "Max grant lifetime set"},
+    {"account.disabled", "Account disabled"},
+    {"account.enabled", "Account enabled"},
+    {"account.closed", "Account closed"},
     {"runner.registered", "Runner registered"},
     {"runner.connected", "Runner connected"},
     {"runner.disconnected", "Runner disconnected"},
@@ -84,11 +87,13 @@ defmodule Emisar.Audit.Event.Query do
     {"user.mfa_rate_limited", "MFA rate limited"},
     {"user.mfa_recovery_code_used", "MFA recovery code used"},
     {"user.mfa_recovery_codes_regenerated", "MFA recovery codes regenerated"},
+    {"user.mfa_reset_by_admin", "MFA reset by admin"},
     {"user.session_revoked", "Session revoked"},
     {"user.other_sessions_revoked", "Other sessions revoked"},
     {"user.sessions_revoked", "Sessions revoked by admin"},
     {"membership.role_changed", "Role changed"},
     {"membership.removed", "Member removed"},
+    {"membership.erased", "Member erased with their user account"},
     {"membership.suspended", "Member suspended"},
     {"membership.reinstated", "Member reinstated"},
     {"membership.invitation_accepted", "Invitation accepted"},
@@ -98,6 +103,7 @@ defmodule Emisar.Audit.Event.Query do
     {"runbook.created", "Runbook created"},
     {"runbook.updated", "Runbook updated"},
     {"runbook.published", "Runbook published"},
+    {"runbook.deleted", "Runbook deleted"},
     {"runbook.dispatched", "Runbook dispatched"},
     {"runbook.execution_succeeded", "Runbook execution succeeded"},
     {"runbook.execution_halted", "Runbook execution halted"},
@@ -121,6 +127,8 @@ defmodule Emisar.Audit.Event.Query do
     {"action_run.success", "Run succeeded"},
     {"action_run.failed", "Run failed"},
     {"action_run.error", "Run errored"},
+    {"action_run.validation_failed", "Run output rejected"},
+    {"action_run.unknown_action", "Run action unknown"},
     {"action_run.refused", "Run refused (signature / pack)"},
     {"action_run.cancelled", "Run cancelled"},
     {"action_run.timed_out", "Run timed out"},
@@ -146,6 +154,7 @@ defmodule Emisar.Audit.Event.Query do
     {"sso.provider_sign_in_verified", "SSO provider sign-in verified"},
     {"sso.identity_linked", "SSO identity linked"},
     {"sso.identity_unlinked", "SSO identity unlinked"},
+    {"sso.existing_user_linked", "SSO identity linked to an existing user"},
     {"sso.link_request_approved", "SSO link request approved"},
     {"sso.link_request_dismissed", "SSO link request dismissed"},
     {"audit.exported", "Audit log exported"},
@@ -171,8 +180,10 @@ defmodule Emisar.Audit.Event.Query do
   # surfaces. `:warn` keeps what it always meant minus the denials: something
   # existing was taken away or throttled (revoked, deleted, suspended, expired,
   # rate-limited) — a caution to look at, not the gate saying no.
-  @danger_suffixes ~w[_failed .failed .error .timed_out _halted .denied .refused .rejected _rejected]
-  @warn_suffixes ~w[.revoked _revoked _rate_limited .disabled .deleted _deleted .removed .suspended .expired .cancelled]
+  @danger_suffixes ~w[_failed .failed .error .timed_out _halted .denied .refused .rejected _rejected
+                      .unknown_action]
+  @warn_suffixes ~w[.revoked _revoked _rate_limited .disabled .deleted _deleted .removed .suspended
+                    .expired .cancelled .closed .erased]
   @pass_suffixes ~w[.success .succeeded .approved _approved .grant_used .consent_granted]
 
   def outcome(event_type) when is_binary(event_type) do
@@ -198,7 +209,10 @@ defmodule Emisar.Audit.Event.Query do
        {"account.updated", "Updated"},
        {"account.require_mfa_set", "MFA enforcement toggled"},
        {"account.require_sso_set", "SSO enforcement toggled"},
-       {"account.max_grant_lifetime_set", "Max grant lifetime set"}
+       {"account.max_grant_lifetime_set", "Max grant lifetime set"},
+       {"account.disabled", "Disabled"},
+       {"account.enabled", "Enabled"},
+       {"account.closed", "Closed"}
      ]},
     {"Runner",
      [
@@ -279,6 +293,7 @@ defmodule Emisar.Audit.Event.Query do
        {"user.mfa_rate_limited", "MFA rate limited"},
        {"user.mfa_recovery_code_used", "MFA recovery code used"},
        {"user.mfa_recovery_codes_regenerated", "MFA recovery codes regenerated"},
+       {"user.mfa_reset_by_admin", "MFA reset by admin"},
        {"user.session_revoked", "Session revoked"},
        {"user.other_sessions_revoked", "Other sessions revoked"},
        {"user.sessions_revoked", "Sessions revoked by admin"}
@@ -290,6 +305,7 @@ defmodule Emisar.Audit.Event.Query do
        {"membership.invitation_accepted", "Invitation accepted (existing user)"},
        {"membership.role_changed", "Role changed"},
        {"membership.removed", "Member removed"},
+       {"membership.erased", "Erased with their user account"},
        {"membership.suspended", "Member suspended"},
        {"membership.reinstated", "Member reinstated"},
        {"membership.runner_access_changed", "Runner access changed"}
@@ -304,6 +320,7 @@ defmodule Emisar.Audit.Event.Query do
        {"runbook.created", "Created"},
        {"runbook.updated", "Updated (new version)"},
        {"runbook.published", "Published"},
+       {"runbook.deleted", "Deleted"},
        {"runbook.dispatched", "Dispatched"},
        {"runbook.execution_succeeded", "Execution succeeded"},
        {"runbook.execution_halted", "Execution halted"},
@@ -333,6 +350,8 @@ defmodule Emisar.Audit.Event.Query do
        {"action_run.success", "Succeeded"},
        {"action_run.failed", "Failed"},
        {"action_run.error", "Errored"},
+       {"action_run.validation_failed", "Validation failed"},
+       {"action_run.unknown_action", "Unknown action"},
        {"action_run.refused", "Refused (signature / pack)"},
        {"action_run.cancelled", "Cancelled"},
        {"action_run.timed_out", "Timed out"},
@@ -361,6 +380,7 @@ defmodule Emisar.Audit.Event.Query do
        {"sso.provider_sign_in_verified", "Provider sign-in verified"},
        {"sso.identity_linked", "Identity linked"},
        {"sso.identity_unlinked", "Identity unlinked"},
+       {"sso.existing_user_linked", "Identity linked to an existing user"},
        {"sso.link_request_approved", "Link request approved"},
        {"sso.link_request_dismissed", "Link request dismissed"}
      ]},
@@ -849,6 +869,12 @@ defmodule Emisar.Audit.Event.Query do
       {true, true, true, "An admin toggled the workspace-wide single sign-on requirement."},
     "account.max_grant_lifetime_set" =>
       {true, true, true, "An admin capped how long a standing approval grant may live."},
+    "account.disabled" =>
+      {false, false, true, "Emisar staff suspended this workspace — its members are signed out."},
+    "account.enabled" => {false, false, true, "Emisar staff lifted a workspace suspension."},
+    "account.closed" =>
+      {true, true, true,
+       "An owner closed the workspace — it is tombstoned and its plan cancelled."},
     "runner.registered" =>
       {true, false, false,
        "A runner enrolled with the control plane (its first HTTP registration)."},
@@ -998,8 +1024,13 @@ defmodule Emisar.Audit.Event.Query do
     "user.other_sessions_revoked" =>
       {true, true, false, "A user revoked every session except the current one."},
     "user.sessions_revoked" => {true, true, true, "An admin revoked a teammate's sessions."},
+    "user.mfa_reset_by_admin" =>
+      {true, true, true, "An admin cleared a teammate's second factor so they can re-enroll."},
     "membership.role_changed" => {true, true, true, "An admin changed a member's role."},
     "membership.removed" => {true, true, true, "An admin removed a member from the workspace."},
+    "membership.erased" =>
+      {false, false, true,
+       "Emisar staff erased this member's user account, so their seat here went with it."},
     "membership.suspended" =>
       {true, true, true, "An admin suspended a member — they can't sign into this workspace."},
     "membership.reinstated" => {true, true, true, "An admin reinstated a suspended member."},
@@ -1016,6 +1047,7 @@ defmodule Emisar.Audit.Event.Query do
     "runbook.updated" => {true, true, true, "An operator edited a runbook (new version)."},
     "runbook.published" =>
       {true, true, true, "An operator published a runbook version for dispatch."},
+    "runbook.deleted" => {true, true, true, "An operator deleted a runbook."},
     "runbook.dispatched" =>
       {true, true, true, "A runbook run started — its steps dispatch in order."},
     "runbook.execution_succeeded" =>
@@ -1060,6 +1092,11 @@ defmodule Emisar.Audit.Event.Query do
       {true, false, true, "A dispatched action exited non-zero on its runner."},
     "action_run.error" =>
       {true, false, true, "A dispatched action errored before/while executing."},
+    "action_run.validation_failed" =>
+      {true, false, true,
+       "A runner's structured output did not match the action's declared output schema."},
+    "action_run.unknown_action" =>
+      {true, false, true, "A runner reported it does not have the dispatched action."},
     "action_run.refused" =>
       {true, false, true, "A runner refused an action (signature or pack mismatch)."},
     "action_run.cancelled" => {true, false, true, "An in-flight action was cancelled."},
@@ -1105,6 +1142,8 @@ defmodule Emisar.Audit.Event.Query do
       {true, true, true, "A user verified and linked an SSO identity to their profile."},
     "sso.identity_unlinked" =>
       {true, true, true, "A user removed a verified SSO identity from their profile."},
+    "sso.existing_user_linked" =>
+      {true, true, true, "An admin linked an IdP identity to an existing emisar user."},
     "sso.provider_updated" =>
       {true, true, true, "An admin changed an identity provider's configuration."},
     "sso.provider_deleted" => {true, true, true, "An admin removed an identity provider."},

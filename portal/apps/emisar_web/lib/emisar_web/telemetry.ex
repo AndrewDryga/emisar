@@ -40,7 +40,13 @@ defmodule EmisarWeb.Telemetry do
     # listener collides with anything else trying to use 9091. `Mix.env/0`
     # isn't available in a release, so the default value can't reference it.
     if Application.get_env(:emisar_web, :enable_prometheus_exporter, true) do
-      port = String.to_integer(System.get_env("METRICS_PORT") || "9091")
+      # Blank counts as absent, the rule config/runtime.exs states for every
+      # optional variable — `METRICS_PORT=` would otherwise raise at boot.
+      port =
+        case System.get_env("METRICS_PORT") do
+          port when port in [nil, ""] -> 9091
+          port -> String.to_integer(port)
+        end
 
       [
         {TelemetryMetricsPrometheus.Core, metrics: metrics()},

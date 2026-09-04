@@ -83,13 +83,6 @@ defmodule Emisar.Runners.EnrollmentKey.Changeset do
     |> validate_required([:account_id])
   end
 
-  def usage(%EnrollmentKey{} = key) do
-    change(key,
-      last_used_at: DateTime.utc_now(),
-      uses_count: key.uses_count + 1
-    )
-  end
-
   # Idempotent: re-revoking an already-revoked key is a no-op (no re-stamp), so
   # the lock-race path (caller passed a stale-active key) can't move revoked_at.
   def revoke(%EnrollmentKey{revoked_at: revoked_at} = key, _by_user_id)

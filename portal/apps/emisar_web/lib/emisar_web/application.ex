@@ -4,13 +4,13 @@ defmodule EmisarWeb.Application do
   @moduledoc false
 
   use Application
+  require Logger
 
   @impl true
   def start(_type, _args) do
     # Attach Sentry's :logger handler exactly once at boot. It's a
     # no-op when SENTRY_DSN isn't configured — Sentry.Client short-
-    # circuits the upload. Wrapped so we don't crash a release if the
-    # API surface changes between Sentry versions.
+    # circuits the upload.
     install_sentry_logger_handler()
 
     children = [
@@ -48,17 +48,28 @@ defmodule EmisarWeb.Application do
 
   defp install_sentry_logger_handler do
     if Code.ensure_loaded?(Sentry.LoggerHandler) do
-      :logger.add_handler(:sentry_handler, Sentry.LoggerHandler, %{
-        config: %{
-          metadata: [:request_id, :runner_id, :run_id, :user_id, :account_id]
-        }
-      })
+      result =
+        :logger.add_handler(:sentry_handler, Sentry.LoggerHandler, %{
+          config: %{
+            metadata: [:request_id, :runner_id, :run_id, :user_id, :account_id]
+          }
+        })
+
+      report_sentry_handler_install(result)
     end
 
     :ok
-  rescue
-    # Handler already installed (mix test/dev reloads) — non-fatal.
-    _ -> :ok
+  end
+
+  defp report_sentry_handler_install(:ok), do: :ok
+
+  # mix test/dev reload boots the app again over a handler that is still installed.
+  defp report_sentry_handler_install({:error, {:already_exist, _handler_id}}), do: :ok
+
+  defp report_sentry_handler_install({:error, reason}) do
+    Logger.warning(
+      "Sentry logger handler was rejected; crashes will not be reported: #{inspect(reason)}"
+    )
   end
 
   @doc false
@@ -104,7 +115,9 @@ defmodule EmisarWeb.Application do
   defp scrub_sentry_message(%Sentry.Interfaces.Message{} = message, redaction_keys) do
     %Sentry.Interfaces.Message{
       message
-      | params: scrub_sentry_value(message.params, redaction_keys)
+      | formatted: scrub_sentry_crash_text(message.formatted, redaction_keys),
+        message: scrub_sentry_crash_text(message.message, redaction_keys),
+        params: scrub_sentry_value(message.params, redaction_keys)
     }
   end
 
@@ -129,7 +142,8 @@ defmodule EmisarWeb.Application do
        ) do
     %Sentry.Interfaces.Exception{
       exception
-      | mechanism: scrub_sentry_mechanism(exception.mechanism, redaction_keys),
+      | value: scrub_sentry_value(exception.value, redaction_keys),
+        mechanism: scrub_sentry_mechanism(exception.mechanism, redaction_keys),
         stacktrace: scrub_sentry_stacktrace(exception.stacktrace)
     }
   end
@@ -228,7 +242,45 @@ defmodule EmisarWeb.Application do
     |> List.to_tuple()
   end
 
+  defp scrub_sentry_value(value, redaction_keys) when is_binary(value) do
+    # `Sentry.LoggerHandler` inspects the crashing term into free text — the
+    # exception value and the formatted message — where keyed MAP redaction can
+    # never reach it. Match the two shapes `inspect/1` prints a key in, and only
+    # a quoted/charlist/binary value, so a container's own secret-named leaves
+    # get redacted instead of the container being swallowed whole.
+    inspected_pair = ~r/
+      (?:"([^"]*)"\s*=>|([A-Za-z_][A-Za-z0-9_]*[!?]?):)
+      \s*
+      ("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|<<[^>]*>>)
+    /x
+
+    Regex.replace(inspected_pair, value, fn match, quoted_key, bare_key, inspected_value ->
+      key = if quoted_key == "", do: bare_key, else: quoted_key
+
+      if sentry_secret_key?(key, redaction_keys) do
+        String.replace_suffix(match, inspected_value, "[REDACTED]")
+      else
+        match
+      end
+    end)
+  end
+
   defp scrub_sentry_value(value, _redaction_keys), do: value
+
+  defp scrub_sentry_crash_text(nil, _redaction_keys), do: nil
+
+  defp scrub_sentry_crash_text(text, redaction_keys) when is_binary(text) do
+    # An unparsed crash report reaches Sentry as one message, tail included. That
+    # tail is the same inspected process state `scrub_sentry_extra/2` drops, so cut
+    # it rather than trust keyed redaction to reach inside it.
+    ["\nState: ", "\nLast message"]
+    |> Enum.reduce(text, fn marker, text ->
+      text |> String.split(marker, parts: 2) |> List.first()
+    end)
+    |> scrub_sentry_value(redaction_keys)
+  end
+
+  defp scrub_sentry_crash_text(text, _redaction_keys), do: text
 
   defp sentry_secret_key?(key, redaction_keys) when is_atom(key) do
     sentry_secret_key?(Atom.to_string(key), redaction_keys)

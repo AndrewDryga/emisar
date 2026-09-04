@@ -20,12 +20,6 @@ defmodule EmisarWeb.SCIM.Resource do
   @error_schema "urn:ietf:params:scim:api:messages:2.0:Error"
   @max_page_size 100
 
-  @doc "The SCIM core User schema URN."
-  def user_schema, do: @user_schema
-
-  @doc "The SCIM core Group schema URN."
-  def group_schema, do: @group_schema
-
   @doc """
   Serialize the `%SSO.SCIMUser{}` directory-user projection to a SCIM User
   resource. `id` is the server-issued immutable resource UUID; `externalId`

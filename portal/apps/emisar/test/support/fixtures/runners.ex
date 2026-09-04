@@ -134,6 +134,21 @@ defmodule Emisar.Fixtures.Runners do
   end
 
   @doc """
+  Spends one use of an enrollment key. Production charges a use with a single
+  guarded UPDATE (`Runners.consume_enrollment_key/2`); this is setup state, so it
+  writes the same two columns directly rather than exposing a read-modify-write
+  twin of that statement in the changeset module.
+  """
+  def spend_enrollment_key(%EnrollmentKey{} = key) do
+    key
+    |> Ecto.Changeset.change(
+      last_used_at: DateTime.utc_now(),
+      uses_count: key.uses_count + 1
+    )
+    |> Repo.update!()
+  end
+
+  @doc """
   Backdates when a single-use enrollment key was spent, so its crash-recovery
   retry window has closed.
   """
