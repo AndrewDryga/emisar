@@ -373,7 +373,7 @@ func TestPublish_ExistingImmutableOnPrivateBucketRetriesWithCredentials(t *testi
 	dir := buildTree(t)
 	f := newFakeGCS()
 	f.privateReads = true
-	const name = "v1/schemas/catalog.v7.schema.json"
+	const name = "v1/schemas/catalog.v6.schema.json"
 	f.status[name] = http.StatusPreconditionFailed
 	existing, err := os.ReadFile(filepath.Join(dir, filepath.FromSlash(name)))
 	if err != nil {

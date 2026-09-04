@@ -98,8 +98,8 @@ func TestRepositoryProofsCoverEveryPublishedRecipe(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(rows) != 54 {
-		t.Fatalf("proved recipes = %d, want 54", len(rows))
+	if len(rows) != 55 {
+		t.Fatalf("proved recipes = %d, want 55", len(rows))
 	}
 }
 
