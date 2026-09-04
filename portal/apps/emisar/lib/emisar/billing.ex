@@ -126,17 +126,6 @@ defmodule Emisar.Billing do
 
   def annual_savings_label(_plan), do: nil
 
-  @doc """
-  The account's effective plan name from the authoritative subscription
-  lifecycle projection. Active, automatic-dunning, and not-yet-effective
-  cancellation states retain the subscribed plan; expired or unresolved state
-  uses Free. The raw subscribed plan remains on the subscription for billing
-  history and provider reconciliation.
-  """
-  def account_plan(%Accounts.Account{} = account) do
-    account.id |> peek_subscription_for_account() |> effective_plan() |> Map.fetch!(:plan_name)
-  end
-
   defp stored_plan_from_subscription(%Subscription{plan: plan}) when is_binary(plan), do: plan
   defp stored_plan_from_subscription(_), do: "free"
 

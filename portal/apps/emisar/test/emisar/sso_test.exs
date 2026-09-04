@@ -336,6 +336,10 @@ defmodule Emisar.SSOTest do
   defp members_op(verb, ids),
     do: %{"op" => verb, "path" => "members", "value" => Enum.map(ids, &%{"value" => &1})}
 
+  # The `replace` with `path: "displayName"` and a bare string, one of the two
+  # rename spellings the reducer accepts.
+  defp rename_op(display), do: %{"op" => "replace", "path" => "displayName", "value" => display}
+
   # -- list_providers_for_account/2 ------------------------------------
 
   describe "list_providers_for_account/2" do
@@ -5236,7 +5240,7 @@ defmodule Emisar.SSOTest do
       # never happened. Entra's existence probe missed and it re-POSTed the group
       # as a duplicate on every sync.
       {:ok, group} = SSO.scim_upsert_group(provider, %{external_id: "grp-empty", member_ids: []})
-      {:ok, %{display: ""}} = SSO.scim_rename_group(provider, group.id, "")
+      {:ok, %{display: ""}} = SSO.scim_patch_group(provider, group.id, [rename_op("")])
 
       assert {:ok, [%{external_group_id: "grp-empty"}], 1} =
                SSO.scim_list_groups(provider, display_name: "grp-empty")
@@ -5268,7 +5272,7 @@ defmodule Emisar.SSOTest do
           member_ids: [identity.id]
         })
 
-      {:ok, _group} = SSO.scim_rename_group(provider, group.id, "Security Council")
+      {:ok, _group} = SSO.scim_patch_group(provider, group.id, [rename_op("Security Council")])
 
       assert {:ok, [%{display: "Security Council"}], 1} = SSO.scim_list_groups(provider)
     end
@@ -5477,9 +5481,9 @@ defmodule Emisar.SSOTest do
     end
   end
 
-  # -- scim_rename_group/3 (provider-scoped) --------------------
+  # -- scim_patch_group/3 renames (provider-scoped) -----------------
 
-  describe "scim_rename_group/3" do
+  describe "scim_patch_group/3 — a displayName replace" do
     setup do
       scim_provider()
     end
@@ -5498,7 +5502,7 @@ defmodule Emisar.SSOTest do
       {:ok, group} = SSO.scim_upsert_group(provider, %{external_id: "grp-ops", member_ids: []})
 
       assert {:ok, %{external_group_id: "grp-ops", display: "Platform"}} =
-               SSO.scim_rename_group(provider, group.id, "Platform")
+               SSO.scim_patch_group(provider, group.id, [rename_op("Platform")])
 
       # The id is the IdP's handle on the group, so a rename must not move it —
       # only the human label the console shows changes.
@@ -5513,18 +5517,19 @@ defmodule Emisar.SSOTest do
         SSO.scim_upsert_group(provider, %{external_id: "grp-unmapped", member_ids: []})
 
       assert {:ok, %{external_group_id: "grp-unmapped", display: "Renamed"}} =
-               SSO.scim_rename_group(provider, group.id, "Renamed")
+               SSO.scim_patch_group(provider, group.id, [rename_op("Renamed")])
     end
 
     test "rejects a malformed id, but takes a blank display", %{provider: provider} do
-      assert SSO.scim_rename_group(provider, "not-a-uuid", "Platform") == {:error, :not_found}
+      assert SSO.scim_patch_group(provider, "not-a-uuid", [rename_op("Platform")]) ==
+               {:error, :not_found}
 
       {:ok, group} = SSO.scim_upsert_group(provider, %{external_id: "grp-ops", member_ids: []})
 
       # displayName is optional in SCIM, so clearing it is a rename, not an error —
       # the group keeps answering on the id the IdP addresses it by.
       assert {:ok, %{external_group_id: "grp-ops", display: ""}} =
-               SSO.scim_rename_group(provider, group.id, "")
+               SSO.scim_patch_group(provider, group.id, [rename_op("")])
     end
   end
 
@@ -5586,6 +5591,65 @@ defmodule Emisar.SSOTest do
   end
 
   # -- scim_patch_group/3 (provider-scoped) ----------------------------
+
+  describe "scim_replace_group/3" do
+    setup do
+      scim_provider()
+    end
+
+    test "replaces the display and the whole member set, and roles follow", %{
+      provider: provider,
+      subject: subject,
+      account: account
+    } do
+      %{identity: kept} = provision(provider, "okta|kept")
+      %{identity: dropped} = provision(provider, "okta|dropped")
+      map_group(provider, subject, "grp-ops", :operator)
+      group_id = create_group_resource(provider, "grp-ops")
+
+      assert {:ok, %{external_group_id: "grp-ops", display: "Ops", member_ids: member_ids}} =
+               SSO.scim_replace_group(provider, group_id, %{
+                 display: "Ops",
+                 member_ids: [kept.id, dropped.id]
+               })
+
+      assert Enum.sort(member_ids) == Enum.sort([kept.id, dropped.id])
+      assert role_of(account.id, dropped.user_id) == :operator
+
+      # PUT carries the absolute set: a member the body omits is removed and
+      # loses the role the mapping granted.
+      assert {:ok, %{external_group_id: "grp-ops", display: "Platform", member_ids: [member_id]}} =
+               SSO.scim_replace_group(provider, group_id, %{
+                 display: "Platform",
+                 member_ids: [kept.id]
+               })
+
+      assert member_id == kept.id
+      assert role_of(account.id, kept.user_id) == :operator
+      assert role_of(account.id, dropped.user_id) == :viewer
+    end
+
+    test "refuses a body whose externalId names a different group", %{provider: provider} do
+      group_id = create_group_resource(provider, "grp-ops")
+
+      # The id in the URL is the identity; a body that names another group is a
+      # redirect attempt, not a rename.
+      assert {:error, :invalid_scim_group} =
+               SSO.scim_replace_group(provider, group_id, %{
+                 external_id: "grp-other",
+                 display: "Ops",
+                 member_ids: []
+               })
+
+      assert {:ok, %{external_group_id: "grp-ops", member_ids: []}} =
+               SSO.scim_fetch_group(provider, group_id)
+    end
+
+    test "rejects a malformed id", %{provider: provider} do
+      assert SSO.scim_replace_group(provider, "not-a-uuid", %{display: "Ops", member_ids: []}) ==
+               {:error, :not_found}
+    end
+  end
 
   describe "scim_patch_group/3" do
     setup do

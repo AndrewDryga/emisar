@@ -521,7 +521,7 @@ defmodule Emisar.AdminTest do
                  ["account=#{account.slug}", "plan=team", "reason=design partner"]
                )
 
-      assert Billing.account_plan(account) == "team"
+      assert {:ok, %{plan: "team"}} = Billing.support_plan(account)
 
       assert {:ok, %{subscriptions: subscriptions}} =
                Admin.execute("emisar.admin.analytics.revenue", [])

@@ -1,28 +1,21 @@
 defmodule Emisar.WebBoundaryChecksTest do
   @moduledoc """
-  AST regression coverage for the two Credo checks that keep `apps/emisar_web`
-  an adapter: `Emisar.Checks.WebNoNestedDomainCalls` and
-  `Emisar.Checks.WebNoChangesetConstruction`.
+  Fixture coverage for the Credo checks that keep `apps/emisar_web` an adapter:
+  no nested domain calls, no changeset construction, no audit writes, no `Repo`,
+  no hand-painted island containers, no hard-sliced hashes, and no unguarded
+  `mount/3` subscribe.
 
-  Credo only loads `credo/checks/**` when `mix credo` runs, so a silent AST
-  regression there would go unnoticed until someone reintroduced the shape the
-  checks exist to stop. These tests parse a probe source at a web path and run
-  each check directly, asserting both what must fire and what must not.
+  Each check gets a probe it MUST flag and a compliant probe it MUST NOT.
   """
   use ExUnit.Case, async: true
-  alias Credo.SourceFile
+  import Emisar.CredoCheckProbe
 
-  # The checks are path-scoped, so every probe is parsed as a web source file.
+  # Most of these checks are path-scoped, so every probe is parsed as a web file.
   @web_file "apps/emisar_web/lib/emisar_web/probe.ex"
+  @live_file "apps/emisar_web/lib/emisar_web/live/probe_live.ex"
 
   setup_all do
-    {:ok, _started} = Application.ensure_all_started(:credo)
-
-    for file <- ~w[web_no_nested_domain_calls.ex web_no_changeset_construction.ex] do
-      Code.require_file(Path.join([__DIR__, "..", "..", "..", "..", "credo", "checks", file]))
-    end
-
-    :ok
+    load()
   end
 
   describe "Emisar.Checks.WebNoNestedDomainCalls" do
@@ -33,7 +26,7 @@ defmodule Emisar.WebBoundaryChecksTest do
       end
       """
 
-      assert triggers(nested_check(), source) == ["Catalog.PublishedRegistry.list"]
+      assert triggers(nested_check(), source, @web_file) == ["Catalog.PublishedRegistry.list"]
     end
 
     test "flags a nested call reached through the top-level context alias" do
@@ -45,7 +38,7 @@ defmodule Emisar.WebBoundaryChecksTest do
       end
       """
 
-      assert triggers(nested_check(), source) == ["Catalog.PublishedRegistry.get"]
+      assert triggers(nested_check(), source, @web_file) == ["Catalog.PublishedRegistry.get"]
     end
 
     test "flags a deep alias, including one renamed with as:" do
@@ -59,7 +52,7 @@ defmodule Emisar.WebBoundaryChecksTest do
       end
       """
 
-      assert triggers(nested_check(), source) == [
+      assert triggers(nested_check(), source, @web_file) == [
                "Accounts.RunnerAccess.none",
                "Runs.RunnerError.new"
              ]
@@ -75,7 +68,7 @@ defmodule Emisar.WebBoundaryChecksTest do
       end
       """
 
-      assert triggers(nested_check(), source) == [
+      assert triggers(nested_check(), source, @web_file) == [
                "Runbooks.Authoring.build_v1",
                "Runbooks.Naming.resolve_slug"
              ]
@@ -91,7 +84,7 @@ defmodule Emisar.WebBoundaryChecksTest do
       end
       """
 
-      assert triggers(nested_check(), source) == [
+      assert triggers(nested_check(), source, @web_file) == [
                "Catalog.PublishedRegistry.Pack.t",
                "Catalog.PublishedRegistry.list"
              ]
@@ -114,7 +107,7 @@ defmodule Emisar.WebBoundaryChecksTest do
       end
       """
 
-      assert triggers(nested_check(), source) == [
+      assert triggers(nested_check(), source, @web_file) == [
                "Catalog.PublishedRegistry.Pack.kind",
                "Catalog.PublishedRegistry.Pack.t"
              ]
@@ -137,7 +130,7 @@ defmodule Emisar.WebBoundaryChecksTest do
       end
       """
 
-      assert triggers(nested_check(), source) == [
+      assert triggers(nested_check(), source, @web_file) == [
                "Catalog.PublishedRegistry.list",
                "Runs.RunnerError.new"
              ]
@@ -180,7 +173,7 @@ defmodule Emisar.WebBoundaryChecksTest do
       end
       """
 
-      assert triggers(nested_check(), source) == []
+      assert triggers(nested_check(), source, @web_file) == []
     end
 
     test "allows the Emisar.Auth.Subject carrier, aliased or fully qualified" do
@@ -193,7 +186,7 @@ defmodule Emisar.WebBoundaryChecksTest do
       end
       """
 
-      assert triggers(nested_check(), source) == []
+      assert triggers(nested_check(), source, @web_file) == []
     end
 
     test "does not treat EmisarWeb as Emisar" do
@@ -206,7 +199,7 @@ defmodule Emisar.WebBoundaryChecksTest do
       end
       """
 
-      assert triggers(nested_check(), source) == []
+      assert triggers(nested_check(), source, @web_file) == []
     end
 
     test "ignores sources outside apps/emisar_web/lib" do
@@ -239,7 +232,7 @@ defmodule Emisar.WebBoundaryChecksTest do
       end
       """
 
-      assert triggers(changeset_check(), source) == [
+      assert triggers(changeset_check(), source, @web_file) == [
                "Ecto.Changeset.add_error",
                "Ecto.Changeset.apply_action",
                "Ecto.Changeset.apply_changes",
@@ -262,7 +255,7 @@ defmodule Emisar.WebBoundaryChecksTest do
       end
       """
 
-      assert triggers(changeset_check(), source) == [
+      assert triggers(changeset_check(), source, @web_file) == [
                "Ecto.Changeset.add_error",
                "Ecto.Changeset.put_change"
              ]
@@ -276,7 +269,7 @@ defmodule Emisar.WebBoundaryChecksTest do
       end
       """
 
-      assert triggers(changeset_check(), source) == ["Ecto.Changeset.add_error"]
+      assert triggers(changeset_check(), source, @web_file) == ["Ecto.Changeset.add_error"]
     end
 
     test "flags import Ecto.Changeset, plain and scoped" do
@@ -288,7 +281,7 @@ defmodule Emisar.WebBoundaryChecksTest do
       end
       """
 
-      assert triggers(changeset_check(), source) == [
+      assert triggers(changeset_check(), source, @web_file) == [
                "import Ecto.Changeset",
                "import Ecto.Changeset",
                "import Ecto.Changeset"
@@ -309,7 +302,7 @@ defmodule Emisar.WebBoundaryChecksTest do
       end
       """
 
-      assert triggers(changeset_check(), source) == ["Ecto.Changeset.put_change"]
+      assert triggers(changeset_check(), source, @web_file) == ["Ecto.Changeset.put_change"]
     end
 
     test "allows read-only inspection, to_form, and marking the submit action" do
@@ -327,7 +320,7 @@ defmodule Emisar.WebBoundaryChecksTest do
       end
       """
 
-      assert triggers(changeset_check(), source) == []
+      assert triggers(changeset_check(), source, @web_file) == []
     end
 
     test "ignores sources outside apps/emisar_web/lib" do
@@ -341,19 +334,281 @@ defmodule Emisar.WebBoundaryChecksTest do
     end
   end
 
-  # Resolved at runtime so the compiler never sees a literal reference to a
-  # module that only exists once `setup_all` requires it — which is also why
-  # `safe_concat` can insist the atom already exists.
-  defp nested_check, do: Module.safe_concat([:Emisar, :Checks, :WebNoNestedDomainCalls])
-  defp changeset_check, do: Module.safe_concat([:Emisar, :Checks, :WebNoChangesetConstruction])
+  describe "Emisar.Checks.WebNoAuditLog" do
+    test "flags a hand-built Audit.Events row in the web layer" do
+      source = """
+      defmodule EmisarWeb.Probe do
+        alias Emisar.Audit
 
-  defp triggers(check, source) do
-    check |> issues(source, @web_file) |> Enum.map(& &1.trigger) |> Enum.sort()
+        def record(user), do: Audit.Events.user_signed_in(user)
+      end
+      """
+
+      assert [issue] = issues(audit_check(), source, @web_file)
+      assert issue.check == audit_check()
+      assert issue.trigger == "Audit.Events.user_signed_in"
+      assert issue.line_no == 4
+      assert issue.message =~ "audit is a domain concern"
+    end
+
+    test "flags every Audit write helper" do
+      source = """
+      defmodule EmisarWeb.Probe do
+        alias Emisar.Audit
+
+        def log(event), do: Audit.log(event)
+        def log_for(user, event), do: Audit.log_for_user(user, event)
+        def record(event), do: Emisar.Audit.record(event)
+      end
+      """
+
+      assert triggers(audit_check(), source, @web_file) == [
+               "Audit.log",
+               "Audit.log_for_user",
+               "Audit.record"
+             ]
+    end
+
+    test "allows reads through the Audit context and a mutation via its own context" do
+      source = """
+      defmodule EmisarWeb.Probe do
+        alias Emisar.Accounts
+        alias Emisar.Audit
+
+        def events(subject), do: Audit.list_events(subject, [])
+        def sign_in(user, context), do: Accounts.record_sign_in(user, context)
+      end
+      """
+
+      assert issues(audit_check(), source, @web_file) == []
+    end
+
+    test "ignores sources outside apps/emisar_web/lib" do
+      source = """
+      defmodule Emisar.Probe do
+        def log(event), do: Audit.log(event)
+      end
+      """
+
+      assert issues(audit_check(), source, "apps/emisar/lib/emisar/probe.ex") == []
+    end
   end
 
-  defp issues(check, source, filename) do
-    source
-    |> SourceFile.parse(filename)
-    |> check.run([])
+  describe "Emisar.Checks.WebNoRepoCalls" do
+    test "flags a Repo call in the web layer" do
+      source = """
+      defmodule EmisarWeb.Probe do
+        def runbooks, do: Emisar.Repo.all(Runbook)
+      end
+      """
+
+      assert [issue] = issues(repo_check(), source, @web_file)
+      assert issue.check == repo_check()
+      assert issue.trigger == "Repo.all"
+      assert issue.line_no == 2
+      assert issue.message =~ "the web calls context"
+    end
+
+    test "allows Repo structs used as documented LiveTable data types" do
+      source = """
+      defmodule EmisarWeb.Probe do
+        alias Emisar.Repo.Paginator
+
+        def page(%Paginator.Metadata{} = metadata), do: metadata.after
+        def rows(subject), do: Emisar.Runbooks.list_runbooks(subject, [])
+      end
+      """
+
+      assert issues(repo_check(), source, @web_file) == []
+    end
+
+    test "ignores sources outside apps/emisar_web/lib" do
+      source = """
+      defmodule Emisar.Probe do
+        def runbooks, do: Emisar.Repo.all(Runbook)
+      end
+      """
+
+      assert issues(repo_check(), source, "apps/emisar/lib/emisar/probe.ex") == []
+    end
   end
+
+  describe "Emisar.Checks.NoIslandContainers" do
+    test "flags a container tag hand-painting a wash background plus a frame" do
+      source = """
+      defmodule EmisarWeb.ProbeLive do
+        def render(assigns) do
+          ~H\"""
+          <div class="rounded-lg bg-zinc-900/60 p-4 ring-1 ring-white/[0.07]">
+            <p>Naked content</p>
+          </div>
+          \"""
+        end
+      end
+      """
+
+      assert [issue] = issues(island_check(), source, @live_file)
+      assert issue.check == island_check()
+      assert issue.line_no == 4
+      assert issue.message =~ "Hand-painted island"
+    end
+
+    test "allows naked content, a shared component, and a wash without a frame" do
+      source = """
+      defmodule EmisarWeb.ProbeLive do
+        def render(assigns) do
+          ~H\"""
+          <div class="divide-y divide-zinc-800/70">
+            <.code_panel id="cmd" label="Command" code={@command} />
+            <div class="bg-zinc-900/60 p-4">
+              <span class="bg-zinc-800 ring-1 ring-white/10">chip</span>
+            </div>
+          </div>
+          \"""
+        end
+      end
+      """
+
+      assert issues(island_check(), source, @live_file) == []
+    end
+
+    test "honors the HEEx disable marker on the line above the tag" do
+      source = """
+      defmodule EmisarWeb.ProbeLive do
+        def render(assigns) do
+          ~H\"""
+          <%!-- credo:disable-for-next-line Emisar.Checks.NoIslandContainers — sanctioned recess --%>
+          <div class="rounded-lg bg-zinc-900/60 p-4 ring-1 ring-white/[0.07]"></div>
+          \"""
+        end
+      end
+      """
+
+      assert issues(island_check(), source, @live_file) == []
+    end
+
+    test "ignores web files outside live/" do
+      source = """
+      defmodule EmisarWeb.Probe do
+        def render(assigns) do
+          ~H\"""
+          <div class="rounded-lg bg-zinc-900/60 p-4 ring-1 ring-white/[0.07]"></div>
+          \"""
+        end
+      end
+      """
+
+      assert issues(island_check(), source, @web_file) == []
+    end
+  end
+
+  describe "Emisar.Checks.NoHashPrefixSlice" do
+    test "flags a hash sliced to a fixed prefix" do
+      source = """
+      defmodule EmisarWeb.Probe do
+        def short(sha), do: String.slice(sha, 0, 16)
+      end
+      """
+
+      assert [issue] = issues(hash_slice_check(), source, @web_file)
+      assert issue.check == hash_slice_check()
+      assert issue.trigger == "String.slice"
+      assert issue.line_no == 2
+      assert issue.message =~ "hash/id is hard-sliced"
+    end
+
+    test "flags a sliced digest read off a struct field" do
+      source = """
+      defmodule EmisarWeb.Probe do
+        def short(version), do: String.slice(version.advertised_hash, 0, 12)
+      end
+      """
+
+      assert triggers(hash_slice_check(), source, @web_file) == ["String.slice"]
+    end
+
+    test "allows the full value and a prose truncation" do
+      source = """
+      defmodule EmisarWeb.Probe do
+        def full(sha), do: sha
+        def teaser(title), do: String.slice(title, 0, 80)
+      end
+      """
+
+      assert issues(hash_slice_check(), source, @web_file) == []
+    end
+
+    test "ignores a context slicing a digest for storage" do
+      source = """
+      defmodule Emisar.Probe do
+        def short(sha), do: String.slice(sha, 0, 16)
+      end
+      """
+
+      assert issues(hash_slice_check(), source, "apps/emisar/lib/emisar/probe.ex") == []
+    end
+  end
+
+  describe "Emisar.Checks.SubscribeNeedsConnected" do
+    test "flags a mount/3 that subscribes without a connected? guard" do
+      source = """
+      defmodule EmisarWeb.ProbeLive do
+        def mount(_params, _session, socket) do
+          Emisar.PubSub.subscribe_runs(socket.assigns.account)
+          {:ok, socket}
+        end
+      end
+      """
+
+      assert [issue] = issues(subscribe_check(), source, @live_file)
+      assert issue.check == subscribe_check()
+      assert issue.trigger == "subscribe"
+      assert issue.line_no == 2
+      assert issue.message =~ "IL-18"
+    end
+
+    test "allows a mount guarded by connected?/1" do
+      source = """
+      defmodule EmisarWeb.ProbeLive do
+        def mount(_params, _session, socket) do
+          if connected?(socket), do: Emisar.PubSub.subscribe_runs(socket.assigns.account)
+          {:ok, socket}
+        end
+      end
+      """
+
+      assert issues(subscribe_check(), source, @live_file) == []
+    end
+
+    test "ignores an unguarded subscribe outside mount and outside live/" do
+      unguarded_mount = """
+      defmodule EmisarWeb.ProbeLive do
+        def mount(_params, _session, socket) do
+          Emisar.PubSub.subscribe_runs(socket.assigns.account)
+          {:ok, socket}
+        end
+      end
+      """
+
+      handle_event = """
+      defmodule EmisarWeb.ProbeLive do
+        def handle_event("watch", _params, socket) do
+          Emisar.PubSub.subscribe_runs(socket.assigns.account)
+          {:noreply, socket}
+        end
+      end
+      """
+
+      assert issues(subscribe_check(), unguarded_mount, @web_file) == []
+      assert issues(subscribe_check(), handle_event, @live_file) == []
+    end
+  end
+
+  defp nested_check, do: check("WebNoNestedDomainCalls")
+  defp changeset_check, do: check("WebNoChangesetConstruction")
+  defp audit_check, do: check("WebNoAuditLog")
+  defp repo_check, do: check("WebNoRepoCalls")
+  defp island_check, do: check("NoIslandContainers")
+  defp hash_slice_check, do: check("NoHashPrefixSlice")
+  defp subscribe_check, do: check("SubscribeNeedsConnected")
 end

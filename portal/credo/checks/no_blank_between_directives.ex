@@ -25,6 +25,7 @@ defmodule Emisar.Checks.NoBlankBetweenDirectives do
       """
     ]
 
+  alias Credo.Code
   alias Credo.IssueMeta
   alias Credo.SourceFile
 
@@ -35,12 +36,21 @@ defmodule Emisar.Checks.NoBlankBetweenDirectives do
     issue_meta = IssueMeta.for(source_file, params)
 
     source_file
-    |> SourceFile.lines()
+    |> code_lines()
     |> Enum.chunk_every(3, 1, :discard)
     |> Enum.filter(fn [{_, a}, {_, blank}, {_, c}] ->
       directive?(a) and String.trim(blank) == "" and directive?(c) and not multiline_start?(c)
     end)
     |> Enum.map(fn [_, {blank_line_no, _}, _] -> issue_for(issue_meta, blank_line_no) end)
+  end
+
+  # A ❌ example inside a `@moduledoc`/`explanations:` heredoc is documentation,
+  # not a header — blanking string bodies keeps the line numbers and stops the
+  # scanner reading prose as code. Comments stay: one between two directives is
+  # exactly what makes the middle line non-blank, so removing them would invent
+  # a violation.
+  defp code_lines(source_file) do
+    source_file |> Code.clean_charlists_strings_and_sigils() |> Code.to_lines()
   end
 
   defp directive?(line), do: Regex.match?(@directive, line)

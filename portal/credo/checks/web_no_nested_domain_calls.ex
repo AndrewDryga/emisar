@@ -80,7 +80,7 @@ defmodule Emisar.Checks.WebNoNestedDomainCalls do
   # A remote call — flag it when it resolves below a top-level Emisar context.
   defp walk({{:., _, [{:__aliases__, meta, parts}, fun]}, _, args} = ast, ctx)
        when is_atom(fun) and fun != :{} and is_list(args) and is_list(parts) do
-    expanded = expand(parts, ctx.aliases)
+    expanded = parts |> names() |> expand(ctx.aliases)
 
     if violation?(expanded, fun, args, meta, ctx.type_calls) do
       {ast, put_issue(ctx, issue_for(ctx, meta, trigger(expanded, fun)))}
@@ -93,7 +93,10 @@ defmodule Emisar.Checks.WebNoNestedDomainCalls do
 
   # Only `Emisar.*` aliases are worth resolving; `EmisarWeb` is a different atom.
   defp put_alias(aliases, local, [:Emisar | _] = parts) when is_atom(local) do
-    if Enum.all?(parts, &is_atom/1), do: Map.put(aliases, local, parts), else: aliases
+    case names(parts) do
+      nil -> aliases
+      base -> Map.put(aliases, Atom.to_string(local), base)
+    end
   end
 
   defp put_alias(aliases, _local, _parts), do: aliases
@@ -131,11 +134,11 @@ defmodule Emisar.Checks.WebNoNestedDomainCalls do
     @heex_call
     |> Regex.scan(text, return: :index)
     |> Enum.flat_map(fn [{start, _length}, path, name] ->
-      expanded = expand(module_parts(text, path), ctx.aliases)
+      expanded = text |> slice(path) |> String.split(".", trim: true) |> expand(ctx.aliases)
       line = start_line + newlines(binary_part(text, 0, start))
 
-      if nested_domain?(expanded) and expanded != [:Emisar, :Auth, :Subject] do
-        [issue_for(ctx, [line: line], trigger(expanded, String.to_atom(slice(text, name))))]
+      if nested_domain?(expanded) and expanded != ~w(Emisar Auth Subject) do
+        [issue_for(ctx, [line: line], trigger(expanded, slice(text, name)))]
       else
         []
       end
@@ -147,26 +150,26 @@ defmodule Emisar.Checks.WebNoNestedDomainCalls do
     if meta[:delimiter] == ~s("""), do: meta[:line] + 1, else: meta[:line]
   end
 
-  defp module_parts(text, range) do
-    text |> slice(range) |> String.split(".", trim: true) |> Enum.map(&String.to_atom/1)
-  end
-
   defp slice(text, {start, length}), do: binary_part(text, start, length)
 
   defp newlines(text), do: length(String.split(text, "\n")) - 1
 
-  defp expand([:Emisar | _] = parts, _aliases), do: all_atoms(parts)
+  # A module path is compared and reported by NAME. The AST carries atoms, but a
+  # `~H` body carries raw template text, and minting an atom per segment there
+  # would grow the never-collected atom table on every file Credo scans.
+  defp names(parts), do: if(Enum.all?(parts, &is_atom/1), do: Enum.map(parts, &Atom.to_string/1))
 
-  defp expand([head | rest], aliases) when is_atom(head) do
+  defp expand(nil, _aliases), do: nil
+  defp expand(["Emisar" | _] = parts, _aliases), do: parts
+
+  defp expand([head | rest], aliases) do
     case Map.get(aliases, head) do
       nil -> nil
-      base -> all_atoms(base ++ rest)
+      base -> base ++ rest
     end
   end
 
   defp expand(_parts, _aliases), do: nil
-
-  defp all_atoms(parts), do: if(Enum.all?(parts, &is_atom/1), do: parts, else: nil)
 
   # Record only remote `t/0` sites inside type attributes. The main walk still
   # visits the whole attribute, so another remote type name cannot inherit the
@@ -199,17 +202,17 @@ defmodule Emisar.Checks.WebNoNestedDomainCalls do
   defp position(meta), do: {meta[:line], meta[:column]}
 
   # The universal auth carrier — the web boundary mints Subjects by design.
-  defp violation?([:Emisar, :Auth, :Subject], _fun, _args, _meta, _type_calls), do: false
+  defp violation?(["Emisar", "Auth", "Subject"], _fun, _args, _meta, _type_calls), do: false
 
   defp violation?(expanded, :t, [], meta, type_calls),
     do: nested_domain?(expanded) and not MapSet.member?(type_calls, position(meta))
 
   defp violation?(expanded, _fun, _args, _meta, _type_calls), do: nested_domain?(expanded)
 
-  defp nested_domain?([:Emisar, _top, _nested | _]), do: true
+  defp nested_domain?(["Emisar", _top, _nested | _]), do: true
   defp nested_domain?(_parts), do: false
 
-  defp trigger([:Emisar | rest], fun), do: Enum.map_join(rest ++ [fun], ".", &Atom.to_string/1)
+  defp trigger(["Emisar" | rest], fun), do: Enum.join(rest ++ [to_string(fun)], ".")
 
   defp issue_for(ctx, meta, trigger) do
     format_issue(

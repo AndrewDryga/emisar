@@ -70,10 +70,17 @@ defmodule Emisar.ContextCoverageTest do
   # identity guard the fixture would have to fake), and the MCP path commits
   # and fires the side effects in one step, so neither can prove the negative.
   #
+  # `close_account/3` is the staff account-closure verb, run from a release
+  # shell until the console grows a surface for it. It was kept on 2026-09-04
+  # when the caller walk stopped counting prose: its scope and denial tests are
+  # the security coverage the audit just tightened (AC-1). Wire it or delete it
+  # at 1.0 — that is a product call, recorded in the round-9 report.
+  #
   # Do NOT add to this list to silence a new failure. A newly written function
   # with no caller is dead on arrival; this list is a decision that was made
   # once, about surface that already existed.
   @intended_api_surface MapSet.new([
+                          {:accounts, {"close_account", 3}},
                           {:accounts, {"list_memberships_for_account", 3}},
                           {:approvals, {"revoke_all_grants", 1}},
                           {:catalog, {"check_pack_trusted", 1}},
@@ -143,10 +150,13 @@ defmodule Emisar.ContextCoverageTest do
     |> public_defs()
   end
 
+  # `defdelegate` is public surface like any `def` — the caller sees one function
+  # either way, and a delegated name that nothing calls or tests is exactly the
+  # dead surface both halves of this test exist to find.
   defp public_defs(ast) do
     {_ast, defs} =
       Macro.prewalk(ast, MapSet.new(), fn
-        {:def, _meta, [head | _body]} = node, defs ->
+        {kind, _meta, [head | _rest]} = node, defs when kind in [:def, :defdelegate] ->
           {node, MapSet.put(defs, function_name_and_arity(head))}
 
         node, defs ->
@@ -171,6 +181,11 @@ defmodule Emisar.ContextCoverageTest do
   # just as much as one in a sibling context — plus `seeds.exs`, which is
   # committed non-test code that `./run seed` must keep running, so a function
   # only the seeds drive is consumed, not dead.
+  #
+  # Each source is reduced to the names it CALLS, read off its AST. Matching the
+  # source TEXT instead counted a name written in a `@doc` heredoc or a comment,
+  # so a documented-but-uncalled function passed as live — the exact shape this
+  # half of the test exists to catch.
   defp lib_sources do
     [
       Path.join([__DIR__, "..", "..", "lib"]),
@@ -178,29 +193,90 @@ defmodule Emisar.ContextCoverageTest do
     ]
     |> Enum.flat_map(&Path.wildcard(Path.join(&1, "**/*.{ex,heex}")))
     |> Enum.concat(Path.wildcard(Path.join([__DIR__, "..", "..", "priv", "repo", "seeds.exs"])))
-    |> Enum.map(&{Path.expand(&1), File.read!(&1)})
+    |> Enum.map(&{Path.expand(&1), called_names(&1)})
+  end
+
+  # `{remote, local}`: names reached through a module (`Mod.fun(…)`, `&Mod.fun/1`)
+  # and names called bare. A `.heex` template has no Elixir AST — and no
+  # docstrings or `#` comments either — so it keeps a text scan.
+  defp called_names(path) do
+    source = File.read!(path)
+
+    if Path.extname(path) == ".heex" do
+      {template_names(source), MapSet.new()}
+    else
+      {_ast, names} =
+        source
+        |> Code.string_to_quoted!()
+        |> Macro.prewalk({MapSet.new(), MapSet.new()}, &collect_call/2)
+
+      names
+    end
+  end
+
+  # `Mod.fun(…)`, `Mod.fun`, and the `&Mod.fun/1` capture's inner node. A
+  # PARENLESS dot on a variable is a struct/map field read (`account.plan`) and
+  # has the identical AST shape, so the target is what tells the two apart.
+  defp collect_call({{:., _, [target, name]}, meta, _args} = node, {remote, local})
+       when is_atom(name) do
+    if meta[:no_parens] == true and not module_target?(target),
+      do: {node, {remote, local}},
+      else: {node, {MapSet.put(remote, Atom.to_string(name)), local}}
+  end
+
+  # `&fun/1` — a local capture; the name node carries a context atom, not args.
+  defp collect_call({:&, _, [{:/, _, [{name, _, ctx}, _arity]}]} = node, {remote, local})
+       when is_atom(name) and is_atom(ctx),
+       do: {node, {remote, MapSet.put(local, Atom.to_string(name))}}
+
+  # A literal `~H` body reaches the AST as a string, so a call written in the
+  # template would otherwise be invisible to the walk.
+  defp collect_call({:sigil_H, _, [{:<<>>, _, parts}, _modifiers]} = node, {remote, local}) do
+    names =
+      parts
+      |> Enum.filter(&is_binary/1)
+      |> Enum.reduce(remote, &MapSet.union(template_names(&1), &2))
+
+    {node, {names, local}}
+  end
+
+  # A definition head is shaped exactly like a local call, so keep its arguments
+  # (a default value can call something) and drop the name.
+  defp collect_call({kind, meta, [head | rest]}, acc)
+       when kind in [:def, :defp, :defmacro, :defmacrop, :defdelegate],
+       do: {{kind, meta, [head_args(head) | rest]}, acc}
+
+  defp collect_call({name, _meta, args} = node, {remote, local})
+       when is_atom(name) and is_list(args),
+       do: {node, {remote, MapSet.put(local, Atom.to_string(name))}}
+
+  defp collect_call(node, acc), do: {node, acc}
+
+  defp module_target?({:__aliases__, _meta, _parts}), do: true
+  defp module_target?(target) when is_atom(target), do: true
+  defp module_target?(_target), do: false
+
+  defp head_args({:when, meta, [head | guards]}), do: {:when, meta, [head_args(head) | guards]}
+  defp head_args({name, _meta, args}) when is_atom(name) and is_list(args), do: args
+  defp head_args(head), do: head
+
+  defp template_names(source) do
+    ~r/\.([a-z_][a-z_0-9]*[!?]?)\s*[(\/]/
+    |> Regex.scan(source)
+    |> MapSet.new(fn [_match, name] -> name end)
   end
 
   defp context_path(context_name),
     do: Path.expand(Path.join([__DIR__, "..", "..", "lib", "emisar", "#{context_name}.ex"]))
 
-  # A function is "called" if some OTHER lib file references it qualified
-  # (`.fun(` / `&Mod.fun/`), or its own module calls it unqualified — a public
-  # function used only by its own module is still live code, just misplaced.
+  # A function is "called" if some other lib file reaches it through a module,
+  # or its own module calls it bare — a public function used only by its own
+  # module is still live code, just misplaced.
   defp called?(sources, definer, {name, _arity}) do
-    Enum.any?(sources, fn {path, source} ->
-      if path == definer do
-        Regex.match?(~r/(?<![.\w])#{Regex.escape(name)}\(/, strip_definitions(source, name)) or
-          String.contains?(source, "&#{name}/")
-      else
-        String.contains?(source, ".#{name}(") or String.contains?(source, ".#{name}/")
-      end
+    Enum.any?(sources, fn {path, {remote, local}} ->
+      MapSet.member?(remote, name) or (path == definer and MapSet.member?(local, name))
     end)
   end
-
-  # Drop the `def`/`defp` heads so a definition does not read as its own caller.
-  defp strip_definitions(source, name),
-    do: Regex.replace(~r/^\s*defp?\s+#{Regex.escape(name)}/m, source, "")
 
   setup_all do
     {:ok, described: described_functions(), sources: lib_sources()}

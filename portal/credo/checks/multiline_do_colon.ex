@@ -25,6 +25,7 @@ defmodule Emisar.Checks.MultilineDoColon do
       """
     ]
 
+  alias Credo.Code
   alias Credo.IssueMeta
   alias Credo.SourceFile
 
@@ -32,8 +33,12 @@ defmodule Emisar.Checks.MultilineDoColon do
   def run(%SourceFile{} = source_file, params) do
     issue_meta = IssueMeta.for(source_file, params)
 
+    # The ❌ example above is documentation, not code. Blanking string, sigil,
+    # and heredoc bodies keeps the line numbering and stops the scanner reading
+    # a docstring as a wrapped `do:`.
     source_file
-    |> SourceFile.lines()
+    |> Code.clean_charlists_strings_and_sigils()
+    |> Code.to_lines()
     |> Enum.filter(fn {_line_no, line} -> String.trim(line) == "do:" end)
     |> Enum.map(fn {line_no, _line} -> issue_for(issue_meta, line_no) end)
   end

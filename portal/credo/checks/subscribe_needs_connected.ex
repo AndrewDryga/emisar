@@ -42,7 +42,10 @@ defmodule Emisar.Checks.SubscribeNeedsConnected do
   defp guarded?(node), do: any_node?(node, &connected_call?/1)
 
   defp subscribe_call?({{:., _, [_, fun]}, _, _}), do: subscribe_name?(fun)
-  defp subscribe_call?({fun, _, args}) when is_atom(fun) and is_list(args), do: subscribe_name?(fun)
+
+  defp subscribe_call?({fun, _, args}) when is_atom(fun) and is_list(args),
+    do: subscribe_name?(fun)
+
   defp subscribe_call?(_), do: false
 
   defp subscribe_name?(fun) when is_atom(fun) do

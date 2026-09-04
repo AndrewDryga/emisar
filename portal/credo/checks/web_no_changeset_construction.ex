@@ -35,7 +35,7 @@ defmodule Emisar.Checks.WebNoChangesetConstruction do
   # match off a mid-path segment and off a `struct.Field.fun(` access.
   @heex_call ~r/(?<![\w.])((?:[A-Z][A-Za-z0-9_]*\.)+)([a-z_][A-Za-z0-9_]*[?!]?)\(/
   @read_only ~w(changed? fetch_change fetch_field fetch_field! get_assoc get_change
-                get_embed get_field traverse_errors)a
+                get_embed get_field traverse_errors)
 
   @doc false
   @impl true
@@ -58,7 +58,7 @@ defmodule Emisar.Checks.WebNoChangesetConstruction do
   defp walk({:alias, _, [{{:., _, [{:__aliases__, _, [:Ecto]}, :{}]}, _, branches}]} = ast, ctx) do
     aliases =
       Enum.reduce(branches, ctx.aliases, fn
-        {:__aliases__, _, [:Changeset]}, acc -> MapSet.put(acc, :Changeset)
+        {:__aliases__, _, [:Changeset]}, acc -> MapSet.put(acc, "Changeset")
         _branch, acc -> acc
       end)
 
@@ -79,7 +79,7 @@ defmodule Emisar.Checks.WebNoChangesetConstruction do
 
   defp walk({{:., _, [{:__aliases__, meta, parts}, fun]}, _, args} = ast, ctx)
        when is_atom(fun) and fun != :{} and is_list(args) and is_list(parts) do
-    if changeset_module?(parts, ctx.aliases) and fun not in @read_only do
+    if changeset_module?(names(parts), ctx.aliases) and Atom.to_string(fun) not in @read_only do
       {ast, put_issue(ctx, issue_for(ctx, meta, "Ecto.Changeset.#{fun}"))}
     else
       {ast, ctx}
@@ -91,8 +91,8 @@ defmodule Emisar.Checks.WebNoChangesetConstruction do
   defp local_name(opts) do
     opts
     |> List.flatten()
-    |> Enum.find_value(:Changeset, fn
-      {:as, {:__aliases__, _, parts}} -> List.last(parts)
+    |> Enum.find_value("Changeset", fn
+      {:as, {:__aliases__, _, parts}} -> parts |> List.last() |> Atom.to_string()
       _ -> nil
     end)
   end
@@ -114,10 +114,11 @@ defmodule Emisar.Checks.WebNoChangesetConstruction do
     @heex_call
     |> Regex.scan(text, return: :index)
     |> Enum.flat_map(fn [{start, _length}, path, name] ->
-      fun = String.to_atom(slice(text, name))
+      fun = slice(text, name)
       line = start_line + newlines(binary_part(text, 0, start))
+      parts = text |> slice(path) |> String.split(".", trim: true)
 
-      if changeset_module?(module_parts(text, path), ctx.aliases) and fun not in @read_only do
+      if changeset_module?(parts, ctx.aliases) and fun not in @read_only do
         [issue_for(ctx, [line: line], "Ecto.Changeset.#{fun}")]
       else
         []
@@ -130,15 +131,16 @@ defmodule Emisar.Checks.WebNoChangesetConstruction do
     if meta[:delimiter] == ~s("""), do: meta[:line] + 1, else: meta[:line]
   end
 
-  defp module_parts(text, range) do
-    text |> slice(range) |> String.split(".", trim: true) |> Enum.map(&String.to_atom/1)
-  end
-
   defp slice(text, {start, length}), do: binary_part(text, start, length)
 
   defp newlines(text), do: length(String.split(text, "\n")) - 1
 
-  defp changeset_module?([:Ecto, :Changeset], _aliases), do: true
+  # A module path is compared by NAME. The AST carries atoms, but a `~H` body
+  # carries raw template text, and minting an atom per segment there would grow
+  # the never-collected atom table on every file Credo scans.
+  defp names(parts), do: if(Enum.all?(parts, &is_atom/1), do: Enum.map(parts, &Atom.to_string/1))
+
+  defp changeset_module?(["Ecto", "Changeset"], _aliases), do: true
   defp changeset_module?([local], aliases), do: MapSet.member?(aliases, local)
   defp changeset_module?(_parts, _aliases), do: false
 

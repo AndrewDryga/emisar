@@ -4112,9 +4112,6 @@ defmodule Emisar.SSO do
   @doc "Internal — removes a synced group and recomputes affected members."
   defdelegate scim_delete_group(provider, id), to: SCIM
 
-  @doc "Internal — renames a synced group."
-  defdelegate scim_rename_group(provider, id, display), to: SCIM
-
   @doc "Internal — applies a PATCH operation list to a synced group."
   defdelegate scim_patch_group(provider, id, operations), to: SCIM
 

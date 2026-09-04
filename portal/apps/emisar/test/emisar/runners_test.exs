@@ -3578,7 +3578,7 @@ defmodule Emisar.RunnersTest do
       assert %EnrollmentKey{id: id} = Runners.peek_enrollment_key_by_secret(raw)
       assert id == key.id
 
-      {:ok, _} = key |> EnrollmentKey.Changeset.usage() |> Repo.update()
+      Fixtures.Runners.spend_enrollment_key(key)
       refute Runners.peek_enrollment_key_by_secret(raw)
     end
 
@@ -4588,7 +4588,7 @@ defmodule Emisar.RunnersTest do
 
       user = Fixtures.Users.create_user()
 
-      assert Billing.account_plan(account) == "team"
+      assert {:ok, %{plan: "team"}} = Billing.support_plan(account)
       # Two runners on a Team plan is well under the cap → check_limit is :ok.
       _ = Fixtures.Runners.create_runner(account_id: account.id)
       _ = Fixtures.Runners.create_runner(account_id: account.id)

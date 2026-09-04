@@ -14,6 +14,10 @@ defmodule Emisar.SSOGroupsTest do
   @scim_string_limit 255
   @max_group_member_ids 5_000
 
+  # A PATCH rename: `replace` with `path: "displayName"` and a bare string, the
+  # only way a rename reaches the group now that PUT and PATCH are the writes.
+  defp rename_op(display), do: %{"op" => "replace", "path" => "displayName", "value" => display}
+
   defp enterprise_owner do
     Fixtures.Subjects.owner_subject(%{plan: "enterprise"})
   end
@@ -439,8 +443,10 @@ defmodule Emisar.SSOGroupsTest do
                member_ids: []
              }) == {:error, :directory_sync_disabled}
 
-      assert SSO.scim_rename_group(in_flight, group.id, "Too Late") ==
-               {:error, :directory_sync_disabled}
+      # A PATCH — rename or membership — reads the addressed group first, and the
+      # disable discarded it, so the in-flight write never reaches the lock.
+      assert SSO.scim_patch_group(in_flight, group.id, [rename_op("Too Late")]) ==
+               {:error, :not_found}
 
       assert SSO.scim_patch_group(
                in_flight,
@@ -588,7 +594,7 @@ defmodule Emisar.SSOGroupsTest do
       assert access_of(account.id, same_name.user_id) == Accounts.RunnerAccess.none()
 
       assert {:ok, renamed} =
-               SSO.scim_rename_group(provider, selected_group.id, "Renamed Admins")
+               SSO.scim_patch_group(provider, selected_group.id, [rename_op("Renamed Admins")])
 
       assert renamed.id == selected_group.id
       assert role_of(account.id, selected.user_id) == :admin

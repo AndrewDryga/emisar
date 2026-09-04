@@ -22,6 +22,9 @@
         # In the latter case `**/*.{ex,exs}` will be used.
         #
         included: [
+          # The custom checks are first-party code too — they get linted and
+          # formatted like everything else (see .formatter.exs `inputs`).
+          "credo/",
           "lib/",
           "src/",
           "test/",

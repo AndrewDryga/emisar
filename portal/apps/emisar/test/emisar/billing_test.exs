@@ -173,68 +173,6 @@ defmodule Emisar.BillingTest do
     end
   end
 
-  describe "account_plan/1" do
-    setup do
-      %{account: Fixtures.Accounts.create_account()}
-    end
-
-    test "no subscription → free, SSO + directory sync locked", %{account: account} do
-      assert Billing.account_plan(account) == "free"
-      refute Billing.sso_available?(account)
-      refute Billing.directory_sync_available?(account)
-    end
-
-    test "Team unlocks OIDC SSO but not SCIM directory sync", %{account: account} do
-      Fixtures.Accounts.create_subscription(account, "team")
-
-      assert Billing.account_plan(account) == "team"
-      assert Billing.sso_available?(account)
-      # SCIM directory sync stays Enterprise-only.
-      refute Billing.directory_sync_available?(account)
-    end
-
-    test "an enterprise subscription unlocks SSO + SCIM directory sync", %{account: account} do
-      Fixtures.Accounts.create_subscription(account, "enterprise")
-
-      assert Billing.account_plan(account) == "enterprise"
-      assert Billing.sso_available?(account)
-      assert Billing.directory_sync_available?(account)
-    end
-
-    test "a canceled subscription uses Free entitlements but retains its subscribed plan", %{
-      account: account
-    } do
-      Fixtures.Accounts.create_subscription(account, "enterprise", status: "canceled")
-
-      assert Billing.account_plan(account) == "free"
-      refute Billing.sso_available?(account)
-
-      assert {:ok, %{plan: "free", subscribed_plan: "enterprise", entitlement_state: :expired}} =
-               Billing.support_plan(account)
-    end
-
-    test "a webhook plan change is reflected immediately — the account row is never touched" do
-      # Regression for the single-source fix: the Paddle webhook only ever
-      # writes subscriptions.plan, so plan gating must read from there, not a
-      # stale accounts.plan copy. Before this change a paid customer's account
-      # stayed on "free" and SSO was wrongly unavailable.
-      account = Fixtures.Accounts.create_account(%{paddle_customer_id: "ctm_upgrade_01"})
-      refute Billing.sso_available?(account)
-
-      event =
-        subscription_created_event("evt_upgrade", account.paddle_customer_id, "pri_ent_01",
-          product_name: "enterprise"
-        )
-
-      assert Billing.record_and_apply_event("evt_upgrade", "subscription.created", event) == :ok
-
-      # The SAME in-memory struct (never re-fetched) now resolves to
-      # enterprise — proof the gate reads the subscription, not the account.
-      assert Billing.account_plan(account) == "enterprise"
-      assert Billing.sso_available?(account)
-    end
-  end
-
   describe "entitlement_state/2" do
     test "projects every owned lifecycle state at the exact scheduled deadline" do
       now = ~U[2026-08-26 12:00:00.000000Z]
@@ -334,7 +272,7 @@ defmodule Emisar.BillingTest do
       account = Fixtures.Accounts.create_account()
       Fixtures.Accounts.create_subscription(account, "team", status: "future_vendor_state")
 
-      assert Billing.account_plan(account) == "free"
+      assert {:ok, %{plan: "free"}} = Billing.support_plan(account)
       refute Billing.sso_available?(account)
       assert Billing.account_audit_retention_days(account.id) == 365
     end
@@ -474,6 +412,65 @@ defmodule Emisar.BillingTest do
   end
 
   describe "support_plan/1" do
+    setup do
+      %{account: Fixtures.Accounts.create_account()}
+    end
+
+    test "no subscription → free, SSO + directory sync locked", %{account: account} do
+      assert {:ok, %{plan: "free"}} = Billing.support_plan(account)
+      refute Billing.sso_available?(account)
+      refute Billing.directory_sync_available?(account)
+    end
+
+    test "Team unlocks OIDC SSO but not SCIM directory sync", %{account: account} do
+      Fixtures.Accounts.create_subscription(account, "team")
+
+      assert {:ok, %{plan: "team"}} = Billing.support_plan(account)
+      assert Billing.sso_available?(account)
+      # SCIM directory sync stays Enterprise-only.
+      refute Billing.directory_sync_available?(account)
+    end
+
+    test "an enterprise subscription unlocks SSO + SCIM directory sync", %{account: account} do
+      Fixtures.Accounts.create_subscription(account, "enterprise")
+
+      assert {:ok, %{plan: "enterprise"}} = Billing.support_plan(account)
+      assert Billing.sso_available?(account)
+      assert Billing.directory_sync_available?(account)
+    end
+
+    test "a canceled subscription uses Free entitlements but retains its subscribed plan", %{
+      account: account
+    } do
+      Fixtures.Accounts.create_subscription(account, "enterprise", status: "canceled")
+
+      assert {:ok, %{plan: "free", subscribed_plan: "enterprise", entitlement_state: :expired}} =
+               Billing.support_plan(account)
+
+      refute Billing.sso_available?(account)
+    end
+
+    test "a webhook plan change is reflected immediately — the account row is never touched" do
+      # Regression for the single-source fix: the Paddle webhook only ever
+      # writes subscriptions.plan, so plan gating must read from there, not a
+      # stale accounts.plan copy. Before this change a paid customer's account
+      # stayed on "free" and SSO was wrongly unavailable.
+      account = Fixtures.Accounts.create_account(%{paddle_customer_id: "ctm_upgrade_01"})
+      refute Billing.sso_available?(account)
+
+      event =
+        subscription_created_event("evt_upgrade", account.paddle_customer_id, "pri_ent_01",
+          product_name: "enterprise"
+        )
+
+      assert Billing.record_and_apply_event("evt_upgrade", "subscription.created", event) == :ok
+
+      # The SAME in-memory struct (never re-fetched) now resolves to
+      # enterprise — proof the gate reads the subscription, not the account.
+      assert {:ok, %{plan: "enterprise"}} = Billing.support_plan(account)
+      assert Billing.sso_available?(account)
+    end
+
     test "reports free, complimentary, and Paddle sources without credentials" do
       free_account = Fixtures.Accounts.create_account()
       assert {:ok, %{plan: "free", source: "free"}} = Billing.support_plan(free_account)
@@ -566,14 +563,14 @@ defmodule Emisar.BillingTest do
       assert {:ok, %Subscription{plan: "team", status: "complimentary"} = team} =
                Billing.grant_complimentary_plan(account, "team")
 
-      assert Billing.account_plan(account) == "team"
+      assert {:ok, %{plan: "team"}} = Billing.support_plan(account)
       assert Billing.sso_available?(account)
 
       assert {:ok, %Subscription{plan: "enterprise", status: "complimentary"} = enterprise} =
                Billing.grant_complimentary_plan(account, "enterprise")
 
       assert enterprise.id == team.id
-      assert Billing.account_plan(account) == "enterprise"
+      assert {:ok, %{plan: "enterprise"}} = Billing.support_plan(account)
       assert Billing.directory_sync_available?(account)
 
       # Chronological order IS the assertion (granted, then replaced), so the
@@ -641,7 +638,7 @@ defmodule Emisar.BillingTest do
       assert {:ok, %Subscription{status: "complimentary"}} =
                Billing.revoke_complimentary_plan(account)
 
-      assert Billing.account_plan(account) == "free"
+      assert {:ok, %{plan: "free"}} = Billing.support_plan(account)
       assert Billing.revoke_complimentary_plan(account) == {:ok, :already_free}
     end
 
@@ -802,7 +799,7 @@ defmodule Emisar.BillingTest do
 
       assert Emisar.Runners.count_billable_runners(account.id) == 5
 
-      assert Billing.account_plan(account) == "free"
+      assert {:ok, %{plan: "free"}} = Billing.support_plan(account)
       assert Billing.check_limit(account, :runners) === {:error, :over_limit, "free", 3}
     end
   end
@@ -2202,7 +2199,7 @@ defmodule Emisar.BillingTest do
                  "data" => %{"id" => "sub_cancel_ent_01"}
                })
 
-      assert Billing.account_plan(account) == "free"
+      assert {:ok, %{plan: "free"}} = Billing.support_plan(account)
       assert Billing.check_limit(account, :runners) == :ok
     end
 
