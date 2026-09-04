@@ -1,5 +1,5 @@
 defmodule Emisar.SSO.OIDC.Guard.RelayTest do
-  use ExUnit.Case, async: true
+  use ExUnit.Case, async: false
   import ExUnit.CaptureLog
   alias Emisar.SSO.OIDC.Guard.Relay
 
