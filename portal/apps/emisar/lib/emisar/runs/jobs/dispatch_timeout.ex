@@ -51,8 +51,6 @@ defmodule Emisar.Runs.Jobs.DispatchTimeout do
     end
   end
 
-  defp resolve_stale_pending_dispatches([]), do: :ok
-
   defp resolve_stale_pending_dispatches(runs, runner, oldest) do
     case Runners.current_connection_generation(runner.account_id, runner.id) do
       {:ok, _generation} ->

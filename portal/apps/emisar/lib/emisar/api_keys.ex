@@ -52,7 +52,8 @@ defmodule Emisar.ApiKeys do
 
   # Keys minted within this window are protected from eviction even
   # when the ring is full — buffer for the "user copied the snippet →
-  # LLM makes its first MCP call" gap.
+  # LLM makes its first MCP call" gap. Both ring knobs are overridable
+  # through the `Emisar.Config` seam for tests.
   @quick_eviction_grace_seconds 60
 
   # A key expiring within this window auto-rotates at the MCP boundary —
@@ -959,8 +960,8 @@ defmodule Emisar.ApiKeys do
   """
   def mint_quick_key(%Subject{account: account} = subject, opts \\ []) do
     account_id = account.id
-    cap = opts[:ring_cap] || @quick_ring_cap
-    grace_s = opts[:eviction_grace_seconds] || @quick_eviction_grace_seconds
+    cap = quick_ring_cap()
+    grace_s = quick_eviction_grace_seconds()
     name = opts[:name] || "Quick connect (auto)"
     {raw, prefix, hash} = Crypto.mint("emk-", @prefix_size)
 
@@ -994,6 +995,17 @@ defmodule Emisar.ApiKeys do
       {:ok, %{key: key}} -> {:ok, raw, key}
       {:error, reason} -> {:error, reason}
     end
+  end
+
+  defp quick_ring_cap,
+    do: Emisar.Config.get_env(:emisar, :api_key_quick_ring_cap, @quick_ring_cap)
+
+  defp quick_eviction_grace_seconds do
+    Emisar.Config.get_env(
+      :emisar,
+      :api_key_quick_eviction_grace_seconds,
+      @quick_eviction_grace_seconds
+    )
   end
 
   defp evict_quick_ring_overflow(account_id, cap, grace_seconds, now) do

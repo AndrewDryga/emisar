@@ -110,7 +110,7 @@ defmodule Emisar.Catalog.PublishedRegistry.CacheTest do
     end
   end
 
-  describe "boot_state/1" do
+  describe "boot_state/0" do
     test "a registry that never answers holds what boot installed" do
       test_pid = self()
 
@@ -119,7 +119,7 @@ defmodule Emisar.Catalog.PublishedRegistry.CacheTest do
         Cache.install_snapshot(snapshot)
       end
 
-      boot = %{Cache.boot_state(put: put) | url: @catalog_url}
+      boot = %{Cache.boot_state() | url: @catalog_url, put: put}
       kept = Cache.refresh(boot, {:error, :nxdomain})
 
       refute_received :installed
@@ -144,9 +144,8 @@ defmodule Emisar.Catalog.PublishedRegistry.CacheTest do
         Cache.install_snapshot(snapshot)
       end
 
-      state = %{Cache.boot_state(put: put) | url: @catalog_url}
+      state = %{Cache.boot_state() | url: @catalog_url, put: put}
 
-      refute_received :installed
       assert state.source == :remote
       assert state.checked_at == nil
       # No digest: the preserved snapshot came from bytes this process never

@@ -589,34 +589,30 @@ defmodule Emisar.Accounts do
   # transaction. Let that zero-membership, never-signed-in row resume without
   # exposing the distinction publicly. Membership or a prior sign-in is the
   # durable evidence that this is an established operator instead.
+  #
+  # Plain reads: the answer only shapes the neutral public response, and the
+  # decisions it precedes are re-judged under real row locks — `Auth`'s magic
+  # link relocks the user, and `put_owner_registration_intent/2` rechecks
+  # `last_sign_in_at` on the locked row inside the final session transaction.
   defp resume_owner_registration(user_attrs) do
     email = user_attrs[:email] || user_attrs["email"]
 
-    result =
-      Repo.transaction(fn ->
-        with true <- is_binary(email),
-             {:ok, %Users.User{} = observed_user} <- Users.fetch_user_by_email(email),
-             {:ok, %Users.User{} = locked_user} <-
-               Users.fetch_and_lock_user_by_id(observed_user.id, Repo),
-             true <- locked_user.email == observed_user.email do
-          memberships =
-            Membership.Query.not_deleted()
-            |> Membership.Query.by_user_id(locked_user.id)
-
-          has_memberships? = Repo.exists?(memberships)
-
-          if is_nil(locked_user.last_sign_in_at) and not has_memberships?,
-            do: {:ok, locked_user},
-            else: {:error, :email_taken}
-        else
-          _ -> {:error, :email_taken}
-        end
-      end)
-
-    case result do
-      {:ok, outcome} -> outcome
-      {:error, _reason} -> {:error, :email_taken}
+    with true <- is_binary(email),
+         {:ok, %Users.User{} = user} <- Users.fetch_user_by_email(email),
+         true <- is_nil(user.last_sign_in_at),
+         false <- member_of_any_account?(user.id) do
+      {:ok, user}
+    else
+      _ -> {:error, :email_taken}
     end
+  end
+
+  defp member_of_any_account?(user_id) do
+    memberships =
+      Membership.Query.not_deleted()
+      |> Membership.Query.by_user_id(user_id)
+
+    Repo.exists?(memberships)
   end
 
   @doc """
@@ -4465,16 +4461,16 @@ defmodule Emisar.Accounts do
     limit = Keyword.get(opts, :limit, 100)
 
     Account.Query.all()
-    |> after_system_sweep_account(Keyword.get(opts, :after_account_id))
+    |> after_account_id(Keyword.get(opts, :after_account_id))
     |> Account.Query.ordered_by_id()
     |> Account.Query.limit_to(limit)
     |> Repo.all()
   end
 
-  defp after_system_sweep_account(queryable, id) when is_binary(id),
+  defp after_account_id(queryable, id) when is_binary(id),
     do: Account.Query.after_id(queryable, id)
 
-  defp after_system_sweep_account(queryable, _id), do: queryable
+  defp after_account_id(queryable, _id), do: queryable
 
   @doc """
   Internal — monthly report job: a bounded, id-ordered page of non-deleted
@@ -4488,16 +4484,11 @@ defmodule Emisar.Accounts do
 
     Account.Query.not_deleted()
     |> Account.Query.due_for_report(cutoff)
-    |> after_report_account(Keyword.get(opts, :after_account_id))
+    |> after_account_id(Keyword.get(opts, :after_account_id))
     |> Account.Query.ordered_by_id()
     |> Account.Query.limit_to(limit)
     |> Repo.all()
   end
-
-  defp after_report_account(queryable, id) when is_binary(id),
-    do: Account.Query.after_id(queryable, id)
-
-  defp after_report_account(queryable, _id), do: queryable
 
   @doc """
   Internal — monthly report job: stamp `last_report_sent_at = now` under a row
@@ -4537,16 +4528,11 @@ defmodule Emisar.Accounts do
 
     Account.Query.not_deleted()
     |> Account.Query.needing_paddle_customer_sync()
-    |> after_paddle_sync_account(Keyword.get(opts, :after_account_id))
+    |> after_account_id(Keyword.get(opts, :after_account_id))
     |> Account.Query.ordered_by_id()
     |> Account.Query.limit_to(limit)
     |> Repo.all()
   end
-
-  defp after_paddle_sync_account(queryable, id) when is_binary(id),
-    do: Account.Query.after_id(queryable, id)
-
-  defp after_paddle_sync_account(queryable, _id), do: queryable
 
   @doc """
   Internal — Billing customer sync: load the account and the stable billing

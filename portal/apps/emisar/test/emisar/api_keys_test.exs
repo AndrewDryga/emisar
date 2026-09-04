@@ -1619,14 +1619,15 @@ defmodule Emisar.ApiKeysTest do
 
     test "ring eviction drops the oldest auto-unused key past the cap, never a used one" do
       {_user, _account, subject} = owner_subject_pair()
-      opts = [ring_cap: 1, eviction_grace_seconds: 0]
+      Emisar.Config.put_override(:emisar, :api_key_quick_ring_cap, 1)
+      Emisar.Config.put_override(:emisar, :api_key_quick_eviction_grace_seconds, 0)
 
-      {:ok, used_raw, used_key} = ApiKeys.mint_quick_key(subject, opts)
+      {:ok, used_raw, used_key} = ApiKeys.mint_quick_key(subject)
       # First use clears the auto flag — eviction must not touch it.
       assert %ApiKey{} = ApiKeys.peek_api_key_by_secret(used_raw)
 
-      {:ok, _raw, evictable} = ApiKeys.mint_quick_key(subject, opts)
-      {:ok, _raw, survivor} = ApiKeys.mint_quick_key(subject, opts)
+      {:ok, _raw, evictable} = ApiKeys.mint_quick_key(subject)
+      {:ok, _raw, survivor} = ApiKeys.mint_quick_key(subject)
 
       refute Repo.reload(evictable)
       assert Repo.reload(survivor)

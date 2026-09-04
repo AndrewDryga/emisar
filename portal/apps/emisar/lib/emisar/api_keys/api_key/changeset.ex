@@ -100,10 +100,9 @@ defmodule Emisar.ApiKeys.ApiKey.Changeset do
     end
   end
 
-  def mint_quick(account_id, user_id, membership_id, prefix, hash, attrs \\ %{}) do
+  def mint_quick(account_id, user_id, membership_id, prefix, hash, attrs) do
     %ApiKey{}
     |> cast(attrs, [:name])
-    |> put_default_value(:name, "Quick connect (auto)")
     |> put_change(:account_id, account_id)
     |> put_change(:created_by_id, user_id)
     |> put_change(:created_by_membership_id, membership_id)

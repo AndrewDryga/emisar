@@ -191,14 +191,6 @@ defmodule EmisarWeb.UserSignUpLive do
          socket
          |> assign(:account_name_error, account_name_error(changeset))
          |> assign_form(Users.change_user(%Emisar.Users.User{}, user_params))}
-
-      # The owner membership is fixed by this flow, so a failure here is ours,
-      # not something the operator can retype their way out of.
-      {:error, _reason} ->
-        {:noreply,
-         socket
-         |> put_flash(:error, "We couldn't finish setting up your workspace. Try again.")
-         |> assign_form(Users.change_user(%Emisar.Users.User{}, user_params))}
     end
   end
 
