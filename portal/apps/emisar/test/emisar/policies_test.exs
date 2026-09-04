@@ -245,8 +245,7 @@ defmodule Emisar.PoliciesTest do
                  "critical" => "deny"
                },
                overrides: [],
-               approval: %{"min_approvals" => 1, "allow_self_approval" => true},
-               approval_valid?: true
+               approval: %{"min_approvals" => 1, "allow_self_approval" => true}
              }
     end
 
@@ -271,14 +270,13 @@ defmodule Emisar.PoliciesTest do
       assert Policies.editor_input(rules) == %{
                defaults: defaults,
                overrides: overrides,
-               approval: approval,
-               approval_valid?: true
+               approval: approval
              }
     end
 
-    test "a missing or unknown tier decision repairs to deny, never allow" do
-      input =
-        Policies.editor_input(%{"defaults" => %{"low" => "allow", "medium" => "obliterate"}})
+    test "a missing or unknown tier decision reads as deny, never allow" do
+      defaults = %{"low" => "allow", "medium" => "obliterate"}
+      input = Policies.editor_input(Map.put(Policies.default_rules(), "defaults", defaults))
 
       assert input.defaults == %{
                "low" => "allow",
@@ -289,15 +287,14 @@ defmodule Emisar.PoliciesTest do
     end
 
     test "non-monotonic stored defaults lift higher tiers without widening access" do
-      input =
-        Policies.editor_input(%{
-          "defaults" => %{
-            "low" => "require_approval",
-            "medium" => "allow",
-            "high" => "deny",
-            "critical" => "require_approval"
-          }
-        })
+      defaults = %{
+        "low" => "require_approval",
+        "medium" => "allow",
+        "high" => "deny",
+        "critical" => "require_approval"
+      }
+
+      input = Policies.editor_input(Map.put(Policies.default_rules(), "defaults", defaults))
 
       assert input.defaults == %{
                "low" => "require_approval",
@@ -310,64 +307,27 @@ defmodule Emisar.PoliciesTest do
       assert changeset.valid?
     end
 
-    test "non-map defaults and non-list overrides deny every tier and drop every row" do
-      deny_all = %{"low" => "deny", "medium" => "deny", "high" => "deny", "critical" => "deny"}
-
-      for rules <- [%{"defaults" => "junk", "overrides" => "junk"}, %{}, nil, "junk", []] do
-        input = Policies.editor_input(rules)
-
-        assert input.defaults == deny_all
-        assert input.overrides == []
-      end
-    end
-
-    test "an unknown override decision repairs to deny and non-string fields to blanks" do
+    test "an unknown override decision reads as deny and non-string fields as blanks" do
       overrides = [
         %{"name" => "keep", "action" => "nginx_*", "decision" => "obliterate"},
-        %{"name" => 42, "action" => nil, "decision" => "allow"},
-        "not-an-object"
+        %{"name" => 42, "action" => nil, "decision" => "allow"}
       ]
 
-      assert Policies.editor_input(%{"overrides" => overrides}).overrides == [
-               %{"name" => "keep", "action" => "nginx_*", "decision" => "deny"},
-               %{"name" => "", "action" => "", "decision" => "allow"},
-               %{"name" => "", "action" => "", "decision" => "deny"}
-             ]
-    end
-
-    test "a padded stored override is trimmed and forced to deny" do
-      rules = %{
-        "overrides" => [
-          %{"name" => "reads", "action" => "  linux.*  ", "decision" => "allow"}
-        ]
-      }
+      rules = Map.put(Policies.default_rules(), "overrides", overrides)
 
       assert Policies.editor_input(rules).overrides == [
-               %{"name" => "reads", "action" => "linux.*", "decision" => "deny"}
+               %{"name" => "keep", "action" => "nginx_*", "decision" => "deny"},
+               %{"name" => "", "action" => "", "decision" => "allow"}
              ]
     end
 
-    test "an unusable approval gate repairs to one non-self approver and reports it" do
-      invalid = [
-        %{},
-        %{"approval" => "garbage"},
-        %{"approval" => %{"min_approvals" => 0, "allow_self_approval" => false}},
-        %{"approval" => %{"min_approvals" => 1, "allow_self_approval" => "yes"}}
-      ]
+    test "a padded stored override is trimmed" do
+      overrides = [%{"name" => "reads", "action" => "  linux.*  ", "decision" => "allow"}]
+      rules = Map.put(Policies.default_rules(), "overrides", overrides)
 
-      for rules <- invalid do
-        input = Policies.editor_input(rules)
-
-        assert input.approval == %{"min_approvals" => 1, "allow_self_approval" => false}
-        refute input.approval_valid?
-      end
-    end
-
-    test "a repaired input builds rules the changeset accepts" do
-      input = Policies.editor_input(%{"defaults" => "junk", "overrides" => ["junk"]})
-      changeset = input |> Policies.build_rules() |> Policies.change_policy()
-
-      assert changeset.valid?
+      assert Policies.editor_input(rules).overrides == [
+               %{"name" => "reads", "action" => "linux.*", "decision" => "allow"}
+             ]
     end
   end
 
@@ -439,13 +399,11 @@ defmodule Emisar.PoliciesTest do
              ]
     end
 
-    test "an explicit approval replaces the gate while approval_valid? rides through" do
-      input = Policies.editor_input(%{})
+    test "an explicit approval replaces the gate", %{input: input} do
       approval = %{"min_approvals" => 2, "allow_self_approval" => false}
       updated = Policies.update_editor_input(input, %{approval: approval})
 
       assert updated.approval == approval
-      refute updated.approval_valid?
     end
 
     test "an incomplete or malformed approval change keeps the complete current gate", %{
@@ -525,7 +483,8 @@ defmodule Emisar.PoliciesTest do
 
     test "hardcodes schema version 2 whatever the input came from", %{input: input} do
       assert Policies.build_rules(input)["schema_version"] == 2
-      assert Policies.build_rules(Policies.editor_input(%{}))["schema_version"] == 2
+      stale = Map.put(Policies.default_rules(), "schema_version", 1)
+      assert Policies.build_rules(Policies.editor_input(stale))["schema_version"] == 2
     end
   end
 

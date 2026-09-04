@@ -65,15 +65,13 @@ defmodule Emisar.Policies do
 
   @typedoc """
   The editor's working copy of a policy: atom keys outside, the persisted
-  string-keyed JSON shapes inside. `approval_valid?` reports whether the STORED
-  approval gate was usable, not whether the current one is.
+  string-keyed JSON shapes inside.
   """
   @type approval_input :: %{String.t() => pos_integer() | boolean()}
   @type editor_input :: %{
           defaults: %{String.t() => String.t()},
           overrides: [%{String.t() => String.t()}],
-          approval: approval_input(),
-          approval_valid?: boolean()
+          approval: approval_input()
         }
 
   @typedoc "One round of operator edits, already parsed out of its transport."
@@ -206,22 +204,18 @@ defmodule Emisar.Policies do
   The editor's working copy of stored `rules`: a complete tier-default map,
   normalized override rows, and a complete approval gate.
 
-  Total — any stored term is accepted. Valid values are preserved; a missing or
-  unknown tier/override decision repairs to `"deny"`, the verdict runtime
-  evaluation already reaches for a corrupt one, and an unusable approval gate
-  repairs to one approver with no self-approval, reported through
-  `approval_valid?: false`. A corrupt row therefore never widens access while
-  the operator repairs it.
+  Valid values are preserved; a missing or unknown tier/override decision reads
+  as `"deny"`, the verdict runtime evaluation already reaches for a corrupt one.
+  The approval gate is the stored one: every row has carried a complete gate
+  since the backfill migration, and the changeset refuses anything else on save,
+  so a row without one is a broken invariant, not an editor state.
   """
   @spec editor_input(term()) :: editor_input()
   def editor_input(rules) do
-    {approval, approval_valid?} = approval_input(rules)
-
     %{
       defaults: rules |> defaults_for() |> normalize_defaults() |> enforce_monotonic(),
       overrides: Enum.map(overrides_for(rules), &normalize_override/1),
-      approval: approval,
-      approval_valid?: approval_valid?
+      approval: approval_input(rules)
     }
   end
 
@@ -234,18 +228,16 @@ defmodule Emisar.Policies do
   An unknown decision or a non-string name/action keeps the current value, rows
   past the server-owned ones are ignored, and the tiers are re-lifted to
   low→critical monotonic restrictiveness so the operator never holds a
-  combination the changeset rejects. `approval_valid?` rides through: only a
-  successful save rebuilds it from persisted rules.
+  combination the changeset rejects.
   """
   @spec update_editor_input(editor_input(), editor_changes()) :: editor_input()
-  def update_editor_input(%{approval_valid?: approval_valid?} = input, changes) do
+  def update_editor_input(input, changes) do
     defaults = input.defaults |> merge_defaults(changes[:defaults]) |> enforce_monotonic()
 
     %{
       defaults: defaults,
       overrides: merge_overrides(input.overrides, changes[:overrides]),
-      approval: merge_approval(input.approval, changes[:approval]),
-      approval_valid?: approval_valid?
+      approval: merge_approval(input.approval, changes[:approval])
     }
   end
 
@@ -278,41 +270,27 @@ defmodule Emisar.Policies do
   end
 
   defp approval_input(rules) do
-    case approval_settings_for(rules) do
-      {:ok, approval} ->
-        {%{
-           "min_approvals" => approval.min_approvals,
-           "allow_self_approval" => approval.allow_self_approval
-         }, true}
+    {:ok, approval} = approval_settings_for(rules)
 
-      {:error, :invalid_policy_approval} ->
-        {%{"min_approvals" => 1, "allow_self_approval" => false}, false}
-    end
+    %{
+      "min_approvals" => approval.min_approvals,
+      "allow_self_approval" => approval.allow_self_approval
+    }
   end
 
   defp normalize_defaults(defaults),
     do: Map.new(@risk_tiers, fn tier -> {tier, normalize_decision(defaults[tier])} end)
 
   defp normalize_override(override) when is_map(override) do
-    action = override_text(override["action"])
-
     %{
       "name" => override_text(override["name"]),
-      "action" => String.trim(action),
-      "decision" => normalized_override_decision(override["decision"], action)
+      "action" => override["action"] |> override_text() |> String.trim(),
+      "decision" => normalize_decision(override["decision"])
     }
   end
 
-  # A stored entry that isn't even an object still becomes a row the operator can
-  # see and delete; blank fields plus deny keep it inert until they do.
-  defp normalize_override(_override), do: %{"name" => "", "action" => "", "decision" => "deny"}
-
   defp override_text(value) when is_binary(value), do: value
   defp override_text(_value), do: ""
-
-  defp normalized_override_decision(decision, action) do
-    if action == String.trim(action), do: normalize_decision(decision), else: "deny"
-  end
 
   defp merge_defaults(defaults, changes) when is_map(changes) do
     Map.new(@risk_tiers, fn tier -> {tier, posted_decision(changes[tier], defaults[tier])} end)

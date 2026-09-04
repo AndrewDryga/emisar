@@ -133,9 +133,7 @@ defmodule EmisarWeb.PoliciesLiveTest do
                 "The account policy requires approval for medium-risk actions by default."}
     end
 
-    test "a padded stored allow override repairs to deny before it can become active", %{
-      conn: conn
-    } do
+    test "a padded stored override renders and saves trimmed", %{conn: conn} do
       {conn, _user, account} = register_and_log_in(conn)
       policy = Policies.peek_policy_for_account(account.id)
 
@@ -153,19 +151,14 @@ defmodule EmisarWeb.PoliciesLiveTest do
       assert html =~ ~s(value="linux.*")
 
       assert html =~
-               ~r/name="policy\[overrides\]\[0\]\[decision\]".*?<option selected[^>]*value="deny"/s
-
-      assert has_element?(lv, "#policy-form-account button.bg-brand-500", "Save")
+               ~r/name="policy\[overrides\]\[0\]\[decision\]".*?<option selected[^>]*value="allow"/s
 
       lv |> form("#policy-form-account") |> render_submit()
-      repaired = Policies.peek_policy_for_account(account.id)
+      saved = Policies.peek_policy_for_account(account.id)
 
-      assert repaired.rules["overrides"] == [
-               %{"name" => "reads", "action" => "linux.*", "decision" => "deny"}
+      assert saved.rules["overrides"] == [
+               %{"name" => "reads", "action" => "linux.*", "decision" => "allow"}
              ]
-
-      assert Policies.evaluate(repaired, %{"action_id" => "linux.uptime", "risk" => "low"}) ==
-               {:deny, ["reads"], "The account policy rule “reads” denies this low-risk action."}
     end
 
     test "tweak defaults + add an override → save → persisted as v2 JSON", %{conn: conn} do
@@ -576,45 +569,6 @@ defmodule EmisarWeb.PoliciesLiveTest do
 
       policy = Policies.peek_policy_for_account(account.id)
       assert policy.rules["approval"] == %{"min_approvals" => 2, "allow_self_approval" => false}
-    end
-
-    test "a corrupt stored gate is visible and can be repaired conservatively", %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
-      policy = Policies.peek_policy_for_account(account.id)
-      corrupt_rules = Map.delete(policy.rules, "approval")
-
-      _policy =
-        policy
-        |> Ecto.Changeset.change(rules: corrupt_rules)
-        |> Emisar.Repo.update!()
-
-      {:ok, lv, html} = live(conn, ~p"/app/#{account}/policies")
-
-      assert html =~ "Stored approval settings are invalid"
-      assert html =~ ~r/name="policy\[approval\]\[min_approvals\]"[^>]*value="1"/
-
-      assert html =~
-               ~r/<input[^>]*name="policy\[approval\]\[allow_self_approval\]"[^>]*value="false"[^>]*checked/
-
-      html =
-        render_change(lv, "form_change", %{
-          "editor" => "account",
-          "policy" => %{
-            "approval" => %{"min_approvals" => "1", "allow_self_approval" => "false"}
-          }
-        })
-
-      assert html =~ "Stored approval settings are invalid"
-
-      html = lv |> form("#policy-form-account") |> render_submit()
-      repaired = Policies.peek_policy_for_account(account.id)
-
-      assert repaired.rules["approval"] == %{
-               "min_approvals" => 1,
-               "allow_self_approval" => false
-             }
-
-      refute html =~ "Stored approval settings are invalid"
     end
 
     test "an existing min_approvals reflects in the editor's number input", %{conn: conn} do
@@ -1139,39 +1093,6 @@ defmodule EmisarWeb.PoliciesLiveTest do
       %{conn: conn, account: account, subject: Fixtures.Subjects.subject_for(user, account)}
     end
 
-    test "a corrupt default approval gate blocks new rulesets until it is repaired", %{
-      conn: conn,
-      account: account
-    } do
-      Fixtures.Runners.create_runner(account_id: account.id, name: "web-1", group: "web")
-      policy = Policies.peek_policy_for_account(account.id)
-      corrupt_rules = Map.delete(policy.rules, "approval")
-
-      policy
-      |> Ecto.Changeset.change(rules: corrupt_rules)
-      |> Emisar.Repo.update!()
-
-      {:ok, lv, html} = live(conn, ~p"/app/#{account}/policies")
-
-      assert html =~
-               ~r/<button(?=[^>]*phx-click="add_ruleset")(?=[^>]*\bdisabled)[^>]*>/
-
-      assert has_element?(
-               lv,
-               "#add-ruleset-disabled-reason",
-               "The default policy must be repaired before adding a ruleset"
-             )
-
-      html = render_hook(lv, "add_ruleset", %{})
-      assert html =~ "The default policy must be repaired before adding a ruleset."
-      refute html =~ ~s(name="uid" value="new-)
-
-      lv |> form("#policy-form-account") |> render_submit()
-      html = render_hook(lv, "add_ruleset", %{})
-
-      assert html =~ ~s(name="uid" value="new-)
-    end
-
     test "a runner-restricted admin sees the default read-only and can edit an in-scope ruleset",
          %{
            account: account,
@@ -1179,12 +1100,6 @@ defmodule EmisarWeb.PoliciesLiveTest do
          } do
       runner = Fixtures.Runners.create_runner(account_id: account.id, name: "db-1", group: "db")
       {:ok, scoped} = Policies.save_scoped_rules(deny_all(), :runner, runner.id, subject)
-      policy = Policies.peek_policy_for_account(account.id)
-
-      policy
-      |> Ecto.Changeset.change(rules: Map.delete(policy.rules, "approval"))
-      |> Emisar.Repo.update!()
-
       membership = Fixtures.Memberships.create_membership(account_id: account.id, role: "admin")
       {:ok, restricted} = Emisar.Accounts.RunnerAccess.restricted(["db"], [])
 
@@ -1195,16 +1110,8 @@ defmodule EmisarWeb.PoliciesLiveTest do
       {:ok, lv, html} = live(admin_conn, ~p"/app/#{account}/policies")
 
       assert html =~ "The default applies to every runner"
-      assert html =~ "full runner and pack access must repair the default policy"
       refute has_element?(lv, "#policy-form-account button[type=submit]")
       assert has_element?(lv, "#policy-form-#{scoped.id} button[type=submit]", "Save ruleset")
-      assert has_element?(lv, ~s(#add-ruleset-row button[disabled]))
-
-      assert has_element?(
-               lv,
-               "#add-ruleset-disabled-reason",
-               "The default policy must be repaired before adding a ruleset"
-             )
 
       before = Policies.peek_policy_for_account(account.id)
 
