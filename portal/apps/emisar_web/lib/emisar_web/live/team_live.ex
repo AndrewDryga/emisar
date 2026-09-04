@@ -1,7 +1,8 @@
 defmodule EmisarWeb.TeamLive do
   use EmisarWeb, :live_view
-  alias Emisar.{Accounts, Audit, Catalog, Runners, SSO}
-  alias EmisarWeb.{ConfirmDialog, LiveForm, LiveTable, Permissions, RoleCopy, RunnerScope}
+  alias Emisar.{Accounts, Audit, Runners, SSO}
+  alias EmisarWeb.{ConfirmDialog, LiveForm, LiveTable, MemberErrors}
+  alias EmisarWeb.{Permissions, RoleCopy, RunnerScope}
   alias Phoenix.LiveView.JS
 
   # String forms of the canonical role enum — the invite/role forms work
@@ -171,7 +172,7 @@ defmodule EmisarWeb.TeamLive do
   # per membership id so a re-render (a member mutation, a filter) can't
   # re-collapse a row the operator opened to audit.
   def handle_event("toggle_scope_expand", %{"id" => id}, socket) do
-    {:noreply, update(socket, :expanded_scopes, &toggle_scope(&1, id))}
+    {:noreply, update(socket, :expanded_scopes, &RunnerScope.toggle_scope(&1, id))}
   end
 
   # Re-reads the member rather than trusting the roster this page rendered: a
@@ -180,7 +181,8 @@ defmodule EmisarWeb.TeamLive do
   def handle_event("start_scope_edit", %{"membership_id" => id}, socket) do
     case Accounts.fetch_team_member_facts(id, socket.assigns.current_subject) do
       {:ok, %{runner_access_editable?: false}} ->
-        {:noreply, put_flash(socket, :error, error_message(:runner_access_managed_by_directory))}
+        {:noreply,
+         put_flash(socket, :error, MemberErrors.message(:runner_access_managed_by_directory))}
 
       # Re-read: a role changed to one that reaches no runners since mount has to
       # close the editor here too — the hidden menu item is never the check.
@@ -188,7 +190,8 @@ defmodule EmisarWeb.TeamLive do
         if Emisar.Auth.role_carries_runner_access?(membership.role),
           do: {:noreply, open_scope_edit(socket, id, access)},
           else:
-            {:noreply, put_flash(socket, :error, error_message(:role_carries_no_runner_access))}
+            {:noreply,
+             put_flash(socket, :error, MemberErrors.message(:role_carries_no_runner_access))}
 
       {:error, _reason} ->
         {:noreply, socket}
@@ -288,7 +291,7 @@ defmodule EmisarWeb.TeamLive do
           {:noreply, put_flash(socket, :error, "Only owners and admins can change this setting.")}
 
         {:error, :mfa_enrollment_required} ->
-          {:noreply, put_flash(socket, :error, error_message(:mfa_enrollment_required))}
+          {:noreply, put_flash(socket, :error, MemberErrors.message(:mfa_enrollment_required))}
 
         {:error, _} ->
           {:noreply, put_flash(socket, :error, "Could not update MFA setting.")}
@@ -496,7 +499,7 @@ defmodule EmisarWeb.TeamLive do
     with_membership(socket, id, fn membership ->
       case Accounts.update_user_as_admin(membership, params, socket.assigns.current_subject) do
         {:ok, _user} -> {:ok, "Member updated."}
-        {:error, reason} -> {:error, error_message(reason)}
+        {:error, reason} -> {:error, MemberErrors.message(reason)}
       end
     end)
     |> close_edit_if_saved()
@@ -553,7 +556,7 @@ defmodule EmisarWeb.TeamLive do
     with_membership(socket, id, fn membership ->
       case Accounts.delete_membership(membership, socket.assigns.current_subject) do
         {:ok, _} -> {:ok, "Member removed."}
-        {:error, reason} -> {:error, error_message(reason)}
+        {:error, reason} -> {:error, MemberErrors.message(reason)}
       end
     end)
     |> noreply()
@@ -571,7 +574,7 @@ defmodule EmisarWeb.TeamLive do
     with_membership(socket, id, fn membership ->
       case Accounts.suspend_membership(membership, socket.assigns.current_subject) do
         {:ok, _} -> {:ok, "Access suspended."}
-        {:error, reason} -> {:error, error_message(reason)}
+        {:error, reason} -> {:error, MemberErrors.message(reason)}
       end
     end)
     |> noreply()
@@ -584,7 +587,7 @@ defmodule EmisarWeb.TeamLive do
       # IdP). The menu also hides the action, but the guard is domain-owned.
       case Accounts.reinstate_membership(membership, socket.assigns.current_subject) do
         {:ok, _} -> {:ok, "Access restored."}
-        {:error, reason} -> {:error, error_message(reason)}
+        {:error, reason} -> {:error, MemberErrors.message(reason)}
       end
     end)
     |> noreply()
@@ -594,7 +597,7 @@ defmodule EmisarWeb.TeamLive do
     with_membership(socket, id, fn membership ->
       case Accounts.end_all_sessions_for(membership, socket.assigns.current_subject) do
         :ok -> {:ok, "All sessions ended for that user."}
-        {:error, reason} -> {:error, error_message(reason)}
+        {:error, reason} -> {:error, MemberErrors.message(reason)}
       end
     end)
     |> noreply()
@@ -627,12 +630,6 @@ defmodule EmisarWeb.TeamLive do
   # the `:email_confirmation` on_mount hook (UserAuth) — the same hook
   # that powers the portal-wide verify-email banner — so there's no
   # per-LV handler here.
-
-  defp toggle_scope(expanded, id) do
-    if MapSet.member?(expanded, id),
-      do: MapSet.delete(expanded, id),
-      else: MapSet.put(expanded, id)
-  end
 
   # The pack half unmounts while the chosen runner mode reaches nothing, so a
   # change event fired from that state carries NO pack params at all — reading
@@ -730,7 +727,7 @@ defmodule EmisarWeb.TeamLive do
              socket.assigns.current_subject
            ) do
         {:ok, _membership} -> {:ok, "Access updated."}
-        {:error, reason} -> {:error, error_message(reason)}
+        {:error, reason} -> {:error, MemberErrors.message(reason)}
       end
     end)
     |> close_scope_edit_if_saved()
@@ -780,8 +777,6 @@ defmodule EmisarWeb.TeamLive do
   end
 
   defp noreply({_result, socket}), do: {:noreply, socket}
-
-  defp error_message(reason), do: EmisarWeb.MemberErrors.message(reason)
 
   defp open_scope_edit(socket, id, access) do
     socket
@@ -839,7 +834,7 @@ defmodule EmisarWeb.TeamLive do
   defp do_change_role(socket, membership, role) do
     case Accounts.update_membership_role(membership, role, socket.assigns.current_subject) do
       {:ok, _updated} -> {:noreply, socket |> put_flash(:info, "Role updated.") |> reload()}
-      {:error, reason} -> {:noreply, put_flash(socket, :error, error_message(reason))}
+      {:error, reason} -> {:noreply, put_flash(socket, :error, MemberErrors.message(reason))}
     end
   end
 
@@ -889,7 +884,7 @@ defmodule EmisarWeb.TeamLive do
   defp resend_invitation_error_message(:unauthorized),
     do: "Only owners and admins can invite members."
 
-  defp resend_invitation_error_message(reason), do: error_message(reason)
+  defp resend_invitation_error_message(reason), do: MemberErrors.message(reason)
 
   defp load_mfa_reset(socket, %{"membership_id" => membership_id}) do
     subject = socket.assigns.current_subject
@@ -991,7 +986,7 @@ defmodule EmisarWeb.TeamLive do
          |> push_navigate(to: ~p"/app/#{socket.assigns.current_account}/settings/team")}
 
       {:error, reason} ->
-        {:noreply, assign(socket, :mfa_reset_error, error_message(reason))}
+        {:noreply, assign(socket, :mfa_reset_error, MemberErrors.message(reason))}
     end
   end
 
@@ -1045,7 +1040,9 @@ defmodule EmisarWeb.TeamLive do
           end
 
         runners_by_id = Map.new(runners, &{&1.id, &1})
-        {advertisements, pack_load_error?} = account_pack_advertisements(socket)
+
+        {advertisements, pack_load_error?} =
+          RunnerScope.account_pack_advertisements(socket.assigns.current_subject)
 
         socket
         |> assign(:member_facts, member_facts)
@@ -1099,7 +1096,9 @@ defmodule EmisarWeb.TeamLive do
 
   defp load_invite_runners(socket) do
     socket = assign_pack_access_restricted(socket)
-    {advertisements, pack_load_error?} = account_pack_advertisements(socket)
+
+    {advertisements, pack_load_error?} =
+      RunnerScope.account_pack_advertisements(socket.assigns.current_subject)
 
     case Runners.list_all_runners_for_account(socket.assigns.current_subject) do
       {:ok, runners} ->
@@ -1119,19 +1118,6 @@ defmodule EmisarWeb.TeamLive do
         |> assign(:pack_advertisements, advertisements)
         |> assign(:pack_load_error?, pack_load_error?)
         |> assign(:runner_load_error?, true)
-    end
-  end
-
-  # A role without view_catalog gets no pack choices rather than a crash — the
-  # same shape as the runner and directory loads above. The second element says
-  # whether the empty map is a real answer or a failed read, so a pack picker
-  # cannot report "No packs on the selected runners" for packs it never read.
-  defp account_pack_advertisements(socket) do
-    subject = socket.assigns.current_subject
-
-    case Catalog.list_pack_advertisements(subject) do
-      {:ok, advertisements} -> {advertisements, false}
-      {:error, _reason} -> {%{}, Catalog.subject_can_view_packs?(subject)}
     end
   end
 
@@ -3042,11 +3028,6 @@ defmodule EmisarWeb.TeamLive do
     </.link>
     """
   end
-
-  defp provisioned_via_label(:scim), do: "SCIM"
-  defp provisioned_via_label(:oidc_jit), do: "SSO"
-  defp provisioned_via_label(:manual), do: "Linked"
-  defp provisioned_via_label(_), do: "Synced"
 
   defp sync_badge_label(%{provisioned_via: :scim, provider_name: provider_name}),
     do: provider_name

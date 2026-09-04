@@ -1465,4 +1465,10 @@ defmodule EmisarWeb.DomainComponents do
   defp agent_count_label(1), do: "agent"
 
   defp agent_count_label(_count), do: "agents"
+
+  @doc "How an SSO identity reached the account, as the word shown beside its provider."
+  def provisioned_via_label(:scim), do: "SCIM"
+  def provisioned_via_label(:oidc_jit), do: "SSO"
+  def provisioned_via_label(:manual), do: "Linked"
+  def provisioned_via_label(_), do: "Synced"
 end

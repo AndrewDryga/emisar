@@ -32,6 +32,9 @@ defmodule EmisarWeb.RunnerScope do
       loading_state: 1
     ]
 
+  alias Emisar.Auth.Subject
+  alias Emisar.Catalog
+
   alias Emisar.Accounts
 
   attr :name, :string, required: true, doc: ~s(checkbox field name, e.g. "scope[]")
@@ -282,6 +285,26 @@ defmodule EmisarWeb.RunnerScope do
   end
 
   def pack_load_error(false), do: nil
+
+  @doc "Flips `id` in the set of expanded scope disclosures."
+  def toggle_scope(expanded, id) do
+    if MapSet.member?(expanded, id),
+      do: MapSet.delete(expanded, id),
+      else: MapSet.put(expanded, id)
+  end
+
+  @doc """
+  The account's pack advertisements for a pack picker, with a flag saying
+  whether an empty map is a real answer or a failed read — a role without
+  view_catalog gets no pack choices rather than a crash, and a picker cannot
+  report "No packs on the selected runners" for packs it never read.
+  """
+  def account_pack_advertisements(%Subject{} = subject) do
+    case Catalog.list_pack_advertisements(subject) do
+      {:ok, advertisements} -> {advertisements, false}
+      {:error, _reason} -> {%{}, Catalog.subject_can_view_packs?(subject)}
+    end
+  end
 
   @doc """
   Runner ids a `"group:x"` / `"runner:id"` selection covers — every runner when

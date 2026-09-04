@@ -1,7 +1,7 @@
 defmodule EmisarWeb.SSOSettingsLive do
   use EmisarWeb, :live_view
-  alias Emisar.{Accounts, Auth, Catalog, Runners, SSO}
-  alias EmisarWeb.{ConfirmDialog, LiveForm, LiveTable, MailTo, RoleCopy}
+  alias Emisar.{Accounts, Auth, Runners, SSO}
+  alias EmisarWeb.{ConfirmDialog, LiveForm, LiveTable, MailTo, MemberErrors, RoleCopy}
   alias EmisarWeb.{OIDCIdentityHandoff, Permissions, RunnerScope}
   alias Phoenix.LiveView.JS
 
@@ -40,8 +40,6 @@ defmodule EmisarWeb.SSOSettingsLive do
                   &{Emisar.Auth.role_label(&1), Atom.to_string(&1)}
                 )
 
-  @mapping_role_options @role_options
-
   # The synced-members list re-roles a real membership, so its select offers ALL
   # roles (incl. owner) — unlike the JIT/mapping selects. update_membership_role
   # still enforces the owner / last-owner / self guards server-side.
@@ -49,9 +47,6 @@ defmodule EmisarWeb.SSOSettingsLive do
                          Emisar.Auth.roles(),
                          &{Emisar.Auth.role_label(&1), Atom.to_string(&1)}
                        )
-
-  # The role strings a synced member may be moved to — the guard set for the
-  # change_member_role event (a crafted role never reaches update_membership_role).
 
   # New member provisioning modes for the form's select. JIT adds the membership on
   # first sign-in; manual parks first sign-ins as pending requests an admin
@@ -77,7 +72,6 @@ defmodule EmisarWeb.SSOSettingsLive do
       )
       |> assign(:kind_options, @kind_options)
       |> assign(:role_options, @role_options)
-      |> assign(:mapping_role_options, @mapping_role_options)
       |> assign(:member_role_options, @member_role_options)
       |> assign(:provisioner_options, @provisioner_options)
       # Suspend/re-role a synced member acts on the Accounts membership, which
@@ -299,7 +293,8 @@ defmodule EmisarWeb.SSOSettingsLive do
   end
 
   defp load_runners(socket) do
-    {advertisements, pack_load_error?} = account_pack_advertisements(socket)
+    {advertisements, pack_load_error?} =
+      RunnerScope.account_pack_advertisements(socket.assigns.current_subject)
 
     socket =
       socket
@@ -316,19 +311,6 @@ defmodule EmisarWeb.SSOSettingsLive do
         socket
         |> assign(:runners, [])
         |> assign(:runner_load_error?, true)
-    end
-  end
-
-  # A role without view_catalog gets no pack choices rather than a crash — the
-  # same shape as the runner load above. The flag says whether the empty map is
-  # a real answer or a failed read, so a pack picker cannot report "No packs on
-  # the selected runners" for packs it never read.
-  defp account_pack_advertisements(socket) do
-    subject = socket.assigns.current_subject
-
-    case Catalog.list_pack_advertisements(subject) do
-      {:ok, advertisements} -> {advertisements, false}
-      {:error, _reason} -> {%{}, Catalog.subject_can_view_packs?(subject)}
     end
   end
 
@@ -528,7 +510,7 @@ defmodule EmisarWeb.SSOSettingsLive do
   # Pure view: expand or collapse a mapping row's clipped pack chip list. Held
   # per mapping id so a re-render can't re-collapse a row opened to audit.
   def handle_event("toggle_scope_expand", %{"id" => id}, socket) do
-    {:noreply, update(socket, :expanded_scopes, &toggle_scope(&1, id))}
+    {:noreply, update(socket, :expanded_scopes, &RunnerScope.toggle_scope(&1, id))}
   end
 
   def handle_event("validate_edit", %{"provider_id" => id, "provider" => params} = event, socket) do
@@ -604,7 +586,7 @@ defmodule EmisarWeb.SSOSettingsLive do
         {:noreply, socket}
 
       provider ->
-        changeset = mapping_changeset(provider, params) |> LiveForm.on_change(event)
+        changeset = SSO.change_group_mapping(provider, params) |> LiveForm.on_change(event)
 
         {:noreply,
          socket
@@ -1112,7 +1094,7 @@ defmodule EmisarWeb.SSOSettingsLive do
         {:error, reason} ->
           # reload() so the dropdown trigger reflects the STORED role after a
           # refusal, not the value the operator picked.
-          {:noreply, socket |> put_flash(:error, member_error(reason)) |> reload()}
+          {:noreply, socket |> put_flash(:error, MemberErrors.message(reason)) |> reload()}
       end
     end)
   end
@@ -1121,7 +1103,7 @@ defmodule EmisarWeb.SSOSettingsLive do
     with_synced_membership(socket, membership_id, fn membership ->
       case Accounts.suspend_membership(membership, socket.assigns.current_subject) do
         {:ok, _} -> {:noreply, socket |> put_flash(:info, "Member suspended.") |> reload()}
-        {:error, reason} -> {:noreply, put_flash(socket, :error, member_error(reason))}
+        {:error, reason} -> {:noreply, put_flash(socket, :error, MemberErrors.message(reason))}
       end
     end)
   end
@@ -1134,7 +1116,7 @@ defmodule EmisarWeb.SSOSettingsLive do
       # guard is domain-owned, not UI-trusted.
       case Accounts.reinstate_membership(membership, socket.assigns.current_subject) do
         {:ok, _} -> {:noreply, socket |> put_flash(:info, "Member reactivated.") |> reload()}
-        {:error, reason} -> {:noreply, put_flash(socket, :error, member_error(reason))}
+        {:error, reason} -> {:noreply, put_flash(socket, :error, MemberErrors.message(reason))}
       end
     end)
   end
@@ -1291,17 +1273,13 @@ defmodule EmisarWeb.SSOSettingsLive do
     end
   end
 
-  # A full reload after a provider mutation: refresh the connection list, the
-  # group→role mappings, AND the pending manual-link requests — so enabling
-  # directory sync (re)seeds a provider's panels, and approving/dismissing a
-  # request drops it from the list.
+  # A full reload after a provider mutation: re-fetch the one connection :show
+  # is on (its row may have changed — SCIM toggled, edited) with its group→role
+  # mappings and pending manual-link requests, so enabling directory sync
+  # (re)seeds the panels and approving/dismissing a request drops it from the
+  # list. If the connection vanished (deleted), load_show falls back to the
+  # overview.
   defp reload(socket) do
-    reload_show(socket)
-  end
-
-  # Re-fetch the one connection :show is on (its row may have changed — SCIM
-  # toggled, edited). If it vanished (deleted), load_show falls back to the overview.
-  defp reload_show(socket) do
     case socket.assigns.providers do
       [provider | _] ->
         params = Map.put(socket.assigns.mapping_filter_params, "id", provider.id)
@@ -1427,14 +1405,12 @@ defmodule EmisarWeb.SSOSettingsLive do
     |> Enum.find(&(&1.id == id))
   end
 
-  # The create-form changeset for a provider's mapping. Built over
-  # The context's form builder — phx-change validation (required fields + the
-  # owner-exclusion) matches the server create path exactly. account_id /
-  # provider_id come from the provider whose panel owns the form.
-  defp mapping_changeset(provider, params \\ %{}),
-    do: SSO.change_group_mapping(provider, params)
-
-  defp mapping_form(provider), do: mapping_to_form(provider, mapping_changeset(provider))
+  # The create form is built over the context's changeset builder, so phx-change
+  # validation (required fields + the owner-exclusion) matches the server create
+  # path exactly; account_id / provider_id come from the provider whose panel
+  # owns the form.
+  defp mapping_form(provider),
+    do: mapping_to_form(provider, SSO.change_group_mapping(provider, %{}))
 
   defp mapping_to_form(provider, %Ecto.Changeset{} = changeset),
     do: to_form(changeset, as: "mapping", id: "create-mapping-#{provider.id}")
@@ -1601,7 +1577,6 @@ defmodule EmisarWeb.SSOSettingsLive do
 
   # Member-lifecycle errors from Accounts (change role / suspend / reinstate) —
   # kept separate from the SSO-config error_message/1 so each reads for its surface.
-  defp member_error(reason), do: EmisarWeb.MemberErrors.message(reason)
 
   # The create form and any open inline edit form coexist in the DOM, so each
   # gets its own `id` — otherwise their inputs collide on `provider_<field>`.
@@ -1813,7 +1788,7 @@ defmodule EmisarWeb.SSOSettingsLive do
           <aside class="order-1 xl:order-2 xl:sticky xl:top-6">
             <.provider_setup_guide
               id="new-rail"
-              kind={form_kind(@form, @kind_options)}
+              kind={form_kind(@form)}
               callback_url={@callback_url}
             />
           </aside>
@@ -2131,7 +2106,7 @@ defmodule EmisarWeb.SSOSettingsLive do
               load_error?={Map.get(@group_mapping_errors, provider.id, false)}
               group_picker={@group_pickers["role"]}
               mapping_form={Map.get(@mapping_forms, provider.id)}
-              mapping_role_options={@mapping_role_options}
+              mapping_role_options={@role_options}
               editing_mapping_id={@editing_mapping_id}
               mapping_edit_form={@mapping_edit_form}
               adding_mapping={@adding_mapping}
@@ -2441,7 +2416,7 @@ defmodule EmisarWeb.SSOSettingsLive do
   # controls; a panel per group was an island per group. Shared by both actions;
   # the outer <.simple_form> spaces the sections and renders the submit footer.
   defp provider_fields(assigns) do
-    assigns = assign(assigns, :kind, form_kind(assigns.form, assigns.kind_options))
+    assigns = assign(assigns, :kind, form_kind(assigns.form))
 
     ~H"""
     <div class="space-y-10">
@@ -2493,7 +2468,7 @@ defmodule EmisarWeb.SSOSettingsLive do
         <.provider_setup_guide
           :if={@inline_guide?}
           id={@guide_id}
-          kind={form_kind(@form, @kind_options)}
+          kind={form_kind(@form)}
           callback_url={@callback_url}
         />
         <div class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -2966,7 +2941,7 @@ defmodule EmisarWeb.SSOSettingsLive do
   # Blank on a fresh /new form (nothing picked yet) — the guide/hints fall back
   # to generic and the issuer stays editable, rather than arbitrarily pre-picking
   # the first provider (and locking its issuer before the operator has chosen).
-  defp form_kind(form, _kind_options) do
+  defp form_kind(form) do
     case form[:kind].value do
       blank when blank in [nil, ""] -> ""
       value -> to_string(value)
@@ -2976,7 +2951,7 @@ defmodule EmisarWeb.SSOSettingsLive do
   # The humanized label for the form's current kind — for the read-only display on
   # the edit form, where provider type is create-only.
   defp selected_kind_label(form, kind_options) do
-    value = form_kind(form, kind_options)
+    value = form_kind(form)
     Enum.find_value(kind_options, value, fn {label, v} -> v == value && label end)
   end
 
@@ -4206,11 +4181,6 @@ defmodule EmisarWeb.SSOSettingsLive do
   defp synced_external_id(identity),
     do: identity.scim_external_id || identity.provider_identifier
 
-  defp provisioned_via_label(:scim), do: "SCIM"
-  defp provisioned_via_label(:oidc_jit), do: "SSO"
-  defp provisioned_via_label(:manual), do: "Linked"
-  defp provisioned_via_label(_), do: "Synced"
-
   defp role_label(role), do: Emisar.Auth.role_label(role)
 
   defp runner_access_mode_label(:none), do: "No runners"
@@ -4223,12 +4193,6 @@ defmodule EmisarWeb.SSOSettingsLive do
 
   defp mapping_pack_reach_phrase(:all), do: "All"
   defp mapping_pack_reach_phrase(:restricted), do: nil
-
-  defp toggle_scope(expanded, id) do
-    if MapSet.member?(expanded, id),
-      do: MapSet.delete(expanded, id),
-      else: MapSet.put(expanded, id)
-  end
 
   # Groups lead — a group is the wider grant, so the visible tags start there.
   defp mapping_scope_tag_items(mapping) do
