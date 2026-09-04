@@ -6,7 +6,7 @@ kind: exec
 risk: medium
 
 description: >
-  Return the last N slowlog entries (commands that exceeded the
+  List the last N slowlog entries (commands that exceeded the
   slowlog threshold). Each entry shows id, timestamp, duration (µs),
   command + args, client addr, and client name. Read-only. Rated medium
   because each entry carries the executed command with its literal

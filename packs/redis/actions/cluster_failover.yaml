@@ -28,10 +28,12 @@ args:
         - TAKEOVER
 execution:
   command:
-    binary: /bin/sh
-    argv:
-      - "-c"
-      - "redis-cli CLUSTER FAILOVER {{ args.mode }}"
+    # The optional marker DROPS the whole element when `mode` is empty, which is
+    # the default safe failover. It is also what lets the catalog's only
+    # `critical` action reach its tool directly: the shell was here solely to
+    # swallow the empty word, and a critical action should not need one.
+    binary: redis-cli
+    argv: ["CLUSTER", "FAILOVER", "{{ args.mode? }}"]
   timeout: 60s
   cancel_grace: 30s
 output:

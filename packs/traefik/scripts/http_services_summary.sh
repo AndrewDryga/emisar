@@ -23,6 +23,9 @@ K=""
 [ "${TRAEFIK_INSECURE:-}" = "true" ] && K="-k"
 only_unhealthy=$1
 
+# Byte-identical to host_readiness.sh's get() and to trget.sh's request; each
+# pack file is content-hashed on its own, so a sourced helper cannot be shared.
+# Keep the three in step — the capture below is the difference that matters.
 get() {
 	if [ -n "${TRAEFIK_BASICAUTH:-}" ]; then
 		printf 'Authorization: Basic %s\n' "$(printf '%s' "$TRAEFIK_BASICAUTH" | base64 | tr -d '\n')" |
@@ -32,11 +35,18 @@ get() {
 	fi
 }
 
+# Captured, not piped: a pipeline exits with jq's status, and jq exits 0 on
+# empty stdin — so an API that is down, 401-ing, or on another port answered
+# "[]", read as "every service is healthy" during the cutover preflight this
+# action exists for. Under `set -e` the substitution fails the action instead.
+# This is the shape host_readiness.sh already uses for the same two GETs.
+services=$(get /api/http/services)
+
 # serverStatus is the health-check map; when absent (no health check) the
 # configured backends count as UP. "unhealthy" is computed only to drive the
 # only_unhealthy filter, then dropped — the up==0 leg fires only for an actual
 # load-balancer (an internal/weighted service legitimately has no backends).
-get /api/http/services | jq -c --arg only "$only_unhealthy" '
+printf '%s' "$services" | jq -c --arg only "$only_unhealthy" '
 	map(
 	  (.loadBalancer != null) as $has_lb
 	  | (.loadBalancer.servers // []) as $servers

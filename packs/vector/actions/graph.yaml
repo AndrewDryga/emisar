@@ -4,7 +4,7 @@ title: vector graph
 kind: exec
 risk: low
 description: >
-  Render the configured Vector topology as a Graphviz DOT graph — the
+  Show the configured Vector topology as a Graphviz DOT graph — the
   source -> transform -> sink wiring read from the config file. Offline:
   reads the config, emits DOT, connects to nothing. Pipe the output to
   `dot` to draw it. Talks only to the local binary — needs no API.

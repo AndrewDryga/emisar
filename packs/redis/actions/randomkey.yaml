@@ -4,7 +4,7 @@ title: RANDOMKEY
 kind: exec
 risk: low
 description: >
-  Return a random key from the current database (or nil if empty).
+  Get a random key from the current database (or nil if empty).
   Useful for sampling key shapes.
 side_effects:
   - One RANDOMKEY command.

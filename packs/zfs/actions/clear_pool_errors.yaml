@@ -27,13 +27,13 @@ args:
       pattern: "^([a-zA-Z0-9_/.][a-zA-Z0-9_/.\\-]{0,127})?$"
 execution:
   command:
-    binary: /bin/sh
-    argv:
-      - "-c"
-      - "zpool clear -- \"$1\" \"$2\""
-      - "emisar"
-      - "{{ args.pool }}"
-      - "{{ args.device }}"
+    # The optional marker DROPS the whole element when `device` is empty, which
+    # is what "empty for all" needs: `zpool clear` with a second operand looks
+    # it up via zpool_find_vdev and fails "no such device in pool". The old
+    # /bin/sh wrapper passed a quoted "" instead, so the example below — the
+    # pack's own most common invocation — could never succeed.
+    binary: zpool
+    argv: ["clear", "--", "{{ args.pool }}", "{{ args.device? }}"]
   timeout: 30s
 output:
   parser: text

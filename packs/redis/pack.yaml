@@ -2,7 +2,7 @@ schema_version: 1
 
 id: redis
 name: Redis operations pack
-version: 0.3.17
+version: 0.3.18
 # Older versions allowed credential redirection or caller-controlled Sentinel
 # votes, and 0.3.16 let config_set take `dir`/`dbfilename`/`logfile` —
 # with the medium, auto-running bgsave that is an arbitrary file write.

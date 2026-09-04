@@ -2,16 +2,21 @@ schema_version: 1
 id: traefik.rawdata
 title: GET /api/rawdata
 kind: script
-risk: low
+risk: high
 description: >
-  Show the complete dynamic configuration as Traefik currently sees it — all
+  Dump the complete dynamic configuration as Traefik currently sees it — all
   routers, services, and middlewares across HTTP/TCP/UDP, each with its
   errors, plus the "usedBy" dependency graph tying routers to services and
   middlewares. The single most complete read for "what is the actual live
   config and what depends on what?". Larger than the per-kind endpoints.
+  Middleware config is operator-authored and can carry secrets (basicAuth /
+  digestAuth user hashes, injected upstream auth headers, forwardAuth
+  targets). The runner's redaction is a fail-closed backstop, not a
+  guarantee — it is pattern-bound and can miss a bespoke secret whose name
+  and value match no rule.
 side_effects:
   - One read-only HTTP GET to the Traefik API.
-  - Read-only.
+  - Read-only, but exposes the full dynamic config (may include secrets).
 args: []
 execution:
   script:

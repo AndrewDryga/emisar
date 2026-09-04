@@ -8,9 +8,29 @@ fail() {
   exit 1
 }
 
+# lineage and terraform_version are the only free-text fields a state file
+# contributes, and a candidate .tfstate is an operator-placed file this action
+# exists to inspect BEFORE anyone trusts it — a corrupt or hand-recovered one
+# can carry any string there. The runner rejects a structured result over 8 KiB,
+# and state_compare_metadata emits two of each, so both are clipped to the
+# maxLength their schemas declare. clipped/controls_collapsed are plan_summary.sh's
+# spelling verbatim: core jq only, because jq's regex builtins are an optional
+# Oniguruma build, and each pack file is content-hashed on its own so the helper
+# is necessarily packaged with both rather than shared.
 project_metadata() {
   local source=$1
   jq --arg source "$source" -ce '
+    def controls_collapsed:
+      (explode | map(if . <= 31 or (. >= 127 and . <= 159) then 0 else . end)) as $cs
+      | [range($cs | length) | select(. == 0 or $cs[.] != 0 or $cs[. - 1] != 0) | $cs[.]]
+      | map(if . == 0 then 32 else . end)
+      | implode;
+
+    def clipped($chars; $bytes):
+      (. // "" | tostring | controls_collapsed) as $clean
+      | ($clean | .[:$chars] | until(utf8bytelength <= $bytes; .[:-1])) as $cut
+      | if $cut == $clean then $clean else ($cut | .[:$chars - 1]) + "…" end;
+
     def metadata($source):
       if type != "object" then
         error("state must be a JSON object")
@@ -29,9 +49,9 @@ project_metadata() {
         {
           source: $source,
           state_format_version: .version,
-          lineage: .lineage,
+          lineage: (.lineage | clipped(64; 64)),
           serial: .serial,
-          terraform_version: .terraform_version,
+          terraform_version: (.terraform_version | clipped(32; 32)),
           resource_instance_count:
             (reduce (.resources[] | .instances[]) as $instance (0; . + 1))
         }

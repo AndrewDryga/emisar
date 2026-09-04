@@ -68,6 +68,36 @@ cases:
       status: failure
       reason_contains: [must match pattern]
 
+  # A candidate .tfstate is an operator-placed file this action exists to
+  # inspect BEFORE anyone trusts it, so its two free-text fields can be any
+  # string at all. The runner rejects a structured result over 8 KiB, so this
+  # case's success IS the byte-cap proof; the two sentinels pin both budgets —
+  # a 300-character ASCII lineage clips on codepoints (63 survive plus an
+  # ellipsis, its control run collapsed to one space) while a 40-character
+  # multibyte version clips on BYTES at half that allowance.
+  - name: tf.state_file_metadata-fits-the-cap-on-a-worst-case-state
+    action: tf.state_file_metadata
+    args: {candidate_file: flood.tfstate}
+    expect:
+      json:
+        /source: candidate
+        /serial: 44
+        /lineage: "packtest-lineage- -AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA…"
+        /terraform_version: "ΩΩΩΩΩΩΩΩΩΩΩΩΩΩΩΩ…"
+
+  # state_compare_metadata emits two metadata objects, so it is the worst case
+  # for the cap; the flooded candidate is the half that can grow.
+  - name: tf.state_compare_metadata-fits-the-cap-on-a-worst-case-state
+    action: tf.state_compare_metadata
+    args: {candidate_file: flood.tfstate}
+    expect:
+      json:
+        /relation: lineage_mismatch
+        /serial_delta: null
+        /candidate/lineage: "packtest-lineage- -AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA…"
+        /candidate/terraform_version: "ΩΩΩΩΩΩΩΩΩΩΩΩΩΩΩΩ…"
+        /live/lineage: 11111111-2222-3333-4444-555555555555
+
   # The plan fixtures need a writable, initialized workspace, and /packs is
   # mounted read-only, so each plan case stages and initializes its own copy.
   # `terraform init` reaches no network here: the fixture uses only the builtin

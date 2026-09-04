@@ -46,9 +46,9 @@ output:
         properties:
           source: {enum: [live, candidate]}
           state_format_version: {const: 4}
-          lineage: {type: string}
+          lineage: {type: string, maxLength: 64}
           serial: {type: integer, minimum: 0}
-          terraform_version: {type: string}
+          terraform_version: {type: string, maxLength: 32}
           resource_instance_count: {type: integer, minimum: 0}
   max_stdout_bytes: 16384
   max_stderr_bytes: 8192

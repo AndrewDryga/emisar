@@ -22,6 +22,11 @@
 # lands in argv, a `ps` listing, or the audit log. Set TRAEFIK_INSECURE=true
 # to skip TLS verification when the API is served over https with a
 # self-signed certificate.
+#
+# The curl invocation below is byte-identical to the get() helpers in
+# host_readiness.sh and http_services_summary.sh; each pack file is
+# content-hashed on its own, so a sourced helper cannot be shared. Keep the
+# three in step.
 TRAEFIK_URL=${TRAEFIK_URL:-http://127.0.0.1:8080}
 K=""
 [ "${TRAEFIK_INSECURE:-}" = "true" ] && K="-k"

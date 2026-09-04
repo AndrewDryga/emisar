@@ -1,0 +1,32 @@
+# A file provider, so the API answers with a real operator-authored middleware
+# instead of only Traefik's internal ones. The basicAuth user hash and the
+# injected upstream header are exactly what traefik.rawdata and
+# traefik.http_middlewares hand back verbatim, which is why both are
+# approval-gated — the cases assert that exposure rather than assume it.
+# The apr1 hash is `openssl passwd -apr1` over "packtest-traefik-basicauth".
+http:
+  routers:
+    packtest-router:
+      rule: "Host(`packtest.example`)"
+      service: packtest-service
+      middlewares:
+        - packtest-auth
+        - packtest-upstream-header
+  services:
+    packtest-service:
+      loadBalancer:
+        servers:
+          - url: "http://127.0.0.1:9999/"
+  middlewares:
+    packtest-auth:
+      basicAuth:
+        users:
+          - "packtest:$apr1$pAcKtEsT$PZSLBj5FU18crmYUQ8aMM0"
+    packtest-upstream-header:
+      headers:
+        customRequestHeaders:
+          # An operator-invented header name, which is the point: the runner's
+          # default vocabulary deliberately omits a bare `auth`, so this shared
+          # upstream secret reaches the caller in cleartext while a `Bearer …`
+          # value in the same field would have been masked.
+          X-Packtest-Upstream-Auth: packtest-traefik-upstream-header

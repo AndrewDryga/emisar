@@ -2,8 +2,11 @@ schema_version: 1
 
 id: systemd-deep
 name: Systemd deep introspection pack
-version: 0.1.20
-retired_below: 0.1.14
+version: 0.1.21
+# 0.1.20 and below let watchdog_status report "no service has a watchdog" for a
+# host where systemctl could not reach the manager at all — a false all-clear
+# from a low, auto-running read.
+retired_below: 0.1.21
 description: >
   Deeper systemd state than linux-core: failed units, list-units,
   timers, cgroup tree, journal disk usage, systemd-analyze for boot

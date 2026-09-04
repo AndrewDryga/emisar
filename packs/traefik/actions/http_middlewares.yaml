@@ -2,14 +2,19 @@ schema_version: 1
 id: traefik.http_middlewares
 title: GET /api/http/middlewares
 kind: script
-risk: low
+risk: high
 description: >
   List every HTTP middleware (auth, rate-limit, headers, redirects, retries,
   circuit-breaker, etc.) with its config, status, and error[]. Use to confirm
-  a middleware is configured as expected and not in error.
+  a middleware is configured as expected and not in error. A middleware is
+  where the edge's auth material lives — basicAuth / digestAuth user hashes,
+  injected upstream auth headers, forwardAuth targets — and the operator
+  names those fields, so the runner's redaction is a fail-closed backstop,
+  not a guarantee: it is pattern-bound and can miss a bespoke secret whose
+  name and value match no rule.
 side_effects:
   - One read-only HTTP GET to the Traefik API.
-  - Read-only.
+  - Read-only, but exposes every middleware's config (may include secrets).
 args: []
 execution:
   script:

@@ -19,6 +19,7 @@ services:
       - ${EMISAR_ROOT}/packs/terraform-readonly/test/fixtures/candidates/newer.fixture:/fixture/candidates/newer.tfstate:ro
       - ${EMISAR_ROOT}/packs/terraform-readonly/test/fixtures/candidates/equal.fixture:/fixture/candidates/equal.tfstate:ro
       - ${EMISAR_ROOT}/packs/terraform-readonly/test/fixtures/candidates/mismatch.fixture:/fixture/candidates/mismatch.tfstate:ro
+      - ${EMISAR_ROOT}/packs/terraform-readonly/test/fixtures/candidates/flood.fixture:/fixture/candidates/flood.tfstate:ro
 
   terraform:
     image: hashicorp/terraform:${PACKTEST_VERSION:-1.15.8}${PACKTEST_DIGEST-}

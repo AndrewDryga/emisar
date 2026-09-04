@@ -4,12 +4,11 @@ title: SENTINEL IS-MASTER-DOWN-BY-ADDR
 kind: exec
 risk: low
 description: >
-  Ask this Sentinel whether the master at ip:port is subjectively
-  down from its point of view. Primarily an internal failover-consensus
-  command, but useful read-only forensics when investigating WHY an
-  objective-down (ODOWN) or failover did or did not fire. Always sends
-  epoch 0 and run id "*", Redis's non-voting form. Connects to the
-  Sentinel on port 26379. Read-only.
+  Check whether this Sentinel considers the master at ip:port subjectively
+  down. Primarily an internal failover-consensus command, but useful
+  read-only forensics when investigating WHY an objective-down (ODOWN) or
+  failover did or did not fire. Always sends epoch 0 and run id "*", Redis's
+  non-voting form. Connects to the Sentinel on port 26379. Read-only.
 side_effects:
   - One SENTINEL IS-MASTER-DOWN-BY-ADDR command on the local Sentinel (port 26379).
   - Fixed to epoch 0 and run id "*", so it cannot advance the election epoch or request a leader vote.

@@ -2,8 +2,14 @@ schema_version: 1
 id: sentry.issue_tags
 title: Show issue tags
 kind: script
-risk: low
-description: Show an issue's tag distribution — which releases, environments, browsers, or servers the error hits most.
+risk: medium
+description: >
+  Show an issue's tag distribution — which releases, environments, browsers, or
+  servers the error hits most. Tag values are whatever the instrumented
+  application set: the standard `user` and `url` tags carry end-user
+  identifiers and full request URLs, and a custom tag is returned verbatim. That
+  is arbitrary application data, so treat the result as sensitive diagnostics —
+  the same call sentry.issue_latest_event already makes for the same values.
 side_effects: [One read-only API request.]
 args:
   - name: organization

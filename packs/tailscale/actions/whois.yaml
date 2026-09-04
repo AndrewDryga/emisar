@@ -4,7 +4,7 @@ title: tailscale whois --json <ip>
 kind: exec
 risk: low
 description: >
-  Identify which tailnet node and user own a Tailscale IP — returns the
+  Show which tailnet node and user own a Tailscale IP — returns the
   node, user, and capabilities as JSON.
 side_effects: ["One tailscale read.", "Read-only."]
 args:

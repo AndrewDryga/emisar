@@ -2,8 +2,11 @@ schema_version: 1
 
 id: sentry
 name: Sentry error monitoring
-version: 0.1.6
-retired_below: 0.1.6
+version: 0.1.7
+# 0.1.6 and below rated issue_tags `low`, so up to a megabyte of raw
+# application tag values — end-user identifiers, request URLs — auto-ran even
+# for an operator who gates `medium`.
+retired_below: 0.1.7
 description: >
   Governed Sentry issue triage, release, ingest-key, volume-stats, and
   alert-rule operations against sentry.io or a self-hosted instance. Auth via

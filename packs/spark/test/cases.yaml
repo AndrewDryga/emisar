@@ -40,6 +40,32 @@ cases:
     expect:
       stdout_contains: [packtest-live]
 
+  # Brackets are how IPv6 spells a literal host. The shape check used to reject
+  # them alongside braces, which disabled all 23 actions on an IPv6-only or
+  # ::-bound deployment before a request was ever attempted. It now gets past
+  # the guard and fails at the transfer, where nothing is listening.
+  - action: spark.applications
+    name: spark.applications-accepts-a-literal-ipv6-endpoint
+    args: {source: driver}
+    env:
+      SPARK_UI_URL: "http://[::1]:4040"
+    expect:
+      status: failure
+      stderr_contains: ["Spark request failed with transfer status"]
+      stderr_not_contains: ["must not contain braces"]
+
+  # The half of the class that must stay rejected: curl expands a brace into one
+  # transfer per alternative, so --globoff is the enforcement and this is the
+  # readable error.
+  - action: spark.applications
+    name: spark.applications-rejects-a-braced-endpoint
+    args: {source: driver}
+    env:
+      SPARK_UI_URL: "http://{a,b}:4040"
+    expect:
+      status: failure
+      stderr_contains: ["Spark URL must not contain braces"]
+
   - action: spark.application
     resolve_args:
       app_id:

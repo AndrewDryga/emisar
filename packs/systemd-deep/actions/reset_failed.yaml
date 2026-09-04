@@ -21,12 +21,13 @@ args:
       pattern: "^([a-zA-Z0-9@:_.][a-zA-Z0-9@:_.\\-]{0,127})?$"
 execution:
   command:
-    binary: /bin/sh
-    argv:
-      - "-c"
-      - "systemctl reset-failed \"$1\""
-      - "emisar"
-      - "{{ args.unit }}"
+    # The optional marker DROPS the whole element when `unit` is empty, which
+    # is what "resets every failed unit" needs: systemctl takes the reset-all
+    # path only when it is given no operand, and an empty one fails
+    # unit_name_mangle. The old /bin/sh wrapper passed a quoted "" instead, so
+    # the example above could never succeed.
+    binary: systemctl
+    argv: ["reset-failed", "{{ args.unit? }}"]
   timeout: 30s
 output:
   parser: text

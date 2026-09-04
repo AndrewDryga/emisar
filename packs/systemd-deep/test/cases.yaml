@@ -41,6 +41,49 @@ cases:
     expect:
       stdout_contains: [Id=cron.service, ActiveState=]
 
+  # "Without a unit name, resets every failed unit" is the action's own example,
+  # and it could not work: the old /bin/sh wrapper handed systemctl a quoted
+  # empty operand, which fails unit_name_mangle instead of taking the reset-all
+  # path. This case runs exactly that example.
+  - name: systemd.reset-failed-clears-every-failed-unit
+    action: systemd.reset_failed
+    args: {}
+    arrange:
+      - argv: [systemd-run, --unit=packtest-failed.service, /bin/false]
+      - argv: [/bin/sh, -c, "systemctl is-failed packtest-failed.service | grep -Fqx failed"]
+        retry_for: 10s
+        retry_every: 200ms
+    probes:
+      - name: the manager holds no failed unit
+        argv: [/bin/sh, -c, "systemctl list-units --failed --plain --no-legend --no-pager; echo probed"]
+        expect:
+          stdout_contains: [probed]
+          stdout_not_contains: [packtest-failed.service]
+
+  - name: systemd.watchdog-status-lists-a-supervised-unit
+    action: systemd.watchdog_status
+    arrange:
+      - argv: [systemd-run, --unit=packtest-watchdog.service, --property=WatchdogSec=30, /bin/sleep, "600"]
+      - argv: [/bin/sh, -c, "test \"$(systemctl show packtest-watchdog.service -p WatchdogUSec --value)\" != 0"]
+        retry_for: 10s
+        retry_every: 200ms
+    expect:
+      stdout_contains: [packtest-watchdog.service]
+    cleanup:
+      - argv: [systemctl, stop, packtest-watchdog.service]
+
+  # The unit list ended a pipeline whose last command always succeeded, so a
+  # host where systemctl cannot reach the manager answered "no service has a
+  # watchdog" — the same false all-clear the journal case above pins.
+  - name: systemd.watchdog-status-fails-when-the-manager-is-unreachable
+    action: systemd.watchdog_status
+    env:
+      PATH: /opt/packtest-systemctl-failure:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+    expect:
+      status: failure
+      exit: [1]
+      stderr_contains: [Failed to connect to bus]
+
   - action: systemd.unit_start
     args: {unit: cron.service}
     arrange:

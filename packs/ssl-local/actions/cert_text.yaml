@@ -36,11 +36,14 @@ output:
   max_stdout_bytes: 65536
   max_stderr_bytes: 8192
   redact:
-    # BACKSTOP, not the active defence. Measured by removing this rule and
-    # re-running the behavior case: it still passed, because `-noout`/`-nokeys`
-    # means openssl never prints a PEM private key however adversarial the
-    # input. The rule earns its place against a future edit that drops that
-    # flag — it does fire when a key block really is in the output.
+    # BACKSTOP, not the active defence, and the identical rule ships on all
+    # seven ssl-local actions — this copy carries the reasoning for them all.
+    # Measured by removing it and re-running the behavior case: it still
+    # passed, because none of the seven prints a PEM body. Where openssl is
+    # the reader, `-noout`/`-nokeys` see to that; find_certs prints filenames
+    # and verify_chain prints a verdict. The rule earns its place against a
+    # future edit that drops one of those flags — it does fire when a key
+    # block really is in the output.
     - name: private-key-pem
       type: regex
       pattern: '(?s)-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----.*?-----END [A-Z0-9 ]*PRIVATE KEY-----'

@@ -38,5 +38,6 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 RUN printf '0123456789abcdef0123456789abcdef\n' > /etc/machine-id
 COPY fixtures/journalctl-failure/ /opt/packtest-journalctl-failure/
-RUN chmod 0755 /opt/packtest-journalctl-failure/*
+COPY fixtures/systemctl-failure/ /opt/packtest-systemctl-failure/
+RUN chmod 0755 /opt/packtest-journalctl-failure/* /opt/packtest-systemctl-failure/*
 USER packtest

@@ -23,6 +23,9 @@ K=""
 [ "${TRAEFIK_INSECURE:-}" = "true" ] && K="-k"
 host=$1
 
+# Byte-identical to http_services_summary.sh's get() and to trget.sh's request;
+# each pack file is content-hashed on its own, so a sourced helper cannot be
+# shared. Keep the three in step — both callers capture before they project.
 get() {
 	if [ -n "${TRAEFIK_BASICAUTH:-}" ]; then
 		printf 'Authorization: Basic %s\n' "$(printf '%s' "$TRAEFIK_BASICAUTH" | base64 | tr -d '\n')" |

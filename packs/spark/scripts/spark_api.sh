@@ -22,9 +22,15 @@ fail() {
 }
 
 # The base URLs these are assembled from are host-administrator state, not
-# caller arguments, but curl would still expand a brace or bracket in one into a
-# transfer per alternative and would follow a non-HTTP scheme. --globoff and
-# --proto below are the enforcement; this is the readable error for a typo.
+# caller arguments, but curl would still expand a brace in one into a transfer
+# per alternative and would follow a non-HTTP scheme. --globoff and --proto
+# below are the enforcement; this is the readable error for a typo.
+#
+# Braces only. Brackets are how IPv6 spells a literal host, and rejecting them
+# disabled every action in this pack on an IPv6-only or ::-bound deployment
+# (SPARK_UI_URL=http://[::1]:4040). --globoff already stops curl expanding a
+# bracket range, which is exactly why the shape check must not ban the
+# character to get that protection.
 validate_url() {
   local url=$1
   case "$url" in
@@ -32,7 +38,7 @@ validate_url() {
     *) fail "Spark URL must start with http:// or https://: $url" ;;
   esac
   case "$url" in
-    *['{}[]']*) fail "Spark URL must not contain braces or brackets: $url" ;;
+    *['{}']*) fail "Spark URL must not contain braces: $url" ;;
   esac
 }
 

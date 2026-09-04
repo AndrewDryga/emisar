@@ -41,7 +41,7 @@ defmodule Emisar.Catalog.PublishedRegistryTest do
     # the pair covers both hash code paths.
     test "content_hash matches the Go runner byte-for-byte (golden values)" do
       assert PublishedRegistry.get("redis").content_hash ==
-               "sha256:f409d117f9ef895a9b1ecba6a36e1d9259f6b7ceee61a9c40f3cf06eda444268"
+               "sha256:82a04b0165cd39bd6d83aba0041bbad19f0e9efd58a98ce22c9ec09a9ad52a2e"
 
       assert PublishedRegistry.get("cassandra").content_hash ==
                "sha256:357bc92c6f32417685b066d9e4c9556e82431a304dd592e0fc75ea82f1d10c75"

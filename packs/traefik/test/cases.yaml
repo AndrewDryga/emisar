@@ -22,3 +22,37 @@ cases:
       exit: [22]
       reason_contains: [process exited with code 22]
       stderr_contains: ["curl: (22)"]
+
+  # rawdata and http_middlewares are approval-gated because they hand back the
+  # operator's own middleware config. The evidence that earns that tier is the
+  # leak itself: the file provider's basicAuth user hash and the upstream
+  # Authorization header it injects both come back in cleartext.
+  - action: traefik.http_middlewares
+    expect:
+      stdout_contains:
+        - packtest-auth@file
+        - '$apr1$pAcKtEsT$'
+        - packtest-traefik-upstream-header
+
+  - action: traefik.rawdata
+    expect:
+      stdout_contains:
+        - packtest-router@file
+        - packtest-service@file
+        - '$apr1$pAcKtEsT$'
+
+  - action: traefik.http_services_summary
+    expect:
+      stdout_contains: ['"name":"packtest-service@file"']
+
+  # The summary pipes an API read into jq, and jq exits 0 on empty stdin — so
+  # before the capture, a 404 (an API that is down, moved, or 401-ing) returned
+  # a successful empty summary that reads as "every service is healthy".
+  - name: traefik.http-services-summary-fails-when-the-api-errors
+    action: traefik.http_services_summary
+    env:
+      TRAEFIK_URL: http://127.0.0.1:8080/does-not-exist
+    expect:
+      status: failure
+      exit: [22]
+      stderr_contains: ["curl: (22)"]

@@ -4,7 +4,7 @@ title: Project live Terraform state metadata
 kind: script
 risk: low
 description: >
-  Pull the current backend state and return only its format version, lineage,
+  Show only the current backend state's metadata — format version, lineage,
   serial, Terraform version, and resource instance count. Resource values and
   outputs are never emitted or written to disk.
 side_effects:
@@ -28,9 +28,9 @@ output:
     properties:
       source: {const: live}
       state_format_version: {const: 4}
-      lineage: {type: string}
+      lineage: {type: string, maxLength: 64}
       serial: {type: integer, minimum: 0}
-      terraform_version: {type: string}
+      terraform_version: {type: string, maxLength: 32}
       resource_instance_count: {type: integer, minimum: 0}
   max_stdout_bytes: 4096
   max_stderr_bytes: 8192

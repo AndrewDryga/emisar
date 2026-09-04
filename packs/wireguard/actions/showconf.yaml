@@ -2,8 +2,14 @@ schema_version: 1
 id: wg.showconf
 title: wg showconf <iface>
 kind: exec
-risk: low
-description: Show the effective config for one WireGuard interface (`[Interface]`/`[Peer]` sections, peer pubkeys, allowed-ips, endpoints). PrivateKey and PresharedKey lines are masked at the source.
+risk: medium
+description: >
+  Show the effective config for one WireGuard interface (`[Interface]`/`[Peer]`
+  sections, peer pubkeys, allowed-ips, endpoints). WireGuard owns this key
+  space, so its secret-bearing directives are enumerable rather than guessed
+  at: `wg showconf` writes exactly `PrivateKey` and `PresharedKey`, and both
+  are masked at the source. Rated medium — not low — because that mask, and
+  not the absence of secrets, is what makes the output safe to return.
 side_effects:
   - "One netlink query."
   - "Read-only."

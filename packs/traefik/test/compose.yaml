@@ -11,6 +11,9 @@ services:
       - --ping=true
       - --ping.entrypoint=ping
       - --entrypoints.ping.address=:8082
+      - --providers.file.filename=/etc/traefik/dynamic.yml
+    volumes:
+      - ${EMISAR_ROOT}/packs/traefik/test/fixtures/dynamic.yml:/etc/traefik/dynamic.yml:ro
     healthcheck:
       test:
         - CMD
