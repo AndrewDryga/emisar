@@ -16,7 +16,7 @@ cases:
     action: pure.protection_groups
     args: {limit: 2, page_cursor: cursor-in}
     expect:
-      stdout_contains: [harness-pgroup, harness-target, '"more_items_remaining": true']
+      stdout_contains: [harness-pgroup, harness-target, '"more_items_remaining":true']
       json:
         /next_page_cursor: cursor-out
   - action: pure.default_protection
@@ -46,12 +46,12 @@ cases:
     action: pure.arrays_performance
     args: {window: 5m, resolution: 1s}
     expect:
-      stdout_contains: [harness-array, '"window_ms": 300000']
+      stdout_contains: [harness-array, '"window_ms":300000']
   - name: pure.volumes-performance-reports-a-full-page-as-truncated
     action: pure.volumes_performance
     args: {limit: 3}
     expect:
-      stdout_contains: [harness-volume-cool, '"more_items_remaining": true']
+      stdout_contains: [harness-volume-cool, '"more_items_remaining":true']
   - name: pure.volumes-performance-rejects-oversampled-window
     action: pure.volumes_performance
     args: {window: 7d, resolution: 30s}
@@ -63,7 +63,7 @@ cases:
     action: pure.hosts_performance
     args: {names: harness-host, window: 24h}
     expect:
-      stdout_contains: [harness-host, '"writes_per_sec": 4200']
+      stdout_contains: [harness-host, '"writes_per_sec":4200']
   - name: pure.network-interfaces-performance-named
     action: pure.network_interfaces_performance
     args: {names: ct0.eth4, limit: 5}

@@ -105,14 +105,14 @@ cases:
   - action: gcp.billing_accounts
     args: {limit: 100}
     expect:
-      stdout_contains: [Harness Billing Account, '"open": true', USD]
+      stdout_contains: [Harness Billing Account, '"open":true', USD]
 
   - action: gcp.billing_projects
     args:
       billing_account: 01B678-5ED3E1-AD1F9F
       limit: 200
     expect:
-      stdout_contains: [example-prod, '"billingEnabled": true']
+      stdout_contains: [example-prod, '"billingEnabled":true']
 
   # gcp.billing_budgets stays contract-only: gcloud registers no
   # api_endpoint_overrides/billingbudgets property, so the budgets call cannot be

@@ -150,12 +150,12 @@ cases:
   - action: gcp.alert_policies
     args: {project: example-prod, limit: 10}
     expect:
-      stdout_contains: [Harness CPU alert, '"enabled": true', harness-channel]
+      stdout_contains: [Harness CPU alert, '"enabled":true', harness-channel]
   - name: gcp.alert_policy_enable-is-idempotent-on-enabled-policy
     action: gcp.alert_policy_enable
     args: {project: example-prod, policy: "8675309001234"}
     expect:
-      stdout_contains: [Harness CPU alert, '"enabled": true']
+      stdout_contains: [Harness CPU alert, '"enabled":true']
     probes:
       - name: the provider received the enable patch
         argv: [curl, -fsS, --cacert, /packs/gcp-monitoring/test/fixtures/server.crt, https://gcp-api:8443/probe/state]
@@ -164,7 +164,7 @@ cases:
   - action: gcp.alert_policy_disable
     args: {project: example-prod, policy: "8675309001234"}
     expect:
-      stdout_contains: [Harness CPU alert, '"enabled": false']
+      stdout_contains: [Harness CPU alert, '"enabled":false']
     probes:
       - name: the provider received the disable patch
         argv: [curl, -fsS, --cacert, /packs/gcp-monitoring/test/fixtures/server.crt, https://gcp-api:8443/probe/state]
