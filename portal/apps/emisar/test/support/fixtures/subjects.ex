@@ -27,7 +27,7 @@ defmodule Emisar.Fixtures.Subjects do
 
     membership =
       Fixtures.Memberships.fetch_membership(account.id, user.id) ||
-        %Membership{role: Atom.to_string(role), user_id: user.id, account_id: account.id}
+        %Membership{role: role, user_id: user.id, account_id: account.id}
 
     Subject.for_user(user, account, membership, context,
       auth_method: opts[:auth_method],
