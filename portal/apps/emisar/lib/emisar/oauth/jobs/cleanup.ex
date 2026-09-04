@@ -6,8 +6,7 @@ defmodule Emisar.OAuth.Jobs.Cleanup do
   use Emisar.Jobs.Job,
     otp_app: :emisar,
     every: :timer.hours(1),
-    initial_delay: :timer.minutes(3),
-    executor: Emisar.Jobs.Executors.GloballyUnique
+    initial_delay: :timer.minutes(3)
 
   require Logger
 

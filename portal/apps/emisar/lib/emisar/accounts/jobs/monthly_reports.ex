@@ -19,8 +19,7 @@ defmodule Emisar.Accounts.Jobs.MonthlyReports do
   use Emisar.Jobs.Job,
     otp_app: :emisar,
     every: :timer.hours(6),
-    initial_delay: :timer.minutes(6),
-    executor: Emisar.Jobs.Executors.GloballyUnique
+    initial_delay: :timer.minutes(6)
 
   alias Emisar.{Accounts, Approvals, CalendarMonth, Jobs, Mail, Runners, Runs}
   alias Emisar.Accounts.Account

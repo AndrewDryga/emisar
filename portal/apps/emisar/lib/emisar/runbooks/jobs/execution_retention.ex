@@ -5,8 +5,7 @@ defmodule Emisar.Runbooks.Jobs.ExecutionRetention do
   use Emisar.Jobs.Job,
     otp_app: :emisar,
     every: :timer.hours(24),
-    initial_delay: :timer.minutes(8),
-    executor: Emisar.Jobs.Executors.GloballyUnique
+    initial_delay: :timer.minutes(8)
 
   alias Emisar.{Accounts, Billing, Jobs, Repo, Runbooks}
   require Logger

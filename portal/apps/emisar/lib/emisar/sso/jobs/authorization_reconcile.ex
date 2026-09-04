@@ -5,8 +5,7 @@ defmodule Emisar.SSO.Jobs.AuthorizationReconcile do
   use Emisar.Jobs.Job,
     otp_app: :emisar,
     every: :timer.minutes(1),
-    initial_delay: :timer.seconds(10),
-    executor: Emisar.Jobs.Executors.GloballyUnique
+    initial_delay: :timer.seconds(10)
 
   @impl Emisar.Jobs.Executors.GloballyUnique
   def execute(_config) do

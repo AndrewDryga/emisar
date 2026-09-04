@@ -5,8 +5,7 @@ defmodule Emisar.MCPOperations.Jobs.ReplayRetention do
   use Emisar.Jobs.Job,
     otp_app: :emisar,
     every: :timer.hours(24),
-    initial_delay: :timer.minutes(6),
-    executor: Emisar.Jobs.Executors.GloballyUnique
+    initial_delay: :timer.minutes(6)
 
   alias Emisar.MCPOperations.Operation
   alias Emisar.Repo

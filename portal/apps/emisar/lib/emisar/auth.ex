@@ -19,7 +19,6 @@ defmodule Emisar.Auth do
   alias Emisar.Repo
   alias Emisar.RequestContext
   alias Emisar.SSO
-  alias Emisar.Telemetry
   alias Emisar.Users
   require Logger
 
@@ -945,9 +944,9 @@ defmodule Emisar.Auth do
   # A magic-link sign-in failed. `user.sign_in_failed` is account-scoped, so it
   # only lands when the token still resolves to a real user (a live token with a
   # bad secret, or an expired/spent one that wasn't deleted). A consumed or
-  # undecodable token has no user to attribute — logged + counted server-side
-  # instead, with the SAME `{:error, :invalid_or_expired}` return so the response
-  # can't be turned into an email-enumeration oracle. Always returns the error.
+  # undecodable token has no user to attribute — logged server-side instead,
+  # with the SAME `{:error, :invalid_or_expired}` return so the response can't
+  # be turned into an email-enumeration oracle. Always returns the error.
   defp record_magic_link_failure(token_id, reason, context) when is_atom(reason) do
     case peek_magic_link_user(token_id) do
       {:ok, %Users.User{} = user} ->
@@ -958,17 +957,15 @@ defmodule Emisar.Auth do
 
       :error ->
         Logger.warning("magic-link sign-in failed for an unresolvable token")
-        Telemetry.magic_link_failed(reason)
     end
 
     {:error, reason}
   end
 
-  # A failed Multi step can forward a %Changeset{} or other non-atom reason; the
-  # is_atom-guarded telemetry call would FunctionClause-crash and a changeset
-  # can't be JSON-encoded into the audit payload — a sign-in 500 plus an
-  # enumeration signal. Collapse every non-atom to the neutral reason a spent or
-  # expired token already gives.
+  # A failed Multi step can forward a %Changeset{} or other non-atom reason, and
+  # a changeset can't be JSON-encoded into the audit payload — a sign-in 500
+  # plus an enumeration signal. Collapse every non-atom to the neutral reason a
+  # spent or expired token already gives.
   defp record_magic_link_failure(token_id, _reason, context),
     do: record_magic_link_failure(token_id, :invalid_or_expired, context)
 

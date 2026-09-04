@@ -139,16 +139,6 @@ defmodule Emisar.TelemetryTest do
       assert measurements == %{count: 1}
       assert meta == %{decision: :approved}
     end
-
-    test "magic_link_failed/1 emits the bounded failure reason" do
-      {measurements, meta} =
-        capture([:emisar, :auth, :magic_link_failed], fn ->
-          Emisar.Telemetry.magic_link_failed(:invalid_token)
-        end)
-
-      assert measurements == %{count: 1}
-      assert meta == %{reason: :invalid_token}
-    end
   end
 
   describe "job telemetry" do

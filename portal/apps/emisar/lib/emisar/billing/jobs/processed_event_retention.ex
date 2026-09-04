@@ -11,8 +11,7 @@ defmodule Emisar.Billing.Jobs.ProcessedEventRetention do
   use Emisar.Jobs.Job,
     otp_app: :emisar,
     every: :timer.hours(24),
-    initial_delay: :timer.minutes(12),
-    executor: Emisar.Jobs.Executors.GloballyUnique
+    initial_delay: :timer.minutes(12)
 
   alias Emisar.Billing.ProcessedEvent
   alias Emisar.Repo

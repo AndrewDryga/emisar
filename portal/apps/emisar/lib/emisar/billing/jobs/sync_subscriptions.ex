@@ -5,8 +5,7 @@ defmodule Emisar.Billing.Jobs.SyncSubscriptions do
   use Emisar.Jobs.Job,
     otp_app: :emisar,
     every: :timer.hours(1),
-    initial_delay: :timer.minutes(2),
-    executor: Emisar.Jobs.Executors.GloballyUnique
+    initial_delay: :timer.minutes(2)
 
   alias Emisar.{Billing, Jobs, Repo}
   require Logger
