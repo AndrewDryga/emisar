@@ -40,7 +40,7 @@ defmodule EmisarWeb.LiveTable do
   alias EmisarWeb.CoreComponents
 
   attr :id, :string, required: true
-  attr :path, :any, required: true, doc: "verified route the form/page links navigate to"
+  attr :path, :string, required: true, doc: "verified route the form/page links navigate to"
   attr :rows, :list, required: true
   attr :metadata, :any, required: true, doc: "%Paginator.Metadata{} from Repo.list/3"
   attr :filter_params, :map, default: %{}, doc: "params currently driving the filter form"
@@ -143,13 +143,17 @@ defmodule EmisarWeb.LiveTable do
       />
 
       <%= if Enum.empty?(@rows) do %>
+        <%!-- Near-flush under the section header, like the populated list: the
+             boxed `empty_state` placeholder is self-framed (dashed border + its
+             own padding), so a fat `py-8` on TOP of the header's `mb-4` floated
+             it 48px down. A hair of `py-1` sits it where the first row would. --%>
         <.empty_result
           id={@id}
           path={@path}
           metadata={@metadata}
           filter_params={@filter_params}
           prefix={@prefix}
-          class={[cards_empty_class(@wrapper_class), "text-sm text-zinc-400"]}
+          class="py-1 text-sm text-zinc-400"
         >
           {render_slot(@empty) || "Nothing to show."}
         </.empty_result>
@@ -332,7 +336,7 @@ defmodule EmisarWeb.LiveTable do
   # -- Filter form ----------------------------------------------------
 
   attr :id, :string, required: true
-  attr :path, :any, required: true
+  attr :path, :string, required: true
   attr :filters, :list, required: true
   attr :params, :map, required: true
   attr :layout, :atom, default: :inline
@@ -731,12 +735,6 @@ defmodule EmisarWeb.LiveTable do
 
   defp active_filter_label(%Filter{} = filter, value), do: "#{filter.title}: #{value}"
 
-  # Near-flush under the section header, like the populated list: the boxed
-  # `empty_state` placeholder is self-framed (dashed border + its own padding),
-  # so a fat `py-8` on TOP of the header's `mb-4` floated it 48px down. A hair of
-  # `py-1` sits it where the first row would, keeping a small buffer.
-  defp cards_empty_class(_wrapper_class), do: "py-1"
-
   # Filters are inert (rendered disabled) only when there's genuinely nothing to
   # filter — no rows AND no active filter. An empty result that IS filtered keeps
   # its controls live so the operator can clear back to the full set.
@@ -748,7 +746,7 @@ defmodule EmisarWeb.LiveTable do
   # -- Paginator ------------------------------------------------------
 
   attr :id, :string, required: true
-  attr :path, :any, required: true
+  attr :path, :string, required: true
   attr :metadata, :any, required: true
   attr :filter_params, :map, required: true
   attr :prefix, :string, required: true
@@ -785,13 +783,13 @@ defmodule EmisarWeb.LiveTable do
   cursor key `?pending_after=...`).
   """
   attr :id, :string, required: true
-  attr :path, :any, required: true
+  attr :path, :string, required: true
   attr :metadata, :any, required: true
   attr :filter_params, :map, default: %{}
   attr :prefix, :string, default: ""
 
   attr :page_count, :integer,
-    default: nil,
+    required: true,
     doc: "rows on THIS page — renders the count as \"50 / 608 total\""
 
   def paginator(assigns) do
@@ -822,7 +820,7 @@ defmodule EmisarWeb.LiveTable do
         <% else %>
           <%= if @metadata.count != nil do %>
             <span class="tabular-nums">
-              <span :if={@page_count && @page_count > 0}>{@page_count} / </span><CoreComponents.tooltip
+              <span :if={@page_count > 0}>{@page_count} / </span><CoreComponents.tooltip
                 :if={@metadata.count_kind == :estimated}
                 id={"#{@id}-count-estimate"}
                 align={:left}
@@ -877,7 +875,7 @@ defmodule EmisarWeb.LiveTable do
 
   def stale_page?(_page_count, _metadata, _params, _prefix), do: false
 
-  defp has_page_cursor?(params, prefix) when is_map(params) do
+  defp has_page_cursor?(params, prefix) do
     Enum.any?(["before", "after"], fn direction ->
       case params["#{prefix}#{direction}"] do
         cursor when is_binary(cursor) -> cursor != ""
@@ -885,8 +883,6 @@ defmodule EmisarWeb.LiveTable do
       end
     end)
   end
-
-  defp has_page_cursor?(_params, _prefix), do: false
 
   defp page_link(path, params, prefix, page_params) do
     # Drop this table's prior cursor (both directions), then layer the
@@ -902,17 +898,13 @@ defmodule EmisarWeb.LiveTable do
         Map.new(page_params, fn {k, v} -> {"#{prefix}#{k}", v} end)
       )
 
-    base = path_to_binary(path)
     # Plug.Conn.Query.encode, not URI.encode_query — a list-valued filter (a
     # multi-select, or a `group:<label>` event-type sentinel) is `["a", "b"]` in
     # the params, which URI.encode_query REJECTS ("values cannot be lists"),
     # 500-ing every paginated filtered list. This mirrors apply_filter/4, which
     # builds the filter URL the same way.
-    if query == %{}, do: base, else: base <> "?" <> Plug.Conn.Query.encode(query)
+    if query == %{}, do: path, else: path <> "?" <> Plug.Conn.Query.encode(query)
   end
-
-  defp path_to_binary(p) when is_binary(p), do: p
-  defp path_to_binary(other), do: to_string(other)
 
   # -- params → list/3 opts ------------------------------------------
 
@@ -1000,10 +992,7 @@ defmodule EmisarWeb.LiveTable do
   defp cast_filter_value(%Filter{type: {:list, _}}, value) when is_binary(value),
     do: [value]
 
-  defp cast_filter_value(%Filter{type: {:list, _}}, values) when is_list(values),
-    do: if(Enum.all?(values, &is_binary/1), do: values, else: nil)
-
-  defp cast_filter_value(%Filter{type: {:list, _}}, _), do: nil
+  defp cast_filter_value(%Filter{type: {:list, _}}, values) when is_list(values), do: values
 
   defp cast_filter_value(%Filter{type: :boolean}, "true"), do: true
   defp cast_filter_value(%Filter{type: :boolean}, _), do: false

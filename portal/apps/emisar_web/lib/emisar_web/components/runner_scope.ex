@@ -287,7 +287,7 @@ defmodule EmisarWeb.RunnerScope do
   Runner ids a `"group:x"` / `"runner:id"` selection covers — every runner when
   the grant reaches them all.
   """
-  def selected_runner_ids(runners, mode, _selected) when mode in ["all", :all],
+  def selected_runner_ids(runners, "all", _selected),
     do: Enum.map(runners, & &1.id)
 
   def selected_runner_ids(runners, _mode, selected) do
@@ -321,7 +321,7 @@ defmodule EmisarWeb.RunnerScope do
   # The runner scope is the prerequisite: while it names nothing, the pack list
   # is empty for a reason the operator can fix upstream, not because the account
   # has no packs.
-  defp pack_empty_message(mode, []) when mode not in ["all", :all],
+  defp pack_empty_message(mode, []) when mode != "all",
     do: "Choose runners first — the packs they carry appear here."
 
   defp pack_empty_message(_mode, _runner_ids), do: "No packs on the selected runners."

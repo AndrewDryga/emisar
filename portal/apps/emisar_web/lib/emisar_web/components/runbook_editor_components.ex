@@ -118,12 +118,13 @@ defmodule EmisarWeb.RunbookEditorComponents do
     not assigns.read_only? and assigns.dirty? and assigns.form.source.valid?
   end
 
+  # Rendered only for a writable editor, so a dirty draft that is not ready can
+  # only be invalid.
   defp draft_save_blocker(assigns) do
     cond do
       draft_save_ready?(assigns) -> nil
       not assigns.dirty? -> "No unsaved changes."
-      not assigns.form.source.valid? -> "Fix the errors in Details before saving."
-      true -> "Saving is unavailable."
+      true -> "Fix the errors in Details before saving."
     end
   end
 
@@ -1015,14 +1016,12 @@ defmodule EmisarWeb.RunbookEditorComponents do
     """
   end
 
-  defp input_card_title(%{"id" => id}, index) when is_binary(id) do
+  defp input_card_title(%{"id" => id}, index) do
     case String.trim(id) do
       "" -> "Input #{index + 1}"
       id -> id
     end
   end
-
-  defp input_card_title(_input, index), do: "Input #{index + 1}"
 
   defp enum_default?(enum_value), do: enum_value["default"] == "true"
 
