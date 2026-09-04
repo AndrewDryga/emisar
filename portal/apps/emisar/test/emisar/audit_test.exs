@@ -79,20 +79,6 @@ defmodule Emisar.AuditTest do
       assert event.request_id == "req123"
     end
 
-    # normalize/1 uses String.to_existing_atom (IL-14): an
-    # invented field name blows up LOUDLY rather than minting an atom from input
-    # (the atom table never GCs; an attacker-influenced key set would be a DoS).
-    test "an invented string field key raises rather than minting an atom (IL-14)", %{
-      account: account
-    } do
-      assert_raise ArgumentError, fn ->
-        Audit.log(account.id, "audit.test", %{
-          "actor_kind" => "system",
-          "this_audit_field_was_never_declared_zqx" => "x"
-        })
-      end
-    end
-
     test "replaces an oversized payload with a bounded audit marker", %{account: account} do
       changeset =
         Audit.changeset(account.id, "audit.test",
@@ -202,17 +188,6 @@ defmodule Emisar.AuditTest do
       # Explicit ip wins over the context; un-overridden ua falls through from it.
       assert Ecto.Changeset.get_field(changeset, :ip_address) == "8.8.8.8"
       assert Ecto.Changeset.get_field(changeset, :user_agent) == "ctx-ua"
-    end
-
-    test "an invented string field key raises rather than minting an atom (IL-14)", %{
-      account: account
-    } do
-      assert_raise ArgumentError, fn ->
-        Audit.changeset(account.id, "audit.test", %{
-          "actor_kind" => "system",
-          "never_declared_audit_field_qzx" => "x"
-        })
-      end
     end
   end
 

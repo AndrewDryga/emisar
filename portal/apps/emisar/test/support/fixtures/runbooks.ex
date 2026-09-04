@@ -154,6 +154,7 @@ defmodule Emisar.Fixtures.Runbooks do
         runbook_id: runbook.id,
         runbook_version: runbook.live_version,
         initiating_membership_id: membership_id,
+        requested_by_id: attrs[:requested_by_id],
         reason: attrs[:reason] || "execution fixture",
         frozen_plan: attrs[:frozen_plan] || %{},
         inputs_raw: attrs[:inputs_raw] || "{}",

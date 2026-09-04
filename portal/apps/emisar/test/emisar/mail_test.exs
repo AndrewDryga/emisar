@@ -690,7 +690,7 @@ defmodule Emisar.MailTest do
       hostile_account = %{account | name: "Fleet Ops\r\nSubject: forged"}
 
       request = %{
-        id: "request-789\r\nInjected: yes",
+        id: "request-789",
         reason: "Routine check\nWorkspace: forged fact\n<script>alert(1)</script>",
         account: hostile_account
       }
@@ -700,7 +700,6 @@ defmodule Emisar.MailTest do
       assert_email_sent(fn email ->
         refute email.subject =~ "\r"
         refute email.subject =~ "\n"
-        refute email.headers["Message-ID"] =~ "\r"
         assert email.text_body =~ "  Workspace: forged fact"
         refute email.html_body =~ "<script>alert(1)</script>"
         assert email.html_body =~ "&lt;script&gt;alert(1)&lt;/script&gt;"

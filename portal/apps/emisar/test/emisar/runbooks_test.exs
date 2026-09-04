@@ -1076,26 +1076,25 @@ defmodule Emisar.RunbooksTest do
     end
 
     test "a foreign membership never supplies its directory name" do
-      account = Fixtures.Accounts.create_account()
+      {user, account, owner} = Fixtures.Subjects.owner_subject()
       other_account = Fixtures.Accounts.create_account()
-      user = Fixtures.Users.create_user(full_name: "Global Name")
 
-      membership =
+      foreign_membership =
         Fixtures.Memberships.create_membership(
           account_id: other_account.id,
           user_id: user.id,
           role: "operator"
         )
 
-      membership = Fixtures.Memberships.sync_display_name(membership, "Foreign Directory Name")
+      Fixtures.Memberships.sync_display_name(foreign_membership, "Foreign Directory Name")
 
-      execution = %RunbookExecution{
+      Fixtures.Runbooks.create_execution(
         account_id: account.id,
-        initiating_membership_id: membership.id,
-        initiating_membership: membership,
-        requested_by: user
-      }
+        initiating_membership_id: foreign_membership.id,
+        requested_by_id: user.id
+      )
 
+      assert {:ok, [execution]} = Runbooks.list_recent_executions(owner)
       assert Runbooks.execution_who_via(execution) == {user.email, nil}
     end
   end

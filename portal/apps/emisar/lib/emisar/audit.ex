@@ -105,7 +105,7 @@ defmodule Emisar.Audit do
     # caller's `%Subject{}` (via `actor/1`) or passed explicitly on the
     # pre-auth path. A struct, so the field set is fixed and a missing
     # context defaults to all-nil (system / engine origin → no metadata).
-    {context, attrs} = Map.pop(normalize(attrs), :context, %RequestContext{})
+    {context, attrs} = Map.pop(Map.new(attrs), :context, %RequestContext{})
 
     merged =
       base
@@ -183,7 +183,7 @@ defmodule Emisar.Audit do
       target_label: user.email
     }
 
-    merged = Map.merge(defaults, normalize(attrs))
+    merged = Map.merge(defaults, Map.new(attrs))
 
     user
     |> Emisar.Accounts.list_active_memberships_for_user()
@@ -327,18 +327,6 @@ defmodule Emisar.Audit do
   defp actor_kind(%Runs.ActionRun{api_key_id: id}) when not is_nil(id), do: "api_key"
   defp actor_kind(%Runs.ActionRun{source: :runbook}), do: "runbook"
   defp actor_kind(_), do: "system"
-
-  # Internal helper — `log/3` accepts both atom and string keys to match
-  # the loose Phoenix-form / API-payload shape callers happen to have.
-  # `String.to_existing_atom/1` blows up loudly if a caller invents a
-  # field name; sibling contexts only ever pass keys the Event
-  # changeset already declares.
-  defp normalize(attrs) do
-    Enum.into(attrs, %{}, fn
-      {k, v} when is_atom(k) -> {k, v}
-      {k, v} when is_binary(k) -> {String.to_existing_atom(k), v}
-    end)
-  end
 
   # -- PubSub ----------------------------------------------------------
 

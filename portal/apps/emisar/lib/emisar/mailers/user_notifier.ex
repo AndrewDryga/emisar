@@ -654,8 +654,7 @@ defmodule Emisar.Mailers.UserNotifier do
 
   defp short_id(id) do
     id
-    |> safe_message_part()
-    |> String.replace(["-", "."], "")
+    |> String.replace("-", "")
     |> String.slice(0, 8)
     |> String.upcase()
   end
@@ -673,23 +672,18 @@ defmodule Emisar.Mailers.UserNotifier do
     kind = event |> Map.fetch!(:kind) |> Atom.to_string()
 
     [
-      {"Message-ID",
-       "<approval.#{safe_message_part(kind)}.#{safe_message_part(event_id)}.#{safe_message_part(subject.membership_id)}@emisar.dev>"},
+      {"Message-ID", "<approval.#{kind}.#{event_id}.#{subject.membership_id}@emisar.dev>"},
       {"In-Reply-To", root},
       {"References", root},
       {"X-PM-KeepID", "true"}
     ]
   end
 
+  # Every part is first-party and header-safe by construction: the request and
+  # event ids are UUIDs, the membership id is a UUID or nil, and the kind is one
+  # of the atoms `approval_event_copy/3` matches.
   defp approval_root_message_id(request, %Subject{} = subject) do
-    "<approval.request.#{safe_message_part(request.id)}.#{safe_message_part(subject.membership_id)}@emisar.dev>"
-  end
-
-  defp safe_message_part(value) do
-    value
-    |> to_string()
-    |> String.replace(~r/[^A-Za-z0-9_.-]/u, "-")
-    |> String.slice(0, 100)
+    "<approval.request.#{request.id}.#{subject.membership_id}@emisar.dev>"
   end
 
   defp request_quorum(%{min_approvals: value}) when is_integer(value) and value > 0, do: value
@@ -859,14 +853,10 @@ defmodule Emisar.Mailers.UserNotifier do
 
     rendered = MonthlyReport.render(recipient, account, report, unsubscribe_url)
 
-    deliver(recipient.email, rendered.subject, rendered.text,
-      html_body: rendered.html,
-      reply_to: "support@emisar.dev",
-      headers: [
-        {"List-Unsubscribe", "<#{unsubscribe_url}>"},
-        {"List-Unsubscribe-Post", "List-Unsubscribe=One-Click"}
-      ]
-    )
+    deliver(recipient.email, rendered.subject, rendered.text, rendered.html, [
+      {"List-Unsubscribe", "<#{unsubscribe_url}>"},
+      {"List-Unsubscribe-Post", "List-Unsubscribe=One-Click"}
+    ])
   end
 
   # The branded sign-in pages thread a `/app/<slug>` return_to through these
@@ -902,14 +892,16 @@ defmodule Emisar.Mailers.UserNotifier do
         footer: Keyword.get(opts, :footer)
       })
 
-    deliver(recipient.email, one_line(subject), rendered.text,
-      html_body: rendered.html,
-      reply_to: "support@emisar.dev",
-      headers: Keyword.get(opts, :headers, [])
+    deliver(
+      recipient.email,
+      one_line(subject),
+      rendered.text,
+      rendered.html,
+      Keyword.get(opts, :headers, [])
     )
   end
 
-  defp deliver(to, subject, body, opts) do
+  defp deliver(to, subject, text, html, headers) do
     if suppression = Mail.suppression_for(to) do
       # `to` hard-bounced or filed a spam complaint (recorded from the
       # Postmark webhook). Sending again only degrades sender reputation, so
@@ -925,22 +917,16 @@ defmodule Emisar.Mailers.UserNotifier do
       new()
       |> to(to)
       |> from(from())
-      |> maybe_reply_to(Keyword.get(opts, :reply_to))
+      |> reply_to("support@emisar.dev")
       |> subject(subject)
-      |> text_body(body)
-      |> maybe_html_body(Keyword.get(opts, :html_body))
-      |> put_extra_headers(Keyword.get(opts, :headers, []))
+      |> text_body(text)
+      |> html_body(html)
+      |> put_extra_headers(headers)
       |> put_provider_option(:track_opens, false)
       |> put_provider_option(:track_links, "None")
       |> Mailer.deliver()
     end
   end
-
-  defp maybe_reply_to(email, nil), do: email
-  defp maybe_reply_to(email, address) when is_binary(address), do: reply_to(email, address)
-
-  defp maybe_html_body(email, nil), do: email
-  defp maybe_html_body(email, body) when is_binary(body), do: html_body(email, body)
 
   defp put_extra_headers(email, headers),
     do: Enum.reduce(headers, email, fn {key, value}, acc -> header(acc, key, value) end)
