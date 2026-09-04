@@ -11,7 +11,6 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -25,6 +24,10 @@ import (
 
 	capturekit "github.com/andrewdryga/emisar/tools/internal/capture"
 )
+
+// How long an outline needs to hold still before the shot that follows it; this
+// console repaints its cards after the ring lands.
+const highlightSettle = 800 * time.Millisecond
 
 func main() {
 	var secretsPath, outDir, credentialsOut, remoteDebugURL string
@@ -64,7 +67,16 @@ func main() {
 // readEnv loads this rig's credentials, letting the process environment win
 // for its per-run keys. The parser is shared so the four rigs cannot drift.
 func readEnv(path string) (map[string]string, error) {
-	return capturekit.ReadEnv(path, "EMISAR_PUBLIC_URL", "EMISAR_SCIM_TOKEN", "EMISAR_DOCS_HOST")
+	env, err := capturekit.ReadEnv(path, "EMISAR_PUBLIC_URL", "EMISAR_SCIM_TOKEN", "EMISAR_DOCS_HOST")
+	if err != nil {
+		return nil, err
+	}
+	// Defaulted once so every later read is total: a shot must show the product's
+	// own host, never the tunnel a certification run happened to use.
+	if env["EMISAR_DOCS_HOST"] == "" {
+		env["EMISAR_DOCS_HOST"] = "emisar.dev"
+	}
+	return env, nil
 }
 
 // focusField puts the cursor in a field so chromedp.KeyEvent types with real key
@@ -113,10 +125,6 @@ func focusField(ctx context.Context, hint string) error {
 		return fmt.Errorf("no field matching %q", hint)
 	}
 	return nil
-}
-
-func clickText(ctx context.Context, label string) (bool, error) {
-	return capturekit.ClickText(ctx, label)
 }
 
 // dismissDialogContaining closes a known transient announcement without
@@ -173,10 +181,6 @@ func clickDeep(ctx context.Context, label string) (bool, error) {
 	var clicked bool
 	err := chromedp.Run(ctx, chromedp.Evaluate(script, &clicked))
 	return clicked, err
-}
-
-func clickContaining(ctx context.Context, label string) (bool, error) {
-	return capturekit.ClickContaining(ctx, label)
 }
 
 // deidentifyHost rewrites the tunnel hostname to the product host for the
@@ -257,7 +261,7 @@ func run(env map[string]string, outDir, credentialsOut, remoteDebugURL string, h
 	// The login page carries Admin Login / User Login tabs and defaults to the
 	// user directory; submitting there fails with "Are you trying to log in as an
 	// Administrator?". Select the admin tab before typing anything.
-	if clicked, err := clickText(ctx, "Admin Login"); err != nil {
+	if clicked, err := capturekit.ClickText(ctx, "Admin Login"); err != nil {
 		return err
 	} else if clicked {
 		if err := chromedp.Run(ctx, chromedp.Sleep(3*time.Second)); err != nil {
@@ -275,7 +279,7 @@ func run(env map[string]string, outDir, credentialsOut, remoteDebugURL string, h
 	// look again.
 	if err := focusField(ctx, "password"); err != nil {
 		for _, label := range []string{"Continue", "Next", "Log In", "Sign In"} {
-			if clicked, clickErr := clickText(ctx, label); clickErr != nil {
+			if clicked, clickErr := capturekit.ClickText(ctx, label); clickErr != nil {
 				return clickErr
 			} else if clicked {
 				break
@@ -298,7 +302,7 @@ func run(env map[string]string, outDir, credentialsOut, remoteDebugURL string, h
 	// the email step, which is why it has to be tried here explicitly.
 	submitted := false
 	for _, label := range []string{"Admin Login", "Login", "Log In", "Sign In"} {
-		clicked, err := clickText(ctx, label)
+		clicked, err := capturekit.ClickText(ctx, label)
 		if err != nil {
 			return err
 		}
@@ -668,11 +672,6 @@ func printApplications(ctx context.Context, env map[string]string, outDir string
 	return idpcapture.Screenshot(ctx, outDir, "jc-applications")
 }
 
-// ssoApplicationsFlow opens the SSO application catalog and reports what the
-// "custom" options actually are. This is the step that settles, by observation,
-// whether JumpCloud lets one app carry both OIDC sign-in and SCIM provisioning —
-// their docs omit OIDC from the custom-SCIM bases, and our shipped copy was
-// corrected on that basis alone.
 // A capture run creates an application. Refuse to create a SECOND one while
 // earlier ones are still here: debugging this flow meant running it repeatedly,
 // and six applications accumulated in the founder's tenant while the fix for
@@ -698,6 +697,11 @@ func refuseIfTenantAlreadyLittered(ctx context.Context, env map[string]string) e
 	return nil
 }
 
+// ssoApplicationsFlow opens the SSO application catalog and reports what the
+// "custom" options actually are. This is the step that settles, by observation,
+// whether JumpCloud lets one app carry both OIDC sign-in and SCIM provisioning —
+// their docs omit OIDC from the custom-SCIM bases, and our shipped copy was
+// corrected on that basis alone.
 func ssoApplicationsFlow(ctx context.Context, env map[string]string, outDir, credentialsOut string, oidcOnly bool) error {
 	// Hash deep-links don't route this SPA (#/sso/applications leaves you on the
 	// onboarding page), so walk the left nav: Access → SSO Applications.
@@ -765,9 +769,9 @@ func ssoApplicationsFlow(ctx context.Context, env map[string]string, outDir, cre
 	// instead of "Add New Application" — same destination, and the empty tenant is
 	// what a thorough cleanup leaves.
 	entry := "Add New Application"
-	if err := highlight(ctx, entry); err != nil {
+	if err := capturekit.Highlight(ctx, entry, highlightSettle); err != nil {
 		entry = "Get Started"
-		if err := highlight(ctx, entry); err != nil {
+		if err := capturekit.Highlight(ctx, entry, highlightSettle); err != nil {
 			return err
 		}
 	}
@@ -801,7 +805,7 @@ func ssoApplicationsFlow(ctx context.Context, env map[string]string, outDir, cre
 	}
 
 	for _, label := range []string{"Add New Application", "+ Add New Application"} {
-		clicked, err := clickText(ctx, label)
+		clicked, err := capturekit.ClickText(ctx, label)
 		if err != nil {
 			return err
 		}
@@ -820,7 +824,7 @@ func ssoApplicationsFlow(ctx context.Context, env map[string]string, outDir, cre
 	if err := chromedp.Run(ctx, chromedp.Sleep(6*time.Second)); err != nil {
 		return err
 	}
-	if err := highlight(ctx, "Custom Application"); err != nil {
+	if err := capturekit.Highlight(ctx, "Custom Application", highlightSettle); err != nil {
 		var offered string
 		_ = chromedp.Run(ctx, chromedp.Evaluate(`(() => {
   const visible = el => el.offsetWidth > 0 || el.offsetHeight > 0;
@@ -854,13 +858,13 @@ func ssoApplicationsFlow(ctx context.Context, env map[string]string, outDir, cre
 	}
 	if !picked {
 		_ = idpcapture.Screenshot(ctx, outDir, "jc-04-no-custom-tile")
-		_ = describePage(ctx)
+		_ = capturekit.DescribePage(ctx, nil)
 		return fmt.Errorf("no custom-integration option on the wizard's first step")
 	}
 	if err := chromedp.Run(ctx, chromedp.Sleep(4*time.Second)); err != nil {
 		return err
 	}
-	if clicked, err := clickText(ctx, "Next"); err != nil {
+	if clicked, err := capturekit.ClickText(ctx, "Next"); err != nil {
 		return err
 	} else if clicked {
 		fmt.Println(`  clicked "Next"`)
@@ -914,10 +918,10 @@ func ssoApplicationsFlow(ctx context.Context, env map[string]string, outDir, cre
 	if err := idpcapture.Screenshot(ctx, outDir, "jc-06-options-chosen"); err != nil {
 		return err
 	}
-	if err := describePage(ctx); err != nil {
+	if err := capturekit.DescribePage(ctx, nil); err != nil {
 		return err
 	}
-	if clicked, err := clickText(ctx, "Next"); err != nil {
+	if clicked, err := capturekit.ClickText(ctx, "Next"); err != nil {
 		return err
 	} else if !clicked {
 		return fmt.Errorf("next disabled after choosing SSO + Export users")
@@ -928,7 +932,7 @@ func ssoApplicationsFlow(ctx context.Context, env map[string]string, outDir, cre
 	// Step 3 is general info. Fill the field BEFORE shooting: a walkthrough frame
 	// showing an empty Display Label teaches nothing, and shipping one is exactly
 	// what drew "you again did not select right options on the screenshots".
-	if err := highlight(ctx, "Display Label"); err != nil {
+	if err := capturekit.Highlight(ctx, "Display Label", highlightSettle); err != nil {
 		_ = idpcapture.Screenshot(ctx, outDir, "jc-07-no-general-info")
 		return fmt.Errorf("next did not advance to Enter General Info: %w", err)
 	}
@@ -954,14 +958,14 @@ func ssoApplicationsFlow(ctx context.Context, env map[string]string, outDir, cre
 	if !named {
 		return errors.New("the Display Label did not take — the app would be created unnamed and cleanup could not find it")
 	}
-	if err := highlight(ctx, "Display Label"); err != nil {
+	if err := capturekit.Highlight(ctx, "Display Label", highlightSettle); err != nil {
 		return err
 	}
 	if err := idpcapture.Screenshot(ctx, outDir, "jc-07-general-info"); err != nil {
 		return err
 	}
 	for _, label := range []string{"Next", "Save Application"} {
-		clicked, err := clickText(ctx, label)
+		clicked, err := capturekit.ClickText(ctx, label)
 		if err != nil {
 			return err
 		}
@@ -972,7 +976,7 @@ func ssoApplicationsFlow(ctx context.Context, env map[string]string, outDir, cre
 			}
 		}
 	}
-	if err := highlight(ctx, "Enabled Features"); err != nil {
+	if err := capturekit.Highlight(ctx, "Enabled Features", highlightSettle); err != nil {
 		return err
 	}
 	if err := idpcapture.Screenshot(ctx, outDir, "jc-08-after-save"); err != nil {
@@ -981,7 +985,7 @@ func ssoApplicationsFlow(ctx context.Context, env map[string]string, outDir, cre
 	// Past Review is where the OIDC redirect URI and the client credentials live —
 	// the screen an operator cannot finish SSO without. The wizard's Review step
 	// only summarises, so a guide that stops here leaves the reader stranded.
-	if clicked, err := clickText(ctx, "Configure Application"); err != nil {
+	if clicked, err := capturekit.ClickText(ctx, "Configure Application"); err != nil {
 		return err
 	} else if !clicked {
 		return fmt.Errorf("no Configure Application button on the review step")
@@ -989,7 +993,7 @@ func ssoApplicationsFlow(ctx context.Context, env map[string]string, outDir, cre
 	if err := chromedp.Run(ctx, chromedp.Sleep(10*time.Second)); err != nil {
 		return err
 	}
-	if err := describePage(ctx); err != nil {
+	if err := capturekit.DescribePage(ctx, nil); err != nil {
 		return err
 	}
 	// Fill the redirect URI before shooting, for the same reason step 3 is filled:
@@ -1018,12 +1022,8 @@ func ssoApplicationsFlow(ctx context.Context, env map[string]string, outDir, cre
 		}
 	}
 
-	docsHost := env["EMISAR_DOCS_HOST"]
-	if docsHost == "" {
-		docsHost = "emisar.dev"
-	}
 	tunnelHost := strings.TrimPrefix(oidcBase, "https://")
-	if err := deidentifyHost(ctx, tunnelHost, strings.TrimPrefix(docsHost, "https://")); err != nil {
+	if err := deidentifyHost(ctx, tunnelHost, strings.TrimPrefix(env["EMISAR_DOCS_HOST"], "https://")); err != nil {
 		return err
 	}
 	if err := highlightGroup(ctx, "Redirect URIs", "Add URI"); err != nil {
@@ -1052,15 +1052,7 @@ func ssoApplicationsFlow(ctx context.Context, env map[string]string, outDir, cre
 	// with the redirect URI unsaved raises JumpCloud's "Unsaved Changes" dialog,
 	// which sits over the tab so its fields never render — the run then failed
 	// looking for Base URL on a page it had never actually reached.
-	// Remember where the app lives BEFORE activating. Activation ends on the
-	// applications LIST, not the app, and the run used to assume it was still on
-	// the app — then hunted for a Provisioning tab on a table of rows.
-	var appURL string
-	if err := chromedp.Run(ctx, chromedp.Location(&appURL)); err != nil {
-		return err
-	}
-
-	clicked, err := clickText(ctx, "Activate")
+	clicked, err := capturekit.ClickText(ctx, "Activate")
 	if err != nil {
 		return err
 	}
@@ -1072,7 +1064,7 @@ func ssoApplicationsFlow(ctx context.Context, env map[string]string, outDir, cre
 		}
 	}
 	if !clicked {
-		if clicked, err = clickContaining(ctx, "Activate"); err != nil {
+		if clicked, err = capturekit.ClickContaining(ctx, "Activate"); err != nil {
 			return err
 		}
 	}
@@ -1125,13 +1117,7 @@ func ssoApplicationsFlow(ctx context.Context, env map[string]string, outDir, cre
 	if err := chromedp.Run(ctx, chromedp.Sleep(4*time.Second)); err != nil {
 		return err
 	}
-	// One implementation of "get back to the app we just made", shared with the
-	// retry below — there were briefly two, reopening in sequence and undoing each
-	// other. Activation ends on the applications list, and this run's app is the
-	// only "emisar" there without a certificate. (Run -cleanup-apps first;
-	// leftovers from earlier attempts look identical.)
-	_ = appURL
-
+	// Activation ends on the applications LIST, not the app, so walk back to it.
 	if err := reopenSavedApp(ctx, env, outDir); err != nil {
 		return err
 	}
@@ -1166,13 +1152,9 @@ func captureSavedOIDCScopes(ctx context.Context, env map[string]string, outDir s
 	if err := chromedp.Run(ctx, chromedp.Sleep(6*time.Second)); err != nil {
 		return err
 	}
-	docsHost := env["EMISAR_DOCS_HOST"]
-	if docsHost == "" {
-		docsHost = "emisar.dev"
-	}
 	publicHost := strings.TrimPrefix(strings.TrimSuffix(env["EMISAR_PUBLIC_URL"], "/"), "https://")
 	if publicHost != "" {
-		if err := deidentifyHost(ctx, publicHost, strings.TrimPrefix(docsHost, "https://")); err != nil {
+		if err := deidentifyHost(ctx, publicHost, strings.TrimPrefix(env["EMISAR_DOCS_HOST"], "https://")); err != nil {
 			return err
 		}
 	}
@@ -1204,7 +1186,7 @@ func writeOIDCCredentials(ctx context.Context, path string) error {
   const visible = el => el.offsetWidth > 0 || el.offsetHeight > 0;
   const dialog = [...document.querySelectorAll('[role=dialog],[aria-modal=true]')]
     .find(el => visible(el) && /Application Activated|Client Secret/i.test(el.textContent || ''));
-  if (!dialog) return '';
+  if (!dialog) return null;
   const fields = [...dialog.querySelectorAll('input')].filter(visible).map(input => {
     let node = input;
     let context = '';
@@ -1219,21 +1201,20 @@ func writeOIDCCredentials(ctx context.Context, path string) error {
         .filter(Boolean).join(' ')
     };
   }).filter(field => field.value);
-  return JSON.stringify(fields);
+  return fields;
 })()`
-	var raw string
-	if err := chromedp.Run(ctx, chromedp.Evaluate(fieldsScript, &raw)); err != nil {
-		return err
-	}
-	if raw == "" {
-		return errors.New("the JumpCloud activation dialog was not available for credential capture")
-	}
 	var fields []struct {
 		Value string `json:"value"`
 		Label string `json:"label"`
 	}
-	if err := json.Unmarshal([]byte(raw), &fields); err != nil {
+	if err := chromedp.Run(ctx, chromedp.Evaluate(fieldsScript, &fields)); err != nil {
 		return err
+	}
+	// nil, not empty: the script returns null when the dialog is missing, and a
+	// list when it is there — an empty one falls through to the error below, which
+	// says what the dialog actually held.
+	if fields == nil {
+		return errors.New("the JumpCloud activation dialog was not available for credential capture")
 	}
 	var clientID, clientSecret string
 	for _, field := range fields {
@@ -1264,23 +1245,12 @@ func writeOIDCCredentials(ctx context.Context, path string) error {
 	return writeOIDCCredentialFile(path, clientID, clientSecret)
 }
 
+// writeOIDCCredentialFile records the disposable certification app's credentials
+// where a later run reads them; the shared writer keeps the file owner-only.
 func writeOIDCCredentialFile(path, clientID, clientSecret string) error {
-	file, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600)
-	if err != nil {
-		return err
-	}
-	defer file.Close()
-	// O_CREATE's mode applies only on creation; tighten a pre-existing file so a
-	// live JumpCloud OIDC secret never lands in a world-readable path.
-	if err := file.Chmod(0o600); err != nil {
-		return err
-	}
-	_, err = fmt.Fprintf(file,
+	return capturekit.WriteCredentialFile(path, fmt.Sprintf(
 		"# Disposable JumpCloud certification app\nJUMPCLOUD_CERT_ISSUER=https://oauth.id.jumpcloud.com/\nJUMPCLOUD_CERT_CLIENT_ID=%s\nJUMPCLOUD_CERT_CLIENT_SECRET=%s\nJUMPCLOUD_APP_ID=created\n",
-		clientID,
-		clientSecret,
-	)
-	return err
+		clientID, clientSecret))
 }
 
 // recoverOIDCCredentials handles the current JumpCloud console path when the
@@ -1302,21 +1272,19 @@ func recoverOIDCCredentials(ctx context.Context, env map[string]string, outDir, 
     for (const el of root.querySelectorAll('*')) {
       if (!visible(el) || el.querySelector('*') || (el.textContent || '').trim() !== 'SSO') continue;
       const rect = el.getBoundingClientRect();
-      return JSON.stringify({x: Math.round(rect.left + rect.width / 2), y: Math.round(rect.top + rect.height / 2)});
+      return {x: Math.round(rect.left + rect.width / 2), y: Math.round(rect.top + rect.height / 2)};
     }
   }
-  return '';
+  return null;
 })()`
-	var located string
-	if err := chromedp.Run(ctx, chromedp.Evaluate(locateSSOTab, &located)); err != nil {
+	// chromedp decodes the returned object straight into tabAt, and a null result
+	// leaves the POINTER nil — which is the miss.
+	var tabAt *struct{ X, Y float64 }
+	if err := chromedp.Run(ctx, chromedp.Evaluate(locateSSOTab, &tabAt)); err != nil {
 		return err
 	}
-	if located == "" {
+	if tabAt == nil {
 		return errors.New("the saved app has no SSO configuration tab")
-	}
-	var tabAt struct{ X, Y float64 }
-	if err := json.Unmarshal([]byte(located), &tabAt); err != nil {
-		return err
 	}
 	if err := chromedp.Run(ctx, chromedp.MouseClickXY(tabAt.X, tabAt.Y), chromedp.Sleep(6*time.Second)); err != nil {
 		return err
@@ -1441,7 +1409,7 @@ func provisioningFlow(ctx context.Context, env map[string]string, outDir string)
 		fmt.Println("  already on the saved app")
 		return provisioningTabFlow(ctx, env, outDir)
 	}
-	if clicked, err := clickText(ctx, "emisar"); err != nil {
+	if clicked, err := capturekit.ClickText(ctx, "emisar"); err != nil {
 		return err
 	} else if !clicked {
 		return fmt.Errorf("saved app not listed")
@@ -1478,25 +1446,20 @@ func openSavedApp(ctx context.Context, env map[string]string, outDir string) err
     const label = row.find(el => (el.textContent || '').trim() === 'emisar');
     if (!label) continue;
     const labelBox = label.getBoundingClientRect();
-    return JSON.stringify({x: Math.round(labelBox.left + labelBox.width / 2), y: Math.round(labelBox.top + labelBox.height / 2), text: text.slice(0, 60)});
+    return {x: Math.round(labelBox.left + labelBox.width / 2), y: Math.round(labelBox.top + labelBox.height / 2), text: text.slice(0, 60)};
   }
-  return '';
+  return null;
 })()`
-	var found string
-	if err := chromedp.Run(ctx, chromedp.Evaluate(openFreshApp, &found)); err != nil {
-		return err
-	}
-	if found == "" {
-		_ = idpcapture.Screenshot(ctx, outDir, "jc-09-cannot-find-fresh-app")
-		return errors.New("the app just created is not identifiable in the list — run -cleanup-apps first")
-	}
-
-	var at struct {
+	var at *struct {
 		X, Y float64
 		Text string
 	}
-	if err := json.Unmarshal([]byte(found), &at); err != nil {
+	if err := chromedp.Run(ctx, chromedp.Evaluate(openFreshApp, &at)); err != nil {
 		return err
+	}
+	if at == nil {
+		_ = idpcapture.Screenshot(ctx, outDir, "jc-09-cannot-find-fresh-app")
+		return errors.New("the app just created is not identifiable in the list — run -cleanup-apps first")
 	}
 	if err := chromedp.Run(ctx, chromedp.MouseClickXY(at.X, at.Y), chromedp.Sleep(14*time.Second)); err != nil {
 		return err
@@ -1574,7 +1537,7 @@ func provisioningTabFlow(ctx context.Context, env map[string]string, outDir stri
 	}
 	if opened == "" {
 		_ = idpcapture.Screenshot(ctx, outDir, "jc-09-no-provisioning-tab")
-		_ = describePage(ctx)
+		_ = capturekit.DescribePage(ctx, nil)
 		return fmt.Errorf("no Provisioning / Identity Management tab on the saved app")
 	}
 	if err := chromedp.Run(ctx, chromedp.Sleep(6*time.Second)); err != nil {
@@ -1632,10 +1595,7 @@ func provisioningTabFlow(ctx context.Context, env map[string]string, outDir stri
 	}
 	fmt.Println("  chose Bearer token")
 
-	if err := chromedp.Run(ctx, chromedp.Sleep(3*time.Second)); err != nil {
-		return err
-	}
-	if err := chromedp.Run(ctx, chromedp.Sleep(3*time.Second)); err != nil {
+	if err := chromedp.Run(ctx, chromedp.Sleep(6*time.Second)); err != nil {
 		return err
 	}
 	base := strings.TrimSuffix(env["EMISAR_PUBLIC_URL"], "/") + "/scim/v2"
@@ -1725,17 +1685,13 @@ func provisioningTabFlow(ctx context.Context, env map[string]string, outDir stri
 		return err
 	}
 
-	docsHost := env["EMISAR_DOCS_HOST"]
-	if docsHost == "" {
-		docsHost = "emisar.dev"
-	}
 	tunnel := strings.TrimPrefix(strings.TrimSuffix(env["EMISAR_PUBLIC_URL"], "/"), "https://")
-	if err := deidentifyHost(ctx, tunnel, strings.TrimPrefix(docsHost, "https://")); err != nil {
+	if err := deidentifyHost(ctx, tunnel, strings.TrimPrefix(env["EMISAR_DOCS_HOST"], "https://")); err != nil {
 		return err
 	}
 
 	for _, label := range []string{"Base URL", "Token Key"} {
-		if err := highlight(ctx, label); err != nil {
+		if err := capturekit.Highlight(ctx, label, highlightSettle); err != nil {
 			return err
 		}
 	}
@@ -1745,7 +1701,7 @@ func provisioningTabFlow(ctx context.Context, env map[string]string, outDir stri
 
 	// The outcome IS the evidence for the next step: provisioning flips to Active
 	// once the connection is accepted, so that badge is what it is about.
-	if err := highlight(ctx, "Provisioning Active"); err != nil {
+	if err := capturekit.Highlight(ctx, "Provisioning Active", highlightSettle); err != nil {
 		return err
 	}
 	if err := idpcapture.Screenshot(ctx, outDir, "jc-11-activate"); err != nil {
@@ -1755,7 +1711,7 @@ func provisioningTabFlow(ctx context.Context, env map[string]string, outDir stri
 		return err
 	}
 
-	return describePage(ctx)
+	return capturekit.DescribePage(ctx, nil)
 }
 
 // probeAddress is the throwaway JumpCloud provisions and deletes as its live
@@ -1887,36 +1843,22 @@ func pressFooterButton(ctx context.Context, label string) (bool, error) {
     }
   };
   walk(document);
-  if (!found) return '';
+  if (!found) return false;
   found.scrollIntoView({block: 'center'});
   // Click it HERE, in the page. A coordinate click on this footer registers
   // visibly — focus moves — but does not run the action, while a DOM click does:
   // the earlier runs that produced a real connection probe against emisar used
-  // one. Coordinates remain the fallback for controls that ignore .click().
+  // one.
   found.click();
-  const box = found.getBoundingClientRect();
-  return JSON.stringify({clicked: true, x: Math.round(box.left + box.width / 2), y: Math.round(box.top + box.height / 2)});
+  return true;
 })()`, label)
 
-	var located string
-	if err := chromedp.Run(ctx, chromedp.Evaluate(script, &located)); err != nil {
+	var pressed bool
+	if err := chromedp.Run(ctx, chromedp.Evaluate(script, &pressed)); err != nil {
 		return false, err
 	}
-	if located == "" {
+	if !pressed {
 		return false, nil
-	}
-
-	var at struct {
-		Clicked bool
-		X, Y    float64
-	}
-	if err := json.Unmarshal([]byte(located), &at); err != nil {
-		return false, err
-	}
-	if !at.Clicked {
-		if err := chromedp.Run(ctx, chromedp.MouseClickXY(at.X, at.Y)); err != nil {
-			return false, err
-		}
 	}
 	fmt.Printf("  pressed %q\n", label)
 	return true, nil
@@ -1977,8 +1919,6 @@ func waitForProvisioningActive(ctx context.Context, within time.Duration) error 
 		}
 	}
 }
-
-// clickRadio selects a radio by its label text.
 
 // describeFields lists the visible inputs so the provisioning form's real field
 // names drive the next step instead of a guess.
@@ -2102,14 +2042,6 @@ func clickInDialog(ctx context.Context, label string) (bool, error) {
 	var clicked bool
 	err := chromedp.Run(ctx, chromedp.Evaluate(script, &clicked))
 	return clicked, err
-}
-
-func describePage(ctx context.Context) error {
-	return capturekit.DescribePage(ctx, nil)
-}
-
-func highlight(ctx context.Context, label string) error {
-	return capturekit.Highlight(ctx, label, 800*time.Millisecond)
 }
 
 // highlightGroup frames the complete labelled unit instead of one word inside

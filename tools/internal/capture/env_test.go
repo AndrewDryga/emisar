@@ -3,6 +3,7 @@ package capture
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -53,5 +54,38 @@ func TestReadEnv(t *testing.T) {
 	}
 	if env["OTHER"] != "from-file" {
 		t.Errorf("a key not named as an override was taken from the process: %q", env["OTHER"])
+	}
+}
+
+// The rigs write live client secrets here, so the file is owner-only even when an
+// earlier run left a world-readable one at that path — O_CREATE's mode applies
+// only on creation, which is what google's own writer missed.
+func TestWriteCredentialFileIsOwnerOnly(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "cert-client.env")
+	if err := os.WriteFile(path, []byte("stale\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	const contents = "ENTRA_CLIENT_ID=11111111-2222-3333-4444-555555555555\n"
+	if err := WriteCredentialFile(path, contents); err != nil {
+		t.Fatalf("write credential file: %v", err)
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(data) != contents {
+		t.Fatalf("credential file = %q, want %q", data, contents)
+	}
+	if runtime.GOOS != "windows" {
+		info, err := os.Stat(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if info.Mode().Perm() != 0o600 {
+			t.Fatalf("mode = %o, want 0600", info.Mode().Perm())
+		}
 	}
 }

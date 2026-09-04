@@ -35,6 +35,10 @@ import (
 	"github.com/andrewdryga/emisar/tools/internal/capture"
 )
 
+// How long an outline needs to hold still before the shot that follows it; this
+// console repaints its cards after the ring lands.
+const highlightSettle = 1200 * time.Millisecond
+
 // pickGoogleAuthenticator clicks the "Select" beside Google Authenticator on the
 // challenge chooser. Okta's widget markup carries no stable hook for the row, so
 // match the label and walk up to the button that belongs to it.
@@ -124,7 +128,16 @@ func fail(err error) {
 // readEnv loads this rig's credentials, letting the process environment win
 // for its per-run keys. The parser is shared so the four rigs cannot drift.
 func readEnv(path string) (map[string]string, error) {
-	return capture.ReadEnv(path, "EMISAR_PUBLIC_URL", "EMISAR_SCIM_TOKEN", "EMISAR_DOCS_HOST", "OKTA_SCIM_APP_ID", "OKTA_OIDC_APP_NAME")
+	env, err := capture.ReadEnv(path, "EMISAR_PUBLIC_URL", "EMISAR_SCIM_TOKEN", "EMISAR_DOCS_HOST", "OKTA_SCIM_APP_ID", "OKTA_OIDC_APP_NAME")
+	if err != nil {
+		return nil, err
+	}
+	// Defaulted once so every later read is total: a shot must show the product's
+	// own host, never the tunnel a certification run happened to use.
+	if env["EMISAR_DOCS_HOST"] == "" {
+		env["EMISAR_DOCS_HOST"] = "https://emisar.dev"
+	}
+	return env, nil
 }
 
 // sessionToken trades username+password for a one-shot session token.
@@ -165,8 +178,6 @@ func sessionToken(env map[string]string) (string, error) {
 	return parsed.SessionToken, nil
 }
 
-// clearMFA answers the admin console's step-up challenge when it appears. A run
-// that already holds a live console session skips straight through.
 // auditTenant lists — and optionally removes — the app integrations and users
 // this rig creates. It goes through Okta's own API from inside the authenticated
 // console session, so it never depends on the console's DOM: the org API is
@@ -251,29 +262,14 @@ func auditTenant(ctx context.Context, env map[string]string, remove bool) error 
 	client := &http.Client{Timeout: 30 * time.Second}
 	orgURL := env["OKTA_ORG_URL"]
 
-	var apps []struct {
-		ID       string `json:"id"`
-		Label    string `json:"label"`
-		Status   string `json:"status"`
-		Settings struct {
-			App struct {
-				Label string `json:"label"`
-			} `json:"app"`
-		} `json:"settings"`
-	}
+	var apps []oktaApp
 	if apiErr, err := oktaAPIGet(ctx, client, orgURL, token, "/api/v1/apps?limit=200", &apps); err != nil {
 		return err
 	} else if apiErr != "" {
 		return fmt.Errorf("the org API refused: %s", apiErr)
 	}
 
-	var users []struct {
-		ID      string `json:"id"`
-		Status  string `json:"status"`
-		Profile struct {
-			Email string `json:"email"`
-		} `json:"profile"`
-	}
+	var users []oktaUser
 	usersError, err := oktaAPIGet(ctx, client, orgURL, token, "/api/v1/users?limit=200", &users)
 	if err != nil {
 		return err
@@ -288,64 +284,38 @@ func auditTenant(ctx context.Context, env map[string]string, remove bool) error 
 		return err
 	}
 
-	// API tokens too, now that -mint-token creates them. A rig owns everything
-	// it creates, and a long-lived credential is the last thing that should go
-	// unlisted in someone's tenant.
-	var apiTokens []struct {
-		ID   string `json:"id"`
-		Name string `json:"name"`
-	}
+	// API tokens too, though this rig does not mint them: a long-lived credential
+	// is the last thing that should sit unlisted in a tenant, whoever created it
+	// (.agent/kb/rules/shared-capture-rigs-own-what-they-create.md).
+	var apiTokens []oktaAPIToken
 	tokensError, err := oktaAPIGet(ctx, client, orgURL, token, "/api/v1/api-tokens", &apiTokens)
 	if err != nil {
 		return err
 	}
 
-	var report struct {
-		Apps        []oktaApp
-		Users       []oktaUser
-		UsersError  string
-		Tokens      []oktaAPIToken
-		TokensError string
-	}
-	for _, app := range apps {
-		report.Apps = append(report.Apps, oktaApp{app.ID, app.Label, app.Status, app.Settings.App.Label})
-	}
-	report.UsersError = usersError
-	for _, user := range users {
-		// This rig creates APPLICATIONS, not users. Match only an address this
-		// rig demonstrably generates, and never the signed-in account: matching
-		// /emisar/ against an email once found the tenant's own admin.
-		ours := user.ID != me.ID && oursUserEmail.MatchString(user.Profile.Email)
-		report.Users = append(report.Users, oktaUser{user.ID, user.Profile.Email, user.Status, ours})
-	}
-	report.TokensError = tokensError
-	for _, apiToken := range apiTokens {
-		report.Tokens = append(report.Tokens, oktaAPIToken{apiToken.ID, apiToken.Name})
-	}
-
 	fmt.Println("--- every application, and what this run will do with it ---")
-	for _, app := range report.Apps {
+	for _, app := range apps {
 		fmt.Printf("  %s %-40s %s (%s)\n",
-			appVerdict(app.ID, app.Label, app.SettingsLabel, env),
+			appVerdict(app.ID, app.Label, app.Settings.App.Label, env),
 			app.Label, app.Status, app.ID)
 	}
 
 	fmt.Println("--- every user ---")
-	if report.UsersError != "" {
-		fmt.Printf("  could not list users: %s\n", report.UsersError)
+	if usersError != "" {
+		fmt.Printf("  could not list users: %s\n", usersError)
 	}
-	for _, user := range report.Users {
+	for _, user := range users {
 		verdict := "spare  "
-		if user.Ours {
+		if oursUser(user, me.ID) {
 			verdict = "DELETE "
 		}
-		fmt.Printf("  %s %-40s %s (%s)\n", verdict, user.Email, user.Status, user.ID)
+		fmt.Printf("  %s %-40s %s (%s)\n", verdict, user.Profile.Email, user.Status, user.ID)
 	}
 	fmt.Println("--- every API token ---")
-	if report.TokensError != "" {
-		fmt.Printf("  could not list tokens: %s\n", report.TokensError)
+	if tokensError != "" {
+		fmt.Printf("  could not list tokens: %s\n", tokensError)
 	}
-	for _, apiToken := range report.Tokens {
+	for _, apiToken := range apiTokens {
 		fmt.Printf("  %-40s %s\n", apiToken.Name, apiToken.ID)
 	}
 	fmt.Println("--- anything spared that this rig created is a filter gap, not a clean tenant ---")
@@ -354,8 +324,8 @@ func auditTenant(ctx context.Context, env map[string]string, remove bool) error 
 		return nil
 	}
 
-	for _, app := range report.Apps {
-		if appVerdict(app.ID, app.Label, app.SettingsLabel, env) != verdictDelete {
+	for _, app := range apps {
+		if appVerdict(app.ID, app.Label, app.Settings.App.Label, env) != verdictDelete {
 			continue
 		}
 		if err := deleteOktaApp(ctx, client, orgURL, token, app.ID); err != nil {
@@ -364,31 +334,50 @@ func auditTenant(ctx context.Context, env map[string]string, remove bool) error 
 		fmt.Printf("  removed application %s\n", app.Label)
 	}
 
-	for _, user := range report.Users {
-		if !user.Ours {
+	for _, user := range users {
+		if !oursUser(user, me.ID) {
 			continue
 		}
 		if err := deleteOktaUser(ctx, client, orgURL, token, user.ID); err != nil {
 			return err
 		}
-		fmt.Printf("  removed user %s\n", user.Email)
+		fmt.Printf("  removed user %s\n", user.Profile.Email)
 	}
 	return nil
 }
 
 // oktaApp, oktaUser, and oktaAPIToken are the inventory rows the audit prints
-// and the cleanup acts on, built from the org API's Go-side reads.
+// and the cleanup acts on, decoded straight from the org API's Go-side reads.
 type oktaApp struct {
-	ID, Label, Status, SettingsLabel string
+	ID       string `json:"id"`
+	Label    string `json:"label"`
+	Status   string `json:"status"`
+	Settings struct {
+		App struct {
+			Label string `json:"label"`
+		} `json:"app"`
+	} `json:"settings"`
 }
 
 type oktaUser struct {
-	ID, Email, Status string
-	Ours              bool
+	ID      string `json:"id"`
+	Status  string `json:"status"`
+	Profile struct {
+		Email string `json:"email"`
+	} `json:"profile"`
 }
 
 type oktaAPIToken struct {
-	ID, Name string
+	ID   string `json:"id"`
+	Name string `json:"name"`
+}
+
+// oursUser decides what a cleanup run does with one listed account. This rig
+// creates APPLICATIONS, not users, so match only an address it demonstrably
+// generates, and never the signed-in account: matching /emisar/ against an email
+// once found the tenant's own admin.
+func oursUser(user oktaUser, meID string) bool {
+	return user.ID != meID && oursUserEmail.MatchString(user.Profile.Email)
 }
 
 // oursUserEmail matches the addresses this rig demonstrably generates, so a
@@ -463,6 +452,8 @@ func oktaCalls(ctx context.Context, client *http.Client, orgURL, token string, c
 	return nil
 }
 
+// clearMFA answers the admin console's step-up challenge when it appears. A run
+// that already holds a live console session skips straight through.
 func clearMFA(ctx context.Context, env map[string]string) error {
 	var location string
 	if err := chromedp.Run(ctx, chromedp.Location(&location)); err != nil {
@@ -562,19 +553,10 @@ func run(env map[string]string, outDir, only string, headless, inventory, cleanu
 	return captureFlow(ctx, env, outDir, only, configureSCIM)
 }
 
-// clickText: shared implementation — the four rigs' copies had drifted.
-func clickText(ctx context.Context, label string) (bool, error) {
-	return capture.ClickText(ctx, label)
-}
-
 // waitForText keeps this rig's attempts convention (one attempt ≈ 2s) over the
 // shared poller.
 func waitForText(ctx context.Context, needle string, attempts int) (bool, error) {
 	return capture.WaitForText(ctx, needle, time.Duration(attempts)*2*time.Second)
-}
-
-func clickContaining(ctx context.Context, label string) (bool, error) {
-	return capture.ClickContaining(ctx, label)
 }
 
 // typeInto sets a field found by placeholder, name, id, or preceding label.
@@ -682,7 +664,7 @@ func captureFlow(ctx context.Context, env map[string]string, outDir, only string
 		if err := clearMFA(ctx, env); err != nil {
 			return err
 		}
-		clicked, err := clickText(ctx, label)
+		clicked, err := capture.ClickText(ctx, label)
 		if err != nil {
 			return err
 		}
@@ -724,7 +706,7 @@ func captureFlow(ctx context.Context, env map[string]string, outDir, only string
 		return err
 	}
 	// Five near-identical SCIM apps come back; ring the one to pick.
-	if err := highlight(ctx, "SCIM 2.0 Test App (Header Auth)"); err != nil {
+	if err := capture.Highlight(ctx, "SCIM 2.0 Test App (Header Auth)", highlightSettle); err != nil {
 		return err
 	}
 	if err := shoot("02-catalog-search"); err != nil {
@@ -734,7 +716,7 @@ func captureFlow(ctx context.Context, env map[string]string, outDir, only string
 		return nil
 	}
 
-	pickedApp, err := clickContaining(ctx, "SCIM 2.0 Test App (Header Auth)")
+	pickedApp, err := capture.ClickContaining(ctx, "SCIM 2.0 Test App (Header Auth)")
 	if err != nil {
 		return err
 	}
@@ -1047,8 +1029,6 @@ func markDocsPanel(
 	return nil
 }
 
-// provisioningFlow captures the half that actually wires Okta to emisar: the
-// API-integration form, the credential test, and the To App lifecycle settings.
 // captureConfiguredCredentials opens the saved SCIM connection for editing and
 // shoots it. Nothing is saved and Test API Credentials is NOT pressed — the point
 // is to show the operator which three controls matter, and pressing it against an
@@ -1116,14 +1096,14 @@ func captureConfiguredCredentials(
 	}
 
 	// Leave the saved configuration exactly as it was.
-	if _, err := clickText(ctx, "Cancel"); err != nil {
+	if _, err := capture.ClickText(ctx, "Cancel"); err != nil {
 		return err
 	}
 	if err := settle(1); err != nil {
 		return err
 	}
 	for _, label := range []string{"Discard changes", "Discard"} {
-		discarded, err := clickText(ctx, label)
+		discarded, err := capture.ClickText(ctx, label)
 		if err != nil {
 			return err
 		}
@@ -1141,11 +1121,6 @@ func captureConfiguredCredentials(
 // DOM property without firing a React input event changes only the screenshot;
 // Save still writes the real configured value.
 func deidentifySCIMBaseURL(ctx context.Context, env map[string]string) error {
-	docsHost := env["EMISAR_DOCS_HOST"]
-	if docsHost == "" {
-		docsHost = "https://emisar.dev"
-	}
-
 	// Rewrite whatever ORIGIN the field holds, rather than the tunnel this run
 	// happens to have: the saved value was written by an earlier capture, under a
 	// different ngrok host, so matching the current one replaced nothing and the
@@ -1159,7 +1134,7 @@ func deidentifySCIMBaseURL(ctx context.Context, env map[string]string) error {
 	const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
 	setter.call(field, %q + path);
 	return true;
-})()`, strings.TrimSuffix(docsHost, "/"))
+})()`, strings.TrimSuffix(env["EMISAR_DOCS_HOST"], "/"))
 
 	var rewritten bool
 
@@ -1173,6 +1148,8 @@ func deidentifySCIMBaseURL(ctx context.Context, env map[string]string) error {
 	return nil
 }
 
+// provisioningFlow captures the half that actually wires Okta to emisar: the
+// API-integration form, the credential test, and the To App lifecycle settings.
 func provisioningFlow(
 	ctx context.Context,
 	env map[string]string,
@@ -1254,7 +1231,7 @@ func provisioningFlow(
 	// Re-runs land on an already-configured app, where this button no longer
 	// exists — the credential screens are captured, so skip to the lifecycle half
 	// rather than failing the whole run.
-	configuring, err := clickText(ctx, "Configure API Integration")
+	configuring, err := capture.ClickText(ctx, "Configure API Integration")
 	if err != nil {
 		return err
 	}
@@ -1340,11 +1317,10 @@ func provisioningFlow(
 }
 
 func deactivateGroupPush(ctx context.Context, settle func(int) error, group string) error {
-	encodedGroup, _ := json.Marshal(group)
 	open := fmt.Sprintf(`(() => {
 		const visible = element => element.offsetWidth > 0 || element.offsetHeight > 0;
 		const labels = Array.from(document.querySelectorAll('a,button,div,span,td'))
-			.filter(element => visible(element) && (element.textContent || '').includes(%s))
+			.filter(element => visible(element) && (element.textContent || '').includes(%q))
 			.sort((left, right) => left.getElementsByTagName('*').length - right.getElementsByTagName('*').length);
 		const label = labels[0];
 		if (!label) return false;
@@ -1355,7 +1331,7 @@ func deactivateGroupPush(ctx context.Context, settle func(int) error, group stri
 			if (action) { action.click(); return true; }
 		}
 		return false;
-	})()`, encodedGroup)
+	})()`, group)
 	var opened bool
 	if err := chromedp.Run(ctx, chromedp.Evaluate(open, &opened)); err != nil {
 		return err
@@ -1366,7 +1342,7 @@ func deactivateGroupPush(ctx context.Context, settle func(int) error, group stri
 	if err := settle(1); err != nil {
 		return err
 	}
-	clicked, err := clickContaining(ctx, "Deactivate group push")
+	clicked, err := capture.ClickContaining(ctx, "Deactivate group push")
 	if err != nil {
 		return err
 	}
@@ -1381,7 +1357,7 @@ func deactivateGroupPush(ctx context.Context, settle func(int) error, group stri
 	// mapping ACTIVE and the run printed that it had been deactivated.
 	var confirmed bool
 	for _, label := range []string{"Deactivate", "Confirm"} {
-		clicked, err := clickText(ctx, label)
+		clicked, err := capture.ClickText(ctx, label)
 		if err != nil {
 			return err
 		}
@@ -1398,7 +1374,7 @@ func deactivateGroupPush(ctx context.Context, settle func(int) error, group stri
 }
 
 func retryErroredPush(ctx context.Context, settle func(int) error) error {
-	clicked, err := clickContaining(ctx, "Error")
+	clicked, err := capture.ClickContaining(ctx, "Error")
 	if err != nil {
 		return err
 	}
@@ -1409,7 +1385,7 @@ func retryErroredPush(ctx context.Context, settle func(int) error) error {
 		return err
 	}
 	for _, label := range []string{"Retry", "Retry push", "Retry All Groups", "Push Now"} {
-		clicked, err = clickText(ctx, label)
+		clicked, err = capture.ClickText(ctx, label)
 		if err != nil {
 			return err
 		}
@@ -1477,12 +1453,12 @@ func lifecycleFlow(
 	}
 	if !shown {
 		_ = shoot("12-to-app-missing")
-		_ = reportPage(ctx)
+		_ = capture.DescribePage(ctx, nil)
 		return fmt.Errorf("the Settings list never rendered — To App absent after re-entering Provisioning")
 	}
 	if err := step("To App"); err != nil {
 		_ = shoot("12-to-app-missing")
-		_ = reportPage(ctx)
+		_ = capture.DescribePage(ctx, nil)
 		return err
 	}
 	if err := step("Edit"); err != nil {
@@ -1535,7 +1511,7 @@ func lifecycleFlow(
 	if err := settle(3); err != nil {
 		return err
 	}
-	if err := highlight(ctx, "Assign"); err != nil {
+	if err := capture.Highlight(ctx, "Assign", highlightSettle); err != nil {
 		return err
 	}
 	if err := shoot("13-assignments"); err != nil {
@@ -1582,7 +1558,7 @@ func pushGroupByName(ctx context.Context, group string, settle func(int) error) 
 	if err := settle(1); err != nil {
 		return err
 	}
-	if selected, err := clickContaining(ctx, "Find groups by name"); err != nil {
+	if selected, err := capture.ClickContaining(ctx, "Find groups by name"); err != nil {
 		return err
 	} else if !selected {
 		return errors.New("the Find groups by name menu item was not found")
@@ -1590,7 +1566,6 @@ func pushGroupByName(ctx context.Context, group string, settle func(int) error) 
 	if err := settle(2); err != nil {
 		return err
 	}
-	encodedGroup, _ := json.Marshal(group)
 	const search = `(() => {
 		const visible = element => element.offsetWidth > 0 || element.offsetHeight > 0;
 		const dialogs = Array.from(document.querySelectorAll('[role=dialog],.modal')).filter(visible);
@@ -1617,13 +1592,13 @@ func pushGroupByName(ctx context.Context, group string, settle func(int) error) 
 	selectGroup := fmt.Sprintf(`(() => {
 		const visible = element => element.offsetWidth > 0 || element.offsetHeight > 0;
 		const matches = Array.from(document.querySelectorAll('a,button,li,div,span,[role=option]'))
-			.filter(element => visible(element) && (element.textContent || '').includes(%s))
+			.filter(element => visible(element) && (element.textContent || '').includes(%q))
 			.sort((left, right) => left.getElementsByTagName('*').length - right.getElementsByTagName('*').length);
 		const label = matches[0];
 		if (!label) return false;
 		(label.closest('a,button,li,[role=option]') || label).click();
 		return true;
-	})()`, encodedGroup)
+	})()`, group)
 	var selected bool
 	if err := chromedp.Run(ctx, chromedp.Evaluate(selectGroup, &selected)); err != nil {
 		return err
@@ -1634,7 +1609,7 @@ func pushGroupByName(ctx context.Context, group string, settle func(int) error) 
 	if err := settle(2); err != nil {
 		return err
 	}
-	if saved, err := clickText(ctx, "Save"); err != nil {
+	if saved, err := capture.ClickText(ctx, "Save"); err != nil {
 		return err
 	} else if !saved {
 		return errors.New("the Push Group Save button was not found")
@@ -1653,15 +1628,14 @@ func pushGroupByName(ctx context.Context, group string, settle func(int) error) 
 	return nil
 }
 
-// clickRadio selects the radio whose label starts with the given text.
-
-// tickInSection checks the box belonging to a named setting. Approach from the
-// HEADING down, not the checkbox up: find the smallest node carrying the setting
-// name, then climb until the container holds exactly one checkbox — that is the
-// setting's own row. The old climb-from-checkbox missed Update User Attributes
-// and Deactivate Users, and the shipped screenshot showed them unticked.
-func tickInSection(ctx context.Context, section string) (bool, error) {
-	script := fmt.Sprintf(`(() => {
+// sectionBoxScript finds a named setting's OWN checkbox and runs action on it as
+// `box`. Approach from the HEADING down, not the checkbox up: find the smallest
+// node carrying the setting name, then climb until the container holds exactly
+// one checkbox — that is the setting's own row. The old climb-from-checkbox missed
+// Update User Attributes and Deactivate Users, and the shipped screenshot showed
+// them unticked.
+func sectionBoxScript(section, action string) string {
+	return fmt.Sprintf(`(() => {
   const visible = el => el.offsetWidth > 0 || el.offsetHeight > 0;
   const heads = [...document.querySelectorAll('*')]
     .filter(el => visible(el) && (el.textContent || '').trim() === %q)
@@ -1670,16 +1644,17 @@ func tickInSection(ctx context.Context, section string) (bool, error) {
   if (!node) return false;
   for (let up = 0; up < 8 && node; up++) {
     const boxes = node.querySelectorAll('input[type=checkbox]');
-    if (boxes.length === 1) {
-      const box = boxes[0];
-      if (!box.checked) { box.scrollIntoView({block: 'center'}); box.click(); }
-      return true;
-    }
+    if (boxes.length === 1) { const box = boxes[0]; %s }
     if (boxes.length > 1) return false;
     node = node.parentElement;
   }
   return false;
-})()`, section)
+})()`, section, action)
+}
+
+// tickInSection checks the box belonging to a named setting.
+func tickInSection(ctx context.Context, section string) (bool, error) {
+	script := sectionBoxScript(section, `if (!box.checked) { box.scrollIntoView({block: 'center'}); box.click(); } return true;`)
 	var ticked bool
 	err := chromedp.Run(ctx, chromedp.Evaluate(script, &ticked))
 	return ticked, err
@@ -1689,21 +1664,7 @@ func tickInSection(ctx context.Context, section string) (bool, error) {
 // a click helper returning true only means something matched, never that the
 // control took the value.
 func sectionChecked(ctx context.Context, section string) (bool, error) {
-	script := fmt.Sprintf(`(() => {
-  const visible = el => el.offsetWidth > 0 || el.offsetHeight > 0;
-  const heads = [...document.querySelectorAll('*')]
-    .filter(el => visible(el) && (el.textContent || '').trim() === %q)
-    .sort((a, b) => a.getElementsByTagName('*').length - b.getElementsByTagName('*').length);
-  let node = heads[0];
-  if (!node) return false;
-  for (let up = 0; up < 8 && node; up++) {
-    const boxes = node.querySelectorAll('input[type=checkbox]');
-    if (boxes.length === 1) return boxes[0].checked;
-    if (boxes.length > 1) return false;
-    node = node.parentElement;
-  }
-  return false;
-})()`, section)
+	script := sectionBoxScript(section, `return box.checked;`)
 	var checked bool
 	err := chromedp.Run(ctx, chromedp.Evaluate(script, &checked))
 	return checked, err
@@ -1826,10 +1787,6 @@ func clearOtherURIFields(ctx context.Context, keepPrefix string) error {
 	return nil
 }
 
-func highlight(ctx context.Context, label string) error {
-	return capture.Highlight(ctx, label, 1200*time.Millisecond)
-}
-
 // highlightLowest disambiguates repeated labels by choosing the lowest
 // interactive control. Okta renders both a Push Groups tab and a Push Groups
 // action; the walkthrough step means the action inside the table card.
@@ -1924,9 +1881,6 @@ func tickEnableAPIIntegration(ctx context.Context) error {
 	return nil
 }
 
-// oidcFlow captures the sign-in half: a confidential OIDC web app whose only
-// redirect URI is emisar's callback. Separate from the SCIM app by necessity —
-// Okta won't put provisioning on an OIDC integration.
 // oidcCredentialsShot photographs the two values the operator carries back to
 // emisar, on the OIDC app that is already there. Kept separate from the creation
 // walkthrough above precisely so the walkthrough can cancel: nothing in this
@@ -1957,7 +1911,7 @@ func oidcCredentialsShot(
 		return err
 	}
 	if !listed {
-		_ = reportPage(ctx)
+		_ = capture.DescribePage(ctx, nil)
 		return fmt.Errorf("the applications list never rendered")
 	}
 	openApp := fmt.Sprintf(`(() => {
@@ -1977,7 +1931,7 @@ func oidcCredentialsShot(
 		return err
 	}
 	if !opened {
-		_ = reportPage(ctx)
+		_ = capture.DescribePage(ctx, nil)
 		return errors.New("configured OIDC app was not found in the applications list")
 	}
 	if err := settle(8); err != nil {
@@ -2031,6 +1985,9 @@ func oidcCredentialsShot(
 	return nil
 }
 
+// oidcFlow captures the sign-in half: a confidential OIDC web app whose only
+// redirect URI is emisar's callback. Separate from the SCIM app by necessity —
+// Okta won't put provisioning on an OIDC integration.
 func oidcFlow(
 	ctx context.Context,
 	env map[string]string,
@@ -2082,9 +2039,6 @@ func oidcFlow(
 	// Okta never dials the redirect URI — the browser does — so screenshots show the
 	// real hosted product URL rather than whatever tunnel this run used.
 	host := env["EMISAR_DOCS_HOST"]
-	if host == "" {
-		host = "https://emisar.dev"
-	}
 	// The first `uri` box is Sign-in redirect URIs. emisar's callback is fixed and
 	// must be the ONLY entry — no wildcard.
 	if err := typeRealKeysSelector(ctx, "input[name=uri]", host+"/sign_in/sso/callback"); err != nil {
@@ -2159,19 +2113,6 @@ func typeRealKeysSelector(ctx context.Context, selector, value string) error {
 		return err
 	}
 	fmt.Printf("  typed into %s\n", selector)
-	return nil
-}
-
-// reportPage prints where the run ended up, so a failed selector is diagnosable
-// from the log rather than only from the screenshots.
-func reportPage(ctx context.Context) error {
-	var location, text string
-	if err := chromedp.Run(ctx,
-		chromedp.Location(&location),
-		chromedp.Evaluate(`document.body.innerText.replace(/\n{2,}/g, "\n").slice(0, 700)`, &text)); err != nil {
-		return err
-	}
-	fmt.Printf("  at %s\n  --- page text ---\n%s\n  ---\n", location, text)
 	return nil
 }
 

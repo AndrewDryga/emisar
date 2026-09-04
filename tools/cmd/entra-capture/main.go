@@ -9,12 +9,10 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
 	"os"
-	"regexp"
 	"strings"
 	"time"
 
@@ -23,6 +21,10 @@ import (
 
 	"github.com/andrewdryga/emisar/tools/internal/capture"
 )
+
+// How long an outline needs to hold still before the shot that follows it; the
+// admin center repaints a blade after the ring lands.
+const highlightSettle = 700 * time.Millisecond
 
 func main() {
 	env := flag.String("env", "portal/.agent/secrets/entra-trial.env", "env file with the tenant credentials")
@@ -76,7 +78,7 @@ func run(env map[string]string, outDir string, headless, formOnly, create bool, 
 
 	if err := signIn(ctx, env, outDir); err != nil {
 		_ = idpcapture.Screenshot(ctx, outDir, "en-login-failed")
-		_ = describePage(ctx)
+		_ = capture.DescribePage(ctx, nil)
 		return err
 	}
 	fmt.Println("  signed in")
@@ -100,7 +102,7 @@ func signIn(ctx context.Context, env map[string]string, outDir string) error {
 	); err != nil {
 		return fmt.Errorf("username step: %w", err)
 	}
-	if err := waitForText(ctx, "Enter password", 45*time.Second); err != nil {
+	if err := capture.RequireText(ctx, "Enter password", 45*time.Second); err != nil {
 		return fmt.Errorf("password screen never appeared: %w", err)
 	}
 	fmt.Println("  username accepted")
@@ -154,10 +156,6 @@ func settle(ctx context.Context, env map[string]string) error {
 	return fmt.Errorf("never reached the admin center")
 }
 
-func waitForText(ctx context.Context, want string, timeout time.Duration) error {
-	return capture.RequireText(ctx, want, timeout)
-}
-
 // submitTOTP answers the authenticator prompt. The code is computed in-process
 // from the enrolment secret; a code is only valid for its 30s window, so this
 // waits for a fresh window rather than submitting one about to expire.
@@ -184,10 +182,6 @@ func submitTOTP(ctx context.Context, env map[string]string) error {
 		chromedp.Click(`input[type="submit"]`, chromedp.ByQuery),
 		chromedp.Sleep(6*time.Second),
 	)
-}
-
-func describePage(ctx context.Context) error {
-	return capture.DescribePage(ctx, nil)
 }
 
 // appRegistrationFlow captures the sign-in half of the Entra walkthrough: the
@@ -266,7 +260,7 @@ func appRegistrationFlow(ctx context.Context, env map[string]string, outDir stri
 // empty", leaving an unrecorded registration behind.
 func captureNewAppOverview(ctx context.Context, env map[string]string, outDir, credentialsOut string) error {
 	dismissOverlays(ctx)
-	if err := waitForText(ctx, "Application (client) ID", 90*time.Second); err != nil {
+	if err := capture.RequireText(ctx, "Application (client) ID", 90*time.Second); err != nil {
 		_ = idpcapture.Screenshot(ctx, outDir, "en-05-overview-failed")
 		return fmt.Errorf("app overview never rendered after Register: %w", err)
 	}
@@ -278,17 +272,16 @@ func captureNewAppOverview(ctx context.Context, env map[string]string, outDir, c
 	env["ENTRA_CLIENT_ID"] = clientID
 	fmt.Printf("  registered app, client id %s\n", clientID)
 	if credentialsOut != "" {
-		if err := writeEntraCredentialFile(credentialsOut, clientID); err != nil {
+		// So a later resume run reads ENTRA_CLIENT_ID instead of registering again.
+		if err := capture.WriteCredentialFile(credentialsOut,
+			fmt.Sprintf("# Disposable Entra certification app\nENTRA_CLIENT_ID=%s\n", clientID)); err != nil {
 			return err
 		}
 		fmt.Printf("  wrote client id to %s\n", credentialsOut)
 	}
-	_ = highlight(ctx, "Application (client) ID")
+	_ = capture.Highlight(ctx, "Application (client) ID", highlightSettle)
 	return idpcapture.Screenshot(ctx, outDir, "en-05-app-overview")
 }
-
-// clientIDPattern is the Entra Application (client) ID GUID shape.
-var clientIDPattern = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
 
 // readClientID pulls the Application (client) ID GUID off the overview blade.
 func readClientID(ctx context.Context) (string, error) {
@@ -311,26 +304,10 @@ func readClientID(ctx context.Context) (string, error) {
 	if err := chromedp.Run(ctx, chromedp.Evaluate(script, &value)); err != nil {
 		return "", err
 	}
-	if !clientIDPattern.MatchString(value) {
-		return "", fmt.Errorf("could not read the Application (client) ID off the overview blade (got %q)", value)
+	if value == "" {
+		return "", errors.New("could not read the Application (client) ID off the overview blade")
 	}
 	return value, nil
-}
-
-// writeEntraCredentialFile records the registered app's client id to an ignored
-// env file, mirroring jumpcloud-capture's -credentials-out so a later resume run
-// can read ENTRA_CLIENT_ID. Chmod after open tightens a pre-existing file.
-func writeEntraCredentialFile(path, clientID string) error {
-	file, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600)
-	if err != nil {
-		return err
-	}
-	defer file.Close()
-	if err := file.Chmod(0o600); err != nil {
-		return err
-	}
-	_, err = fmt.Fprintf(file, "# Disposable Entra certification app\nENTRA_CLIENT_ID=%s\n", clientID)
-	return err
 }
 
 func markRegistrationDocsViewport(ctx context.Context) error {
@@ -443,11 +420,11 @@ func openRegisteredApp(ctx context.Context, env map[string]string, outDir string
 		return err
 	}
 	dismissOverlays(ctx)
-	if err := waitForText(ctx, "Application (client) ID", 90*time.Second); err != nil {
+	if err := capture.RequireText(ctx, "Application (client) ID", 90*time.Second); err != nil {
 		_ = idpcapture.Screenshot(ctx, outDir, "en-05-overview-failed")
 		return fmt.Errorf("app overview never rendered: %w", err)
 	}
-	_ = highlight(ctx, "Application (client) ID")
+	_ = capture.Highlight(ctx, "Application (client) ID", highlightSettle)
 	return idpcapture.Screenshot(ctx, outDir, "en-05-app-overview")
 }
 
@@ -481,7 +458,7 @@ func openService(ctx context.Context, tile, expect string) error {
 		return err
 	}
 	dismissOverlays(ctx)
-	return waitForText(ctx, expect, 90*time.Second)
+	return capture.RequireText(ctx, expect, 90*time.Second)
 }
 
 // dismissOverlays closes the NPS survey and teaching callouts the portal throws
@@ -558,25 +535,19 @@ func clickTextAtCentre(ctx context.Context, label string) error {
   const el = matches[0];
   el.scrollIntoView({block: 'center'});
   const r = el.getBoundingClientRect();
-  return JSON.stringify({x: r.left + r.width / 2, y: r.top + r.height / 2});
+  return {x: r.left + r.width / 2, y: r.top + r.height / 2};
 })()`, label)
 
-	var raw string
-	if err := chromedp.Run(ctx, chromedp.Evaluate(script, &raw)); err != nil {
+	// chromedp decodes the returned object straight into point, and a null result
+	// leaves the POINTER nil — which is the miss.
+	var point *struct{ X, Y float64 }
+	if err := chromedp.Run(ctx, chromedp.Evaluate(script, &point)); err != nil {
 		return err
 	}
-	if raw == "" {
+	if point == nil {
 		return fmt.Errorf("nothing visible matching %q", label)
 	}
-	var point struct{ X, Y float64 }
-	if err := json.Unmarshal([]byte(raw), &point); err != nil {
-		return err
-	}
 	return chromedp.Run(ctx, chromedp.MouseClickXY(point.X, point.Y))
-}
-
-func highlight(ctx context.Context, label string) error {
-	return capture.Highlight(ctx, label, 700*time.Millisecond)
 }
 
 // fillField types into the input whose label, placeholder or aria-label matches.
