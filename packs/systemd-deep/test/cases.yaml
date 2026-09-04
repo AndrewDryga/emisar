@@ -131,7 +131,17 @@ cases:
       - argv: [systemctl, start, cron.service]
     probes:
       - name: systemd recorded a signal, not a clean exit
-        argv: [systemctl, show, cron.service, -p, Result, --value]
+        argv:
+          - /bin/sh
+          - -c
+          - |
+            for _ in $(seq 1 50); do
+              result=$(systemctl show cron.service -p Result --value)
+              [ "$result" = signal ] && { printf '%s\n' "$result"; exit 0; }
+              sleep 0.1
+            done
+            printf '%s\n' "$result"
+            exit 1
         expect:
           stdout_contains: [signal]
 

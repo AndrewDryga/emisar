@@ -115,7 +115,8 @@ cases:
       json:
         /0/id: cec9dfceb0b74c1c9a5e3c135585f364
         /0/isActive: true
-        /0/dsn/public: "http://8f4b2a1c9d0e8f7a6b5c4d3e2f1a0b9c@sentry.example.test/11"
+        /0/dsn: "[REDACTED]"
+        /0/public: 8f4b2a1c9d0e8f7a6b5c4d3e2f1a0b9c
 
   - action: sentry.org_stats
     args: {organization: acme}

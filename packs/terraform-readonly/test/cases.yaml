@@ -475,10 +475,13 @@ cases:
       - name: create state
         argv: [/bin/sh, -c, "cd /tmp/tfdump/workspace && terraform apply -auto-approve -input=false"]
     expect:
-      # `output -json` deliberately un-masks a `sensitive` output. That is the
-      # whole reason this read is approval-gated rather than free.
-      stdout_contains:
+      # Terraform returns sensitive outputs in cleartext, then the runner masks
+      # secret-named fields. The action stays high risk because operators can
+      # choose arbitrary output names outside that best-effort vocabulary.
+      stdout_not_contains:
         - packtest-canary-terraform-state-secret-8d6a
+      json:
+        /password: "[REDACTED]"
 
   - name: tf.state_show
     action: tf.state_show
