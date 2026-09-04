@@ -15,6 +15,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -762,6 +763,12 @@ var (
 	ipv4Pattern    = regexp.MustCompile(`(?:[0-9]{1,3}\.){3}[0-9]{1,3}`)
 )
 
+// ValidDigest reports whether an image digest is the pinned
+// @sha256:<64 lowercase hex characters> form every SUT version must carry.
+func ValidDigest(digest string) bool {
+	return digestPattern.MatchString(digest)
+}
+
 func validateRunner(runner Runner) error {
 	if err := validateRunnerUser(runner.User); err != nil {
 		return err
@@ -836,7 +843,7 @@ func validateVersions(versions []Version) error {
 		if !versionPattern.MatchString(version.Version) {
 			return fmt.Errorf("%s has invalid image tag %q", location, version.Version)
 		}
-		if !digestPattern.MatchString(version.Digest) {
+		if !ValidDigest(version.Digest) {
 			return fmt.Errorf("%s digest must match @sha256:<64 lowercase hex characters>", location)
 		}
 		if seen[version.Version] {
@@ -1261,7 +1268,7 @@ func execute(argv, env []string) (commandResult, error) {
 }
 
 func checkResult(result commandResult, expect Expectation) error {
-	if len(expect.Exit) > 0 && !accepts(expect.Exit, result.exitCode) {
+	if len(expect.Exit) > 0 && !slices.Contains(expect.Exit, result.exitCode) {
 		return fmt.Errorf("exit=%d, expected=%v\nstdout:\n%s\nstderr:\n%s",
 			result.exitCode, expect.Exit, result.stdout, result.stderr)
 	}
@@ -1300,7 +1307,7 @@ func checkActionResult(result actionResult, expect Expectation, requireJSON bool
 		return fmt.Errorf("action status=%s, expected=%s\nreason: %s\nerror: %s\nstdout:\n%s\nstderr:\n%s",
 			result.Status, expect.Status, result.Reason, result.Error, result.Stdout, result.Stderr)
 	}
-	if len(expect.Exit) > 0 && !accepts(expect.Exit, result.ExitCode) {
+	if len(expect.Exit) > 0 && !slices.Contains(expect.Exit, result.ExitCode) {
 		return fmt.Errorf("action exit=%d, expected=%v\nstatus=%s\nreason=%s\nstdout:\n%s\nstderr:\n%s",
 			result.ExitCode, expect.Exit, result.Status, result.Reason, result.Stdout, result.Stderr)
 	}
@@ -1465,15 +1472,6 @@ func checkSecretCanaries(keys []string, env map[string]string, result actionResu
 		}
 	}
 	return nil
-}
-
-func accepts(codes []int, code int) bool {
-	for _, allowed := range codes {
-		if code == allowed {
-			return true
-		}
-	}
-	return false
 }
 
 func argumentValue(value any) (string, error) {

@@ -19,6 +19,7 @@ import (
 	"time"
 
 	devbrowser "github.com/andrewdryga/emisar/tools/internal/browser"
+	"github.com/andrewdryga/emisar/tools/internal/toolutil"
 )
 
 func (a *App) e2eSSO(ctx context.Context) error {
@@ -443,7 +444,7 @@ where slug = 'demo' and paddle_customer_id like 'ctm_stub_%';`
 	}
 	server := exec.Command("mix", "phx.server")
 	server.Dir = a.Portal
-	server.Env = mergedEnv(env)
+	server.Env = toolutil.MergedEnv(env)
 	server.Stdout, server.Stderr = serverLog, serverLog
 	configureProcessGroup(server)
 	if err := server.Start(); err != nil {

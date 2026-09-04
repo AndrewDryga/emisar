@@ -16,6 +16,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -347,7 +348,7 @@ func testWindowsMCPInstaller(root, shell string) error {
 	firstRequested := append([]string(nil), requested...)
 	firstDeviceGrants := deviceGrants
 	serverMu.Unlock()
-	if firstDeviceGrants != 1 || !slicesEqual(firstRequested, windowsClientIDs()) {
+	if firstDeviceGrants != 1 || !slices.Equal(firstRequested, windowsClientIDs()) {
 		return fmt.Errorf(
 			"device grants = %d, requested clients = %v; want one grant for every supported client\n%s",
 			firstDeviceGrants,
@@ -406,7 +407,7 @@ func testWindowsMCPInstaller(root, shell string) error {
 	rerunRequested := append([]string(nil), requested...)
 	rerunDeviceGrants := deviceGrants
 	serverMu.Unlock()
-	if rerunDeviceGrants != 2 || !slicesEqual(rerunRequested, []string{"emisar-mcp-cli"}) {
+	if rerunDeviceGrants != 2 || !slices.Equal(rerunRequested, []string{"emisar-mcp-cli"}) {
 		return fmt.Errorf("rerun used inherited auth: grants=%d clients=%v", rerunDeviceGrants, rerunRequested)
 	}
 	verify = exec.Command(installed, "list_tools", "--json")
@@ -1032,16 +1033,4 @@ func zipWindowsMCPFixture(destination, root, binary string) error {
 
 func windowsInstallerAPIKey(seed byte) string {
 	return "emk-" + base64.RawURLEncoding.EncodeToString(bytes.Repeat([]byte{seed}, 32))
-}
-
-func slicesEqual(left, right []string) bool {
-	if len(left) != len(right) {
-		return false
-	}
-	for index := range left {
-		if left[index] != right[index] {
-			return false
-		}
-	}
-	return true
 }

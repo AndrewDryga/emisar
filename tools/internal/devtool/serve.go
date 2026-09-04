@@ -13,6 +13,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/andrewdryga/emisar/tools/internal/toolutil"
 )
 
 func portFromURL(raw string) (int, error) {
@@ -402,7 +404,7 @@ func (a *App) serve(ctx context.Context, interactive bool) error {
 	name, arguments := serveInvocation(interactive)
 	command := exec.Command(name, arguments...)
 	command.Dir = a.Portal
-	command.Env = mergedEnv(env)
+	command.Env = toolutil.MergedEnv(env)
 	command.Env = append(command.Env,
 		"METRICS_PORT="+strconv.Itoa(metricsPort),
 		"EMISAR_LISTEN_PORT="+strconv.Itoa(listenPort),

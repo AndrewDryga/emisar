@@ -12,6 +12,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/andrewdryga/emisar/tools/internal/toolutil"
 )
 
 // invocation is the fully-constructed agent subprocess: binary, argv,
@@ -182,7 +184,7 @@ func childEnv(keep string) []string {
 			keepValue = value
 			continue
 		}
-		if key == "CLAUDECODE" || hasAnyPrefix(
+		if key == "CLAUDECODE" || toolutil.HasAnyPrefix(
 			key,
 			"EMISAR_",
 			"ANTHROPIC_",
@@ -212,15 +214,6 @@ func replaceEnv(env []string, key, value string) []string {
 		}
 	}
 	return append(out, prefix+value)
-}
-
-func hasAnyPrefix(value string, prefixes ...string) bool {
-	for _, prefix := range prefixes {
-		if strings.HasPrefix(value, prefix) {
-			return true
-		}
-	}
-	return false
 }
 
 // runAgent executes the agent to completion, capturing bounded output. A

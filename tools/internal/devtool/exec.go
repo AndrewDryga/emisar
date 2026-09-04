@@ -5,10 +5,10 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"os"
 	"os/exec"
-	"sort"
 	"strings"
+
+	"github.com/andrewdryga/emisar/tools/internal/toolutil"
 )
 
 func (a *App) command(ctx context.Context, dir string, env map[string]string, name string, args ...string) *exec.Cmd {
@@ -17,7 +17,7 @@ func (a *App) command(ctx context.Context, dir string, env map[string]string, na
 	command.Stdin = a.In
 	command.Stdout = a.Out
 	command.Stderr = a.Err
-	command.Env = mergedEnv(env)
+	command.Env = toolutil.MergedEnv(env)
 	return command
 }
 
@@ -37,7 +37,7 @@ func (a *App) output(ctx context.Context, dir string, env map[string]string, nam
 	}
 	command := exec.CommandContext(ctx, name, args...)
 	command.Dir = dir
-	command.Env = mergedEnv(env)
+	command.Env = toolutil.MergedEnv(env)
 	var stdout, stderr bytes.Buffer
 	command.Stdout = &stdout
 	command.Stderr = &stderr
@@ -49,29 +49,6 @@ func (a *App) output(ctx context.Context, dir string, env map[string]string, nam
 		return nil, fmt.Errorf("%s: %w", strings.Join(append([]string{name}, args...), " "), err)
 	}
 	return stdout.Bytes(), nil
-}
-
-func mergedEnv(overrides map[string]string) []string {
-	values := make(map[string]string)
-	for _, entry := range os.Environ() {
-		key, value, found := strings.Cut(entry, "=")
-		if found {
-			values[key] = value
-		}
-	}
-	for key, value := range overrides {
-		values[key] = value
-	}
-	keys := make([]string, 0, len(values))
-	for key := range values {
-		keys = append(keys, key)
-	}
-	sort.Strings(keys)
-	env := make([]string, 0, len(keys))
-	for _, key := range keys {
-		env = append(env, key+"="+values[key])
-	}
-	return env
 }
 
 func copyOutput(dst io.Writer, data []byte) {

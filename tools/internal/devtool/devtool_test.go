@@ -477,23 +477,6 @@ func TestPortalGateRequiresDatabaseURLInCI(t *testing.T) {
 	}
 }
 
-func TestMergedEnvReplacesExistingValue(t *testing.T) {
-	t.Setenv("EMISAR_ENV_FIXTURE", "old")
-	env := mergedEnv(map[string]string{"EMISAR_ENV_FIXTURE": "new"})
-	matches := 0
-	for _, entry := range env {
-		if entry == "EMISAR_ENV_FIXTURE=new" {
-			matches++
-		}
-		if entry == "EMISAR_ENV_FIXTURE=old" {
-			t.Fatalf("old value remains in environment: %v", env)
-		}
-	}
-	if matches != 1 {
-		t.Fatalf("new value appeared %d times", matches)
-	}
-}
-
 func TestPackTestComposeProjectIsInvocationAndCaseSpecific(t *testing.T) {
 	first := packTestComposeProject("/tmp/a", "run-1", "postgres", "uptime")
 	if first != packTestComposeProject("/tmp/a", "run-1", "postgres", "uptime") ||
