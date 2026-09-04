@@ -40,7 +40,6 @@ defmodule Emisar.Runs do
   def init(_opts) do
     children = [
       job_module("DispatchTimeout"),
-      job_module("EventRetention"),
       job_module("ActionRunRetention"),
       job_module("FleetObservability")
     ]
