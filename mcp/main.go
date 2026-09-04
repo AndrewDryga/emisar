@@ -933,9 +933,7 @@ func canonicalRequestID(meta requestMeta) (string, bool) {
 			return "s:" + id, true
 		}
 	case 'n':
-		if id, ok := new(big.Rat).SetString(string(meta.id)); ok {
-			return "n:" + id.RatString(), true
-		}
+		return "n:" + string(meta.id), true
 	}
 	return "", false
 }
@@ -1130,14 +1128,18 @@ func validJSONInteger(value []byte) bool {
 	if len(value) == 0 {
 		return false
 	}
-	if value[0] == '-' {
+	negative := value[0] == '-'
+	if negative {
 		value = value[1:]
 		if len(value) == 0 {
 			return false
 		}
 	}
 	if value[0] == '0' {
-		return len(value) == 1
+		// -0 is a second spelling of zero, and the portal echoes it back as 0.
+		// Refusing it here keeps one spelling per id value, which is what lets
+		// correlation compare the bytes.
+		return len(value) == 1 && !negative
 	}
 	if value[0] < '1' || value[0] > '9' {
 		return false
@@ -1570,11 +1572,8 @@ func matchingJSONRPCID(want, got json.RawMessage) bool {
 			json.Unmarshal(got, &gotString) == nil &&
 			wantString == gotString
 	}
-	if wantKind == 'n' {
-		wantNumber, wantOK := new(big.Rat).SetString(string(want))
-		gotNumber, gotOK := new(big.Rat).SetString(string(got))
-		return wantOK && gotOK && wantNumber.Cmp(gotNumber) == 0
-	}
+	// The admitted integer grammar has one spelling per value, so the numeric
+	// ids compare as the bytes the client sent.
 	return bytes.Equal(want, got)
 }
 

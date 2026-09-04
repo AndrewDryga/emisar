@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"crypto/rand"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -417,7 +418,7 @@ func loadStoredCLIAccounts() ([]storedCLIAccount, []skippedCLIAccount, error) {
 		if !validCLIAccountFilename(entry.Name()) {
 			continue
 		}
-		account, err := loadOneStoredCLIAccount(configDir, filepath.Join(dir, entry.Name()))
+		account, err := loadOneStoredCLIAccount(filepath.Join(dir, entry.Name()))
 		if err != nil {
 			skipped = append(skipped, skippedCLIAccount{name: entry.Name(), err: err})
 			continue
@@ -440,8 +441,8 @@ func loadStoredCLIAccounts() ([]storedCLIAccount, []skippedCLIAccount, error) {
 
 // loadOneStoredCLIAccount loads and validates a single stored-account file. Its
 // failure takes down only that entry, never the rest of the directory.
-func loadOneStoredCLIAccount(configDir, path string) (storedCLIAccount, error) {
-	store := &credentialStore{path: path, ops: defaultCredentialFileOps()}
+func loadOneStoredCLIAccount(path string) (storedCLIAccount, error) {
+	store := &credentialStore{path: path, random: rand.Reader, ops: defaultCredentialFileOps()}
 	name := filepath.Base(path)
 	if err := store.validateExistingPath(); err != nil {
 		return storedCLIAccount{}, fmt.Errorf("stored account %s: %w", name, err)
@@ -458,13 +459,8 @@ func loadOneStoredCLIAccount(configDir, path string) (storedCLIAccount, error) {
 	if err != nil {
 		return storedCLIAccount{}, fmt.Errorf("stored account %s endpoint: %w", name, err)
 	}
-	expected := newCLIAccountCredentialStoreAt(configDir, state.AccountID, origin, state.BootstrapPrefix)
-	if expected.path != store.path {
-		return storedCLIAccount{}, fmt.Errorf("stored account %s does not match its account identity", name)
-	}
 	store.endpointOrigin = origin
 	store.bootstrapPrefix = state.BootstrapPrefix
-	store.random = expected.random
 	if err := state.validate(origin, state.BootstrapPrefix); err != nil {
 		return storedCLIAccount{}, fmt.Errorf("stored account %s: %w", name, err)
 	}

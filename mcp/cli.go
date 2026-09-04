@@ -647,13 +647,9 @@ func (r cliHumanRenderer) renderRecord(number, total int, value map[string]any, 
 func (r cliHumanRenderer) renderFields(fields []cliHumanField, indent string) {
 	width := 0
 	for _, field := range fields {
-		if length := len([]rune(field.label)); length > width && width < maxCLIHumanFieldAlignmentRunes {
-			width = length
-			if width > maxCLIHumanFieldAlignmentRunes {
-				width = maxCLIHumanFieldAlignmentRunes
-			}
-		}
+		width = max(width, len([]rune(field.label)))
 	}
+	width = min(width, maxCLIHumanFieldAlignmentRunes)
 	for _, field := range fields {
 		value, _ := humanJSONFieldValue(field)
 		paddingWidth := width - len([]rune(field.label))
