@@ -445,5 +445,6 @@ The runner treats every close as reconnectable and backs off; a terminal verdict
 reaches it only through a `shutdown` frame's `reason`. So a 1013 repeats until
 one of the two hosts sharing the identity is given its own data directory.
 
-The code and fixed vectors in `mcp/internal/attest` and
-`runner/internal/attest` are byte-identical and checked from repository CI.
+The code in `mcp/internal/attest` and `runner/internal/attest` is
+byte-identical and checked from repository CI, so both derive the same fixed
+vectors.
