@@ -63,6 +63,13 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
     |> Repo.update!()
   end
 
+  defp sync_numbered_groups(provider, count) do
+    for n <- 1..count do
+      suffix = n |> Integer.to_string() |> String.pad_leading(2, "0")
+      sync_group(provider, "grp-#{suffix}", "Group #{suffix}")
+    end
+  end
+
   defp sync_group(provider, external_group_id, display) do
     {:ok, group} =
       SSO.scim_upsert_group(provider, %{
@@ -1693,14 +1700,16 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
                "#create-mapping-#{provider.id}-submit[phx-hook='PendingButton'][phx-disable-with='Adding...']"
              )
 
+      # The picker is server-searched: opening the form lists the first groups,
+      # and the chosen one rides the form as a hidden id.
+      assert has_element?(lv, "#create-mapping-#{provider.id} button", "Admins")
+      render_click(lv, "select_group", %{"scope" => "role", "group_id" => group.id})
+
       html =
         lv
         |> form("#create-mapping-#{provider.id}", %{
           "provider_id" => provider.id,
-          "mapping" => %{
-            "directory_group_id" => group.id,
-            "role" => "admin"
-          }
+          "mapping" => %{"role" => "admin"}
         })
         |> render_submit()
 
@@ -1837,6 +1846,102 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
       assert html =~ "Role group 01"
     end
 
+    test "the synced-groups readout pages instead of loading the whole directory", %{
+      conn: conn,
+      account: account,
+      provider: provider
+    } do
+      sync_numbered_groups(provider, 21)
+
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/sso/#{provider.id}")
+
+      assert has_element?(lv, "#synced-groups-#{provider.id}-pager", "20 / 21 total")
+
+      first = lv |> element("#synced-groups-#{provider.id}") |> render()
+      assert first =~ "Group 01"
+      refute first =~ "Group 21"
+
+      _html =
+        lv
+        |> element("#synced-groups-#{provider.id}-pager a", "Next →")
+        |> render_click()
+
+      second = lv |> element("#synced-groups-#{provider.id}") |> render()
+      assert second =~ "Group 21"
+      refute second =~ "Group 01"
+    end
+
+    test "the group picker searches the directory rather than listing it", %{
+      conn: conn,
+      account: account,
+      provider: provider
+    } do
+      sync_numbered_groups(provider, 21)
+      sync_group(provider, "00g-oncall", "Incident responders")
+
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/sso/#{provider.id}")
+      render_click(lv, "add_mapping_form", %{})
+
+      opened = lv |> element("#create-mapping-#{provider.id}") |> render()
+      assert opened =~ "Group 01"
+      refute opened =~ "Incident responders"
+
+      _html =
+        lv
+        |> form("#create-mapping-#{provider.id}", %{"group_search" => "oncall"})
+        |> render_change()
+
+      searched = lv |> element("#create-mapping-#{provider.id}") |> render()
+      assert searched =~ "Incident responders"
+      refute searched =~ "Group 01"
+
+      _html =
+        lv
+        |> form("#create-mapping-#{provider.id}", %{"group_search" => "nothing-like-this"})
+        |> render_change()
+
+      missing = lv |> element("#create-mapping-#{provider.id}") |> render()
+      assert missing =~ "No group matches that name or ID."
+    end
+
+    test "maps a group the picker had to search for", %{
+      conn: conn,
+      account: account,
+      provider: provider,
+      owner: owner
+    } do
+      sync_numbered_groups(provider, 21)
+      late = sync_group(provider, "00g-oncall", "Incident responders")
+
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/sso/#{provider.id}")
+
+      # Off the readout's first page and out of the picker's first answer, so
+      # only the search can reach it.
+      refute lv |> element("#synced-groups-#{provider.id}") |> render() =~ "Incident responders"
+
+      render_click(lv, "add_mapping_form", %{})
+
+      _searched =
+        lv
+        |> form("#create-mapping-#{provider.id}", %{"group_search" => "oncall"})
+        |> render_change()
+
+      render_click(lv, "select_group", %{"scope" => "role", "group_id" => late.id})
+
+      html =
+        lv
+        |> form("#create-mapping-#{provider.id}", %{
+          "provider_id" => provider.id,
+          "mapping" => %{"role" => "operator"}
+        })
+        |> render_submit()
+
+      assert html =~ "Role mapping added."
+
+      assert {:ok, [mapping], _meta} = SSO.list_group_mappings(provider, owner)
+      assert mapping.directory_group_id == late.id
+    end
+
     test "edits a mapping's role while its synced group identity and display stay fixed", %{
       conn: conn,
       account: account,
@@ -1924,14 +2029,13 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
 
       refute changed =~ "Choose all runners or at least one selected runner scope."
 
+      render_click(lv, "select_group", %{"scope" => "runner_access", "group_id" => group.id})
+
       invalid =
         lv
         |> form("#create-runner-access-mapping-#{provider.id}", %{
           "provider_id" => provider.id,
-          "runner_access_mapping" => %{
-            "directory_group_id" => group.id,
-            "runner_access_mode" => "restricted"
-          }
+          "runner_access_mapping" => %{"runner_access_mode" => "restricted"}
         })
         |> render_submit()
 
@@ -1942,7 +2046,6 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
         |> form("#create-runner-access-mapping-#{provider.id}", %{
           "provider_id" => provider.id,
           "runner_access_mapping" => %{
-            "directory_group_id" => group.id,
             "runner_access_mode" => "restricted",
             "scope" => ["group:database"]
           }

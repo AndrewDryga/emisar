@@ -4577,7 +4577,7 @@ defmodule Emisar.RunsTest do
       assert DateTime.compare(redelivered.sent_at, sent.sent_at) == :gt
     end
 
-    test "audits an unrelated code, or a cap error with no correlation, and nothing else" do
+    test "audits an unrelated code but records nothing for a cap error naming no request" do
       account = Fixtures.Accounts.create_account()
       runner = Fixtures.Runners.create_runner(account_id: account.id, connected?: true)
       {:ok, run} = Runs.create_run(base_attrs(account.id, runner.id))
@@ -4600,13 +4600,13 @@ defmodule Emisar.RunsTest do
         )
 
       assert Runs.handle_runner_error(unrelated) == {:ok, :not_applicable}
-      assert Runs.handle_runner_error(uncorrelated) == {:ok, :not_applicable}
+      assert Runs.handle_runner_error(uncorrelated) == {:ok, :request_not_found}
 
       assert Runs.peek_run_by_id(run.id).status == :sent
-      assert length(Repo.all(Audit.Event)) == 2
+      assert Repo.one(Audit.Event).payload["code"] == "exec_failed"
     end
 
-    test "does not correlate a cap refusal outside the runner's account, but still audits" do
+    test "records nothing for a cap refusal outside the runner's account" do
       account = Fixtures.Accounts.create_account()
       runner = Fixtures.Runners.create_runner(account_id: account.id, connected?: true)
       other_account = Fixtures.Accounts.create_account()
@@ -4625,13 +4625,10 @@ defmodule Emisar.RunsTest do
       assert Runs.handle_runner_error(command) == {:ok, :request_not_found}
 
       assert Runs.peek_run_by_id(run.id).status == :sent
-
-      event = Repo.one(Audit.Event)
-      assert event.account_id == other_account.id
-      assert event.event_type == "runner.error"
+      refute Repo.one(Audit.Event)
     end
 
-    test "does not correlate another runner's request in the same account, but still audits" do
+    test "records nothing for another runner's request in the same account" do
       account = Fixtures.Accounts.create_account()
       runner = Fixtures.Runners.create_runner(account_id: account.id, connected?: true)
       peer = Fixtures.Runners.create_runner(account_id: account.id, connected?: true)
@@ -4649,10 +4646,7 @@ defmodule Emisar.RunsTest do
       assert Runs.handle_runner_error(command) == {:ok, :request_not_found}
 
       assert Runs.peek_run_by_id(run.id).status == :sent
-
-      event = Repo.one(Audit.Event)
-      assert event.account_id == account.id
-      assert event.target_id == peer.id
+      refute Repo.one(Audit.Event)
     end
 
     test "is idempotent for a duplicate cap error once the run is pending" do

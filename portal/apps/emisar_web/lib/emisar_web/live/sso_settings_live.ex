@@ -7,7 +7,12 @@ defmodule EmisarWeb.SSOSettingsLive do
 
   @role_mapping_prefix "role_mappings_"
   @runner_access_mapping_prefix "runner_access_mappings_"
+  @synced_group_prefix "synced_groups_"
   @synced_member_prefix "synced_members_"
+
+  # The two add-mapping forms each own one group picker. The scope keys their
+  # state and rides their events, so the shared handlers know which form asked.
+  @group_picker_scopes ~w(role runner_access)
 
   # Humanized provider-kind labels for the select + the row badge — the enum's
   # atoms don't title-case cleanly ("openid_connect" → "OpenID Connect").
@@ -102,7 +107,12 @@ defmodule EmisarWeb.SSOSettingsLive do
       |> assign(:group_mapping_metadata, %{})
       |> assign(:group_mapping_errors, %{})
       |> assign(:synced_groups, %{})
+      |> assign(:synced_group_metadata, %{})
       |> assign(:synced_group_errors, %{})
+      # One picker per add-mapping form. A directory can push thousands of
+      # groups, so the picker holds the operator's term and the bounded matches
+      # the server answered with — never the directory.
+      |> assign(:group_pickers, Map.new(@group_picker_scopes, &{&1, new_group_picker()}))
       |> assign(:mapping_forms, %{})
       |> assign(:editing_mapping_id, nil)
       |> assign(:mapping_edit_form, nil)
@@ -345,14 +355,12 @@ defmodule EmisarWeb.SSOSettingsLive do
     runner_access_mappings = paged_rows(runner_access_reads)
 
     # The groups the IdP has actually synced (id + member count), each annotated
-    # with its role mapping — powers the "Synced groups" readout, and (projected
-    # to ids) the map-after-first-sync picker.
-    synced_reads =
-      Map.new(scim_providers, fn provider ->
-        {groups, failed?} = list_synced_groups(socket, provider)
+    # with its role mapping — one page of the "Synced groups" readout. The
+    # mapping pickers search the directory instead of reading this list.
+    synced_group_opts = LiveTable.params_to_opts(params, [], prefix: @synced_group_prefix)
 
-        {provider.id, {groups, failed?}}
-      end)
+    synced_reads =
+      Map.new(scim_providers, &{&1.id, list_synced_groups(socket, &1, synced_group_opts)})
 
     forms = Map.new(scim_providers, &{&1.id, mapping_form(&1)})
     runner_access_forms = runner_access_mapping_forms(socket, scim_providers)
@@ -364,20 +372,17 @@ defmodule EmisarWeb.SSOSettingsLive do
     |> assign(:runner_access_mappings, runner_access_mappings)
     |> assign(:runner_access_mapping_metadata, paged_metadata(runner_access_reads))
     |> assign(:runner_access_mapping_errors, paged_read_errors(runner_access_reads))
-    |> assign(:synced_groups, rows(synced_reads))
-    |> assign(:synced_group_errors, read_errors(synced_reads))
+    |> assign(:synced_groups, paged_rows(synced_reads))
+    |> assign(:synced_group_metadata, paged_metadata(synced_reads))
+    |> assign(:synced_group_errors, paged_read_errors(synced_reads))
     |> assign(:mapping_forms, forms)
     |> assign(:runner_access_mapping_forms, runner_access_forms)
   end
 
-  # Each per-provider read is kept as `{rows, read_failed?}` and split here: the
-  # rows render the list, the flag keeps a failed read from rendering as that
-  # section's "no mappings / no groups" — which on this page reads as a claim
-  # that the directory grants nobody a role or extra runner reach.
-  defp rows(reads), do: Map.new(reads, fn {id, {rows, _failed?}} -> {id, rows} end)
-
-  defp read_errors(reads), do: Map.new(reads, fn {id, {_rows, failed?}} -> {id, failed?} end)
-
+  # Each per-provider read is kept as `{rows, metadata, read_failed?}` and split
+  # here: the rows render the list, the flag keeps a failed read from rendering
+  # as that section's "no mappings / no groups" — which on this page reads as a
+  # claim that the directory grants nobody a role or extra runner reach.
   defp paged_rows(reads),
     do: Map.new(reads, fn {id, {rows, _metadata, _failed?}} -> {id, rows} end)
 
@@ -387,10 +392,10 @@ defmodule EmisarWeb.SSOSettingsLive do
   defp paged_read_errors(reads),
     do: Map.new(reads, fn {id, {_rows, _metadata, failed?}} -> {id, failed?} end)
 
-  defp list_synced_groups(socket, provider) do
-    case SSO.list_synced_groups(provider, socket.assigns.current_subject) do
-      {:ok, groups} -> {groups, false}
-      {:error, _} -> {[], true}
+  defp list_synced_groups(socket, provider, opts) do
+    case SSO.list_synced_groups(provider, socket.assigns.current_subject, opts) do
+      {:ok, groups, metadata} -> {groups, metadata, false}
+      {:error, _reason} -> {[], empty_metadata(), true}
     end
   end
 
@@ -601,7 +606,11 @@ defmodule EmisarWeb.SSOSettingsLive do
 
       provider ->
         changeset = mapping_changeset(provider, params) |> LiveForm.on_change(event)
-        {:noreply, put_mapping_form(socket, id, mapping_to_form(provider, changeset))}
+
+        {:noreply,
+         socket
+         |> put_mapping_form(id, mapping_to_form(provider, changeset))
+         |> search_group_picker("role", provider, event["group_search"])}
     end
   end
 
@@ -613,8 +622,12 @@ defmodule EmisarWeb.SSOSettingsLive do
     )
   end
 
-  def handle_event("add_mapping_form", _params, socket),
-    do: {:noreply, assign(socket, :adding_mapping, true)}
+  def handle_event("add_mapping_form", _params, socket) do
+    {:noreply,
+     socket
+     |> assign(:adding_mapping, true)
+     |> open_group_picker("role")}
+  end
 
   # Close the add form and reset it, so a re-open starts blank (not with the last
   # partial input). do_create_mapping already resets the form on a successful add.
@@ -625,7 +638,10 @@ defmodule EmisarWeb.SSOSettingsLive do
         _ -> socket
       end
 
-    {:noreply, assign(socket, :adding_mapping, false)}
+    {:noreply,
+     socket
+     |> assign(:adding_mapping, false)
+     |> reset_group_picker("role")}
   end
 
   def handle_event("start_edit_mapping", %{"id" => id}, socket) do
@@ -690,7 +706,11 @@ defmodule EmisarWeb.SSOSettingsLive do
              ) do
           {:ok, changeset} ->
             form = runner_access_mapping_to_form(provider, LiveForm.on_change(changeset, event))
-            {:noreply, put_runner_access_mapping_form(socket, id, form)}
+
+            {:noreply,
+             socket
+             |> put_runner_access_mapping_form(id, form)
+             |> search_group_picker("runner_access", provider, event["group_search"])}
 
           {:error, :unauthorized} ->
             {:noreply, socket}
@@ -710,8 +730,12 @@ defmodule EmisarWeb.SSOSettingsLive do
     )
   end
 
-  def handle_event("add_runner_access_mapping_form", _params, socket),
-    do: {:noreply, assign(socket, :adding_runner_access_mapping, true)}
+  def handle_event("add_runner_access_mapping_form", _params, socket) do
+    {:noreply,
+     socket
+     |> assign(:adding_runner_access_mapping, true)
+     |> open_group_picker("runner_access")}
+  end
 
   def handle_event("cancel_add_runner_access_mapping", _params, socket) do
     socket =
@@ -720,8 +744,29 @@ defmodule EmisarWeb.SSOSettingsLive do
         _ -> socket
       end
 
-    {:noreply, assign(socket, :adding_runner_access_mapping, false)}
+    {:noreply,
+     socket
+     |> assign(:adding_runner_access_mapping, false)
+     |> reset_group_picker("runner_access")}
   end
+
+  # -- Group picker (both add-mapping forms) --------------------------
+
+  def handle_event("select_group", %{"scope" => scope, "group_id" => id}, socket)
+      when scope in @group_picker_scopes do
+    picker = group_picker(socket, scope)
+
+    # Only a group the server just answered with can be chosen — the id arrives
+    # over the socket, and the mutation re-authorizes it anyway.
+    case Enum.find(picker.results, &(&1.id == id)) do
+      nil -> {:noreply, socket}
+      group -> {:noreply, put_group_picker(socket, scope, %{picker | chosen: group})}
+    end
+  end
+
+  def handle_event("clear_group", %{"scope" => scope}, socket)
+      when scope in @group_picker_scopes,
+      do: {:noreply, open_group_picker(socket, scope)}
 
   def handle_event("start_edit_runner_access_mapping", %{"id" => id}, socket) do
     case find_runner_access_mapping(socket, id) do
@@ -1119,6 +1164,7 @@ defmodule EmisarWeb.SSOSettingsLive do
            socket
            |> put_flash(:info, "Role mapping added.")
            |> put_mapping_form(provider_id, mapping_form(provider))
+           |> open_group_picker("role")
            |> reload_mappings(provider)}
 
         {:error, %Ecto.Changeset{} = changeset} ->
@@ -1186,6 +1232,7 @@ defmodule EmisarWeb.SSOSettingsLive do
            socket
            |> put_flash(:info, "Group runner access added.")
            |> reset_runner_access_mapping_form(provider)
+           |> open_group_picker("runner_access")
            |> reload_runner_access_mappings(provider)}
 
         {:error, %Ecto.Changeset{} = changeset} ->
@@ -1289,15 +1336,22 @@ defmodule EmisarWeb.SSOSettingsLive do
   end
 
   # The synced-groups readout carries each group's mapping badge, so a mapping
-  # CRUD has to re-annotate it too. Refreshing only the mapping LIST left the
+  # CRUD has to re-read it too. Refreshing only the mapping LIST left the
   # readout showing a role badge for a mapping that had just been deleted. The
-  # groups themselves have not changed — this re-derives their annotation from
-  # the mapping lists now in the socket, with no extra read.
+  # re-read keeps the page the operator is on, cursor and all.
   defp reload_synced_groups(socket, provider) do
-    {groups, failed?} = list_synced_groups(socket, provider)
+    opts =
+      LiveTable.params_to_opts(
+        socket.assigns.mapping_filter_params,
+        [],
+        prefix: @synced_group_prefix
+      )
+
+    {groups, metadata, failed?} = list_synced_groups(socket, provider, opts)
 
     socket
     |> assign(:synced_groups, Map.put(socket.assigns.synced_groups, provider.id, groups))
+    |> put_mapping_metadata(:synced_group_metadata, provider.id, metadata)
     |> put_read_error(:synced_group_errors, provider.id, failed?)
   end
 
@@ -1466,6 +1520,51 @@ defmodule EmisarWeb.SSOSettingsLive do
       as: "runner_access_mapping",
       id: "edit-runner-access-mapping-#{mapping.id}"
     )
+  end
+
+  # -- Group picker ---------------------------------------------------
+
+  # The picker never holds the directory: `results` is the bounded set the last
+  # server search answered with, `chosen` is the group the operator picked (it
+  # rides the form as that group's id), and `load_error?` keeps an empty result
+  # from reading as "no such group" when the read never ran.
+  defp new_group_picker, do: %{term: "", results: [], chosen: nil, load_error?: false}
+
+  defp group_picker(socket, scope), do: Map.fetch!(socket.assigns.group_pickers, scope)
+
+  defp put_group_picker(socket, scope, picker),
+    do: assign(socket, :group_pickers, Map.put(socket.assigns.group_pickers, scope, picker))
+
+  defp reset_group_picker(socket, scope), do: put_group_picker(socket, scope, new_group_picker())
+
+  # Opening (or clearing) a picker shows the first groups straight away, so an
+  # admin with a handful of them never has to type to find one.
+  defp open_group_picker(socket, scope) do
+    case socket.assigns.providers do
+      [provider | _] -> put_group_picker(socket, scope, search_groups(socket, provider, ""))
+      _ -> reset_group_picker(socket, scope)
+    end
+  end
+
+  defp search_group_picker(socket, scope, provider, term) do
+    picker = group_picker(socket, scope)
+    term = term || ""
+
+    # The add form fires phx-change for every control it holds, and a chosen
+    # group replaces the search box entirely — so only a term the operator
+    # actually changed costs a directory read.
+    if picker.chosen || term == picker.term do
+      socket
+    else
+      put_group_picker(socket, scope, search_groups(socket, provider, term))
+    end
+  end
+
+  defp search_groups(socket, provider, term) do
+    case SSO.search_synced_groups(provider, term, socket.assigns.current_subject) do
+      {:ok, groups} -> %{new_group_picker() | term: term, results: groups}
+      {:error, _reason} -> %{new_group_picker() | term: term, load_error?: true}
+    end
   end
 
   defp error_message(:sso_not_available), do: "Single sign-on requires a Team or Enterprise plan."
@@ -2046,7 +2145,7 @@ defmodule EmisarWeb.SSOSettingsLive do
               metadata={Map.get(@group_mapping_metadata, provider.id, empty_metadata())}
               filter_params={@mapping_filter_params}
               load_error?={Map.get(@group_mapping_errors, provider.id, false)}
-              synced_groups={Map.get(@synced_groups, provider.id, [])}
+              group_picker={@group_pickers["role"]}
               mapping_form={Map.get(@mapping_forms, provider.id)}
               mapping_role_options={@mapping_role_options}
               editing_mapping_id={@editing_mapping_id}
@@ -2062,7 +2161,7 @@ defmodule EmisarWeb.SSOSettingsLive do
               metadata={Map.get(@runner_access_mapping_metadata, provider.id, empty_metadata())}
               filter_params={@mapping_filter_params}
               load_error?={Map.get(@runner_access_mapping_errors, provider.id, false)}
-              synced_groups={Map.get(@synced_groups, provider.id, [])}
+              group_picker={@group_pickers["runner_access"]}
               mapping_form={Map.get(@runner_access_mapping_forms, provider.id)}
               editing_mapping_id={@editing_runner_access_mapping_id}
               mapping_edit_form={@runner_access_mapping_edit_form}
@@ -2076,7 +2175,10 @@ defmodule EmisarWeb.SSOSettingsLive do
             <.synced_groups_section
               :if={@can_configure_directory_sync? and provider.scim_enabled}
               id={"synced-groups-#{provider.id}"}
+              path={~p"/app/#{@current_account}/settings/sso/#{provider.id}"}
               synced_groups={Map.get(@synced_groups, provider.id, [])}
+              metadata={Map.get(@synced_group_metadata, provider.id, empty_metadata())}
+              filter_params={@mapping_filter_params}
               load_error?={Map.get(@synced_group_errors, provider.id, false)}
             />
 
@@ -3127,7 +3229,7 @@ defmodule EmisarWeb.SSOSettingsLive do
   attr :mapping_role_options, :list, required: true
   attr :editing_mapping_id, :string, default: nil
   attr :mapping_edit_form, Phoenix.HTML.Form, default: nil
-  attr :synced_groups, :list, default: []
+  attr :group_picker, :map, required: true
   attr :adding_mapping, :boolean, default: false
 
   # The group→role mapping island for one SCIM-enabled connection: intent line,
@@ -3288,12 +3390,11 @@ defmodule EmisarWeb.SSOSettingsLive do
         >
           <input type="hidden" name="provider_id" value={@provider.id} />
           <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <.input
+            <.group_picker
+              id={"role-group-picker-#{@provider.id}"}
+              scope="role"
               field={@mapping_form[:directory_group_id]}
-              type="select"
-              label="IdP group"
-              options={Enum.map(@synced_groups, &directory_group_option/1)}
-              prompt={if @synced_groups == [], do: "Sync a group first", else: "Pick a synced group"}
+              picker={@group_picker}
             />
             <.input
               field={@mapping_form[:role]}
@@ -3334,7 +3435,7 @@ defmodule EmisarWeb.SSOSettingsLive do
   attr :mapping_form, Phoenix.HTML.Form, default: nil
   attr :editing_mapping_id, :string, default: nil
   attr :mapping_edit_form, Phoenix.HTML.Form, default: nil
-  attr :synced_groups, :list, default: []
+  attr :group_picker, :map, required: true
   attr :adding_mapping, :boolean, default: false
   attr :runners, :list, required: true
   attr :pack_advertisements, :map, required: true
@@ -3474,7 +3575,8 @@ defmodule EmisarWeb.SSOSettingsLive do
                 <input type="hidden" name="runner_access_mapping_id" value={mapping.id} />
                 <.runner_access_mapping_fields
                   form={@mapping_edit_form}
-                  synced_groups={@synced_groups}
+                  provider={@provider}
+                  group_picker={@group_picker}
                   runners={@runners}
                   pack_advertisements={@pack_advertisements}
                   pack_access_restricted?={@pack_access_restricted?}
@@ -3556,7 +3658,8 @@ defmodule EmisarWeb.SSOSettingsLive do
             <input type="hidden" name="provider_id" value={@provider.id} />
             <.runner_access_mapping_fields
               form={@mapping_form}
-              synced_groups={@synced_groups}
+              provider={@provider}
+              group_picker={@group_picker}
               runners={@runners}
               pack_advertisements={@pack_advertisements}
               pack_access_restricted?={@pack_access_restricted?}
@@ -3589,7 +3692,8 @@ defmodule EmisarWeb.SSOSettingsLive do
   end
 
   attr :form, Phoenix.HTML.Form, required: true
-  attr :synced_groups, :list, required: true
+  attr :provider, :map, required: true
+  attr :group_picker, :map, required: true
   attr :runners, :list, required: true
   attr :pack_advertisements, :map, required: true
   attr :pack_access_restricted?, :boolean, required: true
@@ -3599,13 +3703,12 @@ defmodule EmisarWeb.SSOSettingsLive do
     ~H"""
     <div class="space-y-4">
       <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
-        <.input
+        <.group_picker
           :if={not @editing?}
+          id={"runner-access-group-picker-#{@provider.id}"}
+          scope="runner_access"
           field={@form[:directory_group_id]}
-          type="select"
-          label="IdP group"
-          options={Enum.map(@synced_groups, &directory_group_option/1)}
-          prompt={if @synced_groups == [], do: "Sync a group first", else: "Pick a synced group"}
+          picker={@group_picker}
         />
       </div>
 
@@ -3660,21 +3763,25 @@ defmodule EmisarWeb.SSOSettingsLive do
   end
 
   attr :id, :string, required: true
+  attr :path, :any, required: true
   attr :synced_groups, :list, required: true
+  attr :metadata, :any, required: true
+  attr :filter_params, :map, required: true
   attr :load_error?, :boolean, default: false
 
   # The groups the IdP actually pushes over SCIM (id + distinct member count),
   # each annotated with its role mapping — the directory-state companion to the
   # group→role mapping config above. It surfaces groups that sync but aren't
   # mapped (their members stay at the connection's default role), which the
-  # mapping list can't show.
+  # mapping list can't show. One page at a time, like every other list here: a
+  # directory decides how many groups it pushes.
   defp synced_groups_section(assigns) do
     ~H"""
     <.section_with_note id={@id}>
       <:header>
         <.section_header
           title="Synced groups"
-          count={length(@synced_groups)}
+          count={@metadata.count}
           count_tone={:neutral}
         />
       </:header>
@@ -3704,6 +3811,17 @@ defmodule EmisarWeb.SSOSettingsLive do
         </li>
       </ul>
 
+      <div class="mt-4">
+        <LiveTable.paginator
+          id={@id}
+          path={@path}
+          metadata={@metadata}
+          filter_params={@filter_params}
+          prefix="synced_groups_"
+          page_count={length(@synced_groups)}
+        />
+      </div>
+
       <.empty_state
         :if={@load_error?}
         variant={:hint}
@@ -3715,7 +3833,14 @@ defmodule EmisarWeb.SSOSettingsLive do
         This is a load error, not an empty directory — your IdP may well be pushing groups.
         Refresh the page to try again.
       </.empty_state>
-      <.empty_state :if={not @load_error? and @synced_groups == []} variant={:hint} class="mt-4">
+      <.empty_state
+        :if={
+          not @load_error? and @synced_groups == [] and
+            not LiveTable.stale_page?(0, @metadata, @filter_params, "synced_groups_")
+        }
+        variant={:hint}
+        class="mt-4"
+      >
         No groups synced yet. Once your IdP pushes group memberships over SCIM, they'll appear here
         with their member counts.
       </.empty_state>
@@ -3730,8 +3855,115 @@ defmodule EmisarWeb.SSOSettingsLive do
   defp members_label(1), do: "1 member"
   defp members_label(count), do: "#{count} members"
 
-  defp directory_group_option(group),
-    do: {"#{directory_group_name(group)} · #{directory_group_reference(group)}", group.id}
+  attr :id, :string, required: true
+  attr :scope, :string, required: true
+  attr :field, Phoenix.HTML.FormField, required: true
+  attr :picker, :map, required: true
+
+  # A directory pushes as many groups as it likes, so this picker asks the
+  # SERVER: the operator types, the server answers with a bounded set of
+  # matches, and the group they pick rides the form as its id. The shared
+  # `searchable_select` type-filters a catalog the browser already holds, which
+  # is exactly what this page stopped sending.
+  defp group_picker(assigns) do
+    errors =
+      if Phoenix.Component.used_input?(assigns.field),
+        do: Enum.map(assigns.field.errors, &translate_error/1),
+        else: []
+
+    assigns = assign(assigns, :errors, errors)
+
+    ~H"""
+    <div>
+      <%!-- The label follows the control that is actually rendered: once a group
+           is chosen the search box is gone, and `for` would point at nothing. --%>
+      <.label for={if is_nil(@picker.chosen), do: @id}>IdP group</.label>
+      <input type="hidden" name={@field.name} value={@picker.chosen && @picker.chosen.id} />
+
+      <div :if={@picker.chosen} class="mt-2 flex items-center justify-between gap-3">
+        <div class="min-w-0">
+          <p class="truncate text-sm text-zinc-200">{directory_group_name(@picker.chosen)}</p>
+          <p class="truncate font-mono text-[11px] text-zinc-400">
+            {directory_group_reference(@picker.chosen)}
+          </p>
+        </div>
+        <.button
+          type="button"
+          variant={:secondary}
+          size={:sm}
+          phx-click="clear_group"
+          phx-value-scope={@scope}
+        >
+          Change
+        </.button>
+      </div>
+
+      <div :if={is_nil(@picker.chosen)} class="mt-2">
+        <.input
+          id={@id}
+          type="text"
+          name="group_search"
+          value={@picker.term}
+          placeholder="Search by name or ID"
+          autocomplete="off"
+          phx-debounce="300"
+        />
+
+        <p class="mt-2 hidden text-xs text-zinc-400 phx-change-loading:block">Searching…</p>
+
+        <ul
+          :if={@picker.results != []}
+          class="scrollbar-control mt-2 max-h-64 divide-y divide-zinc-800/70 overflow-y-auto border-t border-zinc-800/70"
+        >
+          <li :for={group <- @picker.results}>
+            <button
+              type="button"
+              phx-click="select_group"
+              phx-value-scope={@scope}
+              phx-value-group_id={group.id}
+              class="block w-full px-2 py-2 text-left transition hover:bg-white/[0.06]"
+            >
+              <span class="block truncate text-sm text-zinc-200">
+                {directory_group_name(group)}
+              </span>
+              <span class="block truncate font-mono text-[11px] text-zinc-400">
+                {directory_group_reference(group)}
+              </span>
+            </button>
+          </li>
+        </ul>
+
+        <%!-- "No group matches" is a claim about the directory, so it is never
+             made from a read that failed. --%>
+        <.empty_state
+          :if={@picker.load_error?}
+          variant={:hint}
+          tone={:danger}
+          icon="state.warning"
+          class="mt-2"
+        >
+          Couldn't search synced groups. Refresh the page to try again.
+        </.empty_state>
+        <.empty_state
+          :if={not @picker.load_error? and @picker.results == [] and @picker.term == ""}
+          variant={:hint}
+          class="mt-2"
+        >
+          No groups synced yet. Map one once your IdP pushes it over SCIM.
+        </.empty_state>
+        <.empty_state
+          :if={not @picker.load_error? and @picker.results == [] and @picker.term != ""}
+          variant={:hint}
+          class="mt-2"
+        >
+          No group matches that name or ID.
+        </.empty_state>
+      </div>
+
+      <.error :for={msg <- @errors}>{msg}</.error>
+    </div>
+    """
+  end
 
   defp directory_group_name(%{display: display}) when is_binary(display) and display != "",
     do: display

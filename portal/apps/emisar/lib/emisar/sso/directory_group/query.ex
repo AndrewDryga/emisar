@@ -1,5 +1,6 @@
 defmodule Emisar.SSO.DirectoryGroup.Query do
   use Emisar, :query
+  alias Emisar.Repo.Like
   alias Emisar.SSO.DirectoryGroup
 
   def all, do: from(groups in DirectoryGroup, as: :groups)
@@ -74,6 +75,27 @@ defmodule Emisar.SSO.DirectoryGroup.Query do
     )
   end
 
+  @doc """
+  The picker's bounded search: a case-insensitive substring over the display
+  name and the directory's own external id, ordered and capped here so the
+  helper's name is the whole contract. A blank term is the unfiltered head of
+  the same order, which is what an unopened picker shows.
+  """
+  def matching(queryable, term, limit) when term in [nil, ""],
+    do: queryable |> ordered_by_display() |> limit(^limit)
+
+  def matching(queryable, term, limit) do
+    pattern = Like.contains(term)
+
+    queryable
+    |> where(
+      [groups: g],
+      ilike(g.display, ^pattern) or ilike(g.external_group_id, ^pattern)
+    )
+    |> ordered_by_display()
+    |> limit(^limit)
+  end
+
   def lock_for_update(queryable), do: lock(queryable, "FOR NO KEY UPDATE")
 
   def count_by_provider(queryable \\ all()) do
@@ -84,6 +106,14 @@ defmodule Emisar.SSO.DirectoryGroup.Query do
 
   def offset_page(queryable, offset, limit),
     do: queryable |> offset(^offset) |> limit(^limit)
+
+  # Keyset order for the paged readout. `display` and `external_group_id` are
+  # both optional (SCIM requires one of them, not both) and a NULL never
+  # compares, so neither can carry a cursor — the arrival pair can: the
+  # directory's push order, tie-broken by the UUIDv7 the SCIM resource id is.
+  @impl Emisar.Repo.Query
+  def cursor_fields,
+    do: [{:groups, :asc, :inserted_at}, {:groups, :asc, :id}]
 
   @impl Emisar.Repo.Query
   def preloads, do: []

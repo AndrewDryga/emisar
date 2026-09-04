@@ -6178,7 +6178,7 @@ defmodule Emisar.SSOTest do
       assert {:ok, disabled} = SSO.disable_scim(provider, subject)
       {:ok, reenabled, _raw} = SSO.enable_scim(disabled, subject)
 
-      assert SSO.list_synced_groups(reenabled, subject) == {:ok, []}
+      assert {:ok, [], _metadata} = SSO.list_synced_groups(reenabled, subject)
 
       # SCIM does not order Users before Groups. Until the directory pushes
       # groups, there is no snapshot to reason from — so a user-first re-sync
@@ -6254,9 +6254,9 @@ defmodule Emisar.SSOTest do
     end
   end
 
-  # -- list_synced_groups/2 --------------------------------------------
+  # -- list_synced_groups/3 --------------------------------------------
 
-  describe "list_synced_groups/2" do
+  describe "list_synced_groups/3" do
     setup do
       scim_provider()
     end
@@ -6282,21 +6282,24 @@ defmodule Emisar.SSOTest do
           member_ids: [id2.id]
         })
 
-      assert {:ok, groups} = SSO.list_synced_groups(provider, subject)
+      assert {:ok, groups, metadata} = SSO.list_synced_groups(provider, subject)
+      assert metadata.count == 2
 
+      # Arrival order — the keyset the readout pages on, not the display name,
+      # which SCIM leaves optional and a NULL cursor can never compare.
       assert [
                %{
-                 id: admin_group_id,
-                 display: "Admins",
-                 external_group_id: "grp-adm",
+                 id: ops_group_id,
+                 display: "Ops",
+                 external_group_id: "grp-ops",
                  member_count: 1,
                  mapping: nil,
                  runner_access_mapping: nil
                },
                %{
-                 id: ops_group_id,
-                 display: "Ops",
-                 external_group_id: "grp-ops",
+                 id: admin_group_id,
+                 display: "Admins",
+                 external_group_id: "grp-adm",
                  member_count: 1,
                  mapping: nil,
                  runner_access_mapping: nil
@@ -6307,11 +6310,40 @@ defmodule Emisar.SSOTest do
       assert Repo.valid_uuid?(ops_group_id)
     end
 
+    test "walks a directory larger than one page without repeating a group", %{
+      provider: provider,
+      subject: subject
+    } do
+      for n <- 1..25 do
+        suffix = n |> Integer.to_string() |> String.pad_leading(2, "0")
+
+        {:ok, _} =
+          SSO.scim_upsert_group(provider, %{
+            external_id: "grp-#{suffix}",
+            display: "Group #{suffix}",
+            member_ids: []
+          })
+      end
+
+      assert {:ok, first, metadata} = SSO.list_synced_groups(provider, subject)
+      assert length(first) == 20
+      assert metadata.count == 25
+
+      cursor = metadata.next_page_cursor
+
+      assert {:ok, second, _metadata} =
+               SSO.list_synced_groups(provider, subject, page: [cursor: cursor])
+
+      assert length(second) == 5
+      walked = Enum.map(first ++ second, & &1.external_group_id)
+      assert length(Enum.uniq(walked)) == 25
+    end
+
     test "a downgraded plan still reads its synced groups" do
       {_u, account, subject} = Fixtures.Subjects.owner_subject(%{plan: "team"})
       provider = provider_fixture(account)
 
-      assert SSO.list_synced_groups(provider, subject) == {:ok, []}
+      assert {:ok, [], _metadata} = SSO.list_synced_groups(provider, subject)
     end
 
     test "is account-scoped — another account's enterprise owner can't read it", %{
@@ -6320,6 +6352,72 @@ defmodule Emisar.SSOTest do
       {_u, _account_b, subject_b} = enterprise_owner()
 
       assert SSO.list_synced_groups(provider, subject_b) == {:error, :not_found}
+    end
+  end
+
+  # -- search_synced_groups/3 ------------------------------------------
+
+  describe "search_synced_groups/3" do
+    setup do
+      scim_provider()
+    end
+
+    test "matches the display name or the external id, and caps what it returns", %{
+      provider: provider,
+      subject: subject
+    } do
+      for n <- 1..12 do
+        suffix = n |> Integer.to_string() |> String.pad_leading(2, "0")
+
+        {:ok, _} =
+          SSO.scim_upsert_group(provider, %{
+            external_id: "grp-payments-#{suffix}",
+            display: "Payments #{suffix}",
+            member_ids: []
+          })
+      end
+
+      {:ok, _} =
+        SSO.scim_upsert_group(provider, %{
+          external_id: "00g-oncall",
+          display: "Incident responders",
+          member_ids: []
+        })
+
+      assert {:ok, by_display} = SSO.search_synced_groups(provider, "incident", subject)
+      assert [%{external_group_id: "00g-oncall"}] = by_display
+
+      assert {:ok, by_external_id} = SSO.search_synced_groups(provider, "00g-", subject)
+      assert [%{display: "Incident responders"}] = by_external_id
+
+      # A blank term is the head of the same order, so an unopened picker is
+      # already useful; both are capped well below what a directory can push.
+      assert {:ok, matches} = SSO.search_synced_groups(provider, "payments", subject)
+      assert length(matches) == 10
+      assert {:ok, blank} = SSO.search_synced_groups(provider, "", subject)
+      assert length(blank) == 10
+    end
+
+    test "a wildcard in the term matches literally rather than every group", %{
+      provider: provider,
+      subject: subject
+    } do
+      {:ok, _} =
+        SSO.scim_upsert_group(provider, %{
+          external_id: "grp-ops",
+          display: "Ops",
+          member_ids: []
+        })
+
+      assert SSO.search_synced_groups(provider, "%", subject) == {:ok, []}
+    end
+
+    test "is account-scoped — another account's enterprise owner can't search it", %{
+      provider: provider
+    } do
+      {_u, _account_b, subject_b} = enterprise_owner()
+
+      assert SSO.search_synced_groups(provider, "", subject_b) == {:error, :not_found}
     end
   end
 

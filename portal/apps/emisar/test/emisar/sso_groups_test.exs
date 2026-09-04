@@ -1103,7 +1103,7 @@ defmodule Emisar.SSOGroupsTest do
 
   # -- Sync: the map-after-first-sync picker source --------------------
 
-  describe "list_synced_groups/2 — synced groups with member counts" do
+  describe "list_synced_groups/3 — synced groups with member counts" do
     setup do
       scim_provider()
     end
@@ -1143,10 +1143,10 @@ defmodule Emisar.SSOGroupsTest do
           subject
         )
 
-      # Ordered by external group id; the count is distinct members per group.
-      assert {:ok, groups} = SSO.list_synced_groups(provider, subject)
+      # Arrival order; the count is distinct members per group.
+      assert {:ok, groups, _metadata} = SSO.list_synced_groups(provider, subject)
 
-      assert [admin_group, ops_group] = groups
+      assert [ops_group, admin_group] = groups
       assert admin_group.external_group_id == "grp-adm"
       assert admin_group.member_count == 1
       assert admin_group.mapping.id == role_mapping.id
@@ -1161,7 +1161,7 @@ defmodule Emisar.SSOGroupsTest do
       {_u, account, subject} = Fixtures.Subjects.owner_subject(%{plan: "team"})
       provider = provider_fixture(account, %{})
 
-      assert SSO.list_synced_groups(provider, subject) == {:ok, []}
+      assert {:ok, [], _metadata} = SSO.list_synced_groups(provider, subject)
     end
 
     test "is account-scoped — another account's enterprise owner can't read it", %{

@@ -2738,62 +2738,99 @@ defmodule Emisar.SSO do
   # -- Directory sync (SCIM) — group→role mapping config (Subject-gated) --
 
   @doc """
-  List each group resource a provider has synced via SCIM with its distinct
-  member count — the synced-groups readout, and (projected to ids) the picker
-  source for map-after-first-sync so an admin keys a role mapping on a real
-  synced group. Each row also carries its current role and runner-access
-  mappings, if any, so paginating the editable lists cannot make an off-page
-  mapping look absent. `manage_sso` + Enterprise; account-scoped and ordered by
-  immutable server id.
+  One page of the group resources a provider has synced via SCIM, each with its
+  distinct member count and its current role / runner-access mappings, so
+  paginating the editable lists cannot make an off-page mapping look absent.
+
+  A directory pushes as many groups as it likes, so this is a keyset page in
+  arrival order (`DirectoryGroup.Query.cursor_fields/0`), not the whole
+  directory; the mapping picker searches through `search_synced_groups/3`
+  instead of scanning this list. `manage_sso` + Enterprise; account-scoped.
+  Returns `{:ok, rows, %Paginator.Metadata{}}`.
   """
-  def list_synced_groups(%IdentityProvider{} = provider, %Subject{} = subject) do
+  def list_synced_groups(%IdentityProvider{} = provider, %Subject{} = subject, opts \\ []) do
+    # Existence comes from the GROUP rows, the same source the SCIM reads use.
+    # Deriving it from member rows meant an empty group — which the directory has
+    # genuinely pushed — could not be picked for a mapping, because the console
+    # could not see it at all.
+    with :ok <- ensure_can_manage_sso(subject),
+         {:ok, provider} <- fetch_provider_by_id(provider.id, subject),
+         queryable =
+           DirectoryGroup.Query.not_deleted()
+           |> DirectoryGroup.Query.by_account_id(provider.account_id)
+           |> DirectoryGroup.Query.by_provider_id(provider.id)
+           |> Authorizer.for_subject(subject),
+         {:ok, groups, metadata} <- Repo.list(queryable, DirectoryGroup.Query, opts) do
+      {:ok, annotate_synced_groups(groups, provider, subject), metadata}
+    end
+  end
+
+  # The picker never renders a member count or a mapping badge, so its rows are
+  # the group rows themselves — no annotation reads behind a search box that
+  # runs on every keystroke.
+  @synced_group_search_limit 10
+
+  @doc """
+  Search a provider's synced groups by display name or external id, capped at
+  #{@synced_group_search_limit} rows — the mapping picker's source, so choosing
+  a group never depends on the console having preloaded the whole directory. A
+  blank term returns the first groups by display name. `manage_sso` +
+  Enterprise; account-scoped. Returns `{:ok, [%DirectoryGroup{}]}`.
+  """
+  def search_synced_groups(%IdentityProvider{} = provider, term, %Subject{} = subject) do
     with :ok <- ensure_can_manage_sso(subject),
          {:ok, provider} <- fetch_provider_by_id(provider.id, subject) do
-      # Existence comes from the GROUP rows, the same source the SCIM reads use.
-      # Deriving it from member rows here meant an empty group — which the
-      # directory has genuinely pushed — could not be picked for a mapping,
-      # because the console could not see it at all.
-      counts =
-        DirectoryGroupMember.Query.not_deleted()
-        |> DirectoryGroupMember.Query.group_counts_for_provider(provider.id)
-        |> Repo.all()
-        |> Map.new(&{&1.directory_group_id, &1})
-
-      role_mappings =
-        GroupRoleMapping.Query.not_deleted()
-        |> GroupRoleMapping.Query.by_provider_id(provider.id)
-        |> Authorizer.for_subject(subject)
-        |> Repo.all()
-        |> Map.new(&{&1.directory_group_id, &1})
-
-      runner_access_mappings =
-        GroupRunnerAccessMapping.Query.not_deleted()
-        |> GroupRunnerAccessMapping.Query.by_provider_id(provider.id)
-        |> Authorizer.for_subject(subject)
-        |> Repo.all()
-        |> Map.new(&{&1.directory_group_id, &1})
-
       groups =
         DirectoryGroup.Query.not_deleted()
         |> DirectoryGroup.Query.by_account_id(provider.account_id)
         |> DirectoryGroup.Query.by_provider_id(provider.id)
-        |> DirectoryGroup.Query.ordered_by_display()
+        |> DirectoryGroup.Query.matching(term, @synced_group_search_limit)
+        |> Authorizer.for_subject(subject)
         |> Repo.all()
-        |> Enum.map(fn group ->
-          counted = Map.get(counts, group.id, %{})
-
-          %{
-            id: group.id,
-            external_group_id: group.external_group_id,
-            display: group.display,
-            member_count: Map.get(counted, :member_count, 0),
-            mapping: Map.get(role_mappings, group.id),
-            runner_access_mapping: Map.get(runner_access_mappings, group.id)
-          }
-        end)
 
       {:ok, groups}
     end
+  end
+
+  # Counts are read for the PAGE's groups only; the mapping maps stay
+  # provider-wide because they are the admin-authored config the page already
+  # lists in full elsewhere.
+  defp annotate_synced_groups(groups, %IdentityProvider{} = provider, %Subject{} = subject) do
+    group_ids = Enum.map(groups, & &1.id)
+
+    counts =
+      DirectoryGroupMember.Query.not_deleted()
+      |> DirectoryGroupMember.Query.by_directory_group_ids(group_ids)
+      |> DirectoryGroupMember.Query.group_counts_for_provider(provider.id)
+      |> Repo.all()
+      |> Map.new(&{&1.directory_group_id, &1})
+
+    role_mappings =
+      GroupRoleMapping.Query.not_deleted()
+      |> GroupRoleMapping.Query.by_provider_id(provider.id)
+      |> Authorizer.for_subject(subject)
+      |> Repo.all()
+      |> Map.new(&{&1.directory_group_id, &1})
+
+    runner_access_mappings =
+      GroupRunnerAccessMapping.Query.not_deleted()
+      |> GroupRunnerAccessMapping.Query.by_provider_id(provider.id)
+      |> Authorizer.for_subject(subject)
+      |> Repo.all()
+      |> Map.new(&{&1.directory_group_id, &1})
+
+    Enum.map(groups, fn group ->
+      counted = Map.get(counts, group.id, %{})
+
+      %{
+        id: group.id,
+        external_group_id: group.external_group_id,
+        display: group.display,
+        member_count: Map.get(counted, :member_count, 0),
+        mapping: Map.get(role_mappings, group.id),
+        runner_access_mapping: Map.get(runner_access_mappings, group.id)
+      }
+    end)
   end
 
   @doc "List a provider's group→role mappings. `manage_sso` + enterprise; account-scoped."

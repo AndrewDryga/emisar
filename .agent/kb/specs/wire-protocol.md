@@ -423,9 +423,14 @@ The `request_id` shape is the sharp one: the documented boundary above is what
 the runner will accept from any portal, but the portal only ever mints `req_`
 plus 22 base64url characters and closes the socket on anything else, so an
 independent implementation must echo the ID it was given rather than normalize
-it. `concurrency_cap_reached` is exempt from the error-frame budget — a
-saturated runner reporting honest back-pressure is following the contract, while
-the budget exists for a runner looping errors into the account's audit trail.
+it. `concurrency_cap_reached` is exempt from the error-frame budget only when
+it names a dispatch the portal sent to that runner — a saturated runner
+reporting honest back-pressure is following the contract, and its rate is
+bounded by the portal's own dispatch rate. A cap frame the portal cannot
+correlate (no request ID, or one it never issued to that runner) spends the
+budget like any other error frame and writes no audit row: the budget exists for
+a runner looping errors into the account's audit trail, and an uncorrelated
+back-pressure claim is not an audit fact.
 
 Close codes are the only verdict a runner gets, so the vocabulary is contract:
 

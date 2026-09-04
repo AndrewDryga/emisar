@@ -667,8 +667,11 @@ defmodule Emisar.Runs do
   terminal transition that won the race stays authoritative.
 
   The `runner.error` audit row carries the bounded diagnostics and commits with
-  the requeue, so an envelope naming an unknown, foreign, or already-settled
-  request still leaves its trail.
+  the requeue, so an envelope naming an already-settled request still leaves its
+  trail. A cap refusal the account and runner filters cannot correlate to a
+  dispatch is the one envelope that records nothing — see
+  `insert_runner_error_audit/3`; it returns `:request_not_found` so the socket
+  can charge the frame to its error budget instead.
 
   Returns `{:ok, :requeued | :already_pending | {:not_dispatchable, status} |
   :request_not_found | :not_applicable}`, or `{:error, reason}` when nothing was
@@ -677,7 +680,9 @@ defmodule Emisar.Runs do
   def handle_runner_error(%RunnerError{} = runner_error) do
     Multi.new()
     |> Multi.run(:run, fn repo, _changes -> apply_runner_error(repo, runner_error) end)
-    |> Multi.insert(:audit, fn _changes -> runner_error_audit_event(runner_error) end)
+    |> Multi.run(:audit, fn repo, %{run: outcome} ->
+      insert_runner_error_audit(repo, runner_error, outcome)
+    end)
     |> Repo.commit_multi(
       after_commit: fn
         %{run: {:requeued, run}} -> after_run_committed(run)
@@ -704,14 +709,19 @@ defmodule Emisar.Runs do
       |> ActionRun.Query.lock_for_update()
 
     case repo.fetch(queryable, ActionRun.Query) do
-      # The audit fact stands on its own — an envelope we cannot correlate
-      # must not abort the row that records it.
+      # An envelope we cannot correlate is not a dispatch consequence, and it
+      # must not abort the transaction around it.
       {:error, :not_found} -> {:ok, :request_not_found}
       {:ok, %ActionRun{status: :pending}} -> {:ok, :already_pending}
       {:ok, %ActionRun{status: :sent} = run} -> requeue_cap_refused_run(repo, run)
       {:ok, %ActionRun{} = run} -> {:ok, {:not_dispatchable, run.status}}
     end
   end
+
+  # A cap refusal naming no request correlates to nothing, exactly like one
+  # naming a request this runner was never sent.
+  defp apply_runner_error(_repo, %RunnerError{code: "concurrency_cap_reached"}),
+    do: {:ok, :request_not_found}
 
   defp apply_runner_error(_repo, %RunnerError{}), do: {:ok, :not_applicable}
 
@@ -725,6 +735,17 @@ defmodule Emisar.Runs do
 
     with {:ok, requeued} <- repo.update(changeset), do: {:ok, {:requeued, requeued}}
   end
+
+  # An uncorrelated back-pressure claim is not an audit fact. `concurrency_cap_reached`
+  # answers a dispatch WE sent; one naming a request this runner never received asserts
+  # nothing we can confirm about the fleet, and recording it would let a runner mint
+  # retention-stamped rows from invented ids. The socket charges that frame to its
+  # per-connection error budget instead. Every other envelope — including a cap
+  # refusal for a run that has since settled — still leaves its trail.
+  defp insert_runner_error_audit(_repo, %RunnerError{}, :request_not_found), do: {:ok, nil}
+
+  defp insert_runner_error_audit(repo, %RunnerError{} = runner_error, _outcome),
+    do: repo.insert(runner_error_audit_event(runner_error))
 
   defp runner_error_audit_event(%RunnerError{} = runner_error) do
     Audit.Events.runner_error(

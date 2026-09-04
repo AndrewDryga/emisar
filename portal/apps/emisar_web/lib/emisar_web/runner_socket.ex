@@ -468,25 +468,41 @@ defmodule EmisarWeb.RunnerSocket do
   # `concurrency_cap_reached` is not an error report — it is the wire contract's
   # back-pressure answer to a dispatch WE sent, and the portal requeues the run
   # on it. A saturated runner answering exactly as the contract requires must
-  # never look like an error flood, so it is exempt from the budget below (the
-  # rate is bounded by our own dispatch rate, not by the runner).
-  defp handle_envelope("error", %{"code" => "concurrency_cap_reached"} = msg, state),
-    do: record_runner_error(msg, state)
-
-  defp handle_envelope("error", _msg, %{error_frames: seen} = state)
-       when seen >= @max_error_frames_per_connection do
-    Logger.warning("runner #{state.runner_id} exceeded the per-connection error-frame budget")
-    {:stop, :normal, {1008, "Too many error frames on one connection."}, state}
+  # never look like an error flood, so a refusal the domain CORRELATED to a run
+  # we dispatched to this runner is exempt from the budget (that rate is bounded
+  # by our own dispatch rate, not by the runner). A refusal naming a request the
+  # runner was never sent is not back-pressure at all — it is a claim the runner
+  # can invent forever — so it spends the budget like any other error frame.
+  defp handle_envelope("error", %{"code" => "concurrency_cap_reached"} = msg, state) do
+    case record_runner_error(msg, state) do
+      {:ok, :request_not_found} -> spend_error_frame(state)
+      {:ok, _outcome} -> {:ok, state}
+      {:stop, _reason, _state} = stop -> stop
+    end
   end
 
-  defp handle_envelope("error", msg, state),
-    do: record_runner_error(msg, %{state | error_frames: state.error_frames + 1})
+  defp handle_envelope("error", msg, state) do
+    with {:ok, state} <- spend_error_frame(state),
+         {:ok, _outcome} <- record_runner_error(msg, state) do
+      {:ok, state}
+    end
+  end
 
   defp handle_envelope(type, _msg, state) do
     Logger.debug("runner_socket unknown envelope type #{type}")
     {:ok, state}
   end
 
+  defp spend_error_frame(%{error_frames: seen} = state)
+       when seen >= @max_error_frames_per_connection do
+    Logger.warning("runner #{state.runner_id} exceeded the per-connection error-frame budget")
+    {:stop, :normal, {1008, "Too many error frames on one connection."}, state}
+  end
+
+  defp spend_error_frame(state), do: {:ok, %{state | error_frames: state.error_frames + 1}}
+
+  # Returns the domain outcome so the caller can judge the frame, or the socket
+  # result that ends the connection when nothing could be persisted.
   defp record_runner_error(msg, state) do
     runner_error =
       Runs.build_runner_error(
@@ -497,8 +513,8 @@ defmodule EmisarWeb.RunnerSocket do
       )
 
     case Runs.handle_runner_error(runner_error) do
-      {:ok, _outcome} ->
-        {:ok, state}
+      {:ok, outcome} ->
+        {:ok, outcome}
 
       {:error, reason} ->
         failure = runner_error_failure(reason)

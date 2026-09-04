@@ -1053,7 +1053,7 @@ defmodule EmisarWeb.RunnerSocketTest do
              } = Repo.get!(ActionRun, run.id)
     end
 
-    test "a refusal the cloud cannot correlate keeps the socket and the run", %{
+    test "a refusal the cloud cannot correlate spends the budget and records nothing", %{
       state: state,
       run: run
     } do
@@ -1067,11 +1067,13 @@ defmodule EmisarWeb.RunnerSocketTest do
       uncorrelated = runner_frame(%{"type" => "error", "code" => "concurrency_cap_reached"})
 
       assert {:ok, next} = RunnerSocket.handle_in({unknown, text()}, state)
+      assert next.error_frames == 1
       assert Map.delete(next, :error_frames) == Map.delete(state, :error_frames)
-      assert {:ok, next} = RunnerSocket.handle_in({uncorrelated, text()}, state)
-      assert Map.delete(next, :error_frames) == Map.delete(state, :error_frames)
+      assert {:ok, next} = RunnerSocket.handle_in({uncorrelated, text()}, next)
+      assert next.error_frames == 2
 
       assert Repo.get!(ActionRun, run.id).status == :sent
+      assert count_runner_error_events() == 0
     end
 
     test "a duplicate refusal leaves the requeued run pending", %{state: state, run: run} do
@@ -1094,7 +1096,7 @@ defmodule EmisarWeb.RunnerSocketTest do
       assert duplicate.queued_at == requeued.queued_at
     end
 
-    test "cap refusals are exempt from the error-frame budget that closes other errors", %{
+    test "correlated cap refusals are exempt from the budget that closes other errors", %{
       state: state,
       run: run
     } do
@@ -1115,6 +1117,7 @@ defmodule EmisarWeb.RunnerSocketTest do
         end)
 
       assert final.error_frames == 0
+      assert Repo.get!(ActionRun, run.id).status == :pending
 
       spent = %{final | error_frames: 100}
       other = runner_frame(%{"type" => "error", "code" => "exec_failed"})
@@ -1123,6 +1126,34 @@ defmodule EmisarWeb.RunnerSocketTest do
                RunnerSocket.handle_in({other, text()}, spent)
 
       assert {:ok, _next} = RunnerSocket.handle_in({cap, text()}, spent)
+    end
+
+    test "uncorrelated cap refusals spend the budget and close the connection", %{state: state} do
+      # A request id this runner was never sent: the portal correlates it to no
+      # dispatch, so the frame is a claim the runner invented, not back-pressure.
+      invented = fn ->
+        runner_frame(%{
+          "type" => "error",
+          "code" => "concurrency_cap_reached",
+          "request_id" => Emisar.Crypto.run_request_id()
+        })
+      end
+
+      # The same per-connection budget an ordinary error code spends.
+      budget = 100
+
+      spent =
+        Enum.reduce(1..budget, state, fn _, acc ->
+          assert {:ok, next} = RunnerSocket.handle_in({invented.(), text()}, acc)
+          next
+        end)
+
+      assert spent.error_frames == budget
+
+      assert {:stop, :normal, {1008, "Too many error frames on one connection."}, _state} =
+               RunnerSocket.handle_in({invented.(), text()}, spent)
+
+      assert count_runner_error_events() == 0
     end
   end
 
@@ -1761,6 +1792,9 @@ defmodule EmisarWeb.RunnerSocketTest do
 
   defp runner_frame(message),
     do: message |> Map.put("protocol_version", 1) |> Jason.encode!()
+
+  defp count_runner_error_events,
+    do: Emisar.Audit.Event |> Repo.all() |> Enum.count(&(&1.event_type == "runner.error"))
 
   defp count_terminal_audit_events(run, subject) do
     {:ok, events, _meta} = Emisar.Audit.list_events(subject, page: [limit: 200])
