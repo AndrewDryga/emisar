@@ -2500,136 +2500,14 @@ defmodule Emisar.RunnersTest do
     end
   end
 
-  describe "fleet_status/2" do
-    setup do
-      %{now: ~U[2026-08-03 12:00:00.000000Z]}
-    end
-
-    test "an empty fleet counts zero and reads :empty", %{now: now} do
-      status = Runners.fleet_status([], now)
+  describe "empty_fleet_status/0" do
+    test "counts zero and reads :empty" do
+      status = Runners.empty_fleet_status()
 
       assert status.counts.total == 0
       assert status.counts.active == 0
       assert status.signature_mode == :empty
       assert status.reasons == [:fleet_empty]
-    end
-
-    test "connection and dispatch counts partition the whole list", %{now: now} do
-      online = %Runner{online?: true, last_heartbeat_at: DateTime.add(now, -5, :second)}
-      offline = %Runner{last_connected_at: DateTime.add(now, -600, :second)}
-      pending = %Runner{}
-      disabled = %Runner{disabled_at: now}
-
-      status = Runners.fleet_status([online, offline, pending, disabled], now)
-
-      assert status.counts.total == 4
-      assert status.counts.active == 3
-      assert status.counts.online == 1
-      assert status.counts.offline == 1
-      assert status.counts.pending == 1
-      assert status.counts.disabled == 1
-      assert status.counts.portal_ready == 1
-      assert status.counts.portal_queueable == 2
-      assert status.counts.portal_blocked == 1
-    end
-
-    test "reads no-runners-online once every active runner is disconnected", %{now: now} do
-      connected_at = DateTime.add(now, -600, :second)
-      runners = [%Runner{last_connected_at: connected_at}, %Runner{last_connected_at: nil}]
-
-      status = Runners.fleet_status(runners, now)
-
-      assert status.counts.online == 0
-      assert :no_runners_online in status.reasons
-      refute :runners_online in status.reasons
-    end
-
-    test "a fleet of only disabled runners is neither online nor all-offline", %{now: now} do
-      status = Runners.fleet_status([%Runner{disabled_at: now}], now)
-
-      assert status.counts.total == 1
-      assert status.counts.active == 0
-      assert status.signature_mode == :empty
-      assert status.reasons == []
-    end
-
-    test "every active runner enforcing reads :signed_only", %{now: now} do
-      runners = [
-        %Runner{enforce_signatures: true, last_connected_at: DateTime.add(now, -60, :second)},
-        %Runner{enforce_signatures: true, last_connected_at: DateTime.add(now, -60, :second)}
-      ]
-
-      status = Runners.fleet_status(runners, now)
-
-      assert status.counts.signed_only == 2
-      assert status.signature_mode == :signed_only
-      assert :fleet_signed_only in status.reasons
-    end
-
-    test "one plain runner beside an enforcing one reads :mixed", %{now: now} do
-      connected_at = DateTime.add(now, -60, :second)
-
-      runners = [
-        %Runner{enforce_signatures: true, last_connected_at: connected_at},
-        %Runner{last_connected_at: connected_at}
-      ]
-
-      status = Runners.fleet_status(runners, now)
-
-      assert status.counts.signed_only == 1
-      assert status.signature_mode == :mixed
-      assert :mixed_signature_modes in status.reasons
-      refute :fleet_signed_only in status.reasons
-    end
-
-    test "no enforcing runner reads :unsigned_allowed", %{now: now} do
-      status = Runners.fleet_status([%Runner{last_connected_at: now}], now)
-
-      assert status.counts.signed_only == 0
-      assert status.signature_mode == :unsigned_allowed
-    end
-
-    test "a disabled non-enforcing runner doesn't keep the fleet from reading signed-only", %{
-      now: now
-    } do
-      runners = [
-        %Runner{enforce_signatures: true, last_connected_at: DateTime.add(now, -60, :second)},
-        %Runner{disabled_at: now}
-      ]
-
-      assert Runners.fleet_status(runners, now).signature_mode == :signed_only
-    end
-
-    test "stale and degraded counts cover the active runners only", %{now: now} do
-      stale = %Runner{online?: true, last_heartbeat_at: DateTime.add(now, -120, :second)}
-
-      degraded = %Runner{
-        online?: true,
-        last_heartbeat_at: DateTime.add(now, -5, :second),
-        degraded_packs: [
-          %{"pack" => "nginx", "reason" => "invalid manifest"},
-          %{"pack" => "redis", "reason" => "unreadable"}
-        ]
-      }
-
-      disabled_degraded = %Runner{
-        disabled_at: now,
-        degraded_packs: [%{"pack" => "postgres", "reason" => "invalid manifest"}]
-      }
-
-      status = Runners.fleet_status([stale, degraded, disabled_degraded], now)
-
-      assert status.counts.stale == 1
-      assert status.counts.degraded == 1
-      assert status.counts.degraded_packs == 2
-      assert :stale_heartbeats in status.reasons
-      assert :degraded_packs in status.reasons
-    end
-
-    test "defaults `now` to the current instant" do
-      runner = %Runner{online?: true, last_heartbeat_at: DateTime.utc_now()}
-
-      assert Runners.fleet_status([runner]).counts.stale == 0
     end
   end
 

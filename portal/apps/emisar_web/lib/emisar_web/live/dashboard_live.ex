@@ -147,8 +147,8 @@ defmodule EmisarWeb.DashboardLive do
 
   # First run only. The checklist's "ask your agent to run an action" step needs
   # the ONLINE runners' advertised actions, so this path reads the scoped fleet
-  # — one read serving both the pillar's counts and the ids the catalog lookup
-  # needs.
+  # — one read serving both the pillar's two integers and the ids the catalog
+  # lookup needs.
   defp refresh_setup_fleet(socket) do
     subject = socket.assigns.current_subject
     runners_read = Runners.list_all_runners_for_account(subject, preload: [:online?])
@@ -169,8 +169,10 @@ defmodule EmisarWeb.DashboardLive do
         _ -> false
       end
 
+    fleet_counts = %{total: length(runners), online: length(online_runner_ids)}
+
     socket
-    |> assign_fleet_counts(Runners.fleet_status(runners).counts, read_ok?(runners_read))
+    |> assign_fleet_counts(fleet_counts, read_ok?(runners_read))
     |> assign(:actions_advertised?, actions_advertised?)
     |> put_setup_read(:runners, runners_read)
     |> put_setup_read(:actions, actions_read)

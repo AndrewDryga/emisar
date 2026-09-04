@@ -202,7 +202,7 @@ defmodule EmisarWeb.RunnersLive do
     |> assign(:filter_params, params)
     |> assign(:filters, Runners.runner_filters())
     |> assign(:groups, [])
-    |> assign(:fleet, Runners.fleet_status([]))
+    |> assign(:fleet, Runners.empty_fleet_status())
     |> assign(:loaded?, false)
     |> assign(:load_error?, false)
   end
@@ -317,7 +317,7 @@ defmodule EmisarWeb.RunnersLive do
   defp load_fleet_status(subject) do
     case Runners.fetch_fleet_status(subject) do
       {:ok, fleet} -> fleet
-      _ -> Runners.fleet_status([])
+      _ -> Runners.empty_fleet_status()
     end
   end
 
