@@ -1255,6 +1255,24 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
     end
   end
 
+  test "target selection reaches the wire as the published string", %{subject: subject} do
+    for {selection, wire_selection} <- [{:all, "all"}, {:random_one, "random_one"}] do
+      result = projected_result(target_selection: selection)
+
+      assert [%{items: [projected]}] = Runbooks.execution_projection(result).stages
+      assert projected.target_selection == selection
+
+      assert {:ok, payload} = RunbookTools.project_execution(result, subject)
+      item = payload.stages |> hd() |> Map.fetch!(:items) |> hd()
+
+      # Jason renders the atom as the same string, so the encoded schema check
+      # below cannot tell an atom leak from the published value — this assertion
+      # on the pre-encode payload is the one that can.
+      assert item.target_selection == wire_selection
+      assert_valid_tool_result("execute_runbook", wire_execution(payload))
+    end
+  end
+
   test "a group runbook stays listable when one member is offline", %{
     conn: conn,
     account: account,
@@ -2871,7 +2889,7 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
       step_id: "check",
       step_position: 0,
       runner_ref: "db-primary~" <> String.duplicate("a", 32),
-      target_selection: "all",
+      target_selection: Keyword.get(opts, :target_selection, :all),
       action_id: "operations.health",
       pack_ref: @pack_ref,
       pack_hash: @hash,

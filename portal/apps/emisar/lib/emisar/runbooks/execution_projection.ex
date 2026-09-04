@@ -66,7 +66,7 @@ defmodule Emisar.Runbooks.ExecutionProjection do
           id: String.t(),
           step_id: String.t(),
           runner_ref: String.t(),
-          target_selection: String.t(),
+          target_selection: atom(),
           target_group: String.t() | nil,
           action_id: String.t(),
           pack_ref: String.t(),

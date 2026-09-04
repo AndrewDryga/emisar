@@ -601,7 +601,7 @@ defmodule EmisarWeb.MCP.RunbookTools do
       item_id: item.id,
       step_id: item.step_id,
       runner_ref: item.runner_ref,
-      target_selection: item.target_selection,
+      target_selection: to_string(item.target_selection),
       target_group: item.target_group,
       status: wire_status(item.status),
       action_id: item.action_id,

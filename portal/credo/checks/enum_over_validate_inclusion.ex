@@ -9,11 +9,15 @@ defmodule Emisar.Checks.EnumOverValidateInclusion do
       casts to atoms, validates inclusion on cast for free, and keeps the DB
       value as the string form.
 
-      Matched: `validate_inclusion(changeset, :field, [..])` or `… , @attr)` in
-      a changeset module — a literal/module-attr value set is the "fixed
-      string-set" signal. A runtime/computed set (a bound variable) is allowed.
-      The two sanctioned `:string` exceptions (Subscription.status/plan) drop or
-      keep their inclusion deliberately; document them with a disable-line.
+      Matched in a changeset module, piped (`|> validate_inclusion(:field,
+      [..])` — the spelling a changeset pipeline actually uses) and direct
+      (`validate_inclusion(changeset, :field, [..])`), imported or qualified,
+      with or without trailing opts. A literal list, `~w` sigil, or
+      module-attribute value set is the "fixed string-set" signal; a
+      runtime/computed set (a bound variable or a function call) is allowed,
+      trailing options and all. The sanctioned `:string` exceptions (the
+      Paddle-owned `Subscription` fields) drop or keep their inclusion
+      deliberately; document them with a disable-line.
       """
     ]
 
@@ -29,26 +33,42 @@ defmodule Emisar.Checks.EnumOverValidateInclusion do
     end
   end
 
-  # imported form: validate_inclusion(changeset, :field, values [, opts])
-  defp walk({:validate_inclusion, meta, [_cs, field, values | _]} = ast, ctx) do
-    {ast, flag_if_fixed(ctx, meta, field, values)}
+  # imported form: validate_inclusion(changeset, :field, values [, opts]), and
+  # the piped `|> validate_inclusion(:field, values [, opts])`, whose call node
+  # has already consumed the changeset argument.
+  defp walk({:validate_inclusion, meta, args} = ast, ctx) when is_list(args) do
+    {ast, flag_if_fixed(ctx, meta, args)}
   end
 
-  # remote form: Ecto.Changeset.validate_inclusion(changeset, :field, values [, opts])
-  defp walk({{:., _, [_, :validate_inclusion]}, meta, [_cs, field, values | _]} = ast, ctx) do
-    {ast, flag_if_fixed(ctx, meta, field, values)}
+  # remote form: Ecto.Changeset.validate_inclusion(…), piped or not.
+  defp walk({{:., _, [_, :validate_inclusion]}, meta, args} = ast, ctx) when is_list(args) do
+    {ast, flag_if_fixed(ctx, meta, args)}
   end
 
   defp walk(ast, ctx), do: {ast, ctx}
 
-  defp flag_if_fixed(ctx, meta, field, values) do
-    if fixed_set?(values),
-      do: put_issue(ctx, issue_for(ctx, meta, field)),
-      else: ctx
+  # The field is always the argument immediately before the value set, and only
+  # the piped spelling drops the leading changeset — so locating the set locates
+  # the field whichever spelling this is, without matching on arity (the piped
+  # 4-arity call and the direct 3-arity one are the same shape). Same
+  # position-tolerant reading `NoPreloadInRepoOpts` uses for its two forms.
+  defp flag_if_fixed(ctx, meta, args) do
+    case Enum.split_while(args, &(not fixed_set?(&1))) do
+      {[_ | _] = before_set, [_values | _]} ->
+        put_issue(ctx, issue_for(ctx, meta, List.last(before_set)))
+
+      _no_fixed_value_set ->
+        ctx
+    end
   end
 
-  defp fixed_set?(values) when is_list(values), do: true
+  # A trailing `message:`/`allow_nil:` option list is a list too, so the value
+  # set is the list that is NOT a keyword list — otherwise a runtime set carrying
+  # options (`validate_inclusion(cs, :kind, allowed, message: "…")`) reads as
+  # fixed and the field name lands on the wrong argument.
+  defp fixed_set?(values) when is_list(values), do: not Keyword.keyword?(values)
   defp fixed_set?({:@, _, _}), do: true
+  defp fixed_set?({sigil, _, _}) when sigil in [:sigil_w, :sigil_W], do: true
   defp fixed_set?(_), do: false
 
   defp issue_for(ctx, meta, field) do

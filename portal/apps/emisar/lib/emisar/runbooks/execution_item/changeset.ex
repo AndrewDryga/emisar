@@ -17,7 +17,6 @@ defmodule Emisar.Runbooks.ExecutionItem.Changeset do
     |> validate_required(@create_fields -- @deferred_fields)
     |> validate_length(:step_id, min: 1, max: 80)
     |> validate_length(:runner_ref, min: 1, max: 113)
-    |> validate_inclusion(:target_selection, ["all", "random_one"])
     |> validate_length(:target_group, min: 1, max: 80)
     |> validate_length(:action_id, min: 1, max: 128)
     |> validate_length(:pack_ref, min: 1, max: 255)

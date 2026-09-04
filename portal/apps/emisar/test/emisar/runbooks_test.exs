@@ -2570,7 +2570,7 @@ defmodule Emisar.RunbooksTest do
                  "runner_ref"
                ])
 
-      assert %{target_selection: "random_one", target_group: "workers"} =
+      assert %{target_selection: :random_one, target_group: "workers"} =
                ExecutionItem.Query.by_execution_id(result.execution_id) |> Repo.one!()
     end
 

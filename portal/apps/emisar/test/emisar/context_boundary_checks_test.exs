@@ -412,13 +412,46 @@ defmodule Emisar.ContextBoundaryChecksTest do
       assert triggers(enum_over_inclusion(), source, @changeset) == ["validate_inclusion"]
     end
 
-    test "allows a runtime value set" do
+    test "flags the piped spelling at both arities and names the right field" do
+      source = """
+      defmodule Emisar.Sprockets.Sprocket.Changeset do
+        use Emisar, :changeset
+
+        @tiers ~w(gold silver)
+
+        def create(changeset) do
+          changeset
+          |> validate_inclusion(:kind, ["alpha", "beta"])
+          |> validate_inclusion(:mode, ["fast", "slow"], message: "unsupported")
+          |> Ecto.Changeset.validate_inclusion(:tier, @tiers)
+          |> validate_inclusion(:shape, ~w(round square))
+        end
+      end
+      """
+
+      flagged =
+        enum_over_inclusion() |> issues(source, @changeset) |> Enum.sort_by(& &1.line_no)
+
+      assert [kind, mode, tier, shape] = flagged
+      assert kind.line_no == 8
+      assert kind.message =~ ":kind"
+      assert mode.line_no == 9
+      assert mode.message =~ ":mode"
+      assert tier.line_no == 10
+      assert tier.message =~ ":tier"
+      assert shape.line_no == 11
+      assert shape.message =~ ":shape"
+    end
+
+    test "allows a runtime value set, options and all" do
       source = """
       defmodule Emisar.Sprockets.Sprocket.Changeset do
         use Emisar, :changeset
 
         def create(changeset, allowed_kinds) do
-          validate_inclusion(changeset, :kind, allowed_kinds)
+          changeset
+          |> validate_inclusion(:kind, allowed_kinds)
+          |> validate_inclusion(:mode, modes(), message: "unsupported")
         end
       end
       """

@@ -213,7 +213,7 @@ defmodule Emisar.Fixtures.Approvals do
         step_position: target.position,
         runner_id: target.runner.id,
         runner_ref: target.frozen["runner_ref"],
-        target_selection: "all",
+        target_selection: :all,
         action_id: target.frozen["action"],
         pack_ref: target.frozen["pack_ref"],
         pack_hash: target.pack_hash,
