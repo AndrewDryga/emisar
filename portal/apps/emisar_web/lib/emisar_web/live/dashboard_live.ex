@@ -101,6 +101,9 @@ defmodule EmisarWeb.DashboardLive do
     |> assign(:refresh_scheduled?, false)
     |> assign(:pending_refreshes, [])
     |> assign(:setup_reads, %{api_keys: read_ok?(api_keys_read)})
+    # Only the first-run fleet read answers this; the counted path past the
+    # first run never renders the checklist that asks.
+    |> assign(:actions_advertised?, false)
     |> assign(:agents, agents_summary(api_keys))
     |> assign(:billing, unwrap_ok(Billing.billing_summary(account, subject)))
     |> assign(:team_security, team_security(subject))
@@ -121,8 +124,11 @@ defmodule EmisarWeb.DashboardLive do
     |> assign(:can_install_runners?, Runners.subject_can_install_runners?(subject))
     |> assign(:can_issue_agent_key?, ApiKeys.subject_can_issue_quick_key?(subject))
     |> assign(:can_invite_members?, Accounts.subject_can_manage_team?(subject))
-    |> refresh_runners()
+    # Runs first: `refresh_runners/1` picks the cheap counted fleet read once a
+    # run exists, and only an account that has never run anything pays for the
+    # whole scoped fleet plus its advertised actions.
     |> refresh_runs()
+    |> refresh_runners()
     |> refresh_approvals()
     |> assign_current_setup_state()
   end
