@@ -6374,6 +6374,107 @@ defmodule Emisar.CatalogTest do
     end
   end
 
+  describe "count_pack_versions_needing_decision/1" do
+    test "counts pending versions for the account and never another account's" do
+      {account, subject} = account_with_owner()
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
+
+      # No shipped baseline for these versions → they land pending.
+      {:ok, _} =
+        Catalog.observe_state(
+          runner,
+          state_payload(
+            packs: %{
+              "linux-core" => %{"version" => "9.9.9", "hash" => "h1"},
+              "redis" => %{"version" => "9.9.9", "hash" => "h2"}
+            }
+          )
+        )
+
+      assert Catalog.count_pack_versions_needing_decision(subject) == 2
+
+      # A second account's pending pack must not leak into the first's count.
+      {other_account, other_subject} = account_with_owner()
+      other_runner = Fixtures.Runners.create_runner(account_id: other_account.id)
+
+      {:ok, _} =
+        Catalog.observe_state(
+          other_runner,
+          state_payload(packs: %{"redis" => %{"version" => "9.9.9", "hash" => "h3"}})
+        )
+
+      assert Catalog.count_pack_versions_needing_decision(subject) == 2
+      assert Catalog.count_pack_versions_needing_decision(other_subject) == 1
+    end
+
+    test "counts only decisions in current pack access" do
+      {account, subject} = account_with_owner()
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
+
+      {:ok, _} =
+        Catalog.observe_state(
+          runner,
+          state_payload(
+            packs: %{
+              "linux-core" => %{"version" => "9.9.9", "hash" => "h1"},
+              "redis" => %{"version" => "9.9.9", "hash" => "h2"}
+            }
+          )
+        )
+
+      {:ok, linux_only} =
+        Accounts.RunnerAccess.new(:all, [], [], :restricted, ["linux-core"])
+
+      force_runner_access(account, subject, linux_only)
+      assert Catalog.count_pack_versions_needing_decision(subject) == 1
+    end
+
+    test "counts a retired-blocked trusted version, and stops once resolved" do
+      {account, subject} = account_with_owner()
+
+      {pack_id, _watermark} =
+        Emisar.Catalog.PackBaseline.retired_below() |> Enum.sort() |> List.first()
+
+      pack_version =
+        Fixtures.Catalog.create_trusted_pack_version(
+          account_id: account.id,
+          pack_id: pack_id,
+          version: "0.0.0"
+        )
+
+      assert Catalog.count_pack_versions_needing_decision(subject) == 1
+
+      # Overriding the retirement resolves the decision.
+      {:ok, _} = Catalog.override_pack_retirement(pack_version.id, subject)
+      assert Catalog.count_pack_versions_needing_decision(subject) == 0
+    end
+
+    test "a revoked (rejected) retired version is decided — not counted" do
+      {account, subject} = account_with_owner()
+
+      {pack_id, _watermark} =
+        Emisar.Catalog.PackBaseline.retired_below() |> Enum.sort() |> List.first()
+
+      pack_version =
+        Fixtures.Catalog.create_trusted_pack_version(
+          account_id: account.id,
+          pack_id: pack_id,
+          version: "0.0.0"
+        )
+
+      {:ok, _} = Catalog.revoke_pack_version_trust(pack_version.id, subject)
+
+      assert Catalog.count_pack_versions_needing_decision(subject) == 0
+    end
+
+    test "returns 0 for a subject without view_catalog (the badge silently disappears)" do
+      {account, _subject} = account_with_owner()
+      no_view = %Emisar.Auth.Subject{account: account, role: :runner, permissions: MapSet.new()}
+
+      assert Catalog.count_pack_versions_needing_decision(no_view) == 0
+    end
+  end
+
   describe "list_published_packs/0" do
     test "returns the whole published catalog, alphabetically by id" do
       ids = Catalog.list_published_packs() |> Enum.map(& &1.id)
