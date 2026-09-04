@@ -59,7 +59,6 @@ func main() {
 	certifyCredentials := flag.String("certify-credentials", "portal/.agent/secrets/google-cert-client.env", "ignored env file for the certification client's credentials")
 	certifyLogin := flag.String("certify-login", "", "drive a real OIDC sign-in through this emisar begin URL and report where it lands")
 	deleteProjects := flag.String("delete-projects", "", "comma-separated project ids to shut down, then exit")
-	listProjects := flag.Bool("list-projects", false, "print the account's projects and whether each has an auth config")
 	// Agreeing to Google Cloud's terms binds the ACCOUNT, not the run, so it is
 	// never implied by asking for screenshots. The account owner asks for it here,
 	// explicitly, or the capture stops at the wall.
@@ -81,7 +80,7 @@ func main() {
 	if err := os.MkdirAll(*outDir, 0o700); err != nil {
 		fail(err)
 	}
-	if err := run(env, *outDir, *headless, *cleanupOnly, *freshProject, *listProjects, *acceptCloudTOS, *project, *deleteProjects, *certifyRedirect, *certifyCredentials, *certifyLogin); err != nil {
+	if err := run(env, *outDir, *headless, *cleanupOnly, *freshProject, *acceptCloudTOS, *project, *deleteProjects, *certifyRedirect, *certifyCredentials, *certifyLogin); err != nil {
 		fail(err)
 	}
 }
@@ -97,7 +96,7 @@ func readEnv(path string) (map[string]string, error) {
 	return capturekit.ReadEnv(path)
 }
 
-func run(env map[string]string, outDir string, headless, cleanupOnly bool, freshProject string, listProjects, acceptCloudTOS bool, project, deleteProjects, certifyRedirect, certifyCredentials, certifyLogin string) error {
+func run(env map[string]string, outDir string, headless, cleanupOnly bool, freshProject string, acceptCloudTOS bool, project, deleteProjects, certifyRedirect, certifyCredentials, certifyLogin string) error {
 	opts := append(chromedp.DefaultExecAllocatorOptions[:],
 		chromedp.Flag("headless", headless),
 		chromedp.Flag("lang", "en-US"),
@@ -135,9 +134,6 @@ func run(env map[string]string, outDir string, headless, cleanupOnly bool, fresh
 		_ = idpcapture.Screenshot(ctx, outDir, "google-failed")
 		_ = capturekit.DescribePage(ctx, env)
 		return err
-	}
-	if listProjects {
-		return printProjects(ctx)
 	}
 	if deleteProjects != "" {
 		for _, id := range strings.Split(deleteProjects, ",") {
@@ -275,24 +271,6 @@ func shutDownProject(ctx context.Context, id string) error {
 	}
 	fmt.Printf("  shut down %s\n", id)
 	return chromedp.Run(ctx, chromedp.Sleep(8*time.Second))
-}
-
-// printProjects lists what the account can reach, so a capture that needs an
-// unconfigured project can be pointed at one that already exists instead of
-// creating another.
-func printProjects(ctx context.Context) error {
-	if err := chromedp.Run(ctx,
-		chromedp.Navigate("https://console.cloud.google.com/cloud-resource-manager?hl=en"),
-		chromedp.Sleep(15*time.Second)); err != nil {
-		return err
-	}
-	var body string
-	if err := chromedp.Run(ctx, chromedp.Evaluate(`document.body.innerText`, &body)); err != nil {
-		return err
-	}
-	fmt.Println("--- resource manager ---")
-	fmt.Println(body)
-	return nil
 }
 
 // createProject makes the throwaway project whose Get started wizard the capture

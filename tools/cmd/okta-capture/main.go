@@ -76,7 +76,7 @@ func submitPasscode(code string) string {
 
 func main() {
 	var secretsPath, outDir, only, flow, pushGroup string
-	var headless, inventory, cleanup, configureSCIM, retryPush, deactivatePush bool
+	var headless, inventory, cleanup, configureSCIM bool
 	flag.StringVar(&secretsPath, "secrets", "portal/.agent/secrets/okta-integrator.env", "creds env file")
 	flag.StringVar(&outDir, "out", "", "directory for captured PNGs")
 	flag.StringVar(&only, "only", "", "comma-separated screen names (default: all)")
@@ -91,8 +91,6 @@ func main() {
 	flag.BoolVar(&inventory, "inventory", false, "list the apps and users this rig creates, then exit")
 	flag.BoolVar(&cleanup, "cleanup", false, "delete the apps and users this rig created, then exit")
 	flag.BoolVar(&configureSCIM, "configure-scim", false, "replace and verify the saved SCIM endpoint credential")
-	flag.BoolVar(&retryPush, "retry-push", false, "retry the errored group push mapping")
-	flag.BoolVar(&deactivatePush, "deactivate-push", false, "deactivate the current group push mapping")
 	flag.Parse()
 
 	if outDir == "" {
@@ -108,12 +106,6 @@ func main() {
 	}
 	if pushGroup != "" {
 		env["OKTA_PUSH_GROUP"] = pushGroup
-	}
-	if retryPush {
-		env["OKTA_RETRY_PUSH"] = "1"
-	}
-	if deactivatePush {
-		env["OKTA_DEACTIVATE_PUSH"] = "1"
 	}
 	if err := run(env, outDir, only, headless, inventory, cleanup, configureSCIM); err != nil {
 		fail(err)
@@ -1179,30 +1171,6 @@ func provisioningFlow(
 	if err := shoot("07-provisioning-tab"); err != nil {
 		return err
 	}
-	if env["OKTA_DEACTIVATE_PUSH"] == "1" {
-		if err := step("Push Groups"); err != nil {
-			return err
-		}
-		if err := settle(3); err != nil {
-			return err
-		}
-		return deactivateGroupPush(ctx, settle, env["OKTA_PUSH_GROUP"])
-	}
-	if env["OKTA_RETRY_PUSH"] == "1" {
-		if err := step("Push Groups"); err != nil {
-			return err
-		}
-		if err := settle(3); err != nil {
-			return err
-		}
-		if err := retryErroredPush(ctx, settle); err != nil {
-			return err
-		}
-		if err := shoot("14-push-groups"); err != nil {
-			return err
-		}
-		return nil
-	}
 	if pushGroup := env["OKTA_PUSH_GROUP"]; pushGroup != "" {
 		if err := step("Assignments"); err != nil {
 			return err
@@ -1314,97 +1282,6 @@ func provisioningFlow(
 	}
 
 	return lifecycleFlow(ctx, instance, shoot, step, settle, env["OKTA_PUSH_GROUP"])
-}
-
-func deactivateGroupPush(ctx context.Context, settle func(int) error, group string) error {
-	open := fmt.Sprintf(`(() => {
-		const visible = element => element.offsetWidth > 0 || element.offsetHeight > 0;
-		const labels = Array.from(document.querySelectorAll('a,button,div,span,td'))
-			.filter(element => visible(element) && (element.textContent || '').includes(%q))
-			.sort((left, right) => left.getElementsByTagName('*').length - right.getElementsByTagName('*').length);
-		const label = labels[0];
-		if (!label) return false;
-		let row = label;
-		for (let up = 0; up < 10 && row; up++, row = row.parentElement) {
-			const action = Array.from(row.querySelectorAll('a,button,[role=button]'))
-				.find(element => visible(element) && (element.textContent || '').trim() === 'Active');
-			if (action) { action.click(); return true; }
-		}
-		return false;
-	})()`, group)
-	var opened bool
-	if err := chromedp.Run(ctx, chromedp.Evaluate(open, &opened)); err != nil {
-		return err
-	}
-	if !opened {
-		return fmt.Errorf("the active push mapping for %q was not found", group)
-	}
-	if err := settle(1); err != nil {
-		return err
-	}
-	clicked, err := capture.ClickContaining(ctx, "Deactivate group push")
-	if err != nil {
-		return err
-	}
-	if !clicked {
-		return errors.New("the group push menu offered no deactivate action")
-	}
-	if err := settle(2); err != nil {
-		return err
-	}
-	// Every other step here fails when its control is missing; this loop did
-	// not, so a confirm dialog whose button was worded differently left the
-	// mapping ACTIVE and the run printed that it had been deactivated.
-	var confirmed bool
-	for _, label := range []string{"Deactivate", "Confirm"} {
-		clicked, err := capture.ClickText(ctx, label)
-		if err != nil {
-			return err
-		}
-		if clicked {
-			confirmed = true
-			break
-		}
-	}
-	if !confirmed {
-		return errors.New("the group push deactivation was never confirmed")
-	}
-	fmt.Printf("  deactivated group push for %q\n", group)
-	return settle(8)
-}
-
-func retryErroredPush(ctx context.Context, settle func(int) error) error {
-	clicked, err := capture.ClickContaining(ctx, "Error")
-	if err != nil {
-		return err
-	}
-	if !clicked {
-		return errors.New("the errored group push status was not found")
-	}
-	if err := settle(1); err != nil {
-		return err
-	}
-	for _, label := range []string{"Retry", "Retry push", "Retry All Groups", "Push Now"} {
-		clicked, err = capture.ClickText(ctx, label)
-		if err != nil {
-			return err
-		}
-		if clicked {
-			fmt.Printf("  clicked group push action %q\n", label)
-			return settle(12)
-		}
-	}
-	var controls []string
-	if err := chromedp.Run(ctx, chromedp.Evaluate(`Array.from(document.querySelectorAll('a,button,[role=menuitem]'))
-		.filter(element => element.offsetWidth > 0 || element.offsetHeight > 0)
-		.map(element => (element.textContent || element.value || '').trim())
-		.filter(Boolean)`, &controls)); err != nil {
-		return err
-	}
-	if len(controls) > 30 {
-		controls = controls[len(controls)-30:]
-	}
-	return fmt.Errorf("the errored group push menu offered no retry action; visible controls: %q", controls)
 }
 
 // lifecycleFlow captures Provisioning → To App, Assignments and Push Groups —

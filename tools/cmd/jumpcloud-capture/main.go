@@ -30,16 +30,12 @@ import (
 const highlightSettle = 800 * time.Millisecond
 
 func main() {
-	var secretsPath, outDir, credentialsOut, remoteDebugURL string
-	var headless, listApps, cleanupApps, oidcOnly, recoverOIDC bool
+	var secretsPath, outDir, credentialsOut string
+	var headless, cleanupApps, oidcOnly, recoverOIDC bool
 	flag.StringVar(&secretsPath, "secrets", "portal/.agent/secrets/jumpcloud-trial.env", "creds env file")
 	flag.StringVar(&outDir, "out", "", "directory for captured PNGs")
 	flag.StringVar(&credentialsOut, "credentials-out", "", "write the one-time OIDC client credential to this ignored env file")
-	flag.StringVar(&remoteDebugURL, "remote-debug-url", "", "reuse an authenticated Chrome debugging session and skip form login")
 	flag.BoolVar(&headless, "headless", true, "run Chrome headless")
-	// Every full run creates an application. This lists what is there so a cleanup
-	// can be decided from facts rather than a guess about which rows are mine.
-	flag.BoolVar(&listApps, "list-apps", false, "print the configured applications and exit")
 	flag.BoolVar(&cleanupApps, "cleanup-apps", false, "delete the emisar apps a capture run left behind, and exit")
 	flag.BoolVar(&oidcOnly, "oidc-only", false, "stop after activating and capturing OIDC credentials")
 	flag.BoolVar(&recoverOIDC, "recover-oidc-credentials", false, "regenerate and capture credentials for the saved emisar OIDC app")
@@ -58,7 +54,7 @@ func main() {
 		fmt.Fprintln(os.Stderr, "jumpcloud-capture:", err)
 		os.Exit(1)
 	}
-	if err := run(env, outDir, credentialsOut, remoteDebugURL, headless, listApps, cleanupApps, oidcOnly, recoverOIDC, *explore); err != nil {
+	if err := run(env, outDir, credentialsOut, headless, cleanupApps, oidcOnly, recoverOIDC, *explore); err != nil {
 		fmt.Fprintln(os.Stderr, "jumpcloud-capture:", err)
 		os.Exit(1)
 	}
@@ -210,21 +206,15 @@ func deidentifyHost(ctx context.Context, from, to string) error {
 	return nil
 }
 
-func run(env map[string]string, outDir, credentialsOut, remoteDebugURL string, headless, listApps, cleanupApps, oidcOnly, recoverOIDC bool, explore string) error {
+func run(env map[string]string, outDir, credentialsOut string, headless, cleanupApps, oidcOnly, recoverOIDC bool, explore string) error {
 	if err := os.MkdirAll(outDir, 0o700); err != nil {
 		return err
 	}
-	var allocator context.Context
-	var cancelAllocator context.CancelFunc
-	if remoteDebugURL == "" {
-		options := append(chromedp.DefaultExecAllocatorOptions[:],
-			chromedp.Flag("headless", headless),
-			chromedp.WindowSize(1440, 1200),
-		)
-		allocator, cancelAllocator = chromedp.NewExecAllocator(context.Background(), options...)
-	} else {
-		allocator, cancelAllocator = chromedp.NewRemoteAllocator(context.Background(), remoteDebugURL)
-	}
+	options := append(chromedp.DefaultExecAllocatorOptions[:],
+		chromedp.Flag("headless", headless),
+		chromedp.WindowSize(1440, 1200),
+	)
+	allocator, cancelAllocator := chromedp.NewExecAllocator(context.Background(), options...)
 	defer cancelAllocator()
 	ctx, cancel := chromedp.NewContext(allocator)
 	defer cancel()
@@ -233,24 +223,6 @@ func run(env map[string]string, outDir, credentialsOut, remoteDebugURL string, h
 	// the flow before that last wait existed, and then expired inside it.
 	ctx, cancelTimeout := context.WithTimeout(ctx, 12*time.Minute)
 	defer cancelTimeout()
-
-	if remoteDebugURL != "" {
-		if err := chromedp.Run(ctx,
-			chromedp.EmulateViewport(1440, 1200),
-			chromedp.Navigate(env["JUMPCLOUD_CONSOLE_URL"]+"/#/applications"),
-			chromedp.Sleep(10*time.Second)); err != nil {
-			return err
-		}
-		var body string
-		if err := chromedp.Run(ctx, chromedp.Evaluate(`document.body.innerText`, &body)); err != nil {
-			return err
-		}
-		if strings.Contains(body, "Administrator Login") || strings.Contains(body, "User Portal Login") {
-			return errors.New("the remote Chrome session is not signed in to the JumpCloud admin console")
-		}
-		fmt.Println("reused the authenticated JumpCloud admin session")
-		return runAuthenticated(ctx, env, outDir, credentialsOut, listApps, cleanupApps, oidcOnly, recoverOIDC, explore)
-	}
 
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(env["JUMPCLOUD_CONSOLE_URL"]+"/login"),
@@ -330,13 +302,10 @@ func run(env map[string]string, outDir, credentialsOut, remoteDebugURL string, h
 	if err := idpcapture.Screenshot(ctx, outDir, "jc-01-after-login"); err != nil {
 		return err
 	}
-	return runAuthenticated(ctx, env, outDir, credentialsOut, listApps, cleanupApps, oidcOnly, recoverOIDC, explore)
+	return runAuthenticated(ctx, env, outDir, credentialsOut, cleanupApps, oidcOnly, recoverOIDC, explore)
 }
 
-func runAuthenticated(ctx context.Context, env map[string]string, outDir, credentialsOut string, listApps, cleanupApps, oidcOnly, recoverOIDC bool, explore string) error {
-	if listApps {
-		return printApplications(ctx, env, outDir)
-	}
+func runAuthenticated(ctx context.Context, env map[string]string, outDir, credentialsOut string, cleanupApps, oidcOnly, recoverOIDC bool, explore string) error {
 	if explore != "" {
 		return exploreConsole(ctx, env, outDir, explore)
 	}
@@ -646,30 +615,6 @@ func exploreConsole(ctx context.Context, env map[string]string, outDir, script s
 		}
 	}
 	return nil
-}
-
-// printApplications walks to the configured-application list and prints each row,
-// so the litter a repeated capture run leaves can be identified before anything
-// is deleted.
-func printApplications(ctx context.Context, env map[string]string, outDir string) error {
-	if err := openApplicationList(ctx, env["JUMPCLOUD_CONSOLE_URL"]); err != nil {
-		return err
-	}
-	const rows = `(() => {
-  const visible = el => el.offsetWidth > 0 || el.offsetHeight > 0;
-  return [...document.querySelectorAll('tr')]
-    .filter(visible)
-    .map(tr => [...tr.children].map(td => (td.textContent || '').trim()).filter(Boolean).join(' | '))
-    .filter(Boolean)
-    .join('\n');
-})()`
-	var listing string
-	if err := chromedp.Run(ctx, chromedp.Evaluate(rows, &listing)); err != nil {
-		return err
-	}
-	fmt.Println("--- configured applications ---")
-	fmt.Println(listing)
-	return idpcapture.Screenshot(ctx, outDir, "jc-applications")
 }
 
 // A capture run creates an application. Refuse to create a SECOND one while
