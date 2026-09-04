@@ -1737,7 +1737,9 @@ defmodule Emisar.AuditTest do
     } do
       {:ok, event} = Audit.log(account.id, "user.signed_in", actor_kind: "user")
 
-      assert {:ok, csv} = Audit.stream_csv_export(subject, [])
+      # The console always passes its filter list, which is what marks the
+      # receipt as the CSV transport.
+      assert {:ok, csv} = Audit.stream_csv_export(subject, filter: [])
       contents = csv |> Enum.to_list() |> IO.iodata_to_binary()
 
       assert String.starts_with?(contents, "id,occurred_at_utc,event_type,")
