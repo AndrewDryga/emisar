@@ -217,11 +217,6 @@ jobs:
           fi
 
       - name: Attest build provenance
-        # GitHub's attestation API rejects user-owned private repos
-        # (free-tier feature gate). Skip on private; the step kicks
-        # back in automatically once the repo is public. See
-        # runner-release.yml for the same guard + rationale.
-        if: ${{ !github.event.repository.private }}
         uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4
         with:
           subject-path: ${{ steps.archive.outputs.path }}
@@ -289,7 +284,6 @@ jobs:
       # checksum file, trusted workflow, tag ref, and hosted-runner identity.
       - name: Reuse existing checksum attestation
         id: existing_checksum_provenance
-        if: ${{ !github.event.repository.private }}
         env:
           BUNDLE_URL: https://storage.googleapis.com/emisar-pack-registry/releases/mcp/${{ github.ref_name }}/SHA256SUMS-MCP.sigstore.jsonl
         run: |
@@ -323,13 +317,13 @@ jobs:
 
       - name: Attest release checksum metadata
         id: checksum_provenance
-        if: ${{ !github.event.repository.private && steps.existing_checksum_provenance.outputs.found != 'true' }}
+        if: ${{ steps.existing_checksum_provenance.outputs.found != 'true' }}
         uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4
         with:
           subject-path: release/SHA256SUMS-MCP
 
       - name: Preserve offline checksum attestation
-        if: ${{ !github.event.repository.private && steps.existing_checksum_provenance.outputs.found != 'true' }}
+        if: ${{ steps.existing_checksum_provenance.outputs.found != 'true' }}
         env:
           BUNDLE_PATH: ${{ steps.checksum_provenance.outputs.bundle-path }}
         run: |
@@ -388,7 +382,6 @@ jobs:
           done
 
       - name: Verify primary checksum attestation
-        if: ${{ !github.event.repository.private }}
         run: |
           set -euo pipefail
           base="https://emisar.dev/releases/mcp/${RELEASE_TAG}"
@@ -411,5 +404,5 @@ jobs:
             release/emisar-mcp-*.zip
             release/emisar-mcp-*.zip.sha256
             release/SHA256SUMS-MCP
-            ${{ !github.event.repository.private && 'release/SHA256SUMS-MCP.sigstore.jsonl' || '' }}
+            release/SHA256SUMS-MCP.sigstore.jsonl
           fail_on_unmatched_files: true
