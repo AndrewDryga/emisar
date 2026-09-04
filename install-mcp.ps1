@@ -631,18 +631,18 @@ if ($Yes -and -not $ConnectAll) {
         $inheritedURL = $env:EMISAR_URL
         $inheritedAPIKey = $env:EMISAR_API_KEY
         try {
-            Remove-Item Env:EMISAR_URL -ErrorAction SilentlyContinue
-            Remove-Item Env:EMISAR_API_KEY -ErrorAction SilentlyContinue
+            $env:EMISAR_URL = $null
+            $env:EMISAR_API_KEY = $null
             & $executable @connectArguments
             $connectExitCode = $LASTEXITCODE
         } finally {
             if ($null -eq $inheritedURL) {
-                Remove-Item Env:EMISAR_URL -ErrorAction SilentlyContinue
+                $env:EMISAR_URL = $null
             } else {
                 $env:EMISAR_URL = $inheritedURL
             }
             if ($null -eq $inheritedAPIKey) {
-                Remove-Item Env:EMISAR_API_KEY -ErrorAction SilentlyContinue
+                $env:EMISAR_API_KEY = $null
             } else {
                 $env:EMISAR_API_KEY = $inheritedAPIKey
             }
