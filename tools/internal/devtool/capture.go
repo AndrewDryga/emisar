@@ -8,13 +8,34 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 
 	devbrowser "github.com/andrewdryga/emisar/tools/internal/browser"
 )
 
+// The live-IdP screenshot rigs. They capture the provider walkthroughs the same
+// way `capture docs` scripts the local Keycloak, but each drives remote SaaS
+// with its own flags, so ./run forwards the rest of the line untouched rather
+// than re-declaring four flag sets. They enter here because a shared command
+// people and agents both run belongs on ./run, not on a path documented in a
+// README (shared-human-dev-tooling-is-not-agent-state).
+var captureProviders = []string{"entra", "google", "jumpcloud", "okta"}
+
 func (a *App) capture(ctx context.Context, args []string) error {
+	if len(args) != 0 {
+		for _, provider := range captureProviders {
+			if args[0] != provider {
+				continue
+			}
+			// From the repository root: every rig defaults its credential file
+			// to a portal/.agent/secrets/ path relative to it.
+			return a.run(ctx, a.Root, nil,
+				"go", append([]string{"run", "./tools/cmd/" + provider + "-capture"}, args[1:]...)...)
+		}
+	}
 	if len(args) == 0 || (args[0] != "docs" && args[0] != "console") {
-		return usage("usage: ./run capture docs [shot...] | ./run capture console [--task ID] [--group NAME]")
+		return usage("usage: ./run capture docs [shot...] | ./run capture console [--task ID] [--group NAME] | ./run capture <%s> [rig flags...]",
+			strings.Join(captureProviders, "|"))
 	}
 	consoleTask := screenshotTask{}
 	consoleOut := ""

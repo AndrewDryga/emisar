@@ -186,3 +186,105 @@ func TestCheckTrustedReleasePins(t *testing.T) {
 		}
 	})
 }
+
+// The WIF path can only reach a workflow as a literal, so the literal is the
+// contract and this comparison is the only thing keeping it true.
+func TestCheckWorkloadIdentityLiterals(t *testing.T) {
+	const oidc = `resource "google_iam_workload_identity_pool" "github" {
+  workload_identity_pool_id = "github-actions"
+}
+
+resource "google_iam_workload_identity_pool_provider" "github" {
+  workload_identity_pool_provider_id = "github"
+}
+
+resource "google_iam_workload_identity_pool_provider" "github_releases" {
+  workload_identity_pool_provider_id = "github-releases"
+}
+`
+	const outputs = `output "packs_workload_identity_provider" {
+  value = "projects/1/locations/global/workloadIdentityPools/${google_iam_workload_identity_pool_provider.github.workload_identity_pool_id}/providers/${google_iam_workload_identity_pool_provider.github.workload_identity_pool_provider_id}"
+}
+
+output "releases_workload_identity_provider" {
+  value = "projects/1/locations/global/workloadIdentityPools/${google_iam_workload_identity_pool_provider.github_releases.workload_identity_pool_id}/providers/${google_iam_workload_identity_pool_provider.github_releases.workload_identity_pool_provider_id}"
+}
+`
+	const use = "jobs:\n  publish:\n    steps:\n      - with:\n          workload_identity_provider: %s\n"
+
+	for _, test := range []struct {
+		name    string
+		oidc    string
+		outputs string
+		literal string
+		want    string
+	}{
+		{
+			name:    "matching literal passes",
+			literal: "projects/65212203604/locations/global/workloadIdentityPools/github-actions/providers/github-releases",
+		},
+		{
+			name:    "a renamed provider leaves its callers authenticating against nothing",
+			oidc:    strings.Replace(oidc, `"github-releases"`, `"github-tags"`, 1),
+			literal: "projects/65212203604/locations/global/workloadIdentityPools/github-actions/providers/github-releases",
+			want:    `provider "github-releases", which infra/github_oidc.tf does not declare`,
+		},
+		{
+			name:    "a renamed pool is caught the same way",
+			oidc:    strings.Replace(oidc, `"github-actions"`, `"github-oidc"`, 1),
+			literal: "projects/65212203604/locations/global/workloadIdentityPools/github-actions/providers/github",
+			want:    `pool "github-actions"`,
+		},
+		{
+			name:    "a malformed literal is not silently accepted",
+			literal: "github-releases",
+			want:    "which is not a projects/",
+		},
+		{
+			name: "a declared provider with no output has nothing to re-spell from",
+			outputs: `output "packs_workload_identity_provider" {
+  value = "${google_iam_workload_identity_pool_provider.github.workload_identity_pool_provider_id}"
+}
+`,
+			literal: "projects/65212203604/locations/global/workloadIdentityPools/github-actions/providers/github",
+			want:    `publishes no path for workload identity provider "github_releases"`,
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			root := t.TempDir()
+			write := func(path, body string) {
+				t.Helper()
+				full := filepath.Join(root, filepath.FromSlash(path))
+				if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(full, []byte(body), 0o600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			body := test.oidc
+			if body == "" {
+				body = oidc
+			}
+			write("infra/github_oidc.tf", body)
+			published := test.outputs
+			if published == "" {
+				published = outputs
+			}
+			write("infra/outputs.tf", published)
+			write(".github/workflows/runner-release-trusted.yml", strings.Replace(use, "%s", test.literal, 1))
+
+			app := New(root, strings.NewReader(""), &bytes.Buffer{}, &bytes.Buffer{})
+			err := app.checkWorkloadIdentityLiterals()
+			if test.want == "" {
+				if err != nil {
+					t.Fatalf("unexpected error: %v", err)
+				}
+				return
+			}
+			if err == nil || !strings.Contains(err.Error(), test.want) {
+				t.Fatalf("error = %v, want %q", err, test.want)
+			}
+		})
+	}
+}

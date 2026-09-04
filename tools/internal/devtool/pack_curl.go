@@ -77,9 +77,13 @@ func validatePackCurlURLSafety(input packActionLintInput) error {
 // A URL that reaches curl with globbing on expands {a,b} into one transfer per
 // alternative; without --proto an operator-set base URL can select file:// or
 // another scheme entirely. A redirect-following call needs --proto-redir too,
-// because the redirect target is chosen by the response, not the action.
+// because the redirect target is chosen by the response, not the action — and
+// --max-redirs, because the scheme confinement bounds WHERE each hop may go
+// while curl's built-in 50 still lets one response walk the action through
+// fifty of them. The action knows how many hops its endpoint really takes;
+// curl's default is a number nobody chose.
 func curlURLSafetyGap(argv []string) string {
-	var globoff, proto, protoRedir, follows bool
+	var globoff, proto, protoRedir, maxRedirs, follows bool
 	for _, arg := range argv {
 		switch {
 		case arg == "--globoff":
@@ -88,6 +92,8 @@ func curlURLSafetyGap(argv []string) string {
 			proto = true
 		case arg == "--proto-redir":
 			protoRedir = true
+		case arg == "--max-redirs":
+			maxRedirs = true
 		case arg == "--location":
 			follows = true
 		case strings.HasPrefix(arg, "--"):
@@ -111,6 +117,8 @@ func curlURLSafetyGap(argv []string) string {
 		return "no --proto"
 	case follows && !protoRedir:
 		return "follows redirects without --proto-redir"
+	case follows && !maxRedirs:
+		return "follows redirects without --max-redirs"
 	}
 	return ""
 }

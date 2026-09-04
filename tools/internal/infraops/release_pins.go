@@ -143,3 +143,82 @@ func (a *App) trustedReleaseControlPaths(ctx context.Context, trusted string) ([
 	sort.Strings(paths)
 	return paths, nil
 }
+
+// A workflow can only carry its WIF provider as a literal — google-github-
+// actions/auth needs the resource path at parse time, and nothing injects a
+// Terraform output into workflow YAML. So the literal is the contract, and the
+// only thing that keeps it true is comparing it against what Terraform
+// declares. Renaming a pool or provider id in github_oidc.tf otherwise leaves
+// every publisher authenticating against a provider that no longer exists, and
+// the failure surfaces as a release job that cannot get a token.
+var (
+	workloadIdentityPool     = regexp.MustCompile(`(?m)^\s*workload_identity_pool_id\s*=\s*"([^"]+)"`)
+	workloadIdentityProvider = regexp.MustCompile(
+		`(?ms)^resource "google_iam_workload_identity_pool_provider" "([a-z0-9_]+)" \{.*?^\s*workload_identity_pool_provider_id\s*=\s*"([^"]+)"`)
+	workloadIdentityProviderUse  = regexp.MustCompile(`(?m)^\s*workload_identity_provider:\s*(\S+)\s*$`)
+	workloadIdentityProviderPath = regexp.MustCompile(`^projects/[0-9]+/locations/global/workloadIdentityPools/([^/]+)/providers/([^/]+)$`)
+)
+
+func (a *App) checkWorkloadIdentityLiterals() error {
+	oidc, err := os.ReadFile(filepath.Join(a.Root, "infra", "github_oidc.tf"))
+	if err != nil {
+		return err
+	}
+	pool := workloadIdentityPool.FindSubmatch(oidc)
+	if pool == nil {
+		return fmt.Errorf("infra/github_oidc.tf declares no workload_identity_pool_id")
+	}
+	providers := workloadIdentityProvider.FindAllSubmatch(oidc, -1)
+	if len(providers) == 0 {
+		return fmt.Errorf("infra/github_oidc.tf declares no google_iam_workload_identity_pool_provider")
+	}
+	declared := map[string]bool{}
+	for _, provider := range providers {
+		declared[string(pool[1])+"/"+string(provider[2])] = true
+	}
+
+	// Every declared provider needs an output. The workflow literal cannot be
+	// generated, so the operator applying a rename has to be able to read the
+	// new path back out of the apply and re-spell the callers by hand.
+	outputs, err := os.ReadFile(filepath.Join(a.Root, "infra", "outputs.tf"))
+	if err != nil {
+		return err
+	}
+	for _, provider := range providers {
+		reference := "google_iam_workload_identity_pool_provider." + string(provider[1]) + "."
+		if !bytes.Contains(outputs, []byte(reference)) {
+			return fmt.Errorf("infra/outputs.tf publishes no path for workload identity provider %q; a rename would reach its workflow callers through nothing",
+				string(provider[1]))
+		}
+	}
+
+	workflows, err := filepath.Glob(filepath.Join(a.Root, ".github", "workflows", "*.yml"))
+	if err != nil {
+		return err
+	}
+	used := 0
+	for _, workflow := range workflows {
+		body, err := os.ReadFile(workflow)
+		if err != nil {
+			return err
+		}
+		for _, use := range workloadIdentityProviderUse.FindAllSubmatch(body, -1) {
+			literal := string(use[1])
+			path := workloadIdentityProviderPath.FindStringSubmatch(literal)
+			if path == nil {
+				return fmt.Errorf("%s authenticates against %q, which is not a projects/<number>/locations/global/workloadIdentityPools/<pool>/providers/<provider> path",
+					filepath.Base(workflow), literal)
+			}
+			if !declared[path[1]+"/"+path[2]] {
+				return fmt.Errorf("%s authenticates against pool %q provider %q, which infra/github_oidc.tf does not declare — the release would get no token",
+					filepath.Base(workflow), path[1], path[2])
+			}
+			used++
+		}
+	}
+	if used == 0 {
+		return fmt.Errorf(".github/workflows holds no `workload_identity_provider:` literal to verify")
+	}
+	fmt.Fprintf(a.Out, "verified: %d workflow workload identity literal(s) against %d declared provider(s)\n", used, len(declared))
+	return nil
+}

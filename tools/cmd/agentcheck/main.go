@@ -42,9 +42,17 @@ var (
 	skillInlineToolArgs  = regexp.MustCompile("`([a-z_][a-z0-9_]*)((?: +[a-z_][a-z0-9_]*=[^`]*)+)`")
 	skillInlineArgName   = regexp.MustCompile(`([a-z_][a-z0-9_]*)=`)
 	skillAdjacentToolArg = regexp.MustCompile("`([a-z_][a-z0-9_]*)`[^`\n]{0,24}?\\b(?:with|passing|using)\\b[^`\n]{0,12}`([a-z_][a-z0-9_]*)[[:space:]]*:")
-	markdownLink         = regexp.MustCompile(`!?\[[^]]*\]\([^)]+\)`)
-	elixirFence          = regexp.MustCompile("^```elixir\\s*$")
-	fenceClose           = regexp.MustCompile("^```\\s*$")
+	// The third request spelling: a JSON argument object beside its tool name.
+	// It is how a returned continuation is written (`"tool": "list_packs",
+	// "arguments": {…}`), how the bridge README and the docs Copy button write a
+	// CLI example (`emisar-mcp list_packs '{…}'`), and how the spec writes an
+	// input example — the surfaces the `include` rename broke alongside the
+	// skills. Only argument-object GLUE may separate the two, so prose that
+	// happens to mention a tool before an unrelated brace is not read as a call.
+	mcpToolArgumentObject = regexp.MustCompile(`\b([a-z_][a-z0-9_]*)['"\s:,-]{0,24}(?:arguments['"\s:,-]{0,8})?\{`)
+	markdownLink          = regexp.MustCompile(`!?\[[^]]*\]\([^)]+\)`)
+	elixirFence           = regexp.MustCompile("^```elixir\\s*$")
+	fenceClose            = regexp.MustCompile("^```\\s*$")
 	// Only a module DEFINITION is judged. A manual's examples reference real
 	// modules constantly and correctly — `belongs_to :account,
 	// Emisar.Accounts.Account` is the shape we want copied — so matching a bare
@@ -111,6 +119,10 @@ func (c *checker) checkLinks() {
 		}
 		c.expectLink(path, "AGENTS.md")
 	}
+	// Gemini's only entry point is the root GEMINI.md; it has no per-project
+	// equivalent of CLAUDE.md. A copy here instead of a symlink is how a third
+	// tool starts reading a stale manual nobody remembers to update.
+	c.expectLink("GEMINI.md", "AGENTS.md")
 	c.expectLink(".codex/skills", "../.claude/skills")
 	c.expectLink(".gemini/skills", "../.claude/skills")
 }
@@ -720,21 +732,43 @@ func (c *checker) checkDistributionLayout() {
 	// The Cursor package ships VERBATIM copies of the public skills. A
 	// hand-copied snapshot once drifted three weeks behind and shipped
 	// security guidance the live skill forbids, so equality is enforced
-	// rather than assumed.
-	for _, skill := range []string{"author-pack", "install-emisar", "respond-to-production-incidents"} {
-		source, err := os.ReadFile(c.path("skills/" + skill + "/SKILL.md"))
+	// rather than assumed. The mirrored set is READ FROM THE PACKAGE, never
+	// listed here: a hand-maintained list is the same hazard one level up —
+	// a fourth mirrored skill would ship compared to nothing, and a mirror
+	// with no source under skills/ would ship with no source of truth at
+	// all. Byte equality is also what LINTS the mirror: every check the
+	// customer-skill phases run over skills/ reaches these files through it.
+	mirrored := 0
+	mirrorRoot := c.path("dist/cursor-plugin/skills")
+	_ = filepath.WalkDir(mirrorRoot, func(path string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return nil
+		}
+		relative, err := filepath.Rel(mirrorRoot, path)
 		if err != nil {
-			c.fail("reading skills/%s/SKILL.md: %v", skill, err)
-			continue
+			return nil
 		}
-		mirrored, err := os.ReadFile(c.path("dist/cursor-plugin/skills/" + skill + "/SKILL.md"))
+		mirrored++
+		sourcePath := "skills/" + filepath.ToSlash(relative)
+		source, err := os.ReadFile(c.path(sourcePath))
 		if err != nil {
-			c.fail("reading dist/cursor-plugin/skills/%s/SKILL.md: %v", skill, err)
-			continue
+			c.fail("dist/cursor-plugin/skills/%s has no source at %s; a mirror without a source has nothing to stay true to",
+				filepath.ToSlash(relative), sourcePath)
+			return nil
 		}
-		if !bytes.Equal(source, mirrored) {
-			c.fail("dist/cursor-plugin/skills/%s/SKILL.md differs from skills/%s/SKILL.md; copy the source verbatim", skill, skill)
+		copied, err := os.ReadFile(path)
+		if err != nil {
+			c.fail("reading dist/cursor-plugin/skills/%s: %v", filepath.ToSlash(relative), err)
+			return nil
 		}
+		if !bytes.Equal(source, copied) {
+			c.fail("dist/cursor-plugin/skills/%s differs from %s; copy the source verbatim",
+				filepath.ToSlash(relative), sourcePath)
+		}
+		return nil
+	})
+	if mirrored == 0 {
+		c.fail("dist/cursor-plugin/skills mirrors no public skill; the equality check has nothing to compare")
 	}
 
 	c.checkChatGPTSubmissionAnnotations()
@@ -1013,6 +1047,14 @@ func (c *checker) checkPublicSkills() {
 	}
 }
 
+// Read, never edited here: the guard belongs beside the schema it validates
+// against, and each of these files is owned elsewhere.
+var mcpArgumentSurfaces = []string{
+	".agent/kb/specs/mcp-api.md",
+	"mcp/README.md",
+	"portal/apps/emisar_web/lib/emisar_web/controllers/marketing_html/docs/mcp_reference.html.heex",
+}
+
 func (c *checker) checkPublicSkillMCPTools() {
 	const schemaPath = "portal/apps/emisar_web/priv/mcp/api-schemas.json"
 	data, err := os.ReadFile(c.path(schemaPath))
@@ -1068,7 +1110,96 @@ func (c *checker) checkPublicSkillMCPTools() {
 			c.fail("%s:%d cites unknown MCP tool %q; update it from %s", path, line, tool, schemaPath)
 		}
 		c.checkSkillToolArguments(path, data, arguments, schemaPath)
+		c.checkJSONToolArguments(path, data, arguments, schemaPath)
 	}
+
+	// The customer skills were only one of the four surfaces the `availability`
+	// -> `include` rename broke. These three are the ones that FREEZE at 1.0 —
+	// the normative spec, the bridge's own README, and the docs Copy button an
+	// operator pastes into a terminal — so a rename that misses them ships a
+	// contract that instructs the caller to send an argument the portal rejects.
+	for _, path := range mcpArgumentSurfaces {
+		data, err := os.ReadFile(c.path(path))
+		if err != nil {
+			c.fail("reading %s to validate its MCP arguments: %v", path, err)
+			continue
+		}
+		// Each of the three writes its JSON inside a host language, so the
+		// braces and quotes arrive escaped or entity-encoded; scanning the raw
+		// bytes finds the objects but reads no keys out of them, which is a
+		// check that reports ok having judged nothing.
+		if c.checkJSONToolArguments(path, unescapeEmbeddedJSON(data), arguments, schemaPath) == 0 {
+			c.fail("%s cites no MCP argument object; the drift guard reads it and has nothing to judge", path)
+		}
+	}
+}
+
+// The docs Copy button holds its JSON inside a HEEx string attribute and prints
+// it through HTML entities; both spellings have to become ordinary JSON before
+// the object's keys are readable.
+func unescapeEmbeddedJSON(data []byte) []byte {
+	return []byte(strings.NewReplacer(
+		`\"`, `"`,
+		"&#123;", "{",
+		"&#125;", "}",
+		"&quot;", `"`,
+	).Replace(string(data)))
+}
+
+// Reports how many argument objects it judged, so a surface that stops spelling
+// its examples this way fails loudly instead of silently going unchecked.
+func (c *checker) checkJSONToolArguments(path string, data []byte, arguments map[string]map[string]bool, schemaPath string) int {
+	judged := 0
+	for _, match := range mcpToolArgumentObject.FindAllSubmatchIndex(data, -1) {
+		accepted, known := arguments[string(data[match[2]:match[3]])]
+		if !known {
+			continue
+		}
+		keys, ok := jsonObjectKeys(data[match[1]-1:])
+		if !ok {
+			continue
+		}
+		judged++
+		for _, key := range keys {
+			if accepted[key] {
+				continue
+			}
+			line := bytes.Count(data[:match[0]], []byte("\n")) + 1
+			c.fail("%s:%d cites MCP tool %q with unknown argument %q; update it from %s",
+				path, line, string(data[match[2]:match[3]]), key, schemaPath)
+		}
+	}
+	return judged
+}
+
+// The top-level keys of the JSON object starting at data[0]. Nested objects and
+// string contents are skipped rather than parsed: an example is often elided
+// ("..."), so it need not be valid JSON to still name its arguments.
+func jsonObjectKeys(data []byte) ([]string, bool) {
+	var keys []string
+	depth := 0
+	for i := 0; i < len(data); i++ {
+		switch data[i] {
+		case '{':
+			depth++
+		case '}':
+			if depth--; depth == 0 {
+				return keys, true
+			}
+		case '"':
+			end := bytes.IndexByte(data[i+1:], '"')
+			if end < 0 {
+				return nil, false
+			}
+			name := string(data[i+1 : i+1+end])
+			i += end + 1
+			rest := bytes.TrimLeft(data[i+1:], " \t\r\n")
+			if depth == 1 && len(rest) > 0 && rest[0] == ':' {
+				keys = append(keys, name)
+			}
+		}
+	}
+	return nil, false
 }
 
 // A tool name that still exists tells us nothing about the ARGUMENTS beside it:

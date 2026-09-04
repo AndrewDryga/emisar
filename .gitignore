@@ -88,6 +88,10 @@ override.tf.json
 crash.log
 crash.*.log
 
+# Installed by `npm --prefix tools/cmd/entra-capture ci`; the manifest and the
+# lockfile beside it are what is tracked.
+node_modules/
+
 # preset native subagents coop generates in the box (coop-<role>) — never committed
 .claude/agents/coop-*.md
 

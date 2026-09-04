@@ -43,7 +43,7 @@ Better Stack -> external probes, on-call escalation (severe GCP alarms page in),
 |---|---|
 | Compute | Regional managed instance group plus a host-supervised private admin runner per portal VM, optional single-node Livebook workbench, Shielded VMs, no external VM IPs, zero-unavailable portal rolling updates |
 | Database | Cloud SQL PostgreSQL 18, private IP, IAM database authentication through a local proxy, PITR, automated backups, deletion protection |
-| Network | Dedicated VPC, flow logs, Cloud NAT, load-balancer-only application ingress, IAP-only SSH, Cloud Armor per-IP edge rate limiting |
+| Network | Dedicated VPC, flow logs, Cloud NAT, load-balancer-only application ingress, IAP-only SSH, Cloud Armor per-IP rate limiting on the application backends |
 | TLS | Certificate Manager DNS authorization, managed certificates, restricted TLS 1.2+ policy |
 | Secrets | Explicit Secret Manager versions fingerprint the VM template; VM access is per-secret and read-only |
 | Supply chain | Production runs an immutable portal GHCR digest built and tested by CI; COS installs a pinned immutable runner release from the Emisar release host with checksum verification, private packs are rendered by Terraform, and public pack and release artifacts are versioned in GCS |
@@ -468,6 +468,15 @@ permission to replace an object. A repeated immutable publication fetches the
 existing object and verifies its bytes before treating the collision as
 idempotent. Bucket versioning retains recent previous generations of all four
 pointers.
+
+The registry and MTA-STS hosts are backend BUCKETS, so the per-IP rate limit in
+`security_policy.tf` does not reach them: a backend bucket takes only an
+`edge_security_policy`, and a Cloud Armor edge policy cannot carry
+`rate_limit_options`. What bounds them instead is Cloud CDN plus the
+`Cache-Control` the publisher stamps per object — every immutable artifact is
+served from the edge, and only the four live pointers are `no-store` and reach
+the origin on every request. Bounding those four needs a caching contract change
+in `packs/PUBLISHING.md` and the publisher, not a Terraform edit.
 
 ```sh
 curl -fsS https://registry.emisar.dev/v1/catalog.json | jq '.schema_version'

@@ -13,10 +13,15 @@ import { fileURLToPath } from 'node:url'
 
 const here = dirname(fileURLToPath(import.meta.url))
 
-// Playwright is not a repository dependency — these rigs are the only thing that
-// wants it, and adding a package.json to a Go cmd/ directory would be worse. So
-// take it from wherever the operator installed it and say so plainly when it is
-// missing, rather than failing on a module-not-found for a hardcoded path.
+// Playwright is pinned by this directory's package.json + package-lock.json, so
+// it rides the same weekly Dependabot cadence and release-age gate as every
+// other dependency in a security product — it used to be `npm i -g playwright`
+// into whatever the maintainer's global root held, executed with a live tenant's
+// admin password and TOTP seed in process memory. Resolution still goes through
+// the import so a rig run from elsewhere says what is missing, rather than
+// failing on a module-not-found for a hardcoded path.
+//
+//	npm --prefix tools/cmd/entra-capture ci
 export const launchChromium = async options => {
   const from = process.env.EMISAR_PLAYWRIGHT || 'playwright'
   const executablePath = process.env.EMISAR_CHROMIUM_EXECUTABLE
@@ -25,9 +30,9 @@ export const launchChromium = async options => {
     playwright = await import(from)
   } catch (cause) {
     throw new Error(
-      `cannot load Playwright from ${JSON.stringify(from)}. Install it and either ` +
-        'resolve it here (npm i -g playwright, or run from a directory that can ' +
-        'resolve it) or point EMISAR_PLAYWRIGHT at its index.mjs.',
+      `cannot load Playwright from ${JSON.stringify(from)}. Install the pinned ` +
+        'version with `npm --prefix tools/cmd/entra-capture ci`, or point ' +
+        'EMISAR_PLAYWRIGHT at its index.mjs.',
       { cause }
     )
   }

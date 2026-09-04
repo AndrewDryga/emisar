@@ -44,9 +44,17 @@ output "dnssec_ds_record" {
   value       = [for key in data.google_dns_keys.emisar.key_signing_keys : key.ds_record]
 }
 
+# Both providers are spelled from their resources rather than re-typed: the
+# workflows can only carry the path as a literal, so an id renamed here has to
+# reach the operator through an output, not through a plan diff nobody reads.
 output "packs_workload_identity_provider" {
   description = "Full WIF provider resource name the main-only CD workflow authenticates against for pack publishing (google-github-actions/auth `workload_identity_provider`)."
-  value       = "projects/${data.google_project.current.number}/locations/global/workloadIdentityPools/github-actions/providers/github"
+  value       = "projects/${data.google_project.current.number}/locations/global/workloadIdentityPools/${google_iam_workload_identity_pool_provider.github.workload_identity_pool_id}/providers/${google_iam_workload_identity_pool_provider.github.workload_identity_pool_provider_id}"
+}
+
+output "releases_workload_identity_provider" {
+  description = "Full WIF provider resource name the tag-triggered trusted release workflows authenticate against for runner and MCP binary publishing (google-github-actions/auth `workload_identity_provider`)."
+  value       = "projects/${data.google_project.current.number}/locations/global/workloadIdentityPools/${google_iam_workload_identity_pool_provider.github_releases.workload_identity_pool_id}/providers/${google_iam_workload_identity_pool_provider.github_releases.workload_identity_pool_provider_id}"
 }
 
 output "pack_registry_bucket" {

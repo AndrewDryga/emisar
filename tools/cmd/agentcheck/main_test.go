@@ -395,3 +395,119 @@ func TestCheckChatGPTSubmissionAnnotationsCatchesEveryDirectionOfDrift(t *testin
 		t.Fatalf("matching annotations reported failures: %#v", check.failures)
 	}
 }
+
+const testMCPSchema = `{"tools":{"list_packs":{"inputSchema":{"properties":{"include":{},"limit":{}}}}}}`
+
+// The four surfaces the `availability` -> `include` rename broke. Three of them
+// freeze at 1.0, and none of them was read by the guard that rename added.
+func TestCheckPublicSkillMCPToolsRejectsRenamedArgumentOnFrozenSurfaces(t *testing.T) {
+	for _, surface := range mcpArgumentSurfaces {
+		t.Run(surface, func(t *testing.T) {
+			check := testChecker(t)
+			writeTestFile(t, check.root, "portal/apps/emisar_web/priv/mcp/api-schemas.json", testMCPSchema)
+			writeTestFile(t, check.root, "skills/install-emisar/SKILL.md", "---\nname: install-emisar\n---\nbody\n")
+			for _, path := range mcpArgumentSurfaces {
+				body := "emisar-mcp list_packs '{\"include\":\"all\"}'\n"
+				if path == surface {
+					body = "emisar-mcp list_packs '{\"availability\":\"all\"}'\n"
+				}
+				writeTestFile(t, check.root, path, body)
+			}
+
+			check.checkPublicSkillMCPTools()
+
+			if !hasFailure(check, `cites MCP tool "list_packs" with unknown argument "availability"`) {
+				t.Fatalf("failures = %#v", check.failures)
+			}
+		})
+	}
+}
+
+// The docs Copy button holds its JSON inside a HEEx attribute, so the object is
+// found but reads as empty unless the embedded escaping is undone first.
+func TestCheckPublicSkillMCPToolsReadsEscapedCopyButtonArguments(t *testing.T) {
+	check := testChecker(t)
+	writeTestFile(t, check.root, "portal/apps/emisar_web/priv/mcp/api-schemas.json", testMCPSchema)
+	writeTestFile(t, check.root, "skills/install-emisar/SKILL.md", "---\nname: install-emisar\n---\nbody\n")
+	for _, path := range mcpArgumentSurfaces {
+		writeTestFile(t, check.root, path, "emisar-mcp list_packs '{\"include\":\"all\"}'\n")
+	}
+	writeTestFile(t, check.root, mcpArgumentSurfaces[2],
+		`<.docs_code copy_text={"emisar-mcp list_packs '{\"availability\":\"all\"}'"}>`+
+			"\n"+`$ emisar-mcp list_packs '&#123;&quot;availability&quot;:&quot;all&quot;&#125;'`+"\n")
+
+	check.checkPublicSkillMCPTools()
+
+	if !hasFailure(check, `cites MCP tool "list_packs" with unknown argument "availability"`) {
+		t.Fatalf("failures = %#v", check.failures)
+	}
+}
+
+// A surface that stops spelling its examples this way is a check that quietly
+// stopped checking, which is the failure this whole guard exists to prevent.
+func TestCheckPublicSkillMCPToolsRejectsSurfaceWithNoArgumentObject(t *testing.T) {
+	check := testChecker(t)
+	writeTestFile(t, check.root, "portal/apps/emisar_web/priv/mcp/api-schemas.json", testMCPSchema)
+	writeTestFile(t, check.root, "skills/install-emisar/SKILL.md", "---\nname: install-emisar\n---\nbody\n")
+	for _, path := range mcpArgumentSurfaces {
+		writeTestFile(t, check.root, path, "emisar-mcp list_packs '{\"include\":\"all\"}'\n")
+	}
+	writeTestFile(t, check.root, mcpArgumentSurfaces[1], "The bridge speaks MCP.\n")
+
+	check.checkPublicSkillMCPTools()
+
+	if !hasFailure(check, "cites no MCP argument object") {
+		t.Fatalf("failures = %#v", check.failures)
+	}
+}
+
+// Prose naming a tool before an unrelated brace is not a call.
+func TestJSONObjectKeysIgnoresProseBeforeAnUnrelatedBrace(t *testing.T) {
+	check := testChecker(t)
+	arguments := map[string]map[string]bool{"list_packs": {"include": true}}
+	body := []byte("Use list_packs to browse the catalog. A pack manifest looks like\n\n" +
+		"```yaml\nschema_version: 1\n```\n\n{\"availability\": \"all\"}\n")
+
+	if judged := check.checkJSONToolArguments("doc.md", body, arguments, "schema.json"); judged != 0 {
+		t.Fatalf("judged = %d, want 0", judged)
+	}
+	if len(check.failures) != 0 {
+		t.Fatalf("failures = %#v", check.failures)
+	}
+}
+
+// The mirrored set is read from the package: a hand-maintained list is how a
+// fourth mirrored skill would ship compared to nothing.
+func TestCheckDistributionLayoutComparesEveryMirroredSkill(t *testing.T) {
+	check := testChecker(t)
+	writeTestFile(t, check.root, "skills/connect-llm/SKILL.md", "source\n")
+	writeTestFile(t, check.root, "dist/cursor-plugin/skills/connect-llm/SKILL.md", "drifted\n")
+
+	check.checkDistributionLayout()
+
+	if !hasFailure(check, "dist/cursor-plugin/skills/connect-llm/SKILL.md differs from skills/connect-llm/SKILL.md") {
+		t.Fatalf("failures = %#v", check.failures)
+	}
+}
+
+func TestCheckDistributionLayoutRejectsMirrorWithNoSource(t *testing.T) {
+	check := testChecker(t)
+	writeTestFile(t, check.root, "dist/cursor-plugin/skills/invented/SKILL.md", "no source\n")
+
+	check.checkDistributionLayout()
+
+	if !hasFailure(check, "has no source at skills/invented/SKILL.md") {
+		t.Fatalf("failures = %#v", check.failures)
+	}
+}
+
+func TestCheckDistributionLayoutRejectsEmptyMirror(t *testing.T) {
+	check := testChecker(t)
+	writeTestFile(t, check.root, "dist/cursor-plugin/README.md", "package\n")
+
+	check.checkDistributionLayout()
+
+	if !hasFailure(check, "mirrors no public skill") {
+		t.Fatalf("failures = %#v", check.failures)
+	}
+}

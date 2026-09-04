@@ -31,6 +31,20 @@ locals {
     # on its own terms (see infra/AGENTS.md rule 4).
     ["terraform@${var.project_id}.iam.gserviceaccount.com"],
   )
+
+  # HCP runs plans as a SECOND identity (.github/DEPLOYMENT.md): read-only
+  # review roles, deliberately without secretmanager.versions.access. The
+  # exclusion above was written when there was one Terraform identity, so a
+  # refresh that touches a secret version is audited as a PERMISSION_DENIED by a
+  # principal this metric does not know — and pages "Treat as a credential
+  # incident" for the read-only identity doing exactly what it is scoped to be
+  # refused. Only its DENIAL is excluded, not the principal: if the plan
+  # identity ever SUCCEEDS at reading a secret, the read-only boundary has
+  # broken and that is precisely what this alert should say.
+  expected_secret_denial = join(" AND ", [
+    "protoPayload.authenticationInfo.principalEmail=\"terraform-plan@${var.project_id}.iam.gserviceaccount.com\"",
+    "protoPayload.status.code=7", # gRPC PERMISSION_DENIED
+  ])
 }
 
 resource "google_logging_metric" "unexpected_secret_access" {
@@ -46,6 +60,7 @@ resource "google_logging_metric" "unexpected_secret_access" {
       for email in local.expected_secret_readers :
       "NOT protoPayload.authenticationInfo.principalEmail=\"${email}\""
     ],
+    ["NOT (${local.expected_secret_denial})"],
   ))
 
   metric_descriptor {

@@ -222,12 +222,45 @@ func pipelineSourceIsRemote(segment string) bool {
 		}
 		return false
 	}
-	fields := strings.Fields(strings.TrimSpace(lastUnquotedStatement(segment)))
-	for len(fields) > 0 && strings.Contains(fields[0], "=") &&
-		!strings.HasPrefix(fields[0], "-") {
-		fields = fields[1:]
-	}
+	fields := pipelineSourceFields(segment)
 	return len(fields) > 0 && pipelineRemoteSources[fields[0]]
+}
+
+// pipelineSourceFields reduces a pipeline's leading segment to the command that
+// actually runs, stepping over the words a compound statement puts in front of
+// it. Two of those hid the same pipeline twice over in postfix.queue_counts —
+// `for q in …; do n=$(find "$d" … | wc -l)`: the `do` stopped the scanner
+// before it read any command, and `n=$(find` looked like an environment
+// assignment to strip rather than an assignment whose VALUE is the source. The
+// action shipped reporting 0 deferred messages on a host with thousands.
+func pipelineSourceFields(segment string) []string {
+	fields := strings.Fields(strings.TrimSpace(lastUnquotedStatement(segment)))
+	for len(fields) > 0 {
+		field := fields[0]
+		switch {
+		case shellStatementKeywords[field]:
+			fields = fields[1:]
+		case strings.HasPrefix(field, "$("):
+			fields[0] = field[2:]
+		case strings.Contains(field, "=$("):
+			fields[0] = field[strings.Index(field, "=$(")+3:]
+		case strings.Contains(field, "=") && !strings.HasPrefix(field, "-"):
+			fields = fields[1:]
+		default:
+			return fields
+		}
+		// A keyword or prefix can leave an empty field behind ("$(" alone).
+		if len(fields) > 0 && fields[0] == "" {
+			fields = fields[1:]
+		}
+	}
+	return fields
+}
+
+// The words a compound statement can put between the line start and its real
+// command. `!` is here because `! grep … | tail` still pipes grep.
+var shellStatementKeywords = map[string]bool{
+	"do": true, "then": true, "else": true, "!": true, "{": true, "(": true,
 }
 
 func lineEnablesPipefail(line string) bool {
@@ -344,12 +377,7 @@ func pipelineSourceReadsPath(segment string) bool {
 		}
 		return false
 	}
-	fields := strings.Fields(strings.TrimSpace(lastUnquotedStatement(segment)))
-
-	for len(fields) > 0 && strings.Contains(fields[0], "=") &&
-		!strings.HasPrefix(fields[0], "-") {
-		fields = fields[1:]
-	}
+	fields := pipelineSourceFields(segment)
 	if len(fields) == 0 {
 		return false
 	}

@@ -22,7 +22,7 @@ const usageText = `usage: ./run ops <command> [args]
   drill pitr [--apply]               run the PITR and IAM recovery drill
   drill cleanup [--apply [ID]]       list or clean recovery drill resources
   validate-templates                 render and validate production cloud-init
-  verify-release-pins                verify trusted release workflow commit pins
+  verify-release-pins                verify trusted release workflow commit pins and WIF literals
 `
 
 type usageError struct{ message string }
@@ -89,7 +89,10 @@ func (a *App) Run(ctx context.Context, args []string) error {
 		if len(args) != 1 {
 			return usage("usage: ./run ops verify-release-pins")
 		}
-		return a.checkTrustedReleasePins(ctx)
+		if err := a.checkTrustedReleasePins(ctx); err != nil {
+			return err
+		}
+		return a.checkWorkloadIdentityLiterals()
 	case "help", "-h", "--help":
 		fmt.Fprint(a.Out, usageText)
 		return nil

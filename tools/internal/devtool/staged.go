@@ -151,19 +151,26 @@ func (a *App) stagedCheck(ctx context.Context) error {
 		return err
 	}
 	if len(terraformFiles) != 0 {
-		if _, err := exec.LookPath("terraform"); err == nil {
-			for _, file := range terraformFiles {
-				source, err := a.stagedBlob(ctx, file)
-				if err != nil {
-					return err
-				}
-				formatted, err := formatInput(ctx, "terraform", []string{"fmt", "-no-color", "-"}, source)
-				if err != nil {
-					return fmt.Errorf("formatting staged Terraform %s: %w", file, err)
-				}
-				if !bytes.Equal(source, formatted) {
-					return fmt.Errorf("staged Terraform file is not formatted: %s", file)
-				}
+		// Fail closed, like the Portal arm above. A formatter this host happens
+		// not to have used to make the phase pass having checked nothing, so the
+		// unformatted file reached the commit and failed the gate later instead.
+		// Both binaries are pinned in .tool-versions and required by the gates
+		// this check front-runs, so their absence is a setup error, not a reason
+		// to skip.
+		if _, err := exec.LookPath("terraform"); err != nil {
+			return fmt.Errorf("staged Terraform files require terraform (see .tool-versions): %w", err)
+		}
+		for _, file := range terraformFiles {
+			source, err := a.stagedBlob(ctx, file)
+			if err != nil {
+				return err
+			}
+			formatted, err := formatInput(ctx, "terraform", []string{"fmt", "-no-color", "-"}, source)
+			if err != nil {
+				return fmt.Errorf("formatting staged Terraform %s: %w", file, err)
+			}
+			if !bytes.Equal(source, formatted) {
+				return fmt.Errorf("staged Terraform file is not formatted: %s", file)
 			}
 		}
 	}
@@ -173,24 +180,25 @@ func (a *App) stagedCheck(ctx context.Context) error {
 		return err
 	}
 	if len(goFiles) != 0 {
-		if _, err := exec.LookPath("gofmt"); err == nil {
-			var unformatted []string
-			for _, file := range goFiles {
-				source, err := a.stagedBlob(ctx, file)
-				if err != nil {
-					return err
-				}
-				formatted, err := formatInput(ctx, "gofmt", []string{"-s"}, source)
-				if err != nil {
-					return fmt.Errorf("formatting staged Go %s: %w", file, err)
-				}
-				if !bytes.Equal(source, formatted) {
-					unformatted = append(unformatted, file)
-				}
+		if _, err := exec.LookPath("gofmt"); err != nil {
+			return fmt.Errorf("staged Go files require gofmt (it ships with the Go toolchain in .tool-versions): %w", err)
+		}
+		var unformatted []string
+		for _, file := range goFiles {
+			source, err := a.stagedBlob(ctx, file)
+			if err != nil {
+				return err
 			}
-			if len(unformatted) != 0 {
-				return fmt.Errorf("staged Go files are not formatted:\n%s", strings.Join(unformatted, "\n"))
+			formatted, err := formatInput(ctx, "gofmt", []string{"-s"}, source)
+			if err != nil {
+				return fmt.Errorf("formatting staged Go %s: %w", file, err)
 			}
+			if !bytes.Equal(source, formatted) {
+				unformatted = append(unformatted, file)
+			}
+		}
+		if len(unformatted) != 0 {
+			return fmt.Errorf("staged Go files are not formatted:\n%s", strings.Join(unformatted, "\n"))
 		}
 	}
 	return nil

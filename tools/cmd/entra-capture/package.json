@@ -1,0 +1,14 @@
+{
+  "name": "@emisar/entra-capture",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Playwright rigs that photograph the Microsoft Entra admin console for the SSO and SCIM walkthroughs. Development only; never shipped.",
+  "type": "module",
+  "license": "UNLICENSED",
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "playwright": "1.62.1"
+  }
+}

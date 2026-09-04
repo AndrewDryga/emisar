@@ -56,6 +56,7 @@ jobs:
     outputs:
       portal: ${{ steps.detect.outputs.portal }}
       mcp: ${{ steps.detect.outputs.mcp }}
+      runner: ${{ steps.detect.outputs.runner }}
       packs: ${{ steps.detect.outputs.packs }}
       infra: ${{ steps.detect.outputs.infra }}
       deps: ${{ steps.detect.outputs.deps }}
@@ -569,6 +570,51 @@ jobs:
         shell: bash
         run: ./run gate mcp
 
+  runner-root:
+    name: Go - Runner (root)
+    needs: changes
+    if: needs.changes.outputs.runner == 'true'
+    runs-on: ubuntu-latest
+    # The supplementary-group drop is the invariant that stops an action
+    # inheriting the runner daemon's group memberships, and it can only be
+    # OBSERVED as uid 0: the test seeds a group with setgroups(2) and asserts
+    # the child process lost it. Every other lane runs as an ordinary user, so
+    # the test skipped in all of them and had never once executed. A container
+    # is how a GitHub-hosted job gets uid 0 for the whole step instead of for
+    # one sudo'd command.
+    container: ubuntu:24.04
+    timeout-minutes: 15
+    env:
+      GOTOOLCHAIN: local
+    steps:
+      # The base image carries neither, and checkout without git silently
+      # degrades to a REST tarball that has no .git for ./run to read.
+      - name: Install checkout prerequisites
+        run: apt-get update -qq && apt-get install -y -qq git ca-certificates
+
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: runner/go.mod
+          cache: true
+          cache-dependency-path: |
+            runner/go.*
+            tools/go.*
+
+      - name: Run the runner's privileged executor tests
+        run: |
+          set -euo pipefail
+          ./run test runner -count=1 -v ./internal/executor/... | tee privileged.log
+          # A lane whose only reason to exist is uid 0 must fail when the test
+          # it exists for skipped anyway; a silent skip is exactly how this
+          # invariant went unproven for the whole pre-1.0 window.
+          ! grep -q -- '--- SKIP: TestApplyCredential_ClearsSupplementaryGroups' privileged.log
+
   runner-image:
     name: Runner - Image
     needs: changes
@@ -819,7 +865,7 @@ jobs:
   ci-gate:
     name: Required - CI
     if: always()
-    needs: [changes, portal, portal-image, mcp-listing, go, mcp-windows, packs, runner-image, pack-behavior, signing-e2e, sso-e2e, infra, dep-age]
+    needs: [changes, portal, portal-image, mcp-listing, go, mcp-windows, runner-root, packs, runner-image, pack-behavior, signing-e2e, sso-e2e, infra, dep-age]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     env:
@@ -833,6 +879,8 @@ jobs:
       GO_MODULES: ${{ needs.changes.outputs.go_modules }}
       MCP_WINDOWS: ${{ needs.mcp-windows.result }}
       SELECT_MCP: ${{ needs.changes.outputs.mcp }}
+      RUNNER_ROOT: ${{ needs.runner-root.result }}
+      SELECT_RUNNER: ${{ needs.changes.outputs.runner }}
       PACKS: ${{ needs.packs.result }}
       SELECT_PACKS: ${{ needs.changes.outputs.packs }}
       RUNNER_IMAGE: ${{ needs.runner-image.result }}
@@ -885,6 +933,7 @@ jobs:
             require_selected GO true
           fi
           require_selected MCP_WINDOWS "$SELECT_MCP"
+          require_selected RUNNER_ROOT "$SELECT_RUNNER"
           require_selected PACKS "$SELECT_PACKS"
           require_selected RUNNER_IMAGE "$SELECT_RUNNER_IMAGE"
           if [ "$SELECT_PACK_BEHAVIOR" = '[]' ]; then

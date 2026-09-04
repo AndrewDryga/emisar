@@ -48,9 +48,16 @@ func TestValidatePackCurlURLSafety(t *testing.T) {
 			wantErrMsg: "fixture.follows (follows redirects without --proto-redir)",
 		},
 		{
-			name:      "redirect-following call with --proto-redir passes",
+			name:       "redirect-following call must bound the hop count too",
+			id:         "fixture.follows_unbounded",
+			execution:  "command:\n    binary: curl\n    argv: [-sIL, --globoff, --proto, '=https', --proto-redir, '=https', 'https://svc/x']",
+			wantErr:    true,
+			wantErrMsg: "fixture.follows_unbounded (follows redirects without --max-redirs)",
+		},
+		{
+			name:      "redirect-following call with --proto-redir and --max-redirs passes",
 			id:        "fixture.follows_pinned",
-			execution: "command:\n    binary: curl\n    argv: [-sIL, --globoff, --proto, '=https', --proto-redir, '=https', 'https://svc/x']",
+			execution: "command:\n    binary: curl\n    argv: [-sIL, --globoff, --proto, '=https', --proto-redir, '=https', --max-redirs, '1', 'https://svc/x']",
 		},
 		{
 			name:      "flags wrapped across a line continuation still count",

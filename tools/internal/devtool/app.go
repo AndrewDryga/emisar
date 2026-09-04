@@ -51,7 +51,7 @@ Test and verify:
 Browser and UI:
   browser <action>            Manage the persistent browser: start, stop, status
   shot <path> [options]       Save UI proof under the active task
-  capture <docs|console>      Regenerate docs assets or audit the console
+  capture <docs|console|idp>  Regenerate docs assets, audit the console, or drive a live IdP rig
 
 Cross-component scenarios:
   e2e <sso|signing|billing>   Exercise a complete development scenario

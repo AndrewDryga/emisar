@@ -331,6 +331,62 @@ func TestStagedCheckFormatsTheIndexNotTheWorkingTree(t *testing.T) {
 	}
 }
 
+// The Portal arm always failed closed on a missing mix; the Terraform and Go
+// arms skipped silently, so a host without the pinned toolchain committed
+// unformatted files and discovered it from CI.
+func TestStagedCheckFailsClosedWithoutAFormatter(t *testing.T) {
+	for _, test := range []struct {
+		name    string
+		file    string
+		source  string
+		message string
+	}{
+		{"terraform", "main.tf", "resource \"null_resource\" \"probe\"{}\n", "require terraform"},
+		{"gofmt", "probe.go", "package probe\nfunc Value( )int{return 1}\n", "require gofmt"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			root := t.TempDir()
+			for _, args := range [][]string{
+				{"init", "-q"},
+				{"config", "user.email", "test@example.com"},
+				{"config", "user.name", "Test"},
+			} {
+				command := exec.Command("git", args...)
+				command.Dir = root
+				if output, err := command.CombinedOutput(); err != nil {
+					t.Fatalf("git %v: %v: %s", args, err, output)
+				}
+			}
+			if err := os.WriteFile(filepath.Join(root, test.file), []byte(test.source), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			command := exec.Command("git", "add", test.file)
+			command.Dir = root
+			if err := command.Run(); err != nil {
+				t.Fatal(err)
+			}
+
+			// A PATH holding git and nothing else: the check still reads the
+			// index, and has to refuse rather than report success.
+			git, err := exec.LookPath("git")
+			if err != nil {
+				t.Skip("git is not on PATH")
+			}
+			bin := t.TempDir()
+			if err := os.Symlink(git, filepath.Join(bin, "git")); err != nil {
+				t.Fatal(err)
+			}
+			t.Setenv("PATH", bin)
+
+			app := New(root, strings.NewReader(""), &bytes.Buffer{}, &bytes.Buffer{})
+			err = app.stagedCheck(t.Context())
+			if err == nil || !strings.Contains(err.Error(), test.message) {
+				t.Fatalf("staged check error = %v, want %q", err, test.message)
+			}
+		})
+	}
+}
+
 func TestStagedCheckFormatsPortalIndexBlobsWithTheirFilename(t *testing.T) {
 	root := t.TempDir()
 	for _, args := range [][]string{
@@ -1613,5 +1669,28 @@ func TestMCPGateRejectsDependencyChecksumFile(t *testing.T) {
 	err := app.Run(t.Context(), []string{"gate", "mcp"})
 	if err == nil || !strings.Contains(err.Error(), "stdlib-only") {
 		t.Fatalf("error = %v", err)
+	}
+}
+
+// A shared command people and agents both run enters through ./run. The four
+// live-IdP rigs were reachable only by knowing their go run path, so a fifth
+// would arrive the same way unless adding one is what fails.
+func TestCaptureProvidersCoverEveryRig(t *testing.T) {
+	rigs, err := filepath.Glob(filepath.Join("..", "..", "cmd", "*-capture"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rigs) == 0 {
+		t.Fatal("no *-capture rigs found; the glob no longer matches the command directory")
+	}
+	dispatched := make(map[string]bool, len(captureProviders))
+	for _, provider := range captureProviders {
+		dispatched[provider] = true
+	}
+	for _, rig := range rigs {
+		provider := strings.TrimSuffix(filepath.Base(rig), "-capture")
+		if !dispatched[provider] {
+			t.Errorf("tools/cmd/%s-capture is not reachable from ./run capture; add %q to captureProviders", provider, provider)
+		}
 	}
 }

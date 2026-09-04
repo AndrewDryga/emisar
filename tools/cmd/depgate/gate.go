@@ -37,6 +37,10 @@ var manifests = []manifest{
 	{"go", "runner/go.mod"},
 	{"go", "mcp/go.mod"},
 	{"go", "tools/go.mod"},
+	// The Entra capture rigs are the repository's only JavaScript. Dependabot
+	// opens their bumps on the same cooldown, and this is what stops a
+	// hand-made one from dodging it.
+	{"npm", "tools/cmd/entra-capture/package-lock.json"},
 }
 
 const allowlistPath = ".dep-age-allow"
@@ -90,12 +94,58 @@ func parseGo(text string) map[string]string {
 	return out
 }
 
+// parseNPM maps a lockfileVersion 2/3 package-lock.json to {package: version}.
+// The root entry (key "") is the project itself and has no registry release,
+// and an entry without a `resolved` URL came from somewhere other than the
+// registry — parseNonregistry surfaces those instead.
+// npmLockfile is the slice of package-lock.json (lockfileVersion 3) both npm
+// readers need: the resolved version of every installed package, where it came
+// from, and whether it is a link into the tree rather than a registry download.
+type npmLockfile struct {
+	Packages map[string]struct {
+		Version  string `json:"version"`
+		Resolved string `json:"resolved"`
+		Link     bool   `json:"link"`
+	} `json:"packages"`
+}
+
+func parseNPM(text string) (map[string]string, error) {
+	var lock npmLockfile
+	if err := json.Unmarshal([]byte(text), &lock); err != nil {
+		return nil, fmt.Errorf("parsing package-lock.json: %w", err)
+	}
+	out := map[string]string{}
+	for path, entry := range lock.Packages {
+		name, ok := npmPackageName(path)
+		if !ok || entry.Version == "" || entry.Link ||
+			!strings.HasPrefix(entry.Resolved, "https://registry.npmjs.org/") {
+			continue
+		}
+		out[name] = entry.Version
+	}
+	return out, nil
+}
+
+// npmPackageName turns a lockfile path into its package name. Nested paths
+// carry the whole chain ("node_modules/a/node_modules/b"), so the name is
+// whatever follows the LAST node_modules segment.
+func npmPackageName(path string) (string, bool) {
+	index := strings.LastIndex(path, "node_modules/")
+	if index < 0 {
+		return "", false
+	}
+	name := path[index+len("node_modules/"):]
+	return name, name != ""
+}
+
 func parseManifest(eco, text string) (map[string]string, error) {
 	switch eco {
 	case "hex":
 		return parseHex(text), nil
 	case "go":
 		return parseGo(text), nil
+	case "npm":
+		return parseNPM(text)
 	}
 	return nil, fmt.Errorf("unknown ecosystem %q", eco)
 }
@@ -132,6 +182,22 @@ func parseNonregistry(eco, text string) map[string]string {
 				if before, after, ok := strings.Cut(line[len("replace "):], "=>"); ok {
 					out[strings.Fields(before)[0]] = "replace: " + strings.TrimSpace(after)
 				}
+			}
+		}
+	case "npm":
+		var lock npmLockfile
+		if json.Unmarshal([]byte(text), &lock) != nil {
+			return out
+		}
+		for path, entry := range lock.Packages {
+			name, ok := npmPackageName(path)
+			if !ok || entry.Version == "" {
+				continue
+			}
+			if entry.Link {
+				out[name] = "link: " + entry.Resolved
+			} else if !strings.HasPrefix(entry.Resolved, "https://registry.npmjs.org/") {
+				out[name] = "non-registry: " + entry.Resolved
 			}
 		}
 	}
@@ -219,6 +285,15 @@ func getJSON(url string, out any) error {
 	return fmt.Errorf("could not fetch %s after 3 attempts: %w", url, last)
 }
 
+// npmEscape encodes a scoped package for the registry path: only the scope
+// separator needs escaping ("@scope/name" -> "@scope%2fname").
+func npmEscape(pkg string) string {
+	if !strings.HasPrefix(pkg, "@") {
+		return pkg
+	}
+	return strings.Replace(pkg, "/", "%2f", 1)
+}
+
 // goEscape applies the Go module proxy's case-encoding: every uppercase
 // letter becomes '!' + lowercase.
 func goEscape(path string) string {
@@ -262,6 +337,20 @@ func publishedAt(eco, pkg, version string) (time.Time, error) {
 			return time.Time{}, err
 		}
 		return parseRegistryTime(data.Time)
+	case "npm":
+		// The registry has no per-version document; the packument's `time` map
+		// carries every version's publish timestamp.
+		var data struct {
+			Time map[string]string `json:"time"`
+		}
+		if err := getJSON("https://registry.npmjs.org/"+npmEscape(pkg), &data); err != nil {
+			return time.Time{}, err
+		}
+		published, ok := data.Time[version]
+		if !ok {
+			return time.Time{}, fmt.Errorf("npm registry has no publish time for %s@%s", pkg, version)
+		}
+		return parseRegistryTime(published)
 	}
 	return time.Time{}, fmt.Errorf("unknown ecosystem %q", eco)
 }

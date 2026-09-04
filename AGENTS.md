@@ -214,16 +214,16 @@ A correction that only fixes the flagged line *will* be repeated. This pipeline 
 
 ---
 
-## One setup, two tools (Claude + Codex)
+## One setup, three tools (Claude + Codex + Gemini)
 
 **Governing principle:** all durable knowledge and state live in tool-neutral files at fixed paths — `AGENTS.md` and `.agent/`. Each tool's native config is a **thin wrapper that points into those files, never a copy.**
 
-- **Instructions** — `AGENTS.md` is canonical. Codex reads it natively; Claude reads it through the `CLAUDE.md` symlink at each level (root + every project).
-- **State + knowledge** — `.agent/` is read and written identically by both tools.
-- **Contributor skills / commands** — one source: `.claude/skills/`. Claude reads it natively; Codex reads the **same files** via the `.codex/skills` → `../.claude/skills` symlink (Codex auto-discovers a project-level `.codex/skills/` and ignores Claude's extra frontmatter). No per-tool skill copies.
-- **Customer skills** — public product artifacts live under `skills/<name>/`, use portable frontmatter and public interfaces, and never depend on a repository checkout, `AGENTS.md`, `.agent/`, internal contributor skills, or `.claude/` / `.codex/` discovery. `skills/README.md` owns direct customer installation.
-- **Enforcement** — the Claude commit-gate hook under `.claude/` (the only one; a project Stop hook is refused by `agentcheck`) and git hooks under `.githooks/` (`pre-commit` runs the staged check; `commit-msg` verifies that a `Coop-Task:` line git would silently drop is caught, since a line that reads as bound and is not is worse than none); reusable *logic* lives under `tools/` and enters through `./run` so CI or another tool can call it. This layer is genuinely per-tool (Codex has no hook equivalent) — never duplicate *knowledge* into it.
-- **Bookkeeping audit** — after changing `AGENTS.md`, `.claude/skills/`, `skills/`, `.codex/`, hooks, or task-queue conventions, run `./run check agent-setup`. It checks the cross-tool symlinks, current `coop` verbs/state names, and contributor/customer skill metadata so stale agent instructions fail fast; `./run gate tooling` and CI run its static checks too. The one part that needs a live `coop` — the verb/queue contract probe — runs only where `coop` is on PATH (a contributor workstation), and is skipped in CI and inside a coop box where `coop` is absent; there the manuals' verb references ride on the workstation gate and review.
+- **Instructions** — `AGENTS.md` is canonical. Codex reads it natively; Claude reads it through the `CLAUDE.md` symlink at each level (root + every project); Gemini reads it through the root `GEMINI.md` symlink, its only entry point.
+- **State + knowledge** — `.agent/` is read and written identically by every tool.
+- **Contributor skills / commands** — one source: `.claude/skills/`. Claude reads it natively; Codex and Gemini read the **same files** via the `.codex/skills` and `.gemini/skills` → `../.claude/skills` symlinks (each auto-discovers its project-level directory and ignores Claude's extra frontmatter). No per-tool skill copies. `.gemini/` is globally git-ignored on the maintainer's machine, so it is tracked with `git add -f`.
+- **Customer skills** — public product artifacts live under `skills/<name>/`, use portable frontmatter and public interfaces, and never depend on a repository checkout, `AGENTS.md`, `.agent/`, internal contributor skills, or `.claude/` / `.codex/` / `.gemini/` discovery. `skills/README.md` owns direct customer installation.
+- **Enforcement** — the Claude commit-gate hook under `.claude/` (the only one; a project Stop hook is refused by `agentcheck`) and git hooks under `.githooks/` (`pre-commit` runs the staged check; `commit-msg` verifies that a `Coop-Task:` line git would silently drop is caught, since a line that reads as bound and is not is worse than none); reusable *logic* lives under `tools/` and enters through `./run` so CI or another tool can call it. This layer is genuinely per-tool (neither Codex nor Gemini has a hook equivalent) — never duplicate *knowledge* into it.
+- **Bookkeeping audit** — after changing `AGENTS.md`, `.claude/skills/`, `skills/`, `.codex/`, `.gemini/`, hooks, or task-queue conventions, run `./run check agent-setup`. It checks the cross-tool symlinks, current `coop` verbs/state names, and contributor/customer skill metadata so stale agent instructions fail fast; `./run gate tooling` and CI run its static checks too. The one part that needs a live `coop` — the verb/queue contract probe — runs only where `coop` is on PATH (a contributor workstation), and is skipped in CI and inside a coop box where `coop` is absent; there the manuals' verb references ride on the workstation gate and review.
 
 ---
 
@@ -236,4 +236,4 @@ Two kinds:
 
 For a thorough pre-merge review, **`/review-board`** convenes the relevant hats above as parallel review subagents and synthesizes one ranked verdict + a prioritized fix plan. Use `/review-ship` for a lighter proportional review; the fix plan can be queued straight into `.agent/tasks/00_todo/` with `coop tasks add`.
 
-Contributor skills are thin entry points — the durable rules they apply live in `AGENTS.md` and `.agent/kb/rules/`. Both tools share those internal skill files: Claude via `.claude/skills/`, Codex via the `.codex/skills` → `../.claude/skills` symlink (auto-discovered when Codex runs in the repo). Customer-distributed skills are a separate public product surface under `skills/`; see `skills/README.md`.
+Contributor skills are thin entry points — the durable rules they apply live in `AGENTS.md` and `.agent/kb/rules/`. Every tool shares those internal skill files: Claude via `.claude/skills/`, Codex and Gemini via their `.codex/skills` and `.gemini/skills` → `../.claude/skills` symlinks (auto-discovered when either runs in the repo). Customer-distributed skills are a separate public product surface under `skills/`; see `skills/README.md`.

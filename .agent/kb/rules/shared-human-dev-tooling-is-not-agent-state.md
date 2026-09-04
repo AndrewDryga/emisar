@@ -28,6 +28,14 @@ sweep expands every row without duplicating version policy in workflow YAML.
 Shell remains only where shell itself is the shipped artifact, container
 entrypoint, or host-command fixture under test. Adding another tooling language
 requires proving Go cannot own the job and documenting the runtime boundary.
+**The one documented Node boundary is `tools/cmd/entra-capture/*.mjs`** — Entra
+capture rigs whose Playwright automation predates the Go rig beside them. They
+stay JavaScript by decision, so the boundary is what makes them safe: one
+`package.json` + `package-lock.json` in that directory pins the runtime, a
+weekly `npm` Dependabot lane bumps it on the same cooldown as every other
+ecosystem, and `depgate` reads that lockfile so a hand-made bump cannot dodge
+the release-age window. A second Node location, or a dependency resolved from a
+global npm root instead of the lockfile, is out of bounds.
 Disposable screenshots and visual-audit output live under the owning task's
 `screenshots/` directory. An agent with no active task creates and claims a
 basic one before capturing, so task archive cleanup removes its evidence too.

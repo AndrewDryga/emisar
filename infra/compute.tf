@@ -7,18 +7,24 @@ locals {
   # on COS — there is no gh or cosign and no package manager to add one — so the
   # signature check happens HERE, when a human changes this value, not at boot:
   #
-  #   gh attestation verify emisar-<version>-linux-amd64.tar.gz \
+  #   gh attestation verify emisar-0.23.1-linux-amd64.tar.gz \
   #     --repo andrewdryga/emisar \
   #     --signer-workflow AndrewDryga/emisar/.github/workflows/runner-release-trusted.yml \
-  #     --signer-digest <trusted_job_workflow_sha from github_oidc.tf>
+  #     --signer-digest ff1dd7f5902589a61a308f1805c905b4a8f6ac8f
   #
   # (the owner casing is the certificate's, not the lowercase repo spelling; the
   # attesting job runs inside the -trusted reusable workflow, so that ref — not
-  # the thin runner-release.yml caller — is what the certificate SAN carries.
-  # The --signer-digest is the reviewed trusted_job_workflow_sha in
-  # github_oidc.tf; read it from there rather than pinning a copy that rots.)
-  # That is what makes the pin a reviewed decision rather than a checksum
-  # chasing whatever the release currently holds.
+  # the thin runner-release.yml caller — is what the certificate SAN carries.)
+  #
+  # The digest is the trusted_job_workflow_sha THIS release was signed under,
+  # written out here rather than read from github_oidc.tf: that value rotates
+  # whenever a trusted workflow changes, and an already-signed release keeps the
+  # digest it was signed with forever. Reading the current one made the command
+  # fail with "expected BuildSignerDigest to be <current>, got ff1dd7f5…", which
+  # reads like a signature problem and is not one. Bumping the version below
+  # means re-running this command against the new bundle and moving this digest
+  # with it. That is what makes the pin a reviewed decision rather than a
+  # checksum chasing whatever the release currently holds.
   # runtime/admin-runner/runner-version.txt and pack-pins.txt are the single
   # sources: tests/render and the infra gate read the same files, so a bump
   # is validated everywhere and cannot drift between copies.

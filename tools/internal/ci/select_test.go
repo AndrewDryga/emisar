@@ -459,6 +459,67 @@ func TestSelect(t *testing.T) {
 		}
 	})
 
+	// The enforcement half of the contract: what stops dispatching unsigned and
+	// what refuses an attestation that did not validate.
+	t.Run("portal signing enforcement selects the signing scenario", func(t *testing.T) {
+		for _, file := range []string{
+			"portal/apps/emisar/lib/emisar/runners.ex",
+			"portal/apps/emisar/lib/emisar/runners/runner/changeset.ex",
+			"portal/apps/emisar/lib/emisar/runs/action_run/changeset.ex",
+		} {
+			writeFixture(t, root, file, "defmodule Fixture do\nend\n")
+			commitAll(t, root, "signing enforcement")
+			selection, err := Select(context.Background(), root, "pull_request", base)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !selection.SigningE2E {
+				t.Fatalf("%s did not select signing-e2e: %+v", file, selection)
+			}
+			resetHard(t, root, base)
+		}
+	})
+
+	// checkTrustedReleasePins runs in the infra gate, but its other inputs are
+	// the release shims, the trusted workflows, and the verify-release-tag
+	// composite — which reach it only through the Workflows fan-out above.
+	// Narrowing that fan-out would silently stop checking release-pin drift, so
+	// the coupling is pinned here rather than left implicit.
+	t.Run("release authority selects infra", func(t *testing.T) {
+		for _, file := range []string{
+			".github/workflows/runner-release.yml",
+			".github/workflows/runner-release-trusted.yml",
+			".github/workflows/mcp-registry-release.yml",
+			".github/actions/verify-release-tag/action.yml",
+		} {
+			writeFixture(t, root, file, "name: fixture\n")
+			commitAll(t, root, "release authority")
+			selection, err := Select(context.Background(), root, "pull_request", base)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !selection.Infra {
+				t.Fatalf("%s did not select infra: %+v", file, selection)
+			}
+			resetHard(t, root, base)
+		}
+	})
+
+	// The listing job validates server.json against the registry schema; every
+	// emisar-specific assertion about it lives in the Portal suite.
+	t.Run("the MCP listing descriptor selects the portal suite", func(t *testing.T) {
+		writeFixture(t, root, "server.json", "{}\n")
+		commitAll(t, root, "listing descriptor")
+		selection, err := Select(context.Background(), root, "pull_request", base)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !selection.MCPListing || !selection.Portal || !selection.PortalRelease {
+			t.Fatalf("server.json selection = %+v", selection)
+		}
+		resetHard(t, root, base)
+	})
+
 	t.Run("primary SSO context selects the SSO scenario", func(t *testing.T) {
 		file := "portal/apps/emisar/lib/emisar/sso.ex"
 		writeFixture(t, root, file, "defmodule Emisar.SSO do\nend\n")
@@ -542,6 +603,21 @@ func TestSelect(t *testing.T) {
 		resetHard(t, root, base)
 	})
 
+	// The repository's only JavaScript lockfile; depgate reads it, so a bump
+	// that selected no dep-age job would sail past the cooldown it exists for.
+	t.Run("the npm lockfile selects dependency age", func(t *testing.T) {
+		writeFixture(t, root, "tools/cmd/entra-capture/package-lock.json", "{}\n")
+		commitAll(t, root, "npm lockfile")
+		selection, err := Select(context.Background(), root, "pull_request", base)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !selection.Deps {
+			t.Fatalf("npm lockfile selection = %+v", selection)
+		}
+		resetHard(t, root, base)
+	})
+
 	t.Run("terraform lock is infra not dependency age", func(t *testing.T) {
 		writeFixture(t, root, "infra/.terraform.lock.hcl", "provider lock\n")
 		commitAll(t, root, "terraform lock")
@@ -555,7 +631,7 @@ func TestSelect(t *testing.T) {
 		resetHard(t, root, base)
 	})
 
-	for _, path := range []string{"run", ".agent/loop.yaml"} {
+	for _, path := range []string{"run", ".shell", ".agent/loop.yaml"} {
 		t.Run(path+" selects tools", func(t *testing.T) {
 			writeFixture(t, root, path, "fixture\n")
 			commitAll(t, root, path)

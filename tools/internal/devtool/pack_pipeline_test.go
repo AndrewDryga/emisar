@@ -52,6 +52,24 @@ func TestValidatePackPipelineFailures(t *testing.T) {
 			program: "[ -r \"$1\" ] || { echo missing >&2; exit 1; }\ngrep -E ' 5[0-9][0-9] ' \"$1\" | tail -n 100",
 		},
 		{
+			// postfix.queue_counts shipped this shape: the `do` stopped the
+			// scanner before it read any command, and `n=$(find` looked like an
+			// environment assignment to strip rather than an assignment whose
+			// value IS the source.
+			name:       "a loop body's command substitution is still a pipeline",
+			id:         "fixture.loop_substitution",
+			program:    "for q in a b; do n=$(find /var/spool/x/$q -type f 2>/dev/null | wc -l); echo \"$q: $n\"; done",
+			wantErr:    true,
+			wantErrMsg: "fixture.loop_substitution",
+		},
+		{
+			name:       "a loop body's bare pipeline is still a pipeline",
+			id:         "fixture.loop_bare",
+			program:    "for q in a b; do grep -F ERROR /var/log/$q.log | tail -n 20; done",
+			wantErr:    true,
+			wantErrMsg: "fixture.loop_bare",
+		},
+		{
 			name:       "unguarded positional log read",
 			id:         "fixture.unguarded_positional",
 			program:    "grep -E ' 5[0-9][0-9] ' \"$1\" | tail -n 100",

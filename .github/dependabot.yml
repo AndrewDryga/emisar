@@ -41,6 +41,28 @@ updates:
         patterns: ["*"]
         update-types: ["minor", "patch"]
 
+  - package-ecosystem: "npm"
+    # The Entra capture rigs are the repository's only JavaScript. They drive a
+    # live tenant's admin console with its password and TOTP seed in process
+    # memory, so their one dependency waits out the same cooldown as everything
+    # else instead of arriving from a global npm root.
+    directory: "/tools/cmd/entra-capture"
+    schedule:
+      interval: "weekly"
+      day: "tuesday"
+      time: "09:00"
+      timezone: "Etc/UTC"
+    open-pull-requests-limit: 2
+    cooldown:
+      default-days: 7
+      semver-major-days: 30
+      semver-minor-days: 14
+      semver-patch-days: 7
+    groups:
+      npm-minor-patch:
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
+
   - package-ecosystem: "terraform"
     directory: "/infra"
     schedule:

@@ -65,6 +65,70 @@ func TestParseNonregistry_SurfacesUnageableSources(t *testing.T) {
 		}
 	})
 
+	// A tarball URL or a workspace link has no registry publish date, so it
+	// bypasses age enforcement entirely and has to be surfaced instead.
+	t.Run("npm entries with no registry release", func(t *testing.T) {
+		got := parseNonregistry("npm", npmLockFixture)
+		want := map[string]string{
+			"tarball": "non-registry: https://example.invalid/tarball-1.0.0.tgz",
+			"linked":  "link: ../linked",
+		}
+		if !reflect.DeepEqual(got, want) {
+			t.Errorf("npm nonregistry = %v, want %v", got, want)
+		}
+	})
+}
+
+const npmLockFixture = `{
+  "name": "@emisar/fixture",
+  "lockfileVersion": 3,
+  "packages": {
+    "": {"name": "@emisar/fixture", "version": "0.0.0"},
+    "node_modules/playwright": {
+      "version": "1.62.1",
+      "resolved": "https://registry.npmjs.org/playwright/-/playwright-1.62.1.tgz"
+    },
+    "node_modules/playwright/node_modules/nested": {
+      "version": "2.0.0",
+      "resolved": "https://registry.npmjs.org/nested/-/nested-2.0.0.tgz"
+    },
+    "node_modules/@scope/pkg": {
+      "version": "3.1.0",
+      "resolved": "https://registry.npmjs.org/@scope/pkg/-/pkg-3.1.0.tgz"
+    },
+    "node_modules/tarball": {
+      "version": "1.0.0",
+      "resolved": "https://example.invalid/tarball-1.0.0.tgz"
+    },
+    "node_modules/linked": {"version": "0.1.0", "resolved": "../linked", "link": true}
+  }
+}`
+
+// The lockfile is the only place the pinned version lives, so the gate has to
+// read every registry entry out of it — including a transitive one nested under
+// its parent, whose path carries the whole node_modules chain.
+func TestParseNPM_ReadsEveryRegistryEntry(t *testing.T) {
+	got, err := parseNPM(npmLockFixture)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]string{
+		"playwright": "1.62.1",
+		"nested":     "2.0.0",
+		"@scope/pkg": "3.1.0",
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("npm versions = %v, want %v", got, want)
+	}
+}
+
+func TestNPMEscape_OnlyEscapesTheScopeSeparator(t *testing.T) {
+	if got := npmEscape("playwright"); got != "playwright" {
+		t.Errorf("npmEscape(playwright) = %q", got)
+	}
+	if got := npmEscape("@scope/pkg"); got != "@scope%2fpkg" {
+		t.Errorf("npmEscape(@scope/pkg) = %q", got)
+	}
 }
 
 func TestBumpType(t *testing.T) {

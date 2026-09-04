@@ -144,8 +144,17 @@ func (selection *Selection) include(file string) {
 	if strings.HasPrefix(file, "mcp/") || jsonCorpus || mcpInstallerHarness || goCheckoutContract || member(file, "install-mcp.sh", "install-mcp.ps1", "go.work", "go.work.sum") {
 		selection.MCP = true
 	}
+	// The public MCP Registry listing is a cross-language contract like the pack
+	// schema above: the listing job validates it against the registry's own JSON
+	// schema, while every emisar-specific assertion — the dev.emisar/emisar
+	// namespace, the remote URL each LLM client dials, the description cap, and
+	// agreement with portal/VERSION — lives in EmisarWeb.MCPRegistryTest. A
+	// server.json-only edit used to select the one job that cannot check any of
+	// them.
 	if file == "server.json" {
 		selection.MCPListing = true
+		selection.Portal = true
+		selection.PortalRelease = true
 	}
 	// .github/workflows and .githooks route here because actionlint and the
 	// shell lint both live inside the TOOLING gate. Workflow changes previously
@@ -162,7 +171,10 @@ func (selection *Selection) include(file string) {
 	// validates. docker-compose.yml + config.exs are the two sides of the tooling
 	// gate's e2e-stack-version check; neither selected Tools before, so editing
 	// either re-introduced the drift that check exists to catch.
-	if hasAnyPrefix(file, "tools/", "dev/", ".agent/", ".claude/", ".codex/", ".gemini/", "skills/", "dist/", ".github/workflows/", ".github/actions/", ".githooks/") || strings.Contains(file, "/.agent/") || member(file, "run", "go.work", "go.work.sum", ".gitattributes", ".gitignore", ".tool-versions", "docker-compose.yml", "portal/config/config.exs") || filepath.Ext(file) == ".md" {
+	// The members mirror trackedShellFiles' pathspec (`.shell run *.sh
+	// .githooks`): every file that gate shellchecks has to select the gate, or a
+	// syntax error in the contributor shell profile ships green.
+	if hasAnyPrefix(file, "tools/", "dev/", ".agent/", ".claude/", ".codex/", ".gemini/", "skills/", "dist/", ".github/workflows/", ".github/actions/", ".githooks/") || strings.Contains(file, "/.agent/") || member(file, "run", ".shell", "go.work", "go.work.sum", ".gitattributes", ".gitignore", ".tool-versions", "docker-compose.yml", "portal/config/config.exs") || filepath.Ext(file) == ".md" {
 		selection.Tools = true
 	}
 	// Pack behavior plans are validation inputs but are not loaded into registry
@@ -181,7 +193,7 @@ func (selection *Selection) include(file string) {
 	if strings.HasPrefix(file, "infra/") || file == ".tool-versions" {
 		selection.Infra = true
 	}
-	if member(file, "portal/mix.lock", "runner/go.mod", "runner/go.sum", "mcp/go.mod", "mcp/go.sum", "tools/go.mod", "tools/go.sum", ".dep-age-allow") || strings.HasPrefix(file, "tools/cmd/depgate/") {
+	if member(file, "portal/mix.lock", "runner/go.mod", "runner/go.sum", "mcp/go.mod", "mcp/go.sum", "tools/go.mod", "tools/go.sum", "tools/cmd/entra-capture/package-lock.json", ".dep-age-allow") || strings.HasPrefix(file, "tools/cmd/depgate/") {
 		selection.Deps = true
 	}
 	// The selector is workflow control code: validate every branch it can route
@@ -196,6 +208,11 @@ func (selection *Selection) include(file string) {
 	// attested dispatch on the bridge side skipped the required check entirely.
 	// Both scenarios boot through the shared demo seeder before reaching their
 	// own assertions, so a seed change is a behavior input to both.
+	// The portal side enters by PREFIX, not by three named files: naming
+	// runs.ex and runs/attestation.ex left their siblings selecting nothing —
+	// runners.ex ingests the runner's enforce_signatures advertisement and is
+	// what stops dispatching unsigned, and runs/action_run/changeset.ex is what
+	// refuses an attestation that did not validate.
 	sharedE2ESeed := file == "portal/apps/emisar/priv/repo/seeds.exs"
 	if hasAnyPrefix(
 		file,
@@ -204,14 +221,14 @@ func (selection *Selection) include(file string) {
 		"runner/internal/signing/",
 		"runner/internal/attest/",
 		"mcp/internal/attest/",
+		"portal/apps/emisar/lib/emisar/runs",
+		"portal/apps/emisar/lib/emisar/runners",
 	) || sharedE2ESeed || member(
 		file,
 		"docker-compose.yml",
 		"tools/internal/devtool/e2e.go",
 		"mcp/sign.go",
 		"mcp/main.go",
-		"portal/apps/emisar/lib/emisar/runs.ex",
-		"portal/apps/emisar/lib/emisar/runs/attestation.ex",
 		"portal/apps/emisar_web/lib/emisar_web/controllers/mcp/action_tools.ex",
 	) {
 		selection.SigningE2E = true
@@ -481,8 +498,8 @@ func WriteSelection(ctx context.Context, root, event, base, outputPath, summaryP
 	if err != nil {
 		return err
 	}
-	output := fmt.Sprintf("portal=%t\nmcp=%t\npacks=%t\ninfra=%t\ndeps=%t\nworkflows=%t\nmcp_listing=%t\ngo_modules=%s\nportal_release=%t\npacks_release=%t\nrunner_image=%t\npack_behavior=%s\nsigning_e2e=%t\nsso_e2e=%t\n",
-		selection.Portal, selection.MCP, selection.Packs, selection.Infra, selection.Deps,
+	output := fmt.Sprintf("portal=%t\nmcp=%t\nrunner=%t\npacks=%t\ninfra=%t\ndeps=%t\nworkflows=%t\nmcp_listing=%t\ngo_modules=%s\nportal_release=%t\npacks_release=%t\nrunner_image=%t\npack_behavior=%s\nsigning_e2e=%t\nsso_e2e=%t\n",
+		selection.Portal, selection.MCP, selection.Runner, selection.Packs, selection.Infra, selection.Deps,
 		selection.Workflows, selection.MCPListing, modules,
 		selection.PortalRelease, selection.PacksRelease, selection.RunnerImage, packBehavior,
 		selection.SigningE2E, selection.SSOE2E)
@@ -496,8 +513,8 @@ func WriteSelection(ctx context.Context, root, event, base, outputPath, summaryP
 		}
 		return "skip"
 	}
-	summary := fmt.Sprintf("### Gates for this change\n| Area | |\n|---|---|\n| Portal - Test | %s |\n| Portal - Image | %s |\n| Go - Runner | %s |\n| Go - MCP | %s |\n| MCP - Windows | %s |\n| Go - Tools | %s |\n| Packs - Validate | %s |\n| Packs - Behavior (%d) | %s |\n| Runner - Image | %s |\n| E2E - Signing | %s |\n| E2E - SSO | %s |\n| Terraform - Validate | %s |\n| Dependencies - Release age | %s |\n| Actions - Validate workflows | %s |\n| Portal - MCP Registry Listing | %s |\n",
-		mark(selection.Portal), mark(selection.Portal), mark(selection.Runner),
+	summary := fmt.Sprintf("### Gates for this change\n| Area | |\n|---|---|\n| Portal - Test | %s |\n| Portal - Image | %s |\n| Go - Runner | %s |\n| Go - Runner (root) | %s |\n| Go - MCP | %s |\n| MCP - Windows | %s |\n| Go - Tools | %s |\n| Packs - Validate | %s |\n| Packs - Behavior (%d) | %s |\n| Runner - Image | %s |\n| E2E - Signing | %s |\n| E2E - SSO | %s |\n| Terraform - Validate | %s |\n| Dependencies - Release age | %s |\n| Actions - Validate workflows | %s |\n| Portal - MCP Registry Listing | %s |\n",
+		mark(selection.Portal), mark(selection.Portal), mark(selection.Runner), mark(selection.Runner),
 		mark(selection.MCP), mark(selection.MCP), mark(selection.Tools), mark(selection.Packs),
 		len(selection.PackBehavior), mark(len(selection.PackBehavior) > 0),
 		mark(selection.RunnerImage),
