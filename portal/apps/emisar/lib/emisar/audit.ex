@@ -615,19 +615,20 @@ defmodule Emisar.Audit do
   end
 
   @doc """
-  Materializes the operator-facing audit CSV into a temp file the CALLER must
-  delete after sending. Requires view-audit permission and the plan gate, both
-  enforced by `list_events_for_export/2` on every read. Returns
-  `{:ok, %{path: path, count: count}}` or `{:error, reason}` —
-  see `Audit.CSVExport.export/2` for the reason vocabulary; an over-cap
-  refusal carries `%{count: count, max: max}`.
+  The operator-facing audit CSV as a stream of iodata chunks that records the
+  export receipt once it has run. Requires view-audit permission and the plan
+  gate, both enforced by `list_events_for_export/2` on every page read.
+  Returns `{:ok, stream}` or `{:error, reason}` — see `Audit.CSVExport.stream/2`
+  for the reason vocabulary; an over-cap refusal carries
+  `%{count: count, max: max}`.
   """
-  def prepare_csv_export(%Subject{} = subject, opts) when is_list(opts),
-    do: CSVExport.export(subject, opts)
+  def stream_csv_export(%Subject{} = subject, opts) when is_list(opts),
+    do: CSVExport.stream(subject, opts)
 
   @doc """
-  Internal — the export controller calls this after a successful page to
-  self-log the export ("watch the watchers"). Emits `audit.exported` ONLY when
+  Internal — the SIEM export controller calls this after a successful page, and
+  the CSV stream once it has run, to self-log the export ("watch the
+  watchers"). Emits `audit.exported` ONLY when
   the page returned rows (`count > 0`): a caught-up forward-cursor poll (0 rows)
   writes nothing, so a SIEM polling every ~30s doesn't spam the log with its own
   most-frequent event. Account-scoped + attributed via the subject (the api_key

@@ -98,22 +98,6 @@ defmodule EmisarWeb.AuditDownloadControllerTest do
       assert Repo.all(Audit.Event) |> Enum.filter(&(&1.event_type == "audit.exported")) == []
     end
 
-    test "a CSV over the byte cap is refused before download headers", %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
-      Fixtures.Accounts.create_subscription(account, "team")
-
-      {:ok, _} =
-        Audit.log(account.id, "user.invited", actor_kind: "user", actor_label: "alice")
-
-      Emisar.Config.put_override(:emisar, :audit_csv_max_bytes, 32)
-      conn = get(conn, ~p"/app/#{account}/audit/download")
-
-      assert redirected_to(conn) == ~p"/app/#{account}/audit"
-      assert get_resp_header(conn, "content-disposition") == []
-      assert Phoenix.Flash.get(conn.assigns.flash, :error) =~ "contact Support"
-      assert Repo.all(Audit.Event) |> Enum.filter(&(&1.event_type == "audit.exported")) == []
-    end
-
     test "an empty view redirects with 'nothing to export' instead of a bare header file", %{
       conn: conn
     } do

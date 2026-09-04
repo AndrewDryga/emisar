@@ -9,14 +9,12 @@ defmodule EmisarWeb.AuditDownloadController do
   feature — the in-console trail stays on every plan; taking the data OUT is
   the paid surface.
 
-  The adapter half only: param translation, flashes, `send_download`, and
-  deleting the prepared file once it has been sent. The caps, the snapshot
-  check, the CSV encoding, and the export receipt live in
-  `Emisar.Audit.CSVExport`, reached through `Audit.prepare_csv_export/2`.
+  The adapter half only: param translation, flashes, and the chunked response.
+  The row cap, the CSV encoding, and the export receipt live in
+  `Emisar.Audit.CSVExport`, reached through `Audit.stream_csv_export/2`.
   """
   use EmisarWeb, :controller
   alias Emisar.{Audit, Billing}
-  alias EmisarWeb.AuditDownloadLimiter
   alias EmisarWeb.LiveTable
   require Logger
 
@@ -50,40 +48,24 @@ defmodule EmisarWeb.AuditDownloadController do
         |> redirect(to: ~p"/app/#{account}/settings/billing")
 
       true ->
-        case AuditDownloadLimiter.run(account.id, fn ->
-               start_download(conn, subject, account, params)
-             end) do
-          {:error, :audit_download_saturated} ->
-            conn
-            |> put_flash(
-              :info,
-              "Another audit CSV is being prepared. Wait for it to finish and try again."
-            )
-            |> redirect(to: ~p"/app/#{account}/audit")
-
-          result ->
-            result
-        end
+        start_download(conn, subject, account, params)
     end
   end
 
-  # The path is the domain's server-generated temp file; no request value
-  # reaches send_download or cleanup. Sobelow cannot follow that construction.
-  # sobelow_skip ["Traversal.FileModule", "Traversal.SendDownload"]
   defp start_download(conn, subject, account, params) do
     filter_params = audit_filter_params(params)
     opts = list_opts(filter_params, subject)
 
-    case Audit.prepare_csv_export(subject, opts) do
-      {:ok, %{path: path}} ->
+    case Audit.stream_csv_export(subject, opts) do
+      {:ok, csv} ->
         filename =
           "audit-#{account.slug}-#{Calendar.strftime(DateTime.utc_now(), "%Y%m%d%H%M%S")}.csv"
 
-        try do
-          send_download(conn, {:file, path}, filename: filename, content_type: "text/csv")
-        after
-          _ = File.rm(path)
-        end
+        conn
+        |> put_resp_content_type("text/csv")
+        |> put_resp_header("content-disposition", ~s(attachment; filename="#{filename}"))
+        |> send_chunked(200)
+        |> stream_chunks(csv)
 
       {:error, reason} ->
         log_csv_preparation_failure(reason)
@@ -102,26 +84,25 @@ defmodule EmisarWeb.AuditDownloadController do
   defp csv_preparation_error(:nothing_to_export),
     do: "Nothing to export — this view has no events."
 
-  defp csv_preparation_error(reason) when reason in [:row_cap_exceeded, :byte_cap_exceeded] do
-    "This CSV is too large to prepare safely. Narrow the filters, or contact Support and " <>
-      "we'll prepare the complete export."
-  end
-
-  defp csv_preparation_error(:snapshot_changed) do
-    "The audit log changed while the CSV was being prepared. Review the filters and try again."
-  end
-
   defp csv_preparation_error(_reason),
     do: "The CSV could not be prepared. Nothing was downloaded; try again."
 
-  defp log_csv_preparation_failure(reason)
-       when reason in [:row_cap_exceeded, :byte_cap_exceeded, :snapshot_changed] or
-              reason in [:nothing_to_export] or
-              (is_tuple(reason) and elem(reason, 0) == :too_many_rows),
-       do: :ok
+  defp log_csv_preparation_failure(:nothing_to_export), do: :ok
+  defp log_csv_preparation_failure({:too_many_rows, _facts}), do: :ok
 
   defp log_csv_preparation_failure(reason) do
     Logger.error("audit CSV preparation did not complete: #{inspect(reason)}")
+  end
+
+  # A client that goes away mid-download ends the walk; the stream's receipt
+  # still records the rows that left.
+  defp stream_chunks(conn, csv) do
+    Enum.reduce_while(csv, conn, fn data, conn ->
+      case chunk(conn, data) do
+        {:ok, conn} -> {:cont, conn}
+        {:error, :closed} -> {:halt, conn}
+      end
+    end)
   end
 
   # The SAME filter surface the audit LiveView applies: the applicable base
