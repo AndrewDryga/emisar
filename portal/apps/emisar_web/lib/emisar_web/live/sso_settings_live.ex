@@ -1599,18 +1599,6 @@ defmodule EmisarWeb.SSOSettingsLive do
     "You can only hand out a role you hold yourself. Ask an owner to set this one."
   end
 
-  defp error_message(:link_target_outranks_approver) do
-    "That email belongs to a member whose role you can't manage, so linking an identity to them isn't something this role can approve. An owner can approve it."
-  end
-
-  defp error_message(:link_target_in_other_accounts) do
-    "That email belongs to someone who is also a member of another workspace. Linking here would give this connection's sign-in their access there too, so it can't be approved from this workspace."
-  end
-
-  defp error_message(:email_taken) do
-    "A user with that email already exists. Approving would create a duplicate, so this request can't be auto-approved."
-  end
-
   defp error_message(_) do
     "That action didn't complete. Refresh to see the connection's current state, then try again."
   end

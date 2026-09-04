@@ -1363,10 +1363,24 @@ defmodule EmisarWeb.TeamLive do
            "This person must accept their emailed team invitation before you can approve the SSO identity."
          )}
 
-      {:error, _reason} ->
-        {:noreply, put_flash(socket, :error, "Couldn't approve that request.")}
+      {:error, reason} ->
+        {:noreply, put_flash(socket, :error, approval_error_message(reason))}
     end
   end
+
+  defp approval_error_message(:link_target_outranks_approver) do
+    "That email belongs to a member whose role you can't manage, so linking an identity to them isn't something this role can approve. An owner can approve it."
+  end
+
+  defp approval_error_message(:link_target_in_other_accounts) do
+    "That email belongs to someone who is also a member of another workspace. Linking here would give this connection's sign-in their access there too, so it can't be approved from this workspace."
+  end
+
+  defp approval_error_message(:email_taken) do
+    "A user with that email already exists. Approving would create a duplicate, so this request can't be auto-approved."
+  end
+
+  defp approval_error_message(_reason), do: "Couldn't approve that request."
 
   defp do_dismiss_request(socket, id) do
     case find_pending_request(socket, id) do
