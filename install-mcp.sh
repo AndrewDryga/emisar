@@ -392,11 +392,8 @@ invoking_user_home() {
       dscl . -read "/Users/${SUDO_USER}" NFSHomeDirectory 2>/dev/null | awk '{print $2}'
       return
     fi
-    case "${OS}" in
-      darwin) printf '/Users/%s\n' "${SUDO_USER}" ;;
-      *) printf '/home/%s\n' "${SUDO_USER}" ;;
-    esac
-    return
+    # getent is Linux, dscl is macOS, and the OS gate above admits nothing else.
+    die "could not resolve ${SUDO_USER}'s home directory"
   fi
   printf '%s\n' "${HOME}"
 }
@@ -616,10 +613,6 @@ fi
 # ---------------------------------------------------------------------
 
 tmp="$(make_temp_dir)" || die "could not create a private temporary directory"
-if [ ! -d "${tmp}" ] || [ -L "${tmp}" ] || [ ! -O "${tmp}" ] || ! chmod 0700 "${tmp}"; then
-  rm -rf -- "${tmp}"
-  die "temporary directory was not a private directory owned by the installer"
-fi
 staged_paths=""
 backup_paths=""
 activated_paths=""
@@ -811,15 +804,6 @@ activate_installations() {
       return 1
     fi
   done <<<"${install_dirs}"
-
-  # Commit only after the complete set still matches the verified source.
-  while IFS= read -r bin_dst; do
-    installed_sha=$(sha_value "${bin_dst}")
-    if [ "${installed_sha}" != "${source_sha}" ]; then
-      warn "installed binary checksum changed at ${bin_dst}"
-      return 1
-    fi
-  done <<<"${activated_paths}"
 
   transaction_active=0
   installed_paths="${activated_paths}"

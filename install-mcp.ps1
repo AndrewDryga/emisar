@@ -189,7 +189,6 @@ function Save-WebFile([string]$Url, [string]$Path) {
     $outputStream = $null
     try {
         $response = $client.GetAsync($uri, [Net.Http.HttpCompletionOption]::ResponseHeadersRead).GetAwaiter().GetResult()
-        Test-TrustedWebUri $response.RequestMessage.RequestUri
         if (-not $response.IsSuccessStatusCode) {
             throw "HTTP $([int]$response.StatusCode)"
         }
