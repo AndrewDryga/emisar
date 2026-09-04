@@ -7,17 +7,10 @@ defmodule Emisar.Compat do
   on.
 
   The policy is deployment config — the emisar operator's call, not a
-  tenant setting — read at call time:
-
-      config :emisar, Emisar.Compat,
-        runner_minimum: ">= 0.10.0",
-        runner_recommended: ">= 0.23.1",
-        runner_current: "0.23.1",
-        runner_enforce: false,
-        mcp_minimum: ">= 0.3.0",
-        mcp_recommended: ">= 0.10.1",
-        mcp_current: "0.10.1",
-        mcp_enforce: false
+  tenant setting — read at call time from the `Emisar.Compat` application
+  environment. Runner keys use the `runner_` prefix and bridge keys use the
+  `mcp_` prefix; each accepts `minimum`, `recommended`, `current`, and
+  `enforce` settings.
 
   `*_minimum` / `*_recommended` are Elixir `Version` requirement strings
   (`>= 0.10.0`, `~> 0.15`); a malformed one raises rather than silently

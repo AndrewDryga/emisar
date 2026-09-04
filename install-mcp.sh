@@ -296,10 +296,9 @@ fetch_release_files() {
 }
 
 # A named function rather than an inline block, so the behavior suite can drive
-# the refusal directly — on a host without `gh` the attestation step degrades to
-# a warning, which makes this comparison the only thing standing between a
-# tampered download and execution. install.sh's sha_verify is named for the
-# same reason.
+# the refusal directly. The checksum proves the downloaded bytes match the
+# manifest; when signature attestation is configured, a missing `gh` fails the
+# install closed. install.sh's sha_verify is named for the same reason.
 verify_release_checksum() {
   local tmp="$1" tarball="$2"
   local checksum_line
