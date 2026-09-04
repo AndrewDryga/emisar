@@ -1663,16 +1663,13 @@ defmodule Emisar.Catalog do
       pack_id: pack_id,
       pack_version: pack_version,
       pack_hash: pack_hash,
-      title: descriptor["title"] || descriptor["id"],
+      title: descriptor["title"],
       summary: descriptor["summary"],
-      # `kind`/`risk` are RUNNER-ADVERTISED. The dispatch gate reads them
-      # catalog-authoritative (runs.ex) so the MCP/operator CALLER can't spoof
-      # "low", but the runner that ships the pack authors them: for a pack with a
-      # published baseline the risk lives inside the trusted hash; for a TOFU pack
-      # (no baseline) trusting the hash = trusting the declared risk — an accepted
-      # limitation, like the runner-declared group. See .agent/kb/specs/security-model.md.
-      kind: descriptor["kind"] || "exec",
-      risk: descriptor["risk"] || "low",
+      # These runner-advertised fields are required by the existing changeset.
+      # Dispatch later treats the persisted descriptor as authoritative, so an
+      # incomplete advertisement must be rejected instead of receiving defaults.
+      kind: descriptor["kind"],
+      risk: descriptor["risk"],
       description: descriptor["description"],
       side_effects: descriptor["side_effects"] || [],
       args_schema: %{"args" => descriptor["args"] || []},

@@ -1375,7 +1375,13 @@ defmodule EmisarWeb.RunnerSocketTest do
             }
           },
           "actions" => [
-            %{"id" => "linux.df", "pack_id" => "linux", "risk" => "low", "kind" => "exec"}
+            %{
+              "id" => "linux.df",
+              "pack_id" => "linux",
+              "title" => "Disk free",
+              "risk" => "low",
+              "kind" => "exec"
+            }
           ]
         })
 
@@ -1408,6 +1414,7 @@ defmodule EmisarWeb.RunnerSocketTest do
             %{
               "id" => "linux.typed",
               "pack_id" => "linux",
+              "title" => "Typed action",
               "risk" => "low",
               "kind" => "exec",
               "output_schema" => %{
@@ -1449,7 +1456,13 @@ defmodule EmisarWeb.RunnerSocketTest do
             }
           },
           "actions" => [
-            %{"id" => novel, "pack_id" => "linux", "risk" => "low", "kind" => "exec"}
+            %{
+              "id" => novel,
+              "pack_id" => "linux",
+              "title" => "Novel action",
+              "risk" => "low",
+              "kind" => "exec"
+            }
           ]
         })
 

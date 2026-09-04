@@ -362,6 +362,39 @@ defmodule Emisar.CatalogTest do
       assert_receive {:rejected, %{count: 1}}, 500
     end
 
+    test "missing required descriptor fields drop the actions AND say so", %{
+      runner: runner,
+      subject: subject
+    } do
+      handler_id = "catalog-incomplete-#{System.unique_integer([:positive])}"
+      test_pid = self()
+
+      :ok =
+        :telemetry.attach(
+          handler_id,
+          [:emisar, :catalog, :descriptor_rejected],
+          fn _event, measurements, _meta, _config ->
+            send(test_pid, {:rejected, measurements})
+          end,
+          nil
+        )
+
+      on_exit(fn -> :telemetry.detach(handler_id) end)
+
+      actions =
+        ["title", "kind", "risk"]
+        |> Enum.with_index(1)
+        |> Enum.map(fn {field, index} ->
+          "linux.incomplete_#{index}"
+          |> action()
+          |> Map.delete(field)
+        end)
+
+      assert {:ok, _runner} = Catalog.observe_state(runner, state_payload(actions: actions))
+      assert {:ok, [], _metadata} = Catalog.list_actions_for_runner(runner.id, subject)
+      assert_receive {:rejected, %{count: 3}}, 500
+    end
+
     test "upserts runner_actions", %{runner: runner, subject: subject} do
       payload =
         state_payload(actions: [action("linux.uptime"), action("linux.df", risk: "medium")])
