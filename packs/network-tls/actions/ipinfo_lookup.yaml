@@ -26,6 +26,8 @@ execution:
       - "=https"
       - "--proto-redir"
       - "=https"
+      - "--max-redirs"
+      - "1"
       - "--max-time"
       - "10"
       - "https://ipinfo.io/{{ args.ip }}/json"

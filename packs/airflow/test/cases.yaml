@@ -64,6 +64,20 @@ cases:
       exit: [1]
       stderr_contains: ["Airflow API request failed", "/api/v2/dags/no-such-dag"]
 
+  # Brackets are how IPv6 spells a literal host. The shape check used to reject
+  # them alongside braces, which disabled all the actions on an IPv6-only or
+  # ::-bound deployment before a request was ever attempted. It now gets past
+  # the guard and fails at the first transfer (the token mint), where nothing
+  # is listening.
+  - action: airflow.dags
+    name: airflow.dags-accepts-a-literal-ipv6-endpoint
+    env:
+      AIRFLOW_URL: "http://[::1]:8080"
+    expect:
+      status: failure
+      stderr_contains: ["minting an Airflow API token from http://[::1]:8080/auth/token failed"]
+      stderr_not_contains: ["must not contain braces"]
+
   - action: airflow.dag_details
     args: {dag_id: packtest_pipeline}
     expect:

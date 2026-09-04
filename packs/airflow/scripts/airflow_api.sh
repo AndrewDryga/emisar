@@ -28,8 +28,13 @@ validate_base() {
     http://*|https://*) ;;
     *) fail "AIRFLOW_URL must start with http:// or https://" ;;
   esac
+  # Braces only. Brackets are how IPv6 spells a literal host, and rejecting
+  # them disabled every action in this pack on an IPv6-only or ::-bound
+  # deployment (AIRFLOW_URL=http://[::1]:8080). --globoff already stops curl
+  # expanding a bracket range, which is exactly why the shape check must not
+  # ban the character to get that protection.
   case "$base" in
-    *['{}[]']*) fail "AIRFLOW_URL must not contain braces or brackets" ;;
+    *['{}']*) fail "AIRFLOW_URL must not contain braces" ;;
   esac
 }
 
