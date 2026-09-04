@@ -128,6 +128,13 @@ Two things the checker learned the hard way, both worth keeping:
 - **It unwraps grouped source fallbacks.** In `{ dmesg || journalctl; } | tail`,
   the group is still one fallible pipeline source. A successful `tail` must not
   turn failure of both producers into an empty all-clear.
+- **A guard covers only the path its pipeline reads.** `[ -d /var/spool/postfix ]`
+  is no guard for `cat /var/spool/postfix/$q | wc`, and `[ -d "$SP" ]` proves
+  nothing about `du "$SP"/*`: a guarded parent or sibling used to satisfy the
+  check, which is how `postfix.queue_counts` and `py.site_packages_du` shipped
+  their false all-clears. The lint now matches each guard to an operand the
+  source is handed (a bare `$var` resolves through the program's assignments),
+  and `|| exit` / `|| {` alone no longer count as a guard of anything.
 
 **Sweep.** The manifest-driven lint is authoritative. As a quick review aid for
 the repository's conventional layout, run `rg -l '\| *tail |\| *head '

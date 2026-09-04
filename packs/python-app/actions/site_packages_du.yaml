@@ -18,7 +18,11 @@ execution:
         V=${PY_VENV:-/opt/app/venv}
         SP=$("$V/bin/python" -c 'import site; print(site.getsitepackages()[0])') || { echo "cannot resolve site-packages via $V/bin/python" >&2; exit 1; }
         [ -n "$SP" ] && [ -d "$SP" ] || { echo "site-packages is not a readable directory: $SP" >&2; exit 1; }
-        du -sh "$SP"/* 2>/dev/null | sort -rh | head -50
+        # Captured, not piped: the guard above proves the directory exists, but
+        # du is handed its ENTRIES, and an unreadable one made du fail while
+        # head still returned 0 — "site-packages uses no disk" as a success.
+        usage=$(du -sh "$SP"/*) || { echo "cannot measure $SP" >&2; exit 1; }
+        printf '%s\n' "$usage" | sort -rh | head -50
   timeout: 5m
 output:
   parser: text

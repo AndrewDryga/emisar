@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 
 	"go.yaml.in/yaml/v3"
@@ -88,13 +89,27 @@ var pipelineRemoteSources = map[string]bool{
 	"systemd-analyze": true,
 }
 
-var pipelineSourceGuards = []string{
-	"[ -r", "[ -f", "[ -d", "[ -e", "[ -s",
-	"test -r", "test -f", "test -d", "test -e",
-	"exit $status", "exit $?",
-	// A precondition probe that aborts before the pipeline runs.
-	"|| exit", "|| {",
-}
+// A file test answers a question about ONE path, so it only covers a pipeline
+// whose source is handed that same path. `[ -d /var/spool/postfix ]` says
+// nothing about /var/spool/postfix/deferred — postfix keeps the queue
+// directories mode 0700 under a traversable spool, so the guard passed, find
+// was denied, and postfix.queue_counts reported 0 deferred messages on a host
+// with thousands. The old heuristic accepted any guard text anywhere in the
+// program as covering any pipeline in it, which is exactly how that shipped.
+// `[[ -d P ]]` and `[ ! -r P ]` are the same test in other spellings.
+var pipelinePathGuard = regexp.MustCompile(`(?:\[\[?|test)[ \t]+(?:![ \t]+)?-[rfdesx][ \t]+([^ \t\]]+)`)
+
+// Capturing the source's status and exiting with it re-exposes what the pipe
+// discarded, so it covers the whole program rather than one path.
+var pipelineStatusGuards = []string{"exit $status", "exit $?"}
+
+// Authors routinely test the literal and pipe the variable it was assigned to —
+// postfix.maillog_grep picks between /var/log/mail.log and /var/log/maillog
+// inside the guards, then greps "$log". Resolving the variable back to its
+// assignments is what keeps that correct guard from reading as a missing one.
+// A value this cannot parse simply is not a guarded path, so the variable stays
+// uncovered.
+var shellAssignment = regexp.MustCompile(`(?:^|[\s;])([A-Za-z_][A-Za-z0-9_]*)=([^\s;&|<>#]+)`)
 
 type packPipelineAction struct {
 	ID        string `yaml:"id"`
@@ -182,10 +197,10 @@ func shellDashCProgram(argv []string) (string, bool) {
 func pipelineMasksSourceFailure(program string) bool {
 	// A guard text inside a grouped producer does not protect the outer pipe:
 	// `{ source || exit 1; } | tail` still exits with tail's status. Inspect
-	// those groups before applying the legacy whole-program guard heuristic.
+	// those groups before asking whether the program's guards cover the source.
 	// A real pipefail setup is the one global guard that protects the pipe.
 	pipefail := false
-	guarded := pipelineGuardsItsSource(program)
+	guards := pipelineProgramGuards(program)
 	for _, line := range strings.Split(program, "\n") {
 		line = strings.TrimSpace(line)
 		if line == "" || strings.HasPrefix(line, "#") {
@@ -194,7 +209,7 @@ func pipelineMasksSourceFailure(program string) bool {
 		index := firstPipeIndex(line)
 		if index >= 0 && pipelineSourceReadsPath(line[:index]) {
 			if !pipefail && (pipelineSourceIsRemote(line[:index]) ||
-				bracedPipelineSource(line[:index]) || !guarded) {
+				bracedPipelineSource(line[:index]) || !guards.cover(line[:index])) {
 				return true
 			}
 		}
@@ -354,13 +369,101 @@ func indexUnquotedFrom(line string, offset int, match func(string, int) bool) in
 	return -1
 }
 
-func pipelineGuardsItsSource(program string) bool {
-	for _, guard := range pipelineSourceGuards {
-		if strings.Contains(program, guard) {
+type pipelineGuards struct {
+	status      bool
+	paths       map[string]bool
+	assignments map[string][]string
+}
+
+func pipelineProgramGuards(program string) pipelineGuards {
+	guards := pipelineGuards{paths: map[string]bool{}, assignments: map[string][]string{}}
+	for _, status := range pipelineStatusGuards {
+		if strings.Contains(program, status) {
+			guards.status = true
+		}
+	}
+	for _, match := range pipelinePathGuard.FindAllStringSubmatch(program, -1) {
+		guards.paths[normalizeShellPath(match[1])] = true
+	}
+	for _, match := range shellAssignment.FindAllStringSubmatch(program, -1) {
+		guards.assignments[match[1]] = append(guards.assignments[match[1]], normalizeShellPath(match[2]))
+	}
+	return guards
+}
+
+// cover reports whether a guard in the program tested a path this pipeline's
+// source is actually handed. A test on the directory a source WALKS counts —
+// `[ -d "$1" ]` before `find "$1"` is the operand find receives — while a test
+// on an ancestor, a sibling, or the guarded directory's entries does not:
+// none of them proves the source can open what it is about to open.
+func (g pipelineGuards) cover(segment string) bool {
+	if g.status {
+		return true
+	}
+	for _, path := range pipelineSourcePaths(segment) {
+		if g.paths[path] || g.coversVariable(path) {
 			return true
 		}
 	}
 	return false
+}
+
+// A variable operand is covered only when EVERY value the program assigns it was
+// guarded; one unguarded branch is a path that reaches the source untested.
+func (g pipelineGuards) coversVariable(path string) bool {
+	name := shellVariableName(path)
+	if name == "" {
+		return false
+	}
+	values := g.assignments[name]
+	if len(values) == 0 {
+		return false
+	}
+	for _, value := range values {
+		if !g.paths[value] {
+			return false
+		}
+	}
+	return true
+}
+
+// shellVariableName reads the name out of a bare `$log` or `${log}` operand and
+// returns "" for anything else — `$SP/*` and `/var/spool/postfix/$q` are paths
+// BUILT from a variable, so the guarded value is not what the source is handed.
+var bareShellVariable = regexp.MustCompile(`^\$\{?([A-Za-z_][A-Za-z0-9_]*)\}?$`)
+
+func shellVariableName(path string) string {
+	match := bareShellVariable.FindStringSubmatch(path)
+	if match == nil {
+		return ""
+	}
+	return match[1]
+}
+
+// pipelineSourcePaths returns the normalized path operands the leading
+// file-reading command of a pipeline is given.
+func pipelineSourcePaths(segment string) []string {
+	segment = strings.TrimSpace(segment)
+	if bracedPipelineSource(segment) {
+		group := strings.TrimSpace(segment[1 : len(segment)-1])
+		group = strings.TrimSpace(strings.TrimSuffix(group, ";"))
+		var paths []string
+		for _, source := range splitUnquotedOr(group) {
+			paths = append(paths, pipelineSourcePaths(source)...)
+		}
+		return paths
+	}
+	fields := pipelineSourceFields(segment)
+	if len(fields) == 0 || !pipelineFileReaders[fields[0]] {
+		return nil
+	}
+	var paths []string
+	for _, operand := range fields[1:] {
+		if shellOperandIsPath(operand) {
+			paths = append(paths, normalizeShellPath(operand))
+		}
+	}
+	return paths
 }
 
 // pipelineSourceReadsPath reports whether the leading segment of a pipeline
@@ -384,15 +487,7 @@ func pipelineSourceReadsPath(segment string) bool {
 	if pipelineRemoteSources[fields[0]] {
 		return true
 	}
-	if !pipelineFileReaders[fields[0]] {
-		return false
-	}
-	for _, operand := range fields[1:] {
-		if shellOperandIsPath(operand) {
-			return true
-		}
-	}
-	return false
+	return len(pipelineSourcePaths(segment)) > 0
 }
 
 func splitUnquotedOr(segment string) []string {
@@ -410,8 +505,15 @@ func splitUnquotedOr(segment string) []string {
 	}
 }
 
+// normalizeShellPath drops the quoting an author may or may not have used — and
+// may have used mid-operand, as in `"$SP"/*` — so a guard and the read it
+// protects compare as the same expression.
+func normalizeShellPath(operand string) string {
+	return strings.NewReplacer(`"`, "", `'`, "").Replace(operand)
+}
+
 func shellOperandIsPath(operand string) bool {
-	unquoted := strings.Trim(operand, `"'`)
+	unquoted := normalizeShellPath(operand)
 	switch {
 	case strings.HasPrefix(unquoted, "/"):
 		return true

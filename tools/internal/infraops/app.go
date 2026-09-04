@@ -22,7 +22,10 @@ const usageText = `usage: ./run ops <command> [args]
   drill pitr [--apply]               run the PITR and IAM recovery drill
   drill cleanup [--apply [ID]]       list or clean recovery drill resources
   validate-templates                 render and validate production cloud-init
-  verify-release-pins                verify trusted release workflow commit pins and WIF literals
+  verify-release-pins [--resolve-comments]
+                                     verify trusted release workflow commit pins and WIF literals;
+                                     --resolve-comments also resolves every action pin's version
+                                     comment against upstream tags (network, outside the gate)
 `
 
 type usageError struct{ message string }
@@ -41,12 +44,13 @@ func IsUsage(err error) bool {
 
 // App executes infrastructure operations through explicit external CLIs.
 type App struct {
-	Root     string
-	Infra    string
-	In       io.Reader
-	Out      io.Writer
-	Err      io.Writer
-	LookPath func(string) (string, error)
+	Root      string
+	Infra     string
+	In        io.Reader
+	Out       io.Writer
+	Err       io.Writer
+	LookPath  func(string) (string, error)
+	GitHubAPI string
 }
 
 // New creates an infrastructure operations application.
@@ -54,6 +58,7 @@ func New(root string, in io.Reader, out, errOut io.Writer) *App {
 	return &App{
 		Root: root, Infra: filepath.Join(root, "infra"),
 		In: in, Out: out, Err: errOut, LookPath: exec.LookPath,
+		GitHubAPI: githubAPI,
 	}
 }
 
@@ -86,13 +91,24 @@ func (a *App) Run(ctx context.Context, args []string) error {
 		}
 		return a.validateTemplates(ctx)
 	case "verify-release-pins":
-		if len(args) != 1 {
-			return usage("usage: ./run ops verify-release-pins")
+		resolveComments := false
+		switch {
+		case len(args) == 1:
+		case len(args) == 2 && args[1] == "--resolve-comments":
+			resolveComments = true
+		default:
+			return usage("usage: ./run ops verify-release-pins [--resolve-comments]")
 		}
 		if err := a.checkTrustedReleasePins(ctx); err != nil {
 			return err
 		}
-		return a.checkWorkloadIdentityLiterals()
+		if err := a.checkWorkloadIdentityLiterals(); err != nil {
+			return err
+		}
+		if !resolveComments {
+			return nil
+		}
+		return a.checkReleasePinComments(ctx)
 	case "help", "-h", "--help":
 		fmt.Fprint(a.Out, usageText)
 		return nil

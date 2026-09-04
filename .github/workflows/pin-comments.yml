@@ -1,0 +1,55 @@
+name: Pin comments
+
+# NOT A GATE. Every blocking check belongs inside `./run gate <project>`
+# (.agent/kb/rules/shared-checks-live-in-the-canonical-gate.md), and this one
+# cannot: the question "is this commit really the version its comment claims?"
+# is answered only by the upstream repository's tags, so a workstation without
+# network — or with a spent anonymous rate limit — would have to fail a gate for
+# a reason that has nothing to do with the diff. It is the environment-bound
+# exception the rule names, so it runs on a schedule instead of on a pull
+# request: a wrong label is a slow, silent problem (the pin keeps working, it
+# just is not the version anyone reviewed), and a weekly answer is soon enough.
+#
+# `./run ops verify-release-pins` without the flag stays offline and stays in
+# the infra gate; the flag only adds the upstream resolution.
+on:
+  schedule:
+    - cron: "17 6 * * 1"
+  workflow_dispatch:
+
+concurrency:
+  group: pin-comments
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  resolve:
+    name: Resolve action pin comments
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      GOTOOLCHAIN: local
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          # The offline half of this command compares trusted release files to
+          # their pinned commit.
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: tools/go.mod
+          cache: true
+          cache-dependency-path: tools/go.*
+
+      - name: Resolve every pin comment against upstream tags
+        # The default read-only token, purely to lift the anonymous 60-requests
+        # an hour ceiling; the API calls are public tag reads.
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: ./run ops verify-release-pins --resolve-comments

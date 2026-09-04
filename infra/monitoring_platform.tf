@@ -206,8 +206,17 @@ resource "google_monitoring_alert_policy" "cert_expiry" {
   notification_channels = local.alert_notification_channels
 }
 
-# The zero-unavailable rollout should never put the MIG below target. Remaining
-# below target for 15m means repair or creation is genuinely stuck.
+# The zero-unavailable rollout surges above target instead of dipping below it,
+# and the live series agrees: over 45 days the group sat under target in nine
+# episodes, the longest 6 minutes, so 15m still only fires on a genuinely stuck
+# repair or creation.
+#
+# The threshold reads the group's OWN target rather than var.instance_count.
+# A cold apply deliberately holds target_size at zero until the database-owner
+# attestation passes (compute.tf), and against a fixed count that hold is
+# indistinguishable from an outage: the highest-severity pager would run for the
+# whole open-ended ceremony. No duration covers that without also blinding the
+# alert to a stuck fleet for the same span.
 resource "google_monitoring_alert_policy" "mig_below_target" {
   display_name = "Emisar: Instance Group Below Target"
   combiner     = "OR"
@@ -227,7 +236,7 @@ resource "google_monitoring_alert_policy" "mig_below_target" {
     condition_threshold {
       filter          = "resource.type = \"instance_group\" AND resource.labels.instance_group_name = \"${google_compute_region_instance_group_manager.emisar.name}\" AND metric.type = \"compute.googleapis.com/instance_group/size\""
       comparison      = "COMPARISON_LT"
-      threshold_value = var.instance_count
+      threshold_value = google_compute_region_instance_group_manager.emisar.target_size
       duration        = "900s"
       aggregations {
         alignment_period   = "300s"

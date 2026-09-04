@@ -98,6 +98,74 @@ func TestValidatePackPipelineFailures(t *testing.T) {
 			program: "[ -d \"$1\" ] || { echo missing >&2; exit 1; }\nfind \"$1\" -type f 2>/dev/null | head -500",
 		},
 		{
+			// postfix.queue_counts as it actually shipped. The guard is on the
+			// spool root; find is handed /var/spool/postfix/$q, which postfix
+			// keeps mode 0700 — the guard passed, find was denied, and the action
+			// reported 0 deferred messages on a host with thousands.
+			name: "an ancestor guard does not cover the path the source is handed",
+			id:   "fixture.ancestor_guard",
+			program: "[ -d /var/spool/postfix ] || { echo \"no postfix spool at /var/spool/postfix\" >&2; exit 1; }\n" +
+				"for q in incoming active deferred hold; do n=$(find /var/spool/postfix/$q -type f 2>/dev/null | wc -l); echo \"$q: $n\"; done",
+			wantErr:    true,
+			wantErrMsg: "fixture.ancestor_guard",
+		},
+		{
+			// The same action once the guard names what find is given. A test on
+			// the directory a source WALKS is a parent-directory guard and covers
+			// it: that operand is the one find opens.
+			name: "a guard on the directory the source walks covers it",
+			id:   "fixture.parent_dir_guard",
+			program: "[ -d /var/spool/postfix ] || { echo missing >&2; exit 1; }\n" +
+				"for q in incoming active deferred hold; do\n" +
+				"  d=/var/spool/postfix/$q\n" +
+				"  [ -r \"$d\" ] && [ -x \"$d\" ] || { echo \"cannot read $d\" >&2; exit 1; }\n" +
+				"  n=$(find \"$d\" -type f 2>/dev/null | wc -l)\n" +
+				"  echo \"$q: $n\"\n" +
+				"done",
+		},
+		{
+			name: "a sibling path guard does not cover the read",
+			id:   "fixture.sibling_guard",
+			program: "[ -r /var/log/nginx/error.log ] || { echo missing >&2; exit 1; }\n" +
+				"grep -F ERROR /var/log/nginx/access.log | tail -n 50",
+			wantErr:    true,
+			wantErrMsg: "fixture.sibling_guard",
+		},
+		{
+			// postfix.maillog_grep picks the readable log inside the guards and
+			// pipes the variable; resolving it back to its assignments is what
+			// keeps a correct guard from reading as a missing one.
+			name: "a variable assigned only guarded literals is covered",
+			id:   "fixture.resolved_variable",
+			program: "if [ -r /var/log/mail.log ]; then log=/var/log/mail.log\n" +
+				"elif [ -r /var/log/maillog ]; then log=/var/log/maillog\n" +
+				"else echo \"no readable mail log\" >&2; exit 1\n" +
+				"fi\n" +
+				"grep -F \"$P\" \"$log\" | head -2000",
+		},
+		{
+			name: "a variable with an unguarded branch is not covered",
+			id:   "fixture.unresolved_variable",
+			program: "if [ -r /var/log/mail.log ]; then log=/var/log/mail.log\n" +
+				"else log=/var/log/maillog\n" +
+				"fi\n" +
+				"grep -F \"$P\" \"$log\" | head -2000",
+			wantErr:    true,
+			wantErrMsg: "fixture.unresolved_variable",
+		},
+		{
+			// The entries of a guarded directory are paths the guard never saw:
+			// `[ -d "$SP" ]` proves the directory is there, not that du can read
+			// what is in it, and du's failure leaves the pipe reporting success.
+			name: "a glob under a guarded directory is not the guarded path",
+			id:   "fixture.glob_under_guard",
+			program: "SP=/opt/app/venv/lib/python3/site-packages\n" +
+				"[ -n \"$SP\" ] && [ -d \"$SP\" ] || { echo missing >&2; exit 1; }\n" +
+				"du -sh \"$SP\"/* 2>/dev/null | sort -rh | head -50",
+			wantErr:    true,
+			wantErrMsg: "fixture.glob_under_guard",
+		},
+		{
 			name:    "captured status is propagated",
 			id:      "fixture.status_propagated",
 			program: "dump=$(nginx -T 2>&1); status=$?\nprintf '%s\\n' \"$dump\" | head -800\nexit $status",
