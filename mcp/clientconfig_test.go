@@ -481,7 +481,8 @@ func TestClientInstallReplacesBackupWithoutFollowingSymlinks(t *testing.T) {
 }
 
 // A dotfiles repository commonly links the client's config file into place, so
-// the source is read and rewritten like any other file.
+// the source is read through the link and the edit lands in the file the
+// repository keeps, leaving the link itself in place.
 func TestClientInstallAcceptsSymlinkedConfigSources(t *testing.T) {
 	for _, testCase := range []struct {
 		id       string
@@ -511,6 +512,16 @@ func TestClientInstallAcceptsSymlinkedConfigSources(t *testing.T) {
 
 			if err := client.install(testEntryRequest("/usr/local/bin/emisar-mcp", testCase.id)); err != nil {
 				t.Fatalf("install: %v", err)
+			}
+			info, err := os.Lstat(client.ConfigFile)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if info.Mode()&os.ModeSymlink == 0 {
+				t.Fatal("install replaced the config symlink with a regular file")
+			}
+			if !client.configured(target) {
+				t.Error("install through a symlinked config left the link target unwritten")
 			}
 			if !client.configured(client.ConfigFile) {
 				t.Error("install through a symlinked config wrote no emisar entry")

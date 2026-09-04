@@ -747,7 +747,30 @@ func replaceConfigFile(path, expected, contents string) error {
 	if current != expected {
 		return fmt.Errorf("%s changed while emisar was updating it", path)
 	}
-	return writeConfigFile(path, contents)
+	target, err := resolveConfigSymlink(path)
+	if err != nil {
+		return err
+	}
+	return writeConfigFile(target, contents)
+}
+
+// resolveConfigSymlink follows a linked config to the file the operator keeps:
+// a dotfiles repository links the client's config into place, and renaming onto
+// the link would replace it with a regular file and strand the repository copy.
+// Only the config source resolves — a backup destination is deliberately
+// replaced rather than followed.
+func resolveConfigSymlink(path string) (string, error) {
+	info, err := os.Lstat(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return path, nil
+	}
+	if err != nil {
+		return "", err
+	}
+	if info.Mode()&os.ModeSymlink == 0 {
+		return path, nil
+	}
+	return filepath.EvalSymlinks(path)
 }
 
 // syncConfigDirectory makes the rename itself durable. Windows has no
