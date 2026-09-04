@@ -428,3 +428,10 @@ if config_env() in [:dev, :test] do
     config :emisar, paddle_client: Emisar.Billing.PaddleClient.Stub
   end
 end
+
+# Version enforcement is the deliberate operator flip `compatibility.md`
+# describes: the thresholds stay in config.exs, and a peer below the minimum is
+# only warned about until the matching switch is set on the deployment.
+config :emisar, Emisar.Compat,
+  runner_enforce: env.("EMISAR_ENFORCE_RUNNER_VERSION") == "true",
+  mcp_enforce: env.("EMISAR_ENFORCE_MCP_VERSION") == "true"

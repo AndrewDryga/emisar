@@ -52,7 +52,9 @@ direction. A non-additive change to a known frame must bump
 
 A separate runner SemVer policy lives in `Emisar.Compat`. The current production
 threshold is `runner_minimum >= 0.10.0`, with enforcement off, so an old runner
-is currently warned about rather than rejected. When enforcement is on, the
+is currently warned about rather than rejected. Enforcement is switched on per
+peer by setting `EMISAR_ENFORCE_RUNNER_VERSION=true` or
+`EMISAR_ENFORCE_MCP_VERSION=true` on the portal deployment. When enforcement is on, the
 portal audits and rejects a runner below the minimum by sending a `shutdown`
 envelope before closing the session. A missing or unparseable reported version
 classifies as `:unknown` and is never rejected, even with enforcement on;
