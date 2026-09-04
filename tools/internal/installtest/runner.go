@@ -58,6 +58,7 @@ func runnerChecks() []runnerCheck {
 		{"download checksum mismatch", false, runnerDownloadChecksum},
 		{"enrollment state transitions", true, runnerEnrollmentState},
 		{"binary installation rollback", true, runnerInstallRollback},
+		{"binary activation transaction", false, runnerActivationTransaction},
 		{"signal-interrupted rollback", false, runnerSignalRollback},
 		{"installed pack repair", false, runnerPackRepair},
 		{"systemd activation", false, runnerSystemdActive},
@@ -544,6 +545,184 @@ func runnerInstallRollback(h *harness) error {
 		return fmt.Errorf("failed upgrade changed the installed binary")
 	}
 	return nil
+}
+
+// The staged binary runs as root before it is activated, so it must live in a
+// private directory the installer created, and an upgrade must replace the
+// live binary with ONE rename over a target that never stops existing: two
+// renames left an instant where power loss took the host's runner away.
+// Rollback restores the copy the activation kept, and the transaction leaves
+// nothing behind in BIN_DIR either way. None of this needs root.
+func runnerActivationTransaction(h *harness) error {
+	installer := h.repoPath("install.sh")
+	root := h.path("activation")
+	fakeBin := filepath.Join(root, "fake-bin")
+	calls := filepath.Join(root, "mv-calls")
+	if err := h.mkdir(fakeBin); err != nil {
+		return err
+	}
+	if err := fakeExecutable(filepath.Join(fakeBin, "mv"), `
+printf 'mv %s\n' "$*" >>"$MV_CALLS"
+exec /bin/mv "$@"
+`); err != nil {
+		return err
+	}
+	stubs := `
+die() { printf 'DIE: %s\n' "$*" >&2; exit 1; }
+warn() { printf 'WARN: %s\n' "$*" >&2; }
+log() { :; }
+BIN_DIR="$BIN"
+STAGE_DIR=""
+STAGED_BINARY=""
+BACKUP_BINARY=""
+BINARY_ACTIVATED=0
+`
+	names := []string{"stage_binary", "activate_binary", "rollback_binary", "cleanup_stage_dir"}
+	scenario := func(name string, previous bool, body string) (string, []byte, error) {
+		bin := filepath.Join(root, name, "bin")
+		src := filepath.Join(root, name, "release")
+		if err := h.mkdir(bin, src); err != nil {
+			return "", nil, err
+		}
+		if err := fakeExecutable(filepath.Join(src, "emisar"), `
+echo "emisar version 9.9.9"
+`); err != nil {
+			return "", nil, err
+		}
+		if previous {
+			if err := writeFile(filepath.Join(bin, "emisar"), "old runner\n", 0o755); err != nil {
+				return "", nil, err
+			}
+		}
+		if err := os.RemoveAll(calls); err != nil {
+			return "", nil, err
+		}
+		result := h.functions(installer, names, stubs+body, map[string]string{
+			"PATH":     fakeBin + string(os.PathListSeparator) + os.Getenv("PATH"),
+			"BIN":      bin,
+			"RELEASE":  src,
+			"VERSION":  "runner-v9.9.9",
+			"MV_CALLS": calls,
+		})
+		output, err := requireOutput(result)
+		if err != nil {
+			return bin, nil, fmt.Errorf("%s: %w", name, err)
+		}
+		return bin, output, nil
+	}
+	leftovers := func(bin string) error {
+		entries, err := os.ReadDir(bin)
+		if err != nil {
+			return err
+		}
+		for _, entry := range entries {
+			if entry.Name() != "emisar" {
+				return fmt.Errorf("transaction left %s behind in BIN_DIR", entry.Name())
+			}
+		}
+		return nil
+	}
+
+	// Staging: a fresh 0700 directory inside BIN_DIR, never a predictable dot-file.
+	bin, output, err := scenario("stage", true, `
+stage_binary "$RELEASE"
+printf '%s\n%s\n' "$STAGE_DIR" "$STAGED_BINARY"
+`)
+	if err != nil {
+		return err
+	}
+	lines := strings.Split(strings.TrimSpace(string(output)), "\n")
+	if len(lines) != 2 {
+		return fmt.Errorf("stage_binary reported %q, want the stage directory and the staged path", output)
+	}
+	stageDir, staged := lines[0], lines[1]
+	if filepath.Dir(stageDir) != bin || !strings.HasPrefix(filepath.Base(stageDir), ".emisar-stage.") {
+		return fmt.Errorf("stage directory %s is not a private child of %s", stageDir, bin)
+	}
+	info, err := os.Stat(stageDir)
+	if err != nil {
+		return err
+	}
+	if info.Mode().Perm() != 0o700 {
+		return fmt.Errorf("stage directory mode = %s, want 0700", info.Mode().Perm())
+	}
+	if staged != filepath.Join(stageDir, "emisar") {
+		return fmt.Errorf("staged binary at %s, want it inside the stage directory", staged)
+	}
+	if err := exactFile(filepath.Join(bin, "emisar"), "old runner\n"); err != nil {
+		return fmt.Errorf("staging touched the live binary: %w", err)
+	}
+
+	// Upgrade: one rename, a recovery copy of the previous binary, nothing left over.
+	bin, output, err = scenario("upgrade", true, `
+stage_binary "$RELEASE"
+activate_binary
+printf '%s\n' "$BACKUP_BINARY"
+cleanup_stage_dir
+`)
+	if err != nil {
+		return err
+	}
+	if err := exactFile(filepath.Join(bin, "emisar"), "echo \"emisar version 9.9.9\"\n"); err != nil {
+		if err := containsFile(filepath.Join(bin, "emisar"), `echo "emisar version 9.9.9"`); err != nil {
+			return fmt.Errorf("activation did not install the staged binary: %w", err)
+		}
+	}
+	renames, err := os.ReadFile(calls)
+	if err != nil {
+		return fmt.Errorf("activation recorded no rename: %w", err)
+	}
+	if got := strings.Count(string(renames), "\n"); got != 1 {
+		return fmt.Errorf("activation used %d renames, want 1:\n%s", got, renames)
+	}
+	if backup := strings.TrimSpace(string(output)); filepath.Dir(backup) != stageDirOf(bin, renames) {
+		return fmt.Errorf("recovery copy %s is not kept in the private stage directory", backup)
+	}
+	if err := leftovers(bin); err != nil {
+		return fmt.Errorf("committed upgrade: %w", err)
+	}
+
+	// Failed upgrade: rollback restores the previous binary from the copy.
+	bin, _, err = scenario("rollback", true, `
+stage_binary "$RELEASE"
+activate_binary
+rollback_binary
+`)
+	if err != nil {
+		return err
+	}
+	if err := exactFile(filepath.Join(bin, "emisar"), "old runner\n"); err != nil {
+		return fmt.Errorf("rollback did not restore the previous binary: %w", err)
+	}
+	if err := leftovers(bin); err != nil {
+		return fmt.Errorf("rolled-back upgrade: %w", err)
+	}
+
+	// Failed fresh install: rollback removes the binary it activated.
+	bin, _, err = scenario("fresh", false, `
+stage_binary "$RELEASE"
+activate_binary
+rollback_binary
+`)
+	if err != nil {
+		return err
+	}
+	if err := requireAbsent(filepath.Join(bin, "emisar")); err != nil {
+		return fmt.Errorf("rollback kept the binary of a failed fresh install: %w", err)
+	}
+	return leftovers(bin)
+}
+
+// stageDirOf reads the private stage directory back out of the recorded
+// activation rename, whose source is the staged binary inside it.
+func stageDirOf(bin string, renames []byte) string {
+	fields := strings.Fields(string(renames))
+	for _, field := range fields {
+		if strings.HasPrefix(field, bin+string(os.PathSeparator)+".emisar-stage.") {
+			return filepath.Dir(field)
+		}
+	}
+	return ""
 }
 
 // A bare signal fires the EXIT trap with $?=0, which finish_install's rc-guard
