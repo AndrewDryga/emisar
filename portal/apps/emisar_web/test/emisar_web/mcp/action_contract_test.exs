@@ -3,7 +3,7 @@ defmodule EmisarWeb.MCP.ActionContractTest do
   alias Emisar.{ActionContract, JSONNumber}
   alias Emisar.RawJSON
 
-  test "accepts exact numeric tokens and every supported portable type" do
+  test "accepts numeric tokens and every supported portable type" do
     action =
       action([
         arg("name", "string", required: true),
@@ -18,7 +18,7 @@ defmodule EmisarWeb.MCP.ActionContractTest do
 
     {:ok, args} =
       RawJSON.decode_object(
-        ~s({"name":"db","count":1e3,"ratio":0.1234567890123456789,"force":true,"timeout":"1h30m","path":"/var/log/app.log","tags":["a","b"],"ports":[80,"443"]})
+        ~s({"name":"db","count":1000,"ratio":0.1234567890123456789,"force":true,"timeout":"1h30m","path":"/var/log/app.log","tags":["a","b"],"ports":[80,"443"]})
       )
 
     assert ActionContract.validate(args, action) == :ok
@@ -37,12 +37,15 @@ defmodule EmisarWeb.MCP.ActionContractTest do
     assert_issue(%{"extra" => true}, action, "extra", "unknown_arg")
     assert_issue(%{}, action, "count", "required")
     assert_issue(%{"count" => "1.5"}, action, "count", "type")
+    # An integer is a plain literal: exponent and fraction spellings are numbers.
+    assert_issue(%{"count" => %JSONNumber{raw: "1e3"}}, action, "count", "type")
+    assert_issue(%{"count" => %JSONNumber{raw: "1000.0"}}, action, "count", "type")
     assert_issue(%{"count" => 5}, action, "count", "max")
     assert_issue(%{"count" => 1, "mode" => "unsafe"}, action, "mode", "enum")
   end
 
-  test "matches exact runner number membership and bounds" do
-    exact =
+  test "compares numbers the way the runner does: integers exactly, the rest as float64" do
+    runner =
       action([
         arg("ratio", "number", validation: %{"enum" => [1.25], "max" => 1.25}),
         arg("large", "integer", validation: %{"allowed" => [9_007_199_254_740_993]}),
@@ -51,36 +54,32 @@ defmodule EmisarWeb.MCP.ActionContractTest do
 
     assert validate_json(
              ~s({"ratio":1.250,"large":9007199254740993,"tiny":1e-400}),
-             exact
+             runner
+           ) == :ok
+
+    # 1.2500000000000001 is 1.25 as a float64, and an underflowing literal is zero.
+    assert validate_json(
+             ~s({"ratio":1.2500000000000001,"large":9007199254740993,"tiny":-1e-400}),
+             runner
            ) == :ok
 
     assert_issue_json(
-      ~s({"ratio":1.2500000000000001,"large":9007199254740993,"tiny":1e-400}),
-      exact,
-      "ratio",
-      "enum"
-    )
-
-    assert_issue_json(
       ~s({"ratio":1.25,"large":9007199254740992,"tiny":1e-400}),
-      exact,
+      runner,
       "large",
       "allowed"
     )
 
     assert_issue_json(
-      ~s({"ratio":1.25,"large":9007199254740993,"tiny":-1e-400}),
-      exact,
-      "tiny",
-      "min"
+      ~s({"ratio":1.26,"large":9007199254740993,"tiny":0}),
+      runner,
+      "ratio",
+      "enum"
     )
 
     zero = action([arg("value", "number", validation: %{"enum" => [0]})])
     assert validate_json(~s({"value":-0}), zero) == :ok
-    assert_issue_json(~s({"value":1e-400}), zero, "value", "enum")
-
-    decimal_max = action([arg("value", "number", validation: %{"max" => 1.25})])
-    assert_issue_json(~s({"value":1.2500000000000001}), decimal_max, "value", "max")
+    assert validate_json(~s({"value":1e-400}), zero) == :ok
 
     integer_max =
       action([arg("value", "integer", validation: %{"max" => 9_007_199_254_740_992.0})])
