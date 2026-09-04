@@ -312,13 +312,8 @@ func (a *App) cleanupDrill(ctx context.Context, project, id string) error {
 	}
 	if len(clones) == 1 {
 		labels := clones[0].Settings.UserLabels
-		exactOwnership := labels["purpose"] == "recovery-drill" && labels["drill_id"] == id
-		preLabelOwnership := labels["purpose"] == "" && labels["drill_id"] == "" && accountOwned
-		if !exactOwnership && !preLabelOwnership {
+		if labels["purpose"] != "recovery-drill" || labels["drill_id"] != id {
 			return fmt.Errorf("refusing SQL instance without exact ownership proof: %s", clone)
-		}
-		if preLabelOwnership {
-			fmt.Fprintf(a.Out, "recovering pre-label clone whose matching service account proves drill ownership: %s\n", clone)
 		}
 		if err := a.run(ctx, a.Root, nil, "gcloud", "sql", "instances", "patch",
 			clone, "--project="+project, "--no-deletion-protection", "--quiet"); err != nil {
