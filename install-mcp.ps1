@@ -624,8 +624,30 @@ if ($Yes -and -not $ConnectAll) {
     if ($ConnectAll) { $connectArguments += @("--all") }
     & {
         $ErrorActionPreference = "Continue"
-        & $executable @connectArguments
-        if ($LASTEXITCODE -ne 0) {
+        # The installer is establishing stored, per-account credentials. An
+        # ambient pair is for direct commands and would make connect validate
+        # that pair instead of the stored account a reinstall is meant to
+        # repair. Keep the caller's process environment intact after the child.
+        $inheritedURL = $env:EMISAR_URL
+        $inheritedAPIKey = $env:EMISAR_API_KEY
+        try {
+            Remove-Item Env:EMISAR_URL -ErrorAction SilentlyContinue
+            Remove-Item Env:EMISAR_API_KEY -ErrorAction SilentlyContinue
+            & $executable @connectArguments
+            $connectExitCode = $LASTEXITCODE
+        } finally {
+            if ($null -eq $inheritedURL) {
+                Remove-Item Env:EMISAR_URL -ErrorAction SilentlyContinue
+            } else {
+                $env:EMISAR_URL = $inheritedURL
+            }
+            if ($null -eq $inheritedAPIKey) {
+                Remove-Item Env:EMISAR_API_KEY -ErrorAction SilentlyContinue
+            } else {
+                $env:EMISAR_API_KEY = $inheritedAPIKey
+            }
+        }
+        if ($connectExitCode -ne 0) {
             Write-WarningLine "connection setup did not finish; run 'emisar-mcp connect', or use the manual snippets at $($script:PortalOrigin)/app/agents/connect"
         }
     }
