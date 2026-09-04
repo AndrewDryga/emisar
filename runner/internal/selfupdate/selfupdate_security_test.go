@@ -47,7 +47,7 @@ func TestLoadReceiptAcceptsCaseInsensitiveRepository(t *testing.T) {
 	// mixed-case repo hit before the fix — asserting a later binary-identity
 	// failure would only be re-testing the symlink resolution of t.TempDir(),
 	// which is why this used to pass on macOS and fail on Linux CI.
-	for _, repository := range []string{"AndrewDryga/emisar", "EmisarHQ/emisar"} {
+	for _, repository := range []string{"AndrewDryga/emisar"} {
 		t.Run(repository, func(t *testing.T) {
 			executable := writeReceiptFixture(t, t.TempDir(), repository)
 			_, err := loadReceipt(executable, func(string, fs.FileInfo) error { return nil })
@@ -176,123 +176,68 @@ func TestExtractBundleRejectsExecutableLinksAndDuplicateFiles(t *testing.T) {
 	}
 }
 
-// The accepted identities are restated literally so a typo in the constants
-// fails here instead of shipping a fleet that verifies against nothing.
-var (
-	testCurrentIdentity = releaseIdentity{
-		repository: "andrewdryga/emisar",
-		workflow:   "AndrewDryga/emisar/.github/workflows/runner-release-trusted.yml",
-	}
-	testSuccessorIdentity = releaseIdentity{
-		repository: "emisarhq/emisar",
-		workflow:   "EmisarHQ/emisar/.github/workflows/runner-release-trusted.yml",
-	}
-	testLegacyIdentity = releaseIdentity{
-		repository: "andrewdryga/emisar",
-		workflow:   "AndrewDryga/emisar/.github/workflows/runner-release.yml",
-		digest:     "642128eb48205405fd44ce845118e6a68737eea2",
-	}
-)
-
-func wantVerifyArgs(identity releaseIdentity, archive, tag string) []string {
-	args := []string{
-		"attestation", "verify", archive,
-		"--repo", identity.repository,
-		"--signer-workflow", identity.workflow,
-		"--source-ref", "refs/tags/" + tag,
-	}
-	if identity.digest != "" {
-		args = append(args, "--signer-digest", identity.digest)
-	}
-	return append(args, "--deny-self-hosted-runners")
-}
-
-func TestVerifyProvenanceUsesTargetReleasePolicyAndFailsClosed(t *testing.T) {
-	tests := []struct {
-		name     string
-		tag      string
-		attempts []releaseIdentity
-	}{
-		{name: "supported pre-split release", tag: legacyRunnerTag, attempts: []releaseIdentity{testLegacyIdentity}},
-		{name: "future trusted release", tag: "runner-v0.23.0", attempts: []releaseIdentity{testCurrentIdentity, testSuccessorIdentity}},
-		{name: "unused older tag", tag: "runner-v0.21.99", attempts: []releaseIdentity{testCurrentIdentity, testSuccessorIdentity}},
-	}
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			deps := testDependencies("/unused")
-			deps.lookPath = func(string) (string, error) { return "/usr/bin/gh", nil }
-			var calls int
-			var verifyArgs [][]string
-			deps.runCommand = func(_ context.Context, _ string, args, _ []string, _, _ io.Writer) error {
-				calls++
-				if strings.Join(args, " ") == "auth status" {
-					return nil
-				}
-				verifyArgs = append(verifyArgs, append([]string(nil), args...))
-				return errors.New("bad provenance")
-			}
-			_, err := verifyProvenance(context.Background(), "/verified/archive", test.tag, deps, io.Discard, io.Discard)
-			if err == nil || !strings.Contains(err.Error(), "did not verify") {
-				t.Fatalf("error = %v", err)
-			}
-			if calls != 1+len(test.attempts) {
-				t.Fatalf("command calls = %d, want %d", calls, 1+len(test.attempts))
-			}
-			if len(verifyArgs) != len(test.attempts) {
-				t.Fatalf("verify attempts = %d, want %d", len(verifyArgs), len(test.attempts))
-			}
-			for index, identity := range test.attempts {
-				want := wantVerifyArgs(identity, "/verified/archive", test.tag)
-				if strings.Join(verifyArgs[index], "\n") != strings.Join(want, "\n") {
-					t.Fatalf("verify args[%d] = %q, want %q", index, verifyArgs[index], want)
-				}
-			}
-		})
-	}
-}
-
-func TestVerifyProvenanceAcceptsTheSuccessorIdentityDuringTheTransfer(t *testing.T) {
+func TestVerifyChecksumProvenanceUsesOfficialPolicyAndFailsClosed(t *testing.T) {
 	deps := testDependencies("/unused")
 	deps.lookPath = func(string) (string, error) { return "/usr/bin/gh", nil }
-	var verifyArgs [][]string
+
+	var got []string
 	deps.runCommand = func(_ context.Context, _ string, args, _ []string, _, _ io.Writer) error {
-		if strings.Join(args, " ") == "auth status" {
-			return nil
-		}
-		verifyArgs = append(verifyArgs, append([]string(nil), args...))
-		if len(verifyArgs) == 1 {
-			return errors.New("certificate SAN names the successor workflow")
-		}
-		return nil
+		got = append([]string(nil), args...)
+		return errors.New("bad signature")
 	}
-	identity, err := verifyProvenance(context.Background(), "/verified/archive", "runner-v0.23.0", deps, io.Discard, io.Discard)
-	if err != nil {
-		t.Fatal(err)
+
+	err := verifyChecksumProvenance(
+		context.Background(),
+		"/verified/SHA256SUMS",
+		"/verified/SHA256SUMS.sigstore.jsonl",
+		"runner-v0.24.1",
+		deps,
+		io.Discard,
+	)
+	if err == nil || !strings.Contains(err.Error(), "did not verify") {
+		t.Fatalf("error = %v", err)
 	}
-	if identity != testSuccessorIdentity {
-		t.Fatalf("identity = %+v, want %+v", identity, testSuccessorIdentity)
+	want := []string{
+		"attestation", "verify", "/verified/SHA256SUMS",
+		"--bundle", "/verified/SHA256SUMS.sigstore.jsonl",
+		"--repo", "andrewdryga/emisar",
+		"--signer-workflow", "AndrewDryga/emisar/.github/workflows/runner-release-trusted.yml",
+		"--source-ref", "refs/tags/runner-v0.24.1",
+		"--deny-self-hosted-runners",
 	}
-	if len(verifyArgs) != 2 {
-		t.Fatalf("verify attempts = %d, want 2", len(verifyArgs))
-	}
-	wantFirst := wantVerifyArgs(testCurrentIdentity, "/verified/archive", "runner-v0.23.0")
-	if strings.Join(verifyArgs[0], "\n") != strings.Join(wantFirst, "\n") {
-		t.Fatalf("first attempt = %q, want the current identity %q", verifyArgs[0], wantFirst)
+	if strings.Join(got, "\n") != strings.Join(want, "\n") {
+		t.Fatalf("verify args = %q, want %q", got, want)
 	}
 }
 
-func TestInstallerInvocationCarriesTheVerifiedIdentity(t *testing.T) {
+func TestVerifyChecksumProvenanceRequiresTheBundleVerifier(t *testing.T) {
+	deps := testDependencies("/unused")
+	deps.lookPath = func(string) (string, error) { return "", errors.New("not found") }
+	err := verifyChecksumProvenance(
+		context.Background(),
+		"/verified/SHA256SUMS",
+		"/verified/SHA256SUMS.sigstore.jsonl",
+		"runner-v0.24.1",
+		deps,
+		io.Discard,
+	)
+	if err == nil || !strings.Contains(err.Error(), "gh is not installed") {
+		t.Fatalf("error = %v, want missing-verifier refusal", err)
+	}
+}
+
+func TestInstallerInvocationUsesOfficialReleaseIdentity(t *testing.T) {
 	receipt := receipt{
 		Binary: "/usr/local/bin/emisar", EtcDir: "/etc/emisar",
 		DataDir: "/var/lib/emisar", LogDir: "/var/log/emisar",
 		ServiceUser: "emisar", ServiceGroup: "emisar", Init: "systemd",
 	}
-	_, env := installerInvocation("/tmp/bundle", "runner-v0.23.0", receipt, testSuccessorIdentity)
-	if !containsEnvironment(env, "EMISAR_REPO=emisarhq/emisar") {
-		t.Fatal("installer environment does not carry the verified repository")
+	_, env := installerInvocation("/tmp/bundle", "runner-v0.24.1", receipt)
+	if !containsEnvironment(env, "EMISAR_REPO="+officialRepository) {
+		t.Fatal("installer environment does not carry the official repository")
 	}
-	if !containsEnvironment(env, "EMISAR_ATTESTATION_WORKFLOW="+testSuccessorIdentity.workflow) {
-		t.Fatal("installer environment does not carry the verified signer workflow")
+	if !containsEnvironment(env, "EMISAR_ATTESTATION_WORKFLOW="+signerWorkflow) {
+		t.Fatal("installer environment does not carry the official signer workflow")
 	}
 }
 
@@ -326,7 +271,7 @@ func TestInstallerEnvironmentStripsEveryDeniedVariable(t *testing.T) {
 		t.Setenv(name, "hostile-"+name)
 	}
 
-	_, env := installerInvocation("/tmp/bundle", "runner-v0.23.0", receipt, testSuccessorIdentity)
+	_, env := installerInvocation("/tmp/bundle", "runner-v0.23.0", receipt)
 	for _, name := range denied {
 		if containsEnvironment(env, name+"=hostile-"+name) {
 			t.Errorf("%s reached the root installer environment", name)
@@ -336,52 +281,13 @@ func TestInstallerEnvironmentStripsEveryDeniedVariable(t *testing.T) {
 	// above cannot pass by stripping everything.
 	for _, want := range []string{
 		"PATH=/usr/sbin:/usr/bin:/sbin:/bin",
-		"EMISAR_REPO=" + testSuccessorIdentity.repository,
-		"EMISAR_ATTESTATION_WORKFLOW=" + testSuccessorIdentity.workflow,
+		"EMISAR_REPO=" + officialRepository,
+		"EMISAR_ATTESTATION_WORKFLOW=" + signerWorkflow,
 		"EMISAR_PACKS=",
 	} {
 		if !containsEnvironment(env, want) {
 			t.Errorf("installer environment is missing %q", want)
 		}
-	}
-}
-
-func TestVerifyProvenanceUsesUpdateTokenWithoutPuttingItInArguments(t *testing.T) {
-	t.Setenv("GH_TOKEN", "")
-	t.Setenv("GITHUB_TOKEN", "")
-	t.Setenv("EMISAR_GITHUB_TOKEN", "test-update-token")
-	deps := testDependencies("/unused")
-	deps.lookPath = func(string) (string, error) { return "/usr/bin/gh", nil }
-	var calls int
-	deps.runCommand = func(_ context.Context, _ string, args, env []string, _, _ io.Writer) error {
-		calls++
-		if strings.Contains(strings.Join(args, "\n"), "test-update-token") {
-			t.Fatal("update token reached verifier arguments")
-		}
-		if !containsEnvironment(env, "GH_TOKEN=test-update-token") {
-			t.Fatal("update token was not provided to the authenticated verifier")
-		}
-		return nil
-	}
-	if _, err := verifyProvenance(context.Background(), "/verified/archive", "runner-v0.23.0", deps, io.Discard, io.Discard); err != nil {
-		t.Fatal(err)
-	}
-	if calls != 2 {
-		t.Fatalf("command calls = %d, want 2", calls)
-	}
-}
-
-func TestLoadReceiptAcceptsEitherTransferSpelling(t *testing.T) {
-	for _, repository := range []string{"andrewdryga/emisar", "emisarhq/emisar"} {
-		t.Run(repository, func(t *testing.T) {
-			executable, err := filepath.EvalSymlinks(writeReceiptFixture(t, t.TempDir(), repository))
-			if err != nil {
-				t.Fatal(err)
-			}
-			if _, err := loadReceipt(executable, func(string, fs.FileInfo) error { return nil }); err != nil {
-				t.Fatalf("loadReceipt error = %v", err)
-			}
-		})
 	}
 }
 

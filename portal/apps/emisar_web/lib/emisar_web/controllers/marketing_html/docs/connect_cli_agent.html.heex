@@ -4,7 +4,7 @@
   <section class="py-12 sm:py-16">
     <.docs_layout
       current="connect-cli-agent"
-      updated="August 23, 2026"
+      updated="September 3, 2026"
       toc={[
         {"stdio-bridge", "Set up a stdio client"},
         {"connect-later", "Connect a client you install later"},
@@ -40,6 +40,14 @@
           </.link>
           first, then come back to wire in your client.
         </:item>
+        <:item>
+          GitHub CLI with
+          <.docs_inline_code>gh attestation verify --bundle</.docs_inline_code>
+          and outbound HTTPS to
+          <.docs_inline_code>tuf-repo-cdn.sigstore.dev:443</.docs_inline_code>
+          and <.docs_inline_code>tuf-repo.github.com:443</.docs_inline_code>. A GitHub login is not
+          required.
+        </:item>
       </.docs_prerequisites>
 
       <.agent_skill_cta
@@ -69,7 +77,7 @@
         <p class="mt-2 text-base text-zinc-300">
           The installer resolves the latest
           <.docs_inline_code>mcp-v*</.docs_inline_code>
-          release, verifies its checksum, and installs
+          release, authenticates its signed checksum, and installs
           <.docs_inline_code>emisar-mcp</.docs_inline_code>
           into
           <.docs_inline_code>/usr/local/bin</.docs_inline_code>
@@ -97,7 +105,12 @@
         <.docs_verify_download
           tarball="emisar-mcp-<version>-linux-amd64.tar.gz"
           checksums="SHA256SUMS-MCP"
-          component="mcp"
+          bundle="SHA256SUMS-MCP.sigstore.jsonl"
+          tag="mcp-v<version>"
+          workflow="AndrewDryga/emisar/.github/workflows/mcp-release-trusted.yml"
+          detected_os={@detected_os}
+          macos_tarball="emisar-mcp-<version>-darwin-<arch>.tar.gz"
+          windows_tarball="emisar-mcp-<version>-windows-<arch>.zip"
         />
         <p class="mt-5 text-base leading-7 text-zinc-400">
           The installer then runs <code>emisar-mcp connect</code>, which finds the supported

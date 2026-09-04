@@ -1,8 +1,6 @@
 # The iptables verbs write the SUT's own network namespace, which is what makes
 # them safe to run for real: the client already lives in that namespace with
 # CAP_NET_ADMIN for the nftables case, so nothing new was needed to cover them.
-risk_accountability:
-  mode: complete
 services: [firewall]
 versions:
   - version: "13-slim"

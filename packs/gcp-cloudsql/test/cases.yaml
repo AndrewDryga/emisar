@@ -3,8 +3,6 @@ versions:
   - version: 577.0.0-slim
     digest: "@sha256:0d048f80b3bac596bdafc6f0b289b4267ecaaf1e73506e4f6da0b4bef8909fef"
     default: true
-risk_accountability:
-  mode: complete
 secret_env: [CLOUDSDK_AUTH_ACCESS_TOKEN]
 env:
   CLOUDSDK_API_ENDPOINT_OVERRIDES_SQL: http://gcp-api:8080/

@@ -54,7 +54,6 @@ RELEASE_BASE_URL="https://emisar.dev/releases/mcp"
 # checksum stands alone. The official default depends on the resolved release
 # tag and is selected below.
 ATTESTATION_WORKFLOW="${EMISAR_ATTESTATION_WORKFLOW:-}"
-ATTESTATION_SIGNER_DIGEST=""
 ATTESTATION_SOURCE_REF=""
 ATTESTATION_DENY_SELF_HOSTED=0
 # The portal this bridge talks to. A self-hosted or dev portal's install
@@ -158,11 +157,7 @@ newer_version() {
   [ "$(printf '%s\n%s\n' "$1" "$2" | sort -t. -k1,1n -k2,2n -k3,3n | tail -1)" = "$1" ]
 }
 
-# The supported pre-split release tip keeps its immutable original provenance.
-# Pin that exact tag to its workflow commit;
-# every other official tag uses the trusted workflow, with no fallback.
 select_attestation_policy() {
-  ATTESTATION_SIGNER_DIGEST=""
   ATTESTATION_SOURCE_REF=""
   ATTESTATION_DENY_SELF_HOSTED=0
   if [ -n "${ATTESTATION_WORKFLOW}" ] || [ "${REPO}" != "${OFFICIAL_REPO}" ]; then
@@ -172,10 +167,6 @@ select_attestation_policy() {
   ATTESTATION_WORKFLOW="AndrewDryga/emisar/.github/workflows/mcp-release-trusted.yml"
   ATTESTATION_SOURCE_REF="refs/tags/${VERSION}"
   ATTESTATION_DENY_SELF_HOSTED=1
-  if [ "${VERSION}" = "mcp-v0.10.1" ]; then
-    ATTESTATION_WORKFLOW="AndrewDryga/emisar/.github/workflows/mcp-release.yml"
-    ATTESTATION_SIGNER_DIGEST="642128eb48205405fd44ce845118e6a68737eea2"
-  fi
 }
 
 while [ $# -gt 0 ]; do
@@ -329,6 +320,35 @@ verify_release_checksum() {
   ) || die "checksum verification failed for ${tarball}"
 }
 
+verify_checksum_attestation() {
+  local checksums="$1" bundle_url="$2" bundle="$3"
+  if [ -z "${ATTESTATION_WORKFLOW}" ]; then
+    warn "no checksum-signature workflow configured for ${REPO}; trusting the operator-selected repository's checksum policy"
+    return 0
+  fi
+  if ! curl --proto '=https' --proto-redir '=https' --tlsv1.2 \
+    --connect-timeout 15 --max-time 120 --retry 2 -fsSL \
+    -o "${bundle}" "${bundle_url}"; then
+    rm -f -- "${bundle}"
+    die "could not download the checksum signature for ${VERSION}"
+  fi
+  if ! command -v gh >/dev/null 2>&1; then
+    die "GitHub CLI is required to verify the checksum signature"
+  fi
+  local -a verify_args=(
+    attestation verify "${checksums}"
+    --bundle "${bundle}"
+    --repo "${REPO}"
+    --signer-workflow "${ATTESTATION_WORKFLOW}"
+  )
+  [ -z "${ATTESTATION_SOURCE_REF}" ] || verify_args+=(--source-ref "${ATTESTATION_SOURCE_REF}")
+  [ "${ATTESTATION_DENY_SELF_HOSTED}" = "0" ] || verify_args+=(--deny-self-hosted-runners)
+  if ! gh "${verify_args[@]}" >/dev/null 2>&1; then
+    die "the checksum signature for ${VERSION} did not verify against ${ATTESTATION_WORKFLOW}"
+  fi
+  log "checksum signature verified  ${ATTESTATION_WORKFLOW}"
+}
+
 # Same TTY-fallback prompt the runner installer uses — curl|bash makes
 # stdin the script content, not a terminal, so a plain `read` consumes
 # the next line of the script. See install.sh for the longer rationale.
@@ -412,45 +432,6 @@ make_temp_dir() {
     parent=/tmp
   fi
   mktemp -d "${parent%/}/emisar-mcp-install.XXXXXX"
-}
-
-verify_attestation() {
-  local path="$1" name="$2"
-  if [ -z "${ATTESTATION_WORKFLOW}" ]; then
-    warn "no attestation workflow configured for ${REPO} — skipping provenance check"
-    return 0
-  fi
-  local hint="gh attestation verify <file> --repo ${REPO} --signer-workflow ${ATTESTATION_WORKFLOW}"
-  [ -z "${ATTESTATION_SOURCE_REF}" ] || hint="${hint} --source-ref ${ATTESTATION_SOURCE_REF}"
-  [ -z "${ATTESTATION_SIGNER_DIGEST}" ] || hint="${hint} --signer-digest ${ATTESTATION_SIGNER_DIGEST}"
-  [ "${ATTESTATION_DENY_SELF_HOSTED}" = "0" ] || hint="${hint} --deny-self-hosted-runners"
-  if ! command -v gh >/dev/null 2>&1; then
-    warn "gh not installed — skipping release attestation check"
-    warn "verify it yourself: ${hint}"
-    return 0
-  fi
-  # gh refuses the attestation API unauthenticated — it exits 4 telling you to
-  # run `gh auth login` without checking anything. Treating that as a failed
-  # verification would make a GitHub login a prerequisite for installing the
-  # bridge, so an unauthenticated CLI skips exactly like a missing one.
-  if ! gh auth status >/dev/null 2>&1; then
-    warn "gh is not authenticated — skipping release attestation check"
-    warn "verify it yourself: ${hint}"
-    return 0
-  fi
-  log "verifying release attestation"
-  local -a verify_args=(
-    attestation verify "${path}"
-    --repo "${REPO}"
-    --signer-workflow "${ATTESTATION_WORKFLOW}"
-  )
-  [ -z "${ATTESTATION_SOURCE_REF}" ] || verify_args+=(--source-ref "${ATTESTATION_SOURCE_REF}")
-  [ -z "${ATTESTATION_SIGNER_DIGEST}" ] || verify_args+=(--signer-digest "${ATTESTATION_SIGNER_DIGEST}")
-  [ "${ATTESTATION_DENY_SELF_HOSTED}" = "0" ] || verify_args+=(--deny-self-hosted-runners)
-  if ! gh "${verify_args[@]}" >/dev/null 2>&1; then
-    die "release attestation for ${name} did not verify against ${ATTESTATION_WORKFLOW} — refusing to install"
-  fi
-  log "attestation verified  ${ATTESTATION_WORKFLOW}"
 }
 
 # ---------------------------------------------------------------------
@@ -736,15 +717,11 @@ else
   die "neither sha256sum nor shasum found — cannot verify download"
 fi
 
+verify_checksum_attestation \
+  "${tmp}/SHA256SUMS-MCP" \
+  "${BASE_URL}/SHA256SUMS-MCP.sigstore.jsonl" \
+  "${tmp}/SHA256SUMS-MCP.sigstore.jsonl"
 verify_release_checksum "${tmp}" "${TARBALL}"
-
-# The checksum proves the tarball matches SHA256SUMS-MCP; it says nothing about
-# who produced either, since both come from the same release. The Sigstore build
-# provenance does: it binds these bytes to a run of our release workflow on a
-# GitHub-hosted runner. Pinning the signer workflow is what makes that a real
-# check — without it, any attestation from any workflow in the repo passes.
-#
-verify_attestation "${tmp}/${TARBALL}" "${TARBALL}"
 
 log "extracting"
 # --no-same-owner/--no-same-permissions: the archive's recorded uid/gid and mode

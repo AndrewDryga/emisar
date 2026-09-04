@@ -529,45 +529,61 @@ func testWindowsAttestationPolicies(root, shell, temp string) error {
 	if err != nil {
 		return err
 	}
-	verifyFunction, err := powershellFunction(installer, "Test-Attestation")
+	checksumFunction, err := powershellFunction(installer, "Test-ChecksumAttestation")
 	if err != nil {
 		return err
 	}
 	trace := filepath.Join(temp, "attestation-argv.txt")
-	script := policyFunction + verifyFunction + `
+	script := policyFunction + checksumFunction + `
 function Write-WarningLine([string]$Message) {}
 function Write-Info([string]$Message) {}
 function Stop-Install([string]$Message) { throw $Message }
+function Get-Command {
+    if ($global:MissingGh) { return $null }
+    return "gh"
+}
 function gh {
     $commandArgs = @($args)
-    $global:LASTEXITCODE = 0
+    $global:LASTEXITCODE = if ($global:VerifierFails) { 1 } else { 0 }
     if ($commandArgs.Count -gt 0 -and $commandArgs[0] -eq "auth") { return }
     [IO.File]::AppendAllText($env:EMISAR_ATTESTATION_TRACE, (($commandArgs -join "|") + [Environment]::NewLine))
 }
 function Set-TestAttestationPolicy($Policy) {
     $script:AttestationWorkflow = $Policy.Workflow
-    $script:AttestationSignerDigest = $Policy.SignerDigest
     $script:AttestationSourceRef = $Policy.SourceRef
     $script:AttestationDenySelfHosted = $Policy.DenySelfHosted
 }
 
 $script:Repository = "andrewdryga/emisar"
-foreach ($tag in @("mcp-v0.10.1", "mcp-v0.10.2", "mcp-v0.9.99", "MCP-V0.10.1")) {
-    $policy = Get-AttestationPolicy "andrewdryga/emisar" $tag ""
-    Write-Output ("{0}|{1}|{2}|{3}" -f $policy.Workflow, $policy.SignerDigest, $policy.SourceRef, $policy.DenySelfHosted)
-}
-$policy = Get-AttestationPolicy "example/emisar" "mcp-v0.10.1" ""
-Write-Output ("{0}|{1}|{2}|{3}" -f $policy.Workflow, $policy.SignerDigest, $policy.SourceRef, $policy.DenySelfHosted)
-$policy = Get-AttestationPolicy "example/emisar" "mcp-v0.10.1" "example/emisar/.github/workflows/release.yml"
-Write-Output ("{0}|{1}|{2}|{3}" -f $policy.Workflow, $policy.SignerDigest, $policy.SourceRef, $policy.DenySelfHosted)
+$global:MissingGh = $false
+$global:VerifierFails = $false
+$policy = Get-AttestationPolicy "andrewdryga/emisar" "mcp-v9.9.9" ""
+Write-Output ("{0}|{1}|{2}" -f $policy.Workflow, $policy.SourceRef, $policy.DenySelfHosted)
+$forkPolicy = Get-AttestationPolicy "example/emisar" "mcp-v9.9.9" ""
+Write-Output ("{0}|{1}|{2}" -f $forkPolicy.Workflow, $forkPolicy.SourceRef, $forkPolicy.DenySelfHosted)
 
-foreach ($tag in @("mcp-v0.10.1", "mcp-v0.10.2")) {
-    Set-TestAttestationPolicy (Get-AttestationPolicy "andrewdryga/emisar" $tag "")
-    Test-Attestation "C:\verified\mcp.zip" $false
-}
+Set-TestAttestationPolicy $policy
+Test-ChecksumAttestation "C:\verified\SHA256SUMS-MCP" "C:\verified\SHA256SUMS-MCP.sigstore.jsonl" $false
 $script:Repository = "example/emisar"
-Set-TestAttestationPolicy (Get-AttestationPolicy "example/emisar" "mcp-v0.10.1" "example/emisar/.github/workflows/release.yml")
-Test-Attestation "C:\verified\mcp.zip" $false
+Set-TestAttestationPolicy $forkPolicy
+Test-ChecksumAttestation "C:\verified\SHA256SUMS-MCP" "C:\verified\SHA256SUMS-MCP.sigstore.jsonl" $false
+$script:Repository = "andrewdryga/emisar"
+Set-TestAttestationPolicy $policy
+$global:VerifierFails = $true
+try {
+    Test-ChecksumAttestation "C:\verified\SHA256SUMS-MCP" "C:\verified\SHA256SUMS-MCP.sigstore.jsonl" $false
+    throw "bad checksum signature was accepted"
+} catch {
+    if ($_.Exception.Message -notmatch "did not verify") { throw }
+}
+$global:VerifierFails = $false
+$global:MissingGh = $true
+try {
+    Test-ChecksumAttestation "C:\verified\SHA256SUMS-MCP" "C:\verified\SHA256SUMS-MCP.sigstore.jsonl" $false
+    throw "missing checksum verifier was accepted"
+} catch {
+    if ($_.Exception.Message -notmatch "GitHub CLI is required") { throw }
+}
 `
 	path := filepath.Join(temp, "attestation-policy.ps1")
 	if err := os.WriteFile(path, []byte(script), 0o600); err != nil {
@@ -577,12 +593,8 @@ Test-Attestation "C:\verified\mcp.zip" $false
 	if err != nil {
 		return fmt.Errorf("attestation policy: %w\n%s", err, output)
 	}
-	expected := "AndrewDryga/emisar/.github/workflows/mcp-release.yml|642128eb48205405fd44ce845118e6a68737eea2|refs/tags/mcp-v0.10.1|True\n" +
-		"AndrewDryga/emisar/.github/workflows/mcp-release-trusted.yml||refs/tags/mcp-v0.10.2|True\n" +
-		"AndrewDryga/emisar/.github/workflows/mcp-release-trusted.yml||refs/tags/mcp-v0.9.99|True\n" +
-		"AndrewDryga/emisar/.github/workflows/mcp-release-trusted.yml||refs/tags/MCP-V0.10.1|True\n" +
-		"|||False\n" +
-		"example/emisar/.github/workflows/release.yml|||False\n"
+	expected := "AndrewDryga/emisar/.github/workflows/mcp-release-trusted.yml|refs/tags/mcp-v9.9.9|True\n" +
+		"||False\n"
 	actual := strings.ReplaceAll(string(output), "\r\n", "\n")
 	if actual != expected {
 		return fmt.Errorf("attestation policies = %q, want %q", output, expected)
@@ -591,9 +603,8 @@ Test-Attestation "C:\verified\mcp.zip" $false
 	if err != nil {
 		return fmt.Errorf("read attestation argv: %w", err)
 	}
-	expectedTrace := "attestation|verify|C:\\verified\\mcp.zip|--repo|andrewdryga/emisar|--signer-workflow|AndrewDryga/emisar/.github/workflows/mcp-release.yml|--source-ref|refs/tags/mcp-v0.10.1|--signer-digest|642128eb48205405fd44ce845118e6a68737eea2|--deny-self-hosted-runners\n" +
-		"attestation|verify|C:\\verified\\mcp.zip|--repo|andrewdryga/emisar|--signer-workflow|AndrewDryga/emisar/.github/workflows/mcp-release-trusted.yml|--source-ref|refs/tags/mcp-v0.10.2|--deny-self-hosted-runners\n" +
-		"attestation|verify|C:\\verified\\mcp.zip|--repo|example/emisar|--signer-workflow|example/emisar/.github/workflows/release.yml\n"
+	expectedTrace := "attestation|verify|C:\\verified\\SHA256SUMS-MCP|--bundle|C:\\verified\\SHA256SUMS-MCP.sigstore.jsonl|--repo|andrewdryga/emisar|--signer-workflow|AndrewDryga/emisar/.github/workflows/mcp-release-trusted.yml|--source-ref|refs/tags/mcp-v9.9.9|--deny-self-hosted-runners\n" +
+		"attestation|verify|C:\\verified\\SHA256SUMS-MCP|--bundle|C:\\verified\\SHA256SUMS-MCP.sigstore.jsonl|--repo|andrewdryga/emisar|--signer-workflow|AndrewDryga/emisar/.github/workflows/mcp-release-trusted.yml|--source-ref|refs/tags/mcp-v9.9.9|--deny-self-hosted-runners\n"
 	actualTrace := strings.ReplaceAll(string(traceData), "\r\n", "\n")
 	if actualTrace != expectedTrace {
 		return fmt.Errorf("attestation argv = %q, want %q", traceData, expectedTrace)

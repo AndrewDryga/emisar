@@ -3,14 +3,11 @@
 # same Debian release the version matrix pins. So these run for real against a
 # real dpkg database — the one thing they must not do is share it with anything
 # that outlives the case, which is exactly what a container gives.
-# See .agent/kb/pack-behavior-environment-limits.md for the wider lane.
 services: [debian]
 versions:
   - version: "13-slim"
     digest: "@sha256:020c0d20b9880058cbe785a9db107156c3c75c2ac944a6aa7ab59f2add76a7bd"
     default: true
-risk_accountability:
-  mode: complete
 runner:
   user: root
   reason: >

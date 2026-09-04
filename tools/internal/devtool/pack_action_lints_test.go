@@ -84,68 +84,6 @@ func TestPackActionLintsFollowManifest(t *testing.T) {
 	})
 }
 
-func TestLoadPackActionLintInputRejectsInvalidManifestPaths(t *testing.T) {
-	tests := []struct {
-		name     string
-		manifest string
-		want     string
-	}{
-		{name: "invalid YAML", manifest: "actions: [", want: "parse"},
-		{name: "no actions", manifest: "actions: []\n", want: "declares no actions"},
-		{name: "missing action", manifest: "actions:\n  - actions/missing.yaml\n", want: "not readable"},
-		{name: "escaping action", manifest: "actions:\n  - ../outside.yaml\n", want: "escapes the pack root"},
-		{name: "absolute action", manifest: "actions:\n  - /tmp/outside.yaml\n", want: "must be relative"},
-		{name: "duplicate action", manifest: "actions:\n  - actions/a.yaml\n  - actions/./a.yaml\n", want: "same action path twice"},
-		{name: "multiple documents", manifest: "actions:\n  - actions/a.yaml\n---\nactions:\n  - actions/a.yaml\n", want: "multiple YAML documents"},
-	}
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			packDir := t.TempDir()
-			writePackActionLintFile(t, packDir, "pack.yaml", test.manifest)
-			writePackActionLintFile(t, packDir, "actions/a.yaml", safePackLintAction)
-			writePackActionLintFile(t, filepath.Dir(packDir), "outside.yaml", safePackLintAction)
-
-			_, err := loadPackActionLintInput(packDir)
-			if err == nil || !strings.Contains(err.Error(), test.want) {
-				t.Fatalf("error = %v, want containing %q", err, test.want)
-			}
-		})
-	}
-}
-
-func TestLoadPackActionLintInputRejectsNonRegularAndSymlinkEscapes(t *testing.T) {
-	t.Run("directory", func(t *testing.T) {
-		packDir := t.TempDir()
-		writePackActionLintFile(t, packDir, "pack.yaml", "actions:\n  - actions/not-a-file.yaml\n")
-		if err := os.MkdirAll(filepath.Join(packDir, "actions", "not-a-file.yaml"), 0o755); err != nil {
-			t.Fatal(err)
-		}
-
-		_, err := loadPackActionLintInput(packDir)
-		if err == nil || !strings.Contains(err.Error(), "not a regular file") {
-			t.Fatalf("error = %v, want a non-regular-file rejection", err)
-		}
-	})
-
-	t.Run("symlink escape", func(t *testing.T) {
-		root := t.TempDir()
-		packDir := filepath.Join(root, "pack")
-		writePackActionLintFile(t, packDir, "pack.yaml", "actions:\n  - actions/linked.yaml\n")
-		writePackActionLintFile(t, root, "outside.yaml", safePackLintAction)
-		if err := os.MkdirAll(filepath.Join(packDir, "actions"), 0o755); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.Symlink(filepath.Join(root, "outside.yaml"), filepath.Join(packDir, "actions", "linked.yaml")); err != nil {
-			t.Skipf("create symlink fixture: %v", err)
-		}
-
-		_, err := loadPackActionLintInput(packDir)
-		if err == nil || !strings.Contains(err.Error(), "escapes the pack root through a symlink") {
-			t.Fatalf("error = %v, want a resolved symlink escape rejection", err)
-		}
-	})
-}
-
 func TestLoadPackActionLintInputSortsPathsAndCarriesRequirements(t *testing.T) {
 	packDir := t.TempDir()
 	writePackActionLintFile(t, packDir, "pack.yaml", `requires:

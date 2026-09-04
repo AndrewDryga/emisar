@@ -3,8 +3,6 @@ versions:
   - version: "3.3.0"
     digest: "@sha256:fb2c895e33395e4224c3de041e1751b095ee2c214cdf2d330bbaf62fcce0f54b"
     default: true
-risk_accountability:
-  mode: complete
 # Each case boots a complete Airflow standalone service and database. Forty
 # cases cannot finish inside one 20-minute CI row even though each case passes.
 shards: 3

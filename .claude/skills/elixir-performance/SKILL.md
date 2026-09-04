@@ -49,6 +49,6 @@ for preload shape; read the migration for indexes.
 
 Findings ordered by impact: `issue · where · cost · fix`. Fix the unambiguous ones
 (add a preload to `preloads/0`, switch an assign to a stream, add a missing index in
-a NEW migration — IL-11: a committed migration is frozen, never edit it). Leave a judgment call (is
+a NEW migration when the original already ran — IL-11). Leave a judgment call (is
 this list big enough to page?) as a flagged question, not a silent change. Re-measure
 after fixing.

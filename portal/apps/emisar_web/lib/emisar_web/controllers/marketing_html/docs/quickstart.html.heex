@@ -4,7 +4,7 @@
   <section class="py-12 sm:py-16">
     <.docs_layout
       current="quickstart"
-      updated="August 26, 2026"
+      updated="September 3, 2026"
       toc={[
         {"create-account", "Create your account"},
         {"install-runner", "Install the runner"},
@@ -33,10 +33,18 @@
         </:item>
         <:item><code class="text-zinc-300">sudo</code> on that host.</:item>
         <:item>
+          GitHub CLI with
+          <.docs_inline_code>gh attestation verify --bundle</.docs_inline_code>
+          on the host, and on any workstation where you install the stdio bridge. A GitHub login
+          is not required.
+        </:item>
+        <:item>
           Allow outbound HTTPS to <code class="text-zinc-300">emisar.dev:443</code>
           for the runner, installer, and release files, and to
           <code class="text-zinc-300">registry.emisar.dev:443</code>
-          for action packs.
+          for action packs. Release verification also needs
+          <code class="text-zinc-300">tuf-repo-cdn.sigstore.dev:443</code>
+          and <code class="text-zinc-300">tuf-repo.github.com:443</code>.
         </:item>
       </.docs_prerequisites>
 
@@ -66,7 +74,9 @@
       <.docs_verify_download
         tarball="emisar-<version>-linux-amd64.tar.gz"
         checksums="SHA256SUMS"
-        component="runner"
+        bundle="SHA256SUMS.sigstore.jsonl"
+        tag="runner-v<version>"
+        workflow="AndrewDryga/emisar/.github/workflows/runner-release-trusted.yml"
       />
       <.docs_install_script_details />
       <p class="mt-5 text-base leading-7 text-zinc-400">

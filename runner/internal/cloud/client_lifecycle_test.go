@@ -749,23 +749,15 @@ func TestClient_Run_DisabledDialFailureKeepsRetrying(t *testing.T) {
 }
 
 func TestClient_Run_CorruptDispatchLogFailsBeforeDial(t *testing.T) {
-	dir := t.TempDir()
-	storePath := filepath.Join(dir, "dispatches.jsonl")
-	legacyPath := filepath.Join(dir, "dedup.jsonl")
+	storePath := filepath.Join(t.TempDir(), "dispatches.jsonl")
 	if err := os.WriteFile(storePath, []byte("not-json\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(legacyPath, []byte(legacyDispatchLine("stale")+"\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
 	dialer := &alwaysFailDialer{}
-	client := NewClient(dialer, Options{DedupStorePath: storePath, DedupLegacyStorePath: legacyPath})
+	client := NewClient(dialer, Options{DedupStorePath: storePath})
 
 	err := client.Run(context.Background())
-	if err == nil || !strings.Contains(err.Error(), "invalid dispatch log entry on line 1") ||
-		!strings.Contains(err.Error(), dispatchLogQuarantineRisk) ||
-		!strings.Contains(err.Error(), "stop the runner and prove it is idle") ||
-		!strings.Contains(err.Error(), legacyPath) {
+	if err == nil || !strings.Contains(err.Error(), "invalid dispatch log entry on line 1") {
 		t.Fatalf("Run error = %v, want corrupt durable state", err)
 	}
 	if got := dialer.calls.Load(); got != 0 {
@@ -787,9 +779,7 @@ func TestClient_Run_CorruptLegacyDispatchLogFailsBeforeDial(t *testing.T) {
 	})
 
 	err := client.Run(context.Background())
-	if err == nil || !strings.Contains(err.Error(), legacyPath) ||
-		!strings.Contains(err.Error(), "invalid dispatch log entry on line 1") ||
-		!strings.Contains(err.Error(), dispatchLogQuarantineRisk) {
+	if err == nil || !strings.Contains(err.Error(), legacyPath) || !strings.Contains(err.Error(), "invalid dispatch log entry on line 1") {
 		t.Fatalf("Run error = %v, want corrupt legacy state and its path", err)
 	}
 	if got := dialer.calls.Load(); got != 0 {
@@ -802,17 +792,15 @@ func TestClient_Run_CorruptLegacyDispatchLogFailsBeforeDial(t *testing.T) {
 
 // A dispatch log the runner cannot WRITE is still fail-closed, but the remedy
 // is the opposite one: quarantining a file that was never created cannot help,
-// and the operator needs the file named and the data directory blamed. Covers
-// both boot branches that persist — the first-boot create and the legacy
-// migration — plus the read-failure branch, which keeps the quarantine remedy.
+// and the operator needs the file named and the data directory blamed. The one
+// boot branch that persists is the legacy migration (a first boot writes
+// nothing until the first reservation); the read-failure branch keeps the
+// quarantine remedy.
 func TestClient_Run_UnwritableDispatchLogNamesTheFileAndTheCause(t *testing.T) {
 	if os.Geteuid() == 0 {
 		t.Skip("root writes into a mode-0500 directory")
 	}
 	tests := map[string]func(t *testing.T, dir string) (storePath, legacyPath string){
-		"create fails": func(_ *testing.T, dir string) (string, string) {
-			return filepath.Join(dir, "dispatches.jsonl"), ""
-		},
 		"legacy migration fails": func(t *testing.T, dir string) (string, string) {
 			t.Helper()
 			// The legacy file must live outside the unwritable directory so it
@@ -846,7 +834,7 @@ func TestClient_Run_UnwritableDispatchLogNamesTheFileAndTheCause(t *testing.T) {
 				t.Errorf("refusal must blame the data directory: %v", err)
 			}
 			// The remedy that cannot be performed must be gone.
-			if strings.Contains(err.Error(), dispatchLogQuarantineRisk) ||
+			if strings.Contains(err.Error(), "quarantine the file") ||
 				strings.Contains(err.Error(), "stop the runner and prove it is idle") {
 				t.Errorf("refusal still prescribes quarantining a file that was never written: %v", err)
 			}

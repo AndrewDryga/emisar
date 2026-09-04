@@ -100,7 +100,6 @@ Related rule: `rules/<domain>-<slug>.md` <!-- link the real rule when applicable
 - [portal-image-delivery-follows-main](portal-image-delivery-follows-main.md) — every successful main push publishes its exact tested portal image; production planning has no stale-image fallback, and health reports the embedded source revision
 - [portal-tests-share-one-database-per-workspace](portal-tests-share-one-database-per-workspace.md) — two concurrent portal runs share `emisar_test`, so one's migration DDL cancels the other's queries; how to tell that noise from a real missing-synchronization defect
 - [portal-token-map](portal-token-map.md) — every bearer credential the portal mints (table, prefix, owning context, mint/verify/revoke); deliberately no single tokens table
-- [pack-behavior-environment-limits](pack-behavior-environment-limits.md) — what each `risk_accountability` exception reason costs to close, and why two of the six are harness gaps the existing container SUTs already cover
 
 ### Specifications
 

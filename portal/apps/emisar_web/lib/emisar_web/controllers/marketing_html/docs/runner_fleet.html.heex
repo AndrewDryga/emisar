@@ -4,7 +4,7 @@
   <section class="py-12 sm:py-16">
     <.docs_layout
       current="runner-fleet"
-      updated="August 23, 2026"
+      updated="September 3, 2026"
       toc={[
         {"groups-labels", "Groups and labels"},
         {"enrollment-keys", "Enrollment keys"},
@@ -176,6 +176,7 @@ execution:
       </p>
 
       <.docs_h2 id="updating">Updating</.docs_h2>
+      <.docs_release_verifier_prerequisite />
       <.docs_code phx-no-format label="shell"><span class="text-zinc-500"># runner binary — re-run the installer; configs and packs are preserved</span>
 <span class="text-zinc-500">$</span> curl -fsSL https://emisar.dev/install.sh | sudo bash
 

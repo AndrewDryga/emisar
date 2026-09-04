@@ -20,69 +20,12 @@ import (
 	"sort"
 	"strings"
 	"testing"
-	"time"
 )
-
-func TestExecuteLetsInstallerRollbackBeforeCancellationReturns(t *testing.T) {
-	root := t.TempDir()
-	target := filepath.Join(root, "emisar")
-	backup := filepath.Join(root, "emisar.previous")
-	ready := filepath.Join(root, "ready")
-	restored := filepath.Join(root, "restored")
-	script := filepath.Join(root, "installer.sh")
-	if err := os.WriteFile(target, []byte("old runner\n"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	contents := `#!/usr/bin/env bash
-set -eu
-target=$1
-backup=$2
-ready=$3
-restored=$4
-mv "$target" "$backup"
-printf 'new runner\n' >"$target"
-trap 'mv -f "$backup" "$target"; printf done >"$restored"; exit 143' TERM INT
-printf ready >"$ready"
-while :; do sleep 1; done
-`
-	if err := os.WriteFile(script, []byte(contents), 0o700); err != nil {
-		t.Fatal(err)
-	}
-
-	ctx, cancel := context.WithCancel(context.Background())
-	done := make(chan error, 1)
-	go func() {
-		done <- execute(ctx, "/bin/bash", []string{script, target, backup, ready, restored},
-			[]string{"PATH=/usr/bin:/bin"}, io.Discard, io.Discard)
-	}()
-	deadline := time.Now().Add(5 * time.Second)
-	for {
-		if _, err := os.Stat(ready); err == nil {
-			break
-		} else if !errors.Is(err, fs.ErrNotExist) {
-			t.Fatal(err)
-		}
-		if time.Now().After(deadline) {
-			t.Fatal("installer did not reach its activation boundary")
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
-	cancel()
-	if err := <-done; !errors.Is(err, context.Canceled) {
-		t.Fatalf("execute cancellation = %v, want context canceled", err)
-	}
-	if data, err := os.ReadFile(target); err != nil || string(data) != "old runner\n" {
-		t.Fatalf("target after cancellation = %q err=%v, want restored old runner", data, err)
-	}
-	if _, err := os.Stat(restored); err != nil {
-		t.Fatalf("installer rollback did not finish before execute returned: %v", err)
-	}
-}
 
 func TestRunVerifiesReleaseAndHandsItToInstaller(t *testing.T) {
 	root := t.TempDir()
 	executable := writeReceiptFixture(t, root, officialRepository)
-	name := fmt.Sprintf("emisar-0.19.0-%s-%s", runtime.GOOS, runtime.GOARCH)
+	name := fmt.Sprintf("emisar-0.24.1-%s-%s", runtime.GOOS, runtime.GOARCH)
 	archive := releaseArchive(t, name, map[string]archiveEntry{
 		name + "/emisar":     {body: "runner-binary", mode: 0o755},
 		name + "/install.sh": {body: "#!/usr/bin/env bash\n", mode: 0o755},
@@ -95,11 +38,13 @@ func TestRunVerifiesReleaseAndHandsItToInstaller(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case r.URL.Path == "/latest.json":
-			fmt.Fprint(w, `{"schema_version":1,"component":"runner","tag":"runner-v0.19.0","version":"0.19.0","source_revision":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}`)
+			fmt.Fprint(w, `{"schema_version":1,"component":"runner","tag":"runner-v0.24.1","version":"0.24.1","source_revision":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}`)
 		case strings.HasSuffix(r.URL.Path, "/"+archiveName):
 			w.Write(archive)
 		case strings.HasSuffix(r.URL.Path, "/SHA256SUMS"):
 			fmt.Fprint(w, checksums)
+		case strings.HasSuffix(r.URL.Path, "/SHA256SUMS.sigstore.jsonl"):
+			fmt.Fprint(w, "signed checksum bundle")
 		case strings.Contains(r.URL.Path, "/repos/"):
 			githubCalls++
 			http.Error(w, "GitHub fallback must not run", http.StatusInternalServerError)
@@ -114,16 +59,17 @@ func TestRunVerifiesReleaseAndHandsItToInstaller(t *testing.T) {
 	t.Setenv("BASH_ENV", "/tmp/must-not-reach-installer")
 	var commandName string
 	var commandArgs, commandEnv []string
+	var attestationSubjects []string
 	deps := testDependencies(executable)
 	deps.releaseBase = server.URL
 	deps.apiBase = server.URL
 	deps.downloadBase = server.URL
 	deps.httpClient = server.Client()
 	deps.tempRoot = root
-	deps.runCommand = func(_ context.Context, name string, args, env []string, stdout, _ io.Writer) error {
-		if handled, err := handleSafeTargetPreflight(name, args, stdout,
-			filepath.Join(root, "etc"), filepath.Join(root, "data")); handled {
-			return err
+	deps.runCommand = func(_ context.Context, name string, args, env []string, _ io.Writer, _ io.Writer) error {
+		if len(args) > 2 && args[0] == "attestation" && args[1] == "verify" {
+			attestationSubjects = append(attestationSubjects, args[2])
+			return nil
 		}
 		commandName = name
 		commandArgs = append([]string(nil), args...)
@@ -133,7 +79,7 @@ func TestRunVerifiesReleaseAndHandsItToInstaller(t *testing.T) {
 
 	var stdout, stderr bytes.Buffer
 	err := run(context.Background(), Options{
-		CurrentVersion: "0.18.0",
+		CurrentVersion: "0.24.0",
 		Stdout:         &stdout,
 		Stderr:         &stderr,
 	}, deps)
@@ -148,7 +94,7 @@ func TestRunVerifiesReleaseAndHandsItToInstaller(t *testing.T) {
 	}
 	joined := strings.Join(commandArgs, "\n")
 	for _, want := range []string{
-		"--version\nrunner-v0.19.0", "--bin-dir\n" + filepath.Dir(executable),
+		"--version\nrunner-v0.24.1", "--bin-dir\n" + filepath.Dir(executable),
 		"--etc-dir\n" + filepath.Join(root, "etc"), "--preverified-bundle",
 	} {
 		if !strings.Contains(joined, want) {
@@ -169,119 +115,17 @@ func TestRunVerifiesReleaseAndHandsItToInstaller(t *testing.T) {
 	if !containsEnvironment(commandEnv, "PATH=/usr/sbin:/usr/bin:/sbin:/bin") {
 		t.Errorf("installer environment does not pin a system PATH: %q", commandEnv)
 	}
-	if !strings.Contains(stdout.String(), "Verified checksum") || !strings.Contains(stdout.String(), "Updating emisar 0.18.0 to 0.19.0") {
+	if !strings.Contains(stdout.String(), "Verified checksum") || !strings.Contains(stdout.String(), "Updating emisar 0.24.0 to 0.24.1") {
 		t.Errorf("stdout does not explain the verified update:\n%s", stdout.String())
 	}
-	if !strings.Contains(stderr.String(), "provenance was not checked") {
-		t.Errorf("missing verifier warning not surfaced: %s", stderr.String())
+	if !strings.Contains(stdout.String(), "Verified release checksum signature") {
+		t.Errorf("checksum signature verification was not surfaced: %s", stdout.String())
+	}
+	if len(attestationSubjects) != 1 || !strings.HasSuffix(attestationSubjects[0], "/SHA256SUMS") {
+		t.Errorf("attestation subjects = %q, want SHA256SUMS", attestationSubjects)
 	}
 }
 
-func TestRunRefusesTargetWithoutManagedUpdateBoundary(t *testing.T) {
-	tests := []struct {
-		name        string
-		help        string
-		contract    string
-		contractErr error
-		checkErr    error
-		wantError   string
-	}{
-		{
-			name:      "missing offline reader",
-			help:      "State commands:\n  inspect\n",
-			wantError: "cannot verify the existing durable dispatch state",
-		},
-		{
-			name:        "historical installer has no managed-update contract",
-			help:        "State commands:\n  check-dispatch-log\n",
-			contractErr: errors.New("unknown flag"),
-			wantError:   "too old for a safe managed update",
-		},
-		{
-			name:      "wrong installer contract",
-			help:      "State commands:\n  check-dispatch-log\n",
-			contract:  "different-contract\n",
-			wantError: "too old for a safe managed update",
-		},
-		{
-			name:      "reader rejects config and receipt mapping",
-			help:      "State commands:\n  check-dispatch-log\n",
-			contract:  "emisar-managed-update-v1\n",
-			checkErr:  errors.New("configured data directory mismatch"),
-			wantError: "cannot reconcile the configured and receipt-owned durable dispatch state",
-		},
-	}
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			root := t.TempDir()
-			executable := writeReceiptFixture(t, root, officialRepository)
-			dataDir := filepath.Join(root, "data")
-
-			name := fmt.Sprintf("emisar-0.19.0-%s-%s", runtime.GOOS, runtime.GOARCH)
-			archive := releaseArchive(t, name, map[string]archiveEntry{
-				name + "/emisar":     {body: "runner-binary", mode: 0o755},
-				name + "/install.sh": {body: "#!/usr/bin/env bash\n", mode: 0o755},
-			})
-			digest := sha256.Sum256(archive)
-			archiveName := name + ".tar.gz"
-			checksums := hex.EncodeToString(digest[:]) + "  " + archiveName + "\n"
-			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				switch {
-				case r.URL.Path == "/latest.json":
-					fmt.Fprint(w, `{"schema_version":1,"component":"runner","tag":"runner-v0.19.0","version":"0.19.0","source_revision":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}`)
-				case strings.HasSuffix(r.URL.Path, "/"+archiveName):
-					_, _ = w.Write(archive)
-				case strings.HasSuffix(r.URL.Path, "/SHA256SUMS"):
-					fmt.Fprint(w, checksums)
-				default:
-					http.NotFound(w, r)
-				}
-			}))
-			defer server.Close()
-
-			installerCalled := false
-			deps := testDependencies(executable)
-			deps.releaseBase = server.URL
-			deps.apiBase = server.URL
-			deps.downloadBase = server.URL
-			deps.httpClient = server.Client()
-			deps.tempRoot = root
-			deps.runCommand = func(_ context.Context, command string, args, _ []string, stdout, _ io.Writer) error {
-				switch {
-				case command == "/bin/bash" && len(args) == 2 && args[1] == "--managed-update-contract":
-					_, _ = io.WriteString(stdout, test.contract)
-					return test.contractErr
-				case command == "/bin/bash":
-					installerCalled = true
-					return nil
-				case strings.Join(args, " ") == "state --help":
-					_, _ = io.WriteString(stdout, test.help)
-					return nil
-				case strings.Join(args, "\x00") == strings.Join([]string{
-					"--config", filepath.Join(root, "etc", "config.yaml"),
-					"state", "check-dispatch-log", "--data-dir", dataDir,
-				}, "\x00"):
-					return test.checkErr
-				default:
-					return fmt.Errorf("unexpected command %s %q", command, args)
-				}
-			}
-
-			err := run(context.Background(), Options{CurrentVersion: "0.18.0"}, deps)
-			if err == nil || !strings.Contains(err.Error(), test.wantError) {
-				t.Fatalf("error = %v, want %q", err, test.wantError)
-			}
-			if installerCalled {
-				t.Fatal("incompatible target installer was invoked")
-			}
-		})
-	}
-}
-
-// A runner's group, id and labels decide where dispatch reaches it. They are
-// install-time inputs, so an ambient value in root's environment must not
-// silently re-target the host on `sudo emisar update` — the update re-runs the
-// installer, which would bake whatever it inherits into config.yaml.
 func TestRunStripsIdentityOverridesFromTheInstallerHandoff(t *testing.T) {
 	root := t.TempDir()
 	executable := writeReceiptFixture(t, root, officialRepository)
@@ -302,6 +146,8 @@ func TestRunStripsIdentityOverridesFromTheInstallerHandoff(t *testing.T) {
 			w.Write(archive)
 		case strings.HasSuffix(r.URL.Path, "/SHA256SUMS"):
 			fmt.Fprint(w, checksums)
+		case strings.HasSuffix(r.URL.Path, "/SHA256SUMS.sigstore.jsonl"):
+			fmt.Fprint(w, "signed checksum bundle")
 		default:
 			http.NotFound(w, r)
 		}
@@ -319,11 +165,7 @@ func TestRunStripsIdentityOverridesFromTheInstallerHandoff(t *testing.T) {
 	deps.downloadBase = server.URL
 	deps.httpClient = server.Client()
 	deps.tempRoot = root
-	deps.runCommand = func(_ context.Context, command string, args, env []string, stdout, _ io.Writer) error {
-		if handled, err := handleSafeTargetPreflight(command, args, stdout,
-			filepath.Join(root, "etc"), filepath.Join(root, "data")); handled {
-			return err
-		}
+	deps.runCommand = func(_ context.Context, _ string, _ []string, env []string, _ io.Writer, _ io.Writer) error {
 		commandEnv = append([]string(nil), env...)
 		return nil
 	}
@@ -368,6 +210,8 @@ func TestRunFallsBackToImmutableGitHubMirrorWhenEmisarDownloadFails(t *testing.T
 			_, _ = w.Write(archive)
 		case strings.Contains(r.URL.Path, "/releases/download/") && strings.HasSuffix(r.URL.Path, "/SHA256SUMS"):
 			fmt.Fprint(w, checksums)
+		case strings.Contains(r.URL.Path, "/releases/download/") && strings.HasSuffix(r.URL.Path, "/SHA256SUMS.sigstore.jsonl"):
+			fmt.Fprint(w, "signed checksum bundle")
 		case strings.HasSuffix(r.URL.Path, "/"+archiveName):
 			http.Error(w, "mirror unavailable", http.StatusServiceUnavailable)
 		default:
@@ -383,11 +227,7 @@ func TestRunFallsBackToImmutableGitHubMirrorWhenEmisarDownloadFails(t *testing.T
 	deps.downloadBase = server.URL
 	deps.httpClient = server.Client()
 	deps.tempRoot = root
-	deps.runCommand = func(_ context.Context, command string, args, _ []string, stdout, _ io.Writer) error {
-		if handled, err := handleSafeTargetPreflight(command, args, stdout,
-			filepath.Join(root, "etc"), filepath.Join(root, "data")); handled {
-			return err
-		}
+	deps.runCommand = func(_ context.Context, _ string, _ []string, _ []string, _ io.Writer, _ io.Writer) error {
 		return nil
 	}
 	var stderr bytes.Buffer
@@ -538,30 +378,12 @@ func testDependencies(executable string) dependencies {
 		executable:   func() (string, error) { return executable, nil },
 		effectiveID:  func() int { return 0 },
 		trustPath:    func(string, fs.FileInfo) error { return nil },
-		lookPath:     func(string) (string, error) { return "", fs.ErrNotExist },
+		lookPath:     func(string) (string, error) { return "/usr/bin/gh", nil },
 		runCommand:   func(context.Context, string, []string, []string, io.Writer, io.Writer) error { return nil },
 		httpClient:   http.DefaultClient,
 		releaseBase:  releaseBaseURL,
 		apiBase:      apiBaseURL,
 		downloadBase: downloadBaseURL,
-	}
-}
-
-func handleSafeTargetPreflight(command string, args []string, stdout io.Writer, etcDir, dataDir string) (bool, error) {
-	switch {
-	case strings.Join(args, " ") == "state --help":
-		_, _ = io.WriteString(stdout, "  check-dispatch-log\n")
-		return true, nil
-	case command == "/bin/bash" && len(args) == 2 && args[1] == "--managed-update-contract":
-		_, _ = io.WriteString(stdout, "emisar-managed-update-v1\n")
-		return true, nil
-	case strings.Join(args, "\x00") == strings.Join([]string{
-		"--config", filepath.Join(etcDir, "config.yaml"),
-		"state", "check-dispatch-log", "--data-dir", dataDir,
-	}, "\x00"):
-		return true, nil
-	default:
-		return false, nil
 	}
 }
 
@@ -671,10 +493,8 @@ func repoInstaller(t *testing.T) string {
 // fake that only records argv cannot see a flag the real script rejects: the
 // runner passed `--packs ""` for four releases while install.sh answered
 // "flag --packs requires a value" to every update. So the real script parses
-// the real argv here. --managed-update-contract goes last on purpose:
-// install.sh parses flags in order and answers the probe only once every flag
-// before it has been accepted, so the answer proves the whole handoff parses
-// without installing anything.
+// the real argv here. --help goes last so the script parses the handoff and
+// exits before installing anything.
 func TestReleaseInstallerParsesTheHandoff(t *testing.T) {
 	installer := repoInstaller(t)
 	root := t.TempDir()
@@ -694,7 +514,7 @@ func TestReleaseInstallerParsesTheHandoff(t *testing.T) {
 		Binary: executable, EtcDir: filepath.Join(root, "etc"), DataDir: filepath.Join(root, "data"),
 		LogDir: filepath.Join(root, "log"), ServiceUser: "emisar", ServiceGroup: "emisar", Init: "systemd",
 	}
-	args, env := installerInvocation(bundle, "runner-v0.24.1", current, acceptedIdentities("runner-v0.24.1")[0])
+	args, env := installerInvocation(bundle, "runner-v0.24.1", current)
 
 	// Runners 0.20.0 through 0.24.0 add `--packs ""` after --yes, and every one
 	// of them downloads the current installer, so that shape must parse too.
@@ -706,11 +526,11 @@ func TestReleaseInstallerParsesTheHandoff(t *testing.T) {
 		}
 	}
 	for name, argv := range map[string][]string{"current runner": args, "runners 0.20.0 through 0.24.0": fielded} {
-		probe := append(append([]string(nil), argv...), "--managed-update-contract")
+		probe := append(append([]string(nil), argv...), "--help")
 		cmd := exec.Command("/bin/bash", probe...)
 		cmd.Env = env
 		output, err := cmd.CombinedOutput()
-		if err != nil || strings.TrimSpace(string(output)) != "emisar-managed-update-v1" {
+		if err != nil || !strings.Contains(string(output), "emisar installer") {
 			t.Errorf("%s handoff was not parsed by install.sh: err=%v\n%s", name, err, output)
 		}
 	}

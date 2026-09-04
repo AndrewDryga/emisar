@@ -13,15 +13,10 @@ func updateCmd() *cobra.Command {
 		Short: "Update this installer-managed runner",
 		Long: `Update an official installer-managed runner to the latest stable release.
 
-The release archive is checksum-verified and, when an authenticated GitHub CLI
-is available, its workflow provenance is verified before the bundled installer
-runs. The installer preserves configuration, credentials, packs, and local
-evidence. A failure before the selected binary can run restores the prior
-installation. A later failure keeps both binaries and leaves the service stopped
-for explicit recovery. Every selected release must expose the offline
-dispatch-state check and the current managed-installer transaction. The check
-binds the configured data directory to the installer receipt before the bundled
-installer runs.
+The release checksum file is authenticated with its Sigstore bundle and the
+archive is checked against it before the bundled installer runs. The installer
+preserves configuration, credentials, packs, and local evidence and rolls back
+the installation when an update fails.
 
 Container, copied, development, package-managed, and infrastructure-managed
 binaries have no official installer receipt and are refused; update those from

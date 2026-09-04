@@ -3,7 +3,7 @@ defmodule Emisar.Release do
   Release-time tasks. Mix isn't available in a release, so anything
   that needs to run inside the running release (migrations, seeds)
   lives here and gets invoked via `bin/emisar eval`. There is no
-  rollback task on purpose: committed migrations are frozen and an
+  rollback task on purpose: applied migrations are frozen and an
   application rollback redeploys a prior image without reversing DB
   changes (.github/DEPLOYMENT.md).
   """

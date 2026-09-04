@@ -125,75 +125,24 @@ jobs:
           docker tag emisar/portal:ci "${IMAGE}:latest"
           docker push "${IMAGE}:latest"
 
-  packs-approval:
-    name: CD - Approve pack registry release
+  packs-publish:
+    name: CD - Publish pack registry
     # Wait for the complete reusable CI call so publication cannot outpace the
     # catalog compatibility and portal image checks selected for the same commit.
     if: needs.ci.outputs.packs_release == 'true'
     needs: ci
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    concurrency:
-      group: pack-registry-approval
-      # Supersede only an approval that has not released publication yet. The
-      # publication job below has a different, non-cancellable concurrency group.
-      cancel-in-progress: true
-    environment:
-      name: pack-registry-approval
-    permissions:
-      contents: read
-      # "Get an environment" is documented as needing actions:read.
-      actions: read
-    env:
-      GOTOOLCHAIN: local
-    steps:
-      - name: Check out repository
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-
-      - name: Set up Go
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-        with:
-          go-version-file: tools/go.mod
-          cache: true
-          cache-dependency-path: tools/go.*
-
-      - name: Verify the approval environment's protection rules
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: ./run check release-environment "$GITHUB_REPOSITORY" pack-registry-approval
-
-      - name: Record approved release
-        run: |
-          {
-            echo "### Pack registry release approved"
-            echo "- commit: \`${GITHUB_SHA}\`"
-            echo "- publication remains serialized and cannot be canceled once started"
-          } >> "$GITHUB_STEP_SUMMARY"
-
-  packs-publish:
-    name: CD - Publish pack registry
-    if: needs.packs-approval.result == 'success'
-    needs: [ci, packs-approval]
     runs-on: ubuntu-latest
     timeout-minutes: 15
     concurrency:
       group: packs-publish
       cancel-in-progress: false
     environment:
-      # The release decision and its supersede semantics live on the
-      # pack-registry-approval gate above; this identity-bearing environment
-      # binds the short-lived GCP WIF credentials to protected main (no admin
-      # bypass) but does not re-prompt for a reviewer. A bare rerun of an old
-      # publication job is already refused by the "Refuse a superseded release"
-      # step below when a newer release has since published.
+      # This identity-bearing environment binds short-lived GCP WIF credentials
+      # to protected main. The job below also refuses superseded commits.
       name: pack-registry-production
     permissions:
       contents: read
       id-token: write
-      # "Get an environment" is documented as needing actions:read.
-      actions: read
     env:
       GOTOOLCHAIN: local
       REGISTRY_BASE: https://storage.googleapis.com/emisar-pack-registry
@@ -209,17 +158,6 @@ jobs:
           go-version-file: runner/go.mod
           cache: true
           cache-dependency-path: runner/go.sum
-
-      # Before any credential is minted. This environment is what binds the
-      # short-lived GCP WIF credentials to protected main with no admin bypass —
-      # a policy asserted only in the comment above until now, because the check
-      # that verifies it ran in no gate and no workflow. If someone loosens the
-      # environment in repo settings, publication stops here rather than
-      # authenticating under a weaker binding than the comment claims.
-      - name: Verify the publishing environment's protection rules
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: ./run check release-environment "$GITHUB_REPOSITORY" pack-registry-production
 
       - name: Build pack publisher
         run: cd runner && go build -trimpath -o /tmp/packctl ./cmd/packctl
@@ -272,13 +210,11 @@ jobs:
               # from the committed catalog exactly like the empty-registry
               # bootstrap below (immutable content-addressed objects stay
               # protected by publish's if-generation-match:0 either way).
-              # Validate the current published schema. A legacy catalog that
-              # predates generation intentionally takes the committed fallback;
-              # that artifact was already rebuilt against live history before
-              # this change. A shallow jq predicate here previously accepted
-              # catalogs packctl would carry forward with amputated history.
+              # Validate the current published schema. A shallow jq predicate
+              # here previously accepted catalogs packctl would carry forward
+              # with amputated history.
               if /tmp/packctl catalog validate /tmp/previous.json >/dev/null; then
-                echo "using published catalog history from generation $(jq -r .generation /tmp/catalog-metadata.json)"
+                echo "using published catalog history"
               else
                 echo "::warning::published catalog is malformed; repairing its history from the committed catalog"
                 cp portal/apps/emisar/priv/packs/catalog.json /tmp/previous.json

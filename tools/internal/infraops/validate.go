@@ -564,11 +564,10 @@ func (a *App) validateAdminCallback(ctx context.Context, temp string) error {
 [ "$1" = exec ] || exit 2
 shift
 [ "$1" = emisar ] && [ "$2" = /app/bin/emisar ] && [ "$3" = rpc ]
-case "$4" in *"Emisar.Admin.execute(action_id, args, operator)"*) ;; *) exit 3 ;; esac
+case "$4" in *"Emisar.Admin.execute(action_id, args)"*) ;; *) exit 3 ;; esac
 case "$4" in *'System.fetch_env!'*|*'System.get_env('*|*'--env'*) exit 4 ;; esac
 case "$4" in *'Base.decode64!("ZW1pc2FyLmFkbWluLmFjY291bnQuc2hvdw==")'*) ;; *) exit 5 ;; esac
 case "$4" in *'Enum.map(["YWNjb3VudD1kZW1vPXdlc3Q="], &Base.decode64!/1)'*) ;; *) exit 6 ;; esac
-case "$4" in *'operator = Base.decode64!("ZHJpbGxAZXhhbXBsZQ==")'*) ;; *) exit 7 ;; esac
 if [ "${MOCK_RPC_ERROR:-0}" = 1 ]; then
   printf '__EMISAR_ADMIN_ERROR__{"ok":false,"error":"not_found"}\n'
 else
@@ -580,13 +579,8 @@ fi
 	}
 	callback := filepath.Join(a.Infra, "packs", "emisar-admin", "scripts", "callback.sh")
 	pathEnv := mockBin + string(os.PathListSeparator) + os.Getenv("PATH")
-	// The `operator=` token must be peeled OUT of the action's argument list and
-	// forwarded as the third `execute/3` argument, so a staff mutation is audited
-	// to the dispatching operator rather than an anonymous system job. The mock
-	// asserts both: the args list stays `account=demo=west` alone (exit 6) while
-	// the operator rides its own decode (exit 7).
 	output, err := a.output(ctx, a.Root, map[string]string{"PATH": pathEnv},
-		"/bin/sh", callback, "emisar.admin.account.show", "operator=drill@example", "account=demo=west")
+		"/bin/sh", callback, "emisar.admin.account.show", "account=demo=west")
 	if err != nil {
 		return err
 	}
@@ -594,7 +588,7 @@ fi
 		return fmt.Errorf("unexpected admin RPC output: %s", output)
 	}
 	command := a.command(ctx, a.Root, map[string]string{"PATH": pathEnv, "MOCK_RPC_ERROR": "1"},
-		"/bin/sh", callback, "emisar.admin.account.show", "operator=drill@example", "account=demo=west")
+		"/bin/sh", callback, "emisar.admin.account.show", "account=demo=west")
 	command.Stdout = nil
 	command.Stderr = nil
 	failure, err := command.CombinedOutput()

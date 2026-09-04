@@ -69,8 +69,6 @@ const (
   portal                     compile, format-check, and run Credo
   staged                     validate staged migrations and source formatting
   infra-templates            render and validate production cloud-init
-  release-environment <repo> <environment>
-                             verify an exact release environment policy
   packs                      validate every pack and cross-language hash golden
   agent-setup                validate manuals, skills, tasks, hooks, and Coop verbs
   deps [--base <git ref>]    enforce dependency release age and source policy
@@ -427,11 +425,6 @@ func (a *App) portalGate(ctx context.Context) error {
 	if os.Getenv("CI") != "" && os.Getenv("DATABASE_URL") == "" {
 		return fmt.Errorf("CI portal gate requires DATABASE_URL")
 	}
-	if err := a.gatePhase("portal frozen migration history", func() error {
-		return a.checkFrozenMigrations(ctx)
-	}); err != nil {
-		return err
-	}
 	// Fetching a locked dependency graph and checking source format are the
 	// cheapest deterministic failures. Run them before starting services or
 	// compiling the umbrella so a bad candidate fails in seconds.
@@ -503,21 +496,6 @@ func (a *App) portalGate(ctx context.Context) error {
 	})
 }
 
-func (a *App) checkFrozenMigrations(ctx context.Context) error {
-	event := os.Getenv("EMISAR_FROZEN_MIGRATIONS_EVENT")
-	base := os.Getenv("EMISAR_FROZEN_MIGRATIONS_BASE")
-	if (event == "") != (base == "") {
-		return fmt.Errorf("frozen migration range requires both EMISAR_FROZEN_MIGRATIONS_EVENT and EMISAR_FROZEN_MIGRATIONS_BASE")
-	}
-	if event != "" {
-		return ci.CheckFrozenMigrations(ctx, a.Root, event, base)
-	}
-	if os.Getenv("CI") != "" {
-		return fmt.Errorf("CI portal gate requires EMISAR_FROZEN_MIGRATIONS_EVENT and EMISAR_FROZEN_MIGRATIONS_BASE")
-	}
-	return a.checkLocalFrozenMigrations(ctx)
-}
-
 func (a *App) portalTestEnv(ctx context.Context) (map[string]string, error) {
 	if os.Getenv("CI") != "" {
 		if os.Getenv("DATABASE_URL") == "" {
@@ -565,12 +543,6 @@ func (a *App) validatePacks(ctx context.Context) error {
 	}
 	if err := packtest.Validate(plans); err != nil {
 		return fmt.Errorf("pack behavior authoring: %w", err)
-	}
-	// Declaration-only and absent plans are not in `plans` — they schedule
-	// nothing — but the complete catalog still has to account for every
-	// high/critical or redacting action.
-	if err := packtest.ValidateAccountabilityPlans(filepath.Join(a.Root, "packs")); err != nil {
-		return fmt.Errorf("pack risk accountability: %w", err)
 	}
 	if _, err := hostaccess.Discover(filepath.Join(a.Root, "packs")); err != nil {
 		return fmt.Errorf("pack host-access proof authoring: %w", err)

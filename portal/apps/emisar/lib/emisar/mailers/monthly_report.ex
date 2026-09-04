@@ -27,7 +27,6 @@ defmodule Emisar.Mailers.MonthlyReport do
   @rose Style.rose()
   @amber Style.amber()
   @font Style.font()
-  @button_fill Style.button_fill()
 
   # Five, because the approvals split has five outcomes. The runs split has four
   # and leaves its last track empty on purpose — a shared grid is worth more than
@@ -143,10 +142,10 @@ defmodule Emisar.Mailers.MonthlyReport do
         <title>#{HTML.escape(content.account_name)} — #{content.period}</title>
         <!-- The report is designed dark; this tells a client that would otherwise force its own dark mode that the colors are already handled. -->
         <style>:root { color-scheme: dark; supported-color-schemes: dark; }</style>
-    #{Style.gmail_css()}  </head>
-      <body class="body gm-ground" style="margin:0;padding:0;#{Style.fill(@ground)}">
+      </head>
+      <body style="margin:0;padding:0;background-color:#{@ground};">
         #{preview(content.runs)}
-        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" class="gm-ground" style="#{Style.fill(@ground)}">
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#{@ground};">
           <tr>
             <td align="center" style="padding:40px 20px;">
               <table role="presentation" align="center" width="600" cellpadding="0" cellspacing="0" border="0" style="width:100%;max-width:600px;">
@@ -191,10 +190,10 @@ defmodule Emisar.Mailers.MonthlyReport do
   defp heading(content) do
     """
     <tr>
-      <td style="padding:0 0 14px;font-family:#{@font};font-size:15px;line-height:1.6;color:#{@ink_soft};">#{Style.blend("Hi " <> HTML.escape(content.recipient) <> ",")}</td>
+      <td style="padding:0 0 14px;font-family:#{@font};font-size:15px;line-height:1.6;color:#{@ink_soft};">Hi #{HTML.escape(content.recipient)},</td>
     </tr>
     <tr>
-      <td style="padding:0 0 28px;font-family:#{@font};font-size:15px;line-height:1.6;color:#{@ink_soft};">#{Style.blend("Here's what you and your agents ran through emisar for " <> ~s(<strong style="font-weight:600;color:#{@ink};">) <> HTML.escape(content.account_name) <> "</strong> in " <> HTML.escape(content.period) <> ".")}</td>
+      <td style="padding:0 0 28px;font-family:#{@font};font-size:15px;line-height:1.6;color:#{@ink_soft};">Here's what you and your agents ran through emisar for <strong style="font-weight:600;color:#{@ink};">#{HTML.escape(content.account_name)}</strong> in #{HTML.escape(content.period)}.</td>
     </tr>
     """
   end
@@ -240,24 +239,19 @@ defmodule Emisar.Mailers.MonthlyReport do
     """
     <tr>
       <td style="padding:0 0 16px;">
-        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" class="gm-hairline" style="#{Style.fill(@hairline)}border-radius:12px;">
-          <tr><td style="padding:1px;">
-        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" class="gm-surface" style="#{Style.fill(@surface)}border-radius:11px;">
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#{@surface};border:1px solid #{@hairline};border-radius:12px;">
           <tr>
-            <td style="padding:22px 22px 0;font-family:#{@font};font-size:11px;font-weight:600;letter-spacing:0.14em;text-transform:uppercase;color:#{@ink_soft};">#{Style.blend(title)}</td>
+            <td style="padding:22px 22px 0;font-family:#{@font};font-size:11px;font-weight:600;letter-spacing:0.14em;text-transform:uppercase;color:#{@ink_soft};">#{title}</td>
           </tr>
           <tr>
-            <td style="padding:16px 22px 0;font-family:#{@font};font-size:40px;line-height:1;font-weight:600;letter-spacing:-0.03em;color:#{@ink};font-variant-numeric:tabular-nums;">#{Style.blend(headline)}</td>
+            <td style="padding:16px 22px 0;font-family:#{@font};font-size:40px;line-height:1;font-weight:600;letter-spacing:-0.03em;color:#{@ink};font-variant-numeric:tabular-nums;">#{headline}</td>
           </tr>
           <tr>
-            <td style="padding:10px 22px 20px;font-family:#{@font};font-size:14px;line-height:1.5;color:#{@ink_soft};">#{Style.blend(caption)}</td>
+            <td style="padding:10px 22px 20px;font-family:#{@font};font-size:14px;line-height:1.5;color:#{@ink_soft};">#{caption}</td>
           </tr>
-          #{Style.rule()}
           <tr>
-            <td style="padding:18px 22px 20px;">#{stat_columns(stats)}</td>
+            <td style="padding:18px 22px 20px;border-top:1px solid #{@hairline};">#{stat_columns(stats)}</td>
           </tr>
-        </table>
-          </td></tr>
         </table>
       </td>
     </tr>
@@ -284,19 +278,13 @@ defmodule Emisar.Mailers.MonthlyReport do
   defp count_cell({_label, count, color}) do
     tone = count_color(count, color)
 
-    ~s(<td width="#{@track_width}%" style="padding:0 10px 0 0;font-family:#{@font};font-size:24px;line-height:1.1;font-weight:600;letter-spacing:-0.02em;color:#{tone};font-variant-numeric:tabular-nums;">#{count_value(count, tone)}</td>)
+    ~s(<td width="#{@track_width}%" style="padding:0 10px 0 0;font-family:#{@font};font-size:24px;line-height:1.1;font-weight:600;letter-spacing:-0.02em;color:#{tone};font-variant-numeric:tabular-nums;">#{number(count)}</td>)
   end
-
-  # Whether a count needs blend/1 is decided by its TONE, not its value: a
-  # neutral count is carried through a rewrite by the blend, an accent is already
-  # at the fixed point and would come back as its complement inside one.
-  defp count_value(count, @ink_soft), do: Style.blend(number(count))
-  defp count_value(count, _accent), do: number(count)
 
   defp label_cell(nil), do: "<td></td>"
 
   defp label_cell({label, _count, _color}) do
-    ~s(<td style="padding:7px 10px 0 0;font-family:#{@font};font-size:11px;line-height:1.4;letter-spacing:0.08em;text-transform:uppercase;color:#{@ink_soft};">#{Style.blend(label)}</td>)
+    ~s(<td style="padding:7px 10px 0 0;font-family:#{@font};font-size:11px;line-height:1.4;letter-spacing:0.08em;text-transform:uppercase;color:#{@ink_soft};">#{label}</td>)
   end
 
   defp count_color(0, _color), do: @ink_soft
@@ -314,30 +302,23 @@ defmodule Emisar.Mailers.MonthlyReport do
 
     """
     <tr>
-      <td style="padding:14px 2px 12px;font-family:#{@font};font-size:11px;font-weight:600;letter-spacing:0.14em;text-transform:uppercase;color:#{@ink_soft};">#{Style.blend("Right now")}</td>
+      <td style="padding:14px 2px 12px;font-family:#{@font};font-size:11px;font-weight:600;letter-spacing:0.14em;text-transform:uppercase;color:#{@ink_soft};">Right now</td>
     </tr>
     <tr>
-      <td>
+      <td style="border-bottom:1px solid #{@hairline};">
         <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
           #{Enum.map_join(rows, &posture_row/1)}
-          #{Style.rule(2)}
         </table>
       </td>
     </tr>
     """
   end
 
-  # A neutral value needs blend/1 to survive; an accent is already at the fixed
-  # point and must stay outside it, or the blend returns its complement.
-  defp posture_value(@ink, count), do: Style.blend(number(count))
-  defp posture_value(_accent, count), do: number(count)
-
   defp posture_row({label, count, color}) do
     """
-    #{Style.rule(2)}
     <tr>
-      <td style="padding:12px 2px;font-family:#{@font};font-size:14px;color:#{@ink_soft};">#{Style.blend(label)}</td>
-      <td align="right" style="padding:12px 2px;font-family:#{@font};font-size:14px;font-weight:600;color:#{color};font-variant-numeric:tabular-nums;">#{posture_value(color, count)}</td>
+      <td style="padding:12px 2px;border-top:1px solid #{@hairline};font-family:#{@font};font-size:14px;color:#{@ink_soft};">#{label}</td>
+      <td align="right" style="padding:12px 2px;border-top:1px solid #{@hairline};font-family:#{@font};font-size:14px;font-weight:600;color:#{color};font-variant-numeric:tabular-nums;">#{number(count)}</td>
     </tr>
     """
   end
@@ -352,8 +333,8 @@ defmodule Emisar.Mailers.MonthlyReport do
       <td style="padding:30px 0 36px;">
         <table role="presentation" cellpadding="0" cellspacing="0" border="0">
           <tr>
-            <td class="gm-fill" style="#{Style.fill(@button_fill)}border-radius:8px;">
-              <a href="#{HTML.escape(dashboard_url)}" style="display:inline-block;padding:13px 22px;font-family:#{@font};font-size:14px;line-height:1;font-weight:700;color:#{@ink};text-decoration:none;border-radius:8px;">#{Style.blend("Open your dashboard")}</a>
+            <td bgcolor="#{@brand}" style="border-radius:8px;">
+              <a href="#{HTML.escape(dashboard_url)}" style="display:inline-block;padding:13px 22px;font-family:#{@font};font-size:14px;line-height:1;font-weight:600;color:#{@ground};text-decoration:none;border-radius:8px;">Open your dashboard</a>
             </td>
           </tr>
         </table>
@@ -364,10 +345,9 @@ defmodule Emisar.Mailers.MonthlyReport do
 
   defp footer(content) do
     """
-    #{Style.rule()}
     <tr>
-      <td style="padding:22px 0 0;font-family:#{@font};font-size:12px;line-height:1.7;color:#{@ink_soft};">
-        #{Style.blend("You're receiving this monthly report as an owner of " <> HTML.escape(content.account_name) <> ".")}
+      <td style="padding:22px 0 0;border-top:1px solid #{@hairline};font-family:#{@font};font-size:12px;line-height:1.7;color:#{@ink_soft};">
+        You're receiving this monthly report as an owner of #{HTML.escape(content.account_name)}.<br />
         <a href="#{HTML.escape(content.unsubscribe_url)}" style="color:#{@brand};text-decoration:underline;">Unsubscribe</a>
       </td>
     </tr>

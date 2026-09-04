@@ -5,16 +5,6 @@ versions:
     default: true
   - version: "17.6"
     digest: "@sha256:00bc86618629af00d2937fdc5a5d63db3ff8450acf52f0636ec813c7f4902929"
-risk_accountability:
-  mode: complete
-  exceptions: {}
-redaction_accountability:
-  exceptions:
-    # The SELECT already drops ldapbindpasswd= and radiussecrets= options in its
-    # WHERE clause, so the bind password never reaches stdout for the redaction
-    # rule to mask. The command is the boundary; the rule is a backstop against a
-    # future edit that removes that filter, and so cannot be made to fire.
-    postgres.pg_hba_rules: unreachable_by_construction
 secret_env: [PGPASSWORD]
 env:
   PGDATABASE: testdb

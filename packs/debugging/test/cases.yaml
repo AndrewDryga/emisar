@@ -1,18 +1,11 @@
 # drop_caches and sysctl_set reach kernel state a container SHARES with its
 # host, so even a privileged lane would mutate the CI machine. kill_pid remains
-# outside this read-focused fixture and is still declared explicitly.
-# See .agent/kb/pack-behavior-environment-limits.md for what was measured.
+# outside this read-focused fixture.
 services: [debug-target]
 versions:
   - version: "13-slim"
     digest: "@sha256:020c0d20b9880058cbe785a9db107156c3c75c2ac944a6aa7ab59f2add76a7bd"
     default: true
-risk_accountability:
-  mode: complete
-  exceptions:
-    debugging.drop_caches: requires_privileged_host
-    debugging.kill_pid: requires_privileged_host
-    debugging.sysctl_set: requires_privileged_host
 cases:
   - name: debugging.dmesg-tail-falls-back-and-truncates
     action: debugging.dmesg_tail

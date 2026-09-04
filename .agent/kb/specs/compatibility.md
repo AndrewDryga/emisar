@@ -724,38 +724,10 @@ both — legacy entries and the legacy path migrate with an audit-visible log
 line); a per-item fault (one pack, one file) degrades that item loudly and
 never the whole runner.
 
-**What happens on skew.** A dispatch log the runner cannot read refuses
-`connect` with the quarantine remedy in the error; `emisar doctor` and
-`emisar state check-dispatch-log` report the same verdict offline, and
-`install.sh` runs the check with the staged binary before touching a running
-service. The current dispatch format starts with
-`{"format":"emisar_dispatch_log","version":2}` and stores an ordered,
-append-only transition journal between state-equivalent atomic checkpoints.
-Existing unversioned `dispatches.jsonl` snapshots and the older `dedup.jsonl`
-path migrate atomically before the runner connects. Unknown
-versions or fields, impossible transitions, and a non-newline-terminated v2
-tail are corrupt and fail closed; the runner never guesses which writes landed.
-Snapshot-only binaries deliberately reject the v2 header.
-
-The current self-updater requires every selected target binary to expose the
-offline dispatch-state check and its bundled installer to report
-`emisar-managed-update-v1` before handoff. The target loads the receipt-owned
-`config.yaml`, verifies that its effective `paths.data_dir` equals the receipt's
-data directory, and reads that state. Releases predating either boundary are
-refused. A failure before the new binary can run restores the prior installation.
-After a service start attempt—or after binary activation under `--no-service`—
-automatic downgrade is refused: the activated installation and previous binary
-remain, the service stays stopped, and the operator gets an explicit recovery
-message. The installer never restores an older journal snapshot because doing
-so could forget an executed action.
-Managed in-place updates keep the exact install-receipt paths, service identity,
-and init manager. The installer refuses to modify a receiptless pre-v0.20
-runner because it cannot prove that installation's live mapping; a separately
-reviewed adoption flow must establish that proof before a managed update.
-Quarantining a corrupt journal is likewise an explicit loss of replay
-protection and may allow a redelivered action to run again. Future formats keep
-reading v2 or add an explicit successor version; they never reinterpret v2 in
-place.
+**What happens on skew.** The runner reads the atomic dispatch snapshot written
+by earlier releases and migrates the old `dedup.jsonl` path when needed. A file
+it cannot read refuses `connect`; `emisar doctor` and
+`emisar state check-dispatch-log` report the same problem offline.
 
 A broken installed pack loads as degraded (`packs.degraded` log line, doctor
 failure naming the directory) while every healthy pack keeps serving.
@@ -800,33 +772,33 @@ environment is `VERSION`, `BIN_DIR`, `ETC_DIR`, `DATA_DIR`, `LOG_DIR`,
 `SERVICE_USER`, `SERVICE_GROUP`, `ASSUME_YES`, `NO_START`, `NO_SERVICE`,
 `EMISAR_PACKS`, `EMISAR_URL`, `EMISAR_ENROLLMENT_KEY`, `EMISAR_REPO`,
 `EMISAR_GITHUB_TOKEN`, `EMISAR_GROUP`, `EMISAR_RUNNER_ID`,
-`EMISAR_RUNNER_LABEL_<KEY>`, `EMISAR_ATTESTATION_WORKFLOW`, and
-`QUARANTINE_DISPATCH_LOG`. Every one is named rather than summarized, because a
-variable this inventory does not name is a variable nobody reviews before it
-freezes.
+`EMISAR_RUNNER_LABEL_<KEY>`, and `EMISAR_ATTESTATION_WORKFLOW`. Every one is
+named rather than summarized, because a variable this inventory does not name
+is a variable nobody reviews before it freezes.
 
 A yes/no variable here — `ASSUME_YES`, `NO_START`, `NO_SERVICE`, and
-`EMISAR_ALLOW_INSECURE` in both the bridge and PowerShell installer — accepts
-`1`, `true`, `yes`, `y` or `on`, in any case. They previously required the
-literal `1`, so `ASSUME_YES=true` left
+`EMISAR_ALLOW_INSECURE` in the bridge and PowerShell installer — accepts `1`,
+`true`, `yes`, `y` or `on`, in any case. They previously required the literal
+`1`, so `ASSUME_YES=true` left
 the installer interactive, hit a prompt with no terminal and died, and
 `EMISAR_ALLOW_INSECURE=true` silently kept the safety on. Anything unrecognised
-is false, so an unknown value never fails open. `EMISAR_ATTESTATION_WORKFLOW` is the supply-chain-relevant one: it
-selects the workflow identity Sigstore provenance is matched against, and a fork
-or mirror must set it or fall back to the checksum alone.
-`QUARANTINE_DISPATCH_LOG` is advertised in the installer's own output, not its
-`--help`, and is frozen on the same footing.
+is false, so an unknown value never fails open. `EMISAR_ATTESTATION_WORKFLOW`
+selects the workflow identity matched against the downloaded Sigstore bundle.
+Official releases authenticate the combined checksum before trusting an
+archive digest and fail when the bundle, GitHub CLI, or signature is
+unavailable. Older releases without signed checksum metadata are unsupported.
+A fork or mirror sets its own workflow or retains its operator-owned checksum
+policy.
 An unattended runner install requires `--yes` plus an explicit
 `--packs`/`EMISAR_PACKS` value; an explicitly empty value installs no new packs
 and preserves existing ones. A caller without a controlling terminal is refused
 without `--yes`. Interactive installs may leave pack selection unset to review
 host-matched recommendations.
 
-`install-mcp.sh` accepts `--version`, `--install-dir`, `--uninstall`, and
-`--yes`. It accepts
+`install-mcp.sh` accepts `--version`, `--install-dir`, `--uninstall`, and `--yes`.
+It accepts
 `VERSION`, `INSTALL_DIR`, `EMISAR_REPO`, `EMISAR_GITHUB_TOKEN`, `ASSUME_YES`,
-`EMISAR_ATTESTATION_WORKFLOW`,
-and `EMISAR_URL` (the portal the connection phase talks to and writes into
+`EMISAR_ATTESTATION_WORKFLOW`, and `EMISAR_URL` (the portal the connection phase talks to and writes into
 configs; default `https://emisar.dev`). The bridge installer also requires the
 selected GitHub release to be marked immutable. The current release tags are
 `runner-v0.24.0` and `mcp-v0.11.0`.
@@ -845,15 +817,16 @@ removal that did not happen.
 `-PortalOrigin`, `-Uninstall`, `-Yes`, and `-ConnectAll`. Its environment is
 `EMISAR_URL`, `EMISAR_REPO`, `EMISAR_GITHUB_TOKEN`,
 `EMISAR_ATTESTATION_WORKFLOW`, `EMISAR_ALLOW_INSECURE`, and
-`EMISAR_MCP_TEST_BASE_URL`. The last is the one test-only read in any shipped
-installer, kept because the release origin has no operator-facing equivalent,
-and accepted only for a loopback origin with an affirmative
-`EMISAR_ALLOW_INSECURE` value described above. Install
+`EMISAR_MCP_TEST_BASE_URL`. The last is the one
+test-only read in any shipped installer, kept because the release origin has no
+operator-facing equivalent, and accepted only for a loopback origin with an
+affirmative `EMISAR_ALLOW_INSECURE` value described above. Install
 locations are never redirected by a test variable: the installer reads the real
 `APPDATA` and `LOCALAPPDATA`, so its harness sets those the way the Unix
 harness sets real variables and PATH shims. It installs the native
-`windows-amd64` or `windows-arm64` zip per user, verifies `SHA256SUMS-MCP`, and
-checks Sigstore provenance when an authenticated GitHub CLI is available. It
+`windows-amd64` or `windows-arm64` zip per user. It authenticates
+`SHA256SUMS-MCP` from its downloaded Sigstore bundle without a GitHub login,
+then checks the archive digest. It
 uses protected Windows DACLs for the binary directory and direct-CLI
 credentials, and delegates the connection phase to the same `connect` and
 `disconnect` commands.
@@ -982,19 +955,8 @@ still serving version 1 through the deprecation window.
   A published schema object's `$id` names the host that serves it,
   `registry.emisar.dev`. The v2 through v5 suites shipped naming `emisar.dev`,
   which serves nothing at that path; those objects are immutable and stay
-  wrong. v6 corrected the host, v7 added the catalog's monotonic generation,
-  and `TestSchemaIDsNameTheHostThatServesThem` pins the serving host.
-
-  `catalog.json` carries a top-level `generation` from 1 through
-  9,007,199,254,740,991 (the largest integer all JSON consumers compare
-  exactly). A build retains it when the catalog is unchanged and increments it
-  for changed content. Portal
-  caches compare generations within the exact configured catalog URL, reject
-  lower generations, reject different content reusing one generation, and
-  reject unchanged content that skips a generation. A legacy document without
-  the field is not valid under the current v7 schema; the builder alone accepts
-  that omission as the generation-zero predecessor that mints its first
-  generated successor.
+  wrong. v6 corrected the host before publication and
+  `TestSchemaIDsNameTheHostThatServesThem` pins the serving host.
 - The runner's default registry is currently the facade
   `https://emisar.dev`. The facade serves `/packs.json`,
   `/packs/suggest.json`, `/packs/<id>/pack.tar.gz`, and

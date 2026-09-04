@@ -17,7 +17,7 @@
   <section class="py-12 sm:py-16">
     <.docs_layout
       current="containers"
-      updated="August 19, 2026"
+      updated="September 3, 2026"
       toc={[
         {"what-it-sees", "What a containerized runner sees"},
         {"official-image", "The official image"},
@@ -243,6 +243,7 @@ USER 65532</.docs_code>
         to whatever runs the container: <code class="font-mono">docker run --restart</code>, a
         Kubernetes restart policy, or the Nomad client.
       </p>
+      <.docs_release_verifier_prerequisite />
       <.docs_code
         phx-no-format
         label="shell"

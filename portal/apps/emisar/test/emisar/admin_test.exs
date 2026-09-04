@@ -277,30 +277,8 @@ defmodule Emisar.AdminTest do
     end
   end
 
-  describe "execute/3" do
-    setup do
-      %{staff_operator: Fixtures.Users.create_user() |> Fixtures.Users.mark_user_as_staff()}
-    end
-
-    test "requires an operator label for any action outside the declared reads", %{
-      staff_operator: staff_operator
-    } do
-      # The gate is an allowlist of the reads, so an admin action added to the
-      # private pack without touching `Emisar.Admin` is refused rather than
-      # running unlabelled — a mutation cannot fail open by omission.
-      unlisted = "emisar.admin.account.freeze"
-
-      assert Admin.execute(unlisted, ["account=example"], "") == {:error, :operator_required}
-
-      # With a resolved staff operator the gate steps aside and the action is
-      # reported as unsupported, so the allowlist never masks a typo.
-      assert Admin.execute(unlisted, ["account=example"], staff_operator.email) ==
-               {:error, {:unsupported_admin_action, unlisted}}
-    end
-
-    test "erases a user only when the confirmation matches the user id", %{
-      staff_operator: staff_operator
-    } do
+  describe "execute/2" do
+    test "erases a user only when the confirmation matches the user id" do
       {user, _account, _subject} = Fixtures.Subjects.owner_subject()
 
       assert Admin.execute(
@@ -309,8 +287,7 @@ defmodule Emisar.AdminTest do
                  "user_id=#{user.id}",
                  "confirmation=not-the-user-id",
                  "reason=typo in the confirmation"
-               ],
-               staff_operator.email
+               ]
              ) == {:error, {:unsupported_admin_action, "emisar.admin.user.erase"}}
 
       assert {:ok, %{id: _}} = Emisar.Users.fetch_user_by_id(user.id)
@@ -322,8 +299,7 @@ defmodule Emisar.AdminTest do
                    "user_id=#{user.id}",
                    "confirmation=#{user.id}",
                    "reason=verified erasure request"
-                 ],
-                 staff_operator.email
+                 ]
                )
 
       assert erased == user.id
@@ -334,89 +310,48 @@ defmodule Emisar.AdminTest do
       account = Fixtures.Accounts.create_account()
 
       assert {:ok, result} =
-               Admin.execute("emisar.admin.account.show", ["account=#{account.slug}"], "")
+               Admin.execute("emisar.admin.account.show", ["account=#{account.slug}"])
 
       assert result.id == account.id
       assert result.slug == account.slug
       assert result.billing.plan == "free"
     end
 
-    test "stamps a staff mutation as the team, not the system or a spoofable operator id",
-         %{staff_operator: staff_operator} do
+    test "records private support mutations as platform work" do
       account = Fixtures.Accounts.create_account()
 
       assert {:ok, %{disabled: true}} =
                Admin.execute(
                  "emisar.admin.account.disable",
-                 ["account=#{account.slug}", "reason=support=verified"],
-                 staff_operator.email
+                 ["account=#{account.slug}", "reason=support=verified"]
                )
 
       # A disabled account's own owner is locked out, so read the trail directly.
       event = Enum.find(Repo.all(Audit.Event), &(&1.event_type == "account.disabled"))
 
-      # The customer's own trail attributes the block to "Emisar staff" — never an
-      # anonymous "system" job, and never the operator's specific id, which is an
-      # unauthenticated argv claim (one staff member could name another). The
-      # authenticated operator stays accountable in Emisar's own dispatch audit.
-      # The reason value round-trips its embedded "=" unsplit.
-      assert event.actor_kind == "staff"
+      # The RPC has no user credential. The action run records its authenticated
+      # dispatcher; the customer-domain event honestly records platform work.
+      assert event.actor_kind == "system"
       assert is_nil(event.actor_id)
-      assert event.actor_label == "Emisar staff"
+      assert is_nil(event.actor_label)
       assert event.payload == %{"reason" => "support=verified"}
 
       assert {:ok, %{disabled: false}} =
                Admin.execute(
                  "emisar.admin.account.enable",
-                 ["account=#{account.slug}", "reason=support=resolved"],
-                 staff_operator.email
+                 ["account=#{account.slug}", "reason=support=resolved"]
                )
 
       assert {:ok, _account} = Emisar.Accounts.fetch_account_by_id(account.id)
     end
 
-    test "refuses a staff mutation whose operator does not resolve to a live staff user",
-         %{staff_operator: staff_operator} do
+    test "runs the member support verbs with a platform subject" do
       account = Fixtures.Accounts.create_account()
       member = Fixtures.Users.create_user()
-
-      membership =
-        Fixtures.Memberships.create_membership(
-          account_id: account.id,
-          user_id: member.id,
-          role: "operator"
-        )
-
-      args = ["account=#{account.slug}", "member=#{member.email}"]
-
-      # An ordinary account member is not staff; the argv claim naming them is refused.
-      assert Admin.execute("emisar.admin.member.suspend", args, member.email) ==
-               {:error, :operator_not_staff}
-
-      # A reference that resolves to no user at all.
-      assert Admin.execute("emisar.admin.member.suspend", args, "ghost@example.test") ==
-               {:error, :unknown_operator}
-
-      # A blank operator cannot authorize a staff mutation.
-      assert Admin.execute("emisar.admin.member.suspend", args, "") ==
-               {:error, :operator_required}
-
-      refute Repo.reload!(membership).disabled_at
-
-      # A resolvable staff operator, by id, is accepted.
-      assert {:ok, _suspended} =
-               Admin.execute("emisar.admin.member.suspend", args, staff_operator.id)
-
-      assert Repo.reload!(membership).disabled_at
-    end
-
-    test "runs the member break-glass verbs as the resolved staff operator",
-         %{staff_operator: staff_operator} do
-      account = Fixtures.Accounts.create_account()
       Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
 
-      staff_operator =
-        staff_operator
+      member =
+        member
         |> Fixtures.Users.set_mfa_state(
           mfa_secret: "JBSWY3DPEHPK3PXP",
           mfa_enabled_at: DateTime.utc_now(),
@@ -426,25 +361,25 @@ defmodule Emisar.AdminTest do
       membership =
         Fixtures.Memberships.create_membership(
           account_id: account.id,
-          user_id: staff_operator.id,
+          user_id: member.id,
           role: "operator"
         )
 
-      session_token = Fixtures.Auth.create_session_token!(staff_operator, :magic_link, nil)
-      args = ["account=#{account.slug}", "member=#{staff_operator.email}"]
+      session_token = Fixtures.Auth.create_session_token!(member, :magic_link, nil)
+      args = ["account=#{account.slug}", "member=#{member.email}"]
 
       assert {:ok, suspended} =
-               Admin.execute("emisar.admin.member.suspend", args, staff_operator.email)
+               Admin.execute("emisar.admin.member.suspend", args)
 
       assert suspended.id == membership.id
       assert Repo.reload!(membership).disabled_at
 
       # The written row carries no :user preload, so the email has to come from
       # the membership the dispatcher already fetched.
-      assert suspended.email == staff_operator.email
+      assert suspended.email == member.email
 
-      assert {:ok, _} = Admin.execute("emisar.admin.member.reinstate", args, staff_operator.email)
-      assert {:ok, _} = Admin.execute("emisar.admin.sessions.revoke", args, staff_operator.email)
+      assert {:ok, _} = Admin.execute("emisar.admin.member.reinstate", args)
+      assert {:ok, _} = Admin.execute("emisar.admin.sessions.revoke", args)
 
       assert Emisar.Auth.fetch_user_and_token_by_session_token(session_token) ==
                {:error, :not_found}
@@ -452,27 +387,24 @@ defmodule Emisar.AdminTest do
       assert {:ok, _} =
                Admin.execute(
                  "emisar.admin.account.disable",
-                 ["account=#{account.slug}", "reason=break-glass MFA reset"],
-                 staff_operator.email
+                 ["account=#{account.slug}", "reason=break-glass MFA reset"]
                )
 
-      assert {:ok, _} = Admin.execute("emisar.admin.mfa.reset", args, staff_operator.email)
+      assert {:ok, _} = Admin.execute("emisar.admin.mfa.reset", args)
 
-      reset_staff_operator = Repo.reload!(staff_operator)
-      assert is_nil(reset_staff_operator.mfa_secret)
-      assert is_nil(reset_staff_operator.mfa_enabled_at)
-      assert reset_staff_operator.mfa_recovery_codes == []
+      reset_member = Repo.reload!(member)
+      assert is_nil(reset_member.mfa_secret)
+      assert is_nil(reset_member.mfa_enabled_at)
+      assert reset_member.mfa_recovery_codes == []
     end
 
-    test "invites a member with full runner access as the staff operator",
-         %{staff_operator: staff_operator} do
+    test "invites a member with full runner access" do
       account = Fixtures.Accounts.create_account()
 
       assert {:ok, invited} =
                Admin.execute(
                  "emisar.admin.member.invite",
-                 ["account=#{account.slug}", "email=locked-out-owner@example.com", "role=admin"],
-                 staff_operator.email
+                 ["account=#{account.slug}", "email=locked-out-owner@example.com", "role=admin"]
                )
 
       assert invited.email == "locked-out-owner@example.com"
@@ -487,15 +419,13 @@ defmodule Emisar.AdminTest do
       assert is_nil(membership.invited_by_id)
     end
 
-    test "resends a pending invitation as the staff operator",
-         %{staff_operator: staff_operator} do
+    test "resends a pending invitation" do
       account = Fixtures.Accounts.create_account()
 
       assert {:ok, invited} =
                Admin.execute(
                  "emisar.admin.member.invite",
-                 ["account=#{account.slug}", "email=stalled-invite@example.com", "role=operator"],
-                 staff_operator.email
+                 ["account=#{account.slug}", "email=stalled-invite@example.com", "role=operator"]
                )
 
       first_digest = Repo.one(Membership).invitation_token_digest
@@ -503,8 +433,7 @@ defmodule Emisar.AdminTest do
       assert {:ok, resent} =
                Admin.execute(
                  "emisar.admin.invitation.resend",
-                 ["account=#{account.slug}", "member=stalled-invite@example.com"],
-                 staff_operator.email
+                 ["account=#{account.slug}", "member=stalled-invite@example.com"]
                )
 
       assert resent.id == invited.id
@@ -513,7 +442,7 @@ defmodule Emisar.AdminTest do
       refute Repo.one(Membership).invitation_token_digest == first_digest
     end
 
-    test "changes a member role as the staff operator", %{staff_operator: staff_operator} do
+    test "changes a member role" do
       account = Fixtures.Accounts.create_account()
       Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
       user = Fixtures.Users.create_user()
@@ -528,8 +457,7 @@ defmodule Emisar.AdminTest do
       assert {:ok, promoted} =
                Admin.execute(
                  "emisar.admin.member.set_role",
-                 ["account=#{account.slug}", "member=#{user.email}", "role=admin"],
-                 staff_operator.email
+                 ["account=#{account.slug}", "member=#{user.email}", "role=admin"]
                )
 
       assert promoted.id == membership.id
@@ -537,7 +465,7 @@ defmodule Emisar.AdminTest do
       assert promoted.email == user.email
     end
 
-    test "transfers ownership and demotes the previous owner", %{staff_operator: staff_operator} do
+    test "transfers ownership and demotes the previous owner" do
       account = Fixtures.Accounts.create_account()
       previous_owner = Fixtures.Users.create_user()
 
@@ -563,8 +491,7 @@ defmodule Emisar.AdminTest do
                    "account=#{account.slug}",
                    "new_owner=#{next_owner.email}",
                    "previous_owner=#{previous_owner.email}"
-                 ],
-                 staff_operator.email
+                 ]
                )
 
       assert promoted.role == :owner
@@ -573,38 +500,31 @@ defmodule Emisar.AdminTest do
     end
 
     test "rejects malformed, duplicate, excessive, and non-admin arguments" do
-      assert Admin.execute("emisar.admin.account.show", ["account"], "") ==
+      assert Admin.execute("emisar.admin.account.show", ["account"]) ==
                {:error, :invalid_admin_arguments}
 
-      assert Admin.execute("emisar.admin.account.show", ["account=one", "account=two"], "") ==
+      assert Admin.execute("emisar.admin.account.show", ["account=one", "account=two"]) ==
                {:error, :invalid_admin_arguments}
 
-      assert Admin.execute("emisar.admin.account.show", ["a=1", "b=2", "c=3", "d=4"], "") ==
+      assert Admin.execute("emisar.admin.account.show", ["a=1", "b=2", "c=3", "d=4"]) ==
                {:error, :invalid_admin_request}
 
-      # A non-binary operator never satisfies the release-RPC contract.
-      assert Admin.execute("emisar.admin.account.show", ["account=x"], nil) ==
-               {:error, :invalid_admin_request}
-
-      assert Admin.execute("linux.uptime", [], "") == {:error, :invalid_admin_request}
+      assert Admin.execute("linux.uptime", []) == {:error, :invalid_admin_request}
     end
 
-    test "complimentary plans use the existing subscription posture", %{
-      staff_operator: staff_operator
-    } do
+    test "complimentary plans use the existing subscription posture" do
       account = Fixtures.Accounts.create_account()
 
       assert {:ok, %{plan: "team", source: "complimentary"}} =
                Admin.execute(
                  "emisar.admin.plan.grant",
-                 ["account=#{account.slug}", "plan=team", "reason=design partner"],
-                 staff_operator.email
+                 ["account=#{account.slug}", "plan=team", "reason=design partner"]
                )
 
       assert Billing.account_plan(account) == "team"
 
       assert {:ok, %{subscriptions: subscriptions}} =
-               Admin.execute("emisar.admin.analytics.revenue", [], "")
+               Admin.execute("emisar.admin.analytics.revenue", [])
 
       assert %{plan: "team", status: "complimentary", accounts: 1} in subscriptions
     end
@@ -666,7 +586,7 @@ defmodule Emisar.AdminTest do
       })
 
       assert {:ok, report} =
-               Admin.execute("emisar.admin.runtime.recent_failures", ["days=1"], "")
+               Admin.execute("emisar.admin.runtime.recent_failures", ["days=1"])
 
       failed_group = Enum.find(report.groups, &(&1.status == :failed))
       denied_group = Enum.find(report.groups, &(&1.status == :denied))

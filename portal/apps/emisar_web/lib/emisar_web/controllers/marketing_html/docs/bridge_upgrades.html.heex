@@ -4,7 +4,7 @@
   <section class="py-12 sm:py-16">
     <.docs_layout
       current="bridge-upgrades"
-      updated="August 21, 2026"
+      updated="September 3, 2026"
       toc={[
         {"versions", "Find the version you run"},
         {"compatibility", "Compatibility status"},
@@ -25,6 +25,20 @@
           class="text-brand-400 hover:text-brand-300"
         >Upgrade runners</.link>.
       </p>
+
+      <.docs_prerequisites>
+        <:item>
+          GitHub CLI with
+          <.docs_inline_code>gh attestation verify --bundle</.docs_inline_code>
+          on each workstation.
+        </:item>
+        <:item>
+          Outbound HTTPS to <.docs_inline_code>emisar.dev:443</.docs_inline_code>, <.docs_inline_code>tuf-repo-cdn.sigstore.dev:443</.docs_inline_code>, and <.docs_inline_code>tuf-repo.github.com:443</.docs_inline_code>. See <.link
+            navigate={~p"/docs/network-requirements#installers"}
+            class="text-brand-400 hover:text-brand-300"
+          >Network requirements</.link>.
+        </:item>
+      </.docs_prerequisites>
 
       <.docs_h2 id="versions">Find the version you run</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
@@ -100,8 +114,9 @@
       <.docs_h2 id="upgrade">Upgrade a bridge</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         Run the installer on each workstation. It downloads the new binary next to the current
-        one, checks the checksum and the version it reports, keeps a copy of the old binary, and
-        only then swaps them. If any step fails, it puts everything back.
+        one, authenticates the signed checksum metadata, checks the archive and the version it
+        reports, keeps a copy of the old binary, and only then swaps them. If any step fails, it
+        puts everything back.
       </p>
       <.os_docs_code phx-no-format detected={@detected_os}>
         <:tab
@@ -204,8 +219,8 @@
     | sudo bash -s -- --version &lt;known-good-version&gt;</:tab>
       </.os_docs_code>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        Only published releases install; a draft or still-changing release is refused. You can
-        only go back as far as the minimum version above.
+        Only immutable releases with signed checksum metadata install. A draft, changing, or older
+        unsigned release is refused.
       </p>
     </.docs_layout>
   </section>

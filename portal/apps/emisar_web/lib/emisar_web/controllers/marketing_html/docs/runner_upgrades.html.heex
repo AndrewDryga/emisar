@@ -4,7 +4,7 @@
   <section class="py-12 sm:py-16">
     <.docs_layout
       current="runner-upgrades"
-      updated="August 21, 2026"
+      updated="September 3, 2026"
       toc={[
         {"what-moves", "Who upgrades what"},
         {"versions", "Find the versions you run"},
@@ -41,6 +41,14 @@
           and the service unit.
         </:item>
         <:item>One non-critical runner to go first.</:item>
+        <:item>
+          GitHub CLI with
+          <.docs_inline_code>gh attestation verify --bundle</.docs_inline_code>
+          on each runner host, with access to the public trust-root hosts in <.link
+            navigate={~p"/docs/network-requirements#installers"}
+            class="text-brand-400 hover:text-brand-300"
+          >Network requirements</.link>.
+        </:item>
         <:item>
           The release you are currently on, written down. You need the exact tag to go back to it.
         </:item>
@@ -207,20 +215,18 @@
       <.docs_verify_download
         tarball="emisar-<version>-linux-amd64.tar.gz"
         checksums="SHA256SUMS"
-        component="runner"
+        bundle="SHA256SUMS.sigstore.jsonl"
+        tag="runner-v<version>"
+        workflow="AndrewDryga/emisar/.github/workflows/runner-release-trusted.yml"
       />
       <p class="mt-5 text-base leading-7 text-zinc-400">
         The update touches only the binary: <.docs_inline_code>config.yaml</.docs_inline_code>, <.docs_inline_code>runner.env</.docs_inline_code>, the cached token, installed packs, the dispatch log, and the local
-        audit journal all stay as they are. Before the service stops, it verifies the release and
-        archive checksum (an authenticated
-        <.docs_inline_code>gh</.docs_inline_code>
-        CLI also checks the build attestation), stages the binary, checks its version, and
-        confirms the new binary accepts the current config and can read the current dispatch
-        state.
+        audit journal all stay as they are. Before the service stops, it authenticates the signed
+        checksum metadata, verifies the archive against it, and checks the staged binary's version.
       </p>
       <.docs_callout kind={:warn} title="The service does stop">
         <p>
-          Once the preflight passes, the installer stops the service, swaps the binary, and
+          The installer stops the service, swaps the binary, and
           starts it again. A runner kills its children when it exits, so an action in flight on
           that host is interrupted — let running work finish first.
         </p>

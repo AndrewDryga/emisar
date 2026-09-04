@@ -1,17 +1,3 @@
-# Reuse one exact definition for evidence retention and incident detection. Data
-# Access logs share one log name for reads and writes; permissionType is the
-# authorization check that identifies writes without maintaining an incomplete
-# list of JSON, XML, rewrite, compose, and multipart method names.
-locals {
-  pack_registry_data_write_filter = join(" AND ", [
-    "resource.type=\"gcs_bucket\"",
-    "resource.labels.bucket_name=\"${google_storage_bucket.pack_registry.name}\"",
-    "log_id(\"cloudaudit.googleapis.com/data_access\")",
-    "protoPayload.serviceName=\"storage.googleapis.com\"",
-    "protoPayload.authorizationInfo.permissionType=\"DATA_WRITE\"",
-  ])
-}
-
 # A locked, filtered evidence store keeps security events for a normal annual
 # audit period without retaining ordinary application request or workload logs.
 resource "google_logging_project_bucket_config" "security_evidence" {
@@ -56,7 +42,13 @@ resource "google_logging_project_sink" "security_evidence" {
         )
       ))
     ))
-    OR (${local.pack_registry_data_write_filter})
+    OR (
+      resource.type="gcs_bucket"
+      AND resource.labels.bucket_name="${google_storage_bucket.pack_registry.name}"
+      AND log_id("cloudaudit.googleapis.com/data_access")
+      AND protoPayload.serviceName="storage.googleapis.com"
+      AND protoPayload.authorizationInfo.permissionType="DATA_WRITE"
+    )
     OR (log_id("cloudaudit.googleapis.com/activity") AND protoPayload.methodName:"SetIamPolicy")
   FILTER
 }

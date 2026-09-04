@@ -1,12 +1,11 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://registry.emisar.dev/v1/schemas/catalog.v7.schema.json",
+  "$id": "https://registry.emisar.dev/v1/schemas/catalog.v6.schema.json",
   "title": "emisar pack registry catalog",
   "description": "The published catalog.json contract: installable packs, immutable content identity, and complete reviewed action descriptors. Emitted by `emisar pack catalog build`. Trust rests on the authenticated artifact plus content_hash and the runner's re-hash.",
   "type": "object",
   "required": [
     "schema_version",
-    "generation",
     "packs"
   ],
   "additionalProperties": false,
@@ -14,12 +13,6 @@
     "schema_version": {
       "type": "integer",
       "const": 1
-    },
-    "generation": {
-      "type": "integer",
-      "minimum": 1,
-      "maximum": 9007199254740991,
-      "description": "Monotonic identity of the mutable catalog pointer. New builds always emit it. The builder has a separate compatibility path for a legacy --previous document that predates this field."
     },
     "packs": {
       "type": "array",

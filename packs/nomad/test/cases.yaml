@@ -5,30 +5,6 @@ versions:
     default: true
   - version: "1.10.5"
     digest: "@sha256:d52fdb89745d8309de690d53c29d6baec8867e920051eb50b2c7f7f85c127e43"
-risk_accountability:
-  mode: complete
-  exceptions:
-    nomad.agent_force_leave: requires_cluster
-    nomad.alloc_restart: requires_cluster
-    nomad.alloc_signal: requires_cluster
-    nomad.alloc_stop: requires_cluster
-    nomad.deployment_fail: requires_cluster
-    nomad.job_action_run: requires_cluster
-    nomad.job_promote: requires_cluster
-    nomad.job_restart: requires_cluster
-    nomad.job_revert: requires_cluster
-    nomad.job_scale: requires_cluster
-    nomad.node_drain: requires_cluster
-    nomad.node_eligibility_disable: requires_cluster
-    nomad.node_purge: requires_cluster
-    nomad.operator_raft_remove_peer: requires_cluster
-    nomad.task_resources_set: requires_cluster
-    # job dispatch MONITORS placement of the dispatched allocation, so it needs a
-    # running client node. The isolated SUT runs a server only — a nomad client's
-    # cgroup process-manager init fails in the container (cgroup.subtree_control
-    # busy) — so there is nowhere to place it. Same no-running-workloads bucket as
-    # the ops above; registering the parameterized job succeeds, placement can't.
-    nomad.job_dispatch: requires_cluster
 secret_env: [NOMAD_PACKTEST_CANARY]
 env:
   NOMAD_ADDR: "http://nomad:4646"
@@ -40,8 +16,6 @@ env:
   # Mirrors the PACKTEST_DB_PASSWORD literal in test/fixtures/inspect.nomad.hcl —
   # declaring it here makes the harness fail any surface that leaks it unredacted.
   NOMAD_PACKTEST_CANARY: packtest-canary-nomad-e57d31
-redaction_accountability:
-  exceptions: {}
 cases:
   - action: nomad.agent_info
     expect:

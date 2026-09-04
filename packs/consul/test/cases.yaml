@@ -3,21 +3,10 @@ versions:
   - version: "2.0.2"
     digest: "@sha256:7dcf35d6b2682831094f1680aa58be214134969505acce0a9b280249581aa7d2"
     default: true
-risk_accountability:
-  mode: complete
-  exceptions:
-    consul.raft_remove_peer: requires_cluster
 env:
   CONSUL_HTTP_ADDR: "http://consul:8500"
   CONSUL_HTTP_TOKEN: packtest-canary-consul-token-71e4
 secret_env: [CONSUL_HTTP_TOKEN]
-redaction_accountability:
-  exceptions:
-    # The SUT does not bootstrap ACLs, so /v1/acl/token/self answers 401 and
-    # there is no SecretID to mask. Enabling them means bootstrapping a token
-    # and threading it through every other case here — a fixture change, not a
-    # missing assertion. Measured, not assumed: the case was written and run.
-    consul.acl_token_self: requires_dynamic_fixture
 cases:
   - action: consul.agent_checks
     expect:

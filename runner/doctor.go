@@ -330,12 +330,12 @@ func checkDispatchLog(cfg *config.Config) checkResult {
 		return checkResult{"dispatch log", checkOK, "none yet — the first connect creates it"}
 	case cloud.DispatchLogLegacy:
 		return checkResult{"dispatch log", checkOK,
-			fmt.Sprintf("%d entries at %s (older dispatch state; connect migrates it forward)",
+			fmt.Sprintf("%d entries at %s (pre-v0.12 state; connect migrates it forward)",
 				report.Entries, report.Path)}
 	case cloud.DispatchLogCorrupt:
 		return checkResult{"dispatch log", checkFail,
-			fmt.Sprintf("%s is unreadable (%v) — connect refuses to start over it. To begin a clean dispatch log, %s. Quarantining forgets replay history and may allow a redelivered action to run again",
-				report.Path, report.Err, cloud.DispatchLogQuarantineGuidance(cfg.Paths.DataDir))}
+			fmt.Sprintf("%s is unreadable (%v) — connect refuses to start over it; quarantine the file (mv %s %s.corrupt) to begin a clean dispatch log",
+				report.Path, report.Err, report.Path, report.Path)}
 	default:
 		return checkResult{"dispatch log", checkOK,
 			fmt.Sprintf("%d entries at %s", report.Entries, report.Path)}

@@ -11,8 +11,7 @@ name: Trusted - Runner Release
 #   * The verify job accepts only an exact signed runner release tag and every
 #     authority-bearing job depends on it.
 #   * The build step gates on `environment: public-releases`, whose tag
-#     patterns (`runner-v*`, `mcp-v*`) bound which refs may reach it and whose
-#     independent reviewer approves publication with self-review disabled.
+#     patterns (`runner-v*`, `mcp-v*`) bound which refs may reach it.
 #   * GCP accepts only this reusable workflow's path and exact commit SHA. The
 #     caller-selected workflow contents cannot mint publisher credentials.
 #   * The thin caller grants the maximum permissions the called workflow may
@@ -78,8 +77,7 @@ jobs:
     # `public-releases` environment gate at BUILD (not just publish) so the
     # Sigstore OIDC token used for attestation is minted only for a ref the
     # environment's tag patterns admit (`runner-v*`/`mcp-v*`) — an arbitrary
-    # branch can never produce an attested-by-our-workflow artefact. The
-    # independent reviewer is the publication decision after the signed tag.
+    # branch can never produce an attested-by-our-workflow artefact.
     environment:
       name: public-releases
     strategy:

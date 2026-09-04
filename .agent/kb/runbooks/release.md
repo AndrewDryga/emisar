@@ -88,7 +88,7 @@ move or delete them. Cut component tags with `-s` as well:
 ```sh
 git tag -s runner-vX.Y.Z <commit> -m "runner vX.Y.Z"
 git tag -v runner-vX.Y.Z          # "Good signature"
-git push origin runner-vX.Y.Z     # independent reviewer approves the release jobs
+git push origin runner-vX.Y.Z     # starts the release jobs
 ```
 
 `git config --local tag.gpgsign true` (above) covers these too. Release workflows
@@ -202,8 +202,9 @@ Never title a product release with a bare `vX.Y.Z`.
 The `runner-*`/`mcp-*` workflows publish each checksum-verified archive at
 `https://emisar.dev/releases/`, then mirror the same bytes to GitHub Releases.
 They also publish **SLSA Build Level 2 provenance**
-(`actions/attest-build-provenance@v4`, Sigstore-signed) and a `SHA256SUMS`
-(`SHA256SUMS-MCP` for the bridge) on every release. A `runner-v*` release also
+(`actions/attest-build-provenance@v4`, Sigstore-signed), a `SHA256SUMS`
+(`SHA256SUMS-MCP` for the bridge), and the combined checksum's downloaded
+`.sigstore.jsonl` bundle on every current release. A `runner-v*` release also
 publishes the official container image
 `ghcr.io/andrewdryga/emisar-runner:<version>` (multi-arch, provenance + SBOM,
 digest in the release notes). One-time step after the first image release:
@@ -213,15 +214,24 @@ security team runs before installing — keep it in sync with what
 `/trust#release-integrity` publishes:
 
 ```sh
-# provenance — proves the artifact was built by our workflow, from our source
-gh attestation verify emisar-<version>-linux-amd64.tar.gz \
+# signed checksum metadata — proves the trusted workflow produced it for this tag
+gh attestation verify SHA256SUMS --bundle SHA256SUMS.sigstore.jsonl \
   --repo andrewdryga/emisar \
   --signer-workflow AndrewDryga/emisar/.github/workflows/runner-release-trusted.yml \
   --source-ref refs/tags/runner-v<version> \
   --deny-self-hosted-runners
 
-# checksum — proves the bytes match what we published
-sha256sum -c SHA256SUMS                 # SHA256SUMS-MCP for the bridge
+# checksum — verify only the archive that was downloaded
+awk -v file='emisar-<version>-linux-amd64.tar.gz' \
+  '$2 == file { print; found=1 } END { exit !found }' SHA256SUMS \
+  | sha256sum -c -
+
+# optional online provenance — requires an authenticated GitHub CLI
+gh attestation verify emisar-<version>-linux-amd64.tar.gz \
+  --repo andrewdryga/emisar \
+  --signer-workflow AndrewDryga/emisar/.github/workflows/runner-release-trusted.yml \
+  --source-ref refs/tags/runner-v<version> \
+  --deny-self-hosted-runners
 
 # the container image carries the same provenance
 gh attestation verify oci://ghcr.io/andrewdryga/emisar-runner:<version> \
@@ -240,4 +250,6 @@ certificate's; `--repo` takes the lowercase spelling.
 
 The runner and MCP release workflows execute the same checksum and provenance
 verification before publication. The portal `/trust` "Release integrity"
-section quotes these commands for customers.
+section quotes these commands for customers. For MCP substitute
+`SHA256SUMS-MCP`, `SHA256SUMS-MCP.sigstore.jsonl`, the MCP archive name,
+`mcp-v<version>`, and `mcp-release-trusted.yml`.

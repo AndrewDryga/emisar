@@ -35,25 +35,6 @@ replaced. The four mutable pointer objects carry two byte-identical documents at
 their versioned and facade paths. They are overwritten each publish; the bucket's
 **object versioning** keeps a bounded window of recent generations fetchable.
 
-The catalog's top-level `generation` is its monotonic pointer identity, bounded
-at 9,007,199,254,740,991 so every JSON consumer compares it exactly. A build
-starts it at 1, retains it when `--previous` describes the same catalog, and
-increments it when the catalog changes. Portal caches reject a lower generation
-and reject different content that reuses the current generation; byte-identical
-retries remain safe. Catalogs published before this field seed generation 1 on
-their first rebuild through `build --previous`; they are not valid current v7
-catalog documents.
-
-Run exactly one publisher per registry. The official GitHub workflow serializes
-publication, but `packctl publish` and a manual static-host sync do not coordinate
-multiple writers. Two publishers built from the same predecessor can otherwise
-mint conflicting next generations.
-
-Portal binds the accepted generation to the configured catalog URL and keeps
-that floor across a catalog-cache process restart. A full node starts from the
-catalog bundled into its release, so keep that artifact regenerated in every
-pack change and deploy the release only after its exact catalog is published.
-
 `content_hash` is the runner's load-time hash (`emisar pack validate` prints the
 same value). It binds an expected value to exact bytes; it does not authenticate
 the publisher or say the bytes are safe. The trust decision comes from the
@@ -75,9 +56,8 @@ curl -fsS https://registry.emisar.dev/v1/catalog.json -o ./current-catalog.json
 packctl catalog build --packs ./packs --out ./dist/packs --previous ./current-catalog.json
 ```
 
-The build is deterministic: identical packs against the same `--previous`
-produce the same generation, catalog hash, and byte-identical tarballs, so
-re-running it is safe.
+The build is deterministic: identical packs produce an identical catalog hash
+and byte-identical tarballs, so re-running it is safe.
 
 The downloaded live catalog is the only valid history source once the registry
 exists. Do not substitute the repository's bundled catalog: a canceled release
@@ -123,9 +103,10 @@ sets `packs_release` (`tools/internal/ci/select.go`) when its diff changes
 pack sources or the pack toolchain — or, failing that fast path, when the live
 `v1/catalog.json` no longer byte-matches the committed
 `portal/apps/emisar/priv/packs/catalog.json` (or cannot be read at all). After
-a human approves the `pack-registry-approval` environment gate,
-`packs-publish` in `.github/workflows/cd.yml` builds against the live catalog
-and publishes.
+exact-head CI passes, `packs-publish` in `.github/workflows/cd.yml` builds
+against the live catalog and publishes through the protected-main
+`pack-registry-production` environment. Pushing the signed commit is the
+publication decision; the environment has no second reviewer.
 
 The drift probe makes publication level-triggered on registry state rather
 than edge-triggered on one push's diff: when a pack-changing push's CD run
@@ -144,8 +125,7 @@ done | sort | diff /tmp/live-versions.txt -
 ```
 
 A non-empty diff means the registry is stale: any main push (or a manual
-publish, above) republishes it — watch the CD run through approval to
-publication.
+publish, above) republishes it — watch the CD run through publication.
 
 ## Verify
 
@@ -284,24 +264,20 @@ not hand-edit catalog URLs.
 ## Rollback
 
 Immutable objects are never rolled back — they are content-addressed and
-permanent. Bucket object versions are recovery evidence, not pointers to restore
-directly: a Portal that accepted a later catalog generation rejects an older
-document, even when GCS writes it as a new object generation. Recover with a
-forward repair. Use bucket history to inspect the chosen prior state:
+permanent. Only the mutable pointers can regress, and bucket versioning retains
+a bounded window of recent generations. Restore each document and its facade
+alias from the same chosen generation. Restore the facade first and
+`v1/catalog.json` last so the completion marker cannot advertise a half-restored
+registry:
 
 ```bash
 gcloud storage ls -a gs://emisar-pack-registry/v1/catalog.json
-gcloud storage cat 'gs://emisar-pack-registry/v1/catalog.json#<gcs-generation>' \
-  > /tmp/prior-catalog.json
-jq '{generation, packs: [.packs[] | {id, version, content_hash, retired_below}]}' \
-  /tmp/prior-catalog.json
+gcloud storage cp 'gs://emisar-pack-registry/v1/catalog.json#<generation>' \
+  gs://emisar-pack-registry/packs.json
+gcloud storage cp 'gs://emisar-pack-registry/v1/catalog.json#<generation>' \
+  gs://emisar-pack-registry/v1/catalog.json
 ```
 
-Restore the reviewed behavior under a new, higher pack version; never reuse the
-old version label. If the release being replaced is unsafe, set `retired_below`
-to the new safe version so the carried history cannot keep the bad version
-trusted. Then build against the current live catalog and publish the forward
-repair. Do not hand-edit the old JSON's generation and upload it. The normal
-build reconstructs carried history, validates immutable hashes, writes a new
-content-addressed snapshot, and keeps `v1/catalog.json` as the final completion
-marker.
+If a bad suggest index shipped, restore `packs/suggest.json` before
+`v1/suggest.json`; when restoring both documents, restore the suggest pair
+before the catalog pair so `v1/catalog.json` remains the last write.

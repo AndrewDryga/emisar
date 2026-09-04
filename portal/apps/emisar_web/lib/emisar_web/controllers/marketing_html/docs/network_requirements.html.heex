@@ -4,7 +4,7 @@
   <section class="py-12 sm:py-16">
     <.docs_layout
       current="network-requirements"
-      updated="August 20, 2026"
+      updated="September 3, 2026"
       toc={[
         {"table", "What has to be reachable"},
         {"control-plane", "The runner's control connection"},
@@ -64,8 +64,14 @@
                "Outbound",
                "Your emisar origin, TCP 443",
                "HTTPS",
-               "Downloads the release manifest, tarball, and checksums from /releases",
+               "Downloads the release manifest, tarball, checksums, and signed checksum bundle from /releases",
                "Only while install.sh or install-mcp.sh runs"},
+              {"Release checksum trust roots",
+               "Outbound",
+               "tuf-repo-cdn.sigstore.dev and tuf-repo.github.com, TCP 443",
+               "HTTPS",
+               "Lets GitHub CLI authenticate the downloaded checksum bundle against public trust roots",
+               "During install and upgrade when the verifier cache is empty or refreshes"},
               {"GitHub release mirror fallback",
                "Outbound",
                "api.github.com, github.com, and release-assets.githubusercontent.com, TCP 443",
@@ -166,18 +172,30 @@
 
       <.docs_h2 id="installers">Installing and upgrading binaries</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        Allow outbound HTTPS to <.docs_inline_code>emisar.dev:443</.docs_inline_code>. Both installers download releases from <.docs_inline_code>https://emisar.dev/releases</.docs_inline_code>.
+        Install GitHub CLI with <.docs_inline_code>gh attestation verify --bundle</.docs_inline_code>. Both installers download releases from <.docs_inline_code>https://emisar.dev/releases</.docs_inline_code>, authenticate the signed checksum metadata, then verify the selected archive against it. Allow outbound HTTPS to <.docs_inline_code>emisar.dev:443</.docs_inline_code>, <.docs_inline_code>tuf-repo-cdn.sigstore.dev:443</.docs_inline_code>, and <.docs_inline_code>tuf-repo.github.com:443</.docs_inline_code>. Bundle verification does not require a GitHub login; GitHub CLI uses the last two hosts to load public trust roots.
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         To permit the optional GitHub release fallback, also allow outbound HTTPS to <.docs_inline_code>api.github.com:443</.docs_inline_code>, <.docs_inline_code>github.com:443</.docs_inline_code>, and <.docs_inline_code>release-assets.githubusercontent.com:443</.docs_inline_code>.
-        A malformed primary manifest or checksum failure stops the install instead of switching
-        sources.
+        An unavailable primary artifact may be fetched from that fallback. A malformed manifest,
+        invalid signature, or checksum mismatch stops the install instead of switching sources.
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         A custom
         <.docs_inline_code>EMISAR_REPO</.docs_inline_code>
-        uses GitHub directly. For a host with neither release path, download the tarball and
-        checksum elsewhere and install the binary manually — the
+        uses GitHub directly. For a disconnected host, first save the trusted roots on a connected
+        staging machine:
+      </p>
+      <.docs_code
+        phx-no-format
+        label="Run on the staging machine"
+        copy_text="gh attestation trusted-root > trusted_root.jsonl"
+      ><span class="text-zinc-500">$</span> gh attestation trusted-root &gt; trusted_root.jsonl</.docs_code>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        Transfer that file with the selected archive, combined checksum, and
+        <.docs_inline_code>*.sigstore.jsonl</.docs_inline_code>
+        bundle. Pass it to the manual bundle check as <.docs_inline_code>--custom-trusted-root trusted_root.jsonl</.docs_inline_code>, verify the
+        exact archive entry, then install the binary manually. The installers do not accept a
+        custom trusted-root path. The
         <.link
           navigate={~p"/docs/host-install"}
           class="text-brand-400 hover:text-brand-300"
@@ -187,7 +205,7 @@
           navigate={~p"/docs/runner-upgrades"}
           class="text-brand-400 hover:text-brand-300"
         >Upgrade runners</.link>
-        the upgrade path.
+        page owns the upgrade path.
       </p>
 
       <.docs_h2 id="registry">The pack registry</.docs_h2>

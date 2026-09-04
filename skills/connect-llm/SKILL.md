@@ -25,6 +25,10 @@ Verify commands before running them:
 
 - Download `${EMISAR_URL%/}/install-mcp.sh` and run its local copy with
   `--help`; follow the installed help, not remembered flags.
+- Before a local bridge install, require GitHub CLI and confirm `gh attestation
+  verify --help` advertises `--bundle`. Install or update GitHub CLI through the
+  workstation's supported package method when it does not. Do not use the
+  checksum-only break glass as a substitute.
 - After installation, use `emisar-mcp --help` as the installed-version
   contract.
 - Use the signed-in **Agents** page for current client configuration and the
@@ -33,6 +37,9 @@ Verify commands before running them:
   `https://emisar.dev/docs/connect-chatgpt` for a cloud connector,
   `https://emisar.dev/docs/connect-cli-agent` for a local or CLI client, and
   `https://emisar.dev/docs/mcp-reference` when more detail is needed.
+- For an official local bridge install, require outbound HTTPS to
+  `tuf-repo-cdn.sigstore.dev:443` and `tuf-repo.github.com:443` so GitHub CLI
+  can load the public release-verification trust roots.
 - When a registered client lists no tools or a call fails,
   `https://emisar.dev/docs/troubleshooting` owns the client and bridge symptoms.
 
@@ -137,6 +144,14 @@ PY
 esac
 installer="$(mktemp)"
 trap 'rm -f "$installer"' EXIT HUP INT TERM
+command -v gh >/dev/null 2>&1 || {
+  echo "GitHub CLI is required to authenticate the release checksum" >&2
+  exit 1
+}
+gh attestation verify --help 2>&1 | grep -q -- '--bundle' || {
+  echo "GitHub CLI must support attestation bundle verification" >&2
+  exit 1
+}
 curl -fsSL "$EMISAR_URL/install-mcp.sh" -o "$installer"
 bash "$installer" --help
 sudo EMISAR_URL="$EMISAR_URL" bash "$installer"

@@ -3,7 +3,6 @@ package selfupdate
 
 import (
 	"archive/tar"
-	"bytes"
 	"compress/gzip"
 	"context"
 	"crypto/sha256"
@@ -21,7 +20,6 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-	"syscall"
 	"time"
 
 	"github.com/andrewdryga/emisar/runner/internal/httpsecurity"
@@ -32,29 +30,19 @@ const (
 	officialRepository = "andrewdryga/emisar"
 	// Post-split releases are attested by the reusable trusted workflow; the
 	// certificate SAN carries that workflow rather than its thin caller.
-	signerWorkflow = "AndrewDryga/emisar/.github/workflows/runner-release-trusted.yml"
-	// The repository is moving to the EmisarHQ organization. Releases signed
-	// after the transfer carry the successor spelling in their certificate,
-	// while the fleet's already-written receipts and pre-transfer releases
-	// carry the current one — so verification accepts either identity until
-	// the transfer completes and a later release retires the old spelling.
-	// The current identity is tried first because it signs every release
-	// until the repository actually moves.
-	successorRepository     = "emisarhq/emisar"
-	successorSignerWorkflow = "EmisarHQ/emisar/.github/workflows/runner-release-trusted.yml"
-	legacyRunnerTag         = "runner-v0.22.1"
-	legacySignerWorkflow    = "AndrewDryga/emisar/.github/workflows/runner-release.yml"
-	legacySignerDigest      = "642128eb48205405fd44ce845118e6a68737eea2"
-	releaseBaseURL          = "https://emisar.dev/releases/runner"
-	apiBaseURL              = "https://api.github.com"
-	downloadBaseURL         = "https://github.com"
-	maxAPIBytes             = 4 << 20
-	maxManifestBytes        = 1 << 20
-	maxChecksumsBytes       = 1 << 20
-	maxArchiveBytes         = 256 << 20
-	maxInstallerBytes       = 512 << 10
-	maxBinaryBytes          = 128 << 20
-	installerRollbackGrace  = 8 * time.Minute
+	signerWorkflow    = "AndrewDryga/emisar/.github/workflows/runner-release-trusted.yml"
+	releaseBaseURL    = "https://emisar.dev/releases/runner"
+	apiBaseURL        = "https://api.github.com"
+	downloadBaseURL   = "https://github.com"
+	maxAPIBytes       = 4 << 20
+	maxManifestBytes  = 1 << 20
+	maxChecksumsBytes = 1 << 20
+	// Keep this equal to releasepublish's accepted attestation-bundle limit: a
+	// bundle the publisher admits must never brick every managed updater.
+	maxChecksumBundleBytes = 4 << 20
+	maxArchiveBytes        = 256 << 20
+	maxInstallerBytes      = 512 << 10
+	maxBinaryBytes         = 128 << 20
 )
 
 // Options are the operator choices and output streams for one update.
@@ -173,6 +161,7 @@ func run(ctx context.Context, opts Options, deps dependencies) error {
 	archiveName := name + ".tar.gz"
 	archivePath := filepath.Join(temp, archiveName)
 	checksumsPath := filepath.Join(temp, "SHA256SUMS")
+	checksumBundlePath := filepath.Join(temp, "SHA256SUMS.sigstore.jsonl")
 	base := target.BaseURL
 
 	fmt.Fprintf(opts.Stdout, "Downloading emisar %s for %s/%s...\n", targetVersion, runtime.GOOS, runtime.GOARCH)
@@ -194,67 +183,29 @@ func run(ctx context.Context, opts Options, deps dependencies) error {
 		if err := downloadReleaseFiles(ctx, deps.httpClient, fallback.BaseURL, archiveName, archivePath, checksumsPath); err != nil {
 			return fmt.Errorf("both release mirrors failed: %w", err)
 		}
+		base = fallback.BaseURL
+	}
+	if err := download(ctx, deps.httpClient, base+"/SHA256SUMS.sigstore.jsonl", checksumBundlePath, maxChecksumBundleBytes); err != nil {
+		return fmt.Errorf("download release checksum signature: %w", err)
+	}
+	if err := verifyChecksumProvenance(ctx, checksumsPath, checksumBundlePath, target.TagName, deps, opts.Stdout); err != nil {
+		return fmt.Errorf("release checksum signature is required: %w", err)
 	}
 	digest, err := verifyChecksum(archivePath, checksumsPath, archiveName)
 	if err != nil {
 		return err
 	}
 	fmt.Fprintf(opts.Stdout, "Verified checksum sha256:%s…\n", digest[:16])
-
-	identity, err := verifyProvenance(ctx, archivePath, target.TagName, deps, opts.Stdout, opts.Stderr)
-	if err != nil {
-		return err
-	}
 	bundle, err := extractBundle(archivePath, temp, name)
 	if err != nil {
 		return err
 	}
-	if err := targetAcceptsDispatchState(ctx, bundle, receipt, deps); err != nil {
-		return err
-	}
-
 	fmt.Fprintf(opts.Stdout, "Updating emisar %s to %s...\n", opts.CurrentVersion, targetVersion)
-	args, env := installerInvocation(bundle, target.TagName, receipt, identity)
+	args, env := installerInvocation(bundle, target.TagName, receipt)
 	if err := deps.runCommand(ctx, "/bin/bash", args, env, opts.Stdout, opts.Stderr); err != nil {
 		return fmt.Errorf("release installer failed: %w", err)
 	}
 	return nil
-}
-
-// targetAcceptsDispatchState keeps the current updater authoritative across a
-// downgrade. A historical release bundles its historical installer, so the
-// current binary must reject an old target before handing control to a script
-// that cannot know about newer durable state.
-func targetAcceptsDispatchState(ctx context.Context, bundle string, receipt receipt, deps dependencies) error {
-	target := filepath.Join(bundle, "emisar")
-	installer := filepath.Join(bundle, "install.sh")
-	env := []string{"PATH=/usr/sbin:/usr/bin:/sbin:/bin"}
-	var help bytes.Buffer
-	if err := deps.runCommand(ctx, target, []string{"state", "--help"}, env, &help, io.Discard); err != nil ||
-		!commandListed(help.String(), "check-dispatch-log") {
-		return errors.New("target runner cannot verify the existing durable dispatch state")
-	}
-	var contract bytes.Buffer
-	if err := deps.runCommand(ctx, "/bin/bash", []string{installer, "--managed-update-contract"}, env, &contract, io.Discard); err != nil ||
-		strings.TrimSpace(contract.String()) != "emisar-managed-update-v1" {
-		return errors.New("target release installer is too old for a safe managed update")
-	}
-	if err := deps.runCommand(ctx, target,
-		[]string{"--config", filepath.Join(receipt.EtcDir, "config.yaml"), "state", "check-dispatch-log", "--data-dir", receipt.DataDir},
-		env, io.Discard, io.Discard); err != nil {
-		return errors.New("target runner cannot reconcile the configured and receipt-owned durable dispatch state")
-	}
-	return nil
-}
-
-func commandListed(help, command string) bool {
-	for _, line := range strings.Split(help, "\n") {
-		fields := strings.Fields(line)
-		if len(fields) > 0 && fields[0] == command {
-			return true
-		}
-	}
-	return false
 }
 
 func resolveRelease(ctx context.Context, requested string, deps dependencies) (release, error) {
@@ -548,79 +499,41 @@ func verifyChecksum(archivePath, checksumsPath, archiveName string) (string, err
 	return actual, nil
 }
 
-// releaseIdentity pairs the GitHub repository queried for attestations with
-// the workflow identity those attestations are signed under. The two always
-// travel together: mixing one identity's repository with the other's workflow
-// only verifies by accident of GitHub's rename redirects.
-type releaseIdentity struct {
-	repository string
-	workflow   string
-	digest     string
-}
-
-func acceptedIdentities(tag string) []releaseIdentity {
-	if tag == legacyRunnerTag {
-		return []releaseIdentity{
-			{repository: officialRepository, workflow: legacySignerWorkflow, digest: legacySignerDigest},
-		}
-	}
-	return []releaseIdentity{
-		{repository: officialRepository, workflow: signerWorkflow},
-		{repository: successorRepository, workflow: successorSignerWorkflow},
-	}
-}
-
-// verifyProvenance returns the identity the archive verified against, so the
-// installer invocation re-checks the same pair rather than a hardcoded one.
-// When verification is skipped it returns the first accepted identity — the
-// same spelling the skip warning tells the operator to verify by hand.
-func verifyProvenance(ctx context.Context, archive, tag string, deps dependencies, stdout, stderr io.Writer) (releaseIdentity, error) {
-	identities := acceptedIdentities(tag)
+// verifyChecksumProvenance authenticates the checksum metadata with its
+// downloaded Sigstore bundle. It needs no GitHub login.
+func verifyChecksumProvenance(
+	ctx context.Context,
+	checksums, bundle, tag string,
+	deps dependencies,
+	stdout io.Writer,
+) error {
 	gh, err := deps.lookPath("gh")
 	if err != nil {
-		fmt.Fprintln(stderr, "warning: gh is not installed; release provenance was not checked")
-		return identities[0], nil
+		return errors.New("gh is not installed")
 	}
-	env := verifierEnvironment()
-	if err := deps.runCommand(ctx, gh, []string{"auth", "status"}, env, io.Discard, io.Discard); err != nil {
-		fmt.Fprintln(stderr, "warning: gh is not authenticated; release provenance was not checked")
-		return identities[0], nil
+	args := []string{
+		"attestation", "verify", checksums,
+		"--bundle", bundle,
+		"--repo", officialRepository,
+		"--signer-workflow", signerWorkflow,
+		"--source-ref", "refs/tags/" + tag,
+		"--deny-self-hosted-runners",
 	}
-	var lastErr error
-	for _, identity := range identities {
-		args := []string{
-			"attestation", "verify", archive,
-			"--repo", identity.repository,
-			"--signer-workflow", identity.workflow,
-			"--source-ref", "refs/tags/" + tag,
-		}
-		if identity.digest != "" {
-			args = append(args, "--signer-digest", identity.digest)
-		}
-		args = append(args, "--deny-self-hosted-runners")
-		if err := deps.runCommand(ctx, gh, args, env, io.Discard, io.Discard); err != nil {
-			lastErr = err
-			continue
-		}
-		fmt.Fprintln(stdout, "Verified GitHub build provenance.")
-		return identity, nil
+	if err := deps.runCommand(ctx, gh, args, bundleVerifierEnvironment(), io.Discard, io.Discard); err != nil {
+		return fmt.Errorf("release attestation did not verify against %s: %w", signerWorkflow, err)
 	}
-	workflows := make([]string, 0, len(identities))
-	for _, identity := range identities {
-		workflows = append(workflows, identity.workflow)
-	}
-	return releaseIdentity{}, fmt.Errorf(
-		"release attestation did not verify against %s: %w",
-		strings.Join(workflows, " or "), lastErr,
-	)
+	fmt.Fprintln(stdout, "Verified release checksum signature.")
+	return nil
 }
 
-func verifierEnvironment() []string {
-	env := os.Environ()
-	if os.Getenv("GH_TOKEN") == "" && os.Getenv("GITHUB_TOKEN") == "" {
-		if token := os.Getenv("EMISAR_GITHUB_TOKEN"); token != "" {
-			env = append(env, "GH_TOKEN="+token)
+func bundleVerifierEnvironment() []string {
+	env := make([]string, 0, len(os.Environ()))
+	for _, item := range os.Environ() {
+		key, _, _ := strings.Cut(item, "=")
+		if key == "GH_TOKEN" || key == "GITHUB_TOKEN" || key == "EMISAR_GITHUB_TOKEN" {
+			continue
 		}
+		env = append(env, item)
 	}
 	return env
 }
@@ -726,8 +639,8 @@ var installerEnvNames = map[string]bool{
 	"EMISAR_PACKS": true, "EMISAR_REPO": true, "EMISAR_URL": true,
 	"ENV": true, "ETC_DIR": true, "GH_TOKEN": true, "GITHUB_TOKEN": true,
 	"LOG_DIR": true, "NO_SERVICE": true, "NO_START": true, "PATH": true,
-	"QUARANTINE_DISPATCH_LOG": true, "SERVICE_GROUP": true,
-	"SERVICE_USER": true, "SHELLOPTS": true, "VERSION": true,
+	"SERVICE_GROUP": true,
+	"SERVICE_USER":  true, "SHELLOPTS": true, "VERSION": true,
 }
 
 // installerEnvBlocked reports whether a variable must be stripped before
@@ -745,7 +658,7 @@ func installerEnvBlocked(key string) bool {
 		key == "EMISAR_GROUP" || key == "EMISAR_RUNNER_ID"
 }
 
-func installerInvocation(bundle, tag string, receipt receipt, identity releaseIdentity) ([]string, []string) {
+func installerInvocation(bundle, tag string, receipt receipt) ([]string, []string) {
 	args := []string{
 		filepath.Join(bundle, "install.sh"),
 		"--version", tag,
@@ -775,8 +688,8 @@ func installerInvocation(bundle, tag string, receipt receipt, identity releaseId
 	// now, and the installer keeps accepting the empty flag for those runners.
 	env = append(env,
 		"PATH=/usr/sbin:/usr/bin:/sbin:/bin",
-		"EMISAR_REPO="+identity.repository,
-		"EMISAR_ATTESTATION_WORKFLOW="+identity.workflow,
+		"EMISAR_REPO="+officialRepository,
+		"EMISAR_ATTESTATION_WORKFLOW="+signerWorkflow,
 		"EMISAR_PACKS=",
 		"SERVICE_USER="+receipt.ServiceUser,
 		"SERVICE_GROUP="+receipt.ServiceGroup,
@@ -785,41 +698,9 @@ func installerInvocation(bundle, tag string, receipt receipt, identity releaseId
 }
 
 func execute(ctx context.Context, name string, args, env []string, stdout, stderr io.Writer) error {
-	if err := ctx.Err(); err != nil {
-		return err
-	}
-	command := exec.Command(name, args...)
+	command := exec.CommandContext(ctx, name, args...)
 	command.Env = env
 	command.Stdout = stdout
 	command.Stderr = stderr
-	// The installer owns a transactional rollback trap. CommandContext would
-	// SIGKILL it immediately on cancellation, which can strand a half-restored
-	// binary, service definition, or receipt. Give the whole installer process
-	// group a catchable TERM and a bounded window to finish recovery first.
-	command.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-	if err := command.Start(); err != nil {
-		return err
-	}
-	done := make(chan error, 1)
-	go func() { done <- command.Wait() }()
-	select {
-	case err := <-done:
-		return err
-	case <-ctx.Done():
-		if err := syscall.Kill(-command.Process.Pid, syscall.SIGTERM); err != nil && !errors.Is(err, syscall.ESRCH) {
-			_ = command.Process.Kill()
-			<-done
-			return fmt.Errorf("signal release installer for rollback: %w", err)
-		}
-		timer := time.NewTimer(installerRollbackGrace)
-		defer timer.Stop()
-		select {
-		case <-done:
-			return ctx.Err()
-		case <-timer.C:
-			_ = syscall.Kill(-command.Process.Pid, syscall.SIGKILL)
-			<-done
-			return ctx.Err()
-		}
-	}
+	return command.Run()
 }

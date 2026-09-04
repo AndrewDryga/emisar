@@ -23,6 +23,10 @@ Default to the hosted control plane at `https://emisar.dev`. Use a different
 Verify commands before running them:
 
 - Download `${EMISAR_URL%/}/install.sh` and run its local copy with `--help`.
+- Before installation, require GitHub CLI and confirm `gh attestation verify
+  --help` advertises `--bundle`. Install or update GitHub CLI through the
+  target platform's supported package method when it does not. Do not use the
+  checksum-only break glass as a substitute.
 - After installation, use `emisar --help`, `emisar pack --help`, and `emisar
   doctor --help` as the installed-version contracts.
 - Use the signed-in **Runners > Install** page for current enrollment
@@ -34,6 +38,9 @@ Verify commands before running them:
 - Use the public guides at `https://emisar.dev/docs/quickstart`,
   `https://emisar.dev/docs/host-install`, and
   `https://emisar.dev/docs/action-packs` when more detail is needed.
+- For an official install, require outbound HTTPS to
+  `tuf-repo-cdn.sigstore.dev:443` and `tuf-repo.github.com:443` so GitHub CLI
+  can load the public release-verification trust roots.
 - When a runner installs but never appears in the fleet, read the host log
   first (`sudo journalctl -u emisar -n 200`) and take the registration status
   from it rather than guessing. A `401` means the enrollment key was spent,
@@ -57,7 +64,7 @@ installed artifact's contract unless this is an explicit upgrade.
   place their literal values in shell history. Sanitize captured output.
 - Use HTTPS for installer downloads. Plain HTTP is limited to loopback,
   `localhost`, and literal private addresses and must pass the validation below.
-  The installers verify release checksums and activate binaries atomically. Do
+  The installers authenticate signed release checksums and activate binaries atomically. Do
   not silently build from source, write another installer, or use an untrusted
   mirror.
 - Prefer a pinned `runner-vX.Y.Z` tag for repeatable automation.
@@ -168,6 +175,14 @@ PY
 esac
 installer="$(mktemp)"
 trap 'rm -f "$installer"' EXIT HUP INT TERM
+command -v gh >/dev/null 2>&1 || {
+  echo "GitHub CLI is required to authenticate the release checksum" >&2
+  exit 1
+}
+gh attestation verify --help 2>&1 | grep -q -- '--bundle' || {
+  echo "GitHub CLI must support attestation bundle verification" >&2
+  exit 1
+}
 curl -fsSL "$EMISAR_URL/install.sh" -o "$installer"
 bash "$installer" --help
 sudo env \

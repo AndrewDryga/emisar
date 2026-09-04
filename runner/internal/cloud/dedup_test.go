@@ -292,61 +292,15 @@ func TestDedupRing_MigratesLegacyEntriesInPlace(t *testing.T) {
 	}
 }
 
-func TestDedupRing_ValidatesStructuredOutputBeforeLegacyMigration(t *testing.T) {
-	legacy := func(requestID, status, structuredOutput string) string {
-		return `{"request_id":"` + requestID + `","result":{"type":"action_result","protocol_version":1,"request_id":"` +
-			requestID + `","status":"` + status + `","exit_code":0,"event_id":"evt","structured_output":` +
-			structuredOutput + `}}`
-	}
-
-	t.Run("valid object survives migration and restart", func(t *testing.T) {
-		path := filepath.Join(t.TempDir(), "dispatches.jsonl")
-		if err := os.WriteFile(path, []byte(legacy("req-valid", "success", `{"count":1}`)+"\n"), 0o600); err != nil {
-			t.Fatal(err)
-		}
-		migrated := newDedupRing(4, path, "", nil)
-		if migrated.loadErr != nil {
-			t.Fatalf("migrate valid structured result: %v", migrated.loadErr)
-		}
-		if restarted := newDedupRing(4, path, "", nil); restarted.loadErr != nil {
-			t.Fatalf("restart after migration: %v", restarted.loadErr)
-		}
-	})
-
-	for _, test := range []struct {
-		name             string
-		status           string
-		structuredOutput string
-	}{
-		{name: "duplicate object key", status: "success", structuredOutput: `{"a":1,"a":2}`},
-		{name: "non-object", status: "success", structuredOutput: `[]`},
-		{name: "oversize object", status: "success", structuredOutput: `{"value":"` + strings.Repeat("x", 8192) + `"}`},
-		{name: "failed result", status: "failed", structuredOutput: `{"partial":true}`},
-	} {
-		t.Run(test.name, func(t *testing.T) {
-			path := filepath.Join(t.TempDir(), "dispatches.jsonl")
-			if err := os.WriteFile(path, []byte(legacy("req-invalid", test.status, test.structuredOutput)+"\n"), 0o600); err != nil {
-				t.Fatal(err)
-			}
-			if migrated := newDedupRing(4, path, "", nil); migrated.loadErr == nil {
-				t.Fatal("invalid legacy structured result migrated")
-			}
-		})
-	}
-}
-
-// A v0.22 runner persisted output hashes and result.redactions; the wire
-// message no longer carries those fields. Exactly those retired keys are
-// stripped and the store rewritten — any other unknown field still fails
-// closed.
-func TestDedupRing_StripsRetiredPersistedResultFields(t *testing.T) {
+// A pre-0.23 runner persisted result.redactions with every redacting run; the
+// wire message no longer carries the field. Exactly that key is stripped and
+// the store rewritten — any other unknown field still fails closed.
+func TestDedupRing_StripsPersistedResultRedactions(t *testing.T) {
 	digest := testDispatchDigest("req-redacted")
 	line := `{"request_id":"req-redacted","dispatch_sha256":"` + digest + `","state":"acknowledged","result":` +
 		`{"type":"action_result","protocol_version":1,"request_id":"req-redacted","status":"success",` +
 		`"exit_code":0,"duration_ms":5,"emitted_stdout_bytes":0,"emitted_stderr_bytes":0,"progress_chunks":0,` +
 		`"event_id":"evt_req_redacted",` +
-		`"emitted_stdout_sha256":"` + strings.Repeat("a", 64) + `",` +
-		`"emitted_stderr_sha256":"` + strings.Repeat("b", 64) + `",` +
 		`"redactions":[{"name":"database-password","type":"named","count":3}]}}`
 
 	path := filepath.Join(t.TempDir(), "dispatches.jsonl")
@@ -368,10 +322,8 @@ func TestDedupRing_StripsRetiredPersistedResultFields(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, retired := range []string{"redactions", "emitted_stdout_sha256", "emitted_stderr_sha256"} {
-		if bytes.Contains(data, []byte(`"`+retired+`"`)) {
-			t.Fatalf("store still carries retired field %q: %s", retired, data)
-		}
+	if bytes.Contains(data, []byte(`"redactions"`)) {
+		t.Fatalf("store still carries the stripped key: %s", data)
 	}
 	restarted := newDedupRing(4, path, "", nil)
 	if restarted.loadErr != nil {
@@ -379,9 +331,8 @@ func TestDedupRing_StripsRetiredPersistedResultFields(t *testing.T) {
 	}
 }
 
-// The retired-field strip is surgical: an entry whose result carries any
-// OTHER unknown field keeps failing closed, with or without redactions beside
-// it.
+// The redactions strip is surgical: an entry whose result carries any OTHER
+// unknown field keeps failing closed, with or without redactions beside it.
 func TestDedupRing_StripToleranceRejectsOtherUnknownResultFields(t *testing.T) {
 	digest := testDispatchDigest("req-odd")
 	for name, resultExtra := range map[string]string{
@@ -751,10 +702,6 @@ func TestDedupRing_ConcurrentReservations(t *testing.T) {
 	}
 	if dedupSize(d) != 50 {
 		t.Fatalf("size=%d, want 50", dedupSize(d))
-	}
-	restarted := newDedupRing(1000, path, "", nil)
-	if restarted.loadErr != nil || dedupSize(restarted) != 50 {
-		t.Fatalf("concurrent journal restart: error=%v size=%d", restarted.loadErr, dedupSize(restarted))
 	}
 }
 

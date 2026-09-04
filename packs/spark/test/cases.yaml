@@ -3,8 +3,6 @@ versions:
   - version: "4.0.4"
     digest: "@sha256:94ad730f7510002d8a1615de269f27cdeca4d4eef51657384db3fa9246b5a4d8"
     default: true
-risk_accountability:
-  mode: complete
 # Each case boots a master, a worker, a history server, and a live driver — five
 # JVMs once the driver has an executor. Four of those at once is more than a
 # CI runner has, and a cluster that never finishes starting fails every case in

@@ -1,9 +1,4 @@
 services: [mongodb]
-risk_accountability:
-  exceptions:
-    # rs.stepDown() hands PRIMARY to another member. A standalone mongod is not
-    # a replica set at all, so the call has nothing to step down to.
-    mongo.replset_stepdown: requires_cluster
 versions:
   - version: "8.2.5"
     digest: "@sha256:60aa240412f473f672ec8b282fd5651aa156dcc7a220f81f5381ce768ccc3167"
@@ -155,9 +150,8 @@ cases:
     expect:
       stdout_contains: [maximum, bytes]
 
-  # Excused for its whole life as requires_external_service while the mongod it
-  # compacts ran the rest of this file. compact works on a standalone mongod;
-  # the seeded packtest.orders collection is its target.
+  # Compact the seeded collection on the same standalone mongod used by the
+  # rest of the plan.
   - action: mongo.compact_collection
     args: {db_name: packtest, collection: orders}
     expect:

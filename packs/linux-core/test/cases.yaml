@@ -3,20 +3,12 @@
 # namespace and /run, which is all systemctl needs. The crontab reads are the
 # other half of this pack and work differently: they read the passwd file and
 # spool of the machine the ACTION runs on, which is the client container, so
-# their fixture lives there. See
-# .agent/kb/pack-behavior-environment-limits.md for the lane.
+# their fixture lives there.
 services: [systemd]
 versions:
   - version: "13-slim"
     digest: "@sha256:020c0d20b9880058cbe785a9db107156c3c75c2ac944a6aa7ab59f2add76a7bd"
     default: true
-risk_accountability:
-  mode: complete
-  exceptions:
-    # Rebooting a container is not rebooting a host: the container simply dies,
-    # which is the same outcome whether the action worked or not. No lane fixes
-    # this one.
-    linux.reboot_host: requires_privileged_host
 runner:
   user: root
   reason: >

@@ -475,7 +475,10 @@ defmodule EmisarWeb.DocsComponents do
         <ul class="mt-3 space-y-3 text-base leading-7 text-zinc-400">
           <li class="flex items-start gap-2.5">
             <span class="flex-none text-zinc-500">—</span>
-            <span>checks the release checksum (SHA-256);</span>
+            <span>
+              authenticates the signed release checksum with GitHub CLI, then checks the archive
+              against that SHA-256 value;
+            </span>
           </li>
           <li class="flex items-start gap-2.5">
             <span class="flex-none text-zinc-500">—</span>
@@ -531,50 +534,84 @@ defmodule EmisarWeb.DocsComponents do
   defp docs_risk_classes("high"), do: "bg-rose-500/10 text-rose-300 ring-rose-500/30"
   defp docs_risk_classes("critical"), do: "bg-rose-600/15 text-rose-200 ring-rose-500/40"
 
-  # The identity `install.sh` and `install-mcp.sh` verify against in
-  # `select_attestation_policy`. `--owner` on its own accepts an attestation
-  # minted by ANY workflow in ANY repository that owner controls, so a published
-  # recipe has to pin the same facts the installer does or it proves less than
-  # the install it precedes. The signer-workflow owner casing is the
-  # certificate's; `--repo` takes the lowercase spelling.
-  @attestation_repo "andrewdryga/emisar"
-  @runner_attestation_workflow "AndrewDryga/emisar/.github/workflows/runner-release-trusted.yml"
-  @mcp_attestation_workflow "AndrewDryga/emisar/.github/workflows/mcp-release-trusted.yml"
-
-  @doc "The release workflow a component's Sigstore attestation must name."
-  def attestation_workflow("runner"), do: @runner_attestation_workflow
-  def attestation_workflow("mcp"), do: @mcp_attestation_workflow
-
-  @doc "The repository a release attestation must name."
-  def attestation_repo, do: @attestation_repo
-
   @doc """
   A collapsible "Verify this download" block placed under an install command:
-  the download-then-verify commands (SLSA provenance + checksum) with THIS
-  release's artifact names, so a security team can prove the binary before it
-  runs as sudo. `tarball`/`checksums` differ between the runner and the
-  emisar-mcp bridge, so each install surface passes its own; `component`
-  selects the release workflow and tag prefix the attestation must carry.
+  the download-then-verify commands for the signed checksum metadata and the
+  archive bytes with THIS release's artifact names. The runner and emisar-mcp
+  bridge use different names, tags, and trusted workflows, so each install
+  surface passes its own.
   """
   attr :tarball, :string, required: true
   attr :checksums, :string, required: true
-  attr :component, :string, required: true, values: ~w(runner mcp)
+  attr :bundle, :string, required: true
+  attr :tag, :string, required: true
+  attr :workflow, :string, required: true
+  attr :detected_os, :atom, default: nil
+  attr :macos_tarball, :string, default: nil
+  attr :windows_tarball, :string, default: nil
 
   def docs_verify_download(assigns) do
-    tag_prefix = if assigns.component == "mcp", do: "mcp-v", else: "runner-v"
-
-    commands = """
-    # provenance — built by our workflow, from our source, at this tag
-    $ gh attestation verify #{assigns.tarball} \\
-        --repo #{@attestation_repo} \\
-        --signer-workflow #{attestation_workflow(assigns.component)} \\
-        --source-ref refs/tags/#{tag_prefix}<version> \\
-        --deny-self-hosted-runners
-    # checksums — the bytes match what we published
-    $ sha256sum -c #{assigns.checksums}\
+    gh_command = """
+    gh attestation verify #{assigns.checksums} --bundle #{assigns.bundle} \\
+      --repo andrewdryga/emisar \\
+      --signer-workflow #{assigns.workflow} \\
+      --source-ref refs/tags/#{assigns.tag} \\
+      --deny-self-hosted-runners\
     """
 
-    assigns = assign(assigns, :commands, commands)
+    linux_checksum_command = """
+    awk -v file='#{assigns.tarball}' \\
+      '$2 == file { print; found=1 } END { exit !found }' #{assigns.checksums} \\
+      | sha256sum -c -\
+    """
+
+    linux_commands = gh_command <> "\n" <> linux_checksum_command
+
+    linux_transcript =
+      verification_transcript(gh_command, linux_checksum_command, assigns.tarball)
+
+    macos_tarball = assigns.macos_tarball || assigns.tarball
+
+    macos_checksum_command = """
+    awk -v file='#{macos_tarball}' \\
+      '$2 == file { print; found=1 } END { exit !found }' #{assigns.checksums} \\
+      | shasum -a 256 -c -\
+    """
+
+    macos_commands = gh_command <> "\n" <> macos_checksum_command
+    macos_transcript = verification_transcript(gh_command, macos_checksum_command, macos_tarball)
+
+    windows_tarball = assigns.windows_tarball || assigns.tarball
+
+    windows_checksum_command = """
+    $archive = '#{windows_tarball}'
+    $entry = Get-Content #{assigns.checksums} | Where-Object { ($_ -split '\\s+', 2)[1] -eq $archive }
+    if (@($entry).Count -ne 1) { throw 'checksum entry not found or duplicated' }
+    $expected = ($entry -split '\\s+', 2)[0]
+    if ((Get-FileHash $archive -Algorithm SHA256).Hash -ne $expected) { throw 'checksum mismatch' }
+    "$archive`: OK"\
+    """
+
+    windows_commands =
+      String.replace(gh_command, " \\\n  ", " ") <> "\n" <> windows_checksum_command
+
+    windows_transcript =
+      verification_transcript(
+        String.replace(gh_command, " \\\n  ", " "),
+        windows_checksum_command,
+        windows_tarball,
+        "PS> "
+      )
+
+    assigns =
+      assign(assigns,
+        linux_commands: linux_commands,
+        linux_transcript: linux_transcript,
+        macos_commands: macos_commands,
+        macos_transcript: macos_transcript,
+        windows_commands: windows_commands,
+        windows_transcript: windows_transcript
+      )
 
     ~H"""
     <details class="group mt-4 overflow-hidden rounded-lg border border-zinc-900 bg-black/40">
@@ -589,10 +626,25 @@ defmodule EmisarWeb.DocsComponents do
       </summary>
       <div class="border-t border-zinc-900 px-5 pb-5 pt-4">
         <p class="text-sm leading-7 text-zinc-400">
-          The installer checks the checksums for you. emisar also publishes a signed attestation for every release, so you can prove the binary came from our source before it runs as <.docs_inline_code>sudo</.docs_inline_code>.
-          Download the release and run both checks. Keep every flag: without <.docs_inline_code>--signer-workflow</.docs_inline_code>, an attestation from any workflow in the repository passes.
+          The installer runs these checks before the binary can run as <.docs_inline_code>sudo</.docs_inline_code>. Bundle verification requires GitHub CLI with <.docs_inline_code>gh attestation verify --bundle</.docs_inline_code>. It needs no GitHub login, but a fresh cache loads public trust roots from the hosts listed under <.link
+            href="/docs/network-requirements#installers"
+            class="text-brand-400 hover:text-brand-300"
+          >Network requirements</.link>.
         </p>
-        <.docs_code phx-no-format label="shell">{@commands}</.docs_code>
+        <.os_docs_code :if={@detected_os} detected={@detected_os}>
+          <:tab os={:linux} label="Linux" copy_text={@linux_commands}>{@linux_transcript}</:tab>
+          <:tab os={:windows} label="Windows" copy_text={@windows_commands}>
+            {@windows_transcript}
+          </:tab>
+          <:tab os={:macos} label="macOS" copy_text={@macos_commands}>{@macos_transcript}</:tab>
+        </.os_docs_code>
+        <.docs_code
+          :if={!@detected_os}
+          label="Linux"
+          copy_text={@linux_commands}
+        >
+          {@linux_transcript}
+        </.docs_code>
         <p class="mt-3 text-xs leading-5 text-zinc-400">
           More on the signing pipeline: <.link
             href="/trust#release-integrity"
@@ -601,6 +653,19 @@ defmodule EmisarWeb.DocsComponents do
         </p>
       </div>
     </details>
+    """
+  end
+
+  defp verification_transcript(gh_command, checksum_command, tarball, prompt \\ "$ ") do
+    """
+    # signed checksum metadata — produced for this tag by the trusted workflow
+    #{prompt}#{gh_command}
+    ✓ Verification succeeded!
+    …
+    # archive bytes — match the authenticated checksum
+    #{prompt}#{checksum_command}
+    #{tarball}: OK
+    …\
     """
   end
 
@@ -812,6 +877,26 @@ defmodule EmisarWeb.DocsComponents do
         </li>
       </ul>
     </.docs_callout>
+    """
+  end
+
+  @doc """
+  The required verifier dependency next to a standalone installer recipe.
+
+  Full install pages put this in their prerequisites. A page whose main job is
+  something else still needs the dependency beside the command it asks the
+  reader to run, so those recipes share one sentence.
+  """
+  def docs_release_verifier_prerequisite(assigns) do
+    ~H"""
+    <p class="mt-5 text-base leading-7 text-zinc-400">
+      Before running the installer, add GitHub CLI with
+      <.docs_inline_code>gh attestation verify --bundle</.docs_inline_code>
+      and allow the public trust-root hosts in <.link
+        href="/docs/network-requirements#installers"
+        class="text-brand-400 hover:text-brand-300"
+      >Network requirements</.link>. A GitHub login is not required.
+    </p>
     """
   end
 

@@ -3,8 +3,6 @@ versions:
   - version: v1.124.0
     digest: "@sha256:2d7fc1f0f19160a06b0d72daff6c96ddd58de1a4560d1d827aa79633b5382524"
     default: true
-risk_accountability:
-  mode: complete
 env:
   VM_URL: "http://victoriametrics:8428/prometheus"
 defaults:

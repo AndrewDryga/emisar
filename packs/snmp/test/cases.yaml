@@ -3,8 +3,6 @@ versions:
   - version: 13-slim
     digest: "@sha256:020c0d20b9880058cbe785a9db107156c3c75c2ac944a6aa7ab59f2add76a7bd"
     default: true
-risk_accountability:
-  mode: complete
 secret_env: [SNMP_COMMUNITY]
 env:
   SNMP_ALLOWED_HOSTS: SNMPD,SNMPD-FRR

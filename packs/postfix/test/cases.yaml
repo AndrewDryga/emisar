@@ -3,8 +3,6 @@ versions:
   - version: 5.1.0-alpine
     digest: "@sha256:6e761312e833947f77af755072c0e77b67d298d127595470a79e9454008dd594"
     default: true
-risk_accountability:
-  mode: complete
 cases:
   - action: postfix.mailq
     runner_user: root

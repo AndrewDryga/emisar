@@ -34,7 +34,8 @@ procedure by making the reader evaluate steps they were never asked to perform.
 ## Good
 
 ```text
-Allow outbound HTTPS to emisar.dev:443 and registry.emisar.dev:443.
+Allow outbound HTTPS to emisar.dev:443, registry.emisar.dev:443,
+tuf-repo-cdn.sigstore.dev:443, and tuf-repo.github.com:443.
 ```
 
 ```text

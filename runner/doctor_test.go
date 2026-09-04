@@ -386,17 +386,11 @@ func TestCheckDispatchLog(t *testing.T) {
 		if err := os.WriteFile(logPath, []byte("not-json\n"), 0o600); err != nil {
 			t.Fatal(err)
 		}
-		legacyPath := filepath.Join(dataDir, "dedup.jsonl")
-		if err := os.WriteFile(legacyPath, []byte("stale\n"), 0o600); err != nil {
-			t.Fatal(err)
-		}
 		got := checkDispatchLog(&config.Config{Paths: config.Paths{DataDir: dataDir}})
 		if got.status != checkFail {
 			t.Fatalf("status = %v, want fail (%s)", got.status, got.detail)
 		}
-		if !strings.Contains(got.detail, logPath) || !strings.Contains(got.detail, legacyPath) ||
-			!strings.Contains(got.detail, "stop the runner and prove it is idle") ||
-			!strings.Contains(got.detail, "may allow a redelivered action to run again") {
+		if !strings.Contains(got.detail, logPath) || !strings.Contains(got.detail, ".corrupt") {
 			t.Fatalf("detail should name the file and the quarantine remedy: %q", got.detail)
 		}
 	})
@@ -408,7 +402,7 @@ func TestCheckDispatchLog(t *testing.T) {
 			t.Fatal(err)
 		}
 		got := checkDispatchLog(&config.Config{Paths: config.Paths{DataDir: dataDir}})
-		if got.status != checkOK || !strings.Contains(got.detail, "older dispatch state") {
+		if got.status != checkOK || !strings.Contains(got.detail, "migrates") {
 			t.Fatalf("legacy state should be ok pending migration: %v (%s)", got.status, got.detail)
 		}
 	})

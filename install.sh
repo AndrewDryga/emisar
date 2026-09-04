@@ -28,9 +28,9 @@
 #   # Uninstall:
 #   sudo bash install.sh --uninstall
 #
-# Idempotent: re-running upgrades in place. Safe to interrupt — failures before
-# activation roll back, while a binary that may have run is kept with its
-# previous binary and left stopped for explicit recovery.
+# Idempotent: re-running upgrades in place. Safe to interrupt — every
+# step has explicit success criteria; nothing partially applied is left
+# in a "running but broken" state.
 
 set -Eeuo pipefail
 
@@ -45,7 +45,6 @@ set -Eeuo pipefail
 # keeps its exact casing — it is a separate constant, not derived from REPO.
 REPO="$(printf '%s' "${EMISAR_REPO:-andrewdryga/emisar}" | tr '[:upper:]' '[:lower:]')"
 OFFICIAL_REPO="andrewdryga/emisar"
-SUCCESSOR_REPO="emisarhq/emisar"
 RELEASE_BASE_URL="https://emisar.dev/releases/runner"
 # The workflow identity Sigstore build provenance is checked against. It is
 # matched literally against the signing certificate's SubjectAlternativeName,
@@ -58,7 +57,6 @@ RELEASE_BASE_URL="https://emisar.dev/releases/runner"
 # themselves, or the check is skipped and the checksum stands alone. The
 # official default depends on the resolved release tag and is selected below.
 ATTESTATION_WORKFLOW="${EMISAR_ATTESTATION_WORKFLOW:-}"
-ATTESTATION_SIGNER_DIGEST=""
 ATTESTATION_SOURCE_REF=""
 ATTESTATION_DENY_SELF_HOSTED=0
 VERSION="${VERSION:-}"            # empty = latest stable
@@ -137,19 +135,6 @@ Flags:
                      For unattended provisioning.
   --help             This message.
 
-Internal flags. `emisar update` passes these; they are not for hand use, and
-an already-installed runner of any age calls whatever install.sh emisar.dev
-serves today, so their meaning is a live contract between two artifacts:
-  --preverified-bundle DIR
-                     Install from an absolute DIR that `emisar update` has
-                     already downloaded, checksum-verified, and attested.
-                     Skips the download, SHA256SUMS, and attestation steps
-                     entirely, so the bytes in DIR are installed as given.
-                     Requires --version and preserves the installed packs.
-  --managed-update-contract
-                     Print the contract version this script implements and
-                     exit, so `emisar update` can tell before it commits.
-
 Env vars accepted: VERSION, BIN_DIR, ETC_DIR, DATA_DIR, LOG_DIR,
 SERVICE_USER, SERVICE_GROUP, ASSUME_YES, EMISAR_PACKS, NO_START,
 NO_SERVICE, EMISAR_REPO, EMISAR_GITHUB_TOKEN, EMISAR_URL,
@@ -189,12 +174,7 @@ normalize_version() {
   esac
 }
 
-# The supported pre-split release tip retains its immutable original
-# provenance. Admit only that exact tag, pinned to its
-# workflow commit and source tag. Every other official tag must come from the
-# trusted workflow; never retry the legacy signer after a trusted failure.
 select_attestation_policy() {
-  ATTESTATION_SIGNER_DIGEST=""
   ATTESTATION_SOURCE_REF=""
   ATTESTATION_DENY_SELF_HOSTED=0
   if [ -n "${ATTESTATION_WORKFLOW}" ] || [ "${REPO}" != "${OFFICIAL_REPO}" ]; then
@@ -204,10 +184,6 @@ select_attestation_policy() {
   ATTESTATION_WORKFLOW="AndrewDryga/emisar/.github/workflows/runner-release-trusted.yml"
   ATTESTATION_SOURCE_REF="refs/tags/${VERSION}"
   ATTESTATION_DENY_SELF_HOSTED=1
-  if [ "${VERSION}" = "runner-v0.22.1" ]; then
-    ATTESTATION_WORKFLOW="AndrewDryga/emisar/.github/workflows/runner-release.yml"
-    ATTESTATION_SIGNER_DIGEST="642128eb48205405fd44ce845118e6a68737eea2"
-  fi
 }
 
 # A flag whose value is missing must say so, not die on `set -u` with a raw
@@ -222,11 +198,8 @@ require_value() {
   fi
 }
 
-# --packs is the one flag whose value may be empty: `--packs ''` is the argv
-# spelling of EMISAR_PACKS='' — an explicit "no new packs" — and `emisar
-# update` on runners 0.20.0 through 0.24.0 passes exactly that to the installer
-# it downloads, so this script must keep accepting it or those hosts can never
-# update. The value still has to be present and must not be the next flag.
+# Empty means "install no new packs" and is the value existing managed
+# updaters pass explicitly.
 require_present() {
   local flag="$1"
   if [ "$#" -lt 2 ] || [[ "$2" == -* ]]; then
@@ -291,7 +264,6 @@ while [ $# -gt 0 ]; do
     --yes|-y) ASSUME_YES=1; shift;;
     --packs) require_present "$@"; PRE_PACKS="$2"; PACKS_EXPLICIT=1; shift 2;;
     --preverified-bundle) require_value "$@"; PREVERIFIED_BUNDLE="$2"; shift 2;;
-    --managed-update-contract) printf '%s\n' emisar-managed-update-v1; exit 0;;
     --help|-h) usage; exit 0;;
     *) echo "unknown flag: $1" >&2; usage >&2; exit 2;;
   esac
@@ -895,26 +867,17 @@ backup_enrollment_state() {
 restore_enrollment_state() {
   [ "${ENROLLMENT_STATE_BACKED_UP}" = "1" ] || return 0
 
-  local backup="${tmp}/enrollment-state" path name failed=0
+  local backup="${tmp}/enrollment-state" path name
   for path in "${DATA_DIR}/token" "${DATA_DIR}/token.json"; do
     name="$(basename "${path}")"
-    if ! rm -f "${path}"; then
-      warn "could not remove changed runner authentication state at ${path}"
-      failed=1
-      continue
-    fi
+    rm -f "${path}" 2>/dev/null || true
     if [ -e "${backup}/${name}" ] || [ -L "${backup}/${name}" ]; then
-      if ! cp -pP "${backup}/${name}" "${path}"; then
+      cp -pP "${backup}/${name}" "${path}" || \
         warn "could not restore runner authentication state at ${path}"
-        failed=1
-      fi
     fi
   done
-  if ! cp -pP "${backup}/runner.env" "${ETC_DIR}/runner.env"; then
+  cp -pP "${backup}/runner.env" "${ETC_DIR}/runner.env" || \
     warn "could not restore ${ETC_DIR}/runner.env"
-    failed=1
-  fi
-  [ "${failed}" = "0" ] || return 1
   warn "restored the previous enrollment key and token"
 }
 
@@ -1068,6 +1031,11 @@ download_release() {
     fetch_release_files "$base" "$tarball" "$tmp" || die "failed to download ${version} from both release mirrors"
   fi
 
+  verify_checksum_attestation \
+    "${tmp}/SHA256SUMS" \
+    "${base}/SHA256SUMS.sigstore.jsonl" \
+    "${tmp}/SHA256SUMS.sigstore.jsonl"
+
   # Pull the expected hash for our tarball out of SHA256SUMS so we can
   # show it in the status line. The verification itself is done by
   # sha_verify (silenced) so we print one clean line instead of the
@@ -1082,8 +1050,6 @@ download_release() {
   ) || die "checksum verification failed for ${tarball}"
   log "checksum verified  sha256:${expected:0:16}…"
 
-  verify_attestation "${tmp}/${tarball}" "${tarball}"
-
   log "extracting"
   # --no-same-owner/--no-same-permissions: we run as root, and the archive's
   # recorded uid/gid and mode bits are not a trust input — the install paths
@@ -1092,53 +1058,31 @@ download_release() {
   printf '%s\n' "${tmp}/${name}"
 }
 
-# The checksum proves the tarball matches SHA256SUMS; it says nothing about who
-# produced either, since both come from the same release. The Sigstore build
-# provenance does: it binds these bytes to a run of our release workflow on a
-# GitHub-hosted runner. Pinning --signer-workflow is what makes that a real
-# check — without it, any attestation from any workflow in the repo passes.
-#
-# Verification runs only when a verifier is installed. Requiring one would break
-# `curl | sudo bash` on a bare host, which is the path most operators take, so a
-# missing verifier warns and continues on the checksum alone. A verifier that IS
-# present and says no fails the install.
-verify_attestation() {
-  local path="$1" name="$2"
+verify_checksum_attestation() {
+  local checksums="$1" bundle_url="$2" bundle="$3"
   if [ -z "${ATTESTATION_WORKFLOW}" ]; then
-    warn "no attestation workflow configured for ${REPO} — skipping provenance check for ${name}"
+    warn "no checksum-signature workflow configured for ${REPO}; trusting the operator-selected repository's checksum policy"
     return 0
   fi
-  local hint="gh attestation verify <file> --repo ${REPO} --signer-workflow ${ATTESTATION_WORKFLOW}"
-  [ -z "${ATTESTATION_SOURCE_REF}" ] || hint="${hint} --source-ref ${ATTESTATION_SOURCE_REF}"
-  [ -z "${ATTESTATION_SIGNER_DIGEST}" ] || hint="${hint} --signer-digest ${ATTESTATION_SIGNER_DIGEST}"
-  [ "${ATTESTATION_DENY_SELF_HOSTED}" = "0" ] || hint="${hint} --deny-self-hosted-runners"
-  if ! command -v gh >/dev/null 2>&1; then
-    warn "gh not installed — skipping release attestation check for ${name}"
-    warn "verify it yourself: ${hint}"
-    return 0
+  if ! curl --proto '=https' --proto-redir '=https' --tlsv1.2 \
+    --connect-timeout 15 --max-time 120 --retry 2 -fsSL \
+    -o "${bundle}" "${bundle_url}"; then
+    rm -f -- "${bundle}"
+    die "could not download the checksum signature for ${VERSION}"
   fi
-  # gh refuses the attestation API unauthenticated — it exits 4 telling you to
-  # run `gh auth login` without checking anything. Treating that as a failed
-  # verification would make a GitHub login a prerequisite for installing the
-  # runner, so an unauthenticated CLI skips exactly like a missing one.
-  if ! gh auth status >/dev/null 2>&1; then
-    warn "gh is not authenticated — skipping release attestation check for ${name}"
-    warn "verify it yourself: ${hint}"
-    return 0
-  fi
-  log "verifying release attestation"
+  command -v gh >/dev/null 2>&1 ||
+    die "GitHub CLI is required to verify the checksum signature"
   local -a verify_args=(
-    attestation verify "${path}"
+    attestation verify "${checksums}"
+    --bundle "${bundle}"
     --repo "${REPO}"
     --signer-workflow "${ATTESTATION_WORKFLOW}"
   )
   [ -z "${ATTESTATION_SOURCE_REF}" ] || verify_args+=(--source-ref "${ATTESTATION_SOURCE_REF}")
-  [ -z "${ATTESTATION_SIGNER_DIGEST}" ] || verify_args+=(--signer-digest "${ATTESTATION_SIGNER_DIGEST}")
   [ "${ATTESTATION_DENY_SELF_HOSTED}" = "0" ] || verify_args+=(--deny-self-hosted-runners)
-  if ! gh "${verify_args[@]}" >/dev/null 2>&1; then
-    die "release attestation for ${name} did not verify against ${ATTESTATION_WORKFLOW} — refusing to install"
-  fi
-  log "attestation verified  ${ATTESTATION_WORKFLOW}"
+  gh "${verify_args[@]}" >/dev/null 2>&1 ||
+    die "the checksum signature for ${VERSION} did not verify against ${ATTESTATION_WORKFLOW}"
+  log "checksum signature verified  ${ATTESTATION_WORKFLOW}"
 }
 
 require_immutable_release() {
@@ -1234,7 +1178,7 @@ drop_config_skeleton() {
   if [ ! -f "${cfg}" ]; then
     # If the install command supplied EMISAR_URL + EMISAR_ENROLLMENT_KEY, the
     # generated config + env are complete and the runner can boot. Only
-    # flag needs_configuration when an operator-edit is actually needed.
+    # flag NEEDS_CONFIGURATION when an operator-edit is actually needed.
     local needs=0
     if [ -z "${EMISAR_ENROLLMENT_KEY:-}" ]; then
       needs=1
@@ -1256,7 +1200,7 @@ drop_config_skeleton() {
     mv -f "${cfg_staged}" "${cfg}"
     chmod 640 "${cfg}"
     chown "root:${SERVICE_GROUP}" "${cfg}" 2>/dev/null || true
-    needs_configuration="${needs}"
+    NEEDS_CONFIGURATION="${needs}"
   else
     # Config exists — preserve the operator's file. But an explicitly
     # passed EMISAR_GROUP is a deliberate provisioning instruction, so
@@ -1297,7 +1241,7 @@ drop_config_skeleton() {
       warn "EMISAR_URL='${EMISAR_URL}' was NOT applied: ${cfg} already exists and keeps its"
       warn "current cloud.url. Edit it by hand, or move the file aside and re-run."
     fi
-    needs_configuration=0
+    NEEDS_CONFIGURATION=0
   fi
   chmod 640 "${cfg}"
   chown "root:${SERVICE_GROUP}" "${cfg}" 2>/dev/null || chown root:root "${cfg}"
@@ -1320,18 +1264,10 @@ drop_config_skeleton() {
 
 }
 
-STAGE_DIR=""
 STAGED_BINARY=""
 BACKUP_BINARY=""
-BACKUP_BINARY_DIR=""
 BINARY_ACTIVATED=0
-# Set by drop_config_skeleton, read by start_service and print_next_steps.
-# Lowercase like the rest of this script's own state: it is not a knob, and a
-# `${NEEDS_CONFIGURATION:-…}` default let an exported value decide whether the
-# installer started the service.
-needs_configuration=0
 SERVICE_WAS_RUNNING=0
-SERVICE_START_ATTEMPTED=0
 # Set when THIS run created the service unit — a fresh install, not an upgrade.
 # `restore_previous_service` only restarts a service that was already running,
 # so on a fresh install that failed, nothing undid the enablement: the binary was
@@ -1343,250 +1279,6 @@ INSTALL_TRANSACTION=0
 RECEIPT_PREEXISTED=0
 INSTALL_RECEIPT_PATH="${ETC_DIR}/install-receipt"
 INSTALL_RECEIPT_LOCATOR="${BIN_DIR}/.emisar-install-receipt"
-INSTALL_STATE_BACKUP=""
-PRESERVE_INSTALL_BACKUP=0
-DISPATCH_LOG_QUIESCED=0
-
-# Snapshot the installer-owned files that an upgrade rewrites. The service is
-# already stopped when this runs, and the root-owned 0700 transaction directory
-# keeps prior unit/receipt bytes available until either commit or rollback.
-snapshot_install_artifact() {
-  local path="$1" name="$2" destination="$3"
-  if [ -e "${path}" ] || [ -L "${path}" ]; then
-    [ -f "${path}" ] || [ -L "${path}" ] || return 1
-    cp -pP "${path}" "${destination}/${name}" || return 1
-  else
-    : >"${destination}/${name}.absent" || return 1
-  fi
-}
-
-backup_install_state() {
-  local staging="${tmp}/install-state.new" final="${tmp}/install-state"
-  mkdir -m 700 "${staging}" || die "could not stage installer rollback state"
-  case "${INIT}" in
-    systemd)
-      snapshot_install_artifact /etc/systemd/system/emisar.service systemd-unit "${staging}" || \
-        die "could not back up the existing systemd unit"
-      ;;
-    launchd)
-      snapshot_install_artifact /Library/LaunchDaemons/com.emisar.runner.plist launchd-plist "${staging}" || \
-        die "could not back up the existing launchd plist"
-      snapshot_install_artifact "${ETC_DIR}/run-launchd.sh" launchd-runner "${staging}" || \
-        die "could not back up the existing launchd wrapper"
-      ;;
-  esac
-  snapshot_install_artifact "${INSTALL_RECEIPT_PATH}" receipt "${staging}" || \
-    die "could not back up the existing install receipt"
-  snapshot_install_artifact "${INSTALL_RECEIPT_LOCATOR}" receipt-locator "${staging}" || \
-    die "could not back up the existing install receipt locator"
-  mv "${staging}" "${final}" || die "could not activate installer rollback state"
-  INSTALL_STATE_BACKUP="${final}"
-}
-
-restore_install_artifact() {
-  local path="$1" name="$2" saved staged
-  saved="${INSTALL_STATE_BACKUP}/${name}"
-  if [ -e "${saved}" ] || [ -L "${saved}" ]; then
-    staged="$(mktemp "${path}.rollback.XXXXXX")" || return 1
-    rm -f "${staged}" || return 1
-    cp -pP "${saved}" "${staged}" || { rm -f "${staged}"; return 1; }
-    mv -f "${staged}" "${path}" || { rm -f "${staged}"; return 1; }
-  elif [ -f "${saved}.absent" ]; then
-    rm -f "${path}" || return 1
-  else
-    return 1
-  fi
-}
-
-receipt_field_equals() {
-  local key="$1" expected="$2" line value="" count=0
-  while IFS= read -r line || [ -n "${line}" ]; do
-    case "${line}" in
-      "${key}="*)
-        count=$((count + 1))
-        value="${line#*=}"
-        ;;
-    esac
-  done <"${INSTALL_RECEIPT_PATH}"
-  [ "${count}" = "1" ] && [ "${value}" = "${expected}" ]
-}
-
-receipt_repository_equals() {
-  local expected="$1" line value="" normalized="" count=0
-  while IFS= read -r line || [ -n "${line}" ]; do
-    case "${line}" in
-      repository=*)
-        count=$((count + 1))
-        value="${line#*=}"
-        ;;
-    esac
-  done <"${INSTALL_RECEIPT_PATH}"
-  [ "${count}" = "1" ] || return 1
-  normalized="$(printf '%s' "${value}" | tr '[:upper:]' '[:lower:]')"
-  [ "${normalized}" = "${expected}" ] && return 0
-  case "${normalized}:${expected}" in
-    "${OFFICIAL_REPO}:${SUCCESSOR_REPO}"|"${SUCCESSOR_REPO}:${OFFICIAL_REPO}") return 0 ;;
-    *) return 1 ;;
-  esac
-}
-
-file_has_exact_line_once() {
-  local path="$1" expected="$2" count
-  count="$(grep -Fxc -- "${expected}" "${path}" 2>/dev/null || true)"
-  [ "${count}" = "1" ]
-}
-
-file_has_single_assignment() {
-  local path="$1" key="$2" count
-  count="$(grep -Ec -- "^${key}=" "${path}" 2>/dev/null || true)"
-  [ "${count}" = "1" ]
-}
-
-path_owner_mode() {
-  case "${OS}" in
-    darwin) stat -f '%u:%Lp' "$1" ;;
-    linux) stat -c '%u:%a' "$1" ;;
-    *) return 1 ;;
-  esac
-}
-
-trusted_install_path() {
-  local path="$1" expected_mode="$2" metadata uid mode directory
-  [ -f "${path}" ] && [ ! -L "${path}" ] || return 1
-  metadata="$(path_owner_mode "${path}")" || return 1
-  case "${metadata}" in *:*:*) return 1;; esac
-  uid="${metadata%%:*}"
-  mode="${metadata#*:}"
-  case "${uid}:${mode}" in *[!0-9:]*|*:*[89]*) return 1;; esac
-  [ "${uid}" = "0" ] && [ "${mode}" = "${expected_mode}" ] || return 1
-  directory="$(dirname "${path}")"
-  while :; do
-    [ -d "${directory}" ] && [ ! -L "${directory}" ] || return 1
-    metadata="$(path_owner_mode "${directory}")" || return 1
-    case "${metadata}" in *:*:*) return 1;; esac
-    uid="${metadata%%:*}"
-    mode="${metadata#*:}"
-    case "${uid}:${mode}" in *[!0-9:]*|*:*[89]*) return 1;; esac
-    [ "${uid}" = "0" ] || return 1
-    if (( (8#${mode} & 8#022) != 0 )) && [ ! -k "${directory}" ]; then
-      return 1
-    fi
-    [ "${directory}" != / ] || return 0
-    directory="$(dirname "${directory}")"
-  done
-}
-
-# The receipt is an ownership record, not proof of what the service manager is
-# actually running. Refuse an in-place rewrite if a drop-in or moved plist has
-# redirected the service to another binary/config; that other config may name a
-# different durable journal.
-verify_managed_service_mapping() {
-  local systemd_path="${1:-/etc/systemd/system/emisar.service}"
-  local launchd_path="${2:-/Library/LaunchDaemons/com.emisar.runner.plist}"
-  local launchd_runner="${3:-${ETC_DIR}/run-launchd.sh}"
-  local fragment dropins details count value
-  case "${INIT}" in
-    systemd)
-      [ -f "${systemd_path}" ] && [ ! -L "${systemd_path}" ] || return 1
-      fragment="$(systemctl show emisar.service --property=FragmentPath --value 2>/dev/null)" || return 1
-      dropins="$(systemctl show emisar.service --property=DropInPaths --value 2>/dev/null)" || return 1
-      [ "${fragment}" = "${systemd_path}" ] && [ -z "${dropins}" ] || return 1
-      file_has_exact_line_once "${systemd_path}" "User=${SERVICE_USER}" || return 1
-      file_has_exact_line_once "${systemd_path}" "Group=${SERVICE_GROUP}" || return 1
-      file_has_exact_line_once "${systemd_path}" \
-        "ExecStart=${BIN_DIR}/emisar --config ${ETC_DIR}/config.yaml connect" || return 1
-      file_has_single_assignment "${systemd_path}" User || return 1
-      file_has_single_assignment "${systemd_path}" Group || return 1
-      file_has_single_assignment "${systemd_path}" ExecStart || return 1
-      ;;
-    launchd)
-      [ -f "${launchd_path}" ] && [ ! -L "${launchd_path}" ] || return 1
-      [ -f "${launchd_runner}" ] && [ ! -L "${launchd_runner}" ] || return 1
-      launchctl print system >/dev/null 2>&1 || return 1
-      if details="$(launchctl print system/com.emisar.runner 2>/dev/null)"; then
-        printf '%s\n' "${details}" | grep -Fq "path = ${launchd_path}" || return 1
-      fi
-      count="$(plutil -extract ProgramArguments raw -expect array -o - "${launchd_path}" 2>/dev/null)" || return 1
-      [ "${count}" = "4" ] || return 1
-      for value in \
-        "0:${ETC_DIR}/run-launchd.sh" \
-        "1:${BIN_DIR}/emisar" \
-        "2:${ETC_DIR}/config.yaml" \
-        "3:${ETC_DIR}/runner.env"; do
-        count="${value%%:*}"
-        value="${value#*:}"
-        [ "$(plutil -extract "ProgramArguments.${count}" raw -expect string -o - "${launchd_path}" 2>/dev/null)" = "${value}" ] || return 1
-      done
-      [ "$(plutil -extract WorkingDirectory raw -expect string -o - "${launchd_path}" 2>/dev/null)" = "${DATA_DIR}" ] || return 1
-      cmp -s <(launchd_runner_script) "${launchd_runner}" || return 1
-      ;;
-    none) ;;
-    *) return 1 ;;
-  esac
-}
-
-# A successful in-place update must keep pointing at the same durable history
-# and run under the same service identity. Moving those boundaries is a
-# migration, not a binary update; doing it implicitly can abandon replay state.
-verify_existing_install_mapping() {
-  local target="${BIN_DIR}/emisar" service_marker="" locator="" line_count
-  case "${OS}" in
-    linux) service_marker=/etc/systemd/system/emisar.service ;;
-    darwin) service_marker=/Library/LaunchDaemons/com.emisar.runner.plist ;;
-  esac
-
-  if ! { [ -e "${INSTALL_RECEIPT_PATH}" ] || [ -L "${INSTALL_RECEIPT_PATH}" ] ||
-         [ -e "${INSTALL_RECEIPT_LOCATOR}" ] || [ -L "${INSTALL_RECEIPT_LOCATOR}" ]; }; then
-    if [ -e "${target}" ] || [ -L "${target}" ] ||
-       [ -e "${service_marker}" ] || [ -L "${service_marker}" ]; then
-      die "the existing runner has no install receipt, so its live paths and service identity cannot be verified; refusing to modify it automatically"
-    fi
-    case "${INIT}" in
-      systemd)
-        local load_state
-        load_state="$(systemctl show emisar.service --property=LoadState --value 2>/dev/null)" || \
-          die "could not query emisar.service before checking install ownership"
-        if [ "${load_state}" != "not-found" ]; then
-          die "the existing managed runner has no install receipt, so its live paths and service identity cannot be verified; refusing to modify it automatically"
-        fi
-        ;;
-      launchd)
-        launchctl print system >/dev/null 2>&1 || \
-          die "could not query the launchd system domain before checking install ownership"
-        if launchctl print system/com.emisar.runner >/dev/null 2>&1; then
-          die "the existing managed runner has no install receipt, so its live paths and service identity cannot be verified; refusing to modify it automatically"
-        fi
-        ;;
-    esac
-    return 0
-  fi
-
-  trusted_install_path "${INSTALL_RECEIPT_PATH}" 600 || \
-    die "the existing install receipt is missing or unsafe"
-  trusted_install_path "${INSTALL_RECEIPT_LOCATOR}" 644 || \
-    die "the existing install receipt locator is missing or unsafe"
-  IFS= read -r locator <"${INSTALL_RECEIPT_LOCATOR}" || \
-    die "the existing install receipt locator is unreadable"
-  line_count="$(wc -l <"${INSTALL_RECEIPT_LOCATOR}" | tr -d '[:space:]')"
-  if [ "${line_count}" != "1" ] || [ "${locator}" != "${INSTALL_RECEIPT_PATH}" ]; then
-    die "the existing install receipt locator does not match this installation"
-  fi
-
-  if ! receipt_field_equals schema "1" ||
-     ! receipt_field_equals manager "install.sh" ||
-     ! receipt_repository_equals "${REPO}" ||
-     ! receipt_field_equals binary "${BIN_DIR}/emisar" ||
-     ! receipt_field_equals etc_dir "${ETC_DIR}" ||
-     ! receipt_field_equals data_dir "${DATA_DIR}" ||
-     ! receipt_field_equals log_dir "${LOG_DIR}" ||
-     ! receipt_field_equals service_user "${SERVICE_USER}" ||
-     ! receipt_field_equals service_group "${SERVICE_GROUP}" ||
-     ! receipt_field_equals init "${INIT}"; then
-    die "existing install paths, service identity, and init manager cannot be changed in place; rerun with the original settings"
-  fi
-  verify_managed_service_mapping || \
-    die "the managed service does not match the receipt's binary, config, or service identity; refusing to replace it"
-}
 
 # The updater does not infer ownership from a path. This receipt is the
 # installer saying which exact binary and service paths it owns; the CLI accepts
@@ -1638,11 +1330,6 @@ EOF
 }
 
 rollback_install_receipt() {
-  if [ -n "${INSTALL_STATE_BACKUP:-}" ]; then
-    restore_install_artifact "${INSTALL_RECEIPT_PATH}" receipt || return 1
-    restore_install_artifact "${INSTALL_RECEIPT_LOCATOR}" receipt-locator || return 1
-    return 0
-  fi
   [ "${RECEIPT_PREEXISTED}" = "0" ] || return 0
   rm -f "${INSTALL_RECEIPT_PATH}" "${INSTALL_RECEIPT_LOCATOR}"
 }
@@ -1654,15 +1341,7 @@ stage_binary() {
   fi
   mkdir -p "${BIN_DIR}"
   chmod 755 "${BIN_DIR}"
-  # The staged binary is executed AS ROOT before it is activated, so it lives in
-  # a root-owned 0700 directory rather than at a predictable `.emisar.new.$$`
-  # inside BIN_DIR: --bin-dir is only checked lexically, so an administrator may
-  # point it at a directory another local user can write, and that user could
-  # replace the staged file between the copy and the run. The directory sits
-  # inside BIN_DIR so activation stays a rename on one filesystem.
-  STAGE_DIR="$(mktemp -d "${BIN_DIR}/.emisar-stage.XXXXXX")" || die "could not create a staging directory in ${BIN_DIR}"
-  chmod 700 "${STAGE_DIR}" || die "could not secure the staging directory ${STAGE_DIR}"
-  STAGED_BINARY="${STAGE_DIR}/emisar"
+  STAGED_BINARY="${BIN_DIR}/.emisar.new.$$"
   log "staging binary at ${STAGED_BINARY}"
   install -m 0755 "${src}" "${STAGED_BINARY}"
   # Use the one-line machine contract the release workflow verifies. The
@@ -1675,203 +1354,34 @@ stage_binary() {
   log "verified: ${ver_output}"
 }
 
-# A corrupt durable dispatch log makes the upgraded runner refuse to start (by
-# design: it cannot prove at-most-once execution against unreadable state).
-# Catch it with the STAGED binary before the running service is touched, so an
-# upgrade never converts a working host into a crash-looping one. Readable
-# older state is fine — the new runner migrates it forward on boot.
-runner_installation_present() {
-  local systemd_unit="${1:-/etc/systemd/system/emisar.service}"
-  local launchd_plist="${2:-/Library/LaunchDaemons/com.emisar.runner.plist}"
-  { [ -n "${BIN_DIR:-}" ] && { [ -e "${BIN_DIR}/emisar" ] || [ -L "${BIN_DIR}/emisar" ]; }; } ||
-    { [ -n "${INSTALL_RECEIPT_PATH:-}" ] && { [ -e "${INSTALL_RECEIPT_PATH}" ] || [ -L "${INSTALL_RECEIPT_PATH}" ]; }; } ||
-    { [ -n "${INSTALL_RECEIPT_LOCATOR:-}" ] && { [ -e "${INSTALL_RECEIPT_LOCATOR}" ] || [ -L "${INSTALL_RECEIPT_LOCATOR}" ]; }; } ||
-    [ -e "${DATA_DIR}/dispatches.jsonl" ] || [ -L "${DATA_DIR}/dispatches.jsonl" ] ||
-    [ -e "${DATA_DIR}/dedup.jsonl" ] || [ -L "${DATA_DIR}/dedup.jsonl" ] ||
-    [ -e "${systemd_unit}" ] || [ -L "${systemd_unit}" ] ||
-    [ -e "${launchd_plist}" ] || [ -L "${launchd_plist}" ]
-}
-
-check_dispatch_log() {
-  local phase="${1:-quiesced}"
-  # Probe the subcommand LISTING — `state check-dispatch-log --help` on an old
-  # binary prints the parent's help and exits 0, so its exit code proves
-  # nothing. A binary without the check is safe only on a host with no durable
-  # dispatch state and no existing installation that could create it while
-  # this preflight is running.
-  if ! "${STAGED_BINARY}" state --help 2>/dev/null | grep -q "check-dispatch-log"; then
-    if runner_installation_present; then
-      die "staged binary cannot verify the existing durable dispatch state"
-    fi
-    return 0
-  fi
-  if [ ! -f "${ETC_DIR}/config.yaml" ]; then
-    if runner_installation_present; then
-      die "the existing runner config is missing or unsafe, so its durable dispatch directory cannot be verified"
-    fi
-    return 0
-  fi
-  local refusal line
-  if refusal="$({ "${STAGED_BINARY}" --config "${ETC_DIR}/config.yaml" \
-       state check-dispatch-log --data-dir "${DATA_DIR}" >/dev/null; } 2>&1)"; then
-    return 0
-  fi
-  # The check reads the config before the log, so a binary that rejects the
-  # existing config fails here too — and it would crash-loop the service the
-  # moment it started (runner 0.24.0 did, over a config key it had dropped).
-  # Re-read the log alone to tell the two apart, and always repeat the
-  # binary's own words: discarding them is how a rejected config was once
-  # reported as a corrupt dispatch log.
-  if [ -n "${refusal}" ]; then
-    while IFS= read -r line; do warn "  ${line}"; done <<<"${refusal}"
-  fi
-  if "${STAGED_BINARY}" state check-dispatch-log --data-dir "${DATA_DIR}" >/dev/null 2>&1; then
-    die "runner ${VERSION#runner-v} refuses the existing ${ETC_DIR}/config.yaml (see above); the current install is untouched"
-  fi
-  local logfile="${DATA_DIR}/dispatches.jsonl"
-  [ -e "${logfile}" ] || [ -L "${logfile}" ] || logfile="${DATA_DIR}/dedup.jsonl"
-  if [ "${QUARANTINE_DISPATCH_LOG:-0}" = "1" ]; then
-    if [ "${phase}" = "pre-stop" ]; then
-      warn "the unreadable dispatch log will be quarantined only after the existing service is stopped"
-      return 0
-    fi
-    if [ "${DISPATCH_LOG_QUIESCED:-0}" != "1" ]; then
-      die "cannot quarantine the dispatch log without proving the existing service is stopped; stop it and quarantine the file manually"
-    fi
-    local candidate quarantine_parent quarantined_dir="" quarantined moved=0
-    quarantine_parent="$(dirname "${DATA_DIR}")"
-    for candidate in "${DATA_DIR}/dispatches.jsonl" "${DATA_DIR}/dedup.jsonl"; do
-      if [ -e "${candidate}" ] || [ -L "${candidate}" ]; then
-        if [ -z "${quarantined_dir}" ]; then
-          quarantined_dir="$(mktemp -d "${quarantine_parent}/.emisar-dispatch-quarantine-$(date +%Y%m%d%H%M%S).XXXXXX")" || \
-            die "could not create a collision-safe dispatch quarantine"
-          chmod 700 "${quarantined_dir}" || die "could not secure the dispatch quarantine"
-        fi
-        quarantined="${quarantined_dir}/$(basename "${candidate}")"
-        mv "${candidate}" "${quarantined}" || die "could not quarantine ${candidate}"
-        warn "dispatch log was unreadable; quarantined it at ${quarantined}"
-        moved=1
-      fi
-    done
-    [ "${moved}" = "1" ] || die "the unreadable dispatch log disappeared before it could be quarantined"
-    "${STAGED_BINARY}" --config "${ETC_DIR}/config.yaml" \
-      state check-dispatch-log --data-dir "${DATA_DIR}" >/dev/null 2>&1 || \
-      die "dispatch state remained unreadable after quarantine"
-    warn "the runner starts a clean dispatch log on next boot"
-    warn "quarantining forgets replay history and may allow a redelivered action to run again"
-    return 0
-  fi
-  warn "the durable dispatch log at ${logfile} is unreadable; the upgraded runner would refuse to start over it"
-  warn "options:"
-  warn "  1) stop the runner and prove it is idle, then move ${logfile} into a new root-owned mode-0700 quarantine directory outside ${DATA_DIR}"
-  if [ "${logfile}" = "${DATA_DIR}/dispatches.jsonl" ]; then
-    warn "     also quarantine ${DATA_DIR}/dedup.jsonl if present, or it will be adopted on restart"
-  fi
-  if [ "${INIT}" != "none" ]; then
-    warn "  2) re-run this installer with QUARANTINE_DISPATCH_LOG=1 to do that automatically after stopping the managed service"
-    warn "  3) investigate first — nothing changes while the current runner keeps running"
-  else
-    warn "  2) investigate first — automatic quarantine is unavailable with --no-service"
-  fi
-  die "refusing to upgrade over unreadable dispatch state (the current install is untouched)"
-}
 
 activate_binary() {
   local target="${BIN_DIR}/emisar"
-  if [ -e "${target}" ] || [ -L "${target}" ]; then
-    BACKUP_BINARY_DIR="$(mktemp -d "${BIN_DIR}/.emisar.previous.XXXXXX")" || return 1
-    BACKUP_BINARY="${BACKUP_BINARY_DIR}/emisar"
-    # COPY the previous binary aside rather than moving it. Activation below is
-    # then a single rename over a target that never stops existing, so power
-    # loss mid-upgrade leaves either the old binary or the new one — never a
-    # host with no emisar at all, which two renames could.
-    if ! cp -pP "${target}" "${BACKUP_BINARY}"; then
-      rm -f "${BACKUP_BINARY}"
-      BACKUP_BINARY=""
-      rmdir "${BACKUP_BINARY_DIR}" 2>/dev/null || true
-      BACKUP_BINARY_DIR=""
-      return 1
-    fi
+  if [ -e "${target}" ]; then
+    BACKUP_BINARY="${BIN_DIR}/.emisar.previous.$$"
+    mv "${target}" "${BACKUP_BINARY}"
   fi
-  # From this point the transaction owns the target, even if a signal arrives
-  # before the rename's result can be observed: mv may have completed and still
-  # reported failure, and on an externally supervised host something may already
-  # have executed the new binary.
-  BINARY_ACTIVATED=1
-  if ! mv "${STAGED_BINARY}" "${target}"; then
-    # The staged file still sitting where it was put is proof the rename did
-    # NOT take effect, so the target is untouched and this was no activation.
-    if [ -e "${STAGED_BINARY}" ] || [ -L "${STAGED_BINARY}" ]; then
-      BINARY_ACTIVATED=0
-    fi
-    return 1
-  fi
+  mv "${STAGED_BINARY}" "${target}"
   STAGED_BINARY=""
-  cleanup_stage_dir || warn "could not remove the staging directory ${STAGE_DIR}"
+  BINARY_ACTIVATED=1
   log "installed binary to ${target}"
 }
 
 rollback_binary() {
   local target="${BIN_DIR}/emisar"
-  cleanup_staged_binary || return 1
-  if [ -n "${BACKUP_BINARY}" ]; then
-    # The backup, not BINARY_ACTIVATED, is the durable proof that restoration
-    # is required: it is written before the activating rename, so a signal
-    # between the two lands here with the target still intact.
-    if ! { [ -e "${BACKUP_BINARY}" ] || [ -L "${BACKUP_BINARY}" ]; }; then
-      if [ "${BINARY_ACTIVATED}" = "0" ] && { [ -e "${target}" ] || [ -L "${target}" ]; }; then
-        BACKUP_BINARY=""
-        if [ -n "${BACKUP_BINARY_DIR:-}" ]; then
-          rmdir "${BACKUP_BINARY_DIR}" || warn "could not remove empty binary backup directory ${BACKUP_BINARY_DIR}"
-          BACKUP_BINARY_DIR=""
-        fi
-        return 0
-      fi
-      return 1
+  [ -z "${STAGED_BINARY}" ] || rm -f "${STAGED_BINARY}"
+  if [ "${BINARY_ACTIVATED}" = "1" ]; then
+    rm -f "${target}"
+    if [ -n "${BACKUP_BINARY}" ] && [ -e "${BACKUP_BINARY}" ]; then
+      mv "${BACKUP_BINARY}" "${target}"
+      log "restored previous binary after failed upgrade"
     fi
-    mv -f "${BACKUP_BINARY}" "${target}" || return 1
-    BACKUP_BINARY=""
-    if [ -n "${BACKUP_BINARY_DIR:-}" ]; then
-      rmdir "${BACKUP_BINARY_DIR}" || warn "could not remove empty binary backup directory ${BACKUP_BINARY_DIR}"
-      BACKUP_BINARY_DIR=""
-    fi
-    BINARY_ACTIVATED=0
-    log "restored previous binary after failed upgrade"
-  elif [ "${BINARY_ACTIVATED}" = "1" ]; then
-    rm -f "${target}" || return 1
-    BINARY_ACTIVATED=0
-    log "removed binary from failed fresh installation"
-  elif [ -n "${BACKUP_BINARY_DIR:-}" ]; then
-    # A signal may land after reserving the unique container but before the
-    # target move. An intact target plus an empty owned container is safe to
-    # collapse back to the pre-install state.
-    [ -e "${target}" ] || [ -L "${target}" ] || return 1
-    rmdir "${BACKUP_BINARY_DIR}" || return 1
-    BACKUP_BINARY_DIR=""
   fi
-}
-
-cleanup_staged_binary() {
-  if [ -n "${STAGED_BINARY}" ]; then
-    rm -f "${STAGED_BINARY}" || return 1
-    STAGED_BINARY=""
-  fi
-  cleanup_stage_dir
-}
-
-cleanup_stage_dir() {
-  [ -n "${STAGE_DIR:-}" ] || return 0
-  rmdir "${STAGE_DIR}" || return 1
-  STAGE_DIR=""
 }
 
 discard_binary_backup() {
-  [ -z "${BACKUP_BINARY}" ] || rm -f "${BACKUP_BINARY}" || return 1
-  if [ -n "${BACKUP_BINARY_DIR:-}" ]; then
-    rmdir "${BACKUP_BINARY_DIR}" || return 1
-  fi
+  [ -z "${BACKUP_BINARY}" ] || rm -f "${BACKUP_BINARY}"
   BACKUP_BINARY=""
-  BACKUP_BINARY_DIR=""
 }
 
 # install_default_packs installs the starter packs from the bundle shipped
@@ -2068,37 +1578,27 @@ secure_pack_tree() {
 }
 
 install_systemd() {
-  local unit="/etc/systemd/system/emisar.service" staged
-  [ -e "${unit}" ] || [ -L "${unit}" ] || SERVICE_UNIT_CREATED=1
+  local unit="/etc/systemd/system/emisar.service"
+  [ -e "${unit}" ] || SERVICE_UNIT_CREATED=1
   log "writing ${unit}"
-  staged="$(mktemp "${unit}.tmp.XXXXXX")" || die "could not stage ${unit}"
-  systemd_unit >"${staged}" || { rm -f "${staged}"; die "could not render ${unit}"; }
-  chmod 644 "${staged}"
-  chown root:root "${staged}" || { rm -f "${staged}"; die "could not secure ${unit}"; }
-  mv -f "${staged}" "${unit}" || { rm -f "${staged}"; die "could not activate ${unit}"; }
+  systemd_unit > "${unit}"
+  chmod 644 "${unit}"
   systemctl daemon-reload
-  if [ "${SERVICE_UNIT_CREATED}" = "1" ]; then
-    systemctl enable emisar.service >/dev/null
-  fi
+  systemctl enable emisar.service >/dev/null
 }
 
 install_launchd() {
   local plist="/Library/LaunchDaemons/com.emisar.runner.plist"
   local runner="${ETC_DIR}/run-launchd.sh"
-  local staged_runner staged_plist
-  [ -e "${plist}" ] || [ -L "${plist}" ] || SERVICE_UNIT_CREATED=1
+  [ -e "${plist}" ] || SERVICE_UNIT_CREATED=1
   log "writing ${runner}"
-  staged_runner="$(mktemp "${runner}.tmp.XXXXXX")" || die "could not stage ${runner}"
-  launchd_runner_script >"${staged_runner}" || { rm -f "${staged_runner}"; die "could not render ${runner}"; }
-  chown root:wheel "${staged_runner}"
-  chmod 700 "${staged_runner}"
-  mv -f "${staged_runner}" "${runner}" || { rm -f "${staged_runner}"; die "could not activate ${runner}"; }
+  launchd_runner_script > "${runner}"
+  chown root:wheel "${runner}"
+  chmod 700 "${runner}"
   log "writing ${plist}"
-  staged_plist="$(mktemp "${plist}.tmp.XXXXXX")" || die "could not stage ${plist}"
-  launchd_plist >"${staged_plist}" || { rm -f "${staged_plist}"; die "could not render ${plist}"; }
-  chown root:wheel "${staged_plist}"
-  chmod 644 "${staged_plist}"
-  mv -f "${staged_plist}" "${plist}" || { rm -f "${staged_plist}"; die "could not activate ${plist}"; }
+  launchd_plist > "${plist}"
+  chown root:wheel "${plist}"
+  chmod 644 "${plist}"
 }
 
 start_service() {
@@ -2106,7 +1606,7 @@ start_service() {
     # No service unit to start — the operator runs the binary directly.
     return 0
   fi
-  if [ "${needs_configuration}" = "1" ]; then
+  if [ "${NEEDS_CONFIGURATION:-0}" = "1" ]; then
     warn "skipping service start — edit ${ETC_DIR}/config.yaml and ${ETC_DIR}/runner.env first"
     return 0
   fi
@@ -2117,7 +1617,6 @@ start_service() {
   case "${INIT}" in
     systemd)
       log "starting emisar.service"
-      SERVICE_START_ATTEMPTED=1
       systemctl restart emisar.service
       # Type=simple can report a successful start immediately before the
       # process exits. Give startup validation time to fail, then require the
@@ -2130,7 +1629,6 @@ start_service() {
       # bootout is the idempotent way to (re)load; ignore missing-target.
       launchctl bootout system "${plist}" 2>/dev/null || true
       log "loading com.emisar.runner"
-      SERVICE_START_ATTEMPTED=1
       launchctl bootstrap system "${plist}"
       # Verify, like the systemd arm above. This was `|| true`, so a daemon that
       # failed to load reported a successful install — and because
@@ -2139,20 +1637,13 @@ start_service() {
       # progress" on a healthy machine. macOS is the evaluation path, so that is
       # the first thing a new operator sees.
       sleep 2
-      if ! require_launchd_service_running; then
+      if ! launchctl print system/com.emisar.runner >/dev/null 2>&1; then
         launchctl print system/com.emisar.runner || true
-        die "com.emisar.runner did not stay running"
+        die "com.emisar.runner did not stay loaded"
       fi
       SERVICE_STARTED=1
       ;;
   esac
-}
-
-require_launchd_service_running() {
-  local details
-  details="$(launchctl print system/com.emisar.runner 2>/dev/null)" || return 1
-  printf '%s\n' "${details}" | grep -Eq '^[[:space:]]*state = running$' || return 1
-  printf '%s\n' "${details}" | grep -Eq '^[[:space:]]*pid = [1-9][0-9]*$'
 }
 
 require_systemd_service_active() {
@@ -2160,12 +1651,6 @@ require_systemd_service_active() {
   state="$(systemctl is-active emisar.service 2>/dev/null || true)"
   if [ "${state}" != "active" ]; then
     systemctl --no-pager --full status emisar.service || true
-    # `status` shows a few journal lines at best and none while the unit is
-    # auto-restarting — exactly when the runner's exit message is the one
-    # thing worth reading.
-    if command -v journalctl >/dev/null 2>&1; then
-      journalctl --no-pager -n 20 -u emisar.service 2>/dev/null || true
-    fi
     die "emisar.service did not stay active (systemd state: ${state:-unknown})"
   fi
   SERVICE_STARTED=1
@@ -2175,109 +1660,36 @@ require_systemd_service_active() {
 stop_service_if_running() {
   case "${INIT}" in
     systemd)
-      stop_systemd_service_if_running
+      if systemctl is-active --quiet emisar.service; then
+        SERVICE_WAS_RUNNING=1
+        log "stopping emisar.service for upgrade"
+        systemctl stop emisar.service
+      fi
       ;;
     launchd)
       local plist="/Library/LaunchDaemons/com.emisar.runner.plist"
-      launchctl print system >/dev/null 2>&1 || \
-        die "could not query the launchd system domain before upgrade"
       if launchctl print system/com.emisar.runner >/dev/null 2>&1; then
         SERVICE_WAS_RUNNING=1
         log "unloading com.emisar.runner for upgrade"
-        launchctl bootout system "${plist}" >/dev/null 2>&1 || \
-          die "could not unload com.emisar.runner for upgrade"
-        launchctl print system >/dev/null 2>&1 || \
-          die "could not verify the launchd system domain after unload"
-        if launchctl print system/com.emisar.runner >/dev/null 2>&1; then
-          die "com.emisar.runner remained loaded after unload"
-        fi
+        launchctl bootout system "${plist}" 2>/dev/null || true
       fi
-      DISPATCH_LOG_QUIESCED=1
       ;;
-  esac
-}
-
-stop_systemd_service_if_running() {
-  local state
-  state="$(systemctl is-active emisar.service 2>/dev/null || true)"
-  case "${state}" in
-    inactive|failed) DISPATCH_LOG_QUIESCED=1; return 0;;
-    active|activating|reloading|deactivating)
-      SERVICE_WAS_RUNNING=1
-      log "stopping emisar.service for upgrade"
-      systemctl stop emisar.service || die "could not stop emisar.service for upgrade"
-      state="$(systemctl is-active emisar.service 2>/dev/null || true)"
-      case "${state}" in
-        inactive|failed) DISPATCH_LOG_QUIESCED=1; return 0;;
-        *) die "emisar.service did not stop cleanly (systemd state: ${state:-unknown})" ;;
-      esac
-      ;;
-    *) die "could not determine emisar.service state before upgrade" ;;
   esac
 }
 
 restore_previous_service() {
   [ "${SERVICE_WAS_RUNNING}" = "1" ] || return 0
   case "${INIT}" in
-    systemd)
-      systemctl start emisar.service || return 1
-      sleep 2
-      [ "$(systemctl is-active emisar.service 2>/dev/null || true)" = "active" ]
-      ;;
+    systemd) systemctl start emisar.service ;;
     launchd)
-      launchctl bootstrap system /Library/LaunchDaemons/com.emisar.runner.plist || return 1
-      sleep 2
-      require_launchd_service_running
+      launchctl bootstrap system /Library/LaunchDaemons/com.emisar.runner.plist
       ;;
   esac
 }
 
-# Stop any service that may be executing the newly activated binary before a
-# rollback check or binary swap. A failed stop makes automatic rollback unsafe.
-quiesce_attempted_service() {
-  [ "${SERVICE_START_ATTEMPTED}" = "1" ] || return 0
-  case "${INIT}" in
-    systemd)
-      local state
-      systemctl stop emisar.service >/dev/null 2>&1 || return 1
-      state="$(systemctl is-active emisar.service 2>/dev/null || true)"
-      case "${state}" in inactive|failed) return 0;; *) return 1;; esac
-      ;;
-    launchd)
-      launchctl print system >/dev/null 2>&1 || return 1
-      if launchctl print system/com.emisar.runner >/dev/null 2>&1; then
-        launchctl bootout system /Library/LaunchDaemons/com.emisar.runner.plist >/dev/null 2>&1 || true
-      fi
-      launchctl print system >/dev/null 2>&1 || return 1
-      ! launchctl print system/com.emisar.runner >/dev/null 2>&1
-      ;;
-    none) return 0 ;;
-  esac
-}
-
-# Restore the exact service definition an upgrade replaced, or remove the unit
-# and wrapper created by a failed fresh installation.
+# Undo a service unit THIS run created. Only for a fresh install: an upgrade's
+# unit predates us and belongs to the installation we are restoring.
 rollback_service() {
-  if [ -n "${INSTALL_STATE_BACKUP:-}" ]; then
-    case "${INIT}" in
-      systemd)
-        if [ -f "${INSTALL_STATE_BACKUP}/systemd-unit.absent" ]; then
-          systemctl disable --now emisar.service >/dev/null 2>&1 || return 1
-        fi
-        restore_install_artifact /etc/systemd/system/emisar.service systemd-unit || return 1
-        systemctl daemon-reload >/dev/null 2>&1 || return 1
-        ;;
-      launchd)
-        launchctl bootout system/com.emisar.runner >/dev/null 2>&1 || true
-        restore_install_artifact /Library/LaunchDaemons/com.emisar.runner.plist launchd-plist || return 1
-        restore_install_artifact "${ETC_DIR}/run-launchd.sh" launchd-runner || return 1
-        ;;
-    esac
-    if [ "${INIT}" != "none" ]; then
-      log "restored the previous service definition"
-    fi
-    return 0
-  fi
   [ "${SERVICE_UNIT_CREATED}" = "1" ] || return 0
   case "${INIT}" in
     systemd)
@@ -2288,65 +1700,24 @@ rollback_service() {
     launchd)
       launchctl bootout system/com.emisar.runner >/dev/null 2>&1 || true
       rm -f /Library/LaunchDaemons/com.emisar.runner.plist
-      rm -f "${ETC_DIR}/run-launchd.sh"
       ;;
   esac
   log "removed the service unit this run created"
 }
 
 finish_install() {
-  # Recovery is a critical section. A second signal must not interrupt the
-  # binary/service/receipt restore and leave a mixed installation behind.
-  trap '' HUP INT TERM
-  trap - EXIT
-  local rc=$1 had_previous=0 was_activated="${BINARY_ACTIVATED}" was_running="${SERVICE_WAS_RUNNING}"
+  local rc=$1
+  trap - EXIT HUP INT TERM
   set +e
   if [ "$rc" -ne 0 ] && [ "${INSTALL_TRANSACTION}" = "1" ]; then
-    if [ -n "${BACKUP_BINARY}" ] && { [ -e "${BACKUP_BINARY}" ] || [ -L "${BACKUP_BINARY}" ]; }; then
-      had_previous=1
-    fi
-    if ! quiesce_attempted_service; then
-      warn "installation failed and the attempted service could not be stopped; automatic rollback was not performed"
-      PRESERVE_INSTALL_BACKUP=1
-    elif [ "${SERVICE_START_ATTEMPTED}" = "1" ] ||
-         { [ "${INIT}" = "none" ] && [ "${BINARY_ACTIVATED}" = "1" ] &&
-           { [ -e "${BIN_DIR}/emisar" ] || [ -L "${BIN_DIR}/emisar" ]; }; }; then
-      warn "automatic rollback was refused because the activated runner may already have advanced durable state"
-      warn "the activated installation was kept, its previous binary remains at ${BACKUP_BINARY:-none}, and the service was left stopped"
-      warn "do not restore an older dispatch log; doing so may allow a redelivered action to run again"
-      PRESERVE_INSTALL_BACKUP=1
-    else
-      if ! rollback_binary; then
-        warn "installation failed and the binary could not be rolled back; the service was left stopped"
-        [ -z "${BACKUP_BINARY}" ] || warn "the previous binary remains at ${BACKUP_BINARY}"
-        PRESERVE_INSTALL_BACKUP=1
-      else
-        if ! restore_enrollment_state || ! rollback_service || ! rollback_install_receipt; then
-          warn "installation failed and the previous authentication or service state could not be restored; the service was left stopped"
-          PRESERVE_INSTALL_BACKUP=1
-        elif ! restore_previous_service; then
-          warn "installation failed; the previous binary was restored but its service did not stay active"
-        elif [ "${had_previous}" = "1" ] && [ "${was_running}" = "1" ]; then
-          warn "installation failed; the previous binary was restored and its service was verified active"
-        elif [ "${had_previous}" = "1" ]; then
-          warn "installation failed; the previous binary was restored and its service remained stopped as before"
-        elif [ "${was_activated}" = "1" ]; then
-          warn "installation failed; the partial fresh installation was removed"
-        else
-          warn "installation failed before binary activation; the existing installation was left in place"
-        fi
-      fi
-    fi
-  elif [ "$rc" -ne 0 ]; then
-    # Stage/preflight failures happen before INSTALL_TRANSACTION flips on, but
-    # the EXIT trap still owns the staged temp binary.
-    cleanup_staged_binary || warn "installation failed and the staged binary could not be removed"
+    rollback_binary
+    restore_enrollment_state
+    rollback_service
+    rollback_install_receipt
+    restore_previous_service
+    warn "installation failed; restored the previous runner and service state"
   fi
-  if [ "${PRESERVE_INSTALL_BACKUP:-0}" = "1" ] && [ -n "${tmp:-}" ]; then
-    warn "installer rollback files were kept at ${tmp}"
-  else
-    [ -z "${tmp:-}" ] || rm -rf "${tmp}"
-  fi
+  [ -z "${tmp:-}" ] || rm -rf "${tmp}"
   exit "$rc"
 }
 
@@ -2410,19 +1781,11 @@ do_install() {
   # Download, stage, and execute the new binary before interrupting a running
   # service. Architecture/version failures leave the current runner untouched.
   stage_binary "${extracted}"
-  check_dispatch_log pre-stop
-  verify_existing_install_mapping
-  if [ -e "${INSTALL_RECEIPT_PATH}" ] || [ -L "${INSTALL_RECEIPT_PATH}" ] ||
-     [ -e "${INSTALL_RECEIPT_LOCATOR}" ] || [ -L "${INSTALL_RECEIPT_LOCATOR}" ]; then
+  INSTALL_TRANSACTION=1
+  if [ -e "${INSTALL_RECEIPT_PATH}" ] || [ -e "${INSTALL_RECEIPT_LOCATOR}" ]; then
     RECEIPT_PREEXISTED=1
   fi
-  INSTALL_TRANSACTION=1
   stop_service_if_running
-  # The old daemon could create its first dispatch record after the early
-  # preflight. Recheck only after the service is proven stopped, before any
-  # binary or surrounding installation state is changed.
-  check_dispatch_log
-  backup_install_state
 
   # --no-service skips the daemon user — without an init unit, the
   # binary runs as whoever invokes it. Keeping the system user would
@@ -2459,14 +1822,11 @@ do_install() {
     none)    log "skipping service unit (--no-service)";;
   esac
 
-  write_install_receipt
   start_service
+  write_install_receipt
 
-  # The receipt is the transaction's final durable step. From here, an EXIT
-  # signal must keep the activated binary; the old backup is only cleanup.
+  discard_binary_backup
   INSTALL_TRANSACTION=0
-  BINARY_ACTIVATED=0
-  discard_binary_backup || warn "installed successfully but could not remove the previous binary backup at ${BACKUP_BINARY:-${BACKUP_BINARY_DIR:-unknown}}"
 
   log "installed emisar ${VERSION}"
   print_next_steps
@@ -2487,7 +1847,7 @@ EOF
 
   # If EMISAR_URL + EMISAR_ENROLLMENT_KEY came in via env, drop_config_skeleton
   # already wrote them — no manual edit needed. Otherwise prompt for it.
-  if [ "${needs_configuration}" = "1" ]; then
+  if [ "${NEEDS_CONFIGURATION:-1}" = "1" ]; then
     cat <<EOF
 
 Next steps:
@@ -2522,7 +1882,7 @@ EOF
       fi
       ;;
     none)
-      if [ "${needs_configuration}" = "1" ]; then
+      if [ "${NEEDS_CONFIGURATION:-1}" = "1" ]; then
         cat <<EOF
   3. Run the binary directly (no service was installed):
        ${BIN_DIR}/emisar connect --config ${ETC_DIR}/config.yaml

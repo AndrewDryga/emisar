@@ -1,9 +1,0 @@
-# Both attach to a JVM as its owning user, which a SUT running the JVM as the
-# case's own runner user satisfies. That is a fixture we have not built, not a
-# privilege the harness withholds.
-# See .agent/kb/pack-behavior-environment-limits.md for what was measured.
-risk_accountability:
-  mode: complete
-  exceptions:
-    jvm.heap_dump: requires_privileged_host
-    jvm.vm_system_properties: requires_privileged_host

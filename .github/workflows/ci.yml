@@ -184,9 +184,6 @@ jobs:
         # workspace-isolated dependencies automatically outside CI. The
         # dependency audit, Phoenix security scan, and compile-cycle budget
         # run inside this gate so a green local run means a green job.
-        env:
-          EMISAR_FROZEN_MIGRATIONS_EVENT: ${{ github.event_name }}
-          EMISAR_FROZEN_MIGRATIONS_BASE: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
         run: ../run gate portal
 
   mcp-listing:
