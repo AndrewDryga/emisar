@@ -184,9 +184,6 @@ defmodule EmisarWeb.RunNewLive do
                "That runner is outside your access scope. Ask an admin to grant access on the team page."
              )}
 
-          {:error, :runner_required} ->
-            {:noreply, put_flash(socket, :error, "Runner is required.")}
-
           {:error, :pack_untrusted} ->
             {:noreply,
              put_flash(
@@ -246,25 +243,6 @@ defmodule EmisarWeb.RunNewLive do
                :error,
                "This action's pack is outside your access scope. Ask an admin to grant access on the team page."
              )}
-
-          {:error, :invalid_attestation} ->
-            {:noreply,
-             put_flash(
-               socket,
-               :error,
-               "Dispatch authority could not be verified. Reload the page and try again."
-             )}
-
-          {:error, :action_required} ->
-            {:noreply,
-             put_flash(
-               socket,
-               :error,
-               "This action is no longer available. Reload the page and choose a current action."
-             )}
-
-          {:error, :reason_required} ->
-            {:noreply, put_flash(socket, :error, "Add a reason before dispatching this action.")}
 
           # The run record itself was rejected (its fields key to the
           # dispatch envelope — runner_id, source, … — not to the action's
