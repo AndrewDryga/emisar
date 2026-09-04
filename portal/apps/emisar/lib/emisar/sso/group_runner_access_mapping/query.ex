@@ -27,6 +27,14 @@ defmodule Emisar.SSO.GroupRunnerAccessMapping.Query do
     )
   end
 
+  def by_directory_group_ids(queryable \\ all(), directory_group_ids) do
+    where(
+      queryable,
+      [group_runner_access_mappings: m],
+      m.directory_group_id in ^directory_group_ids
+    )
+  end
+
   def with_preloaded_directory_group(queryable \\ all()) do
     preload(queryable, directory_group: ^Emisar.SSO.DirectoryGroup.Query.all())
   end

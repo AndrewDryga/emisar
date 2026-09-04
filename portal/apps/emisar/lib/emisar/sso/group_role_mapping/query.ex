@@ -20,6 +20,9 @@ defmodule Emisar.SSO.GroupRoleMapping.Query do
   def by_directory_group_id(queryable, directory_group_id),
     do: where(queryable, [mappings: m], m.directory_group_id == ^directory_group_id)
 
+  def by_directory_group_ids(queryable, directory_group_ids),
+    do: where(queryable, [mappings: m], m.directory_group_id in ^directory_group_ids)
+
   def with_preloaded_directory_group(queryable) do
     preload(queryable, directory_group: ^Emisar.SSO.DirectoryGroup.Query.all())
   end

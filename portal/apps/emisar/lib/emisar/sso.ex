@@ -2805,9 +2805,13 @@ defmodule Emisar.SSO do
       |> Repo.all()
       |> Map.new(&{&1.directory_group_id, &1})
 
+    # Both maps are narrowed to the page's groups like the member counts above:
+    # a directory can push thousands of groups, and a whole-provider read per
+    # page render is exactly the load paging the list was meant to remove.
     role_mappings =
       GroupRoleMapping.Query.not_deleted()
       |> GroupRoleMapping.Query.by_provider_id(provider.id)
+      |> GroupRoleMapping.Query.by_directory_group_ids(group_ids)
       |> Authorizer.for_subject(subject)
       |> Repo.all()
       |> Map.new(&{&1.directory_group_id, &1})
@@ -2815,6 +2819,7 @@ defmodule Emisar.SSO do
     runner_access_mappings =
       GroupRunnerAccessMapping.Query.not_deleted()
       |> GroupRunnerAccessMapping.Query.by_provider_id(provider.id)
+      |> GroupRunnerAccessMapping.Query.by_directory_group_ids(group_ids)
       |> Authorizer.for_subject(subject)
       |> Repo.all()
       |> Map.new(&{&1.directory_group_id, &1})
