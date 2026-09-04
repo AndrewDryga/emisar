@@ -10,7 +10,7 @@ defmodule EmisarWeb.MfaSetupLive do
   Voluntary management (disable, regenerate codes) stays on the profile page.
   """
   use EmisarWeb, :live_view
-  alias Emisar.{Accounts, Auth}
+  alias Emisar.Auth
   alias EmisarWeb.{MfaEnrollment, MfaErrors}
 
   @email_unavailable_error "Your identity provider did not supply an email address. Ask your administrator to update it, then sign in again."
@@ -19,29 +19,18 @@ defmodule EmisarWeb.MfaSetupLive do
 
   def mount(_params, _session, socket) do
     user = socket.assigns.current_user
-    account = socket.assigns.current_account
 
-    # Delegate the enroll-or-leave decision to the shared domain policy so this
-    # interstitial can't drift from the on_mount hooks / the controller plug —
-    # in particular the MFA exemption stays ACCOUNT-SCOPED (a session SSO-authed
-    # via another account's IdP is NOT exempt here and must prove local MFA).
-    case Accounts.ensure_account_compliant(account, socket.assigns.current_subject) do
+    # The :ensure_sso_compliant on_mount already asked the shared domain policy
+    # (and bounced a non-SSO session), so its verdict is the enroll-or-leave
+    # decision — re-asking here would repeat the provider/identity reads.
+    case socket.assigns.account_compliance do
       {:error, :mfa_required} ->
         mount_required_mfa(socket, user)
-
-      {:error, :sso_required} ->
-        # The :ensure_sso_compliant on_mount already bounced a non-SSO session on
-        # a require_sso+require_mfa account; never enroll a factor before SSO is
-        # satisfied — belt and suspenders.
-        {:ok, push_navigate(socket, to: ~p"/app/#{account}/sso_required")}
 
       # Already compliant (current local proof, not enforcing, or an
       # MFA-satisfying SSO session FOR THIS account) — don't strand the user.
       :ok ->
         {:ok, push_navigate(socket, to: ~p"/app")}
-
-      {:error, reason} when reason in [:not_found, :unauthorized] ->
-        raise EmisarWeb.NotFoundError
     end
   end
 

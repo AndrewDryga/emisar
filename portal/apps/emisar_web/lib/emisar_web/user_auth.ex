@@ -557,7 +557,7 @@ defmodule EmisarWeb.UserAuth do
         {:halt, Phoenix.LiveView.redirect(socket, to: ~p"/app/#{account}/sso_required")}
 
       result when result in [:ok, {:error, :mfa_required}] ->
-        {:cont, socket}
+        {:cont, Phoenix.Component.assign(socket, :account_compliance, result)}
 
       {:error, reason} when reason in [:not_found, :unauthorized] ->
         raise EmisarWeb.NotFoundError
