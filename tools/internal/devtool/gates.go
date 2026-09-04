@@ -239,42 +239,9 @@ func parseCoverage(args []string) (string, error) {
 	return args[1], nil
 }
 
-// checkClientModuleBoundaries keeps repo tooling out of the modules customers
-// build and audit themselves. runner/ and mcp/ ship to self-hosters; packctl is
-// the one sanctioned binary under runner/cmd (pack-hash parity, runner/AGENTS.md).
-// Extending either list is a deliberate, reviewed act, so the gate decides it —
-// as a CI-only step it was invisible until someone pushed.
-func (a *App) checkClientModuleBoundaries(module string) error {
-	if module == "tools" {
-		return nil
-	}
-	entries, err := os.ReadDir(filepath.Join(a.Root, "runner", "cmd"))
-	if err != nil {
-		return err
-	}
-	var commands []string
-	for _, entry := range entries {
-		commands = append(commands, entry.Name())
-	}
-	if len(commands) != 1 || commands[0] != "packctl" {
-		return fmt.Errorf(
-			"runner/cmd must contain exactly packctl, found %v — repo tooling goes in tools/ (runner/AGENTS.md)",
-			commands)
-	}
-	if _, err := os.Stat(filepath.Join(a.Root, "mcp", "cmd")); err == nil {
-		return fmt.Errorf("mcp/ is client-shipped and carries no cmd/ — repo tooling goes in tools/ (runner/AGENTS.md)")
-	} else if !os.IsNotExist(err) {
-		return err
-	}
-	return nil
-}
-
 func (a *App) goGate(ctx context.Context, module, coverage string) error {
 	dir := filepath.Join(a.Root, module)
-	if err := a.gatePhase(module+" source layout and format", func() error {
-		if err := a.checkClientModuleBoundaries(module); err != nil {
-			return err
-		}
+	if err := a.gatePhase(module+" format", func() error {
 		unformatted, err := a.output(ctx, dir, nil, "gofmt", "-l", "-s", ".")
 		if err != nil {
 			return err

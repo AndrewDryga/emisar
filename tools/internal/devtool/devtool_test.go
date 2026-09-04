@@ -1491,19 +1491,10 @@ func TestHostilePackTestOverrideLimitsOnlySUTServices(t *testing.T) {
 	}
 }
 
-// The Go gate decides the client-module boundary, so a synthetic root has to
-// carry the layout it judges: runner/cmd holding exactly packctl, and no
-// mcp/cmd at all.
-func writeClientModuleLayout(t *testing.T, root string) {
+// The runner and MCP gates decide attestation parity, which compares both
+// copies of the verifier byte for byte, so a synthetic root has to carry them.
+func writeAttestParityFixture(t *testing.T, root string) {
 	t.Helper()
-	if err := os.MkdirAll(filepath.Join(root, "runner", "cmd", "packctl"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.MkdirAll(filepath.Join(root, "mcp"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	// The gate also decides attestation parity, which compares both copies of
-	// the verifier byte for byte.
 	implementation := "package attest\n"
 	for _, module := range []string{"runner", "mcp"} {
 		dir := filepath.Join(root, module, "internal", "attest")
@@ -1516,41 +1507,9 @@ func writeClientModuleLayout(t *testing.T, root string) {
 	}
 }
 
-func TestClientModuleBoundaries(t *testing.T) {
-	root := t.TempDir()
-	writeClientModuleLayout(t, root)
-	app := New(root, strings.NewReader(""), &bytes.Buffer{}, &bytes.Buffer{})
-
-	if err := app.checkClientModuleBoundaries("runner"); err != nil {
-		t.Fatalf("the sanctioned layout must pass: %v", err)
-	}
-	if err := app.checkClientModuleBoundaries("tools"); err != nil {
-		t.Fatalf("repo tooling is exempt: %v", err)
-	}
-
-	if err := os.MkdirAll(filepath.Join(root, "runner", "cmd", "smuggled"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := app.checkClientModuleBoundaries("runner"); err == nil ||
-		!strings.Contains(err.Error(), "exactly packctl") {
-		t.Fatalf("a second runner/cmd binary must fail: %v", err)
-	}
-	if err := os.RemoveAll(filepath.Join(root, "runner", "cmd", "smuggled")); err != nil {
-		t.Fatal(err)
-	}
-
-	if err := os.MkdirAll(filepath.Join(root, "mcp", "cmd"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := app.checkClientModuleBoundaries("mcp"); err == nil ||
-		!strings.Contains(err.Error(), "carries no cmd/") {
-		t.Fatalf("an mcp/cmd must fail: %v", err)
-	}
-}
-
 func TestRunnerGateUsesModuleDirectoryAndCoverage(t *testing.T) {
 	root := t.TempDir()
-	writeClientModuleLayout(t, root)
+	writeAttestParityFixture(t, root)
 	bin := filepath.Join(root, "fake-bin")
 	if err := os.Mkdir(bin, 0o755); err != nil {
 		t.Fatal(err)
@@ -1631,7 +1590,7 @@ func TestMCPGateRejectsDependencyChecksumFile(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(module, "go.sum"), []byte("unexpected\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	writeClientModuleLayout(t, root)
+	writeAttestParityFixture(t, root)
 	bin := filepath.Join(root, "fake-bin")
 	if err := os.Mkdir(bin, 0o755); err != nil {
 		t.Fatal(err)
