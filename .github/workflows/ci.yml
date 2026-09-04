@@ -607,6 +607,7 @@ jobs:
             tools/go.*
 
       - name: Run the runner's privileged executor tests
+        shell: bash
         run: |
           set -euo pipefail
           ./run test runner -count=1 -v ./internal/executor/... | tee privileged.log
