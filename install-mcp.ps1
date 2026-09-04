@@ -557,7 +557,7 @@ $versionNumber = $release.Tag.Substring(5)
 # apply the same rule. An explicit -Version stays the deliberate rollback route.
 $installedVersion = Get-InstalledVersion $executable
 if ($null -ne $installedVersion) {
-    if (-not $Version -and $installedVersion -ge [Version]$versionNumber) {
+    if (-not $Version -and -not $ConnectAll -and $installedVersion -ge [Version]$versionNumber) {
         Write-Info "emisar-mcp $installedVersion is already current"
         return
     }
