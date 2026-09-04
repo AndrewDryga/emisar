@@ -32,10 +32,9 @@ defmodule EmisarWeb.RunnerScope do
       loading_state: 1
     ]
 
+  alias Emisar.Accounts
   alias Emisar.Auth.Subject
   alias Emisar.Catalog
-
-  alias Emisar.Accounts
 
   attr :name, :string, required: true, doc: ~s(checkbox field name, e.g. "scope[]")
   attr :runners, :list, required: true, doc: "the account's runners (need id, name, group)"
