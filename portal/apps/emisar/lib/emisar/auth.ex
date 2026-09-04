@@ -145,7 +145,6 @@ defmodule Emisar.Auth do
     UserToken.Query.by_token_digest(Crypto.hash(token))
     |> UserToken.Query.by_context("session")
     |> UserToken.Query.not_expired("session")
-    |> UserToken.Query.with_valid_auth_method()
     |> UserToken.Query.with_preloaded_user()
     |> Repo.one()
     |> case do
@@ -233,7 +232,6 @@ defmodule Emisar.Auth do
       UserToken.Query.by_token_digest(digest)
       |> UserToken.Query.by_context("session")
       |> UserToken.Query.not_expired("session")
-      |> UserToken.Query.with_valid_auth_method()
       |> UserToken.Query.with_preloaded_user()
       |> UserToken.Query.lock_for_update()
 
@@ -477,7 +475,6 @@ defmodule Emisar.Auth do
       UserToken.Query.by_user_id(user.id)
       |> UserToken.Query.by_context("session")
       |> UserToken.Query.not_expired("session")
-      |> UserToken.Query.with_valid_auth_method()
 
     case Repo.list(sessions_query, UserToken.Query, opts) do
       {:ok, tokens, metadata} ->
@@ -1771,7 +1768,6 @@ defmodule Emisar.Auth do
       |> UserToken.Query.by_user_id(user.id)
       |> UserToken.Query.by_context("session")
       |> UserToken.Query.not_expired("session")
-      |> UserToken.Query.with_valid_auth_method()
       |> UserToken.Query.lock_for_update()
 
     with :ok <- verify_oidc_identity_step_up_proof(proof, provider_id, purpose, user),
@@ -2246,7 +2242,6 @@ defmodule Emisar.Auth do
     |> UserToken.Query.by_user_id(user_id)
     |> UserToken.Query.by_context("session")
     |> UserToken.Query.not_expired("session")
-    |> UserToken.Query.with_valid_auth_method()
     |> UserToken.Query.lock_for_update()
     |> repo.fetch(UserToken.Query)
     |> case do
@@ -2792,7 +2787,6 @@ defmodule Emisar.Auth do
       |> UserToken.Query.by_user_id(actor_id)
       |> UserToken.Query.by_context("session")
       |> UserToken.Query.not_expired("session")
-      |> UserToken.Query.with_valid_auth_method()
       |> UserToken.Query.lock_for_update()
       |> repo.fetch(UserToken.Query)
 
