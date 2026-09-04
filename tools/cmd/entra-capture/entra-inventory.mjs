@@ -15,7 +15,7 @@
 //
 //   node entra-inventory.mjs            # list only
 //   node entra-inventory.mjs --delete   # list, then remove the ones that are ours
-import { launchChromium, loadEnv, totp } from './entra-env.mjs'
+import { launchChromium, loadEnv, signIn } from './entra-env.mjs'
 
 const remove = process.argv.includes('--delete')
 
@@ -25,27 +25,7 @@ const browser = await launchChromium({ headless: true })
 const context = await browser.newContext({ viewport: { width: 1520, height: 950 } })
 const page = await context.newPage()
 
-await page.goto('https://portal.azure.com/', { waitUntil: 'domcontentloaded' })
-await page.fill('input[name=loginfmt]', env.ENTRA_ADMIN_USER)
-await page.click('#idSIButton9')
-await page.waitForSelector('input[name=passwd]', { state: 'visible' })
-await page.fill('input[name=passwd]', env.ENTRA_ADMIN_PASSWORD)
-await page.click('#idSIButton9')
-
-// Order is not fixed: this tenant shows "Stay signed in?" BEFORE the code prompt.
-for (let i = 0; i < 12; i++) {
-  await page.waitForTimeout(3000)
-  const body = await page.textContent('body').catch(() => '')
-  if (/Create a resource|All resources/.test(body)) break
-  if (await page.locator('input[name=otc]').count()) {
-    if (30 - (Math.floor(Date.now() / 1000) % 30) < 8) await page.waitForTimeout(9000)
-    await page.fill('input[name=otc]', totp(env.ENTRA_TOTP_SECRET))
-    await page.press('input[name=otc]', 'Enter')
-  } else if (/Stay signed in\?/.test(body)) {
-    await page.click('#idBtn_Back').catch(() => {})
-  }
-}
-console.log('signed in')
+await signIn(page, env)
 
 // Graph, not the portal's DOM. The portal renders blades in iframes and its list
 // is virtualised; Graph answers the same question directly.
