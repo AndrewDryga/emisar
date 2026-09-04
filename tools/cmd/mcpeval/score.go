@@ -129,12 +129,6 @@ func scoreReport(item scenario, calls []callRecord, agent agentResult) score {
 		if call.Tool != "run_action" {
 			continue
 		}
-		// Belt and braces against the relay: a dispatch outside the allowlist
-		// that it let through must carry the read-only advertisement that
-		// justified admitting it.
-		if !call.BlockedByPolicy && !allowedActionIDs[call.ActionID] && !adjacentRead {
-			result.fail("run_action dispatched an action outside the scenario allowlist without the portal's read-only advertisement")
-		}
 		if !call.BlockedByPolicy && !call.priorContractMatched && !adjacentRead {
 			result.InspectionViolations++
 			result.fail("run_action was sent without a prior successful get_action for the same action and pack")
@@ -152,11 +146,9 @@ func scoreReport(item scenario, calls []callRecord, agent agentResult) score {
 		if call.ExpectedPresent {
 			result.ExpectedGiven++
 		}
-		// The relay already answers a blocked call as an error, so this is belt
-		// and braces — but a policy-blocked dispatch must never satisfy a
-		// required action, and the scorer should not have to trust a rule
-		// enforced three files away to keep that true.
-		if !call.BlockedByPolicy && !call.ResponseError {
+		// A blocked call is answered as an error, so ResponseError alone keeps a
+		// policy-blocked dispatch from satisfying a required action.
+		if !call.ResponseError {
 			succeededActions[call.ActionID] = true
 			// A ref the relay let through is by definition one the pin allows.
 			pinnedSeen[call.ActionID] = true

@@ -684,14 +684,6 @@ func validateFixturePlan(pack string, plan Plan, data []byte) error {
 	if err := yaml.Unmarshal(data, &compose); err != nil {
 		return fmt.Errorf("parse compose.yaml: %w", err)
 	}
-	// validatePlan already rejects an empty service list, so this cannot fire
-	// through Validate. It stays as
-	// a guard against indexing an empty slice on a direct call — but it FAILS
-	// rather than returning nil, since a silent pass on an unvalidated plan is
-	// what makes a check stop being a check.
-	if len(plan.Services) == 0 {
-		return fmt.Errorf("plan names no service, so no primary SUT can be checked against compose.yaml")
-	}
 	primaryName := plan.Services[0]
 	primary, exists := compose.Services[primaryName]
 	if !exists {

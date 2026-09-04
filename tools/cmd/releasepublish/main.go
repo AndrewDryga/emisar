@@ -27,9 +27,8 @@ import (
 )
 
 const (
-	defaultEndpoint          = "https://storage.googleapis.com"
-	maxObjectBytes           = 256 << 20
-	maxAttestationBundleSize = 4 << 20
+	defaultEndpoint = "https://storage.googleapis.com"
+	maxObjectBytes  = 256 << 20
 )
 
 var errPrecondition = errors.New("object generation changed")
@@ -138,12 +137,10 @@ func validateOptions(opts options) (semver, error) {
 	if opts.token == "" {
 		return semver{}, errors.New("GOOGLE_OAUTH_ACCESS_TOKEN is required")
 	}
-	prefix := opts.component + "-v"
-	if opts.component == "runner" {
-		prefix = "runner-v"
-	} else if opts.component != "mcp" {
+	if opts.component != "runner" && opts.component != "mcp" {
 		return semver{}, fmt.Errorf("unsupported component %q", opts.component)
 	}
+	prefix := opts.component + "-v"
 	if !strings.HasPrefix(opts.tag, prefix) {
 		return semver{}, fmt.Errorf("tag %q must start with %s", opts.tag, prefix)
 	}
@@ -189,18 +186,18 @@ func buildObjects(opts options, version semver) ([]object, []byte, error) {
 	objects := make([]object, 0, 10)
 	artifacts := make([]artifact, 0, len(wantNames))
 	for _, name := range wantNames {
-		data, err := readBounded(filepath.Join(opts.dir, name), maxObjectBytes)
+		data, err := os.ReadFile(filepath.Join(opts.dir, name))
 		if err != nil {
-			return nil, nil, err
+			return nil, nil, fmt.Errorf("read %s: %w", name, err)
 		}
 		got := sha256Hex(data)
 		if got != wantHashes[name] {
 			return nil, nil, fmt.Errorf("%s digest is %s, %s says %s", name, got, checksumName, wantHashes[name])
 		}
 		sidecarName := name + ".sha256"
-		sidecar, err := readBounded(filepath.Join(opts.dir, sidecarName), 1<<20)
+		sidecar, err := os.ReadFile(filepath.Join(opts.dir, sidecarName))
 		if err != nil {
-			return nil, nil, err
+			return nil, nil, fmt.Errorf("read %s: %w", sidecarName, err)
 		}
 		if strings.TrimSpace(string(sidecar)) != got {
 			return nil, nil, fmt.Errorf("%s does not match %s", sidecarName, name)
@@ -222,9 +219,9 @@ func buildObjects(opts options, version semver) ([]object, []byte, error) {
 		immutable:   true,
 	})
 	bundleName := checksumName + ".sigstore.jsonl"
-	bundle, err := readBounded(filepath.Join(opts.dir, bundleName), maxAttestationBundleSize)
+	bundle, err := os.ReadFile(filepath.Join(opts.dir, bundleName))
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, fmt.Errorf("read %s: %w", bundleName, err)
 	}
 	if len(bundle) == 0 {
 		return nil, nil, fmt.Errorf("%s is empty", bundleName)
@@ -454,22 +451,6 @@ func getObject(ctx context.Context, opts options, name string, maxBytes int) ([]
 		return nil, "", false, fmt.Errorf("stored object exceeds %d bytes", maxBytes)
 	}
 	return data, metadata.Generation, true, nil
-}
-
-func readBounded(path string, maxBytes int64) ([]byte, error) {
-	file, err := os.Open(path)
-	if err != nil {
-		return nil, fmt.Errorf("open %s: %w", filepath.Base(path), err)
-	}
-	defer file.Close()
-	data, err := io.ReadAll(io.LimitReader(file, maxBytes+1))
-	if err != nil {
-		return nil, fmt.Errorf("read %s: %w", filepath.Base(path), err)
-	}
-	if int64(len(data)) > maxBytes {
-		return nil, fmt.Errorf("%s exceeds %d bytes", filepath.Base(path), maxBytes)
-	}
-	return data, nil
 }
 
 func parseSemver(value string) (semver, error) {

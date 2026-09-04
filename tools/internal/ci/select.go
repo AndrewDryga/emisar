@@ -176,7 +176,11 @@ func (selection *Selection) include(file string) {
 	// The listed files mirror trackedShellFiles' pathspec (`.shell run *.sh
 	// .githooks`): every file that gate shellchecks has to select the gate, or a
 	// syntax error in the contributor shell profile ships green.
-	if toolutil.HasAnyPrefix(file, "tools/", "dev/", ".agent/", ".claude/", ".codex/", ".gemini/", "skills/", "dist/", ".github/workflows/", ".github/actions/", ".githooks/") || strings.Contains(file, "/.agent/") || slices.Contains([]string{"run", ".shell", "go.work", "go.work.sum", ".gitattributes", ".gitignore", ".tool-versions", "docker-compose.yml", "portal/config/config.exs"}, file) || filepath.Ext(file) == ".md" {
+	// portal/Dockerfile is here because the tooling gate's release-toolchain
+	// phase is what holds its ELIXIR/OTP/hex/rebar3 ARG defaults to .tool-versions
+	// and the CI workflow's pins; a Dockerfile-only bump otherwise selected only
+	// the Portal job, which cannot see that disagreement.
+	if toolutil.HasAnyPrefix(file, "tools/", "dev/", ".agent/", ".claude/", ".codex/", ".gemini/", "skills/", "dist/", ".github/workflows/", ".github/actions/", ".githooks/") || strings.Contains(file, "/.agent/") || slices.Contains([]string{"run", ".shell", "go.work", "go.work.sum", ".gitattributes", ".gitignore", ".tool-versions", "docker-compose.yml", "portal/config/config.exs", "portal/Dockerfile"}, file) || filepath.Ext(file) == ".md" {
 		selection.Tools = true
 	}
 	// Pack behavior plans are validation inputs but are not loaded into registry
@@ -479,9 +483,9 @@ func WriteSelection(ctx context.Context, root, event, base, outputPath, summaryP
 	if err != nil {
 		return err
 	}
-	output := fmt.Sprintf("portal=%t\nmcp=%t\nrunner=%t\npacks=%t\ninfra=%t\ndeps=%t\nworkflows=%t\nmcp_listing=%t\ngo_modules=%s\nportal_release=%t\npacks_release=%t\nrunner_image=%t\npack_behavior=%s\nsigning_e2e=%t\nsso_e2e=%t\n",
+	output := fmt.Sprintf("portal=%t\nmcp=%t\nrunner=%t\npacks=%t\ninfra=%t\ndeps=%t\nmcp_listing=%t\ngo_modules=%s\nportal_release=%t\npacks_release=%t\nrunner_image=%t\npack_behavior=%s\nsigning_e2e=%t\nsso_e2e=%t\n",
 		selection.Portal, selection.MCP, selection.Runner, selection.Packs, selection.Infra, selection.Deps,
-		selection.Workflows, selection.MCPListing, modules,
+		selection.MCPListing, modules,
 		selection.PortalRelease, selection.PacksRelease, selection.RunnerImage, packBehavior,
 		selection.SigningE2E, selection.SSOE2E)
 	if err := appendOrPrint(outputPath, output); err != nil {
@@ -494,13 +498,13 @@ func WriteSelection(ctx context.Context, root, event, base, outputPath, summaryP
 		}
 		return "skip"
 	}
-	summary := fmt.Sprintf("### Gates for this change\n| Area | |\n|---|---|\n| Portal - Test | %s |\n| Portal - Image | %s |\n| Go - Runner | %s |\n| Go - Runner (root) | %s |\n| Go - MCP | %s |\n| MCP - Windows | %s |\n| Go - Tools | %s |\n| Packs - Validate | %s |\n| Packs - Behavior (%d) | %s |\n| Runner - Image | %s |\n| E2E - Signing | %s |\n| E2E - SSO | %s |\n| Terraform - Validate | %s |\n| Dependencies - Release age | %s |\n| Actions - Validate workflows | %s |\n| Portal - MCP Registry Listing | %s |\n",
+	summary := fmt.Sprintf("### Gates for this change\n| Area | |\n|---|---|\n| Portal - Test | %s |\n| Portal - Image | %s |\n| Go - Runner | %s |\n| Go - Runner (root) | %s |\n| Go - MCP | %s |\n| MCP - Windows | %s |\n| Go - Tools | %s |\n| Packs - Validate | %s |\n| Packs - Behavior (%d) | %s |\n| Runner - Image | %s |\n| E2E - Signing | %s |\n| E2E - SSO | %s |\n| Terraform - Validate | %s |\n| Dependencies - Release age | %s |\n| Portal - MCP Registry Listing | %s |\n",
 		mark(selection.Portal), mark(selection.Portal), mark(selection.Runner), mark(selection.Runner),
 		mark(selection.MCP), mark(selection.MCP), mark(selection.Tools), mark(selection.Packs),
 		len(selection.PackBehavior), mark(len(selection.PackBehavior) > 0),
 		mark(selection.RunnerImage),
 		mark(selection.SigningE2E), mark(selection.SSOE2E),
-		mark(selection.Infra), mark(selection.Deps), mark(selection.Workflows),
+		mark(selection.Infra), mark(selection.Deps),
 		mark(selection.MCPListing))
 	if summaryPath != "" {
 		return appendFile(summaryPath, summary)

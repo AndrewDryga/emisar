@@ -167,11 +167,10 @@ jobs:
           HEX_VERSION: "2.5.1"
           REBAR3_VERSION: "3.27.0"
           REBAR3_SHA512: 0d00494d849fdc521a55142278d1f6ba552954fbd65b80d40df8022f594f05d6c99ed1d731bc263691a04176e11d4c6e126c56ba20dca19c5e42d4ffab2e7e36
+        # The tooling gate's release-toolchain phase holds portal/Dockerfile's ARG
+        # defaults to these pins, and a Dockerfile change selects that gate.
         run: |
           set -euo pipefail
-          grep -Fqx "ARG HEX_VERSION=${HEX_VERSION}" Dockerfile
-          grep -Fqx "ARG REBAR3_VERSION=${REBAR3_VERSION}" Dockerfile
-          grep -Fqx "ARG REBAR3_SHA512=${REBAR3_SHA512}" Dockerfile
           mix local.hex "$HEX_VERSION" --force
           curl -fsSL "https://github.com/erlang/rebar3/releases/download/${REBAR3_VERSION}/rebar3" -o /tmp/rebar3
           printf '%s  %s\n' "$REBAR3_SHA512" /tmp/rebar3 | sha512sum --check --
@@ -790,30 +789,20 @@ jobs:
           cache: true
           cache-dependency-path: tools/go.*
 
-      - name: Install Terraform (version from .tool-versions, checksum-verified)
+      # The infra gate's first phase proves these pins still match .tool-versions,
+      # and it runs in this job seconds later.
+      - name: Install Terraform (pinned, checksum-verified)
         run: |
-          ver="$(awk '/^terraform /{print $2}' .tool-versions)"
-          test -n "$ver" || { echo "::error::no terraform pin in .tool-versions"; exit 1; }
-          test "$ver" = "$TERRAFORM_VERSION" || {
-            echo "::error::Terraform version in .tool-versions must match the workflow checksum pin"
-            exit 1
-          }
           tmp="$(mktemp -d)" && cd "$tmp"
-          base="https://releases.hashicorp.com/terraform/${ver}"
-          curl -fsSLO "${base}/terraform_${ver}_linux_amd64.zip"
-          printf '%s  %s\n' "$TERRAFORM_SHA256" "terraform_${ver}_linux_amd64.zip" | sha256sum --check --
-          unzip -q "terraform_${ver}_linux_amd64.zip"
+          base="https://releases.hashicorp.com/terraform/${TERRAFORM_VERSION}"
+          curl -fsSLO "${base}/terraform_${TERRAFORM_VERSION}_linux_amd64.zip"
+          printf '%s  %s\n' "$TERRAFORM_SHA256" "terraform_${TERRAFORM_VERSION}_linux_amd64.zip" | sha256sum --check --
+          unzip -q "terraform_${TERRAFORM_VERSION}_linux_amd64.zip"
           sudo install -m 0755 terraform /usr/local/bin/terraform
           terraform version
 
       - name: Install TFLint (pinned, checksum-verified)
         run: |
-          ver="$(awk '$1 == "tflint" {print $2}' .tool-versions)"
-          test -n "$ver" || { echo "::error::no TFLint pin in .tool-versions"; exit 1; }
-          test "v${ver}" = "$TFLINT_VERSION" || {
-            echo "::error::TFLint version in .tool-versions must match the workflow checksum pin"
-            exit 1
-          }
           tmp="$(mktemp -d)" && cd "$tmp"
           base="https://github.com/terraform-linters/tflint/releases/download/${TFLINT_VERSION}"
           curl -fsSLO "${base}/tflint_linux_amd64.zip"

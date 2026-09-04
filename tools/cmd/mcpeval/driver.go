@@ -10,7 +10,6 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/andrewdryga/emisar/tools/internal/toolutil"
@@ -264,17 +263,16 @@ func boundedText(value []byte, limit int) string {
 }
 
 // boundedBuffer keeps the first limit bytes and drops the rest, so a runaway
-// agent cannot balloon the report.
+// agent cannot balloon the report. runAgent gives stdout and stderr a buffer
+// each, so os/exec writes to one from a single goroutine and String/Truncated
+// only run once cmd.Run has joined it — no lock is needed.
 type boundedBuffer struct {
-	mu        sync.Mutex
 	buf       strings.Builder
 	limit     int
 	truncated bool
 }
 
 func (b *boundedBuffer) Write(p []byte) (int, error) {
-	b.mu.Lock()
-	defer b.mu.Unlock()
 	remaining := b.limit - b.buf.Len()
 	if remaining > 0 {
 		write := p
@@ -290,13 +288,9 @@ func (b *boundedBuffer) Write(p []byte) (int, error) {
 }
 
 func (b *boundedBuffer) String() string {
-	b.mu.Lock()
-	defer b.mu.Unlock()
 	return b.buf.String()
 }
 
 func (b *boundedBuffer) Truncated() bool {
-	b.mu.Lock()
-	defer b.mu.Unlock()
 	return b.truncated
 }

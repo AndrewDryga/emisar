@@ -142,13 +142,13 @@ func TestCheckReleaseToolchainPins(t *testing.T) {
 		t.Fatalf("hex drift not reported: %v", err)
 	}
 
-	// A malformed rebar3 checksum is rejected as not-well-formed before it could
-	// reach the image's sha512 verification.
+	// A malformed rebar3 checksum cannot equal the workflow's pin, so the
+	// equality compare rejects it before the image's sha512 verification.
 	err = writeReleaseToolchainDockerfile(t, "29.0.3", "1.20.2-otp-29",
 		validBuilderDockerfile()+
 			"ARG HEX_VERSION="+testHexVersion+"\nARG REBAR3_VERSION="+testRebar3Version+"\nARG REBAR3_SHA512=nothex\n").
 		checkReleaseToolchainPins()
-	if err == nil || !strings.Contains(err.Error(), "REBAR3_SHA512=nothex is not") {
+	if err == nil || !strings.Contains(err.Error(), "REBAR3_SHA512=nothex") {
 		t.Fatalf("malformed rebar3 checksum not reported: %v", err)
 	}
 
