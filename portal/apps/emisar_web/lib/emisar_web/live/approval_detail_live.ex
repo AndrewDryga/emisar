@@ -18,33 +18,15 @@ defmodule EmisarWeb.ApprovalDetailLive do
     if connected?(socket), do: mount_connected(id, socket), else: mount_disconnected(socket)
   end
 
+  # The dead render only reads the assigns outside the `@loaded?` block; the
+  # connected mount assigns everything the loaded page renders.
   defp mount_disconnected(socket) do
     {:ok,
      socket
      |> assign(:loaded?, false)
      |> assign(:page_title, "Approval")
-     |> assign(:request, nil)
-     |> assign(:request_facts, nil)
      |> assign(:run, nil)
-     |> assign(:execution_plan, nil)
-     |> assign(:execution_request?, false)
-     |> assign(:action_args, %{})
-     |> assign(:action_risk, nil)
-     |> assign(:action_description, nil)
-     |> assign(:executed_command, nil)
-     |> assign(:runner_connection, :unknown)
-     |> assign(:user_labels, %{})
-     |> assign(:decisions, [])
-     |> assign(:decisions_error?, false)
-     |> assign(:approval_event_refs, %{final: nil, override: nil, decisions: %{}})
-     |> assign(:approved_count, 0)
-     |> assign(:already_decided?, false)
-     |> assign(:self_blocked?, false)
-     |> assign(:unavailable_action_id, nil)
-     |> assign_decision_fields(%{})
-     |> assign_override_fields(%{})
-     |> assign(:grant_reuse_open?, false)
-     |> assign(:grant_duration_options, [])}
+     |> assign(:execution_request?, false)}
   end
 
   defp mount_connected(id, socket) do
@@ -197,22 +179,7 @@ defmodule EmisarWeb.ApprovalDetailLive do
   # server-side flags the decision panel reads — whether THIS user already
   # decided, and whether self-approval is forbidden for them. The context still
   # re-checks both on the decision event (IL-15); these only drive the UI.
-  # Deferred behind connected?/1 (like the requester/decider/risk lookups) so the
-  # dead render does no DB work — the connected pass and exact-request update
-  # handler (always connected) load the real data.
   defp assign_decisions(socket, request) do
-    if connected?(socket) do
-      load_decisions(socket, request)
-    else
-      socket
-      |> assign(:decisions, [])
-      |> assign(:approved_count, 0)
-      |> assign(:already_decided?, false)
-      |> assign(:self_blocked?, false)
-    end
-  end
-
-  defp load_decisions(socket, request) do
     subject = socket.assigns.current_subject
 
     # A failed read here is not "nobody has voted": it would print "0 of 3" to
@@ -693,13 +660,12 @@ defmodule EmisarWeb.ApprovalDetailLive do
     do: "Your decision didn't record. Refresh to see the request's current state, then try again."
 
   # Echo exactly what was granted. The approve that just succeeded validated
-  # these same params, so the confirmation reads the typed choices back out of
-  # the context's own contract rather than re-reading the operator's strings.
+  # these same params, so the match cannot fail and the confirmation reads the
+  # typed choices back out of the context's own contract rather than re-reading
+  # the operator's strings.
   defp approval_flash(params) do
-    case Approvals.decision_input(params) do
-      {:ok, input} -> grant_flash(input)
-      {:error, _changeset} -> "Approved."
-    end
+    {:ok, input} = Approvals.decision_input(params)
+    grant_flash(input)
   end
 
   defp grant_flash(%{duration: :once}), do: "Approved for this call only."
@@ -1240,13 +1206,11 @@ defmodule EmisarWeb.ApprovalDetailLive do
   attr :override_reason_error, :string, default: nil
   attr :request_title, :string, required: true
   # Drives the reuse-window UI: the Match / Limit-to fields only show
-  # once a real grant is being minted (duration != "once"). Defaulted so
-  # a caller that forgets to thread it through can't crash the panel.
-  attr :grant_duration, :string, default: "once"
+  # once a real grant is being minted (duration != "once").
+  attr :grant_duration, :string, required: true
   # The duration menu, already narrowed to the account's lifetime cap by the
-  # caller. Defaulted to the full menu so a caller that forgets to thread it
-  # through degrades to the server-backstopped behavior, not a crash.
-  attr :grant_duration_options, :list, default: @grant_duration_options
+  # caller.
+  attr :grant_duration_options, :list, required: true
   # Whether the reuse disclosure is expanded, owned server-side so a form
   # re-render re-emits `open` instead of collapsing what the operator opened.
   attr :grant_reuse_open?, :boolean, default: false
