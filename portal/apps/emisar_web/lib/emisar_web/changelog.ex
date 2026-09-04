@@ -17,6 +17,51 @@ defmodule EmisarWeb.Changelog do
 
   @entries [
     %{
+      date: ~D[2026-09-04],
+      slug: "v1-failure-path-pass",
+      title: "The v1 failure-path pass",
+      tag: "v0.45.0",
+      summary:
+        "This release takes the v1 audit through recovery, revocation, and publication paths. A runner with corrupt replay state now refuses to start instead of risking a duplicate infrastructure change, while membership removal and credential revocation commit together and an unaccepted invitation grants no account access. Sentry reports strip active MFA setup material. Installers authenticate signed checksum metadata before trusting release archives, runner updates validate the staged binary against fielded configuration before stopping the service, and registry publication refuses stale catalogs or changed immutable schema objects. MCP paging and output now match the published tool contract, and the 99-pack catalog received another pass over risk, redaction, bounded output, shell wrappers, and false all-clear results.",
+      details: [
+        {"Security",
+         [
+           "Corrupt legacy dispatch state stops runner startup, so lost replay evidence cannot turn a retried dispatch into a second infrastructure change.",
+           "Removing a member now revokes their API keys and device grants in the same transaction. Pending and expired invitations remain unauthorized until acceptance completes.",
+           "Sentry strips active TOTP seeds and recovery codes from LiveView state. Run audit events now include the dispatch justification and the policy decision, reason, version, and matched rules without retaining hostile request text."
+         ]},
+        {"Runner",
+         [
+           "The dispatch journal uses bounded atomic snapshots, and startup fails closed when an older journal cannot be recovered.",
+           "Managed updates validate the staged binary against configurations written by fielded installers before stopping the service, then replace the executable with one rename.",
+           "Wrapper arguments, action descriptors, and structured results receive stricter validation. Secret-shaped values stay masked across output types without flattening valid JSON."
+         ]},
+        {"MCP",
+         [
+           "list_packs can return every action in the largest supported pack, tool errors stay within their published contract, and changing a page size no longer invalidates a continuation.",
+           "Client configuration writes compare the file they actually read before replacing it, preserve formats the client accepts, and keep Emisar credentials out of browser child processes.",
+           "Installers reject unpinned downgrades and incomplete checksum metadata. A Windows reinstall now repairs stored credentials even when the parent shell carries direct-command credentials."
+         ]},
+        {"Packs",
+         [
+           "The full catalog was reviewed for real-world risk, source redaction, output caps, host access, HTTP failures, and shell argument boundaries.",
+           "Raw configuration readers that can expose secrets now carry the matching risk, while status actions stop with the underlying command instead of returning a false healthy result.",
+           "Versions that skipped their required approval gate were retired, and the changed action authoring schema now publishes under a new immutable version."
+         ]},
+        {"Platform",
+         [
+           "Runner and MCP installers authenticate signed checksum metadata before using archive hashes. Release verification is pinned to the trusted workflow and exact tag.",
+           "CI now exercises the privileged runner boundary as root, selects the full signing seam, and fails when required formatters or infrastructure tools are missing.",
+           "Registry publication rejects stale catalog generations, and release policy checks cover the environment, workflow pins, and registry writers used by delivery."
+         ]},
+        {"Console",
+         [
+           "Large SSO group sets page through synchronization and display, failed runs are directly filterable in Audit, and runner disconnect messages remain valid UTF-8.",
+           "Admin actions use server-resolved operator labels, the agent picker is easier to read, and Gmail dark mode no longer rewrites transactional email into an unintended palette."
+         ]}
+      ]
+    },
+    %{
       date: ~D[2026-09-02],
       slug: "the-v1-hardening-pass",
       title: "The v1 hardening pass",
