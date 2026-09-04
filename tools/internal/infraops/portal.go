@@ -5,10 +5,8 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"regexp"
-	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -157,9 +155,7 @@ func selectionKey(project string) string {
 		}
 	}
 	if session == "" {
-		session = topShellPID()
-	}
-	if session == "" {
+		// ./run execs the devtool, so the parent IS the invoking shell.
 		session = fmt.Sprint(os.Getppid())
 	}
 	clean := func(value string) string {
@@ -172,35 +168,6 @@ func selectionKey(project string) string {
 	}
 	return filepath.Join(cache, "emisar", "portal",
 		clean(project)+"_session_"+clean(session)+".selection")
-}
-
-func topShellPID() string {
-	shells := map[string]bool{
-		"zsh": true, "bash": true, "fish": true, "sh": true,
-		"dash": true, "ksh": true,
-	}
-	pid := os.Getpid()
-	result := ""
-	for pid > 1 {
-		command, err := exec.Command("ps", "-o", "comm=", "-p", strconv.Itoa(pid)).Output()
-		if err != nil {
-			break
-		}
-		name := strings.TrimPrefix(filepath.Base(strings.TrimSpace(string(command))), "-")
-		if shells[name] {
-			result = strconv.Itoa(pid)
-		}
-		parent, err := exec.Command("ps", "-o", "ppid=", "-p", strconv.Itoa(pid)).Output()
-		if err != nil {
-			break
-		}
-		next, err := strconv.Atoi(strings.TrimSpace(string(parent)))
-		if err != nil || next <= 1 || next == pid {
-			break
-		}
-		pid = next
-	}
-	return result
 }
 
 func (a *App) selectInstances(ctx context.Context, options portalOptions, inventory []byte) ([]instance, error) {
