@@ -158,12 +158,12 @@ defmodule EmisarWeb.MCP.SchemaRegistry.Compiler do
 
   defp collect_definitions(_value, _registry, definitions, _stack), do: definitions
 
-  defp definition_name!("#/$defs/" <> encoded = ref) do
-    if String.contains?(encoded, "/") do
+  defp definition_name!("#/$defs/" <> name = ref) do
+    if String.contains?(name, "/") do
       raise ArgumentError, "MCP schema reference must name one definition: #{inspect(ref)}"
     end
 
-    decode_pointer_token!(encoded, ref)
+    name
   end
 
   defp definition_name!(ref) when is_binary(ref) do
@@ -179,16 +179,6 @@ defmodule EmisarWeb.MCP.SchemaRegistry.Compiler do
       nil -> raise ArgumentError, "unresolved MCP schema reference #{inspect(ref)}"
       definition -> definition
     end
-  end
-
-  defp decode_pointer_token!(token, ref) do
-    if Regex.match?(~r/~(?:[^01]|$)/, token) do
-      raise ArgumentError, "invalid JSON pointer escape in MCP schema reference #{inspect(ref)}"
-    end
-
-    token
-    |> String.replace("~1", "/")
-    |> String.replace("~0", "~")
   end
 
   defp import_external_schema(registry, uri, root_name, schema) do
@@ -239,10 +229,8 @@ defmodule EmisarWeb.MCP.SchemaRegistry.Compiler do
 
   defp rewrite_external_ref(value, _uri, _replacement), do: value
 
-  defp rewrite_local_refs(%{"$ref" => "#/$defs/" <> encoded} = value, prefix) do
-    name = decode_pointer_token!(encoded, "#/$defs/" <> encoded)
-    Map.put(value, "$ref", "#/$defs/#{prefix}#{name}")
-  end
+  defp rewrite_local_refs(%{"$ref" => "#/$defs/" <> name} = value, prefix),
+    do: Map.put(value, "$ref", "#/$defs/#{prefix}#{name}")
 
   defp rewrite_local_refs(%{} = value, prefix) do
     Map.new(value, fn {key, child} -> {key, rewrite_local_refs(child, prefix)} end)

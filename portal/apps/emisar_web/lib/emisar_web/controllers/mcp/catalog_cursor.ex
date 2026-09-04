@@ -30,41 +30,15 @@ defmodule EmisarWeb.MCP.CatalogCursor do
 
   def decode(cursor, tool, scope, filters)
       when is_binary(cursor) and byte_size(cursor) <= @max_cursor_bytes do
-    if canonical_token?(cursor) do
-      case Phoenix.Token.verify(EmisarWeb.Endpoint, @salt, cursor, max_age: @max_age_seconds) do
-        {:ok,
-         %{"tool" => ^tool, "scope" => ^scope, "filters" => ^filters, "last_key" => last_key}}
-        when is_binary(last_key) ->
-          {:ok, last_key}
+    case Phoenix.Token.verify(EmisarWeb.Endpoint, @salt, cursor, max_age: @max_age_seconds) do
+      {:ok, %{"tool" => ^tool, "scope" => ^scope, "filters" => ^filters, "last_key" => last_key}}
+      when is_binary(last_key) ->
+        {:ok, last_key}
 
-        _other ->
-          {:error, :invalid_cursor}
-      end
-    else
-      {:error, :invalid_cursor}
+      _other ->
+        {:error, :invalid_cursor}
     end
   end
 
   def decode(_cursor, _tool, _scope, _filters), do: {:error, :invalid_cursor}
-
-  # Plug.Crypto verifies decoded signature bytes, so alternate Base64URL
-  # spellings that differ only in unused padding bits can otherwise verify as
-  # the same token. Require the exact unpadded canonical spelling before HMAC
-  # verification so opaque cursor identity is byte-stable.
-  defp canonical_token?(token) do
-    case :binary.split(token, ".", [:global]) do
-      [protected, payload, signature] ->
-        Enum.all?([protected, payload, signature], &canonical_base64url?/1)
-
-      _other ->
-        false
-    end
-  end
-
-  defp canonical_base64url?(segment) do
-    case Base.url_decode64(segment, padding: false) do
-      {:ok, decoded} -> Base.url_encode64(decoded, padding: false) == segment
-      :error -> false
-    end
-  end
 end

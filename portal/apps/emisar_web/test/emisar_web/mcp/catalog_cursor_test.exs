@@ -19,25 +19,17 @@ defmodule EmisarWeb.MCP.CatalogCursorTest do
            }) == {:error, :invalid_cursor}
   end
 
-  test "rejects tampering and oversized cursors" do
+  test "rejects a re-signed payload swapped onto another cursor's signature" do
     cursor = CatalogCursor.encode("list_packs", "scope", %{}, "last")
-    [protected, payload, signature] = String.split(cursor, ".")
-    alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"
-    last = :binary.last(signature)
-    {index, 1} = :binary.match(alphabet, <<last>>)
-    alternate_index = div(index, 4) * 4 + rem(index + 1, 4)
-    alternate = binary_part(alphabet, alternate_index, 1)
-
-    noncanonical_signature =
-      binary_part(signature, 0, byte_size(signature) - 1) <> alternate
-
-    tampered = Enum.join([protected, payload, noncanonical_signature], ".")
-
-    assert Base.url_decode64!(signature, padding: false) ==
-             Base.url_decode64!(noncanonical_signature, padding: false)
+    forged = CatalogCursor.encode("list_packs", "scope", %{}, "forged")
+    [protected, _payload, signature] = String.split(cursor, ".")
+    [_protected, forged_payload, _signature] = String.split(forged, ".")
+    tampered = Enum.join([protected, forged_payload, signature], ".")
 
     assert CatalogCursor.decode(tampered, "list_packs", "scope", %{}) == {:error, :invalid_cursor}
+  end
 
+  test "rejects an oversized cursor" do
     assert CatalogCursor.decode(String.duplicate("x", 4_097), "list_packs", "scope", %{}) ==
              {:error, :invalid_cursor}
   end

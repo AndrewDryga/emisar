@@ -650,9 +650,6 @@ defmodule EmisarWeb.MarketingController do
     )
   end
 
-  # Per-action JSON-LD, injected into the generated def below when present.
-  @page_json_ld %{}
-
   # Per-section OG card (in priv/static/images/og/) for the generated pages;
   # everything else falls back to the default emisar-og.webp in the layout.
   # Bespoke actions (pricing, guides) set :og_image inline.
@@ -671,8 +668,7 @@ defmodule EmisarWeb.MarketingController do
 
     # BreadcrumbList structured data for every generated page (home + pricing
     # carry their own bespoke JSON-LD). Derived from the path — Home → Docs
-    # (for /docs/*) → this page — so search results can show the hierarchy. A
-    # bespoke `@page_json_ld` entry, when present, overrides the breadcrumb.
+    # (for /docs/*) → this page — so search results can show the hierarchy.
     docs_crumb =
       if String.starts_with?(path, "/docs/"), do: [{"Docs", @base <> "/docs"}], else: []
 
@@ -752,7 +748,7 @@ defmodule EmisarWeb.MarketingController do
           )
       end
 
-    attrs = Keyword.put(attrs, :json_ld, Map.get(@page_json_ld, action, default_ld))
+    attrs = Keyword.put(attrs, :json_ld, default_ld)
 
     attrs = if action == :docs, do: Keyword.put(attrs, :guides, @guide_summaries), else: attrs
 

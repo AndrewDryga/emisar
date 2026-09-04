@@ -158,7 +158,7 @@ defmodule EmisarWeb.Plugs.ContentSecurityPolicyTest do
       conn =
         conn
         |> Plug.Conn.resp(500, "internal error")
-        |> EmisarWeb.Plugs.ErrorContentSecurityPolicy.call([])
+        |> EmisarWeb.Plugs.ContentSecurityPolicy.put_error_content_security_policy([])
         |> Plug.Conn.send_resp()
 
       assert get_resp_header(conn, "content-security-policy") == [

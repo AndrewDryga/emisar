@@ -670,14 +670,11 @@ defmodule EmisarWeb.UserAuth do
      )}
   end
 
-  # Activity is a coarse operational hint, never an authorization dependency.
-  # A database hiccup must not turn a page navigation into an auth failure; the
-  # next navigation will retry the same conditional update.
+  # Activity is a coarse operational hint the next navigation retries, never an
+  # authorization dependency — so its outcome is dropped.
   defp touch_console_activity(%Subject{} = subject) do
     _result = Accounts.touch_membership_activity(subject)
     :ok
-  rescue
-    _error in [DBConnection.ConnectionError, Postgrex.Error] -> :ok
   end
 
   defp touch_console_activity(_subject), do: :ok

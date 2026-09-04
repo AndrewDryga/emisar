@@ -31,10 +31,18 @@ defmodule EmisarWeb.Plugs.ContentSecurityPolicy do
   directive would be ignored by browsers, so appending whole directives
   can only ever add new ones, never widen an existing one. A directive
   absent from the base (e.g. `frame-src`) is added.
+
+  Endpoint-rendered errors never reach a router pipeline, so `call/2` never
+  runs for them; `put_error_content_security_policy/2` is the endpoint-level
+  entry point that gives those responses a static policy instead.
   """
   @behaviour Plug
 
   import Plug.Conn
+
+  # No page opt-in can reach an error the router never routed, so the fallback
+  # is the fixed minimum rather than the per-request policy.
+  @error_policy "default-src 'self'; object-src 'none'; frame-ancestors 'none'"
 
   @impl Plug
   def init(opts), do: opts
@@ -54,6 +62,25 @@ defmodule EmisarWeb.Plugs.ContentSecurityPolicy do
     # cross-origin-isolated capable). We never rely on window.opener.
     |> put_resp_header("cross-origin-opener-policy", "same-origin")
   end
+
+  @doc """
+  Endpoint function plug: gives a response the router never routed — an
+  unmatched path, or a failure in an endpoint plug — the static error policy.
+  It lands at send time, so a pipeline that did run keeps its own policy.
+  """
+  def put_error_content_security_policy(conn, _opts),
+    do: register_before_send(conn, &put_error_policy/1)
+
+  defp put_error_policy(%{status: status} = conn)
+       when is_integer(status) and status >= 400 and status < 600 do
+    if get_resp_header(conn, "content-security-policy") == [] do
+      put_resp_header(conn, "content-security-policy", @error_policy)
+    else
+      conn
+    end
+  end
+
+  defp put_error_policy(conn), do: conn
 
   defp put_csp_header(conn, nonce) do
     extra = conn.assigns[:csp_extra] || %{}
