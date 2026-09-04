@@ -52,7 +52,6 @@ defmodule EmisarWeb.SSOSettingsLive do
 
   # The role strings a synced member may be moved to — the guard set for the
   # change_member_role event (a crafted role never reaches update_membership_role).
-  @member_roles Enum.map(@member_role_options, &elem(&1, 1))
 
   # New member provisioning modes for the form's select. JIT adds the membership on
   # first sign-in; manual parks first sign-ins as pending requests an admin
@@ -1100,7 +1099,7 @@ defmodule EmisarWeb.SSOSettingsLive do
     end
   end
 
-  defp do_change_member_role(socket, membership_id, role) when role in @member_roles do
+  defp do_change_member_role(socket, membership_id, role) do
     with_synced_membership(socket, membership_id, fn membership ->
       # Directory sync owns a synced member's role (recomputed each sync), and the
       # DOMAIN refuses a manual change off the membership's own `directory_managed`
@@ -1117,9 +1116,6 @@ defmodule EmisarWeb.SSOSettingsLive do
       end
     end)
   end
-
-  defp do_change_member_role(socket, _membership_id, _role),
-    do: {:noreply, put_flash(socket, :error, "Unknown role.")}
 
   defp do_suspend_member(socket, membership_id) do
     with_synced_membership(socket, membership_id, fn membership ->

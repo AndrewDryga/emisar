@@ -2432,7 +2432,7 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
           "role" => "superadmin"
         })
 
-      assert html =~ "Unknown role."
+      assert html =~ "That change wasn&#39;t valid."
       assert Repo.reload!(membership).role == membership.role
     end
   end

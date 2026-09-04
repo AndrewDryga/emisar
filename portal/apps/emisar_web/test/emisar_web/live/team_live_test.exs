@@ -2310,7 +2310,7 @@ defmodule EmisarWeb.TeamLiveTest do
       html =
         render_click(lv, "change_role", %{"membership_id" => membership.id, "role" => "root"})
 
-      assert html =~ "Unknown role."
+      assert html =~ "That change wasn&#39;t valid."
       assert Emisar.Repo.reload!(membership).role == :viewer
     end
 
@@ -3348,7 +3348,7 @@ defmodule EmisarWeb.TeamLiveTest do
       # (no flash, no write).
       html = render_click(lv, "change_role", %{"membership_id" => ghost_id, "role" => "admin"})
       refute html =~ "Role updated."
-      refute html =~ "Unknown role."
+      refute html =~ "That change wasn&#39;t valid."
     end
 
     test "remove / save_edit / save_scopes on an unknown id are silent no-ops", %{

@@ -120,8 +120,8 @@ defmodule EmisarWeb.TeamLive do
       do: {:noreply, reload(socket)}
 
   def handle_info(
-        {:sso_link_requests_changed, account_id},
-        %{assigns: %{current_account: %{id: account_id}, live_action: :index}} = socket
+        {:sso_link_requests_changed, _account_id},
+        %{assigns: %{live_action: :index}} = socket
       ),
       do: {:noreply, assign_sso_state(socket)}
 
@@ -262,50 +262,39 @@ defmodule EmisarWeb.TeamLive do
   end
 
   def handle_event("toggle_require_mfa", _params, socket) do
-    enforcement = socket.assigns.security_facts.mfa_enforcement
-    value = enforcement != :enforced
+    value = socket.assigns.security_facts.mfa_enforcement != :enforced
 
-    cond do
-      not Accounts.subject_can_manage_account_security?(socket.assigns.current_subject) ->
-        {:noreply, put_flash(socket, :error, "Only owners and admins can change this setting.")}
+    if Accounts.subject_can_manage_account_security?(socket.assigns.current_subject) do
+      case Accounts.update_account(
+             socket.assigns.current_account,
+             %{settings: %{require_mfa: value}},
+             socket.assigns.current_subject
+           ) do
+        {:ok, account} ->
+          {:noreply,
+           socket
+           |> assign(:current_account, account)
+           |> assign_security_facts()
+           |> put_flash(
+             :info,
+             if value do
+               "Account-wide MFA enforced. Members without MFA will be prompted on next sign-in."
+             else
+               "Account-wide MFA requirement turned off."
+             end
+           )}
 
-      # Prevent owners from locking themselves out — if they don't have
-      # MFA enabled, they can't enforce it (since the enforcement gate
-      # would funnel them too). The domain refuses it under the write lock
-      # regardless (`:mfa_enrollment_required`); this only saves the round trip.
-      value and enforcement == :actor_not_enrolled ->
-        {:noreply, put_flash(socket, :error, error_message(:mfa_enrollment_required))}
+        {:error, :unauthorized} ->
+          {:noreply, put_flash(socket, :error, "Only owners and admins can change this setting.")}
 
-      true ->
-        case Accounts.update_account(
-               socket.assigns.current_account,
-               %{settings: %{require_mfa: value}},
-               socket.assigns.current_subject
-             ) do
-          {:ok, account} ->
-            {:noreply,
-             socket
-             |> assign(:current_account, account)
-             |> assign_security_facts()
-             |> put_flash(
-               :info,
-               if value do
-                 "Account-wide MFA enforced. Members without MFA will be prompted on next sign-in."
-               else
-                 "Account-wide MFA requirement turned off."
-               end
-             )}
+        {:error, :mfa_enrollment_required} ->
+          {:noreply, put_flash(socket, :error, error_message(:mfa_enrollment_required))}
 
-          {:error, :unauthorized} ->
-            {:noreply,
-             put_flash(socket, :error, "Only owners and admins can change this setting.")}
-
-          {:error, :mfa_enrollment_required} ->
-            {:noreply, put_flash(socket, :error, error_message(:mfa_enrollment_required))}
-
-          {:error, _} ->
-            {:noreply, put_flash(socket, :error, "Could not update MFA setting.")}
-        end
+        {:error, _} ->
+          {:noreply, put_flash(socket, :error, "Could not update MFA setting.")}
+      end
+    else
+      {:noreply, put_flash(socket, :error, "Only owners and admins can change this setting.")}
     end
   end
 
@@ -536,21 +525,9 @@ defmodule EmisarWeb.TeamLive do
   end
 
   def handle_event("change_role", %{"membership_id" => id, "role" => role}, socket) do
-    with true <- role in @roles,
-         %Accounts.Membership{} = membership <- find_member_membership(socket, id) do
-      # A directory-synced member's role is the IdP's — the DOMAIN refuses the
-      # change (`:role_managed_by_directory`) off the membership's own
-      # `directory_managed` flag, so the UI lock is a courtesy, not the guard (IL-15).
-      case Accounts.update_membership_role(membership, role, socket.assigns.current_subject) do
-        {:ok, _updated} ->
-          {:noreply, socket |> put_flash(:info, "Role updated.") |> reload()}
-
-        {:error, reason} ->
-          {:noreply, put_flash(socket, :error, error_message(reason))}
-      end
-    else
-      false -> {:noreply, put_flash(socket, :error, "Unknown role.")}
+    case find_member_membership(socket, id) do
       nil -> {:noreply, socket}
+      %Accounts.Membership{} = membership -> do_change_role(socket, membership, role)
     end
   end
 
@@ -724,8 +701,7 @@ defmodule EmisarWeb.TeamLive do
   defp member_action_confirm_token(_pending), do: nil
 
   defp confirm_member_action(%{action: action, facts: %{membership: membership}}) do
-    event = if action == "end_sessions", do: "end_sessions", else: action
-    js = JS.push(event, value: %{membership_id: membership.id})
+    js = JS.push(action, value: %{membership_id: membership.id})
 
     if action == "remove",
       do: hide_confirm_dialog(js, "member-action"),
@@ -856,6 +832,17 @@ defmodule EmisarWeb.TeamLive do
     end
   end
 
+  # A directory-synced member's role is the IdP's — the DOMAIN refuses the
+  # change (`:role_managed_by_directory`) off the membership's own
+  # `directory_managed` flag, so the UI lock is a courtesy, not the guard
+  # (IL-15). An unknown role fails the changeset's enum cast the same way.
+  defp do_change_role(socket, membership, role) do
+    case Accounts.update_membership_role(membership, role, socket.assigns.current_subject) do
+      {:ok, _updated} -> {:noreply, socket |> put_flash(:info, "Role updated.") |> reload()}
+      {:error, reason} -> {:noreply, put_flash(socket, :error, error_message(reason))}
+    end
+  end
+
   defp do_resend_invitation(socket, %Accounts.Membership{} = membership) do
     case Accounts.resend_account_invitation_and_deliver(
            membership,
@@ -948,7 +935,7 @@ defmodule EmisarWeb.TeamLive do
   defp verify_and_reset_member_mfa(socket, factor) do
     membership = socket.assigns.mfa_reset_target
     subject = socket.assigns.current_subject
-    actor_session_token_digest = current_session_token_digest(socket)
+    actor_session_token_digest = socket.assigns.current_auth.token
 
     with {:ok, proof} <-
            Accounts.verify_member_mfa_reset(
@@ -1007,13 +994,6 @@ defmodule EmisarWeb.TeamLive do
         {:noreply, assign(socket, :mfa_reset_error, error_message(reason))}
     end
   end
-
-  defp current_session_token_digest(%{
-         assigns: %{current_auth: %Emisar.Auth.UserToken{token: token}}
-       }),
-       do: token
-
-  defp current_session_token_digest(_socket), do: nil
 
   # Read from the access projection the scope editors are themselves bounded by,
   # never the mount-time membership struct: a member whose pack access is
@@ -2570,26 +2550,6 @@ defmodule EmisarWeb.TeamLive do
                   title="No members match these filters"
                 >
                   Try another name, role, or status.
-                </.empty_state>
-                <%!-- The non-error, unfiltered empty is defensive — the current
-                 user is always a member of the account they're viewing, so it
-                 shouldn't happen. Keep meaningful copy anyway so it can never
-                 accidentally land as a mystery blank panel. --%>
-                <.empty_state
-                  :if={
-                    not @load_error? and
-                      not LiveTable.has_active_filters?(@filter_params, @filters)
-                  }
-                  icon="product.team"
-                  title="No team members yet."
-                >
-                  Invite a teammate to dispatch runs, approve actions, or watch the audit trail.
-                  <:cta
-                    :if={@can_manage_team?}
-                    navigate={~p"/app/#{@current_account}/settings/team/invite"}
-                  >
-                    Invite member
-                  </:cta>
                 </.empty_state>
               </:empty>
             </LiveTable.live_table>
