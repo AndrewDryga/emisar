@@ -4,9 +4,6 @@ defmodule Emisar.Runs.RunEvent.Query do
   def all,
     do: from(events in Emisar.Runs.RunEvent, as: :events)
 
-  def by_id(queryable, id),
-    do: where(queryable, [events: e], e.id == ^id)
-
   def by_run_id(queryable, run_id),
     do: where(queryable, [events: e], e.run_id == ^run_id)
 

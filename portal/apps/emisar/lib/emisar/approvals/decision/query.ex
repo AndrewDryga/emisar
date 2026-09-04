@@ -4,9 +4,6 @@ defmodule Emisar.Approvals.Decision.Query do
   def all,
     do: from(decisions in Emisar.Approvals.Decision, as: :approval_decisions)
 
-  def by_id(queryable \\ all(), id),
-    do: where(queryable, [approval_decisions: d], d.id == ^id)
-
   def by_account_id(queryable \\ all(), account_id),
     do: where(queryable, [approval_decisions: d], d.account_id == ^account_id)
 
@@ -28,13 +25,6 @@ defmodule Emisar.Approvals.Decision.Query do
     |> where([approval_decisions: d], d.decision == :approve)
     |> select([approval_decisions: d], count(d.decider_id, :distinct))
   end
-
-  @doc """
-  Row lock for the finalize re-read, matching the request-row lock in
-  `record_decision` so concurrent votes serialize.
-  """
-  def lock_for_update(queryable),
-    do: lock(queryable, "FOR NO KEY UPDATE")
 
   @doc "Left-join + preload the (non-deleted) deciding user, idempotently."
   def with_preloaded_decider(queryable) do

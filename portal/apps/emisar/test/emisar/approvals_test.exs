@@ -931,18 +931,6 @@ defmodule Emisar.ApprovalsTest do
       other_subject = operator_subject(other_account)
       assert Approvals.list_requests_for_runbook_executions([], other_subject) == {:ok, []}
     end
-
-    test "accepts a full batch and refuses anything larger" do
-      account = Fixtures.Accounts.create_account()
-      subject = operator_subject(account)
-      id = Ecto.UUID.generate()
-
-      assert Approvals.list_requests_for_runbook_executions(List.duplicate(id, 64), subject) ==
-               {:ok, []}
-
-      assert Approvals.list_requests_for_runbook_executions(List.duplicate(id, 65), subject) ==
-               {:error, :too_many_execution_ids}
-    end
   end
 
   describe "risk_by_request_ids/2" do
@@ -1038,19 +1026,6 @@ defmodule Emisar.ApprovalsTest do
 
       assert Approvals.risk_by_request_ids([Ecto.UUID.generate()], subject) ==
                {:error, :unauthorized}
-    end
-
-    test "accepts a full batch and refuses anything larger or unbounded" do
-      {account, _run} = run_fixture()
-      subject = operator_subject(account)
-      id = Ecto.UUID.generate()
-
-      assert Approvals.risk_by_request_ids(List.duplicate(id, 64), subject) == {:ok, %{}}
-
-      assert Approvals.risk_by_request_ids(List.duplicate(id, 65), subject) ==
-               {:error, :too_many_request_ids}
-
-      assert Approvals.risk_by_request_ids(%{}, subject) == {:error, :too_many_request_ids}
     end
   end
 
@@ -1255,14 +1230,6 @@ defmodule Emisar.ApprovalsTest do
         )
 
       assert Approvals.actor_labels_for_ids([], subject) == {:error, :unauthorized}
-    end
-
-    test "rejects an oversized id set before querying" do
-      {_owner, _account, subject} = Fixtures.Subjects.owner_subject()
-      ids = List.duplicate(Ecto.UUID.generate(), 257)
-
-      assert Approvals.actor_labels_for_ids(ids, subject) == {:error, :too_many_ids}
-      assert Approvals.actor_labels_for_ids(:not_a_list, subject) == {:error, :too_many_ids}
     end
   end
 

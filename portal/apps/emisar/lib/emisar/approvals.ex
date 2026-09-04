@@ -29,14 +29,6 @@ defmodule Emisar.Approvals do
   alias Emisar.SafeText
   require Logger
 
-  # The approvals queue renders at most one 15-row page at a time; 64 leaves
-  # room for a fuller page without letting a caller ask for an unbounded batch.
-  @max_risk_request_ids 64
-
-  # Its only caller asks about one execution; the bound exists so a future
-  # batching caller cannot hand this an unbounded `IN` list.
-  @max_execution_request_ids 64
-
   # The expiry sweep loaded every overdue request fleet-wide, and each row
   # carries its `context` jsonb — for a runbook execution that is the whole
   # frozen plan (up to 1 MiB). A backlog of parked executions therefore pulled
@@ -236,11 +228,10 @@ defmodule Emisar.Approvals do
   end
 
   @doc """
-  Lists visible approval requests for at most #{@max_execution_request_ids}
-  runbook executions. Over the cap it is `{:error, :too_many_execution_ids}`.
+  Lists visible approval requests for the given runbook executions.
   """
   def list_requests_for_runbook_executions(execution_ids, %Subject{} = subject)
-      when is_list(execution_ids) and length(execution_ids) <= @max_execution_request_ids do
+      when is_list(execution_ids) do
     with :ok <-
            Auth.Authorizer.ensure_has_permissions(
              subject,
@@ -257,13 +248,9 @@ defmodule Emisar.Approvals do
     end
   end
 
-  def list_requests_for_runbook_executions(execution_ids, %Subject{})
-      when is_list(execution_ids) and length(execution_ids) > @max_execution_request_ids,
-      do: {:error, :too_many_execution_ids}
-
   @doc """
-  `%{request_id => risk}` for at most #{@max_risk_request_ids} approval request
-  ids — the risk tier each pending card shows, resolved for the whole page in
+  `%{request_id => risk}` for the given approval request ids — the risk tier
+  each pending card shows, resolved for the whole page in
   one catalog read. Requires `view_approvals`; the rows are re-read by id under
   the caller's runner access and account, so a request they cannot see is
   simply absent from the map.
@@ -272,11 +259,9 @@ defmodule Emisar.Approvals do
   runner+action is no longer advertised, and a runbook execution whose frozen
   plan carries an unresolved step risk, both map to `nil` — the caller shows no
   pill rather than an understated one. An empty list still runs the permission
-  gate. Returns `{:ok, %{request_id => risk | nil}}`, `{:error, :unauthorized}`,
-  or `{:error, :too_many_request_ids}`.
+  gate. Returns `{:ok, %{request_id => risk | nil}}` or `{:error, :unauthorized}`.
   """
-  def risk_by_request_ids(request_ids, %Subject{} = subject)
-      when is_list(request_ids) and length(request_ids) <= @max_risk_request_ids do
+  def risk_by_request_ids(request_ids, %Subject{} = subject) when is_list(request_ids) do
     with :ok <-
            Auth.Authorizer.ensure_has_permissions(
              subject,
@@ -294,8 +279,6 @@ defmodule Emisar.Approvals do
       {:ok, Map.new(requests, &{&1.id, request_risk(&1, risk_by_pair)})}
     end
   end
-
-  def risk_by_request_ids(_request_ids, %Subject{}), do: {:error, :too_many_request_ids}
 
   defp list_visible_requests_by_ids(request_ids, %Subject{} = subject) do
     ids = Enum.filter(request_ids, &Repo.valid_uuid?/1)
@@ -436,21 +419,14 @@ defmodule Emisar.Approvals do
     end
   end
 
-  # A page of approval rows references at most a few dozen humans (requester,
-  # decider, each voter, each grant's granter). The ceiling keeps a crafted
-  # id list from turning one render into an unbounded `IN (…)` scan.
-  @max_actor_label_ids 256
-
   @doc """
   Account-local display labels for the humans an approval surface names —
   `{:ok, %{user_id => label}}`. Requires `view` on approvals and resolves ids
   only within the subject's own account, so an id from another account (or one
   whose membership is gone) simply has no label and the caller renders its
-  own former-member text. At most #{@max_actor_label_ids} ids may be supplied;
-  anything longer, or a non-list, is `{:error, :too_many_ids}` with no DB work.
+  own former-member text.
   """
-  def actor_labels_for_ids(ids, %Subject{} = subject)
-      when is_list(ids) and length(ids) <= @max_actor_label_ids do
+  def actor_labels_for_ids(ids, %Subject{} = subject) when is_list(ids) do
     with :ok <-
            Auth.Authorizer.ensure_has_permissions(
              subject,
@@ -459,8 +435,6 @@ defmodule Emisar.Approvals do
       {:ok, Accounts.user_labels_for_ids(ids, subject.account.id)}
     end
   end
-
-  def actor_labels_for_ids(_ids, %Subject{}), do: {:error, :too_many_ids}
 
   # Default window for a pending approval to sit before the
   # ApprovalExpiry worker auto-rejects it. Anything past this is
@@ -835,21 +809,19 @@ defmodule Emisar.Approvals do
 
   defp approval_target_access(account_id, targets)
        when is_binary(account_id) and is_list(targets) and targets != [] do
-    with true <-
-           Enum.all?(targets, fn target ->
-             is_map(target) and Repo.valid_uuid?(Map.get(target, :runner_id))
-           end),
-         {:ok, pack_ids} <- approval_pack_ids(targets) do
-      runner_ids = targets |> Enum.map(&Map.fetch!(&1, :runner_id)) |> Enum.uniq()
-      runner_facts = Runners.runner_scope_facts_for_ids(account_id, runner_ids)
+    case approval_pack_ids(targets) do
+      {:ok, pack_ids} ->
+        runner_ids = targets |> Enum.map(&Map.fetch!(&1, :runner_id)) |> Enum.uniq()
+        runner_facts = Runners.runner_scope_facts_for_ids(account_id, runner_ids)
 
-      if length(runner_facts) == length(runner_ids) do
-        {:ok, %{runners: runner_facts, pack_ids: Enum.uniq(pack_ids)}}
-      else
+        if length(runner_facts) == length(runner_ids) do
+          {:ok, %{runners: runner_facts, pack_ids: Enum.uniq(pack_ids)}}
+        else
+          {:error, :invalid_approval_targets}
+        end
+
+      {:error, :invalid_pack_ref} ->
         {:error, :invalid_approval_targets}
-      end
-    else
-      _ -> {:error, :invalid_approval_targets}
     end
   end
 
@@ -1372,7 +1344,7 @@ defmodule Emisar.Approvals do
        ) do
     with {:ok, targets} <- Runbooks.approval_targets_for_execution(execution_id, account_id),
          runner_ids = approval_target_runner_ids(targets),
-         true <- runner_ids != [] and Enum.all?(runner_ids, &Repo.valid_uuid?/1) do
+         true <- runner_ids != [] do
       lock_target_runners(repo, account_id, runner_ids)
     else
       _ -> {:error, :not_found}

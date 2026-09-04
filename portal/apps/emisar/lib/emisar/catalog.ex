@@ -80,10 +80,6 @@ defmodule Emisar.Catalog do
   # each one keeps well clear of the limit.
   @upsert_chunk_size 500
 
-  # One page of approval cards is the largest batch that asks for exact
-  # runner+action risks, and each pair costs its own OR term in the query.
-  @max_risk_pairs 64
-
   # The console Packs page renders its whole inventory at once, so the read is
   # bounded rather than paged — well above the 80 packs the 1.0 catalog ships.
   @console_pack_version_limit 500
@@ -2415,8 +2411,8 @@ defmodule Emisar.Catalog do
   end
 
   @doc """
-  `%{{runner_id, action_id} => risk}` for at most #{@max_risk_pairs} exact
-  runner/action pairs, in ONE query — the approvals queue resolves every
+  `%{{runner_id, action_id} => risk}` for exact runner/action pairs, in ONE
+  query — the approvals queue resolves every
   pending request's own frozen action without a read per card. Requires
   `view_catalog`; rows are scoped to the caller's CURRENT membership runner
   access and their account.
@@ -2424,11 +2420,9 @@ defmodule Emisar.Catalog do
   A pair whose runner or action is unknown, malformed, out of the caller's
   runner scope, or in another account is simply absent, so a caller shows no
   risk rather than a wrong one. An empty list still runs the permission gate.
-  Returns `{:ok, %{{runner_id, action_id} => risk}}`, `{:error, :unauthorized}`,
-  or `{:error, :too_many_pairs}`.
+  Returns `{:ok, %{{runner_id, action_id} => risk}}` or `{:error, :unauthorized}`.
   """
-  def risk_by_runner_action_pairs(pairs, %Subject{} = subject)
-      when is_list(pairs) and length(pairs) <= @max_risk_pairs do
+  def risk_by_runner_action_pairs(pairs, %Subject{} = subject) when is_list(pairs) do
     with :ok <-
            Auth.Authorizer.ensure_has_permissions(
              subject,
@@ -2437,8 +2431,6 @@ defmodule Emisar.Catalog do
       {:ok, pairs |> Enum.filter(&resolvable_pair?/1) |> risk_by_pair(subject)}
     end
   end
-
-  def risk_by_runner_action_pairs(_pairs, %Subject{}), do: {:error, :too_many_pairs}
 
   defp resolvable_pair?({runner_id, action_id}),
     do: Repo.valid_uuid?(runner_id) and is_binary(action_id)

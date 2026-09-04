@@ -100,9 +100,6 @@ defmodule Emisar.Runs.ActionRun.Query do
     )
   end
 
-  def by_runbook_id(queryable, runbook_id),
-    do: where(queryable, [runs: r], r.runbook_id == ^runbook_id)
-
   def status_in(queryable, statuses),
     do: where(queryable, [runs: r], r.status in ^statuses)
 

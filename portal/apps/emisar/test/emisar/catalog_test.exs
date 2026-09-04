@@ -4609,17 +4609,6 @@ defmodule Emisar.CatalogTest do
       assert Catalog.risk_by_runner_action_pairs([{Ecto.UUID.generate(), "x"}], no_view) ==
                {:error, :unauthorized}
     end
-
-    test "accepts a full batch and refuses anything larger or unbounded", %{subject: subject} do
-      pair = {Ecto.UUID.generate(), "shared.op"}
-
-      assert Catalog.risk_by_runner_action_pairs(List.duplicate(pair, 64), subject) == {:ok, %{}}
-
-      assert Catalog.risk_by_runner_action_pairs(List.duplicate(pair, 65), subject) ==
-               {:error, :too_many_pairs}
-
-      assert Catalog.risk_by_runner_action_pairs(%{}, subject) == {:error, :too_many_pairs}
-    end
   end
 
   describe "most_severe_risk_by_action/1" do
