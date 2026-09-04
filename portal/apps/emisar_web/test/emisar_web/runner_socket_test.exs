@@ -948,6 +948,20 @@ defmodule EmisarWeb.RunnerSocketTest do
       reloaded = Repo.reload!(runner)
       assert reloaded.last_disconnected_at
     end
+
+    test "keeps a truncated multibyte disconnect reason valid UTF-8", %{
+      state: state,
+      runner: runner
+    } do
+      reason = String.duplicate("a", 238) <> "あ"
+
+      assert RunnerSocket.terminate(reason, state) == :ok
+
+      stored = Repo.reload!(runner).last_disconnect_reason
+      assert stored == "\"" <> String.duplicate("a", 238) <> "…"
+      assert String.valid?(stored)
+      assert byte_size(stored) <= 243
+    end
   end
 
   describe "handle_in/2 — runner_state, action_progress, error envelopes" do

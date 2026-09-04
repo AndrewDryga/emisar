@@ -310,8 +310,16 @@ defmodule EmisarWeb.RunnerSocket do
 
   defp truncate_reason(s) when byte_size(s) <= @reason_limit, do: s
 
-  defp truncate_reason(s),
-    do: binary_part(s, 0, @reason_limit) <> "…"
+  defp truncate_reason(s) do
+    prefix = s |> binary_part(0, @reason_limit) |> trim_to_utf8_boundary()
+    prefix <> "…"
+  end
+
+  defp trim_to_utf8_boundary(binary) do
+    if String.valid?(binary),
+      do: binary,
+      else: trim_to_utf8_boundary(binary_part(binary, 0, byte_size(binary) - 1))
+  end
 
   # -- Envelope dispatch ----------------------------------------------
 
