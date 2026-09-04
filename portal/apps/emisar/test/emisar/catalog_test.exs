@@ -3194,12 +3194,15 @@ defmodule Emisar.CatalogTest do
       account: account,
       runner: runner
     } do
-      {:ok, action} =
-        Catalog.fetch_action_for_account("p.inspect", runner.id, account.id)
-
-      action
-      |> Ecto.Changeset.change(risk: :low, output_schema: %{"type" => "object"})
-      |> Repo.update!()
+      Fixtures.Catalog.create_action(
+        runner: runner,
+        action_id: "p.inspect",
+        pack_id: "p",
+        pack_version: "1.0",
+        pack_hash: @dispatch_hash,
+        risk: "low",
+        output_schema: %{"type" => "object"}
+      )
 
       assert Catalog.fetch_dispatch_contract(
                Repo,

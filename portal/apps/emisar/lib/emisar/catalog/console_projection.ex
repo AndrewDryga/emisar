@@ -365,18 +365,17 @@ defmodule Emisar.Catalog.ConsoleProjection do
   end
 
   @doc """
-  Return a complete trusted action manifest for static/MCP reads.
+  Return the trusted action manifest for static/MCP reads.
 
-  This is deliberately stricter than the execution trust gate: historical
-  trusted rows with null or sparse manifests keep their dispatch semantics, but
-  cannot supply model-facing prose or schemas until an operator reviews a new
-  hash. The caller must already hold an account-scoped row.
+  A historical trusted row with no current-schema manifest keeps its dispatch
+  semantics but cannot supply model-facing prose or schemas until an operator
+  reviews a new hash. The caller must already hold an account-scoped row.
   """
   @spec trusted_manifest_for_static_reads(PackVersion.t()) ::
           {:ok, map()} | {:error, :pack_untrusted | :incomplete_manifest}
 
   def trusted_manifest_for_static_reads(%PackVersion{trust_state: :trusted} = pack_version),
-    do: TrustedManifest.validate(pack_version.trusted_manifest)
+    do: TrustedManifest.persisted(pack_version.trusted_manifest)
 
   def trusted_manifest_for_static_reads(%PackVersion{}), do: {:error, :pack_untrusted}
 end

@@ -1417,8 +1417,7 @@ defmodule Emisar.Catalog do
          true <- action.pack_id == pack_id,
          true <- action.pack_version == version,
          true <- action.pack_hash == hash,
-         {:ok, current_descriptor} <- runner_action_descriptor(action),
-         true <- current_descriptor == descriptor do
+         true <- action.descriptor_digest == TrustedManifest.descriptor_digest(descriptor) do
       {:ok, %{action: action, descriptor: descriptor, pack_hash: trusted_hash}}
     else
       {:error, :not_found} -> {:error, :action_not_found}
@@ -1479,19 +1478,6 @@ defmodule Emisar.Catalog do
       |> RunnerAction.Query.lock_for_update()
 
     repo.fetch(queryable, RunnerAction.Query)
-  end
-
-  # One action rendered through the same builder as a trusted manifest, so the
-  # drift comparison covers every model-facing field, including the optional
-  # output contract.
-  defp runner_action_descriptor(%RunnerAction{} = action) do
-    with {:ok, manifest} <- TrustedManifest.from_runner_actions([action]),
-         {:ok, actions} <- TrustedManifest.actions(manifest),
-         %{} = descriptor <- Map.get(actions, action.action_id) do
-      {:ok, descriptor}
-    else
-      _other -> {:error, :invalid_manifest}
-    end
   end
 
   @doc """
