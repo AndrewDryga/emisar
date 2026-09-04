@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
-	"math/big"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -283,14 +282,23 @@ func matchesPattern(pattern, s string) bool {
 	return cached.(*regexp.Regexp).MatchString(s)
 }
 
+// An integer arg compares in int64: Arg.Validate pins its bounds to exactly
+// represented integers, so a job id past 2^53 keeps its true order against one.
+// A number arg compares as the float64 its literal denotes.
 func belowNumericBound(value any, bound float64) bool {
-	comparison, ok := compareNumeric(value, bound)
-	return ok && comparison < 0
+	if n, ok := value.(int64); ok {
+		return n < int64(bound)
+	}
+	f, ok := toFloat(value)
+	return ok && f < bound
 }
 
 func aboveNumericBound(value any, bound float64) bool {
-	comparison, ok := compareNumeric(value, bound)
-	return ok && comparison > 0
+	if n, ok := value.(int64); ok {
+		return n > int64(bound)
+	}
+	f, ok := toFloat(value)
+	return ok && f > bound
 }
 
 // applyPathValidation runs path allow/deny rules and returns the canonical
@@ -578,71 +586,17 @@ func equal(a, b any) bool {
 	case int64:
 		bn, ok := toInt(b)
 		return ok && av == bn
-	case json.Number:
-		comparison, ok := compareNumeric(av, b)
-		return ok && comparison == 0
-	case float64:
-		comparison, ok := compareNumeric(av, b)
-		return ok && comparison == 0
-	case float32:
-		comparison, ok := compareNumeric(av, b)
-		return ok && comparison == 0
+	case json.Number, float64:
+		// A number arg's membership is decided on the value its literal denotes,
+		// not on the spelling: 1.250 and 1.25 are the same number.
+		af, aok := toFloat(av)
+		bf, bok := toFloat(b)
+		return aok && bok && af == bf
 	case bool:
 		bb, ok := b.(bool)
 		return ok && av == bb
 	}
 	return a == b
-}
-
-func compareNumeric(a, b any) (int, bool) {
-	ar, ok := exactNumeric(a)
-	if !ok {
-		return 0, false
-	}
-	br, ok := exactNumeric(b)
-	if !ok {
-		return 0, false
-	}
-	return ar.Cmp(br), true
-}
-
-func exactNumeric(value any) (*big.Rat, bool) {
-	var raw string
-	switch number := value.(type) {
-	case int:
-		raw = strconv.FormatInt(int64(number), 10)
-	case int32:
-		raw = strconv.FormatInt(int64(number), 10)
-	case int64:
-		raw = strconv.FormatInt(number, 10)
-	case uint:
-		raw = strconv.FormatUint(uint64(number), 10)
-	case uint32:
-		raw = strconv.FormatUint(uint64(number), 10)
-	case uint64:
-		raw = strconv.FormatUint(number, 10)
-	case float32:
-		if _, ok := finiteFloat(float64(number)); !ok {
-			return nil, false
-		}
-		raw = strconv.FormatFloat(float64(number), 'g', -1, 32)
-	case float64:
-		if _, ok := finiteFloat(number); !ok {
-			return nil, false
-		}
-		raw = strconv.FormatFloat(number, 'g', -1, 64)
-	case json.Number:
-		raw = number.String()
-	case string:
-		raw = number
-	default:
-		return nil, false
-	}
-	if !json.Valid([]byte(raw)) {
-		return nil, false
-	}
-	rational, ok := new(big.Rat).SetString(raw)
-	return rational, ok
 }
 
 func arrayLen(v any) (int, bool) {
@@ -772,7 +726,14 @@ func toInt(v any) (int64, bool) {
 			return i, true
 		}
 	case json.Number:
-		return exactJSONInteger(n.String())
+		// An integer arg takes the plain integer spelling only: ParseInt refuses
+		// a fraction or an exponent, so "1e3" and "1000.0" are a type error the
+		// caller fixes by sending 1000. The alternative was evaluating every
+		// spelling exactly, which bought nothing an operator reading the
+		// approval — or the argv the script receives — would recognize.
+		if i, err := strconv.ParseInt(n.String(), 10, 64); err == nil {
+			return i, true
+		}
 	}
 	return 0, false
 }
@@ -805,58 +766,6 @@ func toFloat(v any) (float64, bool) {
 
 func finiteFloat(n float64) (float64, bool) {
 	return n, !math.IsNaN(n) && !math.IsInf(n, 0)
-}
-
-// exactJSONInteger accepts every JSON spelling whose mathematical value is an
-// int64 (including 1e3 and 1000.0) without evaluating it through float64.
-func exactJSONInteger(raw string) (int64, bool) {
-	sign := ""
-	if strings.HasPrefix(raw, "-") {
-		sign = "-"
-		raw = raw[1:]
-	}
-	mantissa, exponentText, hasExponent := strings.Cut(raw, "e")
-	if !hasExponent {
-		mantissa, exponentText, hasExponent = strings.Cut(raw, "E")
-	}
-	exponent := new(big.Int)
-	if hasExponent {
-		exponentText = strings.TrimPrefix(exponentText, "+")
-		if _, ok := exponent.SetString(exponentText, 10); !ok {
-			return 0, false
-		}
-	}
-	integer, fraction, _ := strings.Cut(mantissa, ".")
-	digits := strings.TrimLeft(integer+fraction, "0")
-	if digits == "" {
-		return 0, true
-	}
-
-	scale := new(big.Int).Sub(exponent, big.NewInt(int64(len(fraction))))
-	if scale.Sign() < 0 {
-		places := new(big.Int).Neg(scale)
-		if !places.IsInt64() || places.Int64() > int64(len(digits)) {
-			return 0, false
-		}
-		count := int(places.Int64())
-		if count > 0 && strings.Trim(digits[len(digits)-count:], "0") != "" {
-			return 0, false
-		}
-		digits = digits[:len(digits)-count]
-	} else if scale.Sign() > 0 {
-		// Any non-zero coefficient with more than 19 decimal digits cannot fit
-		// int64. Check that bound before expanding an attacker-sized exponent.
-		if !scale.IsInt64() || scale.Int64() > int64(19-len(digits)) {
-			return 0, false
-		}
-		digits += strings.Repeat("0", int(scale.Int64()))
-	}
-
-	value, ok := new(big.Int).SetString(sign+digits, 10)
-	if !ok || !value.IsInt64() {
-		return 0, false
-	}
-	return value.Int64(), true
 }
 
 func toAnyArray(v any) ([]any, error) {
