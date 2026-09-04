@@ -30,20 +30,6 @@ defmodule Emisar.SSO.Provisioning do
   # — never an auto-merge (C1): the admin's approval is still the gate. The
   # display email is the raw value (helps the admin recognize who's asking); the
   # binding on approval uses the captured id, not the email.
-  # A callback already in flight when the connection is deleted would otherwise
-  # park a request against a provider that no longer exists — unapprovable the
-  # moment it is written, and a browser waiting on a page that never resolves.
-  # The delete sweeps the queue; this stops a straggler refilling it.
-  def capture_link_request(
-        %IdentityProvider{deleted_at: %DateTime{}},
-        _id,
-        _e,
-        _n,
-        _claims,
-        _source
-      ),
-      do: {:error, :provider_unavailable}
-
   def capture_link_request(
         %IdentityProvider{} = provider,
         identifier,

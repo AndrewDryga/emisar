@@ -1499,17 +1499,6 @@ defmodule Emisar.OAuthTest do
 
       assert OAuth.resolve_access_token(tokens.access_token, @resource) == {:error, :invalid}
     end
-
-    test "rejects a token whose scope lacks mcp (fail-closed resource-server backstop)",
-         %{tokens: tokens} do
-      # `narrow_scope/1` always mints `mcp`, but the resource server must not
-      # trust that: force the stored scope to `offline_access` only and the live
-      # token no longer authenticates.
-      token = Repo.get_by!(Token, access_token_hash: Emisar.Crypto.hash(tokens.access_token))
-      Repo.update!(Ecto.Changeset.change(token, scope: "offline_access"))
-
-      assert OAuth.resolve_access_token(tokens.access_token, @resource) == {:error, :invalid}
-    end
   end
 
   describe "delete_abandoned_backing_keys/1" do

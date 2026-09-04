@@ -166,8 +166,7 @@ defmodule Emisar.SSO do
   the account. Returns `{:ok, [%UserIdentity{}], %Paginator.Metadata{}}`.
   """
   def list_synced_users(%IdentityProvider{} = provider, %Subject{} = subject, opts \\ []) do
-    with :ok <- ensure_can_manage_sso(subject),
-         {:ok, provider} <- fetch_provider_by_id(provider.id, subject) do
+    with {:ok, provider} <- fetch_provider_by_id(provider.id, subject) do
       # No `ordered_by_recent/1`: the query module's `cursor_fields/0` is that
       # same order, and `Repo.list/3` applies it.
       UserIdentity.Query.not_deleted()
@@ -2753,8 +2752,7 @@ defmodule Emisar.SSO do
     # Deriving it from member rows meant an empty group — which the directory has
     # genuinely pushed — could not be picked for a mapping, because the console
     # could not see it at all.
-    with :ok <- ensure_can_manage_sso(subject),
-         {:ok, provider} <- fetch_provider_by_id(provider.id, subject),
+    with {:ok, provider} <- fetch_provider_by_id(provider.id, subject),
          queryable =
            DirectoryGroup.Query.not_deleted()
            |> DirectoryGroup.Query.by_account_id(provider.account_id)
@@ -2778,8 +2776,7 @@ defmodule Emisar.SSO do
   Enterprise; account-scoped. Returns `{:ok, [%DirectoryGroup{}]}`.
   """
   def search_synced_groups(%IdentityProvider{} = provider, term, %Subject{} = subject) do
-    with :ok <- ensure_can_manage_sso(subject),
-         {:ok, provider} <- fetch_provider_by_id(provider.id, subject) do
+    with {:ok, provider} <- fetch_provider_by_id(provider.id, subject) do
       groups =
         DirectoryGroup.Query.not_deleted()
         |> DirectoryGroup.Query.by_account_id(provider.account_id)

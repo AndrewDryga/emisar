@@ -151,7 +151,7 @@ defmodule Emisar.SSO.SCIM do
   # `retry` is bookkeeping for the race convergence below, not something a caller
   # chooses — it stays off the public surface.
   defp provision_or_load(%IdentityProvider{} = provider, attrs, retry) do
-    external_id = attrs[:external_id] || attrs["external_id"]
+    external_id = attrs[:external_id]
 
     case live_scim_identity(provider, external_id) do
       %UserIdentity{} = identity ->
@@ -578,8 +578,8 @@ defmodule Emisar.SSO.SCIM do
         # link request for an admin to approve (Okta retries and self-heals once
         # linked); a non-member is a genuine collision. Never merge (C1). A
         # provider revoked before the fenced fallback gets the bearer-time 401.
-        email = attrs[:email] || attrs["email"]
-        full_name = attrs[:full_name] || attrs["full_name"]
+        email = attrs[:email]
+        full_name = attrs[:full_name]
 
         case capture_current_scim_member_link(provider, external_id, email, full_name) do
           {:error, :directory_sync_disabled} = revoked -> revoked
@@ -619,8 +619,8 @@ defmodule Emisar.SSO.SCIM do
 
   defp build_scim_provision_multi(%IdentityProvider{} = provider, external_id, attrs) do
     user_attrs = %{
-      email: attrs[:email] || attrs["email"],
-      full_name: attrs[:full_name] || attrs["full_name"]
+      email: attrs[:email],
+      full_name: attrs[:full_name]
     }
 
     Multi.new()
@@ -664,9 +664,8 @@ defmodule Emisar.SSO.SCIM do
     |> Repo.insert()
   end
 
-  # The SCIM `active` flag (default true), accepting atom- or string-keyed attrs
-  # — the SCIM controller decodes JSON to string keys; internal callers use atoms.
-  defp scim_active_from(attrs), do: Map.get(attrs, :active, Map.get(attrs, "active", true))
+  # A SCIM create with no `active` is an active user (RFC 7644 §4.1.1).
+  defp scim_active_from(attrs), do: Map.get(attrs, :active, true)
 
   @doc """
   Internal — SCIM `PATCH /Users/{id}`: reduce the IdP's ordered RFC 7644 §3.5.2
@@ -1274,9 +1273,9 @@ defmodule Emisar.SSO.SCIM do
   values are server-issued User ids; unknown in-scope-shaped ids are ignored.
   """
   def scim_upsert_group(%IdentityProvider{} = provider, attrs) do
-    external_group_id = attrs[:external_id] || attrs["external_id"]
-    display = attrs[:display] || attrs["display"]
-    member_ids = attrs[:member_ids] || attrs["member_ids"] || []
+    external_group_id = attrs[:external_id]
+    display = attrs[:display]
+    member_ids = attrs[:member_ids] || []
 
     multi =
       provider
@@ -1302,9 +1301,9 @@ defmodule Emisar.SSO.SCIM do
   allowing body identity fields to redirect the write.
   """
   def scim_replace_group(%IdentityProvider{} = provider, id, attrs) do
-    external_group_id = attrs[:external_id] || attrs["external_id"]
-    display = attrs[:display] || attrs["display"]
-    member_ids = attrs[:member_ids] || attrs["member_ids"] || []
+    external_group_id = attrs[:external_id]
+    display = attrs[:display]
+    member_ids = attrs[:member_ids] || []
 
     multi =
       provider
