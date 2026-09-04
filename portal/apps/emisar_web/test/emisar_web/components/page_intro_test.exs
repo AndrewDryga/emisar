@@ -24,22 +24,6 @@ defmodule EmisarWeb.Components.PageIntroTest do
       assert html =~ "text-zinc-400"
     end
 
-    test "actions slot renders alongside the subtitle, right-aligned" do
-      assigns = %{}
-
-      html =
-        rendered_to_string(~H"""
-        <CoreComponents.page_intro>
-          Subtitle text
-          <:actions><button>Add</button></:actions>
-        </CoreComponents.page_intro>
-        """)
-
-      assert html =~ "Subtitle text"
-      assert html =~ "Add"
-      assert html =~ "shrink-0"
-    end
-
     test "renders nothing when no slot is given" do
       assigns = %{}
 

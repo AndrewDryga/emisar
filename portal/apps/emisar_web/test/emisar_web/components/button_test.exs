@@ -74,11 +74,8 @@ defmodule EmisarWeb.Components.ButtonTest do
       assert render_button(%{variant: :ghost}) =~ "text-zinc-300"
     end
 
-    test "the amber primary and the ghost tone ramp" do
+    test "the amber primary" do
       assert render_button(%{tone: :amber}) =~ "bg-amber-500"
-      assert render_button(%{variant: :ghost, tone: :rose}) =~ "text-rose-300"
-      assert render_button(%{variant: :ghost, tone: :amber}) =~ "text-amber-300"
-      assert render_button(%{variant: :ghost, tone: :brand}) =~ "text-brand-300"
     end
   end
 

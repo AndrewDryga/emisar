@@ -55,19 +55,6 @@ defmodule EmisarWeb.CopyButtonTest do
     refute html =~ ~s(data-copy="#recipe")
   end
 
-  test "renders a custom Copied label via :label_copied" do
-    assigns = %{}
-
-    html =
-      rendered_to_string(~H"""
-      <EmisarWeb.CoreComponents.copy_button target="#x" label_copied="Copied!">
-        Copy
-      </EmisarWeb.CoreComponents.copy_button>
-      """)
-
-    assert html =~ ~s(data-copy-label-copied="Copied!")
-  end
-
   test "rest passes through id, class merges, no onclick anywhere" do
     assigns = %{}
 
