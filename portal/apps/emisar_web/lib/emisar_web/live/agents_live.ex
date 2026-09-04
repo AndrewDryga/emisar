@@ -30,6 +30,17 @@ defmodule EmisarWeb.AgentsLive do
 
   @refresh_ms 15_000
   @remote_client_ids ~w(chatgpt claude_web)
+  # `@client_ids` ordering drives the tab strip in `connect_panel/1`. Within
+  # each group the order is POPULARITY, not the alphabet — an operator scans
+  # for their own client, and the common ones should be the first few tabs, not
+  # wherever their name happens to sort. Map iteration order isn't guaranteed —
+  # keep ids as a list and pair labels separately.
+  #
+  # `"custom"` is the trailing pseudo-client: picking it doesn't mint a
+  # quick key + snippet, it surfaces a key-builder form instead. Keeps
+  # the "I need a tighter scope" affordance discoverable next to the
+  # client tabs, not hidden in a collapsed details further down.
+  @client_ids ~w(chatgpt claude_web claude_code cursor vscode claude_desktop codex gemini copilot windsurf zed opencode goose grok openclaw pi hermes custom)
 
   def mount(_params, _session, socket) do
     if connected?(socket) do
@@ -142,7 +153,7 @@ defmodule EmisarWeb.AgentsLive do
      |> assign(:quick_connected?, false)}
   end
 
-  def handle_event("select_client", %{"client" => id}, socket) do
+  def handle_event("select_client", %{"client" => id}, socket) when id in @client_ids do
     # Picking a local client mints NOTHING — the installer's device-grant
     # approval mints the keys, and the manual snippet mints its own lazily on
     # reveal. Switching clients resets the lazy snippet state.
@@ -155,9 +166,10 @@ defmodule EmisarWeb.AgentsLive do
      |> assign(:snippet_open?, false)}
   end
 
-  # A crafted event that drops a required key would otherwise match no clause
-  # and crash the socket, taking the page's unsaved state with it. Every
-  # mutating handler on this page ends in this no-op.
+  # A crafted event that drops a required key or names a client the picker
+  # never rendered would otherwise match no clause (or crash `client_config/3`
+  # in render) and take the page's unsaved state with it. Every mutating
+  # handler on this page ends in this no-op.
   def handle_event("select_client", _params, socket), do: {:noreply, socket}
 
   def handle_event("reveal_snippet", _params, socket) do
@@ -615,17 +627,6 @@ defmodule EmisarWeb.AgentsLive do
   # describes one MCP client: label, where its config lives, and a
   # body templated with this operator's URL + key.
 
-  # `@client_ids` ordering drives the tab strip in `connect_panel/1`. Within
-  # each group the order is POPULARITY, not the alphabet — an operator scans
-  # for their own client, and the common ones should be the first few tabs, not
-  # wherever their name happens to sort. Map iteration order isn't guaranteed —
-  # keep ids as a list and pair labels separately.
-  #
-  # `"custom"` is the trailing pseudo-client: picking it doesn't mint a
-  # quick key + snippet, it surfaces a key-builder form instead. Keeps
-  # the "I need a tighter scope" affordance discoverable next to the
-  # client tabs, not hidden in a collapsed details further down.
-  @client_ids ~w(chatgpt claude_web claude_code cursor vscode claude_desktop codex gemini copilot windsurf zed opencode goose grok openclaw pi hermes custom)
   @client_labels %{
     "chatgpt" => "ChatGPT",
     "claude_web" => "Claude.ai",
