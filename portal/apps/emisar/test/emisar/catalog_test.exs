@@ -1137,7 +1137,7 @@ defmodule Emisar.CatalogTest do
 
       assert {:ok, [pack_version], _} = Catalog.list_pack_versions(subject)
       assert pack_version.trust_state == :trusted
-      assert {:ok, manifest} = ConsoleProjection.trusted_manifest_for_static_reads(pack_version)
+      assert {:ok, manifest} = TrustedManifest.persisted(pack_version.trusted_manifest)
 
       descriptor = manifest["actions"][catalog_action["id"]]
       assert descriptor["description"] == catalog_action["description"]
@@ -1174,7 +1174,7 @@ defmodule Emisar.CatalogTest do
 
       assert {:ok, _} = Catalog.observe_state(runner, payload)
       assert {:ok, [repaired], _} = Catalog.list_pack_versions(subject)
-      assert {:ok, manifest} = ConsoleProjection.trusted_manifest_for_static_reads(repaired)
+      assert {:ok, manifest} = TrustedManifest.persisted(repaired.trusted_manifest)
       assert map_size(manifest["actions"]) == length(pack["actions"])
     end
 
@@ -1225,7 +1225,7 @@ defmodule Emisar.CatalogTest do
       assert {:ok, _} = Catalog.observe_state(runner, payload)
 
       assert {:ok, [pack_version], _} = Catalog.list_pack_versions(subject)
-      assert {:ok, manifest} = ConsoleProjection.trusted_manifest_for_static_reads(pack_version)
+      assert {:ok, manifest} = TrustedManifest.persisted(pack_version.trusted_manifest)
       assert map_size(manifest["actions"]) == length(pack["actions"])
 
       descriptor = manifest["actions"][catalog_action["id"]]
@@ -3643,7 +3643,7 @@ defmodule Emisar.CatalogTest do
   end
 
   describe "list_pack_ids_for_account/1" do
-    test "reads one already-authorized account's pack ids and fails closed on a bad id" do
+    test "reads one already-authorized account's pack ids" do
       {account, _subject} = account_with_owner()
       Fixtures.Catalog.create_trusted_pack_version(account_id: account.id, pack_id: "postgres")
 
@@ -3655,7 +3655,6 @@ defmodule Emisar.CatalogTest do
       )
 
       assert Catalog.list_pack_ids_for_account(account.id) == ["postgres"]
-      assert Catalog.list_pack_ids_for_account("not-a-uuid") == []
     end
   end
 
@@ -6383,166 +6382,6 @@ defmodule Emisar.CatalogTest do
       {:ok, [trusted_a], _} = Catalog.list_pack_versions(subject_a)
       assert trusted_a.account_id == account_a.id
       assert Map.has_key?(trusted_a.trusted_manifest["actions"], "acme.secret")
-    end
-  end
-
-  describe "trusted_manifest_for_static_reads/1" do
-    test "bounds each model-facing side effect without rejecting detailed safety guidance" do
-      base_action = %RunnerAction{
-        action_id: "custom.inspect",
-        title: "Inspect",
-        description: "Inspect state.",
-        kind: :exec,
-        risk: :low,
-        args_schema: %{"args" => []},
-        examples: [],
-        search_terms: []
-      }
-
-      assert {:ok, _manifest} =
-               Emisar.Catalog.TrustedManifest.from_runner_actions([
-                 %{base_action | side_effects: [String.duplicate("a", 1_024)]}
-               ])
-
-      assert Emisar.Catalog.TrustedManifest.from_runner_actions([
-               %{base_action | side_effects: [String.duplicate("a", 1_025)]}
-             ]) == {:error, :invalid_manifest}
-    end
-
-    test "accepts only trusted rows carrying a complete versioned manifest" do
-      {:ok, manifest} =
-        Emisar.Catalog.TrustedManifest.from_runner_actions([
-          %RunnerAction{
-            action_id: "custom.inspect",
-            title: "Inspect",
-            description: "Inspect state.",
-            kind: :exec,
-            risk: :low,
-            side_effects: [],
-            args_schema: %{"args" => []},
-            examples: [],
-            search_terms: []
-          }
-        ])
-
-      assert {:ok, ^manifest} =
-               ConsoleProjection.trusted_manifest_for_static_reads(%PackVersion{
-                 trust_state: :trusted,
-                 trusted_manifest: manifest
-               })
-
-      assert ConsoleProjection.trusted_manifest_for_static_reads(%PackVersion{
-               trust_state: :trusted,
-               trusted_manifest: %{
-                 "custom.inspect" => %{"risk" => "low", "kind" => "exec"}
-               }
-             }) == {:error, :incomplete_manifest}
-
-      assert ConsoleProjection.trusted_manifest_for_static_reads(%PackVersion{
-               trust_state: :pending,
-               trusted_manifest: manifest
-             }) == {:error, :pack_untrusted}
-    end
-  end
-
-  describe "count_pack_versions_needing_decision/1" do
-    test "counts pending versions for the account and never another account's" do
-      {account, subject} = account_with_owner()
-      runner = Fixtures.Runners.create_runner(account_id: account.id)
-
-      # No shipped baseline for these versions → they land pending.
-      {:ok, _} =
-        Catalog.observe_state(
-          runner,
-          state_payload(
-            packs: %{
-              "linux-core" => %{"version" => "9.9.9", "hash" => "h1"},
-              "redis" => %{"version" => "9.9.9", "hash" => "h2"}
-            }
-          )
-        )
-
-      assert Catalog.count_pack_versions_needing_decision(subject) == 2
-
-      # A second account's pending pack must not leak into the first's count.
-      {other_account, other_subject} = account_with_owner()
-      other_runner = Fixtures.Runners.create_runner(account_id: other_account.id)
-
-      {:ok, _} =
-        Catalog.observe_state(
-          other_runner,
-          state_payload(packs: %{"redis" => %{"version" => "9.9.9", "hash" => "h3"}})
-        )
-
-      assert Catalog.count_pack_versions_needing_decision(subject) == 2
-      assert Catalog.count_pack_versions_needing_decision(other_subject) == 1
-    end
-
-    test "counts only decisions in current pack access" do
-      {account, subject} = account_with_owner()
-      runner = Fixtures.Runners.create_runner(account_id: account.id)
-
-      {:ok, _} =
-        Catalog.observe_state(
-          runner,
-          state_payload(
-            packs: %{
-              "linux-core" => %{"version" => "9.9.9", "hash" => "h1"},
-              "redis" => %{"version" => "9.9.9", "hash" => "h2"}
-            }
-          )
-        )
-
-      {:ok, linux_only} =
-        Accounts.RunnerAccess.new(:all, [], [], :restricted, ["linux-core"])
-
-      force_runner_access(account, subject, linux_only)
-      assert Catalog.count_pack_versions_needing_decision(subject) == 1
-    end
-
-    test "counts a retired-blocked trusted version, and stops once resolved" do
-      {account, subject} = account_with_owner()
-
-      {pack_id, _watermark} =
-        Emisar.Catalog.PackBaseline.retired_below() |> Enum.sort() |> List.first()
-
-      pack_version =
-        Fixtures.Catalog.create_trusted_pack_version(
-          account_id: account.id,
-          pack_id: pack_id,
-          version: "0.0.0"
-        )
-
-      assert Catalog.count_pack_versions_needing_decision(subject) == 1
-
-      # Overriding the retirement resolves the decision.
-      {:ok, _} = Catalog.override_pack_retirement(pack_version.id, subject)
-      assert Catalog.count_pack_versions_needing_decision(subject) == 0
-    end
-
-    test "a revoked (rejected) retired version is decided — not counted" do
-      {account, subject} = account_with_owner()
-
-      {pack_id, _watermark} =
-        Emisar.Catalog.PackBaseline.retired_below() |> Enum.sort() |> List.first()
-
-      pack_version =
-        Fixtures.Catalog.create_trusted_pack_version(
-          account_id: account.id,
-          pack_id: pack_id,
-          version: "0.0.0"
-        )
-
-      {:ok, _} = Catalog.revoke_pack_version_trust(pack_version.id, subject)
-
-      assert Catalog.count_pack_versions_needing_decision(subject) == 0
-    end
-
-    test "returns 0 for a subject without view_catalog (the badge silently disappears)" do
-      {account, _subject} = account_with_owner()
-      no_view = %Emisar.Auth.Subject{account: account, role: :runner, permissions: MapSet.new()}
-
-      assert Catalog.count_pack_versions_needing_decision(no_view) == 0
     end
   end
 

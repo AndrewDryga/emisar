@@ -1851,15 +1851,11 @@ defmodule Emisar.Catalog do
   sync's pack-scope allowlist.
   """
   def list_pack_ids_for_account(account_id) when is_binary(account_id) do
-    if Repo.valid_uuid?(account_id) do
-      PackVersion.Query.all()
-      |> PackVersion.Query.by_account_id(account_id)
-      |> PackVersion.Query.distinct_pack_ids()
-      |> Repo.all()
-      |> Enum.sort()
-    else
-      []
-    end
+    PackVersion.Query.all()
+    |> PackVersion.Query.by_account_id(account_id)
+    |> PackVersion.Query.distinct_pack_ids()
+    |> Repo.all()
+    |> Enum.sort()
   end
 
   @doc """
@@ -2343,13 +2339,10 @@ defmodule Emisar.Catalog do
     pack_versions =
       PackVersion.Query.all()
       |> PackVersion.Query.by_pack_refs(pack_refs)
-      |> PackVersion.Query.limit_to(length(pack_refs) + 1)
       |> Authorizer.for_subject(subject)
       |> Repo.all()
 
-    if length(pack_versions) <= length(pack_refs),
-      do: {:ok, pack_versions},
-      else: {:error, :candidate_catalog_too_large}
+    {:ok, pack_versions}
   end
 
   defp runbook_candidates(snapshot, request) do

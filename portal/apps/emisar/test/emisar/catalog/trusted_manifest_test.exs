@@ -258,4 +258,29 @@ defmodule Emisar.Catalog.TrustedManifestTest do
       overrides
     )
   end
+
+  describe "persisted/1" do
+    test "returns a current-schema manifest and rejects any other shape" do
+      {:ok, manifest} =
+        TrustedManifest.from_runner_actions([
+          %RunnerAction{
+            action_id: "custom.inspect",
+            title: "Inspect",
+            description: "Inspect state.",
+            kind: :exec,
+            risk: :low,
+            side_effects: [],
+            args_schema: %{"args" => []},
+            examples: [],
+            search_terms: []
+          }
+        ])
+
+      assert TrustedManifest.persisted(manifest) == {:ok, manifest}
+      assert TrustedManifest.persisted(nil) == {:error, :incomplete_manifest}
+
+      assert TrustedManifest.persisted(%{"custom.inspect" => %{"risk" => "low"}}) ==
+               {:error, :incomplete_manifest}
+    end
+  end
 end

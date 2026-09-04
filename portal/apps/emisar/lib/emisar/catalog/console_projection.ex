@@ -13,7 +13,7 @@ defmodule Emisar.Catalog.ConsoleProjection do
   them, so the dependency runs one way.
   """
 
-  alias Emisar.Catalog.{ActionSetDiff, PackBaseline, PackVersion, TrustedManifest}
+  alias Emisar.Catalog.{ActionSetDiff, PackBaseline, PackVersion}
   alias Emisar.Users
 
   # Severity order. Catalog's own risk folding reads it back through
@@ -363,19 +363,4 @@ defmodule Emisar.Catalog.ConsoleProjection do
 
     ActionSetDiff.changes(pending_actions, pack_version.trusted_manifest)
   end
-
-  @doc """
-  Return the trusted action manifest for static/MCP reads.
-
-  A historical trusted row with no current-schema manifest keeps its dispatch
-  semantics but cannot supply model-facing prose or schemas until an operator
-  reviews a new hash. The caller must already hold an account-scoped row.
-  """
-  @spec trusted_manifest_for_static_reads(PackVersion.t()) ::
-          {:ok, map()} | {:error, :pack_untrusted | :incomplete_manifest}
-
-  def trusted_manifest_for_static_reads(%PackVersion{trust_state: :trusted} = pack_version),
-    do: TrustedManifest.persisted(pack_version.trusted_manifest)
-
-  def trusted_manifest_for_static_reads(%PackVersion{}), do: {:error, :pack_untrusted}
 end
