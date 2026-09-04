@@ -179,9 +179,6 @@ func (client detectedClient) install(request clientEntryRequest) error {
 }
 
 func prepareConfigPath(path string) error {
-	if err := refuseConfigSymlink(path); err != nil {
-		return err
-	}
 	return os.MkdirAll(filepath.Dir(path), 0o700)
 }
 
@@ -696,11 +693,6 @@ func writeClientEnvFile(path string, request clientEntryRequest) error {
 
 func prepareClientEnvPath(path string) error {
 	directory := filepath.Dir(path)
-	for _, candidate := range []string{filepath.Dir(directory), directory, path} {
-		if info, err := os.Lstat(candidate); err == nil && info.Mode()&os.ModeSymlink != 0 {
-			return fmt.Errorf("%s is a symlink", candidate)
-		}
-	}
 	if err := validateReplaceableTarget(path, false); err != nil {
 		return err
 	}

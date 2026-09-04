@@ -2,7 +2,6 @@ package main
 
 import (
 	"errors"
-	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -380,17 +379,11 @@ func (adapter clientAdapter) configured(path string) bool {
 }
 
 func readConfigFile(path string) (string, error) {
-	if err := refuseConfigSymlink(path); err != nil {
-		return "", err
-	}
 	file, err := os.Open(path)
 	if err != nil {
 		return "", err
 	}
 	defer file.Close()
-	if err := validateConfigFileIdentity(path, file); err != nil {
-		return "", err
-	}
 	raw, err := readCappedBody(file, maxJSONConfigBytes)
 	if err != nil {
 		return "", err
@@ -400,35 +393,6 @@ func readConfigFile(path string) (string, error) {
 	// the textual editors below find the document at all; the canonical bytes
 	// this bridge writes back simply do not carry one.
 	return strings.TrimPrefix(string(raw), "\ufeff"), nil
-}
-
-func validateConfigFileIdentity(path string, file *os.File) error {
-	opened, err := file.Stat()
-	if err != nil {
-		return err
-	}
-	named, err := os.Lstat(path)
-	if err != nil {
-		return fmt.Errorf("%s changed while opening: %w", path, err)
-	}
-	if !opened.Mode().IsRegular() || !named.Mode().IsRegular() || !os.SameFile(opened, named) {
-		return fmt.Errorf("%s changed while opening", path)
-	}
-	return nil
-}
-
-func refuseConfigSymlink(path string) error {
-	info, err := os.Lstat(path)
-	if errors.Is(err, os.ErrNotExist) {
-		return nil
-	}
-	if err != nil {
-		return err
-	}
-	if info.Mode()&os.ModeSymlink != 0 {
-		return fmt.Errorf("%s is a symlink", path)
-	}
-	return nil
 }
 
 // readConfigSource reads a client config as the starting point for an edit: an
