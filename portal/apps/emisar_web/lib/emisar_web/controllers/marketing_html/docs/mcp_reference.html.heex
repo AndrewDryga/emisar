@@ -153,7 +153,8 @@
           <code>find_actions</code>
           accepts a plain-text task and shows ranked matches. <code>get_action</code>
           shows the selected action's side effects, trusted arguments, and compatible runner refs.
-          <code>recent_runs</code>
+          Pass it the immutable <code>pack_ref</code>
+          returned by <code>find_actions</code>. <code>recent_runs</code>
           and <code>get_operation</code>
           provide run history and mutation recovery.
         </p>
@@ -168,9 +169,9 @@
         <.docs_code
           phx-no-format
           label="shell"
-          copy_text={"emisar-mcp find_actions \"postgres replication\"\nemisar-mcp get_action '{\"action_id\":\"postgres.status\",\"pack_ref\":\"postgres@1.2.0/sha256:...\"}'\nemisar-mcp recent_runs '{\"scope\":\"own\",\"limit\":10}'\nemisar-mcp get_operation '{\"operation_id\":\"op_...\"}'"}
+          copy_text={"emisar-mcp find_actions \"postgres replication\"\nemisar-mcp get_action '{\"action_id\":\"postgres.replication_lag\",\"pack_ref\":\"<pack_ref from find_actions>\"}'\nemisar-mcp recent_runs '{\"scope\":\"own\",\"limit\":10}'\nemisar-mcp get_operation '{\"operation_id\":\"op_...\"}'"}
         ><span class="text-zinc-500">$</span> emisar-mcp find_actions <span class="text-brand-300">"postgres replication"</span>
-<span class="text-zinc-500">$</span> emisar-mcp get_action <span class="text-brand-300">'&#123;"action_id":"postgres.status","pack_ref":"postgres@1.2.0/sha256:..."&#125;'</span>
+<span class="text-zinc-500">$</span> emisar-mcp get_action <span class="text-brand-300">'&#123;"action_id":"postgres.replication_lag","pack_ref":"&lt;pack_ref from find_actions&gt;"&#125;'</span>
 <span class="text-zinc-500">$</span> emisar-mcp recent_runs <span class="text-brand-300">'&#123;"scope":"own","limit":10&#125;'</span>
 <span class="text-zinc-500">$</span> emisar-mcp get_operation <span class="text-brand-300">'&#123;"operation_id":"op_..."&#125;'</span></.docs_code>
 

@@ -286,12 +286,13 @@ operation ID is printed before waiting. Ctrl-C stops waiting, exits 130, and
 prints a `get_operation` command; it does not cancel the action. Any terminal
 status except `success`—`failed`, `error`, `validation_failed`,
 `unknown_action`, `denied`, `cancelled`, `timed_out`, or `refused`—makes the
-human command exit 1.
+human command exit 1. Pass `get_action` the immutable `pack_ref` returned by
+`find_actions`.
 
 ```sh
 emisar-mcp find_actions "postgres replication"
 emisar-mcp get_action \
-  '{"action_id":"postgres.status","pack_ref":"postgres@1.2.0/sha256:..."}'
+  '{"action_id":"postgres.replication_lag","pack_ref":"<pack_ref from find_actions>"}'
 emisar-mcp get_operation '{"operation_id":"op_..."}'
 emisar-mcp recent_runs '{"scope":"own","limit":10}'
 ```
