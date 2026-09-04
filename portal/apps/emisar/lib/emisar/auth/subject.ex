@@ -35,7 +35,6 @@ defmodule Emisar.Auth.Subject do
       session; nil otherwise.
   """
   alias Emisar.{Accounts, RequestContext, Users}
-  alias Emisar.Auth.Role
 
   @type role :: :owner | :admin | :operator | :viewer | :api_client | :runner
   @type permission :: {module(), atom()}
@@ -115,15 +114,6 @@ defmodule Emisar.Auth.Subject do
     }
   end
 
-  # Coerce a membership's role into a known role atom. Unknown values
-  # fall back to the least-privileged role (default-deny posture).
-  defp role_atom(role) do
-    case Role.cast(role) do
-      {:ok, role} -> role
-      :error -> :viewer
-    end
-  end
-
   @doc "The membership role currently allowed to authorize work, including fail-closed state."
   def effective_membership_role(%Accounts.Membership{} = membership) do
     if Accounts.Membership.authorizable?(membership),
@@ -134,9 +124,7 @@ defmodule Emisar.Auth.Subject do
   # Directory changes fail closed while their durable role + runner-access
   # reconciliation is pending. A human owner remains an owner; directory sync
   # is never allowed to grant or revoke that role.
-  defp authorizable_membership_role(%Accounts.Membership{role: role})
-       when role in [:owner, "owner"],
-       do: :owner
+  defp authorizable_membership_role(%Accounts.Membership{role: :owner}), do: :owner
 
   defp authorizable_membership_role(%Accounts.Membership{
          directory_authorization_pending_version: version
@@ -144,7 +132,7 @@ defmodule Emisar.Auth.Subject do
        when is_integer(version),
        do: :viewer
 
-  defp authorizable_membership_role(%Accounts.Membership{role: role}), do: role_atom(role)
+  defp authorizable_membership_role(%Accounts.Membership{role: role}), do: role
 
   # -- Helpers used by every context's `ensure_X_in_subject_account` -
 
