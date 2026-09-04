@@ -243,7 +243,7 @@ defmodule EmisarWeb.RunsLive do
                 This is a load error, not an empty feed — runs may well exist. Refresh the page;
                 if it persists, your access to this account may have changed.
               </.empty_state>
-            <% any_filter_active?(@filter_params, @filters) -> %>
+            <% LiveTable.has_active_filters?(@filter_params, @filters) -> %>
               <span class="text-zinc-400">No runs match these filters.</span>
             <% not connected?(@socket) -> %>
               <%!-- Dead/pre-connect render: don't commit to the onboarding
@@ -380,15 +380,5 @@ defmodule EmisarWeb.RunsLive do
       </LiveTable.live_table>
     </.console_shell>
     """
-  end
-
-  defp any_filter_active?(params, filters) do
-    Enum.any?(filters, fn f ->
-      case Map.get(params, to_string(f.name)) do
-        nil -> false
-        "" -> false
-        _ -> true
-      end
-    end)
   end
 end

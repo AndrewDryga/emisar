@@ -521,7 +521,7 @@ defmodule EmisarWeb.DashboardLive do
         </.link>
       </div>
       <ul class="mt-3 divide-y divide-zinc-800/70 border-t border-zinc-800/70">
-        <li :for={request <- Enum.take(@pending_approvals, 5)}>
+        <li :for={request <- @pending_approvals}>
           <.link
             navigate={~p"/app/#{@current_account}/approvals/#{request.id}"}
             class="group -mx-2 flex items-center gap-3 rounded-md px-2 py-3.5 transition hover:bg-white/[0.04]"
@@ -1030,7 +1030,7 @@ defmodule EmisarWeb.DashboardLive do
 
   # Tiles wear brand (healthy) or neutral — never amber: two amber tiles at
   # once read as an alarm wall and spend amber's attention value. The STATUS
-  # LINE carries the amber; a rose tile is reserved for a hard lockout (Team).
+  # LINE carries the amber.
   defp runners_tone(connected, total) when connected < total, do: :neutral
   defp runners_tone(_connected, _total), do: :brand
 
@@ -1204,7 +1204,7 @@ defmodule EmisarWeb.DashboardLive do
   # -- The pillar card shape --------------------------------------------
 
   attr :label, :string, required: true
-  attr :tone, :atom, required: true, values: [:brand, :rose, :neutral]
+  attr :tone, :atom, required: true, values: [:brand, :neutral]
   attr :status_tone, :atom, default: :neutral, values: [:amber, :rose, :neutral]
   attr :navigate, :string, required: true
   slot :value, required: true

@@ -55,14 +55,8 @@ defmodule EmisarWeb.RunnerDetailLive do
     |> assign(:pack_access_restricted?, access.pack_mode == :restricted)
   end
 
-  def handle_params(params, _uri, socket) do
-    # mount may have redirected; on the post-redirect cycle the runner won't be
-    # in scope so this branch is never reached.
-    case socket.assigns[:runner] do
-      nil -> {:noreply, socket}
-      runner -> {:noreply, load_lists(socket, runner, params)}
-    end
-  end
+  def handle_params(params, _uri, socket),
+    do: {:noreply, load_lists(socket, socket.assigns.runner, params)}
 
   # The paginated actions table + the recent-runs sidebar. Gated on connected?
   # so the two reads run once on the live mount, not also on the dead render

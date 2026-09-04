@@ -516,26 +516,14 @@ defmodule EmisarWeb.PoliciesLive do
   end
 
   # A "require approval" gate that adds no SECOND party — one approval needed and
-  # the requester may supply it. `to_string` guards both the int state and a raw
-  # form string mid-edit.
+  # the requester may supply it.
   defp single_reviewer_gate?(approval),
-    do: approval["allow_self_approval"] && to_string(approval["min_approvals"]) == "1"
-
-  defp approval_count(n) when is_integer(n) and n >= 1, do: n
-
-  defp approval_count(n) when is_binary(n) do
-    case Integer.parse(n) do
-      {i, _} when i >= 1 -> i
-      _ -> 1
-    end
-  end
-
-  defp approval_count(_), do: 1
+    do: approval["allow_self_approval"] && approval["min_approvals"] == 1
 
   # Singular when exactly one approval is required — "1 distinct operators" is wrong,
   # and "distinct" is meaningless for a single approver (nothing to be distinct from).
   defp approval_operators_noun(min_approvals) do
-    if approval_count(min_approvals) == 1, do: "operator", else: "distinct operators"
+    if min_approvals == 1, do: "operator", else: "distinct operators"
   end
 
   defp weakening_sentence([one]), do: one

@@ -692,13 +692,9 @@ defmodule EmisarWeb.RunNewLive do
   defp field_error(%{arg: arg, message: message}), do: {arg, {message, []}}
 
   # `examples` is a packspec field — list of `{description, args}` maps.
-  # Defensive: any shape that isn't a list is a no-op render. Empty
-  # examples (no args AND no description) are dropped — for a zero-arg
+  # Empty examples (no args AND no description) are dropped — for a zero-arg
   # action like `linux.uptime` they'd render a useless "{}" card.
-  defp action_examples(%{examples: list}) when is_list(list),
-    do: Enum.filter(list, &meaningful_example?/1)
-
-  defp action_examples(_), do: []
+  defp action_examples(%{examples: list}), do: Enum.filter(list, &meaningful_example?/1)
 
   defp meaningful_example?(%{"args" => args}) when is_map(args) and map_size(args) > 0, do: true
   defp meaningful_example?(%{"description" => d}) when is_binary(d) and d != "", do: true

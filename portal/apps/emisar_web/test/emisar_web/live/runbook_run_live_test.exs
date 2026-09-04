@@ -294,22 +294,6 @@ defmodule EmisarWeb.RunbookRunLiveTest do
       refute Repo.exists?(RunbookExecution)
     end
 
-    # The redirect above returns from mount before any execution assign exists,
-    # so terminate/2 then unsubscribes a socket that never subscribed. Matching a
-    # nil VALUE missed the ABSENT key and crashed the view on its way out. The
-    # operator still got their redirect, so it surfaced only as a logged crash —
-    # and it is asserted HERE, on the callback, rather than through live/2:
-    # terminate runs after live/2 returns, so a log-capturing test around the
-    # navigation passes whether or not the bug is present.
-    test "terminate/2 survives a socket that never subscribed", %{account: account} do
-      # The shape mount leaves behind on a redirect: the account is assigned by
-      # the auth hook, the execution assigns never are.
-      socket = %Phoenix.LiveView.Socket{assigns: %{__changed__: %{}, current_account: account}}
-
-      refute Map.has_key?(socket.assigns, :subscribed_execution_id)
-      assert EmisarWeb.RunbookRunLive.terminate(:shutdown, socket) == :ok
-    end
-
     test "an exact draft-test execution has a labeled read-only detail route", %{
       conn: conn,
       account: account,

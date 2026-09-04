@@ -195,7 +195,7 @@ defmodule EmisarWeb.ProfileLive do
     # Sequencing guard is the web's own state; the step-up factor decision, the
     # verify, and the commit are all `Auth.confirm_email_change`'s call — the
     # domain re-derives the factor from the fresh row and gates the write.
-    if step in [:totp, :code] and is_binary(new_email) do
+    if step in [:totp, :code] do
       handle_email_change_confirmation(socket, new_email, String.trim(code || ""), subject, step)
     else
       # Out-of-sequence (fired over the socket while :idle, before any save_email
@@ -210,7 +210,7 @@ defmodule EmisarWeb.ProfileLive do
 
     # Same fail-closed sequencing guard as confirm_email_change (IL-15): resend
     # only makes sense while an emailed-code step-up is pending.
-    if step == :code and is_binary(new_email) do
+    if step == :code do
       case Auth.issue_email_change_code(new_email, socket.assigns.current_subject) do
         {:ok, :sent} ->
           {:noreply,
@@ -248,7 +248,7 @@ defmodule EmisarWeb.ProfileLive do
   end
 
   def handle_event("start_oidc_link", %{"provider_id" => provider_id}, socket) do
-    case find_oidc_identity(socket, provider_id: provider_id) do
+    case Enum.find(socket.assigns.oidc_identities, &(&1.provider_id == provider_id)) do
       %{linked?: false} = identity ->
         {:noreply, begin_oidc_step_up(socket, identity, :link)}
 
@@ -265,7 +265,7 @@ defmodule EmisarWeb.ProfileLive do
 
   def handle_event("start_oidc_unlink", %{"identity_id" => identity_id}, socket)
       when is_binary(identity_id) do
-    case find_oidc_identity(socket, identity_id: identity_id) do
+    case Enum.find(socket.assigns.oidc_identities, &(&1.identity_id == identity_id)) do
       %{removable?: true} = identity ->
         {:noreply, begin_oidc_step_up(socket, identity, :unlink)}
 
@@ -902,15 +902,6 @@ defmodule EmisarWeb.ProfileLive do
 
   defp oidc_step_error(:email),
     do: "That confirmation code is wrong or expired. Try again, or resend it."
-
-  defp find_oidc_identity(socket, match) do
-    Enum.find(socket.assigns.oidc_identities, fn identity ->
-      Enum.all?(match, &oidc_identity_matches?(identity, &1))
-    end)
-  end
-
-  defp oidc_identity_matches?(identity, {field, value}),
-    do: Map.get(identity, field) == value
 
   defp reset_oidc_step_up(socket) do
     socket

@@ -1998,25 +1998,21 @@ defmodule EmisarWeb.AgentsLive do
   attr :id, :string, required: true
   attr :label, :string, required: true
   attr :selected, :boolean, default: false
-  attr :disabled, :boolean, default: false
 
   defp client_tab(assigns) do
     ~H"""
     <button
       type="button"
-      disabled={@disabled}
-      phx-click={not @disabled && "select_client"}
+      phx-click="select_client"
       phx-value-client={@id}
       class={[
         "inline-flex min-h-10 min-w-10 items-center justify-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium transition",
-        cond do
-          @disabled -> "cursor-not-allowed bg-zinc-900 text-zinc-500"
-          @selected -> "bg-zinc-100 text-zinc-950"
-          true -> "bg-zinc-900 text-zinc-300 hover:bg-zinc-800"
-        end
+        if(@selected,
+          do: "bg-zinc-100 text-zinc-950",
+          else: "bg-zinc-900 text-zinc-300 hover:bg-zinc-800"
+        )
       ]}
     >
-      <.icon :if={@disabled} name="state.locked" class="h-3.5 w-3.5" />
       {@label}
     </button>
     """

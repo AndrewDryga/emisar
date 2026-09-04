@@ -253,7 +253,7 @@ defmodule EmisarWeb.RunnersLive do
         # minted root-capable install key on every visit. A filtered miss is an
         # empty RESULT, never an empty fleet.
         show_wizard? =
-          runner_access.full_access? and runners == [] and meta.count == 0 and connected?(socket) and
+          runner_access.full_access? and runners == [] and meta.count == 0 and
             not LiveTable.has_active_filters?(params, filters)
 
         socket
