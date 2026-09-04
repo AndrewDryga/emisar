@@ -184,15 +184,9 @@ func verifyPack(ctx context.Context, rt *runtime, p *packspec.Pack, args map[str
 		res.Detail = "declares no verify action"
 		return res
 	}
-	action, ok := rt.registry().Action(p.Setup.Verify)
-	if !ok {
-		// The loader rejects a setup.verify that isn't one of the pack's own
-		// actions, so reaching here means the registry was built some other
-		// way. Say so rather than reporting a healthy pack.
-		res.Status = verifyFailed
-		res.Detail = "declared verify action is not loaded"
-		return res
-	}
+	// The loader rejects a setup.verify that is not one of the pack's own
+	// actions, so a loaded pack always carries it.
+	action, _ := rt.registry().Action(p.Setup.Verify)
 	if missing := missingRequiredArgs(action, args); len(missing) > 0 {
 		res.Status = verifySkipped
 		res.Detail = fmt.Sprintf("needs %s — probe it with: emisar pack verify %s %s",

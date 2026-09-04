@@ -138,8 +138,8 @@ func healAndSeed(path string) (string, error) {
 			// The torn line overruns the window, so it also overruns
 			// MaxLineBytes and no reader here could parse it either way. Cutting
 			// at a guessed offset would destroy complete events in the
-			// tamper-evident trail, so pay for the whole file instead.
-			return healAndSeedWholeFile(path)
+			// tamper-evident trail, so refuse the journal and leave it intact.
+			return "", fmt.Errorf("final line exceeds %d bytes", MaxLineBytes)
 		}
 		// cut < 0 on a complete file means the file is one torn line: +1
 		// truncates to 0, dropping it.
@@ -151,29 +151,12 @@ func healAndSeed(path string) (string, error) {
 
 	last := lastNonEmptyLine(tail)
 	if last == nil && partial {
-		// Only blank lines in the window — corruption or a hand-edit, never
-		// something Write produces. The real chain head is further back.
-		return healAndSeedWholeFile(path)
+		// A window's worth of blank lines is corruption or a hand-edit, never
+		// something Write produces. The real chain head is further back, and
+		// seeding an empty one would write a false break into the next event.
+		return "", errors.New("journal tail is blank")
 	}
 	return lineHash(last), nil
-}
-
-// healAndSeedWholeFile is the exact-but-slow path for a journal whose final
-// line does not fit the tail window. Never reached by a file this package
-// wrote; kept because a wrong truncation here is unrecoverable.
-func healAndSeedWholeFile(path string) (string, error) {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return "", err
-	}
-	if len(data) > 0 && data[len(data)-1] != '\n' {
-		cut := bytes.LastIndexByte(data, '\n') + 1
-		if err := os.Truncate(path, int64(cut)); err != nil {
-			return "", err
-		}
-		data = data[:cut]
-	}
-	return lineHash(lastNonEmptyLine(data)), nil
 }
 
 // lastNonEmptyLine returns the final non-empty newline-terminated line in data,
@@ -239,10 +222,9 @@ func (s *JSONLSink) Write(_ context.Context, ev Event) error {
 	copy(line, b)
 	line[len(b)] = '\n'
 
-	// Defensive: rotation can land in a state where the active file
-	// failed to reopen (disk full, perms). maybeRotateLocked returns
-	// an error in that case but if a future change ever loses that
-	// path, a nil-deref here would panic the runner goroutine.
+	// Close leaves no active file, and closing the journal is how the engine
+	// proves its fail-closed path — no durable start event, no execution — so
+	// this returns the error that path reads instead of dereferencing nil.
 	if s.f == nil {
 		return fmt.Errorf("audit: jsonl sink has no active file")
 	}

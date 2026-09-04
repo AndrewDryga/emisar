@@ -10,6 +10,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/andrewdryga/emisar/runner/pkg/actionspec"
@@ -192,10 +193,6 @@ func applyValidation(a actionspec.Arg, v any) (any, error) {
 	if err := applyScalarValidators(a, val, v); err != nil {
 		return nil, err
 	}
-	if val.MaxItems != nil {
-		// max_items on a non-array arg: schema bug, but be explicit.
-		return nil, newError(a.Name, "max_items", "requires array value")
-	}
 	return applyPathValidation(a, val, v)
 }
 
@@ -237,66 +234,63 @@ func applyScalarValidators(a actionspec.Arg, val *actionspec.Validation, v any) 
 			return newError(a.Name, "allowed", "value must be one of %v", val.Allowed)
 		}
 	}
+	// Arg.Validate settles the schema shapes this section would otherwise have
+	// to re-check: pattern only on string/path args and compiled at pack load,
+	// min/max only on numeric args, min_duration/max_duration only on duration
+	// args. Coerce then produces the matching Go type, so each validator reads
+	// its value directly.
 	if val.Pattern != "" {
-		s, ok := v.(string)
-		if !ok {
-			return newError(a.Name, "type", "pattern requires string value")
-		}
-		re, err := regexp.Compile(val.Pattern)
-		if err != nil {
-			return newError(a.Name, "pattern", "invalid regex in schema: %v", err)
-		}
-		if !re.MatchString(s) {
+		s, _ := v.(string)
+		if !matchesPattern(val.Pattern, s) {
 			return newError(a.Name, "pattern", "must match pattern %s", val.Pattern)
 		}
 	}
-	if val.Min != nil {
-		below, ok := belowNumericBound(v, *val.Min)
-		if !ok {
-			return newError(a.Name, "min", "min requires numeric value")
-		}
-		if below {
-			return newError(a.Name, "min", "must be >= %v", *val.Min)
-		}
+	if val.Min != nil && belowNumericBound(v, *val.Min) {
+		return newError(a.Name, "min", "must be >= %v", *val.Min)
 	}
-	if val.Max != nil {
-		above, ok := aboveNumericBound(v, *val.Max)
-		if !ok {
-			return newError(a.Name, "max", "max requires numeric value")
-		}
-		if above {
-			return newError(a.Name, "max", "must be <= %v", *val.Max)
-		}
+	if val.Max != nil && aboveNumericBound(v, *val.Max) {
+		return newError(a.Name, "max", "must be <= %v", *val.Max)
 	}
-	if val.MinDuration != nil {
-		d, ok := v.(time.Duration)
-		if !ok {
-			return newError(a.Name, "min_duration", "requires duration value")
-		}
-		if d < val.MinDuration.Std() {
+	if val.MinDuration != nil || val.MaxDuration != nil {
+		d, _ := v.(time.Duration)
+		if val.MinDuration != nil && d < val.MinDuration.Std() {
 			return newError(a.Name, "min_duration", "must be >= %s", val.MinDuration.Std())
 		}
-	}
-	if val.MaxDuration != nil {
-		d, ok := v.(time.Duration)
-		if !ok {
-			return newError(a.Name, "max_duration", "requires duration value")
-		}
-		if d > val.MaxDuration.Std() {
+		if val.MaxDuration != nil && d > val.MaxDuration.Std() {
 			return newError(a.Name, "max_duration", "must be <= %s", val.MaxDuration.Std())
 		}
 	}
 	return nil
 }
 
-func belowNumericBound(value any, bound float64) (bool, bool) {
-	comparison, ok := compareNumeric(value, bound)
-	return ok && comparison < 0, ok
+// patterns holds every arg pattern this process has compiled. The set comes
+// from the installed packs, so it is small and fixed once they are loaded —
+// without it every dispatch recompiled the same regex.
+var patterns sync.Map // pattern -> *regexp.Regexp
+
+func matchesPattern(pattern, s string) bool {
+	cached, ok := patterns.Load(pattern)
+	if !ok {
+		compiled, err := regexp.Compile(pattern)
+		if err != nil {
+			// Arg.Validate compiled this at pack load, so it cannot fail for a
+			// loaded action; refuse the value rather than admit it unchecked.
+			return false
+		}
+		patterns.Store(pattern, compiled)
+		cached = compiled
+	}
+	return cached.(*regexp.Regexp).MatchString(s)
 }
 
-func aboveNumericBound(value any, bound float64) (bool, bool) {
+func belowNumericBound(value any, bound float64) bool {
 	comparison, ok := compareNumeric(value, bound)
-	return ok && comparison > 0, ok
+	return ok && comparison < 0
+}
+
+func aboveNumericBound(value any, bound float64) bool {
+	comparison, ok := compareNumeric(value, bound)
+	return ok && comparison > 0
 }
 
 // applyPathValidation runs path allow/deny rules and returns the canonical
@@ -900,18 +894,10 @@ func applyArrayItemLimit(a actionspec.Arg, v any) error {
 		return nil
 	}
 	limit := defaultMaxItems
-	declared := a.Validation != nil && a.Validation.MaxItems != nil
-	if declared {
+	if a.Validation != nil && a.Validation.MaxItems != nil {
 		limit = *a.Validation.MaxItems
 	}
-	n, ok := arrayLen(v)
-	if !ok {
-		if declared {
-			return newError(a.Name, "max_items", "requires array value")
-		}
-		return nil
-	}
-	if n > limit {
+	if n, _ := arrayLen(v); n > limit {
 		return newError(a.Name, "max_items", "too many items (max %d)", limit)
 	}
 	return nil

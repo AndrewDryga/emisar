@@ -1036,20 +1036,10 @@ func (e *Engine) combinedRedactor(act *actionspec.Action, cleanArgs map[string]a
 		rules = append(rules, redact.LiteralSet(sensitiveArgsRule, secrets, "[REDACTED]"))
 	}
 
-	authored, err := redact.CompileAll(act.Output.Redact)
-	if err != nil {
-		// Never drop the sensitive set because an AUTHORED rule failed to compile:
-		// that would widen what reaches the journal and the portal for a reason
-		// that has nothing to do with the arguments. Synthesizing the set cannot
-		// fail, so it still applies. Unreachable today (authored rules are
-		// validated at pack load) — this is about the next caller.
-		e.Logger.Warn("redact.compile_failed",
-			"action", act.ID,
-			"error", err,
-			"fallback", "sensitive arguments and global rules only")
-		return global.Extend(rules)
-	}
-
+	// Authored rules compile at pack load (actionspec.RedactionRule.Validate),
+	// so a loaded action cannot fail here; a rule that somehow did not compile
+	// is dropped rather than taking the sensitive set down with it.
+	authored, _ := redact.CompileAll(act.Output.Redact)
 	return global.Extend(append(rules, authored...))
 }
 

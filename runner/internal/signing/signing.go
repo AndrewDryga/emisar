@@ -226,9 +226,10 @@ func (v *Verifier) Check(dispatch Dispatch, att *Attestation) Decision {
 		return refuse("target_mismatch",
 			"this runner generation is not named exactly once in the signed target set")
 	}
-	// 3. The signer emits 16 random bytes as lowercase hex. Keeping that exact
-	//    shape bounds replay keys and rejects delimiter/control-character input
-	//    even though the v5 signed body is independently unambiguous.
+	// 3. The signer emits 16 random bytes as lowercase hex, and step 7 journals
+	//    every accepted nonce. The nonce journal reloads only that shape, within
+	//    a 256-byte record, so accepting another one here would persist a record
+	//    the next boot reads as a corrupt journal and refuse signed dispatch.
 	if !validNonce(att.Nonce) {
 		return refuse("bad_nonce", "the attestation nonce is not 32 lowercase hex characters")
 	}
