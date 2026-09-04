@@ -41,7 +41,7 @@ cases:
     action: artifactory.repositories
     args: {type: remote}
     expect:
-      stdout_contains: ["[ ]"]
+      stdout_contains: ["[]"]
       stdout_not_contains: [example-repo-local]
   - action: artifactory.file_info
     args: {repo: example-repo-local, path: smoke/hello.txt}

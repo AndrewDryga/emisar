@@ -111,6 +111,7 @@ cases:
     action: nomad.job_health_snapshot
     env:
       NOMAD_TOKEN: "bbbbbbbb-cccc-dddd-eeee-ffffffffffff"
+      PATH: /tmp/packtest-nomad-bin:/opt/emisar/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
     args:
       job: packtest-health
       allocation_limit: 5
@@ -120,11 +121,14 @@ cases:
           - /bin/sh
           - -c
           - |
+            set -eu
+            mkdir -p /tmp/packtest-nomad-bin
             printf '%s\n' 'namespace "default" { capabilities = ["read-job"] }' > /tmp/packtest-read-job.hcl
-            printf '%s\n' 'bbbbbbbb-cccc-dddd-eeee-ffffffffffff' > /tmp/packtest-read-job.secret
-            NOMAD_TOKEN=aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee nomad acl policy apply packtest-read-job /tmp/packtest-read-job.hcl
-            NOMAD_TOKEN=aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee nomad acl token create -accessor=cccccccc-dddd-eeee-ffff-000000000000 -policy=packtest-read-job /tmp/packtest-read-job.secret
-            NOMAD_TOKEN=aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee nomad job run -detach /packs/nomad/test/fixtures/health.nomad.hcl
+            NOMAD_TOKEN=aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee /usr/local/bin/nomad acl policy apply packtest-read-job /tmp/packtest-read-job.hcl
+            NOMAD_TOKEN=aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee /usr/local/bin/nomad acl token create -json -policy=packtest-read-job | jq -er .SecretID > /tmp/packtest-read-job.secret
+            NOMAD_TOKEN=aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee /usr/local/bin/nomad job run -detach /packs/nomad/test/fixtures/health.nomad.hcl
+            printf '%s\n' '#!/bin/sh' 'export NOMAD_TOKEN=$(cat /tmp/packtest-read-job.secret)' 'exec /usr/local/bin/nomad "$@"' > /tmp/packtest-nomad-bin/nomad
+            chmod 700 /tmp/packtest-nomad-bin/nomad
     expect:
       stdout_contains:
         - '"id":"packtest-health"'
@@ -152,7 +156,7 @@ cases:
         - '"packtest-inspect"'
         # The fixture's secret-named env var comes back masked by the runner's
         # default redaction — the leak this action's high risk is about.
-        - '"PACKTEST_DB_PASSWORD": "[REDACTED]"'
+        - '"PACKTEST_DB_PASSWORD":"[REDACTED]"'
       stdout_not_contains:
         - packtest-canary-nomad-e57d31
   - action: nomad.acl_token_self

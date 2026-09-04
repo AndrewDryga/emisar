@@ -54,7 +54,7 @@ cases:
       scope: zone
       location: us-central1-a
     expect:
-      stdout_contains: [harness-mig, '"isStable": true', harness-template]
+      stdout_contains: [harness-mig, '"isStable":true', harness-template]
   - name: gcp.mig-health-regional
     action: gcp.mig_health
     args:
@@ -63,7 +63,7 @@ cases:
       scope: region
       location: us-central1
     expect:
-      stdout_contains: [harness-mig, '"isStable": true', harness-template]
+      stdout_contains: [harness-mig, '"isStable":true', harness-template]
   - name: gcp.operation-status-global
     action: gcp.operation_status
     args:
@@ -167,7 +167,7 @@ cases:
       location: us-central1-a
       size: 3
     expect:
-      stdout_contains: [harness-mig, '"targetSize": 3']
+      stdout_contains: [harness-mig, '"targetSize":3']
     probes:
       - name: the provider received the zonal resize
         argv: [curl, -fsS, http://gcp-api:8080/probe/state]
@@ -182,7 +182,7 @@ cases:
       location: us-central1
       size: 2
     expect:
-      stdout_contains: [harness-mig, '"targetSize": 2']
+      stdout_contains: [harness-mig, '"targetSize":2']
     probes:
       - name: the provider received the regional resize
         argv: [curl, -fsS, http://gcp-api:8080/probe/state]
@@ -197,7 +197,7 @@ cases:
       location: us-central1-a
       size: 0
     expect:
-      stdout_contains: [harness-mig, '"targetSize": 0']
+      stdout_contains: [harness-mig, '"targetSize":0']
     probes:
       - name: the provider received the size-zero resize
         argv: [curl, -fsS, http://gcp-api:8080/probe/state]

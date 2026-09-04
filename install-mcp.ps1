@@ -557,7 +557,7 @@ $versionNumber = $release.Tag.Substring(5)
 # apply the same rule. An explicit -Version stays the deliberate rollback route.
 $installedVersion = Get-InstalledVersion $executable
 if ($null -ne $installedVersion) {
-    if (-not $Version -and $installedVersion -ge [Version]$versionNumber) {
+    if (-not $Version -and -not $ConnectAll -and $installedVersion -ge [Version]$versionNumber) {
         Write-Info "emisar-mcp $installedVersion is already current"
         return
     }
@@ -624,8 +624,30 @@ if ($Yes -and -not $ConnectAll) {
     if ($ConnectAll) { $connectArguments += @("--all") }
     & {
         $ErrorActionPreference = "Continue"
-        & $executable @connectArguments
-        if ($LASTEXITCODE -ne 0) {
+        # The installer is establishing stored, per-account credentials. An
+        # ambient pair is for direct commands and would make connect validate
+        # that pair instead of the stored account a reinstall is meant to
+        # repair. Keep the caller's process environment intact after the child.
+        $inheritedURL = $env:EMISAR_URL
+        $inheritedAPIKey = $env:EMISAR_API_KEY
+        try {
+            $env:EMISAR_URL = $null
+            $env:EMISAR_API_KEY = $null
+            & $executable @connectArguments
+            $connectExitCode = $LASTEXITCODE
+        } finally {
+            if ($null -eq $inheritedURL) {
+                $env:EMISAR_URL = $null
+            } else {
+                $env:EMISAR_URL = $inheritedURL
+            }
+            if ($null -eq $inheritedAPIKey) {
+                $env:EMISAR_API_KEY = $null
+            } else {
+                $env:EMISAR_API_KEY = $inheritedAPIKey
+            }
+        }
+        if ($connectExitCode -ne 0) {
             Write-WarningLine "connection setup did not finish; run 'emisar-mcp connect', or use the manual snippets at $($script:PortalOrigin)/app/agents/connect"
         }
     }

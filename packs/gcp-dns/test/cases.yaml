@@ -62,7 +62,7 @@ cases:
       ttl: 120
       values: "203.0.113.99"
     expect:
-      stdout_contains: [api.example.test., 203.0.113.99, '"ttl": 120']
+      stdout_contains: [api.example.test., 203.0.113.99, '"ttl":120']
     probes:
       - name: the provider received the patch
         argv: [curl, -fsS, http://gcp-api:8080/probe/state]
@@ -102,7 +102,7 @@ cases:
       type: A
       values: "203.0.113.30"
     expect:
-      stdout_contains: [api.example.test., 203.0.113.30, '"deleted": true']
+      stdout_contains: [api.example.test., 203.0.113.30, '"deleted":true']
       stderr_contains: ["Executed transaction"]
     probes:
       - name: the provider received the exact-match deletion change

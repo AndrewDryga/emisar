@@ -196,7 +196,7 @@ cases:
       submission_id:
         argv: [/bin/sh, -c, 'curl -fsS "$SPARK_MASTER_URL/json/" | jq -r ".activedrivers[0].id"']
     expect:
-      stdout_contains: [RUNNING, '"success" : true']
+      stdout_contains: [RUNNING, '"success":true']
 
   # -------------------------------------------------------------- controls
   - action: spark.job_kill
@@ -286,7 +286,7 @@ cases:
       submission_id:
         argv: [/bin/sh, -c, 'curl -fsS "$SPARK_MASTER_URL/json/" | jq -r ".activedrivers[0].id"']
     expect:
-      stdout_contains: ['"success" : true', KillSubmissionResponse]
+      stdout_contains: ['"success":true', KillSubmissionResponse]
     probes:
       - name: the driver leaves the master's active list
         argv:

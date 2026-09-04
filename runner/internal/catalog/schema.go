@@ -27,7 +27,7 @@ var actionSchema []byte
 // whenever any embedded schema changes, then update each schema's $id to the
 // matching published object path. Older schema objects remain permanently
 // available under their prior filenames.
-const SchemaArtifactVersion = 6
+const SchemaArtifactVersion = 7
 
 // Schemas returns the object-name → bytes map of published JSON schemas.
 func Schemas() map[string][]byte {

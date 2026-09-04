@@ -59,7 +59,7 @@ cases:
     arrange:
       - argv: [/bin/sh, -c, 'curl -fsS -u "$ELASTIC_USER:$ELASTIC_PASSWORD" -H "Content-Type: application/json" -X PUT "$ELASTIC_URL/packtest/_doc/1?refresh=true" -d "{\"status\":\"ready\"}" >/dev/null']
     expect:
-      stdout_contains: ['"count" : 1']
+      stdout_contains: ['"count":1']
     cleanup:
       - argv: [/bin/sh, -c, 'curl -fsS -u "$ELASTIC_USER:$ELASTIC_PASSWORD" -X DELETE "$ELASTIC_URL/packtest" >/dev/null']
   - action: es.index_mapping
@@ -124,7 +124,7 @@ cases:
     arrange:
       - argv: [/bin/sh, -c, 'curl -fsS -u "$ELASTIC_USER:$ELASTIC_PASSWORD" -H "Content-Type: application/json" -X PUT "$ELASTIC_URL/packtest-cache/_doc/1?refresh=true" -d "{\"status\":\"ready\"}" >/dev/null']
     expect:
-      stdout_contains: ['"successful"', '"failed" : 0']
+      stdout_contains: ['"successful"', '"failed":0']
     probes:
       # The observable state: the index answers queries after its caches drop.
       - argv: [/bin/sh, -c, 'curl -fsS -u "$ELASTIC_USER:$ELASTIC_PASSWORD" "$ELASTIC_URL/packtest-cache/_count"']
