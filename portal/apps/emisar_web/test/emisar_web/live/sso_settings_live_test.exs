@@ -927,6 +927,20 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
       refute has_element?(lv, "#provider-oidc-step-form")
     end
 
+    test "a crafted step-up event with no verification in progress spends no attempt", %{
+      conn: conn,
+      account: account
+    } do
+      provider = insert_provider(account, %{name: "Workforce Okta", enabled: false})
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/sso/#{provider.id}")
+
+      confirmed = render_hook(lv, "confirm_oidc_step_up", %{"oidc_step" => %{"code" => "000000"}})
+
+      assert confirmed =~ "Start sign-in verification first."
+      assert render_hook(lv, "resend_oidc_step_up", %{}) =~ "Start sign-in verification again."
+      refute_received {:email, _email}
+    end
+
     test "offers activation only after current settings have a real sign-in receipt", %{
       conn: conn,
       account: account,

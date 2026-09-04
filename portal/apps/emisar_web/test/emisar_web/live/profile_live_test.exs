@@ -569,6 +569,19 @@ defmodule EmisarWeb.ProfileLiveTest do
       assert html =~ "That sign-in method is no longer available."
       refute_received {:email, _email}
     end
+
+    test "a crafted step-up event with nothing in progress spends no attempt", %{
+      conn: conn,
+      account: account
+    } do
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/profile")
+
+      confirmed = render_hook(lv, "confirm_oidc_step_up", %{"oidc_step" => %{"code" => "000000"}})
+
+      assert confirmed =~ "Choose a sign-in method first."
+      assert render_hook(lv, "resend_oidc_step_up", %{}) =~ "Start the confirmation again."
+      refute_received {:email, _email}
+    end
   end
 
   describe "sessions" do

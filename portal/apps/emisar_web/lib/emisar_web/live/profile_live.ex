@@ -2,7 +2,7 @@ defmodule EmisarWeb.ProfileLive do
   use EmisarWeb, :live_view
   alias Emisar.{Auth, SSO, Users}
   alias EmisarWeb.{ConfirmDialog, LiveForm, LiveTable, MfaEnrollment}
-  alias EmisarWeb.{MfaErrors, OIDCIdentityHandoff, UserAgent}
+  alias EmisarWeb.{MfaErrors, OIDCStepUp, UserAgent}
   alias Phoenix.LiveView.JS
 
   # Both step-ups on this page — the email-change authenticator branch and
@@ -11,6 +11,10 @@ defmodule EmisarWeb.ProfileLive do
   @mfa_enrollment_email_unavailable_error "Your identity provider did not supply an email address. Ask your administrator to update it, then sign in again."
   @mfa_enrollment_email_suppressed_error "Emisar cannot deliver mail to your current address. Contact support to restore email delivery before setting up MFA."
   @mfa_enrollment_email_delivery_error "We could not deliver the verification code. Try again. If it keeps failing, contact support."
+
+  # Named once so linking and removing a sign-in method report an unstartable
+  # step-up identically — the operator hit the same wall either way.
+  @oidc_step_up_start_error "Couldn't start confirmation. Try again."
 
   def mount(_params, _session, socket) do
     user = socket.assigns.current_user
@@ -30,7 +34,7 @@ defmodule EmisarWeb.ProfileLive do
      |> assign(:sessions_error?, false)
      |> assign(:oidc_identities, [])
      |> assign(:oidc_identities_error?, false)
-     |> reset_oidc_step_up()
+     |> OIDCStepUp.reset()
      |> ConfirmDialog.init()
      |> assign_mfa_facts(user)
      |> assign_profile_form(user)
@@ -250,10 +254,10 @@ defmodule EmisarWeb.ProfileLive do
   def handle_event("start_oidc_link", %{"provider_id" => provider_id}, socket) do
     case Enum.find(socket.assigns.oidc_identities, &(&1.provider_id == provider_id)) do
       %{linked?: false} = identity ->
-        {:noreply, begin_oidc_step_up(socket, identity, :link)}
+        {:noreply, OIDCStepUp.begin(socket, identity, :link, @oidc_step_up_start_error)}
 
       %{linked?: true, removable?: false} = identity ->
-        {:noreply, begin_oidc_step_up(socket, identity, :link)}
+        {:noreply, OIDCStepUp.begin(socket, identity, :link, @oidc_step_up_start_error)}
 
       %{linked?: true, removable?: true} ->
         {:noreply, put_flash(socket, :info, "That sign-in method is already linked.")}
@@ -267,7 +271,7 @@ defmodule EmisarWeb.ProfileLive do
       when is_binary(identity_id) do
     case Enum.find(socket.assigns.oidc_identities, &(&1.identity_id == identity_id)) do
       %{removable?: true} = identity ->
-        {:noreply, begin_oidc_step_up(socket, identity, :unlink)}
+        {:noreply, OIDCStepUp.begin(socket, identity, :unlink, @oidc_step_up_start_error)}
 
       %{linked?: true} ->
         {:noreply,
@@ -284,25 +288,10 @@ defmodule EmisarWeb.ProfileLive do
 
   def handle_event("confirm_oidc_step_up", %{"oidc_step" => %{"code" => code}}, socket) do
     case socket.assigns.oidc_step do
-      %{provider_id: provider_id, purpose: purpose} = step ->
-        case Auth.confirm_oidc_identity_step_up(
-               provider_id,
-               purpose,
-               String.trim(code || ""),
-               socket.assigns.current_subject
-             ) do
-          {:ok, proof} ->
-            complete_oidc_step_up(socket, step, proof)
-
-          {:error, :rate_limited} ->
-            {:noreply, assign(socket, :oidc_step_error, MfaErrors.message(:rate_limited))}
-
-          {:error, :replay} ->
-            {:noreply,
-             assign(socket, :oidc_step_error, "That authenticator code was already used.")}
-
-          {:error, _reason} ->
-            {:noreply, assign(socket, :oidc_step_error, oidc_step_error(step.factor))}
+      %{} = step ->
+        case OIDCStepUp.confirm(step, code, socket.assigns.current_subject) do
+          {:ok, proof} -> complete_oidc_step_up(socket, step, proof)
+          {:error, message} -> {:noreply, assign(socket, :oidc_step_error, message)}
         end
 
       nil ->
@@ -313,35 +302,7 @@ defmodule EmisarWeb.ProfileLive do
   def handle_event("resend_oidc_step_up", _params, socket) do
     case socket.assigns.oidc_step do
       %{factor: :email} = step ->
-        case Auth.resend_oidc_identity_step_up_code(
-               step.provider_id,
-               step.provider_name,
-               step.purpose,
-               socket.assigns.current_subject
-             ) do
-          {:ok, :sent} ->
-            {:noreply,
-             socket
-             |> assign(:oidc_step_error, nil)
-             |> put_flash(:info, "We sent a new code to #{socket.assigns.current_user.email}.")}
-
-          # The account email won't accept mail, so no code can arrive — say so
-          # and drop back to the identity list instead of waiting for a code.
-          {:ok, :suppressed} ->
-            {:noreply,
-             socket
-             |> reset_oidc_step_up()
-             |> put_flash(
-               :error,
-               "We can't deliver a code to #{socket.assigns.current_user.email}."
-             )}
-
-          {:error, :rate_limited} ->
-            {:noreply, assign(socket, :oidc_step_error, MfaErrors.message(:email_rate_limited))}
-
-          {:error, _reason} ->
-            {:noreply, assign(socket, :oidc_step_error, "Couldn't send a new code. Try again.")}
-        end
+        {:noreply, OIDCStepUp.resend(socket, step)}
 
       _other ->
         {:noreply, put_flash(socket, :error, "Start the confirmation again.")}
@@ -349,7 +310,7 @@ defmodule EmisarWeb.ProfileLive do
   end
 
   def handle_event("cancel_oidc_step_up", _params, socket),
-    do: {:noreply, reset_oidc_step_up(socket)}
+    do: {:noreply, OIDCStepUp.reset(socket)}
 
   def handle_event("confirm_typed", params, socket),
     do: {:noreply, ConfirmDialog.put_typed(socket, params)}
@@ -812,42 +773,6 @@ defmodule EmisarWeb.ProfileLive do
   defp step_up_error(_),
     do: "That confirmation code is wrong or expired. Try again, or resend a new one."
 
-  defp begin_oidc_step_up(socket, identity, purpose) do
-    case Auth.begin_oidc_identity_step_up(
-           identity.provider_id,
-           identity.provider_name,
-           purpose,
-           socket.assigns.current_subject
-         ) do
-      {:ok, factor} ->
-        socket
-        |> assign(:oidc_step, Map.merge(identity, %{purpose: purpose, factor: factor}))
-        |> assign(:oidc_step_error, nil)
-        |> assign(:oidc_step_form, to_form(%{"code" => ""}, as: "oidc_step"))
-        |> maybe_flash_oidc_code(factor)
-
-      # The account email can't receive the confirmation code, so the step-up
-      # can't proceed — tell them plainly rather than showing a code prompt.
-      {:error, :delivery_suppressed} ->
-        put_flash(
-          socket,
-          :error,
-          "We can't deliver a code to #{socket.assigns.current_user.email}."
-        )
-
-      {:error, :rate_limited} ->
-        put_flash(socket, :error, MfaErrors.message(:email_rate_limited))
-
-      {:error, _reason} ->
-        put_flash(socket, :error, "Couldn't start confirmation. Try again.")
-    end
-  end
-
-  defp maybe_flash_oidc_code(socket, :email),
-    do: put_flash(socket, :info, "We emailed a confirmation code to your current address.")
-
-  defp maybe_flash_oidc_code(socket, :mfa), do: socket
-
   defp complete_oidc_step_up(socket, %{purpose: :unlink} = step, proof) do
     case SSO.unlink_identity(
            step.identity_id,
@@ -859,7 +784,7 @@ defmodule EmisarWeb.ProfileLive do
         {:noreply,
          socket
          |> put_flash(:info, "#{step.provider_name} was removed from your profile.")
-         |> reset_oidc_step_up()
+         |> OIDCStepUp.reset()
          |> load_oidc_identities()}
 
       {:error, :required_sso_identity} ->
@@ -869,48 +794,18 @@ defmodule EmisarWeb.ProfileLive do
            :error,
            "Link another enabled sign-in method before removing the one this workspace requires."
          )
-         |> reset_oidc_step_up()}
+         |> OIDCStepUp.reset()}
 
       {:error, _reason} ->
         {:noreply,
          socket
          |> put_flash(:error, "Couldn't remove that sign-in method. Refresh and try again.")
-         |> reset_oidc_step_up()}
+         |> OIDCStepUp.reset()}
     end
   end
 
-  defp complete_oidc_step_up(socket, %{purpose: :link} = step, proof) do
-    payload = %{
-      actor_id: socket.assigns.current_user.id,
-      actor_membership_id: socket.assigns.current_subject.membership_id,
-      actor_session_token_digest: socket.assigns.current_auth.token,
-      account_id: socket.assigns.current_account.id,
-      provider_id: step.provider_id,
-      purpose: :link,
-      proof: proof
-    }
-
-    {:noreply,
-     socket
-     |> assign(:oidc_handoff, OIDCIdentityHandoff.sign(payload))
-     |> assign(:oidc_trigger_submit, true)
-     |> assign(:oidc_step_error, nil)}
-  end
-
-  defp oidc_step_error(:mfa),
-    do: "That authenticator or recovery code didn't match. Try again."
-
-  defp oidc_step_error(:email),
-    do: "That confirmation code is wrong or expired. Try again, or resend it."
-
-  defp reset_oidc_step_up(socket) do
-    socket
-    |> assign(:oidc_step, nil)
-    |> assign(:oidc_step_error, nil)
-    |> assign(:oidc_step_form, to_form(%{"code" => ""}, as: "oidc_step"))
-    |> assign(:oidc_handoff, nil)
-    |> assign(:oidc_trigger_submit, false)
-  end
+  defp complete_oidc_step_up(socket, %{purpose: :link} = step, proof),
+    do: {:noreply, OIDCStepUp.handoff(socket, step, proof)}
 
   defp assign_mfa_form(socket) do
     assign(socket, :mfa_form, to_form(%{"otp" => ""}, as: "mfa"))

@@ -1,8 +1,8 @@
 defmodule EmisarWeb.SSOSettingsLive do
   use EmisarWeb, :live_view
-  alias Emisar.{Accounts, Auth, Runners, SSO}
+  alias Emisar.{Accounts, Runners, SSO}
   alias EmisarWeb.{ConfirmDialog, LiveForm, LiveTable, MailTo, MemberErrors, RoleCopy}
-  alias EmisarWeb.{OIDCIdentityHandoff, Permissions, RunnerScope}
+  alias EmisarWeb.{OIDCStepUp, Permissions, RunnerScope}
   alias Phoenix.LiveView.JS
 
   @role_mapping_prefix "role_mappings_"
@@ -13,6 +13,10 @@ defmodule EmisarWeb.SSOSettingsLive do
   # The two add-mapping forms each own one group picker. The scope keys their
   # state and rides their events, so the shared handlers know which form asked.
   @group_picker_scopes ~w(role runner_access)
+
+  # Named the connection's own action: the shared step-up cannot know that this
+  # page is proving a real provider sign-in rather than linking a profile.
+  @sign_in_verification_start_error "Couldn't start sign-in verification."
 
   # Humanized provider-kind labels for the select + the row badge — the enum's
   # atoms don't title-case cleanly ("openid_connect" → "OpenID Connect").
@@ -136,7 +140,7 @@ defmodule EmisarWeb.SSOSettingsLive do
       # or {:error, reason}. Cleared whenever the form changes so it never lies.
       |> assign(:test_result, nil)
       |> assign(:sign_in_verification, nil)
-      |> reset_oidc_step_up()
+      |> OIDCStepUp.reset()
       # False until the connected mount pass runs the list read — so the
       # "No connections yet" empty state never flashes for a team that *has*
       # connections (the first, unconnected pass renders chrome only).
@@ -440,25 +444,10 @@ defmodule EmisarWeb.SSOSettingsLive do
 
   def handle_event("confirm_oidc_step_up", %{"oidc_step" => %{"code" => code}}, socket) do
     case socket.assigns.oidc_step do
-      %{provider_id: provider_id} = step ->
-        case Auth.confirm_oidc_identity_step_up(
-               provider_id,
-               :verify_provider,
-               String.trim(code || ""),
-               socket.assigns.current_subject
-             ) do
-          {:ok, proof} ->
-            complete_provider_step_up(socket, step, proof)
-
-          {:error, :rate_limited} ->
-            {:noreply, assign(socket, :oidc_step_error, mfa_limit_error())}
-
-          {:error, :replay} ->
-            {:noreply,
-             assign(socket, :oidc_step_error, "That authenticator code was already used.")}
-
-          {:error, _reason} ->
-            {:noreply, assign(socket, :oidc_step_error, provider_step_error(step.factor))}
+      %{} = step ->
+        case OIDCStepUp.confirm(step, code, socket.assigns.current_subject) do
+          {:ok, proof} -> {:noreply, OIDCStepUp.handoff(socket, step, proof)}
+          {:error, message} -> {:noreply, assign(socket, :oidc_step_error, message)}
         end
 
       nil ->
@@ -469,35 +458,7 @@ defmodule EmisarWeb.SSOSettingsLive do
   def handle_event("resend_oidc_step_up", _params, socket) do
     case socket.assigns.oidc_step do
       %{factor: :email} = step ->
-        case Auth.resend_oidc_identity_step_up_code(
-               step.provider_id,
-               step.provider_name,
-               :verify_provider,
-               socket.assigns.current_subject
-             ) do
-          {:ok, :sent} ->
-            {:noreply,
-             socket
-             |> assign(:oidc_step_error, nil)
-             |> put_flash(:info, "We sent a new code to #{socket.assigns.current_user.email}.")}
-
-          # The account email won't accept mail, so no code can arrive — say so
-          # and drop back instead of waiting for a code that never comes.
-          {:ok, :suppressed} ->
-            {:noreply,
-             socket
-             |> reset_oidc_step_up()
-             |> put_flash(
-               :error,
-               "We can't deliver a code to #{socket.assigns.current_user.email}."
-             )}
-
-          {:error, :rate_limited} ->
-            {:noreply, assign(socket, :oidc_step_error, email_limit_error())}
-
-          {:error, _reason} ->
-            {:noreply, assign(socket, :oidc_step_error, "Couldn't send a new code. Try again.")}
-        end
+        {:noreply, OIDCStepUp.resend(socket, step)}
 
       _other ->
         {:noreply, put_flash(socket, :error, "Start sign-in verification again.")}
@@ -505,7 +466,7 @@ defmodule EmisarWeb.SSOSettingsLive do
   end
 
   def handle_event("cancel_oidc_step_up", _params, socket),
-    do: {:noreply, reset_oidc_step_up(socket)}
+    do: {:noreply, OIDCStepUp.reset(socket)}
 
   # Pure view: expand or collapse a mapping row's clipped pack chip list. Held
   # per mapping id so a re-render can't re-collapse a row opened to audit.
@@ -883,83 +844,12 @@ defmodule EmisarWeb.SSOSettingsLive do
         {:noreply, put_flash(socket, :error, "That connection is no longer available.")}
 
       provider ->
-        case Auth.begin_oidc_identity_step_up(
-               provider.id,
-               provider.name,
-               :verify_provider,
-               socket.assigns.current_subject
-             ) do
-          {:ok, factor} ->
-            {:noreply,
-             socket
-             |> assign(:oidc_step, %{
-               provider_id: provider.id,
-               provider_name: provider.name,
-               factor: factor
-             })
-             |> assign(:oidc_step_error, nil)
-             |> assign(:oidc_step_form, to_form(%{"code" => ""}, as: "oidc_step"))
-             |> maybe_flash_provider_code(factor)}
+        step = %{provider_id: provider.id, provider_name: provider.name}
 
-          # The account email can't receive the confirmation code, so verification
-          # can't proceed — tell them plainly rather than showing a code prompt.
-          {:error, :delivery_suppressed} ->
-            {:noreply,
-             put_flash(
-               socket,
-               :error,
-               "We can't deliver a code to #{socket.assigns.current_user.email}."
-             )}
-
-          {:error, :rate_limited} ->
-            {:noreply, put_flash(socket, :error, email_limit_error())}
-
-          {:error, _reason} ->
-            {:noreply, put_flash(socket, :error, "Couldn't start sign-in verification.")}
-        end
+        {:noreply,
+         OIDCStepUp.begin(socket, step, :verify_provider, @sign_in_verification_start_error)}
     end
   end
-
-  defp maybe_flash_provider_code(socket, :email),
-    do: put_flash(socket, :info, "We emailed a confirmation code to your current address.")
-
-  defp maybe_flash_provider_code(socket, :mfa), do: socket
-
-  defp complete_provider_step_up(socket, step, proof) do
-    payload = %{
-      actor_id: socket.assigns.current_user.id,
-      actor_membership_id: socket.assigns.current_subject.membership_id,
-      actor_session_token_digest: socket.assigns.current_auth.token,
-      account_id: socket.assigns.current_account.id,
-      provider_id: step.provider_id,
-      purpose: :verify_provider,
-      proof: proof
-    }
-
-    {:noreply,
-     socket
-     |> assign(:oidc_handoff, OIDCIdentityHandoff.sign(payload))
-     |> assign(:oidc_trigger_submit, true)
-     |> assign(:oidc_step_error, nil)}
-  end
-
-  defp reset_oidc_step_up(socket) do
-    socket
-    |> assign(:oidc_step, nil)
-    |> assign(:oidc_step_error, nil)
-    |> assign(:oidc_step_form, to_form(%{"code" => ""}, as: "oidc_step"))
-    |> assign(:oidc_handoff, nil)
-    |> assign(:oidc_trigger_submit, false)
-  end
-
-  defp provider_step_error(:mfa),
-    do: "That authenticator or recovery code didn't match. Try again."
-
-  defp provider_step_error(:email),
-    do: "That confirmation code is wrong or expired. Try again, or resend it."
-
-  defp mfa_limit_error, do: "Too many attempts. Wait a few minutes, then try again."
-  defp email_limit_error, do: "Too many code requests. Wait up to 15 minutes, then try again."
 
   defp do_update(socket, id, params) do
     case find_provider(socket, id) do
