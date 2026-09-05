@@ -30,7 +30,14 @@ type ShotOptions struct {
 	// how a shot reaches state behind a reveal (expand a step, then open its
 	// picker), mirroring the docs captures' Clicks.
 	Clicks []string
+	Fills  []FieldFill
 	Anchor *Anchor
+}
+
+// FieldFill replaces an input after the clicks have opened its form.
+type FieldFill struct {
+	Selector string
+	Value    string
 }
 
 func (s *Session) MarkAnchor(anchor Anchor, attribute string) error {
@@ -130,6 +137,23 @@ func (s *Session) Shot(options ShotOptions) ([]string, error) {
 		if err := chromedp.Run(s.Context,
 			chromedp.WaitVisible(click, chromedp.ByQuery),
 			chromedp.Click(click, chromedp.ByQuery),
+		); err != nil {
+			return nil, err
+		}
+		if err := s.Ready(10*time.Second, ""); err != nil {
+			return nil, err
+		}
+	}
+	for _, fill := range options.Fills {
+		encoded, _ := json.Marshal(fill)
+		// Passing the values as JSON also preserves empty strings, which the
+		// pinned CDP argument encoder otherwise omits in SetValue calls.
+		setValue := `(function(field){const input=document.querySelector(field.Selector);input.value=field.Value;input.dispatchEvent(new Event('input',{bubbles:true}));input.dispatchEvent(new Event('change',{bubbles:true}));})(` + string(encoded) + `)`
+		if err := chromedp.Run(s.Context,
+			chromedp.WaitVisible(fill.Selector, chromedp.ByQuery),
+			chromedp.Focus(fill.Selector, chromedp.ByQuery),
+			chromedp.Evaluate(setValue, nil),
+			chromedp.Blur(fill.Selector, chromedp.ByQuery),
 		); err != nil {
 			return nil, err
 		}

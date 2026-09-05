@@ -155,6 +155,43 @@ func TestReadyAnchorsAndTwoScaleScreenshot(t *testing.T) {
 	}
 }
 
+func TestShotFillsInputsAndNotifiesTheForm(t *testing.T) {
+	if _, err := ResolveChrome(); err != nil {
+		t.Skip(err)
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html")
+		_, _ = w.Write([]byte(`<!doctype html><html><body>
+<button onclick="document.querySelector('form').hidden=false">Open</button>
+<form hidden><input id="path" value="previous"><input id="empty" value="previous"></form>
+<script>window.edits=[];for(const event of ['input','change','blur'])document.querySelector('form').addEventListener(event,e=>edits.push([e.type,e.target.id,e.target.value]),true);</script>
+</body></html>`))
+	}))
+	defer server.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	session, err := New(Config{InBox: testInBox()}).isolatedSessionWithOptions(ctx, server.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer session.Close()
+	path := `C:\Users\O'Brien & $operator=one\emisar-mcp.exe`
+	if _, err := session.Shot(ShotOptions{
+		Path: "/", Label: "filled", Out: t.TempDir(), Clicks: []string{"button"},
+		Fills: []FieldFill{{Selector: "#path", Value: path}, {Selector: "#empty", Value: ""}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	var edits [][]string
+	if err := chromedp.Run(session.Context, chromedp.Evaluate("window.edits", &edits)); err != nil {
+		t.Fatal(err)
+	}
+	want := [][]string{{"input", "path", path}, {"change", "path", path}, {"blur", "path", path}, {"input", "empty", ""}, {"change", "empty", ""}, {"blur", "empty", ""}}
+	if !slices.EqualFunc(edits, want, slices.Equal[[]string]) {
+		t.Fatalf("edits = %#v", edits)
+	}
+}
+
 func TestRGBHex(t *testing.T) {
 	if got := rgbHex("rgba(9, 10, 255, 1)"); got != "#090aff" {
 		t.Fatalf("rgbHex = %s", got)

@@ -1122,13 +1122,13 @@ defmodule EmisarWeb.AgentsLiveTest do
         render_click(lv, "select_client", %{"client" => client})
         html = render_click(lv, "reveal_snippet", %{})
         document = LazyHTML.from_document(html)
-        command = document |> LazyHTML.query("#snippet-#{client}") |> LazyHTML.text()
+        command = document |> LazyHTML.query("#snippet-#{client}-linux") |> LazyHTML.text()
 
         assert String.starts_with?(command, " ")
         assert command =~ "EMISAR_API_KEY=emk-"
 
         assert document
-               |> LazyHTML.query("#manual-setup button[data-copy-text]")
+               |> LazyHTML.query("#manual-setup button[data-os='linux'][data-copy-text]")
                |> LazyHTML.attribute("data-copy-text") == [command]
       end
 
@@ -1180,7 +1180,7 @@ defmodule EmisarWeb.AgentsLiveTest do
         "copilot" => {"~/.copilot/mcp-config.json", "&quot;tools&quot;"},
         "zed" => {"~/.config/zed/settings.json", "&quot;source&quot;: &quot;custom&quot;"},
         "hermes" => {"~/.hermes/config.yaml", "mcp_servers:"},
-        "goose" => {"~/.config/goose/config.yaml", "cmd: /usr/local/bin/emisar-mcp"}
+        "goose" => {"~/.config/goose/config.yaml", "cmd: &quot;/usr/local/bin/emisar-mcp&quot;"}
       }
 
       for {client, {location, marker}} <- shape_markers do
@@ -1205,8 +1205,140 @@ defmodule EmisarWeb.AgentsLiveTest do
       assert html =~ "paste when the client prompts; shown once"
       assert html =~ "does not contain your API key"
       assert render(element(lv, "#secret-vscode")) =~ raw
-      refute render(element(lv, "#snippet-vscode")) =~ raw
+      refute render(element(lv, "#snippet-vscode-linux")) =~ raw
       flush_key_broadcast(lv)
+    end
+
+    test "Windows selection survives reveal, path edits, client changes, and key broadcasts", %{
+      conn: conn
+    } do
+      conn = %{conn | host: "localhost", port: 4000}
+      {conn, _user, account} = register_and_log_in(conn)
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/agents/connect")
+      render_click(lv, "select_client", %{"client" => "claude_desktop"})
+      render_click(element(lv, "button[data-os-select='windows']"))
+      assert Repo.all(ApiKey) == []
+
+      html = render_click(lv, "reveal_snippet", %{})
+      [key] = Repo.all(ApiKey)
+      assert html =~ "%APPDATA%\\Claude\\claude_desktop_config.json"
+      assert has_element?(lv, "#manual-path-windows:not(.hidden)")
+
+      assert has_element?(
+               lv,
+               "#manual-setup button[data-os-select='windows'][aria-pressed='true']"
+             )
+
+      refute has_element?(lv, "#snippet-claude_desktop-windows")
+      refute has_element?(lv, "#manual-setup button[data-os='windows'][data-copy-text]")
+
+      path = ~S|C:\Users\O'Brien & $operator\Programs\emisar-mcp.exe|
+      lv |> form("#bridge-path-form-windows", %{path: path}) |> render_change()
+      document = lv |> render() |> LazyHTML.from_document()
+      body = document |> LazyHTML.query("#snippet-claude_desktop-windows") |> LazyHTML.text()
+      entry = body |> Jason.decode!() |> get_in(["mcpServers", "emisar"])
+      raw = entry["env"]["EMISAR_API_KEY"]
+
+      assert entry["command"] == path
+
+      assert document
+             |> LazyHTML.query("#manual-setup button[data-os='windows'][data-copy-text]")
+             |> LazyHTML.attribute("data-copy-text") == [body]
+
+      assert Repo.all(ApiKey) == [key]
+
+      render_click(lv, "reveal_snippet", %{})
+      assert render_click(lv, "reveal_snippet", %{}) =~ raw
+      send(lv.pid, :tick)
+      assert render(lv) =~ raw
+      assert has_element?(lv, "#manual-path-windows:not(.hidden)")
+
+      assert lv
+             |> render()
+             |> LazyHTML.from_document()
+             |> LazyHTML.query("#bridge-path-windows")
+             |> LazyHTML.attribute("value") == [path]
+
+      assert Repo.all(ApiKey) == [key]
+
+      render_click(lv, "select_client", %{"client" => "vscode"})
+      render_click(lv, "reveal_snippet", %{})
+      assert has_element?(lv, "#manual-path-windows:not(.hidden)")
+      assert has_element?(lv, "#snippet-vscode-windows")
+      refute render(element(lv, "#snippet-vscode-windows")) =~ raw
+      flush_key_broadcast(lv)
+    end
+
+    test "custom Unix paths and invalid Windows paths never alter the revealed credential", %{
+      conn: conn
+    } do
+      {conn, _user, account} = register_and_log_in(conn)
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/agents/connect")
+      render_click(lv, "select_client", %{"client" => "cursor"})
+      render_click(lv, "reveal_snippet", %{})
+      [key] = Repo.all(ApiKey)
+
+      path = "/home/operator/.local/bin/emisar-mcp"
+      lv |> form("#bridge-path-form-linux", %{path: path}) |> render_change()
+
+      body =
+        lv
+        |> element("#snippet-cursor-linux")
+        |> render()
+        |> LazyHTML.from_fragment()
+        |> LazyHTML.text()
+
+      assert get_in(Jason.decode!(body), ["mcpServers", "emisar", "command"]) == path
+
+      render_click(lv, "select_os", %{"os" => "windows"})
+
+      for path <- ["%LOCALAPPDATA%\\emisar.exe", "C:relative.exe", "C:\\bin\\emisar\n.exe"] do
+        render_change(lv, "bridge_path_changed", %{"os" => "windows", "path" => path})
+        assert has_element?(lv, "#manual-path-windows:not(.hidden)")
+        refute has_element?(lv, "#snippet-cursor-windows")
+      end
+
+      for params <- [%{}, %{"os" => "freebsd"}, %{"os" => ["linux"]}] do
+        render_click(lv, "select_os", params)
+      end
+
+      for params <- [
+            %{},
+            %{"os" => "windows", "path" => %{}},
+            %{"os" => "windows", "path" => String.duplicate("x", 4097)}
+          ] do
+        render_change(lv, "bridge_path_changed", params)
+      end
+
+      assert has_element?(lv, "#manual-path-windows:not(.hidden)")
+      assert Repo.all(ApiKey) == [key]
+      flush_key_broadcast(lv)
+    end
+
+    test "viewer-forged platform and path events are denied without minting credentials", %{
+      conn: conn
+    } do
+      account = Fixtures.Accounts.create_account()
+      viewer = Fixtures.Users.create_user()
+
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        user_id: viewer.id,
+        role: "viewer"
+      )
+
+      {:ok, lv, _html} = conn |> log_in_user(viewer) |> live(~p"/app/#{account}/agents/connect")
+
+      assert render_click(lv, "select_os", %{"os" => "windows"}) =~
+               "You don&#39;t have permission to do that."
+
+      assert render_change(lv, "bridge_path_changed", %{
+               "os" => "windows",
+               "path" => "C:\\bridge.exe"
+             }) =~ "You don&#39;t have permission to do that."
+
+      refute has_element?(lv, "#manual-setup")
+      assert Repo.all(ApiKey) == []
     end
 
     test "Grok setup registers the bridge and offers its server-scoped allow rule",

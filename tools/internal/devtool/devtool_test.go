@@ -1270,6 +1270,28 @@ func TestParseShotUsesEmailOverride(t *testing.T) {
 	}
 }
 
+func TestParseShotFillsLiteralValuesAfterClicks(t *testing.T) {
+	command, err := parseShot([]string{
+		"/app/acme/agents/connect", "--label", "manual",
+		"--click", "#manual-setup summary",
+		"--fill", `#bridge-path-windows=C:\Users\O'Brien & $operator=one\emisar-mcp.exe`,
+		"--fill", "#other=",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(command.options.Fills) != 2 || command.options.Fills[0].Selector != "#bridge-path-windows" ||
+		command.options.Fills[0].Value != `C:\Users\O'Brien & $operator=one\emisar-mcp.exe` ||
+		command.options.Fills[1].Value != "" {
+		t.Fatalf("fills = %#v", command.options.Fills)
+	}
+	for _, value := range []string{"missing-separator", "=missing-selector", `[name="path"]=value`, "#id .child=value"} {
+		if _, err := parseShot([]string{"/", "--label", "invalid", "--fill", value}); err == nil {
+			t.Fatalf("accepted invalid fill %q", value)
+		}
+	}
+}
+
 func TestCaptureConsoleRequiresTaskBeforeStartingBrowser(t *testing.T) {
 	app := testApp(t)
 	err := app.capture(t.Context(), []string{"console"})

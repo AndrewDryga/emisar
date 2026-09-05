@@ -48,9 +48,48 @@ defmodule EmisarWeb.Components.OsSwitchTest do
       assert length(String.split(html, ~s(aria-pressed="true"))) == 2
       assert length(String.split(html, ~s(aria-pressed="false"))) == 3
     end
+
+    test "a stateful LiveView can receive the selected platform without changing static tabs" do
+      assigns = %{tabs: @tabs}
+
+      html =
+        rendered_to_string(
+          ~H|<CoreComponents.os_switch detected={:linux} tabs={@tabs} on_change="select_os" />|
+        )
+
+      document = LazyHTML.from_document(html)
+      buttons = LazyHTML.query(document, "button[phx-click='select_os']")
+      assert LazyHTML.attribute(buttons, "phx-value-os") == ["linux", "windows", "macos"]
+
+      static = rendered_to_string(~H|<CoreComponents.os_switch detected={:linux} tabs={@tabs} />|)
+      refute static =~ "phx-click"
+    end
   end
 
   describe "os_code_panel/1" do
+    test "an unavailable platform keeps its tab but has no snippet or copy action" do
+      assigns = %{}
+
+      html =
+        rendered_to_string(~H"""
+        <CoreComponents.os_code_panel id="manual" detected={:windows} on_change="select_os">
+          <:tab os={:linux} label="Linux" code="valid command" />
+          <:tab os={:windows} label="Windows" code={nil} unavailable="Enter a path first." />
+        </CoreComponents.os_code_panel>
+        """)
+
+      assert html =~ "Enter a path first."
+      assert html =~ ~s(phx-click="select_os")
+      document = LazyHTML.from_document(html)
+      assert LazyHTML.query(document, "#manual-windows") |> Enum.to_list() == []
+
+      assert LazyHTML.query(document, "button[data-os='windows'][data-copy-text]")
+             |> Enum.to_list() == []
+
+      assert LazyHTML.query(document, "button[data-os='linux'][data-copy-text]")
+             |> LazyHTML.attribute("data-copy-text") == ["valid command"]
+    end
+
     test "every command renders; only the detected one is visible" do
       assigns = %{}
 
