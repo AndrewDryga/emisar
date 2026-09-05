@@ -76,10 +76,16 @@ export function setupCopyToClipboardDelegation() {
     // serialize-then-reparse is the mXSS shape, and this was the only HTML
     // sink in either bundle. textContent for the flash keeps the label a
     // plain string.
-    const original = [...btn.childNodes].map(node => node.cloneNode(true))
+    // Repeated successes extend this feedback cycle; they must not save the
+    // temporary "Copied" label as the button's original content.
+    btn._copyOriginal ??= [...btn.childNodes].map(node => node.cloneNode(true))
     btn.textContent = btn.dataset.copyLabelCopied || "Copied"
     if (btn._copyTimer) clearTimeout(btn._copyTimer)
-    btn._copyTimer = setTimeout(() => { btn.replaceChildren(...original) }, 1500)
+    btn._copyTimer = setTimeout(() => {
+      btn.replaceChildren(...btn._copyOriginal)
+      delete btn._copyOriginal
+      delete btn._copyTimer
+    }, 1500)
   }
 
   // CAPTURE phase, and the event stops here: a copy click must never ALSO
