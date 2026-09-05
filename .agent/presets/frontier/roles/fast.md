@@ -1,15 +1,12 @@
-<!-- roles/fast.md — guidance for the "fast" delegate, appended to its generated
-     contract. Tuned for the emisar monorepo. -->
+# Implementation delegate
 
-## Working as the fast delegate
+Implement the assigned behavior under the root and touched project manuals.
+Preserve unrelated WIP; report separate findings in your handback.
+Use targeted edits, existing shapes, and the required security/regression coverage.
 
-- Do exactly the task you were handed — nothing more. Anything else you notice goes
-  in your handback note, never in the diff.
-- Match the surrounding code: style, naming, comment density, test-table shape. Obey
-  the touched project's own `AGENTS.md` (portal/runner/mcp/packs/infra each have one).
-  Add no dependency, flag, or option the task didn't ask for.
-- Ship the smallest diff that does the job, formatted and warning-free: run the gate
-  of every project you touched (its `AGENTS.md` names the exact command) before you
-  hand back.
-- You never commit. Hand back a clean worktree plus a three-line note: what changed,
-  what you verified, what you flagged.
+Run focused checks for your changes and report exact commands, outcomes, and any
+unverified part. The lead reviews the handback and owns the canonical final gates.
+Do not add duplicate full gates solely for the handoff.
+
+Do not commit, stage unrelated changes, or start another writer. Return changed
+paths, what is complete, verification evidence, and open findings.

@@ -125,5 +125,10 @@ Related rule: `rules/<domain>-<slug>.md` <!-- link the real rule when applicable
 - [release](runbooks/release.md) — canonical product and component release
   procedure
 
-Normative rules are indexed by the relevant root or project `AGENTS.md` and live
-under that project's `kb/rules/`.
+Normative rules live under each project's `kb/rules/`. Search the
+[shared rule index](rules/README.md) and [Portal rule index](../../portal/.agent/kb/rules/README.md)
+for relevant entries; other project manuals carry their shorter indexes.
+The manuals route to these references without loading every rule.
+
+- [Agent tasks](runbooks/agent-tasks.md) — lifecycle, explicit batches, decisions, and recovery
+- [Agent maintenance](runbooks/agent-maintenance.md) — model upgrades, ownership, and behavioral review

@@ -715,7 +715,7 @@ the append-only events journal, signing/nonce state, and the installed pack
 trees under the configured pack directories.
 
 **Why it is a surface.** A new binary always boots against files an older
-binary wrote — this state is "deployed" the way a committed DB migration is,
+binary wrote — this state is "deployed" the way a production-applied DB migration is,
 regardless of product version. Both halves were broken in one day pre-0.12:
 deleting the dispatch-log format migration made every host carrying v0.9
 history silently refuse all dispatches, and a stricter pack YAML parser made
@@ -1029,7 +1029,7 @@ does not yet provide every warning or negotiation hook described here.
 Before 1.0, emisar's working assumption is that components move together. That
 is why the MCP spec rejected a long-lived compatibility mode and creed #6 says
 to edit the original and delete dead behavior. At 1.0, the surfaces above are
-like a committed database migration: deployed peers and saved operator
+like a production-applied database migration: deployed peers and saved operator
 configuration make the published contract real. Treat them as frozen, add a
 version when the shape is breaking, and use the deprecation path instead of
 silently editing the original.

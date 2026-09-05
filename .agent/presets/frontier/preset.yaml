@@ -8,35 +8,31 @@
 # ladder. Model ids: coop models. Accounts (logins): coop credentials. A preset
 # names models and accounts, never the secrets themselves.
 
-# lead — the agent that fronts the session, as a fallback ladder: the two frontier
-# models at max effort, failing over to each other on a rate limit. Fable 5 (the
-# long-horizon agentic frontier) with GPT-5.6 Sol as the cross-vendor twin.
+# Frontier reasoning at high effort, with cross-provider rate-limit fallback.
+# Targets verified 2026-09-05; see kb/runbooks/agent-maintenance.md.
 lead:
-  agent: [claude:claude-fable-5/high, codex:gpt-5.6-sol/high]
+  agent: [claude:claude-fable-5-1/high, codex:gpt-6-astra/high]
   prompt: roles/lead.md
 
 roles:
   thinker:
-    # READ-ONLY deep-reasoning peer via coop-consult. Sol at high: the consult is
+    # READ-ONLY deep-reasoning peer via coop-consult: the consult is
     # a second read on work the lead already understands, not a second author.
     mode: consult
-    agent:  codex:gpt-5.6-sol/high
+    agent: codex:gpt-6-astra/high
     # emisar is a security product — the thinker's docket leans hard on the
     # trust-boundary work: anything ingesting runner / LLM / operator input.
     when: [architecture, debugging, security, code-review, before-commit]
     prompt: roles/thinker.md
 
   critic:
-    # READ-ONLY second opinion for one-way doors: committed DB migrations,
+    # READ-ONLY second opinion for one-way doors: production-applied migrations,
     # wire/protocol formats, pack manifest semantics, billing/entitlements.
     #
-    # Runs the SAME model as the thinker. It was grok — a third vendor outside the
-    # claude+codex pair — until 304eaf26 reassigned both consult roles to Sol. What
-    # separates them now is the DOCKET and the prompt, not the vendor, so tasking
-    # both on one question buys two lenses, not two independent judgments. Point a
-    # role back at another vendor if independence is what a decision needs.
+    # A different provider from the thinker. The lead can share either provider;
+    # two independent consultations are not a guarantee of independent conclusions.
     mode: consult
-    agent: codex:gpt-5.6-sol/high
+    agent: claude:claude-fable-5-1/high
     when: [plan-review, tradeoffs, one-way-doors, security]
     prompt: roles/critic.md
 
@@ -44,13 +40,9 @@ roles:
     # WRITE-CAPABLE worker via coop-delegate: it may edit the worktree but never
     # commits — the lead reviews the diff, runs the touched project's gate, commits.
     #
-    # The point of this role is that the TOP tier thinks, reviews and steers while the
-    # implementer types. Cost is judged PER TASK, not per token: a weaker model takes more
-    # turns, re-reads more context and lands more rework, so it ends up costing more than
-    # a capable one that gets the diff right first time. Keep these two rungs — luna is the
-    # cross-vendor failover so a claude limit does not silently push implementation back
-    # onto the lead. Measured 2026-08-02: only 2 delegations in 94 iterations, so the gap
-    # to close is leads NOT delegating, not the model being too strong.
+    # Delegate a bounded implementation when the handoff improves time or quality.
+    # Preserve the worker lane and cross-provider fallback; compare task outcomes
+    # before changing its model or effort.
     mode: delegate
     agent: [claude:opus/high, codex:gpt-5.6-luna/xhigh]
     when: [boilerplate, bulk-edits, test-scaffolding, repo-survey]
