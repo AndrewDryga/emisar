@@ -133,6 +133,11 @@ defmodule Emisar.Fixtures.Runbooks do
     deleted
   end
 
+  @doc "Arranges an intervening author edit through the draft changeset."
+  def revise_draft(%Runbook{} = runbook, attrs) do
+    runbook |> Runbook.Changeset.draft(attrs) |> Repo.update!()
+  end
+
   @doc "Arranges parent/stage/item cancellation without invoking scheduler notifications."
   def cancel_execution_in_multi(multi, %RunbookExecution{} = execution) do
     now = DateTime.utc_now()

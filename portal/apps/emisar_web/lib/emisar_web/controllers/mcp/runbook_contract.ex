@@ -66,6 +66,21 @@ defmodule EmisarWeb.MCP.RunbookContract do
   def live_ref(%{live_version: nil}), do: nil
   def live_ref(runbook), do: "#{runbook.slug}@#{runbook.live_version}"
 
+  @doc "Projects the immutable result of a committed draft mutation."
+  def draft_result(operation, subject) do
+    %{
+      operation_id: operation.operation_id,
+      draft_id: operation.resource_id,
+      slug: operation.resource_ref,
+      status: "draft",
+      definition_sha256: operation.draft_definition_sha256,
+      live_ref:
+        live_ref(%{slug: operation.resource_ref, live_version: operation.draft_live_version}),
+      review_url:
+        "#{EmisarWeb.Endpoint.url()}/app/#{subject.account.slug}/runbooks/#{operation.resource_id}/edit"
+    }
+  end
+
   @doc "Returns bounded counts used by list results and human summaries."
   def summary(%{"inputs" => inputs, "stages" => stages}) do
     %{

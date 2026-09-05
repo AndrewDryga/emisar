@@ -112,8 +112,8 @@ defmodule EmisarWeb.MCP.RunbookTools do
     facts = draft_facts(args, operation_id)
 
     case create_or_replay_draft(conn, facts) do
-      {:ok, _kind, runbook} ->
-        draft_result(conn, runbook, operation_id)
+      {:ok, _kind, operation} ->
+        draft_result(conn, operation)
 
       {:error, :operation_conflict} ->
         {:error,
@@ -123,8 +123,8 @@ defmodule EmisarWeb.MCP.RunbookTools do
         {:error,
          error(
            "operation_incomplete",
-           "The operation committed without its draft resource.",
-           true,
+           "The operation's original draft result is unavailable.",
+           false,
            %{operation_id: operation_id}
          )}
 
@@ -158,8 +158,8 @@ defmodule EmisarWeb.MCP.RunbookTools do
     facts = draft_update_facts(args, operation_id)
 
     case update_or_replay_draft(conn, facts) do
-      {:ok, _kind, runbook} ->
-        draft_result(conn, runbook, operation_id)
+      {:ok, _kind, operation} ->
+        draft_result(conn, operation)
 
       {:error, :operation_conflict} ->
         {:error,
@@ -169,8 +169,8 @@ defmodule EmisarWeb.MCP.RunbookTools do
         {:error,
          error(
            "operation_incomplete",
-           "The operation committed without its draft resource.",
-           true,
+           "The operation's original draft result is unavailable.",
+           false,
            %{operation_id: operation_id}
          )}
 
@@ -774,23 +774,9 @@ defmodule EmisarWeb.MCP.RunbookTools do
     |> encoded_size(Runbooks.definition_limit!(:max_definition_bytes) + 8_192)
   end
 
-  # The write succeeded, so what the model still needs is the pair: the draft it
-  # just authored does not run, and this names the release that does.
-  defp draft_result(conn, runbook, operation_id),
-    do: {:ok, draft_payload(runbook, operation_id, conn.assigns.current_subject)}
-
-  defp draft_payload(runbook, operation_id, subject) do
-    %{
-      ok: true,
-      operation_id: operation_id,
-      draft_id: runbook.id,
-      slug: runbook.slug,
-      status: "draft",
-      definition_sha256: Runbooks.definition_digest(runbook.draft_definition),
-      live_ref: RunbookContract.live_ref(runbook),
-      review_url:
-        "#{EmisarWeb.Endpoint.url()}/app/#{subject.account.slug}/runbooks/#{runbook.id}/edit"
-    }
+  defp draft_result(conn, operation) do
+    payload = RunbookContract.draft_result(operation, conn.assigns.current_subject)
+    {:ok, Map.put(payload, :ok, true)}
   end
 
   defp encoded_size(args, max) do

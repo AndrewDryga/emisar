@@ -1268,7 +1268,7 @@ defmodule Emisar.RunbooksTest do
       assert {:ok, :created, created} = Runbooks.create_or_replay_mcp_draft(facts, subject)
 
       assert_receive {:list_changed, :runbook, "runbook.created", created_id}
-      assert created_id == created.id
+      assert created_id == created.resource_id
 
       assert {:ok, :replay, replayed} = Runbooks.create_or_replay_mcp_draft(facts, subject)
       assert replayed.id == created.id
@@ -1311,7 +1311,8 @@ defmodule Emisar.RunbooksTest do
       facts = mcp_draft_facts()
 
       assert {:ok, :created, created} = Runbooks.create_or_replay_mcp_draft(facts, subject)
-      Repo.delete!(created)
+      assert {:ok, runbook} = Runbooks.fetch_runbook_by_id(created.resource_id, subject)
+      Repo.delete!(runbook)
 
       assert Runbooks.create_or_replay_mcp_draft(facts, subject) ==
                {:error, :operation_incomplete}
@@ -1332,7 +1333,9 @@ defmodule Emisar.RunbooksTest do
       assert Enum.count(results, &match?({:ok, :created, _runbook}, &1)) == 1
 
       draft_ids =
-        results |> Enum.map(fn {:ok, _outcome, runbook} -> runbook.id end) |> Enum.uniq()
+        results
+        |> Enum.map(fn {:ok, _outcome, operation} -> operation.resource_id end)
+        |> Enum.uniq()
 
       assert length(draft_ids) == 1
       assert Repo.aggregate(Runbooks.Runbook, :count) == 1
@@ -1411,13 +1414,13 @@ defmodule Emisar.RunbooksTest do
       peer_facts = %{facts | slug: "peer-draft"}
 
       assert {:ok, :created, peer} = Runbooks.create_or_replay_mcp_draft(peer_facts, peer_subject)
-      refute peer.id == created.id
+      refute peer.resource_id == created.resource_id
 
       {_other_user, other_account, other_owner} = Fixtures.Subjects.owner_subject()
       other_subject = api_client_subject(other_account, other_owner, "foreign draft")
 
       assert {:ok, :created, foreign} = Runbooks.create_or_replay_mcp_draft(facts, other_subject)
-      refute foreign.id == created.id
+      refute foreign.resource_id == created.resource_id
       assert foreign.account_id == other_account.id
     end
   end
@@ -1434,11 +1437,12 @@ defmodule Emisar.RunbooksTest do
 
       assert {:ok, :created, revised} = Runbooks.create_or_replay_mcp_draft_update(facts, subject)
 
-      assert revised.id == source.id
-      assert revised.slug == source.slug
-      assert revised.title == "Health review revised"
-      assert revised.draft_definition == revision
-      assert revised.live_version == nil
+      assert revised.resource_id == source.id
+      assert revised.resource_ref == source.slug
+      assert revised.draft_definition_sha256 == Runbooks.definition_digest(revision)
+      assert revised.draft_live_version == nil
+      assert Repo.reload!(source).title == "Health review revised"
+      assert Repo.reload!(source).draft_definition == revision
 
       assert {:ok, :replay, replayed} = Runbooks.create_or_replay_mcp_draft_update(facts, subject)
       assert replayed.id == revised.id
@@ -1466,10 +1470,10 @@ defmodule Emisar.RunbooksTest do
 
       assert {:ok, :created, revised} = Runbooks.create_or_replay_mcp_draft_update(facts, subject)
 
-      assert revised.id == live.id
-      assert revised.live_version == 1
-      assert revised.definition == live.definition
-      assert revised.draft_definition == facts.definition
+      assert revised.resource_id == live.id
+      assert revised.draft_live_version == 1
+      assert revised.draft_definition_sha256 == Runbooks.definition_digest(facts.definition)
+      assert Repo.reload!(live).draft_definition == facts.definition
 
       assert {:ok, still_live} = Runbooks.fetch_model_visible_runbook("health-review", subject)
       assert still_live.definition == live.definition
@@ -1552,12 +1556,13 @@ defmodule Emisar.RunbooksTest do
       facts = mcp_draft_update_facts(source, definition: incomplete)
 
       assert {:ok, :created, revised} = Runbooks.create_or_replay_mcp_draft_update(facts, subject)
-      assert revised.draft_definition == incomplete
+      assert revised.draft_definition_sha256 == Runbooks.definition_digest(incomplete)
+      assert Repo.reload!(source).draft_definition == incomplete
 
       # The draft passes the envelope precisely because publication validation
       # is a separate, human-only transition.
-      assert {:ok, _draft} = Runbooks.Definition.validate_draft(revised.draft_definition)
-      assert {:error, _issues} = Runbooks.Definition.validate(revised.draft_definition)
+      assert {:ok, _draft} = Runbooks.Definition.validate_draft(incomplete)
+      assert {:error, _issues} = Runbooks.Definition.validate(incomplete)
     end
 
     test "refuses a restricted key rewriting someone else's draft with an out-of-scope step" do

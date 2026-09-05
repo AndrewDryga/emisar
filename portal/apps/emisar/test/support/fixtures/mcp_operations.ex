@@ -24,4 +24,11 @@ defmodule Emisar.Fixtures.MCPOperations do
     attrs = Map.merge(base, attrs)
     Repo.insert!(MCPOperations.Operation.Changeset.reserve(attrs))
   end
+
+  @doc "Arranges an operation created before immutable draft results were stored."
+  def remove_draft_result(operation) do
+    operation
+    |> Ecto.Changeset.change(draft_definition_sha256: nil, draft_live_version: nil)
+    |> Repo.update!()
+  end
 end

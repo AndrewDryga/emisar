@@ -104,6 +104,57 @@ defmodule Emisar.MCPOperations do
   def reserve_in_multi(%Multi{}, _attrs, %Subject{}), do: {:error, :unauthorized}
 
   @doc """
+  Completes a reserved draft operation in the same transaction as its resource.
+
+  Requires the reserve permission and the reservation's account and credential
+  lineage. `result` derives the bounded snapshot from the transaction's written
+  resource. Replays return the original operation without invoking it. The
+  `:mcp_draft_result` Multi result is the completed operation, not a mutable draft.
+  """
+  def complete_draft_in_multi(
+        %Multi{} = multi,
+        result,
+        %Subject{account: %{id: account_id}, actor: %ApiKeys.ApiKey{} = key} = subject
+      )
+      when is_function(result, 1) do
+    with :ok <-
+           Auth.Authorizer.ensure_has_permissions(
+             subject,
+             Authorizer.reserve_operations_permission()
+           ) do
+      lineage_id = key.credential_lineage_id
+
+      multi =
+        Multi.run(multi, :mcp_draft_result, fn repo, changes ->
+          case changes.mcp_operation do
+            %{
+              operation:
+                %Operation{account_id: ^account_id, credential_lineage_id: ^lineage_id} =
+                    operation,
+              fresh?: true
+            } ->
+              operation |> Operation.Changeset.complete_draft(result.(changes)) |> repo.update()
+
+            %{
+              operation:
+                %Operation{account_id: ^account_id, credential_lineage_id: ^lineage_id} =
+                    operation,
+              fresh?: false
+            } ->
+              {:ok, operation}
+
+            _other ->
+              {:error, :not_found}
+          end
+        end)
+
+      {:ok, multi}
+    end
+  end
+
+  def complete_draft_in_multi(%Multi{}, _result, %Subject{}), do: {:error, :unauthorized}
+
+  @doc """
   Fetches one minimal recovery record for the authenticated key lineage.
 
   Requires the MCP operation view permission. Missing, foreign-account, and
