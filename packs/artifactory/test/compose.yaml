@@ -13,6 +13,10 @@ services:
       JF_SHARED_DATABASE_URL: jdbc:postgresql://artifactory-db:5432/artifactory
       JF_SHARED_DATABASE_USERNAME: artifactory
       JF_SHARED_DATABASE_PASSWORD: packtest-artifactory-db-3c7a
+      # A one-CPU boot can finish Access registration after the router's
+      # default 15s deadline. Both limits apply to that same join request.
+      JF_ROUTER_SERVICEREGISTRY_REQUESTTIMEOUT: "60s"
+      JF_ROUTER_HTTPCLIENT_REQUESTTIMEOUTSECS: "60"
       PACKTEST_ADMIN_PASSWORD: packtest-canary-artifactory-9d4e
     volumes:
       - ${EMISAR_ROOT}/packs/artifactory/test/fixtures/seed.sh:/opt/jfrog/seed.sh:ro
