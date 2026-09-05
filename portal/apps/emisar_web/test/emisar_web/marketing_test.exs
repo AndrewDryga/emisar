@@ -1131,7 +1131,7 @@ defmodule EmisarWeb.MarketingTest do
       assert html =~ "approved"
 
       # The concrete claims a security reviewer scans for.
-      assert html =~ "21 built-in patterns"
+      assert html =~ "20 built-in patterns"
       assert html =~ "TOTP MFA is available on every plan"
       assert html =~ "dedicated read-only credential"
 

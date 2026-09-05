@@ -33,7 +33,7 @@
 6. **Clamped opts.** Per-call opts (`timeout_ms`, `max_*_bytes`) are clamped
    to the action's declared min/max envelope. A misbehaving cloud cannot
    ask for a 100h timeout on an action that declares a 30s ceiling.
-7. **Output redaction.** Bearer tokens, AWS keys, GitHub tokens,
+7. **Output redaction.** Bearer tokens, GitHub tokens,
    private-key blocks, and common `password=`/`secret=`/`token=`
    assignments are masked by default. Pack authors can add per-action
    rules. Redaction runs **before** the chunk leaves the runner.

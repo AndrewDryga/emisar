@@ -26,6 +26,108 @@ func TestRedactJSONOutput_TruncatedValidDocumentMasksSecretPrefix(t *testing.T) 
 	}
 }
 
+func TestEngine_IAMDiscoveryFeedsLastUsedWithoutLeakingSecrets(t *testing.T) {
+	for _, id := range []string{"AKIAIOSFODNN7EXAMPLE", "ASIA1234567890ABCDEF"} {
+		for _, streaming := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s_streaming_%t", id, streaming), func(t *testing.T) {
+				fixture := filepath.Join(t.TempDir(), "aws-fixture.sh")
+				body := `set -eu
+test "$1" = iam
+case "$2" in
+  list-access-keys)
+    test "$3" = --user-name && test "$4" = alice
+    printf '%s\n' '{"AccessKeyMetadata":[{"AccessKeyId":"` + id + `","Status":"Active","SecretAccessKey":"synthetic-secret","SessionToken":"synthetic-session"}]}'
+    ;;
+  get-access-key-last-used)
+    test "$3" = --access-key-id && test "$4" = '` + id + `'
+    printf '%s\n' '{"UserName":"alice","AccessKeyLastUsed":{"ServiceName":"iam"}}'
+    ;;
+  *) exit 1 ;;
+esac
+test "$5" = --output && test "$6" = json && test "$#" = 6
+`
+				if err := os.WriteFile(fixture, []byte(body), 0o600); err != nil {
+					t.Fatal(err)
+				}
+				// Use the shipped argument/output contracts; replace only the
+				// namespace and the AWS process with a deterministic local peer.
+				actions := make(map[string]string)
+				for _, name := range []string{"list_access_keys", "last_used_access_key"} {
+					yaml, err := os.ReadFile("../../../packs/aws-iam/actions/" + name + ".yaml")
+					if err != nil {
+						t.Fatal(err)
+					}
+					definition := strings.Replace(string(yaml), "id: iam.", "id: t.", 1)
+					definition = strings.Replace(definition, "binary: aws", "binary: /bin/sh", 1)
+					definition = strings.Replace(definition, "argv: [", fmt.Sprintf("argv: [\"-c\", \"exec /bin/sh \\\"$@\\\"\", \"aws-fixture\", %q, ", fixture), 1)
+					actions[name+".yaml"] = definition
+				}
+				e, journal, root := setupEngineExtra(t, actions)
+				defer journal.Close()
+				rules, err := redact.CompileAll(redact.DefaultRules())
+				if err != nil {
+					t.Fatal(err)
+				}
+				e.SetRedactor(redact.New(rules))
+				var progress strings.Builder
+				request := Request{ActionID: "t.list_access_keys", Args: map[string]any{"user": "alice"}, Reason: "test"}
+				if streaming {
+					request.OnProgress = func(stream executor.Stream, data []byte) {
+						if stream == executor.StreamStdout {
+							progress.Write(data)
+						}
+					}
+				}
+				result, err := e.Run(t.Context(), request)
+				if err != nil || result.Status != StatusSuccess {
+					t.Fatalf("discovery: %+v (%v)", result, err)
+				}
+				rows := result.Output.(map[string]any)["AccessKeyMetadata"].([]any)
+				row := rows[0].(map[string]any)
+				if row["AccessKeyId"] != id || row["SecretAccessKey"] != "[REDACTED]" || row["SessionToken"] != "[REDACTED]" {
+					t.Fatalf("discovery lost the ID or leaked secret material: %#v", row)
+				}
+				events := readJournalEvents(t, root)
+				preview := events[len(events)-1].Execution.StdoutPreview
+				outputs := []string{result.Stdout, preview}
+				if streaming {
+					outputs = append(outputs, progress.String())
+				}
+				for _, output := range outputs {
+					if !strings.Contains(output, id) || strings.Contains(output, "synthetic-secret") || strings.Contains(output, "synthetic-session") {
+						t.Fatalf("output/journal redaction differs: %s", output)
+					}
+				}
+				lastUsed, err := e.Run(t.Context(), Request{
+					ActionID: "t.last_used_access_key", Args: map[string]any{"access_key_id": row["AccessKeyId"]}, Reason: "test",
+				})
+				if err != nil || lastUsed.Status != StatusSuccess || lastUsed.Output.(map[string]any)["UserName"] != "alice" {
+					t.Fatalf("discovered ID could not feed last-used: %+v (%v)", lastUsed, err)
+				}
+			})
+		}
+	}
+}
+
+func TestEngine_ExplicitRedactionStillMasksPublicIAMIdentifiers(t *testing.T) {
+	const id = "AKIAIOSFODNN7EXAMPLE"
+	for _, action := range []*actionspec.Action{
+		{Args: []actionspec.Arg{{Name: "id", Sensitive: true}}},
+		{Output: actionspec.Output{Redact: []actionspec.RedactionRule{{Name: "owned-id", Type: "literal", Literal: id}}}},
+	} {
+		rules, err := redact.CompileAll(redact.DefaultRules())
+		if err != nil {
+			t.Fatal(err)
+		}
+		engine := New(Config{Redactor: redact.New(rules)})
+		redactor := engine.combinedRedactor(action, map[string]any{"id": id})
+		output, _, err := redactor.ApplyJSON([]byte(`{"AccessKeyId":"` + id + `"}`))
+		if err != nil || strings.Contains(string(output), id) {
+			t.Fatalf("explicit redaction was bypassed: %s (%v)", output, err)
+		}
+	}
+}
+
 func TestEngine_LongMultilineSensitiveArgumentRemainsMasked(t *testing.T) {
 	const action = `
 schema_version: 1

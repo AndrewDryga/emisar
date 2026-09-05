@@ -863,8 +863,8 @@ func redactArgValue(redactor *redact.Engine, v any) any {
 // redactedInvocation masks the command line for every durable or remote
 // representation. Two passes, because they catch different things: the schema
 // pass replaces the exact values of args declared `sensitive: true`, and the
-// rule pass is the same default net that guards stdout (bearer tokens, AWS and
-// GitHub keys, `password=` assignments). Without the second pass a credential
+// rule pass is the same default net that guards stdout (bearer tokens,
+// GitHub tokens, `password=` assignments). Without the second pass a credential
 // passed through an arg the author forgot to flag was written verbatim into
 // the local journal AND the permanent cloud run record — while the identical
 // bytes in the command's OUTPUT would have been masked.
