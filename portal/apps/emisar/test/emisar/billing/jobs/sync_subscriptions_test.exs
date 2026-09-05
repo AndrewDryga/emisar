@@ -2,6 +2,10 @@
 # retrieval or insert a later row while the current page is being processed.
 defmodule Emisar.Billing.Jobs.SyncSubscriptionsTest.ControlledPaddleClient do
   @behaviour Emisar.Billing.PaddleClient
+  @impl true
+  defdelegate cancel_checkout_transaction(id), to: Emisar.Billing.PaddleClient.Stub
+  @impl true
+  defdelegate list_checkout_transactions(attrs), to: Emisar.Billing.PaddleClient.Stub
   alias Emisar.{Billing, Config}
 
   # Not what any of these stubs exercise; the behaviour requires it.
@@ -16,12 +20,13 @@ defmodule Emisar.Billing.Jobs.SyncSubscriptionsTest.ControlledPaddleClient do
       :ok = maybe_insert_later_subscription(id)
 
       {:ok,
-       %{
-         "id" => id,
-         "status" => "active",
-         "next_billed_at" =>
-           DateTime.utc_now() |> DateTime.add(30 * 86_400, :second) |> DateTime.to_iso8601()
-       }}
+       discovered_subscription(id) ||
+         %{
+           "id" => id,
+           "status" => "active",
+           "next_billed_at" =>
+             DateTime.utc_now() |> DateTime.add(30 * 86_400, :second) |> DateTime.to_iso8601()
+         }}
     end
   end
 
@@ -44,7 +49,38 @@ defmodule Emisar.Billing.Jobs.SyncSubscriptionsTest.ControlledPaddleClient do
 
   @impl true
   def retrieve_transaction(id) do
-    {:ok, %{"id" => id, "subscription_id" => String.replace_prefix(id, "txn_", "sub_")}}
+    subscription_id = String.replace_prefix(id, "txn_", "sub_")
+
+    case discovered_subscription(subscription_id) do
+      nil ->
+        {:error, :not_found}
+
+      subscription ->
+        {:ok,
+         %{
+           "id" => id,
+           "subscription_id" => subscription_id,
+           "customer_id" => subscription["customer_id"],
+           "custom_data" => subscription["custom_data"],
+           "status" => "completed"
+         }}
+    end
+  end
+
+  defp discovered_subscription(id) do
+    pages =
+      case Config.get_env(:emisar, :billing_sync_test_discovery_page) do
+        %{pages: pages} -> Map.values(pages)
+        %{subscriptions: _rows} = page -> [page]
+        _ -> []
+      end
+
+    pages
+    |> Enum.flat_map(& &1.subscriptions)
+    |> Enum.find(fn
+      %{"id" => ^id} -> true
+      _ -> false
+    end)
   end
 
   @impl true
@@ -447,6 +483,10 @@ end
 # the sweep's upsert of a vendor-owned status value can be exercised.
 defmodule Emisar.Billing.Jobs.SyncSubscriptionsUnknownStatusTest.UnknownStatusPaddleClient do
   @behaviour Emisar.Billing.PaddleClient
+  @impl true
+  defdelegate cancel_checkout_transaction(id), to: Emisar.Billing.PaddleClient.Stub
+  @impl true
+  defdelegate list_checkout_transactions(attrs), to: Emisar.Billing.PaddleClient.Stub
 
   # Not what any of these stubs exercise; the behaviour requires it.
   @impl true
@@ -534,6 +574,10 @@ end
 # can be exercised.
 defmodule Emisar.Billing.Jobs.SyncSubscriptionsNoPeriodTest.NoPeriodPaddleClient do
   @behaviour Emisar.Billing.PaddleClient
+  @impl true
+  defdelegate cancel_checkout_transaction(id), to: Emisar.Billing.PaddleClient.Stub
+  @impl true
+  defdelegate list_checkout_transactions(attrs), to: Emisar.Billing.PaddleClient.Stub
 
   # Not what any of these stubs exercise; the behaviour requires it.
   @impl true
@@ -616,6 +660,10 @@ end
 # log can be checked for payload leakage.
 defmodule Emisar.Billing.Jobs.SyncSubscriptionsRedactionTest.HttpErrorPaddleClient do
   @behaviour Emisar.Billing.PaddleClient
+  @impl true
+  defdelegate cancel_checkout_transaction(id), to: Emisar.Billing.PaddleClient.Stub
+  @impl true
+  defdelegate list_checkout_transactions(attrs), to: Emisar.Billing.PaddleClient.Stub
 
   # Not what any of these stubs exercise; the behaviour requires it.
   @impl true

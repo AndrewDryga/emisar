@@ -100,6 +100,7 @@ Related rule: `rules/<domain>-<slug>.md` <!-- link the real rule when applicable
 - [portal-image-delivery-follows-main](portal-image-delivery-follows-main.md) — every successful main push publishes its exact tested portal image; production planning has no stale-image fallback, and health reports the embedded source revision
 - [portal-tests-share-one-database-per-workspace](portal-tests-share-one-database-per-workspace.md) — two concurrent portal runs share `emisar_test`, so one's migration DDL cancels the other's queries; how to tell that noise from a real missing-synchronization defect
 - [portal-token-map](portal-token-map.md) — every bearer credential the portal mints (table, prefix, owning context, mint/verify/revoke); deliberately no single tokens table
+- [billing-checkout-recovery](billing-checkout-recovery.md) — one-shot checkout reservations, exact provider binding, durable duplicate cleanup, and account closure
 
 ### Specifications
 
@@ -124,6 +125,7 @@ Related rule: `rules/<domain>-<slug>.md` <!-- link the real rule when applicable
   rotation procedures by credential class
 - [release](runbooks/release.md) — canonical product and component release
   procedure
+- [First durable-checkout rollout](runbooks/billing-checkout-cutover.md) — quiescent old producers, forward migration, and unresolved legacy payment links
 
 Normative rules live under each project's `kb/rules/`. Search the
 [shared rule index](rules/README.md) and [Portal rule index](../../portal/.agent/kb/rules/README.md)

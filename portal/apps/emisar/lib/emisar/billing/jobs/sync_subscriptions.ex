@@ -11,12 +11,20 @@ defmodule Emisar.Billing.Jobs.SyncSubscriptions do
   require Logger
 
   @subscriptions_per_page 100
+  @max_discovery_pages 100
 
   @impl Emisar.Jobs.Executors.GloballyUnique
   def execute(config) do
     limit = Keyword.get(config, :limit, @subscriptions_per_page)
+    :ok = Jobs.Sweep.each_row(limit, &list_checkout_intents/2, &Billing.Checkouts.recover/1)
     :ok = Jobs.Sweep.each_row(limit, &list_subscriptions/2, &sync/1)
-    discover_page(limit, nil)
+    :ok = discover_safely(limit)
+
+    Jobs.Sweep.each_row(
+      limit,
+      &list_subscription_retirements/2,
+      &Billing.SubscriptionRetirements.recover/1
+    )
   end
 
   defp after_subscription(queryable, id) when is_binary(id),
@@ -40,8 +48,11 @@ defmodule Emisar.Billing.Jobs.SyncSubscriptions do
         case Billing.reconcile_subscription_data(subscription_data,
                expected_subscription: subscription
              ) do
-          {:ok, synced_subscription} ->
+          {:ok, %Billing.Subscription{} = synced_subscription} ->
             sync_runner_quantity_safely(synced_subscription)
+
+          {:ok, _retirement} ->
+            :ok
 
           :ok ->
             Logger.warning("billing_sync.subscription_unmatched",
@@ -86,7 +97,16 @@ defmodule Emisar.Billing.Jobs.SyncSubscriptions do
   # pass repairs the other half: a missed subscription.created event left no
   # local row to retrieve, so list current subscriptions and resolve each one by
   # its mirrored Paddle customer id.
-  defp discover_page(limit, after_cursor) do
+  defp discover_safely(limit) do
+    discover_page(limit, nil, MapSet.new(), 0)
+  rescue
+    error -> log_discovery_failure(error.__struct__)
+  end
+
+  defp discover_page(_limit, _after_cursor, _seen, @max_discovery_pages),
+    do: log_discovery_failure(:discovery_page_limit)
+
+  defp discover_page(limit, after_cursor, seen, page) do
     case Billing.PaddleClient.list_subscriptions(limit: limit, after: after_cursor) do
       {:ok, %{subscriptions: subscriptions, next_after: next_after}}
       when is_list(subscriptions) ->
@@ -97,7 +117,11 @@ defmodule Emisar.Billing.Jobs.SyncSubscriptions do
             :ok
 
           next_after when is_binary(next_after) and next_after != after_cursor ->
-            discover_page(limit, next_after)
+            if MapSet.member?(seen, next_after) do
+              log_discovery_failure(:non_advancing_cursor)
+            else
+              discover_page(limit, next_after, MapSet.put(seen, next_after), page + 1)
+            end
 
           _repeated_or_malformed ->
             log_discovery_failure(:non_advancing_cursor)
@@ -105,6 +129,9 @@ defmodule Emisar.Billing.Jobs.SyncSubscriptions do
 
       {:error, reason} ->
         log_discovery_failure(reason)
+
+      _malformed ->
+        log_discovery_failure(:malformed_subscription_page)
     end
   end
 
@@ -153,6 +180,22 @@ defmodule Emisar.Billing.Jobs.SyncSubscriptions do
     |> after_subscription(cursor)
     |> Billing.Subscription.Query.ordered_by_id()
     |> Billing.Subscription.Query.limit_to(limit)
+    |> Repo.all()
+  end
+
+  defp list_checkout_intents(limit, cursor) do
+    Billing.CheckoutIntent.Query.pending()
+    |> Billing.CheckoutIntent.Query.after_id(cursor)
+    |> Billing.CheckoutIntent.Query.ordered_by_id()
+    |> Billing.CheckoutIntent.Query.limit_to(limit)
+    |> Repo.all()
+  end
+
+  defp list_subscription_retirements(limit, cursor) do
+    Billing.SubscriptionRetirement.Query.pending()
+    |> Billing.SubscriptionRetirement.Query.after_id(cursor)
+    |> Billing.SubscriptionRetirement.Query.ordered_by_id()
+    |> Billing.SubscriptionRetirement.Query.limit_to(limit)
     |> Repo.all()
   end
 end

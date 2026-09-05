@@ -6,6 +6,7 @@ defmodule Emisar.Billing.PaddleClient.Stub do
   """
 
   @behaviour Emisar.Billing.PaddleClient
+  alias Emisar.Billing.PaddleClient.Stub.TransactionStore
 
   @impl true
   def create_customer(%{email: email} = attrs) do
@@ -42,20 +43,27 @@ defmodule Emisar.Billing.PaddleClient.Stub do
   end
 
   @impl true
-  def create_checkout_session(attrs) do
-    {:ok,
-     %{
-       "id" => "txn_stub_" <> short_id(attrs[:customer] || "anon"),
-       "url" => "https://stub.paddle.test/checkout/" <> short_id(attrs[:customer] || "anon")
-     }}
-  end
+  def create_checkout_session(attrs), do: TransactionStore.create(attrs)
 
   @impl true
-  def bind_checkout_transaction(id, _binding), do: {:ok, %{"id" => id}}
+  def bind_checkout_transaction(id, custom_data),
+    do: TransactionStore.bind(id, custom_data)
+
+  @impl true
+  def cancel_checkout_transaction(id), do: TransactionStore.cancel(id)
+
+  @impl true
+  def list_checkout_transactions(attrs), do: TransactionStore.list(attrs)
 
   @impl true
   def retrieve_transaction(id) do
-    {:ok, %{"id" => id, "subscription_id" => String.replace_prefix(id, "txn_", "sub_")}}
+    case TransactionStore.fetch(id) do
+      {:ok, transaction} ->
+        {:ok, transaction}
+
+      :error ->
+        {:error, :not_found}
+    end
   end
 
   @impl true

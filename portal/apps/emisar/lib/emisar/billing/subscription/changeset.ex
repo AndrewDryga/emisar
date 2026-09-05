@@ -53,6 +53,20 @@ defmodule Emisar.Billing.Subscription.Changeset do
     end
   end
 
+  # Provider clocks and omitted facts belong to a provider ID, not our account row.
+  # Apply resets to the original struct so Ecto emits the necessary SQL clears.
+  def replace(%Subscription{} = subscription, attrs) do
+    defaults = Map.from_struct(%Subscription{}) |> Map.take(@fields -- [:account_id])
+
+    subscription
+    |> change(defaults)
+    |> cast(attrs, @fields)
+    |> validate_required([:account_id, :paddle_subscription_id, :plan, :status])
+    |> validate_number(:unit_price_amount, greater_than_or_equal_to: 0)
+    |> validate_number(:billing_frequency, greater_than: 0)
+    |> unique_constraint(:account_id)
+  end
+
   # Once the mirror has Paddle's monotonic timestamp, an incoming event must
   # carry one too. A partial payload without it cannot prove it is newer, so
   # dropping it prevents an old delivery from rewinding the mirror. Legacy rows

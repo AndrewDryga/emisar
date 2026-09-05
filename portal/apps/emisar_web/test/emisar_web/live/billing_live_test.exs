@@ -4,6 +4,10 @@ defmodule EmisarWeb.BillingLiveTest.InvoicesDownPaddleClient do
   # invoice section's failed state without breaking the checkout/portal/catalog
   # calls the rest of the page depends on.
   @behaviour Emisar.Billing.PaddleClient
+  @impl true
+  defdelegate cancel_checkout_transaction(id), to: Emisar.Billing.PaddleClient.Stub
+  @impl true
+  defdelegate list_checkout_transactions(attrs), to: Emisar.Billing.PaddleClient.Stub
 
   alias Emisar.Billing.PaddleClient.Stub
 
@@ -146,6 +150,53 @@ defmodule EmisarWeb.BillingLiveTest do
                render_click(lv, "upgrade", %{"plan" => "team", "cycle" => "year"})
 
       assert url =~ "stub.paddle.test/checkout"
+    end
+
+    for {state, message} <- [
+          creating: "Checkout is still being confirmed.",
+          legacy: "Earlier checkout status could not be confirmed.",
+          paid: "Your payment and subscription are still being reconciled.",
+          retirement: "Another subscription is awaiting cancellation confirmation."
+        ] do
+      test "#{state} checkout gives an actionable pending state without another POST", %{
+        conn: conn,
+        account: account,
+        user: user
+      } do
+        Fixtures.Billing.start_provider()
+        subject = Fixtures.Subjects.subject_for(user, account)
+
+        assert {:ok, _customer_id, account} =
+                 Emisar.Billing.ensure_paddle_customer(account, subject)
+
+        case unquote(state) do
+          :creating ->
+            Fixtures.Billing.create_checkout_intent(account)
+
+          :legacy ->
+            Fixtures.Billing.create_legacy_transaction(account)
+            assert_received {:paddle, :create, _attrs, _caller}
+
+          :paid ->
+            assert {:ok, _url} = Emisar.Billing.start_checkout(account, "team", :month, subject)
+            assert_received {:paddle, :bind, {transaction_id, _custom_data}, _caller}
+            Fixtures.Billing.set_transaction(transaction_id, %{"status" => "paid"})
+            assert_received {:paddle, :create, _attrs, _caller}
+
+          :retirement ->
+            transaction = Fixtures.Billing.create_legacy_transaction(account)
+            subscription = Fixtures.Billing.complete_transaction(transaction["id"])
+            Fixtures.Billing.create_retirement(account, subscription)
+            assert_received {:paddle, :create, _attrs, _caller}
+        end
+
+        {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/billing")
+        html = render_click(lv, "upgrade", %{"plan" => "team", "cycle" => "month"})
+        assert html =~ unquote(message)
+        assert html =~ "Try again shortly"
+        assert has_element?(lv, "button[phx-click='upgrade'][phx-value-plan='team']")
+        refute_received {:paddle, :create, _attrs, _caller}
+      end
     end
 
     test "a signed annual Team choice is preselected but still requires Upgrade", %{

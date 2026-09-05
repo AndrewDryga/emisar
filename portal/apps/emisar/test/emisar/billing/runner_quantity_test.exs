@@ -1,5 +1,9 @@
 defmodule Emisar.Billing.RunnerQuantityTest.ControlledPaddleClient do
   @behaviour Emisar.Billing.PaddleClient
+  @impl true
+  defdelegate cancel_checkout_transaction(id), to: Emisar.Billing.PaddleClient.Stub
+  @impl true
+  defdelegate list_checkout_transactions(attrs), to: Emisar.Billing.PaddleClient.Stub
   alias Emisar.Config
 
   @impl true
