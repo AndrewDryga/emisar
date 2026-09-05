@@ -11,18 +11,14 @@ services:
 
   mongodb:
     image: mongo:${PACKTEST_VERSION:-8.2.5}${PACKTEST_DIGEST-}
-    command: ["mongod", "--setParameter", "enableTestCommands=1"]
+    entrypoint: ["/bin/bash", "/fixture/bootstrap.sh"]
     environment:
-      MONGO_INITDB_ROOT_USERNAME: root
-      MONGO_INITDB_ROOT_PASSWORD: packtest-canary-mongodb-c936
+      PACKTEST_ROOT_PASSWORD: packtest-canary-mongodb-c936
     volumes:
-      - ${EMISAR_ROOT}/packs/mongodb/test/fixtures/init.js:/docker-entrypoint-initdb.d/init.js:ro
+      - ${EMISAR_ROOT}/packs/mongodb/test/fixtures:/fixture:ro
     healthcheck:
-      # Dial the routable address, never loopback. The entrypoint seeds through
-      # a temporary mongod bound to 127.0.0.1 and shuts it down before the real
-      # one starts, so a loopback ping reports healthy while a case connecting
-      # over the network still gets ECONNREFUSED.
-      test: ["CMD-SHELL", "mongosh --host \"$$(hostname -i)\" --quiet --eval \"db.adminCommand('ping').ok\""]
+      # Readiness proves seeded data and the same route the cases use.
+      test: ["CMD-SHELL", "test -f /tmp/packtest-seeded && mongosh --host \"$$(hostname -i)\" --quiet --eval \"db.adminCommand('ping').ok\""]
       interval: 10s
       start_period: 30s
       # Poll cost scales with probe cost: this check spawns a heavyweight

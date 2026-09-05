@@ -1,3 +1,14 @@
+// --auth is enabled already; only loopback can create this first administrator.
+const admin = db.getSiblingDB("admin");
+admin.createUser({
+  user: "root",
+  pwd: process.env.PACKTEST_ROOT_PASSWORD,
+  roles: [{role: "root", db: "admin"}],
+});
+if (!admin.auth("root", process.env.PACKTEST_ROOT_PASSWORD)) {
+  throw new Error("Fixture administrator authentication failed");
+}
+
 const packtest = db.getSiblingDB("packtest");
 
 packtest.orders.insertMany([
