@@ -662,8 +662,9 @@ defmodule EmisarWeb.PoliciesLive do
       <div :if={not @loading?} class="space-y-12">
         <div class="space-y-4">
           <.page_intro>
-            Each action's risk tier meets your default policy — allow, require approval,
-            or deny — with overrides and targeted rulesets for the exceptions.
+            Choose how to handle actions at each risk level: allow them, require approval, or block them.
+            Set rules for specific runners or runner groups, and add exceptions for individual actions.
+            Otherwise, your default rules apply.
             <.doc_link href={~p"/docs/policies-and-approvals"}>Policy docs</.doc_link>
           </.page_intro>
 
