@@ -3,6 +3,7 @@
 package cloud
 
 import (
+	"fmt"
 	"os"
 	"syscall"
 )
@@ -16,4 +17,25 @@ import (
 // per file, and only the open flags are shared.
 func openSecureLocalFile(path string) (*os.File, error) {
 	return os.OpenFile(path, os.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_NONBLOCK, 0)
+}
+
+// openSecureLocalAppend never creates a missing file: an append-only delta
+// cannot reconstruct the history that disappeared with a runner-owned store.
+func openSecureLocalAppend(path string) (*os.File, error) {
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_APPEND|syscall.O_NOFOLLOW|syscall.O_NONBLOCK, 0)
+	if err != nil {
+		return nil, err
+	}
+	info, err := f.Stat()
+	if err == nil && !info.Mode().IsRegular() {
+		err = fmt.Errorf("runner state is not a regular file")
+	}
+	if err == nil && info.Mode().Perm() != 0o600 {
+		err = f.Chmod(0o600)
+	}
+	if err != nil {
+		_ = f.Close()
+		return nil, err
+	}
+	return f, nil
 }

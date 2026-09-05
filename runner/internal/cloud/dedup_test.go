@@ -17,6 +17,9 @@ import (
 func (d *dedupRing) lookup(requestID string) (ActionResultMsg, bool) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
+	if d.unusableLocked() != nil {
+		return ActionResultMsg{}, false
+	}
 	entry, ok := d.records[requestID]
 	if !ok || entry.State != dispatchCompleted && entry.State != dispatchAcknowledged {
 		return ActionResultMsg{}, false

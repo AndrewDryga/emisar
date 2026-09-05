@@ -3,6 +3,7 @@ package cloud
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -11,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/andrewdryga/emisar/runner/internal/fsutil"
 	"github.com/andrewdryga/emisar/runner/internal/outputschema"
 )
 
@@ -26,9 +28,10 @@ type dedupBenchmarkInput struct {
 	result    ActionResultMsg
 }
 
-// BenchmarkDedupRingDurableLifecycle measures the real replace-and-sync path.
-// The contract-max cases intentionally rewrite tens of MiB per operation; use
-// a fixed benchtime (for example, -benchtime=3x) for repeatable samples.
+// BenchmarkDedupRingDurableLifecycle measures real durable transitions with a
+// fully persisted starting history. Counters measure bytes actually accepted
+// by append and snapshot writes, not final file sizes (which double-count old
+// bytes under append). Use -benchtime=3x for comparable short samples.
 func BenchmarkDedupRingDurableLifecycle(b *testing.B) {
 	profiles := dedupBenchmarkProfiles()
 	cases := []struct {
@@ -52,21 +55,16 @@ func BenchmarkDedupRingDurableLifecycle(b *testing.B) {
 func BenchmarkDedupRingDurableLifecycleParallel(b *testing.B) {
 	profile := dedupBenchmarkProfiles()[0]
 	d := newBenchmarkDedupRing(b, 1024, profile)
-	storeBytes, replacedBytes := measureDedupLifecycleBytes(
-		b,
-		d,
-		newDedupBenchmarkInput(1024, profile),
-	)
+	writes := countDedupBenchmarkWrites(d)
 	inputs := make([]dedupBenchmarkInput, b.N)
 	for i := range inputs {
-		inputs[i] = newDedupBenchmarkInput(1025+i, profile)
+		inputs[i] = newDedupBenchmarkInput(1024+i, profile)
 	}
 
 	var next atomic.Uint64
 	var failure error
 	var failureMu sync.Mutex
 	b.ReportAllocs()
-	b.SetBytes(replacedBytes)
 	b.ResetTimer()
 	b.RunParallel(func(worker *testing.PB) {
 		for worker.Next() {
@@ -85,27 +83,21 @@ func BenchmarkDedupRingDurableLifecycleParallel(b *testing.B) {
 	if failure != nil {
 		b.Fatal(failure)
 	}
-	b.ReportMetric(float64(storeBytes), "store-B")
-	b.ReportMetric(float64(replacedBytes), "replaced-B/lifecycle")
+	reportDedupBenchmarkWrites(b, d, writes, b.N)
 }
 
 func benchmarkDedupDurableLifecycle(b *testing.B, entries int, profile dedupBenchmarkProfile) {
 	d := newBenchmarkDedupRing(b, entries, profile)
-	storeBytes, replacedBytes := measureDedupLifecycleBytes(
-		b,
-		d,
-		newDedupBenchmarkInput(entries, profile),
-	)
+	writes := countDedupBenchmarkWrites(d)
 	inputs := make([]dedupBenchmarkInput, b.N)
 	for i := range inputs {
-		inputs[i] = newDedupBenchmarkInput(entries+1+i, profile)
+		inputs[i] = newDedupBenchmarkInput(entries+i, profile)
 	}
 
 	var reserveElapsed time.Duration
 	var completeElapsed time.Duration
 	var acknowledgeElapsed time.Duration
 	b.ReportAllocs()
-	b.SetBytes(replacedBytes)
 	b.ResetTimer()
 	for _, input := range inputs {
 		started := time.Now()
@@ -131,8 +123,40 @@ func benchmarkDedupDurableLifecycle(b *testing.B, entries int, profile dedupBenc
 	b.ReportMetric(float64(reserveElapsed.Nanoseconds())/float64(b.N), "reserve-ns/op")
 	b.ReportMetric(float64(completeElapsed.Nanoseconds())/float64(b.N), "complete-ns/op")
 	b.ReportMetric(float64(acknowledgeElapsed.Nanoseconds())/float64(b.N), "acknowledge-ns/op")
-	b.ReportMetric(float64(storeBytes), "store-B")
-	b.ReportMetric(float64(replacedBytes), "replaced-B/lifecycle")
+	reportDedupBenchmarkWrites(b, d, writes, b.N)
+}
+
+// A full capacity window crosses real compaction thresholds without changing
+// counters to force a synthetic rollover. One benchmark operation is 1025
+// lifecycles; lifecycle-ns and written-B/lifecycle are the amortized measures.
+func BenchmarkDedupRingDurableCompactionWindow(b *testing.B) {
+	const entries = 1024
+	const window = entries + 1
+	for _, profile := range dedupBenchmarkProfiles()[1:] {
+		b.Run(profile.name, func(b *testing.B) {
+			d := newBenchmarkDedupRing(b, entries, profile)
+			writes := countDedupBenchmarkWrites(d)
+			inputs := make([]dedupBenchmarkInput, b.N*window)
+			for i := range inputs {
+				inputs[i] = newDedupBenchmarkInput(entries+i, profile)
+			}
+			b.ReportAllocs()
+			b.ResetTimer()
+			started := time.Now()
+			for _, input := range inputs {
+				if err := runDedupLifecycle(d, input); err != nil {
+					b.Fatal(err)
+				}
+			}
+			elapsed := time.Since(started)
+			b.StopTimer()
+			if writes.snapshots.Load() == 0 {
+				b.Fatal("benchmark window did not cross a compaction")
+			}
+			b.ReportMetric(float64(elapsed.Nanoseconds())/float64(len(inputs)), "lifecycle-ns")
+			reportDedupBenchmarkWrites(b, d, writes, len(inputs))
+		})
+	}
 }
 
 func newBenchmarkDedupRing(b *testing.B, entries int, profile dedupBenchmarkProfile) *dedupRing {
@@ -147,6 +171,9 @@ func newBenchmarkDedupRing(b *testing.B, entries int, profile dedupBenchmarkProf
 			State:          dispatchAcknowledged,
 			Result:         input.result,
 		}
+	}
+	if err := d.writeStore(); err != nil {
+		b.Fatal(err)
 	}
 	return d
 }
@@ -164,27 +191,57 @@ func newDedupBenchmarkInput(sequence int, profile dedupBenchmarkProfile) dedupBe
 	}
 }
 
-func measureDedupLifecycleBytes(
-	b *testing.B,
-	d *dedupRing,
-	input dedupBenchmarkInput,
-) (storeBytes int64, replacedBytes int64) {
+type dedupBenchmarkWrites struct {
+	bytes     atomic.Int64
+	snapshots atomic.Int64
+}
+
+type countingDispatchFile struct {
+	dispatchFile
+	bytes *atomic.Int64
+}
+
+func (f countingDispatchFile) Write(p []byte) (int, error) {
+	n, err := f.dispatchFile.Write(p)
+	f.bytes.Add(int64(n))
+	return n, err
+}
+
+type countingDispatchWriter struct {
+	io.Writer
+	bytes *atomic.Int64
+}
+
+func (w countingDispatchWriter) Write(p []byte) (int, error) {
+	n, err := w.Writer.Write(p)
+	w.bytes.Add(int64(n))
+	return n, err
+}
+
+func countDedupBenchmarkWrites(d *dedupRing) *dedupBenchmarkWrites {
+	writes := &dedupBenchmarkWrites{}
+	d.openAppend = func(path string) (dispatchFile, error) {
+		f, err := openSecureLocalAppend(path)
+		if err != nil {
+			return nil, err
+		}
+		return countingDispatchFile{dispatchFile: f, bytes: &writes.bytes}, nil
+	}
+	d.replaceFile = func(path string, write func(io.Writer) error) error {
+		writes.snapshots.Add(1)
+		return fsutil.ReplaceFile(path, func(w io.Writer) error {
+			return write(countingDispatchWriter{Writer: w, bytes: &writes.bytes})
+		})
+	}
+	return writes
+}
+
+func reportDedupBenchmarkWrites(b *testing.B, d *dedupRing, writes *dedupBenchmarkWrites, lifecycles int) {
 	b.Helper()
-	decision, _, err := d.reserve(input.requestID, input.digest)
-	if err != nil || decision != reservationNew {
-		b.Fatalf("measure reserve %s: decision=%v err=%v", input.requestID, decision, err)
-	}
-	replacedBytes += dedupBenchmarkStoreSize(b, d.storePath)
-	if err := d.complete(input.requestID, input.digest, input.result); err != nil {
-		b.Fatalf("measure complete %s: %v", input.requestID, err)
-	}
-	replacedBytes += dedupBenchmarkStoreSize(b, d.storePath)
-	if err := d.acknowledge(input.requestID); err != nil {
-		b.Fatalf("measure acknowledge %s: %v", input.requestID, err)
-	}
-	storeBytes = dedupBenchmarkStoreSize(b, d.storePath)
-	replacedBytes += storeBytes
-	return storeBytes, replacedBytes
+	b.SetBytes(writes.bytes.Load() / int64(b.N))
+	b.ReportMetric(float64(dedupBenchmarkStoreSize(b, d.storePath)), "store-B")
+	b.ReportMetric(float64(writes.bytes.Load())/float64(lifecycles), "written-B/lifecycle")
+	b.ReportMetric(float64(writes.snapshots.Load()), "compactions")
 }
 
 func dedupBenchmarkStoreSize(b *testing.B, path string) int64 {

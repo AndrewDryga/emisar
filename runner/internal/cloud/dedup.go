@@ -1,7 +1,6 @@
 package cloud
 
 import (
-	"bufio"
 	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
@@ -15,7 +14,6 @@ import (
 	"reflect"
 	"sync"
 
-	"github.com/andrewdryga/emisar/runner/internal/fsutil"
 	"github.com/andrewdryga/emisar/runner/internal/jsonvalue"
 	"github.com/andrewdryga/emisar/runner/internal/outputschema"
 )
@@ -65,6 +63,18 @@ type dedupRing struct {
 	// could not READ. The remedies are opposite: quarantining a file we just
 	// failed to create cannot help, and the real cause is the data directory.
 	loadErrWrite bool
+
+	// The backing stamp belongs to the same file replayed or last committed.
+	// Drift requires a complete committed-state snapshot, never a delta-only
+	// replacement. These fields and the narrow I/O hooks are mutex-protected.
+	backing         os.FileInfo
+	needsSnapshot   bool
+	snapshotBytes   int64
+	appendBytes     int64
+	transitionCount int
+	persistErr      error
+	openAppend      func(string) (dispatchFile, error)
+	replaceFile     func(string, func(io.Writer) error) error
 }
 
 type dispatchState string
@@ -99,11 +109,12 @@ func newDedupRing(max int, storePath, legacyPath string, logger *slog.Logger) *d
 		logger = slog.Default()
 	}
 	d := &dedupRing{
-		max:        max,
-		records:    map[string]dedupEntry{},
-		storePath:  storePath,
-		legacyPath: legacyPath,
-		logger:     logger,
+		max:           max,
+		records:       map[string]dedupEntry{},
+		storePath:     storePath,
+		legacyPath:    legacyPath,
+		logger:        logger,
+		needsSnapshot: true,
 	}
 	d.load()
 	return d
@@ -116,7 +127,7 @@ func (d *dedupRing) load() {
 	if d.storePath == "" {
 		return
 	}
-	entries, sawLegacy, err := readDispatchLog(d.storePath)
+	log, err := readDispatchStore(d.storePath)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			d.adoptLegacyStore()
@@ -127,12 +138,19 @@ func (d *dedupRing) load() {
 		d.logger.Error("cloud.dedup_load_failed", "error", d.loadErr, "path", d.storePath)
 		return
 	}
-	for _, e := range entries {
+	for _, e := range log.entries {
 		d.keys = append(d.keys, e.RequestID)
 		d.records[e.RequestID] = e
 	}
+	d.backing = log.info
+	d.needsSnapshot = log.needsSnapshot
+	d.snapshotBytes = log.snapshotBytes
+	d.appendBytes = log.info.Size() - log.snapshotBytes
+	d.transitionCount = log.transitions
+	loaded := len(d.keys)
 	d.evictToMax()
-	if sawLegacy {
+	d.needsSnapshot = d.needsSnapshot || len(d.keys) != loaded
+	if log.legacy {
 		// Rewrite the whole store so legacy entries are persisted in the
 		// current format exactly once; read state we cannot re-persist is
 		// fail-closed (proceeding could double-run a dispatch).
@@ -229,33 +247,8 @@ func (d *dedupRing) evictToMax() {
 // persists the migration). Open errors keep os.ErrNotExist reachable via
 // errors.Is.
 func readDispatchLog(path string) (entries []dedupEntry, sawLegacy bool, err error) {
-	f, err := os.Open(path)
-	if err != nil {
-		return nil, false, fmt.Errorf("open dispatch log: %w", err)
-	}
-	defer f.Close()
-
-	seen := map[string]struct{}{}
-	sc := bufio.NewScanner(f)
-	sc.Buffer(make([]byte, 0, 64*1024), 16*1024*1024)
-	lineNumber := 0
-	for sc.Scan() {
-		lineNumber++
-		e, legacy, err := decodeDedupEntry(sc.Bytes())
-		if err != nil {
-			return nil, false, fmt.Errorf("invalid dispatch log entry on line %d", lineNumber)
-		}
-		if _, exists := seen[e.RequestID]; exists {
-			return nil, false, fmt.Errorf("duplicate dispatch log entry on line %d", lineNumber)
-		}
-		seen[e.RequestID] = struct{}{}
-		entries = append(entries, e)
-		sawLegacy = sawLegacy || legacy
-	}
-	if err := sc.Err(); err != nil {
-		return nil, false, fmt.Errorf("read dispatch log: %w", err)
-	}
-	return entries, sawLegacy, nil
+	log, err := readDispatchStore(path)
+	return log.entries, log.legacy, err
 }
 
 // decodeDedupEntry decodes one dispatch log line: the current shape strictly,
@@ -494,8 +487,8 @@ func validActionResult(result ActionResultMsg, requestID string) bool {
 func (d *dedupRing) reserve(requestID, digest string) (reservationDecision, ActionResultMsg, error) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
-	if d.loadErr != nil {
-		return reservationNew, ActionResultMsg{}, d.loadErr
+	if err := d.unusableLocked(); err != nil {
+		return reservationNew, ActionResultMsg{}, err
 	}
 	if !validDispatchDigest(digest) {
 		return reservationNew, ActionResultMsg{}, fmt.Errorf("cloud: invalid dispatch digest")
@@ -505,18 +498,17 @@ func (d *dedupRing) reserve(requestID, digest string) (reservationDecision, Acti
 		return decision, result, nil
 	}
 
-	oldKeys := append([]string(nil), d.keys...)
-	oldRecords := cloneDedupRecords(d.records)
-	if len(d.keys) >= d.max && !d.evictOldestAcknowledgedLocked() {
-		return reservationNew, ActionResultMsg{}, fmt.Errorf("cloud: dispatch log capacity reached with active or unacknowledged dispatches")
-	}
-	d.keys = append(d.keys, requestID)
-	d.records[requestID] = dedupEntry{
+	entry := dedupEntry{
 		RequestID: requestID, DispatchSHA256: digest, State: dispatchReserved,
 	}
-	if err := d.writeStore(); err != nil {
-		d.keys = oldKeys
-		d.records = oldRecords
+	transition := dispatchTransition{Version: 1, Entry: entry}
+	if len(d.keys) >= d.max {
+		transition.Evict = d.oldestAcknowledgedLocked()
+		if transition.Evict == "" {
+			return reservationNew, ActionResultMsg{}, fmt.Errorf("cloud: dispatch log capacity reached with active or unacknowledged dispatches")
+		}
+	}
+	if err := d.commitTransitionLocked(transition); err != nil {
 		return reservationNew, ActionResultMsg{}, err
 	}
 	return reservationNew, ActionResultMsg{}, nil
@@ -528,8 +520,8 @@ func (d *dedupRing) reserve(requestID, digest string) (reservationDecision, Acti
 func (d *dedupRing) inspect(requestID, digest string) (reservationDecision, ActionResultMsg, error) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
-	if d.loadErr != nil {
-		return reservationNew, ActionResultMsg{}, d.loadErr
+	if err := d.unusableLocked(); err != nil {
+		return reservationNew, ActionResultMsg{}, err
 	}
 	if !validDispatchDigest(digest) {
 		return reservationNew, ActionResultMsg{}, fmt.Errorf("cloud: invalid dispatch digest")
@@ -571,15 +563,9 @@ func validDispatchDigest(digest string) bool {
 // evictOldestAcknowledgedLocked frees a ring slot. Only an ACKNOWLEDGED entry
 // may go: the portal has the result, so forgetting it cannot lose one.
 //
-// Adopted pre-v0.10 entries enter acknowledged (decodeDedupEntry) and are
-// therefore evictable, which in theory allows a second execution if the portal
-// redelivered that request id after eviction. It cannot: the portal only
-// redelivers a run still in sent/running/cancelling, and its DispatchTimeout
-// sweep resolves those within a two-minute grace — while eviction needs 1024
-// newer dispatches to arrive first. Until eviction, the legacy entry's sentinel
-// digest refuses the redelivery outright. Making legacy entries non-evictable
-// would mean importing them as completed, which resends every ancient result on
-// the next connect — a worse trade for a window that cannot open.
+// Adopted pre-v0.10 entries also enter acknowledged. Retention is bounded:
+// once an acknowledged id is evicted, the ring no longer refuses its replay.
+// Until then, a legacy entry's sentinel digest refuses every new intent.
 func (d *dedupRing) evictOldestAcknowledgedLocked() bool {
 	for index, key := range d.keys {
 		if d.records[key].State == dispatchAcknowledged {
@@ -591,12 +577,13 @@ func (d *dedupRing) evictOldestAcknowledgedLocked() bool {
 	return false
 }
 
-func cloneDedupRecords(records map[string]dedupEntry) map[string]dedupEntry {
-	cloned := make(map[string]dedupEntry, len(records))
-	for key, entry := range records {
-		cloned[key] = entry
+func (d *dedupRing) oldestAcknowledgedLocked() string {
+	for _, key := range d.keys {
+		if d.records[key].State == dispatchAcknowledged {
+			return key
+		}
 	}
-	return cloned
+	return ""
 }
 
 // complete replaces an exact reservation with its terminal result. A digest
@@ -604,6 +591,9 @@ func cloneDedupRecords(records map[string]dedupEntry) map[string]dedupEntry {
 func (d *dedupRing) complete(requestID, digest string, result ActionResultMsg) error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
+	if err := d.unusableLocked(); err != nil {
+		return err
+	}
 	if !validActionResult(result, requestID) {
 		return fmt.Errorf("cloud: invalid terminal result for %q", requestID)
 	}
@@ -626,14 +616,7 @@ func (d *dedupRing) complete(requestID, digest string, result ActionResultMsg) e
 	}
 	existing.State = dispatchCompleted
 	existing.Result = result
-	d.records[requestID] = existing
-	if err := d.writeStore(); err != nil {
-		existing.State = dispatchReserved
-		existing.Result = ActionResultMsg{}
-		d.records[requestID] = existing
-		return err
-	}
-	return nil
+	return d.commitTransitionLocked(dispatchTransition{Version: 1, Entry: existing})
 }
 
 // acknowledge records that the control plane durably received a terminal
@@ -641,6 +624,9 @@ func (d *dedupRing) complete(requestID, digest string, result ActionResultMsg) e
 func (d *dedupRing) acknowledge(requestID string) error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
+	if err := d.unusableLocked(); err != nil {
+		return err
+	}
 
 	existing, ok := d.records[requestID]
 	if !ok {
@@ -653,45 +639,18 @@ func (d *dedupRing) acknowledge(requestID string) error {
 		return nil
 	case dispatchCompleted:
 		existing.State = dispatchAcknowledged
-		d.records[requestID] = existing
-		if err := d.writeStore(); err != nil {
-			existing.State = dispatchCompleted
-			d.records[requestID] = existing
-			return err
-		}
-		return nil
+		return d.commitTransitionLocked(dispatchTransition{Version: 1, Entry: existing})
 	default:
 		return fmt.Errorf("cloud: acknowledge dispatch %q with invalid state %q", requestID, existing.State)
 	}
 }
 
-func (d *dedupRing) writeStore() error {
-	if d.storePath == "" {
-		return nil
-	}
-	// fsutil.ReplaceFile uses CreateTemp, not a fixed "<path>.tmp" opened
-	// O_CREATE|O_TRUNC: the fixed name follows a symlink planted at that path,
-	// so anything able to write in data_dir could redirect the truncate.
-	return fsutil.ReplaceFile(d.storePath, func(w io.Writer) error {
-		for _, key := range d.keys {
-			line, err := json.Marshal(d.records[key])
-			if err != nil {
-				return err
-			}
-			if _, err := w.Write(line); err != nil {
-				return err
-			}
-			if _, err := w.Write([]byte("\n")); err != nil {
-				return err
-			}
-		}
-		return nil
-	})
-}
-
 func (d *dedupRing) unacknowledgedResults() []ActionResultMsg {
 	d.mu.Lock()
 	defer d.mu.Unlock()
+	if d.unusableLocked() != nil {
+		return nil
+	}
 	results := make([]ActionResultMsg, 0)
 	for _, requestID := range d.keys {
 		entry := d.records[requestID]
@@ -705,6 +664,9 @@ func (d *dedupRing) unacknowledgedResults() []ActionResultMsg {
 func (d *dedupRing) unacknowledgedResult(requestID string) (ActionResultMsg, bool) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
+	if d.unusableLocked() != nil {
+		return ActionResultMsg{}, false
+	}
 	entry, ok := d.records[requestID]
 	if !ok || entry.State != dispatchCompleted {
 		return ActionResultMsg{}, false
@@ -715,6 +677,9 @@ func (d *dedupRing) unacknowledgedResult(requestID string) (ActionResultMsg, boo
 func (d *dedupRing) contains(requestID string) bool {
 	d.mu.Lock()
 	defer d.mu.Unlock()
+	if d.unusableLocked() != nil {
+		return false
+	}
 	_, ok := d.records[requestID]
 	return ok
 }
