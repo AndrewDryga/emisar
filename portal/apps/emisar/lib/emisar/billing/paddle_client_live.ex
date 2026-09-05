@@ -145,16 +145,14 @@ defmodule Emisar.Billing.PaddleClient.Live do
 
   def parse_subscription_page(_response), do: {:error, :malformed_subscription_page}
 
-  # Paddle cancels a subscription by PATCHing scheduled_change, not by DELETE.
-  # `effective_from: "immediately"` because this is called when an account is
-  # being closed — a cancellation that waits for the period end keeps billing an
-  # account that is already gone.
+  # Account closure must stop billing immediately, not schedule a later cancel.
   @impl true
   def cancel_subscription(id) do
-    case patch_json("/subscriptions/#{id}", %{
-           scheduled_change: %{action: "cancel", effective_from: "immediately"}
+    case post_json("/subscriptions/#{id}/cancel", %{
+           effective_from: "immediately"
          }) do
-      {:ok, %{"data" => sub}} -> {:ok, sub}
+      {:ok, %{"data" => %{"id" => ^id, "status" => "canceled"} = sub}} -> {:ok, sub}
+      {:ok, _response} -> {:error, :cancellation_not_confirmed}
       other -> other
     end
   end
@@ -294,7 +292,10 @@ defmodule Emisar.Billing.PaddleClient.Live do
   defp next_subscription_cursor(_pagination), do: {:error, :malformed_subscription_page}
 
   defp request_json(request) do
-    case Finch.request(request, Emisar.Finch, receive_timeout: 8_000) do
+    config = Emisar.Config.get_env(:emisar, __MODULE__, [])
+    http_client = Keyword.get(config, :http_client, Finch)
+
+    case http_client.request(request, Emisar.Finch, receive_timeout: 8_000) do
       {:ok, %Finch.Response{status: status, body: body}} when status in 200..299 ->
         Jason.decode(body)
 
