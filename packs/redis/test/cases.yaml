@@ -141,6 +141,8 @@ cases:
     action: redis.sentinel_is_master_down
     args: {ip: 127.0.0.1, port: "6379"}
     arrange:
+      # Redis persists the current epoch before the leader epoch. Keep the
+      # same copied snapshot that proves both writes reached the sampler.
       - argv:
           - /bin/sh
           - -ec
@@ -149,12 +151,13 @@ cases:
             127.0.0.1 6379 7 1111111111111111111111111111111111111111 |
             tail -n 2 >/tmp/packtest-redis-sentinel-vote-before;
             attempts=0;
-            until grep -q '^sentinel current-epoch 7$' /packtest-sentinel/election-state; do
+            until cat /packtest-sentinel/election-state >/tmp/packtest-redis-sentinel-epoch-before &&
+            grep -qx 'sentinel current-epoch 7' /tmp/packtest-redis-sentinel-epoch-before &&
+            grep -qx 'sentinel leader-epoch mymaster 7' /tmp/packtest-redis-sentinel-epoch-before; do
               attempts=$((attempts + 1));
               test "$attempts" -lt 50;
               sleep 0.1;
             done;
-            cat /packtest-sentinel/election-state >/tmp/packtest-redis-sentinel-epoch-before;
             test -s /tmp/packtest-redis-sentinel-vote-before;
             test "$(wc -l </tmp/packtest-redis-sentinel-epoch-before)" = 2
     expect:
