@@ -811,8 +811,9 @@ defmodule EmisarWeb.DomainComponents do
     <%!-- CONTENT ON CANVAS, task + rail: the left column follows the
          operator's own timeline — act (command + credential), wait (the live
          ping line), recover (troubleshooting, revealed in place) — then the
-         script's trust facts as reference; the READING (what's a runner,
-         resources) is a right rail at xl, stacking below when the work canvas
+         script's trust facts as reference. The introduction explains the runner
+         before the task; supporting guidance and resources form a right rail
+         at xl, stacking below when the work canvas
          cannot keep the primary task wider than the rail. Columns
          separate by AIR alone — hairlines are row-lattice grammar, never
          section chrome (vertical rules belong to the shell). ONE type
@@ -821,10 +822,12 @@ defmodule EmisarWeb.DomainComponents do
          artifact; the credential note and the wait line are both AMBER
          (design-system §5/§8.1 — pending and secret-in-hand, not an alarm),
          and the overdue escalation earns its spine rather than its hue. --%>
-    <div>
-      <p :if={is_binary(@install_command)} class="text-sm leading-relaxed text-zinc-400">
-        Two minutes — pick a Linux or macOS host, paste the one-liner.
-      </p>
+    <div id="runner-install-wizard">
+      <.page_intro>
+        A runner is the program that runs actions on your server, VM, or container
+        and sends the results back to emisar. Install one on each host you want to manage.
+        <.doc_link href={~p"/docs/host-install"}>Installation guide</.doc_link>
+      </.page_intro>
 
       <div class="mt-8 xl:grid xl:grid-cols-[minmax(0,1fr)_22rem] xl:gap-x-12">
         <div>
@@ -833,6 +836,9 @@ defmodule EmisarWeb.DomainComponents do
               <div class="space-y-8">
                 <section>
                   <.section_header title="Run this on the host" />
+                  <p class="mt-3 text-sm leading-relaxed text-zinc-400">
+                    Open a terminal on your Linux or macOS host and paste the command below.
+                  </p>
                   <%!-- Copy carries the literal string, including its leading
                        HISTCONTROL space; the compact preview deliberately clips. --%>
                   <.code_line
@@ -994,54 +1000,26 @@ defmodule EmisarWeb.DomainComponents do
           <% end %>
         </div>
 
-        <%!-- The reading rail — what a runner is + the other ways in (docs,
+        <%!-- The reading rail — actions and packs + the other ways in (docs,
              multi-use keys, packs), true for every wizard state (a failed
              mint still deserves the manual-install door). Quiet rows on the
              canvas, never island cards competing with the task. --%>
         <aside class="mt-10 space-y-8 xl:mt-0">
-          <%!-- Beginner framing first — someone installing their first runner
-               needs "what is this and why" before "what the script does". --%>
-          <section>
-            <%!-- Rail heading matches the shared `docs_rail` (text-sm, zinc-200),
-                 NOT the canvas `section_header` (16px display) — so "What's a
-                 runner?" reads identically here and on the Runners list rail. --%>
-            <h3 class="mb-3 text-sm font-semibold text-zinc-200">What's a runner?</h3>
-            <div class="space-y-3 text-sm leading-relaxed text-zinc-400">
-              <p>
-                A runner is the small <span class="text-zinc-200">emisar agent</span>
-                you're installing here — a service on this host that carries out actions for you.
-              </p>
-              <p>
-                The cloud never touches your hosts directly. It dispatches a gated, audited action
-                to the runner, which runs only the vetted actions in its trusted packs and reports
-                back — no inbound access, no SSH keys handed out.
-              </p>
-              <p>
-                Install one on each host you want to operate. Once it connects it appears on the
-                Runners page, ready to receive actions.
-              </p>
-            </div>
-          </section>
+          <.docs_rail title="Runner basics">
+            <p>
+              Actions are tasks such as checking disk space or restarting a service. Packs are
+              collections of actions you install on a runner. <.doc_link href={
+                ~p"/docs/use-a-published-pack"
+              }>How to install a pack</.doc_link>.
+            </p>
+            <p>
+              Your policies decide which actions are allowed, need approval, or are blocked.
+            </p>
+          </.docs_rail>
 
           <section>
             <h3 class="mb-3 text-sm font-semibold text-zinc-200">Resources</h3>
             <ul class="divide-y divide-zinc-800/70 border-t border-zinc-800/70">
-              <li>
-                <.link
-                  href={~p"/docs/host-install"}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  class="group -mx-3 flex items-center gap-4 rounded-lg px-3 py-3.5 transition hover:bg-white/[0.04]"
-                >
-                  <div class="min-w-0 flex-1">
-                    <div class="text-sm font-medium text-zinc-100">Full host install</div>
-                  </div>
-                  <.icon
-                    name="action.external_link"
-                    class="h-4 w-4 shrink-0 text-zinc-500 transition-colors group-hover:text-brand-400"
-                  />
-                </.link>
-              </li>
               <li>
                 <.link
                   href={~p"/docs/containers"}

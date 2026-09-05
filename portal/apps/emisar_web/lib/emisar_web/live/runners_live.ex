@@ -380,9 +380,10 @@ defmodule EmisarWeb.RunnersLive do
           <%!-- Zero fleet, no install permission: the pitch without a wizard
                whose mint can only fail. --%>
           <.empty_state icon="product.runner" title="No runners yet.">
-            A runner is the emisar binary on one of your hosts. Connecting one needs
-            an operator role or above, with access to all runners — ask a teammate
-            who has both, and the new host's live state will appear here.
+            A runner is the program that runs actions on your server, VM, or container
+            and sends the results back to emisar. Connecting one needs an operator role or above, with access to all runners.
+            Ask a teammate who has both to connect a runner.
+            <.doc_link href={~p"/docs/runner-fleet"}>Runner docs</.doc_link>
           </.empty_state>
         <% @show_wizard? -> %>
           <%!-- No runners yet → the empty state IS the installer. A runner is the
@@ -583,11 +584,13 @@ defmodule EmisarWeb.RunnersLive do
 
             <div id="runners-supporting-rail">
               <div id="runner-explainer">
-                <.docs_rail title="Working with runners">
+                <.docs_rail title="Runner basics">
                   <p>
                     Actions are tasks such as checking disk space or restarting a service. Packs are
                     collections of actions you install on a runner. Your policies decide which actions
-                    are allowed, need approval, or are blocked.
+                    are allowed, need approval, or are blocked. <.doc_link href={
+                      ~p"/docs/use-a-published-pack"
+                    }>How to install a pack</.doc_link>.
                   </p>
                   <p>
                     Group related runners, such as “web” or “production,” to apply shared policies

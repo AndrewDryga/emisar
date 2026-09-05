@@ -55,6 +55,39 @@ defmodule EmisarWeb.RunnerInstallLiveTest do
       refute Repo.exists?(EnrollmentKey.Query.all())
     end
 
+    test "explains the runner before the command and keeps setup guidance reachable", %{
+      conn: conn,
+      account: account
+    } do
+      {:ok, lv, html} = live(conn, ~p"/app/#{account}/runners/install")
+
+      assert has_element?(
+               lv,
+               "#runner-install-wizard > p",
+               "A runner is the program that runs actions on your server, VM, or container"
+             )
+
+      assert has_element?(
+               lv,
+               ~s|#runner-install-wizard > p a[href="/docs/host-install"]|,
+               "Installation guide"
+             )
+
+      refute has_element?(lv, ~s|#runner-install-wizard aside a[href="/docs/host-install"]|)
+
+      assert has_element?(lv, "#runner-install-wizard aside h3", "Runner basics")
+
+      assert has_element?(
+               lv,
+               ~s|#runner-install-wizard aside p a[href="/docs/use-a-published-pack"]|,
+               "How to install a pack"
+             )
+
+      {intro_pos, _} = :binary.match(html, "A runner is the program")
+      {command_pos, _} = :binary.match(html, ~s(id="runner-install-command"))
+      assert intro_pos < command_pos
+    end
+
     test "puts the live wait status directly after the command, before the script details", %{
       conn: conn,
       account: account
@@ -163,6 +196,7 @@ defmodule EmisarWeb.RunnerInstallLiveTest do
       # Static render falls through to the "generating…" placeholder, not a
       # real command…
       assert html =~ "Generating your install command"
+      assert html =~ "A runner is the program that runs actions"
       refute html =~ ~s(data-copy-text=" curl -fsSL)
       # …and crucially mints no enrollment key.
       assert Repo.all(EnrollmentKey) == []

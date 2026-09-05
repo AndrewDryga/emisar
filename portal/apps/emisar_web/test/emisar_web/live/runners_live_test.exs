@@ -18,6 +18,16 @@ defmodule EmisarWeb.RunnersLiveTest do
       assert html =~ "curl -fsSL"
       assert html =~ "EMISAR_ENROLLMENT_KEY=emkey-enroll-"
       assert has_element?(lv, "#runner-install-command")
+
+      assert has_element?(
+               lv,
+               "#runner-install-wizard > p",
+               "A runner is the program that runs actions on your server, VM, or container"
+             )
+
+      assert text_position(html, "A runner is the program") <
+               text_position(html, ~s(id="runner-install-command"))
+
       assert html =~ "min-h-9"
       refute html =~ "overflow-x-auto"
       # The redundant "Connect a runner" header button is dropped while the wizard shows.
@@ -310,6 +320,8 @@ defmodule EmisarWeb.RunnersLiveTest do
         build_conn() |> log_in_user(viewer) |> live(~p"/app/#{account}/runners")
 
       assert html =~ "No runners yet."
+      assert html =~ "A runner is the program that runs actions"
+      assert has_element?(lv, ~s(a[href="/docs/runner-fleet"]), "Runner docs")
       assert html =~ "an operator role or above, with access to all runners"
       refute html =~ "Loading"
       refute html =~ "EMISAR_ENROLLMENT_KEY"
@@ -502,9 +514,15 @@ defmodule EmisarWeb.RunnersLiveTest do
       {:ok, lv, html} = live(conn, ~p"/app/#{account}/runners")
 
       assert has_element?(lv, "#runners-supporting-rail:not(.hidden) #runners-cleanup")
-      assert has_element?(lv, "#runner-explainer:not(.hidden)", "Working with runners")
+      assert has_element?(lv, "#runner-explainer:not(.hidden)", "Runner basics")
       assert has_element?(lv, ~s(a[href="/docs/runner-fleet"]), "Runner docs")
       refute has_element?(lv, ~s(#runner-explainer a[href="/docs/runner-fleet"]))
+
+      assert has_element?(
+               lv,
+               ~s|#runner-explainer p:nth-child(1) a[href="/docs/use-a-published-pack"]|,
+               "How to install a pack"
+             )
 
       assert has_element?(
                lv,
