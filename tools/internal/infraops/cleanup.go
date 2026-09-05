@@ -231,6 +231,23 @@ func (a *App) cleanupDrills(ctx context.Context, args []string) error {
 	return nil
 }
 
+// cloneOwnership decides whether the drill may delete the clone that carries
+// its name. Labels are the proof once they exist. The drill creates and binds
+// the service account before it clones, and labels the instance only after the
+// clone returns, so a clone whose labeling request failed carries no labels at
+// all; for that window the matching service account (its display name already
+// verified by the caller) is the ownership proof, or the clone and its account
+// would both outlive every cleanup.
+func cloneOwnership(labels map[string]string, id string, accountOwned bool) (owned bool, preLabel bool) {
+	if labels["purpose"] == "recovery-drill" && labels["drill_id"] == id {
+		return true, false
+	}
+	if labels["purpose"] == "" && labels["drill_id"] == "" && accountOwned {
+		return true, true
+	}
+	return false, false
+}
+
 func (a *App) cleanupDrill(ctx context.Context, project, id string) error {
 	clone := id + "-db"
 	vmName := id + "-probe"
@@ -311,9 +328,12 @@ func (a *App) cleanupDrill(ctx context.Context, project, id string) error {
 		return fmt.Errorf("refusing ambiguous SQL inventory: %s", clone)
 	}
 	if len(clones) == 1 {
-		labels := clones[0].Settings.UserLabels
-		if labels["purpose"] != "recovery-drill" || labels["drill_id"] != id {
+		owned, preLabel := cloneOwnership(clones[0].Settings.UserLabels, id, accountOwned)
+		if !owned {
 			return fmt.Errorf("refusing SQL instance without exact ownership proof: %s", clone)
+		}
+		if preLabel {
+			fmt.Fprintf(a.Out, "recovering clone whose matching service account proves drill ownership before its labels landed: %s\n", clone)
 		}
 		if err := a.run(ctx, a.Root, nil, "gcloud", "sql", "instances", "patch",
 			clone, "--project="+project, "--no-deletion-protection", "--quiet"); err != nil {
