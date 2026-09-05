@@ -41,6 +41,13 @@ defmodule Emisar.Runs.ActionRun.Query do
   def by_runbook_execution_id(queryable, execution_id),
     do: where(queryable, [runs: r], r.runbook_execution_id == ^execution_id)
 
+  def cancelling_runbook_attempts(queryable \\ all()) do
+    where(queryable, [runs: r], r.status == :cancelling and not is_nil(r.runbook_execution_id))
+  end
+
+  def after_id(queryable, nil), do: queryable
+  def after_id(queryable, id), do: where(queryable, [runs: r], r.id > ^id)
+
   def latest_runbook_attempts(queryable \\ all()) do
     queryable
     |> where([runs: r], not is_nil(r.runbook_execution_item_id))

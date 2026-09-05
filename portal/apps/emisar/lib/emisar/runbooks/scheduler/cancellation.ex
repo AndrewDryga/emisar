@@ -31,7 +31,7 @@ defmodule Emisar.Runbooks.Scheduler.Cancellation do
       |> Multi.merge(&compose_cancellation(&1, runbook, subject))
 
     case Repo.commit_multi(multi,
-           after_commit: &after_execution_cancelled(&1, subject)
+           after_commit: &after_execution_cancelled/1
          ) do
       {:ok, %{execution: execution}} -> {:ok, Repo.reload!(execution)}
       {:error, reason} -> {:error, reason}
@@ -118,32 +118,27 @@ defmodule Emisar.Runbooks.Scheduler.Cancellation do
       execution.id,
       "runbook execution cancelled"
     )
+    |> Runs.cancel_active_runbook_attempts_in_multi(
+      execution.account_id,
+      execution.id,
+      "runbook execution cancelled",
+      subject
+    )
   end
 
-  defp after_execution_cancelled(changes, subject) do
+  defp after_execution_cancelled(changes) do
     Approvals.after_runbook_execution_cancellation_committed(changes)
 
     case changes do
       %{execution_cancelled: execution} ->
         Runs.after_undispatched_runbook_attempts_cancelled(changes, execution.id)
+        Runs.after_active_runbook_attempts_cancelled(changes, execution.id)
         Emisar.Runbooks.broadcast_execution_updated(execution.account_id, execution.id)
-        cancel_active_attempts(execution, subject)
         _result = Recovery.scrub_terminal_execution(execution.id)
         :ok
 
       _unchanged ->
         :ok
     end
-  end
-
-  defp cancel_active_attempts(execution, subject) do
-    execution.account_id
-    |> Runs.list_runs_for_runbook_execution(execution.id)
-    |> Enum.reject(&Runs.ActionRun.terminal?(&1.status))
-    |> Enum.each(fn run ->
-      _result = Runs.cancel_run(run, subject, "runbook execution cancelled")
-    end)
-
-    :ok
   end
 end

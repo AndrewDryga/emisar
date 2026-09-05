@@ -9,6 +9,7 @@ defmodule Emisar.Runbooks.Scheduler.Recovery do
   @batch_size 50
 
   def recover_due do
+    Runs.retry_runbook_cancellations(@batch_size)
     callbacks = Runs.list_terminal_runbook_callbacks(@batch_size)
 
     Enum.each(callbacks, fn callback ->
