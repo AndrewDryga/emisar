@@ -38,6 +38,9 @@ $script:AttestationWorkflowOverride = if ($env:EMISAR_ATTESTATION_WORKFLOW) { $e
 $script:AttestationWorkflow = ""
 $script:AttestationSourceRef = ""
 $script:AttestationDenySelfHosted = $false
+# Set by Confirm-MissingVerifier when the operator (or -Yes) accepted an install
+# without GitHub CLI: the checksum from the release mirror stands alone.
+$script:VerifierMissing = $false
 $script:Utf8NoBom = New-Object Text.UTF8Encoding($false)
 # Redirect hops the download helper will follow before giving up.
 $script:MaximumRedirects = 5
@@ -402,6 +405,21 @@ function Assert-SafeArchive([string]$ArchivePath, [string]$ExpectedRoot) {
     }
 }
 
+# GitHub CLI checks the release checksum's signature. Without it the install
+# rests on the checksum from the release mirror alone, so an operator is asked
+# first, and a -Yes run is warned and continues. Decided before any download, so
+# a declined prompt costs nothing. A fork without a signing workflow and a test
+# release have no signature to check.
+function Confirm-MissingVerifier([bool]$TestRelease) {
+    if ($TestRelease -or -not $script:AttestationWorkflow) { return }
+    if (Get-Command gh -ErrorAction SilentlyContinue) { return }
+    Write-WarningLine "GitHub CLI (gh) is not installed, so the release checksum signature cannot be checked"
+    if (-not (Confirm-Install "continue with the checksum from the release mirror only?")) {
+        Stop-Install "aborted: install GitHub CLI to check the release signature, or pass -Yes to continue on the checksum alone"
+    }
+    $script:VerifierMissing = $true
+}
+
 function Test-ChecksumAttestation([string]$ChecksumsPath, [string]$BundlePath, [bool]$TestRelease) {
     if ($TestRelease) {
         Write-WarningLine "test release; skipping checksum-signature verification"
@@ -579,13 +597,18 @@ try {
     $archivePath = Join-Path $temporaryRoot $archiveName
     $checksumsPath = Join-Path $temporaryRoot "SHA256SUMS-MCP"
     $checksumBundlePath = Join-Path $temporaryRoot "SHA256SUMS-MCP.sigstore.jsonl"
+    Confirm-MissingVerifier ([bool]$release.Test)
     Write-Info "downloading $archiveName"
     Save-WebFile "$($release.Base)/$archiveName" $archivePath
     Save-WebFile "$($release.Base)/SHA256SUMS-MCP" $checksumsPath
-    if (-not $release.Test -and $script:AttestationWorkflow) {
+    if (-not $release.Test -and $script:AttestationWorkflow -and -not $script:VerifierMissing) {
         Save-WebFile "$($release.Base)/SHA256SUMS-MCP.sigstore.jsonl" $checksumBundlePath
     }
-    Test-ChecksumAttestation $checksumsPath $checksumBundlePath ([bool]$release.Test)
+    if ($script:VerifierMissing) {
+        Write-WarningLine "checksum signature not checked: GitHub CLI is not installed"
+    } else {
+        Test-ChecksumAttestation $checksumsPath $checksumBundlePath ([bool]$release.Test)
+    }
     $checksums = [IO.File]::ReadAllText($checksumsPath)
     $match = [regex]::Match($checksums, "(?im)^([0-9a-f]{64})\s+\*?" + [regex]::Escape($archiveName) + "\s*$")
     if (-not $match.Success) { Stop-Install "SHA256SUMS-MCP does not list $archiveName" }

@@ -107,8 +107,67 @@ func mcpPortalOrigin(h *harness) error {
 }
 
 func mcpChecksumSignature(h *harness) error {
-	return checksumSignatureContract(h, "install-mcp.sh", "SHA256SUMS-MCP", "mcp-v0.11.0",
+	if err := checksumSignatureContract(h, "install-mcp.sh", "SHA256SUMS-MCP", "mcp-v0.11.0",
+		"AndrewDryga/emisar/.github/workflows/mcp-release-trusted.yml"); err != nil {
+		return err
+	}
+	return missingVerifierConsent(h, "install-mcp.sh",
 		"AndrewDryga/emisar/.github/workflows/mcp-release-trusted.yml")
+}
+
+// missingVerifierConsent pins what an installer does without GitHub CLI: a
+// --yes run warns and continues on the checksum alone, a run with nobody to ask
+// refuses, and a present verifier or a fork's own checksum policy asks nothing.
+// `confirm` is the installer's real one, run without a controlling terminal.
+func missingVerifierConsent(h *harness, installer, workflow string) error {
+	path := h.repoPath(installer)
+	names := []string{"accept_missing_verifier", "confirm"}
+	preamble := `
+log() { printf '%s\n' "$*"; }
+warn() { printf '%s\n' "$*" >&2; }
+die() { printf '%s\n' "$*" >&2; exit 1; }
+command() {
+  if [ "${1:-}" = "-v" ] && [ "${2:-}" = "gh" ] && [ "$MISSING_GH" = "1" ]; then
+    return 1
+  fi
+  builtin command "$@"
+}
+ATTESTATION_WORKFLOW=` + workflow + `
+ASSUME_YES=0
+MISSING_GH=1
+verifier_missing=0
+`
+	invoke := "accept_missing_verifier\nprintf 'verifier_missing=%s\\n' \"$verifier_missing\"\n"
+	const warning = "GitHub CLI (gh) is not installed"
+
+	unattended := h.functions(path, names, preamble+"ASSUME_YES=1\n"+invoke, map[string]string{})
+	output, err := requireOutput(unattended)
+	if err != nil {
+		return fmt.Errorf("unattended install without the verifier: %w", err)
+	}
+	if !strings.Contains(string(output), warning) || !strings.Contains(string(output), "verifier_missing=1") {
+		return fmt.Errorf("unattended install without the verifier did not warn and continue:\n%s", output)
+	}
+
+	nobodyToAsk := h.functions(path, names, preamble+invoke, map[string]string{})
+	if err := expectFailure(nobodyToAsk, "pass --yes to continue on the checksum alone"); err != nil {
+		return fmt.Errorf("missing verifier with nobody to ask did not refuse: %w", err)
+	}
+
+	for name, body := range map[string]string{
+		"present verifier": "MISSING_GH=0\n",
+		"fork policy":      "ATTESTATION_WORKFLOW=\n",
+	} {
+		result := h.functions(path, names, preamble+body+invoke, map[string]string{})
+		output, err := requireOutput(result)
+		if err != nil {
+			return fmt.Errorf("%s: %w", name, err)
+		}
+		if strings.Contains(string(output), warning) || !strings.Contains(string(output), "verifier_missing=0") {
+			return fmt.Errorf("%s asked or warned about the verifier:\n%s", name, output)
+		}
+	}
+	return nil
 }
 
 func checksumSignatureContract(h *harness, installer, checksums, version, workflow string) error {

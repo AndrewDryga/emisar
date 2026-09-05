@@ -119,6 +119,9 @@ truthy() {
 }
 
 ASSUME_YES="${ASSUME_YES:-0}"
+# Set by accept_missing_verifier when the operator (or --yes) accepted an
+# install without GitHub CLI: the checksum from the release mirror stands alone.
+verifier_missing=0
 
 # Config writers stage through mktemp, not a predictable "${file}.emisar-new.$$".
 # A shell > redirect FOLLOWS a destination symlink and chmod follows it too, so
@@ -292,8 +295,10 @@ fetch_release_files() {
 
 # A named function rather than an inline block, so the behavior suite can drive
 # the refusal directly. The checksum proves the downloaded bytes match the
-# manifest; when signature attestation is configured, a missing `gh` fails the
-# install closed. install.sh's sha_verify is named for the same reason.
+# manifest; when signature attestation is configured, a bad signature fails the
+# install closed, and a missing `gh` is decided by accept_missing_verifier
+# before anything is downloaded. install.sh's sha_verify is named for the same
+# reason.
 verify_release_checksum() {
   local tmp="$1" tarball="$2"
   local checksum_line
@@ -312,6 +317,21 @@ verify_release_checksum() {
     cd "${tmp}"
     printf '%s\n' "$checksum_line" | sha_check
   ) || die "checksum verification failed for ${tarball}"
+}
+
+# GitHub CLI checks the release checksum's signature. Without it the install
+# rests on the checksum from the release mirror alone, so an operator at a
+# terminal is asked first, and an unattended --yes run is warned and continues.
+# Decided before any download, so a declined prompt costs nothing. A fork or
+# mirror without a signing workflow has no signature to check.
+accept_missing_verifier() {
+  [ -n "${ATTESTATION_WORKFLOW}" ] || return 0
+  command -v gh >/dev/null 2>&1 && return 0
+  warn "GitHub CLI (gh) is not installed, so the release checksum signature cannot be checked"
+  if ! confirm "continue with the checksum from the release mirror only?"; then
+    die "aborted: install GitHub CLI to check the release signature, or pass --yes to continue on the checksum alone"
+  fi
+  verifier_missing=1
 }
 
 verify_checksum_attestation() {
@@ -695,6 +715,7 @@ trap 'exit 129' HUP
 trap 'exit 130' INT
 trap 'exit 143' TERM
 
+accept_missing_verifier
 log "downloading ${TARBALL} from ${RELEASE_SOURCE}"
 if ! fetch_release_files "$BASE_URL" "$tmp"; then
   if [ "$RELEASE_SOURCE" != "Emisar release mirror" ]; then
@@ -717,10 +738,14 @@ else
   die "neither sha256sum nor shasum found — cannot verify download"
 fi
 
-verify_checksum_attestation \
-  "${tmp}/SHA256SUMS-MCP" \
-  "${BASE_URL}/SHA256SUMS-MCP.sigstore.jsonl" \
-  "${tmp}/SHA256SUMS-MCP.sigstore.jsonl"
+if [ "${verifier_missing}" = "1" ]; then
+  warn "checksum signature not checked: GitHub CLI is not installed"
+else
+  verify_checksum_attestation \
+    "${tmp}/SHA256SUMS-MCP" \
+    "${BASE_URL}/SHA256SUMS-MCP.sigstore.jsonl" \
+    "${tmp}/SHA256SUMS-MCP.sigstore.jsonl"
+fi
 verify_release_checksum "${tmp}" "${TARBALL}"
 
 log "extracting"

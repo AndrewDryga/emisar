@@ -23,10 +23,12 @@ Default to the hosted control plane at `https://emisar.dev`. Use a different
 Verify commands before running them:
 
 - Download `${EMISAR_URL%/}/install.sh` and run its local copy with `--help`.
-- Before installation, require GitHub CLI and confirm `gh attestation verify
-  --help` advertises `--bundle`. Install or update GitHub CLI through the
-  target platform's supported package method when it does not. Do not use the
-  checksum-only break glass as a substitute.
+- Before installation, check for GitHub CLI and confirm `gh attestation verify
+  --help` advertises `--bundle`. Prefer installing or updating GitHub CLI
+  through the target platform's supported package method. When the operator
+  declines, ask before continuing: without GitHub CLI the installer checks only
+  the release checksum, printing a warning under `--yes`. Never make that
+  choice silently, and name the path taken in the health report.
 - After installation, use `emisar --help`, `emisar pack --help`, and `emisar
   doctor --help` as the installed-version contracts.
 - Use the signed-in **Runners > Install** page for current enrollment
@@ -64,9 +66,9 @@ installed artifact's contract unless this is an explicit upgrade.
   place their literal values in shell history. Sanitize captured output.
 - Use HTTPS for installer downloads. Plain HTTP is limited to loopback,
   `localhost`, and literal private addresses and must pass the validation below.
-  The installers authenticate signed release checksums and activate binaries atomically. Do
-  not silently build from source, write another installer, or use an untrusted
-  mirror.
+  The installers authenticate signed release checksums when GitHub CLI is present
+  and activate binaries atomically. Do not silently build from source, write
+  another installer, or use an untrusted mirror.
 - Prefer a pinned `runner-vX.Y.Z` tag for repeatable automation.
   Verify a requested tag exists. For an interactive latest install, report the
   exact installed versions.
@@ -175,14 +177,11 @@ PY
 esac
 installer="$(mktemp)"
 trap 'rm -f "$installer"' EXIT HUP INT TERM
-command -v gh >/dev/null 2>&1 || {
-  echo "GitHub CLI is required to authenticate the release checksum" >&2
-  exit 1
-}
-gh attestation verify --help 2>&1 | grep -q -- '--bundle' || {
-  echo "GitHub CLI must support attestation bundle verification" >&2
-  exit 1
-}
+# Confirmed with the operator beforehand: without GitHub CLI the installer
+# checks only the release checksum and says so.
+if ! command -v gh >/dev/null 2>&1 || ! gh attestation verify --help 2>&1 | grep -q -- '--bundle'; then
+  echo "GitHub CLI with attestation bundle verification is not installed; the installer will check only the release checksum" >&2
+fi
 curl -fsSL "$EMISAR_URL/install.sh" -o "$installer"
 bash "$installer" --help
 sudo env \
