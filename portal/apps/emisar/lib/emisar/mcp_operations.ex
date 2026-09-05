@@ -8,7 +8,7 @@ defmodule Emisar.MCPOperations do
   """
   use Supervisor
   alias Ecto.Multi
-  alias Emisar.{ApiKeys, Auth, CanonicalJSON, Crypto, Repo}
+  alias Emisar.{ApiKeys, Auth, Crypto, Repo}
   alias Emisar.Auth.Subject
   alias Emisar.MCPOperations.{Authorizer, Operation}
 
@@ -51,14 +51,15 @@ defmodule Emisar.MCPOperations do
   @doc """
   Fingerprints the immutable facts one MCP tool call is allowed to reuse.
 
-  Canonical JSON sorts map keys recursively and keeps types distinct, so no two
-  distinct fact sets encode to the same text and no caller can smuggle a changed
-  fact past an identical fingerprint. Facts must be JSON-compatible values with
-  binary map keys; a context passes only the facts whose change must conflict.
+  The encoding is type- and length-framed and sorts map keys recursively, so no
+  two distinct fact sets encode to the same bytes and no caller can smuggle a
+  changed fact past an identical fingerprint. Facts must be JSON-compatible
+  values with binary map keys; a context passes only the facts whose change
+  must conflict.
   """
   def mutation_fingerprint(tool, facts) when is_binary(tool) do
-    ["emisar-mcp-mutation-v2", tool, CanonicalJSON.encode!(facts)]
-    |> Enum.join("\0")
+    ["emisar-mcp-mutation-v1", encode_fact(tool), encode_fact(facts)]
+    |> IO.iodata_to_binary()
     |> Crypto.hash_hex()
   end
 
@@ -161,6 +162,31 @@ defmodule Emisar.MCPOperations do
       "-8" <>
       String.slice(hex, 17, 3) <>
       "-" <> String.slice(hex, 20, 12)
+  end
+
+  defp encode_fact(nil), do: "n"
+  defp encode_fact(true), do: "b1"
+  defp encode_fact(false), do: "b0"
+  defp encode_fact(value) when is_integer(value), do: ["i", Integer.to_string(value), ";"]
+
+  defp encode_fact(value) when is_float(value),
+    do: ["f", :erlang.float_to_binary(value, [:short]), ";"]
+
+  defp encode_fact(value) when is_binary(value),
+    do: ["s", Integer.to_string(byte_size(value)), ":", value]
+
+  defp encode_fact(value) when is_list(value),
+    do: ["l", Integer.to_string(length(value)), ":", Enum.map(value, &encode_fact/1)]
+
+  defp encode_fact(value) when is_map(value) do
+    pairs = Enum.sort_by(value, fn {key, _value} -> key end)
+
+    [
+      "m",
+      Integer.to_string(map_size(value)),
+      ":",
+      Enum.map(pairs, fn {key, item} -> [encode_fact(key), encode_fact(item)] end)
+    ]
   end
 
   defp encode_operation_digest(<<value::unsigned-big-integer-size(128)>>) do

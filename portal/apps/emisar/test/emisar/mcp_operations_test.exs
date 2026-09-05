@@ -152,7 +152,7 @@ defmodule Emisar.MCPOperationsTest do
         %{facts | "args" => %{"deep" => [1, 2.5, false, nil]}},
         %{facts | "runner_refs" => ["web-02~bbb", "web-01~aaa"]},
         Map.delete(facts, "args"),
-        # Quoting: a split that would concatenate to the same bytes unquoted.
+        # Framing: a split that would concatenate to the same bytes unframed.
         %{facts | "action_id" => "linux.upti", "args" => %{"deep" => "me"}}
       ]
 
