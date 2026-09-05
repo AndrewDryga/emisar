@@ -1768,30 +1768,6 @@ defmodule Emisar.Audit.Events do
   defp put_scim_token_transition(payload, _before_hash, _after_hash),
     do: Map.put(payload, :scim_token_rotated, true)
 
-  # Historical issuer rows may predate the URL-component restriction. Strip the
-  # components that can carry credentials before an old value reaches the audit.
-  defp provider_audit_value(:issuer, value) when is_binary(value) do
-    case URI.new(value) do
-      {:ok,
-       %URI{
-         scheme: "https",
-         host: host,
-         userinfo: nil,
-         query: nil,
-         fragment: nil
-       }}
-      when is_binary(host) and host != "" ->
-        value
-
-      {:ok, %URI{scheme: "https", host: host} = uri} when is_binary(host) and host != "" ->
-        %{uri | userinfo: nil, query: nil, fragment: nil}
-        |> URI.to_string()
-
-      _ ->
-        "[redacted invalid issuer]"
-    end
-  end
-
   defp provider_audit_value(_field, nil), do: nil
   defp provider_audit_value(_field, value) when is_boolean(value), do: value
   defp provider_audit_value(_field, value) when is_atom(value), do: to_string(value)

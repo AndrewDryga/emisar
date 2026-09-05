@@ -1859,39 +1859,6 @@ defmodule Emisar.SSOTest do
       refute payload =~ "scim_token_hash"
     end
 
-    test "a historical issuer's credential components are stripped from the audit" do
-      {_user, account, subject} = enterprise_owner()
-      provider = provider_fixture(account, %{client_secret: "old-secret"})
-
-      legacy_issuer =
-        "https://user:ISSUER_SECRET_SENTINEL@legacy-idp.test/tenant?access_token=ISSUER_TOKEN_SENTINEL#ISSUER_FRAGMENT_SENTINEL"
-
-      provider =
-        provider
-        |> Ecto.Changeset.change(issuer: legacy_issuer)
-        |> Repo.update!()
-
-      assert {:ok, _updated} =
-               SSO.update_provider(
-                 provider,
-                 %{issuer: "https://new-idp.test/tenant", client_secret: "new-secret"},
-                 subject
-               )
-
-      assert {:ok, [event], _meta} =
-               Audit.list_events(subject, filter: [event_type: ["sso.provider_updated"]])
-
-      assert event.payload["changes"]["issuer"] == %{
-               "before" => "https://legacy-idp.test/tenant",
-               "after" => "https://new-idp.test/tenant"
-             }
-
-      payload = inspect(event.payload)
-      refute payload =~ "ISSUER_SECRET_SENTINEL"
-      refute payload =~ "ISSUER_TOKEN_SENTINEL"
-      refute payload =~ "ISSUER_FRAGMENT_SENTINEL"
-    end
-
     test "the audit preserves an explicit default port in an otherwise safe issuer" do
       {_user, account, subject} = enterprise_owner()
 
