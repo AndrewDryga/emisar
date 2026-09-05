@@ -1413,13 +1413,29 @@ defmodule Emisar.Catalog do
          true <- action.pack_id == pack_id,
          true <- action.pack_version == version,
          true <- action.pack_hash == hash,
-         true <- action.descriptor_digest == TrustedManifest.descriptor_digest(descriptor) do
+         {:ok, current_descriptor} <- runner_action_descriptor(action),
+         true <- current_descriptor == descriptor do
       {:ok, %{action: action, descriptor: descriptor, pack_hash: trusted_hash}}
     else
       {:error, :not_found} -> {:error, :action_not_found}
       {:error, :pack_retired, _pack_version} = error -> error
       {:error, :pack_untrusted, _pack_version} = error -> error
       _other -> {:error, :action_contract_changed}
+    end
+  end
+
+  # One action rendered through the same builder as a trusted manifest, so the
+  # drift comparison covers every model-facing field, including the optional
+  # output contract — compared structurally, because the stored digest's
+  # canonical form flattens objects into sorted pairs and so cannot tell an
+  # object from the array of pairs it becomes.
+  defp runner_action_descriptor(%RunnerAction{} = action) do
+    with {:ok, manifest} <- TrustedManifest.from_runner_actions([action]),
+         {:ok, actions} <- TrustedManifest.actions(manifest),
+         %{} = descriptor <- Map.get(actions, action.action_id) do
+      {:ok, descriptor}
+    else
+      _other -> {:error, :invalid_manifest}
     end
   end
 

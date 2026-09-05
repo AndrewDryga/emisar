@@ -3212,6 +3212,60 @@ defmodule Emisar.CatalogTest do
                "p@1.0/" <> @dispatch_hash
              ) == {:error, :action_contract_changed}
     end
+
+    test "rejects a drifted output contract whose stored digest matches the trusted one", %{
+      account: account
+    } do
+      # The digest's canonical form flattens an object into its sorted pairs, so
+      # a property that accepts the object {"a": 1} and one that accepts the array
+      # [["a", 1]] share a digest; only the structural comparison separates them.
+      membership = Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
+      subject = Fixtures.Subjects.membership_subject(membership)
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
+
+      trusted_schema = %{
+        "type" => "object",
+        "properties" => %{"result" => %{"enum" => [%{"a" => 1}]}}
+      }
+
+      drifted_schema = %{
+        "type" => "object",
+        "properties" => %{"result" => %{"enum" => [[["a", 1]]]}}
+      }
+
+      advertised = Map.put(action("q.inspect", pack_id: "q"), "output_schema", trusted_schema)
+
+      assert {:ok, _runner} =
+               Catalog.observe_state(
+                 runner,
+                 state_payload(
+                   packs: %{"q" => %{"version" => "1.0", "hash" => @dispatch_hash}},
+                   actions: [advertised]
+                 )
+               )
+
+      {:ok, pack_versions, _metadata} = Catalog.list_pack_versions(subject)
+      pack_version = Enum.find(pack_versions, &(&1.pack_id == "q"))
+      assert {:ok, _trusted} = Catalog.trust_pack_version(pack_version.id, subject)
+
+      Fixtures.Catalog.create_action(
+        runner: runner,
+        action_id: "q.inspect",
+        pack_id: "q",
+        pack_version: "1.0",
+        pack_hash: @dispatch_hash,
+        risk: "low",
+        output_schema: drifted_schema
+      )
+
+      assert Catalog.fetch_dispatch_contract(
+               Repo,
+               account.id,
+               runner.id,
+               "q.inspect",
+               "q@1.0/" <> @dispatch_hash
+             ) == {:error, :action_contract_changed}
+    end
   end
 
   # This pure fn — the dispatch seam check_pack_trusted composes with
