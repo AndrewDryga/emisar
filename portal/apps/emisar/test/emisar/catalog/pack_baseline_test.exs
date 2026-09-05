@@ -173,6 +173,25 @@ defmodule Emisar.Catalog.PackBaselineTest do
     end
   end
 
+  describe "previous_version/1" do
+    test "returns the newest trusted version strictly below the current one" do
+      # redis publishes 0.3.0 with 0.2.0 and 0.2.1 still in the window.
+      assert PackBaseline.previous_version("redis") == "0.2.1"
+    end
+
+    test "returns nil when the window holds only the current version" do
+      assert PackBaseline.previous_version("nginx") == nil
+    end
+
+    test "returns nil for a pack the registry does not publish" do
+      assert PackBaseline.previous_version("definitely-not-a-real-pack") == nil
+    end
+
+    test "returns nil for non-binary arguments" do
+      assert PackBaseline.previous_version(nil) == nil
+    end
+  end
+
   describe "newer_version/2" do
     test "returns the current version when the advertised one is strictly behind" do
       assert PackBaseline.newer_version("redis", "0.2.0") == "0.3.0"
