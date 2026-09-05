@@ -80,10 +80,10 @@ defmodule EmisarWeb.MCP.Service do
       tail_scope: Keyword.get(opts, :tail_scope)
     ]
 
-    # One windowed query + one visibility check for the whole page — a
+    # One bounded tail query + one visibility check for the whole page — a
     # per-summary fetch here was a 4-queries-per-row N+1 on the two
     # fastest-growing tables.
-    events_by_run = run_events_by_id(runs, subject)
+    events_by_run = run_events_by_id(runs, subject, summary_opts[:stream_cap])
 
     Enum.map(runs, fn run ->
       fixed_run_summary(
@@ -107,7 +107,7 @@ defmodule EmisarWeb.MCP.Service do
     events =
       case Keyword.fetch(opts, :events) do
         {:ok, events} -> events
-        :error -> Map.get(run_events_by_id([run], subject), run.id, [])
+        :error -> Map.get(run_events_by_id([run], subject, stream_cap), run.id, [])
       end
 
     output_preview = run_output_preview(run, events, stream_cap)
@@ -595,9 +595,14 @@ defmodule EmisarWeb.MCP.Service do
   # The whole visible-set gate applies to a render's runs at once; a page that
   # narrowed underneath the caller mid-render fails closed exactly as the old
   # per-run fetch did.
-  defp run_events_by_id(runs, subject) do
+  defp run_events_by_id(runs, subject, stream_cap) do
     {:ok, events_by_run} =
-      Runs.list_recent_events_for_runs(Enum.map(runs, & &1.id), @max_output_events + 1, subject)
+      Runs.list_recent_events_for_runs(
+        Enum.map(runs, & &1.id),
+        @max_output_events + 1,
+        subject,
+        max_chunk_bytes: stream_cap
+      )
 
     events_by_run
   end
@@ -631,17 +636,21 @@ defmodule EmisarWeb.MCP.Service do
     Enum.reduce(events, {{"", false}, {"", false}}, fn event, {out, err} ->
       chunk = get_chunk(event)
       stream = event.stream || (event.payload && event.payload["stream"])
+      truncated? = Map.get(event, :preview_truncated?, false)
 
       case stream do
-        "stderr" -> {out, append_tail(err, chunk, stream_cap)}
-        _ -> {append_tail(out, chunk, stream_cap), err}
+        "stderr" -> {out, append_tail(err, chunk, stream_cap, truncated?)}
+        _ -> {append_tail(out, chunk, stream_cap, truncated?), err}
       end
     end)
   end
 
-  defp append_tail({output, truncated?}, chunk, cap) do
+  defp append_tail({output, truncated?}, chunk, cap, chunk_truncated?) do
+    # Clipping may remove a partial UTF-8 code point as well as older bytes.
+    # That spare room belongs to the clipped chunk, not to an earlier event.
+    output = if chunk_truncated?, do: "", else: output
     combined = output <> chunk
-    {truncate(combined, cap), truncated? or byte_size(combined) > cap}
+    {truncate(combined, cap), truncated? or chunk_truncated? or byte_size(combined) > cap}
   end
 
   defp get_chunk(%{payload: %{"chunk" => c}}) when is_binary(c), do: c

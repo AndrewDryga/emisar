@@ -69,8 +69,8 @@ defmodule EmisarWeb.RunbookRunLiveTest do
           "inspect",
           "Inspect",
           "parallel",
-          2,
-          [step("inspect", runner.group, opts)]
+          Keyword.get(opts, :max_parallel, 2),
+          Keyword.get(opts, :steps, [step("inspect", runner.group, opts)])
         )
       ] ++
         if Keyword.get(opts, :second_stage, false) do
@@ -202,6 +202,60 @@ defmodule EmisarWeb.RunbookRunLiveTest do
   end
 
   defp execution, do: Repo.one!(RunbookExecution)
+
+  defp append_large_preview(run) do
+    assert {:ok, _event} =
+             Runs.append_event(run, %{
+               seq: 1,
+               kind: "progress",
+               payload: %{"chunk" => run.id <> "\n" <> String.duplicate("🙂", 65_000)}
+             })
+  end
+
+  defp flush_execution_reload(lv) do
+    render(lv)
+
+    case :sys.get_state(lv.pid).socket.assigns do
+      %{subscribed_execution_id: id, execution_reload_timer: {token, timer}} ->
+        Process.cancel_timer(timer)
+        send(lv.pid, {:reload_execution, id, token})
+
+      _assigns ->
+        :ok
+    end
+
+    render(lv)
+  end
+
+  defp capture_queries(pid, fun) do
+    owner = self()
+    ref = make_ref()
+
+    :ok =
+      :telemetry.attach(
+        ref,
+        [:emisar, :repo, :query],
+        fn _event, _measurements, metadata, _config ->
+          if self() == pid, do: send(owner, {ref, metadata.query, metadata.params})
+        end,
+        nil
+      )
+
+    try do
+      fun.()
+      drain_queries(ref)
+    after
+      :telemetry.detach(ref)
+    end
+  end
+
+  defp drain_queries(ref) do
+    receive do
+      {^ref, query, params} -> [{query, params} | drain_queries(ref)]
+    after
+      0 -> []
+    end
+  end
 
   # The console-started execution has no MCP operation, so a schema-valid
   # placeholder stands in for the id when checking the wire contract.
@@ -688,6 +742,9 @@ defmodule EmisarWeb.RunbookRunLiveTest do
 
       assert [run] = Runs.list_runs_for_runbook_execution(account.id, execution().id)
 
+      execution_id = execution().id
+      :ok = Runbooks.subscribe_execution(account.id, execution_id)
+
       assert {:ok, _event} =
                Runs.append_event(run, %{
                  seq: 1,
@@ -712,7 +769,8 @@ defmodule EmisarWeb.RunbookRunLiveTest do
                  "structured_output" => %{"ready" => true}
                })
 
-      html = render(lv)
+      assert_receive {:runbook_execution_updated, ^execution_id}, 500
+      html = flush_execution_reload(lv)
       assert html =~ "1 of 1 succeeded"
       assert has_element?(lv, "[id$='-progress']", "1 of 1 succeeded")
 
@@ -784,9 +842,12 @@ defmodule EmisarWeb.RunbookRunLiveTest do
       start(lv)
 
       assert [run] = Runs.list_runs_for_runbook_execution(account.id, execution().id)
+      execution_id = execution().id
+      :ok = Runbooks.subscribe_execution(account.id, execution_id)
       assert {:ok, _run} = Fixtures.Runs.finish(run, %{"status" => "failed", "exit_code" => 1})
 
-      html = render(lv)
+      assert_receive {:runbook_execution_updated, ^execution_id}, 500
+      html = flush_execution_reload(lv)
       assert html =~ "Execution halted"
       # Machine codes stay out of the page — the halt block carries the message.
       refute html =~ "action_failed"
@@ -807,6 +868,8 @@ defmodule EmisarWeb.RunbookRunLiveTest do
       start(lv)
 
       assert [run] = Runs.list_runs_for_runbook_execution(account.id, execution().id)
+      execution_id = execution().id
+      :ok = Runbooks.subscribe_execution(account.id, execution_id)
 
       assert {:ok, _run} =
                Fixtures.Runs.finish(run, %{
@@ -814,7 +877,8 @@ defmodule EmisarWeb.RunbookRunLiveTest do
                  "structured_output" => %{"ready" => false}
                })
 
-      html = render(lv)
+      assert_receive {:runbook_execution_updated, ^execution_id}, 500
+      html = flush_execution_reload(lv)
       assert html =~ "waiting"
       assert html =~ "not met"
       refute html =~ "Execution halted"
@@ -851,7 +915,7 @@ defmodule EmisarWeb.RunbookRunLiveTest do
       assert Enum.map(result.execution.stages, & &1.status) == [:pending]
 
       send(lv.pid, {:runbook_execution_updated, execution().id})
-      html = render(lv)
+      html = flush_execution_reload(lv)
       assert html =~ "awaiting approval"
       assert html =~ "Waiting on approval"
       assert html =~ runner.name
@@ -883,6 +947,245 @@ defmodule EmisarWeb.RunbookRunLiveTest do
       assert projection.wait_until == request.expires_at
       assert projection.next.tool == "wait_for_run"
       assert_valid_tool_result("execute_runbook", wire_response(projection))
+    end
+
+    test "coalesces exact execution bursts and unsubscribes after the terminal reload", %{
+      conn: conn,
+      account: account,
+      subject: subject
+    } do
+      runner = trusted_runner(account, subject)
+      runbook = published_runbook(subject, runner)
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runbooks/#{runbook.id}/run")
+      start(lv)
+      execution_id = execution().id
+      :ok = Runbooks.subscribe_execution(account.id, execution_id)
+      assert [run] = Runs.list_runs_for_runbook_execution(account.id, execution_id)
+
+      assert {:ok, _event} =
+               Runs.append_event(run, %{
+                 seq: 1,
+                 kind: "progress",
+                 payload: %{"chunk" => "latest evidence\n"}
+               })
+
+      Runbooks.broadcast_execution_updated(account.id, execution_id)
+      assert_receive {:runbook_execution_updated, ^execution_id}, 500
+      render(lv)
+      assert {token, timer} = :sys.get_state(lv.pid).socket.assigns.execution_reload_timer
+      Process.cancel_timer(timer)
+
+      queries =
+        capture_queries(lv.pid, fn ->
+          for _index <- 1..50 do
+            Runbooks.broadcast_execution_updated(account.id, execution_id)
+            assert_receive {:runbook_execution_updated, ^execution_id}, 500
+          end
+
+          render(lv)
+        end)
+
+      assert queries == []
+      assert {^token, ^timer} = :sys.get_state(lv.pid).socket.assigns.execution_reload_timer
+
+      assert {:ok, _finished} =
+               Fixtures.Runs.finish(run, %{
+                 "status" => "success",
+                 "structured_output" => %{"ready" => true}
+               })
+
+      assert_receive {:runbook_execution_updated, ^execution_id}, 500
+
+      reload_queries =
+        capture_queries(lv.pid, fn ->
+          send(lv.pid, {:reload_execution, execution_id, token})
+          assert render(lv) =~ "1 of 1 succeeded"
+        end)
+
+      assert Enum.count(reload_queries, fn {sql, _params} ->
+               String.contains?(sql, ~s(FROM "runbook_executions"))
+             end) == 1
+
+      assert Enum.count(reload_queries, fn {sql, _params} ->
+               String.contains?(sql, "LATERAL")
+             end) == 1
+
+      assert render(lv) =~ "latest evidence"
+      assert :sys.get_state(lv.pid).socket.assigns.subscribed_execution_id == nil
+      assert :sys.get_state(lv.pid).socket.assigns.execution_reload_timer == nil
+
+      assert capture_queries(lv.pid, fn ->
+               send(lv.pid, {:runbook_execution_updated, execution_id})
+               send(lv.pid, {:reload_execution, execution_id, token})
+               render(lv)
+             end) == []
+    end
+
+    test "ignores unrelated updates and stale timers after navigation back to the same execution",
+         %{
+           conn: conn,
+           account: account,
+           subject: subject
+         } do
+      runner = trusted_runner(account, subject)
+      runbook = published_runbook(subject, runner)
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runbooks/#{runbook.id}/run")
+      start(lv)
+      execution_id = execution().id
+
+      assert capture_queries(lv.pid, fn ->
+               send(lv.pid, {:runbook_execution_updated, Repo.generate_id()})
+               render(lv)
+             end) == []
+
+      send(lv.pid, {:runbook_execution_updated, execution_id})
+      render(lv)
+      assert {old_token, old_timer} = :sys.get_state(lv.pid).socket.assigns.execution_reload_timer
+
+      render_patch(lv, ~p"/app/#{account}/runbooks/#{runbook.id}/run?new=true")
+      assert :sys.get_state(lv.pid).socket.assigns.subscribed_execution_id == nil
+      assert Process.read_timer(old_timer) == false
+
+      render_patch(lv, ~p"/app/#{account}/runbooks/#{runbook.id}/runs/#{execution_id}")
+      send(lv.pid, {:runbook_execution_updated, execution_id})
+      render(lv)
+      assert {new_token, new_timer} = :sys.get_state(lv.pid).socket.assigns.execution_reload_timer
+      Process.cancel_timer(new_timer)
+      refute old_token == new_token
+
+      assert capture_queries(lv.pid, fn ->
+               send(lv.pid, {:reload_execution, execution_id, old_token})
+               render(lv)
+             end) == []
+
+      assert {^new_token, ^new_timer} =
+               :sys.get_state(lv.pid).socket.assigns.execution_reload_timer
+
+      assert flush_execution_reload(lv) =~ "running"
+    end
+
+    test "a pending reload uses current read permissions and clears previously visible output", %{
+      conn: conn,
+      account: account,
+      subject: subject
+    } do
+      runner = trusted_runner(account, subject)
+      runbook = published_runbook(subject, runner)
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runbooks/#{runbook.id}/run")
+      start(lv)
+      execution_id = execution().id
+      assert [run] = Runs.list_runs_for_runbook_execution(account.id, execution_id)
+      append_large_preview(run)
+      send(lv.pid, {:runbook_execution_updated, execution_id})
+      flush_execution_reload(lv)
+      assert :sys.get_state(lv.pid).socket.assigns.events_by_attempt != %{}
+
+      send(lv.pid, {:runbook_execution_updated, execution_id})
+      render(lv)
+      socket = :sys.get_state(lv.pid).socket
+      assert {token, timer} = socket.assigns.execution_reload_timer
+      Process.cancel_timer(timer)
+      subject = Fixtures.Subjects.permissionless_subject(account)
+      socket = Phoenix.Component.assign(socket, :current_subject, subject)
+
+      assert capture_queries(self(), fn ->
+               assert {:noreply, denied} =
+                        EmisarWeb.RunbookRunLive.handle_info(
+                          {:reload_execution, execution_id, token},
+                          socket
+                        )
+
+               assert denied.assigns.result == nil
+               assert denied.assigns.events_by_attempt == %{}
+               assert denied.assigns.subscribed_execution_id == nil
+               assert denied.assigns.execution_reload_timer == nil
+               assert denied.assigns.flash["error"] == "This execution is no longer visible."
+
+               assert denied.redirected ==
+                        {:live, :redirect,
+                         %{to: ~p"/app/#{account}/runbooks/#{runbook.id}/run", kind: :push}}
+             end) == []
+    end
+
+    test "loads only visible attempt previews and drops hidden output on collapse", %{
+      conn: conn,
+      account: account,
+      subject: subject
+    } do
+      runner = trusted_runner(account, subject)
+      steps = Enum.map(1..26, &step("inspect-#{&1}", runner.group, []))
+      runbook = published_runbook(subject, runner, steps: steps, max_parallel: 16)
+
+      assert {:ok, %{execution_id: execution_id}} =
+               Runbooks.dispatch_runbook(runbook, "Inspect preview bounds", subject)
+
+      :ok = Runbooks.subscribe_execution(account.id, execution_id)
+      initial_runs = Runs.list_runs_for_runbook_execution(account.id, execution_id)
+      assert length(initial_runs) == 16
+      Enum.each(initial_runs, &append_large_preview/1)
+
+      for run <- Enum.take(initial_runs, 10) do
+        assert {:ok, _finished} =
+                 Fixtures.Runs.finish(run, %{
+                   "status" => "success",
+                   "structured_output" => %{"ready" => true}
+                 })
+
+        assert_receive {:runbook_execution_updated, ^execution_id}, 500
+      end
+
+      runs = Runs.list_runs_for_runbook_execution(account.id, execution_id)
+      assert length(runs) == 26
+
+      initial_ids = MapSet.new(initial_runs, & &1.id)
+
+      runs
+      |> Enum.reject(&MapSet.member?(initial_ids, &1.id))
+      |> Enum.each(&append_large_preview/1)
+
+      {:ok, lv, html} =
+        live(conn, ~p"/app/#{account}/runbooks/#{runbook.id}/runs/#{execution_id}")
+
+      assigns = :sys.get_state(lv.pid).socket.assigns
+      assert map_size(assigns.events_by_attempt) == 25
+      [stage] = assigns.result.execution.stages
+      hidden_item = List.last(assigns.result.execution.items)
+      hidden_run = assigns.attempts_by_item[hidden_item.id]
+      refute Map.has_key?(assigns.events_by_attempt, hidden_run.id)
+      refute html =~ "execution-item-#{hidden_item.id}"
+      assert html =~ "earlier output omitted"
+
+      expanded_queries =
+        capture_queries(lv.pid, fn ->
+          render_click(lv, "toggle_execution_stage", %{"id" => stage.id})
+        end)
+
+      assigns = :sys.get_state(lv.pid).socket.assigns
+      assert map_size(assigns.events_by_attempt) == 26
+      assert Map.has_key?(assigns.events_by_attempt, hidden_run.id)
+      assert has_element?(lv, "#execution-item-#{hidden_item.id}")
+
+      assert Enum.count(expanded_queries, fn {sql, _params} ->
+               String.contains?(sql, "LATERAL")
+             end) == 1
+
+      collapsed_queries =
+        capture_queries(lv.pid, fn ->
+          render_click(lv, "toggle_execution_stage", %{"id" => stage.id})
+        end)
+
+      assert map_size(:sys.get_state(lv.pid).socket.assigns.events_by_attempt) == 25
+      refute Map.has_key?(:sys.get_state(lv.pid).socket.assigns.events_by_attempt, hidden_run.id)
+      refute has_element?(lv, "#execution-item-#{hidden_item.id}")
+      hidden_id = Ecto.UUID.dump!(hidden_run.id)
+
+      assert [{_sql, params}] =
+               Enum.filter(collapsed_queries, fn {sql, _params} ->
+                 String.contains?(sql, "LATERAL")
+               end)
+
+      refute hidden_id in List.flatten(params)
+      refute hidden_run.id in List.flatten(params)
     end
 
     test "cancellation is durable and the page can start over", %{

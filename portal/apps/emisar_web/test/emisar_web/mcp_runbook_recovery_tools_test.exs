@@ -1943,6 +1943,69 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
     assert preview_bytes <= 65_536
   end
 
+  test "database-clipped Unicode previews retain each stream flag and a complete terminal drain",
+       %{
+         conn: conn,
+         account: account,
+         subject: subject,
+         key: key
+       } do
+    runner = setup_runner!(account, subject, "database-clipped-preview")
+    run = create_mcp_history_run!(account, runner, key, 1)
+    chunk = String.duplicate("🙂é", 35_000)
+    append_progress!(run, 1, "stderr", chunk)
+    append_progress!(run, 2, "stdout", "complete stdout\n")
+
+    assert {:ok, _finished} =
+             Fixtures.Runs.finish(run, %{"status" => "success", "progress_chunks" => 2})
+
+    summary = call(conn, "wait_for_run", %{"run_id" => run.id, "timeout" => "0"})["run"]
+    assert summary["stdout"] == "complete stdout\n"
+    refute summary["truncated_stdout"]
+    assert summary["truncated_stderr"]
+    assert String.valid?(summary["stderr"])
+    assert String.ends_with?(chunk, summary["stderr"])
+    assert byte_size(summary["stderr"]) <= 16_384
+    cursor = summary["next"]["arguments"]["cursor"]
+    assert is_binary(cursor)
+    {drained, frames} = drain_tail!(conn, run, cursor, "", 0)
+    assert drained == chunk <> "complete stdout\n"
+    assert frames > 0
+  end
+
+  test "a clipped Unicode chunk cannot pull older bytes back into the stream tail", %{
+    conn: conn,
+    account: account,
+    subject: subject,
+    key: key
+  } do
+    runner = setup_runner!(account, subject, "exact-unicode-tail")
+    run = create_mcp_history_run!(account, runner, key, 1)
+    chunk = String.duplicate("🙂", 4_096) <> "x"
+    append_progress!(run, 1, "stdout", "a")
+    append_progress!(run, 2, "stdout", chunk)
+    append_progress!(run, 3, "stderr", "other stream")
+
+    assert {:ok, finished} =
+             Fixtures.Runs.finish(run, %{"status" => "success", "progress_chunks" => 3})
+
+    summary = call(conn, "wait_for_run", %{"run_id" => run.id, "timeout" => "0"})["run"]
+    assert summary["stdout"] == String.duplicate("🙂", 4_095) <> "x"
+    assert summary["stderr"] == "other stream"
+    assert summary["truncated_stdout"]
+    refute summary["truncated_stderr"]
+    cursor = summary["next"]["arguments"]["cursor"]
+    assert is_binary(cursor)
+    {drained, _frames} = drain_tail!(conn, run, cursor, "", 0)
+    assert drained == "a" <> chunk <> "other stream"
+
+    narrow = EmisarWeb.MCP.Service.fixed_run_summary(finished, subject, stream_cap: 7)
+    assert narrow.stdout == "🙂x"
+    assert narrow.stderr == " stream"
+    assert narrow.truncated_stdout
+    assert narrow.truncated_stderr
+  end
+
   test "recent history pages on the final mirrored frame size", %{
     conn: conn,
     account: account,

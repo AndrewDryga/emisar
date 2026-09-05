@@ -1416,7 +1416,7 @@ defmodule EmisarWeb.DomainComponents do
 
     ~H"""
     <pre
-      :if={is_binary(@command) or @rows != []}
+      :if={is_binary(@command) or @rows != [] or @output_truncated?}
       tabindex="0"
       aria-label="Command and output"
       class={[
@@ -1435,17 +1435,20 @@ defmodule EmisarWeb.DomainComponents do
       |> Enum.reverse()
       |> Enum.reduce({[], max(max_chars, 0), false}, fn event, {rows, remaining, truncated?} ->
         chunk = event_chunk(event)
+        clipped? = Map.get(event, :preview_truncated?, false)
 
         cond do
           chunk == "" ->
-            {rows, remaining, truncated?}
+            {rows, if(clipped?, do: 0, else: remaining), truncated? or clipped?}
 
           remaining == 0 ->
             {rows, remaining, true}
 
           String.length(chunk) <= remaining ->
             row = %{stream: event.stream, chunk: chunk}
-            {[row | rows], remaining - String.length(chunk), truncated?}
+            # Older rows precede the missing bytes, so cannot extend this tail.
+            remaining = if clipped?, do: 0, else: remaining - String.length(chunk)
+            {[row | rows], remaining, truncated? or clipped?}
 
           true ->
             row = %{stream: event.stream, chunk: String.slice(chunk, -remaining, remaining)}

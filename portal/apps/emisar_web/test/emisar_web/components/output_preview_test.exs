@@ -64,4 +64,46 @@ defmodule EmisarWeb.Components.OutputPreviewTest do
 
     refute html =~ "<pre"
   end
+
+  test "marks database-clipped output even when it fits the display cap" do
+    assigns = %{
+      events: [
+        %{stream: "stderr", payload: %{"chunk" => "🙂 tail"}, preview_truncated?: true}
+      ]
+    }
+
+    html = rendered_to_string(~H|<DomainComponents.output_preview events={@events} />|)
+    assert html =~ "earlier output omitted"
+    assert html =~ "🙂 tail"
+    assert html =~ "text-rose-300"
+  end
+
+  test "keeps the contiguous tail after a clipped chunk without stitching older output across it" do
+    assigns = %{
+      events: [
+        %{stream: "stdout", payload: %{"chunk" => "older output\n"}},
+        %{stream: "stderr", payload: %{"chunk" => "🙂 tail\n"}, preview_truncated?: true},
+        %{stream: "stdout", payload: %{"chunk" => "newer output\n"}}
+      ]
+    }
+
+    html = rendered_to_string(~H|<DomainComponents.output_preview events={@events} />|)
+    refute html =~ "older output"
+    assert html =~ "🙂 tail"
+    assert html =~ "newer output"
+    assert length(String.split(html, "earlier output omitted")) == 2
+  end
+
+  test "shows omission when a byte cap cannot retain a whole code point" do
+    assigns = %{
+      events: [
+        %{stream: "stdout", payload: %{"chunk" => "older output\n"}},
+        %{stream: "stderr", payload: %{"chunk" => ""}, preview_truncated?: true}
+      ]
+    }
+
+    html = rendered_to_string(~H|<DomainComponents.output_preview events={@events} />|)
+    assert html =~ "earlier output omitted"
+    refute html =~ "older output"
+  end
 end

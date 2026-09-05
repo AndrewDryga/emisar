@@ -13,6 +13,7 @@ defmodule EmisarWeb.RunbookRunLive do
   alias EmisarWeb.{Permissions, RunbookMarkdown, RunbookWorkflowComponents}
 
   @preflight_delay_ms 300
+  @execution_reload_delay_ms 500
   @item_page_size 25
 
   def mount(%{"id" => id} = params, _session, socket) do
@@ -51,6 +52,7 @@ defmodule EmisarWeb.RunbookRunLive do
      |> assign(:recent_executions_error?, false)
      |> assign(:expanded_plan_stages, MapSet.new())
      |> assign(:expanded_execution_stages, MapSet.new())
+     |> assign(:execution_reload_timer, nil)
      |> assign(:subscribed_execution_id, nil)}
   end
 
@@ -89,6 +91,7 @@ defmodule EmisarWeb.RunbookRunLive do
           |> assign(:recent_executions_error?, false)
           |> assign(:expanded_plan_stages, MapSet.new())
           |> assign(:expanded_execution_stages, MapSet.new())
+          |> assign(:execution_reload_timer, nil)
           |> assign(:subscribed_execution_id, nil)
 
         {:ok, socket}
@@ -161,7 +164,20 @@ defmodule EmisarWeb.RunbookRunLive do
   end
 
   def handle_event("toggle_execution_stage", %{"id" => id}, socket) do
-    {:noreply, update(socket, :expanded_execution_stages, &toggle_set(&1, id))}
+    case socket.assigns.result do
+      %{execution: execution} ->
+        if Enum.any?(execution.stages, &(&1.id == id)) do
+          {:noreply,
+           socket
+           |> update(:expanded_execution_stages, &toggle_set(&1, id))
+           |> load_execution(execution.id)}
+        else
+          {:noreply, socket}
+        end
+
+      nil ->
+        {:noreply, socket}
+    end
   end
 
   def handle_info(
@@ -176,6 +192,18 @@ defmodule EmisarWeb.RunbookRunLive do
   def handle_info(
         {:runbook_execution_updated, execution_id},
         %{assigns: %{subscribed_execution_id: execution_id}} = socket
+      ) do
+    {:noreply, schedule_execution_reload(socket, execution_id)}
+  end
+
+  def handle_info(
+        {:reload_execution, execution_id, token},
+        %{
+          assigns: %{
+            subscribed_execution_id: execution_id,
+            execution_reload_timer: {token, _timer}
+          }
+        } = socket
       ) do
     {:noreply, load_execution(socket, execution_id)}
   end
@@ -366,6 +394,8 @@ defmodule EmisarWeb.RunbookRunLive do
   end
 
   defp load_execution(socket, execution_id) do
+    socket = cancel_execution_reload(socket)
+
     case Runbooks.fetch_execution_result(execution_id, socket.assigns.current_subject) do
       {:ok, result} when result.execution.runbook_id == socket.assigns.runbook.id ->
         projection = Runbooks.execution_projection(result)
@@ -380,7 +410,7 @@ defmodule EmisarWeb.RunbookRunLive do
             Map.new(result.latest_attempts, &{&1.runbook_execution_item_id, &1})
           )
           |> load_execution_approval_request(result)
-          |> load_attempt_output_previews(result.latest_attempts)
+          |> load_attempt_output_previews()
           |> assign(:recent_executions, [])
           |> assign(:recent_executions_error?, false)
           |> assign(:page_title, execution_page_title(result))
@@ -392,6 +422,7 @@ defmodule EmisarWeb.RunbookRunLive do
       {:error, _reason} ->
         socket
         |> unsubscribe_execution()
+        |> clear_execution_result()
         |> put_flash(:error, "This execution is no longer visible.")
         |> push_navigate(
           to: ~p"/app/#{socket.assigns.current_account}/runbooks/#{socket.assigns.runbook.id}/run"
@@ -400,6 +431,7 @@ defmodule EmisarWeb.RunbookRunLive do
       {:ok, _other_runbook_result} ->
         socket
         |> unsubscribe_execution()
+        |> clear_execution_result()
         |> put_flash(:error, "Execution not found for this runbook.")
         |> push_navigate(
           to: ~p"/app/#{socket.assigns.current_account}/runbooks/#{socket.assigns.runbook.id}/run"
@@ -414,17 +446,22 @@ defmodule EmisarWeb.RunbookRunLive do
   defp reset_run_form(socket) do
     socket
     |> unsubscribe_execution()
+    |> clear_execution_result()
+    |> assign(:reason, "")
+    |> assign(:target_selection_seed, Runbooks.new_target_selection_seed())
+    |> assign(:input_raw, initial_input_raw(socket.assigns.runbook.definition))
+    |> assign(:touched_inputs, MapSet.new())
+    |> schedule_preflight()
+  end
+
+  defp clear_execution_result(socket) do
+    socket
     |> assign(:result, nil)
     |> assign(:projection, nil)
     |> assign(:item_facts, %{})
     |> assign(:attempts_by_item, %{})
     |> assign(:events_by_attempt, %{})
     |> assign(:approval_request, nil)
-    |> assign(:reason, "")
-    |> assign(:target_selection_seed, Runbooks.new_target_selection_seed())
-    |> assign(:input_raw, initial_input_raw(socket.assigns.runbook.definition))
-    |> assign(:touched_inputs, MapSet.new())
-    |> schedule_preflight()
   end
 
   # Only the field the operator actually changed reveals its validation — a
@@ -462,8 +499,20 @@ defmodule EmisarWeb.RunbookRunLive do
     end
   end
 
-  defp load_attempt_output_previews(socket, attempts) do
-    run_ids = Enum.map(attempts, & &1.id)
+  defp load_attempt_output_previews(socket) do
+    run_ids =
+      socket.assigns.result.execution.stages
+      |> Enum.flat_map(fn stage ->
+        socket.assigns.result
+        |> items_for_stage(stage)
+        |> visible_items(MapSet.member?(socket.assigns.expanded_execution_stages, stage.id))
+      end)
+      |> Enum.flat_map(fn item ->
+        case socket.assigns.attempts_by_item[item.id] do
+          nil -> []
+          attempt -> [attempt.id]
+        end
+      end)
 
     case Runs.list_recent_events_for_runs(run_ids, 8, socket.assigns.current_subject) do
       {:ok, events_by_attempt} -> assign(socket, :events_by_attempt, events_by_attempt)
@@ -492,11 +541,28 @@ defmodule EmisarWeb.RunbookRunLive do
        when not is_nil(execution_id) do
     :ok = Runbooks.unsubscribe_execution(socket.assigns.current_account.id, execution_id)
 
-    assign(socket, :subscribed_execution_id, nil)
+    socket
+    |> cancel_execution_reload()
+    |> assign(:subscribed_execution_id, nil)
   end
 
   # Nothing subscribed yet.
-  defp unsubscribe_execution(socket), do: socket
+  defp unsubscribe_execution(socket), do: cancel_execution_reload(socket)
+
+  defp schedule_execution_reload(%{assigns: %{execution_reload_timer: nil}} = socket, id) do
+    token = make_ref()
+    timer = Process.send_after(self(), {:reload_execution, id, token}, @execution_reload_delay_ms)
+    assign(socket, :execution_reload_timer, {token, timer})
+  end
+
+  defp schedule_execution_reload(socket, _id), do: socket
+
+  defp cancel_execution_reload(%{assigns: %{execution_reload_timer: {_token, timer}}} = socket) do
+    Process.cancel_timer(timer)
+    assign(socket, :execution_reload_timer, nil)
+  end
+
+  defp cancel_execution_reload(socket), do: socket
 
   # The domain owns the canonical form values, so a first paint and a reset both
   # render the declared defaults it stringifies — a blank form is not an error

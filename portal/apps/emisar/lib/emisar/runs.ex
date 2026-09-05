@@ -3707,34 +3707,79 @@ defmodule Emisar.Runs do
   # execution's run page into a FunctionClauseError on mount, past the caller's
   # own `{:error, _}` branch. Named, and refused rather than raised.
   @max_tail_run_ids 256
+  @max_tail_read_bytes 2 * 1_024 * 1_024
+  @max_tail_chunk_bytes 32_000
 
   @doc """
   Returns a bounded output tail for at most #{@max_tail_run_ids} visible run ids.
   The entire id set must be visible to the subject; a mixed visible/hidden
   request fails closed. Over the cap it is `{:error, :too_many_run_ids}`.
+  At most 64 events per run and #{@max_tail_read_bytes} aggregate chunk bytes
+  are materialized. `:max_chunk_bytes` may lower the #{@max_tail_chunk_bytes}
+  per-event ceiling. Chunks are valid UTF-8 suffixes; `preview_truncated?` marks
+  omitted persisted bytes. Use the dedicated paged read for complete output.
   """
-  def list_recent_events_for_runs(run_ids, limit, %Subject{} = subject)
+  def list_recent_events_for_runs(run_ids, limit, subject, opts \\ [])
+
+  def list_recent_events_for_runs(run_ids, limit, %Subject{} = subject, opts)
       when is_list(run_ids) and length(run_ids) <= @max_tail_run_ids and is_integer(limit) and
              limit >= 1 and limit <= 64 do
     run_ids = Enum.uniq(run_ids)
 
     with :ok <- validate_run_ids(run_ids),
+         {:ok, max_chunk_bytes} <- tail_chunk_bytes(run_ids, limit, opts),
          :ok <-
            Auth.Authorizer.ensure_has_permissions(subject, Authorizer.view_runs_permission()),
          :ok <- ensure_all_runs_visible(run_ids, subject) do
       events =
         run_ids
-        |> RunEvent.Query.recent_progress_for_runs(limit)
+        |> RunEvent.Query.recent_progress_for_runs(limit, max_chunk_bytes)
         |> Repo.all()
+        |> Enum.map(&output_preview_event/1)
         |> Enum.group_by(& &1.run_id)
 
       {:ok, events}
     end
   end
 
-  def list_recent_events_for_runs(run_ids, _limit, %Subject{})
+  def list_recent_events_for_runs(run_ids, _limit, %Subject{}, _opts)
       when is_list(run_ids) and length(run_ids) > @max_tail_run_ids,
       do: {:error, :too_many_run_ids}
+
+  def list_recent_events_for_runs(_run_ids, _limit, %Subject{}, _opts),
+    do: {:error, :invalid_tail_request}
+
+  defp tail_chunk_bytes(run_ids, limit, opts) when is_list(opts) do
+    if Keyword.keyword?(opts) and Keyword.keys(opts) -- [:max_chunk_bytes] == [] do
+      cap = Keyword.get(opts, :max_chunk_bytes, @max_tail_chunk_bytes)
+
+      if is_integer(cap) and cap > 0 and cap <= @max_tail_chunk_bytes do
+        {:ok, min(cap, div(@max_tail_read_bytes, max(length(run_ids) * limit, 1)))}
+      else
+        {:error, :invalid_tail_request}
+      end
+    else
+      {:error, :invalid_tail_request}
+    end
+  end
+
+  defp tail_chunk_bytes(_run_ids, _limit, _opts), do: {:error, :invalid_tail_request}
+
+  defp output_preview_event(event) do
+    chunk = trim_preview_utf8_prefix(event.chunk)
+
+    event
+    |> Map.drop([:chunk, :chunk_bytes])
+    |> Map.put(:payload, %{"chunk" => chunk})
+    |> Map.put(:preview_truncated?, byte_size(chunk) < event.chunk_bytes)
+  end
+
+  # PostgreSQL text is valid UTF-8; a byte suffix can begin with at most three
+  # continuation bytes. Only that incomplete first code point is discarded.
+  defp trim_preview_utf8_prefix(<<byte, rest::binary>>) when byte in 0x80..0xBF,
+    do: trim_preview_utf8_prefix(rest)
+
+  defp trim_preview_utf8_prefix(chunk), do: chunk
 
   defp validate_run_ids(run_ids) do
     if Enum.all?(run_ids, &Repo.valid_uuid?/1), do: :ok, else: {:error, :not_found}

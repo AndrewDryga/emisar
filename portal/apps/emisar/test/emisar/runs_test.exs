@@ -5657,6 +5657,115 @@ defmodule Emisar.RunsTest do
     end
   end
 
+  describe "list_recent_events_for_runs/4" do
+    test "bounds aggregate materialized UTF-8 chunks independently of stored payload size" do
+      {_owner, account, subject} = Fixtures.Subjects.owner_subject()
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
+      chunk = String.duplicate("🙂", 65_000)
+
+      runs =
+        Enum.map(1..9, fn _index ->
+          {:ok, run} = Runs.create_run(base_attrs(account.id, runner.id))
+
+          for seq <- 1..8 do
+            assert {:ok, _event} =
+                     Runs.append_event(run, %{
+                       seq: seq,
+                       kind: "progress",
+                       payload: %{"chunk" => chunk}
+                     })
+          end
+
+          run
+        end)
+
+      ids = Enum.map(runs, & &1.id)
+      assert {:ok, previews} = Runs.list_recent_events_for_runs(ids, 8, subject, [])
+      events = Enum.flat_map(previews, fn {_id, events} -> events end)
+      assert length(events) == 72
+
+      assert Enum.all?(events, fn event ->
+               String.valid?(event.payload["chunk"]) and event.preview_truncated? and
+                 byte_size(event.payload["chunk"]) <= div(2 * 1_024 * 1_024, 72)
+             end)
+
+      assert Enum.sum(Enum.map(events, &byte_size(&1.payload["chunk"]))) <= 2 * 1_024 * 1_024
+
+      assert {:ok, [complete_event], true} =
+               Runs.list_events_for_run_since(hd(ids), 1, 1, subject)
+
+      assert complete_event.payload["chunk"] == chunk
+    end
+
+    test "projects only bounded string tails and preserves legacy stderr" do
+      {_owner, account, subject} = Fixtures.Subjects.owner_subject()
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
+      {:ok, run} = Runs.create_run(base_attrs(account.id, runner.id))
+
+      for {seq, payload} <- [
+            {1, %{"chunk" => String.duplicate("🙂", 5), "stream" => "stderr"}},
+            {2, %{"chunk" => %{"large" => String.duplicate("x", 250_000)}}},
+            {3, %{"chunk" => "small", "extra" => String.duplicate("x", 250_000)}}
+          ] do
+        assert {:ok, _event} =
+                 Runs.append_event(run, %{seq: seq, kind: "progress", payload: payload})
+      end
+
+      assert {:ok, previews} =
+               Runs.list_recent_events_for_runs([run.id], 3, subject, max_chunk_bytes: 7)
+
+      assert [first, second, third] = previews[run.id]
+      assert first.payload == %{"chunk" => "🙂"}
+      assert first.stream == "stderr"
+      assert first.preview_truncated?
+      assert second.payload == %{"chunk" => ""}
+      refute second.preview_truncated?
+      assert third.payload == %{"chunk" => "small"}
+      refute third.preview_truncated?
+      assert third.stream == "stdout"
+
+      assert {:ok, narrow} =
+               Runs.list_recent_events_for_runs([run.id], 3, subject, max_chunk_bytes: 1)
+
+      assert hd(narrow[run.id]).payload == %{"chunk" => ""}
+      assert hd(narrow[run.id]).preview_truncated?
+    end
+
+    test "refuses invalid limits and byte options, unauthorized and foreign reads" do
+      {_owner, account, subject} = Fixtures.Subjects.owner_subject()
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
+      {:ok, run} = Runs.create_run(base_attrs(account.id, runner.id))
+      foreign_account = Fixtures.Accounts.create_account()
+
+      foreign_subject =
+        Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), foreign_account)
+
+      for opts <- [
+            [max_chunk_bytes: 0],
+            [max_chunk_bytes: -1],
+            [max_chunk_bytes: 32_001],
+            [max_chunk_bytes: "7"],
+            [unexpected: 1],
+            [:not_a_keyword],
+            %{}
+          ] do
+        assert Runs.list_recent_events_for_runs([run.id], 8, subject, opts) ==
+                 {:error, :invalid_tail_request}
+      end
+
+      for limit <- [0, 65, "8"] do
+        assert Runs.list_recent_events_for_runs([run.id], limit, subject, []) ==
+                 {:error, :invalid_tail_request}
+      end
+
+      assert Runs.list_recent_events_for_runs([run.id], 8, no_permissions_subject(account), []) ==
+               {:error, :unauthorized}
+
+      assert Runs.list_recent_events_for_runs([run.id], 8, foreign_subject, []) ==
+               {:error, :not_found}
+    end
+  end
+
   describe "list_events_for_run_since/4" do
     setup do
       {_owner, account, subject} = Fixtures.Subjects.owner_subject()
