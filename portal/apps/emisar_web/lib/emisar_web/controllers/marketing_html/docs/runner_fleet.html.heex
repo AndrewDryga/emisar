@@ -4,7 +4,7 @@
   <section class="py-12 sm:py-16">
     <.docs_layout
       current="runner-fleet"
-      updated="September 3, 2026"
+      updated="September 5, 2026"
       toc={[
         {"groups-labels", "Groups and labels"},
         {"enrollment-keys", "Enrollment keys"},
@@ -47,6 +47,20 @@
         address every runner in one group at once. Name a group after a fleet tier. The installer
         defaults the group to the hostname, which works for one host — change it when you add a
         second.
+      </p>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        To change a runner's group, edit
+        <.docs_inline_code>runner.group</.docs_inline_code>
+        in
+        <.docs_inline_code>/etc/emisar/config.yaml</.docs_inline_code>
+        on that host. Use the same value on each runner you want in the group.
+        If your deployment sets <.docs_inline_code>EMISAR_GROUP</.docs_inline_code>,
+        change that value instead: it overrides the config file.
+      </p>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        Wait for running actions to finish, then restart the runner to apply the change.
+        On Linux with systemd, run <.docs_inline_code>sudo systemctl restart emisar</.docs_inline_code>.
+        The runner appears under its new group when it reconnects.
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         Install packs generously. Give each group every pack that matches what runs there — the

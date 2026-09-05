@@ -475,15 +475,11 @@ defmodule EmisarWeb.RunnersLiveTest do
       disabled = Fixtures.Runners.create_runner(account_id: account.id, connected?: true)
       {:ok, _} = Emisar.Runners.disable_runner(disabled, subject)
 
-      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runners")
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runners")
 
-      # The naked posture line counts each state; healthy-at-zero states are
-      # ABSENT (offline/pending/disabled only render when > 0 — silence is the
-      # confirmation). The whole-account total is NOT repeated here — it lives
-      # in the group header(s) below.
-      assert html =~ "1 connected"
-      refute html =~ "offline"
-      assert html =~ "1 disabled"
+      assert has_element?(lv, "span.tabular-nums", "1 connected")
+      refute has_element?(lv, "span.tabular-nums", "offline")
+      assert has_element?(lv, "span.tabular-nums", "1 disabled")
     end
   end
 
@@ -498,7 +494,7 @@ defmodule EmisarWeb.RunnersLiveTest do
       Fixtures.Runners.mark_disconnected_at(runner, at)
     end
 
-    test "housekeeping stays in document flow after the fleet while only help hides below xl",
+    test "help and housekeeping stay in document flow after the fleet",
          %{conn: conn} do
       {conn, _user, account} = register_and_log_in(conn)
       Fixtures.Runners.create_runner(account_id: account.id, connected?: true)
@@ -506,7 +502,18 @@ defmodule EmisarWeb.RunnersLiveTest do
       {:ok, lv, html} = live(conn, ~p"/app/#{account}/runners")
 
       assert has_element?(lv, "#runners-supporting-rail:not(.hidden) #runners-cleanup")
-      assert html =~ ~s(id="runner-explainer" class="hidden xl:block")
+      assert has_element?(lv, "#runner-explainer:not(.hidden)", "Working with runners")
+      assert has_element?(lv, ~s(a[href="/docs/runner-fleet"]), "Runner docs")
+      refute has_element?(lv, ~s(#runner-explainer a[href="/docs/runner-fleet"]))
+
+      assert has_element?(
+               lv,
+               ~s(#runner-explainer a[href="/docs/runner-fleet#groups-labels"]),
+               "Group related runners"
+             )
+
+      assert text_position(html, ~s(href="/docs/runner-fleet")) <
+               text_position(html, ~s(id="runners"))
 
       assert text_position(html, ~s(id="runners")) <
                text_position(html, ~s(id="runners-supporting-rail"))

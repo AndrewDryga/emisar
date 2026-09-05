@@ -361,8 +361,9 @@ defmodule EmisarWeb.RunnersLive do
       </:actions>
 
       <.page_intro :if={not @show_wizard?}>
-        Live connection state for every host you can access — a runner must be connected before
-        you can dispatch an action to it.
+        A runner is the program that runs actions on your server, VM, or container
+        and sends the results back to emisar. Connect runners and check their status here.
+        <.doc_link href={~p"/docs/runner-fleet"}>Runner docs</.doc_link>
       </.page_intro>
 
       <%= cond do %>
@@ -408,13 +409,9 @@ defmodule EmisarWeb.RunnersLive do
             No runners match your assigned scope. An owner or admin can update it from Team.
           </.empty_state>
         <% true -> %>
-          <%!-- :table width leaves the fleet list too narrow-of-content and wide
-               of page — pair it with a docs rail (the main+aside grammar): the
-               fleet leads, a plain-terms "what's a runner" teaches beside it. The
-               rail is a FIXED 22rem track that only splits off at xl (so its prose
-               never squeezes to 3 words a line). Below xl the fleet leads, the
-               optional explainer hides, and its active housekeeping setting stays
-               in document flow after the list. --%>
+          <%!-- The fleet leads; practical help uses a fixed 22rem rail at xl.
+               Below that split, help and housekeeping follow the list in
+               document flow so both remain reachable. --%>
           <div class="grid grid-cols-1 gap-x-10 gap-y-8 xl:grid-cols-[minmax(0,1fr)_22rem] xl:items-start">
             <div class="min-w-0">
               <%!-- Alerts keep a tight internal rhythm, then the stack leaves a
@@ -585,32 +582,25 @@ defmodule EmisarWeb.RunnersLive do
             </div>
 
             <div id="runners-supporting-rail">
-              <div id="runner-explainer" class="hidden xl:block">
-                <.docs_rail
-                  title="What's a runner?"
-                  doc_href={~p"/docs/runner-fleet"}
-                  doc_label="Runner docs"
-                >
+              <div id="runner-explainer">
+                <.docs_rail title="Working with runners">
                   <p>
-                    A runner is the small <span class="text-zinc-200">emisar agent</span>
-                    installed on one of your hosts — a server, VM, or container.
+                    Actions are tasks such as checking disk space or restarting a service. Packs are
+                    collections of actions you install on a runner. Your policies decide which actions
+                    are allowed, need approval, or are blocked.
                   </p>
                   <p>
-                    It's what actually runs an action. The cloud never touches your hosts directly: it
-                    dispatches to a runner, which executes only the vetted actions in its trusted packs
-                    and reports the result back.
+                    <.doc_link href={~p"/docs/runner-fleet" <> "#groups-labels"}>Group related runners</.doc_link>,
+                    such as “web” or “production,” to apply shared policies or run actions across the group.
                   </p>
                   <p>
-                    A host needs a connected runner before you can dispatch to it. Give runners a
-                    <span class="font-mono text-[13px] text-zinc-300">group</span>
-                    (like <span class="font-mono text-[13px] text-zinc-300">web</span>
-                    or <span class="font-mono text-[13px] text-zinc-300">cassandra-prod</span>) so
-                    policies, runbooks, and an LLM's fan-out can target a whole tier at once.
+                    A runner must be online to receive new actions. If one is offline, check that
+                    its service is running and that it can connect to emisar.
                   </p>
                 </.docs_rail>
               </div>
 
-              <div class="max-w-md xl:mt-6 xl:max-w-none">
+              <div class="mt-6 max-w-md xl:max-w-none">
                 <h3 class="text-[11px] font-semibold uppercase tracking-wider text-zinc-400">
                   Housekeeping
                 </h3>
