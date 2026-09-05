@@ -537,7 +537,7 @@ func (e *Engine) Run(ctx context.Context, req Request) (*Result, error) {
 		// further OnChunk can run — draining the held-back tails needs no lock.
 		if structuredJSON {
 			redactedStdout, hits, jsonRedactionFailed, redactionOverflow =
-				redactJSONOutput(combinedRedactor, rawJSONBuf.String(), plan.Limits.MaxStdoutBytes, execRes.Truncated.Stdout)
+				redactJSONOutput(combinedRedactor, rawJSONBuf.String(), &stdoutBuf, execRes.Truncated.Stdout)
 			if redactedStdout != "" {
 				req.OnProgress(executor.StreamStdout, []byte(redactedStdout))
 			}
@@ -563,7 +563,7 @@ func (e *Engine) Run(ctx context.Context, req Request) (*Result, error) {
 		var hs1, hs2 []redact.Hit
 		if structuredJSON {
 			redactedStdout, hs1, jsonRedactionFailed, redactionOverflow =
-				redactJSONOutput(combinedRedactor, execRes.Stdout, plan.Limits.MaxStdoutBytes, execRes.Truncated.Stdout)
+				redactJSONOutput(combinedRedactor, execRes.Stdout, &stdoutBuf, execRes.Truncated.Stdout)
 		} else {
 			redactedStdout, hs1 = combinedRedactor.ApplyOutput(execRes.Stdout, execRes.Truncated.Stdout)
 			redactedStdout = normalizeUTF8String(redactedStdout)
@@ -698,12 +698,18 @@ type boundedOutput struct {
 }
 
 func (b *boundedOutput) take(data []byte) []byte {
+	if b.truncated {
+		return nil
+	}
 	room := b.limit - b.buf.Len()
 	if room <= 0 {
 		b.truncated = b.truncated || len(data) > 0
 		return nil
 	}
 	if len(data) > room {
+		for room > 0 && !utf8.RuneStart(data[room]) {
+			room--
+		}
 		data = data[:room]
 		b.truncated = true
 	}
@@ -718,29 +724,24 @@ func (b *boundedOutput) String() string { return b.buf.String() }
 // dropped rather than trimmed — half a JSON document is not a document, and
 // the caller turns the overflow into a validation failure — while text from
 // the invalid-JSON fallback is simply cut like any other text stream.
-func redactJSONOutput(redactor *redact.Engine, raw string, limit int, truncated bool) (string, []redact.Hit, bool, bool) {
+func redactJSONOutput(redactor *redact.Engine, raw string, output *boundedOutput, truncated bool) (string, []redact.Hit, bool, bool) {
 	if truncated {
 		// A truncated prefix may itself be valid JSON while ending inside a
 		// known secret. Use prefix-aware text redaction; schema validation
 		// independently refuses the executor's truncated output below.
 		text, hits := redactor.ApplyOutput(raw, true)
-		buf := boundedOutput{limit: limit}
-		return string(buf.take([]byte(normalizeUTF8String(text)))), hits, false, false
+		return string(output.take([]byte(normalizeUTF8String(text)))), hits, false, false
 	}
 	redacted, hits, err := redactor.ApplyJSON([]byte(raw))
 	switch {
 	case err == nil:
-		if len(redacted) > limit {
+		if len(redacted) > output.limit {
 			return "", hits, false, true
 		}
 		return string(redacted), hits, false, false
 	case errors.Is(err, redact.ErrInvalidJSON):
 		text, textHits := redactor.ApplyOutput(raw, truncated)
-		text = normalizeUTF8String(text)
-		if len(text) > limit {
-			text = text[:limit]
-		}
-		return text, textHits, false, false
+		return string(output.take([]byte(normalizeUTF8String(text)))), textHits, false, false
 	default:
 		return string(redacted), hits, true, false
 	}
@@ -1211,6 +1212,9 @@ func reasonForStatus(s Status, r *executor.Result) string {
 func truncatePreview(s string, max int) string {
 	if max <= 0 || len(s) <= max {
 		return s
+	}
+	for max > 0 && !utf8.RuneStart(s[max]) {
+		max--
 	}
 	return s[:max] + "\n...[truncated]"
 }

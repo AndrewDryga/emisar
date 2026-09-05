@@ -20,7 +20,7 @@ import (
 
 func TestRedactJSONOutput_TruncatedValidDocumentMasksSecretPrefix(t *testing.T) {
 	redactor := redact.New([]redact.Rule{redact.LiteralSet("arguments", []string{"abc\"}\nMORE_SECRET"}, "[REDACTED]")})
-	got, hits, failed, overflow := redactJSONOutput(redactor, "{\"x\":\"abc\"}\n", 128, true)
+	got, hits, failed, overflow := redactJSONOutput(redactor, "{\"x\":\"abc\"}\n", &boundedOutput{limit: 128}, true)
 	if got != "{\"x\":\"[REDACTED]" || len(hits) != 1 || failed || overflow {
 		t.Fatalf("truncated JSON prefix was not safely redacted: output=%q hits=%v failed=%t overflow=%t", got, hits, failed, overflow)
 	}
