@@ -1018,6 +1018,8 @@ download_release() {
   local name="emisar-${version_num}-${OS}-${ARCH}"
   local tarball="${name}.tar.gz"
 
+  accept_missing_verifier
+
   if [ "$REPO" = "$OFFICIAL_REPO" ]; then
     if base=$(mirror_release_base "$version"); then
       source="Emisar release mirror"
@@ -1042,10 +1044,14 @@ download_release() {
     fetch_release_files "$base" "$tarball" "$tmp" || die "failed to download ${version} from both release mirrors"
   fi
 
-  verify_checksum_attestation \
-    "${tmp}/SHA256SUMS" \
-    "${base}/SHA256SUMS.sigstore.jsonl" \
-    "${tmp}/SHA256SUMS.sigstore.jsonl"
+  if [ "${verifier_missing}" = "1" ]; then
+    warn "checksum signature not checked: GitHub CLI is not installed"
+  else
+    verify_checksum_attestation \
+      "${tmp}/SHA256SUMS" \
+      "${base}/SHA256SUMS.sigstore.jsonl" \
+      "${tmp}/SHA256SUMS.sigstore.jsonl"
+  fi
 
   # Pull the expected hash for our tarball out of SHA256SUMS so we can
   # show it in the status line. The verification itself is done by
@@ -1067,6 +1073,21 @@ download_release() {
   # get their ownership explicitly below.
   tar -C "${tmp}" --no-same-owner --no-same-permissions -xzf "${tmp}/${tarball}" >&2
   printf '%s\n' "${tmp}/${name}"
+}
+
+# GitHub CLI checks the release checksum's signature. Without it the install
+# rests on the checksum from the release mirror alone, so an operator at a
+# terminal is asked first, and an unattended --yes run is warned and continues.
+# Decided before any download, so a declined prompt costs nothing. A fork or
+# mirror without a signing workflow has no signature to check.
+accept_missing_verifier() {
+  [ -n "${ATTESTATION_WORKFLOW}" ] || return 0
+  command -v gh >/dev/null 2>&1 && return 0
+  warn "GitHub CLI (gh) is not installed, so the release checksum signature cannot be checked"
+  if ! confirm "continue with the checksum from the release mirror only?"; then
+    die "aborted: install GitHub CLI to check the release signature, or pass --yes to continue on the checksum alone"
+  fi
+  verifier_missing=1
 }
 
 verify_checksum_attestation() {
@@ -1278,6 +1299,9 @@ needs_configuration=0
 # Set by drop_config_skeleton when ${ETC_DIR}/config.yaml already existed, so
 # print_next_steps reports the kept file instead of the fresh-install summary.
 config_preexisted=0
+# Set by accept_missing_verifier when the operator (or --yes) accepted an
+# install without GitHub CLI: the checksum from the release mirror stands alone.
+verifier_missing=0
 SERVICE_WAS_RUNNING=0
 # Set when THIS run created the service unit — a fresh install, not an upgrade.
 # `restore_previous_service` only restarts a service that was already running,

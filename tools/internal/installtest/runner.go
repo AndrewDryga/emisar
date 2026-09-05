@@ -83,8 +83,66 @@ func runnerHelpContract(h *harness) error {
 }
 
 func runnerChecksumSignature(h *harness) error {
-	return checksumSignatureContract(h, "install.sh", "SHA256SUMS", "runner-v0.23.1",
-		"AndrewDryga/emisar/.github/workflows/runner-release-trusted.yml")
+	if err := checksumSignatureContract(h, "install.sh", "SHA256SUMS", "runner-v0.23.1",
+		"AndrewDryga/emisar/.github/workflows/runner-release-trusted.yml"); err != nil {
+		return err
+	}
+	return runnerMissingVerifierConsent(h)
+}
+
+// runnerMissingVerifierConsent pins what install.sh does without GitHub CLI: a
+// --yes run warns and continues on the checksum alone, a run with nobody to ask
+// refuses, and a present verifier or a fork's own checksum policy asks nothing.
+// `confirm` is the real one, run without a controlling terminal.
+func runnerMissingVerifierConsent(h *harness) error {
+	path := h.repoPath("install.sh")
+	names := []string{"accept_missing_verifier", "confirm"}
+	preamble := `
+log() { printf '%s\n' "$*"; }
+warn() { printf '%s\n' "$*" >&2; }
+die() { printf '%s\n' "$*" >&2; exit 1; }
+command() {
+  if [ "${1:-}" = "-v" ] && [ "${2:-}" = "gh" ] && [ "$MISSING_GH" = "1" ]; then
+    return 1
+  fi
+  builtin command "$@"
+}
+ATTESTATION_WORKFLOW=AndrewDryga/emisar/.github/workflows/runner-release-trusted.yml
+ASSUME_YES=0
+MISSING_GH=1
+verifier_missing=0
+`
+	invoke := "accept_missing_verifier\nprintf 'verifier_missing=%s\\n' \"$verifier_missing\"\n"
+	const warning = "GitHub CLI (gh) is not installed"
+
+	unattended := h.functions(path, names, preamble+"ASSUME_YES=1\n"+invoke, map[string]string{})
+	output, err := requireOutput(unattended)
+	if err != nil {
+		return fmt.Errorf("unattended install without the verifier: %w", err)
+	}
+	if !strings.Contains(string(output), warning) || !strings.Contains(string(output), "verifier_missing=1") {
+		return fmt.Errorf("unattended install without the verifier did not warn and continue:\n%s", output)
+	}
+
+	nobodyToAsk := h.functions(path, names, preamble+invoke, map[string]string{})
+	if err := expectFailure(nobodyToAsk, "pass --yes to continue on the checksum alone"); err != nil {
+		return fmt.Errorf("missing verifier with nobody to ask did not refuse: %w", err)
+	}
+
+	for name, body := range map[string]string{
+		"present verifier": "MISSING_GH=0\n",
+		"fork policy":      "ATTESTATION_WORKFLOW=\n",
+	} {
+		result := h.functions(path, names, preamble+body+invoke, map[string]string{})
+		output, err := requireOutput(result)
+		if err != nil {
+			return fmt.Errorf("%s: %w", name, err)
+		}
+		if strings.Contains(string(output), warning) || !strings.Contains(string(output), "verifier_missing=0") {
+			return fmt.Errorf("%s asked or warned about the verifier:\n%s", name, output)
+		}
+	}
+	return nil
 }
 
 func runnerOwnedDirectoryValidation(h *harness) error {
@@ -1182,6 +1240,8 @@ warn() { :; }
 die() { printf '%s\n' "$*" >&2; exit 1; }
 github_release_base() { printf 'https://example.invalid/%s\n' "$1"; }
 verify_checksum_attestation() { printf 'CHECKSUM SIGNATURE REACHED\n' >&2; }
+accept_missing_verifier() { :; }
+verifier_missing=0
 digest_of() {
   if command -v sha256sum >/dev/null 2>&1; then
     sha256sum "$1" | awk '{print $1}'

@@ -14,7 +14,9 @@ client.
 ## Start with one host
 
 You need an [emisar account](https://emisar.dev/sign_up), a Linux host with
-systemd, `sudo`, and GitHub CLI with `gh attestation verify --bundle`. Allow
+systemd, and `sudo`. GitHub CLI with `gh attestation verify --bundle` checks the
+release signature; without it the installer asks, or warns and continues when
+run with `--yes`, on the checksum alone. Allow
 outbound HTTPS to `emisar.dev:443`, `registry.emisar.dev:443`,
 `tuf-repo-cdn.sigstore.dev:443`, and `tuf-repo.github.com:443`. The last two
 serve the public trust roots used to authenticate release checksums; no GitHub

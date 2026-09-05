@@ -126,6 +126,113 @@ func TestRunVerifiesReleaseAndHandsItToInstaller(t *testing.T) {
 	}
 }
 
+// checksumOnlyRelease serves one immutable release with its checksum file and
+// counts the requests the update must not make once the verifier is settled.
+type checksumOnlyRelease struct {
+	server         *httptest.Server
+	archiveHits    int
+	bundleHits     int
+	installerRuns  int
+	attestationRun int
+}
+
+func newChecksumOnlyRelease(t *testing.T) *checksumOnlyRelease {
+	t.Helper()
+	name := fmt.Sprintf("emisar-0.24.1-%s-%s", runtime.GOOS, runtime.GOARCH)
+	archive := releaseArchive(t, name, map[string]archiveEntry{
+		name + "/emisar":     {body: "runner-binary", mode: 0o755},
+		name + "/install.sh": {body: "#!/usr/bin/env bash\n", mode: 0o755},
+	})
+	digest := sha256.Sum256(archive)
+	archiveName := name + ".tar.gz"
+	checksums := hex.EncodeToString(digest[:]) + "  " + archiveName + "\n"
+	fixture := &checksumOnlyRelease{}
+	fixture.server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.URL.Path == "/latest.json":
+			fmt.Fprint(w, `{"schema_version":1,"component":"runner","tag":"runner-v0.24.1","version":"0.24.1","source_revision":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}`)
+		case strings.HasSuffix(r.URL.Path, "/"+archiveName):
+			fixture.archiveHits++
+			w.Write(archive)
+		case strings.HasSuffix(r.URL.Path, "/SHA256SUMS"):
+			fmt.Fprint(w, checksums)
+		case strings.HasSuffix(r.URL.Path, "/SHA256SUMS.sigstore.jsonl"):
+			fixture.bundleHits++
+			fmt.Fprint(w, "signed checksum bundle")
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(fixture.server.Close)
+	return fixture
+}
+
+func (f *checksumOnlyRelease) dependencies(t *testing.T, root, executable string) dependencies {
+	t.Helper()
+	deps := testDependencies(executable)
+	deps.releaseBase = f.server.URL
+	deps.apiBase = f.server.URL
+	deps.downloadBase = f.server.URL
+	deps.httpClient = f.server.Client()
+	deps.tempRoot = root
+	deps.runCommand = func(_ context.Context, name string, args, _ []string, _ io.Writer, _ io.Writer) error {
+		if len(args) > 1 && args[0] == "attestation" {
+			f.attestationRun++
+			return nil
+		}
+		if name == "/bin/bash" {
+			f.installerRuns++
+		}
+		return nil
+	}
+	return deps
+}
+
+func TestRunWithoutVerifierWarnsAndContinuesOnChecksumAloneUnattended(t *testing.T) {
+	root := t.TempDir()
+	executable := writeReceiptFixture(t, root, officialRepository)
+	fixture := newChecksumOnlyRelease(t)
+	deps := fixture.dependencies(t, root, executable)
+	deps.lookPath = func(string) (string, error) { return "", &exec.Error{Name: "gh", Err: exec.ErrNotFound} }
+
+	var stdout, stderr bytes.Buffer
+	err := run(context.Background(), Options{CurrentVersion: "0.24.0", Stdout: &stdout, Stderr: &stderr}, deps)
+	if err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if !strings.Contains(stderr.String(), "gh is not installed") {
+		t.Errorf("stderr does not warn about the missing verifier:\n%s", stderr.String())
+	}
+	if strings.Contains(stdout.String(), "[y/N]") {
+		t.Errorf("an unattended update prompted:\n%s", stdout.String())
+	}
+	if fixture.bundleHits != 0 || fixture.attestationRun != 0 {
+		t.Errorf("bundle downloads = %d, attestation runs = %d, want none without a verifier", fixture.bundleHits, fixture.attestationRun)
+	}
+	if !strings.Contains(stdout.String(), "Verified checksum") || strings.Contains(stdout.String(), "Verified release checksum signature") {
+		t.Errorf("stdout must report the checksum and not a signature check:\n%s", stdout.String())
+	}
+	if fixture.installerRuns != 1 {
+		t.Errorf("installer runs = %d, want 1", fixture.installerRuns)
+	}
+}
+
+func TestRunRefusesAnUntrustedVerifierBeforeDownloading(t *testing.T) {
+	root := t.TempDir()
+	executable := writeReceiptFixture(t, root, officialRepository)
+	fixture := newChecksumOnlyRelease(t)
+	deps := fixture.dependencies(t, root, executable)
+	deps.lookPath = func(string) (string, error) { return "", errors.New("/usr/local/bin/gh is not root-owned") }
+
+	err := run(context.Background(), Options{CurrentVersion: "0.24.0"}, deps)
+	if err == nil || !strings.Contains(err.Error(), "not root-owned") {
+		t.Fatalf("error = %v, want the trusted-path refusal", err)
+	}
+	if fixture.archiveHits != 0 || fixture.installerRuns != 0 {
+		t.Errorf("archive downloads = %d, installer runs = %d, want none after a refusal", fixture.archiveHits, fixture.installerRuns)
+	}
+}
+
 func TestRunStripsIdentityOverridesFromTheInstallerHandoff(t *testing.T) {
 	root := t.TempDir()
 	executable := writeReceiptFixture(t, root, officialRepository)

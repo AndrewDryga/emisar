@@ -3,6 +3,7 @@ package selfupdate
 
 import (
 	"archive/tar"
+	"bufio"
 	"compress/gzip"
 	"context"
 	"crypto/sha256"
@@ -51,6 +52,11 @@ type Options struct {
 	CurrentVersion string
 	Stdout         io.Writer
 	Stderr         io.Writer
+	// Stdin answers the one prompt an update can raise, and Interactive says
+	// whether anyone is there to answer it: a terminal is asked, while a unit,
+	// script, or cron run is warned and continues.
+	Stdin       io.Reader
+	Interactive bool
 }
 
 type dependencies struct {
@@ -115,6 +121,9 @@ func run(ctx context.Context, opts Options, deps dependencies) error {
 	if opts.Stderr == nil {
 		opts.Stderr = io.Discard
 	}
+	if opts.Stdin == nil {
+		opts.Stdin = strings.NewReader("")
+	}
 	if deps.effectiveID() != 0 {
 		return errors.New("self-update requires root; run sudo emisar update")
 	}
@@ -164,6 +173,20 @@ func run(ctx context.Context, opts Options, deps dependencies) error {
 	checksumBundlePath := filepath.Join(temp, "SHA256SUMS.sigstore.jsonl")
 	base := target.BaseURL
 
+	// The verifier is settled before any download: a declined prompt then costs
+	// nothing, and an unattended run has already been warned. Only an absent gh
+	// is a question; one that fails the trusted-path check stays a refusal.
+	verifier, err := deps.lookPath("gh")
+	if err != nil {
+		if !errors.Is(err, exec.ErrNotFound) {
+			return fmt.Errorf("release checksum signature verifier: %w", err)
+		}
+		if err := acceptMissingVerifier(opts); err != nil {
+			return err
+		}
+		verifier = ""
+	}
+
 	fmt.Fprintf(opts.Stdout, "Downloading emisar %s for %s/%s...\n", targetVersion, runtime.GOOS, runtime.GOARCH)
 	if err := downloadReleaseFiles(ctx, deps.httpClient, base, archiveName, archivePath, checksumsPath); err != nil {
 		if target.Fallback {
@@ -185,11 +208,13 @@ func run(ctx context.Context, opts Options, deps dependencies) error {
 		}
 		base = fallback.BaseURL
 	}
-	if err := download(ctx, deps.httpClient, base+"/SHA256SUMS.sigstore.jsonl", checksumBundlePath, maxChecksumBundleBytes); err != nil {
-		return fmt.Errorf("download release checksum signature: %w", err)
-	}
-	if err := verifyChecksumProvenance(ctx, checksumsPath, checksumBundlePath, target.TagName, deps, opts.Stdout); err != nil {
-		return fmt.Errorf("release checksum signature is required: %w", err)
+	if verifier != "" {
+		if err := download(ctx, deps.httpClient, base+"/SHA256SUMS.sigstore.jsonl", checksumBundlePath, maxChecksumBundleBytes); err != nil {
+			return fmt.Errorf("download release checksum signature: %w", err)
+		}
+		if err := verifyChecksumProvenance(ctx, verifier, checksumsPath, checksumBundlePath, target.TagName, deps, opts.Stdout); err != nil {
+			return fmt.Errorf("release checksum signature is required: %w", err)
+		}
 	}
 	digest, err := verifyChecksum(archivePath, checksumsPath, archiveName)
 	if err != nil {
@@ -499,18 +524,37 @@ func verifyChecksum(archivePath, checksumsPath, archiveName string) (string, err
 	return actual, nil
 }
 
+// acceptMissingVerifier decides an update without GitHub CLI, which checks the
+// release checksum's signature: the update then rests on the checksum from the
+// release mirror alone. An operator at a terminal is asked first; a unit,
+// script, or cron run is warned and continues. EOF or an empty answer is "no".
+func acceptMissingVerifier(opts Options) error {
+	fmt.Fprintln(opts.Stderr, "warning: gh is not installed; the release checksum signature will not be checked")
+	if !opts.Interactive {
+		return nil
+	}
+	fmt.Fprint(opts.Stdout, "Continue with the checksum from the release mirror only? [y/N]: ")
+	answer, err := bufio.NewReader(opts.Stdin).ReadString('\n')
+	if err != nil && !errors.Is(err, io.EOF) {
+		return fmt.Errorf("reading confirmation: %w", err)
+	}
+	switch strings.ToLower(strings.TrimSpace(answer)) {
+	case "y", "yes":
+		return nil
+	default:
+		return errors.New("aborted: install GitHub CLI to check the release signature")
+	}
+}
+
 // verifyChecksumProvenance authenticates the checksum metadata with its
-// downloaded Sigstore bundle. It needs no GitHub login.
+// downloaded Sigstore bundle through the resolved GitHub CLI. It needs no
+// GitHub login.
 func verifyChecksumProvenance(
 	ctx context.Context,
-	checksums, bundle, tag string,
+	gh, checksums, bundle, tag string,
 	deps dependencies,
 	stdout io.Writer,
 ) error {
-	gh, err := deps.lookPath("gh")
-	if err != nil {
-		return errors.New("gh is not installed")
-	}
 	args := []string{
 		"attestation", "verify", checksums,
 		"--bundle", bundle,

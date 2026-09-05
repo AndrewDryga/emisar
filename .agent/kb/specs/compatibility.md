@@ -787,8 +787,11 @@ the installer interactive, hit a prompt with no terminal and died, and
 is false, so an unknown value never fails open. `EMISAR_ATTESTATION_WORKFLOW`
 selects the workflow identity matched against the downloaded Sigstore bundle.
 Official releases authenticate the combined checksum before trusting an
-archive digest and fail when the bundle, GitHub CLI, or signature is
-unavailable. Older releases without signed checksum metadata are unsupported.
+archive digest and fail when the bundle or signature is unavailable or invalid.
+Without GitHub CLI, install.sh and `emisar update` ask at a terminal, or warn and
+continue unattended, on the checksum alone (decided 2026-09-05); the bridge
+installers still require it. Older releases without signed checksum metadata
+are unsupported.
 A fork or mirror sets its own workflow or retains its operator-owned checksum
 policy.
 An unattended runner install requires `--yes` plus an explicit

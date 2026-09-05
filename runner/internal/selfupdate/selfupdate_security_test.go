@@ -178,7 +178,6 @@ func TestExtractBundleRejectsExecutableLinksAndDuplicateFiles(t *testing.T) {
 
 func TestVerifyChecksumProvenanceUsesOfficialPolicyAndFailsClosed(t *testing.T) {
 	deps := testDependencies("/unused")
-	deps.lookPath = func(string) (string, error) { return "/usr/bin/gh", nil }
 
 	var got []string
 	deps.runCommand = func(_ context.Context, _ string, args, _ []string, _, _ io.Writer) error {
@@ -188,6 +187,7 @@ func TestVerifyChecksumProvenanceUsesOfficialPolicyAndFailsClosed(t *testing.T) 
 
 	err := verifyChecksumProvenance(
 		context.Background(),
+		"/usr/bin/gh",
 		"/verified/SHA256SUMS",
 		"/verified/SHA256SUMS.sigstore.jsonl",
 		"runner-v0.24.1",
@@ -210,19 +210,38 @@ func TestVerifyChecksumProvenanceUsesOfficialPolicyAndFailsClosed(t *testing.T) 
 	}
 }
 
-func TestVerifyChecksumProvenanceRequiresTheBundleVerifier(t *testing.T) {
-	deps := testDependencies("/unused")
-	deps.lookPath = func(string) (string, error) { return "", errors.New("not found") }
-	err := verifyChecksumProvenance(
-		context.Background(),
-		"/verified/SHA256SUMS",
-		"/verified/SHA256SUMS.sigstore.jsonl",
-		"runner-v0.24.1",
-		deps,
-		io.Discard,
-	)
-	if err == nil || !strings.Contains(err.Error(), "gh is not installed") {
-		t.Fatalf("error = %v, want missing-verifier refusal", err)
+func TestAcceptMissingVerifierAsksOnlyAtATerminal(t *testing.T) {
+	tests := []struct {
+		name        string
+		interactive bool
+		stdin       string
+		wantErr     string
+	}{
+		{name: "unattended warns and continues", stdin: "n\n"},
+		{name: "terminal accepts yes", interactive: true, stdin: "yes\n"},
+		{name: "terminal default is no", interactive: true, stdin: "\n", wantErr: "aborted"},
+		{name: "terminal EOF is no", interactive: true, stdin: "", wantErr: "aborted"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			var stdout, stderr bytes.Buffer
+			err := acceptMissingVerifier(Options{
+				Stdout: &stdout, Stderr: &stderr,
+				Stdin: strings.NewReader(test.stdin), Interactive: test.interactive,
+			})
+			if test.wantErr == "" && err != nil {
+				t.Fatalf("error = %v", err)
+			}
+			if test.wantErr != "" && (err == nil || !strings.Contains(err.Error(), test.wantErr)) {
+				t.Fatalf("error = %v, want %q", err, test.wantErr)
+			}
+			if !strings.Contains(stderr.String(), "gh is not installed") {
+				t.Fatalf("stderr = %q, want the missing-verifier warning", stderr.String())
+			}
+			if prompted := strings.Contains(stdout.String(), "[y/N]"); prompted != test.interactive {
+				t.Fatalf("prompted = %v, want %v", prompted, test.interactive)
+			}
+		})
 	}
 }
 
