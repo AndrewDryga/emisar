@@ -508,8 +508,14 @@ defmodule EmisarWeb.RunnersLiveTest do
 
       assert has_element?(
                lv,
-               ~s(#runner-explainer a[href="/docs/runner-fleet#groups-labels"]),
-               "Group related runners"
+               ~s|#runner-explainer p:nth-child(2) a[href="/docs/runner-fleet#groups-labels"]|,
+               "How to group runners"
+             )
+
+      assert has_element?(
+               lv,
+               ~s|#runner-explainer p:nth-child(3) a[href="/docs/runner-fleet#offline"]|,
+               "Troubleshoot an offline runner"
              )
 
       assert text_position(html, ~s(href="/docs/runner-fleet")) <

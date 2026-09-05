@@ -44,6 +44,12 @@ there. Link the `/docs/*` page that owns the subject. Avoid repeating that same
 general link in the side panel; a specific topic can have its own useful deep
 link, such as a connection warning linking to troubleshooting.
 
+For optional how-to or troubleshooting help in a side panel, explain the behavior
+first and finish the paragraph with a descriptive docs link, such as "How to group
+runners" or "Troubleshoot an offline runner". This distinguishes instructions from
+an in-app action. Keep inline links when their job is to define a term or cite a
+reference.
+
 Keep the introduction, main docs link, controls, and decision-critical help
 available at every screen width. Longer optional help can move below the main
 content or into a keyboard-accessible disclosure. It must remain reachable on

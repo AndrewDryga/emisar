@@ -590,12 +590,12 @@ defmodule EmisarWeb.RunnersLive do
                     are allowed, need approval, or are blocked.
                   </p>
                   <p>
-                    <.doc_link href={~p"/docs/runner-fleet" <> "#groups-labels"}>Group related runners</.doc_link>,
-                    such as “web” or “production,” to apply shared policies or run actions across the group.
+                    Group related runners, such as “web” or “production,” to apply shared policies
+                    or run actions across the group. <.doc_link href={~p"/docs/runner-fleet" <> "#groups-labels"}>How to group runners</.doc_link>.
                   </p>
                   <p>
                     A runner must be online to receive new actions. If one is offline, check that
-                    its service is running and that it can connect to emisar.
+                    its service is running and that it can connect to emisar. <.doc_link href={~p"/docs/runner-fleet" <> "#offline"}>Troubleshoot an offline runner</.doc_link>.
                   </p>
                 </.docs_rail>
               </div>
