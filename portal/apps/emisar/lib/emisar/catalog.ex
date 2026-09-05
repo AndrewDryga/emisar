@@ -1184,24 +1184,65 @@ defmodule Emisar.Catalog do
       when is_binary(account_id) and is_integer(days) and days > 0 do
     cutoff = DateTime.add(DateTime.utc_now(), -days * 86_400, :second)
 
-    Multi.new()
-    |> Multi.run(:versions, fn repo, _changes ->
-      live_versions = live_advertised_versions(repo, account_id)
+    delete_pack_version_set(
+      account_id,
+      fn repo ->
+        live_versions = live_advertised_versions(repo, account_id)
 
-      queryable =
         PackVersion.Query.all()
         |> PackVersion.Query.by_account_id(account_id)
         |> PackVersion.Query.last_seen_before(cutoff)
         |> scope_sweep_to_pack_access(subject)
         |> PackVersion.Query.lock_for_update()
-
-      versions =
-        queryable
         |> repo.all()
         |> Enum.reject(&MapSet.member?(live_versions, {&1.pack_id, &1.version}))
+      end,
+      &Audit.Events.pack_retention_swept(subject || account_id, &1, days)
+    )
+  end
 
-      {:ok, versions}
-    end)
+  @doc """
+  Internal — the daily bookkeeping for retired versions, run for every
+  account whatever its cleanup window: deletes each pack version the
+  published catalog retired (`PackBaseline.retired?/2`) that no runner in the
+  account advertises anymore — pin rows and their advertised action rows. Such
+  a version is dead weight the fix already routed around: dispatch refuses
+  it, nothing runs it, and the console's only remedy was removing it by hand.
+  Advertisement is judged on every non-deleted runner's durable `packs` map,
+  offline hosts included, so a version a host still lists is kept exactly as
+  the console counts it. Records ONE `pack_retirement_swept` audit event
+  (system actor) only when something was removed. Returns
+  `{:ok, deleted_count}`.
+  """
+  def delete_unadvertised_retired_pack_versions(account_id) when is_binary(account_id) do
+    delete_pack_version_set(
+      account_id,
+      fn repo ->
+        advertised =
+          account_id
+          |> Runners.list_pack_advertisement_facts_for_account(repo: repo)
+          |> advertised_pack_refs()
+
+        PackVersion.Query.all()
+        |> PackVersion.Query.by_account_id(account_id)
+        |> PackVersion.Query.by_pack_ids(Map.keys(PackBaseline.retired_below()))
+        |> PackVersion.Query.lock_for_update()
+        |> repo.all()
+        |> Enum.filter(&PackBaseline.retired?(&1.pack_id, &1.version))
+        |> Enum.reject(&MapSet.member?(advertised, {&1.pack_id, &1.version}))
+      end,
+      &Audit.Events.pack_retirement_swept(account_id, &1)
+    )
+  end
+
+  # The one transactional shape both bookkeeping sweeps share: lock the
+  # candidate rows (`select_versions` picks them inside the transaction), drop
+  # their advertised action rows, delete the pins, and insert the marker
+  # `record` builds — only when something was removed, since scheduled
+  # housekeeping must not manufacture audit noise on inactive accounts.
+  defp delete_pack_version_set(account_id, select_versions, record) do
+    Multi.new()
+    |> Multi.run(:versions, fn repo, _changes -> {:ok, select_versions.(repo)} end)
     |> Multi.run(:actions, fn repo, %{versions: versions} ->
       {:ok, delete_advertised_actions(repo, account_id, versions)}
     end)
@@ -1213,8 +1254,9 @@ defmodule Emisar.Catalog do
       {count, _} = repo.delete_all(queryable)
       {:ok, count}
     end)
-    |> Multi.run(:audit, fn repo, %{versions: versions} ->
-      record_retention_sweep(repo, versions, days, subject)
+    |> Multi.run(:audit, fn
+      _repo, %{versions: []} -> {:ok, :nothing_removed}
+      repo, %{versions: versions} -> repo.insert(record.(versions))
     end)
     |> Repo.commit_multi(
       after_commit: fn %{deleted: deleted} ->
@@ -1234,11 +1276,18 @@ defmodule Emisar.Catalog do
   # the pack stays live. Liveness comes from the durable connection-record
   # columns; an ungracefully dropped socket reads connected until its next
   # reconnect, which errs toward keeping rows — the safe direction for a
-  # destructive sweep. Mirrors observe_pack/3's "unknown" version default so
-  # protection matches pin creation.
+  # destructive sweep.
   defp live_advertised_versions(repo, account_id) do
-    for %Runners.Runner{} = runner <-
-          Runners.list_pack_referencing_runners_for_account(account_id, repo: repo),
+    account_id
+    |> Runners.list_pack_referencing_runners_for_account(repo: repo)
+    |> advertised_pack_refs()
+  end
+
+  # The `{pack_id, version}` pairs a set of runners durably advertises — their
+  # `packs` maps. Mirrors observe_pack/3's "unknown" version default so
+  # protection matches pin creation.
+  defp advertised_pack_refs(runners) do
+    for runner <- runners,
         {pack_id, info} <- runner.packs,
         is_map(info),
         into: MapSet.new() do
@@ -1258,15 +1307,6 @@ defmodule Emisar.Catalog do
       {count, _} = repo.delete_all(queryable)
       total + count
     end)
-  end
-
-  # No marker when nothing was removed — scheduled housekeeping must not
-  # manufacture audit noise on inactive accounts.
-  defp record_retention_sweep(_repo, [], _days, _subject), do: {:ok, :nothing_removed}
-
-  defp record_retention_sweep(repo, versions, days, subject) do
-    actor = subject || hd(versions).account_id
-    repo.insert(Audit.Events.pack_retention_swept(actor, versions, days))
   end
 
   # The complete descriptors advertised for the exact pending hash — read

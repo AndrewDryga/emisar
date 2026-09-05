@@ -56,6 +56,7 @@ defmodule Emisar.Audit.Event.Query do
     {"pack_version_deleted", "Pack version deleted"},
     {"pack_deleted", "Pack deleted"},
     {"pack_retention_swept", "Pack catalog pruned (retention)"},
+    {"pack_retirement_swept", "Pack catalog pruned (retired versions)"},
     {"dispatch_blocked_pack_untrusted", "Dispatch blocked (pack untrusted)"},
     {"dispatch_blocked_pack_retired", "Dispatch blocked (pack retired)"},
     {"dispatch_blocked_requires_attestation", "Dispatch blocked (unsigned)"},
@@ -241,6 +242,7 @@ defmodule Emisar.Audit.Event.Query do
        {"pack_version_deleted", "Version deleted"},
        {"pack_deleted", "Pack deleted"},
        {"pack_retention_swept", "Catalog pruned (retention)"},
+       {"pack_retirement_swept", "Catalog pruned (retired versions)"},
        {"dispatch_blocked_pack_untrusted", "Dispatch blocked"},
        {"dispatch_blocked_pack_retired", "Dispatch blocked (retired)"}
      ]},
@@ -951,6 +953,9 @@ defmodule Emisar.Audit.Event.Query do
     "pack_retention_swept" =>
       {false, false, true,
        "Pack retention removed versions no runner advertised within the account's window."},
+    "pack_retirement_swept" =>
+      {false, false, true,
+       "Daily catalog bookkeeping removed retired pack versions no runner advertised anymore."},
     "pack_retirement_overridden" =>
       {true, true, true,
        "An admin re-trusted a retired pack version — dispatches with it are allowed again."},

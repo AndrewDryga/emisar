@@ -1056,6 +1056,25 @@ defmodule Emisar.Runners do
     |> repo.all()
   end
 
+  @doc """
+  Internal — every non-deleted runner's durable pack advertisement in an
+  account (`%{id, name, group, packs}`), whatever its connection state. The
+  retired-version bookkeeping judges "no runner is on it" from this set: an
+  offline host that still lists a version simply re-advertises it on
+  reconnect, so it protects the row exactly as the console's advertiser
+  facts (`list_pack_advertisement_facts/2`) count it. Only a deleted runner
+  is gone for good.
+  """
+  def list_pack_advertisement_facts_for_account(account_id, opts \\ [])
+      when is_binary(account_id) do
+    repo = Keyword.get(opts, :repo, Repo)
+
+    Runner.Query.not_deleted()
+    |> Runner.Query.by_account_id(account_id)
+    |> Runner.Query.select_pack_advertisement_facts()
+    |> repo.all()
+  end
+
   # -- Runner socket-driven connection state ---------------------------
   #
   # These run inside the runner WebSocket process — the auth gate is the
