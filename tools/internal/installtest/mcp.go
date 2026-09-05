@@ -40,6 +40,7 @@ func MCP(root string, out io.Writer) error {
 		{"staging integrity", mcpStagingIntegrity},
 		{"atomic multi-target activation", mcpActivationTransaction},
 		{"bridge runs as the invoking user", mcpCLISudoCredentialBoundary},
+		{"uninstall bridge privilege boundary", mcpUninstallSudoBoundary},
 		{"connect and disconnect", mcpConnectCommand},
 		{"uninstall", mcpUninstall},
 		{"uninstall with an older bridge", mcpUninstallWithAnOlderBridge},
@@ -710,6 +711,7 @@ id() {
   [ "${1:-}" = -u ] || return 9
   printf '0\n'
 }
+
 sudo() {
   printf '%s\n' "$@" >"$SUDO_TRACE"
   [ "$1" = -H ] && [ "$2" = -u ] && [ "$3" = "$SUDO_USER" ] || return 9
@@ -735,6 +737,51 @@ printf '%s\n' "$secret" | run_cli_as_invoking_user auth status https://control.e
 		return err
 	}
 	return exactFile(trace, "HOME="+invokingHome+"\nARGS=auth status https://control.example\nKEY=emk-ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopq\n")
+}
+
+func mcpUninstallSudoBoundary(h *harness) error {
+	dir := h.path("uninstall-sudo-bin")
+	trace := h.path("uninstall-sudo-trace")
+	if err := h.mkdir(dir); err != nil {
+		return err
+	}
+	bin := filepath.Join(dir, "emisar-mcp")
+	if err := writeFile(bin, `#!/bin/sh
+printf '%s|%s\n' "$TEST_EFFECTIVE_USER" "$*" >>"$CLI_TRACE"
+`, 0o755); err != nil {
+		return err
+	}
+
+	result := h.functions(h.repoPath("install-mcp.sh"),
+		[]string{"installed_bridge", "run_cli_as_invoking_user", "do_uninstall"}, `
+id() { printf '0\n'; }
+sudo() {
+  [ "$1" = -H ] && [ "$2" = -u ] && [ "$3" = alice ] || return 9
+  shift 3
+  TEST_EFFECTIVE_USER=alice "$@"
+}
+log() { :; }
+warn() { printf '%s\n' "$*" >&2; }
+die() { printf '%s\n' "$*" >&2; exit 1; }
+confirm() { return 0; }
+OS=linux
+ARCH=amd64
+EMISAR_URL=https://control.example
+install_dirs="$INSTALL_DIR"
+do_uninstall
+`, map[string]string{
+			"INSTALL_DIR":         dir,
+			"CLI_TRACE":           trace,
+			"SUDO_USER":           "alice",
+			"TEST_EFFECTIVE_USER": "root",
+		})
+	if _, err := requireOutput(result); err != nil {
+		return err
+	}
+	if err := exactFile(trace, "alice|disconnect --help\nalice|disconnect --all --forget --yes\n"); err != nil {
+		return err
+	}
+	return requireAbsent(bin)
 }
 
 // buildBridge compiles the bridge from THIS checkout into dir. The connect and

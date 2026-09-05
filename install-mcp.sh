@@ -495,7 +495,7 @@ do_uninstall() {
 
   if bridge=$(installed_bridge); then
     first_bin="${bridge}"
-    if ! "${first_bin}" disconnect --help >/dev/null 2>&1; then
+    if ! run_cli_as_invoking_user disconnect --help >/dev/null 2>&1; then
       warn "the installed bridge is older than this script and cannot remove its own client entries"
       warn "  reinstall it first (curl -fsSL ${EMISAR_URL}/install-mcp.sh | sudo bash), then re-run --uninstall"
     elif ! run_cli_as_invoking_user disconnect --all --forget --yes; then
