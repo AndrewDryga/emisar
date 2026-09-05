@@ -3123,9 +3123,9 @@ defmodule EmisarWeb.CoreComponents do
   """
   attr :code, :string, required: true
   attr :label, :string, required: true
-  attr :id, :string, default: nil, doc: "pre id — required with `copy`"
+  attr :id, :string, default: nil, doc: "optional pre id"
   attr :annotation, :string, default: nil, doc: "right-side header meta"
-  attr :copy, :boolean, default: false, doc: "copy button targeting the pre by `id`"
+  attr :copy, :boolean, default: false, doc: "copy the literal code without display chrome"
   attr :copy_label, :string, default: "Copy"
   attr :prompt, :boolean, default: false, doc: ~S(render a select-none "$ " shell prompt)
   attr :max_h, :string, default: nil, doc: ~S(scroll clamp on the pre, e.g. "max-h-64")
@@ -3175,7 +3175,7 @@ defmodule EmisarWeb.CoreComponents do
           </span>
           <.copy_button
             :if={@copy}
-            target={"##{@id}"}
+            text={@code}
             class="shrink-0 bg-zinc-800 px-2 text-zinc-200 hover:bg-zinc-700"
           >
             {@copy_label}
@@ -3276,9 +3276,8 @@ defmodule EmisarWeb.CoreComponents do
     ]}>
       <header class="flex items-center justify-between gap-3 border-b border-zinc-800/70 px-4 py-2">
         <.os_switch detected={@detected} tabs={@tab} />
-        <%!-- One Copy per variant, hidden with its pre: a single button would
-             have to resolve which pre is showing, and the copy listener takes a
-             fixed selector. --%>
+        <%!-- One Copy per variant, hidden with its pre, preserves that
+             command's literal bytes without inspecting presentation text. --%>
         <.copy_button
           :for={tab <- @tab}
           data-os={to_string(tab.os)}
@@ -3286,7 +3285,7 @@ defmodule EmisarWeb.CoreComponents do
             "shrink-0 bg-zinc-800 px-2 text-zinc-200 hover:bg-zinc-700",
             tab.os != @detected && "hidden"
           ]}
-          target={"##{@id}-#{tab.os}"}
+          text={tab.code}
         >
           Copy
         </.copy_button>

@@ -1114,6 +1114,27 @@ defmodule EmisarWeb.AgentsLiveTest do
       flush_key_broadcast(lv)
     end
 
+    test "key-bearing shell snippets copy the exact command with its leading space", %{conn: conn} do
+      {conn, _user, account} = register_and_log_in(conn)
+      {:ok, lv, _} = live(conn, ~p"/app/#{account}/agents/connect")
+
+      for client <- ["claude_code", "grok"] do
+        render_click(lv, "select_client", %{"client" => client})
+        html = render_click(lv, "reveal_snippet", %{})
+        document = LazyHTML.from_document(html)
+        command = document |> LazyHTML.query("#snippet-#{client}") |> LazyHTML.text()
+
+        assert String.starts_with?(command, " ")
+        assert command =~ "EMISAR_API_KEY=emk-"
+
+        assert document
+               |> LazyHTML.query("#manual-setup button[data-copy-text]")
+               |> LazyHTML.attribute("data-copy-text") == [command]
+      end
+
+      flush_key_broadcast(lv)
+    end
+
     test "Claude Code setup offers the optional auto-permit step with the verified rule",
          %{conn: conn} do
       {conn, _user, account} = register_and_log_in(conn)

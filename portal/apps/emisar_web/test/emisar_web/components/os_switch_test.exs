@@ -74,21 +74,26 @@ defmodule EmisarWeb.Components.OsSwitchTest do
       assert html =~ "hidden"
     end
 
-    test "each variant carries its own Copy, targeting its own pre" do
-      assigns = %{}
+    test "each variant copies its exact code, preserving significant whitespace" do
+      assigns = %{linux: " curl …  \n", windows: "\tirm '<&>'", macos: " curl …\n\targ"}
 
       html =
         rendered_to_string(~H"""
         <CoreComponents.os_code_panel id="install" detected={:windows}>
-          <:tab os={:linux} label="Linux" code="curl …" />
-          <:tab os={:windows} label="Windows" code="irm …" />
-          <:tab os={:macos} label="macOS" code="curl …" />
+          <:tab os={:linux} label="Linux" code={@linux} />
+          <:tab os={:windows} label="Windows" code={@windows} />
+          <:tab os={:macos} label="macOS" code={@macos} />
         </CoreComponents.os_code_panel>
         """)
 
-      assert html =~ ~s(data-copy="#install-linux")
-      assert html =~ ~s(data-copy="#install-windows")
-      assert html =~ ~s(data-copy="#install-macos")
+      for os <- [:linux, :windows, :macos] do
+        assert html
+               |> LazyHTML.from_document()
+               |> LazyHTML.query("button[data-os='#{os}'][data-copy-text]")
+               |> LazyHTML.attribute("data-copy-text") == [assigns[os]]
+      end
+
+      refute html =~ "data-copy="
     end
 
     test "the code renders escaped" do

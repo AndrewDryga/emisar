@@ -212,6 +212,14 @@ defmodule EmisarWeb.EnrollmentKeysLiveTest do
     # shell history; a trim anywhere in the handoff would leak it).
     assert html =~
              "</span> curl -fsSL http://localhost:4000/install.sh | sudo EMISAR_ENROLLMENT_KEY=#{raw_secret} EMISAR_URL=http://localhost:4000 bash</pre>"
+
+    assert html
+           |> LazyHTML.from_document()
+           |> LazyHTML.query("button[data-copy-text]")
+           |> LazyHTML.attribute("data-copy-text")
+           |> Enum.member?(
+             " curl -fsSL http://localhost:4000/install.sh | sudo EMISAR_ENROLLMENT_KEY=#{raw_secret} EMISAR_URL=http://localhost:4000 bash"
+           )
   end
 
   test "public HTTP keeps the explicit key reveal but refuses the convenience command", %{

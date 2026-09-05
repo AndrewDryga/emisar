@@ -42,7 +42,7 @@ defmodule EmisarWeb.Components.CodePanelTest do
       assert html =~ "truncate font-mono"
     end
 
-    test "copy renders a copy button targeting the pre id" do
+    test "copy carries the literal code without a selector" do
       assigns = %{}
 
       html =
@@ -50,8 +50,28 @@ defmodule EmisarWeb.Components.CodePanelTest do
           ~H|<CoreComponents.code_panel id="snippet-x" label="Snippet" copy copy_label="Copy snippet" code="a" />|
         )
 
-      assert html =~ ~s(data-copy="#snippet-x")
+      assert html =~ ~s(data-copy-text="a")
+      refute html =~ "data-copy="
       assert html =~ "Copy snippet"
+    end
+
+    test "copy preserves significant bytes and excludes the display prompt without an id" do
+      assigns = %{code: " command\n\t<&>\"  \n"}
+
+      html =
+        rendered_to_string(
+          ~H|<CoreComponents.code_panel label="Command" prompt copy code={@code} />|
+        )
+
+      assert html =~ ~s(</span> command)
+
+      assert html
+             |> LazyHTML.from_document()
+             |> LazyHTML.query("button[data-copy-text]")
+             |> LazyHTML.attribute("data-copy-text") == [assigns.code]
+
+      refute html =~ "data-copy="
+      refute html =~ "<&>"
     end
 
     test "prompt renders the select-none shell prefix" do
