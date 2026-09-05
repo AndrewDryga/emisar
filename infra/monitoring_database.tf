@@ -108,7 +108,7 @@ resource "google_monitoring_alert_policy" "db_down" {
   conditions {
     display_name = "Cloud SQL Server Up Below 1 for 5 Minutes"
     condition_threshold {
-      filter          = "resource.type = \"cloudsql_database\" AND resource.labels.project_id = \"${var.project_id}\" AND resource.labels.database_id = \"${google_sql_database_instance.emisar.name}\" AND metric.type = \"cloudsql.googleapis.com/database/up\""
+      filter          = "resource.type = \"cloudsql_database\" AND resource.labels.project_id = \"${var.project_id}\" AND resource.labels.database_id = \"${var.project_id}:${google_sql_database_instance.emisar.name}\" AND metric.type = \"cloudsql.googleapis.com/database/up\""
       comparison      = "COMPARISON_LT"
       threshold_value = 1
       duration        = "300s"

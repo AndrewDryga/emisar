@@ -1723,6 +1723,44 @@ defmodule Emisar.RunnersTest do
     end
   end
 
+  describe "list_pack_advertisement_facts_for_account/2" do
+    setup do
+      {account, _user, _subject} = account_with_owner_subject()
+      %{account: account}
+    end
+
+    test "reads every non-deleted runner's packs map, whatever its connection state", %{
+      account: account
+    } do
+      connected_runner = Fixtures.Runners.create_runner(account_id: account.id)
+      pending_runner = Fixtures.Runners.create_runner(account_id: account.id, connected?: false)
+      offline_runner = offline_runner(account, 1)
+      disabled_runner = Fixtures.Runners.create_runner(account_id: account.id)
+      Fixtures.Runners.disable_runner(disabled_runner)
+      deleted_runner = Fixtures.Runners.create_runner(account_id: account.id)
+      Fixtures.Runners.mark_deleted(deleted_runner)
+      _other_account_runner = Fixtures.Runners.create_runner()
+
+      Fixtures.Runners.advertise_packs(offline_runner, %{"redis" => %{"version" => "0.1.0"}})
+
+      # An offline host still lists what it has installed and re-advertises it
+      # on reconnect, so the retired-version bookkeeping counts it; only a
+      # deleted runner (or another account's) is out.
+      facts = Runners.list_pack_advertisement_facts_for_account(account.id)
+
+      assert facts |> Enum.map(& &1.id) |> Enum.sort() ==
+               Enum.sort([
+                 connected_runner.id,
+                 pending_runner.id,
+                 offline_runner.id,
+                 disabled_runner.id
+               ])
+
+      assert Enum.find(facts, &(&1.id == offline_runner.id)).packs ==
+               %{"redis" => %{"version" => "0.1.0"}}
+    end
+  end
+
   describe "apply_state/2" do
     setup do
       account = Fixtures.Accounts.create_account()

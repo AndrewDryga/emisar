@@ -28,11 +28,13 @@ args:
       max: 500
 
 execution:
+  # journald can lose unit metadata after a short-lived cron child exits.
+  # Intersecting unit and identifier filters would silently omit that record.
   command:
     binary: /bin/sh
     argv:
       - "-c"
-      - "journalctl -u cron -u crond -t CRON -t CROND --no-pager -n {{ args.count }}"
+      - "journalctl -t CRON -t CROND --no-pager -n {{ args.count }}"
   timeout: 15s
 
 output:

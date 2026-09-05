@@ -261,14 +261,14 @@ func TestDefaultRules_FamiliesPresentAndCompile(t *testing.T) {
 	defs := DefaultRules()
 
 	// Pin the count: the set is the documented last-resort net; an accidental
-	// deletion (or an un-synced add) should trip this. There are 21 rules.
-	if got := len(defs); got != 21 {
-		t.Fatalf("DefaultRules count changed: got %d, want 21 (update this test deliberately if a rule was added/removed)", got)
+	// deletion (or an un-synced add) should trip this. There are 20 rules.
+	if got := len(defs); got != 20 {
+		t.Fatalf("DefaultRules count changed: got %d, want 20 (update this test deliberately if a rule was added/removed)", got)
 	}
 
 	want := []string{
 		"bearer-token", "basic-auth", "jwt", "emisar-token",
-		"aws-access-key", "github-token", "gitlab-token", "slack-token",
+		"github-token", "gitlab-token", "slack-token",
 		"stripe-secret-key", "openai-api-key", "anthropic-api-key",
 		"google-api-key", "npm-token", "sendgrid-api-key",
 		"private-key-block", "pgp-private-key-block", "url-credentials",

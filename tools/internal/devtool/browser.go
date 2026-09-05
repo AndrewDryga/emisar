@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -141,6 +142,14 @@ func parseShot(args []string) (shotCommand, error) {
 		command.options.Clicks = append(command.options.Clicks, value)
 		return nil
 	})
+	flags.Func("fill", "", func(value string) error {
+		selector, text, ok := strings.Cut(value, "=")
+		if !ok || !regexp.MustCompile(`^#[A-Za-z_][A-Za-z0-9_-]*$`).MatchString(selector) {
+			return fmt.Errorf("fill requires #ID=VALUE (an ID selector, not arbitrary CSS)")
+		}
+		command.options.Fills = append(command.options.Fills, devbrowser.FieldFill{Selector: selector, Value: text})
+		return nil
+	})
 	flags.Int64Var(&command.options.Width, "width", 1440, "")
 	flags.IntVar(&settle, "settle", 0, "")
 	path := ""
@@ -157,7 +166,7 @@ func parseShot(args []string) (shotCommand, error) {
 		}
 	}
 	if err := flags.Parse(flagArgs); err != nil || path == "" || command.options.Label == "" || flags.NArg() != 0 {
-		return command, usage("usage: ./run shot <path> --label <name> [--task ID] [--group NAME] [--shot NAME|--select CSS|--heading TEXT|--class-contains a,b] [--climb SEL] [--click SEL]... [--width N] [--settle MS]")
+		return command, usage("usage: ./run shot <path> --label <name> [--task ID] [--group NAME] [--shot NAME|--select CSS|--heading TEXT|--class-contains a,b] [--climb SEL] [--click SEL]... [--fill '#ID=VALUE']... [--width N] [--settle MS]")
 	}
 	command.options.Path = path
 	command.options.Settle = time.Duration(settle) * time.Millisecond

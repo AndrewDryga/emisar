@@ -1994,7 +1994,11 @@ the console before publication and again at execution. Human review and
 publication remain mandatory. Retry returns the same runbook through the common
 operation contract. `get_operation` recovers the same object as
 `kind: "runbook_draft"` — draft ID, slug, hash, live ref, and review URL — after
-an ambiguous response; no synthetic run is created for recovery.
+an ambiguous response; no synthetic run is created for recovery. The hash, slug,
+and live ref describe the original committed mutation, not later edits or
+publications. Read `get_runbook` for current content before a new edit. A missing
+draft or an older operation without a saved result returns `operation_incomplete`;
+recovery never substitutes the current draft's hash for the original result.
 
 ### `update_runbook_draft`
 

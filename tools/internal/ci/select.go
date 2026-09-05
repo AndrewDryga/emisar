@@ -180,7 +180,8 @@ func (selection *Selection) include(file string) {
 	// phase is what holds its ELIXIR/OTP/hex/rebar3 ARG defaults to .tool-versions
 	// and the CI workflow's pins; a Dockerfile-only bump otherwise selected only
 	// the Portal job, which cannot see that disagreement.
-	if toolutil.HasAnyPrefix(file, "tools/", "dev/", ".agent/", ".claude/", ".codex/", ".gemini/", "skills/", "dist/", ".github/workflows/", ".github/actions/", ".githooks/") || strings.Contains(file, "/.agent/") || slices.Contains([]string{"run", ".shell", "go.work", "go.work.sum", ".gitattributes", ".gitignore", ".tool-versions", "docker-compose.yml", "portal/config/config.exs", "portal/Dockerfile"}, file) || filepath.Ext(file) == ".md" {
+	// The shared clipboard module's browser regressions live in tooling.
+	if toolutil.HasAnyPrefix(file, "tools/", "dev/", ".agent/", ".claude/", ".codex/", ".gemini/", "skills/", "dist/", ".github/workflows/", ".github/actions/", ".githooks/") || strings.Contains(file, "/.agent/") || slices.Contains([]string{"run", ".shell", "go.work", "go.work.sum", ".gitattributes", ".gitignore", ".tool-versions", "docker-compose.yml", "portal/config/config.exs", "portal/Dockerfile", "portal/apps/emisar_web/assets/js/copy.js"}, file) || filepath.Ext(file) == ".md" {
 		selection.Tools = true
 	}
 	// Pack behavior plans are validation inputs but are not loaded into registry

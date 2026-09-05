@@ -25,6 +25,9 @@ defmodule Emisar.MCPOperations.Operation do
     field :resource_id, Ecto.UUID
     field :resource_ref, :string
 
+    field :draft_definition_sha256, :string
+    field :draft_live_version, :integer
+
     belongs_to :account, Emisar.Accounts.Account, where: [deleted_at: nil]
 
     timestamps()

@@ -3037,10 +3037,6 @@ defmodule Emisar.SSOTest do
 
   describe "complete_auth/3 — a connection disabled mid-flight" do
     test "a first login cannot land through a door the account just closed" do
-      # Disabling a connection is how an operator revokes a route in, and
-      # end_sessions_signed_in_through runs in that disable's after_commit — so a
-      # callback that completes afterwards is never swept. Under the same row lock
-      # the disable takes, one of the two goes first and the other refuses.
       {_user, account, subject} = enterprise_owner()
       provider = provider_fixture(account)
       {:ok, disabled} = SSO.update_provider(provider, %{enabled: false}, subject)
@@ -3283,30 +3279,42 @@ defmodule Emisar.SSOTest do
       scim_provider()
     end
 
-    test "disabling revokes a linked member's sessions", %{provider: provider, subject: subject} do
+    test "disabling revokes sessions in its transaction", %{provider: provider, subject: subject} do
       %{identity: identity} = provision(provider, "okta|live")
       {:ok, user} = Emisar.Users.fetch_user_by_id(identity.user_id)
 
-      _token =
+      token =
         Fixtures.Auth.create_session_token!(user, :sso, nil, %{}, user_identity_id: identity.id)
 
+      marker = record_session_effects()
+      expected_topic = Auth.live_socket_topic_for_session(token)
+      refute Repo.in_transaction?()
       assert {:ok, _} = SSO.update_provider(provider, %{enabled: false}, subject)
 
-      # Disabling used to stop only NEW sign-ins, leaving every session already
-      # minted through the connection valid for its full lifetime.
+      assert_received {^marker, true}
+      refute_received {^marker, false}
+      assert_received {:scim_delete_disconnect, [^expected_topic], false}
+
       assert Repo.all(
                Emisar.Auth.UserToken.Query.by_user_id(Emisar.Auth.UserToken.Query.all(), user.id)
              ) == []
     end
 
-    test "deleting revokes them too", %{provider: provider, subject: subject} do
+    test "deleting revokes sessions in its transaction", %{provider: provider, subject: subject} do
       %{identity: identity} = provision(provider, "okta|gone")
       {:ok, user} = Emisar.Users.fetch_user_by_id(identity.user_id)
 
-      _token =
+      token =
         Fixtures.Auth.create_session_token!(user, :sso, nil, %{}, user_identity_id: identity.id)
 
+      marker = record_session_effects()
+      expected_topic = Auth.live_socket_topic_for_session(token)
+      refute Repo.in_transaction?()
       assert {:ok, _} = SSO.delete_provider(provider, subject)
+
+      assert_received {^marker, true}
+      refute_received {^marker, false}
+      assert_received {:scim_delete_disconnect, [^expected_topic], false}
 
       assert Repo.all(
                Emisar.Auth.UserToken.Query.by_user_id(Emisar.Auth.UserToken.Query.all(), user.id)
@@ -3344,9 +3352,16 @@ defmodule Emisar.SSOTest do
 
       magic_token = Fixtures.Auth.create_session_token!(user, :magic_link, nil)
 
+      marker = record_session_effects()
+      expected_topic = Auth.live_socket_topic_for_session(provider_token)
+      refute Repo.in_transaction?()
+
       assert {:ok, downgraded} =
                SSO.update_provider(provider, %{satisfies_mfa: false}, subject)
 
+      assert_received {^marker, true}
+      refute_received {^marker, false}
+      assert_received {:scim_delete_disconnect, [^expected_topic], false}
       refute downgraded.satisfies_mfa
       assert Auth.fetch_user_and_token_by_session_token(provider_token) == {:error, :not_found}
       assert {:ok, ^user, _session} = Auth.fetch_user_and_token_by_session_token(other_token)
@@ -9007,6 +9022,35 @@ defmodule Emisar.SSOTest do
   end
 
   # -- Helpers ---------------------------------------------------------
+
+  defp record_session_effects do
+    marker = make_ref()
+    handler = {__MODULE__, self(), marker}
+
+    :ok =
+      :telemetry.attach(
+        handler,
+        [:emisar, :repo, :query],
+        fn _event, _measurements, metadata, {owner, reference} ->
+          if self() == owner and metadata.source == "auth_user_tokens" and
+               String.starts_with?(metadata.query, "DELETE") do
+            send(owner, {reference, Repo.in_transaction?()})
+          end
+        end,
+        {self(), marker}
+      )
+
+    on_exit(fn -> :telemetry.detach(handler) end)
+
+    Emisar.Config.put_override(
+      :emisar,
+      :session_disconnect_handler,
+      {:emisar, RecordingSessionDisconnector}
+    )
+
+    Emisar.Config.put_override(:emisar, :task12_disconnect_test_pid, self())
+    marker
+  end
 
   defp member_mfa_reset_sso_fixture do
     {actor, account, _subject} = enterprise_owner()

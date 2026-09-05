@@ -20,9 +20,9 @@ defmodule Emisar.OAuth.ClientMetadataDocument do
     * redirects are never followed, because the first hop is the only URL whose
       address set was validated;
     * the response must be JSON, arrives under a hard byte cap enforced while
-      streaming, and is bounded by a short timeout.
+      streaming, and shares one five-second deadline with DNS and connection setup.
 
-  The address check PINS the connection: `validate_destination/1` returns the one
+  The address check PINS the connection: `validate_destination/2` returns the one
   address it approved, and the fetch dials exactly that. It used to return `:ok`
   and let the HTTP client resolve again, which is a rebinding window — a record
   with a zero TTL could point somewhere else between the two lookups.
@@ -57,15 +57,49 @@ defmodule Emisar.OAuth.ClientMetadataDocument do
   """
   @spec fetch(String.t()) :: {:ok, map()} | {:error, atom()}
   def fetch(url) when is_binary(url) do
-    with :ok <- validate_url(url),
-         {:ok, address} <- validate_destination(url),
-         {:ok, body} <- get(url, address),
-         {:ok, document} <- decode(body) do
-      validate(document, url)
+    with :ok <- validate_url(url) do
+      deadline = System.monotonic_time(:millisecond) + @timeout_ms
+
+      task =
+        Task.Supervisor.async_nolink(Emisar.TaskSupervisor, fn -> fetch_until(url, deadline) end)
+
+      case Task.yield(task, remaining(deadline)) do
+        {:ok, result} ->
+          result
+
+        {:exit, _reason} ->
+          {:error, :document_unavailable}
+
+        nil ->
+          Task.shutdown(task, :brutal_kill)
+          {:error, :document_unavailable}
+      end
     end
   end
 
   def fetch(_url), do: {:error, :invalid_client_id}
+
+  # Native DNS may ignore its timeout. The worker owns its sockets and this
+  # backstop also terminates it if the authorization request disappears.
+  defp fetch_until(url, deadline) do
+    case :timer.exit_after(remaining(deadline), self(), :shutdown) do
+      {:ok, timer} ->
+        try do
+          with {:ok, address} <- validate_destination(url, deadline),
+               {:ok, body} <- get(url, address, deadline),
+               {:ok, document} <- decode(body) do
+            validate(document, url)
+          end
+        after
+          _ = :timer.cancel(timer)
+        end
+
+      {:error, _reason} ->
+        {:error, :document_unavailable}
+    end
+  end
+
+  defp remaining(deadline), do: max(deadline - System.monotonic_time(:millisecond), 0)
 
   @doc """
   True when `client_id` is shaped like a Client ID Metadata Document URL rather
@@ -103,13 +137,13 @@ defmodule Emisar.OAuth.ClientMetadataDocument do
   # closes the window — the connection goes exactly where the check looked.
   #
   # `nil` means "resolve normally", which is the dev/test loopback path below.
-  defp validate_destination(url) do
+  defp validate_destination(url, deadline) do
     host = URI.parse(url).host
 
     if allow_private_hosts?() do
       {:ok, nil}
     else
-      case resolve(host) do
+      case resolve(host, deadline) do
         {:ok, [_ | _] = addresses} ->
           # Every answer must be public — a split A/AAAA reply cannot smuggle an
           # internal target past a public one — and then the first is the one we
@@ -134,11 +168,20 @@ defmodule Emisar.OAuth.ClientMetadataDocument do
     |> Keyword.get(:allow_private_hosts, false) == true
   end
 
-  defp resolve(host) do
+  defp resolve(host, deadline) do
     charlist = String.to_charlist(host)
 
-    v4 = :inet.getaddrs(charlist, :inet)
-    v6 = :inet.getaddrs(charlist, :inet6)
+    case :inet.parse_address(charlist) do
+      {:ok, address} -> {:ok, [address]}
+      {:error, :einval} -> resolve_hostname(charlist, deadline)
+    end
+  end
+
+  defp resolve_hostname(charlist, deadline) do
+    resolver = config(:resolver, :inet)
+
+    v4 = resolver.getaddrs(charlist, :inet, remaining(deadline))
+    v6 = resolver.getaddrs(charlist, :inet6, remaining(deadline))
 
     case {v4, v6} do
       {{:ok, a}, {:ok, b}} -> {:ok, a ++ b}
@@ -150,7 +193,7 @@ defmodule Emisar.OAuth.ClientMetadataDocument do
 
   # -- Fetch ----------------------------------------------------------
 
-  # Connects to the address `validate_destination/1` approved, carrying the URL's
+  # Connects to the address `validate_destination/2` approved, carrying the URL's
   # hostname for SNI and certificate verification. Mint takes both — an address
   # to dial and a `:hostname` to present and verify against — which is why this
   # calls Mint directly rather than through Finch, whose per-request API has no
@@ -160,12 +203,17 @@ defmodule Emisar.OAuth.ClientMetadataDocument do
   # Streamed, so an oversized body is abandoned mid-flight rather than read into
   # memory first, and a redirect is refused outright: only this URL's address was
   # validated, so following a hop would leave the boundary.
-  defp get(url, address) do
+  defp get(url, address, deadline) do
     uri = URI.parse(url)
     port = uri.port || 443
+    http = config(:http_client, Mint.HTTP)
 
     connect_opts = [
-      transport_opts: [timeout: @timeout_ms],
+      transport_opts: [
+        timeout: remaining(deadline),
+        send_timeout: remaining(deadline),
+        send_timeout_close: true
+      ],
       mode: :passive
     ]
 
@@ -177,20 +225,26 @@ defmodule Emisar.OAuth.ClientMetadataDocument do
         address -> {address, Keyword.put(connect_opts, :hostname, uri.host)}
       end
 
-    case Mint.HTTP.connect(:https, target, port, opts) do
-      {:ok, conn} -> stream_document(conn, uri)
-      {:error, _reason} -> {:error, :document_unavailable}
+    case http.connect(:https, target, port, opts) do
+      {:ok, conn} ->
+        try do
+          stream_document(http, conn, uri, deadline)
+        after
+          http.close(conn)
+        end
+
+      {:error, _reason} ->
+        {:error, :document_unavailable}
     end
   end
 
-  defp stream_document(conn, uri) do
+  defp stream_document(http, conn, uri, deadline) do
     path = (uri.path || "/") <> if(uri.query, do: "?" <> uri.query, else: "")
     headers = [{"accept", "application/json"}, {"host", uri.host}]
 
     try do
-      with {:ok, conn, ref} <- Mint.HTTP.request(conn, "GET", path, headers, nil),
-           {:ok, conn, {status, body}} <- receive_document(conn, ref, {nil, ""}) do
-        Mint.HTTP.close(conn)
+      with {:ok, conn, ref} <- http.request(conn, "GET", path, headers, nil),
+           {:ok, _conn, {status, body}} <- receive_document(http, conn, ref, {nil, ""}, deadline) do
         if status == 200, do: {:ok, body}, else: {:error, :document_unavailable}
       else
         {:error, _conn, _reason} -> {:error, :document_unavailable}
@@ -201,17 +255,21 @@ defmodule Emisar.OAuth.ClientMetadataDocument do
     end
   end
 
-  defp receive_document(conn, ref, acc) do
-    case Mint.HTTP.recv(conn, 0, @timeout_ms) do
+  defp receive_document(http, conn, ref, acc, deadline) do
+    case http.recv(conn, 0, remaining(deadline)) do
       {:ok, conn, responses} ->
         case Enum.reduce(responses, {:cont, acc}, &collect_response(&1, &2, ref)) do
           {:done, acc} -> {:ok, conn, acc}
-          {:cont, acc} -> receive_document(conn, ref, acc)
+          {:cont, acc} -> receive_document(http, conn, ref, acc, deadline)
         end
 
       {:error, _conn, reason, _responses} ->
         {:error, reason}
     end
+  end
+
+  defp config(key, default) do
+    :emisar |> Emisar.Config.get_env(__MODULE__, []) |> Keyword.get(key, default)
   end
 
   defp collect_response({:status, ref, status}, {:cont, acc}, ref),

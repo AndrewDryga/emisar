@@ -15,7 +15,7 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends systemd systemd-sysv dbus cron \
     && rm -rf /var/lib/apt/lists/*
 # cron_recent reads what cron LOGGED, so a job has to actually fire. @reboot
-# runs when the daemon starts, which a restart in the case triggers on demand —
+# runs on the fresh SUT's first daemon start, not later service restarts;
 # a minute-schedule job would make the case wait for a clock boundary.
 RUN printf '@reboot root /bin/true\n' > /etc/cron.d/packtest \
     && chmod 0644 /etc/cron.d/packtest

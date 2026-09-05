@@ -467,8 +467,8 @@ defmodule Emisar.Runbooks do
 
   The operation is reserved first; only the fresh winner validates the
   definition and writes the draft, so a rejected definition rolls the
-  reservation back with it and an exact replay re-reads the committed draft
-  without revalidating. Returns `{:ok, :created | :replay, runbook}`,
+  reservation back with it. Exact retries return the original operation result,
+  provided the runbook still has a draft. Returns `{:ok, :created | :replay, operation}`,
   `{:error, :operation_conflict}`, `{:error, :operation_incomplete}`, the
   ordered definition issues, or
   `{:error, :target_out_of_scope | :pack_out_of_scope | :unauthorized}`.
@@ -529,10 +529,12 @@ defmodule Emisar.Runbooks do
                  Audit.Events.runbook_created(subject, runbook)
                end)
            end),
-         {:ok, %{mcp_operation: reservation}} <-
+         {:ok, multi} <-
+           MCPOperations.complete_draft_in_multi(multi, &mcp_draft_snapshot/1, subject),
+         {:ok, %{mcp_operation: reservation, mcp_draft_result: operation}} <-
            Repo.commit_multi(multi, after_commit: &after_mcp_draft_committed/1),
-         {:ok, runbook} <- fetch_mcp_draft(id, subject) do
-      {:ok, if(reservation.fresh?, do: :created, else: :replay), runbook}
+         {:ok, operation} <- fetch_mcp_draft(operation, subject) do
+      {:ok, if(reservation.fresh?, do: :created, else: :replay), operation}
     else
       {:error, %Ecto.Changeset{} = changeset} -> map_derived_id_conflict(changeset)
       {:error, reason} -> {:error, reason}
@@ -562,9 +564,20 @@ defmodule Emisar.Runbooks do
     }
   end
 
-  defp fetch_mcp_draft(id, subject) do
-    case fetch_runbook_by_id(id, subject) do
-      {:ok, runbook} -> {:ok, runbook}
+  defp mcp_draft_snapshot(%{runbook: runbook}) do
+    %{
+      draft_definition_sha256: definition_digest(runbook.draft_definition),
+      draft_live_version: runbook.live_version
+    }
+  end
+
+  defp fetch_mcp_draft(%{draft_definition_sha256: nil}, _subject),
+    do: {:error, :operation_incomplete}
+
+  defp fetch_mcp_draft(operation, subject) do
+    case fetch_runbook_by_id(operation.resource_id, subject) do
+      {:ok, %{draft_definition: nil}} -> {:error, :operation_incomplete}
+      {:ok, _runbook} -> {:ok, operation}
       {:error, :not_found} -> {:error, :operation_incomplete}
       other -> other
     end
@@ -582,11 +595,12 @@ defmodule Emisar.Runbooks do
   `facts` carries the model's exact authoring intent: `:operation_id`, the
   `:slug` it read, the `:definition_sha256` it read (the optimistic authoring
   lock), `:title`, `:description`, and `:definition`. The runbook itself owns
-  the operation's resource identity, so a replay re-reads the same row.
+  the operation's resource identity. Replays return the original operation
+  result, even after another edit, provided the runbook still has a draft.
 
   Requires manage or draft runbooks, and every step the update writes must sit
   inside the minting member's own runner and pack access. Publishing remains a
-  separate human-only transition. Returns `{:ok, :created | :replay, runbook}`,
+  separate human-only transition. Returns `{:ok, :created | :replay, operation}`,
   `{:error, :draft_changed}`, `{:error, :not_found}`,
   `{:error, :operation_conflict}`, `{:error, :operation_incomplete}`, the
   ordered definition issues, or
@@ -603,13 +617,29 @@ defmodule Emisar.Runbooks do
              {:one_of,
               [Authorizer.manage_runbooks_permission(), Authorizer.draft_runbooks_permission()]}
            ),
-         {:ok, runbook} <- fetch_runbook_by_slug(facts.slug, subject) do
-      attrs = mcp_draft_update_operation_attrs(facts, runbook.id)
-      commit_mcp_draft_update(facts, runbook.id, attrs, subject)
+         {:ok, id} <- mcp_draft_update_resource(facts, subject) do
+      attrs = mcp_draft_update_operation_attrs(facts, id)
+      commit_mcp_draft_update(facts, id, attrs, subject)
     end
   end
 
   def create_or_replay_mcp_draft_update(_facts, %Subject{}), do: {:error, :unauthorized}
+
+  defp mcp_draft_update_resource(facts, subject) do
+    case MCPOperations.fetch_recovery(facts.operation_id, subject) do
+      {:ok, %{tool: :update_runbook_draft, resource_id: id}} ->
+        {:ok, id}
+
+      {:ok, _operation} ->
+        {:error, :operation_conflict}
+
+      {:error, :not_found} ->
+        with {:ok, runbook} <- fetch_runbook_by_slug(facts.slug, subject), do: {:ok, runbook.id}
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
 
   defp mcp_draft_update_operation_attrs(facts, id) do
     fingerprint =
@@ -640,10 +670,12 @@ defmodule Emisar.Runbooks do
              %{mcp_operation: %{fresh?: true}} ->
                compose_fresh_mcp_draft_update(facts, id, subject)
            end),
-         {:ok, %{mcp_operation: reservation}} <-
+         {:ok, multi} <-
+           MCPOperations.complete_draft_in_multi(multi, &mcp_draft_snapshot/1, subject),
+         {:ok, %{mcp_operation: reservation, mcp_draft_result: operation}} <-
            Repo.commit_multi(multi, after_commit: &after_mcp_draft_update_committed/1),
-         {:ok, runbook} <- fetch_mcp_draft(id, subject) do
-      {:ok, if(reservation.fresh?, do: :created, else: :replay), runbook}
+         {:ok, operation} <- fetch_mcp_draft(operation, subject) do
+      {:ok, if(reservation.fresh?, do: :created, else: :replay), operation}
     end
   end
 
@@ -677,7 +709,7 @@ defmodule Emisar.Runbooks do
       |> Authorizer.for_subject(subject)
 
     with {:ok, runbook} <- repo.fetch(queryable, Runbook.Query),
-         true <- editing_digest(runbook) == facts.definition_sha256 do
+         true <- runbook.slug == facts.slug and editing_digest(runbook) == facts.definition_sha256 do
       {:ok, runbook}
     else
       false -> {:error, :draft_changed}

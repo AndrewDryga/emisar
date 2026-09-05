@@ -3,24 +3,28 @@ name: elixir-iron-review
 description: Review a diff or the working tree against the Emisar Iron Laws (IL-1…IL-20) — the mechanical Credo checks plus the judgment checks a static analyzer can't do. Use when reviewing portal/ Elixir before a PR, after a refactor, or to double-check context/query/changeset/LiveView changes. Reports law · file:line · fix.
 effort: medium
 argument-hint: "[path or git ref, default = working tree]  [--fix]"
-allowed-tools: Read, Grep, Glob, Bash
+allowed-tools: Read, Grep, Glob, Bash, Write, Edit
 ---
 
 # Iron Law review
 
 Check `portal/` Elixir against the Iron Laws in `portal/AGENTS.md`. The custom
-Credo checks (`Emisar.Checks.*`) cover the mechanical subset — start by running
-`mix credo` from `portal/` and treating any finding as a failure; this skill
+Credo checks (`Emisar.Checks.*`) cover the mechanical subset; this skill
 **adds the judgment laws** — including IL-15 and IL-16, whose safety depends on
 where a value came from, which a static check deliberately can't decide. Default scope: the working
 tree (`git diff` + untracked). A path or git ref narrows it.
 
-Read-only by default. With `--fix`, apply only the unambiguous mechanical fixes
-(see end) and re-verify; never "fix" a judgment finding without showing it first.
+Read-only by default. A fix request or `--fix` authorizes repairs within its scope.
+Gather evidence for judgment findings before changing behavior; ask only for a
+material decision or missing authority.
 
 ## Step 1 — mechanical checks (Credo)
 
-Run `mix credo` from `portal/` and treat every finding as a failure — fix them all before reading further. The custom `Emisar.Checks.*` AST checks are the mechanical source of truth (IL-1, IL-2, IL-6, IL-7, IL-8, IL-12, IL-14 + the house rules) and **replaced the old hand-grep battery**, so there is nothing to grep by hand. Details: `portal/AGENTS.md` → Enforcement.
+Use existing gate/Credo evidence when it covers the unchanged reviewed tree;
+otherwise run focused Credo on changed Elixir files. Report findings during a
+review; repair them only when fixes are authorized. The final Portal gate still
+includes full Credo. Details: portal/.agent/kb/rules/elixir-layered-contexts.md
+section Enforcement.
 
 ## Step 2 — judgment checks (read the changed bodies)
 
@@ -35,8 +39,10 @@ controller file, read it and check:
 - **IL-5** — public reads/writes return tagged tuples; no bare struct/`nil`.
 - **IL-9** — authorizers expose `build(Schema, :verb)` accessors, clause all
   roles, and the new authorizer is in `auth/permissions.ex`'s `@authorizers`.
-- **IL-10** — no `Repo.preload/2` in a context (route via Query `preloads/0`),
-  except a post-commit email helper.
+- **IL-10** — Subject-gated context reads route preloads through Query `preloads/0`.
+  An internal, no-Subject, already-authorized path holding a struct may use
+  `Repo.preload/2` for its parent association (post-commit email helpers or the
+  runner-register billing check). Confirm that distinction before reporting a finding.
 - **IL-13** — recurrent jobs derive work from durable rows, keep each tick
   idempotent, and stay safe if a previous tick partially completed.
 - **IL-14** — `String.to_atom/1` only on code literals / bounded sets; **never** on
@@ -69,12 +75,12 @@ Lead with a one-line verdict (`N blockers, M suggestions`). If clean, say so in
 one line — don't pad. Findings that need a human call (is this list large enough
 to need a stream?) are SUGGESTIONS with the question stated, not BLOCKERS.
 
-## `--fix` scope (mechanical only)
+## Fix scope
 
-Apply without asking only the unambiguous, behavior-preserving rewrites:
-`Repo.get(X, id)` → `Schema.Query.by_id/2` + `Repo.fetch/3`; `:float`→`:decimal` on
-a money field; moving an inline `where`/`order_by`/`join` into the Schema.Query
-module. Re-run `mix credo` and `mix compile` after. Everything else — a missing
-`for_subject` scope, a `String.to_atom`, a `raw/1`, any authz-shape gap — is
-**report-only**: it needs a human to confirm intent/source first (e.g.
-`String.to_existing_atom` raises if the atom was never defined).
+Trace return contracts and data provenance before repairing a finding. Moving an
+inline query into its Query module can preserve behavior; replacing Repo.get with
+Repo.fetch changes the return shape, and changing a money field may require a
+production migration. Follow the actual caller and applied-migration contracts.
+For authorized security fixes, establish intended scope and test the denial path;
+do not require another confirmation merely because the finding involves judgment.
+Run focused checks after repair and the canonical final gate on the finished tree.

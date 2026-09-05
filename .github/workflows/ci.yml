@@ -576,32 +576,17 @@ jobs:
     needs: changes
     if: needs.changes.outputs.runner == 'true'
     runs-on: ubuntu-latest
-    # The supplementary-group drop is the invariant that stops an action
-    # inheriting the runner daemon's group memberships, and it can only be
-    # OBSERVED as uid 0: the test seeds a group with setgroups(2) and asserts
-    # the child process lost it. Every other lane runs as an ordinary user, so
-    # the test skipped in all of them and had never once executed. A container
-    # is how a GitHub-hosted job gets uid 0 for the whole step instead of for
-    # one sudo'd command.
-    container: ubuntu:24.04
+    # The supplementary-group test needs uid 0 to seed setgroups(2) and check
+    # that action children lose inherited groups. Elevate the entire suite;
+    # checkout and Go setup use the hosted runner's existing tools.
     timeout-minutes: 15
     env:
       GOTOOLCHAIN: local
     steps:
-      # The base image carries neither, and checkout without git silently
-      # degrades to a REST tarball that has no .git for ./run to read.
-      - name: Install checkout prerequisites
-        run: apt-get update -qq && apt-get install -y -qq git ca-certificates
-
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-
-      # checkout writes safe.directory through a temporary HOME. The root
-      # container needs it in the HOME used by the later Go process too.
-      - name: Trust the checked-out workspace
-        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
 
       - name: Set up Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
@@ -616,11 +601,12 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          ./run test runner -count=1 -v ./internal/executor/... | tee privileged.log
-          # A lane whose only reason to exist is uid 0 must fail when the test
-          # it exists for skipped anyway; a silent skip is exactly how this
-          # invariant went unproven for the whole pre-1.0 window.
-          ! grep -q -- '--- SKIP: TestApplyCredential_ClearsSupplementaryGroups' privileged.log
+          sudo -n -H git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          sudo -n -H env "PATH=$PATH" GOTOOLCHAIN=local \
+            ./run test runner -count=1 -v ./internal/executor/... | tee privileged.log
+          # Require the actual test to pass, including when it is renamed or
+          # accidentally omitted from the suite.
+          grep -q -- '^--- PASS: TestApplyCredential_ClearsSupplementaryGroups ' privileged.log
 
   runner-image:
     name: Runner - Image

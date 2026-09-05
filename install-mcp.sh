@@ -60,18 +60,13 @@ ATTESTATION_DENY_SELF_HOSTED=0
 # command overrides it (the client configs written below carry it).
 EMISAR_URL="${EMISAR_URL:-https://emisar.dev}"
 EMISAR_URL="${EMISAR_URL%/}"
-# Validated where it is READ, not where it is written: this value and the keys
-# the portal delivers both land inside JSON, TOML and YAML string literals. A
-# value carrying a quote or a newline does not corrupt those files — it ADDS to
-# them, and every one of those formats can express a second MCP server with its
-# own `command`, which the client runs on next start. So a hostile EMISAR_URL,
-# or a compromised portal's response, would reach arbitrary code on the
-# operator's workstation through a config file. One charset check beats three
-# per-format escapers.
-safe_config_value() {
+# The bridge validates origins and serializes client configuration. Here the
+# URL is only displayed or passed as one quoted argument; reject control bytes
+# before they can alter terminal output, without duplicating its URL policy.
+safe_display_value() {
   case "$1" in
     "") return 1 ;;
-    *[!A-Za-z0-9._:/@+-]*) return 1 ;;
+    *[[:cntrl:]]*) return 1 ;;
   esac
   return 0
 }
@@ -124,6 +119,9 @@ truthy() {
 }
 
 ASSUME_YES="${ASSUME_YES:-0}"
+# Set by accept_missing_verifier when the operator (or --yes) accepted an
+# install without GitHub CLI: the checksum from the release mirror stands alone.
+verifier_missing=0
 
 # Config writers stage through mktemp, not a predictable "${file}.emisar-new.$$".
 # A shell > redirect FOLLOWS a destination symlink and chmod follows it too, so
@@ -194,8 +192,8 @@ warn() { printf '\033[1;33m[install-mcp]\033[0m %s\n' "$*" >&2; }
 die()  { printf '\033[1;31m[install-mcp]\033[0m %s\n' "$*" >&2; exit 1; }
 
 # Checked here rather than beside the assignment: `die` has to exist first.
-safe_config_value "${EMISAR_URL}" ||
-  die "EMISAR_URL contains characters that cannot be written to a client config: ${EMISAR_URL}"
+safe_display_value "${EMISAR_URL}" ||
+  die "EMISAR_URL must be nonempty and contain no control characters"
 
 # --proto-redir is https-only: this helper may carry EMISAR_GITHUB_TOKEN, and a
 # redirect that downgrades the scheme would put that bearer on the wire in the
@@ -297,8 +295,10 @@ fetch_release_files() {
 
 # A named function rather than an inline block, so the behavior suite can drive
 # the refusal directly. The checksum proves the downloaded bytes match the
-# manifest; when signature attestation is configured, a missing `gh` fails the
-# install closed. install.sh's sha_verify is named for the same reason.
+# manifest; when signature attestation is configured, a bad signature fails the
+# install closed, and a missing `gh` is decided by accept_missing_verifier
+# before anything is downloaded. install.sh's sha_verify is named for the same
+# reason.
 verify_release_checksum() {
   local tmp="$1" tarball="$2"
   local checksum_line
@@ -317,6 +317,21 @@ verify_release_checksum() {
     cd "${tmp}"
     printf '%s\n' "$checksum_line" | sha_check
   ) || die "checksum verification failed for ${tarball}"
+}
+
+# GitHub CLI checks the release checksum's signature. Without it the install
+# rests on the checksum from the release mirror alone, so an operator at a
+# terminal is asked first, and an unattended --yes run is warned and continues.
+# Decided before any download, so a declined prompt costs nothing. A fork or
+# mirror without a signing workflow has no signature to check.
+accept_missing_verifier() {
+  [ -n "${ATTESTATION_WORKFLOW}" ] || return 0
+  command -v gh >/dev/null 2>&1 && return 0
+  warn "GitHub CLI (gh) is not installed, so the release checksum signature cannot be checked"
+  if ! confirm "continue with the checksum from the release mirror only?"; then
+    die "aborted: install GitHub CLI to check the release signature, or pass --yes to continue on the checksum alone"
+  fi
+  verifier_missing=1
 }
 
 verify_checksum_attestation() {
@@ -465,17 +480,39 @@ installed_bridge() {
   return 1
 }
 
-# The version an already-installed bridge reports, or "" when none is installed
+# The version this installed bridge reports, or "" when none is installed
 # or it cannot answer. Runs as the invoking user like every other call into an
 # already-installed bridge, so a sudo install never executes a user-owned
 # binary as root. `first_bin` is what run_cli_as_invoking_user invokes.
 installed_bridge_version() {
-  local first_bin reported
-  first_bin=$(installed_bridge) || return 0
+  local first_bin="$1" reported
+  [ -x "${first_bin}" ] || return 0
   reported=$(run_cli_as_invoking_user --version 2>/dev/null) || return 0
   case "${reported}" in
     "emisar-mcp "[0-9]*.[0-9]*.[0-9]*) printf '%s\n' "${reported#emisar-mcp }" ;;
   esac
+}
+
+# Keep the no-downgrade decision local to each destination. An up-to-date user
+# copy must not hide an old system copy, or authorize replacing a newer one.
+select_upgrade_install_dirs() {
+  local dir current_version selected=""
+  while IFS= read -r dir; do
+    [ -n "${dir}" ] || continue
+    current_version=$(installed_bridge_version "${dir}/emisar-mcp")
+    if [ -n "${current_version}" ]; then
+      if [ "${version_pinned}" = "0" ] && ! newer_version "${VERSION#mcp-v}" "${current_version}"; then
+        log "${dir}/emisar-mcp ${current_version} is already current"
+        continue
+      fi
+      if newer_version "${current_version}" "${VERSION#mcp-v}"; then
+        warn "installing emisar-mcp ${VERSION#mcp-v} over the newer ${current_version} at ${dir} because --version asked for it"
+      fi
+    fi
+    selected="${selected}${selected:+
+}${dir}"
+  done <<<"${install_dirs}"
+  install_dirs="${selected}"
 }
 
 do_uninstall() {
@@ -495,7 +532,7 @@ do_uninstall() {
 
   if bridge=$(installed_bridge); then
     first_bin="${bridge}"
-    if ! "${first_bin}" disconnect --help >/dev/null 2>&1; then
+    if ! run_cli_as_invoking_user disconnect --help >/dev/null 2>&1; then
       warn "the installed bridge is older than this script and cannot remove its own client entries"
       warn "  reinstall it first (curl -fsSL ${EMISAR_URL}/install-mcp.sh | sudo bash), then re-run --uninstall"
     elif ! run_cli_as_invoking_user disconnect --all --forget --yes; then
@@ -538,11 +575,6 @@ if [ "${MODE}" = "uninstall" ]; then
   exit 0
 fi
 
-log "install target: ${OS}/${ARCH}"
-while IFS= read -r dir; do
-  log "  → ${dir}/emisar-mcp"
-done <<<"${install_dirs}"
-
 # ---------------------------------------------------------------------
 # Resolve version
 # ---------------------------------------------------------------------
@@ -574,16 +606,12 @@ fi
 # rolled-back metadata can offer a real, correctly attested OLDER one. Nobody
 # asked to go backwards here, so refuse — `emisar update` applies the same rule
 # for the runner. An explicit --version stays the deliberate rollback route.
-current_version=$(installed_bridge_version)
-if [ -n "${current_version}" ]; then
-  if [ "${version_pinned}" = "0" ] && ! newer_version "${VERSION#mcp-v}" "${current_version}"; then
-    log "emisar-mcp ${current_version} is already current"
-    exit 0
-  fi
-  if newer_version "${current_version}" "${VERSION#mcp-v}"; then
-    warn "installing emisar-mcp ${VERSION#mcp-v} over the newer ${current_version} because --version asked for it"
-  fi
-fi
+select_upgrade_install_dirs
+[ -n "${install_dirs}" ] || exit 0
+log "install target: ${OS}/${ARCH}"
+while IFS= read -r dir; do
+  log "  → ${dir}/emisar-mcp"
+done <<<"${install_dirs}"
 select_attestation_policy
 
 VERSION_NUM="${VERSION#mcp-v}"
@@ -687,6 +715,7 @@ trap 'exit 129' HUP
 trap 'exit 130' INT
 trap 'exit 143' TERM
 
+accept_missing_verifier
 log "downloading ${TARBALL} from ${RELEASE_SOURCE}"
 if ! fetch_release_files "$BASE_URL" "$tmp"; then
   if [ "$RELEASE_SOURCE" != "Emisar release mirror" ]; then
@@ -709,10 +738,14 @@ else
   die "neither sha256sum nor shasum found — cannot verify download"
 fi
 
-verify_checksum_attestation \
-  "${tmp}/SHA256SUMS-MCP" \
-  "${BASE_URL}/SHA256SUMS-MCP.sigstore.jsonl" \
-  "${tmp}/SHA256SUMS-MCP.sigstore.jsonl"
+if [ "${verifier_missing}" = "1" ]; then
+  warn "checksum signature not checked: GitHub CLI is not installed"
+else
+  verify_checksum_attestation \
+    "${tmp}/SHA256SUMS-MCP" \
+    "${BASE_URL}/SHA256SUMS-MCP.sigstore.jsonl" \
+    "${tmp}/SHA256SUMS-MCP.sigstore.jsonl"
+fi
 verify_release_checksum "${tmp}" "${TARBALL}"
 
 log "extracting"

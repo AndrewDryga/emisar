@@ -106,8 +106,7 @@ defmodule EmisarWeb.BillingLive do
                )}
 
             {:error, reason} ->
-              {:noreply,
-               put_flash(socket, :error, "Could not start checkout: #{humanize_reason(reason)}")}
+              {:noreply, put_flash(socket, :error, checkout_error(reason))}
           end
         else
           _invalid -> {:noreply, put_flash(socket, :error, "Unknown plan or billing cycle.")}
@@ -305,6 +304,29 @@ defmodule EmisarWeb.BillingLive do
   defp usage_class(pct) when is_integer(pct), do: "bg-brand-400"
 
   defp usage_class(_), do: "bg-brand-400"
+
+  defp checkout_error(:checkout_pending) do
+    "Checkout is still being confirmed. Try again shortly; another checkout won’t start while this is unresolved."
+  end
+
+  defp checkout_error(:payment_reconciling) do
+    "Your payment and subscription are still being reconciled. Try again shortly, or contact support if this continues."
+  end
+
+  defp checkout_error(:subscription_retirement_pending) do
+    "Another subscription is awaiting cancellation confirmation. Try again shortly, or contact support if this continues."
+  end
+
+  defp checkout_error(:legacy_checkout_pending) do
+    "Earlier checkout status could not be confirmed. Try again shortly; contact support if this continues."
+  end
+
+  defp checkout_error(:account_closed), do: "This account is closed. Checkout is unavailable."
+
+  defp checkout_error(:checkout_unavailable),
+    do: "Checkout is unavailable for this account. Contact support for help."
+
+  defp checkout_error(reason), do: "Could not start checkout: #{humanize_reason(reason)}"
 
   defp humanize_reason(reason) when is_binary(reason), do: reason
 

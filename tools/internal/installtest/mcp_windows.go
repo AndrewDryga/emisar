@@ -534,10 +534,15 @@ func testWindowsAttestationPolicies(root, shell, temp string) error {
 	if err != nil {
 		return err
 	}
+	consentFunction, err := powershellFunction(installer, "Confirm-MissingVerifier")
+	if err != nil {
+		return err
+	}
 	trace := filepath.Join(temp, "attestation-argv.txt")
-	script := policyFunction + checksumFunction + `
-function Write-WarningLine([string]$Message) {}
+	script := policyFunction + checksumFunction + consentFunction + `
+function Write-WarningLine([string]$Message) { $global:Warnings += $Message }
 function Write-Info([string]$Message) {}
+function Confirm-Install([string]$Prompt) { return $global:ConsentAnswer }
 function Stop-Install([string]$Message) { throw $Message }
 function Get-Command {
     if ($global:MissingGh) { return $null }
@@ -558,6 +563,7 @@ function Set-TestAttestationPolicy($Policy) {
 $script:Repository = "andrewdryga/emisar"
 $global:MissingGh = $false
 $global:VerifierFails = $false
+$global:Warnings = @()
 $policy = Get-AttestationPolicy "andrewdryga/emisar" "mcp-v9.9.9" ""
 Write-Output ("{0}|{1}|{2}" -f $policy.Workflow, $policy.SourceRef, $policy.DenySelfHosted)
 $forkPolicy = Get-AttestationPolicy "example/emisar" "mcp-v9.9.9" ""
@@ -585,6 +591,34 @@ try {
 } catch {
     if ($_.Exception.Message -notmatch "GitHub CLI is required") { throw }
 }
+
+# Without GitHub CLI the decision is made before the download: -Yes (or an
+# operator answering yes) warns and continues on the checksum alone, a declined
+# prompt refuses naming both remedies, and a present verifier, a fork policy, or
+# a test release ask nothing.
+$global:ConsentAnswer = $true
+$script:VerifierMissing = $false
+Confirm-MissingVerifier $false
+if (-not $script:VerifierMissing) { throw "accepted missing verifier was not recorded" }
+if (-not ($global:Warnings -match "GitHub CLI \(gh\) is not installed")) { throw "accepted missing verifier did not warn" }
+$global:ConsentAnswer = $false
+$script:VerifierMissing = $false
+try {
+    Confirm-MissingVerifier $false
+    throw "missing verifier without consent was accepted"
+} catch {
+    if ($_.Exception.Message -notmatch "pass -Yes") { throw }
+}
+if ($script:VerifierMissing) { throw "a refused verifier decision was recorded as accepted" }
+$global:MissingGh = $false
+Confirm-MissingVerifier $false
+if ($script:VerifierMissing) { throw "a present verifier was treated as missing" }
+$global:MissingGh = $true
+Confirm-MissingVerifier $true
+if ($script:VerifierMissing) { throw "a test release asked about the verifier" }
+Set-TestAttestationPolicy $forkPolicy
+Confirm-MissingVerifier $false
+if ($script:VerifierMissing) { throw "a fork policy asked about the verifier" }
 `
 	path := filepath.Join(temp, "attestation-policy.ps1")
 	if err := os.WriteFile(path, []byte(script), 0o600); err != nil {

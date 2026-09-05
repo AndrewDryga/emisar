@@ -25,11 +25,18 @@ defmodule EmisarWeb.AgentsLive do
   """
   use EmisarWeb, :live_view
   alias Emisar.{Accounts, ApiKeys, Compat}
-  alias EmisarWeb.{ConfirmDialog, LiveForm, LiveTable, Permissions, URLHelpers, UserAgent}
+  alias EmisarWeb.{AgentClientConfig, ConfirmDialog, LiveForm, LiveTable}
+  alias EmisarWeb.{Permissions, URLHelpers, UserAgent}
   alias Phoenix.LiveView.JS
 
   @refresh_ms 15_000
   @remote_client_ids ~w(chatgpt claude_web)
+  @platforms %{"linux" => :linux, "windows" => :windows, "macos" => :macos}
+  @platform_tabs [
+    %{os: :linux, label: "Linux"},
+    %{os: :windows, label: "Windows"},
+    %{os: :macos, label: "macOS"}
+  ]
   # `@client_ids` ordering drives the tab strip in `connect_panel/1`. Within
   # each group the order is POPULARITY, not the alphabet — an operator scans
   # for their own client, and the common ones should be the first few tabs, not
@@ -68,6 +75,7 @@ defmodule EmisarWeb.AgentsLive do
      |> assign(:quick_connected?, false)
      |> assign(:watch_since, DateTime.utc_now())
      |> assign(:snippet_open?, false)
+     |> assign(:bridge_paths, AgentClientConfig.default_paths())
      |> assign(:selected_client, nil)
      |> assign(:base_url, URLHelpers.derive_base_url(socket))
      # Which install command to open on. `get_connect_info/2` is nil on the
@@ -167,7 +175,7 @@ defmodule EmisarWeb.AgentsLive do
   end
 
   # A crafted event that drops a required key or names a client the picker
-  # never rendered would otherwise match no clause (or crash `client_config/3`
+  # never rendered would otherwise match no clause (or crash `client_config/5`
   # in render) and take the page's unsaved state with it. Every mutating
   # handler on this page ends in this no-op.
   def handle_event("select_client", _params, socket), do: {:noreply, socket}
@@ -190,6 +198,30 @@ defmodule EmisarWeb.AgentsLive do
       end
     )
   end
+
+  def handle_event("select_os", %{"os" => os}, socket) when is_map_key(@platforms, os) do
+    Permissions.gated(
+      socket,
+      ApiKeys.subject_can_issue_quick_key?(socket.assigns.current_subject),
+      fn socket -> {:noreply, assign(socket, :detected_os, @platforms[os])} end
+    )
+  end
+
+  def handle_event("select_os", _params, socket), do: {:noreply, socket}
+
+  def handle_event("bridge_path_changed", %{"os" => os, "path" => path}, socket)
+      when is_map_key(@platforms, os) and is_binary(path) and byte_size(path) <= 4096 do
+    Permissions.gated(
+      socket,
+      ApiKeys.subject_can_issue_quick_key?(socket.assigns.current_subject),
+      fn socket ->
+        paths = Map.put(socket.assigns.bridge_paths, @platforms[os], path)
+        {:noreply, assign(socket, :bridge_paths, paths)}
+      end
+    )
+  end
+
+  def handle_event("bridge_path_changed", _params, socket), do: {:noreply, socket}
 
   def handle_event("validate", %{"api_key" => params} = event, socket) do
     changeset = ApiKeys.change_key(params) |> LiveForm.on_change(event)
@@ -678,13 +710,13 @@ defmodule EmisarWeb.AgentsLive do
   defp cli_agent_ids, do: Enum.reject(local_client_ids(), &(&1 in @editor_client_ids))
   defp editor_client_ids, do: Enum.filter(local_client_ids(), &(&1 in @editor_client_ids))
 
-  # A local client either RUNS its snippet as a command (Claude Code) or pastes
-  # it INTO a config file (Claude Desktop, Cursor, Gemini, Codex). The file
-  # clients' `location` is a real path (starts with "~"); the command client has
-  # none — so the setup header can name the right action instead of always
-  # saying "paste".
-  defp config_target_is_file?(%{location: location}),
-    do: is_binary(location) and String.starts_with?(location, "~")
+  defp config_target_is_file?(%{location: location}), do: not is_nil(location)
+
+  defp client_config(client, url, key, os, path) do
+    if remote_client?(client),
+      do: client_config(client, url, key),
+      else: AgentClientConfig.render(client, url, key, os, path)
+  end
 
   defp client_config("claude_web", url, _key) do
     %{
@@ -737,333 +769,6 @@ defmodule EmisarWeb.AgentsLive do
       # reads paste → values → next step without scrolling back up.
       form_at_step: 3
     }
-  end
-
-  defp client_config("claude_code", url, key) do
-    %{
-      kind: :local,
-      # No `location`: the snippet is a command to RUN, not a file to edit.
-      location: nil,
-      # Leading space (note the extra indent on the first line): a shell with
-      # `ignorespace`/`ignoreboth` keeps this key-bearing command out of history.
-      body: """
-       claude mcp add emisar /usr/local/bin/emisar-mcp \\
-          --scope user \\
-          -e EMISAR_URL=#{url} \\
-          -e EMISAR_API_KEY=#{key} \\
-          -e EMISAR_CLIENT=claude-code\
-      """,
-      # Verified against Anthropic's docs: a `permissions.allow` entry of
-      # `mcp__<server>__*` auto-approves every tool from that MCP server
-      # (server name `emisar` matches the `claude mcp add emisar` above).
-      auto_permit: %{
-        installer: true,
-        location: "~/.claude/settings.json (Claude Code's settings — not an emisar file)",
-        body: """
-        {
-          "permissions": {
-            "allow": ["mcp__emisar__*"]
-          }
-        }\
-        """
-      }
-    }
-  end
-
-  defp client_config("claude_desktop", url, key) do
-    %{
-      kind: :local,
-      location: "~/Library/Application Support/Claude/claude_desktop_config.json",
-      body: mcp_json_snippet(url, key, "/usr/local/bin/emisar-mcp", "claude-desktop")
-    }
-  end
-
-  defp client_config("cursor", url, key) do
-    %{
-      kind: :local,
-      location: "~/.cursor/mcp.json",
-      body: mcp_json_snippet(url, key, "/usr/local/bin/emisar-mcp", "cursor"),
-      # Cursor has no per-server allowlist in mcp.json — auto-run is a global
-      # agent toggle (Settings → set tool approval to auto-run / "Yolo").
-      # Honest pointer rather than an invented config key.
-      auto_permit: %{
-        pointer:
-          "Cursor controls this globally, not per-server: in Settings, set the agent's tool-approval to auto-run (\"Yolo\" mode). There's no per-server allowlist in mcp.json.",
-        doc_url: "https://docs.cursor.com/context/mcp"
-      }
-    }
-  end
-
-  # VS Code may synchronize its user MCP configuration across machines. Keep
-  # the one-time key out of mcp.json; its password input is supplied locally
-  # when VS Code starts the bridge. The installers use an owner-only envFile
-  # instead so their browser-approved key never needs to be copied.
-  defp client_config("vscode", url, _key) do
-    %{
-      kind: :local,
-      location: "~/Library/Application Support/Code/User/mcp.json",
-      secret_separate: true,
-      body: """
-      {
-        "inputs": [
-          {
-            "type": "promptString",
-            "id": "emisar-api-key",
-            "description": "Emisar API key",
-            "password": true
-          }
-        ],
-        "servers": {
-          "emisar": {
-            "type": "stdio",
-            "command": "/usr/local/bin/emisar-mcp",
-            "args": [],
-            "env": {
-              "EMISAR_URL": "#{url}",
-              "EMISAR_API_KEY": "${input:emisar-api-key}",
-              "EMISAR_CLIENT": "vscode"
-            }
-          }
-        }
-      }\
-      """
-    }
-  end
-
-  defp client_config("gemini", url, key) do
-    %{
-      kind: :local,
-      location: "~/.gemini/settings.json",
-      body: mcp_json_snippet(url, key, "/usr/local/bin/emisar-mcp", "gemini"),
-      # Verified against Gemini CLI's docs: `"trust": true` on an MCP server
-      # bypasses all tool-call confirmations for that server. Same file as
-      # the snippet above — add the one key to the existing `emisar` block.
-      auto_permit: %{
-        installer: true,
-        location: "~/.gemini/settings.json — add to the \"emisar\" server block above",
-        body: """
-        "emisar": {
-          "trust": true
-        }\
-        """
-      }
-    }
-  end
-
-  defp client_config("codex", url, key) do
-    %{
-      kind: :local,
-      location: "~/.codex/config.toml",
-      body: """
-      [mcp_servers.emisar]
-      command = "/usr/local/bin/emisar-mcp"
-      env = { EMISAR_URL = "#{url}", EMISAR_API_KEY = "#{key}", EMISAR_CLIENT = "codex" }\
-      """,
-      auto_permit: %{
-        installer: true,
-        pointer:
-          "Add default_tools_approval_mode = \"approve\" below [mcp_servers.emisar] in ~/.codex/config.toml. This trusts only the emisar MCP server; emisar still applies its own policies and approvals.",
-        doc_url: "https://developers.openai.com/codex/mcp"
-      }
-    }
-  end
-
-  defp client_config("windsurf", url, key) do
-    %{
-      kind: :local,
-      location: "~/.codeium/windsurf/mcp_config.json",
-      body: mcp_json_snippet(url, key, "/usr/local/bin/emisar-mcp", "windsurf")
-    }
-  end
-
-  # Pi reads the Claude-Code-shaped mcpServers file from its own agent dir.
-  defp client_config("pi", url, key) do
-    %{
-      kind: :local,
-      location: "~/.pi/agent/mcp.json",
-      body: mcp_json_snippet(url, key, "/usr/local/bin/emisar-mcp", "pi")
-    }
-  end
-
-  # OpenClaw nests stdio servers under mcp.servers (NOT top-level mcpServers).
-  defp client_config("openclaw", url, key) do
-    %{
-      kind: :local,
-      location: "~/.openclaw/openclaw.json",
-      body: """
-      {
-        "mcp": {
-          "servers": {
-            "emisar": {
-              "command": "/usr/local/bin/emisar-mcp",
-              "env": {
-                "EMISAR_URL": "#{url}",
-                "EMISAR_API_KEY": "#{key}",
-                "EMISAR_CLIENT": "openclaw"
-              }
-            }
-          }
-        }
-      }\
-      """
-    }
-  end
-
-  # OpenCode: top-level `mcp`, command as an ARRAY, `environment` (not env).
-  defp client_config("opencode", url, key) do
-    %{
-      kind: :local,
-      location: "~/.config/opencode/opencode.json",
-      body: """
-      {
-        "mcp": {
-          "emisar": {
-            "type": "local",
-            "command": ["/usr/local/bin/emisar-mcp"],
-            "enabled": true,
-            "environment": {
-              "EMISAR_URL": "#{url}",
-              "EMISAR_API_KEY": "#{key}",
-              "EMISAR_CLIENT": "opencode"
-            }
-          }
-        }
-      }\
-      """
-    }
-  end
-
-  defp client_config("copilot", url, key) do
-    %{
-      kind: :local,
-      location: "~/.copilot/mcp-config.json",
-      body: """
-      {
-        "mcpServers": {
-          "emisar": {
-            "type": "local",
-            "command": "/usr/local/bin/emisar-mcp",
-            "args": [],
-            "env": {
-              "EMISAR_URL": "#{url}",
-              "EMISAR_API_KEY": "#{key}",
-              "EMISAR_CLIENT": "copilot-cli"
-            },
-            "tools": ["*"]
-          }
-        }
-      }\
-      """
-    }
-  end
-
-  # Zed calls them context_servers; `source: "custom"` is required or the
-  # entry is silently skipped.
-  defp client_config("zed", url, key) do
-    %{
-      kind: :local,
-      location: "~/.config/zed/settings.json",
-      body: """
-      {
-        "context_servers": {
-          "emisar": {
-            "source": "custom",
-            "command": "/usr/local/bin/emisar-mcp",
-            "args": [],
-            "env": {
-              "EMISAR_URL": "#{url}",
-              "EMISAR_API_KEY": "#{key}",
-              "EMISAR_CLIENT": "zed"
-            }
-          }
-        }
-      }\
-      """
-    }
-  end
-
-  defp client_config("hermes", url, key) do
-    %{
-      kind: :local,
-      location: "~/.hermes/config.yaml",
-      body: """
-      mcp_servers:
-        emisar:
-          command: /usr/local/bin/emisar-mcp
-          env:
-            EMISAR_URL: "#{url}"
-            EMISAR_API_KEY: "#{key}"
-            EMISAR_CLIENT: hermes\
-      """
-    }
-  end
-
-  # Goose's stdio extension grammar: `cmd`/`envs` (not command/env).
-  defp client_config("goose", url, key) do
-    %{
-      kind: :local,
-      location: "~/.config/goose/config.yaml",
-      body: """
-      extensions:
-        emisar:
-          name: emisar
-          cmd: /usr/local/bin/emisar-mcp
-          args: []
-          enabled: true
-          envs:
-            EMISAR_URL: "#{url}"
-            EMISAR_API_KEY: "#{key}"
-            EMISAR_CLIENT: goose
-          type: stdio
-          timeout: 300\
-      """
-    }
-  end
-
-  defp client_config("grok", url, key) do
-    %{
-      kind: :local,
-      location: nil,
-      # Leading space (extra indent on the first line): a shell with
-      # `ignorespace`/`ignoreboth` keeps this key-bearing command out of history.
-      body: """
-       grok mcp add emisar \\
-          -e EMISAR_URL=#{url} \\
-          -e EMISAR_API_KEY=#{key} \\
-          -e EMISAR_CLIENT=grok \\
-          -- /usr/local/bin/emisar-mcp\
-      """,
-      # Grok's native permission rules accept a server-scoped MCPTool wildcard.
-      # This drops only Grok's prompt; emisar policy and approvals still apply.
-      auto_permit: %{
-        installer: true,
-        location: "~/.grok/config.toml — add to the existing [permission] section",
-        body: """
-        allow = ["MCPTool(emisar__*)"]\
-        """
-      }
-    }
-  end
-
-  # `client` is baked into EMISAR_CLIENT so the bridge can stamp it on
-  # every local MCP request's User-Agent — the audit page shows it as
-  # "Client: claude-desktop" etc., so operators see which LLM client
-  # produced each event without having to parse the IP.
-  defp mcp_json_snippet(url, key, command, client) do
-    """
-    {
-      "mcpServers": {
-        "emisar": {
-          "command": "#{command}",
-          "env": {
-            "EMISAR_URL": "#{url}",
-            "EMISAR_API_KEY": "#{key}",
-            "EMISAR_CLIENT": "#{client}"
-          }
-        }
-      }
-    }\
-    """
   end
 
   # -- Render ----------------------------------------------------------
@@ -1130,7 +835,8 @@ defmodule EmisarWeb.AgentsLive do
 
       <.connect_panel
         :if={@live_action == :connect and ApiKeys.subject_can_issue_quick_key?(@current_subject)}
-        configs_for={&client_config(&1, @base_url, @quick_secret || "emk-…")}
+        configs_for={&client_config(&1, @base_url, @quick_secret || "emk-…", &2, @bridge_paths[&2])}
+        bridge_paths={@bridge_paths}
         selected_client={@selected_client}
         base_url={@base_url}
         detected_os={@detected_os}
@@ -1193,7 +899,10 @@ defmodule EmisarWeb.AgentsLive do
         </p>
         <div :if={ApiKeys.subject_can_issue_quick_key?(@current_subject)}>
           <.connect_panel
-            configs_for={&client_config(&1, @base_url, @quick_secret || "emk-…")}
+            configs_for={
+              &client_config(&1, @base_url, @quick_secret || "emk-…", &2, @bridge_paths[&2])
+            }
+            bridge_paths={@bridge_paths}
             selected_client={@selected_client}
             base_url={@base_url}
             detected_os={@detected_os}
@@ -1667,6 +1376,7 @@ defmodule EmisarWeb.AgentsLive do
   defp status_word_class(_), do: "text-zinc-400"
 
   attr :configs_for, :any, required: true
+  attr :bridge_paths, :map, required: true
   attr :selected_client, :any, required: true
   attr :base_url, :string, required: true
   attr :detected_os, :atom, required: true
@@ -1682,10 +1392,19 @@ defmodule EmisarWeb.AgentsLive do
       cond do
         assigns.selected_client == nil -> nil
         assigns.selected_client == "custom" -> nil
-        true -> assigns.configs_for.(assigns.selected_client)
+        true -> assigns.configs_for.(assigns.selected_client, assigns.detected_os)
       end
 
-    assigns = assign(assigns, :config, config)
+    variants =
+      if config && config.kind == :local do
+        Enum.map(@platform_tabs, fn tab ->
+          Map.put(tab, :config, assigns.configs_for.(assigns.selected_client, tab.os))
+        end)
+      else
+        []
+      end
+
+    assigns = assigns |> assign(:config, config) |> assign(:variants, variants)
 
     ~H"""
     <%!-- CONTENT ON CANVAS, task + rail (the install-wizard / keys-new
@@ -1869,17 +1588,39 @@ defmodule EmisarWeb.AgentsLive do
                   </span>
                 </:summary>
                 <%= if @quick_secret do %>
-                  <%= if config_target_is_file?(@config) do %>
-                    <p class="text-sm text-zinc-400">
-                      Open
-                      <.inline_code surface={:prominent} size={:sm}>
-                        {@config.location}
-                      </.inline_code>
-                      and add:
+                  <div
+                    :for={variant <- @variants}
+                    id={"manual-path-#{variant.os}"}
+                    data-os={variant.os}
+                    class={["space-y-3", variant.os != @detected_os && "hidden"]}
+                  >
+                    <.bridge_path_form os={variant.os} path={@bridge_paths[variant.os]} />
+                    <%= if config_target_is_file?(variant.config) do %>
+                      <p class="text-sm text-zinc-400">
+                        Open
+                        <.inline_code surface={:prominent} size={:sm} class="break-all">
+                          {variant.config.location}
+                        </.inline_code>
+                        and merge the snippet into your existing configuration.
+                      </p>
+                    <% else %>
+                      <p class="text-sm text-zinc-400">
+                        Run the command in {if variant.os == :windows,
+                          do: "PowerShell",
+                          else: "your terminal"}.
+                      </p>
+                    <% end %>
+                    <p :if={@selected_client == "vscode"} class="text-xs text-zinc-400">
+                      Use “MCP: Open User Configuration” for the current VS Code profile.
                     </p>
-                  <% else %>
-                    <p class="text-sm text-zinc-400">Run this in your terminal:</p>
-                  <% end %>
+                    <p
+                      :if={@selected_client == "claude_desktop" && variant.os == :linux}
+                      class="text-xs text-zinc-400"
+                    >
+                      Claude Desktop has no official Linux release. For community builds, check your
+                      package's MCP configuration location.
+                    </p>
+                  </div>
                   <.code_panel
                     :if={Map.get(@config, :secret_separate, false)}
                     id={"secret-#{@selected_client}"}
@@ -1890,19 +1631,25 @@ defmodule EmisarWeb.AgentsLive do
                     code={@quick_secret}
                     class="mt-3"
                   />
-                  <.code_panel
+                  <p class="mt-3 text-xs text-zinc-400">
+                    {if @config.secret_separate,
+                      do: "The snippet does not contain your API key.",
+                      else: "The snippet contains your API key; keep the configuration private."}
+                  </p>
+                  <.os_code_panel
                     id={"snippet-#{@selected_client}"}
-                    label="Snippet"
-                    annotation={
-                      if Map.get(@config, :secret_separate, false),
-                        do: "does not contain your API key",
-                        else: "contains your API key"
-                    }
-                    copy
-                    copy_label="Copy snippet"
-                    code={@config.body}
+                    detected={@detected_os}
+                    on_change="select_os"
                     class="mt-3"
-                  />
+                  >
+                    <:tab
+                      :for={variant <- @variants}
+                      os={variant.os}
+                      label={variant.label}
+                      code={variant.config.body}
+                      unavailable="Enter a full executable path above to generate this snippet."
+                    />
+                  </.os_code_panel>
                   <%!-- Mechanical next step sits right under the snippet: paste
                        or run it, then restart. --%>
                   <p class="mt-3 text-xs text-zinc-400">
@@ -1992,6 +1739,48 @@ defmodule EmisarWeb.AgentsLive do
         <.agent_docs_rail />
       </div>
     </div>
+    """
+  end
+
+  attr :os, :atom, required: true
+  attr :path, :string, required: true
+
+  defp bridge_path_form(assigns) do
+    error = if assigns.path != "", do: AgentClientConfig.path_error(assigns.path, assigns.os)
+    form = to_form(%{"os" => to_string(assigns.os), "path" => assigns.path})
+    assigns = assigns |> assign(:error, error) |> assign(:path_form, form)
+
+    ~H"""
+    <.form
+      for={@path_form}
+      id={"bridge-path-form-#{@os}"}
+      phx-change="bridge_path_changed"
+      phx-submit="bridge_path_changed"
+    >
+      <input type="hidden" name="os" value={@os} />
+      <.input
+        id={"bridge-path-#{@os}"}
+        name="path"
+        label="Bridge executable"
+        value={@path}
+        errors={if @error, do: [@error], else: []}
+        placeholder={
+          if @os == :windows,
+            do: "C:\\Users\\you\\AppData\\Local\\Programs\\Emisar\\bin\\emisar-mcp.exe"
+        }
+        autocomplete="off"
+        spellcheck="false"
+        maxlength="4096"
+        phx-debounce="300"
+        class="font-mono"
+      />
+    </.form>
+    <p class="text-xs text-zinc-400">
+      Paste the full path without quotes. Find it in a new {if @os == :windows,
+        do: "PowerShell window",
+        else: "terminal"}:
+    </p>
+    <.code_line id={"bridge-discovery-#{@os}"} value={AgentClientConfig.discovery_command(@os)} />
     """
   end
 
@@ -2087,7 +1876,7 @@ defmodule EmisarWeb.AgentsLive do
       </.step_header>
       <%= case {URLHelpers.mcp_install_command(@base_url), URLHelpers.mcp_windows_install_command(@base_url)} do %>
         <% {{:ok, command}, {:ok, windows_command}} -> %>
-          <.os_code_panel id="install-mcp-cmd" detected={@detected_os}>
+          <.os_code_panel id="install-mcp-cmd" detected={@detected_os} on_change="select_os">
             <:tab os={:linux} label="Linux" code={command} />
             <:tab os={:windows} label="Windows" code={windows_command} />
             <:tab os={:macos} label="macOS" code={command} />
@@ -2129,7 +1918,7 @@ defmodule EmisarWeb.AgentsLive do
       </:summary>
       <.auto_permit_why client_label={@client_label} />
       <.auto_permit_installer_note :if={@auto_permit[:installer]} />
-      <p class="mt-3 text-[11px] text-zinc-400 font-mono">{@auto_permit.location}</p>
+      <p class="mt-3 break-all text-[11px] text-zinc-400 font-mono">{@auto_permit.location}</p>
       <.code_panel
         id={"permit-#{@client_id}"}
         label={"#{@client_label}'s setting"}

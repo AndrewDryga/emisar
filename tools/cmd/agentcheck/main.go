@@ -67,6 +67,38 @@ type checker struct {
 	failures []string
 }
 
+var instructionManuals = []string{
+	"AGENTS.md", "portal/AGENTS.md", "runner/AGENTS.md",
+	"mcp/AGENTS.md", "packs/AGENTS.md", "infra/AGENTS.md",
+}
+
+const portalLayerReference = "portal/.agent/kb/rules/elixir-layered-contexts.md"
+
+// Codex loads ancestor manuals together. Sibling projects are separate chains;
+// symlink wrappers and on-demand references do not consume this default budget.
+func (c *checker) checkInstructionBudget() {
+	const limit = 32 * 1024
+	var rootBytes int
+	for _, manual := range instructionManuals {
+		data, err := os.ReadFile(c.path(manual))
+		if err != nil {
+			c.fail("reading %s for instruction budget: %v", manual, err)
+			continue
+		}
+		chain := manual
+		size := len(data)
+		if manual == "AGENTS.md" {
+			rootBytes = size
+		} else {
+			chain = "AGENTS.md + " + manual
+			size += rootBytes + len("\n\n")
+		}
+		if size > limit {
+			c.fail("%s loads %d bytes, exceeding the %d-byte instruction budget; move detail into linked references", chain, size, limit)
+		}
+	}
+}
+
 func (c *checker) fail(format string, args ...any) {
 	message := fmt.Sprintf(format, args...)
 	c.failures = append(c.failures, message)
@@ -256,7 +288,7 @@ func (c *checker) definedElixirModules() map[string]string {
 func (c *checker) checkManualExamples() {
 	defined := c.definedElixirModules()
 	c.walkRepository(func(relative string, entry fs.DirEntry) {
-		if entry.IsDir() || entry.Name() != "AGENTS.md" {
+		if entry.IsDir() || (entry.Name() != "AGENTS.md" && relative != portalLayerReference) {
 			return
 		}
 		data, err := os.ReadFile(c.path(relative))
@@ -411,7 +443,7 @@ func hasPrefix(value string, prefixes []string) bool {
 func (c *checker) checkRuleNames() {
 	prefixes := []string{"design-", "content-", "elixir-", "runner-", "mcp-", "packs-", "infra-", "shared-"}
 	c.walkRepository(func(relative string, entry fs.DirEntry) {
-		if entry.IsDir() || !strings.HasSuffix(relative, ".md") || !isKnowledgeRule(relative) {
+		if entry.IsDir() || entry.Name() == "README.md" || !strings.HasSuffix(relative, ".md") || !isKnowledgeRule(relative) {
 			return
 		}
 		if !hasPrefix(entry.Name(), prefixes) {
@@ -560,23 +592,15 @@ func isLegacyKnowledgeDirectory(relative string) bool {
 		strings.HasSuffix(relative, "/.agent/reference") || strings.HasSuffix(relative, "/.agent/rules")
 }
 
-// Step 2 of the taste pipeline says a recorded rule gets a one-line entry in the
-// owning AGENTS.md rule index. An unindexed rule file is invisible: nothing in
-// the BOOT protocol reads the rules directory, so an agent following it never
-// loads the rule, and the correction it captured gets made again. This is the
-// mechanical half of that pipeline — the same "graduate it" step the creed asks
-// for on every rule it can check.
+// Rules remain discoverable through a manual or its explicitly linked index,
+// even when detailed guidance is moved out of the always-loaded instructions.
 func (c *checker) checkRulesAreIndexed() {
-	manuals := []string{
-		"AGENTS.md", "portal/AGENTS.md", "runner/AGENTS.md",
-		"mcp/AGENTS.md", "packs/AGENTS.md", "infra/AGENTS.md",
-	}
 	// Any manual, not the one whose directory holds the file: a shared rule is
 	// often indexed by the project it governs (packs-* from packs/AGENTS.md,
 	// elixir-model-* from portal/AGENTS.md), and an agent reads the manual for
 	// the area it is working in.
 	var index []byte
-	for _, manual := range manuals {
+	for _, manual := range instructionManuals {
 		data, err := os.ReadFile(c.path(manual))
 		if err != nil {
 			if !os.IsNotExist(err) {
@@ -585,6 +609,15 @@ func (c *checker) checkRulesAreIndexed() {
 			continue
 		}
 		index = append(index, data...)
+		if bytes.Contains(data, []byte(".agent/kb/rules/README.md")) {
+			path := filepath.ToSlash(filepath.Join(filepath.Dir(manual), ".agent/kb/rules/README.md"))
+			contents, err := os.ReadFile(c.path(path))
+			if err != nil {
+				c.fail("reading linked rule index %s: %v", path, err)
+				continue
+			}
+			index = append(index, contents...)
+		}
 	}
 
 	rulesDirs := []string{
@@ -602,12 +635,12 @@ func (c *checker) checkRulesAreIndexed() {
 		}
 		for _, entry := range entries {
 			name := entry.Name()
-			if entry.IsDir() || !strings.HasSuffix(name, ".md") {
+			if entry.IsDir() || name == "README.md" || !strings.HasSuffix(name, ".md") {
 				continue
 			}
 			checked++
 			if !bytes.Contains(index, []byte(name)) {
-				c.fail("%s/%s is in no AGENTS.md rule index; an agent following BOOT will never load it",
+				c.fail("%s/%s is in no manual or linked rule index; an agent following the manual will never load it",
 					rulesDir, name)
 			}
 		}
@@ -1338,6 +1371,7 @@ func hasJSONKey(value any, key string) bool {
 
 func (c *checker) run(requireCoop bool) int {
 	c.checkLinks()
+	c.group("root-plus-project manuals fit the default 32 KiB instruction budget", c.checkInstructionBudget)
 	c.group("manuals, runbooks, and skills use current task commands and state paths", c.checkManualText)
 	c.group("deprecated workspace and project agent logs are absent", c.checkDeprecatedAgentLogs)
 	c.group("skills use current review commands and product/security wording", c.checkSkillText)
@@ -1360,7 +1394,7 @@ func (c *checker) run(requireCoop bool) int {
 	c.group("public skill MCP tool names exist in the portal-owned API schema", c.checkPublicSkillMCPTools)
 	c.group("no project-global Stop hook or retired sweep sentinel", c.checkNoGlobalStopHook)
 	c.group("the commit-msg hook verifies a Coop-Task line parses as a trailer", c.checkCommitMessageHook)
-	c.group("every kb rule is indexed by its owning AGENTS.md", c.checkRulesAreIndexed)
+	c.group("every kb rule is discoverable from a manual or linked rule index", c.checkRulesAreIndexed)
 	c.group("the compatibility spec names every environment variable the installers read", c.checkFrozenInstallerEnv)
 	if len(c.failures) > 0 {
 		fmt.Fprintf(c.errOut, "\nAgent setup audit failed: %d issue(s)\n", len(c.failures))

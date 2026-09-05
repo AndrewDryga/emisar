@@ -164,12 +164,6 @@ func DefaultRules() []actionspec.RedactionRule {
 			Replacement: "[REDACTED_EMISAR_TOKEN]",
 		},
 		{
-			Name:        "aws-access-key",
-			Type:        "regex",
-			Pattern:     `\b(?:AKIA|ASIA)[0-9A-Z]{16}\b`,
-			Replacement: "[REDACTED_AWS_KEY]",
-		},
-		{
 			Name:        "github-token",
 			Type:        "regex",
 			Pattern:     `\b(?:(?:ghp|gho|ghu|ghs|ghr)_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{22,})\b`,

@@ -99,12 +99,13 @@
         </li>
         <li>
           <strong>Output redaction.</strong>
-          The runner masks 21 built-in patterns before output leaves the host. These include
-          bearer and basic auth, JWTs, AWS keys, Google API keys, GitHub tokens, private-key blocks,
+          The runner masks 20 built-in patterns before output leaves the host. These include
+          bearer and basic auth, JWTs, Google API keys, GitHub tokens, private-key blocks,
           and common <code>password=</code>
           / <code>secret=</code>
           / <code>token=</code>
-          assignments. Per-action rules layer on top,
+          assignments. AWS access-key IDs remain usable in follow-up actions; secret access-key
+          fields are masked. Per-action rules layer on top,
           but an unknown shape can pass through — treat redaction as a backstop, not a
           guarantee.
         </li>

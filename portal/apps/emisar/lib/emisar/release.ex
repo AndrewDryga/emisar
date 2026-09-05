@@ -20,7 +20,9 @@ defmodule Emisar.Release do
 
     for repo <- repos() do
       run = fn repo ->
-        with_migration_lock(repo, fn -> Ecto.Migrator.run(repo, :up, all: true) end)
+        with_migration_lock(repo, fn ->
+          Emisar.Release.Migrations.run(repo, Ecto.Migrator.migrations_path(repo))
+        end)
       end
 
       # The migrator needs two connections of its own; the lock holds a third
@@ -36,8 +38,8 @@ defmodule Emisar.Release do
   `bin/migrate`, so two migrators can reach the same pending migration at once.
   Ecto takes its lock per migration and `@disable_migration_lock` turns that off
   for the concurrent-index migrations — precisely where a collision leaves an
-  INVALID index and an unwritten version row behind, which no retry can clear.
-  One advisory lock over the whole run makes the loser wait instead.
+  INVALID index and an unwritten version row behind. One advisory lock over the
+  whole run makes the loser wait, including while recovering interrupted DDL.
   """
   @spec with_migration_lock(Ecto.Repo.t(), (-> result)) :: result when result: term()
   def with_migration_lock(repo, fun) when is_function(fun, 0) do

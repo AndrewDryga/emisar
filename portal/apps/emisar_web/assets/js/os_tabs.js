@@ -15,8 +15,8 @@
 //   <button data-os-select="windows">  the tab
 //   <element data-os="windows">        shown only while that OS is selected
 //
-// A LiveView re-render repaints the server's default, which is the detected
-// OS — the honest thing to snap back to.
+// Stateful LiveViews can opt into a phx-click event and retain their choice
+// server-side. The plain pages still only need this delegated click handler.
 const ACTIVE = ["bg-zinc-800", "text-zinc-100"]
 const INACTIVE = ["text-zinc-400"]
 
@@ -35,7 +35,7 @@ function selectOs(os) {
 export function initOsTabs() {
   document.addEventListener("click", (e) => {
     const btn = e.target.closest("[data-os-select]")
-    if (!btn) return
+    if (!btn || btn.hasAttribute("phx-click")) return
     e.preventDefault()
     selectOs(btn.dataset.osSelect)
   })

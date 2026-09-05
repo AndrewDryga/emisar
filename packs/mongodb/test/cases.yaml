@@ -15,6 +15,11 @@ cases:
   - action: mongo.build_info
     expect:
       stdout_contains: ['"version"']
+    probes:
+      - name: seeded server still rejects unauthenticated database reads
+        argv: [mongosh, --host, mongodb, --quiet, --eval, 'try { db.getSiblingDB("packtest").orders.findOne(); quit(1); } catch (error) { if (error.code !== 13) throw error; print("unauthenticated read denied"); }']
+        expect:
+          stdout_contains: [unauthenticated read denied]
   - action: mongo.collection_list
     args: {database: packtest}
     expect:
@@ -136,10 +141,7 @@ cases:
       stdout_contains: ['"host"', '"connections"', '"version"']
   - action: mongo.top
     arrange:
-      # top counts operations the running server has served, and the fixture is
-      # seeded by the image's temporary init mongod, which is shut down before
-      # the real one starts. Nothing has touched the collection on this server
-      # until the case reads it.
+      # Arrange the read whose collection-level counter the action must report.
       - argv:
           - /bin/sh
           - -c

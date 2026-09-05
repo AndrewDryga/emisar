@@ -16,8 +16,8 @@ same product contract.
 
 Before 1.0, a normal product feature is a minor bump and a release hotfix is a
 patch bump. Pre-1.0 releases do not promise long-lived compatibility between
-components. The current release snapshot is product `v0.45.0`, runner
-`0.25.0`, and `emisar-mcp` `0.12.0`. Those component versions are release tips;
+components. The current release snapshot is product `v0.46.0`, runner
+`0.26.0`, and `emisar-mcp` `0.13.0`. Those component versions are release tips;
 unstamped local builds report `dev`.
 
 At 1.0:
@@ -715,7 +715,7 @@ the append-only events journal, signing/nonce state, and the installed pack
 trees under the configured pack directories.
 
 **Why it is a surface.** A new binary always boots against files an older
-binary wrote — this state is "deployed" the way a committed DB migration is,
+binary wrote — this state is "deployed" the way a production-applied DB migration is,
 regardless of product version. Both halves were broken in one day pre-0.12:
 deleting the dispatch-log format migration made every host carrying v0.9
 history silently refuse all dispatches, and a stricter pack YAML parser made
@@ -787,8 +787,10 @@ the installer interactive, hit a prompt with no terminal and died, and
 is false, so an unknown value never fails open. `EMISAR_ATTESTATION_WORKFLOW`
 selects the workflow identity matched against the downloaded Sigstore bundle.
 Official releases authenticate the combined checksum before trusting an
-archive digest and fail when the bundle, GitHub CLI, or signature is
-unavailable. Older releases without signed checksum metadata are unsupported.
+archive digest and fail when the bundle or signature is unavailable or invalid.
+Without GitHub CLI, every installer and `emisar update` ask at a terminal, or
+warn and continue unattended, on the checksum alone (decided 2026-09-05). Older
+releases without signed checksum metadata are unsupported.
 A fork or mirror sets its own workflow or retains its operator-owned checksum
 policy.
 An unattended runner install requires `--yes` plus an explicit
@@ -803,7 +805,7 @@ It accepts
 `EMISAR_ATTESTATION_WORKFLOW`, and `EMISAR_URL` (the portal the connection phase talks to and writes into
 configs; default `https://emisar.dev`). The bridge installer also requires the
 selected GitHub release to be marked immutable. The current release tags are
-`runner-v0.25.0` and `mcp-v0.12.0`.
+`runner-v0.26.0` and `mcp-v0.13.0`.
 
 **The installers place the binary; the bridge owns the connection phase.** An
 interactive install runs `emisar-mcp connect` as the invoking user, and
@@ -1029,7 +1031,7 @@ does not yet provide every warning or negotiation hook described here.
 Before 1.0, emisar's working assumption is that components move together. That
 is why the MCP spec rejected a long-lived compatibility mode and creed #6 says
 to edit the original and delete dead behavior. At 1.0, the surfaces above are
-like a committed database migration: deployed peers and saved operator
+like a production-applied database migration: deployed peers and saved operator
 configuration make the published contract real. Treat them as frozen, add a
 version when the shape is breaking, and use the deprecation path instead of
 silently editing the original.

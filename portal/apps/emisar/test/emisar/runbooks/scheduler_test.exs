@@ -1,5 +1,6 @@
 defmodule Emisar.Runbooks.SchedulerTest do
   use Emisar.DataCase, async: true
+  alias Ecto.Multi
   alias Emisar.Accounts.RunnerAccess
   alias Emisar.{ApiKeys, Audit, Auth.Subject, Catalog, Fixtures, Repo, Runbooks, Runners, Runs}
   alias Emisar.Runbooks.{Definition, ExecutionItem, RunbookExecution, Scheduler}
@@ -818,24 +819,204 @@ defmodule Emisar.Runbooks.SchedulerTest do
     assert [_only_attempt] = runs(account.id, result.execution_id)
   end
 
-  test "cancelling an active execution requests cancellation of running attempts", %{
-    account: account,
-    subject: subject,
-    runner: runner
-  } do
-    runbook =
-      published_runbook(
-        subject,
-        definition([stage("change", "sequential", 1, [step("apply", runner.group)])])
-      )
+  describe "after_active_runbook_attempts_cancelled/2" do
+    test "cancelling an active execution requests cancellation of running attempts", %{
+      account: account,
+      subject: subject,
+      runner: runner
+    } do
+      runbook =
+        published_runbook(
+          subject,
+          definition([stage("change", "sequential", 1, [step("apply", runner.group)])])
+        )
 
-    assert {:ok, result} = Runbooks.dispatch_runbook(runbook, "cancel active", subject)
-    assert [run] = runs(account.id, result.execution_id)
+      assert {:ok, result} = Runbooks.dispatch_runbook(runbook, "cancel active", subject)
+      assert [run] = runs(account.id, result.execution_id)
 
-    assert {:ok, cancelled} = Runbooks.cancel_execution(result.execution_id, subject)
-    assert cancelled.status == :cancelled
-    assert Repo.reload!(item(result.execution_id)).status == :cancelled
-    assert Repo.reload!(run).status in [:cancelled, :cancelling]
+      assert {:ok, cancelled} = Runbooks.cancel_execution(result.execution_id, subject)
+      assert cancelled.status == :cancelled
+      assert Repo.reload!(item(result.execution_id)).status == :cancelled
+      assert Repo.reload!(run).status == :cancelling
+      assert is_nil(Repo.reload!(run).finished_at)
+      assert is_nil(Repo.reload!(run).cancelled_at)
+      request_id = run.request_id
+      generation = runner.connection_generation
+
+      assert_receive {:cloud_to_runner, ^generation,
+                      %{"type" => "cancel", "request_id" => ^request_id}}
+    end
+  end
+
+  describe "cancel_active_runbook_attempts_in_multi/5" do
+    test "committed child intent survives missing notifications and a repeated parent cancel", %{
+      account: account,
+      subject: subject,
+      runner: runner
+    } do
+      runbook =
+        published_runbook(
+          subject,
+          definition([stage("change", "sequential", 1, [step("apply", runner.group)])])
+        )
+
+      assert {:ok, result} = Runbooks.dispatch_runbook(runbook, "cancel active", subject)
+      assert [run] = runs(account.id, result.execution_id)
+      request_id = run.request_id
+      generation = runner.connection_generation
+      assert_receive {:cloud_to_runner, ^generation, %{"type" => "run_action"}}
+
+      assert {:ok, _changes} =
+               Multi.new()
+               |> Fixtures.Runbooks.cancel_execution_in_multi(execution(result.execution_id))
+               |> Runs.cancel_active_runbook_attempts_in_multi(
+                 account.id,
+                 result.execution_id,
+                 "runbook execution cancelled",
+                 subject
+               )
+               |> Repo.commit_multi()
+
+      cancelling = Repo.reload!(run)
+      assert cancelling.status == :cancelling
+      assert is_nil(cancelling.finished_at)
+      assert is_nil(cancelling.cancelled_at)
+      refute_received {:cloud_to_runner, _generation, %{"type" => "cancel"}}
+
+      assert {:ok, %{status: :cancelled}} =
+               Runbooks.cancel_execution(result.execution_id, subject)
+
+      for _tick <- 1..2 do
+        Scheduler.recover_due()
+
+        assert_receive {:cloud_to_runner, ^generation,
+                        %{"type" => "cancel", "request_id" => ^request_id}}
+
+        refute_received {:cloud_to_runner, _generation, %{"type" => "run_action"}}
+        assert Repo.reload!(run).status == :cancelling
+      end
+
+      cancel_events =
+        Audit.Event.Query.all()
+        |> Audit.Event.Query.by_event_type("run.cancel_requested")
+        |> Repo.all()
+
+      assert [event] = cancel_events
+      assert event.payload["run_id"] == run.id
+      payload = %{"status" => "success", "structured_output" => %{"ready" => true}}
+      assert {:ok, %{status: :success}} = Fixtures.Runs.finish(run, payload)
+      assert execution(result.execution_id).status == :cancelled
+    end
+
+    test "a failed cancellation transaction rolls back parent, child, and audit together", %{
+      account: account,
+      subject: subject,
+      runner: runner
+    } do
+      runbook =
+        published_runbook(
+          subject,
+          definition([stage("change", "sequential", 1, [step("apply", runner.group)])])
+        )
+
+      assert {:ok, result} = Runbooks.dispatch_runbook(runbook, "cancel active", subject)
+      assert [run] = runs(account.id, result.execution_id)
+
+      multi =
+        Multi.new()
+        |> Fixtures.Runbooks.cancel_execution_in_multi(execution(result.execution_id))
+        |> Runs.cancel_active_runbook_attempts_in_multi(
+          account.id,
+          result.execution_id,
+          "runbook execution cancelled",
+          subject
+        )
+        |> Multi.error(:rollback, :checkpoint_failed)
+
+      assert Repo.commit_multi(multi) == {:error, :checkpoint_failed}
+      assert execution(result.execution_id).status == :active
+      assert item(result.execution_id).status == :running
+      assert Repo.one(Runbooks.ExecutionStage).status == :active
+      assert Repo.reload!(run).status == :sent
+
+      refute Audit.Event.Query.all()
+             |> Audit.Event.Query.by_event_type("run.cancel_requested")
+             |> Repo.exists?()
+    end
+  end
+
+  describe "retry_runbook_cancellations/1" do
+    test "cancellation recovery pages past unavailable runners without changing terminal children",
+         %{
+           account: account,
+           subject: subject,
+           runner: runner
+         } do
+      second_runner = trusted_runner(account, subject, group: runner.group)
+      Runners.subscribe_runner_transport(second_runner)
+
+      runbook =
+        published_runbook(
+          subject,
+          definition([stage("change", "parallel", 2, [step("apply", runner.group)])])
+        )
+
+      assert {:ok, result} = Runbooks.dispatch_runbook(runbook, "cancel fleet", subject)
+      assert [first, second] = Enum.sort_by(runs(account.id, result.execution_id), & &1.id)
+      assert_receive {:cloud_to_runner, _generation, %{"type" => "run_action"}}
+      assert_receive {:cloud_to_runner, _generation, %{"type" => "run_action"}}
+      first_runner = Enum.find([runner, second_runner], &(&1.id == first.runner_id))
+      Fixtures.Runners.expire_connection_lease(first_runner)
+
+      assert Runners.current_connection_generation(account.id, first_runner.id) ==
+               {:error, :not_connected}
+
+      Fixtures.Runs.put_status(second, :running)
+
+      assert {:ok, _changes} =
+               Multi.new()
+               |> Fixtures.Runbooks.cancel_execution_in_multi(execution(result.execution_id))
+               |> Runs.cancel_active_runbook_attempts_in_multi(
+                 account.id,
+                 result.execution_id,
+                 "runbook execution cancelled",
+                 subject
+               )
+               |> Repo.commit_multi()
+
+      assert Runs.retry_runbook_cancellations(1) == :ok
+      request_id = second.request_id
+
+      assert_receive {:cloud_to_runner, _generation,
+                      %{"type" => "cancel", "request_id" => ^request_id}}
+
+      first_request_id = first.request_id
+
+      refute_received {:cloud_to_runner, _generation,
+                       %{"type" => "cancel", "request_id" => ^first_request_id}}
+
+      assert Repo.reload!(first).status == :cancelling
+      assert Repo.reload!(second).status == :cancelling
+      payload = %{"status" => "success", "structured_output" => %{"ready" => true}}
+      assert {:ok, %{status: :success}} = Fixtures.Runs.finish(second, payload)
+
+      :ok = Runners.Presence.untrack(self(), Runners.Presence.topic(account.id), first.runner_id)
+      successor = Fixtures.Runners.connect_runner(first_runner)
+      generation = successor.connection_generation
+      assert generation > first_runner.connection_generation
+      assert Runs.resume_runs_for_runner(first.runner_id) == :ok
+
+      assert_receive {:cloud_to_runner, ^generation,
+                      %{"type" => "run_action", "request_id" => ^first_request_id}}
+
+      assert_receive {:cloud_to_runner, ^generation,
+                      %{"type" => "cancel", "request_id" => ^first_request_id}}
+
+      assert Runs.retry_runbook_cancellations(1) == :ok
+
+      refute_received {:cloud_to_runner, _generation,
+                       %{"type" => "cancel", "request_id" => ^request_id}}
+    end
   end
 
   test "cancellation enforces role and account isolation", %{

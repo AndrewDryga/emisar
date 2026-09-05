@@ -254,7 +254,7 @@ defmodule EmisarWeb.MarketingController do
   # built from Billing in pricing_faqs/1 instead.
   @pricing_faqs [
     {"Do you store the output of my commands?",
-     "Runner output is redacted before leaving the host and retained in run history. The audit trail stores terminal outcome metadata, including who, when, action, runner, reason, and exit code. Redaction uses 21 built-in patterns plus your own per-action rules."},
+     "Runner output is redacted before leaving the host and retained in run history. The audit trail stores terminal outcome metadata, including who, when, action, runner, reason, and exit code. Redaction uses 20 built-in patterns plus your own per-action rules."},
     {"How does billing work?",
      "Paid plans are billed per runner through Paddle, our Merchant of Record. You get an invoice for each billing period, and Paddle handles sales tax and VAT. We never see or store full card numbers."},
     {"Can I self-host?",

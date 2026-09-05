@@ -80,6 +80,10 @@ defmodule EmisarWeb.MCP.RecoveryTools do
 
   # Recovering a lost mutation response must tell the model exactly what the
   # response would have — including which release actually runs.
+  defp operation_projection(_conn, %{tool: tool, draft_definition_sha256: nil})
+       when tool in [:create_runbook_draft, :update_runbook_draft],
+       do: {:error, :operation_resource_missing}
+
   defp operation_projection(conn, %{tool: tool} = operation)
        when tool in [:create_runbook_draft, :update_runbook_draft] do
     subject = conn.assigns.current_subject
@@ -88,19 +92,9 @@ defmodule EmisarWeb.MCP.RecoveryTools do
       {:ok, %{draft_definition: nil}} ->
         {:error, :operation_resource_missing}
 
-      {:ok, runbook} ->
-        {:ok,
-         %{
-           operation_id: operation.operation_id,
-           kind: "runbook_draft",
-           draft_id: runbook.id,
-           slug: runbook.slug,
-           status: "draft",
-           definition_sha256: Runbooks.definition_digest(runbook.draft_definition),
-           live_ref: RunbookContract.live_ref(runbook),
-           review_url:
-             "#{EmisarWeb.Endpoint.url()}/app/#{subject.account.slug}/runbooks/#{runbook.id}/edit"
-         }}
+      {:ok, _runbook} ->
+        payload = RunbookContract.draft_result(operation, subject)
+        {:ok, Map.put(payload, :kind, "runbook_draft")}
 
       {:error, _unreadable} ->
         {:error, :operation_resource_missing}

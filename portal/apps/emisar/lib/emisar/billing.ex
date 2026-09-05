@@ -14,9 +14,11 @@ defmodule Emisar.Billing do
   use Supervisor
   import Emisar.Maps, only: [put_present: 3]
   alias Ecto.Multi
-  alias Emisar.{Accounts, Analytics, Audit, Auth, Crypto, PublicUrl, Repo, Runners}
+  alias Emisar.{Accounts, Analytics, Audit, Auth, PublicUrl, Repo, Runners}
   alias Emisar.Auth.Subject
   alias Emisar.Billing.{Authorizer, Entitlements, PaddleClient, Subscription}
+  alias Emisar.Billing.{CheckoutIntent, Checkouts, ProcessedEvent}
+  alias Emisar.Billing.{SubscriptionRetirement, SubscriptionRetirements}
   require Logger
 
   # Feature IDs are the stable plan-membership contract; labels are the shared
@@ -97,6 +99,11 @@ defmodule Emisar.Billing do
       job_module("SyncRunnerQuantities"),
       job_module("SyncSubscriptions")
     ]
+
+    children =
+      if Emisar.Config.fetch_env!(:emisar, :paddle_client) == PaddleClient.Stub,
+        do: [PaddleClient.Stub.TransactionStore | children],
+        else: children
 
     Supervisor.init(children, strategy: :one_for_one)
   end
@@ -417,15 +424,98 @@ defmodule Emisar.Billing do
   the row is the record of what was billed.
   """
   def cancel_subscription_for_close(%Accounts.Account{} = account) do
+    with :ok <- Checkouts.cancel_for_close(account.id),
+         :ok <- cancel_canonical_subscription(account) do
+      SubscriptionRetirements.cancel_for_close(account.id)
+    end
+  end
+
+  defp cancel_canonical_subscription(account) do
     case peek_subscription_for_account(account.id) do
-      %Subscription{paddle_subscription_id: id, status: status}
+      %Subscription{paddle_subscription_id: id, status: status} = captured
       when is_binary(id) and status != "canceled" ->
-        case PaddleClient.cancel_subscription(id) do
-          {:ok, _subscription} -> :ok
+        with {:ok, canceled} <- confirm_canonical_cancellation(id, account.paddle_customer_id),
+             {:ok, %Subscription{paddle_subscription_id: ^id, status: "canceled"}} <-
+               reconcile_subscription_data(canceled, expected_subscription: captured) do
+          :ok
+        else
           {:error, reason} -> {:error, reason}
+          _unconfirmed -> {:error, :cancellation_not_confirmed}
         end
 
       _ ->
+        :ok
+    end
+  end
+
+  defp confirm_canonical_cancellation(id, customer_id) do
+    with {:ok, %{"id" => ^id, "status" => status} = subscription} <-
+           PaddleClient.retrieve_subscription(id),
+         :ok <- ensure_canonical_customer(subscription, customer_id) do
+      case status do
+        "canceled" ->
+          {:ok, subscription}
+
+        status when status in ~w[active trialing past_due paused] ->
+          with {:ok, %{"id" => ^id, "status" => "canceled"} = canceled} <-
+                 PaddleClient.cancel_subscription(id),
+               :ok <- ensure_canonical_customer(canceled, customer_id) do
+            {:ok, canceled}
+          else
+            {:error, reason} -> {:error, reason}
+            _unconfirmed -> {:error, :cancellation_not_confirmed}
+          end
+
+        _unknown ->
+          {:error, :cancellation_not_confirmed}
+      end
+    else
+      {:error, reason} -> {:error, reason}
+      _unconfirmed -> {:error, :cancellation_not_confirmed}
+    end
+  end
+
+  defp ensure_canonical_customer(data, customer_id) do
+    case Map.fetch(data, "customer_id") do
+      :error -> :ok
+      {:ok, ^customer_id} -> :ok
+      _mismatch -> {:error, :cancellation_not_confirmed}
+    end
+  end
+
+  @doc "Internal: DB-only final closure check; Accounts holds the account row lock."
+  def ensure_ready_to_close(%Accounts.Account{} = account, opts) do
+    repo = Keyword.fetch!(opts, :repo)
+    subscription = subscription_for_account(account.id, repo: repo, lock?: true)
+
+    intent =
+      CheckoutIntent.Query.by_account_id(account.id)
+      |> CheckoutIntent.Query.pending()
+      |> CheckoutIntent.Query.lock_for_update()
+      |> repo.peek()
+
+    retirement =
+      SubscriptionRetirement.Query.by_account_id(account.id)
+      |> SubscriptionRetirement.Query.pending()
+      |> SubscriptionRetirement.Query.limit_to(1)
+      |> SubscriptionRetirement.Query.lock_for_update()
+      |> repo.peek()
+
+    cond do
+      match?(
+        %Subscription{paddle_subscription_id: id, status: status}
+        when is_binary(id) and status != "canceled",
+        subscription
+      ) ->
+        {:error, :cancellation_not_confirmed}
+
+      not is_nil(intent) ->
+        {:error, :checkout_pending}
+
+      not is_nil(retirement) ->
+        {:error, :subscription_retirement_pending}
+
+      true ->
         :ok
     end
   end
@@ -559,7 +649,13 @@ defmodule Emisar.Billing do
   # off the committed state, instead of last-write-winning a stale status over a
   # fresh one.
   def upsert_subscription(account_id, attrs, opts \\ []) do
-    writer = if Keyword.get(opts, :manual, false), do: :manual, else: :upsert
+    writer =
+      cond do
+        Keyword.get(opts, :manual, false) -> :manual
+        Keyword.get(opts, :replace_provider?, false) -> :replace
+        true -> :upsert
+      end
+
     reject_deleted? = Keyword.get(opts, :reject_deleted?, false)
 
     Multi.new()
@@ -1040,27 +1136,15 @@ defmodule Emisar.Billing do
          :ok <- Subject.ensure_in_account(subject, account.id, :unauthorized),
          :ok <- ensure_self_service_checkout(plan_name, cycle),
          :ok <- ensure_no_live_subscription(account.id) do
-      # The returned URL is the account's DEFAULT PAYMENT LINK (our /checkout
-      # page running Paddle.js) + ?_ptxn=<transaction> — Paddle has no hosted
-      # checkout. Deliberately no per-transaction checkout.url override: that
-      # requires its own domain approval, while the default link is the
-      # canonical mechanism. The post-payment redirect is the page's
-      # successUrl setting, not a transaction field.
       with {:ok, price_id} <- resolve_checkout_price_id(plan_name, cycle),
-           {:ok, customer_id, _account} <- ensure_paddle_customer(account, subject),
-           {:ok, %{"id" => transaction_id, "url" => url}} <-
-             Emisar.Billing.PaddleClient.create_checkout_session(%{
-               customer: customer_id,
-               price_id: price_id,
-               # Per-runner pricing floors at ONE seat: a zero-runner
-               # account (fresh signup) must still be able to buy, and
-               # Paddle rejects quantity 0.
-               quantity: max(current_count(account, :runners), 1)
-             }),
-           binding = Crypto.paddle_account_binding(account.id, transaction_id),
-           {:ok, _transaction} <-
-             PaddleClient.bind_checkout_transaction(transaction_id, binding) do
-        {:ok, url}
+           {:ok, customer_id, _account} <- ensure_paddle_customer(account, subject) do
+        Checkouts.start(account.id, %{
+          plan: :team,
+          billing_interval: cycle,
+          customer_id: customer_id,
+          price_id: price_id,
+          quantity: max(current_count(account, :runners), 1)
+        })
       end
     end
   end
@@ -1540,12 +1624,30 @@ defmodule Emisar.Billing do
     * inserts the Paddle event id into `paddle_processed_events` (unique
       primary key); if the row already exists, returns
       `{:duplicate, existing}` and does NOT re-apply,
-    * calls `apply_webhook_event/1` inside the same transaction so we
-      can never end up with the dedup row recorded but the side effects
-      missing.
+    * commits the prepared account-scoped transition in that same transaction.
+      Provider proof is fetched before the transaction; the captured mirror
+      version and account identity are checked again under its row locks.
   """
   def record_and_apply_event(event_id, event_type, event)
       when is_binary(event_id) and is_binary(event_type) do
+    recorded? = event_id |> List.wrap() |> ProcessedEvent.Query.by_ids() |> Repo.exists?()
+
+    if recorded? do
+      Emisar.Telemetry.billing_webhook(:duplicate)
+      {:duplicate, event_id}
+    else
+      case prepare_webhook_event(event) do
+        {:ok, prepared} ->
+          commit_prepared_event(event_id, event_type, prepared)
+
+        {:error, reason} ->
+          Emisar.Telemetry.billing_webhook(:failed)
+          {:error, {:apply_failed, reason}}
+      end
+    end
+  end
+
+  defp commit_prepared_event(event_id, event_type, prepared) do
     row = %{id: event_id, event_type: event_type, received_at: DateTime.utc_now()}
 
     Multi.new()
@@ -1566,7 +1668,7 @@ defmodule Emisar.Billing do
       # Carry the upserted subscription through so the POST-commit branch can
       # emit `subscription_changed` — firing inside the txn would risk a
       # phantom event if a later step rolls it back.
-      case apply_webhook_event(event) do
+      case apply_prepared_write(prepared) do
         {:ok, %Subscription{} = subscription} -> {:ok, subscription}
         {:ok, _other} -> {:ok, :applied}
         :ok -> {:ok, :applied}
@@ -1598,12 +1700,6 @@ defmodule Emisar.Billing do
 
   defp track_subscription_change(_applied), do: :ok
 
-  @doc """
-  Internal — applies an incoming Paddle webhook event (account-scoped via
-  the customer/subscription id in the payload, no Subject). Idempotent on
-  `event["id"]` (deduped via `record_and_apply_event/3`). Webhook/worker
-  only; not exposed to LiveView/MCP.
-  """
   @subscription_lifecycle_events ~w[
     subscription.activated
     subscription.canceled
@@ -1618,8 +1714,8 @@ defmodule Emisar.Billing do
     subscription.updated
   ]
 
-  def apply_webhook_event(%{"event_type" => event_type, "data" => subscription_data} = event)
-      when event_type in @subscription_lifecycle_events do
+  defp prepare_webhook_event(%{"event_type" => event_type, "data" => subscription_data} = event)
+       when event_type in @subscription_lifecycle_events and is_map(subscription_data) do
     subscription_data =
       if event_type == "subscription.canceled" do
         subscription_data
@@ -1631,7 +1727,7 @@ defmodule Emisar.Billing do
 
     case subscription_data do
       %{"id" => id, "status" => status} when is_binary(id) and is_binary(status) ->
-        upsert_from_subscription(subscription_data, extract_event_occurred_at(event),
+        prepare_subscription_write(subscription_data, extract_event_occurred_at(event),
           source: :webhook,
           transaction_id: subscription_data["transaction_id"]
         )
@@ -1641,7 +1737,10 @@ defmodule Emisar.Billing do
     end
   end
 
-  def apply_webhook_event(_event), do: :ok
+  defp prepare_webhook_event(%{"event_type" => type}) when type in @subscription_lifecycle_events,
+    do: {:error, :malformed_subscription}
+
+  defp prepare_webhook_event(_event), do: {:ok, :ignored}
 
   @doc false
   def reconcile_subscription_data(subscription_data, opts \\ [])
@@ -1682,122 +1781,220 @@ defmodule Emisar.Billing do
   def reconcile_discovered_subscription_data(_subscription_data),
     do: {:error, :malformed_subscription}
 
-  defp reconcile_unseen_subscription(subscription_data) do
-    case resolve_subscription_account(subscription_data, source: :reconciliation) do
-      {:error, :not_found} ->
-        :ok
+  defp reconcile_unseen_subscription(subscription_data),
+    do: upsert_from_subscription(subscription_data, nil, source: :reconciliation)
 
-      {:error, :ambiguous} ->
-        {:error, :ambiguous_paddle_customer}
+  defp upsert_from_subscription(data, event_occurred_at, opts) do
+    with {:ok, prepared} <- prepare_subscription_write(data, event_occurred_at, opts),
+         do: apply_prepared_write(prepared)
+  end
 
-      {:error, :invalid_binding} ->
-        {:error, :invalid_subscription_account_binding}
+  defp prepare_subscription_write(data, event_occurred_at, opts) do
+    case SubscriptionRetirements.find(data["id"]) do
+      nil ->
+        case peek_subscription_by_paddle_id(data["id"]) do
+          %Subscription{} = existing ->
+            with :ok <- ensure_expected_mirror(existing, opts) do
+              {:ok,
+               {:known, existing.account_id, data, event_occurred_at, mirror_version(existing)}}
+            end
 
-      {:ok, %Accounts.Account{deleted_at: %DateTime{}}} ->
-        retire_closed_account_subscription(subscription_data)
-
-      {:ok, %Accounts.Account{id: account_id}} ->
-        case peek_subscription_for_account(account_id) do
           nil ->
-            reconcile_subscription_data(subscription_data, expected_subscription: :missing)
-
-          %Subscription{status: "canceled"} = terminal ->
-            reconcile_subscription_data(subscription_data, expected_subscription: terminal)
-
-          %Subscription{} ->
-            {:error, :different_live_subscription}
+            prepare_first_seen_subscription(data, event_occurred_at, opts)
         end
+
+      retirement ->
+        {:ok, {:retired, retirement}}
     end
   end
 
-  defp upsert_from_subscription(subscription_data, event_occurred_at, opts) do
-    existing = peek_subscription_by_paddle_id(subscription_data["id"])
+  defp prepare_first_seen_subscription(data, event_occurred_at, opts) do
+    case subscription_candidate(data, opts) do
+      {:ok, candidate} ->
+        data = if candidate.proof, do: candidate.proof.subscription, else: data
 
-    case existing do
-      %Subscription{account_id: account_id} ->
-        mirror_subscription_for_account(account_id, subscription_data,
+        with :ok <-
+               ensure_expected_mirror(peek_subscription_for_account(candidate.account_id), opts),
+             {:ok, canonical} <- refresh_candidate_canonical(candidate, data) do
+          {:ok, {:first_seen, candidate, canonical, data, event_occurred_at}}
+        end
+
+      {:error, :not_found} ->
+        {:ok, :ignored}
+
+      error ->
+        error
+    end
+  end
+
+  defp apply_prepared_write(:ignored), do: :ok
+  defp apply_prepared_write({:retired, retirement}), do: {:ok, retirement}
+
+  defp apply_prepared_write({:known, account_id, data, event_occurred_at, expected}) do
+    mirror_subscription_for_account(account_id, data,
+      event_occurred_at: event_occurred_at,
+      expected_mirror: expected
+    )
+  end
+
+  defp apply_prepared_write({:first_seen, candidate, canonical, data, event_occurred_at}),
+    do: commit_candidate(candidate, canonical, data, event_occurred_at)
+
+  defp subscription_candidate(data, opts) do
+    case subscription_binding(data) do
+      nil ->
+        case Accounts.resolve_paddle_subscription_account(data["customer_id"]) do
+          {:ok, account} ->
+            {:ok,
+             %{
+               account_id: account.id,
+               customer_id: data["customer_id"],
+               account: account,
+               proof: nil
+             }}
+
+          {:error, :ambiguous} ->
+            {:error, :ambiguous_paddle_customer}
+
+          error ->
+            error
+        end
+
+      token when is_binary(token) ->
+        with {:ok, proof} <- SubscriptionRetirements.verify_candidate(data, opts) do
+          account =
+            case Accounts.resolve_paddle_subscription_account(proof.customer_id, proof.account_id) do
+              {:ok, account} -> account
+              {:error, :not_found} -> nil
+            end
+
+          {:ok,
+           %{
+             account_id: proof.account_id,
+             customer_id: proof.customer_id,
+             account: account,
+             proof: proof
+           }}
+        end
+
+      _invalid ->
+        {:error, :invalid_subscription_account_binding}
+    end
+  end
+
+  defp subscription_binding(%{"custom_data" => custom_data}) when is_map(custom_data),
+    do: custom_data["emisar_account_binding"]
+
+  defp subscription_binding(%{"custom_data" => nil}), do: nil
+  defp subscription_binding(%{"custom_data" => _invalid}), do: :invalid
+  defp subscription_binding(_data), do: nil
+
+  defp refresh_candidate_canonical(candidate, data) do
+    canonical = peek_subscription_for_account(candidate.account_id)
+    candidate_id = data["id"]
+    closed? = is_nil(candidate.account) or not is_nil(candidate.account.deleted_at)
+
+    case canonical do
+      %Subscription{paddle_subscription_id: id, status: status}
+      when not closed? and is_binary(id) and id != candidate_id and status != "canceled" ->
+        with {:ok, %{"id" => ^id, "customer_id" => customer, "status" => status} = remote} <-
+               PaddleClient.retrieve_subscription(id),
+             true <-
+               customer == candidate.customer_id and
+                 status in ~w[active trialing past_due paused canceled],
+             {:ok, %Subscription{} = refreshed} <-
+               reconcile_subscription_data(remote, expected_subscription: canonical) do
+          {:ok, refreshed}
+        else
+          {:error, reason} -> {:error, reason}
+          _invalid -> {:error, :invalid_canonical_subscription}
+        end
+
+      _missing_or_terminal ->
+        {:ok, canonical}
+    end
+  end
+
+  defp commit_candidate(candidate, canonical, data, event_occurred_at) do
+    Multi.new()
+    |> Multi.run(:account, fn repo, _changes ->
+      case Accounts.fetch_and_lock_account(candidate.account_id,
+             repo: repo,
+             include_deleted?: true
+           ) do
+        {:ok, account} when account.paddle_customer_id == candidate.customer_id -> {:ok, account}
+        {:ok, _wrong_customer} -> {:error, :invalid_subscription_account_binding}
+        {:error, :not_found} when not is_nil(candidate.proof) -> {:ok, nil}
+        error -> error
+      end
+    end)
+    |> Multi.run(:disposition, fn repo, %{account: account} ->
+      current = subscription_for_account(candidate.account_id, repo: repo, lock?: true)
+
+      with :ok <- ensure_expected_mirror(current, expected_mirror: mirror_version(canonical)) do
+        case SubscriptionRetirements.find(data["id"], repo: repo) do
+          nil -> candidate_disposition(repo, account, current, candidate, data, event_occurred_at)
+          retirement -> {:ok, retirement}
+        end
+      end
+    end)
+    |> Repo.commit_multi()
+    |> case do
+      {:ok, %{disposition: disposition}} -> {:ok, disposition}
+      error -> error
+    end
+  end
+
+  defp candidate_disposition(repo, account, current, candidate, data, event_occurred_at) do
+    candidate_id = data["id"]
+
+    reason =
+      cond do
+        is_nil(account) ->
+          :account_erased
+
+        not is_nil(account.deleted_at) ->
+          :account_closed
+
+        match?(
+          %Subscription{paddle_subscription_id: id, status: status}
+          when is_binary(id) and id != candidate_id and status != "canceled",
+          current
+        ) ->
+          :duplicate
+
+        true ->
+          nil
+      end
+
+    case {reason, candidate.proof} do
+      {nil, _proof} ->
+        mirror_subscription_for_account(candidate.account_id, data,
           event_occurred_at: event_occurred_at,
-          expected_mirror: Keyword.get(opts, :expected_mirror, :unchecked)
+          expected_mirror: mirror_version(current),
+          reject_deleted?: true
         )
 
-      nil ->
-        upsert_first_seen_subscription(subscription_data, event_occurred_at, opts)
-    end
-  end
-
-  defp upsert_first_seen_subscription(subscription_data, event_occurred_at, opts) do
-    case resolve_subscription_account(subscription_data, opts) do
-      {:error, :not_found} ->
-        :ok
-
-      {:error, :ambiguous} ->
-        {:error, :ambiguous_paddle_customer}
-
-      {:error, :invalid_binding} ->
+      {_reason, nil} ->
         {:error, :invalid_subscription_account_binding}
 
-      {:ok, %Accounts.Account{deleted_at: %DateTime{}}} ->
-        retire_closed_account_subscription(subscription_data)
-
-      {:ok, %Accounts.Account{id: account_id}} ->
-        expected = first_seen_expected_mirror(account_id, opts)
-
-        case expected do
-          {:error, reason} ->
-            {:error, reason}
-
-          expected_mirror ->
-            result =
-              mirror_subscription_for_account(account_id, subscription_data,
-                event_occurred_at: event_occurred_at,
-                expected_mirror: expected_mirror,
-                reject_deleted?: true
-              )
-
-            case result do
-              {:error, :account_closed} -> retire_closed_account_subscription(subscription_data)
-              other -> other
-            end
-        end
-    end
-  end
-
-  # A checkout link can outlive its account. If payment completes after the
-  # account was closed, never recreate paid access on the tombstone: retire the
-  # provider subscription immediately. A successful cancel is enough; the
-  # later canceled receipt may mirror history, but no active local row exists.
-  defp retire_closed_account_subscription(%{"status" => status})
-       when status in ["canceled", "paused"],
-       do: :ok
-
-  defp retire_closed_account_subscription(%{"id" => id}) when is_binary(id) do
-    case PaddleClient.cancel_subscription(id) do
-      {:ok, _subscription} -> :ok
-      {:error, reason} -> {:error, reason}
-    end
-  end
-
-  defp first_seen_expected_mirror(account_id, opts) do
-    case Keyword.fetch(opts, :expected_mirror) do
-      {:ok, expected} ->
-        expected
-
-      :error ->
-        case peek_subscription_for_account(account_id) do
-          nil -> nil
-          %Subscription{status: "canceled"} = terminal -> mirror_version(terminal)
-          %Subscription{} -> {:error, :different_live_subscription}
-        end
+      {reason, proof} ->
+        SubscriptionRetirements.enqueue(proof, reason, current && current.paddle_subscription_id,
+          repo: repo
+        )
     end
   end
 
   defp mirror_subscription_for_account(account_id, subscription_data, opts) do
     existing = peek_subscription_for_account(account_id)
 
+    replacement? =
+      not is_nil(existing) and existing.paddle_subscription_id != subscription_data["id"]
+
     plan =
       Entitlements.plan_slug(subscription_data) ||
         Entitlements.known_plan_from_name(Entitlements.product_name(subscription_data)) ||
-        stored_plan_from_subscription(existing)
+        if(not replacement?, do: stored_plan_from_subscription(existing))
 
     attrs =
       subscription_mirror_attrs(subscription_data,
@@ -1816,49 +2013,8 @@ defmodule Emisar.Billing do
         do: Keyword.put(upsert_opts, :reject_deleted?, true),
         else: upsert_opts
 
+    upsert_opts = Keyword.put(upsert_opts, :replace_provider?, replacement?)
     upsert_subscription(account_id, attrs, upsert_opts)
-  end
-
-  defp resolve_subscription_account(subscription_data, opts) do
-    customer_id = subscription_data["customer_id"]
-    binding = get_in(subscription_data, ["custom_data", "emisar_account_binding"])
-
-    case binding do
-      nil ->
-        Accounts.resolve_paddle_subscription_account(customer_id)
-
-      token when is_binary(token) ->
-        with {:ok, {account_id, transaction_id}} <-
-               Crypto.verify_paddle_account_binding(token),
-             :ok <- verify_bound_transaction(subscription_data, transaction_id, opts) do
-          Accounts.resolve_paddle_subscription_account(customer_id, account_id)
-        else
-          {:error, _reason} -> {:error, :invalid_binding}
-        end
-
-      _invalid ->
-        {:error, :invalid_binding}
-    end
-  end
-
-  defp verify_bound_transaction(subscription_data, transaction_id, opts) do
-    case Keyword.get(opts, :source) do
-      :webhook ->
-        if Keyword.get(opts, :transaction_id) == transaction_id,
-          do: :ok,
-          else: {:error, :transaction_mismatch}
-
-      :reconciliation ->
-        with {:ok, transaction} <- PaddleClient.retrieve_transaction(transaction_id),
-             true <- transaction["subscription_id"] == subscription_data["id"] do
-          :ok
-        else
-          _mismatch_or_failure -> {:error, :transaction_mismatch}
-        end
-
-      _unknown_source ->
-        {:error, :transaction_mismatch}
-    end
   end
 
   @doc false

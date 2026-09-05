@@ -60,8 +60,7 @@ versions this repo actually uses.
 
 ## The rule
 
-If, after a reasonable check, you still can't confirm an API exists with the
-signature you need — **say so and ask, or pick a verified alternative.** Never
-write a call you couldn't confirm and hope it compiles. "I assumed `X` exists" is
-the failure mode this skill removes; surfacing "I couldn't find `X` — did you mean
-`Y`?" is the win.
+If a check is inconclusive, inspect a narrower source, reproduce the call safely,
+or use a verified alternative that preserves the requested behavior. Missing
+evidence is investigation work. Ask the user only when their intent or authority
+is the missing information. Never write an unverified call and hope it compiles.

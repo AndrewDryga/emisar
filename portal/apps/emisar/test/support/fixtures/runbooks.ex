@@ -133,6 +133,43 @@ defmodule Emisar.Fixtures.Runbooks do
     deleted
   end
 
+  @doc "Arranges an intervening author edit through the draft changeset."
+  def revise_draft(%Runbook{} = runbook, attrs) do
+    runbook |> Runbook.Changeset.draft(attrs) |> Repo.update!()
+  end
+
+  @doc "Arranges parent/stage/item cancellation without invoking scheduler notifications."
+  def cancel_execution_in_multi(multi, %RunbookExecution{} = execution) do
+    now = DateTime.utc_now()
+
+    stages = ExecutionStage.Query.by_execution_id(execution.id) |> Repo.all()
+    items = ExecutionItem.Query.by_execution_id(execution.id) |> Repo.all()
+
+    multi =
+      Ecto.Multi.update(
+        multi,
+        :execution_cancelled,
+        RunbookExecution.Changeset.cancel(execution, now)
+      )
+
+    multi =
+      Enum.reduce(stages, multi, fn stage, multi ->
+        Ecto.Multi.update(
+          multi,
+          {:stage_cancelled, stage.id},
+          ExecutionStage.Changeset.cancel(stage, now)
+        )
+      end)
+
+    Enum.reduce(items, multi, fn item, multi ->
+      Ecto.Multi.update(
+        multi,
+        {:item_cancelled, item.id},
+        ExecutionItem.Changeset.cancel(item, now)
+      )
+    end)
+  end
+
   @doc """
   A persisted runbook execution. Pass `:completed_at` to arrange a settled
   execution of a given age — retention keys on that stamp, not on insertion.

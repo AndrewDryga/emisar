@@ -653,6 +653,194 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
     assert Repo.aggregate(Runbook, :count) == 1
   end
 
+  test "create and update recovery preserve their original hash after another writer edits", %{
+    conn: conn,
+    account: account,
+    subject: subject
+  } do
+    runner = setup_runner!(account, subject, "draft-race")
+    targets = target_refs(subject, %{"runner_id" => [runner.id]})
+
+    for tool <- ["create_runbook_draft", "update_runbook_draft"] do
+      slug = if tool == "create_runbook_draft", do: "created-review", else: "updated-review"
+      definition = runbook_definition(targets)
+
+      args = %{
+        "slug" => slug,
+        "title" => "Original",
+        "description" => nil,
+        "definition" => definition
+      }
+
+      args =
+        if tool == "update_runbook_draft" do
+          draft = draft_runbook!(subject, slug, %{"runner_id" => [runner.id]})
+          Map.put(args, "definition_sha256", Runbooks.definition_digest(draft.draft_definition))
+        else
+          args
+        end
+
+      original = call(conn, tool, args)
+      assert original["ok"]
+      next_definition = Map.put(definition, "context_markdown", "Another writer's revision.")
+
+      revision_args = %{
+        "slug" => slug,
+        "title" => "Intervening edit",
+        "description" => nil,
+        "definition" => next_definition,
+        "definition_sha256" => original["definition_sha256"]
+      }
+
+      revised = call(conn, "update_runbook_draft", revision_args)
+      assert revised["ok"]
+      refute revised["definition_sha256"] == original["definition_sha256"]
+      audits = Repo.aggregate(Audit.Event, :count)
+
+      assert call(conn, tool, args) == original
+      recovered = call(conn, "get_operation", %{"operation_id" => original["operation_id"]})
+
+      assert recovered["operation"] ==
+               original |> Map.delete("ok") |> Map.put("kind", "runbook_draft")
+
+      assert Repo.aggregate(Audit.Event, :count) == audits
+
+      stale =
+        call(conn, "update_runbook_draft", Map.put(revision_args, "title", "Stale overwrite"))
+
+      assert stale["error"]["code"] == "draft_changed"
+
+      tested =
+        call(conn, "execute_runbook", %{
+          "slug" => slug,
+          "allow_draft" => true,
+          "definition_sha256" => original["definition_sha256"],
+          "reason" => "Test original draft"
+        })
+
+      assert tested["error"]["code"] == "draft_changed"
+      assert {:ok, current} = Runbooks.fetch_runbook_by_id(original["draft_id"], subject)
+      assert current.draft_definition == next_definition
+    end
+  end
+
+  test "a renamed draft replays by resource id even when its old slug is reused", %{
+    conn: conn,
+    account: account,
+    subject: subject
+  } do
+    runner = setup_runner!(account, subject, "renamed-draft")
+    draft = draft_runbook!(subject, "original-slug", %{"runner_id" => [runner.id]})
+
+    args = %{
+      "slug" => draft.slug,
+      "title" => "Original edit",
+      "description" => nil,
+      "definition" => draft.draft_definition,
+      "definition_sha256" => Runbooks.definition_digest(draft.draft_definition)
+    }
+
+    original = call(conn, "update_runbook_draft", args)
+    assert original["ok"]
+    Fixtures.Runbooks.revise_draft(Repo.reload!(draft), %{"slug" => "renamed-slug"})
+    assert call(conn, "update_runbook_draft", args) == original
+    replacement = draft_runbook!(subject, "original-slug", %{"runner_id" => [runner.id]})
+    assert call(conn, "update_runbook_draft", args) == original
+    assert Repo.reload!(replacement) == replacement
+    recovered = call(conn, "get_operation", %{"operation_id" => original["operation_id"]})
+    assert recovered["operation"]["draft_id"] == draft.id
+    assert recovered["operation"]["slug"] == "original-slug"
+  end
+
+  test "draft results survive rotation and scope revocation but stay lineage and account scoped",
+       %{
+         conn: conn,
+         account: account,
+         subject: subject,
+         key: key,
+         membership: membership
+       } do
+    runner = setup_runner!(account, subject, "scoped-draft", group: "db")
+
+    args = %{
+      "slug" => "scoped-review",
+      "title" => "Review",
+      "description" => nil,
+      "definition" => runbook_definition(target_refs(subject, %{"runner_id" => [runner.id]}))
+    }
+
+    original = call(conn, "create_runbook_draft", args)
+    assert original["ok"]
+    {:ok, successor_raw, _successor} = ApiKeys.rotate_api_key(key, subject)
+    successor_conn = authorize(build_conn(), successor_raw)
+    assert call(successor_conn, "create_runbook_draft", args) == original
+    {:ok, access} = Emisar.Accounts.RunnerAccess.restricted(["other"], [])
+    Fixtures.Memberships.force_runner_access(membership, access)
+
+    recovered =
+      call(successor_conn, "get_operation", %{"operation_id" => original["operation_id"]})
+
+    assert recovered["operation"]["definition_sha256"] == original["definition_sha256"]
+
+    {:ok, other_raw, _other_key} = ApiKeys.create_key(%{name: "Independent recovery"}, subject)
+
+    for hidden_conn <- [authorize(build_conn(), other_raw), foreign_key_conn()] do
+      hidden = call(hidden_conn, "get_operation", %{"operation_id" => original["operation_id"]})
+      assert hidden["error"]["code"] == "operation_not_found"
+    end
+  end
+
+  test "an operation without a saved snapshot does not borrow the current draft", %{
+    conn: conn,
+    account: account,
+    subject: subject
+  } do
+    runner = setup_runner!(account, subject, "old-operation")
+
+    args = %{
+      "slug" => "old-review",
+      "title" => "Review",
+      "description" => nil,
+      "definition" => runbook_definition(target_refs(subject, %{"runner_id" => [runner.id]}))
+    }
+
+    original = call(conn, "create_runbook_draft", args)
+    assert original["ok"]
+    Fixtures.MCPOperations.remove_draft_result(Repo.one!(Operation))
+
+    assert call(conn, "create_runbook_draft", args)["error"]["code"] == "operation_incomplete"
+    recovered = call(conn, "get_operation", %{"operation_id" => original["operation_id"]})
+    assert recovered["error"]["code"] == "operation_incomplete"
+  end
+
+  test "the saved live ref does not advance when a later draft is published", %{
+    conn: conn,
+    account: account,
+    subject: subject
+  } do
+    runner = setup_runner!(account, subject, "release-race")
+    live = publish_runbook!(subject, "release-review", %{"runner_id" => [runner.id]})
+
+    args = %{
+      "slug" => live.slug,
+      "title" => "Review",
+      "description" => nil,
+      "definition" => live.definition,
+      "definition_sha256" => Runbooks.definition_digest(live.definition)
+    }
+
+    original = call(conn, "update_runbook_draft", args)
+    assert original["live_ref"] == "release-review@1"
+    published = live |> Repo.reload!() |> Fixtures.Runbooks.publish_runbook()
+    assert published.live_version == 2
+    assert call(conn, "update_runbook_draft", args)["error"]["code"] == "operation_incomplete"
+    Fixtures.Runbooks.revise_draft(published, %{"draft_definition" => live.definition})
+
+    assert call(conn, "update_runbook_draft", args) == original
+    recovered = call(conn, "get_operation", %{"operation_id" => original["operation_id"]})
+    assert recovered["operation"]["live_ref"] == "release-review@1"
+  end
+
   test "get_operation returns a typed error after its draft is published", %{
     conn: conn,
     account: account,

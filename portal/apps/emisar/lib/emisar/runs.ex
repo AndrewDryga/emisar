@@ -2831,6 +2831,84 @@ defmodule Emisar.Runs do
     |> repo.all()
   end
 
+  @doc """
+  Internal — persist cancellation intent for dispatched attempts inside the
+  explicit execution-cancellation transaction. The caller holds the account
+  and execution locks. Halt paths deliberately cancel only undispatched work.
+  """
+  def cancel_active_runbook_attempts_in_multi(
+        %Multi{} = multi,
+        account_id,
+        execution_id,
+        reason,
+        %Subject{} = subject
+      ) do
+    runs_key = {:runbook_active_attempts, execution_id}
+
+    multi
+    |> Multi.run(runs_key, fn repo, _changes ->
+      runs =
+        ActionRun.Query.all()
+        |> ActionRun.Query.by_account_id(account_id)
+        |> ActionRun.Query.by_runbook_execution_id(execution_id)
+        |> ActionRun.Query.status_in([:sent, :running, :cancelling])
+        |> ActionRun.Query.ordered_by_id()
+        |> ActionRun.Query.lock_for_update()
+        |> repo.all()
+
+      {:ok, runs}
+    end)
+    |> Multi.merge(fn changes ->
+      Enum.reduce(Map.fetch!(changes, runs_key), Multi.new(), fn run, multi ->
+        cancel_key = {:runbook_attempt_cancel, execution_id, run.id}
+        audit_key = {:runbook_attempt_cancel_audit, execution_id, run.id}
+
+        multi
+        |> Multi.run(cancel_key, fn repo, _changes ->
+          request_loaded_run_cancellation(repo, run, reason)
+        end)
+        |> Multi.run(audit_key, fn repo, changes ->
+          case Map.fetch!(changes, cancel_key) do
+            {:cancelling, run} ->
+              repo.insert(Audit.Events.run_cancel_requested(subject, run, reason))
+
+            {:retry, _run} ->
+              {:ok, nil}
+          end
+        end)
+      end)
+    end)
+  end
+
+  @doc "Internal — deliver already-committed runbook cancellation intent."
+  def after_active_runbook_attempts_cancelled(changes, execution_id) do
+    Enum.each(changes, fn
+      {{:runbook_attempt_cancel, ^execution_id, _run_id}, outcome} ->
+        deliver_cancel_to_runner(outcome)
+        broadcast_cancellation(outcome)
+
+      _change ->
+        :ok
+    end)
+  end
+
+  @doc "Internal — retry durable runbook cancellation intent, even for terminal parents."
+  def retry_runbook_cancellations(limit \\ @sweep_batch) do
+    Emisar.Jobs.Sweep.each_row(
+      limit,
+      &list_cancelling_runbook_attempts/2,
+      &deliver_cancel_to_runner({:retry, &1})
+    )
+  end
+
+  defp list_cancelling_runbook_attempts(limit, cursor) do
+    ActionRun.Query.cancelling_runbook_attempts()
+    |> ActionRun.Query.after_id(cursor)
+    |> ActionRun.Query.ordered_by_id()
+    |> ActionRun.Query.limit_to(limit)
+    |> Repo.all()
+  end
+
   defp cancel_undispatched_runs(_repo, [], _reason), do: {:ok, []}
 
   defp cancel_undispatched_runs(repo, run_ids, reason) do
@@ -2928,28 +3006,29 @@ defmodule Emisar.Runs do
       |> ActionRun.Query.lock_for_update()
       |> repo.one()
 
-    case loaded_run do
-      nil ->
-        {:ok, :no_run}
+    request_loaded_run_cancellation(repo, loaded_run, reason)
+  end
 
-      %ActionRun{status: status} = run when status in [:pending, :pending_approval] ->
-        cancel_loaded_run(repo, run, reason)
+  defp request_loaded_run_cancellation(_repo, nil, _reason), do: {:ok, :no_run}
 
-      %ActionRun{status: status} = run when status in [:sent, :running] ->
-        with {:ok, cancelling} <-
-               repo.update(
-                 ActionRun.Changeset.transition(run, :cancelling, %{reason_text: reason})
-               ) do
-          {:ok, {:cancelling, cancelling}}
-        end
+  defp request_loaded_run_cancellation(repo, %ActionRun{status: status} = run, reason)
+       when status in [:pending, :pending_approval] do
+    cancel_loaded_run(repo, run, reason)
+  end
 
-      %ActionRun{status: :cancelling} = run ->
-        {:ok, {:retry, run}}
-
-      %ActionRun{} = run ->
-        {:ok, {:noop, run}}
+  defp request_loaded_run_cancellation(repo, %ActionRun{status: status} = run, reason)
+       when status in [:sent, :running] do
+    with {:ok, cancelling} <-
+           repo.update(ActionRun.Changeset.transition(run, :cancelling, %{reason_text: reason})) do
+      {:ok, {:cancelling, cancelling}}
     end
   end
+
+  defp request_loaded_run_cancellation(_repo, %ActionRun{status: :cancelling} = run, _reason),
+    do: {:ok, {:retry, run}}
+
+  defp request_loaded_run_cancellation(_repo, %ActionRun{} = run, _reason),
+    do: {:ok, {:noop, run}}
 
   defp cancel_run_locked(repo, run_id, reason) do
     loaded_run =

@@ -1,64 +1,41 @@
 ---
 name: workflow-work
-description: Execute an approved emisar plan step-by-step, using the touched project's AGENTS.md gate between steps and avoiding scope creep. Use when implementing a planned change, working through a checklist, or the user says "go"/"implement it"/"do the plan". Stops and reports on the first red gate.
+description: Complete an authorized Emisar implementation with focused feedback, canonical final gates, and scope discipline. Use for a plan, checklist, or request to implement or continue work.
 effort: high
 argument-hint: "[plan, or 'continue']"
 allowed-tools: Read, Grep, Glob, Bash, Write, Edit
 ---
 
-# Work the plan
+# Complete the implementation
 
-Implement one step at a time. The point is a green, reviewable change — not speed.
-If there's no plan yet and the change is non-trivial, run `/workflow-spec` first. Read root
-`AGENTS.md` and the `AGENTS.md` for every touched project before editing.
+Follow the root and touched project AGENTS.md. The user's request or accepted plan
+defines the complete deliverable. Use workflow-spec when design is needed, then
+continue under the existing authorization.
 
-## The loop (per step)
+Work in coherent steps. Give concise updates about findings and the next check.
+Use Elixir context/testing skills for Portal, go-engineer for runner/MCP, and
+security-engineer for trust boundaries. Verify unfamiliar APIs against source or
+documentation before using them.
 
-1. **State the step** in one line so progress is visible (a `TaskUpdate` if a task
-   list exists).
-2. **Build it in the standard shape.** Use the narrower skill when one exists:
-   `/elixir-new-context` or `/elixir-context-fn` for portal contexts, `/go-engineer` for
-   runner/mcp, `/security-engineer` for trust boundaries, `/design-frontend` for HEEx,
-   `/elixir-testing` for ExUnit coverage. If you're unsure a function, option, or flag
-   exists — yours or a dependency's — `/tooling-verify-api` before you write it; don't
-   guess (prime directive #7).
-3. **Gate before moving on.** Use the touched project's gate:
-   - **portal/** — after each `.ex`/`.exs` edit, run `mix credo <file>` from
-     `portal/`; step gate with compile/format plus focused tests; final gate below.
-   - **runner/** or **mcp/** — `./run gate runner` or `./run gate mcp`.
-   - **packs/** — `./run gate packs`; refresh the catalog and redis/cassandra
-     hash golden first when the change requires it.
-   - **infra/** — `./run gate infra`.
-   - **agent tooling/docs** — run the changed command plus
-     `./run check agent-setup`.
-4. **Red gate → stop.** Don't pile the next step on a broken one. Fix it, or report
-   the blocker with the error and your read on it. Never edit a test to make a real
-   failure pass.
+Run focused checks for the behavior being changed. For Portal, use focused Credo
+after coherent Elixir edits and relevant ExUnit tests. Keep required happy, denial,
+cross-account, and abuse cases. Fix a red check before dependent work; gather missing
+evidence and repair within scope instead of stopping at the first failure.
+Never weaken an assertion or gate to hide a defect.
 
-## Rules while working
+Adapt routine implementation details as evidence develops. Preserve the full agreed
+behavior and security contracts. For a material scope or authority change, complete
+independent work and ask for that decision. Nearby unrelated issues belong in a
+follow-up. Use targeted edits unless most of the file is changing.
 
-- **No scope creep.** Build the approved slice. A good idea that wasn't in the plan
-  → note it as "later", don't build it now. If the plan turns out wrong, stop and
-  re-plan with the user — don't silently redesign.
-- **Readable + no bloat (prime directive).** Match the surrounding style. Delete
-  dead code you pass. No speculative options/abstractions. Comments say *why*.
-- **Tests are part of the step, not a follow-up.** A portal write isn't done
-  without its denial + cross-account tests (§7); runner/mcp/packs changes need the
-  security/validation regression their project manual requires.
-- **Greenfield (IL-11).** Changing a not-yet-shipped migration → edit it in place.
-  Replacing code → delete the old, update callers, in this change.
+The lead reviews delegated changes and runs each touched project's canonical
+`./run gate <project>` on the final tree. Delegates provide focused check evidence;
+a handoff does not itself require duplicate full gates. Rerun or broaden verification
+after changes, failures, or unresolved concerns. Agent/tooling work also requires
+`./run check agent-setup` and `./run gate tooling`.
 
-## Finish (IL-20 — verify before claiming done)
-
-Run every touched project's `./run gate <project>` command exactly as written
-in its `AGENTS.md`. For Portal:
-
-```sh
-./run gate portal
-```
-
-For agent/tooling changes, run `./run gate tooling` and include
-`./run check agent-setup`.
-Then **show the output** and give a plain status: what's done, what's verified,
-what's left. If something is unverified, say so — don't say "should work". Offer
-`/review-ship` or `/review-board` before the PR when risk warrants it.
+Finish the lifecycle required by AGENTS.md: focused commit, task notes, and
+completion state. Report actual outcomes and validation, distinguishing source
+completion from push, deployment, and live proof. Preserve pending work and user
+decisions across compaction. Do not end with a promise to perform an authorized
+step that remains undone.

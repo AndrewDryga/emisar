@@ -76,9 +76,15 @@ defmodule EmisarWeb.AuditDetailLiveTest do
     # The bare Go HTTP client UA is no longer rendered as a device.
     refute html =~ "Runner (Go)"
 
-    # The payload is copyable (the JSON <pre> is the copy target).
+    # The payload copies the exact JSON, independent of display chrome.
     assert html =~ ~s(id="audit-payload-json")
-    assert html =~ ~s(data-copy="#audit-payload-json")
+    document = LazyHTML.from_document(html)
+    payload = document |> LazyHTML.query("#audit-payload-json") |> LazyHTML.text()
+
+    assert document
+           |> LazyHTML.query("button[data-copy-text]")
+           |> LazyHTML.attribute("data-copy-text")
+           |> Enum.member?(payload)
   end
 
   test "a current-shape run event targets the runner and links back to the run", %{conn: conn} do

@@ -3012,6 +3012,74 @@ defmodule Emisar.CatalogTest do
     end
   end
 
+  describe "delete_unadvertised_retired_pack_versions/1" do
+    setup do
+      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      # A shipped pack with a retirement watermark; "0.0.0" sits strictly below
+      # every one, so the row reads as retired whichever pack sorts first.
+      {pack_id, _watermark} = Catalog.PackBaseline.retired_below() |> Enum.sort() |> List.first()
+
+      retired =
+        Fixtures.Catalog.create_trusted_pack_version(
+          account_id: account.id,
+          pack_id: pack_id,
+          version: "0.0.0"
+        )
+
+      %{account: account, subject: subject, retired: retired}
+    end
+
+    test "removes the pin and its action rows, audited as the system", %{
+      account: account,
+      subject: subject,
+      retired: retired
+    } do
+      # An action row alone is not an advertisement — the runner's durable
+      # packs map is — so a host that no longer lists the pack does not shield
+      # the rows it once advertised.
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
+
+      action =
+        Fixtures.Catalog.create_action(
+          runner: runner,
+          action_id: "retired.check",
+          pack_id: retired.pack_id,
+          pack_version: retired.version
+        )
+
+      assert Catalog.delete_unadvertised_retired_pack_versions(account.id) === {:ok, 1}
+
+      refute Repo.reload(retired)
+      refute Repo.reload(action)
+
+      {:ok, events, _} = Audit.list_events(subject)
+      audit = Enum.find(events, &(&1.event_type == "pack_retirement_swept"))
+
+      assert audit, "expected a pack_retirement_swept audit row"
+      assert audit.actor_kind == "system"
+      assert audit.payload["count"] == 1
+      assert audit.payload["versions"] == ["#{retired.pack_id}@0.0.0"]
+    end
+
+    test "keeps a version any non-deleted runner still lists, and leaves no marker", %{
+      account: account,
+      subject: subject,
+      retired: retired
+    } do
+      # Offline is not gone: the host re-advertises what it has installed on
+      # reconnect, so an offline runner's durable packs map protects the row
+      # exactly as the console's "no runner is on it" counts it.
+      offline = Fixtures.Runners.create_runner(account_id: account.id, connected?: false)
+      Fixtures.Runners.advertise_packs(offline, %{retired.pack_id => %{"version" => "0.0.0"}})
+
+      assert Catalog.delete_unadvertised_retired_pack_versions(account.id) === {:ok, 0}
+
+      assert Repo.reload(retired)
+      {:ok, events, _} = Audit.list_events(subject)
+      refute Enum.any?(events, &(&1.event_type == "pack_retirement_swept"))
+    end
+  end
+
   describe "check_pack_trusted/1" do
     test "trusted state → :ok" do
       {_user, account, subject} = Fixtures.Subjects.owner_subject()

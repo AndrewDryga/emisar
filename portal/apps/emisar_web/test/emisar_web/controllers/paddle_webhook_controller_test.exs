@@ -291,7 +291,7 @@ defmodule EmisarWeb.PaddleWebhookControllerTest do
     test "a well-formed unmodeled event_type → 200 no-op, then dedups on redelivery", %{
       conn: conn
     } do
-      # `apply_webhook_event(_event), do: :ok` accepts any type we don't model.
+      # Unmodeled event types commit their receipt without a subscription write.
       # No subscription is written, the dedup row commits (the no-op IS a
       # success), so a redelivery of the same event_id returns the duplicate
       # marker without reprocessing.

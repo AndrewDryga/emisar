@@ -298,12 +298,15 @@ emisar-&lt;version&gt;-linux-amd64.tar.gz: OK
 <span class="text-zinc-500">$</span> gh attestation verify oci://ghcr.io/andrewdryga/emisar-runner:&lt;version&gt; --owner andrewdryga</pre>
         </div>
         <p class="mt-4 text-base leading-relaxed text-zinc-400">
-          The signed checksum check is the installer's required trust path. It requires GitHub CLI
-          and access to the two public trust-root hosts in <.link
+          The signed checksum check is the installer's trust path when GitHub CLI is installed. It
+          needs access to the two public trust-root hosts in <.link
             navigate={~p"/docs/network-requirements#installers"}
             class="text-brand-400 hover:text-brand-300"
-          >Network requirements</.link>, but no GitHub login. The checksum then proves the selected
-          archive's bytes. An authenticated GitHub CLI can add the per-archive online check.
+          >Network requirements</.link>, but no GitHub login. Without GitHub CLI, the installers
+          and <code class="font-mono text-zinc-300">emisar update</code>
+          ask before continuing, or warn and
+          continue when run unattended, and the checksum from the release mirror alone proves the
+          selected archive's bytes. An authenticated GitHub CLI can add the per-archive online check.
         </p>
       </div>
 

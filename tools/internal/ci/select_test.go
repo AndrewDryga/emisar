@@ -12,6 +12,14 @@ import (
 	"testing"
 )
 
+func TestCopyListenerSelectsBrowserChecks(t *testing.T) {
+	var selection Selection
+	selection.include("portal/apps/emisar_web/assets/js/copy.js")
+	if !selection.Portal || !selection.Tools {
+		t.Fatalf("clipboard change skipped its Portal or browser checks: %+v", selection)
+	}
+}
+
 func TestSelect(t *testing.T) {
 	root := newGitRepo(t)
 	migration := "portal/apps/emisar/priv/repo/migrations/20260101000000_old.exs"

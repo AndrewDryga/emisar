@@ -192,8 +192,28 @@ cases:
   - action: linux.cron_recent
     args: {count: 20}
     arrange:
-      - argv: [/bin/sh, -c, "journalctl -u cron -u crond -t CRON -t CROND --no-pager -n 20 | grep -q CMD"]
+      - argv: [/bin/sh, -c, "journalctl -t CRON -t CROND --no-pager -n 20 | grep -Fq 'CMD (/bin/true)'"]
         retry_for: 30s
         retry_every: 1s
     expect:
       stdout_contains: ["CMD (/bin/true)"]
+
+  # journald may ingest a short-lived cron child's record after its unit
+  # metadata is gone. A real tagged journal record outside cron.service must
+  # therefore still be returned; the boot case above proves real cron output.
+  - name: linux.cron_recent-includes-records-without-cron-unit
+    action: linux.cron_recent
+    args: {count: 20}
+    arrange:
+      - argv: [systemd-run, --unit=packtest-cron-log, --wait, /bin/sh, -c, "logger -t CRON packtest-cron-without-unit && logger -t CROND packtest-crond-without-unit && logger -t packtest-other packtest-unrelated-log"]
+      - argv: [/bin/sh, -c, "journalctl -t CRON -t CROND --no-pager -n 20 > /tmp/packtest-cron-tagged && grep -Fq packtest-cron-without-unit /tmp/packtest-cron-tagged && grep -Fq packtest-crond-without-unit /tmp/packtest-cron-tagged && journalctl -t packtest-other --no-pager -n 20 | grep -Fq packtest-unrelated-log"]
+        retry_for: 10s
+        retry_every: 200ms
+    expect:
+      stdout_contains: [packtest-cron-without-unit, packtest-crond-without-unit]
+      stdout_not_contains: [packtest-unrelated-log]
+    probes:
+      - name: the record does not belong to a cron unit
+        argv: [/bin/sh, -c, "journalctl -u cron -u crond -t CRON -t CROND --no-pager -n 20 > /tmp/packtest-cron-unit && ! grep -Fq packtest-cron-without-unit /tmp/packtest-cron-unit && ! grep -Fq packtest-crond-without-unit /tmp/packtest-cron-unit && echo outside-cron-unit"]
+        expect:
+          stdout_contains: [outside-cron-unit]

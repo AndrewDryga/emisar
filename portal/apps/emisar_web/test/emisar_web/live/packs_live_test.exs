@@ -951,6 +951,23 @@ defmodule EmisarWeb.PacksLiveTest do
       assert html =~ "Remove version"
       refute html =~ "Override retirement"
       refute has_element?(lv, "#override-#{pack_version.id}")
+
+      # The rows are a stream, so the button opens the page-level dialog the
+      # row menu's Delete uses — a per-row dialog id would find nothing.
+      refute has_element?(lv, "#pack-action")
+
+      lv
+      |> element(
+        ~s([phx-click="open_pack_action"][phx-value-action="delete_version"][phx-value-id="#{pack_version.id}"]),
+        "Remove version"
+      )
+      |> render_click()
+
+      assert has_element?(lv, "#pack-action")
+      html = confirm_dialog(lv, "pack-action", "Delete version")
+
+      assert html =~ "Deleted #{pack_id} v0.0.0."
+      refute Emisar.Repo.reload(pack_version)
     end
 
     test "a fleet too large to read whole offers neither Remove nor Override",
@@ -1950,7 +1967,7 @@ defmodule EmisarWeb.PacksLiveTest do
         |> element("#packs-cleanup form")
         |> render_change(%{"days" => ""})
 
-      assert html =~ "Automatic cleanup turned off — pack versions are kept."
+      assert html =~ "Automatic cleanup turned off — unseen pack versions are kept."
       assert has_element?(lv, ~s(#packs-cleanup option[value=""][selected]))
 
       assert {:ok, settings} = Emisar.Accounts.fetch_account_settings(account.id)

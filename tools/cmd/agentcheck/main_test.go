@@ -40,6 +40,95 @@ func TestStaleManualTextRejectsGlobalScreenshotDirectory(t *testing.T) {
 	}
 }
 
+func TestCheckInstructionBudget(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		root    string
+		project string
+		missing string
+		want    string
+	}{
+		{"exact limit", strings.Repeat("x", 1024), strings.Repeat("x", 31*1024-2), "", ""},
+		{"one byte over combined limit", strings.Repeat("x", 1024), strings.Repeat("x", 31*1024-1), "", "32769 bytes"},
+		{"root alone over limit", strings.Repeat("x", 32*1024+1), "", "", "AGENTS.md loads 32769 bytes"},
+		{"unicode is counted in bytes", strings.Repeat("界", 11000), "", "", "33000 bytes"},
+		{"siblings have independent budgets", strings.Repeat("x", 1024), strings.Repeat("x", 20*1024), "", ""},
+		{"missing required manual", "root", "project", "portal/AGENTS.md", "reading portal/AGENTS.md"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			check := testChecker(t)
+			for _, manual := range instructionManuals {
+				if manual == tc.missing {
+					continue
+				}
+				contents := tc.project
+				if manual == "AGENTS.md" {
+					contents = tc.root
+				}
+				writeTestFile(t, check.root, manual, contents)
+			}
+			check.checkInstructionBudget()
+			if tc.want == "" && len(check.failures) != 0 {
+				t.Fatalf("failures = %#v", check.failures)
+			}
+			if tc.want != "" && !hasFailure(check, tc.want) {
+				t.Fatalf("expected %q, failures = %#v", tc.want, check.failures)
+			}
+		})
+	}
+}
+
+func TestCheckRulesAreIndexedThroughLinkedIndex(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		manual string
+		index  string
+		want   string
+	}{
+		{"linked index", "[Rules](.agent/kb/rules/README.md)", "shared-example.md", ""},
+		{"orphan rule", "[Rules](.agent/kb/rules/README.md)", "", "shared-example.md is in no manual"},
+		{"unlinked index", "# Manual", "shared-example.md", "shared-example.md is in no manual"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			check := testChecker(t)
+			writeTestFile(t, check.root, "AGENTS.md", tc.manual)
+			writeTestFile(t, check.root, ".agent/kb/rules/README.md", tc.index)
+			writeTestFile(t, check.root, ".agent/kb/rules/shared-example.md", "# Rule")
+			check.checkRuleNames()
+			check.checkRulesAreIndexed()
+			if tc.want == "" && len(check.failures) != 0 {
+				t.Fatalf("failures = %#v", check.failures)
+			}
+			if tc.want != "" && !hasFailure(check, tc.want) {
+				t.Fatalf("expected %q, failures = %#v", tc.want, check.failures)
+			}
+		})
+	}
+}
+
+func TestCheckManualExamplesChecksRelocatedReference(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		fence  string
+		module string
+		want   bool
+	}{
+		{"real module collision", "elixir", "Emisar.Accounts.Account", true},
+		{"fictional example", "elixir", "Emisar.Widgets.Widget", false},
+		{"non-Elixir fence", "text", "Emisar.Accounts.Account", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			check := testChecker(t)
+			writeTestFile(t, check.root, "portal/apps/emisar/lib/emisar/accounts/account.ex", "defmodule Emisar.Accounts.Account do\nend\n")
+			writeTestFile(t, check.root, portalLayerReference, "```"+tc.fence+"\ndefmodule "+tc.module+" do\n  belongs_to :account, Emisar.Accounts.Account\nend\n```\n")
+			check.checkManualExamples()
+			if got := len(check.failures) != 0; got != tc.want {
+				t.Fatalf("collision = %v, expected %v: %#v", got, tc.want, check.failures)
+			}
+		})
+	}
+}
+
 func TestParseFrontmatter(t *testing.T) {
 	metadata, err := parseFrontmatter([]byte("---\nname: workflow-test\ndescription: Test workflow\neffort: high\nallowed-tools: Read, Bash\n---\nbody\n"))
 	if err != nil {

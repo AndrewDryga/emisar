@@ -285,11 +285,10 @@ defmodule Emisar.Accounts do
   @doc """
   Internal support write: close an account for good.
 
-  Cancels the Paddle subscription FIRST, then tombstones the account, both in
-  one transaction — so a Paddle failure leaves the account open rather than
-  producing a closed account that keeps being billed. `SyncSubscriptions` also
-  skips a deleted account's subscription, which is what stops the hourly
-  reconcile pulling the cancelled plan straight back.
+  Confirms billing cleanup first, then rechecks its durable state under the
+  account lock before tombstoning. Provider calls stay outside the final DB
+  transaction. New checkout or subscription work that won the lock first
+  blocks closure; work arriving afterward observes the closed account.
 
   Soft delete, not a hard one: every default scope is `not_deleted`, so the
   account disappears while its run history and audit rows stay intact.
@@ -309,7 +308,9 @@ defmodule Emisar.Accounts do
              subject,
              Authorizer.manage_own_account_permission()
            ),
-         :ok <- Subject.ensure_in_account(subject, account_id) do
+         :ok <- Subject.ensure_in_account(subject, account_id),
+         {:ok, account} <- fetch_account_for_close(account_id),
+         :ok <- cancel_account_subscription(account) do
       Multi.new()
       |> Multi.run(:account, fn repo, _changes ->
         Account.Query.not_deleted()
@@ -317,8 +318,11 @@ defmodule Emisar.Accounts do
         |> Account.Query.lock_for_update()
         |> repo.fetch(Account.Query)
       end)
-      |> Multi.run(:subscription, fn _repo, %{account: account} ->
-        cancel_account_subscription(account)
+      |> Multi.run(:subscription, fn repo, %{account: account} ->
+        case Billing.ensure_ready_to_close(account, repo: repo) do
+          :ok -> {:ok, :ready}
+          {:error, reason} -> {:error, {:paddle_cancel_failed, reason}}
+        end
       end)
       |> Multi.update(:closed, fn %{account: account} ->
         Account.Changeset.delete(account)
@@ -341,13 +345,19 @@ defmodule Emisar.Accounts do
 
   def close_account(_account_id, _reason, %Subject{}), do: {:error, :invalid_reason}
 
+  defp fetch_account_for_close(account_id) do
+    Account.Query.not_deleted()
+    |> Account.Query.by_id(account_id)
+    |> Repo.fetch(Account.Query)
+  end
+
   # Cancelling before the tombstone means a Paddle outage aborts the close
   # rather than leaving an account that is gone from the product and still
   # paying for it. A complimentary or never-subscribed account has nothing to
   # cancel and closes cleanly.
   defp cancel_account_subscription(%Account{} = account) do
     case Billing.cancel_subscription_for_close(account) do
-      :ok -> {:ok, :cancelled}
+      :ok -> :ok
       {:error, reason} -> {:error, {:paddle_cancel_failed, reason}}
     end
   end

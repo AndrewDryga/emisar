@@ -620,7 +620,8 @@ defmodule EmisarWeb.PacksLive do
   defp disagreeing_runners([first, second]), do: "Runners #{first} and #{second} disagree"
   defp disagreeing_runners(names), do: "Runners #{Enum.join(names, ", ")} disagree"
 
-  defp retention_set_flash(nil), do: "Automatic cleanup turned off — pack versions are kept."
+  defp retention_set_flash(nil),
+    do: "Automatic cleanup turned off — unseen pack versions are kept."
 
   defp retention_set_flash(days),
     do: "Automatic cleanup on — pack versions unseen for #{days_phrase(days)} are removed daily."
@@ -856,8 +857,8 @@ defmodule EmisarWeb.PacksLive do
           v{@version.version} until you update the runners still on it.
         </span>
         <span :if={@fact.retirement_remedy == :remove}>
-          A critical fix superseded this version, and no runner is on it anymore. Remove it to
-          clear it from the catalog — there's nothing to update.
+          A critical fix superseded this version, and no runner is on it anymore. There's
+          nothing to update — the daily cleanup removes it, or remove it now.
         </span>
         <span :if={@fact.retirement_remedy == :resolve_advertisers}>
           A critical fix superseded this version. This account has more runners than this page
@@ -923,14 +924,18 @@ defmodule EmisarWeb.PacksLive do
              destructive face (bordered rose, never a filled "go" green). With
              runners it's futile (a runner re-inserts it), so it's dropped for
              update/override; with a partial fleet read we can't promise it's
-             unused, so it's dropped there too. --%>
+             unused, so it's dropped there too. The rows are a stream, so there is
+             no per-row dialog: this opens the page-level one the row menu's Delete
+             uses. --%>
         <.button
           :if={@fact.retirement_remedy == :remove}
           variant={:secondary}
           tone={:rose}
           size={:sm}
           type="button"
-          phx-click={open_confirm("delete-version-#{@version.id}")}
+          phx-click="open_pack_action"
+          phx-value-action="delete_version"
+          phx-value-id={@version.id}
         >
           Remove version
         </.button>
@@ -1715,7 +1720,8 @@ defmodule EmisarWeb.PacksLive do
                 Remove pack versions no runner has advertised for the selected period. A daily
                 sweep deletes them — trust decisions included — and a runner advertising one
                 again re-inserts it as a fresh trust decision. Versions a connected runner
-                still advertises are never removed.
+                still advertises are never removed. A version a newer release has retired is
+                removed by the same sweep once no runner lists it, even when this is off.
               </p>
               <.gated_setting
                 id="pack-retention"

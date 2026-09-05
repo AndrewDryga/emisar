@@ -14,9 +14,11 @@ permitted command into a sandbox.
 
 The supported production target is Linux with systemd. macOS with launchd is
 available for development and evaluation. Install GitHub CLI with
-`gh attestation verify --bundle`, and allow HTTPS to
+`gh attestation verify --bundle` to check release signatures, and allow HTTPS to
 `tuf-repo-cdn.sigstore.dev:443` and `tuf-repo.github.com:443` so it can load the
-public trust roots. Release verification does not require a GitHub login.
+public trust roots; without GitHub CLI the installer and `emisar update` ask at a
+terminal, or warn and continue unattended, on the checksum alone. Release
+verification does not require a GitHub login.
 
 1. In the emisar console, choose **Connect a runner**. The generated command
    contains the control-plane URL and a fresh, single-use enrollment key.

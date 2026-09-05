@@ -85,6 +85,84 @@ defmodule Emisar.MCPOperationsTest do
     end
   end
 
+  describe "complete_draft_in_multi/3" do
+    test "commits a snapshot once and does not recompute it on replay", %{key_subject: subject} do
+      attrs = draft_operation_attrs()
+      snapshot = %{draft_definition_sha256: @fingerprint, draft_live_version: 2}
+      result = fn _changes -> snapshot end
+
+      assert {:ok, multi} = MCPOperations.reserve_in_multi(Multi.new(), attrs, subject)
+      assert {:ok, multi} = MCPOperations.complete_draft_in_multi(multi, result, subject)
+      assert {:ok, %{mcp_draft_result: operation}} = Repo.commit_multi(multi)
+      assert operation.draft_definition_sha256 == @fingerprint
+      assert operation.draft_live_version == 2
+      assert Repo.reload!(operation).draft_definition_sha256 == @fingerprint
+
+      never = fn _changes -> flunk("a replay must not derive a new snapshot") end
+      assert {:ok, multi} = MCPOperations.reserve_in_multi(Multi.new(), attrs, subject)
+      assert {:ok, multi} = MCPOperations.complete_draft_in_multi(multi, never, subject)
+      assert {:ok, %{mcp_draft_result: replay}} = Repo.commit_multi(multi)
+      assert replay.draft_definition_sha256 == @fingerprint
+      assert replay.draft_live_version == 2
+    end
+
+    test "an invalid result rolls back the reservation and its written resource", %{
+      key_subject: subject,
+      owner_subject: owner
+    } do
+      attrs = draft_operation_attrs()
+      runbook_attrs = Fixtures.Runbooks.runbook_attrs(%{slug: attrs.resource_ref})
+
+      changeset =
+        Emisar.Runbooks.Runbook.Changeset.create(
+          subject.account.id,
+          owner.actor.id,
+          runbook_attrs
+        )
+
+      assert {:ok, multi} = MCPOperations.reserve_in_multi(Multi.new(), attrs, subject)
+      multi = Multi.insert(multi, :runbook, changeset)
+      result = fn _changes -> %{draft_definition_sha256: "invalid"} end
+      assert {:ok, multi} = MCPOperations.complete_draft_in_multi(multi, result, subject)
+      assert {:error, changeset} = Repo.commit_multi(multi)
+      assert "has invalid format" in errors_on(changeset).draft_definition_sha256
+      refute Repo.exists?(MCPOperations.Operation)
+      refute Repo.exists?(Emisar.Runbooks.Runbook)
+    end
+
+    test "requires an API client and the reserve permission", %{
+      key_subject: subject,
+      owner_subject: owner
+    } do
+      result = fn _changes -> %{draft_definition_sha256: @fingerprint} end
+      denied = %{subject | permissions: MapSet.new()}
+
+      assert MCPOperations.complete_draft_in_multi(Multi.new(), result, owner) ==
+               {:error, :unauthorized}
+
+      assert MCPOperations.complete_draft_in_multi(Multi.new(), result, denied) ==
+               {:error, :unauthorized}
+    end
+
+    test "cannot complete a reservation owned by another lineage or account", %{
+      key_subject: subject,
+      owner_subject: owner
+    } do
+      {:ok, _raw, other_key} = ApiKeys.create_key(%{name: "Other lineage"}, owner)
+      other_subject = Auth.Subject.for_api_key(other_key, subject.account)
+      foreign_operation = Fixtures.MCPOperations.create_operation()
+      own_operation = reserve!(draft_operation_attrs(), subject)
+      result = fn _changes -> %{draft_definition_sha256: @fingerprint} end
+
+      for {operation, caller} <- [{own_operation, other_subject}, {foreign_operation, subject}] do
+        multi = Multi.put(Multi.new(), :mcp_operation, %{operation: operation, fresh?: true})
+        assert {:ok, multi} = MCPOperations.complete_draft_in_multi(multi, result, caller)
+        assert Repo.commit_multi(multi) == {:error, :not_found}
+        assert Repo.reload!(operation).draft_definition_sha256 == nil
+      end
+    end
+  end
+
   describe "operation_id/2" do
     test "is stable across retries and key rotation but isolated by request and lineage", %{
       account: account,
@@ -274,6 +352,16 @@ defmodule Emisar.MCPOperationsTest do
       fingerprint: @fingerprint,
       action_id: "linux.uptime",
       pack_ref: @pack_ref
+    }
+  end
+
+  defp draft_operation_attrs do
+    %{
+      operation_id: @operation_id,
+      tool: :create_runbook_draft,
+      fingerprint: @fingerprint,
+      resource_id: Ecto.UUID.generate(),
+      resource_ref: "draft"
     }
   end
 

@@ -974,6 +974,24 @@ defmodule Emisar.Audit.Events do
   end
 
   @doc """
+  The daily catalog bookkeeping removed retired pack versions no runner in the
+  account advertised anymore — dead weight a published fix already routed
+  around. System actor only; one event per sweep that removed anything.
+  """
+  def pack_retirement_swept(account_id, versions)
+      when is_binary(account_id) and is_list(versions) do
+    Audit.changeset(account_id, "pack_retirement_swept",
+      actor_kind: "system",
+      target_kind: "pack_catalog",
+      target_label: "Pack catalog",
+      payload: %{
+        count: length(versions),
+        versions: versions |> Enum.take(100) |> Enum.map(&"#{&1.pack_id}@#{&1.version}")
+      }
+    )
+  end
+
+  @doc """
   Runner retention removed runners cleanly offline past the account's window —
   the hourly sweep (system actor) or the runners page "Clean up now" (operator
   actor). One event per sweep that removed anything.

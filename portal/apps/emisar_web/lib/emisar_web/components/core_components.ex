@@ -3123,9 +3123,9 @@ defmodule EmisarWeb.CoreComponents do
   """
   attr :code, :string, required: true
   attr :label, :string, required: true
-  attr :id, :string, default: nil, doc: "pre id — required with `copy`"
+  attr :id, :string, default: nil, doc: "optional pre id"
   attr :annotation, :string, default: nil, doc: "right-side header meta"
-  attr :copy, :boolean, default: false, doc: "copy button targeting the pre by `id`"
+  attr :copy, :boolean, default: false, doc: "copy the literal code without display chrome"
   attr :copy_label, :string, default: "Copy"
   attr :prompt, :boolean, default: false, doc: ~S(render a select-none "$ " shell prompt)
   attr :max_h, :string, default: nil, doc: ~S(scroll clamp on the pre, e.g. "max-h-64")
@@ -3175,7 +3175,7 @@ defmodule EmisarWeb.CoreComponents do
           </span>
           <.copy_button
             :if={@copy}
-            target={"##{@id}"}
+            text={@code}
             class="shrink-0 bg-zinc-800 px-2 text-zinc-200 hover:bg-zinc-700"
           >
             {@copy_label}
@@ -3217,6 +3217,7 @@ defmodule EmisarWeb.CoreComponents do
   """
   attr :detected, :atom, required: true, values: [:linux, :windows, :macos]
   attr :tabs, :list, required: true, doc: "maps carrying `:os` and `:label`"
+  attr :on_change, :string, default: nil, doc: "optional LiveView event receiving the selected os"
 
   def os_switch(assigns) do
     ~H"""
@@ -3234,6 +3235,8 @@ defmodule EmisarWeb.CoreComponents do
         :for={tab <- @tabs}
         type="button"
         data-os-select={to_string(tab.os)}
+        phx-click={@on_change}
+        phx-value-os={@on_change && to_string(tab.os)}
         aria-pressed={to_string(tab.os == @detected)}
         class={[
           "whitespace-nowrap rounded-md px-2.5 py-1 text-xs font-medium",
@@ -3260,11 +3263,13 @@ defmodule EmisarWeb.CoreComponents do
   attr :id, :string, required: true, doc: "prefix — each variant's pre is `<id>-<os>`"
   attr :detected, :atom, required: true, values: [:linux, :windows, :macos]
   attr :class, :string, default: nil
+  attr :on_change, :string, default: nil
 
   slot :tab, required: true do
     attr :os, :atom, required: true
     attr :label, :string, required: true
     attr :code, :string, required: true
+    attr :unavailable, :string
   end
 
   def os_code_panel(assigns) do
@@ -3275,24 +3280,25 @@ defmodule EmisarWeb.CoreComponents do
       @class
     ]}>
       <header class="flex items-center justify-between gap-3 border-b border-zinc-800/70 px-4 py-2">
-        <.os_switch detected={@detected} tabs={@tab} />
-        <%!-- One Copy per variant, hidden with its pre: a single button would
-             have to resolve which pre is showing, and the copy listener takes a
-             fixed selector. --%>
+        <.os_switch detected={@detected} tabs={@tab} on_change={@on_change} />
+        <%!-- One Copy per variant, hidden with its pre, preserves that
+             command's literal bytes without inspecting presentation text. --%>
         <.copy_button
           :for={tab <- @tab}
+          :if={is_binary(tab.code)}
           data-os={to_string(tab.os)}
           class={[
             "shrink-0 bg-zinc-800 px-2 text-zinc-200 hover:bg-zinc-700",
             tab.os != @detected && "hidden"
           ]}
-          target={"##{@id}-#{tab.os}"}
+          text={tab.code}
         >
           Copy
         </.copy_button>
       </header>
       <pre
         :for={tab <- @tab}
+        :if={is_binary(tab.code)}
         id={"#{@id}-#{tab.os}"}
         data-os={to_string(tab.os)}
         tabindex="0"
@@ -3303,6 +3309,14 @@ defmodule EmisarWeb.CoreComponents do
           tab.os != @detected && "hidden"
         ]}
       >{tab.code}</pre>
+      <p
+        :for={tab <- @tab}
+        :if={is_nil(tab.code)}
+        data-os={to_string(tab.os)}
+        class={["p-4 text-sm text-zinc-400", tab.os != @detected && "hidden"]}
+      >
+        {tab.unavailable}
+      </p>
     </div>
     """
   end

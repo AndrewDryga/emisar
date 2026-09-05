@@ -318,23 +318,11 @@ defmodule Emisar.Auth do
     {:ok, %{count: count, socket_topics: Enum.map(digests, &live_socket_topic/1)}}
   end
 
-  # The one definition of "the session credentials minted through these
-  # identities" — three callers delete exactly this set, and they must not drift.
+  # Both transactional deletion and SCIM revocation use this exact session set.
   defp identity_session_tokens_query(user_id, identity_ids) do
     UserToken.Query.by_user_id(user_id)
     |> UserToken.Query.by_context("session")
     |> UserToken.Query.by_user_identity_ids(identity_ids)
-  end
-
-  @doc """
-  Internal — revoke and disconnect only the session credentials minted through
-  `identity_ids`. Provider disable/delete and MFA-trust downgrade use this exact
-  boundary; unrelated magic-link and other-provider sessions remain untouched.
-  """
-  def revoke_provider_sessions(%Users.User{} = user, identity_ids) when is_list(identity_ids) do
-    {:ok, %{socket_topics: topics}} = delete_identity_session_tokens(user, identity_ids, Repo)
-    disconnect_live_sessions(topics)
-    :ok
   end
 
   @doc """

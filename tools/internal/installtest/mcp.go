@@ -28,6 +28,7 @@ func MCP(root string, out io.Writer) error {
 		run  func(*harness) error
 	}{
 		{"help contract", mcpHelpContract},
+		{"portal origin display safety", mcpPortalOrigin},
 		{"install directory discovery", mcpInstallDirs},
 		{"install confirmation prompt", mcpConfirmPrompt},
 		{"interactive connection handoff", mcpInteractiveConnect},
@@ -35,11 +36,13 @@ func MCP(root string, out io.Writer) error {
 		{"signed checksum", mcpChecksumSignature},
 		{"download checksum mismatch", mcpDownloadChecksum},
 		{"latest release resolution", mcpLatestRelease},
+		{"per-destination upgrade selection", mcpUpgradeSelection},
 		{"installation and rollback", mcpInstallRollback},
 		{"temporary directory privilege boundary", mcpTempDirectoryPrivilegeBoundary},
 		{"staging integrity", mcpStagingIntegrity},
 		{"atomic multi-target activation", mcpActivationTransaction},
 		{"bridge runs as the invoking user", mcpCLISudoCredentialBoundary},
+		{"uninstall bridge privilege boundary", mcpUninstallSudoBoundary},
 		{"connect and disconnect", mcpConnectCommand},
 		{"uninstall", mcpUninstall},
 		{"uninstall with an older bridge", mcpUninstallWithAnOlderBridge},
@@ -66,9 +69,105 @@ func mcpHelpContract(h *harness) error {
 	return nil
 }
 
+func mcpPortalOrigin(h *harness) error {
+	for _, origin := range []string{
+		"https://control.example",
+		"http://[::1]:4000",
+		"https://[fd00::1234]:4443",
+		`https://control.example/";$(touch should-not-exist)`,
+	} {
+		// No installed bridge or client data: exercise the complete script's
+		// validation and display path without installing or connecting anywhere.
+		output, err := requireOutput(h.command(h.temp, map[string]string{
+			"EMISAR_URL": origin,
+			"HOME":       h.path("origin-home"),
+		}, "bash", h.repoPath("install-mcp.sh"), "--uninstall", "--yes", "--install-dir", h.path("origin-bin")))
+		if err != nil {
+			return fmt.Errorf("origin %q: %w", origin, err)
+		}
+		if !strings.Contains(string(output), origin+"/app/agents") {
+			return fmt.Errorf("origin did not reach literal display: %q", output)
+		}
+	}
+	if err := requireAbsent(h.path("should-not-exist")); err != nil {
+		return fmt.Errorf("origin was evaluated as shell code: %w", err)
+	}
+	for _, control := range []byte{'\n', '\r', '\t', '\x1b', '\x7f'} {
+		origin := "https://control.example/" + string(control) + "hostile"
+		result := h.command(h.temp, map[string]string{"EMISAR_URL": origin},
+			"bash", h.repoPath("install-mcp.sh"), "--uninstall", "--yes", "--install-dir", h.path("origin-bin"))
+		if err := expectFailure(result, "contain no control characters"); err != nil {
+			return fmt.Errorf("control byte %x: %w", control, err)
+		}
+		if bytes.Contains(result.output, []byte(origin)) {
+			return fmt.Errorf("error echoed an unsafe origin: %q", result.output)
+		}
+	}
+	return nil
+}
+
 func mcpChecksumSignature(h *harness) error {
-	return checksumSignatureContract(h, "install-mcp.sh", "SHA256SUMS-MCP", "mcp-v0.11.0",
+	if err := checksumSignatureContract(h, "install-mcp.sh", "SHA256SUMS-MCP", "mcp-v0.11.0",
+		"AndrewDryga/emisar/.github/workflows/mcp-release-trusted.yml"); err != nil {
+		return err
+	}
+	return missingVerifierConsent(h, "install-mcp.sh",
 		"AndrewDryga/emisar/.github/workflows/mcp-release-trusted.yml")
+}
+
+// missingVerifierConsent pins what an installer does without GitHub CLI: a
+// --yes run warns and continues on the checksum alone, a run with nobody to ask
+// refuses, and a present verifier or a fork's own checksum policy asks nothing.
+// `confirm` is the installer's real one, run without a controlling terminal.
+func missingVerifierConsent(h *harness, installer, workflow string) error {
+	path := h.repoPath(installer)
+	names := []string{"accept_missing_verifier", "confirm"}
+	preamble := `
+log() { printf '%s\n' "$*"; }
+warn() { printf '%s\n' "$*" >&2; }
+die() { printf '%s\n' "$*" >&2; exit 1; }
+command() {
+  if [ "${1:-}" = "-v" ] && [ "${2:-}" = "gh" ] && [ "$MISSING_GH" = "1" ]; then
+    return 1
+  fi
+  builtin command "$@"
+}
+ATTESTATION_WORKFLOW=` + workflow + `
+ASSUME_YES=0
+MISSING_GH=1
+verifier_missing=0
+`
+	invoke := "accept_missing_verifier\nprintf 'verifier_missing=%s\\n' \"$verifier_missing\"\n"
+	const warning = "GitHub CLI (gh) is not installed"
+
+	unattended := h.functions(path, names, preamble+"ASSUME_YES=1\n"+invoke, map[string]string{})
+	output, err := requireOutput(unattended)
+	if err != nil {
+		return fmt.Errorf("unattended install without the verifier: %w", err)
+	}
+	if !strings.Contains(string(output), warning) || !strings.Contains(string(output), "verifier_missing=1") {
+		return fmt.Errorf("unattended install without the verifier did not warn and continue:\n%s", output)
+	}
+
+	nobodyToAsk := h.functions(path, names, preamble+invoke, map[string]string{})
+	if err := expectFailure(nobodyToAsk, "pass --yes to continue on the checksum alone"); err != nil {
+		return fmt.Errorf("missing verifier with nobody to ask did not refuse: %w", err)
+	}
+
+	for name, body := range map[string]string{
+		"present verifier": "MISSING_GH=0\n",
+		"fork policy":      "ATTESTATION_WORKFLOW=\n",
+	} {
+		result := h.functions(path, names, preamble+body+invoke, map[string]string{})
+		output, err := requireOutput(result)
+		if err != nil {
+			return fmt.Errorf("%s: %w", name, err)
+		}
+		if strings.Contains(string(output), warning) || !strings.Contains(string(output), "verifier_missing=0") {
+			return fmt.Errorf("%s asked or warned about the verifier:\n%s", name, output)
+		}
+	}
+	return nil
 }
 
 func checksumSignatureContract(h *harness, installer, checksums, version, workflow string) error {
@@ -222,6 +321,89 @@ resolve_latest_version
 `, nil)
 	if err := expectFailure(invalid, "invalid MCP latest.json"); err != nil {
 		return fmt.Errorf("invalid mirror manifest did not fail closed: %w", err)
+	}
+	return nil
+}
+
+func mcpUpgradeSelection(h *harness) error {
+	for index, test := range []struct {
+		name     string
+		versions []string
+		pinned   bool
+		upgrade  []bool
+	}{
+		{"current then old", []string{"1.0.0", "0.9.0"}, false, []bool{false, true}},
+		{"old then current", []string{"0.9.0", "1.0.0"}, false, []bool{true, false}},
+		{"newer then old", []string{"1.1.0", "0.9.0"}, false, []bool{false, true}},
+		{"old then newer", []string{"0.9.0", "1.1.0"}, false, []bool{true, false}},
+		{"rolled back metadata", []string{"1.1.0", "1.2.0"}, false, []bool{false, false}},
+		{"explicit rollback", []string{"1.1.0", "1.2.0"}, true, []bool{true, true}},
+		{"unknown and fresh", []string{"unknown", ""}, false, []bool{true, true}},
+		{"custom destination", []string{"0.9.0"}, false, []bool{true}},
+	} {
+		var dirs []string
+		var originals []string
+		var selected []string
+		for destination, version := range test.versions {
+			dir := h.path(fmt.Sprintf("upgrade-%d-%d custom", index, destination))
+			if err := h.mkdir(dir); err != nil {
+				return err
+			}
+			original := ""
+			if version != "" {
+				if err := fakeExecutable(filepath.Join(dir, "emisar-mcp"), fmt.Sprintf("printf 'emisar-mcp %s\\n'\n", version)); err != nil {
+					return err
+				}
+				var err error
+				original, err = fileSHA(filepath.Join(dir, "emisar-mcp"))
+				if err != nil {
+					return err
+				}
+			}
+			dirs = append(dirs, dir)
+			originals = append(originals, original)
+			if test.upgrade[destination] {
+				selected = append(selected, dir)
+			}
+		}
+		pinned := "0"
+		if test.pinned {
+			pinned = "1"
+		}
+		result := h.functions(h.repoPath("install-mcp.sh"), []string{
+			"newer_version", "run_cli_as_invoking_user", "installed_bridge_version",
+			"select_upgrade_install_dirs", "activate_installations",
+		}, shellSHAFunction()+`
+log() { :; }
+select_upgrade_install_dirs
+[ "$install_dirs" = "$EXPECTED_DIRS" ] || { printf 'wrong destinations: %s\n' "$install_dirs" >&2; exit 1; }
+if [ -z "$install_dirs" ]; then exit 0; fi
+while IFS= read -r dir; do
+  printf 'updated\n' >"$dir/.emisar-mcp.new.$$"
+done <<<"$install_dirs"
+source_sha=$(sha_value "${install_dirs%%$'\n'*}/.emisar-mcp.new.$$")
+backup_paths=""
+activated_paths=""
+installed_paths=""
+transaction_active=0
+activate_installations
+`, map[string]string{
+			"install_dirs": strings.Join(dirs, "\n"), "EXPECTED_DIRS": strings.Join(selected, "\n"),
+			"VERSION": "mcp-v1.0.0", "version_pinned": pinned,
+		})
+		if _, err := requireOutput(result); err != nil {
+			return fmt.Errorf("%s: %w", test.name, err)
+		}
+		for destination, dir := range dirs {
+			path := filepath.Join(dir, "emisar-mcp")
+			if test.upgrade[destination] {
+				if err := exactFile(path, "updated\n"); err != nil {
+					return fmt.Errorf("%s: %w", test.name, err)
+				}
+			} else if hash, err := fileSHA(path); err != nil || hash != originals[destination] {
+				return fmt.Errorf("%s: unselected destination changed: %s (%v)", test.name, path, err)
+			}
+		}
 	}
 	return nil
 }
@@ -710,6 +892,7 @@ id() {
   [ "${1:-}" = -u ] || return 9
   printf '0\n'
 }
+
 sudo() {
   printf '%s\n' "$@" >"$SUDO_TRACE"
   [ "$1" = -H ] && [ "$2" = -u ] && [ "$3" = "$SUDO_USER" ] || return 9
@@ -735,6 +918,51 @@ printf '%s\n' "$secret" | run_cli_as_invoking_user auth status https://control.e
 		return err
 	}
 	return exactFile(trace, "HOME="+invokingHome+"\nARGS=auth status https://control.example\nKEY=emk-ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopq\n")
+}
+
+func mcpUninstallSudoBoundary(h *harness) error {
+	dir := h.path("uninstall-sudo-bin")
+	trace := h.path("uninstall-sudo-trace")
+	if err := h.mkdir(dir); err != nil {
+		return err
+	}
+	bin := filepath.Join(dir, "emisar-mcp")
+	if err := writeFile(bin, `#!/bin/sh
+printf '%s|%s\n' "$TEST_EFFECTIVE_USER" "$*" >>"$CLI_TRACE"
+`, 0o755); err != nil {
+		return err
+	}
+
+	result := h.functions(h.repoPath("install-mcp.sh"),
+		[]string{"installed_bridge", "run_cli_as_invoking_user", "do_uninstall"}, `
+id() { printf '0\n'; }
+sudo() {
+  [ "$1" = -H ] && [ "$2" = -u ] && [ "$3" = alice ] || return 9
+  shift 3
+  TEST_EFFECTIVE_USER=alice "$@"
+}
+log() { :; }
+warn() { printf '%s\n' "$*" >&2; }
+die() { printf '%s\n' "$*" >&2; exit 1; }
+confirm() { return 0; }
+OS=linux
+ARCH=amd64
+EMISAR_URL=https://control.example
+install_dirs="$INSTALL_DIR"
+do_uninstall
+`, map[string]string{
+			"INSTALL_DIR":         dir,
+			"CLI_TRACE":           trace,
+			"SUDO_USER":           "alice",
+			"TEST_EFFECTIVE_USER": "root",
+		})
+	if _, err := requireOutput(result); err != nil {
+		return err
+	}
+	if err := exactFile(trace, "alice|disconnect --help\nalice|disconnect --all --forget --yes\n"); err != nil {
+		return err
+	}
+	return requireAbsent(bin)
 }
 
 // buildBridge compiles the bridge from THIS checkout into dir. The connect and

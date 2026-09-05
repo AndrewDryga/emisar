@@ -50,24 +50,83 @@ defmodule Emisar.Billing.PaddleClient.Live do
     # an explicit override would need its own domain approval for zero gain.
     body = %{
       "customer_id" => attrs[:customer],
-      "items" => [%{"price_id" => attrs[:price_id], "quantity" => attrs[:quantity] || 1}]
+      "collection_mode" => "automatic",
+      "items" => [%{"price_id" => attrs[:price_id], "quantity" => attrs[:quantity] || 1}],
+      "custom_data" => attrs[:custom_data]
     }
 
-    with {:ok, %{"data" => %{"checkout" => %{"url" => url}} = data}} <-
-           post_json("/transactions", body) do
-      {:ok, Map.put(data, "url", url)}
+    case post_json("/transactions", body) do
+      {:ok, %{"data" => data}} when is_map(data) -> {:ok, data}
+      {:ok, _response} -> {:error, :invalid_checkout_response}
+      other -> other
     end
   end
 
   @impl true
-  def bind_checkout_transaction(id, binding) do
-    case patch_json("/transactions/#{id}", %{
-           custom_data: %{emisar_account_binding: binding}
-         }) do
+  def bind_checkout_transaction(id, custom_data) when is_map(custom_data) do
+    case patch_json("/transactions/#{id}", %{custom_data: custom_data}) do
       {:ok, %{"data" => transaction}} -> {:ok, transaction}
       other -> other
     end
   end
+
+  @impl true
+  def cancel_checkout_transaction(id) do
+    case patch_json("/transactions/#{id}", %{status: "canceled"}) do
+      {:ok, %{"data" => %{"id" => ^id, "status" => "canceled"} = transaction}} ->
+        {:ok, transaction}
+
+      {:ok, _response} ->
+        {:error, :cancellation_not_confirmed}
+
+      other ->
+        other
+    end
+  end
+
+  @impl true
+  def list_checkout_transactions(attrs) do
+    with :ok <- validate_checkout_cursor(attrs[:after]) do
+      query =
+        %{
+          "customer_id" => Keyword.fetch!(attrs, :customer),
+          "origin" => "api",
+          "collection_mode" => "automatic",
+          "per_page" => min(max(attrs[:limit] || 30, 1), 30)
+        }
+        |> maybe_put_query("after", attrs[:after])
+        |> maybe_put_query("created_at[GTE]", attrs[:created_after])
+        |> URI.encode_query()
+
+      case get("/transactions?#{query}") do
+        {:ok, %{"data" => transactions, "meta" => %{"pagination" => pagination}}}
+        when is_list(transactions) ->
+          with {:ok, cursor} <- next_subscription_cursor(pagination),
+               :ok <- validate_checkout_cursor(cursor),
+               true <- is_nil(cursor) or cursor != attrs[:after] do
+            {:ok, %{transactions: transactions, next_after: cursor}}
+          else
+            _ -> {:error, :malformed_checkout_page}
+          end
+
+        {:ok, _response} ->
+          {:error, :malformed_checkout_page}
+
+        other ->
+          other
+      end
+    end
+  end
+
+  defp validate_checkout_cursor(nil), do: :ok
+
+  defp validate_checkout_cursor(cursor) when is_binary(cursor) do
+    if Regex.match?(~r/\Atxn_[A-Za-z0-9_-]{1,100}\z/, cursor),
+      do: :ok,
+      else: {:error, :malformed_checkout_page}
+  end
+
+  defp validate_checkout_cursor(_cursor), do: {:error, :malformed_checkout_page}
 
   @impl true
   def create_billing_portal_session(attrs) do
@@ -145,16 +204,14 @@ defmodule Emisar.Billing.PaddleClient.Live do
 
   def parse_subscription_page(_response), do: {:error, :malformed_subscription_page}
 
-  # Paddle cancels a subscription by PATCHing scheduled_change, not by DELETE.
-  # `effective_from: "immediately"` because this is called when an account is
-  # being closed — a cancellation that waits for the period end keeps billing an
-  # account that is already gone.
+  # Account closure must stop billing immediately, not schedule a later cancel.
   @impl true
   def cancel_subscription(id) do
-    case patch_json("/subscriptions/#{id}", %{
-           scheduled_change: %{action: "cancel", effective_from: "immediately"}
+    case post_json("/subscriptions/#{id}/cancel", %{
+           effective_from: "immediately"
          }) do
-      {:ok, %{"data" => sub}} -> {:ok, sub}
+      {:ok, %{"data" => %{"id" => ^id, "status" => "canceled"} = sub}} -> {:ok, sub}
+      {:ok, _response} -> {:error, :cancellation_not_confirmed}
       other -> other
     end
   end
@@ -294,7 +351,13 @@ defmodule Emisar.Billing.PaddleClient.Live do
   defp next_subscription_cursor(_pagination), do: {:error, :malformed_subscription_page}
 
   defp request_json(request) do
-    case Finch.request(request, Emisar.Finch, receive_timeout: 8_000) do
+    config = Emisar.Config.get_env(:emisar, __MODULE__, [])
+    http_client = Keyword.get(config, :http_client, Finch)
+
+    case http_client.request(request, Emisar.Finch,
+           receive_timeout: 8_000,
+           request_timeout: 8_000
+         ) do
       {:ok, %Finch.Response{status: status, body: body}} when status in 200..299 ->
         Jason.decode(body)
 

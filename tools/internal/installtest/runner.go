@@ -83,7 +83,11 @@ func runnerHelpContract(h *harness) error {
 }
 
 func runnerChecksumSignature(h *harness) error {
-	return checksumSignatureContract(h, "install.sh", "SHA256SUMS", "runner-v0.23.1",
+	if err := checksumSignatureContract(h, "install.sh", "SHA256SUMS", "runner-v0.23.1",
+		"AndrewDryga/emisar/.github/workflows/runner-release-trusted.yml"); err != nil {
+		return err
+	}
+	return missingVerifierConsent(h, "install.sh",
 		"AndrewDryga/emisar/.github/workflows/runner-release-trusted.yml")
 }
 
@@ -514,6 +518,14 @@ func runnerInstallRollback(h *harness) error {
 	}
 	if !strings.Contains(string(handoff), "preserving installed packs") {
 		return fmt.Errorf("preverified handoff did not name pack preservation:\n%s", handoff)
+	}
+	// The re-run kept the config the first pass wrote; the closing summary must
+	// say so rather than repeat the fresh-install "Pre-configured" line.
+	if !strings.Contains(string(handoff), "Kept the existing configuration at "+filepath.Join(etc, "config.yaml")) {
+		return fmt.Errorf("preverified handoff did not report the kept configuration:\n%s", handoff)
+	}
+	if strings.Contains(string(handoff), "Pre-configured from install env") {
+		return fmt.Errorf("preverified handoff printed the fresh-install configuration summary:\n%s", handoff)
 	}
 	if err := exactFile(marker, "packs stay put\n"); err != nil {
 		return fmt.Errorf("preverified handoff changed packs: %w", err)
@@ -1174,6 +1186,8 @@ warn() { :; }
 die() { printf '%s\n' "$*" >&2; exit 1; }
 github_release_base() { printf 'https://example.invalid/%s\n' "$1"; }
 verify_checksum_attestation() { printf 'CHECKSUM SIGNATURE REACHED\n' >&2; }
+accept_missing_verifier() { :; }
+verifier_missing=0
 digest_of() {
   if command -v sha256sum >/dev/null 2>&1; then
     sha256sum "$1" | awk '{print $1}'
