@@ -460,17 +460,39 @@ installed_bridge() {
   return 1
 }
 
-# The version an already-installed bridge reports, or "" when none is installed
+# The version this installed bridge reports, or "" when none is installed
 # or it cannot answer. Runs as the invoking user like every other call into an
 # already-installed bridge, so a sudo install never executes a user-owned
 # binary as root. `first_bin` is what run_cli_as_invoking_user invokes.
 installed_bridge_version() {
-  local first_bin reported
-  first_bin=$(installed_bridge) || return 0
+  local first_bin="$1" reported
+  [ -x "${first_bin}" ] || return 0
   reported=$(run_cli_as_invoking_user --version 2>/dev/null) || return 0
   case "${reported}" in
     "emisar-mcp "[0-9]*.[0-9]*.[0-9]*) printf '%s\n' "${reported#emisar-mcp }" ;;
   esac
+}
+
+# Keep the no-downgrade decision local to each destination. An up-to-date user
+# copy must not hide an old system copy, or authorize replacing a newer one.
+select_upgrade_install_dirs() {
+  local dir current_version selected=""
+  while IFS= read -r dir; do
+    [ -n "${dir}" ] || continue
+    current_version=$(installed_bridge_version "${dir}/emisar-mcp")
+    if [ -n "${current_version}" ]; then
+      if [ "${version_pinned}" = "0" ] && ! newer_version "${VERSION#mcp-v}" "${current_version}"; then
+        log "${dir}/emisar-mcp ${current_version} is already current"
+        continue
+      fi
+      if newer_version "${current_version}" "${VERSION#mcp-v}"; then
+        warn "installing emisar-mcp ${VERSION#mcp-v} over the newer ${current_version} at ${dir} because --version asked for it"
+      fi
+    fi
+    selected="${selected}${selected:+
+}${dir}"
+  done <<<"${install_dirs}"
+  install_dirs="${selected}"
 }
 
 do_uninstall() {
@@ -533,11 +555,6 @@ if [ "${MODE}" = "uninstall" ]; then
   exit 0
 fi
 
-log "install target: ${OS}/${ARCH}"
-while IFS= read -r dir; do
-  log "  → ${dir}/emisar-mcp"
-done <<<"${install_dirs}"
-
 # ---------------------------------------------------------------------
 # Resolve version
 # ---------------------------------------------------------------------
@@ -569,16 +586,12 @@ fi
 # rolled-back metadata can offer a real, correctly attested OLDER one. Nobody
 # asked to go backwards here, so refuse — `emisar update` applies the same rule
 # for the runner. An explicit --version stays the deliberate rollback route.
-current_version=$(installed_bridge_version)
-if [ -n "${current_version}" ]; then
-  if [ "${version_pinned}" = "0" ] && ! newer_version "${VERSION#mcp-v}" "${current_version}"; then
-    log "emisar-mcp ${current_version} is already current"
-    exit 0
-  fi
-  if newer_version "${current_version}" "${VERSION#mcp-v}"; then
-    warn "installing emisar-mcp ${VERSION#mcp-v} over the newer ${current_version} because --version asked for it"
-  fi
-fi
+select_upgrade_install_dirs
+[ -n "${install_dirs}" ] || exit 0
+log "install target: ${OS}/${ARCH}"
+while IFS= read -r dir; do
+  log "  → ${dir}/emisar-mcp"
+done <<<"${install_dirs}"
 select_attestation_policy
 
 VERSION_NUM="${VERSION#mcp-v}"

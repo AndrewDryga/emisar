@@ -36,6 +36,7 @@ func MCP(root string, out io.Writer) error {
 		{"signed checksum", mcpChecksumSignature},
 		{"download checksum mismatch", mcpDownloadChecksum},
 		{"latest release resolution", mcpLatestRelease},
+		{"per-destination upgrade selection", mcpUpgradeSelection},
 		{"installation and rollback", mcpInstallRollback},
 		{"temporary directory privilege boundary", mcpTempDirectoryPrivilegeBoundary},
 		{"staging integrity", mcpStagingIntegrity},
@@ -261,6 +262,89 @@ resolve_latest_version
 `, nil)
 	if err := expectFailure(invalid, "invalid MCP latest.json"); err != nil {
 		return fmt.Errorf("invalid mirror manifest did not fail closed: %w", err)
+	}
+	return nil
+}
+
+func mcpUpgradeSelection(h *harness) error {
+	for index, test := range []struct {
+		name     string
+		versions []string
+		pinned   bool
+		upgrade  []bool
+	}{
+		{"current then old", []string{"1.0.0", "0.9.0"}, false, []bool{false, true}},
+		{"old then current", []string{"0.9.0", "1.0.0"}, false, []bool{true, false}},
+		{"newer then old", []string{"1.1.0", "0.9.0"}, false, []bool{false, true}},
+		{"old then newer", []string{"0.9.0", "1.1.0"}, false, []bool{true, false}},
+		{"rolled back metadata", []string{"1.1.0", "1.2.0"}, false, []bool{false, false}},
+		{"explicit rollback", []string{"1.1.0", "1.2.0"}, true, []bool{true, true}},
+		{"unknown and fresh", []string{"unknown", ""}, false, []bool{true, true}},
+		{"custom destination", []string{"0.9.0"}, false, []bool{true}},
+	} {
+		var dirs []string
+		var originals []string
+		var selected []string
+		for destination, version := range test.versions {
+			dir := h.path(fmt.Sprintf("upgrade-%d-%d custom", index, destination))
+			if err := h.mkdir(dir); err != nil {
+				return err
+			}
+			original := ""
+			if version != "" {
+				if err := fakeExecutable(filepath.Join(dir, "emisar-mcp"), fmt.Sprintf("printf 'emisar-mcp %s\\n'\n", version)); err != nil {
+					return err
+				}
+				var err error
+				original, err = fileSHA(filepath.Join(dir, "emisar-mcp"))
+				if err != nil {
+					return err
+				}
+			}
+			dirs = append(dirs, dir)
+			originals = append(originals, original)
+			if test.upgrade[destination] {
+				selected = append(selected, dir)
+			}
+		}
+		pinned := "0"
+		if test.pinned {
+			pinned = "1"
+		}
+		result := h.functions(h.repoPath("install-mcp.sh"), []string{
+			"newer_version", "run_cli_as_invoking_user", "installed_bridge_version",
+			"select_upgrade_install_dirs", "activate_installations",
+		}, shellSHAFunction()+`
+log() { :; }
+select_upgrade_install_dirs
+[ "$install_dirs" = "$EXPECTED_DIRS" ] || { printf 'wrong destinations: %s\n' "$install_dirs" >&2; exit 1; }
+if [ -z "$install_dirs" ]; then exit 0; fi
+while IFS= read -r dir; do
+  printf 'updated\n' >"$dir/.emisar-mcp.new.$$"
+done <<<"$install_dirs"
+source_sha=$(sha_value "${install_dirs%%$'\n'*}/.emisar-mcp.new.$$")
+backup_paths=""
+activated_paths=""
+installed_paths=""
+transaction_active=0
+activate_installations
+`, map[string]string{
+			"install_dirs": strings.Join(dirs, "\n"), "EXPECTED_DIRS": strings.Join(selected, "\n"),
+			"VERSION": "mcp-v1.0.0", "version_pinned": pinned,
+		})
+		if _, err := requireOutput(result); err != nil {
+			return fmt.Errorf("%s: %w", test.name, err)
+		}
+		for destination, dir := range dirs {
+			path := filepath.Join(dir, "emisar-mcp")
+			if test.upgrade[destination] {
+				if err := exactFile(path, "updated\n"); err != nil {
+					return fmt.Errorf("%s: %w", test.name, err)
+				}
+			} else if hash, err := fileSHA(path); err != nil || hash != originals[destination] {
+				return fmt.Errorf("%s: unselected destination changed: %s (%v)", test.name, path, err)
+			}
+		}
 	}
 	return nil
 }
