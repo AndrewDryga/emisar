@@ -1245,6 +1245,7 @@ drop_config_skeleton() {
       warn "current cloud.url. Edit it by hand, or move the file aside and re-run."
     fi
     needs_configuration=0
+    config_preexisted=1
   fi
   chmod 640 "${cfg}"
   chown "root:${SERVICE_GROUP}" "${cfg}" 2>/dev/null || chown root:root "${cfg}"
@@ -1274,6 +1275,9 @@ BINARY_ACTIVATED=0
 # uppercase name with an env-style default let an exported value decide whether
 # the installer started the service.
 needs_configuration=0
+# Set by drop_config_skeleton when ${ETC_DIR}/config.yaml already existed, so
+# print_next_steps reports the kept file instead of the fresh-install summary.
+config_preexisted=0
 SERVICE_WAS_RUNNING=0
 # Set when THIS run created the service unit — a fresh install, not an upgrade.
 # `restore_previous_service` only restarts a service that was already running,
@@ -1896,6 +1900,18 @@ Next steps:
   1. Edit ${ETC_DIR}/config.yaml — set runner.group, cloud.url, etc.
   2. Edit ${ETC_DIR}/runner.env — set EMISAR_ENROLLMENT_KEY=emkey-enroll-...
 EOF
+  elif [ "${config_preexisted}" = "1" ]; then
+    # An upgrade or a re-run over a configured host: nothing was pre-configured
+    # by this run, so say what it did with the operator's files.
+    cat <<EOF
+
+Kept the existing configuration at ${ETC_DIR}/config.yaml.
+EOF
+    if [ "${ENROLLMENT_KEY_UPDATE}" = "1" ]; then
+      cat <<EOF
+Updated the enrollment key in ${ETC_DIR}/runner.env.
+EOF
+    fi
   else
     cat <<EOF
 
