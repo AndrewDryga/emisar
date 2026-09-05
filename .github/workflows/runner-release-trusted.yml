@@ -197,6 +197,13 @@ jobs:
         # The attestation is signed by Sigstore using a workflow-bound
         # ambient OIDC identity (no long-lived keys). Verifiable later
         # with `gh attestation verify <tarball> --owner andrewdryga`.
+        #
+        # GitHub's attestation API rejects user-owned private repos
+        # (free-tier feature gate). Skip on private; the step kicks
+        # back in automatically once the repo is public. Without this
+        # guard, the release would never publish (build job fails →
+        # publish skips) on a private repo.
+        if: ${{ !github.event.repository.private }}
         uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4
         with:
           subject-path: |
@@ -332,7 +339,9 @@ jobs:
 
       - name: Attest image provenance
         # Same Sigstore workflow-bound provenance as the tarballs, pushed to
-        # the registry so `gh attestation verify oci://...` works.
+        # the registry so `gh attestation verify oci://...` works. Skipped on
+        # a private repo for the same free-tier gate as the build job.
+        if: ${{ !github.event.repository.private }}
         uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4
         with:
           subject-name: ${{ steps.name.outputs.image }}
@@ -409,6 +418,7 @@ jobs:
       # checksum file, trusted workflow, tag ref, and hosted-runner identity.
       - name: Reuse existing checksum attestation
         id: existing_checksum_provenance
+        if: ${{ !github.event.repository.private }}
         env:
           BUNDLE_URL: https://storage.googleapis.com/emisar-pack-registry/releases/runner/${{ github.ref_name }}/SHA256SUMS.sigstore.jsonl
         run: |
@@ -442,13 +452,13 @@ jobs:
 
       - name: Attest release checksum metadata
         id: checksum_provenance
-        if: ${{ steps.existing_checksum_provenance.outputs.found != 'true' }}
+        if: ${{ !github.event.repository.private && steps.existing_checksum_provenance.outputs.found != 'true' }}
         uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4
         with:
           subject-path: release/SHA256SUMS
 
       - name: Preserve offline checksum attestation
-        if: ${{ steps.existing_checksum_provenance.outputs.found != 'true' }}
+        if: ${{ !github.event.repository.private && steps.existing_checksum_provenance.outputs.found != 'true' }}
         env:
           BUNDLE_PATH: ${{ steps.checksum_provenance.outputs.bundle-path }}
         run: |
@@ -502,6 +512,7 @@ jobs:
           cmp "release/${archive}" "/tmp/${archive}"
 
       - name: Verify primary checksum attestation
+        if: ${{ !github.event.repository.private }}
         run: |
           set -euo pipefail
           base="https://emisar.dev/releases/runner/${RELEASE_TAG}"
@@ -523,8 +534,12 @@ jobs:
           # The digest is the immutable reference to the exact smoke-tested
           # multi-arch image; the notes are where operators pin from.
           append_body: true
+          # The provenance steps skip on a private repo (GitHub's attestation API
+          # rejects user-owned private repos), so this line has to skip with
+          # them. Left unconditional it promised an attestation reviewers were
+          # told to verify with `gh attestation verify` and that did not exist.
           body: |
-            **Container image** (linux/amd64, linux/arm64 — signed provenance + SBOM):
+            **Container image** (linux/amd64, linux/arm64${{ !github.event.repository.private && ' — signed provenance + SBOM' || '' }}):
 
             ```
             ${{ needs.image.outputs.image }}:${{ steps.ver.outputs.version }}@${{ needs.image.outputs.digest }}
@@ -533,5 +548,5 @@ jobs:
             release/emisar-*.tar.gz
             release/emisar-*.tar.gz.sha256
             release/SHA256SUMS
-            release/SHA256SUMS.sigstore.jsonl
+            ${{ !github.event.repository.private && 'release/SHA256SUMS.sigstore.jsonl' || '' }}
           fail_on_unmatched_files: true
