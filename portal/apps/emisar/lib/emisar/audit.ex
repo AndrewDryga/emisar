@@ -105,7 +105,7 @@ defmodule Emisar.Audit do
     # caller's `%Subject{}` (via `actor/1`) or passed explicitly on the
     # pre-auth path. A struct, so the field set is fixed and a missing
     # context defaults to all-nil (system / engine origin → no metadata).
-    {context, attrs} = Map.pop(normalize(attrs), :context, %RequestContext{})
+    {context, attrs} = Map.pop(Map.new(attrs), :context, %RequestContext{})
 
     merged =
       base
@@ -183,7 +183,7 @@ defmodule Emisar.Audit do
       target_label: user.email
     }
 
-    merged = Map.merge(defaults, normalize(attrs))
+    merged = Map.merge(defaults, Map.new(attrs))
 
     user
     |> Emisar.Accounts.list_active_memberships_for_user()
@@ -327,18 +327,6 @@ defmodule Emisar.Audit do
   defp actor_kind(%Runs.ActionRun{api_key_id: id}) when not is_nil(id), do: "api_key"
   defp actor_kind(%Runs.ActionRun{source: :runbook}), do: "runbook"
   defp actor_kind(_), do: "system"
-
-  # Internal helper — `log/3` accepts both atom and string keys to match
-  # the loose Phoenix-form / API-payload shape callers happen to have.
-  # `String.to_existing_atom/1` blows up loudly if a caller invents a
-  # field name; sibling contexts only ever pass keys the Event
-  # changeset already declares.
-  defp normalize(attrs) do
-    Enum.into(attrs, %{}, fn
-      {k, v} when is_atom(k) -> {k, v}
-      {k, v} when is_binary(k) -> {String.to_existing_atom(k), v}
-    end)
-  end
 
   # -- PubSub ----------------------------------------------------------
 
@@ -615,19 +603,20 @@ defmodule Emisar.Audit do
   end
 
   @doc """
-  Materializes the operator-facing audit CSV into a temp file the CALLER must
-  delete after sending. Requires view-audit permission and the plan gate, both
-  enforced by `list_events_for_export/2` on every read. Returns
-  `{:ok, %{path: path, count: count}}` or `{:error, reason}` —
-  see `Audit.CSVExport.export/2` for the reason vocabulary; an over-cap
-  refusal carries `%{count: count, max: max}`.
+  The operator-facing audit CSV as a stream of iodata chunks that records the
+  export receipt once it has run. Requires view-audit permission and the plan
+  gate, both enforced by `list_events_for_export/2` on every page read.
+  Returns `{:ok, stream}` or `{:error, reason}` — see `Audit.CSVExport.stream/2`
+  for the reason vocabulary; an over-cap refusal carries
+  `%{count: count, max: max}`.
   """
-  def prepare_csv_export(%Subject{} = subject, opts) when is_list(opts),
-    do: CSVExport.export(subject, opts)
+  def stream_csv_export(%Subject{} = subject, opts) when is_list(opts),
+    do: CSVExport.stream(subject, opts)
 
   @doc """
-  Internal — the export controller calls this after a successful page to
-  self-log the export ("watch the watchers"). Emits `audit.exported` ONLY when
+  Internal — the SIEM export controller calls this after a successful page, and
+  the CSV stream once it has run, to self-log the export ("watch the
+  watchers"). Emits `audit.exported` ONLY when
   the page returned rows (`count > 0`): a caught-up forward-cursor poll (0 rows)
   writes nothing, so a SIEM polling every ~30s doesn't spam the log with its own
   most-frequent event. Account-scoped + attributed via the subject (the api_key

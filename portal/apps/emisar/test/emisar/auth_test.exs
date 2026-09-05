@@ -375,17 +375,6 @@ defmodule Emisar.AuthTest do
 
       assert Auth.fetch_user_and_token_by_session_token(token) == {:error, :not_found}
     end
-
-    test "a session holding a removed auth_method fails closed, never raising on load", %{
-      user: user
-    } do
-      token = Fixtures.Auth.create_session_token!(user, :magic_link, nil)
-      # Loading a session whose enum value was removed must resolve to
-      # :not_found, not raise ArgumentError and 500 the request.
-      Fixtures.Auth.write_removed_auth_method!()
-
-      assert Auth.fetch_user_and_token_by_session_token(token) == {:error, :not_found}
-    end
   end
 
   describe "session_mfa_verified?/2" do
@@ -530,17 +519,6 @@ defmodule Emisar.AuthTest do
       token = Fixtures.Auth.create_session_token!(user, :magic_link, nil)
       # 61 days is past the 60-day session window.
       age_tokens(user.id, 61 * 24 * 60)
-
-      assert Auth.complete_session_sign_out(token) == :ok
-
-      refute Repo.one(UserToken.Query.by_token_digest(Crypto.hash(token)))
-      assert events_of_type("user.signed_out") == []
-    end
-
-    test "a session holding a removed auth_method is swept without an audit" do
-      {user, _account, _subject} = Fixtures.Subjects.owner_subject()
-      token = Fixtures.Auth.create_session_token!(user, :magic_link, nil)
-      Fixtures.Auth.write_removed_auth_method!()
 
       assert Auth.complete_session_sign_out(token) == :ok
 

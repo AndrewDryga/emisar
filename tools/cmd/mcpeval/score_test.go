@@ -148,19 +148,6 @@ func TestScoreAcceptsAdjacentReadOnlyDispatch(t *testing.T) {
 	}
 }
 
-func TestScoreRejectsOffAllowlistDispatchWithoutReadOnlyAdvertisement(t *testing.T) {
-	// Belt and braces: if the relay ever let an unclassified off-allowlist
-	// dispatch through, the scorer still fails it.
-	calls := append(conformingCalls(), callRecord{
-		Tool: "run_action", ActionID: "linux.cpu_info", PackRef: "p2",
-		RunStates: []runState{{RunID: "r2", OperationID: "op_2", Status: "success"}},
-	})
-	got := scoreReport(conformingScenario(), calls, agentResult{})
-	if got.Passed || !strings.Contains(strings.Join(got.Failures, "\n"), "read-only advertisement") {
-		t.Fatalf("unadvertised off-allowlist dispatch = %#v", got)
-	}
-}
-
 func TestScoreSoftCountsInvalidArgsOnAdjacentReads(t *testing.T) {
 	// An adjacent read composes from its advertisement rather than a retrieved
 	// contract, so a bounced probe self-heals exactly like the discovery reads

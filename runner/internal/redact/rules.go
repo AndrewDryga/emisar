@@ -57,8 +57,7 @@ func LiteralSet(name string, literals []string, replacement string) Rule {
 		unique = append(unique, literal)
 	}
 
-	// Longest first, once, so the single pass can take the first match at a
-	// position and know it is the longest ("abc" inside "abc123").
+	// Longest first so the scan can take the first match at each position.
 	sort.SliceStable(unique, func(i, j int) bool { return len(unique[i]) > len(unique[j]) })
 
 	return Rule{Name: name, Replacement: replacement, literals: unique}
@@ -298,7 +297,7 @@ func CompileAll(rules ...[]actionspec.RedactionRule) ([]Rule, error) {
 
 // apply runs a single Rule on s, returning the new string and the number of
 // substitutions performed.
-func (r Rule) apply(s string) (string, int) {
+func (r Rule) apply(s string, truncated bool) (string, int) {
 	if r.regex != nil {
 		count := len(r.regex.FindAllStringIndex(s, -1))
 		if count == 0 {
@@ -307,6 +306,9 @@ func (r Rule) apply(s string) (string, int) {
 		return r.regex.ReplaceAllString(s, r.Replacement), count
 	}
 	if r.literal != "" {
+		if truncated {
+			return maskAll(s, []string{r.literal}, r.Replacement, true)
+		}
 		count := strings.Count(s, r.literal)
 		if count == 0 {
 			return s, 0
@@ -314,45 +316,53 @@ func (r Rule) apply(s string) (string, int) {
 		return strings.ReplaceAll(s, r.literal, r.Replacement), count
 	}
 	if len(r.literals) > 0 {
-		return maskAll(s, r.literals, r.Replacement)
+		return maskAll(s, r.literals, r.Replacement, truncated)
 	}
 	return s, 0
 }
 
-// maskAll replaces every occurrence of any literal in ONE left-to-right pass,
-// taking the longest literal that matches at each position, and reports how many
-// replacements it made. `literals` must already be ordered longest-first.
+// maskAll masks the union of literal matches in ONE left-to-right pass. It also
+// masks possible literal prefixes at EOF when the reader discarded bytes.
 //
 // One pass is the whole point: replacing literal-by-literal re-reads text an
 // earlier literal already masked, which is how a literal that is a substring of
 // the replacement corrupts the marker instead of hiding behind it.
-func maskAll(s string, literals []string, replacement string) (string, int) {
-	if !containsAny(s, literals) {
+func maskAll(s string, literals []string, replacement string, truncated bool) (string, int) {
+	if !truncated && !containsAny(s, literals) {
 		return s, 0
 	}
 
 	var out strings.Builder
 	out.Grow(len(s))
 	count := 0
+	end := 0
 
-	for i := 0; i < len(s); {
+	for i := 0; i < len(s); i++ {
 		matched := 0
 		for _, literal := range literals {
 			if len(literal) <= len(s)-i && s[i:i+len(literal)] == literal {
 				matched = len(literal)
 				break
 			}
+			if truncated && len(literal) > len(s)-i && strings.HasPrefix(literal, s[i:]) {
+				matched = len(s) - i
+				break
+			}
 		}
-		if matched == 0 {
+		if matched > 0 {
+			if i >= end {
+				out.WriteString(replacement)
+				count++
+			}
+			end = max(end, i+matched)
+		}
+		// Keep scanning inside a match: a second literal can overlap it and
+		// extend farther, including past the reader's truncation boundary.
+		if i >= end {
 			// Advancing a byte cannot split a rune into a false match: a valid
 			// UTF-8 literal never begins with a continuation byte.
 			out.WriteByte(s[i])
-			i++
-			continue
 		}
-		out.WriteString(replacement)
-		i += matched
-		count++
 	}
 
 	return out.String(), count

@@ -395,64 +395,23 @@ defmodule Emisar.Catalog.PublishedRegistry.CatalogTest do
       assert message =~ "malformed setup"
     end
 
-    test "rejects setup host access for an unknown action" do
-      host_access = [
-        %{
-          "actions" => ["redis.missing"],
-          "requirement" => "Read the Redis socket.",
-          "recipes" => [
-            %{
-              "name" => "systemd",
-              "commands" => ["sudo systemctl edit redis"],
-              "verify" => ["sudo -u emisar test -r /run/redis.sock"],
-              "impact" => "Lets the runner reach Redis."
-            }
-          ]
-        }
-      ]
-
-      catalog = put_in_pack(valid_catalog(), 0, "setup", %{"host_access" => host_access})
-      assert {:error, message} = Catalog.parse(catalog)
-      assert message =~ "unknown action"
-    end
-
-    test "rejects duplicate or control-bearing setup host access" do
+    test "rejects a malformed setup host access recipe" do
       group = %{
-        "actions" => ["redis.info", "redis.info"],
+        "actions" => ["redis.info"],
         "requirement" => "Read the Redis socket.",
         "recipes" => [
           %{
             "name" => "systemd",
-            "commands" => ["sudo systemctl edit redis"],
+            "commands" => [],
             "verify" => ["sudo -u emisar test -r /run/redis.sock"],
             "impact" => "Lets the runner reach Redis."
           }
         ]
       }
 
-      duplicate = put_in_pack(valid_catalog(), 0, "setup", %{"host_access" => [group]})
-      assert {:error, duplicate_message} = Catalog.parse(duplicate)
-      assert duplicate_message =~ "repeats setup host_access action"
-
-      unsafe =
-        group
-        |> Map.put("actions", ["redis.info"])
-        |> put_in(["recipes", Access.at(0), "commands"], ["echo ok\nfalse"])
-
-      control = put_in_pack(valid_catalog(), 0, "setup", %{"host_access" => [unsafe]})
-      assert {:error, control_message} = Catalog.parse(control)
-      assert control_message =~ "malformed setup host_access commands"
-
-      invisible =
-        group
-        |> Map.put("actions", ["redis.info"])
-        |> put_in(["recipes", Access.at(0), "impact"], "safe\u200Bhidden")
-
-      format_control =
-        put_in_pack(valid_catalog(), 0, "setup", %{"host_access" => [invisible]})
-
-      assert {:error, format_message} = Catalog.parse(format_control)
-      assert format_message =~ "malformed setup host_access recipe prose"
+      catalog = put_in_pack(valid_catalog(), 0, "setup", %{"host_access" => [group]})
+      assert {:error, message} = Catalog.parse(catalog)
+      assert message =~ "malformed setup host_access recipe"
     end
 
     test "rejects an invalid action risk tier" do

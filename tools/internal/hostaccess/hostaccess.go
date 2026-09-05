@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -182,7 +183,7 @@ func matchProofs(pack, path string, groups []accessGroup, proofs []proof) ([]Row
 		if value.Fixture != "debian" && value.Fixture != "fedora" {
 			return nil, fmt.Errorf("%s fixture %q must be debian or fedora", location, value.Fixture)
 		}
-		if !contains(groups[value.Access].Actions, value.Action) {
+		if !slices.Contains(groups[value.Access].Actions, value.Action) {
 			return nil, fmt.Errorf("%s action %q is not mapped by setup.host_access[%d]", location, value.Action, value.Access)
 		}
 		if strings.TrimSpace(value.Probe) == "" {
@@ -226,15 +227,6 @@ func matchProofs(pack, path string, groups []accessGroup, proofs []proof) ([]Row
 
 func selector(access, recipe int) string {
 	return strconv.Itoa(access) + "." + strconv.Itoa(recipe)
-}
-
-func contains(values []string, target string) bool {
-	for _, value := range values {
-		if value == target {
-			return true
-		}
-	}
-	return false
 }
 
 // Run executes the selected rows. The exact manifest commands are never copied

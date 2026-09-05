@@ -202,7 +202,7 @@ defmodule EmisarWeb.RunnersLive do
     |> assign(:filter_params, params)
     |> assign(:filters, Runners.runner_filters())
     |> assign(:groups, [])
-    |> assign(:fleet, Runners.fleet_status([]))
+    |> assign(:fleet, Runners.empty_fleet_status())
     |> assign(:loaded?, false)
     |> assign(:load_error?, false)
   end
@@ -253,7 +253,7 @@ defmodule EmisarWeb.RunnersLive do
         # minted root-capable install key on every visit. A filtered miss is an
         # empty RESULT, never an empty fleet.
         show_wizard? =
-          runner_access.full_access? and runners == [] and meta.count == 0 and connected?(socket) and
+          runner_access.full_access? and runners == [] and meta.count == 0 and
             not LiveTable.has_active_filters?(params, filters)
 
         socket
@@ -317,7 +317,7 @@ defmodule EmisarWeb.RunnersLive do
   defp load_fleet_status(subject) do
     case Runners.fetch_fleet_status(subject) do
       {:ok, fleet} -> fleet
-      _ -> Runners.fleet_status([])
+      _ -> Runners.empty_fleet_status()
     end
   end
 

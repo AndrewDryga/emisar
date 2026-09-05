@@ -5,8 +5,7 @@ defmodule Emisar.Runs.Jobs.DispatchTimeout do
   use Emisar.Jobs.Job,
     otp_app: :emisar,
     every: :timer.minutes(1),
-    initial_delay: :timer.seconds(10),
-    executor: Emisar.Jobs.Executors.GloballyUnique
+    initial_delay: :timer.seconds(10)
 
   alias Emisar.{Runners, Runs}
   require Logger
@@ -50,8 +49,6 @@ defmodule Emisar.Runs.Jobs.DispatchTimeout do
         Enum.each(runs, &Runs.mark_errored(&1, removed_runner_reason(&1)))
     end
   end
-
-  defp resolve_stale_pending_dispatches([]), do: :ok
 
   defp resolve_stale_pending_dispatches(runs, runner, oldest) do
     case Runners.current_connection_generation(runner.account_id, runner.id) do

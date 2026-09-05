@@ -99,12 +99,8 @@ defmodule Emisar.Users.User.Changeset do
   def mfa_consumed(%User{} = user, at),
     do: change(user, mfa_last_used_at: at)
 
-  @doc "Persist the remaining recovery codes after one is consumed."
+  @doc "Replace the stored recovery digests — one consumed, or a whole new set."
   def mfa_recovery_codes(%User{} = user, codes) when is_list(codes),
-    do: change(user, mfa_recovery_codes: codes)
-
-  @doc "Atomically replace recovery digests after a recovery-code proof."
-  def regenerated_mfa_recovery_codes(%User{} = user, codes) when is_list(codes),
     do: change(user, mfa_recovery_codes: codes)
 
   @doc "Atomically replace recovery digests and consume the proving TOTP bucket."

@@ -133,7 +133,7 @@ defmodule EmisarWeb.PoliciesLive do
       # this, so reverting a change back clears the Save button (not a one-way flag).
       baseline_rules: stored_baseline(policy, input),
       policy: policy,
-      rules_errors: stored_approval_errors(input.approval_valid?, :account)
+      rules_errors: []
     })
   end
 
@@ -147,7 +147,7 @@ defmodule EmisarWeb.PoliciesLive do
       show_override_errors?: false,
       baseline_rules: stored_baseline(policy, input),
       policy: policy,
-      rules_errors: stored_approval_errors(input.approval_valid?, :scoped)
+      rules_errors: []
     })
   end
 
@@ -230,21 +230,15 @@ defmodule EmisarWeb.PoliciesLive do
   def handle_event("remove_override", _params, socket), do: {:noreply, socket}
 
   def handle_event("add_ruleset", _params, socket) do
-    cond do
-      not Policies.subject_can_manage_scoped_policies?(socket.assigns.current_subject) ->
-        {:noreply, socket}
-
-      not socket.assigns.account.approval_valid? ->
-        {:noreply,
-         put_flash(socket, :error, "The default policy must be repaired before adding a ruleset.")}
-
-      true ->
-        {:noreply,
-         assign(
-           socket,
-           :rulesets,
-           socket.assigns.rulesets ++ [new_ruleset(socket.assigns.account)]
-         )}
+    if Policies.subject_can_manage_scoped_policies?(socket.assigns.current_subject) do
+      {:noreply,
+       assign(
+         socket,
+         :rulesets,
+         socket.assigns.rulesets ++ [new_ruleset(socket.assigns.account)]
+       )}
+    else
+      {:noreply, socket}
     end
   end
 
@@ -420,7 +414,6 @@ defmodule EmisarWeb.PoliciesLive do
   # The Save button is emerald only while the editor differs from what's saved: a
   # new (unsaved) ruleset is always dirty; otherwise the live rules are compared
   # to the baseline snapshot, so a revert flips it back to outlined.
-  defp editor_dirty?(%{approval_valid?: false}), do: true
   defp editor_dirty?(%{scope_type: :account} = editor), do: rules_changed?(editor)
   defp editor_dirty?(%{policy: nil}), do: true
   defp editor_dirty?(editor), do: rules_changed?(editor)
@@ -443,10 +436,7 @@ defmodule EmisarWeb.PoliciesLive do
 
       input = Policies.update_editor_input(policy_input(editor), changes)
 
-      rules_errors =
-        stored_approval_errors(input.approval_valid?, editor.scope_type) ++ rules_errors(input)
-
-      editor |> Map.merge(input) |> Map.put(:rules_errors, rules_errors)
+      editor |> Map.merge(input) |> Map.put(:rules_errors, rules_errors(input))
     end)
   end
 
@@ -455,7 +445,7 @@ defmodule EmisarWeb.PoliciesLive do
   # The domain-shaped slice of an editor (or of a rail's assigns) — `Policies`
   # owns the rules; every other key on the map is this page's own state.
   defp policy_input(state),
-    do: Map.take(state, [:defaults, :overrides, :approval, :approval_valid?])
+    do: Map.take(state, [:defaults, :overrides, :approval])
 
   defp parse_target(target) do
     case String.split(target, ":", parts: 2) do
@@ -464,17 +454,6 @@ defmodule EmisarWeb.PoliciesLive do
       _ -> {nil, ""}
     end
   end
-
-  defp stored_approval_errors(true, _scope_type), do: []
-
-  defp stored_approval_errors(false, :account) do
-    [
-      "Stored approval settings are invalid. An owner or admin with full runner and pack access must repair the default policy."
-    ]
-  end
-
-  defp stored_approval_errors(false, _scope_type),
-    do: ["Stored approval settings are invalid. Review this gate and save the policy."]
 
   # The choice cards post an explicit boolean string. Treat a missing value as
   # false, and floor the number input at 1 to mirror the changeset.
@@ -516,26 +495,14 @@ defmodule EmisarWeb.PoliciesLive do
   end
 
   # A "require approval" gate that adds no SECOND party — one approval needed and
-  # the requester may supply it. `to_string` guards both the int state and a raw
-  # form string mid-edit.
+  # the requester may supply it.
   defp single_reviewer_gate?(approval),
-    do: approval["allow_self_approval"] && to_string(approval["min_approvals"]) == "1"
-
-  defp approval_count(n) when is_integer(n) and n >= 1, do: n
-
-  defp approval_count(n) when is_binary(n) do
-    case Integer.parse(n) do
-      {i, _} when i >= 1 -> i
-      _ -> 1
-    end
-  end
-
-  defp approval_count(_), do: 1
+    do: approval["allow_self_approval"] && approval["min_approvals"] == 1
 
   # Singular when exactly one approval is required — "1 distinct operators" is wrong,
   # and "distinct" is meaningless for a single approver (nothing to be distinct from).
   defp approval_operators_noun(min_approvals) do
-    if approval_count(min_approvals) == 1, do: "operator", else: "distinct operators"
+    if min_approvals == 1, do: "operator", else: "distinct operators"
   end
 
   defp weakening_sentence([one]), do: one
@@ -660,22 +627,13 @@ defmodule EmisarWeb.PoliciesLive do
       Enum.any?(runners, &(not MapSet.member?(taken, {:runner, &1.id})))
   end
 
-  defp can_add_ruleset?(account, runners, groups, rulesets, targets_error?),
-    do: account.approval_valid? and not targets_error? and addable_any?(runners, groups, rulesets)
+  defp can_add_ruleset?(runners, groups, rulesets, targets_error?),
+    do: not targets_error? and addable_any?(runners, groups, rulesets)
 
-  defp add_ruleset_disabled_reason(
-         %{approval_valid?: false},
-         _runners,
-         _groups,
-         _rulesets,
-         _err
-       ),
-       do: "The default policy must be repaired before adding a ruleset"
-
-  defp add_ruleset_disabled_reason(_account, _runners, _groups, _rulesets, true),
+  defp add_ruleset_disabled_reason(_runners, _groups, _rulesets, true),
     do: "Couldn't load the runners and groups a ruleset targets. Refresh the page to try again"
 
-  defp add_ruleset_disabled_reason(_account, runners, groups, rulesets, false) do
+  defp add_ruleset_disabled_reason(runners, groups, rulesets, false) do
     if not addable_any?(runners, groups, rulesets),
       do: "Every runner and group already has a ruleset (or none exist yet)"
   end
@@ -848,17 +806,14 @@ defmodule EmisarWeb.PoliciesLive do
               <.add_row
                 label="Add ruleset"
                 phx-click="add_ruleset"
-                disabled={
-                  not can_add_ruleset?(@account, @runners, @groups, @rulesets, @targets_error?)
-                }
+                disabled={not can_add_ruleset?(@runners, @groups, @rulesets, @targets_error?)}
               />
               <p
-                :if={not can_add_ruleset?(@account, @runners, @groups, @rulesets, @targets_error?)}
+                :if={not can_add_ruleset?(@runners, @groups, @rulesets, @targets_error?)}
                 id="add-ruleset-disabled-reason"
                 class="mt-2 text-xs text-zinc-400"
               >
                 {add_ruleset_disabled_reason(
-                  @account,
                   @runners,
                   @groups,
                   @rulesets,

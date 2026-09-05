@@ -100,9 +100,6 @@ defmodule Emisar.Runs.ActionRun.Query do
     )
   end
 
-  def by_runbook_id(queryable, runbook_id),
-    do: where(queryable, [runs: r], r.runbook_id == ^runbook_id)
-
   def status_in(queryable, statuses),
     do: where(queryable, [runs: r], r.status in ^statuses)
 
@@ -120,8 +117,8 @@ defmodule Emisar.Runs.ActionRun.Query do
 
   @doc """
   Id-only projection of one account's runs that reached a terminal state before
-  `ts`. Built for use as a subquery by `RunEvent.Query.by_run_finished_before/3`
-  (the action-run-event retention sweep) — `finished_at` is the authoritative
+  `ts`. Built for use as a subquery by `prunable_ids/3` (the action-run
+  retention sweep) — `finished_at` is the authoritative
   "this run is old" signal, so still-running / never-finished runs (null
   `finished_at`) are excluded.
 

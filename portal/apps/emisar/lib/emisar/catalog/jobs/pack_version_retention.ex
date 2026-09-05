@@ -8,8 +8,7 @@ defmodule Emisar.Catalog.Jobs.PackVersionRetention do
   use Emisar.Jobs.Job,
     otp_app: :emisar,
     every: :timer.hours(24),
-    initial_delay: :timer.minutes(10),
-    executor: Emisar.Jobs.Executors.GloballyUnique
+    initial_delay: :timer.minutes(10)
 
   alias Emisar.{Accounts, Catalog, Jobs}
   require Logger

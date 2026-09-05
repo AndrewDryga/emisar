@@ -367,7 +367,7 @@ func currentExecutable() (string, error) {
 }
 
 func maybeElevateRunner() (bool, error) {
-	if os.Geteuid() == 0 || runtime.GOOS == "windows" {
+	if os.Geteuid() == 0 {
 		return true, nil
 	}
 	sudo, err := exec.LookPath("sudo")

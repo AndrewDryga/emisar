@@ -81,8 +81,7 @@ defmodule Emisar.MCPOperations do
            Auth.Authorizer.ensure_has_permissions(
              subject,
              Authorizer.reserve_operations_permission()
-           ),
-         :ok <- Subject.ensure_in_account(subject, key.account_id) do
+           ) do
       id = Repo.generate_id()
 
       operation_attrs =

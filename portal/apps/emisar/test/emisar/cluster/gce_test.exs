@@ -97,8 +97,7 @@ defmodule Emisar.Cluster.GCETest do
         list_nodes: {__MODULE__, :list_nodes, []},
         config: [
           discover_fn: fn _ -> {:error, :unreachable} end,
-          polling_interval: 60_000,
-          backoff_interval: 2
+          polling_interval: 60_000
         ]
       }
 

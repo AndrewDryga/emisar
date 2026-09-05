@@ -279,16 +279,6 @@ defmodule Emisar.Catalog.PackBaselineTest do
     end
   end
 
-  describe "all_manifests/0" do
-    test "carries a manifest per exact version+hash the catalog retains actions for" do
-      assert PackBaseline.all_manifests() |> Map.keys() |> Enum.sort() == [
-               {"nginx", "1.0.0", @current_hash},
-               {"redis", "0.2.0", @previous_hash},
-               {"redis", "0.3.0", @current_hash}
-             ]
-    end
-  end
-
   describe "retired_below/0" do
     test "carries only the packs the catalog watermarks" do
       assert PackBaseline.retired_below() == %{"redis" => "0.2.0"}

@@ -18,7 +18,6 @@ defmodule Emisar.Cluster.GCE do
     * `:cluster_value`    - label value to filter on (default `"emisar"`).
     * `:basename`         - node basename (default `"emisar"`).
     * `:polling_interval` - ms between polls (default 30_000).
-    * `:backoff_interval` - max ms backoff between discovery retries (default 1_000).
     * `:discover_fn`      - 1-arity `fn(config) -> {:ok, [instance]} | {:error, term}`;
                             a test seam defaulting to `Emisar.Cluster.GCE.Client.discover/1`.
   """
@@ -124,17 +123,13 @@ defmodule Emisar.Cluster.GCE do
     %State{state | meta: known}
   end
 
-  defp fetch_nodes(%State{config: config} = state, remaining_retries \\ 3) do
+  # No retry loop: a failed poll reschedules, so the next attempt is the retry —
+  # and sleeping here would block the strategy process instead.
+  defp fetch_nodes(%State{} = state) do
     case list_cluster_nodes(state) do
       {:ok, nodes} ->
         Logger.debug("cluster: discovered #{length(nodes)} node(s): #{inspect(nodes)}")
         {:ok, nodes}
-
-      {:error, reason} when remaining_retries > 0 ->
-        Logger.warning("cluster discovery failed; retrying: #{inspect(reason)}")
-        backoff = :rand.uniform(Keyword.get(config, :backoff_interval, 1_000)) + 1
-        Process.sleep(backoff)
-        fetch_nodes(state, remaining_retries - 1)
 
       {:error, reason} ->
         Logger.error("cluster discovery failed: #{inspect(reason)}")

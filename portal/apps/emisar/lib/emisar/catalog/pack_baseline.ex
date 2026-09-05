@@ -194,10 +194,6 @@ defmodule Emisar.Catalog.PackBaseline do
   @spec all() :: %{{String.t(), String.t()} => String.t()}
   def all, do: Cache.trust_snapshot().baseline
 
-  @doc "All complete exact-hash manifests, mostly for tests + debugging."
-  @spec all_manifests() :: %{{String.t(), String.t(), String.t()} => map()}
-  def all_manifests, do: Cache.trust_snapshot().manifests
-
   @doc "Whole retirement-watermark map (`pack_id => version`), mostly for tests."
   @spec retired_below() :: %{String.t() => String.t()}
   def retired_below, do: Cache.trust_snapshot().retired_below

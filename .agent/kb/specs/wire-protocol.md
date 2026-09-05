@@ -290,14 +290,16 @@ counting, so every downstream representation uses one byte stream.
 
 **`seq` counts messages, not output lines.** A chunk holds as many consecutive
 same-stream lines as accumulated while an earlier message was still waiting to
-go out, bounded at 64 KiB — so a runner whose socket keeps up still sends each
+go out, bounded at 32 KiB — so a runner whose socket keeps up still sends each
 line on its own, and one that falls behind ships the backlog together instead
 of making the portal write a row per line. The portal stores one event per
 message and compares its count against the result's `progress_chunks`, which
 counts the same messages; a merged chunk therefore never reads as omitted
 output. Because the portal deduplicates a replayed message on
 `(request_id, seq)`, the bytes behind a seq never change once that message has
-been handed to the transport.
+been handed to the transport. Larger text and JSON emissions are split at UTF-8
+boundaries before queueing. The byte bound leaves room for worst-case JSON
+escaping within the portal's 256 KiB encoded event-payload limit.
 
 `action_result` is emitted after the process exits or the runner refuses the
 call, and is replayed across reconnects until the portal returns `ack_result`.
@@ -445,5 +447,6 @@ The runner treats every close as reconnectable and backs off; a terminal verdict
 reaches it only through a `shutdown` frame's `reason`. So a 1013 repeats until
 one of the two hosts sharing the identity is given its own data directory.
 
-The code and fixed vectors in `mcp/internal/attest` and
-`runner/internal/attest` are byte-identical and checked from repository CI.
+The code in `mcp/internal/attest` and `runner/internal/attest` is
+byte-identical and checked from repository CI, so both derive the same fixed
+vectors.

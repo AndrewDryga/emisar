@@ -41,7 +41,6 @@ defmodule Emisar.Admin do
     Emisar.Runbooks.Jobs.ExecutionRetention,
     Emisar.Runs.Jobs.ActionRunRetention,
     Emisar.Runs.Jobs.DispatchTimeout,
-    Emisar.Runs.Jobs.EventRetention,
     Emisar.Runs.Jobs.FleetObservability,
     Emisar.SSO.Jobs.AuthorizationReconcile
   ]

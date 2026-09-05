@@ -255,3 +255,31 @@ func TestPortalHelpDoesNotRequireGcloud(t *testing.T) {
 		t.Fatalf("unexpected help: %s", out.String())
 	}
 }
+
+func TestCloneOwnershipCoversTheLabelFailureWindow(t *testing.T) {
+	const id = "edrill-2609050300-abcdef"
+	labelled := map[string]string{"purpose": "recovery-drill", "drill_id": id, "expires": "20260905150000"}
+	foreign := map[string]string{"purpose": "recovery-drill", "drill_id": "edrill-2609010000-zzzzzz"}
+	cases := []struct {
+		name         string
+		labels       map[string]string
+		accountOwned bool
+		owned        bool
+		preLabel     bool
+	}{
+		{"labels prove ownership on their own", labelled, false, true, false},
+		{"a clone whose labeling failed is owned through its service account", map[string]string{}, true, true, true},
+		{"nil labels behave like an unlabelled clone", nil, true, true, true},
+		{"an unlabelled clone with no service account is refused", map[string]string{}, false, false, false},
+		{"another drill's labels are refused even with a matching service account", foreign, true, false, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			owned, preLabel := cloneOwnership(tc.labels, id, tc.accountOwned)
+			if owned != tc.owned || preLabel != tc.preLabel {
+				t.Fatalf("cloneOwnership(%v, %q, %v) = (%v, %v), want (%v, %v)",
+					tc.labels, id, tc.accountOwned, owned, preLabel, tc.owned, tc.preLabel)
+			}
+		})
+	}
+}

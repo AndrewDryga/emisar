@@ -63,9 +63,6 @@ func writeRuntimeStatus(path string, status RuntimeStatus) error {
 	if path == "" {
 		return nil
 	}
-	if err := validateRuntimeStatus(status); err != nil {
-		return err
-	}
 
 	body, err := json.Marshal(status)
 	if err != nil {
@@ -152,9 +149,9 @@ func ReadRuntimeStatus(path string) (*RuntimeStatus, error) {
 
 	// This file is written by the daemon and read back by whatever `emisar
 	// status` binary the host has, so the two versions routinely differ. Unknown
-	// fields are therefore ignored and schema_version is the real gate: rejecting
-	// an added field turned a newer daemon into "PID N is running, but this file
-	// is unusable" for an older status command, which reads as a broken daemon.
+	// fields are therefore ignored: rejecting an added field turned a newer
+	// daemon into "PID N is running, but this file is unusable" for an older
+	// status command, which reads as a broken daemon.
 	decoder := json.NewDecoder(bytes.NewReader(body))
 	var status RuntimeStatus
 	if err := decoder.Decode(&status); err != nil {
@@ -166,50 +163,7 @@ func ReadRuntimeStatus(path string) (*RuntimeStatus, error) {
 		}
 		return nil, fmt.Errorf("cloud: decode runtime status trailer: %w", err)
 	}
-	if err := validateRuntimeStatus(status); err != nil {
-		return nil, err
-	}
 	return &status, nil
-}
-
-func validateRuntimeStatus(status RuntimeStatus) error {
-	if status.SchemaVersion != 1 {
-		return fmt.Errorf("cloud: unsupported runtime status schema_version %d", status.SchemaVersion)
-	}
-	switch status.State {
-	case RuntimeStateConnecting, RuntimeStateConnected, RuntimeStateReconnecting, RuntimeStateStopped:
-	default:
-		return fmt.Errorf("cloud: invalid runtime status state %q", status.State)
-	}
-	if status.PID <= 0 || status.StartedAt.IsZero() || status.UpdatedAt.IsZero() {
-		return errors.New("cloud: runtime status is missing process identity or timestamps")
-	}
-	if status.UpdatedAt.Before(status.StartedAt) {
-		return errors.New("cloud: runtime status updated_at precedes started_at")
-	}
-	if status.HeartbeatEverySeconds <= 0 {
-		return errors.New("cloud: runtime status has an invalid heartbeat interval")
-	}
-	if status.State == RuntimeStateConnected && status.ConnectedAt == nil {
-		return errors.New("cloud: connected runtime status is missing connected_at")
-	}
-	if status.ConnectedAt != nil && status.ConnectedAt.Before(status.StartedAt) {
-		return errors.New("cloud: runtime status connected_at precedes started_at")
-	}
-	if status.LastHeartbeatSentAt != nil && status.ConnectedAt == nil {
-		return errors.New("cloud: runtime status heartbeat has no connection")
-	}
-	if status.LastHeartbeatSentAt != nil && status.LastHeartbeatSentAt.Before(*status.ConnectedAt) {
-		return errors.New("cloud: runtime status heartbeat precedes connection")
-	}
-	if status.Packs < 0 || status.Actions < 0 || status.UnavailableActions < 0 ||
-		status.DegradedPacks < 0 || status.InflightRuns < 0 || status.ConnectionAttempts < 0 {
-		return errors.New("cloud: runtime status contains a negative counter")
-	}
-	if status.UnavailableActions > status.Actions {
-		return errors.New("cloud: runtime status has more unavailable actions than actions")
-	}
-	return nil
 }
 
 // runtimeStatusWriter coalesces frequent observations behind one non-blocking

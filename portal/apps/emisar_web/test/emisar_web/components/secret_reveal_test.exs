@@ -45,7 +45,7 @@ defmodule EmisarWeb.Components.SecretRevealTest do
 
       html =
         rendered_to_string(~H"""
-        <CoreComponents.secret_reveal title="Save your recovery codes" codes={@codes}>
+        <CoreComponents.secret_reveal id="recovery-codes" title="Save your recovery codes" codes={@codes}>
           Each code works once.
         </CoreComponents.secret_reveal>
         """)

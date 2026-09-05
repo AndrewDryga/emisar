@@ -44,6 +44,17 @@ defmodule EmisarWeb.AgentsLiveTest do
       assert Repo.all(ApiKey) == []
     end
 
+    test "select_client ignores a client the picker never rendered", %{conn: conn} do
+      {conn, _user, account} = register_and_log_in(conn)
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/agents/connect")
+
+      html = render_click(lv, "select_client", %{"client" => "bogus"})
+
+      assert html =~ "Connect an agent"
+      refute has_element?(lv, "#custom-key-create-step")
+      assert Repo.all(ApiKey) == []
+    end
+
     test "the dedicated /connect page carries the flow; the index gets the title CTA once agents exist",
          %{conn: conn} do
       {conn, user, account} = register_and_log_in(conn)

@@ -38,12 +38,18 @@ type Hit struct {
 // Apply redacts s and reports per-rule hit counts. Rules are applied in
 // declaration order; later rules see earlier rules' output.
 func (e *Engine) Apply(s string) (string, []Hit) {
+	return e.ApplyOutput(s, false)
+}
+
+// ApplyOutput also masks a trailing prefix of a known literal when the raw
+// output was truncated. The missing suffix may contain the rest of a secret.
+func (e *Engine) ApplyOutput(s string, truncated bool) (string, []Hit) {
 	if e == nil || len(e.rules) == 0 {
 		return s, nil
 	}
 	var hits []Hit
 	for _, r := range e.rules {
-		out, n := r.apply(s)
+		out, n := r.apply(s, truncated)
 		if n > 0 {
 			t := "regex"
 			if r.regex == nil {

@@ -464,12 +464,9 @@ defmodule Emisar.ActionContract do
   defp coerce_form(%{"name" => name, "type" => "number"}, value) when is_binary(value) do
     number = %JSONNumber{raw: String.trim(value)}
 
-    with {:ok, decoded} <- Jason.decode(number.raw, floats: :decimals),
-         true <- is_integer(decoded) or is_struct(decoded, Decimal),
-         {:ok, _decimal} <- exact_number(number) do
-      {:ok, number}
-    else
-      _ -> issue(name, "type", "expected number")
+    case exact_number(number) do
+      {:ok, _number} -> {:ok, number}
+      :error -> issue(name, "type", "expected number")
     end
   end
 
@@ -494,42 +491,51 @@ defmodule Emisar.ActionContract do
     |> Enum.reject(&(&1 == ""))
   end
 
+  @int64_min -9_223_372_036_854_775_808
+  @int64_max 9_223_372_036_854_775_807
+  # JSON's own number grammar; an integer is that grammar without a fraction or
+  # exponent, so `1e3` and `1000.0` are numbers, never integers — the runner
+  # draws the same line, and both sides keep the token verbatim.
+  @integer_literal ~r/\A-?(?:0|[1-9][0-9]*)\z/
+  @number_literal ~r/\A-?(?:0|[1-9][0-9]*)(?:\.[0-9]+)?(?:[eE][+-]?[0-9]+)?\z/
+
   defp exact_integer(%JSONNumber{raw: raw}), do: exact_integer(raw)
 
-  defp exact_integer(value)
-       when is_integer(value) and value in -9_223_372_036_854_775_808..9_223_372_036_854_775_807,
-       do: {:ok, value}
+  defp exact_integer(value) when is_integer(value) and value in @int64_min..@int64_max,
+    do: {:ok, value}
 
   defp exact_integer(value) when is_binary(value) do
-    with {decimal, ""} <- Decimal.parse(value),
-         true <- Decimal.equal?(decimal, Decimal.round(decimal, 0)),
-         true <- Decimal.compare(decimal, Decimal.new(-9_223_372_036_854_775_808)) != :lt,
-         true <- Decimal.compare(decimal, Decimal.new(9_223_372_036_854_775_807)) != :gt do
-      {:ok, Decimal.to_integer(decimal)}
-    else
-      _ -> :error
-    end
+    if Regex.match?(@integer_literal, value),
+      do: exact_integer(String.to_integer(value)),
+      else: :error
   end
 
   defp exact_integer(_value), do: :error
 
+  # Integers stay exact; anything with a fraction or exponent compares as a
+  # float64, the way the runner validates it.
   defp exact_number(%JSONNumber{raw: raw}) do
-    with {_float, ""} <- Float.parse(raw),
-         {decimal, ""} <- Decimal.parse(raw) do
-      {:ok, decimal}
-    else
+    cond do
+      Regex.match?(@integer_literal, raw) -> {:ok, String.to_integer(raw)}
+      Regex.match?(@number_literal, raw) -> parse_float(raw)
+      true -> :error
+    end
+  end
+
+  defp exact_number(value) when is_integer(value) or is_float(value), do: {:ok, value}
+  defp exact_number(_value), do: :error
+
+  defp parse_float(raw) do
+    case Float.parse(raw) do
+      {float, ""} -> {:ok, float}
       _ -> :error
     end
   end
 
-  defp exact_number(value) when is_integer(value), do: {:ok, Decimal.new(value)}
-  defp exact_number(value) when is_float(value), do: {:ok, Decimal.from_float(value)}
-  defp exact_number(_value), do: :error
-
   defp numeric_equal?(left, right) do
-    with {:ok, left} <- exact_decimal(left),
-         {:ok, right} <- exact_decimal(right) do
-      Decimal.equal?(left, right)
+    with {:ok, left} <- exact_number(left),
+         {:ok, right} <- exact_number(right) do
+      left == right
     else
       _ -> false
     end
@@ -538,18 +544,17 @@ defmodule Emisar.ActionContract do
   defp numeric_compare(_value, nil), do: :not_numeric
 
   defp numeric_compare(left, right) do
-    with {:ok, left} <- exact_decimal(left),
-         {:ok, right} <- exact_decimal(right) do
-      Decimal.compare(left, right)
+    with {:ok, left} <- exact_number(left),
+         {:ok, right} <- exact_number(right) do
+      cond do
+        left < right -> :lt
+        left > right -> :gt
+        true -> :eq
+      end
     else
       _ -> :not_numeric
     end
   end
-
-  defp exact_decimal(%Decimal{} = value), do: {:ok, value}
-  defp exact_decimal(value) when is_integer(value), do: {:ok, Decimal.new(value)}
-  defp exact_decimal(value) when is_float(value), do: {:ok, Decimal.from_float(value)}
-  defp exact_decimal(_value), do: :error
 
   defp duration_nanoseconds(value) when is_binary(value) do
     if Regex.match?(@duration, value) do

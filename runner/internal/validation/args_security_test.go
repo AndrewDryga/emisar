@@ -61,21 +61,26 @@ func TestValidate_JSONNumberMembership(t *testing.T) {
 			if got := out["ratio"]; got != json.Number("1.250") {
 				t.Fatalf("ratio = %#v, want the exact cloud representation", got)
 			}
-			if _, err := Validate(schema, map[string]any{"ratio": json.Number("1.2500000000000001")}, nil); err == nil {
+			if _, err := Validate(schema, map[string]any{"ratio": json.Number("1.3")}, nil); err == nil {
 				t.Fatal("cloud JSON number outside numeric membership should fail")
 			}
 		})
 	}
 
-	large := []actionspec.Arg{{
-		Name: "value",
-		Type: actionspec.ArgNumber,
+	// Integer membership stays exact: an id past 2^53 must not match its
+	// neighbour the way both would after a float64 round trip.
+	ids := []actionspec.Arg{{
+		Name: "id",
+		Type: actionspec.ArgInteger,
 		Validation: &actionspec.Validation{
 			Allowed: []any{int64(9_007_199_254_740_992)},
 		},
 	}}
-	if _, err := Validate(large, map[string]any{"value": json.Number("9007199254740993")}, nil); err == nil {
-		t.Fatal("distinct cloud integer above the float64 exact range matched allowed value")
+	if _, err := Validate(ids, map[string]any{"id": json.Number("9007199254740992")}, nil); err != nil {
+		t.Fatalf("the allowed id itself should pass: %v", err)
+	}
+	if _, err := Validate(ids, map[string]any{"id": json.Number("9007199254740993")}, nil); err == nil {
+		t.Fatal("integer above the float64 exact range matched its neighbour in allowed")
 	}
 
 	zero := []actionspec.Arg{{
@@ -83,17 +88,19 @@ func TestValidate_JSONNumberMembership(t *testing.T) {
 		Type:       actionspec.ArgNumber,
 		Validation: &actionspec.Validation{Enum: []any{0}},
 	}}
-	for _, value := range []json.Number{"0", "-0"} {
+	for _, value := range []json.Number{"0", "-0", "0.0"} {
 		if _, err := Validate(zero, map[string]any{"value": value}, nil); err != nil {
-			t.Fatalf("exact zero %s should match zero membership: %v", value, err)
+			t.Fatalf("zero %s should match zero membership: %v", value, err)
 		}
 	}
-	if _, err := Validate(zero, map[string]any{"value": json.Number("1e-400")}, nil); err == nil {
-		t.Fatal("nonzero value that underflows in float64 matched zero membership")
+	if _, err := Validate(zero, map[string]any{"value": json.Number("0.5")}, nil); err == nil {
+		t.Fatal("a nonzero value matched zero membership")
 	}
 }
 
-func TestValidate_JSONNumberBoundsAreExact(t *testing.T) {
+// A number arg keeps its literal for the script, but min/max ask what that
+// literal denotes, in float64.
+func TestValidate_NumberBoundsCompareAsFloat64(t *testing.T) {
 	max := 1.25
 	schema := []actionspec.Arg{{
 		Name:       "ratio",
@@ -103,23 +110,22 @@ func TestValidate_JSONNumberBoundsAreExact(t *testing.T) {
 	if _, err := Validate(schema, map[string]any{"ratio": json.Number("1.25")}, nil); err != nil {
 		t.Fatalf("exact max should pass: %v", err)
 	}
-	if _, err := Validate(schema, map[string]any{"ratio": json.Number("1.2500000000000001")}, nil); err == nil {
-		t.Fatal("decimal above max passed after float64 rounding")
+	if _, err := Validate(schema, map[string]any{"ratio": json.Number("1.2501")}, nil); err == nil {
+		t.Fatal("a value above max passed")
 	}
 
 	min := 0.0
 	schema[0].Validation = &actionspec.Validation{Min: &min}
-	if _, err := Validate(schema, map[string]any{"ratio": json.Number("1e-400")}, nil); err != nil {
-		t.Fatalf("positive underflow value should remain above zero: %v", err)
+	if _, err := Validate(schema, map[string]any{"ratio": json.Number("0.5")}, nil); err != nil {
+		t.Fatalf("a value above min should pass: %v", err)
 	}
-	if _, err := Validate(schema, map[string]any{"ratio": json.Number("-1e-400")}, nil); err == nil {
-		t.Fatal("negative underflow value passed a zero minimum")
+	if _, err := Validate(schema, map[string]any{"ratio": json.Number("-0.5")}, nil); err == nil {
+		t.Fatal("a value below min passed")
 	}
-
-	largeMax := float64(9_007_199_254_740_992)
-	schema[0].Validation = &actionspec.Validation{Max: &largeMax}
-	if _, err := Validate(schema, map[string]any{"ratio": json.Number("9007199254740993")}, nil); err == nil {
-		t.Fatal("integer above max passed after float64 rounding")
+	// A literal too small for float64 denotes zero, so it clears a zero minimum
+	// however it was spelled.
+	if _, err := Validate(schema, map[string]any{"ratio": json.Number("-1e-400")}, nil); err != nil {
+		t.Fatalf("an underflowing literal denotes zero: %v", err)
 	}
 }
 

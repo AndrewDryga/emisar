@@ -59,7 +59,7 @@ defmodule Emisar.UsersTest do
     end
   end
 
-  describe "register_user/2" do
+  describe "register_user/1" do
     test "creates a user" do
       email = "reg-#{System.unique_integer([:positive])}@example.test"
 

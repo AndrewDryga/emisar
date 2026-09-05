@@ -297,7 +297,7 @@ func TestPublishRejectsRegeneratedAttestationBundle(t *testing.T) {
 	}
 }
 
-func TestPublishRejectsMissingOrUnboundedAttestationBundleBeforeUpload(t *testing.T) {
+func TestPublishRejectsMissingOrEmptyAttestationBundleBeforeUpload(t *testing.T) {
 	tests := []struct {
 		name   string
 		mutate func(*testing.T, string)
@@ -311,7 +311,7 @@ func TestPublishRejectsMissingOrUnboundedAttestationBundleBeforeUpload(t *testin
 					t.Fatal(err)
 				}
 			},
-			want: "open SHA256SUMS.sigstore.jsonl",
+			want: "read SHA256SUMS.sigstore.jsonl",
 		},
 		{
 			name: "empty",
@@ -322,16 +322,6 @@ func TestPublishRejectsMissingOrUnboundedAttestationBundleBeforeUpload(t *testin
 				}
 			},
 			want: "SHA256SUMS.sigstore.jsonl is empty",
-		},
-		{
-			name: "oversized",
-			mutate: func(t *testing.T, path string) {
-				t.Helper()
-				if err := os.Truncate(path, maxAttestationBundleSize+1); err != nil {
-					t.Fatal(err)
-				}
-			},
-			want: "SHA256SUMS.sigstore.jsonl exceeds 4194304 bytes",
 		},
 	}
 

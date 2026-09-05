@@ -2,7 +2,6 @@ package main
 
 import (
 	"encoding/json"
-	"errors"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -481,7 +480,10 @@ func TestClientInstallReplacesBackupWithoutFollowingSymlinks(t *testing.T) {
 	}
 }
 
-func TestClientInstallRefusesSymlinkedConfigSources(t *testing.T) {
+// A dotfiles repository commonly links the client's config file into place, so
+// the source is read through the link and the edit lands in the file the
+// repository keeps, leaving the link itself in place.
+func TestClientInstallAcceptsSymlinkedConfigSources(t *testing.T) {
 	for _, testCase := range []struct {
 		id       string
 		existing string
@@ -508,49 +510,30 @@ func TestClientInstallRefusesSymlinkedConfigSources(t *testing.T) {
 				t.Fatal(err)
 			}
 
-			err := client.install(testEntryRequest("/usr/local/bin/emisar-mcp", testCase.id))
-			if err == nil || !strings.Contains(err.Error(), "is a symlink") {
-				t.Fatalf("install error = %v, want symlink refusal", err)
+			if err := client.install(testEntryRequest("/usr/local/bin/emisar-mcp", testCase.id)); err != nil {
+				t.Fatalf("install: %v", err)
 			}
-			contents, readErr := os.ReadFile(target)
-			if readErr != nil {
-				t.Fatal(readErr)
-			}
-			if string(contents) != testCase.existing {
-				t.Errorf("symlink target changed: got %q, want %q", contents, testCase.existing)
-			}
-			info, statErr := os.Lstat(client.ConfigFile)
-			if statErr != nil {
-				t.Fatal(statErr)
+			info, err := os.Lstat(client.ConfigFile)
+			if err != nil {
+				t.Fatal(err)
 			}
 			if info.Mode()&os.ModeSymlink == 0 {
-				t.Fatal("refused config symlink was replaced")
+				t.Fatal("install replaced the config symlink with a regular file")
 			}
-			if _, statErr := os.Lstat(client.ConfigFile + configBackupSuffix); !errors.Is(statErr, os.ErrNotExist) {
-				t.Errorf("backup written for refused source: %v", statErr)
+			if !client.configured(target) {
+				t.Error("install through a symlinked config left the link target unwritten")
+			}
+			if !client.configured(client.ConfigFile) {
+				t.Error("install through a symlinked config wrote no emisar entry")
+			}
+			backup, err := readConfigFile(client.ConfigFile + configBackupSuffix)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if backup != testCase.existing {
+				t.Errorf("backup = %q, want %q", backup, testCase.existing)
 			}
 		})
-	}
-}
-
-func TestConfigFileIdentityRejectsPathSwap(t *testing.T) {
-	root := t.TempDir()
-	original := filepath.Join(root, "original.json")
-	path := filepath.Join(root, "config.json")
-	if err := os.WriteFile(original, []byte("original"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(path, []byte("replacement"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	file, err := os.Open(original)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer file.Close()
-
-	if err := validateConfigFileIdentity(path, file); err == nil || !strings.Contains(err.Error(), "changed while opening") {
-		t.Fatalf("identity error = %v, want changed-path refusal", err)
 	}
 }
 

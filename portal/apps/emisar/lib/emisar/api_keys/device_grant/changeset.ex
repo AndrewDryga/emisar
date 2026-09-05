@@ -16,7 +16,6 @@ defmodule Emisar.ApiKeys.DeviceGrant.Changeset do
     |> put_change(:expires_at, expires_at)
     |> validate_required([:expires_at])
     |> validate_requested_clients_present()
-    |> validate_length(:requested_clients, max: length(DeviceGrant.known_clients()))
     |> validate_subset(:requested_clients, DeviceGrant.known_clients())
     |> validate_length(:requester_ip, max: 64)
     |> unique_constraint(:device_code_digest)
@@ -44,8 +43,6 @@ defmodule Emisar.ApiKeys.DeviceGrant.Changeset do
   end
 
   def claim(%DeviceGrant{} = grant), do: change(grant, status: :claimed)
-
-  def expire(%DeviceGrant{} = grant), do: change(grant, status: :expired)
 
   # `[]` equals the column default, so it casts to "no change" and slips past
   # the change-based validators — check the FIELD, not the change.

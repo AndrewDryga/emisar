@@ -1,45 +1,39 @@
 defmodule Emisar.Audit.CSVExport do
   @moduledoc """
-  Materializes the operator-facing audit CSV — the domain half of the console's
-  Export button, reached through `Audit.prepare_csv_export/2`.
+  Streams the operator-facing audit CSV — the domain half of the console's
+  Export button, reached through `Audit.stream_csv_export/2`.
 
-  This lived inside the web controller: the caps, the snapshot check, the CSV
-  encoding whose column order freezes at 1.0, and the export receipt are domain
-  behavior, and the web is an adapter. The controller keeps what is genuinely
-  web — param translation, flashes, `send_download`, and deleting the file once
-  it has been sent.
+  The row cap, the CSV encoding whose column order freezes at 1.0, and the
+  export receipt are domain behavior, and the web is an adapter: the controller
+  keeps param translation, flashes, and the chunked response.
 
-  The file is built completely BEFORE the caller commits response headers, so a
-  late page failure can never look like a valid, cleanly terminated CSV. The
-  byte cap also keeps an adversarial set of maximum-sized audit rows from
-  filling the node's temporary volume.
+  ONE exact up-front count decides honestly: within the row cap → stream it
+  all; over → refuse before a byte leaves, never a truncated file. The walk is
+  a descending keyset cursor, so a row logged while it runs sorts ahead of the
+  first page and is never reached — the stream yields at most the probed count.
   """
 
   alias Emisar.{Audit, Config}
   alias Emisar.Auth.Subject
 
   @page_limit 100
-  @default_max_bytes 256 * 1024 * 1024
 
   defp max_rows, do: Config.get_env(:emisar, :audit_csv_max_rows, 100_000)
 
-  defp max_bytes, do: Config.get_env(:emisar, :audit_csv_max_bytes, @default_max_bytes)
-
-  defp max_pages, do: div(max_rows() + @page_limit - 1, @page_limit)
-
   @doc """
-  Builds the complete bounded CSV for `opts` into a fresh 0600 temp file and
-  records the export receipt. Returns `{:ok, %{path: path, count: count}}` —
-  the CALLER owns deleting `path` once it has been sent — or
-  `{:error, :nothing_to_export | :row_cap_exceeded | :byte_cap_exceeded |
-  :snapshot_changed | term}`. An over-cap view refuses with everything the
-  caller's message needs: `{:error, {:too_many_rows, %{count: count, max: max}}}`.
+  The bounded CSV for `opts` as a stream of iodata chunks — the header, then one
+  chunk per page — that records the export receipt with the row count once it
+  has run, whether it completed or the consumer stopped early. Returns
+  `{:ok, stream}` or `{:error, :nothing_to_export | term}`; an over-cap view
+  refuses with everything the caller's message needs:
+  `{:error, {:too_many_rows, %{count: count, max: max}}}`.
 
-  ONE exact up-front count decides honestly: within bounds → write it all;
-  over → refuse, never a truncated file. Authorization and the plan gate are
-  `Audit.list_events_for_export/2`'s, enforced on every page read.
+  Authorization and the plan gate are `Audit.list_events_for_export/2`'s,
+  enforced on every page read. A page that fails mid-stream raises, so the
+  response ends without its terminating chunk instead of looking like a
+  complete forensic artifact.
   """
-  def export(%Subject{} = subject, opts) do
+  def stream(%Subject{} = subject, opts) do
     probe_opts = opts |> Keyword.put(:page, limit: 1) |> Keyword.put(:count, true)
 
     case Audit.list_events_for_export(subject, probe_opts) do
@@ -47,108 +41,44 @@ defmodule Emisar.Audit.CSVExport do
         {:error, :nothing_to_export}
 
       {:ok, _probe, %{count: count}} when count > 0 ->
-        if count <= max_rows() do
-          materialize(subject, opts, count)
-        else
-          {:error, {:too_many_rows, %{count: count, max: max_rows()}}}
-        end
+        if count <= max_rows(),
+          do: {:ok, rows(subject, opts)},
+          else: {:error, {:too_many_rows, %{count: count, max: max_rows()}}}
 
       {:error, reason} ->
         {:error, reason}
     end
   end
 
-  # The path is System.tmp_dir! plus a server-generated UUID; no caller value
-  # reaches the file operations. Sobelow cannot follow that construction.
-  # sobelow_skip ["Traversal.FileModule"]
-  defp materialize(subject, opts, expected_count) do
-    path = Path.join(System.tmp_dir!(), "emisar-audit-#{Ecto.UUID.generate()}.csv")
-
-    with {:ok, count} <- write_csv(path, subject, opts),
-         :ok <- ensure_snapshot_count(count, expected_count),
-         {:ok, _receipt} <- Audit.record_export(subject, opts, count) do
-      {:ok, %{path: path, count: count}}
-    else
-      {:error, reason} ->
-        _ = File.rm(path)
-        {:error, reason}
-    end
+  defp rows(subject, opts) do
+    Stream.resource(
+      fn -> {:header, 0} end,
+      fn
+        {:header, count} -> {[csv_header()], {{:page, nil}, count}}
+        {{:page, cursor}, count} -> next_page(subject, opts, cursor, count)
+        {:done, count} -> {:halt, {:done, count}}
+      end,
+      fn {_stage, count} -> _ = Audit.record_export(subject, opts, count) end
+    )
   end
 
-  defp ensure_snapshot_count(count, count), do: :ok
-  defp ensure_snapshot_count(_count, _expected_count), do: {:error, :snapshot_changed}
-
-  # Only materialize's server-generated temporary path reaches these file calls.
-  # sobelow_skip ["Traversal.FileModule"]
-  defp write_csv(path, subject, opts) do
-    case File.open(path, [:write, :binary, :exclusive], fn io ->
-           with :ok <- File.chmod(path, 0o600),
-                {:ok, bytes} <- write_csv_data(io, csv_header(), 0),
-                {:ok, count, _bytes} <- write_pages(io, subject, opts, nil, 0, 0, bytes) do
-             {:ok, count}
-           end
-         end) do
-      {:ok, result} -> result
-      {:error, reason} -> {:error, {:temporary_file, reason}}
-    end
-  end
-
-  defp write_pages(io, subject, opts, cursor, pages, count, bytes) do
-    if pages >= max_pages() do
-      {:error, :row_cap_exceeded}
-    else
-      write_page(io, subject, opts, cursor, pages, count, bytes)
-    end
-  end
-
-  defp write_page(io, subject, opts, cursor, pages, count, bytes) do
-    # count: false — a walk must not re-count the whole filtered set per page
-    # (the up-front probe already counted once).
+  # count: false — a walk must not re-count the whole filtered set per page
+  # (the up-front probe already counted once).
+  defp next_page(subject, opts, cursor, count) do
     page_opts = opts |> Keyword.put(:page, page(cursor)) |> Keyword.put(:count, false)
 
     case Audit.list_events_for_export(subject, page_opts) do
-      {:ok, [], _meta} when count == 0 ->
-        {:error, :snapshot_changed}
-
       {:ok, [], _meta} ->
-        {:ok, count, bytes}
+        {:halt, {:done, count}}
 
-      {:ok, events, meta} ->
-        next_count = count + length(events)
+      {:ok, events, %{next_page_cursor: nil}} ->
+        {[Enum.map(events, &csv_row/1)], {:done, count + length(events)}}
 
-        if next_count > max_rows() do
-          {:error, :row_cap_exceeded}
-        else
-          case write_csv_data(io, Enum.map(events, &csv_row/1), bytes) do
-            {:ok, bytes} ->
-              case meta.next_page_cursor do
-                nil ->
-                  {:ok, next_count, bytes}
-
-                next ->
-                  write_pages(io, subject, opts, next, pages + 1, next_count, bytes)
-              end
-
-            {:error, reason} ->
-              {:error, reason}
-          end
-        end
+      {:ok, events, %{next_page_cursor: next}} ->
+        {[Enum.map(events, &csv_row/1)], {{:page, next}, count + length(events)}}
 
       {:error, reason} ->
-        {:error, reason}
-    end
-  end
-
-  defp write_csv_data(io, data, bytes) do
-    next_bytes = bytes + IO.iodata_length(data)
-
-    if next_bytes > max_bytes() do
-      {:error, :byte_cap_exceeded}
-    else
-      case :file.write(io, data) do
-        :ok -> {:ok, next_bytes}
-        {:error, reason} -> {:error, {:temporary_file, reason}}
-      end
+        raise "audit CSV page read failed: #{inspect(reason)}"
     end
   end
 

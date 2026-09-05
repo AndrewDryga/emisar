@@ -16,8 +16,7 @@ defmodule EmisarWeb.RunDetailLive do
     "max-h-[60vh] overflow-auto whitespace-pre-wrap break-all bg-black/60 p-4 font-mono text-xs leading-normal text-zinc-300"
   end
 
-  defp events_truncated?(%{progress_event_count: count}), do: count > @event_window
-  defp events_truncated?(_), do: false
+  defp events_truncated?(run), do: run.progress_event_count > @event_window
 
   # "Load earlier output" is offered only for terminal runs: a running run's
   # stream evicts to the most-recent window, so paging earlier chunks in would
@@ -135,7 +134,7 @@ defmodule EmisarWeb.RunDetailLive do
   defp decider_label(_, id) when is_binary(id), do: "a former member"
   defp decider_label(_, _), do: "—"
 
-  def handle_info({:run_updated, run}, socket) when run.id == socket.assigns.run.id do
+  def handle_info({:run_updated, run}, socket) do
     # The broadcast carries a preload-less run; keep the associations loaded at
     # mount (:runner, :api_key, :requested_by) so "Dispatched by" and the runner
     # label don't degrade to "—"/"AI agent" on the first live status flip. The
@@ -493,7 +492,7 @@ defmodule EmisarWeb.RunDetailLive do
             <.event_block
               :if={@run.error_message}
               icon="state.warning"
-              tone={error_block_tone(@run.status)}
+              tone={:rose}
               title={RunStatuses.label(@run.status)}
             >
               <:body><span class="whitespace-pre-wrap">{@run.error_message}</span></:body>
@@ -859,10 +858,6 @@ defmodule EmisarWeb.RunDetailLive do
       (run.status in [:sent, :running, :cancelling, :pending] and runner_connection == :offline)
   end
 
-  # Every message-bearing terminal status is a rose did-not-happen outcome,
-  # matching its status badge.
-  defp error_block_tone(_status), do: :rose
-
   defp runner_label(%Emisar.Runners.Runner{name: name}) when is_binary(name) and name != "",
     do: name
 
@@ -876,10 +871,8 @@ defmodule EmisarWeb.RunDetailLive do
   # Live connection state of the run's runner (:online | :offline). Keyed
   # on runner_id/account_id — both columns, always loaded — so it survives
   # a non-preloaded {:run_updated, run} broadcast replacing the assign.
-  defp runner_connection(%{runner_id: id, account_id: account_id}) when is_binary(id),
+  defp runner_connection(%{runner_id: id, account_id: account_id}),
     do: if(Runners.online?(account_id, id), do: :online, else: :offline)
-
-  defp runner_connection(_), do: :unknown
 
   # `allow` is the implicit happy path — if the run dispatched at all
   # we already know policy let it through. Showing the strip just

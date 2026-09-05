@@ -47,10 +47,6 @@ defmodule EmisarWeb.MCP.ValidationError do
   }
   @reject_reasons ~w(target_contract_changed not_allowed rate_limited)
   @action_id ~r/\A[a-z][a-z0-9_-]*(\.[a-z][a-z0-9_-]*)+\z/
-  @pack_ref ~r|\A[a-z][a-z0-9_-]*@[0-9]+(\.[0-9]+)*/sha256:[0-9a-f]{64}\z|
-  # The release number is optional because a draft run names its runbook by slug
-  # alone; dropping the identifier would leave that rejection unattributable.
-  @runbook_ref ~r/\A[a-z][a-z0-9_-]{0,79}(@[1-9][0-9]{0,8})?\z/
   @max_issues 8
   @max_message_chars 512
   @path_segment ~r/\A[A-Za-z_][A-Za-z0-9_-]{0,63}\z/
@@ -140,8 +136,13 @@ defmodule EmisarWeb.MCP.ValidationError do
   @spec log_dispatch_rejected(Plug.Conn.t(), term(), String.t() | atom(), keyword()) :: :ok
   def log_dispatch_rejected(conn, tool, reason, identifiers \\ []) do
     metadata =
-      [mcp_dispatch_reject_reason: fixed(reason, @reject_reasons, "rejected")]
-      |> Kernel.++(safe_identifiers(identifiers))
+      [
+        mcp_dispatch_reject_reason: fixed(reason, @reject_reasons, "rejected"),
+        mcp_action_id: identifiers[:action_id],
+        mcp_pack_ref: identifiers[:pack_ref],
+        mcp_runbook_ref: identifiers[:runbook_ref]
+      ]
+      |> Enum.reject(fn {_key, value} -> is_nil(value) end)
       |> Kernel.++(client_metadata(conn, tool))
 
     Logger.info("mcp.dispatch_rejected", metadata)
@@ -240,24 +241,6 @@ defmodule EmisarWeb.MCP.ValidationError do
   end
 
   defp safe_tool(_tool), do: "unknown"
-
-  # The callers pass schema-validated input, but a reject identifier is still
-  # model-supplied — re-check it against the published grammar so a drifted or
-  # future call site can never turn the log into a value channel.
-  defp safe_identifiers(identifiers) do
-    [
-      mcp_action_id: safe_identifier(identifiers[:action_id], @action_id, 128),
-      mcp_pack_ref: safe_identifier(identifiers[:pack_ref], @pack_ref, 255),
-      mcp_runbook_ref: safe_identifier(identifiers[:runbook_ref], @runbook_ref, 96)
-    ]
-    |> Enum.reject(fn {_key, value} -> is_nil(value) end)
-  end
-
-  defp safe_identifier(value, pattern, max_bytes) when is_binary(value) do
-    if byte_size(value) <= max_bytes and Regex.match?(pattern, value), do: value, else: nil
-  end
-
-  defp safe_identifier(_value, _pattern, _max_bytes), do: nil
 
   defp unknown_tool_shape(tool) do
     if Regex.match?(@action_id, tool), do: "action_id", else: "other"

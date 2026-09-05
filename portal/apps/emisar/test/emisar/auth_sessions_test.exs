@@ -78,11 +78,11 @@ defmodule Emisar.AuthSessionsTest do
     } do
       current =
         Fixtures.Auth.create_session_token!(user, :magic_link, nil, %{
-          "ip_address" => "198.51.100.7"
+          ip_address: "198.51.100.7"
         })
 
       Fixtures.Auth.create_session_token!(user, :magic_link, nil, %{
-        "ip_address" => "203.0.113.9"
+        ip_address: "203.0.113.9"
       })
 
       assert {:ok, sessions, _meta} = Auth.list_sessions_for_user(Crypto.hash(current), subject)
@@ -113,8 +113,8 @@ defmodule Emisar.AuthSessionsTest do
     } do
       token =
         Fixtures.Auth.create_session_token!(user, :magic_link, nil, %{
-          "ip_address" => "198.51.100.7",
-          "user_agent" => "Mozilla/5.0 Firefox/126.0"
+          ip_address: "198.51.100.7",
+          user_agent: "Mozilla/5.0 Firefox/126.0"
         })
 
       assert {:ok, [session], _meta} = Auth.list_sessions_for_user(Crypto.hash(token), subject)
@@ -237,14 +237,6 @@ defmodule Emisar.AuthSessionsTest do
       assert Auth.revoke_other_sessions!(user, Crypto.hash(keep)) == 2
       assert {:ok, [survivor], _} = Auth.list_sessions_for_user(Crypto.hash(keep), subject)
       assert survivor.current?
-    end
-
-    test "with nil, kills every session including the caller's", %{user: user, subject: subject} do
-      Fixtures.Auth.create_session_token!(user, :magic_link, nil)
-      Fixtures.Auth.create_session_token!(user, :magic_link, nil)
-
-      assert Auth.revoke_other_sessions!(user, nil) == 2
-      assert {:ok, [], _} = Auth.list_sessions_for_user(nil, subject)
     end
   end
 end

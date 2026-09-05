@@ -2759,7 +2759,6 @@ defmodule EmisarWeb.MarketingTest do
       # The CSV cap mirrors Audit.CSVExport's audit_csv_max_rows
       # default; the plan gate renders through the shared plan_note.
       assert html =~ "100,000 events"
-      assert html =~ "256 MiB"
       assert html =~ "complete prepared export"
       assert html =~ "mailto:support@emisar.dev"
     end

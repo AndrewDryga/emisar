@@ -7,9 +7,6 @@ defmodule Emisar.Catalog.RunnerAction.Query do
 
   def none(queryable), do: where(queryable, false)
 
-  def by_id(queryable, id),
-    do: where(queryable, [runner_actions: a], a.id == ^id)
-
   def by_account_id(queryable, account_id),
     do: where(queryable, [runner_actions: a], a.account_id == ^account_id)
 

@@ -22,7 +22,7 @@ defmodule Emisar.Auth.SubjectTest do
     end
 
     test "owner gets the full owner-role permission set", %{user: user, account: account} do
-      membership = %Membership{role: "owner", user_id: user.id, account_id: account.id}
+      membership = %Membership{role: :owner, user_id: user.id, account_id: account.id}
 
       subject = Subject.for_user(user, account, membership)
 
@@ -40,14 +40,14 @@ defmodule Emisar.Auth.SubjectTest do
     test "viewer holds strictly fewer permissions than admin", %{user: user, account: account} do
       viewer_subj =
         Subject.for_user(user, account, %Membership{
-          role: "viewer",
+          role: :viewer,
           user_id: user.id,
           account_id: account.id
         })
 
       admin_subj =
         Subject.for_user(user, account, %Membership{
-          role: "admin",
+          role: :admin,
           user_id: user.id,
           account_id: account.id
         })
@@ -57,31 +57,13 @@ defmodule Emisar.Auth.SubjectTest do
       assert MapSet.size(viewer_subj.permissions) < MapSet.size(admin_subj.permissions)
     end
 
-    test "unknown role string falls back to viewer (default-deny posture)", %{
-      user: user,
-      account: account
-    } do
-      subject =
-        Subject.for_user(user, account, %Membership{
-          role: "no-such-role",
-          user_id: user.id,
-          account_id: account.id
-        })
-
-      # The fallback is the same shape as an explicit viewer subject —
-      # not all-perms, not empty.
-      viewer_perms = Emisar.Auth.Permissions.for_role(:viewer)
-      assert subject.role == :viewer
-      assert subject.permissions == viewer_perms
-    end
-
     test "pending directory authorization is viewer-only except for a human owner", %{
       user: user,
       account: account
     } do
       pending_admin =
         Subject.for_user(user, account, %Membership{
-          role: "admin",
+          role: :admin,
           user_id: user.id,
           account_id: account.id,
           directory_authorization_pending_version: 3
@@ -89,7 +71,7 @@ defmodule Emisar.Auth.SubjectTest do
 
       pending_owner =
         Subject.for_user(user, account, %Membership{
-          role: "owner",
+          role: :owner,
           user_id: user.id,
           account_id: account.id,
           directory_authorization_pending_version: 3
@@ -107,7 +89,7 @@ defmodule Emisar.Auth.SubjectTest do
     } do
       pending =
         Subject.for_user(user, account, %Membership{
-          role: "owner",
+          role: :owner,
           user_id: user.id,
           account_id: account.id,
           invitation_token_digest: "pending-digest"
@@ -123,7 +105,7 @@ defmodule Emisar.Auth.SubjectTest do
     } do
       direct =
         Subject.for_user(user, account, %Membership{
-          role: "admin",
+          role: :admin,
           user_id: user.id,
           account_id: account.id
         })
@@ -149,7 +131,7 @@ defmodule Emisar.Auth.SubjectTest do
     test ":ok when the subject holds the permission", %{account: account, user: user} do
       subject =
         Subject.for_user(user, account, %Membership{
-          role: "owner",
+          role: :owner,
           user_id: user.id,
           account_id: account.id
         })
@@ -163,7 +145,7 @@ defmodule Emisar.Auth.SubjectTest do
     test "{:error, :unauthorized} when the subject lacks it", %{account: account, user: user} do
       subject =
         Subject.for_user(user, account, %Membership{
-          role: "viewer",
+          role: :viewer,
           user_id: user.id,
           account_id: account.id
         })
@@ -180,7 +162,7 @@ defmodule Emisar.Auth.SubjectTest do
     } do
       operator =
         Subject.for_user(user, account, %Membership{
-          role: "operator",
+          role: :operator,
           user_id: user.id,
           account_id: account.id
         })
@@ -197,7 +179,7 @@ defmodule Emisar.Auth.SubjectTest do
     test "rejects {:one_of, [...]} if the subject holds none", %{account: account, user: user} do
       viewer =
         Subject.for_user(user, account, %Membership{
-          role: "viewer",
+          role: :viewer,
           user_id: user.id,
           account_id: account.id
         })
@@ -217,7 +199,7 @@ defmodule Emisar.Auth.SubjectTest do
     } do
       owner =
         Subject.for_user(user, account, %Membership{
-          role: "owner",
+          role: :owner,
           user_id: user.id,
           account_id: account.id
         })
@@ -237,7 +219,7 @@ defmodule Emisar.Auth.SubjectTest do
     } do
       admin =
         Subject.for_user(user, account, %Membership{
-          role: "admin",
+          role: :admin,
           user_id: user.id,
           account_id: account.id
         })

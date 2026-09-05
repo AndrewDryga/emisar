@@ -53,3 +53,20 @@ func ReadEnv(path string, overrides ...string) (map[string]string, error) {
 	}
 	return env, nil
 }
+
+// WriteCredentialFile writes a rig's captured credentials to an ignored env file.
+// Three rigs had their own copy of this, and google's lacked the chmod: O_CREATE's
+// mode applies only on CREATION, so a pre-existing file keeps whatever mode it had
+// and a live client secret lands in it world-readable.
+func WriteCredentialFile(path, contents string) error {
+	file, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+	if err := file.Chmod(0o600); err != nil {
+		return err
+	}
+	_, err = file.WriteString(contents)
+	return err
+}

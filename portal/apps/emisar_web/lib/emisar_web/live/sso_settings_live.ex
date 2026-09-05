@@ -1,8 +1,8 @@
 defmodule EmisarWeb.SSOSettingsLive do
   use EmisarWeb, :live_view
-  alias Emisar.{Accounts, Auth, Catalog, Runners, SSO}
-  alias EmisarWeb.{ConfirmDialog, LiveForm, LiveTable, MailTo, RoleCopy}
-  alias EmisarWeb.{OIDCIdentityHandoff, Permissions, RunnerScope}
+  alias Emisar.{Accounts, Runners, SSO}
+  alias EmisarWeb.{ConfirmDialog, LiveForm, LiveTable, MailTo, MemberErrors, RoleCopy}
+  alias EmisarWeb.{OIDCStepUp, Permissions, RunnerScope}
   alias Phoenix.LiveView.JS
 
   @role_mapping_prefix "role_mappings_"
@@ -13,6 +13,10 @@ defmodule EmisarWeb.SSOSettingsLive do
   # The two add-mapping forms each own one group picker. The scope keys their
   # state and rides their events, so the shared handlers know which form asked.
   @group_picker_scopes ~w(role runner_access)
+
+  # Named the connection's own action: the shared step-up cannot know that this
+  # page is proving a real provider sign-in rather than linking a profile.
+  @sign_in_verification_start_error "Couldn't start sign-in verification."
 
   # Humanized provider-kind labels for the select + the row badge — the enum's
   # atoms don't title-case cleanly ("openid_connect" → "OpenID Connect").
@@ -40,8 +44,6 @@ defmodule EmisarWeb.SSOSettingsLive do
                   &{Emisar.Auth.role_label(&1), Atom.to_string(&1)}
                 )
 
-  @mapping_role_options @role_options
-
   # The synced-members list re-roles a real membership, so its select offers ALL
   # roles (incl. owner) — unlike the JIT/mapping selects. update_membership_role
   # still enforces the owner / last-owner / self guards server-side.
@@ -49,10 +51,6 @@ defmodule EmisarWeb.SSOSettingsLive do
                          Emisar.Auth.roles(),
                          &{Emisar.Auth.role_label(&1), Atom.to_string(&1)}
                        )
-
-  # The role strings a synced member may be moved to — the guard set for the
-  # change_member_role event (a crafted role never reaches update_membership_role).
-  @member_roles Enum.map(@member_role_options, &elem(&1, 1))
 
   # New member provisioning modes for the form's select. JIT adds the membership on
   # first sign-in; manual parks first sign-ins as pending requests an admin
@@ -78,7 +76,6 @@ defmodule EmisarWeb.SSOSettingsLive do
       )
       |> assign(:kind_options, @kind_options)
       |> assign(:role_options, @role_options)
-      |> assign(:mapping_role_options, @mapping_role_options)
       |> assign(:member_role_options, @member_role_options)
       |> assign(:provisioner_options, @provisioner_options)
       # Suspend/re-role a synced member acts on the Accounts membership, which
@@ -97,32 +94,19 @@ defmodule EmisarWeb.SSOSettingsLive do
       # reads it and is reachable over the socket from any route (IL-15), so default
       # it here — a nil default makes the crafted event a no-op, not a KeyError.
       |> assign(:form, nil)
-      # Connection(s) in scope: ALL on :index (a list), the one on :show (detail).
-      # Set per-action in handle_params.
-      |> assign(:providers, [])
-      # Role-mapping state: the per-provider lists + create forms, and the
-      # single open inline edit (id + form). Keyed by provider id so each
-      # provider's directory-sync panel owns its own mappings + form.
-      |> assign(:group_mappings, %{})
-      |> assign(:group_mapping_metadata, %{})
-      |> assign(:group_mapping_errors, %{})
-      |> assign(:synced_groups, %{})
-      |> assign(:synced_group_metadata, %{})
-      |> assign(:synced_group_errors, %{})
+      # The connection in scope: the one :show and :edit load, nil everywhere
+      # else. Set per-action in handle_params.
+      |> assign(:provider, nil)
+      |> reset_mapping_panels()
       # One picker per add-mapping form. A directory can push thousands of
       # groups, so the picker holds the operator's term and the bounded matches
       # the server answered with — never the directory.
       |> assign(:group_pickers, Map.new(@group_picker_scopes, &{&1, new_group_picker()}))
-      |> assign(:mapping_forms, %{})
       |> assign(:editing_mapping_id, nil)
       |> assign(:mapping_edit_form, nil)
       # The add-mapping form is behind an "Add mapping" button, not always open.
       |> assign(:adding_mapping, false)
-      |> assign(:runner_access_mappings, %{})
       |> assign(:expanded_scopes, MapSet.new())
-      |> assign(:runner_access_mapping_metadata, %{})
-      |> assign(:runner_access_mapping_errors, %{})
-      |> assign(:runner_access_mapping_forms, %{})
       |> assign(:editing_runner_access_mapping_id, nil)
       |> assign(:runner_access_mapping_edit_form, nil)
       |> assign(:adding_runner_access_mapping, false)
@@ -143,7 +127,7 @@ defmodule EmisarWeb.SSOSettingsLive do
       # or {:error, reason}. Cleared whenever the form changes so it never lies.
       |> assign(:test_result, nil)
       |> assign(:sign_in_verification, nil)
-      |> reset_oidc_step_up()
+      |> OIDCStepUp.reset()
       # False until the connected mount pass runs the list read — so the
       # "No connections yet" empty state never flashes for a team that *has*
       # connections (the first, unconnected pass renders chrome only).
@@ -218,11 +202,11 @@ defmodule EmisarWeb.SSOSettingsLive do
       {:ok, provider} ->
         socket
         |> assign(:loaded?, true)
-        |> assign(:providers, [provider])
+        |> assign(:provider, provider)
         |> assign(:mapping_filter_params, Map.drop(params, ["id"]))
         |> assign(:adding_mapping, false)
         |> assign(:adding_runner_access_mapping, false)
-        |> load_group_mappings([provider], params)
+        |> load_group_mappings(provider, params)
         |> load_synced_members(provider, params)
         |> load_runners()
         |> load_sign_in_verification(provider)
@@ -288,7 +272,7 @@ defmodule EmisarWeb.SSOSettingsLive do
       {:ok, provider} ->
         socket
         |> assign(:loaded?, true)
-        |> assign(:providers, [provider])
+        |> assign(:provider, provider)
         |> load_runners()
         |> assign_edit_form(provider)
 
@@ -300,7 +284,8 @@ defmodule EmisarWeb.SSOSettingsLive do
   end
 
   defp load_runners(socket) do
-    {advertisements, pack_load_error?} = account_pack_advertisements(socket)
+    {advertisements, pack_load_error?} =
+      RunnerScope.account_pack_advertisements(socket.assigns.current_subject)
 
     socket =
       socket
@@ -320,77 +305,70 @@ defmodule EmisarWeb.SSOSettingsLive do
     end
   end
 
-  # A role without view_catalog gets no pack choices rather than a crash — the
-  # same shape as the runner load above. The flag says whether the empty map is
-  # a real answer or a failed read, so a pack picker cannot report "No packs on
-  # the selected runners" for packs it never read.
-  defp account_pack_advertisements(socket) do
-    subject = socket.assigns.current_subject
-
-    case Catalog.list_pack_advertisements(subject) do
-      {:ok, advertisements} -> {advertisements, false}
-      {:error, _reason} -> {%{}, Catalog.subject_can_view_packs?(subject)}
-    end
-  end
-
-  # Role mappings only exist for SCIM-enabled providers; load each one's
-  # list + seed a fresh create form, both keyed by provider id.
-  defp load_group_mappings(socket, providers, params) do
-    scim_providers = Enum.filter(providers, & &1.scim_enabled)
-
+  # Role mappings only exist for a SCIM-enabled connection; load its lists and
+  # seed fresh create forms. Each read answers `{rows, metadata, read_failed?}`:
+  # the rows render the list, and the flag keeps a failed read from rendering as
+  # that section's "no mappings / no groups" — which on this page reads as a
+  # claim that the directory grants nobody a role or extra runner reach.
+  defp load_group_mappings(
+         socket,
+         %SSO.IdentityProvider{scim_enabled: true} = provider,
+         params
+       ) do
     role_opts = LiveTable.params_to_opts(params, [], prefix: @role_mapping_prefix)
 
     runner_access_opts =
       LiveTable.params_to_opts(params, [], prefix: @runner_access_mapping_prefix)
-
-    role_reads = Map.new(scim_providers, &{&1.id, list_mappings(socket, &1, role_opts)})
-
-    runner_access_reads =
-      Map.new(
-        scim_providers,
-        &{&1.id, list_runner_access_mappings(socket, &1, runner_access_opts)}
-      )
-
-    role_mappings = paged_rows(role_reads)
-    runner_access_mappings = paged_rows(runner_access_reads)
 
     # The groups the IdP has actually synced (id + member count), each annotated
     # with its role mapping — one page of the "Synced groups" readout. The
     # mapping pickers search the directory instead of reading this list.
     synced_group_opts = LiveTable.params_to_opts(params, [], prefix: @synced_group_prefix)
 
-    synced_reads =
-      Map.new(scim_providers, &{&1.id, list_synced_groups(socket, &1, synced_group_opts)})
+    {role_mappings, role_metadata, role_failed?} = list_mappings(socket, provider, role_opts)
 
-    forms = Map.new(scim_providers, &{&1.id, mapping_form(&1)})
-    runner_access_forms = runner_access_mapping_forms(socket, scim_providers)
+    {runner_access_mappings, runner_access_metadata, runner_access_failed?} =
+      list_runner_access_mappings(socket, provider, runner_access_opts)
+
+    {synced_groups, synced_metadata, synced_failed?} =
+      list_synced_groups(socket, provider, synced_group_opts)
 
     socket
     |> assign(:group_mappings, role_mappings)
-    |> assign(:group_mapping_metadata, paged_metadata(role_reads))
-    |> assign(:group_mapping_errors, paged_read_errors(role_reads))
+    |> assign(:group_mapping_metadata, role_metadata)
+    |> assign(:group_mappings_load_error?, role_failed?)
     |> assign(:runner_access_mappings, runner_access_mappings)
-    |> assign(:runner_access_mapping_metadata, paged_metadata(runner_access_reads))
-    |> assign(:runner_access_mapping_errors, paged_read_errors(runner_access_reads))
-    |> assign(:synced_groups, paged_rows(synced_reads))
-    |> assign(:synced_group_metadata, paged_metadata(synced_reads))
-    |> assign(:synced_group_errors, paged_read_errors(synced_reads))
-    |> assign(:mapping_forms, forms)
-    |> assign(:runner_access_mapping_forms, runner_access_forms)
+    |> assign(:runner_access_mapping_metadata, runner_access_metadata)
+    |> assign(:runner_access_mappings_load_error?, runner_access_failed?)
+    |> assign(:synced_groups, synced_groups)
+    |> assign(:synced_group_metadata, synced_metadata)
+    |> assign(:synced_groups_load_error?, synced_failed?)
+    |> assign(:mapping_form, mapping_form(provider))
+    # Cleared before it is re-seeded: a member who no longer holds runner-access
+    # permission must not keep the create form an earlier load left behind.
+    |> assign(:runner_access_mapping_form, nil)
+    |> reset_runner_access_mapping_form(provider)
   end
 
-  # Each per-provider read is kept as `{rows, metadata, read_failed?}` and split
-  # here: the rows render the list, the flag keeps a failed read from rendering
-  # as that section's "no mappings / no groups" — which on this page reads as a
-  # claim that the directory grants nobody a role or extra runner reach.
-  defp paged_rows(reads),
-    do: Map.new(reads, fn {id, {rows, _metadata, _failed?}} -> {id, rows} end)
+  defp load_group_mappings(socket, %SSO.IdentityProvider{}, _params),
+    do: reset_mapping_panels(socket)
 
-  defp paged_metadata(reads),
-    do: Map.new(reads, fn {id, {_rows, metadata, _failed?}} -> {id, metadata} end)
-
-  defp paged_read_errors(reads),
-    do: Map.new(reads, fn {id, {_rows, _metadata, failed?}} -> {id, failed?} end)
+  # The idle directory-sync panels: nothing read, nothing failed, no create
+  # forms. Both the first mount and a connection without SCIM start here.
+  defp reset_mapping_panels(socket) do
+    socket
+    |> assign(:group_mappings, [])
+    |> assign(:group_mapping_metadata, empty_metadata())
+    |> assign(:group_mappings_load_error?, false)
+    |> assign(:mapping_form, nil)
+    |> assign(:runner_access_mappings, [])
+    |> assign(:runner_access_mapping_metadata, empty_metadata())
+    |> assign(:runner_access_mappings_load_error?, false)
+    |> assign(:runner_access_mapping_form, nil)
+    |> assign(:synced_groups, [])
+    |> assign(:synced_group_metadata, empty_metadata())
+    |> assign(:synced_groups_load_error?, false)
+  end
 
   defp list_synced_groups(socket, provider, opts) do
     case SSO.list_synced_groups(provider, socket.assigns.current_subject, opts) do
@@ -459,25 +437,10 @@ defmodule EmisarWeb.SSOSettingsLive do
 
   def handle_event("confirm_oidc_step_up", %{"oidc_step" => %{"code" => code}}, socket) do
     case socket.assigns.oidc_step do
-      %{provider_id: provider_id} = step ->
-        case Auth.confirm_oidc_identity_step_up(
-               provider_id,
-               :verify_provider,
-               String.trim(code || ""),
-               socket.assigns.current_subject
-             ) do
-          {:ok, proof} ->
-            complete_provider_step_up(socket, step, proof)
-
-          {:error, :rate_limited} ->
-            {:noreply, assign(socket, :oidc_step_error, mfa_limit_error())}
-
-          {:error, :replay} ->
-            {:noreply,
-             assign(socket, :oidc_step_error, "That authenticator code was already used.")}
-
-          {:error, _reason} ->
-            {:noreply, assign(socket, :oidc_step_error, provider_step_error(step.factor))}
+      %{} = step ->
+        case OIDCStepUp.confirm(step, code, socket.assigns.current_subject) do
+          {:ok, proof} -> {:noreply, OIDCStepUp.handoff(socket, step, proof)}
+          {:error, message} -> {:noreply, assign(socket, :oidc_step_error, message)}
         end
 
       nil ->
@@ -488,35 +451,7 @@ defmodule EmisarWeb.SSOSettingsLive do
   def handle_event("resend_oidc_step_up", _params, socket) do
     case socket.assigns.oidc_step do
       %{factor: :email} = step ->
-        case Auth.resend_oidc_identity_step_up_code(
-               step.provider_id,
-               step.provider_name,
-               :verify_provider,
-               socket.assigns.current_subject
-             ) do
-          {:ok, :sent} ->
-            {:noreply,
-             socket
-             |> assign(:oidc_step_error, nil)
-             |> put_flash(:info, "We sent a new code to #{socket.assigns.current_user.email}.")}
-
-          # The account email won't accept mail, so no code can arrive — say so
-          # and drop back instead of waiting for a code that never comes.
-          {:ok, :suppressed} ->
-            {:noreply,
-             socket
-             |> reset_oidc_step_up()
-             |> put_flash(
-               :error,
-               "We can't deliver a code to #{socket.assigns.current_user.email}."
-             )}
-
-          {:error, :rate_limited} ->
-            {:noreply, assign(socket, :oidc_step_error, email_limit_error())}
-
-          {:error, _reason} ->
-            {:noreply, assign(socket, :oidc_step_error, "Couldn't send a new code. Try again.")}
-        end
+        {:noreply, OIDCStepUp.resend(socket, step)}
 
       _other ->
         {:noreply, put_flash(socket, :error, "Start sign-in verification again.")}
@@ -524,12 +459,12 @@ defmodule EmisarWeb.SSOSettingsLive do
   end
 
   def handle_event("cancel_oidc_step_up", _params, socket),
-    do: {:noreply, reset_oidc_step_up(socket)}
+    do: {:noreply, OIDCStepUp.reset(socket)}
 
   # Pure view: expand or collapse a mapping row's clipped pack chip list. Held
   # per mapping id so a re-render can't re-collapse a row opened to audit.
   def handle_event("toggle_scope_expand", %{"id" => id}, socket) do
-    {:noreply, update(socket, :expanded_scopes, &toggle_scope(&1, id))}
+    {:noreply, update(socket, :expanded_scopes, &RunnerScope.toggle_scope(&1, id))}
   end
 
   def handle_event("validate_edit", %{"provider_id" => id, "provider" => params} = event, socket) do
@@ -605,11 +540,11 @@ defmodule EmisarWeb.SSOSettingsLive do
         {:noreply, socket}
 
       provider ->
-        changeset = mapping_changeset(provider, params) |> LiveForm.on_change(event)
+        changeset = SSO.change_group_mapping(provider, params) |> LiveForm.on_change(event)
 
         {:noreply,
          socket
-         |> put_mapping_form(id, mapping_to_form(provider, changeset))
+         |> assign(:mapping_form, mapping_to_form(provider, changeset))
          |> search_group_picker("role", provider, event["group_search"])}
     end
   end
@@ -633,9 +568,9 @@ defmodule EmisarWeb.SSOSettingsLive do
   # partial input). do_create_mapping already resets the form on a successful add.
   def handle_event("cancel_add_mapping", _params, socket) do
     socket =
-      case socket.assigns.providers do
-        [provider | _] -> put_mapping_form(socket, provider.id, mapping_form(provider))
-        _ -> socket
+      case socket.assigns.provider do
+        nil -> socket
+        provider -> assign(socket, :mapping_form, mapping_form(provider))
       end
 
     {:noreply,
@@ -709,7 +644,7 @@ defmodule EmisarWeb.SSOSettingsLive do
 
             {:noreply,
              socket
-             |> put_runner_access_mapping_form(id, form)
+             |> assign(:runner_access_mapping_form, form)
              |> search_group_picker("runner_access", provider, event["group_search"])}
 
           {:error, :unauthorized} ->
@@ -739,9 +674,9 @@ defmodule EmisarWeb.SSOSettingsLive do
 
   def handle_event("cancel_add_runner_access_mapping", _params, socket) do
     socket =
-      case socket.assigns.providers do
-        [provider | _] -> reset_runner_access_mapping_form(socket, provider)
-        _ -> socket
+      case socket.assigns.provider do
+        nil -> socket
+        provider -> reset_runner_access_mapping_form(socket, provider)
       end
 
     {:noreply,
@@ -902,83 +837,12 @@ defmodule EmisarWeb.SSOSettingsLive do
         {:noreply, put_flash(socket, :error, "That connection is no longer available.")}
 
       provider ->
-        case Auth.begin_oidc_identity_step_up(
-               provider.id,
-               provider.name,
-               :verify_provider,
-               socket.assigns.current_subject
-             ) do
-          {:ok, factor} ->
-            {:noreply,
-             socket
-             |> assign(:oidc_step, %{
-               provider_id: provider.id,
-               provider_name: provider.name,
-               factor: factor
-             })
-             |> assign(:oidc_step_error, nil)
-             |> assign(:oidc_step_form, to_form(%{"code" => ""}, as: "oidc_step"))
-             |> maybe_flash_provider_code(factor)}
+        step = %{provider_id: provider.id, provider_name: provider.name}
 
-          # The account email can't receive the confirmation code, so verification
-          # can't proceed — tell them plainly rather than showing a code prompt.
-          {:error, :delivery_suppressed} ->
-            {:noreply,
-             put_flash(
-               socket,
-               :error,
-               "We can't deliver a code to #{socket.assigns.current_user.email}."
-             )}
-
-          {:error, :rate_limited} ->
-            {:noreply, put_flash(socket, :error, email_limit_error())}
-
-          {:error, _reason} ->
-            {:noreply, put_flash(socket, :error, "Couldn't start sign-in verification.")}
-        end
+        {:noreply,
+         OIDCStepUp.begin(socket, step, :verify_provider, @sign_in_verification_start_error)}
     end
   end
-
-  defp maybe_flash_provider_code(socket, :email),
-    do: put_flash(socket, :info, "We emailed a confirmation code to your current address.")
-
-  defp maybe_flash_provider_code(socket, :mfa), do: socket
-
-  defp complete_provider_step_up(socket, step, proof) do
-    payload = %{
-      actor_id: socket.assigns.current_user.id,
-      actor_membership_id: socket.assigns.current_subject.membership_id,
-      actor_session_token_digest: socket.assigns.current_auth.token,
-      account_id: socket.assigns.current_account.id,
-      provider_id: step.provider_id,
-      purpose: :verify_provider,
-      proof: proof
-    }
-
-    {:noreply,
-     socket
-     |> assign(:oidc_handoff, OIDCIdentityHandoff.sign(payload))
-     |> assign(:oidc_trigger_submit, true)
-     |> assign(:oidc_step_error, nil)}
-  end
-
-  defp reset_oidc_step_up(socket) do
-    socket
-    |> assign(:oidc_step, nil)
-    |> assign(:oidc_step_error, nil)
-    |> assign(:oidc_step_form, to_form(%{"code" => ""}, as: "oidc_step"))
-    |> assign(:oidc_handoff, nil)
-    |> assign(:oidc_trigger_submit, false)
-  end
-
-  defp provider_step_error(:mfa),
-    do: "That authenticator or recovery code didn't match. Try again."
-
-  defp provider_step_error(:email),
-    do: "That confirmation code is wrong or expired. Try again, or resend it."
-
-  defp mfa_limit_error, do: "Too many attempts. Wait a few minutes, then try again."
-  defp email_limit_error, do: "Too many code requests. Wait up to 15 minutes, then try again."
 
   defp do_update(socket, id, params) do
     case find_provider(socket, id) do
@@ -1100,7 +964,7 @@ defmodule EmisarWeb.SSOSettingsLive do
     end
   end
 
-  defp do_change_member_role(socket, membership_id, role) when role in @member_roles do
+  defp do_change_member_role(socket, membership_id, role) do
     with_synced_membership(socket, membership_id, fn membership ->
       # Directory sync owns a synced member's role (recomputed each sync), and the
       # DOMAIN refuses a manual change off the membership's own `directory_managed`
@@ -1113,19 +977,16 @@ defmodule EmisarWeb.SSOSettingsLive do
         {:error, reason} ->
           # reload() so the dropdown trigger reflects the STORED role after a
           # refusal, not the value the operator picked.
-          {:noreply, socket |> put_flash(:error, member_error(reason)) |> reload()}
+          {:noreply, socket |> put_flash(:error, MemberErrors.message(reason)) |> reload()}
       end
     end)
   end
-
-  defp do_change_member_role(socket, _membership_id, _role),
-    do: {:noreply, put_flash(socket, :error, "Unknown role.")}
 
   defp do_suspend_member(socket, membership_id) do
     with_synced_membership(socket, membership_id, fn membership ->
       case Accounts.suspend_membership(membership, socket.assigns.current_subject) do
         {:ok, _} -> {:noreply, socket |> put_flash(:info, "Member suspended.") |> reload()}
-        {:error, reason} -> {:noreply, put_flash(socket, :error, member_error(reason))}
+        {:error, reason} -> {:noreply, put_flash(socket, :error, MemberErrors.message(reason))}
       end
     end)
   end
@@ -1138,7 +999,7 @@ defmodule EmisarWeb.SSOSettingsLive do
       # guard is domain-owned, not UI-trusted.
       case Accounts.reinstate_membership(membership, socket.assigns.current_subject) do
         {:ok, _} -> {:noreply, socket |> put_flash(:info, "Member reactivated.") |> reload()}
-        {:error, reason} -> {:noreply, put_flash(socket, :error, member_error(reason))}
+        {:error, reason} -> {:noreply, put_flash(socket, :error, MemberErrors.message(reason))}
       end
     end)
   end
@@ -1163,13 +1024,13 @@ defmodule EmisarWeb.SSOSettingsLive do
           {:noreply,
            socket
            |> put_flash(:info, "Role mapping added.")
-           |> put_mapping_form(provider_id, mapping_form(provider))
+           |> assign(:mapping_form, mapping_form(provider))
            |> open_group_picker("role")
            |> reload_mappings(provider)}
 
         {:error, %Ecto.Changeset{} = changeset} ->
           form = mapping_to_form(provider, Map.put(changeset, :action, :insert))
-          {:noreply, put_mapping_form(socket, provider_id, form)}
+          {:noreply, assign(socket, :mapping_form, form)}
 
         {:error, reason} ->
           {:noreply, put_flash(socket, :error, error_message(reason))}
@@ -1237,7 +1098,7 @@ defmodule EmisarWeb.SSOSettingsLive do
 
         {:error, %Ecto.Changeset{} = changeset} ->
           form = runner_access_mapping_to_form(provider, Map.put(changeset, :action, :insert))
-          {:noreply, put_runner_access_mapping_form(socket, provider_id, form)}
+          {:noreply, assign(socket, :runner_access_mapping_form, form)}
 
         {:error, reason} ->
           {:noreply, put_flash(socket, :error, error_message(reason))}
@@ -1295,29 +1156,25 @@ defmodule EmisarWeb.SSOSettingsLive do
     end
   end
 
-  # A full reload after a provider mutation: refresh the connection list, the
-  # group→role mappings, AND the pending manual-link requests — so enabling
-  # directory sync (re)seeds a provider's panels, and approving/dismissing a
-  # request drops it from the list.
+  # A full reload after a provider mutation: re-fetch the one connection :show
+  # is on (its row may have changed — SCIM toggled, edited) with its group→role
+  # mappings and pending manual-link requests, so enabling directory sync
+  # (re)seeds the panels and approving/dismissing a request drops it from the
+  # list. If the connection vanished (deleted), load_show falls back to the
+  # overview.
   defp reload(socket) do
-    reload_show(socket)
-  end
+    case socket.assigns.provider do
+      nil ->
+        socket
 
-  # Re-fetch the one connection :show is on (its row may have changed — SCIM
-  # toggled, edited). If it vanished (deleted), load_show falls back to the overview.
-  defp reload_show(socket) do
-    case socket.assigns.providers do
-      [provider | _] ->
+      provider ->
         params = Map.put(socket.assigns.mapping_filter_params, "id", provider.id)
         load_show(socket, params)
-
-      _ ->
-        socket
     end
   end
 
-  # Refresh just one provider's mapping list (after a mapping CRUD), leaving the
-  # other providers' panels untouched.
+  # Refresh the connection's mapping list after a mapping CRUD, leaving the rest
+  # of the page's loaded state untouched.
   defp reload_mappings(socket, provider) do
     opts =
       LiveTable.params_to_opts(
@@ -1329,9 +1186,9 @@ defmodule EmisarWeb.SSOSettingsLive do
     {mappings, metadata, failed?} = list_mappings(socket, provider, opts)
 
     socket
-    |> put_mappings(provider.id, mappings)
-    |> put_mapping_metadata(:group_mapping_metadata, provider.id, metadata)
-    |> put_read_error(:group_mapping_errors, provider.id, failed?)
+    |> assign(:group_mappings, mappings)
+    |> assign(:group_mapping_metadata, metadata)
+    |> assign(:group_mappings_load_error?, failed?)
     |> reload_synced_groups(provider)
   end
 
@@ -1350,9 +1207,9 @@ defmodule EmisarWeb.SSOSettingsLive do
     {groups, metadata, failed?} = list_synced_groups(socket, provider, opts)
 
     socket
-    |> assign(:synced_groups, Map.put(socket.assigns.synced_groups, provider.id, groups))
-    |> put_mapping_metadata(:synced_group_metadata, provider.id, metadata)
-    |> put_read_error(:synced_group_errors, provider.id, failed?)
+    |> assign(:synced_groups, groups)
+    |> assign(:synced_group_metadata, metadata)
+    |> assign(:synced_groups_load_error?, failed?)
   end
 
   defp reload_mappings_for_id(socket, provider_id) do
@@ -1373,12 +1230,9 @@ defmodule EmisarWeb.SSOSettingsLive do
     {mappings, metadata, failed?} = list_runner_access_mappings(socket, provider, opts)
 
     socket
-    |> assign(
-      :runner_access_mappings,
-      Map.put(socket.assigns.runner_access_mappings, provider.id, mappings)
-    )
-    |> put_mapping_metadata(:runner_access_mapping_metadata, provider.id, metadata)
-    |> put_read_error(:runner_access_mapping_errors, provider.id, failed?)
+    |> assign(:runner_access_mappings, mappings)
+    |> assign(:runner_access_mapping_metadata, metadata)
+    |> assign(:runner_access_mappings_load_error?, failed?)
     |> reload_synced_groups(provider)
   end
 
@@ -1389,56 +1243,25 @@ defmodule EmisarWeb.SSOSettingsLive do
     end
   end
 
-  defp put_mappings(socket, provider_id, mappings) do
-    assign(
-      socket,
-      :group_mappings,
-      Map.put(socket.assigns.group_mappings, provider_id, mappings)
-    )
-  end
+  # The page holds ONE connection, so a crafted event naming any other id finds
+  # nothing and the handler that asked no-ops.
+  defp find_provider(%{assigns: %{provider: %SSO.IdentityProvider{id: id} = provider}}, id),
+    do: provider
 
-  defp put_read_error(socket, assign_name, provider_id, failed?) do
-    errors = Map.put(socket.assigns[assign_name], provider_id, failed?)
-    assign(socket, assign_name, errors)
-  end
+  defp find_provider(_socket, _id), do: nil
 
-  defp put_mapping_metadata(socket, assign_name, provider_id, metadata) do
-    values = Map.put(socket.assigns[assign_name], provider_id, metadata)
-    assign(socket, assign_name, values)
-  end
+  defp find_mapping(socket, id),
+    do: Enum.find(socket.assigns.group_mappings, &(&1.id == id))
 
-  defp put_mapping_form(socket, provider_id, form),
-    do: assign(socket, :mapping_forms, Map.put(socket.assigns.mapping_forms, provider_id, form))
+  defp find_runner_access_mapping(socket, id),
+    do: Enum.find(socket.assigns.runner_access_mappings, &(&1.id == id))
 
-  defp put_runner_access_mapping_form(socket, provider_id, form) do
-    forms = Map.put(socket.assigns.runner_access_mapping_forms, provider_id, form)
-    assign(socket, :runner_access_mapping_forms, forms)
-  end
-
-  defp find_provider(socket, id), do: Enum.find(socket.assigns.providers, &(&1.id == id))
-
-  defp find_mapping(socket, id) do
-    socket.assigns.group_mappings
-    |> Map.values()
-    |> List.flatten()
-    |> Enum.find(&(&1.id == id))
-  end
-
-  defp find_runner_access_mapping(socket, id) do
-    socket.assigns.runner_access_mappings
-    |> Map.values()
-    |> List.flatten()
-    |> Enum.find(&(&1.id == id))
-  end
-
-  # The create-form changeset for a provider's mapping. Built over
-  # The context's form builder — phx-change validation (required fields + the
-  # owner-exclusion) matches the server create path exactly. account_id /
-  # provider_id come from the provider whose panel owns the form.
-  defp mapping_changeset(provider, params \\ %{}),
-    do: SSO.change_group_mapping(provider, params)
-
-  defp mapping_form(provider), do: mapping_to_form(provider, mapping_changeset(provider))
+  # The create form is built over the context's changeset builder, so phx-change
+  # validation (required fields + the owner-exclusion) matches the server create
+  # path exactly; account_id / provider_id come from the provider whose panel
+  # owns the form.
+  defp mapping_form(provider),
+    do: mapping_to_form(provider, SSO.change_group_mapping(provider, %{}))
 
   defp mapping_to_form(provider, %Ecto.Changeset{} = changeset),
     do: to_form(changeset, as: "mapping", id: "create-mapping-#{provider.id}")
@@ -1464,23 +1287,12 @@ defmodule EmisarWeb.SSOSettingsLive do
   # SSO owns the runner-access mapping form — it resolves the raw picker values
   # against the account's live runners — so the web passes them through and
   # renders what comes back.
-  defp runner_access_mapping_forms(socket, providers) do
-    providers
-    |> Enum.flat_map(fn provider ->
-      case SSO.change_group_runner_access_mapping(provider, %{}, socket.assigns.current_subject) do
-        {:ok, changeset} -> [{provider.id, runner_access_mapping_to_form(provider, changeset)}]
-        {:error, :unauthorized} -> []
-      end
-    end)
-    |> Map.new()
-  end
-
   defp reset_runner_access_mapping_form(socket, provider) do
     case SSO.change_group_runner_access_mapping(provider, %{}, socket.assigns.current_subject) do
       {:ok, changeset} ->
-        put_runner_access_mapping_form(
+        assign(
           socket,
-          provider.id,
+          :runner_access_mapping_form,
           runner_access_mapping_to_form(provider, changeset)
         )
 
@@ -1540,9 +1352,9 @@ defmodule EmisarWeb.SSOSettingsLive do
   # Opening (or clearing) a picker shows the first groups straight away, so an
   # admin with a handful of them never has to type to find one.
   defp open_group_picker(socket, scope) do
-    case socket.assigns.providers do
-      [provider | _] -> put_group_picker(socket, scope, search_groups(socket, provider, ""))
-      _ -> reset_group_picker(socket, scope)
+    case socket.assigns.provider do
+      nil -> reset_group_picker(socket, scope)
+      provider -> put_group_picker(socket, scope, search_groups(socket, provider, ""))
     end
   end
 
@@ -1599,25 +1411,12 @@ defmodule EmisarWeb.SSOSettingsLive do
     "You can only hand out a role you hold yourself. Ask an owner to set this one."
   end
 
-  defp error_message(:link_target_outranks_approver) do
-    "That email belongs to a member whose role you can't manage, so linking an identity to them isn't something this role can approve. An owner can approve it."
-  end
-
-  defp error_message(:link_target_in_other_accounts) do
-    "That email belongs to someone who is also a member of another workspace. Linking here would give this connection's sign-in their access there too, so it can't be approved from this workspace."
-  end
-
-  defp error_message(:email_taken) do
-    "A user with that email already exists. Approving would create a duplicate, so this request can't be auto-approved."
-  end
-
   defp error_message(_) do
     "That action didn't complete. Refresh to see the connection's current state, then try again."
   end
 
   # Member-lifecycle errors from Accounts (change role / suspend / reinstate) —
   # kept separate from the SSO-config error_message/1 so each reads for its surface.
-  defp member_error(reason), do: EmisarWeb.MemberErrors.message(reason)
 
   # The create form and any open inline edit form coexist in the DOM, so each
   # gets its own `id` — otherwise their inputs collide on `provider_<field>`.
@@ -1682,8 +1481,8 @@ defmodule EmisarWeb.SSOSettingsLive do
              points at Team's anchored SSO card, NOT /settings/sso: that route is a
              pure redirect to exactly this anchor, so linking it made the crumb
              bounce through a dead stop. --%>
-        <%= case {@live_action, @providers} do %>
-          <% {:show, [provider | _]} -> %>
+        <%= case {@live_action, @provider} do %>
+          <% {:show, %SSO.IdentityProvider{} = provider} -> %>
             <.back_link navigate={~p"/app/#{@current_account}/settings/team"}>Team</.back_link>
             <.detail_header
               back="Single sign-on"
@@ -1697,7 +1496,7 @@ defmodule EmisarWeb.SSOSettingsLive do
               navigate={sso_card_path(@current_account)}
               title="Add connection"
             />
-          <% {:edit, [provider | _]} -> %>
+          <% {:edit, %SSO.IdentityProvider{} = provider} -> %>
             <.back_link navigate={~p"/app/#{@current_account}/settings/team"}>Team</.back_link>
             <.back_link navigate={sso_card_path(@current_account)}>Single sign-on</.back_link>
             <.detail_header
@@ -1710,17 +1509,14 @@ defmodule EmisarWeb.SSOSettingsLive do
             Single sign-on
         <% end %>
       </:title>
-      <:actions
-        :for={provider <- @providers}
-        :if={@can_configure? and @live_action == :show}
-      >
+      <:actions :if={not is_nil(@provider) and @can_configure? and @live_action == :show}>
         <%!-- These act on the connection record, so they live opposite its
              title like every other detail-page action. The status row below
              stays a facts-only read rather than becoming an action toolbar. --%>
         <.button
-          id={"view-provider-activity-#{provider.id}"}
+          id={"view-provider-activity-#{@provider.id}"}
           navigate={
-            ~p"/app/#{@current_account}/audit?#{[target_kind: "identity_provider", target_id: provider.id]}"
+            ~p"/app/#{@current_account}/audit?#{[target_kind: "identity_provider", target_id: @provider.id]}"
           }
           variant={:secondary}
           size={:md}
@@ -1728,8 +1524,8 @@ defmodule EmisarWeb.SSOSettingsLive do
           View activity
         </.button>
         <.button
-          id={"edit-provider-#{provider.id}"}
-          navigate={~p"/app/#{@current_account}/settings/sso/#{provider.id}/edit"}
+          id={"edit-provider-#{@provider.id}"}
+          navigate={~p"/app/#{@current_account}/settings/sso/#{@provider.id}/edit"}
           variant={:secondary}
           size={:md}
         >
@@ -1750,9 +1546,8 @@ defmodule EmisarWeb.SSOSettingsLive do
         </.empty_state>
         <.locked :if={@has_sso_permission?} current_account={@current_account} />
         <.plan_locked_connection
-          :for={provider <- @providers}
-          :if={@has_sso_permission? and @live_action == :show}
-          provider={provider}
+          :if={not is_nil(@provider) and @has_sso_permission? and @live_action == :show}
+          provider={@provider}
           typed={@typed}
         />
       </div>
@@ -1829,7 +1624,7 @@ defmodule EmisarWeb.SSOSettingsLive do
           <aside class="order-1 xl:order-2 xl:sticky xl:top-6">
             <.provider_setup_guide
               id="new-rail"
-              kind={form_kind(@form, @kind_options)}
+              kind={form_kind(@form)}
               callback_url={@callback_url}
             />
           </aside>
@@ -1839,7 +1634,7 @@ defmodule EmisarWeb.SSOSettingsLive do
              sub-header over the same sibling field islands, never an inline
              collapsed block and never one giant card. --%>
         <div :if={@live_action == :edit} class="max-w-3xl space-y-5">
-          <div :for={provider <- @providers} class="space-y-5">
+          <div :if={@provider} class="space-y-5">
             <%!-- No second crumb or heading here: the shell header already reads
                  Team / Single sign-on / <provider> / Edit connection. --%>
             <p class="max-w-prose text-sm leading-relaxed text-zinc-400">
@@ -1850,11 +1645,11 @@ defmodule EmisarWeb.SSOSettingsLive do
             <.simple_form
               :if={@edit_form}
               for={@edit_form}
-              id={"edit-provider-#{provider.id}"}
+              id={"edit-provider-#{@provider.id}"}
               phx-change="validate_edit"
               phx-submit="update"
             >
-              <input type="hidden" name="provider_id" value={provider.id} />
+              <input type="hidden" name="provider_id" value={@provider.id} />
               <.provider_fields
                 form={@edit_form}
                 kind_options={@kind_options}
@@ -1865,7 +1660,7 @@ defmodule EmisarWeb.SSOSettingsLive do
                 pack_access_restricted?={@pack_access_restricted?}
                 runner_load_error?={@runner_load_error?}
                 pack_load_error?={@pack_load_error?}
-                guide_id={provider.id}
+                guide_id={@provider.id}
                 callback_url={@callback_url}
                 editing?
               />
@@ -1873,7 +1668,7 @@ defmodule EmisarWeb.SSOSettingsLive do
                 <%!-- Emerald once edited, quiet outlined while clean (house
                      pattern — the button is the unsaved-changes signal). --%>
                 <.button
-                  id={"save-provider-#{provider.id}"}
+                  id={"save-provider-#{@provider.id}"}
                   variant={if @edit_form.source.changes == %{}, do: :secondary, else: :primary}
                   phx-hook="PendingButton"
                   phx-disable-with="Saving..."
@@ -1881,7 +1676,7 @@ defmodule EmisarWeb.SSOSettingsLive do
                   Save changes
                 </.button>
                 <.button
-                  navigate={~p"/app/#{@current_account}/settings/sso/#{provider.id}"}
+                  navigate={~p"/app/#{@current_account}/settings/sso/#{@provider.id}"}
                   variant={:ghost}
                 >
                   Cancel
@@ -1905,7 +1700,7 @@ defmodule EmisarWeb.SSOSettingsLive do
              providers. NAKED — the code_line is the artifact. --%>
         <%!-- ── Connection detail (/settings/sso/:id) ───────────────────────
              One connection: identity + status + config (edit, directory sync,
-             group→role). @providers holds exactly the one handle_params loaded. --%>
+             group→role). @provider is the one handle_params loaded. --%>
         <%!-- Back crumb + entity name live in the shell header (detail_header),
              like every other detail page. --%>
         <%!-- Help-bearing sections own their two-column row: the heading and its
@@ -1920,7 +1715,7 @@ defmodule EmisarWeb.SSOSettingsLive do
                internal tracks. Sections with no rail still emit a desktop-only
                spacer so the next section starts a fresh outer-grid row. --%>
           <div
-            :for={provider <- @providers}
+            :if={@provider}
             class="grid grid-cols-1 gap-x-12 gap-y-12 xl:grid-cols-[minmax(0,1fr)_18rem] xl:items-start"
           >
             <%!-- The title already names the connection. Its operational facts
@@ -1936,9 +1731,9 @@ defmodule EmisarWeb.SSOSettingsLive do
                     Status
                   </dt>
                   <dd class="mt-1 flex items-center gap-2 text-sm font-medium">
-                    <.status_dot tone={if(provider.enabled, do: :brand, else: :amber)} />
-                    <span class={if(provider.enabled, do: "text-brand-300", else: "text-amber-300")}>
-                      {if(provider.enabled, do: "Enabled", else: "Disabled")}
+                    <.status_dot tone={if(@provider.enabled, do: :brand, else: :amber)} />
+                    <span class={if(@provider.enabled, do: "text-brand-300", else: "text-amber-300")}>
+                      {if(@provider.enabled, do: "Enabled", else: "Disabled")}
                     </span>
                   </dd>
                 </div>
@@ -1946,21 +1741,21 @@ defmodule EmisarWeb.SSOSettingsLive do
                   <dt class="text-[10px] font-semibold uppercase tracking-wider text-zinc-400">
                     Provider
                   </dt>
-                  <dd class="mt-1 text-sm text-zinc-300">{kind_label(provider.kind)}</dd>
+                  <dd class="mt-1 text-sm text-zinc-300">{kind_label(@provider.kind)}</dd>
                 </div>
                 <div>
                   <dt class="text-[10px] font-semibold uppercase tracking-wider text-zinc-400">
                     New members
                   </dt>
                   <dd class="mt-1 text-sm text-zinc-300">
-                    {provisioner_label(provider.provisioner)}
+                    {provisioner_label(@provider.provisioner)}
                   </dd>
                 </div>
                 <div>
                   <dt class="text-[10px] font-semibold uppercase tracking-wider text-zinc-400">
                     Default role
                   </dt>
-                  <dd class="mt-1 text-sm text-zinc-300">{role_label(provider.default_role)}</dd>
+                  <dd class="mt-1 text-sm text-zinc-300">{role_label(@provider.default_role)}</dd>
                 </div>
               </dl>
 
@@ -1982,14 +1777,14 @@ defmodule EmisarWeb.SSOSettingsLive do
                         {sign_in_verification_label(@sign_in_verification)}
                       </p>
                       <p class="mt-0.5 text-xs leading-relaxed text-zinc-400">
-                        {sign_in_verification_copy(@sign_in_verification, provider)}
+                        {sign_in_verification_copy(@sign_in_verification, @provider)}
                         <span :if={
                           @sign_in_verification &&
                             @sign_in_verification.status == :verified &&
                             @sign_in_verification.verified_at
                         }>
                           <.local_time
-                            id={"provider-sign-in-verified-#{provider.id}"}
+                            id={"provider-sign-in-verified-#{@provider.id}"}
                             value={@sign_in_verification.verified_at}
                             mode={:relative}
                           />.
@@ -2002,15 +1797,15 @@ defmodule EmisarWeb.SSOSettingsLive do
                     <.confirm_button
                       :if={
                         (@sign_in_verification && @sign_in_verification.status == :verified) and
-                          not provider.enabled
+                          not @provider.enabled
                       }
-                      id={"enable-verified-provider-#{provider.id}"}
-                      title={"Enable #{provider.name} for members?"}
+                      id={"enable-verified-provider-#{@provider.id}"}
+                      title={"Enable #{@provider.name} for members?"}
                       confirm_label="Enable connection"
                       pending_label="Enabling…"
                       size={:md}
                       on_confirm={
-                        JS.push("enable_verified_provider", value: %{provider_id: provider.id})
+                        JS.push("enable_verified_provider", value: %{provider_id: @provider.id})
                       }
                     >
                       <:body>
@@ -2021,14 +1816,14 @@ defmodule EmisarWeb.SSOSettingsLive do
                     </.confirm_button>
 
                     <.button
-                      id={"verify-provider-sign-in-#{provider.id}"}
+                      id={"verify-provider-sign-in-#{@provider.id}"}
                       type="button"
                       variant={:secondary}
                       size={:md}
                       class="min-w-32"
                       phx-hook="PendingButton"
                       phx-click="start_provider_sign_in_verification"
-                      phx-value-provider_id={provider.id}
+                      phx-value-provider_id={@provider.id}
                       phx-disable-with="Verifying…"
                     >
                       {if(@sign_in_verification && @sign_in_verification.status == :verified,
@@ -2040,7 +1835,7 @@ defmodule EmisarWeb.SSOSettingsLive do
                 </div>
 
                 <.oidc_step_dialog
-                  :if={@oidc_step && @oidc_step.provider_id == provider.id}
+                  :if={@oidc_step && @oidc_step.provider_id == @provider.id}
                   id="provider-oidc-step"
                   form={@oidc_step_form}
                   step={@oidc_step}
@@ -2058,38 +1853,38 @@ defmodule EmisarWeb.SSOSettingsLive do
                 <dl class="divide-y divide-zinc-800/70 border-y border-zinc-800/70">
                   <div class="grid gap-1 py-3 sm:grid-cols-[10rem_minmax(0,1fr)] sm:gap-4">
                     <dt class="text-xs font-medium text-zinc-400">Issuer</dt>
-                    <dd class="break-all font-mono text-sm text-zinc-300">{provider.issuer}</dd>
+                    <dd class="break-all font-mono text-sm text-zinc-300">{@provider.issuer}</dd>
                   </div>
                   <div class="grid gap-1 py-3 sm:grid-cols-[10rem_minmax(0,1fr)] sm:gap-4">
                     <dt class="text-xs font-medium text-zinc-400">Identifier claim</dt>
-                    <dd class="font-mono text-sm text-zinc-300">{provider.identifier_claim}</dd>
+                    <dd class="font-mono text-sm text-zinc-300">{@provider.identifier_claim}</dd>
                   </div>
                   <div
-                    :if={provider.allowed_email_domain}
+                    :if={@provider.allowed_email_domain}
                     class="grid gap-1 py-3 sm:grid-cols-[10rem_minmax(0,1fr)] sm:gap-4"
                   >
                     <dt class="text-xs font-medium text-zinc-400">Email domain</dt>
-                    <dd class="text-sm text-zinc-300">@{provider.allowed_email_domain}</dd>
+                    <dd class="text-sm text-zinc-300">@{@provider.allowed_email_domain}</dd>
                   </div>
                   <div class="grid gap-1 py-3 sm:grid-cols-[10rem_minmax(0,1fr)] sm:gap-4">
                     <dt class="text-xs font-medium text-zinc-400">Runner access</dt>
                     <dd class="text-sm text-zinc-300">
-                      {runner_access_mode_label(provider.default_runner_access_mode)}
+                      {runner_access_mode_label(@provider.default_runner_access_mode)}
                     </dd>
                   </div>
                   <div
-                    :if={provider.default_runner_access_mode != :none}
+                    :if={@provider.default_runner_access_mode != :none}
                     class="grid gap-1 py-3 sm:grid-cols-[10rem_minmax(0,1fr)] sm:gap-4"
                   >
                     <dt class="text-xs font-medium text-zinc-400">Pack access</dt>
                     <dd class="text-sm text-zinc-300">
-                      {pack_access_mode_label(provider.default_pack_access_mode)}
+                      {pack_access_mode_label(@provider.default_pack_access_mode)}
                     </dd>
                   </div>
                   <div class="grid gap-1 py-3 sm:grid-cols-[10rem_minmax(0,1fr)] sm:gap-4">
                     <dt class="text-xs font-medium text-zinc-400">Multi-factor authentication</dt>
                     <dd class="text-sm text-zinc-300">
-                      {if(provider.satisfies_mfa,
+                      {if(@provider.satisfies_mfa,
                         do: "Satisfied by this provider",
                         else: "Not satisfied by this provider"
                       )}
@@ -2105,11 +1900,11 @@ defmodule EmisarWeb.SSOSettingsLive do
                 <p class="text-[10px] font-semibold uppercase tracking-wider text-zinc-400">Docs</p>
                 <ul class="mt-3 space-y-2">
                   <li>
-                    <.doc_link href={docs_path_for_kind(to_string(provider.kind))}>
-                      Setting up {setup_kind_label(to_string(provider.kind))}
+                    <.doc_link href={docs_path_for_kind(to_string(@provider.kind))}>
+                      Setting up {setup_kind_label(to_string(@provider.kind))}
                     </.doc_link>
                   </li>
-                  <li :if={SSO.supports_scim?(provider.kind)}>
+                  <li :if={SSO.supports_scim?(@provider.kind)}>
                     <.doc_link href={~p"/docs/scim"}>Directory sync</.doc_link>
                   </li>
                   <li><.doc_link href={~p"/docs/teams-and-access"}>Roles &amp; access</.doc_link></li>
@@ -2118,8 +1913,8 @@ defmodule EmisarWeb.SSOSettingsLive do
             </section>
 
             <.scim_section
-              :if={@can_configure_directory_sync? and SSO.supports_scim?(provider.kind)}
-              provider={provider}
+              :if={@can_configure_directory_sync? and SSO.supports_scim?(@provider.kind)}
+              provider={@provider}
               scim_base_url={@scim_base_url}
               scim_token={@scim_token}
             />
@@ -2128,41 +1923,41 @@ defmodule EmisarWeb.SSOSettingsLive do
                  instead of dangling an enable panel or an Enterprise upsell for a
                  feature that could never connect. --%>
             <p
-              :if={not SSO.supports_scim?(provider.kind)}
+              :if={not SSO.supports_scim?(@provider.kind)}
               class="max-w-prose text-sm leading-relaxed text-zinc-400"
             >
               <span class="font-medium text-zinc-200">Directory sync</span>
-              isn't available for {kind_label(provider.kind)}. Members are added when they first
+              isn't available for {kind_label(@provider.kind)}. Members are added when they first
               sign in through this connection.
             </p>
-            <.section_spacer :if={not SSO.supports_scim?(provider.kind)} />
+            <.section_spacer :if={not SSO.supports_scim?(@provider.kind)} />
 
             <.role_mapping_section
-              :if={@can_configure_directory_sync? and provider.scim_enabled}
-              provider={provider}
-              path={~p"/app/#{@current_account}/settings/sso/#{provider.id}"}
-              mappings={Map.get(@group_mappings, provider.id, [])}
-              metadata={Map.get(@group_mapping_metadata, provider.id, empty_metadata())}
+              :if={@can_configure_directory_sync? and @provider.scim_enabled}
+              provider={@provider}
+              path={~p"/app/#{@current_account}/settings/sso/#{@provider.id}"}
+              mappings={@group_mappings}
+              metadata={@group_mapping_metadata}
               filter_params={@mapping_filter_params}
-              load_error?={Map.get(@group_mapping_errors, provider.id, false)}
+              load_error?={@group_mappings_load_error?}
               group_picker={@group_pickers["role"]}
-              mapping_form={Map.get(@mapping_forms, provider.id)}
-              mapping_role_options={@mapping_role_options}
+              mapping_form={@mapping_form}
+              mapping_role_options={@role_options}
               editing_mapping_id={@editing_mapping_id}
               mapping_edit_form={@mapping_edit_form}
               adding_mapping={@adding_mapping}
             />
 
             <.group_runner_access_mapping_section
-              :if={@can_configure_directory_sync? and provider.scim_enabled}
-              provider={provider}
-              path={~p"/app/#{@current_account}/settings/sso/#{provider.id}"}
-              mappings={Map.get(@runner_access_mappings, provider.id, [])}
-              metadata={Map.get(@runner_access_mapping_metadata, provider.id, empty_metadata())}
+              :if={@can_configure_directory_sync? and @provider.scim_enabled}
+              provider={@provider}
+              path={~p"/app/#{@current_account}/settings/sso/#{@provider.id}"}
+              mappings={@runner_access_mappings}
+              metadata={@runner_access_mapping_metadata}
               filter_params={@mapping_filter_params}
-              load_error?={Map.get(@runner_access_mapping_errors, provider.id, false)}
+              load_error?={@runner_access_mappings_load_error?}
               group_picker={@group_pickers["runner_access"]}
-              mapping_form={Map.get(@runner_access_mapping_forms, provider.id)}
+              mapping_form={@runner_access_mapping_form}
               editing_mapping_id={@editing_runner_access_mapping_id}
               mapping_edit_form={@runner_access_mapping_edit_form}
               adding_mapping={@adding_runner_access_mapping}
@@ -2173,18 +1968,18 @@ defmodule EmisarWeb.SSOSettingsLive do
             />
 
             <.synced_groups_section
-              :if={@can_configure_directory_sync? and provider.scim_enabled}
-              id={"synced-groups-#{provider.id}"}
-              path={~p"/app/#{@current_account}/settings/sso/#{provider.id}"}
-              synced_groups={Map.get(@synced_groups, provider.id, [])}
-              metadata={Map.get(@synced_group_metadata, provider.id, empty_metadata())}
+              :if={@can_configure_directory_sync? and @provider.scim_enabled}
+              id={"synced-groups-#{@provider.id}"}
+              path={~p"/app/#{@current_account}/settings/sso/#{@provider.id}"}
+              synced_groups={@synced_groups}
+              metadata={@synced_group_metadata}
               filter_params={@mapping_filter_params}
-              load_error?={Map.get(@synced_group_errors, provider.id, false)}
+              load_error?={@synced_groups_load_error?}
             />
 
             <.synced_members_section
-              id={"synced-members-#{provider.id}"}
-              path={~p"/app/#{@current_account}/settings/sso/#{provider.id}"}
+              id={"synced-members-#{@provider.id}"}
+              path={~p"/app/#{@current_account}/settings/sso/#{@provider.id}"}
               members={@synced_members}
               metadata={@synced_member_metadata}
               filter_params={@mapping_filter_params}
@@ -2193,13 +1988,13 @@ defmodule EmisarWeb.SSOSettingsLive do
               can_manage_team?={@can_manage_team?}
               can_configure_directory_sync?={@can_configure_directory_sync?}
               current_user_id={@current_user.id}
-              scim_enabled={provider.scim_enabled}
+              scim_enabled={@provider.scim_enabled}
             />
 
             <%!-- A plan-posture fact, naked — not a boxed interruption. Only for
                  kinds that CAN do SCIM; the note above covers the ones that can't. --%>
             <p
-              :if={!@can_configure_directory_sync? and SSO.supports_scim?(provider.kind)}
+              :if={!@can_configure_directory_sync? and SSO.supports_scim?(@provider.kind)}
               class="max-w-prose text-sm leading-relaxed text-zinc-400"
             >
               <span class="font-medium text-zinc-200">SCIM directory sync</span>
@@ -2218,7 +2013,7 @@ defmodule EmisarWeb.SSOSettingsLive do
               >talk to us</a>.
             </p>
             <.section_spacer :if={
-              !@can_configure_directory_sync? and SSO.supports_scim?(provider.kind)
+              !@can_configure_directory_sync? and SSO.supports_scim?(@provider.kind)
             } />
 
             <%!-- Danger zone at the bottom — the destructive action lives apart
@@ -2229,7 +2024,7 @@ defmodule EmisarWeb.SSOSettingsLive do
               <div class="divide-y divide-zinc-800/70">
                 <.confirm_zone
                   title="Delete this connection"
-                  phx-click={show_confirm_dialog("delete-provider-#{provider.id}")}
+                  phx-click={show_confirm_dialog("delete-provider-#{@provider.id}")}
                 >
                   <:body>
                     Removes the connection and stops new sign-ins through it. Members who sign in
@@ -2243,19 +2038,20 @@ defmodule EmisarWeb.SSOSettingsLive do
             </section>
 
             <.confirm_dialog
-              id={"delete-provider-#{provider.id}"}
+              id={"delete-provider-#{@provider.id}"}
               title="Delete connection"
               confirm_label="Delete connection"
               pending_label="Deleting…"
-              confirm_token={provider.name}
+              confirm_token={@provider.name}
               typed={@typed}
               on_confirm={
-                JS.push("delete", value: %{id: provider.id})
-                |> hide_confirm_dialog("delete-provider-#{provider.id}")
+                JS.push("delete", value: %{id: @provider.id})
+                |> hide_confirm_dialog("delete-provider-#{@provider.id}")
               }
             >
               <:body>
-                Permanently removes the <span class="font-medium text-rose-100">{provider.name}</span>
+                Permanently removes the
+                <span class="font-medium text-rose-100">{@provider.name}</span>
                 connection. Members who sign in only through it lose access until it's re-added.
                 The sessions they signed in through it are ended. This can't be undone.
               </:body>
@@ -2457,7 +2253,7 @@ defmodule EmisarWeb.SSOSettingsLive do
   # controls; a panel per group was an island per group. Shared by both actions;
   # the outer <.simple_form> spaces the sections and renders the submit footer.
   defp provider_fields(assigns) do
-    assigns = assign(assigns, :kind, form_kind(assigns.form, assigns.kind_options))
+    assigns = assign(assigns, :kind, form_kind(assigns.form))
 
     ~H"""
     <div class="space-y-10">
@@ -2509,7 +2305,7 @@ defmodule EmisarWeb.SSOSettingsLive do
         <.provider_setup_guide
           :if={@inline_guide?}
           id={@guide_id}
-          kind={form_kind(@form, @kind_options)}
+          kind={form_kind(@form)}
           callback_url={@callback_url}
         />
         <div class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -2982,7 +2778,7 @@ defmodule EmisarWeb.SSOSettingsLive do
   # Blank on a fresh /new form (nothing picked yet) — the guide/hints fall back
   # to generic and the issuer stays editable, rather than arbitrarily pre-picking
   # the first provider (and locking its issuer before the operator has chosen).
-  defp form_kind(form, _kind_options) do
+  defp form_kind(form) do
     case form[:kind].value do
       blank when blank in [nil, ""] -> ""
       value -> to_string(value)
@@ -2992,7 +2788,7 @@ defmodule EmisarWeb.SSOSettingsLive do
   # The humanized label for the form's current kind — for the read-only display on
   # the edit form, where provider type is create-only.
   defp selected_kind_label(form, kind_options) do
-    value = form_kind(form, kind_options)
+    value = form_kind(form)
     Enum.find_value(kind_options, value, fn {label, v} -> v == value && label end)
   end
 
@@ -4222,11 +4018,6 @@ defmodule EmisarWeb.SSOSettingsLive do
   defp synced_external_id(identity),
     do: identity.scim_external_id || identity.provider_identifier
 
-  defp provisioned_via_label(:scim), do: "SCIM"
-  defp provisioned_via_label(:oidc_jit), do: "SSO"
-  defp provisioned_via_label(:manual), do: "Linked"
-  defp provisioned_via_label(_), do: "Synced"
-
   defp role_label(role), do: Emisar.Auth.role_label(role)
 
   defp runner_access_mode_label(:none), do: "No runners"
@@ -4239,12 +4030,6 @@ defmodule EmisarWeb.SSOSettingsLive do
 
   defp mapping_pack_reach_phrase(:all), do: "All"
   defp mapping_pack_reach_phrase(:restricted), do: nil
-
-  defp toggle_scope(expanded, id) do
-    if MapSet.member?(expanded, id),
-      do: MapSet.delete(expanded, id),
-      else: MapSet.put(expanded, id)
-  end
 
   # Groups lead — a group is the wider grant, so the visible tags start there.
   defp mapping_scope_tag_items(mapping) do

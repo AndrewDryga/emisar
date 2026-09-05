@@ -137,19 +137,15 @@ defmodule Emisar.Auth.UserToken.Changeset do
   def decrement_attempts(%UserToken{remaining_attempts: n} = token) when is_integer(n),
     do: change(token, remaining_attempts: n - 1)
 
-  # The request metadata arrives from Plug with mixed atom/string keys
-  # and non-string values — normalize to the two string-keyed fields
-  # the sessions list renders, dropping blanks.
-  defp normalize_metadata(metadata) when is_map(metadata) do
+  # The sessions list renders two string-keyed fields; a blank stays out.
+  defp normalize_metadata(metadata) do
     %{
-      "ip_address" => to_string_or_nil(metadata[:ip_address] || metadata["ip_address"]),
-      "user_agent" => to_string_or_nil(metadata[:user_agent] || metadata["user_agent"])
+      "ip_address" => to_string_or_nil(metadata[:ip_address]),
+      "user_agent" => to_string_or_nil(metadata[:user_agent])
     }
     |> Enum.reject(fn {_key, value} -> is_nil(value) end)
     |> Map.new()
   end
-
-  defp normalize_metadata(_), do: %{}
 
   defp to_string_or_nil(nil), do: nil
 

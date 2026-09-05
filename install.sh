@@ -1116,12 +1116,8 @@ ensure_user_linux() {
     log "creating system user ${SERVICE_USER}"
     useradd --system --no-create-home --shell /usr/sbin/nologin \
       --home-dir "${DATA_DIR}" "${SERVICE_USER}"
-  elif command -v adduser >/dev/null 2>&1; then
-    # BusyBox/Alpine fallback.
-    log "creating system user ${SERVICE_USER}"
-    adduser -S -D -H -h "${DATA_DIR}" -s /sbin/nologin "${SERVICE_USER}"
   else
-    die "neither useradd nor adduser available; cannot create service user"
+    die "useradd not available; cannot create service user"
   fi
 
   # Grant read access to the system journal and /var/log so the log
@@ -1134,8 +1130,6 @@ ensure_user_linux() {
     grep -q "^${grp}:" /etc/group 2>/dev/null || continue
     if command -v usermod >/dev/null 2>&1; then
       usermod -aG "${grp}" "${SERVICE_USER}" 2>/dev/null || true
-    elif command -v addgroup >/dev/null 2>&1; then
-      addgroup "${SERVICE_USER}" "${grp}" 2>/dev/null || true
     fi
   done
 }
@@ -1209,8 +1203,6 @@ drop_config_skeleton() {
     cfg_staged="$(mktemp "${cfg}.tmp.XXXXXX")"
     config_skeleton > "${cfg_staged}"
     mv -f "${cfg_staged}" "${cfg}"
-    chmod 640 "${cfg}"
-    chown "root:${SERVICE_GROUP}" "${cfg}" 2>/dev/null || true
     needs_configuration="${needs}"
   else
     # Config exists — preserve the operator's file. But an explicitly
@@ -1264,8 +1256,6 @@ drop_config_skeleton() {
     # EMISAR_ENROLLMENT_KEY is never momentarily world-readable. The previous
     # write-then-chmod left a brief race window where it was 0644.
     ( umask 077 && runner_env_skeleton > "${env}" )
-    # Belt-and-suspenders in case a restrictive umask wasn't honoured.
-    chmod 600 "${env}"
   elif [ "${ENROLLMENT_KEY_UPDATE}" = "1" ]; then
     backup_enrollment_state
     write_enrollment_key
@@ -2045,8 +2035,6 @@ do_uninstall() {
       log "removing user ${SERVICE_USER}"
       if command -v userdel >/dev/null 2>&1; then
         userdel "${SERVICE_USER}" || true
-      elif command -v deluser >/dev/null 2>&1; then
-        deluser "${SERVICE_USER}" || true
       fi
     fi
   else

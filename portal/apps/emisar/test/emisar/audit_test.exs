@@ -79,20 +79,6 @@ defmodule Emisar.AuditTest do
       assert event.request_id == "req123"
     end
 
-    # normalize/1 uses String.to_existing_atom (IL-14): an
-    # invented field name blows up LOUDLY rather than minting an atom from input
-    # (the atom table never GCs; an attacker-influenced key set would be a DoS).
-    test "an invented string field key raises rather than minting an atom (IL-14)", %{
-      account: account
-    } do
-      assert_raise ArgumentError, fn ->
-        Audit.log(account.id, "audit.test", %{
-          "actor_kind" => "system",
-          "this_audit_field_was_never_declared_zqx" => "x"
-        })
-      end
-    end
-
     test "replaces an oversized payload with a bounded audit marker", %{account: account} do
       changeset =
         Audit.changeset(account.id, "audit.test",
@@ -202,17 +188,6 @@ defmodule Emisar.AuditTest do
       # Explicit ip wins over the context; un-overridden ua falls through from it.
       assert Ecto.Changeset.get_field(changeset, :ip_address) == "8.8.8.8"
       assert Ecto.Changeset.get_field(changeset, :user_agent) == "ctx-ua"
-    end
-
-    test "an invented string field key raises rather than minting an atom (IL-14)", %{
-      account: account
-    } do
-      assert_raise ArgumentError, fn ->
-        Audit.changeset(account.id, "audit.test", %{
-          "actor_kind" => "system",
-          "never_declared_audit_field_qzx" => "x"
-        })
-      end
     end
   end
 
@@ -1724,30 +1699,35 @@ defmodule Emisar.AuditTest do
     end
   end
 
-  describe "prepare_csv_export/2" do
+  describe "stream_csv_export/2" do
     setup do
       {_user, account, subject} = Fixtures.Subjects.owner_subject()
       Fixtures.Accounts.create_subscription(account, "team")
       %{account: account, subject: subject}
     end
 
-    test "materializes the bounded file and hands the caller the path to delete", %{
+    test "streams the header and rows, then records the receipt with the row count", %{
       account: account,
       subject: subject
     } do
       {:ok, event} = Audit.log(account.id, "user.signed_in", actor_kind: "user")
 
-      # The fixtures already logged their own events, so count is the view's
-      # total, not 1 — the assertion that matters is the logged event's row.
-      assert {:ok, %{path: path, count: count}} = Audit.prepare_csv_export(subject, [])
-      assert count >= 1
-      contents = File.read!(path)
+      # The console always passes its filter list, which is what marks the
+      # receipt as the CSV transport.
+      assert {:ok, csv} = Audit.stream_csv_export(subject, filter: [])
+      contents = csv |> Enum.to_list() |> IO.iodata_to_binary()
+
       assert String.starts_with?(contents, "id,occurred_at_utc,event_type,")
       assert contents =~ event.id
-      File.rm!(path)
+
+      # The fixtures already logged their own events, so the receipt carries the
+      # view's total, not 1.
+      [exported] = Repo.all(Audit.Event) |> Enum.filter(&(&1.event_type == "audit.exported"))
+      assert exported.payload["count"] >= 1
+      assert exported.payload["transport"] == "csv"
     end
 
-    test "an over-cap view is refused with the probed count, and no file survives", %{
+    test "an over-cap view is refused with the probed count before anything streams", %{
       account: account,
       subject: subject
     } do
@@ -1755,15 +1735,16 @@ defmodule Emisar.AuditTest do
       Emisar.Config.put_override(:emisar, :audit_csv_max_rows, 0)
 
       assert {:error, {:too_many_rows, %{count: count, max: 0}}} =
-               Audit.prepare_csv_export(subject, [])
+               Audit.stream_csv_export(subject, [])
 
       assert count >= 1
+      assert Repo.all(Audit.Event) |> Enum.filter(&(&1.event_type == "audit.exported")) == []
     end
 
-    test "an empty view refuses rather than producing a headers-only file", %{subject: subject} do
+    test "an empty view refuses rather than streaming a headers-only file", %{subject: subject} do
       # A window before the account existed matches nothing.
       opts = [filter: [to: ~U[2000-01-01 00:00:00Z]]]
-      assert Audit.prepare_csv_export(subject, opts) == {:error, :nothing_to_export}
+      assert Audit.stream_csv_export(subject, opts) == {:error, :nothing_to_export}
     end
   end
 

@@ -72,8 +72,6 @@ defmodule EmisarWeb.PacksLive do
        |> assign(:version_count, 0)
        |> assign(:pending_count, 0)
        |> assign(:out_of_scope_pack_ids, [])
-       |> assign(:version_facts, %{})
-       |> assign(:group_cache, %{})
        |> assign(:can_manage_pack_retention?, false)
        |> stream(:packs, [])}
     end

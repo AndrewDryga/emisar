@@ -29,7 +29,7 @@ func streamAll(sr *StreamRedactor, input string, chunk int) string {
 		}
 		out.Write(sr.Write(b[i:end]))
 	}
-	out.Write(sr.Flush())
+	out.Write(sr.Flush(false))
 	return out.String()
 }
 
@@ -62,7 +62,7 @@ func TestStreamRedactor_MultiLinePEMNeverLeaks(t *testing.T) {
 		}
 		out.Write(sr.Write([]byte(line)))
 	}
-	out.Write(sr.Flush())
+	out.Write(sr.Flush(false))
 
 	got := out.String()
 	if strings.Contains(got, "LEAKYKEYBODY") {
@@ -131,7 +131,7 @@ func TestStreamRedactor_SingleLineSecretSplitAcrossChunks(t *testing.T) {
 	var out strings.Builder
 	out.Write(sr.Write([]byte("Authorization: Bearer abc123")))
 	out.Write(sr.Write([]byte("def456ghi789jklmno\n")))
-	out.Write(sr.Flush())
+	out.Write(sr.Flush(false))
 
 	got := out.String()
 	if strings.Contains(got, "abc123def456ghi789jklmno") {
@@ -149,7 +149,7 @@ func TestStreamRedactor_SingleQuotedSecretFieldSplitAcrossChunks(t *testing.T) {
 	var output []byte
 	output = append(output, sr.Write([]byte(`{'api_`))...)
 	output = append(output, sr.Write([]byte(`key': 987654321, 'ok': 1}`))...)
-	output = append(output, sr.Flush()...)
+	output = append(output, sr.Flush(false)...)
 
 	if got := string(output); got != `{'api_key': '[REDACTED]', 'ok': 1}` {
 		t.Fatalf("redacted output=%q", got)
@@ -174,7 +174,7 @@ func TestStreamRedactor_EmitsBeforeFlush(t *testing.T) {
 	if emittedBeforeFlush == 0 {
 		t.Fatal("nothing emitted before flush; live streaming is starved")
 	}
-	tail := sr.Flush()
+	tail := sr.Flush(false)
 	if full := emittedBeforeFlush + len(tail); full != 40*len(line) {
 		t.Fatalf("byte accounting off: emitted %d, want %d", full, 40*len(line))
 	}
@@ -205,7 +205,7 @@ func TestStreamRedactor_CommitsAreBatched(t *testing.T) {
 			streamed.Write(out)
 		}
 	}
-	streamed.Write(sr.Flush())
+	streamed.Write(sr.Flush(false))
 
 	// Committing per line past the hold would be ~99 of them; a quarter of a
 	// 1 KiB window carries five 49-byte lines per commit.

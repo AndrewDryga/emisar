@@ -84,7 +84,7 @@ defmodule Emisar.MixProject do
       # connect to a VALIDATED address while carrying the original hostname for
       # SNI and certificate verification. Finch exposes no per-request hook for
       # that, and a fetch that resolves twice is a rebinding window.
-      {:mint, "~> 1.9"},
+      {:mint, "~> 1.10"},
       # OAuth 1.0a request signing for the X Ads Conversion API.
       {:oauther, "~> 1.3"},
 

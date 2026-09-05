@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/andrewdryga/emisar/tools/internal/packhash"
+	"github.com/andrewdryga/emisar/tools/internal/toolutil"
 )
 
 func (a *App) stagedFiles(ctx context.Context, filters []string, paths ...string) ([]string, error) {
@@ -28,13 +29,7 @@ func (a *App) diffFiles(ctx context.Context, base []string, filters []string, pa
 	if err != nil {
 		return nil, err
 	}
-	var files []string
-	for _, entry := range bytes.Split(output, []byte{0}) {
-		if len(entry) != 0 {
-			files = append(files, string(entry))
-		}
-	}
-	return files, nil
+	return toolutil.NULFields(output), nil
 }
 
 func (a *App) stagedBlob(ctx context.Context, path string) ([]byte, error) {
@@ -115,7 +110,7 @@ func (a *App) requireCleanPackHashInputs(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	files := append(nulFields(unstaged), nulFields(untracked)...)
+	files := append(toolutil.NULFields(unstaged), toolutil.NULFields(untracked)...)
 	if len(files) != 0 {
 		return fmt.Errorf(
 			"pack hash validation requires all redis, cassandra, and golden changes staged:\n  %s",

@@ -10,6 +10,8 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+
+	"github.com/andrewdryga/emisar/tools/internal/toolutil"
 )
 
 var (
@@ -21,7 +23,7 @@ func (a *App) runCaptured(ctx context.Context, label, dir string, env map[string
 	return a.gatePhase(label, func() error {
 		command := exec.CommandContext(ctx, name, args...)
 		command.Dir = dir
-		command.Env = mergedEnv(env)
+		command.Env = toolutil.MergedEnv(env)
 		command.Stdin = a.In
 		var output bytes.Buffer
 		command.Stdout, command.Stderr = &output, &output
@@ -107,16 +109,6 @@ func (a *App) ensurePortalTestDatabase(ctx context.Context, env map[string]strin
 	return nil
 }
 
-func nulFields(data []byte) []string {
-	values := make([]string, 0)
-	for _, field := range bytes.Split(data, []byte{0}) {
-		if len(field) > 0 {
-			values = append(values, string(field))
-		}
-	}
-	return values
-}
-
 func (a *App) changedPortalFiles(ctx context.Context) ([]string, error) {
 	changed, err := a.output(ctx, a.Root, nil, "git", "diff", "--name-only", "-z", "--diff-filter=ACMR", "HEAD", "--", "portal")
 	if err != nil {
@@ -127,7 +119,7 @@ func (a *App) changedPortalFiles(ctx context.Context) ([]string, error) {
 		return nil, err
 	}
 	set := make(map[string]struct{})
-	for _, path := range append(nulFields(changed), nulFields(untracked)...) {
+	for _, path := range append(toolutil.NULFields(changed), toolutil.NULFields(untracked)...) {
 		set[path] = struct{}{}
 	}
 	paths := make([]string, 0, len(set))
@@ -373,7 +365,7 @@ func (a *App) trackedShellFiles(ctx context.Context) ([]string, error) {
 		return nil, err
 	}
 	var scripts []string
-	for _, path := range nulFields(data) {
+	for _, path := range toolutil.NULFields(data) {
 		// The git hooks are tracked #!/bin/sh scripts with no extension, so an
 		// extension filter linted none of them — and pre-commit is the entry
 		// point to `./run check staged`, where a syntax error disables the

@@ -118,6 +118,7 @@ func TestEqual(t *testing.T) {
 		{int64(5), "5"}, // int target, string candidate coerces
 		{float64(2.5), "2.5"},
 		{json.Number("1.250"), 1.25},
+		{json.Number("1.2500000000000001"), 1.25}, // both denote the same float64
 		{true, true},
 	}
 	for _, c := range truthy {
@@ -129,8 +130,8 @@ func TestEqual(t *testing.T) {
 		{"x", "y"},
 		{int64(5), int64(6)},
 		{int64(5), "abc"}, // uncoercible
-		{json.Number("1.2500000000000001"), 1.25},
-		{float64(0.5), "1/2"}, // big.Rat syntax is not JSON numeric syntax
+		{json.Number("1.26"), 1.25},
+		{float64(0.5), "1/2"}, // a candidate that is not a number at all
 		{true, false},
 		{true, "true"}, // bool only equals bool
 	}

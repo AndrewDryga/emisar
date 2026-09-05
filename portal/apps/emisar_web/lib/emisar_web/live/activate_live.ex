@@ -118,7 +118,9 @@ defmodule EmisarWeb.ActivateLive do
     # credential-shaped lookup. Guessing was never practical (30^8 over a
     # 15-minute TTL); the point is that the control the comment relies on now
     # actually covers the paths that reach the lookup.
-    if Throttle.check("device_code_lookup", lookup_key(socket), 20, 900_000) != :ok do
+    user_id = socket.assigns.current_user.id
+
+    if Throttle.check("device_code_lookup", user_id, 20, 900_000) != :ok do
       assign(socket,
         grant: nil,
         lookup_error: "Too many attempts. Wait a few minutes and try again."
@@ -154,13 +156,6 @@ defmodule EmisarWeb.ActivateLive do
     case Accounts.list_accounts_for_user(subject) do
       {:ok, accounts, _metadata} -> accounts
       {:error, _reason} -> []
-    end
-  end
-
-  defp lookup_key(socket) do
-    case socket.assigns[:current_user] do
-      %{id: id} -> id
-      _ -> "anonymous"
     end
   end
 

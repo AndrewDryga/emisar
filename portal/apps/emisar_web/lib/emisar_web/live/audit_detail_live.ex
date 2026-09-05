@@ -57,7 +57,7 @@ defmodule EmisarWeb.AuditDetailLive do
   # in `payload.run_id`): the Target card links back to the run. Same
   # subject-gated fetch — a cross-account or deleted run resolves to nil.
   defp target_run(%{target_kind: "runner", payload: %{} = payload}, %{} = subject) do
-    case payload["run_id"] || payload[:run_id] do
+    case payload["run_id"] do
       id when is_binary(id) ->
         case Runs.fetch_run_by_id(id, subject) do
           {:ok, run} -> run
@@ -211,7 +211,7 @@ defmodule EmisarWeb.AuditDetailLive do
            anyone opens the page. Falls through to plain JSON below
            for everything else. --%>
         <.policy_changes
-          :if={@event.event_type == "policy.updated" and is_map(@event.payload)}
+          :if={@event.event_type == "policy.updated"}
           changes={@event.payload["changes"] || %{}}
         />
 
@@ -239,14 +239,9 @@ defmodule EmisarWeb.AuditDetailLive do
     """
   end
 
-  # A non-map payload is unexpected but still content, so it renders; nil and an
-  # empty object are the states with nothing to show.
-  defp payload_entries?(nil), do: false
-  defp payload_entries?(payload) when is_map(payload), do: map_size(payload) > 0
-  defp payload_entries?(_payload), do: true
+  defp payload_entries?(payload), do: map_size(payload) > 0
 
-  defp pretty_payload(map) when is_map(map), do: Jason.encode!(map, pretty: true)
-  defp pretty_payload(other), do: inspect(other)
+  defp pretty_payload(map), do: Jason.encode!(map, pretty: true)
 
   # -- policy.updated diff renderer ---------------------------------
 
@@ -543,14 +538,14 @@ defmodule EmisarWeb.AuditDetailLive do
   #
   #   "emisar-mcp/0.2.0 (client=claude-desktop; host=andrews-mbp.local)"
   #
-  # → %{bridge?: true, bridge: "emisar-mcp/0.2.0", client: ..., host: ...}
+  # → %{bridge?: true, client: ..., host: ...}
   #
   # For everything else (`Go-http-client/1.1` from runners,
   # `Mozilla/...` from browsers, nil), `:bridge?` is false and the
   # detail page hides the Client/Host/MCP-bridge cells — they would
   # otherwise misattribute the runner's HTTP UA as an "MCP bridge".
   defp parse_client_posture(nil),
-    do: %{bridge?: false, client: nil, host: nil, os: nil, bridge: nil}
+    do: %{bridge?: false, client: nil, host: nil, os: nil}
 
   defp parse_client_posture(ua) when is_binary(ua) do
     parens =
@@ -572,21 +567,13 @@ defmodule EmisarWeb.AuditDetailLive do
       |> Enum.reject(&is_nil/1)
       |> Map.new()
 
-    bridge_token =
-      case Regex.run(~r{^([^\s]+)}, ua) do
-        [_, b] -> b
-        _ -> nil
-      end
-
     # Treat as a bridge UA only when we actually parsed a posture
-    # block AND it carries at least one structured field. Otherwise
-    # the first whitespace-delimited token isn't a "bridge", it's
-    # just opaque (Go-http-client/1.1 etc.) and shouldn't be labelled.
+    # block AND it carries at least one structured field; an opaque UA
+    # (Go-http-client/1.1 etc.) shouldn't be labelled.
     is_bridge = parens != nil and (Map.has_key?(fields, "client") or Map.has_key?(fields, "host"))
 
     %{
       bridge?: is_bridge,
-      bridge: if(is_bridge, do: bridge_token),
       client: Map.get(fields, "client"),
       host: Map.get(fields, "host"),
       os: Map.get(fields, "os")

@@ -59,8 +59,8 @@ defmodule Emisar.Billing.Subscription.Changeset do
   # without a stored timestamp still accept the next event and establish the
   # guard when Paddle supplies `updated_at`.
   defp stale_update?(%Subscription{} = subscription, attrs) do
-    incoming_event = attrs[:paddle_event_occurred_at] || attrs["paddle_event_occurred_at"]
-    incoming_object = attrs[:paddle_updated_at] || attrs["paddle_updated_at"]
+    incoming_event = attrs[:paddle_event_occurred_at]
+    incoming_object = attrs[:paddle_updated_at]
 
     stored_latest =
       latest_timestamp(subscription.paddle_event_occurred_at, subscription.paddle_updated_at)
@@ -68,14 +68,15 @@ defmodule Emisar.Billing.Subscription.Changeset do
     event_stale? =
       if is_struct(incoming_event, DateTime),
         do: older?(incoming_event, subscription.paddle_event_occurred_at),
-        else: has_key?(attrs, :paddle_event_occurred_at) and is_struct(stored_latest, DateTime)
+        else:
+          Map.has_key?(attrs, :paddle_event_occurred_at) and is_struct(stored_latest, DateTime)
 
     object_stale? =
       cond do
         is_struct(incoming_object, DateTime) ->
           older?(incoming_object, subscription.paddle_updated_at)
 
-        has_key?(attrs, :paddle_updated_at) and
+        Map.has_key?(attrs, :paddle_updated_at) and
             is_struct(subscription.paddle_updated_at, DateTime) ->
           true
 
@@ -100,7 +101,4 @@ defmodule Emisar.Billing.Subscription.Changeset do
 
   defp older?(_incoming, nil), do: false
   defp older?(incoming, stored), do: DateTime.compare(incoming, stored) == :lt
-
-  defp has_key?(attrs, key),
-    do: Map.has_key?(attrs, key) or Map.has_key?(attrs, Atom.to_string(key))
 end

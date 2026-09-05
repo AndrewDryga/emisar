@@ -19,7 +19,6 @@ defmodule Emisar.Auth do
   alias Emisar.Repo
   alias Emisar.RequestContext
   alias Emisar.SSO
-  alias Emisar.Telemetry
   alias Emisar.Users
   require Logger
 
@@ -145,7 +144,6 @@ defmodule Emisar.Auth do
     UserToken.Query.by_token_digest(Crypto.hash(token))
     |> UserToken.Query.by_context("session")
     |> UserToken.Query.not_expired("session")
-    |> UserToken.Query.with_valid_auth_method()
     |> UserToken.Query.with_preloaded_user()
     |> Repo.one()
     |> case do
@@ -233,7 +231,6 @@ defmodule Emisar.Auth do
       UserToken.Query.by_token_digest(digest)
       |> UserToken.Query.by_context("session")
       |> UserToken.Query.not_expired("session")
-      |> UserToken.Query.with_valid_auth_method()
       |> UserToken.Query.with_preloaded_user()
       |> UserToken.Query.lock_for_update()
 
@@ -477,7 +474,6 @@ defmodule Emisar.Auth do
       UserToken.Query.by_user_id(user.id)
       |> UserToken.Query.by_context("session")
       |> UserToken.Query.not_expired("session")
-      |> UserToken.Query.with_valid_auth_method()
 
     case Repo.list(sessions_query, UserToken.Query, opts) do
       {:ok, tokens, metadata} ->
@@ -569,25 +565,14 @@ defmodule Emisar.Auth do
   Internal — the token-deletion half of
   `revoke_and_disconnect_other_sessions!/2` (the Subject-fronted public
   surface): revoke every session except the one whose stored token digest
-  is `keep_digest`. Pass `nil` to revoke every session including the current
-  one.
+  is `keep_digest`.
   """
-  def revoke_other_sessions!(user, keep_digest, context \\ %RequestContext{})
-
-  def revoke_other_sessions!(%Users.User{} = user, keep_digest, context)
+  def revoke_other_sessions!(%Users.User{} = user, keep_digest, context \\ %RequestContext{})
       when is_binary(keep_digest) do
     sessions_query =
       UserToken.Query.by_user_id(user.id)
       |> UserToken.Query.by_context("session")
       |> UserToken.Query.except_token_digest(keep_digest)
-
-    revoke_sessions_atomically!(user, sessions_query, context)
-  end
-
-  def revoke_other_sessions!(%Users.User{} = user, nil, context) do
-    sessions_query =
-      UserToken.Query.by_user_id(user.id)
-      |> UserToken.Query.by_context("session")
 
     revoke_sessions_atomically!(user, sessions_query, context)
   end
@@ -959,9 +944,9 @@ defmodule Emisar.Auth do
   # A magic-link sign-in failed. `user.sign_in_failed` is account-scoped, so it
   # only lands when the token still resolves to a real user (a live token with a
   # bad secret, or an expired/spent one that wasn't deleted). A consumed or
-  # undecodable token has no user to attribute — logged + counted server-side
-  # instead, with the SAME `{:error, :invalid_or_expired}` return so the response
-  # can't be turned into an email-enumeration oracle. Always returns the error.
+  # undecodable token has no user to attribute — logged server-side instead,
+  # with the SAME `{:error, :invalid_or_expired}` return so the response can't
+  # be turned into an email-enumeration oracle. Always returns the error.
   defp record_magic_link_failure(token_id, reason, context) when is_atom(reason) do
     case peek_magic_link_user(token_id) do
       {:ok, %Users.User{} = user} ->
@@ -972,17 +957,15 @@ defmodule Emisar.Auth do
 
       :error ->
         Logger.warning("magic-link sign-in failed for an unresolvable token")
-        Telemetry.magic_link_failed(reason)
     end
 
     {:error, reason}
   end
 
-  # A failed Multi step can forward a %Changeset{} or other non-atom reason; the
-  # is_atom-guarded telemetry call would FunctionClause-crash and a changeset
-  # can't be JSON-encoded into the audit payload — a sign-in 500 plus an
-  # enumeration signal. Collapse every non-atom to the neutral reason a spent or
-  # expired token already gives.
+  # A failed Multi step can forward a %Changeset{} or other non-atom reason, and
+  # a changeset can't be JSON-encoded into the audit payload — a sign-in 500
+  # plus an enumeration signal. Collapse every non-atom to the neutral reason a
+  # spent or expired token already gives.
   defp record_magic_link_failure(token_id, _reason, context),
     do: record_magic_link_failure(token_id, :invalid_or_expired, context)
 
@@ -1020,6 +1003,7 @@ defmodule Emisar.Auth do
   @mfa_sign_in_proof_max_age_seconds 120
   @member_mfa_reset_proof_salt "member mfa reset proof"
   @member_mfa_reset_proof_max_age_seconds 120
+  @security_attempt_scopes SecurityAttemptWindow.scopes()
 
   @doc """
   Internal — factor one is done (a magic link verified inbox possession) and the
@@ -1771,7 +1755,6 @@ defmodule Emisar.Auth do
       |> UserToken.Query.by_user_id(user.id)
       |> UserToken.Query.by_context("session")
       |> UserToken.Query.not_expired("session")
-      |> UserToken.Query.with_valid_auth_method()
       |> UserToken.Query.lock_for_update()
 
     with :ok <- verify_oidc_identity_step_up_proof(proof, provider_id, purpose, user),
@@ -2246,7 +2229,6 @@ defmodule Emisar.Auth do
     |> UserToken.Query.by_user_id(user_id)
     |> UserToken.Query.by_context("session")
     |> UserToken.Query.not_expired("session")
-    |> UserToken.Query.with_valid_auth_method()
     |> UserToken.Query.lock_for_update()
     |> repo.fetch(UserToken.Query)
     |> case do
@@ -2457,13 +2439,7 @@ defmodule Emisar.Auth do
   def check_security_attempt(user, scope, limit, window_ms, context \\ %RequestContext{})
 
   def check_security_attempt(%Users.User{id: user_id} = user, scope, limit, window_ms, context)
-      when scope in [
-             :mfa_challenge,
-             :inbox_step_up,
-             :email_change_issue,
-             :mfa_enrollment_issue,
-             :oidc_identity_step_up_issue
-           ] and
+      when scope in @security_attempt_scopes and
              is_integer(limit) and limit > 0 and is_integer(window_ms) and window_ms > 0 and
              is_struct(context, RequestContext) do
     if Emisar.Config.get_env(:emisar, :rate_limit_enabled, true) do
@@ -2472,9 +2448,6 @@ defmodule Emisar.Auth do
       :ok
     end
   end
-
-  def check_security_attempt(_, _, _, _, _),
-    do: {:error, :rate_limited, :store_unavailable}
 
   defp do_check_security_attempt(user, user_id, scope, limit, window_ms, context) do
     commit_security_attempt(user, user_id, scope, limit, window_ms, context)
@@ -2541,6 +2514,14 @@ defmodule Emisar.Auth do
     end
   end
 
+  @security_attempt_exhausted_events %{
+    mfa_challenge: "user.mfa_rate_limited",
+    mfa_enrollment_issue: "user.mfa_rate_limited",
+    email_change_issue: "user.email_change_rate_limited",
+    inbox_step_up: "user.inbox_step_up_rate_limited",
+    oidc_identity_step_up_issue: "user.oidc_identity_step_up_rate_limited"
+  }
+
   defp maybe_log_security_attempt_exhausted(
          multi,
          %Users.User{} = user,
@@ -2548,85 +2529,17 @@ defmodule Emisar.Auth do
          limit,
          window_ms,
          %RequestContext{} = context
-       )
-       when scope in [:mfa_challenge, :mfa_enrollment_issue] do
+       ) do
     log_security_attempt_exhausted(
       multi,
       user,
-      "user.mfa_rate_limited",
+      Map.fetch!(@security_attempt_exhausted_events, scope),
       scope,
       limit,
       window_ms,
       context
     )
   end
-
-  defp maybe_log_security_attempt_exhausted(
-         multi,
-         %Users.User{} = user,
-         :email_change_issue,
-         limit,
-         window_ms,
-         %RequestContext{} = context
-       ) do
-    log_security_attempt_exhausted(
-      multi,
-      user,
-      "user.email_change_rate_limited",
-      :email_change_issue,
-      limit,
-      window_ms,
-      context
-    )
-  end
-
-  defp maybe_log_security_attempt_exhausted(
-         multi,
-         %Users.User{} = user,
-         :inbox_step_up,
-         limit,
-         window_ms,
-         %RequestContext{} = context
-       ) do
-    log_security_attempt_exhausted(
-      multi,
-      user,
-      "user.inbox_step_up_rate_limited",
-      :inbox_step_up,
-      limit,
-      window_ms,
-      context
-    )
-  end
-
-  defp maybe_log_security_attempt_exhausted(
-         multi,
-         %Users.User{} = user,
-         :oidc_identity_step_up_issue,
-         limit,
-         window_ms,
-         %RequestContext{} = context
-       ) do
-    log_security_attempt_exhausted(
-      multi,
-      user,
-      "user.oidc_identity_step_up_rate_limited",
-      :oidc_identity_step_up_issue,
-      limit,
-      window_ms,
-      context
-    )
-  end
-
-  defp maybe_log_security_attempt_exhausted(
-         multi,
-         _user,
-         _scope,
-         _limit,
-         _window_ms,
-         _context
-       ),
-       do: multi
 
   defp log_security_attempt_exhausted(
          multi,
@@ -2754,7 +2667,7 @@ defmodule Emisar.Auth do
            max_age: @member_mfa_reset_proof_max_age_seconds
          ) do
       {:ok, {:member_mfa_reset, 1, payload}} when is_map(payload) ->
-        validate_member_mfa_reset_payload(payload)
+        {:ok, payload}
 
       _other ->
         {:error, :mfa_reset_proof_stale}
@@ -2792,7 +2705,6 @@ defmodule Emisar.Auth do
       |> UserToken.Query.by_user_id(actor_id)
       |> UserToken.Query.by_context("session")
       |> UserToken.Query.not_expired("session")
-      |> UserToken.Query.with_valid_auth_method()
       |> UserToken.Query.lock_for_update()
       |> repo.fetch(UserToken.Query)
 
@@ -2882,31 +2794,6 @@ defmodule Emisar.Auth do
   end
 
   defp member_mfa_reset_source(_source), do: {:error, :mfa_reset_proof_stale}
-
-  defp validate_member_mfa_reset_payload(
-         %{
-           actor_id: actor_id,
-           actor_membership_id: actor_membership_id,
-           account_id: account_id,
-           target_membership_id: target_membership_id,
-           target_user_id: target_user_id,
-           target_mfa_enabled_at: %DateTime{},
-           target_updated_at: %DateTime{},
-           actor_session_token_digest: actor_session_token_digest,
-           source: source
-         } = payload
-       )
-       when is_binary(actor_id) and is_binary(actor_membership_id) and is_binary(account_id) and
-              is_binary(target_membership_id) and is_binary(target_user_id) and
-              is_binary(actor_session_token_digest) do
-    case member_mfa_reset_source(source) do
-      {:ok, _source} -> {:ok, payload}
-      {:error, _reason} -> {:error, :mfa_reset_proof_stale}
-    end
-  end
-
-  defp validate_member_mfa_reset_payload(_payload),
-    do: {:error, :mfa_reset_proof_stale}
 
   defp ensure_member_mfa_reset_session_source(%UserToken{}, {:local, _proof}), do: :ok
 

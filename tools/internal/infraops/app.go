@@ -8,11 +8,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"os"
 	"os/exec"
 	"path/filepath"
-	"sort"
 	"strings"
+
+	"github.com/andrewdryga/emisar/tools/internal/toolutil"
 )
 
 const usageText = `usage: ./run ops <command> [args]
@@ -118,33 +118,10 @@ func (a *App) Run(ctx context.Context, args []string) error {
 	}
 }
 
-func mergedEnv(overrides map[string]string) []string {
-	values := make(map[string]string)
-	for _, entry := range os.Environ() {
-		key, value, ok := strings.Cut(entry, "=")
-		if ok {
-			values[key] = value
-		}
-	}
-	for key, value := range overrides {
-		values[key] = value
-	}
-	keys := make([]string, 0, len(values))
-	for key := range values {
-		keys = append(keys, key)
-	}
-	sort.Strings(keys)
-	result := make([]string, 0, len(keys))
-	for _, key := range keys {
-		result = append(result, key+"="+values[key])
-	}
-	return result
-}
-
 func (a *App) command(ctx context.Context, dir string, env map[string]string, name string, args ...string) *exec.Cmd {
 	command := exec.CommandContext(ctx, name, args...)
 	command.Dir = dir
-	command.Env = mergedEnv(env)
+	command.Env = toolutil.MergedEnv(env)
 	command.Stdin = a.In
 	command.Stdout = a.Out
 	command.Stderr = a.Err
@@ -176,7 +153,7 @@ func (a *App) output(ctx context.Context, dir string, env map[string]string, nam
 	}
 	command := exec.CommandContext(ctx, name, args...)
 	command.Dir = dir
-	command.Env = mergedEnv(env)
+	command.Env = toolutil.MergedEnv(env)
 	var stdout, stderr bytes.Buffer
 	command.Stdout = &stdout
 	command.Stderr = &stderr

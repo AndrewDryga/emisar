@@ -8,8 +8,7 @@ defmodule Emisar.Billing.Jobs.SyncRunnerQuantities do
   use Emisar.Jobs.Job,
     otp_app: :emisar,
     every: :timer.minutes(20),
-    initial_delay: :timer.minutes(4),
-    executor: Emisar.Jobs.Executors.GloballyUnique
+    initial_delay: :timer.minutes(4)
 
   alias Emisar.{Billing, Jobs, Repo}
   require Logger

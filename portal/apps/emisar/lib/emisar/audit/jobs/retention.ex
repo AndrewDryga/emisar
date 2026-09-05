@@ -5,8 +5,7 @@ defmodule Emisar.Audit.Jobs.Retention do
   use Emisar.Jobs.Job,
     otp_app: :emisar,
     every: :timer.hours(24),
-    initial_delay: :timer.minutes(4),
-    executor: Emisar.Jobs.Executors.GloballyUnique
+    initial_delay: :timer.minutes(4)
 
   alias Emisar.{Accounts, Audit, Jobs, Repo}
   require Logger

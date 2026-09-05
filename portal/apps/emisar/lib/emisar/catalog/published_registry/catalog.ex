@@ -243,8 +243,7 @@ defmodule Emisar.Catalog.PublishedRegistry.Catalog do
          {:ok, requires_os, requires_binaries} <- fetch_requires(raw, id),
          {:ok, detect} <- fetch_detect(raw, id),
          {:ok, setup} <- fetch_setup(raw, id),
-         {:ok, actions} <- fetch_actions(raw, id),
-         :ok <- validate_host_access_actions(setup, actions, id) do
+         {:ok, actions} <- fetch_actions(raw, id) do
       {:ok,
        %Pack{
          id: id,
@@ -455,135 +454,59 @@ defmodule Emisar.Catalog.PublishedRegistry.Catalog do
     }
   end
 
-  defp parse_host_access(groups, pack_id) when is_list(groups) do
-    initial = {[], MapSet.new()}
-
-    result =
-      Enum.reduce_while(groups, {:ok, initial}, fn group, {:ok, {parsed, seen_actions}} ->
-        case parse_host_access_group(group, pack_id, seen_actions) do
-          {:ok, parsed_group, seen_actions} ->
-            {:cont, {:ok, {[parsed_group | parsed], seen_actions}}}
-
-          {:error, _} = error ->
-            {:halt, error}
-        end
-      end)
-
-    with {:ok, {parsed, _seen_actions}} <- result, do: {:ok, Enum.reverse(parsed)}
-  end
+  # The shape the structs need, and nothing more: `packctl catalog build` lints
+  # the setup text of every first-party pack at publish time, and write access to
+  # the registry bucket is already accepted as sufficient to auto-trust pack
+  # bytes, so a second lint here defends a weaker consequence of a conceded
+  # capability.
+  defp parse_host_access(groups, pack_id) when is_list(groups),
+    do: parse_each(groups, &parse_host_access_group(&1, pack_id))
 
   defp parse_host_access(_groups, pack_id),
     do: {:error, "pack #{inspect(pack_id)} setup host_access must be a list"}
 
   defp parse_host_access_group(
          %{"actions" => actions, "requirement" => requirement, "recipes" => recipes},
-         pack_id,
-         seen_actions
+         pack_id
        )
-       when is_list(actions) and actions != [] and is_list(recipes) and recipes != [] do
-    with true <- Enum.all?(actions, &valid_setup_command?/1),
-         true <- valid_setup_prose?(requirement),
-         {:ok, seen_actions} <- put_host_access_actions(actions, seen_actions, pack_id),
-         {:ok, recipes} <- parse_host_access_recipes(recipes, pack_id) do
-      {:ok, %{actions: actions, requirement: requirement, recipes: recipes}, seen_actions}
+       when is_list(actions) and actions != [] and is_binary(requirement) and
+              is_list(recipes) and recipes != [] do
+    with true <- Enum.all?(actions, &is_binary/1),
+         {:ok, recipes} <- parse_each(recipes, &parse_host_access_recipe(&1, pack_id)) do
+      {:ok, %{actions: actions, requirement: requirement, recipes: recipes}}
     else
-      false -> {:error, "pack #{inspect(pack_id)} has malformed setup host_access text"}
+      false -> {:error, "pack #{inspect(pack_id)} has a malformed setup host_access group"}
       {:error, _} = error -> error
     end
   end
 
-  defp parse_host_access_group(_group, pack_id, _seen_actions),
+  defp parse_host_access_group(_group, pack_id),
     do: {:error, "pack #{inspect(pack_id)} has a malformed setup host_access group"}
 
-  defp put_host_access_actions(actions, seen_actions, pack_id) do
-    Enum.reduce_while(actions, {:ok, seen_actions}, fn action_id, {:ok, seen} ->
-      if MapSet.member?(seen, action_id) do
-        {:halt,
-         {:error,
-          "pack #{inspect(pack_id)} repeats setup host_access action #{inspect(action_id)}"}}
-      else
-        {:cont, {:ok, MapSet.put(seen, action_id)}}
-      end
-    end)
+  defp parse_host_access_recipe(
+         %{"name" => name, "commands" => commands, "verify" => verify, "impact" => impact},
+         pack_id
+       )
+       when is_binary(name) and is_binary(impact) and is_list(commands) and commands != [] and
+              is_list(verify) and verify != [] do
+    if Enum.all?(commands ++ verify, &is_binary/1),
+      do: {:ok, %{name: name, commands: commands, verify: verify, impact: impact}},
+      else: {:error, "pack #{inspect(pack_id)} has a malformed setup host_access recipe"}
   end
 
-  defp parse_host_access_recipes(recipes, pack_id) do
-    initial = {[], MapSet.new()}
+  defp parse_host_access_recipe(_recipe, pack_id),
+    do: {:error, "pack #{inspect(pack_id)} has a malformed setup host_access recipe"}
 
+  defp parse_each(items, parse) do
     result =
-      Enum.reduce_while(recipes, {:ok, initial}, fn recipe, {:ok, {parsed, names}} ->
-        case parse_host_access_recipe(recipe, pack_id, names) do
-          {:ok, parsed_recipe, names} -> {:cont, {:ok, {[parsed_recipe | parsed], names}}}
+      Enum.reduce_while(items, {:ok, []}, fn item, {:ok, parsed} ->
+        case parse.(item) do
+          {:ok, value} -> {:cont, {:ok, [value | parsed]}}
           {:error, _} = error -> {:halt, error}
         end
       end)
 
-    with {:ok, {parsed, _names}} <- result, do: {:ok, Enum.reverse(parsed)}
-  end
-
-  defp parse_host_access_recipe(
-         %{"name" => name, "commands" => commands, "verify" => verify, "impact" => impact},
-         pack_id,
-         names
-       )
-       when is_list(commands) and commands != [] and is_list(verify) and verify != [] do
-    cond do
-      not valid_setup_prose?(name) or not valid_setup_prose?(impact) ->
-        {:error, "pack #{inspect(pack_id)} has malformed setup host_access recipe prose"}
-
-      not Enum.all?(commands ++ verify, &valid_setup_command?/1) ->
-        {:error, "pack #{inspect(pack_id)} has malformed setup host_access commands"}
-
-      MapSet.member?(names, name) ->
-        {:error, "pack #{inspect(pack_id)} repeats setup host_access recipe #{inspect(name)}"}
-
-      true ->
-        recipe = %{name: name, commands: commands, verify: verify, impact: impact}
-        {:ok, recipe, MapSet.put(names, name)}
-    end
-  end
-
-  defp parse_host_access_recipe(_recipe, pack_id, _names),
-    do: {:error, "pack #{inspect(pack_id)} has a malformed setup host_access recipe"}
-
-  defp validate_host_access_actions(setup, actions, pack_id) do
-    action_ids = MapSet.new(actions, & &1.id)
-
-    case Enum.find_value(setup.host_access, fn access ->
-           Enum.find(access.actions, &(not MapSet.member?(action_ids, &1)))
-         end) do
-      nil ->
-        :ok
-
-      action_id ->
-        {:error,
-         "pack #{inspect(pack_id)} setup host_access names unknown action #{inspect(action_id)}"}
-    end
-  end
-
-  defp valid_setup_prose?(value), do: valid_setup_text?(value, true)
-  defp valid_setup_command?(value), do: valid_setup_text?(value, false)
-
-  defp valid_setup_text?(value, prose?) when is_binary(value) do
-    String.valid?(value) and String.trim(value) != "" and
-      value
-      |> String.to_charlist()
-      |> Enum.all?(&safe_setup_codepoint?(&1, prose?))
-  end
-
-  defp valid_setup_text?(_value, _prose?), do: false
-
-  defp safe_setup_codepoint?(codepoint, prose?) do
-    prose_whitespace? = prose? and codepoint in [9, 10, 13]
-
-    prose_whitespace? or not unsafe_setup_codepoint?(codepoint)
-  end
-
-  # Reject Unicode Control and Format characters. Format includes bidi
-  # controls, zero-width text, and BOMs that can make a copied command differ
-  # from what an operator sees.
-  defp unsafe_setup_codepoint?(codepoint) do
-    <<codepoint::utf8>> =~ ~r/[\p{Cc}\p{Cf}]/u
+    with {:ok, parsed} <- result, do: {:ok, Enum.reverse(parsed)}
   end
 
   defp optional_string(map, key) do

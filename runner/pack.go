@@ -565,9 +565,11 @@ func safePackName(name string) bool {
 
 // copyTree recursively copies the directory at src into dst. Regular
 // files and directories only — symlinks and other irregular entries are
-// rejected so an install can't smuggle a link out of the pack tree.
-// (LoadOne already validated the pack, but the copy is a separate trust
-// boundary, so we re-check here rather than trust the loader.)
+// rejected so an install can't smuggle a link out of the pack tree. The
+// loader only inspects the files a pack declares, so this walk is the sole
+// gate on everything else in the tree: without it a `README -> /etc/shadow`
+// beside the manifest would be dereferenced into a world-readable file in
+// the packs dir by a sudo install.
 func copyTree(src, dst string) error {
 	return filepath.WalkDir(src, func(path string, d os.DirEntry, err error) error {
 		if err != nil {

@@ -249,8 +249,6 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
   defp reference_options("output", draft, stage_index),
     do: Enum.map(available_output_refs(draft, stage_index), &{&1, &1})
 
-  defp reference_options(_source, _draft, _stage_index), do: []
-
   defp argument_summary(argument) do
     requirement = if argument["required"] == "true", do: "Required", else: "Optional"
     "#{requirement} #{argument_type_label(argument["type"])}"
@@ -289,14 +287,12 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
   defp stage_card_title(stage, index), do: card_title(stage["id"], "Stage #{index + 1}")
   defp step_card_title(step, index), do: card_title(step["id"], "Step #{index + 1}")
 
-  defp card_title(id, fallback) when is_binary(id) do
+  defp card_title(id, fallback) do
     case String.trim(id) do
       "" -> fallback
       id -> id
     end
   end
-
-  defp card_title(_id, fallback), do: fallback
 
   # The run surface's stage phrasing, so a stage describes itself the same way
   # before and after it runs.
@@ -859,10 +855,7 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
     Enum.count(issues, &step_issue?(&1.path, base))
   end
 
-  defp step_issue?(path, base) when is_binary(path),
-    do: path == base or String.starts_with?(path, base <> "/")
-
-  defp step_issue?(_path, _base), do: false
+  defp step_issue?(path, base), do: path == base or String.starts_with?(path, base <> "/")
 
   # Each ref says in words how far it reaches and whether it still resolves — a
   # per-ref fact a trailing count cannot give. Scope dots said the same thing in

@@ -1,8 +1,7 @@
 // Capture the Entra-side screens chromedp could not reach: the app Overview
 // (client id) and Certificates & secrets. Playwright drives the Azure portal
 // where chromedp only ever rendered its home page.
-import { launchChromium, loadEnv, totp } from './entra-env.mjs'
-import { mkdirSync } from 'node:fs'
+import { launchChromium, loadEnv, shot, signIn } from './entra-env.mjs'
 
 const env = loadEnv()
 
@@ -59,32 +58,8 @@ const outline = async (page, text) => {
 const browser = await launchChromium({ headless: true })
 const page = await browser.newPage({ viewportSize: { width: 1440, height: 1000 } })
 
-await page.goto('https://portal.azure.com/', { waitUntil: 'domcontentloaded' })
-await page.fill('input[name=loginfmt]', env.ENTRA_ADMIN_USER)
-await page.click('#idSIButton9')
-await page.waitForSelector('input[name=passwd]', { state: 'visible' })
-await page.fill('input[name=passwd]', env.ENTRA_ADMIN_PASSWORD)
-await page.click('#idSIButton9')
+await signIn(page, env)
 
-// Order is not fixed: this tenant shows "Stay signed in?" BEFORE the code prompt.
-for (let i = 0; i < 12; i++) {
-  await page.waitForTimeout(3000)
-  const body = await page.textContent('body').catch(() => '')
-  if (/Create a resource|All resources/.test(body)) break
-  if (await page.locator('input[name=otc]').count()) {
-    if (30 - (Math.floor(Date.now() / 1000) % 30) < 8) await page.waitForTimeout(9000)
-    await page.fill('input[name=otc]', totp(env.ENTRA_TOTP_SECRET))
-    // The code screen's submit is not #idSIButton9; Enter in the field works on
-    // every screen in this sequence.
-    await page.press('input[name=otc]', 'Enter')
-  } else if (/Stay signed in\?/.test(body)) {
-    await page.click('#idBtn_Back').catch(() => {})
-  }
-}
-console.log('signed in')
-
-const outDir = process.env.ENTRA_CAPTURE_OUT || '/tmp/entra'
-mkdirSync(outDir, { recursive: true })
 const maskTenantIdentifiers = async () => {
   for (const frame of page.frames()) {
     await frame.evaluate(() => {
@@ -100,13 +75,9 @@ const maskTenantIdentifiers = async () => {
     }).catch(() => {})
   }
 }
-const shot = async (name) => {
+const maskedShot = async (name) => {
   await maskTenantIdentifiers()
-  await page.screenshot({
-    path: `${outDir}/${name}.png`,
-    clip: { x: 0, y: 42, width: 1440, height: 900 },
-  })
-  console.log('shot', name)
+  await shot(page, name, { x: 0, y: 42, width: 1440, height: 900 })
 }
 
 const appId = env.ENTRA_CLIENT_ID
@@ -117,14 +88,14 @@ await page.goto(
 await page.waitForTimeout(20000)
 await page.getByText('Application (client) ID').first().waitFor({ timeout: 90000 })
 await outline(page, 'Application (client) ID')
-await shot('pw-01-app-overview')
+await maskedShot('pw-01-app-overview')
 
 await page.goto(
   `https://portal.azure.com/#blade/Microsoft_AAD_RegisteredApps/ApplicationMenuBlade/Credentials/appId/${appId}`,
   { waitUntil: 'domcontentloaded' })
 await page.waitForTimeout(20000)
 await outline(page, 'New client secret')
-await shot('pw-02-client-secrets')
+await maskedShot('pw-02-client-secrets')
 
 await browser.close()
 console.log('done')

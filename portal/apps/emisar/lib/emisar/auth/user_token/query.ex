@@ -85,12 +85,6 @@ defmodule Emisar.Auth.UserToken.Query do
   def with_attempts_remaining(queryable),
     do: where(queryable, [tokens: t], t.remaining_attempts > 0)
 
-  @doc "Only rows whose auth_method is a currently-valid enum value — a session holding a removed value (a legacy :password session) is excluded rather than raising ArgumentError on load, so it fails closed to not-found instead of 500ing the auth path."
-  def with_valid_auth_method(queryable \\ all()) do
-    valid = Ecto.Enum.values(UserToken, :auth_method)
-    where(queryable, [tokens: t], t.auth_method in ^valid)
-  end
-
   @doc "Validity window of a split-code magic-link code, in minutes — for the sent-page countdown."
   def magic_link_validity_in_minutes, do: @magic_link_validity_in_minutes
 

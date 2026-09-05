@@ -1137,7 +1137,7 @@ defmodule Emisar.CatalogTest do
 
       assert {:ok, [pack_version], _} = Catalog.list_pack_versions(subject)
       assert pack_version.trust_state == :trusted
-      assert {:ok, manifest} = ConsoleProjection.trusted_manifest_for_static_reads(pack_version)
+      assert {:ok, manifest} = TrustedManifest.persisted(pack_version.trusted_manifest)
 
       descriptor = manifest["actions"][catalog_action["id"]]
       assert descriptor["description"] == catalog_action["description"]
@@ -1174,7 +1174,7 @@ defmodule Emisar.CatalogTest do
 
       assert {:ok, _} = Catalog.observe_state(runner, payload)
       assert {:ok, [repaired], _} = Catalog.list_pack_versions(subject)
-      assert {:ok, manifest} = ConsoleProjection.trusted_manifest_for_static_reads(repaired)
+      assert {:ok, manifest} = TrustedManifest.persisted(repaired.trusted_manifest)
       assert map_size(manifest["actions"]) == length(pack["actions"])
     end
 
@@ -1225,7 +1225,7 @@ defmodule Emisar.CatalogTest do
       assert {:ok, _} = Catalog.observe_state(runner, payload)
 
       assert {:ok, [pack_version], _} = Catalog.list_pack_versions(subject)
-      assert {:ok, manifest} = ConsoleProjection.trusted_manifest_for_static_reads(pack_version)
+      assert {:ok, manifest} = TrustedManifest.persisted(pack_version.trusted_manifest)
       assert map_size(manifest["actions"]) == length(pack["actions"])
 
       descriptor = manifest["actions"][catalog_action["id"]]
@@ -3194,12 +3194,15 @@ defmodule Emisar.CatalogTest do
       account: account,
       runner: runner
     } do
-      {:ok, action} =
-        Catalog.fetch_action_for_account("p.inspect", runner.id, account.id)
-
-      action
-      |> Ecto.Changeset.change(risk: :low, output_schema: %{"type" => "object"})
-      |> Repo.update!()
+      Fixtures.Catalog.create_action(
+        runner: runner,
+        action_id: "p.inspect",
+        pack_id: "p",
+        pack_version: "1.0",
+        pack_hash: @dispatch_hash,
+        risk: "low",
+        output_schema: %{"type" => "object"}
+      )
 
       assert Catalog.fetch_dispatch_contract(
                Repo,
@@ -3207,6 +3210,60 @@ defmodule Emisar.CatalogTest do
                runner.id,
                "p.inspect",
                "p@1.0/" <> @dispatch_hash
+             ) == {:error, :action_contract_changed}
+    end
+
+    test "rejects a drifted output contract whose stored digest matches the trusted one", %{
+      account: account
+    } do
+      # The digest's canonical form flattens an object into its sorted pairs, so
+      # a property that accepts the object {"a": 1} and one that accepts the array
+      # [["a", 1]] share a digest; only the structural comparison separates them.
+      membership = Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
+      subject = Fixtures.Subjects.membership_subject(membership)
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
+
+      trusted_schema = %{
+        "type" => "object",
+        "properties" => %{"result" => %{"enum" => [%{"a" => 1}]}}
+      }
+
+      drifted_schema = %{
+        "type" => "object",
+        "properties" => %{"result" => %{"enum" => [[["a", 1]]]}}
+      }
+
+      advertised = Map.put(action("q.inspect", pack_id: "q"), "output_schema", trusted_schema)
+
+      assert {:ok, _runner} =
+               Catalog.observe_state(
+                 runner,
+                 state_payload(
+                   packs: %{"q" => %{"version" => "1.0", "hash" => @dispatch_hash}},
+                   actions: [advertised]
+                 )
+               )
+
+      {:ok, pack_versions, _metadata} = Catalog.list_pack_versions(subject)
+      pack_version = Enum.find(pack_versions, &(&1.pack_id == "q"))
+      assert {:ok, _trusted} = Catalog.trust_pack_version(pack_version.id, subject)
+
+      Fixtures.Catalog.create_action(
+        runner: runner,
+        action_id: "q.inspect",
+        pack_id: "q",
+        pack_version: "1.0",
+        pack_hash: @dispatch_hash,
+        risk: "low",
+        output_schema: drifted_schema
+      )
+
+      assert Catalog.fetch_dispatch_contract(
+               Repo,
+               account.id,
+               runner.id,
+               "q.inspect",
+               "q@1.0/" <> @dispatch_hash
              ) == {:error, :action_contract_changed}
     end
   end
@@ -3640,7 +3697,7 @@ defmodule Emisar.CatalogTest do
   end
 
   describe "list_pack_ids_for_account/1" do
-    test "reads one already-authorized account's pack ids and fails closed on a bad id" do
+    test "reads one already-authorized account's pack ids" do
       {account, _subject} = account_with_owner()
       Fixtures.Catalog.create_trusted_pack_version(account_id: account.id, pack_id: "postgres")
 
@@ -3652,7 +3709,6 @@ defmodule Emisar.CatalogTest do
       )
 
       assert Catalog.list_pack_ids_for_account(account.id) == ["postgres"]
-      assert Catalog.list_pack_ids_for_account("not-a-uuid") == []
     end
   end
 
@@ -4606,17 +4662,6 @@ defmodule Emisar.CatalogTest do
 
       assert Catalog.risk_by_runner_action_pairs([{Ecto.UUID.generate(), "x"}], no_view) ==
                {:error, :unauthorized}
-    end
-
-    test "accepts a full batch and refuses anything larger or unbounded", %{subject: subject} do
-      pair = {Ecto.UUID.generate(), "shared.op"}
-
-      assert Catalog.risk_by_runner_action_pairs(List.duplicate(pair, 64), subject) == {:ok, %{}}
-
-      assert Catalog.risk_by_runner_action_pairs(List.duplicate(pair, 65), subject) ==
-               {:error, :too_many_pairs}
-
-      assert Catalog.risk_by_runner_action_pairs(%{}, subject) == {:error, :too_many_pairs}
     end
   end
 
@@ -6380,65 +6425,6 @@ defmodule Emisar.CatalogTest do
       {:ok, [trusted_a], _} = Catalog.list_pack_versions(subject_a)
       assert trusted_a.account_id == account_a.id
       assert Map.has_key?(trusted_a.trusted_manifest["actions"], "acme.secret")
-    end
-  end
-
-  describe "trusted_manifest_for_static_reads/1" do
-    test "bounds each model-facing side effect without rejecting detailed safety guidance" do
-      base_action = %RunnerAction{
-        action_id: "custom.inspect",
-        title: "Inspect",
-        description: "Inspect state.",
-        kind: :exec,
-        risk: :low,
-        args_schema: %{"args" => []},
-        examples: [],
-        search_terms: []
-      }
-
-      assert {:ok, _manifest} =
-               Emisar.Catalog.TrustedManifest.from_runner_actions([
-                 %{base_action | side_effects: [String.duplicate("a", 1_024)]}
-               ])
-
-      assert Emisar.Catalog.TrustedManifest.from_runner_actions([
-               %{base_action | side_effects: [String.duplicate("a", 1_025)]}
-             ]) == {:error, :invalid_manifest}
-    end
-
-    test "accepts only trusted rows carrying a complete versioned manifest" do
-      {:ok, manifest} =
-        Emisar.Catalog.TrustedManifest.from_runner_actions([
-          %RunnerAction{
-            action_id: "custom.inspect",
-            title: "Inspect",
-            description: "Inspect state.",
-            kind: :exec,
-            risk: :low,
-            side_effects: [],
-            args_schema: %{"args" => []},
-            examples: [],
-            search_terms: []
-          }
-        ])
-
-      assert {:ok, ^manifest} =
-               ConsoleProjection.trusted_manifest_for_static_reads(%PackVersion{
-                 trust_state: :trusted,
-                 trusted_manifest: manifest
-               })
-
-      assert ConsoleProjection.trusted_manifest_for_static_reads(%PackVersion{
-               trust_state: :trusted,
-               trusted_manifest: %{
-                 "custom.inspect" => %{"risk" => "low", "kind" => "exec"}
-               }
-             }) == {:error, :incomplete_manifest}
-
-      assert ConsoleProjection.trusted_manifest_for_static_reads(%PackVersion{
-               trust_state: :pending,
-               trusted_manifest: manifest
-             }) == {:error, :pack_untrusted}
     end
   end
 

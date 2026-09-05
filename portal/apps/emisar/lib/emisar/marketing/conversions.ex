@@ -42,10 +42,6 @@ defmodule Emisar.Marketing.Conversions do
       {:ok, _pid} -> :ok
       {:error, _reason} -> log_failure("dispatch")
     end
-  rescue
-    _exception -> log_failure("dispatch")
-  catch
-    _kind, _reason -> log_failure("dispatch")
   end
 
   defp deliver(sender, config, event) do
@@ -54,10 +50,6 @@ defmodule Emisar.Marketing.Conversions do
       {:error, {:http, status}} when is_integer(status) -> log_failure("http_#{status}")
       {:error, _reason} -> log_failure("request")
     end
-  rescue
-    _exception -> log_failure("exception")
-  catch
-    _kind, _reason -> log_failure("exception")
   end
 
   defp log_failure(error) do

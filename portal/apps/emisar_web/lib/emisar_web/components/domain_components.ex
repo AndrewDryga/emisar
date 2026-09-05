@@ -627,13 +627,7 @@ defmodule EmisarWeb.DomainComponents do
             <.code_line id={"#{@id}-command"} value={command} />
           <% {:error, :insecure_base_url} -> %>
             <p>{version_upgrade_fact(@kind, @unsupported_count, @outdated_count)}</p>
-            <.status_note
-              icon="security.posture_warning"
-              tone={:rose}
-              title="Install command unavailable over HTTP"
-            >
-              Open this portal over HTTPS and refresh. Plain HTTP is allowed only for loopback and private addresses.
-            </.status_note>
+            <.install_transport_refusal variant={:note} />
           <% _error -> %>
             <p>{version_upgrade_fact(@kind, @unsupported_count, @outdated_count)}</p>
             <.install_command_unavailable variant={:note} />
@@ -702,23 +696,9 @@ defmodule EmisarWeb.DomainComponents do
 
   # MCP agents render only as a page-scoped list (there is no per-agent detail
   # view), so the bridge copy always scopes to "on this page" — scope-agnostic.
-  defp version_upgrade_message(:mcp, _scope, unsupported_count, 0) do
-    "#{unsupported_count} #{agent_count_label(unsupported_count)} on this page last connected through a bridge below " <>
-      "the supported range (#{Emisar.Compat.mcp_minimum()}). Run the command once on each " <>
-      "affected machine, then restart its LLM client."
-  end
-
-  defp version_upgrade_message(:mcp, _scope, 0, outdated_count) do
-    "#{outdated_count} #{agent_count_label(outdated_count)} on this page last connected through a bridge behind " <>
-      "#{version_label(Emisar.Compat.mcp_target())}. Run the command once on " <>
-      "each affected machine, then restart its LLM client."
-  end
-
   defp version_upgrade_message(:mcp, _scope, unsupported_count, outdated_count) do
-    "On this page, #{version_count_label(unsupported_count, "agent")} last connected through " <>
-      "a bridge below the supported range (#{Emisar.Compat.mcp_minimum()}) and " <>
-      "#{version_count_label(outdated_count, "agent")} behind #{version_label(Emisar.Compat.mcp_target())}. " <>
-      "Run the command once on each affected machine, then restart its LLM client."
+    version_upgrade_fact(:mcp, unsupported_count, outdated_count) <>
+      " Run the command once on each affected machine, then restart its LLM client."
   end
 
   defp version_upgrade_fact(:mcp, unsupported_count, 0) do
@@ -746,7 +726,21 @@ defmodule EmisarWeb.DomainComponents do
   defp version_upgrade_command(:mcp, base_url), do: URLHelpers.mcp_install_command(base_url)
 
   @doc "The shared refusal shown when a privileged installer cannot be fetched safely."
+  attr :variant, :atom, default: :block, values: [:block, :note]
   attr :class, :string, default: nil
+
+  def install_transport_refusal(%{variant: :note} = assigns) do
+    ~H"""
+    <.status_note
+      icon="security.posture_warning"
+      tone={:rose}
+      title="Install command unavailable over HTTP"
+      class={@class}
+    >
+      Open this portal over HTTPS and refresh. Plain HTTP is allowed only for loopback and private addresses.
+    </.status_note>
+    """
+  end
 
   def install_transport_refusal(assigns) do
     ~H"""
@@ -807,7 +801,7 @@ defmodule EmisarWeb.DomainComponents do
   attr :install_command, :any, required: true
   attr :base_url, :string, default: nil
   attr :show_troubleshooting, :boolean, default: false
-  attr :keys_path, :string, default: "/app/runners/keys"
+  attr :keys_path, :string, required: true
   # The multi-use pointer targets a manage-only page — hide it for callers
   # whose subject can't open it (an in-product link must never 404).
   attr :show_keys_link, :boolean, default: true
@@ -1409,7 +1403,6 @@ defmodule EmisarWeb.DomainComponents do
   attr :command, :string, default: nil
   attr :command_truncated?, :boolean, default: false
   attr :events, :list, required: true
-  attr :label, :string, default: "Command and output"
   attr :max_chars, :integer, default: 32_000
   attr :class, :string, default: nil
 
@@ -1425,7 +1418,7 @@ defmodule EmisarWeb.DomainComponents do
     <pre
       :if={is_binary(@command) or @rows != []}
       tabindex="0"
-      aria-label={@label}
+      aria-label="Command and output"
       class={[
         "overflow-auto whitespace-pre font-mono text-xs leading-relaxed text-zinc-300 [font-variant-ligatures:none]",
         @class
@@ -1472,4 +1465,10 @@ defmodule EmisarWeb.DomainComponents do
   defp agent_count_label(1), do: "agent"
 
   defp agent_count_label(_count), do: "agents"
+
+  @doc "How an SSO identity reached the account, as the word shown beside its provider."
+  def provisioned_via_label(:scim), do: "SCIM"
+  def provisioned_via_label(:oidc_jit), do: "SSO"
+  def provisioned_via_label(:manual), do: "Linked"
+  def provisioned_via_label(_), do: "Synced"
 end

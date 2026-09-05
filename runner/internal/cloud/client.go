@@ -12,6 +12,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+	"unicode/utf8"
 
 	"github.com/andrewdryga/emisar/runner/internal/engine"
 	"github.com/andrewdryga/emisar/runner/internal/executor"
@@ -1239,12 +1240,26 @@ func requestForDispatch(m RunActionMsg, registry *packs.Registry, progress engin
 	return req
 }
 
-// maxProgressChunkBytes bounds one progress message's chunk. It matches the
-// executor's stream buffer, so a merged chunk is never larger than the largest
-// single line the runner could already have sent on its own.
-const maxProgressChunkBytes = 64 * 1024
+// JSON escaping can expand one byte to six. A 32 KiB chunk leaves room for
+// metadata below the portal's 256 KiB encoded event-payload limit, even when
+// every byte needs escaping. Bound newly emitted chunks as well as merges.
+const maxProgressChunkBytes = 32 * 1024
 
-// enqueueProgress queues one output line, merging it into the run's last
+func (c *Client) enqueueProgress(s *runState, requestID, stream, chunk string) {
+	for len(chunk) > maxProgressChunkBytes {
+		end := maxProgressChunkBytes
+		for !utf8.RuneStart(chunk[end]) {
+			end--
+		}
+		c.enqueueProgressChunk(s, requestID, stream, chunk[:end])
+		chunk = chunk[end:]
+	}
+	if chunk != "" {
+		c.enqueueProgressChunk(s, requestID, stream, chunk)
+	}
+}
+
+// enqueueProgressChunk queues one bounded chunk, merging it into the run's last
 // pending progress message when that message is still waiting to go out.
 //
 // The cloud takes a row lock, inserts an event, and bumps the run's counters
@@ -1257,7 +1272,7 @@ const maxProgressChunkBytes = 64 * 1024
 // seq counts MESSAGES, not lines: it is the run's ProgressChunks, which the
 // cloud compares against the events it stored to decide whether output went
 // missing. Merging into a message therefore does not advance it.
-func (c *Client) enqueueProgress(s *runState, requestID, stream, chunk string) {
+func (c *Client) enqueueProgressChunk(s *runState, requestID, stream, chunk string) {
 	s.mu.Lock()
 	if last := len(s.pending) - 1; last >= s.attempted {
 		if previous, ok := s.pending[last].(ActionProgressMsg); ok &&

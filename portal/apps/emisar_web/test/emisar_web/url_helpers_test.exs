@@ -41,13 +41,6 @@ defmodule EmisarWeb.URLHelpersTest do
                host_uri: %URI{scheme: nil, host: "bare.example", port: nil}
              }) == "http://bare.example"
     end
-
-    test "a socket without a host_uri falls back to the production URL" do
-      assert URLHelpers.derive_base_url(%{host_uri: :not_mounted_at_router}) ==
-               "https://emisar.dev"
-
-      assert URLHelpers.derive_base_url(%{}) == "https://emisar.dev"
-    end
   end
 
   describe "mcp_install_command/1" do

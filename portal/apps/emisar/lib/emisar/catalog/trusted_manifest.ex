@@ -104,10 +104,25 @@ defmodule Emisar.Catalog.TrustedManifest do
 
   def validate(_manifest), do: {:error, :incomplete_manifest}
 
-  @doc "Return the action map from a complete persisted manifest."
+  @doc """
+  Return a persisted manifest when it has the complete shape.
+
+  The builders above validate every manifest before it is written, so a read
+  only checks that the row carries a current-schema manifest at all — a
+  pre-manifest row (nil or an older shape) is `:incomplete_manifest`, never
+  re-validated field by field on every dispatch and catalog call.
+  """
+  @spec persisted(term()) :: {:ok, map()} | {:error, :incomplete_manifest}
+  def persisted(%{"schema_version" => @schema_version, "actions" => actions} = manifest)
+      when is_map(actions),
+      do: {:ok, manifest}
+
+  def persisted(_manifest), do: {:error, :incomplete_manifest}
+
+  @doc "Return the action map from a persisted manifest."
   @spec actions(term()) :: {:ok, map()} | {:error, :incomplete_manifest}
   def actions(manifest) do
-    with {:ok, %{"actions" => actions}} <- validate(manifest), do: {:ok, actions}
+    with {:ok, %{"actions" => actions}} <- persisted(manifest), do: {:ok, actions}
   end
 
   @doc """

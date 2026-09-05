@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -803,7 +802,7 @@ func packTestVersionEnv(planCount int, lookup func(string) (string, bool)) (map[
 	if planCount != 1 {
 		return nil, fmt.Errorf("PACKTEST_VERSION requires exactly one selected pack")
 	}
-	if digest != "" && !validPackTestDigest(digest) {
+	if digest != "" && !packtest.ValidDigest(digest) {
 		return nil, fmt.Errorf("PACKTEST_DIGEST must match @sha256:<64 lowercase hex characters>")
 	}
 	return map[string]string{
@@ -833,19 +832,6 @@ func resolvedPackTestVersionEnv(plan packtest.PlanRef, requested map[string]stri
 		}
 	}
 	return resolved
-}
-
-func validPackTestDigest(digest string) bool {
-	const prefix = "@sha256:"
-	if !strings.HasPrefix(digest, prefix) || len(digest) != len(prefix)+64 {
-		return false
-	}
-	encoded := digest[len(prefix):]
-	if encoded != strings.ToLower(encoded) {
-		return false
-	}
-	_, err := hex.DecodeString(encoded)
-	return err == nil
 }
 
 func packTestInvocationID(now time.Time, pid int) string {

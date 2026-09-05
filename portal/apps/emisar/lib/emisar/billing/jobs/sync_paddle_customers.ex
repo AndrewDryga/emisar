@@ -5,8 +5,7 @@ defmodule Emisar.Billing.Jobs.SyncPaddleCustomers do
   use Emisar.Jobs.Job,
     otp_app: :emisar,
     every: :timer.minutes(15),
-    initial_delay: :timer.minutes(1),
-    executor: Emisar.Jobs.Executors.GloballyUnique
+    initial_delay: :timer.minutes(1)
 
   alias Emisar.Billing
 

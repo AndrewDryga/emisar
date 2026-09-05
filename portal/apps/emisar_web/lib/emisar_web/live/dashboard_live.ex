@@ -101,6 +101,9 @@ defmodule EmisarWeb.DashboardLive do
     |> assign(:refresh_scheduled?, false)
     |> assign(:pending_refreshes, [])
     |> assign(:setup_reads, %{api_keys: read_ok?(api_keys_read)})
+    # Only the first-run fleet read answers this; the counted path past the
+    # first run never renders the checklist that asks.
+    |> assign(:actions_advertised?, false)
     |> assign(:agents, agents_summary(api_keys))
     |> assign(:billing, unwrap_ok(Billing.billing_summary(account, subject)))
     |> assign(:team_security, team_security(subject))
@@ -121,8 +124,11 @@ defmodule EmisarWeb.DashboardLive do
     |> assign(:can_install_runners?, Runners.subject_can_install_runners?(subject))
     |> assign(:can_issue_agent_key?, ApiKeys.subject_can_issue_quick_key?(subject))
     |> assign(:can_invite_members?, Accounts.subject_can_manage_team?(subject))
-    |> refresh_runners()
+    # Runs first: `refresh_runners/1` picks the cheap counted fleet read once a
+    # run exists, and only an account that has never run anything pays for the
+    # whole scoped fleet plus its advertised actions.
     |> refresh_runs()
+    |> refresh_runners()
     |> refresh_approvals()
     |> assign_current_setup_state()
   end
@@ -141,8 +147,8 @@ defmodule EmisarWeb.DashboardLive do
 
   # First run only. The checklist's "ask your agent to run an action" step needs
   # the ONLINE runners' advertised actions, so this path reads the scoped fleet
-  # — one read serving both the pillar's counts and the ids the catalog lookup
-  # needs.
+  # — one read serving both the pillar's two integers and the ids the catalog
+  # lookup needs.
   defp refresh_setup_fleet(socket) do
     subject = socket.assigns.current_subject
     runners_read = Runners.list_all_runners_for_account(subject, preload: [:online?])
@@ -163,8 +169,10 @@ defmodule EmisarWeb.DashboardLive do
         _ -> false
       end
 
+    fleet_counts = %{total: length(runners), online: length(online_runner_ids)}
+
     socket
-    |> assign_fleet_counts(Runners.fleet_status(runners).counts, read_ok?(runners_read))
+    |> assign_fleet_counts(fleet_counts, read_ok?(runners_read))
     |> assign(:actions_advertised?, actions_advertised?)
     |> put_setup_read(:runners, runners_read)
     |> put_setup_read(:actions, actions_read)
@@ -513,7 +521,7 @@ defmodule EmisarWeb.DashboardLive do
         </.link>
       </div>
       <ul class="mt-3 divide-y divide-zinc-800/70 border-t border-zinc-800/70">
-        <li :for={request <- Enum.take(@pending_approvals, 5)}>
+        <li :for={request <- @pending_approvals}>
           <.link
             navigate={~p"/app/#{@current_account}/approvals/#{request.id}"}
             class="group -mx-2 flex items-center gap-3 rounded-md px-2 py-3.5 transition hover:bg-white/[0.04]"
@@ -1022,7 +1030,7 @@ defmodule EmisarWeb.DashboardLive do
 
   # Tiles wear brand (healthy) or neutral — never amber: two amber tiles at
   # once read as an alarm wall and spend amber's attention value. The STATUS
-  # LINE carries the amber; a rose tile is reserved for a hard lockout (Team).
+  # LINE carries the amber.
   defp runners_tone(connected, total) when connected < total, do: :neutral
   defp runners_tone(_connected, _total), do: :brand
 
@@ -1196,7 +1204,7 @@ defmodule EmisarWeb.DashboardLive do
   # -- The pillar card shape --------------------------------------------
 
   attr :label, :string, required: true
-  attr :tone, :atom, required: true, values: [:brand, :rose, :neutral]
+  attr :tone, :atom, required: true, values: [:brand, :neutral]
   attr :status_tone, :atom, default: :neutral, values: [:amber, :rose, :neutral]
   attr :navigate, :string, required: true
   slot :value, required: true

@@ -1102,8 +1102,9 @@ The fixed-JSON v5 claim binds:
 
 The fixed struct and JSON escaping keep field boundaries unambiguous. The
 existing certificate format does not change merely because the dispatch claim
-changes. Implementation and fixed vectors remain byte-identical between bridge
-and runner and are compared from the repository root.
+changes. The implementation remains byte-identical between bridge and runner
+and is compared from the repository root, so both derive the same fixed
+vectors.
 
 The portal requires the signed fields to equal its preflight, canonical request
 origin, and persisted operation facts, then relays the claim, the exact

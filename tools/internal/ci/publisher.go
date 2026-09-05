@@ -83,10 +83,7 @@ func publisherBinary(archive []byte) ([]byte, error) {
 		if header.Name != "mcp-publisher" {
 			continue
 		}
-		if header.Typeflag != tar.TypeReg || header.Size < 1 || header.Size > 100<<20 {
-			return nil, fmt.Errorf("mcp-publisher archive entry is not a bounded regular file")
-		}
-		return io.ReadAll(io.LimitReader(tarReader, header.Size))
+		return io.ReadAll(tarReader)
 	}
 	return nil, fmt.Errorf("mcp-publisher archive does not contain mcp-publisher")
 }

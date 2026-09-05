@@ -267,9 +267,7 @@ defmodule Emisar.OAuth.ClientMetadataDocument do
   @spec validate(map(), String.t()) :: {:ok, map()} | {:error, atom()}
   def validate(%{} = document, url) do
     with :ok <- require_fields(document),
-         :ok <- check(document["client_id"] == url, :client_id_mismatch),
-         :ok <- check(storable_text?(document["client_name"]), :invalid_document),
-         :ok <- check(redirect_uris?(document["redirect_uris"]), :invalid_document) do
+         :ok <- check(document["client_id"] == url, :client_id_mismatch) do
       {:ok, document}
     end
   end
@@ -279,19 +277,6 @@ defmodule Emisar.OAuth.ClientMetadataDocument do
       do: :ok,
       else: {:error, :missing_required_fields}
   end
-
-  defp redirect_uris?([_ | _] = uris), do: Enum.all?(uris, &storable_text?/1)
-  defp redirect_uris?(_uris), do: false
-
-  # A remotely-published document is the least trusted string source we have, so
-  # it is judged here rather than left to the row write: JSON `\u0000` decodes to
-  # a real NUL that `String.valid?/1` accepts and Postgres refuses, and the
-  # document's own contract failure should read as `invalid_client`, not a
-  # database error.
-  defp storable_text?(value) when is_binary(value),
-    do: String.valid?(value) and not String.contains?(value, <<0>>)
-
-  defp storable_text?(_value), do: false
 
   defp check(true, _reason), do: :ok
   defp check(false, reason), do: {:error, reason}

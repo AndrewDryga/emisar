@@ -1433,26 +1433,35 @@ defmodule Emisar.Runners do
   end
 
   @doc """
-  Pure fleet projection over an ALREADY-scoped runner list: every runner's
-  `runner_readiness/2` rolled into counts, one fleet-wide signature mode, and
-  the stable reason atoms a surface turns into copy.
-
-  Connection and portal-dispatch counts partition the whole list. `stale`,
-  `signed_only`, `degraded`, and `degraded_packs` cover only the ACTIVE
-  (non-disabled) runners — a disabled runner's posture isn't actionable — and
-  `signature_mode` is computed over that same active set, so a disabled
-  non-enforcing runner can't keep a fleet from reading signed-only.
+  The fleet status of a fleet with no runners — what a surface renders before
+  `fetch_fleet_status/2` has answered.
   """
-  def fleet_status(runners, now \\ DateTime.utc_now()) when is_list(runners) do
-    readiness = Enum.map(runners, &runner_readiness(&1, now))
-    {active, disabled} = Enum.split_with(readiness, &(&1.connection.state != :disabled))
-    build_fleet_status(fleet_counts(readiness, active, disabled))
+  def empty_fleet_status do
+    row = %{
+      total: 0,
+      disabled: 0,
+      online: 0,
+      pending: 0,
+      stale: 0,
+      signed_only: 0,
+      degraded: 0,
+      degraded_packs: 0,
+      portal_ready: 0
+    }
+
+    build_fleet_status(aggregate_counts(row))
   end
 
   @doc """
-  The subject's complete scoped fleet as one `fleet_status/2` projection,
-  counted in the database — the nav, the runners index, and the fleet-dependent
-  nudges all ask on common paths, so no runner row is materialized. The
+  The subject's complete scoped fleet as counts, one fleet-wide signature mode,
+  and the stable reason atoms a surface turns into copy — counted in the
+  database, because the nav, the runners index, and the fleet-dependent nudges
+  all ask on common paths, so no runner row is materialized. Connection and
+  portal-dispatch counts partition the whole fleet; `stale`, `signed_only`,
+  `degraded`, and `degraded_packs` cover only the ACTIVE (non-disabled) runners
+  — a disabled runner's posture isn't actionable — and `signature_mode` is
+  computed over that same active set, so a disabled non-enforcing runner can't
+  keep a fleet from reading signed-only. The
   `view_runners` permission, the membership's CURRENT runner access, and the
   Authorizer's account scope all apply, so a runner the caller can't see never
   reaches the counts; Presence stays the authority on who is online and whose
@@ -1546,33 +1555,6 @@ defmodule Emisar.Runners do
   defp readiness_action_load(load) when is_integer(load) and load >= 0, do: load
   defp readiness_action_load(_load), do: 0
 
-  defp fleet_counts(readiness, active, disabled) do
-    %{
-      total: length(readiness),
-      active: length(active),
-      online: count_connection(readiness, :online),
-      offline: count_connection(readiness, :offline),
-      pending: count_connection(readiness, :pending),
-      disabled: length(disabled),
-      stale: Enum.count(active, &(&1.heartbeat.state == :stale)),
-      signed_only: Enum.count(active, &(&1.signatures.mode == :signed_only)),
-      degraded: Enum.count(active, &(&1.degradation.state == :degraded)),
-      degraded_packs: Enum.sum_by(active, &length(&1.degradation.packs)),
-      portal_ready: count_dispatch(readiness, :ready),
-      portal_queueable: count_dispatch(readiness, :queueable),
-      portal_blocked: count_dispatch(readiness, :blocked)
-    }
-  end
-
-  defp count_connection(readiness, state),
-    do: Enum.count(readiness, &(&1.connection.state == state))
-
-  defp count_dispatch(readiness, state),
-    do: Enum.count(readiness, &(&1.portal_dispatch.state == state))
-
-  # The list projection and the database aggregate both stop at counts, so the
-  # signature mode and the reason atoms are derived once — the two paths cannot
-  # answer the same fleet differently.
   defp build_fleet_status(counts) do
     signature_mode = fleet_signature_mode(counts)
 
@@ -1621,10 +1603,9 @@ defmodule Emisar.Runners do
     end
   end
 
-  # SQL counts what a row can answer; the rest is arithmetic over those, in the
-  # same shape `fleet_counts/3` builds from readiness facts. Among active
-  # runners, signed-only is blocked and the unsigned remainder splits into
-  # online (ready) and absent-presence (queueable).
+  # SQL counts what a row can answer; the rest is arithmetic over those. Among
+  # active runners, signed-only is blocked and the unsigned remainder splits
+  # into online (ready) and absent-presence (queueable).
   defp aggregate_counts(row) do
     active = row.total - row.disabled
 
@@ -1760,21 +1741,16 @@ defmodule Emisar.Runners do
   defp unix_to_datetime(_invalid), do: nil
 
   @doc """
-  True when a runner is visible/dispatchable under explicit runner access.
-  Membership structs are re-resolved by account and id; missing or inactive
-  memberships fail closed.
+  True when a runner is visible/dispatchable under a membership's runner access.
+  The membership is re-resolved by account and id; a missing or inactive one
+  fails closed, as does the web passing no membership at all.
   """
-  def runner_in_scope?(_runner, nil), do: false
-
   def runner_in_scope?(runner, %Accounts.Membership{} = membership) do
     access = Accounts.runner_access_for_membership(membership.account_id, membership.id)
     Accounts.RunnerAccess.runner_in_scope?(runner, access)
   end
 
-  def runner_in_scope?(runner, %Accounts.RunnerAccess{} = access),
-    do: Accounts.RunnerAccess.runner_in_scope?(runner, access)
-
-  def runner_in_scope?(_runner, _access), do: false
+  def runner_in_scope?(_runner, _membership), do: false
 
   # -- Enrollment keys -------------------------------------------------------
 

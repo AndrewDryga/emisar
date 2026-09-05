@@ -129,8 +129,7 @@ func ResolveMirror(rows []MirrorRow, pack, version, digest string) (MirrorRow, b
 }
 
 func validateImageRepository(repository string) error {
-	if repository == "" || repository != strings.ToLower(repository) ||
-		strings.ContainsAny(repository, "@:\t\r\n ") || !imageRepositoryPattern.MatchString(repository) {
+	if !imageRepositoryPattern.MatchString(repository) {
 		return fmt.Errorf("%q must be a lowercase image repository without a tag or digest", repository)
 	}
 	return nil

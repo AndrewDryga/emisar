@@ -182,11 +182,6 @@ defmodule EmisarWeb.RunbookRunLive do
 
   def handle_info(_message, socket), do: {:noreply, socket}
 
-  def terminate(_reason, socket) do
-    _ = unsubscribe_execution(socket)
-    :ok
-  end
-
   defp start_execution(socket) do
     socket = touch_all_inputs(socket)
 
@@ -500,10 +495,7 @@ defmodule EmisarWeb.RunbookRunLive do
     assign(socket, :subscribed_execution_id, nil)
   end
 
-  # Nothing subscribed, including the case this clause exists for: mounting a
-  # draft runbook or a missing one redirects before any of the execution assigns
-  # are set, so `terminate/2` arrives here with the key ABSENT rather than nil.
-  # Matching a nil value alone crashed the view on its way out.
+  # Nothing subscribed yet.
   defp unsubscribe_execution(socket), do: socket
 
   # The domain owns the canonical form values, so a first paint and a reset both
@@ -541,12 +533,12 @@ defmodule EmisarWeb.RunbookRunLive do
   defp items_for_stage(result, stage),
     do: Enum.filter(result.execution.items, &(&1.runbook_execution_stage_id == stage.id))
 
-  defp visible_items(items, expanded?, limit \\ @item_page_size) do
-    if expanded?, do: items, else: Enum.take(items, limit)
+  defp visible_items(items, expanded?) do
+    if expanded?, do: items, else: Enum.take(items, @item_page_size)
   end
 
-  defp hidden_item_count(items, expanded?, limit \\ @item_page_size) do
-    if expanded?, do: 0, else: max(length(items) - limit, 0)
+  defp hidden_item_count(items, expanded?) do
+    if expanded?, do: 0, else: max(length(items) - @item_page_size, 0)
   end
 
   defp toggle_set(set, id) do

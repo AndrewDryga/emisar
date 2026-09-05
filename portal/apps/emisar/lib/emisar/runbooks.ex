@@ -1447,23 +1447,17 @@ defmodule Emisar.Runbooks do
 
   defp execution_who(%RunbookExecution{}), do: nil
 
-  # The membership is the account-local naming authority, so it only names
-  # anyone once it is provably THIS execution's, in THIS account, for THIS
-  # person. An absent (or mismatched) membership degrades to the email, which
-  # still identifies the accountable human without exposing the cross-account
-  # `users.full_name` or a directory name another workspace owns; an unloaded
-  # one names nobody.
+  # The membership is the account-local naming authority, and
+  # `RunbookExecution.Query.with_attribution/1` is its only loader: its join
+  # already binds this execution's own membership, in this account, for this
+  # person. An absent membership degrades to the email, which still identifies
+  # the accountable human without exposing the cross-account `users.full_name`
+  # or a directory name another workspace owns; an unloaded one names nobody.
   defp accountable_name(
-         %RunbookExecution{initiating_membership: %Accounts.Membership{} = membership} = execution,
+         %RunbookExecution{initiating_membership: %Accounts.Membership{} = membership},
          %Users.User{} = user
-       ) do
-    if membership.id == execution.initiating_membership_id and
-         membership.account_id == execution.account_id and membership.user_id == user.id do
-      Accounts.member_display_name(membership, user)
-    else
-      user.email
-    end
-  end
+       ),
+       do: Accounts.member_display_name(membership, user)
 
   defp accountable_name(%RunbookExecution{initiating_membership: nil}, %Users.User{} = user),
     do: user.email

@@ -32,9 +32,9 @@ defmodule EmisarWeb.RunnerSocket do
   # The wire contract bounds JSON nesting at 64 and the runner enforces exactly
   # that on the frames IT receives (`runner/internal/cloud/protocol.go`,
   # `jsonvalue.Limits{MaxDepth: 64}`); this is the portal half, which decoded
-  # a runner's frame with no structural bound at all. Nodes need no bound of
-  # their own — the upgrade pins `max_frame_size` at 2 MiB and the cheapest
-  # node costs two bytes, so the peer sets none either.
+  # a runner's frame with no structural bound at all. `JSONValue.validate/2`
+  # takes both bounds, and the node one is the ceiling the 2 MiB
+  # `max_frame_size` already implies: the cheapest node costs two bytes.
   @max_frame_depth 64
   @max_frame_nodes 1_048_576
   @known_runner_message_types ~w(runner_state action_started action_progress action_result heartbeat error)

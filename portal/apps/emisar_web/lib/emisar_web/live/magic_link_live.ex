@@ -90,12 +90,8 @@ defmodule EmisarWeb.MagicLinkLive do
     end
   end
 
-  defp browser_state(session) do
-    {
-      session["magic_link_token_id"] || session[:magic_link_token_id],
-      session["magic_link_nonce"] || session[:magic_link_nonce]
-    }
-  end
+  defp browser_state(session),
+    do: {session["magic_link_token_id"], session["magic_link_nonce"]}
 
   def render(assigns) do
     ~H"""

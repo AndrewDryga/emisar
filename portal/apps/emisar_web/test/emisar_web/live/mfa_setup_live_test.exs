@@ -226,7 +226,7 @@ defmodule EmisarWeb.MfaSetupLiveTest do
     }
 
     assert_raise EmisarWeb.NotFoundError, fn ->
-      EmisarWeb.MfaSetupLive.mount(%{}, %{}, socket)
+      EmisarWeb.UserAuth.on_mount(:ensure_sso_compliant, %{}, %{}, socket)
     end
   end
 

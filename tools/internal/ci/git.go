@@ -44,14 +44,3 @@ func diffBase(ctx context.Context, root, event, base string) (string, error) {
 	}
 	return strings.TrimSpace(string(result)), nil
 }
-
-func nulStrings(data []byte) []string {
-	fields := bytes.Split(data, []byte{0})
-	values := make([]string, 0, len(fields))
-	for _, field := range fields {
-		if len(field) != 0 {
-			values = append(values, string(field))
-		}
-	}
-	return values
-}

@@ -315,19 +315,9 @@ defmodule EmisarWeb.CoreComponents do
   # Ghost: a text-only button tinted by tone, for a form's quiet Cancel, an
   # inline dismiss (clearing a chosen upload), and a disclosure toggle. NOT for
   # an entity's action verb — revoke/suspend/delete/edit wear a bordered face so
-  # buttons look like buttons (§7.47); the tone ramp below exists so a
-  # `<.menu_item>` row can mirror it inside a dropdown panel.
+  # buttons look like buttons (§7.47).
   defp button_face(:ghost, :neutral),
     do: "font-medium text-zinc-300 hover:bg-zinc-900 focus-visible:outline-zinc-600"
-
-  defp button_face(:ghost, :brand),
-    do: "font-medium text-brand-300 hover:bg-brand-500/10 focus-visible:outline-brand-400"
-
-  defp button_face(:ghost, :amber),
-    do: "font-medium text-amber-300 hover:bg-amber-500/10 focus-visible:outline-amber-400"
-
-  defp button_face(:ghost, :rose),
-    do: "font-medium text-rose-300 hover:bg-rose-500/10 focus-visible:outline-rose-400"
 
   defp default_button_tone(:primary), do: :brand
   defp default_button_tone(:secondary), do: :neutral
@@ -1327,7 +1317,7 @@ defmodule EmisarWeb.CoreComponents do
   attr :variant, :atom, default: :spine, values: [:spine, :strip]
   attr :title, :string, default: nil
   attr :icon, :string, default: nil, doc: "icon meaning override"
-  attr :navigate, :any, default: nil, doc: "makes the whole callout a link"
+  attr :navigate, :any, default: nil, doc: "makes the whole spine callout a link"
   attr :class, :any, default: nil
   attr :rest, :global
 
@@ -1387,25 +1377,6 @@ defmodule EmisarWeb.CoreComponents do
     """
   end
 
-  def callout(assigns) do
-    ~H"""
-    <.link
-      navigate={@navigate}
-      class={[callout_frame(@variant), callout_tone(@tone), callout_hover(@tone), @class]}
-      {@rest}
-    >
-      <.callout_content
-        variant={@variant}
-        tone={@tone}
-        title={@title}
-        icon={@icon}
-        body={@inner_block}
-        action={@action}
-      />
-    </.link>
-    """
-  end
-
   attr :variant, :atom, required: true
   attr :tone, :atom, required: true
   attr :title, :string, required: true
@@ -1437,11 +1408,6 @@ defmodule EmisarWeb.CoreComponents do
   defp callout_tone(:brand), do: "border-brand-500/30 bg-brand-500/10 text-brand-200"
   defp callout_tone(:amber), do: "border-amber-500/40 bg-amber-500/10 text-amber-100"
   defp callout_tone(:rose), do: "border-rose-500/30 bg-rose-500/10 text-rose-200"
-
-  defp callout_hover(:neutral), do: "transition hover:bg-zinc-900/60"
-  defp callout_hover(:brand), do: "transition hover:bg-brand-500/[0.16]"
-  defp callout_hover(:amber), do: "transition hover:bg-amber-500/[0.16]"
-  defp callout_hover(:rose), do: "transition hover:bg-rose-500/[0.16]"
 
   defp callout_icon(:neutral), do: "state.info"
   defp callout_icon(:brand), do: "state.info"
@@ -2035,7 +2001,6 @@ defmodule EmisarWeb.CoreComponents do
 
     assigns =
       assign(assigns,
-        can_view_dashboard?: Emisar.Runs.subject_can_view_runs?(subject),
         can_view_runners?: Emisar.Runners.subject_can_view_runners?(subject),
         can_view_agents?: Emisar.ApiKeys.subject_can_view_api_keys?(subject),
         can_view_runs?: Emisar.Runs.subject_can_view_runs?(subject),
@@ -2069,7 +2034,7 @@ defmodule EmisarWeb.CoreComponents do
          "Support" cut in half read as a rendering defect on every screenshot. --%>
     <nav class="scrollbar-subtle flex-1 space-y-0.5 overflow-y-auto px-3 pb-4 pt-2 text-sm">
       <.nav_link
-        :if={@can_view_dashboard?}
+        :if={@can_view_runs?}
         to={~p"/app/#{@current_account}"}
         active={@section == :dashboard}
         icon="product.dashboard"
@@ -2528,28 +2493,14 @@ defmodule EmisarWeb.CoreComponents do
   end
 
   # The word wears its outcome tone (readable-but-quiet 300-tier); routine
-  # neutral states stay muted. Offline is the one bucket exception: it's a
-  # CAUTION (needs attention), not neutral — amber, one tone for the fact
-  # everywhere (summary strip, row status, dashboard posture).
-  defp status_word_class("offline"), do: "text-amber-300"
-  # Planned (a runbook slot not yet dispatched) is the quietest state — but a
-  # status word an operator reads must clear AA, so it wears the neutral muted
-  # tier (zinc-400); the de-pilled word, not a sub-AA gray, marks it not-yet.
-  # Expired and cancelled are
-  # different: in a run/decision log they're OUTCOMES (nobody decided in time;
-  # an operator pulled the run back), and an uncolored verdict beside
-  # approved/denied/error reads as a bug — they wear amber via the :pending
-  # bucket below.
-  defp status_word_class("planned"), do: "text-zinc-400"
-
-  defp status_word_class(status) do
-    case status_tone(status) do
-      :pass -> "text-brand-300"
-      :pending -> "text-amber-300"
-      :deny -> "text-rose-300"
-      :neutral -> "text-zinc-400"
-    end
-  end
+  # neutral states stay muted. Planned (a runbook slot not yet dispatched) is
+  # the quietest state — but a status word an operator reads must clear AA, so
+  # it wears the neutral muted tier (zinc-400); the de-pilled word, not a
+  # sub-AA gray, marks it not-yet. Expired and cancelled are different: in a
+  # run/decision log they're OUTCOMES (nobody decided in time; an operator
+  # pulled the run back), and an uncolored verdict beside approved/denied/error
+  # reads as a bug — they wear amber via the :pending bucket.
+  defp status_word_class(status), do: tone_text_class(status_dot_tone(status))
 
   # The word tone for an EXPLICIT `status_badge` tone override (bypassing the
   # word-derived bucket above) — same 300-tier palette, keyed by the dot tone.
@@ -2568,11 +2519,13 @@ defmodule EmisarWeb.CoreComponents do
   def status_tone(status) do
     case to_string(status) do
       s
-      when s in ~w[success succeeded connected approved published active running sent cancelling] ->
+      when s in ~w[success succeeded connected approved published trusted enabled active running sent cancelling] ->
         :pass
 
+      # Offline is a CAUTION (needs attention), not neutral — amber, one tone
+      # for the fact everywhere (summary strip, row status, dashboard posture).
       s
-      when s in ~w[pending pending_approval queued waiting expired cancelled] ->
+      when s in ~w[pending pending_approval queued waiting expired cancelled offline] ->
         :pending
 
       s
@@ -2587,30 +2540,19 @@ defmodule EmisarWeb.CoreComponents do
   # The badge dot's {tone, pulse?} per status. In-flight runs pulse so they
   # read as "still happening", not done — the one cue that separates
   # sent/running (and a held pending_approval) from a static same-hue dot.
-  defp status_dot_spec(s)
-       when s in ~w[success succeeded connected approved published trusted enabled],
-       do: {:brand, false}
+  defp status_dot_spec(status) do
+    {status_dot_tone(status),
+     status in ~w[active running sent cancelling pending_approval waiting]}
+  end
 
-  defp status_dot_spec(s) when s in ~w[active running sent cancelling], do: {:brand, true}
-
-  defp status_dot_spec(s) when s in ~w[pending_approval waiting],
-    do: {:amber, true}
-
-  defp status_dot_spec("queued"), do: {:amber, false}
-  defp status_dot_spec("offline"), do: {:amber, false}
-  defp status_dot_spec("pending"), do: {:amber, false}
-  defp status_dot_spec("expired"), do: {:amber, false}
-  defp status_dot_spec("cancelled"), do: {:amber, false}
-  defp status_dot_spec("denied"), do: {:rose, false}
-  defp status_dot_spec("refused"), do: {:rose, false}
-  defp status_dot_spec("rejected"), do: {:rose, false}
-  defp status_dot_spec("retired"), do: {:rose, false}
-
-  defp status_dot_spec(s)
-       when s in ~w[failed halted error validation_failed unknown_action timed_out dispatch_failed],
-       do: {:rose, false}
-
-  defp status_dot_spec(_), do: {:neutral, false}
+  defp status_dot_tone(status) do
+    case status_tone(status) do
+      :pass -> :brand
+      :pending -> :amber
+      :deny -> :rose
+      :neutral -> :neutral
+    end
+  end
 
   defp format_status("pending_approval"), do: "awaiting approval"
   defp format_status("validation_failed"), do: "validation failed"
@@ -3377,26 +3319,15 @@ defmodule EmisarWeb.CoreComponents do
         Each <em>(pack, version)</em> has a pinned trusted hash…
       </.page_intro>
 
-      <.page_intro>
-        <:help>
-          Every action has a <strong>risk tier</strong> from the catalog…
-        </:help>
-      </.page_intro>
   """
   attr :class, :string, default: nil
   slot :inner_block, doc: "the subtitle lead line (rich inline markup allowed)"
-  slot :actions, doc: "right-aligned buttons beside the subtitle"
 
   def page_intro(assigns) do
     ~H"""
-    <div :if={@inner_block != [] or @actions != []} class={["space-y-4", @class]}>
-      <div class="flex items-start justify-between gap-4">
-        <p :if={@inner_block != []} class="max-w-2xl text-sm leading-relaxed text-zinc-400">
-          {render_slot(@inner_block)}
-        </p>
-        <div :if={@actions != []} class="shrink-0">{render_slot(@actions)}</div>
-      </div>
-    </div>
+    <p :if={@inner_block != []} class={["max-w-2xl text-sm leading-relaxed text-zinc-400", @class]}>
+      {render_slot(@inner_block)}
+    </p>
     """
   end
 
@@ -3474,7 +3405,7 @@ defmodule EmisarWeb.CoreComponents do
   """
   attr :title, :string, required: true
   attr :count, :integer, default: nil
-  attr :count_tone, :atom, default: :neutral, values: [:amber, :neutral, :brand]
+  attr :count_tone, :atom, default: :neutral, values: [:amber, :neutral]
   attr :class, :string, default: nil
   slot :subtitle
   slot :actions
@@ -3635,7 +3566,7 @@ defmodule EmisarWeb.CoreComponents do
         ...
       </.meta_strip>
   """
-  attr :cols, :integer, default: nil, values: [nil, 3, 4, 5, 6]
+  attr :cols, :integer, default: nil, values: [nil, 4, 6]
   attr :class, :string, default: nil
   slot :inner_block, required: true
 
@@ -3643,9 +3574,7 @@ defmodule EmisarWeb.CoreComponents do
     # Static lookup so Tailwind picks up every variant.
     lg_cols =
       %{
-        3 => "lg:grid-cols-3",
         4 => "lg:grid-cols-4",
-        5 => "lg:grid-cols-5",
         6 => "lg:grid-cols-6"
       }[assigns.cols] || ""
 
@@ -3693,11 +3622,6 @@ defmodule EmisarWeb.CoreComponents do
   slot :meta
   slot :actions
 
-  slot :body,
-    doc:
-      "full-width content under the row — an expanded detail or disclosure, " <>
-        "which must clear the actions column rather than share the title's measure"
-
   def list_row(assigns) do
     ~H"""
     <li id={@id} class={[@padding, @class]}>
@@ -3735,8 +3659,6 @@ defmodule EmisarWeb.CoreComponents do
           {render_slot(@actions)}
         </div>
       </div>
-
-      <div :if={@body != []} class="mt-3">{render_slot(@body)}</div>
     </li>
     """
   end
@@ -4158,7 +4080,6 @@ defmodule EmisarWeb.CoreComponents do
   attr :target, :string, default: nil, doc: "CSS selector of element whose innerText to copy"
   attr :text, :string, default: nil, doc: "literal string to copy (alternative to :target)"
   attr :class, :any, default: nil
-  attr :label_copied, :string, default: "Copied"
   attr :rest, :global, include: ~w(id)
 
   slot :inner_block, required: true
@@ -4169,7 +4090,7 @@ defmodule EmisarWeb.CoreComponents do
       type="button"
       data-copy={@target}
       data-copy-text={@text}
-      data-copy-label-copied={@label_copied}
+      data-copy-label-copied="Copied"
       class={[
         "rounded bg-zinc-800/80 px-2.5 py-1 text-xs font-medium text-zinc-200 hover:bg-zinc-700",
         @class
@@ -4770,7 +4691,7 @@ defmodule EmisarWeb.CoreComponents do
         </:actions>
       </.secret_reveal>
   """
-  attr :id, :string, default: "reveal-secret"
+  attr :id, :string, required: true
   attr :title, :string, required: true
   attr :codes, :list, required: true, doc: "the reveal-once code list"
   attr :download_name, :string, default: nil, doc: "offer the set as a .txt file"

@@ -5,8 +5,7 @@ defmodule Emisar.Runbooks.Jobs.AdvanceExecutions do
   use Emisar.Jobs.Job,
     otp_app: :emisar,
     every: :timer.seconds(5),
-    initial_delay: :timer.seconds(5),
-    executor: Emisar.Jobs.Executors.GloballyUnique
+    initial_delay: :timer.seconds(5)
 
   @impl Emisar.Jobs.Executors.GloballyUnique
   def execute(_config) do

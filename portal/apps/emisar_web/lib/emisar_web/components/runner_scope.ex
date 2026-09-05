@@ -33,6 +33,8 @@ defmodule EmisarWeb.RunnerScope do
     ]
 
   alias Emisar.Accounts
+  alias Emisar.Auth.Subject
+  alias Emisar.Catalog
 
   attr :name, :string, required: true, doc: ~s(checkbox field name, e.g. "scope[]")
   attr :runners, :list, required: true, doc: "the account's runners (need id, name, group)"
@@ -49,116 +51,94 @@ defmodule EmisarWeb.RunnerScope do
 
   def runner_scope_select(assigns) do
     tree = tree(assigns.runners, assigns.selected)
-
-    assigns =
-      assigns
-      |> assign(:tree, tree)
-      |> assign(:empty?, empty_tree?(tree))
-      |> assign(:ready?, not assigns.loading? and is_nil(assigns.load_error))
-      |> assign(
-        :visible_error,
-        assigns.validation_error ||
-          visible_submit_error(assigns.submit_error_field, assigns.submit_error_message)
-      )
+    assigns = assigns |> assign(:tree, tree) |> assign(:empty?, empty_tree?(tree))
 
     ~H"""
-    <div class={[scope_container_class(@variant), @class]} {@rest}>
-      <p :if={@label} class="mb-2 text-sm font-medium text-zinc-300">{@label}</p>
+    <.scope_panel
+      variant={@variant}
+      label={@label}
+      submit_error_field={@submit_error_field}
+      submit_error_message={@submit_error_message}
+      validation_error={@validation_error}
+      loading?={@loading?}
+      load_error={@load_error}
+      empty?={@empty?}
+      empty_message="No runners registered yet."
+      class={@class}
+      {@rest}
+    >
+      <div :for={group <- @tree.groups}>
+        <.checkbox
+          name={@name}
+          value={group.value}
+          checked={group.selected}
+          class={group_row_class(group.selected)}
+        >
+          <span class="flex-1 truncate font-medium text-zinc-100">{group.name}</span>
+          <span class="shrink-0 rounded-full bg-zinc-800/80 px-2 py-0.5 text-[10px] font-medium tabular-nums text-zinc-400">
+            {length(group.runners)} {if length(group.runners) == 1, do: "runner", else: "runners"}
+          </span>
+        </.checkbox>
 
-      <div :if={@visible_error} class={scope_feedback_class(@variant)}>
-        <.error compact>{@visible_error}</.error>
-      </div>
-      <div :if={@loading?} class={scope_feedback_class(@variant)}>
-        <.loading_state />
-      </div>
-      <div :if={@load_error} class={scope_feedback_class(@variant)}>
-        <.callout tone={:rose}>{@load_error}</.callout>
-      </div>
-
-      <div
-        :if={@ready? and @empty?}
-        class={scope_empty_class(@variant)}
-      >
-        No runners registered yet.
-      </div>
-
-      <div
-        :if={@ready? and not @empty?}
-        class={scope_tree_class(@variant)}
-      >
-        <div :for={group <- @tree.groups}>
+        <%!-- Runners nested under the group, along a hierarchy rail. When the
+             group is picked they're disabled + tagged "via group" — the group
+             already covers them, so an individual tick would be redundant. --%>
+        <div class="relative ml-5 before:pointer-events-none before:absolute before:bottom-5 before:left-0 before:top-0 before:w-px before:bg-zinc-700/50 before:content-['']">
           <.checkbox
-            name={@name}
-            value={group.value}
-            checked={group.selected}
-            class={group_row_class(group.selected)}
-          >
-            <span class="flex-1 truncate font-medium text-zinc-100">{group.name}</span>
-            <span class="shrink-0 rounded-full bg-zinc-800/80 px-2 py-0.5 text-[10px] font-medium tabular-nums text-zinc-400">
-              {length(group.runners)} {if length(group.runners) == 1, do: "runner", else: "runners"}
-            </span>
-          </.checkbox>
-
-          <%!-- Runners nested under the group, along a hierarchy rail. When the
-               group is picked they're disabled + tagged "via group" — the group
-               already covers them, so an individual tick would be redundant. --%>
-          <div class="relative ml-5 before:pointer-events-none before:absolute before:bottom-5 before:left-0 before:top-0 before:w-px before:bg-zinc-700/50 before:content-['']">
-            <.checkbox
-              :for={runner <- group.runners}
-              name={@name}
-              value={runner.value}
-              checked={runner.selected or runner.covered}
-              disabled={runner.covered}
-              class={runner_row_class(runner.covered)}
-            >
-              <span class="flex-1 truncate text-zinc-400">{runner.name}</span>
-              <span
-                :if={runner.covered}
-                class="shrink-0 rounded-full bg-zinc-800 px-2 py-0.5 text-[10px] text-zinc-400"
-              >
-                via group
-              </span>
-            </.checkbox>
-          </div>
-        </div>
-
-        <div :if={@tree.ungrouped != []}>
-          <p class="px-3 pb-1 pt-2.5 text-[10px] font-semibold uppercase tracking-wider text-zinc-400">
-            Ungrouped
-          </p>
-          <.checkbox
-            :for={runner <- @tree.ungrouped}
+            :for={runner <- group.runners}
             name={@name}
             value={runner.value}
-            checked={runner.selected}
-            class="flex min-h-10 cursor-pointer select-none items-center gap-3 py-2 pl-3 pr-3 text-xs transition-colors hover:bg-white/[0.04]"
+            checked={runner.selected or runner.covered}
+            disabled={runner.covered}
+            class={runner_row_class(runner.covered)}
           >
-            <span class="flex-1 truncate text-zinc-300">{runner.name}</span>
-          </.checkbox>
-        </div>
-
-        <%!-- A chosen group or runner the account no longer has: keep it
-             visible and TICKED so the operator can see what their rejected
-             submission still names, and untick it to move on. --%>
-        <div :if={@tree.unavailable != []}>
-          <p class="px-3 pb-1 pt-2.5 text-[10px] font-semibold uppercase tracking-wider text-zinc-400">
-            Unavailable
-          </p>
-          <.checkbox
-            :for={ref <- @tree.unavailable}
-            name={@name}
-            value={ref.value}
-            checked
-            class="flex min-h-10 cursor-pointer select-none items-center gap-3 py-2 pl-3 pr-3 text-xs transition-colors hover:bg-white/[0.04]"
-          >
-            <span class={["flex-1 truncate", unavailable_name_class(ref.kind)]}>{ref.name}</span>
-            <span class="shrink-0 rounded-full bg-zinc-800 px-2 py-0.5 text-[10px] text-zinc-400">
-              unavailable
+            <span class="flex-1 truncate text-zinc-400">{runner.name}</span>
+            <span
+              :if={runner.covered}
+              class="shrink-0 rounded-full bg-zinc-800 px-2 py-0.5 text-[10px] text-zinc-400"
+            >
+              via group
             </span>
           </.checkbox>
         </div>
       </div>
-    </div>
+
+      <div :if={@tree.ungrouped != []}>
+        <p class="px-3 pb-1 pt-2.5 text-[10px] font-semibold uppercase tracking-wider text-zinc-400">
+          Ungrouped
+        </p>
+        <.checkbox
+          :for={runner <- @tree.ungrouped}
+          name={@name}
+          value={runner.value}
+          checked={runner.selected}
+          class="flex min-h-10 cursor-pointer select-none items-center gap-3 py-2 pl-3 pr-3 text-xs transition-colors hover:bg-white/[0.04]"
+        >
+          <span class="flex-1 truncate text-zinc-300">{runner.name}</span>
+        </.checkbox>
+      </div>
+
+      <%!-- A chosen group or runner the account no longer has: keep it
+           visible and TICKED so the operator can see what their rejected
+           submission still names, and untick it to move on. --%>
+      <div :if={@tree.unavailable != []}>
+        <p class="px-3 pb-1 pt-2.5 text-[10px] font-semibold uppercase tracking-wider text-zinc-400">
+          Unavailable
+        </p>
+        <.checkbox
+          :for={ref <- @tree.unavailable}
+          name={@name}
+          value={ref.value}
+          checked
+          class="flex min-h-10 cursor-pointer select-none items-center gap-3 py-2 pl-3 pr-3 text-xs transition-colors hover:bg-white/[0.04]"
+        >
+          <span class={["flex-1 truncate", unavailable_name_class(ref.kind)]}>{ref.name}</span>
+          <span class="shrink-0 rounded-full bg-zinc-800 px-2 py-0.5 text-[10px] text-zinc-400">
+            unavailable
+          </span>
+        </.checkbox>
+      </div>
+    </.scope_panel>
     """
   end
 
@@ -283,11 +263,31 @@ defmodule EmisarWeb.RunnerScope do
 
   def pack_load_error(false), do: nil
 
+  @doc "Flips `id` in the set of expanded scope disclosures."
+  def toggle_scope(expanded, id) do
+    if MapSet.member?(expanded, id),
+      do: MapSet.delete(expanded, id),
+      else: MapSet.put(expanded, id)
+  end
+
+  @doc """
+  The account's pack advertisements for a pack picker, with a flag saying
+  whether an empty map is a real answer or a failed read — a role without
+  view_catalog gets no pack choices rather than a crash, and a picker cannot
+  report "No packs on the selected runners" for packs it never read.
+  """
+  def account_pack_advertisements(%Subject{} = subject) do
+    case Catalog.list_pack_advertisements(subject) do
+      {:ok, advertisements} -> {advertisements, false}
+      {:error, _reason} -> {%{}, Catalog.subject_can_view_packs?(subject)}
+    end
+  end
+
   @doc """
   Runner ids a `"group:x"` / `"runner:id"` selection covers — every runner when
   the grant reaches them all.
   """
-  def selected_runner_ids(runners, mode, _selected) when mode in ["all", :all],
+  def selected_runner_ids(runners, "all", _selected),
     do: Enum.map(runners, & &1.id)
 
   def selected_runner_ids(runners, _mode, selected) do
@@ -321,7 +321,7 @@ defmodule EmisarWeb.RunnerScope do
   # The runner scope is the prerequisite: while it names nothing, the pack list
   # is empty for a reason the operator can fix upstream, not because the account
   # has no packs.
-  defp pack_empty_message(mode, []) when mode not in ["all", :all],
+  defp pack_empty_message(mode, []) when mode != "all",
     do: "Choose runners first — the packs they carry appear here."
 
   defp pack_empty_message(_mode, _runner_ids), do: "No packs on the selected runners."
@@ -342,78 +342,56 @@ defmodule EmisarWeb.RunnerScope do
 
   def pack_scope_select(assigns) do
     nodes = pack_nodes(assigns.packs, assigns.selected)
-
-    assigns =
-      assigns
-      |> assign(:nodes, nodes)
-      |> assign(:empty?, empty_pack_nodes?(nodes))
-      |> assign(:ready?, not assigns.loading? and is_nil(assigns.load_error))
-      |> assign(
-        :visible_error,
-        assigns.validation_error ||
-          visible_submit_error(assigns.submit_error_field, assigns.submit_error_message)
-      )
+    assigns = assigns |> assign(:nodes, nodes) |> assign(:empty?, empty_pack_nodes?(nodes))
 
     ~H"""
-    <div class={[scope_container_class(@variant), @class]} {@rest}>
-      <p :if={@label} class="mb-2 text-sm font-medium text-zinc-300">{@label}</p>
-
-      <div :if={@visible_error} class={scope_feedback_class(@variant)}>
-        <.error compact>{@visible_error}</.error>
-      </div>
-      <div :if={@loading?} class={scope_feedback_class(@variant)}>
-        <.loading_state />
-      </div>
-      <div :if={@load_error} class={scope_feedback_class(@variant)}>
-        <.callout tone={:rose}>{@load_error}</.callout>
-      </div>
-
-      <div
-        :if={@ready? and @empty?}
-        class={scope_empty_class(@variant)}
+    <.scope_panel
+      variant={@variant}
+      label={@label}
+      submit_error_field={@submit_error_field}
+      submit_error_message={@submit_error_message}
+      validation_error={@validation_error}
+      loading?={@loading?}
+      load_error={@load_error}
+      empty?={@empty?}
+      empty_message={@empty_message}
+      class={@class}
+      {@rest}
+    >
+      <.checkbox
+        :for={pack <- @nodes.available}
+        name={@name}
+        value={pack.value}
+        checked={pack.selected}
+        class="flex min-h-10 cursor-pointer select-none items-center gap-3 px-3 py-2 text-xs transition-colors hover:bg-white/[0.04]"
       >
-        {@empty_message}
-      </div>
+        <span class="flex-1 truncate font-mono text-zinc-300">{pack.name}</span>
+        <span class="shrink-0 rounded-full bg-zinc-800/80 px-2 py-0.5 text-[10px] font-medium tabular-nums text-zinc-400">
+          {pack.runner_count} {if pack.runner_count == 1, do: "runner", else: "runners"}
+        </span>
+      </.checkbox>
 
-      <div
-        :if={@ready? and not @empty?}
-        class={scope_tree_class(@variant)}
-      >
+      <%!-- A chosen pack the account no longer carries: keep it visible and
+           TICKED so the operator can see what their rejected submission still
+           names, and untick it to move on. --%>
+      <div :if={@nodes.unavailable != []}>
+        <p class="px-3 pb-1 pt-2.5 text-[10px] font-semibold uppercase tracking-wider text-zinc-400">
+          Unavailable
+        </p>
         <.checkbox
-          :for={pack <- @nodes.available}
+          :for={pack <- @nodes.unavailable}
           name={@name}
           value={pack.value}
-          checked={pack.selected}
+          checked
           class="flex min-h-10 cursor-pointer select-none items-center gap-3 px-3 py-2 text-xs transition-colors hover:bg-white/[0.04]"
         >
-          <span class="flex-1 truncate font-mono text-zinc-300">{pack.name}</span>
-          <span class="shrink-0 rounded-full bg-zinc-800/80 px-2 py-0.5 text-[10px] font-medium tabular-nums text-zinc-400">
-            {pack.runner_count} {if pack.runner_count == 1, do: "runner", else: "runners"}
+          <span class="flex-1 truncate font-mono text-zinc-400">{pack.name}</span>
+          <span class="shrink-0 rounded-full bg-zinc-800 px-2 py-0.5 text-[10px] text-zinc-400">
+            unavailable
           </span>
         </.checkbox>
-
-        <%!-- A chosen pack the account no longer carries: keep it visible and
-             TICKED so the operator can see what their rejected submission still
-             names, and untick it to move on. --%>
-        <div :if={@nodes.unavailable != []}>
-          <p class="px-3 pb-1 pt-2.5 text-[10px] font-semibold uppercase tracking-wider text-zinc-400">
-            Unavailable
-          </p>
-          <.checkbox
-            :for={pack <- @nodes.unavailable}
-            name={@name}
-            value={pack.value}
-            checked
-            class="flex min-h-10 cursor-pointer select-none items-center gap-3 px-3 py-2 text-xs transition-colors hover:bg-white/[0.04]"
-          >
-            <span class="flex-1 truncate font-mono text-zinc-400">{pack.name}</span>
-            <span class="shrink-0 rounded-full bg-zinc-800 px-2 py-0.5 text-[10px] text-zinc-400">
-              unavailable
-            </span>
-          </.checkbox>
-        </div>
       </div>
-    </div>
+    </.scope_panel>
     """
   end
 
@@ -540,6 +518,63 @@ defmodule EmisarWeb.RunnerScope do
   @runner_row "relative flex min-h-10 select-none items-center gap-3 py-2 pl-3 pr-3 text-[11px] transition-colors before:pointer-events-none before:absolute before:left-0 before:top-1/2 before:h-px before:w-3 before:bg-zinc-700/50 before:content-['']"
   defp runner_row_class(true), do: @runner_row <> " opacity-55"
   defp runner_row_class(false), do: @runner_row <> " cursor-pointer hover:bg-white/[0.04]"
+
+  attr :variant, :atom, required: true, values: [:standalone, :attached]
+  attr :label, :string, default: nil
+  attr :submit_error_field, Phoenix.HTML.FormField, default: nil
+  attr :submit_error_message, :string, default: nil
+  attr :validation_error, :string, default: nil
+  attr :loading?, :boolean, default: false
+  attr :load_error, :string, default: nil
+  attr :empty?, :boolean, required: true
+  attr :empty_message, :string, required: true
+  attr :class, :any, default: nil
+  attr :rest, :global
+  slot :inner_block, required: true
+
+  # The chrome both pickers wear — label, the one visible error, the loading and
+  # load-failure blocks, the empty state, and the container the options sit in —
+  # so the option rows are the only thing that differs between them.
+  defp scope_panel(assigns) do
+    assigns =
+      assigns
+      |> assign(:ready?, not assigns.loading? and is_nil(assigns.load_error))
+      |> assign(
+        :visible_error,
+        assigns.validation_error ||
+          visible_submit_error(assigns.submit_error_field, assigns.submit_error_message)
+      )
+
+    ~H"""
+    <div class={[scope_container_class(@variant), @class]} {@rest}>
+      <p :if={@label} class="mb-2 text-sm font-medium text-zinc-300">{@label}</p>
+
+      <div :if={@visible_error} class={scope_feedback_class(@variant)}>
+        <.error compact>{@visible_error}</.error>
+      </div>
+      <div :if={@loading?} class={scope_feedback_class(@variant)}>
+        <.loading_state />
+      </div>
+      <div :if={@load_error} class={scope_feedback_class(@variant)}>
+        <.callout tone={:rose}>{@load_error}</.callout>
+      </div>
+
+      <div
+        :if={@ready? and @empty?}
+        class={scope_empty_class(@variant)}
+      >
+        {@empty_message}
+      </div>
+
+      <div
+        :if={@ready? and not @empty?}
+        class={scope_tree_class(@variant)}
+      >
+        {render_slot(@inner_block)}
+      </div>
+    </div>
+    """
+  end
 
   defp scope_container_class(:attached) do
     "overflow-hidden rounded-b-lg border border-t border-white/25 bg-white/[0.04] " <>

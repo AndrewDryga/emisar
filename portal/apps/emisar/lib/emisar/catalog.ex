@@ -80,10 +80,6 @@ defmodule Emisar.Catalog do
   # each one keeps well clear of the limit.
   @upsert_chunk_size 500
 
-  # One page of approval cards is the largest batch that asks for exact
-  # runner+action risks, and each pair costs its own OR term in the query.
-  @max_risk_pairs 64
-
   # The console Packs page renders its whole inventory at once, so the read is
   # bounded rather than paged — well above the 80 packs the 1.0 catalog ships.
   @console_pack_version_limit 500
@@ -1428,6 +1424,21 @@ defmodule Emisar.Catalog do
     end
   end
 
+  # One action rendered through the same builder as a trusted manifest, so the
+  # drift comparison covers every model-facing field, including the optional
+  # output contract — compared structurally, because the stored digest's
+  # canonical form flattens objects into sorted pairs and so cannot tell an
+  # object from the array of pairs it becomes.
+  defp runner_action_descriptor(%RunnerAction{} = action) do
+    with {:ok, manifest} <- TrustedManifest.from_runner_actions([action]),
+         {:ok, actions} <- TrustedManifest.actions(manifest),
+         %{} = descriptor <- Map.get(actions, action.action_id) do
+      {:ok, descriptor}
+    else
+      _other -> {:error, :invalid_manifest}
+    end
+  end
+
   # Trust moved to a different hash since the caller's snapshot — that is a
   # trust decision (`:pack_untrusted`, with its own audit event), not mere
   # descriptor drift.
@@ -1479,19 +1490,6 @@ defmodule Emisar.Catalog do
       |> RunnerAction.Query.lock_for_update()
 
     repo.fetch(queryable, RunnerAction.Query)
-  end
-
-  # One action rendered through the same builder as a trusted manifest, so the
-  # drift comparison covers every model-facing field, including the optional
-  # output contract.
-  defp runner_action_descriptor(%RunnerAction{} = action) do
-    with {:ok, manifest} <- TrustedManifest.from_runner_actions([action]),
-         {:ok, actions} <- TrustedManifest.actions(manifest),
-         %{} = descriptor <- Map.get(actions, action.action_id) do
-      {:ok, descriptor}
-    else
-      _other -> {:error, :invalid_manifest}
-    end
   end
 
   @doc """
@@ -1865,15 +1863,11 @@ defmodule Emisar.Catalog do
   sync's pack-scope allowlist.
   """
   def list_pack_ids_for_account(account_id) when is_binary(account_id) do
-    if Repo.valid_uuid?(account_id) do
-      PackVersion.Query.all()
-      |> PackVersion.Query.by_account_id(account_id)
-      |> PackVersion.Query.distinct_pack_ids()
-      |> Repo.all()
-      |> Enum.sort()
-    else
-      []
-    end
+    PackVersion.Query.all()
+    |> PackVersion.Query.by_account_id(account_id)
+    |> PackVersion.Query.distinct_pack_ids()
+    |> Repo.all()
+    |> Enum.sort()
   end
 
   @doc """
@@ -2357,13 +2351,10 @@ defmodule Emisar.Catalog do
     pack_versions =
       PackVersion.Query.all()
       |> PackVersion.Query.by_pack_refs(pack_refs)
-      |> PackVersion.Query.limit_to(length(pack_refs) + 1)
       |> Authorizer.for_subject(subject)
       |> Repo.all()
 
-    if length(pack_versions) <= length(pack_refs),
-      do: {:ok, pack_versions},
-      else: {:error, :candidate_catalog_too_large}
+    {:ok, pack_versions}
   end
 
   defp runbook_candidates(snapshot, request) do
@@ -2436,8 +2427,8 @@ defmodule Emisar.Catalog do
   end
 
   @doc """
-  `%{{runner_id, action_id} => risk}` for at most #{@max_risk_pairs} exact
-  runner/action pairs, in ONE query — the approvals queue resolves every
+  `%{{runner_id, action_id} => risk}` for exact runner/action pairs, in ONE
+  query — the approvals queue resolves every
   pending request's own frozen action without a read per card. Requires
   `view_catalog`; rows are scoped to the caller's CURRENT membership runner
   access and their account.
@@ -2445,11 +2436,9 @@ defmodule Emisar.Catalog do
   A pair whose runner or action is unknown, malformed, out of the caller's
   runner scope, or in another account is simply absent, so a caller shows no
   risk rather than a wrong one. An empty list still runs the permission gate.
-  Returns `{:ok, %{{runner_id, action_id} => risk}}`, `{:error, :unauthorized}`,
-  or `{:error, :too_many_pairs}`.
+  Returns `{:ok, %{{runner_id, action_id} => risk}}` or `{:error, :unauthorized}`.
   """
-  def risk_by_runner_action_pairs(pairs, %Subject{} = subject)
-      when is_list(pairs) and length(pairs) <= @max_risk_pairs do
+  def risk_by_runner_action_pairs(pairs, %Subject{} = subject) when is_list(pairs) do
     with :ok <-
            Auth.Authorizer.ensure_has_permissions(
              subject,
@@ -2458,8 +2447,6 @@ defmodule Emisar.Catalog do
       {:ok, pairs |> Enum.filter(&resolvable_pair?/1) |> risk_by_pair(subject)}
     end
   end
-
-  def risk_by_runner_action_pairs(_pairs, %Subject{}), do: {:error, :too_many_pairs}
 
   defp resolvable_pair?({runner_id, action_id}),
     do: Repo.valid_uuid?(runner_id) and is_binary(action_id)

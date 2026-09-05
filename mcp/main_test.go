@@ -123,6 +123,8 @@ func TestParseRequestMeta_ClassifiesMCPIDsAndNotifications(t *testing.T) {
 		{"string id", `{"jsonrpc":"2.0","id":"7","method":"ping"}`, true, false},
 		{"notification", `{"jsonrpc":"2.0","method":"notifications/initialized"}`, true, true},
 		{"null id", `{"jsonrpc":"2.0","id":null,"method":"ping"}`, false, false},
+		{"negative zero id", `{"jsonrpc":"2.0","id":-0,"method":"ping"}`, false, false},
+		{"negative id", `{"jsonrpc":"2.0","id":-12,"method":"ping"}`, true, false},
 		{"fractional id", `{"jsonrpc":"2.0","id":1.5,"method":"ping"}`, false, false},
 		{"object id", `{"jsonrpc":"2.0","id":{},"method":"ping"}`, false, false},
 		{"missing jsonrpc", `{"id":1,"method":"ping"}`, false, false},
@@ -160,6 +162,12 @@ func TestMatchingJSONRPCID_PreservesTypeAndNumericValue(t *testing.T) {
 	}
 	if matchingJSONRPCID(json.RawMessage(`1e3`), json.RawMessage(`1000`)) {
 		t.Error("exponent-form ids are outside the supported integer grammar")
+	}
+	if matchingJSONRPCID(json.RawMessage(`-0`), json.RawMessage(`0`)) {
+		t.Error("negative zero is outside the supported integer grammar")
+	}
+	if !matchingJSONRPCID(json.RawMessage(`-12`), json.RawMessage(` -12 `)) {
+		t.Error("equal negative ids should match across surrounding space")
 	}
 	if !matchingJSONRPCID(json.RawMessage(`"\u0037"`), json.RawMessage(`"7"`)) {
 		t.Error("equivalent string ids should match across JSON escaping")

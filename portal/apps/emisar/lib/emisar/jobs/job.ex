@@ -1,21 +1,27 @@
 defmodule Emisar.Jobs.Job do
   @moduledoc """
   Shared declaration macro for supervised recurrent jobs.
+
+  Every job runs under `Emisar.Jobs.Executors.GloballyUnique` — a tick must
+  happen once across the cluster, which is what a recurrent sweep means here.
   """
 
+  @executor Emisar.Jobs.Executors.GloballyUnique
+
   defmacro __using__(opts) do
-    quote bind_quoted: [opts: opts] do
+    quote bind_quoted: [opts: opts, executor: @executor] do
       @otp_app Keyword.fetch!(opts, :otp_app)
       @interval Keyword.fetch!(opts, :every)
-      @executor Keyword.fetch!(opts, :executor)
       @initial_delay Keyword.get(opts, :initial_delay, 0)
 
-      @behaviour @executor
+      @behaviour executor
 
       def child_spec(_opts) do
         config = Keyword.put_new(__config__(), :initial_delay, @initial_delay)
 
-        Supervisor.child_spec({@executor, {__MODULE__, @interval, config}}, id: __MODULE__)
+        Supervisor.child_spec({unquote(executor), {__MODULE__, @interval, config}},
+          id: __MODULE__
+        )
       end
 
       @doc "Returns this job's application configuration."

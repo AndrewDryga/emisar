@@ -94,8 +94,8 @@ defmodule Emisar.Catalog.PublishedRegistry.Cache do
   def status, do: GenServer.call(__MODULE__, :status)
 
   @impl true
-  def init(opts) do
-    state = boot_state(opts)
+  def init(_opts) do
+    state = boot_state()
 
     if state.url do
       send(self(), :refresh)
@@ -108,14 +108,12 @@ defmodule Emisar.Catalog.PublishedRegistry.Cache do
   Internal — the boot state. The bundled catalog is parsed either way (a
   broken artifact must fail the boot, not the first refresh), but it is
   installed only when no snapshot exists yet; a restart onto an existing one
-  keeps what is already being served. `:put` overrides the installer so a
-  test can count real swaps.
+  keeps what is already being served.
   """
-  @spec boot_state(keyword()) :: map()
-  def boot_state(opts \\ []) do
-    put = Keyword.get(opts, :put, &install_snapshot/1)
+  @spec boot_state() :: map()
+  def boot_state do
     {body, bundled} = load_bundled!()
-    {source, digest} = install_boot_snapshot(put, bundled, Crypto.hash(body))
+    {source, digest} = install_boot_snapshot(bundled, Crypto.hash(body))
 
     %{
       source: source,
@@ -123,7 +121,7 @@ defmodule Emisar.Catalog.PublishedRegistry.Cache do
       loaded_at: DateTime.utc_now(),
       url: catalog_url(),
       digest: digest,
-      put: put
+      put: &install_snapshot/1
     }
   end
 
@@ -132,10 +130,10 @@ defmodule Emisar.Catalog.PublishedRegistry.Cache do
   # does nothing. A PRESERVED snapshot came from a body this process never saw,
   # so it starts with no digest: the next fetch must parse and compare
   # semantically rather than take a byte fast-path against the wrong document.
-  defp install_boot_snapshot(put, bundled, bundled_digest) do
+  defp install_boot_snapshot(bundled, bundled_digest) do
     case :persistent_term.get(@term_key, :absent) do
       :absent ->
-        put.(bundled)
+        install_snapshot(bundled)
         {:bundled, bundled_digest}
 
       ^bundled ->

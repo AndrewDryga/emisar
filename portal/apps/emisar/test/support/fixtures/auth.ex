@@ -80,23 +80,4 @@ defmodule Emisar.Fixtures.Auth do
 
     token
   end
-
-  @doc """
-  Rewrites every session's `auth_method` to a value the enum no longer has —
-  a legacy `password` session from before the passwordless rework.
-
-  The DB now CHECKs this column, and a real deploy narrows the enum in the same
-  release that adds the constraint, so the window this defends is the rows
-  written before that migration ran. Dropping the constraint reproduces that
-  window; the sandbox transaction rolls the drop back with everything else.
-  """
-  def write_removed_auth_method!(value \\ "password") do
-    Ecto.Adapters.SQL.query!(
-      Repo,
-      "ALTER TABLE auth_user_tokens DROP CONSTRAINT auth_user_tokens_auth_method_check",
-      []
-    )
-
-    Ecto.Adapters.SQL.query!(Repo, "UPDATE auth_user_tokens SET auth_method = $1", [value])
-  end
 end

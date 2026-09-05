@@ -7,7 +7,8 @@ import (
 
 // defaultStreamHold is how many trailing raw bytes a StreamRedactor keeps
 // buffered before committing earlier bytes. It bounds generic multi-line regex
-// matches. Built-in private-key blocks use a delimiter state machine instead,
+// matches. Known literals extend this window to their longest value. Built-in
+// private-key blocks use a delimiter state machine instead,
 // so their bodies remain masked regardless of size or a missing END marker.
 const defaultStreamHold = 16 << 10
 
@@ -42,7 +43,16 @@ type StreamRedactor struct {
 // StreamRedactor returns a stateful redactor over e's rules. Feed it raw
 // chunks with Write and drain the tail with Flush at end of stream.
 func (e *Engine) StreamRedactor() *StreamRedactor {
-	return &StreamRedactor{eng: e, hold: defaultStreamHold, keys: newPrivateKeyStreamMasker(e)}
+	hold := defaultStreamHold
+	if e != nil {
+		for _, rule := range e.rules {
+			hold = max(hold, len(rule.literal))
+			for _, literal := range rule.literals {
+				hold = max(hold, len(literal))
+			}
+		}
+	}
+	return &StreamRedactor{eng: e, hold: hold, keys: newPrivateKeyStreamMasker(e)}
 }
 
 // Write feeds the next raw chunk and returns the bytes that are now safe to
@@ -51,31 +61,31 @@ func (e *Engine) StreamRedactor() *StreamRedactor {
 // slice is freshly allocated and owned by the caller.
 func (s *StreamRedactor) Write(p []byte) []byte {
 	s.pending = append(s.pending, s.keys.Write(p)...)
-	return s.commit(false)
+	return s.commit()
 }
 
 // Flush redacts and returns everything still buffered. Call exactly once at
-// end of stream; do not Write afterwards.
-func (s *StreamRedactor) Flush() []byte {
+// end of stream; do not Write afterwards. Set truncated when the input reader
+// discarded bytes, so a known literal cut by its limit is still masked.
+func (s *StreamRedactor) Flush(truncated bool) []byte {
 	s.pending = append(s.pending, s.keys.Flush()...)
-	out := s.commit(true)
+	out, hits := s.eng.ApplyOutput(string(s.pending), truncated)
+	s.hits = MergeHits(s.hits, hits)
+	s.pending = nil
 	s.hits = MergeHits(s.hits, s.keys.Hits())
-	return out
+	if out == "" {
+		return nil
+	}
+	return []byte(out)
 }
 
 // Hits reports the cumulative per-rule hit counts across every committed
 // (and flushed) segment. Valid to read after Flush.
 func (s *StreamRedactor) Hits() []Hit { return s.hits }
 
-func (s *StreamRedactor) commit(flush bool) []byte {
+func (s *StreamRedactor) commit() []byte {
 	if len(s.pending) == 0 {
 		return nil
-	}
-	if flush {
-		out, hits := s.eng.Apply(string(s.pending))
-		s.hits = MergeHits(s.hits, hits)
-		s.pending = nil
-		return []byte(out)
 	}
 	// Keep at least `hold` raw bytes buffered. This guarantees that by the
 	// time a line becomes eligible to emit, enough following bytes have
@@ -94,6 +104,7 @@ func (s *StreamRedactor) commit(flush bool) []byte {
 	// Cut on a line boundary within the committable region. Emitting partial
 	// lines would risk splitting a single-line match mid-token.
 	cut := indexAfterLastNewline(s.pending, len(s.pending)-s.hold)
+	cut = s.eng.literalSafeCut(s.pending, cut)
 	if cut == 0 {
 		return nil
 	}
@@ -111,6 +122,41 @@ func (s *StreamRedactor) commit(flush bool) []byte {
 	copy(rest, s.pending[cut:])
 	s.pending = rest
 	return []byte(segRed)
+}
+
+// Rendered prefixes alone cannot detect a cut inside overlapping literals:
+// both halves may initially render as the same marker. Keep their raw union
+// together, including when moving to a preceding newline crosses another match.
+func (e *Engine) literalSafeCut(input []byte, cut int) int {
+	if e == nil {
+		return cut
+	}
+	for cut > 0 {
+		previous := cut
+		for _, rule := range e.rules {
+			cut = cutBeforeLiteral(input, cut, rule.literal)
+			for _, literal := range rule.literals {
+				cut = cutBeforeLiteral(input, cut, literal)
+			}
+		}
+		cut = indexAfterLastNewline(input, cut)
+		if cut == previous {
+			break
+		}
+	}
+	return cut
+}
+
+func cutBeforeLiteral(input []byte, cut int, literal string) int {
+	if cut == 0 || len(literal) < 2 {
+		return cut
+	}
+	start := max(0, cut-len(literal)+1)
+	end := min(len(input), cut+len(literal)-1)
+	if offset := bytes.Index(input[start:end], []byte(literal)); offset >= 0 {
+		return start + offset
+	}
+	return cut
 }
 
 // indexAfterLastNewline returns the index just past the last '\n' that occurs

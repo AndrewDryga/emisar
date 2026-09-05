@@ -11,10 +11,12 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
 	"github.com/andrewdryga/emisar/tools/internal/packtest"
+	"github.com/andrewdryga/emisar/tools/internal/toolutil"
 )
 
 type Selection struct {
@@ -46,7 +48,7 @@ func Select(ctx context.Context, root, event, base string) (Selection, error) {
 		if err != nil {
 			return Selection{}, err
 		}
-		files = nulStrings(data)
+		files = toolutil.NULFields(data)
 	}
 
 	var selection Selection
@@ -111,7 +113,7 @@ func (selection *Selection) include(file string) {
 	packRegistryPointerContract := file == "infra/pack_registry_mutable_pointers.json"
 	packRuntimeSource := packFile && !isPackTestFile(file)
 	goCheckoutContract := file == ".gitattributes"
-	if strings.HasPrefix(file, "portal/") || member(file, ".dockerignore", "install.sh", "install-mcp.sh", "install-mcp.ps1", ".tool-versions") {
+	if strings.HasPrefix(file, "portal/") || slices.Contains([]string{".dockerignore", "install.sh", "install-mcp.sh", "install-mcp.ps1", ".tool-versions"}, file) {
 		selection.Portal = true
 		selection.PortalRelease = true
 	}
@@ -127,7 +129,7 @@ func (selection *Selection) include(file string) {
 	// the packs page) lives in the Portal suite, so a Go-only schema change must
 	// select Portal too — otherwise CI validates one half of a contract whose
 	// halves can only break together.
-	if hasAnyPrefix(file, "runner/pkg/packspec/", "runner/pkg/actionspec/", "runner/internal/catalog/") {
+	if toolutil.HasAnyPrefix(file, "runner/pkg/packspec/", "runner/pkg/actionspec/", "runner/internal/catalog/") {
 		selection.Portal = true
 		selection.PortalRelease = true
 	}
@@ -135,13 +137,13 @@ func (selection *Selection) include(file string) {
 	// the module boundary forbids sharing their code, so the corpus IS the
 	// parity check and a change to it has to run both suites.
 	jsonCorpus := strings.HasPrefix(file, "dev/json-corpus/")
-	sharedInstallerHarness := hasAnyPrefix(file, "tools/cmd/installtest/", "tools/internal/installtest/harness")
+	sharedInstallerHarness := toolutil.HasAnyPrefix(file, "tools/cmd/installtest/", "tools/internal/installtest/harness")
 	runnerInstallerHarness := sharedInstallerHarness || strings.HasPrefix(file, "tools/internal/installtest/runner")
 	mcpInstallerHarness := sharedInstallerHarness || strings.HasPrefix(file, "tools/internal/installtest/mcp")
-	if strings.HasPrefix(file, "runner/") || jsonCorpus || runnerInstallerHarness || goCheckoutContract || member(file, "install.sh", "README.md", "go.work", "go.work.sum") {
+	if strings.HasPrefix(file, "runner/") || jsonCorpus || runnerInstallerHarness || goCheckoutContract || slices.Contains([]string{"install.sh", "README.md", "go.work", "go.work.sum"}, file) {
 		selection.Runner = true
 	}
-	if strings.HasPrefix(file, "mcp/") || jsonCorpus || mcpInstallerHarness || goCheckoutContract || member(file, "install-mcp.sh", "install-mcp.ps1", "go.work", "go.work.sum") {
+	if strings.HasPrefix(file, "mcp/") || jsonCorpus || mcpInstallerHarness || goCheckoutContract || slices.Contains([]string{"install-mcp.sh", "install-mcp.ps1", "go.work", "go.work.sum"}, file) {
 		selection.MCP = true
 	}
 	// The public MCP Registry listing is a cross-language contract like the pack
@@ -171,34 +173,38 @@ func (selection *Selection) include(file string) {
 	// validates. docker-compose.yml + config.exs are the two sides of the tooling
 	// gate's e2e-stack-version check; neither selected Tools before, so editing
 	// either re-introduced the drift that check exists to catch.
-	// The members mirror trackedShellFiles' pathspec (`.shell run *.sh
+	// The listed files mirror trackedShellFiles' pathspec (`.shell run *.sh
 	// .githooks`): every file that gate shellchecks has to select the gate, or a
 	// syntax error in the contributor shell profile ships green.
-	if hasAnyPrefix(file, "tools/", "dev/", ".agent/", ".claude/", ".codex/", ".gemini/", "skills/", "dist/", ".github/workflows/", ".github/actions/", ".githooks/") || strings.Contains(file, "/.agent/") || member(file, "run", ".shell", "go.work", "go.work.sum", ".gitattributes", ".gitignore", ".tool-versions", "docker-compose.yml", "portal/config/config.exs") || filepath.Ext(file) == ".md" {
+	// portal/Dockerfile is here because the tooling gate's release-toolchain
+	// phase is what holds its ELIXIR/OTP/hex/rebar3 ARG defaults to .tool-versions
+	// and the CI workflow's pins; a Dockerfile-only bump otherwise selected only
+	// the Portal job, which cannot see that disagreement.
+	if toolutil.HasAnyPrefix(file, "tools/", "dev/", ".agent/", ".claude/", ".codex/", ".gemini/", "skills/", "dist/", ".github/workflows/", ".github/actions/", ".githooks/") || strings.Contains(file, "/.agent/") || slices.Contains([]string{"run", ".shell", "go.work", "go.work.sum", ".gitattributes", ".gitignore", ".tool-versions", "docker-compose.yml", "portal/config/config.exs", "portal/Dockerfile"}, file) || filepath.Ext(file) == ".md" {
 		selection.Tools = true
 	}
 	// Pack behavior plans are validation inputs but are not loaded into registry
 	// artifacts. Every runtime input below deliberately matches PacksRelease:
 	// validatePacks ends in checkCatalogReproduction, so code that BUILDS the
 	// catalog must run the job that proves the committed catalog still reproduces.
-	if packFile || packRegistryPointerContract || hasAnyPrefix(file, "runner/internal/packs/", "runner/internal/catalog/", "runner/cmd/packctl/", "runner/pkg/packspec/", "runner/pkg/actionspec/") || member(file, "runner/pack.go", "runner/main.go", "runner/go.mod", "runner/go.sum", "go.work", "go.work.sum") {
+	if packFile || packRegistryPointerContract || toolutil.HasAnyPrefix(file, "runner/internal/packs/", "runner/internal/catalog/", "runner/cmd/packctl/", "runner/pkg/packspec/", "runner/pkg/actionspec/") || slices.Contains([]string{"runner/pack.go", "runner/main.go", "runner/go.mod", "runner/go.sum", "go.work", "go.work.sum"}, file) {
 		selection.Packs = true
 	}
-	if hasAnyPrefix(file, "dev/test-host-access/", "tools/internal/hostaccess/") {
+	if toolutil.HasAnyPrefix(file, "dev/test-host-access/", "tools/internal/hostaccess/") {
 		selection.Packs = true
 	}
-	if packRuntimeSource || hasAnyPrefix(file, "runner/internal/packs/", "runner/internal/catalog/", "runner/cmd/packctl/", "runner/pkg/packspec/", "runner/pkg/actionspec/") || member(file, "runner/pack.go", "runner/main.go", "runner/go.mod", "runner/go.sum", "go.work", "go.work.sum") {
+	if packRuntimeSource || toolutil.HasAnyPrefix(file, "runner/internal/packs/", "runner/internal/catalog/", "runner/cmd/packctl/", "runner/pkg/packspec/", "runner/pkg/actionspec/") || slices.Contains([]string{"runner/pack.go", "runner/main.go", "runner/go.mod", "runner/go.sum", "go.work", "go.work.sum"}, file) {
 		selection.PacksRelease = true
 	}
 	if strings.HasPrefix(file, "infra/") || file == ".tool-versions" {
 		selection.Infra = true
 	}
-	if member(file, "portal/mix.lock", "runner/go.mod", "runner/go.sum", "mcp/go.mod", "mcp/go.sum", "tools/go.mod", "tools/go.sum", "tools/cmd/entra-capture/package-lock.json", ".dep-age-allow") || strings.HasPrefix(file, "tools/cmd/depgate/") {
+	if slices.Contains([]string{"portal/mix.lock", "runner/go.mod", "runner/go.sum", "mcp/go.mod", "mcp/go.sum", "tools/go.mod", "tools/go.sum", "tools/cmd/entra-capture/package-lock.json", ".dep-age-allow"}, file) || strings.HasPrefix(file, "tools/cmd/depgate/") {
 		selection.Deps = true
 	}
 	// The selector is workflow control code: validate every branch it can route
 	// whenever its implementation or command entrypoint changes.
-	if hasAnyPrefix(file, ".github/workflows/", ".github/actions/", "tools/cmd/ci/", "tools/internal/ci/") || file == ".github/dependabot.yml" {
+	if toolutil.HasAnyPrefix(file, ".github/workflows/", ".github/actions/", "tools/cmd/ci/", "tools/internal/ci/") || file == ".github/dependabot.yml" {
 		selection.Workflows = true
 	}
 	// Both halves of the signer↔verifier contract, because the e2e drives the
@@ -214,7 +220,7 @@ func (selection *Selection) include(file string) {
 	// what stops dispatching unsigned, and runs/action_run/changeset.ex is what
 	// refuses an attestation that did not validate.
 	sharedE2ESeed := file == "portal/apps/emisar/priv/repo/seeds.exs"
-	if hasAnyPrefix(
+	if toolutil.HasAnyPrefix(
 		file,
 		"tools/cmd/signing-e2e/",
 		"dev/signing/",
@@ -223,17 +229,16 @@ func (selection *Selection) include(file string) {
 		"mcp/internal/attest/",
 		"portal/apps/emisar/lib/emisar/runs",
 		"portal/apps/emisar/lib/emisar/runners",
-	) || sharedE2ESeed || member(
-		file,
+	) || sharedE2ESeed || slices.Contains([]string{
 		"docker-compose.yml",
 		"tools/internal/devtool/e2e.go",
 		"mcp/sign.go",
 		"mcp/main.go",
 		"portal/apps/emisar_web/lib/emisar_web/controllers/mcp/action_tools.ex",
-	) {
+	}, file) {
 		selection.SigningE2E = true
 	}
-	if hasAnyPrefix(
+	if toolutil.HasAnyPrefix(
 		file,
 		"tools/cmd/sso-e2e/",
 		"dev/keycloak/",
@@ -242,12 +247,11 @@ func (selection *Selection) include(file string) {
 		"portal/apps/emisar_web/lib/emisar_web/controllers/oauth",
 		"portal/apps/emisar_web/lib/emisar_web/controllers/scim/",
 		"portal/apps/emisar_web/lib/emisar_web/live/sso",
-	) || sharedE2ESeed || member(
-		file,
+	) || sharedE2ESeed || slices.Contains([]string{
 		"docker-compose.yml",
 		"tools/internal/devtool/e2e.go",
 		"portal/apps/emisar/lib/emisar/sso.ex",
-	) {
+	}, file) {
 		selection.SSOE2E = true
 	}
 }
@@ -404,7 +408,7 @@ func selectPackBehavior(root string, files []string) ([]packtest.MatrixRow, erro
 }
 
 func packBehaviorSharedPath(file string) bool {
-	return hasAnyPrefix(
+	return toolutil.HasAnyPrefix(
 		file,
 		"tools/cmd/ci/",
 		"tools/internal/ci/",
@@ -427,8 +431,7 @@ func packBehaviorSharedPath(file string) bool {
 		"runner/internal/outputschema/",
 		"runner/pkg/actionspec/",
 		"runner/pkg/packspec/",
-	) || member(
-		file,
+	) || slices.Contains([]string{
 		".github/workflows/ci.yml",
 		".github/workflows/pack-behavior-rows.yml",
 		"tools/internal/devtool/pack.go",
@@ -440,35 +443,17 @@ func packBehaviorSharedPath(file string) bool {
 		"tools/go.sum",
 		"go.work",
 		"go.work.sum",
-	)
+	}, file)
 }
 
 func isPackFile(file string) bool {
 	return strings.HasPrefix(file, "packs/") &&
-		!member(file, "packs/AGENTS.md", "packs/CLAUDE.md", "packs/PUBLISHING.md")
+		!slices.Contains([]string{"packs/AGENTS.md", "packs/CLAUDE.md", "packs/PUBLISHING.md"}, file)
 }
 
 func isPackTestFile(file string) bool {
 	parts := strings.Split(file, "/")
 	return len(parts) >= 3 && parts[0] == "packs" && parts[2] == "test"
-}
-
-func member(value string, candidates ...string) bool {
-	for _, candidate := range candidates {
-		if value == candidate {
-			return true
-		}
-	}
-	return false
-}
-
-func hasAnyPrefix(value string, prefixes ...string) bool {
-	for _, prefix := range prefixes {
-		if strings.HasPrefix(value, prefix) {
-			return true
-		}
-	}
-	return false
 }
 
 func (selection Selection) GoModules() []string {
@@ -498,9 +483,9 @@ func WriteSelection(ctx context.Context, root, event, base, outputPath, summaryP
 	if err != nil {
 		return err
 	}
-	output := fmt.Sprintf("portal=%t\nmcp=%t\nrunner=%t\npacks=%t\ninfra=%t\ndeps=%t\nworkflows=%t\nmcp_listing=%t\ngo_modules=%s\nportal_release=%t\npacks_release=%t\nrunner_image=%t\npack_behavior=%s\nsigning_e2e=%t\nsso_e2e=%t\n",
+	output := fmt.Sprintf("portal=%t\nmcp=%t\nrunner=%t\npacks=%t\ninfra=%t\ndeps=%t\nmcp_listing=%t\ngo_modules=%s\nportal_release=%t\npacks_release=%t\nrunner_image=%t\npack_behavior=%s\nsigning_e2e=%t\nsso_e2e=%t\n",
 		selection.Portal, selection.MCP, selection.Runner, selection.Packs, selection.Infra, selection.Deps,
-		selection.Workflows, selection.MCPListing, modules,
+		selection.MCPListing, modules,
 		selection.PortalRelease, selection.PacksRelease, selection.RunnerImage, packBehavior,
 		selection.SigningE2E, selection.SSOE2E)
 	if err := appendOrPrint(outputPath, output); err != nil {
@@ -513,13 +498,13 @@ func WriteSelection(ctx context.Context, root, event, base, outputPath, summaryP
 		}
 		return "skip"
 	}
-	summary := fmt.Sprintf("### Gates for this change\n| Area | |\n|---|---|\n| Portal - Test | %s |\n| Portal - Image | %s |\n| Go - Runner | %s |\n| Go - Runner (root) | %s |\n| Go - MCP | %s |\n| MCP - Windows | %s |\n| Go - Tools | %s |\n| Packs - Validate | %s |\n| Packs - Behavior (%d) | %s |\n| Runner - Image | %s |\n| E2E - Signing | %s |\n| E2E - SSO | %s |\n| Terraform - Validate | %s |\n| Dependencies - Release age | %s |\n| Actions - Validate workflows | %s |\n| Portal - MCP Registry Listing | %s |\n",
+	summary := fmt.Sprintf("### Gates for this change\n| Area | |\n|---|---|\n| Portal - Test | %s |\n| Portal - Image | %s |\n| Go - Runner | %s |\n| Go - Runner (root) | %s |\n| Go - MCP | %s |\n| MCP - Windows | %s |\n| Go - Tools | %s |\n| Packs - Validate | %s |\n| Packs - Behavior (%d) | %s |\n| Runner - Image | %s |\n| E2E - Signing | %s |\n| E2E - SSO | %s |\n| Terraform - Validate | %s |\n| Dependencies - Release age | %s |\n| Portal - MCP Registry Listing | %s |\n",
 		mark(selection.Portal), mark(selection.Portal), mark(selection.Runner), mark(selection.Runner),
 		mark(selection.MCP), mark(selection.MCP), mark(selection.Tools), mark(selection.Packs),
 		len(selection.PackBehavior), mark(len(selection.PackBehavior) > 0),
 		mark(selection.RunnerImage),
 		mark(selection.SigningE2E), mark(selection.SSOE2E),
-		mark(selection.Infra), mark(selection.Deps), mark(selection.Workflows),
+		mark(selection.Infra), mark(selection.Deps),
 		mark(selection.MCPListing))
 	if summaryPath != "" {
 		return appendFile(summaryPath, summary)

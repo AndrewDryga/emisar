@@ -39,7 +39,7 @@ func TestStreamRedactor_SoundnessGateHoldsSplitMatch(t *testing.T) {
 		}
 	}
 
-	emitted.WriteString(string(sr.Flush()))
+	emitted.WriteString(string(sr.Flush(false)))
 	got := emitted.String()
 	if strings.Contains(got, "LEAKYKEYBODY") {
 		t.Fatalf("key body leaked after flush:\n%s", got)
@@ -123,7 +123,7 @@ func TestStreamRedactor_UnterminatedPrivateKeyMasksThroughEOF(t *testing.T) {
 		}
 		emitted.Write(sr.Write([]byte(input[i:end])))
 	}
-	emitted.Write(sr.Flush())
+	emitted.Write(sr.Flush(false))
 	out := emitted.String()
 	if strings.Contains(out, "TRUNCATEDKEYBODY") {
 		t.Fatalf("unterminated private-key body leaked at EOF: %q", out)
@@ -155,7 +155,7 @@ func TestStreamRedactor_EmptyWriteAndFlush(t *testing.T) {
 	if out := sr.Write([]byte{}); out != nil {
 		t.Fatalf("Write(empty) should emit nothing, got %q", out)
 	}
-	if out := sr.Flush(); out != nil {
+	if out := sr.Flush(false); out != nil {
 		t.Fatalf("Flush on empty buffer should emit nothing, got %q", out)
 	}
 	// Hits over an untouched stream are empty.

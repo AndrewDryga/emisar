@@ -7,7 +7,7 @@ defmodule Emisar.Accounts.Membership.Changeset do
                     directory_provider_id directory_authorization_pending_version
                     invited_by_id invitation_token_digest invitation_sent_to
                     invitation_email_changed_at invitation_accepted_at]a
-  @update_fields ~w[role invitation_accepted_at]a
+  @update_fields ~w[role]a
 
   def create(attrs) do
     %Membership{}

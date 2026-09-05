@@ -68,18 +68,14 @@ defmodule Emisar.Users do
 
   @doc """
   Internal — registration: the auth boundary creates the user before any
-  subject/tenant exists (pre-auth). Pass `repo: repo` from a caller's
-  `Multi.run` so the insert joins that open transaction. Self-serve signup
-  creates the person first, then composes the workspace into the transaction
-  that consumes the proved inbox factor; it defaults to `Repo` for a standalone
-  registration.
+  subject/tenant exists (pre-auth). Self-serve signup creates the person
+  first, then composes the workspace into the transaction that consumes the
+  proved inbox factor.
   """
-  def register_user(attrs, opts \\ []) do
-    repo = Keyword.get(opts, :repo, Repo)
-
+  def register_user(attrs) do
     %User{}
     |> User.Changeset.registration(attrs)
-    |> repo.insert()
+    |> Repo.insert()
   end
 
   @doc """
@@ -307,7 +303,7 @@ defmodule Emisar.Users do
        )
        when is_binary(proof_digest) do
     if Enum.any?(loaded_user.mfa_recovery_codes || [], &Crypto.secure_compare(&1, proof_digest)) do
-      User.Changeset.regenerated_mfa_recovery_codes(loaded_user, digests)
+      User.Changeset.mfa_recovery_codes(loaded_user, digests)
     else
       :invalid
     end

@@ -306,10 +306,7 @@ defmodule EmisarWeb.RunbooksLive do
     """
   end
 
-  defp preview(text) when is_binary(text) and text != "" do
+  defp preview(text) do
     if String.length(text) > 80, do: String.slice(text, 0, 80) <> "…", else: text
   end
-
-  # description is nullable; catch nil / "" / non-binary.
-  defp preview(_), do: "—"
 end

@@ -135,7 +135,7 @@ defmodule Emisar.ApiKeys.ApiKey.ChangesetTest do
     end
   end
 
-  describe "mint_quick/5" do
+  describe "mint_quick/6" do
     test "requires the minting membership" do
       changeset =
         ApiKey.Changeset.mint_quick(
@@ -143,7 +143,8 @@ defmodule Emisar.ApiKeys.ApiKey.ChangesetTest do
           Ecto.UUID.generate(),
           nil,
           "emk-test-key",
-          <<0>>
+          <<0>>,
+          %{name: "Quick connect (auto)"}
         )
 
       assert "can't be blank" in errors_on(changeset).created_by_membership_id

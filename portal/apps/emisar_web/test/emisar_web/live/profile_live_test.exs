@@ -569,6 +569,19 @@ defmodule EmisarWeb.ProfileLiveTest do
       assert html =~ "That sign-in method is no longer available."
       refute_received {:email, _email}
     end
+
+    test "a crafted step-up event with nothing in progress spends no attempt", %{
+      conn: conn,
+      account: account
+    } do
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/profile")
+
+      confirmed = render_hook(lv, "confirm_oidc_step_up", %{"oidc_step" => %{"code" => "000000"}})
+
+      assert confirmed =~ "Choose a sign-in method first."
+      assert render_hook(lv, "resend_oidc_step_up", %{}) =~ "Start the confirmation again."
+      refute_received {:email, _email}
+    end
   end
 
   describe "sessions" do
@@ -610,8 +623,8 @@ defmodule EmisarWeb.ProfileLiveTest do
       # from the current session.
       _other =
         Fixtures.Auth.create_session_token!(user, :magic_link, nil, %{
-          "ip_address" => "198.51.100.4",
-          "user_agent" => "Mozilla/5.0 (X11; Linux x86_64) Chrome/124.0"
+          ip_address: "198.51.100.4",
+          user_agent: "Mozilla/5.0 (X11; Linux x86_64) Chrome/124.0"
         })
 
       {:ok, lv, html} = live(conn, ~p"/app/#{account}/settings/profile")
@@ -637,8 +650,8 @@ defmodule EmisarWeb.ProfileLiveTest do
       # 15 more devices on top of the current session — 16 total, one past a page.
       for n <- 1..15 do
         Fixtures.Auth.create_session_token!(user, :magic_link, nil, %{
-          "ip_address" => "203.0.113.#{n}",
-          "user_agent" => "Mozilla/5.0 (X11; Linux x86_64) Chrome/124.0"
+          ip_address: "203.0.113.#{n}",
+          user_agent: "Mozilla/5.0 (X11; Linux x86_64) Chrome/124.0"
         })
       end
 
@@ -678,7 +691,7 @@ defmodule EmisarWeb.ProfileLiveTest do
       # here once answered `infrastructure.network`, putting a globe in a column
       # of device silhouettes while the drawing made for this case went unused.
       Fixtures.Auth.create_session_token!(user, :magic_link, nil, %{
-        "ip_address" => "198.51.100.7"
+        ip_address: "198.51.100.7"
       })
 
       {:ok, _lv, html} = live(conn, ~p"/app/#{account}/settings/profile")
@@ -696,13 +709,13 @@ defmodule EmisarWeb.ProfileLiveTest do
       user_agent = "Mozilla/5.0 (X11; Linux x86_64) Chrome/124.0"
 
       Fixtures.Auth.create_session_token!(user, :magic_link, nil, %{
-        "ip_address" => "203.0.113.10",
-        "user_agent" => user_agent
+        ip_address: "203.0.113.10",
+        user_agent: user_agent
       })
 
       Fixtures.Auth.create_session_token!(user, :magic_link, nil, %{
-        "ip_address" => "203.0.113.11",
-        "user_agent" => user_agent
+        ip_address: "203.0.113.11",
+        user_agent: user_agent
       })
 
       subject = Fixtures.Subjects.subject_for(user, account)
@@ -737,7 +750,7 @@ defmodule EmisarWeb.ProfileLiveTest do
       # A second device — the row we'll revoke. It's the one the caller's own
       # session token does NOT mark as current.
       Fixtures.Auth.create_session_token!(user, :magic_link, nil, %{
-        "user_agent" => "Mozilla/5.0 (X11; Linux x86_64) Chrome/124.0"
+        user_agent: "Mozilla/5.0 (X11; Linux x86_64) Chrome/124.0"
       })
 
       subject = Fixtures.Subjects.subject_for(user, account)
@@ -768,7 +781,7 @@ defmodule EmisarWeb.ProfileLiveTest do
       # the current device must not (you can't sign yourself out from here —
       # that's "sign out everywhere else").
       Fixtures.Auth.create_session_token!(user, :magic_link, nil, %{
-        "user_agent" => "Mozilla/5.0 (X11; Linux x86_64) Chrome/124.0"
+        user_agent: "Mozilla/5.0 (X11; Linux x86_64) Chrome/124.0"
       })
 
       subject = Fixtures.Subjects.subject_for(user, account)
@@ -827,8 +840,8 @@ defmodule EmisarWeb.ProfileLiveTest do
       # so "no rows on the dead render" is meaningful.
       _other =
         Fixtures.Auth.create_session_token!(user, :magic_link, nil, %{
-          "ip_address" => "203.0.113.9",
-          "user_agent" => "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15) Safari/17.0"
+          ip_address: "203.0.113.9",
+          user_agent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15) Safari/17.0"
         })
 
       dead = conn |> get(~p"/app/#{account}/settings/profile") |> html_response(200)
@@ -860,8 +873,8 @@ defmodule EmisarWeb.ProfileLiveTest do
       # ip/user-agent metadata.
       raw_token =
         Fixtures.Auth.create_session_token!(user, :magic_link, nil, %{
-          "ip_address" => "203.0.113.7",
-          "user_agent" => "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15) Firefox/126.0"
+          ip_address: "203.0.113.7",
+          user_agent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15) Firefox/126.0"
         })
 
       digest = Emisar.Crypto.hash(raw_token)

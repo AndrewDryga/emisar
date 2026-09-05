@@ -22,10 +22,6 @@ defmodule EmisarWeb.Application do
       # Bounds authenticated MCP long polls per credential lineage. Leases are
       # process-monitored so abnormal request exits cannot consume capacity.
       EmisarWeb.MCP.WaitLimiter,
-      # CSVs are materialized before response headers so a failed page cannot
-      # look like a complete forensic artifact. Bound that temporary-disk work
-      # per account and per node; monitored leases survive request crashes.
-      EmisarWeb.AuditDownloadLimiter,
       EmisarWeb.Endpoint,
       # Sits AFTER the Endpoint so on SIGTERM it terminates first
       # (`:one_for_one` shuts down in reverse-start order). Its

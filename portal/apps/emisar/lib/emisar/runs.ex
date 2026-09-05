@@ -40,7 +40,6 @@ defmodule Emisar.Runs do
   def init(_opts) do
     children = [
       job_module("DispatchTimeout"),
-      job_module("EventRetention"),
       job_module("ActionRunRetention"),
       job_module("FleetObservability")
     ]
@@ -904,8 +903,7 @@ defmodule Emisar.Runs do
     reason = attrs[:reason]
     membership_id = Map.get(attrs, :requested_by_membership_id)
 
-    with :ok <- refuse_caller_attestation(attrs),
-         :ok <- require_runner(runner_id),
+    with :ok <- require_runner(runner_id),
          :ok <- require_action(action_id),
          :ok <- require_reason(reason),
          :ok <- runner_in_account(runner_id, account_id),
@@ -2091,13 +2089,10 @@ defmodule Emisar.Runs do
   # `%Attestation{}` is an ordinary Elixir struct, so holding one proves nothing
   # about who built it or what it was bound to. Only `preflight_attestation/4`
   # mints one, and only after validating the raw header against the exact facts
-  # of the fan-out it is about to reserve. Every other entry point therefore
-  # refuses a caller's `:attestation` outright — map or struct — before a run
-  # row, an audit row, or an operation reservation can exist.
-  defp refuse_caller_attestation(attrs) do
-    if carries_attestation?(attrs), do: {:error, :invalid_attestation}, else: :ok
-  end
-
+  # of the fan-out it is about to reserve — so the batch composers refuse a
+  # caller's `:attestation` outright, map or struct, before an operation
+  # reservation or a plan exists. A single dispatch refuses one in
+  # `check_attestation/4`.
   defp refuse_caller_attestations(target_attrs) do
     if Enum.any?(target_attrs, &carries_attestation?/1),
       do: {:error, :invalid_attestation},
@@ -3037,19 +3032,13 @@ defmodule Emisar.Runs do
   defp mark_finished(%ActionRun{} = run, result_payload, connection) do
     {status, structured_output, output_error} = result_outcome(run, result_payload)
 
-    case transition_from(
-           run,
-           :any_nonterminal,
-           status,
-           result_attrs(run, result_payload, structured_output, output_error),
-           connection
-         ) do
-      {:ok, _finished} = ok ->
-        ok
-
-      other ->
-        other
-    end
+    transition_from(
+      run,
+      :any_nonterminal,
+      status,
+      result_attrs(run, result_payload, structured_output, output_error),
+      connection
+    )
   end
 
   defp result_attrs(%ActionRun{} = run, payload, structured_output, output_error) do

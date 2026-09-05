@@ -8,8 +8,7 @@ defmodule Emisar.Runners.Jobs.InactiveRunnerRetention do
   use Emisar.Jobs.Job,
     otp_app: :emisar,
     every: :timer.hours(1),
-    initial_delay: :timer.minutes(10),
-    executor: Emisar.Jobs.Executors.GloballyUnique
+    initial_delay: :timer.minutes(10)
 
   alias Emisar.{Accounts, Jobs, Runners}
   require Logger

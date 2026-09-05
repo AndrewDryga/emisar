@@ -795,7 +795,7 @@ func cliRunbookResultGlyph(w io.Writer, status string) string {
 	if status == "success" || status == "succeeded" {
 		return cliStyledText(w, "32", "✓")
 	}
-	if cliRunFailed(status) || status == "failed" || status == "cancelled" {
+	if cliRunFailed(status) {
 		return cliStyledText(w, "31", "✗")
 	}
 	return "–"

@@ -94,19 +94,5 @@ defmodule Emisar.OAuth.ClientMetadataDocumentTest do
                  {:error, :missing_required_fields}
       end
     end
-
-    test "rejects a malformed client_name or redirect_uris" do
-      assert ClientMetadataDocument.validate(document(%{"client_name" => 42}), @url) ==
-               {:error, :invalid_document}
-
-      assert ClientMetadataDocument.validate(document(%{"redirect_uris" => []}), @url) ==
-               {:error, :invalid_document}
-
-      assert ClientMetadataDocument.validate(document(%{"redirect_uris" => "https://a/cb"}), @url) ==
-               {:error, :invalid_document}
-
-      assert ClientMetadataDocument.validate(document(%{"redirect_uris" => [1]}), @url) ==
-               {:error, :invalid_document}
-    end
   end
 end

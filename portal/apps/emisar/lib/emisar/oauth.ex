@@ -379,7 +379,7 @@ defmodule Emisar.OAuth do
            :ok <- check_code_live(code),
            :ok <-
              check(presented_client_matches?(repo, code.client_id, client_id), :invalid_grant),
-           :ok <- check(constant_eq(code.redirect_uri, redirect_uri), :invalid_grant),
+           :ok <- check(code.redirect_uri == redirect_uri, :invalid_grant),
            :ok <- check(resource_param_ok?(code.resource, params["resource"]), :invalid_target),
            :ok <- check(valid_code_verifier?(verifier), :invalid_grant),
            :ok <- check(pkce_ok?(code, verifier), :invalid_grant),
@@ -553,7 +553,6 @@ defmodule Emisar.OAuth do
       |> Token.Query.by_access_hash(Crypto.hash(raw))
 
     with %Token{} = token <- Repo.peek(queryable),
-         true <- mcp_scope?(token.scope),
          true <- live?(token.access_expires_at),
          true <- resource_matches?(token.resource, resource),
          key when not is_nil(key) <- ApiKeys.peek_api_key_by_id(token.api_key_id),
@@ -721,7 +720,7 @@ defmodule Emisar.OAuth do
          %AuthorizationCode{code_challenge: challenge, code_challenge_method: "S256"},
          verifier
        ) do
-    constant_eq(Crypto.pkce_s256_challenge(verifier), challenge)
+    Crypto.secure_compare(Crypto.pkce_s256_challenge(verifier), challenge)
   end
 
   # Plain method is not allowed (S256 required by MCP).
@@ -778,18 +777,13 @@ defmodule Emisar.OAuth do
   defp check(true, _reason), do: :ok
   defp check(false, reason), do: {:error, reason}
 
-  defp constant_eq(a, b) when is_binary(a) and is_binary(b),
-    do: Crypto.secure_compare(a, b)
-
-  defp constant_eq(_, _), do: false
-
   # RFC 8707 canonical URIs lowercase scheme + host. Keep the rest exact so
   # a token for one path, query, or port can never authenticate another MCP
   # resource, while accepting clients that capitalize only scheme or host.
   defp resource_matches?(token_resource, expected_resource) do
     with {:ok, normalized_token} <- normalize_resource_uri(token_resource),
          {:ok, normalized_expected} <- normalize_resource_uri(expected_resource) do
-      constant_eq(normalized_token, normalized_expected)
+      normalized_token == normalized_expected
     else
       _ -> false
     end
@@ -819,23 +813,15 @@ defmodule Emisar.OAuth do
   defp backing_key_usable?(api_key_id), do: not is_nil(ApiKeys.peek_api_key_by_id(api_key_id))
 
   # Every access token carries the `mcp` scope: that scope IS the capability to
-  # reach the MCP resource, and the resource server rejects a token without it
-  # (`mcp_scope?/1` in `resolve_access_token/2`). `offline_access` is additive
-  # and only gates refresh-token issuance (`mint_token_pair/1`), so a client
-  # that requests it — or requests nothing — still gets `mcp`, and a raw,
-  # client-controlled scope string can't smuggle an unsupported scope in.
+  # reach the MCP resource, and this is the only writer of a token's scope.
+  # `offline_access` is additive and only gates refresh-token issuance
+  # (`mint_token_pair/1`), so a client that requests it — or requests nothing —
+  # still gets `mcp`, and a raw, client-controlled scope string can't smuggle an
+  # unsupported scope in.
   defp narrow_scope(raw) do
     requested = String.split(raw || "", ~r/\s+/, trim: true)
     if "offline_access" in requested, do: "mcp offline_access", else: "mcp"
   end
-
-  # Fail-closed backstop at the resource server: a token whose scope lacks
-  # `mcp` (e.g. a hand-crafted/legacy `offline_access`-only grant) must never
-  # authenticate, even though `narrow_scope/1` always mints `mcp`.
-  defp mcp_scope?(scope) when is_binary(scope),
-    do: "mcp" in String.split(scope, ~r/\s+/, trim: true)
-
-  defp mcp_scope?(_), do: false
 
   # RFC 8707 — a token request MAY repeat the `resource` it wants the token
   # for. When present it must match the resource the grant was bound to at

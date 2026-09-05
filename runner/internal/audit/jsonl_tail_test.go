@@ -44,47 +44,33 @@ func TestOpenJSONL_ReadsOnlyTheTailOfALargeJournal(t *testing.T) {
 	}
 }
 
-// The window is only correct because a line longer than MaxLineBytes is
-// unreadable to every reader in this package. If one is nevertheless present
-// and torn, a window-only heal would find no newline and cut at a guessed
-// offset — destroying complete events in the tamper-evident trail. It must fall
-// back and cut in exactly the right place instead.
-func TestOpenJSONL_TornLineLongerThanMaxLineBytesCutsExactly(t *testing.T) {
+// A line longer than MaxLineBytes is unreadable to every reader in this package
+// and nothing here writes one. If one is nevertheless present and torn, the
+// window holds no newline: healing it would cut at a guessed offset and destroy
+// complete events in the tamper-evident trail. Refuse the journal intact.
+func TestOpenJSONL_RefusesATornLineLongerThanMaxLineBytes(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "events.jsonl")
 	writeN(t, path, 3)
-	complete, err := os.ReadFile(path)
+	before, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	completeSize := len(complete)
-	lastComplete := lastNonEmptyLine(complete)
 
 	// A torn final write two windows long: no newline anywhere in the tail.
 	torn := `{"type":"execution.completed","stdout_preview":"` + strings.Repeat("x", 2*tailWindow)
 	appendRaw(t, path, torn)
 
 	sink, err := OpenJSONL(path, JSONLOptions{})
+	if err == nil {
+		_ = sink.Close()
+		t.Fatal("OpenJSONL accepted a journal whose final line cannot be read back")
+	}
+	after, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = sink.Close() })
-
-	healed, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(healed) != completeSize {
-		t.Fatalf("healed file is %d bytes, want exactly the %d complete bytes", len(healed), completeSize)
-	}
-	if string(healed) != string(complete) {
-		t.Fatal("healing an oversized torn line rewrote the complete events")
-	}
-	if got, want := sink.lastHash, digestOf(lastComplete); got != want {
-		t.Errorf("chain head = %q, want the last COMPLETE line %q", got, want)
-	}
-	// The healed journal must still verify, and keep verifying after appending.
-	if err := VerifyChain(path); err != nil {
-		t.Fatalf("healed chain does not verify: %v", err)
+	if string(after) != string(before)+torn {
+		t.Fatal("a refused journal was rewritten instead of left for the operator")
 	}
 }
 

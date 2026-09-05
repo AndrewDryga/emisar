@@ -148,9 +148,6 @@ func (r *relay) handle(w http.ResponseWriter, request *http.Request) {
 }
 
 func readBounded(reader io.Reader, limit int64) ([]byte, error) {
-	if reader == nil {
-		return nil, nil
-	}
 	limited := io.LimitReader(reader, limit+1)
 	body, err := io.ReadAll(limited)
 	if err != nil {
@@ -294,11 +291,7 @@ func (r *recorder) policyDenied(metadata requestMetadata, body []byte) {
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	index := metadata.call - 1
-	if index < 0 || index >= len(r.calls) {
-		return
-	}
-	call := &r.calls[index]
+	call := &r.calls[metadata.call-1]
 	call.ResponseError = true
 	call.ResponseCode = metadata.blockCode
 	call.ResponseBytes = len(body)
@@ -389,11 +382,7 @@ func (r *recorder) response(metadata requestMetadata, body []byte, statusCode in
 
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	index := metadata.call - 1
-	if index < 0 || index >= len(r.calls) {
-		return
-	}
-	call := &r.calls[index]
+	call := &r.calls[metadata.call-1]
 	call.ResponseBytes = len(body)
 	call.CompletedAt = time.Now().UTC().Format(time.RFC3339Nano)
 	// A JSON-RPC response carries exactly one of result or error. A 200 whose
@@ -467,12 +456,10 @@ func (r *recorder) transportError(metadata requestMetadata) {
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	index := metadata.call - 1
-	if index >= 0 && index < len(r.calls) {
-		r.calls[index].ResponseError = true
-		r.calls[index].ResponseCode = "transport_error"
-		r.calls[index].CompletedAt = time.Now().UTC().Format(time.RFC3339Nano)
-	}
+	call := &r.calls[metadata.call-1]
+	call.ResponseError = true
+	call.ResponseCode = "transport_error"
+	call.CompletedAt = time.Now().UTC().Format(time.RFC3339Nano)
 }
 
 func (r *recorder) snapshot() []callRecord {

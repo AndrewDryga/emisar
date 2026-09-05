@@ -86,9 +86,6 @@ defmodule Emisar.Runbooks.Definition do
       {:error, issues} when is_list(issues) -> {:error, sort_issues(issues)}
       issues when is_list(issues) -> {:error, sort_issues(issues)}
     end
-  rescue
-    Jason.EncodeError ->
-      {:error, [issue("invalid_definition", "", "Definition must contain only JSON values.")]}
   end
 
   def validate(_definition) do
@@ -114,9 +111,6 @@ defmodule Emisar.Runbooks.Definition do
     else
       {:error, issues} when is_list(issues) -> {:error, sort_issues(issues)}
     end
-  rescue
-    Jason.EncodeError ->
-      {:error, [issue("invalid_definition", "", "Definition must contain only JSON values.")]}
   end
 
   def validate_draft(_definition) do

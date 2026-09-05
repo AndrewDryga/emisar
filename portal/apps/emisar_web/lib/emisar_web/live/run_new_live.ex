@@ -184,9 +184,6 @@ defmodule EmisarWeb.RunNewLive do
                "That runner is outside your access scope. Ask an admin to grant access on the team page."
              )}
 
-          {:error, :runner_required} ->
-            {:noreply, put_flash(socket, :error, "Runner is required.")}
-
           {:error, :pack_untrusted} ->
             {:noreply,
              put_flash(
@@ -246,25 +243,6 @@ defmodule EmisarWeb.RunNewLive do
                :error,
                "This action's pack is outside your access scope. Ask an admin to grant access on the team page."
              )}
-
-          {:error, :invalid_attestation} ->
-            {:noreply,
-             put_flash(
-               socket,
-               :error,
-               "Dispatch authority could not be verified. Reload the page and try again."
-             )}
-
-          {:error, :action_required} ->
-            {:noreply,
-             put_flash(
-               socket,
-               :error,
-               "This action is no longer available. Reload the page and choose a current action."
-             )}
-
-          {:error, :reason_required} ->
-            {:noreply, put_flash(socket, :error, "Add a reason before dispatching this action.")}
 
           # The run record itself was rejected (its fields key to the
           # dispatch envelope — runner_id, source, … — not to the action's
@@ -714,13 +692,9 @@ defmodule EmisarWeb.RunNewLive do
   defp field_error(%{arg: arg, message: message}), do: {arg, {message, []}}
 
   # `examples` is a packspec field — list of `{description, args}` maps.
-  # Defensive: any shape that isn't a list is a no-op render. Empty
-  # examples (no args AND no description) are dropped — for a zero-arg
+  # Empty examples (no args AND no description) are dropped — for a zero-arg
   # action like `linux.uptime` they'd render a useless "{}" card.
-  defp action_examples(%{examples: list}) when is_list(list),
-    do: Enum.filter(list, &meaningful_example?/1)
-
-  defp action_examples(_), do: []
+  defp action_examples(%{examples: list}), do: Enum.filter(list, &meaningful_example?/1)
 
   defp meaningful_example?(%{"args" => args}) when is_map(args) and map_size(args) > 0, do: true
   defp meaningful_example?(%{"description" => d}) when is_binary(d) and d != "", do: true

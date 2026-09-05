@@ -74,7 +74,6 @@ config :emisar, Emisar.Billing.Jobs.SyncSubscriptions, enabled: false
 config :emisar, Emisar.OAuth.Jobs.Cleanup, enabled: false
 config :emisar, Emisar.MCPOperations.Jobs.ReplayRetention, enabled: false
 config :emisar, Emisar.Runs.Jobs.DispatchTimeout, enabled: false
-config :emisar, Emisar.Runs.Jobs.EventRetention, enabled: false
 config :emisar, Emisar.Runs.Jobs.ActionRunRetention, enabled: false
 config :emisar, Emisar.Runbooks.Jobs.AdvanceExecutions, enabled: false
 config :emisar, Emisar.Runbooks.Jobs.ExecutionRetention, enabled: false

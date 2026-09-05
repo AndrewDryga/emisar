@@ -7,7 +7,6 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -60,7 +59,6 @@ func main() {
 	certifyCredentials := flag.String("certify-credentials", "portal/.agent/secrets/google-cert-client.env", "ignored env file for the certification client's credentials")
 	certifyLogin := flag.String("certify-login", "", "drive a real OIDC sign-in through this emisar begin URL and report where it lands")
 	deleteProjects := flag.String("delete-projects", "", "comma-separated project ids to shut down, then exit")
-	listProjects := flag.Bool("list-projects", false, "print the account's projects and whether each has an auth config")
 	// Agreeing to Google Cloud's terms binds the ACCOUNT, not the run, so it is
 	// never implied by asking for screenshots. The account owner asks for it here,
 	// explicitly, or the capture stops at the wall.
@@ -82,7 +80,7 @@ func main() {
 	if err := os.MkdirAll(*outDir, 0o700); err != nil {
 		fail(err)
 	}
-	if err := run(env, *outDir, *headless, *cleanupOnly, *freshProject, *listProjects, *acceptCloudTOS, *project, *deleteProjects, *certifyRedirect, *certifyCredentials, *certifyLogin); err != nil {
+	if err := run(env, *outDir, *headless, *cleanupOnly, *freshProject, *acceptCloudTOS, *project, *deleteProjects, *certifyRedirect, *certifyCredentials, *certifyLogin); err != nil {
 		fail(err)
 	}
 }
@@ -98,7 +96,7 @@ func readEnv(path string) (map[string]string, error) {
 	return capturekit.ReadEnv(path)
 }
 
-func run(env map[string]string, outDir string, headless, cleanupOnly bool, freshProject string, listProjects, acceptCloudTOS bool, project, deleteProjects, certifyRedirect, certifyCredentials, certifyLogin string) error {
+func run(env map[string]string, outDir string, headless, cleanupOnly bool, freshProject string, acceptCloudTOS bool, project, deleteProjects, certifyRedirect, certifyCredentials, certifyLogin string) error {
 	opts := append(chromedp.DefaultExecAllocatorOptions[:],
 		chromedp.Flag("headless", headless),
 		chromedp.Flag("lang", "en-US"),
@@ -134,11 +132,8 @@ func run(env map[string]string, outDir string, headless, cleanupOnly bool, fresh
 	}
 	if err := signIn(ctx, env, acceptCloudTOS); err != nil {
 		_ = idpcapture.Screenshot(ctx, outDir, "google-failed")
-		_ = describePage(ctx, env)
+		_ = capturekit.DescribePage(ctx, env)
 		return err
-	}
-	if listProjects {
-		return printProjects(ctx)
 	}
 	if deleteProjects != "" {
 		for _, id := range strings.Split(deleteProjects, ",") {
@@ -155,7 +150,7 @@ func run(env map[string]string, outDir string, headless, cleanupOnly bool, fresh
 	if freshProject != "" {
 		if err := createProject(ctx, freshProject, outDir); err != nil {
 			_ = idpcapture.Screenshot(ctx, outDir, "google-failed")
-			_ = describePage(ctx, env)
+			_ = capturekit.DescribePage(ctx, env)
 			return err
 		}
 	}
@@ -163,7 +158,7 @@ func run(env map[string]string, outDir string, headless, cleanupOnly bool, fresh
 		// Wait for the console to paint before reaching for its nav — the full flow
 		// gets this from authPlatformFlow, and skipping it here left the Clients
 		// click hitting nothing.
-		if err := waitForText(ctx, "Google Auth Platform", 90*time.Second); err != nil {
+		if err := capturekit.RequireText(ctx, "Google Auth Platform", 90*time.Second); err != nil {
 			return err
 		}
 		if err := acceptTerms(ctx); err != nil {
@@ -177,26 +172,19 @@ func run(env map[string]string, outDir string, headless, cleanupOnly bool, fresh
 	if certifyRedirect != "" {
 		if err := certifyClientFlow(ctx, env, outDir, certifyRedirect, certifyCredentials); err != nil {
 			_ = idpcapture.Screenshot(ctx, outDir, "google-failed")
-			_ = describePage(ctx, env)
+			_ = capturekit.DescribePage(ctx, env)
 			return err
 		}
 		return nil
 	}
 	if err := authPlatformFlow(ctx, env, outDir); err != nil {
 		_ = idpcapture.Screenshot(ctx, outDir, "google-failed")
-		_ = describePage(ctx, env)
+		_ = capturekit.DescribePage(ctx, env)
 		return err
 	}
 	return nil
 }
 
-// createProject makes the throwaway project whose Get started wizard the capture
-// walks, then enters the Auth Platform on it. The project id Google derives from
-// the name is what the platform URL needs, and it is not the name — so it is read
-// back off the console rather than guessed.
-// printProjects lists what the account can reach, so a capture that needs an
-// unconfigured project can be pointed at one that already exists instead of
-// creating another.
 // agreeToCloudTerms clears the free-trial signup wall an account that has never
 // used Google Cloud lands on. Only reachable behind -accept-cloud-tos.
 //
@@ -285,23 +273,12 @@ func shutDownProject(ctx context.Context, id string) error {
 	return chromedp.Run(ctx, chromedp.Sleep(8*time.Second))
 }
 
-func printProjects(ctx context.Context) error {
-	if err := chromedp.Run(ctx,
-		chromedp.Navigate("https://console.cloud.google.com/cloud-resource-manager?hl=en"),
-		chromedp.Sleep(15*time.Second)); err != nil {
-		return err
-	}
-	var body string
-	if err := chromedp.Run(ctx, chromedp.Evaluate(`document.body.innerText`, &body)); err != nil {
-		return err
-	}
-	fmt.Println("--- resource manager ---")
-	fmt.Println(body)
-	return nil
-}
-
+// createProject makes the throwaway project whose Get started wizard the capture
+// walks, then enters the Auth Platform on it. The project id Google derives from
+// the name is what the platform URL needs, and it is not the name — so it is read
+// back off the console rather than guessed.
 func createProject(ctx context.Context, name, outDir string) error {
-	if err := waitForText(ctx, "Project name", 90*time.Second); err != nil {
+	if err := capturekit.RequireText(ctx, "Project name", 90*time.Second); err != nil {
 		return fmt.Errorf("the project-create form never appeared: %w", err)
 	}
 	// By position, not by label: the create form's name input has no label,
@@ -482,7 +459,7 @@ func signIn(ctx context.Context, env map[string]string, acceptCloudTOS bool) err
 }
 
 func authPlatformFlow(ctx context.Context, env map[string]string, outDir string) error {
-	if err := waitForText(ctx, "Google Auth Platform", 90*time.Second); err != nil {
+	if err := capturekit.RequireText(ctx, "Google Auth Platform", 90*time.Second); err != nil {
 		return err
 	}
 	if err := acceptTerms(ctx); err != nil {
@@ -496,19 +473,19 @@ func authPlatformFlow(ctx context.Context, env map[string]string, outDir string)
 	// settings pages; an unconfigured one opens either on a Get started button or
 	// straight onto the numbered stepper, depending on how the console routed in.
 	// Capitalization is Google's: the step is "App Information".
-	inWizard := waitForText(ctx, "App Information", 20*time.Second) == nil
+	inWizard := capturekit.RequireText(ctx, "App Information", 20*time.Second) == nil
 	if !inWizard {
-		if err := waitForText(ctx, "Get started", 20*time.Second); err != nil {
+		if err := capturekit.RequireText(ctx, "Get started", 20*time.Second); err != nil {
 			fmt.Println("  already configured — capturing Branding and Audience directly")
 			return configuredFlow(ctx, env, outDir)
 		}
 		if err := capture(ctx, env, outDir, "google-01-get-started", textHighlight("Get started")); err != nil {
 			return err
 		}
-		if err := clickExactText(ctx, "Get started"); err != nil {
+		if err := clickFirstText(ctx, "Get started"); err != nil {
 			return err
 		}
-		if err := waitForText(ctx, "App Information", 30*time.Second); err != nil {
+		if err := capturekit.RequireText(ctx, "App Information", 30*time.Second); err != nil {
 			return err
 		}
 	}
@@ -528,7 +505,7 @@ func authPlatformFlow(ctx context.Context, env map[string]string, outDir string)
 		return err
 	}
 
-	if err := waitForText(ctx, "Audience", 30*time.Second); err != nil {
+	if err := capturekit.RequireText(ctx, "Audience", 30*time.Second); err != nil {
 		return err
 	}
 	if err := selectRadio(ctx, "Internal"); err != nil {
@@ -541,7 +518,7 @@ func authPlatformFlow(ctx context.Context, env map[string]string, outDir string)
 		return err
 	}
 
-	if err := waitForText(ctx, "Contact Information", 30*time.Second); err != nil {
+	if err := capturekit.RequireText(ctx, "Contact Information", 30*time.Second); err != nil {
 		return err
 	}
 	if err := fillField(ctx, "Email addresses", env["GOOGLE_TEST_USER"]); err != nil {
@@ -554,7 +531,7 @@ func authPlatformFlow(ctx context.Context, env map[string]string, outDir string)
 		return err
 	}
 
-	if err := waitForText(ctx, "Finish", 30*time.Second); err != nil {
+	if err := capturekit.RequireText(ctx, "Finish", 30*time.Second); err != nil {
 		return err
 	}
 	// The agreement checkbox is not in every version of this wizard — the current
@@ -572,7 +549,7 @@ func authPlatformFlow(ctx context.Context, env map[string]string, outDir string)
 	if err := clickFirstText(ctx, "Continue", "Create"); err != nil {
 		return err
 	}
-	if err := waitForText(ctx, "OAuth overview", 45*time.Second); err != nil {
+	if err := capturekit.RequireText(ctx, "OAuth overview", 45*time.Second); err != nil {
 		return err
 	}
 
@@ -582,10 +559,10 @@ func authPlatformFlow(ctx context.Context, env map[string]string, outDir string)
 // clientFlow makes the OAuth client emisar signs in with, and is the same on a
 // freshly walked wizard and an already-configured project.
 func clientFlow(ctx context.Context, env map[string]string, outDir string) error {
-	if err := clickExactText(ctx, "Clients"); err != nil {
+	if err := clickFirstText(ctx, "Clients"); err != nil {
 		return err
 	}
-	if err := waitForText(ctx, "OAuth 2.0 Client IDs", 45*time.Second); err != nil {
+	if err := capturekit.RequireText(ctx, "OAuth 2.0 Client IDs", 45*time.Second); err != nil {
 		return err
 	}
 	if err := capture(ctx, env, outDir, "google-06-clients", textHighlight("Create client")); err != nil {
@@ -595,7 +572,7 @@ func clientFlow(ctx context.Context, env map[string]string, outDir string) error
 		return err
 	}
 
-	if err := waitForText(ctx, "Create OAuth client ID", 30*time.Second); err != nil {
+	if err := capturekit.RequireText(ctx, "Create OAuth client ID", 30*time.Second); err != nil {
 		return err
 	}
 	if err := acceptTerms(ctx); err != nil {
@@ -627,7 +604,7 @@ func clientFlow(ctx context.Context, env map[string]string, outDir string) error
 		return err
 	}
 
-	if err := waitForText(ctx, "OAuth client created", 30*time.Second); err != nil {
+	if err := capturekit.RequireText(ctx, "OAuth client created", 30*time.Second); err != nil {
 		return err
 	}
 	if err := capture(ctx, env, outDir, "google-08-client-created", textHighlight("Client ID", "Client secret")); err != nil {
@@ -639,8 +616,6 @@ func clientFlow(ctx context.Context, env map[string]string, outDir string) error
 	return removeCaptureClients(ctx, env, outDir)
 }
 
-// countCaptureClients is how many of this tool's own clients the list still
-// shows. Every deletion is judged by this dropping, never by the click landing.
 // certifyLoginFlow drives a real Google Workspace sign-in through emisar and
 // reports where it lands. This is the claim the guide makes — that a Workspace
 // member can sign in to emisar with Google — and console screenshots do not
@@ -813,21 +788,18 @@ func clickDeepAt(ctx context.Context, wanted string) (bool, error) {
     }
   };
   walk(document, 0, 0);
-  if (!hits.length) return '';
-  return JSON.stringify({x: Math.round(hits[0].x), y: Math.round(hits[0].y)});
+  if (!hits.length) return null;
+  return {x: Math.round(hits[0].x), y: Math.round(hits[0].y)};
 })()`, wanted)
 
-	var found string
-	if err := chromedp.Run(ctx, chromedp.Evaluate(script, &found)); err != nil {
+	// chromedp decodes the returned object straight into at, and a null result
+	// leaves the POINTER nil — which is the miss.
+	var at *struct{ X, Y float64 }
+	if err := chromedp.Run(ctx, chromedp.Evaluate(script, &at)); err != nil {
 		return false, err
 	}
-	if found == "" {
+	if at == nil {
 		return false, nil
-	}
-
-	var at struct{ X, Y float64 }
-	if err := json.Unmarshal([]byte(found), &at); err != nil {
-		return false, err
 	}
 	return true, chromedp.Run(ctx, chromedp.MouseClickXY(at.X, at.Y))
 }
@@ -924,22 +896,22 @@ func firstLine(text string) string {
 // The credentials are written to the secrets directory rather than printed: they
 // are live, and a transcript is not where a client secret should live.
 func certifyClientFlow(ctx context.Context, env map[string]string, outDir, redirectURI, credentialsPath string) error {
-	if err := waitForText(ctx, "Google Auth Platform", 90*time.Second); err != nil {
+	if err := capturekit.RequireText(ctx, "Google Auth Platform", 90*time.Second); err != nil {
 		return err
 	}
 	if err := acceptTerms(ctx); err != nil {
 		return err
 	}
-	if err := clickExactText(ctx, "Clients"); err != nil {
+	if err := clickFirstText(ctx, "Clients"); err != nil {
 		return err
 	}
-	if err := waitForText(ctx, "OAuth 2.0 Client IDs", 45*time.Second); err != nil {
+	if err := capturekit.RequireText(ctx, "OAuth 2.0 Client IDs", 45*time.Second); err != nil {
 		return err
 	}
 	if err := clickFirstText(ctx, "Create client", "Create credentials"); err != nil {
 		return err
 	}
-	if err := waitForText(ctx, "Create OAuth client ID", 30*time.Second); err != nil {
+	if err := capturekit.RequireText(ctx, "Create OAuth client ID", 30*time.Second); err != nil {
 		return err
 	}
 	if err := chooseOption(ctx, "Application type", "Web application"); err != nil {
@@ -954,20 +926,22 @@ func certifyClientFlow(ctx context.Context, env map[string]string, outDir, redir
 	if err := clickFirstText(ctx, "Create"); err != nil {
 		return err
 	}
-	if err := waitForText(ctx, "OAuth client created", 45*time.Second); err != nil {
+	if err := capturekit.RequireText(ctx, "OAuth client created", 45*time.Second); err != nil {
 		return err
 	}
 
-	const readCredentials = `(() => {
+	// The shapes come from the Go patterns the redaction uses, so a change cannot
+	// teach one reader a new credential form and leave the other blind to it.
+	readCredentials := fmt.Sprintf(`(() => {
   const visible = el => el.offsetWidth > 0 || el.offsetHeight > 0;
   const inputs = [...document.querySelectorAll('input')].filter(visible).map(el => el.value).filter(Boolean);
   const text = document.body.innerText;
-  const id = (text.match(/[0-9]{6,}-[a-z0-9]{10,}\.apps\.googleusercontent\.com/) || [])[0] ||
+  const id = (text.match(new RegExp(%q)) || [])[0] ||
     inputs.find(v => /\.apps\.googleusercontent\.com$/.test(v)) || '';
-  const secret = (text.match(/GOCSPX-[A-Za-z0-9_-]{6,}/) || [])[0] ||
+  const secret = (text.match(new RegExp(%q)) || [])[0] ||
     inputs.find(v => /^GOCSPX-/.test(v)) || '';
   return id + '\n' + secret;
-})()`
+})()`, googleClientIDPattern.String(), googleClientSecretPattern.String())
 	var credentials string
 	if err := chromedp.Run(ctx, chromedp.Evaluate(readCredentials, &credentials)); err != nil {
 		return err
@@ -978,13 +952,15 @@ func certifyClientFlow(ctx context.Context, env map[string]string, outDir, redir
 	}
 
 	body := fmt.Sprintf("# emisar OIDC login certification client — redirect %s\nGOOGLE_CERT_CLIENT_ID=%s\nGOOGLE_CERT_CLIENT_SECRET=%s\n", redirectURI, parts[0], parts[1])
-	if err := os.WriteFile(credentialsPath, []byte(body), 0o600); err != nil {
+	if err := capturekit.WriteCredentialFile(credentialsPath, body); err != nil {
 		return err
 	}
 	fmt.Printf("  wrote %s (client %s…)\n", credentialsPath, parts[0][:12])
 	return nil
 }
 
+// countCaptureClients is how many of this tool's own clients the list still
+// shows. Every deletion is judged by this dropping, never by the click landing.
 func countCaptureClients(ctx context.Context) (int, error) {
 	script := fmt.Sprintf(`(() => {
   const visible = el => el.offsetWidth > 0 || el.offsetHeight > 0;
@@ -1001,10 +977,10 @@ func countCaptureClients(ctx context.Context) (int, error) {
 // it behind adds live credentials to the operator's project on every run — three
 // had accumulated before this existed.
 func removeCaptureClients(ctx context.Context, env map[string]string, outDir string) error {
-	if err := clickExactText(ctx, "Clients"); err != nil {
+	if err := clickFirstText(ctx, "Clients"); err != nil {
 		return err
 	}
-	if err := waitForText(ctx, "OAuth 2.0 Client IDs", 45*time.Second); err != nil {
+	if err := capturekit.RequireText(ctx, "OAuth 2.0 Client IDs", 45*time.Second); err != nil {
 		return err
 	}
 	for attempt := 0; attempt < 10; attempt++ {
@@ -1042,7 +1018,7 @@ func removeCaptureClients(ctx context.Context, env map[string]string, outDir str
 			// while live OAuth secrets sat in it — the exact thing
 			// shared-capture-rigs-own-what-they-create forbids.
 			_ = idpcapture.Screenshot(ctx, outDir, "google-cleanup-unselectable")
-			_ = describePage(ctx, env)
+			_ = capturekit.DescribePage(ctx, env)
 			return fmt.Errorf("%d client(s) match this rig's names but no row checkbox could be selected", before)
 		}
 		if err := chromedp.Run(ctx, chromedp.Sleep(time.Second)); err != nil {
@@ -1134,7 +1110,7 @@ func removeCaptureClients(ctx context.Context, env map[string]string, outDir str
 		if err := chromedp.Run(ctx, chromedp.Reload()); err != nil {
 			return err
 		}
-		if err := waitForText(ctx, "OAuth 2.0 Client IDs", 45*time.Second); err != nil {
+		if err := capturekit.RequireText(ctx, "OAuth 2.0 Client IDs", 45*time.Second); err != nil {
 			return err
 		}
 		// PROVE it. Printing "removed" straight after the click reported ten
@@ -1146,7 +1122,7 @@ func removeCaptureClients(ctx context.Context, env map[string]string, outDir str
 		}
 		if after >= before {
 			_ = idpcapture.Screenshot(ctx, outDir, "google-cleanup-stuck")
-			_ = describePage(ctx, env)
+			_ = capturekit.DescribePage(ctx, env)
 			return fmt.Errorf("clicked delete but %d capture client(s) remain", after)
 		}
 		fmt.Printf("  removed a capture client (%d left)\n", after)
@@ -1380,10 +1356,10 @@ func acceptTerms(ctx context.Context) error {
 // Information step writes, Audience carries the Internal/External choice, and
 // Clients is where the OAuth client is made. Same fields, reachable pages.
 func configuredFlow(ctx context.Context, env map[string]string, outDir string) error {
-	if err := clickExactText(ctx, "Branding"); err != nil {
+	if err := clickFirstText(ctx, "Branding"); err != nil {
 		return err
 	}
-	if err := waitForText(ctx, "App name", 45*time.Second); err != nil {
+	if err := capturekit.RequireText(ctx, "App name", 45*time.Second); err != nil {
 		return err
 	}
 	// Label-based, not field-based: this page's inputs carry no accessible name at
@@ -1393,10 +1369,10 @@ func configuredFlow(ctx context.Context, env map[string]string, outDir string) e
 		return err
 	}
 
-	if err := clickExactText(ctx, "Audience"); err != nil {
+	if err := clickFirstText(ctx, "Audience"); err != nil {
 		return err
 	}
-	if err := waitForText(ctx, "Internal", 45*time.Second); err != nil {
+	if err := capturekit.RequireText(ctx, "Internal", 45*time.Second); err != nil {
 		return err
 	}
 	if err := capture(ctx, env, outDir, "google-02-audience", textHighlight("Internal")); err != nil {
@@ -1405,6 +1381,22 @@ func configuredFlow(ctx context.Context, env map[string]string, outDir string) e
 
 	return clientFlow(ctx, env, outDir)
 }
+
+// framePrelude scrolls the shot so EVERY ringed control is in it, not just the
+// last one: centering each in turn left the reader looking at a form whose first
+// outlined field was cut off the top of the shot — the one they act on first.
+const framePrelude = `  const frame = found => {
+    if (!found.length) return;
+    const tops = found.map(el => el.getBoundingClientRect().top + window.scrollY);
+    const bottoms = found.map(el => el.getBoundingClientRect().bottom + window.scrollY);
+    const top = Math.min(...tops), bottom = Math.max(...bottoms);
+    const margin = 140;
+    if (bottom - top + margin * 2 <= window.innerHeight) {
+      window.scrollTo({top: Math.max(0, (top + bottom) / 2 - window.innerHeight / 2)});
+    } else {
+      window.scrollTo({top: Math.max(0, top - margin)});
+    }
+  };`
 
 type highlightScript struct {
 	script   string
@@ -1423,21 +1415,7 @@ func textHighlight(labels ...string) highlightScript {
   const labels = [%s];
   const targets = [];
   let marked = 0;
-  // Frame every ringed control, not just the last one. Centering each in turn left
-  // the reader looking at a form whose first outlined field was cut off the top of
-  // the shot, which is the one they act on first.
-  const frame = found => {
-    if (!found.length) return;
-    const tops = found.map(el => el.getBoundingClientRect().top + window.scrollY);
-    const bottoms = found.map(el => el.getBoundingClientRect().bottom + window.scrollY);
-    const top = Math.min(...tops), bottom = Math.max(...bottoms);
-    const margin = 140;
-    if (bottom - top + margin * 2 <= window.innerHeight) {
-      window.scrollTo({top: Math.max(0, (top + bottom) / 2 - window.innerHeight / 2)});
-    } else {
-      window.scrollTo({top: Math.max(0, top - margin)});
-    }
-  };
+%s
   for (const label of labels) {
     const matches = [...document.querySelectorAll('a,button,label,span,div,li,td,[role=button],[role=radio]')]
       .filter(el => visible(el) && (el.textContent || '').includes(label));
@@ -1452,7 +1430,7 @@ func textHighlight(labels ...string) highlightScript {
   }
   frame(targets);
   return marked;
-})()`, strings.Join(quoted, ",")),
+})()`, strings.Join(quoted, ","), framePrelude),
 	}
 }
 
@@ -1468,21 +1446,7 @@ func fieldHighlight(labels ...string) highlightScript {
   const labels = [%s];
   const targets = [];
   let marked = 0;
-  // Frame every ringed control, not just the last one. Centering each in turn left
-  // the reader looking at a form whose first outlined field was cut off the top of
-  // the shot, which is the one they act on first.
-  const frame = found => {
-    if (!found.length) return;
-    const tops = found.map(el => el.getBoundingClientRect().top + window.scrollY);
-    const bottoms = found.map(el => el.getBoundingClientRect().bottom + window.scrollY);
-    const top = Math.min(...tops), bottom = Math.max(...bottoms);
-    const margin = 140;
-    if (bottom - top + margin * 2 <= window.innerHeight) {
-      window.scrollTo({top: Math.max(0, (top + bottom) / 2 - window.innerHeight / 2)});
-    } else {
-      window.scrollTo({top: Math.max(0, top - margin)});
-    }
-  };
+%s
   for (const wanted of labels) {
     const controls = [...document.querySelectorAll('input,textarea,select,[role=combobox]')].filter(visible);
     const control = controls.find(el => {
@@ -1517,7 +1481,7 @@ func fieldHighlight(labels ...string) highlightScript {
   }
   frame(targets);
   return marked;
-})()`, strings.Join(quoted, ",")),
+})()`, strings.Join(quoted, ","), framePrelude),
 	}
 }
 
@@ -1643,8 +1607,8 @@ func deidentify(ctx context.Context, env map[string]string) error {
   // a live credential in the "client created" shot. Anything SHAPED like a Google
   // client id or secret is redacted whether we have seen it before or not.
   const patterns = [
-    [/\b\d{6,}-[a-z0-9]{10,}\.apps\.googleusercontent\.com\b/gi, CLIENT_ID],
-    [/\bGOCSPX-[A-Za-z0-9_-]{6,}\b/g, CLIENT_SECRET]
+    [new RegExp('\\b' + ID_SHAPE + '\\b', 'gi'), CLIENT_ID],
+    [new RegExp('\\b' + SECRET_SHAPE + '\\b', 'g'), CLIENT_SECRET]
   ];
   const scrub = value => {
     let out = value;
@@ -1668,6 +1632,8 @@ func deidentify(ctx context.Context, env map[string]string) error {
 	for from, to := range replacements {
 		pairs = append(pairs, fmt.Sprintf("[%q,%q]", from, to))
 	}
+	script = strings.Replace(script, "ID_SHAPE", fmt.Sprintf("%q", googleClientIDPattern.String()), 1)
+	script = strings.Replace(script, "SECRET_SHAPE", fmt.Sprintf("%q", googleClientSecretPattern.String()), 1)
 	script = strings.Replace(script, "REPLACEMENTS", "["+strings.Join(pairs, ",")+"]", 1)
 	script = strings.Replace(script, "CLIENT_ID", fmt.Sprintf("%q", redactedClientID), 1)
 	script = strings.Replace(script, "CLIENT_SECRET", fmt.Sprintf("%q", redactedClientSecret), 1)
@@ -1679,14 +1645,6 @@ func deidentify(ctx context.Context, env map[string]string) error {
 		return errors.New("rewriting the DOM failed")
 	}
 	return nil
-}
-
-func waitForText(ctx context.Context, wanted string, timeout time.Duration) error {
-	return capturekit.RequireText(ctx, wanted, timeout)
-}
-
-func clickExactText(ctx context.Context, label string) error {
-	return clickFirstText(ctx, label)
 }
 
 func clickFirstText(ctx context.Context, labels ...string) error {
@@ -1911,10 +1869,6 @@ func totpField(ctx context.Context) (string, error) {
 		}
 	}
 	return "", nil
-}
-
-func describePage(ctx context.Context, env map[string]string) error {
-	return capturekit.DescribePage(ctx, env)
 }
 
 func redactGoogleText(value string, env map[string]string) string {

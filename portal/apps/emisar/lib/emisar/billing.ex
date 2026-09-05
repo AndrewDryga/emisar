@@ -650,8 +650,8 @@ defmodule Emisar.Billing do
   end
 
   defp request_initial_runner_quantity_sync(existing, attrs) do
-    paddle_id = attrs[:paddle_subscription_id] || attrs["paddle_subscription_id"]
-    status = attrs[:status] || attrs["status"]
+    paddle_id = attrs[:paddle_subscription_id]
+    status = attrs[:status]
     existing_paddle_id = existing && existing.paddle_subscription_id
 
     if is_binary(paddle_id) and paddle_id != existing_paddle_id and
@@ -943,28 +943,12 @@ defmodule Emisar.Billing do
     with {:ok, normalized} <-
            normalize_subscription_items(Map.get(subscription_data, "items", [])),
          actual <- Map.new(normalized, &{&1.price_id, &1.quantity}),
-         {:ok, requested} <- requested_price_quantities(requested_items),
+         requested = Map.new(requested_items, &{&1["price_id"], &1["quantity"]}),
          true <- actual == requested do
       :ok
     else
       _mismatch -> {:error, :quantity_update_not_applied}
     end
-  end
-
-  defp requested_price_quantities(items) when is_list(items) do
-    items
-    |> Enum.reduce_while({:ok, %{}}, fn
-      %{"price_id" => price_id, "quantity" => quantity}, {:ok, acc}
-      when is_binary(price_id) and price_id != "" and is_integer(quantity) and quantity > 0 ->
-        if Map.has_key?(acc, price_id) do
-          {:halt, {:error, :ambiguous_subscription_items}}
-        else
-          {:cont, {:ok, Map.put(acc, price_id, quantity)}}
-        end
-
-      _item, _acc ->
-        {:halt, {:error, :malformed_subscription_items}}
-    end)
   end
 
   defp unique_price_ids?(items) do
@@ -1441,14 +1425,6 @@ defmodule Emisar.Billing do
     %{email: owner.email, name: account.name, account_id: account.id}
   end
 
-  defp normalize_paddle_customer_sync_opts(opts) when is_map(opts) do
-    [
-      limit:
-        normalize_paddle_customer_sync_limit(Map.get(opts, "limit") || Map.get(opts, :limit)),
-      after_account_id: Map.get(opts, "after_account_id") || Map.get(opts, :after_account_id)
-    ]
-  end
-
   defp normalize_paddle_customer_sync_opts(opts) when is_list(opts) do
     [
       limit: normalize_paddle_customer_sync_limit(Keyword.get(opts, :limit)),
@@ -1458,13 +1434,6 @@ defmodule Emisar.Billing do
 
   defp normalize_paddle_customer_sync_limit(n) when is_integer(n) and n > 0,
     do: min(n, 500)
-
-  defp normalize_paddle_customer_sync_limit(n) when is_binary(n) do
-    case Integer.parse(n) do
-      {parsed, ""} -> normalize_paddle_customer_sync_limit(parsed)
-      _ -> 100
-    end
-  end
 
   defp normalize_paddle_customer_sync_limit(_), do: 100
 

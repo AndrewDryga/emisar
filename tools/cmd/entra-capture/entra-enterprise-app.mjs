@@ -4,8 +4,7 @@
 // Both live in the Enterprise applications area rather than App registrations, and
 // neither needs a provisioning configuration — which is why they are reachable
 // where the Test-connection and attribute-mapping screens were not.
-import { launchChromium, loadEnv, totp } from './entra-env.mjs'
-import { mkdirSync } from 'node:fs'
+import { launchChromium, loadEnv, shot, signIn } from './entra-env.mjs'
 
 const env = loadEnv()
 
@@ -68,9 +67,6 @@ const outline = async (page, label, { exact = true } = {}) => {
   await page.waitForTimeout(600)
 }
 
-const outDir = process.env.ENTRA_CAPTURE_OUT || '/tmp/entra'
-mkdirSync(outDir, { recursive: true })
-
 const browser = await launchChromium({ headless: true })
 // An EXPLICIT context, because the second capture needs a second page in the same
 // signed-in session and browser.newPage() creates a context that refuses one.
@@ -80,35 +76,7 @@ const browser = await launchChromium({ headless: true })
 const context = await browser.newContext({ viewport: { width: 1520, height: 950 } })
 const page = await context.newPage()
 
-await page.goto('https://portal.azure.com/', { waitUntil: 'domcontentloaded' })
-await page.fill('input[name=loginfmt]', env.ENTRA_ADMIN_USER)
-await page.click('#idSIButton9')
-await page.waitForSelector('input[name=passwd]', { state: 'visible' })
-await page.fill('input[name=passwd]', env.ENTRA_ADMIN_PASSWORD)
-await page.click('#idSIButton9')
-
-// Order is not fixed: this tenant shows "Stay signed in?" BEFORE the code prompt.
-for (let i = 0; i < 12; i++) {
-  await page.waitForTimeout(3000)
-  const body = await page.textContent('body').catch(() => '')
-  if (/Create a resource|All resources/.test(body)) break
-  if (await page.locator('input[name=otc]').count()) {
-    if (30 - (Math.floor(Date.now() / 1000) % 30) < 8) await page.waitForTimeout(9000)
-    await page.fill('input[name=otc]', totp(env.ENTRA_TOTP_SECRET))
-    await page.press('input[name=otc]', 'Enter')
-  } else if (/Stay signed in\?/.test(body)) {
-    await page.click('#idBtn_Back').catch(() => {})
-  }
-}
-console.log('signed in')
-
-const shot = async name => {
-  await page.screenshot({
-    path: `${outDir}/${name}.png`,
-    clip: { x: 0, y: 42, width: 1520, height: 900 },
-  })
-  console.log('shot', name)
-}
+await signIn(page, env)
 
 // 1. Creating the enterprise application. "Create your own application" is the
 // path for a SCIM app: the gallery entries are for products Microsoft already
@@ -122,7 +90,7 @@ await page.getByText('New application').first().click()
 await page.waitForTimeout(12000)
 await page.getByText('Create your own application').first().waitFor({ timeout: 90000 })
 await outline(page, 'Create your own application')
-await shot('pw-10-create-enterprise-app')
+await shot(page, 'pw-10-create-enterprise-app', { x: 0, y: 42, width: 1520, height: 900 })
 if (process.env.ENTRA_CAPTURE_GALLERY_ONLY === '1') {
   await browser.close()
   console.log('done')
@@ -172,7 +140,7 @@ const app = page2.getByText('emisar SCIM', { exact: true }).first()
 try {
   await app.waitFor({ timeout: 180000 })
 } catch (error) {
-  await page2.screenshot({ path: '/tmp/entra/pw-11-app-not-listed.png' })
+  await shot(page2, 'pw-11-app-not-listed')
   throw new Error('the emisar SCIM enterprise application never appeared in the list')
 }
 
@@ -207,8 +175,7 @@ await page2.waitForTimeout(25000)
 // searches every element and throws when it finds nothing, which is the check that
 // matters.
 await outline(page2, 'Add user/group', { exact: false })
-await page2.screenshot({ path: '/tmp/entra/pw-11-assign-users.png' })
-console.log('shot pw-11-assign-users')
+await shot(page2, 'pw-11-assign-users')
 
 await browser.close()
 console.log('done')

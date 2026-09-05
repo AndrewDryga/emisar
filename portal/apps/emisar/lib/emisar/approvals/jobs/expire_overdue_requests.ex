@@ -5,8 +5,7 @@ defmodule Emisar.Approvals.Jobs.ExpireOverdueRequests do
   use Emisar.Jobs.Job,
     otp_app: :emisar,
     every: :timer.minutes(5),
-    initial_delay: :timer.seconds(30),
-    executor: Emisar.Jobs.Executors.GloballyUnique
+    initial_delay: :timer.seconds(30)
 
   require Logger
 
