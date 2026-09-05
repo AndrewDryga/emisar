@@ -28,6 +28,7 @@ func MCP(root string, out io.Writer) error {
 		run  func(*harness) error
 	}{
 		{"help contract", mcpHelpContract},
+		{"portal origin display safety", mcpPortalOrigin},
 		{"install directory discovery", mcpInstallDirs},
 		{"install confirmation prompt", mcpConfirmPrompt},
 		{"interactive connection handoff", mcpInteractiveConnect},
@@ -62,6 +63,43 @@ func mcpHelpContract(h *harness) error {
 	for _, want := range []string{"EMISAR_ATTESTATION_WORKFLOW"} {
 		if !strings.Contains(string(output), want) {
 			return fmt.Errorf("installer help omits %s:\n%s", want, output)
+		}
+	}
+	return nil
+}
+
+func mcpPortalOrigin(h *harness) error {
+	for _, origin := range []string{
+		"https://control.example",
+		"http://[::1]:4000",
+		"https://[fd00::1234]:4443",
+		`https://control.example/";$(touch should-not-exist)`,
+	} {
+		// No installed bridge or client data: exercise the complete script's
+		// validation and display path without installing or connecting anywhere.
+		output, err := requireOutput(h.command(h.temp, map[string]string{
+			"EMISAR_URL": origin,
+			"HOME":       h.path("origin-home"),
+		}, "bash", h.repoPath("install-mcp.sh"), "--uninstall", "--yes", "--install-dir", h.path("origin-bin")))
+		if err != nil {
+			return fmt.Errorf("origin %q: %w", origin, err)
+		}
+		if !strings.Contains(string(output), origin+"/app/agents") {
+			return fmt.Errorf("origin did not reach literal display: %q", output)
+		}
+	}
+	if err := requireAbsent(h.path("should-not-exist")); err != nil {
+		return fmt.Errorf("origin was evaluated as shell code: %w", err)
+	}
+	for _, control := range []byte{'\n', '\r', '\t', '\x1b', '\x7f'} {
+		origin := "https://control.example/" + string(control) + "hostile"
+		result := h.command(h.temp, map[string]string{"EMISAR_URL": origin},
+			"bash", h.repoPath("install-mcp.sh"), "--uninstall", "--yes", "--install-dir", h.path("origin-bin"))
+		if err := expectFailure(result, "contain no control characters"); err != nil {
+			return fmt.Errorf("control byte %x: %w", control, err)
+		}
+		if bytes.Contains(result.output, []byte(origin)) {
+			return fmt.Errorf("error echoed an unsafe origin: %q", result.output)
 		}
 	}
 	return nil

@@ -60,18 +60,13 @@ ATTESTATION_DENY_SELF_HOSTED=0
 # command overrides it (the client configs written below carry it).
 EMISAR_URL="${EMISAR_URL:-https://emisar.dev}"
 EMISAR_URL="${EMISAR_URL%/}"
-# Validated where it is READ, not where it is written: this value and the keys
-# the portal delivers both land inside JSON, TOML and YAML string literals. A
-# value carrying a quote or a newline does not corrupt those files — it ADDS to
-# them, and every one of those formats can express a second MCP server with its
-# own `command`, which the client runs on next start. So a hostile EMISAR_URL,
-# or a compromised portal's response, would reach arbitrary code on the
-# operator's workstation through a config file. One charset check beats three
-# per-format escapers.
-safe_config_value() {
+# The bridge validates origins and serializes client configuration. Here the
+# URL is only displayed or passed as one quoted argument; reject control bytes
+# before they can alter terminal output, without duplicating its URL policy.
+safe_display_value() {
   case "$1" in
     "") return 1 ;;
-    *[!A-Za-z0-9._:/@+-]*) return 1 ;;
+    *[[:cntrl:]]*) return 1 ;;
   esac
   return 0
 }
@@ -194,8 +189,8 @@ warn() { printf '\033[1;33m[install-mcp]\033[0m %s\n' "$*" >&2; }
 die()  { printf '\033[1;31m[install-mcp]\033[0m %s\n' "$*" >&2; exit 1; }
 
 # Checked here rather than beside the assignment: `die` has to exist first.
-safe_config_value "${EMISAR_URL}" ||
-  die "EMISAR_URL contains characters that cannot be written to a client config: ${EMISAR_URL}"
+safe_display_value "${EMISAR_URL}" ||
+  die "EMISAR_URL must be nonempty and contain no control characters"
 
 # --proto-redir is https-only: this helper may carry EMISAR_GITHUB_TOKEN, and a
 # redirect that downgrades the scheme would put that bearer on the wire in the
