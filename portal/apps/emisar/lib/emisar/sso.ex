@@ -935,6 +935,18 @@ defmodule Emisar.SSO do
         end
       end)
       |> Multi.update(:provider, fn %{update_target: %{changeset: changeset}} -> changeset end)
+      |> Multi.run(:session_effect, fn repo,
+                                       %{
+                                         provider: provider,
+                                         update_target: %{changeset: changeset}
+                                       } ->
+        if Ecto.Changeset.get_change(changeset, :enabled) == false or
+             Ecto.Changeset.get_change(changeset, :satisfies_mfa) == false do
+          delete_provider_session_tokens(provider, repo)
+        else
+          {:ok, %{socket_topics: []}}
+        end
+      end)
       |> Multi.insert(:audit, fn %{
                                    update_target: %{provider: before},
                                    provider: updated
@@ -942,8 +954,14 @@ defmodule Emisar.SSO do
         Audit.Events.identity_provider_updated(subject, before, updated)
       end)
       |> Repo.commit_multi(
-        after_commit: fn %{provider: provider, update_target: %{changeset: changeset}} ->
-          on_provider_updated(provider, changeset)
+        after_commit: fn %{
+                           provider: provider,
+                           update_target: %{changeset: changeset},
+                           session_effect: %{socket_topics: topics}
+                         } ->
+          Auth.disconnect_live_socket_topics(topics)
+          _ = recompute_authorization_if_changed(provider, changeset)
+          :ok
         end
       )
       |> case do
@@ -1028,6 +1046,9 @@ defmodule Emisar.SSO do
         |> IdentityProvider.Changeset.delete()
         |> then(&prepare_provider_authorization_change(loaded_provider, &1, true))
       end)
+      |> Multi.run(:session_effect, fn repo, %{provider: provider} ->
+        delete_provider_session_tokens(provider, repo)
+      end)
       |> Multi.insert(:audit, fn %{provider: provider} ->
         Audit.Events.identity_provider_deleted(subject, provider)
       end)
@@ -1037,8 +1058,8 @@ defmodule Emisar.SSO do
       # froze every synced member's role behind `directory_managed: true`
       # pointing at a provider nobody can name again. (The sibling
       # `disable_scim/2` keeps its repair post-commit precisely because its row
-      # stays fetchable, so a retry repeats it.) Session revocation stays after
-      # the commit: it disconnects live sockets, which a rollback cannot undo.
+      # stays fetchable, so a retry repeats it.) Session tokens also disappear
+      # atomically; only socket disconnects wait for the commit.
       |> Multi.run(:role_control, fn _repo, %{provider: provider} ->
         {:ok, return_role_control_to_operators(provider)}
       end)
@@ -1046,8 +1067,11 @@ defmodule Emisar.SSO do
         {:ok, delete_pending_link_requests(provider)}
       end)
       |> Repo.commit_multi(
-        after_commit: fn %{provider: provider, dismissed_requests: dismissed} ->
-          end_sessions_signed_in_through(provider)
+        after_commit: fn %{
+                           session_effect: %{socket_topics: topics},
+                           dismissed_requests: dismissed
+                         } ->
+          Auth.disconnect_live_socket_topics(topics)
           Enum.each(dismissed, &broadcast_link_request_dismissed/1)
         end
       )
@@ -1485,20 +1509,6 @@ defmodule Emisar.SSO do
     end
   end
 
-  # Both concerns run on every update: clause-matching on `scim_enabled` used to
-  # mean a SCIM-enabled connection never reached the disable branch below.
-  defp on_provider_updated(%IdentityProvider{} = provider, changeset) do
-    # Revoke before optional reconciliation: a mapping-side failure must never
-    # leave credentials carrying trust the committed provider no longer grants.
-    if Ecto.Changeset.get_change(changeset, :enabled) == false or
-         Ecto.Changeset.get_change(changeset, :satisfies_mfa) == false,
-       do: end_sessions_signed_in_through(provider),
-       else: :ok
-
-    _ = recompute_authorization_if_changed(provider, changeset)
-    :ok
-  end
-
   defp recompute_authorization_if_changed(
          %IdentityProvider{scim_enabled: true} = provider,
          changeset
@@ -1544,13 +1554,22 @@ defmodule Emisar.SSO do
     dismissed
   end
 
-  defp end_sessions_signed_in_through(%IdentityProvider{} = provider) do
-    provider
-    |> all_provider_identities()
-    |> Enum.group_by(& &1.user_id, & &1.id)
-    |> Enum.each(fn {user_id, identity_ids} ->
-      end_identity_sessions(user_id, identity_ids, &Auth.revoke_provider_sessions/2)
-    end)
+  defp delete_provider_session_tokens(%IdentityProvider{} = provider, repo) do
+    # Retired identities can still carry valid cookies. Revoke every identity
+    # the provider vouched for, not just the currently visible ones.
+    topics =
+      UserIdentity.Query.all()
+      |> UserIdentity.Query.by_provider_id(provider.id)
+      |> repo.all()
+      |> Enum.group_by(& &1.user_id, & &1.id)
+      |> Enum.flat_map(fn {user_id, identity_ids} ->
+        {:ok, %{socket_topics: topics}} =
+          Auth.delete_identity_session_tokens(user_id, identity_ids, repo)
+
+        topics
+      end)
+
+    {:ok, %{socket_topics: topics}}
   end
 
   @doc """
@@ -1567,13 +1586,13 @@ defmodule Emisar.SSO do
       |> Repo.all()
       |> Enum.map(& &1.id)
 
-    end_identity_sessions(user_id, identity_ids, &Auth.revoke_identity_sessions/2)
+    end_identity_sessions(user_id, identity_ids)
   end
 
-  defp end_identity_sessions(user_id, identity_ids, revoke) do
+  defp end_identity_sessions(user_id, identity_ids) do
     case Users.fetch_user_by_id(user_id) do
       {:ok, user} ->
-        revoke.(user, identity_ids)
+        Auth.revoke_identity_sessions(user, identity_ids)
 
       {:error, reason} ->
         Logger.warning("sso_session_user_missing",
@@ -1583,16 +1602,6 @@ defmodule Emisar.SSO do
 
         :ok
     end
-  end
-
-  # Revocation reads EVERY identity the connection ever minted, retired ones
-  # included. Soft-deleting an identity does not invalidate the cookie a session
-  # already holds, so enumerating only live rows let a retired identity's session
-  # survive the disable or delete that was supposed to end it.
-  defp all_provider_identities(%IdentityProvider{} = provider) do
-    UserIdentity.Query.all()
-    |> UserIdentity.Query.by_provider_id(provider.id)
-    |> Repo.all()
   end
 
   @authorization_reconcile_batch_size 100
@@ -2530,13 +2539,8 @@ defmodule Emisar.SSO do
     Multi.error(multi, :sso_provider, :provider_disabled)
   end
 
-  # A sign-in write additionally re-reads whether the connection is still ENABLED.
-  # The provider struct was resolved when the request arrived; disabling it is
-  # exactly how an operator revokes a route in, and a callback already in flight
-  # would otherwise land a session through a door the account had just closed —
-  # `end_sessions_signed_in_through/1` runs in the disable's after_commit, so a
-  # session created after that is never swept. Under the same row lock the disable
-  # takes, one of the two happens first and the other refuses.
+  # Sign-in and revocation take the same provider lock, so a callback carrying
+  # a stale enabled snapshot cannot mint a session after revocation commits.
   defp put_enabled_provider_lock(multi, %IdentityProvider{} = provider) do
     Multi.run(multi, :locked_provider, fn repo, _changes ->
       with {:ok, locked} <- lock_provider_row(provider, repo) do

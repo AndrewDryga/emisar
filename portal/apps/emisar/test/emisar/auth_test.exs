@@ -624,47 +624,6 @@ defmodule Emisar.AuthTest do
     end
   end
 
-  describe "revoke_provider_sessions/2" do
-    test "revokes only sessions minted through the selected provider identities" do
-      user = Fixtures.Users.create_user()
-      account = Fixtures.Accounts.create_account()
-      provider = Fixtures.SSO.create_identity_provider(account_id: account.id)
-
-      other_provider =
-        Fixtures.SSO.create_identity_provider(account_id: account.id, kind: :entra)
-
-      identity =
-        Fixtures.SSO.create_user_identity(
-          account_id: account.id,
-          provider_id: provider.id,
-          user_id: user.id
-        )
-
-      other_identity =
-        Fixtures.SSO.create_user_identity(
-          account_id: account.id,
-          provider_id: other_provider.id,
-          user_id: user.id
-        )
-
-      revoked =
-        Fixtures.Auth.create_session_token!(user, :sso, nil, %{}, user_identity_id: identity.id)
-
-      other_sso =
-        Fixtures.Auth.create_session_token!(user, :sso, nil, %{},
-          user_identity_id: other_identity.id
-        )
-
-      magic_link = Fixtures.Auth.create_session_token!(user, :magic_link, nil)
-
-      assert Auth.revoke_provider_sessions(user, [identity.id]) == :ok
-
-      assert Auth.fetch_user_and_token_by_session_token(revoked) == {:error, :not_found}
-      assert {:ok, _user, _token} = Auth.fetch_user_and_token_by_session_token(other_sso)
-      assert {:ok, _user, _token} = Auth.fetch_user_and_token_by_session_token(magic_link)
-    end
-  end
-
   describe "capture_live_socket_topics/1" do
     test "captures a topic per live session, and still resolves them after the rows are gone" do
       user = Fixtures.Users.create_user()
