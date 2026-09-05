@@ -1377,12 +1377,12 @@ defmodule Emisar.Runbooks do
   @spec editor_action(EditorProjection.t(), [String.t()], String.t(), String.t(), String.t()) ::
           {:ok, EditorProjection.action()} | {:error, :not_found}
   def editor_action(%EditorProjection{} = projection, refs, selection, pack_id, action_id) do
-    projection
-    |> editor_actions(refs, selection)
-    |> Enum.find(&(&1.pack_id == pack_id and &1.action_id == action_id))
-    |> case do
-      nil -> {:error, :not_found}
-      action -> {:ok, action}
+    case editor_target_runners(projection, refs, selection) do
+      {:ok, targets} ->
+        Catalog.common_action(projection.catalog, Enum.map(targets, & &1.id), pack_id, action_id)
+
+      {:error, :unknown_target} ->
+        {:error, :not_found}
     end
   end
 

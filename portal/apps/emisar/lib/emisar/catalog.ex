@@ -2164,8 +2164,7 @@ defmodule Emisar.Catalog do
              Authorizer.view_catalog_permission()
            ),
          :ok <- ensure_runners_in_account(runners, subject),
-         {:ok, scoped_runners} <- Runners.list_all_runners_for_account(subject),
-         :ok <- ensure_runners_in_scope(runners, scoped_runners),
+         :ok <- Runners.ensure_runner_ids_visible(Enum.map(runners, & &1.id), subject),
          [_deployment | _rest] = deployments <- runner_deployments(runners),
          {:ok, actions} <- deployment_actions(deployments, subject),
          {:ok, pack_versions} <- deployment_pack_versions(deployments, subject) do
@@ -2195,16 +2194,37 @@ defmodule Emisar.Catalog do
 
   def common_actions(%EditorProjection{} = projection, runner_ids) when is_list(runner_ids) do
     projection.candidates
-    |> Enum.flat_map(fn {{pack_id, action_id}, by_runner} ->
-      runner_candidates =
-        Enum.map(runner_ids, &{&1, editor_runner_candidates(projection, by_runner, &1, pack_id)})
-
-      case select_common_action(runner_candidates) do
-        {:ok, selected} -> [common_action(pack_id, action_id, selected)]
-        {:error, _reason} -> []
+    |> Enum.flat_map(fn {{pack_id, action_id}, _by_runner} ->
+      case common_action(projection, runner_ids, pack_id, action_id) do
+        {:ok, action} -> [action]
+        {:error, :not_found} -> []
       end
     end)
     |> Enum.sort_by(&{&1.action_id, &1.pack_id})
+  end
+
+  @doc """
+  Resolves one selected editor action using the same complete contract and
+  structural-coverage checks as `common_actions/2`, without visiting unrelated
+  catalog entries. A missing or incompatible selection returns `:not_found`.
+  """
+  @spec common_action(EditorProjection.t(), [String.t()], String.t(), String.t()) ::
+          {:ok, map()} | {:error, :not_found}
+  def common_action(%EditorProjection{}, [], _pack_id, _action_id),
+    do: {:error, :not_found}
+
+  def common_action(%EditorProjection{} = projection, runner_ids, pack_id, action_id) do
+    with {:ok, by_runner} <- Map.fetch(projection.candidates, {pack_id, action_id}),
+         candidates =
+           Enum.map(
+             runner_ids,
+             &{&1, editor_runner_candidates(projection, by_runner, &1, pack_id)}
+           ),
+         {:ok, selected} <- select_common_action(candidates) do
+      {:ok, common_action(pack_id, action_id, selected)}
+    else
+      _unavailable -> {:error, :not_found}
+    end
   end
 
   defp editor_runner_candidates(projection, by_runner, runner_id, pack_id) do
@@ -2334,14 +2354,6 @@ defmodule Emisar.Catalog do
     if Enum.all?(runners, &Subject.in_account?(subject, &1.account_id)),
       do: :ok,
       else: {:error, :not_found}
-  end
-
-  defp ensure_runners_in_scope(runners, scoped_runners) do
-    scoped_ids = MapSet.new(scoped_runners, & &1.id)
-
-    if Enum.all?(runners, &MapSet.member?(scoped_ids, &1.id)),
-      do: :ok,
-      else: {:error, :unauthorized}
   end
 
   defp runner_deployments(runners) do

@@ -319,6 +319,36 @@ defmodule Emisar.RunnersTest do
     end
   end
 
+  describe "ensure_runner_ids_visible/2" do
+    test "checks the whole current scope without trusting supplied runner facts" do
+      {user, account, subject} = Fixtures.Subjects.owner_subject()
+      allowed = Fixtures.Runners.create_runner(account_id: account.id, group: "database")
+      hidden = Fixtures.Runners.create_runner(account_id: account.id, group: "web")
+      foreign = Fixtures.Runners.create_runner()
+
+      assert :ok = Runners.ensure_runner_ids_visible([allowed.id, allowed.id], subject)
+      assert :ok = Runners.ensure_runner_ids_visible([], subject)
+
+      {:ok, access} = Accounts.RunnerAccess.restricted(["database"], [])
+
+      account.id
+      |> Fixtures.Memberships.fetch_membership(user.id)
+      |> Fixtures.Memberships.force_runner_access(access)
+
+      assert :ok = Runners.ensure_runner_ids_visible([allowed.id], subject)
+
+      for ids <- [[allowed.id, hidden.id], [foreign.id], ["invalid-id"]] do
+        assert {:error, :unauthorized} = Runners.ensure_runner_ids_visible(ids, subject)
+      end
+
+      Fixtures.Runners.mark_deleted(allowed)
+      assert {:error, :unauthorized} = Runners.ensure_runner_ids_visible([allowed.id], subject)
+
+      no_view = Fixtures.Subjects.build_subject(account: account, role: :runner)
+      assert {:error, :unauthorized} = Runners.ensure_runner_ids_visible([], no_view)
+    end
+  end
+
   describe "list_runner_options/1" do
     test "returns only the visible fleet's ids and names in name order" do
       {account, _user, subject} = account_with_owner_subject()

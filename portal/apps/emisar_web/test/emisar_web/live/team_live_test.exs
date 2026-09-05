@@ -335,6 +335,7 @@ defmodule EmisarWeb.TeamLiveTest do
         )
 
       send(lv.pid, {:sso_link_requests_changed, account.id})
+      send(lv.pid, {:recompute_nav_badge, :access_requests})
       assert has_element?(lv, badge, "2")
 
       assert has_element?(

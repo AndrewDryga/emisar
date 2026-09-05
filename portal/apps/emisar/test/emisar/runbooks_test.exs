@@ -3032,6 +3032,45 @@ defmodule Emisar.RunbooksTest do
   end
 
   describe "editor_action/5" do
+    test "selected-action work stays bounded as unrelated catalog entries grow" do
+      targets = for n <- 1..20, do: %{name: "worker-#{n}", group: "workers"}
+
+      actions =
+        for n <- 1..2_000 do
+          %{
+            pack_id: "demo",
+            action_id: "demo.action_#{n}",
+            descriptor: %{"risk" => "low", "kind" => "exec", "args_schema" => %{"args" => []}}
+          }
+        end
+
+      small = Fixtures.Runbooks.build_editor_projection(targets, Enum.take(actions, 1))
+      large = Fixtures.Runbooks.build_editor_projection(targets, actions)
+
+      lookup = fn projection ->
+        for _ <- 1..32 do
+          assert {:ok, %{action_id: "demo.action_1"}} =
+                   Runbooks.editor_action(
+                     projection,
+                     ["group:workers"],
+                     "all",
+                     "demo",
+                     "demo.action_1"
+                   )
+        end
+      end
+
+      lookup.(small)
+      lookup.(large)
+      {:reductions, before_small} = Process.info(self(), :reductions)
+      lookup.(small)
+      {:reductions, after_small} = Process.info(self(), :reductions)
+      lookup.(large)
+      {:reductions, after_large} = Process.info(self(), :reductions)
+
+      assert after_large - after_small < 2 * (after_small - before_small)
+    end
+
     test "carries the trusted descriptor's arguments and risk" do
       {_user, account, subject} = Fixtures.Subjects.owner_subject()
       trusted_runner(account, subject, args: [arg("seconds", "integer")])

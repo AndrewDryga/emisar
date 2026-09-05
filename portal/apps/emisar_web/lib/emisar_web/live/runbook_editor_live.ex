@@ -26,15 +26,13 @@ defmodule EmisarWeb.RunbookEditorLive do
       else: mount_disconnected(socket, socket.assigns.live_action)
   end
 
-  defp mount_disconnected(socket, :new), do: apply_action(socket, :new, %{})
-
-  defp mount_disconnected(socket, :edit) do
+  defp mount_disconnected(socket, action) when action in [:new, :edit] do
     draft = RunbookDraft.new()
 
     {:ok,
      socket
      |> assign(:loaded?, false)
-     |> assign(:page_title, "Runbook")
+     |> assign(:page_title, if(action == :new, do: "New runbook", else: "Runbook"))
      |> assign(:runbook, nil)
      |> assign(:base_sha, nil)
      |> assign(:publish_review, nil)

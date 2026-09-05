@@ -50,6 +50,16 @@ defmodule EmisarWeb.RunnerDetailLive do
     access = Accounts.runner_access_for_subject(socket.assigns.current_subject)
 
     socket
+    |> assign(:runner_display_access, access)
+    |> project_runner(runner)
+  end
+
+  # Display facts are invalidated by membership access changes. Presence only
+  # changes connection metadata; mutations still authorize through the context.
+  defp project_runner(socket, runner) do
+    access = socket.assigns.runner_display_access
+
+    socket
     |> assign(:runner, runner)
     |> assign(:readiness, Runners.runner_readiness(runner, access))
     |> assign(:pack_access_restricted?, access.pack_mode == :restricted)
@@ -148,7 +158,10 @@ defmodule EmisarWeb.RunnerDetailLive do
   def handle_info(%{event: "presence_diff"} = event, socket) do
     change = Runners.normalize_connection_change(event)
     runner = Runners.project_runner_connection(socket.assigns.runner, change)
-    {:noreply, assign_runner(socket, runner)}
+
+    if runner == socket.assigns.runner,
+      do: {:noreply, socket},
+      else: {:noreply, project_runner(socket, runner)}
   end
 
   def handle_info(

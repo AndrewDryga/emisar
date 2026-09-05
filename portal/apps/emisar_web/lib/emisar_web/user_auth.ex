@@ -595,11 +595,8 @@ defmodule EmisarWeb.UserAuth do
   # First connect computes them + subscribes to the account's approvals, SSO,
   # packs, and runner-connections topics; `attach_hook`s then refresh whenever a
   # request is created/decided, a pack flips pending/resolved, or a runner connects/
-  # disconnects. The approvals hook returns `{:cont, ...}` so the host LV's own
-  # `handle_info/2` (e.g. reload the approvals table) still runs; the packs hook
-  # `{:halt}`s — no host LV needs that message; the fleet hook forwards
-  # `presence_diff` so host pages can patch their visible state, but `{:halt}`s
-  # its own topology-recompute tick.
+  # disconnects. Broadcasts continue to the host LiveView's own handler;
+  # only the hooks' private coalesced recompute ticks halt here.
   def on_mount(:track_pending_approvals, _params, _session, socket) do
     if Phoenix.LiveView.connected?(socket) and socket.assigns[:current_account] do
       account_id = socket.assigns.current_account.id
@@ -719,8 +716,14 @@ defmodule EmisarWeb.UserAuth do
   defp ensure_slug_unchanged(_params, _uri, socket), do: {:cont, socket}
 
   defp refresh_pending_approvals({:approval_updated, _}, socket) do
-    {:cont,
-     ShellChrome.put(socket,
+    {:cont, schedule_badge_recompute(socket, :approvals)}
+  end
+
+  defp refresh_pending_approvals({:recompute_nav_badge, :approvals}, socket) do
+    {:halt,
+     socket
+     |> clear_badge_recompute(:approvals)
+     |> ShellChrome.put(
        pending_approvals_count: approval_count_for(socket.assigns[:current_subject])
      )}
   end
@@ -728,8 +731,14 @@ defmodule EmisarWeb.UserAuth do
   defp refresh_pending_approvals(_msg, socket), do: {:cont, socket}
 
   defp refresh_pending_access_requests({:sso_link_requests_changed, _account_id}, socket) do
-    {:cont,
-     ShellChrome.put(socket,
+    {:cont, schedule_badge_recompute(socket, :access_requests)}
+  end
+
+  defp refresh_pending_access_requests({:recompute_nav_badge, :access_requests}, socket) do
+    {:halt,
+     socket
+     |> clear_badge_recompute(:access_requests)
+     |> ShellChrome.put(
        pending_access_requests_count: access_request_count_for(socket.assigns[:current_subject])
      )}
   end
@@ -742,13 +751,35 @@ defmodule EmisarWeb.UserAuth do
   # surface that gates dispatch authorization — showing "1 pending" beside a
   # stale list until someone reloaded, because its own handler never ran.
   defp refresh_pending_packs({:pack_trust_changed, _account_id}, socket) do
-    {:cont,
-     ShellChrome.put(socket,
+    {:cont, schedule_badge_recompute(socket, :packs)}
+  end
+
+  defp refresh_pending_packs({:recompute_nav_badge, :packs}, socket) do
+    {:halt,
+     socket
+     |> clear_badge_recompute(:packs)
+     |> ShellChrome.put(
        pending_packs_count: pack_pending_count_for(socket.assigns[:current_subject])
      )}
   end
 
   defp refresh_pending_packs(_msg, socket), do: {:cont, socket}
+
+  defp schedule_badge_recompute(socket, badge) do
+    pending = socket.assigns[:pending_badge_recomputes] || MapSet.new()
+
+    if MapSet.member?(pending, badge) do
+      socket
+    else
+      Process.send_after(self(), {:recompute_nav_badge, badge}, 500)
+      Phoenix.Component.assign(socket, :pending_badge_recomputes, MapSet.put(pending, badge))
+    end
+  end
+
+  defp clear_badge_recompute(socket, badge) do
+    pending = socket.assigns[:pending_badge_recomputes] || MapSet.new()
+    Phoenix.Component.assign(socket, :pending_badge_recomputes, MapSet.delete(pending, badge))
+  end
 
   # Heartbeats update Presence metadata without changing fleet connectivity.
   # Recompute the nav alert only for join-only or leave-only topology changes;

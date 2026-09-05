@@ -239,6 +239,31 @@ defmodule Emisar.Runners do
   end
 
   @doc """
+  Rechecks that every supplied runner id is currently visible, without loading
+  fleet payloads. Requires `view_runners`; a missing, deleted, foreign, or
+  out-of-scope id fails the whole set with `{:error, :unauthorized}`.
+  """
+  def ensure_runner_ids_visible(ids, %Subject{} = subject) when is_list(ids) do
+    with :ok <-
+           Auth.Authorizer.ensure_has_permissions(subject, Authorizer.view_runners_permission()),
+         true <- Enum.all?(ids, &Repo.valid_uuid?/1) do
+      ids = Enum.uniq(ids)
+
+      count =
+        Runner.Query.not_deleted()
+        |> Runner.Query.by_ids(ids)
+        |> scope_to_subject_membership(subject)
+        |> Authorizer.for_subject(subject)
+        |> Repo.aggregate(:count, :id)
+
+      if count == length(ids), do: :ok, else: {:error, :unauthorized}
+    else
+      false -> {:error, :unauthorized}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  @doc """
   `{:ok, [{runner_id, name}]}` for the subject's complete visible fleet, sorted
   by name. Selects only the two stable fields a runner dropdown renders and
   never reads Presence. Requires `view_runners`.

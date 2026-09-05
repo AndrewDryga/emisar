@@ -186,6 +186,10 @@ defmodule Emisar.Runs do
            ) do
       {preloads, opts} = Keyword.pop(opts, :preload, [])
 
+      # Run history grows without bound, including within a filter. Keep small
+      # totals exact and label planner estimates for sets too large to scan.
+      opts = Keyword.put_new(opts, :count, :auto)
+
       count_queryable =
         ActionRun.Query.all()
         |> Authorizer.for_subject(subject)

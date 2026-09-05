@@ -345,6 +345,29 @@ defmodule Emisar.RunsTest do
   end
 
   describe "list_runs/2" do
+    test "uses adaptive totals while preserving explicit count choices" do
+      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
+      run = Fixtures.Runs.create_run(account_id: account.id, runner_id: runner.id)
+      Fixtures.Runs.create_run()
+
+      assert {:ok, [listed], %{count: 1, count_kind: :exact}} = Runs.list_runs(subject)
+      assert listed.id == run.id
+
+      Emisar.Config.put_override(:emisar, :exact_count_ceiling, -1)
+
+      assert {:ok, [_listed], %{count_kind: :estimated}} = Runs.list_runs(subject)
+
+      assert {:ok, [_listed], %{count_kind: :estimated}} =
+               Runs.list_runs(subject, filter: [runner_id: runner.id])
+
+      assert {:ok, [_listed], %{count: 1, count_kind: :exact}} =
+               Runs.list_runs(subject, count: true)
+
+      assert {:ok, [_listed], %{count: nil, count_kind: nil}} =
+               Runs.list_runs(subject, count: false)
+    end
+
     test "pages the subject's account only (cross-account isolation)" do
       {_user, account, subject} = Fixtures.Subjects.owner_subject()
       runner = Fixtures.Runners.create_runner(account_id: account.id)

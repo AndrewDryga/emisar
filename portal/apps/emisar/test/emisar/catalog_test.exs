@@ -4441,6 +4441,38 @@ defmodule Emisar.CatalogTest do
     end
   end
 
+  describe "common_action/4" do
+    test "resolves the same trusted action as the full picker, and refuses absent selections" do
+      {account, subject} = account_with_owner()
+      runner = advertise_editor_action(account, subject, [])
+
+      assert {:ok, runners} = Runners.list_all_runners_for_account(subject, preload: [:online?])
+      assert {:ok, projection} = Catalog.build_editor_projection(runners, subject)
+      assert [action] = Catalog.common_actions(projection, [runner.id])
+
+      assert {:ok, ^action} =
+               Catalog.common_action(projection, [runner.id], "demo", "demo.inspect")
+
+      assert {:error, :not_found} =
+               Catalog.common_action(projection, [runner.id], "demo", "demo.missing")
+
+      assert {:error, :not_found} =
+               Catalog.common_action(projection, [], "demo", "demo.inspect")
+    end
+
+    test "a keyed selection cannot reconcile incompatible trusted contracts" do
+      {account, subject} = account_with_owner()
+      first = advertise_editor_action(account, subject, version: "1.0.0")
+      second = advertise_editor_action(account, subject, version: "2.0.0", risk: "critical")
+
+      assert {:ok, runners} = Runners.list_all_runners_for_account(subject, preload: [:online?])
+      assert {:ok, projection} = Catalog.build_editor_projection(runners, subject)
+
+      assert {:error, :not_found} =
+               Catalog.common_action(projection, [first.id, second.id], "demo", "demo.inspect")
+    end
+  end
+
   describe "select_common_action/1" do
     test "selects the newest exact candidate per runner and their shared contract" do
       older = editor_candidate("1.0.0")

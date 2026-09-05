@@ -1136,7 +1136,11 @@ defmodule EmisarWeb.PacksLiveTest do
       badge = "a[href='/app/#{account.slug}/packs'] span.tabular-nums"
       assert has_element?(lv, badge, "1")
 
+      :ok = Emisar.Catalog.subscribe_account_packs(account.id)
       render_click(lv, "override_retirement", %{"id" => pack_version.id})
+      account_id = account.id
+      assert_receive {:pack_trust_changed, ^account_id}
+      send(lv.pid, {:recompute_nav_badge, :packs})
 
       refute has_element?(lv, badge)
     end
