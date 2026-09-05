@@ -1358,6 +1358,8 @@ defmodule EmisarWeb.MarketingTest do
       assert html =~ "Signed dispatch uses your own PKI"
       assert html =~ "Identity and session flows now carry current authority"
       assert html =~ "The v1 failure-path pass"
+      assert html =~ "Reliable recovery and leaner internals"
+      assert html =~ "Runbook cancellation now survives a control-plane restart"
 
       assert html =~
                "This release takes the v1 audit through recovery, revocation, and publication paths"
@@ -1399,6 +1401,7 @@ defmodule EmisarWeb.MarketingTest do
       assert html =~ "v0.43.0"
       assert html =~ "v0.44.0"
       assert html =~ "v0.45.0"
+      assert html =~ "v0.46.0"
       assert html =~ "v0.15.0"
 
       # The first-party RSS feed, the repo, and the "see all" out-link.

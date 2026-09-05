@@ -17,6 +17,48 @@ defmodule EmisarWeb.Changelog do
 
   @entries [
     %{
+      date: ~D[2026-09-05],
+      slug: "reliable-recovery-and-leaner-internals",
+      title: "Reliable recovery and leaner internals",
+      tag: "v0.46.0",
+      summary:
+        "Runbook cancellation now survives a control-plane restart, and retried MCP draft changes recover their original result even after the draft changes again. Checkout reservations prevent repeated requests from creating another payable checkout; ambiguous provider responses remain pending until reconciliation can establish what happened. This release also removes unused code and duplicated helpers across the control plane, runner, bridge, and contributor tools.",
+      details: [
+        {"Security",
+         [
+           "SSO provider trust changes and session revocation commit together. OAuth client-metadata fetching now has one deadline covering the entire request.",
+           "Runner redaction now masks long private-key blocks and sensitive argument values cut by output limits. Default rules preserve public AWS access-key IDs while masking recognized secret-key and session-token fields.",
+           "MCP uninstall probes run as the invoking user instead of executing user-owned binaries with elevated privileges. The HTTP client dependency includes fixes for two HTTP/1 parsing advisories."
+         ]},
+        {"Runner",
+         [
+           "Every encoded progress frame stays within the transport limit, and output caps preserve valid UTF-8 across streamed results and journal previews.",
+           "Installers accept IPv6 loopback portal addresses, assess each installed MCP copy independently during upgrades, and report the configuration they retained.",
+           "When GitHub CLI is unavailable for provenance verification, interactive installers ask whether to continue; noninteractive installs print a warning."
+         ]},
+        {"Billing",
+         [
+           "Subscription conflicts have durable cleanup records, and cancellation is confirmed against the provider before local closure. Cancellation stops recurrence; the initial charge remains unchanged.",
+           "Self-hosters using live billing must stop old checkout producers and finish their in-flight requests before enabling checkout traffic on this version. Existing unresolved payment links block a fresh checkout."
+         ]},
+        {"MCP",
+         [
+           "Older draft operations without a saved result return operation_incomplete. Inspect the current draft before making another change."
+         ]},
+        {"Console",
+         [
+           "Manual agent setup shows the correct commands and configuration paths for Linux, macOS, and Windows.",
+           "Copy buttons preserve literal command content and whitespace, omit presentation prompts, and restore their contents after repeated clicks.",
+           "Removing an unadvertised retired pack version works again, and audit CSV exports stream instead of loading the complete export into memory."
+         ]},
+        {"Platform",
+         [
+           "Release migrations recover interrupted concurrent index builds and verify the expected index definition before continuing.",
+           "The database availability alert now selects the monitored database's actual metric identity."
+         ]}
+      ]
+    },
+    %{
       date: ~D[2026-09-04],
       slug: "v1-failure-path-pass",
       title: "The v1 failure-path pass",
