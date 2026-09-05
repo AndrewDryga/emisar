@@ -133,11 +133,8 @@ type Result struct {
 // swap it without locking out in-flight runs.
 type Engine struct {
 	registry atomic.Pointer[packs.Registry]
-	// admission and redactor are the two policy objects a config reload can
-	// replace. Behind atomic pointers for the same reason as the registry: a
-	// SIGHUP must apply an operator's tightened deny list (or new redaction
-	// rule) without waiting for in-flight runs, and a run reads each one at
-	// the moment it needs it.
+	// Reloads replace the policy snapshots used by subsequent actions without
+	// interrupting actions that already passed admission.
 	admission atomic.Pointer[admission.Policy]
 	redactor  atomic.Pointer[redact.Engine]
 
@@ -214,9 +211,8 @@ func (e *Engine) SetAdmission(policy *admission.Policy) { e.admission.Store(poli
 // Redactor returns the global output redaction engine (nil = none configured).
 func (e *Engine) Redactor() *redact.Engine { return e.redactor.Load() }
 
-// SetRedactor replaces the global redaction rules. Output is redacted as it
-// leaves the executor, so a reload applies to output produced after the swap,
-// including from a run that started before it.
+// SetRedactor replaces the global rules for subsequent actions. An in-flight
+// action keeps one redactor snapshot for its complete output.
 func (e *Engine) SetRedactor(r *redact.Engine) { e.redactor.Store(r) }
 
 // Registry returns the current pack registry. Safe to call from any
@@ -541,12 +537,12 @@ func (e *Engine) Run(ctx context.Context, req Request) (*Result, error) {
 		// further OnChunk can run — draining the held-back tails needs no lock.
 		if structuredJSON {
 			redactedStdout, hits, jsonRedactionFailed, redactionOverflow =
-				redactJSONOutput(combinedRedactor, rawJSONBuf.String(), plan.Limits.MaxStdoutBytes)
+				redactJSONOutput(combinedRedactor, rawJSONBuf.String(), plan.Limits.MaxStdoutBytes, execRes.Truncated.Stdout)
 			if redactedStdout != "" {
 				req.OnProgress(executor.StreamStdout, []byte(redactedStdout))
 			}
 		} else {
-			if tail := outRed.Flush(); len(tail) > 0 {
+			if tail := outRed.Flush(execRes.Truncated.Stdout); len(tail) > 0 {
 				tail = normalizeUTF8Bytes(tail)
 				if tail = stdoutBuf.take(tail); len(tail) > 0 {
 					req.OnProgress(executor.StreamStdout, tail)
@@ -555,7 +551,7 @@ func (e *Engine) Run(ctx context.Context, req Request) (*Result, error) {
 			redactedStdout = stdoutBuf.String()
 			hits = outRed.Hits()
 		}
-		if tail := errRed.Flush(); len(tail) > 0 {
+		if tail := errRed.Flush(execRes.Truncated.Stderr); len(tail) > 0 {
 			tail = normalizeUTF8Bytes(tail)
 			if tail = stderrBuf.take(tail); len(tail) > 0 {
 				req.OnProgress(executor.StreamStderr, tail)
@@ -567,13 +563,13 @@ func (e *Engine) Run(ctx context.Context, req Request) (*Result, error) {
 		var hs1, hs2 []redact.Hit
 		if structuredJSON {
 			redactedStdout, hs1, jsonRedactionFailed, redactionOverflow =
-				redactJSONOutput(combinedRedactor, execRes.Stdout, plan.Limits.MaxStdoutBytes)
+				redactJSONOutput(combinedRedactor, execRes.Stdout, plan.Limits.MaxStdoutBytes, execRes.Truncated.Stdout)
 		} else {
-			redactedStdout, hs1 = combinedRedactor.Apply(execRes.Stdout)
+			redactedStdout, hs1 = combinedRedactor.ApplyOutput(execRes.Stdout, execRes.Truncated.Stdout)
 			redactedStdout = normalizeUTF8String(redactedStdout)
 			redactedStdout = string(stdoutBuf.take([]byte(redactedStdout)))
 		}
-		redactedStderr, hs2 = combinedRedactor.Apply(execRes.Stderr)
+		redactedStderr, hs2 = combinedRedactor.ApplyOutput(execRes.Stderr, execRes.Truncated.Stderr)
 		redactedStderr = normalizeUTF8String(redactedStderr)
 		redactedStderr = string(stderrBuf.take([]byte(redactedStderr)))
 		hits = redact.MergeHits(hs1, hs2)
@@ -693,8 +689,8 @@ func (e *Engine) Run(ctx context.Context, req Request) (*Result, error) {
 // that. The visible cap lives HERE rather than in the executor because a cap
 // applied to raw bytes can cut a sensitive value in half: the literal rule
 // synthesized for it then matches nothing and the prefix leaves the host
-// unmasked. streamPipe lets the raw stream overshoot to a line boundary and
-// this is where the overshoot is taken back off.
+// unmasked. The redactor masks known literal prefixes when raw input was cut;
+// this is where streamPipe's bounded line overshoot is taken back off.
 type boundedOutput struct {
 	limit     int
 	buf       strings.Builder
@@ -722,7 +718,15 @@ func (b *boundedOutput) String() string { return b.buf.String() }
 // dropped rather than trimmed — half a JSON document is not a document, and
 // the caller turns the overflow into a validation failure — while text from
 // the invalid-JSON fallback is simply cut like any other text stream.
-func redactJSONOutput(redactor *redact.Engine, raw string, limit int) (string, []redact.Hit, bool, bool) {
+func redactJSONOutput(redactor *redact.Engine, raw string, limit int, truncated bool) (string, []redact.Hit, bool, bool) {
+	if truncated {
+		// A truncated prefix may itself be valid JSON while ending inside a
+		// known secret. Use prefix-aware text redaction; schema validation
+		// independently refuses the executor's truncated output below.
+		text, hits := redactor.ApplyOutput(raw, true)
+		buf := boundedOutput{limit: limit}
+		return string(buf.take([]byte(normalizeUTF8String(text)))), hits, false, false
+	}
 	redacted, hits, err := redactor.ApplyJSON([]byte(raw))
 	switch {
 	case err == nil:
@@ -731,7 +735,7 @@ func redactJSONOutput(redactor *redact.Engine, raw string, limit int) (string, [
 		}
 		return string(redacted), hits, false, false
 	case errors.Is(err, redact.ErrInvalidJSON):
-		text, textHits := redactor.Apply(raw)
+		text, textHits := redactor.ApplyOutput(raw, truncated)
 		text = normalizeUTF8String(text)
 		if len(text) > limit {
 			text = text[:limit]

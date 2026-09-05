@@ -2,6 +2,7 @@ package engine
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"log/slog"
@@ -16,6 +17,83 @@ import (
 	"github.com/andrewdryga/emisar/runner/internal/redact"
 	"github.com/andrewdryga/emisar/runner/pkg/actionspec"
 )
+
+func TestRedactJSONOutput_TruncatedValidDocumentMasksSecretPrefix(t *testing.T) {
+	redactor := redact.New([]redact.Rule{redact.LiteralSet("arguments", []string{"abc\"}\nMORE_SECRET"}, "[REDACTED]")})
+	got, hits, failed, overflow := redactJSONOutput(redactor, "{\"x\":\"abc\"}\n", 128, true)
+	if got != "{\"x\":\"[REDACTED]" || len(hits) != 1 || failed || overflow {
+		t.Fatalf("truncated JSON prefix was not safely redacted: output=%q hits=%v failed=%t overflow=%t", got, hits, failed, overflow)
+	}
+}
+
+func TestEngine_LongMultilineSensitiveArgumentRemainsMasked(t *testing.T) {
+	const action = `
+schema_version: 1
+id: t.multiline_secret
+title: Multiline sensitive argument
+kind: exec
+risk: medium
+description: Echo a synthetic sensitive argument to both streams.
+side_effects: [none]
+args:
+  - {name: token, type: string, required: true, sensitive: true}
+execution:
+  command:
+    binary: /bin/sh
+    argv: ["-c", "printf '%s' \"$VALUE\"; printf '%s' \"$VALUE\" >&2"]
+  env:
+    VALUE: "{{ args.token }}"
+  timeout: 5s
+output:
+  parser: text
+  max_stdout_bytes: 65536
+  max_stdout_bytes_min: 128
+  max_stderr_bytes: 65536
+  max_stderr_bytes_min: 128
+`
+	args := map[string]any{"token": strings.Repeat("SYNTHETIC_SECRET!\n", 1600)}
+	raw, err := json.Marshal(args)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(raw) > 32768 {
+		t.Fatal("sensitive argument must fit the wire argument limit")
+	}
+	for _, parser := range []string{"text", "json"} {
+		e, journal, _ := setupEngineExtra(t, map[string]string{"multiline_secret.yaml": strings.Replace(action, "parser: text", "parser: "+parser, 1)})
+		t.Cleanup(func() { _ = journal.Close() })
+		for _, limit := range []int{128, 16384, 65536} {
+			for _, streaming := range []bool{false, true} {
+				t.Run(fmt.Sprintf("parser_%s_limit_%d_streaming_%t", parser, limit, streaming), func(t *testing.T) {
+					var stdout, stderr strings.Builder
+					req := Request{ActionID: "t.multiline_secret", Args: args, Reason: "test", Opts: Opts{MaxStdoutBytes: limit, MaxStderrBytes: limit}}
+					if streaming {
+						req.OnProgress = func(stream executor.Stream, data []byte) {
+							if stream == executor.StreamStdout {
+								stdout.Write(data)
+							} else {
+								stderr.Write(data)
+							}
+						}
+					}
+					result, err := e.Run(t.Context(), req)
+					if err != nil {
+						t.Fatal(err)
+					}
+					if result.Status != StatusSuccess {
+						t.Fatalf("status=%s reason=%s", result.Status, result.Reason)
+					}
+					if result.Stdout != "[REDACTED]" || result.Stderr != "[REDACTED]" {
+						t.Fatal("a sensitive argument escaped into retained output")
+					}
+					if streaming && (stdout.String() != "[REDACTED]" || stderr.String() != "[REDACTED]") {
+						t.Fatal("a sensitive argument escaped in progress output")
+					}
+				})
+			}
+		}
+	}
+}
 
 // TestEngine_ScalarArgIsLiteralArgvNoShell proves an LLM-supplied arg with
 // shell metacharacters is passed to the process as ONE literal argv element
