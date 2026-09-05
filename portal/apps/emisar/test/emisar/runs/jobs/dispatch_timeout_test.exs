@@ -296,12 +296,134 @@ defmodule Emisar.Runs.Jobs.DispatchTimeoutTest do
     runner = backdate_disconnect!(runner, 10 * 60)
     runs = Enum.map(1..3, fn _ -> pending_run_for(runner, 5 * 60) end)
 
-    assert DispatchTimeout.execute([]) == :ok
+    assert DispatchTimeout.execute(batch_size: 2) == :ok
 
     assert Enum.all?(runs, fn run ->
              reloaded = Runs.peek_run_by_id(run.id)
              reloaded.status == :error and reloaded.error_message =~ "offline"
            end)
+  end
+
+  test "healthy running pages cannot starve a later offline run" do
+    online = Fixtures.Runners.create_runner(connected?: true)
+    offline = Fixtures.Runners.create_runner(account_id: online.account_id, connected?: false)
+    runs = Enum.map(1..3, fn _ -> running_run_for(online) end) |> Enum.sort_by(& &1.id)
+    [first, second, last] = runs
+    last |> Ecto.Changeset.change(runner_id: offline.id, status: :cancelling) |> Repo.update!()
+
+    assert DispatchTimeout.execute(batch_size: 2) == :ok
+    assert Runs.peek_run_by_id(first.id).status == :running
+    assert Runs.peek_run_by_id(second.id).status == :running
+    assert Runs.peek_run_by_id(last.id).status == :error
+  end
+
+  test "sent runs waiting for successor replay do not starve a later disconnected dispatch" do
+    online = Fixtures.Runners.create_runner(connected?: true)
+    offline = Fixtures.Runners.create_runner(account_id: online.account_id, connected?: false)
+
+    runs =
+      Enum.map(1..3, fn _ ->
+        sent_run_for(online, 300)
+        |> Ecto.Changeset.change(runner_connection_generation: online.connection_generation - 1)
+        |> Repo.update!()
+      end)
+      |> Enum.sort_by(& &1.id)
+
+    [first, second, last] = runs
+    last |> Ecto.Changeset.change(runner_id: offline.id) |> Repo.update!()
+
+    assert DispatchTimeout.execute(batch_size: 2) == :ok
+    assert Runs.peek_run_by_id(first.id).status == :sent
+    assert Runs.peek_run_by_id(second.id).status == :sent
+    assert Runs.peek_run_by_id(last.id).status == :error
+  end
+
+  test "pending pages dispatch the actual oldest run only once per runner" do
+    runner = Fixtures.Runners.create_runner(connected?: true)
+    Runners.subscribe_runner_transport(runner)
+    runs = Enum.map(1..5, fn _ -> pending_run_for(runner, 300) end) |> Enum.sort_by(& &1.id)
+    oldest = List.last(runs)
+
+    oldest
+    |> Ecto.Changeset.change(inserted_at: DateTime.add(DateTime.utc_now(), -600, :second))
+    |> Repo.update!()
+
+    assert DispatchTimeout.execute(batch_size: 2) == :ok
+    assert Runs.peek_run_by_id(oldest.id).status == :sent
+    assert Enum.all?(Enum.drop(runs, -1), &(Runs.peek_run_by_id(&1.id).status == :pending))
+    assert_receive {:cloud_to_runner, _generation, %{"request_id" => request_id}}, 500
+    assert request_id == oldest.request_id
+    refute_receive {:cloud_to_runner, _generation, %{"type" => "run_action"}}, 50
+  end
+
+  test "healthy running runs use one slim connection query per page, not per run" do
+    runner = Fixtures.Runners.create_runner(connected?: true)
+    Enum.each(1..7, fn _ -> running_run_for(runner) end)
+    test_pid = self()
+    handler = {__MODULE__, test_pid, make_ref()}
+
+    :ok =
+      :telemetry.attach(
+        handler,
+        [:emisar, :repo, :query],
+        fn _event, _measurements, metadata, _config ->
+          if self() == test_pid, do: send(test_pid, {:sweep_query, metadata.query})
+        end,
+        nil
+      )
+
+    on_exit(fn -> :telemetry.detach(handler) end)
+    assert DispatchTimeout.execute(batch_size: 3) == :ok
+    queries = drain_sweep_queries()
+    runner_queries = Enum.filter(queries, &String.contains?(&1, ~s(FROM "runners")))
+    assert length(runner_queries) == 3
+    assert Enum.all?(runner_queries, &String.contains?(&1, "unnest"))
+    refute Enum.any?(runner_queries, &String.contains?(&1, ~s("packs")))
+    refute Enum.any?(queries, &String.contains?(&1, ~s("args_raw")))
+  end
+
+  for status <- [:pending, :sent, :running] do
+    test "a reconnect after the batch lease read is checked before failing a #{status} run" do
+      runner = Fixtures.Runners.create_runner(connected?: false)
+
+      run =
+        case unquote(status) do
+          :pending -> pending_run_for(runner, 300)
+          :sent -> sent_run_for(runner, 300)
+          :running -> running_run_for(runner)
+        end
+
+      test_pid = self()
+      handler = {__MODULE__, test_pid, make_ref()}
+      Process.put(handler, :reconnect)
+
+      :ok =
+        :telemetry.attach(
+          handler,
+          [:emisar, :repo, :query],
+          fn _event, _measurements, metadata, _config ->
+            if self() == test_pid and String.contains?(metadata.query, "unnest") and
+                 Process.delete(handler) == :reconnect do
+              send(test_pid, {:reconnected, Runners.connect_runner(runner)})
+            end
+          end,
+          nil
+        )
+
+      on_exit(fn -> :telemetry.detach(handler) end)
+      assert DispatchTimeout.execute(batch_size: 2) == :ok
+      assert_received {:reconnected, {:ok, _runner}}
+      expected = if unquote(status) == :running, do: :running, else: :sent
+      assert Runs.peek_run_by_id(run.id).status == expected
+    end
+  end
+
+  defp drain_sweep_queries(queries \\ []) do
+    receive do
+      {:sweep_query, query} -> drain_sweep_queries([query | queries])
+    after
+      0 -> Enum.reverse(queries)
+    end
   end
 
   test "a pending queue advances when its stale sent head times out" do

@@ -39,6 +39,8 @@ defmodule Emisar.Fixtures.Policies do
       Policies.Policy.Changeset.create(%{
         account_id: account_id,
         updated_by_id: user_id,
+        scope_type: attrs[:scope_type] || :account,
+        scope_value: attrs[:scope_value] || "",
         rules: rules
       })
 

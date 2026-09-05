@@ -109,6 +109,26 @@ defmodule Emisar.Runners do
     end
   end
 
+  @doc "Internal — current labels for a bounded, already authorized policy page."
+  def current_runner_labels_for_ids(account_id, ids)
+      when is_binary(account_id) and is_list(ids) and length(ids) <= 100 do
+    Runner.Query.not_deleted()
+    |> Runner.Query.by_account_id(account_id)
+    |> Runner.Query.select_labels(ids, :name)
+    |> Repo.all()
+    |> Map.new()
+  end
+
+  @doc "Internal — SQL target projection for an already authorized current access snapshot."
+  def scope_targets_query(account_id, %Accounts.RunnerAccess{} = access) do
+    groups = if access.mode == :restricted, do: access.groups, else: []
+
+    Runner.Query.not_deleted()
+    |> Runner.Query.by_account_id(account_id)
+    |> scope_to_runner_access(access)
+    |> Emisar.Runners.ScopeTarget.Query.all(account_id, groups)
+  end
+
   @doc """
   Internal — bounded account-scoped facts for checking a previously authorized
   resource against current membership runner access. Missing or cross-account
@@ -233,6 +253,29 @@ defmodule Emisar.Runners do
         |> Authorizer.for_subject(subject)
         |> Repo.all()
         |> apply_runner_preloads(preloads)
+
+      {:ok, runners}
+    end
+  end
+
+  @doc """
+  Slim, freshly scoped runner facts for model discovery, with live connection
+  fields. `:ids` optionally narrows hydration to selected inventory rows; it
+  never bypasses current membership, account or runner scope. Returns `{:ok, runners}`.
+  """
+  def list_model_runners(%Subject{} = subject, opts \\ []) do
+    with :ok <-
+           Auth.Authorizer.ensure_has_permissions(subject, Authorizer.view_runners_permission()) do
+      query = Runner.Query.not_deleted()
+      query = if ids = Keyword.get(opts, :ids), do: Runner.Query.by_ids(query, ids), else: query
+
+      runners =
+        query
+        |> Runner.Query.select_model_fields()
+        |> scope_to_subject_membership(subject)
+        |> Authorizer.for_subject(subject)
+        |> Repo.all()
+        |> apply_runner_preloads([:online?])
 
       {:ok, runners}
     end
@@ -983,23 +1026,53 @@ defmodule Emisar.Runners do
   end
 
   @doc """
-  Internal — the inactivity-retention sweep for one account: the daily
+  Internal — the inactivity-retention sweep for one account: the hourly
   `Runners.Jobs.InactiveRunnerRetention` tick (no subject → system audit actor,
   account-wide) and `sweep_inactive_runners/1` (operator actor, narrowed to that
   operator's runner access). Soft-deletes every in-scope runner cleanly offline
   for `hours` hours — durably disconnected with a last disconnect older than the
-  cutoff — and records ONE `runner.retention_swept` audit event only when
-  something was removed. Returns `{:ok, deleted_count}`.
+  cutoff in bounded transactions, each recording one `runner.retention_swept`
+  event only when something was removed. Returns `{:ok, deleted_count}`;
+  a later batch failure leaves earlier committed deletions and receipts intact.
 
   Conservative by construction: a currently-connected runner (a later
   `last_connected_at`), a never-connected runner, and a disabled runner (a
   deliberate reversible park) are all excluded, so the sweep only removes hosts
   that connected and have since stayed gone.
   """
-  def delete_inactive_runners(account_id, hours, subject \\ nil)
+  def delete_inactive_runners(account_id, hours, subject \\ nil, opts \\ [])
       when is_binary(account_id) and is_integer(hours) and hours > 0 do
     cutoff = DateTime.add(DateTime.utc_now(), -hours * 3_600, :second)
+    batch_size = opts |> Keyword.get(:batch_size, 100) |> max(1) |> min(100)
+    delete_inactive_runner_batches(account_id, hours, subject, cutoff, batch_size, nil, 0)
+  end
 
+  defp delete_inactive_runner_batches(account_id, hours, subject, cutoff, limit, cursor, total) do
+    result = delete_inactive_runner_batch(account_id, hours, subject, cutoff, limit, cursor)
+
+    case result do
+      {:ok, %{runners: []}} ->
+        {:ok, total}
+
+      {:ok, %{runners: runners, deleted: deleted}} ->
+        cursor = List.last(runners).id
+
+        delete_inactive_runner_batches(
+          account_id,
+          hours,
+          subject,
+          cutoff,
+          limit,
+          cursor,
+          total + length(deleted)
+        )
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
+  defp delete_inactive_runner_batch(account_id, hours, subject, cutoff, limit, cursor) do
     Multi.new()
     |> Multi.run(:runners, fn repo, _changes ->
       queryable =
@@ -1008,8 +1081,10 @@ defmodule Emisar.Runners do
         |> Runner.Query.not_disabled()
         |> Runner.Query.disconnected()
         |> Runner.Query.last_disconnected_before(cutoff)
-        |> scope_sweep_to_subject(subject)
+        |> Runner.Query.after_id(cursor)
+        |> Runner.Query.retention_batch(limit)
         |> Runner.Query.lock_for_update()
+        |> scope_sweep_to_subject(subject)
 
       {:ok, repo.all(queryable)}
     end)
@@ -1018,24 +1093,22 @@ defmodule Emisar.Runners do
 
       queryable =
         Runner.Query.all()
+        |> Runner.Query.by_account_id(account_id)
         |> Runner.Query.by_ids(Enum.map(runners, & &1.id))
+        |> Runner.Query.select_retention_fields()
 
-      {count, _} = repo.update_all(queryable, set: [deleted_at: now, updated_at: now])
-      {:ok, count}
+      {_count, deleted} = repo.update_all(queryable, set: [deleted_at: now, updated_at: now])
+      {:ok, deleted}
     end)
-    |> Multi.run(:audit, fn repo, %{runners: runners} ->
-      record_inactivity_sweep(repo, runners, hours, subject)
+    |> Multi.run(:audit, fn repo, %{deleted: deleted} ->
+      record_inactivity_sweep(repo, deleted, hours, subject)
     end)
     |> Multi.run(:quantity_sync, fn repo, %{deleted: deleted} ->
-      if deleted > 0,
+      if deleted != [],
         do: Billing.request_runner_quantity_sync(account_id, repo: repo),
         else: {:ok, :not_requested}
     end)
     |> Repo.commit_multi()
-    |> case do
-      {:ok, %{deleted: deleted}} -> {:ok, deleted}
-      {:error, reason} -> {:error, reason}
-    end
   end
 
   # No marker when nothing was removed — scheduled housekeeping must not
@@ -1052,52 +1125,76 @@ defmodule Emisar.Runners do
   # not delete beyond their scope. The nightly job passes no subject and stays
   # account-wide; an owner (or any all-access member) resolves to unrestricted.
   defp scope_sweep_to_subject(queryable, %Subject{} = subject),
-    do: scope_to_subject_membership(queryable, subject)
+    do: queryable |> scope_to_subject_membership(subject) |> Authorizer.for_subject(subject)
 
   defp scope_sweep_to_subject(queryable, nil), do: queryable
 
   @doc """
-  Internal — every runner whose advertised packs still matter, for pack
-  retention.
-
-  Deliberately NOT the connected set. Disable is a reversible park (see
-  `shared-runner-lifecycle-states`), and a disconnected runner reconnects — but
-  the retention sweep read `list_connected_runners_for_account/2`, so parking a
-  runner for maintenance eventually hard-deleted its `catalog_pack_versions`
-  rows INCLUDING the trusted ones. Re-enabling then left every pack `:pending`
-  and dispatch failing closed until an admin re-reviewed each hash, with nothing
-  having warned that a reversible action cost that.
-
-  A merely DISCONNECTED runner is not shielded — that case ages out exactly as
-  before — and neither is a deleted one.
+  Internal — the bounded candidate `{pack_id, version}` pairs protected from
+  age retention by a durably connected or deliberately disabled runner. A
+  reversible park preserves trust pins; merely offline and deleted hosts do not.
+  Reads no fleet rows or pack maps into memory. Accepts a transaction `:repo`.
   """
-  def list_pack_referencing_runners_for_account(account_id, opts \\ [])
-      when is_binary(account_id) do
+  def list_retention_protected_pack_refs(account_id, refs, opts \\ [])
+      when is_binary(account_id) and is_list(refs) and length(refs) <= 100 do
     repo = Keyword.get(opts, :repo, Repo)
 
     Runner.Query.not_deleted()
     |> Runner.Query.connected_or_disabled()
     |> Runner.Query.by_account_id(account_id)
+    |> Emisar.Runners.PackReference.Query.advertised_refs(refs)
     |> repo.all()
   end
 
   @doc """
-  Internal — every non-deleted runner's durable pack advertisement in an
-  account (`%{id, name, group, packs}`), whatever its connection state. The
-  retired-version bookkeeping judges "no runner is on it" from this set: an
-  offline host that still lists a version simply re-advertises it on
-  reconnect, so it protects the row exactly as the console's advertiser
-  facts (`list_pack_advertisement_facts/2`) count it. Only a deleted runner
-  is gone for good.
+  Internal — bounded candidate pairs advertised by ANY non-deleted runner,
+  including offline hosts. Retirement has no age window: an offline host still
+  lists what it will re-advertise on reconnect. Accepts a transaction `:repo`.
   """
-  def list_pack_advertisement_facts_for_account(account_id, opts \\ [])
-      when is_binary(account_id) do
+  def list_advertised_pack_refs(account_id, refs, opts \\ [])
+      when is_binary(account_id) and is_list(refs) and length(refs) <= 100 do
     repo = Keyword.get(opts, :repo, Repo)
 
     Runner.Query.not_deleted()
     |> Runner.Query.by_account_id(account_id)
-    |> Runner.Query.select_pack_advertisement_facts()
+    |> Emisar.Runners.PackReference.Query.advertised_refs(refs)
     |> repo.all()
+  end
+
+  @doc """
+  Internal — which bounded `{pack_id, version, effective_hash}` candidates are
+  visible in the subject's current runner reach. Both JSON values must be exact
+  strings; retention's version-only protection is deliberately a separate read.
+  Accepts a transaction `:repo`; no runner or advertisement maps are returned.
+  """
+  def list_visible_pack_deployments(deployments, %Subject{} = subject, opts \\ [])
+      when is_list(deployments) and length(deployments) <= 100 do
+    with :ok <-
+           Auth.Authorizer.ensure_has_permissions(subject, Authorizer.view_runners_permission()) do
+      repo = Keyword.get(opts, :repo, Repo)
+      access = Accounts.runner_access_for_subject(subject)
+
+      case access.mode do
+        :all ->
+          {:ok, deployments}
+
+        :none ->
+          {:ok, []}
+
+        :restricted ->
+          runners =
+            Runner.Query.not_deleted()
+            |> scope_to_runner_access(access)
+            |> Authorizer.for_subject(subject)
+
+          visible =
+            runners
+            |> Emisar.Runners.PackReference.Query.visible_deployments(deployments)
+            |> repo.all()
+
+          {:ok, visible}
+      end
+    end
   end
 
   # -- Runner socket-driven connection state ---------------------------
@@ -1973,6 +2070,27 @@ defmodule Emisar.Runners do
     if active_connection_lease?(runner),
       do: {:ok, runner.connection_generation},
       else: {:error, :not_connected}
+  end
+
+  @doc """
+  Internal — positive lease facts for one bounded timeout-sweep page, keyed by
+  exact `{account_id, runner_id}`. Missing entries are not a terminal verdict:
+  a caller must check the current connection again before failing a run.
+  """
+  def current_connection_generations([]), do: %{}
+
+  def current_connection_generations(account_runner_pairs) when is_list(account_runner_pairs) do
+    pairs = Enum.uniq(account_runner_pairs)
+
+    Runner.Query.not_deleted()
+    |> Runner.Query.not_disabled()
+    |> Runner.Query.with_active_account()
+    |> Runner.Query.by_account_runner_pairs(pairs)
+    |> Runner.Query.select_current_connection_generations(DateTime.utc_now())
+    |> Repo.all()
+    |> Map.new(fn {account_id, runner_id, generation} ->
+      {{account_id, runner_id}, generation}
+    end)
   end
 
   defp active_connection_lease?(%Runner{

@@ -28,9 +28,9 @@ defmodule Emisar.Policies do
       }
   """
   alias Ecto.Multi
-  alias Emisar.{Accounts, Audit, Auth, Repo, Runners}
+  alias Emisar.{Accounts, Audit, Auth, Catalog, Repo, Runners}
   alias Emisar.Auth.Subject
-  alias Emisar.Policies.{Authorizer, Glob, Policy}
+  alias Emisar.Policies.{Authorizer, Glob, Policy, Target}
 
   @risk_tiers ~w(low medium high critical)
   @decisions ~w(allow require_approval deny)
@@ -144,48 +144,6 @@ defmodule Emisar.Policies do
   end
 
   def shadowed_overrides(_rules), do: []
-
-  @doc """
-  The overrides in `rules` whose glob matches no action in `action_risks`.
-
-  An override that matches nothing is not invalid — an operator may write a rule
-  before installing the pack it targets — so this is advisory, never a
-  validation error. It exists because a rule that silently does nothing looks
-  exactly like a rule that works: the glob grammar treats every character except
-  `*` as a literal, so a regex-flavored `cassandra\\.drop_*` reads as protection
-  and can never match an action id. A `deny` is the case that matters — the
-  operator believes the fleet is covered.
-
-  Uses the same `Glob` matcher dispatch uses. Pure (no Subject / Repo, like
-  `shadowed_overrides/1`). Returns `[%{index: i}]` in row order, and nothing at
-  all for an empty catalog, where every override would look unmatched.
-  """
-  def unmatched_overrides(rules, action_risks) when is_map(rules) and is_map(action_risks) do
-    action_ids = Map.keys(action_risks)
-
-    if action_ids == [] do
-      []
-    else
-      for {override, index} <- Enum.with_index(overrides_for(rules)),
-          unmatched_override?(override, action_ids),
-          do: %{index: index}
-    end
-  end
-
-  def unmatched_overrides(_rules, _action_risks), do: []
-
-  # A blank glob is the editor's half-filled row, which owns its own required
-  # error — reporting it as unmatched too would just double up on that row.
-  defp unmatched_override?(override, action_ids) do
-    case override_action(override) do
-      glob when is_binary(glob) and glob != "" ->
-        matcher = Glob.compile(glob)
-        not Enum.any?(action_ids, &Glob.match_compiled?(matcher, &1))
-
-      _blank ->
-        false
-    end
-  end
 
   # Index of the first earlier override whose glob subsumes `glob` (skipping
   # blank-glob earlier rows, which can't subsume anything), or nil.
@@ -440,29 +398,123 @@ defmodule Emisar.Policies do
 
   defp approval_snapshot(_decision, _policy), do: nil
 
-  @doc """
-  The runner/group policy overrides (every non-account scope) whose target the
-  subject can actually reach, newest scope grouping first. The account default is
-  read via `fetch_policy/1`; this is the list the editor shows beneath it.
+  @doc "Lists a bounded page of reachable saved targets, without policy rules."
+  def list_scoped_policy_summaries(%Subject{} = subject, opts \\ []) do
+    with :ok <-
+           Auth.Authorizer.ensure_has_permissions(subject, Authorizer.view_policies_permission()),
+         {:ok, summaries, metadata} <- scoped_summary_page(subject, opts) do
+      summaries =
+        Enum.map(summaries, fn summary ->
+          %{summary | scope_type: if(summary.scope_type == "runner", do: :runner, else: :group)}
+        end)
 
-  A ruleset NAMES its target in `scope_value` and spells out what may run there,
-  so a member restricted away from a runner or group never sees its ruleset: an
-  unrestricted member gets every override, a restricted one gets those scoped to
-  a runner in their fleet or a group they hold, and a `none` member gets nothing.
+      ids = for %{scope_type: :runner, scope_value: id} <- summaries, Repo.valid_uuid?(id), do: id
+      labels = Runners.current_runner_labels_for_ids(subject.account.id, ids)
+
+      summaries =
+        Enum.map(summaries, fn summary ->
+          label =
+            if summary.scope_type == :runner,
+              do: Map.get(labels, summary.scope_value, summary.scope_value),
+              else: summary.scope_value
+
+          Map.put(summary, :target_label, label)
+        end)
+
+      {:ok, summaries, metadata}
+    end
+  end
+
+  defp scoped_summary_page(subject, opts) do
+    Policy.Query.not_deleted()
+    |> Policy.Query.scoped_overrides()
+    |> scope_to_runner_access(subject)
+    |> Policy.Query.select_summary()
+    |> Authorizer.for_subject(subject)
+    |> Repo.list(Policy.Query, bounded_page(opts, 25, :auto))
+  end
+
+  @doc "Loads one reachable saved editor; foreign, deleted and hidden rows are not found."
+  def fetch_scoped_policy_by_id(id, %Subject{} = subject) do
+    with :ok <-
+           Auth.Authorizer.ensure_has_permissions(subject, Authorizer.view_policies_permission()),
+         true <- Repo.valid_uuid?(id) do
+      Policy.Query.not_deleted()
+      |> Policy.Query.scoped_overrides()
+      |> Policy.Query.by_id(id)
+      |> scope_to_runner_access(subject)
+      |> Authorizer.for_subject(subject)
+      |> Repo.fetch(Policy.Query)
+    else
+      false -> {:error, :not_found}
+      error -> error
+    end
+  end
+
+  @doc """
+  A bounded, searchable target page, including globally taken targets.
+
+  Returns `{:error, :invalid_search}` for malformed UTF-8, null characters or
+  search terms longer than 512 bytes.
   """
-  def list_scoped_policies(%Subject{} = subject) do
+  def list_scope_target_options(search, %Subject{} = subject, opts \\ []) do
+    with :ok <-
+           Auth.Authorizer.ensure_has_permissions(subject, Authorizer.view_policies_permission()),
+         {:ok, search} <- target_search(search) do
+      target_query(subject)
+      |> Target.Query.with_policy()
+      |> Target.Query.search(search)
+      |> Authorizer.for_subject(subject)
+      |> Repo.list(Target.Query, bounded_page(opts, 25, false))
+    end
+  end
+
+  defp target_search(search) when is_binary(search) and byte_size(search) <= 512 do
+    if String.valid?(search) and not String.contains?(search, <<0>>),
+      do: {:ok, String.trim(search)},
+      else: {:error, :invalid_search}
+  end
+
+  defp target_search(_search), do: {:error, :invalid_search}
+
+  @doc "Resolves a selected target independently of its current search page."
+  def fetch_scope_target_option(scope_type, scope_value, %Subject{} = subject)
+      when scope_type in [:runner, :group] and is_binary(scope_value) do
     with :ok <-
            Auth.Authorizer.ensure_has_permissions(subject, Authorizer.view_policies_permission()) do
-      results =
-        Policy.Query.not_deleted()
-        |> Policy.Query.scoped_overrides()
-        |> Policy.Query.ordered_by_scope()
-        |> scope_to_runner_access(subject)
-        |> Authorizer.for_subject(subject)
-        |> Repo.all()
-
-      {:ok, results}
+      target_query(subject)
+      |> Target.Query.by_scope(scope_type, scope_value)
+      |> Target.Query.with_policy()
+      |> Authorizer.for_subject(subject)
+      |> Repo.fetch(Target.Query)
     end
+  end
+
+  @doc "Whether any reachable target remains after saved policies and all open drafts."
+  def scope_target_available?(reserved, %Subject{} = subject) when is_list(reserved) do
+    with :ok <-
+           Auth.Authorizer.ensure_has_permissions(subject, Authorizer.view_policies_permission()) do
+      available? =
+        target_query(subject)
+        |> Target.Query.with_policy()
+        |> Target.Query.available(reserved)
+        |> Authorizer.for_subject(subject)
+        |> Repo.exists?()
+
+      {:ok, available?}
+    end
+  end
+
+  defp target_query(subject) do
+    subject.account.id
+    |> Runners.scope_targets_query(Accounts.runner_access_for_subject(subject))
+    |> Target.Query.all()
+  end
+
+  defp bounded_page(opts, limit, count) do
+    page = Keyword.get(opts, :page, [])
+    page = Keyword.put(page, :limit, min(Keyword.get(page, :limit, limit), limit))
+    opts |> Keyword.put(:page, page) |> Keyword.put(:count, count)
   end
 
   # Per-member runner access is the third gate: `Authorizer.for_subject/2` scopes
@@ -475,8 +527,8 @@ defmodule Emisar.Policies do
         queryable
 
       access ->
-        {runner_ids, groups} = Runners.reachable_scope_values(subject.account.id, access)
-        Policy.Query.by_scope_reach(queryable, runner_ids, groups)
+        targets = Runners.scope_targets_query(subject.account.id, access)
+        Policy.Query.by_scope_targets(queryable, targets)
     end
   end
 
@@ -739,9 +791,7 @@ defmodule Emisar.Policies do
   defp ensure_scope_in_reach(:account, _scope_value, %Subject{}), do: :ok
 
   defp ensure_scope_in_reach(:runner, runner_id, %Subject{} = subject) do
-    access = Accounts.runner_access_for_subject(subject)
-    {runner_ids, _groups} = Runners.reachable_scope_values(subject.account.id, access)
-    if runner_id in runner_ids, do: :ok, else: {:error, :runner_not_found}
+    if target_reachable?(:runner, runner_id, subject), do: :ok, else: {:error, :runner_not_found}
   end
 
   # A group is a NAME, not a host, and an UNRESTRICTED writer can already see
@@ -757,13 +807,162 @@ defmodule Emisar.Policies do
       %Accounts.RunnerAccess{mode: :all} ->
         :ok
 
-      access ->
-        {_runner_ids, groups} = Runners.reachable_scope_values(subject.account.id, access)
-        if group in groups, do: :ok, else: {:error, :group_not_found}
+      _access ->
+        if target_reachable?(:group, group, subject), do: :ok, else: {:error, :group_not_found}
     end
   end
 
   defp ensure_scope_in_reach(:group, _group, %Subject{}), do: {:error, :group_not_found}
+
+  defp target_reachable?(scope_type, value, subject) do
+    target_query(subject)
+    |> Target.Query.by_scope(scope_type, value)
+    |> Authorizer.for_subject(subject)
+    |> Repo.exists?()
+  end
+
+  @doc "Computes a policy preview in bounded, freshly authorized catalog batches."
+  def preview_policy(input, editor_ref, %Subject{} = subject, opts \\ []) do
+    with :ok <-
+           Auth.Authorizer.ensure_has_permissions(subject, Authorizer.view_policies_permission()),
+         :ok <- validate_preview_input(input),
+         {:ok, target} <- preview_target(editor_ref, subject) do
+      access = Accounts.runner_access_for_subject(subject)
+
+      if access.mode == :none or access.pack_mode == :none do
+        {:error, :no_access}
+      else
+        rules = build_rules(input)
+
+        matchers =
+          for {row, index} <- Enum.with_index(input.overrides),
+              pattern = String.trim(row["action"] || ""),
+              pattern != "",
+              do: {index, Glob.compile(pattern)}
+
+        state = %{
+          total: 0,
+          account_id: subject.account.id,
+          access_snapshot: access,
+          editor_ref: editor_ref,
+          target: target,
+          outcome: empty_outcome(),
+          breakdown: Map.new(@risk_tiers, &{&1, 0}),
+          unmatched_override_indexes: MapSet.new(matchers, &elem(&1, 0))
+        }
+
+        plan = %{
+          target: target,
+          editor_ref: editor_ref,
+          access: access,
+          defaults: defaults_for(rules),
+          overrides: compile_overrides(overrides_for(rules)),
+          matchers: matchers,
+          cancelled?: Keyword.get(opts, :cancelled?, fn -> false end)
+        }
+
+        preview_batches(plan, subject, state, nil)
+      end
+    end
+  end
+
+  @doc "Rechecks a completed background preview immediately before the web adapter publishes it."
+  def preview_current?(
+        %{account_id: account_id, access_snapshot: access, editor_ref: ref, target: target},
+        %Subject{} = subject
+      ) do
+    account_id == subject.account.id and subject_can_view_policies?(subject) and
+      Accounts.runner_access_for_subject(subject) == access and
+      preview_target(ref, subject) == {:ok, target}
+  end
+
+  defp validate_preview_input(%{overrides: overrides} = input)
+       when is_list(overrides) and length(overrides) <= 200 do
+    if Enum.all?(overrides, fn row ->
+         is_map(row) and is_binary(row["action"]) and String.length(row["action"]) <= 200
+       end) and
+         change_policy(build_rules(input)).valid?, do: :ok, else: {:error, :invalid_rules}
+  end
+
+  defp validate_preview_input(_), do: {:error, :invalid_rules}
+
+  defp preview_target(:account, _subject), do: {:ok, :account}
+
+  defp preview_target(id, subject) when is_binary(id) do
+    if Repo.valid_uuid?(id) do
+      Policy.Query.not_deleted()
+      |> Policy.Query.scoped_overrides()
+      |> Policy.Query.by_id(id)
+      |> scope_to_runner_access(subject)
+      |> Policy.Query.select_scope()
+      |> Authorizer.for_subject(subject)
+      |> Repo.fetch(Policy.Query)
+      |> case do
+        {:ok, policy} -> {:ok, {policy.scope_type, policy.scope_value}}
+        error -> error
+      end
+    else
+      {:error, :not_found}
+    end
+  end
+
+  defp preview_target({type, value}, subject)
+       when type in [:runner, :group] and is_binary(value) do
+    with :ok <- ensure_scope_in_reach(type, value, subject), do: {:ok, {type, value}}
+  end
+
+  defp preview_target(_, _subject), do: {:error, :not_found}
+
+  defp preview_batches(plan, subject, state, cursor) do
+    with :ok <- preview_continues(plan, subject),
+         {:ok, actions, metadata} <-
+           Catalog.list_action_risks(plan.target, subject, page: [limit: 100, cursor: cursor]),
+         :ok <- preview_continues(plan, subject) do
+      state =
+        Enum.reduce(actions, state, fn %{action_id: id, risk: risk}, state ->
+          unmatched =
+            Enum.reduce(plan.matchers, state.unmatched_override_indexes, fn {index, matcher},
+                                                                            unmatched ->
+              if MapSet.member?(unmatched, index) and Glob.match_compiled?(matcher, id),
+                do: MapSet.delete(unmatched, index),
+                else: unmatched
+            end)
+
+          %{
+            state
+            | total: state.total + 1,
+              outcome:
+                add_outcome_action(
+                  state.outcome,
+                  simulation_decision(plan.defaults, plan.overrides, id, risk),
+                  id
+                ),
+              breakdown: Map.update!(state.breakdown, risk, &(&1 + 1)),
+              unmatched_override_indexes: unmatched
+          }
+        end)
+
+      cond do
+        metadata.next_page_cursor ->
+          preview_batches(plan, subject, state, metadata.next_page_cursor)
+
+        state.total == 0 ->
+          {:ok, %{state | unmatched_override_indexes: MapSet.new()}}
+
+        true ->
+          {:ok, state}
+      end
+    end
+  end
+
+  defp preview_continues(plan, subject) do
+    cond do
+      plan.cancelled?.() -> {:error, :cancelled}
+      Accounts.runner_access_for_subject(subject) != plan.access -> {:error, :unauthorized}
+      preview_target(plan.editor_ref, subject) != {:ok, plan.target} -> {:error, :unauthorized}
+      true -> :ok
+    end
+  end
 
   # -- Evaluation -----------------------------------------------------
 
@@ -791,25 +990,6 @@ defmodule Emisar.Policies do
         name = rule_name(override)
         {decision, [name], decision_reason(policy, decision, risk, {:rule, name})}
     end
-  end
-
-  @doc """
-  Applies `rules` (a rules map — e.g. a live editor's `to_rules`) to a catalog
-  `%{action_id => risk}` and buckets each action by the decision it would get,
-  using the same first-match override and tier-default rules as dispatch. Pure —
-  no gate; the catalog is already fetched + authorized. Powers the policy page's
-  live "what this policy allows / needs approval / denies" rail. Returns
-  `%{"allow" => %{count, examples}, "require_approval" => …, "deny" => …}` with
-  all three present (0/[] for an empty one).
-  """
-  def simulate_outcome(rules, action_risks) when is_map(rules) and is_map(action_risks) do
-    defaults = defaults_for(rules)
-    overrides = compile_overrides(overrides_for(rules))
-
-    Enum.reduce(action_risks, empty_outcome(), fn {action_id, risk}, outcome ->
-      decision = simulation_decision(defaults, overrides, action_id, risk)
-      add_outcome_action(outcome, decision, action_id)
-    end)
   end
 
   defp compile_overrides(overrides) when is_list(overrides),

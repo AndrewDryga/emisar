@@ -17,10 +17,8 @@ defmodule EmisarWeb.PoliciesLive do
   drives every unit.
   """
   use EmisarWeb, :live_view
-  alias Emisar.Catalog
   alias Emisar.Policies
-  alias Emisar.Runners
-  alias EmisarWeb.Permissions
+  alias EmisarWeb.{LiveTable, Permissions}
 
   # Non-breaking spaces so the browser keeps the indent (ASCII whitespace in an
   # <option> is stripped) — nests runners under their group in the target picker.
@@ -28,7 +26,21 @@ defmodule EmisarWeb.PoliciesLive do
 
   def mount(_params, _session, socket) do
     socket =
-      assign(socket, page_title: "Policy", loading?: not connected?(socket), load_error?: false)
+      socket
+      |> assign(
+        page_title: "Policy",
+        loading?: not connected?(socket),
+        load_error?: false,
+        account_error?: false,
+        rulesets: [],
+        summaries: [],
+        metadata: %Emisar.Repo.Paginator.Metadata{},
+        filter_params: %{},
+        preview_active: nil,
+        preview_cancel: nil,
+        preview_queue: []
+      )
+      |> stream(:policies, [])
 
     # Gate BEFORE any policy read: a role without view_policies must see
     # nothing, not the account posture with only the scoped read errored.
@@ -47,78 +59,76 @@ defmodule EmisarWeb.PoliciesLive do
     end
   end
 
-  # Load every editor the page needs: the default (account-scoped) policy, the existing
-  # runner/group rulesets, and the runner/group pickers new rulesets target.
+  def handle_params(params, _uri, socket) do
+    if connected?(socket) and not is_nil(socket.assigns[:account]) do
+      socket =
+        if policy_cursor(params) != policy_cursor(socket.assigns.filter_params) or
+             socket.assigns.loading?, do: load_summaries(socket, params), else: socket
+
+      socket =
+        Enum.reduce(socket.assigns.rulesets, socket, fn editor, socket ->
+          if is_nil(editor.policy) and
+               target_cursor(params, editor.uid) !=
+                 target_cursor(socket.assigns.filter_params, editor.uid),
+             do: load_target_options(socket, editor.uid, params),
+             else: socket
+        end)
+
+      {:noreply, assign(socket, filter_params: params, loading?: false)}
+    else
+      {:noreply, socket}
+    end
+  end
+
   defp load_all(socket) do
     subject = socket.assigns.current_subject
     capabilities = Policies.policy_management_capabilities(subject)
-    {runners, runners_failed?} = list_runners(subject)
-    {groups, groups_failed?} = list_groups(subject)
-    catalog_index = load_action_risk_index(subject)
 
-    account_policy =
+    {account_policy, account_error?} =
       case Policies.fetch_policy(subject) do
-        {:ok, policy} -> policy
-        {:error, _} -> nil
-      end
-
-    account_editor =
-      account_policy |> build_account_editor() |> Map.put(:catalog, catalog_index.account)
-
-    # A failed scoped-policy read must read as an error, not an empty ruleset
-    # list — "No targeted rulesets yet" would wrongly imply none are configured.
-    {rulesets, load_error?} =
-      case Policies.list_scoped_policies(subject) do
-        {:ok, policies} ->
-          {Enum.map(policies, fn policy ->
-             policy |> build_ruleset_editor() |> put_ruleset_catalog(runners, catalog_index)
-           end), false}
-
-        {:error, _} ->
-          {[], true}
+        {:ok, policy} -> {policy, false}
+        {:error, :not_found} -> {nil, false}
+        {:error, _} -> {nil, true}
       end
 
     socket
-    |> assign(:loading?, false)
-    |> assign(:load_error?, load_error?)
+    |> assign(:loading?, not account_error?)
+    |> assign(:account_error?, account_error?)
     |> assign(:can_manage?, capabilities.can_manage?)
     |> assign(:has_runner_access?, capabilities.has_runner_access?)
     |> assign(:can_manage_scoped?, capabilities.can_manage_scoped?)
     |> assign(:can_manage_account?, capabilities.can_manage_account?)
-    |> assign(:catalog_index, catalog_index)
-    |> assign(:account, account_editor)
-    |> assign(:rulesets, rulesets)
-    |> assign(:runners, runners)
-    |> assign(:groups, groups)
-    |> assign(:targets_error?, runners_failed? or groups_failed?)
+    |> assign(:account, if(account_error?, do: nil, else: build_account_editor(account_policy)))
+    |> refresh_target_availability()
+    |> schedule_preview("account", 0)
   end
 
-  # The compact catalog risk index every policy rail derives from. A failed read
-  # is an empty index (the rails show the connect-a-runner hint), never a crash.
-  defp load_action_risk_index(subject) do
-    case Catalog.action_risk_index_for_account(subject) do
-      {:ok, index} -> index
-      {:error, _} -> empty_action_risk_index()
+  defp load_summaries(socket, params, keep_uid \\ nil) do
+    opts = LiveTable.params_to_opts(params, [], prefix: "policies_")
+
+    case Policies.list_scoped_policy_summaries(socket.assigns.current_subject, opts) do
+      {:ok, summaries, metadata} ->
+        ids = MapSet.new(summaries, & &1.id)
+
+        socket =
+          Enum.reduce(socket.assigns.rulesets, socket, fn editor, socket ->
+            if editor.policy && editor.uid != keep_uid && not MapSet.member?(ids, editor.uid) &&
+                 not editor_dirty?(editor), do: drop_editor(socket, editor.uid), else: socket
+          end)
+
+        socket
+        |> assign(summaries: summaries, metadata: metadata, load_error?: false)
+        |> stream(:policies, summaries, reset: true)
+
+      {:error, _} ->
+        socket |> assign(summaries: [], load_error?: true) |> stream(:policies, [], reset: true)
     end
   end
 
-  defp empty_action_risk_index, do: %{account: %{}, runners: %{}}
+  defp policy_cursor(params), do: {params["policies_after"], params["policies_before"]}
 
-  # The target catalog a ruleset governs (its runner, or its group's runners) —
-  # so the rail speaks for THAT target, not account-wide. A group resolves to its
-  # runners' ids from the already-loaded @runners.
-  defp put_ruleset_catalog(ruleset, runners, catalog_index) do
-    catalog = Catalog.action_risks_from_index(catalog_index, ruleset_runner_ids(ruleset, runners))
-    Map.put(ruleset, :catalog, catalog)
-  end
-
-  defp ruleset_runner_ids(%{scope_type: :runner, scope_value: runner_id}, _runners),
-    do: [runner_id]
-
-  defp ruleset_runner_ids(%{scope_type: :group, scope_value: group}, runners),
-    do: runners |> Enum.filter(&(&1.group == group)) |> Enum.map(& &1.id)
-
-  defp ruleset_runner_ids(_ruleset, _runners), do: []
+  defp target_cursor(params, uid),
+    do: {params["target_#{uid}_after"], params["target_#{uid}_before"]}
 
   defp build_account_editor(policy) do
     rules = (policy && policy.rules) || Policies.default_rules()
@@ -133,7 +143,10 @@ defmodule EmisarWeb.PoliciesLive do
       # this, so reverting a change back clears the Save button (not a one-way flag).
       baseline_rules: stored_baseline(policy, input),
       policy: policy,
-      rules_errors: []
+      rules_errors: [],
+      preview: :pending,
+      preview_generation: nil,
+      preview_timer: nil
     })
   end
 
@@ -147,7 +160,11 @@ defmodule EmisarWeb.PoliciesLive do
       show_override_errors?: false,
       baseline_rules: stored_baseline(policy, input),
       policy: policy,
-      rules_errors: []
+      rules_errors: [],
+      target_label: policy.scope_value,
+      preview: :pending,
+      preview_generation: nil,
+      preview_timer: nil
     })
   end
 
@@ -164,37 +181,93 @@ defmodule EmisarWeb.PoliciesLive do
       scope_value: "",
       show_override_errors?: false,
       baseline_rules: Policies.build_rules(input),
-      # Filled in once a target is picked (set_target); no target = no catalog.
-      catalog: %{},
       policy: nil,
-      rules_errors: []
+      rules_errors: [],
+      target_label: "",
+      target_search: "",
+      target_options: [],
+      target_metadata: %Emisar.Repo.Paginator.Metadata{},
+      target_error: nil,
+      selected_target: nil,
+      preview: :pending,
+      preview_generation: nil,
+      preview_timer: nil
     })
   end
 
   defp stored_baseline(nil, input), do: Policies.build_rules(input)
   defp stored_baseline(%Policies.Policy{rules: rules}, _input), do: rules
 
-  # The targets a ruleset can claim. A failed read is carried, not collapsed:
-  # empty target lists otherwise disable Add ruleset with "…or none exist yet",
-  # blaming an empty fleet for a read that never answered.
-  defp list_runners(subject) do
-    case Runners.list_all_runners_for_account(subject) do
-      {:ok, runners} -> {runners, false}
-      {:error, _} -> {[], true}
-    end
-  end
-
-  defp list_groups(subject) do
-    case Runners.list_group_summaries(subject) do
-      {:ok, rows} ->
-        {rows |> Enum.map(&elem(&1, 0)) |> Enum.reject(&blank?/1) |> Enum.sort(), false}
-
-      {:error, _} ->
-        {[], true}
-    end
-  end
-
   # -- Events ---------------------------------------------------------
+
+  # An unavailable default is not the implicit default of an unconfigured
+  # account. Never seed drafts or compare approval gates against invented rules.
+  def handle_event(_event, _params, %{assigns: %{account_error?: true}} = socket),
+    do: {:noreply, socket}
+
+  def handle_event("open_ruleset", %{"uid" => uid}, socket) when is_binary(uid) do
+    if find_ruleset(socket, uid) do
+      {:noreply, socket}
+    else
+      case Policies.fetch_scoped_policy_by_id(uid, socket.assigns.current_subject) do
+        {:ok, policy} ->
+          summary = Enum.find(socket.assigns.summaries, &(&1.id == uid))
+
+          editor = %{
+            build_ruleset_editor(policy)
+            | target_label: if(summary, do: summary.target_label, else: policy.scope_value)
+          }
+
+          {:noreply,
+           socket
+           |> assign(:rulesets, socket.assigns.rulesets ++ [editor])
+           |> schedule_preview(uid, 0)}
+
+        {:error, _} ->
+          {:noreply,
+           put_flash(socket, :error, "Couldn't open this ruleset. Your access may have changed.")}
+      end
+    end
+  end
+
+  def handle_event("open_ruleset", _params, socket), do: {:noreply, socket}
+
+  def handle_event("close_ruleset", %{"uid" => uid}, socket) do
+    case find_ruleset(socket, uid) do
+      nil ->
+        {:noreply, socket}
+
+      editor ->
+        if editor_dirty?(editor) do
+          {:noreply, put_flash(socket, :error, "Save or remove this draft before closing it.")}
+        else
+          {:noreply, drop_editor(socket, uid)}
+        end
+    end
+  end
+
+  def handle_event("close_ruleset", _params, socket), do: {:noreply, socket}
+
+  def handle_event("search_targets", %{"uid" => uid, "search" => search}, socket)
+      when is_binary(uid) do
+    case find_ruleset(socket, uid) do
+      %{policy: nil} ->
+        params =
+          Map.drop(socket.assigns.filter_params, ["target_#{uid}_after", "target_#{uid}_before"])
+
+        {:noreply, load_target_options(socket, uid, params, search)}
+
+      _ ->
+        {:noreply, socket}
+    end
+  end
+
+  def handle_event("search_targets", _params, socket), do: {:noreply, socket}
+
+  def handle_event("retry_preview", %{"editor" => uid}, socket) when is_binary(uid),
+    do: {:noreply, schedule_preview(socket, uid, 0)}
+
+  def handle_event("retry_preview", _params, socket), do: {:noreply, socket}
 
   def handle_event("form_change", %{"editor" => editor_id, "policy" => params}, socket),
     do: {:noreply, apply_policy_params(socket, editor_id, params)}
@@ -207,7 +280,9 @@ defmodule EmisarWeb.PoliciesLive do
   def handle_event("add_override", %{"editor" => editor_id}, socket) do
     {:noreply,
      update_editor(socket, editor_id, fn editor ->
-       %{editor | overrides: editor.overrides ++ [Policies.empty_override()]}
+       if length(editor.overrides) < 200,
+         do: %{editor | overrides: editor.overrides ++ [Policies.empty_override()]},
+         else: editor
      end)}
   end
 
@@ -230,13 +305,16 @@ defmodule EmisarWeb.PoliciesLive do
   def handle_event("remove_override", _params, socket), do: {:noreply, socket}
 
   def handle_event("add_ruleset", _params, socket) do
-    if Policies.subject_can_manage_scoped_policies?(socket.assigns.current_subject) do
+    socket = refresh_target_availability(socket)
+
+    if Policies.subject_can_manage_scoped_policies?(socket.assigns.current_subject) and
+         socket.assigns.target_available == {:ok, true} do
+      editor = new_ruleset(socket.assigns.account)
+
       {:noreply,
-       assign(
-         socket,
-         :rulesets,
-         socket.assigns.rulesets ++ [new_ruleset(socket.assigns.account)]
-       )}
+       socket
+       |> assign(:rulesets, socket.assigns.rulesets ++ [editor])
+       |> load_target_options(editor.uid, socket.assigns.filter_params)}
     else
       {:noreply, socket}
     end
@@ -244,13 +322,10 @@ defmodule EmisarWeb.PoliciesLive do
 
   def handle_event("set_target", %{"uid" => uid, "target" => target}, socket)
       when is_binary(uid) and is_binary(target) do
-    {scope_type, scope_value} = parse_target(target)
-
-    {:noreply,
-     update_editor(socket, uid, fn editor ->
-       editor = %{editor | scope_type: scope_type, scope_value: scope_value}
-       put_ruleset_catalog(editor, socket.assigns.runners, socket.assigns.catalog_index)
-     end)}
+    case find_ruleset(socket, uid) do
+      %{policy: nil} -> {:noreply, select_target(socket, uid, parse_target(target))}
+      _ -> {:noreply, socket}
+    end
   end
 
   def handle_event("set_target", _params, socket), do: {:noreply, socket}
@@ -267,8 +342,7 @@ defmodule EmisarWeb.PoliciesLive do
 
       # Not-yet-saved card — just drop it from the page.
       %{} ->
-        {:noreply,
-         assign(socket, :rulesets, Enum.reject(socket.assigns.rulesets, &(&1.uid == uid)))}
+        {:noreply, socket |> drop_editor(uid) |> refresh_target_availability()}
 
       nil ->
         {:noreply, socket}
@@ -355,25 +429,30 @@ defmodule EmisarWeb.PoliciesLive do
   # Swap the just-saved editor for one rebuilt from the returned row (a new
   # ruleset's uid flips from `new-…` to the policy id), leaving every other
   # card's in-progress edits untouched — no full reload, no lost work.
-  # Saving the policy doesn't change the FLEET's catalog, so carry the existing
-  # one onto the rebuilt editor rather than re-reading it.
+  # Only this editor gets a fresh, bounded preview; sibling drafts stay intact.
   defp replace_saved(socket, "account", policy) do
-    rebuilt = Map.put(build_account_editor(policy), :catalog, socket.assigns.account.catalog)
-    assign(socket, :account, rebuilt)
+    socket
+    |> cancel_preview("account")
+    |> assign(:account, build_account_editor(policy))
+    |> schedule_preview("account", 0)
   end
 
   defp replace_saved(socket, old_uid, policy) do
-    rebuilt =
-      policy
-      |> build_ruleset_editor()
-      |> put_ruleset_catalog(socket.assigns.runners, socket.assigns.catalog_index)
+    previous = find_ruleset(socket, old_uid)
+    rebuilt = %{build_ruleset_editor(policy) | target_label: previous.target_label}
+    socket = cancel_preview(socket, old_uid)
 
     rulesets =
       Enum.map(socket.assigns.rulesets, fn ruleset ->
         if ruleset.uid == old_uid, do: rebuilt, else: ruleset
       end)
 
-    assign(socket, :rulesets, rulesets)
+    socket
+    |> assign(:rulesets, rulesets)
+    |> refresh_target_availability()
+    |> refresh_open_target_options()
+    |> load_summaries(socket.assigns.filter_params, policy.id)
+    |> schedule_preview(policy.id, 0)
   end
 
   defp delete_ruleset(socket, policy, uid) do
@@ -382,7 +461,10 @@ defmodule EmisarWeb.PoliciesLive do
         {:noreply,
          socket
          |> put_flash(:info, "Ruleset removed — that scope falls back to the default policy.")
-         |> assign(:rulesets, Enum.reject(socket.assigns.rulesets, &(&1.uid == uid)))}
+         |> drop_editor(uid)
+         |> refresh_target_availability()
+         |> refresh_open_target_options()
+         |> load_summaries(socket.assigns.filter_params)}
 
       {:error, _reason} ->
         {:noreply, put_flash(socket, :error, "Could not remove ruleset.")}
@@ -399,10 +481,16 @@ defmodule EmisarWeb.PoliciesLive do
   # Dirtiness isn't a stored flag — editor_dirty?/1 computes it against the
   # editor's baseline_rules, so reverting an edit back to the saved value clears
   # the Save button (a one-way latch left it stuck emerald).
-  defp update_editor(socket, "account", fun),
+  defp update_editor(socket, uid, fun) do
+    if get_editor(socket, uid),
+      do: socket |> put_editor(uid, fun) |> schedule_preview(uid),
+      else: socket
+  end
+
+  defp put_editor(socket, "account", fun),
     do: assign(socket, :account, fun.(socket.assigns.account))
 
-  defp update_editor(socket, uid, fun) do
+  defp put_editor(socket, uid, fun) do
     rulesets =
       Enum.map(socket.assigns.rulesets, fn ruleset ->
         if ruleset.uid == uid, do: fun.(ruleset), else: ruleset
@@ -547,102 +635,287 @@ defmodule EmisarWeb.PoliciesLive do
   defp blank?(value) when is_binary(value), do: String.trim(value) == ""
   defp blank?(_), do: false
 
-  # -- Target helpers -------------------------------------------------
+  # -- Bounded target options and editor previews ----------------------
 
-  defp target_name(%{scope_type: :runner, scope_value: id}, runners), do: runner_name(runners, id)
-  defp target_name(%{scope_type: :group, scope_value: group}, _runners), do: group
+  defp refresh_target_availability(socket) do
+    result =
+      if socket.assigns.account_error?,
+        do: {:error, :unavailable},
+        else:
+          Policies.scope_target_available?(
+            reserved_targets(socket.assigns.rulesets),
+            socket.assigns.current_subject
+          )
 
-  # Resolve a runner id to its name; fall back to the id if the runner was
-  # since deleted so the ruleset stays identifiable.
-  defp runner_name(runners, id) do
-    case Enum.find(runners, &(&1.id == id)) do
-      %{name: name} -> name
-      nil -> id
+    assign(socket, :target_available, result)
+  end
+
+  defp reserved_targets(rulesets, except_uid \\ nil) do
+    for editor <- rulesets,
+        is_nil(editor.policy),
+        editor.uid != except_uid,
+        editor.scope_type in [:runner, :group],
+        do: {editor.scope_type, editor.scope_value}
+  end
+
+  defp load_target_options(socket, uid, params) do
+    load_target_options(socket, uid, params, find_ruleset(socket, uid).target_search)
+  end
+
+  defp load_target_options(socket, uid, params, search) do
+    editor = find_ruleset(socket, uid)
+    opts = LiveTable.params_to_opts(params, [], prefix: "target_#{uid}_")
+
+    case Policies.list_scope_target_options(search, socket.assigns.current_subject, opts) do
+      {:ok, options, metadata} ->
+        selected =
+          if editor.selected_target do
+            case Policies.fetch_scope_target_option(
+                   editor.scope_type,
+                   editor.scope_value,
+                   socket.assigns.current_subject
+                 ) do
+              {:ok, target} ->
+                target
+
+              _ ->
+                editor.selected_target
+                |> Map.put(:label, editor.scope_value)
+                |> Map.put(:unavailable?, true)
+            end
+          end
+
+        socket
+        |> assign(:filter_params, params)
+        |> put_editor(
+          uid,
+          &%{
+            &1
+            | target_search: search,
+              target_options: options,
+              target_metadata: metadata,
+              selected_target: selected,
+              target_error: nil
+          }
+        )
+
+      {:error, :invalid_search} ->
+        put_editor(socket, uid, fn editor ->
+          %{editor | target_error: "Use valid text without null characters, up to 512 bytes."}
+        end)
+
+      {:error, _} ->
+        put_editor(socket, uid, fn editor ->
+          %{
+            editor
+            | target_options: [],
+              target_error: "Couldn't load targets. Change the search to try again."
+          }
+        end)
     end
   end
 
-  defp target_selected?(ruleset, scope_type, scope_value),
-    do: ruleset.scope_type == scope_type and ruleset.scope_value == scope_value
+  defp refresh_open_target_options(socket) do
+    Enum.reduce(socket.assigns.rulesets, socket, fn editor, socket ->
+      if is_nil(editor.policy),
+        do: load_target_options(socket, editor.uid, socket.assigns.filter_params),
+        else: socket
+    end)
+  end
 
-  # Ordered options for the target picker: each group as a selectable header,
-  # then its runners indented beneath, then any ungrouped runners — one tree, so
-  # groups are pickable (a native <optgroup> label isn't) with no separate
-  # runners-vs-groups split. A target another ruleset already claims is disabled
-  # (kept visible so the whole fleet reads at a glance). The current card's own
-  # pick is excluded from `taken`, so it stays selectable.
-  defp target_options(runners, groups, ruleset, rulesets) do
-    taken = taken_targets(rulesets, ruleset.uid)
+  defp select_target(socket, uid, {type, value}) when type in [:runner, :group] do
+    taken = reserved_targets(socket.assigns.rulesets, uid)
 
-    grouped =
-      Enum.flat_map(groups, fn group ->
-        header = target_option(:group, group, group, ruleset, taken)
-        [header | Enum.map(runners_in_group(runners, group), &runner_option(&1, ruleset, taken))]
-      end)
+    case Policies.fetch_scope_target_option(type, value, socket.assigns.current_subject) do
+      {:ok, %{taken?: false} = target} ->
+        if {type, value} in taken do
+          put_flash(socket, :error, "That target already has an open draft.")
+        else
+          socket
+          |> update_editor(
+            uid,
+            &%{
+              &1
+              | scope_type: type,
+                scope_value: value,
+                target_label: target.label,
+                selected_target: target
+            }
+          )
+          |> refresh_target_availability()
+        end
 
-    case ungrouped_runners(runners) do
-      [] ->
-        grouped
-
-      ungrouped ->
-        header = %{value: "", label: "Ungrouped", disabled: true, selected: false}
-        grouped ++ [header | Enum.map(ungrouped, &runner_option(&1, ruleset, taken))]
+      _ ->
+        socket
+        |> select_target(uid, {nil, ""})
+        |> put_flash(
+          :error,
+          "That runner or group isn't in your fleet, or already has a ruleset."
+        )
     end
   end
 
-  defp target_option(scope_type, scope_value, name, ruleset, taken) do
-    taken? = MapSet.member?(taken, {scope_type, scope_value})
-
-    %{
-      value: "#{scope_type}:#{scope_value}",
-      label: if(taken?, do: name <> " — has a ruleset", else: name),
-      disabled: taken?,
-      selected: target_selected?(ruleset, scope_type, scope_value)
-    }
+  defp select_target(socket, uid, _) do
+    socket
+    |> update_editor(
+      uid,
+      &%{&1 | scope_type: nil, scope_value: "", target_label: "", selected_target: nil}
+    )
+    |> refresh_target_availability()
   end
 
-  defp runner_option(runner, ruleset, taken) do
-    option = target_option(:runner, runner.id, runner.name, ruleset, taken)
-    %{option | label: @runner_indent <> option.label}
+  defp target_options(ruleset, rulesets) do
+    reserved = MapSet.new(reserved_targets(rulesets, ruleset.uid))
+
+    rows =
+      if ruleset.selected_target,
+        do: [ruleset.selected_target | ruleset.target_options],
+        else: ruleset.target_options
+
+    rows
+    |> Enum.uniq_by(&{&1.scope_type, &1.scope_value})
+    |> Enum.map(fn row ->
+      type = if row.scope_type == "runner", do: :runner, else: :group
+      taken? = row.taken? or MapSet.member?(reserved, {type, row.scope_value})
+      unavailable? = Map.get(row, :unavailable?, false)
+
+      suffix =
+        cond do
+          unavailable? -> " — unavailable"
+          taken? -> " — has a ruleset"
+          true -> ""
+        end
+
+      %{
+        value: "#{type}:#{row.scope_value}",
+        label:
+          if(type == :runner, do: @runner_indent, else: "") <>
+            row.label <> suffix,
+        disabled: taken? or unavailable?,
+        selected: ruleset.scope_type == type and ruleset.scope_value == row.scope_value
+      }
+    end)
   end
 
-  defp runners_in_group(runners, group),
-    do: runners |> Enum.filter(&(&1.group == group)) |> Enum.sort_by(& &1.name)
-
-  defp ungrouped_runners(runners),
-    do: runners |> Enum.filter(&blank?(&1.group)) |> Enum.sort_by(& &1.name)
-
-  defp taken_targets(rulesets, current_uid) do
-    for ruleset <- rulesets,
-        ruleset.uid != current_uid,
-        not is_nil(ruleset.scope_type),
-        into: MapSet.new(),
-        do: {ruleset.scope_type, ruleset.scope_value}
+  defp drop_editor(socket, uid) do
+    socket
+    |> cancel_preview(uid)
+    |> assign(:rulesets, Enum.reject(socket.assigns.rulesets, &(&1.uid == uid)))
   end
 
-  # Any target still free to claim — gates the "Add ruleset" button.
-  defp addable_any?(runners, groups, rulesets) do
-    taken = taken_targets(rulesets, nil)
+  defp schedule_preview(socket, uid, delay \\ 300) do
+    if get_editor(socket, uid) do
+      socket = cancel_preview(socket, uid)
+      generation = System.unique_integer([:positive, :monotonic])
+      timer = Process.send_after(self(), {:preview_due, uid, generation}, delay)
 
-    Enum.any?(groups, &(not MapSet.member?(taken, {:group, &1}))) or
-      Enum.any?(runners, &(not MapSet.member?(taken, {:runner, &1.id})))
+      put_editor(
+        socket,
+        uid,
+        &%{&1 | preview: :pending, preview_generation: generation, preview_timer: timer}
+      )
+    else
+      socket
+    end
   end
 
-  defp can_add_ruleset?(runners, groups, rulesets, targets_error?),
-    do: not targets_error? and addable_any?(runners, groups, rulesets)
+  defp cancel_preview(socket, uid) do
+    if editor = get_editor(socket, uid) do
+      if editor.preview_timer, do: Process.cancel_timer(editor.preview_timer)
+    end
 
-  defp add_ruleset_disabled_reason(_runners, _groups, _rulesets, true),
-    do: "Couldn't load the runners and groups a ruleset targets. Refresh the page to try again"
+    socket =
+      case socket.assigns.preview_active do
+        {:policy_preview, ^uid, _} ->
+          :atomics.put(socket.assigns.preview_cancel, 1, 1)
+          socket
 
-  defp add_ruleset_disabled_reason(runners, groups, rulesets, false) do
-    if not addable_any?(runners, groups, rulesets),
-      do: "Every runner and group already has a ruleset (or none exist yet)"
+        _ ->
+          socket
+      end
+
+    socket
+    |> assign(:preview_queue, Enum.reject(socket.assigns.preview_queue, &(&1 == uid)))
+    |> start_next_preview()
   end
+
+  def handle_info({:preview_due, uid, generation}, socket) do
+    case get_editor(socket, uid) do
+      %{preview_generation: ^generation, preview_timer: timer} when not is_nil(timer) ->
+        {:noreply,
+         socket
+         |> put_editor(uid, &%{&1 | preview_timer: nil})
+         |> assign(:preview_queue, Enum.uniq(socket.assigns.preview_queue ++ [uid]))
+         |> start_next_preview()}
+
+      _ ->
+        {:noreply, socket}
+    end
+  end
+
+  # Badge/fleet broadcasts do not change an operator's working draft.
+  def handle_info(_msg, socket), do: {:noreply, socket}
+
+  defp start_next_preview(
+         %{assigns: %{preview_active: nil, preview_queue: [uid | rest]}} = socket
+       ) do
+    editor = get_editor(socket, uid)
+    subject = socket.assigns.current_subject
+    input = policy_input(editor)
+
+    ref =
+      cond do
+        uid == "account" -> :account
+        editor.policy -> editor.policy.id
+        true -> {editor.scope_type, editor.scope_value}
+      end
+
+    key = {:policy_preview, uid, editor.preview_generation}
+    cancel = :atomics.new(1, [])
+
+    socket
+    |> assign(preview_active: key, preview_cancel: cancel, preview_queue: rest)
+    |> start_async(key, fn ->
+      Policies.preview_policy(input, ref, subject,
+        cancelled?: fn -> :atomics.get(cancel, 1) == 1 end
+      )
+    end)
+  end
+
+  defp start_next_preview(socket), do: socket
+
+  def handle_async({:policy_preview, uid, generation} = key, result, socket) do
+    if socket.assigns.preview_active == key do
+      socket =
+        case get_editor(socket, uid) do
+          %{preview_generation: ^generation} ->
+            preview = completed_preview(result, socket.assigns.current_subject)
+            put_editor(socket, uid, &%{&1 | preview: preview})
+
+          _ ->
+            socket
+        end
+
+      {:noreply,
+       socket |> assign(preview_active: nil, preview_cancel: nil) |> start_next_preview()}
+    else
+      {:noreply, socket}
+    end
+  end
+
+  defp completed_preview({:ok, {:ok, preview}}, subject) do
+    if Policies.preview_current?(preview, subject),
+      do: {:ok, preview},
+      else: {:error, :unauthorized}
+  end
+
+  defp completed_preview({:ok, {:error, reason}}, _subject), do: {:error, reason}
+  defp completed_preview({:exit, _}, _subject), do: {:error, :load_failed}
+
+  defp preview_unmatched({:ok, preview}), do: preview.unmatched_override_indexes
+  defp preview_unmatched(_), do: MapSet.new()
 
   # -- Render ---------------------------------------------------------
-
-  # No-op for the broadcasts the on_mount badge/fleet hooks forward (approvals,
-  # pack trust, runner presence). The hooks own those nav cues; this page ignores them.
-  def handle_info(_msg, socket), do: {:noreply, socket}
 
   def render(assigns) do
     ~H"""
@@ -659,7 +932,16 @@ defmodule EmisarWeb.PoliciesLive do
 
       <.loading_state :if={@loading?} />
 
-      <div :if={not @loading?} class="space-y-12">
+      <.empty_state
+        :if={not @loading? and @account_error?}
+        tone={:danger}
+        icon="state.warning"
+        title="Couldn't load the default policy"
+      >
+        Refresh the page to try again. No changes have been saved.
+      </.empty_state>
+
+      <div :if={not @loading? and not @account_error?} class="space-y-12">
         <div class="space-y-4">
           <.page_intro>
             Choose how to handle actions at each risk level: allow them, require approval, or block them.
@@ -729,7 +1011,7 @@ defmodule EmisarWeb.PoliciesLive do
                 editor_id="account"
                 defaults={@account.defaults}
                 overrides={@account.overrides}
-                catalog={@account.catalog}
+                unmatched_overrides={preview_unmatched(@account.preview)}
                 approval={@account.approval}
                 rules_errors={@account.rules_errors}
                 show_override_errors={@account.show_override_errors?}
@@ -742,7 +1024,7 @@ defmodule EmisarWeb.PoliciesLive do
             <aside class="lg:col-span-1">
               <.policy_rail
                 editor_id="account"
-                catalog={@account.catalog}
+                preview={@account.preview}
                 defaults={@account.defaults}
                 overrides={@account.overrides}
                 approval={@account.approval}
@@ -764,7 +1046,7 @@ defmodule EmisarWeb.PoliciesLive do
           </.section_header>
 
           <.empty_state
-            :if={@load_error? and @rulesets == []}
+            :if={@load_error?}
             tone={:danger}
             icon="state.warning"
             title="Couldn't load targeted rulesets"
@@ -777,21 +1059,47 @@ defmodule EmisarWeb.PoliciesLive do
                the Add-ruleset composer below IS the empty state (the runbook
                precedent — no dashed hint above a dashed composer). --%>
           <p
-            :if={not @load_error? and @rulesets == [] and not @can_manage_scoped?}
+            :if={
+              not @load_error? and @summaries == [] and @rulesets == [] and not @can_manage_scoped?
+            }
             class="text-sm text-zinc-400"
           >
             No targeted rulesets — every runner uses the default policy above.
           </p>
 
-          <div :if={@rulesets != []} class="space-y-8">
+          <div id="saved-policies" phx-update="stream" class="divide-y divide-zinc-800/70">
+            <div
+              :for={{dom_id, summary} <- @streams.policies}
+              id={dom_id}
+              class="flex items-center justify-between gap-4 py-4"
+            >
+              <div class="min-w-0 flex items-center gap-2">
+                <.chip upcase>{summary.scope_type}</.chip>
+                <span class="truncate text-sm font-semibold text-zinc-100">{summary.target_label}</span>
+                <span class="text-xs tabular-nums text-zinc-400">v{summary.vsn}</span>
+              </div>
+              <.button variant={:secondary} phx-click="open_ruleset" phx-value-uid={summary.id}>
+                Open ruleset
+              </.button>
+            </div>
+          </div>
+          <LiveTable.paginator
+            id="saved-policies"
+            path={~p"/app/#{@current_account}/policies"}
+            metadata={@metadata}
+            filter_params={@filter_params}
+            prefix="policies_"
+            page_count={length(@summaries)}
+          />
+
+          <div :if={@rulesets != []} class="mt-8 space-y-8">
             <div :for={ruleset <- @rulesets}>
               <.ruleset_unit
                 ruleset={ruleset}
                 current_account={@current_account}
                 account_approval={@account.approval}
-                runners={@runners}
-                groups={@groups}
                 rulesets={@rulesets}
+                filter_params={@filter_params}
                 can_manage={@can_manage_scoped?}
                 catalog_path={~p"/app/#{@current_account}/packs"}
               />
@@ -807,19 +1115,18 @@ defmodule EmisarWeb.PoliciesLive do
               <.add_row
                 label="Add ruleset"
                 phx-click="add_ruleset"
-                disabled={not can_add_ruleset?(@runners, @groups, @rulesets, @targets_error?)}
+                disabled={@target_available != {:ok, true}}
               />
               <p
-                :if={not can_add_ruleset?(@runners, @groups, @rulesets, @targets_error?)}
+                :if={@target_available != {:ok, true}}
                 id="add-ruleset-disabled-reason"
                 class="mt-2 text-xs text-zinc-400"
               >
-                {add_ruleset_disabled_reason(
-                  @runners,
-                  @groups,
-                  @rulesets,
-                  @targets_error?
-                )}
+                <%= if @target_available == {:ok, false} do %>
+                  Every runner and group already has a ruleset (or none exist yet)
+                <% else %>
+                  Couldn't load the runners and groups a ruleset targets. Refresh the page to try again.
+                <% end %>
               </p>
             </div>
           </div>
@@ -829,7 +1136,7 @@ defmodule EmisarWeb.PoliciesLive do
     """
   end
 
-  attr :catalog, :map, required: true, doc: "%{action_id => risk} the policy governs"
+  attr :preview, :any, required: true
   attr :editor_id, :string, required: true
   attr :defaults, :map, required: true
   attr :overrides, :list, required: true
@@ -844,23 +1151,43 @@ defmodule EmisarWeb.PoliciesLive do
   # The side rail: apply the LIVE rules to the target's catalog and preview the
   # decision — allow / needs-approval / deny, with a few example actions — so the
   # operator sees what the policy DOES, live as they edit. Below it, the catalog's
-  # risk profile. Recomputes on every render (pure, in-memory).
+  # risk profile. Rendering reads only the bounded background preview result.
   defp policy_rail(assigns) do
-    rules = Policies.build_rules(policy_input(assigns))
+    result =
+      case assigns.preview do
+        {:ok, preview} -> preview
+        _ -> %{total: nil, outcome: %{}, breakdown: %{}}
+      end
 
     assigns =
       assign(assigns,
-        outcome: Policies.simulate_outcome(rules, assigns.catalog),
-        breakdown: Catalog.risk_breakdown_of(assigns.catalog),
+        outcome: result.outcome,
+        breakdown: result.breakdown,
         single_reviewer?: single_reviewer_gate?(assigns.approval),
-        total: map_size(assigns.catalog)
+        total: result.total
       )
 
     ~H"""
     <div id={"policy-rail-" <> @editor_id} class="space-y-5">
       <div>
         <h3 class="text-[11px] font-semibold uppercase tracking-wider text-zinc-400">In effect</h3>
-        <p :if={@total > 0} class="mt-1 text-xs leading-relaxed text-zinc-400">
+        <p :if={@preview == :pending} class="mt-1 text-xs text-zinc-400" role="status">
+          Updating preview…
+        </p>
+        <div :if={match?({:error, _}, @preview)} class="mt-1 space-y-2 text-xs text-zinc-400">
+          <%= if @preview == {:error, :no_access} do %>
+            No action catalog is visible without runner access.
+          <% else %>
+            Couldn't update the preview. Your edits are preserved.
+            <.button
+              variant={:secondary}
+              size={:sm}
+              phx-click="retry_preview"
+              phx-value-editor={@editor_id}
+            >Retry preview</.button>
+          <% end %>
+        </div>
+        <p :if={is_integer(@total) and @total > 0} class="mt-1 text-xs leading-relaxed text-zinc-400">
           What this policy decides for {@target}'s
           <span class="font-medium text-zinc-300">{@total}</span>
           {ngettext_action(@total)}.
@@ -881,7 +1208,7 @@ defmodule EmisarWeb.PoliciesLive do
         </p>
       </div>
 
-      <div :if={@total > 0} class="space-y-3">
+      <div :if={is_integer(@total) and @total > 0} class="space-y-3">
         <.outcome_row tone={:brand} label="Allowed" stat={@outcome["allow"]} />
         <.outcome_row tone={:amber} label="Needs approval" stat={@outcome["require_approval"]} />
         <.outcome_row tone={:rose} label="Denied" stat={@outcome["deny"]} />
@@ -890,7 +1217,7 @@ defmodule EmisarWeb.PoliciesLive do
       <%!-- The catalog's danger profile — the counts the tier decisions above act
            on. Compact: pill + count, most-severe first. "View all" opens the full
            action catalog (Packs) in a new tab, so an in-flight edit is untouched. --%>
-      <div :if={@total > 0} class="border-t border-zinc-800/70 pt-4">
+      <div :if={is_integer(@total) and @total > 0} class="border-t border-zinc-800/70 pt-4">
         <div class="flex items-baseline justify-between">
           <h3 class="text-[10px] font-semibold uppercase tracking-wider text-zinc-400">
             Catalog by risk
@@ -909,7 +1236,11 @@ defmodule EmisarWeb.PoliciesLive do
             class="flex items-center justify-between"
           >
             <dt>
-              <.risk_pill id={"policy-breakdown-#{tier}-risk"} risk={tier} variant={:track} />
+              <.risk_pill
+                id={"policy-breakdown-#{@editor_id}-#{tier}-risk"}
+                risk={tier}
+                variant={:track}
+              />
             </dt>
             <dd class="text-xs tabular-nums text-zinc-400">{@breakdown[tier]}</dd>
           </div>
@@ -976,9 +1307,8 @@ defmodule EmisarWeb.PoliciesLive do
   attr :ruleset, :map, required: true
   attr :current_account, :map, required: true
   attr :account_approval, :map, required: true
-  attr :runners, :list, required: true
-  attr :groups, :list, required: true
   attr :rulesets, :list, required: true
+  attr :filter_params, :map, required: true
   attr :can_manage, :boolean, required: true
   attr :catalog_path, :string, required: true, doc: "link to the full action catalog (Packs)"
 
@@ -992,19 +1322,25 @@ defmodule EmisarWeb.PoliciesLive do
         <%= if @ruleset.policy do %>
           <%!-- Saved ruleset: entity chip + name, and a red modal-confirmed Remove
            (removing it loses the overrides, so it earns the confirm). --%>
-          <header class="flex items-start justify-between gap-4">
+          <header class="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
             <div class="min-w-0">
               <div class="flex items-center gap-2">
                 <.chip upcase>{@ruleset.scope_type}</.chip>
                 <span class="truncate text-sm font-semibold text-zinc-100">
-                  {target_name(@ruleset, @runners)}
+                  {@ruleset.target_label}
                 </span>
               </div>
               <p class="mt-1 text-xs text-zinc-400">
                 Replaces the default policy for this {@ruleset.scope_type}.
               </p>
             </div>
-            <div class="flex shrink-0 items-center gap-3">
+            <div class="flex flex-wrap items-center gap-3">
+              <.button
+                variant={:secondary}
+                phx-click="close_ruleset"
+                phx-value-uid={@ruleset.uid}
+                disabled={editor_dirty?(@ruleset)}
+              >Close editor</.button>
               <%!-- Navigation, but it shares this header row with the bordered
                    Remove — one button grammar per row, at the peer's optical
                    height (§7.47). --%>
@@ -1036,6 +1372,21 @@ defmodule EmisarWeb.PoliciesLive do
             </div>
           </header>
         <% else %>
+          <form
+            id={"policy-target-search-#{@ruleset.uid}"}
+            phx-change="search_targets"
+            class="mb-3 sm:max-w-xs"
+          >
+            <input type="hidden" name="uid" value={@ruleset.uid} />
+            <.input
+              type="search"
+              name="search"
+              id={"target-search-#{@ruleset.uid}"}
+              label="Find a runner or group"
+              value={@ruleset.target_search}
+              phx-debounce="300"
+            />
+          </form>
           <%!-- Unsaved ruleset: the target picker with a red Remove aligned to the
            select box (items-end + matching size). Nothing's persisted, so Remove
            drops the card directly — no confirm modal. A form (not a lone select)
@@ -1059,7 +1410,7 @@ defmodule EmisarWeb.PoliciesLive do
                 disabled={not @can_manage}
                 prompt="Choose a runner or group…"
                 prompt_selected={is_nil(@ruleset.scope_type)}
-                options={target_options(@runners, @groups, @ruleset, @rulesets)}
+                options={target_options(@ruleset, @rulesets)}
               />
             </form>
             <.button
@@ -1076,6 +1427,17 @@ defmodule EmisarWeb.PoliciesLive do
               Remove
             </.button>
           </header>
+          <p :if={@ruleset.target_error} role="alert" class="mt-2 text-xs text-rose-300">
+            {@ruleset.target_error}
+          </p>
+          <LiveTable.paginator
+            id={"policy-targets-#{@ruleset.uid}"}
+            path={~p"/app/#{@current_account}/policies"}
+            metadata={@ruleset.target_metadata}
+            filter_params={@filter_params}
+            prefix={"target_#{@ruleset.uid}_"}
+            page_count={length(@ruleset.target_options)}
+          />
         <% end %>
 
         <.policy_fields
@@ -1083,7 +1445,7 @@ defmodule EmisarWeb.PoliciesLive do
           editor_id={@ruleset.uid}
           defaults={@ruleset.defaults}
           overrides={@ruleset.overrides}
-          catalog={@ruleset.catalog}
+          unmatched_overrides={preview_unmatched(@ruleset.preview)}
           approval={@ruleset.approval}
           approval_weakenings={approval_weakenings(@ruleset.approval, @account_approval)}
           rules_errors={@ruleset.rules_errors}
@@ -1099,12 +1461,12 @@ defmodule EmisarWeb.PoliciesLive do
       <aside :if={@ruleset.scope_type} class="lg:col-span-1">
         <.policy_rail
           editor_id={@ruleset.uid}
-          catalog={@ruleset.catalog}
+          preview={@ruleset.preview}
           defaults={@ruleset.defaults}
           overrides={@ruleset.overrides}
           approval={@ruleset.approval}
           catalog_path={@catalog_path}
-          target={target_name(@ruleset, @runners)}
+          target={@ruleset.target_label}
         />
       </aside>
     </div>
@@ -1115,9 +1477,7 @@ defmodule EmisarWeb.PoliciesLive do
   attr :defaults, :map, required: true
   attr :overrides, :list, required: true
 
-  attr :catalog, :map,
-    required: true,
-    doc: "the target's `%{action_id => risk}` index — what an override glob is checked against"
+  attr :unmatched_overrides, :any, required: true
 
   attr :approval, :map, required: true
 
@@ -1142,7 +1502,6 @@ defmodule EmisarWeb.PoliciesLive do
     assigns =
       assign(assigns,
         shadowed_overrides: shadowed_overrides_by_index(assigns.overrides),
-        unmatched_overrides: unmatched_overrides_by_index(assigns.overrides, assigns.catalog),
         single_reviewer?: single_reviewer_gate?(assigns.approval)
       )
 
@@ -1546,15 +1905,6 @@ defmodule EmisarWeb.PoliciesLive do
     %{"overrides" => overrides}
     |> Policies.shadowed_overrides()
     |> Map.new(fn %{index: index, shadowed_by: shadowed_by} -> {index, shadowed_by} end)
-  end
-
-  # Rows whose glob matches nothing in the target's catalog. Same live rows and
-  # same matcher dispatch uses, so what the editor warns about is what the fleet
-  # would actually do. Empty while the catalog is still empty.
-  defp unmatched_overrides_by_index(overrides, catalog) do
-    %{"overrides" => overrides}
-    |> Policies.unmatched_overrides(catalog)
-    |> MapSet.new(& &1.index)
   end
 
   # The rank below which a tier's decision can't drop: 0 for `low` (anything

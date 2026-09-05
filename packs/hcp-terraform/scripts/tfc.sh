@@ -48,7 +48,7 @@ api_protocols() {
 # Plain --fail would throw the body away. Needs curl 7.76 or newer.
 api_get() {
   printf 'Authorization: Bearer %s\n' "${TFE_TOKEN:-}" |
-    curl -q --globoff --proto "$(api_protocols)" --fail-with-body -sS -H @- "$(api_base)$1"
+    curl -q --globoff --proto "$(api_protocols)" --max-filesize "$max_response_bytes" --fail-with-body -sS -H @- "$(api_base)$1"
 }
 
 # The json-output endpoint answers with a one-minute redirect to blob storage.
@@ -59,7 +59,7 @@ api_get() {
 api_get_following_redirect() {
   printf 'Authorization: Bearer %s\n' "${TFE_TOKEN:-}" |
     curl -q --globoff --proto "$(api_protocols)" --proto-redir "$(api_protocols)" \
-      --max-redirs 1 --fail-with-body -sSL -H @- "$(api_base)$1"
+      --max-redirs 1 --max-filesize "$max_response_bytes" --fail-with-body -sSL -H @- "$(api_base)$1"
 }
 
 # The unlock and force-unlock endpoints take no request body — their documented
@@ -72,21 +72,33 @@ api_post() {
   shift
   (($# == 0)) || set -- --data "$1"
   printf 'Authorization: Bearer %s\n' "${TFE_TOKEN:-}" |
-    curl -q --globoff --proto "$(api_protocols)" --fail-with-body -sS -X POST -H @- \
+    curl -q --globoff --proto "$(api_protocols)" --max-filesize "$max_response_bytes" --fail-with-body -sS -X POST -H @- \
       -H 'Content-Type: application/vnd.api+json' \
       "$@" "$(api_base)$path"
 }
 
-request() {
-  local response status=0
-  response=$("$@") || status=$?
-  if ((status != 0)); then
-    printf '%s\n' "$response" >&2
-    fail "HCP Terraform rejected the request — request exit status $status"
+request() (
+  # Bound bytes before capture, including transfers without Content-Length.
+  umask 077
+  response_dir=$(mktemp -d "${TMPDIR:-/tmp}/emisar-hcp-terraform.XXXXXXXX") || exit 1
+  trap 'rm -f -- "$response_dir/body"; rmdir -- "$response_dir"' EXIT
+  trap 'exit 129' HUP
+  trap 'exit 130' INT
+  trap 'exit 143' TERM
+  if "$@" | head -c "$((max_response_bytes + 1))" >"$response_dir/body"; then
+    statuses=("${PIPESTATUS[@]}")
+  else
+    statuses=("${PIPESTATUS[@]}")
   fi
-  ((${#response} <= max_response_bytes)) || fail "API response exceeded 32 MiB"
-  printf '%s' "$response"
-}
+  bytes=$(wc -c <"$response_dir/body")
+  ((bytes <= max_response_bytes && statuses[0] != 63)) || fail "API response exceeded 32 MiB"
+  ((statuses[1] == 0)) || fail "Could not read API response"
+  if ((statuses[0] != 0)); then
+    cat "$response_dir/body" >&2
+    fail "HCP Terraform rejected the request — request exit status ${statuses[0]}"
+  fi
+  cat "$response_dir/body"
+)
 
 require_id() {
   local kind=$1 value=$2 prefix=$3

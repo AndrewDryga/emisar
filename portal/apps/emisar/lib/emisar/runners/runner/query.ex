@@ -41,8 +41,56 @@ defmodule Emisar.Runners.Runner.Query do
   def by_account_id(queryable, account_id),
     do: where(queryable, [runners: r], r.account_id == ^account_id)
 
+  def by_account_runner_pairs(queryable, pairs) do
+    {account_ids, runner_ids} = Enum.unzip(pairs)
+
+    where(
+      queryable,
+      [runners: r],
+      fragment(
+        "(?, ?) IN (SELECT * FROM unnest(?::uuid[], ?::uuid[]))",
+        r.account_id,
+        r.id,
+        type(^account_ids, {:array, :binary_id}),
+        type(^runner_ids, {:array, :binary_id})
+      )
+    )
+  end
+
+  def select_current_connection_generations(queryable, now) do
+    queryable
+    |> where(
+      [runners: r],
+      not is_nil(r.connection_lease_id) and r.connection_lease_expires_at > ^now
+    )
+    |> select([runners: r], {r.account_id, r.id, r.connection_generation})
+  end
+
   def select_scope_facts(queryable),
     do: select(queryable, [runners: r], %{id: r.id, group: r.group})
+
+  @doc "Only identity, advertisement and connection fields used by model discovery."
+  def select_model_fields(queryable) do
+    select(
+      queryable,
+      [runners: r],
+      struct(r, [
+        :id,
+        :account_id,
+        :external_id,
+        :name,
+        :hostname,
+        :group,
+        :labels,
+        :packs,
+        :degraded_packs,
+        :enforce_signatures,
+        :disabled_at,
+        :last_connected_at,
+        :last_disconnected_at
+      ])
+    )
+  end
 
   @doc "Selects `{runner_id, runner_name}` for account-scoped UI option lists."
   def select_options(queryable),
@@ -106,6 +154,19 @@ defmodule Emisar.Runners.Runner.Query do
     do: order_by(queryable, [runners: r], asc: r.name, asc: r.id)
 
   def limit_to(queryable, limit), do: limit(queryable, ^limit)
+
+  def after_id(queryable, nil), do: queryable
+  def after_id(queryable, id), do: where(queryable, [runners: r], r.id > ^id)
+
+  def retention_batch(queryable, limit) do
+    queryable
+    |> order_by([runners: r], asc: r.id)
+    |> limit_to(limit)
+    |> select_retention_fields()
+  end
+
+  def select_retention_fields(queryable),
+    do: select(queryable, [runners: r], struct(r, [:id, :account_id, :name]))
 
   @doc """
   Filter by derived connection state. `online_ids` is the set of runner

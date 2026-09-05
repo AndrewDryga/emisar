@@ -3485,35 +3485,59 @@ defmodule Emisar.RunsTest do
     end
   end
 
-  describe "list_stale_dispatches/2" do
-    setup do
-      account = Fixtures.Accounts.create_account()
-      _ = Fixtures.Policies.create_policy(account_id: account.id)
-      subject = owner_subject_for(account)
-      %{account: account, subject: subject}
-    end
-
-    test "returns only pending/sent runs older than the cutoff", %{
-      account: account,
-      subject: subject
-    } do
-      runner = Fixtures.Runners.create_runner(account_id: account.id)
-      _ = Fixtures.Catalog.create_action(runner: runner)
-
-      {:ok, :running, fresh} =
-        Runs.dispatch_run(base_attrs(account.id, runner.id), subject)
-
-      # Backdate one run so it's past the cutoff.
-      stale_inserted_at = DateTime.utc_now() |> DateTime.add(-5 * 60, :second)
+  describe "list_stale_sent_dispatches/3" do
+    test "pages stale sent runs across accounts without loading dispatch payloads" do
+      now = DateTime.utc_now()
+      cutoff = DateTime.add(now, -120, :second)
 
       stale =
-        fresh
-        |> Ecto.Changeset.change(queued_at: stale_inserted_at, status: :sent)
-        |> Repo.update!()
+        for _ <- 1..3 do
+          Fixtures.Runs.create_run(status: :sent, args_raw: ~s({"large":"payload"}))
+          |> Ecto.Changeset.change(queued_at: DateTime.add(now, -300, :second))
+          |> Repo.update!()
+        end
 
-      cutoff = DateTime.utc_now() |> DateTime.add(-2 * 60, :second)
-      assert [stale_row] = Runs.list_stale_dispatches(cutoff)
-      assert stale_row.id == stale.id
+      for {status, queued_at} <- [{:pending, DateTime.add(now, -300, :second)}, {:sent, now}] do
+        Fixtures.Runs.create_run(status: status)
+        |> Ecto.Changeset.change(queued_at: queued_at)
+        |> Repo.update!()
+      end
+
+      first = Runs.list_stale_sent_dispatches(cutoff, 2, nil)
+      assert length(first) == 2
+      assert [last] = Runs.list_stale_sent_dispatches(cutoff, 2, List.last(first).id)
+      assert Enum.map(first ++ [last], & &1.id) == Enum.sort(Enum.map(stale, & &1.id))
+      assert Enum.all?(first ++ [last], &is_nil(&1.args_raw))
+      assert Runs.list_stale_sent_dispatches(cutoff, 2, last.id) == []
+    end
+  end
+
+  describe "list_stale_pending_dispatches/3" do
+    test "keeps each runner contiguous across page boundaries and excludes other states" do
+      cutoff = DateTime.add(DateTime.utc_now(), -120, :second)
+      queued_at = DateTime.add(cutoff, -180, :second)
+
+      rows =
+        for runner <- Enum.map(1..2, fn _ -> Fixtures.Runners.create_runner() end), _ <- 1..3 do
+          Fixtures.Runs.create_run(
+            account_id: runner.account_id,
+            runner_id: runner.id,
+            status: :pending
+          )
+          |> Ecto.Changeset.change(queued_at: queued_at)
+          |> Repo.update!()
+        end
+
+      Fixtures.Runs.create_run(status: :sent)
+      Fixtures.Runs.create_run(status: :pending)
+      first = Runs.list_stale_pending_dispatches(cutoff, 2, nil)
+      last = List.last(first)
+      rest = Runs.list_stale_pending_dispatches(cutoff, 10, {last.runner_id, last.id})
+      key = &{&1.runner_id, &1.id}
+
+      assert length(first) == 2
+      assert Enum.map(first ++ rest, key) == Enum.sort(Enum.map(rows, key))
+      assert Enum.all?(first ++ rest, &is_nil(&1.args_raw))
     end
   end
 
@@ -3536,7 +3560,7 @@ defmodule Emisar.RunsTest do
     end
   end
 
-  describe "RunDispatchTimeout sweep (worker over list_stale_dispatches/1)" do
+  describe "RunDispatchTimeout sweep" do
     setup do
       account = Fixtures.Accounts.create_account()
       _ = Fixtures.Policies.create_policy(account_id: account.id)
@@ -3797,19 +3821,22 @@ defmodule Emisar.RunsTest do
     end
   end
 
-  describe "list_running_runs/1" do
-    test "bounds the batch so one tick cannot load the whole fleet" do
+  describe "list_running_runs/2" do
+    test "bounds each page and advances past unchanged rows" do
       account = Fixtures.Accounts.create_account()
       runner = Fixtures.Runners.create_runner(account_id: account.id)
 
-      for _ <- 1..3 do
-        Fixtures.Runs.create_run(account_id: account.id, runner_id: runner.id, status: :running)
-      end
+      rows =
+        for _ <- 1..3 do
+          Fixtures.Runs.create_run(account_id: account.id, runner_id: runner.id, status: :running)
+        end
 
-      # DispatchTimeout loads this every 60s, fleet-wide: a wide outage parking
-      # tens of thousands of runs made the tick outlast its own interval, so
-      # timeouts stopped being enforced during the incident they exist for.
-      assert length(Runs.list_running_runs(2)) == 2
+      first = Runs.list_running_runs(2, nil)
+      assert length(first) == 2
+      assert [last] = Runs.list_running_runs(2, List.last(first).id)
+      assert Enum.map(first ++ [last], & &1.id) == Enum.sort(Enum.map(rows, & &1.id))
+      assert Enum.all?(first ++ [last], &is_nil(&1.args_raw))
+      assert Runs.list_running_runs(2, last.id) == []
     end
 
     test "returns only in-flight rows" do
@@ -3819,8 +3846,12 @@ defmodule Emisar.RunsTest do
       {:ok, running} = Runs.create_run(base_attrs(account.id, runner.id))
       running = Fixtures.Runs.put_status(running, :running)
 
-      ids = Runs.list_running_runs() |> Enum.map(& &1.id)
+      cancelling = Fixtures.Runs.create_run(status: :cancelling)
+      Fixtures.Runs.create_run(status: :success)
+
+      ids = Runs.list_running_runs(10, nil) |> Enum.map(& &1.id)
       assert running.id in ids
+      assert cancelling.id in ids
       refute pending.id in ids
       assert running.status == :running
       assert %DateTime{} = running.started_at

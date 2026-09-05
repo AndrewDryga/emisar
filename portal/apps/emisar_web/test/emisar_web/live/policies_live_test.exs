@@ -451,21 +451,21 @@ defmodule EmisarWeb.PoliciesLiveTest do
 
       # Regex-flavored: the escaped dot is a literal here, so this denies
       # nothing while reading exactly like a rule that protects the fleet.
-      html =
-        lv
-        |> form("#policy-form-account", %{
-          "policy" => %{
-            "overrides" => %{
-              "0" => %{
-                "name" => "block-reload",
-                "action" => "nginx\\.reload",
-                "decision" => "deny"
-              }
+      lv
+      |> form("#policy-form-account", %{
+        "policy" => %{
+          "overrides" => %{
+            "0" => %{
+              "name" => "block-reload",
+              "action" => "nginx\\.reload",
+              "decision" => "deny"
             }
           }
-        })
-        |> render_change()
+        }
+      })
+      |> render_change()
 
+      html = settle_previews(lv)
       assert html =~ "Matches no action on this target"
       assert html =~ "this <strong>deny</strong>"
     end
@@ -657,6 +657,7 @@ defmodule EmisarWeb.PoliciesLiveTest do
       assert html =~
                ~r/<label[^>]*ring-2[^>]*ring-brand-500\/50[^>]*>\s*<input[^>]*name="policy\[approval\]\[allow_self_approval\]"[^>]*value="true"[^>]*checked/
 
+      settle_previews(lv)
       form_html = lv |> element("#policy-form-account") |> render()
       rail_html = lv |> element("#policy-rail-account") |> render()
 
@@ -922,7 +923,7 @@ defmodule EmisarWeb.PoliciesLiveTest do
     end
 
     test "another account's default policy + rulesets never appear on this page", %{conn: conn} do
-      # `fetch_policy` / `list_scoped_policies` scope to the
+      # `fetch_policy` / `list_scoped_policy_summaries` scope to the
       # subject's account via `for_subject`, so a foreign account's saved default
       # and runner ruleset are invisible here.
       {conn, _user, account} = register_and_log_in(conn)
@@ -1107,7 +1108,8 @@ defmodule EmisarWeb.PoliciesLiveTest do
         Emisar.Accounts.update_membership_runner_access(membership, restricted, subject)
 
       admin_conn = log_in_user(build_conn(), Emisar.Repo.preload(membership, :user).user)
-      {:ok, lv, html} = live(admin_conn, ~p"/app/#{account}/policies")
+      {:ok, lv, _html} = live(admin_conn, ~p"/app/#{account}/policies")
+      html = render_click(lv, "open_ruleset", %{"uid" => scoped.id})
 
       assert html =~ "The default applies to every runner"
       refute has_element?(lv, "#policy-form-account button[type=submit]")
@@ -1147,7 +1149,7 @@ defmodule EmisarWeb.PoliciesLiveTest do
 
       refute html =~ "unless a targeted ruleset below overrides it"
       refute html =~ "Targeted rulesets"
-      assert html =~ "No action catalog is visible without runner access."
+      assert settle_previews(lv) =~ "No action catalog is visible without runner access."
       refute html =~ "once a runner reports its catalog"
       refute has_element?(lv, "#policy-form-account button[type=submit]")
       refute has_element?(lv, "#add-ruleset-row")
@@ -1168,7 +1170,8 @@ defmodule EmisarWeb.PoliciesLiveTest do
         Emisar.Accounts.update_membership_runner_access(membership, restricted, subject)
 
       admin_conn = log_in_user(build_conn(), Emisar.Repo.preload(membership, :user).user)
-      {:ok, lv, html} = live(admin_conn, ~p"/app/#{account}/policies")
+      {:ok, lv, _html} = live(admin_conn, ~p"/app/#{account}/policies")
+      html = render_click(lv, "open_ruleset", %{"uid" => scoped.id})
 
       assert html =~ "Policy rules can affect every pack on their target"
       refute has_element?(lv, "#policy-form-account button[type=submit]")
@@ -1185,9 +1188,10 @@ defmodule EmisarWeb.PoliciesLiveTest do
       runner =
         Fixtures.Runners.create_runner(account_id: account.id, name: "web-1", group: "web")
 
-      {:ok, _} = Policies.save_scoped_rules(deny_all(), :runner, runner.id, subject)
+      {:ok, scoped} = Policies.save_scoped_rules(deny_all(), :runner, runner.id, subject)
 
-      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/policies")
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/policies")
+      html = render_click(lv, "open_ruleset", %{"uid" => scoped.id})
 
       assert html =~ "Default policy"
       assert html =~ "Targeted rulesets"
@@ -1209,7 +1213,7 @@ defmodule EmisarWeb.PoliciesLiveTest do
       runner =
         Fixtures.Runners.create_runner(account_id: account.id, name: "ghost-1", group: "web")
 
-      {:ok, _} = Policies.save_scoped_rules(deny_all(), :runner, runner.id, subject)
+      {:ok, scoped} = Policies.save_scoped_rules(deny_all(), :runner, runner.id, subject)
 
       # Soft-delete the runner — it drops out of `@runners`, so the label resolver
       # can't find a name for the saved scope.
@@ -1217,7 +1221,8 @@ defmodule EmisarWeb.PoliciesLiveTest do
       |> Emisar.Runners.Runner.Query.by_id(runner.id)
       |> Emisar.Repo.update_all(set: [deleted_at: DateTime.utc_now()])
 
-      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/policies")
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/policies")
+      html = render_click(lv, "open_ruleset", %{"uid" => scoped.id})
 
       # The deleted runner's name is gone; the card identifies the scope by its id.
       refute html =~ "ghost-1"
@@ -1234,7 +1239,7 @@ defmodule EmisarWeb.PoliciesLiveTest do
       # crash, the page is unchanged.
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/policies")
 
-      before = render(lv)
+      before = settle_previews(lv)
       # Dispatch the event directly (the button doesn't exist for this uid); it
       # returns without raising and leaves the rendered page identical.
       render_hook(lv, "remove_ruleset", %{"uid" => "new-does-not-exist"})
@@ -1261,7 +1266,8 @@ defmodule EmisarWeb.PoliciesLiveTest do
       # allowed), so this scope is weaker than the strict account default.
       {:ok, scoped} = Policies.save_scoped_rules(deny_all(), :runner, runner.id, subject)
 
-      {:ok, lv, html} = live(conn, ~p"/app/#{account}/policies")
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/policies")
+      html = render_click(lv, "open_ruleset", %{"uid" => scoped.id})
 
       assert html =~ "Weaker approval gate than the default policy"
       assert html =~ "requires fewer approvals (1 vs 2)"
@@ -1290,9 +1296,10 @@ defmodule EmisarWeb.PoliciesLiveTest do
       runner = Fixtures.Runners.create_runner(account_id: account.id, name: "web-1", group: "web")
       # The account default is the lax baseline (1 approver, self-approval on), so
       # a deny_all ruleset matches it — nothing weaker to warn about.
-      {:ok, _} = Policies.save_scoped_rules(deny_all(), :runner, runner.id, subject)
+      {:ok, scoped} = Policies.save_scoped_rules(deny_all(), :runner, runner.id, subject)
 
-      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/policies")
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/policies")
+      html = render_click(lv, "open_ruleset", %{"uid" => scoped.id})
 
       refute html =~ "Weaker approval gate than the default policy"
     end
@@ -1321,7 +1328,7 @@ defmodule EmisarWeb.PoliciesLiveTest do
 
       lv |> form(~s(form[id^="policy-form-new-"])) |> render_submit()
 
-      assert {:ok, [policy]} = Policies.list_scoped_policies(subject)
+      assert {:ok, [policy], _metadata} = Policies.list_scoped_policy_summaries(subject)
       assert policy.scope_type == :runner
       assert policy.scope_value == runner.id
     end
@@ -1347,25 +1354,23 @@ defmodule EmisarWeb.PoliciesLiveTest do
 
       admin_conn = log_in_user(build_conn(), Emisar.Repo.preload(membership, :user).user)
 
-      for {target, noun} <- [
-            {"runner:" <> Ecto.UUID.generate(), "That runner"},
-            {"group:edge", "That group"}
+      for target <- [
+            "runner:" <> Ecto.UUID.generate(),
+            "group:edge"
           ] do
         {:ok, lv, _html} = live(admin_conn, ~p"/app/#{account}/policies")
 
         html = lv |> render_click("add_ruleset", %{})
         [uid] = Regex.run(~r/new-\d+/, html)
 
-        render_hook(lv, "set_target", %{"uid" => uid, "target" => target})
-
-        html = lv |> form(~s(form[id^="policy-form-new-"])) |> render_submit()
-
-        assert html =~ noun
-        assert html =~ "in your fleet."
+        html = render_hook(lv, "set_target", %{"uid" => uid, "target" => target})
+        refute has_element?(lv, ~s(form[id^="policy-form-new-"]))
+        assert html =~ "isn&#39;t in your fleet"
+        render_hook(lv, "save", %{"editor" => uid})
       end
 
       # The crafted scopes persisted nothing — no override exists.
-      assert Policies.list_scoped_policies(subject) == {:ok, []}
+      assert {:ok, [], _metadata} = Policies.list_scoped_policy_summaries(subject)
     end
 
     test "add a ruleset → pick a group → save → persists a group-scoped policy", %{
@@ -1386,7 +1391,7 @@ defmodule EmisarWeb.PoliciesLiveTest do
 
       lv |> form(~s(form[id^="policy-form-new-"])) |> render_submit()
 
-      assert {:ok, [policy]} = Policies.list_scoped_policies(subject)
+      assert {:ok, [policy], _metadata} = Policies.list_scoped_policy_summaries(subject)
       assert policy.scope_type == :group
       assert policy.scope_value == "prod"
     end
@@ -1444,10 +1449,11 @@ defmodule EmisarWeb.PoliciesLiveTest do
       {:ok, saved} = Policies.save_scoped_rules(deny_all(), :runner, runner.id, subject)
 
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/policies")
+      render_click(lv, "open_ruleset", %{"uid" => saved.id})
       html = lv |> render_click("remove_ruleset", %{"uid" => saved.id})
 
       assert html =~ "Ruleset removed"
-      assert Policies.list_scoped_policies(subject) == {:ok, []}
+      assert {:ok, [], _metadata} = Policies.list_scoped_policy_summaries(subject)
     end
 
     test "a viewer sees the policy read-only and a forged save is denied", %{
@@ -1508,11 +1514,13 @@ defmodule EmisarWeb.PoliciesLiveTest do
       {:ok, lv, _html} =
         build_conn() |> log_in_user(operator) |> live(~p"/app/#{account}/policies")
 
+      render_click(lv, "open_ruleset", %{"uid" => saved.id})
+
       assert render_hook(lv, "remove_ruleset", %{"uid" => saved.id}) =~
                "have permission to do that"
 
       # The ruleset is still there.
-      assert {:ok, [_]} = Policies.list_scoped_policies(subject)
+      assert {:ok, [_], _metadata} = Policies.list_scoped_policy_summaries(subject)
     end
 
     test "a viewer's crafted remove_ruleset is denied", %{
@@ -1537,10 +1545,12 @@ defmodule EmisarWeb.PoliciesLiveTest do
       {:ok, lv, _html} =
         build_conn() |> log_in_user(viewer) |> live(~p"/app/#{account}/policies")
 
+      render_click(lv, "open_ruleset", %{"uid" => saved.id})
+
       assert render_hook(lv, "remove_ruleset", %{"uid" => saved.id}) =~
                "have permission to do that"
 
-      assert {:ok, [_]} = Policies.list_scoped_policies(subject)
+      assert {:ok, [_], _metadata} = Policies.list_scoped_policy_summaries(subject)
     end
 
     test "an operator's crafted add_ruleset is a no-op — no card added", %{
@@ -1589,7 +1599,7 @@ defmodule EmisarWeb.PoliciesLiveTest do
 
       # First save persists the row and rebuilds the card under the policy id.
       lv |> form(~s(form[id^="policy-form-new-"])) |> render_submit()
-      assert {:ok, [policy]} = Policies.list_scoped_policies(subject)
+      assert {:ok, [policy], _metadata} = Policies.list_scoped_policy_summaries(subject)
 
       # The card now submits under the policy id, not `new-…`.
       html = render(lv)
@@ -1599,7 +1609,7 @@ defmodule EmisarWeb.PoliciesLiveTest do
       # Second save edits the same scope — still exactly one runner ruleset.
       lv |> form(~s(form[id="policy-form-#{policy.id}"])) |> render_submit()
 
-      {:ok, scoped} = Policies.list_scoped_policies(subject)
+      {:ok, scoped, _metadata} = Policies.list_scoped_policy_summaries(subject)
       assert Enum.count(scoped, &(&1.scope_type == :runner and &1.scope_value == runner.id)) == 1
     end
 
@@ -1619,7 +1629,7 @@ defmodule EmisarWeb.PoliciesLiveTest do
       html = lv |> render_click("add_ruleset", %{})
 
       # Two separate picker forms, each carrying its own hidden uid.
-      uids = Regex.scan(~r/name="uid" value="(new-\d+)"/, html, capture: :all_but_first)
+      uids = Regex.scan(~r/id="policy-target-form-(new-\d+)"/, html, capture: :all_but_first)
       assert length(uids) == 2
       assert uids |> List.flatten() |> Enum.uniq() |> length() == 2
     end
@@ -1767,6 +1777,7 @@ defmodule EmisarWeb.PoliciesLiveTest do
       {:ok, saved} = Policies.save_scoped_rules(deny_all(), :runner, runner.id, subject)
 
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/policies")
+      render_click(lv, "open_ruleset", %{"uid" => saved.id})
 
       html = lv |> render_click("add_override", %{"editor" => saved.id})
 
@@ -1803,7 +1814,8 @@ defmodule EmisarWeb.PoliciesLiveTest do
           subject
         )
 
-      {:ok, lv, html} = live(conn, ~p"/app/#{account}/policies")
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/policies")
+      html = render_click(lv, "open_ruleset", %{"uid" => saved.id})
       assert html =~ ~s(value="scoped-one")
 
       html = lv |> render_click("remove_override", %{"editor" => saved.id, "index" => "0"})
@@ -1823,6 +1835,23 @@ defmodule EmisarWeb.PoliciesLiveTest do
     end
 
     assert Process.alive?(lv.pid)
+  end
+
+  defp settle_previews(lv) do
+    state = :sys.get_state(lv.pid).socket.assigns
+
+    Enum.each([state.account | state.rulesets], fn
+      %{preview_timer: nil} ->
+        :ok
+
+      editor ->
+        Process.cancel_timer(editor.preview_timer)
+        send(lv.pid, {:preview_due, editor.uid, editor.preview_generation})
+    end)
+
+    render(lv)
+    render_async(lv, 2_000)
+    render(lv)
   end
 
   defp deny_all do

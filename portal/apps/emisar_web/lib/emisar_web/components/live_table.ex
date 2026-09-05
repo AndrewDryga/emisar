@@ -46,6 +46,10 @@ defmodule EmisarWeb.LiveTable do
   attr :filter_params, :map, default: %{}, doc: "params currently driving the filter form"
   attr :filters, :list, default: [], doc: "list of %Filter{} from the entity's owning context"
 
+  attr :filter_option_pickers, :map,
+    default: %{},
+    doc: "Host-owned search and cursor metadata for bounded filter choices, keyed by filter name"
+
   attr :filter_layout, :atom,
     default: :inline,
     values: [:inline, :stacked],
@@ -137,6 +141,7 @@ defmodule EmisarWeb.LiveTable do
         id={"#{@id}-filter"}
         path={@path}
         filters={@filters}
+        option_pickers={@filter_option_pickers}
         params={@filter_params}
         layout={@filter_layout}
         hidden={filters_inert?(@rows, @filter_params, @filters, @prefix)}
@@ -210,6 +215,7 @@ defmodule EmisarWeb.LiveTable do
         id={"#{@id}-filter"}
         path={@path}
         filters={@filters}
+        option_pickers={@filter_option_pickers}
         params={@filter_params}
         layout={@filter_layout}
         hidden={filters_inert?(@rows, @filter_params, @filters, @prefix)}
@@ -339,6 +345,7 @@ defmodule EmisarWeb.LiveTable do
   attr :path, :string, required: true
   attr :filters, :list, required: true
   attr :params, :map, required: true
+  attr :option_pickers, :map, default: %{}
   attr :layout, :atom, default: :inline
   # ACCOUNT-empty hides the bar outright — dead controls above a zero-state
   # pitch push the page's job down (filter-empty keeps live controls, since
@@ -356,6 +363,7 @@ defmodule EmisarWeb.LiveTable do
         <div :for={filter <- @filters} class={filter_item_class(@layout, filter)}>
           <.filter_input
             filter={filter}
+            option_picker={Map.get(@option_pickers, filter.name)}
             value={filter_value(@params, to_string(filter.name), filter)}
           />
         </div>
@@ -411,6 +419,79 @@ defmodule EmisarWeb.LiveTable do
 
   attr :filter, :any, required: true
   attr :value, :any, default: nil
+  attr :option_picker, :map, default: nil
+
+  # Choice pages are host-owned state, separate from the event page URL. The
+  # input-level event deliberately overrides the surrounding filter form's
+  # change event; searching choices does not apply a new event filter.
+  defp filter_input(%{option_picker: %{} = picker} = assigns) do
+    assigns =
+      assigns
+      |> assign(:selected, List.wrap(assigns.value))
+      |> assign(:groups, normalize_groups(assigns.filter.values || []))
+      |> assign(:active?, filter_active?(assigns.filter, assigns.value))
+      |> assign(:picker, picker)
+
+    ~H"""
+    <div id={"filter-#{@filter.name}-choices"} class="space-y-2">
+      <label class={filter_label_class(@active?)}>
+        <span class="mb-1">{@filter.title}</span>
+        <CoreComponents.select
+          name={to_string(@filter.name)}
+          size={:filter}
+          active?={@active?}
+          prompt="All"
+          options={filter_select_options(@groups, @selected)}
+        />
+      </label>
+      <CoreComponents.input
+        id={"filter-#{@filter.name}-search"}
+        name={"option_search[#{@filter.name}]"}
+        type="search"
+        value={@picker.search}
+        size={:compact}
+        aria-label={"Search #{@filter.title} choices"}
+        placeholder="Search names"
+        autocomplete="off"
+        maxlength="512"
+        phx-change="search_filter_options"
+        phx-debounce="300"
+      />
+      <p :if={@picker.error} role="status" class="text-xs text-red-400">{@picker.error}</p>
+      <p :if={is_nil(@picker.error) and @picker.empty?} role="status" class="text-xs text-zinc-400">
+        {if @picker.selected, do: "No other matching choices.", else: "No matching choices."}
+      </p>
+      <nav
+        :if={@picker.metadata.previous_page_cursor || @picker.metadata.next_page_cursor}
+        aria-label={"#{@filter.title} choices"}
+        class="flex items-center justify-end gap-2"
+      >
+        <CoreComponents.button
+          :if={@picker.metadata.previous_page_cursor}
+          type="button"
+          variant={:secondary}
+          size={:sm}
+          phx-click="page_filter_options"
+          phx-value-field={@filter.name}
+          phx-value-direction="previous"
+        >
+          ← Prev
+        </CoreComponents.button>
+        <CoreComponents.button
+          :if={@picker.metadata.next_page_cursor}
+          type="button"
+          variant={:secondary}
+          size={:sm}
+          phx-click="page_filter_options"
+          phx-value-field={@filter.name}
+          phx-value-direction="next"
+        >
+          Next →
+        </CoreComponents.button>
+      </nav>
+    </div>
+    """
+  end
 
   # Searchable combobox for a large {:list, _} filter (`%Filter{search: true}` —
   # the audit Type picker's ~90 grouped options). Server renders the full option

@@ -1393,6 +1393,354 @@ defmodule EmisarWeb.MCPCatalogToolsTest do
     assert stale["error"]["next"]["tool"] == "get_action"
   end
 
+  test "runner metadata pages hydrate only emitted deployments while retaining global cursor scope",
+       %{
+         conn: conn,
+         account: account,
+         subject: subject
+       } do
+    runners =
+      for name <- ~w(alpha beta gamma) do
+        runner = Fixtures.Runners.create_runner(account_id: account.id, name: name)
+
+        observe!(runner, %{name => %{"version" => "1.0.0", "hash" => @hash}}, [
+          action("#{name}.read", name),
+          action("#{name}.inspect", name)
+        ])
+
+        runner
+      end
+
+    trust_all!(subject)
+    observe_catalog_queries()
+
+    first = call(conn, "list_runners", %{"limit" => 1})
+    assert [%{"name" => "alpha", "packs" => ["alpha"]}] = first["runners"]
+    assert first["summary"]["matched"] == 3
+    assert first["summary"]["connected"] == 3
+    assert is_binary(first["next_cursor"])
+    assert_catalog_reads(catalog_queries(), [2], [1])
+
+    second = call(conn, "list_runners", %{"limit" => 1, "cursor" => first["next_cursor"]})
+    assert [%{"name" => "beta", "packs" => ["beta"]}] = second["runners"]
+    assert second["summary"] == first["summary"]
+    assert_catalog_reads(catalog_queries(), [2], [1])
+
+    # A pack outside either emitted page remains part of the inventory scope.
+    observe!(List.last(runners), %{"gamma" => %{"version" => "2.0.0", "hash" => @hash}}, [
+      action("gamma.read", "gamma"),
+      action("gamma.inspect", "gamma")
+    ])
+
+    trust_all!(subject)
+    invalid = call(conn, "list_runners", %{"limit" => 1, "cursor" => first["next_cursor"]})
+    assert invalid["error"]["code"] == "invalid_cursor"
+  end
+
+  test "pack pagination scans unavailable prefix chunks until it has an executable lookahead", %{
+    conn: conn,
+    account: account,
+    subject: subject
+  } do
+    runner = Fixtures.Runners.create_runner(account_id: account.id)
+    names = ~w(alpha beta gamma theta zeta)
+    packs = Map.new(names, &{&1, %{"version" => "1.0.0", "hash" => @hash}})
+
+    actions =
+      Enum.map(names, fn name ->
+        descriptor = action("#{name}.read", name)
+
+        if name in ~w(alpha beta gamma) do
+          Map.merge(descriptor, %{
+            "primary_executable_available" => false,
+            "missing_executable" => "fixture-tool"
+          })
+        else
+          descriptor
+        end
+      end)
+
+    observe!(runner, packs, actions)
+    trust_all!(subject)
+    observe_catalog_queries()
+
+    first = call(conn, "list_packs", %{"limit" => 1})
+    assert [%{"pack_ref" => "theta@1.0.0/" <> @hash}] = first["packs"]
+    assert is_binary(first["next_cursor"])
+    assert_catalog_reads(catalog_queries(), [2, 2, 1], [2, 2, 1])
+
+    second = call(conn, "list_packs", %{"limit" => 1, "cursor" => first["next_cursor"]})
+    assert [%{"pack_ref" => "zeta@1.0.0/" <> @hash}] = second["packs"]
+    assert second["next_cursor"] == nil
+    assert_catalog_reads(catalog_queries(), [1], [1])
+  end
+
+  test "byte-fitted pack cursors resume after the last emitted pack rather than the hydrated lookahead",
+       %{conn: conn, account: account, subject: subject} do
+    runner = Fixtures.Runners.create_runner(account_id: account.id)
+    names = ~w(alpha beta gamma)
+    packs = Map.new(names, &{&1, %{"version" => "1.0.0", "hash" => @hash}})
+
+    actions =
+      for name <- names, index <- 1..60 do
+        action("#{name}.read#{index}", name,
+          title: String.duplicate("t", 160),
+          summary: String.duplicate("s", 512)
+        )
+      end
+
+    observe!(runner, packs, actions)
+    trust_all!(subject)
+    observe_catalog_queries()
+
+    first = call(conn, "list_packs", %{"include" => "all", "limit" => 2})
+    assert [%{"pack_ref" => "alpha@1.0.0/" <> @hash, "actions" => emitted}] = first["packs"]
+    assert length(emitted) == 60
+    assert byte_size(Jason.encode!(first["packs"])) > 30_000
+    assert byte_size(Jason.encode!(first["packs"])) <= 60_000
+    assert_catalog_reads(catalog_queries(), [180], [3])
+
+    second =
+      call(conn, "list_packs", %{
+        "include" => "all",
+        "limit" => 2,
+        "cursor" => first["next_cursor"]
+      })
+
+    assert [%{"pack_ref" => "beta@1.0.0/" <> @hash}] = second["packs"]
+    assert is_binary(second["next_cursor"])
+    assert_catalog_reads(catalog_queries(), [120], [2])
+
+    third =
+      call(conn, "list_packs", %{
+        "include" => "all",
+        "limit" => 2,
+        "cursor" => second["next_cursor"]
+      })
+
+    assert [%{"pack_ref" => "gamma@1.0.0/" <> @hash}] = third["packs"]
+    assert third["next_cursor"] == nil
+    assert_catalog_reads(catalog_queries(), [60], [1])
+  end
+
+  test "an exact filtered pack retains version skew and issues from every advertising peer", %{
+    conn: conn,
+    account: account,
+    subject: subject
+  } do
+    healthy = Fixtures.Runners.create_runner(account_id: account.id, name: "healthy")
+    changed = Fixtures.Runners.create_runner(account_id: account.id, name: "changed")
+    newer = Fixtures.Runners.create_runner(account_id: account.id, name: "newer")
+    first_deployment = %{"acme" => %{"version" => "1.0.0", "hash" => @hash}}
+    descriptors = [action("acme.read", "acme")]
+    observe!(healthy, first_deployment, descriptors)
+    observe!(changed, first_deployment, descriptors)
+    observe!(newer, %{"acme" => %{"version" => "2.0.0", "hash" => @hash}}, descriptors)
+    trust_all!(subject)
+    observe!(changed, first_deployment, [action("acme.read", "acme", title: "Untrusted change")])
+    {:ok, healthy_ref} = Runners.public_ref(healthy)
+    observe_catalog_queries()
+
+    result =
+      call(conn, "list_packs", %{
+        "pack_ref" => "acme@1.0.0/#{@hash}",
+        "runner_refs" => [healthy_ref],
+        "include" => "all",
+        "limit" => 1
+      })
+
+    assert [pack] = result["packs"]
+    assert pack["availability"] == "executable"
+    assert [%{"title" => "acme.read", "availability" => "executable"}] = pack["actions"]
+
+    assert Enum.sort(Enum.map(pack["issues"], & &1["code"])) ==
+             ~w(descriptor_mismatch partially_deployed version_skew)
+
+    assert result["next_cursor"] == nil
+    assert_catalog_reads(catalog_queries(), [2], [1])
+  end
+
+  test "exact missing actions hydrate once and narrowed unavailable continuations use the global first pack",
+       %{conn: conn, account: account, subject: subject} do
+    first = Fixtures.Runners.create_runner(account_id: account.id, name: "global-first")
+    selected = Fixtures.Runners.create_runner(account_id: account.id, name: "selected-target")
+
+    observe!(first, %{"alpha" => %{"version" => "1.0.0", "hash" => @hash}}, [
+      action("shared.read", "alpha")
+    ])
+
+    observe!(selected, %{"zeta" => %{"version" => "1.0.0", "hash" => @hash}}, [
+      action("shared.read", "zeta")
+      |> Map.put("primary_executable_available", false)
+      |> Map.put("missing_executable", "fixture-tool")
+    ])
+
+    trust_all!(subject)
+    observe_catalog_queries()
+
+    missing = call(conn, "find_actions", %{"action_id" => "shared.absent"})
+    assert missing["ok"]
+    assert missing["candidates"] == []
+    assert missing["next"] == nil
+    assert_catalog_reads(catalog_queries(), [2], [2])
+
+    unavailable =
+      call(conn, "find_actions", %{
+        "action_id" => "shared.read",
+        "target" => "selected-target"
+      })
+
+    assert unavailable["error"]["code"] == "action_unavailable"
+    assert unavailable["error"]["next"]["tool"] == "list_runners"
+
+    assert unavailable["error"]["next"]["arguments"]["pack_ref"] ==
+             "alpha@1.0.0/#{@hash}"
+
+    assert unavailable["error"]["next"]["arguments"]["action_id"] == "shared.read"
+    assert_catalog_reads(catalog_queries(), [1, 2], [1, 2])
+  end
+
+  test "runner issue and exact-action summaries include matches past the fifty-runner hydration chunk",
+       %{
+         conn: conn,
+         account: account,
+         subject: subject
+       } do
+    for index <- 1..52 do
+      name = "fleet-" <> String.pad_leading(Integer.to_string(index), 2, "0")
+      runner = Fixtures.Runners.create_runner(account_id: account.id, name: name)
+      descriptor = action("acme.read", "acme")
+
+      descriptor =
+        if index in [1, 52] do
+          Map.merge(descriptor, %{
+            "primary_executable_available" => false,
+            "missing_executable" => "fixture-tool"
+          })
+        else
+          descriptor
+        end
+
+      observe!(runner, %{"acme" => %{"version" => "1.0.0", "hash" => @hash}}, [descriptor])
+    end
+
+    trust_all!(subject)
+    observe_catalog_queries()
+    first = call(conn, "list_runners", %{"issues_only" => true, "limit" => 1})
+    assert [%{"name" => "fleet-01"}] = first["runners"]
+    assert first["summary"]["matched"] == 2
+    assert first["summary"]["connected"] == 2
+    assert_catalog_reads(catalog_queries(), [50, 2, 1], [1, 1, 1])
+
+    second =
+      call(conn, "list_runners", %{
+        "issues_only" => true,
+        "limit" => 1,
+        "cursor" => first["next_cursor"]
+      })
+
+    assert [%{"name" => "fleet-52"}] = second["runners"]
+    assert second["summary"] == first["summary"]
+    assert second["next_cursor"] == nil
+    assert_catalog_reads(catalog_queries(), [50, 2, 1], [1, 1, 1])
+
+    executable =
+      call(conn, "list_runners", %{
+        "pack_ref" => "acme@1.0.0/#{@hash}",
+        "action_id" => "acme.read",
+        "limit" => 1
+      })
+
+    assert [%{"name" => "fleet-02"}] = executable["runners"]
+    assert executable["summary"]["matched"] == 50
+    assert executable["summary"]["connected"] == 50
+    assert is_binary(executable["next_cursor"])
+    assert_catalog_reads(catalog_queries(), [50, 2, 1], [1, 1, 1])
+  end
+
+  test "targeted search reads complete selected siblings but ranks every matching action before paging",
+       %{
+         conn: conn,
+         account: account,
+         subject: subject
+       } do
+    selected = Fixtures.Runners.create_runner(account_id: account.id, name: "selected-target")
+    other = Fixtures.Runners.create_runner(account_id: account.id, name: "other-target")
+
+    observe!(selected, %{"acme" => %{"version" => "1.0.0", "hash" => @hash}}, [
+      action("acme.disk_a", "acme", title: "Disk usage"),
+      action("acme.disk_b", "acme", title: "Disk usage"),
+      action("acme.unrelated", "acme", title: "Inspect memory")
+    ])
+
+    observe!(other, %{"other" => %{"version" => "1.0.0", "hash" => @hash}}, [
+      action("other.disk", "other", title: "Disk usage")
+    ])
+
+    trust_all!(subject)
+    observe_catalog_queries()
+
+    first =
+      call(conn, "find_actions", %{"query" => "disk", "target" => "selected-target", "limit" => 1})
+
+    assert [%{"action_id" => "acme.disk_a"}] = first["candidates"]
+    assert first["next"]["tool"] == "find_actions"
+    assert first["next"]["arguments"]["target"] == "selected-target"
+    assert_catalog_reads(catalog_queries(), [3], [1])
+
+    second = call(conn, "find_actions", first["next"]["arguments"])
+    assert [%{"action_id" => "acme.disk_b"}] = second["candidates"]
+    assert second["next"] == nil
+    assert_catalog_reads(catalog_queries(), [3], [1])
+  end
+
+  defp observe_catalog_queries do
+    handler = {__MODULE__, make_ref()}
+
+    :ok =
+      :telemetry.attach(
+        handler,
+        [:emisar, :repo, :query],
+        &__MODULE__.catalog_query_event/4,
+        self()
+      )
+
+    on_exit(fn -> :telemetry.detach(handler) end)
+  end
+
+  def catalog_query_event(_event, _measurements, metadata, owner) do
+    if self() == owner do
+      case metadata.result do
+        {:ok, %{num_rows: rows, columns: columns}} ->
+          send(owner, {:catalog_query, %{query: metadata.query, rows: rows, columns: columns}})
+
+        _other ->
+          :ok
+      end
+    end
+  end
+
+  defp catalog_queries(acc \\ []) do
+    receive do
+      {:catalog_query, query} -> catalog_queries([query | acc])
+    after
+      0 -> Enum.reverse(acc)
+    end
+  end
+
+  defp assert_catalog_reads(queries, action_rows, manifest_rows) do
+    actions = Enum.filter(queries, &String.contains?(&1.query, "FROM \"catalog_runner_actions\""))
+
+    manifests =
+      Enum.filter(queries, fn query ->
+        String.contains?(query.query, "FROM \"catalog_pack_versions\"") and
+          "trusted_manifest" in query.columns
+      end)
+
+    assert Enum.map(actions, & &1.rows) == action_rows
+    assert Enum.map(manifests, & &1.rows) == manifest_rows
+  end
+
   defp rpc(conn, method, params \\ %{}) do
     body = %{jsonrpc: "2.0", id: 1, method: method, params: params}
 

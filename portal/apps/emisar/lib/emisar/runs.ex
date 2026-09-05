@@ -2408,19 +2408,36 @@ defmodule Emisar.Runs do
   end
 
   @doc """
-  Internal — used by `Emisar.Runs.Jobs.DispatchTimeout` to find runs
-  that have been sitting in `pending` / `sent` longer than the
-  dispatch threshold. Returns a plain list (no pagination); the worker
-  iterates and decides per-run whether to time it out based on the
-  runner's current state.
+  Internal — one ID-keyset page of stale sent dispatches. The timeout sweep
+  examines every page, including runs it leaves active. Only sweep facts are
+  loaded; redelivery reads the complete current run before dispatching it.
   """
-  def list_stale_dispatches(cutoff, limit \\ @sweep_batch)
-      when is_struct(cutoff, DateTime) do
+  def list_stale_sent_dispatches(cutoff, limit, after_id)
+      when is_struct(cutoff, DateTime) and is_integer(limit) and limit > 0 do
     ActionRun.Query.all()
-    |> ActionRun.Query.status_in([:pending, :sent])
+    |> ActionRun.Query.status_in([:sent])
     |> ActionRun.Query.queued_before(cutoff)
-    |> ActionRun.Query.ordered_by_oldest()
+    |> ActionRun.Query.after_id(after_id)
+    |> ActionRun.Query.ordered_by_id()
     |> ActionRun.Query.limit_to(limit)
+    |> ActionRun.Query.select_dispatch_sweep_fields()
+    |> Repo.all()
+  end
+
+  @doc """
+  Internal — one stale pending page ordered by `(runner_id, id)`. This keeps
+  each runner's queue contiguous across pages; dispatch still chooses the
+  actual oldest queued run, not the first UUID encountered by the sweep.
+  """
+  def list_stale_pending_dispatches(cutoff, limit, after_runner_run)
+      when is_struct(cutoff, DateTime) and is_integer(limit) and limit > 0 do
+    ActionRun.Query.all()
+    |> ActionRun.Query.status_in([:pending])
+    |> ActionRun.Query.queued_before(cutoff)
+    |> ActionRun.Query.after_runner_and_id(after_runner_run)
+    |> ActionRun.Query.ordered_by_runner_and_id()
+    |> ActionRun.Query.limit_to(limit)
+    |> ActionRun.Query.select_dispatch_sweep_fields()
     |> Repo.all()
   end
 
@@ -2519,16 +2536,17 @@ defmodule Emisar.Runs do
   defp recover_cancellation(%ActionRun{}, _generation), do: :ok
 
   @doc """
-  Internal — used by `Emisar.Runs.Jobs.DispatchTimeout` to find in-flight
-  runs whose runner may have died mid-run. Plain list (real fleets keep few
-  runs in flight); the worker decides per-run from the runner's presence and
-  disconnect history.
+  Internal — one ID-keyset page of running/cancelling sweep facts. A healthy
+  first page does not prevent the worker from examining later runs. Liveness
+  is resolved from durable connection leases, never Presence.
   """
-  def list_running_runs(limit \\ @sweep_batch) do
+  def list_running_runs(limit, after_id) when is_integer(limit) and limit > 0 do
     ActionRun.Query.all()
     |> ActionRun.Query.status_in([:running, :cancelling])
-    |> ActionRun.Query.ordered_by_oldest()
+    |> ActionRun.Query.after_id(after_id)
+    |> ActionRun.Query.ordered_by_id()
     |> ActionRun.Query.limit_to(limit)
+    |> ActionRun.Query.select_dispatch_sweep_fields()
     |> Repo.all()
   end
 

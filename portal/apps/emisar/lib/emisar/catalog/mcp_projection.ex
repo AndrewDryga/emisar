@@ -66,7 +66,7 @@ defmodule Emisar.Catalog.MCPProjection do
           actions_by_deployment
         )
       end)
-      |> put_version_skew_issues()
+      |> put_version_skew_issues(Keyword.get(opts, :pack_headers))
       |> Enum.sort_by(& &1.pack_ref)
 
     pack_issues_by_runner = pack_issues_by_runner(packs)
@@ -77,6 +77,41 @@ defmodule Emisar.Catalog.MCPProjection do
       end)
 
     %{packs: packs, runners: projected_runners}
+  end
+
+  @doc """
+  Slim discovery inventory. Headers have passed the persisted-manifest shape
+  gate, but carry no actions or executable verdict. Their compatibility keys
+  mean only that the scoped runner advertises the exact trusted reference.
+  """
+  def inventory(pack_headers, runners) do
+    runners = runners |> Enum.flat_map(&project_runner/1) |> Enum.sort_by(& &1.runner_ref)
+
+    headers =
+      pack_headers
+      |> Enum.reject(fn header ->
+        PackBaseline.retired?(header.pack_id, header.version) and
+          is_nil(header.retirement_overridden_at)
+      end)
+      |> Map.new(&{{&1.pack_id, &1.version, &1.hash}, &1})
+
+    packs =
+      runners
+      |> Enum.flat_map(&runner_deployments/1)
+      |> Enum.filter(&Map.has_key?(headers, {&1.pack_id, &1.version, &1.hash}))
+      |> Enum.group_by(& &1.pack_ref)
+      |> Enum.map(fn {pack_ref, [first | _] = deployments} ->
+        %{
+          pack_ref: pack_ref,
+          pack_id: first.pack_id,
+          version: first.version,
+          hash: first.hash,
+          compatibility: Map.new(deployments, &{&1.runner_id, Map.take(&1, [:runner_ref])})
+        }
+      end)
+      |> Enum.sort_by(& &1.pack_ref)
+
+    %{packs: packs, runners: runners}
   end
 
   # A runner that is not connected wears ONLY its connection story. Its stored
@@ -454,9 +489,9 @@ defmodule Emisar.Catalog.MCPProjection do
     end
   end
 
-  defp put_version_skew_issues(packs) do
+  defp put_version_skew_issues(packs, pack_headers) do
     skewed_pack_ids =
-      packs
+      (pack_headers || packs)
       |> Enum.group_by(& &1.pack_id)
       |> Enum.filter(fn {_pack_id, versions} -> length(versions) > 1 end)
       |> Enum.map(fn {pack_id, _versions} -> pack_id end)

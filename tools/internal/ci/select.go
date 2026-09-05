@@ -184,6 +184,21 @@ func (selection *Selection) include(file string) {
 	if toolutil.HasAnyPrefix(file, "tools/", "dev/", ".agent/", ".claude/", ".codex/", ".gemini/", "skills/", "dist/", ".github/workflows/", ".github/actions/", ".githooks/") || strings.Contains(file, "/.agent/") || slices.Contains([]string{"run", ".shell", "go.work", "go.work.sum", ".gitattributes", ".gitignore", ".tool-versions", "docker-compose.yml", "portal/config/config.exs", "portal/Dockerfile", "portal/apps/emisar_web/assets/js/copy.js"}, file) || filepath.Ext(file) == ".md" {
 		selection.Tools = true
 	}
+	// Full-script HTTP response-bound regressions live in devtool, not in
+	// the provider behavior harness. Keep this list narrow: Nomad's real-CLI
+	// transport cases are owned by its existing two-row pack behavior plan.
+	if slices.Contains([]string{
+		"packs/databricks/scripts/databricks.sh",
+		"packs/hcp-terraform/scripts/tfc.sh",
+		"packs/spark/scripts/spark_api.sh",
+		"packs/cloudflare/scripts/cf_api.sh",
+		"packs/bunnycdn/scripts/bunny_api.sh",
+		"packs/airflow/scripts/airflow_api.sh",
+		"packs/pfsense/scripts/pfproject.sh",
+		"packs/pfsense/scripts/pfreq.sh",
+	}, file) {
+		selection.Tools = true
+	}
 	// Pack behavior plans are validation inputs but are not loaded into registry
 	// artifacts. Every runtime input below deliberately matches PacksRelease:
 	// validatePacks ends in checkCatalogReproduction, so code that BUILDS the

@@ -62,9 +62,28 @@ else
 	set --
 fi
 
-# `set -e` does not catch a failure in a non-final pipeline command, so piping
-# straight into jq meant an unreachable agent or a rejected ACL token produced
-# empty stdin, an exit-0 jq, and a successful-looking empty list. Assigning from
-# a command substitution puts nomad's own status back on the line set -e reads.
-response=$(nomad operator api "$@" "$path")
-printf '%s' "$response" | jq -c "$project"
+# Bound the CLI's streaming response before projection. Preserve its status
+# separately because POSIX pipelines otherwise hide source failures behind jq.
+umask 077
+response_dir=$(mktemp -d "${TMPDIR:-/tmp}/emisar-nomad.XXXXXXXX") || exit 1
+trap 'rm -f -- "$response_dir/body" "$response_dir/status"; rmdir -- "$response_dir"' 0
+trap 'exit 129' HUP
+trap 'exit 130' INT
+trap 'exit 143' TERM
+if (
+  if nomad operator api "$@" "$path"; then status=0; else status=$?; fi
+  printf '%s\n' "$status" >"$response_dir/status"
+) | head -c 33554433 >"$response_dir/body"; then
+  read_status=0
+else
+  read_status=$?
+fi
+bytes=$(wc -c <"$response_dir/body")
+if [ "$bytes" -gt 33554432 ]; then
+  printf '%s\n' 'Nomad API response exceeded 32 MiB' >&2
+  exit 1
+fi
+[ "$read_status" -eq 0 ] || exit "$read_status"
+status=$(cat "$response_dir/status")
+[ "$status" -eq 0 ] || exit "$status"
+jq -c "$project" <"$response_dir/body"

@@ -15,6 +15,7 @@ readonly master_base="${SPARK_MASTER_URL:-http://127.0.0.1:8080}"
 readonly rest_base="${SPARK_REST_URL:-http://127.0.0.1:6066}"
 readonly connect_timeout=10
 readonly max_time=45
+readonly max_response_bytes=33554432
 
 fail() {
   printf '%s\n' "$1" >&2
@@ -60,16 +61,29 @@ auth_header() {
 
 # One request. -f makes any 4xx/5xx a failed action rather than an empty
 # success, and --globoff keeps a brace in the assembled URL literal.
-request() {
-  local method=$1 url=$2 status=0 response
+request() (
+  local method=$1 url=$2
   shift 2
   validate_url "$url"
-  response=$(auth_header | curl -q --globoff --proto '=http,https' -fsS -H @- \
+  umask 077
+  response_dir=$(mktemp -d "${TMPDIR:-/tmp}/emisar-spark.XXXXXXXX") || exit 1
+  trap 'rm -f -- "$response_dir/body"; rmdir -- "$response_dir"' EXIT
+  trap 'exit 129' HUP
+  trap 'exit 130' INT
+  trap 'exit 143' TERM
+  if auth_header | curl -q --globoff --proto '=http,https' --max-filesize "$max_response_bytes" -fsS -H @- \
     -X "$method" --connect-timeout "$connect_timeout" --max-time "$max_time" \
-    "$@" "$url") || status=$?
-  ((status == 0)) || fail "Spark request failed with transfer status $status: $method $url"
-  printf '%s' "$response"
-}
+    "$@" "$url" | head -c "$((max_response_bytes + 1))" >"$response_dir/body"; then
+    statuses=("${PIPESTATUS[@]}")
+  else
+    statuses=("${PIPESTATUS[@]}")
+  fi
+  bytes=$(wc -c <"$response_dir/body")
+  ((bytes <= max_response_bytes && statuses[1] != 63)) || fail "Spark API response exceeded 32 MiB"
+  ((statuses[0] == 0 && statuses[1] == 0 && statuses[2] == 0)) ||
+    fail "Spark request failed with transfer status ${statuses[1]}: $method $url"
+  cat "$response_dir/body"
+)
 
 api_get() { request GET "$@" -G; }
 

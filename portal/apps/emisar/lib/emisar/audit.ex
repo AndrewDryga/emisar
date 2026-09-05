@@ -27,7 +27,7 @@ defmodule Emisar.Audit do
   engine origin) carries no request metadata, by construction.
   """
   use Supervisor
-  alias Emisar.Audit.{Authorizer, CSVExport, Event, Events}
+  alias Emisar.Audit.{Authorizer, CSVExport, Event, Events, IdentityOption}
   alias Emisar.Auth
   alias Emisar.Auth.Subject
   alias Emisar.{Billing, Crypto, Repo, RequestContext, Runs, SafeText}
@@ -448,71 +448,93 @@ defmodule Emisar.Audit do
   defp empty_approval_refs, do: %{final: nil, override: nil, decisions: %{}}
 
   @doc """
-  Distinct actors of `actor_kind` that appear in the account's audit log — the
-  options for the page's on-demand actor filter, as `{id, label}` sorted by
-  label (a bounded lookup, not a paginated list). Labels resolve cross-context
-  the same way the table's actor column does; an id whose row is gone (deleted
-  since the event, or only resolvable in another account) is dropped. Returns
-  `{:ok, [{id, label}]}` or `{:error, :unauthorized}`.
+  Searchable actors from the caller's readable audit history, sorted by label
+  and id. Returns `{:ok, [{id, label}], metadata}` with at most 50 page choices.
+  `:search` is a literal case-insensitive substring (at most 512 bytes); `:page`
+  accepts the usual cursor and limit. Counts are never calculated.
 
-  `opts[:ensure]` forces an actor id into the option set even with zero events
-  (a Team "View activity" link for a member who hasn't acted yet), so the picker
-  can SELECT it instead of falling back to All. It is a caller-supplied id — the
-  audit page takes it straight from the URL — so it buys no account reach: an id
-  that resolves only in another account is dropped.
+  `:ensure` independently pins one selected id after the page, without changing
+  its cursors. Account-local actors can be pinned without events for Team's
+  "View activity" link. Removed identities use the latest readable frozen label,
+  or their id for a selected identity with readable history but no label. An id
+  resolvable only in another account never grants access to that account's name.
   """
   def list_actor_options(actor_kind, %Subject{} = subject, opts \\ [])
       when is_binary(actor_kind) do
-    with :ok <- ensure_can_read_audit(subject) do
-      logged_ids =
-        Event.Query.all()
-        |> Event.Query.distinct_actor_ids_of_kind(actor_kind)
-        |> Authorizer.for_subject(subject)
-        |> Repo.all()
-
-      ids = Enum.uniq(logged_ids ++ List.wrap(opts[:ensure]))
-
-      labels =
-        %{actor_kind => ids}
-        |> resolve_labels(subject.account.id)
-        |> Map.get(actor_kind, %{})
-
-      options =
-        ids
-        |> Enum.map(fn id -> {id, Map.get(labels, id)} end)
-        |> Enum.reject(fn {_id, label} -> is_nil(label) end)
-        |> Enum.sort_by(fn {_id, label} -> label end)
-
-      {:ok, options}
-    end
+    list_identity_options(actor_kind, :actor, subject, opts)
   end
 
   @doc """
-  Distinct subjects of `target_kind` in the account's audit log — the options
-  for the page's on-demand "filter by subject" picker, as `{id, label}` sorted by
-  label. Mirrors `list_actor_options/2`. Returns `{:ok, [{id, label}]}` or
-  `{:error, :unauthorized}`.
+  Searchable targets from the caller's readable audit history. Mirrors
+  `list_actor_options/3`, except a pinned target always needs readable event
+  evidence; selecting a target never opens an unrelated entity lookup.
   """
-  def list_target_options(target_kind, %Subject{} = subject) when is_binary(target_kind) do
-    with :ok <- ensure_can_read_audit(subject) do
-      ids =
-        Event.Query.all()
-        |> Event.Query.distinct_target_ids_of_kind(target_kind)
+  def list_target_options(target_kind, %Subject{} = subject, opts \\ [])
+      when is_binary(target_kind) do
+    list_identity_options(target_kind, :target, subject, opts)
+  end
+
+  defp list_identity_options(kind, side, subject, opts) do
+    with :ok <- ensure_can_read_audit(subject),
+         :ok <- validate_identity_kind(kind, side),
+         {:ok, search} <- identity_search(Keyword.get(opts, :search, "")) do
+      events = Event.Query.all() |> Authorizer.for_subject(subject)
+
+      page =
+        kind
+        |> IdentityOption.Query.all(side, subject.account.id, events)
+        |> IdentityOption.Query.search(search)
         |> Authorizer.for_subject(subject)
-        |> Repo.all()
+        |> Repo.list(IdentityOption.Query, identity_page(opts))
 
-      labels =
-        %{target_kind => ids}
-        |> resolve_labels(subject.account.id)
-        |> Map.get(target_kind, %{})
+      with {:ok, rows, metadata} <- page,
+           {:ok, selected} <- selected_identity(kind, side, subject, events, opts[:ensure], rows) do
+        {:ok, Enum.map(rows ++ selected, &{&1.id, &1.label}), metadata}
+      end
+    end
+  end
 
-      options =
-        ids
-        |> Enum.map(fn id -> {id, Map.get(labels, id)} end)
-        |> Enum.reject(fn {_id, label} -> is_nil(label) end)
-        |> Enum.sort_by(fn {_id, label} -> label end)
+  defp validate_identity_kind("action_run", :target), do: :ok
 
-      {:ok, options}
+  defp validate_identity_kind(kind, side) do
+    name = if side == :actor, do: :actor_kind, else: :target_kind
+    filter = Enum.find(Event.Query.filters(), &(&1.name == name))
+
+    if Enum.any?(filter.valid_values, fn {value, _label} -> value == kind end),
+      do: :ok,
+      else: {:error, :invalid_kind}
+  end
+
+  defp identity_search(search) when is_binary(search) and byte_size(search) <= 512 do
+    if String.valid?(search) and not String.contains?(search, <<0>>),
+      do: {:ok, String.trim(search)},
+      else: {:error, :invalid_search}
+  end
+
+  defp identity_search(_search), do: {:error, :invalid_search}
+
+  defp identity_page(opts) do
+    page = Keyword.get(opts, :page, [])
+    limit = Keyword.get(page, :limit, 50)
+    limit = if is_integer(limit), do: min(max(limit, 1), 50), else: 50
+    [count: false, page: Keyword.put(page, :limit, limit)]
+  end
+
+  defp selected_identity(kind, side, subject, events, id, rows) do
+    id = if Repo.valid_uuid?(id), do: String.downcase(id)
+
+    if id && not Enum.any?(rows, &(&1.id == id)) do
+      kind
+      |> IdentityOption.Query.selected(side, subject.account.id, events, id)
+      |> Authorizer.for_subject(subject)
+      |> Repo.fetch(IdentityOption.Query)
+      |> case do
+        {:ok, row} -> {:ok, [row]}
+        {:error, :not_found} -> {:ok, []}
+        {:error, reason} -> {:error, reason}
+      end
+    else
+      {:ok, []}
     end
   end
 

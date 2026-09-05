@@ -117,6 +117,33 @@ defmodule Emisar.Catalog.Jobs.PackVersionRetentionTest do
     assert Catalog.check_pack_trusted(action) == {:error, :pack_untrusted, :no_pin}
   end
 
+  test "bounded candidate batches audit and continue across account pages" do
+    accounts = for _ <- 1..2, do: Fixtures.Accounts.create_account()
+
+    for account <- accounts do
+      Fixtures.Accounts.set_account_settings(account, %{pack_unseen_retention_days: @window_days})
+
+      for index <- 1..3 do
+        Fixtures.Catalog.create_trusted_pack_version(
+          account_id: account.id,
+          pack_id: "stale#{index}",
+          version: "v"
+        )
+        |> Fixtures.Catalog.backdate_pack_version_last_seen(
+          DateTime.add(DateTime.utc_now(), -40 * 86_400, :second)
+        )
+      end
+    end
+
+    assert PackVersionRetention.execute(limit: 1, batch_size: 2) == :ok
+    assert PackVersionRetention.execute(limit: 1, batch_size: 2) == :ok
+
+    for account <- accounts do
+      counts = account.id |> retention_markers() |> Enum.map(& &1.payload["count"]) |> Enum.sort()
+      assert counts == [1, 2]
+    end
+  end
+
   describe "retired versions" do
     test "removes a retired version no runner advertises, even with automatic cleanup off" do
       account = Fixtures.Accounts.create_account()

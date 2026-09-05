@@ -36,11 +36,11 @@ defmodule Emisar.PoliciesScopesTest do
       assert policy.scope_type == :runner
       assert policy.scope_value == runner.id
 
-      assert {:ok, [listed]} = Policies.list_scoped_policies(subject)
+      assert {:ok, [listed], _metadata} = Policies.list_scoped_policy_summaries(subject)
       assert listed.id == policy.id
 
       assert {:ok, _} = Policies.delete_scoped_policy(policy, subject)
-      assert Policies.list_scoped_policies(subject) == {:ok, []}
+      assert {:ok, [], _metadata} = Policies.list_scoped_policy_summaries(subject)
     end
 
     test "editing a scope upserts the same row and bumps vsn" do
@@ -72,7 +72,7 @@ defmodule Emisar.PoliciesScopesTest do
 
       {_user, _account_b, subject_b} = Fixtures.Subjects.owner_subject()
 
-      assert Policies.list_scoped_policies(subject_b) == {:ok, []}
+      assert {:ok, [], _metadata} = Policies.list_scoped_policy_summaries(subject_b)
       assert Policies.delete_scoped_policy(policy_a, subject_b) == {:error, :not_found}
     end
 
@@ -107,7 +107,7 @@ defmodule Emisar.PoliciesScopesTest do
       assert first.id == second.id
       assert second.rules["defaults"]["low"] == "deny"
 
-      {:ok, scoped} = Policies.list_scoped_policies(subject)
+      {:ok, scoped, _metadata} = Policies.list_scoped_policy_summaries(subject)
       assert Enum.count(scoped, &(&1.scope_type == :runner and &1.scope_value == runner.id)) == 1
     end
 
@@ -121,7 +121,7 @@ defmodule Emisar.PoliciesScopesTest do
       {:ok, group_policy} = Policies.save_scoped_rules(@deny_all, :group, runner.id, subject)
 
       refute runner_policy.id == group_policy.id
-      {:ok, scoped} = Policies.list_scoped_policies(subject)
+      {:ok, scoped, _metadata} = Policies.list_scoped_policy_summaries(subject)
       assert length(scoped) == 2
     end
 
@@ -132,7 +132,7 @@ defmodule Emisar.PoliciesScopesTest do
       {:ok, _} = Policies.save_scoped_rules(@allow_all, :runner, runner_one.id, subject)
       {:ok, _} = Policies.save_scoped_rules(@deny_all, :runner, runner_two.id, subject)
 
-      {:ok, scoped} = Policies.list_scoped_policies(subject)
+      {:ok, scoped, _metadata} = Policies.list_scoped_policy_summaries(subject)
       assert length(scoped) == 2
     end
 
@@ -140,7 +140,7 @@ defmodule Emisar.PoliciesScopesTest do
     # set), and the unique index is partial (`WHERE deleted_at IS NULL`). So the
     # same scope can be claimed again by a fresh save: the upsert's conflict target
     # repeats that predicate, the tombstoned row is invisible to it, and a NEW live
-    # row is created — never a unique violation, and `list_scoped_policies` (which
+    # row is created — never a unique violation, and `list_scoped_policy_summaries` (which
     # filters `not_deleted`) shows exactly the new one.
     test "soft-deleting a runner ruleset lets the same scope be saved again (new live row)", %{
       account: account,
@@ -152,7 +152,7 @@ defmodule Emisar.PoliciesScopesTest do
       {:ok, _deleted} = Policies.delete_scoped_policy(original, subject)
 
       # The tombstoned row no longer lists.
-      {:ok, after_delete} = Policies.list_scoped_policies(subject)
+      {:ok, after_delete, _metadata} = Policies.list_scoped_policy_summaries(subject)
       refute Enum.any?(after_delete, &(&1.id == original.id))
 
       # Re-claiming the freed scope succeeds (partial unique index ignores the
@@ -161,7 +161,7 @@ defmodule Emisar.PoliciesScopesTest do
       refute reclaimed.id == original.id
       assert reclaimed.rules["defaults"]["low"] == "deny"
 
-      {:ok, live} = Policies.list_scoped_policies(subject)
+      {:ok, live, _metadata} = Policies.list_scoped_policy_summaries(subject)
 
       reclaimed_scope =
         Enum.filter(live, &(&1.scope_type == :runner and &1.scope_value == runner.id))
@@ -220,17 +220,21 @@ defmodule Emisar.PoliciesScopesTest do
       # B's only scoped write is a distinct group row in B's account.
       assert group_policy_b.account_id == account_b.id
       refute group_policy_b.id == group_policy_a.id
-      assert {:ok, [listed_b]} = Policies.list_scoped_policies(subject_b)
+      assert {:ok, [listed_b], _metadata} = Policies.list_scoped_policy_summaries(subject_b)
       assert listed_b.id == group_policy_b.id
 
       # A still resolves its OWN (deny) overrides, and sees exactly its two —
       # none of B's leaked in.
-      {:ok, a_scoped} = Policies.list_scoped_policies(subject_a)
+      {:ok, a_scoped, _metadata} = Policies.list_scoped_policy_summaries(subject_a)
 
       fetched_runner_a =
         Enum.find(a_scoped, &(&1.scope_type == :runner and &1.scope_value == runner_a.id))
 
       assert fetched_runner_a.id == runner_policy_a.id
+
+      assert {:ok, fetched_runner_a} =
+               Policies.fetch_scoped_policy_by_id(fetched_runner_a.id, subject_a)
+
       assert fetched_runner_a.rules["defaults"]["low"] == "deny"
       assert fetched_runner_a.vsn == runner_policy_a.vsn
 
@@ -238,6 +242,10 @@ defmodule Emisar.PoliciesScopesTest do
         Enum.find(a_scoped, &(&1.scope_type == :group and &1.scope_value == "prod"))
 
       assert fetched_group_a.id == group_policy_a.id
+
+      assert {:ok, fetched_group_a} =
+               Policies.fetch_scoped_policy_by_id(fetched_group_a.id, subject_a)
+
       assert fetched_group_a.rules["defaults"]["low"] == "deny"
 
       assert Enum.map(a_scoped, & &1.id) |> Enum.sort() ==

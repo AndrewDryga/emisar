@@ -106,4 +106,21 @@ defmodule Emisar.Runners.Jobs.InactiveRunnerRetentionTest do
 
     assert retention_markers(account.id) == []
   end
+
+  test "pages accounts and runner candidates independently with one receipt per changed batch" do
+    accounts = for _ <- 1..2, do: Fixtures.Accounts.create_account()
+
+    for account <- accounts do
+      Fixtures.Accounts.set_runner_inactive_retention_hours(account, @window_hours)
+      for _ <- 1..3, do: offline_runner(account, @beyond_window_hours)
+    end
+
+    assert InactiveRunnerRetention.execute(limit: 1, batch_size: 2) == :ok
+    assert InactiveRunnerRetention.execute(limit: 1, batch_size: 2) == :ok
+
+    for account <- accounts do
+      counts = account.id |> retention_markers() |> Enum.map(& &1.payload["count"]) |> Enum.sort()
+      assert counts == [1, 2]
+    end
+  end
 end

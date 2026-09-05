@@ -180,13 +180,13 @@ defmodule Emisar.PoliciesTest do
     end
   end
 
-  describe "unmatched_overrides/2" do
+  describe "preview_policy/4 — unmatched overrides" do
     @catalog %{"nginx.reload" => :medium, "nginx.error_tail" => :low, "linux.uptime" => :low}
 
     test "a glob that matches an action is not reported" do
       rules = %{"overrides" => [%{"action" => "nginx.*", "decision" => "deny"}]}
 
-      assert Policies.unmatched_overrides(rules, @catalog) == []
+      assert preview_unmatched(rules, @catalog) == []
     end
 
     test "a regex-flavored glob matches nothing and is reported" do
@@ -195,7 +195,7 @@ defmodule Emisar.PoliciesTest do
       # This reads as protection and denies nothing.
       rules = %{"overrides" => [%{"action" => "nginx\\.reload", "decision" => "deny"}]}
 
-      assert Policies.unmatched_overrides(rules, @catalog) == [%{index: 0}]
+      assert preview_unmatched(rules, @catalog) == [%{index: 0}]
     end
 
     test "reports every unmatched row in order and leaves matching rows alone" do
@@ -207,31 +207,31 @@ defmodule Emisar.PoliciesTest do
         ]
       }
 
-      assert Policies.unmatched_overrides(rules, @catalog) == [%{index: 0}, %{index: 2}]
+      assert preview_unmatched(rules, @catalog) == [%{index: 0}, %{index: 2}]
     end
 
     test "matching stays case-insensitive, exactly as dispatch matches" do
       rules = %{"overrides" => [%{"action" => "NGINX.RELOAD", "decision" => "deny"}]}
 
-      assert Policies.unmatched_overrides(rules, @catalog) == []
+      assert preview_unmatched(rules, @catalog) == []
     end
 
     test "a blank row is the editor's half-filled state and owns its own error" do
       rules = %{"overrides" => [%{"action" => "", "decision" => "deny"}]}
 
-      assert Policies.unmatched_overrides(rules, @catalog) == []
+      assert preview_unmatched(rules, @catalog) == []
     end
 
     test "an empty catalog reports nothing — everything would look unmatched" do
       rules = %{"overrides" => [%{"action" => "cassandra.*", "decision" => "deny"}]}
 
-      assert Policies.unmatched_overrides(rules, %{}) == []
+      assert preview_unmatched(rules, %{}) == []
     end
 
     test "empty / missing overrides → []" do
-      assert Policies.unmatched_overrides(%{"overrides" => []}, @catalog) == []
-      assert Policies.unmatched_overrides(%{}, @catalog) == []
-      assert Policies.unmatched_overrides(nil, @catalog) == []
+      assert preview_unmatched(%{"overrides" => []}, @catalog) == []
+      assert preview_unmatched(%{}, @catalog) == []
+      assert preview_unmatched(nil, @catalog) == []
     end
   end
 
@@ -825,13 +825,13 @@ defmodule Emisar.PoliciesTest do
     end
   end
 
-  describe "list_scoped_policies/1" do
+  describe "list_scoped_policy_summaries/2" do
     test "lists the account's scoped overrides, excluding the account default" do
       {_user, account, subject} = Fixtures.Subjects.owner_subject()
       runner = Fixtures.Runners.create_runner(account_id: account.id, connected?: false)
       {:ok, scoped} = Policies.save_scoped_rules(allow_all_rules(), :runner, runner.id, subject)
 
-      assert {:ok, [listed]} = Policies.list_scoped_policies(subject)
+      assert {:ok, [listed], _metadata} = Policies.list_scoped_policy_summaries(subject)
       assert listed.id == scoped.id
       # The account default isn't a scoped override, so it never lists here.
       refute listed.scope_type == :account
@@ -847,11 +847,11 @@ defmodule Emisar.PoliciesTest do
 
       operator = Fixtures.Subjects.membership_subject(operator_membership)
 
-      assert {:ok, [_]} = Policies.list_scoped_policies(operator)
+      assert {:ok, [_], _metadata} = Policies.list_scoped_policy_summaries(operator)
 
       {_raw, api_key} = Fixtures.ApiKeys.create_api_key(account_id: account.id)
       api_subject = Subject.for_api_key(api_key, account)
-      assert Policies.list_scoped_policies(api_subject) == {:error, :unauthorized}
+      assert Policies.list_scoped_policy_summaries(api_subject) == {:error, :unauthorized}
     end
 
     test "cross-account: never lists another account's overrides" do
@@ -860,7 +860,7 @@ defmodule Emisar.PoliciesTest do
       {:ok, _} = Policies.save_scoped_rules(allow_all_rules(), :runner, runner_a.id, subject_a)
 
       {_user_b, _account_b, subject_b} = Fixtures.Subjects.owner_subject()
-      assert Policies.list_scoped_policies(subject_b) == {:ok, []}
+      assert {:ok, [], _metadata} = Policies.list_scoped_policy_summaries(subject_b)
     end
 
     # A ruleset names its target and spells out what may run there, so the list
@@ -876,7 +876,7 @@ defmodule Emisar.PoliciesTest do
 
       member = restricted_member(account, owner, "operator", ["db"])
 
-      assert {:ok, [listed]} = Policies.list_scoped_policies(member)
+      assert {:ok, [listed], _metadata} = Policies.list_scoped_policy_summaries(member)
       assert listed.id == db_policy.id
     end
 
@@ -893,7 +893,7 @@ defmodule Emisar.PoliciesTest do
       {:ok, _updated} =
         Accounts.update_membership_runner_access(member_membership, RunnerAccess.none(), owner)
 
-      assert Policies.list_scoped_policies(member) == {:ok, []}
+      assert {:ok, [], _metadata} = Policies.list_scoped_policy_summaries(member)
     end
 
     # Group names are not account-unique, and the narrowing matches on the name.
@@ -907,7 +907,7 @@ defmodule Emisar.PoliciesTest do
 
       member_a = restricted_member(account_a, owner_a, "operator", ["db"])
 
-      assert Policies.list_scoped_policies(member_a) == {:ok, []}
+      assert {:ok, [], _metadata} = Policies.list_scoped_policy_summaries(member_a)
     end
   end
 
@@ -922,7 +922,7 @@ defmodule Emisar.PoliciesTest do
       refute is_nil(deleted.deleted_at)
 
       # Gone from the editor's list; the scope now resolves to the broader default.
-      assert Policies.list_scoped_policies(subject) == {:ok, []}
+      assert {:ok, [], _metadata} = Policies.list_scoped_policy_summaries(subject)
     end
 
     test "a viewer can't delete an override (no manage_policies)" do
@@ -935,7 +935,7 @@ defmodule Emisar.PoliciesTest do
 
       assert Policies.delete_scoped_policy(policy, viewer) == {:error, :unauthorized}
       # The row is untouched — still live.
-      assert {:ok, [_]} = Policies.list_scoped_policies(owner)
+      assert {:ok, [_], _metadata} = Policies.list_scoped_policy_summaries(owner)
     end
 
     # Removing a ruleset changes what may run on its hosts, so the scope is
@@ -953,7 +953,7 @@ defmodule Emisar.PoliciesTest do
       admin = restricted_member(account, owner, "admin", ["db"])
 
       assert Policies.delete_scoped_policy(policy, admin) == {:error, :runner_not_found}
-      assert {:ok, [_still_live]} = Policies.list_scoped_policies(owner)
+      assert {:ok, [_still_live], _metadata} = Policies.list_scoped_policy_summaries(owner)
     end
 
     test "cross-account: B can't delete A's override (:not_found, row untouched)" do
@@ -968,7 +968,7 @@ defmodule Emisar.PoliciesTest do
       # The locked re-fetch is scoped by Authorizer.for_subject, so A's override
       # scopes out to :not_found for B without being touched.
       assert Policies.delete_scoped_policy(policy_a, subject_b) == {:error, :not_found}
-      assert {:ok, [_]} = Policies.list_scoped_policies(subject_a)
+      assert {:ok, [_], _metadata} = Policies.list_scoped_policy_summaries(subject_a)
     end
 
     test "a forged struct claiming a reachable scope cannot delete another account's row" do
@@ -988,7 +988,7 @@ defmodule Emisar.PoliciesTest do
 
       assert Policies.delete_scoped_policy(forged, subject_b) == {:error, :not_found}
       refute Repo.reload!(policy_a).deleted_at
-      assert {:ok, [_]} = Policies.list_scoped_policies(subject_a)
+      assert {:ok, [_], _metadata} = Policies.list_scoped_policy_summaries(subject_a)
     end
 
     test "a forged scoped snapshot cannot delete the account default" do
@@ -1040,7 +1040,7 @@ defmodule Emisar.PoliciesTest do
       assert Policies.save_scoped_rules(deny_all_rules(), :runner, foreign_runner.id, subject) ==
                {:error, :runner_not_found}
 
-      assert Policies.list_scoped_policies(subject) == {:ok, []}
+      assert {:ok, [], _metadata} = Policies.list_scoped_policy_summaries(subject)
     end
 
     test "rejects a nonexistent and a malformed runner id (:runner_not_found)" do
@@ -1078,7 +1078,7 @@ defmodule Emisar.PoliciesTest do
       assert saved.scope_value == "not-enrolled-yet"
 
       # The read side has to agree, or they would write a ruleset they cannot see.
-      assert {:ok, [listed]} = Policies.list_scoped_policies(subject)
+      assert {:ok, [listed], _metadata} = Policies.list_scoped_policy_summaries(subject)
       assert listed.id == saved.id
       assert listed.scope_value == "not-enrolled-yet"
     end
@@ -1105,7 +1105,7 @@ defmodule Emisar.PoliciesTest do
       assert Policies.save_scoped_rules(deny_all_rules(), :group, "no-such-group", admin) ==
                {:error, :group_not_found}
 
-      assert Policies.list_scoped_policies(owner) == {:ok, []}
+      assert {:ok, [], _metadata} = Policies.list_scoped_policy_summaries(owner)
     end
 
     test "a viewer can't save a scoped override (no manage_policies)" do
@@ -1130,10 +1130,11 @@ defmodule Emisar.PoliciesTest do
       assert Policies.save_scoped_rules(allow_all_rules(), :runner, runner_a.id, subject_b) ==
                {:error, :runner_not_found}
 
-      assert Policies.list_scoped_policies(subject_b) == {:ok, []}
+      assert {:ok, [], _metadata} = Policies.list_scoped_policy_summaries(subject_b)
 
-      assert {:ok, [fetched_a]} = Policies.list_scoped_policies(subject_a)
+      assert {:ok, [fetched_a], _metadata} = Policies.list_scoped_policy_summaries(subject_a)
       assert fetched_a.id == policy_a.id
+      assert {:ok, fetched_a} = Policies.fetch_scoped_policy_by_id(fetched_a.id, subject_a)
       assert fetched_a.rules["defaults"]["low"] == "deny"
       assert fetched_a.vsn == policy_a.vsn
     end
@@ -1188,8 +1189,9 @@ defmodule Emisar.PoliciesTest do
       assert default_after.rules == default_before.rules
       assert default_after.vsn == default_before.vsn
 
-      assert {:ok, [still_live]} = Policies.list_scoped_policies(owner)
+      assert {:ok, [still_live], _metadata} = Policies.list_scoped_policy_summaries(owner)
       assert still_live.id == scoped.id
+      assert {:ok, still_live} = Policies.fetch_scoped_policy_by_id(still_live.id, owner)
       assert still_live.rules == scoped.rules
     end
   end
@@ -1365,9 +1367,6 @@ defmodule Emisar.PoliciesTest do
                Policies.evaluate(policy, %{"action_id" => "linux.uptime", "risk" => "low"})
 
       assert Policies.shadowed_overrides(rules) == []
-
-      outcome = Policies.simulate_outcome(rules, %{"linux.uptime" => :low})
-      assert outcome["deny"] == %{count: 1, examples: ["linux.uptime"]}
     end
 
     test "low/medium tier defaults to allow with stock defaults", %{policy: policy} do
@@ -1535,7 +1534,7 @@ defmodule Emisar.PoliciesTest do
     end
   end
 
-  describe "simulate_outcome/2" do
+  describe "preview_policy/4 — outcomes" do
     test "buckets each catalog action by its decision under the live rules" do
       rules = %{
         "defaults" => %{
@@ -1559,7 +1558,7 @@ defmodule Emisar.PoliciesTest do
         "wipe.disk" => :critical
       }
 
-      outcome = Policies.simulate_outcome(rules, catalog)
+      outcome = preview_result(rules, catalog).outcome
 
       assert outcome["allow"] == %{count: 2, examples: ["docker.ps", "nginx.reload"]}
 
@@ -1572,7 +1571,7 @@ defmodule Emisar.PoliciesTest do
     end
 
     test "every decision is present — an empty catalog is 0/[] across the board" do
-      outcome = Policies.simulate_outcome(Policies.default_rules(), %{})
+      outcome = preview_result(Policies.default_rules(), %{}).outcome
 
       for decision <- ["allow", "require_approval", "deny"] do
         assert outcome[decision] == %{count: 0, examples: []}
@@ -1600,7 +1599,7 @@ defmodule Emisar.PoliciesTest do
           "c.drop_table" => :low
         })
 
-      outcome = Policies.simulate_outcome(rules, catalog)
+      outcome = preview_result(rules, catalog).outcome
 
       assert outcome["allow"] == %{
                count: 1_000,
@@ -1650,6 +1649,30 @@ defmodule Emisar.PoliciesTest do
   # Allow/deny-everything rule shapes for the scoped-CRUD describes above.
   # A persisted member of `account` whose runner access is narrowed to `groups`,
   # granted through the real mutation so the scope rows match production.
+  defp preview_unmatched(rules, catalog) do
+    preview_result(rules, catalog).unmatched_override_indexes
+    |> Enum.sort()
+    |> Enum.map(&%{index: &1})
+  end
+
+  defp preview_result(rules, catalog) do
+    {_user, account, subject} = Fixtures.Subjects.owner_subject()
+    runner = Fixtures.Runners.create_runner(account_id: account.id, connected?: false)
+
+    for {id, risk} <- catalog do
+      Fixtures.Catalog.create_action(
+        runner: runner,
+        action_id: id,
+        risk: risk,
+        pack_id: "preview"
+      )
+    end
+
+    input = Policies.editor_input(Map.merge(Policies.default_rules(), rules || %{}))
+    {:ok, result} = Policies.preview_policy(input, :account, subject)
+    result
+  end
+
   defp restricted_member(account, granting_subject, role, groups) do
     membership = Fixtures.Memberships.create_membership(account_id: account.id, role: role)
     {:ok, access} = RunnerAccess.restricted(groups, [])

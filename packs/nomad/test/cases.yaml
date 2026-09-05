@@ -1,4 +1,4 @@
-services: [nomad]
+services: [nomad, nomad-response]
 versions:
   - version: "2.0.4"
     digest: "@sha256:14f0cf3dc43d949e759b50d793529976a1a1a7f391eaf1e048acd55cd5392462"
@@ -17,6 +17,31 @@ env:
   # declaring it here makes the harness fail any surface that leaks it unredacted.
   NOMAD_PACKTEST_CANARY: packtest-canary-nomad-e57d31
 cases:
+  - name: nomad.job_list_by_meta-response-bounds
+    action: nomad.job_list_by_meta
+    arrange:
+      - argv: [nomad, job, run, -detach, /packs/nomad/test/fixtures/inspect.nomad.hcl]
+    expect:
+      stdout_contains: ['"ID":"packtest-inspect"']
+    probes:
+      - argv: [/bin/sh, /packs/nomad/test/fixtures/response-bounds.sh, length]
+        expect:
+          stdout_contains: [Nomad response length verified]
+      - argv: [/bin/sh, /packs/nomad/test/fixtures/response-bounds.sh, chunked]
+        expect:
+          stdout_contains: [Nomad response chunked verified]
+      - argv: [/bin/sh, /packs/nomad/test/fixtures/response-bounds.sh, close]
+        expect:
+          stdout_contains: [Nomad response close verified]
+      - argv: [/bin/sh, /packs/nomad/test/fixtures/response-bounds.sh, failures]
+        expect:
+          stdout_contains: [Nomad response failures verified]
+      - argv: [/bin/sh, /packs/nomad/test/fixtures/response-bounds.sh, producer]
+        expect:
+          stdout_contains: [Nomad response producer verified]
+      - argv: [/bin/sh, /packs/nomad/test/fixtures/response-bounds.sh, cancel]
+        expect:
+          stdout_contains: [Nomad response cancel verified]
   - action: nomad.agent_info
     expect:
       stdout_contains: [nomad, server, raft]

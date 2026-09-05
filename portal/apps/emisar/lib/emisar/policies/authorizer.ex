@@ -18,6 +18,11 @@ defmodule Emisar.Policies.Authorizer do
   def list_permissions_for_role(_), do: []
 
   @impl Emisar.Auth.Authorizer
+  def for_subject(%Ecto.Query{aliases: %{policy_targets: _}} = queryable, %Subject{
+        account: %{id: account_id}
+      }),
+      do: Emisar.Policies.Target.Query.by_account_id(queryable, account_id)
+
   def for_subject(queryable, %Subject{account: %{id: account_id}}),
     do: Policy.Query.by_account_id(queryable, account_id)
 

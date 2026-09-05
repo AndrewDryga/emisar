@@ -58,6 +58,49 @@ defmodule Emisar.Catalog.PackVersion.Query do
   def pending(queryable \\ all()),
     do: where(queryable, [packs: p], p.trust_state == :pending)
 
+  @doc "Exact trusted hashes, never the pending-hash visibility selector."
+  def by_trusted_deployments(queryable, deployments) do
+    {pack_ids, versions, hashes} =
+      Enum.reduce(deployments, {[], [], []}, fn {pack_id, version, hash},
+                                                {ids, versions, hashes} ->
+        {[pack_id | ids], [version | versions], [hash | hashes]}
+      end)
+
+    where(
+      queryable,
+      [packs: p],
+      fragment(
+        "(?, ?, ?) IN (SELECT * FROM unnest(?::varchar[], ?::varchar[], ?::varchar[]))",
+        p.pack_id,
+        p.version,
+        p.hash,
+        ^pack_ids,
+        ^versions,
+        ^hashes
+      )
+    )
+  end
+
+  @doc "The persisted-manifest shape gate, without fetching its descriptors."
+  def model_visible(queryable) do
+    where(
+      queryable,
+      [packs: p],
+      p.trust_state == :trusted and
+        fragment("jsonb_typeof(? -> 'schema_version') = 'number'", p.trusted_manifest) and
+        fragment("? ->> 'schema_version' = '1'", p.trusted_manifest) and
+        fragment("jsonb_typeof(? -> 'actions') = 'object'", p.trusted_manifest)
+    )
+  end
+
+  def select_model_headers(queryable) do
+    select(
+      queryable,
+      [packs: p],
+      struct(p, [:id, :pack_id, :version, :hash, :trust_state, :retirement_overridden_at])
+    )
+  end
+
   @doc "Trusted rows with no retirement override — the retired-blocked badge read."
   def trusted_unoverridden(queryable \\ all()) do
     where(
@@ -112,6 +155,33 @@ defmodule Emisar.Catalog.PackVersion.Query do
   end
 
   def limit_to(queryable, limit), do: limit(queryable, ^limit)
+
+  def after_retention_cursor(queryable, nil), do: queryable
+
+  def after_retention_cursor(queryable, {pack_id, version}) do
+    where(
+      queryable,
+      [packs: p],
+      fragment("(?, ?) > (?::varchar, ?::varchar)", p.pack_id, p.version, ^pack_id, ^version)
+    )
+  end
+
+  def retention_batch(queryable, limit) do
+    # The existing account/pack/version unique index provides both the seek
+    # and the order. Retention needs a stable traversal, not semver ordering.
+    queryable
+    |> ordered_by_pack()
+    |> limit_to(limit)
+    |> select_retention_fields()
+  end
+
+  def select_retention_fields(queryable) do
+    select(
+      queryable,
+      [packs: p],
+      struct(p, [:id, :account_id, :pack_id, :version, :hash, :pending_hash])
+    )
+  end
 
   @doc """
   Row lock for the trust/reject re-read (`FOR NO KEY UPDATE`) so a

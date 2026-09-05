@@ -1633,7 +1633,7 @@ defmodule Emisar.RunnersTest do
     end
   end
 
-  describe "delete_inactive_runners/3" do
+  describe "delete_inactive_runners/4" do
     setup do
       {account, _user, _subject} = account_with_owner_subject()
       %{account: account}
@@ -1723,7 +1723,7 @@ defmodule Emisar.RunnersTest do
     end
   end
 
-  describe "list_pack_referencing_runners_for_account/2" do
+  describe "list_retention_protected_pack_refs/3" do
     setup do
       {account, _user, _subject} = account_with_owner_subject()
       %{account: account}
@@ -1740,20 +1740,27 @@ defmodule Emisar.RunnersTest do
       deleted_runner = Fixtures.Runners.create_runner(account_id: account.id)
       Fixtures.Runners.mark_deleted(deleted_runner)
 
+      for {runner, version} <- [
+            {connected_runner, "1"},
+            {disabled_runner, "2"},
+            {deleted_runner, "3"}
+          ] do
+        Fixtures.Runners.advertise_packs(runner, %{"test" => %{"version" => version}})
+      end
+
       # Disabled IS included — pack retention must not delete a parked runner's
       # trust pins, because re-enabling cannot recover them. Merely disconnected
       # and deleted are still excluded, so those age out as before.
-      ids =
-        account.id
-        |> Runners.list_pack_referencing_runners_for_account()
-        |> Enum.map(& &1.id)
-        |> Enum.sort()
-
-      assert ids == Enum.sort([connected_runner.id, disabled_runner.id])
+      assert Runners.list_retention_protected_pack_refs(account.id, [
+               {"test", "1"},
+               {"test", "2"},
+               {"test", "3"}
+             ]) ==
+               [{"test", "1"}, {"test", "2"}]
     end
   end
 
-  describe "list_pack_advertisement_facts_for_account/2" do
+  describe "list_advertised_pack_refs/3" do
     setup do
       {account, _user, _subject} = account_with_owner_subject()
       %{account: account}
@@ -1776,18 +1783,20 @@ defmodule Emisar.RunnersTest do
       # An offline host still lists what it has installed and re-advertises it
       # on reconnect, so the retired-version bookkeeping counts it; only a
       # deleted runner (or another account's) is out.
-      facts = Runners.list_pack_advertisement_facts_for_account(account.id)
+      runners = [
+        connected_runner,
+        pending_runner,
+        offline_runner,
+        disabled_runner,
+        deleted_runner
+      ]
 
-      assert facts |> Enum.map(& &1.id) |> Enum.sort() ==
-               Enum.sort([
-                 connected_runner.id,
-                 pending_runner.id,
-                 offline_runner.id,
-                 disabled_runner.id
-               ])
+      for {runner, index} <- Enum.with_index(runners) do
+        Fixtures.Runners.advertise_packs(runner, %{"test" => %{"version" => "#{index}"}})
+      end
 
-      assert Enum.find(facts, &(&1.id == offline_runner.id)).packs ==
-               %{"redis" => %{"version" => "0.1.0"}}
+      refs = for index <- 0..4, do: {"test", "#{index}"}
+      assert Runners.list_advertised_pack_refs(account.id, refs) == Enum.take(refs, 4)
     end
   end
 
@@ -2285,6 +2294,56 @@ defmodule Emisar.RunnersTest do
 
       assert {:ok, ^generation} =
                Runners.current_connection_generation(runner.account_id, runner.id)
+    end
+  end
+
+  describe "current_connection_generations/1" do
+    test "returns only requested exact account/runner pairs, including multiple accounts" do
+      first = Fixtures.Runners.create_runner(connected?: true)
+      second = Fixtures.Runners.create_runner(connected?: true)
+      _unrequested = Fixtures.Runners.create_runner(connected?: true)
+      first_pair = {first.account_id, first.id}
+      second_pair = {second.account_id, second.id}
+
+      assert Runners.current_connection_generations([first_pair, second_pair, first_pair]) == %{
+               first_pair => first.connection_generation,
+               second_pair => second.connection_generation
+             }
+
+      assert Runners.current_connection_generations([
+               {first.account_id, second.id},
+               {second.account_id, first.id}
+             ]) == %{}
+
+      assert Runners.current_connection_generations([]) == %{}
+    end
+
+    test "excludes expired, missing, disabled and deleted leases and inactive accounts" do
+      runners =
+        for invalidate <- [
+              &Fixtures.Runners.expire_connection_lease/1,
+              &Fixtures.Runners.clear_connection_lease_id/1,
+              &Fixtures.Runners.disable_runner/1,
+              &Fixtures.Runners.mark_deleted/1
+            ] do
+          Fixtures.Runners.create_runner(connected?: true)
+          |> invalidate.()
+        end
+
+      inactive =
+        for invalidate <- [
+              &Fixtures.Accounts.disable_account/1,
+              &Fixtures.Accounts.mark_account_as_deleted/1
+            ] do
+          account = Fixtures.Accounts.create_account()
+          runner = Fixtures.Runners.create_runner(account_id: account.id, connected?: true)
+          invalidate.(account)
+
+          runner
+        end
+
+      pairs = Enum.map(runners ++ inactive, &{&1.account_id, &1.id})
+      assert Runners.current_connection_generations(pairs) == %{}
     end
   end
 

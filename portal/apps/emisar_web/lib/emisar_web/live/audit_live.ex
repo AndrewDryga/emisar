@@ -11,6 +11,10 @@ defmodule EmisarWeb.AuditLive do
   alias EmisarWeb.{AuditSummary, LiveTable}
 
   @reload_debounce_ms 500
+  @identity_fields %{
+    "actor_id" => {:actor_id, "actor_kind", :actor},
+    "target_id" => {:target_id, "target_kind", :target}
+  }
 
   def mount(params, _session, socket) do
     # Audit log is the canonical "what just happened" surface — any
@@ -40,7 +44,9 @@ defmodule EmisarWeb.AuditLive do
        :filters_open?,
        LiveTable.has_active_filters?(params, Audit.event_filters(socket.assigns.current_subject))
      )
-     |> assign(:reload_scheduled?, false)}
+     |> assign(:reload_scheduled?, false)
+     |> assign(:filter_cache_key, nil)
+     |> assign(:filter_option_pickers, %{})}
   end
 
   # IL-18: the dead render shows `<.loading_state />` for the trail, so the
@@ -49,6 +55,8 @@ defmodule EmisarWeb.AuditLive do
   # render its labels), so its static state still resolves on both passes; the
   # data-backed kind options wait for the connected pass.
   def handle_params(params, _uri, socket) do
+    params = params |> Map.drop(["option_search", "_target"]) |> normalize_identity_params()
+
     if connected?(socket) do
       {:noreply, load(socket, params)}
     else
@@ -90,9 +98,10 @@ defmodule EmisarWeb.AuditLive do
   end
 
   def handle_event("toggle_filters", _params, socket),
-    do: {:noreply, assign(socket, :filters_open?, false)}
+    do: {:noreply, socket |> assign(:filters_open?, false) |> assign(:filter_cache_key, nil)}
 
   def handle_event("filter", params, socket) do
+    params = Map.drop(params, ["option_search", "_target"])
     # The filter form doesn't carry actor_id when the "by actor" picker is
     # hidden (it's set by clicking a row's actor), so merge it back or a
     # dropdown change would silently drop an active actor filter. From/To now
@@ -128,6 +137,38 @@ defmodule EmisarWeb.AuditLive do
     {:noreply,
      LiveTable.apply_filter(socket, ~p"/app/#{socket.assigns.current_account}/audit", merged)}
   end
+
+  def handle_event(
+        "search_filter_options",
+        %{"_target" => ["option_search", field], "option_search" => %{} = searches},
+        socket
+      ) do
+    search = Map.get(searches, field)
+
+    with true <- socket.assigns.filters_open?,
+         {name, _kind_field, _side} <- Map.get(@identity_fields, field),
+         %{} = picker <- Map.get(socket.assigns.filter_option_pickers, name),
+         true <- is_binary(search) and search != picker.search do
+      {:noreply, update_identity_picker(socket, field, search, nil)}
+    else
+      _ -> {:noreply, socket}
+    end
+  end
+
+  def handle_event("search_filter_options", _params, socket), do: {:noreply, socket}
+
+  def handle_event("page_filter_options", %{"field" => field, "direction" => direction}, socket) do
+    with true <- socket.assigns.filters_open?,
+         {name, _kind_field, _side} <- Map.get(@identity_fields, field),
+         %{} = picker <- Map.get(socket.assigns.filter_option_pickers, name),
+         cursor when is_binary(cursor) <- choice_cursor(picker.metadata, direction) do
+      {:noreply, update_identity_picker(socket, field, picker.search, cursor)}
+    else
+      _ -> {:noreply, socket}
+    end
+  end
+
+  def handle_event("page_filter_options", _params, socket), do: {:noreply, socket}
 
   def handle_event("preset", %{"window" => window}, socket) do
     # Quick relative-range segments set :from to (now − window) and clear :to, so
@@ -192,11 +233,34 @@ defmodule EmisarWeb.AuditLive do
 
   def handle_event("category", _params, socket), do: {:noreply, socket}
 
+  defp choice_cursor(metadata, "previous"), do: metadata.previous_page_cursor
+  defp choice_cursor(metadata, "next"), do: metadata.next_page_cursor
+  defp choice_cursor(_metadata, _direction), do: nil
+
+  defp normalize_identity_params(params) do
+    Enum.reduce(@identity_fields, params, fn {field, _definition}, params ->
+      if id = canonical_identity_id(params[field]),
+        do: Map.put(params, field, id),
+        else: params
+    end)
+  end
+
+  defp canonical_identity_id(id) when is_binary(id) and byte_size(id) == 36 do
+    case Ecto.UUID.cast(id) do
+      {:ok, id} -> id
+      :error -> nil
+    end
+  end
+
+  defp canonical_identity_id(_id), do: nil
+
   # The download hands over exactly what the operator is looking at — the
   # active filter params ride the href; cursors don't (the download walks the
   # whole filtered set itself).
   defp audit_download_path(assigns) do
-    query = Map.drop(assigns.filter_params, ["account_id_or_slug", "before", "after"])
+    query =
+      Map.drop(assigns.filter_params, ["account_id_or_slug", "before", "after", "option_search"])
+
     ~p"/app/#{assigns.current_account}/audit/download?#{query}"
   end
 
@@ -231,34 +295,92 @@ defmodule EmisarWeb.AuditLive do
   defp preset_seconds("7d"), do: 604_800
   defp preset_seconds(_), do: nil
 
-  # When exactly one actor kind is selected in the filter bar, surface a "filter
-  # by actor" picker for that kind — its options are the distinct actors of that
-  # kind already in the account's log. Render-only: actor_id still applies via
-  # the opts path below, so it appears on demand instead of an always-empty
-  # dropdown.
-  defp actor_kind_filter(params, subject) do
-    # `ensure` the currently-filtered actor into the options so a click-through
-    # from Team "View activity" selects the member even when they have no events
-    # yet (otherwise the picker would fall back to All).
-    with kind when is_binary(kind) <- blank_to_nil(params["actor_kind"]),
-         {:ok, [_ | _] = options} <-
-           Audit.list_actor_options(kind, subject, ensure: blank_to_nil(params["actor_id"])) do
-      [Audit.actor_filter(options)]
-    else
-      _ -> []
+  defp identity_picker(field, params, subject, search \\ "", cursor \\ nil) do
+    {_name, kind_field, side} = Map.fetch!(@identity_fields, field)
+    kind = blank_to_nil(params[kind_field])
+    selected = blank_to_nil(params[field])
+
+    if is_binary(kind) do
+      opts = [search: search, page: [cursor: cursor], ensure: selected]
+
+      read =
+        if side == :actor, do: &Audit.list_actor_options/3, else: &Audit.list_target_options/3
+
+      case read.(kind, subject, opts) do
+        {:ok, options, metadata} ->
+          %{
+            kind: kind,
+            selected: selected,
+            search: search,
+            options: pin_unavailable(options, selected),
+            empty?: Enum.all?(options, fn {id, _label} -> id == selected end),
+            error: nil,
+            metadata: metadata
+          }
+
+        {:error, reason} ->
+          %{
+            kind: kind,
+            selected: selected,
+            search: bounded_search_display(search),
+            options: pin_unavailable([], selected),
+            empty?: false,
+            error:
+              if(reason == :invalid_search,
+                do: "Search is too long or contains unsupported characters.",
+                else: "Couldn't load choices."
+              ),
+            metadata: %Emisar.Repo.Paginator.Metadata{}
+          }
+      end
     end
   end
 
-  # Same shape for the Target column: when a target kind is selected, surface a
-  # "filter by target" picker for that kind (its distinct targets in the log).
-  defp target_kind_filter(params, subject) do
-    with kind when is_binary(kind) <- blank_to_nil(params["target_kind"]),
-         {:ok, [_ | _] = options} <- Audit.list_target_options(kind, subject) do
-      [Audit.target_filter(options)]
-    else
-      _ -> []
-    end
+  # Keep a stale/foreign URL selection visibly distinct from All without
+  # claiming a name or exposing metadata the context refused to resolve.
+  defp pin_unavailable(options, selected) do
+    if canonical_identity_id(selected) && not List.keymember?(options, selected, 0),
+      do: options ++ [{selected, "#{selected} (unavailable)"}],
+      else: options
   end
+
+  defp bounded_search_display(search) when is_binary(search) and byte_size(search) <= 512 do
+    if String.valid?(search) and not String.contains?(search, <<0>>), do: search, else: ""
+  end
+
+  defp bounded_search_display(_search), do: ""
+
+  defp update_identity_picker(socket, field, search, cursor) do
+    {name, _kind_field, _side} = Map.fetch!(@identity_fields, field)
+
+    picker =
+      identity_picker(
+        field,
+        socket.assigns.filter_params,
+        socket.assigns.current_subject,
+        search,
+        cursor
+      )
+
+    pickers = Map.put(socket.assigns.filter_option_pickers, name, picker)
+
+    socket
+    |> assign(:filter_option_pickers, pickers)
+    |> assign(:filters, with_identity_filters(socket.assigns.base_filters, pickers))
+    |> assign_filter_summary(socket.assigns.filter_params)
+  end
+
+  defp with_identity_filters(filters, pickers) do
+    Enum.flat_map(filters, fn
+      %{name: :actor_kind} = filter -> [filter | identity_filter(pickers[:actor_id], :actor)]
+      %{name: :target_kind} = filter -> [filter | identity_filter(pickers[:target_id], :target)]
+      filter -> [filter]
+    end)
+  end
+
+  defp identity_filter(nil, _side), do: []
+  defp identity_filter(picker, :actor), do: [Audit.actor_filter(picker.options)]
+  defp identity_filter(picker, :target), do: [Audit.target_filter(picker.options)]
 
   defp load(socket, params) do
     socket
@@ -309,6 +431,26 @@ defmodule EmisarWeb.AuditLive do
   defp assign_filter_state(socket, params) do
     subject = socket.assigns.current_subject
 
+    normalized =
+      params
+      |> Map.drop(["before", "after"])
+      |> Map.reject(fn {_key, value} -> value in [nil, ""] end)
+
+    cache_key =
+      {subject.account.id, subject.permissions, normalized, connected?(socket),
+       socket.assigns.filters_open?}
+
+    if socket.assigns.filter_cache_key == cache_key do
+      assign_filter_summary(socket, params)
+    else
+      socket
+      |> reload_filter_choices(params, subject)
+      |> assign(:filter_cache_key, cache_key)
+      |> assign_filter_summary(params)
+    end
+  end
+
+  defp reload_filter_choices(socket, params, subject) do
     # Request ID + Sign-in method only apply to some event types — drop them
     # when the selected Type can't carry them (or none is set), so the filter
     # panel shows only filters that can actually narrow the log. The subject
@@ -327,27 +469,30 @@ defmodule EmisarWeb.AuditLive do
     # control belongs next to its trigger), not tacked on at the end.
     # base_filters stays the opts source; the actor/target pickers are
     # render-only — actor_id/target_id apply via the opts path in `load/2`.
-    {actor_filter, target_filter} =
+    pickers =
       if connected?(socket) and socket.assigns.filters_open? do
-        {actor_kind_filter(params, subject), target_kind_filter(params, subject)}
+        Map.new(@identity_fields, fn {field, {name, _kind_field, _side}} ->
+          {name, identity_picker(field, params, subject)}
+        end)
+        |> Map.reject(fn {_name, picker} -> is_nil(picker) end)
       else
-        {[], []}
+        %{}
       end
 
-    filters =
-      Enum.flat_map(base_filters, fn
-        %{name: :actor_kind} = f -> [f | actor_filter]
-        %{name: :target_kind} = f -> [f | target_filter]
-        f -> [f]
-      end)
+    socket
+    |> assign(:base_filters, base_filters)
+    |> assign(:filter_option_pickers, pickers)
+    |> assign(:filters, with_identity_filters(base_filters, pickers))
+    |> assign(:categories, Audit.event_category_values(subject))
+  end
 
+  defp assign_filter_summary(socket, params) do
+    filters = socket.assigns.filters
     # actor_id rides as a URL param outside the form (set by clicking a row's
     # actor); target_id is set by its dynamic picker. Both aren't in
     # base_filters, so they're threaded into list_events directly. From/To are
     # LiveTable datetime filters — params_to_opts applies them via :filter.
     socket
-    |> assign(:filters, filters)
-    |> assign(:categories, Audit.event_category_values(subject))
     |> assign(:filter_params, params)
     |> assign(:active_facet_count, LiveTable.count_active_filters(params, filters))
     |> assign(
@@ -552,6 +697,7 @@ defmodule EmisarWeb.AuditLive do
         metadata={@metadata}
         filter_params={@filter_params}
         filters={@filters}
+        filter_option_pickers={@filter_option_pickers}
         filter_layout={:stacked}
         filter_visibility={:collapsible}
         filters_open={@filters_open?}

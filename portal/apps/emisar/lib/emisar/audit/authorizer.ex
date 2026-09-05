@@ -45,6 +45,11 @@ defmodule Emisar.Audit.Authorizer do
   end
 
   @impl Emisar.Auth.Authorizer
+  def for_subject(%Ecto.Query{aliases: %{audit_identity_options: _}} = queryable, %Subject{
+        account: %{id: account_id}
+      }),
+      do: Emisar.Audit.IdentityOption.Query.by_account_id(queryable, account_id)
+
   # Row scoping is where the billing narrowing lives, so EVERY audit read — the
   # list, the detail fetch, the filter-option lookups, the export sweep — is
   # narrowed by construction. A crafted filter or a direct context call widens

@@ -73,8 +73,8 @@ defmodule EmisarWeb.MCP.CatalogTools do
   end
 
   def call(conn, tool, args) when tool in ~w(list_packs list_runners find_actions) do
-    with {:ok, snapshot, scope} <- snapshot(conn) do
-      execute(tool, snapshot, scope, parse(tool, args))
+    with {:ok, inventory, scope} <- snapshot(conn) do
+      execute(tool, inventory, scope, conn.assigns.current_subject, parse(tool, args))
     end
   end
 
@@ -82,7 +82,7 @@ defmodule EmisarWeb.MCP.CatalogTools do
     subject = conn.assigns.current_subject
     api_key = conn.assigns.api_key
 
-    case Catalog.model_catalog(subject) do
+    case Catalog.model_inventory(subject) do
       {:ok, snapshot} ->
         scope =
           [subject.account.id, api_key.credential_lineage_id] ++
@@ -101,47 +101,81 @@ defmodule EmisarWeb.MCP.CatalogTools do
     end
   end
 
-  defp execute("list_packs", snapshot, scope, args) do
-    packs =
-      snapshot.packs
-      |> Enum.filter(&pack_matches?(&1, args))
-      |> Enum.map(&pack_result(&1, args))
-      |> Enum.reject(&is_nil/1)
-
-    paginate(
-      "list_packs",
-      packs,
-      & &1.pack_ref,
-      scope,
-      args,
-      :packs
-    )
+  defp execute("list_packs", inventory, scope, subject, args) do
+    with {:ok, last_key} <- decode_cursor("list_packs", scope, args),
+         headers =
+           inventory.packs
+           |> Enum.filter(&pack_matches?(&1, args))
+           |> after_key(& &1.pack_ref, last_key),
+         {:ok, packs} <- pack_page(headers, inventory, subject, args) do
+      paginate("list_packs", packs, & &1.pack_ref, scope, args, :packs)
+    end
   end
 
-  defp execute("list_runners", snapshot, scope, args) do
-    packs_by_ref = Map.new(snapshot.packs, &{&1.pack_ref, &1})
-
-    runners =
-      snapshot.runners
-      |> Enum.filter(&runner_matches?(&1, packs_by_ref, args))
-
-    summary = runner_summary(runners)
-
-    with {:ok, page} <-
-           paginate(
+  defp execute("list_runners", inventory, scope, subject, args) do
+    with {:ok, last_key} <- decode_cursor("list_runners", scope, args),
+         {:ok, runners} <- matching_runners(inventory, subject, args),
+         {page_runners, more?} =
+           runners
+           |> after_key(& &1.runner_ref, last_key)
+           |> split_more(args.limit),
+         {:ok, page_snapshot} <- hydrate_runners(page_runners, subject),
+         :ok <- ensure_page_runners(page_runners, page_snapshot.runners),
+         {:ok, page} <-
+           page_result(
              "list_runners",
-             runners,
+             page_snapshot.runners,
+             more?,
              & &1.runner_ref,
              scope,
              args,
              :runners,
-             &runner_result(&1, snapshot.packs)
+             &runner_result(&1, page_snapshot.packs)
            ) do
-      {:ok, Map.put(page, :summary, summary)}
+      {:ok, Map.put(page, :summary, runner_summary(runners))}
     end
   end
 
-  defp execute("find_actions", snapshot, scope, args) do
+  defp execute("find_actions", inventory, scope, subject, args) do
+    headers = Enum.filter(inventory.packs, &pack_identity_matches?(&1, args))
+
+    runners =
+      inventory.runners
+      |> target_matches(args.target)
+      |> Enum.filter(&(args.runner_refs == [] or &1.runner_ref in args.runner_refs))
+
+    with {:ok, _last_key} <- decode_cursor("find_actions", scope, args),
+         {:ok, snapshot} <- hydrate(runners, headers, subject) do
+      result = rank_actions(snapshot, scope, args)
+
+      # A target with no deployment still gets the exact-action diagnostic if
+      # another scoped runner advertises it. Only that empty exact lookup needs
+      # the wider read; global ranking otherwise spans the narrowed candidates.
+      if exact_action_filter?(args) and length(runners) < length(inventory.runners) and
+           (unavailable_result?(result) or is_nil(deployed_pack_ref(snapshot, args))) do
+        with {:ok, fallback} <- hydrate(inventory.runners, headers, subject) do
+          rank_actions(fallback, scope, args)
+        end
+      else
+        result
+      end
+    end
+  end
+
+  defp unavailable_result?({:error, %{error: %{code: "action_unavailable"}}}), do: true
+  defp unavailable_result?(_result), do: false
+
+  defp ensure_page_runners(selected, current) do
+    if MapSet.new(selected, & &1.id) == MapSet.new(current, & &1.id) do
+      :ok
+    else
+      # A newly inaccessible page cannot emit stale metadata or a continuation
+      # with no emitted anchor.
+      {:error, error("not_allowed", "Runner access changed. Repeat the catalog request.")}
+    end
+  end
+
+  defp rank_actions(snapshot, scope, args) do
     searchable =
       snapshot.packs
       |> Enum.flat_map(&searchable_actions(&1, snapshot.runners, args))
@@ -164,6 +198,87 @@ defmodule EmisarWeb.MCP.CatalogTools do
       end
     else
       paginate_candidates(candidates, scope, args)
+    end
+  end
+
+  # Inclusion depends on complete action compatibility, not just a header's
+  # availability. Walk sorted chunks until there is one included lookahead row;
+  # byte fitting below still places the cursor after the last EMITTED pack.
+  defp pack_page(headers, inventory, subject, args) do
+    headers
+    |> Enum.chunk_every(args.limit + 1)
+    |> Enum.reduce_while({:ok, []}, fn chunk, {:ok, found} ->
+      ids = chunk |> Enum.flat_map(&Map.keys(&1.compatibility)) |> MapSet.new()
+      runners = Enum.filter(inventory.runners, &MapSet.member?(ids, &1.id))
+
+      case hydrate(runners, chunk, subject, pack_headers: inventory.packs) do
+        {:ok, snapshot} ->
+          included = snapshot.packs |> Enum.map(&pack_result(&1, args)) |> Enum.reject(&is_nil/1)
+          found = Enum.take(found ++ included, args.limit + 1)
+          if length(found) > args.limit, do: {:halt, {:ok, found}}, else: {:cont, {:ok, found}}
+
+        {:error, _reason} = error ->
+          {:halt, error}
+      end
+    end)
+  end
+
+  defp matching_runners(inventory, subject, args) do
+    headers = Map.new(inventory.packs, &{&1.pack_ref, &1})
+
+    candidates =
+      Enum.filter(inventory.runners, fn runner ->
+        runner_metadata_matches?(runner, args) and
+          runner_pack_match?(runner, headers, %{args | action_id: nil})
+      end)
+
+    if args.issues_only or not is_nil(args.action_id) do
+      # These predicates need manifest comparison. Fold bounded fleet chunks,
+      # retaining only matching slim runner facts, never a fleet-sized set of
+      # hydrated actions/manifests. The summary remains over ALL matches.
+      candidates
+      |> Enum.chunk_every(50)
+      |> Enum.reduce_while({:ok, []}, fn chunk, {:ok, matched} ->
+        case hydrate_runners(chunk, subject) do
+          {:ok, snapshot} ->
+            packs = Map.new(snapshot.packs, &{&1.pack_ref, &1})
+            matches = Enum.filter(snapshot.runners, &runner_matches?(&1, packs, args))
+            {:cont, {:ok, [matches | matched]}}
+
+          {:error, _reason} = error ->
+            {:halt, error}
+        end
+      end)
+      |> case do
+        {:ok, chunks} -> {:ok, chunks |> Enum.reverse() |> List.flatten()}
+        error -> error
+      end
+    else
+      {:ok, candidates}
+    end
+  end
+
+  defp hydrate_runners(runners, subject) do
+    model_catalog(subject, runner_ids: Enum.map(runners, & &1.id))
+  end
+
+  defp hydrate(runners, headers, subject, opts \\ []) do
+    model_catalog(
+      subject,
+      Keyword.merge(opts,
+        runner_ids: Enum.map(runners, & &1.id),
+        pack_refs: Enum.map(headers, & &1.pack_ref)
+      )
+    )
+  end
+
+  defp model_catalog(subject, opts) do
+    case Catalog.model_catalog(subject, opts) do
+      {:ok, snapshot} ->
+        {:ok, snapshot}
+
+      {:error, :unauthorized} ->
+        {:error, error("not_allowed", "This key cannot read catalog data.")}
     end
   end
 
@@ -228,9 +343,13 @@ defmodule EmisarWeb.MCP.CatalogTools do
   defp maybe_put_output_schema(action, _schema), do: action
 
   defp pack_matches?(pack, args) do
-    (is_nil(args.pack_id) or pack.pack_id == args.pack_id) and
-      (is_nil(args.pack_ref) or pack.pack_ref == args.pack_ref) and
+    pack_identity_matches?(pack, args) and
       runner_ref_overlap?(Map.values(pack.compatibility), args.runner_refs)
+  end
+
+  defp pack_identity_matches?(pack, args) do
+    (is_nil(args.pack_id) or pack.pack_id == args.pack_id) and
+      (is_nil(args.pack_ref) or pack.pack_ref == args.pack_ref)
   end
 
   defp pack_result(pack, args) do
@@ -285,11 +404,15 @@ defmodule EmisarWeb.MCP.CatalogTools do
   end
 
   defp runner_matches?(runner, packs_by_ref, args) do
-    (is_nil(args.query) or runner_query_match?(runner, args.query)) and
-      (args.runner_refs == [] or runner.runner_ref in args.runner_refs) and
-      (args.statuses == [] or runner.status in args.statuses) and
+    runner_metadata_matches?(runner, args) and
       (not args.issues_only or runner.issues != []) and
       runner_pack_match?(runner, packs_by_ref, args)
+  end
+
+  defp runner_metadata_matches?(runner, args) do
+    (is_nil(args.query) or runner_query_match?(runner, args.query)) and
+      (args.runner_refs == [] or runner.runner_ref in args.runner_refs) and
+      (args.statuses == [] or runner.status in args.statuses)
   end
 
   defp runner_pack_match?(_runner, _packs, %{pack_id: nil, pack_ref: nil}), do: true
@@ -787,22 +910,37 @@ defmodule EmisarWeb.MCP.CatalogTools do
       {:ok, last_key} ->
         items = if last_key, do: Enum.drop_while(items, &(key.(&1) <= last_key)), else: items
         {page, more?} = split_more(items, args.limit)
-        {page, rendered, more?} = fit_page(page, render, more?)
-
-        cursor =
-          if more? do
-            CatalogCursor.encode(tool, scope, filters, key.(List.last(page)))
-          end
-
-        result =
-          Map.merge(%{ok: true, observed_at: observed_at()}, pagination(tool, args, cursor))
-
-        {:ok, Map.put(result, field, rendered)}
+        page_result(tool, page, more?, key, scope, args, field, render)
 
       {:error, :invalid_cursor} ->
         {:error, error("invalid_cursor", Service.invalid_cursor_message(:page, tool))}
     end
   end
+
+  defp page_result(tool, page, more?, key, scope, args, field, render) do
+    {page, rendered, more?} = fit_page(page, render, more?)
+
+    cursor =
+      if more? do
+        CatalogCursor.encode(tool, scope, cursor_filters(args), key.(List.last(page)))
+      end
+
+    result = Map.merge(%{ok: true, observed_at: observed_at()}, pagination(tool, args, cursor))
+    {:ok, Map.put(result, field, rendered)}
+  end
+
+  defp decode_cursor(tool, scope, args) do
+    case CatalogCursor.decode(args.cursor, tool, scope, cursor_filters(args)) do
+      {:ok, key} ->
+        {:ok, key}
+
+      {:error, :invalid_cursor} ->
+        {:error, error("invalid_cursor", Service.invalid_cursor_message(:page, tool))}
+    end
+  end
+
+  defp after_key(items, _key, nil), do: items
+  defp after_key(items, key, last_key), do: Enum.drop_while(items, &(key.(&1) <= last_key))
 
   # find_actions hands back the whole next page as a copy-ready `next`
   # continuation (the model must re-supply the query with the cursor, so a bare

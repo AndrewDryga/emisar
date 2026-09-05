@@ -20,6 +20,34 @@ func TestCopyListenerSelectsBrowserChecks(t *testing.T) {
 	}
 }
 
+func TestPackResponseScriptsSelectTooling(t *testing.T) {
+	for _, path := range []string{
+		"packs/databricks/scripts/databricks.sh",
+		"packs/hcp-terraform/scripts/tfc.sh",
+		"packs/spark/scripts/spark_api.sh",
+		"packs/cloudflare/scripts/cf_api.sh",
+		"packs/bunnycdn/scripts/bunny_api.sh",
+		"packs/airflow/scripts/airflow_api.sh",
+		"packs/pfsense/scripts/pfproject.sh",
+		"packs/pfsense/scripts/pfreq.sh",
+	} {
+		t.Run(path, func(t *testing.T) {
+			var selection Selection
+			selection.include(path)
+			if !selection.Tools || !selection.Packs || selection.Workflows {
+				t.Fatalf("response entrypoint skipped focused tooling or broadened workflow selection: %+v", selection)
+			}
+		})
+	}
+	for _, path := range []string{"packs/nomad/scripts/by_meta.sh", "packs/redis/actions/ping.yaml"} {
+		var selection Selection
+		selection.include(path)
+		if selection.Tools || !selection.Packs {
+			t.Fatalf("unrelated pack selected tooling: %s %+v", path, selection)
+		}
+	}
+}
+
 func TestSelect(t *testing.T) {
 	root := newGitRepo(t)
 	migration := "portal/apps/emisar/priv/repo/migrations/20260101000000_old.exs"

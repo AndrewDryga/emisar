@@ -13,6 +13,7 @@ readonly base="${AIRFLOW_URL:-http://127.0.0.1:8080}"
 readonly api="$base/api/v2"
 readonly connect_timeout=10
 readonly max_time=45
+readonly max_response_bytes=33554432
 
 fail() {
   printf '%s\n' "$1" >&2
@@ -46,6 +47,27 @@ validate_base() {
 token=""
 token_resolved=""
 
+# Shared by token minting and API reads. Stdin remains the caller's credential
+# document; only the response goes through the bounded private file.
+bounded_transfer() (
+  umask 077
+  response_dir=$(mktemp -d "${TMPDIR:-/tmp}/emisar-airflow.XXXXXXXX") || exit 1
+  trap 'rm -f -- "$response_dir/body"; rmdir -- "$response_dir"' EXIT
+  trap 'exit 129' HUP
+  trap 'exit 130' INT
+  trap 'exit 143' TERM
+  if "$@" | head -c "$((max_response_bytes + 1))" >"$response_dir/body"; then
+    statuses=("${PIPESTATUS[@]}")
+  else
+    statuses=("${PIPESTATUS[@]}")
+  fi
+  bytes=$(wc -c <"$response_dir/body")
+  ((bytes <= max_response_bytes && statuses[0] != 63)) || fail "Airflow API response exceeded 32 MiB"
+  ((statuses[1] == 0)) || fail "Could not read Airflow API response"
+  ((statuses[0] == 0)) || exit "${statuses[0]}"
+  cat "$response_dir/body"
+)
+
 resolve_token() {
   [[ -z $token_resolved ]] || return 0
   token_resolved=yes
@@ -56,7 +78,7 @@ resolve_token() {
   [[ -n ${AIRFLOW_USERNAME:-} && -n ${AIRFLOW_PASSWORD:-} ]] || return 0
   local response
   response=$(jq -nc '{username: env.AIRFLOW_USERNAME, password: env.AIRFLOW_PASSWORD}' |
-    curl -q --globoff --proto '=http,https' -fsS -X POST \
+    bounded_transfer curl -q --globoff --proto '=http,https' --max-filesize "$max_response_bytes" -fsS -X POST \
       -H 'Content-Type: application/json' --data @- \
       --connect-timeout "$connect_timeout" --max-time "$max_time" \
       "$base/auth/token") ||
@@ -75,7 +97,7 @@ auth_header() {
 request() {
   local method=$1 url=$2 status=0 response
   shift 2
-  response=$(auth_header | curl -q --globoff --proto '=http,https' -fsS -H @- \
+  response=$(auth_header | bounded_transfer curl -q --globoff --proto '=http,https' --max-filesize "$max_response_bytes" -fsS -H @- \
     -X "$method" --connect-timeout "$connect_timeout" --max-time "$max_time" \
     "$@" "$url") || status=$?
   ((status == 0)) || fail "Airflow API request failed with transfer status $status: $method ${url#"$base"}"

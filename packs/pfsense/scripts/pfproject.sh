@@ -20,9 +20,29 @@ set -eu
 
 dir=$(dirname "$0")
 
-# Capture before filtering. Piped straight into jq, a failed request (401, 403,
-# a 404 path, an unreachable host) sent jq empty stdin — and jq exits 0 on empty
-# input, so the action reported SUCCESS with no findings. "Are any certificates
-# expiring?" answered "no" from an auth failure.
-body=$(sh "$dir/pfreq.sh" GET "$1")
-printf '%s' "$body" | jq "$2"
+# Bound the raw body before jq or shell capture. POSIX pipelines report only
+# the last command, so retain the producer's status separately: HTTP failure
+# must never become jq's successful empty input.
+umask 077
+response_dir=$(mktemp -d "${TMPDIR:-/tmp}/emisar-pfsense.XXXXXXXX") || exit 1
+trap 'rm -f -- "$response_dir/body" "$response_dir/status"; rmdir -- "$response_dir"' 0
+trap 'exit 129' HUP
+trap 'exit 130' INT
+trap 'exit 143' TERM
+if (
+  if sh "$dir/pfreq.sh" GET "$1" --max-filesize 33554432; then status=0; else status=$?; fi
+  printf '%s\n' "$status" >"$response_dir/status"
+) | head -c 33554433 >"$response_dir/body"; then
+  read_status=0
+else
+  read_status=$?
+fi
+bytes=$(wc -c <"$response_dir/body")
+status=$(cat "$response_dir/status")
+if [ "$bytes" -gt 33554432 ] || [ "$status" -eq 63 ]; then
+  printf '%s\n' 'pfSense API response exceeded 32 MiB' >&2
+  exit 1
+fi
+[ "$read_status" -eq 0 ] || exit "$read_status"
+[ "$status" -eq 0 ] || exit "$status"
+jq "$2" <"$response_dir/body"

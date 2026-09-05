@@ -5,14 +5,55 @@ defmodule Emisar.Release.IndexRecoveryTest do
   alias Emisar.Repo
 
   setup_all do
-    path =
-      Application.app_dir(
-        :emisar,
-        "priv/repo/migrations/20261024000000_recover_skipped_concurrent_indexes.exs"
-      )
+    for file <- [
+          "20261024000000_recover_skipped_concurrent_indexes.exs",
+          "20261026000000_index_dispatch_sweep_cursors.exs"
+        ] do
+      path = Application.app_dir(:emisar, "priv/repo/migrations/" <> file)
+      Code.require_file(path)
+    end
 
-    Code.require_file(path)
     :ok
+  end
+
+  test "dispatch sweep indexes resume every successful prefix and roll back independently" do
+    indexes = [
+      Fixture.definition(
+        "action_runs",
+        "id",
+        "action_runs_in_flight_sweep_id_idx",
+        "status IN ('pending', 'sent', 'running', 'cancelling')"
+      ),
+      Fixture.definition(
+        "action_runs",
+        "runner_id, id",
+        "action_runs_pending_sweep_runner_id_idx",
+        "status = 'pending'"
+      )
+    ]
+
+    for count <- 0..length(indexes) do
+      Fixture.with_schema(fn schema ->
+        Fixture.create_tables(schema)
+        existing = Enum.take(indexes, count)
+        Enum.each(existing, &Fixture.create_index(schema, &1))
+        before = Map.new(existing, &{&1.name, Fixture.index(schema, &1.name)})
+        migration = Emisar.Repo.Migrations.IndexDispatchSweepCursors
+        version = 20_261_026_000_000
+
+        assert Ecto.Migrator.up(Repo, version, migration, prefix: schema) == :ok
+
+        for index <- indexes do
+          current = Fixture.index(schema, index.name)
+          assert current.valid and current.ready and current.live
+          if previous = before[index.name], do: assert(current.oid == previous.oid)
+        end
+
+        assert Ecto.Migrator.up(Repo, version, migration, prefix: schema) == :already_up
+        assert Ecto.Migrator.down(Repo, version, migration, prefix: schema) == :ok
+        assert Enum.all?(indexes, &is_nil(Fixture.index(schema, &1.name)))
+      end)
+    end
   end
 
   for version <- Fixture.versions() do

@@ -1152,16 +1152,6 @@ defmodule Emisar.Catalog do
     end
   end
 
-  # The manual "Clean up now" sweep is narrowed to the operator's own scope,
-  # exactly as the trust decisions are — deleting a pin REMOVES a trust
-  # decision, and the console never showed this member those versions. The daily
-  # job passes no subject and stays account-wide, which is the same split
-  # `Runners.scope_sweep_to_subject/2` makes for the fleet.
-  defp scope_sweep_to_pack_access(queryable, %Subject{} = subject),
-    do: scope_pack_versions_to_subject(queryable, subject)
-
-  defp scope_sweep_to_pack_access(queryable, nil), do: queryable
-
   # The subject's account struct is a socket snapshot — read the setting fresh.
   defp fetch_retention_days(%Subject{account: %{id: account_id}}) do
     with {:ok, settings} <- Accounts.fetch_account_settings(account_id) do
@@ -1175,29 +1165,33 @@ defmodule Emisar.Catalog do
   and `sweep_unseen_pack_versions/1` (operator actor). Deletes every pack
   version no runner has advertised for `days` days — pin rows and their
   advertised action rows — except versions a connected runner still
-  advertises: runner_state is only re-sent on change, so a stable host's
-  `last_seen_at` goes stale while its packs are live. Records ONE
-  `pack_retention_swept` audit event only when something was removed.
-  Returns `{:ok, deleted_count}`.
+  advertises, or a deliberately disabled runner still lists. runner_state is
+  only re-sent on change, so a stable host's `last_seen_at` can go stale.
+  Each bounded transaction records one `pack_retention_swept` event only when
+  it removed something. Returns `{:ok, deleted_count}`; a later failure does
+  not roll back earlier committed batches or their audit receipts.
   """
-  def delete_unseen_pack_versions(account_id, days, subject \\ nil)
+  def delete_unseen_pack_versions(account_id, days, subject \\ nil, opts \\ [])
       when is_binary(account_id) and is_integer(days) and days > 0 do
     cutoff = DateTime.add(DateTime.utc_now(), -days * 86_400, :second)
 
-    delete_pack_version_set(
-      account_id,
-      fn repo ->
-        live_versions = live_advertised_versions(repo, account_id)
+    queryable =
+      PackVersion.Query.all()
+      |> PackVersion.Query.by_account_id(account_id)
+      |> PackVersion.Query.last_seen_before(cutoff)
 
-        PackVersion.Query.all()
-        |> PackVersion.Query.by_account_id(account_id)
-        |> PackVersion.Query.last_seen_before(cutoff)
-        |> scope_sweep_to_pack_access(subject)
-        |> PackVersion.Query.lock_for_update()
-        |> repo.all()
-        |> Enum.reject(&MapSet.member?(live_versions, {&1.pack_id, &1.version}))
+    delete_pack_version_batches(
+      account_id,
+      queryable,
+      fn repo, candidates ->
+        with {:ok, visible} <- visible_retention_candidates(candidates, subject, repo) do
+          refs = Enum.map(visible, &{&1.pack_id, &1.version})
+          protected = Runners.list_retention_protected_pack_refs(account_id, refs, repo: repo)
+          {:ok, reject_protected_versions(visible, protected)}
+        end
       end,
-      &Audit.Events.pack_retention_swept(subject || account_id, &1, days)
+      &Audit.Events.pack_retention_swept(subject || account_id, &1, days),
+      opts
     )
   end
 
@@ -1210,103 +1204,155 @@ defmodule Emisar.Catalog do
   it, nothing runs it, and the console's only remedy was removing it by hand.
   Advertisement is judged on every non-deleted runner's durable `packs` map,
   offline hosts included, so a version a host still lists is kept exactly as
-  the console counts it. Records ONE `pack_retirement_swept` audit event
-  (system actor) only when something was removed. Returns
-  `{:ok, deleted_count}`.
+  the console counts it. Records one `pack_retirement_swept` system event per
+  nonempty committed batch. Returns `{:ok, deleted_count}`; earlier committed
+  progress survives a later batch failure.
   """
-  def delete_unadvertised_retired_pack_versions(account_id) when is_binary(account_id) do
-    delete_pack_version_set(
-      account_id,
-      fn repo ->
-        advertised =
-          account_id
-          |> Runners.list_pack_advertisement_facts_for_account(repo: repo)
-          |> advertised_pack_refs()
+  def delete_unadvertised_retired_pack_versions(account_id, opts \\ [])
+      when is_binary(account_id) do
+    queryable =
+      PackVersion.Query.all()
+      |> PackVersion.Query.by_account_id(account_id)
+      |> PackVersion.Query.by_pack_ids(Map.keys(PackBaseline.retired_below()))
 
-        PackVersion.Query.all()
-        |> PackVersion.Query.by_account_id(account_id)
-        |> PackVersion.Query.by_pack_ids(Map.keys(PackBaseline.retired_below()))
-        |> PackVersion.Query.lock_for_update()
-        |> repo.all()
-        |> Enum.filter(&PackBaseline.retired?(&1.pack_id, &1.version))
-        |> Enum.reject(&MapSet.member?(advertised, {&1.pack_id, &1.version}))
+    delete_pack_version_batches(
+      account_id,
+      queryable,
+      fn repo, candidates ->
+        retired = Enum.filter(candidates, &PackBaseline.retired?(&1.pack_id, &1.version))
+        refs = Enum.map(retired, &{&1.pack_id, &1.version})
+        advertised = Runners.list_advertised_pack_refs(account_id, refs, repo: repo)
+        {:ok, reject_protected_versions(retired, advertised)}
       end,
-      &Audit.Events.pack_retirement_swept(account_id, &1)
+      &Audit.Events.pack_retirement_swept(account_id, &1),
+      opts
     )
   end
 
-  # The one transactional shape both bookkeeping sweeps share: lock the
-  # candidate rows (`select_versions` picks them inside the transaction), drop
-  # their advertised action rows, delete the pins, and insert the marker
-  # `record` builds — only when something was removed, since scheduled
-  # housekeeping must not manufacture audit noise on inactive accounts.
-  defp delete_pack_version_set(account_id, select_versions, record) do
+  defp delete_pack_version_batches(account_id, queryable, select_versions, record, opts) do
+    limit = opts |> Keyword.get(:batch_size, 100) |> max(1) |> min(100)
+    delete_pack_version_batches(account_id, queryable, select_versions, record, limit, nil, 0)
+  end
+
+  defp delete_pack_version_batches(
+         account_id,
+         queryable,
+         select_versions,
+         record,
+         limit,
+         cursor,
+         total
+       ) do
+    result =
+      delete_pack_version_batch(account_id, queryable, select_versions, record, limit, cursor)
+
+    case result do
+      {:ok, %{candidates: []}} ->
+        {:ok, total}
+
+      {:ok, %{candidates: candidates, deleted: deleted}} ->
+        # EXAMINED, not deleted: a page full of protected or out-of-scope rows
+        # must not starve later candidates, nor be revisited forever.
+        last = List.last(candidates)
+        cursor = {last.pack_id, last.version}
+
+        delete_pack_version_batches(
+          account_id,
+          queryable,
+          select_versions,
+          record,
+          limit,
+          cursor,
+          total + length(deleted)
+        )
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
+  defp delete_pack_version_batch(account_id, queryable, select_versions, record, limit, cursor) do
     Multi.new()
-    |> Multi.run(:versions, fn repo, _changes -> {:ok, select_versions.(repo)} end)
+    |> Multi.run(:candidates, fn repo, _changes ->
+      queryable =
+        queryable
+        |> PackVersion.Query.after_retention_cursor(cursor)
+        |> PackVersion.Query.retention_batch(limit)
+        |> PackVersion.Query.lock_for_update()
+
+      {:ok, repo.all(queryable)}
+    end)
+    |> Multi.run(:versions, fn
+      _repo, %{candidates: []} -> {:ok, []}
+      repo, %{candidates: candidates} -> select_versions.(repo, candidates)
+    end)
     |> Multi.run(:actions, fn repo, %{versions: versions} ->
       {:ok, delete_advertised_actions(repo, account_id, versions)}
     end)
     |> Multi.run(:deleted, fn repo, %{versions: versions} ->
       queryable =
         PackVersion.Query.all()
+        |> PackVersion.Query.by_account_id(account_id)
         |> PackVersion.Query.by_ids(Enum.map(versions, & &1.id))
+        |> PackVersion.Query.select_retention_fields()
 
-      {count, _} = repo.delete_all(queryable)
-      {:ok, count}
+      {_count, deleted} = repo.delete_all(queryable)
+      {:ok, deleted}
     end)
     |> Multi.run(:audit, fn
-      _repo, %{versions: []} -> {:ok, :nothing_removed}
-      repo, %{versions: versions} -> repo.insert(record.(versions))
+      _repo, %{deleted: []} -> {:ok, :nothing_removed}
+      repo, %{deleted: deleted} -> repo.insert(record.(deleted))
     end)
     |> Repo.commit_multi(
       after_commit: fn %{deleted: deleted} ->
-        if deleted > 0, do: broadcast_pack_trust(account_id)
+        if deleted != [], do: broadcast_pack_trust(account_id)
         :ok
       end
     )
-    |> case do
-      {:ok, %{deleted: deleted}} -> {:ok, deleted}
-      {:error, reason} -> {:error, reason}
+  end
+
+  defp visible_retention_candidates(candidates, nil, _repo), do: {:ok, candidates}
+
+  defp visible_retention_candidates(candidates, %Subject{} = subject, repo) do
+    access = Accounts.runner_access_for_subject(subject)
+
+    candidates =
+      Enum.filter(
+        candidates,
+        &(&1.account_id == subject.account.id and
+            Accounts.RunnerAccess.pack_in_scope?(&1.pack_id, access))
+      )
+
+    deployments = Enum.map(candidates, &{&1.pack_id, &1.version, &1.pending_hash || &1.hash})
+
+    with {:ok, visible} <- Runners.list_visible_pack_deployments(deployments, subject, repo: repo) do
+      visible = MapSet.new(visible)
+
+      {:ok,
+       Enum.filter(
+         candidates,
+         &MapSet.member?(visible, {&1.pack_id, &1.version, &1.pending_hash || &1.hash})
+       )}
     end
   end
 
-  # A version a connected runner still advertises is not "unseen": runners
-  # re-send runner_state on reconnect, SIGHUP, and pack changes — not on a
-  # timer — so a stable host's advertisement keeps `last_seen_at` frozen while
-  # the pack stays live. Liveness comes from the durable connection-record
-  # columns; an ungracefully dropped socket reads connected until its next
-  # reconnect, which errs toward keeping rows — the safe direction for a
-  # destructive sweep.
-  defp live_advertised_versions(repo, account_id) do
-    account_id
-    |> Runners.list_pack_referencing_runners_for_account(repo: repo)
-    |> advertised_pack_refs()
-  end
-
-  # The `{pack_id, version}` pairs a set of runners durably advertises — their
-  # `packs` maps. Mirrors observe_pack/3's "unknown" version default so
-  # protection matches pin creation.
-  defp advertised_pack_refs(runners) do
-    for runner <- runners,
-        {pack_id, info} <- runner.packs,
-        is_map(info),
-        into: MapSet.new() do
-      {pack_id, info["version"] || "unknown"}
-    end
+  defp reject_protected_versions(versions, protected) do
+    protected = MapSet.new(protected)
+    Enum.reject(versions, &MapSet.member?(protected, {&1.pack_id, &1.version}))
   end
 
   defp delete_advertised_actions(_repo, _account_id, []), do: 0
 
   defp delete_advertised_actions(repo, account_id, versions) do
-    Enum.reduce(versions, 0, fn %PackVersion{} = version, total ->
-      queryable =
-        RunnerAction.Query.all()
-        |> RunnerAction.Query.by_account_id(account_id)
-        |> RunnerAction.Query.by_pack(version.pack_id, version.version)
+    refs = Enum.map(versions, &{&1.pack_id, &1.version})
 
-      {count, _} = repo.delete_all(queryable)
-      total + count
-    end)
+    queryable =
+      RunnerAction.Query.all()
+      |> RunnerAction.Query.by_account_id(account_id)
+      |> RunnerAction.Query.by_pack_refs(refs)
+
+    {count, _} = repo.delete_all(queryable)
+    count
   end
 
   # The complete descriptors advertised for the exact pending hash — read
@@ -1945,12 +1991,43 @@ defmodule Emisar.Catalog do
   diagnostics, never compatible targets. Requires `view_catalog` (plus the
   runner-scope gate the fleet read applies); returns `{:ok, snapshot}` or
   `{:error, :unauthorized}`.
+
+  `:runner_ids` and `:pack_refs` narrow expensive hydration after discovery;
+  omitted selections mean all current scoped deployments. `:pack_headers`
+  supplies the same request's complete slim inventory for the pack-wide
+  version-skew diagnostic only. None of these options grants access or trust.
   """
-  @spec model_catalog(Subject.t()) :: {:ok, map()} | {:error, :unauthorized}
-  def model_catalog(%Subject{} = subject) do
+  @spec model_catalog(Subject.t(), keyword()) :: {:ok, map()} | {:error, :unauthorized}
+  def model_catalog(%Subject{} = subject, opts \\ []) do
     with :ok <-
            Auth.Authorizer.ensure_has_permissions(subject, Authorizer.view_catalog_permission()) do
-      model_snapshot(subject)
+      model_snapshot(subject, opts)
+    end
+  end
+
+  @doc """
+  Fresh slim model inventory, without manifests, advertised action rows or
+  executable verdicts. Complete sorted identities preserve cursor scope while
+  callers select which deployments to hydrate through `model_catalog/2`.
+  Requires the same catalog and runner permissions as the full projection.
+  """
+  def model_inventory(%Subject{} = subject) do
+    with :ok <-
+           Auth.Authorizer.ensure_has_permissions(subject, Authorizer.view_catalog_permission()),
+         {:ok, runners} <- Runners.list_model_runners(subject) do
+      access = Accounts.runner_access_for_subject(subject)
+      runners = Enum.map(runners, &scope_runner_pack_facts(&1, access))
+
+      headers =
+        PackVersion.Query.all()
+        |> PackVersion.Query.by_trusted_deployments(model_pack_deployments(runners))
+        |> PackVersion.Query.model_visible()
+        |> PackVersion.Query.select_model_headers()
+        |> scope_pack_versions_to_packs(access)
+        |> Authorizer.for_subject(subject)
+        |> Repo.all()
+
+      {:ok, MCPProjection.inventory(headers, runners)}
     end
   end
 
@@ -1972,8 +2049,11 @@ defmodule Emisar.Catalog do
       when is_list(runner_refs) do
     with :ok <-
            Auth.Authorizer.ensure_has_permissions(subject, Authorizer.view_catalog_permission()),
-         {:ok, deployment} <- MCPProjection.parse_pack_ref(pack_ref),
-         {:ok, snapshot} <- model_snapshot(subject, deployment),
+         {:ok, _deployment} <- MCPProjection.parse_pack_ref(pack_ref),
+         {:ok, inventory} <- model_inventory(subject),
+         {:ok, runner_ids} <- requested_model_runner_ids(inventory.runners, runner_refs),
+         {:ok, snapshot} <-
+           model_snapshot(subject, runner_ids: runner_ids, pack_refs: [pack_ref]),
          %{} = pack <- Enum.find(snapshot.packs, &(&1.pack_ref == pack_ref)),
          %{} = action <- Enum.find(pack.actions, &(&1["action_id"] == action_id)),
          {:ok, runners} <- compatible_model_runners(snapshot.runners, action, runner_refs) do
@@ -1984,41 +2064,69 @@ defmodule Emisar.Catalog do
     end
   end
 
-  # The fleet read carries live membership + API-key runner scope, so it — not
-  # the account — decides which advertisements may reach a model at all.
-  #
-  # `deployment` narrows both reads to one exact {pack_id, version, hash} when
-  # the caller is resolving ONE action; a listing still spans the account. Either
-  # way the actions come back as manifest-match columns only — the descriptors a
-  # model sees are the trusted manifest's, and the row's own copy is now compared
-  # through its stored digest.
-  defp model_snapshot(%Subject{} = subject, deployment \\ nil) do
+  # Selections are hints, never authorization. Every hydration re-reads current
+  # membership/runner/pack scope and current trust. Complete sibling action rows
+  # remain essential: an extra or changed advertisement invalidates the whole
+  # deployment even when the caller asks for just one action.
+  defp model_snapshot(%Subject{} = subject, opts) do
     with {:ok, runners} <-
-           Runners.list_all_runners_for_account(subject, preload: [:online?]) do
+           Runners.list_model_runners(subject, ids: Keyword.get(opts, :runner_ids)) do
       access = Accounts.runner_access_for_subject(subject)
       runners = Enum.map(runners, &scope_runner_pack_facts(&1, access))
-      runner_ids = Enum.map(runners, & &1.id)
+      pack_refs = Keyword.get(opts, :pack_refs)
 
-      actions =
-        RunnerAction.Query.all()
-        |> RunnerAction.Query.by_runner_ids(runner_ids)
-        |> scope_actions_to_deployment(deployment)
-        |> RunnerAction.Query.ordered_by_action_seen()
-        |> RunnerAction.Query.select_manifest_match_columns()
-        |> scope_actions_to_packs(access)
-        |> Authorizer.for_subject(subject)
-        |> Repo.all()
+      deployments = model_deployments(runners, pack_refs)
+
+      pack_deployments =
+        deployments
+        |> Enum.map(fn {_runner_id, pack_id, version, hash} -> {pack_id, version, hash} end)
+        |> Enum.uniq()
 
       pack_versions =
         PackVersion.Query.all()
-        |> scope_pack_versions_to_deployment(deployment)
-        |> PackVersion.Query.ordered_by_pack()
+        |> PackVersion.Query.by_trusted_deployments(pack_deployments)
+        |> PackVersion.Query.model_visible()
+        |> scope_pack_versions_to_packs(access)
+        |> Authorizer.for_subject(subject)
+        |> Repo.all()
+
+      visible = MCPProjection.inventory(pack_versions, runners)
+      visible_refs = MapSet.new(visible.packs, & &1.pack_ref)
+
+      deployments =
+        Enum.filter(deployments, fn {_runner_id, pack_id, version, hash} ->
+          {:ok, ref} = MCPProjection.pack_ref(pack_id, version, hash)
+          MapSet.member?(visible_refs, ref)
+        end)
+
+      actions =
+        RunnerAction.Query.all()
+        |> RunnerAction.Query.by_deployments(deployments)
+        |> RunnerAction.Query.select_manifest_match_columns()
+        |> scope_actions_to_subject_membership(subject)
         |> Authorizer.for_subject(subject)
         |> Repo.all()
 
       {:ok,
-       MCPProjection.build(pack_versions, actions, runners, only_pack_ref: pack_ref(deployment))}
+       MCPProjection.build(pack_versions, actions, runners,
+         pack_headers: Keyword.get(opts, :pack_headers)
+       )}
     end
+  end
+
+  defp model_deployments(runners, pack_refs) do
+    for runner <- runners,
+        {pack_id, %{"version" => version, "hash" => hash}} <- runner.packs,
+        {:ok, ref} <- [MCPProjection.pack_ref(pack_id, version, hash)],
+        is_nil(pack_refs) or ref in pack_refs,
+        do: {runner.id, pack_id, version, hash}
+  end
+
+  defp model_pack_deployments(runners) do
+    runners
+    |> model_deployments(nil)
+    |> Enum.map(fn {_runner_id, pack_id, version, hash} -> {pack_id, version, hash} end)
+    |> Enum.uniq()
   end
 
   defp scope_runner_pack_facts(runner, %Accounts.RunnerAccess{} = access) do
@@ -2039,27 +2147,12 @@ defmodule Emisar.Catalog do
     %{runner | packs: packs, degraded_packs: degraded_packs}
   end
 
-  defp scope_actions_to_deployment(queryable, nil), do: queryable
+  defp requested_model_runner_ids(runners, []), do: {:ok, Enum.map(runners, & &1.id)}
 
-  defp scope_actions_to_deployment(queryable, {pack_id, version, hash}) do
-    queryable
-    |> RunnerAction.Query.by_pack_id(pack_id)
-    |> RunnerAction.Query.by_pack_version(version)
-    |> RunnerAction.Query.by_pack_hash(hash)
-  end
-
-  defp scope_pack_versions_to_deployment(queryable, nil), do: queryable
-
-  defp scope_pack_versions_to_deployment(queryable, {pack_id, version, _hash}),
-    do: PackVersion.Query.by_pack_id_and_version(queryable, pack_id, version)
-
-  defp pack_ref(nil), do: nil
-
-  defp pack_ref({pack_id, version, hash}) do
-    case MCPProjection.pack_ref(pack_id, version, hash) do
-      {:ok, pack_ref} -> pack_ref
-      {:error, :invalid_pack_ref} -> nil
-    end
+  defp requested_model_runner_ids(runners, refs) do
+    ids_by_ref = Map.new(runners, &{&1.runner_ref, &1.id})
+    ids = Enum.map(refs, &Map.get(ids_by_ref, &1))
+    if Enum.all?(ids), do: {:ok, ids}, else: {:error, :not_found}
   end
 
   defp compatible_model_runners(runners, action, []) do
@@ -2655,32 +2748,30 @@ defmodule Emisar.Catalog do
     end)
   end
 
-  @doc """
-  Compact, account-scoped action risk index for policy previews.
-
-  Returns the account-wide `%{action_id => worst_risk}` plus each runner's own
-  `%{action_id => risk}` from one `view_catalog`-gated query that selects only
-  `{runner_id, action_id, risk}`. Policy rails use this instead of loading full
-  `runner_actions` structs or issuing one query per targeted ruleset.
-  """
-  def action_risk_index_for_account(%Subject{} = subject) do
+  @doc "Pages distinct action ids and their worst semantic risk under current runner and pack access."
+  def list_action_risks(target, %Subject{} = subject, opts \\ []) do
     with :ok <-
            Auth.Authorizer.ensure_has_permissions(subject, Authorizer.view_catalog_permission()) do
-      rows =
-        RunnerAction.Query.all()
-        |> scope_actions_to_subject_membership(subject)
-        |> RunnerAction.Query.select_action_risk_rows()
-        |> Authorizer.for_subject(subject)
-        |> Repo.all()
+      RunnerAction.Query.all()
+      |> Emisar.Catalog.ActionRisk.Query.for_target(target)
+      |> scope_actions_to_subject_membership(subject)
+      |> Emisar.Catalog.ActionRisk.Query.aggregate()
+      |> Authorizer.for_subject(subject)
+      |> Repo.list(Emisar.Catalog.ActionRisk.Query, Keyword.put(opts, :count, false))
+      |> case do
+        {:ok, rows, metadata} ->
+          if Enum.all?(rows, &(&1.risk in ~w(low medium high critical))),
+            do: {:ok, rows, metadata},
+            else: {:error, :unresolved_risk}
 
-      {:ok, action_risk_index(rows)}
+        error ->
+          error
+      end
     end
   end
 
   @doc """
-  Same as `action_risk_index_for_account/1` but scoped to a set of runners — the
-  policy page uses it per targeted ruleset (a group resolves to its runners'
-  ids at the call site) so the rail speaks for THAT runner or group.
+  The worst risk per action across selected runners, for the dashboard.
   `view_catalog` gated + account-scoped (`for_subject`, so a foreign runner id
   contributes nothing); an empty id list is the empty map, still gated.
   `{:ok, %{action_id => risk}}`.
@@ -2705,49 +2796,6 @@ defmodule Emisar.Catalog do
 
       {:ok, most_severe_risk_by_action_rows(rows)}
     end
-  end
-
-  @doc """
-  Derives `%{action_id => worst_risk}` for `runner_ids` from an
-  `action_risk_index_for_account/1` result. Pure and intentionally tolerant:
-  unknown runner ids contribute nothing, matching the account-scoped query path.
-  """
-  def action_risks_from_index(%{runners: actions_by_runner}, runner_ids)
-      when is_list(runner_ids) do
-    runner_ids
-    |> Enum.flat_map(&Map.get(actions_by_runner, &1, %{}))
-    |> Enum.reduce(%{}, fn {action_id, risk}, acc ->
-      Map.update(acc, action_id, risk, &most_severe(&1, risk))
-    end)
-  end
-
-  defp action_risk_index(rows) when is_list(rows) do
-    Enum.reduce(rows, %{account: %{}, runners: %{}}, &add_action_risk_row/2)
-  end
-
-  defp add_action_risk_row({runner_id, action_id, risk}, index) do
-    account = Map.update(index.account, action_id, risk, &most_severe(&1, risk))
-
-    runners =
-      Map.update(index.runners, runner_id, %{action_id => risk}, fn actions ->
-        Map.update(actions, action_id, risk, &most_severe(&1, risk))
-      end)
-
-    %{index | account: account, runners: runners}
-  end
-
-  @doc """
-  The per-tier action count of an `%{action_id => risk}` map (from
-  `action_risks_for_*`) — `%{"low" => n, "medium" => n, "high" => n,
-  "critical" => n}`. Pure — no gate; the caller already fetched the map. All four
-  tiers are present (0 for a tier no action carries).
-  """
-  def risk_breakdown_of(action_risks) when is_map(action_risks) do
-    counts = Enum.frequencies_by(action_risks, fn {_id, risk} -> risk end)
-
-    Map.new([:low, :medium, :high, :critical], fn risk ->
-      {Atom.to_string(risk), Map.get(counts, risk, 0)}
-    end)
   end
 
   @doc """

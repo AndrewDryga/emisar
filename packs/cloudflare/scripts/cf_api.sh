@@ -46,16 +46,28 @@ curl_protocols() {
   fi
 }
 
-request() {
-  local method=$1 url=$2 response status=0
+request() (
+  local method=$1 url=$2
   shift 2
-
-  response=$(printf 'Authorization: Bearer %s\n' "$CF_API_TOKEN" |
-    curl -q --globoff --proto "$(curl_protocols)" -fsS -X "$method" -H @- "$@" "$url") || status=$?
-  ((status == 0)) || fail "Cloudflare API request failed"
-  ((${#response} <= max_response_bytes)) || fail "Cloudflare API response exceeded 16 MiB"
-  printf '%s' "$response"
-}
+  umask 077
+  response_dir=$(mktemp -d "${TMPDIR:-/tmp}/emisar-cloudflare.XXXXXXXX") || exit 1
+  trap 'rm -f -- "$response_dir/body"; rmdir -- "$response_dir"' EXIT
+  trap 'exit 129' HUP
+  trap 'exit 130' INT
+  trap 'exit 143' TERM
+  if printf 'Authorization: Bearer %s\n' "$CF_API_TOKEN" |
+    curl -q --globoff --proto "$(curl_protocols)" --max-filesize "$max_response_bytes" \
+      -fsS -X "$method" -H @- "$@" "$url" |
+    head -c "$((max_response_bytes + 1))" >"$response_dir/body"; then
+    statuses=("${PIPESTATUS[@]}")
+  else
+    statuses=("${PIPESTATUS[@]}")
+  fi
+  bytes=$(wc -c <"$response_dir/body")
+  ((bytes <= max_response_bytes && statuses[1] != 63)) || fail "Cloudflare API response exceeded 16 MiB"
+  ((statuses[0] == 0 && statuses[1] == 0 && statuses[2] == 0)) || fail "Cloudflare API request failed"
+  cat "$response_dir/body"
+)
 
 # Every REST response carries the v4 envelope. A 2xx whose envelope says
 # success:false is still a failure and must not read as a healthy run.

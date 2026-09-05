@@ -1161,7 +1161,7 @@ defmodule Emisar.RunnerAccessTest do
       assert {:ok, scoped, _} = Audit.list_events(member_subject)
       assert runner_targets(scoped) == Enum.sort([db.id, edge.id])
 
-      assert {:ok, options} = Audit.list_target_options("runner", member_subject)
+      assert {:ok, options, _metadata} = Audit.list_target_options("runner", member_subject)
       assert MapSet.new(options) == MapSet.new([{db.id, "db-1"}, {edge.id, "edge-1"}])
     end
 
@@ -1296,7 +1296,7 @@ defmodule Emisar.RunnerAccessTest do
 
       assert {:ok, _event} = Audit.fetch_event_by_id(edge_event.id, member_subject)
 
-      assert {:ok, options} = Audit.list_target_options("policy", member_subject)
+      assert {:ok, options, _metadata} = Audit.list_target_options("policy", member_subject)
 
       assert MapSet.new(options, &elem(&1, 1)) ==
                MapSet.new(["Runner policy · #{db.id}", "Group policy · edge"])
@@ -1405,17 +1405,18 @@ defmodule Emisar.RunnerAccessTest do
 
       db_id = db.id
 
-      assert {:ok, [{^db_id, "db-1"}]} =
+      assert {:ok, [{^db_id, "db-1"}], _metadata} =
                Audit.list_actor_options("runner", member_subject, ensure: db.id)
 
       edge_id = edge.id
 
-      assert {:ok, [{^edge_id, "edge-1"}]} =
+      assert {:ok, [{^edge_id, "edge-1"}], _metadata} =
                Audit.list_actor_options("runner", member_subject, ensure: edge.id)
 
       foreign = Fixtures.Runners.create_runner(name: "foreign-1", group: "db")
 
-      assert Audit.list_actor_options("runner", member_subject, ensure: foreign.id) == {:ok, []}
+      assert {:ok, [], _metadata} =
+               Audit.list_actor_options("runner", member_subject, ensure: foreign.id)
     end
   end
 

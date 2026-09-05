@@ -48,6 +48,38 @@ defmodule Emisar.Runs.ActionRun.Query do
   def after_id(queryable, nil), do: queryable
   def after_id(queryable, id), do: where(queryable, [runs: r], r.id > ^id)
 
+  def after_runner_and_id(queryable, nil), do: queryable
+
+  def after_runner_and_id(queryable, {runner_id, id}) do
+    where(
+      queryable,
+      [runs: r],
+      fragment(
+        "(?, ?) > (?, ?)",
+        r.runner_id,
+        r.id,
+        type(^runner_id, :binary_id),
+        type(^id, :binary_id)
+      )
+    )
+  end
+
+  def select_dispatch_sweep_fields(queryable) do
+    select(
+      queryable,
+      [runs: r],
+      struct(r, [
+        :id,
+        :account_id,
+        :runner_id,
+        :request_id,
+        :status,
+        :queued_at,
+        :runner_connection_generation
+      ])
+    )
+  end
+
   def latest_runbook_attempts(queryable \\ all()) do
     queryable
     |> where([runs: r], not is_nil(r.runbook_execution_item_id))
@@ -321,6 +353,9 @@ defmodule Emisar.Runs.ActionRun.Query do
 
   def ordered_by_id(queryable \\ all()),
     do: order_by(queryable, [runs: r], asc: r.id)
+
+  def ordered_by_runner_and_id(queryable),
+    do: order_by(queryable, [runs: r], asc: r.runner_id, asc: r.id)
 
   def limit_to(queryable, n), do: limit(queryable, ^n)
 

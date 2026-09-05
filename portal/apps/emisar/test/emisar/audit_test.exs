@@ -1307,7 +1307,7 @@ defmodule Emisar.AuditTest do
       {:ok, _} = Audit.log(account.id, "y", actor_kind: "user", actor_id: bob.id)
       {:ok, _} = Audit.log(account.id, "z", actor_kind: "user", actor_id: alice.id)
 
-      assert {:ok, [{alice_id, "Alice"}, {bob_id, "Bob"}]} =
+      assert {:ok, [{alice_id, "Alice"}, {bob_id, "Bob"}], _metadata} =
                Audit.list_actor_options("user", subject)
 
       assert alice_id == alice.id
@@ -1322,20 +1322,20 @@ defmodule Emisar.AuditTest do
       quiet = Fixtures.Users.create_user(email: "quiet@example.com", full_name: "Quiet User")
       _ = Fixtures.Memberships.create_membership(account_id: account.id, user_id: quiet.id)
 
-      assert Audit.list_actor_options("user", subject) == {:ok, []}
+      assert {:ok, [], _metadata} = Audit.list_actor_options("user", subject)
 
       # ensure them in so the picker SELECTS them instead of falling back to All.
-      assert {:ok, [{id, "Quiet User"}]} =
+      assert {:ok, [{id, "Quiet User"}], _metadata} =
                Audit.list_actor_options("user", subject, ensure: quiet.id)
 
       assert id == quiet.id
 
       # An id that isn't a member of this account resolves to no label → dropped.
       stranger = Fixtures.Users.create_user(email: "stranger@example.com")
-      assert Audit.list_actor_options("user", subject, ensure: stranger.id) == {:ok, []}
+      assert {:ok, [], _metadata} = Audit.list_actor_options("user", subject, ensure: stranger.id)
 
       # nil ensure is a no-op.
-      assert Audit.list_actor_options("user", subject, ensure: nil) == {:ok, []}
+      assert {:ok, [], _metadata} = Audit.list_actor_options("user", subject, ensure: nil)
     end
 
     test "scopes to the requested kind only", %{
@@ -1352,7 +1352,7 @@ defmodule Emisar.AuditTest do
       {:ok, _} = Audit.log(account.id, "u", actor_kind: "user", actor_id: member.id)
       {:ok, _} = Audit.log(account.id, "k", actor_kind: "api_key", actor_id: key.id)
 
-      assert {:ok, [{id, _label}]} = Audit.list_actor_options("api_key", subject)
+      assert {:ok, [{id, _label}], _metadata} = Audit.list_actor_options("api_key", subject)
       assert id == key.id
     end
 
@@ -1370,7 +1370,7 @@ defmodule Emisar.AuditTest do
       # but is only resolvable in B, so it must not surface in A's picker.
       {:ok, _} = Audit.log(account_a.id, "x", actor_kind: "user", actor_id: user_b.id)
 
-      assert Audit.list_actor_options("user", subject_a) == {:ok, []}
+      assert {:ok, [], _metadata} = Audit.list_actor_options("user", subject_a)
     end
 
     test "a kind with no resolvable actors yields no options" do
@@ -1378,7 +1378,7 @@ defmodule Emisar.AuditTest do
       subject = Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account, role: :owner)
       {:ok, _} = Audit.log(account.id, "x", actor_kind: "system", actor_id: Ecto.UUID.generate())
 
-      assert Audit.list_actor_options("system", subject) == {:ok, []}
+      assert {:ok, [], _metadata} = Audit.list_actor_options("system", subject)
     end
 
     # the actor picker enforces view_audit before any DB
@@ -1391,7 +1391,7 @@ defmodule Emisar.AuditTest do
     end
   end
 
-  describe "list_target_options/2 (the dynamic subject picker)" do
+  describe "list_target_options/3 (the dynamic subject picker)" do
     # the picker read enforces view_audit BEFORE any DB touch; a subject
     # stripped of every permission is denied, never handed options.
     test "a subject without view_audit is denied (no DB touch)" do
@@ -1420,7 +1420,7 @@ defmodule Emisar.AuditTest do
       {:ok, _} =
         Audit.log(account_a.id, "user.invited", target_kind: "user", target_id: user_a.id)
 
-      assert Audit.list_target_options("user", subject_b) == {:ok, []}
+      assert {:ok, [], _metadata} = Audit.list_target_options("user", subject_b)
     end
 
     # (context half) — `policy` and `approval_grant` have no
@@ -1436,8 +1436,8 @@ defmodule Emisar.AuditTest do
           target_id: Ecto.UUID.generate()
         )
 
-      assert Audit.list_target_options("policy", subject) == {:ok, []}
-      assert Audit.list_target_options("approval_grant", subject) == {:ok, []}
+      assert {:ok, [], _metadata} = Audit.list_target_options("policy", subject)
+      assert {:ok, [], _metadata} = Audit.list_target_options("approval_grant", subject)
     end
 
     # a subject id that WAS resolvable when the event was
@@ -1468,7 +1468,7 @@ defmodule Emisar.AuditTest do
         Audit.log(account.id, "user.invited", target_kind: "user", target_id: member.id)
 
       # While the member is in the account, the picker offers them.
-      assert {:ok, [{id, "Departing User"}]} =
+      assert {:ok, [{id, "Departing User"}], _metadata} =
                Audit.list_target_options("user", subject)
 
       assert id == member.id
@@ -1478,7 +1478,7 @@ defmodule Emisar.AuditTest do
       # option is dropped rather than rendered with a nil/blank label.
       Fixtures.Memberships.mark_membership_as_deleted(membership)
 
-      assert Audit.list_target_options("user", subject) == {:ok, []}
+      assert {:ok, [], _metadata} = Audit.list_target_options("user", subject)
     end
   end
 
@@ -1889,6 +1889,11 @@ defmodule Emisar.AuditTest do
       assert refs["user"][user.id] == user.full_name
       assert refs["runner"][runner.id] == "db-prod-01"
       assert refs["api_key"][api_key.id] == api_key.name
+
+      for event <- [e_user, e_runner, e_key] do
+        assert {:ok, options, _} = Audit.list_target_options(event.target_kind, subject)
+        assert {event.target_id, refs[event.target_kind][event.target_id]} in options
+      end
     end
 
     test "resolves the human behind an api_key actor (its owner)", %{
@@ -2107,6 +2112,11 @@ defmodule Emisar.AuditTest do
       # the held action, not the id every other kind resolves away from.
       assert refs["approval_request"][request.id] == "linux.uptime"
       assert refs["runbook"][runbook.id] == "deploy-book"
+
+      for event <- [e_enrollment_key, e_run, e_request, e_runbook] do
+        assert {:ok, options, _} = Audit.list_target_options(event.target_kind, subject)
+        assert {event.target_id, refs[event.target_kind][event.target_id]} in options
+      end
     end
 
     test "an approval_request for a runbook execution resolves its runbook title", %{
@@ -2128,6 +2138,11 @@ defmodule Emisar.AuditTest do
       refs = Audit.resolve_references([event], subject)
 
       assert refs["approval_request"][request.id] == "Rotate the edge certificates"
+
+      assert {:ok, [{id, "Rotate the edge certificates"}], _} =
+               Audit.list_target_options("approval_request", subject)
+
+      assert id == request.id
     end
 
     test "an approval_request deleted since the event is simply absent" do

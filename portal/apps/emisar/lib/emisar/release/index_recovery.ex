@@ -219,6 +219,7 @@ defmodule Emisar.Release.IndexRecovery do
        do: "varchar"
 
   defp column_type("allowed_email_domain"), do: "citext"
+  defp column_type(name) when name in ~w(actor_label target_label), do: "varchar"
   defp column_type("inputs_raw"), do: "bytea"
   defp column_type("enabled"), do: "bool"
 
@@ -321,6 +322,17 @@ defmodule Emisar.Release.IndexRecovery do
   defp predicates(:quantity_sync), do: ["(runner_quantity_sync_requested_at IS NOT NULL)"]
   defp predicates(:active), do: ["((status)::text = 'active'::text)"]
   defp predicates(:running), do: ["((status)::text = 'running'::text)"]
+  defp predicates(:pending), do: ["((status)::text = 'pending'::text)"]
+
+  defp predicates(:actor_label),
+    do: [
+      "((actor_id IS NOT NULL) AND (actor_label IS NOT NULL) AND (btrim((actor_label)::text) <> ''::text))"
+    ]
+
+  defp predicates(:target_label),
+    do: [
+      "((target_id IS NOT NULL) AND (target_label IS NOT NULL) AND (btrim((target_label)::text) <> ''::text))"
+    ]
 
   defp predicates(:active_identifier),
     do: ["((deleted_at IS NULL) AND (provider_identifier_retired_at IS NULL))"]
@@ -362,9 +374,11 @@ defmodule Emisar.Release.IndexRecovery do
   defp predicate_columns(:finished), do: ["finished_at"]
   defp predicate_columns(:completed), do: ["completed_at"]
   defp predicate_columns(:quantity_sync), do: ["runner_quantity_sync_requested_at"]
+  defp predicate_columns(:actor_label), do: ["actor_id", "actor_label"]
+  defp predicate_columns(:target_label), do: ["target_id", "target_label"]
 
   defp predicate_columns(predicate)
-       when predicate in [:active, :running, :old_in_flight, :in_flight], do: ["status"]
+       when predicate in [:active, :running, :pending, :old_in_flight, :in_flight], do: ["status"]
 
   defp predicate_columns(:unscrubbed), do: ["status", "inputs_raw"]
   defp predicate_columns(:active_identifier), do: ["deleted_at", "provider_identifier_retired_at"]

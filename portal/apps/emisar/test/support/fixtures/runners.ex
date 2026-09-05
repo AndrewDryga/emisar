@@ -190,6 +190,13 @@ defmodule Emisar.Fixtures.Runners do
     |> Repo.update!()
   end
 
+  @doc "Clears only the lease identity, retaining expiry to test independent liveness checks."
+  def clear_connection_lease_id(%Runner{} = runner) do
+    runner
+    |> Ecto.Changeset.change(connection_lease_id: nil)
+    |> Repo.update!()
+  end
+
   @doc """
   Stamps a runner as durably disconnected at `at` (connected shortly before it),
   so the inactivity-retention sweep sees it offline since `at`. Pair with
@@ -217,6 +224,11 @@ defmodule Emisar.Fixtures.Runners do
     runner
     |> Runner.Changeset.delete()
     |> Repo.update!()
+  end
+
+  @doc "Moves a runner between groups to exercise current reach checks."
+  def move_to_group(%Runner{} = runner, group) do
+    runner |> Ecto.Changeset.change(group: group) |> Repo.update!()
   end
 
   @doc """

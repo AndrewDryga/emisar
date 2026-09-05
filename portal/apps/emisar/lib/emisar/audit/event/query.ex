@@ -534,18 +534,6 @@ defmodule Emisar.Audit.Event.Query do
   def by_event_type(queryable, type),
     do: where(queryable, [events: e], e.event_type == ^type)
 
-  @doc """
-  Distinct `actor_id`s for actors of `kind` in the scoped events — the id set
-  the context resolves to labels for the audit page's on-demand "filter by
-  actor" picker.
-  """
-  def distinct_actor_ids_of_kind(queryable \\ all(), kind) do
-    queryable
-    |> where([events: e], e.actor_kind == ^kind and not is_nil(e.actor_id))
-    |> select([events: e], e.actor_id)
-    |> distinct(true)
-  end
-
   @doc "Distinct non-null actor kinds present in the scoped audit query."
   def distinct_actor_kinds(queryable \\ all()) do
     queryable
@@ -586,14 +574,6 @@ defmodule Emisar.Audit.Event.Query do
 
   @doc "A query that matches no audit events."
   def none(queryable), do: where(queryable, false)
-
-  @doc "Distinct `target_id`s of `kind` — options for the on-demand subject picker."
-  def distinct_target_ids_of_kind(queryable \\ all(), kind) do
-    queryable
-    |> where([events: e], e.target_kind == ^kind and not is_nil(e.target_id))
-    |> select([events: e], e.target_id)
-    |> distinct(true)
-  end
 
   @doc "Distinct non-null target kinds present in the scoped audit query."
   def distinct_target_kinds(queryable \\ all()) do

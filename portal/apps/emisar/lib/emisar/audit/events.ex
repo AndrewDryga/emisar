@@ -937,7 +937,7 @@ defmodule Emisar.Audit.Events do
   @doc """
   Pack retention removed versions no runner advertised within the account's
   window — the daily sweep (system actor) or the packs page "Clean up now"
-  (operator actor). One event per sweep that removed anything.
+  (operator actor). One event per nonempty committed batch.
   """
   def pack_retention_swept(%Subject{account: %{id: account_id}} = subject, versions, days)
       when is_list(versions) do
@@ -976,7 +976,7 @@ defmodule Emisar.Audit.Events do
   @doc """
   The daily catalog bookkeeping removed retired pack versions no runner in the
   account advertised anymore — dead weight a published fix already routed
-  around. System actor only; one event per sweep that removed anything.
+  around. System actor only; one event per nonempty committed batch.
   """
   def pack_retirement_swept(account_id, versions)
       when is_binary(account_id) and is_list(versions) do
@@ -994,7 +994,7 @@ defmodule Emisar.Audit.Events do
   @doc """
   Runner retention removed runners cleanly offline past the account's window —
   the hourly sweep (system actor) or the runners page "Clean up now" (operator
-  actor). One event per sweep that removed anything.
+  actor). One event per nonempty committed batch.
   """
   def runner_retention_swept(%Subject{account: %{id: account_id}} = subject, runners, hours)
       when is_list(runners) do

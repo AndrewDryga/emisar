@@ -25,20 +25,32 @@ defmodule Emisar.Policies.Policy.Query do
   def scoped_overrides(queryable),
     do: where(queryable, [policies: p], p.scope_type != :account)
 
-  @doc """
-  Rulesets whose target a member's runner access reaches — one of the runner ids
-  or group names given. The account default names no host and is always in
-  reach; compose `scoped_overrides/1` to drop it where only overrides belong.
-  """
-  def by_scope_reach(queryable, runner_ids, groups)
-      when is_list(runner_ids) and is_list(groups) do
-    where(
-      queryable,
-      [policies: p],
-      p.scope_type == :account or
-        (p.scope_type == :runner and p.scope_value in ^runner_ids) or
-        (p.scope_type == :group and p.scope_value in ^groups)
-    )
+  def select_summary(queryable) do
+    select(queryable, [policies: p], %{
+      id: p.id,
+      scope_type: fragment("?::text", p.scope_type),
+      scope_value: p.scope_value,
+      vsn: p.vsn,
+      updated_at: p.updated_at
+    })
+  end
+
+  def select_scope(queryable),
+    do: select(queryable, [policies: p], map(p, [:scope_type, :scope_value]))
+
+  def cursor_fields,
+    do: [{:policies, :asc, :scope_type}, {:policies, :asc, :scope_value}, {:policies, :asc, :id}]
+
+  def by_scope_targets(queryable, targets) do
+    reachable =
+      from(t in subquery(targets),
+        where:
+          t.scope_type == parent_as(:policies).scope_type and
+            t.scope_value == parent_as(:policies).scope_value,
+        select: 1
+      )
+
+    where(queryable, exists(subquery(reachable)))
   end
 
   def by_scope(queryable, scope_type, scope_value) do
@@ -75,11 +87,6 @@ defmodule Emisar.Policies.Policy.Query do
         (p.scope_type == :group and p.scope_value in ^groups)
     )
   end
-
-  # Group overrides before runner overrides (enum string order), stable within
-  # a type by scope_value so the editor list doesn't jump around.
-  def ordered_by_scope(queryable),
-    do: order_by(queryable, [policies: p], asc: p.scope_type, asc: p.scope_value)
 
   @doc "Audit label-lookup helper for policy targets."
   def select_audit_labels(queryable, ids) do

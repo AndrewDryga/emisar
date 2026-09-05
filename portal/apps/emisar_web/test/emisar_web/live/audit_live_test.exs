@@ -322,7 +322,7 @@ defmodule EmisarWeb.AuditLiveTest do
           actor_label: "unrelated-human"
         )
 
-      {:ok, _lv, html} =
+      {:ok, lv, html} =
         live(conn, ~p"/app/#{account}/audit?#{[actor_kind: "user", actor_id: actor_id]}")
 
       # The pivot's control is the facet panel now (the dismissable chip died):
@@ -330,7 +330,8 @@ defmodule EmisarWeb.AuditLiveTest do
       # the pivoted id, and rows scope to that actor.
       assert html =~ ~s(name="actor_id")
       assert html =~ "admin@example.com"
-      refute html =~ "unrelated-human"
+      # Other readable identities remain filter choices, not matching events.
+      refute has_element?(lv, "li[id^='event-']", "unrelated-human")
     end
 
     test "the From date filter narrows to recent events", %{conn: conn} do
@@ -728,13 +729,10 @@ defmodule EmisarWeb.AuditLiveTest do
                :binary.match(html, ~s(name="target_id"))
     end
 
-    # `approval_grant` and `policy` have no label resolver,
-    # so their distinct-id options all resolve to nil and are rejected → the
-    # dependent picker never renders (intentional; you filter those by Type).
-    test "a subject kind with no label resolver surfaces no picker", %{conn: conn} do
+    test "missing subject rows show an explicit empty choice state", %{conn: conn} do
       {conn, _user, account} = register_and_log_in(conn)
 
-      # Real rows of the resolver-less kinds — the picker still must not appear.
+      # Unresolved ids have no current or frozen label to offer.
       {:ok, _} =
         Audit.log(account.id, "approval.grant_revoked",
           target_kind: "approval_grant",
@@ -748,10 +746,12 @@ defmodule EmisarWeb.AuditLiveTest do
         )
 
       {:ok, _lv, html} = live(conn, ~p"/app/#{account}/audit?target_kind=approval_grant")
-      refute html =~ ~s(name="target_id")
+      assert html =~ ~s(name="target_id")
+      assert html =~ "No matching choices."
 
       {:ok, _lv, html} = live(conn, ~p"/app/#{account}/audit?target_kind=policy")
-      refute html =~ ~s(name="target_id")
+      assert html =~ ~s(name="target_id")
+      assert html =~ "No matching choices."
     end
 
     # picking an actor then switching the Actor *type*
@@ -1036,27 +1036,23 @@ defmodule EmisarWeb.AuditLiveTest do
       assert params["event_type"] == "user.invited"
     end
 
-    # selecting an Actor kind that has NO actors of that
-    # kind in the log surfaces no dependent picker: the `{:ok, [_|_]}` guard
-    # fails on an empty option list, so the actor_id <select> isn't rendered.
-    test "an actor kind with no actors in the log surfaces no picker", %{conn: conn} do
+    test "an actor kind with no actors shows an empty searchable picker", %{conn: conn} do
       {conn, _user, account} = register_and_log_in(conn)
-      # A user-actor row exists, but NO runner-actor rows — so picking the
-      # runner kind must not render a picker.
+      # A user-actor row exists, but there are no runner-actor rows.
       {:ok, _} = Audit.log(account.id, "user.invited", actor_kind: "user", actor_label: "x")
 
       {:ok, _lv, html} = live(conn, ~p"/app/#{account}/audit?actor_kind=runner")
-      refute html =~ ~s(name="actor_id")
+      assert html =~ ~s(name="actor_id")
+      assert html =~ "No matching choices."
     end
 
-    # same for the Subject picker: a subject kind with no
-    # subjects of that kind in the log renders no dependent picker.
-    test "a subject kind with no subjects in the log surfaces no picker", %{conn: conn} do
+    test "a subject kind with no subjects shows an empty searchable picker", %{conn: conn} do
       {conn, _user, account} = register_and_log_in(conn)
       {:ok, _} = Audit.log(account.id, "user.invited", target_kind: "user", target_label: "x")
 
       {:ok, _lv, html} = live(conn, ~p"/app/#{account}/audit?target_kind=runner")
-      refute html =~ ~s(name="target_id")
+      assert html =~ ~s(name="target_id")
+      assert html =~ "No matching choices."
     end
 
     # a system / scheduler / runbook actor has no

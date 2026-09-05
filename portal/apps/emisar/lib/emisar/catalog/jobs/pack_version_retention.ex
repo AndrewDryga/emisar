@@ -5,7 +5,7 @@ defmodule Emisar.Catalog.Jobs.PackVersionRetention do
   (`Catalog.delete_unadvertised_retired_pack_versions/1`), then — only where
   automatic cleanup is on, which `Catalog.pack_retention_days/1` decides — the
   versions no runner has advertised within the account's window. Each sweep
-  audits itself only when it removed something.
+  audits each nonempty committed batch, not an account-sized transaction.
   """
   use Emisar.Jobs.Job,
     otp_app: :emisar,
@@ -19,10 +19,12 @@ defmodule Emisar.Catalog.Jobs.PackVersionRetention do
 
   @impl Emisar.Jobs.Executors.GloballyUnique
   def execute(config) do
+    batch_opts = Keyword.take(config, [:batch_size])
+
     deleted_count =
       config
       |> Keyword.get(:limit, @accounts_per_page)
-      |> Jobs.Sweep.reduce_pages(0, &list_accounts/2, &sweep_account/2)
+      |> Jobs.Sweep.reduce_pages(0, &list_accounts/2, &sweep_account(&1, &2, batch_opts))
 
     if deleted_count > 0 do
       Logger.info("pack_version_retention.swept", count: deleted_count)
@@ -31,20 +33,20 @@ defmodule Emisar.Catalog.Jobs.PackVersionRetention do
     :ok
   end
 
-  defp sweep_account(%Accounts.Account{} = account, deleted_total) do
-    deleted_total + retired_removed(account) + unseen_removed(account)
+  defp sweep_account(%Accounts.Account{} = account, deleted_total, batch_opts) do
+    deleted_total + retired_removed(account, batch_opts) + unseen_removed(account, batch_opts)
   end
 
-  defp retired_removed(%Accounts.Account{id: account_id}) do
-    case Catalog.delete_unadvertised_retired_pack_versions(account_id) do
+  defp retired_removed(%Accounts.Account{id: account_id}, batch_opts) do
+    case Catalog.delete_unadvertised_retired_pack_versions(account_id, batch_opts) do
       {:ok, deleted} -> deleted
       {:error, _reason} -> 0
     end
   end
 
-  defp unseen_removed(%Accounts.Account{} = account) do
+  defp unseen_removed(%Accounts.Account{} = account, batch_opts) do
     with {:ok, days} <- Catalog.pack_retention_days(account),
-         {:ok, deleted} <- Catalog.delete_unseen_pack_versions(account.id, days) do
+         {:ok, deleted} <- Catalog.delete_unseen_pack_versions(account.id, days, nil, batch_opts) do
       deleted
     else
       {:error, _reason} -> 0
