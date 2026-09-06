@@ -48,7 +48,7 @@ def response(path, query):
         # A window renders both bounds plus the resolution the action asked for.
         if sorted(query) != ["end_time", "limit", "resolution", "start_time"]:
             return None
-        if query["resolution"] != ["1000"] or query["limit"] != ["1000"]:
+        if query["resolution"] not in (["1000"], ["86400000"]) or query["limit"] != ["1000"]:
             return None
         span = int(query["end_time"][0]) - int(query["start_time"][0])
         return collection([{

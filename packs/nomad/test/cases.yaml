@@ -81,6 +81,7 @@ cases:
       - argv: [nomad, job, run, -detach, /packs/nomad/test/fixtures/health.nomad.hcl]
     expect:
       stdout_contains:
+        - '"allocations_available":'
         - '"id":"packtest-health"'
         - '"desired":2'
         - '"desired_allocations":2'

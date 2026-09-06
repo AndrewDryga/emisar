@@ -31,11 +31,6 @@ if ! step_seconds=$(duration_seconds "$step"); then
 	exit 1
 fi
 
-if [ "$window_seconds" -gt 604800 ]; then
-	echo "prometheus: window $window exceeds the 7d maximum" >&2
-	exit 1
-fi
-
 points=$((window_seconds / step_seconds + 1))
 if [ "$points" -gt 10081 ]; then
 	echo "prometheus: window $window at step $step produces $points evaluation timestamps; maximum is 10081" >&2

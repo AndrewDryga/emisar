@@ -33,10 +33,10 @@ args:
     type: integer
     required: false
     default: 60
-    description: Mtime window in minutes.
+    description: Mtime window in minutes, up to a year (525600).
     validation:
       min: 1
-      max: 10080
+      max: 525600
   - name: max_depth
     type: integer
     required: false

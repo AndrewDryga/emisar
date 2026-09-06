@@ -2,7 +2,7 @@ schema_version: 1
 
 id: gcp-cloudsql
 name: Google Cloud SQL diagnostics and recovery
-version: 0.3.1
+version: 0.3.2
 description: >
   Cloud SQL diagnostics for instances, databases, users, backups, operations,
   server CA certificates, and Query Insights query rankings, plus governed

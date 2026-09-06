@@ -104,6 +104,23 @@ cases:
       stdout_contains: [/tmp/packtest-recent/fresh.log]
       stdout_not_contains: [stale.log]
 
+  # A year-long window still excludes the 2020 file, so the maximum filters too.
+  - name: fs.find_recent_modified-accepts-a-year
+    action: fs.find_recent_modified
+    args: {path: /tmp/packtest-recent, minutes: 525600}
+    arrange:
+      - argv:
+          - /bin/sh
+          - -c
+          - |
+            mkdir -p /tmp/packtest-recent
+            : > /tmp/packtest-recent/fresh.log
+            : > /tmp/packtest-recent/stale.log
+            touch -d '2020-01-01 00:00:00' /tmp/packtest-recent/stale.log
+    expect:
+      stdout_contains: [/tmp/packtest-recent/fresh.log]
+      stdout_not_contains: [stale.log]
+
   # A file owner may set the setuid bit on their own file, so the fixture needs
   # no privileged identity to plant what this scan is meant to find.
   - action: fs.find_setuid

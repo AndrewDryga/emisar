@@ -6,7 +6,7 @@
 #
 # Read-only GET against the VictoriaLogs LogsQL HTTP API.
 #
-#   $1     bounded trailing window.
+#   $1     trailing window; the server's retention is its only bound.
 #   $2     step for bucketed endpoints, or - for endpoints without one.
 #   $3     path appended to $VL_URL, e.g. /select/logsql/query.
 #   $4...  extra curl flags — normally --data-urlencode "name=value" pairs.
@@ -47,10 +47,6 @@ shift 2
 
 if ! window_seconds=$(duration_seconds "$window"); then
 	echo "victorialogs: invalid window $window" >&2
-	exit 1
-fi
-if [ "$window_seconds" -gt 86400 ]; then
-	echo "victorialogs: window $window exceeds the 24h maximum" >&2
 	exit 1
 fi
 if [ "$step" != "-" ]; then

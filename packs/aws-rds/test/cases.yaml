@@ -66,3 +66,8 @@ cases:
     args: {duration_minutes: 120, limit: 25}
     expect:
       stdout_contains: [Events, harness-db, maintenance]
+  - name: rds.recent_events-accepts-the-14-day-retention-window
+    action: rds.recent_events
+    args: {duration_minutes: 20160, limit: 25}
+    expect:
+      stdout_contains: [Events, harness-db, maintenance]

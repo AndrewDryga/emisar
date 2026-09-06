@@ -30,6 +30,17 @@ cases:
         - '"net_cost":"12298386.515"'
         - '"credits":"-138.008554"'
 
+  - name: gcp.cost-by-service-accepts-three-years
+    action: gcp.cost_by_service
+    args:
+      project: example-prod
+      dataset: billing_export
+      billing_account: 01B678-5ED3E1-AD1F9F
+      days: 1100
+      limit: 50
+    expect:
+      stdout_contains: [gcp_billing_export_v1_01B678_5ED3E1_AD1F9F, Compute Engine]
+
   # An account that turned on the detailed export has no standard table at all,
   # so a fixed table name answers that whole fleet with a 404.
   - name: gcp.cost-by-service-reads-the-detailed-export

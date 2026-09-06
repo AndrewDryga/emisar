@@ -120,6 +120,12 @@ case "$mode" in
     attachment=$3
     region=$4
     window_minutes=$5
+    alignment_seconds=$6
+    points=$((window_minutes * 60 / alignment_seconds + 1))
+    if [ "$points" -gt 1000 ]; then
+      printf '%s\n' "a window of $window_minutes minutes at ${alignment_seconds}s alignment needs $points points per metric; one page holds 1000, so raise alignment_seconds or shorten the window" >&2
+      exit 2
+    fi
     interval "$window_minutes"
     resource_filter="resource.type = \"interconnect_attachment\" AND resource.labels.attachment_name = \"$attachment\" AND resource.labels.attachment_region = \"$region\""
 
@@ -135,7 +141,7 @@ case "$mode" in
         --data-urlencode "filter=metric.type = \"$metric\" AND ($resource_filter)" \
         --data-urlencode "interval.startTime=$start_time" \
         --data-urlencode "interval.endTime=$end_time" \
-        --data-urlencode "aggregation.alignmentPeriod=60s" \
+        --data-urlencode "aggregation.alignmentPeriod=${alignment_seconds}s" \
         --data-urlencode "aggregation.perSeriesAligner=$aligner" \
         --data-urlencode "view=FULL" \
         --data-urlencode "pageSize=1000" \

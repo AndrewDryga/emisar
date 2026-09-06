@@ -64,7 +64,22 @@ cases:
       - argv: [/bin/sh, -c, "test ! -e /tmp/packtest-victoriametrics-cost-argv && echo client-not-invoked"]
         expect:
           stdout_contains: [client-not-invoked]
-  - name: vm.query-range-rejects-over-window-limit-before-client
+  - name: vm.query-range-allows-thirty-days-at-one-hour
+    action: vm.query_range
+    args: {query: harness_metric, window: 30d, step: 1h}
+    env:
+      VM_URL: http://cost-canary
+    expect:
+      stdout_contains: [PACKTEST_VM_COST_CANARY]
+    probes:
+      - argv: [cat, /tmp/packtest-victoriametrics-cost-argv]
+        expect:
+          stdout_contains: [query=harness_metric, start=-30d, end=now, step=1h, timeout=30s]
+    cleanup:
+      - argv: [rm, -f, /tmp/packtest-victoriametrics-cost-argv]
+  # The span itself is no longer capped; the point guard is what still rejects
+  # a long window at a fine step before the client runs.
+  - name: vm.query-range-rejects-over-point-limit-on-a-long-window
     action: vm.query_range
     args: {query: harness_metric, window: 10081m, step: 60s}
     env:
@@ -73,7 +88,7 @@ cases:
       status: failure
       exit: [1]
       reason_contains: [process exited with code 1]
-      stderr_contains: [exceeds the 7d maximum]
+      stderr_contains: [evaluation timestamps, maximum is 10081]
     probes:
       - argv: [/bin/sh, -c, "test ! -e /tmp/packtest-victoriametrics-cost-argv && echo client-not-invoked"]
         expect:

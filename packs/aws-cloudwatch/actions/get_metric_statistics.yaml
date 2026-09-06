@@ -1,9 +1,16 @@
 schema_version: 1
 id: cw.get_metric_statistics
-title: aws cloudwatch get-metric-statistics (last 1h)
-kind: exec
+title: aws cloudwatch get-metric-statistics
+kind: script
 risk: low
-description: Get 1-hour Average + Max for one metric. Use for quick health snapshots.
+description: >
+  Get Average and Maximum for one metric over a trailing window ending now,
+  by default the last hour at 5-minute periods. The window reaches 455 days,
+  CloudWatch's retention: 1-minute points exist for 15 days, 5-minute points
+  for 63 days, and hourly points after that, so an older window needs a
+  matching period. One call returns at most 1440 data points, so window /
+  period must fit. Dimensions select one series (Name=InstanceId,Value=i-…);
+  without them CloudWatch returns only data published without dimensions.
 side_effects: ["One API call.", "Read-only."]
 args:
   - name: namespace
@@ -18,22 +25,54 @@ args:
     description: Metric name.
     validation:
       pattern: "^[a-zA-Z0-9_.\\-]{1,255}$"
+  - name: window_minutes
+    type: integer
+    required: false
+    default: 60
+    description: Trailing window in minutes ending now, up to 455 days (655200), CloudWatch's retention.
+    validation:
+      min: 1
+      max: 655200
+  - name: period
+    type: integer
+    required: false
+    default: 300
+    description: Statistic period in seconds, a multiple of 60 up to one day (86400); at least 300 past 15 days and 3600 past 63 days.
+    validation:
+      min: 60
+      max: 86400
+  - name: dimensions
+    type: string
+    required: false
+    default: ""
+    description: Up to three Name=...,Value=... pairs separated by single spaces, e.g. Name=InstanceId,Value=i-0123456789abcdef0.
+    validation:
+      pattern: "^(Name=[a-zA-Z0-9_.:/\\-]{1,255},Value=[a-zA-Z0-9_.:/\\-]{1,255}( Name=[a-zA-Z0-9_.:/\\-]{1,255},Value=[a-zA-Z0-9_.:/\\-]{1,255}){0,2})?$"
+      max_length: 1600
 execution:
-  command:
-    binary: /bin/sh
-    argv:
-      - "-c"
-      - "END=$(date -u +%Y-%m-%dT%H:%M:%SZ); START=$(date -u -d '1 hour ago' +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u -v-1H +%Y-%m-%dT%H:%M:%SZ); aws cloudwatch get-metric-statistics --namespace ''\"$1\"'' --metric-name ''\"$2\"'' --start-time $START --end-time $END --period 300 --statistics Average Maximum --output json"
-      - "emisar"
-      - "{{ args.namespace }}"
-      - "{{ args.metric }}"
+  script:
+    path: scripts/get_metric_statistics.sh
+    interpreter: /bin/sh
+  argv:
+    - "{{ args.namespace }}"
+    - "{{ args.metric }}"
+    - "{{ args.window_minutes }}"
+    - "{{ args.period }}"
+    - "{{ args.dimensions }}"
   timeout: 30s
 output:
   parser: json
-  max_stdout_bytes: 131072
+  max_stdout_bytes: 1048576
   max_stderr_bytes: 8192
 examples:
   - title: CPU last 1h
     args:
       namespace: "AWS/EC2"
       metric: "CPUUtilization"
+  - title: Two weeks of one instance's CPU at hourly points
+    args:
+      namespace: "AWS/EC2"
+      metric: "CPUUtilization"
+      window_minutes: 20160
+      period: 3600
+      dimensions: "Name=InstanceId,Value=i-0123456789abcdef0"

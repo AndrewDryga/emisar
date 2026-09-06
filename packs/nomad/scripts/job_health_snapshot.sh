@@ -114,6 +114,7 @@ jq -cn \
 	--slurpfile job "$tmp/job.json" \
 	--slurpfile summary "$tmp/summary.json" \
 	--slurpfile allocations "$tmp/allocations.json" \
+	--slurpfile all_allocations "$tmp/all_allocations.json" \
 	--slurpfile deployments "$tmp/deployments.json" \
 	--slurpfile checks "$tmp/checks.ndjson" '
 	def message:
@@ -246,6 +247,7 @@ jq -cn \
 				]
 			}
 		],
+		allocations_available: ($all_allocations[0] | length),
 		allocations: [
 			$allocations[] | . as $allocation | {
 				id: $allocation.ID,

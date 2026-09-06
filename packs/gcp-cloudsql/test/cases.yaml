@@ -89,6 +89,11 @@ cases:
         - 'SELECT count(o0.\"id\") FROM \"orders\"'
       # top_n caps the ranking, so the third fixture series must not appear.
       stdout_not_contains: ['"rank":3']
+  - name: gcp.sql_query_insights-accepts-the-30-day-retention-window
+    action: gcp.sql_query_insights
+    args: {project: example-prod, instance: harness-sql, metric: execution_time, window_minutes: 43200, top_n: 2}
+    expect:
+      stdout_contains: ['"ranking_complete":true', '"rank":1']
   # A percentile comes from the cross-series reducer, not an aligner, so the
   # value type changes with it.
   - name: gcp.sql_query_insights-latency-percentile

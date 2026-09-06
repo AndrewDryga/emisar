@@ -4,9 +4,10 @@ title: GET /api/v1/query_range
 kind: script
 risk: low
 description: >
-  Run a range PromQL query over a trailing window ending now. The window is
-  limited to 7 days and the window-to-step ratio to 10,081 evaluation
-  timestamps per returned series. Use for bounded trends and incident graphs.
+  Run a range PromQL query over a trailing window ending now. The server's
+  retention is the only bound on the window; window / step may produce at
+  most 10,081 evaluation timestamps per series, just under the 11,000
+  Prometheus itself refuses. Use for bounded trends and incident graphs.
 side_effects:
   - One PromQL range query — can be expensive on large series.
   - Read-only.
@@ -21,16 +22,16 @@ args:
     type: string
     required: false
     default: "1h"
-    description: 'Trailing window ending now, up to 7d, e.g. 1h, 6h, 24h, 7d.'
+    description: "Trailing window ending now, e.g. 1h, 24h, 7d, 30d; bounded by the server's retention."
     validation:
       pattern: "^[1-9][0-9]{0,4}[smhd]$"
   - name: step
     type: string
     required: false
     default: "60s"
-    description: 'Resolution between points. Window / step may produce at most 10,081 timestamps.'
+    description: 'Resolution between points, e.g. 60s, 5m, 1h, 1d. Window / step may produce at most 10,081 timestamps.'
     validation:
-      pattern: "^[1-9][0-9]{0,4}[sm]$"
+      pattern: "^[1-9][0-9]{0,4}[smhd]$"
 execution:
   script:
     path: scripts/query_range.sh
@@ -55,3 +56,8 @@ examples:
       query: "sum(rate(http_requests_total[5m]))"
       window: "7d"
       step: "1m"
+  - title: Thirty days at hourly resolution
+    args:
+      query: "sum(rate(http_requests_total[5m]))"
+      window: "30d"
+      step: "1h"

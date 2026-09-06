@@ -34,6 +34,21 @@ cases:
       - argv: [/bin/sh, -c, "aws cloudwatch put-metric-data --namespace Harness --metric-name Requests --value 7 --timestamp \"$(date -u -d '1 minute ago' +%Y-%m-%dT%H:%M:%SZ)\""]
     expect:
       stdout_contains: [Datapoints, Average, Maximum]
+  # Two weeks at hourly periods is 336 points, inside the 1440 one call returns.
+  - name: cw.get_metric_statistics-accepts-two-weeks-at-hourly-periods
+    action: cw.get_metric_statistics
+    args: {namespace: Harness, metric: Requests, window_minutes: 20160, period: 3600}
+    arrange:
+      - argv: [/bin/sh, -c, "aws cloudwatch put-metric-data --namespace Harness --metric-name Requests --value 7 --timestamp \"$(date -u -d '1 minute ago' +%Y-%m-%dT%H:%M:%SZ)\""]
+    expect:
+      stdout_contains: [Datapoints]
+  - name: cw.get_metric_statistics-rejects-more-than-1440-points-before-the-call
+    action: cw.get_metric_statistics
+    args: {namespace: Harness, metric: Requests, window_minutes: 1500, period: 60}
+    expect:
+      status: failure
+      exit: [2]
+      stderr_contains: [at most 1440]
   - action: cw.list_metrics
     args: {namespace: Harness}
     arrange:

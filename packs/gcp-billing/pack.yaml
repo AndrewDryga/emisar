@@ -2,7 +2,7 @@ schema_version: 1
 
 id: gcp-billing
 name: Google Cloud billing and cost analytics
-version: 0.2.2
+version: 0.2.3
 description: >
   Read-only Google Cloud spend analytics — cost by service, project, and SKU,
   a daily trend, and export freshness — read from the Cloud Billing export in

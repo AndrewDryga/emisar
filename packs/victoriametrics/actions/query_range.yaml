@@ -5,8 +5,9 @@ kind: script
 risk: low
 description: >
   Run a range PromQL/MetricsQL query against VictoriaMetrics — evaluates one
-  expression across a trailing window ending now, limited to 7 days and 10,081
-  outer evaluation timestamps per returned series. Use for trends and rates
+  expression across a trailing window ending now, bounded by the server's
+  retention and by 10,081 outer evaluation timestamps per returned series;
+  the server enforces its own points and query-duration limits. Use for trends and rates
   over time; use vm.query_instant for a single current value. A successful
   range response can legitimately contain no matching series, so refine or
   discover the selector instead of repeating an unchanged query. Query
@@ -25,16 +26,16 @@ args:
     type: string
     required: false
     default: "1h"
-    description: 'Trailing window ending now, up to 7d, e.g. 30m, 1h, 6h, 24h, 7d.'
+    description: "Trailing window ending now, e.g. 30m, 1h, 24h, 7d, 30d; bounded by the server's retention."
     validation:
       pattern: '^[1-9][0-9]{0,4}[smhdwy]$'
   - name: step
     type: string
     required: false
     default: "60s"
-    description: 'Resolution between points. Window / step may produce at most 10,081 timestamps.'
+    description: 'Resolution between points, e.g. 60s, 5m, 1h, 1d. Window / step may produce at most 10,081 timestamps.'
     validation:
-      pattern: '^[1-9][0-9]{0,4}[smh]$'
+      pattern: '^[1-9][0-9]{0,4}[smhd]$'
 execution:
   script:
     path: scripts/vmget.sh
@@ -70,3 +71,8 @@ examples:
       query: 'max_over_time(sum by (alloc_id) (container_memory_working_set_bytes{alloc_id!=""})[24h:5m])'
       window: "24h"
       step: "5m"
+  - title: Thirty days of request rate at hourly resolution
+    args:
+      query: "sum(rate(vm_http_requests_total[5m]))"
+      window: "30d"
+      step: "1h"

@@ -32,6 +32,44 @@ cases:
     expect:
       stdout_contains: [packtest-alpha]
 
+  # journald's retention is the only bound on the window now.
+  - name: linux.journalctl_grep-accepts-a-year-long-window
+    action: linux.journalctl_grep
+    args:
+      unit: packtest-journal.service
+      grep: "packtest-(alpha|beta)"
+      since: 8760h
+      priority: info
+      entry_limit: 100
+    env:
+      PATH: /opt/journal-without-pcre:/opt/emisar/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+    arrange:
+      - argv: [systemd-run, --unit=packtest-journal, --wait, /bin/sh, -c, "echo packtest-alpha >&2"]
+      - argv: [/bin/sh, -c, "journalctl -u packtest-journal.service --no-pager | grep -Fq packtest-alpha"]
+        retry_for: 10s
+        retry_every: 200ms
+    expect:
+      stdout_contains: [packtest-alpha]
+
+  - name: linux.journalctl-accepts-a-year-long-window
+    action: linux.journalctl
+    args:
+      unit: packtest-journal.service
+      since: 8760h
+      priority: info
+    arrange:
+      - argv: [systemd-run, --unit=packtest-journal, --wait, /bin/sh, -c, "echo packtest-alpha >&2"]
+      - argv: [/bin/sh, -c, "journalctl -u packtest-journal.service --no-pager | grep -Fq packtest-alpha"]
+        retry_for: 10s
+        retry_every: 200ms
+    expect:
+      stdout_contains: [packtest-alpha]
+    probes:
+      - name: journald itself answers the same year-long window
+        argv: [/bin/sh, -c, "journalctl -u packtest-journal.service --since '8760h ago' -p info --no-pager | grep -Fq packtest-alpha && echo present"]
+        expect:
+          stdout_contains: [present]
+
   - name: linux.journalctl_grep-rejects-an-invalid-extended-regex
     action: linux.journalctl_grep
     args:

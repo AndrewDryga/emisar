@@ -50,10 +50,10 @@ args:
     type: integer
     required: false
     default: 60
-    description: Recent query window in minutes.
+    description: Trailing window in minutes ending now, up to 3650 days (5256000), the longest bucket retention; the _Default bucket keeps 30 days unless configured.
     validation:
       min: 1
-      max: 1440
+      max: 5256000
   - name: page_size
     type: integer
     required: false

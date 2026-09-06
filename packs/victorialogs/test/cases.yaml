@@ -25,6 +25,18 @@ cases:
         retry_every: 100ms
     expect:
       stdout_contains: [harness-log-event, packtest]
+  - name: vl.query-accepts-a-thirty-day-window
+    action: vl.query
+    args: {query: "harness-log-event", window: 30d, limit: 10}
+    arrange: *ingest_log
+    expect:
+      stdout_contains: [harness-log-event, packtest]
+  - name: vl.hits-accepts-thirty-days-at-daily-buckets
+    action: vl.hits
+    args: {query: "harness-log-event", window: 30d, step: 1d}
+    arrange: *ingest_log
+    expect:
+      stdout_contains: [timestamps, values]
   - name: vl.query-http-error
     action: vl.query
     args: {query: "*", window: 1h, limit: 1}
@@ -93,20 +105,21 @@ cases:
     cleanup:
       - argv: [rm, -f, /tmp/packtest-victorialogs-cost-argv]
 
-  - name: vl.query-rejects-over-window-limit-before-client
+  # The span is bounded by the server's retention now, so a month-long window
+  # reaches the client with the same start, end, and extra_filters bounds.
+  - name: vl.query-allows-a-thirty-day-window
     action: vl.query
-    args: {query: "*", window: 1441m, limit: 1}
+    args: {query: "*", window: 30d, limit: 1}
     env:
       VL_URL: http://cost-canary
     expect:
-      status: failure
-      exit: [1]
-      reason_contains: [process exited with code 1]
-      stderr_contains: [exceeds the 24h maximum]
+      stdout_contains: [PACKTEST_VL_COST_CANARY]
     probes:
-      - argv: [/bin/sh, -c, "test ! -e /tmp/packtest-victorialogs-cost-argv && echo client-not-invoked"]
+      - argv: [cat, /tmp/packtest-victorialogs-cost-argv]
         expect:
-          stdout_contains: [client-not-invoked]
+          stdout_contains: [start=30d, end=now, 'extra_filters=_time:30d', timeout=30s]
+    cleanup:
+      - argv: [rm, -f, /tmp/packtest-victorialogs-cost-argv]
 
   - name: vl.hits-allows-exact-bucket-limit
     action: vl.hits

@@ -215,6 +215,28 @@ cases:
         /result/0/actor/email: ops@example.test
         /result/0/resource/type: DNS_record
 
+  - name: cf.audit_logs-accepts-the-18-month-retention-window
+    action: cf.audit_logs
+    args: {account_id: 9f8e7d6c5b4a39281706f5e4d3c2b1a0, hours: 13140, per_page: 1000}
+    expect:
+      json:
+        /result/0/action/type: rec_add
+        /result/0/actor/email: ops@example.test
+
+  - name: cf.list_tunnels-accepts-the-api-maximum-page
+    action: cf.list_tunnels
+    args: {account_id: 9f8e7d6c5b4a39281706f5e4d3c2b1a0, per_page: 1000}
+    expect:
+      json:
+        /result/0/id: f70a3b21-9c86-4dcb-8d5e-1f2a3b4c5d6e
+
+  - name: cf.zone_analytics-accepts-a-year
+    action: cf.zone_analytics
+    args: {zone_id: abc123def456abc123def456abc123de, hours: 8760}
+    expect:
+      json:
+        /totals/requests: 100000
+
   - action: cf.zone_analytics
     args: {zone_id: abc123def456abc123def456abc123de, hours: 6}
     expect:

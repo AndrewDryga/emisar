@@ -41,18 +41,18 @@ args:
     type: integer
     required: false
     default: 10
-    description: Maximum recent allocations and associated check reads.
+    description: Newest allocations to include, each adding one checks read, up to 100; allocations_available carries the job's full count so a partial list is visible.
     validation:
       min: 1
-      max: 25
+      max: 100
   - name: events_per_task
     type: integer
     required: false
     default: 5
-    description: Maximum recent restart and failed events retained per task.
+    description: Maximum recent restart and failed events retained per task, up to 50.
     validation:
       min: 1
-      max: 20
+      max: 50
 execution:
   script:
     path: scripts/job_health_snapshot.sh

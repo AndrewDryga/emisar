@@ -47,6 +47,12 @@ cases:
     args: {window: 5m, resolution: 1s}
     expect:
       stdout_contains: [harness-array, '"window_ms":300000']
+  # A year at the auto resolution (daily) stays inside the 1000-sample page.
+  - name: pure.arrays-performance-year-window-at-daily-resolution
+    action: pure.arrays_performance
+    args: {window: 1y}
+    expect:
+      stdout_contains: [harness-array, '"window_ms":31536000000']
   - name: pure.volumes-performance-reports-a-full-page-as-truncated
     action: pure.volumes_performance
     args: {limit: 3}

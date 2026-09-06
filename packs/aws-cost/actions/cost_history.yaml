@@ -1,0 +1,63 @@
+schema_version: 1
+id: ce.cost_history
+title: Cost over a trailing window by dimension
+kind: exec
+risk: low
+description: >
+  Show cost over a trailing window of days ending today, grouped by one
+  dimension at daily or monthly granularity. Cost Explorer serves 14 months
+  of daily data and, once multi-year data is enabled, 38 months monthly; a
+  window past what the account has enabled fails with the API's own error,
+  so use MONTHLY beyond 14 months.
+side_effects: ["One Cost Explorer call, paginated by the CLI.", "Read-only."]
+args:
+  - name: days
+    type: integer
+    required: false
+    default: 30
+    description: Trailing window in days ending today, up to 38 months (1155), the most Cost Explorer serves.
+    validation:
+      min: 1
+      max: 1155
+  - name: granularity
+    type: string
+    required: false
+    default: DAILY
+    description: DAILY within the last 14 months, MONTHLY for anything longer.
+    validation:
+      enum: [DAILY, MONTHLY]
+  - name: group_by
+    type: string
+    required: false
+    default: SERVICE
+    description: Cost Explorer dimension to group by.
+    validation:
+      enum: [SERVICE, LINKED_ACCOUNT, AZ, INSTANCE_TYPE, USAGE_TYPE, OPERATION, PURCHASE_TYPE, PLATFORM, TENANCY, RECORD_TYPE, LEGAL_ENTITY_NAME, INVOICING_ENTITY]
+  - name: metric
+    type: string
+    required: false
+    default: UnblendedCost
+    description: Cost metric to report.
+    validation:
+      enum: [UnblendedCost, AmortizedCost, BlendedCost, NetUnblendedCost, NetAmortizedCost, UsageQuantity]
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "START=$(date -u -d \"$1 days ago\" +%Y-%m-%d 2>/dev/null || date -u -v-\"$1\"d +%Y-%m-%d); END=$(date -u -d tomorrow +%Y-%m-%d 2>/dev/null || date -u -v+1d +%Y-%m-%d); aws ce get-cost-and-usage --time-period Start=$START,End=$END --granularity \"$2\" --metrics \"$3\" --group-by Type=DIMENSION,Key=\"$4\" --output json"
+      - "emisar"
+      - "{{ args.days }}"
+      - "{{ args.granularity }}"
+      - "{{ args.metric }}"
+      - "{{ args.group_by }}"
+  timeout: 120s
+output:
+  parser: json
+  max_stdout_bytes: 8388608
+  max_stderr_bytes: 8192
+examples:
+  - title: Last 30 days by service, daily
+    args: {}
+  - title: Three years by account, monthly
+    args: {days: 1095, granularity: MONTHLY, group_by: LINKED_ACCOUNT}

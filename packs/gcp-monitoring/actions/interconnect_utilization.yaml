@@ -6,7 +6,9 @@ risk: low
 description: >
   Query capacity plus received and sent byte rates for one Cloud Interconnect
   attachment, then calculate independent ingress and egress utilization
-  ratios. The link is full duplex, so directions are never summed.
+  ratios. The link is full duplex, so directions are never summed. The window
+  reaches 730 days at a coarse alignment: window / alignment_seconds must fit
+  the 1000-point page each metric is read in.
 side_effects:
   - One gcloud token read and three read-only Monitoring API requests.
   - Writes public metric responses to mode-0600 temporary files and removes them before exit.
@@ -36,10 +38,18 @@ args:
     type: integer
     required: false
     default: 60
-    description: Recent query window in minutes.
+    description: Trailing window in minutes ending now, up to 730 days (1051200); window / alignment_seconds must fit the 1000-point page.
     validation:
       min: 5
-      max: 360
+      max: 1051200
+  - name: alignment_seconds
+    type: integer
+    required: false
+    default: 60
+    description: Alignment period for the three rate and capacity series, from one minute to one week (604800).
+    validation:
+      min: 60
+      max: 604800
 execution:
   script:
     path: scripts/monitoring_api.sh
@@ -50,6 +60,7 @@ execution:
     - "{{ args.attachment }}"
     - "{{ args.region }}"
     - "{{ args.window_minutes }}"
+    - "{{ args.alignment_seconds }}"
   timeout: 90s
 output:
   parser: json
@@ -63,3 +74,10 @@ examples:
       attachment: va1-primary
       region: us-central1
       window_minutes: 60
+  - title: Two weeks at hourly points
+    args:
+      project: example-prod
+      attachment: va1-primary
+      region: us-central1
+      window_minutes: 20160
+      alignment_seconds: 3600

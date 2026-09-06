@@ -21,9 +21,9 @@ args:
     type: string
     required: false
     default: latest
-    description: History window ending now; latest returns only the newest sample.
+    description: History window ending now, up to a year at the coarsest resolution the array's own history depth allows; latest returns only the newest sample.
     validation:
-      enum: [latest, 5m, 1h, 6h, 24h, 7d]
+      enum: [latest, 5m, 1h, 6h, 24h, 7d, 30d, 90d, 1y]
   - name: resolution
     type: string
     required: false

@@ -22,8 +22,8 @@ args:
     type: integer
     required: false
     default: 50
-    description: Tunnels returned in this page.
-    validation: {min: 5, max: 100}
+    description: Tunnels returned in this page, up to 1000, the API maximum.
+    validation: {min: 5, max: 1000}
 execution:
   script: {path: scripts/cf_api.sh, interpreter: /bin/bash}
   argv: [list-tunnels, "{{ args.account_id }}", "{{ args.page }}", "{{ args.per_page }}"]

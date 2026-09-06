@@ -68,6 +68,19 @@ cases:
             - 'logName = \"projects/example-prod/logs/harness-api\"'
             - '"orderBy": "timestamp desc"'
             - '"pageSize": 5'
+  - name: gcp.log_entries-accepts-the-longest-bucket-retention
+    action: gcp.log_entries
+    args:
+      project: example-prod
+      minimum_severity: ERROR
+      resource_type: gce_instance
+      log_id: harness-api
+      window_minutes: 5256000
+      page_size: 5
+    expect:
+      json:
+        /entries/0/severity: ERROR
+        /more_available: true
   # Five entries whose projected fields are floods of the six-byte escaped
   # U+2028 codepoint. Success proves the advertised maximum remains below the
   # runner's 8 KiB structured-result cap after canonical JSON encoding.
@@ -172,6 +185,39 @@ cases:
         - harness-attachment
         - '"ingress_utilization_ratio":0.25'
         - '"egress_utilization_ratio":0.5'
+  # The retention-wide window fits one page only at a coarse alignment; the
+  # probe proves all three reads carried the requested alignment period.
+  - name: gcp.interconnect_utilization-accepts-the-retention-window-at-weekly-alignment
+    action: gcp.interconnect_utilization
+    args:
+      project: example-prod
+      attachment: harness-attachment
+      region: us-central1
+      window_minutes: 1051200
+      alignment_seconds: 604800
+    expect:
+      stdout_contains:
+        - harness-attachment
+        - '"ingress_utilization_ratio":0.25'
+    probes:
+      - name: the metric reads asked for 730 days at weekly alignment
+        argv: [curl, -fsS, --cacert, /packs/gcp-monitoring/test/fixtures/server.crt, https://gcp-api:8443/probe/state]
+        expect:
+          stdout_contains:
+            - '"aggregation.alignmentPeriod": "604800s"'
+            - '"interval_minutes": 1051200'
+  - name: gcp.interconnect_utilization-rejects-a-window-that-overflows-the-page
+    action: gcp.interconnect_utilization
+    args:
+      project: example-prod
+      attachment: harness-attachment
+      region: us-central1
+      window_minutes: 1051200
+      alignment_seconds: 60
+    expect:
+      status: failure
+      exit: [2]
+      stderr_contains: [one page holds 1000]
   - action: gcp.alert_policies
     args: {project: example-prod, limit: 10}
     expect:

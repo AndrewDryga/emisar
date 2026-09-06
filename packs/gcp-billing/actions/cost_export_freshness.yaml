@@ -34,10 +34,10 @@ args:
     type: integer
     required: false
     default: 7
-    description: Recent usage window in days to summarize.
+    description: Recent usage window in days to summarize, up to three years (1100); the export keeps everything and max_scan_gb bounds the scan.
     validation:
       min: 1
-      max: 400
+      max: 1100
   - name: max_scan_gb
     type: integer
     required: false

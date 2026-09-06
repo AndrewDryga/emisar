@@ -83,6 +83,18 @@ case "$window" in
 		window_seconds=604800
 		auto_ms=28800000
 		;;
+	30d)
+		window_seconds=2592000
+		auto_ms=28800000
+		;;
+	90d)
+		window_seconds=7776000
+		auto_ms=86400000
+		;;
+	1y)
+		window_seconds=31536000
+		auto_ms=86400000
+		;;
 	*)
 		echo "pure-flasharray: invalid window" >&2
 		exit 2

@@ -78,7 +78,22 @@ cases:
       - argv: [/bin/sh, -c, "test ! -e /tmp/packtest-prometheus-cost-argv && echo client-not-invoked"]
         expect:
           stdout_contains: [client-not-invoked]
-  - name: prom.query-range-rejects-over-window-limit-before-client
+  - name: prom.query-range-allows-thirty-days-at-one-hour
+    action: prom.query_range
+    args: {query: up, window: 30d, step: 1h}
+    env:
+      PROM_URL: http://cost-canary
+    expect:
+      stdout_contains: [PACKTEST_PROM_COST_CANARY]
+    probes:
+      - argv: [cat, /tmp/packtest-prometheus-cost-argv]
+        expect:
+          stdout_contains: [query=up, start=, end=, step=1h, timeout=30s]
+    cleanup:
+      - argv: [rm, -f, /tmp/packtest-prometheus-cost-argv]
+  # The span itself is no longer capped; the point guard is what still rejects
+  # a long window at a fine step before the client runs.
+  - name: prom.query-range-rejects-over-point-limit-on-a-long-window
     action: prom.query_range
     args: {query: up, window: 10081m, step: 60s}
     env:
@@ -87,7 +102,7 @@ cases:
       status: failure
       exit: [1]
       reason_contains: [process exited with code 1]
-      stderr_contains: [exceeds the 7d maximum]
+      stderr_contains: [evaluation timestamps, maximum is 10081]
     probes:
       - argv: [/bin/sh, -c, "test ! -e /tmp/packtest-prometheus-cost-argv && echo client-not-invoked"]
         expect:

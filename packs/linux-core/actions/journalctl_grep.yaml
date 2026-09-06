@@ -40,9 +40,7 @@ args:
     type: duration
     required: false
     default: "2h"
-    description: Look back at most this far.
-    validation:
-      max_duration: 24h
+    description: Look back this far, e.g. 2h, 48h, 720h (units s, m, h); journald's own retention is the real bound.
 
   - name: priority
     type: string

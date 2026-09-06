@@ -16,7 +16,7 @@ args:
     type: string
     required: false
     default: "1h"
-    description: 'How far back: 30m, 1h, 6h, 24h.'
+    description: "How far back, e.g. 30m, 1h, 24h, 7d; the log group's retention is the real bound."
     validation:
       pattern: "^[0-9]{1,4}[mhd]$"
 execution:

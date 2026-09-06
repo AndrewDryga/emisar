@@ -49,8 +49,8 @@ args:
     type: integer
     required: false
     default: 60
-    description: Recent window in minutes, aligned as a single period so each query yields one comparable value.
-    validation: {min: 5, max: 1440}
+    description: Recent window in minutes, up to 30 days (43200), the longest Query Insights retention (7 days on Enterprise edition); aligned as a single period so each query yields one comparable value.
+    validation: {min: 5, max: 43200}
   - name: top_n
     type: integer
     required: false
