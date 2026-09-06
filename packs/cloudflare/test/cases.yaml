@@ -604,7 +604,7 @@ cases:
       status: failure
       exit: [1]
       reason_contains: [process exited with code 1]
-      stderr_contains: ["Cloudflare GraphQL query failed"]
+      stderr_contains: ["Cloudflare GraphQL query failed: zone not found"]
 
   - name: cf.update_dns_record-requires-a-change
     action: cf.update_dns_record

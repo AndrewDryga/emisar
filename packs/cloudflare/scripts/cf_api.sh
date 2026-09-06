@@ -269,8 +269,10 @@ zone_analytics() {
   )")
   # GraphQL reports failure inside a 200 body, so transport success alone is
   # not enough.
+  # The plan decides how far back the dataset reaches, so the API's own message
+  # ("too old", "zone not found") is what tells the caller what to change.
   printf '%s' "$response" | jq -e '(.errors // []) | length == 0' >/dev/null ||
-    fail "Cloudflare GraphQL query failed"
+    fail "Cloudflare GraphQL query failed: $(printf '%s' "$response" | jq -r '[.errors[]?.message // "unknown error"] | join("; ")')"
   printf '%s' "$response" | jq -ce --arg since "$since_ts" --arg until "$until_ts" '
     (.data.viewer.zones[0].httpRequests1hGroups // []) as $groups
     | {
