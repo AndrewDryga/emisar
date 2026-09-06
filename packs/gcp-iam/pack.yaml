@@ -2,11 +2,12 @@ schema_version: 1
 
 id: gcp-iam
 name: Google Cloud IAM diagnostics
-version: 0.1.2
+version: 0.2.0
 description: >
-  Read-only Google Cloud IAM diagnostics for workload identity providers,
-  workload identity pools, and service-account policies. Every action names
-  the target project and global location explicitly.
+  Read-only Google Cloud project discovery and IAM diagnostics for workload
+  identity providers, workload identity pools, and service-account policies.
+  Discover projects visible to the authenticated identity, then use their
+  project IDs with the project-scoped GCP actions.
 vendor: emisar
 homepage: https://emisar.dev/packs/gcp-iam
 
@@ -30,11 +31,13 @@ setup:
     - "Any credential/config env you set must be allowlisted in the runner's `execution.inherit_env`; attached service accounts and workload identity need no credential env."
     - "For a credential file, populate a dedicated `CLOUDSDK_CONFIG` with `gcloud auth login --cred-file=...` or set `CLOUDSDK_AUTH_CREDENTIAL_FILE_OVERRIDE`; ordinary gcloud commands do not authenticate from GOOGLE_APPLICATION_CREDENTIALS."
     - "Use a read-only principal. Workload identity reads need roles/iam.workloadIdentityPoolViewer; service-account policy reads need roles/iam.serviceAccountViewer or equivalent permissions."
+    - "`gcp.projects` lists active projects where the current identity has `resourcemanager.projects.get`, for example through `roles/browser`. It needs no project ID. Project visibility does not grant access to each project's services."
     - "This is a remote-target client pack and is never host-auto-suggested merely because gcloud is installed."
-    - "All actions pass --quiet and an explicit --project, so ambient project configuration cannot redirect a request."
-  verify: gcp.workload_identity_pools
+    - "All actions pass `--quiet`. IAM resource reads require an explicit `--project`; `gcp.projects` discovers projects across the authenticated identity's access."
+  verify: gcp.projects
 
 actions:
+  - actions/projects.yaml
   - actions/wif_provider_describe.yaml
   - actions/service_account_policy.yaml
   - actions/workload_identity_pools.yaml

@@ -1,0 +1,49 @@
+schema_version: 1
+id: gcp.projects
+title: List authenticated Google Cloud projects
+kind: exec
+risk: low
+description: >
+  List active Google Cloud projects visible to the runner's authenticated
+  gcloud identity, including project IDs, project numbers, names, and lifecycle
+  states. Use the returned project IDs with other GCP actions. No project
+  argument is required. Visibility requires resourcemanager.projects.get;
+  access to individual services still depends on their IAM permissions.
+side_effects:
+  - Read-only Cloud Resource Manager API pagination.
+  - Returned projects are capped by limit; increase it if the result reaches the cap.
+search_terms:
+  - list GCP projects
+  - authenticated projects
+  - accessible projects
+  - project discovery
+args:
+  - name: limit
+    type: integer
+    required: false
+    default: 100
+    description: Maximum projects to return across API pages.
+    validation:
+      min: 1
+      max: 500
+execution:
+  command:
+    binary: gcloud
+    argv:
+      - projects
+      - list
+      - "--limit={{ args.limit }}"
+      - --format=json(projectId,projectNumber,name,lifecycleState)
+      - --quiet
+  timeout: 60s
+output:
+  parser: json
+  parser_required: true
+  max_stdout_bytes: 262144
+  max_stderr_bytes: 16384
+examples:
+  - title: Discover projects for the authenticated identity
+    args: {}
+  - title: List up to 500 visible projects
+    args:
+      limit: 500

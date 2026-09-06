@@ -6,12 +6,79 @@ versions:
 secret_env: [CLOUDSDK_AUTH_ACCESS_TOKEN]
 env:
   CLOUDSDK_API_ENDPOINT_OVERRIDES_IAM: http://gcp-api:8080/
+  CLOUDSDK_API_ENDPOINT_OVERRIDES_CLOUDRESOURCEMANAGER: http://gcp-api:8080/
   CLOUDSDK_AUTH_ACCESS_TOKEN: packtest-canary-gcp-iam-access-token-093f
 defaults:
   expect:
     stdout_not_empty: true
     stdout_not_contains: [packtest-canary-gcp-iam-access-token-093f]
 cases:
+  - name: gcp.projects-discovers-across-pages
+    action: gcp.projects
+    expect:
+      json:
+        /0/projectId: example-prod
+        /0/projectNumber: '1001'
+        /0/name: Example production
+        /0/lifecycleState: ACTIVE
+        /1/projectId: example-staging
+      stdout_not_contains: [labels, private-fixture-label, createTime, DELETE_REQUESTED]
+  - name: gcp.projects-respects-limit
+    action: gcp.projects
+    args: {limit: 1}
+    expect:
+      json:
+        /0/projectId: example-prod
+      stdout_not_contains: [example-staging]
+  - name: gcp.projects-empty
+    action: gcp.projects
+    env:
+      CLOUDSDK_API_ENDPOINT_OVERRIDES_CLOUDRESOURCEMANAGER: http://gcp-api:8080/empty/
+    expect:
+      json:
+        '': []
+  - name: gcp.projects-maximum-limit
+    action: gcp.projects
+    args: {limit: 500}
+    env:
+      CLOUDSDK_API_ENDPOINT_OVERRIDES_CLOUDRESOURCEMANAGER: http://gcp-api:8080/large/
+    expect:
+      json:
+        /499/projectId: fixture-project-499
+        /499/lifecycleState: ACTIVE
+      stdout_not_contains: [fixture-project-500, labels, private-fixture-label]
+  - name: gcp.projects-permission-denied
+    action: gcp.projects
+    env:
+      CLOUDSDK_API_ENDPOINT_OVERRIDES_CLOUDRESOURCEMANAGER: http://gcp-api:8080/denied/
+    expect:
+      status: failure
+      exit: [1]
+      stdout_not_empty: false
+      stderr_contains: [PERMISSION_DENIED]
+  - name: gcp.projects-unauthenticated
+    action: gcp.projects
+    env:
+      CLOUDSDK_API_ENDPOINT_OVERRIDES_CLOUDRESOURCEMANAGER: http://gcp-api:8080/unauthenticated/
+    expect:
+      status: failure
+      exit: [1]
+      stdout_not_empty: false
+      stderr_contains: [UNAUTHENTICATED]
+  - name: gcp.projects-rejects-zero-limit
+    action: gcp.projects
+    args: {limit: 0}
+    expect:
+      status: failure
+      stdout_not_empty: false
+      reason_contains: [must be >= 1]
+  - name: gcp.projects-rejects-excessive-limit
+    action: gcp.projects
+    args: {limit: 501}
+    expect:
+      status: failure
+      stdout_not_empty: false
+      reason_contains: [must be <= 500]
   - action: gcp.workload_identity_pools
     args: {project: example-prod, limit: 5}
     expect:
