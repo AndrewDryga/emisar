@@ -1,5 +1,6 @@
 import json
 import ssl
+from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
@@ -34,6 +35,17 @@ def metric_series(metric_type, value, resource_type):
         "valueType": "DOUBLE",
         "points": [point(value)],
     }
+
+
+def time_series_request(query):
+    request = {key: values[0] for key, values in query.items()}
+    start = request.get("interval.startTime")
+    end = request.get("interval.endTime")
+    if start and end:
+        layout = "%Y-%m-%dT%H:%M:%SZ"
+        delta = datetime.strptime(end, layout) - datetime.strptime(start, layout)
+        request["interval_minutes"] = int(delta.total_seconds() // 60)
+    return request
 
 
 def alert_policy():
@@ -90,6 +102,7 @@ def response(raw_path):
             }]
         }
     if request.path.endswith("/timeSeries"):
+        REQUESTS.append(time_series_request(query))
         filter_value = query.get("filter", [""])[0]
         if "network/attachment/capacity" in filter_value:
             return {

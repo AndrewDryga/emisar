@@ -4,9 +4,17 @@ title: Query Cloud Monitoring time series
 kind: script
 risk: low
 description: >
-  Query one metric type over a bounded recent window, optionally narrowing by
-  a Monitoring resource filter. Returns FULL time-series data and a
-  next_page_cursor when another page exists.
+  Query one metric type over a trailing window ending now, optionally
+  narrowing by a Monitoring resource filter. Returns FULL time-series data and
+  a next_page_cursor when another page exists. The window reaches 730 days,
+  Google's retention for Compute Engine, GKE, Cloud Storage, BigQuery, Cloud
+  SQL, load balancer, custom, agent and Prometheus metrics (full resolution
+  for six weeks, 10-minute points after that); every other family, including
+  log-based metrics, keeps six weeks. Beyond a day, set an aligner (ALIGN_RATE
+  for counters, ALIGN_MEAN for gauges) and pick alignment_seconds so
+  window / alignment fits in one page; ALIGN_NONE returns raw samples and
+  pages through them. Google answers a response over 200 MB with HTTP 429:
+  raise alignment_seconds or narrow resource_filter.
 side_effects:
   - One gcloud token read and one read-only Monitoring API request.
   - page_size caps returned points because the request uses view=FULL.
@@ -35,18 +43,18 @@ args:
     type: integer
     required: false
     default: 60
-    description: Recent query window in minutes.
+    description: Trailing window in minutes ending now, up to 730 days (1051200).
     validation:
       min: 1
-      max: 1440
+      max: 1051200
   - name: alignment_seconds
     type: integer
     required: false
     default: 60
-    description: Alignment period when aligner is not ALIGN_NONE.
+    description: Alignment period when aligner is not ALIGN_NONE, from one minute to one week (604800).
     validation:
       min: 60
-      max: 3600
+      max: 604800
   - name: aligner
     type: string
     required: false
@@ -107,3 +115,12 @@ examples:
       window_minutes: 60
       alignment_seconds: 300
       aligner: ALIGN_MEAN
+  - title: Two weeks of load balancer request rate at hourly points
+    args:
+      project: example-prod
+      metric_type: loadbalancing.googleapis.com/https/request_count
+      resource_filter: 'resource.type = "https_lb_rule" AND resource.labels.url_map_name = "web"'
+      window_minutes: 20160
+      alignment_seconds: 3600
+      aligner: ALIGN_RATE
+      page_size: 1000

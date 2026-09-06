@@ -125,6 +125,31 @@ cases:
         - compute.googleapis.com/instance/cpu/utilization
         - harness-vm
         - "0.42"
+  # The full retention window at weekly alignment is the advertised maximum;
+  # the probe proves the script turned it into a 730-day interval and passed
+  # the aligner, alignment period, and page size through to the API.
+  - name: gcp.metric_query-accepts-the-full-retention-window
+    action: gcp.metric_query
+    args:
+      project: example-prod
+      metric_type: compute.googleapis.com/instance/cpu/utilization
+      window_minutes: 1051200
+      alignment_seconds: 604800
+      aligner: ALIGN_MEAN
+      page_size: 1000
+    expect:
+      stdout_contains:
+        - compute.googleapis.com/instance/cpu/utilization
+        - "0.42"
+    probes:
+      - name: the request asked Monitoring for 730 days at weekly alignment
+        argv: [curl, -fsS, --cacert, /packs/gcp-monitoring/test/fixtures/server.crt, https://gcp-api:8443/probe/state]
+        expect:
+          stdout_contains:
+            - '"interval_minutes": 1051200'
+            - '"aggregation.alignmentPeriod": "604800s"'
+            - '"aggregation.perSeriesAligner": "ALIGN_MEAN"'
+            - '"pageSize": "1000"'
   - action: gcp.metric_descriptors
     args:
       project: example-prod
