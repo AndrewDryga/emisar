@@ -343,7 +343,7 @@ defmodule Emisar.Mailers.UserNotifier do
       "Needs approval · 0 of #{quorum} approvals received.",
       blocks,
       {"Review approval", url},
-      headers: approval_thread_headers(:requested, request, subject)
+      headers: approval_thread_headers(:requested, request, approver)
     )
   end
 
@@ -354,7 +354,7 @@ defmodule Emisar.Mailers.UserNotifier do
   ActionRun exists. The request context is the frozen, already-redacted plan.
   """
   def deliver_runbook_execution_approval_request(
-        %Subject{actor: %Users.User{} = approver} = subject,
+        %Subject{actor: %Users.User{} = approver},
         %{} = request,
         requester_name \\ nil
       ) do
@@ -389,13 +389,13 @@ defmodule Emisar.Mailers.UserNotifier do
       "Needs approval · 0 of #{quorum} approvals received.",
       blocks,
       {"Review approval", approval_url(request)},
-      headers: approval_thread_headers(:requested, request, subject)
+      headers: approval_thread_headers(:requested, request, approver)
     )
   end
 
   @doc "Sends a self-contained approval lifecycle update in the recipient's request thread."
   def deliver_approval_event(
-        %Subject{actor: %Users.User{} = approver} = subject,
+        %Subject{actor: %Users.User{} = approver},
         %{} = request,
         %{} = event
       ) do
@@ -426,7 +426,7 @@ defmodule Emisar.Mailers.UserNotifier do
       preview,
       blocks,
       {"View current status", approval_url(request)},
-      headers: approval_thread_headers(event, request, subject)
+      headers: approval_thread_headers(event, request, approver)
     )
   end
 
@@ -449,7 +449,7 @@ defmodule Emisar.Mailers.UserNotifier do
     label = approval_decision_label(request)
     quorum = request_quorum(request)
 
-    {title, preview, lead} =
+    {preview, lead} =
       requester_decision_copy(request.status, approved_count, quorum, event_kind, actor_label)
 
     blocks =
@@ -467,11 +467,12 @@ defmodule Emisar.Mailers.UserNotifier do
 
     deliver_transactional(
       requester,
-      "#{title} · #{one_line(label)}",
+      approval_subject(request, label),
       preview,
       blocks,
       {"View approval", approval_url(request)},
-      secondary_action: approved_target_action(request)
+      secondary_action: approved_target_action(request),
+      headers: approval_thread_headers(%{kind: event_kind || request.status}, request, requester)
     )
   end
 
@@ -610,8 +611,13 @@ defmodule Emisar.Mailers.UserNotifier do
     do: PublicUrl.url("/app/#{request.account.slug}/approvals/#{request.id}")
 
   defp approval_subject(request, label) do
-    "[#{account_name(request.account)}] Approval · #{one_line(label)} · #{short_id(request.id)}"
-    |> String.slice(0, 180)
+    # UUIDv7 prefixes repeat for nearby requests. Keep the full identity even
+    # when the descriptive part needs truncation, so unrelated mail cannot merge.
+    suffix = " · #{request.id}"
+
+    "Approval · #{one_line(label)}"
+    |> String.slice(0, 180 - String.length(suffix))
+    |> Kernel.<>(suffix)
   end
 
   defp account_name(%{name: name}) when is_binary(name), do: one_line(name)
@@ -652,38 +658,30 @@ defmodule Emisar.Mailers.UserNotifier do
 
   defp approved_target_action(_request), do: nil
 
-  defp short_id(id) do
-    id
-    |> String.replace("-", "")
-    |> String.slice(0, 8)
-    |> String.upcase()
-  end
-
-  defp approval_thread_headers(:requested, request, %Subject{} = subject) do
+  defp approval_thread_headers(:requested, request, %Users.User{} = recipient) do
     [
-      {"Message-ID", approval_root_message_id(request, subject)},
+      {"Message-ID", approval_root_message_id(request, recipient)},
       {"X-PM-KeepID", "true"}
     ]
   end
 
-  defp approval_thread_headers(event, request, %Subject{} = subject) when is_map(event) do
-    root = approval_root_message_id(request, subject)
+  defp approval_thread_headers(event, request, %Users.User{} = recipient) when is_map(event) do
+    root = approval_root_message_id(request, recipient)
     event_id = Map.get(event, :id) || Map.get(event, :decision_id) || request.id
     kind = event |> Map.fetch!(:kind) |> Atom.to_string()
 
     [
-      {"Message-ID", "<approval.#{kind}.#{event_id}.#{subject.membership_id}@emisar.dev>"},
+      {"Message-ID", "<approval.#{kind}.#{request.id}.#{event_id}.#{recipient.id}@emisar.dev>"},
       {"In-Reply-To", root},
       {"References", root},
       {"X-PM-KeepID", "true"}
     ]
   end
 
-  # Every part is first-party and header-safe by construction: the request and
-  # event ids are UUIDs, the membership id is a UUID or nil, and the kind is one
-  # of the atoms `approval_event_copy/3` matches.
-  defp approval_root_message_id(request, %Subject{} = subject) do
-    "<approval.request.#{request.id}.#{subject.membership_id}@emisar.dev>"
+  # Every part is first-party and header-safe by construction: request, event,
+  # and recipient ids are UUIDs; the kind is a matched approval lifecycle atom.
+  defp approval_root_message_id(request, %Users.User{} = recipient) do
+    "<approval.request.#{request.id}.#{recipient.id}@emisar.dev>"
   end
 
   defp request_quorum(%{min_approvals: value}) when is_integer(value) and value > 0, do: value
@@ -753,7 +751,6 @@ defmodule Emisar.Mailers.UserNotifier do
 
   defp requester_decision_copy(:approved, count, quorum, :overridden, _actor_label) do
     {
-      "Approved using an override",
       "An owner or admin approved your request using an override.",
       {:status, "Your approval request was ", "approved",
        " using an override after #{count} of #{quorum} approvals.", :warning}
@@ -762,7 +759,6 @@ defmodule Emisar.Mailers.UserNotifier do
 
   defp requester_decision_copy(:approved, count, quorum, _event_kind, _actor_label) do
     {
-      "Approval complete",
       "Your approval request was approved.",
       {:status, "Your approval request was ", "approved",
        " with #{count} of #{quorum} approvals.", :success}
@@ -773,7 +769,6 @@ defmodule Emisar.Mailers.UserNotifier do
     actor = one_line(actor_label || "An approver")
 
     {
-      "Approval denied",
       "#{actor} denied your approval request.",
       {:status, "Your approval request was ", "denied",
        " by #{actor} with #{count} of #{quorum} approvals.", :danger}
@@ -782,7 +777,6 @@ defmodule Emisar.Mailers.UserNotifier do
 
   defp requester_decision_copy(:expired, count, quorum, _event_kind, _actor_label) do
     {
-      "Approval expired",
       "Your approval request expired.",
       {:status, "Your approval request ", "expired", " with #{count} of #{quorum} approvals.",
        :warning}
@@ -791,7 +785,6 @@ defmodule Emisar.Mailers.UserNotifier do
 
   defp requester_decision_copy(:cancelled, count, quorum, _event_kind, _actor_label) do
     {
-      "Approval cancelled",
       "Your approval request was cancelled.",
       {:status, "Your approval request was ", "cancelled",
        " with #{count} of #{quorum} approvals.", :warning}

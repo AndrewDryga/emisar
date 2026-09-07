@@ -655,7 +655,7 @@ defmodule Emisar.MailTest do
       UserNotifier.deliver_approval_request(subject, request, run)
       assert_receive {:email, initial}
 
-      root = "<approval.request.request-123.#{subject.membership_id}@emisar.dev>"
+      root = "<approval.request.request-123.#{subject.actor.id}@emisar.dev>"
       assert initial.headers["Message-ID"] == root
       refute Map.has_key?(initial.headers, "In-Reply-To")
       assert initial.text_body =~ "0 of 2"
@@ -671,7 +671,7 @@ defmodule Emisar.MailTest do
 
       assert_receive {:email, update}
       assert update.subject == initial.subject
-      assert update.headers["Message-ID"] =~ "approval.vote.decision-456"
+      assert update.headers["Message-ID"] =~ "approval.vote.request-123.decision-456"
       assert update.headers["In-Reply-To"] == root
       assert update.headers["References"] == root
       assert update.text_body =~ "1 of 2"
@@ -862,7 +862,7 @@ defmodule Emisar.MailTest do
       UserNotifier.deliver_approval_decision(requester, request)
 
       assert_email_sent(fn email ->
-        assert email.subject == "Approval complete · caddy.reload_config"
+        assert email.subject == "Approval · caddy.reload_config · #{request.id}"
         assert email.text_body =~ "approved with 0 of 1 approvals"
         assert email.text_body =~ "rotate the cert"
         assert email.text_body =~ "confirmed with the on-call"
@@ -897,7 +897,7 @@ defmodule Emisar.MailTest do
       UserNotifier.deliver_approval_decision(requester, request, 0, nil, "Alex Operator")
 
       assert_email_sent(fn email ->
-        assert email.subject == "Approval denied · Database maintenance"
+        assert email.subject == "Approval · Database maintenance · #{request.id}"
         assert email.text_body =~ "was denied by Alex Operator"
         refute email.text_body =~ "DECISION NOTE"
         true
@@ -939,7 +939,7 @@ defmodule Emisar.MailTest do
       UserNotifier.deliver_approval_decision(requester, request)
 
       assert_email_sent(fn email ->
-        assert email.subject == "Approval expired · linux.systemctl_restart"
+        assert email.subject == "Approval · linux.systemctl_restart · #{request.id}"
         assert email.text_body =~ "expired with 0 of 1 approvals"
         true
       end)
@@ -961,7 +961,7 @@ defmodule Emisar.MailTest do
       UserNotifier.deliver_approval_decision(requester, request, 1, :overridden)
 
       assert_email_sent(fn email ->
-        assert email.subject == "Approved using an override · postgres.restore"
+        assert email.subject == "Approval · postgres.restore · #{request.id}"
         assert email.text_body =~ "approved using an override after 1 of 3 approvals"
         assert email.html_body =~ "color:#{Style.amber()};"
         refute email.text_body =~ "remaining review requirement was waived"

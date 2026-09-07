@@ -42,6 +42,14 @@ identity resolves inside the request's account. An approved request links to bot
 the approval record and the resulting action run or runbook execution; the run is
 a quiet secondary action, not a second primary button.
 
+Thread approval email by the approval request. Pending, vote, and outcome emails
+use the same subject built from the frozen action or runbook label and the full
+request UUID. Keep the UUID when truncating long labels: UUIDv7 prefixes contain
+time and repeat across nearby requests. Keep mutable account names in the body
+so a rename cannot split the conversation. Requester and approver messages use
+the same recipient-user and request identity for their root Message-ID, with
+distinct event Message-IDs and In-Reply-To/References pointing to that root.
+
 Do not add chrome that explains itself (`This message was sent by emisar`) or a
 disclaimer that repeats the noun in the sentence. Name the object precisely
 instead: `The approval request was approved` does not claim that the action ran.
@@ -72,8 +80,9 @@ Your approval request was cancelled with 1 of 2 approvals.
   Approvals:  1 of 2
 ```
 
-In HTML, only `cancelled` is bold and amber. The subject remains `Approval
-cancelled · postgres.vacuum_table`; it is not rendered again above `Hi`.
+In HTML, only `cancelled` is bold and amber. The subject remains `Approval ·
+postgres.vacuum_table · <request UUID>` throughout the approval lifecycle; it is
+not rendered again above `Hi`.
 
 ```text
 Hi Avery,

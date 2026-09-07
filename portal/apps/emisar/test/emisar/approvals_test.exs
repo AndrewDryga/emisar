@@ -2030,7 +2030,7 @@ defmodule Emisar.ApprovalsTest do
                  Enum.map(email.to, &elem(&1, 1)) == [subject.actor.email]
                end)
 
-      assert email.subject == "Approval complete · linux.uptime"
+      assert email.subject == "Approval · linux.uptime · #{request.id}"
       assert email.text_body =~ "approved with 1 of 1 approvals"
       assert email.text_body =~ "lgtm"
       assert email.text_body =~ "/app/#{account.slug}/runs/#{run.id}"
@@ -2839,7 +2839,7 @@ defmodule Emisar.ApprovalsTest do
 
       assert Enum.any?(emails, fn email ->
                Enum.map(email.to, &elem(&1, 1)) == [requester_subject.actor.email] &&
-                 email.subject == "Approved using an override · linux.uptime" &&
+                 email.subject == "Approval · linux.uptime · #{request.id}" &&
                  email.text_body =~ "approved using an override after 1 of 3 approvals"
              end)
     end
@@ -3512,7 +3512,7 @@ defmodule Emisar.ApprovalsTest do
                  Enum.map(email.to, &elem(&1, 1)) == [subject.actor.email]
                end)
 
-      assert email.subject == "Approval denied · linux.uptime"
+      assert email.subject == "Approval · linux.uptime · #{request.id}"
       assert email.text_body =~ "was denied by Test User with 0 of 1"
       assert email.text_body =~ "not now"
 
