@@ -35,6 +35,14 @@ box:
     # migrations against the one the host is using. test.exs appends this.
     MIX_TEST_PARTITION: box
 
+# Coop hides secret-looking files from everything it starts, sidecars included, so Keycloak was
+# handed an empty stand-in for its generated dev TLS key and died on startup. This declares the
+# files the stack must read for real. It is a request, not a grant: an agent in the box can edit
+# this file, so `coop up` still asks a human to approve the list once on each machine.
+services:
+  require_real_files:
+    - dev/keycloak/certs/generated/tls.key
+
 # Ports a dev server in the box listens on — coop publishes each to a stable host
 # port so you can open it in your browser (the portal already binds 0.0.0.0 in dev):
 serve:
