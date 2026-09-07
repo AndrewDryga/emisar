@@ -19,7 +19,13 @@ folder move. A status checkbox is not a substitute for a transition.
 1. Use `coop tasks ls` to find the task matching the request. Create one with
    `coop tasks add --project root "<title>"` or the owning project when needed.
    Fill task.md with context, acceptance, and approach. Claim it with
-   `coop tasks claim <id>`; skip another agent's active claim.
+   `coop tasks claim <id> --as <your agent>`, so the board reads `claimed by
+   claude (pid 812)` instead of an anonymous hold; skip another agent's active
+   claim. A claim from a tool call binds to your process, and `coop loop
+   --preflight` releases it once that process is gone. Pass `--pid <n>` only
+   when coop would otherwise bind the wrong process, such as a wrapper that
+   exits while the work continues. `--force` takes over a live claim and needs
+   the human to say so.
 2. Implement the requested behavior, preserving unrelated WIP. Run focused checks
    while working and the touched project's canonical final gate before committing.
 3. Stage only task-owned files/hunks. Make one focused commit ending with

@@ -7,8 +7,9 @@ any code is edited:
 1. **Before-shot** — ensure the work has a claimed task, then capture the
    reported state from `./run serve`. A one-off visual review still gets a basic
    task: create it in the relevant queue with `coop tasks add --project portal
-   "<title>"`, then `coop tasks claim <id>`. This ownership is intentional:
-   clearing completed tasks clears their disposable screenshots too.
+   "<title>"`, then `coop tasks claim <id> --as <your agent>`. This ownership
+   is intentional: clearing completed tasks clears their disposable screenshots
+   too.
 
    ```sh
    ./run shot <path> --label before --select '<css>' \
