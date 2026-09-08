@@ -1154,9 +1154,8 @@ defmodule EmisarWeb.ProfileLive do
             </.section_header>
           </:header>
           <:note>
-            We recommend linking the methods you use. This can avoid waiting for an administrator
-            to connect your first sign-in to your existing profile. Each workspace has its own
-            sign-in methods and access requirements.
+            Link the methods you use to help avoid approval delays.
+            Each workspace sets its own sign-in rules.
             <.doc_link href="/docs/sso">About single sign-on</.doc_link>
           </:note>
 
@@ -1284,6 +1283,9 @@ defmodule EmisarWeb.ProfileLive do
               <:subtitle>Use an authenticator app for an extra check when you sign in.</:subtitle>
             </.section_header>
           </:header>
+          <:note :if={not @mfa_facts.enabled? and @mfa_enrollment_step == :idle}>
+            We recommend enabling MFA to help protect your profile.
+          </:note>
 
           <%= cond do %>
             <% @mfa_recovery_codes -> %>
@@ -1449,9 +1451,8 @@ defmodule EmisarWeb.ProfileLive do
                 </:actions>
               </.mfa_enrollment>
             <% true -> %>
-              <div class="flex flex-wrap items-center gap-2">
+              <div>
                 <.chip tone={:amber}>Not enabled</.chip>
-                <span class="text-sm text-zinc-400">Recommended</span>
               </div>
               <.error :if={@mfa_start_error}>{@mfa_start_error}</.error>
               <.button

@@ -579,7 +579,13 @@ defmodule EmisarWeb.ProfileLiveTest do
       {:ok, lv, html} = live(conn, ~p"/app/#{account}/settings/profile")
 
       assert html =~ "Sign-in methods"
-      assert has_element?(lv, "#single-sign-on-help", "We recommend linking the methods you use.")
+
+      assert has_element?(
+               lv,
+               "#single-sign-on-help",
+               "Each workspace sets its own sign-in rules."
+             )
+
       assert has_element?(lv, "#oidc-identity-#{provider.id}", "Workforce Okta")
       assert has_element?(lv, "#link-oidc-#{provider.id}", "Link")
 
@@ -1199,6 +1205,7 @@ defmodule EmisarWeb.ProfileLiveTest do
       # Codes are shown exactly once — the panel goes away on dismiss
       # (the enable flash still mentions them, so check the element).
       assert has_element?(lv, "#mfa-recovery-codes")
+      refute has_element?(lv, "#multi-factor-authentication-help")
 
       # The voluntary reveal offers a file download too (matching the enforced
       # setup path) — a clipboard is too volatile for a lockout credential.
@@ -1213,6 +1220,7 @@ defmodule EmisarWeb.ProfileLiveTest do
       html = render_click(lv, "dismiss_recovery_codes", %{})
       refute has_element?(lv, "#mfa-recovery-codes")
       assert has_element?(lv, "#multi-factor-authentication", "10 recovery codes remaining")
+      refute has_element?(lv, "#multi-factor-authentication-help")
       refute html =~ "Generate new codes before these run out."
     end
 
@@ -1224,7 +1232,14 @@ defmodule EmisarWeb.ProfileLiveTest do
 
       refute html =~ "mfa-setup-key"
       assert has_element?(lv, "#multi-factor-authentication", "Not enabled")
-      assert has_element?(lv, "#multi-factor-authentication", "Recommended")
+
+      assert has_element?(
+               lv,
+               "aside#multi-factor-authentication-help",
+               "We recommend enabling MFA to help protect your profile."
+             )
+
+      refute has_element?(lv, "#multi-factor-authentication > div", "recommend")
       refute html =~ "First verify your email"
       refute html =~ "Keep your recovery codes somewhere"
       refute html =~ "Email verification code"
@@ -1233,9 +1248,13 @@ defmodule EmisarWeb.ProfileLiveTest do
       html = render_click(lv, "start_mfa", %{})
 
       assert html =~ "Email verification code"
+      refute has_element?(lv, "#multi-factor-authentication-help")
       refute has_element?(lv, "#multi-factor-authentication", "Not enabled")
       refute html =~ "mfa-setup-key"
       assert_received {:email, _}
+
+      render_click(lv, "cancel_mfa", %{})
+      assert has_element?(lv, "#multi-factor-authentication-help", "We recommend enabling MFA")
     end
 
     test "a suppressed current address does not claim or advance delivery", %{
