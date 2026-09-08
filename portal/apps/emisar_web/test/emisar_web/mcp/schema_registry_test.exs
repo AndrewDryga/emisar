@@ -152,15 +152,27 @@ defmodule EmisarWeb.MCP.SchemaRegistryTest do
              "Opaque continuation token"
 
     assert get_in(run_action, ["inputSchema", "$defs", "reason", "description"]) ==
-             "Human-readable justification for this action. Shown to human approvers and recorded in the audit log — state the specific action and why it is needed (e.g. 'Restart stuck postgres on db-1 to clear a connection pileup'). Must be at least 12 characters; vague or placeholder reasons are rejected."
+             "Explain the action or runbook, its target, purpose, and material impact in plain sentences for approvers and the audit log. At least 12 characters."
 
     assert get_in(run_action, ["inputSchema", "$defs", "reason", "minLength"]) == 12
 
     assert get_in(run_action, ["inputSchema", "$defs", "evidence", "description"]) ==
-             "Optional: what you already observed that makes this action necessary — prior findings, error signatures, or the run ids you inspected. State it so approvers and the audit log see the basis. Not verified."
+             "Optional: explain observations and why they matter, then add supporting references. Include only checks performed and state uncertainty. Emisar does not verify them."
 
     assert get_in(run_action, ["inputSchema", "$defs", "expected", "description"]) ==
-             "Optional: the outcome you expect if this action works — the hypothesis a follow-up check would confirm. Records what success looks like for approvers and the audit log. Not required and not verified."
+             "Optional: describe the observable result and how to check it. For diagnostic reads, state the question the output should answer. Keep later steps distinct. This is an expectation, not a verified result."
+
+    assert run_action["description"] =~
+             "Use plain, complete sentences for an operator who has not read the conversation."
+
+    assert run_action["description"] =~
+             "Reason: Enable logical decoding on dev-db to prepare it for replication."
+
+    assert run_action["description"] =~
+             "Evidence: The reviewed plan changes only cloudsql.logical_decoding to on for dev-db"
+
+    assert run_action["description"] =~
+             "Expected: Logical decoding is enabled and dev-db returns to a healthy state after restarting."
 
     assert run_action["inputSchema"]["properties"]["wait"]["description"] ==
              "Maximum time to block before returning the current state, as a duration string: \"0\", \"30s\", or \"1500ms\"."

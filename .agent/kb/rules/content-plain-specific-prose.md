@@ -54,6 +54,15 @@ writer first.
 - Vary rhythm with the idea, not through arbitrary fragments or decoration.
 - Use humor only when it sharpens the point and preserves trust.
 - State a verified fact directly and qualify the exact uncertainty.
+- Write run metadata for an operator who has not read the conversation, using
+  plain language and complete sentences. `reason` explains the action, target,
+  purpose, and material impact; `evidence` explains supporting observations;
+  `expected` gives the observable result and how to check it. Explain findings
+  before appending relevant IDs and hashes as supporting references. Preserve
+  meaningful risks, uncertainty, and scope limits without approval-history
+  recaps or lists of unrelated resources. Keep examples in the canonical MCP
+  schema guidance and essential writing instructions in the tool description
+  too, so clients need not expose field descriptions to convey the standard.
 - Preserve prerequisites, consequences and security conditions when simplifying
   reviewed copy. If a caveat applies to only one flow, narrow it and move it to
   that flow instead of deleting it. Compare the facts before and after the edit;

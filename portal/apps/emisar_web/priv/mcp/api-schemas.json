@@ -203,21 +203,21 @@
     },
     "reason": {
       "type": "string",
-      "description": "Human-readable justification for this action. Shown to human approvers and recorded in the audit log — state the specific action and why it is needed (e.g. 'Restart stuck postgres on db-1 to clear a connection pileup'). Must be at least 12 characters; vague or placeholder reasons are rejected.",
+      "description": "Explain the action or runbook, its target, purpose, and material impact in plain sentences for approvers and the audit log. At least 12 characters.",
       "minLength": 12,
       "maxLength": 2000,
       "pattern": "\\S"
     },
     "evidence": {
       "type": "string",
-      "description": "Optional: what you already observed that makes this action necessary — prior findings, error signatures, or the run ids you inspected. State it so approvers and the audit log see the basis. Not verified.",
+      "description": "Optional: explain observations and why they matter, then add supporting references. Include only checks performed and state uncertainty. Emisar does not verify them.",
       "minLength": 1,
       "maxLength": 4000,
       "pattern": "\\S"
     },
     "expected": {
       "type": "string",
-      "description": "Optional: the outcome you expect if this action works — the hypothesis a follow-up check would confirm. Records what success looks like for approvers and the audit log. Not required and not verified.",
+      "description": "Optional: describe the observable result and how to check it. For diagnostic reads, state the question the output should answer. Keep later steps distinct. This is an expectation, not a verified result.",
       "minLength": 1,
       "maxLength": 2000,
       "pattern": "\\S"
@@ -1297,7 +1297,7 @@
     },
     "run_action": {
       "title": "Run action",
-      "description": "Run one exact action on explicit runner_refs through Emisar scope, policy, approval, audit, and signed runner verification. The selected action may be destructive; inspect it with get_action first. Emisar evaluates policy and handles any required human approval.",
+      "description": "Run one exact action on explicit runner_refs through Emisar scope, policy, approval, audit, and signed runner verification. The selected action may be destructive; inspect it with get_action first. Emisar evaluates policy and handles any required human approval.\n\nUse plain, complete sentences for an operator who has not read the conversation. State material impact and uncertainty. Put relevant IDs and hashes after the explanation. Avoid compressed shorthand, approval-history recaps, and lists of unrelated resources.\n\nExample (adapt the facts to the actual run):\nReason: Enable logical decoding on dev-db to prepare it for replication. This change includes the approved database restart.\nEvidence: The reviewed plan changes only cloudsql.logical_decoding to on for dev-db and preserves the existing IAM flag. The database and its backup were healthy when checked at 21:35 UTC.\nExpected: Logical decoding is enabled and dev-db returns to a healthy state after restarting. Verify recovery before changing another source. This step does not start replication or copy data.",
       "annotations": {"readOnlyHint": false, "destructiveHint": true, "idempotentHint": false, "openWorldHint": true},
       "inputSchema": {
         "type": "object",
