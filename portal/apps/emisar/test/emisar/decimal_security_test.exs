@@ -1,8 +1,8 @@
 defmodule Emisar.DecimalSecurityTest do
   use ExUnit.Case, async: true
 
-  # The version-specific Hex exception in the umbrella project is justified
-  # by these resource limits, not by an assumption that decimal input is trusted.
+  # Keep resource-bound regressions even when the advisory scan is clean:
+  # decimal input is not assumed to be trusted.
   test "parsing and casting reject pathological exponents" do
     for input <- ["1e1000000000", "1e-1000000000"] do
       assert Decimal.parse(input) == :error

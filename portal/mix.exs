@@ -15,7 +15,6 @@ defmodule Emisar.Umbrella.MixProject do
       # compilation listener. `mix phx.server` runs from the umbrella
       # root, so the listener is registered here (not in a child app).
       listeners: [Phoenix.CodeReloader],
-      hex: hex_audit_options(),
       deps: deps(),
       aliases: aliases(),
       releases: [
@@ -29,21 +28,6 @@ defmodule Emisar.Umbrella.MixProject do
         ]
       ]
     ]
-  end
-
-  defp hex_audit_options do
-    # Reviewed 2026-09-08: the EEF/OSV feed incorrectly marks every Decimal
-    # release affected; the maintainer identifies 3.0.0 as the fixed release:
-    # https://github.com/ericmj/decimal/security/advisories/GHSA-rhv4-8758-jx7v
-    # Limit this exception to the verified lock version. DecimalSecurityTest
-    # exercises its input/output bounds. Remove when the feed is corrected.
-    case Mix.Dep.Lock.read(Path.join(__DIR__, "mix.lock"))[:decimal] do
-      {:hex, :decimal, "3.1.1", _, _, _, "hexpm", _} ->
-        [ignore_advisories: ["EEF-CVE-2026-32686"]]
-
-      _ ->
-        []
-    end
   end
 
   defp deps do
