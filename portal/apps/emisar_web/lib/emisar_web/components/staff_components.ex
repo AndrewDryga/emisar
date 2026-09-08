@@ -57,7 +57,7 @@ defmodule EmisarWeb.StaffComponents do
               navigate={~p"/admin"}
               class="rounded-lg bg-white/[0.06] px-3 py-1.5 font-medium text-zinc-50"
             >
-              Accounts
+              Workspaces
             </.link>
             <%!-- href, not navigate: /ops/live is a different live_session, so
                  a live navigation would only fall back to a full page load. --%>

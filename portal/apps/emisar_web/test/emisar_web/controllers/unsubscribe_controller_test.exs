@@ -21,7 +21,7 @@ defmodule EmisarWeb.UnsubscribeControllerTest do
 
     test "404s on a forged token", %{conn: conn} do
       conn = get(conn, ~p"/unsubscribe/monthly-report/not-a-real-token")
-      assert html_response(conn, 404) =~ "malformed"
+      assert html_response(conn, 404) =~ "workspace is no longer available"
     end
   end
 
@@ -38,7 +38,7 @@ defmodule EmisarWeb.UnsubscribeControllerTest do
 
     test "404s on a forged token", %{conn: conn} do
       conn = post(conn, ~p"/unsubscribe/monthly-report/nope")
-      assert html_response(conn, 404) =~ "malformed"
+      assert html_response(conn, 404) =~ "workspace is no longer available"
     end
   end
 end

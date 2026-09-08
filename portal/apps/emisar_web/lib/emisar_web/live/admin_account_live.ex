@@ -24,7 +24,7 @@ defmodule EmisarWeb.AdminAccountLive do
     # per view rather than two.
     if connected?(socket),
       do: load_account(socket, id),
-      else: {:ok, assign(socket, page_title: "Account", overview: nil)}
+      else: {:ok, assign(socket, page_title: "Workspace", overview: nil)}
   end
 
   defp load_account(socket, id) do
@@ -37,7 +37,7 @@ defmodule EmisarWeb.AdminAccountLive do
       {:error, :not_found} ->
         {:ok,
          socket
-         |> put_flash(:error, "Account not found.")
+         |> put_flash(:error, "Workspace not found.")
          |> push_navigate(to: ~p"/admin")}
 
       # Staff was revoked mid-session (account_overview re-checks per call). Fail
@@ -54,7 +54,7 @@ defmodule EmisarWeb.AdminAccountLive do
     ~H"""
     <.staff_shell current_user={@current_user}>
       <:title>
-        <.detail_header back="Accounts" navigate={~p"/admin"} title={@page_title} />
+        <.detail_header back="Workspaces" navigate={~p"/admin"} title={@page_title} />
       </:title>
 
       <.loading_state :if={is_nil(@overview)} />
@@ -66,7 +66,7 @@ defmodule EmisarWeb.AdminAccountLive do
           <.meta_field label="Slug">
             <span class="font-mono">{@overview.account.slug}</span>
           </.meta_field>
-          <.meta_field label="Account ID" wrap>
+          <.meta_field label="Workspace ID" wrap>
             <.copyable_id value={@overview.account.id} />
           </.meta_field>
           <.meta_field label="Created">
@@ -128,7 +128,7 @@ defmodule EmisarWeb.AdminAccountLive do
         <div>
           <.section_header title="Members" count={length(@overview.members)} />
           <.empty_state :if={@overview.members == []} variant={:bare} title="No members.">
-            Nobody can sign in to this account.
+            Nobody can sign in to this workspace.
           </.empty_state>
           <ul
             :if={@overview.members != []}
@@ -240,7 +240,7 @@ defmodule EmisarWeb.AdminAccountLive do
             variant={:bare}
             title="No runners enrolled."
           >
-            Nothing in this account can execute an action yet.
+            No runners are registered in this workspace.
           </.empty_state>
           <ul
             :if={@overview.fleet.runners != []}
@@ -283,11 +283,11 @@ defmodule EmisarWeb.AdminAccountLive do
                is why it reads as a subtitle rather than the count badge, which
                everywhere else on this page counts the rows under it. --%>
           <.section_header title="Runs">
-            <:subtitle>{@overview.runs.count_30d} dispatched in the last 30 days.</:subtitle>
+            <:subtitle>{@overview.runs.count_30d} runs created in the last 30 days.</:subtitle>
           </.section_header>
 
           <.empty_state :if={@overview.runs.recent == []} variant={:bare} title="No runs yet.">
-            This account has never dispatched an action.
+            No runs are recorded for this workspace.
           </.empty_state>
           <%!-- Identity, status, and timing only. A run row carries the
                 customer's arguments and output; neither ever renders here. --%>
@@ -328,9 +328,9 @@ defmodule EmisarWeb.AdminAccountLive do
           <.empty_state
             :if={@overview.mcp.recent_clients == []}
             variant={:bare}
-            title="No MCP activity."
+            title="No recent agent runs"
           >
-            No agent has dispatched an action here in the last 30 days.
+            No agent runs are recorded in the last 30 days.
           </.empty_state>
           <ul
             :if={@overview.mcp.recent_clients != []}
@@ -352,7 +352,7 @@ defmodule EmisarWeb.AdminAccountLive do
         <div>
           <.section_header title="Recent audit events" />
           <.empty_state :if={@overview.audit_tail == []} variant={:bare} title="Nothing recorded.">
-            This account's trail is empty.
+            No audit events are recorded for this workspace.
           </.empty_state>
           <ul
             :if={@overview.audit_tail != []}
@@ -390,8 +390,7 @@ defmodule EmisarWeb.AdminAccountLive do
              already names its two action ids; what this adds is where a
              mutation SURFACES — in the customer's trail, like any other run. --%>
         <.status_note icon="interface.cli" title="Where support changes happen">
-          Every mutation enters through the private emisar-admin pack, so it arrives in this
-          account's own audit trail as an ordinary run.
+          Support changes go through audited emisar-admin actions, not this page.
         </.status_note>
       </div>
     </.staff_shell>
@@ -402,6 +401,6 @@ defmodule EmisarWeb.AdminAccountLive do
   # (`legacy_manual`, `past_due`) that no operator says out loud.
   defp humanize_token(token), do: token |> String.replace("_", " ") |> String.capitalize()
 
-  defp api_keys_subtitle(1), do: "1 active API key."
-  defp api_keys_subtitle(count), do: "#{count} active API keys."
+  defp api_keys_subtitle(1), do: "1 unrevoked API key."
+  defp api_keys_subtitle(count), do: "#{count} unrevoked API keys."
 end

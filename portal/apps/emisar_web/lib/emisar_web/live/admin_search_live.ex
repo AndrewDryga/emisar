@@ -12,7 +12,7 @@ defmodule EmisarWeb.AdminSearchLive do
   alias Emisar.Admin
 
   def mount(_params, _session, socket) do
-    socket = socket |> assign(:page_title, "Accounts") |> assign(:query, "")
+    socket = socket |> assign(:page_title, "Workspaces") |> assign(:query, "")
 
     # IL-18: mount runs twice, so the search only reads on the connected pass.
     if connected?(socket),
@@ -50,17 +50,16 @@ defmodule EmisarWeb.AdminSearchLive do
   defp blank_query?(query), do: String.trim(query) == ""
 
   defp results_title(query) do
-    if blank_query?(query), do: "Recent accounts", else: "Matching accounts"
+    if blank_query?(query), do: "Recent workspaces", else: "Matching workspaces"
   end
 
   def render(assigns) do
     ~H"""
     <.staff_shell current_user={@current_user}>
-      <:title>Accounts</:title>
+      <:title>Workspaces</:title>
 
       <.page_intro>
-        Every account on the platform, disabled ones included. Search by account name, slug, or a
-        member's email address.
+        Search workspaces by name, slug, or member email. Disabled workspaces are included.
       </.page_intro>
 
       <%!-- The id is what lets LiveView replay this form after a reconnect, so
@@ -86,20 +85,23 @@ defmodule EmisarWeb.AdminSearchLive do
         <.empty_state
           :if={@accounts == [] and blank_query?(@query)}
           icon="identity.organization"
-          title="No accounts yet."
+          title="No workspaces yet"
         >
-          Nobody has signed up on this deployment.
+          No workspaces have been created on this deployment.
         </.empty_state>
         <.empty_state
           :if={@accounts == [] and not blank_query?(@query)}
           icon="action.search"
-          title="No accounts match this search."
+          title="No workspaces match this search"
         >
-          Try the account slug, or the email address of someone on the team.
+          Try the workspace slug or a member's email address.
         </.empty_state>
 
         <div :if={@accounts != []}>
           <.section_header title={results_title(@query)} count={length(@accounts)} />
+          <p :if={length(@accounts) == 25} class="mb-4 text-sm text-zinc-400">
+            Showing up to 25 workspaces. Refine your search if needed.
+          </p>
           <ul class="divide-y divide-zinc-800/70 border-t border-zinc-800/70">
             <.list_row :for={account <- @accounts} id={"account-#{account.id}"} padding="py-4">
               <:title>

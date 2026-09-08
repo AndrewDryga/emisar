@@ -28,7 +28,7 @@ defmodule EmisarWeb.ErrorHTMLTest do
   describe "500" do
     test "renders a branded page with the support email exposed" do
       html = render_to_string(EmisarWeb.ErrorHTML, "500", "html", %{})
-      assert html =~ "Something broke on our side"
+      assert html =~ "We couldn&#39;t load this page"
       assert html =~ "Error 500"
       assert html =~ "support@emisar.dev"
     end
@@ -46,12 +46,14 @@ defmodule EmisarWeb.ErrorHTMLTest do
   end
 
   describe "403" do
-    test "renders spoken recovery copy, never the raw Forbidden" do
+    test "a permission denial offers the dashboard, not stale-session advice" do
       html = render_to_string(EmisarWeb.ErrorHTML, "403", "html", %{})
 
       assert html =~ "Error 403"
-      assert html =~ "verify that request"
-      assert html =~ "Go back, refresh the page, and try again."
+      assert html =~ "Access denied"
+      assert html =~ "workspace administrator"
+      assert html =~ ~s(href="/app")
+      refute html =~ "session may have expired"
       refute html =~ "Forbidden"
     end
 
@@ -64,6 +66,9 @@ defmodule EmisarWeb.ErrorHTMLTest do
         assert_error_sent(403, fn -> post(conn, ~p"/sign_in/magic/start", %{}) end)
 
       assert body =~ "verify that request"
+      assert body =~ "Your session may have expired"
+      assert body =~ ~s(href="/sign_in")
+      refute body =~ "workspace administrator"
       refute body =~ "Forbidden"
     end
   end

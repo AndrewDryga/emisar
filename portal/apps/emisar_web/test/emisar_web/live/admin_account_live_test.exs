@@ -70,7 +70,7 @@ defmodule EmisarWeb.AdminAccountLiveTest do
       # in the markup — assert the segment that identifies this action.
       assert html =~ "replication_status"
       assert has_element?(live, "#run-#{run.id}")
-      assert html =~ "1 active API key."
+      assert html =~ "1 unrevoked API key."
 
       # The fixture subscription has no Paddle id, so its source (legacy_manual)
       # differs from the plan — the row renders, humanized.
@@ -166,7 +166,7 @@ defmodule EmisarWeb.AdminAccountLiveTest do
       # The redirect happens on the connected mount, so its flash comes back as
       # a signed token — follow it and read the flash where staff would see it.
       {:ok, _live, html} = follow_redirect(result, conn)
-      assert html =~ "Account not found."
+      assert html =~ "Workspace not found."
       assert staff_view_events() == []
     end
   end
@@ -182,7 +182,7 @@ defmodule EmisarWeb.AdminAccountLiveTest do
       assert html =~ "No providers configured."
       assert html =~ "No runners enrolled."
       assert html =~ "No runs yet."
-      assert html =~ "No MCP activity."
+      assert html =~ "No recent agent runs"
       assert html =~ "free"
 
       # A free account's source IS "free" — the row would only restate Plan.

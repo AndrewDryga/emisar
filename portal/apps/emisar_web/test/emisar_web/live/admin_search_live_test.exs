@@ -16,7 +16,7 @@ defmodule EmisarWeb.AdminSearchLiveTest do
 
       {:ok, _live, html} = live(conn, ~p"/admin")
 
-      assert html =~ "Recent accounts"
+      assert html =~ "Recent workspaces"
       assert html =~ account.name
       assert html =~ account.slug
     end
@@ -28,9 +28,39 @@ defmodule EmisarWeb.AdminSearchLiveTest do
       {:ok, live, _html} = live(conn, ~p"/admin")
       html = render_change(form(live, "form"), %{"query" => account.slug})
 
-      assert html =~ "Matching accounts"
+      assert html =~ "Matching workspaces"
       assert html =~ account.name
       refute html =~ other_account.name
+    end
+
+    test "a capped result set explains the limit and search can narrow it", %{conn: conn} do
+      accounts =
+        for index <- 1..26,
+            do: Fixtures.Accounts.create_account(name: "Searchable Workspace #{index}")
+
+      {:ok, lv, _html} = live(conn, ~p"/admin")
+      html = lv |> form("form", %{query: "Searchable Workspace"}) |> render_change()
+
+      assert html
+             |> LazyHTML.from_document()
+             |> LazyHTML.query("li[id^=account-]")
+             |> Enum.count() ==
+               25
+
+      assert html =~ "Showing up to 25 workspaces"
+
+      account = hd(accounts)
+      html = lv |> form("form", %{query: account.slug}) |> render_change()
+
+      assert has_element?(lv, "#account-#{account.id}")
+
+      assert html
+             |> LazyHTML.from_document()
+             |> LazyHTML.query("li[id^=account-]")
+             |> Enum.count() ==
+               1
+
+      refute html =~ "Showing up to 25 workspaces"
     end
 
     test "a crafted search event with a non-binary query does not crash the socket", %{conn: conn} do
@@ -56,8 +86,8 @@ defmodule EmisarWeb.AdminSearchLiveTest do
       {:ok, live, _html} = live(conn, ~p"/admin")
       html = render_change(form(live, "form"), %{"query" => "nothing-matches-this"})
 
-      assert html =~ "No accounts match this search."
-      refute html =~ "Matching accounts"
+      assert html =~ "No workspaces match this search"
+      refute html =~ "Matching workspaces"
     end
 
     test "the typed query survives the render round-trip", %{conn: conn} do

@@ -18,36 +18,54 @@ defmodule EmisarWeb.ErrorHTML do
     statics: EmisarWeb.static_paths()
 
   import EmisarWeb.MarketingComponents, only: [brand: 1]
+  import EmisarWeb.CoreComponents, only: [button: 1]
 
   def render("404.html", _assigns) do
     error_page(%{
       status: 404,
       title: "Page not found",
       message:
-        "The page you're looking for doesn't exist, or the link you followed is out of date. Check the URL or head back to the dashboard."
+        "This page may have moved or been removed. Check the address, or return to your dashboard.",
+      action: "Open dashboard",
+      href: "/app"
     })
   end
 
   # The common path here is a stale-session CSRF failure — a form that sat
   # open until the session expired, then POSTed. Spoken recovery copy, not
   # the raw "Forbidden".
-  def render("403.html", _assigns) do
+  def render("403.html", %{reason: %Plug.CSRFProtection.InvalidCSRFTokenError{}}) do
     error_page(%{
       status: 403,
       title: "We couldn't verify that request",
       message:
-        "This usually happens when a page sat open long enough for your session to expire. Go back, refresh the page, and try again."
+        "Your session may have expired. Go back, refresh the page, and try again. If that doesn't help, sign in again.",
+      action: "Sign in again",
+      href: "/sign_in"
+    })
+  end
+
+  def render("403.html", _assigns) do
+    error_page(%{
+      status: 403,
+      title: "Access denied",
+      message:
+        "You don't have permission to open this page or make this change. Check that you're signed in with the right email, or ask your workspace administrator for access.",
+      action: "Open dashboard",
+      href: "/app"
     })
   end
 
   def render("500.html", _assigns) do
     error_page(%{
       status: 500,
-      title: "Something broke on our side",
+      title: "We couldn't load this page",
       # No promise of a page: on-call is alerted on a sustained 5xx rate, so a
       # single error reaches our logs and nobody's phone.
       message:
-        "We hit an unexpected error, and it's recorded on our side. Try again in a moment; if it keeps happening, ping support@emisar.dev — include the URL and roughly when it happened."
+        "An unexpected server error stopped this request. Try again in a moment. If it keeps happening, contact support@emisar.dev with the page address and when it happened.",
+      action: "Return to dashboard",
+      href: "/app"
     })
   end
 
@@ -58,7 +76,9 @@ defmodule EmisarWeb.ErrorHTML do
     error_page(%{
       status: template_to_status(template),
       title: status,
-      message: "Something went wrong. Try heading back and trying again."
+      message: "We couldn't complete this request. Return to your dashboard and try again.",
+      action: "Open dashboard",
+      href: "/app"
     })
   end
 
@@ -86,29 +106,19 @@ defmodule EmisarWeb.ErrorHTML do
             <.brand />
           </a>
 
-          <p class="mt-10 text-xs font-semibold uppercase tracking-[0.18em] text-zinc-500">
+          <p class="mt-10 text-xs font-semibold uppercase tracking-wider text-zinc-400">
             Error {@status}
           </p>
-          <h1 class="mt-2 text-2xl font-semibold tracking-tight text-zinc-50">
+          <h1 class="mt-2 text-balance text-2xl font-semibold tracking-tight text-zinc-50">
             {@title}
           </h1>
           <p class="mt-3 text-sm leading-relaxed text-zinc-400">
             {@message}
           </p>
 
-          <div class="mt-8 flex items-center justify-center gap-3">
-            <a
-              href="/"
-              class="rounded-lg bg-brand-500 px-4 py-2 text-sm font-semibold text-zinc-950 hover:bg-brand-400"
-            >
-              Back to home
-            </a>
-            <a
-              href="/app"
-              class="rounded-lg border border-zinc-800 px-4 py-2 text-sm font-medium text-zinc-300 hover:bg-zinc-900"
-            >
-              Open dashboard
-            </a>
+          <div class="mt-8 flex flex-wrap items-center justify-center gap-3">
+            <.button href={@href}>{@action}</.button>
+            <.button href="/" variant={:secondary}>Back to home</.button>
           </div>
         </main>
       </body>
