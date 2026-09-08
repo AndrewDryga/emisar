@@ -932,7 +932,24 @@ func packTestDockerLog(t *testing.T, root string) string {
 	script := "#!/bin/sh\n" +
 		"printf '%s|%s\\n' \"$COMPOSE_PROJECT_NAME\" \"$*\" >> \"$COMMAND_LOG\"\n" +
 		"if [ -n \"$BLOCK_RUN\" ]; then case \" $* \" in *\" run \"*) while :; do :; done ;; esac; fi\n" +
-		"if [ -n \"$FAIL_RUN\" ]; then case \" $* \" in *\" run \"*) exit 1 ;; esac; fi\n"
+		"if [ -n \"$FAIL_RUN\" ]; then case \" $* \" in *\" run \"*) exit 1 ;; esac; fi\n" +
+		"case \" $* \" in\n" +
+		"  *\" ps \"*\" --quiet \"*) printf 'fixture-container\\n' ;;\n" +
+		"  *\" ps \"*) printf 'fixture-container-state\\n' ;;\n" +
+		"  *\" logs \"*) printf 'fixture-sut-log\\n' ;;\n" +
+		"  *\" inspect \"*) printf 'fixture-inspect-state\\n' ;;\n" +
+		"  *\" down \"*) if [ -n \"$EVIDENCE_REPORT\" ]; then\n" +
+		"    failed= state= logs= inspect=\n" +
+		"    while IFS= read -r line; do case \"$line\" in\n" +
+		"      *'Case failed before cleanup:'*) failed=1 ;;\n" +
+		"      fixture-container-state) state=1 ;;\n" +
+		"      fixture-sut-log) logs=1 ;;\n" +
+		"      fixture-inspect-state) inspect=1 ;;\n" +
+		"    esac; done < \"$EVIDENCE_REPORT\"\n" +
+		"    [ \"$failed$state$logs$inspect\" = 1111 ] || exit 2\n" +
+		"    printf 'Evidence persisted before teardown\\n'\n" +
+		"  fi ;;\n" +
+		"esac\n"
 	if err := os.WriteFile(filepath.Join(bin, "docker"), []byte(script), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -976,6 +993,12 @@ func TestRunPackTestCaseAlwaysTearsDownItsComposeProject(t *testing.T) {
 	run := compose + "run --rm --no-deps --entrypoint /opt/emisar/bin/packtest -e PACKTEST_VERSION=18.4 runner-tools " +
 		"--pack postgres --case uptime --reports /tmp/packtest-reports"
 	down := compose + "down -v --remove-orphans"
+	evidence := []string{
+		compose + "ps --all --no-trunc --format json",
+		compose + "logs --no-color --timestamps postgres",
+		compose + "ps --all --quiet",
+		"inspect fixture-container",
+	}
 
 	tests := []struct {
 		name         string
@@ -986,7 +1009,10 @@ func TestRunPackTestCaseAlwaysTearsDownItsComposeProject(t *testing.T) {
 		wantErr      string
 	}{
 		{name: "a passing case tears down once", want: []string{up, run, down}},
-		{name: "an interrupted run still tears down", interruptRun: true, want: []string{up, run, down}, wantErr: "docker compose"},
+		{name: "an interrupted run preserves evidence before teardown", interruptRun: true,
+			want: append(append([]string{up, run}, evidence...), down), wantErr: "docker compose"},
+		{name: "a failed run preserves evidence before teardown", failRun: "1",
+			want: append(append([]string{up, run}, evidence...), down), wantErr: "docker compose"},
 		{
 			name:    "a panic tears down while unwinding",
 			failRun: "1",
@@ -1070,6 +1096,13 @@ func TestRunPackTestCaseAlwaysTearsDownItsComposeProject(t *testing.T) {
 			got := strings.Split(strings.TrimSpace(string(data)), "\n")
 			if !slices.Equal(got, want) {
 				t.Fatalf("commands:\n%s\nwant:\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
+			}
+			if test.wantErr != "" {
+				for _, proof := range []string{"fixture-container-state", "fixture-sut-log", "fixture-inspect-state"} {
+					if !strings.Contains(output.String(), proof) {
+						t.Errorf("missing %s in failed case evidence:\n%s", proof, output.String())
+					}
+				}
 			}
 		})
 	}

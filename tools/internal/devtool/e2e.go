@@ -82,7 +82,7 @@ func (a *App) e2eSSO(ctx context.Context) error {
 		// service that exits during startup takes its reason to the grave and
 		// CI shows an unexplained exit status. Dump the same evidence the pack
 		// harness does before the deferred teardown removes the containers.
-		a.capturePackTestEvidence(ctx, []string{"compose"}, env, []string{"portal", "keycloak", "db"})
+		a.capturePackTestEvidence([]string{"compose"}, env, []string{"portal", "keycloak", "db"})
 		return err
 	}
 	if err := compose(ctx, "run", "--rm", "seeder"); err != nil {
@@ -108,7 +108,7 @@ func (a *App) e2eSSO(ctx context.Context) error {
 		// does — the harness only sees the browser's last URL, which says a redirect
 		// did not happen but never why. The deferred teardown removes the containers
 		// moments later, so capture it here or lose it.
-		a.capturePackTestEvidence(ctx, []string{"compose"}, env, []string{"portal", "keycloak"})
+		a.capturePackTestEvidence([]string{"compose"}, env, []string{"portal", "keycloak"})
 		return err
 	}
 	return nil

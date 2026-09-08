@@ -197,9 +197,11 @@ exception: it is tagged by the bytes of its Dockerfile, so every run and every
 checkout reuses one build and changed content lands on a new tag.
 
 Each case report records the pack and SUT versions, image digest, execution
-identity, resolved images, action result, and durations. Failures also capture
-Compose health, container inspect data, SUT logs, and cleanup errors. CI uploads
-the complete reports directory for a failed matrix row.
+identity, resolved images, action result, and durations. Reports are written as
+cases run. Failures and cancellations capture Compose health, container inspect
+data, and SUT logs before teardown; cleanup errors are recorded too. CI stops
+execution before the job deadline to leave time for diagnostics, cleanup, and
+uploading the reports. A hard process kill can still interrupt that work.
 
 ## Running
 

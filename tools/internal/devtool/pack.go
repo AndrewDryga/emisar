@@ -183,7 +183,7 @@ func (a *App) packTest(ctx context.Context, pattern string, names []string, case
 				return err
 			}
 			overrides[plan.Name] = override
-			fmt.Fprintf(a.Out, "Hostile limits: %s (1 CPU, 1536 MiB, 512 PIDs per SUT)\n", plan.Name)
+			fmt.Fprintf(a.Out, "Hostile limits: %s (1 CPU, 1536 MiB, %d PIDs per SUT)\n", plan.Name, packTestHostilePIDs)
 		}
 		resolved, err := a.preparePackTestPlan(ctx, baseCompose, overrides[plan.Name], invocationID, runnerImage, plan, versionEnv)
 		if err != nil {
@@ -222,20 +222,7 @@ func (a *App) packTest(ctx context.Context, pattern string, names []string, case
 		go func() {
 			defer workers.Done()
 			for job := range jobs {
-				var output bytes.Buffer
-				writePackTestReportHeader(&output, job.Plan, job.Case.ID, job.VersionEnv, job.Case.RunnerUser)
-				worker := New(a.Root, nil, &output, &output)
-				started := time.Now()
-				runErr := worker.runPackTestCase(ctx, baseCompose, runnerImage, job)
-				duration := time.Since(started).Round(time.Millisecond)
-				fmt.Fprintf(&output, "\nCase duration: %s\n", duration)
-				if runErr != nil {
-					fmt.Fprintf(&output, "\nError: %v\n", runErr)
-				}
-				results <- packTestCaseResult{
-					Plan: job.Plan, Case: job.Case, Duration: duration,
-					Output: output.Bytes(), Err: runErr,
-				}
+				results <- a.runPackTestJob(ctx, baseCompose, runnerImage, reports, job)
 			}
 		}()
 	}
@@ -246,14 +233,6 @@ func (a *App) packTest(ctx context.Context, pattern string, names []string, case
 
 	completed := make([]packTestCaseResult, 0, len(queued))
 	for result := range results {
-		reportDir := filepath.Join(reports, result.Plan.Name)
-		if err := os.MkdirAll(reportDir, 0o755); err != nil {
-			result.Err = errors.Join(result.Err, fmt.Errorf("create report directory: %w", err))
-		}
-		reportPath := filepath.Join(reportDir, result.Case.ID+".log")
-		if err := os.WriteFile(reportPath, result.Output, 0o644); err != nil {
-			result.Err = errors.Join(result.Err, fmt.Errorf("write report: %w", err))
-		}
 		completed = append(completed, result)
 		status := "PASS"
 		if result.Err != nil {
@@ -444,6 +423,56 @@ type packTestCaseResult struct {
 	Err      error
 }
 
+type packTestReport struct {
+	output bytes.Buffer
+	file   io.Writer
+	err    error
+}
+
+func (r *packTestReport) Write(data []byte) (int, error) {
+	r.output.Write(data)
+	n, err := r.file.Write(data)
+	if r.err == nil {
+		r.err = err
+	}
+	return n, err
+}
+
+func (a *App) runPackTestJob(ctx context.Context, baseCompose, runnerImage, reports string, job packTestJob) packTestCaseResult {
+	result := packTestCaseResult{Plan: job.Plan, Case: job.Case}
+	reportDir := filepath.Join(reports, job.Plan.Name)
+	if err := os.MkdirAll(reportDir, 0o755); err != nil {
+		result.Err = fmt.Errorf("create report directory: %w", err)
+		return result
+	}
+	report, err := os.Create(filepath.Join(reportDir, job.Case.ID+".log"))
+	if err != nil {
+		result.Err = fmt.Errorf("create report: %w", err)
+		return result
+	}
+	defer report.Close()
+	// Persist as the case runs: teardown or a hard process kill must not erase
+	// everything that was already observed inside an in-memory worker buffer.
+	writer := &packTestReport{file: report}
+	writePackTestReportHeader(writer, job.Plan, job.Case.ID, job.VersionEnv, job.Case.RunnerUser)
+	worker := New(a.Root, nil, writer, writer)
+	started := time.Now()
+	result.Err = worker.runPackTestCase(ctx, baseCompose, runnerImage, job)
+	result.Duration = time.Since(started).Round(time.Millisecond)
+	fmt.Fprintf(writer, "\nCase duration: %s\n", result.Duration)
+	if result.Err != nil {
+		fmt.Fprintf(writer, "\nError: %v\n", result.Err)
+	}
+	if err := report.Close(); err != nil {
+		result.Err = errors.Join(result.Err, fmt.Errorf("close report: %w", err))
+	}
+	if writer.err != nil {
+		result.Err = errors.Join(result.Err, fmt.Errorf("write report: %w", writer.err))
+	}
+	result.Output = writer.output.Bytes()
+	return result
+}
+
 func (a *App) preparePackTestPlan(
 	ctx context.Context,
 	baseCompose string,
@@ -548,6 +577,11 @@ func retryPackTestPull(ctx context.Context, backoff time.Duration, log io.Writer
 }
 
 func (a *App) runPackTestCase(ctx context.Context, baseCompose, runnerImage string, job packTestJob) (err error) {
+	// Queued cases own no resources yet. On cancellation, report them without
+	// spending another evidence/cleanup budget or starting a new Compose project.
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	packCompose := filepath.Join(filepath.Dir(job.Plan.Path), "compose.yaml")
 	compose := packTestComposeArgs(baseCompose, packCompose, job.ComposeExtra)
 	env := packTestComposeEnv(
@@ -573,7 +607,7 @@ func (a *App) runPackTestCase(ctx context.Context, baseCompose, runnerImage stri
 		if cleanupErr == nil {
 			return
 		}
-		a.capturePackTestEvidence(cleanupCtx, compose, env, job.Plan.Services)
+		a.capturePackTestEvidence(compose, env, job.Plan.Services)
 		err = errors.Join(err, fmt.Errorf("cleanup: %w", cleanupErr))
 	}()
 
@@ -591,7 +625,8 @@ func (a *App) runPackTestCase(ctx context.Context, baseCompose, runnerImage stri
 		runErr = fmt.Errorf("setup: %w", setupErr)
 	}
 	if runErr != nil {
-		a.capturePackTestEvidence(ctx, compose, env, job.Plan.Services)
+		fmt.Fprintf(a.Out, "\nCase failed before cleanup: %v\n", runErr)
+		a.capturePackTestEvidence(compose, env, job.Plan.Services)
 	}
 	return runErr
 }
@@ -614,6 +649,8 @@ type hostilePackTestService struct {
 	PidsLimit int    `yaml:"pids_limit"`
 }
 
+const packTestHostilePIDs = 4096
+
 // Hostile mode starves a SUT the way a busy runner host does, so a case that
 // only passes on an idle workstation fails here instead of in production.
 //
@@ -631,7 +668,7 @@ type hostilePackTestService struct {
 func writePackTestHostileOverride(reports string, plan packtest.PlanRef) (string, error) {
 	services := make(map[string]hostilePackTestService, len(plan.Services))
 	for _, service := range plan.Services {
-		services[service] = hostilePackTestService{CPUs: "1.0", MemLimit: "1536m", PidsLimit: 4096}
+		services[service] = hostilePackTestService{CPUs: "1.0", MemLimit: "1536m", PidsLimit: packTestHostilePIDs}
 	}
 	data, err := yaml.Marshal(hostilePackTestCompose{Services: services})
 	if err != nil {
@@ -735,7 +772,11 @@ func packTestComposeEnv(
 	return env
 }
 
-func (a *App) capturePackTestEvidence(ctx context.Context, compose []string, env map[string]string, services []string) {
+func (a *App) capturePackTestEvidence(compose []string, env map[string]string, services []string) {
+	// Failure evidence outlives the case's canceled execution context, but is
+	// bounded independently so it cannot consume the teardown/upload window.
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
 	fmt.Fprintln(a.Out, "\n=== failure evidence ===")
 	for _, command := range [][]string{
 		append(append([]string{}, compose...), "ps", "--all", "--no-trunc", "--format", "json"),

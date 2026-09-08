@@ -147,6 +147,12 @@ jobs:
       PACKTEST_MIRROR_REGISTRY: ${{ needs.tools.outputs.mirror_registry }}
       SHARD: ${{ matrix.shard }}/${{ matrix.shards }}
     steps:
+      - name: Reserve time for failure evidence and cleanup
+        # The 20-minute job limit includes setup. Stop execution at minute 17,
+        # leaving up to two minutes for bounded diagnostics/teardown and one
+        # for artifact upload, rather than letting the hard timeout kill both.
+        run: echo "PACKTEST_DEADLINE_UNIX=$(( $(date +%s) + 17 * 60 ))" >> "$GITHUB_ENV"
+
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -200,10 +206,17 @@ jobs:
       - name: Exercise pack behavior
         # Resource pressure reproduces runner-shaped starvation; the Linux host
         # still remains the authority for uid ownership and AppArmor.
-        run: ./run test packs "$PACK" --shard "$SHARD" --hostile
+        run: |
+          remaining=$(( PACKTEST_DEADLINE_UNIX - $(date +%s) ))
+          if (( remaining <= 0 )); then
+            echo "Pack setup exhausted the execution budget; reserving cleanup and upload time." >&2
+            exit 1
+          fi
+          timeout --signal=TERM --kill-after=2m "${remaining}s" \
+            ./run test packs "$PACK" --shard "$SHARD" --hostile
 
       - name: Upload failed pack report
-        if: failure()
+        if: failure() || cancelled()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: pack-behavior-${{ matrix.pack }}-${{ matrix.version }}-${{ matrix.shard }}
