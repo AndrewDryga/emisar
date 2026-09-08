@@ -239,7 +239,7 @@ defmodule EmisarWeb.PoliciesLive do
 
       editor ->
         if editor_dirty?(editor) do
-          {:noreply, put_flash(socket, :error, "Save or remove this draft before closing it.")}
+          {:noreply, put_flash(socket, :error, "Save your changes before closing this ruleset.")}
         else
           {:noreply, drop_editor(socket, uid)}
         end
@@ -402,8 +402,10 @@ defmodule EmisarWeb.PoliciesLive do
 
     case save_fun.(rules, socket.assigns.current_subject) do
       {:ok, policy} ->
-        {:noreply,
-         socket |> put_flash(:info, "Policy saved.") |> replace_saved(editor.uid, policy)}
+        message =
+          if editor.scope_type == :account, do: "Default policy saved.", else: "Ruleset saved."
+
+        {:noreply, socket |> put_flash(:info, message) |> replace_saved(editor.uid, policy)}
 
       # The UI prevents invalid policies (constrained selects + monotonic
       # enforcement + partial rows blocked + untouched blank rows dropped), so
@@ -422,7 +424,7 @@ defmodule EmisarWeb.PoliciesLive do
         {:noreply, put_flash(socket, :error, "That group isn't in your fleet.")}
 
       {:error, _reason} ->
-        {:noreply, put_flash(socket, :error, "Could not save policy.")}
+        {:noreply, put_flash(socket, :error, "Couldn't save your changes. Try again.")}
     end
   end
 
@@ -460,14 +462,14 @@ defmodule EmisarWeb.PoliciesLive do
       {:ok, _deleted} ->
         {:noreply,
          socket
-         |> put_flash(:info, "Ruleset removed — that scope falls back to the default policy.")
+         |> put_flash(:info, "Ruleset removed.")
          |> drop_editor(uid)
          |> refresh_target_availability()
          |> refresh_open_target_options()
          |> load_summaries(socket.assigns.filter_params)}
 
       {:error, _reason} ->
-        {:noreply, put_flash(socket, :error, "Could not remove ruleset.")}
+        {:noreply, put_flash(socket, :error, "Couldn't remove this ruleset. Try again.")}
     end
   end
 
@@ -570,13 +572,13 @@ defmodule EmisarWeb.PoliciesLive do
     fewer_approvals =
       if scoped["min_approvals"] < default["min_approvals"],
         do: [
-          "requires fewer approvals (#{scoped["min_approvals"]} vs #{default["min_approvals"]})"
+          "Requires #{scoped["min_approvals"]} #{approval_approvers_noun(scoped["min_approvals"])} instead of #{default["min_approvals"]}."
         ],
         else: []
 
     self_approval =
       if scoped["allow_self_approval"] and not default["allow_self_approval"],
-        do: ["lets the requester approve their own action"],
+        do: ["Allows self-approval, which the default policy does not."],
         else: []
 
     fewer_approvals ++ self_approval
@@ -587,14 +589,13 @@ defmodule EmisarWeb.PoliciesLive do
   defp single_reviewer_gate?(approval),
     do: approval["allow_self_approval"] && approval["min_approvals"] == 1
 
-  # Singular when exactly one approval is required — "1 distinct operators" is wrong,
-  # and "distinct" is meaningless for a single approver (nothing to be distinct from).
-  defp approval_operators_noun(min_approvals) do
-    if min_approvals == 1, do: "operator", else: "distinct operators"
+  defp approval_people_noun(min_approvals) do
+    if min_approvals == 1, do: "person", else: "different people"
   end
 
-  defp weakening_sentence([one]), do: one
-  defp weakening_sentence(many), do: Enum.join(many, " and ")
+  defp approval_approvers_noun(min_approvals) do
+    if min_approvals == 1, do: "approver", else: "approvers"
+  end
 
   # LiveView posts a repeated field group as an index-keyed map; the domain
   # takes an ordered list.
@@ -938,7 +939,7 @@ defmodule EmisarWeb.PoliciesLive do
         icon="state.warning"
         title="Couldn't load the default policy"
       >
-        Refresh the page to try again. No changes have been saved.
+        Refresh the page to try again.
       </.empty_state>
 
       <div :if={not @loading? and not @account_error?} class="space-y-12">
@@ -950,11 +951,6 @@ defmodule EmisarWeb.PoliciesLive do
             <.doc_link href={~p"/docs/policies-and-approvals"}>Policy docs</.doc_link>
           </.page_intro>
 
-          <%!-- A quiet naked line, not a boxed note — the viewer fact isn't an
-               actionable warning (§8.1). --%>
-          <p :if={not @has_runner_access?} class="text-xs text-zinc-400">
-            No runners in your access. The default policy is read-only, and targeted rulesets are hidden.
-          </p>
           <p :if={@has_runner_access? and not @can_manage?} class="text-xs text-zinc-400">
             You can view the policy, but only owners and admins can change it.
           </p>
@@ -962,7 +958,7 @@ defmodule EmisarWeb.PoliciesLive do
             :if={@has_runner_access? and @can_manage? and not @can_manage_scoped?}
             class="text-xs text-zinc-400"
           >
-            Policy rules can affect every pack on their target. Full pack access is required to change them.
+            Access to all packs is required to edit policy rules.
           </p>
         </div>
 
@@ -971,13 +967,25 @@ defmodule EmisarWeb.PoliciesLive do
              over that target's catalog, shown as allow / needs-approval / deny.
              The editor sits naked on the canvas; the only boxes are the
              self-contained controls and the earned amber warnings. --%>
-        <section>
+        <section id="default-policy">
           <.section_header title="Default policy">
+            <:badge :if={not @has_runner_access?}>
+              <.chip
+                id="policy-read-only"
+                tone={:neutral}
+                icon="state.locked"
+                baseline
+              >
+                Read-only
+              </.chip>
+            </:badge>
             <:subtitle>
               <%= if @has_runner_access? do %>
-                The base decision for every runner, by risk tier — unless a targeted ruleset below overrides it.
+                Applies when a runner has no matching runner or group ruleset.
               <% else %>
-                The base decision for every runner, by risk tier.
+                <span id="policy-runner-access-notice">
+                  You don't have access to any runners. You can view only the default policy.
+                </span>
               <% end %>
             </:subtitle>
             <%!-- Navigation, but the SAME verb repeats on every targeted-ruleset
@@ -993,7 +1001,7 @@ defmodule EmisarWeb.PoliciesLive do
                 size={:lg}
                 class="h-10"
               >
-                View activity
+                View audit trail
               </.button>
             </:actions>
           </.section_header>
@@ -1002,7 +1010,7 @@ defmodule EmisarWeb.PoliciesLive do
             :if={@can_manage_scoped? and not @can_manage_account?}
             class="mb-4 text-xs text-zinc-400"
           >
-            The default applies to every runner. Full runner access is required to change it.
+            Access to all runners is required to edit the default policy.
           </p>
 
           <div class="grid grid-cols-1 gap-8 lg:grid-cols-4 lg:items-start">
@@ -1030,7 +1038,6 @@ defmodule EmisarWeb.PoliciesLive do
                 approval={@account.approval}
                 catalog_path={~p"/app/#{@current_account}/packs"}
                 catalog_visible?={@has_runner_access?}
-                target="your fleet"
               />
             </aside>
           </div>
@@ -1040,8 +1047,8 @@ defmodule EmisarWeb.PoliciesLive do
           <.section_header title="Targeted rulesets">
             <:subtitle>
               A ruleset <strong class="text-zinc-300">replaces</strong>
-              the default policy for one runner or group. Most specific wins — runner,
-              then group, then the default policy.
+              the default policy, including action overrides and approval requirements.
+              Runner rules take priority over group rules.
             </:subtitle>
           </.section_header>
 
@@ -1051,8 +1058,7 @@ defmodule EmisarWeb.PoliciesLive do
             icon="state.warning"
             title="Couldn't load targeted rulesets"
           >
-            This is a load error, not an empty configuration — rulesets may well be set.
-            Refresh the page; if it persists, your access to this account may have changed.
+            Refresh the page to try again.
           </.empty_state>
 
           <%!-- Viewer with nothing to see gets the quiet fact; for a manager
@@ -1064,7 +1070,7 @@ defmodule EmisarWeb.PoliciesLive do
             }
             class="text-sm text-zinc-400"
           >
-            No targeted rulesets — every runner uses the default policy above.
+            No targeted rulesets for the runners you can access.
           </p>
 
           <div id="saved-policies" phx-update="stream" class="divide-y divide-zinc-800/70">
@@ -1123,9 +1129,9 @@ defmodule EmisarWeb.PoliciesLive do
                 class="mt-2 text-xs text-zinc-400"
               >
                 <%= if @target_available == {:ok, false} do %>
-                  Every runner and group already has a ruleset (or none exist yet)
+                  No runners or groups are available for a new ruleset.
                 <% else %>
-                  Couldn't load the runners and groups a ruleset targets. Refresh the page to try again.
+                  Couldn't load runners and groups. Refresh the page to try again.
                 <% end %>
               </p>
             </div>
@@ -1143,10 +1149,6 @@ defmodule EmisarWeb.PoliciesLive do
   attr :approval, :map, required: true
   attr :catalog_path, :string, required: true, doc: "link to the full action catalog (Packs)"
   attr :catalog_visible?, :boolean, default: true
-
-  attr :target, :string,
-    required: true,
-    doc: "who this policy applies to, e.g. \"your fleet\" or a group name"
 
   # The side rail: apply the LIVE rules to the target's catalog and preview the
   # decision — allow / needs-approval / deny, with a few example actions — so the
@@ -1170,13 +1172,15 @@ defmodule EmisarWeb.PoliciesLive do
     ~H"""
     <div id={"policy-rail-" <> @editor_id} class="space-y-5">
       <div>
-        <h3 class="text-[11px] font-semibold uppercase tracking-wider text-zinc-400">In effect</h3>
+        <h3 class="text-[11px] font-semibold uppercase tracking-wider text-zinc-400">
+          Policy preview
+        </h3>
         <p :if={@preview == :pending} class="mt-1 text-xs text-zinc-400" role="status">
           Updating preview…
         </p>
         <div :if={match?({:error, _}, @preview)} class="mt-1 space-y-2 text-xs text-zinc-400">
           <%= if @preview == {:error, :no_access} do %>
-            No action catalog is visible without runner access.
+            No actions are available to preview with your current access.
           <% else %>
             Couldn't update the preview. Your edits are preserved.
             <.button
@@ -1188,9 +1192,8 @@ defmodule EmisarWeb.PoliciesLive do
           <% end %>
         </div>
         <p :if={is_integer(@total) and @total > 0} class="mt-1 text-xs leading-relaxed text-zinc-400">
-          What this policy decides for {@target}'s
-          <span class="font-medium text-zinc-300">{@total}</span>
-          {ngettext_action(@total)}.
+          How these rules would handle <span class="font-medium text-zinc-300">{@total}</span>
+          reported {ngettext_action(@total)}. Includes unsaved changes; other rulesets aren't included.
         </p>
         <%!-- No catalog yet: the empty note stands in as the subtitle — no
              "…for your fleet's 0 actions." line to state a count of nothing. --%>
@@ -1198,13 +1201,17 @@ defmodule EmisarWeb.PoliciesLive do
           :if={@total == 0 and not @catalog_visible?}
           class="mt-1 text-xs leading-relaxed text-zinc-400"
         >
-          No action catalog is visible without runner access.
+          No actions are available to preview with your current access.
         </p>
         <p
           :if={@total == 0 and @catalog_visible?}
           class="mt-1 text-xs leading-relaxed text-zinc-400"
         >
-          No actions advertised on this target yet — decisions appear once a runner reports its catalog.
+          <%= if @editor_id == "account" do %>
+            No actions reported by your runners yet.
+          <% else %>
+            No actions reported for this runner or group yet.
+          <% end %>
         </p>
       </div>
 
@@ -1215,19 +1222,19 @@ defmodule EmisarWeb.PoliciesLive do
       </div>
 
       <%!-- The catalog's danger profile — the counts the tier decisions above act
-           on. Compact: pill + count, most-severe first. "View all" opens the full
+           on. Compact: pill + count, most-severe first. "View packs" opens the full
            action catalog (Packs) in a new tab, so an in-flight edit is untouched. --%>
       <div :if={is_integer(@total) and @total > 0} class="border-t border-zinc-800/70 pt-4">
         <div class="flex items-baseline justify-between">
           <h3 class="text-[10px] font-semibold uppercase tracking-wider text-zinc-400">
-            Catalog by risk
+            Actions by risk
           </h3>
           <.link
             href={@catalog_path}
             target="_blank"
-            class="inline-flex items-center gap-0.5 text-[10px] font-medium text-zinc-400 hover:text-zinc-300"
+            class="text-[10px] font-medium text-zinc-400 hover:text-zinc-300"
           >
-            View all <.icon name="action.external_link" class="h-2.5 w-2.5" />
+            View packs <.icon name="action.external_link" class="h-2.5 w-2.5" />
           </.link>
         </div>
         <dl class="mt-3 space-y-2">
@@ -1258,7 +1265,7 @@ defmodule EmisarWeb.PoliciesLive do
     """
   end
 
-  # The effective-state rail is the warning's one home. The approval controls
+  # The preview rail is the warning's one home. The approval controls
   # already show the selected posture; repeating the consequence there makes
   # the same warning compete with itself on the page.
   defp single_reviewer_warning(assigns) do
@@ -1266,10 +1273,10 @@ defmodule EmisarWeb.PoliciesLive do
     <.event_block
       tone={:amber}
       icon="security.posture_warning"
-      title="In effect — a single approval is enough, and the requester may approve their own request"
+      title="No independent approval required"
       size={:compact}
     >
-      <:body>Choose a different operator, or raise the count, to add independent review.</:body>
+      <:body>A requester with approval permission can provide the only approval needed.</:body>
     </.event_block>
     """
   end
@@ -1352,13 +1359,13 @@ defmodule EmisarWeb.PoliciesLive do
                 size={:lg}
                 class="h-10"
               >
-                View activity
+                View audit trail
               </.button>
               <.confirm_button
                 :if={@can_manage}
                 id={"remove-ruleset-#{@ruleset.uid}"}
                 title="Remove this ruleset?"
-                confirm_label="Remove ruleset"
+                confirm_label="Remove"
                 variant={:secondary}
                 tone={:rose}
                 size={:lg}
@@ -1366,7 +1373,13 @@ defmodule EmisarWeb.PoliciesLive do
                 class="h-10"
                 on_confirm={JS.push("remove_ruleset", value: %{uid: @ruleset.uid})}
               >
-                <:body>This {@ruleset.scope_type} falls back to the default policy.</:body>
+                <:body>
+                  <%= if @ruleset.scope_type == :runner do %>
+                    This runner will use its group's ruleset, if one exists. Otherwise, the default policy applies.
+                  <% else %>
+                    Runners in this group will use the default policy unless they have their own ruleset.
+                  <% end %>
+                </:body>
                 Remove
               </.confirm_button>
             </div>
@@ -1430,6 +1443,9 @@ defmodule EmisarWeb.PoliciesLive do
           <p :if={@ruleset.target_error} role="alert" class="mt-2 text-xs text-rose-300">
             {@ruleset.target_error}
           </p>
+          <p class="mt-4 text-xs text-zinc-400">
+            Starts with the current default rules. Later changes to the default won't update this ruleset.
+          </p>
           <LiveTable.paginator
             id={"policy-targets-#{@ruleset.uid}"}
             path={~p"/app/#{@current_account}/policies"}
@@ -1454,9 +1470,6 @@ defmodule EmisarWeb.PoliciesLive do
           save_label="Save ruleset"
           dirty={editor_dirty?(@ruleset)}
         />
-        <p :if={is_nil(@ruleset.scope_type)} class="mt-4 text-xs text-zinc-400">
-          Pick a runner or group above, then set its rules.
-        </p>
       </div>
       <aside :if={@ruleset.scope_type} class="lg:col-span-1">
         <.policy_rail
@@ -1466,7 +1479,6 @@ defmodule EmisarWeb.PoliciesLive do
           overrides={@ruleset.overrides}
           approval={@ruleset.approval}
           catalog_path={@catalog_path}
-          target={@ruleset.target_label}
         />
       </aside>
     </div>
@@ -1549,16 +1561,23 @@ defmodule EmisarWeb.PoliciesLive do
 
       <div>
         <h3 class="text-[10px] font-semibold uppercase tracking-wider text-zinc-400">
-          Per-action overrides
+          Action overrides
         </h3>
         <p class="mt-0.5 text-xs text-zinc-400">
-          First match wins. Action supports wildcards (e.g. <code class="font-mono text-zinc-300">cassandra.*</code>).
+          The first matching override applies instead of the risk-level rule.
+          Use <code class="font-mono text-zinc-300">*</code> to match multiple actions,
+          such as <code class="font-mono text-zinc-300">linux.*</code>.
         </p>
 
-        <%!-- Viewer's empty fact; a manager's empty state IS the composer below. --%>
-        <p :if={@overrides == [] and not @can_manage} class="mt-4 text-xs text-zinc-400">
-          No overrides — the tier defaults above decide every action.
-        </p>
+        <%!-- Read-only emptiness uses the shared placeholder; editable policies
+             keep the Add override composer as their empty state. --%>
+        <.empty_state
+          :if={@overrides == [] and not @can_manage}
+          variant={:hint}
+          class="mt-4 px-4 py-3 [&>p]:leading-4"
+        >
+          No action overrides
+        </.empty_state>
 
         <div :if={@overrides != []} class="mt-2 divide-y divide-zinc-800/70">
           <%!-- First-match wins, so an override whose glob is subsumed by an
@@ -1599,6 +1618,10 @@ defmodule EmisarWeb.PoliciesLive do
         <h3 class="text-[10px] font-semibold uppercase tracking-wider text-zinc-400">
           Approval requirements
         </h3>
+        <p class="mt-0.5 text-xs text-zinc-400">
+          Applies to actions that require approval.
+          For AI-agent requests, self-approval also includes the agent's owner.
+        </p>
 
         <%!-- The two cards name WHO may approve — self-labeling, so no separate
              "Who can approve" eyebrow above them (under the section h3 it read as
@@ -1610,17 +1633,17 @@ defmodule EmisarWeb.PoliciesLive do
           columns={2}
           class="mt-3"
         >
-          <:card value="false" icon="identity.group" title="A different operator">
-            No signing off on your own request.
+          <:card value="false" icon="identity.group" title="No self-approval">
+            Requesters can't approve their own requests.
           </:card>
-          <:card value="true" icon="identity.person" title="Anyone, incl. requester">
-            The requester's own approval can count.
+          <:card value="true" icon="identity.person" title="Allow self-approval">
+            Requesters can approve their own requests if they have permission to approve.
           </:card>
         </.choice_cards>
 
         <div class="mt-6">
           <.label variant={:eyebrow} for={"policy-#{@editor_id}-min-approvals"}>
-            Required approvals
+            Required approvers
           </.label>
           <%!-- The eyebrow labels from above; the input and the trailing clause
                share one centered row so they align — an inline eyebrow beside the
@@ -1638,7 +1661,7 @@ defmodule EmisarWeb.PoliciesLive do
               class="w-14 rounded-lg border-0 bg-zinc-900 px-2 py-1.5 text-center text-sm font-medium text-zinc-100 ring-1 ring-inset ring-zinc-800 focus:ring-2 focus:ring-inset focus:ring-brand-500 disabled:opacity-50"
             />
             <span class="text-xs text-zinc-400">
-              {approval_operators_noun(@approval["min_approvals"])}, before the action runs.
+              {approval_people_noun(@approval["min_approvals"])}
             </span>
           </div>
         </div>
@@ -1650,13 +1673,11 @@ defmodule EmisarWeb.PoliciesLive do
           :if={@approval_weakenings != []}
           tone={:amber}
           icon="security.posture_warning"
-          title="Weaker approval gate than the default policy"
+          title="Less restrictive approval requirements"
           class="mt-4"
         >
           <:body>
-            This ruleset replaces the default for its target, and its gate is laxer — it {weakening_sentence(
-              @approval_weakenings
-            )}. Tighten it here if that isn't intended.
+            {Enum.join(@approval_weakenings, " ")}
           </:body>
         </.event_block>
       </div>
@@ -1785,29 +1806,30 @@ defmodule EmisarWeb.PoliciesLive do
          a FIXED trash width, not `auto` — a view-only row renders no trash, and
          a content-sized track would collapse there, sliding every field sideways
          between the editable and blocked states. It reserves the icon button's
-         full 40px target even though its visible face matches the 32px fields. --%>
+         full 40px target even though its visible face matches the 32px fields.
+         Field padding owns horizontal spacing: 8px between inputs, then 4px
+         before the button target + its 4px face inset = the same visible gap. --%>
     <div class={[
-      "space-y-2 @md:grid @md:items-start @md:gap-2 @md:space-y-0",
+      "space-y-2 @md:grid @md:items-start @md:gap-y-2 @md:space-y-0",
       "@md:grid-cols-[minmax(0,3fr)_minmax(0,5fr)_max-content_2.5rem]"
     ]}>
-      <div>
+      <div class="@md:pr-2">
         <.input
           id={"policy-#{@editor_id}-override-#{@index}-name"}
           name={"policy[overrides][#{@index}][name]"}
           value={@override["name"]}
-          label="Name"
+          label="Name (optional)"
           label_variant={:eyebrow}
           size={:compact}
-          placeholder="optional"
           disabled={!@can_manage}
         />
       </div>
-      <div>
+      <div class="@md:pr-2">
         <.input
           id={"policy-#{@editor_id}-override-#{@index}-action"}
           name={"policy[overrides][#{@index}][action]"}
           value={@override["action"]}
-          label="Action (glob ok)"
+          label="Action"
           label_variant={:eyebrow}
           size={:compact}
           class="font-mono text-xs"
@@ -1816,7 +1838,7 @@ defmodule EmisarWeb.PoliciesLive do
           disabled={!@can_manage}
         />
       </div>
-      <div>
+      <div class="@md:pr-1">
         <.input
           id={"policy-#{@editor_id}-override-#{@index}-decision"}
           name={"policy[overrides][#{@index}][decision]"}
@@ -1832,7 +1854,7 @@ defmodule EmisarWeb.PoliciesLive do
       </div>
       <%!-- Trash sits right after Decision (justify-start), not floated to the
            far edge of its cell. pt-4 centers the 40px target on the compact
-           field box; its 32px visual face aligns exactly with that box. --%>
+           field box; the preceding field already accounts for its face inset. --%>
       <div class="@md:flex @md:items-start @md:justify-start @md:pt-4">
         <.icon_button
           :if={@can_manage}
@@ -1857,30 +1879,24 @@ defmodule EmisarWeb.PoliciesLive do
     >
       <.icon name="state.warning" class="mt-0.5 h-3.5 w-3.5 flex-none" />
       <span :if={@override["decision"] == "deny"}>
-        Shadowed by rule {@shadowed_by + 1} above — this <strong>deny</strong>
-        never applies (first match wins).
+        Override {@shadowed_by + 1} matches first, so this <strong>deny</strong> rule never applies.
       </span>
       <span :if={@override["decision"] != "deny"}>
-        Shadowed by rule {@shadowed_by + 1} above — this rule never applies (first match wins).
+        Override {@shadowed_by + 1} matches first, so this override never applies.
       </span>
     </p>
 
     <%!-- A glob that matches nothing today. Not an error: the pack may simply
          not be installed yet. Shown only when the row isn't already shadowed,
-         so one row carries one diagnosis. Sharpened for a deny, where the
-         operator believes the fleet is covered and it isn't. --%>
+         so one row carries one diagnosis. The preview is limited to the
+         visible catalog; actions may also be reported later. --%>
     <p
       :if={@unmatched and @shadowed_by == nil}
       class="mt-2 flex items-start gap-1.5 text-xs text-amber-300"
     >
       <.icon name="state.warning" class="mt-0.5 h-3.5 w-3.5 flex-none" />
-      <span :if={@override["decision"] == "deny"}>
-        Matches no action on this target — this <strong>deny</strong>
-        blocks nothing today. Check the glob, or ignore this if the pack isn't installed yet.
-      </span>
-      <span :if={@override["decision"] != "deny"}>
-        Matches no action on this target. Check the glob, or ignore this if the pack isn't
-        installed yet.
+      <span>
+        No actions in this preview match this pattern. It can still apply to actions reported later.
       </span>
     </p>
     """
@@ -1888,7 +1904,7 @@ defmodule EmisarWeb.PoliciesLive do
 
   defp override_action_errors(true, override) do
     if partial_override?(override),
-      do: ["Enter an action glob or remove this override."],
+      do: ["Enter an action name or pattern, or remove this override."],
       else: []
   end
 

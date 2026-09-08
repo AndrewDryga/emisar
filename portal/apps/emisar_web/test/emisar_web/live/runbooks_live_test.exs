@@ -40,6 +40,7 @@ defmodule EmisarWeb.RunbooksLiveTest do
     {:ok, lv, html} = live(conn, ~p"/app/#{account}/runbooks")
 
     assert html =~ "Runbooks"
+    assert has_element?(lv, "#runbooks-primary", "ask your LLM to create one")
     assert has_element?(lv, "a[href='#{~p"/app/#{account}/runbooks/new"}']", "New runbook")
 
     assert has_element?(
@@ -58,7 +59,7 @@ defmodule EmisarWeb.RunbooksLiveTest do
     dead = conn |> get(~p"/app/#{account}/runbooks") |> html_response(200)
 
     assert dead =~ "Loading…"
-    refute dead =~ "No runbooks yet."
+    refute dead =~ "No runbooks yet"
     refute dead =~ "Existing runbook"
   end
 
@@ -87,7 +88,7 @@ defmodule EmisarWeb.RunbooksLiveTest do
     assert html =~ "Deploy check"
     assert html =~ "Half baked"
     refute has_element?(lv, "span", "Live v1")
-    assert has_element?(lv, "span", "Never published")
+    assert has_element?(lv, "span", "Draft")
 
     # Only the live release runs, and the button names it — a runbook without
     # one offers no Run and no draft dot (it is ALL unpublished).
@@ -106,7 +107,7 @@ defmodule EmisarWeb.RunbooksLiveTest do
     assert has_element?(
              lv,
              ~s(a[href="/app/#{account.slug}/audit?target_kind=runbook&target_id=#{published.id}"]),
-             "View activity"
+             "View audit trail"
            )
 
     refute html =~ "/versions"
@@ -126,7 +127,7 @@ defmodule EmisarWeb.RunbooksLiveTest do
     # Waiting changes are a quiet amber dot whose tooltip explains itself on
     # keyboard and touch, never a labeled chip shouting beside the title.
     assert has_element?(lv, "#runbook-#{runbook.id}-draft-tip[role='tooltip']")
-    assert render(lv) =~ "Unpublished changes — open the runbook to review and publish them."
+    assert render(lv) =~ "This runbook has unpublished workflow changes."
     refute has_element?(lv, "span", "Live v1")
 
     # The Run button dispatches — and names — the live release, unchanged by
@@ -149,15 +150,17 @@ defmodule EmisarWeb.RunbooksLiveTest do
 
     {:ok, lv, html} = live(conn, ~p"/app/#{account}/runbooks")
 
-    assert has_element?(lv, "#runbooks-docs-rail a[href='/docs/runbooks']")
+    assert has_element?(lv, "a[href='/docs/runbooks']", "Runbook docs")
+    refute has_element?(lv, "#runbooks-docs-rail a[href='/docs/runbooks']")
     assert has_element?(lv, "#runbooks-reading-rail:not([class*='border-l'])")
 
     assert has_element?(
              lv,
              "#runbooks-docs-rail",
-             "Every action in a stage must succeed before the next stage starts"
+             "Save workflow changes as a draft before publishing them."
            )
 
+    refute html =~ "Stages run in order"
     refute html =~ "Runbooks turn an ordered procedure"
     refute has_element?(lv, "#runbooks-primary a[href='/docs/runbooks']")
     assert has_element?(lv, "#recent-runbook-runs a[href$='/runs/#{execution.id}']")
@@ -174,7 +177,12 @@ defmodule EmisarWeb.RunbooksLiveTest do
 
     {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runbooks")
 
-    assert has_element?(lv, "#recent-runbook-runs a[href$='/runs?source=runbook']", "View all")
+    assert has_element?(
+             lv,
+             "#recent-runbook-runs a[href$='/runs?source=runbook']",
+             "View action runs"
+           )
+
     refute has_element?(lv, "#recent-runbook-runs [id$='-pager']")
   end
 
@@ -184,8 +192,33 @@ defmodule EmisarWeb.RunbooksLiveTest do
 
     {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runbooks")
 
-    assert has_element?(lv, "#recent-runbook-runs", "No runs yet.")
+    assert has_element?(lv, "#recent-runbook-runs", "No executions yet.")
     refute has_element?(lv, "#recent-runbook-runs a[href$='/runs?source=runbook']")
+  end
+
+  test "an empty list offers a viewer no unavailable authoring instructions", %{conn: conn} do
+    account = Fixtures.Accounts.create_account()
+    viewer = Fixtures.Users.create_user()
+
+    Fixtures.Memberships.create_membership(
+      account_id: account.id,
+      user_id: viewer.id,
+      role: "viewer"
+    )
+
+    {:ok, lv, _html} =
+      conn
+      |> log_in_user(viewer)
+      |> live(~p"/app/#{account}/runbooks")
+
+    assert has_element?(
+             lv,
+             "#runbooks-primary",
+             "Published runbooks will appear here when available."
+           )
+
+    refute has_element?(lv, "#runbooks-primary", "ask your LLM to create one")
+    assert has_element?(lv, "a[href='/docs/runbooks']", "Runbook docs")
   end
 
   test "a viewer gets the list but no New action", %{conn: conn} do

@@ -48,7 +48,7 @@ defmodule EmisarWeb.AuditExportLiveTest do
 
     # an account with no export tokens shows
     # the mint affordance but NOT the (empty) list section: the list div is
-    # `:if={@export_keys != []}`, so a manager sees just the "Mint export token"
+    # `:if={@export_keys != []}`, so a manager sees just the "Create export token"
     # button until they've created one.
     test "with no export keys the list is hidden but the mint affordance shows", %{
       conn: conn,
@@ -58,7 +58,11 @@ defmodule EmisarWeb.AuditExportLiveTest do
 
       # The SIEM card + mint button are present (the owner manages keys)…
       assert html =~ "SIEM export"
-      assert html =~ "Mint export token"
+      assert html =~ "Create export token"
+      assert html =~ "independent, long-term retention"
+      assert has_element?(lv, "#audit-export-endpoint", "/api/audit")
+      assert has_element?(lv, ~s(a[href="/docs/audit-and-siem#polling"]), "Collector setup")
+      assert has_element?(lv, ~s(a[href="/docs/credentials#audit-tokens"]), "Token rotation")
       # …but with zero export tokens the list section is hidden — so no list-row
       # Revoke affordance renders (the header copy is present regardless, so the
       # list's presence is the real signal). Scope to the card to be sure.
@@ -68,23 +72,25 @@ defmodule EmisarWeb.AuditExportLiveTest do
     end
 
     # while a freshly-minted secret is being revealed, the
-    # "Mint export token" button is hidden (`:if={is_nil(@export_secret)}`) so a
+    # "Create export token" button is hidden (`:if={is_nil(@export_secret)}`) so a
     # double-mint can't clobber the one-shot reveal; dismissing brings it back.
     test "the mint button is hidden while a secret is being revealed", %{
       conn: conn,
       account: account
     } do
       {:ok, lv, html} = live(conn, ~p"/app/#{account}/audit/export")
-      assert html =~ "Mint export token"
+      assert html =~ "Create export token"
 
       html = render_click(lv, "create_export_key", %{})
       # The secret is shown and the mint button is gone during the reveal.
       assert html =~ "emk-"
-      refute html =~ "Mint export token"
+      assert html =~ "Export token created"
+      assert has_element?(lv, "button[phx-click='dismiss_export_secret']", "I've saved the token")
+      refute html =~ "Create export token"
 
       # Dismissing the reveal restores the mint button.
       html = render_click(lv, "dismiss_export_secret", %{})
-      assert html =~ "Mint export token"
+      assert html =~ "Create export token"
     end
 
     # the curl snippet's base URL is derived from the socket
@@ -115,7 +121,7 @@ defmodule EmisarWeb.AuditExportLiveTest do
       # A brand-new mount of the same page (reconnect) must not carry the secret.
       {:ok, _lv2, fresh_html} = live(conn, ~p"/app/#{account}/audit/export")
       refute fresh_html =~ raw
-      refute fresh_html =~ "won't show it again"
+      refute fresh_html =~ "Export token created"
     end
 
     # the Revoke button renders only for non-revoked keys
@@ -143,7 +149,7 @@ defmodule EmisarWeb.AuditExportLiveTest do
       assert siem_card =~ ~s(id="revoke-export-#{active.id}")
       # …the revoked key does NOT (no control keyed to it) but shows the chip.
       refute siem_card =~ ~s(id="revoke-export-#{to_revoke.id}")
-      assert siem_card =~ "revoked"
+      assert siem_card =~ "Revoked"
     end
 
     # a key whose creating user has since been deleted still
@@ -353,7 +359,7 @@ defmodule EmisarWeb.AuditExportLiveTest do
 
       assert {:ok, lv, html} = live(conn, ~p"/app/#{account}/audit/export")
 
-      assert html =~ "Continuous export is paused"
+      assert html =~ "SIEM export unavailable"
       refute has_element?(lv, "button[phx-click='create_export_key']")
     end
 
@@ -374,7 +380,7 @@ defmodule EmisarWeb.AuditExportLiveTest do
                build_conn() |> log_in_user(operator) |> live(~p"/app/#{account}/audit/export")
 
       assert to == ~p"/app/#{account}/audit"
-      assert %{"error" => "Managing export tokens needs an admin role."} = flash
+      assert %{"error" => "You need an owner or admin role to manage export tokens."} = flash
     end
 
     test "another account's export tokens never appear in this account's SIEM list",

@@ -32,7 +32,10 @@ defmodule EmisarWeb.BillingIntentControllerTest do
     assert html =~ "Selected plan"
     assert html =~ "Monthly"
     assert html =~ account.name
-    refute html =~ "checkout"
+    assert html =~ "review the price in checkout"
+    assert html =~ "Cancel"
+    refute html =~ "Keep my current plan"
+    refute html =~ "Paddle.Initialize"
     refute account.paddle_customer_id
   end
 
@@ -130,5 +133,56 @@ defmodule EmisarWeb.BillingIntentControllerTest do
 
     assert redirected_to(canceled) == ~p"/app"
     refute get_session(canceled, :billing_intent)
+  end
+
+  test "a viewer with a workspace sees a permission-empty chooser, not no workspaces", %{
+    conn: conn
+  } do
+    {conn, user, _account} = register_and_log_in(conn)
+    {:ok, membership} = Emisar.Accounts.fetch_membership_for_session(user, nil)
+    Fixtures.Memberships.force_role(membership, "viewer")
+    token = BillingIntent.sign("team", :month)
+    captured = get(conn, ~p"/start/team/#{token}")
+
+    chooser = get(recycle(captured), ~p"/app/billing/start")
+    html = html_response(chooser, 200)
+    assert html =~ "No workspaces you can upgrade"
+    assert html =~ "You need billing access"
+    assert get_session(chooser, :billing_intent) == token
+    refute html =~ "Choose a plan again"
+  end
+
+  test "a workspace loading error stays distinct from an invalid plan choice" do
+    token = BillingIntent.sign("team", :month)
+    {:ok, intent} = BillingIntent.verify(token)
+
+    html =
+      render_component(&EmisarWeb.BillingIntentHTML.show/1,
+        accounts: [],
+        accounts_error?: true,
+        intent: intent,
+        token: token
+      )
+
+    assert html =~ "load your workspaces"
+    assert html =~ "Try again"
+    assert html =~ ~s(href="/app/billing/start")
+    refute html =~ "No workspaces you can upgrade"
+    refute html =~ "no longer valid"
+  end
+
+  test "an invalid stored plan choice is cleared rather than shown as a workspace error", %{
+    conn: conn
+  } do
+    {conn, _user, _account} = register_and_log_in(conn)
+    conn = Plug.Conn.put_session(conn, :billing_intent, "forged")
+    conn = get(conn, ~p"/app/billing/start")
+
+    assert redirected_to(conn) == ~p"/pricing"
+
+    assert Phoenix.Flash.get(conn.assigns.flash, :error) =~
+             "That plan selection is no longer valid"
+
+    refute get_session(conn, :billing_intent)
   end
 end

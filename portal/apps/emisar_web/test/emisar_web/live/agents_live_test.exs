@@ -60,13 +60,16 @@ defmodule EmisarWeb.AgentsLiveTest do
       {conn, user, account} = register_and_log_in(conn)
 
       {:ok, lv, html} = live(conn, ~p"/app/#{account}/agents/connect")
-      assert html =~ "Cloud clients use OAuth"
+      assert html =~ "Connect your AI app to inspect your infrastructure"
       assert html =~ "Connect an agent"
+      assert has_element?(lv, "h3", "What's an AI agent?")
+      assert html =~ "An AI agent is an app, such as Claude, ChatGPT, or Cursor"
+      refute html =~ "Connections and access"
 
       # The local picker partitions by kind — one transport group, two
       # sub-labels — so fifteen tabs never render as one flat list.
-      assert html =~ "uses the stdio bridge"
-      assert html =~ "CLI agents"
+      assert html =~ "use the emisar installer"
+      assert html =~ "Terminal apps"
       assert html =~ "Editors &amp; desktop apps"
       assert has_element?(lv, "#client-kind-cli.text-zinc-400")
       assert has_element?(lv, "#client-kind-editors.text-zinc-400")
@@ -78,9 +81,10 @@ defmodule EmisarWeb.AgentsLiveTest do
       {:ok, _raw, _key} =
         ApiKeys.create_key(%{name: "Bot"}, subject)
 
-      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/agents")
+      {:ok, lv, html} = live(conn, ~p"/app/#{account}/agents")
       assert html =~ ~p"/app/#{account}/agents/connect"
-      refute html =~ "Cloud clients use OAuth"
+      assert html =~ "Connections and access"
+      refute has_element?(lv, "h3", "What's an AI agent?")
     end
 
     # test.exs policy: < 0.0.1 unsupported, [0.0.1, 0.1.0) outdated, >= 0.1.0 supported.
@@ -99,7 +103,7 @@ defmodule EmisarWeb.AgentsLiveTest do
       # The status pill (text-rose-300) leads with the block itself, and the
       # separate stale-version chip is suppressed so the row never carries two
       # red labels for the one fact.
-      assert has_element?(lv, "span.text-rose-300", "unsupported")
+      assert has_element?(lv, "span.text-rose-300", "Unsupported")
       refute has_element?(lv, "#mcp-version-#{key.id}")
 
       assert html =~ "MCP bridge update required"
@@ -137,7 +141,7 @@ defmodule EmisarWeb.AgentsLiveTest do
       # A rose-300 pill word is the override itself: a revert would render a
       # zinc "idle" pill and no rose "unsupported", failing this. The chip is
       # suppressed so the block reads once.
-      assert has_element?(lv, "span.text-rose-300", "unsupported")
+      assert has_element?(lv, "span.text-rose-300", "Unsupported")
       refute has_element?(lv, "#mcp-version-#{key.id}")
     end
 
@@ -150,7 +154,7 @@ defmodule EmisarWeb.AgentsLiveTest do
         ApiKeys.record_client_info(key, %{"name" => "Claude Code", "bridge_version" => "1.0.0"})
 
       {:ok, _lv, html} = live(conn, ~p"/app/#{account}/agents")
-      refute html =~ "unsupported"
+      refute html =~ "Unsupported"
       refute html =~ "outdated"
       refute html =~ "install-mcp.sh"
     end
@@ -173,7 +177,7 @@ defmodule EmisarWeb.AgentsLiveTest do
       {:ok, _lv, current_html} = live(conn, ~p"/app/#{account}/agents")
       refute current_html =~ "MCP bridge update required"
       refute current_html =~ "outdated"
-      refute current_html =~ "unsupported"
+      refute current_html =~ "Unsupported"
     end
 
     test "a revoked client does not prompt the operator to upgrade its old bridge", %{conn: conn} do
@@ -190,7 +194,8 @@ defmodule EmisarWeb.AgentsLiveTest do
       {:ok, _key} = ApiKeys.revoke_api_key(key, subject)
 
       {:ok, _lv, html} = live(conn, ~p"/app/#{account}/agents?status=revoked")
-      assert html =~ "unsupported"
+      assert html =~ "Revoked"
+      refute html =~ "Unsupported"
       refute html =~ "MCP bridge update required"
       refute html =~ "install-mcp.sh"
     end
@@ -307,23 +312,29 @@ defmodule EmisarWeb.AgentsLiveTest do
       # (tone-default info icon), never the spine-less status_note.
       assert html =~ "state.info"
       assert html =~ "Steps for Claude.ai"
-      assert html =~ "Settings &rarr; Connectors" or html =~ "Settings → Connectors"
+      assert html =~ "Customize → Connectors"
+      assert html =~ "Organization settings → Connectors → Add → Custom → Web"
+      assert html =~ "+ → Connectors"
+      assert html =~ "publicly reachable over HTTPS"
       assert html =~ "Read-only tools"
       assert html =~ "Write/delete tools"
       assert html =~ "Always allow"
-      assert html =~ "Emisar still enforces policy and asks for approval before risky actions"
+
+      assert html =~
+               "Your emisar policies still decide which actions are allowed, require approval, or are blocked."
+
       refute html =~ "What counts as &quot;risky&quot;"
 
       # The local-bridge snippet shape is NOT shown for this client.
       refute html =~ "EMISAR_API_KEY"
       refute html =~ "Authorization: Bearer emk-"
-      refute html =~ "New key minted"
+      refute html =~ "API key created"
       refute html =~ "/usr/local/bin/emisar-mcp"
 
       # The install-emisar-mcp block does not render at all for remote
       # MCP clients — it's a local-bridge-only concern.
       refute html =~ "install-mcp.sh"
-      refute html =~ "Install the bridge"
+      refute html =~ "Run the installer"
     end
 
     test "selecting ChatGPT shows the remote MCP panel too", %{conn: conn} do
@@ -340,6 +351,8 @@ defmodule EmisarWeb.AgentsLiveTest do
       # then Permissions → Allow all actions to drop the per-call prompts.
       assert html =~ "Security and login"
       assert html =~ "Developer mode"
+      assert html =~ "If the option is missing"
+      assert html =~ "click + next to the search box"
       assert html =~ "Allow all actions"
       assert html =~ "choose OAuth"
       refute html =~ "Authorization: Bearer emk-"
@@ -360,7 +373,7 @@ defmodule EmisarWeb.AgentsLiveTest do
       # The install one-liner targets THIS portal (the test host isn't the
       # hosted default, so EMISAR_URL rides along), and the block says the
       # installer finishes the setup with a browser approval — no key copying.
-      assert html =~ "Install the bridge"
+      assert html =~ "Run the installer"
       assert html =~ "/install-mcp.sh | sudo EMISAR_URL=http://localhost:4000 bash"
 
       assert html =~
@@ -373,15 +386,30 @@ defmodule EmisarWeb.AgentsLiveTest do
       assert html =~ "id=\"install-mcp-cmd-windows\""
       assert html =~ "id=\"install-mcp-cmd-macos\""
       assert html =~ "data-os-select=\"windows\""
-      assert html =~ "offers to add emisar to the LLM clients it finds"
-      assert html =~ "approve the connection in your browser"
+      assert html =~ "offers to connect emisar to the AI apps it finds"
+      assert html =~ "Approve the connection in your browser"
       refute html =~ "Copy your API key"
 
       # The manual fallback is collapsed; the wait line already tracks the
       # installer path, and pre-connect the page carries NO amber spine.
-      assert html =~ "Set up Claude Desktop manually instead"
+      assert html =~ "Set up Claude Desktop manually"
+      refute html =~ "shows a config snippet with a fresh key"
       assert html =~ "Waiting for your agent"
       refute html =~ "bg-amber-300/40"
+
+      example_prompt =
+        "Check my hosts via emisar — load, memory, disk, and any failed services — and flag anything that needs attention."
+
+      assert has_element?(lv, "#agent-example-prompt", example_prompt)
+
+      assert html
+             |> LazyHTML.from_document()
+             |> LazyHTML.query("#agent-connect-step button[data-copy-text]")
+             |> LazyHTML.attribute("data-copy-text") == [example_prompt]
+
+      assert has_element?(lv, "#agent-connection-status[role='status'][data-state='waiting']")
+      assert has_element?(lv, "#agent-connection-status .animate-pulse")
+      refute has_element?(lv, "#agent-connection-status .animate-ping")
 
       # Revealing the manual snippet mints the client-named key lazily.
       revealed = render_click(lv, "reveal_snippet", %{})
@@ -394,6 +422,33 @@ defmodule EmisarWeb.AgentsLiveTest do
       assert revealed =~ "claude-desktop"
       assert revealed =~ "emk-"
       assert revealed =~ "Open"
+      assert has_element?(lv, "#manual-path-linux", "Extract the archive")
+      assert has_element?(lv, "#manual-path-linux label", "MCP bridge path")
+
+      assert has_element?(
+               lv,
+               ~s|#manual-path-linux a[href="https://emisar.dev/releases/mcp/mcp-v0.1.0/emisar-mcp-0.1.0-linux-amd64.tar.gz"]|,
+               "x64"
+             )
+
+      assert has_element?(
+               lv,
+               ~s|#manual-path-macos a[href="https://emisar.dev/releases/mcp/mcp-v0.1.0/emisar-mcp-0.1.0-darwin-arm64.tar.gz"]|,
+               "Apple silicon"
+             )
+
+      assert has_element?(lv, "#bridge-check-linux", "/usr/local/bin/emisar-mcp --version")
+      refute has_element?(lv, "#bridge-check-linux", "'/usr/local/bin/emisar-mcp'")
+      assert has_element?(lv, "#manual-setup ol > li", "Download and check the bridge")
+      assert has_element?(lv, "#manual-setup ol > li", "Add emisar to Claude Desktop")
+      assert has_element?(lv, "#manual-setup ol > li", "Check the connection")
+      assert revealed =~ "Settings → Developer → Edit Config"
+      refute revealed =~ "no official Linux release"
+      refute revealed =~ "Paste the full path without quotes"
+      refute has_element?(lv, "#bridge-discovery-linux")
+
+      assert text_position(revealed, "The emisar MCP bridge connects your AI app to emisar") <
+               text_position(revealed, ~s(id="bridge-path-form-linux"))
 
       # Auto-unused — operator's list is still empty until an MCP call
       # promotes it.
@@ -407,7 +462,7 @@ defmodule EmisarWeb.AgentsLiveTest do
 
       html = render_click(lv, "select_client", %{"client" => "claude_desktop"})
 
-      assert html =~ "Install command unavailable over HTTP"
+      assert html =~ "Open emisar over HTTPS"
       refute html =~ "id=\"install-mcp-cmd\""
       refute html =~ "offers to add emisar"
     end
@@ -424,10 +479,11 @@ defmodule EmisarWeb.AgentsLiveTest do
       {:ok, lv, _} = live(conn, ~p"/app/#{account}/agents/connect")
       html = render_click(lv, "select_client", %{"client" => "claude_code"})
       assert html =~ "Waiting for your agent"
-      refute html =~ "Connected — your agent is live"
+      refute html =~ "Agent connected"
+      {_attempt, connection_timer} = :sys.get_state(lv.pid).socket.assigns.connection_wait
 
       assert %ApiKey{} = ApiKeys.peek_api_key_by_secret(old_raw)
-      refute render(lv) =~ "Connected — your agent is live"
+      refute render(lv) =~ "Agent connected"
 
       # The installer's device grant mints the key on approval; its first MCP
       # call promotes it and broadcasts to this page.
@@ -438,7 +494,115 @@ defmodule EmisarWeb.AgentsLiveTest do
       {:ok, %{client_keys: client_keys}} = ApiKeys.claim_device_grant(device_code)
       assert %ApiKey{} = ApiKeys.peek_api_key_by_secret(client_keys["claude-code"])
 
-      assert render(lv) =~ "Connected — your agent is live"
+      assert render(lv) =~ "Agent connected"
+
+      assert has_element?(
+               lv,
+               "#agent-connection-status[data-state='connected']",
+               "Agent connected"
+             )
+
+      assert Process.read_timer(connection_timer) == false
+      refute has_element?(lv, "#agent-connection-status .animate-pulse")
+      assert has_element?(lv, "#agent-example-prompt")
+    end
+
+    test "local setup reveals troubleshooting after its two-minute timeout", %{conn: conn} do
+      {conn, _user, account} = register_and_log_in(conn)
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/agents/connect")
+      assert :sys.get_state(lv.pid).socket.assigns.connection_wait == nil
+
+      render_click(lv, "select_client", %{"client" => "copilot"})
+      {attempt, timer} = :sys.get_state(lv.pid).socket.assigns.connection_wait
+      remaining = Process.read_timer(timer)
+      assert remaining > 0 and remaining <= 120_000
+      assert has_element?(lv, "#agent-connection-status[data-state='waiting']")
+      refute has_element?(lv, "#agent-connection-status ol")
+
+      send(lv.pid, {:agent_connection_timeout, attempt})
+
+      assert has_element?(
+               lv,
+               "#agent-connection-status[data-state='delayed']",
+               "Still waiting for your agent"
+             )
+
+      assert has_element?(lv, "#agent-connection-status .bg-amber-400.animate-pulse")
+      assert has_element?(lv, "#agent-connection-status ol", "Restart Copilot CLI")
+
+      assert has_element?(
+               lv,
+               ~s|#agent-connection-status a[href="/docs/connect-cli-agent#troubleshooting"]|
+             )
+
+      assert Repo.all(ApiKey) == []
+    end
+
+    test "switching apps cancels the timer and ignores the old attempt", %{conn: conn} do
+      {conn, _user, account} = register_and_log_in(conn)
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/agents/connect")
+      render_click(lv, "select_client", %{"client" => "claude_desktop"})
+      {first_attempt, first_timer} = :sys.get_state(lv.pid).socket.assigns.connection_wait
+
+      render_click(lv, "select_client", %{"client" => "copilot"})
+      {next_attempt, next_timer} = :sys.get_state(lv.pid).socket.assigns.connection_wait
+      refute next_attempt == first_attempt
+      assert Process.read_timer(first_timer) == false
+      send(lv.pid, {:agent_connection_timeout, first_attempt})
+      assert has_element?(lv, "#agent-connection-status[data-state='waiting']")
+
+      render_click(lv, "select_client", %{"client" => "chatgpt"})
+      assert Process.read_timer(next_timer) == false
+      send(lv.pid, {:agent_connection_timeout, next_attempt})
+      refute has_element?(lv, "#agent-connection-status")
+      assert :sys.get_state(lv.pid).socket.assigns.connection_wait == nil
+      refute :sys.get_state(lv.pid).socket.assigns.connection_delayed?
+    end
+
+    test "manual setup resets the delay and a late first call clears troubleshooting", %{
+      conn: conn
+    } do
+      {conn, _user, account} = register_and_log_in(conn)
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/agents/connect")
+      render_click(lv, "select_client", %{"client" => "claude_code"})
+      {installer_attempt, _timer} = :sys.get_state(lv.pid).socket.assigns.connection_wait
+      send(lv.pid, {:agent_connection_timeout, installer_attempt})
+      assert has_element?(lv, "#agent-connection-status[data-state='delayed']")
+
+      html = render_click(lv, "reveal_snippet", %{})
+      [_, raw] = Regex.run(~r/EMISAR_API_KEY=(emk-[A-Za-z0-9_-]+)/, html)
+      {manual_attempt, manual_timer} = :sys.get_state(lv.pid).socket.assigns.connection_wait
+      refute manual_attempt == installer_attempt
+      assert has_element?(lv, "#agent-connection-status[data-state='waiting']")
+      send(lv.pid, {:agent_connection_timeout, installer_attempt})
+      assert has_element?(lv, "#agent-connection-status[data-state='waiting']")
+
+      send(lv.pid, {:agent_connection_timeout, manual_attempt})
+      assert has_element?(lv, "#agent-connection-status ol", "Confirm the bridge path")
+      assert %ApiKey{} = ApiKeys.peek_api_key_by_secret(raw)
+      assert has_element?(lv, "#agent-connection-status[data-state='connected']")
+      refute has_element?(lv, "#agent-connection-status ol")
+      assert Process.read_timer(manual_timer) == false
+
+      send(lv.pid, {:agent_connection_timeout, manual_attempt})
+      assert has_element?(lv, "#agent-connection-status[data-state='connected']")
+    end
+
+    test "custom setup only starts waiting after a key is created", %{conn: conn} do
+      {conn, _user, account} = register_and_log_in(conn)
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/agents/connect")
+      render_click(lv, "select_client", %{"client" => "custom"})
+      assert :sys.get_state(lv.pid).socket.assigns.connection_wait == nil
+
+      lv
+      |> form("#api_key_form", %{"api_key" => %{"name" => "custom-timeout"}})
+      |> render_submit()
+
+      {attempt, _timer} = :sys.get_state(lv.pid).socket.assigns.connection_wait
+      send(lv.pid, {:agent_connection_timeout, attempt})
+      assert has_element?(lv, "#agent-connection-status[data-state='delayed']")
+      assert has_element?(lv, "#agent-connection-status ol", "Authorization header")
+      refute has_element?(lv, "#agent-connection-status", "bridge path")
     end
 
     test "an MCP call promotes the revealed-snippet key to a visible Connected LLM",
@@ -546,6 +710,12 @@ defmodule EmisarWeb.AgentsLiveTest do
       assert html =~ "Revoke all"
       assert html =~ "Revoke every key Jordan Lee owns?"
 
+      assert has_element?(
+               lv,
+               "#revoke-member-keys-#{membership.id}",
+               "including rotated replacements"
+             )
+
       # The support handle: each key's Actions menu copies the key id.
       assert has_element?(lv, "[data-copy-text='#{key_one.id}']", "Copy ID")
 
@@ -595,7 +765,7 @@ defmodule EmisarWeb.AgentsLiveTest do
           "membership-id" => target_membership.id
         })
 
-      assert flash =~ "Could not revoke this member"
+      assert flash =~ "Couldn&#39;t revoke this member"
       assert is_nil(Repo.reload!(target_key).revoked_at)
     end
 
@@ -613,7 +783,7 @@ defmodule EmisarWeb.AgentsLiveTest do
 
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/agents")
 
-      assert render_click(lv, "rotate", %{"id" => backing.id}) =~ "Could not rotate the key."
+      assert render_click(lv, "rotate", %{"id" => backing.id}) =~ "Couldn&#39;t rotate the key."
 
       # No successor minted; the backing key stays the only row, un-rotated.
       assert [only_key] = Repo.all(ApiKey)
@@ -710,7 +880,7 @@ defmodule EmisarWeb.AgentsLiveTest do
       {:ok, _lv, html} = live(conn, ~p"/app/#{account}/agents")
       assert html =~ "v1.0.0"
       refute html =~ "outdated"
-      refute html =~ "unsupported"
+      refute html =~ "Unsupported"
     end
 
     test "keys are grouped under the issuing human, off the per-row meta", %{conn: conn} do
@@ -751,10 +921,10 @@ defmodule EmisarWeb.AgentsLiveTest do
 
       {:ok, _lv, html} = live(conn, ~p"/app/#{account}/agents")
 
-      # Status words are lowercase dot+word (one casing family console-wide).
-      assert html =~ "active</span>" or html =~ "active\n"
-      assert html =~ "idle"
-      assert html =~ "never used"
+      # Status badges use sentence case; inline activity counts stay lowercase.
+      assert html =~ "Active</span>" or html =~ "Active\n"
+      assert html =~ "Idle</span>" or html =~ "Idle\n"
+      assert html =~ "Never used"
       # Stat counters: 1 active, 1 idle, 1 never_used
       assert html =~ "ActiveBot"
       assert html =~ "IdleBot"
@@ -813,7 +983,7 @@ defmodule EmisarWeb.AgentsLiveTest do
       # input…
       assert html =~ "can&#39;t be blank" or html =~ "can't be blank"
       # …and no flash banner dumping a humanized changeset.
-      refute html =~ "Could not create key"
+      refute html =~ "Couldn&#39;t create the key"
       # No key was persisted on the invalid submit.
       assert Repo.all(ApiKey) == []
     end
@@ -847,7 +1017,7 @@ defmodule EmisarWeb.AgentsLiveTest do
 
       render_click(lv, "select_client", %{"client" => "claude_code"})
       send(lv.pid, :tick)
-      assert render(lv) =~ "Install the bridge"
+      assert render(lv) =~ "Run the installer"
 
       render_click(lv, "select_client", %{"client" => "custom"})
       assert has_element?(lv, ~s(#api_key_form input[value="draft-bot"]))
@@ -953,7 +1123,7 @@ defmodule EmisarWeb.AgentsLiveTest do
           "api_key" => %{"name" => "siem", "kind" => "audit_export"}
         })
 
-      assert html =~ "Could not create the key."
+      assert html =~ "Couldn&#39;t create the key."
       refute Repo.one(ApiKey)
     end
 
@@ -1034,13 +1204,18 @@ defmodule EmisarWeb.AgentsLiveTest do
         |> form("#api_key_form", %{"api_key" => %{"name" => "my-custom-bot"}})
         |> render_submit()
 
-      assert html =~ "New key minted"
+      assert html =~ "API key created"
       assert html =~ ~r/emk-[A-Za-z0-9_-]{10,}/
+      assert has_element?(lv, ~s(#custom-secret[aria-label="API key"]))
+      refute html =~ "bearer token"
       assert has_element?(lv, "#custom-key-save-step", "Save your key")
       assert has_element?(lv, "#custom-secret")
       refute has_element?(lv, "#custom-key-create-step")
       refute has_element?(lv, "#api_key_form")
       assert has_element?(lv, "#agent-connect-step", "Connect your agent")
+      assert has_element?(lv, "#custom-rpc-url", "/api/mcp/rpc")
+      assert has_element?(lv, "#agent-connect-step", "Streamable HTTP")
+      assert has_element?(lv, "#agent-connect-step", "Set the Authorization header")
     end
 
     test "rotating a key from its row mints a successor and reveals the new secret",
@@ -1055,7 +1230,7 @@ defmodule EmisarWeb.AgentsLiveTest do
 
       html = render_click(lv, "rotate", %{"id" => key.id})
 
-      assert html =~ "Key rotated"
+      assert html =~ "New key ready—update your agent"
       assert html =~ ~r/emk-[A-Za-z0-9_-]{10,}/
 
       # Successor minted alongside the original — both visible, neither revoked.
@@ -1063,6 +1238,37 @@ defmodule EmisarWeb.AgentsLiveTest do
       assert length(keys) == 2
       assert Enum.all?(keys, &is_nil(&1.revoked_at))
       flush_key_broadcast(lv)
+    end
+
+    test "Rotate requests automatic rotation without revealing a secret and allows manual fallback",
+         %{conn: conn} do
+      {conn, user, account} = register_and_log_in(conn)
+
+      {_raw, key} =
+        Fixtures.ApiKeys.create_api_key(account_id: account.id, created_by_id: user.id)
+
+      key = Fixtures.ApiKeys.mark_rotation_supported(key)
+      ApiKeys.subscribe_account_api_keys(account.id)
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/agents")
+
+      assert has_element?(lv, "#agent-key-expires-#{key.id}[datetime]")
+      html = render_click(lv, "rotate", %{"id" => key.id})
+      assert_receive {:list_changed, :api_key, "api_key.rotation_requested", _}
+      assert html =~ "Rotation requested"
+      assert html =~ "Rotate manually"
+      refute html =~ "New key ready—update your agent"
+      refute has_element?(lv, "#rotated-key")
+      assert Repo.aggregate(ApiKey, :count) == 1
+      render(lv)
+
+      render_click(lv, "open_key_action", %{"id" => key.id, "action" => "rotate_manual"})
+      assert has_element?(lv, "#agent-key-action", "Cancels the pending automatic rotation")
+      html = render_click(lv, "rotate_manual", %{"id" => key.id})
+      assert_receive {:list_changed, :api_key, "api_key.created", _}
+      assert html =~ "New key ready—update your agent"
+      assert Repo.reload!(key).rotation_requested_at == nil
+      assert Repo.aggregate(ApiKey, :count) == 2
+      render(lv)
     end
 
     # The activity words and the swap-pending state explain themselves through
@@ -1084,6 +1290,7 @@ defmodule EmisarWeb.AgentsLiveTest do
       # Swap pending: the successor row's amber seg explains the auto-revoke.
       assert has_element?(lv, "#swap-pending-#{successor.id}[role='tooltip']")
       assert html =~ "revoked automatically the first time this key is used"
+      assert html =~ "awaiting first use"
 
       # No raw title= fallback remains for these explanations.
       refute html =~ ~s(title="called an action in the last 5 minutes")
@@ -1142,9 +1349,13 @@ defmodule EmisarWeb.AgentsLiveTest do
 
       html = lv |> render_click("select_client", %{"client" => "claude_code"})
 
-      # The optional step gives one direct safety sentence before the setting.
+      # The optional step explains that emisar policies still apply.
       assert html =~ "Skip the per-tool prompts"
-      assert html =~ "Emisar still enforces policy and asks for approval before risky actions"
+
+      assert html =~
+               "Your emisar policies still decide which actions are allowed, require approval, or are blocked."
+
+      refute html =~ "safe to"
       # The verified Claude Code rule — wildcard over the emisar MCP server.
       assert html =~ "mcp__emisar__*"
       assert html =~ "permissions"
@@ -1172,7 +1383,7 @@ defmodule EmisarWeb.AgentsLiveTest do
       # One distinctive marker per verified upstream schema — a wrong key
       # name (mcpServers vs mcp.servers, env vs envs) breaks the client.
       shape_markers = %{
-        "vscode" => {"~/Library/Application Support/Code/User/mcp.json", "&quot;servers&quot;"},
+        "vscode" => {"MCP: Open User Configuration", "&quot;servers&quot;"},
         "windsurf" => {"~/.codeium/windsurf/mcp_config.json", "&quot;windsurf&quot;"},
         "pi" => {"~/.pi/agent/mcp.json", "&quot;pi&quot;"},
         "openclaw" => {"~/.openclaw/openclaw.json", "&quot;servers&quot;"},
@@ -1186,7 +1397,7 @@ defmodule EmisarWeb.AgentsLiveTest do
       for {client, {location, marker}} <- shape_markers do
         lv |> render_click("select_client", %{"client" => client})
         html = render_click(lv, "reveal_snippet", %{})
-        assert html =~ location, "#{client}: missing location #{location}"
+        assert rendered_text(html) =~ location, "#{client}: missing location #{location}"
         assert html =~ marker, "#{client}: missing shape marker #{marker}"
       end
 
@@ -1221,7 +1432,7 @@ defmodule EmisarWeb.AgentsLiveTest do
 
       html = render_click(lv, "reveal_snippet", %{})
       [key] = Repo.all(ApiKey)
-      assert html =~ "%APPDATA%\\Claude\\claude_desktop_config.json"
+      assert rendered_text(html) =~ "Settings → Developer → Edit Config"
       assert has_element?(lv, "#manual-path-windows:not(.hidden)")
 
       assert has_element?(
@@ -1230,6 +1441,7 @@ defmodule EmisarWeb.AgentsLiveTest do
              )
 
       refute has_element?(lv, "#snippet-claude_desktop-windows")
+      refute has_element?(lv, "#bridge-check-windows")
       refute has_element?(lv, "#manual-setup button[data-os='windows'][data-copy-text]")
 
       path = ~S|C:\Users\O'Brien & $operator\Programs\emisar-mcp.exe|
@@ -1240,6 +1452,11 @@ defmodule EmisarWeb.AgentsLiveTest do
       raw = entry["env"]["EMISAR_API_KEY"]
 
       assert entry["command"] == path
+
+      assert document
+             |> LazyHTML.query("#manual-path-windows button[data-copy-text]")
+             |> LazyHTML.attribute("data-copy-text") ==
+               [~S|& 'C:\Users\O''Brien & $operator\Programs\emisar-mcp.exe' --version|]
 
       assert document
              |> LazyHTML.query("#manual-setup button[data-os='windows'][data-copy-text]")
@@ -1328,6 +1545,10 @@ defmodule EmisarWeb.AgentsLiveTest do
       )
 
       {:ok, lv, _html} = conn |> log_in_user(viewer) |> live(~p"/app/#{account}/agents/connect")
+
+      assert has_element?(lv, "h2", "You don't have permission to connect agents.")
+      assert render(lv) =~ "Ask an owner or admin to grant you an operator role."
+      refute render(lv) =~ "operator role or above"
 
       assert render_click(lv, "select_os", %{"os" => "windows"}) =~
                "You don&#39;t have permission to do that."
@@ -1505,10 +1726,11 @@ defmodule EmisarWeb.AgentsLiveTest do
       assert render_click(lv, "open_key_action", %{"action" => "revoke", "id" => key.id}) =~
                "Revoke this agent key"
 
+      assert has_element?(lv, "#agent-key-action", "blocks the agent's next request")
       assert has_element?(lv, ~s(#agent-key-action input[name="confirm_token"]))
-      # Revoke is a typed-confirm flow, so the page copy promises "seconds",
-      # never "one click".
-      assert html =~ "revoke access in seconds"
+      # Revoke remains a typed-confirm flow; the help explains when to revoke,
+      # without promising a one-click destructive action.
+      assert html =~ "Revoke a key when the connection is no longer needed"
       refute html =~ "one click"
     end
 
@@ -1567,7 +1789,7 @@ defmodule EmisarWeb.AgentsLiveTest do
 
       html = render_click(lv, "rotate", %{"id" => key.id})
 
-      assert html =~ "Key rotated"
+      assert html =~ "New key ready—update your agent"
       assert [successor] = Enum.reject(Repo.all(ApiKey), &(&1.id == key.id))
       assert successor.replaces_id == key.id
       flush_key_broadcast(lv)
@@ -1826,4 +2048,8 @@ defmodule EmisarWeb.AgentsLiveTest do
   # reload while the test still owns the DB sandbox; without it the reload can
   # land after teardown as Postgrex disconnect noise, which fails the gate.
   defp flush_key_broadcast(lv), do: render(lv)
+
+  defp rendered_text(html) do
+    html |> LazyHTML.from_document() |> LazyHTML.text() |> String.replace(~r/\s+/, " ")
+  end
 end

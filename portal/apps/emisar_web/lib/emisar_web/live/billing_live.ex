@@ -1,9 +1,10 @@
 defmodule EmisarWeb.BillingLive do
   use EmisarWeb, :live_view
   alias Emisar.Billing
-  alias EmisarWeb.{BillingIntent, MailTo, Permissions}
+  alias EmisarWeb.{BillingIntent, MailTo, Permissions, ShellChrome}
 
   @plan_order ["free", "team", "enterprise"]
+  @refresh_ms 15_000
 
   def mount(params, _session, socket) do
     billing_intent = billing_intent(params["billing_intent"])
@@ -13,32 +14,21 @@ defmodule EmisarWeb.BillingLive do
         page_title: "Billing",
         loading?: not connected?(socket),
         cycle: (billing_intent && billing_intent.cycle) || :month,
-        billing_intent: billing_intent
+        billing_intent: billing_intent,
+        summary: nil,
+        billing_refresh: nil
       )
 
     if connected?(socket) do
-      account = socket.assigns.current_account
-      subject = socket.assigns.current_subject
-
       {:ok,
        socket
        |> assign(:plans, ordered_plans())
-       |> assign(:summary, fetch_summary(account, subject))
-       |> assign(:features, feature_states(account))
-       |> assign_invoices(account, subject)}
+       |> refresh_summary()
+       |> assign_invoices(socket.assigns.current_account, socket.assigns.current_subject)
+       |> schedule_refresh()}
     else
       {:ok, socket}
     end
-  end
-
-  # The plan's gated feature entitlements (Paddle custom_data overrides, else the
-  # plan-tier default) — rendered as an enabled/disabled list beside usage.
-  defp feature_states(account) do
-    %{
-      sso: Billing.sso_available?(account),
-      scim: Billing.directory_sync_available?(account),
-      audit_export: Billing.audit_export_available?(account)
-    }
   end
 
   # A member who may not read the ledger never fires its read, so the assign
@@ -61,12 +51,54 @@ defmodule EmisarWeb.BillingLive do
     end
   end
 
+  defp refresh_summary(socket) do
+    summary = fetch_summary(socket.assigns.current_account, socket.assigns.current_subject)
+    channels = if summary, do: summary.support_channels, else: %{email?: false, slack_url: nil}
+
+    socket
+    |> assign(:summary, summary)
+    |> ShellChrome.put(support_channels: channels)
+  end
+
+  # One local-database refresh at a time. Neither the timer nor the return
+  # from checkout confirms payment or calls Paddle; only the stored billing
+  # state determines access. Invoice reads stay on mount and explicit retry.
+  defp schedule_refresh(socket) do
+    case socket.assigns.billing_refresh do
+      {_attempt, timer} -> Process.cancel_timer(timer)
+      nil -> :ok
+    end
+
+    attempt = make_ref()
+
+    timer =
+      Process.send_after(
+        self(),
+        {:refresh_billing, attempt},
+        refresh_delay(socket.assigns.summary)
+      )
+
+    assign(socket, :billing_refresh, {attempt, timer})
+  end
+
+  defp refresh_delay(%{entitlement_state: :ending} = summary) do
+    case summary.scheduled_change_effective_at || summary.current_period_end do
+      %DateTime{} = deadline ->
+        deadline |> DateTime.diff(DateTime.utc_now(), :millisecond) |> max(1) |> min(@refresh_ms)
+
+      _ ->
+        @refresh_ms
+    end
+  end
+
+  defp refresh_delay(_summary), do: @refresh_ms
+
   # Recent invoices for the payment-history list, fetched off the mount path
   # (IL-18) — a slow Paddle response must not hold up the first paint. A
   # failure renders as the section's inline retry state; the rest of the
   # page (and the portal link) still works.
   defp fetch_invoices(account, subject) do
-    case Billing.list_recent_invoices(account, subject) do
+    case Billing.list_recent_invoices(account, subject, limit: 3) do
       {:ok, invoices} -> {:ok, %{invoices: invoices}}
       {:error, reason} -> {:error, reason}
     end
@@ -132,15 +164,15 @@ defmodule EmisarWeb.BillingLive do
              put_flash(
                socket,
                :error,
-               "No Paddle customer yet — upgrade to a paid plan first, then come back to manage billing."
+               "No billing details are available yet. Contact support for help."
              )}
 
-          {:error, reason} ->
+          {:error, _reason} ->
             {:noreply,
              put_flash(
                socket,
                :error,
-               "Could not open billing portal: #{humanize_reason(reason)}"
+               "Couldn't open billing. Try again, or contact support if this continues."
              )}
         end
       end
@@ -164,14 +196,13 @@ defmodule EmisarWeb.BillingLive do
             {:noreply, redirect(socket, external: url)}
 
           {:error, reason} ->
-            {:noreply,
-             put_flash(socket, :error, "Couldn't open that invoice: #{humanize_reason(reason)}")}
+            {:noreply, put_flash(socket, :error, invoice_error(reason))}
         end
       end
     )
   end
 
-  # Re-run the failed async invoice fetch in place. Authorization lives in
+  # Refresh the async invoice list in place. Authorization lives in
   # the context read (view-invoices + account scope), same as the mount fetch.
   def handle_event("retry_invoices", _params, socket) do
     account = socket.assigns.current_account
@@ -187,6 +218,67 @@ defmodule EmisarWeb.BillingLive do
       def_map = Map.fetch!(all, key)
       Map.put(def_map, :key, key)
     end)
+  end
+
+  # Recovery and support-owned subscriptions are management surfaces, not
+  # acquisition funnels. An ended, unmanaged subscription may choose afresh.
+  defp offer_keys(summary) do
+    cond do
+      summary.subscription_source == "complimentary" -> []
+      summary.entitlement_state in [:dunning, :ending, :unresolved] -> []
+      summary.entitlement_state == :expired and summary.subscription_status != "canceled" -> []
+      summary.plan == "free" and not summary.subscription_managed? -> ["team", "enterprise"]
+      summary.plan == "team" -> ["enterprise"]
+      true -> []
+    end
+  end
+
+  defp offer_features(plan, summary) do
+    runners =
+      if plan.runners_limit == :unlimited,
+        do: "Unlimited runners",
+        else: "Up to #{plan.runners_limit} runners"
+
+    plan.features
+    |> Keyword.put_new(:runners, runners)
+    |> Keyword.update(:support, "Email support", fn label ->
+      if plan.key == "enterprise" and summary.support_channels.email?,
+        do: "Slack support",
+        else: label
+    end)
+    |> Enum.filter(fn
+      {:runners, _} -> greater_limit?(plan.runners_limit, summary.runner_limit)
+      {:members, _} -> greater_limit?(plan.members_limit, summary.member_limit)
+      {:audit_retention, _} -> plan.audit_retention_days > summary.audit_retention_days
+      {feature, _} when feature in [:sso, :scim, :audit_export] -> not summary.features[feature]
+      {:team, _} -> summary.plan == "free"
+      {:support, _} -> plan.key == "enterprise" or not summary.support_channels.email?
+      # Full commercial detail remains in the docs; keep the upgrade offer short.
+      {feature, _} -> feature == :security_review
+    end)
+  end
+
+  defp greater_limit?(_offered, :unlimited), do: false
+  defp greater_limit?(:unlimited, _current), do: true
+  defp greater_limit?(offered, current), do: offered > current
+
+  defp additional_plan_features(plans, summary) do
+    case Enum.find(plans, &(&1.key == summary.plan)) do
+      nil ->
+        []
+
+      plan ->
+        Keyword.take(plan.features, [:security_review, :deployment_planning, :rollout_support])
+    end
+  end
+
+  defp estimate_label(plan, summary, cycle) do
+    quantity = max(summary.runner_count, 1)
+    cents = if cycle == :year, do: plan.annual_price_cents, else: plan.monthly_price_cents
+    period = if cycle == :year, do: "year", else: "month"
+    runners = if quantity == 1, do: "1 billable runner", else: "#{quantity} billable runners"
+
+    "Estimated total: #{format_total(cents * quantity, "USD")}/#{period} for #{runners}"
   end
 
   defp limit_label(:unlimited), do: "Unlimited"
@@ -208,7 +300,9 @@ defmodule EmisarWeb.BillingLive do
 
   defp billing_intent_actionable?(intent, summary, subject) do
     not is_nil(intent) and intent.plan == "team" and
+      "team" in offer_keys(summary) and
       plan_rank("team") > plan_rank(summary.plan) and
+      plan_action(%{key: "team"}, summary) == :upgrade and
       Billing.subject_can_manage_billing?(subject)
   end
 
@@ -224,8 +318,6 @@ defmodule EmisarWeb.BillingLive do
   defp price_label(%{monthly_price_cents: cents}, :month),
     do: "$#{div(cents, 100)} / runner / month"
 
-  defp current_plan?(%{key: key}, %{plan: current}), do: key == current
-
   # Tier position in @plan_order so a card can tell an upgrade from a downgrade.
   # An unknown plan ranks ABOVE every known one: the only way to hold one is a
   # slug minted in Paddle for a custom deal, which `billing_summary` already
@@ -240,6 +332,19 @@ defmodule EmisarWeb.BillingLive do
   # which is sales-led by definition. Both send the operator to support rather
   # than offering a checkout that `start_checkout` would refuse anyway.
   defp sales_led_plan?(plan) when is_binary(plan), do: plan_rank(plan) >= plan_rank("enterprise")
+
+  defp plan_action(plan, summary) do
+    cond do
+      summary.subscription_source == "complimentary" -> :support
+      sales_led_plan?(summary.plan) -> :support
+      summary.subscription_managed? and sales_led_plan?(summary.subscribed_plan) -> :support
+      plan.key == "enterprise" -> :sales
+      summary.subscription_managed? and summary.billing_portal_available? -> :manage
+      summary.subscription_managed? -> :support
+      plan_rank(plan.key) > plan_rank(summary.plan) -> :upgrade
+      true -> :support
+    end
+  end
 
   # Formats a total in the currency's minor unit. Paddle bills in the customer's
   # local currency, so both the subscription summary and each invoice carry their
@@ -268,7 +373,9 @@ defmodule EmisarWeb.BillingLive do
   # The current-plan strip price, cadence-aware: the annual subscriber reads
   # "$X/yr" at the annual rate, monthly "$X/mo", and a custom (unknown-price)
   # plan just "Custom" — no bare "Custom/mo" suffix.
-  defp period_price_label(%{period_total_cents: nil}), do: "Custom"
+  defp period_price_label(%{subscription_source: "complimentary"}), do: "Complimentary"
+  defp period_price_label(%{plan: "free"}), do: "$0"
+  defp period_price_label(%{period_total_cents: nil}), do: "Custom pricing"
 
   defp period_price_label(%{
          period_total_cents: cents,
@@ -306,19 +413,19 @@ defmodule EmisarWeb.BillingLive do
   defp usage_class(_), do: "bg-brand-400"
 
   defp checkout_error(:checkout_pending) do
-    "Checkout is still being confirmed. Try again shortly; another checkout won’t start while this is unresolved."
+    "We're confirming your checkout. Try again shortly."
   end
 
   defp checkout_error(:payment_reconciling) do
-    "Your payment and subscription are still being reconciled. Try again shortly, or contact support if this continues."
+    "We're confirming your payment and subscription. Try again shortly, or contact support if this continues."
   end
 
   defp checkout_error(:subscription_retirement_pending) do
-    "Another subscription is awaiting cancellation confirmation. Try again shortly, or contact support if this continues."
+    "We're confirming the cancellation of an earlier subscription. Try again shortly, or contact support if this continues."
   end
 
   defp checkout_error(:legacy_checkout_pending) do
-    "Earlier checkout status could not be confirmed. Try again shortly; contact support if this continues."
+    "We couldn't confirm an earlier checkout. Try again shortly, or contact support if this continues."
   end
 
   defp checkout_error(:account_closed), do: "This account is closed. Checkout is unavailable."
@@ -326,14 +433,11 @@ defmodule EmisarWeb.BillingLive do
   defp checkout_error(:checkout_unavailable),
     do: "Checkout is unavailable for this account. Contact support for help."
 
-  defp checkout_error(reason), do: "Could not start checkout: #{humanize_reason(reason)}"
+  defp checkout_error(_reason),
+    do: "Couldn't start checkout. Try again, or contact support if this continues."
 
-  defp humanize_reason(reason) when is_binary(reason), do: reason
-
-  defp humanize_reason(reason) when is_atom(reason),
-    do: reason |> Atom.to_string() |> String.replace("_", " ")
-
-  defp humanize_reason(_), do: "unknown error"
+  defp invoice_error(:not_found), do: "That invoice is no longer available."
+  defp invoice_error(_reason), do: "Couldn't open the invoice. Try again."
 
   # Billing mailto context rides the authed page assigns so support can route
   # the request without asking which account or user sent it.
@@ -355,11 +459,24 @@ defmodule EmisarWeb.BillingLive do
     )
   end
 
-  # No-op for the broadcasts the on_mount badge/fleet hooks forward (approvals,
-  # pack trust, runner presence). The hooks own those nav cues; this page ignores them.
+  def handle_info({:refresh_billing, attempt}, socket) do
+    case socket.assigns.billing_refresh do
+      {^attempt, _timer} -> {:noreply, socket |> refresh_summary() |> schedule_refresh()}
+      _stale -> {:noreply, socket}
+    end
+  end
+
+  # The badge/fleet hooks own unrelated account broadcasts.
   def handle_info(_msg, socket), do: {:noreply, socket}
 
   def render(assigns) do
+    offers =
+      if assigns.summary,
+        do: Enum.filter(assigns.plans, &(&1.key in offer_keys(assigns.summary))),
+        else: []
+
+    assigns = assign(assigns, :offers, offers)
+
     ~H"""
     <.console_shell
       chrome={@shell_chrome}
@@ -373,10 +490,8 @@ defmodule EmisarWeb.BillingLive do
       <:title>Billing</:title>
 
       <.page_intro>
-        Your plan sets this account's limits — how many runners connect, how long the audit log is
-        kept, and which features are on. Track usage against them, change plan, and manage payment
-        here. <.doc_link href="/pricing#compare">Compare plans</.doc_link>
-        <.doc_link href={~p"/docs/billing"}>Billing docs</.doc_link>
+        See what your plan includes and how much you're using, with billing details and upgrade
+        options in one place. <.doc_link href={~p"/docs/billing"}>Billing docs</.doc_link>
       </.page_intro>
 
       <.loading_state :if={@loading?} />
@@ -390,8 +505,7 @@ defmodule EmisarWeb.BillingLive do
         icon="state.warning"
         title="Couldn't load billing"
       >
-        Something went wrong loading your plan and usage — this is on our side,
-        not a problem with your payment. Try again in a moment.
+        Reload this page to try again.
         <:cta navigate={~p"/app/#{@current_account}/settings/billing"}>Reload</:cta>
       </.empty_state>
 
@@ -406,129 +520,91 @@ defmodule EmisarWeb.BillingLive do
         >
           <:cta :if={Billing.subject_can_manage_billing?(@current_subject)}>
             <.button
+              :if={@summary.billing_portal_available?}
               variant={:secondary}
               size={:sm}
               class="shrink-0"
               phx-click="manage_billing"
-              phx-disable-with="Opening portal…"
+              phx-disable-with="Opening billing…"
             >
               Manage billing
             </.button>
+            <.button
+              :if={not @summary.billing_portal_available?}
+              variant={:secondary}
+              size={:sm}
+              href={billing_support_mailto(@current_account, @current_user)}
+            >
+              Contact support
+            </.button>
           </:cta>
         </.subscription_banner>
-        <%!-- Current-plan strip on the canvas: plan facts + self-serve money
-             actions in the wide left column; the usage meters (current limits)
-             and a help/support aside on the right — the create-page helper-rail
-             grammar, so "what you have / what you're using / who to ask" read in
-             one row. --%>
-        <%!-- The house rail track — a FIXED 22rem splitting at xl, the same one
-             every other console page uses, never a squeezed fraction: a quarter
-             of the lg canvas left the rail ~168px, which broke "22 / Unlimited"
-             across two lines under its own label. Only the account FACTS share
-             the row with it; the plan grid moved below (see there). --%>
-        <section class="grid grid-cols-1 gap-x-10 gap-y-8 xl:grid-cols-[minmax(0,1fr)_22rem] xl:items-start">
+        <div class="grid grid-cols-1 gap-x-10 gap-y-8 xl:grid-cols-[minmax(0,1fr)_22rem] xl:items-start">
           <div class="min-w-0 space-y-8">
-            <div class="flex flex-wrap items-start justify-between gap-4">
+            <section id="billing-current-plan">
+              <.section_header title="Current plan">
+                <:actions :if={Billing.subject_can_manage_billing?(@current_subject)}>
+                  <.button
+                    :if={
+                      @summary.billing_portal_available? and
+                        @summary.subscription_source != "complimentary"
+                    }
+                    variant={:secondary}
+                    phx-click="manage_billing"
+                    phx-disable-with="Opening billing…"
+                  >
+                    Manage billing
+                  </.button>
+                  <.button
+                    :if={
+                      @summary.subscription_source == "complimentary" or
+                        (not @summary.billing_portal_available? and
+                           (@summary.support_channels.email? or @summary.subscription_managed?))
+                    }
+                    variant={:secondary}
+                    href={billing_support_mailto(@current_account, @current_user)}
+                  >
+                    Contact support
+                  </.button>
+                </:actions>
+              </.section_header>
               <div>
-                <div class="text-[11px] font-semibold uppercase tracking-wider text-zinc-400">
-                  Current plan
-                </div>
-                <div class="mt-1 flex flex-wrap items-baseline gap-x-2 gap-y-1">
+                <div class="flex flex-wrap items-baseline gap-x-2 gap-y-1">
                   <span class="text-2xl font-semibold text-zinc-50">{@summary.plan_name}</span>
-                  <span class="text-sm text-zinc-500">·</span>
-                  <span class="text-sm text-zinc-400">{period_price_label(@summary)}</span>
+                  <span class="text-sm tabular-nums text-zinc-400">{period_price_label(@summary)}</span>
                 </div>
-                <%!-- Subscription cycle notes — only rendered when the
-                   underlying Paddle subscription has the matching state.
-                   Cancel-at-period-end is the loud case (you keep your
-                   plan until the date, then revert to free); trial_end
-                   shows during trial; current_period_end always shows
-                   on a paid plan so the operator knows "next charge
-                   on …". --%>
-                <div class="mt-2 flex flex-wrap items-center gap-2 text-xs">
-                  <.chip
-                    :if={
-                      @summary.entitlement_state == :ending &&
-                        (@summary.scheduled_change_effective_at || @summary.current_period_end)
-                    }
-                    tone={:amber}
-                  >
-                    {if @summary.scheduled_change_action == "pause", do: "Pauses", else: "Ends"} on
-                    <.local_time
-                      id="billing-access-ends-on"
-                      value={@summary.scheduled_change_effective_at || @summary.current_period_end}
-                      class="inline"
-                    />
-                  </.chip>
-                  <.chip :if={@summary.trial_end} tone={:brand}>
-                    Trial ends
-                    <.local_time id="billing-trial-ends" value={@summary.trial_end} class="inline" />
-                  </.chip>
-                  <span
-                    :if={
-                      @summary.entitlement_state in [:active, :dunning] &&
-                        @summary.current_period_end && @summary.cancel_at_period_end != true &&
-                        is_nil(@summary.scheduled_change_action)
-                    }
-                    class="text-zinc-400"
-                  >
-                    Next charge
-                    <.local_time
-                      id="billing-next-charge"
-                      value={@summary.current_period_end}
-                      class="inline"
-                    />
-                  </span>
-                </div>
-              </div>
-
-              <%!-- Manage subscription only — the plan CARDS below own
-                 upgrade/downgrade, so the strip never duplicates them. Surfaces
-                 the Paddle Customer Portal (invoices, payment method, plan
-                 change, cancellation) once a Paddle customer is attached. --%>
-              <div class="flex flex-wrap gap-2">
-                <.button
+                <%!-- The banner owns pause/cancellation deadlines. --%>
+                <p :if={@summary.trial_end} class="mt-2 text-xs text-zinc-400">
+                  Trial ends
+                  <.local_time id="billing-trial-ends" value={@summary.trial_end} class="inline" />
+                </p>
+                <p
                   :if={
-                    @current_account.paddle_customer_id &&
-                      Billing.subject_can_manage_billing?(@current_subject)
+                    @summary.entitlement_state in [:active, :dunning] &&
+                      @summary.current_period_end && @summary.cancel_at_period_end != true &&
+                      is_nil(@summary.scheduled_change_action)
                   }
-                  variant={:secondary}
-                  phx-click="manage_billing"
-                  phx-disable-with="Opening portal…"
-                  icon="product.billing"
+                  class="mt-2 text-xs text-zinc-400"
                 >
-                  Manage subscription
-                </.button>
+                  Next charge
+                  <.local_time
+                    id="billing-next-charge"
+                    value={@summary.current_period_end}
+                    class="inline"
+                  />
+                </p>
               </div>
-            </div>
-
-            <%!-- Recent invoices — a payment history inline, so operators don't
-                 open the portal just to check the last charge. Manage subscription
-                 still owns the full ledger + PDF downloads. A paid row is silent
-                 (no green "Paid" chip); only past-due earns a tone. Loaded async
-                 off the mount path (IL-18); loading/failed chrome renders only
-                 once a Paddle customer exists — a never-billed account resolves
-                 to [] instantly, and a flash of "Recent invoices" that then
-                 vanishes would just jiggle the page. --%>
-            <%!-- The ledger is money, not operations: an operator reading their
-                 plan and limits above has no business in what the company paid
-                 and when, while the roles that run the account's money do.
-                 Gated on the same `view_invoices` the context read enforces —
-                 the section is hidden because there is nothing to show, not to
-                 hide a control that would work. --%>
+            </section>
             <.async_result
               :let={invoices}
               :if={Billing.subject_can_view_invoices?(@current_subject)}
               assign={@invoices}
             >
               <:loading>
-                <section :if={@current_account.paddle_customer_id}>
-                  <h3 class="text-[11px] font-semibold uppercase tracking-wider text-zinc-400">
-                    Recent invoices
-                  </h3>
-                  <p class="mt-3 flex items-center gap-2 text-sm text-zinc-400">
-                    <.icon name="state.loading" class="h-4 w-4 animate-spin" />
-                    Loading payment history…
+                <section :if={@summary.billing_portal_available?}>
+                  <.section_header title="Recent invoices" />
+                  <p class="flex items-center gap-2 text-sm text-zinc-400">
+                    <.icon name="state.loading" class="h-4 w-4 animate-spin" /> Loading invoices…
                   </p>
                 </section>
               </:loading>
@@ -539,10 +615,7 @@ defmodule EmisarWeb.BillingLive do
                   title="Couldn't load recent invoices"
                   class="max-w-prose"
                 >
-                  <:body>
-                    Something went wrong loading your payment history — this is on our
-                    side, not a problem with your payment.
-                  </:body>
+                  <:body>Try again to load your invoices.</:body>
                   <.button
                     variant={:secondary}
                     size={:sm}
@@ -554,13 +627,31 @@ defmodule EmisarWeb.BillingLive do
                   </.button>
                 </.event_block>
               </:failed>
-              <section :if={invoices != []}>
-                <h3 class="text-[11px] font-semibold uppercase tracking-wider text-zinc-400">
-                  Recent invoices
-                </h3>
-                <ul class="mt-3 divide-y divide-zinc-800/70 border-t border-zinc-800/70">
+              <section :if={@summary.billing_portal_available?}>
+                <.section_header title="Recent invoices">
+                  <:actions>
+                    <.button
+                      variant={:secondary}
+                      size={:sm}
+                      phx-click="retry_invoices"
+                      phx-disable-with="Loading…"
+                    >
+                      Refresh invoices
+                    </.button>
+                    <.button
+                      :if={Billing.subject_can_manage_billing?(@current_subject)}
+                      variant={:secondary}
+                      size={:sm}
+                      phx-click="manage_billing"
+                      phx-disable-with="Opening billing…"
+                    >
+                      View all invoices
+                    </.button>
+                  </:actions>
+                </.section_header>
+                <ul :if={invoices != []} id="billing-invoices" class="divide-y divide-zinc-800/70">
                   <li
-                    :for={invoice <- invoices}
+                    :for={invoice <- Enum.take(invoices, 3)}
                     class="flex flex-wrap items-center gap-x-4 gap-y-1 py-3 text-sm"
                   >
                     <.local_time
@@ -569,10 +660,8 @@ defmodule EmisarWeb.BillingLive do
                       value={invoice.billed_at}
                       class="w-36 shrink-0 whitespace-nowrap text-zinc-400"
                     />
-                    <%!-- An amount Paddle sent in a shape we could not read is an
-                         em-dash, not "Custom" (which means a sales-led price on a
-                         plan card) and certainly not "$0.00". --%>
-                    <span class="w-16 font-medium tabular-nums text-zinc-200">
+                    <%!-- Unreadable provider amounts stay unknown, never zero. --%>
+                    <span class="min-w-[4rem] font-medium tabular-nums text-zinc-200">
                       {if invoice.amount_cents,
                         do: format_total(invoice.amount_cents, invoice.currency),
                         else: "—"}
@@ -587,57 +676,28 @@ defmodule EmisarWeb.BillingLive do
                       >
                         {invoice_status_label(invoice.status)}
                       </.chip>
-                      <%!-- Paddle mints the PDF on demand — a phx-click, not an href,
-                         since we fetch the signed URL server-side then redirect. --%>
-                      <button
-                        type="button"
+                      <%!-- The context rechecks ownership before minting the PDF URL. --%>
+                      <.button
+                        variant={:secondary}
+                        size={:sm}
                         phx-click="download_invoice"
                         phx-value-id={invoice.id}
                         phx-disable-with="Opening…"
-                        class="inline-flex items-center gap-1 font-medium text-brand-400 hover:text-brand-300"
-                        title={"Download invoice #{invoice.invoice_number} (PDF)"}
+                        aria-label={"Download invoice #{invoice.invoice_number} (PDF)"}
                       >
-                        <.icon name="action.download" class="h-3.5 w-3.5" /> PDF
-                      </button>
+                        PDF
+                      </.button>
                     </div>
                   </li>
                 </ul>
               </section>
             </.async_result>
-
-            <%!-- Enterprise is a custom, sales-led plan (no self-serve price), so
-               plan + billing changes go through our team. The icon-caps-a-spine
-               grammar (event_block) — a vertical line drops from the lifebuoy —
-               marks it a standing posture note; the action is the aside's
-               "Contact support". --%>
-            <.event_block
-              :if={sales_led_plan?(@summary.plan)}
-              icon="product.support"
-              tone={:neutral}
-              title="Custom Enterprise plan"
-              class="max-w-prose"
-            >
-              <:body>
-                Your plan and billing are handled with our team, not self-serve. Contact support to
-                change your plan, ask about an invoice, or cancel — we'll take care of it.
-              </:body>
-            </.event_block>
           </div>
-
-          <%!-- Right rail — current limits, plan features, and where to get help
-             (the create-page helper-column grammar), no framing line. Below xl it
-             becomes a three-up BAND under the account facts: each group keeps a
-             rail-width measure and fills the row, rather than one column of
-             stretched label/value rows or a capped block beside dead space. --%>
-          <aside class="grid gap-x-10 gap-y-8 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-1">
-            <div>
-              <h3 class="text-[11px] font-semibold uppercase tracking-wider text-zinc-400">
-                Usage
-              </h3>
-              <%!-- The summary limits are entitlement-aware (Paddle product
-                 custom_data overrides the compiled plan defaults) — never
-                 re-derive them from the plans map by name. --%>
-              <div class="mt-4 space-y-4">
+          <aside class="min-w-0 space-y-8">
+            <section id="billing-usage">
+              <.section_header title="Usage" />
+              <div class="space-y-4">
+                <%!-- These are actual entitlements, including account-specific limits. --%>
                 <.usage_meter
                   label="Runners"
                   count={@summary.runner_count}
@@ -650,208 +710,153 @@ defmodule EmisarWeb.BillingLive do
                   limit_label={limit_label(@summary.member_limit)}
                   pct={usage_pct(@summary.member_count, @summary.member_limit)}
                 />
-                <%!-- Audit retention is a plan cap too, but a duration not a
-                     count — a plain key/value row in the same rail as the meters. --%>
-                <div class="flex items-baseline justify-between text-xs">
+                <div class="flex items-baseline justify-between gap-3 text-xs">
                   <span class="text-zinc-400">Audit retention</span>
-                  <span class="font-medium text-zinc-200">
+                  <span class="font-medium tabular-nums text-zinc-200">
                     {@summary.audit_retention_days} days
                   </span>
                 </div>
               </div>
-            </div>
-            <div>
-              <h3 class="text-[11px] font-semibold uppercase tracking-wider text-zinc-400">
-                Features
-              </h3>
-              <%!-- Plan-gated features (entitlement-aware) — what this plan turns on. --%>
-              <ul class="mt-4 space-y-2 text-sm">
-                <.feature_line enabled={@features.sso} label="Single sign-on (OIDC)" />
-                <.feature_line enabled={@features.scim} label="SCIM directory sync" />
-                <.feature_line enabled={@features.audit_export} label="Audit export (CSV + SIEM)" />
+            </section>
+            <section id="billing-features">
+              <.section_header title="Features" />
+              <ul class="space-y-2 text-sm">
+                <.feature_line enabled={@summary.features.sso} label="Single sign-on (OIDC)" />
+                <.feature_line enabled={@summary.features.scim} label="SCIM directory sync" />
+                <.feature_line
+                  enabled={@summary.features.audit_export}
+                  label="Audit export (CSV + SIEM)"
+                />
+                <.feature_line
+                  :for={{_key, label} <- additional_plan_features(@plans, @summary)}
+                  enabled={true}
+                  label={label}
+                />
               </ul>
-            </div>
-            <%!-- Third of three, so it is the one left alone on a row when the
-                 band is two-up — take the whole row there and let the prose use
-                 it, rather than sit half-width beside nothing. --%>
-            <div class="sm:col-span-2 md:col-span-1">
-              <h3 class="text-[11px] font-semibold uppercase tracking-wider text-zinc-400">
-                Need help?
-              </h3>
-              <p class="mt-3 text-sm leading-relaxed text-zinc-400">
-                Questions about your plan, an invoice, or your limits? Our team can help — and can set
-                up a custom plan if you're outgrowing these.
+            </section>
+            <section :if={@summary.support_channels.email?} id="billing-support">
+              <.section_header title="Need help?" />
+              <p class="text-sm leading-relaxed text-zinc-400">
+                <%= if sales_led_plan?(@summary.plan) do %>
+                  Contact us for general support, billing help, plan changes, or cancellation.
+                <% else %>
+                  Contact us for help with emisar or your billing.
+                <% end %>
               </p>
-              <a
-                href={billing_support_mailto(@current_account, @current_user)}
-                class="mt-3 inline-flex items-center gap-1 text-sm font-medium text-brand-400 hover:text-brand-300"
-              >
-                Contact support <.icon name="action.next" class="h-3.5 w-3.5" />
-              </a>
-            </div>
+              <div class="mt-3 flex flex-wrap gap-x-5 gap-y-2">
+                <.link
+                  :if={@summary.support_channels.slack_url}
+                  href={@summary.support_channels.slack_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  class="inline-flex items-center gap-1 text-sm font-medium text-brand-400 hover:text-brand-300"
+                >
+                  Slack support <.icon name="action.external_link" class="h-3.5 w-3.5" />
+                </.link>
+                <a
+                  href={billing_support_mailto(@current_account, @current_user)}
+                  class="group text-sm font-medium text-brand-400 hover:text-brand-300"
+                >
+                  Email support&nbsp;<.cta_arrow />
+                </a>
+              </div>
+            </section>
           </aside>
-        </section>
-        <%!-- Plans take the FULL canvas below the facts row, never the
-                 column beside the rail: three side-by-side cards have a width
-                 floor a list column doesn't, and sharing the row with a 22rem
-                 rail crushed them to ~176px, wrapping "Contact support to
-                 switch" onto three lines. The comparison is also the page's
-                 widest read — the row above answers "what do I have", this
-                 answers "what else is there". Picking a plan is the
-                 choice_cards concept — the current plan takes the selected
-                 treatment (bright ring), the rest quiet. --%>
-        <%!-- What the tiers include is an operational fact every member
-                 works against (the same `view_billing` the usage rail and the
-                 plan strip already render from) — an operator chasing a limit
-                 needs to see which plan lifts it before asking for it, and
-                 hiding the whole catalogue left them nothing to point at.
-                 Buying stays the money-handler's job: `start_checkout/4`
-                 requires manage-billing, so the CTA — not the card — is what
-                 that permission gates. --%>
-        <section>
+        </div>
+
+        <section :if={@offers != []} id="billing-upgrade-offers" class="max-w-3xl">
           <.status_note
-            :if={
-              billing_intent_actionable?(
-                @billing_intent,
-                @summary,
-                @current_subject
-              )
-            }
+            :if={billing_intent_actionable?(@billing_intent, @summary, @current_subject)}
             icon="product.billing"
-            tone={:brand}
+            tone={:neutral}
             title={"Review Team for #{@current_account.name}"}
             class="mb-5"
           >
             {cycle_label(@cycle)} is selected. Choose Upgrade to Team below to open checkout.
             Nothing is charged until you confirm there.
           </.status_note>
-          <.section_header title="Plans">
-            <:actions>
-              <%!-- Monthly/annual is pure UI state (set_cycle) — the chosen
-                       cycle rides on the Upgrade click. The saving shows per plan
-                       on the card, so the toggle itself stays neutral. --%>
-              <div class="inline-flex rounded-lg p-0.5 text-xs font-medium ring-1 ring-zinc-800">
-                <button
-                  :for={{value, label} <- [{"month", "Monthly"}, {"year", "Annual"}]}
-                  type="button"
-                  phx-click="set_cycle"
-                  phx-value-cycle={value}
-                  aria-pressed={to_string(@cycle) == value}
-                  class={[
-                    "rounded-md px-3 py-1.5 transition-colors",
-                    if(to_string(@cycle) == value,
-                      do: "bg-zinc-800 text-zinc-100",
-                      else: "text-zinc-400 hover:text-zinc-200"
-                    )
-                  ]}
-                >
-                  {label}
-                </button>
-              </div>
-            </:actions>
-          </.section_header>
-          <div class="grid grid-cols-1 gap-4 md:grid-cols-3">
-            <%!-- ONE card style for every plan — identity ("current") and merch
-                 ("most popular") are the CHIPS' job; per-plan border treatments
-                 read as three different products. --%>
-            <%!-- The current plan is METADATA, not a pass verdict (design-system
-                     §3.1), so it never wears the brand ring: the neutral `current`
-                     chip names it, and a neutral wash keeps it findable in the row. --%>
-            <%!-- credo:disable-for-next-line Emisar.Checks.NoIslandContainers — the choice-card recipe (pick-a-plan grid; current = neutral wash) --%>
+          <.section_header title={
+            if @summary.plan == "free", do: "Upgrade your plan", else: "Upgrade to Enterprise"
+          } />
+          <div class={["grid gap-4", length(@offers) == 2 && "md:grid-cols-2"]}>
+            <%!-- credo:disable-for-next-line Emisar.Checks.NoIslandContainers — paid choices reuse the shared choice-card recipe; a single offer stays on canvas --%>
             <article
-              :for={plan <- @plans}
-              class={[
-                "relative flex flex-col rounded-lg p-5 ring-1 ring-zinc-800",
-                if(current_plan?(plan, @summary), do: "bg-white/[0.04]", else: "bg-black/20")
-              ]}
+              :for={plan <- @offers}
+              id={"billing-offer-#{plan.key}"}
+              class={
+                if length(@offers) == 2,
+                  do: "flex min-w-0 flex-col rounded-lg bg-black/20 p-4 ring-1 ring-zinc-800",
+                  else: "grid min-w-0 gap-x-10 gap-y-4 md:grid-cols-2"
+              }
             >
-              <div class="flex items-center justify-between gap-2">
-                <h3 class="text-lg font-semibold text-zinc-100">{plan.name}</h3>
-                <.chip :if={current_plan?(plan, @summary)} tone={:neutral}>current</.chip>
-                <.chip
-                  :if={
+              <div>
+                <.section_header :if={length(@offers) == 2} title={plan.name} class="min-h-8">
+                  <:badge :if={
                     plan.key == "team" and
-                      billing_intent_actionable?(
-                        @billing_intent,
-                        @summary,
-                        @current_subject
-                      )
-                  }
-                  tone={:brand}
-                >
-                  selected
-                </.chip>
-                <%!-- Upsell merch only reads as such BELOW the badged plan —
-                     a customer already above it gets silence. --%>
-                <.chip :if={
-                  plan.key == "team" and
-                    plan_rank("team") > plan_rank(@summary.plan) and
-                    not billing_intent_actionable?(
-                      @billing_intent,
-                      @summary,
-                      @current_subject
-                    )
-                }>
-                  most popular
-                </.chip>
+                      billing_intent_actionable?(@billing_intent, @summary, @current_subject)
+                  }>
+                    <.chip tone={:neutral}>Selected</.chip>
+                  </:badge>
+                  <:actions :if={plan.key == "team"}>
+                    <div
+                      class="inline-flex rounded-lg p-0.5 text-xs font-medium ring-1 ring-zinc-800"
+                      role="group"
+                      aria-label="Team billing cycle"
+                    >
+                      <button
+                        :for={{value, label} <- [{"month", "Monthly"}, {"year", "Annual"}]}
+                        type="button"
+                        phx-click="set_cycle"
+                        phx-value-cycle={value}
+                        aria-pressed={to_string(@cycle) == value}
+                        class={[
+                          "rounded-md px-3 py-1.5 transition-colors",
+                          if(to_string(@cycle) == value,
+                            do: "bg-zinc-800 text-zinc-100",
+                            else: "text-zinc-400 hover:text-zinc-200"
+                          )
+                        ]}
+                      >
+                        {label}
+                      </button>
+                    </div>
+                  </:actions>
+                </.section_header>
+                <p class="text-sm tabular-nums text-zinc-200">{price_label(plan, @cycle)}</p>
+                <p :if={plan.key == "team"} class="mt-2 text-xs tabular-nums text-zinc-400">
+                  {estimate_label(plan, @summary, @cycle)}
+                  <span
+                    :if={@cycle == :year and Billing.annual_savings_label(plan)}
+                    class="block mt-1"
+                  >
+                    {Billing.annual_savings_label(plan)}
+                  </span>
+                </p>
               </div>
-
-              <p class="mt-2 text-sm text-zinc-400">
-                {price_label(plan, @cycle)}
-                <span
-                  :if={@cycle == :year and Billing.annual_savings_label(plan)}
-                  class="text-brand-400"
+              <ul class={[
+                "space-y-1.5 text-xs text-zinc-300",
+                if(length(@offers) == 2,
+                  do: "mt-4 flex-1",
+                  else: "md:col-start-2 md:row-start-1 md:row-span-2"
+                )
+              ]}>
+                <li
+                  :for={{_key, label} <- offer_features(plan, @summary)}
+                  class="flex items-start gap-2"
                 >
-                  · {Billing.annual_savings_label(plan)}
-                </span>
-              </p>
-
-              <ul class="mt-4 flex-1 space-y-2 text-xs text-zinc-300">
-                <li :for={{_id, label} <- plan.features} class="flex items-start gap-2">
-                  <.icon name="state.included" class="mt-0.5 h-4 w-4 flex-none text-brand-400" />
-                  <span class="leading-relaxed">{label}</span>
+                  <.icon name="state.included" class="h-4 w-4 flex-none text-zinc-400" />
+                  <span>{label}</span>
                 </li>
               </ul>
-
-              <%!-- No footer on the current plan: the chip already says it —
-                   a disabled "You're here" button was a fake affordance. Same
-                   reasoning for a member who can't buy: every button here would
-                   die in a denial, and a card whose footer is simply absent
-                   reads as a price list, which is what it is for them. --%>
               <div
-                :if={
-                  not current_plan?(plan, @summary) and
-                    Billing.subject_can_manage_billing?(@current_subject)
-                }
-                class="mt-5"
+                :if={Billing.subject_can_manage_billing?(@current_subject)}
+                class={if length(@offers) == 2, do: "mt-4", else: "md:col-start-1 md:row-start-2"}
               >
-                <%= cond do %>
-                  <% plan.key == "enterprise" -> %>
+                <%= case plan_action(plan, @summary) do %>
+                  <% :upgrade -> %>
                     <.button
-                      variant={:secondary}
-                      size={:md}
                       class="w-full"
-                      href={enterprise_sales_mailto(@current_account, @current_user)}
-                    >
-                      Contact sales
-                    </.button>
-                  <% sales_led_plan?(@summary.plan) -> %>
-                    <%!-- On a custom Enterprise plan (or any Paddle-minted slug
-                         this build doesn't know) every other tier is a downgrade,
-                         and there's no self-serve path off it — the note above
-                         carries the one real action (contact support). --%>
-                    <.button
-                      variant={:secondary}
-                      size={:md}
-                      class="w-full"
-                      href={billing_support_mailto(@current_account, @current_user)}
-                    >
-                      Contact support to switch
-                    </.button>
-                  <% plan_rank(plan.key) > plan_rank(@summary.plan) -> %>
-                    <.button
-                      size={:md}
-                      class="w-full"
+                      size={:sm}
                       phx-click="upgrade"
                       phx-value-plan={plan.key}
                       phx-value-cycle={@cycle}
@@ -859,19 +864,31 @@ defmodule EmisarWeb.BillingLive do
                     >
                       Upgrade to {plan.name}
                     </.button>
-                  <% true -> %>
-                    <%!-- Lower tier than the current plan — a downgrade. A downgrade
-                         isn't a checkout (that would open a second subscription); plan
-                         changes + cancellations live in the Paddle customer portal, so
-                         route there instead of mislabeling it "Upgrade to Free". --%>
+                  <% :sales -> %>
                     <.button
                       variant={:secondary}
-                      size={:md}
-                      class="w-full"
-                      phx-click="manage_billing"
-                      phx-disable-with="Opening portal…"
+                      class={if length(@offers) == 2, do: "w-full"}
+                      size={:sm}
+                      href={enterprise_sales_mailto(@current_account, @current_user)}
                     >
-                      Downgrade to {plan.name}
+                      Contact sales
+                    </.button>
+                  <% :support -> %>
+                    <.button
+                      variant={:secondary}
+                      size={:sm}
+                      href={billing_support_mailto(@current_account, @current_user)}
+                    >
+                      Contact support
+                    </.button>
+                  <% :manage -> %>
+                    <.button
+                      variant={:secondary}
+                      size={:sm}
+                      phx-click="manage_billing"
+                      phx-disable-with="Opening billing…"
+                    >
+                      Manage billing
                     </.button>
                 <% end %>
               </div>
@@ -886,7 +903,7 @@ defmodule EmisarWeb.BillingLive do
   attr :enabled, :boolean, required: true
   attr :label, :string, required: true
 
-  # One plan-feature line in the billing rail: a check when the plan turns it
+  # One plan-feature line in the usage rail: a check when the plan turns it
   # on, a muted dash when it doesn't. The included-feature glyph is the house
   # bare `state.included` in brand — the same one the plan cards, docs
   # prerequisites, and auth components render; a filled circle here made one
@@ -911,9 +928,9 @@ defmodule EmisarWeb.BillingLive do
   defp usage_meter(assigns) do
     ~H"""
     <div>
-      <div class="flex items-baseline justify-between text-xs">
+      <div class="flex items-baseline justify-between gap-3 text-xs">
         <span class="text-zinc-400">{@label}</span>
-        <span class="font-medium text-zinc-200">
+        <span class="font-medium tabular-nums text-zinc-200">
           {@count} <span class="text-zinc-400">/ {@limit_label}</span>
         </span>
       </div>

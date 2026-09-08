@@ -144,7 +144,7 @@ defmodule EmisarWeb.RunNewLiveTest do
 
     # Meta strip: risk / kind / pack.
     assert html =~ "Risk"
-    assert html =~ "Kind"
+    assert html =~ "Type"
     assert html =~ "exec"
     assert html =~ "Pack"
     assert html =~ "linux-core"
@@ -214,9 +214,9 @@ defmodule EmisarWeb.RunNewLiveTest do
     {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runs/new/#{runner.id}/#{action.action_id}")
 
     assert html =~ "Signed dispatch only"
-    assert html =~ "run it from your MCP client"
+    assert html =~ "Use an MCP client with a signing key and certificate"
     # No Dispatch submit — the run would be refused at the runner.
-    refute html =~ "Dispatch to"
+    refute html =~ "Run on"
   end
 
   test "live validation surfaces an inline error once the field is touched", %{conn: conn} do
@@ -264,7 +264,43 @@ defmodule EmisarWeb.RunNewLiveTest do
     assert to == ~p"/app/#{account}/runners/#{runner.id}"
 
     assert flash["error"] ==
-             "This action cannot start because its primary executable is missing on the runner."
+             "The required tool epmd isn't installed on the runner. Install it and reload the runner."
+  end
+
+  test "an unavailable action without a reported tool keeps a useful fallback", %{conn: conn} do
+    {conn, _user, account} = register_and_log_in(conn)
+    runner = Fixtures.Runners.create_runner(account_id: account.id)
+
+    action =
+      Fixtures.Catalog.create_action(
+        runner: runner,
+        primary_executable_available: false,
+        missing_executable: nil
+      )
+
+    assert {:error, {:live_redirect, %{flash: flash}}} =
+             live(conn, ~p"/app/#{account}/runs/new/#{runner.id}/#{action.action_id}")
+
+    assert flash["error"] ==
+             "The tool required by this action isn't installed on the runner. Install it and reload the runner."
+  end
+
+  test "a tool removed while the form is open is named from current runner evidence", %{
+    conn: conn
+  } do
+    {conn, user, account} = register_and_log_in(conn)
+    Fixtures.Policies.create_policy(account_id: account.id, created_by_id: user.id)
+    {runner, action} = action_with_required_arg(account)
+
+    {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runs/new/#{runner.id}/#{action.action_id}")
+
+    action
+    |> Ecto.Changeset.change(primary_executable_available: false, missing_executable: "tail")
+    |> Repo.update!()
+
+    html = submit_dispatch(lv)
+    assert html =~ "The required tool tail isn&#39;t installed on the runner"
+    assert {:ok, [], _} = Runs.list_recent_runs(owner_subject(user, account), limit: 50)
   end
 
   # A blank reason is a validation of the operator's own input, so it renders
@@ -281,8 +317,13 @@ defmodule EmisarWeb.RunNewLiveTest do
     |> render_submit()
 
     # The message is the inline field error inside the form, not the flash banner.
-    assert has_element?(lv, "#dispatch_form p.text-rose-400", "Reason is required")
-    refute has_element?(lv, "#flash-error", "Reason is required")
+    assert has_element?(
+             lv,
+             "#dispatch_form p.text-rose-400",
+             "Enter a reason for running this action"
+           )
+
+    refute has_element?(lv, "#flash-error", "Enter a reason for running this action")
     assert {:ok, [], _} = Runs.list_recent_runs(owner_subject(user, account), limit: 50)
   end
 
@@ -428,7 +469,7 @@ defmodule EmisarWeb.RunNewLiveTest do
     # The shared confirm dialog, never the native data-confirm popup.
     refute has_element?(lv, "button[data-confirm]")
     assert has_element?(lv, "#confirm-dispatch")
-    assert render(lv) =~ "immediately."
+    assert render(lv) =~ "The run will wait if approval is required or the runner is offline."
   end
 
   test "a high-risk confirm folds in the entered args (the blast radius)", %{conn: conn} do
@@ -474,7 +515,7 @@ defmodule EmisarWeb.RunNewLiveTest do
     {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runs/new/#{runner.id}/#{action.action_id}")
 
     # The button names the TARGET — the last glance binds action + host.
-    assert has_element?(lv, "button", "Dispatch to #{runner.name}")
+    assert has_element?(lv, "button", "Run on #{runner.name}")
     refute has_element?(lv, "button[data-confirm]")
     refute has_element?(lv, "#confirm-dispatch")
   end
@@ -492,9 +533,9 @@ defmodule EmisarWeb.RunNewLiveTest do
     html = render(lv)
 
     assert html =~ "Runner offline"
-    assert html =~ "queues as"
+    assert html =~ "any required approval is granted"
     # The portal accepts the dispatch and delivers it on the first connect.
-    assert has_element?(lv, "button", "Dispatch to #{runner.name}")
+    assert has_element?(lv, "button", "Run on #{runner.name}")
   end
 
   test "a disabled runner reports the disabled remedy, not the signed-only one", %{conn: conn} do
@@ -519,8 +560,8 @@ defmodule EmisarWeb.RunNewLiveTest do
     # the runner, not reaching for a signing key.
     assert html =~ "This runner is disabled"
     refute html =~ "Signed dispatch only"
-    refute html =~ "run it from your MCP client"
-    refute has_element?(lv, "button", "Dispatch to")
+    refute html =~ "Use an MCP client with a signing key and certificate"
+    refute has_element?(lv, "button", "Run on")
   end
 
   test "a viewer sees a note instead of the dispatch button", %{conn: conn} do
@@ -542,8 +583,8 @@ defmodule EmisarWeb.RunNewLiveTest do
       |> log_in_user(viewer)
       |> live(~p"/app/#{account}/runs/new/#{runner.id}/#{action.action_id}")
 
-    refute has_element?(lv, "button", "Dispatch to")
-    assert html =~ "Your role can&#39;t dispatch runs"
+    refute has_element?(lv, "button", "Run on")
+    assert html =~ "You don&#39;t have permission to run actions"
   end
 
   # -- dispatch denial / abuse flashes ---------------------------------
@@ -580,7 +621,7 @@ defmodule EmisarWeb.RunNewLiveTest do
 
     html = submit_dispatch(lv)
 
-    assert html =~ "Runner not found in this account."
+    assert html =~ "This runner is no longer available."
     assert {:ok, [], _} = Runs.list_recent_runs(owner_subject(user, account), limit: 50)
   end
 
@@ -602,7 +643,7 @@ defmodule EmisarWeb.RunNewLiveTest do
 
     html = submit_dispatch(lv)
 
-    assert html =~ "no longer advertises that action"
+    assert html =~ "This action is no longer available on the runner"
     assert {:ok, [], _} = Runs.list_recent_runs(owner_subject(user, account), limit: 50)
   end
 
@@ -627,8 +668,8 @@ defmodule EmisarWeb.RunNewLiveTest do
 
     html = submit_dispatch(lv, %{}, "checking host uptime")
 
-    assert html =~ "This action changed while the form was open"
-    assert html =~ "Reload the page and review the current arguments"
+    assert html =~ "This action changed while you were editing"
+    assert html =~ "Refresh the page and review its arguments"
     refute html =~ "action_contract_changed"
     assert {:ok, [], _} = Runs.list_recent_runs(owner_subject(user, account), limit: 50)
   end
@@ -663,7 +704,7 @@ defmodule EmisarWeb.RunNewLiveTest do
       capture_log(fn ->
         html = submit_dispatch(lv, %{}, "checking host uptime")
 
-        assert html =~ "The run could not be dispatched"
+        assert html =~ "Couldn&#39;t submit the run"
         assert html =~ "contact support"
         refute html =~ "invalid_policy_approval"
         refute html =~ "Dispatch failed"
@@ -742,7 +783,7 @@ defmodule EmisarWeb.RunNewLiveTest do
 
     html = submit_dispatch(lv, %{}, "running the custom action")
 
-    assert html =~ "untrusted version of the action"
+    assert html =~ "This pack version isn&#39;t trusted"
     assert html =~ "Packs page"
     assert {:ok, [], _} = Runs.list_recent_runs(owner_subject(user, account), limit: 50)
   end
@@ -768,13 +809,13 @@ defmodule EmisarWeb.RunNewLiveTest do
     {:ok, lv, html} = live(conn, ~p"/app/#{account}/runs/new/#{runner.id}/#{action.action_id}")
 
     # The button is replaced by a signed-only notice…
-    refute html =~ "Dispatch to runner"
+    refute html =~ "Run on runner"
 
     # …but the form still exists; forcing the submit reaches the handler,
     # which gates on the runner's attestation requirement.
     html = submit_dispatch(lv, %{}, "forcing it anyway")
 
-    assert html =~ "only accepts signed runs from an MCP client"
+    assert html =~ "This runner requires signed actions"
     assert {:ok, [], _} = Runs.list_recent_runs(owner_subject(user, account), limit: 50)
   end
 

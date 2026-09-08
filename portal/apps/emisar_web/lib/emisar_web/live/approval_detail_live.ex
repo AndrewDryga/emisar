@@ -7,11 +7,11 @@ defmodule EmisarWeb.ApprovalDetailLive do
   # `grant_duration_options/1` narrows it to what the account's lifetime cap
   # permits before it reaches the form.
   @grant_duration_options [
-    {"Just this call (no grant)", "once"},
-    {"Next 1 hour", "one_hour"},
-    {"Next 24 hours", "one_day"},
-    {"Next 30 days", "thirty_days"},
-    {"Next 90 days", "ninety_days"}
+    {"This run only", "once"},
+    {"1 hour", "one_hour"},
+    {"1 day", "one_day"},
+    {"30 days", "thirty_days"},
+    {"90 days", "ninety_days"}
   ]
 
   def mount(%{"id" => id}, _session, socket) do
@@ -389,7 +389,7 @@ defmodule EmisarWeb.ApprovalDetailLive do
             socket = assign_decisions(socket, request)
 
             msg =
-              "Recorded — #{socket.assigns.approved_count} of #{request.min_approvals} approvals."
+              "Approval recorded. #{socket.assigns.approved_count}/#{request.min_approvals} required approvals received."
 
             {:noreply, socket |> assign_request(request) |> put_flash(:info, msg)}
 
@@ -538,11 +538,11 @@ defmodule EmisarWeb.ApprovalDetailLive do
     changeset.errors |> Keyword.keys() |> List.first() |> grant_field_error()
   end
 
-  defp grant_field_error(:duration), do: "Pick a reuse window from the list."
-  defp grant_field_error(:scope), do: "Pick how this grant matches arguments."
+  defp grant_field_error(:duration), do: "Choose a duration from the list."
+  defp grant_field_error(:scope), do: "Choose which arguments the grant allows."
 
   defp grant_field_error(:max_uses),
-    do: "Limit to must be a whole number of uses, at least 1. Leave it blank for unlimited."
+    do: "Enter a whole number of at least 1, or leave blank for no use limit."
 
   defp grant_field_error(_field), do: "Check the reuse settings, then decide again."
 
@@ -620,14 +620,16 @@ defmodule EmisarWeb.ApprovalDetailLive do
     end
   end
 
-  defp decision_error_message(:expired), do: "This request expired before your decision landed."
-  defp decision_error_message(:already_decided), do: "Someone else already decided this request."
+  defp decision_error_message(:expired),
+    do: "This request expired before your decision was saved."
+
+  defp decision_error_message(:already_decided), do: "This request already has a final decision."
 
   defp decision_error_message(:quorum_already_met),
-    do: "The required reviews are already present. Refresh to see the final decision."
+    do: "All required approvals have been received. Refresh the page to see the result."
 
   defp decision_error_message(:run_cancelled),
-    do: "The run was cancelled before approval, so there's nothing left to approve."
+    do: "The run was cancelled and no longer needs approval."
 
   # NOT necessarily cancelled: under min_approvals: 1 a concurrent approver can
   # win the account-lock race, dispatch the run, and move it out of
@@ -641,23 +643,20 @@ defmodule EmisarWeb.ApprovalDetailLive do
 
   defp decision_error_message(reason)
        when reason in [:action_not_found, :pack_untrusted, :pack_retired, :action_unavailable] do
-    "The trusted contract for this action is no longer available, so there's nothing left to " <>
-      "approve. Deny this request and re-issue it once the action is available again."
+    "This action can't be approved right now. Check its availability and pack trust, " <>
+      "then refresh this page."
   end
 
   defp decision_error_message(:attestation_stale) do
-    "This signed request expired before approval — its signature is now outside the runner's " <>
-      "freshness window, so the runner would refuse it. Re-issue it from your MCP client and " <>
-      "approve the fresh one."
+    "This signed request expired. Send a new request from your AI app."
   end
 
   defp decision_error_message(:grant_exceeds_account_max_lifetime) do
-    "This grant's duration exceeds your account's maximum grant-lifetime cap. " <>
-      "Pick a shorter window."
+    "Choose a duration within the maximum grant lifetime."
   end
 
   defp decision_error_message(_),
-    do: "Your decision didn't record. Refresh to see the request's current state, then try again."
+    do: "Couldn't save your decision. Refresh the page to check its status before trying again."
 
   # Echo exactly what was granted. The approve that just succeeded validated
   # these same params, so the match cannot fail and the confirmation reads the
@@ -668,7 +667,7 @@ defmodule EmisarWeb.ApprovalDetailLive do
     grant_flash(input)
   end
 
-  defp grant_flash(%{duration: :once}), do: "Approved for this call only."
+  defp grant_flash(%{duration: :once}), do: "Approved for this run only."
 
   defp grant_flash(%{duration: duration} = input) do
     "Approved. Standing grant active for #{grant_window(duration)} " <>
@@ -782,7 +781,7 @@ defmodule EmisarWeb.ApprovalDetailLive do
           variant={:secondary}
           size={:md}
         >
-          View activity
+          View audit trail
         </.button>
       </:actions>
       <.loading_state :if={not @loaded?} />
@@ -797,8 +796,8 @@ defmodule EmisarWeb.ApprovalDetailLive do
                columns via `wrap`). --%>
           <div class="grid grid-cols-2 gap-x-10 gap-y-8 sm:flex sm:flex-wrap sm:items-start sm:gap-x-14">
             <%!-- The NORMALIZED verdict, not the raw DB status: a lapsed request
-                 the sweeper hasn't auto-denied yet is still :pending in the DB,
-                 and "Status: pending" above an "Expired — auto-denied" verdict
+                 the sweeper hasn't expired yet is still :pending in the DB,
+                 and "Status: pending" above an expiry explanation
                  block contradicts the page. --%>
             <%!-- wrap: a badge is a composite, not a text run — truncation shears
              its pill instead of ellipsizing (§7.35). --%>
@@ -841,7 +840,7 @@ defmodule EmisarWeb.ApprovalDetailLive do
                 <span :if={is_nil(runner_id)} class="text-zinc-500">—</span>
               <% end %>
             </.meta_field>
-            <.meta_field :if={@execution_request?} label="Frozen work">
+            <.meta_field :if={@execution_request?} label="Planned work" wrap>
               <span class="text-zinc-200">{execution_work_label(@execution_plan)}</span>
             </.meta_field>
             <%!-- Who (the accountable human) AND what asked: a request from an
@@ -873,7 +872,7 @@ defmodule EmisarWeb.ApprovalDetailLive do
             <%!-- wrap: the forensic timestamp is a machine value — on a phone it takes
              the full row and wraps rather than clipping to "…" (and never leaves
              the adjacent half-cell empty while truncating). --%>
-            <.meta_field label="When" wrap>
+            <.meta_field label="Requested" wrap>
               <.local_time
                 value={@request.requested_at}
                 mode={:forensic}
@@ -904,15 +903,14 @@ defmodule EmisarWeb.ApprovalDetailLive do
 
           <% verdict = @request_facts.status %>
           <p :if={verdict == :expired} class="mt-5 max-w-prose text-sm leading-relaxed text-zinc-400">
-            <span class="font-medium text-zinc-200">Expired — auto-denied.</span>
-            No one decided before the deadline, so the {target_noun(@execution_request?)} will not
-            run. The requester can re-issue it if it's still needed.
+            This request expired before it received all required approvals.
+            The {target_noun(@execution_request?)} did not run. Submit a new request if it's still needed.
           </p>
           <p
             :if={verdict == :cancelled}
             class="mt-5 max-w-prose text-sm leading-relaxed text-zinc-400"
           >
-            This request was withdrawn before a decision, so the {target_noun(@execution_request?)} did not run.
+            This request was cancelled. The {target_noun(@execution_request?)} did not run.
           </p>
         </div>
 
@@ -928,10 +926,9 @@ defmodule EmisarWeb.ApprovalDetailLive do
              args one click away, ONE why-cluster, then the vote trail. --%>
           <div class="space-y-10">
             <section :if={@execution_request?}>
-              <.section_header title="Frozen runbook plan">
+              <.section_header title="Runbook plan">
                 <:subtitle>
-                  Review every action, runner, and visible argument. One approval covers the
-                  complete execution.
+                  Approval covers all actions and target runners shown here.
                 </:subtitle>
               </.section_header>
               <div class="space-y-8">
@@ -962,7 +959,6 @@ defmodule EmisarWeb.ApprovalDetailLive do
                 :if={@executed_command}
                 id={"approval-command-#{@request.id}"}
                 label="Command"
-                annotation="what the runner will execute"
                 prompt
                 code={@executed_command}
               />
@@ -970,7 +966,6 @@ defmodule EmisarWeb.ApprovalDetailLive do
                 :if={is_nil(@executed_command) && @action_args != %{}}
                 id={"approval-raw-args-#{@request.id}"}
                 label="Arguments"
-                annotation="what the runner will receive"
                 max_h="max-h-64"
                 code={format_json(@action_args)}
               />
@@ -985,7 +980,7 @@ defmodule EmisarWeb.ApprovalDetailLive do
               class="-mt-7"
             >
               <:summary>
-                Raw arguments
+                Arguments (JSON)
                 <span
                   :if={@request.context["args_sha256"]}
                   class="ml-1 min-w-0 truncate font-mono text-zinc-400"
@@ -994,7 +989,7 @@ defmodule EmisarWeb.ApprovalDetailLive do
               </:summary>
               <pre
                 tabindex="0"
-                aria-label="Raw arguments"
+                aria-label="Arguments (JSON)"
                 class="max-h-64 overflow-auto rounded-b-lg bg-black/40 px-4 py-3 font-mono text-xs leading-relaxed text-zinc-300"
               >{format_json(@action_args)}</pre>
             </.disclosure>
@@ -1010,7 +1005,7 @@ defmodule EmisarWeb.ApprovalDetailLive do
                 (@request.evidence && @request.evidence != "") ||
                 (@request.expected && @request.expected != "") || (@run && @run.policy_reason)
             }>
-              <.section_header title="Why" />
+              <.section_header title="Request details" />
               <dl class="space-y-5">
                 <div :if={@request.reason && @request.reason != ""}>
                   <dt
@@ -1039,7 +1034,7 @@ defmodule EmisarWeb.ApprovalDetailLive do
                 </div>
                 <div :if={@request.expected && @request.expected != ""}>
                   <dt class="text-[11px] font-semibold uppercase tracking-wider text-zinc-400">
-                    Expected
+                    Expected outcome
                   </dt>
                   <dd class="mt-1 text-sm leading-relaxed text-zinc-200">
                     <span class="whitespace-pre-wrap">{@request.expected}</span>
@@ -1100,11 +1095,10 @@ defmodule EmisarWeb.ApprovalDetailLive do
                 }
               >
                 <%= if displayed_decisions == [] do %>
-                  This is a load error, not an untouched request — approvals may already be
-                  recorded. Refresh the page before deciding.
+                  Existing decisions couldn't be loaded. Refresh the page before adding yours.
                 <% else %>
-                  The final decision is shown below, but earlier votes may be missing. Refresh
-                  the page to load the complete history.
+                  The final decision is shown, but earlier reviews couldn't be loaded.
+                  Refresh the page to try again.
                 <% end %>
               </.empty_state>
               <ul :if={displayed_decisions != []} class="divide-y divide-zinc-800/70">
@@ -1253,7 +1247,7 @@ defmodule EmisarWeb.ApprovalDetailLive do
     approve_label =
       if assigns.execution_request?,
         do: execution_action_label(assigns.execution_kind, "Approve"),
-        else: "Approve and send"
+        else: "Approve"
 
     assigns =
       assigns
@@ -1267,7 +1261,7 @@ defmodule EmisarWeb.ApprovalDetailLive do
     <section>
       <%!-- No subtitle: the note field's own placeholder already says the
            decision is logged — a header line restating it is double copy. --%>
-      <.section_header title="Decide" />
+      <.section_header title="Your decision" />
 
       <%!-- Live countdown so the operator decides against the clock, not a static
            "expires in 3h". Ticks client-side (ExpiryCountdown hook); at zero it
@@ -1286,13 +1280,6 @@ defmodule EmisarWeb.ApprovalDetailLive do
         <span data-countdown-text>{countdown_fallback(@expires_in_seconds)}</span>
       </div>
 
-      <p :if={@min_approvals > 1} class="text-xs leading-relaxed text-zinc-400">
-        This {target_noun(@execution_request?)} needs
-        <strong class="text-zinc-100">{@min_approvals} distinct approvals</strong>
-        <span :if={not @decisions_error?}>— {@approved_count} so far.</span>
-        <span :if={@decisions_error?}>— the current tally couldn't be read.</span>
-      </p>
-
       <.event_block
         :if={
           not @execution_request? and @runner_state == :offline and
@@ -1304,19 +1291,20 @@ defmodule EmisarWeb.ApprovalDetailLive do
         class="mt-4"
       >
         <:body>
-          You can still approve — the action queues and runs once the runner reconnects, or
-          expires if it doesn't.
+          The runner is offline, but you can still approve this request. The run can start only
+          when the runner is online and all required approvals are received.
         </:body>
       </.event_block>
 
       <%= cond do %>
         <% not @can_decide? -> %>
           <p class="mt-4 text-xs leading-relaxed text-zinc-400">
-            Viewers can't decide approvals.
+            You don't have permission to approve or deny requests.
+            Ask an owner or admin to grant you an operator role.
           </p>
         <% @already_decided? -> %>
           <p class="mt-4 text-xs leading-relaxed text-zinc-400">
-            You've already recorded your decision on this request. Waiting on the remaining approvers.
+            Your approval is recorded. Waiting for the remaining approvers.
           </p>
           <div :if={@override_available?} class="mt-4" data-shot="approval-override">
             <.button
@@ -1327,25 +1315,22 @@ defmodule EmisarWeb.ApprovalDetailLive do
               icon="action.approve"
               phx-click={open_confirm("override-approval-reviews")}
             >
-              Approve using override
+              Approve with override
             </.button>
           </div>
         <% true -> %>
-          <%!-- No trusted contract resolves for this action any more, so an
-               approve would be refused. Say which action, and point at the one
-               move left — Deny, then re-issue. --%>
+          <%!-- Approval fails closed while the action cannot be resolved or
+               admitted. This can recover; manual denial is not required. --%>
           <.event_block
             :if={@unavailable_action_id}
             icon="state.warning"
             tone={:rose}
-            title="Action no longer available"
+            title="Action unavailable"
             class="mt-4"
           >
             <:body>
-              Emisar can't find a trusted contract for
               <span class="font-mono text-zinc-200">{@unavailable_action_id}</span>
-              any more, so this request can't be approved. Deny it, then re-issue the request once
-              the action is available again.
+              can't be approved right now. Check its availability and pack trust, then refresh this page.
             </:body>
           </.event_block>
           <%!-- Approve form. Hidden when this user is the requester and the
@@ -1356,22 +1341,12 @@ defmodule EmisarWeb.ApprovalDetailLive do
             :if={@self_blocked? and is_nil(@unavailable_action_id)}
             class="mt-4 text-xs leading-relaxed text-zinc-400"
           >
-            You can't use the normal approval path on your own request.
-            <span :if={@can_override?}>
-              A different operator can approve it, or if waiting is unsafe, use the override
-              option below.
-            </span>
-            <span :if={not @can_override?}>A different operator must approve it.</span>
-          </p>
-          <p :if={is_nil(@unavailable_action_id)} class="mt-4 text-xs leading-relaxed text-zinc-400">
-            {decision_intro(@execution_request?, @self_blocked?, @grant_duration_options)}
-            <.doc_link href={~p"/docs/policies-and-approvals"}>Approvals docs</.doc_link>
+            Policy doesn't allow you to approve your own request. Another approver is needed.
           </p>
           <%!-- ONE decision form: a single note field logged with whichever
                decision is taken (two competing optional textareas doubled the
                form, and the deny box under Approve read as a note for the
-               approval just taken). Default approve state = one-shot ("just
-               this call"), no grant. --%>
+               approval just taken). Default approve state = this run only, no grant. --%>
           <form
             id="approval-decision-form"
             phx-submit="decide"
@@ -1391,7 +1366,7 @@ defmodule EmisarWeb.ApprovalDetailLive do
               rows="2"
               maxlength={Approvals.max_decision_reason_length()}
               aria-label="Decision note"
-              placeholder="Note — logged with your decision (optional)"
+              placeholder="Note for the audit record (optional)"
               class="min-h-0 resize-none"
             />
             <.error :if={@decision_reason_error}>{@decision_reason_error}</.error>
@@ -1406,7 +1381,7 @@ defmodule EmisarWeb.ApprovalDetailLive do
               }
               class="text-[11px] leading-relaxed text-zinc-400"
             >
-              Standing grants are disabled for this account — every approval is single-use.
+              Standing grants are disabled. Each approval is single-use.
             </p>
             <.disclosure
               :if={
@@ -1419,14 +1394,14 @@ defmodule EmisarWeb.ApprovalDetailLive do
             >
               <:summary>
                 <.icon name="state.pending" class="h-3.5 w-3.5 text-zinc-400" />
-                Allow the LLM to reuse this approval
+                Allow the agent to reuse this approval
               </:summary>
               <div class="space-y-3">
                 <div>
                   <.input
                     name="duration"
                     type="select"
-                    label="For"
+                    label="Duration"
                     label_variant={:eyebrow}
                     value={@grant_duration}
                     options={@grant_duration_options}
@@ -1445,7 +1420,7 @@ defmodule EmisarWeb.ApprovalDetailLive do
                   <.input
                     name="scope"
                     type="select"
-                    label="Match"
+                    label="Arguments"
                     label_variant={:eyebrow}
                     value={@grant_scope}
                     options={[
@@ -1463,17 +1438,16 @@ defmodule EmisarWeb.ApprovalDetailLive do
                     id="grant_max_uses"
                     name="max_uses"
                     value={@grant_max_uses}
-                    label="Limit to (optional)"
+                    label="Use limit (optional)"
                     label_variant={:eyebrow}
                     min="1"
-                    placeholder="unlimited"
+                    placeholder="No use limit"
                   />
                   <p class="mt-1 text-[11px] leading-relaxed text-zinc-400">
-                    Cap how many times this grant can be used within the window. Leave blank for unlimited.
-                    Grants are reviewable + revocable on the <.link
+                    Includes this run. Leave blank for no use limit. Manage grants in <.link
                       navigate={~p"/app/#{@current_account}/approvals"}
                       class="text-brand-400 hover:text-brand-300"
-                    >approvals page</.link>.
+                    >Approvals</.link>.
                   </p>
                 </div>
               </div>
@@ -1509,7 +1483,7 @@ defmodule EmisarWeb.ApprovalDetailLive do
                       |> open_confirm("override-approval-reviews")
                     }
                   >
-                    Approve using override
+                    Approve with override
                   </.menu_item>
                 </:menu>
               </.split_button>
@@ -1536,7 +1510,7 @@ defmodule EmisarWeb.ApprovalDetailLive do
                 icon="action.approve"
                 phx-click={open_confirm("override-approval-reviews")}
               >
-                Approve using override
+                Approve with override
               </.button>
             </div>
             <.button
@@ -1551,6 +1525,14 @@ defmodule EmisarWeb.ApprovalDetailLive do
               Deny
             </.button>
           </form>
+          <p
+            :if={is_nil(@unavailable_action_id)}
+            id="approval-decision-help"
+            class="mt-4 text-xs leading-relaxed text-zinc-400"
+          >
+            {decision_intro(@execution_request?, @self_blocked?, @grant_duration_options)}
+            <.doc_link href={~p"/docs/policies-and-approvals"}>Approvals docs</.doc_link>
+          </p>
       <% end %>
 
       <.override_dialog
@@ -1577,8 +1559,8 @@ defmodule EmisarWeb.ApprovalDetailLive do
     ~H"""
     <.confirm_dialog
       id="override-approval-reviews"
-      title="Approve using override?"
-      confirm_label="Approve using override"
+      title="Approve with override?"
+      confirm_label="Approve with override"
       disabled={not override_reason_present?(@reason)}
       tone={:amber}
       on_confirm={
@@ -1588,15 +1570,11 @@ defmodule EmisarWeb.ApprovalDetailLive do
     >
       <:body>
         <p data-override-consequence class="text-pretty text-xs leading-relaxed text-zinc-400">
-          This approves <span class="font-medium break-words text-zinc-100">{@request_title}</span>
-          with
-          <span class="font-medium text-zinc-200">
-            {@approved_count} of {@min_approvals} required approvals
-          </span>
-          and skips {remaining_approval_count(@approved_count, @min_approvals)} remaining {plural(
-            remaining_approval_count(@approved_count, @min_approvals),
-            "review"
-          )}. <span :if={@self_blocked?}>It also skips the self-approval rule.</span>
+          Approve <span class="font-medium break-words text-zinc-100">{@request_title}</span>
+          with <span class="font-medium text-zinc-200">
+            {@approved_count}/{@min_approvals} required approvals
+          </span>. This skips the remaining reviews.
+          <span :if={@self_blocked?}>This also allows you to approve your own request.</span>
           All other policy and runner checks still apply.
         </p>
       </:body>
@@ -1631,32 +1609,30 @@ defmodule EmisarWeb.ApprovalDetailLive do
     """
   end
 
-  # Self-blocked requester: only Deny renders, so the intro must not explain
+  # Self-blocked requester: only Deny renders, so the help must not explain
   # an Approve button they'll never see — the paragraph above already says a
   # different operator has to approve.
   defp decision_intro(_execution_request?, true, _options) do
-    "You can still deny your own request — your decision is logged."
+    "You can still deny this request."
   end
 
   defp decision_intro(true, false, _options) do
-    "Approve once to release every action shown here. This execution will not ask for another " <>
-      "approval. If policy changes to deny the work, runner access is removed, or a trusted " <>
-      "pack is no longer available before dispatch, Emisar stops the execution."
+    "Policy, access, and pack trust are checked again before actions run."
   end
 
   defp decision_intro(false, false, options) do
-    "Approve runs this action once#{reuse_clause(options)} decision is logged."
+    "Approval applies to this run only#{reuse_clause(options)}"
   end
 
-  # The middle clause of the decide-form lead line. The reuse-window offer
+  # The middle clause of the decision help. The reuse-window offer
   # appears only when the standing-grant menu itself does — the account allows a
   # duration past "once" (`grant_duration_options` has more than one entry) —
   # so the copy never names an affordance the form doesn't show.
   defp reuse_clause([_, _ | _]) do
-    " — or pick a reuse window to issue a standing grant. Either"
+    " unless you allow the agent to reuse it."
   end
 
-  defp reuse_clause(_options), do: ". Your"
+  defp reuse_clause(_options), do: "."
 
   defp override_available?(
          can_override?,
@@ -1674,9 +1650,6 @@ defmodule EmisarWeb.ApprovalDetailLive do
 
   defp override_reason_present?(reason) when is_binary(reason), do: String.trim(reason) != ""
   defp override_reason_present?(_reason), do: false
-
-  defp remaining_approval_count(approved_count, min_approvals),
-    do: max(min_approvals - approved_count, 0)
 
   defp overridden?(%{override: event_id}), do: is_binary(event_id)
   defp overridden?(_refs), do: false

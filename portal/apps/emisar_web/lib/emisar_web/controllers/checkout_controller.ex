@@ -30,7 +30,7 @@ defmodule EmisarWeb.CheckoutController do
       # spin forever. Render the honest dead-link state instead.
       missing_transaction?(params["_ptxn"]) ->
         conn
-        |> assign(:page_title, "Checkout link expired")
+        |> assign(:page_title, "Incomplete checkout link")
         |> render(:expired)
 
       true ->
@@ -50,7 +50,10 @@ defmodule EmisarWeb.CheckoutController do
     account = conn.assigns.current_account
 
     conn
-    |> put_flash(:info, "We're finishing your checkout — your plan updates here in a moment.")
+    |> put_flash(
+      :info,
+      "Your plan will update here once your payment and subscription are confirmed."
+    )
     |> redirect(to: ~p"/app/#{account}/settings/billing")
   end
 

@@ -98,7 +98,7 @@ defmodule EmisarWeb.ApprovalDecisionGateLiveTest do
         |> form("form[phx-submit='decide']", %{})
         |> render_submit(%{"reason" => "ok", "decision" => "approve"})
 
-      assert html =~ "Approved for this call only."
+      assert html =~ "Approved for this run only."
       assert reload_status(request.id) == :approved
     end
 
@@ -132,13 +132,13 @@ defmodule EmisarWeb.ApprovalDecisionGateLiveTest do
       account: account,
       request: request
     } do
-      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/approvals/#{request.id}")
+      {:ok, lv, html} = live(conn, ~p"/app/#{account}/approvals/#{request.id}")
 
-      assert html =~ "Viewers can&#39;t decide approvals." or
-               html =~ "Viewers can't decide approvals."
+      assert html =~ "You don&#39;t have permission to approve or deny requests." or
+               html =~ "You don't have permission to approve or deny requests."
 
-      refute html =~ "Approve and send"
-      refute html =~ "phx-submit=\"deny\""
+      refute has_element?(lv, "#approval-decision-form button[name=decision][value=approve]")
+      refute has_element?(lv, "#approval-decision-form button[name=decision][value=deny]")
     end
 
     test "a crafted approve event is refused — flash, request stays pending", %{
@@ -153,7 +153,7 @@ defmodule EmisarWeb.ApprovalDecisionGateLiveTest do
       # must deny it (IL-15).
       html = render_hook(lv, "approve", %{"reason" => "let me in"})
 
-      assert html =~ "Viewers can&#39;t decide approvals."
+      assert html =~ "You don&#39;t have permission to approve or deny requests."
       assert reload_status(request.id) == :pending
     end
 
@@ -166,7 +166,7 @@ defmodule EmisarWeb.ApprovalDecisionGateLiveTest do
 
       html = render_hook(lv, "deny", %{"reason" => "nope"})
 
-      assert html =~ "Viewers can&#39;t decide approvals."
+      assert html =~ "You don&#39;t have permission to approve or deny requests."
       assert reload_status(request.id) == :pending
     end
   end
@@ -184,8 +184,11 @@ defmodule EmisarWeb.ApprovalDecisionGateLiveTest do
       # self-approval. The Approve form is hidden in the UI…
       {:ok, lv, html} = live(conn, ~p"/app/#{account}/approvals/#{request.id}")
 
-      refute html =~ "Approve and send"
-      assert html =~ "You can&#39;t use the normal approval path on your own request"
+      refute has_element?(lv, "#approval-decision-form button[name=decision][value=approve]")
+
+      assert html =~
+               "Policy doesn&#39;t allow you to approve your own request. Another approver is needed."
+
       assert has_element?(lv, ~s([data-shot="approval-override"]))
 
       # …and a hand-rolled approve event (bypassing the hidden button) is
@@ -212,7 +215,7 @@ defmodule EmisarWeb.ApprovalDecisionGateLiveTest do
       {:ok, lv, html} =
         build_conn() |> log_in_user(other) |> live(~p"/app/#{account}/approvals/#{request.id}")
 
-      assert html =~ "Approve and send"
+      assert html =~ "Approve"
 
       lv
       |> form("form[phx-submit='decide']", %{})

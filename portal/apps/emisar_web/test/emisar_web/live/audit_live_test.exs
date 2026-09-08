@@ -221,7 +221,7 @@ defmodule EmisarWeb.AuditLiveTest do
       refute secondary =~ "via"
     end
 
-    test "an unresolvable actor id renders in full, never a slice", %{conn: conn} do
+    test "an unavailable actor name never falls back to an ID", %{conn: conn} do
       {conn, _user, account} = register_and_log_in(conn)
       ghost_id = Ecto.UUID.generate()
 
@@ -230,12 +230,9 @@ defmodule EmisarWeb.AuditLiveTest do
 
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/audit")
 
-      # The deleted-record fallback keeps the WHOLE id — the hover title is
-      # built from this text, so a slice here would make the id unrecoverable
-      # anywhere on the trail; CSS truncation does the display fitting.
       actor_cell = lv |> element("#event-#{event.id} [data-audit-actor]") |> render()
-      assert actor_cell =~ ghost_id
-      assert actor_cell =~ ~s(title="#{ghost_id}")
+      assert actor_cell =~ "Name unavailable"
+      refute actor_cell =~ ghost_id
     end
 
     test "rows name the actor, and the date filters render in the facet panel",
@@ -458,7 +455,102 @@ defmodule EmisarWeb.AuditLiveTest do
                "Decisions"
              )
 
-      refute has_element?(lv, "[role='group'] button[phx-click='toggle_problems']")
+      refute has_element?(lv, "button", "Problems only")
+
+      lv |> element("button[phx-click='toggle_filters']") |> render_click()
+      refute has_element?(lv, "#audit-events-filter [name='outcome']")
+      refute has_element?(lv, "#audit-events-filter label", "Severity")
+    end
+
+    test "Category refreshes Type choices even while Type stays All", %{conn: conn} do
+      {conn, _user, account} = register_and_log_in(conn)
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/audit")
+      html = lv |> element("button[phx-click='toggle_filters']") |> render_click()
+
+      [picker_id] =
+        html
+        |> LazyHTML.from_document()
+        |> LazyHTML.query("#audit-events-filter [phx-hook='Combobox']")
+        |> LazyHTML.attribute("id")
+
+      assert has_element?(lv, "[data-combobox-option][data-value='group:Sign-in']")
+
+      lv |> form("#audit-events-filter", %{category: "fleet"}) |> render_change()
+
+      refute has_element?(lv, "[id='#{picker_id}']")
+      assert has_element?(lv, "[data-combobox-option][data-value='group:Runner']")
+      refute has_element?(lv, "[data-combobox-option][data-value='group:Sign-in']")
+      assert has_element?(lv, "input[name='event_type'][value='']")
+
+      lv |> form("#audit-events-filter", %{category: ""}) |> render_change()
+
+      assert has_element?(lv, "[data-combobox-option][data-value='group:Sign-in']")
+      assert has_element?(lv, "[data-combobox-option][data-value='group:Runner']")
+    end
+
+    test "changing Category in the form clears an incompatible Type", %{conn: conn} do
+      {conn, _user, account} = register_and_log_in(conn)
+
+      {:ok, lv, _html} =
+        live(conn, ~p"/app/#{account}/audit?category=access&event_type=user.sign_in_failed")
+
+      lv |> form("#audit-events-filter", %{category: "fleet"}) |> render_change()
+
+      to = assert_patch(lv)
+      params = to |> URI.parse() |> Map.fetch!(:query) |> Plug.Conn.Query.decode()
+      assert params["category"] == "fleet"
+      refute Map.has_key?(params, "event_type")
+      assert has_element?(lv, "input[name='event_type'][value='']")
+    end
+
+    test "a category shortcut clears an incompatible Type and preserves the time filter", %{
+      conn: conn
+    } do
+      {conn, _user, account} = register_and_log_in(conn)
+      from = "2026-01-01T00:00"
+      filters = [category: "access", event_type: "user.sign_in_failed", from: from]
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/audit?#{filters}")
+
+      lv |> element("button[phx-click='category'][phx-value-category='fleet']") |> render_click()
+
+      to = assert_patch(lv)
+      params = to |> URI.parse() |> Map.fetch!(:query) |> Plug.Conn.Query.decode()
+      assert params["category"] == ["fleet"]
+      assert params["from"] == from
+      refute Map.has_key?(params, "event_type")
+    end
+
+    test "choosing and clearing a compatible Category preserves Type", %{conn: conn} do
+      {conn, _user, account} = register_and_log_in(conn)
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/audit?event_type=runner.connected")
+
+      lv |> form("#audit-events-filter", %{category: "fleet"}) |> render_change()
+      to = assert_patch(lv)
+      params = to |> URI.parse() |> Map.fetch!(:query) |> Plug.Conn.Query.decode()
+      assert params["event_type"] == "runner.connected"
+
+      lv |> element("button[phx-click='category'][phx-value-category='fleet']") |> render_click()
+      to = assert_patch(lv)
+      params = to |> URI.parse() |> Map.fetch!(:query) |> Plug.Conn.Query.decode()
+      refute Map.has_key?(params, "category")
+      assert params["event_type"] == "runner.connected"
+      assert has_element?(lv, "[data-combobox-option][data-value='group:Sign-in']")
+    end
+
+    test "an incompatible shared Category and Type link remains an empty intersection", %{
+      conn: conn
+    } do
+      {conn, _user, account} = register_and_log_in(conn)
+      {:ok, fleet_event} = Audit.log(account.id, "runner.connected", actor_kind: "runner")
+      {:ok, access_event} = Audit.log(account.id, "user.sign_in_failed", actor_kind: "user")
+
+      {:ok, lv, html} =
+        live(conn, ~p"/app/#{account}/audit?category=fleet&event_type=user.sign_in_failed")
+
+      assert html =~ "No events match these filters."
+      refute has_element?(lv, "#event-#{fleet_event.id}")
+      refute has_element?(lv, "#event-#{access_event.id}")
+      assert has_element?(lv, "input[name='event_type'][value='user.sign_in_failed']")
     end
 
     test "a relative-range preset segment narrows to the window (sets From to now − window)",
@@ -493,8 +585,7 @@ defmodule EmisarWeb.AuditLiveTest do
       refute html =~ "ancient-actor"
     end
 
-    test "the Problems-only toggle filters to failures/denials without crashing (list-param round-trip)",
-         %{conn: conn} do
+    test "a removed outcome URL filter does not hide audit events", %{conn: conn} do
       {conn, _user, account} = register_and_log_in(conn)
 
       routine_runner =
@@ -514,17 +605,16 @@ defmodule EmisarWeb.AuditLiveTest do
           target_label: routine_runner.name
         )
 
-      {:ok, lv, html} = live(conn, ~p"/app/#{account}/audit")
+      {:ok, lv, html} =
+        live(conn, ~p"/app/#{account}/audit?#{[outcome: ["danger", "warn"]]}")
+
       assert html =~ "failed-signin"
       assert html =~ "routine-runner"
+      refute has_element?(lv, "button", "Problems only")
 
-      # Toggling "Problems only" sets outcome=[danger, warn]; the list param must
-      # round-trip — it crashed when URI.encode_query flattened it to "dangerwarn"
-      # and the next render hit `"danger" in "dangerwarn"`.
-      html = lv |> element("button", "Problems only") |> render_click()
-
-      assert html =~ "failed-signin"
-      refute html =~ "routine-runner"
+      html = lv |> element("button[phx-click='toggle_filters']") |> render_click()
+      refute has_element?(lv, "#audit-events-filter [name='outcome']")
+      refute html =~ "Severity"
     end
 
     test "a subject 'View activity' pivot filters to that subject and shows a clearable chip",
@@ -691,7 +781,14 @@ defmodule EmisarWeb.AuditLiveTest do
     test "selecting an actor kind surfaces a picker of that kind's resolved actors",
          %{conn: conn} do
       {conn, user, account} = register_and_log_in(conn)
-      {:ok, _} = Audit.log(account.id, "user.invited", actor_kind: "user", actor_id: user.id)
+
+      {:ok, _} =
+        Audit.log(account.id, "user.invited",
+          actor_kind: "user",
+          actor_id: user.id,
+          target_kind: "user",
+          target_id: user.id
+        )
 
       # No kind selected → no actor picker rendered.
       {:ok, _lv, html} = live(conn, ~p"/app/#{account}/audit")
@@ -700,7 +797,7 @@ defmodule EmisarWeb.AuditLiveTest do
       # One kind selected → the picker appears, listing the resolved actor.
       {:ok, _lv, html} = live(conn, ~p"/app/#{account}/audit?actor_kind=user")
       assert html =~ ~s(name="actor_id")
-      assert html =~ ~s(value="#{user.id}")
+      assert html =~ "actor_id=#{user.id}"
       # …and right after its Actor-type trigger — before the next (Subject)
       # filter, not tacked on at the end.
       assert :binary.match(html, ~s(name="actor_id")) <
@@ -722,7 +819,7 @@ defmodule EmisarWeb.AuditLiveTest do
       # email), right after its Subject trigger — same shape as the actor picker.
       {:ok, _lv, html} = live(conn, ~p"/app/#{account}/audit?target_kind=user")
       assert html =~ ~s(name="target_id")
-      assert html =~ ~s(value="#{user.id}")
+      assert html =~ "target_id=#{user.id}"
       assert html =~ user.email
 
       assert :binary.match(html, ~s(name="target_kind")) <
@@ -881,8 +978,7 @@ defmodule EmisarWeb.AuditLiveTest do
       assert render(lv) =~ "freshly-committed-actor"
     end
 
-    # an account with zero events shows the RICH empty
-    # state (naming the surfaces that produce events), distinct from the terse
+    # an account with zero events explains when records appear, distinct from the terse
     # filtered-empty one-liner. A fresh account already has its `account.created`
     # row, so clear the log to reach the genuinely-empty state.
     test "an empty log with no filter shows the rich empty state", %{conn: conn} do
@@ -891,9 +987,8 @@ defmodule EmisarWeb.AuditLiveTest do
 
       {:ok, _lv, html} = live(conn, ~p"/app/#{account}/audit")
 
-      assert html =~ "No audit events yet."
-      # Names the event-producing surfaces, not the terse filtered copy.
-      assert html =~ "Packs page"
+      assert html =~ "No audit events yet"
+      assert html =~ "Events appear automatically"
       refute html =~ "No events match these filters."
     end
 
@@ -909,7 +1004,7 @@ defmodule EmisarWeb.AuditLiveTest do
       {:ok, _lv, html} = live(conn, ~p"/app/#{account}/audit?event_type=runner.deleted")
 
       assert html =~ "No events match these filters."
-      refute html =~ "No audit events yet."
+      refute html =~ "No audit events yet"
     end
 
     # the actor chip's clear (✕) link drops `actor_id` from
@@ -962,19 +1057,19 @@ defmodule EmisarWeb.AuditLiveTest do
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/audit?actor_id=#{actor_a}")
 
       # actor_id is a pivot (chip), not a facet — the panel starts closed.
-      # Open it, then change an unrelated filter (Outcome) — actor_id must
+      # Open it, then change an unrelated filter (Category) — actor_id must
       # ride along.
       lv |> element("button[phx-click='toggle_filters']") |> render_click()
 
       lv
-      |> form("#audit-events-filter", %{outcome: "danger"})
+      |> form("#audit-events-filter", %{category: "access"})
       |> render_change()
 
       to = assert_patch(lv)
       %{query: query} = URI.parse(to)
       params = URI.decode_query(query)
       assert params["actor_id"] == actor_a
-      assert params["outcome"] == "danger"
+      assert params["category"] == "access"
     end
 
     # a chip for an actor that isn't in the loaded rows (its
@@ -1285,7 +1380,7 @@ defmodule EmisarWeb.AuditLiveTest do
   end
 
   # Empty an account's audit log so the genuinely-empty state can be tested — a
-  # fresh account already carries its `account.created` / `user.signed_up` rows.
+  # fresh account already carries its `account.created` row.
   # Building the queryable straight from the Query module is the sanctioned
   # test-fixture shape (§7).
   # {"when-<event_id>" => datetime attr} for every relative WHEN cell in the
@@ -1354,7 +1449,7 @@ defmodule EmisarWeb.AuditLiveTest do
     test "renders the billing events and none of the rest", %{account: account, conn: conn} do
       {:ok, _lv, html} = live(conn, ~p"/app/#{account}/audit")
 
-      assert html =~ "Subscription plan changed"
+      assert html =~ "Subscription updated"
       refute html =~ "Runner connected"
       refute html =~ "db-prod-01"
     end
@@ -1362,8 +1457,21 @@ defmodule EmisarWeb.AuditLiveTest do
     test "the intro says the view is the billing slice", %{account: account, conn: conn} do
       {:ok, _lv, html} = live(conn, ~p"/app/#{account}/audit")
 
-      assert html =~ "The billing events in this account&#39;s audit trail"
-      refute html =~ "The append-only record of every action"
+      assert html =~ "Your role gives you access to billing events only."
+      refute html =~ "A record of actions, approvals, sign-ins"
+    end
+
+    test "an empty billing view explains only billing activity", %{account: account, conn: conn} do
+      clear_audit_log(account.id)
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/audit")
+
+      assert has_element?(
+               lv,
+               "#audit-events-empty",
+               "Subscription changes will appear here automatically."
+             )
+
+      refute has_element?(lv, "#audit-events-empty", "actions run")
     end
 
     # No export control, because the domain refuses the download — an upgrade

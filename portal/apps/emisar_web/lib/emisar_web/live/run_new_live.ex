@@ -12,12 +12,12 @@ defmodule EmisarWeb.RunNewLive do
          |> put_flash(:error, "Action not found.")
          |> push_navigate(to: ~p"/app/#{socket.assigns.current_account}/runners/#{runner_id}")}
 
-      {:ok, %{primary_executable_available: false}} ->
+      {:ok, %{primary_executable_available: false} = action} ->
         {:ok,
          socket
          |> put_flash(
            :error,
-           "This action cannot start because its primary executable is missing on the runner."
+           missing_tool_message(action)
          )
          |> push_navigate(to: ~p"/app/#{socket.assigns.current_account}/runners/#{runner_id}")}
 
@@ -142,7 +142,7 @@ defmodule EmisarWeb.RunNewLive do
       {:noreply,
        socket
        |> assign(:reason, reason)
-       |> assign(:reason_error, "Reason is required — describe why you are running this action.")}
+       |> assign(:reason_error, "Enter a reason for running this action.")}
     else
       do_dispatch_with_reason(socket, raw_args, reason)
     end
@@ -174,14 +174,14 @@ defmodule EmisarWeb.RunNewLive do
             {:noreply, put_flash(socket, :error, "Denied by policy: #{reason}")}
 
           {:error, :runner_not_found} ->
-            {:noreply, put_flash(socket, :error, "Runner not found in this account.")}
+            {:noreply, put_flash(socket, :error, "This runner is no longer available.")}
 
           {:error, :runner_out_of_scope} ->
             {:noreply,
              put_flash(
                socket,
                :error,
-               "That runner is outside your access scope. Ask an admin to grant access on the team page."
+               "You don't have access to this runner. Ask an owner or admin to grant you access."
              )}
 
           {:error, :pack_untrusted} ->
@@ -189,8 +189,7 @@ defmodule EmisarWeb.RunNewLive do
              put_flash(
                socket,
                :error,
-               "This runner is advertising an untrusted version of the action's pack. " <>
-                 "Review and trust it on the Packs page before dispatching."
+               "This pack version isn't trusted. Review it on the Packs page before running the action."
              )}
 
           {:error, :pack_retired} ->
@@ -198,9 +197,7 @@ defmodule EmisarWeb.RunNewLive do
              put_flash(
                socket,
                :error,
-               "This runner is advertising a retired version of the action's pack — a newer " <>
-                 "release superseded it. Update the pack on the runner, or re-trust the version " <>
-                 "on the Packs page."
+               "This pack version is retired. Update the pack on the runner or trust this version again on the Packs page."
              )}
 
           {:error, :runner_requires_attestation} ->
@@ -208,8 +205,7 @@ defmodule EmisarWeb.RunNewLive do
              put_flash(
                socket,
                :error,
-               "This runner only accepts signed runs from an MCP client — the portal can't " <>
-                 "dispatch to it. Run the action from your MCP client instead."
+               "This runner requires signed actions. Use an MCP client with a signing key and certificate."
              )}
 
           {:error, :action_not_found} ->
@@ -217,7 +213,7 @@ defmodule EmisarWeb.RunNewLive do
              put_flash(
                socket,
                :error,
-               "This runner no longer advertises that action — reload the page and pick a current one."
+               "This action is no longer available on the runner. Choose another action from the runner's page."
              )}
 
           {:error, :action_unavailable} ->
@@ -225,7 +221,7 @@ defmodule EmisarWeb.RunNewLive do
              put_flash(
                socket,
                :error,
-               "This action cannot start on the runner because its primary executable is missing. Install the tool and reload the runner."
+               current_missing_tool_message(socket)
              )}
 
           {:error, :action_contract_changed} ->
@@ -233,7 +229,7 @@ defmodule EmisarWeb.RunNewLive do
              put_flash(
                socket,
                :error,
-               "This action changed while the form was open. Reload the page and review the current arguments before dispatching."
+               "This action changed while you were editing. Refresh the page and review its arguments before running it."
              )}
 
           {:error, :pack_out_of_scope} ->
@@ -241,7 +237,7 @@ defmodule EmisarWeb.RunNewLive do
              put_flash(
                socket,
                :error,
-               "This action's pack is outside your access scope. Ask an admin to grant access on the team page."
+               "You don't have access to this pack. Ask an owner or admin to grant you access."
              )}
 
           # The run record itself was rejected (its fields key to the
@@ -261,6 +257,27 @@ defmodule EmisarWeb.RunNewLive do
     end
   end
 
+  # Host prerequisites can change while the form is open. Re-read through the
+  # authorized catalog rather than naming a tool from stale host evidence.
+  defp current_missing_tool_message(socket) do
+    case Catalog.fetch_action_by_id(
+           socket.assigns.action.action_id,
+           socket.assigns.runner_id,
+           socket.assigns.current_subject
+         ) do
+      {:ok, action} -> missing_tool_message(action)
+      {:error, _reason} -> missing_tool_message(nil)
+    end
+  end
+
+  defp missing_tool_message(%{missing_executable: tool}) when is_binary(tool) and tool != "" do
+    "The required tool #{tool} isn't installed on the runner. Install it and reload the runner."
+  end
+
+  defp missing_tool_message(_action) do
+    "The tool required by this action isn't installed on the runner. Install it and reload the runner."
+  end
+
   defp unexpected_dispatch_failure(socket, reason) do
     Logger.error(
       "operator dispatch failed account_id=#{socket.assigns.current_account.id} " <>
@@ -271,7 +288,7 @@ defmodule EmisarWeb.RunNewLive do
     put_flash(
       socket,
       :error,
-      "The run could not be dispatched. Reload the page and try again. If it keeps failing, contact support."
+      "Couldn't submit the run. Refresh the page and try again. If it keeps failing, contact support."
     )
   end
 
@@ -368,7 +385,7 @@ defmodule EmisarWeb.RunNewLive do
             <.meta_field label="Risk" wrap>
               <.risk_pill id={"run-new-#{@action.action_id}-risk"} risk={@action.risk} />
             </.meta_field>
-            <.meta_field label="Kind">
+            <.meta_field label="Type">
               <span class="text-zinc-200">{@action.kind}</span>
             </.meta_field>
             <.meta_field label="Pack">
@@ -387,9 +404,8 @@ defmodule EmisarWeb.RunNewLive do
           severity={:info}
           title="Runner offline"
         >
-          {@runner.name} isn't connected right now. You can still dispatch — the run queues as
-          <span class="font-mono text-zinc-300">pending</span>
-          and executes when the runner reconnects.
+          {@runner.name} is offline right now. You can still submit the run, but it won't start
+          until the runner is online and any required approval is granted.
         </.offline_notice>
 
         <%!-- Signed-only runner — the portal is locked out. This actionable
@@ -402,10 +418,9 @@ defmodule EmisarWeb.RunNewLive do
           title="Signed dispatch only"
         >
           <:body>
-            {@runner.name} verifies a client signature on every run and refuses unsigned ones, so
-            the portal can't dispatch to it. Run this action from an MCP client configured with the
-            runner's signing key.
-            <.doc_link href={~p"/docs/signed-dispatch"}>Signed dispatch docs</.doc_link>
+            This runner only accepts signed actions, so you can't start runs from the console.
+            Use an MCP client with a signing key and certificate.
+            <.doc_link href={~p"/docs/signed-dispatch"}>Signing setup</.doc_link>
           </:body>
         </.event_block>
 
@@ -417,7 +432,7 @@ defmodule EmisarWeb.RunNewLive do
              a section just to tell the operator there's nothing in
              it. --%>
         <section>
-          <.section_header title={if(@args_schema == [], do: "Dispatch", else: "Arguments")} />
+          <.section_header title={if(@args_schema == [], do: "Run details", else: "Arguments")} />
           <.simple_form
             for={@form}
             id="dispatch_form"
@@ -441,7 +456,7 @@ defmodule EmisarWeb.RunNewLive do
                 required={true}
                 placeholder="Why are you running this action?"
               />
-              <p class="mt-1 text-xs text-zinc-400">Logged to the audit trail.</p>
+              <p class="mt-1 text-xs text-zinc-400">Included in the run's audit record.</p>
             </div>
 
             <:actions>
@@ -455,10 +470,9 @@ defmodule EmisarWeb.RunNewLive do
                   @can_dispatch? and portal_dispatchable?(@readiness) and
                     not dispatch_confirm_required?(@action)
                 }
-                phx-disable-with="Dispatching..."
+                phx-disable-with="Starting…"
               >
-                Dispatch to {(@runner && @runner.name) || "runner"}
-                <span aria-hidden="true">→</span>
+                Run on {(@runner && @runner.name) || "runner"}
               </.button>
               <.button
                 :if={
@@ -468,8 +482,7 @@ defmodule EmisarWeb.RunNewLive do
                 type="button"
                 phx-click={open_confirm("confirm-dispatch")}
               >
-                Dispatch to {(@runner && @runner.name) || "runner"}
-                <span aria-hidden="true">→</span>
+                Run on {(@runner && @runner.name) || "runner"}
               </.button>
               <button
                 type="submit"
@@ -478,26 +491,24 @@ defmodule EmisarWeb.RunNewLive do
                 tabindex="-1"
                 aria-hidden="true"
               ></button>
-              <%!-- Signed-only runner — the run would be refused, so there's no
-                   Dispatch button; the quiet fact points at the MCP client. --%>
-              <p
-                :if={@can_dispatch? and signature_blocked?(@readiness)}
-                class="text-sm text-zinc-400"
-              >
-                This runner only runs signed dispatches — run it from your MCP client.
-              </p>
               <%!-- Disabled runner — also buttonless, but the remedy is on the
                    runner's own page rather than in an MCP client. --%>
               <p
                 :if={@can_dispatch? and dispatch_disabled?(@readiness)}
                 class="text-sm text-zinc-400"
               >
-                This runner is disabled — enable it on the runner's page before dispatching.
+                This runner is disabled. Enable it on the
+                <.link
+                  navigate={~p"/app/#{@current_account}/runners/#{@runner_id}"}
+                  class="font-medium text-brand-400 hover:text-brand-300"
+                >runner's page</.link>
+                to run actions.
               </p>
               <%!-- Viewers can reach this page but can't dispatch; the
                    handler also gates (IL-15) — this hides the dead button. --%>
               <p :if={not @can_dispatch?} class="text-sm text-zinc-400">
-                Your role can't dispatch runs. Ask an operator, admin, or owner to run this.
+                You don't have permission to run actions.
+                Ask an owner or admin to grant you an operator role.
               </p>
             </:actions>
           </.simple_form>
@@ -505,19 +516,18 @@ defmodule EmisarWeb.RunNewLive do
           <.confirm_dialog
             :if={@action && dispatch_confirm_required?(@action)}
             id="confirm-dispatch"
-            title="Dispatch this action now?"
-            confirm_label="Dispatch"
-            pending_label="Dispatching…"
+            title="Run this action?"
+            confirm_label="Run action"
+            pending_label="Starting…"
             on_confirm={
               JS.dispatch("click", to: "#dispatch-form-submit")
               |> close_confirm("confirm-dispatch")
             }
           >
             <:body>
-              <span class="font-medium text-zinc-200">{@action.action_id}</span>
-              ({@action.risk} risk) runs on
-              <span class="font-medium text-zinc-200">{(@runner && @runner.name) || @runner_id}</span>
-              immediately.
+              Run <span class="font-medium text-zinc-200">{@action.action_id}</span>
+              ({@action.risk} risk) on <span class="font-medium text-zinc-200">{(@runner && @runner.name) || @runner_id}</span>.
+              The run will wait if approval is required or the runner is offline.
               <span
                 :if={args_blast_radius(@args_schema, @form.params) != ""}
                 class="mt-2 block whitespace-pre-line"
@@ -539,9 +549,9 @@ defmodule EmisarWeb.RunNewLive do
     "boolean" => {"checkbox", nil},
     "integer" => {"number", nil},
     "number" => {"number", nil},
-    "string_array" => {"text", "Comma-separated."},
-    "integer_array" => {"text", "Comma-separated."},
-    "duration" => {"text", "Go duration (e.g. 30s, 5m, 2h)."}
+    "string_array" => {"text", "Separate values with commas."},
+    "integer_array" => {"text", "Separate values with commas."},
+    "duration" => {"text", "Use a duration such as 30s, 5m, or 2h."}
   }
 
   defp input_type_for(_type, [_option | _rest]), do: {"select", nil}

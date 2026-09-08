@@ -265,6 +265,22 @@ defmodule EmisarWeb.RunsLiveTest do
     assert html =~ "No runs yet"
   end
 
+  test "empty history keeps punctuation adjacent to inline links", %{conn: conn} do
+    {conn, _user, account} = register_and_log_in(conn)
+    Fixtures.Runners.create_runner(account_id: account.id, connected?: false)
+
+    {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runs")
+
+    text =
+      html
+      |> LazyHTML.from_document()
+      |> LazyHTML.query("#runs-empty p")
+      |> LazyHTML.text()
+
+    assert text =~ "runner's page."
+    refute text =~ ~r/\s+[.,;:!?]/
+  end
+
   test "a member who cannot reach runners sees empty history, not an install instruction", %{
     conn: conn
   } do
@@ -283,8 +299,8 @@ defmodule EmisarWeb.RunsLiveTest do
       |> log_in_user(member)
       |> live(~p"/app/#{account}/runs")
 
-    assert html =~ "This account has no run history yet"
-    assert html =~ ~r/someone with\s+runner access dispatches an action/
+    assert html =~ "Runs will appear here"
+    assert html =~ "runner you can access"
     refute html =~ "Install a"
     refute html =~ "runner first"
   end

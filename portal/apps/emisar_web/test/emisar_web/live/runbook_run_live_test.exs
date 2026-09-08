@@ -292,7 +292,9 @@ defmodule EmisarWeb.RunbookRunLiveTest do
                |> log_in_user(viewer)
                |> live(~p"/app/#{account}/runbooks/#{runbook.id}/run")
 
-      assert flash["error"] == "Running a runbook needs an operator role or above."
+      assert flash["error"] ==
+               "You don't have permission to run runbooks. Ask an owner or admin to grant you an operator role."
+
       assert user.id != viewer.id
     end
 
@@ -387,6 +389,13 @@ defmodule EmisarWeb.RunbookRunLiveTest do
       assert has_element?(lv, "h1 a", "Runbooks")
       assert has_element?(lv, "h1 a", runbook.title)
       assert html =~ "Validate the unpublished change"
+
+      assert has_element?(
+               lv,
+               "#runbook-execution-result",
+               "This execution runs an unpublished workflow on your runners."
+             )
+
       refute has_element?(lv, "a", "Run again")
       refute has_element?(lv, "button", "Start execution")
     end
@@ -428,18 +437,17 @@ defmodule EmisarWeb.RunbookRunLiveTest do
              )
 
       assert has_element?(lv, "#current-runbook-plan")
-      assert has_element?(lv, "#current-runbook-plan-summary")
+      refute has_element?(lv, "#current-runbook-plan-summary")
       assert has_element?(lv, "#runbook-start-rail:not([class*='border-l'])")
       assert has_element?(lv, "#runbook-execution-history")
 
       assert_before(html, ~s(id="runbook-operator-context"), ~s(id="runbook-run-form"))
       assert_before(html, ~s(name="reason"), ~s(id="current-runbook-plan"))
       assert_before(html, ~s(id="current-runbook-plan"), ~s(id="start-runbook-button"))
-      assert_before(html, ~s(id="runbook-before-starting"), ~s(id="current-runbook-plan-summary"))
 
       assert_before(
         html,
-        ~s(id="current-runbook-plan-summary"),
+        ~s(id="runbook-before-starting"),
         ~s(id="runbook-execution-history")
       )
 
@@ -451,7 +459,9 @@ defmodule EmisarWeb.RunbookRunLiveTest do
       send(lv.pid, {:run_preflight, 2})
       html = render(lv)
 
-      assert html =~ "Current plan"
+      refute html =~ "Plan summary"
+      assert html =~ "Targets and policies are checked again when you start."
+      refute html =~ "dispatched exactly as shown"
       assert html =~ "Inspect"
       assert html =~ "Apply change"
       assert html =~ "token"
@@ -580,8 +590,14 @@ defmodule EmisarWeb.RunbookRunLiveTest do
 
       refute html =~ "Plan blocked"
       refute html =~ "Required input is missing."
-      assert html =~ "The plan resolves once the required inputs above are filled in."
-      assert html =~ "Waiting for the required inputs."
+      assert html =~ "Enter the required inputs to preview the actions and target runners."
+
+      assert has_element?(
+               lv,
+               "#current-runbook-plan > p.text-zinc-400",
+               "Enter the required inputs"
+             )
+
       assert html =~ "Fill in the required inputs to start this execution."
       assert has_element?(lv, "#start-runbook-button[disabled]")
 
@@ -595,7 +611,7 @@ defmodule EmisarWeb.RunbookRunLiveTest do
       send(lv.pid, {:run_preflight, 2})
       html = render(lv)
       refute html =~ "Plan blocked"
-      assert html =~ "The plan resolves once the required inputs above are filled in."
+      assert html =~ "Enter the required inputs to preview the actions and target runners."
 
       # Interacting with the field itself reveals its validation.
       render_change(lv, "run_form_changed", %{
@@ -632,7 +648,7 @@ defmodule EmisarWeb.RunbookRunLiveTest do
 
       Fixtures.Runbooks.mark_runbook_as_deleted(runbook)
 
-      assert start(lv) =~ "The runbook did not start. Re-run preflight and try again."
+      assert start(lv) =~ "The runbook couldn&#39;t start. Refresh the page and try again."
       refute Repo.one(RunbookExecution)
     end
   end
@@ -796,7 +812,7 @@ defmodule EmisarWeb.RunbookRunLiveTest do
       assert has_element?(lv, "[id^=execution-item-] a", "View")
       refute html =~ "View raw action output"
       assert html =~ "Extracted outputs"
-      assert html =~ "Success evidence"
+      assert html =~ "Result checks"
       assert html =~ "ready"
       assert html =~ "Output extraction"
       assert html =~ "Success condition"
@@ -908,6 +924,11 @@ defmodule EmisarWeb.RunbookRunLiveTest do
       runner = trusted_runner(account, subject, risk: "high")
       runbook = published_runbook(subject, runner)
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runbooks/#{runbook.id}/run")
+
+      send(lv.pid, {:run_preflight, 1})
+      assert has_element?(lv, "#current-runbook-plan > header", "Approval required")
+      refute has_element?(lv, "#current-runbook-plan-summary")
+
       start(lv)
 
       assert {:ok, result} = Runbooks.fetch_execution_result(execution().id, subject)
@@ -917,7 +938,14 @@ defmodule EmisarWeb.RunbookRunLiveTest do
       send(lv.pid, {:runbook_execution_updated, execution().id})
       html = flush_execution_reload(lv)
       assert html =~ "awaiting approval"
-      assert html =~ "Waiting on approval"
+      assert html =~ "Waiting for approval"
+
+      assert has_element?(
+               lv,
+               "#runbook-execution-result",
+               "This execution starts once all required approvals are received."
+             )
+
       assert html =~ runner.name
       refute has_element?(lv, "details[id^=execution-item-]")
 
@@ -930,7 +958,7 @@ defmodule EmisarWeb.RunbookRunLiveTest do
       assert has_element?(
                lv,
                ~s(a[href="/app/#{account.slug}/approvals/#{request.id}"]),
-               "View approval"
+               "Waiting for approval"
              )
 
       # The MCP projection hands the model the same bounded approval object an
@@ -1206,8 +1234,13 @@ defmodule EmisarWeb.RunbookRunLiveTest do
                "Cancel execution"
              )
 
-      assert has_element?(lv, "#cancel-runbook-execution", runbook.title)
-      assert has_element?(lv, "#cancel-runbook-execution", "Queued actions will not start")
+      assert has_element?(
+               lv,
+               "#cancel-runbook-execution",
+               "Queued actions won't start. Running actions receive a cancellation request."
+             )
+
+      assert has_element?(lv, "#cancel-runbook-execution-confirm", "Cancel execution")
       refute render(lv) =~ "data-confirm"
 
       html = render_click(lv, "cancel_execution", %{})

@@ -10,16 +10,14 @@
     <.icon name="state.locked" class="h-5 w-5" />
   </span>
   <h1 class="font-display mt-5 text-xl font-semibold tracking-[-0.01em] text-zinc-100">
-    Opening secure checkout…
+    Opening checkout…
   </h1>
   <p class="mt-2 text-sm leading-relaxed text-zinc-400">
-    Payment is handled by Paddle, our merchant of record. If the checkout
-    window doesn't open, allow pop-ups and refresh this page.
+    Payments are handled by Paddle. If checkout doesn't open, refresh this page.
   </p>
   <p class="mt-6 text-xs text-zinc-500">
-    Closed it by mistake?
-    <.link navigate={~p"/app"} class="text-brand-300 hover:text-brand-200">
-      Back to your console
+    <.link navigate={~p"/app/billing"} class="text-brand-300 hover:text-brand-200">
+      Go to Billing
     </.link>
   </p>
 </div>

@@ -204,8 +204,8 @@ defmodule EmisarWeb.AuditExportControllerTest do
   end
 
   # Setting up `Fixtures.Subjects.owner_subject` + `Fixtures.ApiKeys.create_api_key` audits
-  # `account.created`, `user.signed_up`, `api_key.created` — so every
-  # test starts with 3 baseline events on the account. We filter the
+  # `account.created`, `api_key.created` — so every
+  # test starts with 2 baseline events on the account. We filter the
   # SIEM export to event types under our control to keep assertions
   # deterministic.
   @test_types ~w[user.signed_in user.signed_out policy.updated]

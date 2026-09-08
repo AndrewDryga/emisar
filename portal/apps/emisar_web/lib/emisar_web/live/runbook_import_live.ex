@@ -213,16 +213,16 @@ defmodule EmisarWeb.RunbookImportLive do
 
   defp source_errors(file, pasted_json) do
     case {file, pasted_json} do
-      {nil, ""} -> ["Choose a JSON file or paste the canonical JSON."]
+      {nil, ""} -> ["Choose a JSON file or paste a runbook definition."]
       {%{}, ""} -> []
       {nil, _json} -> []
-      {%{}, _json} -> ["Use either the selected file or pasted JSON, not both."]
+      {%{}, _json} -> ["Use either a file or pasted JSON, not both."]
     end
   end
 
   defp conflicting_source_errors(file, pasted_json) do
     if file && pasted_json != "",
-      do: ["Use either the selected file or pasted JSON, not both."],
+      do: ["Use either a file or pasted JSON, not both."],
       else: []
   end
 
@@ -287,8 +287,11 @@ defmodule EmisarWeb.RunbookImportLive do
           phx-submit="import_runbook"
         >
           <div>
-            <.section_header title="Import canonical JSON">
-              <:subtitle>The definition becomes an editable draft in this account.</:subtitle>
+            <.section_header title="Import from JSON">
+              <:subtitle>
+                Upload a JSON file or paste a runbook definition. It will open as a draft that
+                you can edit before publishing.
+              </:subtitle>
             </.section_header>
           </div>
 
@@ -319,7 +322,7 @@ defmodule EmisarWeb.RunbookImportLive do
               <.live_file_input
                 upload={@uploads.runbook_json}
                 class="sr-only"
-                aria-label="Choose canonical runbook JSON"
+                aria-label="Choose a runbook JSON file"
               />
             </label>
 
@@ -377,7 +380,7 @@ defmodule EmisarWeb.RunbookImportLive do
             id="runbook-import-json"
             name="import[json]"
             value={@import_form.params["json"]}
-            label="Canonical JSON"
+            label="Runbook JSON"
             errors={@json_errors}
             maxlength={Runbooks.definition_limit!(:max_definition_bytes)}
             rows="14"

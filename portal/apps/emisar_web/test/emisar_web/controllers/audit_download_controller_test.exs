@@ -91,9 +91,9 @@ defmodule EmisarWeb.AuditDownloadControllerTest do
       conn = get(conn, ~p"/app/#{account}/audit/download")
 
       assert redirected_to(conn) =~ ~p"/app/#{account}/audit"
-      assert Phoenix.Flash.get(conn.assigns.flash, :error) =~ "caps at 2"
+      assert Phoenix.Flash.get(conn.assigns.flash, :error) =~ "limited to 2 events"
       assert Phoenix.Flash.get(conn.assigns.flash, :error) =~ "contact Support"
-      assert Phoenix.Flash.get(conn.assigns.flash, :error) =~ "prepare the complete export"
+      assert Phoenix.Flash.get(conn.assigns.flash, :error) =~ "help with a larger export"
       # No export was logged — nothing left the building.
       assert Repo.all(Audit.Event) |> Enum.filter(&(&1.event_type == "audit.exported")) == []
     end
@@ -107,7 +107,7 @@ defmodule EmisarWeb.AuditDownloadControllerTest do
       conn = get(conn, ~p"/app/#{account}/audit/download?event_type=runbook.published")
 
       assert redirected_to(conn) =~ ~p"/app/#{account}/audit"
-      assert Phoenix.Flash.get(conn.assigns.flash, :error) =~ "Nothing to export"
+      assert Phoenix.Flash.get(conn.assigns.flash, :error) =~ "No audit events to export."
     end
 
     test "another account's slug 404s before any data is read", %{conn: conn} do

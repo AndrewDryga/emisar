@@ -30,6 +30,7 @@ defmodule EmisarWeb.AgentsLive do
   alias Phoenix.LiveView.JS
 
   @refresh_ms 15_000
+  @connection_timeout_ms 120_000
   @remote_client_ids ~w(chatgpt claude_web)
   @platforms %{"linux" => :linux, "windows" => :windows, "macos" => :macos}
   @platform_tabs [
@@ -47,7 +48,7 @@ defmodule EmisarWeb.AgentsLive do
   # quick key + snippet, it surfaces a key-builder form instead. Keeps
   # the "I need a tighter scope" affordance discoverable next to the
   # client tabs, not hidden in a collapsed details further down.
-  @client_ids ~w(chatgpt claude_web claude_code cursor vscode claude_desktop codex gemini copilot windsurf zed opencode goose grok openclaw pi hermes custom)
+  @client_ids ~w(chatgpt claude_web claude_code cursor vscode claude_desktop codex gemini copilot windsurf zed opencode goose grok openclaw pi hermes coop custom)
 
   def mount(_params, _session, socket) do
     if connected?(socket) do
@@ -62,7 +63,8 @@ defmodule EmisarWeb.AgentsLive do
     # The operator first picks which LLM client they're connecting. For local
     # clients the INSTALLER does the setup (device-grant approval mints the
     # keys); the manual snippet's key is minted lazily, only when its
-    # disclosure is opened. Cloud clients use OAuth, so their backing key is
+    # disclosure is opened. co:op shows its configuration on selection.
+    # Cloud clients use OAuth, so their backing key is
     # minted only after the user consents in the OAuth flow.
     {:ok,
      socket
@@ -73,6 +75,8 @@ defmodule EmisarWeb.AgentsLive do
      # here) watches for ANY key minted after this page opened connecting.
      |> assign(:quick_key_id, nil)
      |> assign(:quick_connected?, false)
+     |> assign(:connection_wait, nil)
+     |> assign(:connection_delayed?, false)
      |> assign(:watch_since, DateTime.utc_now())
      |> assign(:snippet_open?, false)
      |> assign(:bridge_paths, AgentClientConfig.default_paths())
@@ -147,7 +151,8 @@ defmodule EmisarWeb.AgentsLive do
          |> assign(:selected_client, "custom")
          |> assign(:quick_secret, nil)
          |> assign(:quick_key_id, nil)
-         |> assign(:quick_connected?, false)}
+         |> assign(:quick_connected?, false)
+         |> clear_connection_wait()}
       end
     )
   end
@@ -158,7 +163,29 @@ defmodule EmisarWeb.AgentsLive do
      |> assign(:selected_client, id)
      |> assign(:quick_secret, nil)
      |> assign(:quick_key_id, nil)
-     |> assign(:quick_connected?, false)}
+     |> assign(:quick_connected?, false)
+     |> clear_connection_wait()}
+  end
+
+  def handle_event("select_client", %{"client" => "coop"}, socket) do
+    Permissions.gated(
+      socket,
+      ApiKeys.subject_can_issue_quick_key?(socket.assigns.current_subject),
+      fn socket ->
+        if socket.assigns.selected_client == "coop" and is_binary(socket.assigns.quick_secret) do
+          {:noreply, socket}
+        else
+          socket
+          |> assign(:selected_client, "coop")
+          |> assign(:quick_secret, nil)
+          |> assign(:quick_key_id, nil)
+          |> assign(:quick_connected?, false)
+          |> assign(:snippet_open?, false)
+          |> clear_connection_wait()
+          |> mint_snippet_key()
+        end
+      end
+    )
   end
 
   def handle_event("select_client", %{"client" => id}, socket) when id in @client_ids do
@@ -171,7 +198,8 @@ defmodule EmisarWeb.AgentsLive do
      |> assign(:quick_secret, nil)
      |> assign(:quick_key_id, nil)
      |> assign(:quick_connected?, false)
-     |> assign(:snippet_open?, false)}
+     |> assign(:snippet_open?, false)
+     |> start_connection_wait()}
   end
 
   # A crafted event that drops a required key or names a client the picker
@@ -250,7 +278,7 @@ defmodule EmisarWeb.AgentsLive do
     do: {:noreply, assign(socket, :rotated, nil)}
 
   def handle_event("open_key_action", %{"action" => action, "id" => id}, socket)
-      when action in ["rotate", "revoke"] do
+      when action in ["rotate", "rotate_manual", "revoke"] do
     with_manageable_key(socket, id, fn socket, key ->
       facts = row_facts(key, DateTime.utc_now())
 
@@ -290,7 +318,12 @@ defmodule EmisarWeb.AgentsLive do
          |> reload()}
 
       {:error, _} ->
-        {:noreply, put_flash(socket, :error, "Could not revoke this member's keys.")}
+        {:noreply,
+         put_flash(
+           socket,
+           :error,
+           "Couldn't revoke this member's keys. Refresh the page and try again."
+         )}
     end
   end
 
@@ -301,9 +334,27 @@ defmodule EmisarWeb.AgentsLive do
 
   def handle_event("rotate", _params, socket), do: {:noreply, socket}
 
+  def handle_event("rotate_manual", %{"id" => id}, socket),
+    do: with_manageable_key(socket, id, &do_manual_rotate/2)
+
+  def handle_event("rotate_manual", _params, socket), do: {:noreply, socket}
+
   def handle_info(:tick, socket) do
     Process.send_after(self(), :tick, @refresh_ms)
     {:noreply, refresh_key_activity(socket)}
+  end
+
+  def handle_info({:agent_connection_timeout, attempt}, socket) do
+    case socket.assigns.connection_wait do
+      {^attempt, _timer} ->
+        {:noreply,
+         socket
+         |> clear_connection_wait()
+         |> assign(:connection_delayed?, not socket.assigns.quick_connected?)}
+
+      _stale_attempt ->
+        {:noreply, socket}
+    end
   end
 
   # Every api_key change (including `api_key.first_used`) reloads the list;
@@ -318,8 +369,37 @@ defmodule EmisarWeb.AgentsLive do
 
   # -- Internals -------------------------------------------------------
 
-  # The manual snippet's lazy mint (reveal_snippet): named after the client so
-  # it lands on the agents list and audit rows as e.g. "Claude Desktop".
+  # One timer per setup attempt. A cancelled timer may already have queued its
+  # message, so the attempt reference also guards client/key switches.
+  defp start_connection_wait(socket) do
+    socket = clear_connection_wait(socket)
+    attempt = make_ref()
+
+    timer =
+      Process.send_after(self(), {:agent_connection_timeout, attempt}, @connection_timeout_ms)
+
+    assign(socket, :connection_wait, {attempt, timer})
+  end
+
+  defp clear_connection_wait(socket) do
+    if socket.assigns.connection_wait do
+      {_attempt, timer} = socket.assigns.connection_wait
+      Process.cancel_timer(timer)
+    end
+
+    socket
+    |> assign(:connection_wait, nil)
+    |> assign(:connection_delayed?, false)
+  end
+
+  defp assign_quick_connection(socket, rows) do
+    socket = assign(socket, :quick_connected?, quick_key_connected?(socket, rows))
+
+    if socket.assigns.quick_connected?, do: clear_connection_wait(socket), else: socket
+  end
+
+  # Shared by co:op selection and manual-snippet reveal. The key is named after
+  # the client so it lands on the agents list and audit rows as e.g. "Claude Desktop".
   defp mint_snippet_key(socket) do
     name = client_label(socket.assigns.selected_client)
 
@@ -330,13 +410,17 @@ defmodule EmisarWeb.AgentsLive do
          |> assign(:quick_secret, raw)
          |> assign(:quick_key_id, key.id)
          |> assign(:quick_connected?, false)
+         |> start_connection_wait()
          |> reload()}
+
+      {:error, _reason} when socket.assigns.selected_client == "coop" ->
+        {:noreply, socket}
 
       {:error, _reason} ->
         {:noreply,
          socket
          |> assign(:snippet_open?, false)
-         |> put_flash(:error, "Could not mint a key for the snippet.")}
+         |> put_flash(:error, "Couldn't create the key. Open manual setup to try again.")}
     end
   end
 
@@ -352,6 +436,7 @@ defmodule EmisarWeb.AgentsLive do
          |> assign(:quick_secret, raw)
          |> assign(:quick_key_id, key.id)
          |> assign(:quick_connected?, false)
+         |> start_connection_wait()
          |> assign_form(ApiKeys.change_key(default_params()))
          |> reload()}
 
@@ -364,7 +449,8 @@ defmodule EmisarWeb.AgentsLive do
       # posted kind — a crafted `audit_export` post from this page is refused
       # there, and lands here rather than crashing the socket.
       {:error, _reason} ->
-        {:noreply, put_flash(socket, :error, "Could not create the key.")}
+        {:noreply,
+         put_flash(socket, :error, "Couldn't create the key. Refresh the page and try again.")}
     end
   end
 
@@ -406,11 +492,31 @@ defmodule EmisarWeb.AgentsLive do
         {:noreply,
          socket
          |> assign(:pending_key_action, nil)
-         |> put_flash(:error, "Could not revoke the key.")}
+         |> put_flash(:error, "Couldn't revoke the key. Refresh the page and try again.")}
     end
   end
 
   defp do_rotate(socket, key) do
+    case ApiKeys.request_api_key_rotation(key, socket.assigns.current_subject) do
+      {:ok, _requested} ->
+        {:noreply,
+         socket
+         |> assign(:pending_key_action, nil)
+         |> put_flash(
+           :info,
+           "Rotation requested. The agent will update its key on its next call."
+         )
+         |> reload()}
+
+      {:error, :manual_required} ->
+        do_manual_rotate(socket, key)
+
+      {:error, reason} ->
+        rotation_error(socket, reason)
+    end
+  end
+
+  defp do_manual_rotate(socket, key) do
     case ApiKeys.rotate_api_key(key, socket.assigns.current_subject) do
       # The successor's one-time secret shows in a compact reveal banner right
       # here on the index — never by dumping the whole connect panel + custom
@@ -424,15 +530,32 @@ defmodule EmisarWeb.AgentsLive do
          |> assign(:rotated, %{name: key.name, secret: raw})
          |> reload()}
 
-      {:error, _} ->
-        {:noreply,
-         socket
-         |> assign(:pending_key_action, nil)
-         |> put_flash(:error, "Could not rotate the key.")}
+      {:error, reason} ->
+        rotation_error(socket, reason)
     end
   end
 
-  defp key_action_available?("rotate", facts), do: facts.rotatable?
+  defp rotation_error(socket, :already_rotated) do
+    {:noreply,
+     socket
+     |> assign(:pending_key_action, nil)
+     |> put_flash(
+       :info,
+       "Rotation has already started. Waiting for the agent to use its new key."
+     )
+     |> reload()}
+  end
+
+  defp rotation_error(socket, _reason) do
+    {:noreply,
+     socket
+     |> assign(:pending_key_action, nil)
+     |> put_flash(:error, "Couldn't rotate the key. Refresh the page and try again.")}
+  end
+
+  defp key_action_available?(action, facts) when action in ["rotate", "rotate_manual"],
+    do: facts.rotatable?
+
   defp key_action_available?("revoke", facts), do: not facts.revoked?
 
   # Structural refresh-in-place (PubSub / mutation): re-runs with current URL
@@ -468,7 +591,7 @@ defmodule EmisarWeb.AgentsLive do
     |> assign(:dormant_count, summary.activity.dormant)
     |> assign(:never_used_count, summary.activity.never_used)
     |> assign(:issued_count, summary.live)
-    |> assign(:quick_connected?, quick_key_connected?(socket, rows))
+    |> assign_quick_connection(rows)
     |> assign_connect_inline()
   end
 
@@ -505,7 +628,7 @@ defmodule EmisarWeb.AgentsLive do
     do: Enum.any?(rows, fn {key, facts} -> key.id == id and facts.used? end)
 
   defp quick_key_connected?(%{assigns: assigns}, rows) do
-    local_client?(assigns.selected_client) and
+    local_client?(assigns.selected_client) and assigns.selected_client != "coop" and
       Enum.any?(rows, fn {key, facts} ->
         facts.used? and DateTime.compare(key.inserted_at, assigns.watch_since) == :gt
       end)
@@ -554,7 +677,7 @@ defmodule EmisarWeb.AgentsLive do
         |> assign(:dormant_count, summary.activity.dormant)
         |> assign(:never_used_count, summary.activity.never_used)
         |> assign(:issued_count, summary.live)
-        |> assign(:quick_connected?, quick_key_connected?(socket, rows))
+        |> assign_quick_connection(rows)
         |> assign_connect_inline()
         |> assign(:load_error?, false)
 
@@ -602,8 +725,9 @@ defmodule EmisarWeb.AgentsLive do
 
   defp pending_key_confirm_token(_pending), do: nil
 
-  defp confirm_key_action(%{action: "rotate", key: key}) do
-    JS.push("rotate", value: %{id: key.id}) |> close_confirm("agent-key-action")
+  defp confirm_key_action(%{action: action, key: key})
+       when action in ["rotate", "rotate_manual"] do
+    JS.push(action, value: %{id: key.id}) |> close_confirm("agent-key-action")
   end
 
   defp confirm_key_action(%{facts: %{expiry: :expired}, key: key}) do
@@ -646,12 +770,12 @@ defmodule EmisarWeb.AgentsLive do
     for {_key, facts} <- rows, facts.usable?, do: facts.bridge_version
   end
 
-  defp status_label(:active), do: "active"
-  defp status_label(:idle), do: "idle"
-  defp status_label(:dormant), do: "dormant"
-  defp status_label(:never_used), do: "never used"
-  defp status_label(:revoked), do: "revoked"
-  defp status_label(:unsupported), do: "unsupported"
+  defp status_label(:active), do: "Active"
+  defp status_label(:idle), do: "Idle"
+  defp status_label(:dormant), do: "Dormant"
+  defp status_label(:never_used), do: "Never used"
+  defp status_label(:revoked), do: "Revoked"
+  defp status_label(:unsupported), do: "Unsupported"
 
   # -- Client configs --------------------------------------------------
   #
@@ -677,6 +801,7 @@ defmodule EmisarWeb.AgentsLive do
     "openclaw" => "OpenClaw",
     "pi" => "Pi",
     "hermes" => "Hermes",
+    "coop" => "co:op",
     "custom" => "Custom"
   }
 
@@ -705,7 +830,7 @@ defmodule EmisarWeb.AgentsLive do
   # and `marketing_test.exs` asserts the sentence against it — so adding a client
   # tab fails that test until the copy moves with it.
   def local_client_ids,
-    do: Enum.reject(@client_ids, &(remote_client?(&1) or &1 == "custom"))
+    do: Enum.reject(@client_ids, &(remote_client?(&1) or &1 in ["custom", "coop"]))
 
   defp cli_agent_ids, do: Enum.reject(local_client_ids(), &(&1 in @editor_client_ids))
   defp editor_client_ids, do: Enum.filter(local_client_ids(), &(&1 in @editor_client_ids))
@@ -731,16 +856,17 @@ defmodule EmisarWeb.AgentsLive do
           "OAuth Client ID and OAuth Client Secret are optional. Claude.ai discovers Emisar's OAuth metadata and registers itself."
       },
       steps: [
-        "Open Settings → Connectors → Add custom connector in claude.ai.",
+        "In Claude, open Customize → Connectors and choose Add custom connector.",
         "Paste the connector name and Remote MCP server URL below.",
-        "Select Add, then complete the emisar sign-in and consent screen."
+        "Select Add, then Connect, and complete the emisar sign-in and consent screen.",
+        "Start a chat, open + → Connectors, and turn on emisar. Ask which runners it can access."
       ],
       # The copy fields render inside this step (paste the values), so the guide
       # reads paste → values → next step without scrolling back up.
       form_at_step: 2,
       auto_permit: %{
         pointer:
-          "After connecting, open Settings → Connectors → Emisar, then set Read-only tools and Write/delete tools to Always allow.",
+          "After connecting, open Customize → Connectors → emisar, then set Read-only tools and Write/delete tools to Always allow.",
         doc_url: nil
       }
     }
@@ -759,15 +885,21 @@ defmodule EmisarWeb.AgentsLive do
           "No API key is required. ChatGPT discovers Emisar's OAuth metadata from the server URL."
       },
       steps: [
-        "Turn on Developer mode once: Settings → Security and login (also linked at the bottom of Settings → Plugins).",
-        "Open Settings → Plugins and click Create.",
+        "Open ChatGPT's Settings and select Security and login.",
+        "Turn on Developer mode. If the option is missing, check your account's eligibility or ask your workspace admin about access.",
+        "Open ChatGPT Plugins and click + next to the search box.",
         "Set Connection to Server URL, paste the Name and MCP Server URL below, then choose OAuth.",
-        "Check \"I understand and want to continue\", click Create, then complete the emisar sign-in and consent screen.",
-        "Use it from a new chat: + → More → Emisar. To skip the per-call prompts, open Emisar → Permissions and choose Allow all actions."
+        "Review the connection details, click Create, then complete the emisar sign-in and consent screen.",
+        "Start a new chat and add emisar from the tools menu. Ask which runners it can access."
       ],
       # The copy fields render inside this step (paste the values), so the guide
       # reads paste → values → next step without scrolling back up.
-      form_at_step: 3
+      form_at_step: 4,
+      auto_permit: %{
+        pointer:
+          "Open emisar → Permissions and choose Allow all actions to skip ChatGPT's per-tool prompts for this connection.",
+        doc_url: "https://developers.openai.com/plugins/deploy/connect-chatgpt"
+      }
     }
   end
 
@@ -810,14 +942,15 @@ defmodule EmisarWeb.AgentsLive do
       </:actions>
 
       <.page_intro :if={@live_action == :index}>
-        The agents connected to this workspace, and the key behind each — connect a new one, or
-        revoke access in seconds.
+        Connect Claude, ChatGPT, Cursor, or another AI agent to run actions through emisar.
+        Review each agent’s activity and manage its access here.
+        <.doc_link href={~p"/docs/agents-and-keys"}>Agent docs</.doc_link>
       </.page_intro>
 
       <.page_intro :if={@live_action == :connect}>
-        Pick how your agent connects. Cloud clients use OAuth and mint their backing key only
-        after consent; local clients get a one-time key with setup pre-filled.
-        <.doc_link href={~p"/docs/agents-and-keys"}>Connect an agent docs</.doc_link>
+        Connect your AI app to inspect your infrastructure and run actions through emisar.
+        Choose the app below for setup instructions.
+        <.doc_link href={~p"/docs/agents-and-keys"}>Setup guide</.doc_link>
       </.page_intro>
 
       <.empty_state
@@ -827,10 +960,9 @@ defmodule EmisarWeb.AgentsLive do
         }
         variant={:bare}
         icon="product.runner"
-        title="Connecting an agent needs an operator role or above."
+        title="You don't have permission to connect agents."
       >
-        Ask an operator, admin, or owner to mint the key — you'll see the
-        agent and its activity here once it's connected.
+        Ask an owner or admin to grant you an operator role.
       </.empty_state>
 
       <.connect_panel
@@ -843,6 +975,7 @@ defmodule EmisarWeb.AgentsLive do
         quick_secret={@quick_secret}
         quick_key_id={@quick_key_id}
         quick_connected?={@quick_connected?}
+        connection_delayed?={@connection_delayed?}
         snippet_open?={@snippet_open?}
         current_account={@current_account}
         form={@form}
@@ -861,16 +994,16 @@ defmodule EmisarWeb.AgentsLive do
         :if={@live_action == :index and @rotated}
         icon="identity.credential"
         tone={:amber}
-        title="Key rotated — copy the new key now; it won't be shown again"
+        title="New key ready—update your agent"
       >
         <:body>
-          Update <span class="font-medium text-zinc-200">{@rotated.name}</span>'s client config
-          with this key. The old key keeps working until this one's first use — the moment the
-          client authenticates with it, the old key is revoked automatically.
+          Copy this key into <span class="font-medium text-zinc-200">{@rotated.name}</span>'s
+          connection settings. It won't be shown again. The old key works until the agent
+          uses this one or the old key expires.
         </:body>
         <.code_panel
           id="rotated-key"
-          label="API key (bearer token)"
+          label="API key"
           copy
           copy_label="Copy key"
           code={@rotated.secret}
@@ -894,8 +1027,8 @@ defmodule EmisarWeb.AgentsLive do
           :if={not ApiKeys.subject_can_issue_quick_key?(@current_subject)}
           class="max-w-prose text-sm leading-relaxed text-zinc-400"
         >
-          Connecting an agent needs an operator role or above — ask an operator,
-          admin, or owner to mint the key.
+          You don't have permission to connect agents.
+          Ask an owner or admin to grant you an operator role.
         </p>
         <div :if={ApiKeys.subject_can_issue_quick_key?(@current_subject)}>
           <.connect_panel
@@ -909,6 +1042,7 @@ defmodule EmisarWeb.AgentsLive do
             quick_secret={@quick_secret}
             quick_key_id={@quick_key_id}
             quick_connected?={@quick_connected?}
+            connection_delayed?={@connection_delayed?}
             snippet_open?={@snippet_open?}
             current_account={@current_account}
             form={@form}
@@ -1043,9 +1177,8 @@ defmodule EmisarWeb.AgentsLive do
                     }
                   >
                     <:body>
-                      Every usable key in this group stops working — each connected client is
-                      refused on its very next call, and rotation successors fall with their
-                      chain. This cannot be undone. Use it when a device is lost or stolen.
+                      Revokes all of {owner}'s keys, including rotated replacements.
+                      Their agents will lose access on their next request. This can't be undone.
                     </:body>
                   </.confirm_dialog>
                 </:action>
@@ -1104,7 +1237,7 @@ defmodule EmisarWeb.AgentsLive do
                       >
                         <span class="text-amber-300/90">
                           replaces <span class="font-mono">{facts.replaced_key_prefix}…</span>
-                          · swap pending
+                          · awaiting first use
                         </span>
                       </.tooltip>
                     </:seg>
@@ -1116,6 +1249,12 @@ defmodule EmisarWeb.AgentsLive do
                         placeholder="never"
                       />
                     </:seg>
+                    <:seg :if={facts.rotation_requested?}>
+                      <span class="text-amber-300">Rotation requested — waiting for the agent</span>
+                    </:seg>
+                    <:seg :if={facts.successor_pending?}>
+                      <span class="text-amber-300">Waiting for the new key's first use</span>
+                    </:seg>
                     <:seg :if={facts.expires_at}>
                       <span class={expiry_class(facts.expiry)}>
                         {if facts.expiry == :expired, do: "expired", else: "expires"}
@@ -1123,8 +1262,20 @@ defmodule EmisarWeb.AgentsLive do
                           id={"agent-key-expires-#{key.id}"}
                           value={facts.expires_at}
                           mode={:relative}
+                          styled_tooltip
                         />
                       </span>
+                    </:seg>
+                    <:seg :if={facts.oauth_backing?}>
+                      <.tooltip
+                        id={"agent-oauth-expiry-#{key.id}"}
+                        text="This connection has no fixed key expiry. The client refreshes its OAuth tokens automatically."
+                      >
+                        <span>OAuth-managed expiry</span>
+                      </.tooltip>
+                    </:seg>
+                    <:seg :if={is_nil(facts.expires_at) and not facts.oauth_backing?}>
+                      No expiration date
                     </:seg>
                   </.meta_line>
                 </:meta>
@@ -1184,16 +1335,27 @@ defmodule EmisarWeb.AgentsLive do
                          backing-key id), so rotation would only break the connection.
                          Revoke stays — it's the operator's off-switch. --%>
                       <.menu_item
-                        :if={facts.rotatable?}
+                        :if={facts.rotatable? and not facts.rotation_requested?}
+                        icon="action.refresh"
                         phx-click="open_key_action"
                         phx-value-action="rotate"
                         phx-value-id={key.id}
                       >
                         Rotate
                       </.menu_item>
+                      <.menu_item
+                        :if={facts.rotatable? and facts.rotation_requested?}
+                        icon="action.refresh"
+                        phx-click="open_key_action"
+                        phx-value-action="rotate_manual"
+                        phx-value-id={key.id}
+                      >
+                        Rotate manually
+                      </.menu_item>
                       <div class="my-1 border-t border-zinc-800/70"></div>
                       <.menu_item
                         tone={:rose}
+                        icon="state.revoked"
                         phx-click="open_key_action"
                         phx-value-action="revoke"
                         phx-value-id={key.id}
@@ -1238,9 +1400,7 @@ defmodule EmisarWeb.AgentsLive do
                     icon="state.warning"
                     title="Couldn't load your agents"
                   >
-                    This is a load error, not an empty list — your connected agents may well be
-                    here. Refresh the page; if it persists, your access to this account may have
-                    changed.
+                    Refresh the page to try again. If it keeps failing, contact support.
                   </.empty_state>
                 <% LiveTable.has_active_filters?(@filter_params, @filters) -> %>
                   <span class="text-zinc-400">No agents match these filters.</span>
@@ -1269,12 +1429,14 @@ defmodule EmisarWeb.AgentsLive do
             <.confirm_dialog
               id="agent-key-action"
               title={
-                if @pending_key_action.action == "rotate",
+                if @pending_key_action.action in ["rotate", "rotate_manual"],
                   do: "Rotate this key?",
                   else: "Revoke this agent key"
               }
               confirm_label={
-                if @pending_key_action.action == "rotate", do: "Rotate key", else: "Revoke key"
+                if @pending_key_action.action in ["rotate", "rotate_manual"],
+                  do: "Rotate key",
+                  else: "Revoke key"
               }
               confirm_token={pending_key_confirm_token(@pending_key_action)}
               typed={@typed}
@@ -1282,9 +1444,18 @@ defmodule EmisarWeb.AgentsLive do
             >
               <:body>
                 <%= cond do %>
+                  <% @pending_key_action.action == "rotate_manual" -> %>
+                    Cancels the pending automatic rotation and gives you a new key to copy into
+                    the agent's settings. The current key keeps working until the new key is used
+                    or the current key expires.
+                  <% @pending_key_action.action == "rotate" and
+                       @pending_key_action.facts.auto_rotation_supported? and
+                       @pending_key_action.facts.usable? -> %>
+                    The agent will update its key on its next call. If automatic rotation isn't
+                    available, you'll get a new key to copy into the agent's settings.
                   <% @pending_key_action.action == "rotate" -> %>
-                    A new key with the same scope is minted; this one keeps working until the new
-                    key's first use, then it's revoked automatically.
+                    You'll get a new key to copy into the agent's settings. The current key keeps
+                    working until the new key is used or the current key expires.
                   <% @pending_key_action.facts.expiry == :expired -> %>
                     Permanently marks
                     <span class="font-mono font-medium text-zinc-200">
@@ -1292,53 +1463,46 @@ defmodule EmisarWeb.AgentsLive do
                     </span>
                     as revoked. It has already expired and cannot authenticate or run actions.
                   <% true -> %>
-                    Permanently revokes
+                    Revoking
                     <span class="font-mono font-medium text-zinc-200">
                       {@pending_key_action.key.name}
                     </span>
-                    — the connected client gets 401s on its next call. This can't be undone;
-                    connect the client again to mint a fresh key.
+                    blocks the agent's next request. Reconnect the agent to restore access.
+                    This can't be undone.
                 <% end %>
               </:body>
             </.confirm_dialog>
           </div>
         </div>
 
-        <.agent_docs_rail />
+        <.agent_docs_rail current_account={@current_account} />
       </section>
     </.console_shell>
     """
   end
 
-  # The "what's an agent + how its key behaves" explainer, shared by the agents
-  # list (below the table) and the connect page (right rail): one copy, one place.
-  # Kept concise — one section, three paragraphs — so the rail never overshoots a
-  # short local-client install panel on the connect page.
+  # Management guidance for the agents list. The connect flow introduces the
+  # concept separately, before the reader needs key-lifecycle details.
+  attr :current_account, :any, required: true
+
   defp agent_docs_rail(assigns) do
     ~H"""
-    <.docs_rail
-      title="What's an AI agent?"
-      doc_href={~p"/docs/agents-and-keys"}
-      doc_label="Connect an agent docs"
-    >
+    <.docs_rail title="Connections and access">
       <p>
-        An agent is any LLM client — <span class="text-zinc-200">Claude, ChatGPT, Cursor,
-        Codex</span>
-        — connected to emisar as an <span class="text-zinc-200">MCP</span>
-        or as a <span class="text-zinc-200">CLI</span>
-        tool.
+        Agents are grouped by the team member who connected them. Each agent uses that
+        member’s runner access. To change which runners their agents can reach, update
+        the member’s access in <.link
+          navigate={~p"/app/#{@current_account}/settings/team"}
+          class="font-medium text-brand-400 hover:text-brand-300"
+        >Team</.link>.
       </p>
       <p>
-        emisar exposes your runners and their action catalog as an MCP server, so an agent can
-        only request actions that are <span class="text-zinc-200">in the catalog</span>
-        — never a raw shell. Every call is gated by policy, may need an approval, and lands in
-        the audit trail.
+        Each connection has its own key. For local agents using the emisar MCP bridge,
+        expiring keys rotate automatically. <.doc_link href={~p"/docs/agents-and-keys" <> "#rotating"}>How key rotation works</.doc_link>.
       </p>
       <p>
-        Each connection gets its own key, revocable in seconds. A key reaches only the runners
-        the operator who created it can reach — it never outgrows the person behind it, and
-        narrowing that operator's scope shrinks every key they've issued. Cloud LLMs like
-        Claude.ai and ChatGPT connect from the server URL over OAuth — no token to manage.
+        Revoke a key when the connection is no longer needed or the key may have been exposed.
+        To use that connection again, reconnect the agent. <.doc_link href={~p"/docs/agents-and-keys" <> "#revoking"}>How to revoke access</.doc_link>.
       </p>
     </.docs_rail>
     """
@@ -1383,6 +1547,7 @@ defmodule EmisarWeb.AgentsLive do
   attr :quick_secret, :string, default: nil
   attr :quick_key_id, :string, default: nil
   attr :quick_connected?, :boolean, default: false
+  attr :connection_delayed?, :boolean, default: false
   attr :snippet_open?, :boolean, default: false
   attr :current_account, :any, required: true
   attr :form, :any, default: nil
@@ -1398,19 +1563,43 @@ defmodule EmisarWeb.AgentsLive do
     variants =
       if config && config.kind == :local do
         Enum.map(@platform_tabs, fn tab ->
-          Map.put(tab, :config, assigns.configs_for.(assigns.selected_client, tab.os))
+          tab
+          |> Map.put(:config, assigns.configs_for.(assigns.selected_client, tab.os))
+          |> Map.put(
+            :downloads,
+            AgentClientConfig.download_links(tab.os, Emisar.Compat.mcp_target())
+          )
         end)
       else
         []
       end
 
-    assigns = assigns |> assign(:config, config) |> assign(:variants, variants)
+    connection_state =
+      cond do
+        assigns.quick_connected? -> :connected
+        assigns.connection_delayed? -> :delayed
+        true -> :waiting
+      end
+
+    connection_title =
+      case connection_state do
+        :connected -> "Agent connected"
+        :delayed -> "Still waiting for your agent"
+        :waiting -> "Waiting for your agent"
+      end
+
+    assigns =
+      assigns
+      |> assign(:config, config)
+      |> assign(:variants, variants)
+      |> assign(:connection_state, connection_state)
+      |> assign(:connection_title, connection_title)
 
     ~H"""
     <%!-- CONTENT ON CANVAS, task + rail (the install-wizard / keys-new
          grammar) at the same 7xl column as the list it's reached from, so the
          header never jumps: the picker + per-client setup are the task on the
-         left; the "how keys work" explainer fills the rail on the right. --%>
+         left; beginner guidance fills the rail on the right. --%>
     <div class="xl:grid xl:grid-cols-[minmax(0,1fr)_22rem] xl:gap-x-16">
       <div id="connect-panel">
         <%!-- Client picker on the canvas — grouped into two transport families.
@@ -1422,10 +1611,7 @@ defmodule EmisarWeb.AgentsLive do
            intro / section header above, so the picker carries no header. --%>
         <div>
           <p class="text-[11px] font-medium uppercase tracking-wider text-zinc-400">
-            Cloud
-            <span class="ml-1 normal-case tracking-normal text-zinc-400">
-              — hosted LLMs: no install, OAuth
-            </span>
+            Web apps<span class="normal-case tracking-normal text-zinc-400"> — connect by signing in</span>
           </p>
           <div class="mt-2.5 flex flex-wrap gap-1.5">
             <.client_tab
@@ -1437,10 +1623,7 @@ defmodule EmisarWeb.AgentsLive do
           </div>
 
           <p class="mt-6 text-[11px] font-medium uppercase tracking-wider text-zinc-400">
-            Local
-            <span class="ml-1 normal-case tracking-normal text-zinc-400">
-              — uses the stdio bridge
-            </span>
+            On your computer<span class="normal-case tracking-normal text-zinc-400"> — use the emisar installer</span>
           </p>
           <%!-- Kind sub-labels are the smaller member of the group-label
              family (the docs rail's subgroup grammar): the transport fact
@@ -1451,7 +1634,7 @@ defmodule EmisarWeb.AgentsLive do
             id="client-kind-cli"
             class="mt-2.5 text-[10px] font-medium uppercase tracking-wide text-zinc-400"
           >
-            CLI agents
+            Terminal apps
           </p>
           <div class="mt-1.5 flex flex-wrap gap-1.5">
             <.client_tab
@@ -1477,7 +1660,14 @@ defmodule EmisarWeb.AgentsLive do
           </div>
 
           <p class="mt-6 text-[11px] font-medium uppercase tracking-wider text-zinc-400">
-            Roll your own
+            Agent sandboxes
+          </p>
+          <div class="mt-2.5 flex flex-wrap gap-1.5">
+            <.client_tab id="coop" label="co:op" selected={"coop" == @selected_client} />
+          </div>
+
+          <p class="mt-6 text-[11px] font-medium uppercase tracking-wider text-zinc-400">
+            Custom setup
           </p>
           <div class="mt-2.5 flex flex-wrap gap-1.5">
             <%!-- Custom key is the same ISSUE tier as the quick flows above: it
@@ -1505,7 +1695,7 @@ defmodule EmisarWeb.AgentsLive do
                480px of reserved dead space buried the agents list. --%>
             <span></span>
           <% @selected_client == "custom" -> %>
-            <div id="custom-key-flow" class="mt-10">
+            <div id="custom-key-flow" class="mt-6 border-t border-zinc-800/70 pt-6">
               <%= if @quick_secret do %>
                 <section id="custom-key-save-step" class="space-y-6">
                   <.step_header step={1} title="Save your key" />
@@ -1518,18 +1708,18 @@ defmodule EmisarWeb.AgentsLive do
                   <.event_block
                     icon="identity.credential"
                     tone={:amber}
-                    title="New key minted — it's live now"
+                    title="API key created"
                   >
                     <:body>
-                      Copy the bearer token below before you leave this page; we won't show it
-                      again. If you lose it, create another key.
+                      Copy the API key below before you leave this page; we won't show it
+                      again.
                       <.doc_link href={~p"/docs/agents-and-keys"}>Manage agents & keys docs</.doc_link>
                     </:body>
                   </.event_block>
 
                   <.code_panel
                     id="custom-secret"
-                    label="API key (bearer token)"
+                    label="API key"
                     copy
                     copy_label="Copy key"
                     code={@quick_secret}
@@ -1542,8 +1732,119 @@ defmodule EmisarWeb.AgentsLive do
                 </section>
               <% end %>
             </div>
+          <% @config && @config.kind == :coop -> %>
+            <div id="coop-setup" class="mt-6 space-y-8 border-t border-zinc-800/70 pt-6">
+              <p class="text-sm text-zinc-400">
+                co:op is a free, open-source tool for running AI agents in a local sandbox.
+                It limits access to files, secrets, and tools on your machine; emisar extends that
+                control to your infrastructure and third-party tools.
+                <.doc_link href={~p"/docs/connect-coop"}>Full co:op guide</.doc_link>
+              </p>
+              <section id="coop-install-step" class="space-y-4">
+                <.step_header step={1} title="Install co:op" />
+                <div class="ml-6 space-y-4 text-sm text-zinc-400">
+                  <p>On Linux or macOS, start Docker and run:</p>
+                  <.code_line
+                    id="coop-install"
+                    label="On your computer"
+                    value="curl -fsSL https://raw.githubusercontent.com/AndrewDryga/coop/main/install.sh | sh"
+                  />
+                  <p>
+                    Follow any PATH instructions, then initialize your repository and sign in.
+                    Replace
+                    <.inline_code>codex</.inline_code>
+                    with <.inline_code>claude</.inline_code>, <.inline_code>gemini</.inline_code>, or
+                    <.inline_code>grok</.inline_code>
+                    for another agent.
+                  </p>
+                  <.code_panel
+                    id="coop-init"
+                    label="From your repository"
+                    code={~s(coop init\ncoop login codex)}
+                    copy
+                  />
+                </div>
+              </section>
+              <section id="coop-container-step" class="space-y-4">
+                <.step_header step={2} title="Prepare the container" />
+                <div class="ml-6 space-y-4 text-sm text-zinc-400">
+                  <p>
+                    Create
+                    <.inline_code>.agent/Dockerfile</.inline_code>
+                    with this content.
+                    If you already have one, add the installation steps and keep your existing
+                    toolchain and final user; give that user ownership of <.inline_code>/config</.inline_code>.
+                  </p>
+                  <.code_panel
+                    id="coop-dockerfile"
+                    label=".agent/Dockerfile"
+                    code={AgentClientConfig.coop_dockerfile()}
+                    max_h="max-h-64"
+                    copy
+                  />
+                  <p>
+                    In
+                    <.inline_code>~/.config/coop/coop.conf</.inline_code>
+                    on your computer,
+                    add or update these settings. Append the mount if
+                    <.inline_code>COOP_RUN_ARGS</.inline_code>
+                    already exists.
+                    Keep this volume so replacement keys survive new containers.
+                  </p>
+                  <.code_panel
+                    id="coop-storage"
+                    label="coop.conf"
+                    code={~s(COOP_RUNTIME=docker\nCOOP_RUN_ARGS=-v coop-emisar-config:/config)}
+                    copy
+                  />
+                  <.code_line
+                    id="coop-build"
+                    label="From your repository"
+                    value="coop build && coop doctor"
+                  />
+                </div>
+              </section>
+              <section id="coop-config-step" class="space-y-4">
+                <.step_header step={3} title="Copy the MCP configuration" />
+                <div class="ml-6">
+                  <%= if @quick_secret do %>
+                    <div class="space-y-5 text-sm text-zinc-400">
+                      <p>
+                        Merge this emisar entry into
+                        <.inline_code>~/.config/coop/agents/mcp.json</.inline_code>
+                        on your computer, preserving other servers. Create the file and parent
+                        directories if needed. Keep it outside your repository and readable only by
+                        your user; this key is shown only during setup.
+                      </p>
+                      <.code_panel
+                        id="coop-config"
+                        label="mcp.json"
+                        code={@config.body}
+                        copy
+                      />
+                      <p>
+                        If your runners require signed dispatch, add the signing credentials from <.doc_link href={
+                          ~p"/docs/signed-dispatch"
+                        }>Set up signed dispatch</.doc_link>.
+                      </p>
+                    </div>
+                  <% else %>
+                    <div id="coop-config-error" role="alert" class="space-y-3">
+                      <.error>Couldn't prepare the configuration.</.error>
+                      <.button
+                        variant={:secondary}
+                        phx-click="select_client"
+                        phx-value-client="coop"
+                      >
+                        Try again
+                      </.button>
+                    </div>
+                  <% end %>
+                </div>
+              </section>
+            </div>
           <% @config && @config.kind == :remote -> %>
-            <div class="mt-10 space-y-8">
+            <div class="mt-6 space-y-8 border-t border-zinc-800/70 pt-6">
               <.remote_mcp_panel
                 client_id={@selected_client}
                 client_label={client_label(@selected_client)}
@@ -1558,7 +1859,21 @@ defmodule EmisarWeb.AgentsLive do
               />
             </div>
           <% @config -> %>
-            <div class="mt-10 space-y-8">
+            <div class="mt-6 space-y-8 border-t border-zinc-800/70 pt-6">
+              <div :if={@selected_client == "pi"} class="space-y-3 text-sm text-zinc-400">
+                <p>
+                  Pi needs an MCP extension. Install the third-party
+                  <.doc_link href="https://github.com/nicobailon/pi-mcp-adapter">pi-mcp-adapter</.doc_link>
+                  before connecting emisar:
+                </p>
+                <.code_line id="pi-install-adapter" value="pi install npm:pi-mcp-adapter" />
+              </div>
+              <p
+                :if={@selected_client in ["hermes", "goose"] && @detected_os == :windows}
+                class="text-sm text-zinc-400"
+              >
+                On Windows, use manual setup below to save the configuration in the right folder.
+              </p>
               <.local_install_block base_url={@base_url} detected_os={@detected_os} />
 
               <%!-- Manual setup is the fallback — the installer writes the
@@ -1579,87 +1894,112 @@ defmodule EmisarWeb.AgentsLive do
               >
                 <:summary>
                   <span class="font-medium">
-                    Set up {client_label(@selected_client)} manually instead
-                    <span class="text-zinc-400">
-                      {if Map.get(@config, :secret_separate, false),
-                        do: "(shows a fresh key and config snippet)",
-                        else: "(shows a config snippet with a fresh key)"}
-                    </span>
+                    Set up {client_label(@selected_client)} manually
                   </span>
                 </:summary>
                 <%= if @quick_secret do %>
-                  <div
-                    :for={variant <- @variants}
-                    id={"manual-path-#{variant.os}"}
-                    data-os={variant.os}
-                    class={["space-y-3", variant.os != @detected_os && "hidden"]}
-                  >
-                    <.bridge_path_form os={variant.os} path={@bridge_paths[variant.os]} />
-                    <%= if config_target_is_file?(variant.config) do %>
-                      <p class="text-sm text-zinc-400">
-                        Open
-                        <.inline_code surface={:prominent} size={:sm} class="break-all">
-                          {variant.config.location}
-                        </.inline_code>
-                        and merge the snippet into your existing configuration.
+                  <ol class="list-decimal space-y-6 pl-5 text-sm text-zinc-400">
+                    <li class="space-y-3">
+                      <p class="font-medium text-zinc-200">Download and check the bridge</p>
+                      <div
+                        :for={variant <- @variants}
+                        id={"manual-path-#{variant.os}"}
+                        data-os={variant.os}
+                        class={["space-y-3", variant.os != @detected_os && "hidden"]}
+                      >
+                        <p>
+                          The emisar MCP bridge connects your AI app to emisar.
+                          <%= if variant.downloads != [] do %>
+                            Download it for {variant.label}:<%= for {{label, href}, index} <- Enum.with_index(variant.downloads) do %>
+                              {if index == 0, do: " ", else: " or "}<.doc_link href={href}>{label}</.doc_link>
+                            <% end %>.
+                            Extract the archive, keep the executable in a permanent folder, and enter
+                            its full path below. If it's already installed, use its existing path.
+                          <% else %>
+                            Install it using the command above, then enter its full path below.
+                          <% end %>
+                        </p>
+                        <.bridge_path_form os={variant.os} path={@bridge_paths[variant.os]} />
+                      </div>
+                    </li>
+                    <li class="space-y-3">
+                      <p class="font-medium text-zinc-200">
+                        Add emisar to {client_label(@selected_client)}
                       </p>
-                    <% else %>
-                      <p class="text-sm text-zinc-400">
-                        Run the command in {if variant.os == :windows,
-                          do: "PowerShell",
-                          else: "your terminal"}.
+                      <div
+                        :for={variant <- @variants}
+                        data-os={variant.os}
+                        class={["space-y-3", variant.os != @detected_os && "hidden"]}
+                      >
+                        <%= cond do %>
+                          <% @selected_client == "claude_desktop" -> %>
+                            <p>
+                              In Claude Desktop, open Settings → Developer → Edit Config.
+                              Merge the snippet into the file and save it. These settings connect
+                              Desktop Chat, not the Code tab.
+                            </p>
+                          <% @selected_client == "vscode" -> %>
+                            <p>
+                              Open the Command Palette and run MCP: Open User Configuration.
+                              Merge the snippet into the file for your current profile and save it.
+                            </p>
+                          <% config_target_is_file?(variant.config) -> %>
+                            <p>
+                              Open
+                              <.inline_code surface={:prominent} size={:sm} class="break-all">
+                                {variant.config.location}
+                              </.inline_code>
+                              and merge the snippet into your configuration. If the file doesn't
+                              exist, create it and any missing folders. Save the file.
+                            </p>
+                          <% true -> %>
+                            <p>
+                              Run the command in {if variant.os == :windows,
+                                do: "PowerShell",
+                                else: "your terminal"}.
+                            </p>
+                        <% end %>
+                      </div>
+                      <.code_panel
+                        :if={Map.get(@config, :secret_separate, false)}
+                        id={"secret-#{@selected_client}"}
+                        label="API key"
+                        annotation="paste when the client prompts; shown once"
+                        copy
+                        copy_label="Copy key"
+                        code={@quick_secret}
+                      />
+                      <p class="text-xs text-zinc-400">
+                        {if @config.secret_separate,
+                          do: "The snippet does not contain your API key.",
+                          else: "The snippet contains your API key; keep the configuration private."}
                       </p>
-                    <% end %>
-                    <p :if={@selected_client == "vscode"} class="text-xs text-zinc-400">
-                      Use “MCP: Open User Configuration” for the current VS Code profile.
-                    </p>
-                    <p
-                      :if={@selected_client == "claude_desktop" && variant.os == :linux}
-                      class="text-xs text-zinc-400"
-                    >
-                      Claude Desktop has no official Linux release. For community builds, check your
-                      package's MCP configuration location.
-                    </p>
-                  </div>
-                  <.code_panel
-                    :if={Map.get(@config, :secret_separate, false)}
-                    id={"secret-#{@selected_client}"}
-                    label="API key"
-                    annotation="paste when the client prompts; shown once"
-                    copy
-                    copy_label="Copy key"
-                    code={@quick_secret}
-                    class="mt-3"
-                  />
-                  <p class="mt-3 text-xs text-zinc-400">
-                    {if @config.secret_separate,
-                      do: "The snippet does not contain your API key.",
-                      else: "The snippet contains your API key; keep the configuration private."}
-                  </p>
-                  <.os_code_panel
-                    id={"snippet-#{@selected_client}"}
-                    detected={@detected_os}
-                    on_change="select_os"
-                    class="mt-3"
-                  >
-                    <:tab
-                      :for={variant <- @variants}
-                      os={variant.os}
-                      label={variant.label}
-                      code={variant.config.body}
-                      unavailable="Enter a full executable path above to generate this snippet."
-                    />
-                  </.os_code_panel>
-                  <%!-- Mechanical next step sits right under the snippet: paste
-                       or run it, then restart. --%>
-                  <p class="mt-3 text-xs text-zinc-400">
-                    {if config_target_is_file?(@config),
-                      do: "Restart #{client_label(@selected_client)} after saving.",
-                      else: "Start a fresh #{client_label(@selected_client)} session to use it."} Shown once — pick the client again for a fresh key if you lose it.
-                    <.doc_link href={~p"/docs/connect-cli-agent"}>Troubleshooting</.doc_link>
-                  </p>
+                      <.os_code_panel
+                        id={"snippet-#{@selected_client}"}
+                        detected={@detected_os}
+                        on_change="select_os"
+                      >
+                        <:tab
+                          :for={variant <- @variants}
+                          os={variant.os}
+                          label={variant.label}
+                          code={variant.config.body}
+                          unavailable="Enter a full executable path above to generate this snippet."
+                        />
+                      </.os_code_panel>
+                    </li>
+                    <li class="space-y-3">
+                      <p class="font-medium text-zinc-200">Check the connection</p>
+                      <p :for={instruction <- AgentClientConfig.connection_steps(@selected_client)}>
+                        {instruction}
+                      </p>
+                      <p class="text-xs text-zinc-400">
+                        <.doc_link href={~p"/docs/connect-cli-agent" <> "#troubleshooting"}>Troubleshooting</.doc_link>
+                      </p>
+                    </li>
+                  </ol>
                 <% else %>
-                  <p class="text-sm text-zinc-400">One moment — minting this client's key…</p>
+                  <p class="text-sm text-zinc-400">Creating your API key…</p>
                 <% end %>
               </.disclosure>
             </div>
@@ -1670,52 +2010,161 @@ defmodule EmisarWeb.AgentsLive do
              watchdog). The snippet/custom paths watch their minted key's id;
              the installer path watches for any key minted after this page
              opened making its first call (quick_key_connected?/2 — a
-             pre-existing agent can't flip it). Waiting is the NORMAL state —
-             the quiet dot-led wait line (wait-room grammar) — and the brand
-             connected block takes over on the first call (instant via the
-             broadcast, tick as the fallback). --%>
+             pre-existing agent can't flip it). The neutral waiting state and
+             green connected state share one stable, politely announced row. --%>
         <section
           :if={@quick_key_id || local_client?(@selected_client)}
           id="agent-connect-step"
           class="mt-8"
         >
-          <.step_header step={2} title="Connect your agent">
+          <.step_header
+            step={if @selected_client == "coop", do: 4, else: 2}
+            title="Connect your agent"
+          >
             <:subtitle>
-              start {client_label(@selected_client)} — its first call lands it here
+              <%= cond do %>
+                <% @selected_client == "coop" -> %>
+                  Start a fresh session from your repository, then send the example prompt.
+                <% @selected_client == "custom" -> %>
+                  Add an MCP server in your app and choose Streamable HTTP.
+                <% true -> %>
+                  Finish setup in {client_label(@selected_client)}, then try the example prompt.
+              <% end %>
             </:subtitle>
           </.step_header>
-          <%= if @quick_connected? do %>
-            <.event_block
-              icon="state.success"
-              tone={:brand}
-              title="Connected — your agent is live"
+          <div class="ml-6 max-w-prose space-y-5">
+            <div
+              :if={@selected_client != "coop" && local_client?(@selected_client) && !@snippet_open?}
+              class="space-y-3 text-sm text-zinc-400"
             >
-              <:body>
-                Its first call just landed. Every request now shows under its name in
-                <.link
-                  navigate={~p"/app/#{@current_account}/agents"}
-                  class="text-brand-400 hover:text-brand-300"
-                >
-                  agents
-                </.link>
-                and <.link
-                  navigate={~p"/app/#{@current_account}/runs"}
-                  class="text-brand-400 hover:text-brand-300"
-                >Runs</.link>.
-              </:body>
-            </.event_block>
-          <% else %>
-            <div class="flex items-start gap-3">
-              <%!-- mt-[6px]: optically centers the 10px dot on the first
-                   text line (text-sm/relaxed ≈ 23px line box). --%>
-              <.status_dot tone={:brand} animate={:ping} size={:lg} class="mt-[6px]" />
-              <p class="text-sm leading-relaxed text-zinc-400">
-                <span class="font-medium text-zinc-300">Waiting for your agent's first call</span>
-                — this updates on its own; you can leave, and the agent will show in the
-                agents list either way.
+              <p :for={
+                instruction <- AgentClientConfig.connection_steps(@selected_client, :installer)
+              }>
+                {instruction}
               </p>
             </div>
-          <% end %>
+            <div :if={@selected_client == "custom"} class="space-y-3">
+              <.code_line
+                id="custom-rpc-url"
+                label="Server URL"
+                value={@base_url <> "/api/mcp/rpc"}
+                copy_label="Copy URL"
+              />
+              <p class="text-sm text-zinc-400">
+                Set the Authorization header to
+                <.inline_code surface={:prominent} size={:sm}>Bearer</.inline_code>
+                followed by a space and the API key above. Save the connection, then send the
+                prompt below.
+                <.doc_link href={~p"/docs/connect-cli-agent" <> "#direct-http"}>Direct HTTP setup</.doc_link>
+              </p>
+            </div>
+
+            <%= if @selected_client == "coop" do %>
+              <.code_line id="coop-start" label="From your repository" value="coop codex" />
+              <p class="text-sm text-zinc-400">
+                Replace
+                <.inline_code>codex</.inline_code>
+                with the agent you signed in to.
+              </p>
+              <.code_panel
+                id="agent-example-prompt"
+                label="Example prompt"
+                code="Use emisar to find a runner with linux.uptime, run that action, and show me the output."
+                copy
+                copy_label="Copy prompt"
+                wrap
+              />
+              <p class="text-sm text-zinc-400">
+                You'll need an online runner with the linux-core pack trusted. Allow the tool call
+                if your agent asks, and complete any approval required by your policy. Check the
+                returned uptime, then confirm the action, runner, and operator in <.link
+                  navigate={~p"/app/#{@current_account}/audit"}
+                  class="text-brand-400 hover:text-brand-300"
+                >Audit</.link>.
+              </p>
+              <.disclosure id="coop-tool-prompts" size={:md}>
+                <:summary>
+                  <span class="font-medium">
+                    Skip emisar tool-call prompts <span class="text-zinc-400">(optional)</span>
+                  </span>
+                </:summary>
+                <div class="space-y-3 text-sm text-zinc-400">
+                  <p>
+                    co:op's default agent commands already skip local permission prompts for all
+                    tools inside the sandbox, including emisar.
+                  </p>
+                  <p>
+                    If you've customized your agent's command, follow the <.doc_link href={
+                      ~p"/docs/connect-coop#tool-permissions"
+                    }>co:op tool-permission guide</.doc_link>.
+                    Your
+                    <.doc_link href={~p"/docs/policies-and-approvals"}>emisar policies and approvals</.doc_link>
+                    still apply.
+                  </p>
+                </div>
+              </.disclosure>
+            <% else %>
+              <.agent_example_prompt id="agent-example-prompt" />
+            <% end %>
+
+            <.connection_status
+              id="agent-connection-status"
+              state={@connection_state}
+              title={@connection_title}
+            >
+              <%= cond do %>
+                <% @connection_state == :connected -> %>
+                  Manage its access in
+                  <.link
+                    navigate={~p"/app/#{@current_account}/agents"}
+                    class="text-brand-400 hover:text-brand-300"
+                  >AI agents</.link>
+                  or view its activity in <.link
+                    navigate={~p"/app/#{@current_account}/runs"}
+                    class="text-brand-400 hover:text-brand-300"
+                  >Runs</.link>.
+                <% @connection_state == :delayed -> %>
+                  If you've finished setup, check the connection in {if @selected_client == "custom",
+                    do: "your AI app",
+                    else: client_label(@selected_client)}:
+                <% true -> %>
+                  You can leave this page. Your agent will appear in
+                  <.link
+                    navigate={~p"/app/#{@current_account}/agents"}
+                    class="text-brand-400 hover:text-brand-300"
+                  >AI agents</.link>
+                  when it connects.
+              <% end %>
+              <:details :if={@connection_state == :delayed}>
+                <.steps>
+                  <:step>
+                    <%= if @selected_client == "custom" do %>
+                      Confirm the server URL and Authorization header match the values above.
+                    <% else %>
+                      Restart {client_label(@selected_client)} and check its MCP connection output
+                      for errors.
+                    <% end %>
+                  </:step>
+                  <:step :if={@selected_client not in ["custom", "coop"] && @quick_secret}>
+                    Confirm the bridge path and save the configuration shown in manual setup.
+                  </:step>
+                  <:step :if={@selected_client == "coop"}>
+                    Check co:op's shared mcp.json, rebuild its image if the bridge is missing,
+                    and start a new session.
+                  </:step>
+                  <:step>
+                    Make sure the computer running your app can reach <code class="break-all font-mono text-zinc-300">{@base_url}</code>.
+                  </:step>
+                  <:step>
+                    Send the example prompt and allow the emisar tool call if your app asks.
+                  </:step>
+                </.steps>
+                <p class="mt-3 text-sm">
+                  <.doc_link href={~p"/docs/connect-cli-agent" <> "#troubleshooting"}>Troubleshooting</.doc_link>
+                </p>
+              </:details>
+            </.connection_status>
+          </div>
         </section>
 
         <%!-- Optional, off the act→wait timeline — reads after the live
@@ -1730,13 +2179,20 @@ defmodule EmisarWeb.AgentsLive do
         </div>
       </div>
 
-      <%!-- The reading rail — the shared what's-an-agent + how-its-key-behaves
-           explainer (the same one the agents list shows below its table). Hidden
-           below xl (where the grid collapses to one column) so the connect steps
-           lead; condensed to one section, it no longer overshoots a short
-           local-client install panel. --%>
-      <div class="hidden xl:block">
-        <.agent_docs_rail />
+      <%!-- Onboarding teaches the concept; list-page help owns managing keys.
+           Keep this introduction reachable on narrow screens too. --%>
+      <div class="mt-10 xl:mt-0">
+        <.docs_rail title="What's an AI agent?">
+          <p>
+            An AI agent is an app, such as Claude, ChatGPT, or Cursor, that can use tools
+            to carry out tasks for you.
+          </p>
+          <p>
+            emisar connects that app to your infrastructure. Ask it to investigate an incident
+            across your fleet, carry out recovery steps, and verify the result using the
+            actions you make available.
+          </p>
+        </.docs_rail>
       </div>
     </div>
     """
@@ -1748,7 +2204,12 @@ defmodule EmisarWeb.AgentsLive do
   defp bridge_path_form(assigns) do
     error = if assigns.path != "", do: AgentClientConfig.path_error(assigns.path, assigns.os)
     form = to_form(%{"os" => to_string(assigns.os), "path" => assigns.path})
-    assigns = assigns |> assign(:error, error) |> assign(:path_form, form)
+
+    assigns =
+      assigns
+      |> assign(:error, error)
+      |> assign(:path_form, form)
+      |> assign(:version_command, AgentClientConfig.version_command(assigns.path, assigns.os))
 
     ~H"""
     <.form
@@ -1761,7 +2222,7 @@ defmodule EmisarWeb.AgentsLive do
       <.input
         id={"bridge-path-#{@os}"}
         name="path"
-        label="Bridge executable"
+        label="MCP bridge path"
         value={@path}
         errors={if @error, do: [@error], else: []}
         placeholder={
@@ -1775,12 +2236,15 @@ defmodule EmisarWeb.AgentsLive do
         class="font-mono"
       />
     </.form>
-    <p class="text-xs text-zinc-400">
-      Paste the full path without quotes. Find it in a new {if @os == :windows,
-        do: "PowerShell window",
-        else: "terminal"}:
+    <p :if={@version_command} class="text-xs text-zinc-400">
+      Run this in {if @os == :windows, do: "PowerShell", else: "your terminal"} to check that
+      the bridge starts. It should print its version:
     </p>
-    <.code_line id={"bridge-discovery-#{@os}"} value={AgentClientConfig.discovery_command(@os)} />
+    <.code_line
+      :if={@version_command}
+      id={"bridge-check-#{@os}"}
+      value={@version_command}
+    />
     """
   end
 
@@ -1829,7 +2293,7 @@ defmodule EmisarWeb.AgentsLive do
         <%!-- A quiet typographic numeral, not a badge — same size as the title,
              muted and tabular so the three step numbers align down the column and
              the eye reads a sequence without chrome. --%>
-        <span class="shrink-0 font-display text-base font-medium tabular-nums text-zinc-400">
+        <span class="w-3 shrink-0 font-display text-base font-medium tabular-nums text-zinc-400">
           {@step}
         </span>
         <div class="min-w-0">
@@ -1862,8 +2326,8 @@ defmodule EmisarWeb.AgentsLive do
            RIGHT as header actions — they open the docs/trust pages in a new tab
            (doc_link's ↗), so a security-conscious operator can vet the curl|bash
            without losing this flow. --%>
-      <.step_header step={1} title="Install the bridge">
-        <:subtitle>one-time, per machine</:subtitle>
+      <.step_header step={1} title="Run the installer">
+        <:subtitle>On the computer where you use your AI app.</:subtitle>
         <:actions>
           <%!-- text-xs so these header-action links stay subordinate to the
                16px heading — doc_link inherits ambient size, and step_header's
@@ -1882,8 +2346,8 @@ defmodule EmisarWeb.AgentsLive do
             <:tab os={:macos} label="macOS" code={command} />
           </.os_code_panel>
           <p class="mt-2 text-xs leading-5 text-zinc-400">
-            The installer for your platform offers to add emisar to the LLM clients it finds —
-            approve the connection in your browser when it asks. No key to copy.
+            The installer offers to connect emisar to the AI apps it finds.
+            Approve the connection in your browser when prompted. No key to copy.
           </p>
         <% {{:error, :insecure_base_url}, _windows} -> %>
           <.install_transport_refusal />
@@ -1970,8 +2434,7 @@ defmodule EmisarWeb.AgentsLive do
   defp auto_permit_why(assigns) do
     ~H"""
     <p class="text-xs text-zinc-400">
-      Emisar still enforces policy and asks for approval before risky actions, so it is safe to
-      turn off {@client_label}'s extra prompts.
+      Your emisar policies still decide which actions are allowed, require approval, or are blocked.
     </p>
     """
   end
@@ -1996,8 +2459,13 @@ defmodule EmisarWeb.AgentsLive do
              above the steps, so the operator reads "paste these" → the fields →
              the next step without scrolling back up. Each client stores its own
              step list + paste index because the menu paths and paste point differ
-             (Claude.ai pastes at step 2, ChatGPT at step 3). --%>
+             (Claude.ai pastes at step 2, ChatGPT at step 4). --%>
         <.section_header title={"Steps for #{@client_label}"} />
+        <p :if={@client_id == "claude_web"} class="mt-3 text-sm text-zinc-400">
+          On Claude Team or Enterprise, an organization owner must add the connector first:
+          Organization settings → Connectors → Add → Custom → Web. Members then choose
+          Connect under Customize → Connectors and sign in to emisar.
+        </p>
         <.steps class="mt-5">
           <:step :for={{step, idx} <- Enum.with_index(@steps)}>
             {step}
@@ -2014,6 +2482,10 @@ defmodule EmisarWeb.AgentsLive do
                 value={@rpc_url}
                 copy_label="Copy URL"
               />
+              <p class="text-xs text-zinc-400">
+                The server URL must be publicly reachable over HTTPS. localhost and private
+                network addresses won't work with this connection method.
+              </p>
               <.callout tone={:neutral} title={@oauth_note.title}>
                 {@oauth_note.body}
               </.callout>
@@ -2029,9 +2501,10 @@ defmodule EmisarWeb.AgentsLive do
       />
 
       <p class="text-xs text-zinc-400">
-        Cloud LLM connectors need {@client_label} to be on a plan that
-        supports custom OAuth MCP servers. Connection refused or 401?
-        <.doc_link href={~p"/docs/connect-cli-agent" <> "#troubleshooting"}>Troubleshooting</.doc_link>
+        Your account and workspace settings must allow custom MCP connections.
+        <.doc_link href={
+          if @client_id == "chatgpt", do: ~p"/docs/connect-chatgpt", else: ~p"/docs/connect-claude-ai"
+        }>Full setup guide</.doc_link>
       </p>
     </div>
     """
@@ -2067,7 +2540,7 @@ defmodule EmisarWeb.AgentsLive do
         <.input
           field={@form[:description]}
           type="textarea"
-          label="Description"
+          label="Description (optional)"
           placeholder="Optional — what is this key for? Who uses it?"
           rows="2"
         />
@@ -2081,11 +2554,10 @@ defmodule EmisarWeb.AgentsLive do
         <.input
           field={@form[:expires_at]}
           type="datetime-local"
-          label="Expires (UTC)"
+          label="Expiration date (UTC, optional)"
         />
         <p class="mt-1 text-xs text-zinc-400">
-          Leave blank for the default 30-day expiry — a short-lived key limits the
-          blast radius if it leaks. Pick a date to override.
+          Leave blank to expire the key in 30 days.
         </p>
 
         <:actions>

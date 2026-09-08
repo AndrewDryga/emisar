@@ -236,6 +236,89 @@ defmodule EmisarWeb.AgentClientConfigTest do
     end
   end
 
+  describe "version_command/2" do
+    test "leaves simple POSIX executable paths unquoted" do
+      for os <- [:linux, :macos] do
+        assert AgentClientConfig.version_command("/usr/local/bin/emisar-mcp", os) ==
+                 "/usr/local/bin/emisar-mcp --version"
+      end
+    end
+
+    test "uses the entered path as one shell argument without credentials" do
+      assert AgentClientConfig.version_command(@paths.macos, :macos) ==
+               "'/Users/Operator Name/.local/bin/emisar-mcp' --version"
+
+      assert AgentClientConfig.version_command(@paths.linux, :linux) ==
+               "'" <> String.replace(@paths.linux, "'", "'\"'\"'") <> "' --version"
+
+      assert AgentClientConfig.version_command(@paths.windows, :windows) ==
+               ~S|& 'C:\Users\O''Brien & $operator\Programs\emisar-mcp.exe' --version|
+    end
+
+    test "does not produce an executable command until the path is valid" do
+      for os <- [:linux, :macos, :windows], path <- ["", "emisar-mcp", "relative/path"] do
+        assert AgentClientConfig.version_command(path, os) == nil
+      end
+    end
+  end
+
+  describe "connection_steps/2" do
+    test "VS Code only asks for a copied key after manual setup" do
+      manual = AgentClientConfig.connection_steps("vscode") |> Enum.join(" ")
+      installer = AgentClientConfig.connection_steps("vscode", :installer) |> Enum.join(" ")
+
+      assert manual =~ "Paste the API key above"
+      refute installer =~ "Paste the API key"
+      assert manual =~ "MCP: List Servers"
+      assert installer =~ "MCP: List Servers"
+      assert manual =~ "Local target and Agent role"
+    end
+
+    test "Cursor scopes optional permissions to emisar and the selected OS" do
+      config =
+        AgentClientConfig.render(
+          "cursor",
+          "https://emisar.dev",
+          "emk-test",
+          :windows,
+          @paths.windows
+        )
+
+      assert config.auto_permit.pointer =~ "emisar:*"
+      assert config.auto_permit.pointer =~ ~S|%USERPROFILE%\.cursor\permissions.json|
+      refute config.auto_permit.pointer =~ "Yolo"
+    end
+  end
+
+  describe "download_links/2" do
+    test "links to both architectures of the configured release with the right archive format" do
+      for {os, platform, extension} <- [
+            {:linux, "linux", "tar.gz"},
+            {:macos, "darwin", "tar.gz"},
+            {:windows, "windows", "zip"}
+          ] do
+        links = AgentClientConfig.download_links(os, "0.13.0")
+        assert length(links) == 2
+
+        for arch <- ["amd64", "arm64"] do
+          assert Enum.any?(links, fn {_label, href} ->
+                   href ==
+                     "https://emisar.dev/releases/mcp/mcp-v0.13.0/emisar-mcp-0.13.0-#{platform}-#{arch}.#{extension}"
+                 end)
+        end
+      end
+
+      assert Enum.map(AgentClientConfig.download_links(:macos, "0.13.0"), &elem(&1, 0)) ==
+               ["Apple silicon", "Intel"]
+    end
+
+    test "does not turn a version requirement or an unknown target into a download URL" do
+      for version <- [nil, "", ">= 0.13.0", "not-a-version"] do
+        assert AgentClientConfig.download_links(:linux, version) == []
+      end
+    end
+  end
+
   describe "path_error/2" do
     test "accepts absolute paths with spaces and shell punctuation but rejects incomplete paths" do
       for {os, path} <- @paths, do: assert(AgentClientConfig.path_error(path, os) == nil)

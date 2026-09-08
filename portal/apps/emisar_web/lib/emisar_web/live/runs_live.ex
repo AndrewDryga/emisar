@@ -212,8 +212,8 @@ defmodule EmisarWeb.RunsLive do
       <:title>Runs</:title>
 
       <.page_intro>
-        Every action dispatched across your fleet, newest first. Open a row for its arguments,
-        output, and audit record. Runner output is redacted before leaving the host.
+        A run is an action dispatched to a runner. Open a row for its arguments, output,
+        and audit record. The output is redacted before leaving the host.
         <.doc_link href={~p"/docs/runs"}>Runs docs</.doc_link>
       </.page_intro>
 
@@ -240,8 +240,7 @@ defmodule EmisarWeb.RunsLive do
                 icon="state.warning"
                 title="Couldn't load your runs"
               >
-                This is a load error, not an empty feed — runs may well exist. Refresh the page;
-                if it persists, your access to this account may have changed.
+                Refresh the page to try again.
               </.empty_state>
             <% LiveTable.has_active_filters?(@filter_params, @filters) -> %>
               <span class="text-zinc-400">No runs match these filters.</span>
@@ -254,7 +253,7 @@ defmodule EmisarWeb.RunsLive do
               <%!-- Runner-less account: naming dispatch paths that don't exist
                  yet contradicts the product's own guidance — the first job is
                  a runner (the dashboard says the same). --%>
-              <.empty_state icon="product.run" title="No runs yet.">
+              <.empty_state icon="product.run" title="No runs yet">
                 Install a
                 <.link
                   navigate={~p"/app/#{@current_account}/runners"}
@@ -262,35 +261,31 @@ defmodule EmisarWeb.RunsLive do
                 >
                   runner
                 </.link>
-                first — actions dispatch to your own hosts, and every run lands
-                here, gated and audited.
+                to run your first action. You'll see its progress and result here.
               </.empty_state>
             <% not @any_runners? -> %>
-              <.empty_state icon="product.run" title="No runs yet.">
-                This account has no run history yet. Runs will appear here after someone with
-                runner access dispatches an action.
+              <.empty_state icon="product.run" title="No runs yet">
+                Runs will appear here when an action is started on a runner you can access.
               </.empty_state>
             <% true -> %>
-              <.empty_state icon="product.run" title="No runs yet.">
-                Dispatch one from a
-                <.link
-                  navigate={~p"/app/#{@current_account}/runners"}
-                  class="text-brand-400 hover:text-brand-300"
-                >
-                  runner detail page
-                </.link>
-                or kick off a <.link
-                  navigate={~p"/app/#{@current_account}/runbooks"}
-                  class="text-brand-400 hover:text-brand-300"
-                >runbook</.link>.
-                Runs from an
+              <.empty_state icon="product.run" title="No runs yet">
+                Ask an
                 <.link
                   navigate={~p"/app/#{@current_account}/agents"}
                   class="text-brand-400 hover:text-brand-300"
                 >
                   AI agent
                 </.link>
-                (over MCP) land here too.
+                to run an action, or choose an action on a <.link
+                  navigate={~p"/app/#{@current_account}/runners"}
+                  class="text-brand-400 hover:text-brand-300"
+                >runner's page</.link>.
+                Actions started by
+                <.link
+                  navigate={~p"/app/#{@current_account}/runbooks"}
+                  class="text-brand-400 hover:text-brand-300"
+                >runbooks</.link>
+                appear here too.
               </.empty_state>
           <% end %>
         </:empty>

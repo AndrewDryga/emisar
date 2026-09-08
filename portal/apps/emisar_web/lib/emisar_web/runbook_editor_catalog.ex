@@ -167,17 +167,76 @@ defmodule EmisarWeb.RunbookEditorCatalog do
     )
   end
 
-  @doc "Align descriptor-backed argument rows after an action choice changes or loads."
+  @doc "Align arguments and edited output bindings with the selected common action contract."
   def sync_step(step, previous, projection) do
     choice = action_value(step["pack_id"], step["action"])
     previous_choice = action_value(previous["pack_id"], previous["action"])
 
-    if choice != previous_choice or argument_metadata_missing?(step["args"]) do
-      sync_step_arguments(step, projection)
-    else
-      step
+    step =
+      if choice != previous_choice or argument_metadata_missing?(step["args"]) do
+        sync_step_arguments(step, projection)
+      else
+        step
+      end
+
+    scope_changed? =
+      choice != previous_choice or
+        step["target_refs"] != previous["target_refs"] or
+        step["target_selection"] != previous["target_selection"]
+
+    sync_step_outputs(step, previous, projection, scope_changed?)
+  end
+
+  defp sync_step_outputs(step, previous, projection, scope_changed?) do
+    previous_outputs = previous["outputs"] || []
+
+    outputs =
+      step["outputs"]
+      |> Enum.with_index()
+      |> Enum.map(fn {output, index} ->
+        previous_output = Enum.at(previous_outputs, index)
+
+        if scope_changed? or output_binding_changed?(output, previous_output) do
+          Map.put(output, "source", output_source(output, step, projection))
+        else
+          output
+        end
+      end)
+
+    Map.put(step, "outputs", outputs)
+  end
+
+  defp output_binding_changed?(
+         %{"source" => "structured_output", "extract_type" => type},
+         _previous
+       )
+       when type != "json_pointer",
+       do: true
+
+  defp output_binding_changed?(_output, nil), do: true
+
+  defp output_binding_changed?(output, previous) do
+    Map.take(output, ["source", "extract_type"]) !=
+      Map.take(previous, ["source", "extract_type"])
+  end
+
+  defp output_source(%{"source" => source, "extract_type" => "json_pointer"}, step, projection)
+       when source in ["stdout", "structured_output"] do
+    case Runbooks.editor_action(
+           projection,
+           step["target_refs"],
+           step["target_selection"],
+           step["pack_id"],
+           step["action"]
+         ) do
+      {:ok, %{output_schema: schema}} when is_map(schema) -> "structured_output"
+      {:ok, _action} -> "stdout"
+      {:error, :not_found} -> source
     end
   end
+
+  defp output_source(%{"source" => "structured_output"}, _step, _projection), do: "stdout"
+  defp output_source(output, _step, _projection), do: output["source"]
 
   @doc "Risk of the selected pack/action choice on the selected targets."
   def risk(projection, refs, selection, pack_id, action_id) do
@@ -277,7 +336,7 @@ defmodule EmisarWeb.RunbookEditorCatalog do
         all_option = %{
           value: group_ref,
           selection: "all",
-          label: "Every runner in group",
+          label: "All available runners in group",
           kind: :group_all,
           disabled: false,
           selected: false
@@ -343,7 +402,7 @@ defmodule EmisarWeb.RunbookEditorCatalog do
   defp target_kind(_ref, _selection), do: :runner
 
   defp unavailable_target_description("group:" <> _group),
-    do: "Saved group is no longer available"
+    do: "No online, enabled runners in this group are accessible to you"
 
   defp unavailable_target_description(_ref), do: "Saved runner is no longer available"
 

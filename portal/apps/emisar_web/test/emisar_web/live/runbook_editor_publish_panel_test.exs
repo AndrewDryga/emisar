@@ -31,8 +31,11 @@ defmodule EmisarWeb.RunbookEditorPublishPanelTest do
     html = render(lv)
 
     assert html =~ "Run check"
-    assert html =~ "Validated"
-    assert html =~ "This definition resolves and can be executed"
+    assert html =~ "Checks passed"
+
+    assert html =~
+             "The workflow passes checks for current runners, actions, pack trust, and policy."
+
     refute html =~ "Publish check"
     refute html =~ "Ready to publish"
 
@@ -71,7 +74,7 @@ defmodule EmisarWeb.RunbookEditorPublishPanelTest do
     html = render(lv)
 
     assert html =~ "Run check"
-    assert html =~ "Current infrastructure blocks new executions"
+    assert html =~ "Resolve these issues before running"
     refute html =~ "blocks publication"
   end
 

@@ -8,10 +8,16 @@ defmodule EmisarWeb.PacksLiveTest do
 
     test "renders the empty state when the account has no pack observations", %{conn: conn} do
       {conn, _user, account} = register_and_log_in(conn)
-      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/packs")
+      {:ok, lv, html} = live(conn, ~p"/app/#{account}/packs")
 
       assert html =~ "Packs"
       assert html =~ "No packs reported yet"
+      assert html =~ "Install a pack on a connected runner to see it here."
+      refute html =~ "vetted actions"
+      refute html =~ "trust ledger"
+      assert has_element?(lv, "a[href='/docs/use-a-published-pack']", "Install a pack")
+      assert has_element?(lv, "a[href='/docs/action-packs#pack-trust']", "How pack trust works")
+      assert has_element?(lv, "a[href='/docs/pack-updates']", "Update a pack")
     end
 
     test "a crafted filter event with non-binary params does not crash the socket", %{conn: conn} do
@@ -24,6 +30,11 @@ defmodule EmisarWeb.PacksLiveTest do
 
     test "lists in-scope packs in full and names the rest for discovery only", %{conn: conn} do
       {conn, user, account} = register_and_log_in(conn)
+
+      account.id
+      |> Fixtures.Memberships.fetch_membership(user.id)
+      |> Fixtures.Memberships.force_role("admin")
+
       runner = Fixtures.Runners.create_runner(account_id: account.id)
 
       {:ok, _runner} =
@@ -70,8 +81,8 @@ defmodule EmisarWeb.PacksLiveTest do
 
       # The out-of-scope pack is NAMED, and that is all: no version row, no
       # hash, no action, no trust state, no advertiser.
-      assert html =~ "Outside your pack access"
-      assert has_element?(lv, "section.mt-12", "Outside your pack access")
+      assert html =~ "Packs you can&#39;t access"
+      assert has_element?(lv, "section.mt-12", "Packs you can't access")
       assert html =~ "hidden-tools"
       # Read the page's TEXT, not its markup: a version like "7.7" also occurs in
       # the coordinates of an inline icon's path data.
@@ -83,6 +94,10 @@ defmodule EmisarWeb.PacksLiveTest do
 
     test "uses content-start spacing when only out-of-scope packs are visible", %{conn: conn} do
       {conn, user, account} = register_and_log_in(conn)
+
+      account.id
+      |> Fixtures.Memberships.fetch_membership(user.id)
+      |> Fixtures.Memberships.force_role("admin")
 
       Fixtures.Catalog.create_trusted_pack_version(
         account_id: account.id,
@@ -99,12 +114,17 @@ defmodule EmisarWeb.PacksLiveTest do
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/packs")
 
       refute has_element?(lv, "#packs.mt-10")
-      assert has_element?(lv, "section.mt-6", "Outside your pack access")
-      refute has_element?(lv, "section.mt-12", "Outside your pack access")
+      assert has_element?(lv, "section.mt-6", "Packs you can't access")
+      refute has_element?(lv, "section.mt-12", "Packs you can't access")
     end
 
     test "a crafted contents event on an out-of-scope pack reveals nothing", %{conn: conn} do
       {conn, user, account} = register_and_log_in(conn)
+
+      account.id
+      |> Fixtures.Memberships.fetch_membership(user.id)
+      |> Fixtures.Memberships.force_role("admin")
+
       runner = Fixtures.Runners.create_runner(account_id: account.id)
 
       {:ok, _runner} =
@@ -215,7 +235,14 @@ defmodule EmisarWeb.PacksLiveTest do
       # Trust opens a plain (amber) confirm modal — trusting adopts code
       # fleet-wide; Reject (irreversible-feeling) opens the typed-confirm dialog.
       # Neither dispatches straight away.
-      assert html =~ "Trust pack"
+      assert html =~ "Trust version"
+
+      assert has_element?(
+               lv,
+               "#trust-#{pack_version.id}",
+               "Your policies still apply to every action."
+             )
+
       assert has_element?(lv, ~s([id^="trust-"]))
       assert html =~ "open_reject"
       assert has_element?(lv, "#reject-pack")
@@ -223,7 +250,7 @@ defmodule EmisarWeb.PacksLiveTest do
       assert has_element?(
                lv,
                ~s(a[href="/app/#{account.slug}/audit?target_kind=pack_version&target_id=#{pack_version.id}"]),
-               "View activity"
+               "View audit trail"
              )
     end
 
@@ -262,14 +289,14 @@ defmodule EmisarWeb.PacksLiveTest do
       {:ok, lv, _dead} = live(conn, ~p"/app/#{account}/packs")
       html = render(lv)
 
-      assert html =~ "runner still advertising this"
+      assert html =~ "runner reports this version"
       assert html =~ "canary-01"
       assert html =~ "staging"
 
       # A never-trusted pack has no baseline hash to diff against, so the readout
       # skips the empty "trusted: (none yet)" and shows just the bytes on the runner.
       refute html =~ "(none yet)"
-      assert html =~ "on the runner"
+      assert html =~ "Reported hash"
       assert html =~ hash
     end
 
@@ -307,7 +334,7 @@ defmodule EmisarWeb.PacksLiveTest do
       html = render(lv)
 
       # The trust decision now shows WHAT it authorizes, not just the hash.
-      assert html =~ "Trusting authorizes"
+      assert html =~ "1 action in this version"
       assert html =~ "acme.danger"
       assert html =~ "high"
     end
@@ -541,7 +568,7 @@ defmodule EmisarWeb.PacksLiveTest do
       {:ok, lv, _} = live(conn, ~p"/app/#{account}/packs")
 
       # The published pack links out to its public registry page, in a new tab.
-      assert has_element?(lv, ~s(a[href="/packs/caddy"][target="_blank"]), "Registry")
+      assert has_element?(lv, ~s(a[href="/packs/caddy"][target="_blank"]), "Pack catalog")
       # The custom pack has no public registry page → no link.
       refute has_element?(lv, ~s(a[href="/packs/acme-tools"]))
     end
@@ -560,10 +587,10 @@ defmodule EmisarWeb.PacksLiveTest do
       {:ok, lv, _dead} = live(conn, ~p"/app/#{account}/packs")
       html = render(lv)
 
-      assert html =~ "pack we don&#39;t ship a baseline for"
-      assert html =~ "Dispatch is blocked"
+      assert html =~ "This version&#39;s contents aren&#39;t automatically trusted"
+      assert html =~ "before its actions can be used"
       # The hash-drift copy must NOT show — there's no prior trusted hash to drift from.
-      refute html =~ "advertising a different hash"
+      refute html =~ "reported changed contents"
     end
 
     test "a trusted version advertising no actions shows the empty View-contents copy", %{
@@ -589,7 +616,7 @@ defmodule EmisarWeb.PacksLiveTest do
           "version" => pack_version.version
         })
 
-      assert html =~ "No actions advertised for this version right now."
+      assert html =~ "No runner currently reports actions for this version."
     end
 
     test "Trust adopts the pending hash and clears the pending badge", %{
@@ -645,9 +672,9 @@ defmodule EmisarWeb.PacksLiveTest do
       html = render_click(lv, "trust", %{"id" => pack_version.id})
 
       assert html =~
-               "Runners alpha-box and bravo-box disagree about what this version contains (action acme.deploy)."
+               "Runners alpha-box and bravo-box report different definitions for acme.deploy."
 
-      assert html =~ "Trust stays blocked until they advertise identical contents."
+      assert html =~ "Resolve the differences before trusting this version."
       # Fail-closed: the row stays pending with its Trust affordance intact.
       assert has_element?(lv, "#trust-#{pack_version.id}")
     end
@@ -669,14 +696,18 @@ defmodule EmisarWeb.PacksLiveTest do
         "version" => pack_version.version
       })
 
-      type_confirm_token(lv, "reject-pack", "acme-tools v9.9")
-      html = confirm_dialog(lv, "reject-pack", "Reject pack")
+      assert has_element?(lv, "#reject-pack", "Keep these contents blocked.")
+      assert has_element?(lv, "#reject-pack", "Different contents reported for this version")
+      refute has_element?(lv, "#reject-pack", "keep the previously trusted contents")
 
-      assert html =~ "Rejected acme-tools v9.9. It stays listed as rejected"
+      type_confirm_token(lv, "reject-pack", "acme-tools v9.9")
+      html = confirm_dialog(lv, "reject-pack", "Reject contents")
+
+      assert html =~ "Rejected acme-tools v9.9."
       # The rejected row stays visible — quietly, with the fix-admin-mistake
       # Trust affordance — instead of vanishing from the list.
       assert has_element?(lv, "#packs li", "acme-tools")
-      assert has_element?(lv, "#packs li", "Rejected — dispatch refuses this version")
+      assert has_element?(lv, "#packs li", "Rejected — actions from this version are blocked")
 
       assert has_element?(
                lv,
@@ -699,10 +730,10 @@ defmodule EmisarWeb.PacksLiveTest do
       )
       |> render_click()
 
-      html = confirm_dialog(lv, "pack-action", "Trust pack")
+      html = confirm_dialog(lv, "pack-action", "Trust version")
 
       assert html =~ "Trusted acme-tools v9.9."
-      refute has_element?(lv, "#packs li", "Rejected — dispatch refuses this version")
+      refute has_element?(lv, "#packs li", "Rejected — actions from this version are blocked")
     end
 
     test "reject's typed-confirm: Confirm won't fire until the pack token matches", %{
@@ -721,13 +752,13 @@ defmodule EmisarWeb.PacksLiveTest do
 
       # Empty + wrong token → Confirm disabled, `reject` never dispatched.
       assert_raise ArgumentError, ~r/disabled/, fn ->
-        confirm_dialog(lv, "reject-pack", "Reject pack")
+        confirm_dialog(lv, "reject-pack", "Reject contents")
       end
 
       type_confirm_token(lv, "reject-pack", "acme-tools v0.0")
 
       assert_raise ArgumentError, ~r/disabled/, fn ->
-        confirm_dialog(lv, "reject-pack", "Reject pack")
+        confirm_dialog(lv, "reject-pack", "Reject contents")
       end
 
       # The pending row is untouched — no bypassing event fired.
@@ -743,7 +774,7 @@ defmodule EmisarWeb.PacksLiveTest do
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/packs")
       html = render_click(lv, "reject", %{"id" => pack_version.id})
 
-      assert html =~ "Rejected acme-tools v9.9. It stays listed as rejected"
+      assert html =~ "Rejected acme-tools v9.9."
       assert has_element?(lv, "#packs li", "acme-tools")
     end
 
@@ -761,7 +792,8 @@ defmodule EmisarWeb.PacksLiveTest do
       {:ok, lv, _dead} = live(conn, ~p"/app/#{account}/packs")
       html = render(lv)
 
-      refute html =~ "Retired"
+      assert has_element?(lv, "#packs-acme-tools")
+      refute has_element?(lv, "#packs-acme-tools", "Retired")
       refute html =~ "Override retirement"
       refute has_element?(lv, ~s([id^="override-"]))
     end
@@ -787,10 +819,10 @@ defmodule EmisarWeb.PacksLiveTest do
       html = render(lv)
 
       assert html =~ "Update available"
-      assert html =~ "v#{current} has shipped"
+      assert html =~ "v#{current} is available"
       assert html =~ "emisar pack install #{pack_id}"
       # A neutral nudge, not a warning — no rose retired block on this row.
-      refute html =~ "Retired by a newer release"
+      refute html =~ "Retired version"
     end
 
     test "multiple outdated versions of one pack show a SINGLE update-available note",
@@ -819,7 +851,7 @@ defmodule EmisarWeb.PacksLiveTest do
       {:ok, lv, _dead} = live(conn, ~p"/app/#{account}/packs")
       html = render(lv)
 
-      assert html =~ "v#{current} has shipped"
+      assert html =~ "v#{current} is available"
       occurrences = Regex.scan(~r/Update available/, html) |> length()
       assert occurrences == 1
     end
@@ -887,7 +919,7 @@ defmodule EmisarWeb.PacksLiveTest do
       {:ok, lv, _dead} = live(conn, ~p"/app/#{account}/packs")
       html = render(lv)
 
-      assert html =~ "Retired by a newer release"
+      assert html =~ "Retired version"
       refute html =~ "Update available"
     end
 
@@ -919,12 +951,16 @@ defmodule EmisarWeb.PacksLiveTest do
       {:ok, lv, _dead} = live(conn, ~p"/app/#{account}/packs")
       html = render(lv)
 
-      assert html =~ "Retired by a newer release"
-      assert html =~ "update the runners still on it"
+      assert html =~ "Retired version"
+      assert html =~ "Update the pack on the runners below."
       assert html =~ "Override retirement"
       assert has_element?(lv, "#override-#{pack_version.id}")
       # Removal is futile while a runner re-advertises it, so it's dropped here.
-      refute html =~ "Remove version"
+      refute has_element?(
+               lv,
+               ~s(#retirement-remove-#{pack_version.id}[phx-click="open_pack_action"][phx-value-action="delete_version"]),
+               "Remove"
+             )
     end
 
     test "a retired trusted version with NO runners recommends removal, not override",
@@ -946,27 +982,27 @@ defmodule EmisarWeb.PacksLiveTest do
       {:ok, lv, _dead} = live(conn, ~p"/app/#{account}/packs")
       html = render(lv)
 
-      assert html =~ "Retired by a newer release"
-      assert html =~ "no runner is on it"
-      assert html =~ "Remove version"
+      assert html =~ "Retired version"
+      assert html =~ "No runner reports this retired version."
+      assert html =~ "Remove"
       refute html =~ "Override retirement"
       refute has_element?(lv, "#override-#{pack_version.id}")
 
       # The rows are a stream, so the button opens the page-level dialog the
-      # row menu's Delete uses — a per-row dialog id would find nothing.
+      # row menu's Remove uses — a per-row dialog id would find nothing.
       refute has_element?(lv, "#pack-action")
 
       lv
       |> element(
-        ~s([phx-click="open_pack_action"][phx-value-action="delete_version"][phx-value-id="#{pack_version.id}"]),
-        "Remove version"
+        ~s(#retirement-remove-#{pack_version.id}[phx-click="open_pack_action"][phx-value-action="delete_version"]),
+        "Remove"
       )
       |> render_click()
 
       assert has_element?(lv, "#pack-action")
-      html = confirm_dialog(lv, "pack-action", "Delete version")
+      html = confirm_dialog(lv, "pack-action", "Remove")
 
-      assert html =~ "Deleted #{pack_id} v0.0.0."
+      assert html =~ "Removed #{pack_id} v0.0.0 from Packs."
       refute Emisar.Repo.reload(pack_version)
     end
 
@@ -992,11 +1028,17 @@ defmodule EmisarWeb.PacksLiveTest do
       {:ok, lv, _dead} = live(conn, ~p"/app/#{account}/packs")
       html = render(lv)
 
-      assert html =~ "Retired by a newer release"
-      assert html =~ "more runners than this page"
+      assert html =~ "Retired version"
+      assert html =~ "The runner list is incomplete"
       assert html =~ "emisar pack install #{pack_id}"
-      refute html =~ "no runner is on it"
-      refute html =~ "Remove version"
+      refute html =~ "No runner reports this retired version."
+
+      refute has_element?(
+               lv,
+               ~s(#retirement-remove-#{pack_version.id}[phx-click="open_pack_action"][phx-value-action="delete_version"]),
+               "Remove"
+             )
+
       refute html =~ "Override retirement"
       refute has_element?(lv, "#override-#{pack_version.id}")
     end
@@ -1032,7 +1074,7 @@ defmodule EmisarWeb.PacksLiveTest do
 
       assert html =~ "At least 1"
       assert html =~ "aaa-canary"
-      assert html =~ "others may be on it too"
+      assert html =~ "Other runners may also use this version."
       assert html =~ "Override retirement"
     end
 
@@ -1042,7 +1084,7 @@ defmodule EmisarWeb.PacksLiveTest do
       # retirement watermark — never trusted, so it lands pending, but the
       # watermark prunes it from the baseline (lookup == nil). It must NOT read
       # as "a pack we don't ship a baseline for" with a plain Trust: it's OUR
-      # pack, retired by a security fix, and the remedy is upgrading the runner,
+      # pack, retired after critical changes, and the remedy is upgrading the runner,
       # not re-authorizing the superseded bytes.
       {pack_id, _watermark} =
         Emisar.Catalog.PackBaseline.retired_below() |> Enum.sort() |> List.first()
@@ -1066,20 +1108,20 @@ defmodule EmisarWeb.PacksLiveTest do
       {:ok, lv, _dead} = live(conn, ~p"/app/#{account}/packs")
       html = render(lv)
 
-      assert html =~ "Retired by a newer release"
+      assert html =~ "Retired version"
       assert html =~ "emisar pack install #{pack_id}"
       assert html =~ "Trust anyway"
-      refute html =~ "pack we don&#39;t ship a baseline for"
+      refute html =~ "This version&#39;s contents aren&#39;t automatically trusted"
 
       # The command updates the PACK on that host, not the runner binary, and
       # the body names where to run it.
-      assert html =~ "Update the pack to"
+      assert html =~ "Run on each affected host to update the pack to"
       refute html =~ "Update the runner to"
-      assert html =~ "Update the pack on the runners still on it"
+      assert html =~ "Update the pack on the runners below."
       # The count sits in its own span, so the noun is what reads back here —
       # singular, because exactly one runner advertises it.
-      assert html =~ "runner still on this retired version"
-      refute html =~ "runners still on this retired version"
+      assert html =~ "runner reports this version"
+      refute html =~ "runners report this version"
       # Named by the runner the operator knows, not the hostname it reported.
       assert html =~ runner.name
     end
@@ -1103,8 +1145,8 @@ defmodule EmisarWeb.PacksLiveTest do
       {:ok, lv, _dead} = live(conn, ~p"/app/#{account}/packs")
       html = render(lv)
 
-      assert html =~ "Retired by a newer release"
-      assert html =~ "No runner advertises it now"
+      assert html =~ "Retired version"
+      assert html =~ "No runner reports this version."
       refute html =~ "still on it"
       refute html =~ "emisar pack install #{pack_id}"
       assert html =~ "Reject"
@@ -1171,9 +1213,9 @@ defmodule EmisarWeb.PacksLiveTest do
       html = render(lv)
 
       refute html =~ "RETIRED"
-      refute html =~ "Retired by a newer release"
+      refute html =~ "Retired version"
       refute has_element?(lv, "#override-#{pack_version.id}")
-      assert has_element?(lv, "#packs li", "Rejected — dispatch refuses this version")
+      assert has_element?(lv, "#packs li", "Rejected — actions from this version are blocked")
     end
 
     test "the override-retirement handler re-trusts and stays gated when dispatched directly",
@@ -1189,7 +1231,7 @@ defmodule EmisarWeb.PacksLiveTest do
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/packs")
       html = render_click(lv, "override_retirement", %{"id" => trusted.id})
 
-      assert html =~ "Overrode the retirement of acme-tools"
+      assert html =~ "Retirement overridden for acme-tools"
     end
 
     test "a viewer's crafted override-retirement event is denied", %{account: account} do
@@ -1209,10 +1251,10 @@ defmodule EmisarWeb.PacksLiveTest do
 
       html = render_click(lv, "override_retirement", %{"id" => pack_version.id})
 
-      assert html =~ "Admin required to override pack retirement."
+      assert html =~ "Only owners and admins can override retirement."
     end
 
-    test "an owner revokes trust from the row's quiet control — the version turns rejected", %{
+    test "revoked trust offers a distinct restore-trust confirmation", %{
       conn: conn,
       user: user,
       account: account
@@ -1231,9 +1273,17 @@ defmodule EmisarWeb.PacksLiveTest do
       lv |> element(selector) |> render_click()
       html = confirm_dialog(lv, "pack-action", "Revoke trust")
 
-      assert html =~ "Revoked trust in acme-tools v9.9."
-      assert has_element?(lv, "#packs li", "Rejected — dispatch refuses this version")
+      assert html =~ "Trust revoked for acme-tools v9.9."
+      assert has_element?(lv, "#packs li", "Rejected — actions from this version are blocked")
       refute has_element?(lv, selector)
+
+      render_click(lv, "open_pack_action", %{"action" => "trust", "id" => trusted.id})
+
+      assert has_element?(lv, "#pack-action", "Restore trust in acme-tools v9.9?")
+      assert has_element?(lv, "#pack-action", "Trust the previously recorded contents again.")
+      assert has_element?(lv, "#pack-action-confirm", "Restore trust")
+
+      assert confirm_dialog(lv, "pack-action", "Restore trust") =~ "Trusted acme-tools v9.9."
     end
 
     test "a viewer's crafted revoke-trust event is denied", %{account: account} do
@@ -1253,10 +1303,10 @@ defmodule EmisarWeb.PacksLiveTest do
 
       html = render_click(lv, "revoke_trust", %{"id" => pack_version.id})
 
-      assert html =~ "Admin required to revoke pack trust."
+      assert html =~ "Only owners and admins can revoke trust."
     end
 
-    test "an owner deletes a version — the row disappears with the re-insert warning", %{
+    test "removing a version explains that it remains installed on runners", %{
       conn: conn,
       account: account
     } do
@@ -1272,10 +1322,11 @@ defmodule EmisarWeb.PacksLiveTest do
 
       lv |> element(selector) |> render_click()
       assert has_element?(lv, "#pack-action")
-      html = confirm_dialog(lv, "pack-action", "Delete version")
+      assert has_element?(lv, "#pack-action", "This does not uninstall it from runners.")
+      assert has_element?(lv, "#pack-action", "It will reappear if reported again.")
+      html = confirm_dialog(lv, "pack-action", "Remove")
 
-      assert html =~ "Deleted acme-tools v9.9."
-      assert html =~ "re-insert it as a fresh trust decision"
+      assert html =~ "Removed acme-tools v9.9 from Packs."
       refute has_element?(lv, "#packs li", "acme-tools")
     end
 
@@ -1320,13 +1371,15 @@ defmodule EmisarWeb.PacksLiveTest do
       lv |> element(selector) |> render_click()
       confirmation = render(lv)
 
-      assert confirmation =~ "Removes every recorded version of"
+      assert confirmation =~ "Remove all recorded versions of"
       assert confirmation =~ "acme-tools"
+      assert has_element?(lv, "#pack-action", "This does not uninstall the pack from runners.")
+      refute confirmation =~ "Audit history is kept"
       refute confirmation =~ "Removes all 1 version"
 
-      html = confirm_dialog(lv, "pack-action", "Delete pack")
+      html = confirm_dialog(lv, "pack-action", "Remove")
 
-      assert html =~ "Deleted acme-tools (2 versions)."
+      assert html =~ "Removed acme-tools (2 versions) from Packs."
       refute has_element?(lv, "#packs li", "acme-tools")
 
       subject = Fixtures.Subjects.subject_for(user, account)
@@ -1368,10 +1421,10 @@ defmodule EmisarWeb.PacksLiveTest do
       refute has_element?(lv, "#pack-action")
 
       html = render_click(lv, "delete_version", %{"id" => pack_version.id})
-      assert html =~ "Admin required to delete packs."
+      assert html =~ "Only owners and admins can remove packs."
 
       html = render_click(lv, "delete_pack", %{"pack_id" => "acme-tools"})
-      assert html =~ "Admin required to delete packs."
+      assert html =~ "Only owners and admins can remove packs."
 
       # The pending row survives both crafted attempts.
       assert has_element?(lv, "#packs li", "acme-tools")
@@ -1447,10 +1500,33 @@ defmodule EmisarWeb.PacksLiveTest do
       {:ok, lv, _dead} = live(conn, ~p"/app/#{account}/packs")
       html = render(lv)
 
-      assert html =~ "Changes since you last trusted"
+      assert html =~ "Changes from the trusted contents"
       assert html =~ "added"
       assert html =~ "acme.wipe"
       assert html =~ "critical"
+
+      assert has_element?(
+               lv,
+               "#trust-#{pack_version.id}",
+               "Replace the trusted content hash with the reported hash across your fleet."
+             )
+
+      assert has_element?(
+               lv,
+               "#trust-#{pack_version.id}",
+               "Your policies still apply to every action."
+             )
+
+      render_click(lv, "open_reject", %{"id" => pack_version.id})
+
+      assert has_element?(
+               lv,
+               "#reject-pack",
+               "Reject these changes and keep the previously trusted contents."
+             )
+
+      assert has_element?(lv, "#reject-pack", "the review will reopen.")
+      refute has_element?(lv, "#reject-pack", "Different contents reported for this version")
     end
 
     # A rewrite the risk pills cannot show — the model-facing description and the
@@ -1484,7 +1560,7 @@ defmodule EmisarWeb.PacksLiveTest do
         lv |> render() |> LazyHTML.from_fragment() |> LazyHTML.query("li") |> LazyHTML.text()
 
       assert changed =~ "~ changed"
-      assert changed =~ "description, output_schema, summary"
+      assert changed =~ "Description, Output schema, Summary"
       refute changed =~ "risk,"
     end
 
@@ -1538,7 +1614,7 @@ defmodule EmisarWeb.PacksLiveTest do
 
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/packs")
 
-      assert render(lv) =~ "1 pack version needs trust review."
+      assert render(lv) =~ "1 pack version needs review"
     end
 
     test "the trust-review banner pluralizes for several pending versions", %{
@@ -1568,7 +1644,7 @@ defmodule EmisarWeb.PacksLiveTest do
 
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/packs")
 
-      assert render(lv) =~ "2 pack versions need trust review."
+      assert render(lv) =~ "2 pack versions need review"
     end
 
     test "an operator sees the pending banner but no Trust/Reject controls", %{account: account} do
@@ -1593,7 +1669,7 @@ defmodule EmisarWeb.PacksLiveTest do
 
       assert html =~ "acme-tools"
       # The banner that explains the block is still there…
-      assert html =~ "needs trust review."
+      assert html =~ "needs review"
       # …but no mutate controls.
       refute html =~ "phx-click=\"trust\""
       refute html =~ "open_reject"
@@ -1669,7 +1745,7 @@ defmodule EmisarWeb.PacksLiveTest do
     test "an operator's crafted trust event is denied — nothing trusted", %{account: account} do
       # the Trust button is hidden for an operator, but a
       # crafted `trust` event still hits the handler. `trust_pack_version` requires
-      # `manage_catalog` → {:error,:unauthorized} → "Admin required to trust packs."
+      # `manage_catalog` → {:error,:unauthorized} → "Only owners and admins can trust packs."
       # The pending row is untouched.
       pack_version = observe_pending_pack!(account)
 
@@ -1687,7 +1763,7 @@ defmodule EmisarWeb.PacksLiveTest do
 
       html = render_click(lv, "trust", %{"id" => pack_version.id})
 
-      assert html =~ "Admin required to trust packs."
+      assert html =~ "Only owners and admins can trust packs."
       # Still pending — it remains in the list.
       assert has_element?(lv, "#packs li", "acme-tools")
     end
@@ -1730,7 +1806,7 @@ defmodule EmisarWeb.PacksLiveTest do
       html = render_click(lv, "trust", %{"id" => pack_version.id})
 
       assert html =~
-               "Pack contents are invalid — fix the pack and have the runner advertise it again."
+               "This version has invalid contents. Fix the pack and reload the runner."
     end
 
     test "a viewer's crafted trust event is denied", %{account: account} do
@@ -1751,7 +1827,7 @@ defmodule EmisarWeb.PacksLiveTest do
 
       html = render_click(lv, "trust", %{"id" => pack_version.id})
 
-      assert html =~ "Admin required to trust packs."
+      assert html =~ "Only owners and admins can trust packs."
       assert has_element?(lv, "#packs li", "acme-tools")
     end
 
@@ -1770,7 +1846,7 @@ defmodule EmisarWeb.PacksLiveTest do
 
       # The pending pack is on the page (its banner explains the block)…
       assert html =~ "acme-tools"
-      assert html =~ "needs trust review."
+      assert html =~ "needs review"
       # …but the trusted-only contents chevron is absent.
       refute html =~ "inspect_pack"
     end
@@ -1832,14 +1908,14 @@ defmodule EmisarWeb.PacksLiveTest do
       assert html =~ "acme-extras v1.0"
 
       assert_raise ArgumentError, ~r/disabled/, fn ->
-        confirm_dialog(lv, "reject-pack", "Reject pack")
+        confirm_dialog(lv, "reject-pack", "Reject contents")
       end
 
       # Typing the new token unblocks it and rejects acme-extras (not acme-tools).
       type_confirm_token(lv, "reject-pack", "acme-extras v1.0")
-      html = confirm_dialog(lv, "reject-pack", "Reject pack")
+      html = confirm_dialog(lv, "reject-pack", "Reject contents")
 
-      assert html =~ "Rejected acme-extras v1.0. It stays listed as rejected"
+      assert html =~ "Rejected acme-extras v1.0."
       assert has_element?(lv, "#packs li", "acme-tools")
     end
 
@@ -1847,7 +1923,7 @@ defmodule EmisarWeb.PacksLiveTest do
       # closes GOV-011 denial — the Reject button is hidden for an operator, but a
       # crafted `reject` (bypassing the typed-confirm dialog) still hits the gated
       # handler. `reject_pack_version` requires `manage_catalog` →
-      # "Admin required to reject packs." The pending row survives.
+      # "Only owners and admins can reject contents." The pending row survives.
       pack_version = observe_pending_pack!(account)
 
       operator = Fixtures.Users.create_user()
@@ -1864,7 +1940,7 @@ defmodule EmisarWeb.PacksLiveTest do
 
       html = render_click(lv, "reject", %{"id" => pack_version.id})
 
-      assert html =~ "Admin required to reject packs."
+      assert html =~ "Only owners and admins can reject contents."
       assert has_element?(lv, "#packs li", "acme-tools")
     end
 
@@ -1875,7 +1951,7 @@ defmodule EmisarWeb.PacksLiveTest do
       # once the row is trusted (no longer
       # pending), a crafted `trust`/`reject` event (e.g. a stale tab, or the loser
       # of a race the locked re-read already serialized) returns `:not_pending`.
-      # The LV handlers map that to "Nothing pending on that pack." rather than
+      # The LV handlers map that to "This version no longer has a pending review." rather than
       # crashing or re-resolving.
       pack_version = observe_pending_pack!(account)
 
@@ -1886,11 +1962,11 @@ defmodule EmisarWeb.PacksLiveTest do
 
       # A second trust on the now-resolved row is the no-op-with-flash path.
       assert render_click(lv, "trust", %{"id" => pack_version.id}) =~
-               "Nothing pending on that pack."
+               "This version no longer has a pending review."
 
       # Same for a crafted reject against the resolved row.
       assert render_click(lv, "reject", %{"id" => pack_version.id}) =~
-               "Nothing pending on that pack."
+               "This version no longer has a pending review."
     end
   end
 
@@ -1953,8 +2029,9 @@ defmodule EmisarWeb.PacksLiveTest do
         |> element("#packs-cleanup form")
         |> render_change(%{"days" => "30"})
 
-      assert html =~ "Automatic cleanup on — pack versions unseen for 30 days are removed daily."
+      assert html =~ "Automatic cleanup set to 30 days."
       assert has_element?(lv, ~s(#packs-cleanup option[value="30"][selected]))
+      assert has_element?(lv, "#packs-cleanup-now", "disabled runners are kept.")
 
       assert {:ok, settings} = Emisar.Accounts.fetch_account_settings(account.id)
       assert settings.pack_unseen_retention_days == 30
@@ -1971,7 +2048,7 @@ defmodule EmisarWeb.PacksLiveTest do
         |> element("#packs-cleanup form")
         |> render_change(%{"days" => ""})
 
-      assert html =~ "Automatic cleanup turned off — unseen pack versions are kept."
+      assert html =~ "Automatic cleanup turned off."
       assert has_element?(lv, ~s(#packs-cleanup option[value=""][selected]))
 
       assert {:ok, settings} = Emisar.Accounts.fetch_account_settings(account.id)
@@ -2005,7 +2082,7 @@ defmodule EmisarWeb.PacksLiveTest do
         |> element("#packs-cleanup form")
         |> render_change(%{"days" => "1"})
 
-      assert html =~ "Automatic cleanup on — pack versions unseen for 1 day are removed daily."
+      assert html =~ "Automatic cleanup set to 1 day."
       assert has_element?(lv, ~s(#packs-cleanup option[value="1"][selected]))
     end
 
@@ -2023,7 +2100,7 @@ defmodule EmisarWeb.PacksLiveTest do
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/packs")
       html = render_click(lv, "cleanup_now", %{})
 
-      assert html =~ "Removed 1 pack version no runner has advertised recently."
+      assert html =~ "Removed 1 pack version."
       refute has_element?(lv, "#packs li", "acme-tools")
     end
 
@@ -2056,14 +2133,14 @@ defmodule EmisarWeb.PacksLiveTest do
 
       # The schedule they can't set is still ON the page as a value, with the
       # requirement on the lock's tooltip rather than a prose tail.
-      assert html =~ "After 30 days unseen"
+      assert html =~ "After 30 days"
       assert html =~ "Only owners and admins with full pack access can change this."
       refute has_element?(lv, "#packs-cleanup form")
 
       assert render_click(lv, "set_pack_retention", %{"days" => "7"}) =~
                "Only owners and admins with full pack access can change this setting."
 
-      assert render_click(lv, "cleanup_now", %{}) =~ "Admin required to clean up the catalog."
+      assert render_click(lv, "cleanup_now", %{}) =~ "Only owners and admins can clean up packs."
 
       # The stale row survived both crafted attempts, and the window is untouched.
       assert Emisar.Repo.reload(stale)
@@ -2092,7 +2169,7 @@ defmodule EmisarWeb.PacksLiveTest do
       {:ok, lv, html} =
         build_conn() |> log_in_user(admin) |> live(~p"/app/#{account}/packs")
 
-      assert html =~ "After 30 days unseen"
+      assert html =~ "After 30 days"
       assert html =~ "Only owners and admins with full pack access can change this."
       refute has_element?(lv, "#pack-retention-form")
 
@@ -2264,8 +2341,8 @@ defmodule EmisarWeb.PacksLiveTest do
       {:ok, lv, _} = live(conn, ~p"/app/#{account}/packs")
 
       html = filter(lv, "", "critical")
-      assert html =~ "No packs advertise a critical-risk action."
-      refute html =~ "No packs reported yet."
+      assert html =~ "No packs contain critical-risk actions."
+      refute html =~ "No packs reported yet"
     end
   end
 

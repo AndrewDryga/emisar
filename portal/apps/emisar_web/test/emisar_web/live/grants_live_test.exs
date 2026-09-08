@@ -86,8 +86,9 @@ defmodule EmisarWeb.GrantsLiveTest do
     assert html =~ "cassandra.repair"
     assert html =~ api_key.name
     assert html =~ "runner-1"
-    assert html =~ "exact"
-    assert html =~ "not used yet · cap 5"
+    assert has_element?(lv, "#grants", "Same")
+    assert has_element?(lv, "#grants", "0/5 uses")
+    assert has_element?(lv, "#grants li", "last used never")
     refute html =~ "No active grants"
     assert has_element?(lv, "#revoke-grant-#{g.id}")
   end

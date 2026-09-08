@@ -3,6 +3,128 @@ defmodule EmisarWeb.AuditDetailLiveTest do
   import Phoenix.LiveViewTest
   alias Emisar.{Audit, Repo, RequestContext, Runs}
 
+  test "current-account targets use a short label without repeating the account ID", %{conn: conn} do
+    {conn, user, account} = register_and_log_in(conn)
+
+    for saved_label <- [nil, "Previously saved account name"] do
+      {:ok, event} =
+        Audit.log(account.id, "account.max_grant_lifetime_set",
+          actor_kind: "user",
+          actor_id: user.id,
+          target_kind: "account",
+          target_id: account.id,
+          target_label: saved_label,
+          payload: %{max_grant_lifetime_seconds: 7_776_000}
+        )
+
+      {:ok, list, _html} = live(conn, ~p"/app/#{account}/audit")
+      row = list |> element("#event-#{event.id}") |> render() |> LazyHTML.from_document()
+
+      assert row |> LazyHTML.query(".xl\\:hidden") |> LazyHTML.text() =~ "→ account"
+
+      assert has_element?(
+               list,
+               "#event-#{event.id} [data-audit-cell-primary].text-zinc-500",
+               "account"
+             )
+
+      refute has_element?(list, "#event-#{event.id} [title='account']")
+      refute LazyHTML.text(row) =~ "Current account"
+      refute LazyHTML.text(row) =~ account.id
+      refute LazyHTML.text(row) =~ "Previously saved account name"
+
+      {:ok, detail, _html} = live(conn, ~p"/app/#{account}/audit/#{event.id}")
+      target = detail |> element("[data-audit-entity='Target']") |> render()
+
+      assert target =~ "Current account"
+      refute target =~ account.id
+      refute target =~ "Previously saved account name"
+      refute has_element?(detail, "[data-audit-entity='Target'] [data-audit-facts]")
+      assert Repo.get!(Audit.Event, event.id).target_id == account.id
+      assert Repo.get!(Audit.Event, event.id).target_label == saved_label
+    end
+  end
+
+  test "other targets are not relabeled as the current account", %{conn: conn} do
+    {conn, user, account} = register_and_log_in(conn)
+    other_account_id = Ecto.UUID.generate()
+
+    {:ok, event} =
+      Audit.log(account.id, "account.updated",
+        actor_kind: "user",
+        actor_id: user.id,
+        target_kind: "account",
+        target_id: other_account_id,
+        target_label: "Recorded target"
+      )
+
+    {:ok, list, _html} = live(conn, ~p"/app/#{account}/audit")
+    assert has_element?(list, "#event-#{event.id}", "Recorded target")
+    refute has_element?(list, "#event-#{event.id}", "Current account")
+
+    {:ok, detail, _html} = live(conn, ~p"/app/#{account}/audit/#{event.id}")
+    assert has_element?(detail, "[data-audit-entity='Target']", "Recorded target")
+    assert has_element?(detail, "[data-audit-entity='Target']", other_account_id)
+    refute has_element?(detail, "[data-audit-entity='Target']", "Current account")
+  end
+
+  test "former members use recorded names in the list and detail, keeping IDs only as facts", %{
+    conn: conn
+  } do
+    {conn, _user, account} = register_and_log_in(conn)
+    former_user_id = Ecto.UUID.generate()
+
+    {:ok, _} =
+      Audit.log(account.id, "membership.renamed_via_scim",
+        target_kind: "user",
+        target_id: former_user_id,
+        payload: %{to: "Recorded directory name"},
+        occurred_at: DateTime.add(DateTime.utc_now(), -60, :second)
+      )
+
+    for {saved_label, expected} <- [
+          {nil, "Recorded directory name"},
+          {"Event's saved name", "Event's saved name"}
+        ] do
+      {:ok, event} =
+        Audit.log(account.id, "membership.role_synced_via_scim",
+          actor_kind: "directory_sync",
+          actor_label: "Okta",
+          target_kind: "user",
+          target_id: former_user_id,
+          target_label: saved_label,
+          payload: %{from: "viewer", to: "admin"}
+        )
+
+      {:ok, list, _html} = live(conn, ~p"/app/#{account}/audit")
+      row = list |> element("#event-#{event.id}") |> render() |> LazyHTML.from_document()
+
+      assert LazyHTML.text(row) =~ expected
+      refute LazyHTML.text(row) =~ former_user_id
+      assert row |> LazyHTML.query(".xl\\:hidden") |> LazyHTML.text() =~ expected
+
+      {:ok, detail, _html} = live(conn, ~p"/app/#{account}/audit/#{event.id}")
+
+      primary =
+        detail
+        |> element("[data-audit-entity='Target'] [data-audit-primary]")
+        |> render()
+        |> LazyHTML.from_document()
+        |> LazyHTML.text()
+
+      assert primary =~ expected
+      refute primary =~ former_user_id
+
+      assert has_element?(
+               detail,
+               "[data-audit-entity='Target'] [data-audit-facts]",
+               former_user_id
+             )
+
+      assert Repo.get!(Audit.Event, event.id).target_label == saved_label
+    end
+  end
+
   test "strips hostile metadata from a historical event", %{conn: conn} do
     {conn, _user, account} = register_and_log_in(conn)
 
@@ -119,7 +241,7 @@ defmodule EmisarWeb.AuditDetailLiveTest do
       |> render()
 
     assert target_heading =~
-             ~r/data-audit-entity-kind[^>]*>\s*runner\s*<.*data-audit-entity-role[^>]*>\s*Target\s*</s
+             ~r/data-audit-entity-kind[^>]*>\s*Runner\s*<.*data-audit-entity-role[^>]*>\s*Target\s*</s
   end
 
   test "surfaces self-reported client metadata from the run payload, labeled as such", %{
@@ -145,7 +267,7 @@ defmodule EmisarWeb.AuditDetailLiveTest do
     assert html =~ "Client metadata"
     assert html =~ "asset_tag"
     assert html =~ "LT-4417"
-    assert html =~ "not verified device posture"
+    assert html =~ "not verified by emisar"
   end
 
   test "the actor card stacks the human above the api_key/client", %{conn: conn} do
@@ -196,7 +318,7 @@ defmodule EmisarWeb.AuditDetailLiveTest do
     assert heading =~ "font-semibold text-zinc-400"
 
     assert heading =~
-             ~r/data-audit-entity-kind[^>]*>\s*api key\s*<.*data-audit-entity-role[^>]*>\s*Actor\s*</s
+             ~r/data-audit-entity-kind[^>]*>\s*API key\s*<.*data-audit-entity-role[^>]*>\s*Actor\s*</s
 
     refute primary =~ "api_key:"
     assert primary =~ "Jordan Vale"
@@ -219,12 +341,13 @@ defmodule EmisarWeb.AuditDetailLiveTest do
     subject =
       Fixtures.Subjects.subject_for(user, account, role: :owner, auth_method: :sso, mfa: true)
 
-    {:ok, event} = Audit.record(Audit.Events.account_updated(subject, account))
+    updated = %{account | name: "Renamed"}
+    {:ok, event} = Audit.record(Audit.Events.account_updated(subject, account, updated))
 
     {:ok, _lv, html} = live(conn, ~p"/app/#{account}/audit/#{event.id}")
 
     # Sign-in method with a MFA badge — answerable at a glance, not buried in JSON.
-    assert html =~ "Sign-in"
+    assert html =~ "Sign-in method"
     assert html =~ "SSO"
     assert html =~ "MFA"
   end
@@ -358,7 +481,7 @@ defmodule EmisarWeb.AuditDetailLiveTest do
   end
 
   # an event with no recorded actor/subject kind renders the
-  # "— (not recorded)" entity card rather than a broken or blank card.
+  # "Not recorded" entity card rather than a broken or blank card.
   test "an event with nil actor and subject kind renders the not-recorded card", %{conn: conn} do
     {conn, _user, account} = register_and_log_in(conn)
 
@@ -367,12 +490,12 @@ defmodule EmisarWeb.AuditDetailLiveTest do
 
     {:ok, _lv, html} = live(conn, ~p"/app/#{account}/audit/#{event.id}")
 
-    assert html =~ "— (not recorded)"
+    assert html =~ "Not recorded"
     # Both cards render the placeholder (Actor + Subject), one each.
-    assert length(String.split(html, "— (not recorded)")) == 3
+    assert length(String.split(html, "Not recorded")) == 3
   end
 
-  test "a self-action renders the subject as 'same as actor (self)', not a duplicate card",
+  test "a self-action renders the subject as 'Same as actor', not a duplicate card",
        %{conn: conn} do
     {conn, user, account} = register_and_log_in(conn)
 
@@ -387,8 +510,8 @@ defmodule EmisarWeb.AuditDetailLiveTest do
 
     {:ok, lv, html} = live(conn, ~p"/app/#{account}/audit/#{event.id}")
 
-    assert html =~ "same as actor"
-    assert html =~ "(self)"
+    assert html =~ "Same as actor"
+    refute html =~ "(self)"
 
     target_heading =
       lv
@@ -396,7 +519,7 @@ defmodule EmisarWeb.AuditDetailLiveTest do
       |> render()
 
     assert target_heading =~
-             ~r/data-audit-entity-kind[^>]*>\s*user\s*<.*data-audit-entity-role[^>]*>\s*Target\s*</s
+             ~r/data-audit-entity-kind[^>]*>\s*User\s*<.*data-audit-entity-role[^>]*>\s*Target\s*</s
   end
 
   test "the event id is a first-class copyable meta field; payload copy says Copy JSON",
@@ -533,15 +656,83 @@ defmodule EmisarWeb.AuditDetailLiveTest do
     {:ok, _lv, html} = live(conn, ~p"/app/#{account}/audit/#{event.id}")
 
     # The diff card, not raw JSON: the section header + each diff bucket.
-    assert html =~ "Changes"
-    assert html =~ "Tier defaults"
+    assert html =~ "Policy changes"
+    assert html =~ "Default rules"
     assert html =~ "high:"
     assert html =~ "Added overrides"
     assert html =~ "new.*"
     assert html =~ "Removed overrides"
     assert html =~ "gone.*"
-    assert html =~ "Modified overrides"
+    assert html =~ "Changed overrides"
     assert html =~ "moved.*"
+  end
+
+  test "override diffs show only the fields that changed", %{conn: conn} do
+    {conn, _user, account} = register_and_log_in(conn)
+    override = %{"action" => "linux.*", "name" => "Original", "decision" => "allow"}
+    before_rules = Map.put(Emisar.Policies.default_rules(), "overrides", [override])
+
+    for {name, decision} <- [{"Renamed", "allow"}, {"Restricted", "deny"}, {"", "allow"}] do
+      updated = Map.merge(override, %{"name" => name, "decision" => decision})
+      after_rules = Map.put(before_rules, "overrides", [updated])
+      changes = Emisar.Policies.diff_rules(before_rules, after_rules)
+
+      {:ok, event} =
+        Audit.log(account.id, "policy.updated",
+          actor_kind: "user",
+          target_kind: "policy",
+          payload: %{"changes" => changes, "before" => before_rules, "after" => after_rules}
+        )
+
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/audit/#{event.id}")
+
+      assert has_element?(lv, "#audit-policy-changes", "Changed overrides (1)")
+      assert has_element?(lv, "#audit-policy-changes", "Name:")
+      assert has_element?(lv, "#audit-policy-changes", "Original")
+      assert has_element?(lv, "#audit-policy-changes", if(name == "", do: "—", else: name))
+
+      if decision == "deny" do
+        assert has_element?(lv, "#audit-policy-changes", "Decision:")
+        assert has_element?(lv, "#audit-policy-changes", "Allow")
+        assert has_element?(lv, "#audit-policy-changes", "Deny")
+      else
+        refute has_element?(lv, "#audit-policy-changes", "Decision:")
+        refute has_element?(lv, "#audit-policy-changes", "Allow")
+      end
+
+      assert has_element?(lv, "#audit-payload-json", "allow")
+    end
+  end
+
+  test "sign-in summaries use plain language without changing recorded data", %{conn: conn} do
+    {conn, user, account} = register_and_log_in(conn)
+
+    {:ok, event} =
+      Audit.log(account.id, "user.signed_in",
+        actor_kind: "user",
+        actor_id: user.id,
+        target_kind: "user",
+        target_id: user.id,
+        payload: %{"method" => "magic_link"}
+      )
+
+    {:ok, list, _html} = live(conn, ~p"/app/#{account}/audit")
+    assert has_element?(list, "#event-#{event.id}", "Using magic link")
+    assert has_element?(list, "#event-#{event.id}", "self")
+
+    {:ok, detail, _html} = live(conn, ~p"/app/#{account}/audit/#{event.id}")
+
+    summary =
+      detail
+      |> element("[data-audit-summary]")
+      |> render()
+      |> LazyHTML.from_document()
+      |> LazyHTML.text()
+      |> String.replace(~r/\s+/, " ")
+
+    assert summary =~ "Using magic link"
+    refute summary =~ "Using:"
+    assert has_element?(detail, "#audit-payload-json", "magic_link")
   end
 
   # a runner-as-actor event carries the runner's bare
@@ -596,5 +787,75 @@ defmodule EmisarWeb.AuditDetailLiveTest do
     # No parsed posture → no MCP attribution. (The device line may still show a
     # short token, but the bridge-only cells stay hidden.)
     refute has_element?(lv, "[data-audit-facts] dt", "MCP client")
+  end
+
+  test "an approval-only policy change is visible from saved rules even with an old empty diff",
+       %{conn: conn} do
+    {conn, _user, account} = register_and_log_in(conn)
+
+    before_rules =
+      Map.put(Emisar.Policies.default_rules(), "approval", %{
+        "min_approvals" => 1,
+        "allow_self_approval" => true
+      })
+
+    after_rules =
+      Map.put(before_rules, "approval", %{
+        "min_approvals" => 3,
+        "allow_self_approval" => false
+      })
+
+    {:ok, event} =
+      Audit.log(account.id, "policy.updated",
+        actor_kind: "user",
+        target_kind: "policy",
+        target_id: Ecto.UUID.generate(),
+        payload: %{before: before_rules, after: after_rules, changes: %{}}
+      )
+
+    {:ok, lv, _html} = live(conn, ~p"/app/#{account}/audit/#{event.id}")
+
+    assert has_element?(lv, "#audit-policy-changes", "Approval requirements")
+    assert has_element?(lv, "#audit-policy-changes", "Required approvers")
+    assert has_element?(lv, "#audit-policy-changes", "Self-approval")
+    assert has_element?(lv, "#audit-policy-changes", "Not allowed")
+    refute has_element?(lv, "#audit-policy-changes", "Default rules")
+    assert Repo.get!(Audit.Event, event.id).payload["changes"] == %{}
+  end
+
+  test "override-order changes retain each duplicate pattern's name and decision", %{conn: conn} do
+    {conn, _user, account} = register_and_log_in(conn)
+    first = %{"action" => "linux.*", "name" => "Allow hosts", "decision" => "allow"}
+    second = %{"action" => "linux.*", "name" => "Deny hosts", "decision" => "deny"}
+    before_rules = Map.put(Emisar.Policies.default_rules(), "overrides", [first, second])
+    after_rules = Map.put(before_rules, "overrides", [second, first])
+
+    {:ok, event} =
+      Audit.log(account.id, "policy.updated",
+        actor_kind: "user",
+        target_kind: "policy",
+        target_id: Ecto.UUID.generate(),
+        payload: %{before: before_rules, after: after_rules, changes: %{}}
+      )
+
+    {:ok, lv, _html} = live(conn, ~p"/app/#{account}/audit/#{event.id}")
+
+    assert has_element?(lv, "#audit-policy-changes", "Override order changed")
+
+    orders =
+      lv
+      |> element("#audit-policy-changes")
+      |> render()
+      |> LazyHTML.from_document()
+      |> LazyHTML.query("ol")
+      |> Enum.map(&LazyHTML.text/1)
+
+    assert length(orders) == 2
+    [before_order, after_order] = orders
+    assert before_order =~ ~r/Allow hosts.*Deny hosts/s
+    assert after_order =~ ~r/Deny hosts.*Allow hosts/s
+    refute has_element?(lv, "#audit-policy-changes", "Added overrides")
+    refute has_element?(lv, "#audit-policy-changes", "Removed overrides")
+    refute has_element?(lv, "#audit-policy-changes", "Changed overrides")
   end
 end

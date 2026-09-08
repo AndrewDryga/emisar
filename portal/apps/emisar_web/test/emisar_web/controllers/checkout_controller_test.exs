@@ -17,6 +17,10 @@ defmodule EmisarWeb.CheckoutControllerTest do
       assert html =~ ~s(data-token="live_tok_123")
       assert html =~ ~s(data-sandbox="false")
       assert html =~ "Paddle.Initialize"
+      assert html =~ "Opening checkout"
+      assert html =~ "Go to Billing"
+      assert html =~ ~s(href="/app/billing")
+      refute html =~ "pop-up"
       # Utility page — never indexed.
       assert html =~ ~s(name="robots" content="noindex)
 
@@ -41,18 +45,19 @@ defmodule EmisarWeb.CheckoutControllerTest do
       assert html =~ ~s(data-sandbox="true")
     end
 
-    test "a link without its ?_ptxn= transaction renders the expired state, not the spinner", %{
-      conn: conn
-    } do
+    test "a link without its ?_ptxn= transaction renders the incomplete state, not the spinner",
+         %{
+           conn: conn
+         } do
       # Paddle's checkout.url always carries the transaction; without it
       # Paddle.js has nothing to open and the old page spun forever.
       Emisar.Config.put_override(:emisar, :paddle_client_token, "live_tok_123")
 
       html = conn |> get(~p"/checkout") |> html_response(200)
 
-      assert html =~ "This checkout link has expired"
-      assert html =~ "Back to your console"
-      refute html =~ "Opening secure checkout"
+      assert html =~ "This checkout link is incomplete"
+      assert html =~ "Go to Billing"
+      refute html =~ "Opening checkout"
       refute html =~ "paddle.js"
     end
 
@@ -67,7 +72,7 @@ defmodule EmisarWeb.CheckoutControllerTest do
 
   describe "GET /app/checkout/success" do
     test "lands the operator on their account's billing page with a flash", %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
+      {conn, user, account} = register_and_log_in(conn)
 
       conn = get(conn, ~p"/app/checkout/success")
 
@@ -75,8 +80,11 @@ defmodule EmisarWeb.CheckoutControllerTest do
       # Never claim money was received on a bare redirect — the webhook-backed
       # subscription on the billing page is the source of truth.
       flash = Phoenix.Flash.get(conn.assigns.flash, :info)
-      assert flash =~ "finishing your checkout"
+      assert flash =~ "once your payment and subscription are confirmed"
       refute flash =~ "Payment received"
+
+      subject = Fixtures.Subjects.subject_for(user, account)
+      assert {:ok, %{plan: "free"}} = Emisar.Billing.billing_summary(account, subject)
     end
 
     test "an anonymous return bounces to sign-in", %{conn: conn} do

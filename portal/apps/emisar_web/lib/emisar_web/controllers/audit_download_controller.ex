@@ -76,16 +76,16 @@ defmodule EmisarWeb.AuditDownloadController do
     end
   end
 
-  defp csv_preparation_error({:too_many_rows, %{count: count, max: max}}) do
-    "This view has #{count} events — the CSV download caps at #{max}. " <>
-      "Narrow the filters, or contact Support and we'll prepare the complete export."
+  defp csv_preparation_error({:too_many_rows, %{max: max}}) do
+    "CSV exports are limited to #{max} events. " <>
+      "Narrow the date range or filters, or contact Support for help with a larger export."
   end
 
   defp csv_preparation_error(:nothing_to_export),
-    do: "Nothing to export — this view has no events."
+    do: "No audit events to export."
 
   defp csv_preparation_error(_reason),
-    do: "The CSV could not be prepared. Nothing was downloaded; try again."
+    do: "Couldn't prepare the CSV. Nothing was downloaded. Try again."
 
   defp log_csv_preparation_failure(:nothing_to_export), do: :ok
   defp log_csv_preparation_failure({:too_many_rows, _facts}), do: :ok

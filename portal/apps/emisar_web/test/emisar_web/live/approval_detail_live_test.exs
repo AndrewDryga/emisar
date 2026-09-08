@@ -74,7 +74,7 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
     {:ok, lv, html} = live(conn, ~p"/app/#{account}/approvals/#{request.id}")
 
     assert html =~ "Database maintenance"
-    assert html =~ "Frozen runbook plan"
+    assert html =~ "Runbook plan"
     assert html =~ "parallel · up to 2 at once"
     assert html =~ "1 stage · 2 actions · 2 runners"
     assert html =~ "postgres.config_validate"
@@ -84,14 +84,28 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
     assert html =~ "[REDACTED]"
     assert has_element?(lv, ~s(#approval-plan-stage-apply [data-steps-marker="parallel"]))
     refute has_element?(lv, "#approval-plan-stage-apply [data-steps-marker=number]")
-    assert html =~ "This execution will not ask for another approval."
-    assert html =~ "Emisar stops the execution."
+    assert html =~ "Approval covers all actions and target runners shown here."
+    assert html =~ "Policy, access, and pack trust are checked again before actions run."
+
+    assert has_element?(
+             lv,
+             "#approval-decision-form + #approval-decision-help",
+             "Policy, access, and pack trust are checked again before actions run."
+           )
+
+    assert has_element?(
+             lv,
+             "#approval-decision-help a[href='/docs/policies-and-approvals']",
+             "Approvals docs"
+           )
+
+    refute html =~ "additional approvers."
     assert html =~ "Approve runbook"
     refute html =~ "postgres@1.4.2/sha256:"
     refute html =~ String.duplicate("1", 64)
     refute has_element?(lv, "details", "Arguments")
-    refute html =~ "Allow the LLM to reuse this approval"
-    refute html =~ "Approve and send"
+    refute html =~ "Allow the agent to reuse this approval"
+    refute has_element?(lv, "#grant-reuse")
   end
 
   test "identifies a draft test before the approver decides", %{conn: conn} do
@@ -141,9 +155,9 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
 
     {:ok, lv, html} = live(conn, ~p"/app/#{account}/approvals/#{request.id}")
 
-    assert html =~ "This request was withdrawn before a decision, so the action did not run."
+    assert html =~ "This request was cancelled. The action did not run."
     assert has_element?(lv, ~s([data-shot="approval-verdict"]), "cancelled")
-    refute has_element?(lv, "button", "Approve and send")
+    refute has_element?(lv, "button", "Approve")
   end
 
   test "approving a runbook follows the explicit non-ActionRun result branch", %{conn: conn} do
@@ -262,13 +276,13 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
 
     {:ok, request} = Approvals.create_request(run, user.id, "please approve")
 
-    {:ok, _lv, html} = live(conn, ~p"/app/#{account}/approvals/#{request.id}")
+    {:ok, lv, html} = live(conn, ~p"/app/#{account}/approvals/#{request.id}")
 
     # The omitted `frequency` falls back to the PUBLISHED pack's declared
     # default — exactly what the runner will do — so the approver sees the full
     # command, not just args, and not the advertisement's version of either.
     assert html =~ "cloud-init single --name=ssh --frequency=always"
-    assert html =~ "what the runner will execute"
+    assert has_element?(lv, "#approval-command-#{request.id}")
     refute html =~ "forged"
     refute html =~ "[REDACTED]"
   end
@@ -303,10 +317,10 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
 
     {:ok, request} = Approvals.create_request(run, user.id, "please approve")
 
-    {:ok, _lv, html} = live(conn, ~p"/app/#{account}/approvals/#{request.id}")
+    {:ok, lv, html} = live(conn, ~p"/app/#{account}/approvals/#{request.id}")
 
     assert html =~ "systemctl restart checkout-api.service"
-    assert html =~ "what the runner will execute"
+    assert has_element?(lv, "#approval-command-#{request.id}")
   end
 
   test "hides the command when the pinned hash differs from our published bytes",
@@ -501,20 +515,26 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
 
     # The panel renders the approve form (owner can decide) — this is the
     # exact path that raised KeyError on `@grant_duration` in production.
-    assert html =~ "Decide"
-    assert html =~ "Approve and send"
+    assert html =~ "Your decision"
+
+    assert has_element?(
+             lv,
+             "#approval-decision-form button[name=decision][value=approve]",
+             "Approve"
+           )
+
     # The reuse-window duration select renders its options and defaults to
     # "once" (the tracked @grant_duration), which keeps the grant fields hidden.
     assert html =~ ~s(name="duration")
-    assert html =~ "Just this call (no grant)"
-    assert html =~ "Next 90 days"
+    assert html =~ "This run only"
+    assert html =~ "90 days"
     assert html =~ ~r/<option(?=[^>]*\bvalue="once")(?=[^>]*\bselected)[^>]*>/
     # A held request shows when it auto-cancels so the decider can triage.
     assert html =~ "Expires"
     assert html =~ "expires"
     # Both decision buttons guard the most consequential click against a
     # double-submit.
-    assert has_element?(lv, "button[phx-disable-with]", "Approve and send")
+    assert has_element?(lv, "button[phx-disable-with]", "Approve")
     assert has_element?(lv, "button[phx-disable-with]", "Deny")
   end
 
@@ -527,10 +547,10 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
 
     {:ok, _lv, html} = live(conn, ~p"/app/#{account}/approvals/#{request.id}")
 
-    assert html =~ "Just this call (no grant)"
-    assert html =~ "Next 24 hours"
-    refute html =~ "Next 30 days"
-    refute html =~ "Next 90 days"
+    assert html =~ "This run only"
+    assert html =~ "1 day"
+    refute html =~ "30 days"
+    refute html =~ "90 days"
   end
 
   test "cap 0 replaces the reuse menu with the standing-grants-disabled note", %{conn: conn} do
@@ -542,8 +562,8 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
     {:ok, _lv, html} = live(conn, ~p"/app/#{account}/approvals/#{request.id}")
 
     # No dead one-option select — the note says why the affordance is gone.
-    refute html =~ "Allow the LLM to reuse this approval"
-    assert html =~ "Standing grants are disabled for this account"
+    refute html =~ "Allow the agent to reuse this approval"
+    assert html =~ "Standing grants are disabled. Each approval is single-use."
   end
 
   test "the decide panel carries a live expiry countdown that lapses server-side", %{conn: conn} do
@@ -565,7 +585,7 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
     # Firing the lapse event re-fetches server-side; a still-future request stays in
     # the Decide panel — the server clock decides, not a (possibly skewed) client.
     lv |> element("#expiry-countdown-#{request.id}") |> render_hook("expiry_lapsed")
-    assert has_element?(lv, "button", "Approve and send")
+    assert has_element?(lv, "button", "Approve")
   end
 
   test "choosing a reuse window reveals the grant scope fields", %{conn: conn} do
@@ -667,11 +687,16 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
         "max_uses" => "0"
       })
 
-    assert html =~ "Limit to must be a whole number of uses, at least 1."
+    assert html =~ "Enter a whole number of at least 1, or leave blank for no use limit."
     refute html =~ "Refresh to see the request"
 
     # Still decidable, still holding every value the operator typed.
-    assert html =~ "Approve and send"
+    assert has_element?(
+             lv,
+             "#approval-decision-form button[name=decision][value=approve]",
+             "Approve"
+           )
+
     assert html =~ note
     assert html =~ ~r/<option(?=[^>]*\bvalue="one_day")(?=[^>]*\bselected)[^>]*>/
     assert html =~ ~r/<option(?=[^>]*\bvalue="any_args")(?=[^>]*\bselected)[^>]*>/
@@ -691,8 +716,14 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
       |> form("form[phx-submit='decide']", %{})
       |> render_submit(%{"decision" => "approve", "reason" => "", "duration" => "forever"})
 
-    assert html =~ "Pick a reuse window from the list."
-    assert html =~ "Approve and send"
+    assert html =~ "Choose a duration from the list."
+
+    assert has_element?(
+             lv,
+             "#approval-decision-form button[name=decision][value=approve]",
+             "Approve"
+           )
+
     assert %{status: :pending} = Repo.reload!(request)
   end
 
@@ -712,8 +743,14 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
         "scope" => "everything"
       })
 
-    assert html =~ "Pick how this grant matches arguments."
-    assert html =~ "Approve and send"
+    assert html =~ "Choose which arguments the grant allows."
+
+    assert has_element?(
+             lv,
+             "#approval-decision-form button[name=decision][value=approve]",
+             "Approve"
+           )
+
     assert %{status: :pending} = Repo.reload!(request)
   end
 
@@ -732,7 +769,7 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
       |> element("form[phx-change='grant_form_changed']")
       |> render_change(%{"duration" => "one_day", "max_uses" => "2"})
 
-    refute changed =~ "Limit to must be a whole number of uses"
+    refute changed =~ "Enter a whole number of at least 1"
   end
 
   test "a refused self-approval keeps the note so it can be reused on Deny", %{conn: conn} do
@@ -759,16 +796,16 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
     {conn, user, account} = register_and_log_in(conn)
     request = pending_request(account, user, allow_self_approval: false)
 
-    {:ok, _lv, html} = live(conn, ~p"/app/#{account}/approvals/#{request.id}")
+    {:ok, lv, html} = live(conn, ~p"/app/#{account}/approvals/#{request.id}")
 
     # The intro must not describe the Approve button (or the reuse offer)
     # the self-blocked requester never sees — only the Deny they still have.
-    assert html =~ "You can&#39;t use the normal approval path on your own request."
-    assert html =~ "if waiting is unsafe, use the override"
-    assert html =~ "You can still deny your own request — your decision is logged."
-    refute html =~ "Approve runs this action once"
-    refute html =~ "Approve and send"
-    refute html =~ "Allow the LLM to reuse this approval"
+    assert html =~ "Policy doesn&#39;t allow you to approve your own request."
+    assert html =~ "Another approver is needed."
+    assert html =~ "You can still deny this request."
+    refute html =~ "Approval applies to this run only"
+    refute has_element?(lv, "#approval-decision-form button[name=decision][value=approve]")
+    refute html =~ "Allow the agent to reuse this approval"
   end
 
   test "the disconnected (dead) render shows the shared loading state", %{conn: conn} do
@@ -837,12 +874,14 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
     # decide panel is gone once the request is settled.
     assert html =~ "Denied"
     assert html =~ "duplicate of an earlier run"
-    refute html =~ "Approve and send"
+    refute has_element?(lv, "#approval-decision-form button[name=decision][value=approve]")
     assert Repo.reload!(request).decision_reason == "duplicate of an earlier run"
     assert_approval_broadcast(lv, request)
   end
 
-  test "an expired request leads with the auto-denied verdict, no decide panel", %{conn: conn} do
+  test "an expired request explains expiry without calling it a denial, no decide panel", %{
+    conn: conn
+  } do
     {conn, user, account} = register_and_log_in(conn)
     request = pending_request(account, user)
 
@@ -853,14 +892,14 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
     )
     |> Repo.update!()
 
-    {:ok, _lv, html} = live(conn, ~p"/app/#{account}/approvals/#{request.id}")
+    {:ok, lv, html} = live(conn, ~p"/app/#{account}/approvals/#{request.id}")
 
-    assert html =~ "Expired"
-    assert html =~ "auto-denied"
-    refute html =~ "Approve and send"
+    assert has_element?(lv, ".text-amber-300", "expired")
+    assert html =~ "This request expired before it received all required approvals."
+    refute has_element?(lv, "#approval-decision-form button[name=decision][value=approve]")
   end
 
-  test "a lapsed request the sweeper hasn't denied yet reads expired, never pending", %{
+  test "a lapsed request the sweeper hasn't expired yet reads expired, never pending", %{
     conn: conn
   } do
     {conn, user, account} = register_and_log_in(conn)
@@ -868,24 +907,29 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
 
     # Still :pending in the DB — only the expiry has lapsed. The page must
     # normalize everywhere: a "pending" status badge above an
-    # "Expired — auto-denied" verdict contradicts itself.
+    # message explaining that the request expired would contradict itself.
     request
     |> Ecto.Changeset.change(expires_at: DateTime.add(DateTime.utc_now(), -3600, :second))
     |> Repo.update!()
 
-    {:ok, _lv, html} = live(conn, ~p"/app/#{account}/approvals/#{request.id}")
+    {:ok, lv, html} = live(conn, ~p"/app/#{account}/approvals/#{request.id}")
 
-    assert html =~ "Expired — auto-denied"
+    assert html =~ "This request expired before it received all required approvals."
     refute html =~ ~r/pending/i
-    refute html =~ "Approve and send"
+    refute has_element?(lv, "#approval-decision-form button[name=decision][value=approve]")
   end
 
   test "a decision that lost a race to expiry re-fetches and flips the panel", %{conn: conn} do
     {conn, user, account} = register_and_log_in(conn)
     request = pending_request(account, user)
 
-    {:ok, lv, html} = live(conn, ~p"/app/#{account}/approvals/#{request.id}")
-    assert html =~ "Approve and send"
+    {:ok, lv, _html} = live(conn, ~p"/app/#{account}/approvals/#{request.id}")
+
+    assert has_element?(
+             lv,
+             "#approval-decision-form button[name=decision][value=approve]",
+             "Approve"
+           )
 
     # The request expires out from under the open page — its live broadcast
     # hasn't arrived yet, so simulate by expiring the row directly, then
@@ -902,17 +946,27 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
       |> form("form[phx-submit='decide']", %{"reason" => ""})
       |> render_submit(%{"decision" => "deny"})
 
-    assert html =~ "expired before your decision landed"
+    assert html =~ "expired before your decision was saved"
     # The form flipped to decision-history — no interactive decision left.
-    refute html =~ "Approve and send"
+    refute has_element?(lv, "#approval-decision-form button[name=decision][value=approve]")
   end
 
   test "revoked pack access blocks a stale denial and leaves the approval page", %{conn: conn} do
     {conn, user, account} = register_and_log_in(conn)
+
+    account.id
+    |> Fixtures.Memberships.fetch_membership(user.id)
+    |> Fixtures.Memberships.force_role("admin")
+
     request = pending_request(account, user)
 
-    {:ok, lv, html} = live(conn, ~p"/app/#{account}/approvals/#{request.id}")
-    assert html =~ "Approve and send"
+    {:ok, lv, _html} = live(conn, ~p"/app/#{account}/approvals/#{request.id}")
+
+    assert has_element?(
+             lv,
+             "#approval-decision-form button[name=decision][value=approve]",
+             "Approve"
+           )
 
     membership = Fixtures.Memberships.fetch_membership(account.id, user.id)
 
@@ -987,8 +1041,8 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
 
     # The gate refuses up front with the actionable re-issue prompt, not a
     # generic "didn't record" — and the run is never finalized/dispatched.
-    assert html =~ "expired before approval"
-    assert html =~ "Re-issue it from your MCP client"
+    assert html =~ "This signed request expired."
+    assert html =~ "Send a new request from your AI app."
     assert Repo.reload!(request).status == :pending
     _ = approver
   end
@@ -1001,11 +1055,11 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
 
     {:ok, lv, html} = live(conn, ~p"/app/#{account}/approvals/#{request.id}")
 
-    assert html =~ "Action no longer available"
+    assert html =~ "Action unavailable"
     assert html =~ "linux.uptime"
-    assert html =~ "re-issue the request once"
-    refute html =~ "Approve and send"
-    refute html =~ "Allow the LLM to reuse this approval"
+    assert html =~ "Check its availability and pack trust"
+    refute has_element?(lv, "#approval-decision-form button[name=decision][value=approve]")
+    refute html =~ "Allow the agent to reuse this approval"
     assert has_element?(lv, "button", "Deny")
   end
 
@@ -1018,8 +1072,13 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
     {conn, user, account} = register_and_log_in(conn)
     request = pending_request(account, user)
 
-    {:ok, lv, html} = live(conn, ~p"/app/#{account}/approvals/#{request.id}")
-    assert html =~ "Approve and send"
+    {:ok, lv, _html} = live(conn, ~p"/app/#{account}/approvals/#{request.id}")
+
+    assert has_element?(
+             lv,
+             "#approval-decision-form button[name=decision][value=approve]",
+             "Approve"
+           )
 
     runner_id = Repo.reload!(request).context["runner_id"]
     Fixtures.Catalog.delete_actions_for_runner(runner_id)
@@ -1031,10 +1090,10 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
       |> form("form[phx-submit='decide']", %{})
       |> render_submit(%{"decision" => "approve", "reason" => note})
 
-    assert html =~ "no longer available"
-    assert html =~ "Action no longer available"
+    assert html =~ "Check its availability and pack trust"
+    assert html =~ "Action unavailable"
     assert html =~ note
-    refute html =~ "Approve and send"
+    refute has_element?(lv, "#approval-decision-form button[name=decision][value=approve]")
     assert has_element?(lv, "button", "Deny")
     assert Repo.reload!(request).status == :pending
     refute_receive {:cloud_to_runner, _generation, _}, 100
@@ -1049,7 +1108,7 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
     {:ok, lv, html} = live(conn, ~p"/app/#{account}/approvals/#{request.id}")
 
     assert html =~ "Runner offline"
-    assert html =~ "queues and runs once the runner reconnects"
+    assert html =~ "The runner is offline, but you can still approve this request."
 
     run = Repo.get!(Runs.ActionRun, request.run_id)
 
@@ -1092,7 +1151,7 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
   test "a multi-approver request shows the N-of-M tally and the per-vote Decisions card", %{
     conn: conn
   } do
-    # (multi side) — a request needing 2 distinct approvals
+    # (multi side) — a request needing 3 distinct approvals
     # surfaces the "Approvals" meta tally AND, once a vote is recorded, the
     # per-vote Decisions card (both gated on `min_approvals > 1`). A first
     # sub-threshold approve by a distinct operator leaves it pending with one vote.
@@ -1100,10 +1159,10 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
     request = pending_request(account, owner)
 
     request
-    |> Ecto.Changeset.change(min_approvals: 2)
+    |> Ecto.Changeset.change(min_approvals: 3)
     |> Repo.update!()
 
-    # A different operator records the first (of two) approvals — stays pending.
+    # A different operator records the first (of three) approvals — stays pending.
     # A distinct full_name so the Decisions card's decider label is unambiguous
     # (every fixture user is otherwise "Test User").
     approver = Fixtures.Users.create_user(full_name: "Casey Approver")
@@ -1122,13 +1181,25 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
         "first"
       )
 
-    {:ok, _lv, html} = live(conn, ~p"/app/#{account}/approvals/#{request.id}")
+    {:ok, lv, html} = live(conn, ~p"/app/#{account}/approvals/#{request.id}")
 
-    # The meta strip carries the distinct-approver tally…
-    assert html =~ "1 of 2"
+    # The header owns the tally; the decision panel does not repeat it.
+    assert html =~ "1 of 3"
+    refute html =~ "additional approvers."
+    assert has_element?(lv, "#approval-decision-form + #approval-decision-help")
     # …and the Decisions card lists the recorded vote attributed to its decider.
     assert html =~ "Decisions"
     assert html =~ "Casey Approver"
+
+    html =
+      lv
+      |> form("#approval-decision-form")
+      |> render_submit(%{"decision" => "approve"})
+
+    assert html =~ "Approval recorded. 2/3 required approvals received."
+    assert html =~ "2 of 3"
+    refute html =~ "additional approvers."
+    assert Repo.reload!(request).status == :pending
   end
 
   test "an owner chooses the approval override from the split action and sees the exception ledger",
@@ -1146,22 +1217,22 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
     assert has_element?(
              lv,
              ~s(#approval-action-split-primary[name="decision"][value="approve"]),
-             "Approve and send"
+             "Approve"
            )
 
     assert has_element?(
              lv,
              "#approval-action-split-menu button",
-             "Approve using override"
+             "Approve with override"
            )
 
-    assert has_element?(lv, "#override-approval-reviews", "Approve using override?")
+    assert has_element?(lv, "#override-approval-reviews", "Approve with override?")
     refute has_element?(lv, "#override-approval-reviews-form")
 
     assert has_element?(
              lv,
              "#override-approval-reviews button[disabled]",
-             "Approve using override"
+             "Approve with override"
            )
 
     lv
@@ -1185,10 +1256,10 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
     refute has_element?(
              lv,
              "#override-approval-reviews button[disabled]",
-             "Approve using override"
+             "Approve with override"
            )
 
-    html = confirm_dialog(lv, "override-approval-reviews", "Approve using override")
+    html = confirm_dialog(lv, "override-approval-reviews", "Approve with override")
 
     assert html =~ "Approval override recorded. The action was released for dispatch."
     assert has_element?(lv, ~s([data-shot="approval-verdict"]), "approved")
@@ -1253,13 +1324,13 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
 
     {:ok, lv, html} = live(conn, ~p"/app/#{account}/approvals/#{request.id}")
 
-    assert html =~ "You&#39;ve already recorded your decision"
+    assert html =~ "Your approval is recorded."
     refute has_element?(lv, "#approval-decision-form")
 
     assert has_element?(
              lv,
              ~s([data-shot="approval-override"] button),
-             "Approve using override"
+             "Approve with override"
            )
 
     html = render_hook(lv, "override", %{"reason" => "No second reviewer is available"})
@@ -1282,9 +1353,14 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
       )
 
     operator_conn = log_in_user(build_conn(), operator)
-    {:ok, lv, html} = live(operator_conn, ~p"/app/#{account}/approvals/#{request.id}")
+    {:ok, lv, _html} = live(operator_conn, ~p"/app/#{account}/approvals/#{request.id}")
 
-    assert html =~ "Approve and send"
+    assert has_element?(
+             lv,
+             "#approval-decision-form button[name=decision][value=approve]",
+             "Approve"
+           )
+
     refute has_element?(lv, ~s([data-shot="approval-override"]))
 
     render_hook(lv, "override", %{"reason" => "crafted"})
@@ -1298,13 +1374,13 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
 
     {:ok, lv, html} = live(conn, ~p"/app/#{account}/approvals/#{request.id}")
 
-    assert html =~ "You can&#39;t use the normal approval path on your own request"
-    assert html =~ "if waiting is unsafe, use the override"
+    assert html =~ "Policy doesn&#39;t allow you to approve your own request"
+    assert html =~ "Another approver is needed."
 
     assert has_element?(
              lv,
              ~s([data-shot="approval-override"] button),
-             "Approve using override"
+             "Approve with override"
            )
   end
 
@@ -1505,7 +1581,7 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
     refute html =~ requester.email
     assert html =~ "Former member"
     # Sanity: the decision panel still rendered (the owner can decide).
-    assert html =~ "Decide"
+    assert html =~ "approval-decision-form"
   end
 
   defp flash_message(flash, key) when is_map(flash), do: flash[key]

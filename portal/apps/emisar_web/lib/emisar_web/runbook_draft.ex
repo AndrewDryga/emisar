@@ -140,7 +140,7 @@ defmodule EmisarWeb.RunbookDraft do
 
   def stage do
     %{
-      "id" => "stage",
+      "id" => "",
       "title" => "Run actions",
       "mode" => "sequential",
       "max_parallel" => "5",
@@ -150,7 +150,7 @@ defmodule EmisarWeb.RunbookDraft do
 
   def step do
     %{
-      "id" => "step",
+      "id" => "",
       "pack_id" => "",
       "action" => "",
       "target_selection" => "all",
@@ -178,7 +178,7 @@ defmodule EmisarWeb.RunbookDraft do
   def output do
     %{
       "id" => "",
-      "source" => "structured_output",
+      "source" => "stdout",
       "sensitive" => "false",
       "extract_type" => "json_pointer",
       "expression" => "",
@@ -244,7 +244,7 @@ defmodule EmisarWeb.RunbookDraft do
   defp output_command(output) when is_map(output) do
     %{
       id: text_field(output, "id"),
-      source: text_field(output, "source", "structured_output"),
+      source: text_field(output, "source", "stdout"),
       sensitive?: output["sensitive"] == "true",
       extract_type: text_field(output, "extract_type", "json_pointer"),
       expression: text_field(output, "expression"),
@@ -356,7 +356,7 @@ defmodule EmisarWeb.RunbookDraft do
 
     %{
       "id" => output["id"] || "",
-      "source" => output["source"] || "structured_output",
+      "source" => output["source"] || "stdout",
       "sensitive" => bool_string(output["sensitive"]),
       "extract_type" => extract["type"] || "json_pointer",
       "expression" => extract["expression"] || "",

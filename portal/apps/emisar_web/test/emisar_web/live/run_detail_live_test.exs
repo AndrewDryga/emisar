@@ -45,7 +45,7 @@ defmodule EmisarWeb.RunDetailLiveTest do
 
   defp output_count(html, needle), do: length(:binary.matches(html, needle))
 
-  test "View activity links the dispatch's request_id trace", %{conn: conn} do
+  test "View audit trail links the dispatch's request_id trace", %{conn: conn} do
     {conn, _user, account} = register_and_log_in(conn)
     run = run_with(account, %{})
 
@@ -53,7 +53,9 @@ defmodule EmisarWeb.RunDetailLiveTest do
 
     # Run events target the RUNNER, so the run's trail is its request_id trace
     # (transitions + grant use + cancel), not a target filter.
-    assert html =~ "View activity"
+    assert html =~ "View audit trail"
+    assert html =~ "Copy ID"
+    assert html =~ "Created"
     assert html =~ ~s(request_id=#{run.request_id})
     refute html =~ "target_kind=action_run"
     refute html =~ "target_id=#{run.id}"
@@ -133,7 +135,7 @@ defmodule EmisarWeb.RunDetailLiveTest do
     assert html =~ ~r/·\s*v4/
   end
 
-  test "an approved run's Why cluster names the human release — who, when, why",
+  test "an approved run's request details name the approver — who, when, why",
        %{conn: conn} do
     {conn, _user, account} = register_and_log_in(conn)
 
@@ -209,7 +211,7 @@ defmodule EmisarWeb.RunDetailLiveTest do
     assert html =~ "Approved by Jordan Approver"
   end
 
-  test "the Why cluster renders the optional evidence/expected chain, only when present",
+  test "request details render optional evidence and expected outcome only when present",
        %{conn: conn} do
     {conn, _user, account} = register_and_log_in(conn)
 
@@ -224,7 +226,7 @@ defmodule EmisarWeb.RunDetailLiveTest do
 
     assert html =~ "Evidence"
     assert html =~ "run 0f9c showed the queue depth climbing for 20m"
-    assert html =~ "Expected"
+    assert html =~ "Expected outcome"
     assert html =~ "queue depth drops to zero within a minute"
 
     # Several facts share the cluster, so each earns its key.
@@ -239,9 +241,9 @@ defmodule EmisarWeb.RunDetailLiveTest do
     refute html =~ "Evidence"
     refute html =~ "Expected"
 
-    # ...and with the reason ALONE under it, the section header "Why" already
+    # ...and with the reason ALONE under it, the section header "Request details" already
     # names the fact, so the REASON key would say it twice.
-    assert html =~ "Why"
+    assert html =~ "Request details"
     refute html =~ "Reason"
   end
 
@@ -258,13 +260,16 @@ defmodule EmisarWeb.RunDetailLiveTest do
         "not during the change freeze"
       )
 
-    {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runs/#{run.id}")
+    {:ok, lv, html} = live(conn, ~p"/app/#{account}/runs/#{run.id}")
 
     # The run lands :cancelled, but the requester must see WHY — the denial
     # reason the approver typed (stored on the run as "approval denied: …") —
     # not a bare grey badge.
     assert html =~ "Cancelled"
     assert html =~ "approval denied: not during the change freeze"
+    assert has_element?(lv, ~s(#run-cancelled [data-icon="state.cancelled"].text-amber-300))
+    assert has_element?(lv, ~s(#run-cancelled [class~="bg-amber-300/40"]))
+    refute has_element?(lv, "#run-cancelled .text-rose-400")
   end
 
   test "the held-run approval CTA uses the shared arrow, not a literal glyph", %{conn: conn} do
@@ -275,11 +280,35 @@ defmodule EmisarWeb.RunDetailLiveTest do
 
     {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runs/#{run.id}")
 
-    assert html =~ "Waiting on approval"
+    assert html =~ "Waiting for approval"
     assert html =~ "View approval"
     # <.cta_arrow/> — a decorative icon span, not a "→" screen readers announce.
     assert html =~ "action.next"
     refute html =~ "View approval →"
+  end
+
+  test "existing approval expiry reasons display as a sentence", %{conn: conn} do
+    {conn, user, account} = register_and_log_in(conn)
+    run = run_with(account, %{status: :pending})
+
+    {:ok, run} =
+      Runs.cancel_run(run, owner_subject(user, account), "approval expired without decision")
+
+    {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runs/#{run.id}")
+
+    assert has_element?(lv, "#run-cancelled", "Approval expired.")
+    assert Repo.reload!(run).reason_text == "approval expired without decision"
+  end
+
+  test "user-written cancellation reasons keep their original case", %{conn: conn} do
+    {conn, user, account} = register_and_log_in(conn)
+    run = run_with(account, %{status: :pending})
+    reason = "iOS rollout paused by SRE"
+    {:ok, run} = Runs.cancel_run(run, owner_subject(user, account), reason)
+
+    {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runs/#{run.id}")
+
+    assert has_element?(lv, "#run-cancelled", reason)
   end
 
   test "omits the policy summary when no decision was recorded", %{conn: conn} do
@@ -357,7 +386,7 @@ defmodule EmisarWeb.RunDetailLiveTest do
     assert html =~ "LT-4417"
     assert html =~ "device_id"
     # Explicitly self-reported, never presented as verified device posture.
-    assert html =~ "not verified device posture"
+    assert html =~ "not verified by emisar"
   end
 
   test "hides the client-metadata block for a run with none", %{conn: conn} do
@@ -385,7 +414,7 @@ defmodule EmisarWeb.RunDetailLiveTest do
     {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runs/#{run.id}")
 
     assert html =~ "Executed command"
-    assert html =~ "truncated · secrets redacted"
+    assert html =~ "Truncated · redacted"
   end
 
   test "keeps the complete executed-command annotation quiet", %{conn: conn} do
@@ -402,8 +431,8 @@ defmodule EmisarWeb.RunDetailLiveTest do
 
     {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runs/#{run.id}")
 
-    assert html =~ "secrets redacted"
-    refute html =~ "truncated · secrets redacted"
+    assert html =~ "Redacted"
+    refute html =~ "Truncated · redacted"
   end
 
   test "warns when the runner could not persist its terminal audit event", %{conn: conn} do
@@ -422,7 +451,7 @@ defmodule EmisarWeb.RunDetailLiveTest do
 
     assert html =~ "state.not_dispatched"
     assert html =~ "Runner audit record incomplete"
-    assert html =~ "audit storage before relying on its local journal"
+    assert rendered_text(html) =~ "Check the runner's audit storage."
   end
 
   test "does not show a runner audit warning for a healthy terminal result", %{conn: conn} do
@@ -439,7 +468,7 @@ defmodule EmisarWeb.RunDetailLiveTest do
     {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runs/#{run.id}")
 
     refute html =~ "Runner audit record incomplete"
-    refute html =~ "audit storage before relying on its local journal"
+    refute html =~ "Check the runner's audit storage."
   end
 
   # Metadata keys/values are attacker-influenced (a hostile MCP client controls
@@ -527,7 +556,7 @@ defmodule EmisarWeb.RunDetailLiveTest do
     assert html =~ "&lt;script&gt;"
   end
 
-  test "typed output offers a client-side raw and formatted JSON view", %{conn: conn} do
+  test "typed output offers a client-side text and formatted JSON view", %{conn: conn} do
     {conn, _user, account} = register_and_log_in(conn)
 
     schema = %{
@@ -567,10 +596,13 @@ defmodule EmisarWeb.RunDetailLiveTest do
 
     {:ok, lv, html} = live(conn, ~p"/app/#{account}/runs/#{finished.id}")
 
+    assert has_element?(lv, "#run-output-raw-toggle", "Text")
+    assert has_element?(lv, "#run-output-json-toggle", "JSON")
+
     assert has_element?(lv, ~s([role="group"][aria-label="Output view"]))
     assert has_element?(lv, "#run-output-raw-toggle[aria-pressed=true]")
     assert has_element?(lv, "#run-output-json-toggle[aria-pressed=false]")
-    assert has_element?(lv, "#run-output-raw-legend", "stderr in rose")
+    assert has_element?(lv, "#run-output-raw-legend", "stderr highlighted")
     assert has_element?(lv, ~s(#run-output-copy-raw[data-copy="#run-output"]))
     assert has_element?(lv, ~s(#run-output-copy-json[data-copy="#run-output-json-view"].hidden))
     assert has_element?(lv, "#run-output-json-view.hidden")
@@ -729,7 +761,7 @@ defmodule EmisarWeb.RunDetailLiveTest do
 
     {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runs/#{run.id}")
 
-    assert html =~ "earlier output trimmed"
+    assert html =~ "earlier output hidden"
     refute html =~ "Load earlier output"
   end
 
@@ -795,7 +827,7 @@ defmodule EmisarWeb.RunDetailLiveTest do
     {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runs/#{run.id}")
 
     html = render_click(lv, "cancel", %{})
-    assert html =~ "Cancellation accepted."
+    assert html =~ "Cancellation requested. Waiting for the runner to stop."
     assert html =~ "Cancellation requested"
     assert Repo.reload!(run).status == :cancelling
   end
@@ -810,11 +842,11 @@ defmodule EmisarWeb.RunDetailLiveTest do
     assert has_element?(lv, "#cancel-run", "Cancel run")
     assert html =~ "Cancel this run?"
     refute html =~ "Withdraw request"
-    refute html =~ "The runner is signalled SIGTERM"
+    refute html =~ "Changes already made won't be undone."
 
     html = render_click(lv, "cancel", %{})
 
-    assert html =~ "Cancellation accepted."
+    assert html =~ "Run cancelled."
 
     assert %Emisar.Runs.ActionRun{status: :cancelled, reason_text: "operator cancelled"} =
              Repo.reload!(run)
@@ -837,7 +869,7 @@ defmodule EmisarWeb.RunDetailLiveTest do
 
     html = render_click(lv, "cancel", %{})
 
-    assert html =~ "Cancellation accepted."
+    assert html =~ "Cancellation requested. Waiting for the runner to stop."
 
     assert %Emisar.Runs.ActionRun{status: :cancelling, reason_text: "operator cancelled"} =
              Repo.reload!(run)
@@ -847,9 +879,9 @@ defmodule EmisarWeb.RunDetailLiveTest do
   end
 
   # when cancel_run returns a non-:ok (here the run row
-  # vanished between render and the cancel click), the handler flashes "Unable
-  # to cancel." instead of crashing.
-  test "a cancel that fails surfaces an 'Unable to cancel.' flash", %{conn: conn} do
+  # vanished between render and the cancel click), the handler gives a recovery
+  # message instead of crashing.
+  test "a cancel that fails asks the operator to refresh its status", %{conn: conn} do
     {conn, _user, account} = register_and_log_in(conn)
     run = run_with(account, %{status: "pending"})
 
@@ -860,7 +892,7 @@ defmodule EmisarWeb.RunDetailLiveTest do
     Repo.delete!(run)
 
     html = render_click(lv, "cancel", %{})
-    assert html =~ "Unable to cancel."
+    assert html =~ "Couldn&#39;t cancel the run. Refresh the page to check its status."
   end
 
   test "a viewer cannot cancel", %{conn: conn} do
@@ -979,13 +1011,13 @@ defmodule EmisarWeb.RunDetailLiveTest do
         "error" => "refused: signature does not match the dispatched action"
       })
 
-    {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runs/#{run.id}")
+    {:ok, lv, html} = live(conn, ~p"/app/#{account}/runs/#{run.id}")
 
     # The distinct terminal state + the human refusal reason both show…
     assert html =~ "refused"
     assert html =~ "refused: signature does not match the dispatched action"
     # …titled and toned as the same rose refusal the status badge and audit use.
-    assert html =~ ">Refused<"
+    assert has_element?(lv, "#run-failure-cause", "Refused")
     assert html =~ "bg-rose-400/40"
     refute html =~ "bg-amber-300/40"
     # …and there's no empty terminal panel (a refused run produced no output).
@@ -1004,12 +1036,12 @@ defmodule EmisarWeb.RunDetailLiveTest do
         "error" => "process exited with code 1"
       })
 
-    {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runs/#{run.id}")
+    {:ok, lv, html} = live(conn, ~p"/app/#{account}/runs/#{run.id}")
 
-    assert html =~ ">Failed<"
+    assert has_element?(lv, "#run-failure-cause", "Failed")
     assert html =~ "process exited with code 1"
     assert html =~ "bg-rose-400/40"
-    refute html =~ ">Error<"
+    refute has_element?(lv, "#run-failure-cause", "Error")
   end
 
   test "an error run's cause panel keeps the 'Error' title (the system-side status)", %{
@@ -1025,9 +1057,9 @@ defmodule EmisarWeb.RunDetailLiveTest do
         "error" => "runner disconnected, result never arrived"
       })
 
-    {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runs/#{run.id}")
+    {:ok, lv, html} = live(conn, ~p"/app/#{account}/runs/#{run.id}")
 
-    assert html =~ ">Error<"
+    assert has_element?(lv, "#run-failure-cause", "Error")
     assert html =~ "bg-rose-400/40"
   end
 
@@ -1053,20 +1085,32 @@ defmodule EmisarWeb.RunDetailLiveTest do
     refute has_element?(lv, "#cancel-run")
   end
 
+  test "a stale cancellation reports an already finished run", %{conn: conn} do
+    {conn, _user, account} = register_and_log_in(conn)
+    run = run_with(account, %{status: "running"})
+
+    {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runs/#{run.id}")
+
+    Fixtures.Runs.finish_without_runbook_callback(run, :success, %{})
+
+    assert render_click(lv, "cancel", %{}) =~ "This run has already finished."
+    assert Repo.reload!(run).status == :success
+  end
+
   test "an in-flight run whose runner is offline shows the disconnected banner", %{conn: conn} do
     {conn, _user, account} = register_and_log_in(conn)
     run = run_with(account, %{status: "running", runner_connected?: false})
 
     {:ok, lv, html} = live(conn, ~p"/app/#{account}/runs/#{run.id}")
 
-    assert html =~ "Runner disconnected"
+    assert html =~ "Runner offline"
 
     send(lv.pid, %{
       event: "presence_diff",
       payload: %{joins: %{run.runner_id => %{metas: [%{}]}}, leaves: %{}}
     })
 
-    refute render(lv) =~ "Runner disconnected"
+    refute render(lv) =~ "Runner offline"
   end
 
   test "a queued run whose runner is offline explains why it's stuck", %{conn: conn} do
@@ -1087,7 +1131,7 @@ defmodule EmisarWeb.RunDetailLiveTest do
 
     {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runs/#{run.id}")
 
-    refute html =~ "Runner disconnected"
+    refute html =~ "Runner offline"
   end
 
   test "shows a streaming pill while in flight, gone once terminal", %{conn: conn} do
@@ -1095,7 +1139,7 @@ defmodule EmisarWeb.RunDetailLiveTest do
     run = run_with(account, %{status: "running"})
 
     {:ok, lv, html} = live(conn, ~p"/app/#{account}/runs/#{run.id}")
-    assert html =~ "streaming"
+    assert html =~ "Streaming"
 
     {:ok, finished} =
       Fixtures.Runs.finish(run, %{
@@ -1105,7 +1149,7 @@ defmodule EmisarWeb.RunDetailLiveTest do
       })
 
     send(lv.pid, {:run_updated, finished})
-    refute render(lv) =~ "streaming"
+    refute render(lv) =~ "Streaming"
   end
 
   test "the pre-connect render says it is loading, never that no output was captured", %{
@@ -1132,17 +1176,17 @@ defmodule EmisarWeb.RunDetailLiveTest do
     })
 
     # The dead render defers the output read behind connected?/1 (IL-18), so it
-    # has no answer yet — "No output captured." there would be a claim about a
+    # has no answer yet — "No text output was recorded." would be a claim about a
     # run that in fact produced output.
     dead = html_response(get(conn, ~p"/app/#{account}/runs/#{finished.id}"), 200)
 
-    refute dead =~ "No output captured."
+    refute dead =~ "No text output was recorded."
     assert dead =~ "Loading…"
 
     {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runs/#{finished.id}")
 
     assert html =~ "up 3 days"
-    refute html =~ "No output captured."
+    refute html =~ "No text output was recorded."
   end
 
   test "a terminal run that really captured nothing still says so", %{conn: conn} do
@@ -1158,6 +1202,10 @@ defmodule EmisarWeb.RunDetailLiveTest do
 
     {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runs/#{finished.id}")
 
-    assert html =~ "No output captured."
+    assert html =~ "No text output was recorded."
+  end
+
+  defp rendered_text(html) do
+    html |> LazyHTML.from_document() |> LazyHTML.text() |> String.replace(~r/\s+/, " ")
   end
 end

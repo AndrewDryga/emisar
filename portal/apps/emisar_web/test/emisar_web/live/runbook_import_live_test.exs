@@ -165,7 +165,7 @@ defmodule EmisarWeb.RunbookImportLiveTest do
       })
       |> render_submit()
 
-    assert html =~ "Use either the selected file or pasted JSON, not both."
+    assert html =~ "Use either a file or pasted JSON, not both."
 
     assert {:ok, [], _metadata} =
              Runbooks.list_runbooks(owner_subject(user, account), page: [limit: 10])
@@ -181,7 +181,7 @@ defmodule EmisarWeb.RunbookImportLiveTest do
       })
 
     assert html =~ "Title is required."
-    assert html =~ "Choose a JSON file or paste the canonical JSON."
+    assert html =~ "Choose a JSON file or paste a runbook definition."
   end
 
   test "rejects oversized and non-JSON file selections", %{conn: conn} do

@@ -14,7 +14,7 @@ defmodule EmisarWeb.ApprovalsLive do
     3. **Recent decisions** — last 25 approve/deny calls for history.
   """
   use EmisarWeb, :live_view
-  alias Emisar.{Accounts, Approvals, Audit, Runners}
+  alias Emisar.{Accounts, Approvals, Audit, Policies, Runners}
   alias EmisarWeb.{ConfirmDialog, LiveTable, Permissions}
   alias Phoenix.LiveView.JS
 
@@ -89,7 +89,7 @@ defmodule EmisarWeb.ApprovalsLive do
               {:ok, _} ->
                 {:noreply,
                  socket
-                 |> put_flash(:info, "Grant revoked. New calls will require fresh approval.")
+                 |> put_flash(:info, "Grant revoked.")
                  |> reload()}
 
               _ ->
@@ -136,10 +136,11 @@ defmodule EmisarWeb.ApprovalsLive do
         {:noreply, put_flash(socket, :error, "Only owners and admins can change this setting.")}
 
       {:error, %Ecto.Changeset{}} ->
-        {:noreply, put_flash(socket, :error, "Pick a valid grant-lifetime cap.")}
+        {:noreply, put_flash(socket, :error, "Choose a valid maximum grant lifetime.")}
 
       {:error, _reason} ->
-        {:noreply, put_flash(socket, :error, "Could not update the grant-lifetime cap.")}
+        {:noreply,
+         put_flash(socket, :error, "Couldn't update the maximum grant lifetime. Try again.")}
     end
   end
 
@@ -230,6 +231,7 @@ defmodule EmisarWeb.ApprovalsLive do
     |> assign(:pending_request_facts, pending_facts)
     |> assign(:pending_metadata, pending_meta)
     |> assign(:pending_error?, pending_error?)
+    |> assign(:approval_requirements_help, approval_requirements_help(subject))
     |> assign(:grants, grants)
     |> assign(:grants_metadata, grants_meta)
     |> assign(:grants_error?, grants_error?)
@@ -330,6 +332,35 @@ defmodule EmisarWeb.ApprovalsLive do
 
   defp request_scope_label(request, labels), do: "on #{runner_label(request, labels)}"
 
+  defp approval_requirements_help(subject) do
+    case Policies.fetch_approval_requirements_summary(subject) do
+      {:ok, settings} ->
+        can_decide? = Approvals.subject_can_decide_approval?(subject)
+
+        approval_count_help(settings.min_approvals) <>
+          " " <> self_approval_help(settings.allow_self_approval, can_decide?)
+
+      {:error, _reason} ->
+        nil
+    end
+  end
+
+  defp approval_count_help(1), do: "Current policies require one approver."
+
+  defp approval_count_help(:varies),
+    do: "Current approval requirements vary by runner. Some requests need more than one approver."
+
+  defp approval_count_help(count), do: "Current policies require #{count} approvers."
+
+  defp self_approval_help(true, true), do: "You can approve your own requests."
+  defp self_approval_help(true, false), do: "Approvers can approve their own requests."
+  defp self_approval_help(false, true), do: "You can't approve your own requests."
+
+  defp self_approval_help(false, false),
+    do: "Requests must be approved by someone other than the requester."
+
+  defp self_approval_help(:varies, _can_decide?), do: "Some requests don't allow self-approval."
+
   defp plural(1, noun), do: noun
   defp plural(_count, noun), do: noun <> "s"
 
@@ -348,19 +379,14 @@ defmodule EmisarWeb.ApprovalsLive do
   defp grant_key_label(%{api_key: %{key_prefix: p}}) when is_binary(p), do: "#{p}…"
   defp grant_key_label(_), do: "(deleted key)"
 
-  # New grants start at uses_count=1 — minting a grant also dispatches the
-  # run it was approved from, and that execution counts. The 0 clauses
-  # stay as a fallback for legacy grants minted before that was recorded.
-  # Plain English — "1 use" read as "1 use REMAINING"; "used once" can't.
-  defp format_uses(%{uses_count: 0, max_uses: nil}), do: "not used yet"
-  defp format_uses(%{uses_count: 0, max_uses: max}), do: "not used yet · cap #{max}"
-  defp format_uses(%{uses_count: 1, max_uses: nil}), do: "used once"
-  defp format_uses(%{uses_count: c, max_uses: nil}), do: "used #{c} times"
-  defp format_uses(%{uses_count: c, max_uses: max}), do: "used #{c} of #{max}"
+  # The initial approved run counts as one use. Match enrollment-key metadata:
+  # consumed uses / total limit, or consumed uses when there is no limit.
+  defp format_uses(%{uses_count: count, max_uses: nil}),
+    do: "#{count} #{plural(count, "use")}"
 
-  # A grant's expiry — "no expiry" when open-ended, else "expires 3m
-  # ago" with the timestamp through <.local_time> (viewer-local,
-  # hoverable, live); {" "} keeps "expires" off the <time> tag.
+  defp format_uses(%{uses_count: count, max_uses: max}), do: "#{count}/#{max} uses"
+
+  # Open-ended grants carry a badge instead of a duplicate expiry metadata item.
   attr :grant, :map, required: true
 
   defp expiry_status(%{grant: %{expires_at: %DateTime{} = ts}} = assigns) do
@@ -370,8 +396,6 @@ defmodule EmisarWeb.ApprovalsLive do
     expires{" "}<.local_time id={"grant-expiry-#{@grant.id}"} value={@expires_at} mode={:relative} />
     """
   end
-
-  defp expiry_status(assigns), do: ~H"no expiry"
 
   # Keep the exact scope inspectable without repeating argument values. Some
   # values are secrets, and the grant row intentionally stores only the hash.
@@ -391,14 +415,11 @@ defmodule EmisarWeb.ApprovalsLive do
   defp cap_updated(socket, account, _revoked_count) do
     socket
     |> assign(:current_account, account)
-    |> put_flash(:info, grant_lifetime_flash(account.settings.max_grant_lifetime_seconds))
+    |> put_flash(:info, "Maximum grant lifetime updated.")
   end
 
   # 0 is the kill switch: minting AND matching refuse account-wide.
   defp grants_disabled?(account), do: account.settings.max_grant_lifetime_seconds == 0
-
-  defp grant_lifetime_flash(nil), do: "Grant-lifetime cap removed — grants can use any window."
-  defp grant_lifetime_flash(_seconds), do: "Grant-lifetime cap updated."
 
   defp grants_disabled_flash(0),
     do: "Standing grants disabled — every approval is now single-use."
@@ -415,26 +436,18 @@ defmodule EmisarWeb.ApprovalsLive do
       "longer authorize anything; try again to clear them from the list."
   end
 
-  defp grants_revoked_flash(0), do: "No active standing grants remained in your access."
-
-  defp grants_revoked_flash(1) do
-    "Revoked 1 standing grant in your access. The affected client's next matching call will need fresh approval."
-  end
+  defp grants_revoked_flash(0), do: "No active grants to revoke."
 
   defp grants_revoked_flash(revoked_count) do
-    "Revoked #{revoked_count} standing grants in your access. The affected clients' next matching calls will need fresh approval."
+    "#{revoked_count} #{plural(revoked_count, "grant")} revoked."
   end
 
   defp grants_partially_revoked_flash(0) do
-    "No standing grants were revoked. Some grants in your access may remain active. Retry Revoke all."
-  end
-
-  defp grants_partially_revoked_flash(1) do
-    "1 standing grant was revoked and stays revoked. Some grants in your access may remain active. Retry Revoke all."
+    "No grants revoked. Some grants may still be active. Try Revoke all again."
   end
 
   defp grants_partially_revoked_flash(revoked_count) do
-    "#{revoked_count} standing grants were revoked and stay revoked. Some grants in your access may remain active. Retry Revoke all."
+    "#{revoked_count} #{plural(revoked_count, "grant")} revoked. Some grants may still be active. Try Revoke all again."
   end
 
   defp can_revoke_all_grants?(subject, metadata, grants_error?) do
@@ -442,9 +455,9 @@ defmodule EmisarWeb.ApprovalsLive do
   end
 
   # What a member who can't change the cap reads in its place. Worded like the
-  # select's own options, so both audiences read the setting the same way — and
-  # it covers the uncapped state, which had no rendering at all.
-  defp grant_lifetime_value_label(nil), do: "No cap"
+  # select's own options, so both audiences read the setting the same way.
+  # An unset cap allows the longest supported grant duration: 90 days.
+  defp grant_lifetime_value_label(nil), do: grant_lifetime_label(7_776_000)
   defp grant_lifetime_value_label(0), do: "Disabled"
   defp grant_lifetime_value_label(seconds), do: grant_lifetime_label(seconds)
 
@@ -454,7 +467,7 @@ defmodule EmisarWeb.ApprovalsLive do
   defp grant_lifetime_label(7_776_000), do: "90 days"
   defp grant_lifetime_label(seconds), do: "#{seconds} s"
 
-  # A strict→loose scale: disabled (no standing grants at all) up to no cap.
+  # A strict→loose scale: disabled up to the longest supported duration.
   defp grant_lifetime_options(current) do
     [
       %{
@@ -466,8 +479,12 @@ defmodule EmisarWeb.ApprovalsLive do
       %{value: "3600", label: "1 hour", selected: current == 3_600, disabled: false},
       %{value: "86400", label: "1 day", selected: current == 86_400, disabled: false},
       %{value: "2592000", label: "30 days", selected: current == 2_592_000, disabled: false},
-      %{value: "7776000", label: "90 days", selected: current == 7_776_000, disabled: false},
-      %{value: "", label: "No cap", selected: is_nil(current), disabled: false}
+      %{
+        value: "7776000",
+        label: "90 days",
+        selected: current in [nil, 7_776_000],
+        disabled: false
+      }
     ]
   end
 
@@ -485,11 +502,11 @@ defmodule EmisarWeb.ApprovalsLive do
       <:title>Approvals</:title>
 
       <.page_intro>
-        Actions and whole runbook executions pause here before they run. Review the exact frozen
-        work, then approve or deny; your reason is logged.
+        Review actions waiting for approval. Open a request to see what will run,
+        where, and why before you approve or deny it.
         <.doc_link href={~p"/docs/policies-and-approvals"}>Approvals docs</.doc_link>
         <span :if={@pack_access_restricted?} class="mt-2 block">
-          Your pack access limits this page to approvals and grants for packs you can use.
+          Only requests and grants for packs you can access are shown.
         </span>
       </.page_intro>
 
@@ -500,7 +517,9 @@ defmodule EmisarWeb.ApprovalsLive do
         <%!-- 1. PENDING --%>
         <section class="grid grid-cols-1 gap-x-10 gap-y-8 xl:grid-cols-[minmax(0,1fr)_22rem] xl:items-start">
           <div class="min-w-0">
-            <.section_header title="Pending" />
+            <.section_header title="Pending">
+              <:subtitle>Requests that need manual approval under your policies.</:subtitle>
+            </.section_header>
 
             <LiveTable.live_table
               layout={:cards}
@@ -575,41 +594,35 @@ defmodule EmisarWeb.ApprovalsLive do
                   :if={@pending_error?}
                   tone={:danger}
                   icon="state.warning"
-                  title="Couldn't load pending approvals."
+                  title="Couldn't load pending approvals"
                 >
-                  This is a load error, not an empty queue — a held action may be waiting.
-                  Refresh the page; if it persists, your access may have changed.
+                  Requests may still be waiting for approval. Refresh the page to try again.
                 </.empty_state>
                 <.empty_state
                   :if={not @pending_error?}
                   icon="product.approval"
-                  title="Nothing waiting."
+                  title="No pending approvals"
                 >
-                  Approvals show up here when
+                  When your
                   <.link
                     navigate={~p"/app/#{@current_account}/policies"}
                     class="text-brand-400 hover:text-brand-300"
-                  >
-                    policy
-                  </.link>
-                  evaluates an action as <code class="text-zinc-300">require_approval</code>
-                  — in a direct run or anywhere in a runbook. You'll get an email too.
+                  >policies</.link>
+                  require approval, the request appears here.
                 </.empty_state>
               </:empty>
             </LiveTable.live_table>
           </div>
 
-          <.docs_rail title="What needs approval?">
+          <.docs_rail title="Approval requirements">
+            <p id="approval-requirements-help">
+              <%= if @approval_requirements_help do %>
+                {@approval_requirements_help}{" "}
+              <% end %>
+              Each request shows its approval requirements and expiry.
+            </p>
             <p>
-              A run lands here when
-              <.link
-                navigate={~p"/app/#{@current_account}/policies"}
-                class="text-brand-400 hover:text-brand-300"
-              >
-                policy
-              </.link>
-              evaluates an action as <span class="font-mono text-[13px] text-zinc-300">require_approval</span>. A direct action creates one request for that run. A runbook with any gated item
-              creates one request for its complete frozen execution.
+              Runbooks use one approval request per execution, covering all actions and target runners.
             </p>
           </.docs_rail>
         </section>
@@ -619,10 +632,11 @@ defmodule EmisarWeb.ApprovalsLive do
           <div class="min-w-0">
             <.section_header title="Standing grants">
               <:subtitle :if={not grants_disabled?(@current_account)}>
-                Approvals that auto-allow follow-up calls for a bounded window.
+                Approvals that let an agent repeat an action without asking again,
+                until they expire or reach a use limit.
               </:subtitle>
               <:subtitle :if={grants_disabled?(@current_account)}>
-                Disabled for this account — every approval is single-use.
+                Disabled — every approval is single-use.
               </:subtitle>
               <:actions :if={
                 can_revoke_all_grants?(
@@ -652,7 +666,7 @@ defmodule EmisarWeb.ApprovalsLive do
                 )
               }
               id="revoke-all-grants-dialog"
-              title="Revoke all grants in your access?"
+              title="Revoke all grants?"
               confirm_label="Revoke all grants"
               confirm_token="REVOKE ALL"
               typed={@typed}
@@ -662,7 +676,7 @@ defmodule EmisarWeb.ApprovalsLive do
               }
             >
               <:body>
-                This immediately revokes every active standing grant within your runner and pack access, including grants on other pages. Each affected client's next matching call will need fresh approval.
+                Revoke all active grants within your runner and pack access, including grants on other pages.
               </:body>
             </.confirm_dialog>
 
@@ -688,8 +702,11 @@ defmodule EmisarWeb.ApprovalsLive do
                       category="runner"
                       value={if g.runner, do: g.runner.name, else: "any"}
                     />
-                    <.identity_tag category="args" value={if g.args_sha256, do: "exact", else: "any"} />
-                    <.chip :if={g.expires_at == nil} tone={:amber}>no expiry</.chip>
+                    <.identity_tag
+                      category="Arguments"
+                      value={if g.args_sha256, do: "Same", else: "Any"}
+                    />
+                    <.chip :if={g.expires_at == nil} tone={:amber}>No expiration date</.chip>
                   </:chips>
                   <:meta>
                     <div
@@ -717,7 +734,7 @@ defmodule EmisarWeb.ApprovalsLive do
                     </.meta_line>
 
                     <.meta_line class="mt-0.5">
-                      <:seg><.expiry_status grant={g} /></:seg>
+                      <:seg :if={g.expires_at}><.expiry_status grant={g} /></:seg>
                       <:seg>{format_uses(g)}</:seg>
                       <:seg>
                         last used{" "}<.local_time
@@ -754,7 +771,9 @@ defmodule EmisarWeb.ApprovalsLive do
                       on_confirm={JS.push("revoke_grant", value: %{id: g.id})}
                     >
                       <:body>
-                        Calls to {g.action_id} from {(g.api_key && g.api_key.name) || "the key"} will require fresh approval.
+                        This grant will no longer approve new runs of {g.action_id} for {(g.api_key &&
+                                                                                            g.api_key.name) ||
+                          "this agent"}.
                       </:body>
                       Revoke
                     </.confirm_button>
@@ -768,10 +787,9 @@ defmodule EmisarWeb.ApprovalsLive do
                 <.empty_state
                   :if={@grants_denied?}
                   icon="state.locked"
-                  title="Only owners and admins can see standing grants."
+                  title="Only owners and admins can see standing grants"
                 >
-                  Grants may be active and letting agents skip the approval prompt — ask an
-                  owner or admin to review them.
+                  Ask an owner or admin to review any active grants.
                 </.empty_state>
                 <.empty_state
                   :if={@grants_error?}
@@ -779,19 +797,16 @@ defmodule EmisarWeb.ApprovalsLive do
                   icon="state.warning"
                   title="Couldn't load standing grants"
                 >
-                  This is a load error, not an empty list — grants may well be active and letting
-                  agents skip approval. Refresh the page; if it persists, your access may have
-                  changed.
+                  Grants may still be active. Refresh the page to try again.
                 </.empty_state>
                 <.empty_state
                   :if={
                     not @grants_error? and not @grants_denied? and grants_disabled?(@current_account)
                   }
                   icon="state.disabled"
-                  title="Standing grants are disabled."
+                  title="Standing grants are disabled"
                 >
-                  Every approval is single-use — agents re-ask each time. An owner or
-                  admin can re-enable them under Maximum grant lifetime below.
+                  An owner or admin can enable them in Maximum grant lifetime.
                 </.empty_state>
                 <.empty_state
                   :if={
@@ -799,28 +814,26 @@ defmodule EmisarWeb.ApprovalsLive do
                       not grants_disabled?(@current_account)
                   }
                   icon="product.approval"
-                  title="No active grants."
+                  title="No active grants"
                 >
-                  Grants appear when you approve a run with a duration other than
-                  <em>just this call</em>
-                  — they let the same LLM client re-run the same action
-                  inside the window without re-asking. Revocable here at any time.
+                  To let an agent repeat an action, choose how long it can reuse the approval
+                  when reviewing its request.
                 </.empty_state>
               </:empty>
             </LiveTable.live_table>
           </div>
 
           <aside class="space-y-6">
-            <.docs_rail title="What's a standing grant?">
+            <.docs_rail title="What a grant allows">
               <p>
-                Approving with a duration mints a <span class="text-zinc-200">standing grant</span>: repeat calls of the same
-                action by the same API key are auto-approved for that window instead of re-asking.
+                Each grant is tied to one agent key and action. Check its runner, argument,
+                expiry, and use limits to see what it allows.
               </p>
             </.docs_rail>
 
             <div>
               <h3 class="text-[11px] font-semibold uppercase tracking-wider text-zinc-400">
-                Guardrails
+                Grant settings
               </h3>
               <%!-- Max grant-lifetime cap — owner/admin. Bounds how long an approved
                    standing grant can keep skipping the prompt; single-use ("once") is
@@ -831,8 +844,7 @@ defmodule EmisarWeb.ApprovalsLive do
               <div id="approvals-grant-cap" class="mt-3 rounded-xl border border-zinc-800/80 p-4">
                 <h4 class="text-sm font-medium text-zinc-100">Maximum grant lifetime</h4>
                 <p class="mt-1 text-xs leading-relaxed text-zinc-400">
-                  Cap how long an approved grant can keep skipping the prompt.
-                  Single-use approvals are always allowed.
+                  Disabling grants also revokes all existing grants.
                 </p>
                 <.gated_setting
                   id="max-grant-lifetime"
@@ -914,36 +926,29 @@ defmodule EmisarWeb.ApprovalsLive do
                   :if={@decided_error?}
                   tone={:danger}
                   icon="state.warning"
-                  title="Couldn't load the decision log"
+                  title="Couldn't load recent decisions"
                 >
-                  This is a load error, not an empty log — decisions may well be recorded.
-                  Refresh the page; if it persists, your access may have changed.
+                  Refresh the page to try again.
                 </.empty_state>
                 <.empty_state
                   :if={not @decided_error?}
                   icon="product.approval"
-                  title="No decided approvals yet."
+                  title="No decisions yet"
                 >
-                  When you approve or deny a pending request, the decision lands here.
-                  Useful for re-checking who approved what, and when.
+                  Approved, denied, expired, and cancelled requests appear here.
                 </.empty_state>
               </:empty>
             </LiveTable.live_table>
           </div>
 
-          <.docs_rail title="The decision log">
+          <.docs_rail title="Reviewing past decisions">
             <p>
-              Every decided request — <span class="text-zinc-200">approved</span>, <span class="text-zinc-200">denied</span>, or
-              <span class="text-zinc-200">expired</span>
-              — with who decided it and when.
-            </p>
-            <p>
-              The full forensic trail — request context, the resolved command, reasons —
-              lives in the <.link
+              Open a request to see its reviews and decision reasons. The
+              <.link
                 navigate={~p"/app/#{@current_account}/audit"}
                 class="text-brand-400 hover:text-brand-300"
-              >
-                audit log</.link>.
+              >Audit log</.link>
+              includes related activity, such as policy changes and action dispatches.
             </p>
           </.docs_rail>
         </section>

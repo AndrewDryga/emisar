@@ -220,8 +220,8 @@ defmodule EmisarWeb.PacksLive do
     |> MapSet.union(MapSet.new(Map.keys(projection.matched_action_ids)))
   end
 
-  defp pending_review_title(1), do: "1 pack version needs trust review."
-  defp pending_review_title(count), do: "#{count} pack versions need trust review."
+  defp pending_review_title(1), do: "1 pack version needs review"
+  defp pending_review_title(count), do: "#{count} pack versions need review"
 
   def handle_event("filter", params, socket) do
     {:noreply,
@@ -240,18 +240,18 @@ defmodule EmisarWeb.PacksLive do
          |> restream_pack(pack_version.pack_id)}
 
       {:error, :not_pending} ->
-        {:noreply, put_flash(socket, :error, "Nothing pending on that pack.")}
+        {:noreply, put_flash(socket, :error, "This version no longer has a pending review.")}
 
       {:error, :nothing_to_trust} ->
         {:noreply,
          put_flash(
            socket,
            :error,
-           "Nothing recorded to trust — wait for a runner to advertise this pack again."
+           "No contents are available to review. Wait for a runner to report this version again."
          )}
 
       {:error, :unauthorized} ->
-        {:noreply, put_flash(socket, :error, "Admin required to trust packs.")}
+        {:noreply, put_flash(socket, :error, "Only owners and admins can trust packs.")}
 
       {:error, {:descriptor_mismatch, action_id, runner_names}} ->
         {:noreply, put_flash(socket, :error, descriptor_mismatch_flash(action_id, runner_names))}
@@ -261,11 +261,11 @@ defmodule EmisarWeb.PacksLive do
          put_flash(
            socket,
            :error,
-           "Pack contents are invalid — fix the pack and have the runner advertise it again."
+           "This version has invalid contents. Fix the pack and reload the runner."
          )}
 
       {:error, _} ->
-        {:noreply, put_flash(socket, :error, "Could not trust pack — try again.")}
+        {:noreply, put_flash(socket, :error, "Couldn't trust this version. Try again.")}
     end
   end
 
@@ -283,13 +283,13 @@ defmodule EmisarWeb.PacksLive do
          |> restream_pack(pack_version.pack_id)}
 
       {:error, :not_pending} ->
-        {:noreply, put_flash(socket, :error, "Nothing pending on that pack.")}
+        {:noreply, put_flash(socket, :error, "This version no longer has a pending review.")}
 
       {:error, :unauthorized} ->
-        {:noreply, put_flash(socket, :error, "Admin required to reject packs.")}
+        {:noreply, put_flash(socket, :error, "Only owners and admins can reject contents.")}
 
       {:error, _} ->
-        {:noreply, put_flash(socket, :error, "Could not reject pack — try again.")}
+        {:noreply, put_flash(socket, :error, "Couldn't reject these contents. Try again.")}
     end
   end
 
@@ -302,21 +302,21 @@ defmodule EmisarWeb.PacksLive do
          socket
          |> put_flash(
            :info,
-           "Revoked trust in #{pack_version.pack_id} v#{pack_version.version}. Dispatch refuses it until you trust it again."
+           "Trust revoked for #{pack_version.pack_id} v#{pack_version.version}."
          )
          |> restream_pack(pack_version.pack_id)}
 
       {:error, :not_trusted} ->
-        {:noreply, put_flash(socket, :error, "Only a trusted version can be revoked.")}
+        {:noreply, put_flash(socket, :error, "This version isn't trusted. Refresh the page.")}
 
       {:error, :unauthorized} ->
-        {:noreply, put_flash(socket, :error, "Admin required to revoke pack trust.")}
+        {:noreply, put_flash(socket, :error, "Only owners and admins can revoke trust.")}
 
       {:error, :not_found} ->
         {:noreply, put_flash(socket, :error, "That pack version no longer exists.")}
 
       {:error, _} ->
-        {:noreply, put_flash(socket, :error, "Could not revoke trust — try again.")}
+        {:noreply, put_flash(socket, :error, "Couldn't revoke trust. Try again.")}
     end
   end
 
@@ -329,18 +329,18 @@ defmodule EmisarWeb.PacksLive do
          socket
          |> put_flash(
            :info,
-           "Deleted #{pack_version.pack_id} v#{pack_version.version}. A runner still advertising it will re-insert it as a fresh trust decision."
+           "Removed #{pack_version.pack_id} v#{pack_version.version} from Packs."
          )
          |> restream_pack(pack_version.pack_id)}
 
       {:error, :unauthorized} ->
-        {:noreply, put_flash(socket, :error, "Admin required to delete packs.")}
+        {:noreply, put_flash(socket, :error, "Only owners and admins can remove packs.")}
 
       {:error, :not_found} ->
         {:noreply, put_flash(socket, :error, "That pack version no longer exists.")}
 
       {:error, _} ->
-        {:noreply, put_flash(socket, :error, "Could not delete the version — try again.")}
+        {:noreply, put_flash(socket, :error, "Couldn't remove this version. Try again.")}
     end
   end
 
@@ -353,18 +353,18 @@ defmodule EmisarWeb.PacksLive do
          socket
          |> put_flash(
            :info,
-           "Deleted #{pack_id} (#{version_count_label(versions)}). A runner still advertising it will re-insert it as a fresh trust decision."
+           "Removed #{pack_id} (#{version_count_label(versions)}) from Packs."
          )
          |> restream_pack(pack_id)}
 
       {:error, :unauthorized} ->
-        {:noreply, put_flash(socket, :error, "Admin required to delete packs.")}
+        {:noreply, put_flash(socket, :error, "Only owners and admins can remove packs.")}
 
       {:error, :not_found} ->
         {:noreply, put_flash(socket, :error, "That pack no longer exists.")}
 
       {:error, _} ->
-        {:noreply, put_flash(socket, :error, "Could not delete the pack — try again.")}
+        {:noreply, put_flash(socket, :error, "Couldn't remove this pack. Try again.")}
     end
   end
 
@@ -412,7 +412,7 @@ defmodule EmisarWeb.PacksLive do
          put_flash(
            socket,
            :info,
-           "Nothing to remove — every pack version was seen within the window."
+           "No pack versions are eligible for cleanup."
          )}
 
       {:ok, count} ->
@@ -425,10 +425,10 @@ defmodule EmisarWeb.PacksLive do
         {:noreply, put_flash(socket, :error, "Turn on automatic cleanup first.")}
 
       {:error, :unauthorized} ->
-        {:noreply, put_flash(socket, :error, "Admin required to clean up the catalog.")}
+        {:noreply, put_flash(socket, :error, "Only owners and admins can clean up packs.")}
 
       {:error, _} ->
-        {:noreply, put_flash(socket, :error, "Could not clean up — try again.")}
+        {:noreply, put_flash(socket, :error, "Couldn't clean up packs. Try again.")}
     end
   end
 
@@ -442,22 +442,21 @@ defmodule EmisarWeb.PacksLive do
          socket
          |> put_flash(
            :info,
-           "Overrode the retirement of #{pack_version.pack_id} v#{pack_version.version}. Dispatch is unblocked for this version — update the pack on your runners when you can."
+           "Retirement overridden for #{pack_version.pack_id} v#{pack_version.version}."
          )
          |> restream_pack(pack_version.pack_id)}
 
       {:error, :not_trusted} ->
-        {:noreply,
-         put_flash(socket, :error, "Only a trusted version's retirement can be overridden.")}
+        {:noreply, put_flash(socket, :error, "This version isn't trusted. Refresh the page.")}
 
       {:error, :unauthorized} ->
-        {:noreply, put_flash(socket, :error, "Admin required to override pack retirement.")}
+        {:noreply, put_flash(socket, :error, "Only owners and admins can override retirement.")}
 
       {:error, :not_found} ->
         {:noreply, put_flash(socket, :error, "That pack version no longer exists.")}
 
       {:error, _} ->
-        {:noreply, put_flash(socket, :error, "Could not override retirement — try again.")}
+        {:noreply, put_flash(socket, :error, "Couldn't override retirement. Try again.")}
     end
   end
 
@@ -466,13 +465,20 @@ defmodule EmisarWeb.PacksLive do
   # Stash which pack version the reject dialog targets (the rows are a stream,
   # so the dialog is page-level and reads this assign). Typed-confirm is UX
   # friction only — `reject` above stays the server gate.
-  def handle_event(
-        "open_reject",
-        %{"id" => id, "pack_id" => pack_id, "version" => version},
-        socket
-      ) do
-    target = %{id: id, token: "#{pack_id} v#{version}"}
-    {:noreply, socket |> assign(:reject_target, target) |> ConfirmDialog.reset()}
+  def handle_event("open_reject", %{"id" => id}, socket) do
+    case cached_version(socket.assigns.group_cache, id) do
+      {pack_id, version} ->
+        target = %{
+          id: id,
+          token: "#{pack_id} v#{version.version}",
+          previously_trusted?: not is_nil(version.hash)
+        }
+
+        {:noreply, socket |> assign(:reject_target, target) |> ConfirmDialog.reset()}
+
+      nil ->
+        {:noreply, socket}
+    end
   end
 
   def handle_event("open_reject", _params, socket), do: {:noreply, socket}
@@ -598,43 +604,47 @@ defmodule EmisarWeb.PacksLive do
   # A drift-reject reverts to the trusted bytes and the on-host mismatch stays
   # live, so it re-surfaces on the next advertisement; a never-trusted reject
   # sticks (the refused hash is remembered) until different bytes show up.
-  defp reject_flash(%Catalog.PackVersion{trust_state: :trusted} = pack_version) do
-    "Rejected drift on #{pack_version.pack_id} v#{pack_version.version}. The runner advertising the new hash will re-broadcast — if it's still set, this will re-surface."
+  defp reject_flash(%Catalog.PackVersion{trust_state: :trusted}) do
+    "Changes rejected. Previously trusted contents are kept."
   end
 
   defp reject_flash(%Catalog.PackVersion{} = pack_version) do
-    "Rejected #{pack_version.pack_id} v#{pack_version.version}. It stays listed as rejected — a runner advertising different contents will re-open the review."
+    "Rejected #{pack_version.pack_id} v#{pack_version.version}."
   end
 
   # The fleet disagrees about what the pending bytes contain — name the
   # runners so the operator can find the stale or hostile one. Trust stays
   # blocked (fail-closed) rather than letting one runner pick the manifest.
   defp descriptor_mismatch_flash(action_id, runner_names) do
-    "#{disagreeing_runners(runner_names)} about what this version contains (action #{action_id}). Trust stays blocked until they advertise identical contents."
+    "#{disagreeing_runners(runner_names)} for #{action_id}. Resolve the differences before trusting this version."
   end
 
   # The domain narrows the names to the runners this member reaches, so a
   # runner-restricted operator can be told the block and its cause without
   # being handed the name of a runner outside their fleet scope.
-  defp disagreeing_runners([]), do: "Runners disagree"
-  defp disagreeing_runners([first, second]), do: "Runners #{first} and #{second} disagree"
-  defp disagreeing_runners(names), do: "Runners #{Enum.join(names, ", ")} disagree"
+  defp disagreeing_runners([]), do: "Runners report different definitions"
+
+  defp disagreeing_runners([first, second]),
+    do: "Runners #{first} and #{second} report different definitions"
+
+  defp disagreeing_runners(names),
+    do: "Runners #{Enum.join(names, ", ")} report different definitions"
 
   defp retention_set_flash(nil),
-    do: "Automatic cleanup turned off — unseen pack versions are kept."
+    do: "Automatic cleanup turned off."
 
   defp retention_set_flash(days),
-    do: "Automatic cleanup on — pack versions unseen for #{days_phrase(days)} are removed daily."
+    do: "Automatic cleanup set to #{days_phrase(days)}."
 
-  defp cleanup_flash(1), do: "Removed 1 pack version no runner has advertised recently."
+  defp cleanup_flash(1), do: "Removed 1 pack version."
 
   defp cleanup_flash(count),
-    do: "Removed #{count} pack versions no runner has advertised recently."
+    do: "Removed #{count} pack versions."
 
   # What a member who can't change the schedule reads in its place. Worded like
   # the select's own options, so both audiences read the setting the same way.
   defp pack_retention_value_label(nil), do: "Off"
-  defp pack_retention_value_label(days), do: "After #{days_phrase(days)} unseen"
+  defp pack_retention_value_label(days), do: "After #{days_phrase(days)}"
 
   defp days_phrase(1), do: "1 day"
   defp days_phrase(days), do: "#{days} days"
@@ -643,16 +653,16 @@ defmodule EmisarWeb.PacksLive do
     [
       %{
         value: "",
-        label: "Off — keep unseen versions",
+        label: "Off",
         selected: is_nil(current),
         disabled: false
       },
-      %{value: "1", label: "After 1 day unseen", selected: current == 1, disabled: false},
-      %{value: "7", label: "After 7 days unseen", selected: current == 7, disabled: false},
-      %{value: "14", label: "After 14 days unseen", selected: current == 14, disabled: false},
-      %{value: "30", label: "After 30 days unseen", selected: current == 30, disabled: false},
-      %{value: "60", label: "After 60 days unseen", selected: current == 60, disabled: false},
-      %{value: "90", label: "After 90 days unseen", selected: current == 90, disabled: false}
+      %{value: "1", label: "After 1 day", selected: current == 1, disabled: false},
+      %{value: "7", label: "After 7 days", selected: current == 7, disabled: false},
+      %{value: "14", label: "After 14 days", selected: current == 14, disabled: false},
+      %{value: "30", label: "After 30 days", selected: current == 30, disabled: false},
+      %{value: "60", label: "After 60 days", selected: current == 60, disabled: false},
+      %{value: "90", label: "After 90 days", selected: current == 90, disabled: false}
     ]
   end
 
@@ -777,7 +787,7 @@ defmodule EmisarWeb.PacksLive do
     ~H"""
     <div class="mt-2 pl-8">
       <p data-role="pack-version-facts" class="text-[11px] text-zinc-400">
-        first seen
+        first reported
         <.local_time
           id={"pack-version-first-#{@version.id}"}
           value={@version.first_seen_at}
@@ -787,13 +797,12 @@ defmodule EmisarWeb.PacksLive do
         <span class="text-zinc-700">·</span>
         <span class="break-all font-mono">{@version.hash || @version.pending_hash}</span>
       </p>
-      <p :if={is_nil(@inspected)} class="mt-2 text-[11px] text-zinc-400">Loading…</p>
+      <p :if={is_nil(@inspected)} class="mt-2 text-[11px] text-zinc-400">Loading actions…</p>
       <p :if={@inspected == :error} class="mt-2 text-[11px] text-rose-300">
-        Couldn't load this version's actions — a read error, not an empty pack. Refresh before
-        deciding on its trust.
+        Couldn't load this version's actions. Refresh the page to try again.
       </p>
       <p :if={@inspected == []} class="mt-2 text-[11px] text-zinc-400">
-        No actions advertised for this version right now.
+        No runner currently reports actions for this version.
       </p>
       <p
         :if={not is_nil(@matched) and @shown not in [nil, :error, []]}
@@ -833,10 +842,10 @@ defmodule EmisarWeb.PacksLive do
   attr :can_manage, :boolean, required: true
 
   # A trusted version the shipped catalog RETIRED — a newer release marked every
-  # version below a watermark unsafe (a critical fix). The Catalog picks the ONE
+  # version below a watermark retired after critical changes. The Catalog picks the ONE
   # remedy that fits (`retirement_remedy`); this only words it. Runners still on
   # it → update them (or, only if you truly can't yet, override the retirement).
-  # None, from a complete fleet read → it's dead weight the fix already routed
+  # None, from a complete fleet read → it's dead weight the update already routed
   # around, so just remove it. None, from a PARTIAL read → we can't claim nobody
   # is on it, so neither removal nor override is offered. Rendered as the shared
   # icon-capped rose spine — the ONE house face for an operational alert. An
@@ -848,21 +857,21 @@ defmodule EmisarWeb.PacksLive do
       :if={@fact.retirement_blocked?}
       icon="trust.untrusted"
       tone={:rose}
-      title="Retired by a newer release"
+      title="Retired version"
       class="mt-3 pl-8"
     >
       <:body>
         <span :if={@fact.retirement_remedy == :update_or_override}>
-          A critical fix superseded this version. Dispatch is blocked for <code>{@pack_id}</code>
-          v{@version.version} until you update the runners still on it.
+          This version was retired after critical changes. Its actions are blocked.
+          Update the pack on the runners below.
         </span>
         <span :if={@fact.retirement_remedy == :remove}>
-          A critical fix superseded this version, and no runner is on it anymore. There's
-          nothing to update — the daily cleanup removes it, or remove it now.
+          No runner reports this retired version. Daily cleanup will remove it, or you can
+          remove it now.
         </span>
         <span :if={@fact.retirement_remedy == :resolve_advertisers}>
-          A critical fix superseded this version. This account has more runners than this page
-          reads, so we can't tell whether any is still on it — update your runners to clear it.
+          This version was retired after critical changes. The runner list is incomplete,
+          so check for other hosts that need the update.
         </span>
       </:body>
       <%!-- Updating is the fix in every state that still shows this block: with
@@ -893,12 +902,12 @@ defmodule EmisarWeb.PacksLive do
           />
         </div>
         <p :if={@fact.advertising.coverage == :partial} class="mt-2">
-          More runners than this page reads — others may be on it too.
+          This list is incomplete. Other runners may also use this version.
         </p>
       </div>
       <div :if={@can_manage} class="mt-3 flex flex-wrap gap-2">
         <%!-- Runners on it, and you genuinely can't update yet: override to let its
-             actions run despite the fix. Deliberate bypass — rose confirm, admin-
+             actions run despite the critical changes. Deliberate bypass — rose confirm, admin-
              only, audited (the context fn stays the server gate, IL-15). Gone once
              no runner is on it: nothing to keep running, and re-enabling a retired
              version for a future runner is the opposite of the goal. --%>
@@ -913,9 +922,8 @@ defmodule EmisarWeb.PacksLive do
           on_confirm={JS.push("override_retirement", value: %{id: @version.id})}
         >
           <:body>
-            This version was retired by a newer release. Overriding lets its actions run again
-            despite the fix — do this only if you can't yet update the pack on the runner. The
-            override is audited. To silence this without allowing dispatch, remove the version.
+            Allow this retired version to be used despite critical changes. Update the pack
+            as soon as possible. Your policies still apply.
           </:body>
           Override retirement
         </.confirm_button>
@@ -925,10 +933,11 @@ defmodule EmisarWeb.PacksLive do
              runners it's futile (a runner re-inserts it), so it's dropped for
              update/override; with a partial fleet read we can't promise it's
              unused, so it's dropped there too. The rows are a stream, so there is
-             no per-row dialog: this opens the page-level one the row menu's Delete
+             no per-row dialog: this opens the page-level one the row menu's Remove
              uses. --%>
         <.button
           :if={@fact.retirement_remedy == :remove}
+          id={"retirement-remove-#{@version.id}"}
           variant={:secondary}
           tone={:rose}
           size={:sm}
@@ -937,7 +946,7 @@ defmodule EmisarWeb.PacksLive do
           phx-value-action="delete_version"
           phx-value-id={@version.id}
         >
-          Remove version
+          Remove
         </.button>
       </div>
     </.event_block>
@@ -946,7 +955,7 @@ defmodule EmisarWeb.PacksLive do
       class="mt-2 flex flex-wrap items-center gap-1.5 pl-8 text-[11px] text-zinc-400"
     >
       <.icon name="trust.declared" class="h-3.5 w-3.5 text-zinc-500" />
-      Retired by a newer release — overridden by {@fact.override.actor_label || "an admin"}
+      Retirement overridden by {@fact.override.actor_label || "an admin"}
       <.local_time
         id={"pack-version-override-#{@version.id}"}
         value={@fact.override.at}
@@ -958,10 +967,8 @@ defmodule EmisarWeb.PacksLive do
   end
 
   # How many runners advertise a version, in the operator's words. A COMPLETE
-  # fleet read states the exact count; a PARTIAL one can only state a floor —
-  # and with nothing found it cannot claim the version is unused at all.
-  defp advertiser_count(%{coverage: :partial, runners: []}), do: "An unknown number of"
-
+  # fleet read states the exact count; a PARTIAL one can only state a floor.
+  # An empty partial read has its own unavailable branch at the call site.
   defp advertiser_count(%{coverage: :partial, runners: runners}),
     do: "At least #{length(runners)}"
 
@@ -980,13 +987,13 @@ defmodule EmisarWeb.PacksLive do
   # what clears the row. A partial read → we cannot claim nobody is on it, so
   # the sentence stays conditional rather than asserting either way.
   defp pending_retired_remedy(%{runners: [_ | _]}),
-    do: "Update the pack on the runners still on it to clear this."
+    do: "Its actions are blocked. Update the pack on the runners below."
 
   defp pending_retired_remedy(%{coverage: :complete}),
-    do: "No runner advertises it now, so there is nothing to update — reject it to clear this."
+    do: "No runner reports this version. Reject its contents to close the review."
 
   defp pending_retired_remedy(_advertising),
-    do: "Update the pack on any runner still on it to clear this."
+    do: "Update the pack wherever this version is installed."
 
   # Nobody is on it and we read the whole fleet, so an install command would
   # offer a fix for a problem that no longer exists; Reject is the action.
@@ -1003,29 +1010,27 @@ defmodule EmisarWeb.PacksLive do
   # spine like every operational alert — what changed, who it unblocks, and the
   # decision buttons inside one contained unit. A pending version that sits below
   # a shipped pack's retirement watermark is a KNOWN pack whose bytes a security
-  # fix superseded, NOT an unknown one to trust — it wears the rose retired face
+  # changes superseded, NOT an unknown one to trust — it wears the rose retired face
   # and leads with the upgrade, keeping trust a labelled escape hatch.
   defp pending_notice(assigns) do
     ~H"""
     <.event_block
       icon="trust.untrusted"
       tone={(@fact.retirement_blocked? && :rose) || :amber}
-      title={(@fact.retirement_blocked? && "Retired by a newer release") || "Pending trust review"}
+      title={(@fact.retirement_blocked? && "Retired version") || "Awaiting trust review"}
       class="mt-3 pl-8"
     >
       <:body>
         <span :if={@fact.retirement_blocked?}>
-          <code>{@pack_id}</code> v{@version.version} was retired by a newer release — a
-          security fix superseded it. {pending_retired_remedy(@fact.advertising)}
+          This version was retired after critical changes. {pending_retired_remedy(@fact.advertising)}
         </span>
         <span :if={not @fact.retirement_blocked? and is_nil(@version.hash)}>
-          A runner advertised <code>{@pack_id}</code> v{@version.version} —
-          a pack we don't ship a baseline for. Dispatch is blocked until
-          you trust its contents.
+          This version's contents aren't automatically trusted. An owner or admin must review
+          them before its actions can be used.
         </span>
         <span :if={not @fact.retirement_blocked? and not is_nil(@version.hash)}>
-          A runner is advertising a different hash. Dispatch is blocked for <code>{@pack_id}</code>
-          v{@version.version} until you decide.
+          A runner reported changed contents for this version. Its actions are blocked until
+          an owner or admin reviews the changes.
         </span>
       </:body>
       <.install_command
@@ -1044,8 +1049,8 @@ defmodule EmisarWeb.PacksLive do
         :if={not is_nil(@version.hash)}
         class="mt-3 grid grid-cols-[max-content,1fr] gap-x-3 gap-y-1 text-[11px]"
       >
-        <.kv layout={:grid} label="trusted:">{@version.hash}</.kv>
-        <.kv layout={:grid} label="advertising:">
+        <.kv layout={:grid} label="Trusted hash">{@version.hash}</.kv>
+        <.kv layout={:grid} label="Reported hash">
           <span class="text-zinc-300">{@version.pending_hash || "—"}</span>
         </.kv>
       </dl>
@@ -1056,11 +1061,11 @@ defmodule EmisarWeb.PacksLive do
         :if={is_nil(@version.hash) and not @fact.retirement_blocked?}
         class="mt-3 flex flex-wrap items-baseline gap-x-2 text-[11px] text-zinc-400"
       >
-        on the runner:
+        Reported hash
         <span class="break-all font-mono text-zinc-300">{@version.pending_hash || "—"}</span>
       </p>
-      <%!-- Blast radius — which hosts this trust click unblocks. One canary box
-           vs the whole fleet is the difference between a safe and a scary Trust.
+      <%!-- Hosts reporting this version, not necessarily the exact pending hash.
+           Do not imply that trusting the pending hash unblocks every listed host.
            A fleet we couldn't read to the end says so: a short list is a floor,
            and an empty one is not proof that nobody is on it. --%>
       <div
@@ -1071,12 +1076,9 @@ defmodule EmisarWeb.PacksLive do
           <span class="font-semibold text-zinc-300">
             {advertiser_count(@fact.advertising)}
           </span>
-          <span :if={@fact.retirement_blocked?}>
-            {advertiser_noun(@fact.advertising)} still on this retired version — update the pack on:
-          </span>
-          <span :if={not @fact.retirement_blocked?}>
-            {advertiser_noun(@fact.advertising)} still advertising this — trusting unblocks dispatch on:
-          </span>
+          {advertiser_noun(@fact.advertising)} {if length(@fact.advertising.runners) == 1,
+            do: "reports",
+            else: "report"} this version:
         </p>
         <%!-- A neutral two-tone tag per runner — the group (muted, left)
              then the runner name (brighter, right), split by a divider.
@@ -1093,15 +1095,14 @@ defmodule EmisarWeb.PacksLive do
           />
         </div>
         <p :if={@fact.advertising.coverage == :partial} class="mt-2">
-          More runners than this page reads — others may advertise it too.
+          This list is incomplete. Other runners may also use this version.
         </p>
       </div>
       <p
         :if={@fact.advertising.coverage == :partial and @fact.advertising.runners == []}
         class="mt-3 text-[11px] leading-relaxed text-zinc-400"
       >
-        This account has more runners than this page reads, so we can't say how many advertise
-        this version.
+        The runner list is incomplete, so we can't confirm whether this version is still in use.
       </p>
       <%!-- What CHANGED since this hash was last trusted — diffed
            against the action set snapshotted at that Trust
@@ -1111,7 +1112,7 @@ defmodule EmisarWeb.PacksLive do
            headline danger an operator must see before re-trusting. --%>
       <div :if={diff_has_changes?(@fact.action_changes)} class="mt-3">
         <div class="flex items-center gap-1.5 text-[11px] font-semibold text-rose-300">
-          <.icon name="action.sync" class="h-3.5 w-3.5" /> Changes since you last trusted this pack:
+          <.icon name="action.sync" class="h-3.5 w-3.5" /> Changes from the trusted contents
         </div>
         <ul class="mt-2 space-y-1">
           <li :for={a <- @fact.action_changes.added} class="flex items-center gap-2 text-[11px]">
@@ -1173,12 +1174,12 @@ defmodule EmisarWeb.PacksLive do
           </li>
         </ul>
       </div>
-      <%!-- What trusting this authorizes — the FULL action set advertised under
+      <%!-- The FULL action set advertised under
            the exact hash awaiting review (the diff above shows only what moved),
            so "Trust new contents" isn't a blind click. --%>
       <div :if={@fact.actions != []} class="mt-3">
         <div class="text-[11px] font-semibold text-zinc-300">
-          Trusting authorizes {length(@fact.actions)} action(s):
+          {length(@fact.actions)} {if length(@fact.actions) == 1, do: "action", else: "actions"} in this version
         </div>
         <.pack_action_list
           id={"pack-version-#{@version.id}-pending"}
@@ -1209,12 +1210,14 @@ defmodule EmisarWeb.PacksLive do
           on_confirm={JS.push("trust", value: %{id: @version.id})}
         >
           <:body>
-            Cloud will allow its actions to run on {advertiser_count(@fact.advertising)} advertising {advertiser_noun(
-              @fact.advertising
-            )}. Trusting adopts this exact code fleet-wide.
+            <%= if is_nil(@version.hash) do %>
+              Trust these exact contents across your fleet. Your policies still apply to every action.
+            <% else %>
+              Replace the trusted content hash with the reported hash across your fleet.
+              Your policies still apply to every action.
+            <% end %>
             <span :if={@fact.retired?} class="text-rose-300">
-              This version was retired by a newer release — trusting it also overrides
-              that retirement, so its actions run despite the fix.
+              This also overrides retirement and allows the version to be used despite critical changes.
             </span>
           </:body>
           {trust_confirm_label(@fact, @version)}
@@ -1250,10 +1253,10 @@ defmodule EmisarWeb.PacksLive do
     do: "Trust #{pack_id} v#{version.version}?"
 
   defp trust_confirm_title(_fact, pack_id, version),
-    do: "Adopt the new hash for #{pack_id} v#{version.version}?"
+    do: "Trust the new contents of #{pack_id} v#{version.version}?"
 
   defp trust_confirm_label(%{retirement_blocked?: true}, _version), do: "Trust anyway"
-  defp trust_confirm_label(_fact, %{hash: nil}), do: "Trust pack"
+  defp trust_confirm_label(_fact, %{hash: nil}), do: "Trust version"
   defp trust_confirm_label(_fact, _version), do: "Trust new contents"
 
   attr :pack_id, :string, required: true
@@ -1263,9 +1266,9 @@ defmodule EmisarWeb.PacksLive do
   # decides whether the pack has one (a trusted, non-retired version below the
   # shipped current, with that current version not already installed beside it),
   # so it is never repeated on each stale version. A convenience, never a
-  # warning: a security fix RETIRES a version (packs retire only on
-  # security/critical fixes), so an outdated-but-not-retired version is safe by
-  # construction and still dispatches — the weakest, quietest tier, a neutral
+  # warning: critical changes RETIRE a version. A non-retired version keeps its
+  # existing trust state; policy and other execution checks still apply.
+  # This is the weakest, quietest tier, a neutral
   # spine below the version rows.
   defp update_available_note(assigns) do
     ~H"""
@@ -1282,7 +1285,7 @@ defmodule EmisarWeb.PacksLive do
       class="mt-4"
     >
       <:body>
-        v{@update.version} has shipped. Your installed versions still run and dispatch fine — update your runners when you can.
+        v{@update.version} is available.
       </:body>
       <.install_command
         id={"update-cmd-#{@pack_id}"}
@@ -1308,7 +1311,7 @@ defmodule EmisarWeb.PacksLive do
     <div class="mt-3">
       <p class="text-xs text-zinc-400">
         <span :if={@successor}>
-          Update the pack to <span class="font-medium text-zinc-200">v{@successor}</span>
+          Run on each affected host to update the pack to <span class="font-medium text-zinc-200">v{@successor}</span>:
         </span>
         <span :if={is_nil(@successor)}>Install on the runner</span>
       </p>
@@ -1338,10 +1341,8 @@ defmodule EmisarWeb.PacksLive do
       <:title>Packs</:title>
 
       <.page_intro>
-        A pack is a versioned bundle of <span class="text-zinc-200">vetted actions</span>
-        a runner may execute — the runner advertises what it has installed, and this
-        page shows the trust ledger for packs in your access.
-        <.doc_link href={~p"/docs/action-packs"}>Action pack docs</.doc_link>
+        A pack is a collection of actions your runners can execute. Explore reported versions
+        and manage trust. <.doc_link href={~p"/docs/action-packs"}>Packs docs</.doc_link>
       </.page_intro>
 
       <div class="mt-2 grid grid-cols-1 gap-x-10 gap-y-8 xl:grid-cols-[minmax(0,1fr)_22rem] xl:items-start">
@@ -1353,7 +1354,7 @@ defmodule EmisarWeb.PacksLive do
             title={pending_review_title(@pending_count)}
             class="mt-2"
           >
-            Dispatch against these versions is blocked until an admin reviews the new hash.
+            Actions from these versions are blocked until an owner or admin trusts their contents.
           </.callout>
 
           <.loading_state :if={@loading?} />
@@ -1365,8 +1366,7 @@ defmodule EmisarWeb.PacksLive do
             title="Couldn't load packs"
             class="mt-8"
           >
-            This is a load error, not an empty inventory — your runners may well be advertising
-            packs. Refresh the page; if it persists, your access to this account may have changed.
+            Refresh the page to try again.
           </.empty_state>
 
           <%!-- "Nothing here yet" is only true when the WORKSPACE has no packs.
@@ -1380,17 +1380,11 @@ defmodule EmisarWeb.PacksLive do
                 @risk_filter == "" and not @load_error? and not @loading?
             }
             icon="product.pack"
-            title="No packs reported yet."
+            title="No packs reported yet"
             class="mt-8"
           >
-            A pack is the bundle of actions a runner can run.
-            <.link
-              navigate={~p"/app/#{@current_account}/runners"}
-              class="text-brand-400 hover:text-brand-300"
-            >
-              Connect a runner
-            </.link>
-            and the packs it loads appear here to trust or reject.
+            Install a pack on a connected runner to see it here.
+            <.doc_link href={~p"/docs/use-a-published-pack"}>Install a pack</.doc_link>
           </.empty_state>
 
           <%!-- Inline filter row (shared LiveTable field grammar: label + brand
@@ -1427,12 +1421,12 @@ defmodule EmisarWeb.PacksLive do
               "flex w-full flex-col text-xs font-medium sm:w-40",
               (@risk_filter != "" && "text-brand-300") || "text-zinc-400"
             ]}>
-              <span class="mb-1">Risk</span>
+              <span class="mb-1">Action risk</span>
               <.select
                 name="risk"
                 size={:filter}
                 active?={@risk_filter != ""}
-                prompt="All risk"
+                prompt="All risk levels"
                 prompt_selected={@risk_filter == ""}
                 options={
                   Enum.map(~w(low medium high critical), fn tier ->
@@ -1490,7 +1484,7 @@ defmodule EmisarWeb.PacksLive do
                   phx-value-action="delete_pack"
                   phx-value-pack-id={pack.id}
                 >
-                  Delete pack
+                  Remove
                 </.button>
               </header>
 
@@ -1533,7 +1527,7 @@ defmodule EmisarWeb.PacksLive do
                          lives in the contents expansion; last-seen trails like
                          timestamps everywhere else in the console. --%>
                     <span class="text-[11px] text-zinc-400">
-                      last seen
+                      last reported
                       <.local_time
                         id={"pack-version-last-#{v.id}"}
                         value={v.last_seen_at}
@@ -1542,7 +1536,7 @@ defmodule EmisarWeb.PacksLive do
                       />
                     </span>
                     <%!-- A manager's row carries three verbs (read + one trust verb +
-                         Delete) — the labeled-menu threshold (§7.47), same grammar as
+                         Remove) — the labeled-menu threshold (§7.47), same grammar as
                          the LLM-agents rows. Everyone else has only the read path, and
                          a one-item dropdown is ceremony, so it stays the house brand
                          link: navigation is never button chrome (§2). --%>
@@ -1563,7 +1557,7 @@ defmodule EmisarWeb.PacksLive do
                             }
                             icon="product.audit"
                           >
-                            View activity
+                            View audit trail
                           </.menu_item>
                           <.menu_item
                             :if={
@@ -1575,7 +1569,11 @@ defmodule EmisarWeb.PacksLive do
                             phx-value-action="trust"
                             phx-value-id={v.id}
                           >
-                            Trust
+                            {pack_action_label(%{
+                              action: "trust",
+                              version: v,
+                              fact: @version_facts[v.id]
+                            })}
                           </.menu_item>
                           <.menu_item
                             :if={@version_facts[v.id].trust_state == :trusted}
@@ -1592,7 +1590,7 @@ defmodule EmisarWeb.PacksLive do
                             phx-value-action="delete_version"
                             phx-value-id={v.id}
                           >
-                            Delete
+                            Remove
                           </.menu_item>
                         </.dropdown>
                       <% else %>
@@ -1602,7 +1600,7 @@ defmodule EmisarWeb.PacksLive do
                           }
                           class="group inline-flex shrink-0 items-center gap-1 text-xs font-medium text-brand-400 hover:text-brand-300"
                         >
-                          View activity <.cta_arrow />
+                          View audit trail <.cta_arrow />
                         </.link>
                       <% end %>
                     </div>
@@ -1633,7 +1631,7 @@ defmodule EmisarWeb.PacksLive do
                     :if={@version_facts[v.id].trust_state == :rejected}
                     class="mt-1.5 pl-8 text-xs text-zinc-400"
                   >
-                    Rejected — dispatch refuses this version until you trust it again.
+                    Rejected — actions from this version are blocked until an owner or admin trusts it again.
                   </p>
 
                   <.pending_notice
@@ -1673,12 +1671,11 @@ defmodule EmisarWeb.PacksLive do
             class={if @pack_count == 0, do: "mt-6", else: "mt-12"}
           >
             <.section_header
-              title="Outside your pack access"
+              title="Packs you can't access"
               count={length(@out_of_scope_pack_ids)}
             >
               <:subtitle>
-                Also running in this workspace. Ask an owner or admin for access to actions those
-                packs provide.
+                Ask an owner or admin for access to these packs and their actions.
               </:subtitle>
             </.section_header>
             <div class="mt-4 flex flex-wrap gap-2">
@@ -1688,24 +1685,22 @@ defmodule EmisarWeb.PacksLive do
         </div>
 
         <aside class="space-y-6">
-          <.docs_rail
-            title="How pack trust works"
-            doc_href={~p"/docs/action-packs"}
-            doc_label="Action pack docs"
-          >
+          <.docs_rail title="Installation and trust">
             <p>
-              Packs published by emisar are <span class="text-zinc-200">trusted automatically</span>
-              — every version is
-              pinned to the exact content hash of the signed registry build. When a
-              security fix supersedes a version, the older release is
-              <span class="text-zinc-200">retired</span>
-              and dispatch to it is blocked until you update the runner or decide
-              otherwise.
+              Install packs on the runner's host. Check the pack's setup instructions for required
+              tools, credentials, and host access.
+              <.doc_link href={~p"/docs/use-a-published-pack"}>Install a pack</.doc_link>
             </p>
             <p>
-              Everything else — your own packs, third-party builds, or contents that
-              changed on a host — waits as <span class="text-zinc-200">pending</span>
-              until an admin reviews and trusts it.
+              Packs matching emisar's published contents are trusted automatically. Custom or
+              modified packs need an owner or admin's review before use. Trust applies to the
+              exact content hash.
+              <.doc_link href={~p"/docs/action-packs#pack-trust"}>How pack trust works</.doc_link>
+            </p>
+            <p>
+              When a version is retired, update the pack on its runners. Its actions are blocked
+              unless an owner or admin overrides retirement.
+              <.doc_link href={~p"/docs/pack-updates"}>Update a pack</.doc_link>
             </p>
           </.docs_rail>
 
@@ -1717,11 +1712,8 @@ defmodule EmisarWeb.PacksLive do
             <div id="packs-cleanup" class="mt-3 rounded-xl border border-zinc-800/80 p-4">
               <h4 class="text-sm font-medium text-zinc-100">Automatic cleanup</h4>
               <p class="mt-1 text-xs leading-relaxed text-zinc-400">
-                Remove pack versions no runner has advertised for the selected period. A daily
-                sweep deletes them — trust decisions included — and a runner advertising one
-                again re-inserts it as a fresh trust decision. Versions a connected runner
-                still advertises are never removed. A version a newer release has retired is
-                removed by the same sweep once no runner lists it, even when this is off.
+                Automatically remove unused retired versions and versions no longer reported by runners.
+                <.doc_link href={~p"/docs/pack-updates#cleanup"}>Details</.doc_link>
               </p>
               <.gated_setting
                 id="pack-retention"
@@ -1735,7 +1727,7 @@ defmodule EmisarWeb.PacksLive do
                 <form id="pack-retention-form" phx-change="set_pack_retention">
                   <.select
                     name="days"
-                    aria-label="Remove pack versions not seen for"
+                    aria-label="Remove pack versions not reported for"
                     options={
                       pack_retention_options(@current_account.settings.pack_unseen_retention_days)
                     }
@@ -1748,15 +1740,15 @@ defmodule EmisarWeb.PacksLive do
                   tone={:neutral}
                   size={:lg}
                   class="mt-3 w-full"
-                  title="Clean up unseen pack versions?"
+                  title="Clean up old pack versions?"
                   confirm_label="Clean up now"
                   on_confirm={JS.push("cleanup_now")}
                 >
                   <:body>
-                    Deletes every pack version no runner has advertised in the last {days_phrase(
+                    Remove versions not reported for {days_phrase(
                       @current_account.settings.pack_unseen_retention_days
-                    )} — trust decisions included. Versions a connected runner still
-                    advertises are kept.
+                    )}, including their trust decisions. Versions still loaded by connected or
+                    disabled runners are kept.
                   </:body>
                   Clean up now
                 </.confirm_button>
@@ -1785,29 +1777,24 @@ defmodule EmisarWeb.PacksLive do
           <:body>
             <%= case @pending_pack_action.action do %>
               <% "delete_pack" -> %>
-                Removes every recorded version of <code>{@pending_pack_action.pack_id}</code>
-                — trust decisions and advertised actions included. A runner still advertising it
-                will re-insert it. Audit history is kept.
+                Remove all recorded versions of <code>{@pending_pack_action.pack_id}</code>,
+                including their actions and trust decisions. This does not uninstall the pack
+                from runners. It will reappear if reported again.
               <% "delete_version" -> %>
-                Removes this version and its advertised actions from the catalog. If a runner
-                still advertises it, it will reappear as a fresh trust decision. Audit history
-                is kept.
+                Remove this version, including its actions and trust decision. This does not
+                uninstall it from runners. It will reappear if reported again.
               <% "revoke_trust" -> %>
-                Dispatch refuses this version until it is trusted again. It stays listed as
-                rejected, so you can restore trust later.
+                Block new runs from this version until you trust it again. It stays listed as rejected.
               <% "trust" -> %>
                 <span :if={not is_nil(@pending_pack_action.version.pending_hash)}>
-                  Adopts the refused contents — its actions may run on {advertiser_count(
-                    @pending_pack_action.fact.advertising
-                  )} advertising {advertiser_noun(@pending_pack_action.fact.advertising)}.
+                  Trust these previously rejected contents across your fleet. Your policies
+                  still apply to every action.
                 </span>
                 <span :if={is_nil(@pending_pack_action.version.pending_hash)}>
-                  Restores trust in the previously recorded contents — its actions may dispatch
-                  again.
+                  Trust the previously recorded contents again. Your policies still apply to every action.
                 </span>
                 <span :if={@pending_pack_action.fact.retired?} class="text-rose-300">
-                  This version was retired by a newer release — trusting it also overrides that
-                  retirement, so its actions run despite the fix.
+                  This also overrides retirement and allows the version to be used despite critical changes.
                 </span>
             <% end %>
           </:body>
@@ -1821,8 +1808,10 @@ defmodule EmisarWeb.PacksLive do
            Confirm fires `reject` (still server-authz-gated) then closes. --%>
       <.confirm_dialog
         id="reject-pack"
-        title="Reject this pack version"
-        confirm_label="Reject pack"
+        title={
+          if @reject_target, do: "Reject #{@reject_target.token}?", else: "Reject these contents?"
+        }
+        confirm_label="Reject contents"
         confirm_token={(@reject_target && @reject_target.token) || ""}
         typed={@typed}
         on_confirm={
@@ -1831,10 +1820,13 @@ defmodule EmisarWeb.PacksLive do
         }
       >
         <:body>
-          Rejects <span class="font-mono font-medium text-zinc-200">
-            {(@reject_target && @reject_target.token) || "this pack version"}
-          </span>: its actions stay blocked and dispatch keeps refusing it. If a runner keeps
-          advertising the hash, it reappears here pending another decision.
+          <%= if @reject_target && @reject_target.previously_trusted? do %>
+            Reject these changes and keep the previously trusted contents. If a runner reports
+            these changes again, the review will reopen.
+          <% else %>
+            Keep these contents blocked. Different contents reported for this version will
+            need another review.
+          <% end %>
         </:body>
       </.confirm_dialog>
     </.console_shell>
@@ -1847,23 +1839,33 @@ defmodule EmisarWeb.PacksLive do
   end
 
   defp pack_action_title(%{action: "delete_pack", pack_id: pack_id}),
-    do: "Delete #{pack_id}?"
+    do: "Remove #{pack_id}?"
+
+  defp pack_action_title(%{
+         action: "trust",
+         pack_id: pack_id,
+         version: %{pending_hash: nil} = version
+       }),
+       do: "Restore trust in #{pack_id} v#{version.version}?"
 
   defp pack_action_title(%{action: action, pack_id: pack_id, version: version}) do
     verb =
       case action do
         "trust" -> "Trust"
         "revoke_trust" -> "Revoke trust in"
-        "delete_version" -> "Delete"
+        "delete_version" -> "Remove"
       end
 
     "#{verb} #{pack_id} v#{version.version}?"
   end
 
-  defp pack_action_label(%{action: "delete_pack"}), do: "Delete pack"
-  defp pack_action_label(%{action: "delete_version"}), do: "Delete version"
+  defp pack_action_label(%{action: action}) when action in ["delete_pack", "delete_version"],
+    do: "Remove"
+
   defp pack_action_label(%{action: "revoke_trust"}), do: "Revoke trust"
-  defp pack_action_label(%{action: "trust"}), do: "Trust pack"
+  defp pack_action_label(%{action: "trust", fact: %{retired?: true}}), do: "Trust anyway"
+  defp pack_action_label(%{action: "trust", version: %{pending_hash: nil}}), do: "Restore trust"
+  defp pack_action_label(%{action: "trust"}), do: "Trust version"
 
   defp confirm_pack_action(%{action: "delete_pack", pack_id: pack_id}) do
     JS.push("delete_pack", value: %{pack_id: pack_id}) |> close_confirm("pack-action")
@@ -1883,9 +1885,9 @@ defmodule EmisarWeb.PacksLive do
   # as "nothing matched THESE filters", not an empty inventory.
   defp no_match_copy(name, risk) do
     cond do
-      name != "" and risk != "" -> ~s(No #{risk}-risk packs match "#{name}".)
+      name != "" and risk != "" -> "No packs match these filters."
       name != "" -> ~s(No packs or actions match "#{name}".)
-      true -> "No packs advertise a #{risk}-risk action."
+      true -> "No packs contain #{risk}-risk actions."
     end
   end
 
@@ -1910,9 +1912,9 @@ defmodule EmisarWeb.PacksLive do
       target="_blank"
       rel="noopener"
       class="inline-flex shrink-0 items-center gap-0.5 text-[11px] text-zinc-400 transition-colors hover:text-zinc-300"
-      title="Published in emisar's public pack registry — opens in a new tab"
+      title="Open this pack in the catalog"
     >
-      Registry <.icon name="action.external_link" class="h-3 w-3" />
+      Pack catalog <.icon name="action.external_link" class="h-3 w-3" />
     </.link>
     """
   end
@@ -1932,5 +1934,12 @@ defmodule EmisarWeb.PacksLive do
   # values: risk in the pills, kind in the arrow beside them. Without this the
   # operator is asked to re-trust a rewritten description, args_schema or
   # output_schema that the card never names.
-  defp other_changed_fields(%{changed_fields: fields}), do: fields -- ["kind", "risk"]
+  defp other_changed_fields(%{changed_fields: fields}) do
+    fields
+    |> Enum.reject(&(&1 in ["kind", "risk"]))
+    |> Enum.map(&changed_field_label/1)
+  end
+
+  defp changed_field_label("args_schema"), do: "Arguments"
+  defp changed_field_label(field), do: field |> String.replace("_", " ") |> String.capitalize()
 end

@@ -9,8 +9,8 @@ defmodule EmisarWeb.RunnerInstallLive do
   - On mount (connected pass only), mint a fresh install enrollment key for
     this account so the operator doesn't have to click "generate" then
     copy. Ring eviction in `Runners.mint_install_key/2` caps unused
-    autos at 42 per account regardless of how many times this page
-    loads.
+    autos near 42 per account, allowing a 60-second grace for fresh commands.
+    Keys expire after 24 hours; a daily job removes unused expired keys.
   - Subscribe to runner events. When the runner minted from THIS page's
     key registers + connects, flash + navigate back to `/app/runners` so
     they land on the page that proves it worked. A different runner joining
@@ -37,7 +37,7 @@ defmodule EmisarWeb.RunnerInstallLive do
        socket
        |> put_flash(
          :error,
-         "Connecting a runner needs an operator role or above, with access to all runners."
+         "Connecting runners requires an operator role or above and access to all runners."
        )
        |> push_navigate(to: ~p"/app/#{socket.assigns.current_account}/runners")}
     end
@@ -82,7 +82,7 @@ defmodule EmisarWeb.RunnerInstallLive do
          ) do
       {:noreply,
        socket
-       |> put_flash(:info, "Runner connected — taking you to the list.")
+       |> put_flash(:info, "Runner connected.")
        |> push_navigate(to: ~p"/app/#{account}/runners")}
     else
       {:noreply, socket}
@@ -116,6 +116,7 @@ defmodule EmisarWeb.RunnerInstallLive do
         install_command={@install_command}
         base_url={@base_url}
         show_troubleshooting={@show_troubleshooting?}
+        runners_path={~p"/app/#{@current_account}/runners"}
         keys_path={~p"/app/#{@current_account}/runners/keys"}
         show_keys_link={Runners.subject_can_manage_enrollment_keys?(@current_subject)}
       />

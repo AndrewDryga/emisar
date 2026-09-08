@@ -27,7 +27,7 @@ defmodule EmisarWeb.EnrollmentKeysLive do
     else
       {:ok,
        socket
-       |> put_flash(:error, "Enrollment keys need an owner or admin role.")
+       |> put_flash(:error, "Only owners and admins can manage enrollment keys.")
        |> push_navigate(to: ~p"/app/#{socket.assigns.current_account}/runners")}
     end
   end
@@ -37,7 +37,7 @@ defmodule EmisarWeb.EnrollmentKeysLive do
   # domain gate in `create_enrollment_key/2` is still the authorization.
   def handle_params(_params, _uri, %{assigns: %{live_action: :new}} = socket) do
     if Runners.subject_can_create_enrollment_keys?(socket.assigns.current_subject) do
-      {:noreply, socket |> assign(:page_title, "Issue an enrollment key") |> load(%{})}
+      {:noreply, socket |> assign(:page_title, "Create an enrollment key") |> load(%{})}
     else
       {:noreply,
        socket
@@ -69,7 +69,7 @@ defmodule EmisarWeb.EnrollmentKeysLive do
   # the empty state, and the route-guard flash all read from here, so the three
   # cannot drift into three different rules.
   defp issue_key_lock_text do
-    "Creating a key needs access to all runners. A new host picks its own group when it joins, so a key can put a machine in any group."
+    "You need access to all runners to create an enrollment key."
   end
 
   defp fetch_billing(socket) do
@@ -129,6 +129,21 @@ defmodule EmisarWeb.EnrollmentKeysLive do
      )}
   end
 
+  def handle_event("restore_source_filter", %{"source" => source}, socket)
+      when source in ["", "manual", "console"] do
+    # A shared URL or a choice already made on this page wins over browser
+    # preferences. The normal filtered read still checks current permissions.
+    if socket.assigns.live_action == :index and
+         not Map.has_key?(socket.assigns.filter_params, "source") do
+      params = socket.assigns.filter_params |> Map.take(["status"]) |> Map.put("source", source)
+      handle_event("filter", params, socket)
+    else
+      {:noreply, socket}
+    end
+  end
+
+  def handle_event("restore_source_filter", _params, socket), do: {:noreply, socket}
+
   defp do_create(socket, params) do
     case Runners.create_enrollment_key(params, socket.assigns.current_subject) do
       {:ok, raw, _key} ->
@@ -184,7 +199,7 @@ defmodule EmisarWeb.EnrollmentKeysLive do
   end
 
   defp load(socket, params) do
-    # Revoked keys hide by default via the status filter's `%Filter{default:}` —
+    # Unusable keys hide by default via the status filter's `%Filter{default:}` —
     # LiveTable resolves absent → "active" and keeps an explicit "All" in the
     # URL (apply_filter gets the filters below), so no param injection here.
     filters = Runners.enrollment_key_filters()
@@ -245,6 +260,16 @@ defmodule EmisarWeb.EnrollmentKeysLive do
   defp truthy?("on"), do: true
   defp truthy?(_), do: false
 
+  defp key_usage(key) do
+    limit = if key.reusable, do: key.max_uses, else: 1
+
+    if limit do
+      "#{key.uses_count}/#{limit} uses"
+    else
+      "#{key.uses_count} #{if key.uses_count == 1, do: "use", else: "uses"}"
+    end
+  end
+
   def render(assigns) do
     ~H"""
     <.console_shell
@@ -262,7 +287,7 @@ defmodule EmisarWeb.EnrollmentKeysLive do
           <.back_link navigate={~p"/app/#{@current_account}/runners/keys"}>
             Enrollment keys
           </.back_link>
-          Issue an enrollment key
+          Create an enrollment key
         <% else %>
           <.back_link navigate={~p"/app/#{@current_account}/runners"}>Runners</.back_link>
           Enrollment keys
@@ -287,11 +312,22 @@ defmodule EmisarWeb.EnrollmentKeysLive do
         <% end %>
       </:actions>
 
-      <%!-- ===== Issue an enrollment key — its own focused page (:new) =====
+      <.page_intro :if={@live_action == :index}>
+        Enrollment keys register new runners with emisar. Create keys for individual hosts
+        or automated fleet setup.
+        <.doc_link href={~p"/docs/runner-fleet#enrollment-keys"}>Enrollment docs</.doc_link>
+      </.page_intro>
+
+      <.page_intro :if={@live_action == :new}>
+        Create a key to register new runners from an install command or your provisioning tools.
+        <.doc_link href={~p"/docs/runner-fleet#enrollment-keys"}>Enrollment docs</.doc_link>
+      </.page_intro>
+
+      <%!-- ===== Create an enrollment key — its own focused page (:new) =====
            CONTENT ON CANVAS, task + rail (the install-wizard grammar) at the
            same 7xl column as the list it's reached from, so the header never
            jumps: the form (or its success reveal) is the task on the left; the
-           "what is this" explainer fills the rail on the right. --%>
+           key-choice and lifecycle help fills the rail on the right. --%>
       <%!-- Task column is sized to a readable FORM width (36rem), not 1fr —
            a 3-field form shouldn't stretch to fill the 7xl column; at xl the
            rail sits right beside it without becoming wider than the task. --%>
@@ -308,10 +344,11 @@ defmodule EmisarWeb.EnrollmentKeysLive do
             <.event_block
               icon="identity.credential"
               tone={:amber}
-              title="Copy this enrollment key now — it won't be shown again."
+              title="Enrollment key created"
             >
               <:body>
-                Treat it like a password. Anyone with this key can register a runner under <span class="font-medium text-zinc-200">{@current_account.name}</span>.
+                Copy the key now — it won't be shown again. Keep it private;
+                anyone with it can register runners.
               </:body>
 
               <.code_panel
@@ -326,7 +363,7 @@ defmodule EmisarWeb.EnrollmentKeysLive do
               <.code_panel
                 :if={is_binary(@install_command)}
                 id="install-command"
-                label="Install on a host"
+                label="Install a runner"
                 annotation="contains your enrollment key"
                 prompt
                 copy
@@ -334,19 +371,21 @@ defmodule EmisarWeb.EnrollmentKeysLive do
                 class="mt-6"
               />
 
+              <p :if={is_binary(@install_command)} class="mt-2 text-xs leading-relaxed text-zinc-400">
+                Run this command on the host where you want to install the runner.
+              </p>
+
               <.status_note
                 :if={@install_command == :insecure_transport}
                 icon="security.posture_warning"
                 tone={:rose}
-                title="Install command unavailable over HTTP"
+                title="Open emisar over HTTPS"
                 class="mt-6"
               >
                 The key above is still valid. Copy it now, then use the <.link
                   href={~p"/docs/host-install"}
                   class="font-medium text-brand-400 hover:text-brand-300"
-                >
-                  manual runner install instructions
-                </.link>.
+                >manual runner install instructions</.link>.
                 Open the portal over HTTPS before generating another install command.
               </.status_note>
 
@@ -357,7 +396,7 @@ defmodule EmisarWeb.EnrollmentKeysLive do
               />
 
               <div class="mt-6 flex flex-wrap items-center gap-3">
-                <.button phx-click="dismiss_secret" icon="action.add">Issue another</.button>
+                <.button phx-click="dismiss_secret" icon="action.add">Create another</.button>
                 <.button navigate={~p"/app/#{@current_account}/runners/keys"} variant={:secondary}>
                   Back to enrollment keys
                 </.button>
@@ -375,19 +414,29 @@ defmodule EmisarWeb.EnrollmentKeysLive do
             <.input
               field={@form[:description]}
               type="text"
-              label="Description"
-              placeholder="prod web tier"
+              label="Description (optional)"
+              placeholder="Production web servers"
             />
-            <.input
-              field={@form[:expires_at]}
-              type="datetime-local"
-              label="Expires at (UTC, optional)"
-            />
-            <.input
-              field={@form[:reusable]}
-              type="checkbox"
-              label="Reusable (many runners can register with this key)"
-            />
+            <div class="space-y-1.5">
+              <.input
+                field={@form[:expires_at]}
+                type="datetime-local"
+                label="Expiration date (UTC, optional)"
+              />
+              <p class="text-xs leading-relaxed text-zinc-400">
+                Leave blank for no expiration date.
+              </p>
+            </div>
+            <div class="space-y-1.5">
+              <.input
+                field={@form[:reusable]}
+                type="checkbox"
+                label="Reusable key"
+              />
+              <p class="text-xs leading-relaxed text-zinc-400">
+                Allow multiple runners to register with this key. Otherwise, it can be used once.
+              </p>
+            </div>
             <%!-- Max-uses only applies when Reusable is checked — single-use
                  keys self-cap at 1. Hiding it (vs disabling with a disclaimer)
                  is the same progressive-disclosure rule the agents wizard uses:
@@ -398,12 +447,11 @@ defmodule EmisarWeb.EnrollmentKeysLive do
                 field={@form[:max_uses]}
                 type="number"
                 min="1"
-                label="Max uses"
-                placeholder="unlimited"
+                label="Use limit (optional)"
+                placeholder="Unlimited"
               />
               <p class="text-xs leading-relaxed text-zinc-400">
-                Caps how many runners can register before the key auto-revokes.
-                Leave blank for unlimited.
+                Each runner registration counts as one use. Leave blank for unlimited uses.
               </p>
             </div>
             <:actions>
@@ -415,205 +463,237 @@ defmodule EmisarWeb.EnrollmentKeysLive do
           </.simple_form>
         </div>
 
-        <%!-- The reading rail — what an enrollment key IS and how its lifecycle
-             works, so an operator issuing one understands the exchange and
-             the revoke semantics before they mint a root-capable secret. --%>
-        <aside class="mt-10 xl:mt-0">
-          <.section_header title="What an enrollment key is" />
-          <div class="space-y-4 text-sm leading-relaxed text-zinc-400">
-            <p>
-              A bearer secret a fresh host presents to
-              <span class="font-medium text-zinc-300">enroll</span>
-              as a runner: it runs the install command with the key, registers, and trades it for
-              its own token. The key is never used again for that host.
-            </p>
-            <p>
-              A <span class="font-medium text-zinc-300">single-use</span>
-              key is spent on the first registration — right for an autoscaler baking one host at a
-              time; a <span class="font-medium text-zinc-300">reusable</span>
-              key keeps enrolling until it expires or hits its max-uses cap, for a stable fleet or
-              image bake.
-            </p>
-            <p>
-              <span class="font-medium text-zinc-300">Revoking is safe</span>
-              either way — it blocks new registrations (a revoked key gets a 401), but hosts already
-              enrolled keep running on their own tokens.
-            </p>
-            <p class="pt-1">
-              <.doc_link href={~p"/docs/runner-fleet"}>Runner setup docs</.doc_link>
-            </p>
-          </div>
-        </aside>
+        <div class="mt-10 xl:mt-0">
+          <.new_enrollment_key_help />
+        </div>
       </div>
 
-      <.page_intro :if={@live_action == :index}>
-        Enrollment keys register new hosts as runners — a single-use key is spent on first
-        registration; a reusable key keeps enrolling hosts until it expires or hits its max-uses cap.
-        <.doc_link href={~p"/docs/runner-fleet"}>Runner setup docs</.doc_link>
-      </.page_intro>
+      <div
+        :if={@live_action == :index}
+        id="enrollment-key-filters"
+        phx-hook="EnrollmentKeyFilters"
+        data-preference-key={"enrollment-key-source:#{@current_user.id}:#{@current_account.id}"}
+        data-source={@filter_params["source"] || ""}
+        data-source-explicit={to_string(Map.has_key?(@filter_params, "source"))}
+        class="grid grid-cols-1 gap-x-10 gap-y-8 xl:grid-cols-[minmax(0,1fr)_22rem] xl:items-start"
+      >
+        <div class="space-y-6">
+          <%!-- The same cap warning as the issue page — standing context while
+               managing keys, so "you're at cap" isn't a surprise at New key. --%>
+          <.runner_cap_callout billing={@billing} current_account={@current_account} />
 
-      <div :if={@live_action == :index} class="space-y-6">
-        <%!-- The same cap warning as the issue page — standing context while
-             managing keys, so "you're at cap" isn't a surprise at New key. --%>
-        <.runner_cap_callout billing={@billing} current_account={@current_account} />
-
-        <%!-- Key list — the LiveTable :cards shell renders the filter row, the
-             bordered card list, and the count in its paginator footer, so this
-             page matches audit / runs. The page heading is the console_shell
-             <:title> above — no extra section card around it. --%>
-        <LiveTable.live_table
-          layout={:cards}
-          id="enrollment-keys"
-          path={~p"/app/#{@current_account}/runners/keys"}
-          rows={@enrollment_keys}
-          metadata={@metadata}
-          filters={@filters}
-          filter_params={@filter_params}
-          wrapper_class="divide-y divide-zinc-800/70"
-        >
-          <%!-- Canvas rows; the per-row icon disc died with the island. --%>
-          <:item :let={key}>
-            <.list_row padding="py-4">
-              <:title>
-                <span class="truncate font-medium text-zinc-100">
-                  {key.description || "(no description)"}
-                </span>
-              </:title>
-              <:chips>
-                <.chip :if={key.reusable}>reusable</.chip>
-                <%!-- A reusable key with no expiry is a standing fleet-enrollment secret —
-                     flag it amber so a long-lived multi-host credential isn't read as routine. --%>
-                <.chip
-                  :if={key.reusable and is_nil(key.expires_at) and is_nil(key.revoked_at)}
-                  tone={:amber}
-                >
-                  no expiry
-                </.chip>
-                <.chip :if={not key.reusable}>single-use</.chip>
-                <.chip :if={key.revoked_at} tone={:rose}>revoked</.chip>
-              </:chips>
-              <:meta>
-                <.meta_line class="text-[11px]">
-                  <:seg mono>{key.key_prefix}…</:seg>
-                  <:seg>{key.uses_count} {if key.uses_count == 1, do: "use", else: "uses"}</:seg>
-                  <:seg>
-                    last used{" "}<.local_time
-                      id={"enrollment-key-used-#{key.id}"}
-                      value={key.last_used_at}
-                      mode={:relative}
-                      placeholder="never"
-                    />
-                  </:seg>
-                  <:seg :if={key.created_by}>by {key.created_by.email}</:seg>
-                </.meta_line>
-              </:meta>
-              <:actions>
-                <%!-- Navigation, but this row's action group also carries a bordered
-                     Revoke, and a row wears ONE button grammar (§7.47). The face is
-                     the ROW's, not the per-row permission state's — restyling it when
-                     Revoke is absent would move the layout between states (§7.55). --%>
+          <%!-- Key list — the LiveTable :cards shell renders the filter row, the
+               bordered card list, and the count in its paginator footer, so this
+               page matches audit / runs. The page heading is the console_shell
+               <:title> above — no extra section card around it. --%>
+          <LiveTable.live_table
+            layout={:cards}
+            id="enrollment-keys"
+            path={~p"/app/#{@current_account}/runners/keys"}
+            rows={@enrollment_keys}
+            metadata={@metadata}
+            filters={@filters}
+            filter_params={@filter_params}
+            wrapper_class="divide-y divide-zinc-800/70"
+          >
+            <%!-- Canvas rows; the per-row icon disc died with the island. --%>
+            <:item :let={key}>
+              <.list_row padding="py-4">
+                <:title>
+                  <span class="truncate font-medium text-zinc-100">
+                    {key.description || "(no description)"}
+                  </span>
+                </:title>
+                <:chips>
+                  <.chip :if={key.reusable} tone={:amber}>Reusable</.chip>
+                  <%!-- A reusable key with no expiry is a standing fleet-enrollment secret —
+                       flag it amber so a long-lived multi-host credential isn't read as routine. --%>
+                  <.chip
+                    :if={key.reusable and is_nil(key.expires_at) and is_nil(key.revoked_at)}
+                    tone={:amber}
+                  >
+                    No expiration date
+                  </.chip>
+                  <%= case Runners.enrollment_key_status(key) do %>
+                    <% :revoked -> %>
+                      <.chip tone={:rose}>Revoked</.chip>
+                    <% :expired -> %>
+                      <.chip>Expired</.chip>
+                    <% :spent -> %>
+                      <.chip>Used up</.chip>
+                    <% :active -> %>
+                  <% end %>
+                </:chips>
+                <:meta>
+                  <.meta_line class="text-[11px]">
+                    <:seg mono>{key.key_prefix}…</:seg>
+                    <:seg><span class="tabular-nums">{key_usage(key)}</span></:seg>
+                    <:seg>
+                      last used{" "}<.local_time
+                        id={"enrollment-key-used-#{key.id}"}
+                        value={key.last_used_at}
+                        mode={:relative}
+                        placeholder="never"
+                      />
+                    </:seg>
+                    <:seg :if={key.created_by}>by {key.created_by.email}</:seg>
+                    <:seg :if={key.expires_at}>
+                      {if DateTime.compare(key.expires_at, DateTime.utc_now()) == :gt,
+                        do: "expires",
+                        else: "expired"}{" "}<.local_time
+                        id={"enrollment-key-expiry-#{key.id}"}
+                        value={key.expires_at}
+                        mode={:relative}
+                      />
+                    </:seg>
+                  </.meta_line>
+                </:meta>
+                <:actions>
+                  <%!-- Navigation, but this row's action group also carries a bordered
+                       Revoke, and a row wears ONE button grammar (§7.47). The face is
+                       the ROW's, not the per-row permission state's — restyling it when
+                       Revoke is absent would move the layout between states (§7.55). --%>
+                  <.button
+                    navigate={
+                      ~p"/app/#{@current_account}/audit?#{[target_kind: "enrollment_key", target_id: key.id]}"
+                    }
+                    variant={:secondary}
+                    size={:sm}
+                  >
+                    View activity
+                  </.button>
+                  <%!-- Plain confirm — revoking doesn't disconnect anyone (existing
+                       runners keep their tokens) and is undone by issuing a fresh
+                       key, so it doesn't earn a type-to-confirm. The button only
+                       OPENS the dialog; `revoke` still fires from Confirm and stays
+                       server-authz-gated (subject_can_revoke_enrollment_keys?). --%>
+                  <.button
+                    :if={
+                      is_nil(key.revoked_at) and
+                        @can_revoke_keys?
+                    }
+                    variant={:secondary}
+                    tone={:rose}
+                    size={:sm}
+                    type="button"
+                    phx-click={open_confirm("revoke-key-#{key.id}")}
+                  >
+                    Revoke
+                  </.button>
+                  <.confirm_dialog
+                    :if={
+                      is_nil(key.revoked_at) and
+                        @can_revoke_keys?
+                    }
+                    id={"revoke-key-#{key.id}"}
+                    title="Revoke this enrollment key?"
+                    confirm_label="Revoke key"
+                    on_confirm={
+                      JS.push("revoke", value: %{id: key.id})
+                      |> close_confirm("revoke-key-#{key.id}")
+                    }
+                  >
+                    <:body>
+                      Revoking
+                      <span class="font-mono font-medium text-zinc-200">{key.key_prefix}…</span>
+                      blocks new registrations. Registered runners stay connected. This can't be undone.
+                    </:body>
+                  </.confirm_dialog>
+                </:actions>
+              </.list_row>
+            </:item>
+            <:empty>
+              <%!-- Dead/pre-connect render: the list hasn't been read yet, so don't
+                   claim the account has no keys. --%>
+              <.loading_state :if={not connected?(@socket)} />
+              <.empty_state
+                :if={connected?(@socket) and @load_error?}
+                icon="state.warning"
+                title="Could not load enrollment keys"
+              >
+                Refresh the page to try again.
+              </.empty_state>
+              <.empty_state
+                :if={
+                  connected?(@socket) and not @load_error? and
+                    LiveTable.has_active_filters?(@filter_params, @filters)
+                }
+                icon="action.filter"
+                title="No matching enrollment keys"
+              >
+                Clear the filters to see other keys.
+              </.empty_state>
+              <.empty_state
+                :if={
+                  connected?(@socket) and not @load_error? and
+                    not LiveTable.has_active_filters?(@filter_params, @filters)
+                }
+                icon="identity.credential"
+                title="No active enrollment keys"
+              >
+                <p :if={@can_create_keys?}>
+                  Create a key to register runners. Keys generated during runner setup also appear here.
+                </p>
+                <p :if={not @can_create_keys?}>
+                  Ask an owner or admin to create a key when you need one.
+                </p>
                 <.button
-                  navigate={
-                    ~p"/app/#{@current_account}/audit?#{[target_kind: "enrollment_key", target_id: key.id]}"
-                  }
+                  :if={@can_create_keys?}
+                  navigate={~p"/app/#{@current_account}/runners/keys/new"}
                   variant={:secondary}
                   size={:sm}
+                  icon="action.add"
+                  class="mt-4"
                 >
-                  View activity
+                  New enrollment key
                 </.button>
-                <%!-- Plain confirm — revoking doesn't disconnect anyone (existing
-                     runners keep their tokens) and is undone by issuing a fresh
-                     key, so it doesn't earn a type-to-confirm. The button only
-                     OPENS the dialog; `revoke` still fires from Confirm and stays
-                     server-authz-gated (subject_can_revoke_enrollment_keys?). --%>
-                <.button
-                  :if={
-                    is_nil(key.revoked_at) and
-                      @can_revoke_keys?
-                  }
-                  variant={:secondary}
-                  tone={:rose}
-                  size={:sm}
-                  type="button"
-                  phx-click={open_confirm("revoke-key-#{key.id}")}
+                <p
+                  :if={not @can_create_keys?}
+                  class="mt-4 text-xs text-zinc-400"
                 >
-                  Revoke
-                </.button>
-                <.confirm_dialog
-                  :if={
-                    is_nil(key.revoked_at) and
-                      @can_revoke_keys?
-                  }
-                  id={"revoke-key-#{key.id}"}
-                  title="Revoke enrollment key"
-                  confirm_label="Revoke key"
-                  on_confirm={
-                    JS.push("revoke", value: %{id: key.id})
-                    |> close_confirm("revoke-key-#{key.id}")
-                  }
-                >
-                  <:body>
-                    Permanently revokes <span class="font-mono font-medium text-zinc-200">{key.key_prefix}…</span>.
-                    Existing runners aren't affected, but new registrations with this key will
-                    fail. This can't be undone — issue a fresh key instead.
-                  </:body>
-                </.confirm_dialog>
-              </:actions>
-            </.list_row>
-          </:item>
-          <:empty>
-            <%!-- Dead/pre-connect render: the list hasn't been read yet, so don't
-                 claim the account has no keys. --%>
-            <.loading_state :if={not connected?(@socket)} />
-            <.empty_state
-              :if={connected?(@socket) and @load_error?}
-              icon="state.warning"
-              title="Could not load enrollment keys."
-            >
-              Your permissions may have changed. Reload, or ask an owner to check your role.
-            </.empty_state>
-            <.empty_state
-              :if={
-                connected?(@socket) and not @load_error? and
-                  LiveTable.has_active_filters?(@filter_params, @filters)
-              }
-              icon="action.filter"
-              title="No enrollment keys match this filter."
-            >
-              Clear the filter to see the rest.
-            </.empty_state>
-            <.empty_state
-              :if={
-                connected?(@socket) and not @load_error? and
-                  not LiveTable.has_active_filters?(@filter_params, @filters)
-              }
-              icon="identity.credential"
-              title="No enrollment keys yet."
-            >
-              An enrollment key is the bearer secret a fresh host enrolls with — mint a
-              reusable one for image bakes and cloud-init fleets. The install
-              wizard's one-time keys appear here too, revocable until used.
-              <.button
-                :if={@can_create_keys?}
-                navigate={~p"/app/#{@current_account}/runners/keys/new"}
-                variant={:secondary}
-                size={:sm}
-                icon="action.add"
-                class="mt-4"
-              >
-                New enrollment key
-              </.button>
-              <p
-                :if={not @can_create_keys?}
-                class="mt-4 text-xs text-zinc-400"
-              >
-                {issue_key_lock_text()}
-              </p>
-            </.empty_state>
-          </:empty>
-        </LiveTable.live_table>
+                  {issue_key_lock_text()}
+                </p>
+              </.empty_state>
+            </:empty>
+          </LiveTable.live_table>
+        </div>
+
+        <.enrollment_key_help />
       </div>
     </.console_shell>
+    """
+  end
+
+  defp new_enrollment_key_help(assigns) do
+    ~H"""
+    <.docs_rail title="Using your key">
+      <p>
+        For automated provisioning, keep reusable keys in your secret manager and pass them
+        to hosts during setup.
+        <.doc_link href={~p"/docs/host-install#config"}>Runner configuration</.doc_link>
+      </p>
+      <p>
+        During registration, each runner exchanges the enrollment key for its own connection
+        key. If the enrollment key expires or is revoked, registered runners stay connected.
+        <.doc_link href={~p"/docs/runner-credentials#enrollment-keys"}>How runner keys work</.doc_link>
+      </p>
+    </.docs_rail>
+    """
+  end
+
+  defp enrollment_key_help(assigns) do
+    ~H"""
+    <.docs_rail title="Choosing and revoking keys">
+      <p>
+        Use a single-use key for one host. Reusable keys can register multiple hosts until
+        they expire, reach a use limit, or are revoked.
+      </p>
+      <p>
+        After enrollment, each runner connects with its own key. Revoking an enrollment key
+        blocks new registrations without disconnecting existing runners.
+        <.doc_link href={~p"/docs/runner-credentials"}>How runner keys work</.doc_link>
+      </p>
+    </.docs_rail>
     """
   end
 
@@ -632,7 +712,7 @@ defmodule EmisarWeb.EnrollmentKeysLive do
       title={runner_cap_title(@billing)}
     >
       {@billing.runner_count} of {@billing.runner_limit} runners in use.
-      Issuing a key doesn't reserve a slot — the runner only counts after it registers.
+      Creating a key doesn't reserve a slot — the runner only counts after it registers.
       <.doc_link href={~p"/docs/limits"}>Plan limits docs</.doc_link>
       <:action>
         <.button

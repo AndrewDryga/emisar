@@ -1,6 +1,6 @@
 defmodule EmisarWeb.EnrollmentKeysLiveTest do
   @moduledoc """
-  The runner enrollment-keys list defaults to hiding revoked keys (the Status
+  The runner enrollment-keys list defaults to hiding unusable keys (the Status
   filter defaults to "active"); the operator widens it via the dropdown.
   """
   use EmisarWeb.ConnCase, async: true
@@ -35,22 +35,26 @@ defmodule EmisarWeb.EnrollmentKeysLiveTest do
     # apply_filter KEEPS the explicit blank in the URL — that's what overrides
     # the "active" default on the next load instead of snapping back to it.
     lv |> form("#enrollment-keys-filter", %{"status" => ""}) |> render_change()
-    assert_patched(lv, ~p"/app/#{account}/runners/keys?status=")
+    assert_patched(lv, ~p"/app/#{account}/runners/keys?source=&status=")
 
     html = render(lv)
     assert html =~ "live-key-aaa"
     assert html =~ "dead-key-zzz"
+    assert has_element?(lv, ~s(select[name="status"] option[value=""][selected]))
+    assert has_element?(lv, ~s(label.text-brand-300 select[name="status"]))
   end
 
   # a brand-new account with no enrollment keys renders the
-  # "No enrollment keys yet." onboarding empty state.
+  # "No active enrollment keys" onboarding empty state.
   test "no enrollment keys → onboarding empty state", %{conn: conn} do
     {conn, _user, account} = register_and_log_in(conn)
 
-    {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runners/keys")
+    {:ok, lv, html} = live(conn, ~p"/app/#{account}/runners/keys")
 
-    assert html =~ "No enrollment keys yet."
-    assert html =~ "bearer secret a fresh host enrolls with"
+    assert html =~ "No active enrollment keys"
+    assert html =~ "Create a key to register runners."
+    assert has_element?(lv, ~s(a[href="/docs/runner-fleet#enrollment-keys"]), "Enrollment docs")
+    assert has_element?(lv, ~s(a[href="/docs/runner-credentials"]), "How runner keys work")
     # The pitch carries a real CTA, not a narrated chrome reference.
     assert html =~ "New enrollment key"
   end
@@ -67,6 +71,182 @@ defmodule EmisarWeb.EnrollmentKeysLiveTest do
       live(conn, ~p"/app/#{account}/runners/keys?page=garbage-cursor")
 
     assert html =~ "still-here"
+  end
+
+  test "Source hides setup keys without losing their revocation controls in All", %{conn: conn} do
+    {conn, user, account} = register_and_log_in(conn)
+
+    {_, console} =
+      Fixtures.Runners.create_install_key(account_id: account.id, created_by_id: user.id)
+
+    Fixtures.Runners.create_enrollment_key(
+      account_id: account.id,
+      description: "manual-fleet-key"
+    )
+
+    {_, revoked} =
+      Fixtures.Runners.create_enrollment_key(
+        account_id: account.id,
+        description: "revoked-manual-key"
+      )
+
+    Fixtures.Runners.set_enrollment_key_state(revoked, revoked_at: DateTime.utc_now())
+    {:ok, lv, html} = live(conn, ~p"/app/#{account}/runners/keys")
+
+    assert html =~ "Console install command"
+    assert has_element?(lv, "#enrollment-key-expiry-#{console.id}")
+    assert has_element?(lv, ~s([phx-click*="revoke-key-#{console.id}"]))
+
+    assert has_element?(
+             lv,
+             ~s([data-preference-key="enrollment-key-source:#{user.id}:#{account.id}"])
+           )
+
+    assert has_element?(lv, ~s(select[name="status"] option[value="active"][selected]))
+    refute has_element?(lv, ~s(select[name="status"] option[value=""][selected]))
+
+    lv |> form("#enrollment-keys-filter", %{"source" => "manual"}) |> render_change()
+    assert_patched(lv, ~p"/app/#{account}/runners/keys?source=manual&status=active")
+    refute render(lv) =~ "Console install command"
+    assert render(lv) =~ "manual-fleet-key"
+    refute render(lv) =~ "revoked-manual-key"
+    assert has_element?(lv, ~s(select[name="status"] option[value="active"][selected]))
+    refute has_element?(lv, ~s(select[name="status"] option[value=""][selected]))
+    refute has_element?(lv, ~s(label.text-brand-300 select[name="status"]))
+    assert has_element?(lv, ~s(label.text-brand-300 select[name="source"]))
+
+    lv |> form("#enrollment-keys-filter", %{"source" => ""}) |> render_change()
+    assert_patched(lv, ~p"/app/#{account}/runners/keys?source=&status=active")
+    assert render(lv) =~ "Console install command"
+    assert has_element?(lv, ~s(select[name="status"] option[value="active"][selected]))
+
+    # Deliberately selecting All is different from the Active baseline, and
+    # remains selected and highlighted when Source changes again.
+    lv |> form("#enrollment-keys-filter", %{"status" => ""}) |> render_change()
+    assert_patched(lv, ~p"/app/#{account}/runners/keys?source=&status=")
+    lv |> form("#enrollment-keys-filter", %{"source" => "manual"}) |> render_change()
+    assert_patched(lv, ~p"/app/#{account}/runners/keys?source=manual&status=")
+    assert render(lv) =~ "revoked-manual-key"
+    assert has_element?(lv, ~s(select[name="status"] option[value=""][selected]))
+    assert has_element?(lv, ~s(label.text-brand-300 select[name="status"]))
+  end
+
+  test "a saved Source restores only when the URL has no explicit selection", %{conn: conn} do
+    {conn, _user, account} = register_and_log_in(conn)
+    {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runners/keys")
+    render_hook(lv, "restore_source_filter", %{"source" => "manual"})
+    assert_patched(lv, ~p"/app/#{account}/runners/keys?source=manual")
+
+    render_hook(lv, "restore_source_filter", %{"source" => "console"})
+    refute_patched(lv)
+
+    {:ok, all, _html} = live(conn, ~p"/app/#{account}/runners/keys?source=")
+    render_hook(all, "restore_source_filter", %{"source" => "manual"})
+    refute_patched(all)
+    render_hook(all, "restore_source_filter", %{"source" => "invalid"})
+    refute_patched(all)
+  end
+
+  test "Active hides spent and expired keys, while All labels both states", %{conn: conn} do
+    {conn, _user, account} = register_and_log_in(conn)
+    past = DateTime.add(DateTime.utc_now(), -60, :second)
+
+    Fixtures.Runners.create_enrollment_key(
+      account_id: account.id,
+      description: "expired-key",
+      expires_at: past
+    )
+
+    {_, spent} =
+      Fixtures.Runners.create_enrollment_key(account_id: account.id, description: "spent-key")
+
+    Fixtures.Runners.spend_enrollment_key(spent)
+    {:ok, lv, html} = live(conn, ~p"/app/#{account}/runners/keys")
+
+    assert html =~ "No active enrollment keys"
+    refute html =~ "expired-key"
+    refute html =~ "spent-key"
+
+    assert has_element?(
+             lv,
+             "#enrollment-keys-filter select[name=status] option[value=active][selected]"
+           )
+
+    lv |> form("#enrollment-keys-filter", %{"status" => ""}) |> render_change()
+    assert_patch(lv, ~p"/app/#{account}/runners/keys?source=&status=")
+    html = render(lv)
+    assert html =~ "expired-key"
+    assert html =~ "spent-key"
+    assert html =~ "Used up"
+    assert has_element?(lv, "#enrollment-keys span.tabular-nums", "1/1 uses")
+    assert html =~ ~r/expired\s*<time\s/s
+  end
+
+  test "key metadata shows use limits and plain expiry wording", %{conn: conn} do
+    {conn, user, account} = register_and_log_in(conn)
+    future = DateTime.add(DateTime.utc_now(), 19 * 60 * 60, :second)
+
+    Fixtures.Runners.create_enrollment_key(
+      account_id: account.id,
+      created_by_id: user.id,
+      expires_at: future
+    )
+
+    {_, capped} =
+      Fixtures.Runners.create_enrollment_key(
+        account_id: account.id,
+        created_by_id: user.id,
+        reusable: true,
+        max_uses: 5
+      )
+
+    Fixtures.Runners.set_enrollment_key_state(capped, uses_count: 2)
+
+    {_, unlimited} =
+      Fixtures.Runners.create_enrollment_key(
+        account_id: account.id,
+        created_by_id: user.id,
+        reusable: true
+      )
+
+    Fixtures.Runners.set_enrollment_key_state(unlimited, uses_count: 1)
+
+    {:ok, lv, html} = live(conn, ~p"/app/#{account}/runners/keys")
+
+    assert has_element?(lv, "#enrollment-keys span.tabular-nums", "0/1 uses")
+    assert has_element?(lv, "#enrollment-keys span.tabular-nums", "2/5 uses")
+    assert html =~ ~r/<span class="tabular-nums">\s*1 use\s*<\/span>/s
+    assert html =~ ~r/expires\s*<time\s/s
+    assert html =~ "No expiration date"
+    assert has_element?(lv, "#enrollment-keys", "Reusable")
+    refute html =~ "no expiry"
+    refute has_element?(lv, "#enrollment-keys", "single-use")
+  end
+
+  test "the create page explains key choices separately from setup-key cleanup", %{conn: conn} do
+    {conn, _user, account} = register_and_log_in(conn)
+    {:ok, lv, html} = live(conn, ~p"/app/#{account}/runners/keys/new")
+
+    assert html =~ "Create a key to register new runners"
+    assert html =~ "Description (optional)"
+    assert html =~ "Expiration date (UTC, optional)"
+    assert html =~ "Leave blank for no expiration date"
+    assert html =~ "Reusable key"
+    assert html =~ "Otherwise, it can be used once"
+    assert has_element?(lv, "h3", "Using your key")
+    assert has_element?(lv, ~s(a[href="/docs/host-install#config"]), "Runner configuration")
+    refute html =~ "Choosing and revoking keys"
+    refute html =~ "expire after 24 hours"
+    refute has_element?(lv, ~s(input[name="enrollment_key[reusable]"][checked]))
+    refute has_element?(lv, ~s(input[name="enrollment_key[max_uses]"]))
+
+    html =
+      lv
+      |> form("#enrollment_key_form", %{"enrollment_key" => %{"reusable" => "true"}})
+      |> render_change()
+
+    assert html =~ "Use limit (optional)"
+    assert html =~ "Leave blank for unlimited uses"
   end
 
   # max_uses is kept only for a reusable key with a positive
@@ -93,7 +273,7 @@ defmodule EmisarWeb.EnrollmentKeysLiveTest do
     })
     |> render_submit()
 
-    # The reveal is the success step; "Issue another" returns the form.
+    # The reveal is the success step; "Create another" returns the form.
     render_click(lv, "dismiss_secret", %{})
 
     # Single-use (reusable unchecked, no max_uses field shown) → max_uses nil.
@@ -142,7 +322,7 @@ defmodule EmisarWeb.EnrollmentKeysLiveTest do
       |> render_submit()
 
     assert html =~ "is invalid"
-    refute html =~ "Copy this enrollment key now"
+    refute html =~ "Enrollment key created"
     assert {:ok, [], _} = Runners.list_enrollment_keys(subject)
   end
 
@@ -165,7 +345,7 @@ defmodule EmisarWeb.EnrollmentKeysLiveTest do
       |> render_submit()
 
     assert html =~ "must be greater than 0"
-    refute html =~ "Copy this enrollment key now"
+    refute html =~ "Enrollment key created"
     assert {:ok, [], _} = Runners.list_enrollment_keys(subject)
   end
 
@@ -206,6 +386,10 @@ defmodule EmisarWeb.EnrollmentKeysLiveTest do
 
     [raw_secret] = Regex.run(~r/emkey-enroll-[A-Za-z0-9_-]{43}/, html)
 
+    assert html =~ "Enrollment key created"
+    assert html =~ "Copy the key now"
+    assert html =~ "Run this command on the host where you want to install the runner"
+
     # The one-liner is Runners.enrollment_install_command/2's output verbatim —
     # rendered after the panel's `$ ` prompt span, so the assertion also pins the
     # intentional leading space (HISTCONTROL=ignorespace keeps the key out of
@@ -234,7 +418,7 @@ defmodule EmisarWeb.EnrollmentKeysLiveTest do
       |> render_submit()
 
     assert html =~ ~r/emkey-enroll-[A-Za-z0-9_-]{43}/
-    assert html =~ "Install command unavailable over HTTP"
+    assert html =~ "Open emisar over HTTPS"
     assert html =~ "The key above is still valid"
     assert html =~ ~s(href="/docs/host-install")
     refute html =~ "install.sh | sudo"
@@ -254,7 +438,7 @@ defmodule EmisarWeb.EnrollmentKeysLiveTest do
       |> render_submit()
 
     [raw_secret] = Regex.run(~r/emkey-enroll-[A-Za-z0-9_-]{20,}/, html)
-    # The success step offers "Issue another" (dismiss); there is NO re-reveal.
+    # The success step offers "Create another" (dismiss); there is NO re-reveal.
     assert has_element?(lv, "[phx-click=\"dismiss_secret\"]")
 
     html = render_click(lv, "dismiss_secret", %{})
@@ -287,7 +471,7 @@ defmodule EmisarWeb.EnrollmentKeysLiveTest do
     assert {:error, {:live_redirect, %{to: ^dest, flash: flash}}} =
              live(viewer_conn, ~p"/app/#{account}/runners/keys")
 
-    assert flash["error"] == "Enrollment keys need an owner or admin role."
+    assert flash["error"] == "Only owners and admins can manage enrollment keys."
 
     assert {:error, {:live_redirect, %{to: ^dest}}} =
              live(viewer_conn, ~p"/app/#{account}/runners/keys/new")
@@ -423,7 +607,7 @@ defmodule EmisarWeb.EnrollmentKeysLiveTest do
              |> log_in_user(operator)
              |> live(~p"/app/#{account}/runners/keys")
 
-    assert flash["error"] == "Enrollment keys need an owner or admin role."
+    assert flash["error"] == "Only owners and admins can manage enrollment keys."
   end
 
   # A runner-scoped admin keeps the list for audit AND can still revoke
@@ -452,7 +636,7 @@ defmodule EmisarWeb.EnrollmentKeysLiveTest do
     assert has_element?(lv, "button[disabled]", "New key")
     refute has_element?(lv, ~s(a[href="/app/#{account.slug}/runners/keys/new"]))
     assert has_element?(lv, ~s([phx-click*="revoke-key-#{key.id}"]))
-    assert html =~ "needs access to all runners"
+    assert html =~ "need access to all runners"
 
     # The issue route refuses rather than routing them into a form that cannot
     # succeed, and lands them back on the list with the reason.
@@ -461,7 +645,7 @@ defmodule EmisarWeb.EnrollmentKeysLiveTest do
     assert {:error, {:live_redirect, %{to: ^dest, flash: flash}}} =
              live(admin_conn, ~p"/app/#{account}/runners/keys/new")
 
-    assert flash["error"] =~ "needs access to all runners"
+    assert flash["error"] =~ "need access to all runners"
   end
 
   # IL-15: hiding the control is never the authorization. A crafted create event
@@ -590,7 +774,7 @@ defmodule EmisarWeb.EnrollmentKeysLiveTest do
     html = conn |> get(~p"/app/#{account}/runners/keys") |> html_response(200)
 
     assert html =~ "Loading"
-    refute html =~ "No enrollment keys yet."
+    refute html =~ "No active enrollment keys"
     refute html =~ "live-key"
   end
 

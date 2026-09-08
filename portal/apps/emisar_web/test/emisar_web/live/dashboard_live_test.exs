@@ -736,7 +736,7 @@ defmodule EmisarWeb.DashboardLiveTest do
 
       {:ok, lv, html} = live(conn, ~p"/app/#{account}")
 
-      assert html =~ "Payment recovery in progress"
+      assert html =~ "Payment overdue"
       # The owner can act — the banner links to the billing page (manage there).
       assert has_element?(
                lv,
@@ -748,7 +748,7 @@ defmodule EmisarWeb.DashboardLiveTest do
     test "a healthy account shows no billing banner", %{conn: conn, account: account} do
       {:ok, _lv, html} = live(conn, ~p"/app/#{account}")
 
-      refute html =~ "Payment recovery in progress"
+      refute html =~ "Payment overdue"
       refute html =~ "Subscription ended"
     end
 
@@ -768,7 +768,7 @@ defmodule EmisarWeb.DashboardLiveTest do
       {:ok, lv, html} = live(conn, ~p"/app/#{account}")
 
       # Every member should KNOW there's a payment problem…
-      assert html =~ "Payment recovery in progress"
+      assert html =~ "Payment overdue"
       # …but only an owner gets the manage affordance.
       refute has_element?(lv, "a[href='/app/settings/billing']", "Manage billing")
     end

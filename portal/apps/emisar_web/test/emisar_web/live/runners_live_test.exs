@@ -14,7 +14,7 @@ defmodule EmisarWeb.RunnersLiveTest do
 
       # No runners yet → the empty state IS the installer, one-liner pre-minted,
       # so a first-time operator connects a host with no detour to a separate page.
-      assert html =~ "Run this on the host"
+      assert html =~ "Run on the host"
       assert html =~ "curl -fsSL"
       assert html =~ "EMISAR_ENROLLMENT_KEY=emkey-enroll-"
       assert has_element?(lv, "#runner-install-command")
@@ -205,11 +205,11 @@ defmodule EmisarWeb.RunnersLiveTest do
 
       {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runners")
 
-      assert html =~ "signed-only"
+      assert html =~ "Signed dispatch only"
       assert html =~ "hardened"
       assert html =~ "plain"
       # A mixed fleet (one unsigned) must NOT show the all-fleet notice.
-      refute html =~ "Fleet is signed-only"
+      refute html =~ ~s(id="fleet-signed-dispatch")
     end
 
     test "shows the fleet signed-only notice when every active runner enforces", %{conn: conn} do
@@ -218,7 +218,8 @@ defmodule EmisarWeb.RunnersLiveTest do
       Fixtures.Runners.create_runner(account_id: account.id, name: "b", enforce_signatures: true)
 
       {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runners")
-      assert html =~ "Fleet is signed-only"
+      assert html =~ ~s(id="fleet-signed-dispatch")
+      assert html =~ "Signed dispatch only"
     end
 
     test "a disabled plain runner doesn't suppress the fleet signed-only notice", %{conn: conn} do
@@ -231,7 +232,8 @@ defmodule EmisarWeb.RunnersLiveTest do
 
       {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runners")
 
-      assert html =~ "Fleet is signed-only"
+      assert html =~ ~s(id="fleet-signed-dispatch")
+      assert html =~ "Signed dispatch only"
     end
 
     test "an offline runner's 'last seen' heartbeat renders through <.local_time>", %{conn: conn} do
@@ -348,8 +350,12 @@ defmodule EmisarWeb.RunnersLiveTest do
         |> log_in_user(member)
         |> live(~p"/app/#{account}/runners")
 
-      assert html =~ "No runner access"
+      assert html =~ "You do not have access to any runners"
       assert html =~ "have access to any runners"
+      assert has_element?(lv, "#runners-supporting-rail #runner-explainer", "Runner basics")
+      assert has_element?(lv, ~s|#runner-explainer a[href="/docs/use-a-published-pack"]|)
+      assert has_element?(lv, ~s|#runner-explainer a[href="/docs/runner-fleet#groups-labels"]|)
+      refute has_element?(lv, "#runners-cleanup")
       refute html =~ "No runners yet."
       refute html =~ "EMISAR_ENROLLMENT_KEY"
       refute html =~ "Connect a runner"
@@ -379,8 +385,10 @@ defmodule EmisarWeb.RunnersLiveTest do
         |> log_in_user(member)
         |> live(~p"/app/#{account}/runners")
 
-      assert html =~ "No runners in your access"
-      assert html =~ "No runners match your assigned scope"
+      assert html =~ "You do not have access to any runners"
+      assert html =~ "Ask an owner or admin to update your runner access"
+      assert has_element?(lv, "#runners-supporting-rail #runner-explainer", "Runner basics")
+      refute has_element?(lv, "#runners-cleanup")
       refute html =~ "No runners yet."
       refute html =~ "EMISAR_ENROLLMENT_KEY"
 
@@ -417,7 +425,7 @@ defmodule EmisarWeb.RunnersLiveTest do
 
       assert html =~ "No runners match this search."
       assert has_element?(lv, "#runners-filter input[name='group_or_name'][value='missing']")
-      refute html =~ "No runners in your access"
+      refute html =~ "You do not have access to any runners"
       refute html =~ "An owner or admin can update it"
     end
 
@@ -530,11 +538,7 @@ defmodule EmisarWeb.RunnersLiveTest do
                "How to group runners"
              )
 
-      assert has_element?(
-               lv,
-               ~s|#runner-explainer p:nth-child(3) a[href="/docs/runner-fleet#offline"]|,
-               "Troubleshoot an offline runner"
-             )
+      refute has_element?(lv, ~s|#runner-explainer a[href="/docs/runner-fleet#offline"]|)
 
       assert text_position(html, ~s(href="/docs/runner-fleet")) <
                text_position(html, ~s(id="runners"))
@@ -559,7 +563,7 @@ defmodule EmisarWeb.RunnersLiveTest do
         |> render_change(%{"hours" => "720"})
 
       assert html =~
-               "Automatic cleanup on — runners inactive for 30 days are removed by the hourly sweep."
+               "Automatic cleanup on — runners offline for 30 days are removed by the hourly sweep."
 
       assert has_element?(lv, ~s(#runners-cleanup option[value="720"][selected]))
     end
@@ -579,7 +583,7 @@ defmodule EmisarWeb.RunnersLiveTest do
         |> render_change(%{"hours" => "1"})
 
       assert html =~
-               "Automatic cleanup on — runners inactive for 1 hour are removed by the hourly sweep."
+               "Automatic cleanup on — runners offline for 1 hour are removed by the hourly sweep."
 
       assert has_element?(lv, ~s(#runners-cleanup option[value="1"][selected]))
 
@@ -589,7 +593,7 @@ defmodule EmisarWeb.RunnersLiveTest do
         |> render_change(%{"hours" => "6"})
 
       assert html =~
-               "Automatic cleanup on — runners inactive for 6 hours are removed by the hourly sweep."
+               "Automatic cleanup on — runners offline for 6 hours are removed by the hourly sweep."
 
       assert has_element?(lv, ~s(#runners-cleanup option[value="6"][selected]))
     end
@@ -606,7 +610,7 @@ defmodule EmisarWeb.RunnersLiveTest do
         |> render_change(%{"hours" => "24"})
 
       assert html =~
-               "Automatic cleanup on — runners inactive for 1 day are removed by the hourly sweep."
+               "Automatic cleanup on — runners offline for 1 day are removed by the hourly sweep."
 
       assert has_element?(lv, ~s(#runners-cleanup option[value="24"][selected]))
     end
@@ -622,7 +626,7 @@ defmodule EmisarWeb.RunnersLiveTest do
 
       after_html = render_click(lv, "cleanup_inactive_now", %{})
 
-      assert after_html =~ "Removed 1 inactive runner."
+      assert after_html =~ "Removed 1 offline runner."
       refute after_html =~ "stale-host"
       assert after_html =~ "live-host"
     end
@@ -655,7 +659,7 @@ defmodule EmisarWeb.RunnersLiveTest do
 
       # The schedule they can't set is still ON the page as a value, with the
       # requirement on the lock's tooltip rather than a prose tail.
-      assert html =~ "After 30 days inactive"
+      assert html =~ "After 30 days offline"
       assert html =~ "Only owners and admins can change this."
       refute has_element?(lv, "#runner-retention-form")
       refute has_element?(lv, "#runners-cleanup-now")
@@ -705,7 +709,7 @@ defmodule EmisarWeb.RunnersLiveTest do
 
       {:ok, lv, html} = build_conn() |> log_in_user(admin) |> live(~p"/app/#{account}/runners")
 
-      assert html =~ "After 30 days inactive"
+      assert html =~ "After 30 days offline"
       assert html =~ "Only owners and admins can change this."
       refute has_element?(lv, "#runner-retention-form")
 
@@ -714,7 +718,7 @@ defmodule EmisarWeb.RunnersLiveTest do
 
       # The manual sweep stays available, narrowed to the admin's own scope.
       assert has_element?(lv, "#runners-cleanup-now")
-      assert render_click(lv, "cleanup_inactive_now", %{}) =~ "Removed 1 inactive runner."
+      assert render_click(lv, "cleanup_inactive_now", %{}) =~ "Removed 1 offline runner."
 
       assert %DateTime{} = Emisar.Repo.reload!(in_scope).deleted_at
       assert %{deleted_at: nil} = Emisar.Repo.reload!(out_of_scope)
@@ -751,9 +755,9 @@ defmodule EmisarWeb.RunnersLiveTest do
       # The command embeds a live root-capable credential — the wizard must
       # say so (won't reshow, treat like a password) and let the operator
       # read the script before running it, not just on the marketing page.
-      assert html =~ "Live credential"
-      assert html =~ "Treat it like a password"
-      assert html =~ "read it first"
+      assert html =~ "Keep this command private"
+      assert html =~ "single-use enrollment key that expires after 24 hours"
+      assert html =~ "View install script"
       assert html =~ ~s(href="/install.sh")
     end
 
@@ -763,18 +767,22 @@ defmodule EmisarWeb.RunnersLiveTest do
 
       {:ok, lv, html} = live(conn, ~p"/app/#{account}/runners/install")
       # Hidden during the grace period — only the "waiting" pulse shows.
-      refute html =~ "Not seeing it yet?"
+      refute html =~ "Still waiting for your runner"
 
       # The real watchdog is a ~35s Process.send_after; fire its message
       # directly so the operator isn't left staring at an animated dot when
       # the key, the firewall, or a non-systemd host is the problem.
       send(lv.pid, :reveal_troubleshooting)
       html = render(lv)
-      assert html =~ "Not seeing it yet?"
-      assert html =~ "truncated on paste"
-      assert html =~ "journalctl -u emisar -f"
+      assert html =~ "Still waiting for your runner"
+      assert html =~ "Make sure you copied and ran the complete command."
+      assert html =~ "sudo emisar doctor"
       # The overdue escalation is the ONE amber state on the page.
-      assert html =~ "bg-amber-300/40"
+      assert has_element?(
+               lv,
+               "#runner-connection-status[data-state=delayed] .text-amber-300",
+               "Still waiting for your runner"
+             )
     end
 
     test "redirects anonymous users to /sign_in", %{conn: conn} do
@@ -804,7 +812,7 @@ defmodule EmisarWeb.RunnersLiveTest do
 
       {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runners/#{runner.id}")
       assert html =~ "my-runner"
-      assert html =~ "Advertised actions"
+      assert html =~ "Actions"
     end
   end
 

@@ -18,12 +18,47 @@ defmodule EmisarWeb.RunnerDetailLiveTest do
     account: account,
     runner: runner
   } do
-    {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runners/#{runner.id}")
+    {:ok, lv, html} = live(conn, ~p"/app/#{account}/runners/#{runner.id}")
 
     assert html =~ runner.name
     assert html =~ runner.hostname
+    assert has_element?(lv, ~s|a[href="/docs/runner-fleet"]|, "Runner docs")
     refute html =~ "failed to load on this runner"
     refute html =~ "Your pack access limits this list"
+  end
+
+  test "shows current key expiry and queues automatic rotation for an offline runner", %{
+    conn: conn,
+    account: account,
+    runner: runner
+  } do
+    {_raw, token} = Fixtures.Runners.create_token(runner)
+    runner = Fixtures.Runners.set_connection_credential(runner, token)
+    Runners.subscribe_account_credentials(account.id)
+    {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runners/#{runner.id}")
+
+    assert has_element?(lv, "#runner-current-key-expiry-time[datetime]")
+    assert has_element?(lv, "#runner-connection-key button:not([disabled])", "Rotate key")
+    html = render_click(lv, "rotate_key", %{})
+    assert_receive {:runner_credentials_changed, _}
+    assert html =~ "Waiting for the runner to connect with its new key"
+    assert has_element?(lv, "#runner-connection-key button[disabled]", "Rotation requested")
+    refute html =~ token.token_prefix
+    render(lv)
+  end
+
+  test "an older runner explains why remote rotation is unavailable", %{
+    conn: conn,
+    account: account,
+    runner: runner
+  } do
+    {_raw, token} = Fixtures.Runners.create_token(runner)
+    runner = Fixtures.Runners.set_connection_credential(runner, token, false)
+    {:ok, lv, html} = live(conn, ~p"/app/#{account}/runners/#{runner.id}")
+    assert html =~ "Update this runner to rotate its key from here"
+    assert has_element?(lv, "#runner-connection-key button[disabled]", "Rotate key")
+    render_click(lv, "rotate_key", %{})
+    assert Emisar.Repo.reload!(runner).credential_rotation_requested_at == nil
   end
 
   test "runner-advertised degraded packs render with their reasons and the remedy", %{
@@ -54,6 +89,10 @@ defmodule EmisarWeb.RunnerDetailLiveTest do
     user: user,
     account: account
   } do
+    account.id
+    |> Fixtures.Memberships.fetch_membership(user.id)
+    |> Fixtures.Memberships.force_role("admin")
+
     runner = Fixtures.Runners.create_runner(account_id: account.id, connected?: true)
 
     Fixtures.Catalog.create_action(
@@ -109,6 +148,10 @@ defmodule EmisarWeb.RunnerDetailLiveTest do
     user: user,
     account: account
   } do
+    account.id
+    |> Fixtures.Memberships.fetch_membership(user.id)
+    |> Fixtures.Memberships.force_role("admin")
+
     runner = Fixtures.Runners.create_runner(account_id: account.id, group: "database")
     Fixtures.Catalog.create_action(runner: runner, action_id: "postgres.status")
 
@@ -180,7 +223,7 @@ defmodule EmisarWeb.RunnerDetailLiveTest do
     assert html =~ "sudo emisar update"
     assert html =~ "bg-amber-300/40"
     refute html =~ "bg-amber-500/10"
-    assert html =~ "preserves its configuration and restarts the service"
+    assert html =~ "update and restart the runner without losing its configuration"
   end
 
   test "a current runner shows no version chip", %{conn: conn, account: account} do
@@ -197,17 +240,17 @@ defmodule EmisarWeb.RunnerDetailLiveTest do
   # An empty catalog names the step that fills it, and which step that is
   # depends on whether the runner can advertise at all. setup's runner is
   # offline, so packs are not the question yet.
-  test "an offline runner with no actions points at the daemon, not at packs", %{
+  test "an offline runner with no actions points at reconnecting, not at packs", %{
     conn: conn,
     account: account,
     runner: runner
   } do
     {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runners/#{runner.id}")
 
-    assert html =~ "No actions yet."
-    assert html =~ "is not connected"
+    assert html =~ "No actions yet"
+    assert html =~ "Connect the runner to see its actions."
     assert html =~ "emisar status"
-    assert html =~ "/docs/troubleshooting"
+    assert html =~ "/docs/runner-fleet#offline"
     refute html =~ "emisar pack suggest"
   end
 
@@ -219,10 +262,10 @@ defmodule EmisarWeb.RunnerDetailLiveTest do
 
     {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runners/#{runner.id}")
 
-    assert html =~ "No actions yet."
-    assert html =~ "Actions come from packs"
+    assert html =~ "No actions yet"
+    assert html =~ "Install a pack on the host to add its actions here."
     assert html =~ "emisar pack suggest"
-    assert html =~ "Browse the pack catalog"
+    assert html =~ "Browse packs"
     refute html =~ "emisar status"
   end
 
@@ -235,8 +278,8 @@ defmodule EmisarWeb.RunnerDetailLiveTest do
   } do
     {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runners/#{runner.id}")
 
-    assert html =~ "No runs yet."
-    assert html =~ "Nothing dispatched to this runner yet"
+    assert html =~ "No runs yet"
+    assert html =~ "Actions sent to this runner will appear here."
   end
 
   test "a bad cursor in the URL falls back to the first page, not a crash", %{
@@ -260,7 +303,7 @@ defmodule EmisarWeb.RunnerDetailLiveTest do
 
     # The reason is a real tooltip (keyboard/touch reachable), not a raw title.
     assert has_element?(lv, "#action-offline-#{action.id}-tt button[disabled]", "Run")
-    assert has_element?(lv, "#action-offline-#{action.id}[role=tooltip]", "can't be dispatched")
+    assert has_element?(lv, "#action-offline-#{action.id}[role=tooltip]", "must be online")
     # The signal-slash icon is the non-color cue (not the dimmed text alone).
     assert html =~ "state.offline"
   end
@@ -289,8 +332,8 @@ defmodule EmisarWeb.RunnerDetailLiveTest do
              "Signed dispatch only"
            )
 
-    # Points operators at the concrete provisioning tool.
-    assert html =~ "emisar signing init"
+    # Full signing setup belongs in the linked guide.
+    assert has_element?(lv, ~s|a[href="/docs/signed-dispatch"]|, "Signing setup")
     # The Run affordance is the disabled lock variant (not color alone), and is
     # NOT a dispatch link — the portal can't run on this host.
     assert html =~ "state.locked"
@@ -394,7 +437,7 @@ defmodule EmisarWeb.RunnerDetailLiveTest do
     assert has_element?(
              lv,
              "#action-missing-exec-#{action.id}[role=tooltip]",
-             "Primary executable epmd is missing"
+             "The required tool epmd"
            )
 
     assert html =~ "runner.maintenance"
@@ -590,6 +633,9 @@ defmodule EmisarWeb.RunnerDetailLiveTest do
     runner: runner
   } do
     {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runners/#{runner.id}")
+
+    assert has_element?(lv, "#delete-runner", "The host must register again to connect again.")
+    assert has_element?(lv, "#delete-runner", "Run history and audit events are kept.")
 
     # Drive the dialog: type the runner's name, then Confirm.
     type_confirm_token(lv, "delete-runner", runner.name)

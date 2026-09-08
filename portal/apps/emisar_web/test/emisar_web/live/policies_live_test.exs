@@ -21,8 +21,15 @@ defmodule EmisarWeb.PoliciesLiveTest do
       {:ok, lv, html} = live(conn, ~p"/app/#{account}/policies")
 
       assert html =~ "Default policy"
-      assert html =~ "Per-action overrides"
+      assert html =~ "Action overrides"
       assert html =~ "Targeted rulesets"
+      assert html =~ "Applies when a runner has no matching runner or group ruleset."
+      assert html =~ "No self-approval"
+      assert html =~ "Allow self-approval"
+      assert html =~ "if they have permission to approve."
+
+      assert rendered_text(html) =~
+               "For AI-agent requests, self-approval also includes the agent's owner."
 
       # Defaults render every tier with a select.
       assert html =~ ~s(name="policy[defaults][low]")
@@ -34,12 +41,15 @@ defmodule EmisarWeb.PoliciesLiveTest do
       # the dashed composers ARE the empty states (no placeholder hints).
       assert html =~ "Add override"
       assert html =~ "Add ruleset"
+      refute html =~ "No action overrides"
+      refute has_element?(lv, "#policy-read-only")
+      refute has_element?(lv, "#policy-runner-access-notice")
       policy = Policies.peek_policy_for_account(account.id)
 
       assert has_element?(
                lv,
                ~s(a[href="/app/#{account.slug}/audit?target_kind=policy&target_id=#{policy.id}"]),
-               "View activity"
+               "View audit trail"
              )
 
       assert lv |> element("#add-ruleset-row") |> render() =~ "lg:grid-cols-4"
@@ -59,12 +69,12 @@ defmodule EmisarWeb.PoliciesLiveTest do
 
     test "the approval-count input is programmatically labelled (UI-005 a11y)", %{conn: conn} do
       # The raw min_approvals number input had no accessible name; it now carries
-      # an editor-scoped id wired to its "Required approvals" <label for> (the id
+      # an editor-scoped id wired to its "Required approvers" <label for> (the id
       # is scoped so the default policy + each ruleset don't collide).
       {conn, _user, account} = register_and_log_in(conn)
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/policies")
 
-      assert has_element?(lv, ~s|label[for="policy-account-min-approvals"]|, "Required approvals")
+      assert has_element?(lv, ~s|label[for="policy-account-min-approvals"]|, "Required approvers")
 
       assert has_element?(
                lv,
@@ -264,13 +274,13 @@ defmodule EmisarWeb.PoliciesLiveTest do
         })
         |> render_change()
 
-      refute html =~ "Enter an action glob or remove this override."
+      refute html =~ "Enter an action name or pattern, or remove this override."
 
       html = lv |> form("#policy-form-account") |> render_submit()
 
       assert html =~ "typed-but-incomplete"
-      assert html =~ "Enter an action glob or remove this override."
-      refute html =~ "Policy saved."
+      assert html =~ "Enter an action name or pattern, or remove this override."
+      refute html =~ "Default policy saved."
       assert Policies.peek_policy_for_account(account.id).rules["overrides"] == []
 
       html =
@@ -288,8 +298,8 @@ defmodule EmisarWeb.PoliciesLiveTest do
         })
         |> render_change()
 
-      refute html =~ "Enter an action glob or remove this override."
-      assert lv |> form("#policy-form-account") |> render_submit() =~ "Policy saved."
+      refute html =~ "Enter an action name or pattern, or remove this override."
+      assert lv |> form("#policy-form-account") |> render_submit() =~ "Default policy saved."
     end
 
     test "a changed decision also makes a blank-action override incomplete", %{conn: conn} do
@@ -310,8 +320,8 @@ defmodule EmisarWeb.PoliciesLiveTest do
 
       html = lv |> form("#policy-form-account") |> render_submit()
 
-      assert html =~ "Enter an action glob or remove this override."
-      refute html =~ "Policy saved."
+      assert html =~ "Enter an action name or pattern, or remove this override."
+      refute html =~ "Default policy saved."
     end
 
     test "remove_override drops the row from the account form", %{conn: conn} do
@@ -414,7 +424,7 @@ defmodule EmisarWeb.PoliciesLiveTest do
         })
         |> render_change()
 
-      assert html =~ "Shadowed by rule 1 above"
+      assert html =~ "Override 1 matches first"
       # The deny case gets the sharpened copy.
       assert html =~ "this <strong>deny</strong>"
     end
@@ -438,10 +448,12 @@ defmodule EmisarWeb.PoliciesLiveTest do
         })
         |> render_change()
 
-      refute html =~ "Shadowed by rule"
+      refute html =~ "matches first, so this"
     end
 
-    test "warns when an override glob matches no action on the target (deny copy)", %{conn: conn} do
+    test "an unmatched override warning is scoped to the preview and allows future actions", %{
+      conn: conn
+    } do
       {conn, _user, account} = register_and_log_in(conn)
       runner = Fixtures.Runners.create_runner(account_id: account.id)
       Fixtures.Catalog.create_action(runner: runner, action_id: "nginx.reload", risk: "medium")
@@ -466,8 +478,8 @@ defmodule EmisarWeb.PoliciesLiveTest do
       |> render_change()
 
       html = settle_previews(lv)
-      assert html =~ "Matches no action on this target"
-      assert html =~ "this <strong>deny</strong>"
+      assert html =~ "No actions in this preview match this pattern."
+      assert html =~ "It can still apply to actions reported later."
     end
 
     test "no unmatched warning once the glob actually matches an action", %{conn: conn} do
@@ -489,7 +501,7 @@ defmodule EmisarWeb.PoliciesLiveTest do
         })
         |> render_change()
 
-      refute html =~ "Matches no action on this target"
+      refute html =~ "No actions in this preview match this pattern."
     end
 
     test "a valid edit saves cleanly — the rules error is a defensive inline net, never a flash",
@@ -507,8 +519,8 @@ defmodule EmisarWeb.PoliciesLiveTest do
         })
         |> render_submit()
 
-      assert html =~ "Policy saved."
-      refute html =~ "Could not save policy"
+      assert html =~ "Default policy saved."
+      refute html =~ "Couldn&#39;t save your changes"
       refute html =~ "higher-risk tiers must be at least as restrictive"
     end
 
@@ -598,11 +610,11 @@ defmodule EmisarWeb.PoliciesLiveTest do
 
       # A healthy gate (3 approvals from a different operator) needs no callout — the
       # cards + count already say what it does, so the amber warning box stays hidden.
-      refute html =~ "the requester may approve their own request"
-      refute html =~ "add independent review"
+      refute html =~ "No independent approval required"
+      refute html =~ "A requester with approval permission can provide the only approval needed."
     end
 
-    test "the required-approvals label pluralizes with the count", %{conn: conn} do
+    test "the required-approvers label pluralizes with the count", %{conn: conn} do
       {conn, user, account} = register_and_log_in(conn)
       subject = Fixtures.Subjects.subject_for(user, account)
 
@@ -615,11 +627,10 @@ defmodule EmisarWeb.PoliciesLiveTest do
           subject
         )
 
-      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/policies")
+      {:ok, lv, html} = live(conn, ~p"/app/#{account}/policies")
 
-      # One approval — singular, and "distinct" drops (nothing to be distinct from).
-      assert html =~ "operator, before the action runs"
-      refute html =~ "operators, before the action runs"
+      assert has_element?(lv, "#policy-account-min-approvals + span", "person")
+      refute html =~ "different people"
 
       {:ok, _} =
         Policies.save_rules(
@@ -632,7 +643,7 @@ defmodule EmisarWeb.PoliciesLiveTest do
 
       {:ok, _lv, html} = live(conn, ~p"/app/#{account}/policies")
 
-      assert html =~ "distinct operators, before the action runs"
+      assert html =~ "different people"
     end
 
     test "self-approval + a single approval warns once below the preview's risk catalog", %{
@@ -661,18 +672,31 @@ defmodule EmisarWeb.PoliciesLiveTest do
       form_html = lv |> element("#policy-form-account") |> render()
       rail_html = lv |> element("#policy-rail-account") |> render()
 
-      refute form_html =~ "the requester may approve their own request"
-      refute form_html =~ "add independent review"
-      assert rail_html =~ "the requester may approve their own request"
-      assert rail_html =~ "add independent review"
-      assert rail_html =~ ~r/class="text-xs font-medium text-zinc-200">\s*In effect/
-      assert length(Regex.scan(~r/the requester may approve their own request/, html)) == 1
+      assert rail_html =~ "Policy preview"
+
+      assert rendered_text(rail_html) =~
+               "Includes unsaved changes; other rulesets aren't included."
+
+      refute form_html =~ "No independent approval required"
+
+      refute form_html =~
+               "A requester with approval permission can provide the only approval needed."
+
+      assert rail_html =~ "No independent approval required"
+
+      assert rail_html =~
+               "A requester with approval permission can provide the only approval needed."
+
+      assert rail_html =~
+               ~r/class="text-xs font-medium text-zinc-200">\s*No independent approval required/
+
+      assert length(Regex.scan(~r/No independent approval required/, html)) == 1
 
       warning_html = lv |> element("#policy-single-reviewer-warning-account") |> render()
       assert warning_html =~ ~s(class="border-t border-zinc-800/70 pt-4")
 
-      {catalog_position, _length} = :binary.match(rail_html, "Catalog by risk")
-      {warning_position, _length} = :binary.match(rail_html, "the requester may approve")
+      {catalog_position, _length} = :binary.match(rail_html, "Actions by risk")
+      {warning_position, _length} = :binary.match(rail_html, "No independent approval required")
       assert catalog_position < warning_position
 
       refute html =~ "Self-approval is allowed and only one approval is required"
@@ -699,8 +723,10 @@ defmodule EmisarWeb.PoliciesLiveTest do
             lv |> element("#policy-form-account") |> render(),
             lv |> element("#policy-rail-account") |> render()
           ] do
-        refute safe_html =~ "the requester may approve their own request"
-        refute safe_html =~ "add independent review"
+        refute safe_html =~ "No independent approval required"
+
+        refute safe_html =~
+                 "A requester with approval permission can provide the only approval needed."
       end
 
       refute has_element?(lv, "#policy-single-reviewer-warning-account")
@@ -723,8 +749,8 @@ defmodule EmisarWeb.PoliciesLiveTest do
 
       # One approval from a different operator is a real gate — the callout is reserved
       # for the weak self-single-approval case, so nothing shows here.
-      refute html =~ "add independent review"
-      refute html =~ "the requester may approve their own request"
+      refute html =~ "A requester with approval permission can provide the only approval needed."
+      refute html =~ "No independent approval required"
     end
 
     test "an operator sees the policy read-only — no manage affordances, save denied", %{
@@ -1058,7 +1084,7 @@ defmodule EmisarWeb.PoliciesLiveTest do
       refute html =~ "higher-risk tiers must be at least as restrictive"
 
       html = lv |> form("#policy-form-account") |> render_submit()
-      assert html =~ "Policy saved."
+      assert html =~ "Default policy saved."
       refute html =~ "higher-risk tiers must be at least as restrictive"
 
       policy = Policies.peek_policy_for_account(account.id)
@@ -1111,7 +1137,7 @@ defmodule EmisarWeb.PoliciesLiveTest do
       {:ok, lv, _html} = live(admin_conn, ~p"/app/#{account}/policies")
       html = render_click(lv, "open_ruleset", %{"uid" => scoped.id})
 
-      assert html =~ "The default applies to every runner"
+      assert html =~ "Access to all runners is required to edit the default policy."
       refute has_element?(lv, "#policy-form-account button[type=submit]")
       assert has_element?(lv, "#policy-form-#{scoped.id} button[type=submit]", "Save ruleset")
 
@@ -1144,12 +1170,41 @@ defmodule EmisarWeb.PoliciesLiveTest do
       admin_conn = log_in_user(build_conn(), Emisar.Repo.preload(membership, :user).user)
       {:ok, lv, html} = live(admin_conn, ~p"/app/#{account}/policies")
 
-      assert html =~
-               "No runners in your access. The default policy is read-only, and targeted rulesets are hidden."
+      assert rendered_text(html) =~
+               "You don't have access to any runners. You can view only the default policy."
+
+      assert has_element?(
+               lv,
+               ~s|#default-policy > header #policy-read-only.text-zinc-300 svg[data-icon="state.locked"]|
+             )
+
+      assert has_element?(
+               lv,
+               "#default-policy > header .items-baseline > h2 + #policy-read-only.items-baseline",
+               "Read-only"
+             )
+
+      assert has_element?(
+               lv,
+               ~s|#policy-read-only svg[data-icon="state.locked"].self-center|
+             )
+
+      refute has_element?(lv, "#policy-read-only.-translate-y-px")
+
+      assert has_element?(
+               lv,
+               "#default-policy > header p #policy-runner-access-notice",
+               "You can view only the default policy."
+             )
+
+      refute html =~ "Applies when a runner has no matching runner or group ruleset."
 
       refute html =~ "unless a targeted ruleset below overrides it"
       refute html =~ "Targeted rulesets"
-      assert settle_previews(lv) =~ "No action catalog is visible without runner access."
+
+      assert settle_previews(lv) =~
+               "No actions are available to preview with your current access."
+
       refute html =~ "once a runner reports its catalog"
       refute has_element?(lv, "#policy-form-account button[type=submit]")
       refute has_element?(lv, "#add-ruleset-row")
@@ -1173,7 +1228,7 @@ defmodule EmisarWeb.PoliciesLiveTest do
       {:ok, lv, _html} = live(admin_conn, ~p"/app/#{account}/policies")
       html = render_click(lv, "open_ruleset", %{"uid" => scoped.id})
 
-      assert html =~ "Policy rules can affect every pack on their target"
+      assert html =~ "Access to all packs is required to edit policy rules."
       refute has_element?(lv, "#policy-form-account button[type=submit]")
       refute has_element?(lv, "#policy-form-#{scoped.id} button[type=submit]")
       refute has_element?(lv, "#add-ruleset-row")
@@ -1269,18 +1324,24 @@ defmodule EmisarWeb.PoliciesLiveTest do
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/policies")
       html = render_click(lv, "open_ruleset", %{"uid" => scoped.id})
 
-      assert html =~ "Weaker approval gate than the default policy"
-      assert html =~ "requires fewer approvals (1 vs 2)"
-      assert html =~ "lets the requester approve their own action"
+      assert html =~ "Less restrictive approval requirements"
+      assert html =~ "Requires 1 approver instead of 2."
+      assert html =~ "Allows self-approval, which the default policy does not."
 
       form_html = lv |> element("#policy-form-#{scoped.id}") |> render()
       rail_html = lv |> element("#policy-rail-#{scoped.id}") |> render()
 
-      refute form_html =~ "the requester may approve their own request"
-      refute form_html =~ "add independent review"
-      assert rail_html =~ "the requester may approve their own request"
-      assert rail_html =~ "add independent review"
-      assert length(Regex.scan(~r/the requester may approve their own request/, html)) == 1
+      refute form_html =~ "No independent approval required"
+
+      refute form_html =~
+               "A requester with approval permission can provide the only approval needed."
+
+      assert rail_html =~ "No independent approval required"
+
+      assert rail_html =~
+               "A requester with approval permission can provide the only approval needed."
+
+      assert length(Regex.scan(~r/No independent approval required/, html)) == 1
 
       warning_html =
         lv |> element("#policy-single-reviewer-warning-#{scoped.id}") |> render()
@@ -1301,7 +1362,7 @@ defmodule EmisarWeb.PoliciesLiveTest do
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/policies")
       html = render_click(lv, "open_ruleset", %{"uid" => scoped.id})
 
-      refute html =~ "Weaker approval gate than the default policy"
+      refute html =~ "Less restrictive approval requirements"
     end
 
     test "add a ruleset → pick a runner → save → persists a runner-scoped policy", %{
@@ -1314,7 +1375,7 @@ defmodule EmisarWeb.PoliciesLiveTest do
 
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/policies")
 
-      lv |> render_click("add_ruleset", %{})
+      assert lv |> render_click("add_ruleset", %{}) =~ "Starts with the current default rules."
 
       # Pick the runner target on the new (unsaved) card — the change fires on
       # the picker form, which carries the ruleset uid as a hidden field.
@@ -1325,8 +1386,9 @@ defmodule EmisarWeb.PoliciesLiveTest do
 
       # The card now exposes its policy form (Save ruleset).
       assert html =~ "Save ruleset"
+      assert rendered_text(html) =~ "Later changes to the default won't update this ruleset."
 
-      lv |> form(~s(form[id^="policy-form-new-"])) |> render_submit()
+      assert lv |> form(~s(form[id^="policy-form-new-"])) |> render_submit() =~ "Ruleset saved."
 
       assert {:ok, [policy], _metadata} = Policies.list_scoped_policy_summaries(subject)
       assert policy.scope_type == :runner
@@ -1438,7 +1500,7 @@ defmodule EmisarWeb.PoliciesLiveTest do
       assert html =~ "web-1 — has a ruleset"
     end
 
-    test "removing a saved ruleset falls the scope back to the default policy", %{
+    test "removing a runner ruleset explains group precedence and confirms removal", %{
       conn: conn,
       account: account,
       subject: subject
@@ -1449,11 +1511,31 @@ defmodule EmisarWeb.PoliciesLiveTest do
       {:ok, saved} = Policies.save_scoped_rules(deny_all(), :runner, runner.id, subject)
 
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/policies")
-      render_click(lv, "open_ruleset", %{"uid" => saved.id})
+      html = render_click(lv, "open_ruleset", %{"uid" => saved.id})
+      assert rendered_text(html) =~ "This runner will use its group's ruleset, if one exists."
+      assert html =~ "Otherwise, the default policy applies."
+      refute html =~ "Remove ruleset"
       html = lv |> render_click("remove_ruleset", %{"uid" => saved.id})
 
-      assert html =~ "Ruleset removed"
+      assert html =~ "Ruleset removed."
       assert {:ok, [], _metadata} = Policies.list_scoped_policy_summaries(subject)
+    end
+
+    test "group ruleset removal explains that runner rulesets still take priority", %{
+      conn: conn,
+      account: account,
+      subject: subject
+    } do
+      Fixtures.Runners.create_runner(account_id: account.id, name: "db-1", group: "db")
+      {:ok, saved} = Policies.save_scoped_rules(deny_all(), :group, "db", subject)
+
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/policies")
+      html = render_click(lv, "open_ruleset", %{"uid" => saved.id})
+
+      assert html =~
+               "Runners in this group will use the default policy unless they have their own ruleset."
+
+      refute html =~ "This runner will use its group's ruleset"
     end
 
     test "a viewer sees the policy read-only and a forged save is denied", %{
@@ -1485,6 +1567,14 @@ defmodule EmisarWeb.PoliciesLiveTest do
       refute html =~ "Add ruleset"
       refute html =~ "Save default policy"
       assert html =~ "only owners and admins can change it"
+
+      assert has_element?(
+               lv,
+               "#policy-form-account .border-dashed.text-center.px-4.py-3",
+               "No action overrides"
+             )
+
+      refute html =~ "No overrides. The risk-level rules above apply."
 
       # A forged save event is refused at the handler (apostrophe is HTML-escaped).
       assert render_hook(lv, "save", %{"editor" => "account"}) =~ "have permission to do that"
@@ -1723,7 +1813,7 @@ defmodule EmisarWeb.PoliciesLiveTest do
     } do
       # a target string without a `runner:`/`group:` prefix
       # → `parse_target/1` returns `{nil, ""}`, so the card reverts to its
-      # "Pick a runner or group above" prompt and hides the rules editor.
+      # target picker and hides the rules editor.
       runner = Fixtures.Runners.create_runner(account_id: account.id, name: "web-1", group: "web")
 
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/policies")
@@ -1747,7 +1837,7 @@ defmodule EmisarWeb.PoliciesLiveTest do
       html = render_change(lv, "set_target", %{"uid" => uid, "target" => "garbage-no-prefix"})
 
       refute html =~ "Save ruleset"
-      assert html =~ "Pick a runner or group above"
+      assert html =~ "Starts with the current default rules."
     end
 
     test "a malformed set_target event (no keys) is a no-op", %{conn: conn, account: account} do
@@ -1762,7 +1852,7 @@ defmodule EmisarWeb.PoliciesLiveTest do
       # A crafted event with neither key still leaves the page alive and the new
       # card on its picker prompt.
       html = render_hook(lv, "set_target", %{})
-      assert html =~ "Pick a runner or group above"
+      assert html =~ "Starts with the current default rules."
     end
 
     test "add_override on a ruleset card appends to that editor only and defaults to allow", %{
@@ -1880,5 +1970,9 @@ defmodule EmisarWeb.PoliciesLiveTest do
 
     [_tag, class] = Regex.run(pattern, html)
     class
+  end
+
+  defp rendered_text(html) do
+    html |> LazyHTML.from_document() |> LazyHTML.text() |> String.replace(~r/\s+/, " ")
   end
 end

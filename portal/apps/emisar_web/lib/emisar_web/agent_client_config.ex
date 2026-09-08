@@ -29,10 +29,85 @@ defmodule EmisarWeb.AgentClientConfig do
 
   def path_error(_path, _os), do: "The executable path is too long."
 
-  def discovery_command(:windows),
-    do: "(Get-Command emisar-mcp.exe -CommandType Application | Select-Object -First 1).Source"
+  def version_command(path, os) do
+    if is_nil(path_error(path, os)) do
+      prefix = if os == :windows, do: "& ", else: ""
 
-  def discovery_command(os) when os in [:linux, :macos], do: "command -v emisar-mcp"
+      executable =
+        if os != :windows and String.match?(path, ~r/\A[\/A-Za-z0-9_.-]+\z/),
+          do: path,
+          else: shell_quote(path, os)
+
+      prefix <> executable <> " --version"
+    end
+  end
+
+  def download_links(os, version) when is_binary(version) do
+    case Version.parse(version) do
+      {:ok, _version} ->
+        platform = if os == :macos, do: "darwin", else: to_string(os)
+        extension = if os == :windows, do: "zip", else: "tar.gz"
+
+        architectures =
+          if os == :macos,
+            do: [{"Apple silicon", "arm64"}, {"Intel", "amd64"}],
+            else: [{"x64", "amd64"}, {"ARM64", "arm64"}]
+
+        for {label, arch} <- architectures do
+          artifact = "emisar-mcp-#{version}-#{platform}-#{arch}.#{extension}"
+          {label, "https://emisar.dev/releases/mcp/mcp-v#{version}/#{artifact}"}
+        end
+
+      :error ->
+        []
+    end
+  end
+
+  def download_links(_os, _version), do: []
+
+  def coop_dockerfile do
+    ~S"""
+    ARG COOP_BASE_IMAGE=coop-box
+    FROM ${COOP_BASE_IMAGE}
+
+    USER root
+    RUN install -d -m 755 /etc/apt/keyrings \
+     && curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
+          -o /etc/apt/keyrings/githubcli-archive-keyring.gpg \
+     && chmod go+r /etc/apt/keyrings/githubcli-archive-keyring.gpg \
+     && printf '%s\n' "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" \
+          > /etc/apt/sources.list.d/github-cli.list \
+     && apt-get update \
+     && apt-get install -y --no-install-recommends gh
+    RUN curl -fsSL https://emisar.dev/install-mcp.sh -o /tmp/install-mcp.sh \
+     && bash /tmp/install-mcp.sh --yes --install-dir /usr/local/bin \
+     && install -d -m 700 -o node -g node /config
+    USER node
+    """
+  end
+
+  def render("coop", url, key, _os, _path) do
+    %{
+      kind: :coop,
+      body:
+        Jason.encode!(
+          %{
+            "mcpServers" => %{
+              "emisar" => %{
+                "command" => "/usr/local/bin/emisar-mcp",
+                "env" => %{
+                  "EMISAR_URL" => url,
+                  "EMISAR_API_KEY" => key,
+                  "EMISAR_CLIENT" => "coop",
+                  "XDG_CONFIG_HOME" => "/config"
+                }
+              }
+            }
+          },
+          pretty: true
+        )
+    }
+  end
 
   def render(client, url, key, os, path) do
     %{
@@ -42,6 +117,99 @@ defmodule EmisarWeb.AgentClientConfig do
       secret_separate: client == "vscode",
       auto_permit: auto_permit(client, os)
     }
+  end
+
+  def connection_steps(client, setup \\ :manual) do
+    case client do
+      "coop" ->
+        [
+          "Start a new co:op session with your preferred agent, then check that emisar appears in its MCP tools."
+        ]
+
+      "claude_code" ->
+        [
+          "Start a new Claude Code session and run /mcp. Confirm that emisar is connected."
+        ]
+
+      "claude_desktop" ->
+        [
+          "Fully quit and reopen Claude Desktop. Open Settings → Developer and confirm that emisar is running.",
+          "Start a chat and enable emisar from + → Connectors."
+        ]
+
+      "cursor" ->
+        [
+          "Restart Cursor, open Customize, and enable the emisar MCP server. Approve the connection when prompted."
+        ]
+
+      "vscode" ->
+        key_step =
+          if setup == :manual,
+            do: " Paste the API key above when VS Code asks for it.",
+            else: ""
+
+        [
+          "In the Command Palette, run MCP: List Servers, select emisar, then Start. Confirm server trust when prompted." <>
+            key_step,
+          "Open Chat, choose the Local target and Agent role, and enable the emisar tools. For the Copilot session target instead, use the Copilot CLI setup on this page."
+        ]
+
+      "gemini" ->
+        [
+          "Start a new Gemini CLI session in a folder you trust. If prompted, review the folder before trusting it; MCP servers stay disabled in untrusted folders.",
+          "Run /mcp and confirm that emisar is connected."
+        ]
+
+      "codex" ->
+        [
+          "Start a new Codex CLI session and run /mcp. Confirm that emisar is connected."
+        ]
+
+      "windsurf" ->
+        [
+          "Restart Windsurf and open Cascade's MCP settings. Enable emisar and confirm that its tools are listed."
+        ]
+
+      "zed" ->
+        [
+          "Restart Zed and open Settings → AI → MCP Servers. Confirm that emisar is active, then open the Agent Panel."
+        ]
+
+      "openclaw" ->
+        [
+          "Restart OpenClaw, then run openclaw mcp probe emisar to check the connection."
+        ]
+
+      "opencode" ->
+        [
+          "Start a new OpenCode session and run opencode mcp list in your terminal. Confirm that emisar is connected."
+        ]
+
+      "copilot" ->
+        [
+          "Start a new Copilot CLI session and run /mcp show emisar to check its status and tools."
+        ]
+
+      "grok" ->
+        [
+          "Run grok mcp doctor emisar to check the connection, then start a new Grok CLI session."
+        ]
+
+      "pi" ->
+        [
+          "Restart Pi after installing the MCP adapter and saving the configuration, then run /mcp reconnect emisar."
+        ]
+
+      "hermes" ->
+        [
+          "Run hermes mcp test emisar to check the connection and its tools, then start a new Hermes chat."
+        ]
+
+      "goose" ->
+        [
+          "Restart Goose and start a new session. If emisar is missing, check that it is enabled under Extensions."
+        ]
+    end
   end
 
   defp absolute_path?(path, :windows),
@@ -216,11 +384,11 @@ defmodule EmisarWeb.AgentClientConfig do
     }
   end
 
-  defp auto_permit("cursor", _os) do
+  defp auto_permit("cursor", os) do
     %{
       pointer:
-        "Cursor controls this globally, not per-server: in Settings, set the agent's tool-approval to auto-run (\"Yolo\" mode). There's no per-server allowlist in mcp.json.",
-      doc_url: "https://docs.cursor.com/context/mcp"
+        "In Cursor Settings, choose Allowlist as the Run Mode and add emisar:* to the MCP allowlist. For file-based setup, add it to mcpAllowlist in #{home_path(os, ".cursor/permissions.json")}. Keep existing entries: this field replaces the in-app list. Your team's policy may restrict local overrides.",
+      doc_url: "https://prod.cursor.com/docs/reference/permissions"
     }
   end
 

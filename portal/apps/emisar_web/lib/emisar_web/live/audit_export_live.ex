@@ -16,7 +16,7 @@ defmodule EmisarWeb.AuditExportLive do
     else
       {:ok,
        socket
-       |> put_flash(:error, "Managing export tokens needs an admin role.")
+       |> put_flash(:error, "You need an owner or admin role to manage export tokens.")
        |> push_navigate(to: ~p"/app/#{socket.assigns.current_account}/audit")}
     end
   end
@@ -57,8 +57,11 @@ defmodule EmisarWeb.AuditExportLive do
              {:ok, _revoked} <- ApiKeys.revoke_api_key(key, s.assigns.current_subject) do
           {:noreply, s |> put_flash(:info, "Export token revoked.") |> assign_export_keys()}
         else
-          {:error, :not_found} -> {:noreply, s}
-          {:error, _} -> {:noreply, put_flash(s, :error, "Could not revoke the token.")}
+          {:error, :not_found} ->
+            {:noreply, s}
+
+          {:error, _} ->
+            {:noreply, put_flash(s, :error, "Couldn't revoke the export token. Try again.")}
         end
       end
     )
@@ -97,7 +100,7 @@ defmodule EmisarWeb.AuditExportLive do
              |> push_navigate(to: ~p"/app/#{s.assigns.current_account}/settings/billing")}
 
           {:error, _} ->
-            {:noreply, put_flash(s, :error, "Could not mint the export key.")}
+            {:noreply, put_flash(s, :error, "Couldn't create the export token. Try again.")}
         end
       end
     )
@@ -157,151 +160,179 @@ defmodule EmisarWeb.AuditExportLive do
       </:title>
 
       <.page_intro>
-        Your SIEM reads audit events as NDJSON from this endpoint, for independent, long-term
-        retention. Mint a read-only export token, then point your collector at <code class="font-mono text-zinc-300">{@base_audit_url}</code>.
-        <.doc_link href={~p"/docs/audit-and-siem"}>Audit log docs</.doc_link>
+        Export audit events to your SIEM for independent, long-term retention.
+        Manage the read-only tokens your collector uses to connect.
+        <.doc_link href={~p"/docs/audit-and-siem#token"}>SIEM export docs</.doc_link>
       </.page_intro>
 
-      <%!-- CONTENT ON CANVAS (the keys-page grammar): a section header with
-           the mint action, hairline token rows below — the panel island died
-           with the old design. The one box left is the shown-once secret. --%>
-      <section id="siem-export">
-        <.callout
-          :if={not @continuous_export_available?}
-          tone={:amber}
-          icon="state.warning"
-          title="Continuous export is paused"
-          class="mb-6"
-        >
-          Existing tokens no longer read audit events. You can revoke them here or restore a paid
-          plan from Billing.
-        </.callout>
-        <.section_header title="Export tokens">
-          <:subtitle>
-            Read-only, admin-minted, revocable — separate from the LLM-agent keys.
-          </:subtitle>
-          <:actions>
-            <.button
-              :if={@continuous_export_available? and is_nil(@export_secret)}
-              variant={:secondary}
-              size={:md}
-              class="shrink-0"
-              type="button"
-              icon="identity.credential"
-              phx-click="create_export_key"
-            >
-              Mint export token
-            </.button>
-          </:actions>
-        </.section_header>
-
-        <%!-- One-shot reveal in the shared naked single-secret grammar. The
-             raw secret only ever exists in the socket assigns; a refresh
-             hides it for good. --%>
-        <div :if={@export_secret}>
-          <.event_block
-            icon="identity.credential"
+      <div class="grid grid-cols-1 gap-x-10 gap-y-8 xl:grid-cols-[minmax(0,1fr)_22rem] xl:items-start">
+        <section id="siem-export">
+          <.callout
+            :if={not @continuous_export_available?}
             tone={:amber}
-            title="Copy this token now — we won't show it again."
+            icon="state.warning"
+            title="SIEM export unavailable"
+            class="mb-6"
           >
-            <:body>
-              A read-only token for shipping audit events to a SIEM.
-            </:body>
+            Your current plan doesn't include SIEM export. Existing tokens can't read events,
+            but you can still revoke them.
+            <.link
+              navigate={~p"/app/#{@current_account}/settings/billing"}
+              class="font-medium text-brand-400 hover:text-brand-300"
+            >View plans</.link>
+          </.callout>
+          <.section_header title="Export tokens">
+            <:actions>
+              <.button
+                :if={@continuous_export_available? and is_nil(@export_secret)}
+                variant={:secondary}
+                size={:md}
+                class="shrink-0"
+                type="button"
+                icon="identity.credential"
+                phx-click="create_export_key"
+              >
+                Create export token
+              </.button>
+            </:actions>
+          </.section_header>
 
-            <.code_panel
-              id="export-secret"
-              label="Audit export token"
-              copy
-              copy_label="Copy token"
-              code={@export_secret}
-              class="mt-6"
-            />
+          <%!-- One-shot reveal in the shared naked single-secret grammar. The
+               raw secret only ever exists in the socket assigns; a refresh
+               hides it for good. --%>
+          <div :if={@export_secret}>
+            <.event_block
+              icon="identity.credential"
+              tone={:amber}
+              title="Export token created"
+            >
+              <:body>
+                Save this read-only token in your collector's configuration before closing this
+                message. You won't be able to view it again.
+              </:body>
 
-            <.code_panel
-              id="export-secret-use"
-              label="Use with"
-              annotation="contains your token"
-              copy
-              code={"curl -H \"Authorization: Bearer #{@export_secret}\" #{@base_audit_url}"}
-              class="mt-6"
-            />
+              <.code_panel
+                id="export-secret"
+                label="Audit export token"
+                copy
+                copy_label="Copy token"
+                code={@export_secret}
+                class="mt-6"
+              />
 
-            <div class="mt-6">
-              <.button phx-click="dismiss_export_secret" variant={:secondary}>Done</.button>
-            </div>
-          </.event_block>
-        </div>
+              <.code_panel
+                id="export-secret-use"
+                label="Test your token"
+                annotation="contains your token"
+                copy
+                code={"curl -H \"Authorization: Bearer #{@export_secret}\" #{@base_audit_url}"}
+                class="mt-6"
+              />
 
-        <%!-- Existing export tokens — listed with revoke. The agents page
-             filters these out so SIEM-export tokens live here exclusively. --%>
-        <.callout :if={@load_error?} tone={:rose} title="Could not load export tokens">
-          Your permissions may have changed. Reload, or ask an owner to check your role.
-        </.callout>
+              <div class="mt-6">
+                <.button phx-click="dismiss_export_secret" variant={:secondary}>
+                  I've saved the token
+                </.button>
+              </div>
+            </.event_block>
+          </div>
 
-        <.callout
-          :if={@export_keys_truncated?}
-          tone={:amber}
-          title="Showing the first 100 export tokens"
-        >
-          Revoke some to see the rest.
-        </.callout>
+          <%!-- Existing export tokens — listed with revoke. The agents page
+               filters these out so SIEM-export tokens live here exclusively. --%>
+          <.callout :if={@load_error?} tone={:rose} title="Couldn't load export tokens">
+            Refresh the page to try again.
+          </.callout>
 
-        <div :if={@export_keys != []} class="mt-2">
-          <ul class="divide-y divide-zinc-800/70 border-t border-zinc-800/70">
-            <.list_row :for={key <- @export_keys} padding="py-4">
-              <:title>
-                <span class="truncate text-sm font-medium text-zinc-100">{key.name}</span>
-              </:title>
-              <:chips>
-                <.chip tone={:neutral}>read-only</.chip>
-                <.chip :if={key.revoked_at} tone={:rose}>revoked</.chip>
-              </:chips>
-              <:meta>
-                <.meta_line class="text-[11px]">
-                  <:seg mono>{key.key_prefix}…</:seg>
-                  <:seg>
-                    last used{" "}<.local_time
-                      id={"export-key-used-#{key.id}"}
-                      value={key.last_used_at}
-                      mode={:relative}
-                      placeholder="never"
-                    />
-                  </:seg>
-                  <:seg :if={key.created_by}>by {key.created_by.email}</:seg>
-                </.meta_line>
-              </:meta>
-              <:actions>
-                <.confirm_button
-                  :if={is_nil(key.revoked_at)}
-                  id={"revoke-export-#{key.id}"}
-                  title="Revoke this export token?"
-                  confirm_label="Revoke"
-                  variant={:secondary}
-                  tone={:rose}
-                  size={:sm}
-                  class="shrink-0"
-                  on_confirm={JS.push("revoke_export_key", value: %{id: key.id})}
-                >
-                  <:body>Any active SIEM collector using it will start receiving 401s.</:body>
-                  Revoke
-                </.confirm_button>
-              </:actions>
-            </.list_row>
-          </ul>
-        </div>
+          <.callout
+            :if={@export_keys_truncated?}
+            tone={:amber}
+            title="Export token list limit"
+          >
+            Only the 100 most recent export tokens are shown.
+          </.callout>
 
-        <.empty_state
-          :if={
-            @export_keys == [] and @continuous_export_available? and not @load_error? and
-              is_nil(@export_secret)
-          }
-          icon="identity.credential"
-          title="No export tokens yet."
-        >
-          Mint a token to start streaming audit events to your SIEM. It's read-only and
-          scoped to audit export.
-        </.empty_state>
-      </section>
+          <div :if={@export_keys != []} class="mt-2">
+            <ul class="divide-y divide-zinc-800/70 border-t border-zinc-800/70">
+              <.list_row :for={key <- @export_keys} padding="py-4">
+                <:title>
+                  <span class="truncate text-sm font-medium text-zinc-100">{key.name}</span>
+                </:title>
+                <:chips>
+                  <.chip tone={:neutral}>Read-only</.chip>
+                  <.chip :if={key.revoked_at} tone={:rose}>Revoked</.chip>
+                </:chips>
+                <:meta>
+                  <.meta_line class="text-[11px]">
+                    <:seg mono>{key.key_prefix}…</:seg>
+                    <:seg>
+                      last used{" "}<.local_time
+                        id={"export-key-used-#{key.id}"}
+                        value={key.last_used_at}
+                        mode={:relative}
+                        placeholder="never"
+                      />
+                    </:seg>
+                    <:seg :if={key.created_by}>by {key.created_by.email}</:seg>
+                  </.meta_line>
+                </:meta>
+                <:actions>
+                  <.confirm_button
+                    :if={is_nil(key.revoked_at)}
+                    id={"revoke-export-#{key.id}"}
+                    title="Revoke this export token?"
+                    confirm_label="Revoke"
+                    variant={:secondary}
+                    tone={:rose}
+                    size={:sm}
+                    class="shrink-0"
+                    on_confirm={JS.push("revoke_export_key", value: %{id: key.id})}
+                  >
+                    <:body>
+                      Collectors using this token will lose access to audit events.
+                      Events already exported are not affected.
+                    </:body>
+                    Revoke
+                  </.confirm_button>
+                </:actions>
+              </.list_row>
+            </ul>
+          </div>
+
+          <.empty_state
+            :if={
+              @export_keys == [] and @continuous_export_available? and not @load_error? and
+                is_nil(@export_secret)
+            }
+            icon="identity.credential"
+            title="No export tokens yet"
+          >
+            Create a token to connect your SIEM or log collector.
+          </.empty_state>
+        </section>
+
+        <.docs_rail title="Connect your SIEM">
+          <p>
+            Configure your SIEM or log collector to request events from this endpoint using an
+            export token. Each event is returned as one line of JSON (NDJSON).
+          </p>
+          <.code_panel
+            id="audit-export-endpoint"
+            label="Endpoint"
+            copy
+            copy_label="Copy endpoint"
+            code={@base_audit_url}
+          />
+          <p>
+            Save the cursor returned with each batch to continue where you left off.
+            <.doc_link href={~p"/docs/audit-and-siem#polling"}>Collector setup</.doc_link>
+          </p>
+          <p>
+            To replace a token, create a new one, update your collector, and confirm it works
+            before revoking the old token.
+            <.doc_link href={~p"/docs/credentials#audit-tokens"}>Token rotation</.doc_link>
+          </p>
+        </.docs_rail>
+      </div>
     </.console_shell>
     """
   end

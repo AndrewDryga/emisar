@@ -130,6 +130,10 @@ defmodule EmisarWeb.ConsoleRefreshPerformanceTest do
     account: account,
     runner: runner
   } do
+    account.id
+    |> Fixtures.Memberships.fetch_membership(user.id)
+    |> Fixtures.Memberships.force_role("admin")
+
     run = Fixtures.Runs.create_run(account_id: account.id, runner_id: runner.id)
     request = Fixtures.Approvals.create_request(account_id: account.id, run_id: run.id)
     {:ok, view, _html} = live(conn, ~p"/app/#{account}/runs")

@@ -24,7 +24,10 @@ defmodule EmisarWeb.RunbookRunLive do
     else
       {:ok,
        socket
-       |> put_flash(:error, "Running a runbook needs an operator role or above.")
+       |> put_flash(
+         :error,
+         "You don't have permission to run runbooks. Ask an owner or admin to grant you an operator role."
+       )
        |> push_navigate(to: ~p"/app/#{socket.assigns.current_account}/runbooks")}
     end
   end
@@ -41,7 +44,7 @@ defmodule EmisarWeb.RunbookRunLive do
      |> assign(:touched_inputs, MapSet.new())
      |> assign(:target_selection_seed, nil)
      |> assign(:preflight_generation, 0)
-     |> assign(:preflight, %{state: :idle, plan: nil, issues: [], checked_at: nil})
+     |> assign(:preflight, %{state: :idle, plan: nil, issues: []})
      |> assign(:result, nil)
      |> assign(:projection, nil)
      |> assign(:item_facts, %{})
@@ -80,7 +83,7 @@ defmodule EmisarWeb.RunbookRunLive do
           |> assign(:touched_inputs, MapSet.new())
           |> assign(:target_selection_seed, Runbooks.new_target_selection_seed())
           |> assign(:preflight_generation, 0)
-          |> assign(:preflight, %{state: :idle, plan: nil, issues: [], checked_at: nil})
+          |> assign(:preflight, %{state: :idle, plan: nil, issues: []})
           |> assign(:result, nil)
           |> assign(:projection, nil)
           |> assign(:item_facts, %{})
@@ -255,8 +258,7 @@ defmodule EmisarWeb.RunbookRunLive do
          assign(socket, :preflight, %{
            state: :error,
            plan: nil,
-           issues: issues,
-           checked_at: DateTime.utc_now()
+           issues: issues
          })}
 
       {:error, :not_live} ->
@@ -288,7 +290,7 @@ defmodule EmisarWeb.RunbookRunLive do
 
       {:error, _reason} ->
         {:noreply,
-         put_flash(socket, :error, "The runbook did not start. Re-run preflight and try again.")}
+         put_flash(socket, :error, "The runbook couldn't start. Refresh the page and try again.")}
     end
   end
 
@@ -336,8 +338,7 @@ defmodule EmisarWeb.RunbookRunLive do
     |> assign(:preflight, %{
       state: :error,
       plan: nil,
-      issues: issues,
-      checked_at: DateTime.utc_now()
+      issues: issues
     })
   end
 
@@ -354,8 +355,7 @@ defmodule EmisarWeb.RunbookRunLive do
         |> assign(:preflight, %{
           state: :error,
           plan: nil,
-          issues: issues,
-          checked_at: DateTime.utc_now()
+          issues: issues
         })
     end
   end
@@ -371,24 +371,21 @@ defmodule EmisarWeb.RunbookRunLive do
         assign(socket, :preflight, %{
           state: :ready,
           plan: plan,
-          issues: [],
-          checked_at: DateTime.utc_now()
+          issues: []
         })
 
       {:error, issues} when is_list(issues) ->
         assign(socket, :preflight, %{
           state: :error,
           plan: nil,
-          issues: issues,
-          checked_at: DateTime.utc_now()
+          issues: issues
         })
 
       {:error, _reason} ->
         assign(socket, :preflight, %{
           state: :error,
           plan: nil,
-          issues: [issue("dispatch_failed", "", "Current preflight could not be completed.")],
-          checked_at: DateTime.utc_now()
+          issues: [issue("dispatch_failed", "", "Current preflight could not be completed.")]
         })
     end
   end
@@ -640,13 +637,20 @@ defmodule EmisarWeb.RunbookRunLive do
   defp humanize_terminal_code(code),
     do: code |> String.replace("_", " ") |> String.capitalize()
 
+  defp result_message("runbook execution cancelled"), do: "This execution was cancelled."
+
+  defp result_message("Wait budget ended before the success conditions passed."),
+    do: "The time or attempt limit was reached before the success conditions passed."
+
+  defp result_message(message), do: message
+
   defp stage_mode(%{mode: :parallel, max_parallel: max_parallel}),
     do: "parallel · up to #{max_parallel} at once"
 
   defp stage_mode(%{mode: :sequential}), do: "sequential"
 
   defp wait_label(%{status: :waiting, attempt_count: attempts, wait: wait}) when is_map(wait) do
-    "#{attempts} of #{wait["max_attempts"]} observations"
+    "#{attempts}/#{wait["max_attempts"]} attempts"
   end
 
   defp wait_label(_item), do: nil
@@ -768,8 +772,7 @@ defmodule EmisarWeb.RunbookRunLive do
           on_confirm={JS.push("cancel_execution")}
         >
           <:body>
-            Cancels the current <span class="font-medium text-zinc-200">{@runbook.title}</span>
-            execution. Queued actions will not start; already-running actions receive a cancellation request.
+            Queued actions won't start. Running actions receive a cancellation request.
           </:body>
           Cancel execution
         </.confirm_button>
@@ -863,7 +866,7 @@ defmodule EmisarWeb.RunbookRunLive do
           :if={String.trim(@runbook.definition["context_markdown"] || "") != ""}
           id="runbook-operator-context"
         >
-          <.section_header title="Operator context" />
+          <.section_header title="Instructions" />
           <.artifact_panel>
             <RunbookMarkdown.render markdown={@runbook.definition["context_markdown"]} />
           </.artifact_panel>
@@ -872,7 +875,7 @@ defmodule EmisarWeb.RunbookRunLive do
         <section id="runbook-start-execution">
           <.section_header title="Start execution">
             <:subtitle>
-              Supply this execution's values and record why it should run now.
+              Enter the input values and explain why you're running this runbook.
             </:subtitle>
           </.section_header>
           <form
@@ -899,9 +902,9 @@ defmodule EmisarWeb.RunbookRunLive do
                     {input["description"]}
                     <span :if={input["sensitive"]} class="text-amber-300"> · sensitive</span>
                   </p>
-                  <p :if={@visible_input_errors[input["id"]]} class="mt-1 text-xs text-rose-300">
-                    {@visible_input_errors[input["id"]]}
-                  </p>
+                  <div :if={@visible_input_errors[input["id"]]} class="mt-1">
+                    <.error compact>{@visible_input_errors[input["id"]]}</.error>
+                  </div>
                 </div>
               </div>
 
@@ -938,11 +941,11 @@ defmodule EmisarWeb.RunbookRunLive do
                   <% @preflight_view.state == :awaiting_input -> %>
                     Fill in the required inputs to start this execution.
                   <% @preflight_view.state == :error -> %>
-                    Resolve the plan issues above before starting.
+                    Resolve the issues above before starting.
                   <% String.trim(@reason) == "" -> %>
                     Add a reason to start this execution.
                   <% true -> %>
-                    The frozen plan below will be dispatched exactly as shown.
+                    Targets and policies are checked again when you start.
                 <% end %>
               </p>
             </div>
@@ -954,16 +957,16 @@ defmodule EmisarWeb.RunbookRunLive do
         <section id="runbook-before-starting">
           <.section_header title="Before starting" />
           <p class="text-sm leading-6 text-zinc-400">
-            Starting freezes this exact plan. If approval is required, one decision covers every
-            listed action—there are no separate action approvals. Dispatch still stops if access,
-            pack trust, or policy no longer permits an action.
+            Runbook approvals cover all actions and target runners in one request. Your policy
+            may require more than one approver.
           </p>
-          <div class="mt-3">
+          <p class="mt-3 text-sm leading-6 text-zinc-400">
+            Access, pack trust, and policy are checked again before each action starts.
+          </p>
+          <div class="mt-3 text-sm">
             <.doc_link href={~p"/docs/runbooks"}>Runbook execution guide</.doc_link>
           </div>
         </section>
-
-        <.plan_summary preflight={@preflight_view} />
 
         <section id="runbook-execution-history">
           <.section_header title="Recent executions" />
@@ -980,67 +983,16 @@ defmodule EmisarWeb.RunbookRunLive do
   end
 
   attr :preflight, :map, required: true
-
-  defp plan_summary(assigns) do
-    ~H"""
-    <section id="current-runbook-plan-summary">
-      <.section_header title="Current plan" />
-
-      <div
-        :if={@preflight.state == :loading}
-        class="flex items-center gap-2 text-sm text-zinc-400"
-      >
-        <.icon name="state.loading" class="h-4 w-4 animate-spin motion-reduce:animate-none" />
-        Checking current state…
-      </div>
-
-      <p :if={@preflight.state == :awaiting_input} class="text-sm leading-6 text-zinc-400">
-        Waiting for the required inputs.
-      </p>
-
-      <p :if={@preflight.state == :error} class="text-sm leading-6 text-rose-300">
-        Resolve the plan issues before starting.
-      </p>
-
-      <div :if={@preflight.state == :ready}>
-        <dl class="grid grid-cols-2 gap-x-4 gap-y-3 text-xs">
-          <div>
-            <dt class="text-zinc-500">Actions</dt>
-            <dd class="mt-0.5 font-medium tabular-nums text-zinc-200">
-              {@preflight.plan["total_items"]}
-            </dd>
-          </div>
-          <div>
-            <dt class="text-zinc-500">Stages</dt>
-            <dd class="mt-0.5 font-medium tabular-nums text-zinc-200">
-              {length(@preflight.plan["stages"])}
-            </dd>
-          </div>
-          <div>
-            <dt class="text-zinc-500">Run approval</dt>
-            <dd class="mt-0.5 font-medium text-zinc-200">
-              {if @preflight.plan["approval_required"], do: "Required", else: "Not required"}
-            </dd>
-          </div>
-          <div :if={@preflight.checked_at}>
-            <dt class="text-zinc-500">Resolved</dt>
-            <dd class="mt-0.5 text-zinc-300">
-              <.local_time value={@preflight.checked_at} mode={:relative} />
-            </dd>
-          </div>
-        </dl>
-      </div>
-    </section>
-    """
-  end
-
-  attr :preflight, :map, required: true
   attr :expanded_stages, :any, required: true
 
   defp plan_details(assigns) do
     ~H"""
     <section id="current-runbook-plan">
-      <.section_header title="Plan" />
+      <.section_header title="Plan">
+        <:badge :if={@preflight.state == :ready && @preflight.plan["approval_required"]}>
+          <.chip tone={:amber}>Approval required</.chip>
+        </:badge>
+      </.section_header>
 
       <div
         :if={@preflight.state == :loading}
@@ -1051,7 +1003,7 @@ defmodule EmisarWeb.RunbookRunLive do
       </div>
 
       <p :if={@preflight.state == :awaiting_input} class="text-sm leading-6 text-zinc-400">
-        The plan resolves once the required inputs above are filled in.
+        Enter the required inputs to preview the actions and target runners.
       </p>
 
       <.event_block
@@ -1169,6 +1121,9 @@ defmodule EmisarWeb.RunbookRunLive do
 
     ~H"""
     <div id="runbook-execution-result" class="space-y-12">
+      <p :if={@result.execution.kind == :draft_test} class="text-sm leading-6 text-zinc-400">
+        This execution runs an unpublished workflow on your runners.
+      </p>
       <%!-- The STATUS block mirrors the run detail's grammar: the naked meta row
            carries the facts, the reason renders as the operator's own artifact,
            and only a held/dead outcome earns an attention event block. --%>
@@ -1227,21 +1182,16 @@ defmodule EmisarWeb.RunbookRunLive do
           <.event_block
             :if={@result.execution.status == :pending_approval}
             icon="state.awaiting_human"
-            title="Waiting on approval"
+            title="Waiting for approval"
+            title_navigate={
+              @approval_request &&
+                ~p"/app/#{@current_account}/approvals/#{@approval_request.id}"
+            }
           >
             <:body>
-              This execution is held until an approver decides. One decision covers every
-              listed action.
+              This execution starts once all required approvals are received. The approval
+              request covers every action and target runner.
             </:body>
-            <div :if={@approval_request} class="mt-4">
-              <.button
-                tone={:amber}
-                size={:md}
-                navigate={~p"/app/#{@current_account}/approvals/#{@approval_request.id}"}
-              >
-                View approval →
-              </.button>
-            </div>
           </.event_block>
 
           <.event_block
@@ -1251,7 +1201,10 @@ defmodule EmisarWeb.RunbookRunLive do
             title="Execution halted"
           >
             <:body>
-              <span class="whitespace-pre-wrap">{@result.execution.terminal_message}</span>
+              <span class="whitespace-pre-wrap">{result_message(@result.execution.terminal_message)}</span>
+              <p class="mt-2">
+                No further actions will start. Actions already running can finish.
+              </p>
             </:body>
           </.event_block>
 
@@ -1262,8 +1215,10 @@ defmodule EmisarWeb.RunbookRunLive do
             title="Execution cancelled"
           >
             <:body>
-              <span :if={@result.execution.terminal_message} class="whitespace-pre-wrap">{@result.execution.terminal_message}</span>
-              <span :if={is_nil(@result.execution.terminal_message)}>An operator pulled this execution back.</span>
+              <span :if={@result.execution.terminal_message} class="whitespace-pre-wrap">{result_message(
+                @result.execution.terminal_message
+              )}</span>
+              <span :if={is_nil(@result.execution.terminal_message)}>This execution was cancelled.</span>
             </:body>
           </.event_block>
         </div>
@@ -1299,7 +1254,7 @@ defmodule EmisarWeb.RunbookRunLive do
           title="Stage halted"
           class="mb-5"
         >
-          <:body>{stage.terminal_message}</:body>
+          <:body>{result_message(stage.terminal_message)}</:body>
         </.event_block>
 
         <% expanded? = MapSet.member?(@expanded_stages, stage.id) %>
@@ -1390,18 +1345,18 @@ defmodule EmisarWeb.RunbookRunLive do
                 the plan and the editor: a later step binds to `<id>.<output>`,
                 so it is identity, not addressing. --%>
           <span class="text-zinc-500">·</span>
-          <span class="font-mono text-xs text-zinc-500">{@item.step_id}</span>
+          <span class="font-mono text-xs text-zinc-400">{@item.step_id}</span>
           <.risk_pill :if={@item.risk} id={"execution-item-#{@item.id}-risk"} risk={@item.risk} />
         </div>
         <%!-- No leading glyph, matching the plan and the editor: a runner name
               says what it is, so an arrow would label nothing. --%>
         <p class="mt-1 text-xs text-zinc-300">
           {RunbookWorkflowComponents.runner_name(@item.runner_ref)}
-          <span :if={@item.target_group} class="text-zinc-500">
+          <span :if={@item.target_group} class="text-zinc-400">
             · selected from {@item.target_group}
           </span>
           <%!-- One attempt is the norm — only a repeat observation earns a mention. --%>
-          <span :if={@item.attempt_count > 1} class="text-zinc-500">
+          <span :if={@item.attempt_count > 1} class="tabular-nums text-zinc-400">
             · {@item.attempt_count} attempts
           </span>
         </p>
@@ -1414,9 +1369,9 @@ defmodule EmisarWeb.RunbookRunLive do
         <.link
           :if={@attempt}
           navigate={~p"/app/#{@current_account}/runs/#{@attempt.id}"}
-          class="text-xs font-medium text-brand-400 hover:text-brand-300"
+          class="group text-xs font-medium text-brand-400 hover:text-brand-300"
         >
-          View
+          View run&nbsp;<.cta_arrow class="h-3 w-3" />
         </.link>
       </div>
     </div>
@@ -1455,7 +1410,7 @@ defmodule EmisarWeb.RunbookRunLive do
           <.status_badge status={@attempt.status} />
         </.kv>
         <.kv :if={wait_label(@item)} label="Wait">{wait_label(@item)}</.kv>
-        <.kv :if={@item.next_attempt_at} label="Next observation">
+        <.kv :if={@item.next_attempt_at} label="Next attempt">
           <.local_time value={@item.next_attempt_at} mode={:relative} />
         </.kv>
       </dl>
@@ -1467,7 +1422,7 @@ defmodule EmisarWeb.RunbookRunLive do
         tone={:rose}
         title={humanize_terminal_code(@item.terminal_code) || "Action failed"}
       >
-        <:body>{terminal_message}</:body>
+        <:body>{result_message(terminal_message)}</:body>
       </.event_block>
 
       <.output_preview
@@ -1495,7 +1450,7 @@ defmodule EmisarWeb.RunbookRunLive do
 
       <div :if={@fact.evidence != []}>
         <p class="text-[11px] font-semibold uppercase tracking-wider text-zinc-400">
-          Success evidence
+          Result checks
         </p>
         <ul class="mt-2 divide-y divide-zinc-800/70 border-y border-zinc-800/70">
           <li

@@ -1,8 +1,7 @@
-defmodule EmisarWeb.BillingLiveTest.InvoicesDownPaddleClient do
+defmodule EmisarWeb.BillingLiveTest.InvoicePaddleClient do
   @moduledoc false
-  # The stub Paddle with ONLY the transaction list failing — exercises the
-  # invoice section's failed state without breaking the checkout/portal/catalog
-  # calls the rest of the page depends on.
+  # Override only invoice reads: errors and oversized result sets must not
+  # change checkout/portal behavior elsewhere on the page.
   @behaviour Emisar.Billing.PaddleClient
   @impl true
   defdelegate cancel_checkout_transaction(id), to: Emisar.Billing.PaddleClient.Stub
@@ -41,7 +40,13 @@ defmodule EmisarWeb.BillingLiveTest.InvoicesDownPaddleClient do
   defdelegate construct_webhook_event(payload, sig, secret), to: Stub
 
   @impl true
-  def list_transactions(_attrs), do: {:error, :paddle_unavailable}
+  def list_transactions(attrs) do
+    if owner = Emisar.Config.get_env(:emisar, :billing_test_invoice_owner) do
+      send(owner, {:invoice_request, attrs})
+    end
+
+    Emisar.Config.get_env(:emisar, :billing_test_invoice_result) || {:error, :paddle_unavailable}
+  end
 end
 
 defmodule EmisarWeb.BillingLiveTest do
@@ -61,7 +66,7 @@ defmodule EmisarWeb.BillingLiveTest do
   """
   use EmisarWeb.ConnCase, async: true
   alias EmisarWeb.BillingIntent
-  alias EmisarWeb.BillingLiveTest.InvoicesDownPaddleClient
+  alias EmisarWeb.BillingLiveTest.InvoicePaddleClient
 
   defp downgrade_to(user, role) when is_binary(role) do
     {:ok, membership} = Emisar.Accounts.fetch_membership_for_session(user, nil)
@@ -74,38 +79,79 @@ defmodule EmisarWeb.BillingLiveTest do
       %{conn: conn, account: account, user: user}
     end
 
-    test "renders the current plan, usage meters, and contextual support nav", %{
+    test "renders the current plan and usage without offering Free product support", %{
       conn: conn,
-      account: account,
-      user: user
+      account: account
     } do
-      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/settings/billing")
+      {:ok, lv, html} = live(conn, ~p"/app/#{account}/settings/billing")
 
       # Free plan strip + the two usage meters.
       assert html =~ "Current plan"
       assert html =~ "Free"
       assert html =~ "Runners"
       assert html =~ "Team members"
+      assert html =~ "Billing docs"
+      refute html =~ "Compare plans"
+      assert html =~ "See what your plan includes and how much you"
+      assert has_element?(lv, "#billing-usage", "/ 3")
+      assert has_element?(lv, "#billing-usage", "7 days")
+      assert html =~ "Up to 100 runners"
+      assert html =~ "Unlimited runners"
+      refute html =~ "$0/mo"
+      refute has_element?(lv, "#billing-support")
+      refute has_element?(lv, "nav a[href^='mailto:support@emisar.dev']")
+
+      refute html =~
+               "Contact us for general support, billing help, plan changes, or cancellation."
+
       # Owner sees the upgrade CTA (viewers don't — asserted below).
       assert html =~ "Upgrade to Team"
       # The Enterprise plan card carries the same benefit the pricing page promises.
-      assert html =~ "Dedicated Slack support channel"
-      assert html =~ "subject=Support%20request%20-%20Test%20Co"
-      assert html =~ "Account%20ID%3A%20#{account.id}"
-      assert html =~ "User%3A%20#{String.replace(user.email, "@", "%40")}"
+      assert html =~ "Slack and email support"
+
+      assert has_element?(
+               lv,
+               "#billing-offer-team button[phx-click='upgrade']",
+               "Upgrade to Team"
+             )
+
+      assert has_element?(
+               lv,
+               "#billing-offer-enterprise a[href^='mailto:sales@emisar.dev']",
+               "Contact sales"
+             )
+
+      assert has_element?(lv, "#billing-offer-team button[phx-click='set_cycle']", "Annual")
+      refute has_element?(lv, "#billing-offer-enterprise button[phx-click='set_cycle']")
+      refute has_element?(lv, "#billing-offer-free")
+
+      assert has_element?(
+               lv,
+               "#billing-offer-team",
+               "Estimated total: $20.00/month for 1 billable runner"
+             )
     end
 
-    test "from a paid plan a lower plan reads as a Downgrade, never 'Upgrade to Free'", %{
+    test "a lower plan routes an existing subscription to Manage billing", %{
       conn: conn,
       account: account
     } do
-      insert_subscription(account, "active")
+      attach_customer(account, "ctm_managed_team")
 
-      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/settings/billing")
+      insert_subscription_with(account, %{
+        plan: "team",
+        status: "active",
+        paddle_subscription_id: "sub_managed_team"
+      })
 
-      # On Team, Free is below — a downgrade, routed to the Paddle portal
-      # (manage_billing), never a mislabeled "Upgrade to Free" checkout.
-      assert html =~ "Downgrade to Free"
+      {:ok, lv, html} = live(conn, ~p"/app/#{account}/settings/billing")
+
+      # Changes and downgrades remain reachable without a card for each tier.
+      assert html =~ "Manage billing"
+      assert has_element?(lv, "#billing-offer-enterprise a", "Contact sales")
+      refute has_element?(lv, "#billing-offer-team")
+      refute has_element?(lv, "button[phx-click='set_cycle']")
+      refute html =~ "Downgrade to Free"
       refute html =~ "Upgrade to Free"
       refute html =~ ~s(phx-value-plan="free")
     end
@@ -142,6 +188,13 @@ defmodule EmisarWeb.BillingLiveTest do
       annual = render_click(lv, "set_cycle", %{"cycle" => "year"})
       assert annual =~ "$200 / runner / year"
       assert annual =~ "2 months free"
+
+      assert has_element?(
+               lv,
+               "#billing-offer-team",
+               "Estimated total: $200.00/year for 1 billable runner"
+             )
+
       assert has_element?(lv, "button[phx-value-cycle='year'][phx-click='upgrade']")
 
       # An annual upgrade still starts checkout (price selection is asserted in
@@ -153,10 +206,10 @@ defmodule EmisarWeb.BillingLiveTest do
     end
 
     for {state, message} <- [
-          creating: "Checkout is still being confirmed.",
-          legacy: "Earlier checkout status could not be confirmed.",
-          paid: "Your payment and subscription are still being reconciled.",
-          retirement: "Another subscription is awaiting cancellation confirmation."
+          creating: "We&#39;re confirming your checkout.",
+          legacy: "We couldn&#39;t confirm an earlier checkout.",
+          paid: "We&#39;re confirming your payment and subscription.",
+          retirement: "We&#39;re confirming the cancellation of an earlier subscription."
         ] do
       test "#{state} checkout gives an actionable pending state without another POST", %{
         conn: conn,
@@ -211,6 +264,7 @@ defmodule EmisarWeb.BillingLiveTest do
       assert html =~ "Review Team for Test Co"
       assert html =~ "Annual billing is selected"
       assert html =~ "Nothing is charged until you confirm there"
+      assert has_element?(lv, "#billing-offer-team", "Estimated total: $200.00/year")
       refute html =~ "most popular"
       assert has_element?(lv, "button[phx-value-cycle='year'][phx-click='upgrade']")
     end
@@ -223,7 +277,7 @@ defmodule EmisarWeb.BillingLiveTest do
         live(conn, ~p"/app/#{account}/settings/billing?billing_intent=forged")
 
       refute html =~ "Review Team for"
-      assert html =~ "most popular"
+      refute html =~ "most popular"
       assert has_element?(lv, "button[phx-value-cycle='month'][phx-click='upgrade']")
     end
 
@@ -274,25 +328,214 @@ defmodule EmisarWeb.BillingLiveTest do
     } do
       insert_subscription_with(account, %{plan: "enterprise", status: "active"})
 
-      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/settings/billing")
+      {:ok, lv, html} = live(conn, ~p"/app/#{account}/settings/billing")
 
-      # The special-state notice names the custom plan and carries the one real
-      # action — email support (a prefilled mailto), not a self-serve control.
-      assert html =~ "Custom Enterprise plan"
+      # Support-owned changes belong in the existing help rail, not another
+      # callout repeating the plan's identity.
+      refute html =~ "Custom plan"
+
+      assert has_element?(
+               lv,
+               "#billing-support p",
+               "Contact us for general support, billing help, plan changes, or cancellation."
+             )
+
+      refute html =~ "Questions about an invoice, your limits, or a custom plan?"
       assert html =~ "mailto:support@emisar.dev"
       assert html =~ "subject=Billing%20question%20-%20Test%20Co"
       assert html =~ "Account%20ID%3A%20#{account.id}"
       assert html =~ "User%3A%20#{String.replace(user.email, "@", "%40")}"
 
       # No self-serve downgrade off a custom plan: the lower tiers read "Contact
-      # support to switch", never a "Downgrade to …" routing to a Paddle portal
+      # support", never a "Downgrade to …" routing to a Paddle portal
       # this account has no customer in.
-      assert html =~ "Contact support to switch"
+      assert html =~ "Contact support"
       refute html =~ "Downgrade to"
+      refute has_element?(lv, "#billing-upgrade-offers")
+      refute has_element?(lv, "button[phx-click='set_cycle']")
+    end
+  end
+
+  describe "plan-specific support" do
+    for {plan, status, email?, slack?} <- [
+          {"free", "active", false, false},
+          {"team", "active", true, false},
+          {"enterprise", "active", true, true},
+          {"enterprise", "complimentary", true, true},
+          {"enterprise", "canceled", false, false}
+        ] do
+      test "#{plan} / #{status} shows only its included support channels", %{conn: conn} do
+        {conn, user, account} = register_and_log_in(conn)
+        url = "https://workspace.slack.com/archives/C01234567"
+        assert {:ok, _} = Emisar.Accounts.put_support_slack_url(account.id, url)
+        Fixtures.Accounts.create_subscription(account, unquote(plan), status: unquote(status))
+
+        {:ok, lv, html} = live(conn, ~p"/app/#{account}/settings/billing")
+        assert has_element?(lv, "#billing-support") == unquote(email?)
+
+        assert has_element?(
+                 lv,
+                 "#billing-support a[href^='mailto:support@emisar.dev']",
+                 "Email support"
+               ) == unquote(email?)
+
+        assert has_element?(lv, "#billing-support a[href='#{url}']", "Slack support") ==
+                 unquote(slack?)
+
+        assert has_element?(lv, "nav a[href='#{url}']") == unquote(slack?)
+        assert has_element?(lv, "#mobile-nav a[href='#{url}']") == unquote(slack?)
+
+        assert has_element?(lv, "nav a[href^='mailto:support@emisar.dev']", "Email support") ==
+                 unquote(email?)
+
+        if unquote(email?) do
+          assert html =~ "subject=Support%20request%20-%20Test%20Co"
+          assert html =~ "User%3A%20#{String.replace(user.email, "@", "%40")}"
+        end
+
+        if unquote(slack?) do
+          assert has_element?(
+                   lv,
+                   "#billing-support a[href='#{url}'][target='_blank'][rel='noopener noreferrer']"
+                 )
+        else
+          refute html =~ url
+        end
+      end
+    end
+
+    test "Enterprise without a configured channel offers email, not a broken Slack link", %{
+      conn: conn
+    } do
+      {conn, _user, account} = register_and_log_in(conn)
+      Fixtures.Accounts.create_subscription(account, "enterprise")
+      other = Fixtures.Accounts.create_account(plan: "enterprise")
+      other_url = "https://other.slack.com/archives/C98765432"
+      assert {:ok, _} = Emisar.Accounts.put_support_slack_url(other.id, other_url)
+
+      {:ok, lv, html} = live(conn, ~p"/app/#{account}/settings/billing")
+      assert has_element?(lv, "#billing-support a", "Email support")
+      refute has_element?(lv, "#billing-support a", "Slack support")
+      refute html =~ other_url
+    end
+
+    test "Billing refreshes channel changes and removes support after downgrade", %{conn: conn} do
+      {conn, _user, account} = register_and_log_in(conn)
+      Fixtures.Accounts.create_subscription(account, "enterprise")
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/billing")
+      url = "https://workspace.slack.com/archives/C01234567"
+
+      assert {:ok, _} = Emisar.Accounts.put_support_slack_url(account.id, url)
+      refresh_billing(lv)
+      assert has_element?(lv, "#billing-support a[href='#{url}']")
+      assert has_element?(lv, "nav a[href='#{url}']")
+
+      assert {:ok, _} = Emisar.Accounts.put_support_slack_url(account.id, nil)
+      refute refresh_billing(lv) =~ url
+      assert has_element?(lv, "#billing-support a", "Email support")
+
+      Fixtures.Accounts.create_subscription(account, "enterprise", status: "canceled")
+      refresh_billing(lv)
+      refute has_element?(lv, "#billing-support")
+      refute has_element?(lv, "nav a[href^='mailto:support@emisar.dev']")
+    end
+
+    test "support navigation refreshes on other pages and ignores stale refresh ticks", %{
+      conn: conn
+    } do
+      {conn, _user, account} = register_and_log_in(conn)
+      Fixtures.Accounts.create_subscription(account, "enterprise")
+      url = "https://workspace.slack.com/archives/C01234567"
+      assert {:ok, _} = Emisar.Accounts.put_support_slack_url(account.id, url)
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runs")
+      assert has_element?(lv, "nav a[href='#{url}']")
+
+      assert {:ok, _} = Emisar.Accounts.put_support_slack_url(account.id, nil)
+      attempt = :sys.get_state(lv.pid).socket.assigns.support_refresh
+      send(lv.pid, {:refresh_nav_support, attempt})
+      refute render(lv) =~ url
+      assert has_element?(lv, "nav a", "Email support")
+      next_attempt = :sys.get_state(lv.pid).socket.assigns.support_refresh
+      send(lv.pid, {:refresh_nav_support, attempt})
+      render(lv)
+      assert :sys.get_state(lv.pid).socket.assigns.support_refresh == next_attempt
+
+      Fixtures.Accounts.create_subscription(account, "enterprise",
+        scheduled_change_action: "cancel",
+        scheduled_change_effective_at: DateTime.add(DateTime.utc_now(), -1, :second)
+      )
+
+      send(lv.pid, {:refresh_nav_support, next_attempt})
+      render(lv)
+      refute has_element?(lv, "nav a[href^='mailto:support@emisar.dev']")
     end
   end
 
   describe "usage meter + plan display" do
+    test "Team estimates use enabled runner quantity and update with the selected cycle", %{
+      conn: conn
+    } do
+      {conn, _user, account} = register_and_log_in(conn)
+      for _ <- 1..3, do: Fixtures.Runners.create_runner(account_id: account.id, connected?: false)
+
+      Fixtures.Runners.create_runner(account_id: account.id, connected?: false)
+      |> Fixtures.Runners.disable_runner()
+
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/billing")
+
+      assert has_element?(
+               lv,
+               "#billing-offer-team",
+               "Estimated total: $60.00/month for 3 billable runners"
+             )
+
+      render_click(lv, "set_cycle", %{"cycle" => "year"})
+
+      assert has_element?(
+               lv,
+               "#billing-offer-team",
+               "Estimated total: $600.00/year for 3 billable runners"
+             )
+
+      assert has_element?(lv, "#billing-current-plan", "$0")
+    end
+
+    test "features stay visible through price selection and a billing refresh", %{conn: conn} do
+      {conn, _user, account} = register_and_log_in(conn)
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/billing")
+
+      assert has_element?(lv, "#billing-usage", "7 days")
+      assert has_element?(lv, "section#billing-features", "Single sign-on (OIDC)")
+      refute has_element?(lv, "#billing-features details")
+      render_click(lv, "set_cycle", %{"cycle" => "year"})
+      refresh_billing(lv)
+      assert has_element?(lv, "section#billing-features", "Single sign-on (OIDC)")
+      refute has_element?(lv, "#billing-features details")
+    end
+
+    test "Enterprise offers only benefits not already granted to Team", %{conn: conn} do
+      {conn, _user, account} = register_and_log_in(conn)
+
+      Fixtures.Accounts.create_subscription(account, "team",
+        entitlements: %{
+          "runners_limit" => "unlimited",
+          "audit_retention_days" => 365,
+          "features_scim_enabled?" => true
+        }
+      )
+
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/billing")
+
+      assert has_element?(lv, "#billing-features", "SCIM directory sync")
+      refute has_element?(lv, "#billing-offer-enterprise", "SCIM directory sync")
+      refute has_element?(lv, "#billing-offer-enterprise", "365-day audit retention")
+      refute has_element?(lv, "#billing-offer-enterprise", "Unlimited runners")
+      refute has_element?(lv, "#billing-offer-enterprise", "Everything in Team")
+      refute has_element?(lv, "#billing-offer-enterprise", "Slack and email support")
+      assert has_element?(lv, "#billing-offer-enterprise", "Slack support")
+      assert has_element?(lv, "#billing-offer-enterprise", "Security and procurement review")
+    end
+
     test "a Free account at the runner ceiling colours the meter amber, never rose", %{
       conn: conn
     } do
@@ -339,21 +582,16 @@ defmodule EmisarWeb.BillingLiveTest do
       refute html =~ "Upgrade to Enterprise"
     end
 
-    test "a legacy/unknown plan name degrades to free-tier display", %{conn: conn} do
-      # `plan("legacy-pro")` is nil → plan_def falls back to plan("free"), so the
-      # strip shows the Free name + the three plan cards still render. A dropped
-      # plan must never 500 the billing page.
+    test "an unknown custom plan keeps its identity and management surface", %{conn: conn} do
       {conn, _user, account} = register_and_log_in(conn)
       insert_subscription_with(account, %{plan: "legacy-pro", status: "active"})
 
-      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/settings/billing")
+      {:ok, lv, html} = live(conn, ~p"/app/#{account}/settings/billing")
 
-      # plan_def.name degrades to "Free"; the page renders, plans still listed.
-      assert html =~ "Current plan"
-      assert html =~ "Free"
-      assert html =~ "Team"
-      assert html =~ "Enterprise"
-      # No banner — "active" is healthy — and no crash on the unknown plan key.
+      assert has_element?(lv, "#billing-current-plan", "Legacy-pro")
+      assert has_element?(lv, "#billing-current-plan a", "Contact support")
+      refute has_element?(lv, "#billing-upgrade-offers")
+      refute has_element?(lv, "button[phx-click='set_cycle']")
       refute html =~ "Payment past due"
     end
 
@@ -374,8 +612,12 @@ defmodule EmisarWeb.BillingLiveTest do
       refute html =~ "most popular"
 
       # Same treatment the literal "enterprise" plan gets: the one real action.
-      assert html =~ "Custom Enterprise plan"
-      assert html =~ "Contact support to switch"
+      refute html =~ "Custom plan"
+
+      assert html =~
+               "Contact us for general support, billing help, plan changes, or cancellation."
+
+      assert html =~ "Contact support"
     end
 
     test "an enterprise account shows a Custom total and Unlimited meters", %{conn: conn} do
@@ -413,9 +655,10 @@ defmodule EmisarWeb.BillingLiveTest do
         billing_interval: "year"
       })
 
-      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/settings/billing")
+      {:ok, lv, html} = live(conn, ~p"/app/#{account}/settings/billing")
 
-      assert html =~ "$200.00/yr"
+      assert has_element?(lv, "#billing-current-plan", "$200.00/yr")
+      refute has_element?(lv, "button[phx-click='set_cycle']")
       refute html =~ "/mo"
     end
 
@@ -451,8 +694,8 @@ defmodule EmisarWeb.BillingLiveTest do
 
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/billing")
 
-      # The "Manage subscription" control is present once a customer exists…
-      assert has_element?(lv, "button[phx-click='manage_billing']", "Manage subscription")
+      # The "Manage billing" control is present once a customer exists…
+      assert has_element?(lv, "button[phx-click='manage_billing']", "Manage billing")
 
       # …and clicking it redirects out to the (stub) portal URL.
       assert {:error, {:redirect, redirect}} = render_click(lv, "manage_billing", %{})
@@ -488,7 +731,7 @@ defmodule EmisarWeb.BillingLiveTest do
     } do
       # On an account with no paddle_customer_id, open_billing_portal short-circuits
       # to {:error, :no_customer} BEFORE any PaddleClient call, so the handler shows
-      # the "upgrade first" flash and stays on the page (no redirect). The flash —
+      # the support flash and stays on the page (no redirect). The flash —
       # not a portal URL — is the proof the vendor was never reached.
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/billing")
 
@@ -496,7 +739,7 @@ defmodule EmisarWeb.BillingLiveTest do
       refute has_element?(lv, "button[phx-click='manage_billing']")
 
       html = render_hook(lv, "manage_billing", %{})
-      assert html =~ "upgrade to a paid plan first"
+      assert html =~ "No billing details are available yet"
     end
 
     test "an admin manages the subscription — the account's money is theirs to run", %{
@@ -509,7 +752,7 @@ defmodule EmisarWeb.BillingLiveTest do
 
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/billing")
 
-      assert has_element?(lv, "button[phx-click='manage_billing']", "Manage subscription")
+      assert has_element?(lv, "button[phx-click='manage_billing']", "Manage billing")
 
       assert {:error, {:redirect, redirect}} = render_click(lv, "manage_billing", %{})
       url = redirect[:to] || redirect[:external]
@@ -567,20 +810,26 @@ defmodule EmisarWeb.BillingLiveTest do
       account: account
     } do
       downgrade_to(user, "viewer")
+      attach_customer(account, "ctm_viewer_no_ledger")
 
       {:ok, lv, html} = live(conn, ~p"/app/#{account}/settings/billing")
 
       # What the tiers include is an operational fact on view_billing, alongside
       # the current plan and the usage meters…
       assert html =~ "Current plan"
-      assert html =~ "Usage"
-      assert html =~ "Plans"
+      assert has_element?(lv, "#billing-usage", "Runners")
+      assert has_element?(lv, "#billing-upgrade-offers")
       assert html =~ "Team"
+      assert html =~ "See what your plan includes and how much you"
       # …while spending money is manage_billing's: the ledger and every card's
       # call to action are gone, so there is no control left to deny.
       refute html =~ "Recent invoices"
       refute html =~ "Upgrade to Team"
       refute has_element?(lv, "button[phx-click='upgrade']")
+      refute has_element?(lv, "button[phx-click='manage_billing']")
+      refute has_element?(lv, "button[phx-click='download_invoice']")
+      assert has_element?(lv, "#billing-offer-team")
+      assert has_element?(lv, "#billing-offer-enterprise")
     end
 
     test "a crafted upgrade event is refused — flash, no redirect", %{
@@ -623,7 +872,7 @@ defmodule EmisarWeb.BillingLiveTest do
       # catalogue, and the checkout that acts on it.
       assert html =~ "Recent invoices"
       assert has_element?(lv, "button[phx-click='download_invoice'][phx-value-id='txn_stub_1']")
-      assert html =~ "Plans"
+      assert has_element?(lv, "#billing-upgrade-offers")
       assert has_element?(lv, "button[phx-click='upgrade']")
     end
 
@@ -655,8 +904,8 @@ defmodule EmisarWeb.BillingLiveTest do
       {:ok, lv, html} = live(conn, ~p"/app/#{account}/settings/billing")
 
       assert html =~ "Current plan"
-      assert html =~ "Usage"
-      assert html =~ "Plans"
+      assert has_element?(lv, "#billing-usage", "Runners")
+      assert has_element?(lv, "#billing-upgrade-offers")
       refute html =~ "Recent invoices"
       refute has_element?(lv, "button[phx-click='upgrade']")
     end
@@ -703,7 +952,7 @@ defmodule EmisarWeb.BillingLiveTest do
       # The role holds manage_billing, so it gets the same money controls an
       # owner does — never the read-only locked copy.
       assert html =~ "Upgrade to Team"
-      assert has_element?(lv, "button[phx-click='manage_billing']", "Manage subscription")
+      assert has_element?(lv, "button[phx-click='manage_billing']", "Manage billing")
       refute html =~ "Owner or billing manager only"
 
       # And the upgrade event passes both gates (LV + context) into checkout.
@@ -720,6 +969,38 @@ defmodule EmisarWeb.BillingLiveTest do
       %{conn: conn, user: user, account: account}
     end
 
+    test "only three recent invoices render and the full ledger opens in billing", %{
+      conn: conn,
+      account: account
+    } do
+      attach_customer(account, "ctm_invoice_limit")
+      {:ok, [invoice | _]} = Emisar.Billing.PaddleClient.Stub.list_transactions(%{})
+      invoices = for n <- 1..5, do: Map.put(invoice, "id", "txn_recent_#{n}")
+      Emisar.Config.put_override(:emisar, :paddle_client, InvoicePaddleClient)
+      Emisar.Config.put_override(:emisar, :billing_test_invoice_owner, self())
+      Emisar.Config.put_override(:emisar, :billing_test_invoice_result, {:ok, invoices})
+
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/billing")
+      html = render_async(lv)
+
+      assert_received {:invoice_request, %{customer: "ctm_invoice_limit", limit: 3}}
+
+      ids =
+        html
+        |> LazyHTML.from_document()
+        |> LazyHTML.query("#billing-invoices button")
+        |> LazyHTML.attribute("phx-value-id")
+
+      assert ids == ["txn_recent_1", "txn_recent_2", "txn_recent_3"]
+
+      assert {:error, {:redirect, %{to: url}}} =
+               lv
+               |> element("button[phx-click='manage_billing']", "View all invoices")
+               |> render_click()
+
+      assert url =~ "stub-portal"
+    end
+
     test "the mount render is the loading state; the list arrives async", %{
       conn: conn,
       account: account
@@ -731,14 +1012,14 @@ defmodule EmisarWeb.BillingLiveTest do
       # The connected mount paints before Paddle answers — the section shows
       # its loading line and no invoice rows yet. (String asserts only: a
       # `has_element?` re-render can already have processed the async result.)
-      assert html =~ "Loading payment history"
+      assert html =~ "Loading invoices"
       refute html =~ "download_invoice"
 
       # The resolved fetch replaces the loading line with the list.
       html = render_async(lv)
       assert html =~ "Recent invoices"
       assert has_element?(lv, "button[phx-click='download_invoice'][phx-value-id='txn_stub_1']")
-      refute html =~ "Loading payment history"
+      refute html =~ "Loading invoices"
     end
 
     test "a never-billed account renders no invoice chrome at all", %{
@@ -750,7 +1031,7 @@ defmodule EmisarWeb.BillingLiveTest do
       # section heading ever renders.
       {:ok, lv, html} = live(conn, ~p"/app/#{account}/settings/billing")
 
-      refute html =~ "Loading payment history"
+      refute html =~ "Loading invoices"
 
       html = render_async(lv)
       refute html =~ "Recent invoices"
@@ -761,7 +1042,7 @@ defmodule EmisarWeb.BillingLiveTest do
       account: account
     } do
       account = attach_customer(account, "ctm_invoices_down_01")
-      Emisar.Config.put_override(:emisar, :paddle_client, InvoicesDownPaddleClient)
+      Emisar.Config.put_override(:emisar, :paddle_client, InvoicePaddleClient)
 
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/billing")
 
@@ -769,7 +1050,7 @@ defmodule EmisarWeb.BillingLiveTest do
       # retry — while the rest of the page stays up.
       html = render_async(lv)
       assert html =~ "load recent invoices"
-      assert html =~ "not a problem with your payment"
+      refute html =~ "not a problem with your payment"
       assert has_element?(lv, "button[phx-click='retry_invoices']", "Try again")
       assert html =~ "Current plan"
 
@@ -779,18 +1060,19 @@ defmodule EmisarWeb.BillingLiveTest do
 
       html = render_async(lv)
       assert html =~ "Recent invoices"
-      refute has_element?(lv, "button[phx-click='retry_invoices']")
+      assert has_element?(lv, "button[phx-click='retry_invoices']", "Refresh invoices")
     end
   end
 
   describe "subscription health banner" do
     test "a past_due subscription shows the rose payment banner + a manage action", %{conn: conn} do
       {conn, _user, account} = register_and_log_in(conn)
+      attach_customer(account, "ctm_past_due")
       insert_subscription(account, "past_due")
 
       {:ok, lv, html} = live(conn, ~p"/app/#{account}/settings/billing")
 
-      assert html =~ "Payment recovery in progress"
+      assert html =~ "Payment overdue"
       assert html =~ "Update your payment details"
       # The owner can fix it — the banner surfaces the billing portal.
       assert has_element?(lv, "button[phx-click='manage_billing']", "Manage billing")
@@ -803,8 +1085,8 @@ defmodule EmisarWeb.BillingLiveTest do
       {:ok, _lv, html} = live(conn, ~p"/app/#{account}/settings/billing")
 
       assert html =~ "Subscription ended"
-      assert html =~ "Free limits"
-      assert html =~ "Paid integrations are dormant"
+      assert html =~ "is on the Free plan"
+      assert html =~ "restore paid features"
     end
 
     test "a healthy account shows no failure banner", %{conn: conn} do
@@ -812,7 +1094,7 @@ defmodule EmisarWeb.BillingLiveTest do
 
       {:ok, _lv, html} = live(conn, ~p"/app/#{account}/settings/billing")
 
-      refute html =~ "Payment recovery in progress"
+      refute html =~ "Payment overdue"
       refute html =~ "Subscription ended"
     end
 
@@ -828,11 +1110,12 @@ defmodule EmisarWeb.BillingLiveTest do
         current_period_end: effective_at
       })
 
-      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/settings/billing")
+      {:ok, lv, html} = live(conn, ~p"/app/#{account}/settings/billing")
 
-      assert html =~ "Paid access is scheduled to end"
-      assert html =~ "Paid features remain available until the scheduled end"
-      assert html =~ "Ends on"
+      assert html =~ "Subscription ending"
+      assert html =~ "Your paid features remain available until"
+      assert has_element?(lv, "#subscription-access-changes-at")
+      refute has_element?(lv, "#billing-access-ends-on")
       refute html =~ "Next charge"
       assert html =~ "Team"
     end
@@ -841,12 +1124,14 @@ defmodule EmisarWeb.BillingLiveTest do
       {conn, _user, account} = register_and_log_in(conn)
       insert_subscription(account, "paused")
 
-      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/settings/billing")
+      {:ok, lv, html} = live(conn, ~p"/app/#{account}/settings/billing")
 
-      assert html =~ "Paid access paused"
-      assert html =~ "Free limits"
+      assert html =~ "Subscription paused"
+      assert html =~ "is on the Free plan"
+      refute has_element?(lv, "#billing-upgrade-offers")
+      refute has_element?(lv, "button[phx-click='set_cycle']")
       # Amber FYI, not the rose payment-failure tone.
-      refute html =~ "Payment recovery in progress"
+      refute html =~ "Payment overdue"
     end
 
     test "an unknown status fails closed with a recovery-oriented banner", %{conn: conn} do
@@ -857,15 +1142,15 @@ defmodule EmisarWeb.BillingLiveTest do
 
       assert html =~ "Billing status unavailable"
       assert html =~ "Paid features are temporarily unavailable"
-      assert html =~ "Billing, recovery, and cleanup remain available"
+      refute html =~ "cleanup remain available"
       assert html =~ "Current plan"
     end
 
     test "the banner distinguishes dunning access from expired access", %{conn: _conn} do
       cases = [
-        {"past_due", "Paid features remain available"},
-        {"paused", "Paid integrations are dormant"},
-        {"canceled", "Paid integrations are dormant"}
+        {"past_due", "paid features remain available"},
+        {"paused", "restore paid features"},
+        {"canceled", "restore paid features"}
       ]
 
       for {status, advisory_body} <- cases do
@@ -888,9 +1173,222 @@ defmodule EmisarWeb.BillingLiveTest do
 
       {:ok, lv, html} = live(conn, ~p"/app/#{account}/settings/billing")
 
-      assert html =~ "Payment recovery in progress"
+      assert html =~ "Payment overdue"
       refute has_element?(lv, "button[phx-click='manage_billing']")
     end
+  end
+
+  describe "billing refresh" do
+    test "confirmed billing facts update an already-open Free page", %{conn: conn} do
+      {conn, _user, account} = register_and_log_in(conn)
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/billing")
+      render_async(lv)
+
+      assert has_element?(lv, "button[phx-click='upgrade']", "Upgrade to Team")
+      refute has_element?(lv, "button[phx-click='manage_billing']")
+      assert has_element?(lv, "li span.text-zinc-400", "Single sign-on (OIDC)")
+
+      attach_customer(account, "ctm_confirmed_after_mount")
+
+      Fixtures.Accounts.create_subscription(account, "team",
+        paddle_subscription_id: "sub_confirmed_after_mount",
+        unit_price_amount: 2000,
+        quantity: 2,
+        currency_code: "EUR",
+        entitlements: %{"runners_limit" => 250, "features_scim_enabled?" => true}
+      )
+
+      Fixtures.Runners.create_runner(account_id: account.id)
+      member = Fixtures.Users.create_user()
+      Fixtures.Memberships.create_membership(account_id: account.id, user_id: member.id)
+
+      html = refresh_billing(lv)
+      assert html =~ "€40.00/mo"
+      assert html =~ "/ 250"
+      assert billing_summary(lv).runner_count == 1
+      assert billing_summary(lv).member_count == 2
+      assert has_element?(lv, "li span.text-zinc-300", "Single sign-on (OIDC)")
+      assert has_element?(lv, "li span.text-zinc-300", "SCIM directory sync")
+      refute has_element?(lv, "#billing-offer-team")
+      assert has_element?(lv, "#billing-offer-enterprise")
+      refute has_element?(lv, "#billing-offer-enterprise", "SCIM directory sync")
+      refute has_element?(lv, "button[phx-click='set_cycle']")
+      refute has_element?(lv, "button[phx-click='upgrade']")
+      assert has_element?(lv, "button[phx-click='manage_billing']", "Manage billing")
+
+      # No provider call on the tick. The newly available ledger can be loaded
+      # explicitly using the current customer, despite the stale mount account.
+      refute has_element?(lv, "button[phx-click='download_invoice']")
+      assert has_element?(lv, "button[phx-click='retry_invoices']", "Refresh invoices")
+      render_click(lv, "retry_invoices", %{})
+      render_async(lv)
+      assert has_element?(lv, "button[phx-click='download_invoice'][phx-value-id='txn_stub_1']")
+
+      assert {:error, {:redirect, %{to: url}}} = render_click(lv, "manage_billing", %{})
+      assert url =~ "stub-portal"
+    end
+
+    test "complimentary changes refresh access without claiming recurring charges", %{conn: conn} do
+      {conn, _user, account} = register_and_log_in(conn)
+      Fixtures.Runners.create_runner(account_id: account.id)
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/billing")
+
+      assert {:ok, _} = Emisar.Billing.grant_complimentary_plan(account, "team")
+      html = refresh_billing(lv)
+      assert html =~ "Complimentary"
+      assert html =~ "/ 100"
+      refute html =~ "$20.00/mo"
+      refute has_element?(lv, "button[phx-click='manage_billing']")
+      refute has_element?(lv, "button[phx-click='upgrade']")
+
+      assert has_element?(
+               lv,
+               "#billing-current-plan a[href^='mailto:support@emisar.dev']",
+               "Contact support"
+             )
+
+      refute has_element?(lv, "#billing-upgrade-offers")
+      refute has_element?(lv, "button[phx-click='set_cycle']")
+
+      assert {:ok, _} = Emisar.Billing.revoke_complimentary_plan(account)
+      html = refresh_billing(lv)
+      refute html =~ "Complimentary"
+      refute html =~ "$0/mo"
+      assert html =~ "/ 3"
+      assert has_element?(lv, "button[phx-click='upgrade']", "Upgrade to Team")
+      assert has_element?(lv, "li span.text-zinc-400", "Single sign-on (OIDC)")
+    end
+
+    for {action, title} <- [{"pause", "Subscription paused"}, {"cancel", "Subscription ended"}] do
+      test "an elapsed scheduled #{action} refreshes access before a terminal webhook", %{
+        conn: conn
+      } do
+        {conn, _user, account} = register_and_log_in(conn)
+        attach_customer(account, "ctm_scheduled_#{unquote(action)}")
+        deadline = DateTime.add(DateTime.utc_now(), 86_400, :second)
+
+        subscription =
+          insert_subscription_with(account, %{
+            plan: "team",
+            status: "active",
+            paddle_subscription_id: "sub_scheduled_#{unquote(action)}",
+            scheduled_change_action: unquote(action),
+            scheduled_change_effective_at: deadline
+          })
+
+        {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/billing")
+        assert billing_summary(lv).plan == "team"
+
+        subscription
+        |> Ecto.Changeset.change(
+          scheduled_change_effective_at: DateTime.add(DateTime.utc_now(), -1, :second)
+        )
+        |> Emisar.Repo.update!()
+
+        html = refresh_billing(lv)
+        assert html =~ unquote(title)
+        assert html =~ "is on the Free plan"
+        assert billing_summary(lv).plan == "free"
+        assert billing_summary(lv).subscription_status == "active"
+        # An unconfirmed terminal state is still an existing subscription.
+        refute has_element?(lv, "button[phx-click='upgrade']")
+        assert has_element?(lv, "#billing-current-plan button[phx-click='manage_billing']")
+        refute has_element?(lv, "#billing-upgrade-offers")
+      end
+    end
+
+    test "a nearer deadline shortens the timer and stale ticks cannot fork it", %{conn: conn} do
+      {conn, _user, account} = register_and_log_in(conn)
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/billing")
+      {old_attempt, old_timer} = :sys.get_state(lv.pid).socket.assigns.billing_refresh
+
+      insert_subscription_with(account, %{
+        plan: "team",
+        status: "active",
+        scheduled_change_action: "pause",
+        scheduled_change_effective_at: DateTime.add(DateTime.utc_now(), 10, :second)
+      })
+
+      refresh_billing(lv)
+      current = {_attempt, timer} = :sys.get_state(lv.pid).socket.assigns.billing_refresh
+      refute Process.read_timer(old_timer)
+      assert Process.read_timer(timer) <= 10_000
+
+      send(lv.pid, {:refresh_billing, old_attempt})
+      render(lv)
+      assert :sys.get_state(lv.pid).socket.assigns.billing_refresh == current
+    end
+
+    test "periodic refresh leaves invoice failures for explicit retry", %{conn: conn} do
+      {conn, _user, account} = register_and_log_in(conn)
+      attach_customer(account, "ctm_refresh_invoice_failure")
+      Emisar.Config.put_override(:emisar, :paddle_client, InvoicePaddleClient)
+      Emisar.Config.put_override(:emisar, :billing_test_invoice_owner, self())
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/billing")
+      render_async(lv)
+      assert_received {:invoice_request, _}
+
+      for _ <- 1..3, do: refresh_billing(lv)
+      render_async(lv)
+      refute_received {:invoice_request, _}
+      assert has_element?(lv, "button[phx-click='retry_invoices']", "Try again")
+
+      render_click(lv, "retry_invoices", %{})
+      render_async(lv)
+      assert_received {:invoice_request, _}
+    end
+
+    for status <- ["paused", "some_unmodeled_status"] do
+      test "#{status} subscriptions do not offer another checkout", %{conn: conn} do
+        {conn, _user, account} = register_and_log_in(conn)
+
+        insert_subscription_with(account, %{
+          plan: "team",
+          status: unquote(status),
+          paddle_subscription_id: "sub_existing_#{unquote(status)}"
+        })
+
+        {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/billing")
+        assert billing_summary(lv).plan == "free"
+        refute has_element?(lv, "#billing-upgrade-offers")
+        refute has_element?(lv, "button[phx-click='upgrade']")
+        refute has_element?(lv, "button[phx-click='manage_billing']")
+
+        assert has_element?(
+                 lv,
+                 "#billing-current-plan a[href^='mailto:support@emisar.dev']",
+                 "Contact support"
+               )
+
+        attach_customer(account, "ctm_existing_#{unquote(status)}")
+        refresh_billing(lv)
+        refute has_element?(lv, "button[phx-click='upgrade']")
+        assert has_element?(lv, "#billing-current-plan button[phx-click='manage_billing']")
+      end
+    end
+
+    test "a canceled custom plan permits a new Team checkout", %{conn: conn} do
+      {conn, _user, account} = register_and_log_in(conn)
+
+      insert_subscription_with(account, %{
+        plan: "enterprise",
+        status: "canceled",
+        paddle_subscription_id: "sub_canceled_custom"
+      })
+
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/billing")
+      assert billing_summary(lv).plan == "free"
+      assert has_element?(lv, "button[phx-click='upgrade']", "Upgrade to Team")
+      assert has_element?(lv, "#billing-offer-enterprise a", "Contact sales")
+    end
+  end
+
+  defp billing_summary(lv), do: :sys.get_state(lv.pid).socket.assigns.summary
+
+  defp refresh_billing(lv) do
+    {attempt, _timer} = :sys.get_state(lv.pid).socket.assigns.billing_refresh
+    send(lv.pid, {:refresh_billing, attempt})
+    render(lv)
   end
 
   defp insert_subscription(account, status) do

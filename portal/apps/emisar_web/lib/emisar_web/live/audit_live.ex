@@ -134,6 +134,8 @@ defmodule EmisarWeb.AuditLive do
          do: Map.delete(merged, "target_id"),
          else: merged
 
+    merged = clear_incompatible_type(merged, socket.assigns.filter_params)
+
     {:noreply,
      LiveTable.apply_filter(socket, ~p"/app/#{socket.assigns.current_account}/audit", merged)}
   end
@@ -203,22 +205,10 @@ defmodule EmisarWeb.AuditLive do
   # mutating handler on this page ends in this no-op.
   def handle_event("preset", _params, socket), do: {:noreply, socket}
 
-  def handle_event("toggle_problems", _params, socket) do
-    params = socket.assigns.filter_params
-
-    merged =
-      if problems_only?(params),
-        do: Map.delete(params, "outcome"),
-        else: Map.put(params, "outcome", ["danger", "warn"])
-
-    {:noreply,
-     LiveTable.apply_filter(socket, ~p"/app/#{socket.assigns.current_account}/audit", merged)}
-  end
-
   # A category segment is a single-select TOGGLE onto the `category` panel facet:
   # click one to focus that lens (replacing any prior category), click the
   # active one to clear it. It only narrows the VIEW — the append-only trail is
-  # never trimmed. Other active filters are preserved.
+  # never trimmed. An incompatible Type is cleared; other filters are preserved.
   def handle_event("category", %{"category" => category}, socket) do
     params = socket.assigns.filter_params
 
@@ -227,11 +217,30 @@ defmodule EmisarWeb.AuditLive do
         do: Map.delete(params, "category"),
         else: Map.put(params, "category", [category])
 
+    merged = clear_incompatible_type(merged, params)
+
     {:noreply,
      LiveTable.apply_filter(socket, ~p"/app/#{socket.assigns.current_account}/audit", merged)}
   end
 
   def handle_event("category", _params, socket), do: {:noreply, socket}
+
+  # Only a deliberate category change clears Type. A shared URL keeps its
+  # explicit constraints, even when their intersection is empty.
+  defp clear_incompatible_type(params, previous) do
+    if List.wrap(blank_to_nil(params["category"])) ==
+         List.wrap(blank_to_nil(previous["category"])) do
+      params
+    else
+      types = Audit.compatible_event_types(params["event_type"], params["category"])
+
+      cond do
+        types == List.wrap(params["event_type"]) -> params
+        types == [] -> Map.delete(params, "event_type")
+        true -> Map.put(params, "event_type", types)
+      end
+    end
+  end
 
   defp choice_cursor(metadata, "previous"), do: metadata.previous_page_cursor
   defp choice_cursor(metadata, "next"), do: metadata.next_page_cursor
@@ -267,13 +276,6 @@ defmodule EmisarWeb.AuditLive do
   # Quick relative-range presets for the audit date filter — re-adds the buttons
   # the date-unification dropped, now setting the unified bar's :from.
   defp audit_presets, do: [{"Last hour", "1h"}, {"Last 24 hours", "24h"}, {"Last 7 days", "7d"}]
-
-  # The "Problems only" toggle is on when the Outcome filter is exactly the two
-  # non-routine outcomes (failures + denials/removals) the audit dots color.
-  defp problems_only?(params) do
-    outcome = List.wrap(params["outcome"])
-    "danger" in outcome and "warn" in outcome
-  end
 
   # Window → the "YYYY-MM-DDTHH:MM" UTC string the :from datetime filter parses
   # (now minus the window). Computed at click time so the range stays anchored to
@@ -535,7 +537,7 @@ defmodule EmisarWeb.AuditLive do
             Export CSV
           </.button>
         <% else %>
-          <.upgrade_button tip="CSV export is on the Team plan — upgrade to turn it on">
+          <.upgrade_button tip="CSV export requires the Team plan or above.">
             Export CSV
           </.upgrade_button>
         <% end %>
@@ -549,7 +551,7 @@ defmodule EmisarWeb.AuditLive do
               SIEM export
             </.button>
           <% else %>
-            <.upgrade_button tip="SIEM export is on the Team plan — upgrade to turn it on">
+            <.upgrade_button tip="SIEM export requires the Team plan or above.">
               SIEM export
             </.upgrade_button>
           <% end %>
@@ -557,17 +559,19 @@ defmodule EmisarWeb.AuditLive do
       </:actions>
 
       <.page_intro :if={Audit.subject_sees_billing_audit_only?(@current_subject)}>
-        The billing events in this account's audit trail — every plan change, recorded as it
-        happens. <.doc_link href={~p"/docs/audit-and-siem"}>Audit log docs</.doc_link>
+        Your role gives you access to billing events only.
+        Open an event to see what changed and when.
+        <.doc_link href={~p"/docs/audit-and-siem"}>Audit log docs</.doc_link>
       </.page_intro>
       <.page_intro :if={not Audit.subject_sees_billing_audit_only?(@current_subject)}>
-        The append-only record of actions, approvals, and access changes in this account —
-        exportable to your SIEM for independent, long-term retention.
+        A record of actions, approvals, sign-ins, and changes to policies and access.
+        Open an event for its full details and related records.
+        Export to your SIEM for independent, long-term retention.
         <.doc_link href={~p"/docs/audit-and-siem"}>Audit log docs</.doc_link>
       </.page_intro>
 
-      <%!-- THREE filter dimensions share this row — a relative window, the
-           outcome toggle, and the review-category lens. Distance separates
+      <%!-- Two filter dimensions share this row — a relative window and the
+           review-category lens. Distance separates
            dimensions; options within one dimension share edges as a segmented
            control. Each group stays intact when the outer row wraps. --%>
       <div
@@ -598,32 +602,6 @@ defmodule EmisarWeb.AuditLive do
             </.segmented_filter>
           </.segmented_filter_group>
         </div>
-        <%!-- One-click "only the events that went wrong" — denials, removals, and
-             failures (the danger+warn severities) — so the rows an operator hunts
-             for surface out of a wall of routine sign-ins, without hand-building
-             the Severity filter. Toggles the filter the panel already exposes.
-             Active wears the BRAND active-filter tint like every other filter
-             control — rose would say "something is wrong", but an engaged
-             toggle is a filter state, not an alarm (the problem ROWS carry
-             their own rose/amber). --%>
-        <%!-- Hidden for a billing-only reader: their slice is routine plan
-             changes (all info severity), so a danger+warn filter matches nothing
-             and the toggle would just look broken. --%>
-        <button
-          :if={not Audit.subject_sees_billing_audit_only?(@current_subject)}
-          type="button"
-          phx-click="toggle_problems"
-          aria-pressed={to_string(problems_only?(@filter_params))}
-          class={[
-            "rounded-md px-2 py-1 font-medium ring-1 transition-colors",
-            if(problems_only?(@filter_params),
-              do: "bg-brand-500/10 text-brand-300 ring-brand-500/40",
-              else: "bg-zinc-900 text-zinc-300 ring-zinc-800 hover:bg-zinc-800 hover:text-zinc-100"
-            )
-          ]}
-        >
-          Problems only
-        </button>
         <%!-- Event-category segments — the coarse review lens (UI-017): one click
              focuses decisions / access / activity out of the runner connect-
              disconnect churn (Fleet), or onto it. They drive the same `category`
@@ -714,7 +692,7 @@ defmodule EmisarWeb.AuditLive do
             <span class={audit_column_header_class()}>Actor</span>
             <span class={audit_column_header_class()}>Target</span>
             <span class={audit_column_header_class()}>Source IP</span>
-            <span class={[audit_column_header_class(), "text-right"]}>When</span>
+            <span class={audit_column_header_class()}>When</span>
           </li>
         </:list_header>
         <:item :let={event}>
@@ -749,7 +727,7 @@ defmodule EmisarWeb.AuditLive do
                     {format_event_type(event.event_type)}
                   </div>
                   <div class="mt-0.5 truncate text-xs leading-4 text-zinc-400 xl:hidden">
-                    {event_meta(event, @refs)}
+                    {event_meta(event, @refs, @current_account)}
                   </div>
                   <div
                     :if={pairs_text(event) != ""}
@@ -766,7 +744,8 @@ defmodule EmisarWeb.AuditLive do
                 refs={@refs}
               />
               <.audit_cell
-                value={target_text(event, @refs)}
+                value={target_text(event, @refs, @current_account)}
+                muted={event.target_kind == "account" and event.target_id == @current_account.id}
                 placeholder={if self_event?(event), do: "self", else: "—"}
               />
               <.audit_cell value={event.ip_address} mono />
@@ -775,16 +754,14 @@ defmodule EmisarWeb.AuditLive do
                 value={event.occurred_at}
                 mode={:relative}
                 styled_tooltip
-                class="ml-auto shrink-0 whitespace-nowrap text-xs leading-5 text-zinc-400 xl:ml-0 xl:text-right"
+                class="ml-auto shrink-0 whitespace-nowrap text-xs leading-5 text-zinc-400 xl:ml-0"
               />
             </.link>
           </li>
         </:item>
         <:empty>
-          <%!-- Filter-active stays a one-liner so it doesn't dominate
-               when the operator is just over-filtering. Empty-account
-               state gets richer copy that names the surfaces that
-               actually produce events. --%>
+          <%!-- Keep no matching results distinct from an empty log. The latter
+               explains when events appear, within the reader's audit access. --%>
           <%= cond do %>
             <% not connected?(@socket) -> %>
               <.loading_state />
@@ -794,28 +771,17 @@ defmodule EmisarWeb.AuditLive do
                 icon="state.warning"
                 title="Couldn't load the audit log"
               >
-                This is a load error, not an empty log. Refresh the page; if it persists, your
-                access to this account may have changed.
+                Refresh the page to try again.
               </.empty_state>
             <% any_filter_active?(@filter_params, @filters) -> %>
               <span class="text-zinc-400">No events match these filters.</span>
             <% true -> %>
-              <.empty_state icon="evidence.document" title="No audit events yet.">
-                They appear as soon as something happens — a
-                <.link
-                  navigate={~p"/app/#{@current_account}/runners"}
-                  class="text-brand-400 hover:text-brand-300"
-                >
-                  runner
-                </.link>
-                connects, an operator dispatches a <.link
-                  navigate={~p"/app/#{@current_account}/runs"}
-                  class="text-brand-400 hover:text-brand-300"
-                >run</.link>,
-                an approval is decided, or a pack is observed on the <.link
-                  navigate={~p"/app/#{@current_account}/packs"}
-                  class="text-brand-400 hover:text-brand-300"
-                >Packs page</.link>.
+              <.empty_state icon="evidence.document" title="No audit events yet">
+                <%= if Audit.subject_sees_billing_audit_only?(@current_subject) do %>
+                  Subscription changes will appear here automatically.
+                <% else %>
+                  Events appear automatically as actions run, approvals are decided, or settings change.
+                <% end %>
               </.empty_state>
           <% end %>
         </:empty>
@@ -846,6 +812,7 @@ defmodule EmisarWeb.AuditLive do
 
   attr :value, :string, default: nil
   attr :mono, :boolean, default: false
+  attr :muted, :boolean, default: false
   attr :placeholder, :string, default: "—"
 
   # An xl+ forensic column cell (Actor / Target / Source IP). An empty cell
@@ -857,11 +824,12 @@ defmodule EmisarWeb.AuditLive do
       <span
         :if={@value}
         class={[
-          "block truncate leading-5 text-zinc-400",
+          "block truncate leading-5",
+          if(@muted, do: "text-zinc-500", else: "text-zinc-400"),
           if(@mono, do: "font-mono text-xs tabular-nums", else: "text-sm")
         ]}
         data-audit-cell-primary
-        title={@value}
+        title={if !@muted, do: @value}
       >
         {@value}
       </span>
@@ -915,14 +883,14 @@ defmodule EmisarWeb.AuditLive do
   # actor (a sign-in acts on itself; a role change acts on a teammate), then
   # the payload's notable pairs, then the source IP. Plain text on purpose:
   # the row's one link is the row itself (→ the event detail).
-  defp event_meta(event, refs) do
+  defp event_meta(event, refs, current_account) do
     # Actor and its target bind into ONE "who → what" segment (a middot
     # between them read as two unrelated facts); the arrow appears only when
     # the event acted on something other than its actor.
     who =
       [
         actor_label_text(event.actor_kind, event.actor_id, event.actor_label, refs),
-        target_text(event, refs)
+        target_text(event, refs, current_account)
       ]
       |> Enum.reject(&is_nil/1)
       |> Enum.join(" → ")
@@ -932,22 +900,25 @@ defmodule EmisarWeb.AuditLive do
     |> Enum.join(" · ")
   end
 
-  # "via magic_link" reads as prose, and "action" renders as the bare command
-  # identity (`caddy.access_log_tail · duration_ms: 260ms` — the WHAT of a run
-  # row, not a k: v fact about it); every other pair stays forensic "k: v".
+  # Sign-in method reads as prose; the action remains a bare identifier.
+  # Other summary pairs use the same display labels as event details.
   defp pairs_text(event) do
     AuditSummary.summary_pairs(event)
     |> Enum.map_join(" · ", fn
-      {"via", v} -> "via #{v}"
-      {"action", v} -> v
+      {"Using", v} -> "Using #{v}"
+      {"Action", v} -> v
       {k, v} -> "#{k}: #{v}"
     end)
   end
 
-  defp target_text(event, refs) do
+  defp target_text(%{target_kind: "account", target_id: id}, _refs, %{id: id})
+       when is_binary(id),
+       do: "account"
+
+  defp target_text(event, refs, _current_account) do
     if self_event?(event),
       do: nil,
-      else: party_text(event.target_kind, event.target_id, event.target_label, refs)
+      else: party_text(event.target_kind, event.target_id, event.target_label, refs, :target)
   end
 
   # An event whose target IS its actor (a sign-in, a runner connect) — the
@@ -958,12 +929,13 @@ defmodule EmisarWeb.AuditLive do
   defp self_event?(event),
     do: event.target_kind == event.actor_kind and event.target_id == event.actor_id
 
-  defp party_text(nil, _id, _label, _refs), do: nil
+  defp party_text(nil, _id, _label, _refs, _side), do: nil
 
-  defp party_text(kind, nil, _label, _refs) when kind in ["system", "scheduler", "runbook"],
-    do: kindless_label(kind)
+  defp party_text(kind, nil, _label, _refs, _side)
+       when kind in ["system", "scheduler", "runbook"],
+       do: kindless_label(kind)
 
-  defp party_text(kind, id, label, refs), do: resolve_label(refs, kind, id, label)
+  defp party_text(kind, id, label, refs, side), do: resolve_label(refs, kind, id, label, side)
 
   # User-first ACTOR rendering: the accountable HUMAN leads, the credential is
   # secondary `via` context. An api_key/MCP actor resolves its owner (the key
@@ -971,13 +943,13 @@ defmodule EmisarWeb.AuditLive do
   # resolved (deleted, or a legacy row) it degrades to the key name alone.
   # Every other actor kind is already human — `via` is nil.
   defp actor_who_via("api_key", id, label, refs) when not is_nil(id) do
-    key_name = resolve_label(refs, "api_key", id, label)
+    key_name = resolve_label(refs, "api_key", id, label, :actor)
     owner = refs |> Map.get("api_key_owner", %{}) |> Map.get(id)
 
     if owner, do: {owner, key_name}, else: {key_name, nil}
   end
 
-  defp actor_who_via(kind, id, label, refs), do: {party_text(kind, id, label, refs), nil}
+  defp actor_who_via(kind, id, label, refs), do: {party_text(kind, id, label, refs, :actor), nil}
 
   # The single-string actor label for the folded list's narrative meta line.
   # The xl forensic column uses `audit_actor_cell/1`'s two-level hierarchy.
@@ -1021,7 +993,7 @@ defmodule EmisarWeb.AuditLive do
     {text, via} =
       if assigns.actor?,
         do: actor_who_via(assigns.kind, assigns.id, assigns.label, assigns.refs),
-        else: {resolve_label(assigns.refs, assigns.kind, assigns.id, assigns.label), nil}
+        else: {resolve_label(assigns.refs, assigns.kind, assigns.id, assigns.label, :target), nil}
 
     title = if via, do: "#{assigns.kind}: #{text} · via #{via}", else: "#{assigns.kind}: #{text}"
     assigns = assign(assigns, text: text, via: via, title: title, href: ref_href(assigns))
@@ -1062,7 +1034,7 @@ defmodule EmisarWeb.AuditLive do
   events `:neutral`. Denials are rose here exactly as they are in the approvals
   queue: the tone table (design-console-ux §2) reads rose as "denied", and one
   refusal must not wear two colors on two surfaces. Keyed off
-  `Audit.event_outcome/1` so the dot + the "Severity" filter never disagree.
+  `Audit.event_outcome/1` for the shared event classification.
   Public because the detail page's title dot must match the list (same sharing
   mechanism as `ref/1`).
   """
@@ -1092,19 +1064,18 @@ defmodule EmisarWeb.AuditLive do
     end
   end
 
-  # Look up the live label from `refs` first (the freshest); fall back
-  # to the label that was stamped on the event at write time; finally
-  # to the raw id — in FULL, because the hover titles are built from this
-  # return, so a slice here would make the id unrecoverable anywhere on
-  # the trail. The event might predate any rename, and the underlying
-  # record might have been deleted; the containers truncate for display.
-  defp resolve_label(refs, kind, id, fallback_label) do
+  # Prefer the current account-scoped name, then this event's snapshot, then
+  # readable historical identity evidence. IDs stay in the detail facts and
+  # exports; they are never a substitute for a human-readable identity label.
+  defp resolve_label(refs, kind, id, fallback_label, side) do
     live = kind && id && refs |> Map.get(kind, %{}) |> Map.get(id)
+    historical = get_in(refs, ["historical", {kind, side}, id])
 
     cond do
-      live -> live
+      live && live != "" -> live
       fallback_label && fallback_label != "" -> fallback_label
-      is_binary(id) -> id
+      historical && historical != "" -> historical
+      is_binary(id) -> "Name unavailable"
       true -> "—"
     end
   end

@@ -4,14 +4,23 @@ defmodule EmisarWeb.RunnerInstallLiveTest do
   alias Emisar.Runners.EnrollmentKey
 
   describe "GET /app/runners/install" do
-    test "states the key is one-time and points multi-use at Enrollment keys", %{conn: conn} do
+    test "explains single-use and reusable enrollment keys beside the command", %{conn: conn} do
       {conn, _user, account} = register_and_log_in(conn)
       conn = local_conn(conn)
-      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runners/install")
+      {:ok, lv, html} = live(conn, ~p"/app/#{account}/runners/install")
 
-      assert html =~ "one-time"
-      assert html =~ "multi-use"
+      assert html =~ "single-use"
+      assert html =~ "reusable"
+      assert html =~ "Deploying to an autoscaling fleet?"
       assert html =~ ~p"/app/#{account}/runners/keys"
+
+      assert has_element?(
+               lv,
+               ~s|a[href="/app/#{account.slug}/runners/keys"]|,
+               "reusable enrollment key"
+             )
+
+      refute has_element?(lv, ~s|aside a[href="/app/#{account.slug}/runners/keys"]|)
     end
 
     setup %{conn: conn} do
@@ -23,7 +32,7 @@ defmodule EmisarWeb.RunnerInstallLiveTest do
       conn: conn,
       account: account
     } do
-      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runners/install")
+      {:ok, lv, html} = live(conn, ~p"/app/#{account}/runners/install")
 
       [raw_secret] = Regex.run(~r/emkey-enroll-[A-Za-z0-9_-]{43}/, html)
 
@@ -34,6 +43,12 @@ defmodule EmisarWeb.RunnerInstallLiveTest do
       # innerText used to strip that leading space.
       assert html =~
                ~s(data-copy-text=" curl -fsSL http://localhost:4000/install.sh | sudo EMISAR_ENROLLMENT_KEY=#{raw_secret} EMISAR_URL=http://localhost:4000 bash")
+
+      assert html =~ "> curl -fsSL"
+      assert has_element?(lv, "#runner-install-command.whitespace-pre")
+      refute html =~ "The leading space keeps the key out of your shell history"
+      assert has_element?(lv, ~s|a[href="/install.sh"][target="_blank"]|, "→")
+      assert has_element?(lv, ~s|a[href="/trust#release-integrity"][target="_blank"]|, "→")
     end
 
     test "public HTTP refuses before minting an install key", %{account: account} do
@@ -49,8 +64,8 @@ defmodule EmisarWeb.RunnerInstallLiveTest do
       {:ok, _lv, html} =
         build_conn() |> log_in_user(owner) |> live(~p"/app/#{account}/runners/install")
 
-      assert html =~ "Install command unavailable over HTTP"
-      refute html =~ "Waiting for a runner to connect"
+      assert html =~ "Open emisar over HTTPS"
+      refute html =~ "Waiting for your runner"
       refute html =~ ~r/emkey-enroll-[A-Za-z0-9_-]{43}/
       refute Repo.exists?(EnrollmentKey.Query.all())
     end
@@ -75,9 +90,34 @@ defmodule EmisarWeb.RunnerInstallLiveTest do
 
       refute has_element?(lv, ~s|#runner-install-wizard aside a[href="/docs/host-install"]|)
 
-      assert has_element?(lv, "#runner-install-wizard aside h3", "Runner basics")
+      assert has_element?(lv, "#runner-install-wizard aside h3", "Adding actions")
 
       assert has_element?(
+               lv,
+               "#runner-install-wizard aside",
+               "A runner advertises and executes actions on your host"
+             )
+
+      refute has_element?(lv, "#runner-install-wizard aside details")
+      assert has_element?(lv, "#runner-install-wizard aside h3", "Deployment guides")
+      assert has_element?(lv, ~s|#runner-install-wizard aside li a[href="/docs/containers"]|)
+      assert has_element?(lv, ~s|#runner-install-wizard aside li a[href="/docs/kubernetes"]|)
+      assert has_element?(lv, ~s|#runner-install-wizard aside li a[href="/docs/nomad"]|)
+
+      assert has_element?(
+               lv,
+               ~s|#runner-install-wizard aside li a[href="/docs/autoscaling-fleets"]|
+             )
+
+      refute has_element?(
+               lv,
+               ~s|#runner-install-wizard aside a[href="/app/#{account.slug}/runners/keys"]|
+             )
+
+      assert has_element?(lv, ~s|#runner-install-wizard aside p a[href="/packs"]|, "Pack catalog")
+      refute has_element?(lv, ~s|#runner-install-wizard aside a[href*="github.com"]|)
+
+      refute has_element?(
                lv,
                ~s|#runner-install-wizard aside p a[href="/docs/use-a-published-pack"]|,
                "How to install a pack"
@@ -88,19 +128,57 @@ defmodule EmisarWeb.RunnerInstallLiveTest do
       assert intro_pos < command_pos
     end
 
+    test "delayed troubleshooting works for either supported host platform", %{
+      conn: conn,
+      account: account
+    } do
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runners/install")
+      assert has_element?(lv, "#runner-connection-status[data-state='waiting']")
+      refute has_element?(lv, "#runner-connection-status ol")
+      send(lv.pid, :reveal_troubleshooting)
+
+      html = render(lv)
+
+      assert has_element?(
+               lv,
+               "#runner-connection-status[data-state='delayed']",
+               "Still waiting for your runner"
+             )
+
+      assert has_element?(lv, "#runner-connection-status .bg-amber-400.animate-pulse")
+      assert has_element?(lv, "#runner-connection-status ol", "sudo emisar doctor")
+      refute html =~ "Runner not connected"
+      refute has_element?(lv, "#runner-connection-status[data-state='waiting']")
+      assert html =~ "sudo emisar doctor"
+      assert html =~ "systemd on Linux or launchd on macOS"
+      refute html =~ "journalctl -u emisar -f"
+      refute html =~ "(not root)"
+      refute html =~ "runs as root by default"
+
+      assert has_element?(
+               lv,
+               ~s|a[href="/docs/runner-fleet#never-appears"]|,
+               "Troubleshooting"
+             )
+    end
+
     test "puts the live wait status directly after the command, before the script details", %{
       conn: conn,
       account: account
     } do
-      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runners/install")
+      {:ok, lv, html} = live(conn, ~p"/app/#{account}/runners/install")
 
-      {waiting_pos, _} = :binary.match(html, "Waiting for a runner to connect")
-      {script_pos, _} = :binary.match(html, "What the script does")
+      {waiting_pos, _} = :binary.match(html, "Waiting for your runner")
+      {script_pos, _} = :binary.match(html, "What the installer does")
 
       assert waiting_pos < script_pos
-      # Pre-grace the page carries NO amber spine — the credential note is
-      # neutral and the wait is a brand ping; amber belongs to the overdue
-      # "Not seeing it yet?" escalation alone.
+      assert has_element?(lv, "#runner-connection-status[role='status'][data-state='waiting']")
+      assert has_element?(lv, "#runner-connection-status .animate-pulse")
+      refute has_element?(lv, "#runner-connection-status .animate-ping")
+      refute has_element?(lv, "#runner-connection-status .bg-amber-400")
+      assert has_element?(lv, "#runner-connection-status a", "Runners")
+      # Waiting is neutral. The private-command note remains amber; the
+      # connection status only turns amber after the grace period.
       refute html =~ "bg-amber-300/40"
       refute html =~ "border-dashed border-amber"
     end
@@ -148,7 +226,7 @@ defmodule EmisarWeb.RunnerInstallLiveTest do
 
       assert %{
                "error" =>
-                 "Connecting a runner needs an operator role or above, with access to all runners."
+                 "Connecting runners requires an operator role or above and access to all runners."
              } = flash
     end
 
@@ -170,7 +248,7 @@ defmodule EmisarWeb.RunnerInstallLiveTest do
                |> log_in_user(Emisar.Repo.preload(membership, :user).user)
                |> live(~p"/app/#{account}/runners/install")
 
-      assert flash["error"] =~ "with access to all runners"
+      assert flash["error"] =~ "and access to all runners"
     end
 
     # the connected mount mints exactly one

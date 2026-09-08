@@ -133,12 +133,10 @@ defmodule EmisarWeb.RunbooksLive do
         </.button>
       </:actions>
 
-      <%!-- Defines the noun and names who can dispatch it; the rail beside the list
-           owns the EXECUTION semantics (stages, what stops a run) and the docs link,
-           so neither is repeated here. --%>
       <.page_intro>
-        A runbook is a multi-step procedure saved as one versioned unit — an operator or an
-        AI agent dispatches it on demand, and only the published release ever runs.
+        A runbook combines actions into a repeatable procedure across your runners. Build and
+        publish a workflow, then run it yourself or through an AI agent.
+        <.doc_link href={~p"/docs/runbooks"}>Runbook docs</.doc_link>
       </.page_intro>
 
       <div class="grid min-w-0 gap-x-12 gap-y-10 xl:grid-cols-[minmax(0,1fr)_20rem]">
@@ -154,18 +152,19 @@ defmodule EmisarWeb.RunbooksLive do
               <.empty_state
                 tone={:danger}
                 icon="state.warning"
-                title="Couldn't load your runbooks"
+                title="Couldn't load runbooks"
               >
-                This is a load error, not an empty list — your runbooks may well exist. Refresh the
-                page; if it persists, your access to this account may have changed.
+                Refresh the page to try again.
               </.empty_state>
             <% @runbooks == [] && @metadata.count == 0 &&
                  not LiveTable.has_active_filters?(@filter_params, @filters) -> %>
-              <%!-- The intro above defines what a runbook is, so this says the one
-                   thing it can add: the two ways to get a first one, matching the
-                   header's two buttons. --%>
-              <.empty_state icon="product.runbook" title="No runbooks yet.">
-                Compose one from your fleet's actions, or import a definition you already have.
+              <.empty_state icon="product.runbook" title="No runbooks yet">
+                <%= if Runbooks.subject_can_author_runbooks?(@current_subject) do %>
+                  Create a runbook from your runners' actions, ask your LLM to create one, or
+                  import a JSON definition.
+                <% else %>
+                  Published runbooks will appear here when available.
+                <% end %>
               </.empty_state>
             <% true -> %>
               <%!-- Standalone live_table (self-framed cards panel) — matches runs/
@@ -199,12 +198,12 @@ defmodule EmisarWeb.RunbooksLive do
                        live is ALL unpublished — the amber signal is reserved for a
                        live release someone has already edited past. --%>
                       <.chip :if={is_nil(runbook.live_version)} tone={:neutral}>
-                        Never published
+                        Draft
                       </.chip>
                       <.tooltip
                         :if={runbook.live_version && runbook.draft_definition}
                         id={"runbook-#{runbook.id}-draft-tip"}
-                        text="Unpublished changes — open the runbook to review and publish them."
+                        text="This runbook has unpublished workflow changes."
                         aria_label="Unpublished changes"
                         align={:left}
                         class="shrink-0"
@@ -243,12 +242,12 @@ defmodule EmisarWeb.RunbooksLive do
                         variant={:secondary}
                         size={:sm}
                       >
-                        View activity
+                        View audit trail
                       </.button>
                       <%!-- Secondary: the page's ONE brand fill is "New runbook" —
                        a green per row turns the fill into wallpaper. Only the
-                       live release runs, so a runbook with nothing published
-                       offers no Run. --%>
+                       live release runs from this button; draft tests are a
+                       separate AI-agent flow. --%>
                       <.button
                         :if={runbook.live_version && Runs.subject_can_dispatch_run?(@current_subject)}
                         navigate={~p"/app/#{@current_account}/runbooks/#{runbook.id}/run"}
@@ -269,12 +268,9 @@ defmodule EmisarWeb.RunbooksLive do
           <section id="runbooks-docs-rail">
             <.section_header title="How runbooks work" />
             <p class="text-sm leading-6 text-zinc-400">
-              Build stages in execution order. Every action in a stage must succeed before the
-              next stage starts; a denial, timeout, cancellation, or failure stops the run.
+              Save workflow changes as a draft before publishing them. AI agents can also test
+              drafts on your runners without publishing them.
             </p>
-            <div class="mt-3">
-              <.doc_link href={~p"/docs/runbooks"}>Read the runbook docs</.doc_link>
-            </div>
           </section>
 
           <%!-- A digest, not a second list: the rail stays five rows and hands
@@ -283,13 +279,13 @@ defmodule EmisarWeb.RunbooksLive do
                Paging a 20rem rail five at a time would outweigh the runbooks
                it sits beside. Same shape as a runner's own recent-runs rail. --%>
           <section id="recent-runbook-runs">
-            <.section_header title="Recent runs">
+            <.section_header title="Recent executions" actions_align={:baseline}>
               <:actions :if={@recent_executions != []}>
                 <.link
                   navigate={~p"/app/#{@current_account}/runs?#{[source: "runbook"]}"}
-                  class="group inline-flex items-center gap-1 text-xs font-medium text-brand-400 hover:text-brand-300"
+                  class="group text-xs font-medium text-brand-400 hover:text-brand-300"
                 >
-                  View all <.cta_arrow />
+                  View action runs <.cta_arrow class="ml-0.5 h-3.5 w-3.5" />
                 </.link>
               </:actions>
             </.section_header>

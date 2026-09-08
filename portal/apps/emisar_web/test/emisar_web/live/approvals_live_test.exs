@@ -5,12 +5,124 @@ defmodule EmisarWeb.ApprovalsLiveTest do
   the next call needs fresh human approval).
   """
   use EmisarWeb.ConnCase, async: true
-  alias Emisar.{Accounts, Approvals, Audit}
+  alias Emisar.{Accounts, Approvals, Audit, Policies, Repo}
   alias Emisar.Catalog
   alias Emisar.Runs
 
   @grant_pack_hash "sha256:" <> String.duplicate("a", 64)
   @grant_pack_ref "linux-core@1.0.0/" <> @grant_pack_hash
+
+  test "approval help reflects current policies without changing an existing request", %{
+    conn: conn
+  } do
+    {conn, user, account} = register_and_log_in(conn)
+    request = pending_request!(account, user.id, "Restart after maintenance")
+
+    rules =
+      Map.put(Policies.default_rules(), "approval", %{
+        "min_approvals" => 2,
+        "allow_self_approval" => false
+      })
+
+    Fixtures.Policies.create_policy(account_id: account.id, rules: rules)
+
+    {:ok, lv, _html} = live(conn, ~p"/app/#{account}/approvals")
+
+    assert has_element?(
+             lv,
+             "#approval-requirements-help",
+             "Current policies require 2 approvers."
+           )
+
+    assert has_element?(lv, "#approval-requirements-help", "You can't approve your own requests.")
+
+    assert has_element?(
+             lv,
+             "#approval-requirements-help",
+             "Each request shows its approval requirements and expiry."
+           )
+
+    assert Repo.reload!(request).min_approvals == 1
+    assert Repo.reload!(request).allow_self_approval
+  end
+
+  test "approval help includes targeted requirements even with no pending requests", %{conn: conn} do
+    {conn, _user, account} = register_and_log_in(conn)
+    Fixtures.Policies.create_policy(account_id: account.id)
+
+    rules =
+      Map.put(Policies.default_rules(), "approval", %{
+        "min_approvals" => 3,
+        "allow_self_approval" => false
+      })
+
+    Fixtures.Policies.create_policy(
+      account_id: account.id,
+      scope_type: :group,
+      scope_value: "databases",
+      rules: rules
+    )
+
+    {:ok, lv, _html} = live(conn, ~p"/app/#{account}/approvals")
+
+    assert has_element?(
+             lv,
+             "#approval-requirements-help",
+             "Current approval requirements vary by runner."
+           )
+
+    assert has_element?(
+             lv,
+             "#approval-requirements-help",
+             "Some requests need more than one approver."
+           )
+
+    assert has_element?(
+             lv,
+             "#approval-requirements-help",
+             "Some requests don't allow self-approval."
+           )
+  end
+
+  test "invalid policy settings leave neutral request-level guidance", %{conn: conn} do
+    {conn, _user, account} = register_and_log_in(conn)
+    policy = Fixtures.Policies.create_policy(account_id: account.id)
+    Fixtures.Policies.corrupt_approval_settings(policy, :missing)
+
+    {:ok, lv, _html} = live(conn, ~p"/app/#{account}/approvals")
+
+    assert has_element?(
+             lv,
+             "#approval-requirements-help",
+             "Each request shows its approval requirements and expiry."
+           )
+
+    refute has_element?(lv, "#approval-requirements-help", "Current policies require")
+    refute has_element?(lv, "#approval-requirements-help", "You can approve your own requests.")
+  end
+
+  test "policy help does not tell a viewer that they can approve requests", %{conn: conn} do
+    {conn, user, account} = register_and_log_in(conn)
+    membership = Fixtures.Memberships.fetch_membership(account.id, user.id)
+    Fixtures.Memberships.force_role(membership, "viewer")
+    Fixtures.Policies.create_policy(account_id: account.id)
+
+    {:ok, lv, _html} = live(conn, ~p"/app/#{account}/approvals")
+
+    assert has_element?(
+             lv,
+             "#approval-requirements-help",
+             "Current policies require one approver."
+           )
+
+    assert has_element?(
+             lv,
+             "#approval-requirements-help",
+             "Approvers can approve their own requests."
+           )
+
+    refute has_element?(lv, "#approval-requirements-help", "You can approve your own requests.")
+  end
 
   test "a crafted event that drops its required key is a no-op, not a crash", %{conn: conn} do
     {conn, _user, account} = register_and_log_in(conn)
@@ -149,7 +261,7 @@ defmodule EmisarWeb.ApprovalsLiveTest do
     {:ok, _lv, html} = live(admin_conn, ~p"/app/#{account}/approvals")
 
     assert html =~
-             "Your pack access limits this page to approvals and grants for packs you can use."
+             "Only requests and grants for packs you can access are shown."
   end
 
   test "the pack-access notice follows current access, not the mount snapshot", %{conn: conn} do
@@ -172,7 +284,7 @@ defmodule EmisarWeb.ApprovalsLiveTest do
     Fixtures.Memberships.force_runner_access(membership, restricted)
 
     assert render_patch(lv, ~p"/app/#{account}/approvals") =~
-             "Your pack access limits this page to approvals and grants for packs you can use."
+             "Only requests and grants for packs you can access are shown."
   end
 
   test "labels a requester with this account's directory name", %{conn: conn} do
@@ -329,7 +441,7 @@ defmodule EmisarWeb.ApprovalsLiveTest do
     refute has_element?(lv, "a.text-brand-400", "Audit record")
 
     html = render_click(lv, "revoke_grant", %{"id" => grant.id})
-    assert html =~ "Grant revoked. New calls will require fresh approval."
+    assert html =~ "Grant revoked."
   end
 
   test "an owner confirms and revokes every standing grant in their access", %{conn: conn} do
@@ -348,7 +460,7 @@ defmodule EmisarWeb.ApprovalsLiveTest do
     type_confirm_token(lv, "revoke-all-grants-dialog", "REVOKE ALL")
     html = confirm_dialog(lv, "revoke-all-grants-dialog", "Revoke all grants")
 
-    assert html =~ "Revoked 1 standing grant in your access."
+    assert html =~ "1 grant revoked."
     refute has_element?(lv, "#revoke-all-grants")
     assert {:ok, [], _metadata} = Approvals.list_grants_for_account(subject)
 
@@ -431,10 +543,10 @@ defmodule EmisarWeb.ApprovalsLiveTest do
     {:ok, _lv, html} = live(conn, ~p"/app/#{account}/approvals")
 
     # The denied request carries its outcome badge in Recent; the pending one is
-    # the amber card up top, with the reassuring "Nothing waiting" copy absent.
+    # the row up top, with the empty-state copy absent.
     assert html =~ "denied"
     assert html =~ "still-waiting"
-    refute html =~ "Nothing waiting"
+    refute html =~ "No pending approvals"
   end
 
   test "a viewer sees pending + recent but no standing-grants rows", %{conn: conn} do
@@ -463,8 +575,8 @@ defmodule EmisarWeb.ApprovalsLiveTest do
     # …but it doesn't render for the viewer (no manage_grants), and telling them
     # the account has none would be a lie about live authorization.
     assert html =~ "viewer can see this"
-    assert html =~ "Only owners and admins can see standing grants."
-    refute html =~ "No active grants."
+    assert html =~ "Only owners and admins can see standing grants"
+    refute html =~ "No active grants"
     refute html =~ "Revoke"
   end
 
@@ -491,8 +603,8 @@ defmodule EmisarWeb.ApprovalsLiveTest do
     {:ok, _lv, html} =
       build_conn() |> log_in_user(operator) |> live(~p"/app/#{account}/approvals")
 
-    assert html =~ "Only owners and admins can see standing grants."
-    refute html =~ "No active grants."
+    assert html =~ "Only owners and admins can see standing grants"
+    refute html =~ "No active grants"
     refute html =~ "Revoke"
   end
 
@@ -515,35 +627,35 @@ defmodule EmisarWeb.ApprovalsLiveTest do
     refute html =~ "account-B secret reboot"
     refute html =~ "account-B grant"
     # A's own page reads as genuinely empty, not as B's data.
-    assert html =~ "Nothing waiting."
+    assert html =~ "No pending approvals"
   end
 
-  test "a pending-load error renders the danger empty-state, not 'Nothing waiting'", %{conn: conn} do
+  test "a pending-load error renders the danger empty-state, not an empty queue", %{conn: conn} do
     # a crafted `?pending_after=` cursor makes
     # `list_pending_approval_requests` → `Repo.list` return {:error,:invalid_cursor}.
-    # That collapses to [] but sets `pending_error?`, so the section must warn "a
-    # held action may be waiting", NOT reassure with "Nothing waiting".
+    # That collapses to [] but sets `pending_error?`, so the section must warn
+    # that requests may still be waiting, not report an empty queue.
     {conn, _user, account} = register_and_log_in(conn)
 
     {:ok, _lv, html} =
       live(conn, ~p"/app/#{account}/approvals?pending_after=not-a-real-cursor")
 
-    assert html =~ "Couldn&#39;t load pending approvals."
-    assert html =~ "a held action may be waiting"
-    refute html =~ "Nothing waiting."
+    assert html =~ "Couldn&#39;t load pending approvals"
+    assert html =~ "Requests may still be waiting for approval."
+    refute html =~ "No pending approvals"
   end
 
   test "an empty queue shows the reassuring empty-state linking to policies", %{conn: conn} do
     # zero pending and no load error: the Pending section
-    # renders the reassuring "Nothing waiting." empty-state (not the danger one),
+    # renders the "No pending approvals" empty-state (not the danger one),
     # with the link to /policies that explains where approvals come from.
     {conn, _user, account} = register_and_log_in(conn)
 
     {:ok, _lv, html} = live(conn, ~p"/app/#{account}/approvals")
 
-    assert html =~ "Nothing waiting."
+    assert html =~ "No pending approvals"
     assert html =~ ~s(data-icon="product.approval")
-    refute html =~ "Couldn&#39;t load pending approvals."
+    refute html =~ "Couldn&#39;t load pending approvals"
     # The empty-state points the operator at the policy that gates runs.
     assert html =~ ~p"/app/#{account}/policies"
   end
@@ -558,8 +670,8 @@ defmodule EmisarWeb.ApprovalsLiveTest do
 
     {:ok, lv, html} = live(conn, ~p"/app/#{account}/approvals")
 
-    assert html =~ "No active grants."
-    assert html =~ "No decided approvals yet."
+    assert html =~ "No active grants"
+    assert html =~ "No decisions yet"
     assert has_element?(lv, ~s(#pending-empty [data-icon="product.approval"]))
     assert has_element?(lv, ~s(#grants-empty [data-icon="product.approval"]))
     assert has_element?(lv, ~s(#decided-empty [data-icon="product.approval"]))
@@ -572,7 +684,7 @@ defmodule EmisarWeb.ApprovalsLiveTest do
     # Crafted `grants_after`/`decided_after` cursors make both reads return
     # {:error, _} for an OWNER, who holds manage_grants — so this is a real read
     # failure, not a permission denial. A standing grant is live authorization to
-    # skip the approval prompt, so "No active grants." here would understate what
+    # skip the approval prompt, so "No active grants" here would understate what
     # the account currently allows.
     {conn, _user, account} = register_and_log_in(conn)
 
@@ -583,12 +695,12 @@ defmodule EmisarWeb.ApprovalsLiveTest do
       )
 
     assert html =~ "Couldn&#39;t load standing grants"
-    assert html =~ "Couldn&#39;t load the decision log"
-    refute html =~ "No active grants."
-    refute html =~ "No decided approvals yet."
+    assert html =~ "Couldn&#39;t load recent decisions"
+    refute html =~ "No active grants"
+    refute html =~ "No decisions yet"
     # Pending read fine — its own section is unaffected.
-    refute html =~ "Couldn&#39;t load pending approvals."
-    assert html =~ "Nothing waiting."
+    refute html =~ "Couldn&#39;t load pending approvals"
+    assert html =~ "No pending approvals"
     refute has_element?(lv, "#revoke-all-grants")
   end
 
@@ -657,7 +769,7 @@ defmodule EmisarWeb.ApprovalsLiveTest do
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/approvals")
 
       assert render_change(lv, "set_max_grant_lifetime", %{"seconds" => "86400"}) =~
-               "Grant-lifetime cap updated."
+               "Maximum grant lifetime updated."
 
       assert Emisar.Repo.reload!(account).settings.max_grant_lifetime_seconds == 86_400
     end
@@ -679,8 +791,14 @@ defmodule EmisarWeb.ApprovalsLiveTest do
 
       {:ok, lv, html} = live(conn, ~p"/app/#{account}/approvals")
       assert html =~ "linux.reboot"
-      # Uncapped default — the Guardrails select shows it as the selected option.
-      assert has_element?(lv, ~s(#approvals-grant-cap option[value=""][selected]))
+      # The unset default uses the supported maximum, without a duplicate option.
+      assert has_element?(
+               lv,
+               ~s(#approvals-grant-cap option[value="7776000"][selected]),
+               "90 days"
+             )
+
+      refute has_element?(lv, ~s(#approvals-grant-cap option[value=""]))
 
       html = render_change(lv, "set_max_grant_lifetime", %{"seconds" => "0"})
 
@@ -688,19 +806,20 @@ defmodule EmisarWeb.ApprovalsLiveTest do
       # the section speaks the disabled state everywhere the operator looks.
       assert html =~ "Standing grants disabled — 1 active grant revoked"
       assert Emisar.Repo.reload!(account).settings.max_grant_lifetime_seconds == 0
-      assert html =~ "Standing grants are disabled."
-      assert html =~ "Disabled for this account — every approval is single-use."
+      assert html =~ "Standing grants are disabled"
+      assert html =~ "Disabled — every approval is single-use."
       assert {:ok, [], _} = Approvals.list_grants_for_account(subject)
     end
 
-    test "an owner removes the cap", %{conn: conn, account: account} do
+    test "an owner restores the 90-day maximum", %{conn: conn, account: account} do
       Fixtures.Accounts.set_max_grant_lifetime_seconds(account, 3600)
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/approvals")
 
-      assert render_change(lv, "set_max_grant_lifetime", %{"seconds" => ""}) =~
-               "Grant-lifetime cap removed"
+      assert render_change(lv, "set_max_grant_lifetime", %{"seconds" => "7776000"}) =~
+               "Maximum grant lifetime updated."
 
-      refute Emisar.Repo.reload!(account).settings.max_grant_lifetime_seconds
+      assert Emisar.Repo.reload!(account).settings.max_grant_lifetime_seconds == 7_776_000
+      assert has_element?(lv, ~s(#approvals-grant-cap option[value="7776000"][selected]))
     end
 
     test "a malformed cap is refused by the domain, not parsed here", %{
@@ -711,7 +830,7 @@ defmodule EmisarWeb.ApprovalsLiveTest do
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/approvals")
 
       assert render_change(lv, "set_max_grant_lifetime", %{"seconds" => "forever"}) =~
-               "Pick a valid grant-lifetime cap."
+               "Choose a valid maximum grant lifetime."
 
       assert Emisar.Repo.reload!(account).settings.max_grant_lifetime_seconds == 3600
     end

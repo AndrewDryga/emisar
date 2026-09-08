@@ -204,10 +204,22 @@ defmodule EmisarWeb.RunDetailLive do
                "operator cancelled"
              ) do
           {:ok, run} ->
-            {:noreply, socket |> assign(:run, run) |> put_flash(:info, "Cancellation accepted.")}
+            message =
+              case run.status do
+                :cancelled -> "Run cancelled."
+                :cancelling -> "Cancellation requested. Waiting for the runner to stop."
+                _ -> "This run has already finished."
+              end
+
+            {:noreply, socket |> assign(:run, run) |> put_flash(:info, message)}
 
           _ ->
-            {:noreply, put_flash(socket, :error, "Unable to cancel.")}
+            {:noreply,
+             put_flash(
+               socket,
+               :error,
+               "Couldn't cancel the run. Refresh the page to check its status."
+             )}
         end
       end
     )
@@ -301,11 +313,11 @@ defmodule EmisarWeb.RunDetailLive do
           variant={:secondary}
           size={:md}
           data-copy-text={@run.id}
-          data-copy-label-copied="Copied id"
+          data-copy-label-copied="Copied ID"
         >
           <.icon name="action.copy" class="-ml-0.5 h-3.5 w-3.5" />
           <span class="sm:hidden">Copy</span>
-          <span class="hidden sm:inline">Copy id</span>
+          <span class="hidden sm:inline">Copy ID</span>
         </.button>
         <%!-- Close the loop: the dispatch's slice of the audit trail. request_id
              groups the run's transitions, its grant use, and its cancel request
@@ -319,8 +331,8 @@ defmodule EmisarWeb.RunDetailLive do
           variant={:secondary}
           size={:md}
         >
-          <span class="sm:hidden">Activity</span>
-          <span class="hidden sm:inline">View activity</span>
+          <span class="sm:hidden">Audit trail</span>
+          <span class="hidden sm:inline">View audit trail</span>
         </.button>
         <.confirm_button
           :if={
@@ -335,11 +347,11 @@ defmodule EmisarWeb.RunDetailLive do
           <:body>
             <%= cond do %>
               <% @run.status == :pending_approval -> %>
-                This run is waiting for approval and has not reached a runner. Cancelling it also closes the approval request.
+                Cancel this run and its approval request. The action won't run.
               <% @run.status == :pending -> %>
-                This queued run has not reached the runner and will be cancelled immediately.
+                Remove this run from the queue. The action won't run.
               <% true -> %>
-                The runner is signalled SIGTERM, then SIGKILL if it doesn't stop.
+                Ask the runner to stop this action. Changes already made won't be undone.
             <% end %>
           </:body>
           Cancel run
@@ -383,9 +395,9 @@ defmodule EmisarWeb.RunDetailLive do
                 class="text-zinc-400"
               />
             </.meta_field>
-            <.meta_field label="Dispatched by">
+            <.meta_field label="Dispatched by" wrap>
               <% {who, via} = Runs.run_who_via(@run) %>
-              <span class="block truncate">
+              <span class="block">
                 <span :if={who} class="text-zinc-200">{who}</span>
                 <span :if={via} class={if who, do: "text-zinc-400", else: "text-zinc-200"}>
                   {if who, do: "via #{via}", else: via}
@@ -418,7 +430,7 @@ defmodule EmisarWeb.RunDetailLive do
             <%!-- Forensic (2026-06-30 21:39:54) to match the approval detail's WHEN —
                sibling detail pages describing the same event in two datetime
                dialects read as two authors. --%>
-            <.meta_field label="Started" wrap>
+            <.meta_field label="Created" wrap>
               <.local_time
                 value={@run.inserted_at}
                 mode={:forensic}
@@ -436,9 +448,9 @@ defmodule EmisarWeb.RunDetailLive do
             <.event_block
               :if={@run.status == :pending_approval and @approval_request}
               icon="state.awaiting_human"
-              title="Waiting on approval"
+              title="Waiting for approval"
             >
-              <:body>This run is held until an approver decides.</:body>
+              <:body>Policy requires manual approval before this action can run.</:body>
               <div class="mt-4">
                 <.button
                   tone={:amber}
@@ -457,15 +469,18 @@ defmodule EmisarWeb.RunDetailLive do
                which a prune may have removed). --%>
             <.event_block
               :if={@run.status == :cancelled and @run.reason_text not in [nil, ""]}
+              id="run-cancelled"
               icon="state.cancelled"
-              tone={:rose}
+              tone={:amber}
               title="Cancelled"
             >
-              <:body><span class="whitespace-pre-wrap">{@run.reason_text}</span></:body>
+              <:body>
+                <span class="whitespace-pre-wrap">{cancellation_reason(@run.reason_text)}</span>
+              </:body>
               <div :if={@approval_request} class="mt-4">
                 <.button
                   variant={:secondary}
-                  tone={:rose}
+                  tone={:amber}
                   size={:md}
                   class="group"
                   navigate={~p"/app/#{@current_account}/approvals/#{@approval_request.id}"}
@@ -482,7 +497,7 @@ defmodule EmisarWeb.RunDetailLive do
               title="Cancellation requested"
             >
               <:body>
-                Waiting for the runner to stop and report the final outcome.
+                Waiting for the runner to confirm whether the action stopped.
               </:body>
             </.event_block>
 
@@ -491,6 +506,7 @@ defmodule EmisarWeb.RunDetailLive do
                "Error". --%>
             <.event_block
               :if={@run.error_message}
+              id="run-failure-cause"
               icon="state.warning"
               tone={:rose}
               title={RunStatuses.label(@run.status)}
@@ -505,9 +521,8 @@ defmodule EmisarWeb.RunDetailLive do
               title="Runner audit record incomplete"
             >
               <:body>
-                The runner could not persist its terminal event to its local audit journal.
-                This run's cloud audit trail and result remain available; inspect the runner's
-                audit storage before relying on its local journal.
+                The runner couldn't save the final result to its local audit journal.
+                The result and audit trail are available in emisar. Check the runner's audit storage.
               </:body>
             </.event_block>
 
@@ -517,11 +532,11 @@ defmodule EmisarWeb.RunDetailLive do
             <.event_block
               :if={@run.status in [:sent, :running, :cancelling] and @runner_connection == :offline}
               icon="state.not_dispatched"
-              title="Runner disconnected"
+              title="Runner offline"
             >
               <:body>
-                Its socket dropped while this run was in flight — output may be incomplete.
-                The run is marked errored if the runner doesn't reconnect shortly.
+                The runner lost its connection, so output may be incomplete. The action may still be running.
+                <.doc_link href={~p"/docs/runner-fleet#offline"}>Troubleshoot the connection</.doc_link>
               </:body>
             </.event_block>
 
@@ -533,8 +548,9 @@ defmodule EmisarWeb.RunDetailLive do
               title="Queued — runner offline"
             >
               <:body>
-                Waiting for {runner_label(@run.runner)} to reconnect before this run can dispatch.
-                It's marked errored if the runner doesn't return before the dispatch timeout.
+                This run is waiting for {runner_label(@run.runner)} to reconnect.
+                If the wait exceeds the dispatch timeout, the run ends with an error.
+                <.doc_link href={~p"/docs/runner-fleet#offline"}>Troubleshoot the connection</.doc_link>
               </:body>
             </.event_block>
           </div>
@@ -549,7 +565,7 @@ defmodule EmisarWeb.RunDetailLive do
           @run.reason not in [nil, ""] or @run.evidence not in [nil, ""] or
             @run.expected not in [nil, ""] or show_policy?(@run)
         }>
-          <.section_header title="Why" />
+          <.section_header title="Request details" />
           <dl class="space-y-5">
             <div :if={@run.reason && @run.reason != ""}>
               <dt
@@ -578,7 +594,7 @@ defmodule EmisarWeb.RunDetailLive do
             </div>
             <div :if={@run.expected && @run.expected != ""}>
               <dt class="text-[11px] font-semibold uppercase tracking-wider text-zinc-400">
-                Expected
+                Expected outcome
               </dt>
               <dd class="mt-1 text-sm leading-relaxed text-zinc-200">
                 <span class="whitespace-pre-wrap">{@run.expected}</span>
@@ -604,7 +620,7 @@ defmodule EmisarWeb.RunDetailLive do
                 :if={matched_rules_label(@run.matched_rules) != "—"}
                 class="mt-1.5 text-xs text-zinc-400"
               >
-                Matched
+                Matched rules
                 <span class="font-mono text-zinc-400">
                   {matched_rules_label(@run.matched_rules)}
                 </span>
@@ -666,8 +682,8 @@ defmodule EmisarWeb.RunDetailLive do
           label="Executed command"
           annotation={
             if @run.executed_command_truncated,
-              do: "truncated · secrets redacted",
-              else: "secrets redacted"
+              do: "Truncated · redacted",
+              else: "Redacted"
           }
           code={@run.executed_command}
         />
@@ -695,13 +711,13 @@ defmodule EmisarWeb.RunDetailLive do
                 :if={@run.status in [:sent, :running, :cancelling]}
                 class="inline-flex items-center gap-1 rounded-full bg-brand-500/10 px-2 py-0.5 text-[10px] font-medium text-brand-300 ring-1 ring-brand-500/30"
               >
-                <span class="h-1.5 w-1.5 animate-pulse rounded-full bg-brand-400"></span> streaming…
+                <span class="h-1.5 w-1.5 animate-pulse rounded-full bg-brand-400"></span> Streaming…
               </span>
               <span
                 :if={@output_present?}
                 id="run-output-raw-legend"
                 class="font-mono text-[11px] text-zinc-400"
-              >stderr in rose</span>
+              >stderr highlighted</span>
             </div>
             <div class="ml-auto flex flex-wrap items-center justify-end gap-2">
               <div
@@ -719,7 +735,7 @@ defmodule EmisarWeb.RunDetailLive do
                   :if={@run.status in [:sent, :running, :cancelling] and events_truncated?(@run)}
                   class="text-amber-400/80"
                 >
-                  latest {event_window()} chunks · earlier output trimmed
+                  Showing recent output · earlier output hidden
                 </span>
                 <.button
                   :if={can_load_earlier?(@run, @more_earlier?)}
@@ -741,7 +757,7 @@ defmodule EmisarWeb.RunDetailLive do
                     aria-controls="run-output-raw-view"
                     phx-click={show_raw_output()}
                   >
-                    Raw
+                    Text
                   </.segmented_filter>
                   <.segmented_filter
                     id="run-output-json-toggle"
@@ -793,7 +809,6 @@ defmodule EmisarWeb.RunDetailLive do
               title="Couldn't load this run's output"
               class="m-4"
             >
-              This is a read error, not an empty result — the run may well have produced output.
               Refresh the page to try again.
             </.callout>
 
@@ -807,7 +822,7 @@ defmodule EmisarWeb.RunDetailLive do
               }
               class="bg-black/60 p-4 font-mono text-xs text-zinc-400"
             >
-              No output captured.
+              No text output was recorded.
             </p>
             <%!-- min-height only while IN FLIGHT (room for chunks to stream into);
                  a terminal run's panel hugs its real output instead of padding a
@@ -823,7 +838,7 @@ defmodule EmisarWeb.RunDetailLive do
               id="run-output"
               phx-update="stream"
               tabindex="0"
-              aria-label="Raw run output"
+              aria-label="Run text output"
               class={[
                 output_pre_classes(),
                 @run.status in [:sent, :running, :cancelling] && "min-h-[24rem]"
@@ -868,6 +883,18 @@ defmodule EmisarWeb.RunDetailLive do
   # Runner meta field renders `<.removed_runner>` for a nil association instead.
   defp runner_label(_), do: "a removed runner"
 
+  # Display the generated expiry message consistently on existing runs without
+  # rewriting historical records or changing the case of user-written reasons.
+  defp cancellation_reason(reason)
+       when reason in [
+              "approval expired without decision",
+              "Approval expired without decision",
+              "Approval expired without a decision."
+            ],
+       do: "Approval expired."
+
+  defp cancellation_reason(reason), do: reason
+
   # Live connection state of the run's runner (:online | :offline). Keyed
   # on runner_id/account_id — both columns, always loaded — so it survives
   # a non-preloaded {:run_updated, run} broadcast replacing the assign.
@@ -883,8 +910,8 @@ defmodule EmisarWeb.RunDetailLive do
   defp show_policy?(%{policy_decision: "allow"}), do: false
   defp show_policy?(%{policy_decision: _}), do: true
 
-  # The section header already says "Why", so a lone REASON key stacked under it
-  # prints one thing twice (§7.43). The keys earn their place the moment a second
+  # A lone reason needs no separate field label beneath Request details.
+  # The keys earn their place the moment a second
   # fact — evidence, the expected outcome, the policy that gated it — joins them.
   defp lone_reason?(run) do
     run.evidence in [nil, ""] and run.expected in [nil, ""] and not show_policy?(run)

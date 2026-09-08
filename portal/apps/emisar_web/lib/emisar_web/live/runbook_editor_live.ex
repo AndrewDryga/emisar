@@ -369,8 +369,10 @@ defmodule EmisarWeb.RunbookEditorLive do
         %{"stage" => stage_index, "step" => step_index, "index" => index},
         socket
       ) do
-    mutate_step(socket, stage_index, step_index, fn step ->
-      Map.update!(step, "outputs", &List.delete_at(&1, safe_index(index)))
+    mutate(socket, fn draft ->
+      update_step(draft, stage_index, step_index, fn step ->
+        Map.update!(step, "outputs", &List.delete_at(&1, safe_index(index)))
+      end)
     end)
   end
 
@@ -474,7 +476,12 @@ defmodule EmisarWeb.RunbookEditorLive do
   end
 
   defp mutate_step(socket, stage_index, step_index, fun) do
-    mutate(socket, &update_step(&1, stage_index, step_index, fun))
+    mutate(
+      socket,
+      &update_step(&1, stage_index, step_index, fn previous ->
+        RunbookEditorCatalog.sync_step(fun.(previous), previous, socket.assigns.catalog)
+      end)
+    )
   end
 
   defp append_input(draft) do
@@ -646,6 +653,30 @@ defmodule EmisarWeb.RunbookEditorLive do
 
   defp discard_draft(%{assigns: %{runbook: nil}} = socket), do: {:noreply, socket}
 
+  # Unsaved-only edits have no persisted draft to discard. Restore the editor's
+  # loaded release without writing a draft just to delete it again.
+  defp discard_draft(
+         %{
+           assigns: %{
+             runbook: %Runbooks.Runbook{live_version: version, draft_definition: nil} = runbook,
+             dirty?: dirty?
+           }
+         } = socket
+       )
+       when is_integer(version) do
+    if dirty? do
+      socket =
+        socket
+        |> assign_editing_runbook(runbook)
+        |> load_catalog_and_validate()
+        |> put_flash(:info, "Unpublished changes discarded.")
+
+      {:noreply, socket}
+    else
+      {:noreply, socket}
+    end
+  end
+
   defp discard_draft(socket) do
     case Runbooks.discard_draft(socket.assigns.runbook, socket.assigns.current_subject) do
       {:ok, runbook} ->
@@ -747,7 +778,7 @@ defmodule EmisarWeb.RunbookEditorLive do
        issues: issues,
        checked_at: DateTime.utc_now()
      })
-     |> put_flash(:error, "Current preflight must pass before publishing.")}
+     |> put_flash(:error, "Resolve the issues above before publishing.")}
   end
 
   defp present_persist_error(socket, :draft_changed) do
@@ -755,7 +786,7 @@ defmodule EmisarWeb.RunbookEditorLive do
      put_flash(
        socket,
        :error,
-       "Changed elsewhere since you opened it — reload to pick up the latest draft."
+       "This runbook changed elsewhere. Reload the page to load the latest draft."
      )}
   end
 

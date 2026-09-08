@@ -126,7 +126,7 @@ defmodule EmisarWeb.AuditDetailLive do
             </.meta_field>
             <%!-- wrap, like its Event ID and Request ID siblings: the copy button is
              a sibling control, and an IPv6 address is wider than the UUIDs. --%>
-            <.meta_field label="IP address" wrap>
+            <.meta_field label="Source IP" wrap>
               <.copyable_id
                 :if={@event.ip_address}
                 value={@event.ip_address}
@@ -190,12 +190,15 @@ defmodule EmisarWeb.AuditDetailLive do
           <div
             :if={AuditSummary.summary_pairs(@event) != []}
             class="mt-8 flex flex-wrap items-center gap-2"
+            data-audit-summary
           >
             <span class="text-[11px] font-semibold uppercase tracking-wider text-zinc-400">
               Summary
             </span>
             <.chip :for={pair <- AuditSummary.summary_pairs(@event)}>
-              <span class="font-mono text-zinc-400">{elem(pair, 0)}:</span>
+              <span class="font-mono text-zinc-400">
+                {elem(pair, 0)}{if elem(pair, 0) != "Using", do: ":"}
+              </span>
               <span class="text-zinc-200">{elem(pair, 1)}</span>
             </.chip>
           </div>
@@ -212,7 +215,8 @@ defmodule EmisarWeb.AuditDetailLive do
            for everything else. --%>
         <.policy_changes
           :if={@event.event_type == "policy.updated"}
-          changes={@event.payload["changes"] || %{}}
+          changes={Audit.policy_changes(@event.payload)}
+          payload={@event.payload}
         />
 
         <%!-- Payload — primary content on the page. Wide and tall,
@@ -228,7 +232,7 @@ defmodule EmisarWeb.AuditDetailLive do
         <.code_panel
           :if={payload_entries?(@event.payload)}
           id="audit-payload-json"
-          label="Payload"
+          label="Event data (JSON)"
           copy
           copy_label="Copy JSON"
           max_h="max-h-[60vh]"
@@ -246,17 +250,23 @@ defmodule EmisarWeb.AuditDetailLive do
   # -- policy.updated diff renderer ---------------------------------
 
   attr :changes, :map, required: true
+  attr :payload, :map, required: true
 
   defp policy_changes(assigns) do
-    defaults = assigns.changes["defaults"] || %{}
-    overrides = assigns.changes["overrides"] || %{}
+    defaults = policy_diff_map(assigns.changes["defaults"])
+    overrides = policy_diff_map(assigns.changes["overrides"])
+    approval = policy_diff_map(assigns.changes["approval"])
 
     assigns =
       assigns
       |> assign(:defaults_diff, defaults)
-      |> assign(:added, overrides["added"] || [])
-      |> assign(:removed, overrides["removed"] || [])
-      |> assign(:changed, overrides["changed"] || [])
+      |> assign(:approval_diff, approval)
+      |> assign(:order_changed?, overrides["order_changed"] == true)
+      |> assign(:before_order, policy_override_order(assigns.payload["before"]))
+      |> assign(:after_order, policy_override_order(assigns.payload["after"]))
+      |> assign(:added, policy_diff_rows(overrides["added"]))
+      |> assign(:removed, policy_diff_rows(overrides["removed"]))
+      |> assign(:changed, policy_diff_rows(overrides["changed"]))
 
     ~H"""
     <%!-- Every decision VALUE here is neutral zinc (§7.42): a policy decision is
@@ -264,13 +274,19 @@ defmodule EmisarWeb.AuditDetailLive do
          old=rose/new=brand lied about direction — a tightening (allow → deny)
          rendered the safer value red. The `→` and the section headings carry
          direction; the faint row washes carry add/remove/modify. --%>
-    <section :if={@defaults_diff != %{} or @added != [] or @removed != [] or @changed != []}>
-      <.section_header title="Changes" />
+    <section
+      :if={
+        @defaults_diff != %{} or @approval_diff != %{} or @order_changed? or @added != [] or
+          @removed != [] or @changed != []
+      }
+      id="audit-policy-changes"
+    >
+      <.section_header title="Policy changes" />
       <div class="space-y-5">
         <%= if @defaults_diff != %{} do %>
           <div>
             <p class="mb-2 text-[10px] font-semibold uppercase tracking-wider text-zinc-400">
-              Tier defaults
+              Default rules
             </p>
             <ul class="space-y-1 text-sm">
               <li
@@ -279,16 +295,61 @@ defmodule EmisarWeb.AuditDetailLive do
               >
                 <span class="font-mono text-xs text-zinc-300">{tier}:</span>
                 <.inline_code surface={:diff} size={:compact}>
-                  {from || "—"}
+                  {policy_decision_label(from)}
                 </.inline_code>
                 <span class="text-zinc-500">→</span>
                 <.inline_code surface={:diff} size={:compact}>
-                  {to || "—"}
+                  {policy_decision_label(to)}
                 </.inline_code>
               </li>
             </ul>
           </div>
         <% end %>
+
+        <div :if={@approval_diff != %{}}>
+          <p class="mb-2 text-[10px] font-semibold uppercase tracking-wider text-zinc-400">
+            Approval requirements
+          </p>
+          <ul class="space-y-1 text-sm">
+            <li
+              :for={{field, %{"from" => from, "to" => to}} <- @approval_diff}
+              class="flex items-center gap-2"
+            >
+              <span class="text-xs text-zinc-300">{approval_field_label(field)}:</span>
+              <.inline_code surface={:diff} size={:compact}>
+                {approval_field_value(field, from)}
+              </.inline_code>
+              <span class="text-zinc-500">→</span>
+              <.inline_code surface={:diff} size={:compact}>
+                {approval_field_value(field, to)}
+              </.inline_code>
+            </li>
+          </ul>
+        </div>
+
+        <div :if={@order_changed?}>
+          <p class="mb-2 text-[10px] font-semibold uppercase tracking-wider text-zinc-400">
+            Override order changed
+          </p>
+          <div
+            :for={{label, overrides} <- [{"Before", @before_order}, {"After", @after_order}]}
+            class="mb-2"
+          >
+            <p class="mb-1 text-xs text-zinc-400">{label}</p>
+            <ol class="list-decimal space-y-1 pl-5 text-xs text-zinc-300">
+              <li :for={override <- overrides}>
+                <code class="font-mono text-zinc-200">{override["action"]}</code>
+                <span class="text-zinc-500">→</span>
+                <code class="font-mono text-zinc-200">
+                  {policy_decision_label(override["decision"])}
+                </code>
+                <span :if={override["name"] not in [nil, ""]} class="ml-2 text-zinc-400">
+                  ({override["name"]})
+                </span>
+              </li>
+            </ol>
+          </div>
+        </div>
 
         <%= if @added != [] do %>
           <div>
@@ -299,7 +360,7 @@ defmodule EmisarWeb.AuditDetailLive do
               <li :for={ov <- @added} class="rounded bg-brand-500/[0.04] px-2 py-1">
                 <code class="font-mono text-zinc-200">{ov["action"]}</code>
                 <span class="text-zinc-500">→</span>
-                <code class="font-mono text-zinc-200">{ov["decision"]}</code>
+                <code class="font-mono text-zinc-200">{policy_decision_label(ov["decision"])}</code>
                 <span :if={ov["name"] && ov["name"] != ""} class="ml-2 text-zinc-400">
                   ({ov["name"]})
                 </span>
@@ -317,7 +378,7 @@ defmodule EmisarWeb.AuditDetailLive do
               <li :for={ov <- @removed} class="rounded bg-rose-500/[0.04] px-2 py-1">
                 <code class="font-mono text-zinc-200">{ov["action"]}</code>
                 <span class="text-zinc-500">→</span>
-                <code class="font-mono text-zinc-200">{ov["decision"]}</code>
+                <code class="font-mono text-zinc-200">{policy_decision_label(ov["decision"])}</code>
               </li>
             </ul>
           </div>
@@ -326,18 +387,17 @@ defmodule EmisarWeb.AuditDetailLive do
         <%= if @changed != [] do %>
           <div>
             <p class="mb-2 text-[10px] font-semibold uppercase tracking-wider text-zinc-400">
-              Modified overrides ({length(@changed)})
+              Changed overrides ({length(@changed)})
             </p>
             <ul class="space-y-1 text-xs">
               <li :for={c <- @changed} class="rounded bg-amber-500/[0.04] px-2 py-1">
                 <code class="font-mono text-zinc-200">{c["action"]}</code>:
-                <.inline_code surface={:diff}>
-                  {c["from"]["decision"]}
-                </.inline_code>
-                <span class="text-zinc-500">→</span>
-                <.inline_code surface={:diff}>
-                  {c["to"]["decision"]}
-                </.inline_code>
+                <%= for {label, from, to} <- override_changes(c) do %>
+                  <span class="text-zinc-400">{label}:</span>
+                  <.inline_code surface={:diff}>{from}</.inline_code>
+                  <span class="text-zinc-500">→</span>
+                  <.inline_code surface={:diff}>{to}</.inline_code>
+                <% end %>
               </li>
             </ul>
           </div>
@@ -366,12 +426,24 @@ defmodule EmisarWeb.AuditDetailLive do
   attr :auth_method, :string, default: nil
   attr :mfa, :boolean, default: nil
 
+  defp entity_card(
+         %{role: "Target", kind: "account", id: id, current_account: %{id: id}} = assigns
+       )
+       when is_binary(id) do
+    ~H"""
+    <div class="min-w-0" data-audit-entity={@role}>
+      <.entity_heading role={@role} kind={@kind} />
+      <p class="mt-2 text-sm text-zinc-300">Current account</p>
+    </div>
+    """
+  end
+
   defp entity_card(%{self?: true} = assigns) do
     ~H"""
     <div class="min-w-0" data-audit-entity={@role}>
       <.entity_heading role={@role} kind={@kind} />
       <p class="mt-2 text-sm text-zinc-400">
-        same as actor <span class="text-zinc-400">(self)</span>
+        Same as actor
       </p>
     </div>
     """
@@ -381,7 +453,7 @@ defmodule EmisarWeb.AuditDetailLive do
     ~H"""
     <div class="min-w-0" data-audit-entity={@role}>
       <.entity_heading role={@role} />
-      <p class="mt-2 text-sm text-zinc-400">— (not recorded)</p>
+      <p class="mt-2 text-sm text-zinc-400">Not recorded</p>
     </div>
     """
   end
@@ -451,11 +523,11 @@ defmodule EmisarWeb.AuditDetailLive do
           {@device}
         </dd>
 
-        <dt :if={@auth_method} class={entity_fact_label_class()}>Sign-in</dt>
+        <dt :if={@auth_method} class={entity_fact_label_class()}>Sign-in method</dt>
         <dd :if={@auth_method} class={entity_fact_centered_value_class()}>
           <span>{auth_method_label(@auth_method)}</span>
           <.chip :if={@mfa == true} tone={:brand}>MFA</.chip>
-          <.chip :if={@mfa == false}>no MFA</.chip>
+          <.chip :if={@mfa == false}>MFA not used</.chip>
         </dd>
 
         <dt :if={@mcp_client_label != ""} class={entity_fact_label_class()}>MCP client</dt>
@@ -497,7 +569,50 @@ defmodule EmisarWeb.AuditDetailLive do
   end
 
   defp entity_kind_label(nil), do: nil
-  defp entity_kind_label(kind), do: String.replace(kind, "_", " ")
+  defp entity_kind_label("action_run"), do: "Run"
+  defp entity_kind_label("api_key"), do: "API key"
+  defp entity_kind_label(kind), do: kind |> String.replace("_", " ") |> String.capitalize()
+
+  defp policy_diff_map(value) when is_map(value), do: value
+  defp policy_diff_map(_), do: %{}
+
+  defp policy_diff_rows(rows) when is_list(rows), do: Enum.filter(rows, &is_map/1)
+  defp policy_diff_rows(_), do: []
+
+  defp policy_override_order(%{"overrides" => overrides}) when is_list(overrides),
+    do: Enum.filter(overrides, &is_map/1)
+
+  defp policy_override_order(_), do: []
+
+  defp approval_field_label("min_approvals"), do: "Required approvers"
+  defp approval_field_label("allow_self_approval"), do: "Self-approval"
+  defp approval_field_label(field), do: field
+
+  defp approval_field_value("allow_self_approval", true), do: "Allowed"
+  defp approval_field_value("allow_self_approval", false), do: "Not allowed"
+  defp approval_field_value(_field, nil), do: "Not recorded"
+  defp approval_field_value(_field, value), do: value
+
+  defp policy_decision_label("allow"), do: "Allow"
+  defp policy_decision_label("require_approval"), do: "Require approval"
+  defp policy_decision_label("deny"), do: "Deny"
+  defp policy_decision_label(nil), do: "—"
+  defp policy_decision_label(value), do: value
+
+  defp override_changes(change) do
+    Enum.flat_map([{"name", "Name"}, {"decision", "Decision"}], fn {field, label} ->
+      from = get_in(change, ["from", field])
+      to = get_in(change, ["to", field])
+
+      if from == to,
+        do: [],
+        else: [{label, override_field_value(field, from), override_field_value(field, to)}]
+    end)
+  end
+
+  defp override_field_value("decision", value), do: policy_decision_label(value)
+  defp override_field_value(_field, value) when value in [nil, ""], do: "—"
+  defp override_field_value(_field, value), do: value
 
   defp entity_fact_label_class,
     do: "flex min-h-5 items-start font-normal text-zinc-400"

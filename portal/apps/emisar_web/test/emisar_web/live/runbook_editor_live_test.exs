@@ -103,6 +103,7 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
                    "description" => "Reports uptime",
                    "side_effects" => [],
                    "args" => Keyword.get(opts, :args, []),
+                   "output_schema" => Keyword.get(opts, :output_schema),
                    "examples" => [],
                    "search_terms" => []
                  }
@@ -134,15 +135,20 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
     } do
       {:ok, lv, html} = live(conn, ~p"/app/#{account}/runbooks/new")
 
-      assert html =~ "Operator context"
-      assert html =~ "Run-time inputs"
-      assert html =~ "A stage is a barrier"
+      assert html =~ "Instructions"
+      assert html =~ "Inputs"
+      assert has_element?(lv, "#runbook-stages", "Stages run in order")
       assert html =~ "Arguments"
       assert html =~ "Extracted outputs"
+      refute html =~ "No extracted outputs."
+      refute html =~ "No inputs."
+      assert has_element?(lv, "#runbook-inputs button", "Add input")
+      assert has_element?(lv, "#runbook-stage-0-step-0-outputs button", "Add output")
       assert html =~ "Success conditions"
-      assert html =~ "Wait policy"
+      assert has_element?(lv, "#runbook-stage-0-step-0-wait", "When conditions aren't met")
       assert html =~ "Build the first stage"
       refute html =~ "Choose runners first"
+      refute html =~ "Only online, enabled runners with the required trusted action are included."
       refute html =~ "Pack selection follows the action automatically"
       refute html =~ "definition issues"
       refute html =~ "steps_json"
@@ -195,6 +201,13 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
 
       render_click(lv, "add_stage", %{})
       assert has_element?(lv, "#runbook-stage-1")
+      assert has_element?(lv, ~s(input[name="draft[stages][1][id]"][value=""]))
+
+      assert has_element?(
+               lv,
+               ~s(input[name="draft[stages][1][steps][0][id]"][value=""])
+             )
+
       assert has_element?(lv, "#runbook-stages button", "Add stage")
 
       staged_html = render(lv)
@@ -205,15 +218,21 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
       render_click(lv, "add_step", %{"stage" => "0"})
       assert has_element?(lv, "#runbook-stage-0-step-1")
 
+      assert has_element?(
+               lv,
+               ~s(input[name="draft[stages][0][steps][1][id]"][value=""])
+             )
+
       html = change(lv, valid_draft())
-      assert html =~ "Maximum concurrency"
       assert has_element?(lv, ~s(input[name="draft[stages][0][max_parallel]"]))
+      assert has_element?(lv, "#runbook-stage-0-overview label", "Max parallel actions")
+      refute has_element?(lv, "#runbook-stage-0-overview", "Maximum simultaneous actions")
       assert html =~ "xl:grid-cols-[9rem_minmax(0,1fr)_10rem_11rem]"
 
       assert has_element?(
                lv,
                "#runbook-inputs",
-               "Sensitive values are masked in plans, approvals, and results."
+               "Mark sensitive inputs to hide their values in plans, approvals, and results."
              )
 
       # An answer-shaped fragment ("Yes - …") is leaked review dialogue, not
@@ -281,13 +300,21 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
 
       assert has_element?(
                lv,
+               "#runbook-stage-0-step-0-target-options",
+               "No online, enabled runners in this group are accessible to you"
+             )
+
+      refute html =~ "All available runners in default (unavailable)"
+
+      assert has_element?(
+               lv,
                ~s(#runbook-stage-0-step-0-target-options button[data-target-kind="group_all"][phx-click="remove_target"][phx-value-target="group:default"][phx-value-selection="all"]),
-               "default group Saved group is no longer available Unavailable"
+               "default group No online, enabled runners in this group are accessible to you Unavailable"
              )
 
       refute has_element?(lv, "#runbook-stage-0-step-0-targets > .mt-2.space-y-2")
 
-      assert :binary.match(html, "Operator context") <
+      assert :binary.match(html, "Instructions") <
                :binary.match(html, ~s(id="runbook-inputs"))
 
       assert :binary.match(html, ~s(id="runbook-inputs")) <
@@ -444,7 +471,7 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
 
       assert has_element?(
                lv,
-               ~s(button[aria-label="Remove allowed value"][class~="rounded-lg"][class~="ring-1"][class~="ring-zinc-800"])
+               ~s(button[aria-label="Remove allowed value"][phx-click="remove_enum_value"])
              )
 
       enum_html = render(lv)
@@ -608,7 +635,7 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
 
       assert has_element?(
                lv,
-               ~s|#runbook-stage-0-step-0-output-0-extractor[class~="lg:grid-cols-[12rem_12rem_minmax(0,1fr)]"]|
+               ~s|#runbook-stage-0-step-0-output-0-extractor[class~="@2xl:grid-cols-[12rem_12rem_minmax(0,1fr)]"]|
              )
 
       assert has_element?(
@@ -658,6 +685,40 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
                  ~s(name="draft[stages][0][steps][0][success][0][value]")
                )
 
+      regex_output =
+        RunbookDraft.output()
+        |> Map.merge(%{
+          "extract_type" => "regex",
+          "expression" => "status=(\\w+)",
+          "capture" => "1"
+        })
+
+      regex_draft =
+        valid_draft()
+        |> put_in(
+          ["stages", Access.at(0), "steps", Access.at(0), "outputs"],
+          [regex_output]
+        )
+
+      change(lv, regex_draft)
+
+      assert has_element?(
+               lv,
+               ~s|#runbook-stage-0-step-0-output-0-extractor[class~="@2xl:grid-cols-[12rem_12rem_minmax(0,1fr)_7rem]"]|
+             )
+
+      for field <- ["source", "extract_type", "expression", "capture"] do
+        assert has_element?(
+                 lv,
+                 ~s|#runbook-stage-0-step-0-output-0-extractor [name="draft[stages][0][steps][0][outputs][0][#{field}]"]|
+               )
+      end
+
+      assert has_element?(
+               lv,
+               ~s|#runbook-stage-0-step-0-output-0-extractor input[name$="[capture]"][value="1"]|
+             )
+
       sensitive_output = RunbookDraft.output() |> Map.put("sensitive", "true")
 
       sensitive_draft =
@@ -668,6 +729,11 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
         )
 
       change(lv, sensitive_draft)
+
+      refute has_element?(
+               lv,
+               ~s|#runbook-stage-0-step-0-output-0-extractor input[name$="[capture]"]|
+             )
 
       assert has_element?(
                lv,
@@ -716,6 +782,19 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
 
       assert has_element?(
                lv,
+               ~s|input[name="draft[stages][0][steps][0][wait][max_attempts]"][min="2"][max="100"][step="1"]|
+             )
+
+      refute html =~ "Includes the first attempt."
+
+      assert has_element?(
+               lv,
+               "#runbook-stage-0-step-0-wait-help",
+               "Choose an available low-risk action to configure repeats."
+             )
+
+      assert has_element?(
+               lv,
                ~s|#runbook-stage-0-step-0-wait-controls[class~="lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1.3fr)]"]|
              )
 
@@ -742,6 +821,88 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
                  html,
                  ~s(name="draft[stages][0][steps][0][wait][max_attempts]")
                )
+    end
+
+    test "repeat help follows conditions and the current limits", %{
+      conn: conn,
+      user: user,
+      account: account
+    } do
+      arrange_current_action(account, user)
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runbooks/new")
+      step = ["stages", Access.at(0), "steps", Access.at(0)]
+      help = "#runbook-stage-0-step-0-wait-help"
+
+      draft = valid_draft()
+      change(lv, draft)
+      assert has_element?(lv, help, "This action runs once.")
+
+      draft = put_in(draft, step ++ ["wait", "enabled"], "true")
+      change(lv, draft)
+      assert has_element?(lv, help, "Add a success condition to use repeats.")
+
+      output =
+        RunbookDraft.output()
+        |> Map.merge(%{
+          "id" => "ready",
+          "source" => "stdout",
+          "extract_type" => "contains",
+          "expression" => "ready"
+        })
+
+      draft =
+        draft
+        |> put_in(step ++ ["outputs"], [output])
+        |> put_in(step ++ ["success"], [
+          %{"output" => "ready", "operator" => "equals", "value" => "true"}
+        ])
+
+      change(lv, draft)
+      assert has_element?(lv, help, "Repeat every 10 seconds until conditions pass")
+      assert has_element?(lv, help, "12 attempts or 120 seconds")
+      assert has_element?(lv, help, "Action failures stop the execution.")
+
+      draft =
+        draft
+        |> put_in(step ++ ["wait", "interval_seconds"], "15")
+        |> put_in(step ++ ["wait", "timeout_seconds"], "60")
+        |> put_in(step ++ ["wait", "max_attempts"], "4")
+
+      change(lv, draft)
+      assert has_element?(lv, help, "Repeat every 15 seconds until conditions pass")
+      assert has_element?(lv, help, "4 attempts or 60 seconds")
+      refute has_element?(lv, help, "12 attempts")
+
+      change(lv, put_in(draft, step ++ ["wait", "max_attempts"], "1"))
+      assert has_element?(lv, help, "Enter valid repeat limits.")
+      refute has_element?(lv, help, "Repeat every")
+
+      change(lv, put_in(draft, step ++ ["wait", "enabled"], "false"))
+      assert has_element?(lv, help, "Stop execution if a condition fails.")
+      refute has_element?(lv, help, "Repeat every")
+    end
+
+    test "repeat help explains why a high-risk action cannot repeat", %{
+      conn: conn,
+      user: user,
+      account: account
+    } do
+      arrange_current_action(account, user, risk: "high")
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runbooks/new")
+
+      draft =
+        valid_draft()
+        |> put_in(["stages", Access.at(0), "steps", Access.at(0), "wait", "enabled"], "true")
+
+      change(lv, draft)
+
+      assert has_element?(
+               lv,
+               "#runbook-stage-0-step-0-wait-help",
+               "This high-risk action cannot repeat. Choose Stop execution or a low-risk action."
+             )
+
+      refute has_element?(lv, "#runbook-stage-0-step-0-wait-help", "Repeat every")
     end
 
     test "target-first action selection derives the pack from current runner support", %{
@@ -861,7 +1022,7 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
       assert has_element?(
                lv,
                ~s(#runbook-stage-0-step-0-target-options button[data-target-kind="group_all"]),
-               "Every runner in group"
+               "All available runners in group"
              )
 
       assert has_element?(
@@ -1247,7 +1408,7 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
       html = render(lv)
 
       assert html =~ "Ready to publish", html |> LazyHTML.from_fragment() |> LazyHTML.text()
-      assert html =~ "Resolved"
+      assert html =~ "Last checked"
       refute html =~ "Checked"
       assert html =~ "1"
 
@@ -1262,7 +1423,7 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
       # Publishing is a confirmed step: the button opens the review, and only
       # its confirm mints the release.
       html = render_click(lv, "review_publish", %{})
-      assert html =~ "First release — publishing creates v1"
+      assert html =~ "Publish v1 to make this workflow available to run."
       refute Repo.exists?(Runbook)
 
       destination = ~p"/app/#{account}/runbooks"
@@ -1293,7 +1454,7 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
       Fixtures.Catalog.delete_actions_for_runner(runner.id)
 
       html = render_click(lv, "publish", %{})
-      assert html =~ "Current preflight must pass before publishing."
+      assert html =~ "Resolve the issues above before publishing."
       refute html =~ "Ready to publish"
 
       # The refused publication takes its review panel with it, so the issues
@@ -1335,7 +1496,7 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
 
       Fixtures.Catalog.delete_actions_for_runner(runner.id)
       html = render_click(lv, "publish", %{})
-      assert html =~ "Current preflight must pass before publishing."
+      assert html =~ "Resolve the issues above before publishing."
 
       assert %Runbook{live_version: nil} = created = Repo.one!(Runbook)
       # The operator's work is still on the page, not just in the row.
@@ -1378,7 +1539,7 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
       render_click(lv, "review_publish", %{})
 
       html = render_click(lv, "publish", %{})
-      assert html =~ "Current preflight must pass before publishing."
+      assert html =~ "Resolve the issues above before publishing."
 
       # The save that preceded the refused publish stands; nothing went live.
       assert %Runbook{} = saved = Repo.one!(Runbook)
@@ -1420,13 +1581,31 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
 
       {:ok, lv, html} = live(conn, ~p"/app/#{account}/runbooks/#{published.id}/edit")
 
-      assert has_element?(lv, "#runbook-lifecycle-desktop", "Live")
+      assert has_element?(lv, "#runbook-lifecycle-desktop", "Published version")
       assert has_element?(lv, "#runbook-lifecycle-desktop", "v1")
       # Clean live runbook: no divergence, so no Next row.
       refute has_element?(lv, "#runbook-lifecycle-desktop", "Next")
-      refute html =~ "Discard changes"
+      assert html =~ "Discard changes"
+      assert has_element?(lv, ~s(button[aria-label="Discard changes"][disabled]))
+
+      html = render_click(lv, "discard_draft", %{})
+      refute html =~ "Could not discard these changes."
+      assert Repo.one!(Runbook).draft_definition == nil
 
       edited = valid_draft(title: "Fleet health", inputs: [RunbookDraft.input()])
+      change(lv, edited)
+
+      assert has_element?(
+               lv,
+               ~s|button[aria-label="Discard changes"][class~="text-amber-200"]:not([disabled])|
+             )
+
+      html = render_click(lv, "discard_draft", %{})
+      assert html =~ "Unpublished changes discarded."
+      assert has_element?(lv, ~s(button[aria-label="Discard changes"][disabled]))
+      refute has_element?(lv, "#runbook-input-0")
+      assert Repo.one!(Runbook).draft_definition == nil
+
       change(lv, edited)
 
       destination = ~p"/app/#{account}/runbooks"
@@ -1441,10 +1620,15 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
       # release it replaces and the number Publish will mint.
       {:ok, reopened, _html} = live(conn, ~p"/app/#{account}/runbooks/#{published.id}/edit")
 
-      assert has_element?(reopened, "#runbook-lifecycle-desktop", "Live")
+      assert has_element?(reopened, "#runbook-lifecycle-desktop", "Published")
       assert has_element?(reopened, "#runbook-lifecycle-desktop", "Next")
       assert has_element?(reopened, "#runbook-lifecycle-desktop", "v2")
       assert has_element?(reopened, "#discard-runbook-draft")
+
+      assert has_element?(
+               reopened,
+               ~s|button[aria-label="Discard changes"][class~="text-amber-200"]:not([disabled])|
+             )
     end
 
     test "an unpublished change written elsewhere is refused, not overwritten", %{
@@ -1476,7 +1660,7 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
       change(lv, valid_draft(title: "Fleet health rewritten"))
       html = render_click(lv, "save", %{})
 
-      assert html =~ "Changed elsewhere since you opened it"
+      assert html =~ "This runbook changed elsewhere."
       assert Repo.one!(Runbook).draft_definition == elsewhere
     end
 
@@ -1507,7 +1691,7 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
       change(lv, valid_draft(inputs: [input]))
       html = render_click(lv, "review_publish", %{})
 
-      assert html =~ "These lines replace what runs today."
+      assert html =~ "These changes replace the published workflow."
       assert has_element?(lv, "#runbook-actions-desktop-review", "incident_id")
       assert has_element?(lv, "#runbook-actions-desktop-review-confirm", "Publish v2")
       refute html =~ "First release"
@@ -1593,7 +1777,7 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
 
       assert html =~ "Unpublished changes discarded."
       refute html =~ "incident_id"
-      refute has_element?(editing, "#discard-runbook-draft")
+      assert has_element?(editing, ~s(button[aria-label="Discard changes"][disabled]))
 
       assert %Runbook{} = runbook = Repo.one!(Runbook)
       assert runbook.draft_definition == nil
@@ -1616,7 +1800,7 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
 
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runbooks/#{runbook.id}/edit")
 
-      assert has_element?(lv, "#runbook-lifecycle-desktop", "Never published")
+      assert has_element?(lv, "#runbook-lifecycle-desktop", "Not published")
       refute has_element?(lv, "#discard-runbook-draft")
 
       # The domain refuses it too, so a crafted event cannot empty the editor.
@@ -1832,7 +2016,7 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
       details = "#runbook-stage-0-step-0-details"
 
       assert has_element?(lv, details, "set to")
-      assert has_element?(lv, details, "from structured output at")
+      assert has_element?(lv, details, "from stdout at")
       assert has_element?(lv, details, "whether stdout contains")
       assert has_element?(lv, details, "lines in stderr containing")
       assert has_element?(lv, details, "capture 1 of")
@@ -1846,15 +2030,122 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
       refute has_element?(lv, details, "JSON Pointer")
     end
 
+    test "output pickers show only streams and resolve the extractor to a valid source", %{
+      conn: conn,
+      user: user,
+      account: account
+    } do
+      schema = %{
+        "type" => "object",
+        "properties" => %{"healthy" => %{"type" => "boolean"}},
+        "required" => ["healthy"],
+        "additionalProperties" => false
+      }
+
+      arrange_current_action(account, user, output_schema: schema)
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runbooks/new")
+      change(lv, valid_draft())
+      render_click(lv, "add_output", %{"stage" => "0", "step" => "0"})
+
+      source = ~s(select[name="draft[stages][0][steps][0][outputs][0][source]"])
+
+      assert has_element?(
+               lv,
+               source <> ~s( option[value="structured_output"][selected]),
+               "stdout"
+             )
+
+      assert has_element?(lv, source <> ~s( option[value="stderr"]), "stderr")
+      options = lv |> render() |> LazyHTML.from_document() |> LazyHTML.query(source <> " option")
+      assert Enum.count(options) == 2
+      refute has_element?(lv, source, "Structured output")
+      refute has_element?(lv, "#runbook-stage-0-step-0-outputs", "must contain valid JSON")
+
+      output = %{
+        RunbookDraft.output()
+        | "source" => "structured_output",
+          "extract_type" => "regex"
+      }
+
+      draft =
+        put_in(valid_draft(), ["stages", Access.at(0), "steps", Access.at(0), "outputs"], [output])
+
+      change(lv, draft)
+
+      assert has_element?(lv, source <> ~s( option[value="stdout"][selected]), "stdout")
+      refute has_element?(lv, source <> ~s( option[value="structured_output"]))
+      refute render(lv) =~ "Structured output requires a JSON Pointer extractor."
+    end
+
+    test "loaded output bindings survive form posts and deletion of unnamed siblings", %{
+      conn: conn,
+      user: user,
+      account: account
+    } do
+      schema = %{
+        "type" => "object",
+        "properties" => %{"healthy" => %{"type" => "boolean"}},
+        "required" => ["healthy"],
+        "additionalProperties" => false
+      }
+
+      arrange_current_action(account, user, output_schema: schema)
+
+      outputs = [
+        %{RunbookDraft.output() | "id" => "validated", "source" => "structured_output"},
+        %{RunbookDraft.output() | "id" => "raw", "source" => "stdout"}
+      ]
+
+      draft =
+        put_in(valid_draft(), ["stages", Access.at(0), "steps", Access.at(0), "outputs"], outputs)
+
+      definition = canonical_definition(draft)
+
+      runbook =
+        Fixtures.Runbooks.create_runbook(
+          account_id: account.id,
+          created_by_id: user.id,
+          definition: definition
+        )
+
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runbooks/#{runbook.id}/edit")
+      lv |> form("#runbook-editor-form") |> render_change()
+
+      json =
+        lv
+        |> render()
+        |> LazyHTML.from_document()
+        |> LazyHTML.query("#runbook-canonical-json")
+        |> LazyHTML.text()
+        |> Jason.decode!()
+
+      assert json == definition
+
+      unnamed = Enum.map(outputs, &Map.put(&1, "id", ""))
+      draft = put_in(draft, ["stages", Access.at(0), "steps", Access.at(0), "outputs"], unnamed)
+      change(lv, draft)
+      render_click(lv, "remove_output", %{"stage" => "0", "step" => "0", "index" => "0"})
+
+      source = ~s(select[name="draft[stages][0][steps][0][outputs][0][source]"])
+      assert has_element?(lv, source <> ~s( option[value="stdout"][selected]))
+      refute has_element?(lv, source <> ~s( option[value="structured_output"]))
+    end
+
     test "a stage and an open step lead with the identifier they were given", %{
       conn: conn,
       account: account
     } do
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runbooks/new")
 
-      assert has_element?(lv, "#runbook-stage-0 h3", "stage")
+      assert has_element?(lv, ~s(input[name="draft[stages][0][id]"][value=""]))
+
+      assert has_element?(
+               lv,
+               ~s(input[name="draft[stages][0][steps][0][id]"][value=""])
+             )
+
+      assert has_element?(lv, "#runbook-stage-0 h3", "Stage 1")
       assert has_element?(lv, "#runbook-stage-0", "Stage 1 · sequential")
-      assert has_element?(lv, "#runbook-stage-0-step-0", "step")
       assert has_element?(lv, "#runbook-stage-0-step-0", "Step 1")
 
       change(lv, valid_draft())
@@ -1929,14 +2220,14 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
 
       # How far the ref reaches is spelled out, not encoded in scope dots that
       # need a tooltip to say the same thing.
-      assert has_element?(lv, summary, "Every runner in default")
+      assert has_element?(lv, summary, "All available runners in default")
       refute has_element?(lv, ~s|#{summary} [data-target-scope-icon]|)
 
       # The phrase says what it is, so no glyph labels it.
       refute has_element?(lv, summary, "→")
       assert has_element?(lv, summary, "uptime")
       assert has_element?(lv, details, "from run-time input")
-      assert has_element?(lv, details, "from structured output at")
+      assert has_element?(lv, details, "from stdout at")
 
       # An operator-supplied value reads like the name it belongs to.
       assert has_element?(lv, "#{details} span[class*='font-mono']", "config_path")
@@ -1946,7 +2237,7 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
       assert has_element?(
                lv,
                details,
-               "observe again every 10s, for up to 12 observations or 120s"
+               "repeat every 10s, for up to 12 attempts or 120s"
              )
 
       # Every value sits beside its own name, in one column per step.
@@ -2092,7 +2383,7 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
       assert html =~ "Read-only runbook"
       assert html =~ "Inspect"
       assert html =~ "linux.uptime"
-      assert has_element?(lv, "#runbook-lifecycle-desktop", "Live")
+      assert has_element?(lv, "#runbook-lifecycle-desktop", "Published")
       assert has_element?(lv, "#runbook-lifecycle-desktop", "v1")
 
       assert :binary.match(html, ~s(id="runbook-lifecycle-desktop")) <

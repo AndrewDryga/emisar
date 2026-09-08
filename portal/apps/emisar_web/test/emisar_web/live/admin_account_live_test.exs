@@ -78,6 +78,19 @@ defmodule EmisarWeb.AdminAccountLiveTest do
       assert html =~ "Legacy manual"
     end
 
+    test "shows the configured channel and private command without adding a write control", %{
+      conn: conn,
+      account: account
+    } do
+      url = "https://workspace.slack.com/archives/C01234567"
+      assert {:ok, _} = Emisar.Accounts.put_support_slack_url(account.id, url)
+      {:ok, lv, html} = live(conn, ~p"/admin/accounts/#{account.id}")
+      assert html =~ url
+      assert has_element?(lv, "#support-slack-url")
+      assert html =~ "support.set_slack_channel"
+      refute has_element?(lv, "form[phx-submit]")
+    end
+
     test "only token-backed invitations carry the pending badge", %{
       conn: conn,
       account: account,

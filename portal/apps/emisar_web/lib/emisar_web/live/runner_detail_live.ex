@@ -1,19 +1,21 @@
 defmodule EmisarWeb.RunnerDetailLive do
   use EmisarWeb, :live_view
   alias Emisar.{Accounts, Catalog, Runners, Runs}
-  alias EmisarWeb.{ConfirmDialog, FleetStates, LiveTable}
+  alias EmisarWeb.{ConfirmDialog, LiveTable}
   alias EmisarWeb.{Permissions, TransportReason, URLHelpers}
 
   def mount(%{"id" => id}, _session, socket) do
     membership = socket.assigns.current_membership
 
-    if connected?(socket),
-      do: Accounts.subscribe_account_team(socket.assigns.current_account.id)
+    if connected?(socket) do
+      Accounts.subscribe_account_team(socket.assigns.current_account.id)
+      Runners.subscribe_account_credentials(socket.assigns.current_account.id)
+    end
 
     case Runners.fetch_runner_by_id(
            id,
            socket.assigns.current_subject,
-           preload: [:online?]
+           preload: [:online?, :connection_token]
          ) do
       # A denied role and a missing runner are indistinguishable — never leak
       # existence, never crash on {:error, :unauthorized}.
@@ -61,6 +63,7 @@ defmodule EmisarWeb.RunnerDetailLive do
 
     socket
     |> assign(:runner, runner)
+    |> assign(:credential, Runners.credential_facts(runner))
     |> assign(:readiness, Runners.runner_readiness(runner, access))
     |> assign(:pack_access_restricted?, access.pack_mode == :restricted)
   end
@@ -159,10 +162,15 @@ defmodule EmisarWeb.RunnerDetailLive do
     change = Runners.normalize_connection_change(event)
     runner = Runners.project_runner_connection(socket.assigns.runner, change)
 
-    if runner == socket.assigns.runner,
-      do: {:noreply, socket},
-      else: {:noreply, project_runner(socket, runner)}
+    if runner == socket.assigns.runner do
+      {:noreply, socket}
+    else
+      {:noreply, project_runner(socket, runner)}
+    end
   end
+
+  def handle_info({:runner_credentials_changed, id}, %{assigns: %{runner: %{id: id}}} = socket),
+    do: {:noreply, refresh_current_runner(socket)}
 
   def handle_info(
         {:list_changed, :team, "membership.runner_access_changed", user_id},
@@ -177,7 +185,7 @@ defmodule EmisarWeb.RunnerDetailLive do
     case Runners.fetch_runner_by_id(
            socket.assigns.runner.id,
            socket.assigns.current_subject,
-           preload: [:online?]
+           preload: [:online?, :connection_token]
          ) do
       {:ok, runner} ->
         socket
@@ -224,6 +232,25 @@ defmodule EmisarWeb.RunnerDetailLive do
     )
   end
 
+  def handle_event("rotate_key", _params, socket) do
+    case Runners.request_credential_rotation(
+           socket.assigns.runner,
+           socket.assigns.current_subject
+         ) do
+      {:ok, _runner} ->
+        {:noreply,
+         socket
+         |> put_flash(
+           :info,
+           "Key rotation requested. The runner will rotate its key when connected."
+         )
+         |> refresh_current_runner()}
+
+      {:error, reason} ->
+        {:noreply, put_flash(socket, :error, rotation_error_message(reason))}
+    end
+  end
+
   def handle_event("enable", _params, socket) do
     Permissions.gated(
       socket,
@@ -257,7 +284,7 @@ defmodule EmisarWeb.RunnerDetailLive do
           {:ok, _runner} ->
             {:noreply,
              socket
-             |> put_flash(:info, "Runner deleted. The host can re-register on next connect.")
+             |> put_flash(:info, "Runner deleted. The host must register again to connect again.")
              |> push_navigate(to: ~p"/app/#{socket.assigns.current_account}/runners")}
 
           {:error, :not_found} ->
@@ -280,6 +307,24 @@ defmodule EmisarWeb.RunnerDetailLive do
 
   def handle_event("confirm_reset", _params, socket),
     do: {:noreply, ConfirmDialog.reset(socket)}
+
+  defp rotation_error_message(:rotation_not_supported),
+    do: "Update this runner to rotate its key from here."
+
+  defp rotation_error_message(:token_unavailable),
+    do: "Ensure the runner is connected before rotating its key."
+
+  defp rotation_error_message(:token_expired) do
+    "The key this runner used has expired. Reconnect the runner; if registration fails, use a new enrollment key."
+  end
+
+  defp rotation_error_message(:runner_disabled), do: "Enable the runner before rotating its key."
+
+  defp rotation_error_message(:unauthorized),
+    do: "You don't have permission to rotate this runner's key."
+
+  defp rotation_error_message(_reason),
+    do: "Could not request key rotation. Refresh the page and try again."
 
   def render(assigns) do
     ~H"""
@@ -322,14 +367,13 @@ defmodule EmisarWeb.RunnerDetailLive do
         </.button>
       </:actions>
 
-      <%!-- The page owns its own rhythm: ONE space-y-12 wrapper makes the shell's
-           space-y-6 a no-op (a single child) and sets a generous 48px between the
-           major blocks. A per-block `mt-*` on a shell child can't do this — the
-           shell's space-y wins on specificity and collapses every gap but the
-           first back to 24px, so the air silently vanishes. Approvals owns its
-           rhythm the same way. The `mt-4` is the one gap the wrapper still owns:
-           breathing room under the page title before the vital-stats grid (the
-           shell starts content tight, right under the title). --%>
+      <.page_intro>
+        Run actions on this host, review recent runs, and manage its connection.
+        <.doc_link href={~p"/docs/runner-fleet"}>Runner docs</.doc_link>
+      </.page_intro>
+
+      <%!-- Keep the major detail sections 48px apart; the shell owns the gap
+           between the page introduction and this wrapper. --%>
       <div class="mt-4 space-y-12">
         <%!-- Identity: the vital-stats grid and the labels/disconnect row are ONE
              block — the row is a hairline continuation of the grid — so they stay
@@ -433,8 +477,7 @@ defmodule EmisarWeb.RunnerDetailLive do
                 <span class="text-zinc-400">— {degraded["reason"]}</span>
               </p>
               <p>
-                Reinstall the pack on the host (<.inline_code surface={:quiet} size={:xs}>emisar pack install &lt;name&gt;</.inline_code>) or re-run the installer; the runner
-                re-advertises on its next reload.
+                Reinstall the affected pack on the host with <.inline_code surface={:quiet} size={:xs}>emisar pack install &lt;name&gt;</.inline_code>.
               </p>
             </div>
           </.callout>
@@ -457,13 +500,9 @@ defmodule EmisarWeb.RunnerDetailLive do
           title="Signed dispatch only"
           primary
         >
-          This runner verifies a client signature on every run and refuses unsigned ones, so
-          the portal can't dispatch to it. Runs and runbooks must come from an MCP client
-          configured with a signing key and certificate — mint them with
-          <.inline_code surface={:quiet} size={:xs}>
-            emisar signing init
-          </.inline_code>
-          on the host.
+          This runner only accepts signed actions, so you can't start runs from the console.
+          Use an MCP client with a signing key and certificate.
+          <.doc_link href={~p"/docs/signed-dispatch"}>Signing setup</.doc_link>
         </.status_note>
 
         <.loading_state :if={@loading?} />
@@ -487,7 +526,7 @@ defmodule EmisarWeb.RunnerDetailLive do
             "lg:col-span-2 lg:col-start-1 lg:row-start-1 lg:flex lg:flex-col",
             paired_placeholders? && "lg:self-stretch"
           ]}>
-            <.section_header title="Advertised actions" count={@actions_metadata.count}>
+            <.section_header title="Actions" count={@actions_metadata.count}>
               <:subtitle :if={@pack_access_restricted?}>
                 Your pack access limits this list to actions from packs you can use.
               </:subtitle>
@@ -556,7 +595,12 @@ defmodule EmisarWeb.RunnerDetailLive do
                       <% action.primary_executable_available == false -> %>
                         <.tooltip
                           id={"action-missing-exec-#{action.id}"}
-                          text={"Primary executable #{action.missing_executable || "unknown"} is missing on this runner"}
+                          text={
+                            if action.missing_executable not in [nil, ""],
+                              do:
+                                "The required tool #{action.missing_executable} isn't installed on this runner.",
+                              else: "The tool required by this action isn't installed on this runner."
+                          }
                           class="shrink-0"
                         >
                           <.button
@@ -576,7 +620,7 @@ defmodule EmisarWeb.RunnerDetailLive do
                            WHY on hover, keyboard focus, and touch alike. --%>
                         <.tooltip
                           id={"action-signed-only-#{action.id}"}
-                          text="Signed dispatch only — run this from your MCP client; the portal can't dispatch to this runner"
+                          text="Signed dispatch only — use an MCP client with a signing key and certificate"
                           class="shrink-0"
                         >
                           <.button
@@ -611,7 +655,7 @@ defmodule EmisarWeb.RunnerDetailLive do
                            explains why on hover, keyboard focus, and touch alike. --%>
                         <.tooltip
                           id={"action-offline-#{action.id}"}
-                          text={"Runner is #{FleetStates.label(@readiness.connection.state)} — runs can't be dispatched from here until it reconnects"}
+                          text="The runner must be online to start an action from here"
                           class="shrink-0"
                         >
                           <.button
@@ -630,7 +674,7 @@ defmodule EmisarWeb.RunnerDetailLive do
                            one an operator fixes right here on this page. --%>
                         <.tooltip
                           id={"action-disabled-#{action.id}"}
-                          text="Runner is disabled — enable it before dispatching"
+                          text="Runner is disabled — enable it to run actions"
                           class="shrink-0"
                         >
                           <.button
@@ -660,8 +704,7 @@ defmodule EmisarWeb.RunnerDetailLive do
                       title="Couldn't load this runner's actions"
                       class={placeholder_box()}
                     >
-                      This is a load error, not an empty catalog — the host is not the thing to
-                      check. Refresh the page to try again.
+                      Refresh the page to try again.
                     </.empty_state>
                   <% LiveTable.has_active_filters?(@filter_params, @action_filters) -> %>
                     <span class="text-zinc-400">No actions match these filters.</span>
@@ -679,13 +722,13 @@ defmodule EmisarWeb.RunnerDetailLive do
             "lg:col-start-3 lg:row-start-1 lg:flex lg:flex-col",
             paired_placeholders? && "lg:self-stretch"
           ]}>
-            <.section_header title="Recent runs">
+            <.section_header title="Recent runs" actions_align={:baseline}>
               <:actions :if={@recent_runs != []}>
                 <.link
                   navigate={~p"/app/#{@current_account}/runs?#{[runner_id: @runner.id]}"}
-                  class="group inline-flex items-center gap-1 text-xs font-medium text-brand-400 hover:text-brand-300"
+                  class="group text-xs font-medium text-brand-400 hover:text-brand-300"
                 >
-                  View all <.cta_arrow />
+                  View all <.cta_arrow class="ml-0.5 h-3.5 w-3.5" />
                 </.link>
               </:actions>
             </.section_header>
@@ -698,8 +741,7 @@ defmodule EmisarWeb.RunnerDetailLive do
                   title="Couldn't load recent runs"
                   class={placeholder_box()}
                 >
-                  This is a load error, not an empty history — runs may well exist. Refresh the
-                  page to try again.
+                  Refresh the page to try again.
                 </.empty_state>
               <% @recent_runs == [] -> %>
                 <%!-- Shared min-height + centered content so this narrow (1/3)
@@ -710,10 +752,10 @@ defmodule EmisarWeb.RunnerDetailLive do
                      column full) state. --%>
                 <.empty_state
                   icon="product.run"
-                  title="No runs yet."
+                  title="No runs yet"
                   class={placeholder_box()}
                 >
-                  Nothing dispatched to this runner yet — runs land here as they happen.
+                  Actions sent to this runner will appear here.
                 </.empty_state>
               <% true -> %>
                 <ul class="divide-y divide-zinc-800/70">
@@ -724,6 +766,59 @@ defmodule EmisarWeb.RunnerDetailLive do
             <% end %>
           </section>
         </div>
+
+        <section :if={not @loading?} id="runner-connection-key">
+          <.section_header title="Connection key" />
+          <.confirm_zone
+            title="Current key"
+            tone={:neutral}
+            show_action={Runners.subject_can_manage_runners?(@current_subject)}
+            disabled={
+              @credential.pending? or not @credential.known? or @credential.expired? or
+                not @runner.credential_rotation_supported or not is_nil(@runner.disabled_at)
+            }
+            phx-click={open_confirm("rotate-runner-key")}
+          >
+            <:heading>
+              <.runner_key_expiry id="runner-current-key-expiry" facts={@credential} />
+            </:heading>
+            <:body>
+              <%= cond do %>
+                <% @credential.expired? -> %>
+                  The key this runner used has expired. Reconnect the runner; if registration fails,
+                  use a new enrollment key.
+                <% @runner.disabled_at -> %>
+                  Enable the runner before rotating its key.
+                <% not @credential.known? -> %>
+                  Reconnect the runner to see its current key's expiry.
+                <% @credential.pending? -> %>
+                  Waiting for the runner to connect with its new key. If it stays pending,
+                  check the runner's logs.
+                <% not @runner.credential_rotation_supported -> %>
+                  Update this runner to rotate its key from here.
+                <% true -> %>
+                  The runner rotates its key automatically. Rotating it now won't interrupt
+                  running actions.
+              <% end %>
+              <.doc_link href={~p"/docs/runner-credentials" <> "#runner-tokens"}>
+                How runner keys work
+              </.doc_link>
+            </:body>
+            {if @credential.pending?, do: "Rotation requested", else: "Rotate key"}
+          </.confirm_zone>
+          <.confirm_dialog
+            :if={Runners.subject_can_manage_runners?(@current_subject)}
+            id="rotate-runner-key"
+            title="Rotate this runner's key?"
+            confirm_label="Rotate key"
+            on_confirm={JS.push("rotate_key") |> close_confirm("rotate-runner-key")}
+          >
+            <:body>
+              The runner will save a new key and reconnect. Running actions continue. If the runner
+              is offline, rotation waits until it connects again.
+            </:body>
+          </.confirm_dialog>
+        </section>
 
         <%!-- Danger zone — destructive/restorative actions as canvas hairline
            rows under their own section, not rose-boxed islands. Disable is the
@@ -740,12 +835,12 @@ defmodule EmisarWeb.RunnerDetailLive do
               :if={@readiness.connection.state != :disabled}
               id="disable-runner"
               title="Disable this runner"
-              confirm="It will not be able to reconnect until you enable it again. Audit history is preserved."
+              confirm="Blocks new actions and connections until you enable it again."
               confirm_label="Disable runner"
               on_confirm={JS.push("disable")}
             >
               <:body>
-                Removes it from the catalog and rejects future reconnects. Audit history is preserved.
+                Blocks new actions and connections until you enable it again.
               </:body>
               Disable runner
             </.confirm_zone>
@@ -757,7 +852,7 @@ defmodule EmisarWeb.RunnerDetailLive do
               phx-click="enable"
             >
               <:body>
-                Clears the disabled flag so the host can reconnect and reappear in the catalog.
+                Allows the runner to reconnect and run actions again.
                 Counts against your plan's runner limit.
               </:body>
               Enable runner
@@ -772,10 +867,8 @@ defmodule EmisarWeb.RunnerDetailLive do
               phx-click={show_confirm_dialog("delete-runner")}
             >
               <:body>
-                Removes the runner row from your account. The host can re-register on its
-                next connect (it will appear as a fresh runner with new tokens), which is
-                the intended path when you want to recover from a wedged state or
-                re-bootstrap a host. Run history and audit events are preserved.
+                Permanently removes this runner. The host must register again to connect again.
+                Run history and audit events are kept.
               </:body>
               Delete runner
             </.confirm_zone>
@@ -791,9 +884,8 @@ defmodule EmisarWeb.RunnerDetailLive do
             on_confirm={JS.push("delete") |> hide_confirm_dialog("delete-runner")}
           >
             <:body>
-              Removes <span class="font-medium text-zinc-200">{@runner.name}</span>
-              from your account. The host can re-register on its next connect as a fresh
-              runner with new tokens. Run history and audit events are preserved.
+              Permanently removes <span class="font-medium text-zinc-200">{@runner.name}</span>.
+              The host must register again to connect again. Run history and audit events are kept.
             </:body>
           </.confirm_dialog>
         </section>
@@ -849,9 +941,9 @@ defmodule EmisarWeb.RunnerDetailLive do
   # disconnected one cannot advertise at all, so packs are not the question yet.
   defp empty_catalog_state(%{online?: true} = assigns) do
     ~H"""
-    <.empty_state icon="product.runner" title="No actions yet." class={@class}>
-      Actions come from packs, and this host has none installed yet. Install one and its actions
-      land here. <.doc_link href={~p"/packs"}>Browse the pack catalog</.doc_link>
+    <.empty_state icon="product.runner" title="No actions yet" class={@class}>
+      Install a pack on the host to add its actions here.
+      <.doc_link href={~p"/packs"}>Browse packs</.doc_link>
       <:command id="empty-catalog-suggest" label="Run on the host" value="emisar pack suggest" />
     </.empty_state>
     """
@@ -859,10 +951,9 @@ defmodule EmisarWeb.RunnerDetailLive do
 
   defp empty_catalog_state(assigns) do
     ~H"""
-    <.empty_state icon="product.runner" title="No actions yet." class={@class}>
-      A runner reports its actions when it connects, and this one is not connected. Check the
-      daemon on the host.
-      <.doc_link href={~p"/docs/troubleshooting"}>Runner troubleshooting</.doc_link>
+    <.empty_state icon="product.runner" title="No actions yet" class={@class}>
+      Connect the runner to see its actions.
+      <.doc_link href={~p"/docs/runner-fleet" <> "#offline"}>Troubleshooting</.doc_link>
       <:command id="empty-catalog-status" label="Run on the host" value="emisar status" />
     </.empty_state>
     """

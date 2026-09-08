@@ -696,13 +696,6 @@ defmodule EmisarWeb.DashboardLive do
           true -> 1
         end
       )
-      # The exact words to send an agent, so a first-timer isn't left guessing.
-      # A read-only health check: it maps to real actions (load / memory / disk /
-      # failed units) and can't change anything, so it's a safe first run.
-      |> assign(
-        :example_prompt,
-        "Check my production via emisar — load, memory, disk, and any failed services — and flag anything that needs attention."
-      )
 
     ~H"""
     <section class="pt-2">
@@ -816,13 +809,9 @@ defmodule EmisarWeb.DashboardLive do
                 Ask in plain English — your agent picks the matching action from the catalog and
                 runs it on the host. A read-only health check is a safe first run:
               </p>
-              <.code_panel
+              <.agent_example_prompt
                 id="onboarding-example-prompt"
-                label="Example prompt"
-                copy
-                wrap
                 class="mt-3 sm:max-w-prose"
-                code={@example_prompt}
               />
             <% end %>
           </div>

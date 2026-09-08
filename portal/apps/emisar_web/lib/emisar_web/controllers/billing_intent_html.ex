@@ -5,7 +5,7 @@ defmodule EmisarWeb.BillingIntentHTML do
     ~H"""
     <.auth_layout title="Choose a workspace">
       <.selected_plan cycle={@intent.cycle} class="mb-7">
-        Choose the workspace to upgrade. Review the price before you pay.
+        Choose the workspace to upgrade. You'll review the price in checkout.
       </.selected_plan>
 
       <div class="space-y-3">
@@ -25,12 +25,23 @@ defmodule EmisarWeb.BillingIntentHTML do
       </div>
 
       <.empty_state
-        :if={@accounts == []}
+        :if={@accounts == [] and not @accounts_error?}
         variant={:hint}
         icon="product.billing"
-        title="Create a workspace first"
+        title="No workspaces you can upgrade"
       >
-        Create a workspace on Free, then review the Team upgrade.
+        You need billing access to upgrade an existing workspace. You can also create a new one.
+      </.empty_state>
+
+      <.empty_state
+        :if={@accounts_error?}
+        variant={:hint}
+        tone={:danger}
+        icon="state.warning"
+        title="Couldn't load your workspaces"
+      >
+        Try again to choose a workspace.
+        <:cta navigate={~p"/app/billing/start"}>Try again</:cta>
       </.empty_state>
 
       <div class="mt-6 space-y-3">
@@ -47,7 +58,7 @@ defmodule EmisarWeb.BillingIntentHTML do
             type="submit"
             class="w-full py-2 text-sm font-medium text-zinc-400 hover:text-zinc-200"
           >
-            Keep my current plan
+            Cancel
           </button>
         </form>
       </div>

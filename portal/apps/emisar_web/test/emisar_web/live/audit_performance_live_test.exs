@@ -18,7 +18,9 @@ defmodule EmisarWeb.AuditPerformanceLiveTest do
 
     lv |> element("#audit-events-pager a", "Next") |> render_click()
     assert assigns(lv).filter_option_pickers == original
-    refute Enum.any?(queries(), &facet_query?/1)
+    page_queries = queries()
+    assert Enum.any?(page_queries, &event_page_query?/1)
+    refute Enum.any?(page_queries, &facet_query?/1)
 
     send(lv.pid, :reload_audit)
     render(lv)
@@ -76,7 +78,8 @@ defmodule EmisarWeb.AuditPerformanceLiveTest do
     {:ok, lv, _} = live(conn, ~p"/app/#{account}/audit?actor_kind=user&actor_id=#{id}")
     html = search(lv, "actor_id", "no match")
     assert html =~ "No other matching choices."
-    assert has_element?(lv, "select[name='actor_id'] option[selected][value='#{id}']")
+    assert has_element?(lv, "input[type='hidden'][name='actor_id'][value='#{id}']")
+    assert has_element?(lv, "#filter-actor_id-choices a[aria-current=true]", "Former member")
     assert assigns(lv).filter_params["actor_id"] == id
 
     render_change(lv, "filter", %{
@@ -99,12 +102,12 @@ defmodule EmisarWeb.AuditPerformanceLiveTest do
     {:ok, lv, html} =
       live(conn, ~p"/app/#{account}/audit?target_kind=user&target_id=#{id}")
 
-    assert has_element?(lv, "select[name='target_id'] option[selected][value='#{id}']")
+    assert has_element?(lv, "input[type='hidden'][name='target_id'][value='#{id}']")
     assert html =~ "#{id} (unavailable)"
     html = search(lv, "target_id", String.duplicate("x", 513))
     assert html =~ "Search is too long or contains unsupported characters."
     refute html =~ "No matching choices."
-    assert has_element?(lv, "select[name='target_id'] option[selected][value='#{id}']")
+    assert has_element?(lv, "input[type='hidden'][name='target_id'][value='#{id}']")
     assert assigns(lv).filter_option_pickers.target_id.search == ""
   end
 
@@ -215,5 +218,8 @@ defmodule EmisarWeb.AuditPerformanceLiveTest do
          String.contains?(query, [".\"actor_kind\"", ".\"target_kind\""]))
   end
 
-  defp event_page_query?(query), do: String.contains?(query, "\"payload\"")
+  defp event_page_query?(query) do
+    [projection | _] = String.split(query, " FROM ", parts: 2)
+    String.contains?(projection, "\"payload\"")
+  end
 end

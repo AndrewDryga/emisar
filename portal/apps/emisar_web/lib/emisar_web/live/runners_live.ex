@@ -10,6 +10,9 @@ defmodule EmisarWeb.RunnersLive do
   @reload_debounce_ms 500
 
   def mount(_params, _session, socket) do
+    if connected?(socket),
+      do: Runners.subscribe_account_credentials(socket.assigns.current_account.id)
+
     {:ok,
      socket
      |> assign(:page_title, "Runners")
@@ -41,6 +44,9 @@ defmodule EmisarWeb.RunnersLive do
 
   def handle_info(:reload_runners, socket),
     do: {:noreply, socket |> assign(:reload_scheduled?, false) |> reload()}
+
+  def handle_info({:runner_credentials_changed, _id}, socket),
+    do: {:noreply, schedule_reload(socket)}
 
   # The empty-state wizard's grace period elapsed with no runner — reveal its
   # troubleshooting checklist (a runner joining first re-runs load/2, which drops
@@ -98,7 +104,7 @@ defmodule EmisarWeb.RunnersLive do
     case Runners.sweep_inactive_runners(socket.assigns.current_subject) do
       {:ok, 0} ->
         {:noreply,
-         put_flash(socket, :info, "Nothing to remove — no runner has been inactive that long.")}
+         put_flash(socket, :info, "Nothing to remove — no runner has been offline that long.")}
 
       {:ok, count} ->
         {:noreply,
@@ -129,20 +135,20 @@ defmodule EmisarWeb.RunnersLive do
     end
   end
 
-  defp retention_set_flash(nil), do: "Automatic cleanup turned off — inactive runners are kept."
+  defp retention_set_flash(nil), do: "Automatic cleanup turned off — offline runners are kept."
 
   defp retention_set_flash(hours) do
     period = retention_period_phrase(hours)
-    "Automatic cleanup on — runners inactive for #{period} are removed by the hourly sweep."
+    "Automatic cleanup on — runners offline for #{period} are removed by the hourly sweep."
   end
 
-  defp cleanup_flash(1), do: "Removed 1 inactive runner."
-  defp cleanup_flash(count), do: "Removed #{count} inactive runners."
+  defp cleanup_flash(1), do: "Removed 1 offline runner."
+  defp cleanup_flash(count), do: "Removed #{count} offline runners."
 
   # What a member who can't change the schedule reads in its place. Worded like
   # the select's own options, so both audiences read the setting the same way.
   defp retention_value_label(nil), do: "Off"
-  defp retention_value_label(hours), do: "After #{retention_period_phrase(hours)} inactive"
+  defp retention_value_label(hours), do: "After #{retention_period_phrase(hours)} offline"
 
   defp retention_period_phrase(1), do: "1 hour"
   defp retention_period_phrase(24), do: "1 day"
@@ -156,18 +162,18 @@ defmodule EmisarWeb.RunnersLive do
     [
       %{
         value: "",
-        label: "Off — keep inactive runners",
+        label: "Off — keep offline runners",
         selected: is_nil(current_hours),
         disabled: false
       },
-      retention_option(1, "After 1 hour inactive", current_hours),
-      retention_option(6, "After 6 hours inactive", current_hours),
-      retention_option(24, "After 1 day inactive", current_hours),
-      retention_option(168, "After 7 days inactive", current_hours),
-      retention_option(336, "After 14 days inactive", current_hours),
-      retention_option(720, "After 30 days inactive", current_hours),
-      retention_option(1_440, "After 60 days inactive", current_hours),
-      retention_option(2_160, "After 90 days inactive", current_hours)
+      retention_option(1, "After 1 hour offline", current_hours),
+      retention_option(6, "After 6 hours offline", current_hours),
+      retention_option(24, "After 1 day offline", current_hours),
+      retention_option(168, "After 7 days offline", current_hours),
+      retention_option(336, "After 14 days offline", current_hours),
+      retention_option(720, "After 30 days offline", current_hours),
+      retention_option(1_440, "After 60 days offline", current_hours),
+      retention_option(2_160, "After 90 days offline", current_hours)
     ]
   end
 
@@ -231,7 +237,7 @@ defmodule EmisarWeb.RunnersLive do
     # notice never disagrees with the counters beside it.
     fleet = load_fleet_status(socket.assigns.current_subject)
 
-    opts = Keyword.put(opts, :preload, [:online?])
+    opts = Keyword.put(opts, :preload, [:online?, :connection_token])
 
     case Runners.list_runners_for_account(socket.assigns.current_subject, opts) do
       {:ok, runners, meta} ->
@@ -371,10 +377,9 @@ defmodule EmisarWeb.RunnersLive do
           <.empty_state
             tone={:danger}
             icon="state.warning"
-            title="Couldn't load your fleet"
+            title="Couldn't load runners"
           >
-            This is a load error, not an empty fleet — a host may well be connected. Refresh the
-            page; if it persists, your access to this account may have changed.
+            Refresh the page to try again. If it keeps failing, contact support.
           </.empty_state>
         <% @show_wizard? and not @can_install_runners? -> %>
           <%!-- Zero fleet, no install permission: the pitch without a wizard
@@ -393,6 +398,7 @@ defmodule EmisarWeb.RunnersLive do
             install_command={@install_command}
             base_url={@base_url}
             show_troubleshooting={@show_troubleshooting?}
+            runners_path={~p"/app/#{@current_account}/runners"}
             keys_path={~p"/app/#{@current_account}/runners/keys"}
             show_keys_link={Runners.subject_can_manage_enrollment_keys?(@current_subject)}
           />
@@ -400,15 +406,28 @@ defmodule EmisarWeb.RunnersLive do
           <%!-- Dead/pre-connect render — defer the onboarding pitch until the
                live socket confirms there really are no runners. --%>
           <.loading_state />
-        <% not @has_runner_access? -> %>
-          <.empty_state icon="product.runner" title="No runner access">
-            You don't have access to any runners. An owner or admin can grant it from Team.
-          </.empty_state>
-        <% not @has_full_runner_access? and @metadata.count == 0 and
-             not LiveTable.has_active_filters?(@filter_params, @filters) -> %>
-          <.empty_state icon="product.runner" title="No runners in your access">
-            No runners match your assigned scope. An owner or admin can update it from Team.
-          </.empty_state>
+        <% not @has_runner_access? or
+             (not @has_full_runner_access? and @metadata.count == 0 and
+                not LiveTable.has_active_filters?(@filter_params, @filters)) -> %>
+          <%!-- Public help remains useful without runner access; fleet data and
+               housekeeping stay in the accessible-fleet branch below. --%>
+          <div class="grid grid-cols-1 gap-x-10 gap-y-8 xl:grid-cols-[minmax(0,1fr)_22rem] xl:items-start">
+            <div class="min-w-0">
+              <.empty_state
+                icon="product.runner"
+                title="You do not have access to any runners"
+              >
+                <%= if @has_runner_access? do %>
+                  Ask an owner or admin to update your runner access.
+                <% else %>
+                  Ask an owner or admin to grant you access.
+                <% end %>
+              </.empty_state>
+            </div>
+            <div id="runners-supporting-rail">
+              <.runner_help />
+            </div>
+          </div>
         <% true -> %>
           <%!-- The fleet leads; practical help uses a fixed 22rem rail at xl.
                Below that split, help and housekeeping follow the list in
@@ -429,21 +448,21 @@ defmodule EmisarWeb.RunnersLive do
                   severity={:critical}
                   title="All runners offline"
                 >
-                  Every runner in this fleet is disconnected — dispatched actions will queue (or fail)
-                  until one reconnects. Check the hosts, or the runner service on them.
+                  New actions can't run until their runners reconnect.
+                  <.doc_link href={~p"/docs/runner-fleet#offline"}>Troubleshooting</.doc_link>
                 </.offline_notice>
                 <%!-- Whole-fleet dispatch posture: every active runner is signed-only, so the
                      portal is locked out account-wide. --%>
                 <.callout
                   :if={@fleet.signature_mode == :signed_only}
+                  id="fleet-signed-dispatch"
                   tone={:brand}
                   icon="trust.signed_dispatch"
-                  title="Fleet is signed-only"
+                  title="Signed dispatch only"
                 >
-                  Every runner in this account verifies a client signature and refuses unsigned runs, so
-                  the portal can't dispatch to any of them. Runs and runbooks must come from an MCP client
-                  configured with each runner's signing key.
-                  <.doc_link href={~p"/docs/signed-dispatch"}>Signed dispatch docs</.doc_link>
+                  These runners only accept signed actions, so you can't start runs from the console.
+                  Use an MCP client with a signing key and certificate.
+                  <.doc_link href={~p"/docs/signed-dispatch"}>Signing setup</.doc_link>
                 </.callout>
                 <.version_upgrade_notice
                   id="runner-upgrade"
@@ -518,6 +537,7 @@ defmodule EmisarWeb.RunnersLive do
 
                 <:item :let={runner}>
                   <% readiness = Runners.runner_readiness(runner) %>
+                  <% credential = Runners.credential_facts(runner) %>
                   <li>
                     <.link
                       navigate={~p"/app/#{@current_account}/runners/#{runner.id}"}
@@ -547,9 +567,9 @@ defmodule EmisarWeb.RunnersLive do
                             :if={readiness.signatures.mode == :signed_only}
                             tone={:neutral}
                             icon="trust.signed_dispatch"
-                            title="Runs only signed dispatches — the portal can't dispatch to this runner"
+                            title="Requires an MCP client with a signing key and certificate."
                           >
-                            signed-only
+                            Signed dispatch only
                           </.chip>
                         </div>
                         <.meta_line class="mt-0.5 text-xs text-zinc-400">
@@ -561,6 +581,15 @@ defmodule EmisarWeb.RunnersLive do
                             {runner.hostname || runner.external_id || "no host"}
                           </:seg>
                           <:seg><.heartbeat_status readiness={readiness} /></:seg>
+                          <:seg>
+                            <.runner_key_expiry
+                              id={"runner-key-expiry-#{runner.id}"}
+                              facts={credential}
+                            />
+                          </:seg>
+                          <:seg :if={credential.pending?}>
+                            <span class="text-amber-300">Key rotation requested</span>
+                          </:seg>
                           <%!-- Zero is the default, not a signal — the count joins the meta
                            line only while something is actually running. --%>
                           <:seg :if={readiness.action_load > 0}>
@@ -583,25 +612,7 @@ defmodule EmisarWeb.RunnersLive do
             </div>
 
             <div id="runners-supporting-rail">
-              <div id="runner-explainer">
-                <.docs_rail title="Runner basics">
-                  <p>
-                    Actions are tasks such as checking disk space or restarting a service. Packs are
-                    collections of actions you install on a runner. Your policies decide which actions
-                    are allowed, need approval, or are blocked. <.doc_link href={
-                      ~p"/docs/use-a-published-pack"
-                    }>How to install a pack</.doc_link>.
-                  </p>
-                  <p>
-                    Group related runners, such as “web” or “production,” to apply shared policies
-                    or run actions across the group. <.doc_link href={~p"/docs/runner-fleet" <> "#groups-labels"}>How to group runners</.doc_link>.
-                  </p>
-                  <p>
-                    A runner must be online to receive new actions. If one is offline, check that
-                    its service is running and that it can connect to emisar. <.doc_link href={~p"/docs/runner-fleet" <> "#offline"}>Troubleshoot an offline runner</.doc_link>.
-                  </p>
-                </.docs_rail>
-              </div>
+              <.runner_help />
 
               <div class="mt-6 max-w-md xl:max-w-none">
                 <h3 class="text-[11px] font-semibold uppercase tracking-wider text-zinc-400">
@@ -611,7 +622,8 @@ defmodule EmisarWeb.RunnersLive do
                 <div id="runners-cleanup" class="mt-3 rounded-xl border border-zinc-800/80 p-4">
                   <h4 class="text-sm font-medium text-zinc-100">Automatic cleanup</h4>
                   <p class="mt-1 text-xs leading-relaxed text-zinc-400">
-                    Remove runners that have been disconnected for the selected period. A host that comes back online re-enrolls as a fresh runner. Currently-connected and disabled runners are skipped.
+                    Remove runners offline for the selected period, skipping disabled runners.
+                    Cleaned-up hosts must register again.
                   </p>
                   <.gated_setting
                     id="runner-retention"
@@ -623,7 +635,7 @@ defmodule EmisarWeb.RunnersLive do
                     <form id="runner-retention-form" phx-change="set_runner_retention">
                       <.select
                         name="hours"
-                        aria-label="Remove runners inactive for"
+                        aria-label="Remove runners offline for"
                         options={runner_retention_options(@retention_hours)}
                       />
                     </form>
@@ -637,14 +649,12 @@ defmodule EmisarWeb.RunnersLive do
                     tone={:neutral}
                     size={:lg}
                     class="mt-3 w-full"
-                    title="Clean up inactive runners?"
+                    title="Clean up offline runners?"
                     confirm_label="Clean up now"
                     on_confirm={JS.push("cleanup_inactive_now")}
                   >
                     <:body>
-                      Soft-deletes every runner inactive for more than {retention_period_phrase(
-                        @retention_hours
-                      )}. A host that comes back online re-enrolls as a fresh runner; its
+                      Removes runners offline for more than {retention_period_phrase(@retention_hours)}, skipping disabled runners. Cleaned-up hosts must register again;
                       audit history is kept.
                     </:body>
                     Clean up now
@@ -655,6 +665,25 @@ defmodule EmisarWeb.RunnersLive do
           </div>
       <% end %>
     </.console_shell>
+    """
+  end
+
+  defp runner_help(assigns) do
+    ~H"""
+    <div id="runner-explainer">
+      <.docs_rail title="Runner basics">
+        <p>
+          Install packs on a runner to add the actions you need. A pack is a collection
+          of related tasks, such as checking disk space or restarting a service. <.doc_link href={
+            ~p"/docs/use-a-published-pack"
+          }>How to install a pack</.doc_link>.
+        </p>
+        <p>
+          Group related runners, such as “web” or “production,” to apply shared policies
+          or run actions across the group. <.doc_link href={~p"/docs/runner-fleet" <> "#groups-labels"}>How to group runners</.doc_link>.
+        </p>
+      </.docs_rail>
+    </div>
     """
   end
 

@@ -112,6 +112,17 @@ defmodule EmisarWeb.AdminAccountLive do
           <p class="mt-4 text-xs text-zinc-400">
             <.inline_code text="Change a plan with `emisar.admin.plan.grant`; re-read Paddle with `emisar.admin.billing.sync`." />
           </p>
+          <div class="mt-4">
+            <.code_line
+              :if={@overview.account.settings.support_slack_url}
+              id="support-slack-url"
+              label="Slack support channel"
+              value={@overview.account.settings.support_slack_url}
+            />
+            <p class="mt-2 text-xs text-zinc-400">
+              <.inline_code text="Set the Enterprise support channel with `emisar.admin.support.set_slack_channel`. Leave `url` blank to remove it." />
+            </p>
+          </div>
         </div>
 
         <div>

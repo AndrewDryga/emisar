@@ -35,19 +35,26 @@ defmodule EmisarWeb.BillingIntentController do
   end
 
   def show(conn, _params) do
-    with {:ok, token, intent} <- pending_intent(conn),
-         {:ok, accounts, _meta} <-
-           Accounts.list_accounts_for_user(conn.assigns.current_subject,
-             page: [limit: 100],
-             count: false
-           ) do
-      render(conn, :show,
-        accounts: manageable_accounts(conn, accounts),
-        intent: intent,
-        token: token
-      )
-    else
-      _error -> invalid_intent(conn)
+    case pending_intent(conn) do
+      {:ok, token, intent} ->
+        {accounts, accounts_error?} =
+          case Accounts.list_accounts_for_user(conn.assigns.current_subject,
+                 page: [limit: 100],
+                 count: false
+               ) do
+            {:ok, accounts, _meta} -> {manageable_accounts(conn, accounts), false}
+            {:error, _reason} -> {[], true}
+          end
+
+        render(conn, :show,
+          accounts: accounts,
+          accounts_error?: accounts_error?,
+          intent: intent,
+          token: token
+        )
+
+      _error ->
+        invalid_intent(conn)
     end
   end
 
@@ -62,10 +69,22 @@ defmodule EmisarWeb.BillingIntentController do
       |> UserAuth.switch_account(membership)
       |> redirect(to: ~p"/app/#{membership.account}/settings/billing?billing_intent=#{token}")
     else
-      false -> denied_selection(conn)
-      {:error, :unauthorized} -> denied_selection(conn)
-      {:error, :not_found} -> denied_selection(conn)
-      _error -> invalid_intent(conn)
+      false ->
+        denied_selection(conn)
+
+      {:error, :unauthorized} ->
+        denied_selection(conn)
+
+      {:error, :not_found} ->
+        denied_selection(conn)
+
+      {:error, :invalid} ->
+        invalid_intent(conn)
+
+      _error ->
+        conn
+        |> put_flash(:error, "Couldn't select that workspace. Try again.")
+        |> show(%{})
     end
   end
 
@@ -107,7 +126,7 @@ defmodule EmisarWeb.BillingIntentController do
   defp invalid_intent(conn) do
     conn
     |> delete_session(:billing_intent)
-    |> put_flash(:error, "That Team plan choice expired. Choose a plan again.")
+    |> put_flash(:error, "That plan selection is no longer valid. Choose a plan again.")
     |> redirect(to: ~p"/pricing")
   end
 
