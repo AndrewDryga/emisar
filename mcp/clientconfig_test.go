@@ -111,9 +111,11 @@ func testConfigRoots(t *testing.T) configRoots {
 	t.Helper()
 	root := t.TempDir()
 	return configRoots{
-		home:      filepath.Join(root, "home"),
-		appConfig: filepath.Join(root, "appconfig"),
-		dotConfig: filepath.Join(root, "home", ".config"),
+		home:        filepath.Join(root, "home"),
+		appConfig:   filepath.Join(root, "appconfig"),
+		dotConfig:   filepath.Join(root, "home", ".config"),
+		hermesHome:  filepath.Join(root, "home", ".hermes"),
+		gooseConfig: filepath.Join(root, "home", ".config", "goose"),
 	}
 }
 

@@ -373,7 +373,7 @@ services:
       context: .
       dockerfile: dev/mcp/Dockerfile
       args:
-        MCP_VERSION: "0.11.0"
+        MCP_VERSION: "0.13.0"
     image: emisar/mcp:dev
     profiles: ["test"]
     depends_on:

@@ -52,8 +52,8 @@ config :emisar, Emisar.Compat,
   runner_current: "0.24.0",
   runner_enforce: false,
   mcp_minimum: ">= 0.3.0",
-  mcp_recommended: ">= 0.11.0",
-  mcp_current: "0.11.0",
+  mcp_recommended: ">= 0.13.0",
+  mcp_current: "0.13.0",
   mcp_enforce: false
 
 # Configures the mailer

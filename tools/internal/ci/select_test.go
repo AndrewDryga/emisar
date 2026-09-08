@@ -451,7 +451,9 @@ func TestSelect(t *testing.T) {
 			{name: "runner", file: "tools/internal/installtest/runner.go", wantRunner: true},
 			{name: "mcp", file: "tools/internal/installtest/mcp.go", wantMCP: true},
 			{name: "mcp windows", file: "tools/internal/installtest/mcp_windows.go", wantMCP: true},
+			{name: "mcp windows tests", file: "tools/internal/installtest/mcp_windows_test.go", wantMCP: true},
 			{name: "shared harness", file: "tools/internal/installtest/harness.go", wantRunner: true, wantMCP: true},
+			{name: "shared harness tests", file: "tools/internal/installtest/harness_test.go", wantRunner: true, wantMCP: true},
 			{name: "command", file: "tools/cmd/installtest/main.go", wantRunner: true, wantMCP: true},
 		} {
 			t.Run(test.name, func(t *testing.T) {

@@ -365,6 +365,16 @@ func (a *App) installerGate(ctx context.Context, module string) error {
 		}); err != nil {
 			return err
 		}
+		if err := a.gatePhase("mcp installer harness tests", func() error {
+			args := []string{"test"}
+			if goRaceSupported(runtime.GOOS, runtime.GOARCH) {
+				args = append(args, "-race")
+			}
+			args = append(args, "-count=1", "./tools/internal/installtest")
+			return a.run(ctx, a.Root, nil, "go", args...)
+		}); err != nil {
+			return err
+		}
 		return a.gatePhase("mcp installer behavior", func() error {
 			return a.run(ctx, a.Root, nil, "go", "run", "./tools/cmd/installtest", "mcp-windows")
 		})

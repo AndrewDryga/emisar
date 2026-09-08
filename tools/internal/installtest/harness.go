@@ -137,7 +137,8 @@ func environment(overrides map[string]string) []string {
 	for key, value := range overrides {
 		prefix := key + "="
 		for index := len(env) - 1; index >= 0; index-- {
-			if strings.HasPrefix(env[index], prefix) {
+			name, _, _ := strings.Cut(env[index], "=")
+			if name == key || runtime.GOOS == "windows" && strings.EqualFold(name, key) {
 				env = append(env[:index], env[index+1:]...)
 			}
 		}
@@ -146,7 +147,7 @@ func environment(overrides map[string]string) []string {
 	return env
 }
 
-// sandboxConfigHome keeps XDG_CONFIG_HOME inside a sandboxed HOME.
+// sandboxConfigHome keeps client configuration inside a sandboxed home.
 //
 // Overriding HOME alone does not isolate a run: on Linux the bridge prefers
 // XDG_CONFIG_HOME when resolving the directory holding VS Code's and Claude
@@ -156,21 +157,38 @@ func environment(overrides map[string]string) []string {
 //
 // A developer's shell usually leaves XDG_CONFIG_HOME unset, and GitHub's Ubuntu
 // images export it — which is why this could only fail in CI. A caller that
-// names XDG_CONFIG_HOME itself is left alone.
+// names a configuration override itself is left alone. Hermes and Goose also
+// have client-specific overrides; inheriting them could overwrite real user
+// credentials even when HOME and the platform directories are sandboxed.
 func sandboxConfigHome(overrides map[string]string) map[string]string {
 	home, sandboxed := overrides["HOME"]
+	if runtime.GOOS == "windows" {
+		if userProfile := overrides["USERPROFILE"]; userProfile != "" {
+			home, sandboxed = userProfile, true
+		}
+	}
 	if !sandboxed || home == "" {
 		return overrides
 	}
-	if _, named := overrides["XDG_CONFIG_HOME"]; named {
-		return overrides
+	defaults := map[string]string{
+		"XDG_CONFIG_HOME": filepath.Join(home, ".config"),
+		"HERMES_HOME":     "",
+		"GOOSE_PATH_ROOT": "",
+	}
+	if runtime.GOOS == "windows" {
+		defaults["APPDATA"] = filepath.Join(home, "AppData", "Roaming")
+		defaults["LOCALAPPDATA"] = filepath.Join(home, "AppData", "Local")
 	}
 
-	sandboxedOverrides := make(map[string]string, len(overrides)+1)
+	sandboxedOverrides := make(map[string]string, len(overrides)+len(defaults))
 	for key, value := range overrides {
 		sandboxedOverrides[key] = value
 	}
-	sandboxedOverrides["XDG_CONFIG_HOME"] = filepath.Join(home, ".config")
+	for key, value := range defaults {
+		if _, named := overrides[key]; !named {
+			sandboxedOverrides[key] = value
+		}
+	}
 	return sandboxedOverrides
 }
 

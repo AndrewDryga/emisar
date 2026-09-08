@@ -51,7 +51,7 @@ type windowsClientFixture struct {
 	marker   string
 }
 
-func windowsClientFixtures(home, appData string) []windowsClientFixture {
+func windowsClientFixtures(home, appData, localAppData string) []windowsClientFixture {
 	return []windowsClientFixture{
 		{"claude-code", "json", filepath.Join(home, ".claude.json"), "{\"fixture\":\"claude-code\"}\r\n", `"fixture":"claude-code"`},
 		{"claude-desktop", "json", filepath.Join(appData, "Claude", "claude_desktop_config.json"), "{\"fixture\":\"claude-desktop\"}\r\n", `"fixture":"claude-desktop"`},
@@ -65,8 +65,8 @@ func windowsClientFixtures(home, appData string) []windowsClientFixture {
 		{"pi", "json", filepath.Join(home, ".pi", "agent", "mcp.json"), "{\"fixture\":\"pi\"}\r\n", `"fixture":"pi"`},
 		{"copilot-cli", "copilot", filepath.Join(home, ".copilot", "mcp-config.json"), "{\"fixture\":\"copilot-cli\"}\r\n", `"fixture":"copilot-cli"`},
 		{"zed", "zed", filepath.Join(appData, "Zed", "settings.json"), "{\"fixture\":\"zed\",\"context_servers\":{\"other\":{\"source\":\"custom\",\"command\":\"other-mcp\"}}}\r\n", `"fixture":"zed"`},
-		{"hermes", "hermes", filepath.Join(home, ".hermes", "config.yaml"), "model: windows-hermes\r\n", "model: windows-hermes"},
-		{"goose", "goose", filepath.Join(home, ".config", "goose", "config.yaml"), "provider: windows-goose\r\n", "provider: windows-goose"},
+		{"hermes", "hermes", filepath.Join(localAppData, "hermes", "config.yaml"), "model: windows-hermes\r\n", "model: windows-hermes"},
+		{"goose", "goose", filepath.Join(appData, "Block", "goose", "config", "config.yaml"), "provider: windows-goose\r\n", "provider: windows-goose"},
 		{"grok", "toml", filepath.Join(home, ".grok", "config.toml"), "[permission]\r\nallow = [\"MCPTool(other__*)\"]\r\n", `allow = ["MCPTool(other__*)"]`},
 	}
 }
@@ -246,7 +246,7 @@ func testWindowsMCPInstaller(root, shell string) error {
 	home := filepath.Join(temp, "home")
 	appData := filepath.Join(temp, "appdata")
 	localAppData := filepath.Join(temp, "localappdata")
-	fixtures := windowsClientFixtures(home, appData)
+	fixtures := windowsClientFixtures(home, appData, localAppData)
 	for _, fixture := range fixtures {
 		if err := os.MkdirAll(filepath.Dir(fixture.path), 0o700); err != nil {
 			return err

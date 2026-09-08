@@ -379,7 +379,10 @@ func useConnectTestHome(t *testing.T) configRoots {
 	t.Setenv("HOME", home)
 	t.Setenv("USERPROFILE", home)
 	t.Setenv("APPDATA", filepath.Join(home, "AppData", "Roaming"))
+	t.Setenv("LOCALAPPDATA", filepath.Join(home, "AppData", "Local"))
 	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
+	t.Setenv("HERMES_HOME", "")
+	t.Setenv("GOOSE_PATH_ROOT", "")
 	t.Setenv("EMISAR_ALLOW_INSECURE", "1")
 	roots, err := currentConfigRoots()
 	if err != nil {

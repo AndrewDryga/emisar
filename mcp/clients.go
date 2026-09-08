@@ -69,14 +69,17 @@ type clientEntryRequest struct {
 	AutoPermit bool
 }
 
-// configRoots are the three directory roots these clients build paths from.
+// configRoots are the directory roots these clients build paths from.
 // appConfig is the platform's application-configuration directory, while
 // dotConfig is a literal ~/.config that several cross-platform CLIs use even
-// on macOS and Windows.
+// on macOS and Windows. Hermes and Goose additionally own configuration-root
+// overrides that must apply to detection, installation, and removal alike.
 type configRoots struct {
-	home      string
-	appConfig string
-	dotConfig string
+	home        string
+	appConfig   string
+	dotConfig   string
+	hermesHome  string
+	gooseConfig string
 }
 
 func resolveConfigRoots(home string) configRoots {
@@ -96,6 +99,27 @@ func resolveConfigRoots(home string) configRoots {
 		} else {
 			roots.appConfig = roots.dotConfig
 		}
+	}
+	roots.hermesHome = strings.TrimSpace(os.Getenv("HERMES_HOME"))
+	if roots.hermesHome == "" {
+		if runtime.GOOS == "windows" {
+			localAppData := strings.TrimSpace(os.Getenv("LOCALAPPDATA"))
+			if localAppData == "" {
+				localAppData = filepath.Join(home, "AppData", "Local")
+			}
+			roots.hermesHome = filepath.Join(localAppData, "hermes")
+		} else {
+			roots.hermesHome = filepath.Join(home, ".hermes")
+		}
+	}
+	// Goose accepts an absolute override only. Its Windows configuration lives
+	// under Roaming AppData, not the Unix-style .config directory.
+	if pathRoot := os.Getenv("GOOSE_PATH_ROOT"); filepath.IsAbs(pathRoot) {
+		roots.gooseConfig = filepath.Join(pathRoot, "config")
+	} else if runtime.GOOS == "windows" {
+		roots.gooseConfig = filepath.Join(roots.appConfig, "Block", "goose", "config")
+	} else {
+		roots.gooseConfig = filepath.Join(roots.dotConfig, "goose")
 	}
 	return roots
 }
@@ -277,14 +301,18 @@ var clientAdapters = []clientAdapter{
 		Label:   "Hermes",
 		format:  formatYAML,
 		yamlTop: "mcp_servers",
-		file:    homePath(".hermes", "config.yaml"),
+		file: func(roots configRoots) string {
+			return filepath.Join(roots.hermesHome, "config.yaml")
+		},
 	},
 	{
 		ID:      "goose",
 		Label:   "Goose",
 		format:  formatYAML,
 		yamlTop: "extensions",
-		file:    dotConfigPath("goose", "config.yaml"),
+		file: func(roots configRoots) string {
+			return filepath.Join(roots.gooseConfig, "config.yaml")
+		},
 	},
 	{
 		ID:         "grok",
