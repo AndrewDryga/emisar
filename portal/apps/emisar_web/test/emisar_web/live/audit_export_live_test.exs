@@ -46,10 +46,8 @@ defmodule EmisarWeb.AuditExportLiveTest do
       assert revoked.revoked_at
     end
 
-    # an account with no export tokens shows
-    # the mint affordance but NOT the (empty) list section: the list div is
-    # `:if={@export_keys != []}`, so a manager sees just the "Create export token"
-    # button until they've created one.
+    # An account with no export tokens shows the mint affordance and empty state,
+    # not a table or pager with no rows.
     test "with no export keys the list is hidden but the mint affordance shows", %{
       conn: conn,
       account: account
@@ -69,6 +67,165 @@ defmodule EmisarWeb.AuditExportLiveTest do
       siem_card = lv |> element("#siem-export") |> render()
       refute siem_card =~ "revoke_export_key"
       refute siem_card =~ "Revoked"
+    end
+
+    test "every token beyond 100 is reachable, including revoked tokens, with account and kind isolation",
+         %{
+           conn: conn,
+           user: user,
+           account: account
+         } do
+      keys = create_export_keys(account, user, 101)
+      subject = Fixtures.Subjects.subject_for(user, account)
+      {:ok, _revoked} = Emisar.ApiKeys.revoke_api_key(List.last(keys), subject)
+
+      {_, agent_key} =
+        Fixtures.ApiKeys.create_api_key(account_id: account.id, created_by_id: user.id)
+
+      foreign = Fixtures.Accounts.create_account(plan: "team")
+
+      {_, foreign_key} =
+        Fixtures.ApiKeys.create_api_key(account_id: foreign.id, kind: :audit_export)
+
+      {:ok, lv, html} = live(conn, ~p"/app/#{account}/audit/export?status=live&limit=10000")
+      assert length(export_row_ids(html)) == 20
+      assert has_element?(lv, "#export-keys-pager", "101")
+
+      ids = collect_export_pages(lv, 6)
+      assert length(ids) == 101
+      assert MapSet.new(ids) == MapSet.new(keys, &("export-key-" <> &1.id))
+      refute "export-key-#{agent_key.id}" in ids
+      refute "export-key-#{foreign_key.id}" in ids
+      assert has_element?(lv, "#export-key-#{List.last(keys).id}", "Revoked")
+      refute has_element?(lv, "#revoke-export-#{List.last(keys).id}")
+    end
+
+    test "later pages survive revoke, PubSub and reload while the one-shot secret survives patches only",
+         %{
+           conn: conn,
+           user: user,
+           account: account
+         } do
+      keys = create_export_keys(account, user, 21)
+      oldest = List.last(keys)
+      path = ~p"/app/#{account}/audit/export"
+      {:ok, lv, _html} = live(conn, path)
+
+      next =
+        lv
+        |> element("#export-keys-pager a", "Next")
+        |> render()
+        |> LazyHTML.from_fragment()
+        |> LazyHTML.query("a")
+        |> LazyHTML.attribute("href")
+        |> hd()
+
+      lv |> element("#export-keys-pager a", "Next") |> render_click()
+      assert_patch(lv, next)
+      assert has_element?(lv, "#revoke-export-#{oldest.id}")
+
+      render_click(lv, "revoke_export_key", %{"id" => oldest.id})
+      assert has_element?(lv, "#export-key-#{oldest.id}", "Revoked")
+      refute has_element?(lv, "#revoke-export-#{oldest.id}")
+
+      {_, external} =
+        Fixtures.ApiKeys.create_api_key(
+          account_id: account.id,
+          created_by_id: user.id,
+          kind: :audit_export
+        )
+
+      assert has_element?(lv, "#export-key-#{oldest.id}")
+      refute has_element?(lv, "#export-key-#{external.id}")
+      {:ok, _fresh, fresh_html} = live(conn, next)
+      assert export_row_ids(fresh_html) == export_row_ids(render(lv))
+
+      html = render_click(lv, "create_export_key", %{})
+
+      raw =
+        html
+        |> LazyHTML.from_fragment()
+        |> LazyHTML.query("#export-secret")
+        |> LazyHTML.text()
+
+      assert has_element?(lv, "#export-key-#{oldest.id}")
+
+      lv |> element("#export-keys-pager a", "Prev") |> render_click()
+      assert render(lv) =~ raw
+      lv |> element("#export-keys-pager a", "Next") |> render_click()
+      assert render(lv) =~ raw
+      {:ok, _fresh, fresh_html} = live(conn, next)
+      refute fresh_html =~ raw
+      refute fresh_html =~ "Export token created"
+
+      render_click(lv, "dismiss_export_secret", %{})
+      refute render(lv) =~ raw
+    end
+
+    test "malformed cursors show a recoverable read error without clearing the revealed secret",
+         %{
+           conn: conn,
+           account: account
+         } do
+      path = ~p"/app/#{account}/audit/export"
+      {:ok, lv, _html} = live(conn, path)
+      html = render_click(lv, "create_export_key", %{})
+
+      raw =
+        html
+        |> LazyHTML.from_fragment()
+        |> LazyHTML.query("#export-secret")
+        |> LazyHTML.text()
+
+      wrong_types =
+        Base.url_encode64(
+          Jason.encode!(["after", [["binary", "bad time"], ["binary", "bad uuid"]]]),
+          padding: false
+        )
+
+      for cursor <- ["not-a-cursor", String.duplicate("a", 11_000), wrong_types] do
+        render_patch(lv, ~p"/app/#{account}/audit/export?after=#{cursor}")
+        assert has_element?(lv, "#export-keys-empty", "Couldn't load export tokens")
+        refute has_element?(lv, "#export-keys-empty", "No export tokens yet")
+        assert render(lv) =~ raw
+        lv |> element("#export-keys-empty a", "Back to first page") |> render_click()
+        assert_patch(lv, path)
+        assert has_element?(lv, "#export-keys > li")
+        assert render(lv) =~ raw
+      end
+
+      for cursor <- [["bad"], %{"nested" => "bad"}] do
+        render_patch(lv, ~p"/app/#{account}/audit/export?#{%{"after" => cursor}}")
+        assert has_element?(lv, "#export-keys > li")
+        assert render(lv) =~ raw
+      end
+    end
+
+    test "a valid foreign cursor cannot expose foreign tokens or mislabel a stale page as empty",
+         %{
+           conn: conn,
+           user: user,
+           account: account
+         } do
+      [key] = create_export_keys(account, user, 1)
+      {foreign_user, foreign, foreign_subject} = Fixtures.Subjects.owner_subject()
+      Fixtures.Accounts.create_subscription(foreign, "team")
+
+      for key <- create_export_keys(foreign, foreign_user, 2) do
+        Fixtures.ApiKeys.backdate_api_key_inserted_at(key, ~U[2000-01-01 00:00:00.000000Z])
+      end
+
+      {:ok, _keys, metadata} =
+        Emisar.ApiKeys.list_audit_export_keys_for_account(foreign_subject, page: [limit: 1])
+
+      {:ok, lv, html} =
+        live(conn, ~p"/app/#{account}/audit/export?after=#{metadata.next_page_cursor}")
+
+      assert html =~ "This page no longer has results."
+      refute html =~ "No export tokens yet"
+      assert export_row_ids(html) == []
+      lv |> element("#export-keys-pager a", "Back to first page") |> render_click()
+      assert has_element?(lv, "#export-key-#{key.id}")
     end
 
     # while a freshly-minted secret is being revealed, the
@@ -448,5 +605,39 @@ defmodule EmisarWeb.AuditExportLiveTest do
     end
 
     assert Process.alive?(lv.pid)
+  end
+
+  defp create_export_keys(account, user, count) do
+    now = DateTime.utc_now()
+
+    for index <- 1..count do
+      {_, key} =
+        Fixtures.ApiKeys.create_api_key(
+          account_id: account.id,
+          created_by_id: user.id,
+          kind: :audit_export,
+          name: "Export #{index}"
+        )
+
+      Fixtures.ApiKeys.backdate_api_key_inserted_at(key, DateTime.add(now, -index, :second))
+    end
+  end
+
+  defp export_row_ids(html) do
+    html
+    |> LazyHTML.from_fragment()
+    |> LazyHTML.query("#export-keys > li")
+    |> LazyHTML.attribute("id")
+  end
+
+  defp collect_export_pages(lv, remaining) when remaining > 0 do
+    ids = export_row_ids(render(lv))
+
+    if has_element?(lv, "#export-keys-pager a", "Next") do
+      lv |> element("#export-keys-pager a", "Next") |> render_click()
+      ids ++ collect_export_pages(lv, remaining - 1)
+    else
+      ids
+    end
   end
 end

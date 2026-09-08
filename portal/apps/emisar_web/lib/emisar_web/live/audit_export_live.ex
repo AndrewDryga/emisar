@@ -7,7 +7,7 @@ defmodule EmisarWeb.AuditExportLive do
   """
   use EmisarWeb, :live_view
   alias Emisar.{ApiKeys, Billing}
-  alias EmisarWeb.{Permissions, URLHelpers}
+  alias EmisarWeb.{LiveTable, Permissions, URLHelpers}
   alias Phoenix.LiveView.JS
 
   def mount(_params, _session, socket) do
@@ -36,8 +36,19 @@ defmodule EmisarWeb.AuditExportLive do
        Billing.audit_export_available?(socket.assigns.current_account)
      )
      |> assign(:export_secret, nil)
-     |> assign(:base_audit_url, URLHelpers.derive_base_url(socket) <> "/api/audit")
-     |> assign_export_keys()}
+     |> assign(:base_audit_url, URLHelpers.derive_base_url(socket) <> "/api/audit")}
+  end
+
+  def handle_params(params, _uri, socket) do
+    # Pagination is URL-driven; token creation and PubSub refresh the same page.
+    # There is deliberately no default status filter: revoked tokens stay visible.
+    socket = assign(socket, :filter_params, Map.take(params, ["after", "before"]))
+
+    if connected?(socket) do
+      {:noreply, assign_export_keys(socket)}
+    else
+      {:noreply, empty_export_keys(socket, false)}
+    end
   end
 
   def handle_info({:list_changed, :api_key, _event_type, _id}, socket),
@@ -109,33 +120,29 @@ defmodule EmisarWeb.AuditExportLive do
   def handle_event("dismiss_export_secret", _params, socket),
     do: {:noreply, assign(socket, :export_secret, nil)}
 
-  # `page_size:` is not an option Repo.list/3 recognises — it was silently
-  # dropped, so the limit stayed the default 35 with no paginator and no cursor,
-  # which left token 36 onward unrevocable from the console. Ask for the
-  # paginator's maximum instead: an account holds a handful of long-lived SIEM
-  # tokens, so one page covers it, and `truncated?` says so rather than hiding
-  # the rest. A failed read is also distinguished from an empty account —
-  # collapsing both to [] told an operator whose permission had just been
-  # tightened that they had no tokens.
-  @export_key_page 100
-
   defp assign_export_keys(socket) do
-    case ApiKeys.list_audit_export_keys_for_account(socket.assigns.current_subject,
-           page: [limit: @export_key_page],
-           preload: [:created_by]
+    opts = LiveTable.params_to_opts(socket.assigns.filter_params, [])
+
+    case ApiKeys.list_audit_export_keys_for_account(
+           socket.assigns.current_subject,
+           Keyword.put(opts, :preload, [:created_by])
          ) do
-      {:ok, keys, _meta} ->
+      {:ok, keys, metadata} ->
         socket
         |> assign(:export_keys, keys)
-        |> assign(:export_keys_truncated?, length(keys) >= @export_key_page)
+        |> assign(:metadata, metadata)
         |> assign(:load_error?, false)
 
-      _ ->
-        socket
-        |> assign(:export_keys, [])
-        |> assign(:export_keys_truncated?, false)
-        |> assign(:load_error?, true)
+      {:error, _reason} ->
+        empty_export_keys(socket, true)
     end
+  end
+
+  defp empty_export_keys(socket, load_error?) do
+    socket
+    |> assign(:export_keys, [])
+    |> assign(:metadata, %Emisar.Repo.Paginator.Metadata{count: 0, limit: 0})
+    |> assign(:load_error?, load_error?)
   end
 
   # This page lists and mints only :audit_export tokens, so revoke narrows to that
@@ -239,21 +246,17 @@ defmodule EmisarWeb.AuditExportLive do
 
           <%!-- Existing export tokens — listed with revoke. The agents page
                filters these out so SIEM-export tokens live here exclusively. --%>
-          <.callout :if={@load_error?} tone={:rose} title="Couldn't load export tokens">
-            Refresh the page to try again.
-          </.callout>
-
-          <.callout
-            :if={@export_keys_truncated?}
-            tone={:amber}
-            title="Export token list limit"
+          <LiveTable.live_table
+            id="export-keys"
+            path={~p"/app/#{@current_account}/audit/export"}
+            rows={@export_keys}
+            metadata={@metadata}
+            filter_params={@filter_params}
+            layout={:cards}
+            wrapper_class="divide-y divide-zinc-800/70 border-t border-zinc-800/70"
           >
-            Only the 100 most recent export tokens are shown.
-          </.callout>
-
-          <div :if={@export_keys != []} class="mt-2">
-            <ul class="divide-y divide-zinc-800/70 border-t border-zinc-800/70">
-              <.list_row :for={key <- @export_keys} padding="py-4">
+            <:item :let={key}>
+              <.list_row id={"export-key-#{key.id}"} padding="py-4">
                 <:title>
                   <span class="truncate text-sm font-medium text-zinc-100">{key.name}</span>
                 </:title>
@@ -295,19 +298,28 @@ defmodule EmisarWeb.AuditExportLive do
                   </.confirm_button>
                 </:actions>
               </.list_row>
-            </ul>
-          </div>
-
-          <.empty_state
-            :if={
-              @export_keys == [] and @continuous_export_available? and not @load_error? and
-                is_nil(@export_secret)
-            }
-            icon="identity.credential"
-            title="No export tokens yet"
-          >
-            Create a token to connect your SIEM or log collector.
-          </.empty_state>
+            </:item>
+            <:empty>
+              <%= cond do %>
+                <% not connected?(@socket) -> %>
+                  <.loading_state />
+                <% @load_error? -> %>
+                  <.callout tone={:rose} title="Couldn't load export tokens">
+                    <.link
+                      patch={~p"/app/#{@current_account}/audit/export"}
+                      class="font-medium text-brand-400 hover:text-brand-300"
+                    >
+                      {if @filter_params == %{}, do: "Try again", else: "Back to first page"}
+                    </.link>
+                  </.callout>
+                <% @continuous_export_available? and is_nil(@export_secret) -> %>
+                  <.empty_state icon="identity.credential" title="No export tokens yet">
+                    Create a token to connect your SIEM or log collector.
+                  </.empty_state>
+                <% true -> %>
+              <% end %>
+            </:empty>
+          </LiveTable.live_table>
         </section>
 
         <.docs_rail title="Connect your SIEM">
