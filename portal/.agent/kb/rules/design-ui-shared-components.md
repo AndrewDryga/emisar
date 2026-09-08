@@ -124,6 +124,10 @@ origin through the shared tooltip; do not call an OIDC-linked identity Synced or
 use native title tooltips for the same explanation. Team needs no generic page
 introduction; the roster and its read-only state explain the available work.
 
+Section titles use the shared 20px tier, above 16px item names; subtitles use 14px
+type with a 4px title gap. Keep 16px between header and content and 48px between
+independent settings sections, with one owner for each gap. Do not copy the
+header recipe into individual pages or enlarge metadata to create hierarchy.
 Use quieter `section_header level={3}` headings for
 subsections within a named section. Multi-row settings tables share one label/value
 alignment in the primary column; the side rail holds help. Where a section needs one or two

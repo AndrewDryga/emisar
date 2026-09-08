@@ -790,7 +790,12 @@ defmodule EmisarWeb.BillingLive do
               }
             >
               <div>
-                <.section_header :if={length(@offers) == 2} title={plan.name} class="min-h-8">
+                <.section_header
+                  :if={length(@offers) == 2}
+                  level={3}
+                  title={plan.name}
+                  class="min-h-8"
+                >
                   <:badge :if={
                     plan.key == "team" and
                       billing_intent_actionable?(@billing_intent, @summary, @current_subject)

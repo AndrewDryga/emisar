@@ -204,13 +204,19 @@ use `brand-*` for accent, primary action, links, and success/allowed/healthy.
   Negative tracking tightens with size (display tightest). Body copy is plain
   Inter (root), `text-zinc-400`, `leading-8`/`leading-7`/`leading-relaxed`,
   `text-pretty` on paragraphs, `text-balance` on headings.
-- **Console page titles** carry `.font-display` at the *console* size — the app
-  shell's title is `font-display text-lg sm:text-xl font-bold tracking-tight`. The
-  cv11 single-story `a` ties the console to the marketing type signature without
-  the big marketing scale or any materiality (calm = small + flat, not a
-  different typeface). Section/card headers *within* a page stay plain
-  (`text-sm font-semibold text-zinc-100`) — the display cut is for the page title
-  only, not every label.
+- **Console hierarchy:** the shell owns the 28px bold page title. Shared
+  `section_header` owns 20px semibold section titles with 28px line height and
+  `level={3}` owns 16px semibold subsections with 24px line height. Page and section
+  titles use `.font-display`; items and body copy use plain Inter. Row identities
+  stay 16px (14px in compact lists), supporting copy 14px, and metadata 12px.
+  A section must remain visibly stronger than the items it contains. Reuse the
+  shared header for numbered setup steps too; do not copy its typography recipe.
+  Keep labels, code-panel captions, and help-rail headings quiet rather than
+  enlarging every heading-shaped element.
+- **Header rhythm:** 4px from title to subtitle; 16px from the shared header to its
+  content. Subtitles use 14px type with 24px line height. Independent settings
+  sections use 48px gaps; related rows stay together. One wrapper owns each gap:
+  do not stack a header margin, a parent `space-y-*`, and a content margin.
 - **Numbers:** live counts / metrics / tables use **tabular figures**
   (`font-variant-numeric: tabular-nums` / `tabular-nums`) so they don't jitter.
 - **Mono:** `font-mono` for action ids, code, terminal, runner names.

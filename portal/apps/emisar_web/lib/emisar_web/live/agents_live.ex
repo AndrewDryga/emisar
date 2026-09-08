@@ -1758,7 +1758,7 @@ defmodule EmisarWeb.AgentsLive do
           <% @selected_client == "custom" -> %>
             <div id="custom-key-flow" class="mt-6 border-t border-zinc-800/70 pt-6">
               <%= if @quick_secret do %>
-                <section id="custom-key-save-step" class="space-y-6">
+                <section id="custom-key-save-step" class="space-y-4">
                   <.step_header step={1} title="Save your key" />
                   <%!-- AMBER: a single-secret reveal wears the pending tone
                        (design-system §8.1) — the key is in the operator's hands
@@ -1787,7 +1787,7 @@ defmodule EmisarWeb.AgentsLive do
                   />
                 </section>
               <% else %>
-                <section id="custom-key-create-step" class="space-y-6">
+                <section id="custom-key-create-step">
                   <.step_header step={1} title="Create a key" />
                   <.custom_key_panel form={@form} />
                 </section>
@@ -2345,29 +2345,15 @@ defmodule EmisarWeb.AgentsLive do
   # richer sections, so they number the headers.)
   defp step_header(assigns) do
     ~H"""
-    <%!-- items-end, not items-baseline: the trailing action links sit on the
-         SUBTITLE's line — the title keeps its row to itself — and both sides
-         are text-xs there, so their line boxes coincide. A header with no
-         subtitle degrades to its single line's bottom edge. --%>
-    <header class="mb-4 flex flex-wrap items-end justify-between gap-x-4 gap-y-1">
-      <div class="flex min-w-0 items-baseline gap-3">
-        <%!-- A quiet typographic numeral, not a badge — same size as the title,
-             muted and tabular so the three step numbers align down the column and
-             the eye reads a sequence without chrome. --%>
-        <span class="w-3 shrink-0 font-display text-base font-medium tabular-nums text-zinc-400">
-          {@step}
-        </span>
-        <div class="min-w-0">
-          <h2 class="font-display text-base font-semibold tracking-[-0.012em] text-zinc-100">
-            {@title}
-          </h2>
-          <p :if={@subtitle != []} class="mt-0.5 text-xs text-zinc-400">{render_slot(@subtitle)}</p>
-        </div>
-      </div>
-      <div :if={@actions != []} class="flex shrink-0 items-center gap-2">
-        {render_slot(@actions)}
-      </div>
-    </header>
+    <div class="mb-4 flex items-baseline gap-3 [&>header]:mb-0">
+      <span class="w-3 shrink-0 font-display text-xl font-medium leading-7 tabular-nums text-zinc-400">
+        {@step}
+      </span>
+      <.section_header title={@title} class="min-w-0 flex-1">
+        <:subtitle :if={@subtitle != []}>{render_slot(@subtitle)}</:subtitle>
+        <:actions :if={@actions != []}>{render_slot(@actions)}</:actions>
+      </.section_header>
+    </div>
     """
   end
 
@@ -2391,7 +2377,7 @@ defmodule EmisarWeb.AgentsLive do
         <:subtitle>On the computer where you use your AI app.</:subtitle>
         <:actions>
           <%!-- text-xs so these header-action links stay subordinate to the
-               16px heading — doc_link inherits ambient size, and step_header's
+               section heading — doc_link inherits ambient size, and step_header's
                actions slot sets none. --%>
           <div class="flex items-center gap-3 text-xs">
             <.doc_link href={~p"/docs/connect-cli-agent"}>Manual install</.doc_link>

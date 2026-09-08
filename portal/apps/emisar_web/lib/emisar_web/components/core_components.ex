@@ -3449,7 +3449,7 @@ defmodule EmisarWeb.CoreComponents do
 
   @doc """
   The bare heading-row above a canvas section — the console's ONE section
-  heading (boxed panels are dead, §8.1). A `text-base` section title, an
+  heading (boxed panels are dead, §8.1). A 20px section title, an
   optional inline `<.count_badge>` and `:badge` slot, an optional `:subtitle` line, and a
   right-aligned `:actions` slot. Use `actions_align={:baseline}` for a text link
   beside the title; the default keeps controls aligned with the section's bottom.
@@ -3478,14 +3478,17 @@ defmodule EmisarWeb.CoreComponents do
       if(@actions_align == :baseline, do: "items-baseline", else: "items-end"),
       @class
     ]}>
-      <div class="min-w-0">
-        <div class={["flex gap-2", if(@badge == [], do: "items-center", else: "items-baseline")]}>
+      <div class="min-w-[12rem] flex-1 basis-0">
+        <div class={[
+          "flex flex-wrap gap-x-2 gap-y-1",
+          if(@badge == [], do: "items-center", else: "items-baseline")
+        ]}>
           <.dynamic_tag
             tag_name={"h#{@level}"}
             class={
               if @level == 2,
-                do: "font-display text-base font-semibold tracking-[-0.012em] text-zinc-100",
-                else: "text-sm font-medium text-zinc-200"
+                do: "font-display text-xl font-semibold leading-7 tracking-[-0.012em] text-zinc-100",
+                else: "text-base font-semibold leading-6 text-zinc-200"
             }
           >
             {@title}
@@ -3493,7 +3496,7 @@ defmodule EmisarWeb.CoreComponents do
           <.count_badge count={@count} tone={@count_tone} />
           {render_slot(@badge)}
         </div>
-        <p :if={@subtitle != []} class="mt-0.5 text-xs text-zinc-400">
+        <p :if={@subtitle != []} class="mt-1 text-sm leading-6 text-zinc-400">
           {render_slot(@subtitle)}
         </p>
       </div>

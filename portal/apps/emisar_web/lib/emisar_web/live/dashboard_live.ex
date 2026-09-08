@@ -483,15 +483,12 @@ defmodule EmisarWeb.DashboardLive do
          zero state below, hiding held actions entirely — so it keeps the
          section and says the queue is unknown. --%>
     <section :if={@can_view_approvals? and @pending_approvals_error?} class="pt-6">
-      <h2 class="font-display text-base font-semibold tracking-[-0.012em] text-zinc-100">
-        Awaiting review
-      </h2>
+      <.section_header title="Awaiting review" />
       <.empty_state
         variant={:hint}
         tone={:danger}
         icon="state.warning"
         title="Couldn't load pending approvals"
-        class="mt-3"
       >
         This is a load error, not an empty queue — a held action may be waiting. Refresh the page,
         or open Approvals to check.
@@ -504,23 +501,22 @@ defmodule EmisarWeb.DashboardLive do
          amber stays on the STATUS (the dot, the waiting count), never a boxed
          wash: approvals earn attention, not the centerpiece. --%>
     <section :if={@pending_approvals != [] and not @pending_approvals_error?} class="pt-6">
-      <div class="flex flex-wrap items-baseline justify-between gap-3">
-        <div class="flex min-w-0 flex-wrap items-baseline gap-3">
-          <h2 class="font-display text-base font-semibold tracking-[-0.012em] text-zinc-100">
-            Awaiting review
-          </h2>
+      <.section_header title="Awaiting review" actions_align={:baseline}>
+        <:badge>
           <span class="text-xs tabular-nums text-amber-300">
             {@pending_approvals_count} {pending_decision_label(@pending_approvals_count)}
           </span>
-        </div>
-        <.link
-          navigate={~p"/app/#{@current_account}/approvals"}
-          class="group text-xs font-medium text-brand-400 hover:text-brand-300"
-        >
-          Review all <.cta_arrow class="ml-0.5 h-3 w-3" />
-        </.link>
-      </div>
-      <ul class="mt-3 divide-y divide-zinc-800/70 border-t border-zinc-800/70">
+        </:badge>
+        <:actions>
+          <.link
+            navigate={~p"/app/#{@current_account}/approvals"}
+            class="group text-xs font-medium text-brand-400 hover:text-brand-300"
+          >
+            Review all <.cta_arrow class="ml-0.5 h-3 w-3" />
+          </.link>
+        </:actions>
+      </.section_header>
+      <ul class="divide-y divide-zinc-800/70 border-t border-zinc-800/70">
         <li :for={request <- @pending_approvals}>
           <.link
             navigate={~p"/app/#{@current_account}/approvals/#{request.id}"}
@@ -556,18 +552,15 @@ defmodule EmisarWeb.DashboardLive do
          digest, and borderless rows under a single hairline. The activity feed
          is content, not a framed widget. --%>
     <section :if={@can_view_runs? and not @show_setup?} class="pt-6">
-      <div class="flex flex-wrap items-baseline justify-between gap-3">
-        <div class="flex min-w-0 flex-wrap items-baseline gap-3">
-          <h2 class="font-display text-base font-semibold tracking-[-0.012em] text-zinc-100">
-            Recent runs
-          </h2>
+      <.section_header title="Recent runs" actions_align={:baseline}>
+        <:badge :if={@shown_run_stats.total > 0}>
           <%!-- The digest quantifies THESE rows, not a 24h window (§7.36). The
                window read said "5 in the last 24h · 100% success" directly above
                a list that also carried older runs and a cancelled one — a summary
                that describes a different set than the collection it annotates is
                worse than none. `summarize_runs/1` applies the domain's own
                outcome split to the rows being rendered, so the two cannot drift. --%>
-          <span :if={@shown_run_stats.total > 0} class="text-xs text-zinc-400">
+          <span class="text-xs text-zinc-400">
             <span class="tabular-nums">
               {@shown_run_stats.total} {if @shown_run_stats.total == 1,
                 do: "run",
@@ -580,16 +573,18 @@ defmodule EmisarWeb.DashboardLive do
               · {@shown_run_stats.failed} failed
             </span>
           </span>
-        </div>
+        </:badge>
         <%!-- The runs section renders only once a run exists (the checklist owns
              the whole path to the first run), so this always resolves. --%>
-        <.link
-          navigate={~p"/app/#{@current_account}/runs"}
-          class="group text-xs font-medium text-brand-400 hover:text-brand-300"
-        >
-          View all <.cta_arrow class="ml-0.5 h-3 w-3" />
-        </.link>
-      </div>
+        <:actions>
+          <.link
+            navigate={~p"/app/#{@current_account}/runs"}
+            class="group text-xs font-medium text-brand-400 hover:text-brand-300"
+          >
+            View all <.cta_arrow class="ml-0.5 h-3 w-3" />
+          </.link>
+        </:actions>
+      </.section_header>
 
       <%!-- The runs read failed, so the empty feed below would claim nothing has
            run. Say the read failed instead. --%>
@@ -599,7 +594,6 @@ defmodule EmisarWeb.DashboardLive do
         tone={:danger}
         icon="state.warning"
         title="Couldn't load recent runs"
-        class="mt-3"
       >
         This is a load error, not an empty feed — runs may well exist. Refresh the page, or open
         Runs to check.
@@ -607,7 +601,7 @@ defmodule EmisarWeb.DashboardLive do
 
       <ul
         :if={not @recent_runs_error? and @recent_runs != []}
-        class="mt-3 divide-y divide-zinc-800/70 border-t border-zinc-800/70"
+        class="divide-y divide-zinc-800/70 border-t border-zinc-800/70"
       >
         <li :for={run <- @recent_runs}>
           <.run_row
@@ -699,26 +693,23 @@ defmodule EmisarWeb.DashboardLive do
 
     ~H"""
     <section class="pt-2">
-      <div class="flex flex-wrap items-baseline gap-3">
-        <h2 class="font-display text-base font-semibold tracking-[-0.012em] text-zinc-100">
-          Run your first action
-        </h2>
-        <span :if={@done_count > 0} class="text-xs tabular-nums text-brand-300">
-          {@done_count} of 3 done
-        </span>
-      </div>
-      <p class="mt-1 max-w-prose text-sm leading-relaxed text-zinc-400">
-        <%= if @runner_done? and not @actions_advertised? do %>
-          Your runner needs at least one action pack before it can do work. Install a pack from the
-          catalog, then ask any MCP client — Claude, Cursor, Codex — to run it. Every call is checked
-          against policy first.
-        <% else %>
-          Connect a runner on your host and an AI agent such as Claude, Cursor, or Codex.
-          Then ask the agent to run an action. Your policy applies to every request.
-        <% end %>
-      </p>
+      <.section_header title="Run your first action">
+        <:badge :if={@done_count > 0}>
+          <span class="text-xs tabular-nums text-brand-300">{@done_count} of 3 done</span>
+        </:badge>
+        <:subtitle>
+          <%= if @runner_done? and not @actions_advertised? do %>
+            Your runner needs at least one action pack before it can do work. Install a pack from the
+            catalog, then ask any MCP client — Claude, Cursor, Codex — to run it. Every call is checked
+            against policy first.
+          <% else %>
+            Connect a runner on your host and an AI agent such as Claude, Cursor, or Codex.
+            Then ask the agent to run an action. Your policy applies to every request.
+          <% end %>
+        </:subtitle>
+      </.section_header>
 
-      <ol class="mt-6 divide-y divide-zinc-800/70 border-t border-zinc-800/70">
+      <ol class="divide-y divide-zinc-800/70 border-t border-zinc-800/70">
         <.setup_step
           number={1}
           done={@runner_done?}

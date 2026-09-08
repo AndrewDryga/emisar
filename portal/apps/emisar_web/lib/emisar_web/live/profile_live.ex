@@ -22,6 +22,7 @@ defmodule EmisarWeb.ProfileLive do
     {:ok,
      socket
      |> assign(:page_title, "Profile")
+     |> assign(:profile_editing?, false)
      |> assign(:mfa_recovery_codes, nil)
      |> assign(:codes_saved?, false)
      |> assign(:mfa_start_error, nil)
@@ -135,6 +136,20 @@ defmodule EmisarWeb.ProfileLive do
     }
   end
 
+  def handle_event("edit_profile", _params, socket) do
+    {:noreply,
+     socket
+     |> assign_profile_form(socket.assigns.current_user)
+     |> assign(:profile_editing?, true)}
+  end
+
+  def handle_event("cancel_profile_edit", _params, socket) do
+    {:noreply,
+     socket
+     |> assign_profile_form(socket.assigns.current_user)
+     |> assign(:profile_editing?, false)}
+  end
+
   def handle_event("validate_profile", %{"profile" => params} = event, socket) do
     changeset =
       socket.assigns.current_user
@@ -151,6 +166,7 @@ defmodule EmisarWeb.ProfileLive do
          socket
          |> put_flash(:info, "Name updated.")
          |> assign(:current_user, updated)
+         |> assign(:profile_editing?, false)
          |> assign_profile_form(updated)}
 
       {:error, %Ecto.Changeset{} = changeset} ->
@@ -964,12 +980,23 @@ defmodule EmisarWeb.ProfileLive do
               <:subtitle>How you appear to other members.</:subtitle>
             </.section_header>
           </:header>
+          <div :if={not @profile_editing?} class="flex flex-wrap items-center justify-between gap-3">
+            <p class="min-w-0 break-words text-sm text-zinc-200">
+              {@current_user.full_name || "No display name"}
+            </p>
+            <.button id="change-name" variant={:secondary} size={:sm} phx-click="edit_profile">
+              Change name
+            </.button>
+          </div>
           <.simple_form
+            :if={@profile_editing?}
             for={@profile_form}
             id="profile_form"
             class="max-w-2xl"
             phx-change="validate_profile"
             phx-submit="save_profile"
+            phx-mounted={JS.focus(to: "#profile_full_name")}
+            phx-remove={JS.focus(to: "#change-name")}
           >
             <%!-- No field label — the section title already says "Display name"
                  (one voice on a single-field section); aria-label keeps the
@@ -988,6 +1015,9 @@ defmodule EmisarWeb.ProfileLive do
                 phx-disable-with="Saving..."
               >
                 Save
+              </.button>
+              <.button variant={:ghost} type="button" phx-click="cancel_profile_edit">
+                Cancel
               </.button>
             </:actions>
           </.simple_form>
@@ -1310,11 +1340,12 @@ defmodule EmisarWeb.ProfileLive do
                 phx-submit="regenerate_recovery_codes"
                 class="mt-5 max-w-2xl"
               >
-                <h3 class="text-sm font-medium text-zinc-200">Generate new recovery codes</h3>
-                <p class="text-sm text-zinc-300">
-                  New recovery codes will replace your existing codes. Enter an authenticator
-                  or recovery code to continue.
-                </p>
+                <.section_header level={3} title="Generate new recovery codes">
+                  <:subtitle>
+                    New recovery codes will replace your existing codes. Enter an authenticator
+                    or recovery code to continue.
+                  </:subtitle>
+                </.section_header>
                 <.input
                   field={@mfa_recovery_regeneration_form[:code]}
                   type="text"
@@ -1343,11 +1374,12 @@ defmodule EmisarWeb.ProfileLive do
                 phx-submit="disable_mfa"
                 class="mt-5 max-w-2xl"
               >
-                <h3 class="text-sm font-medium text-zinc-200">Disable MFA</h3>
-                <p class="text-sm text-zinc-300">
-                  You'll stop using an authenticator code to sign in. You may need to set it
-                  up again to access workspaces that require MFA.
-                </p>
+                <.section_header level={3} title="Disable MFA">
+                  <:subtitle>
+                    You'll stop using an authenticator code to sign in. You may need to set it
+                    up again to access workspaces that require MFA.
+                  </:subtitle>
+                </.section_header>
                 <.input
                   field={@mfa_disable_form[:code]}
                   type="text"

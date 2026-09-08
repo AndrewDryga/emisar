@@ -82,6 +82,9 @@ defmodule EmisarWeb.ProfileLiveTest do
     test "the name saves independently and an unchanged value disables Save", %{conn: conn} do
       {conn, user, account} = register_and_log_in(conn)
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/profile")
+      refute has_element?(lv, "#profile_form")
+      assert has_element?(lv, "#display-name", user.full_name)
+      lv |> element("#change-name", "Change name") |> render_click()
       assert has_element?(lv, "#profile_form button[disabled]", "Save")
       refute has_element?(lv, "#email_form")
 
@@ -101,6 +104,7 @@ defmodule EmisarWeb.ProfileLiveTest do
     test "saving a new full name updates and confirms", %{conn: conn} do
       {conn, user, account} = register_and_log_in(conn)
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/profile")
+      lv |> element("#change-name") |> render_click()
 
       html =
         lv
@@ -110,6 +114,39 @@ defmodule EmisarWeb.ProfileLiveTest do
       assert html =~ "Name updated."
       assert html =~ "Renamed Person"
       assert Emisar.Repo.reload!(user).full_name == "Renamed Person"
+      refute has_element?(lv, "#profile_form")
+      assert has_element?(lv, "#change-name")
+      refute has_element?(lv, "#email_form")
+    end
+
+    test "cancel discards the name draft without resetting an email edit", %{conn: conn} do
+      {conn, user, account} = register_and_log_in(conn)
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/profile")
+      edit_email(lv)
+      lv |> element("#change-name") |> render_click()
+      lv |> form("#profile_form", profile: %{full_name: "Discard this"}) |> render_change()
+      lv |> element("#profile_form button", "Cancel") |> render_click()
+
+      refute has_element?(lv, "#profile_form")
+      assert has_element?(lv, "#email_form")
+      assert Emisar.Repo.reload!(user).full_name == user.full_name
+
+      lv |> element("#change-name") |> render_click()
+      assert has_element?(lv, "#profile_full_name[value='#{user.full_name}']")
+      assert has_element?(lv, "#profile_form button[disabled]", "Save")
+    end
+
+    test "invalid names keep the editor open and report a field error", %{conn: conn} do
+      {conn, user, account} = register_and_log_in(conn)
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/profile")
+      lv |> element("#change-name") |> render_click()
+      draft = String.duplicate("x", 256)
+
+      lv |> form("#profile_form", profile: %{full_name: draft}) |> render_submit()
+
+      assert has_element?(lv, "#profile_form", "should be at most 255 character(s)")
+      assert has_element?(lv, "#profile_full_name[value='#{draft}']")
+      assert Emisar.Repo.reload!(user).full_name == user.full_name
     end
 
     test "a save after the user is deleted keeps the typed name and reports the failure", %{
@@ -117,6 +154,7 @@ defmodule EmisarWeb.ProfileLiveTest do
     } do
       {conn, user, account} = register_and_log_in(conn)
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/profile")
+      lv |> element("#change-name") |> render_click()
       Fixtures.Users.mark_user_as_deleted(user)
 
       html =
