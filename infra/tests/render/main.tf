@@ -125,3 +125,11 @@ output "cloud_init" {
 output "livebook_cloud_init" {
   value = local.livebook_cloud_init
 }
+
+output "backup_workflow" {
+  value = templatefile("${path.module}/../../runtime/backup-check/workflow.yaml", {
+    project_id  = local.common.project_id
+    instance_id = "emisar"
+    metric_type = "custom.googleapis.com/emisar/cloudsql/last_automated_backup_timestamp"
+  })
+}

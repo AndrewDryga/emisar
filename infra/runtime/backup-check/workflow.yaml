@@ -1,0 +1,99 @@
+# Terraform supplies the only project, instance and metric this workflow uses.
+# Failed/incomplete reads never write a point: the checker-stale alarm covers them.
+main:
+  steps:
+    - initialize:
+        assign:
+          - project_id: ${jsonencode(project_id)}
+          - instance_id: ${jsonencode(instance_id)}
+          - metric_type: ${jsonencode(metric_type)}
+          - latest_success: 0
+          - page_token: ""
+          - seen_tokens: []
+    - list_backups:
+        call: googleapis.sqladmin.v1.backupRuns.list
+        args:
+          project: $${project_id}
+          instance: $${instance_id}
+          maxResults: 100
+          pageToken: $${page_token}
+        result: page
+    - validate_page:
+        switch:
+          - condition: $${page.kind != "sql#backupRunsList"}
+            steps:
+              - reject_page:
+                  raise: "Unexpected Cloud SQL backup inventory response"
+    - read_page:
+        assign:
+          - backups: $${default(map.get(page, "items"), [])}
+          - page_token: $${default(map.get(page, "nextPageToken"), "")}
+    - validate_page_fields:
+        switch:
+          - condition: $${get_type(backups) != "list" or get_type(page_token) != "string"}
+            steps:
+              - reject_page_fields:
+                  raise: "Malformed Cloud SQL backup inventory page"
+    - inspect_backups:
+        for:
+          value: backup
+          in: $${backups}
+          steps:
+            - validate_instance:
+                switch:
+                  - condition: $${backup.instance != instance_id}
+                    steps:
+                      - reject_instance:
+                          raise: "Backup inventory returned a different instance"
+            - select_automated_success:
+                switch:
+                  - condition: $${backup.type != "AUTOMATED" or backup.status != "SUCCESSFUL"}
+                    next: continue
+            - parse_completion:
+                assign:
+                  - completed_at: $${time.parse(backup.endTime)}
+            - validate_completion:
+                switch:
+                  - condition: $${completed_at <= 0 or completed_at > sys.now()}
+                    steps:
+                      - reject_completion:
+                          raise: "Invalid successful backup completion time"
+            # Inventory is ordered by initiation, not completion time.
+            - keep_latest:
+                assign:
+                  - latest_success: $${math.max(latest_success, completed_at)}
+    - check_pagination:
+        switch:
+          - condition: $${page_token == ""}
+            next: publish
+          - condition: $${page_token in seen_tokens or len(seen_tokens) >= 100}
+            steps:
+              - reject_pagination:
+                  raise: "Cloud SQL backup inventory pagination did not complete"
+    - remember_page:
+        assign:
+          - seen_tokens: $${list.concat(seen_tokens, page_token)}
+        next: list_backups
+    - publish:
+        call: http.post
+        args:
+          url: $${"https://monitoring.googleapis.com/v3/projects/" + project_id + "/timeSeries"}
+          auth:
+            type: OAuth2
+          body:
+            timeSeries:
+              - metric:
+                  type: $${metric_type}
+                  labels:
+                    instance_id: $${instance_id}
+                resource:
+                  type: global
+                  labels:
+                    project_id: $${project_id}
+                metricKind: GAUGE
+                valueType: DOUBLE
+                points:
+                  - interval:
+                      endTime: $${time.format(sys.now())}
+                    value:
+                      doubleValue: $${latest_success}
