@@ -62,6 +62,32 @@ after its successor is minted, so a runner that receives one and fails to
 persist it still reconnects and tries again. Refresh failure of any kind leaves
 the runner on its existing token; it never blocks a connect.
 
+**Operator-requested rotation.** A runner advertising
+`credential_rotation_supported: true` accepts a `refresh_credentials` frame
+for its cached token. The portal first records a durable rotation request so
+that credential is eligible for an early refresh. It delivers the request to
+the authenticated connection and repeats it while pending on later runner
+state/heartbeat messages. An offline runner receives it after reconnecting.
+
+```json
+{
+  "type": "refresh_credentials",
+  "protocol_version": 1,
+  "token_prefix": "rnrtok-abcde"
+}
+```
+
+`token_prefix` is the complete 12-character non-secret identifier (`rnrtok-`
+plus five characters), not a token. The runner ignores missing, partial, or
+nonmatching prefixes. For a matching credential whose refresh time is still
+ahead, it persists a due-now `refresh_after` before ending the socket session.
+The ordinary reconnect path performs the refresh; in-flight actions continue.
+A failed credential-store write keeps the existing session and is retried.
+Repeated requests for an already-due credential do not end its session or
+reset its hourly refresh retry deadline. The persisted deadline also survives a
+process restart. Rotation is complete only when the successor is used, not
+when the request is queued or a successor is minted.
+
 **Token expiry.** A token past its `expires_at` is refused wherever it is
 presented — the websocket upgrade and `POST /runner/token/refresh` both answer
 `401 {"error":"token_expired"}` — so a leaked credential cannot renew itself and
@@ -118,6 +144,10 @@ are persisted; `signing_ca_ids` currently is not, so the console cannot answer
 which CA a runner trusts. Ask the host: `emisar state` prints the exact
 `runner_state` this runner would advertise, `signing_ca_ids` included.
 
+`credential_rotation_supported` is advertised by a connected client whose
+dialer supports durable, operator-requested credential refresh. An absent or
+false value does not promise support for the `refresh_credentials` message.
+
 Every action descriptor includes `primary_executable_available`. A new runner
 sets it to `false` and includes the bounded `missing_executable` name when the
 program it would start does not resolve on the runner process's `PATH`. The
@@ -145,6 +175,7 @@ portal ignores the field, and an older runner never sends it.
   "hostname": "dbcas103",
   "group": "cassandra",
   "labels": {"datacenter": "dc1", "rack": "rack3"},
+  "credential_rotation_supported": true,
   "enforce_signatures": true,
   "signing_ca_ids": ["ca-prod-2026"],
   "max_attestation_age_seconds": 86400,

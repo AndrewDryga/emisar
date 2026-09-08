@@ -84,6 +84,42 @@ type WebsocketDialer struct {
 // credential rotation into a reconnect storm.
 const rotationRetryInterval = time.Hour
 
+// The portal's non-secret credential identifier is "rnrtok-" plus five random
+// characters. Requiring the whole prefix prevents an empty or partial match.
+const runnerTokenPrefixSize = 12
+
+// RequestCredentialRotation durably advances this credential's refresh deadline
+// before the client reconnects. An already-due deadline is coalesced: after a
+// failed refresh, repeated portal notifications must preserve the hourly retry
+// scheduled by noteSessionCredential instead of recycling every heartbeat.
+func (d *WebsocketDialer) RequestCredentialRotation(prefix string, now time.Time) (bool, error) {
+	if len(prefix) != runnerTokenPrefixSize || !strings.HasPrefix(prefix, "rnrtok-") {
+		return false, nil
+	}
+	d.rotateMu.Lock()
+	defer d.rotateMu.Unlock()
+
+	token, err := d.readToken()
+	if err != nil {
+		return false, fmt.Errorf("read credential for rotation: %w", err)
+	}
+	if !strings.HasPrefix(token.Raw, prefix) {
+		return false, nil
+	}
+	// A previous atomic replace may have renamed the file before its directory
+	// sync failed. In that case the file is already due but this session still
+	// has the original distant deadline: retry persistence before reconnecting.
+	if token.refreshDue(now) && !d.rotateAfter.After(now.Add(rotationRetryInterval)) {
+		return false, nil
+	}
+	token.RefreshAfter = now.UTC().Format(time.RFC3339Nano)
+	if err := d.writeToken(token); err != nil {
+		return false, fmt.Errorf("persist credential rotation request: %w", err)
+	}
+	d.rotateAfter = now
+	return true, nil
+}
+
 // CredentialRotationDue reports whether the credential this session dialed with
 // has become eligible for rotation. The client ends the session when it has:
 // a dial is the only place a token refreshes, so a session that outlives its

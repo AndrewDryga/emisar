@@ -89,6 +89,8 @@ defmodule EmisarWeb.RunnerSocket do
       connection_generation: runner.connection_generation,
       connection_lease_id: runner.connection_lease_id,
       token_id: token.id,
+      token_prefix: token.token_prefix,
+      token_issued_at: token.issued_at,
       request_context: request_context,
       seen_request_ids: :queue.new(),
       seen_request_set: MapSet.new(),
@@ -344,9 +346,9 @@ defmodule EmisarWeb.RunnerSocket do
         # runner's version is first known here (it rides runner_state, not the
         # connect upgrade), so version enforcement gates on it now.
         case maybe_enforce_runner_version(runner, state) do
-          {:ok, _new_state} = result ->
+          {:ok, new_state} ->
             send(self(), :resume_runs)
-            result
+            maybe_request_credential_rotation(runner, new_state)
 
           other ->
             other
@@ -467,7 +469,7 @@ defmodule EmisarWeb.RunnerSocket do
            state.connection_lease_id,
            msg["action_load"]
          ) do
-      {:ok, _runner} -> {:ok, refresh_heartbeat(state)}
+      {:ok, runner} -> maybe_request_credential_rotation(runner, refresh_heartbeat(state))
       {:error, :not_found} -> {:stop, :normal, {1008, "Runner connection lease expired."}, state}
       {:error, reason} -> {:stop, {:heartbeat_persist_failed, reason}, state}
     end
@@ -499,6 +501,13 @@ defmodule EmisarWeb.RunnerSocket do
   defp handle_envelope(type, _msg, state) do
     Logger.debug("runner_socket unknown envelope type #{type}")
     {:ok, state}
+  end
+
+  defp maybe_request_credential_rotation(runner, state) do
+    case Runners.credential_rotation_message(runner, state.token_prefix, state.token_issued_at) do
+      nil -> {:ok, state}
+      message -> {:push, {:text, Jason.encode!(message)}, state}
+    end
   end
 
   defp spend_error_frame(%{error_frames: seen} = state)

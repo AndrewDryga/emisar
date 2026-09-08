@@ -44,7 +44,8 @@ defmodule EmisarWeb.RunnerConnectController do
   """
   def refresh_token(conn, _params) do
     with {:ok, token} <- read_bearer(conn),
-         {:ok, raw_token, refresh_after} <- Runners.refresh_runner_token(token) do
+         {:ok, raw_token, refresh_after} <-
+           Runners.refresh_runner_token(token, RequestContext.from_conn(conn)) do
       json(conn, %{token: raw_token, refresh_after: iso8601(refresh_after)})
     else
       :missing_bearer ->
@@ -54,6 +55,9 @@ defmodule EmisarWeb.RunnerConnectController do
         conn
         |> put_status(:conflict)
         |> json(%{error: "not_due"})
+
+      {:error, :authentication_unavailable} ->
+        authentication_unavailable(conn)
 
       {:error, :runner_disabled} ->
         unauthorized(conn, "runner_disabled")
@@ -137,7 +141,7 @@ defmodule EmisarWeb.RunnerConnectController do
 
   def websocket(conn, _params) do
     with {:ok, raw} <- read_bearer(conn),
-         {:ok, token, runner} <- Runners.verify_runner_token(raw) do
+         {:ok, token, runner} <- Runners.verify_runner_token(raw, RequestContext.from_conn(conn)) do
       # Threaded into the socket process so its lifecycle audit events
       # (connect in init, disconnect in terminate) carry the connecting
       # host's IP + UA — `init/1` builds the `%RequestContext{}` from
@@ -180,10 +184,19 @@ defmodule EmisarWeb.RunnerConnectController do
         conn
         |> put_status(:forbidden)
         |> json(%{error: "account_disabled"})
+
+      {:error, :authentication_unavailable} ->
+        authentication_unavailable(conn)
     end
   end
 
   # -- Helpers --------------------------------------------------------
+
+  defp authentication_unavailable(conn) do
+    conn
+    |> put_status(:service_unavailable)
+    |> json(%{error: "authentication_unavailable"})
+  end
 
   defp read_bearer(conn) do
     case get_req_header(conn, "authorization") do

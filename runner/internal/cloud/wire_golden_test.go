@@ -233,19 +233,29 @@ func canonicalWireFrames() []wireFrameCase {
 			},
 		},
 		{
+			name: string(MsgRefreshCredentials),
+			marshal: func() ([]byte, error) {
+				return json.Marshal(RefreshCredentialsMsg{
+					Envelope:    unaddressed(MsgRefreshCredentials),
+					TokenPrefix: "rnrtok-abcde",
+				})
+			},
+		},
+		{
 			name: string(MsgRunnerState),
 			marshal: func() ([]byte, error) {
 				return json.Marshal(RunnerStateMsg{
-					Envelope:                 unaddressed(MsgRunnerState),
-					Version:                  "0.12.0",
-					Hostname:                 "runner-db-01",
-					Group:                    "database",
-					Labels:                   map[string]string{"datacenter": "dc1", "rack": "rack3"},
-					Packs:                    map[string]PackInfo{"database": {Version: "1.2.3", Hash: "sha256:" + repeated("b", 64)}},
-					Actions:                  []ActionDescriptor{canonicalActionDescriptor()},
-					EnforceSignatures:        true,
-					SigningCAIDs:             []string{"ca-production", "ca-staging"},
-					MaxAttestationAgeSeconds: 86400,
+					Envelope:                    unaddressed(MsgRunnerState),
+					Version:                     "0.12.0",
+					Hostname:                    "runner-db-01",
+					Group:                       "database",
+					Labels:                      map[string]string{"datacenter": "dc1", "rack": "rack3"},
+					Packs:                       map[string]PackInfo{"database": {Version: "1.2.3", Hash: "sha256:" + repeated("b", 64)}},
+					Actions:                     []ActionDescriptor{canonicalActionDescriptor()},
+					CredentialRotationSupported: true,
+					EnforceSignatures:           true,
+					SigningCAIDs:                []string{"ca-production", "ca-staging"},
+					MaxAttestationAgeSeconds:    86400,
 					DegradedPacks: []DegradedPackState{
 						{Pack: "cloud-init", Reason: "packs: parse pack.yaml: yaml: unmarshal errors"},
 					},

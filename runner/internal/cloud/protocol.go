@@ -33,10 +33,11 @@ type MessageType string
 
 const (
 	// Cloud -> Runner
-	MsgRunAction MessageType = "run_action"
-	MsgCancel    MessageType = "cancel"
-	MsgAckResult MessageType = "ack_result"
-	MsgShutdown  MessageType = "shutdown"
+	MsgRunAction          MessageType = "run_action"
+	MsgCancel             MessageType = "cancel"
+	MsgAckResult          MessageType = "ack_result"
+	MsgShutdown           MessageType = "shutdown"
+	MsgRefreshCredentials MessageType = "refresh_credentials"
 
 	// Runner -> Cloud
 	MsgRunnerState    MessageType = "runner_state"
@@ -243,10 +244,11 @@ var (
 // names plus its nested opts/attestation objects, and owns the refusal path for
 // a frame it rejects.
 var inboundFieldNames = map[MessageType][]string{
-	MsgCancel:    canonicalJSONFieldNames(reflect.TypeOf(CancelMsg{})),
-	MsgAckResult: canonicalJSONFieldNames(reflect.TypeOf(AckResultMsg{})),
-	MsgShutdown:  canonicalJSONFieldNames(reflect.TypeOf(ShutdownMsg{})),
-	MsgError:     canonicalJSONFieldNames(reflect.TypeOf(ErrorMsg{})),
+	MsgCancel:             canonicalJSONFieldNames(reflect.TypeOf(CancelMsg{})),
+	MsgAckResult:          canonicalJSONFieldNames(reflect.TypeOf(AckResultMsg{})),
+	MsgShutdown:           canonicalJSONFieldNames(reflect.TypeOf(ShutdownMsg{})),
+	MsgRefreshCredentials: canonicalJSONFieldNames(reflect.TypeOf(RefreshCredentialsMsg{})),
+	MsgError:              canonicalJSONFieldNames(reflect.TypeOf(ErrorMsg{})),
 }
 
 // rejectInboundAliases enforces the wire spec's "case aliases are rejected" on
@@ -384,6 +386,13 @@ type ShutdownMsg struct {
 	Message string `json:"message"`
 }
 
+// RefreshCredentialsMsg makes the authenticated session's credential eligible
+// for an early refresh. TokenPrefix identifies the credential, never its secret.
+type RefreshCredentialsMsg struct {
+	Envelope
+	TokenPrefix string `json:"token_prefix"`
+}
+
 // RunnerStateMsg is the self-description sent on connect and on pack reload.
 // Actions are the primary surface; pack metadata is a side index for cloud
 // UI grouping.
@@ -399,6 +408,9 @@ type RunnerStateMsg struct {
 	Labels   map[string]string   `json:"labels,omitempty"`
 	Packs    map[string]PackInfo `json:"packs,omitempty"`
 	Actions  []ActionDescriptor  `json:"actions"`
+	// CredentialRotationSupported is set by the client when its dialer can
+	// durably accept an early refresh request for the current credential.
+	CredentialRotationSupported bool `json:"credential_rotation_supported,omitempty"`
 	// EnforceSignatures advertises that this runner verifies a client signature
 	// on every dispatch and refuses unsigned ones. The cloud responds by
 	// disabling its own (operator/runbook) dispatch to this runner.

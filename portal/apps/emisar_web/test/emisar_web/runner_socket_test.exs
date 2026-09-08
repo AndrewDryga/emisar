@@ -844,6 +844,41 @@ defmodule EmisarWeb.RunnerSocketTest do
       assert meta.action_load == 9
       assert is_integer(meta.last_heartbeat_at)
     end
+
+    test "heartbeat recovers a missed rotation request until the new key connects", %{
+      state: state,
+      runner: runner,
+      token: token,
+      subject: subject
+    } do
+      runner = Fixtures.Runners.set_connection_credential(Repo.reload!(runner), token)
+      assert {:ok, requested} = Runners.request_credential_rotation(runner, subject)
+      generation = state.connection_generation
+      assert_receive {:cloud_to_runner, ^generation, message}
+
+      expected = %{
+        "type" => "refresh_credentials",
+        "protocol_version" => 1,
+        "token_prefix" => token.token_prefix
+      }
+
+      assert {:push, delivered, ^state} =
+               RunnerSocket.handle_info({:cloud_to_runner, generation, message}, state)
+
+      assert decode(delivered) == expected
+      {:text, delivered_json} = delivered
+      assert length(Regex.scan(~r/"protocol_version"/, delivered_json)) == 1
+      heartbeat = runner_frame(%{"type" => "heartbeat", "action_load" => 0})
+      assert {:push, retried, _state} = RunnerSocket.handle_in({heartbeat, text()}, state)
+      assert decode(retried) == expected
+
+      {_raw, successor} = Runners.mint_runner_token(requested)
+      assert RunnerSocket.terminate(:normal, state) == :ok
+      :ok = Presence.untrack(self(), Presence.topic(runner.account_id), runner.id)
+      assert {:ok, replacement_state} = RunnerSocket.init(%{token: successor, runner: requested})
+      assert {:ok, _state} = RunnerSocket.handle_in({heartbeat, text()}, replacement_state)
+      assert Repo.reload!(runner).connection_token_id == successor.id
+    end
   end
 
   describe "handle_info/2 — heartbeat timeout" do

@@ -3,6 +3,29 @@ defmodule EmisarWeb.RunnerConnectControllerTest do
   Route-level coverage for the pre-auth runner transport rate limits.
   """
   use EmisarWeb.ConnCase, async: false
+  alias Emisar.{Audit, Fixtures, Repo}
+
+  test "refresh authentication records first replacement use with request metadata" do
+    runner = Fixtures.Runners.create_runner(connected?: false)
+    {_old_raw, previous} = Fixtures.Runners.create_token(runner)
+    {raw, replacement} = Fixtures.Runners.create_token(runner, replaces_id: previous.id)
+
+    conn =
+      build_conn()
+      |> put_req_header("authorization", "Bearer " <> raw)
+      |> put_req_header("user-agent", "emisar-runner/receipt-test")
+      |> post(~p"/runner/token/refresh", %{})
+
+    assert json_response(conn, 409)["error"] == "not_due"
+    assert event = Repo.one(Audit.Event)
+    assert event.event_type == "runner.credential_rotated"
+    assert event.account_id == runner.account_id
+    assert event.payload["token_id"] == replacement.id
+    assert event.user_agent == "emisar-runner/receipt-test"
+    assert event.ip_address
+    refute event.payload["token_hash"]
+    refute conn.resp_body =~ raw
+  end
 
   test "the token refresh and the socket upgrade share one per-IP cap" do
     Emisar.Config.put_override(:emisar, :rate_limit_enabled, true)

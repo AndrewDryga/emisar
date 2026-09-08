@@ -65,6 +65,12 @@ type credentialRotator interface {
 	CredentialRotationDue(now time.Time) bool
 }
 
+type credentialRotationRequester interface {
+	RequestCredentialRotation(prefix string, now time.Time) (bool, error)
+}
+
+var errCredentialRotationRequested = errors.New("cloud: credential rotation requested")
+
 // Options configure the Client behaviour.
 type Options struct {
 	StateBuilder   *StateBuilder
@@ -376,7 +382,7 @@ func (c *Client) runSession(parent context.Context) (bool, error) {
 	defer sessionWG.Wait()
 	defer sessionCancel()
 
-	state := c.opts.StateBuilder.Build()
+	state := c.buildState()
 	if err := validateRunnerStateSize(state); err != nil {
 		// Local, deterministic, and unchanged by retrying: the state we built is
 		// too large to advertise. Report it as NOT connected so the caller keeps
@@ -533,7 +539,7 @@ func (c *Client) dispatch(parent context.Context, raw []byte) error {
 	// Every KNOWN message must carry the exact protocol version; an unknown
 	// type stays ignorable so an additive message family cannot break a peer.
 	switch envelope.Type {
-	case MsgRunAction, MsgCancel, MsgAckResult, MsgError, MsgShutdown:
+	case MsgRunAction, MsgCancel, MsgAckResult, MsgError, MsgShutdown, MsgRefreshCredentials:
 		if err := c.requireProtocolVersion(envelope); err != nil {
 			return err
 		}
@@ -588,6 +594,30 @@ func (c *Client) dispatch(parent context.Context, raw []byte) error {
 			"request_id", envelope.RequestID)
 		if m.Code == "finalize_failed" {
 			c.retryFinalization(envelope.RequestID)
+		}
+	case MsgRefreshCredentials:
+		var m RefreshCredentialsMsg
+		if err := validateUniqueJSON(raw); err != nil {
+			c.opts.Logger.Warn("cloud.bad_credential_rotation")
+			return nil
+		}
+		if err := json.Unmarshal(raw, &m); err != nil {
+			c.opts.Logger.Warn("cloud.bad_credential_rotation")
+			return nil
+		}
+		if rotator, ok := c.dialer.(credentialRotationRequester); ok {
+			requested, err := rotator.RequestCredentialRotation(m.TokenPrefix, time.Now().UTC())
+			if err != nil {
+				// The bearer secret and transport are unchanged. Do not echo input
+				// or filesystem errors from the credential boundary into logs.
+				c.opts.Logger.Warn("cloud.credential_rotation_not_persisted",
+					"detail", "keeping the current connection; the portal can retry")
+				return nil
+			}
+			if requested {
+				c.opts.Logger.Info("cloud.credential_rotation_requested")
+				return errCredentialRotationRequested
+			}
 		}
 	case MsgShutdown:
 		var m ShutdownMsg
@@ -1425,6 +1455,12 @@ func (c *Client) retryTerminalPersistence(s *runState) (bool, error) {
 	return true, nil
 }
 
+func (c *Client) buildState() RunnerStateMsg {
+	state := c.opts.StateBuilder.Build()
+	_, state.CredentialRotationSupported = c.dialer.(credentialRotationRequester)
+	return state
+}
+
 // readvertiseLoop watches for Readvertise() pings and primary-executable
 // changes. SIGHUP refreshes immediately; the fixed poll keeps package installs
 // and removals from leaving action readiness stale indefinitely.
@@ -1464,12 +1500,12 @@ func (c *Client) readvertiseLoop(
 		case <-ctx.Done():
 			return
 		case <-c.readvertise:
-			state := c.opts.StateBuilder.Build()
+			state := c.buildState()
 			if !sendState(state) {
 				return
 			}
 		case <-ticker.C:
-			state := c.opts.StateBuilder.Build()
+			state := c.buildState()
 			availability := primaryExecutableAvailability(state)
 			if availability == lastAvailability {
 				continue

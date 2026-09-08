@@ -73,6 +73,11 @@
       "protocol_version": 1,
       "action_load": 4
     },
+    "refresh_credentials": {
+      "type": "refresh_credentials",
+      "protocol_version": 1,
+      "token_prefix": "rnrtok-abcde"
+    },
     "run_action": {
       "type": "run_action",
       "protocol_version": 1,
@@ -210,6 +215,7 @@
           "primary_executable_available": true
         }
       ],
+      "credential_rotation_supported": true,
       "enforce_signatures": true,
       "signing_ca_ids": [
         "ca-production",
