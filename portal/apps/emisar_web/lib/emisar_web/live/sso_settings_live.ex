@@ -3474,8 +3474,10 @@ defmodule EmisarWeb.SSOSettingsLive do
       <:note>
         <p>
           Members get the highest role from their mapped groups, or the default
-          <.chip id="connection-default-role-note">{role_label(@provider.default_role)}</.chip>
-          role if none match. Directory sync never grants Owner.
+          <.chip id="connection-default-role-note" class="mr-1">
+            {role_label(@provider.default_role)}
+          </.chip>
+          {" "}role if none match. Directory sync never grants Owner.
         </p>
         <p id="connection-default-access-note" class="mt-3">
           By default, groups use this connection's runner and pack access. Edit access adds
