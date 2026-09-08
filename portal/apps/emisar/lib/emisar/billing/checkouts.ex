@@ -264,12 +264,32 @@ defmodule Emisar.Billing.Checkouts do
       with :ok <- ensure_url_scope(account, subscription, current, intent),
            :ok <- ensure_no_retirements(intent.account_id, repo),
            true <- current.state == :payable and valid_checkout_url?(current.checkout_url) do
-        {:ok, current.checkout_url}
+        {:ok, with_origin_account(current.checkout_url, current.account_id)}
       else
         false -> {:error, :checkout_pending}
         error -> error
       end
     end)
+  end
+
+  # Keep the provider URL intact in storage. The origin is only a return-path
+  # hint; the authenticated return independently authorizes this account.
+  defp with_origin_account(url, account_id) do
+    uri = URI.parse(url)
+
+    query =
+      uri.query
+      |> to_string()
+      |> String.split("&", trim: true)
+      |> Enum.reject(&origin_account_param?/1)
+      |> Enum.concat(["emisar_account_id=" <> account_id])
+      |> Enum.join("&")
+
+    URI.to_string(%{uri | query: query})
+  end
+
+  defp origin_account_param?(pair) do
+    pair |> String.split("=", parts: 2) |> hd() |> URI.decode_www_form() == "emisar_account_id"
   end
 
   defp ensure_url_scope(account, subscription, current, expected) do

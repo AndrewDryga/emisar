@@ -12,10 +12,41 @@ defmodule Emisar.Billing.CheckoutsTest do
 
   test "same facts reuse one payable transaction", %{account: account, subject: subject} do
     assert {:ok, url} = Billing.start_checkout(account, "team", :month, subject)
+    assert URI.decode_query(URI.parse(url).query)["emisar_account_id"] == account.id
     assert {:ok, ^url} = Billing.start_checkout(account, "team", :month, subject)
     assert_received {:paddle, :create, _attrs, _caller}
     refute_received {:paddle, :create, _attrs, _caller}
     assert intent(account).state == :payable
+  end
+
+  test "fresh and resumed URLs preserve provider parameters and replace only the origin hint", %{
+    account: account,
+    subject: subject
+  } do
+    provider_url =
+      "https://checkout.example.test/?_ptxn=txn_review&extra=a%20b&extra=c&emisar_account_id=wrong&emisar%5Faccount_id=also-wrong#payment"
+
+    Config.put_override(:emisar, :billing_test_after_call, fn
+      :create, _args, {:ok, transaction} ->
+        updated =
+          Fixtures.Billing.set_transaction(transaction["id"], %{
+            "checkout" => %{"url" => provider_url}
+          })
+
+        {:ok, updated}
+
+      _operation, _args, result ->
+        result
+    end)
+
+    expected =
+      "https://checkout.example.test/?_ptxn=txn_review&extra=a%20b&extra=c&emisar_account_id=#{account.id}#payment"
+
+    assert {:ok, ^expected} = Billing.start_checkout(account, "team", :month, subject)
+    assert {:ok, ^expected} = Billing.start_checkout(account, "team", :month, subject)
+    assert intent(account).checkout_url == provider_url
+    assert_received {:paddle, :create, _attrs, _caller}
+    refute_received {:paddle, :create, _attrs, _caller}
   end
 
   test "a cadence change cancels the billed old transaction before creating another", %{
@@ -91,8 +122,8 @@ defmodule Emisar.Billing.CheckoutsTest do
       "checkout" => %{"url" => "https://checkout.example.test/recovered"}
     })
 
-    assert {:ok, "https://checkout.example.test/recovered"} =
-             Billing.start_checkout(account, "team", :month, subject)
+    assert {:ok, url} = Billing.start_checkout(account, "team", :month, subject)
+    assert url == "https://checkout.example.test/recovered?emisar_account_id=#{account.id}"
 
     assert_received {:paddle, :create, _attrs, _caller}
     refute_received {:paddle, :create, _attrs, _caller}

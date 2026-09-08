@@ -386,11 +386,10 @@ defmodule EmisarWeb.Router do
     post "/billing/start", BillingIntentController, :select
     post "/billing/start/cancel", BillingIntentController, :cancel
 
-    # Paddle's post-payment redirect. The checkout page can't know the account
-    # slug at render time, so this resolves the session's current account and
-    # lands on its billing page. Before the slug scope so "checkout" never
-    # parses as an account ref.
+    # New checkout links pin the origin UUID; authentication resolves that
+    # account before the session selection. Older unscoped returns stay neutral.
     get "/checkout/success", CheckoutController, :success
+    get "/:account_id_or_slug/checkout/success", CheckoutController, :success
 
     # require_sso step-up shim: :ensure_sso_compliant bounces a non-SSO session here;
     # GET renders the explicit sign-out form; POST revokes the session and lands on

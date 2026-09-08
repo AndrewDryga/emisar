@@ -45,6 +45,52 @@ defmodule EmisarWeb.CheckoutControllerTest do
       assert html =~ ~s(data-sandbox="true")
     end
 
+    test "an origin UUID pins both return links without needing a session", %{conn: conn} do
+      Emisar.Config.put_override(:emisar, :paddle_client_token, "live_tok_123")
+      account_id = Ecto.UUID.generate()
+
+      html =
+        conn
+        |> get(~p"/checkout?_ptxn=txn_123&emisar_account_id=#{account_id}")
+        |> html_response(200)
+
+      assert html =~
+               ~s(data-success-url="#{EmisarWeb.Endpoint.url()}/app/#{account_id}/checkout/success")
+
+      assert html =~ ~s(href="/app/#{account_id}/settings/billing")
+
+      incomplete =
+        conn
+        |> get(~p"/checkout?emisar_account_id=#{account_id}")
+        |> html_response(200)
+
+      assert incomplete =~ ~s(href="/app/#{account_id}/settings/billing")
+      refute incomplete =~ "paddle.js"
+    end
+
+    test "malformed origins cannot supply return paths", %{conn: conn} do
+      Emisar.Config.put_override(:emisar, :paddle_client_token, "live_tok_123")
+
+      for origin <- [
+            "",
+            "demo",
+            "sixteen-raw-bytes",
+            "https://evil.example/",
+            "../other",
+            ["bad"],
+            %{"id" => "bad"}
+          ] do
+        html =
+          conn
+          |> get(~p"/checkout", %{"_ptxn" => "txn_123", "emisar_account_id" => origin})
+          |> html_response(200)
+
+        assert html =~ ~s(data-success-url="#{EmisarWeb.Endpoint.url()}/app/checkout/success")
+        assert html =~ ~s(href="/app/billing")
+        refute html =~ "evil.example"
+      end
+    end
+
     test "a link without its ?_ptxn= transaction renders the incomplete state, not the spinner",
          %{
            conn: conn
@@ -71,16 +117,18 @@ defmodule EmisarWeb.CheckoutControllerTest do
   end
 
   describe "GET /app/checkout/success" do
-    test "lands the operator on their account's billing page with a flash", %{conn: conn} do
+    test "an old unscoped return gives neutral guidance, even with a spoofed path parameter", %{
+      conn: conn
+    } do
       {conn, user, account} = register_and_log_in(conn)
 
-      conn = get(conn, ~p"/app/checkout/success")
+      conn = get(conn, ~p"/app/checkout/success?account_id_or_slug=#{account.id}")
 
       assert redirected_to(conn) == "/app/#{account.slug}/settings/billing"
       # Never claim money was received on a bare redirect — the webhook-backed
       # subscription on the billing page is the source of truth.
       flash = Phoenix.Flash.get(conn.assigns.flash, :info)
-      assert flash =~ "once your payment and subscription are confirmed"
+      assert flash == "Choose the workspace you upgraded to check its billing status."
       refute flash =~ "Payment received"
 
       subject = Fixtures.Subjects.subject_for(user, account)
@@ -91,6 +139,81 @@ defmodule EmisarWeb.CheckoutControllerTest do
       conn = get(conn, ~p"/app/checkout/success")
 
       assert redirected_to(conn) =~ "/sign_in"
+    end
+  end
+
+  describe "GET /app/:account_id_or_slug/checkout/success" do
+    test "returns to the origin after another tab switches accounts and the origin is renamed", %{
+      conn: conn
+    } do
+      {conn, user, origin} = register_and_log_in(conn)
+      selected = Fixtures.Accounts.create_account()
+
+      Fixtures.Memberships.create_membership(
+        account_id: selected.id,
+        user_id: user.id,
+        role: "owner"
+      )
+
+      subject = Fixtures.Subjects.subject_for(user, origin)
+      new_slug = Fixtures.Random.unique_slug()
+      assert {:ok, renamed} = Emisar.Accounts.update_account(origin, %{slug: new_slug}, subject)
+
+      conn =
+        conn
+        |> put_session(:current_account_id, selected.id)
+        |> get(~p"/app/#{origin.id}/checkout/success")
+
+      assert redirected_to(conn) == ~p"/app/#{renamed}/settings/billing"
+      assert get_session(conn, :current_account_id) == origin.id
+
+      assert Phoenix.Flash.get(conn.assigns.flash, :info) =~
+               "once your payment and subscription are confirmed"
+
+      assert {:ok, %{plan: "free"}} = Emisar.Billing.billing_summary(renamed, subject)
+
+      assert {:ok, %{plan: "free"}} =
+               Emisar.Billing.billing_summary(
+                 selected,
+                 Fixtures.Subjects.subject_for(user, selected)
+               )
+    end
+
+    test "an absent or foreign origin never falls back to the selected account", %{conn: conn} do
+      {conn, _user, _account} = register_and_log_in(conn)
+      foreign = Fixtures.Accounts.create_account()
+
+      for origin_id <- [foreign.id, Ecto.UUID.generate()] do
+        assert_error_sent 404, fn -> get(conn, ~p"/app/#{origin_id}/checkout/success") end
+      end
+    end
+
+    test "a suspended origin membership never falls back to another active membership", %{
+      conn: conn
+    } do
+      {conn, user, selected} = register_and_log_in(conn)
+      origin = Fixtures.Accounts.create_account()
+
+      membership =
+        Fixtures.Memberships.create_membership(
+          account_id: origin.id,
+          user_id: user.id,
+          role: "owner"
+        )
+
+      Fixtures.Memberships.suspend_membership(membership)
+      conn = put_session(conn, :current_account_id, selected.id)
+
+      assert_error_sent 404, fn -> get(conn, ~p"/app/#{origin.id}/checkout/success") end
+    end
+
+    test "an anonymous return preserves the exact origin for sign-in", %{conn: conn} do
+      origin_id = Ecto.UUID.generate()
+      path = ~p"/app/#{origin_id}/checkout/success"
+      conn = get(conn, path)
+
+      assert redirected_to(conn) =~ "/sign_in"
+      assert get_session(conn, :user_return_to) == path
     end
   end
 end

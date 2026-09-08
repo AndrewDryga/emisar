@@ -9,9 +9,9 @@ defmodule EmisarWeb.CheckoutController do
   initialized. Noindex (a utility page, not marketing), and CSP is widened
   per-request to Paddle's origins only here.
 
-  `success` is where the overlay redirects after payment: it resolves the
-  session's current account (the slug isn't known when the page renders) and
-  lands the operator back on that account's billing page.
+  `success` returns to the originating account by immutable UUID, independently
+  of the session's current account. Authentication authorizes the URL account.
+  Older links without an origin use a neutral return, never payment confirmation.
   """
   use EmisarWeb, :controller
 
@@ -19,6 +19,7 @@ defmodule EmisarWeb.CheckoutController do
 
   def show(conn, params) do
     token = Emisar.Config.get_env(:emisar, :paddle_client_token)
+    conn = assign_return_paths(conn, params["emisar_account_id"])
 
     cond do
       # No client token (stub billing / self-host) — nothing to initialize.
@@ -38,7 +39,6 @@ defmodule EmisarWeb.CheckoutController do
         |> assign(:page_title, "Checkout")
         |> assign(:paddle_client_token, token)
         |> assign(:paddle_sandbox?, String.starts_with?(token, "test_"))
-        |> assign(:success_url, url(~p"/app/checkout/success"))
         |> assign(:csp_extra, paddle_csp())
         |> render(:show)
     end
@@ -46,15 +46,38 @@ defmodule EmisarWeb.CheckoutController do
 
   defp missing_transaction?(ptxn), do: not is_binary(ptxn) or String.trim(ptxn) == ""
 
+  defp assign_return_paths(conn, origin) when is_binary(origin) and byte_size(origin) == 36 do
+    case Ecto.UUID.cast(origin) do
+      {:ok, account_id} ->
+        conn
+        |> assign(:success_url, url(~p"/app/#{account_id}/checkout/success"))
+        |> assign(:billing_url, ~p"/app/#{account_id}/settings/billing")
+
+      :error ->
+        assign_return_paths(conn, nil)
+    end
+  end
+
+  defp assign_return_paths(conn, _origin) do
+    conn
+    |> assign(:success_url, url(~p"/app/checkout/success"))
+    |> assign(:billing_url, ~p"/app/billing")
+  end
+
   def success(conn, _params) do
     account = conn.assigns.current_account
 
     conn
-    |> put_flash(
-      :info,
-      "Your plan will update here once your payment and subscription are confirmed."
-    )
+    |> put_flash(:info, return_message(conn.path_params))
     |> redirect(to: ~p"/app/#{account}/settings/billing")
+  end
+
+  defp return_message(%{"account_id_or_slug" => _account_ref}) do
+    "Your plan will update here once your payment and subscription are confirmed."
+  end
+
+  defp return_message(_params) do
+    "Choose the workspace you upgraded to check its billing status."
   end
 
   # Paddle.js loads its script + loader stylesheet from cdn.paddle.com, opens
