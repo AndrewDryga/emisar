@@ -203,6 +203,59 @@ defmodule Emisar.Approvals do
   end
 
   @doc """
+  Read-only review of a currently visible request and its frozen action's
+  availability. Reuses the approval trust gate without recording its rejection
+  receipt, changing the request, or rebinding it to a newer pack.
+
+  Whole-runbook requests use their read-only frozen execution precheck, never
+  the decision path that may halt an execution after a failed approval.
+  """
+  def fetch_approval_review(id, %Subject{} = subject) do
+    with {:ok, request} <- fetch_approval_request_by_id(id, subject) do
+      {action, block} = review_action(request, subject)
+      risks = if action, do: %{{action.runner_id, action.action_id} => action.risk}, else: %{}
+      {:ok, %{request: request, action: action, block: block, risk: request_risk(request, risks)}}
+    end
+  end
+
+  defp review_action(request, subject) do
+    do_review_action(request, subject)
+  rescue
+    _error in [Postgrex.Error, DBConnection.ConnectionError] ->
+      Logger.error("Could not check approval action availability")
+      {nil, pending_review_block(request, :catalog_read_failed)}
+  end
+
+  defp do_review_action(%Request{run_id: run_id} = request, subject) when is_binary(run_id) do
+    with :ok <-
+           Auth.Authorizer.ensure_has_permissions(
+             subject,
+             Catalog.Authorizer.view_catalog_permission()
+           ),
+         {:ok, action} <- Runs.fetch_run_action_for_approval(run_id) do
+      {action, nil}
+    else
+      {:error, :unauthorized} -> {nil, pending_review_block(request, :catalog_read_failed)}
+      {:error, reason} -> {nil, pending_review_block(request, Audit.Rejection.reason(reason))}
+    end
+  end
+
+  defp do_review_action(request, _subject), do: {nil, review_action_block(request)}
+
+  defp review_action_block(%Request{status: :pending, runbook_execution_id: execution_id})
+       when is_binary(execution_id) do
+    execution_id |> Runbooks.recheck_execution_approval() |> review_block_reason()
+  end
+
+  defp review_action_block(_request), do: nil
+
+  defp review_block_reason(:ok), do: nil
+  defp review_block_reason({:error, reason}), do: Audit.Rejection.reason(reason)
+
+  defp pending_review_block(%Request{status: :pending}, reason), do: reason
+  defp pending_review_block(_request, _reason), do: nil
+
+  @doc """
   Looks up the (single) approval request for a run. There is a
   unique-by-design relationship: one run produces at most one approval
   request, since policy is evaluated once at dispatch time.

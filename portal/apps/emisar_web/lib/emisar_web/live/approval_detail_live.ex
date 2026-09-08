@@ -3,6 +3,14 @@ defmodule EmisarWeb.ApprovalDetailLive do
   alias Emisar.{Approvals, Audit, Catalog, Runners, Runs}
   alias EmisarWeb.{Permissions, RunbookWorkflowComponents}
 
+  @availability_blocks [
+    :action_not_found,
+    :action_unavailable,
+    :pack_untrusted,
+    :pack_retired,
+    :action_contract_changed
+  ]
+
   # The full grant-reuse duration menu (label + posted value), in display order.
   # `grant_duration_options/1` narrows it to what the account's lifetime cap
   # permits before it reaches the form.
@@ -33,7 +41,7 @@ defmodule EmisarWeb.ApprovalDetailLive do
     account_id = socket.assigns.current_account.id
     subject = socket.assigns.current_subject
 
-    case Approvals.fetch_approval_request_by_id(id, subject) do
+    case Approvals.fetch_approval_review(id, subject) do
       # A denied role and a missing approval are indistinguishable — never
       # leak existence, never crash on {:error, :unauthorized}.
       {:error, _} ->
@@ -42,7 +50,7 @@ defmodule EmisarWeb.ApprovalDetailLive do
          |> put_flash(:error, "Approval not found.")
          |> push_navigate(to: ~p"/app/#{socket.assigns.current_account}/approvals")}
 
-      {:ok, request} ->
+      {:ok, %{request: request, action: action, block: block, risk: risk}} ->
         Approvals.subscribe_request(account_id, request.id)
 
         run = fetch_action_run(request, socket.assigns.current_subject)
@@ -50,11 +58,6 @@ defmodule EmisarWeb.ApprovalDetailLive do
         execution_request? = not is_nil(execution_plan)
 
         title = "Approval · " <> request_title(request)
-
-        # The plain-English "what this does", the command preview, and whether
-        # the action is still advertised all need the catalog row itself
-        # (display-only, connected pass; nil if it's no longer advertised).
-        action = fetch_action_for(request.context, socket.assigns.current_subject)
 
         {:ok,
          socket
@@ -65,20 +68,14 @@ defmodule EmisarWeb.ApprovalDetailLive do
          |> assign(:execution_plan, execution_plan)
          |> assign(:execution_request?, execution_request?)
          |> assign(:action_args, visible_action_args(run, subject))
-         |> assign(:action_risk, request_risk(request, subject))
+         |> assign(:action_risk, risk)
          |> assign(:action_description, action && action.description)
          # The exact command the runner will execute, arguments resolved into
          # the action's template — shown only when our published pack is
          # provably byte-for-byte the runner's.
          |> assign(:executed_command, build_command_preview(action, run, subject))
          |> assign(:runner_connection, runner_connection(run))
-         # Approve re-resolves the action's trusted contract and fails closed
-         # when it is gone, so an unresolvable action means the panel must not
-         # promise a send.
-         |> assign(
-           :unavailable_action_id,
-           unavailable_action_id(request, execution_request?, action)
-         )
+         |> assign(:approval_block, block)
          |> assign_decisions(request)
          # Every operator-entered decision field is tracked server-side. A
          # co-approver's broadcast, the expiry countdown, or a refused decision
@@ -135,15 +132,6 @@ defmodule EmisarWeb.ApprovalDetailLive do
   # addressable in a page title.
   defp request_title(%Approvals.Request{} = request),
     do: Approvals.request_name(request) || request.id
-
-  # One tier for either shape — a direct action's advertised risk or the worst
-  # across a frozen execution plan — owned by the Approvals context.
-  defp request_risk(request, subject) do
-    case Approvals.risk_by_request_ids([request.id], subject) do
-      {:ok, risks} -> risks[request.id]
-      {:error, _reason} -> nil
-    end
-  end
 
   defp execution_work_label(%{"stages" => stages}) when is_list(stages) do
     items = Enum.flat_map(stages, &Map.get(&1, "items", []))
@@ -231,28 +219,6 @@ defmodule EmisarWeb.ApprovalDetailLive do
     end
   end
 
-  defp fetch_action_for(%{"action_id" => action_id, "runner_id" => runner_id}, subject)
-       when is_binary(action_id) and is_binary(runner_id) do
-    case Catalog.fetch_action_by_id(action_id, runner_id, subject) do
-      {:ok, action} -> action
-      {:error, _} -> nil
-    end
-  end
-
-  defp fetch_action_for(_context, _subject), do: nil
-
-  # The snapshotted action id an approve can no longer bind to a trusted
-  # contract — nil whenever the request is still approvable. A runbook
-  # execution carries its own frozen plan and re-check, so it never lands here.
-  defp unavailable_action_id(_request, true, _action), do: nil
-  defp unavailable_action_id(_request, false, %Catalog.RunnerAction{}), do: nil
-
-  defp unavailable_action_id(%{context: %{"action_id" => action_id}}, false, nil)
-       when is_binary(action_id),
-       do: action_id
-
-  defp unavailable_action_id(_request, false, _action), do: nil
-
   # Runs owns the trust proof, the rendering, and the masking; a preview it
   # can't stand behind renders no command card at all — the raw Arguments card
   # still carries the detail.
@@ -292,26 +258,42 @@ defmodule EmisarWeb.ApprovalDetailLive do
   defp countdown_fallback(seconds) when seconds < 3600, do: "Expires in #{div(seconds, 60)}m"
   defp countdown_fallback(seconds), do: "Expires in #{div(seconds, 3600)}h"
 
-  def handle_info({:approval_request_updated, %{id: id} = updated}, socket)
+  def handle_info({:approval_request_updated, %{id: id}}, socket)
       when id == socket.assigns.request.id do
-    {:noreply,
-     socket
-     |> assign_request(updated)
-     |> assign_decisions(updated)}
+    {:noreply, refetch_request(socket)}
+  end
+
+  def handle_info({:pack_trust_changed, account_id}, socket)
+      when account_id == socket.assigns.current_account.id do
+    {:noreply, refetch_request(socket)}
   end
 
   def handle_info(%{event: "presence_diff"} = event, socket) do
+    change = Runners.normalize_connection_change(event)
+
     connection =
       Runners.project_connection(
         socket.assigns.runner_connection,
         runner_id(socket.assigns.run),
-        Runners.normalize_connection_change(event)
+        change
       )
 
-    {:noreply, assign(socket, :runner_connection, connection)}
+    updated = assign(socket, :runner_connection, connection)
+
+    {:noreply,
+     if(
+       connection != socket.assigns.runner_connection or
+         (socket.assigns.execution_request? and Runners.connection_topology_changed?(change)),
+       do: refetch_request(updated),
+       else: updated
+     )}
   end
 
   def handle_info(_, socket), do: {:noreply, socket}
+
+  def handle_event("recheck", _params, socket) do
+    {:noreply, refetch_request(socket)}
+  end
 
   def handle_event("grant_form_changed", params, socket) do
     {:noreply, assign_decision_fields(socket, params)}
@@ -457,10 +439,16 @@ defmodule EmisarWeb.ApprovalDetailLive do
   # re-entry into the form clears a previous rejection's message.
   defp assign_decision_fields(socket, params) do
     socket
-    |> assign(:decision_reason, params["reason"] || "")
-    |> assign(:grant_duration, params["duration"] || "once")
-    |> assign(:grant_scope, params["scope"] || "exact_args")
-    |> assign(:grant_max_uses, params["max_uses"] || "")
+    |> assign(:decision_reason, Map.get(params, "reason", socket.assigns[:decision_reason] || ""))
+    |> assign(
+      :grant_duration,
+      Map.get(params, "duration", socket.assigns[:grant_duration] || "once")
+    )
+    |> assign(
+      :grant_scope,
+      Map.get(params, "scope", socket.assigns[:grant_scope] || "exact_args")
+    )
+    |> assign(:grant_max_uses, Map.get(params, "max_uses", socket.assigns[:grant_max_uses] || ""))
     |> assign(:grant_input_error, nil)
     |> assign(:decision_reason_error, nil)
   end
@@ -509,17 +497,17 @@ defmodule EmisarWeb.ApprovalDetailLive do
   end
 
   defp override_failed(socket, reason, params)
-       when reason in [:action_not_found, :pack_untrusted, :pack_retired, :action_unavailable] do
+       when reason in @availability_blocks do
     {:noreply,
      socket
      |> assign_override_fields(params)
-     |> assign(:unavailable_action_id, socket.assigns.request.context["action_id"])
-     |> put_flash(:error, decision_error_message(reason))}
+     |> assign(:approval_block, reason)}
   end
 
-  defp override_failed(socket, reason, _params) do
+  defp override_failed(socket, reason, params) do
     {:noreply,
      socket
+     |> assign_override_fields(params)
      |> refetch_request()
      |> put_flash(:error, decision_error_message(reason))}
   end
@@ -586,37 +574,46 @@ defmodule EmisarWeb.ApprovalDetailLive do
   # note they wrote) and flip it to the unavailable state — the same thing a
   # fresh mount would show now.
   defp decision_failed(socket, reason, params)
-       when reason in [:action_not_found, :pack_untrusted, :pack_retired, :action_unavailable] do
+       when reason in @availability_blocks do
     {:noreply,
      socket
      |> assign_decision_fields(params)
-     |> assign(:unavailable_action_id, socket.assigns.request.context["action_id"])
-     |> put_flash(:error, decision_error_message(reason))}
+     |> assign(:approval_block, reason)}
   end
 
   # An approve/deny that didn't take: the request expired or was decided
   # between render and this click (the live exact-request broadcast can
   # race a fast click). Re-fetch so the panel flips to decision-history, then
   # flash the real cause instead of leaving the form interactive.
-  defp decision_failed(socket, reason, _params) do
+  defp decision_failed(socket, reason, params) do
     {:noreply,
      socket
+     |> assign_decision_fields(params)
      |> refetch_request()
      |> put_flash(:error, decision_error_message(reason))}
   end
 
   defp refetch_request(socket) do
-    case Approvals.fetch_approval_request_by_id(
+    case Approvals.fetch_approval_review(
            socket.assigns.request.id,
            socket.assigns.current_subject
          ) do
-      {:ok, request} ->
+      {:ok, %{request: request, action: action, block: block, risk: risk}} ->
         socket
         |> assign_request(request)
         |> assign_decisions(request)
+        |> assign(:approval_block, block)
+        |> assign(:action_risk, risk)
+        |> assign(:action_description, action && action.description)
+        |> assign(
+          :executed_command,
+          build_command_preview(action, socket.assigns.run, socket.assigns.current_subject)
+        )
 
       {:error, _} ->
         socket
+        |> put_flash(:error, "Approval is no longer available under your current access.")
+        |> push_navigate(to: ~p"/app/#{socket.assigns.current_account}/approvals")
     end
   end
 
@@ -641,12 +638,6 @@ defmodule EmisarWeb.ApprovalDetailLive do
   defp decision_error_message(:runbook_execution_not_approvable),
     do: "The runbook execution is no longer awaiting approval. Refresh to see its current state."
 
-  defp decision_error_message(reason)
-       when reason in [:action_not_found, :pack_untrusted, :pack_retired, :action_unavailable] do
-    "This action can't be approved right now. Check its availability and pack trust, " <>
-      "then refresh this page."
-  end
-
   defp decision_error_message(:attestation_stale) do
     "This signed request expired. Send a new request from your AI app."
   end
@@ -657,6 +648,91 @@ defmodule EmisarWeb.ApprovalDetailLive do
 
   defp decision_error_message(_),
     do: "Couldn't save your decision. Refresh the page to check its status before trying again."
+
+  defp approval_block_copy(:catalog_read_failed) do
+    %{
+      title: "Couldn't check availability",
+      body: "The action catalog could not be read. Recheck before approving this request."
+    }
+  end
+
+  defp approval_block_copy(:action_not_found) do
+    %{
+      title: "Action unavailable",
+      body: "A runner no longer reports a required action. Restore it, then recheck."
+    }
+  end
+
+  defp approval_block_copy(:action_unavailable) do
+    %{
+      title: "Required executable missing",
+      body: "A runner is missing an executable this request needs. Restore it, then recheck."
+    }
+  end
+
+  defp approval_block_copy(:pack_untrusted) do
+    %{
+      title: "Pack not trusted",
+      body:
+        "This request's pack version is not currently trusted. Review its trust status, then recheck."
+    }
+  end
+
+  defp approval_block_copy(:pack_retired) do
+    %{
+      title: "Pack version retired",
+      body:
+        "This request uses a retired pack version. Review the pack's retirement notice before rechecking."
+    }
+  end
+
+  defp approval_block_copy(:action_contract_changed) do
+    %{
+      title: "Action changed",
+      body:
+        "The action no longer matches the trusted definition. Restore the expected version, or submit a new request for the changed action."
+    }
+  end
+
+  defp approval_block_copy(:runner_not_found) do
+    %{
+      title: "Runner unavailable",
+      body:
+        "A runner in this runbook is offline or no longer available. Restore it, then recheck."
+    }
+  end
+
+  defp approval_block_copy(reason)
+       when reason in [:authorization_lost, :runner_out_of_scope, :pack_out_of_scope] do
+    %{
+      title: "Requester access changed",
+      body:
+        "The requester no longer has the access this runbook needs. Review their access, then recheck."
+    }
+  end
+
+  defp approval_block_copy(:denied_by_policy) do
+    %{
+      title: "Blocked by current policy",
+      body:
+        "Current policy denies an action in this runbook. Review the policy before rechecking."
+    }
+  end
+
+  defp approval_block_copy(:runner_requires_attestation) do
+    %{
+      title: "Runner requires a signed request",
+      body:
+        "This runbook cannot supply the signature a target runner requires. Review the runner's signing requirements."
+    }
+  end
+
+  defp approval_block_copy(_reason) do
+    %{
+      title: "Request cannot be approved",
+      body: "Recheck the request's current status before trying to approve it."
+    }
+  end
 
   # Echo exactly what was granted. The approve that just succeeded validated
   # these same params, so the match cannot fail and the confirmation reads the
@@ -1165,7 +1241,7 @@ defmodule EmisarWeb.ApprovalDetailLive do
               grant_duration_options={@grant_duration_options}
               grant_reuse_open?={@grant_reuse_open?}
               runner_state={@runner_connection}
-              unavailable_action_id={@unavailable_action_id}
+              approval_block={@approval_block}
               execution_request?={@execution_request?}
               execution_kind={@request.context["execution_kind"]}
               self_blocked?={@self_blocked?}
@@ -1211,10 +1287,9 @@ defmodule EmisarWeb.ApprovalDetailLive do
   # Connection state of the target runner (:online | :offline | :unknown)
   # so the operator knows whether an approval will actually dispatch.
   attr :runner_state, :atom, default: :unknown
-  # Set to the snapshotted action id once no trusted contract resolves for it.
-  # Approve would be refused by the context, so the panel drops it and the
-  # reuse controls and leaves Deny as the way out.
-  attr :unavailable_action_id, :string, default: nil
+  # A read-only check or a refused decision found a block. It never changes the
+  # frozen request; Recheck can clear a restored dependency without a page reload.
+  attr :approval_block, :atom, default: nil
   attr :execution_request?, :boolean, default: false
   attr :execution_kind, :string, default: nil
   # Server-computed UI gates. self_blocked? hides Approve when this user is the
@@ -1241,7 +1316,7 @@ defmodule EmisarWeb.ApprovalDetailLive do
         assigns.decisions_error?,
         assigns.self_blocked?,
         assigns.already_decided?,
-        assigns.unavailable_action_id
+        assigns.approval_block
       )
 
     approve_label =
@@ -1253,12 +1328,13 @@ defmodule EmisarWeb.ApprovalDetailLive do
       assigns
       |> assign(:override_available?, override_available?)
       |> assign(:approve_label, approve_label)
+      |> assign(:block_copy, approval_block_copy(assigns.approval_block))
 
     ~H"""
     <%!-- NAKED on the canvas — a form's fields are self-contained controls
          (the runbook editor / every create flow already sit boxless); the
          panel island read as one more wash box. --%>
-    <section>
+    <section id="approval-decision-panel">
       <%!-- No subtitle: the note field's own placeholder already says the
            decision is logged — a header line restating it is double copy. --%>
       <.section_header title="Your decision" />
@@ -1283,7 +1359,7 @@ defmodule EmisarWeb.ApprovalDetailLive do
       <.event_block
         :if={
           not @execution_request? and @runner_state == :offline and
-            is_nil(@unavailable_action_id)
+            is_nil(@approval_block)
         }
         icon="state.not_dispatched"
         tone={:amber}
@@ -1294,6 +1370,26 @@ defmodule EmisarWeb.ApprovalDetailLive do
           The runner is offline, but you can still approve this request. The run can start only
           when the runner is online and all required approvals are received.
         </:body>
+      </.event_block>
+
+      <.event_block
+        :if={@approval_block}
+        id="approval-availability"
+        icon="state.warning"
+        tone={:amber}
+        title={@block_copy.title}
+        class="mt-4"
+      >
+        <:body>{@block_copy.body}</:body>
+        <.button
+          type="button"
+          variant={:secondary}
+          phx-click="recheck"
+          phx-disable-with="Checking…"
+          class="mt-3"
+        >
+          Recheck
+        </.button>
       </.event_block>
 
       <%= cond do %>
@@ -1319,26 +1415,12 @@ defmodule EmisarWeb.ApprovalDetailLive do
             </.button>
           </div>
         <% true -> %>
-          <%!-- Approval fails closed while the action cannot be resolved or
-               admitted. This can recover; manual denial is not required. --%>
-          <.event_block
-            :if={@unavailable_action_id}
-            icon="state.warning"
-            tone={:rose}
-            title="Action unavailable"
-            class="mt-4"
-          >
-            <:body>
-              <span class="font-mono text-zinc-200">{@unavailable_action_id}</span>
-              can't be approved right now. Check its availability and pack trust, then refresh this page.
-            </:body>
-          </.event_block>
           <%!-- Approve form. Hidden when this user is the requester and the
                policy forbids self-approval — the context refuses it anyway
                (IL-15), this just removes the dead button. They can still Deny
                their own request. --%>
           <p
-            :if={@self_blocked? and is_nil(@unavailable_action_id)}
+            :if={@self_blocked? and is_nil(@approval_block)}
             class="mt-4 text-xs leading-relaxed text-zinc-400"
           >
             Policy doesn't allow you to approve your own request. Another approver is needed.
@@ -1377,7 +1459,7 @@ defmodule EmisarWeb.ApprovalDetailLive do
             <p
               :if={
                 not @execution_request? and not @self_blocked? and
-                  is_nil(@unavailable_action_id) and length(@grant_duration_options) <= 1
+                  is_nil(@approval_block) and length(@grant_duration_options) <= 1
               }
               class="text-[11px] leading-relaxed text-zinc-400"
             >
@@ -1386,7 +1468,7 @@ defmodule EmisarWeb.ApprovalDetailLive do
             <.disclosure
               :if={
                 not @execution_request? and not @self_blocked? and
-                  is_nil(@unavailable_action_id) and length(@grant_duration_options) > 1
+                  is_nil(@approval_block) and length(@grant_duration_options) > 1
               }
               id="grant-reuse"
               open={@grant_reuse_open?}
@@ -1461,7 +1543,7 @@ defmodule EmisarWeb.ApprovalDetailLive do
             <%!-- Approve stays gated for the self-blocked requester; deny is
                  always available (denying your own request is fine). --%>
             <div
-              :if={not @self_blocked? and is_nil(@unavailable_action_id) and @override_available?}
+              :if={not @self_blocked? and is_nil(@approval_block) and @override_available?}
               data-shot="approval-override"
             >
               <.split_button
@@ -1490,7 +1572,7 @@ defmodule EmisarWeb.ApprovalDetailLive do
             </div>
             <.button
               :if={
-                not @self_blocked? and is_nil(@unavailable_action_id) and
+                not @self_blocked? and is_nil(@approval_block) and
                   not @override_available?
               }
               name="decision"
@@ -1526,7 +1608,7 @@ defmodule EmisarWeb.ApprovalDetailLive do
             </.button>
           </form>
           <p
-            :if={is_nil(@unavailable_action_id)}
+            :if={is_nil(@approval_block)}
             id="approval-decision-help"
             class="mt-4 text-xs leading-relaxed text-zinc-400"
           >
@@ -1641,9 +1723,9 @@ defmodule EmisarWeb.ApprovalDetailLive do
          decisions_error?,
          self_blocked?,
          already_decided?,
-         unavailable_action_id
+         approval_block
        ) do
-    can_override? and not decisions_error? and is_nil(unavailable_action_id) and
+    can_override? and not decisions_error? and is_nil(approval_block) and
       approved_count < min_approvals and
       (min_approvals > 1 or self_blocked? or already_decided?)
   end

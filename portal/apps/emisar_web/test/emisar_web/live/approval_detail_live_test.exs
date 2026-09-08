@@ -58,11 +58,46 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
         min_approvals: Keyword.get(opts, :min_approvals, 1)
       )
 
-    request
+    Repo.reload!(request)
   end
 
   defp pending_execution_request(account, requested_by) do
     Fixtures.Approvals.create_execution_request(account, requested_by, executable?: true)
+  end
+
+  defp trusted_published_action(runner, pack_id, action_id) do
+    pack = PublishedRegistry.get(pack_id)
+    manifest = Emisar.Catalog.PackBaseline.manifest(pack_id, pack.version, pack.content_hash)
+    descriptor = manifest["actions"][action_id]
+
+    attrs =
+      ~w(title description kind risk side_effects args_schema output_schema examples)a
+      |> Map.new(&{&1, descriptor[Atom.to_string(&1)]})
+      |> Map.merge(%{
+        runner: runner,
+        action_id: action_id,
+        pack_id: pack_id,
+        pack_version: pack.version,
+        pack_hash: pack.content_hash
+      })
+
+    action =
+      Fixtures.Catalog.create_action(attrs)
+      |> Ecto.Changeset.change(
+        summary: descriptor["summary"],
+        search_terms: descriptor["search_terms"]
+      )
+      |> Repo.update!()
+
+    Fixtures.Catalog.create_trusted_pack_version(
+      account_id: runner.account_id,
+      pack_id: pack_id,
+      version: pack.version,
+      hash: pack.content_hash,
+      trusted_manifest: manifest
+    )
+
+    {action, "#{pack_id}@#{pack.version}/#{pack.content_hash}"}
   end
 
   test "renders human decision evidence and states that whole-run approval happens once", %{
@@ -112,7 +147,10 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
     {conn, user, account} = register_and_log_in(conn)
 
     request =
-      Fixtures.Approvals.create_execution_request(account, user, %{execution_kind: :draft_test})
+      Fixtures.Approvals.create_execution_request(account, user, %{
+        execution_kind: :draft_test,
+        executable?: true
+      })
 
     {:ok, lv, html} = live(conn, ~p"/app/#{account}/approvals/#{request.id}")
 
@@ -202,13 +240,15 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
         action_id: "linux.reboot",
         source: "operator",
         reason: "rolling restart",
-        args: %{}
+        args: %{},
+        pack_ref: Fixtures.Catalog.default_pack_ref(),
+        expected_pack_hash: Fixtures.Catalog.default_pack_hash()
       })
 
     {:ok, request} = Approvals.create_request(run, user.id, "please approve")
 
     {:ok, _lv, html} = live(conn, ~p"/app/#{account}/approvals/#{request.id}")
-    # The risk is looked up from the catalog and rendered as a pill.
+    # The risk is proven against the frozen pack and rendered as a pill.
     assert html =~ "high"
   end
 
@@ -244,6 +284,9 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
     {conn, user, account} = register_and_log_in(conn)
     runner = Fixtures.Runners.create_runner(account_id: account.id)
 
+    {action, pack_ref} =
+      trusted_published_action(runner, "cloud-init", "cloud-init.single_module")
+
     # A runner's advertisement is mutable, so it is deliberately forged here:
     # a different default and a `sensitive` flag the published pack does not
     # declare. Neither may reach the preview.
@@ -254,15 +297,6 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
       ]
     }
 
-    Fixtures.Catalog.create_action(
-      runner: runner,
-      action_id: "cloud-init.single_module",
-      pack_id: "cloud-init",
-      pack_hash: PublishedRegistry.get("cloud-init").content_hash,
-      kind: "exec",
-      args_schema: forged_args_schema
-    )
-
     {:ok, run} =
       Runs.create_run(%{
         account_id: account.id,
@@ -271,6 +305,7 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
         source: "operator",
         reason: "re-run module",
         args: %{"module" => "ssh"},
+        pack_ref: pack_ref,
         expected_pack_hash: PublishedRegistry.get("cloud-init").content_hash
       })
 
@@ -285,24 +320,23 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
     assert has_element?(lv, "#approval-command-#{request.id}")
     refute html =~ "forged"
     refute html =~ "[REDACTED]"
+
+    action |> Ecto.Changeset.change(args_schema: forged_args_schema) |> Repo.update!()
+    send(lv.pid, {:pack_trust_changed, account.id})
+    html = render(lv)
+    assert html =~ "Action changed"
+    refute has_element?(lv, "#approval-command-#{request.id}")
+    assert has_element?(lv, "#approval-raw-args-#{request.id}")
+    refute html =~ "forged"
   end
 
-  test "shows the resolved command from the advertised hash when no hash is pinned",
+  test "withholds the command when the request has no frozen pack hash",
        %{conn: conn} do
-    # The seeded/queued case: the run carries no pinned hash, but the runner
-    # advertises the exact bytes of our published pack.
+    # Even a currently trusted advertisement cannot prove what an old unpinned
+    # request reviewed. Keep its stored arguments, not a newly resolved command.
     {conn, user, account} = register_and_log_in(conn)
     runner = Fixtures.Runners.create_runner(account_id: account.id)
-    pack = PublishedRegistry.get("systemd-deep")
-
-    Fixtures.Catalog.create_action(
-      runner: runner,
-      action_id: "systemd.unit_restart",
-      pack_id: "systemd-deep",
-      pack_hash: pack.content_hash,
-      kind: "exec",
-      args_schema: %{"args" => [%{"name" => "unit", "type" => "string"}]}
-    )
+    {_action, pack_ref} = trusted_published_action(runner, "systemd-deep", "systemd.unit_restart")
 
     {:ok, run} =
       Runs.create_run(%{
@@ -312,6 +346,7 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
         source: "operator",
         reason: "restart the api",
         args: %{"unit" => "checkout-api.service"},
+        pack_ref: pack_ref,
         expected_pack_hash: nil
       })
 
@@ -319,8 +354,9 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
 
     {:ok, lv, html} = live(conn, ~p"/app/#{account}/approvals/#{request.id}")
 
-    assert html =~ "systemctl restart checkout-api.service"
-    assert has_element?(lv, "#approval-command-#{request.id}")
+    refute html =~ "systemctl restart checkout-api.service"
+    refute has_element?(lv, "#approval-command-#{request.id}")
+    assert has_element?(lv, "#approval-raw-args-#{request.id}", "checkout-api.service")
   end
 
   test "hides the command when the pinned hash differs from our published bytes",
@@ -436,19 +472,8 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
 
     # The pack's own schema does NOT declare `module` sensitive, so only the
     # run's recorded sensitivity can keep the value out of the command line.
-    Fixtures.Catalog.create_action(
-      runner: runner,
-      action_id: "cloud-init.single_module",
-      pack_id: "cloud-init",
-      pack_hash: PublishedRegistry.get("cloud-init").content_hash,
-      kind: "exec",
-      args_schema: %{
-        "args" => [
-          %{"name" => "module", "type" => "string", "required" => true},
-          %{"name" => "frequency", "type" => "string", "default" => "always"}
-        ]
-      }
-    )
+    {action, pack_ref} =
+      trusted_published_action(runner, "cloud-init", "cloud-init.single_module")
 
     {:ok, run} =
       Runs.create_run(%{
@@ -459,17 +484,26 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
         reason: "re-run module",
         args_raw: ~s({"module":"secret-module-value"}),
         sensitive_arg_names: ["module"],
+        pack_ref: pack_ref,
         expected_pack_hash: PublishedRegistry.get("cloud-init").content_hash
       })
 
     {:ok, request} = Approvals.create_request(run, user.id, "please approve")
 
-    {:ok, _lv, html} = live(conn, ~p"/app/#{account}/approvals/#{request.id}")
+    {:ok, lv, html} = live(conn, ~p"/app/#{account}/approvals/#{request.id}")
 
     # Shell-quoted because the placeholder carries brackets — the same quoting
     # the runner applies, so the preview still reads as the real command.
     assert html =~ "cloud-init single &#39;--name=[REDACTED]&#39; --frequency=always"
     refute html =~ "secret-module-value"
+
+    action |> Ecto.Changeset.change(args_schema: %{"args" => []}) |> Repo.update!()
+    send(lv.pid, {:pack_trust_changed, account.id})
+    html = render(lv)
+    assert html =~ "Action changed"
+    assert html =~ "[REDACTED]"
+    refute html =~ "secret-module-value"
+    refute has_element?(lv, "#approval-command-#{request.id}")
   end
 
   test "hides both the arguments and the command when they no longer decode", %{conn: conn} do
@@ -1057,10 +1091,236 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
 
     assert html =~ "Action unavailable"
     assert html =~ "linux.uptime"
-    assert html =~ "Check its availability and pack trust"
+    assert html =~ "Restore it, then recheck."
     refute has_element?(lv, "#approval-decision-form button[name=decision][value=approve]")
     refute html =~ "Allow the agent to reuse this approval"
     assert has_element?(lv, "button", "Deny")
+  end
+
+  test "Recheck restores a missing action without losing the note, reuse choices, or override reason",
+       %{conn: conn} do
+    {conn, user, account} = register_and_log_in(conn)
+    request = pending_request(account, user, min_approvals: 2)
+    runner = Repo.get!(Runner, request.context["runner_id"])
+    {:ok, lv, _html} = live(conn, ~p"/app/#{account}/approvals/#{request.id}")
+
+    render_hook(lv, "toggle_grant_reuse", %{})
+
+    render_hook(lv, "grant_form_changed", %{
+      "reason" => "Reviewed the impact",
+      "duration" => "one_hour",
+      "scope" => "any_args",
+      "max_uses" => "3"
+    })
+
+    render_hook(lv, "override_form_changed", %{"reason" => "Emergency review"})
+    Fixtures.Catalog.delete_actions_for_runner(runner.id)
+    send(lv.pid, {:pack_trust_changed, account.id})
+    assert render(lv) =~ "Action unavailable"
+    assert has_element?(lv, "button", "Deny")
+
+    # Controls hidden by the blockage are absent from this form change. Their
+    # saved values must survive while the operator continues editing the note.
+    render_hook(lv, "grant_form_changed", %{"reason" => "Reviewed the impact again"})
+    Fixtures.Catalog.create_action(runner: runner)
+    lv |> element("#approval-availability button", "Recheck") |> render_click()
+
+    refute has_element?(lv, "#approval-availability")
+    assert has_element?(lv, "#approval-decision-form textarea", "Reviewed the impact again")
+    assert has_element?(lv, "#grant-reuse[open]")
+    assert has_element?(lv, ~s(select[name=duration] option[value=one_hour][selected]))
+    assert has_element?(lv, ~s(select[name=scope] option[value=any_args][selected]))
+    assert has_element?(lv, ~s(input[name=max_uses][value="3"]))
+    assert has_element?(lv, "#override-reason", "Emergency review")
+    assert has_element?(lv, "#approval-decision-form button[value=approve]")
+    assert Repo.reload!(request).status == :pending
+
+    assert {:ok, []} =
+             Approvals.list_decisions_for_request(
+               request,
+               Fixtures.Subjects.subject_for(user, account)
+             )
+  end
+
+  test "changed advertisement facts disappear until the frozen action is proven again", %{
+    conn: conn
+  } do
+    {conn, user, account} = register_and_log_in(conn)
+    request = pending_request(account, user)
+    subject = Fixtures.Subjects.subject_for(user, account)
+    runner = Repo.get!(Runner, request.context["runner_id"])
+    {:ok, action} = Emisar.Catalog.fetch_action_by_id("linux.uptime", runner.id, subject)
+    {:ok, lv, html} = live(conn, ~p"/app/#{account}/approvals/#{request.id}")
+    assert html =~ action.description
+    assert has_element?(lv, "#approval-#{request.id}-risk-tt", "low")
+
+    action
+    |> Ecto.Changeset.change(description: "Changed advertisement after review", risk: :critical)
+    |> Repo.update!()
+
+    send(lv.pid, {:pack_trust_changed, account.id})
+    html = render(lv)
+    assert html =~ "Action changed"
+    refute html =~ "Changed advertisement after review"
+    refute html =~ action.description
+    refute has_element?(lv, "#approval-#{request.id}-risk")
+    refute has_element?(lv, "#approval-decision-form button[value=approve]")
+
+    Fixtures.Catalog.create_action(runner: runner)
+    html = lv |> element("#approval-availability button", "Recheck") |> render_click()
+    refute has_element?(lv, "#approval-availability")
+    assert html =~ action.description
+    assert has_element?(lv, "#approval-#{request.id}-risk-tt", "low")
+    assert has_element?(lv, "#approval-decision-form button[value=approve]")
+  end
+
+  test "a concluded approval does not present a later advertisement as its reviewed action", %{
+    conn: conn
+  } do
+    {conn, user, account} = register_and_log_in(conn)
+    request = pending_request(account, user)
+    subject = Fixtures.Subjects.subject_for(user, account)
+    {:ok, {_request, _run}} = Approvals.deny_request(request, subject, "Not needed")
+
+    {:ok, action} =
+      Emisar.Catalog.fetch_action_by_id("linux.uptime", request.context["runner_id"], subject)
+
+    action
+    |> Ecto.Changeset.change(description: "Different work now", risk: :critical)
+    |> Repo.update!()
+
+    {:ok, lv, html} = live(conn, ~p"/app/#{account}/approvals/#{request.id}")
+    assert html =~ "Not needed"
+    refute html =~ "Different work now"
+    refute has_element?(lv, "#approval-#{request.id}-risk")
+    refute has_element?(lv, "#approval-decision-panel")
+  end
+
+  test "Recheck distinguishes a catalog inspection failure from a missing action", %{conn: conn} do
+    {conn, user, account} = register_and_log_in(conn)
+    request = pending_request(account, user)
+    {:ok, lv, _html} = live(conn, ~p"/app/#{account}/approvals/#{request.id}")
+    permission = Emisar.Catalog.Authorizer.view_catalog_permission()
+
+    :sys.replace_state(lv.pid, fn state ->
+      update_in(state.socket.assigns.current_subject.permissions, &MapSet.delete(&1, permission))
+    end)
+
+    html = render_hook(lv, "recheck", %{})
+    assert html =~ "Couldn&#39;t check availability"
+    refute html =~ "no longer reports a required action"
+    refute has_element?(lv, "#approval-decision-form button[value=approve]")
+    assert has_element?(lv, "button", "Deny")
+
+    :sys.replace_state(lv.pid, fn state ->
+      update_in(state.socket.assigns.current_subject.permissions, &MapSet.put(&1, permission))
+    end)
+
+    lv |> element("#approval-availability button", "Recheck") |> render_click()
+    refute has_element?(lv, "#approval-availability")
+    assert has_element?(lv, "#approval-decision-form button[value=approve]")
+  end
+
+  test "a recorded vote still shows a later blockage and can recheck without another vote", %{
+    conn: conn
+  } do
+    {conn, user, account} = register_and_log_in(conn)
+    request = pending_request(account, user, min_approvals: 2)
+    runner = Repo.get!(Runner, request.context["runner_id"])
+    {:ok, lv, _html} = live(conn, ~p"/app/#{account}/approvals/#{request.id}")
+    render_hook(lv, "approve", %{"reason" => "Reviewed"})
+    assert render(lv) =~ "Your approval is recorded"
+
+    Fixtures.Catalog.delete_actions_for_runner(runner.id)
+    send(lv.pid, {:pack_trust_changed, account.id})
+    html = render(lv)
+    assert html =~ "Action unavailable"
+    assert html =~ "Your approval is recorded"
+
+    Fixtures.Catalog.create_action(runner: runner)
+    lv |> element("#approval-availability button", "Recheck") |> render_click()
+    refute has_element?(lv, "#approval-availability")
+
+    assert {:ok, [_decision]} =
+             Approvals.list_decisions_for_request(
+               request,
+               Fixtures.Subjects.subject_for(user, account)
+             )
+
+    assert Repo.reload!(request).status == :pending
+  end
+
+  test "a relevant runner reconnect refreshes availability while unrelated trust events do not",
+       %{
+         conn: conn
+       } do
+    {conn, user, account} = register_and_log_in(conn)
+    request = pending_request(account, user)
+    runner = Repo.get!(Runner, request.context["runner_id"])
+    Fixtures.Catalog.delete_actions_for_runner(runner.id)
+    {:ok, lv, _html} = live(conn, ~p"/app/#{account}/approvals/#{request.id}")
+    Fixtures.Catalog.create_action(runner: runner)
+
+    send(lv.pid, {:pack_trust_changed, Ecto.UUID.generate()})
+    assert render(lv) =~ "Action unavailable"
+
+    send(lv.pid, %{
+      event: "presence_diff",
+      payload: %{joins: %{runner.id => %{metas: [%{}]}}, leaves: %{}}
+    })
+
+    refute render(lv) =~ "Action unavailable"
+    assert has_element?(lv, "#approval-decision-form button[value=approve]")
+  end
+
+  test "Recheck respects access revoked while the page is open", %{conn: conn} do
+    {conn, user, account} = register_and_log_in(conn)
+    membership = Fixtures.Memberships.fetch_membership(account.id, user.id)
+    Fixtures.Memberships.force_role(membership, "admin")
+    request = pending_request(account, user)
+    Fixtures.Catalog.delete_actions_for_runner(request.context["runner_id"])
+    {:ok, lv, _html} = live(conn, ~p"/app/#{account}/approvals/#{request.id}")
+    {:ok, access} = Accounts.RunnerAccess.new(:all, [], [], :restricted, ["another-pack"])
+    Fixtures.Memberships.force_runner_access(membership, access)
+
+    lv |> element("#approval-availability button", "Recheck") |> render_click()
+    flash = assert_redirect(lv, ~p"/app/#{account}/approvals")
+    assert flash["error"] == "Approval is no longer available under your current access."
+    assert Repo.reload!(request).status == :pending
+  end
+
+  test "a changed runbook action can be restored without cancelling its frozen execution", %{
+    conn: conn
+  } do
+    {conn, user, account} = register_and_log_in(conn)
+    request = pending_execution_request(account, user)
+    subject = Fixtures.Subjects.subject_for(user, account)
+
+    {:ok, [target | _]} =
+      Emisar.Runbooks.approval_targets_for_execution(request.runbook_execution_id, account.id)
+
+    {:ok, action} =
+      Emisar.Catalog.fetch_action_by_id("postgres.config_validate", target.runner_id, subject)
+
+    action |> Ecto.Changeset.change(description: "Changed since review") |> Repo.update!()
+
+    {:ok, lv, html} = live(conn, ~p"/app/#{account}/approvals/#{request.id}")
+    assert html =~ "Action changed"
+    assert html =~ "submit a new request for the changed action"
+    refute has_element?(lv, "#approval-decision-form button[value=approve]")
+    assert has_element?(lv, "button", "Deny")
+
+    Repo.reload!(action)
+    |> Ecto.Changeset.change(description: action.description)
+    |> Repo.update!()
+
+    lv |> element("#approval-availability button", "Recheck") |> render_click()
+    refute has_element?(lv, "#approval-availability")
+    assert has_element?(lv, "#approval-decision-form button[value=approve]", "Approve runbook")
+    assert Repo.reload!(request).status == :pending
+
+    assert Repo.get!(Emisar.Runbooks.RunbookExecution, request.runbook_execution_id).status ==
+             :pending_approval
   end
 
   test "an action deleted while the page is open maps the approve refusal into the same state",
@@ -1090,7 +1350,7 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
       |> form("form[phx-submit='decide']", %{})
       |> render_submit(%{"decision" => "approve", "reason" => note})
 
-    assert html =~ "Check its availability and pack trust"
+    assert html =~ "Restore it, then recheck."
     assert html =~ "Action unavailable"
     assert html =~ note
     refute has_element?(lv, "#approval-decision-form button[name=decision][value=approve]")

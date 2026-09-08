@@ -3625,6 +3625,47 @@ defmodule Emisar.RunsTest do
     end
   end
 
+  describe "fetch_run_action_for_approval/1" do
+    test "returns only the frozen contract's verified facts without decision side effects" do
+      account = Fixtures.Accounts.create_account()
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
+      action = Fixtures.Catalog.create_action(runner: runner)
+
+      {:ok, run} =
+        Runs.create_run(%{
+          account_id: account.id,
+          runner_id: runner.id,
+          action_id: action.action_id,
+          source: "operator",
+          args: %{},
+          pack_ref: Fixtures.Catalog.default_pack_ref(),
+          expected_pack_hash: Fixtures.Catalog.default_pack_hash()
+        })
+
+      assert {:ok, verified} = Runs.fetch_run_action_for_approval(run.id)
+      assert verified.description == action.description
+      assert verified.risk == action.risk
+      assert verified.pack_hash == run.expected_pack_hash
+      assert Runs.recheck_run_pack_trust_for_approval(run.id) == :ok
+
+      action
+      |> Ecto.Changeset.change(description: "Different work", risk: :critical)
+      |> Repo.update!()
+
+      assert {:error, :action_contract_changed} = Runs.fetch_run_action_for_approval(run.id)
+
+      Repo.reload!(action)
+      |> Ecto.Changeset.change(description: action.description, risk: action.risk)
+      |> Repo.update!()
+
+      assert {:ok, restored} = Runs.fetch_run_action_for_approval(run.id)
+      assert restored.description == action.description
+      assert restored.risk == action.risk
+      assert Repo.reload!(run) == run
+      assert dispatch_rejections() == []
+    end
+  end
+
   describe "check_run_attestation_fresh/1" do
     setup do
       account = Fixtures.Accounts.create_account()

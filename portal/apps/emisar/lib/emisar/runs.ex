@@ -1882,6 +1882,17 @@ defmodule Emisar.Runs do
   end
 
   @doc """
+  Internal read for an already-authorized approval request. Returns the action
+  from the same current trust, executable, and frozen pack-hash proof used by
+  the decision gate, never an independently read runner advertisement. The
+  caller owns request/account authorization. Rejection receipts are returned
+  without being recorded; reading this proof has no decision side effects.
+  """
+  def fetch_run_action_for_approval(run_id) when is_binary(run_id) do
+    run_id |> fetch_run!() |> fetch_snapshotted_action()
+  end
+
+  @doc """
   Internal — Approvals' pre-approval gate for signed dispatch: refuse the
   approval when this run's relayed signature would already be outside the
   enforcing runner's freshness window, so a slow approval doesn't leave an
@@ -2766,6 +2777,10 @@ defmodule Emisar.Runs do
   # cost is an approved request whose run is then refused here, never changed
   # bytes executing, because delivery compares the run's SNAPSHOTTED pack hash.
   defp recheck_snapshotted_pack_trust(%ActionRun{} = run) do
+    with {:ok, _action} <- fetch_snapshotted_action(run), do: :ok
+  end
+
+  defp fetch_snapshotted_action(%ActionRun{} = run) do
     with {:ok, contract} <-
            fetch_dispatch_contract(
              run.account_id,
@@ -2774,8 +2789,9 @@ defmodule Emisar.Runs do
              run.pack_ref,
              run
            ),
-         :ok <- ensure_primary_executable_available(contract.action) do
-      ensure_snapshotted_pack_hash(run, contract)
+         :ok <- ensure_primary_executable_available(contract.action),
+         :ok <- ensure_snapshotted_pack_hash(run, contract) do
+      {:ok, contract.action}
     end
   end
 

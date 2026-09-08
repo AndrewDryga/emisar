@@ -119,6 +119,234 @@ defmodule Emisar.ApprovalsTest do
 
   # -- Grants ---------------------------------------------------------
 
+  describe "fetch_approval_review/2" do
+    setup do
+      {account, run} = run_fixture()
+      subject = operator_subject(account)
+      {:ok, request} = Approvals.create_request(run, run.requested_by_id, "Review this action")
+      %{account: account, run: run, subject: subject, request: Repo.reload!(request)}
+    end
+
+    test "distinguishes missing, executable, contract, and trust failures without changing the request",
+         %{account: account, run: run, subject: subject, request: request} do
+      runner = Repo.get!(Emisar.Runners.Runner, run.runner_id)
+      action = Fixtures.Catalog.create_action(runner: runner)
+      events_before = Repo.aggregate(Audit.Event, :count)
+
+      assert {:ok, %{block: nil, action: %{id: action_id}}} =
+               Approvals.fetch_approval_review(request.id, subject)
+
+      assert action_id == action.id
+
+      action |> Ecto.Changeset.change(primary_executable_available: false) |> Repo.update!()
+
+      assert {:ok, %{block: :action_unavailable}} =
+               Approvals.fetch_approval_review(request.id, subject)
+
+      action
+      |> Ecto.Changeset.change(description: "Changed after review", risk: :critical)
+      |> Repo.update!()
+
+      assert {:ok, %{block: :action_contract_changed, action: nil, risk: nil}} =
+               Approvals.fetch_approval_review(request.id, subject)
+
+      Fixtures.Catalog.delete_actions_for_runner(runner.id)
+
+      assert {:ok, %{block: :action_not_found, action: nil}} =
+               Approvals.fetch_approval_review(request.id, subject)
+
+      Fixtures.Catalog.create_action(runner: runner)
+      [pack] = Fixtures.Catalog.list_pack_versions(account.id)
+      pack |> Ecto.Changeset.change(trust_state: :rejected) |> Repo.update!()
+
+      assert {:ok, %{block: :pack_untrusted, action: nil, risk: nil}} =
+               Approvals.fetch_approval_review(request.id, subject)
+
+      assert Repo.aggregate(Audit.Event, :count) == events_before
+      assert Repo.reload!(request) == request
+      assert Repo.reload!(run) == run
+
+      Fixtures.Catalog.create_action(runner: runner)
+
+      assert {:ok, %{block: nil, action: restored, risk: restored_risk}} =
+               Approvals.fetch_approval_review(request.id, subject)
+
+      assert restored.description == action.description
+      assert restored.risk == action.risk
+      assert restored_risk == action.risk
+      assert Repo.reload!(run).expected_pack_hash == run.expected_pack_hash
+      assert Repo.reload!(run).pack_ref == run.pack_ref
+    end
+
+    test "catalog inspection refusal is not reported as a missing action", %{
+      subject: subject,
+      request: request
+    } do
+      restricted = %{
+        subject
+        | permissions:
+            MapSet.delete(subject.permissions, Catalog.Authorizer.view_catalog_permission())
+      }
+
+      assert {:ok, %{block: :catalog_read_failed, action: nil}} =
+               Approvals.fetch_approval_review(request.id, restricted)
+
+      assert {:ok, %{block: nil}} = Approvals.fetch_approval_review(request.id, subject)
+      assert Repo.reload!(request).status == :pending
+    end
+
+    test "a retired frozen pack has its own block rather than a missing-action diagnosis", %{
+      account: account,
+      run: run,
+      subject: subject,
+      request: request
+    } do
+      {pack_id, _watermark} = Catalog.PackBaseline.retired_below() |> Enum.sort() |> List.first()
+      runner = Repo.get!(Emisar.Runners.Runner, run.runner_id)
+      hash = Fixtures.Catalog.pack_hash("retired-approval")
+
+      action =
+        Fixtures.Catalog.create_action(
+          runner: runner,
+          pack_id: pack_id,
+          pack_version: "0.0.0",
+          pack_hash: hash
+        )
+
+      {:ok, manifest} = Catalog.TrustedManifest.from_runner_actions([action])
+
+      Fixtures.Catalog.create_trusted_pack_version(
+        account_id: account.id,
+        pack_id: pack_id,
+        version: "0.0.0",
+        hash: hash,
+        trusted_manifest: manifest
+      )
+
+      run =
+        run
+        |> Ecto.Changeset.change(pack_ref: "#{pack_id}@0.0.0/#{hash}", expected_pack_hash: hash)
+        |> Repo.update!()
+
+      events_before = Repo.aggregate(Audit.Event, :count)
+
+      assert {:ok, %{block: :pack_retired, action: nil, risk: nil}} =
+               Approvals.fetch_approval_review(request.id, subject)
+
+      assert Repo.reload!(request).status == :pending
+      assert Repo.reload!(run).pack_ref == run.pack_ref
+      assert Repo.aggregate(Audit.Event, :count) == events_before
+    end
+
+    test "newly trusted bytes cannot supply display facts for an older frozen request", %{
+      account: account,
+      run: run,
+      subject: subject,
+      request: request
+    } do
+      runner = Repo.get!(Emisar.Runners.Runner, run.runner_id)
+      action = Fixtures.Catalog.create_action(runner: runner)
+      new_hash = Fixtures.Catalog.pack_hash("different-reviewed-bytes")
+
+      changed =
+        action
+        |> Ecto.Changeset.change(
+          description: "A different action definition",
+          risk: :critical,
+          pack_hash: new_hash
+        )
+        |> Repo.update!()
+
+      {:ok, manifest} = Catalog.TrustedManifest.from_runner_actions([changed])
+      [pack] = Fixtures.Catalog.list_pack_versions(account.id)
+      pack |> Ecto.Changeset.change(hash: new_hash, trusted_manifest: manifest) |> Repo.update!()
+      events_before = Repo.aggregate(Audit.Event, :count)
+
+      assert {:ok, %{block: :pack_untrusted, action: nil, risk: nil}} =
+               Approvals.fetch_approval_review(request.id, subject)
+
+      assert Repo.reload!(run).expected_pack_hash == run.expected_pack_hash
+      assert Repo.reload!(run).pack_ref == run.pack_ref
+      assert Repo.reload!(request) == request
+      assert Repo.aggregate(Audit.Event, :count) == events_before
+    end
+
+    test "concluded requests also withhold changed advertisement facts", %{
+      run: run,
+      subject: subject,
+      request: request
+    } do
+      {:ok, {denied, _run}} = Approvals.deny_request(request, subject, "Not needed")
+      runner = Repo.get!(Emisar.Runners.Runner, run.runner_id)
+      action = Fixtures.Catalog.create_action(runner: runner)
+
+      action
+      |> Ecto.Changeset.change(description: "Changed later", risk: :critical)
+      |> Repo.update!()
+
+      assert {:ok, %{request: %{status: :denied}, block: nil, action: nil, risk: nil}} =
+               Approvals.fetch_approval_review(denied.id, subject)
+
+      assert Repo.reload!(denied).decision_reason == "Not needed"
+    end
+
+    test "requires permission and current target access without leaking another account", %{
+      account: account,
+      subject: subject,
+      request: request
+    } do
+      denied = Fixtures.Subjects.permissionless_subject(account)
+      assert {:error, :unauthorized} = Approvals.fetch_approval_review(request.id, denied)
+      {_user, _other_account, foreign} = Fixtures.Subjects.owner_subject()
+      assert {:error, :not_found} = Approvals.fetch_approval_review(request.id, foreign)
+
+      membership = Fixtures.Memberships.fetch_membership(account.id, subject.actor.id)
+
+      Fixtures.Memberships.force_runner_access(
+        membership,
+        all_runner_pack_access(["another-pack"])
+      )
+
+      assert {:error, :not_found} = Approvals.fetch_approval_review(request.id, subject)
+    end
+
+    test "runbook rechecks retain a frozen pending execution through failure and restoration", %{
+      account: account,
+      subject: subject
+    } do
+      request =
+        Fixtures.Approvals.create_execution_request(account, subject.actor, executable?: true)
+
+      request = Repo.reload!(request)
+      execution = Repo.get!(Runbooks.RunbookExecution, request.runbook_execution_id)
+      {:ok, [target | _]} = Runbooks.approval_targets_for_execution(execution.id, account.id)
+
+      {:ok, action} =
+        Catalog.fetch_action_by_id("postgres.config_validate", target.runner_id, subject)
+
+      events_before = Repo.aggregate(Audit.Event, :count)
+
+      assert {:ok, %{block: nil}} = Approvals.fetch_approval_review(request.id, subject)
+
+      action |> Ecto.Changeset.change(description: "Changed after review") |> Repo.update!()
+
+      assert {:ok, %{block: :action_contract_changed}} =
+               Approvals.fetch_approval_review(request.id, subject)
+
+      assert Repo.reload!(request) == request
+      assert Repo.reload!(execution) == execution
+      assert Repo.aggregate(Audit.Event, :count) == events_before
+
+      Repo.reload!(action)
+      |> Ecto.Changeset.change(description: action.description)
+      |> Repo.update!()
+
+      assert {:ok, %{block: nil}} = Approvals.fetch_approval_review(request.id, subject)
+      assert Repo.reload!(execution).frozen_plan == execution.frozen_plan
+      assert Repo.aggregate(Audit.Event, :count) == events_before
+    end
+  end
+
   defp insert_grant(account, key, opts) do
     Fixtures.Approvals.create_grant(
       Map.merge(
