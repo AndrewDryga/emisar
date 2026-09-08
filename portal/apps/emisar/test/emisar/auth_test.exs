@@ -3102,11 +3102,23 @@ defmodule Emisar.AuthTest do
     } do
       sibling_token = Fixtures.Auth.create_session_token!(user, :magic_link, nil)
 
-      assert {:ok, proof} =
-               Auth.verify_mfa_challenge(
-                 user,
-                 {:totp, NimbleTOTP.verification_code(secret)}
-               )
+      generated_at = System.os_time(:second)
+      code = NimbleTOTP.verification_code(secret, time: generated_at)
+
+      result =
+        case Auth.verify_mfa_challenge(user, {:totp, code}) do
+          {:error, :invalid} ->
+            # This test exercises session stamping, not clock rollover. Retry
+            # only when generating and consuming the code straddled a bucket;
+            # an invalid code within the same bucket must still fail the test.
+            assert div(System.os_time(:second), 30) != div(generated_at, 30)
+            Auth.verify_mfa_challenge(user, {:totp, NimbleTOTP.verification_code(secret)})
+
+          result ->
+            result
+        end
+
+      assert {:ok, proof} = result
 
       assert {:ok, %UserToken{id: updated_id}} =
                Auth.complete_current_session_mfa(proof, Crypto.hash(session_token), subject)
