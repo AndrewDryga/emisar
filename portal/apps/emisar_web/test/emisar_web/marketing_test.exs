@@ -165,7 +165,7 @@ defmodule EmisarWeb.MarketingTest do
     assert html =~ "Team"
     assert html =~ "Enterprise"
     assert html =~ "365-day audit retention"
-    assert length(Regex.scan(~r/Dedicated Slack support channel/, html)) == 2
+    assert length(Regex.scan(~r/Slack and email support/, html)) == 2
     refute html =~ "Priority support"
     refute html =~ "99.9% uptime SLA"
     refute html =~ "On-prem / self-hosted option"
@@ -442,6 +442,45 @@ defmodule EmisarWeb.MarketingTest do
     google = conn |> get(~p"/docs/integrations/google-workspace") |> html_response(200)
     assert google =~ "Internal"
     assert google =~ "accounts.google.com"
+
+    for guide <- [okta, keycloak, entra, jumpcloud, google] do
+      assert guide =~ "Add connection"
+      assert guide =~ "Verify sign-in"
+      assert guide =~ "Enable for members"
+    end
+
+    for issuer <- [
+          "https://oauth.id.jumpcloud.com/",
+          "https://oauth.id.eu.jumpcloud.com/",
+          "https://oauth.id.in.jumpcloud.com/"
+        ] do
+      assert jumpcloud =~ issuer
+    end
+
+    assert jumpcloud =~ "/images/docs/sso/jumpcloud-emisar-credentials.webp"
+    assert okta =~ "Copy the org URL from the account menu"
+    refute entra =~ "Provision the person before testing sign-in"
+    assert entra =~ "directory sync is not required for this verification"
+    assert google =~ "Google Auth Platform"
+    assert google =~ "Require approval"
+  end
+
+  test "Entra keeps the provisioning caveat beside directory sync, not administrator verification",
+       %{conn: conn} do
+    html = conn |> get(~p"/docs/integrations/entra") |> html_response(200)
+    document = LazyHTML.from_document(html)
+    note = document |> LazyHTML.query("#scim + p + div") |> LazyHTML.text() |> squish()
+
+    assert html =~ "directory sync is not required for this verification"
+    assert note =~ "Provision members before their first sign-in"
+    assert note =~ "With directory sync enabled"
+    assert note =~ "email_verified"
+    assert note =~ "active member provisioned by"
+    assert note =~ "this Entra connection"
+    assert note =~ "oid"
+    assert note =~ "externalId"
+    assert note =~ "objectId"
+    refute html =~ "sign-in creates another"
   end
 
   test "SCIM docs page covers directory sync, deprovisioning, and group mapping",
@@ -455,7 +494,10 @@ defmodule EmisarWeb.MarketingTest do
     refute html =~ "deletes the user"
     # Owner is never assignable via sync.
     assert html =~ "Owner is never assignable through"
-    assert html =~ "Role mapping pairs"
+    assert html =~ "Role mapping"
+    assert html =~ "Groups &amp; access"
+    assert html =~ "Edit access"
+    assert html =~ "Reset to defaults"
     refute html =~ "by its SCIM"
     refute html =~ "Mapping groups to roles"
   end
@@ -1018,6 +1060,10 @@ defmodule EmisarWeb.MarketingTest do
       assert html =~ "mailto:security@emisar.dev"
       assert html =~ "https://status.emisar.dev"
       assert html =~ "Do not send API keys"
+      assert html =~ "Team includes email support"
+      assert html =~ "Free is self-serve"
+      assert html =~ "Billing and account access"
+      refute html =~ "For setup, runner, MCP connection, billing, or account-access problems"
     end
 
     test "the sitemap lists the public support URL", %{conn: conn} do
@@ -1274,9 +1320,10 @@ defmodule EmisarWeb.MarketingTest do
       html = conn |> get(~p"/docs/connect-claude-ai") |> html_response(200) |> squish()
 
       # Current ChatGPT Developer-mode setup path: OAuth, no static token.
-      assert chatgpt =~ "Settings → Security and login"
+      assert chatgpt =~ "<strong>Settings</strong> and select <strong>Security and login</strong>"
       assert chatgpt =~ "ChatGPT Plugins"
       assert chatgpt =~ "Developer mode"
+      assert chatgpt =~ "If the option is missing"
       assert chatgpt =~ "Access depends"
       assert chatgpt =~ "Server URL"
       assert chatgpt =~ "Review the connection permissions"
@@ -1288,7 +1335,8 @@ defmodule EmisarWeb.MarketingTest do
       assert html =~ "Runners that do not require signed dispatch"
 
       # Claude's connector block on the same page.
-      assert html =~ "Settings → Connectors"
+      assert html =~ "Customize → Connectors"
+      assert html =~ "Organization settings → Connectors → Add → Custom → Web"
       assert html =~ "Connector name"
       assert html =~ "OAuth Client ID / Client Secret"
       assert html =~ "Read-only tools"
@@ -1302,6 +1350,8 @@ defmodule EmisarWeb.MarketingTest do
 
       # Both carry the shared prerequisites.
       assert chatgpt =~ "Before you start, you need:"
+      assert chatgpt =~ "publicly reachable HTTPS server URL"
+      assert html =~ "publicly reachable HTTPS server URL"
     end
 
     test "the CLI-client page routes by-hand setup to the console instead of duplicating it",
@@ -1312,6 +1362,11 @@ defmodule EmisarWeb.MarketingTest do
       # the key — the docs page points there and carries no config to drift.
       assert html =~ ~s(href="/app/agents/connect")
       assert html =~ "already filled in"
+      assert html =~ "Download the bridge for your operating system and processor"
+      assert html =~ "Create the file and any missing folders"
+      assert html =~ "pi install npm:pi-mcp-adapter"
+      assert html =~ "Settings → Developer → Edit Config"
+      assert html =~ "interactive API-key prompt"
       refute html =~ "claude_desktop_config.json"
       refute html =~ ".cursor/mcp.json"
     end
@@ -1649,6 +1704,20 @@ defmodule EmisarWeb.MarketingTest do
       assert html =~ "an admin trusts their exact version and hash"
     end
 
+    test "pack cleanup documents its permission and retention boundaries", %{conn: conn} do
+      html = conn |> get(~p"/docs/pack-updates") |> html_response(200)
+
+      cleanup =
+        html
+        |> LazyHTML.from_document()
+        |> LazyHTML.query("#cleanup + p")
+        |> LazyHTML.text()
+        |> squish()
+
+      assert cleanup =~ "Owners and admins with full pack access"
+      assert cleanup =~ "Versions still listed by a connected or disabled runner are kept"
+    end
+
     test "the policies-and-approvals page renders the approval TTL and standing grants",
          %{conn: conn} do
       html = conn |> get(~p"/docs/policies-and-approvals") |> html_response(200)
@@ -1657,6 +1726,8 @@ defmodule EmisarWeb.MarketingTest do
       assert html =~ "require_approval"
       assert html =~ "24 hours"
       assert html =~ "Standing grants"
+      assert squish(html) =~ "When standing grants are enabled"
+      assert squish(html) =~ "a duration allowed by your account"
       assert html =~ "reason; it is recorded with the decision"
       assert html =~ "creates no standing grant"
       assert html =~ "gets its own audit record"
@@ -1695,14 +1766,20 @@ defmodule EmisarWeb.MarketingTest do
       assert html =~ "caddy.reload_config"
       assert html =~ "&quot;pack&quot;: {&quot;id&quot;: &quot;caddy&quot;}"
       assert html =~ "group:edge-web"
-      assert html =~ "Every runner in group"
+      assert html =~ "All available runners in group"
       assert html =~ "One random runner"
       assert html =~ "random_one"
       assert html =~ "the work does not move to another member"
-      assert html =~ "one approval for the complete frozen execution"
+      assert html =~ "one approval request for the complete frozen execution"
       assert html =~ "Action arguments"
       assert html =~ "Extracted outputs"
       assert html =~ "Success conditions"
+      assert html =~ "Choose stdout or"
+      assert html =~ "The selected stream must contain valid"
+      assert html =~ "schema-validated stdout result"
+      assert html =~ "action.output_schema"
+      assert html =~ "Structured output supports JSON Pointer only"
+      assert html =~ "it comes from stdout, never stderr"
       assert html =~ "Wait policy"
       assert html =~ "caddy.reverse_proxy_upstreams"
       assert html =~ "&quot;expression&quot;: &quot;/healthy&quot;"
@@ -1738,6 +1815,9 @@ defmodule EmisarWeb.MarketingTest do
 
       assert html =~ "allow_draft: true"
       refute html =~ "test_runbook_draft"
+
+      assert html =~ ~s(href="/docs/runbooks#extracted-outputs")
+      assert html =~ "runbook output sources and extractors"
 
       assert html =~ "60 seconds"
       assert html =~ "eight requests"
@@ -1846,6 +1926,9 @@ defmodule EmisarWeb.MarketingTest do
       # An LLM-access reviewer checks the key model: policy + the minting member's
       # runner scope, not a per-key grant.
       assert html =~ "runner scope"
+      assert html =~ "Authenticator count shows local enrollment"
+      assert html =~ "standing approvals"
+      assert html =~ "does not restore those credentials or approvals"
     end
 
     test "the authentication hub separates sign-in, enforcement, and lifecycle", %{conn: conn} do
@@ -1881,6 +1964,8 @@ defmodule EmisarWeb.MarketingTest do
       assert html =~ "claim to confirm the Workspace tenant"
       assert html =~ "claim does not confirm the email address"
       assert html =~ "stable identity claim"
+      assert html =~ "become read-only once a member identity exists"
+      assert html =~ "not a minimum role"
       assert html =~ "reads these claims from the ID token and does not call UserInfo"
       assert html =~ "with no additional audience"
       assert html =~ "Require SSO for the account"
@@ -1905,7 +1990,10 @@ defmodule EmisarWeb.MarketingTest do
       assert html =~ "5,000 member IDs"
       assert html =~ "Group runner access is"
       assert html =~ "additive"
-      assert html =~ "Last sync"
+      assert html =~ "Waiting for first request"
+      assert html =~ "Last request"
+      assert html =~ "not a successful synchronization"
+      assert html =~ "fallback, not a minimum"
     end
 
     test "the JumpCloud guide explains its externalId-less probe lifecycle", %{conn: conn} do
@@ -1918,9 +2006,9 @@ defmodule EmisarWeb.MarketingTest do
     test "authentication docs expose review dates without a dead edit action", %{conn: conn} do
       review_dates = [
         {"/docs/authentication", "August 23, 2026"},
-        {"/docs/teams-and-access", "August 23, 2026"},
-        {"/docs/sso", "August 23, 2026"},
-        {"/docs/scim", "August 23, 2026"}
+        {"/docs/teams-and-access", "September 7, 2026"},
+        {"/docs/sso", "September 7, 2026"},
+        {"/docs/scim", "September 7, 2026"}
       ]
 
       for {route, date} <- review_dates do
@@ -1984,11 +2072,15 @@ defmodule EmisarWeb.MarketingTest do
       html = conn |> get(~p"/docs/sso") |> html_response(200)
 
       # SSO folded into Team: directions say Team → Single sign-on and the
-      # console's own button label (Add provider) — UI-010 regression.
+      # console's current action labels and verification-before-enable flow.
       assert html =~ "Team → Single sign-on"
-      assert html =~ "Add provider"
+      assert html =~ "Add connection"
+      assert html =~ "Check issuer"
+      assert html =~ "Verify sign-in"
+      assert html =~ "Enable for members"
       refute html =~ "Settings → Single sign-on"
-      refute html =~ "Add connection</strong>"
+      refute html =~ "Test connection"
+      assert html =~ "/images/docs/sso/sso-activation-fields.webp"
     end
 
     test "the audit-and-siem page renders the SIEM curl and journal verify", %{conn: conn} do
@@ -2017,6 +2109,10 @@ defmodule EmisarWeb.MarketingTest do
       assert runs =~ "Run statuses"
       assert runs =~ "most recent 500"
       assert runs =~ "SIGTERM"
+      assert runs =~ "View audit trail"
+      assert runs =~ "Load earlier output"
+      assert runs =~ "Cancelling the run also closes its approval request."
+      refute runs =~ "is not cancelled here"
 
       keys = conn |> get(~p"/docs/agents-and-keys") |> html_response(200) |> squish()
       assert keys =~ "emk-"
@@ -2024,6 +2120,9 @@ defmodule EmisarWeb.MarketingTest do
       assert keys =~ "audit-export"
       assert keys =~ "MCP bridge keys are short-lived and rotate themselves"
       assert keys =~ "writable and persistent"
+      assert keys =~ "Set up [client] manually"
+      assert keys =~ "The first authenticated request with the new key retires the old one"
+      refute keys =~ "Reveal key"
 
       assert keys =~
                "OAuth tokens, arbitrary Bearer tokens, and audit-export tokens bypass local rotation state."
@@ -2042,6 +2141,10 @@ defmodule EmisarWeb.MarketingTest do
       assert billing =~ "365 days"
       assert billing =~ ~s(href="/docs/audit-and-siem#retention")
       assert billing =~ "Paddle"
+      assert billing =~ "You do not need to subscribe to Team first."
+      assert billing =~ "three most recent invoices"
+      assert billing =~ "View all invoices"
+      assert billing =~ "minimum of one billable runner"
       # The row VALUES, from the catalog that enforces them — the table used to
       # be hand-typed here and pinned by its exact markup spacing, which made
       # the assertion about the layout rather than the numbers.
@@ -2367,7 +2470,9 @@ defmodule EmisarWeb.MarketingTest do
       assert html =~
                "On a connection at 60 days, the runner exchanges it for a successor"
 
-      assert html =~ "token remains valid for 24 hours after the swap"
+      assert html =~ "token remains valid for up to 24 hours after the swap"
+      assert html =~ "Rotate key"
+      assert html =~ "running actions continue"
 
       # Refresh needs a connection. A long-offline runner can therefore reach
       # expiry and needs an eligible enrollment key for recovery.
@@ -2376,8 +2481,8 @@ defmodule EmisarWeb.MarketingTest do
 
       # The comparison table agreed the token never rotated and had no overlap.
       # Both were wrong once enforcement landed.
-      assert matrix =~ "Automatic — the runner swaps itself onto a successor at 60 days"
-      assert matrix =~ "the outgoing token works for 24 hours after the swap"
+      assert matrix =~ "Automatic at 60 days, or request an earlier rotation"
+      assert matrix =~ "up to 24 hours after the swap, without extending its existing expiry"
       refute matrix =~ "None — the new token replaces the cached one"
     end
 

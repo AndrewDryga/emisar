@@ -4,7 +4,7 @@
   <section class="py-12 sm:py-16">
     <.docs_layout
       current="integrations-keycloak"
-      updated="August 25, 2026"
+      updated="September 7, 2026"
       evidence="Live-tested against Keycloak on August 25, 2026."
       toc={[
         {"sso", "Single sign-on"},
@@ -38,16 +38,16 @@
             <a
               href={~p"/app/sso/new"}
               class="font-medium text-brand-400 underline decoration-zinc-700 underline-offset-4 hover:text-brand-300"
-            >Team → Single sign-on → Add provider</a>
+            >Team → Single sign-on → Add connection</a>
             and choose <strong class="text-zinc-200">Keycloak</strong>. Leave the page open: the
             callback URL on it is what Keycloak asks for next, and Keycloak's values come back here
             at the end.
           </p>
           <.docs_screenshot
             src="/images/docs/sso/keycloak-emisar-add-provider.webp"
-            title="emisar · Add provider"
+            title="emisar · Add connection"
             caption="Picking the provider here tailors the rest of the form to it."
-            alt="emisar's Add provider form with the Provider type select outlined in green and set to Keycloak."
+            alt="emisar's Add connection form with the Provider type select outlined in green and set to Keycloak."
           />
         </.docs_step>
         <.docs_step n={2}>
@@ -163,13 +163,12 @@
             https://YOUR-KEYCLOAK-HOST/realms/YOUR-REALM
           </.docs_value>
           <p class="mt-4">
-            Press <strong class="text-zinc-200">Test connection</strong>
-            — it fetches the realm's discovery document, so a wrong host or realm fails here
-            rather than at someone's first sign-in. Then tick
-            <strong class="text-zinc-200">Enabled</strong>
-            and save. Open a private window and sign in as a Keycloak user who is not in emisar.
-            Auto-provisioning assigns the default role. Manual provisioning creates a pending
-            request for an administrator.
+            Select <strong class="text-zinc-200">Add connection</strong>, then <strong class="text-zinc-200">Verify sign-in</strong>. Complete the identity checks
+            and sign in with your Keycloak user. After verification, select
+            <strong class="text-zinc-200">Enable for members</strong>
+            and confirm.
+            New members follow the connection's <strong class="text-zinc-200">New members</strong>
+            setting: add on first sign-in or require administrator approval.
           </p>
           <.docs_callout kind={:warn} title="Your Keycloak has to be reachable from emisar">
             <p>
@@ -184,7 +183,7 @@
 
           <.docs_screenshot
             src="/images/docs/sso/keycloak-emisar-credentials.webp"
-            title="emisar · Add provider"
+            title="emisar · Add connection"
             caption="Three values from Keycloak. The issuer is the realm URL, not the host on its own."
             alt="emisar's OIDC connection fields with Issuer URL, Client ID and Client secret each outlined in green, and the Issuer URL placeholder showing https://YOUR-HOST/realms/YOUR-REALM."
           />

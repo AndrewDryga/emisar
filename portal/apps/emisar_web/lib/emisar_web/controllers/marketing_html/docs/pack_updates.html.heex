@@ -4,7 +4,7 @@
   <section class="py-12 sm:py-16">
     <.docs_layout
       current="pack-updates"
-      updated="August 23, 2026"
+      updated="September 5, 2026"
       toc={[
         {"record", "1. See where you are"},
         {"review", "2. Read what changed"},
@@ -13,6 +13,7 @@
         {"fleet", "5. Roll through the fleet"},
         {"rollback", "6. Rollback"},
         {"retirement", "Retired versions"},
+        {"cleanup", "Automatic cleanup"},
         {"troubleshooting", "Troubleshooting"}
       ]}
     >
@@ -213,8 +214,8 @@
       <.docs_screenshot
         src="/images/screenshots/packs.webp"
         title="emisar console · Packs"
-        caption="Each installed version with its trust state, the hosts last seen advertising it, and a hash-pinned update command."
-        alt="The Packs page showing caddy, debian, and docker packs. Each version row carries a green trusted badge and a last-seen date, and an Update available notice shows the hash-pinned emisar pack install command for the newer version."
+        caption="Reported pack versions with their trust state and last report."
+        alt="The Packs page showing collapsed bonding, caddy, and cassandra rows, each with its reported version, trusted status and last report."
       />
       <p class="mt-5 text-base leading-7 text-zinc-400">
         Test the updated pack on the canary. The probe runs the pack's declared verify
@@ -339,6 +340,20 @@
         and <.link navigate={~p"/docs/pack-registry"} class="text-brand-400 hover:text-brand-300">Host your own registry</.link>.
       </p>
 
+      <.docs_h2 id="cleanup">Automatic cleanup</.docs_h2>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        Owners and admins with full pack access can choose how long to keep unreported versions
+        on the Packs page.
+        Cleanup runs daily and removes those versions and their trust decisions.
+        Versions still listed by a connected or disabled runner are kept. If a removed version
+        appears again, its trust is evaluated again.
+      </p>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        Retired versions are removed once no runner reports them, even when automatic
+        cleanup is off. Cleanup removes catalog records, not files on runner hosts.
+        Audit history is kept under your audit retention settings.
+      </p>
+
       <.docs_h2 id="troubleshooting">Troubleshooting</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         Four different states look the same from the catalog — the action you wanted is not
@@ -418,7 +433,7 @@
       <.docs_code phx-no-format label="shell">sudo emisar pack validate ./pack</.docs_code>
       <.docs_code phx-no-format label="shell">sudo emisar pack list</.docs_code>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        <strong class="text-zinc-200">Contact support</strong>
+        On Team or Enterprise, <strong class="text-zinc-200">contact support</strong>
         when the host hash matches the trusted hash and dispatch still refuses.
         <.link
           navigate={~p"/docs/action-packs"}

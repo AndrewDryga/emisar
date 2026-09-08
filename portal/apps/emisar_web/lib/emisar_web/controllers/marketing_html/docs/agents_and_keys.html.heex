@@ -4,7 +4,7 @@
   <section class="py-12 sm:py-16">
     <.docs_layout
       current="agents-and-keys"
-      updated="August 4, 2026"
+      updated="September 5, 2026"
       toc={[
         {"the-list", "Your connected agents"},
         {"what-is-a-key", "What an agent key is"},
@@ -40,7 +40,7 @@
         src="/images/screenshots/agents.webp"
         title="emisar console · AI agents"
         caption="Keys grouped by the member who owns them — status, last call, expiry, and per-agent rotate and revoke."
-        alt="The AI agents page, grouped by the person who owns each key: Jordan Lee's Claude Desktop, Gemini CLI, and Codex CLI; Maya Chen's Cursor, ChatGPT, and Claude Code. Each row shows the client, bridge version, a status dot (active, idle, dormant, or never used), last-call and expiry, a 'swap pending' rotation in progress, per-agent View activity, Rotate, and Revoke actions, and a Revoke all button on each member's group."
+        alt="The AI agents page, grouped by the member who owns each connection. Rows show the client, status, last call and expiry, with actions to view activity, rotate or revoke the key. Awaiting first use marks a replacement key that has not connected yet."
       />
 
       <.docs_h2 id="the-list">Your connected agents</.docs_h2>
@@ -60,14 +60,14 @@
             A row reads dormant, idle, or never used from its own last call — and
             <.chip tone={:rose} icon="state.warning">unsupported</.chip>
             when the bridge it reported is below the version emisar supports. A rotation in flight
-            shows as a swap pending until the successor's first call retires the old key.
+            shows as Rotation requested, then awaits the successor's first call to retire the old key.
           </span>
         </li>
         <li class="flex items-start gap-2.5">
           <span class="flex-none text-zinc-500">—</span>
           <span>
             <strong class="text-zinc-200">Each row carries its own actions.</strong>
-            View activity opens the audit trail filtered to that agent. Rotate and Revoke act on
+            View activity opens Runs filtered to that agent; View audit trail opens its audit events. Rotate and Revoke act on
             the key behind it, which is the rest of this page. Copy ID copies the key's
             identifier — the safe handle for a support request, since the secret is never shown
             again.
@@ -148,13 +148,16 @@
         </li>
       </ul>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        Scoping the person also scopes their agents. To limit an agent, narrow the key owner's access
-        on the
-        <.link
+        Scoping the person also scopes their agents. To limit an agent, use an Admin or Operator
+        membership and narrow that member's access
+        on the <.link
           navigate={~p"/docs/teams-and-access"}
           class="text-brand-400 hover:text-brand-300"
-        >Team page</.link>
-        page. You do not tune keys one by one. Remove that member's access to stop every key they
+        >Team page</.link>. Owners always have access to all runners and packs; their keys still
+        use the fixed API-client permissions and pass policy, approval, and trust checks.
+        Promoting a scoped member to Owner expands their connected agents' access without
+        replacing credentials or reconnecting. You do not tune keys one by one.
+        Remove that member's access to stop every key they
         issued from resolving to a runner. An unbound key is never usable.
       </p>
 
@@ -166,8 +169,9 @@
           class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
         >AI agents</a>
         in the console — the same place you
-        connect and revoke agents. Pick the client you are connecting and emisar mints a key for it
-        on the spot. The secret drops into a pre-filled config snippet you copy into that client.
+        connect and revoke agents. Pick the client you are connecting to see its setup instructions.
+        Open <strong>Set up [client] manually</strong>
+        to create a key and see the command or configuration for that client.
         Cloud clients like Claude.ai and ChatGPT do not use a pasted key. They connect over OAuth.
         emisar mints their backing key only after you approve the connection.
       </p>
@@ -176,8 +180,9 @@
           <span class="flex-none text-zinc-500">—</span>
           <span>
             <strong class="text-zinc-200">Minted on demand, per client.</strong>
-            emisar mints a manual key when you open that client's snippet or approve its installer.
-            It does not mint one earlier. The agents list therefore shows real connections only.
+            emisar creates a key when you open manual setup or approve an installer.
+            Choosing co:op creates the key for its displayed configuration. Other local client
+            choices do not create a key until you take the next setup step.
           </span>
         </li>
         <li class="flex items-start gap-2.5">
@@ -193,30 +198,35 @@
 
       <.docs_h2 id="rotating">Rotating a key</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        Rotating swaps a key's secret without downtime. From an agent's row,
-        <strong>Rotate</strong>
-        mints a successor. It inherits the old key's name, scope, and kind. It has a new secret and
-        expiry. Both keys work through the overlap. The old one keeps authenticating
-        until the successor's first successful call, which retires the old key automatically. Update
-        the client's config with the new secret any time in that window — nothing breaks while you
-        do.
+        Choose <strong>Rotate</strong> on an agent's row to replace its key. If the agent supports
+        automatic rotation, it saves the new key on its next call — there's nothing to copy.
+        The row shows <strong>Rotation requested</strong> while it waits. Otherwise, emisar shows
+        a new key for you to copy into the agent's settings.
+      </p>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        The current key keeps working until the new key is used or the current key expires.
+        The first authenticated request with the new key retires the old one automatically. Each row
+        shows its expiry; hover or focus the time to see the exact date. OAuth connections show
+        <strong>OAuth-managed expiry</strong>
+        because their tokens have a separate lifecycle.
       </p>
       <ul class="mt-4 space-y-3 text-base leading-7 text-zinc-400">
         <li class="flex items-start gap-2.5">
           <span class="flex-none text-zinc-500">—</span>
           <span>
-            <strong class="text-zinc-200">Copy the new secret now.</strong>
-            Like the original, it is shown once. If you lose it before the client swaps, rotate
-            again.
+            <strong class="text-zinc-200">Manual setup when needed.</strong>
+            If automatic rotation stays pending, choose <strong>Rotate manually</strong>
+            on the
+            same row. This cancels the pending request and shows a replacement key once. Copy it
+            into the agent's settings. If you lose it, rotate the replacement key's row.
           </span>
         </li>
         <li class="flex items-start gap-2.5">
           <span class="flex-none text-zinc-500">—</span>
           <span>
             <strong class="text-zinc-200">You can still revoke the old key.</strong>
-            To skip the overlap, revoke the old key by hand. Rotation keeps this option available.
-            A predecessor the successor retired is <em>spent</em>, not revoked — revoke it yourself
-            when you need it provably dead rather than merely superseded.
+            Revocation also ends access for that key's replacements. Use it to stop access after
+            a leak, not to finish a normal rotation — the new key's first use does that for you.
           </span>
         </li>
         <li class="flex items-start gap-2.5">
@@ -237,7 +247,9 @@
             successor. It promotes the successor only after emisar confirms the exact new key.
             Long-running local agents keep working through the change. This needs the bridge's
             credential directory to be writable and persistent. OAuth tokens, arbitrary Bearer
-            tokens, and audit-export tokens bypass local rotation state.
+            tokens, and audit-export tokens bypass local rotation state. By default, automatic renewal is
+            limited to 90 days from the connection's original key; after that, Rotate uses manual
+            setup. A pending request does not extend the current key's expiry.
           </span>
         </li>
       </ul>
@@ -246,8 +258,8 @@
       <p class="mt-5 text-base leading-7 text-zinc-400">
         <strong>Revoke</strong> is the kill switch. The moment you confirm, the
         key is dead and the connected client is refused on its very next call. Reach for it when a key leaks, an agent misbehaves, or a connection
-        is finished. It asks you to type the agent's name first,
-        because it cannot be undone.
+        is finished. For an active key, confirmation asks you to type the agent's name.
+        An expired key needs a simple confirmation instead.
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         Revoking cascades: every downstream key in that key's rotation chain dies with it, and any

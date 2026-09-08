@@ -4,7 +4,7 @@
   <section class="py-12 sm:py-16">
     <.docs_layout
       current="integrations-jumpcloud"
-      updated="August 25, 2026"
+      updated="September 7, 2026"
       evidence="Live-tested against a JumpCloud tenant on August 25, 2026."
       toc={[
         {"sso", "Single sign-on"},
@@ -35,16 +35,16 @@
             <a
               href={~p"/app/sso/new"}
               class="font-medium text-brand-400 underline decoration-zinc-700 underline-offset-4 hover:text-brand-300"
-            >Team → Single sign-on → Add provider</a>
+            >Team → Single sign-on → Add connection</a>
             and choose <strong class="text-zinc-200">JumpCloud</strong>. Leave the page open: the
             callback URL on it is what JumpCloud asks for next, and JumpCloud's values come back here
             at the end.
           </p>
           <.docs_screenshot
             src="/images/docs/sso/jumpcloud-emisar-add-provider.webp"
-            title="emisar · Add provider"
+            title="emisar · Add connection"
             caption="Picking the provider here tailors the rest of the form to it."
-            alt="emisar's Add provider form with the Provider type select outlined in green and set to JumpCloud."
+            alt="emisar's Add connection form with the Provider type select outlined in green and set to JumpCloud."
           />
         </.docs_step>
         <.docs_step n={2}>
@@ -178,15 +178,34 @@
           <p class="font-semibold text-zinc-100">Paste the two values it reveals.</p>
           <p class="mt-1.5">
             Activating shows the <strong class="text-zinc-200">Client ID</strong>
-            and <strong class="text-zinc-200">Client Secret</strong>. The issuer is already filled and
-            locked on the connection from step 1. Every JumpCloud organization uses the same
-            issuer. Enter only the client ID and secret. Select <strong class="text-zinc-200">Enabled</strong>, save, and sign in.
+            and <strong class="text-zinc-200">Client Secret</strong>. In emisar, select the
+            <strong class="text-zinc-200">JumpCloud region</strong>
+            your organization uses:
+            United States, Europe, or India. Paste the client ID and secret, then select <strong class="text-zinc-200">Add connection</strong>.
+          </p>
+          <.docs_settings>
+            <:setting label="United States">
+              <.docs_inline_code>https://oauth.id.jumpcloud.com/</.docs_inline_code>
+            </:setting>
+            <:setting label="Europe">
+              <.docs_inline_code>https://oauth.id.eu.jumpcloud.com/</.docs_inline_code>
+            </:setting>
+            <:setting label="India">
+              <.docs_inline_code>https://oauth.id.in.jumpcloud.com/</.docs_inline_code>
+            </:setting>
+          </.docs_settings>
+          <p class="mt-4">
+            Select <strong class="text-zinc-200">Verify sign-in</strong>
+            and complete the
+            identity checks. After verification, select
+            <strong class="text-zinc-200">Enable for members</strong>
+            and confirm.
           </p>
           <.docs_screenshot
             src="/images/docs/sso/jumpcloud-emisar-credentials.webp"
-            title="emisar · Add provider"
-            caption="Nothing to look up: JumpCloud's issuer is fixed, so emisar fills and locks it."
-            alt="emisar's OIDC connection fields with the Issuer URL locked at https://oauth.id.jumpcloud.com/ behind a padlock, and Client ID and Client secret each outlined in green below it."
+            title="emisar · Add connection"
+            caption="Choose your JumpCloud region and paste the client ID and secret."
+            alt="OIDC connection fields with JumpCloud region set to United States, empty Client ID and Client secret fields, and Identifier claim set to sub."
           />
         </.docs_step>
       </ol>
@@ -256,7 +275,7 @@
             Then bind the people you want synced: the app's
             <strong class="text-zinc-200">User Groups</strong>
             tab decides who is in scope. Members appear under
-            <strong class="text-zinc-200">Synced members</strong>
+            <strong class="text-zinc-200">Members</strong>
             on the emisar connection, and their JumpCloud groups become mappable to roles below.
           </p>
         </.docs_step>
@@ -285,7 +304,7 @@
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         Check the first request carefully. It shows the email JumpCloud asserted.
-        <strong class="text-zinc-200">Synced members</strong>
+        <strong class="text-zinc-200">Members</strong>
         under
         <a
           href={~p"/app/sso"}

@@ -4,7 +4,7 @@
   <section class="py-12 sm:py-16">
     <.docs_layout
       current="integrations-google-workspace"
-      updated="August 25, 2026"
+      updated="September 7, 2026"
       evidence="Live-tested against Google Workspace on August 25, 2026."
       toc={[
         {"sso", "Single sign-on"},
@@ -41,16 +41,16 @@
             <a
               href={~p"/app/sso/new"}
               class="font-medium text-brand-400 underline decoration-zinc-700 underline-offset-4 hover:text-brand-300"
-            >Team → Single sign-on → Add provider</a>
+            >Team → Single sign-on → Add connection</a>
             and choose <strong class="text-zinc-200">Google Workspace</strong>. Leave the page open: the
             callback URL on it is what Google asks for next, and Google's values come back here
             at the end.
           </p>
           <.docs_screenshot
             src="/images/docs/sso/google-emisar-add-provider.webp"
-            title="emisar · Add provider"
+            title="emisar · Add connection"
             caption="Picking the provider here tailors the rest of the form to it."
-            alt="emisar's Add provider form with the Provider type select outlined in green and set to Google Workspace."
+            alt="emisar's Add connection form with the Provider type select outlined in green and set to Google Workspace."
           />
         </.docs_step>
         <.docs_step n={2}>
@@ -173,13 +173,18 @@
             <.docs_inline_code>https://accounts.google.com</.docs_inline_code>
             for every Google customer — so it is one less thing to get wrong. Leave the identifier
             claim on <.docs_inline_code>sub</.docs_inline_code>.
+            Select <strong class="text-zinc-200">Add connection</strong>, then
+            <strong class="text-zinc-200">Verify sign-in</strong>
+            and complete the identity checks.
+            After verification, select <strong class="text-zinc-200">Enable for members</strong>
+            and confirm.
           </p>
 
           <.docs_screenshot
             src="/images/docs/sso/google-emisar-connection.webp"
-            title="emisar console · Add provider"
+            title="emisar console · Add connection"
             caption="Picking Google Workspace locks the issuer to https://accounts.google.com — the padlock means there is nothing for you to look up or mistype."
-            alt="emisar's Add provider form with Provider type set to Google Workspace, the in-app setup steps naming the Google Cloud Console path, the redirect URI to register with a copy button, and a locked Issuer URL field showing https://accounts.google.com."
+            alt="The Google Workspace OIDC fields: a locked Issuer URL showing https://accounts.google.com, highlighted Client ID and Client secret, and Identifier claim set to sub."
           />
         </.docs_step>
       </ol>
@@ -200,9 +205,12 @@
       <p class="mt-5 text-base leading-7 text-zinc-400">
         Google Workspace cannot push users to emisar — it provisions only applications in its
         SaaS catalog, and the custom OAuth client created above has no SCIM connector, so
-        emisar hides the sync panel. Members are created at their first sign-in with the
-        connection's default role, or held for administrator approval with Manual
-        provisioning, and nobody is removed automatically.
+        emisar hides the sync panel. With
+        <strong class="text-zinc-200">Add on first sign-in</strong>
+        selected, new members receive the connection's default role and access. With
+        <strong class="text-zinc-200">Require approval</strong>
+        selected, their first sign-in
+        waits for administrator approval. Neither setting removes members automatically.
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         Offboarding is therefore two steps: suspend the Google account to block new sign-ins,

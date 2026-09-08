@@ -4,7 +4,7 @@
   <section class="py-12 sm:py-16">
     <.docs_layout
       current="quickstart"
-      updated="September 3, 2026"
+      updated="September 7, 2026"
       toc={[
         {"create-account", "Create your account"},
         {"install-runner", "Install the runner"},
@@ -376,6 +376,20 @@ Runner is connected and healthy.</.docs_code>
           navigate={~p"/docs/runner-fleet"}
           class="text-brand-400 hover:text-brand-300"
         >Manage the runner fleet</.link>.
+      </p>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        We also recommend running your agents locally inside a sandbox, such as <.link
+          navigate={~p"/docs/connect-coop"}
+          class="text-brand-400 hover:text-brand-300"
+        >co:op</.link>. Agents are most useful when you can leave them working unattended, but
+        built-in permission prompts alone don't isolate them from your machine. An agent with
+        access can leak your secrets, use your SSH keys without asking, or delete files it
+        shouldn't touch.
+      </p>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        A sandbox limits which files, secrets, and tools the agent can access on your machine.
+        It pairs well with emisar, which extends that control to your infrastructure and
+        third-party tools.
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         See it end to end on a real incident: <.link

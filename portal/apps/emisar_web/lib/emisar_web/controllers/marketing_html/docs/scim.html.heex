@@ -4,7 +4,7 @@
   <section class="py-12 sm:py-16">
     <.docs_layout
       current="scim"
-      updated="August 23, 2026"
+      updated="September 7, 2026"
       toc={[
         {"enable", "Enabling directory sync"},
         {"protocol", "SCIM protocol reference"},
@@ -47,9 +47,9 @@
 
       <.docs_screenshot
         src="/images/docs/sso/sso-directory-sync.webp"
-        title="emisar console · Directory sync (SCIM)"
+        title="emisar console · User provisioning & directory sync"
         caption="A configured connection: the SCIM base URL to copy, token rotation, and the three steps for pointing your IdP at it."
-        alt="The Directory sync (SCIM) panel on a configured connection: an enabled badge, Rotate token and Disable buttons, the SCIM base URL with a copy button, and the expanded 'Point your IdP at this connection' guide — enable SCIM provisioning at your provider, set that base URL as the connector's endpoint and paste the bearer token as its API token, and map the SCIM externalId to the same value the OIDC sub claim carries."
+        alt="User provisioning and directory sync: New members, SCIM status and last request, with Rotate token and Disable on the right. Setup instructions are expanded, with the base URL and copy button under step 2."
       />
 
       <ol class="mt-8 space-y-6">
@@ -58,7 +58,9 @@
             From <a
               href={~p"/app/sso"}
               class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
-            >Team → Single sign-on</a>, open the connection and click <span class="text-zinc-300">Enable directory sync</span>.
+            >Team → Single sign-on</a>, open the connection and click
+            <span class="text-zinc-300">Enable</span>
+            under <strong class="text-zinc-200">User provisioning &amp; directory sync</strong>.
           </p>
           <p class="mt-1.5">
             emisar shows you two things to wire into your provider's SCIM connector:
@@ -95,7 +97,7 @@
             header), and enable Create, Update, and Deactivate. Okta and Entra need a
             separate provisioning application — their OIDC login applications cannot
             provision through SCIM — while JumpCloud carries sign-in and provisioning in
-            one. The <strong class="text-zinc-200">“Point your IdP at this connection”</strong>
+            one. The <strong class="text-zinc-200">Setup instructions</strong>
             guide lists the provider-specific settings.
           </p>
         </.docs_step>
@@ -151,7 +153,7 @@
           <span>
             <strong class="text-zinc-200">Provisioning</strong>
             creates the user and membership at the connection's default role before their
-            first login, with runner access combined from Default runner access and mapped
+            first login, with runner access combined from Default access and mapped
             directory groups.
           </span>
         </li>
@@ -196,10 +198,19 @@
 
       <.docs_screenshot
         src="/images/docs/sso/scim-synced-users.webp"
-        title="emisar console · Synced members"
-        caption="Once your IdP is connected, provisioned members appear here with the directory id they came from and the role their groups earned them."
-        alt="The Synced members list on a connection: two members provisioned over SCIM, each with a SCIM badge, the directory externalId they were provisioned under, when they last synced, a locked role chip showing the role their group mapping earned them, and a Suspend action."
+        title="emisar console · Members"
+        caption="Members appear with their sign-in or directory-sync origin, role, and IdP groups. Choose a group to filter the list."
+        alt="The connection's Members list with name and email, last seen, origin and role badges, IdP groups, and access controls. Search and group filters sit above the list."
       />
+
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        The connection's Members list includes identities added through sign-in and directory
+        sync. Last seen records the identity's latest activity, including sign-in; it is not
+        a directory-sync success receipt. Suspending access in emisar creates a manual hold
+        that later directory sync does not remove. Restore access does not restore revoked
+        agent credentials or standing approvals. Directory-deactivated members must first be
+        reactivated in the identity provider.
+      </p>
 
       <.docs_h2 id="protocol">SCIM protocol reference</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
@@ -409,27 +420,41 @@
 
       <.docs_h2 id="role-mapping">Role mapping</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        Role mapping pairs an exact synced directory group with an emisar role
+        In <strong class="text-zinc-200">Groups &amp; access</strong>, use a group's role dropdown to assign an emisar role
         — <strong class="text-zinc-200">viewer</strong>, <strong class="text-zinc-200">operator</strong>, <strong class="text-zinc-200">billing manager</strong>,
         or <strong class="text-zinc-200">admin</strong>. A member in several mapped groups gets the
         <strong class="text-zinc-200">highest</strong>
-        role mapped to any of them. Renaming a group does not break its mapping.
+        role mapped to any of them. If none of their groups has a role mapping, the connection's
+        default role applies. That default is a fallback, not a minimum. Renaming a group does not break its mapping.
         <strong class="text-zinc-200">Owner is never assignable through
         sync</strong>
         — it stays a deliberate human assignment.
       </p>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        Directory sync cannot grant or remove Owner privileges or narrow an Owner's runner
+        and pack access. It can still suspend an Owner, subject to the last-owner safeguard.
+        To hand an Owner's role and access back to the directory, another Owner chooses
+        Use directory role from their role menu on Team. While sync is pending, that member
+        has Viewer privileges and no runner or pack access.
+      </p>
 
       <.docs_screenshot
         src="/images/docs/sso/scim-group-role-mapping.webp"
-        title="emisar console · Role mapping"
-        caption="Each mapping pairs one exact synced directory group with the role its members land at. A synced group you don't map leaves its members at the connection's default role."
-        alt="The Role mapping panel on a connection: two mappings — the Platform Engineers directory group (externalId kc-grp-platform) mapped to Admin, and SRE On-call (kc-grp-sre) mapped to Operator — each with Edit and Delete, plus an Add mapping button."
+        title="emisar console · Groups & access"
+        caption="Each mapping pairs one exact synced directory group with a role. Members with no mapped groups use the connection's default role."
+        alt="Groups and access lists each directory group with its member count, an in-place role dropdown, runner and pack access, and Edit access. Add mapping is above the list."
       />
 
       <.docs_h2 id="runner-access-mapping">Mapping directory groups to runner access</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        Map a synced directory group to All runners, selected runner groups, or individual
-        runners. The mapping applies to current group
+        In <strong class="text-zinc-200">Groups &amp; access</strong>, each row shows the connection defaults plus that group's
+        runner and pack grants. Choose <strong class="text-zinc-200">Edit access</strong>
+        on the group
+        to add access to all runners, selected runner groups, or individual runners and packs.
+        Connection defaults stay selected and locked in the editor; you can keep that access or add more.
+        Choose <strong class="text-zinc-200">Reset to defaults</strong>
+        in the editor to remove only
+        that group's access grant; its role mapping stays unchanged. The grant applies to current group
         members immediately and follows later SCIM membership changes.
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
@@ -477,12 +502,14 @@
             </tr>
             <tr>
               <td class="px-4 py-3 font-semibold text-zinc-100">
-                The connection says Never synced
+                The connection says Waiting for first request
               </td>
               <td class="px-4 py-3">
                 The bearer has not authenticated successfully yet. Run the IdP connector's test,
                 then check that provisioning is enabled and assigned. After the first request,
-                emisar shows <strong class="text-zinc-200">Last sync</strong> with its age.
+                emisar shows <strong class="text-zinc-200">Last request</strong> with its age.
+                This records an authenticated request, not a successful synchronization. Check
+                your identity provider's provisioning logs for operation results.
               </td>
             </tr>
             <tr>
@@ -503,9 +530,8 @@
                 A group mapping has no effect
               </td>
               <td class="px-4 py-3">
-                Confirm the group appears under Synced groups, its SCIM <code>externalId</code>
-                exactly matches the mapping, and the IdP pushed members. A display name is not the
-                mapping key.
+                Confirm the group appears under Groups &amp; access, has the intended role or access grant,
+                and the IdP pushed members. Mappings target the exact synced group resource, not its display name.
               </td>
             </tr>
             <tr>

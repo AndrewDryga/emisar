@@ -110,9 +110,8 @@
       </p>
       <.docs_callout kind={:warn} title="Complete a real SSO sign-in before requiring it">
         <p>
-          Test connection checks discovery and endpoint reachability — not client assignment,
-          the redirect URI, claims, or login policy. Keep an owner session open, sign in
-          through the provider in another browser, and only then turn on Require SSO from <a href={
+          Save the connection, then choose Verify sign-in to complete a real provider sign-in.
+          Keep an owner session open while you check it, and only then turn on Require SSO from <a href={
             ~p"/app/team"
           }>Team → Security</a>.
         </p>
@@ -242,8 +241,8 @@
           <span class="flex-none text-zinc-500">—</span>
           <span>
             Members manage their own sessions from Profile — it lists each active session with
-            device information, and one click signs out one session or every session except the
-            current one. An administrator can suspend a membership, which ends its sessions and
+            device information. They can sign out one session or every session except the
+            current one after confirming. An administrator can suspend a membership, which ends its sessions and
             revokes API keys minted from it.
           </span>
         </li>

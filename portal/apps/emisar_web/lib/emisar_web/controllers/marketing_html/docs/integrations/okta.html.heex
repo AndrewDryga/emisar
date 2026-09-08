@@ -4,7 +4,7 @@
   <section class="py-12 sm:py-16">
     <.docs_layout
       current="integrations-okta"
-      updated="August 25, 2026"
+      updated="September 7, 2026"
       evidence="Live-tested against an Okta Integrator org on August 25, 2026."
       toc={[
         {"sso", "Single sign-on"},
@@ -36,16 +36,16 @@
             <a
               href={~p"/app/sso/new"}
               class="font-medium text-brand-400 underline decoration-zinc-700 underline-offset-4 hover:text-brand-300"
-            >Team → Single sign-on → Add provider</a>
+            >Team → Single sign-on → Add connection</a>
             and choose <strong class="text-zinc-200">Okta</strong>. Leave the page open: the
             callback URL on it is what Okta asks for next, and Okta's values come back here
             at the end.
           </p>
           <.docs_screenshot
             src="/images/docs/sso/okta-emisar-add-provider.webp"
-            title="emisar · Add provider"
+            title="emisar · Add connection"
             caption="Picking the provider here tailors the rest of the form to it."
-            alt="emisar's Add provider form with the Provider type select outlined in green and set to Okta."
+            alt="emisar's Add connection form with the Provider type select outlined in green and set to Okta."
           />
         </.docs_step>
         <.docs_step n={2}>
@@ -81,7 +81,7 @@
               name your administrators will recognize.
             </:setting>
             <:setting label="Sign-in redirect URIs">
-              Copy the callback from the Add provider page. It ends with
+              Copy the callback from the Add connection page. It ends with
               <.docs_inline_code>/sign_in/sso/callback</.docs_inline_code>
               on your emisar host. Keep it as the only entry.
             </:setting>
@@ -129,15 +129,21 @@
           <p class="mt-1.5">
             Back on the connection you opened in step 1, paste the client ID and secret. For the
             issuer use your <strong class="text-zinc-200">org</strong>
-            authorization server — that is your Okta org URL itself
+            authorization server. Copy the org URL from the account menu in the Okta admin console
             (<.docs_inline_code>https://your-org.okta.com</.docs_inline_code>,
-            with no
+            without
+            <.docs_inline_code>-admin</.docs_inline_code>
+            or an
             <.docs_inline_code>/oauth2/…</.docs_inline_code>
-            path). Then tick <strong class="text-zinc-200">Enabled</strong>, save, and sign in.
+            path). Select <strong class="text-zinc-200">Add connection</strong>, then
+            <strong class="text-zinc-200">Verify sign-in</strong>
+            and complete the identity checks.
+            After verification, select <strong class="text-zinc-200">Enable for members</strong>
+            and confirm.
           </p>
           <.docs_screenshot
             src="/images/docs/sso/okta-emisar-credentials.webp"
-            title="emisar · Add provider"
+            title="emisar · Add connection"
             caption="Three values from Okta. The issuer is your org URL, not an authorization-server path."
             alt="emisar's OIDC connection fields with Issuer URL, Client ID and Client secret each outlined in green, and the Issuer URL placeholder showing https://YOUR-ORG.okta.com."
           />
@@ -294,7 +300,7 @@
             tab, use <strong class="text-zinc-200">Assign</strong>
             → <strong class="text-zinc-200">Assign to People</strong>
             (or to a group). Each person you assign appears in emisar under
-            <strong class="text-zinc-200">Synced members</strong>
+            <strong class="text-zinc-200">Members</strong>
             at the connection's default role, and each one you unassign is deprovisioned there.
           </p>
           <.docs_screenshot
@@ -313,7 +319,7 @@
             Complete this step when Okta groups control roles or runner access. Groups travel on their
             own tab — <strong class="text-zinc-200">Push Groups</strong>, beside Assignments, not
             part of the To App settings you just turned on. Push a group here and it appears in
-            emisar under <strong class="text-zinc-200">Synced groups</strong>, ready to map by its
+            emisar under <strong class="text-zinc-200">Groups &amp; access</strong>, ready to map by its
             immutable directory-group identity.
           </p>
           <.docs_screenshot

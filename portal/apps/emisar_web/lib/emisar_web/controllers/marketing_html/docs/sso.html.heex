@@ -4,7 +4,7 @@
   <section class="py-12 sm:py-16">
     <.docs_layout
       current="sso"
-      updated="August 23, 2026"
+      updated="September 7, 2026"
       toc={[
         {"sso-login", "Setting up SSO login"},
         {"signing-in", "How members sign in"},
@@ -44,7 +44,7 @@
           <a
             href={~p"/app/sso/new"}
             class="font-medium text-brand-400 underline decoration-zinc-700 underline-offset-4 hover:text-brand-300"
-          >Team → Single sign-on → Add provider</a>
+          >Team → Single sign-on → Add connection</a>
           and choose your provider type. Leave the page open — it shows the redirect URI your
           provider asks for next.
         </li>
@@ -54,14 +54,27 @@
           — one with a client secret. Paste emisar's redirect URI into it unchanged; it ends in <.docs_inline_code>/sign_in/sso/callback</.docs_inline_code>.
         </li>
         <li>
-          Back in emisar, enter the issuer URL, client ID, and client secret. Press <strong class="text-zinc-200">Test connection</strong>, then tick
-          <strong class="text-zinc-200">Enabled</strong>
-          and save — otherwise sign-ins will not work.
+          Back in emisar, enter the issuer URL, client ID, and client secret. For JumpCloud,
+          select your organization's region instead of entering an issuer URL. Choose the new-member
+          defaults, then select <strong class="text-zinc-200">Add connection</strong>.
+        </li>
+        <li>
+          Select <strong class="text-zinc-200">Verify sign-in</strong>, complete the identity
+          checks, and sign in at your provider. This links your provider identity to your
+          current emisar member and verifies the saved connection.
+        </li>
+        <li>
+          Select <strong class="text-zinc-200">Enable for members</strong> and confirm.
+          Members can now use this connection to sign in.
         </li>
       </ol>
       <p class="mt-5 text-base leading-7 text-zinc-400">
+        <strong class="text-zinc-200">Check issuer</strong> checks the provider's discovery
+        document. It does not test the client credentials or replace sign-in verification.
+      </p>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
         The <a href="#providers" class="text-brand-400 hover:text-brand-300">provider guides</a>
-        below walk each of these screens with screenshots.
+        below cover each provider's setup.
       </p>
 
       <.docs_h3 id="connection-fields">Connection settings</.docs_h3>
@@ -94,8 +107,9 @@
           href="#subject-not-email"
           class="text-brand-400 hover:text-brand-300"
         >emisar
-        recognises a returning member by this value</a>, so it locks permanently at the first
-        sign-in. Your directory must send the same value as SCIM
+        recognises a returning member by this value</a>. The issuer, client ID, and identifier
+        claim become read-only once a member identity exists, including one created through
+        directory sync. The client secret can still be rotated. Your directory must send the same value as SCIM
         <.link navigate={~p"/docs/scim"} class="text-brand-400 hover:text-brand-300"><.docs_inline_code>
           externalId
         </.docs_inline_code></.link>
@@ -106,17 +120,17 @@
         src="/images/docs/sso/sso-connection-fields.webp"
         title="emisar console · Add connection"
         caption="The identifier claim already defaults to the OIDC standard; only Microsoft Entra needs another."
-        alt="The OIDC connection section of emisar's Add connection form: an Issuer URL field placeholdered 'your provider's OIDC issuer URL (the discovery base)' and noted as fetched for discovery over HTTPS, empty Client ID and Client secret fields side by side, and an Identifier claim select set to 'sub — OIDC standard'."
+        alt="The OIDC connection section of Add connection: Issuer URL, Client ID, Client secret, and Identifier claim set to sub."
       />
 
       <.docs_h3 id="provisioning-fields">Who gets in, and what they get</.docs_h3>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        <strong class="text-zinc-200">New-user provisioning</strong>
+        <strong class="text-zinc-200">New members</strong>
         controls a first sign-in when no emisar member exists:
-        <span class="text-zinc-300">Auto-provision</span>
-        creates the member immediately, and <span class="text-zinc-300">Manual</span>
-        holds the first sign-in for administrator approval. Auto-provision is the usual setup
-        when the provider application is assigned only to approved users; use Manual when you
+        <span class="text-zinc-300">Add on first sign-in</span>
+        creates the member immediately, and <span class="text-zinc-300">Require approval</span>
+        holds the first sign-in for administrator approval. Adding on first sign-in is the usual setup
+        when the provider application is assigned only to approved users; require approval when you
         cannot control assignments that tightly.
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
@@ -128,16 +142,17 @@
         unprovisioned account waits for approval either way.
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        <strong class="text-zinc-200">Default role for new users</strong>
+        <strong class="text-zinc-200">Default role</strong>
         is configurable. Provisioning never grants <span class="text-zinc-300">owner</span>
         — that stays a deliberate human grant, so no provider misconfiguration can grant this
-        role. If you configure Role mapping, the mapped role wins and this is only the fallback
-        for someone in no mapped group. See
+        role. In Groups &amp; access, the highest mapped role wins and the default is only the fallback
+        for someone in no mapped group, not a minimum role. With directory sync enabled, changes
+        also apply to existing directory-managed members. See
         <.link navigate={~p"/docs/teams-and-access"} class="text-brand-400 hover:text-brand-300">roles</.link>
         for the list of roles and their permissions.
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        <strong class="text-zinc-200">Default runner access</strong>
+        <strong class="text-zinc-200">Default access</strong>
         controls which hosts a new member can see and use.
         <span class="text-zinc-300">No runners</span>
         is the safe default — the member reads the console and reaches nothing until you
@@ -163,7 +178,7 @@
         src="/images/docs/sso/sso-provisioning-fields.webp"
         title="emisar console · Add connection"
         caption="The state every member provisioned through this connection starts in."
-        alt="The Member provisioning section: a New member provisioning select set to 'Auto-provision new members on first sign-in', a Default role choice of admin, billing manager, operator, or viewer with viewer selected, a Default access choice of no runners (selected), all runners, or selected runners, and an optional Allowed email domain field."
+        alt="The Member access section: New members set to Add on first sign-in, Default role set to Viewer, Default access set to No runners, and an optional Allowed email domain field."
         preview_h="max-h-[32rem]"
       />
 
@@ -181,9 +196,9 @@
 
       <.docs_screenshot
         src="/images/docs/sso/sso-activation-fields.webp"
-        title="emisar console · Add connection"
-        caption="Both boxes start off, so a saved connection is inert until you enable it."
-        alt="The Security and activation section: an unchecked box reading 'Sign-in through this provider satisfies the account's MFA requirement', noted as safe only when the provider enforces MFA itself, and an unchecked 'Enabled (members can sign in through this connection)' box."
+        title="emisar console · Sign-in security"
+        caption="Count provider sign-ins toward the account's MFA requirement only when the provider enforces MFA."
+        alt="Sign-in security with the setting 'Sign-in through this provider satisfies the account's MFA requirement' unchecked and guidance to enable it only when the provider enforces MFA."
       />
 
       <.docs_h2 id="signing-in">How members sign in</.docs_h2>
@@ -231,7 +246,7 @@
       <.docs_h3 id="require-sso">Require SSO for the account</.docs_h3>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         First complete a real sign-in through the connection in another browser.
-        <strong class="text-zinc-200">Test connection</strong>
+        <strong class="text-zinc-200">Check issuer</strong>
         checks discovery and reachability only — not user assignment, callback acceptance, or
         claims — so it can pass on a connection nobody can actually sign in through. Keep an
         owner session open while you test. Then open
@@ -467,7 +482,7 @@
           <tbody class="divide-y divide-zinc-900 text-zinc-300">
             <tr>
               <td class="px-4 py-3 font-semibold text-zinc-100">
-                Test connection cannot load discovery
+                Check issuer cannot load discovery
               </td>
               <td class="px-4 py-3">
                 Use the issuer, not an authorization or token URL. Confirm it serves

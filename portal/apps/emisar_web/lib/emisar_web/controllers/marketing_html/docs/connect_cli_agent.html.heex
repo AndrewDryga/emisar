@@ -4,7 +4,7 @@
   <section class="py-12 sm:py-16">
     <.docs_layout
       current="connect-cli-agent"
-      updated="September 3, 2026"
+      updated="September 6, 2026"
       toc={[
         {"stdio-bridge", "Set up a stdio client"},
         {"connect-later", "Connect a client you install later"},
@@ -31,7 +31,17 @@
         >Connect a cloud LLM</.link>.
       </p>
 
+      <p class="mt-4 text-base leading-7 text-zinc-400">
+        Want to limit what your agent can access on your computer? We recommend co:op.
+        Follow
+        <.link navigate={~p"/docs/connect-coop"} class="text-brand-400 hover:text-brand-300">Connect co:op</.link>
+        for installation and its shared container configuration.
+      </p>
+
       <.docs_prerequisites>
+        <:item>
+          Your AI app installed on the computer where you will run the bridge.
+        </:item>
         <:item>
           An account with at least one runner online. Otherwise the agent signs in fine and finds
           an empty catalog with nothing to call. New here? Run the
@@ -191,17 +201,81 @@ Restart any client you just connected so it picks up the new server.</.docs_code
 
       <section>
         <.docs_h2 id="manual-setup">Set up a client by hand</.docs_h2>
-        <p class="mt-5 text-base leading-7 text-zinc-400">
-          When the installer does not support your client, or you would rather edit the config
-          yourself, open
-          <a
-            href={~p"/app/agents/connect"}
-            class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
-          >Connect an agent</a>
-          in the console and pick the client. It shows the exact config file or command for that
-          client with your key and the endpoint already filled in — the key is shown once, so
-          copy the snippet from there rather than from a docs page that cannot know it.
+        <ol class="mt-4 list-decimal space-y-4 pl-6 text-base text-zinc-300">
+          <li>
+            Open <a
+              href={~p"/app/agents/connect"}
+              class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
+            >Connect an agent</a>, select your app, and expand <strong>Set up manually</strong>.
+          </li>
+          <li>
+            Download the bridge for your operating system and processor. Extract the archive,
+            keep the executable in a permanent folder, and enter its full path. If you already
+            installed the bridge, use its existing path. Run the version command shown below
+            the field; it should print the bridge's version.
+          </li>
+          <li>
+            Follow the app's configuration instructions. Your key and endpoint are already filled in.
+            For a configuration file, merge the snippet with existing settings; do not replace other
+            servers. Create the file and any missing folders if needed, then save it. For a command,
+            run it in the terminal shown. VS Code asks for the API key separately when its server starts.
+          </li>
+          <li>
+            Follow the app's <strong>Check the connection</strong> steps to start the server and
+            approve any connection prompts. Then send the example prompt to your app.
+            The console shows <strong>Agent connected</strong> after the app makes its first call.
+          </li>
+        </ol>
+        <p class="mt-4 text-base text-zinc-400">
+          Save your configuration before leaving the setup page. The key is shown only during
+          setup; keep the configuration private.
         </p>
+        <.docs_h3 id="client-prerequisites">Client-specific requirements</.docs_h3>
+        <ul class="mt-4 list-disc space-y-3 pl-6 text-base text-zinc-400">
+          <li>
+            <strong class="text-zinc-200">Claude Desktop:</strong>
+            use <strong>Settings → Developer → Edit Config</strong>
+            to open the right file on your
+            platform. Fully quit and reopen the app after saving. These settings connect Desktop
+            Chat, not the Code tab.
+          </li>
+          <li>
+            <strong class="text-zinc-200">VS Code:</strong>
+            this setup uses the <strong>Local</strong>
+            chat target and <strong>Agent</strong>
+            role.
+            The <strong>Copilot</strong>
+            session target cannot use its interactive API-key prompt;
+            configure it through the <strong>Copilot CLI</strong>
+            option on Connect an agent instead.
+          </li>
+          <li>
+            <strong class="text-zinc-200">Gemini CLI:</strong>
+            MCP servers do not connect in untrusted folders. Review the folder-trust prompt before
+            trusting the folder, then run <code>/mcp</code>
+            to check emisar's connection.
+          </li>
+          <li>
+            <strong class="text-zinc-200">Pi:</strong>
+            install Pi first, then add the third-party
+            <.link
+              href="https://github.com/nicobailon/pi-mcp-adapter#install"
+              class="text-brand-400 hover:text-brand-300"
+            >pi-mcp-adapter</.link>
+            with <code>pi install npm:pi-mcp-adapter</code>.
+            After saving the configuration, restart Pi and run <code>/mcp reconnect emisar</code>.
+            Follow
+            <.link
+              href="https://github.com/badlogic/pi-mono/blob/main/packages/coding-agent/README.md"
+              class="text-brand-400 hover:text-brand-300"
+            >Pi's installation guide</.link>
+            for its Node.js and platform requirements.
+          </li>
+          <li>
+            <strong class="text-zinc-200">Hermes and Goose on Windows:</strong>
+            use manual setup and the Windows configuration path shown in the console.
+          </li>
+        </ul>
       </section>
 
       <section>
@@ -364,7 +438,7 @@ Restart any client you just connected so it picks up the new server.</.docs_code
         <li class="flex items-start gap-2.5">
           <span class="flex-none text-zinc-500">—</span>
           <span>
-            <strong class="text-zinc-200">Contact support</strong>
+            On Team or Enterprise, <strong class="text-zinc-200">contact support</strong>
             when the same tool returns a transport error on every attempt. Also contact support when a
             recorded operation ID is missing under the credential that created it.
           </span>

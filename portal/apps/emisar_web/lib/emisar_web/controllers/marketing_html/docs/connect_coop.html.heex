@@ -1,0 +1,308 @@
+<div class="bg-zinc-950 text-zinc-100" phx-no-curly-interpolation>
+  <.marketing_nav current_user={@current_user} current={:docs} />
+
+  <section class="py-12 sm:py-16">
+    <.docs_layout
+      current="connect-coop"
+      updated="September 7, 2026"
+      toc={[
+        {"start", "Start the connection"},
+        {"install", "Install co:op"},
+        {"bridge", "Prepare the container"},
+        {"configure", "Configure MCP"},
+        {"verify", "Verify the connection"},
+        {"troubleshooting", "Troubleshooting"}
+      ]}
+    >
+      <.docs_header current="connect-coop">
+        <:dek>
+          co:op is a free, open-source tool for running AI agents locally in a sandbox.
+          Pair it with emisar so your agent can work securely on your machine and with your infrastructure.
+        </:dek>
+      </.docs_header>
+
+      <p class="mt-4 text-base leading-7 text-zinc-400">
+        Without a sandbox, an agent can access files, secrets, and tools it doesn't need for
+        its task. co:op gives it a separate workspace where you control what it can access.
+        emisar extends that control to your infrastructure and third-party tools.
+      </p>
+
+      <.docs_prerequisites>
+        <:item>
+          A Linux or macOS computer with Docker running. This walkthrough uses a Docker
+          image and named volume for the emisar bridge.
+          The installer needs curl, tar, and sha256sum or shasum.
+        </:item>
+        <:item>An account with the coding-agent provider you want to use through co:op.</:item>
+        <:item>
+          An emisar account with permission to connect an agent and at least one runner online.
+          The
+          <.link navigate={~p"/docs/quickstart"} class="text-brand-400 hover:text-brand-300">quickstart</.link>
+          sets up a runner and its first action.
+        </:item>
+      </.docs_prerequisites>
+
+      <.docs_h2 id="start">1. Start the connection</.docs_h2>
+      <p class="mt-4 text-base leading-7 text-zinc-400">
+        Open
+        <a
+          href={~p"/app/agents/connect"}
+          class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
+        >Connect an agent</a>
+        and choose <strong class="text-zinc-200">co:op</strong>.
+        Your key is filled into the configuration automatically. Keep the page open while
+        you prepare the container.
+      </p>
+
+      <.docs_h2 id="install">2. Install co:op</.docs_h2>
+      <p class="mt-4 text-base leading-7 text-zinc-400">
+        Run the installer in your host terminal. It downloads co:op into <.docs_inline_code>~/.local/bin</.docs_inline_code>, builds the container image,
+        and runs
+        <.docs_inline_code>coop doctor</.docs_inline_code>
+        when a runtime is available.
+        Follow
+        <.link
+          href="https://github.com/AndrewDryga/coop#install"
+          class="text-brand-400 hover:text-brand-300"
+        >co:op's installation guide</.link>
+        for download verification and runtime setup.
+      </p>
+      <.docs_code
+        phx-no-format
+        label="shell"
+        copy_text="curl -fsSL https://raw.githubusercontent.com/AndrewDryga/coop/main/install.sh | sh"
+      ><span class="text-zinc-500">$</span> curl -fsSL https://raw.githubusercontent.com/AndrewDryga/coop/main/install.sh | sh</.docs_code>
+      <p class="mt-4 text-base leading-7 text-zinc-400">
+        Add
+        <.docs_inline_code>~/.local/bin</.docs_inline_code>
+        to your PATH if the installer
+        asks. If it skipped the image build, run
+        <.docs_inline_code>coop build</.docs_inline_code>
+        followed by <.docs_inline_code>coop doctor</.docs_inline_code>.
+      </p>
+      <p class="mt-4 text-base leading-7 text-zinc-400">
+        In the repository where you want to work, run
+        <.docs_inline_code>coop init</.docs_inline_code>
+        to create the project instructions, task queue, and hooks. Then run
+        <.docs_inline_code>coop login codex</.docs_inline_code>
+        and complete its sign-in prompts.
+        Replace
+        <.docs_inline_code>codex</.docs_inline_code>
+        with <.docs_inline_code>claude</.docs_inline_code>, <.docs_inline_code>gemini</.docs_inline_code>,
+        or
+        <.docs_inline_code>grok</.docs_inline_code>
+        for another provider.
+      </p>
+
+      <.docs_h2 id="bridge">3. Prepare the container</.docs_h2>
+      <.docs_callout kind={:note} title="Keep production access behind emisar">
+        <p>
+          Keep production credentials, SSH-agent sockets, and the host's container socket out of
+          the sandbox. Hide project-specific secret files with <.docs_inline_code>.coopignore</.docs_inline_code>;
+          <.docs_inline_code>.gitignore</.docs_inline_code>
+          does not hide them from the agent.
+        </p>
+      </.docs_callout>
+      <p class="mt-4 text-base leading-7 text-zinc-400">
+        The emisar bridge runs inside co:op's container and gives Codex, Claude, Gemini, and Grok
+        the same MCP configuration. Build it into your image and mount a volume to retain
+        rotated credentials when co:op replaces the container.
+        Installing the bridge on your host does not install it in the image.
+      </p>
+      <.docs_h3 id="bridge-image">Build the bridge into your image</.docs_h3>
+      <p class="mt-3 text-base leading-7 text-zinc-400">
+        For a project without a custom image, create
+        <.docs_inline_code>.agent/Dockerfile</.docs_inline_code>
+        with this content. If you already have one, add the installation and directory-creation
+        steps to it, keeping your existing toolchain and final user.
+      </p>
+      <.docs_code phx-no-format label=".agent/Dockerfile">ARG COOP_BASE_IMAGE=coop-box
+FROM ${COOP_BASE_IMAGE}
+
+USER root
+RUN install -d -m 755 /etc/apt/keyrings \
+ &amp;&amp; curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
+      -o /etc/apt/keyrings/githubcli-archive-keyring.gpg \
+ &amp;&amp; chmod go+r /etc/apt/keyrings/githubcli-archive-keyring.gpg \
+ &amp;&amp; printf '%s\n' "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" \
+      &gt; /etc/apt/sources.list.d/github-cli.list \
+ &amp;&amp; apt-get update \
+ &amp;&amp; apt-get install -y --no-install-recommends gh
+RUN curl -fsSL https://emisar.dev/install-mcp.sh -o /tmp/install-mcp.sh \
+ &amp;&amp; bash /tmp/install-mcp.sh --yes --install-dir /usr/local/bin \
+ &amp;&amp; install -d -m 700 -o node -g node /config
+USER node</.docs_code>
+      <p class="mt-4 text-base leading-7 text-zinc-400">
+        The installer verifies the release and
+        <.docs_inline_code>--yes</.docs_inline_code>
+        skips interactive sign-in during the image build. This Dockerfile installs GitHub CLI
+        from its
+        <.link
+          href="https://github.com/cli/cli/blob/trunk/docs/install_linux.md#debian"
+          class="text-brand-400 hover:text-brand-300"
+        >official package repository</.link>
+        so the installer can verify the release attestation. For a different base image, follow the
+        <.link
+          navigate={~p"/docs/connect-cli-agent#stdio-bridge"}
+          class="text-brand-400 hover:text-brand-300"
+        >bridge prerequisites</.link>
+        and give your container user ownership of <.docs_inline_code>/config</.docs_inline_code>.
+      </p>
+      <.docs_h3 id="bridge-storage">Keep rotated credentials</.docs_h3>
+      <p class="mt-3 text-base leading-7 text-zinc-400">
+        In your host's <.docs_inline_code>~/.config/coop/coop.conf</.docs_inline_code>,
+        select Docker and add the volume mount. If
+        <.docs_inline_code>COOP_RUN_ARGS</.docs_inline_code>
+        already exists, append the mount to its existing arguments. This setting applies to your
+        co:op sessions on this machine.
+      </p>
+      <.docs_code phx-no-format label="coop.conf">COOP_RUNTIME=docker
+COOP_RUN_ARGS=-v coop-emisar-config:/config</.docs_code>
+      <p class="mt-4 text-base leading-7 text-zinc-400">
+        Run
+        <.docs_inline_code>coop build</.docs_inline_code>
+        from your repository to build the
+        extended image. Retain the
+        <.docs_inline_code>coop-emisar-config</.docs_inline_code>
+        volume: after rotation, the replacement key is stored there. If that volume is lost,
+        create a fresh key in emisar and update the configuration before reconnecting.
+        Run
+        <.docs_inline_code>coop doctor</.docs_inline_code>
+        again after changing the image or mounts
+        to check the sandbox's isolation.
+      </p>
+      <.docs_h2 id="configure">4. Copy your co:op configuration</.docs_h2>
+      <p class="mt-4 text-base leading-7 text-zinc-400">
+        Back on <a
+          href={~p"/app/agents/connect"}
+          class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
+        >Connect an agent</a>,
+        copy the configuration under <strong class="text-zinc-200">Copy the MCP configuration</strong>.
+        Your key is already filled in and is shown only during setup.
+      </p>
+      <p class="mt-4 text-base leading-7 text-zinc-400">
+        co:op reads
+        <.docs_inline_code>~/.config/coop/agents/mcp.json</.docs_inline_code>
+        on your host and supplies those servers to the agent inside its container.
+        Merge the emisar entry into that file, preserving any other servers.
+        Create the file and parent directories if they are missing, and make the file readable
+        and writable only by your user. Keep it outside your repository;
+        <.docs_inline_code>COOP_MCP_FILE</.docs_inline_code>
+        can select another private file. The console generates this shape with literal values:
+      </p>
+      <.docs_code phx-no-format label="mcp.json">{
+  "mcpServers": {
+    "emisar": {
+      "command": "/usr/local/bin/emisar-mcp",
+      "env": {
+        "EMISAR_URL": "https://emisar.dev",
+        "EMISAR_API_KEY": "emk-replace-with-your-key",
+        "EMISAR_CLIENT": "coop",
+        "XDG_CONFIG_HOME": "/config"
+      }
+    }
+  }
+}</.docs_code>
+      <p class="mt-4 text-base leading-7 text-zinc-400">
+        For signed dispatch, add
+        <.docs_inline_code>EMISAR_SIGNING_KEY</.docs_inline_code>
+        and
+        <.docs_inline_code>EMISAR_SIGNING_CERT</.docs_inline_code>
+        to that
+        <.docs_inline_code>env</.docs_inline_code>
+        object using the values from <.link
+          navigate={~p"/docs/signed-dispatch"}
+          class="text-brand-400 hover:text-brand-300"
+        >Set up signed dispatch</.link>.
+        Keep credentials in this private host configuration, outside your Dockerfile and repository.
+      </p>
+
+      <.docs_h2 id="verify">5. Verify the connection</.docs_h2>
+      <ol class="mt-4 list-decimal space-y-3 pl-6 text-base leading-7 text-zinc-400">
+        <li>
+          From your repository, start a fresh session with <.docs_inline_code>coop codex</.docs_inline_code>, <.docs_inline_code>coop claude</.docs_inline_code>, <.docs_inline_code>coop gemini</.docs_inline_code>, or <.docs_inline_code>coop grok</.docs_inline_code>.
+          Check that emisar appears in the agent's MCP tools.
+        </li>
+        <li>
+          Ask the agent: <strong class="font-medium text-zinc-200">Use emisar to find a runner
+          with linux.uptime, run that action, and show me the output.</strong>
+          Allow the tool call if your agent asks, and complete any approval required by your policy.
+        </li>
+        <li>
+          Confirm the returned uptime, then open
+          <a
+            href={~p"/app/audit"}
+            class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
+          >Audit</a>
+          and check the action, runner, and operator. Listing MCP tools checks discovery;
+          the action output and audit event confirm execution.
+        </li>
+      </ol>
+
+      <.docs_h3 id="tool-permissions">Skip local tool-call prompts</.docs_h3>
+      <p class="mt-3 text-base leading-7 text-zinc-400">
+        co:op's default commands for Codex, Claude, Gemini, and Grok already skip local
+        permission prompts for all tools inside the sandbox, including emisar.
+        This does not change your <.link
+          navigate={~p"/docs/policies-and-approvals"}
+          class="text-brand-400 hover:text-brand-300"
+        >emisar policies and approvals</.link>.
+      </p>
+      <p class="mt-4 text-base leading-7 text-zinc-400">
+        If you've customized the launch command and want to return to co:op's default behavior:
+      </p>
+      <ol class="mt-4 list-decimal space-y-3 pl-6 text-base leading-7 text-zinc-400">
+        <li>
+          Check your shell environment and co:op configuration file for your agent's command setting: <.docs_inline_code>COOP_CODEX_CMD</.docs_inline_code>, <.docs_inline_code>COOP_CLAUDE_CMD</.docs_inline_code>, <.docs_inline_code>COOP_GEMINI_CMD</.docs_inline_code>, or <.docs_inline_code>COOP_GROK_CMD</.docs_inline_code>.
+          The file is
+          <.docs_inline_code>~/.config/coop/coop.conf</.docs_inline_code>
+          by default,
+          or
+          <.docs_inline_code>$XDG_CONFIG_HOME/coop/coop.conf</.docs_inline_code>
+          when set.
+          <.docs_inline_code>COOP_CONF</.docs_inline_code>
+          can select another file.
+          An environment variable takes precedence over the file.
+        </li>
+        <li>
+          Remove only that command override from the file and unset it in your shell, if present.
+          This restores the whole default command, not just its permission setting.
+        </li>
+        <li>
+          Start a new session with <.docs_inline_code>coop codex</.docs_inline_code>, replacing
+          <.docs_inline_code>codex</.docs_inline_code>
+          with your agent.
+        </li>
+      </ol>
+
+      <.docs_h2 id="troubleshooting">Troubleshooting</.docs_h2>
+      <ul class="mt-4 list-disc space-y-3 pl-6 text-base leading-7 text-zinc-400">
+        <li>
+          <strong class="text-zinc-200">No container runtime:</strong>
+          install and start Docker, then run
+          <.docs_inline_code>coop build</.docs_inline_code>
+          and <.docs_inline_code>coop doctor</.docs_inline_code>.
+        </li>
+        <li>
+          <strong class="text-zinc-200">401 after connecting:</strong>
+          check the key and the credential volume mount. Replace a revoked or expired key in
+          the private configuration, then start a new co:op session.
+        </li>
+        <li>
+          <strong class="text-zinc-200">Bridge executable not found:</strong>
+          rebuild the project's co:op image and start a new container. A host executable path is
+          not a container executable path.
+        </li>
+        <li>
+          <strong class="text-zinc-200">Tools are listed but there are no actions:</strong>
+          check that a runner is online and that your access and pack trust allow the action.
+          Follow
+          <.link navigate={~p"/docs/troubleshooting"} class="text-brand-400 hover:text-brand-300">Troubleshooting runs</.link>
+          for policy and approval failures.
+        </li>
+      </ul>
+    </.docs_layout>
+  </section>
+
+  <.marketing_footer />
+</div>

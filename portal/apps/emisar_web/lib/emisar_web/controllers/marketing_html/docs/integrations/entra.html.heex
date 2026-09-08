@@ -4,7 +4,7 @@
   <section class="py-12 sm:py-16">
     <.docs_layout
       current="integrations-entra"
-      updated="August 25, 2026"
+      updated="September 7, 2026"
       evidence="Live-tested against a Microsoft Entra tenant on August 25, 2026."
       toc={[
         {"sso", "Single sign-on"},
@@ -29,15 +29,6 @@
       <p class="mt-5 text-base leading-7 text-zinc-400">
         Connecting an identity provider is a paid feature. <.plan_note tier={:team} />
       </p>
-      <.docs_callout kind={:note} title="Provision the person before testing sign-in.">
-        <p>
-          Entra's v2 ID token does not include <.docs_inline_code>email_verified</.docs_inline_code>.
-          emisar accepts that omission only when the token's
-          <.docs_inline_code>oid</.docs_inline_code>
-          matches an active member provisioned by this Entra connection. Complete directory sync
-          below before testing the first sign-in.
-        </p>
-      </.docs_callout>
       <ol class="mt-8 space-y-10">
         <.docs_step n={1}>
           <.docs_step_venue>emisar</.docs_step_venue>
@@ -47,16 +38,16 @@
             <a
               href={~p"/app/sso/new"}
               class="font-medium text-brand-400 underline decoration-zinc-700 underline-offset-4 hover:text-brand-300"
-            >Team → Single sign-on → Add provider</a>
+            >Team → Single sign-on → Add connection</a>
             and choose <strong class="text-zinc-200">Microsoft Entra ID</strong>. Leave the page open: the
             callback URL on it is what Entra asks for next, and Entra's values come back here
             at the end.
           </p>
           <.docs_screenshot
             src="/images/docs/sso/entra-emisar-add-provider.webp"
-            title="emisar · Add provider"
+            title="emisar · Add connection"
             caption="Picking the provider here tailors the rest of the form to it."
-            alt="emisar's Add provider form with the Provider type select outlined in green and set to Microsoft Entra ID."
+            alt="emisar's Add connection form with the Provider type select outlined in green and set to Microsoft Entra."
           />
         </.docs_step>
         <.docs_step n={2}>
@@ -136,12 +127,17 @@
             <.docs_inline_code>sub</.docs_inline_code>
             to each application. The
             <.docs_inline_code>oid</.docs_inline_code>
-            claim also matches the value directory sync sends. Save the connection. After
-            directory sync below has provisioned the same person, select <strong class="text-zinc-200">Enabled</strong>, save again, and sign in.
+            claim also matches the value directory sync sends.
+          </p>
+          <p class="mt-4">
+            Select <strong class="text-zinc-200">Add connection</strong>, then <strong class="text-zinc-200">Verify sign-in</strong>. Complete the identity checks
+            and sign in with your Entra user. This links your Entra identity to your current
+            emisar member; directory sync is not required for this verification.
+            Select <strong class="text-zinc-200">Enable for members</strong> and confirm.
           </p>
           <.docs_screenshot
             src="/images/docs/sso/entra-emisar-credentials.webp"
-            title="emisar · Add provider"
+            title="emisar · Add connection"
             caption="The issuer carries your tenant ID and ends in /v2.0. The identifier claim is already oid."
             alt="emisar's OIDC connection fields with Issuer URL, Client ID and Client secret each outlined in green, the Issuer URL placeholder showing https://login.microsoftonline.com/YOUR-TENANT-ID/v2.0, and the Identifier claim reading oid — Microsoft Entra."
           />
@@ -156,6 +152,20 @@
         <.docs_inline_code>oid</.docs_inline_code>
         claim to sign-in. <.plan_note tier={:enterprise} />
       </p>
+      <.docs_callout kind={:note} title="Provision members before their first sign-in.">
+        <p>
+          With directory sync enabled, provision members before they sign in. When Entra's
+          ID token omits <.docs_inline_code>email_verified</.docs_inline_code>, emisar matches
+          its
+          <.docs_inline_code>oid</.docs_inline_code>
+          to an active member provisioned by
+          this Entra connection, not by email. Map SCIM
+          <.docs_inline_code>externalId</.docs_inline_code>
+          to Entra's
+          <.docs_inline_code>objectId</.docs_inline_code>
+          so both flows use the same identifier.
+        </p>
+      </.docs_callout>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         You need the connection's <strong class="text-zinc-200">SCIM base URL</strong>
         and <strong class="text-zinc-200">bearer token</strong>
@@ -243,8 +253,8 @@
             This value can be missing, duplicated, or changed. It also differs from the identifier
             used by the sign-in connection. If SSO uses
             <.docs_inline_code>oid</.docs_inline_code>
-            while SCIM uses <.docs_inline_code>mailNickname</.docs_inline_code>, one person
-            becomes two identities. The directory provisions one, and sign-in creates another.
+            while SCIM uses <.docs_inline_code>mailNickname</.docs_inline_code>, sign-in cannot
+            match the synced member and waits for administrator approval.
             <.docs_inline_code>objectId</.docs_inline_code>
             is the same
             immutable value as <.docs_inline_code>oid</.docs_inline_code>, so
@@ -262,9 +272,8 @@
             and turn <strong class="text-zinc-200">Provisioning Status</strong>
             on. Scope is separate from assignment and defaults to everyone. Change it, or Entra
             sends the entire directory regardless of assignment. Entra syncs roughly every 40
-            minutes. New members appear under
-            <strong class="text-zinc-200">Synced members</strong>
-            after the next cycle, not immediately. Their Entra groups then appear under <strong class="text-zinc-200">Synced groups</strong>.
+            minutes. New members appear under <strong class="text-zinc-200">Members</strong>
+            after the next cycle, not immediately. Their Entra groups then appear under <strong class="text-zinc-200">Groups &amp; access</strong>.
           </p>
           <.docs_screenshot
             src="/images/docs/sso/entra-assign-users.webp"

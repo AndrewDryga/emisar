@@ -316,7 +316,7 @@ defmodule EmisarWeb.MarketingStructuralTest do
            {"/app/runners/keys/new", "Runners → Enrollment keys → New key"},
            {"/app/runners", "Runners"}
          ]},
-        {"/docs/credentials", [{"/app/agents", "Agents"}, {"/app/audit/export", "Audit export"}]},
+        {"/docs/credentials", [{"/app/agents", "Agents"}, {"/app/audit/export", "SIEM export"}]},
         {"/docs/runner-credentials",
          [
            {"/app/runners/keys", "Runners → Enrollment keys"},
@@ -341,8 +341,7 @@ defmodule EmisarWeb.MarketingStructuralTest do
          ]},
         {"/docs/policies-and-approvals",
          [{"/app/policies", "Policies"}, {"/app/approvals", "Approvals"}]},
-        {"/docs/audit-and-siem",
-         [{"/app/audit", "Audit"}, {"/app/audit/export", "Audit export"}]},
+        {"/docs/audit-and-siem", [{"/app/audit", "Audit"}, {"/app/audit/export", "SIEM export"}]},
         {"/docs/runbooks",
          [
            {"/app/runbooks", "Runbooks"},

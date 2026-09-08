@@ -162,8 +162,8 @@
         src="/images/screenshots/loop/approval-pending.webp"
         preview_h="max-h-[32rem]"
         title="emisar console · Approval"
-        caption="The approver sees the action, risk, runner, exact command, and reason — one click approves or denies, optionally with a reuse window."
-        alt="A pending approval for caddy.reload_config on edge-fra-01 requested by Maya Chen via Claude Code: the high risk tier, the exact command the runner will execute, the reason and the policy that held it, an expiry countdown, a reuse-window selector, and Approve and send / Deny buttons."
+        caption="The approver sees the action, risk, runner, exact command, and reason, then approves or denies, optionally with a reuse window."
+        alt="A pending approval for caddy.reload_config on edge-fra-01 requested by Maya Chen via Claude Code: the high risk tier, the exact command the runner will execute, the reason and the policy that held it, an expiry countdown, a reuse option, and Approve / Deny buttons."
       />
       <ul class="mt-4 space-y-3 text-base leading-7 text-zinc-400">
         <li class="flex items-start gap-2.5">
@@ -177,7 +177,7 @@
         <li class="flex items-start gap-2.5">
           <span class="flex-none text-zinc-500">—</span>
           <span>
-            If the required reviewers are unavailable, an owner or admin can use <strong class="text-zinc-200">Break-glass approval</strong>. They must give a
+            If the required reviewers are unavailable, an owner or admin can use <strong class="text-zinc-200">Approve with override</strong>. They must give a
             reason; it is recorded with the decision. The exception waives the missing reviews and,
             when necessary, the self-approval rule; it creates no standing grant and
             gets its own audit record. Scope, expiry, cancellation, pack trust, dispatch
@@ -212,11 +212,12 @@
       <p class="mt-5 text-base leading-7 text-zinc-400">
         Approving the same
         <.docs_inline_code>nomad job revert</.docs_inline_code>
-        for each of 20 allocations helps nobody. When you approve, choose a duration —
-        <strong class="text-zinc-200">once</strong>
-        for this run only, or a standing grant for
-        <strong class="text-zinc-200">1 hour, 24 hours, 30 days, or 90 days</strong>
-        — and matching future calls skip the queue:
+        for each of 20 allocations helps nobody. Approval applies to
+        <strong class="text-zinc-200">This run only</strong>
+        by default. When standing grants are enabled, choose
+        <strong class="text-zinc-200">Allow the agent to reuse this approval</strong>
+        and a duration allowed by your account
+        so matching future calls skip the queue:
       </p>
       <ul class="mt-4 space-y-3 text-base leading-7 text-zinc-400">
         <li class="flex items-start gap-2.5">
@@ -236,7 +237,7 @@
               href={~p"/app/approvals"}
               class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
             >Approvals</a>
-            where one click revokes it early. Every use is still a fully audited run.
+            where you can choose Revoke and confirm to end it early. Every use is still a fully audited run.
           </span>
         </li>
       </ul>

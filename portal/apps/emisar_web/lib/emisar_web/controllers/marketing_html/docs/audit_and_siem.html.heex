@@ -59,9 +59,9 @@
           class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
         >Audit</a>
         filters by event type or actor kind, and the <strong>Export CSV</strong>
-        button downloads exactly the view you filtered to. Every row expands to the full
-        payload, and references resolve to live labels — a runner name, a user email — so you
-        never cross-reference UUIDs by hand. A run dispatched by an LLM records the client, the
+        button downloads exactly the view you filtered to. Open a row for the full
+        event details and payload. References show current or recorded names when available;
+        identifiers remain in the details and exports. A run dispatched by an LLM records the client, the
         key, the session, and the required <.docs_inline_code>reason</.docs_inline_code>,
         so one filter answers what the agent did last night and why.
       </p>
@@ -81,10 +81,12 @@
 
       <.docs_h2 id="token">1. Mint an export token</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        Mint a read-only audit-export token from <a
+        Mint a read-only audit-export token from
+        <a
           href={~p"/app/audit/export"}
           class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
-        >Audit export</a>. It is a separate credential kind from an agent key: it can only read
+        >SIEM export</a>
+        with Create export token. It is a separate credential kind from an agent key: it can only read
         events, and it cannot list runners or run an action. <.plan_note tier={:team} />
       </p>
 

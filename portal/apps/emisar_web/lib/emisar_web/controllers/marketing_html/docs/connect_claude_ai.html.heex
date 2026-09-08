@@ -4,7 +4,7 @@
   <section class="py-12 sm:py-16">
     <.docs_layout
       current="connect-claude-ai"
-      updated="August 21, 2026"
+      updated="September 6, 2026"
       toc={[
         {"connect", "Add the connector"},
         {"verify", "Verify the connection"},
@@ -26,13 +26,24 @@
       <.docs_cloud_connector_prerequisites />
 
       <.docs_h2 id="connect">Add the connector</.docs_h2>
+      <p class="mt-4 text-base text-zinc-400">
+        On Claude Team or Enterprise, an organization owner must first add emisar under
+        <strong>Organization settings → Connectors → Add → Custom → Web</strong>
+        using the values
+        below. Members then open <strong>Customize → Connectors</strong>, select <strong>Connect</strong>, and sign in to emisar.
+      </p>
       <ol class="mt-4 list-decimal space-y-3 pl-6 text-base text-zinc-300">
         <li>
-          Open <strong>Settings → Connectors</strong>
-          (on Pro/Max it is <strong>Customize → Connectors</strong>).
+          Open
+          <a
+            href={~p"/app/agents/connect"}
+            class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
+          >Connect an agent</a>
+          in emisar and select <strong>Claude.ai</strong>.
         </li>
         <li>
-          Click <strong>+</strong> → <strong>Add custom connector</strong>.
+          In Claude, open <strong>Customize → Connectors</strong>
+          and choose <strong>Add custom connector</strong>.
         </li>
         <li>
           Fill in the <strong>Connector name</strong>
@@ -45,35 +56,26 @@
         <li>
           Leave <strong>Advanced settings</strong>
           (OAuth Client ID / Client Secret) <strong>empty</strong>
-          —
-          emisar registers your client for you via Dynamic Client
-          Registration. Click <strong>Add</strong>.
+          — you do not need to create OAuth credentials. Click <strong>Add</strong>, then <strong>Connect</strong>.
         </li>
         <li>
           Claude opens an emisar tab. Sign in, review what the
-          connector is asking for, and click <strong>Authorize</strong>. The connector flips on.
+          connector is asking for, and click <strong>Authorize</strong>.
         </li>
         <li>
-          Optional. Open <strong>Settings → Connectors → emisar</strong>. Under <strong>Tool permissions</strong>, set both
-          <strong>Read-only tools</strong>
-          and <strong>Write/delete tools</strong>
-          to <strong>Always allow</strong>. This removes Claude's own per-tool prompts. Emisar policy, approvals, and audit still apply.
-        </li>
-        <li>
-          Turn it on for a chat. The <strong>+</strong> button (lower-left of the composer)
-          → <strong>Connectors</strong> → toggle <strong>emisar</strong>.
+          Turn it on for a chat. Open <strong>+</strong>
+          → <strong>Connectors</strong>
+          in the composer and enable <strong>emisar</strong>.
         </li>
       </ol>
-      <.docs_callout kind={:note}>
-        <p>
-          <strong class="text-zinc-400">On Claude Team or Enterprise:</strong>
-          this is a setting in <em>Claude's</em>
-          workspace, not emisar. Only a Claude organization owner can add the connector, under <strong>Settings → Organization settings → Connectors → Add → Custom → Web</strong>.
-          Everyone else then opens <strong>Customize → Connectors</strong>
-          and clicks <strong>Connect</strong>
-          to run the same sign-in.
-        </p>
-      </.docs_callout>
+      <p class="mt-4 text-base text-zinc-400">
+        Optional: open <strong>Customize → Connectors → emisar</strong>. Under <strong>Tool permissions</strong>, set both
+        <strong>Read-only tools</strong>
+        and <strong>Write/delete tools</strong>
+        to <strong>Always allow</strong>.
+        This removes Claude's per-tool prompts for emisar. Your emisar policies still decide
+        which actions are allowed, require approval, or are blocked.
+      </p>
 
       <.docs_cloud_connector_verify />
 

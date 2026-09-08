@@ -4,7 +4,7 @@
   <section class="py-12 sm:py-16">
     <.docs_layout
       current="teams-and-access"
-      updated="August 23, 2026"
+      updated="September 7, 2026"
       toc={[
         {"roles", "Roles"},
         {"inviting", "Inviting your team"},
@@ -24,8 +24,8 @@
       <.docs_screenshot
         src="/images/screenshots/team-page.webp"
         title="emisar console · Team"
-        caption="The roster — each member's role, runner scope, and a directory-sync badge — beside the account's security panel."
-        alt="The desktop Team page: the member roster — each member with their role (owner, admin, billing manager, operator, viewer), their runner scope (all runners, or a specific group), and a badge on members provisioned and role-synced through SCIM — beside the Security panel with MFA enforcement and single sign-on."
+        caption="The member roster shows roles and access, with the account's security settings beside it."
+        alt="The desktop Team page with member filters, Viewer and Operator rows showing runner and pack access, and the security settings alongside the roster."
       />
 
       <.docs_h2 id="roles">Roles</.docs_h2>
@@ -41,7 +41,8 @@
             <tr>
               <td class="px-4 py-3 font-semibold text-zinc-100">Owner</td>
               <td class="px-4 py-3">
-                Everything an admin can do, plus managing other owners. The last owner cannot
+                Everything an admin can do, plus managing other owners and access to every
+                runner and pack. Owner access cannot be narrowed. The last owner cannot
                 be removed or demoted, so an account always has an owner.
               </td>
             </tr>
@@ -89,9 +90,9 @@
           href={~p"/app/team/invite"}
           class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
         >Team → Invite</a>, enter an email, choose a role, runner access, and pack access, and
-        send it. Accepting the one-time link (stored hashed) activates the pending membership and
-        its grants. Only an owner can grant the owner role; admins can invite up to admin. You can
-        suspend and restore members without losing their history.
+        send the invitation. Accepting it activates the pending membership and its grants;
+        the account's sign-in requirements still apply. Only an owner can grant the owner role
+        or manage another owner. Admins can invite and manage members up to admin.
       </p>
 
       <.docs_screenshot
@@ -104,11 +105,12 @@
 
       <.docs_h2 id="runner-scopes">Per-member scope: runners and packs</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        Access of any member can be restricted to packs and runners. It can be done either
-        manually from <a
+        Admins, operators, and viewers can be restricted to specific runners and packs.
+        Set access from Actions → Edit access on <a
           href={~p"/app/team"}
           class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
-        >Team</a>, or by mapping SSO/SCIM directory groups.
+        >Team</a>, or map SSO/SCIM directory groups. Owners always have account-wide access;
+        billing managers have no runner or pack access.
       </p>
       <ul class="mt-4 space-y-3 text-base leading-7 text-zinc-400">
         <li class="flex items-start gap-2.5">
@@ -147,17 +149,26 @@
         audited.
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        Scope binds owners and admins too — an admin scoped to one group really does lose
-        the rest of the fleet. Nobody can change their own access; anyone who can manage them
-        can.
+        An admin scoped to one group cannot reach the rest of the fleet. Owners are exempt
+        from runner and pack scoping, but not from policy, required approvals, pack trust,
+        suspension, or the account boundary. Nobody can edit their own access.
+      </p>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        Promoting a member to Owner grants all runners and packs. Their connected agents
+        inherit the wider access without reconnecting.
+        Demoting an Owner requires choosing their new access. For a directory-managed Owner,
+        choose Use directory role: directory sync sets both role and access, with Viewer
+        privileges and no runner or pack access until it completes.
       </p>
 
       <.docs_h2 id="mfa">MFA</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         <strong class="text-zinc-200">Require MFA</strong>
         requires the current browser to prove the member's active factor before it can use the
-        account. Members without TOTP enroll; other unproved sessions enter an authenticator or
-        recovery code. Factor setup and the SSO exemption are in <.link
+        account. Members can use an authenticator app or a sign-in through an SSO connection
+        configured to satisfy MFA. The Team page's Authenticator count shows local enrollment,
+        not whether every member satisfies the account's MFA requirement. Factor setup and
+        the SSO exemption are in <.link
           navigate={~p"/docs/authentication" <> "#enforcement"}
           class="text-brand-400 hover:text-brand-300"
         >Enforce account sign-in</.link>.
@@ -165,8 +176,11 @@
 
       <.docs_h2 id="sessions">Sessions &amp; credentials</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        Suspending a member blocks sign-in, ends their console sessions immediately, and
-        revokes the API keys minted from their membership. Sign-in mechanics and session
+        Suspend access blocks access to this account, ends the member's sessions, and revokes
+        their agent credentials and standing approvals. Restore access restores membership
+        access, but does not restore those credentials or approvals. A manual suspension stays
+        in place across directory sync; a directory-deactivated member must first be reactivated
+        in the identity provider. Sign-in mechanics and session
         self-service are in <.link
           navigate={~p"/docs/authentication"}
           class="text-brand-400 hover:text-brand-300"

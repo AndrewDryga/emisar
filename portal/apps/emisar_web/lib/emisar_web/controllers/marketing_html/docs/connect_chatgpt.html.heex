@@ -4,7 +4,7 @@
   <section class="py-12 sm:py-16">
     <.docs_layout
       current="connect-chatgpt"
-      updated="August 21, 2026"
+      updated="September 6, 2026"
       toc={[
         {"connect", "Add the connector"},
         {"verify", "Verify the connection"},
@@ -32,7 +32,20 @@
       </p>
       <ol class="mt-4 list-decimal space-y-3 pl-6 text-base text-zinc-300">
         <li>
-          Open <strong>Settings → Security and login</strong>. Turn on <strong>Developer mode</strong>.
+          Open
+          <a
+            href={~p"/app/agents/connect"}
+            class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
+          >Connect an agent</a>
+          in emisar and select <strong>ChatGPT</strong>.
+        </li>
+        <li>
+          In ChatGPT, open <strong>Settings</strong>
+          and select <strong>Security and login</strong>.
+        </li>
+        <li>
+          Turn on <strong>Developer mode</strong>. If the option is missing, check your account's
+          eligibility or ask your workspace admin about access.
         </li>
         <li>
           Open
@@ -40,8 +53,8 @@
             href="https://chatgpt.com/plugins"
             class="text-brand-400 hover:text-brand-300"
           >ChatGPT Plugins</a>
-          and select the small <strong>+</strong>
-          button just right of the search box — it is easy to miss.
+          and select <strong>+</strong>
+          next to the search box.
         </li>
         <li>
           Fill the form:
@@ -68,7 +81,8 @@
           </p>
         </li>
         <li>
-          ChatGPT opens the emisar sign-in page. Sign in and choose <strong>Authorize</strong>. ChatGPT then lists the emisar tools.
+          ChatGPT opens the emisar sign-in page. Sign in, review the requested access, and
+          choose <strong>Authorize</strong>. ChatGPT then lists the emisar tools.
         </li>
         <li>
           Review the connection permissions. emisar policy, approvals, and audit still apply to
@@ -79,11 +93,15 @@
           from the tools menu. A listed tool means metadata access only. Adding the connection
           lets the chat call those tools.
         </li>
-        <li>
-          After a tool metadata change, open the plugin connection. Refresh its tool metadata
-          before the next test.
-        </li>
       </ol>
+      <p class="mt-4 text-base text-zinc-400">
+        If emisar's tools change, open its connection in ChatGPT Plugins and select
+        <strong>Refresh</strong>
+        before starting a new chat. <.link
+          href="https://developers.openai.com/plugins/deploy/connect-chatgpt"
+          class="text-brand-400 hover:text-brand-300"
+        >ChatGPT connection guide</.link>.
+      </p>
       <.docs_cloud_connector_verify />
 
       <.docs_cloud_connector_grants />

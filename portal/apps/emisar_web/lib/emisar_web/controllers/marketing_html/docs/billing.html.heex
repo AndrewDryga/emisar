@@ -4,7 +4,7 @@
   <section class="py-12 sm:py-16">
     <.docs_layout
       current="billing"
-      updated="August 23, 2026"
+      updated="September 7, 2026"
       toc={[
         {"plans", "Plans and limits"},
         {"entitlements", "What each plan unlocks"},
@@ -66,6 +66,12 @@
       </p>
 
       <.docs_h2 id="entitlements">What each plan unlocks</.docs_h2>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        Free is self-serve and does not include product support. Team includes email support;
+        Enterprise adds a shared Slack channel. On Enterprise, open your configured channel
+        from Slack support in the console sidebar or Billing's Need help section. Email support
+        is available there too. Billing and account-access help remain available on every plan.
+      </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         Free includes the console, audit trail, policies, approvals, and runbooks; paid plans
         add the features below.
@@ -170,13 +176,20 @@
         >Teams &amp; access</.link>.
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        To upgrade, open <a
+        To upgrade from Free to Team, open <a
           href={~p"/app/billing"}
           class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
         >Settings → Billing</a>, pick <strong class="text-zinc-200">Monthly</strong>
-        or <strong class="text-zinc-200">Annual</strong>, choose a plan, and pay in the
-        Paddle checkout that opens on the page. The new plan and its limits take effect once
-        Paddle confirms the charge.
+        or <strong class="text-zinc-200">Annual</strong>
+        in the Team offer, then choose <strong class="text-zinc-200">Upgrade to Team</strong>. The estimate uses your current
+        enabled runners, with a minimum of one billable runner; checkout confirms the price.
+        The new plan and its limits take effect once Paddle confirms the charge.
+      </p>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        To move from Free or Team to Enterprise, choose
+        <strong class="text-zinc-200">Contact sales</strong>
+        in the Enterprise offer.
+        You do not need to subscribe to Team first.
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         To downgrade or cancel, open
@@ -184,7 +197,7 @@
           href={~p"/app/billing"}
           class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
         >Settings → Billing</a>
-        and choose <strong class="text-zinc-200">Manage subscription</strong>
+        and choose <strong class="text-zinc-200">Manage billing</strong>
         — it opens the Paddle customer portal. Do not start another checkout for this change.
       </p>
       <.docs_callout kind={:note} title="Cancelling keeps your plan until the period ends">
@@ -205,8 +218,10 @@
 
       <.docs_h2 id="invoices">Invoices and payment method</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        The Billing page shows recent invoices — date, amount, number, and status — each
-        with a PDF download.
+        The Billing page shows your three most recent invoices — date, amount, number, and
+        status — each with a PDF download. Choose
+        <strong class="text-zinc-200">View all invoices</strong>
+        for the full history.
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         Open the Paddle customer portal for full invoice history, payment methods, billing
@@ -215,7 +230,7 @@
           href={~p"/app/billing"}
           class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
         >Settings → Billing</a>
-        and choose <strong class="text-zinc-200">Manage subscription</strong>. Paddle is
+        and choose <strong class="text-zinc-200">Manage billing</strong>. Paddle is
         emisar's merchant of record and holds the complete ledger and card details — it is
         PCI DSS compliant and SOC 2 Type II audited (see <a
           href="https://trust.paddle.com/"
@@ -223,8 +238,7 @@
         >Paddle's trust center</a>).
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        Manage subscription appears after your first paid checkout — a Free account that has
-        never checked out has nothing to manage.
+        Manage billing appears once billing details are available for your account.
       </p>
 
       <.docs_h2 id="payment-failure">If a payment fails</.docs_h2>
@@ -236,7 +250,7 @@
         Open <a
           href={~p"/app/billing"}
           class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
-        >Settings → Billing</a>, choose <strong class="text-zinc-200">Manage subscription</strong>,
+        >Settings → Billing</a>, choose <strong class="text-zinc-200">Manage billing</strong>,
         and update the payment method — Paddle uses it for the next retry. To stop renewing
         instead, cancel in the Paddle portal. Every plan change is recorded in the <.link
           navigate={~p"/docs/audit-and-siem"}

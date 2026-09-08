@@ -4,7 +4,7 @@
   <section class="py-12 sm:py-16">
     <.docs_layout
       current="runs"
-      updated="August 23, 2026"
+      updated="September 6, 2026"
       toc={[
         {"the-list", "The Runs list"},
         {"statuses", "Run statuses"},
@@ -34,7 +34,7 @@
         src="/images/screenshots/runs.webp"
         title="emisar console · Runs"
         caption="Every dispatch with who asked for it, where it ran, and a color-coded outcome."
-        alt="The Runs list: columns for When, Action, Runner, Dispatched by, Status, and Duration. Rows show actions like caddy.reload_config and postgres.replication_lag dispatched across runners edge-fra-01, api-iad-02, and pg-primary-iad, each attributed to a named operator or agent, with color-coded statuses — success, and two runs awaiting approval — and a per-run duration."
+        alt="The Runs list: columns for When, Action, Runner, Dispatched by, Status, and Duration. Rows show actions like caddy.reload_config and postgres.replication_lag dispatched across runners edge-fra-01, api-iad-02, and pg-primary-iad, each attributed to a named operator or agent, with color-coded statuses including success and awaiting approval, and a per-run duration."
       />
       <p class="mt-5 text-base leading-7 text-zinc-400">
         Four filters narrow the feed. Each one lives in the URL. The back button, a refresh,
@@ -131,14 +131,16 @@
           class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
         >Runs</a>
         to see one invocation. The fact strip starts with the outcome — <strong>Status</strong>, <strong>Runner</strong>, <strong>Dispatched by</strong>, <strong>Duration</strong>, <strong>Exit code</strong>, and
-        <strong>Started</strong>
-        — and the Runner value links to that host.
+        <strong>Created</strong>
+        — and the Runner value links to that host. Created is when the run was requested,
+        before any queue or approval wait. Use <strong>View audit trail</strong>
+        for its audit records.
       </p>
       <.docs_screenshot
         src="/images/screenshots/run-detail.webp"
         title="emisar console · Run"
-        caption="One invocation: the outcome strip, the reason, the exact arguments and executed command, and the bounded output."
-        alt="A successful caddy.reload_config run on edge-sfo-03 dispatched by Maya Chen via runbook: the success status with duration and exit code, the Why section with the reason, the JSON arguments, the executed command marked secrets redacted, and the command output."
+        caption="One invocation: the outcome strip, the reason, the executed command, and the bounded output."
+        alt="A successful caddy.reload_config run on edge-fra-01 dispatched by Maya Chen via Claude Code: status, duration and exit code, Request details with the reason, and the executed command and output."
       />
       <p class="mt-5 text-base leading-7 text-zinc-400">
         <strong>Dispatched by</strong>
@@ -151,8 +153,8 @@
         itself.
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        A <strong>Why</strong>
-        section carries the justification. Every dispatch includes a
+        <strong>Request details</strong>
+        shows why the action was requested. Every dispatch includes a
         <.docs_inline_code>reason</.docs_inline_code>
         from the operator or agent. An agent can also include evidence and expected outcome:
         evidence records what it observed, and expected records the outcome that confirms
@@ -182,15 +184,17 @@
       <.docs_h2 id="output">Live output and caps</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         The output panel streams stdout and stderr line by line as the runner produces them. The
-        stderr stream uses a separate tint to highlight errors. A <em>streaming</em>
+        stderr stream is highlighted separately. A <em>Streaming</em>
         marker appears while the run is active. A run with no output says so instead of showing an
-        empty terminal.
+        empty terminal. When the action returns structured output, switch between
+        <strong>Text</strong>
+        and <strong>JSON</strong>. <strong>Copy</strong>
+        copies the selected view.
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        The terminal renders the most recent 500 chunks. A run that streamed more shows a note that
-        earlier output was trimmed. This is a
-        display limit that keeps a chatty run from growing the page without bound. It caps what is on
-        screen, not what the runner sent or what is recorded.
+        The terminal shows the most recent 500 chunks of text output. Earlier output is hidden
+        while the run is active. After it finishes, use <strong>Load earlier output</strong>
+        to read more. This display limit does not remove stored output.
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         Truncation can also happen at the source. The runner bounds the output it captures per the
@@ -223,7 +227,8 @@
         >Runs</a>
         and use <strong>Cancel run</strong>
         —
-        available while the run is pending, sent, or running, to operators and above. What happens
+        available to operators, admins, and owners while the run is queued, waiting for approval,
+        sent, or running. What happens
         depends on where the run is:
       </p>
       <ul class="mt-4 space-y-3 text-base leading-7 text-zinc-400">
@@ -238,22 +243,24 @@
         <li class="flex items-start gap-2.5">
           <span class="flex-none text-zinc-500">—</span>
           <span>
+            <strong class="text-zinc-200">Waiting for approval.</strong>
+            Cancelling the run also closes its approval request. The action will not run.
+          </span>
+        </li>
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-500">—</span>
+          <span>
             <strong class="text-zinc-200">In flight (sent or running).</strong>
-            The control plane signals the runner with SIGTERM, then SIGKILL if needed. The run
+            emisar asks the runner to stop the action. The runner sends SIGTERM to the action's
+            process group, then SIGKILL if needed. The run
             remains at <em>cancelling</em>
-            until the runner reports its final outcome. The runner remains the authority on what
-            stopped.
+            until the runner reports its final outcome. Changes already made are not undone.
           </span>
         </li>
       </ul>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        Cancellation is recorded in the audit trail and is idempotent: asking to cancel a
-        run that already finished does nothing. A run that is <em>awaiting approval</em>
-        is not cancelled here — deny its approval instead, which pulls the run back and
-        records the denial reason. See <.link
-          navigate={~p"/docs/policies-and-approvals"}
-          class="text-brand-400 hover:text-brand-300"
-        >policies and approvals</.link>.
+        Cancellation is recorded in the audit trail. Repeating the request does not change
+        a run that has already finished.
       </p>
 
       <.docs_h2 id="operations">Operations and retries</.docs_h2>
@@ -304,9 +311,9 @@
           </thead>
           <tbody class="divide-y divide-zinc-900 text-zinc-300">
             <%= for {status, move} <- [
-              {:failed, "Read the output — this is a real result, not a gate."},
-              {:error, "Check the runner's connection, then dispatch again once it is back."},
-              {:timed_out, "Check the target system — the action was stopped mid-work."}
+              {:failed, "Read the output to find why the command failed."},
+              {:error, "Read the error and check the host before running the action again; it may already have made changes."},
+              {:timed_out, "Check the host for partial changes before running the action again."}
             ] do %>
               <% {_label, meaning} = EmisarWeb.RunStatuses.entries()[status] %>
               <tr>
@@ -353,7 +360,7 @@
         <li class="flex items-start gap-2.5">
           <span class="flex-none text-zinc-500">—</span>
           <span>
-            <strong class="text-zinc-200">Contact support</strong>
+            On Team or Enterprise, <strong class="text-zinc-200">contact support</strong>
             when the same dispatch reports
             <.docs_inline_code>execution_outcome_unknown</.docs_inline_code>
             repeatedly, or a run stays <.status_badge status={:running} />

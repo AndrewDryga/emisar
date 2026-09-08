@@ -501,6 +501,15 @@
           instead of being overwritten.
         </p>
         <p>
+          Before authoring a step, use <code>get_action</code>
+          to inspect its argument and output schemas. See
+          <a
+            href={~p"/docs/runbooks#extracted-outputs"}
+            class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
+          >runbook output sources and extractors</a>
+          for stdout, stderr, and schema-validated JSON bindings.
+        </p>
+        <p>
           Execution runs the live release. An older <code>slug@N</code>
           answers <code>not_live</code>
           rather than silently running current content. An unpublished change never enters ordinary

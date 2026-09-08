@@ -172,6 +172,15 @@ defmodule EmisarWeb.DocsNav do
               desc: "Add emisar to ChatGPT through Developer mode — no key to manage."
             },
             %{
+              slug: "connect-coop",
+              title: "co:op",
+              path: "/docs/connect-coop",
+              icon: "interface.cli",
+              keywords: "coop co:op install container sandbox codex claude gemini grok mcp",
+              desc:
+                "Run AI agents in a local sandbox and control what they can do with your infrastructure."
+            },
+            %{
               slug: "connect-multiple-accounts",
               title: "Multiple accounts",
               path: "/docs/connect-multiple-accounts",

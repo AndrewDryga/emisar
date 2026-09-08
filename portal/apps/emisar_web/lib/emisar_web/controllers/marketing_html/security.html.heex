@@ -217,31 +217,31 @@
       <.console_cast id="approval-loop-cast" class="mx-auto mt-16 max-w-4xl">
         <:frame
           src="/images/screenshots/loop/approval-pending.webp"
-          alt="A pending approval in the emisar console: Claude, for Maya Chen, asks to run caddy.reload_config on the edge-fra-01 runner. The page shows the action's high risk, the exact command, the reason, the policy that held it, and Approve and send / Deny controls."
+          alt="A pending approval in the emisar console: Claude, for Maya Chen, asks to run caddy.reload_config on the edge-fra-01 runner. The page shows the action's high risk, the exact command, the reason, the policy that held it, and Approve / Deny controls."
           label="Held"
           caption="Policy holds the agent's request for a human — the exact command, the reason, and the risk on one screen."
-          click="80.3,41.1"
-          spot="14.3,10.9,21.4,4.5"
+          click="80.3,29.6"
+          spot="14.7,9.8,3.8,3.9"
           note="Actions are governed by policy based on risk level"
-          spot2="3.1,31.3,55.9,5.1"
+          spot2="3.1,27.9,55.9,4.5"
           note2="You see the exact command that will be executed"
-          spot3="3.1,48,55.9,16.3"
+          spot3="3.1,45.3,55.9,13.9"
           note3="AI agents must provide a reason — evidence and expected outcome are optional"
         />
         <:frame
           src="/images/screenshots/loop/approval-note.webp"
-          alt="The same approval with the decision note typed into the Decide panel: “validated config, active connections drained, deploy window open”."
+          alt="The same approval with the note typed into Your decision: “validated config, active connections drained, deploy window open”."
           label="Decide"
           caption="Jordan reviews and writes the note the record will keep."
-          click="80.3,55.1"
+          click="80.3,42.1"
         />
         <:frame
           src="/images/screenshots/loop/approval-approved.webp"
           alt="The request after the click: approved by Jordan Lee, with the note preserved as the decision reason."
           label="Approved"
           caption="Approved — decider, time, and reason on the record."
-          click="80.6,5.7"
-          spot="3.1,18.8,48,8.4"
+          click="79.3,5.1"
+          spot="3.1,60.7,87.5,10.7"
           note="Approval reason is recorded"
         />
         <:frame
@@ -249,17 +249,17 @@
           alt="The run detail for the approved action: success on edge-fra-01 with exit code 0, the approval decision inline, the executed command marked secrets redacted, and the captured output."
           label="Executed"
           caption="Only now does the runner execute: exit 0, output scrubbed on the runner before it left the host."
-          click="91.4,5.7"
-          spot="3.1,82.9,93.8,10.9"
+          click="90.8,5.1"
+          spot="3.1,78.7,93.8,12"
           note="Runner output is redacted before leaving the host and retained in run history. Related state changes are recorded in the audit log."
         />
         <:frame
           src="/images/screenshots/loop/audit-trail.webp"
-          alt="The audit log opened from View activity, pre-filtered to this dispatch's request-id trace: Run succeeded and Run awaiting approval for caddy.reload_config on edge-fra-01."
+          alt="The audit log opened from View audit trail, pre-filtered to this dispatch's request-id trace: Run succeeded and Run awaiting approval for caddy.reload_config on edge-fra-01."
           label="Recorded"
-          caption="Seconds later the audit has the whole trail."
-          click="50,33.6"
-          spot="2.1,30.2,95.8,6.7"
+          caption="Seconds later, the run is in the audit log."
+          click="50,32.1"
+          spot="3.1,29.1,93.8,6"
           note="The run is audit logged"
         />
         <:frame
@@ -267,9 +267,9 @@
           alt="The audit event detail for Run succeeded: when, event id, request id, actor Maya Chen, target runner edge-fra-01 with a link to the run, and the full JSON payload including the executed command and exit code 0."
           label="Evidence"
           caption="The evidence one click deep — actor, target, request id, payload — exportable to your SIEM."
-          spot="3.1,26.7,93.8,10.6"
+          spot="3.1,16.8,93.8,9.5"
           note="Who acted, and on what"
-          spot2="3.1,52.1,93.8,17"
+          spot2="3.1,39.5,93.8,28.8"
           note2="The full payload"
         />
       </.console_cast>

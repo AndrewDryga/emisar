@@ -163,7 +163,7 @@ defmodule EmisarWeb.MarketingHTML do
     """
   end
 
-  @doc "The prerequisites every cloud connector shares — a runner online, no signed dispatch."
+  @doc "Shared cloud-connector prerequisites: runner, endpoint reachability, and signing limits."
   def docs_cloud_connector_prerequisites(assigns) do
     ~H"""
     <.docs_prerequisites>
@@ -174,6 +174,15 @@ defmodule EmisarWeb.MarketingHTML do
           quickstart
         </.link>
         first, then come back to wire in your LLM.
+      </:item>
+      <:item>
+        A publicly reachable HTTPS server URL. The URL connection in these guides cannot reach
+        localhost or a private network address. If you run emisar privately, use a
+        <.link
+          navigate={~p"/docs/connect-cli-agent"}
+          class="text-brand-400 hover:text-brand-300"
+        >local AI client</.link>
+        that can reach it instead.
       </:item>
       <:item>
         Runners that do not require signed dispatch. Claude.ai and ChatGPT do not create emisar

@@ -8,12 +8,13 @@
         Get help with emisar.
       </.marketing_heading>
       <p class="mt-6 max-w-2xl text-lg leading-8 text-zinc-400">
-        For setup, runner, MCP connection, billing, or account-access problems, email the support
-        address below.
+        Team includes email support. Enterprise includes email support and a shared Slack channel.
+        You'll find your support links in the console. Free is self-serve, with documentation
+        for setup and troubleshooting.
       </p>
       <div class="mt-8 flex flex-wrap gap-4">
-        <.marketing_button href={EmisarWeb.MailTo.support()} icon="communication.email">
-          Email support
+        <.marketing_button href={~p"/docs/troubleshooting"} icon="product.docs">
+          Troubleshooting guide
         </.marketing_button>
         <.marketing_button
           href={Application.get_env(:emisar_web, :status_page_url, "https://status.emisar.dev")}
@@ -28,6 +29,31 @@
 
   <section class="border-y border-zinc-900 py-16 sm:py-20">
     <div class="mx-auto grid max-w-4xl gap-12 px-6 md:grid-cols-2 lg:px-8">
+      <div>
+        <h2 class="text-xl font-semibold text-zinc-50">Billing and account access</h2>
+        <p class="mt-5 text-sm leading-6 text-zinc-400">
+          For billing or account-access problems on any plan, email <a
+            href={EmisarWeb.MailTo.support()}
+            class="font-medium text-brand-300 hover:text-brand-200"
+          >support@emisar.dev</a>.
+        </p>
+        <p class="mt-5 text-sm leading-6 text-zinc-400">
+          Team and Enterprise customers can also use this address for product support.
+        </p>
+      </div>
+      <div>
+        <h2 class="text-xl font-semibold text-zinc-50">Documentation</h2>
+        <p class="mt-5 text-sm leading-6 text-zinc-400">
+          Start with the
+          <.link href={~p"/docs"} class="font-medium text-brand-300 hover:text-brand-200">documentation</.link>
+          for connection and runner setup, or the
+          <.link
+            href={~p"/docs/troubleshooting"}
+            class="font-medium text-brand-300 hover:text-brand-200"
+          >troubleshooting guide</.link>
+          to work through a problem.
+        </p>
+      </div>
       <div>
         <h2 class="text-xl font-semibold text-zinc-50">What to include</h2>
         <ul class="mt-5 space-y-3 text-sm leading-6 text-zinc-400">
@@ -52,16 +78,6 @@
           Do not send API keys, OAuth tokens, session cookies, private keys, runner enrollment keys,
           cloud credentials, or raw output that may contain secrets. Revoke anything sensitive that
           was exposed before contacting us.
-        </p>
-        <p class="mt-5 text-sm leading-6 text-zinc-400">
-          Start with the
-          <.link
-            href={~p"/docs"}
-            class="font-medium text-brand-300 hover:text-brand-200"
-          >
-            documentation
-          </.link>
-          for connection and runner setup.
         </p>
       </div>
     </div>
