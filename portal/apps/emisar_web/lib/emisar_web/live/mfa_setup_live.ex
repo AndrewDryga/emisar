@@ -62,17 +62,12 @@ defmodule EmisarWeb.MfaSetupLive do
     <.auth_layout title="Multi-factor authentication required">
       <p class="mb-6 text-sm text-zinc-400">
         <span class="font-semibold text-zinc-200">{@current_account.name}</span>
-        requires multi-factor authentication for every member.
+        requires MFA.
         <%= if @mfa_mode == :enrollment do %>
-          Set it up now to continue to your dashboard.
+          Set up an authenticator app to continue.
         <% else %>
-          Verify this session to continue to your dashboard.
+          Enter an authenticator or recovery code to continue.
         <% end %>
-        Learn why we require it in the <.link
-          href={~p"/security"}
-          class="text-zinc-400 underline hover:text-zinc-200"
-        >
-          Security overview</.link>.
       </p>
 
       <%= cond do %>
@@ -88,13 +83,13 @@ defmodule EmisarWeb.MfaSetupLive do
               />
               <:actions>
                 <.button class="w-full" phx-disable-with="Verifying...">
-                  Verify <span aria-hidden="true">→</span>
+                  Continue
                 </.button>
               </:actions>
             </.simple_form>
 
             <.auth_footer_link event="use_recovery">
-              <:lead>Lost your device?</:lead>
+              <:lead>Can't access your authenticator?</:lead>
               Use a recovery code
             </.auth_footer_link>
           <% else %>
@@ -109,7 +104,7 @@ defmodule EmisarWeb.MfaSetupLive do
               <.error :if={@mfa_challenge_error}>{@mfa_challenge_error}</.error>
               <:actions>
                 <.button class="w-full" phx-disable-with="Verifying...">
-                  Verify <span aria-hidden="true">→</span>
+                  Continue
                 </.button>
               </:actions>
             </.simple_form>
@@ -121,35 +116,26 @@ defmodule EmisarWeb.MfaSetupLive do
           <% end %>
         <% @mfa_recovery_codes -> %>
           <div class="space-y-4">
+            <.mfa_setup_progress step={3} />
             <.secret_reveal
               id="mfa-recovery-codes"
               title="Save your recovery codes"
               codes={@mfa_recovery_codes}
               download_name="emisar-recovery-codes.txt"
             >
-              Each code signs you in once if you lose your authenticator. They are only
-              shown now.
+              Use a recovery code if you can't access your authenticator. Each code works once.
+              Save these somewhere safe—you won't be able to view them again.
+              <:actions>
+                <.recovery_code_acknowledgement
+                  saved={@codes_saved?}
+                  event="continue"
+                  label="Continue"
+                />
+              </:actions>
             </.secret_reveal>
-
-            <%!-- Gate Continue behind an explicit acknowledgement: an
-                 MFA-required member who skips saving these and later loses
-                 their authenticator is permanently locked out. --%>
-            <.checkbox
-              class="flex items-center gap-2 text-xs text-zinc-300"
-              phx-click="toggle_codes_saved"
-              checked={@codes_saved?}
-              label="I've saved my recovery codes somewhere safe"
-            />
-            <.button
-              phx-click="continue"
-              phx-disable-with="Loading..."
-              disabled={not @codes_saved?}
-              class="disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              Continue to dashboard <span aria-hidden="true">→</span>
-            </.button>
           </div>
         <% @mfa_enrollment_step == :email -> %>
+          <.mfa_setup_progress step={1} />
           <.mfa_enrollment_email_verification
             email={@current_user.email}
             form={@mfa_enrollment_email_form}
@@ -164,17 +150,25 @@ defmodule EmisarWeb.MfaSetupLive do
               </.button>
             </:actions>
           </.mfa_enrollment_email_verification>
-        <% @mfa_uri -> %>
-          <.mfa_enrollment qr_svg={@mfa_qr_svg} uri={@mfa_uri} form={@mfa_form} error={@mfa_error}>
+        <% @mfa_enrollment_step == :totp -> %>
+          <.mfa_setup_progress step={2} />
+          <.mfa_enrollment
+            qr_svg={@mfa_qr_svg}
+            setup_key={@mfa_setup_key}
+            form={@mfa_form}
+            error={@mfa_error}
+          >
+            <:instructions>
+              Scan this QR code with your authenticator app, then enter its 6-digit code.
+            </:instructions>
             <:actions>
-              <.button phx-disable-with="Verifying...">Confirm and continue</.button>
+              <.button phx-disable-with="Enabling...">Enable MFA</.button>
             </:actions>
           </.mfa_enrollment>
         <% true -> %>
           <div class="space-y-4">
             <p class="text-sm text-zinc-300">
-              First verify your current email address. We will not reveal an authenticator secret
-              until that proof succeeds.
+              First verify your email, then connect your authenticator app.
             </p>
             <.error :if={@mfa_start_error}>{@mfa_start_error}</.error>
             <.button phx-click="start_mfa" phx-disable-with="Sending...">
@@ -233,6 +227,8 @@ defmodule EmisarWeb.MfaSetupLive do
         socket
       ) do
     if socket.assigns.mfa_enrollment_step == :email do
+      socket = push_event(socket, "code:reset", %{id: "mfa-enrollment-email-code"})
+
       case Auth.verify_mfa_enrollment_code(
              String.trim(code || ""),
              socket.assigns.current_subject
@@ -245,7 +241,7 @@ defmodule EmisarWeb.MfaSetupLive do
            assign(
              socket,
              :mfa_enrollment_email_error,
-             "That code is wrong or expired. Try again."
+             "That code is incorrect or expired. Try again or request a new code."
            )}
 
         {:error, :rate_limited} ->
@@ -278,7 +274,10 @@ defmodule EmisarWeb.MfaSetupLive do
     if socket.assigns.mfa_enrollment_step == :email do
       case Auth.issue_mfa_enrollment_code(socket.assigns.current_subject) do
         {:ok, :sent} ->
-          {:noreply, assign(socket, :mfa_enrollment_email_error, nil)}
+          {:noreply,
+           socket
+           |> assign(:mfa_enrollment_email_error, nil)
+           |> push_event("code:reset", %{id: "mfa-enrollment-email-code"})}
 
         {:ok, :suppressed} ->
           {:noreply, assign(socket, :mfa_enrollment_email_error, @email_suppressed_error)}
@@ -325,7 +324,10 @@ defmodule EmisarWeb.MfaSetupLive do
            |> assign_mfa_form()}
 
         {:error, :invalid_otp} ->
-          {:noreply, assign(socket, :mfa_error, MfaErrors.message(:invalid_otp))}
+          {:noreply,
+           socket
+           |> assign(:mfa_error, MfaErrors.message(:invalid_otp))
+           |> push_event("code:reset", %{id: "mfa-otp"})}
 
         {:error, :mfa_enrollment_proof_stale} ->
           {:noreply,
@@ -369,6 +371,8 @@ defmodule EmisarWeb.MfaSetupLive do
   end
 
   defp verify_current_session(socket, factor) do
+    socket = push_event(socket, "code:reset", %{id: "mfa-session-otp"})
+
     with {:ok, proof} <-
            Auth.verify_current_session_mfa_challenge(
              factor,

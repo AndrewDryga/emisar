@@ -7,7 +7,6 @@ defmodule EmisarWeb.TeamLive do
 
   # String forms of the canonical role enum — the invite/role forms work
   # in strings (HTTP params); membership.role itself is an atom.
-  @roles Enum.map(Emisar.Auth.roles(), &Atom.to_string/1)
   @runner_scope_required "Choose at least one runner group or runner for selected access."
   @pack_scope_required "Choose at least one pack for selected pack access."
 
@@ -32,13 +31,14 @@ defmodule EmisarWeb.TeamLive do
      # derived where they are loaded — both load paths re-read current access.
      # The dead render has no editor yet, so it makes no claim about one.
      |> assign(:pack_access_restricted?, false)
-     |> assign(:roles, @roles)
+     |> assign(:roles, assignable_roles(socket.assigns.current_subject))
      # The roster, its security stats, and the pending-request queue are read by
      # the :index route only, but a crafted event reaches their handlers from any
      # route — an empty default makes that a no-op instead of a dead socket.
      |> assign(:member_facts, [])
      |> assign(:security_facts, unavailable_security_facts())
      |> assign(:pending_requests, [])
+     |> assign(:provider_facts, [])
      |> assign(:expanded_scopes, MapSet.new())
      |> assign(:editing_id, nil)
      |> assign(:edit_form, nil)
@@ -52,7 +52,6 @@ defmodule EmisarWeb.TeamLive do
      |> assign(:runners, [])
      |> assign(:runners_by_id, %{})
      |> assign(:runner_load_error?, false)
-     |> assign(:current_role, socket.assigns.current_subject.role)
      |> assign(:filters, Accounts.team_member_filters())
      |> assign(:pack_advertisements, %{})
      |> assign(:pack_load_error?, false)
@@ -131,6 +130,9 @@ defmodule EmisarWeb.TeamLive do
   defp reload(socket), do: load(socket, socket.assigns[:filter_params] || %{})
 
   def handle_event("filter", params, socket) do
+    fields = Enum.map(socket.assigns.filters, &to_string(&1.name))
+    params = Map.merge(Map.take(socket.assigns.filter_params, fields), Map.take(params, fields))
+
     {:noreply,
      LiveTable.apply_filter(
        socket,
@@ -138,6 +140,10 @@ defmodule EmisarWeb.TeamLive do
        params,
        socket.assigns.filters
      )}
+  end
+
+  def handle_event("start_edit", %{"membership_id" => id}, %{assigns: %{editing_id: id}} = socket) do
+    {:noreply, close_name_edit(socket)}
   end
 
   def handle_event("start_edit", %{"membership_id" => id}, socket) do
@@ -152,20 +158,14 @@ defmodule EmisarWeb.TeamLive do
         # stack into one unreadable run under the same row.
         {:noreply,
          socket
+         |> close_scope_edit()
          |> assign(:editing_id, id)
-         |> assign(:edit_form, to_form(params, as: "user"))
-         |> assign(:scope_editing_id, nil)
-         |> assign(:scope_access_mode, "none")
-         |> assign(:scope_draft, [])
-         |> assign(:scope_error, nil)
-         |> assign(:scope_pack_mode, "all")
-         |> assign(:scope_pack_draft, [])
-         |> assign(:scope_pack_error, nil)}
+         |> assign(:edit_form, to_form(params, as: "user"))}
     end
   end
 
   def handle_event("cancel_edit", _params, socket) do
-    {:noreply, socket |> assign(:editing_id, nil) |> assign(:edit_form, nil)}
+    {:noreply, close_name_edit(socket)}
   end
 
   # Pure view: expand or collapse a roster row's clipped scope chip list. Held
@@ -175,14 +175,28 @@ defmodule EmisarWeb.TeamLive do
     {:noreply, update(socket, :expanded_scopes, &RunnerScope.toggle_scope(&1, id))}
   end
 
+  def handle_event(
+        "start_scope_edit",
+        %{"membership_id" => id},
+        %{assigns: %{scope_editing_id: id}} = socket
+      ) do
+    {:noreply, close_scope_edit(socket)}
+  end
+
   # Re-reads the member rather than trusting the roster this page rendered: a
   # directory that claimed their runner access since mount has to CLOSE the
   # editor, and the socket's copy would still open it.
   def handle_event("start_scope_edit", %{"membership_id" => id}, socket) do
     case Accounts.fetch_team_member_facts(id, socket.assigns.current_subject) do
-      {:ok, %{runner_access_editable?: false}} ->
-        {:noreply,
-         put_flash(socket, :error, MemberErrors.message(:runner_access_managed_by_directory))}
+      {:ok, %{runner_access_editable?: false, membership: membership}} ->
+        reason =
+          cond do
+            membership.role == :owner -> :owner_access_is_account_wide
+            membership.runner_access_directory_managed -> :runner_access_managed_by_directory
+            true -> :unauthorized
+          end
+
+        {:noreply, put_flash(socket, :error, MemberErrors.message(reason))}
 
       # Re-read: a role changed to one that reaches no runners since mount has to
       # close the editor here too — the hidden menu item is never the check.
@@ -199,15 +213,7 @@ defmodule EmisarWeb.TeamLive do
   end
 
   def handle_event("cancel_scope_edit", _params, socket) do
-    {:noreply,
-     socket
-     |> assign(:scope_editing_id, nil)
-     |> assign(:scope_access_mode, "none")
-     |> assign(:scope_draft, [])
-     |> assign(:scope_error, nil)
-     |> assign(:scope_pack_mode, "all")
-     |> assign(:scope_pack_draft, [])
-     |> assign(:scope_pack_error, nil)}
+    {:noreply, close_scope_edit(socket)}
   end
 
   # Live-normalize the scope selection so the picker can disable a runner the
@@ -264,10 +270,17 @@ defmodule EmisarWeb.TeamLive do
     end
   end
 
+  def handle_event(event, _params, %{assigns: %{security_facts: %{available?: false}}} = socket)
+      when event in ["toggle_require_mfa", "toggle_require_sso"] do
+    {:noreply,
+     put_flash(socket, :error, "Couldn't load sign-in settings. Refresh and try again.")}
+  end
+
   def handle_event("toggle_require_mfa", _params, socket) do
     value = socket.assigns.security_facts.mfa_enforcement != :enforced
 
-    if Accounts.subject_can_manage_account_security?(socket.assigns.current_subject) do
+    if socket.assigns.security_facts.available? and
+         Accounts.subject_can_manage_account_security?(socket.assigns.current_subject) do
       case Accounts.update_account(
              socket.assigns.current_account,
              %{settings: %{require_mfa: value}},
@@ -281,9 +294,9 @@ defmodule EmisarWeb.TeamLive do
            |> put_flash(
              :info,
              if value do
-               "Account-wide MFA enforced. Members without MFA will be prompted on next sign-in."
+               "MFA is now required."
              else
-               "Account-wide MFA requirement turned off."
+               "MFA is no longer required."
              end
            )}
 
@@ -305,7 +318,8 @@ defmodule EmisarWeb.TeamLive do
     account = socket.assigns.current_account
     value = not socket.assigns.security_facts.sso_required?
 
-    if Accounts.subject_can_manage_account_security?(socket.assigns.current_subject) do
+    if socket.assigns.security_facts.available? and
+         Accounts.subject_can_manage_account_security?(socket.assigns.current_subject) do
       case Accounts.update_account(
              account,
              %{settings: %{require_sso: value}},
@@ -671,7 +685,7 @@ defmodule EmisarWeb.TeamLive do
   defp member_action_available?(
          %{assigns: %{can_manage_team?: true, current_user: %{id: current_user_id}}},
          action,
-         %{membership: %{user_id: user_id}} = facts
+         %{membership: %{user_id: user_id}, manageable?: true} = facts
        )
        when user_id != current_user_id do
     action != "suspend" or not facts.disabled?
@@ -684,11 +698,11 @@ defmodule EmisarWeb.TeamLive do
 
   defp open_member_action_dialog(_pending), do: open_confirm("member-action")
 
-  defp member_action_title(%{action: "suspend"}), do: "Suspend this member?"
+  defp member_action_title(%{action: "suspend"}), do: "Suspend this member's access?"
   defp member_action_title(%{action: "end_sessions"}), do: "End all sessions for this member?"
   defp member_action_title(%{action: "remove"}), do: "Remove from team"
 
-  defp member_action_label(%{action: "suspend"}), do: "Suspend member"
+  defp member_action_label(%{action: "suspend"}), do: "Suspend access"
   defp member_action_label(%{action: "end_sessions"}), do: "End sessions"
   defp member_action_label(%{action: "remove"}), do: "Remove member"
 
@@ -710,12 +724,12 @@ defmodule EmisarWeb.TeamLive do
   # visible "Member updated." from a previous save closed the editor on a
   # refusal and threw the typed name away with it.)
   defp close_scope_edit_if_saved({:ok, socket}),
-    do: {:noreply, assign(socket, :scope_editing_id, nil)}
+    do: {:noreply, close_scope_edit(socket)}
 
   defp close_scope_edit_if_saved({:error, socket}), do: {:noreply, socket}
 
   defp close_edit_if_saved({:ok, socket}),
-    do: {:noreply, socket |> assign(:editing_id, nil) |> assign(:edit_form, nil)}
+    do: {:noreply, close_name_edit(socket)}
 
   defp close_edit_if_saved({:error, socket}), do: {:noreply, socket}
 
@@ -778,8 +792,24 @@ defmodule EmisarWeb.TeamLive do
 
   defp noreply({_result, socket}), do: {:noreply, socket}
 
+  defp close_name_edit(socket) do
+    socket |> assign(:editing_id, nil) |> assign(:edit_form, nil)
+  end
+
+  defp close_scope_edit(socket) do
+    socket
+    |> assign(:scope_editing_id, nil)
+    |> assign(:scope_access_mode, "none")
+    |> assign(:scope_draft, [])
+    |> assign(:scope_error, nil)
+    |> assign(:scope_pack_mode, "all")
+    |> assign(:scope_pack_draft, [])
+    |> assign(:scope_pack_error, nil)
+  end
+
   defp open_scope_edit(socket, id, access) do
     socket
+    |> close_name_edit()
     |> assign(:scope_editing_id, id)
     |> assign(:scope_access_mode, to_string(access.mode))
     |> assign(:scope_draft, RunnerScope.to_values(access.groups, access.runner_ids))
@@ -787,8 +817,6 @@ defmodule EmisarWeb.TeamLive do
     |> assign(:scope_pack_mode, to_string(access.pack_mode))
     |> assign(:scope_pack_draft, RunnerScope.to_pack_values(access.pack_ids))
     |> assign(:scope_pack_error, nil)
-    |> assign(:editing_id, nil)
-    |> assign(:edit_form, nil)
   end
 
   defp do_invite(socket, params) do
@@ -1002,7 +1030,7 @@ defmodule EmisarWeb.TeamLive do
 
   defp load(socket, params) do
     socket = assign_pack_access_restricted(socket)
-    opts = LiveTable.params_to_opts(params, socket.assigns.filters)
+    opts = LiveTable.params_to_opts(params, Accounts.team_member_filters())
 
     case Accounts.list_team_member_facts(
            socket.assigns.current_account,
@@ -1128,22 +1156,22 @@ defmodule EmisarWeb.TeamLive do
   defp assign_security_facts(socket) do
     facts =
       case Accounts.fetch_team_security_facts(socket.assigns.current_subject) do
-        {:ok, facts} -> facts
+        {:ok, facts} -> Map.put(facts, :available?, true)
         {:error, _} -> unavailable_security_facts()
       end
 
     assign(socket, :security_facts, facts)
   end
 
-  # A denied/failed read shows an empty, unenforced stance rather than a partial
-  # one — the roster's own load error is what tells the operator it didn't load.
+  # Unavailable is distinct from an account with enforcement turned off.
   defp unavailable_security_facts do
     %{
-      mfa_total: 0,
-      mfa_enrolled: 0,
-      mfa_missing: 0,
-      mfa_enforcement: :actor_not_enrolled,
-      sso_required?: false
+      available?: false,
+      mfa_total: nil,
+      mfa_enrolled: nil,
+      mfa_missing: nil,
+      mfa_enforcement: :unavailable,
+      sso_required?: nil
     }
   end
 
@@ -1197,7 +1225,7 @@ defmodule EmisarWeb.TeamLive do
     |> assign(:sso_load_error?, providers_failed? or posture_failed?)
     |> assign(:pending_requests, pending_requests)
     |> assign(:pending_requests_error?, pending_requests_error?)
-    |> assign_approval_access(pending_requests)
+    |> maybe_assign_approval_access(pending_requests, pending_requests_error?)
     |> assign(:sync_stats, sync_stats)
     |> assign(:sync_stats_error?, sync_stats_error?)
   end
@@ -1207,6 +1235,11 @@ defmodule EmisarWeb.TeamLive do
   # failed read is only reported to someone the section is actually for.
   defp sso_admin?(socket), do: SSO.subject_can_manage_sso?(socket.assigns.current_subject)
 
+  defp maybe_assign_approval_access(socket, _requests, true), do: socket
+
+  defp maybe_assign_approval_access(socket, requests, false),
+    do: assign_approval_access(socket, requests)
+
   # Each request's form opens on the runner access its own connection currently
   # defaults to — SSO derives it, so the page never reads a provider's default
   # fields (or has to decide what a missing connection would mean).
@@ -1214,22 +1247,38 @@ defmodule EmisarWeb.TeamLive do
     access_by_id = Map.new(request_facts, &{&1.request.id, &1.default_runner_access})
 
     socket
-    |> assign(:approval_access_modes, by_request(access_by_id, &to_string(&1.mode)))
-    |> assign(
+    |> keep_approval_drafts(:approval_access_modes, by_request(access_by_id, &to_string(&1.mode)))
+    |> keep_approval_drafts(
       :approval_scope_drafts,
       by_request(access_by_id, &RunnerScope.to_values(&1.groups, &1.runner_ids))
     )
-    |> assign(:approval_scope_errors, %{})
+    |> keep_approval_drafts(
+      :approval_scope_errors,
+      Map.new(access_by_id, fn {id, _} -> {id, nil} end)
+    )
     # The pack half is seeded from the same connection default as the runner
     # half: leaving it blank opened every request on "All packs", so approving a
     # pack-restricted connection's member by hand granted reach its
     # auto-provisioned members never get.
-    |> assign(:approval_pack_modes, by_request(access_by_id, &to_string(&1.pack_mode)))
-    |> assign(
+    |> keep_approval_drafts(
+      :approval_pack_modes,
+      by_request(access_by_id, &to_string(&1.pack_mode))
+    )
+    |> keep_approval_drafts(
       :approval_pack_drafts,
       by_request(access_by_id, &RunnerScope.to_pack_values(&1.pack_ids))
     )
-    |> assign(:approval_pack_errors, %{})
+    |> keep_approval_drafts(
+      :approval_pack_errors,
+      Map.new(access_by_id, fn {id, _} -> {id, nil} end)
+    )
+  end
+
+  # Seed only new requests and discard settled ones; broadcasts must not replace
+  # the access an operator is reviewing with the connection's defaults.
+  defp keep_approval_drafts(socket, key, defaults) do
+    existing = Map.take(socket.assigns[key] || %{}, Map.keys(defaults))
+    assign(socket, key, Map.merge(defaults, existing))
   end
 
   defp by_request(access_by_id, fun),
@@ -1374,23 +1423,31 @@ defmodule EmisarWeb.TeamLive do
 
   defp sync_count(count, word), do: "#{count} #{word}#{if count == 1, do: "", else: "s"}"
 
+  defp assignable_roles(subject) do
+    Emisar.Auth.roles()
+    |> Enum.filter(&Accounts.subject_can_assign_member_role?(&1, subject))
+    |> Enum.map(&Atom.to_string/1)
+  end
+
   # What a member who can't flip these security/notification settings reads in
   # the control's place. Each states the setting's own state plainly — the OFF
   # state included, which none of the three used to render at all.
-  defp mfa_enforcement_value_label(:enforced), do: "Enforced"
-  defp mfa_enforcement_value_label(_), do: "Not enforced"
+  defp mfa_enforcement_value_label(:enforced), do: "Required"
+  defp mfa_enforcement_value_label(:unavailable), do: "Unavailable"
+  defp mfa_enforcement_value_label(_), do: "Not required"
 
   defp sso_connections_value_label(0), do: "Not configured"
   defp sso_connections_value_label(_), do: "Configured"
 
   defp sso_required_value_label(true), do: "Required"
+  defp sso_required_value_label(nil), do: "Unavailable"
   defp sso_required_value_label(_), do: "Not required"
 
   defp monthly_report_value_label(true), do: "Off"
   defp monthly_report_value_label(_), do: "On"
 
   defp request_label(request),
-    do: Accounts.user_display_name(request) || request.provider_identifier
+    do: Accounts.user_display_name(request) || "this member"
 
   defp approval_title(%{request: %{matched_user_id: nil} = request}),
     do: "Approve access for #{request_label(request)}?"
@@ -1400,7 +1457,7 @@ defmodule EmisarWeb.TeamLive do
 
   defp approval_action_label(%{request: %{matched_user_id: matched_user_id}})
        when not is_nil(matched_user_id),
-       do: "Link account"
+       do: "Link identity"
 
   defp approval_action_label(_request_facts), do: "Approve"
 
@@ -1467,6 +1524,7 @@ defmodule EmisarWeb.TeamLive do
   # No reach at all has no pack half at all: the row itself is suppressed, which
   # is why this needs no `mode: :none` clause.
   defp pack_reach_phrase(%Accounts.RunnerAccess{pack_mode: :all}), do: "All"
+  defp pack_reach_phrase(%Accounts.RunnerAccess{pack_mode: :restricted, pack_ids: []}), do: "None"
   defp pack_reach_phrase(%Accounts.RunnerAccess{}), do: nil
 
   defp assign_form(socket, %Ecto.Changeset{} = changeset) do
@@ -1517,6 +1575,29 @@ defmodule EmisarWeb.TeamLive do
             Team
         <% end %>
       </:title>
+      <:actions :if={@live_action == :index}>
+        <.button
+          :if={@provider_facts != []}
+          id="team-sso-sign-in-link"
+          variant={:secondary}
+          size={:md}
+          class="min-w-36"
+          data-copy-text={@sign_in_url}
+          data-copy-label-copied="Link copied"
+          aria-live="polite"
+        >
+          Copy sign-in link
+        </.button>
+        <.button
+          :if={@can_manage_team?}
+          id="invite-member"
+          navigate={~p"/app/#{@current_account}/settings/team/invite"}
+          size={:md}
+          icon="action.add"
+        >
+          Invite member
+        </.button>
+      </:actions>
 
       <%!-- ========= Invite a member — its own focused page (:new) =========
            Pulled off the roster so the role choice gets room to breathe: a
@@ -1532,7 +1613,7 @@ defmodule EmisarWeb.TeamLive do
           icon="state.locked"
           title="You can't invite members"
         >
-          Only owners and admins can invite members. Ask an owner or admin to add someone.
+          Only owners and admins can invite members.
         </.empty_state>
 
         <%!-- Sent is the settled destination of this focused flow, so it gets a
@@ -1556,8 +1637,7 @@ defmodule EmisarWeb.TeamLive do
 
         <div :if={@can_manage_team? and is_nil(@invited_email)}>
           <p class="text-sm leading-relaxed text-zinc-400">
-            We'll email a join link for <span class="font-medium text-zinc-300">{@current_account.name}</span>. They'll sign in
-            with a magic link or SSO — no password — and land in this workspace.
+            We'll email an invitation to join <span class="font-medium text-zinc-300">{@current_account.name}</span>.
           </p>
 
           <.simple_form
@@ -1578,9 +1658,6 @@ defmodule EmisarWeb.TeamLive do
 
             <fieldset>
               <legend class="text-sm font-medium text-zinc-300">Role</legend>
-              <p class="mt-0.5 text-xs text-zinc-400">
-                What this person can do once they join — you can change it later.
-              </p>
               <.choice_cards
                 name="invite[role]"
                 value={@form[:role].value}
@@ -1613,12 +1690,22 @@ defmodule EmisarWeb.TeamLive do
               </div>
             </fieldset>
 
-            <fieldset :if={Emisar.Auth.role_carries_runner_access?(@form[:role].value)}>
+            <fieldset :if={@form[:role].value == "owner"}>
+              <legend class="text-sm font-medium text-zinc-300">Access</legend>
+              <div class="mt-3 flex flex-wrap items-center gap-2">
+                <.chip>All runners</.chip>
+                <.chip>All packs</.chip>
+              </div>
+            </fieldset>
+
+            <fieldset :if={
+              @form[:role].value != "owner" and
+                Emisar.Auth.role_carries_runner_access?(@form[:role].value)
+            }>
               <legend class="text-sm font-medium text-zinc-300">Access</legend>
               <%!-- The eyebrows below already say the two decisions, so this line
                     spends itself on the one thing they cannot: why the first card
                     is preselected. --%>
-              <p class="mt-0.5 text-xs text-zinc-400">New members start with no access.</p>
               <div class="mt-3">
                 <.label variant={:eyebrow}>Runners</.label>
               </div>
@@ -1689,15 +1776,13 @@ defmodule EmisarWeb.TeamLive do
           <.status_note
             icon="state.warning"
             tone={:amber}
-            title="This removes their current factor"
+            title="Reset authenticator"
             primary
           >
-            The authenticator and recovery codes for
             <span class="font-medium text-zinc-200">
               {Accounts.user_display_name(target) || target.email || "this member"}
-            </span>
-            are wiped. Every session they hold is signed out. They can set up a new factor
-            after signing in. Confirm the member asked for this reset before you continue.
+            </span>'s authenticator and recovery codes will be removed, and all their sessions ended.
+            Confirm they requested this reset before continuing.
           </.status_note>
 
           <div class="mt-7">
@@ -1823,17 +1908,6 @@ defmodule EmisarWeb.TeamLive do
         </div>
       </div>
 
-      <%!-- The role note opens the page instead of closing it: it explains why
-           the roster's invite and role controls are missing, so it has to be
-           read BEFORE them, not discovered under the last row. The docs link
-           stays the paragraph's tail either way. --%>
-      <.page_intro :if={@live_action == :index}>
-        Members, roles, and invitations for this workspace — who can dispatch, approve,
-        and configure.{" "}<span :if={not @can_manage_team? and @current_role}>Only owners and admins can invite or manage members. Your role: {Emisar.Auth.role_label(
-          @current_role
-        )}.{" "}</span><.doc_link href={~p"/docs/teams-and-access"}>Team &amp; access docs</.doc_link>
-      </.page_intro>
-
       <.loading_state :if={@live_action == :index and @loading?} />
 
       <%!-- Single-column list. Each row is a member: avatar, name +
@@ -1863,7 +1937,6 @@ defmodule EmisarWeb.TeamLive do
               icon="state.warning"
               title="Couldn't load access requests"
             >
-              This is a load error, not an empty queue — someone may be locked out waiting on you.
               Refresh the page to try again.
             </.empty_state>
           </section>
@@ -1890,7 +1963,7 @@ defmodule EmisarWeb.TeamLive do
                 </:title>
                 <:chips>
                   <.chip :if={request_facts.request.matched_user_id} tone={:amber}>
-                    Existing account
+                    Existing member
                   </.chip>
                 </:chips>
                 <:meta>
@@ -1993,6 +2066,7 @@ defmodule EmisarWeb.TeamLive do
                       <input type="hidden" name="_request_id" value={request.id} />
                       <.input
                         type="select"
+                        id={"approve-request-#{request.id}-runner-access-mode"}
                         name="runner_access_mode"
                         value={Map.get(@approval_access_modes, request.id, "none")}
                         label="Runner access"
@@ -2020,7 +2094,6 @@ defmodule EmisarWeb.TeamLive do
                         advertisements={@pack_advertisements}
                         grant_limited?={@pack_access_restricted?}
                         load_error={RunnerScope.pack_load_error(@pack_load_error?)}
-                        variant={:select}
                         mode_name="pack_access_mode"
                         mode_value={Map.get(@approval_pack_modes, request.id, "all")}
                         scope_name="pack_scope[]"
@@ -2052,18 +2125,10 @@ defmodule EmisarWeb.TeamLive do
              action dropdown floats freely (nothing clips on the canvas).
              Inline edit and scope-edit forms render INSIDE the :item slot
              below the top-line content, keeping the natural flow per row. --%>
-            <%!-- Invite lives on the Members header — the action belongs to the
-               roster it grows, not the page as a whole. --%>
             <.section_header title="Members">
-              <:actions :if={@can_manage_team?}>
-                <.button
-                  navigate={~p"/app/#{@current_account}/settings/team/invite"}
-                  size={:sm}
-                  icon="action.add"
-                >
-                  Invite member
-                </.button>
-              </:actions>
+              <:badge :if={not @can_manage_team?}>
+                <.chip id="team-read-only" icon="state.locked" baseline>Read-only</.chip>
+              </:badge>
             </.section_header>
 
             <LiveTable.live_table
@@ -2119,7 +2184,7 @@ defmodule EmisarWeb.TeamLive do
                             tone={:rose}
                             title="This address bounced or filed a spam complaint, so emails to it are blocked. Contact support to clear it."
                           >
-                            Email bouncing
+                            Email blocked
                           </.chip>
                           <%!-- MFA status. Three states worth distinguishing:
                          (1) enrolled — quiet brand check, the happy
@@ -2128,15 +2193,16 @@ defmodule EmisarWeb.TeamLive do
                          enrolled AND the account requires MFA — LOUD
                          rose, because that user can't sign in right
                          now and an admin should chase them. --%>
-                          <.mfa_badge
-                            enrolled?={member.mfa_enrolled?}
-                            require_mfa?={@security_facts.mfa_enforcement == :enforced}
-                          />
+                          <.mfa_badge enrolled?={member.mfa_enrolled?} />
                           <%!-- Provisioned by an SSO/SCIM connection? Attribute + link
                          it, so an admin can see where this member came from and
                          jump to the provider. Renders nothing for a manually-added
                          member (or when the viewer can't read SSO). --%>
-                          <.sync_badge directory={directory} account={@current_account} />
+                          <.sync_badge
+                            id={"member-source-#{membership.id}"}
+                            directory={directory}
+                            account={@current_account}
+                          />
                           <.chip :if={membership.user_id == @current_user.id} tone={:neutral}>
                             You
                           </.chip>
@@ -2265,16 +2331,10 @@ defmodule EmisarWeb.TeamLive do
                                   <% {:group, group} -> %>
                                     <.identity_tag category="group" value={group} />
                                   <% {:runner, runner_id} -> %>
-                                    <%!-- The full runner id rides the tag's title; the value
-                                     half names the live runner, and falls back to the shared
-                                     removed-runner label when the id no longer resolves. --%>
-                                    <.identity_tag category="runner" title={runner_id}>
+                                    <.identity_tag category="runner">
                                       <% runner = Map.get(@runners_by_id, runner_id) %>
                                       <span :if={runner}>{runner.name}</span>
-                                      <.removed_runner
-                                        :if={is_nil(runner)}
-                                        runner_id={runner_id}
-                                      />
+                                      <span :if={is_nil(runner)}>Runner unavailable</span>
                                     </.identity_tag>
                                 <% end %>
                               </:item>
@@ -2330,7 +2390,7 @@ defmodule EmisarWeb.TeamLive do
                       class="flex shrink-0 items-center justify-start gap-1.5 pl-14 lg:min-w-[12.5rem] lg:justify-end lg:pl-0"
                     >
                       <%= cond do %>
-                        <% @can_manage_team? and not member.self_owner? and not member.role_editable? -> %>
+                        <% @can_manage_team? and not member.self_owner? and membership.directory_managed -> %>
                           <%!-- Synced role: the IdP owns it (a role mapping, or the
                          provider default), so directory sync recomputes it and a manual
                          change here silently reverts. Read-only, pointing to where the
@@ -2362,10 +2422,33 @@ defmodule EmisarWeb.TeamLive do
                             </:trigger>
                             <.menu_item
                               :for={role <- @roles}
-                              :if={role != to_string(membership.role)}
+                              :if={membership.role != :owner and role != to_string(membership.role)}
                               phx-click={open_confirm("change-role-#{membership.id}-#{role}")}
                             >
                               {Emisar.Auth.role_label(role)}
+                            </.menu_item>
+                            <.menu_item
+                              :for={role <- @roles}
+                              :if={
+                                membership.role == :owner and
+                                  not membership.runner_access_directory_managed and role != "owner"
+                              }
+                              navigate={
+                                ~p"/app/#{@current_account}/settings/team/#{membership.id}/change-role/#{role}"
+                              }
+                            >
+                              {Emisar.Auth.role_label(role)}
+                            </.menu_item>
+                            <.menu_item
+                              :if={
+                                membership.role == :owner and
+                                  membership.runner_access_directory_managed
+                              }
+                              navigate={
+                                ~p"/app/#{@current_account}/settings/team/#{membership.id}/change-role/directory"
+                              }
+                            >
+                              Use directory role
                             </.menu_item>
                           </.dropdown>
                         <% true -> %>
@@ -2382,12 +2465,16 @@ defmodule EmisarWeb.TeamLive do
                       <.member_actions
                         member={member}
                         current_user_id={@current_user.id}
-                        can_manage?={@can_manage_team?}
+                        can_manage?={member.manageable?}
+                        can_manage_team?={@can_manage_team?}
                         can_view_member_activity?={
                           not Audit.subject_sees_billing_audit_only?(@current_subject)
                         }
                         current_account={@current_account}
                         name_locked?={directory_managed?(directory)}
+                        name_editing?={@editing_id == membership.id}
+                        access_editing?={@scope_editing_id == membership.id}
+                        directory_name={directory_label(directory)}
                       />
                     </div>
                   </div>
@@ -2399,7 +2486,7 @@ defmodule EmisarWeb.TeamLive do
                   <.confirm_dialog
                     :for={role <- @roles}
                     :if={
-                      @can_manage_team? and member.role_editable? and
+                      @can_manage_team? and member.role_editable? and membership.role != :owner and
                         role != to_string(membership.role)
                     }
                     id={"change-role-#{membership.id}-#{role}"}
@@ -2411,7 +2498,12 @@ defmodule EmisarWeb.TeamLive do
                       |> close_confirm("change-role-#{membership.id}-#{role}")
                     }
                   >
-                    <:body>{RoleCopy.change_body(role)}</:body>
+                    <:body>
+                      <p>{RoleCopy.change_body(role)}</p>
+                      <p :if={RoleCopy.access_hint(role)} class="mt-3">
+                        {RoleCopy.access_hint(role)}
+                      </p>
+                    </:body>
                   </.confirm_dialog>
 
                   <%!-- Edit form appears inline under the row, NAKED (§8.1: forms
@@ -2435,10 +2527,6 @@ defmodule EmisarWeb.TeamLive do
                         label="Full name"
                         autocomplete="name"
                       />
-                      <p class="text-xs text-zinc-400">
-                        Only display name can be changed from here. Members
-                        update their own sign-in email on their Profile page.
-                      </p>
                       <:actions>
                         <.button phx-disable-with="Saving...">Save</.button>
                         <.button variant={:ghost} type="button" phx-click="cancel_edit">
@@ -2457,8 +2545,7 @@ defmodule EmisarWeb.TeamLive do
                     >
                       <input type="hidden" name="membership_id" value={membership.id} />
                       <p class="text-xs text-zinc-400">
-                        Any API key they create reaches only what you allow here, so narrowing
-                        this narrows their keys too.
+                        Changes also apply to this member's agent credentials.
                       </p>
 
                       <div>
@@ -2507,7 +2594,7 @@ defmodule EmisarWeb.TeamLive do
                       />
 
                       <div class="flex items-center gap-3">
-                        <.button phx-disable-with="Saving...">Save scope</.button>
+                        <.button phx-disable-with="Saving…">Save access</.button>
                         <.button variant={:ghost} type="button" phx-click="cancel_scope_edit">
                           Cancel
                         </.button>
@@ -2523,8 +2610,7 @@ defmodule EmisarWeb.TeamLive do
                   icon="state.warning"
                   title="Couldn't load your team"
                 >
-                  This is a load error, not an empty team — you're always a member of your own.
-                  Refresh the page; if it persists, your access to this account may have changed.
+                  Refresh the page to try again.
                 </.empty_state>
                 <.empty_state
                   :if={
@@ -2559,17 +2645,16 @@ defmodule EmisarWeb.TeamLive do
                 <:body>
                   <%= case @pending_member_action.action do %>
                     <% "suspend" -> %>
-                      They're signed out and can't sign back in until you restore them.
+                      {RoleCopy.suspend_body()}
                     <% "end_sessions" -> %>
-                      Signs them out of every device; they can sign back in right away.
+                      Signs this member out on all devices.
                     <% "remove" -> %>
                       <% membership = @pending_member_action.facts.membership %> Permanently removes
                       <span class="font-medium text-rose-100">
                         {(membership.user && membership.user.email) || "this member"}
                       </span>
-                      from the team: they lose access immediately, their role and runner scopes
-                      are deleted, and they'd need a fresh invite to return. Suspend instead to
-                      keep their access reversible.
+                      from the team. They lose access immediately, and their agent credentials and
+                      standing approvals are revoked.
                   <% end %>
                 </:body>
               </.confirm_dialog>
@@ -2588,20 +2673,25 @@ defmodule EmisarWeb.TeamLive do
           <h3 class="text-[11px] font-semibold uppercase tracking-wider text-zinc-400">Security</h3>
 
           <%!-- ── Multi-factor authentication ── --%>
-          <% unenrolled = @security_facts.mfa_missing %>
+          <.event_block
+            :if={not @security_facts.available?}
+            id="team-security-unavailable"
+            icon="state.warning"
+            tone={:amber}
+            title="Couldn't load sign-in settings"
+          >
+            <:body>Refresh the page to try again.</:body>
+          </.event_block>
           <%!-- credo:disable-for-next-line Emisar.Checks.NoIslandContainers — a self-contained security control, boxed per the screenshot --%>
           <div class="rounded-xl border border-zinc-800/80 p-4">
             <h4 class="text-sm font-medium text-zinc-100">Multi-factor authentication</h4>
             <p class="mt-1 text-xs leading-relaxed text-zinc-400">
-              When enforced, members without MFA are funneled to their profile to set it up before
-              they can use the rest of the app. You can't enable this until you've enrolled
-              yourself — prevents lock-outs.
+              Require a second factor before members can use this account.
             </p>
-            <p class="mt-3 flex flex-wrap items-center gap-2 text-xs">
+            <p :if={@security_facts.available?} class="mt-3 flex flex-wrap items-center gap-2 text-xs">
               <span class="flex items-center gap-1.5">
-                <.status_dot :if={unenrolled > 0} tone={:amber} size={:sm} />
                 <span class="text-zinc-400">
-                  MFA enrolled:
+                  Authenticator set up:
                   <span id="mfa-enrolled-count" class="font-medium tabular-nums text-zinc-200">
                     {@security_facts.mfa_enrolled}
                   </span>
@@ -2609,6 +2699,7 @@ defmodule EmisarWeb.TeamLive do
                   <span class="font-medium tabular-nums text-zinc-200">
                     {@security_facts.mfa_total}
                   </span>
+                  {if @security_facts.mfa_total == 1, do: "member", else: "members"}
                 </span>
               </span>
             </p>
@@ -2617,7 +2708,10 @@ defmodule EmisarWeb.TeamLive do
                  for one who can't — a chip as well would state it twice. --%>
             <.gated_setting
               id="require-mfa"
-              can_change?={Accounts.subject_can_manage_account_security?(@current_subject)}
+              can_change?={
+                @security_facts.available? and
+                  Accounts.subject_can_manage_account_security?(@current_subject)
+              }
               value={mfa_enforcement_value_label(@security_facts.mfa_enforcement)}
               who_can_change="Only owners and admins can change this."
               class="mt-4"
@@ -2630,16 +2724,12 @@ defmodule EmisarWeb.TeamLive do
                 >
                   <.mfa_confirm_button
                     require_mfa={false}
-                    total={@security_facts.mfa_total}
-                    unenrolled={unenrolled}
                     disabled={true}
                   />
                 </.tooltip>
               <% else %>
                 <.mfa_confirm_button
                   require_mfa={@security_facts.mfa_enforcement == :enforced}
-                  total={@security_facts.mfa_total}
-                  unenrolled={unenrolled}
                   disabled={false}
                 />
               <% end %>
@@ -2653,9 +2743,7 @@ defmodule EmisarWeb.TeamLive do
           <div id="single-sign-on" class="rounded-xl border border-zinc-800/80 p-4">
             <h4 class="text-sm font-medium text-zinc-100">Single sign-on</h4>
             <p class="mt-1 text-xs leading-relaxed text-zinc-400">
-              Connect your organization's identity provider so members sign in through it. New
-              users are provisioned on first sign-in — automatically or after your approval — and
-              you choose the role they land with.
+              Let members sign in through your identity provider.
             </p>
             <%!-- The whole list fits: a connection is unique per provider kind
                  (one Okta, one Google, …), so there are at most a handful. --%>
@@ -2689,7 +2777,7 @@ defmodule EmisarWeb.TeamLive do
                         {sync_count(stats.users, "user")} · {sync_count(stats.groups, "group")}
                       </span>
                       <span :if={provider.last_synced_at} class="text-brand-300/90">
-                        · synced
+                        · connected
                         <.local_time
                           id={"provider-synced-#{provider.id}"}
                           value={provider.last_synced_at}
@@ -2697,7 +2785,7 @@ defmodule EmisarWeb.TeamLive do
                         />
                       </span>
                       <span :if={is_nil(provider.last_synced_at)} class="text-amber-300/90">
-                        · never synced
+                        · never connected
                       </span>
                     </span>
                   </div>
@@ -2708,8 +2796,6 @@ defmodule EmisarWeb.TeamLive do
                 </.link>
               </li>
             </ul>
-            <%!-- "Not configured" is a claim about how this account signs in, so
-                 it is never made from a read that failed. --%>
             <.empty_state
               :if={@sso_load_error?}
               variant={:hint}
@@ -2718,63 +2804,72 @@ defmodule EmisarWeb.TeamLive do
               title="Couldn't load single sign-on"
               class="mt-3"
             >
-              This is a load error, not a sign-in posture — connections may well be configured
-              and enforced. Refresh the page to try again.
+              Refresh the page to try again.
             </.empty_state>
-            <%!-- With no list to show, the card still has to say where SSO
-                 STANDS — through the same shape as every other setting (§7.59).
-                 An SSO admin only lands here when nothing is connected, so
-                 their arm keeps the sign-in consequence; a member who can't
-                 manage connections gets that state as the locked value, not a
-                 sentence about who outranks them. --%>
+            <%!-- The setup action owns the empty state. Members without SSO
+                 management access still see the narrow read-only posture. --%>
             <.gated_setting
-              :if={not @sso_load_error? and @provider_facts == []}
+              :if={not @sso_load_error? or SSO.subject_can_manage_sso?(@current_subject)}
               id="sso-connections"
               can_change?={SSO.subject_can_manage_sso?(@current_subject)}
               value={sso_connections_value_label(@enabled_sso_provider_count)}
               who_can_change="Only owners and admins can change this."
-              class="mt-3"
+              class="mt-4"
             >
-              <p class="text-xs text-zinc-400">
-                Not configured — members sign in with a magic link.
-              </p>
-            </.gated_setting>
-            <div class="mt-4">
-              <%= cond do %>
-                <% SSO.subject_can_configure_sso?(@current_subject) -> %>
+              <%= if SSO.subject_can_configure_sso?(@current_subject) do %>
+                <.button
+                  id="add-sso-connection"
+                  navigate={~p"/app/#{@current_account}/settings/sso/new"}
+                  variant={:secondary}
+                  size={:sm}
+                  icon="action.add"
+                >
+                  Add connection
+                </.button>
+              <% else %>
+                <.tooltip
+                  id="add-sso-connection-plan"
+                  text="Single sign-on requires the Team plan or above."
+                  placement={:bottom}
+                  class="shrink-0"
+                >
                   <.button
-                    navigate={~p"/app/#{@current_account}/settings/sso/new"}
+                    id="add-sso-connection"
+                    type="button"
                     variant={:secondary}
                     size={:sm}
-                    icon="action.add"
+                    icon="state.locked"
+                    disabled
+                    aria-describedby="add-sso-connection-plan"
                   >
-                    Add provider
+                    Add connection
                   </.button>
-                <% Accounts.subject_can_manage_account_security?(@current_subject) -> %>
-                  <span class="text-[11px] text-zinc-400">
-                    Available on the Team and Enterprise plans
-                  </span>
-                <% true -> %>
+                </.tooltip>
               <% end %>
-            </div>
-            <%!-- Enforcement qualifies the connections above, so it stays in
-                 their card. Match the quiet sign-in-link subsection grammar;
-                 keep the lockout consequence and confirm action intact. --%>
+            </.gated_setting>
+            <%!-- Enforcement stays with the connections it governs; sharing
+                 the sign-in link belongs to the page's member actions. --%>
             <div
+              :if={
+                @provider_facts != [] or @enabled_sso_provider_count > 0 or
+                  @security_facts.sso_required? == true
+              }
               data-role="require-sso-section"
               class="mt-4 border-t border-zinc-800/70 pt-3"
             >
               <p class="text-[11px] font-medium text-zinc-300">Require single sign-on</p>
               <p class="mt-0.5 text-[11px] leading-relaxed text-zinc-400">
-                Members sign in through this account's identity provider. Magic-link sign-ins are
-                redirected to SSO. Needs an enabled connection.
+                Disable all other sign-in methods for this account.
               </p>
               <%!-- The "Required" tag that rode the title line is gone: the button's
                    verb states it for a member who can change it, the locked value for
                    one who can't, and neither said it when SSO was NOT required. --%>
               <.gated_setting
                 id="require-sso"
-                can_change?={Accounts.subject_can_manage_account_security?(@current_subject)}
+                can_change?={
+                  @security_facts.available? and not @sso_load_error? and
+                    Accounts.subject_can_manage_account_security?(@current_subject)
+                }
                 value={sso_required_value_label(@security_facts.sso_required?)}
                 who_can_change="Only owners and admins can change this."
                 class="mt-3"
@@ -2815,19 +2910,6 @@ defmodule EmisarWeb.TeamLive do
                 <% end %>
               </.gated_setting>
             </div>
-            <%!-- The branded sign-in link to hand to members — only once there's a
-                 connection to sign in through. --%>
-            <div
-              :if={@provider_facts != []}
-              data-role="team-sign-in-section"
-              class="mt-4 border-t border-zinc-800/70 pt-3"
-            >
-              <p class="text-[11px] font-medium text-zinc-300">Team sign-in link</p>
-              <p class="mt-0.5 text-[11px] leading-relaxed text-zinc-400">
-                Share this — it opens this team's sign-in page with your SSO connections.
-              </p>
-              <.code_line id="team-sso-sign-in-link" value={@sign_in_url} class="mt-2" />
-            </div>
           </div>
 
           <%!-- ===== Notifications ===== account-wide email preferences, distinct
@@ -2841,9 +2923,7 @@ defmodule EmisarWeb.TeamLive do
           <div class="rounded-xl border border-zinc-800/80 p-4">
             <h4 class="text-sm font-medium text-zinc-100">Monthly report</h4>
             <p class="mt-1 text-xs leading-relaxed text-zinc-400">
-              A once-a-month email to the account owner summarizing what emisar did — runs executed,
-              approvals that gated risky work, current posture. Sign-in and approval emails are
-              separate and keep working either way.
+              Email the account owner a monthly summary of activity and security.
             </p>
             <.gated_setting
               id="monthly-report"
@@ -2855,7 +2935,7 @@ defmodule EmisarWeb.TeamLive do
               <.switch
                 on={not @current_account.settings.monthly_report_opt_out}
                 on_label="Turn off"
-                off_label="Turn back on"
+                off_label="Turn on"
                 aria-label="Monthly account-health report email"
                 phx-click="toggle_monthly_report"
               />
@@ -2899,12 +2979,7 @@ defmodule EmisarWeb.TeamLive do
         <.meta_field label="Packs" wrap>{invited_pack_access(@access)}</.meta_field>
       </.meta_strip>
 
-      <div class="mt-7 border-t border-zinc-800/70 pt-5">
-        <h2 class="text-sm font-medium text-zinc-200">What happens next</h2>
-        <p class="mt-1 max-w-xl text-sm leading-relaxed text-zinc-400">
-          They can join with the emailed link, then sign in with a magic link or your SSO provider.
-          You can resend the invitation or change their access from the member list.
-        </p>
+      <div class="mt-7">
         {render_slot(@inner_block)}
       </div>
     </div>
@@ -2956,7 +3031,7 @@ defmodule EmisarWeb.TeamLive do
       Enum.map(access.runner_ids, fn id ->
         case Map.get(runners_by_id, id) do
           %{name: name} when is_binary(name) and name != "" -> name
-          _runner -> id
+          _runner -> "Runner unavailable"
         end
       end)
 
@@ -2964,6 +3039,10 @@ defmodule EmisarWeb.TeamLive do
   end
 
   defp invited_pack_access(%Accounts.RunnerAccess{mode: :none}), do: "None"
+
+  defp invited_pack_access(%Accounts.RunnerAccess{pack_mode: :restricted, pack_ids: []}),
+    do: "No packs"
+
   defp invited_pack_access(%Accounts.RunnerAccess{pack_mode: :all}), do: "All packs"
 
   defp invited_pack_access(%Accounts.RunnerAccess{pack_mode: :restricted, pack_ids: pack_ids}),
@@ -2971,28 +3050,15 @@ defmodule EmisarWeb.TeamLive do
 
   # Inline action menu for a single member row. Hidden for the actor's
   attr :enrolled?, :boolean, required: true
-  attr :require_mfa?, :boolean, required: true
 
   defp mfa_badge(%{enrolled?: true} = assigns) do
     ~H"""
     <.chip
       tone={:brand}
       icon="identity.authentication"
-      title="Multi-factor authentication is enrolled."
+      title="This member has set up an authenticator app in emisar."
     >
-      MFA
-    </.chip>
-    """
-  end
-
-  defp mfa_badge(%{require_mfa?: true} = assigns) do
-    ~H"""
-    <.chip
-      tone={:rose}
-      icon="security.posture_warning"
-      title="Account requires MFA but this user hasn't enrolled. They can't sign in until they do."
-    >
-      MFA required
+      Authenticator
     </.chip>
     """
   end
@@ -3004,6 +3070,7 @@ defmodule EmisarWeb.TeamLive do
 
   attr :directory, :any, default: nil
   attr :account, :map, required: true
+  attr :id, :string, required: true
 
   # A linked chip attributing a member to the SSO/SCIM connection that
   # provisioned them — SCIM directory sync, an SSO first-login (JIT), or an admin
@@ -3015,17 +3082,18 @@ defmodule EmisarWeb.TeamLive do
     assigns = assign(assigns, :identity, assigns.directory.identity)
 
     ~H"""
-    <.link
-      navigate={~p"/app/#{@account}/settings/sso/#{@identity.provider_id}"}
-      class="inline-flex min-w-0 max-w-full items-center gap-1 rounded-md bg-zinc-800/70 px-1.5 py-0.5 text-[11px] font-medium text-zinc-300 ring-1 ring-inset ring-white/10 transition hover:bg-zinc-700/70 hover:text-zinc-100"
-      title={"Provisioned via #{provisioned_via_label(@identity.provisioned_via)} — #{@identity.provider_name}"}
-    >
-      <%!-- A directory SOURCE is identity metadata, not a pass state — the sync
-           glyph stays neutral zinc (brand green is reserved for healthy/pass),
-           so a roster of synced members doesn't paint itself green. --%>
-      <.icon name="identity.directory_sync" class="h-3 w-3 shrink-0 text-zinc-400" />
-      <span class="truncate">{sync_badge_label(@identity)}</span>
-    </.link>
+    <.tooltip id={@id} text={provisioned_via_tooltip(@identity.provisioned_via)}>
+      <.link
+        navigate={~p"/app/#{@account}/settings/sso/#{@identity.provider_id}"}
+        class="inline-flex min-w-0 max-w-full items-center gap-1 rounded-md bg-zinc-800/70 px-1.5 py-0.5 text-[11px] font-medium text-zinc-300 ring-1 ring-inset ring-white/10 transition hover:bg-zinc-700/70 hover:text-zinc-100"
+      >
+        <%!-- A directory SOURCE is identity metadata, not a pass state — the sync
+             glyph stays neutral zinc (brand green is reserved for healthy/pass),
+             so a roster of synced members doesn't paint itself green. --%>
+        <.icon name="identity.directory_sync" class="h-3 w-3 shrink-0 text-zinc-400" />
+        <span class="truncate">{sync_badge_label(@identity)}</span>
+      </.link>
+    </.tooltip>
     """
   end
 
@@ -3042,11 +3110,15 @@ defmodule EmisarWeb.TeamLive do
   attr :member, :map, required: true
   attr :current_user_id, :string, required: true
   attr :can_manage?, :boolean, required: true
+  attr :can_manage_team?, :boolean, required: true
   # A reader who only sees the billing slice of the trail finds nothing under a
   # person-filtered view, so they get no jump into one — not even their own.
   attr :can_view_member_activity?, :boolean, required: true
   attr :current_account, :map, required: true
   attr :name_locked?, :boolean, required: true
+  attr :name_editing?, :boolean, required: true
+  attr :access_editing?, :boolean, required: true
+  attr :directory_name, :string, required: true
 
   defp member_actions(assigns) do
     assigns = assign(assigns, :membership, assigns.member.membership)
@@ -3080,6 +3152,16 @@ defmodule EmisarWeb.TeamLive do
         >
           Resend email
         </.button>
+      <% @can_manage_team? and not @can_manage? and @can_view_member_activity? -> %>
+        <.button
+          navigate={
+            ~p"/app/#{@current_account}/audit?#{[actor_kind: "user", actor_id: @membership.user_id]}"
+          }
+          variant={:secondary}
+          size={:sm}
+        >
+          View activity
+        </.button>
       <% @can_manage? -> %>
         <.dropdown
           class="inline-block text-left"
@@ -3104,8 +3186,10 @@ defmodule EmisarWeb.TeamLive do
             :if={not @name_locked?}
             phx-click="start_edit"
             phx-value-membership_id={@membership.id}
+            aria-expanded={to_string(@name_editing?)}
+            aria-controls={if @name_editing?, do: "edit-form-#{@membership.id}"}
           >
-            Edit name
+            {if @name_editing?, do: "Cancel name edit", else: "Edit name"}
           </.menu_item>
           <%!-- A role that reaches no runners has nothing to set: the row above
            already states the cleared value, so the verb goes rather than
@@ -3117,17 +3201,26 @@ defmodule EmisarWeb.TeamLive do
             }
             phx-click="start_scope_edit"
             phx-value-membership_id={@membership.id}
+            aria-expanded={to_string(@access_editing?)}
+            aria-controls={if @access_editing?, do: "member-scope-form-#{@membership.id}"}
           >
-            Set access
+            {if @access_editing?, do: "Cancel access edit", else: "Edit access"}
           </.menu_item>
           <.menu_item
-            :if={@member.disabled?}
+            :if={@member.disabled? and not @membership.directory_suspended}
             tone={:brand}
             phx-click="reinstate"
             phx-value-membership_id={@membership.id}
           >
             Restore access
           </.menu_item>
+          <.tooltip
+            :if={@member.disabled? and @membership.directory_suspended}
+            id={"restore-in-directory-#{@membership.id}"}
+            text={"Reactivate this member in #{@directory_name}."}
+          >
+            <.menu_item disabled>Restore access</.menu_item>
+          </.tooltip>
           <.menu_item
             :if={not @member.disabled?}
             tone={:amber}
@@ -3162,7 +3255,7 @@ defmodule EmisarWeb.TeamLive do
             phx-value-action="end_sessions"
             phx-value-membership_id={@membership.id}
           >
-            End all sessions
+            End sessions
           </.menu_item>
           <div class="my-1 border-t border-zinc-800/70"></div>
           <%!-- IRREVERSIBLE — typed-confirm modal instead of native
@@ -3174,7 +3267,7 @@ defmodule EmisarWeb.TeamLive do
             phx-value-action="remove"
             phx-value-membership_id={@membership.id}
           >
-            Remove from team
+            Remove member
           </.menu_item>
         </.dropdown>
       <% true -> %>
@@ -3193,22 +3286,21 @@ defmodule EmisarWeb.TeamLive do
       disabled={@disabled}
       title={
         if @require_mfa,
-          do: "Stop enforcing MFA account-wide?",
-          else: "Enforce MFA for everyone on this account?"
+          do: "Stop requiring MFA?",
+          else: "Require MFA for everyone?"
       }
-      confirm_label={if @require_mfa, do: "Stop enforcing", else: "Enforce MFA"}
+      confirm_label={if @require_mfa, do: "Stop requiring MFA", else: "Require MFA"}
       on_confirm={JS.push("toggle_require_mfa")}
     >
       <:body>
         <%= if @require_mfa do %>
           Members will be able to use the account without MFA again.
         <% else %>
-          {@unenrolled} of {@total} members aren't enrolled yet — they'll be funneled to set it up
-          before they can use the account again. You can't enable this until you've enrolled
-          yourself.
+          Members must verify a second factor before using this account. They can use an
+          authenticator app or an SSO connection configured to satisfy MFA.
         <% end %>
       </:body>
-      {if @require_mfa, do: "Stop enforcing MFA", else: "Enforce MFA"}
+      {if @require_mfa, do: "Stop requiring MFA", else: "Require MFA"}
     </.confirm_button>
     """
   end
@@ -3224,10 +3316,6 @@ defmodule EmisarWeb.TeamLive do
   # directory facts the viewer can't read still gets a sentence that makes sense.
   defp directory_label(nil), do: "your identity provider"
   defp directory_label(directory), do: directory.identity.provider_name
-
-  # A member the directory (SCIM) has deactivated (`scim_active: false`) — the IdP
-  # revoked their access, so emisar keeps them suspended and won't reinstate them here
-  # (reactivate in the IdP instead). A nil identity (not synced) is never IdP-deactivated.
 
   # The member's display name for a confirm/flash — name, else email, else nil
   # (the user is always preloaded here). Callers supply the "this member" fallback.

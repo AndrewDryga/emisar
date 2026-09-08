@@ -24,7 +24,7 @@ defmodule EmisarWeb.OIDCStepUp do
   """
 
   import Phoenix.Component, only: [assign: 3, to_form: 2]
-  import Phoenix.LiveView, only: [put_flash: 3]
+  import Phoenix.LiveView, only: [push_event: 3, put_flash: 3]
   alias Emisar.Auth
   alias EmisarWeb.{MfaErrors, OIDCIdentityHandoff}
 
@@ -81,10 +81,17 @@ defmodule EmisarWeb.OIDCStepUp do
            String.trim(code || ""),
            subject
          ) do
-      {:ok, proof} -> {:ok, proof}
-      {:error, :rate_limited} -> {:error, MfaErrors.message(:rate_limited)}
-      {:error, :replay} -> {:error, "That authenticator code was already used."}
-      {:error, _reason} -> {:error, wrong_code_message(step.factor)}
+      {:ok, proof} ->
+        {:ok, proof}
+
+      {:error, :rate_limited} ->
+        {:error, MfaErrors.message(:rate_limited)}
+
+      {:error, :replay} ->
+        {:error, "That authenticator code was already used. Wait for the next code."}
+
+      {:error, _reason} ->
+        {:error, wrong_code_message(step.factor)}
     end
   end
 
@@ -92,10 +99,10 @@ defmodule EmisarWeb.OIDCStepUp do
     do: "That authenticator or recovery code didn't match. Try again."
 
   defp wrong_code_message(:email),
-    do: "That confirmation code is wrong or expired. Try again, or resend it."
+    do: "That code is incorrect or expired. Try again or request a new code."
 
   @doc "Issues a replacement code for an emailed step-up already in progress."
-  def resend(socket, step) do
+  def resend(socket, step, code_input_id) do
     case Auth.resend_oidc_identity_step_up_code(
            step.provider_id,
            step.provider_name,
@@ -105,6 +112,7 @@ defmodule EmisarWeb.OIDCStepUp do
       {:ok, :sent} ->
         socket
         |> assign(:oidc_step_error, nil)
+        |> push_event("code:reset", %{id: code_input_id})
         |> put_flash(:info, "We sent a new code to #{socket.assigns.current_user.email}.")
 
       # The account email won't accept mail, so no code can arrive — say so and

@@ -2,8 +2,7 @@ defmodule EmisarWeb.Components.MfaEnrollmentTest do
   @moduledoc """
   Renders `EmisarWeb.AuthComponents.mfa_enrollment/1` — the ONE TOTP
   enrollment block (profile voluntary setup + enforced-MFA interstitial).
-  Asserts the QR svg, the can't-scan URI disclosure, the shared
-  `code_input` confirm form, the slots, and the stacked/split wrappers.
+  Asserts the QR svg, the manual setup key, the shared code input and actions.
   """
   use ExUnit.Case, async: true
   import Phoenix.Component
@@ -14,7 +13,7 @@ defmodule EmisarWeb.Components.MfaEnrollmentTest do
     rendered_to_string(~H"""
     <AuthComponents.mfa_enrollment
       qr_svg={@qr_svg}
-      uri={@uri}
+      setup_key={@setup_key}
       form={@form}
       variant={@variant}
     >
@@ -29,7 +28,7 @@ defmodule EmisarWeb.Components.MfaEnrollmentTest do
   defp base_assigns do
     %{
       qr_svg: ~s(<svg viewBox="0 0 10 10"><rect /></svg>),
-      uri: "otpauth://totp/emisar:op@example.com?secret=ABC234",
+      setup_key: "ABC234",
       form: to_form(%{"otp" => ""}, as: "mfa"),
       variant: :stacked,
       instructions: nil
@@ -49,29 +48,27 @@ defmodule EmisarWeb.Components.MfaEnrollmentTest do
   end
 
   describe "mfa_enrollment/1" do
-    test "stacked: QR svg, caption, URI disclosure with copy, code_input form" do
+    test "shows a copyable manual key beside the QR without a provisioning URI" do
       html = render_enrollment(base_assigns())
 
       assert html =~ ~s(<svg viewBox="0 0 10 10">)
       assert html =~ "Scan with your authenticator"
-      assert html =~ "Can't scan? Use a setup URI"
-      assert html =~ "otpauth://totp/emisar:op@example.com?secret=ABC234"
-      assert html =~ ~s(data-copy="#mfa-uri")
+      assert html =~ "Can't scan? Enter a setup key"
+      assert html =~ ~s(data-copy-text="ABC234")
+      assert html =~ "choose a time-based key"
+      refute html =~ "otpauth://"
       assert html =~ ~s(id="mfa_form")
       assert html =~ ~s(phx-submit="confirm_mfa")
       assert html =~ ~s(id="mfa-otp")
       assert html =~ "Confirm and enable"
-      assert html =~ "space-y-4"
-      refute html =~ "sm:grid-cols-[auto_1fr]"
     end
 
-    test "split: the 2-col grid wrapper and the instructions slot render" do
+    test "renders page instructions with the shared code form" do
       html =
         base_assigns()
         |> Map.merge(%{variant: :split, instructions: "Scan, then confirm."})
         |> render_enrollment()
 
-      assert html =~ "sm:grid-cols-[auto_1fr]"
       assert html =~ "Scan, then confirm."
     end
 
@@ -80,6 +77,29 @@ defmodule EmisarWeb.Components.MfaEnrollmentTest do
 
       refute html =~ ~s(class="text-sm text-zinc-300")
     end
+  end
+
+  test "recovery acknowledgement requires saving before the final action" do
+    assigns = %{saved: false}
+
+    html =
+      rendered_to_string(~H"""
+      <AuthComponents.recovery_code_acknowledgement saved={@saved} event="dismiss_recovery_codes" />
+      """)
+
+    assert html =~ "I&#39;ve saved my recovery codes somewhere safe"
+    assert html =~ ~s(phx-click="toggle_codes_saved")
+    assert html =~ ~r/<button[^>]*disabled/
+
+    assigns = %{saved: true}
+
+    html =
+      rendered_to_string(~H"""
+      <AuthComponents.recovery_code_acknowledgement saved={@saved} event="continue" label="Continue" />
+      """)
+
+    refute html =~ ~r/<button[^>]*\sdisabled[\s=>]/
+    assert html =~ ~s(phx-click="continue")
   end
 
   test "email verification precedes the QR with an inline code form" do

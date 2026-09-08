@@ -37,7 +37,7 @@ defmodule EmisarWeb.MfaEnrollment do
     |> assign(:mfa_enrollment_step, :totp)
     |> assign(:mfa_enrollment_proof, proof)
     |> assign(:mfa_secret, secret)
-    |> assign(:mfa_uri, uri)
+    |> assign(:mfa_setup_key, MfaQr.setup_key(secret))
     |> assign(:mfa_qr_svg, MfaQr.svg(uri))
     |> assign(:mfa_error, nil)
   end
@@ -54,7 +54,7 @@ defmodule EmisarWeb.MfaEnrollment do
     |> assign(:mfa_enrollment_proof, nil)
     |> assign(:mfa_enrollment_email_error, nil)
     |> assign(:mfa_secret, nil)
-    |> assign(:mfa_uri, nil)
+    |> assign(:mfa_setup_key, nil)
     |> assign(:mfa_qr_svg, nil)
     |> assign(:mfa_error, nil)
   end

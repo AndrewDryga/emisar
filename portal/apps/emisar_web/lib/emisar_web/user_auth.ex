@@ -8,8 +8,9 @@ defmodule EmisarWeb.UserAuth do
   use EmisarWeb, :verified_routes
   import Plug.Conn
   import Phoenix.Controller
-  alias Emisar.{Accounts, ApiKeys, Approvals, Auth, Catalog, Marketing, Runners, SSO, Throttle}
+  alias Emisar.{Accounts, ApiKeys, Approvals, Auth}
   alias Emisar.Auth.Subject
+  alias Emisar.{Billing, Catalog, Marketing, Runners, SSO, Throttle}
   alias EmisarWeb.{Analytics, BillingIntent, MarketingAttribution, ShellChrome}
   alias EmisarWeb.RequestContext
 
@@ -618,9 +619,16 @@ defmodule EmisarWeb.UserAuth do
        socket
        |> ShellChrome.put(navigation_facts_for(subject))
        |> ShellChrome.put(
+         support_channels: support_channels_for(subject),
          pending_approvals_count: approval_count_for(subject),
          pending_access_requests_count: access_request_count_for(subject),
          pending_packs_count: pack_pending_count_for(subject)
+       )
+       |> schedule_support_refresh()
+       |> Phoenix.LiveView.attach_hook(
+         :refresh_nav_support,
+         :handle_info,
+         &refresh_nav_support/2
        )
        |> Phoenix.LiveView.attach_hook(
          :refresh_pending_approvals,
@@ -855,6 +863,41 @@ defmodule EmisarWeb.UserAuth do
 
   defp approval_count_for(nil), do: 0
   defp approval_count_for(subject), do: Approvals.count_pending_approval_requests(subject)
+
+  defp support_channels_for(%Subject{account: account} = subject) do
+    case Billing.support_channels(account, subject) do
+      {:ok, channels} -> channels
+      {:error, _} -> %{email?: false, slack_url: nil}
+    end
+  end
+
+  defp support_channels_for(_), do: %{email?: false, slack_url: nil}
+
+  # Billing refreshes this projection alongside its summary. Other mounted
+  # pages need a bounded local read too: plan deadlines and staff link changes
+  # must not leave a stale destination in the sidebar indefinitely.
+  defp schedule_support_refresh(%{view: EmisarWeb.BillingLive} = socket), do: socket
+
+  defp schedule_support_refresh(socket) do
+    attempt = make_ref()
+    Process.send_after(self(), {:refresh_nav_support, attempt}, 60_000)
+    Phoenix.Component.assign(socket, :support_refresh, attempt)
+  end
+
+  defp refresh_nav_support({:refresh_nav_support, attempt}, socket) do
+    if socket.assigns[:support_refresh] == attempt do
+      {:halt,
+       socket
+       |> ShellChrome.put(
+         support_channels: support_channels_for(socket.assigns[:current_subject])
+       )
+       |> schedule_support_refresh()}
+    else
+      {:halt, socket}
+    end
+  end
+
+  defp refresh_nav_support(_message, socket), do: {:cont, socket}
 
   defp access_request_count_for(nil), do: 0
   defp access_request_count_for(subject), do: SSO.count_pending_link_requests(subject)

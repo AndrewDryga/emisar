@@ -13,7 +13,7 @@ defmodule EmisarWeb.MfaErrors do
   # and it leaves via a full redirect where the profile page can patch. Those are
   # real differences between the two surfaces, not drift.
   @messages %{
-    invalid_otp: "That code didn't match — try the next one.",
+    invalid_otp: "That code didn't match. Try the latest code from your authenticator.",
     mfa_enrollment_proof_stale: "Your account changed. Verify your current email again.",
     session_not_found: "Your session changed. Sign in again before enabling MFA.",
     email_verification_required: "Email a verification code first.",

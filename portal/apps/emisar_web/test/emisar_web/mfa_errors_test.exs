@@ -30,7 +30,8 @@ defmodule EmisarWeb.MfaErrorsTest do
     end
 
     test "a rejected code is worded once, for both enrollment surfaces" do
-      assert MfaErrors.message(:invalid_otp) == "That code didn't match — try the next one."
+      assert MfaErrors.message(:invalid_otp) ==
+               "That code didn't match. Try the latest code from your authenticator."
     end
   end
 

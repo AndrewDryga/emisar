@@ -3,16 +3,38 @@ defmodule EmisarWeb.ProfileLiveTest do
   alias Emisar.Auth
 
   describe "email form validation" do
+    test "a profile without an email address does not claim confirmation is pending", %{
+      conn: conn
+    } do
+      {:ok, user} = Emisar.Users.provision_sso_user(%{full_name: "No Email"})
+      account = Fixtures.Accounts.create_account()
+
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        user_id: user.id,
+        role: "viewer"
+      )
+
+      conn = log_in_user(conn, user)
+
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/profile")
+      assert has_element?(lv, "#email", "No email address")
+      assert has_element?(lv, "#email", "Ask your administrator")
+      refute has_element?(lv, "#email", "Awaiting confirmation")
+    end
+
     test "a malformed email surfaces inline via phx-change, not a flash", %{conn: conn} do
       {conn, _user, account} = register_and_log_in(conn)
       {:ok, lv, html} = live(conn, ~p"/app/#{account}/settings/profile")
 
-      # The email form tells the operator a change takes a second step.
-      assert html =~ "confirmed with a second step"
+      assert html =~ "We send your sign-in links to this address."
+      refute has_element?(lv, "#email_form")
+      assert has_element?(lv, "#change-email", "Change email")
 
       # The email-format check is a field error driven by phx-change.
       html =
         lv
+        |> edit_email()
         |> form("#email_form", %{"email" => %{"email" => "not-an-email"}})
         |> render_change()
 
@@ -21,6 +43,25 @@ defmodule EmisarWeb.ProfileLiveTest do
   end
 
   describe "profile form" do
+    test "the name saves independently and an unchanged value disables Save", %{conn: conn} do
+      {conn, user, account} = register_and_log_in(conn)
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/profile")
+      assert has_element?(lv, "#profile_form button[disabled]", "Save")
+      refute has_element?(lv, "#email_form")
+
+      lv
+      |> form("#profile_form", %{"profile" => %{"full_name" => "Updated name"}})
+      |> render_change()
+
+      refute has_element?(lv, "#profile_form button[disabled]")
+
+      lv
+      |> form("#profile_form", %{"profile" => %{"full_name" => user.full_name}})
+      |> render_change()
+
+      assert has_element?(lv, "#profile_form button[disabled]", "Save")
+    end
+
     test "saving a new full name updates and confirms", %{conn: conn} do
       {conn, user, account} = register_and_log_in(conn)
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/profile")
@@ -30,7 +71,7 @@ defmodule EmisarWeb.ProfileLiveTest do
         |> form("#profile_form", %{"profile" => %{"full_name" => "Renamed Person"}})
         |> render_submit()
 
-      assert html =~ "Profile updated."
+      assert html =~ "Name updated."
       assert html =~ "Renamed Person"
       assert Emisar.Repo.reload!(user).full_name == "Renamed Person"
     end
@@ -58,6 +99,38 @@ defmodule EmisarWeb.ProfileLiveTest do
       %{conn: conn, user: user, account: account}
     end
 
+    test "an address rejected after proof keeps the draft and shows its error locally", %{
+      conn: conn,
+      user: user,
+      account: account
+    } do
+      other = Fixtures.Users.create_user()
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/profile")
+
+      lv
+      |> edit_email()
+      |> form("#email_form", %{"email" => %{"email" => other.email}})
+      |> render_submit()
+
+      assert_received {:email, email}
+
+      render_hook(lv, "confirm_email_change", %{
+        "email_step" => %{"code" => Fixtures.Auth.code_from_email(email)}
+      })
+
+      assert has_element?(lv, "#email_form", "Couldn't change to that email")
+      assert has_element?(lv, "#email_form input[value='#{other.email}']")
+      refute has_element?(lv, "#email_step_form")
+      assert Emisar.Repo.reload!(user).email == user.email
+
+      lv
+      |> form("#email_form", %{"email" => %{"email" => "corrected@example.com"}})
+      |> render_change()
+
+      refute has_element?(lv, "#email_form", "Couldn't change to that email")
+      assert has_element?(lv, "#email_form input[value='corrected@example.com']")
+    end
+
     test "a change needs a confirmation code (no MFA) — not applied until confirmed", %{
       conn: conn,
       user: user,
@@ -68,12 +141,14 @@ defmodule EmisarWeb.ProfileLiveTest do
       # Submitting only STARTS the step-up — the email is not changed yet.
       html =
         lv
+        |> edit_email()
         |> form("#email_form", %{"email" => %{"email" => "fresh@example.com"}})
         |> render_submit()
 
       assert html =~ "emailed a confirmation code"
-      assert html =~ "Confirm change"
-      assert html =~ "confirms it&#39;s really you"
+      assert has_element?(lv, "#email_step_form button", "Change email")
+      assert html =~ "enter the 6-digit code sent to"
+      assert html =~ user.email
       assert Emisar.Repo.reload!(user).email == user.email
 
       # A wrong code is refused and the email stays put. The code boxes are
@@ -82,7 +157,8 @@ defmodule EmisarWeb.ProfileLiveTest do
       render_hook(lv, "confirm_email_change", %{"email_step" => %{"code" => "000000"}})
 
       # The rejection renders inline at the code input, not in a transient flash.
-      assert lv |> element("#email_step_form") |> render() =~ "wrong or expired"
+      assert lv |> element("#email_step_form") |> render() =~ "incorrect or expired"
+      assert_push_event(lv, "code:reset", %{id: "email-step-code"})
       assert Emisar.Repo.reload!(user).email == user.email
     end
 
@@ -129,6 +205,7 @@ defmodule EmisarWeb.ProfileLiveTest do
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/profile")
 
       lv
+      |> edit_email()
       |> form("#email_form", %{"email" => %{"email" => "mfa-fresh@example.com"}})
       |> render_submit()
 
@@ -149,20 +226,21 @@ defmodule EmisarWeb.ProfileLiveTest do
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/profile")
 
       lv
+      |> edit_email()
       |> form("#email_form", %{"email" => %{"email" => "fresh@example.com"}})
       |> render_submit()
 
       assert_received {:email, _first_code_email}
 
       render_hook(lv, "confirm_email_change", %{"email_step" => %{"code" => "000000"}})
-      assert lv |> element("#email_step_form") |> render() =~ "wrong or expired"
+      assert lv |> element("#email_step_form") |> render() =~ "incorrect or expired"
 
       html = lv |> element("#email_step_form button", "Resend code") |> render_click()
 
       # Success is claimed only after the issue call actually ran — a fresh code
       # was emailed — and the stale rejection no longer sits under the input.
       assert html =~ "We sent a new code to"
-      refute html =~ "wrong or expired"
+      refute html =~ "incorrect or expired"
       assert_received {:email, resent_email}
       code = Fixtures.Auth.code_from_email(resent_email)
 
@@ -179,6 +257,7 @@ defmodule EmisarWeb.ProfileLiveTest do
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/profile")
 
       lv
+      |> edit_email()
       |> form("#email_form", %{"email" => %{"email" => "fresh@example.com"}})
       |> render_submit()
 
@@ -221,6 +300,7 @@ defmodule EmisarWeb.ProfileLiveTest do
 
       html =
         lv
+        |> edit_email()
         |> form("#email_form", %{"email" => %{"email" => "fresh@example.com"}})
         |> render_submit()
 
@@ -241,6 +321,7 @@ defmodule EmisarWeb.ProfileLiveTest do
 
       html =
         lv
+        |> edit_email()
         |> form("#email_form", %{"email" => %{"email" => "fresh@example.com"}})
         |> render_submit()
 
@@ -256,18 +337,19 @@ defmodule EmisarWeb.ProfileLiveTest do
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/profile")
 
       lv
+      |> edit_email()
       |> form("#email_form", %{"email" => %{"email" => "first@example.com"}})
       |> render_submit()
 
       render_hook(lv, "confirm_email_change", %{"email_step" => %{"code" => "000000"}})
-      assert lv |> element("#email_step_form") |> render() =~ "wrong or expired"
+      assert lv |> element("#email_step_form") |> render() =~ "incorrect or expired"
 
       # The email form isn't rendered mid-step, but the event stays reachable
       # over the socket — a restarted challenge must not open already accusing
       # the operator of the prior challenge's wrong code.
       render_hook(lv, "save_email", %{"email" => %{"email" => "second@example.com"}})
 
-      refute lv |> element("#email_step_form") |> render() =~ "wrong or expired"
+      refute lv |> element("#email_step_form") |> render() =~ "incorrect or expired"
     end
 
     test "a resend after the user is deleted reports failure instead of claiming success", %{
@@ -278,6 +360,7 @@ defmodule EmisarWeb.ProfileLiveTest do
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/profile")
 
       lv
+      |> edit_email()
       |> form("#email_form", %{"email" => %{"email" => "fresh@example.com"}})
       |> render_submit()
 
@@ -306,6 +389,7 @@ defmodule EmisarWeb.ProfileLiveTest do
       # MFA-on → an authenticator prompt, no emailed code.
       html =
         lv
+        |> edit_email()
         |> form("#email_form", %{"email" => %{"email" => "mfa-fresh@example.com"}})
         |> render_submit()
 
@@ -317,8 +401,12 @@ defmodule EmisarWeb.ProfileLiveTest do
           "email_step" => %{"code" => NimbleTOTP.verification_code(secret)}
         })
 
-      assert html =~ "Email updated."
-      assert Emisar.Repo.reload!(user).email == "mfa-fresh@example.com"
+      assert html =~ "Email changed. Check mfa-fresh@example.com for a confirmation link."
+      assert has_element?(lv, "#email", "Awaiting confirmation")
+      refute has_element?(lv, "#email_form")
+      updated = Emisar.Repo.reload!(user)
+      assert updated.email == "mfa-fresh@example.com"
+      assert is_nil(updated.confirmed_at)
     end
 
     test "an exhausted MFA window refuses the confirmation inline, email unchanged", %{
@@ -335,6 +423,7 @@ defmodule EmisarWeb.ProfileLiveTest do
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/profile")
 
       lv
+      |> edit_email()
       |> form("#email_form", %{"email" => %{"email" => "mfa-fresh@example.com"}})
       |> render_submit()
 
@@ -365,6 +454,7 @@ defmodule EmisarWeb.ProfileLiveTest do
 
       html =
         lv
+        |> edit_email()
         |> form("#email_form", %{"email" => %{"email" => "not-an-email"}})
         |> render_submit()
 
@@ -372,7 +462,7 @@ defmodule EmisarWeb.ProfileLiveTest do
       assert Emisar.Repo.reload!(user).email == original_email
     end
 
-    test "cancelling the step-up returns to the form, email unchanged", %{
+    test "cancelling the step-up returns to the current address, email unchanged", %{
       conn: conn,
       user: user,
       account: account
@@ -380,13 +470,16 @@ defmodule EmisarWeb.ProfileLiveTest do
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/profile")
 
       lv
+      |> edit_email()
       |> form("#email_form", %{"email" => %{"email" => "fresh@example.com"}})
       |> render_submit()
 
       html = lv |> element("#email_step_form button", "Cancel") |> render_click()
 
-      assert html =~ "Email address"
-      refute html =~ "Confirm change"
+      assert html =~ user.email
+      assert has_element?(lv, "#change-email")
+      refute has_element?(lv, "#email_form")
+      refute has_element?(lv, "#email_step_form")
       assert Emisar.Repo.reload!(user).email == user.email
     end
   end
@@ -412,7 +505,7 @@ defmodule EmisarWeb.ProfileLiveTest do
       {:ok, lv, html} = live(conn, ~p"/app/#{account}/settings/profile")
 
       assert html =~ "Sign-in methods"
-      assert html =~ "signs you into every workspace this profile can access"
+      assert html =~ "A linked method signs you in to your profile."
       assert has_element?(lv, "#oidc-identity-#{provider.id}", "Workforce Okta")
       assert has_element?(lv, "#link-oidc-#{provider.id}", "Link")
 
@@ -448,8 +541,9 @@ defmodule EmisarWeb.ProfileLiveTest do
           "oidc_step" => %{"code" => "000000"}
         })
 
-      assert wrong =~ "wrong or expired"
+      assert wrong =~ "incorrect or expired"
       refute wrong =~ ~s(name="handoff")
+      assert_push_event(lv, "code:reset", %{id: "profile-oidc-step-code"})
 
       confirmed =
         render_hook(lv, "confirm_oidc_step_up", %{
@@ -497,7 +591,8 @@ defmodule EmisarWeb.ProfileLiveTest do
       assert html =~ ~s(id="profile-oidc-step-close")
       assert html =~ ~s(id="profile-oidc-step-resend")
       assert html =~ "hover:bg-zinc-800"
-      refute html =~ ">Cancel<"
+      assert has_element?(lv, "#profile-oidc-step-form button", "Cancel")
+      assert has_element?(lv, "#profile-oidc-step-continue", "Continue to Workforce Okta")
 
       assert has_element?(
                lv,
@@ -511,6 +606,7 @@ defmodule EmisarWeb.ProfileLiveTest do
 
       lv |> element("#profile-oidc-step-resend") |> render_click()
       assert_received {:email, _replacement_email}
+      assert_push_event(lv, "code:reset", %{id: "profile-oidc-step-code"})
       assert render(lv) =~ "We sent a new code"
 
       lv |> element("#profile-oidc-step-close") |> render_click()
@@ -534,20 +630,39 @@ defmodule EmisarWeb.ProfileLiveTest do
 
       {:ok, lv, html} = live(conn, ~p"/app/#{account}/settings/profile")
 
-      assert html =~ "Linked and verified by you"
+      assert html =~ "Linked by you"
       assert has_element?(lv, "#remove-oidc-#{provider.id}", "Remove")
-      assert has_element?(lv, "#remove-oidc-dialog-#{provider.id}", "Type Workforce Okta")
-
-      assert has_element?(
-               lv,
-               "#remove-oidc-dialog-#{provider.id}-confirm[phx-disable-with='Starting…']"
-             )
-
-      render_click(lv, "start_oidc_unlink", %{"identity_id" => identity.id})
+      refute has_element?(lv, "#remove-oidc-dialog-#{provider.id}")
+      lv |> element("#remove-oidc-#{provider.id}") |> render_click()
       assert_received {:email, email}
+      assert has_element?(lv, "#profile-oidc-step", "Type Workforce Okta to confirm")
+      assert has_element?(lv, "#profile-oidc-step-continue[disabled]", "Remove sign-in method")
+
+      for token <- [nil, "Wrong provider"] do
+        render_hook(lv, "confirm_oidc_step_up", %{
+          "confirm_token" => token,
+          "oidc_step" => %{"code" => Fixtures.Auth.code_from_email(email)}
+        })
+
+        assert has_element?(
+                 lv,
+                 "#profile-oidc-step",
+                 "Enter the provider name to confirm removal."
+               )
+
+        refute Emisar.Repo.reload!(identity).deleted_at
+        refute_push_event(lv, "code:reset", %{id: "profile-oidc-step-code"})
+      end
+
+      lv
+      |> form("#profile-oidc-step-form", %{"confirm_token" => provider.name})
+      |> render_change()
+
+      refute has_element?(lv, "#profile-oidc-step-continue[disabled]")
 
       html =
         render_hook(lv, "confirm_oidc_step_up", %{
+          "confirm_token" => provider.name,
           "oidc_step" => %{"code" => Fixtures.Auth.code_from_email(email)}
         })
 
@@ -568,6 +683,40 @@ defmodule EmisarWeb.ProfileLiveTest do
 
       assert html =~ "That sign-in method is no longer available."
       refute_received {:email, _email}
+    end
+
+    test "a required method remains user-linked and explains blocked removal before proof", %{
+      conn: conn,
+      account: account,
+      provider: provider,
+      user: user
+    } do
+      identity =
+        Fixtures.SSO.create_user_identity(%{
+          account_id: account.id,
+          provider_id: provider.id,
+          user_id: user.id,
+          created_by: :user,
+          provisioned_via: :oidc_link
+        })
+
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/profile")
+      Fixtures.Accounts.set_account_settings(account, %{require_sso: true})
+      render_click(lv, "retry_oidc_identities", %{})
+
+      assert has_element?(lv, "#oidc-identity-#{provider.id}", "Linked by you")
+      assert has_element?(lv, "#remove-oidc-#{provider.id}[disabled]")
+      refute has_element?(lv, "#link-oidc-#{provider.id}")
+
+      assert has_element?(
+               lv,
+               "#remove-oidc-reason-#{provider.id}",
+               "Link another enabled sign-in method before removing this one."
+             )
+
+      render_click(lv, "start_oidc_unlink", %{"identity_id" => identity.id})
+      refute has_element?(lv, "#profile-oidc-step")
+      refute_received {:email, _}
     end
 
     test "a crafted step-up event with nothing in progress spends no attempt", %{
@@ -601,7 +750,7 @@ defmodule EmisarWeb.ProfileLiveTest do
 
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/profile")
       html = render(lv)
-      assert html =~ "this device"
+      assert html =~ "This session"
 
       subject = Fixtures.Subjects.subject_for(user, account)
       {:ok, sessions, _meta} = Auth.list_sessions_for_user(nil, subject, page: [limit: 100])
@@ -629,13 +778,13 @@ defmodule EmisarWeb.ProfileLiveTest do
 
       {:ok, lv, html} = live(conn, ~p"/app/#{account}/settings/profile")
 
-      # The current session carries the "this device" marker; the second device
+      # The current session carries the "This session" marker; the second device
       # renders its IP + parsed label in its own row. Rows order by recency, so
       # position isn't asserted — the marker, not the slot, orients the operator.
-      assert html =~ "this device"
+      assert html =~ "This session"
       assert html =~ "198.51.100.4"
       assert html =~ "Chrome on Linux"
-      assert has_element?(lv, "#active-sessions li", "this device")
+      assert has_element?(lv, "#active-sessions li", "This session")
 
       subject = Fixtures.Subjects.subject_for(user, account)
       {:ok, sessions, _meta} = Auth.list_sessions_for_user(nil, subject, page: [limit: 100])
@@ -847,8 +996,53 @@ defmodule EmisarWeb.ProfileLiveTest do
       dead = conn |> get(~p"/app/#{account}/settings/profile") |> html_response(200)
 
       # The seeded device's metadata is NOT read on the dead pass.
+      assert dead =~ "Loading sessions"
+      assert dead =~ "Loading sign-in methods"
+      refute dead =~ "No single sign-on providers are enabled"
       refute dead =~ "203.0.113.9"
-      refute dead =~ "This device"
+      refute dead =~ "This session"
+    end
+
+    test "failed reads stay distinct from empty lists and offer local retry", %{
+      conn: conn,
+      account: account
+    } do
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/profile")
+      original_subject = :sys.get_state(lv.pid).socket.assigns.current_subject
+
+      :sys.replace_state(lv.pid, fn state ->
+        socket =
+          Phoenix.Component.assign(state.socket, :current_subject, %{
+            original_subject
+            | actor: nil,
+              permissions: MapSet.new()
+          })
+
+        %{state | socket: socket}
+      end)
+
+      render_click(lv, "retry_oidc_identities", %{})
+      render_click(lv, "retry_sessions", %{})
+      assert has_element?(lv, "#sessions", "Couldn't load your sessions")
+      assert has_element?(lv, "button[phx-click=retry_sessions]", "Retry")
+      refute has_element?(lv, "#active-sessions")
+      assert has_element?(lv, "#single-sign-on", "Couldn't load sign-in methods")
+      assert has_element?(lv, "button[phx-click=retry_oidc_identities]", "Retry")
+      refute has_element?(lv, "#single-sign-on", "No single sign-on providers are enabled")
+
+      :sys.replace_state(lv.pid, fn state ->
+        %{
+          state
+          | socket: Phoenix.Component.assign(state.socket, :current_subject, original_subject)
+        }
+      end)
+
+      render_click(lv, "retry_oidc_identities", %{})
+      render_click(lv, "retry_sessions", %{})
+      refute has_element?(lv, "button[phx-click=retry_sessions]")
+      assert has_element?(lv, "#active-sessions", "This session")
+      refute has_element?(lv, "button[phx-click=retry_oidc_identities]")
+      assert has_element?(lv, "#single-sign-on", "No single sign-on providers are enabled")
     end
 
     test "revoking a vanished session id flashes instead of crashing", %{
@@ -930,10 +1124,14 @@ defmodule EmisarWeb.ProfileLiveTest do
 
       # Once saved, the MFA-on view surfaces how many codes remain (a fresh 10,
       # so no low-count nudge).
+      assert has_element?(lv, "#mfa-recovery-codes button[disabled]", "Done")
+      render_click(lv, "dismiss_recovery_codes", %{})
+      assert has_element?(lv, "#mfa-recovery-codes")
+      render_click(lv, "toggle_codes_saved", %{})
       html = render_click(lv, "dismiss_recovery_codes", %{})
       refute has_element?(lv, "#mfa-recovery-codes")
-      assert html =~ "10 recovery codes remaining"
-      refute html =~ "Regenerate for a fresh set"
+      assert has_element?(lv, "#multi-factor-authentication", "10 recovery codes remaining")
+      refute html =~ "Generate new codes before these run out."
     end
 
     test "mount and refresh send no enrollment mail; the explicit start reveals no secret", %{
@@ -942,13 +1140,13 @@ defmodule EmisarWeb.ProfileLiveTest do
     } do
       {:ok, lv, html} = live(conn, ~p"/app/#{account}/settings/profile")
 
-      refute html =~ "secret="
+      refute html =~ "mfa-setup-key"
       refute_received {:email, _}
 
       html = render_click(lv, "start_mfa", %{})
 
       assert html =~ "Email verification code"
-      refute html =~ "secret="
+      refute html =~ "mfa-setup-key"
       assert_received {:email, _}
     end
 
@@ -967,7 +1165,7 @@ defmodule EmisarWeb.ProfileLiveTest do
       assert html =~ "cannot deliver mail to your current address"
       assert html =~ "Contact support"
       refute html =~ "Email verification code"
-      refute html =~ "secret="
+      refute html =~ "mfa-setup-key"
       refute_received {:email, _}
     end
 
@@ -983,7 +1181,7 @@ defmodule EmisarWeb.ProfileLiveTest do
         })
 
       assert html =~ "Start the enable flow first."
-      refute html =~ "secret="
+      refute html =~ "mfa-setup-key"
 
       render_click(lv, "start_mfa", %{})
       assert_received {:email, _}
@@ -993,8 +1191,9 @@ defmodule EmisarWeb.ProfileLiveTest do
           "mfa_enrollment" => %{"code" => "000000"}
         })
 
-      assert html =~ "wrong or expired"
-      refute html =~ "secret="
+      assert html =~ "incorrect or expired"
+      refute html =~ "mfa-setup-key"
+      assert_push_event(lv, "code:reset", %{id: "mfa-enrollment-email-code"})
     end
 
     test "the enrollment QR is a server-rendered inline SVG, not a third-party image", %{
@@ -1010,10 +1209,11 @@ defmodule EmisarWeb.ProfileLiveTest do
 
       html = begin_mfa_enrollment(lv)
 
-      # The QR is an inlined <svg> (EQRCode), with the manual-entry fallback URI
+      # The QR is an inlined <svg> (EQRCode), with the manual-entry fallback key
       # present in the page…
       assert html =~ "<svg"
-      assert html =~ "otpauth://totp/"
+      assert html =~ "mfa-setup-key"
+      refute html =~ "otpauth://totp/"
       # …and the secret-bearing URI is NEVER handed to a remote image: it isn't an
       # <img src=> at all, and no known QR-image service host appears.
       refute html =~ ~r/<img[^>]+otpauth/
@@ -1035,10 +1235,10 @@ defmodule EmisarWeb.ProfileLiveTest do
       )
       |> Emisar.Repo.update!()
 
-      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/settings/profile")
+      {:ok, lv, html} = live(conn, ~p"/app/#{account}/settings/profile")
 
-      assert html =~ "2 recovery codes remaining"
-      assert html =~ "Regenerate for a fresh set"
+      assert has_element?(lv, "#multi-factor-authentication", "2 recovery codes remaining")
+      assert html =~ "Generate new codes before these run out."
     end
 
     test "a wrong OTP leaves MFA off with the error inline at the code input", %{
@@ -1056,6 +1256,7 @@ defmodule EmisarWeb.ProfileLiveTest do
       # and the QR stays up so the operator can retry with the next code.
       assert lv |> element("#mfa_form") |> render() =~ "That code didn&#39;t match"
       assert has_element?(lv, "#mfa-otp")
+      assert_push_event(lv, "code:reset", %{id: "mfa-otp"})
       refute Emisar.Repo.reload!(user).mfa_enabled_at
     end
 
@@ -1166,6 +1367,7 @@ defmodule EmisarWeb.ProfileLiveTest do
       [_, a_code | _] = Regex.run(~r/([a-z2-7]{16})/, shown)
       assert is_binary(a_code)
 
+      render_click(lv, "toggle_codes_saved", %{})
       dismissed = render_click(lv, "dismiss_recovery_codes", %{})
       refute has_element?(lv, "#mfa-recovery-codes")
       refute dismissed =~ a_code
@@ -1202,7 +1404,7 @@ defmodule EmisarWeb.ProfileLiveTest do
 
       html = render_click(lv, "disable_mfa", %{})
 
-      assert html =~ "Enter your authenticator code or one of your recovery codes"
+      assert html =~ "Authenticator or recovery code"
       assert html =~ "That code did not match. Try again."
       reloaded = Emisar.Repo.reload!(user)
       assert %DateTime{} = reloaded.mfa_enabled_at
@@ -1293,11 +1495,11 @@ defmodule EmisarWeb.ProfileLiveTest do
       refute has_element?(lv, "#mfa_recovery_regeneration_form")
       assert has_element?(lv, "#mfa_disable_form")
 
-      assert has_element?(lv, "#mfa_disable_form button", "Confirm and disable")
-      refute has_element?(lv, "#mfa_disable_form button", "Disable MFA")
+      assert has_element?(lv, "#mfa_disable_form button", "Disable MFA")
+      refute has_element?(lv, "#mfa_disable_form button", "Confirm and disable")
 
       disable_submit =
-        lv |> element("#mfa_disable_form button", "Confirm and disable") |> render()
+        lv |> element("#mfa_disable_form button", "Disable MFA") |> render()
 
       assert disable_submit =~ "border-rose-500/40"
       refute disable_submit =~ "bg-brand-500"
@@ -1443,7 +1645,7 @@ defmodule EmisarWeb.ProfileLiveTest do
 
       # The refusal renders at the code input and the step stays open to retry.
       assert html =~ "Too many attempts. Wait a few minutes, then try again."
-      assert html =~ "Enter your authenticator code or one of your recovery codes"
+      assert html =~ "Authenticator or recovery code"
       assert %DateTime{} = Emisar.Repo.reload!(user).mfa_enabled_at
     end
   end
@@ -1463,8 +1665,13 @@ defmodule EmisarWeb.ProfileLiveTest do
 
   defp mfa_secret_from(html) do
     # The setup panel renders the Base32 secret for manual entry.
-    [_, encoded] = Regex.run(~r/secret=([A-Z2-7]+)/, html)
+    [_, encoded] = Regex.run(~r/data-copy-text="([A-Z2-7]+)"/, html)
     Base.decode32!(encoded, padding: false)
+  end
+
+  defp edit_email(lv) do
+    lv |> element("#change-email") |> render_click()
+    lv
   end
 
   defp begin_mfa_enrollment(lv) do

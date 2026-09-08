@@ -81,6 +81,156 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
     group
   end
 
+  defp refresh_directory(lv) do
+    {attempt, provider_id, _timer} = :sys.get_state(lv.pid).socket.assigns.directory_refresh
+    send(lv.pid, {:refresh_directory, attempt, provider_id})
+    render(lv)
+  end
+
+  describe "connection refresh and fixed identity fields" do
+    setup %{conn: conn} do
+      {conn, user, account} = register_and_log_in(conn, %{account: %{plan: "enterprise"}})
+      provider = insert_provider(account, %{})
+
+      %{
+        conn: conn,
+        user: user,
+        account: account,
+        provider: provider,
+        subject: Fixtures.Subjects.subject_for(user, account)
+      }
+    end
+
+    test "directory pushes refresh members and groups without replacing a mapping draft or token",
+         %{
+           conn: conn,
+           account: account,
+           provider: provider,
+           subject: subject
+         } do
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/sso/#{provider.id}")
+      render_click(lv, "enable_scim", %{"id" => provider.id})
+      provider = Repo.reload!(provider)
+      chosen = sync_group(provider, "chosen", "Chosen group")
+      render_click(lv, "add_mapping_form", %{})
+      render_click(lv, "select_group", %{"scope" => "role", "group_id" => chosen.id})
+
+      lv
+      |> form("#create-mapping-#{provider.id}", %{"mapping" => %{"role" => "operator"}})
+      |> render_change()
+
+      before = :sys.get_state(lv.pid).socket.assigns
+      assert is_binary(before.scim_token.token)
+      sync_group(provider, "arrived", "New directory group")
+
+      {:ok, _member} =
+        SSO.scim_provision_user(provider, %{
+          external_id: "directory-new-member",
+          email: "directory-new@example.com",
+          full_name: "New Directory Member"
+        })
+
+      html = refresh_directory(lv)
+      assert html =~ "New Directory Member"
+      assert html =~ "directory-new@example.com"
+      assert html =~ "New directory group"
+      refute html =~ "directory-new-member"
+      after_refresh = :sys.get_state(lv.pid).socket.assigns
+      assert after_refresh.mapping_form.params == before.mapping_form.params
+      assert after_refresh.group_pickers == before.group_pickers
+      assert after_refresh.scim_token == before.scim_token
+      assert after_refresh.adding_mapping
+
+      {:ok, _provider, _token} = SSO.rotate_scim_token(provider, subject)
+      refresh_directory(lv)
+      assert is_nil(:sys.get_state(lv.pid).socket.assigns.scim_token)
+      refute has_element?(lv, "#scim-token-#{provider.id}")
+    end
+
+    test "external enable, disable, and re-enable seed usable forms", %{
+      conn: conn,
+      account: account,
+      provider: provider,
+      subject: subject
+    } do
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/sso/#{provider.id}")
+      {:ok, provider, _token} = SSO.enable_scim(provider, subject)
+      refresh_directory(lv)
+      render_click(lv, "add_mapping_form", %{})
+      assert has_element?(lv, "#create-mapping-#{provider.id}")
+
+      {:ok, provider} = SSO.disable_scim(provider, subject)
+      refresh_directory(lv)
+      refute has_element?(lv, "#create-mapping-#{provider.id}")
+
+      {:ok, _provider, _token} = SSO.enable_scim(provider, subject)
+      refresh_directory(lv)
+      render_click(lv, "add_mapping_form", %{})
+      group = sync_group(provider, "restored-group", "Restored group")
+      refresh_directory(lv)
+      render_click(lv, "edit_group_access", %{"group_id" => group.id})
+      assert has_element?(lv, "#create-mapping-#{provider.id}")
+      assert has_element?(lv, "#edit-group-access-#{group.id}")
+    end
+
+    test "refresh rechecks plan entitlement without needing a new socket", %{
+      conn: conn,
+      account: account,
+      provider: provider
+    } do
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/sso/#{provider.id}")
+      Fixtures.Accounts.create_subscription(account, "enterprise", status: "canceled")
+      refresh_directory(lv)
+      refute :sys.get_state(lv.pid).socket.assigns.can_configure?
+      refute :sys.get_state(lv.pid).socket.assigns.can_configure_directory_sync?
+    end
+
+    test "stale ticks cannot refresh another connection or an edit form", %{
+      conn: conn,
+      account: account,
+      provider: provider
+    } do
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/sso/#{provider.id}")
+      {attempt, id, _timer} = :sys.get_state(lv.pid).socket.assigns.directory_refresh
+      other = insert_provider(account, %{kind: :entra, name: "Other connection"})
+      render_patch(lv, ~p"/app/#{account}/settings/sso/#{other.id}")
+      send(lv.pid, {:refresh_directory, attempt, id})
+      render(lv)
+      assert :sys.get_state(lv.pid).socket.assigns.provider.id == other.id
+
+      {attempt, id, _timer} = :sys.get_state(lv.pid).socket.assigns.directory_refresh
+      render_patch(lv, ~p"/app/#{account}/settings/sso/#{other.id}/edit")
+      send(lv.pid, {:refresh_directory, attempt, id})
+      render(lv)
+      assert is_nil(:sys.get_state(lv.pid).socket.assigns.directory_refresh)
+      assert has_element?(lv, "form#edit-provider-#{other.id}")
+    end
+
+    test "a bound identity locks issuer, client ID, and claim, but leaves secret rotation available",
+         %{
+           conn: conn,
+           account: account,
+           user: user,
+           provider: provider
+         } do
+      path = ~p"/app/#{account}/settings/sso/#{provider.id}/edit"
+      {:ok, lv, _html} = live(conn, path)
+
+      for field <- ~w(issuer client_id identifier_claim) do
+        refute has_element?(lv, "[name='provider[#{field}]'][disabled]")
+      end
+
+      mark_sign_in_verified(provider, user)
+      render_patch(lv, path <> "?reload=1")
+
+      for field <- ~w(issuer client_id identifier_claim) do
+        assert has_element?(lv, "[name='provider[#{field}]'][disabled]")
+      end
+
+      assert has_element?(lv, "input[name='provider[client_secret]']:not([disabled])")
+    end
+  end
+
   describe "as an enterprise admin" do
     setup %{conn: conn} do
       {conn, user, account} = register_and_log_in(conn, %{account: %{plan: "enterprise"}})
@@ -101,7 +251,7 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
       {:ok, lv, new_html} = live(conn, ~p"/app/#{account}/settings/sso/new")
       assert new_html =~ "Add connection"
       refute new_html =~ "Add an identity provider"
-      assert new_html =~ "Member provisioning"
+      assert new_html =~ "Member access"
       refute new_html =~ "User provisioning"
       assert new_html =~ "/sign_in/sso/callback"
       assert new_html =~ "Check issuer"
@@ -172,6 +322,105 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
       assert html =~ ~s(value="https://accounts.google.com")
     end
 
+    test "JumpCloud requires a region and saves the selection", %{conn: conn, account: account} do
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/sso/new")
+
+      lv
+      |> form("#provider_form", %{"provider" => %{"kind" => "google_workspace"}})
+      |> render_change()
+
+      lv
+      |> form("#provider_form", %{"provider" => %{"kind" => "jumpcloud"}})
+      |> render_change(%{"_target" => ["provider", "kind"]})
+
+      assert has_element?(
+               lv,
+               "select[name='provider[issuer]'] option[value='']",
+               "Select a region"
+             )
+
+      refute has_element?(lv, "select[name='provider[issuer]'] option[selected]:not([value=''])")
+      refute has_element?(lv, "input[name='provider[issuer]']")
+
+      for {label, issuer} <- [
+            {"United States", "https://oauth.id.jumpcloud.com/"},
+            {"Europe", "https://oauth.id.eu.jumpcloud.com/"},
+            {"India", "https://oauth.id.in.jumpcloud.com/"}
+          ] do
+        assert has_element?(
+                 lv,
+                 "select[name='provider[issuer]'] option[value='#{issuer}']",
+                 label
+               )
+      end
+
+      assert lv |> element("#test-provider") |> render_click() =~
+               "Select a JumpCloud region first."
+
+      lv
+      |> form("#provider_form", %{
+        "provider" => %{"issuer" => "https://oauth.id.eu.jumpcloud.com/"}
+      })
+      |> render_change()
+
+      assert has_element?(
+               lv,
+               "select[name='provider[issuer]'] option[value='https://oauth.id.eu.jumpcloud.com/'][selected]"
+             )
+
+      lv
+      |> form("#provider_form", %{
+        "provider" => %{
+          "name" => "European JumpCloud",
+          "client_id" => "eu-client",
+          "client_secret" => "eu-secret"
+        }
+      })
+      |> render_submit()
+
+      created =
+        IdentityProvider.Query.not_deleted()
+        |> IdentityProvider.Query.by_account_id(account.id)
+        |> Repo.one!()
+
+      assert created.kind == :jumpcloud
+      assert created.issuer == "https://oauth.id.eu.jumpcloud.com/"
+      refute created.enabled
+      assert_redirect(lv, ~p"/app/#{account}/settings/sso/#{created.id}")
+    end
+
+    test "JumpCloud retains its region and locks the select after an identity is linked", %{
+      conn: conn,
+      account: account,
+      user: user
+    } do
+      provider =
+        insert_provider(account, %{
+          kind: :jumpcloud,
+          issuer: "https://oauth.id.jumpcloud.com/"
+        })
+
+      path = ~p"/app/#{account}/settings/sso/#{provider.id}/edit"
+      {:ok, lv, _html} = live(conn, path)
+
+      assert has_element?(lv, "select[name='provider[issuer]']:not([disabled])")
+
+      assert has_element?(
+               lv,
+               "select[name='provider[issuer]'] option[value='https://oauth.id.jumpcloud.com/'][selected]"
+             )
+
+      mark_sign_in_verified(provider, user)
+      render_patch(lv, path <> "?reload=1")
+
+      assert has_element?(lv, "select[name='provider[issuer]'][disabled]")
+
+      assert has_element?(
+               lv,
+               "select[name='provider[issuer]'] option[value='https://oauth.id.jumpcloud.com/'][selected]"
+             )
+    end
+
     test "the default-role picker is radio cards with per-role descriptions", %{
       conn: conn,
       account: account
@@ -181,7 +430,7 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
       assert html =~ ~s(name="provider[default_role]")
       assert html =~ ~s(type="radio")
       # A role's shared description renders on its card (viewer, here).
-      assert html =~ "Read-only across runs"
+      assert html =~ "Viewers have read-only access across runs"
       assert html =~ ~s(name="provider[default_runner_access_mode]")
 
       assert has_element?(
@@ -742,25 +991,38 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
       # token and flips it, so a provider built straight from the changeset is
       # sign-in only whatever attrs say.
       off = insert_provider(account, %{name: "Sign-in only"})
-      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/settings/sso/#{off.id}")
+      {:ok, off_lv, html} = live(conn, ~p"/app/#{account}/settings/sso/#{off.id}")
 
-      # Sign-in only: no mapping or synced-group sections, so their notes are
-      # absent too — a note exists to explain the section beside it.
-      refute html =~ "Adds runners on top of the connection default"
-      refute html =~ "What your IdP has actually pushed"
-      assert html =~ "Members added when they first signed in"
+      # Sign-in only: member guidance stays visible without directory-specific notes.
+      refute html =~ "Edit access adds"
+      refute html =~ "Groups received from your identity provider"
+      assert html =~ "Members linked to this connection"
+
+      assert has_element?(
+               off_lv,
+               "#synced-members-#{off.id}-help",
+               "To remove a member, use the Team page."
+             )
+
+      refute has_element?(
+               off_lv,
+               "#synced-members-#{off.id}-help",
+               "deactivate them in your identity provider"
+             )
 
       owner = Fixtures.Subjects.subject_for(user, account)
-      on = insert_provider(account, %{name: "Synced", kind: :entra})
+
+      on =
+        insert_provider(account, %{name: "Synced", kind: :entra, default_role: :billing_manager})
+
       {:ok, on, _raw} = SSO.enable_scim(on, owner)
       {:ok, lv, synced} = live(conn, ~p"/app/#{account}/settings/sso/#{on.id}")
 
       for note <- [
             "Members and groups stay in sync",
-            "Choose the role for each synced group",
-            "Each mapping adds runner and pack access",
-            "Groups received from your identity provider",
-            "Suspend someone here for a temporary hold"
+            "Members get the highest role from their mapped groups",
+            "Edit access adds",
+            "Suspend access here for a temporary hold"
           ] do
         assert synced =~ note
       end
@@ -768,13 +1030,37 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
       assert synced =~ "remove their emisar access"
       refute synced =~ "remove their Emisar access"
 
+      assert has_element?(
+               lv,
+               "#group-access-section-#{on.id}-help #connection-default-role-note",
+               "Billing manager"
+             )
+
+      refute has_element?(lv, "#connection-role-summary")
+      assert has_element?(lv, "#connection-default-access-note", "By default, groups use")
+      refute has_element?(lv, "#connection-access-summary")
+      refute has_element?(lv, "#connection-default-access-note", "All packs")
+
+      assert has_element?(
+               lv,
+               "#synced-members-#{on.id}-help",
+               "Members linked to this connection"
+             )
+
+      assert has_element?(
+               lv,
+               "#synced-members-#{on.id}-help",
+               "To remove a member, deactivate them in your identity provider."
+             )
+
+      refute has_element?(lv, "#synced-members-#{on.id}-help", "use the Team page")
+
       for {section_id, note} <- [
             {"directory-sync-#{on.id}", "Members and groups stay in sync"},
-            {"role-mapping-section-#{on.id}", "Choose the role for each synced group"},
-            {"runner-access-mapping-section-#{on.id}",
-             "Each mapping adds runner and pack access"},
-            {"synced-groups-#{on.id}", "Groups received from your identity provider"},
-            {"synced-members-#{on.id}", "Suspend someone here for a temporary hold"}
+            {"group-access-section-#{on.id}",
+             "Members get the highest role from their mapped groups"},
+            {"group-access-section-#{on.id}", "Edit access adds"},
+            {"synced-members-#{on.id}", "Suspend access here for a temporary hold"}
           ] do
         assert has_element?(lv, "##{section_id} > div:first-child")
         assert has_element?(lv, "##{section_id} > div:nth-child(2)")
@@ -785,14 +1071,8 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
       # the content row below it.
       assert has_element?(
                lv,
-               "#role-mapping-section-#{on.id} > div:first-child button",
+               "#group-access-section-#{on.id} > div:first-child button",
                "Add mapping"
-             )
-
-      assert has_element?(
-               lv,
-               "#runner-access-mapping-section-#{on.id} > div:first-child button",
-               "Add runner access"
              )
 
       # The note carries no heading of its own: the section title is directly to
@@ -812,17 +1092,24 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
       {:ok, lv, html} = live(conn, ~p"/app/#{account}/settings/sso/#{shown.id}")
 
       assert html =~ "Acme Okta"
-      assert has_element?(lv, "#connection-summary dt", "Status")
-      assert has_element?(lv, "#connection-summary dd", "Enabled")
-      assert has_element?(lv, "#connection-summary dt", "Provider")
-      assert has_element?(lv, "#connection-summary", "Connection settings")
-      assert has_element?(lv, "#connection-summary > #sign-in-verification-column")
-      assert has_element?(lv, "#connection-summary > #connection-settings")
+      assert has_element?(lv, "#connection-status", "Sign-in status")
+      assert has_element?(lv, "#connection-enabled-status", "Enabled")
+      assert has_element?(lv, "#connection-status #sign-in-verification")
+      assert has_element?(lv, "#connection-settings dt", "Provider")
+      assert has_element?(lv, "#connection-summary > #connection-status")
+      assert has_element?(lv, "#connection-summary > #connection-settings", "Sign-in settings")
+      assert has_element?(lv, "#connection-provisioning h2", "User provisioning & directory sync")
+      refute has_element?(lv, "#group-access-section-#{shown.id}")
+      refute has_element?(lv, "#runner-access-mapping-section-#{shown.id}")
       assert has_element?(lv, "#connection-summary > #connection-docs", "Setting up")
-      assert lv |> element("#sign-in-verification-column") |> render() =~ "xl:col-start-1"
-      refute lv |> element("#sign-in-verification") |> render() =~ "xl:col-span-2"
-      assert lv |> element("#connection-settings") |> render() =~ "xl:row-start-3"
-      assert lv |> element("#connection-docs") |> render() =~ "xl:row-start-3"
+      refute has_element?(lv, "#connection-summary > dl")
+      refute has_element?(lv, "#connection-status dt")
+      refute has_element?(lv, "#connection-member-access")
+      refute has_element?(lv, "#connection-access-summary")
+      refute has_element?(lv, "#connection-settings dt", "Allowed email domain")
+      assert lv |> element("#connection-status") |> render() =~ "xl:col-start-1"
+      assert lv |> element("#connection-settings") |> render() =~ "xl:row-start-2"
+      assert lv |> element("#connection-docs") |> render() =~ "xl:row-start-2"
       assert has_element?(lv, "header #view-provider-activity-#{shown.id}", "View activity")
       assert has_element?(lv, "header #edit-provider-#{shown.id}", "Edit")
       refute has_element?(lv, "#connection-summary #view-provider-activity-#{shown.id}")
@@ -833,9 +1120,138 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
       # ghost button beside Edit up top.
       assert html =~ "Delete this connection"
       assert has_element?(lv, "#connection-danger-zone")
-      assert lv |> element("#connection-danger-zone") |> render() =~ "xl:col-span-2"
+      assert has_element?(lv, "#connection-danger-zone[class~='xl:col-start-1']")
+      refute has_element?(lv, "#connection-danger-zone[class~='max-w-3xl']")
+      refute has_element?(lv, "#connection-danger-zone[class~='xl:col-span-2']")
       # A single-connection view — the other connection isn't on this page.
       refute html =~ "Globex Google"
+    end
+
+    test "keeps sign-in and provisioning settings separate without an empty group section", %{
+      conn: conn,
+      account: account
+    } do
+      provider =
+        insert_provider(account, %{
+          allowed_email_domain: "example.com",
+          satisfies_mfa: true,
+          provisioner: :manual,
+          default_role: :operator,
+          default_runner_access_mode: :all,
+          default_pack_access_mode: :all
+        })
+
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/sso/#{provider.id}")
+
+      for label <- [
+            "Provider",
+            "Issuer",
+            "Identifier claim",
+            "Allowed email domain",
+            "Multi-factor authentication"
+          ] do
+        assert has_element?(lv, "#connection-settings dt", label)
+        refute has_element?(lv, "#connection-provisioning dt", label)
+        refute has_element?(lv, "#group-access-section-#{provider.id} dt", label)
+      end
+
+      assert has_element?(lv, "#connection-provisioning dt", "New members")
+      refute has_element?(lv, "#connection-settings dt", "New members")
+
+      assert has_element?(lv, "#connection-settings dd", "@example.com")
+      assert has_element?(lv, "#connection-settings dd", "Satisfied by this provider")
+      assert has_element?(lv, "#connection-provisioning dd", "Require approval")
+      refute has_element?(lv, "#group-access-section-#{provider.id}")
+
+      assert has_element?(
+               lv,
+               "#scim-status-#{provider.id} #connection-provisioning-summary dt + dd",
+               "Require approval"
+             )
+
+      assert has_element?(lv, "#scim-status-#{provider.id} p", "SCIM")
+      assert has_element?(lv, "#scim-enabled-status-#{provider.id}", "Disabled")
+      refute has_element?(lv, "#connection-provisioning-policy")
+
+      for summary <- ["connection-role-summary", "connection-access-summary"] do
+        refute has_element?(lv, "##{summary}")
+      end
+
+      for label <- ["Default role", "Default runner access", "Default pack access"] do
+        refute has_element?(lv, "#connection-provisioning dt", label)
+      end
+    end
+
+    test "access mapping help explains additive grants without repeating defaults above groups",
+         %{
+           conn: conn,
+           account: account,
+           user: user
+         } do
+      provider =
+        insert_provider(account, %{
+          kind: :entra,
+          default_runner_access_mode: :all,
+          default_pack_access_mode: :all
+        })
+
+      owner = Fixtures.Subjects.subject_for(user, account)
+      {:ok, provider, _token} = SSO.enable_scim(provider, owner)
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/sso/#{provider.id}")
+
+      assert has_element?(lv, "#connection-default-access-note", "By default, groups use")
+      refute has_element?(lv, "#connection-access-summary")
+      refute has_element?(lv, "#connection-role-summary")
+      refute has_element?(lv, "#connection-default-access-note", "no runner access")
+
+      assert has_element?(
+               lv,
+               "#group-access-section-#{provider.id}-help",
+               "Reset to defaults removes that grant."
+             )
+    end
+
+    test "groups SCIM and directory lists under provisioning before one Groups & access section",
+         %{
+           conn: conn,
+           account: account,
+           user: user
+         } do
+      owner = Fixtures.Subjects.subject_for(user, account)
+      provider = insert_provider(account, %{kind: :entra})
+      {:ok, provider, _token} = SSO.enable_scim(provider, owner)
+
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/sso/#{provider.id}")
+
+      assert has_element?(
+               lv,
+               "#connection-provisioning > #directory-sync-#{provider.id} h2",
+               "User provisioning & directory sync"
+             )
+
+      assert has_element?(
+               lv,
+               "#scim-status-#{provider.id} #connection-provisioning-summary dt",
+               "New members"
+             )
+
+      refute has_element?(lv, "#connection-provisioning h3", "Directory sync")
+
+      for {section, title} <- [
+            {"synced-members", "Members"}
+          ] do
+        assert has_element?(lv, "#connection-provisioning > ##{section}-#{provider.id} h3", title)
+        refute has_element?(lv, "##{section}-#{provider.id} > h2")
+      end
+
+      assert has_element?(
+               lv,
+               "#connection-provisioning + #group-access-section-#{provider.id} + #connection-danger-zone"
+             )
+
+      refute has_element?(lv, "#connection-role-summary")
+      refute has_element?(lv, "#connection-access-summary")
+      assert has_element?(lv, "#group-access-section-#{provider.id} button", "Add mapping")
     end
 
     test "separates issuer discovery from a real sign-in verification", %{
@@ -847,7 +1263,9 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
       {:ok, lv, html} = live(conn, ~p"/app/#{account}/settings/sso/#{provider.id}")
 
       assert has_element?(lv, "#sign-in-verification", "Sign-in not verified")
-      assert html =~ "No administrator has completed a real provider sign-in"
+      assert has_element?(lv, "#connection-status #connection-enabled-status", "Disabled")
+      assert has_element?(lv, "#connection-status #verify-provider-sign-in-#{provider.id}")
+      assert html =~ "Verify sign-in before enabling this connection."
 
       assert has_element?(
                lv,
@@ -879,7 +1297,7 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
           "oidc_step" => %{"code" => "000000"}
         })
 
-      assert wrong =~ "wrong or expired"
+      assert wrong =~ "incorrect or expired"
       refute wrong =~ ~s(name="handoff")
 
       confirmed =
@@ -907,7 +1325,7 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
       assert html =~ ~s(id="provider-oidc-step-close")
       assert html =~ ~s(id="provider-oidc-step-resend")
       assert html =~ "hover:bg-zinc-800"
-      refute html =~ ">Cancel<"
+      assert has_element?(lv, "#provider-oidc-step-form button", "Cancel")
 
       assert has_element?(
                lv,
@@ -921,6 +1339,7 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
 
       lv |> element("#provider-oidc-step-resend") |> render_click()
       assert_received {:email, _replacement_email}
+      assert_push_event(lv, "code:reset", %{id: "provider-oidc-step-code"})
       assert render(lv) =~ "We sent a new code"
 
       lv |> element("#provider-oidc-step-close") |> render_click()
@@ -1017,7 +1436,7 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
 
       {:ok, _lv, html} = live(conn, ~p"/app/#{account}/settings/sso/#{provider.id}")
 
-      assert html =~ "Single sign-on needs an owner or admin role."
+      assert html =~ "Single sign-on settings are restricted"
       refute html =~ "Acme Okta"
     end
 
@@ -1092,7 +1511,7 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
 
       html = render_click(lv, "test_connection", %{})
 
-      assert html =~ "https URL first"
+      assert html =~ "HTTPS URL first"
     end
 
     test "a capped account gets fixed retry copy without another discovery", %{
@@ -1144,20 +1563,23 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
       conn: conn,
       account: account
     } do
-      # Role mappings are a SCIM feature — the create/edit forms (and the
-      # "Role mapping" panel) render only when `scim_enabled`. A freshly
-      # created connection is SCIM-off (enable_scim turns it on), so it must not
-      # surface them.
+      # Without SCIM there are no group controls or rows to show.
       provider = insert_provider(account, %{name: "No SCIM Okta"})
       refute Repo.reload!(provider).scim_enabled
       {:ok, lv, html} = live(conn, ~p"/app/#{account}/settings/sso/#{provider.id}")
 
       # The connection itself renders…
       assert html =~ "No SCIM Okta"
-      # …but the mapping panel + its create form don't (the section is gated on
-      # scim_enabled).
-      refute html =~ "Role mapping"
+      # …without an empty group section or directory mapping affordances.
+      refute has_element?(lv, "#group-access-section-#{provider.id}")
+      refute has_element?(lv, "#group-access-section-#{provider.id} button", "Add mapping")
+      refute has_element?(lv, "#group-access-section-#{provider.id}-help")
       refute has_element?(lv, "#create-mapping-#{provider.id}")
+      refute has_element?(lv, "#create-runner-access-mapping-#{provider.id}")
+      refute has_element?(lv, "#synced-groups-#{provider.id}")
+      assert has_element?(lv, "#connection-provisioning > #synced-members-#{provider.id}")
+      refute html =~ "No synced groups yet"
+      refute html =~ "No access mappings yet"
     end
   end
 
@@ -1260,8 +1682,8 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
         "okta" => "Directory sync is a second Okta app",
         "entra" => "directory sync is a separate enterprise application",
         "jumpcloud" => "One JumpCloud application covers both",
-        "keycloak" => "Keycloak pushes no directory of its own",
-        "google_workspace" => "Google Workspace can&#39;t push a directory"
+        "keycloak" => "Directory sync requires a third-party Keycloak extension",
+        "google_workspace" => "Google Workspace doesn&#39;t support directory sync with emisar"
       }
 
       for {kind, note} <- notes do
@@ -1275,6 +1697,53 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
         # spend itself repeating the name or saying a guide exists.
         refute html =~ "setup guide"
       end
+    end
+  end
+
+  describe "current provider setup directions" do
+    setup %{conn: conn} do
+      {conn, _user, account} = register_and_log_in(conn, %{account: %{plan: "enterprise"}})
+      %{conn: conn, account: account}
+    end
+
+    test "Google uses Auth Platform and an internal audience", %{conn: conn, account: account} do
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/sso/new")
+
+      html =
+        lv
+        |> form("#provider_form", %{"provider" => %{"kind" => "google_workspace"}})
+        |> render_change()
+
+      assert html =~ "Google Auth Platform"
+      assert html =~ "Clients → Create client"
+      assert html =~ "Audience"
+      assert html =~ "Internal"
+      assert html =~ "Verify sign-in"
+      assert html =~ "Enable for members"
+      refute html =~ "APIs &amp; Services"
+      refute html =~ "fields below"
+    end
+
+    test "Okta identifies the org URL, and Entra does not show a DPoP instruction", %{
+      conn: conn,
+      account: account
+    } do
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/sso/new")
+
+      okta =
+        lv
+        |> form("#provider_form", %{"provider" => %{"kind" => "okta"}})
+        |> render_change()
+
+      assert okta =~ "Copy your org URL from the account menu"
+      assert okta =~ "DPoP-bound tokens"
+
+      entra =
+        lv
+        |> form("#provider_form", %{"provider" => %{"kind" => "entra"}})
+        |> render_change()
+
+      refute entra =~ "DPoP"
     end
   end
 
@@ -1293,6 +1762,11 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
       {:ok, lv, sign_in_only} = live(conn, ~p"/app/#{account}/settings/sso/#{provider.id}")
 
       refute sign_in_only =~ "Members and groups stay in sync"
+      assert has_element?(lv, "#scim-enabled-status-#{provider.id}", "Disabled")
+      assert has_element?(lv, "#scim-actions-#{provider.id} #enable-scim-#{provider.id}")
+      refute has_element?(lv, "#scim-request-status-#{provider.id}")
+      refute has_element?(lv, "#scim-setup-#{provider.id}")
+      refute has_element?(lv, "#scim-url-#{provider.id}")
 
       assert has_element?(
                lv,
@@ -1308,12 +1782,94 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
       # The freshly-minted ems- token is rendered exactly once, in the reveal.
       assert html =~ "ems-"
       # The IdP-side SCIM setup steps appear once sync is on.
-      assert html =~ "Point your IdP at this connection"
+      assert has_element?(lv, "#scim-setup-#{provider.id}[open] summary", "Setup instructions")
       assert html =~ "externalId"
 
       sync_controls = lv |> element("#directory-sync-#{provider.id}") |> render()
-      assert has_element?(lv, "#rotate-scim-#{provider.id}")
-      assert has_element?(lv, "#disable-scim-#{provider.id}")
+      assert has_element?(lv, "#scim-actions-#{provider.id} #rotate-scim-#{provider.id}")
+      assert has_element?(lv, "#scim-actions-#{provider.id} #disable-scim-#{provider.id}")
+      assert has_element?(lv, "#scim-enabled-status-#{provider.id}", "Enabled")
+
+      assert has_element?(
+               lv,
+               "#scim-request-status-#{provider.id}",
+               "(waiting for first request)"
+             )
+
+      assert has_element?(
+               lv,
+               "#scim-setup-#{provider.id} > ol > li:nth-child(2) p",
+               "Set the connector's SCIM endpoint to this base URL:"
+             )
+
+      assert has_element?(
+               lv,
+               "#scim-setup-#{provider.id} > ol > li:nth-child(2) #scim-endpoint-#{provider.id} #scim-url-#{provider.id}",
+               "/scim/v2"
+             )
+
+      refute has_element?(lv, "#scim-setup-#{provider.id} > #scim-endpoint-#{provider.id}")
+      refute has_element?(lv, "#scim-setup-#{provider.id}", "Base URL above")
+      refute has_element?(lv, "#scim-setup-#{provider.id}", "value above")
+      assert has_element?(lv, "#scim-url-#{provider.id} button[data-copy-text$='/scim/v2']")
+
+      assert has_element?(
+               lv,
+               "#scim-status-#{provider.id} > div:first-child + #scim-actions-#{provider.id}"
+             )
+
+      assert has_element?(lv, "#scim-status-#{provider.id}[class~='sm:justify-between']")
+
+      assert has_element?(
+               lv,
+               "#scim-status-#{provider.id} #scim-enabled-status-#{provider.id}",
+               "Enabled"
+             )
+
+      assert has_element?(
+               lv,
+               "#scim-status-#{provider.id} > div:first-child #connection-provisioning-summary",
+               "Add on first sign-in"
+             )
+
+      assert has_element?(
+               lv,
+               "#scim-status-#{provider.id} p + #scim-enabled-status-#{provider.id}",
+               "Enabled"
+             )
+
+      assert has_element?(
+               lv,
+               "#scim-enabled-status-#{provider.id} > span.text-brand-300",
+               "Enabled"
+             )
+
+      assert has_element?(
+               lv,
+               "#scim-enabled-status-#{provider.id} > #scim-request-status-#{provider.id}.text-zinc-400",
+               "(waiting for first request)"
+             )
+
+      refute has_element?(lv, "#scim-enabled-status-#{provider.id}.text-brand-300")
+      refute has_element?(lv, "#scim-status-#{provider.id} dt", "Status")
+
+      refute has_element?(
+               lv,
+               "#directory-sync-#{provider.id} header #scim-actions-#{provider.id}"
+             )
+
+      refute has_element?(
+               lv,
+               "#directory-sync-#{provider.id} header #scim-enabled-status-#{provider.id}"
+             )
+
+      refute has_element?(
+               lv,
+               "#directory-sync-#{provider.id} header #scim-request-status-#{provider.id}"
+             )
+
+      refute has_element?(lv, "#scim-status-#{provider.id} #scim-url-#{provider.id}")
+      assert has_element?(lv, "#scim-endpoint-#{provider.id} + p", "bearer token")
 
       assert has_element?(
                lv,
@@ -1328,7 +1884,7 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
       assert sync_controls =~ "Rotate token"
       assert sync_controls =~ "Disable"
       assert sync_controls =~ "first-child]:mb-0"
-      refute sync_controls =~ "Enabled"
+      refute sync_controls =~ "Last connected"
 
       reloaded = Repo.reload!(provider)
       assert reloaded.scim_enabled
@@ -1381,11 +1937,17 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
       dismissed = render_click(lv, "dismiss_scim_token", %{})
       refute dismissed =~ token
 
+      assert has_element?(
+               lv,
+               "#scim-setup-#{provider.id}:not([open]) summary",
+               "Setup instructions"
+             )
+
       # And a fresh mount never re-renders it (write-only, like client_secret).
-      {:ok, _lv2, remounted} = live(conn, ~p"/app/#{account}/settings/sso/#{provider.id}")
+      {:ok, lv2, remounted} = live(conn, ~p"/app/#{account}/settings/sso/#{provider.id}")
       refute remounted =~ token
       # Directory sync still shows as on, just without the secret.
-      assert remounted =~ "Directory sync (SCIM)"
+      assert has_element?(lv2, "#scim-enabled-status-#{provider.id}", "Enabled")
     end
 
     test "rotate issues a new token; disable turns sync off", %{
@@ -1398,15 +1960,30 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
       first = render_click(lv, "enable_scim", %{"id" => provider.id})
       [_, token1 | _] = Regex.run(~r/(ems-[A-Za-z0-9_-]{20,})/, first)
 
+      render_click(lv, "dismiss_scim_token", %{})
+      refute has_element?(lv, "#scim-setup-#{provider.id}[open]")
+
       rotated = render_click(lv, "rotate_scim", %{"id" => provider.id})
       assert rotated =~ "SCIM token rotated."
       [_, token2 | _] = Regex.run(~r/(ems-[A-Za-z0-9_-]{20,})/, rotated)
       refute token1 == token2
+      assert has_element?(lv, "#scim-setup-#{provider.id}[open]")
+      assert {:ok, _provider} = SSO.authenticate_scim_token(token2)
 
       disabled = render_click(lv, "disable_scim", %{"id" => provider.id})
       assert disabled =~ "Directory sync disabled."
       refute disabled =~ token2
       refute Repo.reload!(provider).scim_enabled
+      assert has_element?(lv, "#scim-enabled-status-#{provider.id}", "Disabled")
+      assert has_element?(lv, "#scim-actions-#{provider.id} #enable-scim-#{provider.id}")
+      refute has_element?(lv, "#scim-request-status-#{provider.id}")
+      refute has_element?(lv, "#scim-setup-#{provider.id}")
+      refute has_element?(lv, "#rotate-scim-#{provider.id}")
+      refute has_element?(lv, "#disable-scim-#{provider.id}")
+      assert has_element?(lv, "#connection-provisioning > #synced-members-#{provider.id}")
+      refute has_element?(lv, "#group-access-section-#{provider.id}")
+      refute has_element?(lv, "#group-access-section-#{provider.id} button", "Add mapping")
+      refute has_element?(lv, "#synced-groups-#{provider.id}")
     end
 
     test "a non-admin viewer cannot enable directory sync", %{
@@ -1450,12 +2027,22 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
     end
 
     test "Google Workspace hides the enable panel and says why", %{conn: conn, account: account} do
-      google = insert_provider(account, %{name: "Acme Google", kind: :google_workspace})
+      google =
+        insert_provider(account, %{
+          name: "Acme Google",
+          kind: :google_workspace,
+          provisioner: :manual
+        })
 
-      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/settings/sso/#{google.id}")
+      {:ok, lv, html} = live(conn, ~p"/app/#{account}/settings/sso/#{google.id}")
 
       assert html =~ "isn&#39;t available for Google Workspace"
-      assert html =~ "Members are added when they first"
+      assert has_element?(lv, "#connection-provisioning dd", "Require approval")
+      refute html =~ "Members are added when they first"
+      refute has_element?(lv, "#connection-provisioning", "Enterprise plan")
+      assert has_element?(lv, "#connection-provisioning > #synced-members-#{google.id}")
+      refute has_element?(lv, "#group-access-section-#{google.id}")
+      refute has_element?(lv, "#group-access-section-#{google.id} button", "Add mapping")
       refute html =~ "enable_scim"
     end
 
@@ -1518,6 +2105,58 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
       }
     end
 
+    test "your own row keeps its role and explains the disabled controls", %{
+      conn: conn,
+      user: user,
+      account: account,
+      provider: provider
+    } do
+      membership = Fixtures.Memberships.fetch_membership(account.id, user.id)
+
+      Fixtures.SSO.create_user_identity(%{
+        account_id: account.id,
+        provider_id: provider.id,
+        user_id: user.id,
+        created_by: :user,
+        provisioned_via: :oidc_link
+      })
+
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/sso/#{provider.id}")
+
+      assert has_element?(lv, "#self-role-lock-#{membership.id}-tt", "Owner")
+      assert has_element?(lv, "#self-role-lock-#{membership.id}-tt [data-icon='role.restricted']")
+      refute has_element?(lv, "#self-role-lock-#{membership.id}-tt button")
+
+      assert has_element?(
+               lv,
+               "#self-role-lock-#{membership.id}[role='tooltip']",
+               "You can't change your own role."
+             )
+
+      assert has_element?(
+               lv,
+               "#self-suspend-lock-#{membership.id}-tt button[disabled]",
+               "Suspend access"
+             )
+
+      assert has_element?(
+               lv,
+               "#self-suspend-lock-#{membership.id}[role='tooltip']",
+               "You can't suspend your own access."
+             )
+
+      refute has_element?(lv, "#synced-role-#{membership.id}-admin")
+
+      render_click(lv, "change_member_role", %{
+        "membership_id" => membership.id,
+        "role" => "admin"
+      })
+
+      render_click(lv, "suspend_member", %{"membership_id" => membership.id})
+      assert Repo.reload!(membership).role == :owner
+      refute Accounts.membership_disabled?(Repo.reload!(membership))
+    end
+
     test "lists the provisioned member and suspends them from the connection page", %{
       conn: conn,
       account: account,
@@ -1526,7 +2165,7 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
     } do
       {:ok, lv, html} = live(conn, ~p"/app/#{account}/settings/sso/#{provider.id}")
 
-      assert html =~ "Synced members"
+      assert html =~ "Members"
       assert html =~ "Dana Sync"
       refute Emisar.Accounts.Membership.disabled?(membership)
 
@@ -1541,7 +2180,7 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
 
       assert has_element?(
                lv,
-               "#reactivate-scim-#{membership.id}[phx-hook='PendingButton'][phx-disable-with='Reactivating…']"
+               "#reactivate-scim-#{membership.id}[phx-hook='PendingButton'][phx-disable-with='Restoring…']"
              )
 
       render_click(lv, "reinstate_member", %{"membership_id" => membership.id})
@@ -1566,7 +2205,7 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/sso/#{provider.id}")
       trigger = "#reactivate-in-idp-#{membership.id}-tt"
 
-      assert has_element?(lv, "#{trigger} button[disabled]", "Reactivate")
+      assert has_element?(lv, "#{trigger} button[disabled]", "Restore access")
 
       assert has_element?(
                lv,
@@ -1608,10 +2247,10 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
 
       assert html =~ "Dana Sync"
       refute html =~ "Bulk Person 20"
-      refute html =~ "No one has been provisioned through this connection yet"
+      refute html =~ "No members yet"
     end
 
-    test "a connection with nobody provisioned keeps the confident empty copy", %{
+    test "a connection with no members shows its sign-in empty state", %{
       conn: conn,
       account: account
     } do
@@ -1619,8 +2258,10 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
 
       {:ok, _lv, html} = live(conn, ~p"/app/#{account}/settings/sso/#{unsynced.id}")
 
-      assert html =~ "No one has been provisioned through this connection yet"
-      refute html =~ "Synced members couldn&#39;t be loaded"
+      assert html =~ "No members yet"
+      assert html =~ "Members appear here after signing in through this connection."
+      refute html =~ "or being added by directory sync"
+      refute html =~ "Couldn&#39;t load members"
     end
 
     test "a failed membership read asks for a retry instead of claiming nobody is there", %{
@@ -1641,12 +2282,12 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
 
       html = render_patch(lv, ~p"/app/#{account}/settings/sso/#{provider.id}?reload=1")
 
-      assert html =~ "Synced members couldn&#39;t be loaded"
+      assert html =~ "Couldn&#39;t load members"
 
       assert html =~
-               "Refresh the page to try again. This connection may still have provisioned members."
+               "Refresh the page to try again."
 
-      refute html =~ "No one has been provisioned"
+      refute html =~ "No members yet"
       refute html =~ "Dana Sync"
     end
 
@@ -1662,12 +2303,24 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
 
       Fixtures.Accounts.create_subscription(account, "team")
 
-      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/settings/sso/#{provider.id}")
+      {:ok, lv, html} = live(conn, ~p"/app/#{account}/settings/sso/#{provider.id}")
 
       assert html =~
                "Role is managed by directory sync — change this member&#39;s groups in your IdP"
 
-      refute html =~ "Role mapping above"
+      refute html =~ "set it in Groups & access"
+      assert has_element?(lv, "#connection-provisioning", "Enterprise plan")
+
+      assert has_element?(
+               lv,
+               "#connection-provisioning > #synced-members-#{provider.id}",
+               "Dana Sync"
+             )
+
+      refute has_element?(lv, "#group-access-section-#{provider.id}")
+      refute has_element?(lv, "#connection-provisioning #directory-sync-#{provider.id}")
+      refute has_element?(lv, "#synced-groups-#{provider.id}")
+      refute has_element?(lv, "#group-access-section-#{provider.id} button", "Add mapping")
     end
 
     test "a crafted suspend is refused for a non-admin viewer", %{
@@ -1693,6 +2346,366 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
       provider = insert_provider(account, %{name: "Acme Okta"})
       {:ok, provider, _raw} = SSO.enable_scim(provider, owner)
       %{conn: conn, user: user, account: account, provider: provider, owner: owner}
+    end
+
+    test "all directory lists have compact empty states without empty pagers", %{
+      conn: conn,
+      account: account,
+      provider: provider
+    } do
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/sso/#{provider.id}")
+
+      for {section, title, pager} <- [
+            {"group-access-section", "No synced groups yet", "group-access"},
+            {"synced-members", "No members yet", "synced-members"}
+          ] do
+        assert has_element?(lv, "##{section}-#{provider.id} h2", title)
+        refute has_element?(lv, "##{pager}-#{provider.id}-pager")
+      end
+
+      assert has_element?(
+               lv,
+               "#synced-members-#{provider.id}",
+               "or being added by directory sync"
+             )
+    end
+
+    test "opening a mapping composer replaces its empty state until canceled", %{
+      conn: conn,
+      account: account,
+      provider: provider
+    } do
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/sso/#{provider.id}")
+
+      for {section, title, open_event, cancel_event, form_id} <- [
+            {"group-access-section", "No synced groups yet", "add_mapping_form",
+             "cancel_add_mapping", "create-mapping"}
+          ] do
+        assert has_element?(lv, "##{section}-#{provider.id} h2", title)
+        render_click(lv, open_event, %{})
+        assert has_element?(lv, "##{form_id}-#{provider.id}")
+        refute has_element?(lv, "##{section}-#{provider.id} h2", title)
+
+        render_click(lv, cancel_event, %{})
+        refute has_element?(lv, "##{form_id}-#{provider.id}")
+        assert has_element?(lv, "##{section}-#{provider.id} h2", title)
+      end
+    end
+
+    test "failed directory reads show errors instead of empty results", %{
+      conn: conn,
+      account: account,
+      provider: provider
+    } do
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/sso/#{provider.id}")
+
+      :sys.replace_state(lv.pid, fn state ->
+        socket =
+          Phoenix.Component.assign(state.socket,
+            group_mappings_load_error?: true
+          )
+
+        %{state | socket: socket}
+      end)
+
+      render_click(lv, "dismiss_scim_token", %{})
+
+      for {section, title, empty_title} <- [
+            {"group-access-section", "Couldn't load groups", "No synced groups yet"}
+          ] do
+        assert has_element?(lv, "##{section}-#{provider.id} h2", title)
+        refute has_element?(lv, "##{section}-#{provider.id} h2", empty_title)
+      end
+    end
+
+    test "a group's role menu creates its mapping without opening a form", %{
+      conn: conn,
+      account: account,
+      provider: provider,
+      owner: owner
+    } do
+      assert {:ok, %{identity: identity}} =
+               SSO.scim_provision_user(provider, %{
+                 external_id: "triage-member",
+                 email: "triage@example.com",
+                 full_name: "Triage Member"
+               })
+
+      assert {:ok, group} =
+               SSO.scim_upsert_group(provider, %{
+                 external_id: "triage",
+                 display: "Triage",
+                 member_ids: [identity.id]
+               })
+
+      mapped_group = sync_group(provider, "eng", "Engineering")
+
+      {:ok, existing} =
+        SSO.create_group_mapping(
+          provider,
+          %{directory_group_id: mapped_group.id, role: :admin},
+          owner
+        )
+
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/sso/#{provider.id}")
+      refute has_element?(lv, "#synced-groups-#{provider.id}")
+      assert has_element?(lv, "#synced-group-#{group.id}", "1 member")
+      assert has_element?(lv, "#synced-group-#{mapped_group.id}", "0 members")
+      assert has_element?(lv, "#group-role-#{mapped_group.id} > summary", "Admin")
+      assert has_element?(lv, "#group-role-#{group.id} > summary", "Map role")
+      refute has_element?(lv, "#group-role-#{group.id} [role='separator']")
+      refute has_element?(lv, "#group-role-#{group.id} button", "Remove mapping")
+      refute has_element?(lv, "#group-role-#{group.id} button[phx-value-role='owner']")
+      refute has_element?(lv, "#create-mapping-#{provider.id}")
+
+      lv |> element("#group-role-#{group.id} button[phx-value-role='operator']") |> render_click()
+      refute has_element?(lv, "#create-mapping-#{provider.id}")
+      assert has_element?(lv, "#group-role-#{group.id} > summary", "Operator")
+      assert has_element?(lv, "#synced-group-#{group.id}", "1 member")
+
+      assert {:ok, group_rows, _metadata} =
+               SSO.list_group_access(provider, owner, page: [limit: 100])
+
+      mappings = Enum.flat_map(group_rows, &List.wrap(&1.mapping))
+      mapping = Enum.find(mappings, &(&1.directory_group_id == group.id))
+      assert mapping.role == :operator
+
+      assert has_element?(lv, "#group-role-#{group.id} [role='separator']")
+
+      assert has_element?(
+               lv,
+               "#group-role-#{group.id} #remove-role-mapping-#{mapping.id}[class~='text-rose-300']",
+               "Remove mapping"
+             )
+
+      assert has_element?(
+               lv,
+               "#synced-group-#{group.id} > #delete-mapping-#{mapping.id}[role='dialog']"
+             )
+
+      refute has_element?(lv, "#group-role-#{group.id} [role='dialog']")
+
+      refute has_element?(
+               lv,
+               "#role-mapping-#{mapping.id} > div > div > button",
+               "Remove mapping"
+             )
+
+      lv |> element("#delete-mapping-#{mapping.id}-confirm") |> render_click()
+      assert has_element?(lv, "#group-role-#{group.id} > summary", "Map role")
+      assert has_element?(lv, "#synced-group-#{group.id}", "1 member")
+      assert has_element?(lv, "#role-mapping-#{existing.id}", "Admin")
+    end
+
+    test "role-menu errors stay at the group and clear after a successful change", %{
+      conn: conn,
+      account: account,
+      provider: provider,
+      owner: owner
+    } do
+      group = sync_group(provider, "roles", "Role choices")
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/sso/#{provider.id}")
+
+      for role <- [nil, %{}, ["admin"]] do
+        render_click(lv, "set_group_role", %{"group_id" => group.id, "role" => role})
+      end
+
+      assert {:ok, group_rows, _metadata} =
+               SSO.list_group_access(provider, owner, page: [limit: 100])
+
+      assert [] = Enum.flat_map(group_rows, &List.wrap(&1.mapping))
+      render_click(lv, "set_group_role", %{"group_id" => group.id, "role" => "owner"})
+
+      assert has_element?(
+               lv,
+               "#group-role-error-#{group.id}[role='alert']",
+               "directory sync cannot grant owner"
+             )
+
+      assert has_element?(lv, "#group-role-#{group.id} > summary", "Map role")
+      refute has_element?(lv, "#create-mapping-#{provider.id}")
+
+      assert {:ok, group_rows, _metadata} =
+               SSO.list_group_access(provider, owner, page: [limit: 100])
+
+      assert [] = Enum.flat_map(group_rows, &List.wrap(&1.mapping))
+
+      render_click(lv, "add_mapping_form", %{})
+      render_click(lv, "select_group", %{"scope" => "role", "group_id" => group.id})
+
+      lv
+      |> form("#create-mapping-#{provider.id}", %{"mapping" => %{"role" => "operator"}})
+      |> render_submit()
+
+      refute has_element?(lv, "#group-role-error-#{group.id}")
+      assert has_element?(lv, "#group-role-#{group.id} > summary", "Operator")
+
+      render_click(lv, "set_group_role", %{"group_id" => group.id, "role" => "owner"})
+
+      assert has_element?(
+               lv,
+               "#group-role-error-#{group.id}",
+               "directory sync cannot grant owner"
+             )
+
+      assert has_element?(lv, "#group-role-#{group.id} > summary", "Operator")
+      lv |> element("#group-role-#{group.id} button[phx-value-role='viewer']") |> render_click()
+      refute has_element?(lv, "#group-role-error-#{group.id}")
+      assert has_element?(lv, "#group-role-#{group.id} > summary", "Viewer")
+
+      assert {:ok, group_rows, _metadata} =
+               SSO.list_group_access(provider, owner, page: [limit: 100])
+
+      assert [mapping] = Enum.flat_map(group_rows, &List.wrap(&1.mapping))
+      assert mapping.role == :viewer
+    end
+
+    test "a mapping created after render is not overwritten by a stale menu", %{
+      conn: conn,
+      account: account,
+      provider: provider,
+      owner: owner
+    } do
+      group = sync_group(provider, "concurrent", "Concurrent mapping")
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/sso/#{provider.id}")
+      attrs = %{directory_group_id: group.id, role: :operator}
+      {:ok, original} = SSO.create_group_mapping(provider, attrs, owner)
+
+      lv |> element("#group-role-#{group.id} button[phx-value-role='admin']") |> render_click()
+
+      assert has_element?(
+               lv,
+               "#group-role-error-#{group.id}",
+               "This group already has a role mapping."
+             )
+
+      assert has_element?(lv, "#group-role-#{group.id} > summary", "Operator")
+
+      assert {:ok, group_rows, _metadata} =
+               SSO.list_group_access(provider, owner, page: [limit: 100])
+
+      assert [mapping] = Enum.flat_map(group_rows, &List.wrap(&1.mapping))
+      assert mapping.id == original.id
+      assert mapping.role == :operator
+
+      render_click(lv, "delete_mapping", %{"id" => mapping.id})
+      refute has_element?(lv, "#group-role-error-#{group.id}")
+      assert has_element?(lv, "#group-role-#{group.id} > summary", "Map role")
+    end
+
+    test "a retired group's saved mapping stays visible and removable", %{
+      conn: conn,
+      account: account,
+      provider: provider,
+      owner: owner
+    } do
+      group = sync_group(provider, "retired", "Retired group")
+      attrs = %{directory_group_id: group.id, role: :operator}
+      {:ok, mapping} = SSO.create_group_mapping(provider, attrs, owner)
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/sso/#{provider.id}")
+      refute has_element?(lv, "#synced-group-#{group.id}", "No longer synced")
+
+      assert {:ok, _} = SSO.scim_delete_group(provider, group.id)
+      refresh_directory(lv)
+      assert has_element?(lv, "#synced-group-#{group.id}", "No longer synced")
+      assert has_element?(lv, "#role-mapping-#{mapping.id}", "Operator")
+      assert has_element?(lv, "#delete-mapping-#{mapping.id}", "Remove mapping")
+      assert has_element?(lv, "#group-role-#{group.id} > summary", "Operator")
+      assert has_element?(lv, "#group-role-#{group.id} #remove-role-mapping-#{mapping.id}")
+      refute has_element?(lv, "#group-role-#{group.id} button[phx-value-role]")
+      refute has_element?(lv, "#group-role-#{group.id} [role='separator']")
+
+      :sys.replace_state(lv.pid, fn state ->
+        groups = Enum.map(state.socket.assigns.access_groups, &%{&1 | mapping: nil})
+        socket = Phoenix.Component.assign(state.socket, :access_groups, groups)
+        %{state | socket: socket}
+      end)
+
+      render_click(lv, "set_group_role", %{"group_id" => group.id, "role" => "admin"})
+      refute has_element?(lv, "#group-role-#{group.id}")
+      refute has_element?(lv, "#create-mapping-#{provider.id}")
+      refresh_directory(lv)
+
+      render_click(lv, "delete_mapping", %{"id" => mapping.id})
+      refute has_element?(lv, "#synced-group-#{group.id}")
+      assert has_element?(lv, "#group-access-section-#{provider.id}", "No synced groups yet")
+
+      assert {:ok, group_rows, _metadata} =
+               SSO.list_group_access(provider, owner, page: [limit: 100])
+
+      assert [] = Enum.flat_map(group_rows, &List.wrap(&1.mapping))
+    end
+
+    test "row menus preserve an open Add mapping draft", %{
+      conn: conn,
+      account: account,
+      provider: provider,
+      owner: owner
+    } do
+      first = sync_group(provider, "first", "First group")
+      second = sync_group(provider, "second", "Second group")
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/sso/#{provider.id}")
+      render_click(lv, "add_mapping_form", %{})
+      render_click(lv, "select_group", %{"scope" => "role", "group_id" => first.id})
+
+      lv
+      |> form("#create-mapping-#{provider.id}", %{"mapping" => %{"role" => "admin"}})
+      |> render_change()
+
+      assert has_element?(lv, "#map-group-role-#{second.id}[disabled]")
+      render_click(lv, "set_group_role", %{"group_id" => second.id, "role" => "viewer"})
+      assert has_element?(lv, "#role-group-picker-#{provider.id} > summary", "First group")
+
+      assert has_element?(
+               lv,
+               "#create-mapping-role-#{provider.id} option[value='admin'][selected]"
+             )
+
+      assert {:ok, group_rows, _metadata} =
+               SSO.list_group_access(provider, owner, page: [limit: 100])
+
+      assert [] = Enum.flat_map(group_rows, &List.wrap(&1.mapping))
+      render_click(lv, "cancel_add_mapping", %{})
+      lv |> element("#group-role-#{second.id} button[phx-value-role='viewer']") |> render_click()
+      assert has_element?(lv, "#group-role-#{second.id} > summary", "Viewer")
+      assert has_element?(lv, "#group-role-#{first.id} > summary", "Map role")
+      refute has_element?(lv, "#create-mapping-#{provider.id}")
+    end
+
+    test "role menus reject groups outside the current connection", %{
+      conn: conn,
+      account: account,
+      provider: provider,
+      owner: owner
+    } do
+      other = insert_provider(account, %{kind: :entra}) |> Fixtures.SSO.enable_scim()
+      other_group = sync_group(other, "other-connection", "Other connection")
+      foreign_account = Fixtures.Accounts.create_account(%{plan: "enterprise"})
+      foreign = insert_provider(foreign_account, %{}) |> Fixtures.SSO.enable_scim()
+      foreign_group = sync_group(foreign, "foreign", "Foreign group")
+      foreign_user = Fixtures.Users.create_user()
+      foreign_subject = Fixtures.Subjects.subject_for(foreign_user, foreign_account)
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/sso/#{provider.id}")
+
+      for id <- [other_group.id, foreign_group.id, "not-a-group-id"] do
+        render_click(lv, "set_group_role", %{"group_id" => id, "role" => "admin"})
+        refute has_element?(lv, "#create-mapping-#{provider.id}")
+      end
+
+      assert {:ok, group_rows, _metadata} =
+               SSO.list_group_access(provider, owner, page: [limit: 100])
+
+      assert [] = Enum.flat_map(group_rows, &List.wrap(&1.mapping))
+
+      assert {:ok, group_rows, _metadata} =
+               SSO.list_group_access(other, owner, page: [limit: 100])
+
+      assert [] = Enum.flat_map(group_rows, &List.wrap(&1.mapping))
+
+      assert {:ok, group_rows, _metadata} =
+               SSO.list_group_access(foreign, foreign_subject, page: [limit: 100])
+
+      assert [] = Enum.flat_map(group_rows, &List.wrap(&1.mapping))
     end
 
     test "creates, lists, and deletes a role mapping", %{
@@ -1732,135 +2745,90 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
       assert html =~ "Admins"
       assert html =~ "00g-admins"
 
-      {:ok, [mapping], _meta} = SSO.list_group_mappings(provider, owner)
+      assert {:ok, group_rows, _meta} =
+               SSO.list_group_access(provider, owner, page: [limit: 100])
+
+      assert [mapping] = Enum.flat_map(group_rows, &List.wrap(&1.mapping))
 
       assert has_element?(
                lv,
-               "#delete-mapping-#{mapping.id}-confirm[phx-disable-with='Deleting…']"
+               "#delete-mapping-#{mapping.id}-confirm[phx-disable-with='Removing…']"
              )
 
-      # Delete it — the gated event removes the row.
+      # Remove only the mapping — the group remains and can be mapped again.
       deleted = render_click(lv, "delete_mapping", %{"id" => mapping.id})
-      assert deleted =~ "Role mapping deleted."
+      assert deleted =~ "Role mapping removed."
 
-      assert {:ok, [], _meta} = SSO.list_group_mappings(provider, owner)
+      assert {:ok, group_rows, _meta} =
+               SSO.list_group_access(provider, owner, page: [limit: 100])
+
+      assert [] = Enum.flat_map(group_rows, &List.wrap(&1.mapping))
+      assert has_element?(lv, "#synced-group-#{group.id}", "Admins")
+      assert has_element?(lv, "#group-role-#{group.id} > summary", "Map role")
+      refute has_element?(lv, "#role-mapping-#{mapping.id}")
     end
 
-    test "role and runner-access mapping lists page independently and recover stale pages", %{
-      conn: conn,
-      account: account,
-      provider: provider,
-      owner: owner
-    } do
-      for n <- 1..21 do
-        suffix = n |> Integer.to_string() |> String.pad_leading(2, "0")
-        role_group = sync_group(provider, "role-group-#{suffix}", "Role group #{suffix}")
-        access_group = sync_group(provider, "access-group-#{suffix}", "Access group #{suffix}")
+    test "one group pager retains the row until both mappings and the directory group are gone",
+         %{
+           conn: conn,
+           account: account,
+           provider: provider,
+           owner: owner
+         } do
+      entries =
+        for n <- 1..21 do
+          suffix = n |> Integer.to_string() |> String.pad_leading(2, "0")
+          group = sync_group(provider, "group-#{suffix}", "Group #{suffix}")
 
-        {:ok, _mapping} =
-          SSO.create_group_mapping(
-            provider,
-            %{
-              directory_group_id: role_group.id,
-              role: :operator
-            },
-            owner
-          )
+          {:ok, role} =
+            SSO.create_group_mapping(
+              provider,
+              %{directory_group_id: group.id, role: :operator},
+              owner
+            )
 
-        {:ok, _mapping} =
-          SSO.create_group_runner_access_mapping(
-            provider,
-            %{
-              directory_group_id: access_group.id,
-              runner_access_mode: :all
-            },
-            owner
-          )
-      end
+          {:ok, access} =
+            SSO.create_group_runner_access_mapping(
+              provider,
+              %{directory_group_id: group.id, runner_access_mode: :all},
+              owner
+            )
 
+          {group, role, access}
+        end
+
+      {last_group, last_role, last_access} = List.last(entries)
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/sso/#{provider.id}")
+      assert has_element?(lv, "#group-access-#{provider.id}-pager", "20 / 21 total")
+      refute has_element?(lv, "#runner-access-mappings-#{provider.id}-pager")
 
-      assert has_element?(lv, "#role-mappings-#{provider.id}-pager", "20 / 21 total")
+      lv |> element("#group-access-#{provider.id}-pager a", "Next →") |> render_click()
+      assert has_element?(lv, "#synced-group-#{last_group.id}", "Group 21")
+      assert has_element?(lv, "#group-access-facts-#{last_group.id}", "All")
 
-      assert has_element?(
-               lv,
-               "#runner-access-mappings-#{provider.id}-pager",
-               "20 / 21 total"
-             )
+      render_click(lv, "delete_mapping", %{"id" => last_role.id})
+      assert has_element?(lv, "#group-role-#{last_group.id} > summary", "Map role")
+      assert has_element?(lv, "#group-access-#{provider.id}-pager", "1 / 21")
 
-      role_html = lv |> element("#role-mapping-section-#{provider.id}") |> render()
-      access_html = lv |> element("#runner-access-mapping-section-#{provider.id}") |> render()
-      assert role_html =~ "Role group 01"
-      refute role_html =~ "Role group 21"
-      assert access_html =~ "Access group 01"
-      refute access_html =~ "Access group 21"
+      assert {:ok, _} = SSO.scim_delete_group(provider, last_group.id)
+      refresh_directory(lv)
+      assert has_element?(lv, "#synced-group-#{last_group.id}", "No longer synced")
+      refute has_element?(lv, "#synced-group-#{last_group.id} [phx-click='edit_group_access']")
+      assert has_element?(lv, "#synced-group-#{last_group.id} button", "Remove access mapping")
 
-      _html =
-        lv
-        |> element("#role-mappings-#{provider.id}-pager a", "Next →")
-        |> render_click()
+      render_click(lv, "delete_runner_access_mapping", %{"id" => last_access.id})
+      refute has_element?(lv, "#synced-group-#{last_group.id}")
+      assert has_element?(lv, "#group-access-#{provider.id}-pager a", "Back to first page")
+      refute has_element?(lv, "#group-access-section-#{provider.id}", "No synced groups yet")
 
-      assert has_element?(lv, "#role-mappings-#{provider.id}-pager", "1 / 21")
-      assert lv |> element("#role-mapping-section-#{provider.id}") |> render() =~ "Role group 21"
+      lv
+      |> element("#group-access-#{provider.id}-pager a", "Back to first page")
+      |> render_click()
 
-      refute lv
-             |> element("#runner-access-mapping-section-#{provider.id}")
-             |> render() =~ "Access group 21"
-
-      _html =
-        lv
-        |> element("#runner-access-mappings-#{provider.id}-pager a", "Next →")
-        |> render_click()
-
-      assert lv |> element("#role-mapping-section-#{provider.id}") |> render() =~ "Role group 21"
-
-      assert lv
-             |> element("#runner-access-mapping-section-#{provider.id}")
-             |> render() =~ "Access group 21"
-
-      {:ok, role_mappings, _meta} =
-        SSO.list_group_mappings(provider, owner, page: [limit: 100])
-
-      role_21 = Enum.find(role_mappings, &(&1.external_group_id == "role-group-21"))
-      html = render_click(lv, "delete_mapping", %{"id" => role_21.id})
-
-      assert has_element?(
-               lv,
-               "#role-mappings-#{provider.id}-pager a",
-               "Back to first page"
-             )
-
-      refute html =~ "No role mappings yet."
-      assert html =~ "Access group 21"
-
-      _html =
-        lv
-        |> element("#role-mappings-#{provider.id}-pager a", "Back to first page")
-        |> render_click()
-
-      html = render(lv)
-      assert html =~ "Role group 01"
-      assert html =~ "Access group 21"
-
-      {:ok, runner_mappings, _meta} =
-        SSO.list_group_runner_access_mappings(provider, owner, page: [limit: 100])
-
-      runner_21 =
-        Enum.find(runner_mappings, &(&1.external_group_id == "access-group-21"))
-
-      html = render_click(lv, "delete_runner_access_mapping", %{"id" => runner_21.id})
-
-      assert has_element?(
-               lv,
-               "#runner-access-mappings-#{provider.id}-pager a",
-               "Back to first page"
-             )
-
-      refute html =~ "No IdP groups grant additional runner access."
-      assert html =~ "Role group 01"
+      assert has_element?(lv, "#group-access-section-#{provider.id}", "Group 01")
     end
 
-    test "the synced-groups readout pages instead of loading the whole directory", %{
+    test "role mapping pages all synced groups, including unmapped groups", %{
       conn: conn,
       account: account,
       provider: provider
@@ -1869,18 +2837,19 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
 
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/sso/#{provider.id}")
 
-      assert has_element?(lv, "#synced-groups-#{provider.id}-pager", "20 / 21 total")
+      assert has_element?(lv, "#group-access-#{provider.id}-pager", "20 / 21 total")
+      refute has_element?(lv, "#synced-groups-#{provider.id}")
 
-      first = lv |> element("#synced-groups-#{provider.id}") |> render()
+      first = lv |> element("#group-access-section-#{provider.id}") |> render()
       assert first =~ "Group 01"
       refute first =~ "Group 21"
 
       _html =
         lv
-        |> element("#synced-groups-#{provider.id}-pager a", "Next →")
+        |> element("#group-access-#{provider.id}-pager a", "Next →")
         |> render_click()
 
-      second = lv |> element("#synced-groups-#{provider.id}") |> render()
+      second = lv |> element("#group-access-section-#{provider.id}") |> render()
       assert second =~ "Group 21"
       refute second =~ "Group 01"
     end
@@ -1918,6 +2887,93 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
       assert missing =~ "No group matches that name or ID."
     end
 
+    test "the role mapping composer starts with closed searchable pickers and require a group choice",
+         %{
+           conn: conn,
+           account: account,
+           provider: provider
+         } do
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/sso/#{provider.id}")
+
+      for {event, cancel, picker, form_id} <- [
+            {"add_mapping_form", "cancel_add_mapping", "role-group-picker", "create-mapping"}
+          ] do
+        render_click(lv, event, %{})
+
+        assert has_element?(
+                 lv,
+                 "##{picker}-#{provider.id}[data-dropdown][phx-mounted]:not([open]) > summary",
+                 "Select a directory group"
+               )
+
+        assert has_element?(
+                 lv,
+                 "##{picker}-#{provider.id} [data-dropdown-panel] input[data-dropdown-search]"
+               )
+
+        assert has_element?(lv, "##{form_id}-#{provider.id}-submit[disabled]")
+        refute has_element?(lv, "##{form_id}-#{provider.id} > p", "Add mapping")
+        render_click(lv, cancel, %{})
+      end
+    end
+
+    test "searching for a replacement keeps the chosen group and role until another is selected",
+         %{
+           conn: conn,
+           account: account,
+           provider: provider,
+           owner: owner
+         } do
+      platform = sync_group(provider, "grp-platform", "Platform Engineers")
+      oncall = sync_group(provider, "grp-oncall", "Incident responders")
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/sso/#{provider.id}")
+      render_click(lv, "add_mapping_form", %{})
+
+      lv
+      |> element("#role-group-picker-#{provider.id} button", "Platform Engineers")
+      |> render_click()
+
+      assert has_element?(lv, "#create-mapping-#{provider.id}-submit[disabled]")
+
+      lv
+      |> form("#create-mapping-#{provider.id}", %{"mapping" => %{"role" => "operator"}})
+      |> render_change()
+
+      refute has_element?(lv, "#create-mapping-#{provider.id}-submit[disabled]")
+
+      lv
+      |> form("#create-mapping-#{provider.id}", %{"group_search" => "oncall"})
+      |> render_change()
+
+      assert has_element?(lv, "#role-group-picker-#{provider.id} > summary", "Platform Engineers")
+
+      assert has_element?(
+               lv,
+               "#create-mapping-#{provider.id} input[name='mapping[directory_group_id]'][value='#{platform.id}']"
+             )
+
+      lv
+      |> element("#role-group-picker-#{provider.id} button", "Incident responders")
+      |> render_click()
+
+      assert has_element?(
+               lv,
+               "#role-group-picker-#{provider.id} > summary",
+               "Incident responders"
+             )
+
+      lv
+      |> form("#create-mapping-#{provider.id}")
+      |> render_submit()
+
+      assert {:ok, group_rows, _metadata} =
+               SSO.list_group_access(provider, owner, page: [limit: 100])
+
+      assert [mapping] = Enum.flat_map(group_rows, &List.wrap(&1.mapping))
+      assert mapping.directory_group_id == oncall.id
+      assert mapping.role == :operator
+    end
+
     test "maps a group the picker had to search for", %{
       conn: conn,
       account: account,
@@ -1931,7 +2987,8 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
 
       # Off the readout's first page and out of the picker's first answer, so
       # only the search can reach it.
-      refute lv |> element("#synced-groups-#{provider.id}") |> render() =~ "Incident responders"
+      refute lv |> element("#group-access-section-#{provider.id}") |> render() =~
+               "Incident responders"
 
       render_click(lv, "add_mapping_form", %{})
 
@@ -1952,8 +3009,124 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
 
       assert html =~ "Role mapping added."
 
-      assert {:ok, [mapping], _meta} = SSO.list_group_mappings(provider, owner)
+      assert {:ok, group_rows, _meta} =
+               SSO.list_group_access(provider, owner, page: [limit: 100])
+
+      assert [mapping] = Enum.flat_map(group_rows, &List.wrap(&1.mapping))
       assert mapping.directory_group_id == late.id
+    end
+
+    test "a duplicate role mapping shows the group error and preserves the selected role", %{
+      conn: conn,
+      account: account,
+      provider: provider,
+      owner: owner
+    } do
+      group = sync_group(provider, "role-dupe", "Platform Engineers")
+      replacement = sync_group(provider, "role-other", "Security Review")
+
+      {:ok, original} =
+        SSO.create_group_mapping(
+          provider,
+          %{"directory_group_id" => group.id, "role" => "operator"},
+          owner
+        )
+
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/sso/#{provider.id}")
+      render_click(lv, "add_mapping_form", %{})
+      render_click(lv, "select_group", %{"scope" => "role", "group_id" => group.id})
+
+      lv
+      |> form("#create-mapping-#{provider.id}", %{"mapping" => %{"role" => "admin"}})
+      |> render_submit()
+
+      assert has_element?(
+               lv,
+               "#role-group-picker-#{provider.id} + p",
+               "This group already has a role mapping."
+             )
+
+      assert has_element?(lv, "#role-group-picker-#{provider.id} > summary", "Platform Engineers")
+      assert has_element?(lv, "#create-mapping-#{provider.id} option[value='admin'][selected]")
+
+      assert {:ok, group_rows, _metadata} =
+               SSO.list_group_access(provider, owner, page: [limit: 100])
+
+      assert [unchanged] = Enum.flat_map(group_rows, &List.wrap(&1.mapping))
+      assert unchanged.id == original.id
+      assert unchanged.role == :operator
+
+      render_click(lv, "select_group", %{"scope" => "role", "group_id" => replacement.id})
+      lv |> form("#create-mapping-#{provider.id}") |> render_submit()
+
+      refute has_element?(
+               lv,
+               "#role-group-picker-#{provider.id} + p",
+               "This group already has a role mapping."
+             )
+
+      assert {:ok, group_rows, _metadata} =
+               SSO.list_group_access(provider, owner, page: [limit: 100])
+
+      mappings = Enum.flat_map(group_rows, &List.wrap(&1.mapping))
+      assert Enum.any?(mappings, &(&1.directory_group_id == replacement.id and &1.role == :admin))
+    end
+
+    test "a concurrent access mapping stays unchanged and the row keeps the rejected draft", %{
+      conn: conn,
+      account: account,
+      provider: provider,
+      owner: owner
+    } do
+      runner = Fixtures.Runners.create_runner(account_id: account.id, group: "database")
+      group = sync_group(provider, "access-dupe", "Database team")
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/sso/#{provider.id}")
+      render_click(lv, "edit_group_access", %{"group_id" => group.id})
+
+      {:ok, original} =
+        SSO.create_group_runner_access_mapping(
+          provider,
+          %{
+            "directory_group_id" => group.id,
+            "runner_access_mode" => "restricted",
+            "scope" => ["runner:#{runner.id}"]
+          },
+          owner
+        )
+
+      refresh_directory(lv)
+
+      lv
+      |> form("#edit-group-access-#{group.id}", %{
+        "runner_access_mapping" => %{"runner_access_mode" => "all"}
+      })
+      |> render_change()
+
+      lv
+      |> form("#edit-group-access-#{group.id}", %{
+        "runner_access_mapping" => %{"runner_access_mode" => "all", "pack_access_mode" => "all"}
+      })
+      |> render_submit()
+
+      assert has_element?(
+               lv,
+               "#synced-group-#{group.id} #group-access-error-#{group.id}",
+               "This group already has an access mapping."
+             )
+
+      assert has_element?(
+               lv,
+               "#edit-group-access-#{group.id} input[name='runner_access_mapping[runner_access_mode]'][value='all'][checked]"
+             )
+
+      assert {:ok, group_rows, _metadata} =
+               SSO.list_group_access(provider, owner, page: [limit: 100])
+
+      assert [unchanged] = Enum.flat_map(group_rows, &List.wrap(&1.runner_access_mapping))
+
+      assert unchanged.id == original.id
+      assert unchanged.runner_access_mode == :restricted
+      assert unchanged.runner_scope_runner_ids == [runner.id]
     end
 
     test "edits a mapping's role while its synced group identity and display stay fixed", %{
@@ -1976,25 +3149,23 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
 
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/sso/#{provider.id}")
 
-      # The synced group is immutable mapping identity. Only the role is editable.
-      _ = render_click(lv, "start_edit_mapping", %{"id" => mapping.id})
-
-      assert has_element?(
-               lv,
-               "#save-mapping-#{mapping.id}[class~='min-w-20'][phx-hook='PendingButton'][phx-disable-with='Saving...']"
-             )
+      assert has_element?(lv, "#group-role-#{group.id} > summary", "Operator")
+      refute has_element?(lv, "#group-role-#{group.id} button[phx-value-role='operator']")
+      assert has_element?(lv, "#delete-mapping-#{mapping.id}")
+      refute has_element?(lv, "#synced-group-#{group.id} form")
 
       html =
         lv
-        |> form("#edit-mapping-#{mapping.id}", %{
-          "mapping_id" => mapping.id,
-          "mapping" => %{"role" => "admin"}
-        })
-        |> render_submit()
+        |> element("#group-role-#{group.id} button[phx-value-role='admin']")
+        |> render_click()
 
       assert html =~ "Role mapping updated."
+      assert has_element?(lv, "#group-role-#{group.id} > summary", "Admin")
 
-      {:ok, [updated], _meta} = SSO.list_group_mappings(provider, owner)
+      assert {:ok, group_rows, _meta} =
+               SSO.list_group_access(provider, owner, page: [limit: 100])
+
+      assert [updated] = Enum.flat_map(group_rows, &List.wrap(&1.mapping))
       assert updated.id == mapping.id
       assert updated.directory_group_id == group.id
       assert updated.external_group_id == "00g-eng"
@@ -2002,120 +3173,521 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
       assert updated.role == :admin
     end
 
-    test "creates, updates, and deletes an independent group runner-access mapping", %{
+    test "edits access beneath its group with shared selectors and resets only the access grant",
+         %{
+           conn: conn,
+           account: account,
+           provider: provider,
+           owner: owner,
+           user: user
+         } do
+      membership = Fixtures.Memberships.fetch_membership(account.id, user.id)
+      Fixtures.Memberships.force_runner_access(membership, Emisar.Accounts.RunnerAccess.all())
+      runner = Fixtures.Runners.create_runner(account_id: account.id, group: "database")
+      group = sync_group(provider, "grp-database", "Database team")
+
+      {:ok, role} =
+        SSO.create_group_mapping(
+          provider,
+          %{directory_group_id: group.id, role: :operator},
+          owner
+        )
+
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/sso/#{provider.id}")
+
+      assert has_element?(lv, "#group-access-section-#{provider.id} h2", "Groups & access")
+      refute has_element?(lv, "#runner-access-mapping-section-#{provider.id}")
+      refute has_element?(lv, "#connection-role-summary")
+      refute has_element?(lv, "#connection-access-summary")
+      refute has_element?(lv, "#synced-group-#{group.id}", "Default")
+      assert has_element?(lv, "#group-access-facts-#{group.id}", "None")
+      assert has_element?(lv, "#group-actions-#{group.id} > #group-role-#{group.id}")
+
+      assert has_element?(
+               lv,
+               "#group-actions-#{group.id} > #edit-group-access-#{group.id}-toggle[aria-expanded='false']",
+               "Edit access"
+             )
+
+      lv |> element("#edit-group-access-#{group.id}-toggle") |> render_click()
+
+      assert has_element?(lv, "#synced-group-#{group.id} #edit-group-access-#{group.id}")
+      refute has_element?(lv, "#synced-group-#{group.id}[class~='border-dashed']")
+      refute has_element?(lv, "#synced-group-#{group.id}[class~='px-4']")
+      refute has_element?(lv, "#synced-group-#{group.id}[class*='bg-']")
+      refute has_element?(lv, "#synced-group-#{group.id}[class*='ring-']")
+
+      assert has_element?(
+               lv,
+               "#group-actions-#{group.id} > #edit-group-access-#{group.id}-toggle[aria-expanded='true']",
+               "Cancel edit"
+             )
+
+      assert has_element?(lv, "#edit-group-access-#{group.id}", "No runners")
+      assert has_element?(lv, "#edit-group-access-#{group.id}", "No packs")
+
+      refute has_element?(
+               lv,
+               "#synced-group-#{group.id}",
+               "Connection defaults and other group grants still apply."
+             )
+
+      refute has_element?(lv, "#edit-group-access-#{group.id} [name='group_search']")
+
+      refute has_element?(
+               lv,
+               "#edit-group-access-#{group.id} [name='runner_access_mapping[directory_group_id]']"
+             )
+
+      for field <- ~w(runner_access_mode pack_access_mode) do
+        assert has_element?(
+                 lv,
+                 "#edit-group-access-#{group.id} input[type='radio'][name='runner_access_mapping[#{field}]'][value='none'][checked]"
+               )
+
+        refute has_element?(
+                 lv,
+                 "#edit-group-access-#{group.id} select[name='runner_access_mapping[#{field}]']"
+               )
+      end
+
+      lv
+      |> form("#edit-group-access-#{group.id}", %{
+        "runner_access_mapping" => %{"runner_access_mode" => "restricted"}
+      })
+      |> render_change()
+
+      assert has_element?(
+               lv,
+               "#edit-group-access-#{group.id} input[type='checkbox'][name='runner_access_mapping[scope][]'][value='group:database']"
+             )
+
+      assert has_element?(
+               lv,
+               "#edit-group-access-#{group.id} input[type='checkbox'][name='runner_access_mapping[scope][]'][value='runner:#{runner.id}']"
+             )
+
+      invalid =
+        lv
+        |> form("#edit-group-access-#{group.id}", %{
+          "runner_access_mapping" => %{
+            "runner_access_mode" => "restricted",
+            "pack_access_mode" => "all"
+          }
+        })
+        |> render_submit()
+
+      assert invalid =~ "Choose all runners or at least one selected runner scope."
+      assert has_element?(lv, "#group-access-error-#{group.id}")
+
+      lv
+      |> form("#edit-group-access-#{group.id}", %{
+        "runner_access_mapping" => %{"runner_access_mode" => "all", "pack_access_mode" => "all"}
+      })
+      |> render_change()
+
+      refute has_element?(lv, "#group-access-error-#{group.id}")
+
+      lv
+      |> form("#edit-group-access-#{group.id}", %{
+        "runner_access_mapping" => %{"runner_access_mode" => "restricted"}
+      })
+      |> render_change()
+
+      lv
+      |> form("#edit-group-access-#{group.id}", %{
+        "runner_access_mapping" => %{
+          "runner_access_mode" => "restricted",
+          "scope" => ["group:database"],
+          "pack_access_mode" => "all"
+        }
+      })
+      |> render_submit()
+
+      assert {:ok, group_rows, _meta} =
+               SSO.list_group_access(provider, owner, page: [limit: 100])
+
+      assert [mapping] = Enum.flat_map(group_rows, &List.wrap(&1.runner_access_mapping))
+      assert mapping.directory_group_id == group.id
+      assert mapping.runner_scope_groups == ["database"]
+      assert has_element?(lv, "#group-access-facts-#{group.id}", "database")
+      refute has_element?(lv, "#synced-group-#{group.id}", "Default")
+      refute has_element?(lv, "#group-access-error-#{group.id}")
+
+      render_click(lv, "edit_group_access", %{"group_id" => group.id})
+
+      assert has_element?(
+               lv,
+               "#edit-group-access-#{group.id} input[type='checkbox'][value='group:database'][checked]"
+             )
+
+      assert has_element?(
+               lv,
+               "#edit-group-access-#{group.id} input[type='checkbox'][value='runner:#{runner.id}'][disabled]"
+             )
+
+      assert has_element?(lv, "#save-group-access-#{group.id}[phx-hook='PendingButton']")
+
+      lv
+      |> form("#edit-group-access-#{group.id}", %{
+        "runner_access_mapping" => %{"runner_access_mode" => "all"}
+      })
+      |> render_submit()
+
+      assert {:ok, group_rows, _meta} =
+               SSO.list_group_access(provider, owner, page: [limit: 100])
+
+      assert [%{runner_access_mode: :all}] =
+               Enum.flat_map(group_rows, &List.wrap(&1.runner_access_mapping))
+
+      render_click(lv, "edit_group_access", %{"group_id" => group.id})
+
+      assert has_element?(
+               lv,
+               "#delete-runner-access-mapping-#{mapping.id}-confirm",
+               "Reset to defaults"
+             )
+
+      lv |> element("#delete-runner-access-mapping-#{mapping.id}-confirm") |> render_click()
+
+      assert {:ok, group_rows, _meta} =
+               SSO.list_group_access(provider, owner, page: [limit: 100])
+
+      assert [] = Enum.flat_map(group_rows, &List.wrap(&1.runner_access_mapping))
+
+      assert {:ok, group_rows, _meta} =
+               SSO.list_group_access(provider, owner, page: [limit: 100])
+
+      assert [retained_role] = Enum.flat_map(group_rows, &List.wrap(&1.mapping))
+      assert retained_role.id == role.id
+      refute has_element?(lv, "#connection-access-summary")
+      refute has_element?(lv, "#synced-group-#{group.id}", "Default")
+      assert has_element?(lv, "#group-access-facts-#{group.id}", "None")
+      assert has_element?(lv, "#group-role-#{group.id} > summary", "Operator")
+    end
+
+    test "access editing preserves drafts, toggles closed, and recovers when its group disappears",
+         %{
+           conn: conn,
+           account: account,
+           provider: provider,
+           owner: owner
+         } do
+      first = sync_group(provider, "draft-first", "First group")
+      second = sync_group(provider, "draft-second", "Second group")
+
+      {:ok, retired_mapping} =
+        SSO.create_group_runner_access_mapping(
+          provider,
+          %{directory_group_id: second.id, runner_access_mode: :all},
+          owner
+        )
+
+      {:ok, _} = SSO.scim_delete_group(provider, second.id)
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/sso/#{provider.id}")
+
+      render_click(lv, "edit_group_access", %{"group_id" => first.id})
+
+      lv
+      |> form("#edit-group-access-#{first.id}", %{
+        "runner_access_mapping" => %{"runner_access_mode" => "all"}
+      })
+      |> render_change()
+
+      lv
+      |> form("#edit-group-access-#{first.id}", %{
+        "runner_access_mapping" => %{"runner_access_mode" => "all", "pack_access_mode" => "all"}
+      })
+      |> render_change()
+
+      refresh_directory(lv)
+      render_click(lv, "delete_runner_access_mapping", %{"id" => retired_mapping.id})
+
+      assert has_element?(
+               lv,
+               "#edit-group-access-#{first.id} input[name='runner_access_mapping[runner_access_mode]'][value='all'][checked]"
+             )
+
+      render_click(lv, "edit_group_access", %{"group_id" => first.id})
+      refute has_element?(lv, "#edit-group-access-#{first.id}")
+      render_click(lv, "edit_group_access", %{"group_id" => first.id})
+
+      assert has_element?(
+               lv,
+               "#edit-group-access-#{first.id} input[name='runner_access_mapping[runner_access_mode]'][value='none'][checked]"
+             )
+
+      third = sync_group(provider, "draft-third", "Third group")
+      refresh_directory(lv)
+      render_click(lv, "edit_group_access", %{"group_id" => third.id})
+      assert has_element?(lv, "#edit-group-access-#{first.id}")
+      refute has_element?(lv, "#edit-group-access-#{third.id}")
+      assert has_element?(lv, "#synced-group-#{third.id} button[disabled]", "Edit access")
+
+      {:ok, _} = SSO.scim_delete_group(provider, first.id)
+      refresh_directory(lv)
+      refute has_element?(lv, "#edit-group-access-#{first.id}")
+      assert render(lv) =~ "unsaved access changes were discarded"
+      lv |> element("#edit-group-access-#{third.id}-toggle") |> render_click()
+      assert has_element?(lv, "#edit-group-access-#{third.id}")
+    end
+
+    test "all defaults lock both dimensions and saving exactly defaults removes redundant additions",
+         %{
+           conn: conn,
+           account: account,
+           provider: provider,
+           owner: owner
+         } do
+      runner = Fixtures.Runners.create_runner(account_id: account.id, group: "database")
+
+      {:ok, provider} =
+        SSO.update_provider(
+          provider,
+          %{
+            default_runner_access_mode: :all,
+            default_pack_access_mode: :all
+          },
+          owner
+        )
+
+      group = sync_group(provider, "grant-only", "Grant only")
+
+      {:ok, _mapping} =
+        SSO.create_group_runner_access_mapping(
+          provider,
+          %{
+            directory_group_id: group.id,
+            runner_access_mode: :restricted,
+            scope: ["runner:#{runner.id}"]
+          },
+          owner
+        )
+
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/sso/#{provider.id}")
+
+      assert has_element?(lv, "#group-access-facts-#{group.id}", "All")
+      refute has_element?(lv, "#synced-group-#{group.id}", "Default")
+      refute has_element?(lv, "#connection-access-summary")
+      render_click(lv, "edit_group_access", %{"group_id" => group.id})
+
+      for field <- ~w(runner_access_mode pack_access_mode) do
+        assert has_element?(
+                 lv,
+                 "#edit-group-access-#{group.id} input[name='runner_access_mapping[#{field}]'][value='all'][checked][disabled]"
+               )
+
+        assert has_element?(
+                 lv,
+                 "#edit-group-access-#{group.id} input[name='runner_access_mapping[#{field}]'][value='none'][disabled]"
+               )
+      end
+
+      lv |> form("#edit-group-access-#{group.id}") |> render_submit()
+
+      assert {:ok, group_rows, _} =
+               SSO.list_group_access(provider, owner, page: [limit: 100])
+
+      assert [] = Enum.flat_map(group_rows, &List.wrap(&1.runner_access_mapping))
+    end
+
+    test "access editor selects and locks named defaults without saving them as additions", %{
+      conn: conn,
+      account: account,
+      provider: provider,
+      owner: owner
+    } do
+      Fixtures.Runners.create_runner(account_id: account.id, group: "database")
+
+      runner =
+        Fixtures.Runners.create_runner(account_id: account.id, group: "api", name: "api-primary")
+
+      {:ok, provider} =
+        SSO.update_provider(
+          provider,
+          %{
+            default_runner_access_mode: :restricted,
+            default_runner_scope: ["group:database", "runner:#{runner.id}"],
+            default_pack_access_mode: :all
+          },
+          owner
+        )
+
+      group = sync_group(provider, "named-defaults", "Named defaults")
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/sso/#{provider.id}")
+
+      refute has_element?(lv, "#connection-access-summary")
+      lv |> element("#edit-group-access-#{group.id}-toggle") |> render_click()
+
+      assert has_element?(
+               lv,
+               "#edit-group-access-#{group.id} input[value='group:database'][checked][disabled]"
+             )
+
+      assert has_element?(
+               lv,
+               "#edit-group-access-#{group.id} input[value='runner:#{runner.id}'][checked][disabled]"
+             )
+
+      assert has_element?(
+               lv,
+               "#edit-group-access-#{group.id} input[name='runner_access_mapping[pack_access_mode]'][value='all'][checked][disabled]"
+             )
+
+      assert {:ok, group_rows, _} =
+               SSO.list_group_access(provider, owner, page: [limit: 100])
+
+      assert [] = Enum.flat_map(group_rows, &List.wrap(&1.runner_access_mapping))
+
+      # A live baseline change moves the locks, not the stored draft additions.
+      {:ok, _} = SSO.update_provider(provider, %{default_runner_access_mode: :all}, owner)
+      refresh_directory(lv)
+
+      assert has_element?(
+               lv,
+               "#edit-group-access-#{group.id} input[name='runner_access_mapping[runner_access_mode]'][value='all'][checked][disabled]"
+             )
+
+      assert :sys.get_state(lv.pid).socket.assigns.group_access_editor.form.source.changes.runner_access_mode ==
+               :none
+
+      lv |> element("#edit-group-access-#{group.id}-toggle") |> render_click()
+      refute has_element?(lv, "#connection-access-summary")
+      assert has_element?(lv, "#group-access-facts-#{group.id}", "All")
+    end
+
+    test "access editor binds every submit to the opened row and rejects foreign targets", %{
+      conn: conn,
+      account: account,
+      provider: provider,
+      owner: owner
+    } do
+      first = sync_group(provider, "bound-first", "First group")
+      second = sync_group(provider, "bound-second", "Second group")
+      other_provider = insert_provider(account, %{kind: :entra})
+      {:ok, other_provider, _} = SSO.enable_scim(other_provider, owner)
+      foreign = sync_group(other_provider, "foreign", "Foreign group")
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/sso/#{provider.id}")
+      render_click(lv, "edit_group_access", %{"group_id" => foreign.id})
+      refute has_element?(lv, "form[phx-submit='save_group_access']")
+
+      render_click(lv, "save_group_access", %{
+        "group_id" => first.id,
+        "runner_access_mapping" => %{"runner_access_mode" => "all"}
+      })
+
+      assert {:ok, group_rows, _} =
+               SSO.list_group_access(provider, owner, page: [limit: 100])
+
+      assert [] = Enum.flat_map(group_rows, &List.wrap(&1.runner_access_mapping))
+
+      render_click(lv, "edit_group_access", %{"group_id" => first.id})
+
+      for bad_id <- [second.id, foreign.id, Ecto.UUID.generate()] do
+        render_click(lv, "save_group_access", %{
+          "group_id" => bad_id,
+          "runner_access_mapping" => %{"runner_access_mode" => "all"}
+        })
+      end
+
+      for event <- ["edit_group_access", "validate_group_access", "save_group_access"] do
+        render_click(lv, event, %{"runner_access_mapping" => "not a map"})
+      end
+
+      assert {:ok, group_rows, _} =
+               SSO.list_group_access(provider, owner, page: [limit: 100])
+
+      assert [] = Enum.flat_map(group_rows, &List.wrap(&1.runner_access_mapping))
+
+      render_click(lv, "save_group_access", %{
+        "group_id" => first.id,
+        "runner_access_mapping" => %{
+          "directory_group_id" => foreign.id,
+          "provider_id" => other_provider.id,
+          "runner_access_mode" => "all",
+          "pack_access_mode" => "all"
+        }
+      })
+
+      assert {:ok, group_rows, _} =
+               SSO.list_group_access(provider, owner, page: [limit: 100])
+
+      assert [mapping] = Enum.flat_map(group_rows, &List.wrap(&1.runner_access_mapping))
+      assert mapping.directory_group_id == first.id
+      assert mapping.provider_id == provider.id
+
+      assert {:ok, group_rows, _} =
+               SSO.list_group_access(other_provider, owner, page: [limit: 100])
+
+      assert [] = Enum.flat_map(group_rows, &List.wrap(&1.runner_access_mapping))
+    end
+
+    test "a viewer cannot open, save, or reset group access through forged events", %{
       conn: conn,
       account: account,
       provider: provider,
       owner: owner,
       user: user
     } do
-      membership = Fixtures.Memberships.fetch_membership(account.id, user.id)
-      Fixtures.Memberships.force_runner_access(membership, Emisar.Accounts.RunnerAccess.all())
-      runner = Fixtures.Runners.create_runner(account_id: account.id, group: "database")
-      assert {:ok, [%{id: runner_id}]} = Emisar.Runners.list_all_runners_for_account(owner)
-      assert runner_id == runner.id
-      group = sync_group(provider, "grp-database", "Database team")
-      {:ok, lv, html} = live(conn, ~p"/app/#{account}/settings/sso/#{provider.id}")
+      group = sync_group(provider, "denied", "Denied group")
 
-      assert html =~ "Runner access mapping"
+      {:ok, mapping} =
+        SSO.create_group_runner_access_mapping(
+          provider,
+          %{directory_group_id: group.id, runner_access_mode: :all},
+          owner
+        )
 
-      assert has_element?(
-               lv,
-               "#runner-access-mapping-section-#{provider.id} > #runner-access-mapping-section-#{provider.id}-help",
-               "Each mapping adds runner and pack access"
-             )
+      make_viewer(user)
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/sso/#{provider.id}")
 
-      refute html =~ "No runners registered yet"
-      render_click(lv, "add_runner_access_mapping_form", %{})
+      render_click(lv, "edit_group_access", %{"group_id" => group.id})
 
-      assert has_element?(
-               lv,
-               "#create-runner-access-mapping-#{provider.id}-submit[phx-hook='PendingButton'][phx-disable-with='Adding...']"
-             )
+      render_click(lv, "save_group_access", %{
+        "group_id" => group.id,
+        "runner_access_mapping" => %{"runner_access_mode" => "all"}
+      })
 
-      changed =
-        lv
-        |> form("#create-runner-access-mapping-#{provider.id}", %{
-          "provider_id" => provider.id,
-          "runner_access_mapping" => %{"runner_access_mode" => "restricted"}
-        })
-        |> render_change()
-
-      refute changed =~ "Choose all runners or at least one selected runner scope."
-
-      render_click(lv, "select_group", %{"scope" => "runner_access", "group_id" => group.id})
-
-      invalid =
-        lv
-        |> form("#create-runner-access-mapping-#{provider.id}", %{
-          "provider_id" => provider.id,
-          "runner_access_mapping" => %{"runner_access_mode" => "restricted"}
-        })
-        |> render_submit()
-
-      assert invalid =~ "Choose all runners or at least one selected runner scope."
-
-      html =
-        lv
-        |> form("#create-runner-access-mapping-#{provider.id}", %{
-          "provider_id" => provider.id,
-          "runner_access_mapping" => %{
-            "runner_access_mode" => "restricted",
-            "scope" => ["group:database"]
-          }
-        })
-        |> render_submit()
-
-      assert html =~ "Group runner access added."
-      assert html =~ "Database team"
-      assert html =~ "database"
-
-      assert {:ok, [mapping], _meta} =
-               SSO.list_group_runner_access_mappings(provider, owner)
-
-      mapping_facts =
-        lv
-        |> element("#runner-access-mapping-facts-#{mapping.id}")
-        |> render()
-
-      assert mapping_facts =~ "runners:"
-      assert mapping_facts =~ "packs:"
-      refute mapping_facts =~ "Selected runners"
-      refute mapping_facts =~ "Selected packs"
-
-      render_click(lv, "start_edit_runner_access_mapping", %{"id" => mapping.id})
-
-      assert has_element?(
-               lv,
-               "#save-runner-access-mapping-#{mapping.id}[class~='min-w-20'][phx-hook='PendingButton'][phx-disable-with='Saving...']"
-             )
-
-      updated =
-        lv
-        |> form("#edit-runner-access-mapping-#{mapping.id}", %{
-          "runner_access_mapping_id" => mapping.id,
-          "runner_access_mapping" => %{
-            "runner_access_mode" => "all"
-          }
-        })
-        |> render_submit()
-
-      assert updated =~ "Group runner access updated."
-
-      assert {:ok, [%{runner_access_mode: :all}], _meta} =
-               SSO.list_group_runner_access_mappings(provider, owner)
-
-      assert has_element?(
-               lv,
-               "#delete-runner-access-mapping-#{mapping.id}-confirm[phx-disable-with='Deleting…']"
-             )
-
-      deleted = render_click(lv, "delete_runner_access_mapping", %{"id" => mapping.id})
-      assert deleted =~ "Group runner access deleted."
-      assert {:ok, [], _meta} = SSO.list_group_runner_access_mappings(provider, owner)
+      render_click(lv, "delete_runner_access_mapping", %{"id" => mapping.id})
+      refute has_element?(lv, "form[phx-submit='save_group_access']")
+      unchanged = Repo.reload!(mapping)
+      assert is_nil(unchanged.deleted_at)
+      assert unchanged.runner_access_mode == :all
     end
 
-    test "a mapped runner scope names the live runner and carries its full id", %{
+    test "an open access editor cannot save or reset after the plan is downgraded", %{
+      conn: conn,
+      account: account,
+      provider: provider,
+      owner: owner
+    } do
+      group = sync_group(provider, "downgraded", "Downgraded group")
+
+      {:ok, mapping} =
+        SSO.create_group_runner_access_mapping(
+          provider,
+          %{directory_group_id: group.id, runner_access_mode: :all},
+          owner
+        )
+
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/sso/#{provider.id}")
+      render_click(lv, "edit_group_access", %{"group_id" => group.id})
+      Fixtures.Accounts.create_subscription(account, "enterprise", status: "canceled")
+
+      render_click(lv, "save_group_access", %{
+        "group_id" => group.id,
+        "runner_access_mapping" => %{"runner_access_mode" => "restricted", "scope" => []}
+      })
+
+      render_click(lv, "delete_runner_access_mapping", %{"id" => mapping.id})
+      unchanged = Repo.reload!(mapping)
+      assert is_nil(unchanged.deleted_at)
+      assert unchanged.runner_access_mode == :all
+      refresh_directory(lv)
+      refute has_element?(lv, "form[phx-submit='save_group_access']")
+    end
+
+    test "a mapped runner scope names the live runner without exposing its ID", %{
       conn: conn,
       account: account,
       provider: provider,
@@ -2139,15 +3711,17 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
 
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/sso/#{provider.id}")
 
-      assert has_element?(lv, "span[title='#{runner.id}']", "r20")
+      assert has_element?(lv, "#group-access-section-#{provider.id}", "r20")
+      refute has_element?(lv, "[title='#{runner.id}']")
     end
 
-    test "a mapped runner scope that no longer resolves reads as a removed runner", %{
-      conn: conn,
-      account: account,
-      provider: provider,
-      owner: owner
-    } do
+    test "a mapped runner scope that no longer resolves reads as unavailable without exposing its ID",
+         %{
+           conn: conn,
+           account: account,
+           provider: provider,
+           owner: owner
+         } do
       runner =
         Fixtures.Runners.create_runner(account_id: account.id, name: "r21", group: "database")
 
@@ -2170,7 +3744,7 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
 
       {:ok, lv, html} = live(conn, ~p"/app/#{account}/settings/sso/#{provider.id}")
 
-      assert has_element?(lv, "span[title='#{runner.id}']", "Removed runner")
+      assert has_element?(lv, "#group-access-section-#{provider.id}", "Runner unavailable")
       refute html =~ "r21"
     end
 
@@ -2228,7 +3802,11 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
         })
 
       assert rejected =~ "directory sync cannot grant owner"
-      assert {:ok, [], _meta} = SSO.list_group_mappings(provider, owner)
+
+      assert {:ok, group_rows, _meta} =
+               SSO.list_group_access(provider, owner, page: [limit: 100])
+
+      assert [] = Enum.flat_map(group_rows, &List.wrap(&1.mapping))
     end
 
     test "a non-admin viewer cannot create a role mapping", %{
@@ -2238,8 +3816,12 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
       provider: provider,
       owner: owner
     } do
+      group = sync_group(provider, "viewer-forged", "Viewer forged group")
       _ = make_viewer(user)
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/sso/#{provider.id}")
+      render_click(lv, "set_group_role", %{"group_id" => group.id, "role" => "admin"})
+      refute has_element?(lv, "#create-mapping-#{provider.id}")
+      refute has_element?(lv, "#group-role-#{group.id}")
 
       # The viewer sees the upsell, not the panel; the gated event is a no-op
       # server-side even if pushed directly.
@@ -2250,7 +3832,10 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
         })
 
       # No mapping was created (read it back through the pre-demotion owner subject).
-      assert {:ok, [], _meta} = SSO.list_group_mappings(provider, owner)
+      assert {:ok, group_rows, _meta} =
+               SSO.list_group_access(provider, owner, page: [limit: 100])
+
+      assert [] = Enum.flat_map(group_rows, &List.wrap(&1.mapping))
     end
 
     test "a non-admin viewer cannot update or delete a role mapping (forged events)", %{
@@ -2276,15 +3861,15 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/sso/#{provider.id}")
 
       _ =
-        render_submit(lv, "update_mapping", %{
-          "mapping_id" => mapping.id,
-          "mapping" => %{"role" => "admin"}
-        })
+        render_click(lv, "set_group_role", %{"group_id" => group.id, "role" => "admin"})
 
       _ = render_click(lv, "delete_mapping", %{"id" => mapping.id})
 
       # Unchanged and present — read back through the pre-demotion owner subject.
-      assert {:ok, [unchanged], _meta} = SSO.list_group_mappings(provider, owner)
+      assert {:ok, group_rows, _meta} =
+               SSO.list_group_access(provider, owner, page: [limit: 100])
+
+      assert [unchanged] = Enum.flat_map(group_rows, &List.wrap(&1.mapping))
       assert unchanged.id == mapping.id
       assert unchanged.role == :operator
     end
@@ -2319,7 +3904,9 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
 
       {:ok, _lv, html} = live(conn, ~p"/app/#{account}/settings/sso/#{provider.id}")
 
-      assert html =~ "SCIM directory sync"
+      assert html =~
+               "Sync members and groups from your identity provider with the Enterprise plan."
+
       assert html =~ "mailto:sales@emisar.dev"
       assert html =~ "subject=SCIM%20directory%20sync%20-%20Test%20Co"
       assert html =~ "Account%20ID%3A%20#{account.id}"
@@ -2334,7 +3921,7 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
 
       {:ok, lv, html} = live(conn, ~p"/app/#{account}/settings/sso/new")
 
-      assert html =~ "Single sign-on needs an owner or admin role."
+      assert html =~ "Single sign-on settings are restricted"
       refute has_element?(lv, "#provider_form")
     end
   end
@@ -2413,13 +4000,24 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
       # change is a privilege grant, so it goes through the same styled confirm as
       # the Team roster: a per-role confirm modal, never a bare select that would
       # promote to owner on a single change.
+      Fixtures.Memberships.force_runner_access(membership, Emisar.Accounts.RunnerAccess.none())
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/sso/#{provider.id}")
 
       # The promote-on-change select is gone; a confirm dialog exists for every
       # OTHER role, and the owner one spells out the consequence.
       refute has_element?(lv, ~s(select[name="role"]))
       assert has_element?(lv, "#synced-role-#{membership.id}-owner")
-      assert render(lv) =~ "can remove or demote you"
+      refute has_element?(lv, "#synced-role-#{membership.id}-owner", "credentials")
+      refute has_element?(lv, "#synced-role-#{membership.id}-owner", "reconnect")
+      assert render(lv) =~ "They can delete the account and remove or demote you."
+
+      assert has_element?(
+               lv,
+               "#synced-role-#{membership.id}-admin p + p.mt-3",
+               "Actions → Edit access on the Team page"
+             )
+
+      refute has_element?(lv, "#synced-role-#{membership.id}-owner p + p")
 
       # Confirming a role (the dialog's on_confirm pushes change_member_role) lands it.
       new_role = if membership.role == :operator, do: "viewer", else: "operator"
@@ -2451,7 +4049,7 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
     end
   end
 
-  describe "the 'point your IdP at this connection' setup steps hide once synced" do
+  describe "directory request history and setup instructions" do
     setup %{conn: conn} do
       {conn, _user, account} = register_and_log_in(conn, %{account: %{plan: "enterprise"}})
       provider = insert_provider(account, %{})
@@ -2459,27 +4057,82 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
       %{conn: conn, account: account, provider: provider}
     end
 
-    test "shown while the directory hasn't synced yet", %{
+    test "waits for the first request without a historical timestamp", %{
       conn: conn,
       account: account,
       provider: provider
     } do
-      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/settings/sso/#{provider.id}")
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/sso/#{provider.id}")
 
-      assert html =~ "Point your IdP at this connection"
+      assert has_element?(lv, "#scim-enabled-status-#{provider.id}", "Enabled")
+
+      assert has_element?(
+               lv,
+               "#scim-request-status-#{provider.id}",
+               "(waiting for first request)"
+             )
+
+      refute has_element?(lv, "#scim-last-request-#{provider.id}")
+
+      assert has_element?(
+               lv,
+               "#scim-setup-#{provider.id}:not([open]) summary",
+               "Setup instructions"
+             )
     end
 
-    test "hidden once the directory synced within the last day", %{
+    test "recent and old requests keep the same status and available setup instructions", %{
       conn: conn,
       account: account,
       provider: provider
     } do
-      {:ok, provider} =
-        provider |> Ecto.Changeset.change(scim_last_seen_at: DateTime.utc_now()) |> Repo.update()
+      for age <- [0, 86_400, 7 * 86_400] do
+        last_request = DateTime.add(DateTime.utc_now(), -age, :second)
 
-      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/settings/sso/#{provider.id}")
+        provider
+        |> Ecto.Changeset.change(scim_last_seen_at: last_request)
+        |> Repo.update!()
 
-      refute html =~ "Point your IdP at this connection"
+        {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/sso/#{provider.id}")
+
+        assert has_element?(lv, "#scim-enabled-status-#{provider.id}", "Enabled")
+
+        assert has_element?(
+                 lv,
+                 "#scim-enabled-status-#{provider.id} > span.text-brand-300",
+                 "Enabled"
+               )
+
+        assert has_element?(
+                 lv,
+                 "#scim-enabled-status-#{provider.id} > #scim-request-status-#{provider.id}.text-zinc-400",
+                 "(last request"
+               )
+
+        assert has_element?(
+                 lv,
+                 "#scim-request-status-#{provider.id} #scim-last-request-#{provider.id}"
+               )
+
+        refute has_element?(lv, "#scim-request-status-#{provider.id} .text-brand-300")
+
+        assert has_element?(
+                 lv,
+                 "#scim-last-request-#{provider.id}[datetime='#{DateTime.to_iso8601(last_request)}']"
+               )
+
+        refute has_element?(
+                 lv,
+                 "#scim-request-status-#{provider.id}",
+                 "waiting for first request"
+               )
+
+        assert has_element?(
+                 lv,
+                 "#scim-setup-#{provider.id}:not([open]) summary",
+                 "Setup instructions"
+               )
+      end
     end
   end
 end

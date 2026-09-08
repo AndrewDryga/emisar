@@ -8,8 +8,10 @@ defmodule EmisarWeb.MfaQr do
 
   @issuer "emisar"
 
+  def setup_key(secret) when is_binary(secret), do: Base.encode32(secret, padding: false)
+
   def provisioning_uri(email, secret) when is_binary(email) and is_binary(secret) do
-    encoded = Base.encode32(secret, padding: false)
+    encoded = setup_key(secret)
     label = URI.encode(email, &URI.char_unreserved?/1)
     "otpauth://totp/#{@issuer}:#{label}?secret=#{encoded}&issuer=#{@issuer}"
   end

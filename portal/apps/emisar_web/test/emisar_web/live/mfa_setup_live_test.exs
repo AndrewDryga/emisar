@@ -55,13 +55,13 @@ defmodule EmisarWeb.MfaSetupLiveTest do
     {:ok, lv, html} = live(conn, ~p"/app/mfa_setup")
 
     assert html =~ account.name
-    assert html =~ "requires multi-factor authentication"
+    assert html =~ "requires MFA."
 
     html = begin_mfa_enrollment(lv)
 
-    # The provisioning URI is rendered only after current-inbox proof — recover
+    # The manual setup key is rendered only after current-inbox proof — recover
     # the secret from it to play the authenticator's part.
-    assert [_, encoded] = Regex.run(~r/secret=([A-Z2-7]+)/, html)
+    assert [_, encoded] = Regex.run(~r/data-copy-text="([A-Z2-7]+)"/, html)
     secret = Base.decode32!(encoded, padding: false)
     otp = NimbleTOTP.verification_code(secret)
 
@@ -87,22 +87,22 @@ defmodule EmisarWeb.MfaSetupLiveTest do
     # Continue is gated until the operator acknowledges saving the codes —
     # an MFA-required member who skips this can lock themselves out. The
     # acknowledgement checkbox starts unchecked.
-    assert has_element?(lv, "button[disabled]", "Continue to dashboard")
+    assert has_element?(lv, "button[disabled]", "Continue")
     refute has_element?(lv, "input[type=checkbox][checked]")
 
     # A crafted socket event cannot bypass the disabled button.
     html = render_click(lv, "continue", %{})
     assert html =~ "Save your recovery codes before continuing."
-    assert has_element?(lv, "button[disabled]", "Continue to dashboard")
+    assert has_element?(lv, "button[disabled]", "Continue")
 
     html = render_click(lv, "toggle_codes_saved", %{})
     # The <.checkbox checked={@codes_saved?}> reflects the toggled state, and
     # Continue un-gates.
     assert html =~ ~r/<input[^>]*type="checkbox"[^>]*checked/
-    refute has_element?(lv, "button[disabled]", "Continue to dashboard")
+    refute has_element?(lv, "button[disabled]", "Continue")
 
     lv
-    |> element("button", "Continue to dashboard")
+    |> element("button", "Continue")
     |> render_click()
 
     assert_redirect(lv, "/app")
@@ -117,6 +117,7 @@ defmodule EmisarWeb.MfaSetupLiveTest do
 
     assert has_element?(lv, "#mfa_form", "didn't match")
     refute has_element?(lv, "#flash-error", "didn't match")
+    assert_push_event(lv, "code:reset", %{id: "mfa-otp"})
   end
 
   test "an enrolled member verifies TOTP for only this browser", %{
@@ -131,7 +132,7 @@ defmodule EmisarWeb.MfaSetupLiveTest do
 
     {:ok, lv, html} = live(conn, ~p"/app/mfa_setup")
 
-    assert html =~ "Verify this session"
+    assert html =~ "Enter an authenticator or recovery code to continue."
 
     render_hook(lv, "verify_totp", %{"otp" => NimbleTOTP.verification_code(secret)})
     assert_redirect(lv, "/app")
@@ -193,7 +194,7 @@ defmodule EmisarWeb.MfaSetupLiveTest do
 
     assert_redirect(lv, "/app/mfa_setup")
     {:ok, _challenge, html} = live(conn, ~p"/app/mfa_setup")
-    assert html =~ "Verify this session"
+    assert html =~ "Enter an authenticator or recovery code to continue."
   end
 
   test "a concurrent enrollment completion remounts into challenge", %{
@@ -202,7 +203,7 @@ defmodule EmisarWeb.MfaSetupLiveTest do
   } do
     {:ok, lv, _html} = live(conn, ~p"/app/mfa_setup")
     html = begin_mfa_enrollment(lv)
-    [_, encoded] = Regex.run(~r/secret=([A-Z2-7]+)/, html)
+    [_, encoded] = Regex.run(~r/data-copy-text="([A-Z2-7]+)"/, html)
     pending_secret = Base.decode32!(encoded, padding: false)
 
     {_user, _codes} =
@@ -212,7 +213,7 @@ defmodule EmisarWeb.MfaSetupLiveTest do
 
     assert_redirect(lv, "/app/mfa_setup")
     {:ok, _challenge, html} = live(conn, ~p"/app/mfa_setup")
-    assert html =~ "Verify this session"
+    assert html =~ "Enter an authenticator or recovery code to continue."
   end
 
   test "a subject without account-view permission fails closed", %{
@@ -233,17 +234,17 @@ defmodule EmisarWeb.MfaSetupLiveTest do
   test "the secret is minted only after email proof and the QR keeps it", %{conn: conn} do
     {:ok, lv, initial} = live(conn, ~p"/app/mfa_setup")
 
-    refute initial =~ "secret="
+    refute initial =~ "mfa-setup-key"
     refute_received {:email, _}
 
     html = begin_mfa_enrollment(lv)
 
-    assert [_, encoded] = Regex.run(~r/secret=([A-Z2-7]+)/, html)
+    assert [_, encoded] = Regex.run(~r/data-copy-text="([A-Z2-7]+)"/, html)
     # The encoded secret is a real, decodable base32 TOTP secret (not a placeholder).
     assert {:ok, _secret} = Base.decode32(encoded, padding: false)
 
     # Re-rendering the SAME connected view keeps the same secret — minted once.
-    assert [_, ^encoded] = Regex.run(~r/secret=([A-Z2-7]+)/, render(lv))
+    assert [_, ^encoded] = Regex.run(~r/data-copy-text="([A-Z2-7]+)"/, render(lv))
   end
 
   test "the disconnected render asks for an explicit email and sends nothing", %{
@@ -252,7 +253,7 @@ defmodule EmisarWeb.MfaSetupLiveTest do
     html = conn |> get(~p"/app/mfa_setup") |> html_response(200)
 
     assert html =~ "Email me a verification code"
-    refute html =~ "secret="
+    refute html =~ "mfa-setup-key"
     refute_received {:email, _}
   end
 
@@ -262,7 +263,7 @@ defmodule EmisarWeb.MfaSetupLiveTest do
     html = render_click(lv, "toggle_codes_saved", %{})
 
     assert html =~ "Email me a verification code"
-    refute html =~ "secret="
+    refute html =~ "mfa-setup-key"
   end
 
   test "the QR is a server-generated SVG, never attacker-influenced markup (IL-16)", %{conn: conn} do
@@ -298,7 +299,7 @@ defmodule EmisarWeb.MfaSetupLiveTest do
 
     assert html =~ "identity provider did not supply an email address"
     assert html =~ "Ask your administrator"
-    refute html =~ "secret="
+    refute html =~ "mfa-setup-key"
     refute_received {:email, _}
   end
 
@@ -312,7 +313,7 @@ defmodule EmisarWeb.MfaSetupLiveTest do
     assert html =~ "contact support"
     assert html =~ "Email me a verification code"
     refute html =~ "Email verification code"
-    refute html =~ "secret="
+    refute html =~ "mfa-setup-key"
     refute_received {:email, _}
   end
 
@@ -329,7 +330,7 @@ defmodule EmisarWeb.MfaSetupLiveTest do
     assert html =~ "Contact support"
     assert html =~ "Email me a verification code"
     refute html =~ "Email verification code"
-    refute html =~ "secret="
+    refute html =~ "mfa-setup-key"
     refute_received {:email, _}
   end
 
@@ -396,7 +397,7 @@ defmodule EmisarWeb.MfaSetupLiveTest do
                live(conn, ~p"/app/#{account}/settings/profile")
 
       assert {:ok, _lv, html} = live(conn, ~p"/app/mfa_setup")
-      assert html =~ "Verify this session"
+      assert html =~ "Enter an authenticator or recovery code to continue."
     end
   end
 
@@ -456,7 +457,7 @@ defmodule EmisarWeb.MfaSetupLiveTest do
       |> put_session(:user_token, token)
 
     {:ok, lv, html} = live(conn, ~p"/app/mfa_setup")
-    assert html =~ "Verify this session"
+    assert html =~ "Enter an authenticator or recovery code to continue."
 
     render_click(lv, "use_recovery")
     render_hook(lv, "verify_recovery", %{"code" => recovery_code})

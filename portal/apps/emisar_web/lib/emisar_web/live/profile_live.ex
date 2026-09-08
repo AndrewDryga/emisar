@@ -23,6 +23,8 @@ defmodule EmisarWeb.ProfileLive do
      socket
      |> assign(:page_title, "Profile")
      |> assign(:mfa_recovery_codes, nil)
+     |> assign(:codes_saved?, false)
+     |> assign(:mfa_start_error, nil)
      |> assign(:mfa_recovery_regeneration_step, :idle)
      |> assign(:mfa_recovery_regeneration_error, nil)
      |> assign(:mfa_disable_step, :idle)
@@ -32,8 +34,10 @@ defmodule EmisarWeb.ProfileLive do
      |> assign(:metadata, %Emisar.Repo.Paginator.Metadata{count: 0, limit: 0})
      |> assign(:filter_params, %{})
      |> assign(:sessions_error?, false)
+     |> assign(:sessions_loaded?, false)
      |> assign(:oidc_identities, [])
      |> assign(:oidc_identities_error?, false)
+     |> assign(:oidc_identities_loaded?, false)
      |> OIDCStepUp.reset()
      |> ConfirmDialog.init()
      |> assign_mfa_facts(user)
@@ -50,9 +54,8 @@ defmodule EmisarWeb.ProfileLive do
 
   def handle_params(params, _uri, socket), do: {:noreply, maybe_load_sessions(socket, params)}
 
-  # IL-18: the session list is the only DB read on this page — skip it on the
-  # pre-connect static render so mount + handle_params do no query work; the
-  # connected params load fills it in, and each prev/next patch re-runs it.
+  # IL-18: load lists only after connecting; static HTML shows loading, not an
+  # empty result. Session pagination preserves its URL state.
   defp maybe_load_sessions(socket, params) do
     if connected?(socket) do
       socket |> load_sessions(params) |> load_oidc_identities()
@@ -62,6 +65,8 @@ defmodule EmisarWeb.ProfileLive do
   end
 
   defp load_oidc_identities(socket) do
+    socket = assign(socket, :oidc_identities_loaded?, true)
+
     case SSO.list_self_service_identity_facts(socket.assigns.current_subject) do
       {:ok, identities} ->
         socket
@@ -79,6 +84,7 @@ defmodule EmisarWeb.ProfileLive do
   # ungrouped wall of near-identical rows buries the one unfamiliar device an
   # operator is scanning for. Cursor-paginated (UserToken.Query.cursor_fields).
   defp load_sessions(socket, params) do
+    socket = assign(socket, :sessions_loaded?, true)
     opts = LiveTable.params_to_opts(params)
     list_opts = Keyword.put(opts, :page, Keyword.put(opts[:page], :limit, 15))
 
@@ -143,7 +149,7 @@ defmodule EmisarWeb.ProfileLive do
       {:ok, updated} ->
         {:noreply,
          socket
-         |> put_flash(:info, "Profile updated.")
+         |> put_flash(:info, "Name updated.")
          |> assign(:current_user, updated)
          |> assign_profile_form(updated)}
 
@@ -166,8 +172,30 @@ defmodule EmisarWeb.ProfileLive do
       |> Users.change_user(%{"email" => params["email"] || ""})
       |> LiveForm.on_change(event)
 
+    socket =
+      if socket.assigns.email_step == :edit and
+           params["email"] != socket.assigns.email_form[:email].value do
+        assign(socket, :email_step_error, nil)
+      else
+        socket
+      end
+
     {:noreply, assign(socket, :email_form, to_form(changeset, as: "email"))}
   end
+
+  def handle_event("edit_email", _params, socket) do
+    {:noreply,
+     socket
+     |> reset_email_step()
+     |> assign(:email_step, :edit)
+     |> assign_email_form(socket.assigns.current_user)}
+  end
+
+  def handle_event("retry_sessions", _params, socket),
+    do: {:noreply, reload_sessions(socket)}
+
+  def handle_event("retry_oidc_identities", _params, socket),
+    do: {:noreply, load_oidc_identities(socket)}
 
   # Email is identity-defining — it controls every future magic link — so a
   # self-service change is credential-grade: the submit only STARTS a step-up
@@ -186,7 +214,7 @@ defmodule EmisarWeb.ProfileLive do
         {:noreply, assign(socket, :email_form, to_form(changeset, as: "email"))}
 
       not Map.has_key?(changeset.changes, :email) ->
-        {:noreply, put_flash(socket, :info, "That's already your email.")}
+        {:noreply, assign(socket, :email_step_error, "That's already your email.")}
 
       true ->
         {:noreply, start_email_step_up(socket, user, new_email)}
@@ -220,6 +248,7 @@ defmodule EmisarWeb.ProfileLive do
           {:noreply,
            socket
            |> assign(:email_step_error, nil)
+           |> push_event("code:reset", %{id: "email-step-code"})
            |> put_flash(:info, "We sent a new code to #{socket.assigns.current_user.email}.")}
 
         # The code goes to the CURRENT address, which has bounced/complained, so
@@ -237,7 +266,7 @@ defmodule EmisarWeb.ProfileLive do
 
         # :not_found (row gone mid-session) or any other unexpected Multi failure.
         {:error, _reason} ->
-          {:noreply, put_flash(socket, :error, "Couldn't send a new code. Try again.")}
+          {:noreply, assign(socket, :email_step_error, "Couldn't send a new code. Try again.")}
       end
     else
       {:noreply, put_flash(socket, :error, "Start an email change first.")}
@@ -252,14 +281,16 @@ defmodule EmisarWeb.ProfileLive do
   end
 
   def handle_event("start_oidc_link", %{"provider_id" => provider_id}, socket) do
+    socket = socket |> OIDCStepUp.reset() |> ConfirmDialog.reset()
+
     case Enum.find(socket.assigns.oidc_identities, &(&1.provider_id == provider_id)) do
       %{linked?: false} = identity ->
         {:noreply, OIDCStepUp.begin(socket, identity, :link, @oidc_step_up_start_error)}
 
-      %{linked?: true, removable?: false} = identity ->
+      %{linked?: true, user_verified?: false} = identity ->
         {:noreply, OIDCStepUp.begin(socket, identity, :link, @oidc_step_up_start_error)}
 
-      %{linked?: true, removable?: true} ->
+      %{linked?: true, user_verified?: true} ->
         {:noreply, put_flash(socket, :info, "That sign-in method is already linked.")}
 
       nil ->
@@ -269,9 +300,19 @@ defmodule EmisarWeb.ProfileLive do
 
   def handle_event("start_oidc_unlink", %{"identity_id" => identity_id}, socket)
       when is_binary(identity_id) do
+    socket = socket |> OIDCStepUp.reset() |> ConfirmDialog.reset()
+
     case Enum.find(socket.assigns.oidc_identities, &(&1.identity_id == identity_id)) do
       %{removable?: true} = identity ->
         {:noreply, OIDCStepUp.begin(socket, identity, :unlink, @oidc_step_up_start_error)}
+
+      %{removal_blocked_reason: :required_sso_identity} ->
+        {:noreply,
+         put_flash(
+           socket,
+           :error,
+           "Link another enabled sign-in method before removing this one."
+         )}
 
       %{linked?: true} ->
         {:noreply,
@@ -286,12 +327,23 @@ defmodule EmisarWeb.ProfileLive do
 
   def handle_event("start_oidc_unlink", _params, socket), do: {:noreply, socket}
 
-  def handle_event("confirm_oidc_step_up", %{"oidc_step" => %{"code" => code}}, socket) do
+  def handle_event("confirm_oidc_step_up", %{"oidc_step" => %{"code" => code}} = params, socket) do
     case socket.assigns.oidc_step do
       %{} = step ->
-        case OIDCStepUp.confirm(step, code, socket.assigns.current_subject) do
-          {:ok, proof} -> complete_oidc_step_up(socket, step, proof)
-          {:error, message} -> {:noreply, assign(socket, :oidc_step_error, message)}
+        if step.purpose == :unlink and params["confirm_token"] != step.provider_name do
+          {:noreply,
+           assign(socket, :oidc_step_error, "Enter the provider name to confirm removal.")}
+        else
+          case OIDCStepUp.confirm(step, code, socket.assigns.current_subject) do
+            {:ok, proof} ->
+              complete_oidc_step_up(socket, step, proof)
+
+            {:error, message} ->
+              {:noreply,
+               socket
+               |> assign(:oidc_step_error, message)
+               |> push_event("code:reset", %{id: "profile-oidc-step-code"})}
+          end
         end
 
       nil ->
@@ -302,7 +354,7 @@ defmodule EmisarWeb.ProfileLive do
   def handle_event("resend_oidc_step_up", _params, socket) do
     case socket.assigns.oidc_step do
       %{factor: :email} = step ->
-        {:noreply, OIDCStepUp.resend(socket, step)}
+        {:noreply, OIDCStepUp.resend(socket, step, "profile-oidc-step-code")}
 
       _other ->
         {:noreply, put_flash(socket, :error, "Start the confirmation again.")}
@@ -310,7 +362,7 @@ defmodule EmisarWeb.ProfileLive do
   end
 
   def handle_event("cancel_oidc_step_up", _params, socket),
-    do: {:noreply, OIDCStepUp.reset(socket)}
+    do: {:noreply, socket |> OIDCStepUp.reset() |> ConfirmDialog.reset()}
 
   def handle_event("confirm_typed", params, socket),
     do: {:noreply, ConfirmDialog.put_typed(socket, params)}
@@ -354,23 +406,24 @@ defmodule EmisarWeb.ProfileLive do
         {:noreply,
          socket
          |> assign(:mfa_enrollment_step, :email)
+         |> assign(:mfa_start_error, nil)
          |> assign(:mfa_enrollment_email_error, nil)
          |> put_flash(:info, "We emailed a verification code to your current address.")}
 
       {:ok, :suppressed} ->
-        {:noreply, put_flash(socket, :error, @mfa_enrollment_email_suppressed_error)}
+        {:noreply, assign(socket, :mfa_start_error, @mfa_enrollment_email_suppressed_error)}
 
       {:error, :rate_limited} ->
-        {:noreply, put_flash(socket, :error, MfaErrors.message(:email_rate_limited))}
+        {:noreply, assign(socket, :mfa_start_error, MfaErrors.message(:email_rate_limited))}
 
       {:error, :email_unavailable} ->
-        {:noreply, put_flash(socket, :error, @mfa_enrollment_email_unavailable_error)}
+        {:noreply, assign(socket, :mfa_start_error, @mfa_enrollment_email_unavailable_error)}
 
       {:error, :mfa_already_enabled} ->
         {:noreply, refresh_after_mfa_enabled(socket)}
 
       {:error, _reason} ->
-        {:noreply, put_flash(socket, :error, @mfa_enrollment_email_delivery_error)}
+        {:noreply, assign(socket, :mfa_start_error, @mfa_enrollment_email_delivery_error)}
     end
   end
 
@@ -380,6 +433,8 @@ defmodule EmisarWeb.ProfileLive do
         socket
       ) do
     if socket.assigns.mfa_enrollment_step == :email do
+      socket = push_event(socket, "code:reset", %{id: "mfa-enrollment-email-code"})
+
       case Auth.verify_mfa_enrollment_code(
              String.trim(code || ""),
              socket.assigns.current_subject
@@ -392,7 +447,7 @@ defmodule EmisarWeb.ProfileLive do
            assign(
              socket,
              :mfa_enrollment_email_error,
-             "That code is wrong or expired. Try again."
+             "That code is incorrect or expired. Try again or request a new code."
            )}
 
         {:error, :rate_limited} ->
@@ -426,6 +481,7 @@ defmodule EmisarWeb.ProfileLive do
           {:noreply,
            socket
            |> assign(:mfa_enrollment_email_error, nil)
+           |> push_event("code:reset", %{id: "mfa-enrollment-email-code"})
            |> put_flash(:info, "We sent a new verification code.")}
 
         {:ok, :suppressed} ->
@@ -477,12 +533,17 @@ defmodule EmisarWeb.ProfileLive do
            |> MfaEnrollment.assign_current_proof(updated)
            |> assign_mfa_facts(updated)
            |> assign(:mfa_recovery_codes, recovery_codes)
+           |> assign(:codes_saved?, false)
            |> MfaEnrollment.reset()
+           |> assign(:mfa_enrollment_step, :recovery)
            |> assign_mfa_enrollment_email_form()
            |> assign_mfa_form()}
 
         {:error, :invalid_otp} ->
-          {:noreply, assign(socket, :mfa_error, MfaErrors.message(:invalid_otp))}
+          {:noreply,
+           socket
+           |> assign(:mfa_error, MfaErrors.message(:invalid_otp))
+           |> push_event("code:reset", %{id: "mfa-otp"})}
 
         {:error, :mfa_enrollment_proof_stale} ->
           {:noreply,
@@ -534,7 +595,19 @@ defmodule EmisarWeb.ProfileLive do
   end
 
   def handle_event("dismiss_recovery_codes", _params, socket) do
-    {:noreply, assign(socket, :mfa_recovery_codes, nil)}
+    if socket.assigns.mfa_recovery_codes && socket.assigns.codes_saved? do
+      {:noreply, socket |> assign(:mfa_recovery_codes, nil) |> MfaEnrollment.reset()}
+    else
+      {:noreply, put_flash(socket, :error, MfaErrors.message(:recovery_codes_unsaved))}
+    end
+  end
+
+  def handle_event("toggle_codes_saved", _params, socket) do
+    if socket.assigns.mfa_recovery_codes do
+      {:noreply, update(socket, :codes_saved?, &(not &1))}
+    else
+      {:noreply, socket}
+    end
   end
 
   def handle_event("start_disable_mfa", _params, socket) do
@@ -591,7 +664,10 @@ defmodule EmisarWeb.ProfileLive do
         {:noreply,
          socket
          |> assign(:mfa_disable_step, :code)
-         |> assign(:mfa_disable_error, "That authenticator code was already used. Try again.")}
+         |> assign(
+           :mfa_disable_error,
+           "That authenticator code was already used. Wait for the next code."
+         )}
 
       {:error, _reason} ->
         {:noreply,
@@ -610,6 +686,7 @@ defmodule EmisarWeb.ProfileLive do
          |> assign(:current_user, updated)
          |> assign_mfa_facts(updated)
          |> assign(:mfa_recovery_codes, codes)
+         |> assign(:codes_saved?, false)
          |> reset_mfa_recovery_regeneration()}
 
       {:error, :rate_limited} ->
@@ -668,7 +745,7 @@ defmodule EmisarWeb.ProfileLive do
     assign(socket, :email_form, to_form(changeset, as: "email"))
   end
 
-  # Email-change step-up state: :idle (the edit form), :totp (an MFA-on user
+  # Email-change state: :idle (current address), :edit (new address), :totp (an MFA-on user
   # re-enters an authenticator code), or :code (a one-time code emailed to the
   # current address). `pending_new_email` is the change awaiting confirmation.
   defp reset_email_step(socket) do
@@ -680,11 +757,13 @@ defmodule EmisarWeb.ProfileLive do
   end
 
   defp handle_email_change_confirmation(socket, new_email, code, subject, step) do
+    socket = push_event(socket, "code:reset", %{id: "email-step-code"})
+
     case Auth.confirm_email_change(new_email, code, subject) do
       {:ok, updated} ->
         {:noreply,
          socket
-         |> put_flash(:info, "Email updated.")
+         |> put_flash(:info, "Email changed. Check #{updated.email} for a confirmation link.")
          |> assign(:current_user, updated)
          |> assign_email_form(updated)
          |> reset_email_step()}
@@ -707,19 +786,25 @@ defmodule EmisarWeb.ProfileLive do
 
       # Step-up passed but the email itself was rejected (e.g. now taken) — the
       # one-time proof is spent, so send them back to the start.
-      {:error, %Ecto.Changeset{}} ->
+      {:error, %Ecto.Changeset{} = changeset} ->
         {:noreply,
          socket
-         |> put_flash(:error, "Could not change to that email — it may already be in use.")
-         |> reset_email_step()}
+         |> reset_email_step()
+         |> assign(:email_step, :edit)
+         |> assign(:email_form, to_form(changeset, as: "email"))
+         |> assign(
+           :email_step_error,
+           "Couldn't change to that email. Check the address and try again."
+         )}
 
       # Any other domain failure (e.g. the row was soft-deleted mid-session) — the
       # proof is spent, so reset rather than leave a dead step-up open.
       {:error, _reason} ->
         {:noreply,
          socket
-         |> put_flash(:error, "Could not change your email. Try again.")
-         |> reset_email_step()}
+         |> reset_email_step()
+         |> assign(:email_step, :edit)
+         |> assign(:email_step_error, "Couldn't change your email. Try again.")}
     end
   end
 
@@ -749,29 +834,29 @@ defmodule EmisarWeb.ProfileLive do
       # "check your inbox". They can't self-fix a suppressed current address.
       {:error, :delivery_suppressed} ->
         socket
-        |> put_flash(
-          :error,
+        |> assign(:email_step, :edit)
+        |> assign(
+          :email_step_error,
           "We can't send a code to your current email (#{user.email}). Contact support@emisar.dev."
         )
-        |> reset_email_step()
 
       {:error, :rate_limited} ->
         socket
-        |> put_flash(:error, MfaErrors.message(:email_rate_limited))
-        |> reset_email_step()
+        |> assign(:email_step, :edit)
+        |> assign(:email_step_error, MfaErrors.message(:email_rate_limited))
 
       # :not_found (row gone mid-session) or any other unexpected Multi failure.
       {:error, _reason} ->
         socket
-        |> put_flash(:error, "Couldn't start the email change. Try again.")
-        |> reset_email_step()
+        |> assign(:email_step, :edit)
+        |> assign(:email_step_error, "Couldn't start the email change. Try again.")
     end
   end
 
-  defp step_up_error(:totp), do: "That authenticator code didn't match. Try again."
+  defp step_up_error(:totp), do: MfaErrors.message(:invalid_otp)
 
   defp step_up_error(_),
-    do: "That confirmation code is wrong or expired. Try again, or resend a new one."
+    do: "That code is incorrect or expired. Try again or request a new code."
 
   defp complete_oidc_step_up(socket, %{purpose: :unlink} = step, proof) do
     case SSO.unlink_identity(
@@ -854,7 +939,7 @@ defmodule EmisarWeb.ProfileLive do
       current_user={@current_user}
       current_account={@current_account}
       section={:profile}
-      width={:settings}
+      width={:table}
     >
       <:title>Profile</:title>
 
@@ -863,17 +948,20 @@ defmodule EmisarWeb.ProfileLive do
         <.doc_link href="/security">Security overview</.doc_link>
       </.page_intro>
 
-      <%!-- CONTENT ON CANVAS: one naked section per concern (§8.1 — the
-           fields, the enrollment block, and the reveal card are the only
-           surfaces; a panel around a form was an island). --%>
-      <div class="mt-4 max-w-2xl space-y-12">
-        <section>
-          <.section_header title="Display name">
-            <:subtitle>How you appear to other members.</:subtitle>
-          </.section_header>
+      <div
+        id="profile-layout"
+        class="grid grid-cols-1 gap-x-12 gap-y-12 xl:grid-cols-[minmax(0,1fr)_18rem] xl:items-start"
+      >
+        <.section_with_note id="display-name">
+          <:header>
+            <.section_header title="Display name">
+              <:subtitle>How you appear to other members.</:subtitle>
+            </.section_header>
+          </:header>
           <.simple_form
             for={@profile_form}
             id="profile_form"
+            class="max-w-2xl"
             phx-change="validate_profile"
             phx-submit="save_profile"
           >
@@ -888,46 +976,72 @@ defmodule EmisarWeb.ProfileLive do
               placeholder="Ada Lovelace"
             />
             <:actions>
-              <%!-- Emerald once edited, quiet outlined while clean — the Save
-                   button IS the unsaved-changes signal (house pattern). --%>
               <.button
                 variant={if @profile_form.source.changes == %{}, do: :secondary, else: :primary}
+                disabled={@profile_form.source.changes == %{}}
                 phx-disable-with="Saving..."
               >
                 Save
               </.button>
             </:actions>
           </.simple_form>
-        </section>
+        </.section_with_note>
 
-        <section>
-          <.section_header title="Email">
-            <:subtitle>
-              Used to sign in — every future sign-in link goes to it, so a change is
-              confirmed with a second step.
-            </:subtitle>
-          </.section_header>
+        <.section_with_note id="email">
+          <:header>
+            <.section_header title="Email">
+              <:subtitle>We send your sign-in links to this address.</:subtitle>
+            </.section_header>
+          </:header>
           <%= case @email_step do %>
             <% :idle -> %>
+              <div class="flex flex-wrap items-center justify-between gap-3">
+                <div class="min-w-0">
+                  <p class="break-all text-sm text-zinc-200">
+                    {@current_user.email || "No email address"}
+                  </p>
+                  <p :if={is_nil(@current_user.email)} class="mt-1 text-xs text-zinc-400">
+                    Ask your administrator to add an email address in your sign-in provider,
+                    then sign in again.
+                  </p>
+                  <p
+                    :if={@current_user.email && is_nil(@current_user.confirmed_at)}
+                    class="mt-1 text-xs text-zinc-400"
+                  >
+                    Awaiting confirmation
+                  </p>
+                </div>
+                <.button id="change-email" variant={:secondary} size={:sm} phx-click="edit_email">
+                  Change email
+                </.button>
+              </div>
+            <% :edit -> %>
               <.simple_form
                 for={@email_form}
                 id="email_form"
+                class="max-w-2xl"
                 phx-change="validate_email"
                 phx-submit="save_email"
               >
+                <p class="text-sm text-zinc-300">Enter your new email address.</p>
                 <.input
                   field={@email_form[:email]}
                   type="email"
-                  aria-label="Email address"
+                  aria-label="New email address"
                   autocomplete="email"
                   required
                 />
+                <.error :if={@email_step_error}>{@email_step_error}</.error>
                 <:actions>
                   <.button
                     variant={if @email_form.source.changes == %{}, do: :secondary, else: :primary}
+                    disabled={@email_form.source.changes == %{}}
                     phx-disable-with="Checking..."
                   >
-                    Update email
+                    Continue
+                  </.button>
+                  <.button variant={:ghost} type="button" phx-click="cancel_email_change">
+                    Cancel
                   </.button>
                 </:actions>
               </.simple_form>
@@ -935,17 +1049,16 @@ defmodule EmisarWeb.ProfileLive do
               <.simple_form
                 for={@email_step_form}
                 id="email_step_form"
+                class="max-w-2xl"
                 phx-submit="confirm_email_change"
               >
                 <p class="text-sm text-zinc-300">
-                  Confirm changing your email to <span class="font-medium text-zinc-100">{@pending_new_email}</span>.
-                </p>
-                <p :if={step == :code} class="text-xs text-zinc-400">
-                  We emailed a 6-digit code to your current address ({@current_user.email}). Entering
-                  it confirms it's really you — an open session alone can't change your email.
-                </p>
-                <p :if={step == :totp} class="text-xs text-zinc-400">
-                  Enter the code from your authenticator app — your second factor confirms the change.
+                  To change your email to <span class="break-all font-medium text-zinc-100">{@pending_new_email}</span>,
+                  <%= if step == :code do %>
+                    enter the 6-digit code sent to <span class="break-all">{@current_user.email}</span>.
+                  <% else %>
+                    enter the 6-digit code from your authenticator app.
+                  <% end %>
                 </p>
                 <.code_input
                   id="email-step-code"
@@ -955,7 +1068,7 @@ defmodule EmisarWeb.ProfileLive do
                   error={@email_step_error}
                 />
                 <:actions>
-                  <.button phx-disable-with="Confirming...">Confirm change</.button>
+                  <.button phx-disable-with="Changing...">Change email</.button>
                   <.button
                     :if={step == :code}
                     variant={:secondary}
@@ -966,7 +1079,7 @@ defmodule EmisarWeb.ProfileLive do
                     Resend code
                   </.button>
                   <.button
-                    variant={:secondary}
+                    variant={:ghost}
                     size={:md}
                     type="button"
                     phx-click="cancel_email_change"
@@ -976,15 +1089,25 @@ defmodule EmisarWeb.ProfileLive do
                 </:actions>
               </.simple_form>
           <% end %>
-        </section>
+        </.section_with_note>
 
-        <section id="single-sign-on">
-          <.section_header title="Sign-in methods">
-            <:subtitle>
-              Link an enabled provider from this workspace to your emisar profile. A linked method
-              signs you into every workspace this profile can access.
-            </:subtitle>
-          </.section_header>
+        <.section_with_note id="single-sign-on">
+          <:header>
+            <.section_header title="Sign-in methods">
+              <:subtitle>
+                Link your profile to a sign-in provider available in this workspace.
+              </:subtitle>
+            </.section_header>
+          </:header>
+          <:note>
+            A linked method signs you in to your profile. Each workspace can still require
+            its own sign-in provider or MFA.
+            <.doc_link href="/docs/sso">About single sign-on</.doc_link>
+          </:note>
+
+          <p :if={not @oidc_identities_loaded?} role="status" class="text-sm text-zinc-400">
+            Loading sign-in methods…
+          </p>
 
           <.empty_state
             :if={@oidc_identities_error?}
@@ -992,14 +1115,24 @@ defmodule EmisarWeb.ProfileLive do
             icon="state.warning"
             title="Couldn't load sign-in methods"
           >
-            Refresh the page to try again.
+            Try loading them again.
+            <:actions>
+              <.button
+                variant={:secondary}
+                size={:sm}
+                phx-click="retry_oidc_identities"
+                phx-disable-with="Loading…"
+              >
+                Retry
+              </.button>
+            </:actions>
           </.empty_state>
 
           <p
-            :if={not @oidc_identities_error? and @oidc_identities == []}
+            :if={@oidc_identities_loaded? and not @oidc_identities_error? and @oidc_identities == []}
             class="text-sm text-zinc-400"
           >
-            This workspace has no enabled single sign-on connections.
+            No single sign-on providers are enabled in this workspace.
           </p>
 
           <ul
@@ -1016,23 +1149,24 @@ defmodule EmisarWeb.ProfileLive do
                 <p class="font-medium text-zinc-100">{identity.provider_name}</p>
                 <p class="mt-1 text-xs text-zinc-400">
                   <%= cond do %>
-                    <% identity.removable? -> %>
-                      Linked and verified by you
-                      <span :if={identity.verified_at}> · <.local_time
-                        id={"oidc-verified-#{identity.provider_id}"}
-                        value={identity.verified_at}
-                        mode={:relative}
-                      /></span>
+                    <% identity.user_verified? -> %>
+                      Linked by you
                     <% identity.linked? -> %>
-                      Linked by your workspace · verify it yourself before removal
+                      Linked by your workspace
                     <% true -> %>
-                      Not linked to your profile
+                      Not linked
                   <% end %>
                 </p>
               </div>
-              <div class="flex shrink-0 flex-wrap gap-2 sm:justify-end">
+              <div class="flex flex-wrap items-center gap-2 sm:justify-end">
+                <span
+                  :if={identity.linked? and not identity.user_verified?}
+                  class="text-xs text-zinc-400"
+                >
+                  Verify it before you can remove it.
+                </span>
                 <.button
-                  :if={not identity.removable?}
+                  :if={not identity.user_verified?}
                   id={"link-oidc-#{identity.provider_id}"}
                   type="button"
                   variant={:secondary}
@@ -1045,34 +1179,31 @@ defmodule EmisarWeb.ProfileLive do
                 >
                   {if(identity.linked?, do: "Verify", else: "Link")}
                 </.button>
-                <.button
-                  :if={identity.removable?}
-                  id={"remove-oidc-#{identity.provider_id}"}
-                  type="button"
-                  variant={:secondary}
-                  tone={:rose}
-                  size={:sm}
-                  phx-click={show_confirm_dialog("remove-oidc-dialog-#{identity.provider_id}")}
-                >
-                  Remove
-                </.button>
-                <.confirm_dialog
-                  :if={identity.removable?}
-                  id={"remove-oidc-dialog-#{identity.provider_id}"}
-                  title={"Remove #{identity.provider_name}?"}
-                  confirm_label="Continue to confirmation"
-                  pending_label="Starting…"
-                  confirm_token={identity.provider_name}
-                  typed={@typed}
-                  on_confirm={
-                    JS.push("start_oidc_unlink", value: %{identity_id: identity.identity_id})
-                    |> hide_confirm_dialog("remove-oidc-dialog-#{identity.provider_id}")
-                  }
-                >
-                  <:body>
-                    This removes a way to sign in. Sessions created with it will be signed out.
-                  </:body>
-                </.confirm_dialog>
+                <div :if={identity.user_verified?} class="space-y-1 sm:text-right">
+                  <.button
+                    id={"remove-oidc-#{identity.provider_id}"}
+                    type="button"
+                    variant={:secondary}
+                    tone={:rose}
+                    size={:sm}
+                    disabled={not identity.removable?}
+                    aria-describedby={
+                      not identity.removable? && "remove-oidc-reason-#{identity.provider_id}"
+                    }
+                    phx-click="start_oidc_unlink"
+                    phx-value-identity_id={identity.identity_id}
+                    phx-disable-with="Opening…"
+                  >
+                    Remove
+                  </.button>
+                  <p
+                    :if={not identity.removable?}
+                    id={"remove-oidc-reason-#{identity.provider_id}"}
+                    class="max-w-xs text-xs text-zinc-400"
+                  >
+                    Link another enabled sign-in method before removing this one.
+                  </p>
+                </div>
               </div>
             </li>
           </ul>
@@ -1085,69 +1216,59 @@ defmodule EmisarWeb.ProfileLive do
             purpose={@oidc_step.purpose}
             email={@current_user.email}
             error={@oidc_step_error}
+            typed={@typed}
             handoff={@oidc_handoff}
             trigger_submit={@oidc_trigger_submit}
             action={~p"/app/#{@current_account}/settings/sso/identity/link"}
           />
-        </section>
+        </.section_with_note>
 
-        <section>
-          <%!-- No On/off badge: the sole action ("Set up MFA" / "Disable MFA")
-               already states the current state unambiguously. --%>
-          <.section_header title="Multi-factor authentication">
-            <:subtitle>
-              Adds a TOTP code at sign-in, so a leaked sign-in link alone can't get in.
-            </:subtitle>
-          </.section_header>
+        <.section_with_note id="multi-factor-authentication">
+          <:header>
+            <.section_header title="Multi-factor authentication">
+              <:subtitle>Use an authenticator app for an extra check when you sign in.</:subtitle>
+            </.section_header>
+          </:header>
+          <:note>
+            Keep your recovery codes somewhere you can reach without your authenticator,
+            such as a password manager on another device.
+            <.doc_link href="/security">About sign-in security</.doc_link>
+          </:note>
 
           <%= cond do %>
             <% @mfa_recovery_codes -> %>
-              <%!-- One-shot reveal — codes are only shown right after
-                   enable / regenerate. The card forces an explicit
-                   "I saved them" before the user can close. --%>
+              <.mfa_setup_progress :if={@mfa_enrollment_step == :recovery} step={3} />
               <.secret_reveal
                 id="mfa-recovery-codes"
                 title="Save your recovery codes"
                 codes={@mfa_recovery_codes}
                 download_name="emisar-recovery-codes.txt"
               >
-                Each code works once if you can't reach your authenticator. Store them in a
-                password manager — we can't show them again.
+                Use a recovery code if you can't access your authenticator. Each code works once.
+                Save these somewhere safe—you won't be able to view them again.
                 <:actions>
-                  <.confirm_button
-                    id="ack-recovery-codes"
-                    title="Stored them somewhere safe?"
-                    confirm_label="I've saved them"
-                    variant={:secondary}
-                    tone={:neutral}
-                    size={:sm}
-                    on_confirm={JS.push("dismiss_recovery_codes")}
-                  >
-                    <:body>Once this closes we can't show these recovery codes again.</:body>
-                    I've saved them
-                  </.confirm_button>
+                  <.recovery_code_acknowledgement
+                    saved={@codes_saved?}
+                    event="dismiss_recovery_codes"
+                  />
                 </:actions>
               </.secret_reveal>
             <% @mfa_facts.enabled? -> %>
-              <p class="text-sm text-zinc-300">
-                You're protected by a second factor. Disabling means a leaked sign-in link is
-                enough to sign in.
-              </p>
-              <%!-- Recovery codes burn down one per lost-device sign-in, but the
-                   count was never surfaced — nudge to regenerate before they run
-                   out and a lost authenticator becomes a lockout. --%>
+              <p class="text-sm font-medium text-brand-300">Enabled</p>
               <% remaining = @mfa_facts.recovery_codes_remaining %>
-              <p class={[
-                "mt-3 text-xs",
-                if(remaining <= 2, do: "font-medium text-amber-300", else: "text-zinc-400")
-              ]}>
-                {remaining} recovery {if remaining == 1, do: "code", else: "codes"} remaining.<span :if={
-                  remaining <= 2
-                }>
-                  Regenerate for a fresh set before a lost authenticator locks you out.
-                </span>
-              </p>
-              <div class="mt-4 flex flex-wrap items-center gap-3">
+              <div class="mt-2 space-y-1 text-sm">
+                <p class="text-zinc-400">
+                  <span class="tabular-nums">{remaining}</span>
+                  recovery {if remaining == 1, do: "code", else: "codes"} remaining.
+                </p>
+                <p :if={remaining <= 2} class="text-amber-300">
+                  Generate new codes before these run out.
+                </p>
+              </div>
+              <div
+                :if={@mfa_recovery_regeneration_step == :idle and @mfa_disable_step == :idle}
+                class="mt-4 flex flex-wrap items-center gap-3"
+              >
                 <.button
                   id="regen-codes"
                   variant={:secondary}
@@ -1155,31 +1276,29 @@ defmodule EmisarWeb.ProfileLive do
                   type="button"
                   phx-click="start_regenerate_recovery_codes"
                 >
-                  Regenerate recovery codes
+                  Generate new recovery codes
                 </.button>
-                <.confirm_button
+                <.button
                   id="disable-mfa"
-                  title="Disable MFA on your account?"
-                  confirm_label="Disable MFA"
                   variant={:secondary}
                   tone={:rose}
                   size={:md}
-                  on_confirm={JS.push("start_disable_mfa")}
+                  phx-click="start_disable_mfa"
                 >
-                  <:body>A leaked sign-in link alone will then be enough to sign in.</:body>
                   Disable MFA
-                </.confirm_button>
+                </.button>
               </div>
               <.simple_form
                 :if={@mfa_recovery_regeneration_step == :code}
                 for={@mfa_recovery_regeneration_form}
                 id="mfa_recovery_regeneration_form"
                 phx-submit="regenerate_recovery_codes"
-                class="mt-5 max-w-md"
+                class="mt-5 max-w-2xl"
               >
+                <h3 class="text-sm font-medium text-zinc-200">Generate new recovery codes</h3>
                 <p class="text-sm text-zinc-300">
-                  Enter your authenticator code or one current recovery code. The old recovery
-                  codes stop working only after this proof succeeds.
+                  New recovery codes will replace your existing codes. Enter an authenticator
+                  or recovery code to continue.
                 </p>
                 <.input
                   field={@mfa_recovery_regeneration_form[:code]}
@@ -1192,7 +1311,7 @@ defmodule EmisarWeb.ProfileLive do
                   {@mfa_recovery_regeneration_error}
                 </.error>
                 <:actions>
-                  <.button phx-disable-with="Regenerating...">Regenerate codes</.button>
+                  <.button phx-disable-with="Generating...">Generate new codes</.button>
                   <.button
                     variant={:ghost}
                     type="button"
@@ -1207,10 +1326,12 @@ defmodule EmisarWeb.ProfileLive do
                 for={@mfa_disable_form}
                 id="mfa_disable_form"
                 phx-submit="disable_mfa"
-                class="mt-5 max-w-md"
+                class="mt-5 max-w-2xl"
               >
+                <h3 class="text-sm font-medium text-zinc-200">Disable MFA</h3>
                 <p class="text-sm text-zinc-300">
-                  Enter your authenticator code or one of your recovery codes to confirm.
+                  You'll stop using an authenticator code to sign in. You may need to set it
+                  up again to access workspaces that require MFA.
                 </p>
                 <.input
                   field={@mfa_disable_form[:code]}
@@ -1222,7 +1343,7 @@ defmodule EmisarWeb.ProfileLive do
                 <.error :if={@mfa_disable_error}>{@mfa_disable_error}</.error>
                 <:actions>
                   <.button variant={:secondary} tone={:rose} phx-disable-with="Disabling...">
-                    Confirm and disable
+                    Disable MFA
                   </.button>
                   <.button
                     variant={:ghost}
@@ -1234,6 +1355,7 @@ defmodule EmisarWeb.ProfileLive do
                 </:actions>
               </.simple_form>
             <% @mfa_enrollment_step == :email -> %>
+              <.mfa_setup_progress step={1} />
               <.mfa_enrollment_email_verification
                 email={@current_user.email}
                 form={@mfa_enrollment_email_form}
@@ -1255,60 +1377,70 @@ defmodule EmisarWeb.ProfileLive do
                   </.button>
                 </:actions>
               </.mfa_enrollment_email_verification>
-            <% @mfa_uri -> %>
+            <% @mfa_enrollment_step == :totp -> %>
+              <.mfa_setup_progress step={2} />
               <.mfa_enrollment
                 qr_svg={@mfa_qr_svg}
-                uri={@mfa_uri}
+                setup_key={@mfa_setup_key}
                 form={@mfa_form}
                 variant={:split}
                 error={@mfa_error}
               >
                 <:instructions>
-                  Scan with Google Authenticator, 1Password, Authy, or similar — then enter
-                  the 6-digit code to confirm.
+                  Scan this QR code with your authenticator app, then enter its 6-digit code.
                 </:instructions>
                 <:actions>
-                  <.button phx-disable-with="Verifying...">Confirm and enable</.button>
+                  <.button phx-disable-with="Enabling...">Enable MFA</.button>
                   <.button variant={:ghost} type="button" phx-click="cancel_mfa">
                     Cancel
                   </.button>
                 </:actions>
               </.mfa_enrollment>
             <% true -> %>
-              <p class="text-sm text-zinc-300">
-                Verify your current email, then scan a TOTP secret with your authenticator app and
-                confirm its 6-digit code.
+              <p class="text-sm text-zinc-200">Not enabled</p>
+              <p class="mt-2 text-sm text-zinc-400">
+                First verify your email, then connect your authenticator app.
               </p>
-              <%!-- Secondary like every profile island action — this page has
-                   no single primary (ONE emerald fill per viewport). --%>
-              <.button variant={:secondary} phx-click="start_mfa" size={:md} class="mt-4">
+              <.error :if={@mfa_start_error}>{@mfa_start_error}</.error>
+              <.button
+                variant={:secondary}
+                phx-click="start_mfa"
+                phx-disable-with="Sending…"
+                size={:md}
+                class="mt-4"
+              >
                 Set up MFA
               </.button>
           <% end %>
-        </section>
+        </.section_with_note>
 
-        <section>
-          <.section_header title="Active sessions">
-            <:subtitle>
-              Each row is one signed-in browser or device. Sign out of any you don't
-              recognize — your current device stays signed in.
-            </:subtitle>
-            <:actions>
-              <.confirm_button
-                :if={@session_count > 1}
-                id="signout-others"
-                title="Sign out of every other browser and device?"
-                confirm_label="Sign out everywhere else"
-                variant={:secondary}
-                tone={:rose}
-                size={:sm}
-                on_confirm={JS.push("revoke_other_sessions")}
-              >
-                <:body>Your current device stays signed in.</:body>
-                Sign out everywhere else
-              </.confirm_button>
-            </:actions>
-          </.section_header>
+        <.section_with_note id="sessions">
+          <:header>
+            <.section_header title="Active sessions">
+              <:subtitle>
+                Browsers and devices signed in to your profile.
+              </:subtitle>
+              <:actions>
+                <.confirm_button
+                  :if={@session_count > 1}
+                  id="signout-others"
+                  title="Sign out of every other browser and device?"
+                  confirm_label="Sign out everywhere else"
+                  variant={:secondary}
+                  tone={:rose}
+                  size={:sm}
+                  on_confirm={JS.push("revoke_other_sessions")}
+                >
+                  <:body>Your current device stays signed in.</:body>
+                  Sign out everywhere else
+                </.confirm_button>
+              </:actions>
+            </.section_header>
+          </:header>
+          <:note>
+            Don't recognize a session? Sign it out. That browser or device will need to sign in again.
+            Signing out everywhere else keeps this session open.
+          </:note>
 
           <%!-- No max-height: the scroll cap cropped the next row to a ~10px
                sliver that read as a rendering bug. Long lists paginate (15 a
@@ -1317,18 +1449,30 @@ defmodule EmisarWeb.ProfileLive do
                pager off the list only when the pager renders (its :if drops the
                node on a single page, leaving one child and no phantom gap). --%>
           <div class="space-y-4">
+            <p :if={not @sessions_loaded?} role="status" class="text-sm text-zinc-400">
+              Loading sessions…
+            </p>
             <.empty_state
               :if={@sessions_error?}
               tone={:danger}
               icon="state.warning"
               title="Couldn't load your sessions"
             >
-              This is a load error, not an empty list — you are signed in on at least this device.
-              Refresh the page to try again.
+              Try loading them again.
+              <:actions>
+                <.button
+                  variant={:secondary}
+                  size={:sm}
+                  phx-click="retry_sessions"
+                  phx-disable-with="Loading…"
+                >
+                  Retry
+                </.button>
+              </:actions>
             </.empty_state>
 
             <ul
-              :if={not @sessions_error?}
+              :if={@sessions_loaded? and not @sessions_error?}
               id="active-sessions"
               phx-update="stream"
               class="divide-y divide-zinc-800/70 text-sm"
@@ -1337,7 +1481,6 @@ defmodule EmisarWeb.ProfileLive do
                 :for={{dom_id, session} <- @streams.sessions}
                 id={dom_id}
                 icon={session.icon}
-                class={session.current? && "bg-brand-500/[0.04]"}
               >
                 <:title>
                   <span class="truncate font-medium text-zinc-100">
@@ -1346,7 +1489,7 @@ defmodule EmisarWeb.ProfileLive do
                 </:title>
                 <:chips>
                   <.chip :if={session.current?} tone={:neutral}>
-                    this device
+                    This session
                   </.chip>
                 </:chips>
                 <:meta>
@@ -1389,7 +1532,7 @@ defmodule EmisarWeb.ProfileLive do
               page_count={@session_page_count}
             />
           </div>
-        </section>
+        </.section_with_note>
       </div>
     </.console_shell>
     """

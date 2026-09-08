@@ -138,21 +138,37 @@ defmodule EmisarWeb.SSOController do
         conn,
         %{"account_id_or_slug" => account_ref, "handoff" => handoff}
       ) do
-    redirect_uri = url(~p"/sign_in/sso/callback")
-
     with %Users.User{} = user <- conn.assigns[:current_user],
          %Auth.UserToken{token: actor_session_token_digest} <- conn.assigns[:current_auth],
          {:ok, subject} <- UserAuth.subject_for_account(conn, account_ref),
          {:ok, payload} <- OIDCIdentityHandoff.verify(handoff),
          {:ok, provider_id, purpose, proof} <-
-           identity_handoff_payload(payload, user, subject, actor_session_token_digest),
-         {:ok, begun} <-
+           identity_handoff_payload(payload, user, subject, actor_session_token_digest) do
+      begin_bound_identity_link(
+        conn,
+        {provider_id, purpose, proof},
+        actor_session_token_digest,
+        subject
+      )
+    else
+      reason ->
+        identity_link_begin_error(conn, reason, identity_link_failure_path(account_ref))
+    end
+  end
+
+  # Only a signed handoff bound to the current actor, account, and session may
+  # choose a purpose-specific return page, including when provider startup fails.
+  defp begin_bound_identity_link(conn, {provider_id, purpose, proof}, session_digest, subject) do
+    redirect_uri = url(~p"/sign_in/sso/callback")
+    return_path = identity_link_return_path(subject.account, provider_id, purpose)
+
+    with {:ok, begun} <-
            SSO.begin_identity_link(
              provider_id,
              purpose,
              redirect_uri,
              proof,
-             actor_session_token_digest,
+             session_digest,
              subject
            ),
          :ok <- validate_authorize_url(begun.authorize_url) do
@@ -173,7 +189,7 @@ defmodule EmisarWeb.SSOController do
           :pkce_verifier
         ])
         |> Map.put(:redirect_uri, redirect_uri)
-        |> Map.put(:return_path, identity_link_return_path(subject.account, provider_id, purpose))
+        |> Map.put(:return_path, return_path)
 
       conn
       |> delete_session(@stash_key)
@@ -185,13 +201,17 @@ defmodule EmisarWeb.SSOController do
       |> render(:identity_redirect)
     else
       reason ->
-        log_failure("sso_identity_link_begin_failed", reason)
-
-        conn
-        |> delete_session(@identity_link_stash_key)
-        |> put_flash(:error, "Couldn't start provider sign-in. Confirm your code and try again.")
-        |> redirect(to: identity_link_failure_path(account_ref))
+        identity_link_begin_error(conn, reason, return_path)
     end
+  end
+
+  defp identity_link_begin_error(conn, reason, return_path) do
+    log_failure("sso_identity_link_begin_failed", reason)
+
+    conn
+    |> delete_session(@identity_link_stash_key)
+    |> put_flash(:error, "Couldn't start provider sign-in. Confirm your code and try again.")
+    |> redirect(to: return_path)
   end
 
   @failure_events ~w[sso_begin_failed sso_callback_failed

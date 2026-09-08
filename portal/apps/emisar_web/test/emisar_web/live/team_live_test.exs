@@ -26,12 +26,141 @@ defmodule EmisarWeb.TeamLiveTest do
     render(lv)
   end
 
-  describe "GET /app/settings/team as an owner" do
-    test "the roster offers an Invite member action, not the read-only banner", %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
-      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/settings/team")
+  describe "refresh and member capabilities" do
+    test "roster and request refreshes preserve approval drafts, seed new requests, and prune settled ones",
+         %{conn: conn} do
+      {conn, user, account} = register_and_log_in(conn, %{account: %{plan: "team"}})
+      provider = Fixtures.SSO.create_identity_provider(account_id: account.id)
+      request = Fixtures.SSO.create_link_request(provider: provider, full_name: "Draft Member")
+      runner = Fixtures.Runners.create_runner(account_id: account.id, group: "database")
+      Fixtures.Catalog.create_action(runner: runner, action_id: "pg.up", pack_id: "postgres")
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/team")
 
-      assert html =~ "Invite member"
+      render_change(lv, "approval_access_changed", %{
+        "_request_id" => request.id,
+        "runner_access_mode" => "restricted",
+        "scope" => ["group:database"],
+        "pack_access_mode" => "restricted",
+        "pack_scope" => ["pack:postgres"]
+      })
+
+      draft_keys = [
+        :approval_access_modes,
+        :approval_scope_drafts,
+        :approval_pack_modes,
+        :approval_pack_drafts
+      ]
+
+      before = Map.take(:sys.get_state(lv.pid).socket.assigns, draft_keys)
+      send(lv.pid, {:list_changed, :team, "membership.updated", user.id})
+      render(lv)
+      assert Map.take(:sys.get_state(lv.pid).socket.assigns, draft_keys) == before
+
+      new_request = Fixtures.SSO.create_link_request(provider: provider, full_name: "New Member")
+      send(lv.pid, {:sso_link_requests_changed, account.id})
+      render(lv)
+      after_refresh = :sys.get_state(lv.pid).socket.assigns
+
+      for key <- draft_keys do
+        assert after_refresh[key][request.id] == before[key][request.id]
+        assert Map.has_key?(after_refresh[key], new_request.id)
+      end
+
+      render_change(lv, "approval_access_changed", %{
+        "_request_id" => new_request.id,
+        "runner_access_mode" => "restricted",
+        "scope" => ["group:database"],
+        "pack_access_mode" => "restricted",
+        "pack_scope" => ["pack:postgres"]
+      })
+
+      for pending <- [request, new_request] do
+        assert has_element?(
+                 lv,
+                 "#approve-request-#{pending.id}-runner-access-mode option[value=restricted][selected]"
+               )
+
+        assert has_element?(
+                 lv,
+                 "#approve-request-#{pending.id} input[name='pack_scope[]'][value='pack:postgres'][checked]"
+               )
+      end
+
+      render_click(lv, "dismiss_request", %{"id" => request.id})
+
+      for key <- draft_keys do
+        refute Map.has_key?(:sys.get_state(lv.pid).socket.assigns[key], request.id)
+      end
+    end
+
+    test "a failed roster read shows unavailable security facts and cannot toggle enforcement", %{
+      conn: conn
+    } do
+      {conn, user, account} = register_and_log_in(conn)
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/team")
+
+      :sys.replace_state(lv.pid, fn state ->
+        update_in(
+          state.socket.assigns.current_subject.permissions,
+          &MapSet.delete(&1, Emisar.Accounts.Authorizer.view_own_account_permission())
+        )
+      end)
+
+      send(lv.pid, {:list_changed, :team, "membership.updated", user.id})
+      render(lv)
+
+      assert has_element?(lv, "#team-security-unavailable")
+      assert has_element?(lv, "#require-mfa-lock-tt", "Unavailable")
+      refute has_element?(lv, "#mfa-enrolled-count")
+      assert render_click(lv, "toggle_require_mfa", %{}) =~ "Couldn&#39;t load sign-in settings"
+      refute Emisar.Repo.reload!(account).settings.require_mfa
+    end
+
+    test "admins keep owner activity links but cannot grant Owner or manage an owner", %{
+      conn: conn
+    } do
+      {_conn, owner, account} = register_and_log_in(conn)
+      {:ok, owner_membership} = Emisar.Accounts.fetch_membership_for_session(owner, nil)
+      admin = Fixtures.Users.create_user()
+
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        user_id: admin.id,
+        role: "admin"
+      )
+
+      teammate = Fixtures.Memberships.create_membership(account_id: account.id, role: "operator")
+      conn = build_conn() |> log_in_user(admin)
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/team")
+
+      row = "#member-row-#{owner_membership.id}"
+      assert has_element?(lv, "#{row} a[href*='actor_id=#{owner.id}']", "View activity")
+      refute has_element?(lv, "#{row} summary", "Actions")
+      refute has_element?(lv, "#change-role-#{teammate.id}-owner")
+
+      render_click(lv, "open_member_action", %{
+        "action" => "suspend",
+        "membership_id" => owner_membership.id
+      })
+
+      refute has_element?(lv, "#member-action-confirm")
+
+      {:ok, invite, _html} = live(conn, ~p"/app/#{account}/settings/team/invite")
+      refute has_element?(invite, "input[name='invite[role]'][value='owner']")
+      assert has_element?(invite, "input[name='invite[role]'][value='admin']")
+    end
+  end
+
+  describe "GET /app/settings/team as an owner" do
+    test "the page header offers Invite member without duplicating it on the roster", %{
+      conn: conn
+    } do
+      {conn, _user, account} = register_and_log_in(conn)
+      {:ok, lv, html} = live(conn, ~p"/app/#{account}/settings/team")
+
+      assert has_element?(lv, "header a#invite-member.text-sm[class~='py-1.5']", "Invite member")
+      refute has_element?(lv, "#members-section a", "Invite member")
+      refute has_element?(lv, "#team-sso-sign-in-link")
       # The invite form itself lives on its own page now, not inline on the roster.
       refute html =~ "Send invite"
       refute html =~ "Only owners and admins can invite"
@@ -220,18 +349,35 @@ defmodule EmisarWeb.TeamLiveTest do
     test "the Security rail is SSO's one console door (its nav item is gone)", %{conn: conn} do
       {conn, _user, account} = register_and_log_in(conn)
 
-      # Free plan, no provider: SSO is plan-gated, shown as a quiet line (no pill,
-      # no link — Billing is in the nav). No provider to list yet.
-      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/settings/team")
-      assert html =~ "Available on the Team and Enterprise plans"
+      # The setup action stays visible on Free, with the plan reason attached
+      # to the disabled control rather than replacing it with passive prose.
+      {:ok, free_view, html} = live(conn, ~p"/app/#{account}/settings/team")
+      assert has_element?(free_view, "button#add-sso-connection[disabled]", "Add connection")
+      assert has_element?(free_view, "#add-sso-connection [data-icon='state.locked']")
+      refute has_element?(free_view, "#add-sso-connection [data-icon='action.add']")
+
+      assert has_element?(
+               free_view,
+               "#add-sso-connection-plan[role='tooltip'][data-side='below']",
+               "Single sign-on requires the Team plan or above."
+             )
+
+      refute has_element?(free_view, "a[href='/app/#{account.slug}/settings/sso/new']")
+      refute has_element?(free_view, "[data-role='require-sso-section']")
+      refute html =~ "Not configured — members sign in with a magic link."
 
       # With the plan (still no provider), the door becomes the real Add button
       # into /new — the plan gate is cleared.
       Fixtures.Accounts.create_subscription(account, "team")
       {:ok, lv, html} = live(conn, ~p"/app/#{account}/settings/team")
-      assert html =~ "Add provider"
+      assert html =~ "Add connection"
       assert html =~ ~p"/app/#{account}/settings/sso/new"
-      refute html =~ "Available on the Team and Enterprise plans"
+      assert has_element?(lv, "a#add-sso-connection")
+      assert has_element?(lv, "#add-sso-connection [data-icon='action.add']")
+      refute has_element?(lv, "#add-sso-connection[disabled]")
+      refute has_element?(lv, "[data-role='require-sso-section']")
+      refute html =~ "Not configured — members sign in with a magic link."
+      refute html =~ "Single sign-on requires the Team plan or above."
 
       # The card's anchor id is a deep-link contract: /settings/sso redirects to
       # /settings/team#single-sign-on, and /docs/sso sends operators there.
@@ -381,9 +527,9 @@ defmodule EmisarWeb.TeamLiveTest do
       row = "#pending-access-request-#{request.id}"
       dialog = "#approve-request-dialog-#{request.id}"
 
-      assert has_element?(lv, row, "Existing account")
+      assert has_element?(lv, row, "Existing member")
       assert has_element?(lv, row, "Okta workforce")
-      assert has_element?(lv, row, "Link account")
+      assert has_element?(lv, row, "Link identity")
       refute has_element?(lv, row, "Approving lets this connection")
       refute has_element?(lv, "#{row} select")
       refute has_element?(lv, "#{dialog} form")
@@ -602,7 +748,7 @@ defmodule EmisarWeb.TeamLiveTest do
 
       {:ok, _lv, html} = live(conn, ~p"/app/#{account}/settings/team")
       assert html =~ member.email
-      refute html =~ "Existing account"
+      refute html =~ "Existing member"
     end
 
     test "the pending-request form reaches the runner access change handler", %{conn: conn} do
@@ -692,36 +838,78 @@ defmodule EmisarWeb.TeamLiveTest do
       assert cleared =~ "Choose at least one pack for selected pack access."
     end
 
-    test "the connection lists in the Security panel with the sign-in link", %{conn: conn} do
+    test "the connection stays in Security and the header copies its account sign-in link", %{
+      conn: conn
+    } do
       {conn, _user, account} = register_and_log_in(conn)
       Fixtures.Accounts.create_subscription(account, "team")
       provider = Fixtures.SSO.create_identity_provider(account_id: account.id, name: "Okta prod")
 
       {:ok, lv, html} = live(conn, ~p"/app/#{account}/settings/team")
-      # The connection row links straight to its detail page; the branded sign-in
-      # link shows once a connection exists.
+      # The connection row links to its detail; sharing the URL is a header action.
       assert html =~ "Okta prod"
       assert html =~ ~p"/app/#{account}/settings/sso/#{provider.id}"
-      assert html =~ "Team sign-in link"
+      sign_in_url = Emisar.PublicUrl.base() <> ~p"/app/#{account}/sign_in"
+
+      assert has_element?(
+               lv,
+               "header button#team-sso-sign-in-link.text-sm[class~='py-1.5'][data-copy-text='#{sign_in_url}']",
+               "Copy sign-in link"
+             )
+
+      refute has_element?(lv, "#single-sign-on #team-sso-sign-in-link")
+      refute html =~ "Team sign-in link"
       # No leading unlabeled dot: the row already says "Disabled" in words, and a
       # dot beside sync metadata would report a different dimension (§7.32). The
       # trailing navigation chevron is the row's affordance and stays.
       refute has_element?(lv, "#sso-provider-#{provider.id} > [aria-hidden=true]:first-child")
     end
 
-    test "SSO enforcement is a subsection above the team sign-in link", %{conn: conn} do
+    test "SSO enforcement stays in Security while member actions live only in the page header", %{
+      conn: conn
+    } do
       {conn, _user, account} = register_and_log_in(conn)
       Fixtures.Accounts.create_subscription(account, "team")
       Fixtures.SSO.create_identity_provider(account_id: account.id)
 
-      {:ok, lv, html} = live(conn, ~p"/app/#{account}/settings/team")
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/team")
 
       assert has_element?(lv, "#single-sign-on [data-role='require-sso-section']")
-      assert has_element?(lv, "#single-sign-on [data-role='team-sign-in-section']")
-      assert {require_position, _length} = :binary.match(html, "require-sso-section")
-      assert {sign_in_position, _length} = :binary.match(html, "team-sign-in-section")
-      assert require_position < sign_in_position
+
+      assert has_element?(
+               lv,
+               "[data-role='require-sso-section']",
+               "Disable all other sign-in methods for this account."
+             )
+
+      refute has_element?(lv, "[data-role='team-sign-in-section']")
+      assert has_element?(lv, "header #team-sso-sign-in-link")
+      assert has_element?(lv, "header #invite-member")
       assert has_element?(lv, "#single-sign-on #require-sso")
+
+      {:ok, invite, _html} = live(conn, ~p"/app/#{account}/settings/team/invite")
+      refute has_element?(invite, "header #team-sso-sign-in-link")
+      refute has_element?(invite, "header #invite-member")
+    end
+
+    test "a configured but disabled connection keeps its enforcement prerequisite visible", %{
+      conn: conn
+    } do
+      {conn, _user, account} = register_and_log_in(conn)
+      Fixtures.Accounts.create_subscription(account, "team")
+      provider = Fixtures.SSO.create_identity_provider(account_id: account.id, enabled: false)
+
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/team")
+
+      assert has_element?(lv, "#sso-provider-#{provider.id}", "Disabled")
+
+      assert has_element?(
+               lv,
+               "[data-role='require-sso-section']",
+               "Add an enabled connection first"
+             )
+
+      refute has_element?(lv, "#require-sso")
     end
 
     test "a downgraded plan still shows pending requests — dismissing one needs no plan", %{
@@ -762,10 +950,13 @@ defmodule EmisarWeb.TeamLiveTest do
       assert html =~ "Send invite"
       # Each assignable role is explained, not just named — assigning one is a
       # privilege grant, so the picker itself carries the description.
-      assert html =~ "Read-only across runs"
-      assert html =~ "Dispatches actions and approves them"
+      assert html =~ "Viewers have read-only access across runs"
+
+      assert html =~
+               "Operators can run actions, handle approvals, and create, edit, and publish runbooks."
+
       assert has_element?(lv, "input[name='invite[runner_access_mode]'][value='none']:checked")
-      assert html =~ "New members start with no access"
+      assert html =~ "They can join the workspace but cannot view or act on runners."
     end
 
     test "an invalid email renders inline on the field, not in a flash", %{conn: conn} do
@@ -802,7 +993,7 @@ defmodule EmisarWeb.TeamLiveTest do
       assert html =~ "None"
       assert html =~ "Invite another"
       assert html =~ "View members"
-      assert html =~ "What happens next"
+      refute html =~ "What happens next"
 
       assert_email_sent(fn sent ->
         sent.to == [{"", "newbie@example.com"}] and sent.text_body =~ "/accept_invitation/"
@@ -976,7 +1167,7 @@ defmodule EmisarWeb.TeamLiveTest do
 
       # The route is reachable, but the domain-gated view refuses to compose an
       # invite for a viewer (no form) and explains who can.
-      assert html =~ "Ask an owner or admin to add someone"
+      assert html =~ "Only owners and admins can invite members."
       refute html =~ "Send invite"
 
       # Forging the submit event past the missing form lands on the domain gate.
@@ -1037,7 +1228,7 @@ defmodule EmisarWeb.TeamLiveTest do
 
       {:ok, _lv, html} = live(conn, ~p"/app/#{account}/settings/team")
 
-      assert html =~ "Only owners and admins can invite"
+      assert html =~ "Read-only"
       refute html =~ "Invite member"
     end
 
@@ -1061,6 +1252,8 @@ defmodule EmisarWeb.TeamLiveTest do
       refute html =~ "Configured — owners and admins manage connections."
       refute html =~ "Not configured — members sign in with a magic link."
       refute html =~ "Private IdP"
+      refute has_element?(lv, "header #team-sso-sign-in-link")
+      refute has_element?(lv, "header #invite-member")
     end
 
     test "an unconfigured account reads as Not configured, still locked", %{conn: conn} do
@@ -1072,6 +1265,8 @@ defmodule EmisarWeb.TeamLiveTest do
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/team")
 
       assert has_element?(lv, "#sso-connections-lock-tt", "Not configured")
+      refute has_element?(lv, "#add-sso-connection")
+      refute has_element?(lv, "[data-role='require-sso-section']")
     end
   end
 
@@ -1124,11 +1319,8 @@ defmodule EmisarWeb.TeamLiveTest do
 
         refute has_element?(lv, "##{"change-role-#{teammate_membership.id}-operator"}")
 
-        # The read-only note names their role and points them at who can manage.
-        # It renders the role's LABEL, so `billing_manager` reads as a phrase
-        # rather than leaking the atom's underscore.
-        assert html =~ "Only owners and admins can invite or manage members."
-        assert html =~ "Your role: #{Emisar.Auth.role_label(unquote(role))}"
+        assert has_element?(lv, "#team-read-only", "Read-only")
+        refute html =~ "Your role:"
 
         # The roster offers no jump into a TEAMMATE's audit trail — only into
         # your own. (A manager's per-row audit item lives in the Actions menu,
@@ -1170,8 +1362,8 @@ defmodule EmisarWeb.TeamLiveTest do
       refute has_element?(lv, "summary", "Actions")
       refute has_element?(lv, "##{"change-role-#{teammate_membership.id}-operator"}")
 
-      assert html =~ "Only owners and admins can invite or manage members."
-      assert html =~ "Your role: Billing manager"
+      assert has_element?(lv, "#team-read-only", "Read-only")
+      refute html =~ "Your role:"
 
       refute has_element?(lv, "a[href*='actor_id=#{teammate.id}']", "View activity")
       refute has_element?(lv, "a[href*='actor_id=#{member.id}']", "View activity")
@@ -1225,19 +1417,14 @@ defmodule EmisarWeb.TeamLiveTest do
       {:ok, lv, html} =
         build_conn() |> log_in_user(member) |> live(~p"/app/#{account}/settings/team")
 
-      # One paragraph, in this order: what the page is, who may change it, docs.
-      assert has_element?(
-               lv,
-               "p",
-               ~r/who can dispatch, approve,\s+and configure\.\s+Only owners and admins can invite or manage members\.\s+Your role: Operator\.\s+Team & access docs/s
-             )
-
-      # Moved, not duplicated — the footer under the roster is gone.
-      assert length(Regex.scan(~r/Only owners and admins can invite or manage members\./, html)) ==
-               1
+      # The roster badge owns the read-only state; no redundant page introduction.
+      refute html =~ "See who's on your team, their access"
+      refute html =~ "Invite your team, choose what they can access"
+      assert has_element?(lv, "#team-read-only", "Read-only")
+      refute html =~ "Only owners and admins can invite or manage members."
     end
 
-    test "the permission note keeps the viewer's role when filters hide their row", %{
+    test "the read-only badge stays visible when filters hide the viewer's row", %{
       account: account
     } do
       viewer = Fixtures.Users.create_user(full_name: "Reader Rae")
@@ -1254,7 +1441,7 @@ defmodule EmisarWeb.TeamLiveTest do
         |> log_in_user(viewer)
         |> live(~p"/app/#{account}/settings/team?role=owner")
 
-      assert html =~ "Your role: Viewer"
+      assert html =~ "Read-only"
       refute has_element?(lv, "#member-name-#{viewer_membership.id}")
       assert has_element?(lv, "#members-filter option[value='owner'][selected]")
     end
@@ -1405,7 +1592,7 @@ defmodule EmisarWeb.TeamLiveTest do
   describe "runner-scope editor (#238)" do
     # The seat's access is structurally nothing, so the roster states the cleared
     # value and drops the verb rather than opening an editor that cannot save.
-    test "a billing manager is offered no Set access verb, and the event is refused anyway", %{
+    test "a billing manager is offered no Edit access verb, and the event is refused anyway", %{
       conn: conn
     } do
       {conn, owner, account} = register_and_log_in(conn, %{account: %{name: "FinanceOrg"}})
@@ -1419,7 +1606,7 @@ defmodule EmisarWeb.TeamLiveTest do
       {:ok, lv, html} = live(conn, ~p"/app/#{account}/settings/team")
 
       # The verb exists on the page — for the operator, not the finance seat.
-      assert html =~ "Set access"
+      assert html =~ "Edit access"
 
       assert has_element?(
                lv,
@@ -1887,7 +2074,7 @@ defmodule EmisarWeb.TeamLiveTest do
       assert Emisar.Accounts.runner_access_for_memberships([membership])[membership.id] == access
     end
 
-    test "a scoped runner chip names the runner and carries its full id", %{conn: conn} do
+    test "a scoped runner chip names the runner without exposing its ID", %{conn: conn} do
       {conn, owner, account} = register_and_log_in(conn, %{account: %{name: "ScopeOrg5"}})
       subject = Fixtures.Subjects.subject_for(owner, account, role: :owner)
 
@@ -1910,10 +2097,12 @@ defmodule EmisarWeb.TeamLiveTest do
 
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/team")
 
-      assert has_element?(lv, "span[title='#{runner.id}']", "r11")
+      assert has_element?(lv, "#member-runners-#{membership.id}", "r11")
+      refute has_element?(lv, "[title='#{runner.id}']")
     end
 
-    test "a scoped runner that no longer resolves reads as a removed runner", %{conn: conn} do
+    test "a scoped runner that no longer resolves reads as unavailable without exposing its ID",
+         %{conn: conn} do
       {conn, owner, account} = register_and_log_in(conn, %{account: %{name: "ScopeOrg6"}})
       subject = Fixtures.Subjects.subject_for(owner, account, role: :owner)
 
@@ -1940,7 +2129,7 @@ defmodule EmisarWeb.TeamLiveTest do
 
       {:ok, lv, html} = live(conn, ~p"/app/#{account}/settings/team")
 
-      assert has_element?(lv, "span[title='#{runner.id}']", "Removed runner")
+      assert has_element?(lv, "#member-runners-#{membership.id}", "Runner unavailable")
       refute html =~ "r12"
     end
   end
@@ -2144,6 +2333,87 @@ defmodule EmisarWeb.TeamLiveTest do
                ~r/<input(?=[^>]*\bname="user\[full_name\]")(?=[^>]*\bvalue="Half-typed Na")[^>]*>/
     end
 
+    test "the name action toggles its editor without saving the draft", %{
+      lv: lv,
+      member: member,
+      membership: membership
+    } do
+      action = "[phx-click='start_edit'][phx-value-membership_id='#{membership.id}']"
+
+      lv |> element(action, "Edit name") |> render_click()
+      assert has_element?(lv, "#{action}[aria-expanded='true']", "Cancel name edit")
+      assert has_element?(lv, "#edit-form-#{membership.id}")
+      render_change(lv, "validate_edit", %{"user" => %{"full_name" => "Unsaved name"}})
+
+      lv |> element(action, "Cancel name edit") |> render_click()
+      refute has_element?(lv, "#edit-form-#{membership.id}")
+      assert has_element?(lv, "#{action}[aria-expanded='false']", "Edit name")
+      assert Emisar.Repo.reload!(member).full_name == member.full_name
+
+      lv |> element(action) |> render_click()
+      assert has_element?(lv, "#edit-form-#{membership.id}")
+      refute has_element?(lv, "#edit-form-#{membership.id} input[value='Unsaved name']")
+    end
+
+    test "the access action toggles its editor and reloads saved access when reopened", %{
+      lv: lv,
+      account: account,
+      membership: membership
+    } do
+      action = "[phx-click='start_scope_edit'][phx-value-membership_id='#{membership.id}']"
+      form_id = "#member-scope-form-#{membership.id}"
+
+      lv |> element(action, "Edit access") |> render_click()
+      assert has_element?(lv, "#{action}[aria-expanded='true']", "Cancel access edit")
+      render_change(lv, "scope_changed", %{"runner_access_mode" => "none"})
+
+      assert has_element?(
+               lv,
+               "#{form_id} input[name='runner_access_mode'][value='none'][checked]"
+             )
+
+      lv |> element(action, "Cancel access edit") |> render_click()
+      refute has_element?(lv, form_id)
+      assert has_element?(lv, "#{action}[aria-expanded='false']", "Edit access")
+
+      assert Emisar.Accounts.runner_access_for_membership(account.id, membership.id) ==
+               Emisar.Accounts.RunnerAccess.all()
+
+      lv |> element(action) |> render_click()
+      assert has_element?(lv, "#{form_id} input[name='runner_access_mode'][value='all'][checked]")
+    end
+
+    test "opening another member or editor replaces only the previous inline editor", %{
+      owner: owner,
+      account: account,
+      membership: membership
+    } do
+      other = Fixtures.Memberships.create_membership(account_id: account.id, role: "operator")
+
+      {:ok, lv, _html} =
+        build_conn() |> log_in_user(owner) |> live(~p"/app/#{account}/settings/team")
+
+      for {event, form_prefix} <- [
+            {"start_edit", "edit-form"},
+            {"start_scope_edit", "member-scope-form"}
+          ] do
+        render_click(lv, event, %{"membership_id" => membership.id})
+        assert has_element?(lv, "##{form_prefix}-#{membership.id}")
+
+        render_click(lv, event, %{"membership_id" => other.id})
+        assert has_element?(lv, "##{form_prefix}-#{other.id}")
+        refute has_element?(lv, "##{form_prefix}-#{membership.id}")
+      end
+
+      render_click(lv, "start_edit", %{"membership_id" => membership.id})
+      assert has_element?(lv, "#edit-form-#{membership.id}")
+      refute has_element?(lv, "form[id^='member-scope-form-']")
+
+      render_click(lv, "start_scope_edit", %{"membership_id" => other.id})
+      assert has_element?(lv, "#member-scope-form-#{other.id}")
+      refute has_element?(lv, "form[id^='edit-form-']")
+    end
+
     test "accepted member rows do not offer invite resend", %{lv: lv, membership: membership} do
       refute has_element?(
                lv,
@@ -2283,8 +2553,20 @@ defmodule EmisarWeb.TeamLiveTest do
       # so a `#change-role-<membership>-<role>` dialog renders per offered role.
       assert membership.role == :viewer
 
-      for role <- ~w(operator admin owner) do
+      for role <- ~w(operator admin owner billing_manager) do
         assert has_element?(lv, "##{"change-role-#{membership.id}-#{role}"}")
+      end
+
+      for role <- ~w(operator admin) do
+        assert has_element?(
+                 lv,
+                 "#change-role-#{membership.id}-#{role} p + p.mt-3",
+                 "Actions → Edit access"
+               )
+      end
+
+      for role <- ~w(owner billing_manager) do
+        refute has_element?(lv, "#change-role-#{membership.id}-#{role} p + p")
       end
 
       # The current role is not offered as a change target — no dialog for it.
@@ -2481,8 +2763,13 @@ defmodule EmisarWeb.TeamLiveTest do
         "membership_id" => membership.id
       })
 
-      assert render(lv) =~ "they lose access immediately"
-      assert render(lv) =~ "need a fresh invite to return"
+      assert render(lv) =~ "They lose access immediately"
+
+      assert has_element?(
+               lv,
+               "#member-action",
+               "agent credentials and standing approvals are revoked"
+             )
     end
 
     test "remove's typed-confirm: Confirm won't fire until the email matches", %{
@@ -2545,7 +2832,7 @@ defmodule EmisarWeb.TeamLiveTest do
 
       assert has_element?(
                lv,
-               "a[title='Provisioned via SCIM — Acme Okta']",
+               "#member-source-#{synced.membership.id}-tt a",
                "Acme Okta"
              )
 
@@ -2669,6 +2956,14 @@ defmodule EmisarWeb.TeamLiveTest do
       assert Emisar.Repo.reload!(synced.membership).disabled_at
 
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/team")
+
+      assert has_element?(
+               lv,
+               "#restore-in-directory-#{synced.membership.id}-tt button[disabled]",
+               "Restore access"
+             )
+
+      refute has_element?(lv, "#member-row-#{synced.membership.id} [phx-click='reinstate']")
 
       html = render_click(lv, "reinstate", %{"membership_id" => synced.membership.id})
 
@@ -2823,7 +3118,7 @@ defmodule EmisarWeb.TeamLiveTest do
       {:ok, lv, html} =
         live(conn, ~p"/app/#{account}/settings/team/#{membership.id}/reset_mfa")
 
-      assert html =~ "This removes their current factor"
+      assert html =~ "authenticator and recovery codes will be removed"
 
       render_hook(lv, "verify_reset_totp", %{
         "otp" => NimbleTOTP.verification_code(secret)
@@ -2968,7 +3263,7 @@ defmodule EmisarWeb.TeamLiveTest do
     test "an owner without MFA hits the lockout guard", %{conn: conn, account: account} do
       {:ok, lv, html} = live(conn, ~p"/app/#{account}/settings/team")
 
-      assert has_element?(lv, "button[disabled]", "Enforce MFA")
+      assert has_element?(lv, "button[disabled]", "Require MFA")
       assert html =~ "state.locked"
       assert html =~ "lock yourself out"
 
@@ -2992,8 +3287,8 @@ defmodule EmisarWeb.TeamLiveTest do
 
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/team")
 
-      refute has_element?(lv, "button[disabled]", "Enforce MFA")
-      assert render_click(lv, "toggle_require_mfa", %{}) =~ "Account-wide MFA enforced."
+      refute has_element?(lv, "button[disabled]", "Require MFA")
+      assert render_click(lv, "toggle_require_mfa", %{}) =~ "MFA is now required."
       assert Emisar.Repo.reload!(account).settings.require_mfa
     end
 
@@ -3026,18 +3321,18 @@ defmodule EmisarWeb.TeamLiveTest do
         session_token: get_session(conn, :user_token)
       )
 
-      # Off: the trigger reads "Enforce MFA" and opens our confirm dialog.
+      # Off: the trigger reads "Require MFA" and opens our confirm dialog.
       {:ok, lv, html} = live(conn, ~p"/app/#{account}/settings/team")
-      assert html =~ "Enforce MFA"
+      assert html =~ "Require MFA"
       assert has_element?(lv, "#enforce-mfa")
 
       # Confirming fires the (server-authz-gated) handler.
-      assert render_click(lv, "toggle_require_mfa", %{}) =~ "Account-wide MFA enforced."
+      assert render_click(lv, "toggle_require_mfa", %{}) =~ "MFA is now required."
       assert Emisar.Repo.reload!(account).settings.require_mfa
 
       # On: the trigger flips to the turn-off action.
       {:ok, _lv, html} = live(conn, ~p"/app/#{account}/settings/team")
-      assert html =~ "Stop enforcing MFA"
+      assert html =~ "Stop requiring MFA"
     end
   end
 
@@ -3055,7 +3350,7 @@ defmodule EmisarWeb.TeamLiveTest do
 
       assert render_click(lv, "toggle_monthly_report", %{}) =~ "Monthly report turned off."
       assert Emisar.Repo.reload!(account).settings.monthly_report_opt_out
-      assert has_element?(lv, ~s(button[role="switch"]), "Turn back on")
+      assert has_element?(lv, ~s(button[role="switch"]), "Turn on")
 
       assert render_click(lv, "toggle_monthly_report", %{}) =~ "Monthly report turned back on"
       refute Emisar.Repo.reload!(account).settings.monthly_report_opt_out
@@ -3084,13 +3379,15 @@ defmodule EmisarWeb.TeamLiveTest do
   end
 
   describe "MFA enrollment stat" do
-    test "keeps the zero count neutral while the status dot carries attention", %{conn: conn} do
+    test "keeps the zero count neutral and names its member denominator", %{conn: conn} do
       {conn, _owner, account} = register_and_log_in(conn)
 
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/team")
 
       assert has_element?(lv, "#mfa-enrolled-count.text-zinc-200", "0")
       refute has_element?(lv, "#mfa-enrolled-count.text-amber-300")
+      assert has_element?(lv, "p", ~r/Authenticator set up:\s+0\s+of\s+1\s+member\b/)
+      refute has_element?(lv, "[data-role='require-sso-section']")
     end
 
     test "renders account-wide enrollment, not just the visible page", %{conn: conn} do
@@ -3105,12 +3402,11 @@ defmodule EmisarWeb.TeamLiveTest do
         role: "admin"
       )
 
-      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/settings/team")
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/team")
 
       # Owner (unenrolled) + the enrolled member → 1 of 2. The counts come from
       # Accounts.team_mfa_stats (account-wide), not @memberships.
-      assert html =~ "MFA enrolled:"
-      assert html =~ "1 of 2"
+      assert has_element?(lv, "p", ~r/Authenticator set up:\s+1\s+of\s+2\s+members\b/)
     end
   end
 
@@ -3129,14 +3425,14 @@ defmodule EmisarWeb.TeamLiveTest do
 
       {:ok, _lv, html} = live(conn, ~p"/app/#{account}/settings/team")
 
-      assert html =~ "Email bouncing"
+      assert html =~ "Email blocked"
       assert html =~ "Contact support to clear it"
     end
 
     test "shows no badge when no member email is suppressed", %{conn: conn, account: account} do
       {:ok, _lv, html} = live(conn, ~p"/app/#{account}/settings/team")
 
-      refute html =~ "Email bouncing"
+      refute html =~ "Email blocked"
     end
   end
 

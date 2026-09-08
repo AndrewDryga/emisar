@@ -657,6 +657,93 @@ defmodule EmisarWeb.SSOControllerTest do
       refute get_session(failed, @identity_link_stash_key)
     end
 
+    test "verification startup failures return to the connection for enabled and disabled providers",
+         %{
+           conn: conn
+         } do
+      Emisar.Config.put_override(:emisar, :sso_oidc_impl, FailingBeginOIDC)
+
+      for enabled <- [true, false] do
+        verification =
+          identity_link_controller_fixture(conn, purpose: :verify_provider, enabled: enabled)
+
+        failed =
+          post(verification.conn, ~p"/app/#{verification.account}/settings/sso/identity/link", %{
+            "handoff" => verification.handoff,
+            "return_to" => "https://attacker.test/"
+          })
+
+        assert redirected_to(failed) ==
+                 ~p"/app/#{verification.account}/settings/sso/#{verification.provider.id}"
+
+        assert Phoenix.Flash.get(failed.assigns.flash, :error) =~
+                 "Couldn't start provider sign-in"
+
+        refute get_session(failed, @identity_link_stash_key)
+        assert get_session(failed, :user_token) == verification.session_token
+        assert Repo.reload!(verification.provider).enabled == enabled
+        assert is_nil(Repo.reload!(verification.provider).sign_in_verified_at)
+      end
+    end
+
+    test "an unsafe verification authorization URL returns to the connection without a stash", %{
+      conn: conn
+    } do
+      verification = identity_link_controller_fixture(conn, purpose: :verify_provider)
+      Emisar.Config.put_override(:emisar, :sso_oidc_impl, UnsafeAuthorizeOIDC)
+
+      failed =
+        post(verification.conn, ~p"/app/#{verification.account}/settings/sso/identity/link", %{
+          "handoff" => verification.handoff
+        })
+
+      assert redirected_to(failed) ==
+               ~p"/app/#{verification.account}/settings/sso/#{verification.provider.id}"
+
+      refute get_session(failed, @identity_link_stash_key)
+      assert get_session(failed, :user_token) == verification.session_token
+    end
+
+    test "verification still rechecks management permission before provider work", %{conn: conn} do
+      verification = identity_link_controller_fixture(conn, purpose: :verify_provider)
+      Fixtures.Memberships.force_role(verification.membership, "viewer")
+      Emisar.Config.put_override(:emisar, :sso_oidc_impl, RecordingOIDC)
+
+      failed =
+        post(verification.conn, ~p"/app/#{verification.account}/settings/sso/identity/link", %{
+          "handoff" => verification.handoff
+        })
+
+      assert redirected_to(failed) ==
+               ~p"/app/#{verification.account}/settings/sso/#{verification.provider.id}"
+
+      refute get_session(failed, @identity_link_stash_key)
+      refute_receive {:oidc_begin, _provider_id}
+    end
+
+    test "verification callback failures also return to the connection", %{conn: conn} do
+      verification =
+        identity_link_controller_fixture(conn, purpose: :verify_provider, enabled: false)
+
+      Emisar.Config.put_override(:emisar, :sso_oidc_impl, FailingOIDC)
+
+      begun =
+        post(verification.conn, ~p"/app/#{verification.account}/settings/sso/identity/link", %{
+          "handoff" => verification.handoff
+        })
+
+      failed =
+        begun |> recycle() |> get(~p"/sign_in/sso/callback", %{"state" => "s", "code" => "code"})
+
+      assert redirected_to(failed) ==
+               ~p"/app/#{verification.account.id}/settings/sso/#{verification.provider.id}"
+
+      refute get_session(failed, @identity_link_stash_key)
+      assert get_session(failed, :user_token) == verification.session_token
+      refute Repo.reload!(verification.provider).enabled
+      assert is_nil(Repo.reload!(verification.provider).sign_in_verified_at)
+    end
+
     test "the callback links the identity without replacing the current session", %{conn: conn} do
       link = identity_link_controller_fixture(conn)
 
@@ -701,35 +788,40 @@ defmodule EmisarWeb.SSOControllerTest do
     end
 
     test "a copied handoff cannot cross accounts or sessions", %{conn: conn} do
-      link = identity_link_controller_fixture(conn)
-      other_account = Fixtures.Accounts.create_account(plan: "enterprise")
+      Emisar.Config.put_override(:emisar, :sso_oidc_impl, RecordingOIDC)
 
-      _other_membership =
-        Fixtures.Memberships.create_membership(
-          account_id: other_account.id,
-          user_id: link.user.id,
-          role: "owner"
-        )
+      for purpose <- [:link, :verify_provider] do
+        link = identity_link_controller_fixture(conn, purpose: purpose)
+        other_account = Fixtures.Accounts.create_account(plan: "enterprise")
 
-      wrong_account =
-        post(link.conn, ~p"/app/#{other_account}/settings/sso/identity/link", %{
-          "handoff" => link.handoff
-        })
+        _other_membership =
+          Fixtures.Memberships.create_membership(
+            account_id: other_account.id,
+            user_id: link.user.id,
+            role: "owner"
+          )
 
-      assert redirected_to(wrong_account) == ~p"/app/#{other_account}/settings/profile"
-      refute get_session(wrong_account, @identity_link_stash_key)
+        wrong_account =
+          post(link.conn, ~p"/app/#{other_account}/settings/sso/identity/link", %{
+            "handoff" => link.handoff
+          })
 
-      replacement_session = Fixtures.Auth.create_session_token!(link.user, :magic_link, nil)
+        assert redirected_to(wrong_account) == ~p"/app/#{other_account}/settings/profile"
+        refute get_session(wrong_account, @identity_link_stash_key)
 
-      wrong_session =
-        link.conn
-        |> put_session(:user_token, replacement_session)
-        |> post(~p"/app/#{link.account}/settings/sso/identity/link", %{
-          "handoff" => link.handoff
-        })
+        replacement_session = Fixtures.Auth.create_session_token!(link.user, :magic_link, nil)
 
-      assert redirected_to(wrong_session) == ~p"/app/#{link.account}/settings/profile"
-      refute get_session(wrong_session, @identity_link_stash_key)
+        wrong_session =
+          link.conn
+          |> put_session(:user_token, replacement_session)
+          |> post(~p"/app/#{link.account}/settings/sso/identity/link", %{
+            "handoff" => link.handoff
+          })
+
+        assert redirected_to(wrong_session) == ~p"/app/#{link.account}/settings/profile"
+        refute get_session(wrong_session, @identity_link_stash_key)
+        refute_receive {:oidc_begin, _provider_id}
+      end
     end
 
     test "an invalid handoff fails closed without beginning provider work", %{conn: conn} do
@@ -738,7 +830,10 @@ defmodule EmisarWeb.SSOControllerTest do
 
       failed =
         post(link.conn, ~p"/app/#{link.account}/settings/sso/identity/link", %{
-          "handoff" => "not-signed"
+          "handoff" => "not-signed",
+          "provider_id" => link.provider.id,
+          "purpose" => "verify_provider",
+          "return_to" => "https://attacker.test/"
         })
 
       assert redirected_to(failed) == ~p"/app/#{link.account}/settings/profile"
