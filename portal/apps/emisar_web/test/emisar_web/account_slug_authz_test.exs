@@ -183,7 +183,7 @@ defmodule EmisarWeb.AccountSlugAuthzTest do
       conn = get(conn, ~p"/app")
 
       assert redirected_to(conn) == ~p"/onboarding"
-      assert Phoenix.Flash.get(conn.assigns.flash, :error) =~ "don't belong to any account"
+      assert Phoenix.Flash.get(conn.assigns.flash, :error) =~ "don't belong to any workspace"
     end
 
     test "a user whose every membership is suspended is force-logged-out", %{conn: conn} do

@@ -49,7 +49,7 @@ defmodule EmisarWeb.SSOSignInTest do
       html = conn |> get(~p"/sign_in/sso") |> html_response(200)
 
       assert html =~ "Sign in with SSO"
-      assert html =~ "Which team are you signing in to"
+      assert html =~ "Enter your workspace address"
       refute html =~ "Work email"
     end
 
@@ -85,7 +85,14 @@ defmodule EmisarWeb.SSOSignInTest do
 
     test "an unknown team address re-renders with an error, no redirect", %{conn: conn} do
       conn = post(conn, ~p"/sign_in/sso", team: %{slug: "no-such-team"})
-      assert html_response(conn, 200) =~ "couldn&#39;t find a team"
+      form = conn |> html_response(200) |> LazyHTML.from_document() |> LazyHTML.query("form")
+
+      assert LazyHTML.text(form) =~ "couldn't find a workspace"
+
+      assert form |> LazyHTML.query("input[name='team[slug]']") |> LazyHTML.attribute("value") ==
+               ["no-such-team"]
+
+      refute Phoenix.Flash.get(conn.assigns.flash, :error)
     end
 
     test "a whitespace-only slug trims to nothing and re-renders the not-found message", %{
@@ -95,7 +102,7 @@ defmodule EmisarWeb.SSOSignInTest do
       # it up, so "   " becomes "" which no account matches: the same friendly
       # not-found re-render as a real unknown slug, never a redirect or a crash.
       conn = post(conn, ~p"/sign_in/sso", team: %{slug: "   "})
-      assert html_response(conn, 200) =~ "couldn&#39;t find a team"
+      assert html_response(conn, 200) =~ "couldn&#39;t find a workspace"
     end
 
     test "malformed team fields re-render the neutral not-found response", %{conn: conn} do
@@ -106,7 +113,7 @@ defmodule EmisarWeb.SSOSignInTest do
           ] do
         response = post(conn, ~p"/sign_in/sso", params)
 
-        assert html_response(response, 200) =~ "couldn&#39;t find a team"
+        assert html_response(response, 200) =~ "couldn&#39;t find a workspace"
       end
     end
 
@@ -126,7 +133,7 @@ defmodule EmisarWeb.SSOSignInTest do
 
       fake = post(conn, ~p"/sign_in/sso", team: %{slug: "definitely-not-a-team"})
       assert fake.status == 200
-      assert html_response(fake, 200) =~ "couldn&#39;t find a team"
+      assert html_response(fake, 200) =~ "couldn&#39;t find a workspace"
     end
 
     test "a tampered recent-accounts cookie is ignored — at worst an empty picker, no crash", %{
@@ -145,7 +152,7 @@ defmodule EmisarWeb.SSOSignInTest do
       html = conn |> get(~p"/sign_in/sso") |> html_response(200)
 
       # Renders the picker (manual team-address form) without error.
-      assert html =~ "Which team are you signing in to"
+      assert html =~ "Enter your workspace address"
     end
 
     test "an already-authenticated visitor is bounced off the team picker to /app", %{conn: conn} do

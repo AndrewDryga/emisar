@@ -24,7 +24,7 @@ defmodule EmisarWeb.ActivateLiveTest do
 
       # The consent-card grammar: brand-named clients, requester, phish line.
       assert html =~ "Claude Code &amp; Cursor"
-      assert html =~ "requested by the emisar installer from"
+      assert html =~ "Connection requested from"
       assert html =~ "203.0.113.9"
       assert html =~ "Only approve a request you just started"
 
@@ -83,7 +83,7 @@ defmodule EmisarWeb.ActivateLiveTest do
 
       typed = user_code |> String.downcase() |> String.replace("-", " ")
       found = render_submit(lv, "lookup", %{"lookup" => %{"code" => typed}})
-      assert found =~ "requested by the emisar installer from"
+      assert found =~ "Connection requested from"
       assert found =~ "Claude Code"
     end
 
@@ -95,8 +95,8 @@ defmodule EmisarWeb.ActivateLiveTest do
 
       approved = render_click(lv, "approve", %{})
       assert approved =~ "Approved — return to your terminal"
-      assert approved =~ "stores each credential"
-      assert approved =~ "that machine"
+      assert approved =~ "Return to your terminal to finish setup."
+      assert approved =~ "Agents appear in Agents after their first call"
       assert approved =~ "Close this tab"
       assert approved =~ ~p"/app/#{account}/agents"
 
@@ -115,7 +115,7 @@ defmodule EmisarWeb.ActivateLiveTest do
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/activate?code=#{user_code}")
 
       denied = render_click(lv, "deny", %{})
-      assert denied =~ "Denied — the installer stops"
+      assert denied =~ "Connection denied"
 
       assert ApiKeys.claim_device_grant(device_code) == {:error, :access_denied}
       assert Repo.all(ApiKey) == []
@@ -176,7 +176,7 @@ defmodule EmisarWeb.ActivateLiveTest do
 
       {:ok, _lv, html} = live(conn, ~p"/app/#{account}/activate?code=#{user_code}")
 
-      refute html =~ "Approve into"
+      refute html =~ ~s(id="activate-account")
       assert html =~ account.name
     end
 
@@ -195,7 +195,7 @@ defmodule EmisarWeb.ActivateLiveTest do
 
       {:ok, lv, html} = live(conn, ~p"/app/#{account}/activate?code=#{user_code}")
 
-      assert html =~ "Approve into"
+      assert has_element?(lv, "select#activate-account")
       assert html =~ "Second Workspace"
 
       render_change(lv, "pick_account", %{"account" => other_account.slug})

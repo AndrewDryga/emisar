@@ -61,9 +61,9 @@ defmodule EmisarWeb.AccountSignInLiveTest do
 
     assert html =~ "Continue with Acme Okta"
     assert html =~ ~p"/sign_in/sso/#{provider.id}"
-    assert html =~ "This team requires single sign-on"
+    assert html =~ "This workspace requires single sign-on"
     refute html =~ ~s|action="/sign_in/magic/start"|
-    refute html =~ "Email me a sign-in link"
+    refute html =~ "Send sign-in link"
   end
 
   test "an expired require_sso account offers recovery by magic link", %{conn: conn} do
@@ -75,9 +75,9 @@ defmodule EmisarWeb.AccountSignInLiveTest do
     {:ok, _lv, html} = live(conn, ~p"/app/#{account}/sign_in")
 
     refute html =~ ~p"/sign_in/sso/#{provider.id}"
-    refute html =~ "This team requires single sign-on"
+    refute html =~ "This workspace requires single sign-on"
     assert html =~ ~s|action="/sign_in/magic/start"|
-    assert html =~ "Email me a sign-in link"
+    assert html =~ "Send sign-in link"
   end
 
   test "the 'different team' link drops to the generic SSO picker", %{conn: conn} do
@@ -123,11 +123,11 @@ defmodule EmisarWeb.AccountSignInLiveTest do
 
     {:ok, _lv, html} = live(conn, ~p"/app/#{account}/sign_in")
 
-    assert html =~ "This account is disabled"
+    assert html =~ "This workspace is disabled"
     assert html =~ "support@emisar.dev"
     refute html =~ ~p"/sign_in/sso/#{provider.id}"
     refute html =~ ~s|action="/sign_in/magic/start"|
-    refute html =~ "Sign in to a different team"
+    refute html =~ "Sign in to a different workspace"
   end
 
   test "an unknown slug is a 404 — and a soft-deleted account is the SAME 404 (no leak)", %{

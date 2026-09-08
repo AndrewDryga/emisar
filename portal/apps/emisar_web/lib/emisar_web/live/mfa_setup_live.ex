@@ -13,7 +13,7 @@ defmodule EmisarWeb.MfaSetupLive do
   alias Emisar.Auth
   alias EmisarWeb.{MfaEnrollment, MfaErrors}
 
-  @email_unavailable_error "Your identity provider did not supply an email address. Ask your administrator to update it, then sign in again."
+  @email_unavailable_error "Your profile has no email address. Ask your workspace administrator for help, or contact support@emisar.dev."
   @email_suppressed_error "Emisar cannot deliver mail to your current address. Contact support to restore email delivery before setting up MFA."
   @email_delivery_error "We could not deliver the verification code. Try again. If it keeps failing, contact support."
 
@@ -89,7 +89,7 @@ defmodule EmisarWeb.MfaSetupLive do
             </.simple_form>
 
             <.auth_footer_link event="use_recovery">
-              <:lead>Can't access your authenticator?</:lead>
+              <:lead>Can't use your authenticator?</:lead>
               Use a recovery code
             </.auth_footer_link>
           <% else %>
@@ -145,7 +145,12 @@ defmodule EmisarWeb.MfaSetupLive do
               <.button phx-disable-with="Verifying...">Verify email</.button>
               <%!-- Resending sends a real email, so it wears a bordered face (§7.47) —
                    the same grammar as the profile copy of this step. --%>
-              <.button variant={:secondary} type="button" phx-click="resend_mfa_enrollment_email">
+              <.button
+                variant={:secondary}
+                type="button"
+                phx-click="resend_mfa_enrollment_email"
+                phx-disable-with="Sending..."
+              >
                 Resend code
               </.button>
             </:actions>
@@ -176,6 +181,9 @@ defmodule EmisarWeb.MfaSetupLive do
             </.button>
           </div>
       <% end %>
+      <.auth_footer_link href={~p"/sign_out"} method="delete">
+        Sign out
+      </.auth_footer_link>
     </.auth_layout>
     """
   end
@@ -277,6 +285,10 @@ defmodule EmisarWeb.MfaSetupLive do
           {:noreply,
            socket
            |> assign(:mfa_enrollment_email_error, nil)
+           |> put_flash(
+             :info,
+             "A new verification code was sent to #{socket.assigns.current_user.email}."
+           )
            |> push_event("code:reset", %{id: "mfa-enrollment-email-code"})}
 
         {:ok, :suppressed} ->

@@ -14,7 +14,7 @@ defmodule EmisarWeb.MagicLinkLive do
 
     {:ok,
      socket
-     |> assign(:page_title, "Sign in via email")
+     |> assign(:page_title, "Sign in with email")
      # `?sent=1` alone isn't enough: a bookmark, a reload, or a lapsed session
      # would render a code form that can never verify — and hide Resend, which
      # only shows with an address. magic_link_start stashes the address for every
@@ -95,9 +95,9 @@ defmodule EmisarWeb.MagicLinkLive do
 
   def render(assigns) do
     ~H"""
-    <.auth_layout title="Sign in via email">
+    <.auth_layout title="Sign in with email">
       <%= if @sent? do %>
-        <.callout tone={:brand} icon="state.magic_link_sent" title="Check your inbox.">
+        <.callout tone={:brand} icon="state.magic_link_sent" title="Check your inbox">
           <p :if={@email} class="mt-1.5">
             We emailed a sign-in link and a 6-character code to <code class="font-mono text-brand-100">{@email}</code>. Enter
             the code here, or open the link from <em>this same browser</em>. Both expire in
@@ -187,20 +187,20 @@ defmodule EmisarWeb.MagicLinkLive do
           />
           <:actions>
             <.button class="w-full">
-              Email me a sign-in link <span aria-hidden="true">→</span>
+              Send sign-in link
             </.button>
           </:actions>
         </.simple_form>
 
         <%!-- Never a dead end: a cold/expired-link visit gets the same
              exits the sign-in page offers. --%>
-        <.auth_footer_link navigate={~p"/sign_in"}>
+        <.auth_footer_link href={~p"/sign_in/sso"}>
           <:lead>Prefer SSO?</:lead>
-          Back to sign in
+          Sign in with SSO
         </.auth_footer_link>
         <.auth_footer_link navigate={~p"/sign_up"}>
           <:lead>New to emisar?</:lead>
-          Create an account
+          Create a workspace
         </.auth_footer_link>
       <% end %>
     </.auth_layout>

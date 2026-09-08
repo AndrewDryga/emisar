@@ -10,7 +10,7 @@ defmodule EmisarWeb.UserSignInLive do
 
   def render(assigns) do
     ~H"""
-    <.auth_layout title="Welcome back">
+    <.auth_layout title="Sign in with email">
       <p class="mb-6 text-sm text-zinc-400">
         Enter your email and we'll send a one-time <span class="whitespace-nowrap">sign-in link</span>
         and a <span class="whitespace-nowrap">6-character code</span>. They expire in 15 minutes.
@@ -20,7 +20,7 @@ defmodule EmisarWeb.UserSignInLive do
         <.input field={@form[:email]} type="email" label="Work email" autocomplete="email" required />
         <:actions>
           <.button class="w-full">
-            Email me a sign-in link <span aria-hidden="true">→</span>
+            Send sign-in link
           </.button>
         </:actions>
       </.simple_form>
@@ -33,7 +33,7 @@ defmodule EmisarWeb.UserSignInLive do
 
       <.auth_footer_link href={~p"/sign_up"}>
         <:lead>New to emisar?</:lead>
-        Create an account
+        Create a workspace
       </.auth_footer_link>
     </.auth_layout>
     """

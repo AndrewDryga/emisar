@@ -1800,12 +1800,12 @@ defmodule EmisarWeb.CoreComponents do
              "Resend" button is handled by the global `:email_confirmation`
              on_mount hook so it works regardless of which LV is mounted. --%>
         <.callout
-          :if={@current_user && is_nil(@current_user.confirmed_at)}
+          :if={@current_user && @current_user.email && is_nil(@current_user.confirmed_at)}
           tone={:amber}
           variant={:strip}
           icon="communication.email"
         >
-          Verify your email — we sent a confirmation link to <span class="font-medium text-amber-100">{@current_user.email}</span>.
+          Verify your email — open the confirmation link for <span class="break-all font-medium text-amber-100">{@current_user.email}</span>, or request a new one.
           <:action>
             <.button variant={:secondary} size={:sm} phx-click="resend_confirmation">
               Resend email

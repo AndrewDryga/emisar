@@ -108,6 +108,41 @@ defmodule EmisarWeb.MfaSetupLiveTest do
     assert_redirect(lv, "/app")
   end
 
+  test "the required-MFA exit signs out through DELETE and revokes this session", %{conn: conn} do
+    token = Plug.Conn.get_session(conn, :user_token)
+    {:ok, lv, _html} = live(conn, ~p"/app/mfa_setup")
+
+    assert has_element?(lv, "a[href='/sign_out'][data-method=delete]", "Sign out")
+
+    conn = delete(conn, ~p"/sign_out")
+
+    assert redirected_to(conn) == "/"
+    refute Plug.Conn.get_session(conn, :user_token)
+    assert Auth.fetch_user_and_token_by_session_token(token) == {:error, :not_found}
+  end
+
+  test "resending enrollment verification confirms delivery and preserves the email step", %{
+    conn: conn,
+    user: user
+  } do
+    {:ok, lv, _html} = live(conn, ~p"/app/mfa_setup")
+    render_click(lv, "start_mfa", %{})
+    assert_received {:email, _first_email}
+
+    html = lv |> element("button", "Resend code") |> render_click()
+
+    assert html =~ "A new verification code was sent to #{user.email}."
+    assert has_element?(lv, "#mfa_enrollment_email_form")
+    refute has_element?(lv, "#mfa_form")
+    assert_received {:email, email}
+    code = Fixtures.Auth.code_from_email(email)
+
+    render_submit(lv, "verify_mfa_enrollment_email", %{"mfa_enrollment" => %{"code" => code}})
+
+    assert has_element?(lv, "#mfa_form")
+    refute has_element?(lv, "#mfa_enrollment_email_form")
+  end
+
   test "a wrong code is rejected inline at the form, not as a flash", %{conn: conn} do
     {:ok, lv, _html} = live(conn, ~p"/app/mfa_setup")
 
@@ -283,7 +318,7 @@ defmodule EmisarWeb.MfaSetupLiveTest do
     assert html =~ ~s|viewBox=|
   end
 
-  test "a no-email member fails closed with actionable IdP guidance", %{account: account} do
+  test "a no-email member fails closed with actionable profile guidance", %{account: account} do
     {:ok, user} = Users.provision_sso_user(%{full_name: "No Email"})
 
     Fixtures.Memberships.create_membership(
@@ -297,8 +332,8 @@ defmodule EmisarWeb.MfaSetupLiveTest do
 
     html = render_click(lv, "start_mfa", %{})
 
-    assert html =~ "identity provider did not supply an email address"
-    assert html =~ "Ask your administrator"
+    assert html =~ "Your profile has no email address"
+    assert html =~ "Ask your workspace administrator"
     refute html =~ "mfa-setup-key"
     refute_received {:email, _}
   end

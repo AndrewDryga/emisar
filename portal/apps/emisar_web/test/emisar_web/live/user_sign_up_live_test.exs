@@ -34,7 +34,7 @@ defmodule EmisarWeb.UserSignUpLiveTest do
     {:ok, _lv, html} = live(conn, ~p"/sign_up")
 
     assert html =~ "Create your workspace"
-    assert html =~ "Team or company name"
+    assert html =~ "Workspace name"
     # Passwordless: the page states up front that a one-time link is emailed.
     assert html =~ "one-time sign-in link"
     refute html =~ ~s|name="user[password]"|
@@ -67,12 +67,12 @@ defmodule EmisarWeb.UserSignUpLiveTest do
   end
 
   test "the account-name input is programmatically labelled (UI-005 a11y)", %{conn: conn} do
-    # The visible "Team or company name" label is wired to the input via
+    # The visible "Workspace name" label is wired to the input via
     # <label for>/id, so a screen reader announces it — the name-based <.input>
     # falls back id → name to keep the association it would otherwise lose.
     {:ok, lv, _html} = live(conn, ~p"/sign_up")
 
-    assert has_element?(lv, ~s|label[for="account_name"]|, "Team or company name")
+    assert has_element?(lv, ~s|label[for="account_name"]|, "Workspace name")
     assert has_element?(lv, ~s|input#account_name[name="account_name"]|)
   end
 

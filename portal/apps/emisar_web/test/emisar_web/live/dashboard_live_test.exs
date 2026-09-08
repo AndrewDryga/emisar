@@ -50,7 +50,7 @@ defmodule EmisarWeb.DashboardLiveTest do
         |> log_in_user(operator)
         |> live(~p"/app/#{account}")
 
-      assert html =~ "Get to your first gated run"
+      assert html =~ "Run your first action"
       assert has_element?(lv, "a[href='#{~p"/app/#{account}"}']", "Dashboard")
     end
 
@@ -66,7 +66,7 @@ defmodule EmisarWeb.DashboardLiveTest do
       # The button is wired to the global :email_confirmation on_mount hook,
       # not to DashboardLive — clicking it still re-sends from any page.
       html = lv |> element("button", "Resend email") |> render_click()
-      assert html =~ "Confirmation email sent"
+      assert html =~ "Confirmation email requested"
     end
 
     test "confirmed users see no verify-email banner", %{conn: conn} do
@@ -104,7 +104,7 @@ defmodule EmisarWeb.DashboardLiveTest do
 
       # The zero state is an ORDERED path to the first gated run: two
       # required connections + one optional invite — not three equal pillars.
-      assert html =~ "Get to your first gated run"
+      assert html =~ "Run your first action"
       assert html =~ "Connect a runner"
       assert html =~ "Connect an AI agent"
       # Step 3 teaches the payoff with a concrete, copy-pasteable prompt so a
@@ -129,7 +129,7 @@ defmodule EmisarWeb.DashboardLiveTest do
 
       {:ok, _lv, html} = live(conn, ~p"/app/#{account}")
 
-      assert html =~ "Get to your first gated run"
+      assert html =~ "Run your first action"
       assert html =~ "1 of 3 done"
       assert html =~ "1 runner connected"
       assert html =~ ~p"/app/#{account}/agents/connect"
@@ -143,7 +143,7 @@ defmodule EmisarWeb.DashboardLiveTest do
 
       {:ok, lv, html} = live(conn, ~p"/app/#{account}")
 
-      assert html =~ "Get to your first gated run"
+      assert html =~ "Run your first action"
       # A stored runner row is not a connected runner: the step stays
       # incomplete and explains recovery instead of advancing the checklist
       # toward a first action that cannot dispatch.
@@ -239,7 +239,7 @@ defmodule EmisarWeb.DashboardLiveTest do
 
       # A viewer can read every checklist fact, so the state is truthful — but
       # every setup action is gated to roles that can actually perform it.
-      assert html =~ "Get to your first gated run"
+      assert html =~ "Run your first action"
       assert html =~ "Setup needs an operator role or above"
       refute html =~ ~p"/app/#{account}/runners/install"
     end
@@ -261,7 +261,7 @@ defmodule EmisarWeb.DashboardLiveTest do
         |> log_in_user(member)
         |> live(~p"/app/#{account}")
 
-      refute html =~ "Get to your first gated run"
+      refute html =~ "Run your first action"
       refute html =~ "Connect a runner"
       refute html =~ ~p"/app/#{account}/runners/install"
       assert html =~ "No runner access"
@@ -289,7 +289,7 @@ defmodule EmisarWeb.DashboardLiveTest do
         |> log_in_user(member)
         |> live(~p"/app/#{account}")
 
-      refute html =~ "Get to your first gated run"
+      refute html =~ "Run your first action"
       refute html =~ "Put your first host online"
       assert html =~ "No runners in your access"
       assert html =~ "Recent runs"
@@ -312,7 +312,7 @@ defmodule EmisarWeb.DashboardLiveTest do
 
       {:ok, lv, html} = live(conn, ~p"/app/#{account}")
 
-      refute html =~ "Get to your first gated run"
+      refute html =~ "Run your first action"
       # The runners pillar carries live state (one registered runner,
       # not connected in a test) and the runs section returns.
       assert html =~ "/ 1 connected"
@@ -537,7 +537,7 @@ defmodule EmisarWeb.DashboardLiveTest do
       # Both connections exist, but the runner cannot execute anything yet. The
       # checklist replaces the unusable prompt with the missing setup action.
       {:ok, lv, html} = live(conn, ~p"/app/#{account}")
-      assert html =~ "Get to your first gated run"
+      assert html =~ "Run your first action"
       assert html =~ "needs at least one action pack"
       assert html =~ "Install a pack from the catalog"
       assert html =~ "not advertising any actions yet"
@@ -570,7 +570,7 @@ defmodule EmisarWeb.DashboardLiveTest do
       # The first run hands off to the pillars — the checklist is gone.
       first_run(account, runner)
       {:ok, _lv2, html2} = live(conn, ~p"/app/#{account}")
-      refute html2 =~ "Get to your first gated run"
+      refute html2 =~ "Run your first action"
       assert html2 =~ "Recent runs"
     end
 
@@ -640,7 +640,7 @@ defmodule EmisarWeb.DashboardLiveTest do
       assert has_element?(
                lv,
                "a[href='#{~p"/app/#{account}/agents/connect"}']",
-               "Connect an agent"
+               "Connect an AI agent"
              )
 
       assert has_element?(
@@ -650,11 +650,21 @@ defmodule EmisarWeb.DashboardLiveTest do
              )
     end
 
+    test "the empty agent pillar opens the app selector directly", %{conn: conn} do
+      {conn, _user, account} = register_and_log_in(conn)
+      Fixtures.Runs.create_run(account_id: account.id)
+
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}")
+
+      assert has_element?(lv, "a[href='/app/#{account.slug}/agents/connect']", "Choose your app")
+      refute has_element?(lv, "a[href='/app/#{account.slug}/agents']", "Choose your app")
+    end
+
     test "runner topology broadcasts schedule a debounced fleet refresh", %{conn: conn} do
       {conn, _user, account} = register_and_log_in(conn)
 
       {:ok, lv, html} = live(conn, ~p"/app/#{account}")
-      assert html =~ "Get to your first gated run"
+      assert html =~ "Run your first action"
 
       # A runner registers elsewhere; the dashboard hears the topology-changing
       # Presence diff and arms a debounced runner-only refresh. Inject the timer

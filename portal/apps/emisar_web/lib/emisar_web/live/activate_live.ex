@@ -188,9 +188,8 @@ defmodule EmisarWeb.ActivateLive do
               </h1>
             </div>
             <p class="mt-3 text-sm leading-relaxed text-zinc-400">
-              The installer picks this up within seconds and stores each credential on
-              that machine. The new agents appear in Agents after their first call — revoke
-              them there anytime.
+              Approval is complete. Return to your terminal to finish setup.
+              Agents appear in Agents after their first call; you can revoke them there.
             </p>
             <%!-- The headline's own instruction is the primary action: the tab
                  came from a terminal the operator is going back to, so closing
@@ -222,13 +221,12 @@ defmodule EmisarWeb.ActivateLive do
             <div class="flex items-center gap-2.5">
               <.icon name="product.approval" class="h-6 w-6 flex-none text-zinc-400" />
               <h1 class="text-lg font-semibold text-zinc-50">
-                Denied — the installer stops
+                Connection denied
               </h1>
             </div>
             <p class="mt-3 text-sm leading-relaxed text-zinc-400">
-              The request is dead; its code can't be approved later. If this wasn't
-              you, nothing was connected — and nothing can be until someone with
-              access approves a fresh code.
+              This request can't be approved later. No connection was created from it.
+              To try again, start a new connection from your terminal.
             </p>
           </div>
         <% @grant -> %>
@@ -237,7 +235,7 @@ defmodule EmisarWeb.ActivateLive do
               Connect <span class="text-brand-400">{client_labels_phrase(@grant)}</span>
             </h1>
             <p class="mt-1 text-sm text-zinc-400">
-              requested by the emisar installer from
+              Connection requested from
               <span class="font-mono text-[0.92em] text-zinc-300">
                 {@grant.requester_ip || "an unknown address"}
               </span>
@@ -253,7 +251,7 @@ defmodule EmisarWeb.ActivateLive do
 
           <div class="px-6 py-5">
             <p class="text-xs font-medium uppercase tracking-wide text-zinc-400">
-              Approving this will
+              Approval lets setup continue
             </p>
             <ul class="mt-3 space-y-3">
               <li class="flex items-start gap-3">
@@ -280,8 +278,8 @@ defmodule EmisarWeb.ActivateLive do
             <.consent_note class="mt-5">
               <strong class="text-zinc-300">Only approve a request you just started
               yourself.</strong>
-              The keys can only run what your policy already permits — risky actions
-              still pause for human approval, and every call is audited.
+              The connection uses your workspace access. Policy decides which actions run,
+              wait for approval, or are denied. Action requests are attributed to you and audited.
             </.consent_note>
 
             <%!-- Which account the keys land in. A member of several accounts picks
@@ -300,7 +298,7 @@ defmodule EmisarWeb.ActivateLive do
                 type="select"
                 id="activate-account"
                 name="account"
-                label="Approve into"
+                label="Workspace"
                 label_variant={:eyebrow}
                 value={@current_account.slug}
                 options={Enum.map(@accounts, &{&1.name, &1.slug})}
@@ -316,7 +314,7 @@ defmodule EmisarWeb.ActivateLive do
           <div class="border-b border-zinc-800 px-6 py-5">
             <h1 class="text-lg font-semibold text-zinc-50">Approve an agent connection</h1>
             <p class="mt-1 text-sm text-zinc-400">
-              Enter the approval code shown by the installer in your terminal.
+              Enter the approval code shown in your terminal.
             </p>
           </div>
           <div class="px-6 py-5">

@@ -10,17 +10,17 @@
       wants to connect to <strong class="text-zinc-200">{@account_name}</strong>
     </p>
     <p :if={length(@accounts) > 1} class="mt-1 text-sm text-zinc-400">
-      wants to connect to one of your accounts
+      wants to connect to one of your workspaces
     </p>
-    <p :if={@callback_origin} class="mt-2 text-xs text-zinc-500">
-      Authorization codes go to
-      <span class="font-mono text-[0.92em] text-zinc-400">{@callback_origin}</span>
+    <p :if={@callback_origin} class="mt-2 text-xs text-zinc-400">
+      The authorization code will be sent to
+      <span class="break-all font-mono text-[0.92em] text-zinc-300">{@callback_origin}</span>
     </p>
   </div>
 
   <div class="px-6 py-5">
-    <p class="text-xs font-medium uppercase tracking-wide text-zinc-500">
-      This will allow it to
+    <p class="text-xs font-semibold uppercase tracking-wider text-zinc-400">
+      This connection can
     </p>
     <ul class="mt-3 space-y-3">
       <li :for={scope <- @scopes} class="flex items-start gap-3">
@@ -30,9 +30,9 @@
     </ul>
 
     <.consent_note class="mt-5">
-      The client can only run actions your policy already permits, and
-      every call is attributed to you and recorded in the audit log.
-      Anything requiring approval still waits for a human.
+      The connection uses your workspace access. Policy decides which actions run,
+      wait for approval, or are denied. Action requests are attributed to you and recorded
+      in the audit log.
     </.consent_note>
 
     <.form for={%{}} action={~p"/oauth/authorize"} method="post" class="mt-6">
@@ -54,7 +54,7 @@
           type="select"
           id="consent-account"
           name="account_id"
-          label="Grant access to"
+          label="Workspace"
           label_variant={:eyebrow}
           value={@selected_account_id}
           options={Enum.map(@accounts, &{&1.name, &1.id})}

@@ -19,6 +19,7 @@ defmodule EmisarWeb.MfaChallengeLive do
          socket
          |> assign(:page_title, "Multi-factor authentication")
          |> assign(:user, user)
+         |> assign(:pending_at, session["mfa_pending_at"])
          |> assign(:mode, :totp)
          |> assign(:error, nil)
          |> assign(:request_context, RequestContext.from_socket(socket))
@@ -48,6 +49,17 @@ defmodule EmisarWeb.MfaChallengeLive do
   # a failure (or a rate-limit) stays put with an inline error — Auth audits
   # the miss and owns the brute-force cap.
   defp verify(socket, factor) do
+    if pending_fresh?(%{"mfa_pending_at" => socket.assigns.pending_at}) do
+      verify_factor(socket, factor)
+    else
+      {:noreply,
+       socket
+       |> put_flash(:error, "Your sign-in attempt expired. Sign in again to continue.")
+       |> redirect(to: ~p"/sign_in/magic")}
+    end
+  end
+
+  defp verify_factor(socket, factor) do
     user = socket.assigns.user
 
     case Auth.verify_mfa_challenge(user, factor, socket.assigns.request_context) do
@@ -105,14 +117,14 @@ defmodule EmisarWeb.MfaChallengeLive do
         <.simple_form for={%{}} phx-submit="verify_totp">
           <.code_input id="mfa-otp" name="otp" numeric label="Authenticator code" error={@error} />
           <:actions>
-            <.button class="w-full">
-              Verify <span aria-hidden="true">→</span>
+            <.button class="w-full" phx-disable-with="Verifying...">
+              Continue
             </.button>
           </:actions>
         </.simple_form>
 
         <.auth_footer_link event="use_recovery">
-          <:lead>Lost your device?</:lead>
+          <:lead>Can't use your authenticator?</:lead>
           Use a recovery code
         </.auth_footer_link>
       <% else %>
@@ -133,8 +145,8 @@ defmodule EmisarWeb.MfaChallengeLive do
                assigned error shows on submit, matching code_input's inline error. --%>
           <.error :if={@error}>{@error}</.error>
           <:actions>
-            <.button class="w-full">
-              Verify <span aria-hidden="true">→</span>
+            <.button class="w-full" phx-disable-with="Verifying...">
+              Continue
             </.button>
           </:actions>
         </.simple_form>

@@ -9,7 +9,7 @@ defmodule EmisarWeb.EmailConfirmationHookTest do
   """
   use EmisarWeb.ConnCase, async: true
   import Swoosh.TestAssertions
-  alias Emisar.{Accounts, Users}
+  alias Emisar.{Accounts, Mail, Users}
 
   # A signed-in user who has a workspace but has NOT confirmed their email,
   # so the resend banner/handler is live for them.
@@ -44,8 +44,35 @@ defmodule EmisarWeb.EmailConfirmationHookTest do
 
     html = render_click(lv, "resend_confirmation", %{})
 
-    assert html =~ "Confirmation email sent to #{user.email}"
+    assert html =~ "Confirmation email requested for #{user.email}"
     assert_email_sent(subject: "Confirm your emisar email", to: {"", user.email})
+  end
+
+  test "a missing email hides the banner and a forged resend sends nothing", %{conn: conn} do
+    user = Fixtures.Users.create_sso_user(confirmed?: false)
+    account = Fixtures.Accounts.create_account()
+    Fixtures.Memberships.create_membership(account_id: account.id, user_id: user.id)
+
+    {:ok, lv, _html} = live(log_in_user(conn, user), ~p"/app/#{account}")
+
+    refute has_element?(lv, "button[phx-click=resend_confirmation]")
+    html = render_click(lv, "resend_confirmation", %{})
+
+    assert html =~ "Ask your workspace administrator for help"
+    refute html =~ "Confirmation email requested"
+    assert_no_email_sent()
+  end
+
+  test "suppressed delivery does not claim a confirmation email was sent", %{conn: conn} do
+    {conn, user, account} = unconfirmed_member(conn)
+    {:ok, _suppression} = Mail.suppress(user.email, :hard_bounce, "bounce")
+    {:ok, lv, _html} = live(conn, ~p"/app/#{account}")
+
+    html = render_click(lv, "resend_confirmation", %{})
+
+    assert html =~ "Confirmation email requested"
+    refute html =~ "Confirmation email sent"
+    assert_no_email_sent()
   end
 
   test "a resend loop is capped, so the button can't bomb an inbox or the sending domain", %{
@@ -60,7 +87,7 @@ defmodule EmisarWeb.EmailConfirmationHookTest do
     {:ok, lv, _html} = live(conn, ~p"/app/#{account}")
 
     for _ <- 1..5 do
-      assert render_click(lv, "resend_confirmation", %{}) =~ "Confirmation email sent"
+      assert render_click(lv, "resend_confirmation", %{}) =~ "Confirmation email requested"
       assert_email_sent(to: {"", user.email})
     end
 

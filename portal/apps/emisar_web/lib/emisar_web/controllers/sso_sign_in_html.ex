@@ -5,7 +5,7 @@ defmodule EmisarWeb.SSOSignInHTML do
     ~H"""
     <.auth_layout title="Sign in with SSO">
       <div :if={@recent != []} class="space-y-3">
-        <p class="text-sm text-zinc-400">Continue to a team you've used before:</p>
+        <p class="text-sm text-zinc-400">Choose a workspace you've used before:</p>
         <.button
           :for={team <- @recent}
           href={~p"/app/#{team["slug"]}/sign_in"}
@@ -14,28 +14,28 @@ defmodule EmisarWeb.SSOSignInHTML do
         >
           <span class="flex min-w-0 flex-col text-left">
             <span class="truncate">{team["name"]}</span>
-            <span class="font-mono text-xs text-zinc-500">app/{team["slug"]}</span>
+            <span class="font-mono text-xs text-zinc-400">app/{team["slug"]}</span>
           </span>
           <span aria-hidden="true">→</span>
         </.button>
       </div>
-      <.or_separator :if={@recent != []} label="or enter your team" />
+      <.or_separator :if={@recent != []} label="or enter a workspace address" />
 
       <.simple_form for={@form} action={~p"/sign_in/sso"}>
         <p class="text-sm leading-relaxed text-zinc-400">
-          Which team are you signing in to? We'll take you to its sign-in page.
+          Enter your workspace address to open its sign-in page.
         </p>
         <.input
           field={@form[:slug]}
-          label="Your team's address"
+          label="Workspace address"
           placeholder="acme"
           autocomplete="off"
           required
         />
-        <p class="text-xs leading-relaxed text-zinc-500">
-          The short name in your emisar URL — e.g. <code class="text-zinc-400">acme</code>
-          for <span class="text-zinc-400">app/acme</span>, not your team's full name. It's in your
-          invite email or any emisar link your team shared; ask your admin if you're not sure.
+        <.error :if={@error}>{@error}</.error>
+        <p class="text-xs leading-relaxed text-zinc-400">
+          For <code class="text-zinc-300">app.emisar.dev/app/acme</code>, enter <code class="text-zinc-300">acme</code>. Check a workspace link your team shared,
+          or ask your administrator if you don't know the address.
         </p>
         <:actions>
           <.button class="w-full">

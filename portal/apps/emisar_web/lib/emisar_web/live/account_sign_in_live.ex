@@ -35,7 +35,7 @@ defmodule EmisarWeb.AccountSignInLive do
     ~H"""
     <.auth_layout title={"Sign in to #{@account.name}"}>
       <p :if={@account.disabled_at} class="text-sm leading-6 text-zinc-300">
-        This account is disabled. Contact
+        This workspace is disabled. Contact
         <a class="font-medium text-white underline" href="mailto:support@emisar.dev">
           support@emisar.dev
         </a>
@@ -48,7 +48,7 @@ defmodule EmisarWeb.AccountSignInLive do
         </.button>
       </div>
       <p :if={@account.settings.require_sso and @providers != []} class="mt-4 text-sm text-zinc-400">
-        This team requires single sign-on. Use your identity provider above.
+        This workspace requires single sign-on. Continue with your identity provider.
       </p>
       <.or_separator
         :if={@providers != [] and not @account.settings.require_sso}
@@ -59,7 +59,7 @@ defmodule EmisarWeb.AccountSignInLive do
         :if={is_nil(@account.disabled_at) and (@providers == [] or not @account.settings.require_sso)}
         class="mb-4 text-sm text-zinc-400"
       >
-        Enter your email for a one-time sign-in link and a 6-character code.
+        Enter your email for a one-time sign-in link and a 6-character code. They expire in 15 minutes.
       </p>
 
       <.simple_form
@@ -73,13 +73,13 @@ defmodule EmisarWeb.AccountSignInLive do
         <.input field={@form[:email]} type="email" label="Work email" autocomplete="email" required />
         <:actions>
           <.button class="w-full">
-            Email me a sign-in link <span aria-hidden="true">→</span>
+            Send sign-in link
           </.button>
         </:actions>
       </.simple_form>
 
-      <.auth_footer_link :if={is_nil(@account.disabled_at)} navigate={~p"/sign_in/sso"}>
-        Sign in to a different team
+      <.auth_footer_link :if={is_nil(@account.disabled_at)} href={~p"/sign_in/sso"}>
+        Sign in to a different workspace
       </.auth_footer_link>
     </.auth_layout>
     """

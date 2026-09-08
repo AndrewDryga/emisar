@@ -245,7 +245,7 @@ defmodule EmisarWeb.UserSessionController do
         |> delete_resp_cookie(@magic_cookie)
         |> put_flash(
           :error,
-          "That sign-in code expired or didn't match this browser. Resend a fresh one below."
+          "This sign-in link has expired or can't be used in this browser. Request a new sign-in email."
         )
         |> redirect(to: ~p"/sign_in/magic?sent=1")
     end

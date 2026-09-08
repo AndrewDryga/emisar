@@ -328,7 +328,7 @@ defmodule EmisarWeb.AcceptInvitationLiveTest do
       {:ok, _lv, html} =
         build_conn() |> log_in_user(bystander) |> live(~p"/accept_invitation/#{token}")
 
-      assert html =~ "Wrong account"
+      assert html =~ "Sign in with your invited email"
       assert html =~ "Sign out"
       refute html =~ "phx-click=\"accept_existing\""
     end

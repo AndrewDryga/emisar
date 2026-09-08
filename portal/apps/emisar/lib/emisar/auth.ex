@@ -1313,7 +1313,8 @@ defmodule Emisar.Auth do
   the user's CURRENT row — an MFA user re-enters TOTP (`:totp`), otherwise a
   one-time code is emailed to the current address to prove inbox control
   (`:code`, issued here). Returns `{:ok, :totp | :code}` or
-  `{:error, :not_found | :rate_limited | :delivery_suppressed}` —
+  `{:error, :not_found | :rate_limited | :email_unavailable | :delivery_suppressed}` —
+  `:email_unavailable` when inbox verification is required but there is no current address;
   `:delivery_suppressed` when the current address can't receive the code, so
   the change can't proceed. The factor is the domain's call so a stale MFA
   snapshot in the caller can't downgrade the challenge, and
@@ -1325,6 +1326,9 @@ defmodule Emisar.Auth do
       case email_change_factor(user) do
         :totp ->
           {:ok, :totp}
+
+        :code when user.email in [nil, ""] ->
+          {:error, :email_unavailable}
 
         :code ->
           case do_issue_email_change_code(new_email, user, subject) do

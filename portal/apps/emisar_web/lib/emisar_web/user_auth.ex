@@ -287,8 +287,12 @@ defmodule EmisarWeb.UserAuth do
           |> log_out_user_with_flash("Your access has been suspended. Contact your team admin.")
           |> halt()
         else
+          message =
+            Phoenix.Flash.get(conn.assigns.flash, :error) ||
+              "You don't belong to any workspace. Create one to continue."
+
           conn
-          |> put_flash(:error, "You don't belong to any account. Create one to continue.")
+          |> put_flash(:error, message)
           |> redirect(to: ~p"/onboarding")
           |> halt()
         end
@@ -825,6 +829,13 @@ defmodule EmisarWeb.UserAuth do
   defp resend_confirmation_email("resend_confirmation", _params, socket) do
     socket =
       case socket.assigns[:current_user] do
+        %{email: nil} ->
+          Phoenix.LiveView.put_flash(
+            socket,
+            :error,
+            "Your profile has no email address. Ask your workspace administrator for help, or contact support@emisar.dev."
+          )
+
         %{confirmed_at: nil} = user ->
           deliver_confirmation(socket, user)
 
@@ -850,7 +861,12 @@ defmodule EmisarWeb.UserAuth do
       :ok ->
         subject = socket.assigns.current_subject
         :ok = Auth.deliver_confirmation_instructions(user, subject.account, subject.context)
-        Phoenix.LiveView.put_flash(socket, :info, "Confirmation email sent to #{user.email}.")
+
+        Phoenix.LiveView.put_flash(
+          socket,
+          :info,
+          "Confirmation email requested for #{user.email}. Check your inbox."
+        )
 
       {:error, :rate_limited} ->
         Phoenix.LiveView.put_flash(

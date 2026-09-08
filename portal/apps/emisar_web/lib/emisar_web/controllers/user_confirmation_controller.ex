@@ -32,13 +32,28 @@ defmodule EmisarWeb.UserConfirmationController do
   # alarm — the session state is the user's own, no token oracle involved.
   defp dead_confirm_link(conn, %Users.User{confirmed_at: %DateTime{}}) do
     conn
-    |> put_flash(:info, "Your email is already confirmed — you're all set.")
+    |> put_flash(:info, "Your email is already confirmed.")
     |> redirect(to: ~p"/app")
   end
 
   defp dead_confirm_link(conn, current_user) do
+    recovery =
+      case current_user do
+        %{email: nil} ->
+          "Your profile has no email address. Ask your workspace administrator for help, or contact support@emisar.dev."
+
+        %{} ->
+          "Request a new link using Resend email in the verification banner, or sign out and sign in with email."
+
+        nil ->
+          "Sign in with email to confirm your address with a new sign-in link."
+      end
+
     conn
-    |> put_flash(:error, "That confirmation link expired or was already used.")
+    |> put_flash(
+      :error,
+      "That confirmation link isn't valid, has expired or was already used. " <> recovery
+    )
     |> redirect(to: post_confirm_path(not is_nil(current_user)))
   end
 

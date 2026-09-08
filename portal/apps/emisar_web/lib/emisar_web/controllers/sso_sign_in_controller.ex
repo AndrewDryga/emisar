@@ -12,7 +12,7 @@ defmodule EmisarWeb.SSOSignInController do
   alias EmisarWeb.RecentAccounts
 
   def new(conn, _params) do
-    render(conn, :new, recent: RecentAccounts.list(conn), form: team_form(""))
+    render(conn, :new, recent: RecentAccounts.list(conn), form: team_form(""), error: nil)
   end
 
   def create(conn, %{"team" => %{"slug" => slug}}) when is_binary(slug) do
@@ -28,9 +28,11 @@ defmodule EmisarWeb.SSOSignInController do
   def create(conn, _params), do: render_not_found(conn, "")
 
   defp render_not_found(conn, slug) do
-    conn
-    |> put_flash(:error, "We couldn't find a team at that address. Check it and try again.")
-    |> render(:new, recent: RecentAccounts.list(conn), form: team_form(slug))
+    render(conn, :new,
+      recent: RecentAccounts.list(conn),
+      form: team_form(slug),
+      error: "We couldn't find a workspace at that address. Check it or ask your administrator."
+    )
   end
 
   defp team_form(slug), do: Phoenix.Component.to_form(%{"slug" => slug}, as: "team")

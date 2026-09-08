@@ -64,7 +64,7 @@ defmodule EmisarWeb.SSOPendingLiveTest do
     {:ok, _lv, html} = live(conn, ~p"/sign_in/sso/pending")
 
     assert html =~ "Accept your invitation"
-    assert html =~ "Open the team invitation sent to"
+    assert html =~ "Open the workspace invitation sent to"
     refute html =~ "there&#39;s nothing you need to do here"
   end
 

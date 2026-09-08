@@ -11,7 +11,7 @@ defmodule EmisarWeb.UserSignInLiveTest do
   test "the form renders the magic-link and SSO paths", %{conn: conn} do
     {:ok, _lv, html} = live(conn, ~p"/sign_in")
 
-    assert html =~ "Welcome back"
+    assert html =~ "Sign in with email"
     # The email form POSTs to the split-code magic-link start action.
     assert html =~ ~s|action="/sign_in/magic/start"|
     assert html =~ ~s|name="user[email]"|

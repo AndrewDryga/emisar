@@ -9,7 +9,7 @@ defmodule EmisarWeb.DashboardLive do
 
     # A finance-only member (billing_manager) can't read a single dashboard
     # tile — every operational query returns :unauthorized, so recent_runs is
-    # always empty and the first-run checklist ("Get to your first gated run")
+    # always empty and the first-run checklist ("Run your first action")
     # leads a dead-end tutorial for runner onboarding they can't perform. Send
     # them to their home base instead. Capability-based, not role-name, so a
     # future narrow finance role inherits the right landing.
@@ -701,7 +701,7 @@ defmodule EmisarWeb.DashboardLive do
     <section class="pt-2">
       <div class="flex flex-wrap items-baseline gap-3">
         <h2 class="font-display text-base font-semibold tracking-[-0.012em] text-zinc-100">
-          Get to your first gated run
+          Run your first action
         </h2>
         <span :if={@done_count > 0} class="text-xs tabular-nums text-brand-300">
           {@done_count} of 3 done
@@ -713,8 +713,8 @@ defmodule EmisarWeb.DashboardLive do
           catalog, then ask any MCP client — Claude, Cursor, Codex — to run it. Every call is checked
           against policy first.
         <% else %>
-          Two connections, then ask any MCP client — Claude, Cursor, Codex — to run an action on
-          your own hosts. Every call is checked against policy first.
+          Connect a runner on your host and an AI agent such as Claude, Cursor, or Codex.
+          Then ask the agent to run an action. Your policy applies to every request.
         <% end %>
       </p>
 
@@ -738,8 +738,8 @@ defmodule EmisarWeb.DashboardLive do
               class="font-medium text-brand-400 hover:text-brand-300"
             >See runner status</.link>
           <% else %>
-            The emisar agent on one of your hosts — one curl command, connected in
-            about two minutes.
+            Install the runner on a host where you want to run actions. It connects that host
+            to emisar and runs the actions you allow.
           <% end %>
         </.setup_step>
         <.setup_step
@@ -748,7 +748,7 @@ defmodule EmisarWeb.DashboardLive do
           current={@current_step == 2}
           title="Connect an AI agent"
           done_text={"#{@agents_connected} #{if @agents_connected == 1, do: "agent", else: "agents"} connected"}
-          action_label="Connect an agent"
+          action_label="Connect an AI agent"
           navigate={~p"/app/#{@current_account}/agents/connect"}
           done_navigate={~p"/app/#{@current_account}/agents"}
           can_act?={@can_issue_agent_key?}
@@ -758,7 +758,8 @@ defmodule EmisarWeb.DashboardLive do
             agent has made an authenticated call yet. Finish the setup in your MCP client — this
             step completes on its first call.
           <% else %>
-            Give Claude, Cursor, or any MCP client a scoped, revocable key.
+            Connect the app you use to ask for infrastructure work. Its access is limited to
+            your runners and packs, and you can revoke the connection.
           <% end %>
         </.setup_step>
         <%!-- Step 3 — make the first run possible, then spell out the exact
@@ -806,8 +807,8 @@ defmodule EmisarWeb.DashboardLive do
                 Ask your agent to run an action
               </span>
               <p class="mt-0.5 max-w-prose text-sm leading-relaxed text-zinc-400">
-                Ask in plain English — your agent picks the matching action from the catalog and
-                runs it on the host. A read-only health check is a safe first run:
+                Ask in plain English. Your agent selects actions from the catalog;
+                any that need approval wait for a decision. Start with a read-only health check:
               </p>
               <.agent_example_prompt
                 id="onboarding-example-prompt"
@@ -827,7 +828,7 @@ defmodule EmisarWeb.DashboardLive do
           done_navigate={~p"/app/#{@current_account}/settings/team"}
           can_act?={@can_invite_members?}
         >
-          Teammates dispatch and approve under their own audited identity.
+          Each teammate gets their own access. The audit trail records who runs and approves actions.
         </.setup_step>
       </ol>
 
@@ -1037,9 +1038,9 @@ defmodule EmisarWeb.DashboardLive do
     ~H"""
     <.pillar_cta
       label="AI agents"
-      title="Connect any MCP client"
-      cta="Mint a scoped key"
-      navigate={~p"/app/#{@current_account}/agents"}
+      title="Connect an AI agent"
+      cta="Choose your app"
+      navigate={~p"/app/#{@current_account}/agents/connect"}
     />
     """
   end

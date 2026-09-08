@@ -1,20 +1,14 @@
-<div class="flex min-h-screen items-center justify-center bg-zinc-950 px-6 py-12">
-  <div class="w-full max-w-md text-center">
-    <div class="mb-8 flex justify-center">
-      <img src={~p"/images/brand/emisar-logo.svg"} alt="emisar" class="h-8 w-auto" />
-    </div>
-
-    <div class="rounded-2xl border border-zinc-800 bg-zinc-900/60 px-6 py-8 shadow-xl">
-      <.icon name="state.warning" class="mx-auto h-10 w-10 text-amber-400" />
-      <h1 class="mt-4 text-lg font-semibold text-zinc-50">Authorization error</h1>
-      <p class="mt-2 text-sm leading-relaxed text-zinc-400">{@message}</p>
-      <p class="mt-6 text-xs text-zinc-500">
-        Nothing was authorized. Close this window and retry the connection
-        from your client, or <.link
-          href={~p"/docs/connect-claude-ai"}
-          class="text-brand-400 hover:text-brand-300"
-        >read the connection guide</.link>.
-      </p>
-    </div>
+<.auth_card>
+  <div class="px-6 py-6">
+    <h1 class="text-balance text-lg font-semibold text-zinc-50">
+      Couldn't authorize this connection
+    </h1>
+    <p class="mt-3 text-sm leading-relaxed text-zinc-400">{@message}</p>
+    <p class="mt-6 text-sm leading-relaxed text-zinc-400">
+      Nothing was authorized. Restart the connection from your app.
+    </p>
+    <p class="mt-4 text-sm">
+      <.doc_link href={~p"/docs/agents-and-keys"}>Agent connection help</.doc_link>
+    </p>
   </div>
-</div>
+</.auth_card>

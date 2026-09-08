@@ -1,11 +1,9 @@
 defmodule EmisarWeb.SSOPendingLive do
   @moduledoc """
-  Where a `:manual`-provisioner SSO first login waits. Instead of an error bounce,
-  the person lands here — authenticated to their IdP but with no account access
-  yet — while an admin approves them. Keyed by the link-request id the callback
-  stashed in the session (possession is the authorization; the person isn't a
-  member). Subscribing to the request lets approval re-run sign-in automatically,
-  and dismissal say so, with no refresh.
+  Where an SSO sign-in waits for administrator approval, including identity
+  links for existing members. Keyed by the link-request id the callback stashed
+  in the session after provider authentication. Subscribing to that request
+  lets approval restart sign-in and dismissal update this page without refresh.
   """
   use EmisarWeb, :live_view
   alias Emisar.SSO
@@ -31,8 +29,8 @@ defmodule EmisarWeb.SSOPendingLive do
     end
   end
 
-  # Approved: the identity now exists, so re-run SSO — the person is still signed
-  # in to their IdP, so it completes without a prompt and lands them in the app.
+  # Approved: restart provider sign-in. The provider may still require a prompt;
+  # the normal callback rechecks the current connection and membership state.
   def handle_info({:sso_link_request, :approved, %{provider_id: provider_id}}, socket) do
     {:noreply, redirect(socket, to: ~p"/sign_in/sso/#{provider_id}")}
   end
@@ -50,11 +48,10 @@ defmodule EmisarWeb.SSOPendingLive do
         <%!-- Naked dot-led wait line (the install wizard's wait grammar) — a
              box around a status line is the island §8.1 bans. --%>
         <div class="flex items-center gap-3">
-          <.status_dot tone={:brand} animate={:ping} size={:lg} />
+          <.status_dot tone={:amber} size={:lg} />
           <p :if={not @invitation_pending?} class="text-sm text-zinc-300">
-            Waiting for an administrator at
-            <span class="font-medium text-zinc-100">{@request.account.name}</span>
-            to approve your access.
+            An administrator at <span class="font-medium text-zinc-100">{@request.account.name}</span>
+            must approve this sign-in.
           </p>
           <p :if={@invitation_pending?} class="text-sm text-zinc-300">
             Accept your invitation to
@@ -64,20 +61,19 @@ defmodule EmisarWeb.SSOPendingLive do
         </div>
 
         <p :if={not @invitation_pending?} class="text-sm leading-relaxed text-zinc-400">
-          You've signed in through your identity provider as <span class="font-medium text-zinc-200">{@request.email}</span>, but this team has an
-          admin approve each new member. Leave this page open — it signs you in automatically the
-          moment they approve.
+          Your identity provider signed you in as <span class="break-all font-medium text-zinc-200">{@request.email}</span>.
+          Keep this page open to continue after approval.
         </p>
 
         <p :if={@invitation_pending?} class="text-sm leading-relaxed text-zinc-400">
-          Open the team invitation sent to
+          Open the workspace invitation sent to
           <span class="font-medium text-zinc-200">{@request.email}</span>
-          and accept it. Then leave this page open — it signs you in automatically
-          when an administrator approves the SSO identity.
+          and accept it. Then keep this page open to continue after an administrator approves
+          this sign-in.
         </p>
 
-        <p :if={not @invitation_pending?} class="text-xs leading-relaxed text-zinc-400">
-          Until then you can't reach anything in the account — there's nothing you need to do here.
+        <p class="text-xs leading-relaxed text-zinc-400">
+          If this page loses its connection or you close it, sign in again to check for approval.
         </p>
 
         <.button variant={:secondary} href={~p"/sign_in"} class="w-full">
@@ -87,7 +83,7 @@ defmodule EmisarWeb.SSOPendingLive do
 
       <div :if={@status == :dismissed} class="space-y-6">
         <.callout tone={:rose} icon="state.denied">
-          Your access request was declined.
+          Your sign-in request was declined.
         </.callout>
 
         <p class="text-sm leading-relaxed text-zinc-400">

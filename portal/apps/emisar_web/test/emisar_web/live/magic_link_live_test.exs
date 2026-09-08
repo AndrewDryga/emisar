@@ -25,7 +25,7 @@ defmodule EmisarWeb.MagicLinkLiveTest do
     conn = Plug.Test.init_test_session(conn, %{"magic_link_email" => "operator@example.test"})
     {:ok, _lv, html} = live(conn, ~p"/sign_in/magic?sent=1")
 
-    assert html =~ "Check your inbox."
+    assert html =~ "Check your inbox"
     # The code is verified in this LiveView (no controller POST) — so a wrong code
     # can be shown inline; the per-character boxes (CodeInput hook) aggregate into
     # one hidden field the phx-submit reads.
@@ -60,7 +60,7 @@ defmodule EmisarWeb.MagicLinkLiveTest do
     {:ok, _lv, html} = live(conn, ~p"/sign_in/magic?sent=1")
 
     assert html =~ ~s(action="/sign_in/magic/start")
-    refute html =~ "Check your inbox."
+    refute html =~ "Check your inbox"
     refute html =~ ~s(phx-hook="CodeInput")
   end
 

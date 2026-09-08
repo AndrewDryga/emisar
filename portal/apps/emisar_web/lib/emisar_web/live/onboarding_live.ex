@@ -25,7 +25,7 @@ defmodule EmisarWeb.OnboardingLive do
 
       {:ok,
        socket
-       |> assign(:page_title, "Set up your workspace")
+       |> assign(:page_title, "Create your workspace")
        |> assign(:billing_intent, billing_intent)
        |> assign(:billing_choice, billing_choice)
        |> assign(:trigger_submit, false)
@@ -41,9 +41,9 @@ defmodule EmisarWeb.OnboardingLive do
 
   def render(assigns) do
     ~H"""
-    <.auth_layout title="Set up your workspace">
+    <.auth_layout title="Create your workspace">
       <p :if={is_nil(@billing_choice)} class="mb-6 text-sm text-zinc-400">
-        One quick step. You'll invite members and connect runners next.
+        Give your workspace a name. Next, connect a runner and an AI agent to run your first action.
       </p>
       <.selected_plan :if={@billing_choice} cycle={@billing_choice.cycle} class="mb-6">
         Create this workspace on Free, then review the Team upgrade. Nothing is charged now.
@@ -61,7 +61,7 @@ defmodule EmisarWeb.OnboardingLive do
         <.input
           field={@form[:name]}
           type="text"
-          label="What's your team or company called?"
+          label="Workspace name"
           autocomplete="organization"
           placeholder="Acme Corp"
           required
@@ -82,8 +82,11 @@ defmodule EmisarWeb.OnboardingLive do
       </.simple_form>
 
       <p :if={is_nil(@billing_choice)} class="mt-6 text-xs text-zinc-400">
-        Starts on the Free plan: 3 runners, 1 user, 7-day audit retention. You can upgrade any time.
+        Starts on the Free plan: 3 runners, 1 seat, 7-day audit retention. You can upgrade any time.
       </p>
+      <.auth_footer_link href={~p"/sign_out"} method="delete">
+        Sign out
+      </.auth_footer_link>
     </.auth_layout>
     """
   end

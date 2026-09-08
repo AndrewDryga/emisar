@@ -4,7 +4,7 @@ defmodule EmisarWeb.AuthFlowTest do
   describe "GET /sign_in" do
     test "renders the passwordless sign-in form", %{conn: conn} do
       {:ok, _lv, html} = live(conn, ~p"/sign_in")
-      assert html =~ "Welcome back"
+      assert html =~ "Sign in with email"
       assert html =~ "Work email"
       assert html =~ "sign-in link"
       # Passwordless: no password field, no forgot-password link.

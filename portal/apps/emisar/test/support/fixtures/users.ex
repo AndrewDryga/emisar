@@ -28,6 +28,22 @@ defmodule Emisar.Fixtures.Users do
     if confirmed?, do: confirm_user(user), else: user
   end
 
+  @doc "Persists an SSO user, including profiles without an email address."
+  def create_sso_user(attrs \\ %{}) do
+    attrs = Map.new(attrs)
+    confirmed? = Map.get(attrs, :confirmed?, true)
+
+    changeset =
+      %{full_name: "SSO User"}
+      |> Map.merge(Map.drop(attrs, [:confirmed?]))
+      |> User.Changeset.sso_create()
+
+    changeset =
+      if confirmed?, do: changeset, else: Ecto.Changeset.put_change(changeset, :confirmed_at, nil)
+
+    Emisar.Repo.insert!(changeset)
+  end
+
   @doc "Marks a user's email confirmed, bypassing the token flow. Test/seed convenience."
   def confirm_user(%User{} = user) do
     {:ok, user} = user |> User.Changeset.confirm() |> Emisar.Repo.update()

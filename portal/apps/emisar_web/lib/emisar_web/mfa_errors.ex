@@ -16,7 +16,7 @@ defmodule EmisarWeb.MfaErrors do
     invalid_otp: "That code didn't match. Try the latest code from your authenticator.",
     mfa_enrollment_proof_stale: "Your account changed. Verify your current email again.",
     session_not_found: "Your session changed. Sign in again before enabling MFA.",
-    email_verification_required: "Email a verification code first.",
+    email_verification_required: "Request an email verification code first.",
     recovery_codes_unsaved: "Save your recovery codes before continuing.",
     rate_limited: "Too many attempts. Wait a few minutes, then try again.",
     email_rate_limited: "Too many code requests. Wait up to 15 minutes, then try again."

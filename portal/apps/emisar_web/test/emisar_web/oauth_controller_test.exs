@@ -499,7 +499,7 @@ defmodule EmisarWeb.OAuthControllerTest do
       assert html =~ challenge
 
       # Both known scopes render as human-readable grants, not raw tokens.
-      assert html =~ "Run approved actions"
+      assert html =~ "Read the action catalog"
       assert html =~ "Stay connected"
     end
 
@@ -565,7 +565,7 @@ defmodule EmisarWeb.OAuthControllerTest do
         |> get(~p"/oauth/authorize?#{params}")
         |> html_response(200)
 
-      assert html =~ "Grant access to"
+      assert html =~ "Workspace"
       assert html =~ ~s(name="account_id")
       assert html =~ "Beta Workspace"
       assert html =~ account.name
@@ -636,11 +636,13 @@ defmodule EmisarWeb.OAuthControllerTest do
         |> get(~p"/oauth/authorize?#{params}")
         |> html_response(200)
 
-      assert html =~ "Authorization codes go to"
+      assert html =~ "The authorization code will be sent to"
       # The bare origin is surfaced to the operator (the full callback path is
       # only echoed in the hidden redirect_uri field the POST carries back).
-      assert html =~
-               ~s(<span class="font-mono text-[0.92em] text-zinc-400">https://chatgpt.com</span>)
+      assert html
+             |> LazyHTML.from_document()
+             |> LazyHTML.query("span.break-all")
+             |> LazyHTML.text() == "https://chatgpt.com"
     end
 
     test "scope_label falls back to the raw token for unknown scopes" do
@@ -719,7 +721,7 @@ defmodule EmisarWeb.OAuthControllerTest do
         |> html_response(200)
 
       # The "mcp" scope label renders; the offline_access one does not.
-      assert html =~ "Run approved actions"
+      assert html =~ "Read the action catalog"
       refute html =~ "Stay connected"
     end
 
@@ -774,9 +776,11 @@ defmodule EmisarWeb.OAuthControllerTest do
         |> get(~p"/oauth/authorize?#{params}")
         |> html_response(200)
 
-      assert html =~ "only run actions your policy already permits"
-      assert html =~ "attributed to you and recorded in the audit log"
-      assert html =~ "requiring approval still waits for a human"
+      text = html |> LazyHTML.from_document() |> LazyHTML.text() |> String.replace(~r/\s+/, " ")
+
+      assert text =~ "Policy decides which actions run"
+      assert text =~ "attributed to you and recorded in the audit log"
+      assert text =~ "wait for approval, or are denied"
     end
 
     # code_challenge_method may be omitted; the domain defaults it to S256, so
@@ -880,7 +884,7 @@ defmodule EmisarWeb.OAuthControllerTest do
         |> get(~p"/oauth/authorize?#{params}")
         |> html_response(400)
 
-      assert html =~ "Authorization error"
+      assert html =~ "authorize this connection"
     end
 
     test "redirects unauthenticated operators to sign in", %{conn: conn, client: client} do
@@ -1083,7 +1087,7 @@ defmodule EmisarWeb.OAuthControllerTest do
         |> log_in_user(user)
         |> get(~p"/oauth/authorize?#{params}")
 
-      assert html_response(conn, 400) =~ "Authorization error"
+      assert html_response(conn, 400) =~ "authorize this connection"
       # An error page, not a 302 — there is no Location header to an unvetted origin.
       assert get_resp_header(conn, "location") == []
     end
@@ -1109,7 +1113,7 @@ defmodule EmisarWeb.OAuthControllerTest do
         |> log_in_user(user)
         |> get(~p"/oauth/authorize?#{params}")
 
-      assert html_response(conn, 400) =~ "Authorization error"
+      assert html_response(conn, 400) =~ "authorize this connection"
       # An error page, not a 302 — there is no Location header to an unvetted origin.
       assert get_resp_header(conn, "location") == []
 
@@ -1138,7 +1142,7 @@ defmodule EmisarWeb.OAuthControllerTest do
         |> log_in_user(user)
         |> get(~p"/oauth/authorize?#{params}")
 
-      assert html_response(conn, 400) =~ "Authorization error"
+      assert html_response(conn, 400) =~ "authorize this connection"
       # An error page, not a 302 — there is no Location header to an unvetted origin.
       assert get_resp_header(conn, "location") == []
     end
@@ -1355,7 +1359,7 @@ defmodule EmisarWeb.OAuthControllerTest do
 
       # No code redirected to the client, no hint the account exists. (The
       # apostrophe in "isn't" is HTML-escaped, so assert around it.)
-      assert html_response(conn, 400) =~ "available to your user"
+      assert html_response(conn, 400) =~ "choose a workspace you can access"
       refute Repo.one(Emisar.ApiKeys.ApiKey)
       refute Repo.one(OAuth.AuthorizationCode)
     end
@@ -1384,7 +1388,7 @@ defmodule EmisarWeb.OAuthControllerTest do
           "decision" => "approve"
         })
 
-      assert html_response(conn, 400) =~ "available to your user"
+      assert html_response(conn, 400) =~ "choose a workspace you can access"
       refute Repo.one(Emisar.ApiKeys.ApiKey)
       refute Repo.one(OAuth.AuthorizationCode)
     end
@@ -1411,7 +1415,7 @@ defmodule EmisarWeb.OAuthControllerTest do
           "decision" => "approve"
         })
 
-      assert html_response(conn, 400) =~ "available to your user"
+      assert html_response(conn, 400) =~ "choose a workspace you can access"
       refute Repo.one(Emisar.ApiKeys.ApiKey)
       refute Repo.one(OAuth.AuthorizationCode)
     end
@@ -1450,7 +1454,7 @@ defmodule EmisarWeb.OAuthControllerTest do
 
       # The key-issue denial page (apostrophes are HTML-escaped, so assert the
       # apostrophe-free sentence).
-      assert html_response(conn, 400) =~ "Connecting one mints an API key"
+      assert html_response(conn, 400) =~ "Ask a workspace administrator for access"
       refute Repo.one(Emisar.ApiKeys.ApiKey)
       refute Repo.one(OAuth.AuthorizationCode)
     end
@@ -1604,7 +1608,7 @@ defmodule EmisarWeb.OAuthControllerTest do
           "decision" => "approve"
         })
 
-      assert html_response(conn, 400) =~ "Authorization error"
+      assert html_response(conn, 400) =~ "authorize this connection"
       assert get_resp_header(conn, "location") == []
     end
 
@@ -1744,7 +1748,7 @@ defmodule EmisarWeb.OAuthControllerTest do
           "decision" => "approve"
         })
 
-      assert html_response(conn, 400) =~ "Authorization error"
+      assert html_response(conn, 400) =~ "authorize this connection"
       assert get_resp_header(conn, "location") == []
     end
 
@@ -1771,7 +1775,7 @@ defmodule EmisarWeb.OAuthControllerTest do
           "decision" => "deny"
         })
 
-      assert html_response(conn, 400) =~ "Authorization error"
+      assert html_response(conn, 400) =~ "authorize this connection"
       assert get_resp_header(conn, "location") == []
     end
 

@@ -65,7 +65,7 @@ defmodule EmisarWeb.UserSignUpLive do
           id="account_name"
           value={@account_name}
           type="text"
-          label="Team or company name"
+          label="Workspace name"
           autocomplete="organization"
           errors={if @account_name_error, do: [@account_name_error], else: []}
           required
@@ -74,7 +74,8 @@ defmodule EmisarWeb.UserSignUpLive do
         <%!-- The auth mechanism, stated where it happens (the CTA) — not
              mixed into the plan facts above. --%>
         <p class="text-xs leading-relaxed text-zinc-400">
-          No password to set — we'll email you a one-time sign-in link and a 6-character code.
+          We'll email you a one-time sign-in link and a 6-character code to verify your email
+          and finish creating your workspace.
         </p>
 
         <%!-- Carries the workspace/profile intent to the inbox-proof factor.
@@ -96,7 +97,7 @@ defmodule EmisarWeb.UserSignUpLive do
 
         <:actions>
           <.button phx-disable-with="Creating..." class="w-full">
-            Create account <span aria-hidden="true">→</span>
+            Create workspace
           </.button>
         </:actions>
       </.simple_form>
@@ -104,14 +105,14 @@ defmodule EmisarWeb.UserSignUpLive do
       <%!-- Consent at the point of account creation — footer links don't
            read as agreement on a trust product. --%>
       <p class="mt-3 text-center text-xs text-zinc-400">
-        By creating an account you agree to the
+        By creating a workspace you agree to the
         <.link href={~p"/terms"} class="text-zinc-400 underline hover:text-zinc-200">Terms</.link>
         and <.link href={~p"/privacy"} class="text-zinc-400 underline hover:text-zinc-200">
           Privacy Policy</.link>.
       </p>
 
       <.auth_footer_link href={~p"/sign_in"}>
-        <:lead>Already have an account?</:lead>
+        <:lead>Already use emisar?</:lead>
         Sign in
       </.auth_footer_link>
     </.auth_layout>

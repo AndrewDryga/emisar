@@ -130,9 +130,13 @@ defmodule EmisarWeb.AcceptInvitationLive do
           required
         />
 
+        <p class="text-sm text-zinc-400">
+          We'll email you a sign-in link and a 6-character code to finish signing in.
+        </p>
+
         <:actions>
           <.button phx-disable-with="Joining..." class="w-full">
-            Accept &amp; email me a sign-in link <span aria-hidden="true">→</span>
+            Accept invitation
           </.button>
         </:actions>
       </.simple_form>
@@ -159,14 +163,15 @@ defmodule EmisarWeb.AcceptInvitationLive do
 
   def render(%{state: :signed_in_mismatch} = assigns) do
     ~H"""
-    <.auth_layout title="Wrong account">
+    <.auth_layout title="Sign in with your invited email">
       <div class="space-y-4 text-sm text-zinc-300">
         <p>
           This invitation is for <span class="font-mono text-zinc-100">{@membership.user.email}</span>, but
           you're signed in as <span class="font-mono text-zinc-100">{@current_user.email}</span>.
         </p>
         <p class="text-zinc-400">
-          Sign out first, then re-open the invitation link to accept it as {@membership.user.email}.
+          Sign out, then reopen this invitation from your email. To join with your current email
+          instead, ask the sender to invite that address.
         </p>
 
         <.button

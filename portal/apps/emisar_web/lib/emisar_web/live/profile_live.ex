@@ -8,7 +8,7 @@ defmodule EmisarWeb.ProfileLive do
   # Both step-ups on this page — the email-change authenticator branch and
   # disabling MFA — spend the same per-user MFA attempt window, so they report
   # its exhaustion in the same words.
-  @mfa_enrollment_email_unavailable_error "Your identity provider did not supply an email address. Ask your administrator to update it, then sign in again."
+  @mfa_enrollment_email_unavailable_error "Your profile has no email address. Ask your workspace administrator for help, or contact support@emisar.dev."
   @mfa_enrollment_email_suppressed_error "Emisar cannot deliver mail to your current address. Contact support to restore email delivery before setting up MFA."
   @mfa_enrollment_email_delivery_error "We could not deliver the verification code. Try again. If it keeps failing, contact support."
 
@@ -162,7 +162,7 @@ defmodule EmisarWeb.ProfileLive do
         {:noreply,
          socket
          |> assign(:profile_form, to_form(changeset, as: "profile"))
-         |> put_flash(:error, "Couldn't update your profile. Try again.")}
+         |> put_flash(:error, "Couldn't update your name. Try again.")}
     end
   end
 
@@ -376,7 +376,8 @@ defmodule EmisarWeb.ProfileLive do
         {:noreply, socket |> put_flash(:info, "Session signed out.") |> reload_sessions()}
 
       {:error, :not_found} ->
-        {:noreply, put_flash(socket, :error, "Session no longer exists.")}
+        {:noreply,
+         socket |> put_flash(:info, "This session has already ended.") |> reload_sessions()}
 
       {:error, _reason} ->
         {:noreply, put_flash(socket, :error, "Couldn't sign out this session. Try again.")}
@@ -470,7 +471,7 @@ defmodule EmisarWeb.ProfileLive do
            assign(socket, :mfa_enrollment_email_error, "Could not verify that code. Try again.")}
       end
     else
-      {:noreply, put_flash(socket, :error, "Start the enable flow first.")}
+      {:noreply, put_flash(socket, :error, "Start MFA setup again.")}
     end
   end
 
@@ -500,7 +501,7 @@ defmodule EmisarWeb.ProfileLive do
            assign(socket, :mfa_enrollment_email_error, @mfa_enrollment_email_delivery_error)}
       end
     else
-      {:noreply, put_flash(socket, :error, "Start the enable flow first.")}
+      {:noreply, put_flash(socket, :error, "Start MFA setup again.")}
     end
   end
 
@@ -513,7 +514,7 @@ defmodule EmisarWeb.ProfileLive do
     secret = socket.assigns.mfa_secret
 
     if is_nil(secret) do
-      {:noreply, put_flash(socket, :error, "Start the enable flow first.")}
+      {:noreply, put_flash(socket, :error, "Start MFA setup again.")}
     else
       case Auth.enable_mfa(
              secret,
@@ -840,6 +841,11 @@ defmodule EmisarWeb.ProfileLive do
           "We can't send a code to your current email (#{user.email}). Contact support@emisar.dev."
         )
 
+      {:error, :email_unavailable} ->
+        socket
+        |> assign(:email_step, :edit)
+        |> assign(:email_step_error, @mfa_enrollment_email_unavailable_error)
+
       {:error, :rate_limited} ->
         socket
         |> assign(:email_step, :edit)
@@ -1000,9 +1006,12 @@ defmodule EmisarWeb.ProfileLive do
                   <p class="break-all text-sm text-zinc-200">
                     {@current_user.email || "No email address"}
                   </p>
-                  <p :if={is_nil(@current_user.email)} class="mt-1 text-xs text-zinc-400">
-                    Ask your administrator to add an email address in your sign-in provider,
-                    then sign in again.
+                  <p
+                    :if={is_nil(@current_user.email) and is_nil(@current_user.mfa_enabled_at)}
+                    class="mt-1 text-xs text-zinc-400"
+                  >
+                    Your profile has no email address. Ask your workspace administrator for help,
+                    or contact support@emisar.dev.
                   </p>
                   <p
                     :if={@current_user.email && is_nil(@current_user.confirmed_at)}
@@ -1011,7 +1020,13 @@ defmodule EmisarWeb.ProfileLive do
                     Awaiting confirmation
                   </p>
                 </div>
-                <.button id="change-email" variant={:secondary} size={:sm} phx-click="edit_email">
+                <.button
+                  id="change-email"
+                  variant={:secondary}
+                  size={:sm}
+                  phx-click="edit_email"
+                  disabled={is_nil(@current_user.email) and is_nil(@current_user.mfa_enabled_at)}
+                >
                   Change email
                 </.button>
               </div>

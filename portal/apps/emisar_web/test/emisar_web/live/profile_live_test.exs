@@ -6,7 +6,7 @@ defmodule EmisarWeb.ProfileLiveTest do
     test "a profile without an email address does not claim confirmation is pending", %{
       conn: conn
     } do
-      {:ok, user} = Emisar.Users.provision_sso_user(%{full_name: "No Email"})
+      user = Fixtures.Users.create_sso_user(full_name: "No Email")
       account = Fixtures.Accounts.create_account()
 
       Fixtures.Memberships.create_membership(
@@ -19,8 +19,44 @@ defmodule EmisarWeb.ProfileLiveTest do
 
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/profile")
       assert has_element?(lv, "#email", "No email address")
-      assert has_element?(lv, "#email", "Ask your administrator")
+      assert has_element?(lv, "#email", "Ask your workspace administrator")
       refute has_element?(lv, "#email", "Awaiting confirmation")
+      assert has_element?(lv, "#change-email[disabled]")
+
+      render_click(lv, "edit_email", %{})
+      render_submit(lv, "save_email", %{"email" => %{"email" => "new@example.com"}})
+
+      assert has_element?(lv, "#email_form", "Your profile has no email address")
+      refute has_element?(lv, "#email_step_form")
+      refute_received {:email, _}
+    end
+
+    test "a missing-email profile with MFA can add an address through its authenticator", %{
+      conn: conn
+    } do
+      user =
+        Fixtures.Users.create_sso_user()
+        |> Fixtures.Users.set_mfa_state(
+          mfa_secret: Auth.generate_mfa_secret(),
+          mfa_enabled_at: DateTime.utc_now()
+        )
+
+      account = Fixtures.Accounts.create_account()
+      Fixtures.Memberships.create_membership(account_id: account.id, user_id: user.id)
+
+      {:ok, lv, _html} = live(log_in_user(conn, user), ~p"/app/#{account}/settings/profile")
+
+      refute has_element?(lv, "#change-email[disabled]")
+      refute has_element?(lv, "#email", "Ask your workspace administrator")
+
+      lv
+      |> edit_email()
+      |> form("#email_form", %{"email" => %{"email" => "new@example.com"}})
+      |> render_submit()
+
+      assert has_element?(lv, "#email_step_form", "authenticator")
+      assert is_nil(Emisar.Repo.reload!(user).email)
+      refute_received {:email, _}
     end
 
     test "a malformed email surfaces inline via phx-change, not a flash", %{conn: conn} do
@@ -88,7 +124,7 @@ defmodule EmisarWeb.ProfileLiveTest do
         |> form("#profile_form", %{"profile" => %{"full_name" => "Unsaved Name"}})
         |> render_submit()
 
-      assert html =~ "Couldn&#39;t update your profile. Try again."
+      assert html =~ "Couldn&#39;t update your name. Try again."
       assert html =~ ~s(value="Unsaved Name")
     end
   end
@@ -1045,14 +1081,26 @@ defmodule EmisarWeb.ProfileLiveTest do
       assert has_element?(lv, "#single-sign-on", "No single sign-on providers are enabled")
     end
 
-    test "revoking a vanished session id flashes instead of crashing", %{
+    test "revoking a session removed after mount refreshes the displayed list", %{
       conn: conn,
+      user: user,
       account: account
     } do
+      token = Fixtures.Auth.create_session_token!(user, :magic_link, nil)
+      subject = Fixtures.Subjects.subject_for(user, account)
+      current_digest = Emisar.Crypto.hash(session_token(conn))
+      {:ok, sessions, _meta} = Auth.list_sessions_for_user(current_digest, subject)
+      other = Enum.find(sessions, &(not &1.current?))
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/profile")
+      assert has_element?(lv, "#sessions-#{other.id}")
 
-      assert render_click(lv, "revoke_session", %{"id" => Ecto.UUID.generate()}) =~
-               "Session no longer exists."
+      Fixtures.Auth.delete_session_token!(token)
+
+      assert render_click(lv, "revoke_session", %{"id" => other.id}) =~
+               "This session has already ended."
+
+      refute has_element?(lv, "#sessions-#{other.id}")
+      assert has_element?(lv, "#active-sessions", "This session")
     end
 
     test "the rendered session rows never surface the raw token (only id + metadata)", %{
@@ -1180,7 +1228,7 @@ defmodule EmisarWeb.ProfileLiveTest do
           "mfa_enrollment" => %{"code" => "000000"}
         })
 
-      assert html =~ "Start the enable flow first."
+      assert html =~ "Start MFA setup again."
       refute html =~ "mfa-setup-key"
 
       render_click(lv, "start_mfa", %{})
@@ -1387,7 +1435,7 @@ defmodule EmisarWeb.ProfileLiveTest do
       # push the event, so fire it directly.
       html = render_submit(lv, "confirm_mfa", %{"mfa" => %{"otp" => "123456"}})
 
-      assert html =~ "Start the enable flow first."
+      assert html =~ "Start MFA setup again."
     end
 
     test "disabling MFA without a code is rejected and MFA stays enabled", %{

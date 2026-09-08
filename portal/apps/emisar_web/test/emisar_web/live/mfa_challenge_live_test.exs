@@ -66,6 +66,28 @@ defmodule EmisarWeb.MfaChallengeLiveTest do
   end
 
   describe "recovery-code verification" do
+    test "an attempt expiring after mount does not consume the recovery code", %{
+      conn: conn,
+      user: user,
+      recovery_codes: [code | _]
+    } do
+      {:ok, lv, _html} = live(conn, ~p"/sign_in/mfa")
+      lv |> element("button", "Use a recovery code") |> render_click()
+
+      :sys.replace_state(
+        lv.pid,
+        &put_in(&1.socket.assigns.pending_at, System.system_time(:second) - 601)
+      )
+
+      result = lv |> form("form[phx-submit=verify_recovery]", %{code: code}) |> render_submit()
+
+      assert {:error, {:redirect, %{to: "/sign_in/magic"}}} = result
+      {:ok, conn} = follow_redirect(result, conn)
+
+      assert html_response(conn, 200) =~ "Your sign-in attempt expired"
+      assert {:ok, _proof} = Auth.verify_mfa_challenge(user, {:recovery_code, code})
+    end
+
     test "a valid recovery code redirects to completion", %{
       conn: conn,
       recovery_codes: [code | _]

@@ -53,6 +53,15 @@ defmodule Emisar.Fixtures.Auth do
     :ok
   end
 
+  @doc "Removes a session row to arrange a stale session list."
+  def delete_session_token!(token) when is_binary(token) do
+    {1, _} =
+      UserToken.Query.by_token_digest(Crypto.hash(token))
+      |> Repo.delete_all()
+
+    :ok
+  end
+
   @doc """
   Persists a session row with arbitrary provenance and returns the raw token.
   `mfa_verified_at` is when this session proved a second factor, or nil for

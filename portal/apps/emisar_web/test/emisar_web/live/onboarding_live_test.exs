@@ -1,6 +1,6 @@
 defmodule EmisarWeb.OnboardingLiveTest do
   use EmisarWeb.ConnCase, async: true
-  alias Emisar.{Accounts, Repo}
+  alias Emisar.{Accounts, Auth, Repo}
   alias Emisar.Accounts.Membership
   alias EmisarWeb.BillingIntent
 
@@ -116,6 +116,22 @@ defmodule EmisarWeb.OnboardingLiveTest do
   end
 
   describe "no-membership entry + tenant pinning" do
+    test "a memberless user can sign out without creating a workspace", %{conn: conn} do
+      user = Fixtures.Users.create_user(confirmed?: false)
+      conn = log_in_user(conn, user)
+      token = Plug.Conn.get_session(conn, :user_token)
+      {:ok, lv, _html} = live(conn, ~p"/onboarding")
+
+      assert has_element?(lv, "a[href='/sign_out'][data-method=delete]", "Sign out")
+
+      conn = delete(conn, ~p"/sign_out")
+
+      assert redirected_to(conn) == "/"
+      refute Plug.Conn.get_session(conn, :user_token)
+      assert Auth.fetch_user_and_token_by_session_token(token) == {:error, :not_found}
+      refute Repo.exists?(Membership)
+    end
+
     test "a no-membership user landing on /app is routed to onboarding to create a workspace", %{
       conn: conn
     } do
@@ -132,7 +148,7 @@ defmodule EmisarWeb.OnboardingLiveTest do
       state = :sys.get_state(lv.pid)
 
       assert state.socket.assigns.current_user.id == user.id
-      assert html =~ "Set up your workspace"
+      assert html =~ "Create your workspace"
       assert html =~ "onboarding_form"
     end
 

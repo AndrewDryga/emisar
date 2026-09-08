@@ -1649,6 +1649,29 @@ defmodule Emisar.AuthTest do
       %{user: user, subject: subject}
     end
 
+    test "a user without a current email or MFA cannot request an inbox code" do
+      user = Fixtures.Users.create_sso_user()
+      subject = Fixtures.Subjects.build_subject(user: user)
+
+      assert Auth.begin_email_change("new@example.com", subject) == {:error, :email_unavailable}
+      refute Repo.exists?(UserToken)
+      refute_received {:email, _}
+    end
+
+    test "a user without a current email can prove an existing authenticator" do
+      user = Fixtures.Users.create_sso_user()
+      subject = Fixtures.Subjects.build_subject(user: user)
+
+      Fixtures.Users.set_mfa_state(user,
+        mfa_secret: Auth.generate_mfa_secret(),
+        mfa_enabled_at: DateTime.utc_now()
+      )
+
+      assert Auth.begin_email_change("new@example.com", subject) == {:ok, :totp}
+      refute Repo.exists?(UserToken)
+      refute_received {:email, _}
+    end
+
     test "a user without MFA gets the emailed-code factor, bound to the new email", %{
       user: user,
       subject: subject

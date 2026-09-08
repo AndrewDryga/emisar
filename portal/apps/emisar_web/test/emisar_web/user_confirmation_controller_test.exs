@@ -56,6 +56,39 @@ defmodule EmisarWeb.UserConfirmationControllerTest do
 
       assert redirected_to(conn) == ~p"/sign_in"
       assert Phoenix.Flash.get(conn.assigns.flash, :error) =~ "expired or was already used"
+      assert Phoenix.Flash.get(conn.assigns.flash, :error) =~ "Sign in with email"
+    end
+
+    test "a memberless user keeps working recovery instructions after reaching onboarding", %{
+      conn: conn
+    } do
+      user = Fixtures.Users.create_user(confirmed?: false)
+      conn = conn |> log_in_user(user) |> get(~p"/confirm/no-longer-valid")
+
+      assert redirected_to(conn) == ~p"/app"
+      assert Phoenix.Flash.get(conn.assigns.flash, :error) =~ "using Resend email"
+      assert Phoenix.Flash.get(conn.assigns.flash, :error) =~ "sign out and sign in with email"
+      refute Repo.reload!(user).confirmed_at
+      refute_received {:email, _}
+
+      conn = get(recycle(conn), ~p"/app")
+      assert redirected_to(conn) == ~p"/onboarding"
+
+      {:ok, _lv, html} = live(recycle(conn), ~p"/onboarding")
+      assert html =~ "sign out and sign in with email"
+    end
+
+    test "a missing-email user gets provider guidance, not an unusable resend action", %{
+      conn: conn
+    } do
+      user = Fixtures.Users.create_sso_user(confirmed?: false)
+      conn = conn |> log_in_user(user) |> get(~p"/confirm/no-longer-valid")
+
+      assert redirected_to(conn) == ~p"/app"
+      assert Phoenix.Flash.get(conn.assigns.flash, :error) =~ "Ask your workspace administrator"
+      refute Phoenix.Flash.get(conn.assigns.flash, :error) =~ "Resend email"
+      refute Repo.reload!(user).confirmed_at
+      refute_received {:email, _}
     end
 
     test "a non-decodable token is uniformly invalid (base64 decode fails first)", %{conn: conn} do

@@ -13,7 +13,9 @@ defmodule EmisarWeb.OAuthHTML do
   Operators should understand what they're granting, not read raw scope
   tokens.
   """
-  def scope_label("mcp"), do: "Run approved actions on your runners and read their catalog"
+  def scope_label("mcp"),
+    do: "Read the action catalog and request actions within your workspace access"
+
   def scope_label("offline_access"), do: "Stay connected without re-authorizing every session"
   def scope_label(other), do: other
 end

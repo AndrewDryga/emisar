@@ -1210,7 +1210,7 @@ defmodule EmisarWeb.TeamLiveTest do
       assert has_element?(lv, roster_resend, "Resend email")
 
       html = lv |> element(roster_resend) |> render_click()
-      assert html =~ "Confirmation email sent"
+      assert html =~ "Confirmation email requested"
     end
 
     test "a confirmed user sees no resend button", %{conn: conn, account: account} do

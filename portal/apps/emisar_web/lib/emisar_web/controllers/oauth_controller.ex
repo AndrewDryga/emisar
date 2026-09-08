@@ -85,15 +85,18 @@ defmodule EmisarWeb.OAuthController do
         redirect_error(conn, redirect_uri, code, params["state"])
 
       _ ->
-        render_invalid(conn, "Unknown client or unregistered redirect URI.")
+        render_invalid(conn, "We couldn't verify the app or its return address.")
     end
   end
 
   # POST /oauth/authorize — the operator approved or denied.
   def authorize_submit(conn, params) do
     case OAuth.fetch_client(params["client_id"]) do
-      {:ok, client} -> submit_decision(conn, client, params)
-      {:error, :not_found} -> render_invalid(conn, "Unknown client or unregistered redirect URI.")
+      {:ok, client} ->
+        submit_decision(conn, client, params)
+
+      {:error, :not_found} ->
+        render_invalid(conn, "We couldn't verify the app or its return address.")
     end
   end
 
@@ -113,7 +116,7 @@ defmodule EmisarWeb.OAuthController do
       {:error, :not_found} ->
         render_invalid(
           conn,
-          "That account isn't available to your user. Reload the page and try again."
+          "That workspace isn't available to you. Restart the connection and choose a workspace you can access."
         )
     end
   end
@@ -130,7 +133,7 @@ defmodule EmisarWeb.OAuthController do
         redirect_error(conn, redirect_uri, code, params["state"])
 
       {:error, :invalid_redirect_uri} ->
-        render_invalid(conn, "Unknown client or unregistered redirect URI.")
+        render_invalid(conn, "We couldn't verify the app or its return address.")
     end
   end
 
@@ -147,26 +150,25 @@ defmodule EmisarWeb.OAuthController do
       {:error, :unauthorized} ->
         render_invalid(
           conn,
-          "Your role can't connect an MCP client. Connecting one mints an API key, " <>
-            "which requires key-issue permission — ask an account admin to connect it."
+          "Your role can't connect an AI agent. Ask a workspace administrator for access."
         )
 
       {:error, :sso_required} ->
         render_invalid(
           conn,
-          "This team requires single sign-on. Sign in to it with your identity provider " <>
-            "before connecting an MCP client."
+          "This workspace requires single sign-on. Sign in to it with your identity provider " <>
+            "before connecting an AI agent."
         )
 
       {:error, :mfa_required} ->
         render_invalid(
           conn,
-          "This team requires multi-factor authentication. Open its console and set up or " <>
-            "verify MFA for this browser before connecting an MCP client."
+          "This workspace requires multi-factor authentication. Open its console and set up or " <>
+            "verify MFA for this browser before connecting an AI agent."
         )
 
       {:error, :invalid_redirect_uri} ->
-        render_invalid(conn, "Unknown client or unregistered redirect URI.")
+        render_invalid(conn, "We couldn't verify the app or its return address.")
 
       # A revoked seat, or a write that failed for a reason we can't shape into
       # an OAuth error — never bounce to a callback the domain didn't hand back.
@@ -405,7 +407,7 @@ defmodule EmisarWeb.OAuthController do
   defp account_label(conn) do
     case conn.assigns[:current_account] do
       %{name: name} when is_binary(name) -> name
-      _ -> "your account"
+      _ -> "your workspace"
     end
   end
 
