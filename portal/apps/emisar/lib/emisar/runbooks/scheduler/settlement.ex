@@ -2,8 +2,8 @@ defmodule Emisar.Runbooks.Scheduler.Settlement do
   @moduledoc false
 
   alias Ecto.Multi
-  alias Emisar.{Accounts, Audit, Crypto, Repo, Runs}
-  alias Emisar.Runbooks.{ExecutionItem, ExecutionStage, Extractor, RunbookExecution, Scheduler}
+  alias Emisar.{Audit, Crypto, Repo, Runs}
+  alias Emisar.Runbooks.{ExecutionItem, Extractor, RunbookExecution, Scheduler}
   alias Emisar.Runbooks.Scheduler.Recovery
 
   def action_run_settled(
@@ -18,8 +18,7 @@ defmodule Emisar.Runbooks.Scheduler.Settlement do
     with %ExecutionItem{} = item <- item,
          true <- item.status == :running and item.attempt_count == run.attempt_number,
          outcome <- attempt_outcome(run, item),
-         {:ok, changed?} <-
-           settle_item(run, outcome, item.runbook_execution_stage_id) do
+         {:ok, changed?} <- settle_item(run, outcome) do
       if changed?, do: Scheduler.advance_execution(execution_id), else: :noop
     else
       _stale_or_missing -> :noop
@@ -44,20 +43,12 @@ defmodule Emisar.Runbooks.Scheduler.Settlement do
   defp attempt_outcome(%Runs.ActionRun{}, _item),
     do: {:error, "action_failed", "The action attempt did not succeed.", []}
 
-  defp settle_item(run, outcome, stage_id) do
+  # Recording a completed attempt changes only its execution and item. The
+  # execution lock excludes advancement/cancellation; a later advance checks
+  # current account authority before it can schedule another attempt.
+  defp settle_item(run, outcome) do
     Multi.new()
-    |> Multi.run(:active_account, fn repo, _changes ->
-      Accounts.fetch_and_lock_account(run.account_id, repo: repo)
-    end)
     |> Multi.run(:execution, &Scheduler.lock_execution(&1, &2, run.runbook_execution_id))
-    |> Multi.run(:stage, fn repo, _changes ->
-      stage =
-        ExecutionStage.Query.by_id(stage_id)
-        |> ExecutionStage.Query.lock_for_update()
-        |> repo.one()
-
-      {:ok, stage}
-    end)
     |> Multi.run(:item, fn repo, _changes ->
       item =
         ExecutionItem.Query.by_id(run.runbook_execution_item_id)

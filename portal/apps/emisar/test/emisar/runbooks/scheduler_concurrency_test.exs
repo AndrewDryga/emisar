@@ -4,10 +4,168 @@ defmodule Emisar.Runbooks.SchedulerConcurrencyTest do
   alias Ecto.Adapters.SQL.Sandbox
   alias Emisar.{Accounts, Approvals, Catalog, Fixtures, Repo, Runbooks, Runners, Runs}
   alias Emisar.Accounts.Account
-  alias Emisar.Runbooks.{ExecutionItem, RunbookExecution, Scheduler}
+  alias Emisar.Runbooks.{ExecutionItem, ExecutionStage, RunbookExecution, Scheduler}
   alias Emisar.Users.User
 
   @hash "sha256:" <> String.duplicate("d", 64)
+
+  test "concurrent terminal callbacks settle an item once" do
+    unboxed_account(fn account, subject, runner ->
+      Runners.subscribe_runner_transport(runner)
+
+      runbook =
+        published_runbook(
+          subject,
+          definition([stage("inspect", "sequential", 1, [step("check", runner.group)])])
+        )
+
+      assert {:ok, result} = Runbooks.dispatch_runbook(runbook, "duplicate results", subject)
+      assert [attempt] = runs(account.id, result.execution_id)
+
+      finished =
+        Fixtures.Runs.finish_without_runbook_callback(attempt, :success, %{"ready" => true})
+
+      outcomes =
+        concurrently([
+          fn -> Runbooks.action_run_settled(finished) end,
+          fn -> Runbooks.action_run_settled(finished) end
+        ])
+
+      assert Enum.all?(outcomes, &(&1 in [:ok, :noop]))
+      assert execution(result.execution_id).status == :succeeded
+      assert length(runs(account.id, result.execution_id)) == 1
+
+      assert Repo.aggregate(
+               from(e in Emisar.Audit.Event,
+                 where: e.account_id == ^account.id and e.event_type == "runbook.item_succeeded"
+               ),
+               :count
+             ) == 1
+    end)
+  end
+
+  test "settlement commits without waiting for an unrelated account or stage update" do
+    unboxed_account(fn account, subject, runner ->
+      Runners.subscribe_runner_transport(runner)
+
+      runbook =
+        published_runbook(
+          subject,
+          definition([stage("inspect", "sequential", 1, [step("check", runner.group)])])
+        )
+
+      assert {:ok, result} = Runbooks.dispatch_runbook(runbook, "settlement locks", subject)
+      assert [attempt] = runs(account.id, result.execution_id)
+
+      finished =
+        Fixtures.Runs.finish_without_runbook_callback(attempt, :success, %{"ready" => true})
+
+      execution_id = result.execution_id
+      item = ExecutionItem.Query.by_id(attempt.runbook_execution_item_id) |> Repo.one!()
+      Runbooks.subscribe_execution(account.id, execution_id)
+      parent = self()
+
+      updater =
+        unboxed_task(fn ->
+          Repo.transact(fn ->
+            assert {:ok, _} = Accounts.fetch_and_lock_account(account.id)
+
+            ExecutionStage.Query.by_id(item.runbook_execution_stage_id)
+            |> ExecutionStage.Query.lock_for_update()
+            |> Repo.one!()
+
+            send(parent, :unrelated_rows_locked)
+
+            receive do
+              :release -> {:ok, :released}
+            end
+          end)
+        end)
+
+      Process.unlink(updater.pid)
+
+      try do
+        assert_receive :unrelated_rows_locked, 5_000
+        callback = unboxed_task(fn -> Runbooks.action_run_settled(finished) end)
+        Process.unlink(callback.pid)
+
+        try do
+          # Advancing the next stage still needs the account lock. This signal
+          # must arrive after settlement commits and before that next operation.
+          assert_receive {:runbook_execution_updated, ^execution_id}, 5_000
+          assert Repo.reload!(item).status == :succeeded
+
+          assert Repo.aggregate(
+                   from(e in Emisar.Audit.Event,
+                     where:
+                       e.account_id == ^account.id and e.event_type == "runbook.item_succeeded"
+                   ),
+                   :count
+                 ) == 1
+
+          send(updater.pid, :release)
+          assert Task.await(callback, 10_000) in [:ok, :noop]
+          assert Runbooks.action_run_settled(finished) == :noop
+        after
+          stop_tasks([callback])
+        end
+      after
+        send(updater.pid, :release)
+        Task.yield(updater, 5_000) || Task.shutdown(updater, :brutal_kill)
+        Runbooks.unsubscribe_execution(account.id, execution_id)
+      end
+    end)
+  end
+
+  test "terminal payload cleanup does not wait for an unrelated account update" do
+    unboxed_account(fn account, subject, runner ->
+      runbook =
+        published_runbook(
+          subject,
+          definition([stage("inspect", "sequential", 1, [step("check", runner.group)])])
+        )
+
+      execution =
+        Fixtures.Runbooks.create_execution(
+          runbook: runbook,
+          initiating_membership_id: subject.membership_id,
+          completed_at: DateTime.utc_now()
+        )
+
+      refute is_nil(execution.inputs_raw)
+      parent = self()
+
+      updater =
+        unboxed_task(fn ->
+          Repo.transact(fn ->
+            assert {:ok, _} = Accounts.fetch_and_lock_account(account.id)
+            send(parent, :account_locked)
+
+            receive do
+              :release -> {:ok, :released}
+            end
+          end)
+        end)
+
+      Process.unlink(updater.pid)
+
+      try do
+        assert_receive :account_locked, 5_000
+        cleanup = unboxed_task(fn -> Scheduler.scrub_terminal_execution(execution.id) end)
+        Process.unlink(cleanup.pid)
+
+        try do
+          assert Task.yield(cleanup, 5_000) == {:ok, :scrubbed}
+          assert is_nil(Repo.reload!(execution).inputs_raw)
+        after
+          stop_tasks([cleanup])
+        end
+      after
+        send(updater.pid, :release)
+        Task.yield(updater, 5_000) || Task.shutdown(updater, :brutal_kill)
+      end
+    end)
+  end
 
   test "a fresh MCP launch waiting behind publication refuses the old release without reserving effects" do
     unboxed_account(fn account, owner, runner ->

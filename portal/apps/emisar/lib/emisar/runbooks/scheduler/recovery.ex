@@ -80,7 +80,6 @@ defmodule Emisar.Runbooks.Scheduler.Recovery do
   def scrub_terminal_execution(execution_id) when is_binary(execution_id) do
     multi =
       Multi.new()
-      |> Scheduler.maybe_lock_execution_account(execution_id)
       |> Multi.run(:execution, &lock_execution(&1, &2, execution_id))
       |> Multi.run(:items, &lock_execution_items/2)
       |> Multi.run(:scrubbed, &scrub_terminal_payloads/2)

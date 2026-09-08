@@ -294,9 +294,9 @@ defmodule Emisar.Runbooks.Scheduler do
   end
 
   @doc """
-  Internal — shared with the scheduler's satellites (Recovery, Settlement),
-  which used to carry byte-identical copies. Locks the execution's account row
-  first so every scheduler transaction takes its locks in the same order.
+  Internal — lock the account before an advance or halt that can touch current
+  authority and execution state. Settlement and terminal payload cleanup only
+  need their execution's locks.
   """
   def maybe_lock_execution_account(multi, execution_id) do
     execution = RunbookExecution.Query.by_id(execution_id) |> Repo.peek()

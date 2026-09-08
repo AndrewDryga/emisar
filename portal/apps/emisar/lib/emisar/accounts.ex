@@ -4064,7 +4064,7 @@ defmodule Emisar.Accounts do
 
   A non-empty selected-runner scope is resolved against the account's live
   runners so a stale or foreign pick surfaces on the field; the write
-  revalidates under a row lock, so this stays advisory. Every other mode reads
+  revalidates on submission, so this stays advisory. Every other mode reads
   nothing, keeping the LiveView's mount-time builder query-free.
 
   Returns `{:ok, %Ecto.Changeset{}}` or `{:error, :unauthorized}`.
@@ -4076,7 +4076,7 @@ defmodule Emisar.Accounts do
              subject,
              Authorizer.invite_member_permission()
            ) do
-      allowlist = invitation_access_facts(Repo, account_id, attrs, false)
+      allowlist = invitation_access_facts(Repo, account_id, attrs)
       {:ok, InvitationInput.changeset(attrs, allowlist)}
     end
   end
@@ -4185,13 +4185,11 @@ defmodule Emisar.Accounts do
   end
 
   # The authoritative gate: the SAME input changeset the form uses, rebuilt
-  # against the account's live runner rows held under FOR UPDATE, so a
-  # concurrent soft-delete serializes behind this invitation rather than
-  # landing a grant on a runner that is already gone. Role coverage and
-  # nondelegation stay tagged atoms; invalid input comes back as the changeset
-  # the LiveView renders inline.
+  # against the account's live runners on submission. Scopes are names, not
+  # runner foreign keys: a later deletion leaves an inert grant, and execution
+  # resolves live runners again. Do not lock the fleet while inviting a person.
   defp validate_invitation(repo, attrs, %Subject{account: %Account{id: account_id}} = subject) do
-    allowlist = invitation_access_facts(repo, account_id, attrs, true)
+    allowlist = invitation_access_facts(repo, account_id, attrs)
     changeset = InvitationInput.changeset(attrs, allowlist)
 
     with {:ok, invitation} <- Ecto.Changeset.apply_action(changeset, :insert),
@@ -4204,17 +4202,17 @@ defmodule Emisar.Accounts do
   # `none`/`all` name no runners and `all` packs names none either, so the
   # mount-time form builder reads nothing (IL-18); a malformed selection resolves
   # nothing and the input changeset fails it closed.
-  defp invitation_access_facts(repo, account_id, attrs, lock?) do
+  defp invitation_access_facts(repo, account_id, attrs) do
     RunnerAccess.allowlist(
-      invitation_runner_facts(repo, account_id, attrs, lock?),
+      invitation_runner_facts(repo, account_id, attrs),
       invitation_pack_facts(repo, account_id, attrs)
     )
   end
 
-  defp invitation_runner_facts(repo, account_id, attrs, lock?) do
+  defp invitation_runner_facts(repo, account_id, attrs) do
     case RunnerAccess.selection_refs(invitation_scope_values(attrs)) do
       {:ok, {[], []}} -> []
-      {:ok, {groups, runner_ids}} -> runner_facts(repo, account_id, groups, runner_ids, lock?)
+      {:ok, {groups, runner_ids}} -> runner_facts(repo, account_id, groups, runner_ids)
       {:error, :invalid_runner_access} -> []
     end
   end
@@ -4240,7 +4238,7 @@ defmodule Emisar.Accounts do
   # is: tenancy stays owned here rather than opening an Accounts -> Runners
   # dependency. Bounded by the selection (RunnerAccess caps it at 256 scopes)
   # and fully parameterized.
-  defp runner_facts(repo, account_id, groups, runner_ids, lock?) do
+  defp runner_facts(repo, account_id, groups, runner_ids) do
     query = """
     SELECT runners.id::text, runners."group"
     FROM runners
@@ -4254,12 +4252,9 @@ defmodule Emisar.Accounts do
     dumped_runner_ids = for id <- runner_ids, {:ok, dumped} <- [Ecto.UUID.dump(id)], do: dumped
     params = [Ecto.UUID.dump!(account_id), dumped_runner_ids, groups]
 
-    %{rows: rows} = Ecto.Adapters.SQL.query!(repo, query <> lock_clause(lock?), params)
+    %{rows: rows} = Ecto.Adapters.SQL.query!(repo, query, params)
     Enum.map(rows, fn [id, group] -> %{id: id, group: group} end)
   end
-
-  defp lock_clause(true), do: "FOR UPDATE"
-  defp lock_clause(false), do: ""
 
   # The pack dimension is a name filter, not a foreign key, so an id that stops
   # existing simply stops matching — no lock, and no Accounts -> Catalog
