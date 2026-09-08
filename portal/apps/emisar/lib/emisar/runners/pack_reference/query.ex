@@ -67,7 +67,7 @@ defmodule Emisar.Runners.PackReference.Query do
 
     # Materialize computed ordinals, not TOAST pointers to runner pack maps.
     # Each consumed runner expands its JSON once; candidate EXISTS still stops
-    # at its first witness. The DB may spill these <=100-element arrays, but
+    # at its first witness. The DB may spill these bounded candidate arrays, but
     # no fleet maps cross into the process and absent refs cannot re-detoast
     # every runner once per candidate. Both scans use the same already-scoped
     # runner query in one statement.

@@ -14,10 +14,10 @@ tool makes every client load every name, description, target enum, and JSON
 Schema before the model can choose anything. That wastes context, and some
 clients omit or defer tools when the catalog grows.
 
-Client-maintained action allowlists are not the answer. An API key sees actions
-advertised by runners inside the minting operator's current runner scope, narrowed
-further by their pack scope. That set changes as runners connect, packs change, and
-scope changes. Emisar remains the source of truth; its scope, trust, policy,
+Client-maintained action allowlists are not the answer. An API key can inspect
+the account's trusted observed catalog. Executable candidates are limited by the
+minting operator's current runner and pack scope. That set changes as runners
+connect, packs change, and scope changes. Emisar remains the source of truth; its scope, trust, policy,
 approval, and audit controls are the authorization boundary.
 
 The Owner role always carries account-wide runner and pack access; Admin and
@@ -61,7 +61,7 @@ trusted actions and execute them through the same governed path every time.
 - Compatibility with the pre-release one-tool-per-action MCP surface.
 - Predicting a policy result before the exact action, pack, arguments, targets,
   and reason are known.
-- Listing public-registry packs that no in-scope runner has observed.
+- Listing public-registry packs that no runner in the account has observed.
 - Bridge-signed cloud-expanded runbook execution. That needs a separate frozen
   plan attestation and is not smuggled into the action attestation.
 
@@ -109,13 +109,13 @@ rather than this specification.
 | Tool | Purpose |
 | --- | --- |
 | `list_packs` | Browse currently trusted observed pack capabilities and deployment problems. |
-| `list_runners` | Inspect the scoped fleet, connectivity, and pack deployments. |
+| `list_runners` | Inspect the account fleet, connectivity, and pack deployments. |
 | `find_actions` | Retrieve compact action candidates by task or exact filter. |
 | `get_action` | Fetch one exact argument contract and compatible targets. |
 | `run_action` | Dispatch one exact action to explicit runner references. |
 | `get_operation` | Recover one exact bridge mutation after an ambiguous response. |
 | `wait_for_run` | Wait for one run or runbook execution to change or finish, and stream its output forward. |
-| `recent_runs` | Inspect and paginate scoped run activity. |
+| `recent_runs` | Inspect and paginate account run activity. |
 | `list_runbooks` | List every visible runbook with its live release and its unpublished change. |
 | `get_runbook` | Inspect one runbook's live release, or its single unpublished change. |
 | `execute_runbook` | Execute one runbook's live release, or an explicitly allowed unpublished change. |
@@ -192,19 +192,20 @@ mutation recovery or cancellation correlation.
 
 ### Scope and disclosure
 
-Every discovery and runbook-definition read uses the API key's account and the
-minting operator's current runner and pack scope. Data visible only through an
-inaccessible runner, or only in an out-of-scope pack on an accessible runner,
-must not affect a result, total, cursor, error distinction, or search rank.
-Exact lookup outside scope is indistinguishable from absence. Action-run and
-runbook-execution history and audit receipts are account-wide; they may name
-runners or packs outside the caller's current scope.
+Operational reads require the exact current account identity and the tool's
+existing read permission. Runner and pack scope limits actions, not shared fleet,
+trusted catalog, runbook definitions, execution history, output, or audit receipts.
+Read filters, totals and pagination describe that account-wide inventory. Foreign
+account objects remain indistinguishable from absence; protected credentials,
+draft artifacts and operation-lineage recovery retain their existing gates.
 
-Composite immutable resources are authorized atomically before pagination. In
-particular, a runbook containing any exact out-of-scope runner ref is itself
-inaccessible; the API never redacts a hashed definition and never exposes which
-member caused denial. Data inside an inaccessible composite resource cannot
-affect visible totals, cursors, ranks, or error details.
+Discovery never authorizes execution. Executable-only filters, compatible target
+lists, authoring, execution, cancellation and administrative mutations independently
+check current runner and pack access. Eligibility cursors remain bound to current
+grants. Composite mutations authorize every affected target before side effects;
+a mixed-authority plan is refused atomically. Readable immutable definitions stay
+complete, never redacted into a different hashed object. MCP definition reads
+still require the complete current trusted contract described below.
 
 The bridge and portal reject duplicate JSON object keys at every protocol and
 tool-input depth before routing. They never rely on different parsers choosing
@@ -515,9 +516,9 @@ Initial deployment issue codes are `descriptor_mismatch`,
 
 ## `list_runners`
 
-`list_runners` is the fleet and compatibility surface. It returns only runners
-inside the current scope, including disconnected, pending, and disabled runners
-when the caller may see them.
+`list_runners` is the fleet and compatibility surface. It returns the account's
+runners, including disconnected, pending, and disabled runners, to current
+operational readers. Compatibility remains specific to the caller's action access.
 
 ### Input
 
@@ -588,7 +589,7 @@ when the caller may see them.
 }
 ```
 
-`summary` counts the scoped filtered set before pagination. One runner object is
+`summary` counts the filtered account set before pagination. One runner object is
 at most 56 KiB encoded, with at most 32 bounded labels and eight issues; runner
 registration/advertisement rejects values that cannot satisfy that projection.
 `packs` inlines the bare pack ids this runner can dispatch right now — its
@@ -715,9 +716,11 @@ JSON Pointer outputs; do not infer a schema from an action's name or sample log.
 
 `action_id` and `pack_ref` are required. `target` and `runner_refs` have the same
 meaning and mutual exclusion as `find_actions`. With `target` or neither, the
-response returns at most 15 compatible runners. With `runner_refs`, all 1 through
-16 supplied refs must be returned or the call fails with exact per-ref
-compatibility details. Unknown properties are rejected.
+response returns at most 15 compatible runners and may return a trusted contract
+with an empty `compatible_runners` list. With `runner_refs`, all 1 through 16
+supplied refs must be compatible or the call fails with `action_unavailable` and
+a `list_runners` continuation. It does not return partial success or per-ref
+denial details. Unknown properties are rejected.
 
 ### Response
 
@@ -1463,10 +1466,11 @@ place, so it carries no number and no ref; callers name it by slug plus the exac
 and the exact-content consent required to run it. There is no per-edit history a
 model can address: only releases accumulate.
 
-Runbook reads apply the atomic visibility rule above to the live release: its
-complete definition must currently resolve to in-scope runners and trusted
-compatible pack/action contracts, or that release is absent from discovery and
-exact reads and refuses execution. The unpublished change is deliberately exempt,
+Model runbook reads require the live release's complete definition to resolve to
+current account targets and trusted compatible pack/action contracts. Runner and
+pack action scope, connectivity, disabled state and signing readiness do not hide
+that definition; they still constrain execution. An unresolved or untrusted live
+release is absent from model discovery and exact reads. The unpublished change is deliberately exempt,
 because a change whose targets no longer resolve must stay readable and editable
 so its author can repair it; a runbook carrying one therefore stays listed even
 while its live release does not resolve, with both sides stated honestly.
@@ -2106,7 +2110,7 @@ Tool-domain errors use the common structured error shape. Initial stable codes:
 
 | Code | Meaning | Automatic action |
 | --- | --- | --- |
-| `action_unavailable` | Exact visible contract is not executable. | Follow returned diagnostics. |
+| `action_unavailable` | The trusted action is unavailable, or not every requested runner can execute it. | Follow returned diagnostics. |
 | `ambiguous_output` | An output binding does not have exactly one producer for the selected runner. | Make the producer unambiguous for each target. |
 | `ambiguous_pack_version` | The selected pack version has conflicting trusted hashes. | Resolve catalog trust; do not choose a hash client-side. |
 | `catalog_scope_too_large` | The selected deployments exceed the bounded catalog-resolution limit. | Narrow the target set or split the runbook. |
@@ -2136,7 +2140,7 @@ Tool-domain errors use the common structured error shape. Initial stable codes:
 | `response_too_large` | One result item cannot fit the bounded MCP response. | Read it in the console or reduce the output; retrying unchanged will not help. |
 | `run_not_found` | Exact visible run or execution is absent. | Check the ID; do not probe other scopes. |
 | `runbook_capacity_exceeded` | The account already has the maximum 1,024 active runbook items. | Wait for work to finish or cancel an execution, then retry. |
-| `runbook_not_found` | No live release answers that slug or ref in current scope. | `list_runbooks` names every visible runbook; do not probe other slugs. |
+| `runbook_not_found` | No readable trusted live release answers that slug or ref in this account. | `list_runbooks` names every visible runbook; do not probe other slugs. |
 | `runbook_too_large` | The runbook exists but does not fit one MCP response. | Open it in the console; do not retry or substitute another runbook. |
 | `signature_required` | A selected runner requires a customer-CA action attestation; `details.runner_refs` names the enforcing runners. | Use a signing-enabled bridge or select only non-enforcing runners. |
 | `signed_runbook_unsupported` | Runbook includes enforcing runners. | Use signed actions or await plan signing. |
@@ -2266,7 +2270,8 @@ production actions.
 
 ## Security invariants
 
-- Discovery never widens account, runner, or pack scope and never authorizes execution.
+- Discovery preserves current account identity, read permissions, credential and
+  content-trust gates. It never authorizes execution or widens action grants.
 - Only exact currently trusted complete pack manifests enter discovery. Pending,
   rejected, revoked, and retirement-blocked refs remain operator-only catalog
   facts. A run already authorized against a then-visible ref may report that its

@@ -542,6 +542,11 @@ defmodule EmisarWeb.UserAuth do
          :account_lifecycle,
          :handle_info,
          &handle_account_lifecycle/2
+       )
+       |> Phoenix.LiveView.attach_hook(
+         :membership_action_access,
+         :handle_info,
+         &refresh_membership_action_access/2
        )}
     else
       {:error, :not_found} ->
@@ -694,6 +699,7 @@ defmodule EmisarWeb.UserAuth do
   defp subscribe_and_refetch_account(socket, user, account_ref, membership) do
     if Phoenix.LiveView.connected?(socket) do
       :ok = Accounts.subscribe_account_lifecycle(membership.account_id)
+      :ok = Accounts.subscribe_account_team(membership.account_id)
       Accounts.fetch_membership_by_account_id_or_slug(user, account_ref)
     else
       {:ok, membership}
@@ -707,6 +713,39 @@ defmodule EmisarWeb.UserAuth do
        do: {:halt, socket}
 
   defp handle_account_lifecycle(_message, socket), do: {:cont, socket}
+
+  defp refresh_membership_action_access(
+         {:list_changed, :team, "membership.runner_access_changed", user_id},
+         %{
+           assigns: %{
+             current_subject: %{actor: %{id: user_id}} = subject,
+             current_membership: previous_membership
+           }
+         } = socket
+       ) do
+    with {:ok, membership} <-
+           Accounts.fetch_membership_by_account_id_or_slug(subject.actor, subject.account.id),
+         true <- membership.id == subject.membership_id,
+         true <- is_nil(membership.directory_authorization_pending_version),
+         true <- is_nil(previous_membership.directory_authorization_pending_version),
+         true <- membership.role == previous_membership.role,
+         true <- Subject.effective_membership_role(membership) == subject.role do
+      # Retain the original permission attenuation and session provenance. This
+      # hook refreshes scope only; role/pending changes require a fresh mount.
+      subject = %{subject | actor: membership.user, account: membership.account}
+
+      {:cont,
+       socket
+       |> Phoenix.Component.assign(:current_user, membership.user)
+       |> Phoenix.Component.assign(:current_membership, membership)
+       |> Phoenix.Component.assign(:current_account, membership.account)
+       |> Phoenix.Component.assign(:current_subject, subject)}
+    else
+      _ -> {:halt, Phoenix.LiveView.redirect(socket, to: ~p"/app/#{subject.account}")}
+    end
+  end
+
+  defp refresh_membership_action_access(_message, socket), do: {:cont, socket}
 
   # Defense-in-depth for cross-slug `live_patch` (attached by :ensure_account_slug):
   # on_mount runs once, so a patch that changes the URL's account ref WITHOUT a
@@ -730,6 +769,12 @@ defmodule EmisarWeb.UserAuth do
   defp refresh_pending_approvals({:approval_updated, _}, socket) do
     {:cont, schedule_badge_recompute(socket, :approvals)}
   end
+
+  defp refresh_pending_approvals(
+         {:list_changed, :team, "membership.runner_access_changed", user_id},
+         %{assigns: %{current_user: %{id: user_id}}} = socket
+       ),
+       do: {:cont, schedule_badge_recompute(socket, :approvals)}
 
   defp refresh_pending_approvals({:recompute_nav_badge, :approvals}, socket) do
     {:halt,

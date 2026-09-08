@@ -261,7 +261,12 @@ func renderCLIGetRunbook(w io.Writer, raw []byte, account string) (string, bool)
 	writeCLIResultField(&out, "Live release", runbook.LiveRef, maxCLIFleetRefRunes)
 	writeCLIRunbookDefinition(&out, w, runbook.Definition)
 	if command := cliRunbookExecuteTemplateForOS(runbook, account, runtime.GOOS); command != "" {
-		fmt.Fprintf(&out, "\n%s\n  %s\n", cliStyledText(w, "1", "Run"), command)
+		heading := "Request a run"
+		if runbook.Status == "draft" {
+			heading = "Request a draft test"
+		}
+		fmt.Fprintf(&out, "\n%s\n  %s\n", cliStyledText(w, "1", heading), command)
+		out.WriteString("  emisar checks access and execution requirements before starting.\n")
 	}
 	out.WriteString("\nUse --json for the complete definition and exact values.\n")
 	return out.String(), true

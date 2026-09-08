@@ -67,44 +67,64 @@ defmodule Emisar.Approvals do
   defp job_module(name), do: Module.safe_concat([__MODULE__, "Jobs", name])
 
   def list_pending_approval_requests(%Subject{} = subject, opts \\ []) do
-    with :ok <-
-           Auth.Authorizer.ensure_has_permissions(
-             subject,
-             Authorizer.view_approvals_permission()
-           ) do
+    with {:ok, subject} <-
+           Auth.fetch_current_subject(Authorizer.view_approvals_permission(), subject) do
       # Oldest-pending-first (a FIFO queue). The order_by opt overrides the
       # query module's default (recent-first) cursor so the effective ORDER BY
       # equals the keyset tuple — otherwise pre-ordering and cursor disagree and
       # rows are skipped/duplicated across pages.
       opts = Keyword.put_new(opts, :order_by, [{:requests, :asc, :requested_at}])
+      {view, opts} = Keyword.pop(opts, :view, :all)
 
       Request.Query.pending()
-      |> scope_requests_to_subject(subject)
+      |> apply_pending_view(view, subject)
       |> Authorizer.for_subject(subject)
       |> Repo.list(Request.Query, opts)
     end
   end
 
   @doc """
-  Cheap COUNT(*) for the sidebar / dashboard badge — same Subject gate +
-  account scoping as `list_pending_approval_requests/2`, but skips the
-  pagination + preload work. Returns `0` if the caller lacks permission
-  (badge silently disappears rather than erroring).
+  Count requests needing this person's decision, using the same predicate as
+  `list_pending_approval_requests(subject, view: :needs_decision)`. Shared requests
+  outside their action authority remain readable but never inflate this badge.
   """
   def count_pending_approval_requests(%Subject{} = subject) do
-    case Auth.Authorizer.ensure_has_permissions(
-           subject,
-           Authorizer.view_approvals_permission()
-         ) do
-      :ok ->
+    case Auth.fetch_current_subject(Authorizer.view_approvals_permission(), subject) do
+      {:ok, subject} ->
         Request.Query.pending()
-        |> scope_requests_to_subject(subject)
+        |> apply_pending_view(:needs_decision, subject)
         |> Authorizer.for_subject(subject)
         |> Repo.aggregate(:count)
 
       _ ->
         0
     end
+  end
+
+  defp apply_pending_view(query, :all, _subject), do: query
+
+  defp apply_pending_view(query, :needs_decision, subject) do
+    if subject_can_decide_approval?(subject) do
+      query
+      |> scope_requests_to_subject(subject)
+      |> Request.Query.awaiting_decision_by(Subject.actor_id(subject), DateTime.utc_now())
+    else
+      Request.Query.none(query)
+    end
+  end
+
+  @doc "Filter choices for the shared pending list; decision capability controls its initial view."
+  def pending_request_filters(%Subject{} = subject) do
+    [
+      %Repo.Filter{
+        name: :view,
+        title: "View",
+        type: {:list, :string},
+        values: [{"needs_decision", "Needs your decision"}],
+        default: if(subject_can_decide_approval?(subject), do: "needs_decision"),
+        prompt: "All requests"
+      }
+    ]
   end
 
   @doc """
@@ -158,11 +178,8 @@ defmodule Emisar.Approvals do
   end
 
   def list_approval_requests_for_account(%Subject{} = subject, opts \\ []) do
-    with :ok <-
-           Auth.Authorizer.ensure_has_permissions(
-             subject,
-             Authorizer.view_approvals_permission()
-           ) do
+    with {:ok, subject} <-
+           Auth.fetch_current_subject(Authorizer.view_approvals_permission(), subject) do
       {status, opts} = Keyword.pop(opts, :status)
       {limit, opts} = Keyword.pop(opts, :limit, 100)
       opts = Keyword.put_new(opts, :page, limit: limit)
@@ -171,7 +188,6 @@ defmodule Emisar.Approvals do
       # ORDER BY so it matches the keyset WHERE.
       Request.Query.all()
       |> apply_request_status_filter(status)
-      |> scope_requests_to_subject(subject)
       |> Authorizer.for_subject(subject)
       |> Repo.list(Request.Query, opts)
     end
@@ -185,20 +201,20 @@ defmodule Emisar.Approvals do
   defp apply_request_status_filter(query, status), do: Request.Query.by_status(query, status)
 
   def fetch_approval_request_by_id(id, %Subject{} = subject, opts \\ []) do
-    with :ok <-
-           Auth.Authorizer.ensure_has_permissions(
-             subject,
-             Authorizer.view_approvals_permission()
-           ),
-         true <- Repo.valid_uuid?(id) do
+    with {:ok, subject} <-
+           Auth.fetch_current_subject(Authorizer.view_approvals_permission(), subject) do
+      fetch_readable_request(id, subject, opts)
+    end
+  end
+
+  defp fetch_readable_request(id, subject, opts \\ []) do
+    if Repo.valid_uuid?(id) do
       Request.Query.all()
       |> Request.Query.by_id(id)
-      |> scope_requests_to_subject(subject)
       |> Authorizer.for_subject(subject)
       |> Repo.fetch(Request.Query, opts)
     else
-      false -> {:error, :not_found}
-      other -> other
+      {:error, :not_found}
     end
   end
 
@@ -211,11 +227,32 @@ defmodule Emisar.Approvals do
   the decision path that may halt an execution after a failed approval.
   """
   def fetch_approval_review(id, %Subject{} = subject) do
-    with {:ok, request} <- fetch_approval_request_by_id(id, subject) do
+    with {:ok, subject} <-
+           Auth.fetch_current_subject(Authorizer.view_approvals_permission(), subject),
+         {:ok, request} <- fetch_readable_request(id, subject) do
       {action, block} = review_action(request, subject)
       risks = if action, do: %{{action.runner_id, action.action_id} => action.risk}, else: %{}
-      {:ok, %{request: request, action: action, block: block, risk: request_risk(request, risks)}}
+
+      {:ok,
+       %{
+         request: request,
+         action: action,
+         block: block,
+         risk: request_risk(request, risks),
+         can_decide?: subject_can_decide_approval?(subject),
+         can_override?: subject_can_override_approval?(subject),
+         target_authorized?: request_target_authorized?(request, subject)
+       }}
     end
+  end
+
+  defp request_target_authorized?(request, subject) do
+    subject_can_decide_approval?(subject) and
+      Request.Query.all()
+      |> Request.Query.by_id(request.id)
+      |> Authorizer.for_subject(subject)
+      |> scope_requests_to_subject(subject)
+      |> Repo.exists?()
   end
 
   defp review_action(request, subject) do
@@ -267,14 +304,10 @@ defmodule Emisar.Approvals do
   decided request always persists and stays fetchable.
   """
   def fetch_approval_request_by_run_id(run_id, %Subject{} = subject) do
-    with :ok <-
-           Auth.Authorizer.ensure_has_permissions(
-             subject,
-             Authorizer.view_approvals_permission()
-           ) do
+    with {:ok, subject} <-
+           Auth.fetch_current_subject(Authorizer.view_approvals_permission(), subject) do
       Request.Query.all()
       |> Request.Query.by_run_id(run_id)
-      |> scope_requests_to_subject(subject)
       |> Authorizer.for_subject(subject)
       |> Repo.fetch(Request.Query)
     end
@@ -285,15 +318,11 @@ defmodule Emisar.Approvals do
   """
   def list_requests_for_runbook_executions(execution_ids, %Subject{} = subject)
       when is_list(execution_ids) do
-    with :ok <-
-           Auth.Authorizer.ensure_has_permissions(
-             subject,
-             Authorizer.view_approvals_permission()
-           ) do
+    with {:ok, subject} <-
+           Auth.fetch_current_subject(Authorizer.view_approvals_permission(), subject) do
       requests =
         Request.Query.all()
         |> Request.Query.by_runbook_execution_ids(execution_ids)
-        |> scope_requests_to_subject(subject)
         |> Authorizer.for_subject(subject)
         |> Repo.all()
 
@@ -305,7 +334,7 @@ defmodule Emisar.Approvals do
   `%{request_id => risk}` for the given approval request ids — the risk tier
   each pending card shows, resolved for the whole page in
   one catalog read. Requires `view_approvals`; the rows are re-read by id under
-  the caller's runner access and account, so a request they cannot see is
+  the caller's current read identity and account, so a request they cannot see is
   simply absent from the map.
 
   Every visible request IS a key: an ordinary action request whose frozen
@@ -315,11 +344,8 @@ defmodule Emisar.Approvals do
   gate. Returns `{:ok, %{request_id => risk | nil}}` or `{:error, :unauthorized}`.
   """
   def risk_by_request_ids(request_ids, %Subject{} = subject) when is_list(request_ids) do
-    with :ok <-
-           Auth.Authorizer.ensure_has_permissions(
-             subject,
-             Authorizer.view_approvals_permission()
-           ) do
+    with {:ok, subject} <-
+           Auth.fetch_current_subject(Authorizer.view_approvals_permission(), subject) do
       requests = list_visible_requests_by_ids(request_ids, subject)
       pairs = Enum.flat_map(requests, &request_action_pair/1)
 
@@ -338,7 +364,6 @@ defmodule Emisar.Approvals do
 
     Request.Query.all()
     |> Request.Query.by_ids(ids)
-    |> scope_requests_to_subject(subject)
     |> Authorizer.for_subject(subject)
     |> Repo.all()
   end
@@ -393,11 +418,8 @@ defmodule Emisar.Approvals do
         %Runs.ActionRun{account_id: account_id, id: run_id},
         %Subject{} = subject
       ) do
-    with :ok <-
-           Auth.Authorizer.ensure_has_permissions(
-             subject,
-             Runs.Authorizer.view_runs_permission()
-           ),
+    with {:ok, subject} <-
+           Auth.fetch_current_subject(Runs.Authorizer.view_runs_permission(), subject),
          :ok <- Subject.ensure_in_account(subject, account_id) do
       Request.Query.all()
       |> Request.Query.by_run_id(run_id)
@@ -420,11 +442,8 @@ defmodule Emisar.Approvals do
         %Runbooks.RunbookExecution{account_id: account_id, id: execution_id},
         %Subject{} = subject
       ) do
-    with :ok <-
-           Auth.Authorizer.ensure_has_permissions(
-             subject,
-             Runbooks.Authorizer.view_runbooks_permission()
-           ),
+    with {:ok, subject} <-
+           Auth.fetch_current_subject(Runbooks.Authorizer.view_runbooks_permission(), subject),
          :ok <- Subject.ensure_in_account(subject, account_id) do
       Request.Query.all()
       |> Request.Query.by_runbook_execution_id(execution_id)
@@ -439,12 +458,9 @@ defmodule Emisar.Approvals do
   `:approval_decisions` Authorizer clause). Returns `{:ok, [decision]}`.
   """
   def list_decisions_for_request(%Request{} = request, %Subject{} = subject) do
-    with :ok <-
-           Auth.Authorizer.ensure_has_permissions(
-             subject,
-             Authorizer.view_approvals_permission()
-           ),
-         {:ok, _request} <- fetch_approval_request_by_id(request.id, subject) do
+    with {:ok, subject} <-
+           Auth.fetch_current_subject(Authorizer.view_approvals_permission(), subject),
+         {:ok, _request} <- fetch_readable_request(request.id, subject) do
       decisions =
         Decision.Query.all()
         |> Decision.Query.by_request_id(request.id)
@@ -462,12 +478,9 @@ defmodule Emisar.Approvals do
   Requires `view`; account-scoped. Returns `{:ok, count}`.
   """
   def approved_count_for_request(%Request{} = request, %Subject{} = subject) do
-    with :ok <-
-           Auth.Authorizer.ensure_has_permissions(
-             subject,
-             Authorizer.view_approvals_permission()
-           ),
-         {:ok, _request} <- fetch_approval_request_by_id(request.id, subject) do
+    with {:ok, subject} <-
+           Auth.fetch_current_subject(Authorizer.view_approvals_permission(), subject),
+         {:ok, _request} <- fetch_readable_request(request.id, subject) do
       {:ok, Repo.one(Decision.Query.approved_distinct_decider_count(request.id))}
     end
   end
@@ -480,11 +493,8 @@ defmodule Emisar.Approvals do
   own former-member text.
   """
   def actor_labels_for_ids(ids, %Subject{} = subject) when is_list(ids) do
-    with :ok <-
-           Auth.Authorizer.ensure_has_permissions(
-             subject,
-             Authorizer.view_approvals_permission()
-           ) do
+    with {:ok, subject} <-
+           Auth.fetch_current_subject(Authorizer.view_approvals_permission(), subject) do
       {:ok, Accounts.user_labels_for_ids(ids, subject.account.id)}
     end
   end
@@ -717,14 +727,38 @@ defmodule Emisar.Approvals do
   # (`:notify_approvers_async?` flips this).
   defp notify_approval_created(%Request{} = request, %Runs.ActionRun{} = run) do
     broadcast_approval(request)
-    run_notify(fn -> notify_approvers(request, run, request.requested_by_id, :requested) end)
+
+    run_notify(fn ->
+      notify_if_pending(request, fn current ->
+        notify_approvers(current, run, current.requested_by_id, :requested)
+      end)
+    end)
+
     :ok
   end
 
   defp notify_runbook_execution_approval_created(%Request{} = request) do
     broadcast_approval(request)
-    run_notify(fn -> notify_runbook_execution_approvers(request, :requested) end)
+
+    run_notify(fn ->
+      notify_if_pending(request, &notify_runbook_execution_approvers(&1, :requested))
+    end)
+
     :ok
+  end
+
+  # Delivery can start after a request has already been decided or expired.
+  # This applies only to initial prompts, never to decision receipts.
+  defp notify_if_pending(request, deliver) do
+    current =
+      Request.Query.all()
+      |> Request.Query.by_account_id(request.account_id)
+      |> Request.Query.by_id(request.id)
+      |> Repo.one()
+
+    if current && request_facts(current, DateTime.utc_now()).status == :pending,
+      do: deliver.(current),
+      else: :ok
   end
 
   # The passed requester wins when present (UI/runbook); otherwise an
@@ -762,13 +796,13 @@ defmodule Emisar.Approvals do
     # Preload runner so the email body can show the runner's name
     # ("db-prod-01") instead of its UUID — approvers shouldn't need to
     # context-switch into the app just to know what's being touched.
-    run = Repo.preload(run, :runner)
+    run = Repo.preload(run, :runner, force: true)
 
     # Preload the account so the email can build the canonical slugged
     # approval link (/app/:account/approvals/:id) — a slug-less URL 404s.
     request = Repo.preload(request, :account)
 
-    with %Runners.Runner{} = runner <- run.runner,
+    with %Runners.Runner{deleted_at: nil} = runner <- run.runner,
          true <- run.account_id == request.account_id and runner.account_id == request.account_id,
          {:ok, pack_id} <- approval_pack_id(run.pack_ref) do
       notify_approvers_pages(
@@ -792,7 +826,7 @@ defmodule Emisar.Approvals do
              request.runbook_execution_id,
              request.account_id
            ),
-         {:ok, target_access} <- approval_target_access(request.account_id, targets) do
+         {:ok, target_access} <- approval_target_access(request.account_id, targets, event) do
       notify_approvers_pages(
         request,
         :runbook_execution,
@@ -831,6 +865,7 @@ defmodule Emisar.Approvals do
       Auth.Permissions.roles_with_permission(Authorizer.decide_approval_permission())
 
     access_by_membership = Accounts.runner_access_for_memberships(memberships)
+    already_decided = notified_decider_ids(request, memberships, event)
 
     memberships
     |> Enum.filter(fn membership ->
@@ -838,6 +873,7 @@ defmodule Emisar.Approvals do
       # triggered the request is excluded since they already saw it in the UI.
       Accounts.membership_authorized?(membership) and membership.role in approver_roles and
         membership.user_id != requested_by_id and
+        not MapSet.member?(already_decided, membership.user_id) and
         membership_covers_targets?(
           Map.get(access_by_membership, membership.id, Accounts.RunnerAccess.none()),
           target_access
@@ -850,6 +886,18 @@ defmodule Emisar.Approvals do
       else: :ok
   end
 
+  defp notified_decider_ids(request, memberships, :requested) do
+    Decision.Query.all()
+    |> Decision.Query.by_account_id(request.account_id)
+    |> Decision.Query.by_request_id(request.id)
+    |> Decision.Query.by_decider_ids(Enum.map(memberships, & &1.user_id))
+    |> Decision.Query.select_decider_ids()
+    |> Repo.all()
+    |> MapSet.new()
+  end
+
+  defp notified_decider_ids(_request, _memberships, _event), do: MapSet.new()
+
   defp membership_covers_targets?(
          %Accounts.RunnerAccess{} = access,
          %{runners: [_ | _] = runners, pack_ids: [_ | _] = pack_ids}
@@ -860,14 +908,15 @@ defmodule Emisar.Approvals do
 
   defp membership_covers_targets?(_access, _targets), do: false
 
-  defp approval_target_access(account_id, targets)
+  defp approval_target_access(account_id, targets, event)
        when is_binary(account_id) and is_list(targets) and targets != [] do
     case approval_pack_ids(targets) do
       {:ok, pack_ids} ->
         runner_ids = targets |> Enum.map(&Map.fetch!(&1, :runner_id)) |> Enum.uniq()
         runner_facts = Runners.runner_scope_facts_for_ids(account_id, runner_ids)
 
-        if length(runner_facts) == length(runner_ids) do
+        if length(runner_facts) == length(runner_ids) and
+             (event != :requested or Enum.all?(runner_facts, &is_nil(&1.deleted_at))) do
           {:ok, %{runners: runner_facts, pack_ids: Enum.uniq(pack_ids)}}
         else
           {:error, :invalid_approval_targets}
@@ -878,7 +927,8 @@ defmodule Emisar.Approvals do
     end
   end
 
-  defp approval_target_access(_account_id, _targets), do: {:error, :invalid_approval_targets}
+  defp approval_target_access(_account_id, _targets, _event),
+    do: {:error, :invalid_approval_targets}
 
   defp approval_pack_ids(targets) do
     Enum.reduce_while(targets, {:ok, []}, fn target, {:ok, pack_ids} ->
@@ -1080,11 +1130,8 @@ defmodule Emisar.Approvals do
   {:grant_failed, changeset}}`. Rejected input records nothing.
   """
   def approve_request(%Request{} = request, %Subject{} = subject, reason \\ nil, attrs \\ []) do
-    with :ok <-
-           Auth.Authorizer.ensure_has_permissions(
-             subject,
-             Authorizer.decide_approval_permission()
-           ),
+    with {:ok, subject} <-
+           Auth.fetch_current_subject(Authorizer.decide_approval_permission(), subject),
          {:ok, input} <- decision_input(attrs) do
       record_decision(request, subject, :approve, reason, input)
     end
@@ -1108,13 +1155,9 @@ defmodule Emisar.Approvals do
   :run_cancelled | :already_decided | :quorum_already_met | ...}`.
   """
   def override_request(%Request{} = supplied_request, reason, %Subject{} = subject) do
-    with :ok <-
-           Auth.Authorizer.ensure_has_permissions(
-             subject,
-             Authorizer.override_approval_permission()
-           ),
+    with {:ok, subject} <-
+           Auth.fetch_current_subject(Authorizer.override_approval_permission(), subject),
          {:ok, reason} <- normalize_override_reason(reason),
-         :ok <- ensure_current_override_membership(subject),
          {:ok, request} <- fetch_approval_request_for_decision(supplied_request.id, subject),
          :ok <- ensure_request_pending(request),
          :ok <- recheck_override_trust(request, subject),
@@ -1126,11 +1169,8 @@ defmodule Emisar.Approvals do
         |> Multi.run(:active_account, fn repo, _changes ->
           Accounts.fetch_and_lock_account(request.account_id, repo: repo)
         end)
-        |> Multi.run(:active_membership, fn repo, _changes ->
-          fetch_locked_override_membership(repo, subject)
-        end)
-        |> Multi.run(:locked_runner_access, fn repo, %{active_membership: membership} ->
-          {:ok, Accounts.runner_access_for_locked_membership(repo, membership)}
+        |> Multi.run(:locked_runner_access, fn repo, _changes ->
+          fetch_locked_actor_access(repo, subject, Authorizer.override_approval_permission())
         end)
         |> Multi.run(:approval_target, fn repo, _changes ->
           lock_approval_target(repo, request)
@@ -1139,19 +1179,7 @@ defmodule Emisar.Approvals do
           lock_approval_target_runners(repo, request, target)
         end)
         |> Multi.run(:locked, fn repo, %{locked_runner_access: access} ->
-          query =
-            Request.Query.all()
-            |> Request.Query.by_id(request.id)
-            |> Request.Query.by_account_id(subject.account.id)
-            |> Request.Query.lock_for_update()
-            |> Authorizer.for_subject(subject)
-
-          with {:ok, locked} <- repo.fetch(query, Request.Query),
-               true <- request_visible_with_access?(repo, locked.id, subject, access) do
-            {:ok, locked}
-          else
-            _ -> {:error, :not_found}
-          end
+          fetch_locked_decision_request(repo, request, subject, access)
         end)
         |> Multi.run(:override_preflight, fn _repo, %{locked: locked} ->
           recheck_locked_override(locked)
@@ -1198,11 +1226,8 @@ defmodule Emisar.Approvals do
   :decision_reason_unsafe_text}`.
   """
   def deny_request(%Request{} = request, %Subject{} = subject, reason \\ nil) do
-    with :ok <-
-           Auth.Authorizer.ensure_has_permissions(
-             subject,
-             Authorizer.decide_approval_permission()
-           ) do
+    with {:ok, subject} <-
+           Auth.fetch_current_subject(Authorizer.decide_approval_permission(), subject) do
       # A deny mints nothing, so it carries the defaults rather than any
       # caller-supplied input — there is no grant path to bypass validation on.
       record_decision(request, subject, :deny, reason, %DecisionInput{})
@@ -1233,45 +1258,26 @@ defmodule Emisar.Approvals do
 
   defp normalize_override_reason(_reason), do: {:error, :override_reason_required}
 
-  defp ensure_current_override_membership(
-         %Subject{actor: %Users.User{} = user, account: account} = subject
-       ) do
-    account.id
-    |> Accounts.peek_active_membership(subject.membership_id)
-    |> ensure_override_membership(user, account)
-  end
-
-  defp ensure_current_override_membership(_subject), do: {:error, :unauthorized}
-
-  defp fetch_locked_override_membership(
+  # The account lock precedes this helper. Revalidate the exact human actor
+  # after its membership and user locks, preserving the caller's attenuated
+  # permissions. Access rows are changed under that same membership lock.
+  defp fetch_locked_actor_access(
          repo,
-         %Subject{actor: %Users.User{} = user, account: account} = subject
+         %Subject{actor: %Users.User{id: user_id}, account: account} = subject,
+         permission
        ) do
     with {:ok, membership} <-
-           Accounts.fetch_and_lock_active_membership(
-             repo,
-             account.id,
-             subject.membership_id
-           ),
-         :ok <- ensure_override_membership(membership, user, account) do
-      {:ok, membership}
+           Accounts.fetch_and_lock_membership(account.id, subject.membership_id, repo: repo),
+         true <- membership.user_id == user_id,
+         {:ok, _user} <- Users.fetch_and_lock_user_by_id(user_id, repo),
+         {:ok, _current} <- Auth.fetch_current_subject(permission, subject) do
+      {:ok, Accounts.runner_access_for_locked_membership(repo, membership)}
     else
       _ -> {:error, :unauthorized}
     end
   end
 
-  defp ensure_override_membership(
-         %Accounts.Membership{user_id: user_id} = membership,
-         %Users.User{id: user_id} = user,
-         account
-       ) do
-    user
-    |> Subject.for_user(account, membership)
-    |> Auth.Authorizer.ensure_has_permissions(Authorizer.override_approval_permission())
-  end
-
-  defp ensure_override_membership(_membership, _user, _account),
-    do: {:error, :unauthorized}
+  defp fetch_locked_actor_access(_repo, _subject, _permission), do: {:error, :unauthorized}
 
   # and hand it a validated input first. Fetch the request through the subject
   # scope before evaluating any request-derived guard: callers can hold a stale
@@ -1290,7 +1296,7 @@ defmodule Emisar.Approvals do
          {:ok, request} <- fetch_approval_request_for_decision(supplied_request.id, subject),
          :ok <- ensure_request_pending(request),
          :ok <- check_self_approval(decision, request, subject),
-         :ok <- recheck_trust(decision, request),
+         :ok <- recheck_trust(decision, request, subject),
          :ok <- check_attestation_fresh(decision, request) do
       by_user_id = Subject.actor_id(subject)
       grant_attrs = Map.from_struct(input)
@@ -1300,23 +1306,17 @@ defmodule Emisar.Approvals do
         |> Multi.run(:active_account, fn repo, _changes ->
           Accounts.fetch_and_lock_account(request.account_id, repo: repo)
         end)
+        |> Multi.run(:locked_runner_access, fn repo, _changes ->
+          fetch_locked_actor_access(repo, subject, Authorizer.decide_approval_permission())
+        end)
         |> Multi.run(:approval_target, fn repo, _changes ->
           lock_approval_target(repo, request)
         end)
-        |> Multi.run(:locked, fn repo, _changes ->
-          query =
-            Request.Query.all()
-            |> Request.Query.by_id(request.id)
-            |> Request.Query.by_account_id(subject.account.id)
-            |> Request.Query.lock_for_update()
-            |> Authorizer.for_subject(subject)
-
-          with {:ok, locked} <- repo.fetch(query, Request.Query),
-               true <- request_visible_to_subject?(repo, locked.id, subject) do
-            {:ok, locked}
-          else
-            _ -> {:error, :not_found}
-          end
+        |> Multi.run(:target_runners, fn repo, %{approval_target: target} ->
+          lock_approval_target_runners(repo, request, target)
+        end)
+        |> Multi.run(:locked, fn repo, %{locked_runner_access: access} ->
+          fetch_locked_decision_request(repo, request, subject, access)
         end)
         |> Multi.run(:decision, fn _repo, %{locked: locked} ->
           insert_decision(locked, by_user_id, decision)
@@ -1365,12 +1365,20 @@ defmodule Emisar.Approvals do
   defp ensure_request_pending(%Request{status: :cancelled}), do: {:error, :run_cancelled}
   defp ensure_request_pending(%Request{}), do: {:error, :already_decided}
 
-  defp request_visible_to_subject?(repo, request_id, %Subject{} = subject) do
-    Request.Query.all()
-    |> Request.Query.by_id(request_id)
-    |> scope_requests_to_subject(subject)
-    |> Authorizer.for_subject(subject)
-    |> repo.exists?()
+  defp fetch_locked_decision_request(repo, request, subject, access) do
+    query =
+      Request.Query.all()
+      |> Request.Query.by_id(request.id)
+      |> Request.Query.by_account_id(subject.account.id)
+      |> Request.Query.lock_for_update()
+      |> Authorizer.for_subject(subject)
+
+    with {:ok, locked} <- repo.fetch(query, Request.Query),
+         true <- request_visible_with_access?(repo, locked.id, subject, access) do
+      {:ok, locked}
+    else
+      _ -> {:error, :not_found}
+    end
   end
 
   defp request_visible_with_access?(repo, request_id, %Subject{} = subject, access) do
@@ -1421,12 +1429,7 @@ defmodule Emisar.Approvals do
   end
 
   defp lock_target_runners(repo, account_id, runner_ids) do
-    Enum.reduce_while(runner_ids, {:ok, :locked}, fn runner_id, {:ok, :locked} ->
-      case Runners.fetch_and_lock_active_runner(runner_id, account_id, repo: repo) do
-        {:ok, _runner} -> {:cont, {:ok, :locked}}
-        {:error, _reason} -> {:halt, {:error, :not_found}}
-      end
-    end)
+    Runners.fetch_and_lock_cancellation_runners(account_id, runner_ids, repo: repo)
   end
 
   # Self-approval gate (server-side, IL-15 — UI hiding is cosmetic only). Only an
@@ -1454,12 +1457,13 @@ defmodule Emisar.Approvals do
   # finalizing approve re-dispatches, so without this the operator's "yes"
   # against the trusted bytes would ship the new ones. Deny needs no trust
   # check — it cancels.
-  defp recheck_trust(:approve, %Request{run_id: run_id}) when is_binary(run_id),
+  defp recheck_trust(:approve, %Request{run_id: run_id}, _subject) when is_binary(run_id),
     do: Runs.recheck_run_pack_trust_for_approval(run_id)
 
   defp recheck_trust(
          :approve,
-         %Request{runbook_execution_id: execution_id} = request
+         %Request{runbook_execution_id: execution_id} = request,
+         subject
        )
        when is_binary(execution_id) do
     case Emisar.Runbooks.recheck_execution_approval(execution_id) do
@@ -1467,11 +1471,16 @@ defmodule Emisar.Approvals do
         :ok
 
       {:error, reason} ->
-        halt_unapprovable_execution(request, reason)
+        halt_unapprovable_execution(
+          request,
+          reason,
+          subject,
+          Authorizer.decide_approval_permission()
+        )
     end
   end
 
-  defp recheck_trust(:deny, _request), do: :ok
+  defp recheck_trust(:deny, _request, _subject), do: :ok
 
   defp recheck_override_trust(%Request{run_id: run_id}, _subject) when is_binary(run_id),
     do: Runs.recheck_run_pack_trust_for_approval(run_id)
@@ -1482,8 +1491,16 @@ defmodule Emisar.Approvals do
        )
        when is_binary(execution_id) do
     case Runbooks.recheck_execution_approval(execution_id) do
-      :ok -> :ok
-      {:error, reason} -> halt_unapprovable_execution(request, reason, subject)
+      :ok ->
+        :ok
+
+      {:error, reason} ->
+        halt_unapprovable_execution(
+          request,
+          reason,
+          subject,
+          Authorizer.override_approval_permission()
+        )
     end
   end
 
@@ -1518,7 +1535,12 @@ defmodule Emisar.Approvals do
          %Subject{} = subject
        )
        when is_binary(execution_id) do
-    case halt_unapprovable_execution(request, reason, subject) do
+    case halt_unapprovable_execution(
+           request,
+           reason,
+           subject,
+           Authorizer.override_approval_permission()
+         ) do
       :ok -> {:error, :runbook_execution_not_approvable}
       {:error, _reason} = error -> error
     end
@@ -1526,7 +1548,7 @@ defmodule Emisar.Approvals do
 
   defp resolve_override_preflight_failure(%Request{}, reason, %Subject{}), do: {:error, reason}
 
-  defp halt_unapprovable_execution(request, initial_reason, override_subject \\ nil) do
+  defp halt_unapprovable_execution(request, initial_reason, subject, permission) do
     {code, message} = execution_recheck_failure(Audit.Rejection.reason(initial_reason))
     now = DateTime.utc_now()
 
@@ -1535,9 +1557,17 @@ defmodule Emisar.Approvals do
       |> Multi.run(:active_account, fn repo, _changes ->
         Accounts.fetch_and_lock_account(request.account_id, repo: repo)
       end)
-      |> maybe_lock_override_membership(override_subject)
+      |> Multi.run(:locked_runner_access, fn repo, _changes ->
+        fetch_locked_actor_access(repo, subject, permission)
+      end)
       |> Multi.run(:approval_target, fn repo, _changes ->
         lock_approval_target(repo, request)
+      end)
+      |> Multi.run(:target_runners, fn repo, %{approval_target: target} ->
+        lock_approval_target_runners(repo, request, target)
+      end)
+      |> Multi.run(:locked, fn repo, %{locked_runner_access: access} ->
+        fetch_locked_decision_request(repo, request, subject, access)
       end)
       |> Multi.run(:execution_recheck, fn _repo, _changes ->
         {:ok, Emisar.Runbooks.recheck_execution_approval(request.runbook_execution_id)}
@@ -1587,14 +1617,6 @@ defmodule Emisar.Approvals do
         {:error, Audit.Rejection.with_reason(initial_reason, :runbook_execution_not_approvable)}
     end
   end
-
-  defp maybe_lock_override_membership(%Multi{} = multi, %Subject{} = subject) do
-    Multi.run(multi, :active_membership, fn repo, _changes ->
-      fetch_locked_override_membership(repo, subject)
-    end)
-  end
-
-  defp maybe_lock_override_membership(%Multi{} = multi, nil), do: multi
 
   defp execution_recheck_failure(:authorization_lost),
     do: {"authorization_lost", "Initiating authority is no longer allowed to dispatch."}
@@ -2475,54 +2497,132 @@ defmodule Emisar.Approvals do
 
   @doc "Operator-initiated kill switch on a grant."
   def revoke_grant(%Grant{} = grant, %Subject{} = subject) do
-    with :ok <-
-           Auth.Authorizer.ensure_has_permissions(
-             subject,
-             Authorizer.manage_grants_permission()
-           ) do
-      by_user_id = Subject.actor_id(subject)
-
-      Grant.Query.all()
-      |> Grant.Query.by_id(grant.id)
-      |> scope_grants_to_subject(subject)
-      |> Authorizer.for_subject(subject)
-      |> Repo.fetch_and_update(Grant.Query,
-        with: &Grant.Changeset.revoke(&1, by_user_id),
-        audit: &Audit.Events.approval_grant_revoked(subject, &1)
-      )
+    with {:ok, subject} <-
+           Auth.fetch_current_subject(Authorizer.manage_grants_permission(), subject) do
+      grant_management_multi(subject)
+      |> Multi.run(:grant, fn repo, _changes ->
+        Grant.Query.all()
+        |> Grant.Query.by_id(grant.id)
+        |> Grant.Query.lock_for_update()
+        |> Authorizer.for_subject(subject)
+        |> repo.fetch(Grant.Query)
+      end)
+      |> Multi.run(:target_access, fn repo, %{grant: locked, locked_runner_access: access} ->
+        case authorize_grant_targets(repo, subject.account.id, [locked], access) do
+          {:ok, :authorized} -> {:ok, :authorized}
+          {:error, _reason} -> {:error, :not_found}
+        end
+      end)
+      |> Multi.merge(fn %{grant: locked} ->
+        put_grant_revocation(Multi.new(), locked, subject)
+      end)
+      |> Repo.commit_multi()
+      |> case do
+        {:ok, changes} -> {:ok, Map.fetch!(changes, {:revoked_grant, grant.id})}
+        {:error, reason} -> {:error, reason}
+      end
     end
   end
 
   @doc """
-  Revokes every active grant in the subject's runner and pack access. Each
-  grant goes through `revoke_grant/2` (its own row lock + audit event), so the
-  trail records every capability that was cut. Expired grants are already inert
-  and remain historical rows. Returns `{:ok, count}`, or
-  `{:error, :grants_partially_revoked, count, reason}` when one grant's
-  revocation failed — the `count` already revoked stays revoked, and the caller
-  decides what to tell the operator about the rest. `%Subject{}` needs
-  `manage_grants`.
+  Revokes every active grant in the account atomically. The current manager
+  must cover every affected runner and pack; mixed authority revokes nothing.
+  Each grant has its own audit row in the same transaction. Expired grants
+  remain historical rows. Returns `{:ok, count}` or `{:error, reason}`.
   """
   def revoke_all_grants(%Subject{} = subject) do
-    with :ok <-
-           Auth.Authorizer.ensure_has_permissions(
-             subject,
-             Authorizer.manage_grants_permission()
-           ) do
-      grants =
-        Grant.Query.not_revoked()
-        |> Grant.Query.not_expired()
-        |> scope_grants_to_subject(subject)
-        |> Authorizer.for_subject(subject)
-        |> Repo.all()
+    with {:ok, subject} <-
+           Auth.fetch_current_subject(Authorizer.manage_grants_permission(), subject) do
+      grant_management_multi(subject)
+      |> Multi.run(:grants, fn repo, _changes ->
+        grants =
+          Grant.Query.not_revoked()
+          |> Grant.Query.not_expired()
+          |> Grant.Query.ordered_by_id()
+          |> Grant.Query.lock_for_update()
+          |> Authorizer.for_subject(subject)
+          |> repo.all()
 
-      revoke_each_grant(grants, &revoke_grant(&1, subject))
+        {:ok, grants}
+      end)
+      |> Multi.run(:target_access, fn repo, %{grants: grants, locked_runner_access: access} ->
+        authorize_grant_targets(repo, subject.account.id, grants, access)
+      end)
+      |> Multi.merge(fn %{grants: grants} ->
+        Enum.reduce(grants, Multi.new(), &put_grant_revocation(&2, &1, subject))
+      end)
+      |> Repo.commit_multi()
+      |> case do
+        {:ok, changes} -> {:ok, length(changes.grants)}
+        {:error, reason} -> {:error, reason}
+      end
     end
   end
 
-  # The one sweep contract, shared by the subject-scoped public sweep and the
-  # account-wide kill-switch sweep: stop at the first failure and report how
-  # many were actually cut, so a caller never reads a partial sweep as complete.
+  defp grant_management_multi(subject) do
+    Multi.new()
+    |> Multi.run(:active_account, fn repo, _changes ->
+      Accounts.fetch_and_lock_account(subject.account.id, repo: repo)
+    end)
+    |> Multi.run(:locked_runner_access, fn repo, _changes ->
+      fetch_locked_actor_access(repo, subject, Authorizer.manage_grants_permission())
+    end)
+  end
+
+  defp put_grant_revocation(multi, grant, subject) do
+    key = {:revoked_grant, grant.id}
+
+    multi
+    |> Multi.update(key, Grant.Changeset.revoke(grant, Subject.actor_id(subject)))
+    |> Multi.insert(
+      {:grant_revocation_audit, grant.id},
+      &Audit.Events.approval_grant_revoked(subject, Map.fetch!(&1, key))
+    )
+  end
+
+  # A nil runner is the persisted wildcard, not a missing target. It requires
+  # all-runner authority. Named runners use their current account/group facts;
+  # neither catalog availability nor pack trust is needed to cut off a grant.
+  defp authorize_grant_targets(repo, account_id, grants, access) do
+    if Enum.all?(grants, &grant_pack_and_wildcard_allowed?(&1, account_id, access)) do
+      grants
+      |> Enum.map(& &1.runner_id)
+      |> Enum.reject(&is_nil/1)
+      |> Enum.uniq()
+      |> Enum.sort()
+      |> Enum.chunk_every(256)
+      |> Enum.reduce_while({:ok, :authorized}, fn ids, _acc ->
+        with {:ok, runners} <-
+               Runners.fetch_and_lock_cancellation_runners(account_id, ids, repo: repo),
+             true <- Enum.all?(runners, &Accounts.RunnerAccess.runner_in_scope?(&1, access)) do
+          {:cont, {:ok, :authorized}}
+        else
+          _ -> {:halt, {:error, :unauthorized}}
+        end
+      end)
+    else
+      {:error, :unauthorized}
+    end
+  end
+
+  defp grant_pack_and_wildcard_allowed?(
+         %Grant{account_id: account_id} = grant,
+         account_id,
+         access
+       ) do
+    with true <-
+           (is_nil(grant.runner_id) and access.mode == :all) or Repo.valid_uuid?(grant.runner_id),
+         {:ok, {pack_id, _version, _hash}} <- Catalog.MCPProjection.parse_pack_ref(grant.pack_ref) do
+      Accounts.RunnerAccess.pack_in_scope?(pack_id, access)
+    else
+      _ -> false
+    end
+  end
+
+  defp grant_pack_and_wildcard_allowed?(_grant, _account_id, _access), do: false
+
+  # Only the cap-zero containment sweep may commit incrementally: every grant
+  # is already inert under the committed cap, even if its audit cleanup fails.
   defp revoke_each_grant(grants, revoke_one) do
     Enum.reduce_while(grants, {:ok, 0}, fn grant, {:ok, revoked_count} ->
       case revoke_one.(grant) do
@@ -2606,11 +2706,8 @@ defmodule Emisar.Approvals do
     * `{:error, %Ecto.Changeset{} | :unauthorized | :not_found}`.
   """
   def update_grant_lifetime_settings(%Accounts.Account{} = account, attrs, %Subject{} = subject) do
-    with :ok <-
-           Auth.Authorizer.ensure_has_permissions(
-             subject,
-             Authorizer.manage_grants_permission()
-           ),
+    with {:ok, subject} <-
+           Auth.fetch_current_subject(Authorizer.manage_grants_permission(), subject),
          :ok <- Subject.ensure_in_account(subject, account.id),
          {:ok, %GrantLifetimeInput{seconds: seconds}} <- grant_lifetime_input(attrs),
          {:ok, updated_account} <-
@@ -2643,8 +2740,8 @@ defmodule Emisar.Approvals do
   # `manage_grants`, tenancy, and input validation, and the cap of 0 is
   # committed. The cap is an ACCOUNT-wide fact, so the sweep is too — it scopes
   # by the updated account's explicit id and deliberately skips the subject's
-  # runner-visibility filter (`revoke_all_grants/1` keeps that, and its
-  # restricted-manager semantics). A grant the manager cannot see is already
+  # target-authority check (`revoke_all_grants/1` proves its complete target
+  # set first). A grant outside the manager's access is already
   # inert under the cap; leaving it un-revoked would leave it unaudited and
   # make `revoked_count` read as a complete sweep when it is not.
   defp revoke_account_grants(%Accounts.Account{} = account, %Subject{} = subject) do
@@ -2676,18 +2773,14 @@ defmodule Emisar.Approvals do
   caller's: pass `preload:` for the associations the page renders.
   """
   def list_grants_for_account(%Subject{} = subject, opts \\ []) do
-    with :ok <-
-           Auth.Authorizer.ensure_has_permissions(
-             subject,
-             Authorizer.manage_grants_permission()
-           ) do
+    with {:ok, subject} <-
+           Auth.fetch_current_subject(Authorizer.manage_grants_permission(), subject) do
       {preloads, opts} = Keyword.pop(opts, :preload, [])
 
       Grant.Query.not_revoked()
       |> Grant.Query.ordered_by_recent()
       |> Grant.Query.not_expired()
       |> apply_grant_preloads(preloads)
-      |> scope_grants_to_subject(subject)
       |> Authorizer.for_subject(subject)
       |> Repo.list(Grant.Query, opts)
     end
@@ -2709,18 +2802,14 @@ defmodule Emisar.Approvals do
   end
 
   def fetch_grant_by_id(id, %Subject{} = subject, opts \\ []) do
-    with :ok <-
-           Auth.Authorizer.ensure_has_permissions(
-             subject,
-             Authorizer.manage_grants_permission()
-           ),
+    with {:ok, subject} <-
+           Auth.fetch_current_subject(Authorizer.manage_grants_permission(), subject),
          true <- Repo.valid_uuid?(id) do
       {preloads, opts} = Keyword.pop(opts, :preload, [])
 
       Grant.Query.all()
       |> Grant.Query.by_id(id)
       |> apply_grant_preloads(preloads)
-      |> scope_grants_to_subject(subject)
       |> Authorizer.for_subject(subject)
       |> Repo.fetch(Grant.Query, opts)
     else
@@ -2732,8 +2821,40 @@ defmodule Emisar.Approvals do
   defp scope_requests_to_subject(queryable, %Subject{} = subject),
     do: Request.Query.by_target_access(queryable, Accounts.runner_access_for_subject(subject))
 
-  defp scope_grants_to_subject(queryable, %Subject{} = subject),
-    do: Grant.Query.by_target_access(queryable, Accounts.runner_access_for_subject(subject))
+  @doc """
+  Advisory revocation hints for one rendered grant page (at most 100 ids).
+  `all_authorized?` checks every active workspace grant, not just this page.
+  Revocation independently repeats authority checks under locks.
+  """
+  def grant_management_by_ids(ids, %Subject{} = subject)
+      when is_list(ids) and length(ids) <= 100 do
+    with {:ok, subject} <-
+           Auth.fetch_current_subject(Authorizer.manage_grants_permission(), subject) do
+      ids = Enum.filter(ids, &Repo.valid_uuid?/1)
+      access = Accounts.runner_access_for_subject(subject)
+
+      active =
+        Grant.Query.not_revoked()
+        |> Grant.Query.not_expired()
+        |> Authorizer.for_subject(subject)
+
+      allowed_ids =
+        active
+        |> Grant.Query.by_ids(ids)
+        |> Grant.Query.by_target_access(access)
+        |> Grant.Query.select_ids()
+        |> Repo.all()
+        |> MapSet.new()
+
+      outside? = active |> Grant.Query.outside_target_access(access) |> Repo.exists?()
+
+      {:ok,
+       %{
+         grants: Map.new(ids, &{&1, MapSet.member?(allowed_ids, &1)}),
+         all_authorized?: not outside?
+       }}
+    end
+  end
 
   # -- Authorization --------------------------------------------------
 

@@ -11,6 +11,14 @@ defmodule Emisar.Fixtures.Runs do
   @default_pack_ref "linux-core@1.0.0/sha256:" <> String.duplicate("a", 64)
   @default_operation_id "op_724NN9NMDZ1T76NARWCKM5A0D6"
 
+  @doc "Valid unsigned dispatch attributes; the caller supplies its runner and account."
+  def dispatch_attrs(overrides \\ %{}) do
+    Map.merge(
+      %{action_id: "linux.uptime", args: %{}, reason: "Check host health", source: "operator"},
+      Map.new(overrides)
+    )
+  end
+
   @doc """
   Persists a `:success` action run by default. Caller supplies `:account_id`
   (a runner is created in it) or nothing (a fresh account + runner). Override
@@ -32,12 +40,19 @@ defmodule Emisar.Fixtures.Runs do
       runner_id: attrs[:runner_id] || runner.id,
       request_id: attrs[:request_id] || Crypto.run_request_id(),
       action_id: attrs[:action_id] || "svc.read",
+      pack_ref: attrs[:pack_ref],
       source: attrs[:source] || :operator,
       status: attrs[:status] || :success,
       args_raw: attrs[:args_raw] || "{}",
       sensitive_arg_names: attrs[:sensitive_arg_names] || [],
       expected_pack_hash: attrs[:expected_pack_hash]
     }
+
+    params =
+      Map.merge(
+        params,
+        Map.take(attrs, [:requested_by_id, :initiating_membership_id, :api_key_id])
+      )
 
     {:ok, run} = params |> ActionRun.Changeset.create() |> Repo.insert()
 

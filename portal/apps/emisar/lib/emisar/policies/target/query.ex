@@ -18,6 +18,21 @@ defmodule Emisar.Policies.Target.Query do
     )
   end
 
+  def by_scopes(queryable, scopes) do
+    runners = for {:runner, value} <- scopes, do: value
+    groups = for {:group, value} <- scopes, do: value
+
+    where(
+      queryable,
+      [policy_targets: t],
+      (t.scope_type == ^"runner" and t.scope_value in ^runners) or
+        (t.scope_type == ^"group" and t.scope_value in ^groups)
+    )
+  end
+
+  def select_scope_identity(queryable),
+    do: select(queryable, [policy_targets: t], {t.scope_type, t.scope_value})
+
   def with_policy(query) do
     query
     |> join(:left, [policy_targets: t], p in Emisar.Policies.Policy,

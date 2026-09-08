@@ -66,14 +66,17 @@ defmodule EmisarWeb.RunbookEditorCatalog do
   def target_label(projection, ref, selection \\ "all")
 
   def target_label(projection, "group:" <> group = ref, "all") do
-    case Enum.count(projection.targets, &(&1.group == group)) do
-      0 -> fallback_target_label(ref, "all")
-      count -> "#{group} — all online runners (#{count})"
+    count = Enum.count(projection.targets, &(&1.group == group))
+
+    if group in projection.groups and count > 0 do
+      "#{group} — all online runners (#{count})"
+    else
+      fallback_target_label(ref, "all")
     end
   end
 
   def target_label(projection, "group:" <> group = ref, "random_one") do
-    if Enum.any?(projection.targets, &(&1.group == group)),
+    if group in projection.groups and Enum.any?(projection.targets, &(&1.group == group)),
       do: "#{group} — one online runner",
       else: fallback_target_label(ref, "random_one")
   end
@@ -113,8 +116,8 @@ defmodule EmisarWeb.RunbookEditorCatalog do
   end
 
   @doc "The stable DOM id of the action pool for one target selection in this editor mount."
-  def action_pool_id(refs, selection) when is_list(refs) do
-    "runbook-action-pool-#{:erlang.phash2({Enum.sort(refs), selection})}"
+  def action_pool_id(refs, selection, generation) when is_list(refs) do
+    "runbook-action-pool-#{:erlang.phash2({Enum.sort(refs), selection, generation})}"
   end
 
   @doc """
@@ -357,7 +360,9 @@ defmodule EmisarWeb.RunbookEditorCatalog do
           |> Enum.sort_by(& &1.name)
           |> Enum.map(&runner_option/1)
 
-        [group_heading, all_option, random_option | runner_options]
+        if group in projection.groups,
+          do: [group_heading, all_option, random_option | runner_options],
+          else: [group_heading | runner_options]
       end)
 
     ungrouped =
@@ -402,7 +407,7 @@ defmodule EmisarWeb.RunbookEditorCatalog do
   defp target_kind(_ref, _selection), do: :runner
 
   defp unavailable_target_description("group:" <> _group),
-    do: "No online, enabled runners in this group are accessible to you"
+    do: "This group is outside your action access or has no available runners"
 
   defp unavailable_target_description(_ref), do: "Saved runner is no longer available"
 
@@ -418,7 +423,7 @@ defmodule EmisarWeb.RunbookEditorCatalog do
   end
 
   defp fallback_target_label("group:" <> group, "random_one"),
-    do: group <> " — one online runner"
+    do: group <> " — one runner"
 
   defp fallback_target_label("group:" <> group, _selection), do: group <> " group"
 

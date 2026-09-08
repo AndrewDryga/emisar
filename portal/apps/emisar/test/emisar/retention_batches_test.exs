@@ -260,6 +260,38 @@ defmodule Emisar.RetentionBatchesTest do
   end
 
   describe "delete_unseen_pack_versions/4" do
+    test "each manual batch rechecks management authority and preserves earlier receipts", %{
+      account: account
+    } do
+      first = stale_version(account, "first", "v1")
+      second = stale_version(account, "second", "v1")
+      membership = Fixtures.Memberships.create_membership(account_id: account.id, role: "admin")
+      subject = Fixtures.Subjects.membership_subject(membership)
+      id = {__MODULE__, self(), make_ref()}
+
+      :telemetry.attach(
+        id,
+        [:emisar, :repo, :query],
+        &__MODULE__.demote_on_second_pack_batch/4,
+        %{
+          owner: self(),
+          membership: membership,
+          counter: :atomics.new(1, [])
+        }
+      )
+
+      try do
+        assert {:error, :unauthorized} =
+                 Catalog.delete_unseen_pack_versions(account.id, 30, subject, batch_size: 1)
+      after
+        :telemetry.detach(id)
+      end
+
+      assert is_nil(Repo.reload(first))
+      assert Repo.reload!(second)
+      assert marker_counts(account.id, "pack_retention_swept") == [1]
+    end
+
     test "lexical pack/version cursor crosses ties and a protected head exactly once", %{
       account: account
     } do
@@ -491,6 +523,18 @@ defmodule Emisar.RetentionBatchesTest do
          String.contains?(metadata.query, "FOR NO KEY UPDATE") and
          :atomics.add_get(counter, 1, 1) == 2 do
       Repo.put_dynamic_repo(:retention_batch_unavailable_repo)
+    end
+  end
+
+  def demote_on_second_pack_batch(_event, _measurements, metadata, %{
+        owner: owner,
+        membership: membership,
+        counter: counter
+      }) do
+    if self() == owner and String.contains?(metadata.query, "FROM \"accounts\"") and
+         String.contains?(metadata.query, "FOR NO KEY UPDATE") and
+         :atomics.add_get(counter, 1, 1) == 2 do
+      Fixtures.Memberships.force_role(membership, "viewer")
     end
   end
 

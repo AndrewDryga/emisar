@@ -689,16 +689,17 @@ defmodule EmisarWeb.DashboardLiveTest do
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}")
 
       # The header digest is DERIVED from the rows just read (so it can only ever
-      # describe them — §7.36), which also costs no second windowed read. Run
-      # history is account-wide, so no current-access lookup is needed either.
-      assert refresh_query_count(lv, {:run_updated, Ecto.UUID.generate()}) == 1
+      # describe them — §7.36), which also costs no second windowed read.
+      # One current identity check plus the shared run read; no scope query.
+      assert refresh_query_count(lv, {:run_updated, Ecto.UUID.generate()}) == 2
     end
 
     test "an approval event refreshes only the fixed five-row queue snippet", %{conn: conn} do
       {conn, _user, account} = register_and_log_in(conn)
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}")
 
-      assert refresh_query_count(lv, {:approval_updated, Ecto.UUID.generate()}) == 3
+      # Current identity, two current action-access reads, and the bounded list.
+      assert refresh_query_count(lv, {:approval_updated, Ecto.UUID.generate()}) == 4
     end
 
     test "a runner topology event refreshes only fleet and advertised-action facts", %{
@@ -712,7 +713,9 @@ defmodule EmisarWeb.DashboardLiveTest do
         payload: %{joins: %{Ecto.UUID.generate() => %{metas: [%{}]}}, leaves: %{}}
       }
 
-      assert refresh_query_count(lv, event) == 3
+      # Current identity + shared runner inventory; action scope needs no
+      # database work when there are no advertised action candidates.
+      assert refresh_query_count(lv, event) == 2
     end
 
     test "past the first run a topology event reads no row per runner or advertised action", %{

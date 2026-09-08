@@ -3101,26 +3101,26 @@ defmodule Emisar.SSO do
         |> Authorizer.for_subject(subject)
         |> Repo.fetch(GroupRoleMapping.Query)
       end)
+      |> Multi.run(:validated_mapping, fn _repo, %{locked_mapping: mapping} ->
+        changeset = GroupRoleMapping.Changeset.update(mapping, attrs)
+        if changeset.valid?, do: {:ok, changeset}, else: {:error, changeset}
+      end)
       |> Multi.run(:authorization_change, fn _repo,
                                              %{
                                                locked_provider: provider,
-                                               locked_mapping: mapping
+                                               locked_mapping: mapping,
+                                               validated_mapping: changeset
                                              } ->
-        prepare_locked_mapping_authorization_change(
-          provider,
-          mapping.directory_group_id,
-          :live
-        )
+        prepare_mapping_update_authorization(provider, mapping, changeset, [:role])
       end)
-      |> Multi.update(:mapping, fn %{locked_mapping: mapping} ->
-        GroupRoleMapping.Changeset.update(mapping, attrs)
-      end)
+      |> Multi.update(:mapping, & &1.validated_mapping)
       |> Multi.insert(:audit, fn %{mapping: mapping} ->
         Audit.Events.group_role_mapping_updated(subject, mapping)
       end)
       |> Repo.commit_multi(
-        after_commit: fn %{mapping: mapping} ->
-          recompute_mapping_members(mapping)
+        after_commit: fn
+          %{authorization_change: :unchanged} -> :ok
+          %{mapping: mapping} -> recompute_mapping_members(mapping)
         end
       )
       |> mapping_result()
@@ -3260,12 +3260,20 @@ defmodule Emisar.SSO do
       |> Multi.run(:authorization_change, fn _repo,
                                              %{
                                                locked_provider: provider,
-                                               locked_mapping: mapping
+                                               locked_mapping: mapping,
+                                               validated_mapping: changeset
                                              } ->
-        prepare_locked_mapping_authorization_change(
+        prepare_mapping_update_authorization(
           provider,
-          mapping.directory_group_id,
-          :live
+          mapping,
+          changeset,
+          [
+            :runner_access_mode,
+            :runner_scope_groups,
+            :runner_scope_runner_ids,
+            :pack_access_mode,
+            :pack_scope_pack_ids
+          ]
         )
       end)
       |> Multi.update(:mapping, & &1.validated_mapping)
@@ -3273,8 +3281,9 @@ defmodule Emisar.SSO do
         Audit.Events.group_runner_access_mapping_updated(subject, before_mapping, mapping)
       end)
       |> Repo.commit_multi(
-        after_commit: fn %{mapping: mapping} ->
-          recompute_runner_access_mapping_members(mapping)
+        after_commit: fn
+          %{authorization_change: :unchanged} -> :ok
+          %{mapping: mapping} -> recompute_runner_access_mapping_members(mapping)
         end
       )
       |> mapping_result()
@@ -3408,6 +3417,16 @@ defmodule Emisar.SSO do
       |> Repo.fetch(DirectoryGroup.Query)
     else
       {:error, :not_found}
+    end
+  end
+
+  # Virtual selection fields are rebuilt on every form submission. Only changed
+  # persisted grants need to fence directory authorization and reconnect members.
+  defp prepare_mapping_update_authorization(provider, mapping, changeset, fields) do
+    if Enum.any?(fields, &Map.has_key?(changeset.changes, &1)) do
+      prepare_locked_mapping_authorization_change(provider, mapping.directory_group_id, :live)
+    else
+      {:ok, :unchanged}
     end
   end
 

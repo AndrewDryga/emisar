@@ -340,6 +340,7 @@ defmodule Emisar.Fixtures.Runbooks do
 
     %Emisar.Runbooks.EditorProjection{
       targets: targets,
+      groups: targets |> Enum.map(& &1.group) |> Enum.reject(&is_nil/1) |> Enum.uniq(),
       catalog: %Emisar.Catalog.EditorProjection{candidates: candidates}
     }
   end

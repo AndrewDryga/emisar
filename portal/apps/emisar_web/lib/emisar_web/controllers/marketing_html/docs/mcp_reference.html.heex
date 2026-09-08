@@ -4,7 +4,7 @@
   <section class="py-12 sm:py-16">
     <.docs_layout
       current="mcp-reference"
-      updated="August 23, 2026"
+      updated="September 8, 2026"
       toc={[
         {"calling-the-endpoint", "Calling the endpoint"},
         {"command-line", "Use tools from the shell"},
@@ -358,14 +358,14 @@
             </thead>
             <tbody class="divide-y divide-zinc-900 text-zinc-400">
               <%= for {tool, purpose} <- [
-                {"list_packs", "List currently trusted in-scope packs with bounded action summaries and deployment issues."},
+                {"list_packs", "List currently trusted packs with bounded action summaries and deployment issues."},
                 {"list_runners", "Inspect runner connectivity, compatibility, and exact runner refs."},
                 {"find_actions", "Find a bounded set of actions by task or exact identifiers."},
                 {"get_action", "Read one immutable action contract and its compatible runners."},
                 {"run_action", "Dispatch one exact action to one or more selected runners."},
                 {"get_operation", "Recover one exact mutation after an ambiguous response."},
                 {"wait_for_run", "Wait for one run to change or reach a terminal state."},
-                {"recent_runs", "Inspect scoped run history with exact identity filters."},
+                {"recent_runs", "Inspect workspace run history with exact identity filters."},
                 {"list_runbooks", "List every runbook with its live release and any unpublished change."},
                 {"get_runbook", "Read one runbook's live release, or its unpublished change."},
                 {"execute_runbook", "Execute the live release, or an explicitly allowed unpublished change."},
@@ -386,7 +386,8 @@
           Start broad only when the task needs it. <code>list_packs</code>
           gives a bounded overview. <code>find_actions</code>
           ranks candidates. <code>get_action</code>
-          returns the exact argument schema and the current compatible runner refs. Use
+          returns the exact argument schema and the current compatible runner refs. Without
+          explicit runner refs, it can return a trusted action with no runners you can use. Use
           <code>list_runners</code>
           for fleet
           diagnosis or target selection. Pack and runner pages default to 15 items. Continue a list
@@ -399,7 +400,7 @@
           is the normal path and omits capabilities that
           cannot run anywhere in scope. <code>include: "all"</code>
           is diagnostic: it preserves
-          trusted but unavailable packs and actions together with deployment issues such as no
+          trusted packs and actions outside your action access or currently unavailable, with issues such as no
           connected runner, a missing executable, or a descriptor mismatch. Pending, rejected,
           revoked, and retirement-blocked pack refs are operator-only facts that discovery
           omits — when an expected ref is absent, review it in <a
@@ -551,7 +552,7 @@
             <tbody class="divide-y divide-zinc-900 text-zinc-400">
               <%= for {code, meaning, next} <- [
                 {"target_contract_changed", "The selected action, pack, or runner generation is stale.", "Call get_action again and make a fresh selection."},
-                {"action_unavailable", "No currently visible exact action contract is executable.", "Follow the returned list_runners continuation to see why no runner can execute it."},
+                {"action_unavailable", "The trusted action is unavailable, or the requested runners cannot execute it.", "Follow the returned list_runners continuation to review the targets."},
                 {"operation_conflict", "One operation ID was reused with different facts.", "Treat it as a security error. Do not retry."},
                 {"signed_runbook_unsupported", "A runbook includes signature-enforcing targets.", "Use individually signed run_action calls."}
               ] do %>

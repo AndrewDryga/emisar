@@ -82,7 +82,7 @@ defmodule Emisar.Catalog.MCPProjection do
   @doc """
   Slim discovery inventory. Headers have passed the persisted-manifest shape
   gate, but carry no actions or executable verdict. Their compatibility keys
-  mean only that the scoped runner advertises the exact trusted reference.
+  mean only that the account runner advertises the exact trusted reference.
   """
   def inventory(pack_headers, runners) do
     runners = runners |> Enum.flat_map(&project_runner/1) |> Enum.sort_by(& &1.runner_ref)
@@ -485,7 +485,7 @@ defmodule Emisar.Catalog.MCPProjection do
 
   defp version_skew_issue(pack_id, skewed_pack_ids) do
     if MapSet.member?(skewed_pack_ids, pack_id) do
-      issue("version_skew", "In-scope runners advertise more than one exact ref for this pack.")
+      issue("version_skew", "Runners advertise more than one exact ref for this pack.")
     end
   end
 
@@ -591,7 +591,7 @@ defmodule Emisar.Catalog.MCPProjection do
 
   defp unique_issues(issues) do
     issues
-    |> Enum.uniq_by(& &1.code)
-    |> Enum.sort_by(& &1.code)
+    |> Enum.uniq()
+    |> Enum.sort_by(&{&1.code, &1.message})
   end
 end

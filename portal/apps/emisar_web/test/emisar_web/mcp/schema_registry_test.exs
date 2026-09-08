@@ -138,7 +138,7 @@ defmodule EmisarWeb.MCP.SchemaRegistryTest do
     wait_for_run = Enum.find(SchemaRegistry.tools(), &(&1["name"] == "wait_for_run"))
 
     assert list_packs["description"] ==
-             "List currently trusted exact pack refs observed on in-scope runners, with their bounded action catalogs. The all view includes trusted but currently unavailable deployments; packs without current trust are omitted."
+             "List trusted pack refs and bounded action catalogs observed in this workspace. Defaults to executable candidates; the all view includes trusted deployments outside your action permissions or currently unavailable."
 
     find_actions = Enum.find(SchemaRegistry.tools(), &(&1["name"] == "find_actions"))
 
@@ -193,7 +193,12 @@ defmodule EmisarWeb.MCP.SchemaRegistryTest do
     list_runners = Enum.find(SchemaRegistry.tools(), &(&1["name"] == "list_runners"))
 
     assert list_runners["description"] ==
-             "Inspect in-scope runners, connectivity, and compatibility issues for currently trusted packs and actions. Use the exact returned runner_ref values for dispatch. Runner group values are runbook targets: prefer `group:<group_name>` refs over per-runner refs."
+             "Inspect workspace runners, connectivity and trusted-pack compatibility. An action filter returns only eligible candidates. For runbooks, prefer group:<group_name> targets; they require access to the complete group."
+
+    get_action = Enum.find(SchemaRegistry.tools(), &(&1["name"] == "get_action"))
+
+    assert get_action["description"] ==
+             "Get a trusted action's argument schema, optional stdout JSON output_schema, risk and side effects in an immutable pack_ref. compatible_runners may be empty; explicit runner_refs must all be eligible. Call before run_action or authoring a runbook step."
 
     create_draft = Enum.find(SchemaRegistry.tools(), &(&1["name"] == "create_runbook_draft"))
 

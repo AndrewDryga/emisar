@@ -24,10 +24,6 @@ defmodule EmisarWeb.RoleCopy do
     "Owners can manage the entire account and access all runners and packs. They can delete the account and remove or demote you."
   end
 
-  def change_body("admin") do
-    "Admins can manage runners, policy, members, approvals, and billing across the whole account — everything an owner can, except adding or removing owners."
-  end
-
   def change_body("operator"),
     do: Auth.role_description("operator")
 
@@ -35,7 +31,7 @@ defmodule EmisarWeb.RoleCopy do
 
   @doc "A separate access-editing paragraph for Admin and Operator role confirmations."
   def access_hint(role) when role in ["admin", "operator"] do
-    "You can limit their access to specific runners, runner groups, or packs from Actions → Edit access on the Team page."
+    "Limit their action access to specific runners, runner groups, or packs from Actions → Edit access on the Team page."
   end
 
   def access_hint(_), do: nil

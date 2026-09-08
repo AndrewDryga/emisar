@@ -2,7 +2,7 @@ defmodule Emisar.Runbooks.Scheduler.Creation do
   @moduledoc false
 
   alias Ecto.Multi
-  alias Emisar.{Accounts, Approvals, Audit, Policies, Repo}
+  alias Emisar.{Accounts, Approvals, Audit, Catalog, Policies, Repo, Runners, Runs}
   alias Emisar.Auth.Subject
   alias Emisar.Runbooks.{Authorizer, Definition, ExecutionItem, ExecutionStage, Runbook}
   alias Emisar.Runbooks.{RunbookExecution, Scheduler}
@@ -88,6 +88,11 @@ defmodule Emisar.Runbooks.Scheduler.Creation do
     |> Multi.run({:runbook_capacity, execution_id}, fn repo, _changes ->
       reserve_account_capacity(repo, runbook.account_id, length(items))
     end)
+    |> Multi.run({:runbook_dispatch_access, execution_id}, fn repo, _changes ->
+      with :ok <- Subject.ensure_in_account(subject, runbook.account_id) do
+        Runs.fetch_and_lock_dispatch_access(subject, repo: repo)
+      end
+    end)
     |> Multi.run({:runbook_current, execution_id}, fn repo, _changes ->
       # A mounted page holds a pre-transaction struct. Lock the current row
       # after the account lock so deletion serializes with execution creation;
@@ -98,6 +103,10 @@ defmodule Emisar.Runbooks.Scheduler.Creation do
       |> Runbook.Query.lock_for_update()
       |> Authorizer.for_subject(subject)
       |> repo.fetch(Runbook.Query)
+    end)
+    |> Multi.run({:runbook_target_authority, execution_id}, fn repo, changes ->
+      access = Map.fetch!(changes, {:runbook_dispatch_access, execution_id})
+      authorize_compiled_targets(repo, compiled, runbook.account_id, access)
     end)
     |> Multi.run({:runbook_policy_snapshot, execution_id}, fn _repo, _changes ->
       validate_policy_snapshot(compiled.items, runbook.account_id)
@@ -123,6 +132,47 @@ defmodule Emisar.Runbooks.Scheduler.Creation do
         length(stages)
       )
     end)
+  end
+
+  # Check the whole committed group before its selected physical targets. Only
+  # those exact targets are locked: another host joining later does not change
+  # the reviewed plan or acquire a logical item in this execution.
+  defp authorize_compiled_targets(repo, compiled, account_id, access) do
+    groups =
+      compiled.definition["stages"]
+      |> Enum.flat_map(& &1["steps"])
+      |> Enum.flat_map(& &1["targets"]["refs"])
+      |> Enum.flat_map(fn
+        "group:" <> group -> [group]
+        _ref -> []
+      end)
+      |> Enum.uniq()
+
+    runner_ids = compiled.items |> Enum.map(& &1.runner_id) |> Enum.uniq()
+
+    with :ok <- Runners.ensure_group_access(account_id, groups, access, repo: repo),
+         {:ok, runners} <-
+           Runners.fetch_and_lock_cancellation_runners(account_id, runner_ids, repo: repo),
+         true <- Enum.all?(runners, &Accounts.RunnerAccess.runner_in_scope?(&1, access)),
+         true <- Enum.all?(compiled.items, &compiled_pack_in_scope?(&1, access)) do
+      current_groups = Map.new(runners, &{&1.id, &1.group})
+
+      if Enum.all?(
+           compiled.items,
+           &(Map.fetch!(current_groups, &1.runner_id) == &1.runner_group)
+         ),
+         do: {:ok, :authorized},
+         else: {:error, :review_changed}
+    else
+      _ -> {:error, :unauthorized}
+    end
+  end
+
+  defp compiled_pack_in_scope?(item, access) do
+    case Catalog.MCPProjection.parse_pack_ref(item.pack_ref) do
+      {:ok, {pack_id, _version, _hash}} -> Accounts.RunnerAccess.pack_in_scope?(pack_id, access)
+      _ -> false
+    end
   end
 
   defp reserve_account_capacity(repo, account_id, item_count) do

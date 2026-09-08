@@ -101,6 +101,45 @@ defmodule Emisar.RunnersTest do
 
       assert id == runner.id
       assert Runners.runner_scope_facts_for_ids(account.id, List.duplicate(runner.id, 257)) == []
+      deleted = Fixtures.Runners.mark_deleted(runner)
+
+      assert [%{id: ^id, group: "database", deleted_at: deleted_at}] =
+               Runners.runner_scope_facts_for_ids(account.id, [runner.id, other.id])
+
+      assert deleted_at == deleted.deleted_at
+    end
+  end
+
+  describe "fetch_and_lock_cancellation_runners/3" do
+    test "returns sorted complete current facts including disabled and offline runners" do
+      account = Fixtures.Accounts.create_account()
+      first = Fixtures.Runners.create_runner(account_id: account.id, connected?: false)
+      second = Fixtures.Runners.create_runner(account_id: account.id)
+      Fixtures.Runners.disable_runner(second)
+
+      assert {:ok, facts} =
+               Runners.fetch_and_lock_cancellation_runners(account.id, [second.id, first.id],
+                 repo: Repo
+               )
+
+      assert Enum.map(facts, & &1.id) == Enum.sort([first.id, second.id])
+      assert Enum.all?(facts, &(Enum.sort(Map.keys(&1)) == [:deleted_at, :group, :id]))
+    end
+
+    test "a missing, deleted or foreign runner refuses the complete set" do
+      account = Fixtures.Accounts.create_account()
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
+      foreign = Fixtures.Runners.create_runner()
+
+      for ids <- [[runner.id, foreign.id], [runner.id, Ecto.UUID.generate()], ["invalid"], []] do
+        assert Runners.fetch_and_lock_cancellation_runners(account.id, ids) ==
+                 {:error, :not_found}
+      end
+
+      Fixtures.Runners.mark_deleted(runner)
+
+      assert Runners.fetch_and_lock_cancellation_runners(account.id, [runner.id]) ==
+               {:error, :not_found}
     end
   end
 
@@ -124,7 +163,7 @@ defmodule Emisar.RunnersTest do
       # all stay missing — and a requested group answers once, never once per
       # member.
       assert facts.groups == ["database"]
-      assert facts.runners == [%{id: runner.id, group: "database"}]
+      assert facts.runners == [%{id: runner.id, group: "database", deleted_at: nil}]
     end
 
     test "a deleted runner takes its group and its id with it" do
@@ -302,13 +341,13 @@ defmodule Emisar.RunnersTest do
       assert Runners.list_all_runners_for_account(other_subject) == {:ok, []}
     end
 
-    test "a subject without a membership sees no runners" do
+    test "a subject without a membership is refused" do
       {account, _user, subject} = account_with_owner_subject()
       Fixtures.Runners.create_runner(account_id: account.id, connected?: false)
       subject = %{subject | membership_id: nil}
 
-      assert Runners.list_all_runners_for_account(subject) == {:ok, []}
-      assert {:ok, [], _metadata} = Runners.list_runners_for_account(subject)
+      assert Runners.list_all_runners_for_account(subject) == {:error, :unauthorized}
+      assert Runners.list_runners_for_account(subject) == {:error, :unauthorized}
     end
 
     test "a viewer subject (no view_runners) is unauthorized" do
@@ -319,7 +358,34 @@ defmodule Emisar.RunnersTest do
     end
   end
 
-  describe "ensure_runner_ids_visible/2" do
+  describe "list_runners_in_action_scope/2" do
+    test "returns only current action candidates and preserves role and account gates" do
+      account = Fixtures.Accounts.create_account()
+
+      membership =
+        Fixtures.Memberships.create_membership(account_id: account.id, role: "operator")
+
+      subject = Fixtures.Subjects.membership_subject(membership)
+      runner = Fixtures.Runners.create_runner(account_id: account.id, group: "staging")
+      Fixtures.Runners.create_runner(account_id: account.id, group: "production")
+      Fixtures.Runners.create_runner(group: "staging")
+      {:ok, access} = RunnerAccess.new(:restricted, ["staging"], [])
+      Fixtures.Memberships.force_runner_access(membership, access)
+
+      assert {:ok, [candidate]} = Runners.list_runners_in_action_scope(subject)
+      assert candidate.id == runner.id
+      Fixtures.Memberships.force_runner_access(membership, RunnerAccess.none())
+      assert Runners.list_runners_in_action_scope(subject) == {:ok, []}
+
+      assert Runners.list_runners_in_action_scope(%{subject | permissions: MapSet.new()}) ==
+               {:error, :unauthorized}
+
+      Fixtures.Memberships.suspend_membership(membership)
+      assert Runners.list_runners_in_action_scope(subject) == {:error, :unauthorized}
+    end
+  end
+
+  describe "ensure_runner_ids_in_action_scope/2" do
     test "checks the whole current scope without trusting supplied runner facts" do
       {user, account, _owner} = Fixtures.Subjects.owner_subject()
       membership = Fixtures.Memberships.fetch_membership(account.id, user.id)
@@ -333,8 +399,8 @@ defmodule Emisar.RunnersTest do
       hidden = Fixtures.Runners.create_runner(account_id: account.id, group: "web")
       foreign = Fixtures.Runners.create_runner()
 
-      assert :ok = Runners.ensure_runner_ids_visible([allowed.id, allowed.id], subject)
-      assert :ok = Runners.ensure_runner_ids_visible([], subject)
+      assert :ok = Runners.ensure_runner_ids_in_action_scope([allowed.id, allowed.id], subject)
+      assert :ok = Runners.ensure_runner_ids_in_action_scope([], subject)
 
       {:ok, access} = Accounts.RunnerAccess.restricted(["database"], [])
 
@@ -342,17 +408,19 @@ defmodule Emisar.RunnersTest do
       |> Fixtures.Memberships.fetch_membership(user.id)
       |> Fixtures.Memberships.force_runner_access(access)
 
-      assert :ok = Runners.ensure_runner_ids_visible([allowed.id], subject)
+      assert :ok = Runners.ensure_runner_ids_in_action_scope([allowed.id], subject)
 
       for ids <- [[allowed.id, hidden.id], [foreign.id], ["invalid-id"]] do
-        assert {:error, :unauthorized} = Runners.ensure_runner_ids_visible(ids, subject)
+        assert {:error, :unauthorized} = Runners.ensure_runner_ids_in_action_scope(ids, subject)
       end
 
       Fixtures.Runners.mark_deleted(allowed)
-      assert {:error, :unauthorized} = Runners.ensure_runner_ids_visible([allowed.id], subject)
+
+      assert {:error, :unauthorized} =
+               Runners.ensure_runner_ids_in_action_scope([allowed.id], subject)
 
       no_view = Fixtures.Subjects.build_subject(account: account, role: :runner)
-      assert {:error, :unauthorized} = Runners.ensure_runner_ids_visible([], no_view)
+      assert {:error, :unauthorized} = Runners.ensure_runner_ids_in_action_scope([], no_view)
     end
   end
 
@@ -459,7 +527,7 @@ defmodule Emisar.RunnersTest do
       assert id == runner_a.id
     end
 
-    test "returns only current runner scope and marks account coverage partial" do
+    test "action scope does not hide advertisements or make complete coverage partial" do
       {_user, account, subject} = Fixtures.Subjects.owner_subject()
       membership = Fixtures.Memberships.fetch_membership(account.id, subject.actor.id)
 
@@ -476,7 +544,7 @@ defmodule Emisar.RunnersTest do
           connected?: false
         )
 
-      _hidden =
+      outside_action_scope =
         Fixtures.Runners.create_runner(
           account_id: account.id,
           name: "hidden-secret-name",
@@ -488,10 +556,10 @@ defmodule Emisar.RunnersTest do
       {:ok, access} = Accounts.RunnerAccess.restricted(["database"], [])
       Fixtures.Memberships.force_runner_access(membership, access)
 
-      assert {:ok, [%{id: id, name: "visible"}], %{coverage: :partial}} =
+      assert {:ok, facts, %{coverage: :complete}} =
                Runners.list_pack_advertisement_facts(10, subject)
 
-      assert id == visible.id
+      assert Enum.map(facts, & &1.id) == [visible.id, outside_action_scope.id]
     end
   end
 
@@ -576,6 +644,58 @@ defmodule Emisar.RunnersTest do
                [%{"selection" => "all", "refs" => ["runner:#{foreign_ref}"]}],
                other_subject
              ) == {:error, {:unknown_target, 0}}
+    end
+  end
+
+  describe "resolve_model_runbook_target_sets/2" do
+    test "shares offline and disabled targets without granting execution access" do
+      {account, _user, _owner} = account_with_owner_subject()
+
+      offline =
+        Fixtures.Runners.create_runner(account_id: account.id, group: "db", connected?: false)
+
+      disabled =
+        Fixtures.Runners.create_runner(
+          account_id: account.id,
+          group: "db",
+          enforce_signatures: true
+        )
+
+      Fixtures.Runners.disable_runner(disabled)
+      deleted = Fixtures.Runners.create_runner(account_id: account.id, group: "db")
+      Fixtures.Runners.mark_deleted(deleted)
+      membership = Fixtures.Memberships.create_membership(account_id: account.id, role: "viewer")
+      Fixtures.Memberships.force_runner_access(membership, RunnerAccess.none())
+      subject = Fixtures.Subjects.membership_subject(membership)
+      targets = [%{"selection" => "all", "refs" => ["group:db"]}]
+
+      assert {:ok, [%{runners: readable}]} =
+               Runners.resolve_model_runbook_target_sets(targets, subject)
+
+      assert MapSet.new(readable, & &1.id) == MapSet.new([offline.id, disabled.id])
+
+      assert Runners.resolve_runbook_target_sets(targets, subject) ==
+               {:error, {:unknown_target, 0}}
+
+      Fixtures.Memberships.suspend_membership(membership)
+
+      assert Runners.resolve_model_runbook_target_sets(targets, subject) ==
+               {:error, :unauthorized}
+    end
+
+    test "refuses foreign targets and readers without permission" do
+      {account, _user, subject} = account_with_owner_subject()
+      foreign = Fixtures.Runners.create_runner(group: "foreign")
+      assert {:ok, ref} = Runners.public_ref(foreign)
+      targets = [%{"selection" => "all", "refs" => [ref]}]
+
+      assert Runners.resolve_model_runbook_target_sets(targets, subject) ==
+               {:error, {:unknown_target, 0}}
+
+      assert Runners.resolve_model_runbook_target_sets(
+               targets,
+               Fixtures.Subjects.permissionless_subject(account)
+             ) == {:error, :unauthorized}
     end
   end
 
@@ -1829,6 +1949,53 @@ defmodule Emisar.RunnersTest do
     end
   end
 
+  describe "list_pack_refs_outside_runner_access/4" do
+    test "returns only candidate refs with out-of-scope live advertisers, independent of hash" do
+      account = Fixtures.Accounts.create_account()
+      runner = Fixtures.Runners.create_runner(account_id: account.id, group: "staging")
+
+      outside =
+        Fixtures.Runners.create_runner(
+          account_id: account.id,
+          group: "production",
+          connected?: false
+        )
+
+      deleted = Fixtures.Runners.create_runner(account_id: account.id, group: "production")
+      foreign = Fixtures.Runners.create_runner(group: "production")
+
+      Fixtures.Runners.advertise_packs(runner, %{
+        "custom" => %{"version" => "1", "hash" => "trusted"}
+      })
+
+      Fixtures.Runners.advertise_packs(outside, %{
+        "custom" => %{"version" => "1", "hash" => "other"},
+        "unknown-version" => %{}
+      })
+
+      Fixtures.Runners.advertise_packs(deleted, %{"deleted" => %{"version" => "1"}})
+      Fixtures.Runners.advertise_packs(foreign, %{"foreign" => %{"version" => "1"}})
+      Fixtures.Runners.mark_deleted(deleted)
+      {:ok, access} = RunnerAccess.new(:restricted, ["staging"], [])
+
+      refs = [
+        {"custom", "1"},
+        {"custom", "2"},
+        {"unknown-version", "unknown"},
+        {"deleted", "1"},
+        {"foreign", "1"}
+      ]
+
+      assert Runners.list_pack_refs_outside_runner_access(account.id, refs, access, repo: Repo) ==
+               [{"custom", "1"}, {"unknown-version", "unknown"}]
+
+      assert Runners.list_pack_refs_outside_runner_access(account.id, refs, RunnerAccess.all()) ==
+               []
+
+      assert Runners.list_pack_refs_outside_runner_access(account.id, [], access) == []
+    end
+  end
+
   describe "apply_state/2" do
     setup do
       account = Fixtures.Accounts.create_account()
@@ -2771,7 +2938,7 @@ defmodule Emisar.RunnersTest do
       assert status.reasons == [:fleet_empty]
     end
 
-    test "restricted runner access hides a signed, degraded runner from the fleet posture" do
+    test "restricted action access does not hide signed or degraded fleet posture" do
       {account, _owner, _owner_subject} = account_with_owner_subject()
 
       in_scope =
@@ -2804,12 +2971,12 @@ defmodule Emisar.RunnersTest do
 
       assert {:ok, status} = Runners.fetch_fleet_status(subject)
 
-      assert status.counts.total == 1
-      assert status.counts.signed_only == 0
-      assert status.counts.degraded == 0
-      assert status.signature_mode == :unsigned_allowed
+      assert status.counts.total == 2
+      assert status.counts.signed_only == 1
+      assert status.counts.degraded == 1
+      assert status.signature_mode == :mixed
       refute :fleet_signed_only in status.reasons
-      refute :degraded_packs in status.reasons
+      assert :degraded_packs in status.reasons
     end
 
     test "a stale heartbeat surfaces beside an online runner it doesn't unseat" do
@@ -2901,7 +3068,7 @@ defmodule Emisar.RunnersTest do
       assert Enum.find(runners, &(&1.id == invalid_runner.id)).last_heartbeat_at == nil
     end
 
-    test "a suspended membership fails closed — no runner reaches the counts" do
+    test "a suspended membership is refused rather than shown an empty fleet" do
       {account, _owner, _owner_subject} = account_with_owner_subject()
       Fixtures.Runners.create_runner(account_id: account.id, connected?: true)
 
@@ -2917,10 +3084,7 @@ defmodule Emisar.RunnersTest do
       subject = Fixtures.Subjects.membership_subject(membership)
       Fixtures.Memberships.suspend_membership(membership)
 
-      assert {:ok, status} = Runners.fetch_fleet_status(subject)
-
-      assert status.counts.total == 0
-      assert status.reasons == [:fleet_empty]
+      assert Runners.fetch_fleet_status(subject) == {:error, :unauthorized}
     end
 
     test "rejects a subject without view permission" do

@@ -50,7 +50,7 @@ defmodule EmisarWeb.ApprovalDetailLive do
          |> put_flash(:error, "Approval not found.")
          |> push_navigate(to: ~p"/app/#{socket.assigns.current_account}/approvals")}
 
-      {:ok, %{request: request, action: action, block: block, risk: risk}} ->
+      {:ok, %{request: request, action: action, block: block, risk: risk} = review} ->
         Approvals.subscribe_request(account_id, request.id)
 
         run = fetch_action_run(request, socket.assigns.current_subject)
@@ -76,6 +76,7 @@ defmodule EmisarWeb.ApprovalDetailLive do
          |> assign(:executed_command, build_command_preview(action, run, subject))
          |> assign(:runner_connection, runner_connection(run))
          |> assign(:approval_block, block)
+         |> assign_decision_authority(review)
          |> assign_decisions(request)
          # Every operator-entered decision field is tracked server-side. A
          # co-approver's broadcast, the expiry countdown, or a refused decision
@@ -267,6 +268,12 @@ defmodule EmisarWeb.ApprovalDetailLive do
       when account_id == socket.assigns.current_account.id do
     {:noreply, refetch_request(socket)}
   end
+
+  def handle_info(
+        {:list_changed, :team, "membership.runner_access_changed", user_id},
+        %{assigns: %{current_user: %{id: user_id}}} = socket
+      ),
+      do: {:noreply, refetch_request(socket)}
 
   def handle_info(%{event: "presence_diff"} = event, socket) do
     change = Runners.normalize_connection_change(event)
@@ -489,13 +496,6 @@ defmodule EmisarWeb.ApprovalDetailLive do
      |> push_navigate(to: ~p"/app/#{socket.assigns.current_account}/approvals")}
   end
 
-  defp override_failed(socket, :not_found, _params) do
-    {:noreply,
-     socket
-     |> put_flash(:error, "Approval is no longer available under your current access.")
-     |> push_navigate(to: ~p"/app/#{socket.assigns.current_account}/approvals")}
-  end
-
   defp override_failed(socket, reason, params)
        when reason in @availability_blocks do
     {:noreply,
@@ -558,17 +558,6 @@ defmodule EmisarWeb.ApprovalDetailLive do
      )}
   end
 
-  # The request can leave this member's current runner or pack access while an
-  # approval page is already open. The context re-checks that access inside the
-  # decision transaction; once it answers as absent, remove the stale controls
-  # instead of leaving a page that keeps offering a decision it cannot record.
-  defp decision_failed(socket, :not_found, _params) do
-    {:noreply,
-     socket
-     |> put_flash(:error, "Approval is no longer available under your current access.")
-     |> push_navigate(to: ~p"/app/#{socket.assigns.current_account}/approvals")}
-  end
-
   # The approve gate re-resolved the action's trusted contract and refused. The
   # request is untouched and still deniable, so keep the panel live (and the
   # note they wrote) and flip it to the unavailable state — the same thing a
@@ -598,11 +587,12 @@ defmodule EmisarWeb.ApprovalDetailLive do
            socket.assigns.request.id,
            socket.assigns.current_subject
          ) do
-      {:ok, %{request: request, action: action, block: block, risk: risk}} ->
+      {:ok, %{request: request, action: action, block: block, risk: risk} = review} ->
         socket
         |> assign_request(request)
         |> assign_decisions(request)
         |> assign(:approval_block, block)
+        |> assign_decision_authority(review)
         |> assign(:action_risk, risk)
         |> assign(:action_description, action && action.description)
         |> assign(
@@ -617,10 +607,21 @@ defmodule EmisarWeb.ApprovalDetailLive do
     end
   end
 
+  defp assign_decision_authority(socket, review) do
+    assign(
+      socket,
+      :decision_authority,
+      Map.take(review, [:can_decide?, :can_override?, :target_authorized?])
+    )
+  end
+
   defp decision_error_message(:expired),
     do: "This request expired before your decision was saved."
 
   defp decision_error_message(:already_decided), do: "This request already has a final decision."
+
+  defp decision_error_message(:not_found),
+    do: "This request is unavailable or outside your action access. No decision was saved."
 
   defp decision_error_message(:quorum_already_met),
     do: "All required approvals have been received. Refresh the page to see the result."
@@ -1227,8 +1228,9 @@ defmodule EmisarWeb.ApprovalDetailLive do
              decided or lapsed request has no rail, so the column goes full-width. --%>
           <aside :if={verdict == :pending} class="xl:sticky xl:top-6 xl:self-start">
             <.decision_panel
-              can_decide?={Approvals.subject_can_decide_approval?(@current_subject)}
-              can_override?={Approvals.subject_can_override_approval?(@current_subject)}
+              can_decide?={@decision_authority.can_decide?}
+              can_override?={@decision_authority.can_override?}
+              target_authorized?={@decision_authority.target_authorized?}
               decision_reason={@decision_reason}
               grant_duration={@grant_duration}
               grant_scope={@grant_scope}
@@ -1262,6 +1264,7 @@ defmodule EmisarWeb.ApprovalDetailLive do
   end
 
   attr :can_decide?, :boolean, required: true
+  attr :target_authorized?, :boolean, required: true
   attr :can_override?, :boolean, default: false
   # The operator's in-progress decision input, tracked server-side so a
   # re-render restores it rather than clearing it.
@@ -1310,7 +1313,7 @@ defmodule EmisarWeb.ApprovalDetailLive do
   defp decision_panel(assigns) do
     override_available? =
       override_available?(
-        assigns.can_override?,
+        assigns.can_override? and assigns.target_authorized?,
         assigns.min_approvals,
         assigns.approved_count,
         assigns.decisions_error?,
@@ -1367,7 +1370,7 @@ defmodule EmisarWeb.ApprovalDetailLive do
         class="mt-4"
       >
         <:body>
-          The runner is offline, but you can still approve this request. The run can start only
+          The runner is offline. The run can start only
           when the runner is online and all required approvals are received.
         </:body>
       </.event_block>
@@ -1391,6 +1394,14 @@ defmodule EmisarWeb.ApprovalDetailLive do
           Recheck
         </.button>
       </.event_block>
+
+      <p
+        :if={@can_decide? and not @target_authorized?}
+        id="approval-access-required"
+        class="mt-4 text-xs leading-relaxed text-zinc-400"
+      >
+        You can review this request, but deciding it requires action access to every runner and pack it uses.
+      </p>
 
       <%= cond do %>
         <% not @can_decide? -> %>
@@ -1577,6 +1588,7 @@ defmodule EmisarWeb.ApprovalDetailLive do
               }
               name="decision"
               value="approve"
+              disabled={not @target_authorized?}
               class="w-full"
               icon="action.approve"
               phx-disable-with="Approving…"
@@ -1598,6 +1610,7 @@ defmodule EmisarWeb.ApprovalDetailLive do
             <.button
               name="decision"
               value="deny"
+              disabled={not @target_authorized?}
               variant={:secondary}
               tone={:rose}
               class="w-full"

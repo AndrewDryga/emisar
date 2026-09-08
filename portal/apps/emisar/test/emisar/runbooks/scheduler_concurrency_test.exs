@@ -9,6 +9,88 @@ defmodule Emisar.Runbooks.SchedulerConcurrencyTest do
 
   @hash "sha256:" <> String.duplicate("d", 64)
 
+  test "a fresh MCP launch waiting behind publication refuses the old release without reserving effects" do
+    unboxed_account(fn account, owner, runner ->
+      runbook =
+        published_runbook(
+          owner,
+          definition([stage("inspect", "sequential", 1, [step("check", runner.group)])])
+        )
+
+      assert {:ok, _raw, key} = Emisar.ApiKeys.create_key(%{name: "Release fence"}, owner)
+      subject = Emisar.Auth.Subject.for_api_key(key, account)
+
+      facts = %{
+        operation_id: "op_144NN9NMDZ1T76NARWCKM5A0D6",
+        runbook_ref: "#{runbook.slug}@1",
+        allow_draft: false,
+        reason: "Run the reviewed release",
+        input_values: %{}
+      }
+
+      parent = self()
+
+      publisher =
+        unboxed_task(fn ->
+          Repo.transact(fn ->
+            assert {:ok, _} = Accounts.fetch_and_lock_account(account.id)
+            send(parent, {:publisher_locked, backend_pid()})
+
+            receive do
+              :publish -> :ok
+            after
+              10_000 -> flunk("publisher was not released")
+            end
+
+            attrs = %{
+              "draft_definition" =>
+                Map.put(runbook.definition, "context_markdown", "Updated release instructions.")
+            }
+
+            # Arrange the committed release under the same account lock as
+            # publication, without nesting a public after-commit callback.
+            published =
+              runbook
+              |> Fixtures.Runbooks.revise_draft(attrs)
+              |> Fixtures.Runbooks.publish_runbook()
+
+            {:ok, published}
+          end)
+        end)
+
+      # Await owns failure propagation so the enclosing fixture's cleanup runs
+      # even when a worker raises; a linked exit would kill it before teardown.
+      Process.unlink(publisher.pid)
+
+      assert_receive {:publisher_locked, publisher_backend}, 5_000
+
+      launcher =
+        unboxed_task(fn ->
+          send(parent, {:launcher_backend, backend_pid()})
+          Runbooks.create_or_replay_mcp_execution(facts, subject)
+        end)
+
+      Process.unlink(launcher.pid)
+
+      try do
+        assert_receive {:launcher_backend, launcher_backend}, 5_000
+        await_blocked_by(launcher_backend, publisher_backend)
+        send(publisher.pid, :publish)
+        assert {:ok, %{live_version: 2}} = Task.await(publisher, 10_000)
+        assert Task.await(launcher, 10_000) == {:error, :not_live}
+        refute Repo.exists?(from(e in RunbookExecution, where: e.account_id == ^account.id))
+
+        refute Repo.exists?(
+                 from(o in Emisar.MCPOperations.Operation, where: o.account_id == ^account.id)
+               )
+
+        refute Repo.exists?(from(r in Runs.ActionRun, where: r.account_id == ^account.id))
+      after
+        stop_tasks([publisher, launcher])
+      end
+    end)
+  end
+
   @tag timeout: 120_000
   test "two concurrent maximum-size launches admit only the account capacity that remains" do
     unboxed_account(fn account, subject, first_runner ->

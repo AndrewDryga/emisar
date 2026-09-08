@@ -318,7 +318,8 @@ defmodule Emisar.RunnerAccessTest do
                  owner_subject
                )
 
-      assert {:ok, [], %{count: 0}} = Runners.list_runners_for_account(member_subject)
+      assert {:ok, _, %{count: 3}} = Runners.list_runners_for_account(member_subject)
+      assert {:ok, []} = Runners.list_runners_in_action_scope(member_subject)
 
       {:ok, restricted} = RunnerAccess.restricted(["db"], [edge.id])
 
@@ -327,7 +328,8 @@ defmodule Emisar.RunnerAccessTest do
 
       assert updated.runner_access_mode == :restricted
       assert Accounts.runner_access_for_membership(account.id, member.id) == restricted
-      assert {:ok, scoped, %{count: 2}} = Runners.list_runners_for_account(member_subject)
+      assert {:ok, _, %{count: 3}} = Runners.list_runners_for_account(member_subject)
+      assert {:ok, scoped} = Runners.list_runners_in_action_scope(member_subject)
       assert Enum.sort(Enum.map(scoped, & &1.name)) == ["db-1", "edge-1"]
       assert {:ok, fetched_db} = Runners.fetch_runner_by_id(db.id, member_subject)
       assert fetched_db.id == db.id
@@ -384,7 +386,7 @@ defmodule Emisar.RunnerAccessTest do
              ) == {:error, :invalid_runner_access}
     end
 
-    test "single-runner reads hide out-of-scope runners", %{
+    test "single-runner reads retain runners outside action scope", %{
       account: account,
       owner_subject: owner_subject,
       member: member,
@@ -396,8 +398,13 @@ defmodule Emisar.RunnerAccessTest do
       {:ok, _membership} =
         Accounts.update_membership_runner_access(member, restricted, owner_subject)
 
-      assert Runners.fetch_runner_by_id(runner.id, member_subject) == {:error, :not_found}
-      assert Runners.fetch_runner_by_name(runner.name, member_subject) == {:error, :not_found}
+      assert {:ok, fetched} = Runners.fetch_runner_by_id(runner.id, member_subject)
+      assert fetched.id == runner.id
+      assert {:ok, fetched} = Runners.fetch_runner_by_name(runner.name, member_subject)
+      assert fetched.id == runner.id
+
+      assert Runners.ensure_runner_ids_in_action_scope([runner.id], member_subject) ==
+               {:error, :unauthorized}
     end
 
     test "inactive, deleted, missing, and malformed memberships fail closed", %{
@@ -1073,7 +1080,7 @@ defmodule Emisar.RunnerAccessTest do
       assert Runs.peek_run_by_id(run.id).status == :pending
     end
 
-    test "catalog discovery hides an action outside the member's packs" do
+    test "catalog inspection stays readable outside the member's current packs" do
       {account, _owner, _owner_subject} = account_with_owner()
       runner = Fixtures.Runners.create_runner(account_id: account.id, group: "app")
 
@@ -1098,8 +1105,11 @@ defmodule Emisar.RunnerAccessTest do
       {:ok, out_of_scope} = RunnerAccess.new(:all, [], [], :restricted, ["postgres"])
       Fixtures.Memberships.force_runner_access(member, out_of_scope)
 
-      assert Catalog.fetch_action_by_id("linux.uptime", runner.id, member_subject) ==
-               {:error, :not_found}
+      assert {:ok, _action} =
+               Catalog.fetch_action_by_id("linux.uptime", runner.id, member_subject)
+
+      assert Catalog.risk_by_action_ids(["linux.uptime"], member_subject) ==
+               {:ok, %{"linux.uptime" => :low}}
     end
   end
 

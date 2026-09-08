@@ -129,22 +129,31 @@ defmodule EmisarWeb.RunbookEditorLive do
     |> assign(:catalog, %Runbooks.EditorProjection{})
     |> assign(:catalog_load_error?, false)
     |> assign(:action_pool, nil)
+    |> assign(:catalog_generation, 0)
+    |> assign(:authoring_error, nil)
   end
 
   defp load_catalog_and_validate(socket) do
+    socket = load_catalog(socket)
+    draft = sync_draft_catalog(socket.assigns.draft, socket.assigns.draft, socket.assigns.catalog)
+
+    socket
+    |> assign(:draft, draft)
+    |> validate_and_preview()
+  end
+
+  defp load_catalog(socket) do
     {catalog, loaded?} =
       case Runbooks.editor_projection(socket.assigns.current_subject) do
         {:ok, projection} -> {projection, true}
         {:error, _reason} -> {%Runbooks.EditorProjection{}, false}
       end
 
-    draft = sync_draft_catalog(socket.assigns.draft, socket.assigns.draft, catalog)
-
     socket
-    |> assign(:draft, draft)
     |> assign(:catalog, catalog)
     |> assign(:catalog_load_error?, not loaded?)
-    |> validate_and_preview()
+    |> assign(:action_pool, nil)
+    |> update(:catalog_generation, &(&1 + 1))
   end
 
   def handle_event("draft_changed", %{"draft" => params} = event_params, socket) do
@@ -187,7 +196,8 @@ defmodule EmisarWeb.RunbookEditorLive do
          source ==
            RunbookEditorCatalog.action_pool_id(
              step["target_refs"],
-             step["target_selection"]
+             step["target_selection"],
+             socket.assigns.catalog_generation
            ) do
       groups =
         RunbookEditorCatalog.action_option_groups(
@@ -462,6 +472,21 @@ defmodule EmisarWeb.RunbookEditorLive do
   end
 
   def handle_info({:runbook_preview, _stale_generation}, socket), do: {:noreply, socket}
+
+  def handle_info(
+        {:list_changed, :team, "membership.runner_access_changed", user_id},
+        %{assigns: %{current_user: %{id: user_id}}} = socket
+      ) do
+    # UserAuth refreshed the exact current membership. Do not sync the draft:
+    # that can rewrite argument/output bindings the operator is still editing.
+    {:noreply,
+     socket
+     |> load_catalog()
+     |> refresh_authoring_access()
+     |> assign(:publish_review, nil)
+     |> schedule_preview()}
+  end
+
   def handle_info(_message, socket), do: {:noreply, socket}
 
   defp mutate(%{assigns: %{read_only?: true}} = socket, _fun),
@@ -542,7 +567,7 @@ defmodule EmisarWeb.RunbookEditorLive do
   # Every definition change runs through here, so it is also where a publish
   # review the operator opened stops describing what they would publish.
   defp validate_and_preview(socket) do
-    socket = assign(socket, :publish_review, nil)
+    socket = socket |> assign(:publish_review, nil) |> refresh_authoring_access()
     definition = canonical_definition(socket.assigns.draft)
 
     case Runbooks.validate_definition(definition, socket.assigns.current_subject) do
@@ -566,6 +591,19 @@ defmodule EmisarWeb.RunbookEditorLive do
         |> assign(:definition_issues, [])
         |> assign(:preview, %{state: :unavailable, plan: nil, issues: [], checked_at: nil})
     end
+  end
+
+  defp refresh_authoring_access(socket) do
+    error =
+      case Runbooks.definition_authoring_access(
+             canonical_definition(socket.assigns.draft),
+             socket.assigns.current_subject
+           ) do
+        {:ok, :authorized} -> nil
+        {:error, reason} -> reason
+      end
+
+    assign(socket, :authoring_error, error)
   end
 
   defp schedule_preview(%{assigns: %{read_only?: true}} = socket) do
@@ -594,20 +632,10 @@ defmodule EmisarWeb.RunbookEditorLive do
         })
 
       {:error, issues} when is_list(issues) ->
-        assign(socket, :preview, %{
-          state: :blocked,
-          plan: nil,
-          issues: issues,
-          checked_at: DateTime.utc_now()
-        })
+        assign(socket, :preview, %{socket.assigns.preview | state: :blocked, issues: issues})
 
       {:error, _reason} ->
-        assign(socket, :preview, %{
-          state: :unavailable,
-          plan: nil,
-          issues: [],
-          checked_at: DateTime.utc_now()
-        })
+        assign(socket, :preview, %{socket.assigns.preview | state: :unavailable, issues: []})
     end
   end
 
@@ -788,6 +816,15 @@ defmodule EmisarWeb.RunbookEditorLive do
        :error,
        "This runbook changed elsewhere. Reload the page to load the latest draft."
      )}
+  end
+
+  defp present_persist_error(socket, reason)
+       when reason in [:target_out_of_scope, :pack_out_of_scope] do
+    {:noreply,
+     socket
+     |> assign(:authoring_error, reason)
+     |> assign(:publish_review, nil)
+     |> put_flash(:error, EmisarWeb.RunbookEditorComponents.authoring_access_message(reason))}
   end
 
   defp present_persist_error(socket, _reason) do

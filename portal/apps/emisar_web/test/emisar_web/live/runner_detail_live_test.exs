@@ -1,8 +1,8 @@
 defmodule EmisarWeb.RunnerDetailLiveTest do
   @moduledoc """
   The runner detail page: presence-backed status, the enable/disable/
-  delete lifecycle, and the two no-existence-leak paths — cross-account
-  and per-user runner scope both read as "not found", never 403.
+  delete lifecycle, shared inventory with scoped controls, and cross-account
+  isolation without leaking a foreign runner's existence.
   """
   use EmisarWeb.ConnCase, async: true
   alias Emisar.{Accounts, Catalog, Runners}
@@ -84,7 +84,7 @@ defmodule EmisarWeb.RunnerDetailLiveTest do
     assert html =~ "emisar pack install"
   end
 
-  test "current pack access hides denied actions, filters, links, and diagnostics", %{
+  test "pack access limits actions without hiding the catalog or diagnostics", %{
     conn: conn,
     user: user,
     account: account
@@ -133,17 +133,17 @@ defmodule EmisarWeb.RunnerDetailLiveTest do
     assert html =~ "Database health"
     assert html =~ "/runs/new/#{runner.id}/postgres.status"
     assert html =~ "allowed failure"
-    assert html =~ "Your pack access limits this list to actions from packs you can use."
+    refute html =~ "Your pack access limits this list"
 
-    refute has_element?(lv, "#actions", "linux.reboot_host")
-    refute has_element?(lv, "option[value=linux-core]")
-    refute html =~ "Denied host action"
+    assert has_element?(lv, "#actions", "linux.reboot_host")
+    assert has_element?(lv, "option[value=linux-core]")
+    assert html =~ "Denied host action"
     refute html =~ "/runs/new/#{runner.id}/linux.reboot_host"
-    refute html =~ "denied failure"
-    refute html =~ "CRITICAL"
+    assert html =~ "denied failure"
+    assert html =~ "Outside your action access"
   end
 
-  test "an open detail page exits when current runner access is replaced", %{
+  test "an open detail page keeps its catalog and disables actions after scope loss", %{
     conn: conn,
     user: user,
     account: account
@@ -169,7 +169,16 @@ defmodule EmisarWeb.RunnerDetailLiveTest do
       {:list_changed, :team, "membership.runner_access_changed", user.id}
     )
 
-    assert_redirect(lv, ~p"/app/#{account}/runners")
+    html = render(lv)
+    assert html =~ "postgres.status"
+    assert html =~ "This runner is outside your management access"
+    assert html =~ "Outside your action access"
+    assert has_element?(lv, "button[disabled]", "Disable runner")
+    refute html =~ "/runs/new/#{runner.id}/postgres.status"
+    refute :sys.get_state(lv.pid).socket.assigns.can_manage_runner?
+
+    render_click(lv, "disable", %{})
+    refute Emisar.Repo.reload!(runner).disabled_at
   end
 
   test "does not expose a routine socket-close tuple", %{conn: conn, account: account} do
@@ -447,10 +456,10 @@ defmodule EmisarWeb.RunnerDetailLiveTest do
   test "an unknown id bounces to the index as not-found", %{conn: conn, account: account} do
     dest = ~p"/app/#{account}/runners"
 
-    assert {:error, {:live_redirect, %{to: ^dest, flash: flash}}} =
-             live(conn, ~p"/app/#{account}/runners/#{Ecto.UUID.generate()}")
-
-    assert flash["error"] == "Runner not found."
+    result = live(conn, ~p"/app/#{account}/runners/#{Ecto.UUID.generate()}")
+    assert {:error, {:live_redirect, %{to: ^dest}}} = result
+    assert {:ok, _lv, html} = follow_redirect(result, conn)
+    assert html =~ "Runner not found."
   end
 
   test "a cross-account runner reads as not-found", %{conn: conn, account: account} do
@@ -462,7 +471,7 @@ defmodule EmisarWeb.RunnerDetailLiveTest do
              live(conn, ~p"/app/#{account}/runners/#{foreign_runner.id}")
   end
 
-  test "an out-of-scope runner reads as not-found, not 403", %{
+  test "an out-of-scope runner remains readable with action controls disabled", %{
     conn: _conn,
     user: _owner,
     account: account,
@@ -481,19 +490,19 @@ defmodule EmisarWeb.RunnerDetailLiveTest do
 
     {:ok, access} = Emisar.Accounts.RunnerAccess.restricted([], [in_scope_runner.id])
     Fixtures.Memberships.force_runner_access(membership, access)
+    Fixtures.Catalog.create_action(runner: runner)
 
     operator_conn = build_conn() |> log_in_user(operator)
 
-    # The scoped runner works; the unscoped one doesn't exist for them.
     assert {:ok, _lv, _html} =
              live(operator_conn, ~p"/app/#{account}/runners/#{in_scope_runner.id}")
 
-    dest = ~p"/app/#{account}/runners"
-
-    assert {:error, {:live_redirect, %{to: ^dest, flash: flash}}} =
+    assert {:ok, lv, html} =
              live(build_conn() |> log_in_user(operator), ~p"/app/#{account}/runners/#{runner.id}")
 
-    assert flash["error"] == "Runner not found."
+    assert html =~ runner.name
+    assert has_element?(lv, "#actions")
+    refute :sys.get_state(lv.pid).socket.assigns.can_manage_runner?
   end
 
   test "disable / enable round-trip", %{conn: conn, account: account, runner: runner} do

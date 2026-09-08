@@ -448,8 +448,7 @@ defmodule EmisarWeb.RunbookRunLiveTest do
   end
 
   describe "authorization and current preflight" do
-    test "a viewer cannot mount the dispatch surface", %{
-      user: user,
+    test "a viewer can read the runbook but cannot start it", %{
       account: account,
       subject: subject
     } do
@@ -463,17 +462,79 @@ defmodule EmisarWeb.RunbookRunLiveTest do
         role: "viewer"
       )
 
-      destination = ~p"/app/#{account}/runbooks"
-
-      assert {:error, {:live_redirect, %{to: ^destination, flash: flash}}} =
+      assert {:ok, lv, html} =
                build_conn()
                |> log_in_user(viewer)
                |> live(~p"/app/#{account}/runbooks/#{runbook.id}/run")
 
-      assert flash["error"] ==
-               "You don't have permission to run runbooks. Ask an owner or admin to grant you an operator role."
+      assert html =~ "Confirm the incident"
+      assert has_element?(lv, "#runbook-read-only", "cannot start it")
+      assert has_element?(lv, "#start-runbook-button[disabled]")
+      render_click(lv, "start", %{"reason" => "Forged start", "inputs" => %{}})
+      refute Repo.exists?(RunbookExecution)
+      refute_receive {:dispatch_run, _, _}
+    end
 
-      assert user.id != viewer.id
+    test "scope refresh preserves inputs and the displayed plan until explicit recheck", %{
+      conn: conn,
+      user: user,
+      account: account,
+      subject: subject
+    } do
+      runner =
+        trusted_runner(account, subject,
+          args: [%{"name" => "window", "type" => "integer", "required" => true}]
+        )
+
+      runbook = published_runbook(subject, runner, typed_input: true)
+      membership = Fixtures.Memberships.fetch_membership(account.id, user.id)
+      membership = Fixtures.Memberships.force_role(membership, "admin")
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runbooks/#{runbook.id}/run")
+
+      render_change(lv, "run_form_changed", %{
+        "reason" => "Keep this reason",
+        "inputs" => %{"window" => "45"}
+      })
+
+      resolve_preflight(lv)
+      before = :sys.get_state(lv.pid).socket.assigns
+      assert before.preflight.state == :ready
+      receipt = preview_id(lv)
+
+      Fixtures.Memberships.force_runner_access(membership, Emisar.Accounts.RunnerAccess.none())
+      send(lv.pid, {:list_changed, :team, "membership.runner_access_changed", user.id})
+      assert render(lv) =~ "Your access changed"
+      after_change = :sys.get_state(lv.pid).socket.assigns
+      assert after_change.reason == before.reason
+      assert after_change.input_raw == before.input_raw
+      assert after_change.preflight.plan == before.preflight.plan
+      assert after_change.review == nil
+      send(lv.pid, {:run_preflight, before.preflight_generation})
+      render(lv)
+      assert :sys.get_state(lv.pid).socket.assigns.preflight == after_change.preflight
+      assert has_element?(lv, "#recheck-runbook-plan")
+      assert has_element?(lv, "#start-runbook-button[disabled]")
+
+      render_click(lv, "start", %{
+        "reason" => before.reason,
+        "inputs" => %{"window" => "45"},
+        "preview_id" => receipt
+      })
+
+      refute Repo.exists?(RunbookExecution)
+
+      render_click(lv, "recheck_plan", %{})
+      assert :sys.get_state(lv.pid).socket.assigns.preflight.state == :error
+      Fixtures.Memberships.force_runner_access(membership, Emisar.Accounts.RunnerAccess.all())
+      send(lv.pid, {:list_changed, :team, "membership.runner_access_changed", user.id})
+      render(lv)
+      assert has_element?(lv, "#start-runbook-button[disabled]")
+      render_click(lv, "recheck_plan", %{})
+      assert has_element?(lv, "#start-runbook-button:not([disabled])")
+      assert preview_id(lv) != receipt
+      assert :sys.get_state(lv.pid).socket.assigns.input_raw == before.input_raw
+      refute Repo.exists?(RunbookExecution)
+      refute_receive {:dispatch_run, _, _}
     end
 
     # The reason is copied onto the approval card and the audit trail, so the
@@ -1393,6 +1454,127 @@ defmodule EmisarWeb.RunbookRunLiveTest do
 
       refute hidden_id in List.flatten(params)
       refute hidden_run.id in List.flatten(params)
+    end
+
+    test "a viewer without action scope reads retained history after the parent and runner are deleted",
+         %{
+           account: account,
+           subject: subject
+         } do
+      runner = trusted_runner(account, subject)
+      runbook = published_runbook(subject, runner)
+
+      assert {:ok, %{execution_id: execution_id}} =
+               Runbooks.dispatch_runbook(runbook, "Retained incident evidence", subject)
+
+      [run] = Runs.list_runs_for_runbook_execution(account.id, execution_id)
+
+      assert {:ok, _event} =
+               Runs.append_event(run, %{
+                 seq: 1,
+                 kind: "progress",
+                 payload: %{"chunk" => "Retained output"}
+               })
+
+      Fixtures.Runbooks.mark_runbook_as_deleted(runbook)
+      Fixtures.Runners.mark_deleted(runner)
+      viewer = Fixtures.Users.create_user()
+
+      membership =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          user_id: viewer.id,
+          role: "viewer"
+        )
+
+      Fixtures.Memberships.force_runner_access(membership, Emisar.Accounts.RunnerAccess.none())
+
+      assert {:ok, lv, html} =
+               build_conn()
+               |> log_in_user(viewer)
+               |> live(~p"/app/#{account}/runbooks/#{runbook.id}/runs/#{execution_id}")
+
+      assert html =~ "Retained incident evidence"
+      assert html =~ "Retained output"
+      assert :sys.get_state(lv.pid).socket.assigns.runbook.deleted_at != nil
+      assert has_element?(lv, "#cancel-runbook-execution-confirm[disabled]")
+      render_click(lv, "cancel_execution", %{})
+      assert Repo.reload!(execution()).status == :active
+    end
+
+    test "execution URLs reject a different runbook and a foreign account", %{
+      conn: conn,
+      account: account,
+      subject: subject
+    } do
+      runner = trusted_runner(account, subject)
+      runbook = published_runbook(subject, runner)
+      other = published_runbook(subject, runner)
+
+      assert {:ok, %{execution_id: execution_id}} =
+               Runbooks.dispatch_runbook(runbook, "Exact history", subject)
+
+      wrong_path = ~p"/app/#{account}/runbooks/#{other.id}/run"
+
+      assert {:error, {:live_redirect, %{to: ^wrong_path}}} =
+               live(conn, ~p"/app/#{account}/runbooks/#{other.id}/runs/#{execution_id}")
+
+      {foreign_conn, _user, foreign_account} = register_and_log_in(build_conn())
+      foreign_path = ~p"/app/#{foreign_account}/runbooks/#{runbook.id}/run"
+
+      assert {:error, {:live_redirect, %{to: ^foreign_path}}} =
+               live(
+                 foreign_conn,
+                 ~p"/app/#{foreign_account}/runbooks/#{runbook.id}/runs/#{execution_id}"
+               )
+    end
+
+    test "scope loss disables whole-execution cancellation without dropping retained output", %{
+      conn: conn,
+      user: user,
+      account: account,
+      subject: subject
+    } do
+      runner = trusted_runner(account, subject)
+      other = trusted_runner(account, subject, group: "other")
+
+      runbook =
+        published_runbook(subject, runner,
+          steps: [step("first", runner.group, []), step("second", other.group, [])]
+        )
+
+      membership = Fixtures.Memberships.fetch_membership(account.id, user.id)
+      membership = Fixtures.Memberships.force_role(membership, "admin")
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runbooks/#{runbook.id}/run")
+      start(lv)
+      before = :sys.get_state(lv.pid).socket.assigns
+      assert has_element?(lv, "#cancel-runbook-execution-confirm:not([disabled])")
+
+      Fixtures.Memberships.force_runner_access(membership, %Emisar.Accounts.RunnerAccess{
+        mode: :restricted,
+        groups: [],
+        runner_ids: [runner.id],
+        pack_mode: :all
+      })
+
+      send(lv.pid, {:list_changed, :team, "membership.runner_access_changed", user.id})
+      render(lv)
+      assert :sys.get_state(lv.pid).socket.assigns.result == before.result
+      assert :sys.get_state(lv.pid).socket.assigns.events_by_attempt == before.events_by_attempt
+      assert has_element?(lv, "#cancel-runbook-execution-confirm[disabled]")
+      assert has_element?(lv, "#runbook-cancellation-access")
+      render_click(lv, "cancel_execution", %{})
+      assert execution().status == :active
+
+      assert Enum.all?(
+               Runs.list_runs_for_runbook_execution(account.id, execution().id),
+               &(&1.status == :sent)
+             )
+
+      Fixtures.Memberships.force_runner_access(membership, Emisar.Accounts.RunnerAccess.all())
+      send(lv.pid, {:list_changed, :team, "membership.runner_access_changed", user.id})
+      render(lv)
+      assert has_element?(lv, "#cancel-runbook-execution-confirm:not([disabled])")
     end
 
     test "cancellation is durable and the page can start over", %{

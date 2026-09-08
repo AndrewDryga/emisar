@@ -6,6 +6,119 @@ defmodule Emisar.ApprovalsConcurrencyTest do
 
   @moduletag timeout: 60_000
 
+  test "ordinary approve and deny wait for the runner lock and reject its changed group" do
+    for decide <- [&Approvals.approve_request/2, &Approvals.deny_request/2] do
+      unboxed_request(fn %{
+                           request: request,
+                           owner_membership: membership,
+                           runner: runner,
+                           run: run
+                         } ->
+        {:ok, access} = Accounts.RunnerAccess.restricted([runner.group], [])
+
+        membership =
+          membership
+          |> Fixtures.Memberships.force_role("admin")
+          |> Fixtures.Memberships.force_runner_access(access)
+
+        admin = Fixtures.Subjects.membership_subject(membership)
+
+        assert_scope_change_blocks(
+          runner,
+          fn -> decide.(request, admin) end,
+          {:error, :not_found}
+        )
+
+        assert Repo.reload!(request).status == :pending
+        assert Repo.reload!(run).status == :pending_approval
+        refute Repo.exists?(by_request(Approvals.Decision, request.id))
+        refute Repo.exists?(by_approval_request(Approvals.Grant, request.id))
+        refute_receive {:cloud_to_runner, _, _}, 100
+      end)
+    end
+  end
+
+  test "ordinary and override invalid-runbook cleanup recheck target scope under runner locks" do
+    for decide <- [
+          &Approvals.approve_request(&1, &2),
+          &Approvals.override_request(&1, "Stop invalid work", &2)
+        ] do
+      Sandbox.unboxed_run(Repo, fn ->
+        {user, account, _owner} = Fixtures.Subjects.owner_subject()
+        membership = Fixtures.Memberships.fetch_membership(account.id, user.id)
+        request = Fixtures.Approvals.create_execution_request(account, user, executable?: false)
+
+        {:ok, [target | _]} =
+          Runbooks.approval_targets_for_execution(request.runbook_execution_id, account.id)
+
+        runner = Runners.peek_runner_by_id(target.runner_id)
+        {:ok, access} = Accounts.RunnerAccess.restricted([runner.group], [])
+
+        membership =
+          membership
+          |> Fixtures.Memberships.force_role("admin")
+          |> Fixtures.Memberships.force_runner_access(access)
+
+        admin = Fixtures.Subjects.membership_subject(membership)
+
+        try do
+          assert_scope_change_blocks(
+            runner,
+            fn -> decide.(request, admin) end,
+            {:error, :runbook_execution_not_approvable}
+          )
+
+          assert Repo.reload!(request).status == :pending
+
+          assert Repo.get!(Runbooks.RunbookExecution, request.runbook_execution_id).status ==
+                   :pending_approval
+
+          refute Repo.exists?(by_request(Approvals.Decision, request.id))
+        after
+          Repo.delete_all(from(row in Accounts.Account, where: row.id == ^account.id))
+          Repo.delete_all(from(row in Users.User, where: row.id == ^user.id))
+        end
+      end)
+    end
+  end
+
+  test "single and bulk grant revocation wait for current runner scope before any mutation" do
+    for bulk? <- [false, true] do
+      unboxed_request(fn %{owner_membership: membership, runner: runner, account: account} ->
+        {:ok, access} = Accounts.RunnerAccess.restricted([runner.group], [])
+
+        membership =
+          membership
+          |> Fixtures.Memberships.force_role("admin")
+          |> Fixtures.Memberships.force_runner_access(access)
+
+        admin = Fixtures.Subjects.membership_subject(membership)
+
+        {_secret, key} =
+          Fixtures.ApiKeys.create_api_key(account_id: account.id, created_by_id: admin.actor.id)
+
+        grant =
+          Fixtures.Approvals.create_grant(
+            account_id: account.id,
+            api_key_id: key.id,
+            granted_by_id: admin.actor.id,
+            runner_id: runner.id
+          )
+
+        revoke = fn ->
+          if bulk?,
+            do: Approvals.revoke_all_grants(admin),
+            else: Approvals.revoke_grant(grant, admin)
+        end
+
+        expected = if bulk?, do: {:error, :unauthorized}, else: {:error, :not_found}
+        assert_scope_change_blocks(runner, revoke, expected)
+        refute Repo.reload!(grant).revoked_at
+        refute Repo.exists?(from(event in Audit.Event, where: event.target_id == ^grant.id))
+      end)
+    end
+  end
+
   test "concurrent overrides release, audit, and dispatch exactly once" do
     unboxed_request(fn %{request: request, owner: owner} ->
       parent = self()
@@ -247,6 +360,7 @@ defmodule Emisar.ApprovalsConcurrencyTest do
 
       try do
         fun.(%{
+          account: account,
           request: request,
           owner: owner,
           owner_membership: owner_membership,
@@ -268,4 +382,36 @@ defmodule Emisar.ApprovalsConcurrencyTest do
 
   defp by_approval_request(queryable, request_id),
     do: where(queryable, [row], row.approval_request_id == ^request_id)
+
+  defp assert_scope_change_blocks(runner, operation, expected) do
+    parent = self()
+
+    changer =
+      unboxed_task(fn ->
+        Repo.transaction(fn ->
+          Fixtures.Runners.move_to_group(runner, "moved-out-of-scope")
+          send(parent, {:scope_change_ready, backend_pid()})
+          receive do: (:commit -> :committed)
+        end)
+      end)
+
+    assert_receive {:scope_change_ready, changer_backend}, 5_000
+
+    mutation =
+      unboxed_task(fn ->
+        send(parent, {:mutation_ready, backend_pid()})
+        operation.()
+      end)
+
+    try do
+      assert_receive {:mutation_ready, mutation_backend}, 5_000
+      await_blocked_by(mutation_backend, changer_backend)
+      send(changer.pid, :commit)
+      assert Task.await(changer, 30_000) == {:ok, :committed}
+      assert Task.await(mutation, 30_000) == expected
+    after
+      send(changer.pid, :commit)
+      stop_tasks([changer, mutation])
+    end
+  end
 end

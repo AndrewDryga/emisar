@@ -1566,7 +1566,7 @@ defmodule Emisar.RunsTest do
                )
 
       assert Runs.dispatch_run(base_attrs(account.id, runner.id), subject) ==
-               {:error, :runner_not_found}
+               {:error, :unauthorized}
 
       refute_receive {:cloud_to_runner, _generation, _message}, 100
     end
@@ -2611,7 +2611,7 @@ defmodule Emisar.RunsTest do
 
       Fixtures.Accounts.disable_account(account)
 
-      assert Runs.dispatch_mcp_action(facts, subject) == {:error, :not_found}
+      assert Runs.dispatch_mcp_action(facts, subject) == {:error, :unauthorized}
       refute Repo.exists?(ActionRun)
       assert dispatch_rejections() == []
     end
@@ -2621,7 +2621,7 @@ defmodule Emisar.RunsTest do
       facts = mcp_action_facts("op_334NN9NMDZ1T76NARWCKM5A0D8", [runner])
       unbound = %{subject | membership_id: nil}
 
-      assert Runs.dispatch_mcp_action(facts, unbound) == {:error, :runner_out_of_scope}
+      assert Runs.dispatch_mcp_action(facts, unbound) == {:error, :unauthorized}
       assert dispatch_rejections() == []
     end
 
@@ -6008,7 +6008,9 @@ defmodule Emisar.RunsTest do
       foreign_account = Fixtures.Accounts.create_account()
 
       foreign_subject =
-        Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), foreign_account)
+        Fixtures.Subjects.membership_subject(
+          Fixtures.Memberships.create_membership(account_id: foreign_account.id)
+        )
 
       for opts <- [
             [max_chunk_bytes: 0],
@@ -6451,15 +6453,6 @@ defmodule Emisar.RunsTest do
       viewer_subject = Fixtures.Subjects.subject_for(viewer, account, role: :viewer)
 
       refute Runs.subject_can_dispatch_run?(viewer_subject)
-    end
-  end
-
-  describe "role_can_dispatch_run?/1" do
-    test "uses the canonical role permission table and rejects unknown values" do
-      assert Runs.role_can_dispatch_run?(:owner)
-      assert Runs.role_can_dispatch_run?(:operator)
-      refute Runs.role_can_dispatch_run?(:viewer)
-      refute Runs.role_can_dispatch_run?("operator")
     end
   end
 

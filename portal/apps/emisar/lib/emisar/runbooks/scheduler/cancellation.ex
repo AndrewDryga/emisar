@@ -17,6 +17,9 @@ defmodule Emisar.Runbooks.Scheduler.Cancellation do
       |> Multi.run(:active_account, fn repo, _changes ->
         Accounts.fetch_and_lock_account(expected.account_id, repo: repo)
       end)
+      |> Multi.run(:cancellation_access, fn repo, _changes ->
+        Runs.fetch_and_lock_cancellation_access(subject, repo: repo)
+      end)
       |> Multi.run(:execution, fn repo, _changes ->
         execution =
           RunbookExecution.Query.by_account_id(expected.account_id)
@@ -28,6 +31,7 @@ defmodule Emisar.Runbooks.Scheduler.Cancellation do
       end)
       |> Multi.run(:stages, &lock_execution_stages/2)
       |> Multi.run(:items, &lock_execution_items/2)
+      |> Multi.run(:cancellation_authorized, &authorize_cancellation/2)
       |> Multi.merge(&compose_cancellation(&1, runbook, subject))
 
     case Repo.commit_multi(multi,
@@ -35,6 +39,22 @@ defmodule Emisar.Runbooks.Scheduler.Cancellation do
          ) do
       {:ok, %{execution: execution}} -> {:ok, Repo.reload!(execution)}
       {:error, reason} -> {:error, reason}
+    end
+  end
+
+  defp authorize_cancellation(_repo, %{execution: %{status: status}})
+       when status not in [:pending_approval, :active],
+       do: {:ok, :unchanged}
+
+  defp authorize_cancellation(repo, changes) do
+    with :ok <-
+           Runs.ensure_cancellation_targets_authorized(
+             changes.execution.account_id,
+             changes.items,
+             changes.cancellation_access,
+             repo: repo
+           ) do
+      {:ok, :authorized}
     end
   end
 

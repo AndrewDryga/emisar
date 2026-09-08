@@ -50,7 +50,8 @@ defmodule Emisar.AccountsAuditReceiptsTest do
 
     test "owned cleanup settings record enabled and disabled periods" do
       account = Fixtures.Accounts.create_account()
-      subject = Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account)
+      membership = Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
+      subject = Fixtures.Subjects.membership_subject(membership)
 
       assert {:ok, _} = Accounts.put_account_pack_retention_days(account.id, 30, subject)
 
@@ -79,7 +80,8 @@ defmodule Emisar.AccountsAuditReceiptsTest do
 
     test "unchanged account fields and cleanup settings create no event" do
       account = Fixtures.Accounts.create_account()
-      subject = Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account)
+      membership = Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
+      subject = Fixtures.Subjects.membership_subject(membership)
 
       attrs = %{
         name: account.name,

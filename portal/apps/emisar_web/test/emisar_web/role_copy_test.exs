@@ -23,7 +23,8 @@ defmodule EmisarWeb.RoleCopyTest do
       assert RoleCopy.change_body("owner") =~
                "They can delete the account and remove or demote you."
 
-      assert RoleCopy.change_body("admin") =~ "except adding or removing owners"
+      assert RoleCopy.change_body("admin") == Emisar.Auth.role_description("admin")
+      refute RoleCopy.change_body("admin") =~ "everything an owner can"
       assert RoleCopy.change_body("operator") =~ "Operators can run actions"
     end
 

@@ -386,7 +386,7 @@ defmodule EmisarWeb.SSOSettingsLive do
       |> assign(:pack_advertisements, advertisements)
       |> assign(:pack_load_error?, pack_load_error?)
 
-    case Runners.list_all_runners_for_account(socket.assigns.current_subject) do
+    case Runners.list_runners_in_action_scope(socket.assigns.current_subject) do
       {:ok, runners} ->
         socket
         |> assign(:runners, runners)
@@ -469,23 +469,17 @@ defmodule EmisarWeb.SSOSettingsLive do
   def handle_event("page_member_groups", params, socket),
     do: {:noreply, DirectoryGroups.page_member_groups(socket, params)}
 
-  def handle_event("filter_groups", %{"search" => term}, socket) when is_binary(term) do
+  def handle_event("filter_groups", %{"group_access_search" => term}, socket)
+      when is_binary(term) do
     if socket.assigns.provider do
-      params =
-        socket.assigns.mapping_filter_params
-        |> Map.take([
-          "synced_members_after",
-          "synced_members_before",
-          "synced_members_search",
-          "synced_members_directory_group_id"
-        ])
-        |> Map.put("group_access_search", String.slice(term, 0, 200))
-
       {:noreply,
        LiveTable.apply_filter(
          socket,
          ~p"/app/#{socket.assigns.current_account}/settings/sso/#{socket.assigns.provider.id}",
-         params
+         %{"group_access_search" => String.slice(term, 0, 200)},
+         SSO.directory_group_filters(),
+         prefix: "group_access_",
+         current_params: socket.assigns.mapping_filter_params
        )}
     else
       {:noreply, socket}
@@ -494,27 +488,25 @@ defmodule EmisarWeb.SSOSettingsLive do
 
   def handle_event("filter_groups", _params, socket), do: {:noreply, socket}
 
-  def handle_event("filter_directory_members", %{"search" => term} = submitted, socket)
+  def handle_event(
+        "filter_directory_members",
+        %{"synced_members_search" => term} = submitted,
+        socket
+      )
       when is_binary(term) do
     if socket.assigns.provider do
       params =
-        socket.assigns.mapping_filter_params
-        |> Map.take(["group_access_after", "group_access_before", "group_access_search"])
+        submitted
         |> Map.put("synced_members_search", String.slice(term, 0, 200))
-        |> Map.put(
-          "synced_members_directory_group_id",
-          Map.get(
-            submitted,
-            "directory_group_id",
-            socket.assigns.mapping_filter_params["synced_members_directory_group_id"]
-          )
-        )
 
       {:noreply,
        LiveTable.apply_filter(
          socket,
          ~p"/app/#{socket.assigns.current_account}/settings/sso/#{socket.assigns.provider.id}",
-         params
+         params,
+         SSO.directory_member_filters(),
+         prefix: "synced_members_",
+         current_params: socket.assigns.mapping_filter_params
        )}
     else
       {:noreply, socket}
@@ -2540,7 +2532,7 @@ defmodule EmisarWeb.SSOSettingsLive do
                 attached_value="restricted"
               >
                 <:card value="none" title="No runners">
-                  No access to runners.
+                  No permission to act on runners.
                 </:card>
                 <:card value="all" title="All runners">
                   Access to all current and future runners.
@@ -3635,7 +3627,7 @@ defmodule EmisarWeb.SSOSettingsLive do
                   if @defaults.mode != :none, do: "Connection defaults already grant runner access."
                 }
               >
-                No runner access through this group.
+                No runner action permissions through this group.
               </:card>
               <:card
                 value="all"

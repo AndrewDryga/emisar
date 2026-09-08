@@ -86,11 +86,15 @@ defmodule EmisarWeb.DirectoryGroupsLiveTest do
     refute has_element?(lv, "#synced-member-groups-#{member.identity.id} [phx-hook=Tooltip]")
     refute has_element?(lv, "#synced-group-#{platform.id} [role=tooltip]", member.user.full_name)
 
-    lv |> form("#group-access-search", %{search: "Security"}) |> render_change()
+    lv |> form("#group-access-search", %{group_access_search: "Security"}) |> render_change()
     assert_patch(lv)
     assert has_element?(lv, "#synced-group-#{security.id}")
     refute has_element?(lv, "#synced-group-#{platform.id}")
-    lv |> form("#directory-members-search", %{search: "nobody@example.test"}) |> render_change()
+
+    lv
+    |> form("#directory-members-search", %{synced_members_search: "nobody@example.test"})
+    |> render_change()
+
     patched = assert_patch(lv)
     assert patched =~ "group_access_search=Security"
     assert has_element?(lv, "#synced-group-#{security.id}")

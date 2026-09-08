@@ -785,8 +785,10 @@ defmodule Emisar.Accounts do
   Internal — Catalog owns the pack-cleanup contract (permission, tenancy, and
   the period's validation); this writes the canonical result to
   `settings.pack_unseen_retention_days` on the active account, audited as
-  `account.updated` in the same transaction. `nil` turns cleanup off. Returns
-  `{:ok, account}` or `{:error, %Ecto.Changeset{} | :not_found}`.
+  `account.updated` in the same transaction. The setter repeats current management
+  and all-pack authority under account and exact actor locks. `nil` turns cleanup
+  off. Returns `{:ok, account}` or
+  `{:error, %Ecto.Changeset{} | :not_found | :unauthorized}`.
   """
   def put_account_pack_retention_days(account_id, days, %Subject{} = subject)
       when is_nil(days) or (is_integer(days) and days > 0) do
@@ -795,7 +797,12 @@ defmodule Emisar.Accounts do
       |> Account.Query.by_id(account_id)
       |> Authorizer.for_subject(subject)
       |> Repo.fetch_and_update(Account.Query,
-        with: &Account.Changeset.update(&1, %{settings: %{pack_unseen_retention_days: days}}),
+        with: fn locked ->
+          case lock_current_pack_manager(subject) do
+            :ok -> Account.Changeset.put_pack_retention_days(locked, days)
+            {:error, reason} -> reason
+          end
+        end,
         audit: &account_update_audit(&1, &2, subject)
       )
     else
@@ -803,13 +810,37 @@ defmodule Emisar.Accounts do
     end
   end
 
+  # The account is locked by the setter. Only all-pack authority is required;
+  # runner restrictions do not change the pack-cleanup schedule contract.
+  defp lock_current_pack_manager(
+         %Subject{account: %{id: account_id}, actor: %Users.User{id: user_id}} = subject
+       ) do
+    with {:ok, %Membership{user_id: ^user_id}} <-
+           fetch_and_lock_membership(account_id, subject.membership_id),
+         {:ok, _user} <- Users.fetch_and_lock_user_by_id(user_id, Repo),
+         {:ok, current} <-
+           Auth.fetch_current_subject(
+             Emisar.Catalog.Authorizer.manage_catalog_permission(),
+             subject
+           ),
+         %RunnerAccess{pack_mode: :all} <- runner_access_for_subject(current) do
+      :ok
+    else
+      _ -> {:error, :unauthorized}
+    end
+  end
+
+  defp lock_current_pack_manager(_subject), do: {:error, :unauthorized}
+
   @doc """
   Internal — Runners owns the runner-cleanup contract (permission, the
   unrestricted-runner-access requirement, tenancy, and the window's
   validation); this writes the canonical result to
   `settings.runner_inactive_retention_hours` on the active account, audited as
-  `account.updated` in the same transaction. `nil` turns cleanup off. Returns
-  `{:ok, account}` or `{:error, %Ecto.Changeset{} | :not_found}`.
+  `account.updated` in the same transaction. The setter repeats current management
+  and full-runner authority under account and exact actor locks. `nil` turns
+  cleanup off. Returns `{:ok, account}` or
+  `{:error, %Ecto.Changeset{} | :not_found | :unauthorized}`.
   """
   def put_account_runner_inactive_retention_hours(account_id, hours, %Subject{} = subject)
       when is_nil(hours) or (is_integer(hours) and hours > 0) do
@@ -818,13 +849,41 @@ defmodule Emisar.Accounts do
       |> Account.Query.by_id(account_id)
       |> Authorizer.for_subject(subject)
       |> Repo.fetch_and_update(Account.Query,
-        with: &Account.Changeset.put_runner_inactive_retention_hours(&1, hours),
+        with: fn locked ->
+          case lock_current_runner_manager(subject) do
+            :ok -> Account.Changeset.put_runner_inactive_retention_hours(locked, hours)
+            {:error, reason} -> reason
+          end
+        end,
         audit: &account_update_audit(&1, &2, subject)
       )
     else
       {:error, :not_found}
     end
   end
+
+  # The setter holds the active account lock. Cleanup is fleet-wide, so current
+  # management permission and all-runner authority must survive exact actor locks.
+  # Pack-only restrictions do not change this contract.
+  defp lock_current_runner_manager(
+         %Subject{account: %{id: account_id}, actor: %Users.User{id: user_id}} = subject
+       ) do
+    with {:ok, %Membership{user_id: ^user_id}} <-
+           fetch_and_lock_membership(account_id, subject.membership_id),
+         {:ok, _user} <- Users.fetch_and_lock_user_by_id(user_id, Repo),
+         {:ok, current} <-
+           Auth.fetch_current_subject(
+             Emisar.Runners.Authorizer.manage_runners_permission(),
+             subject
+           ),
+         %RunnerAccess{mode: :all} <- runner_access_for_subject(current) do
+      :ok
+    else
+      _ -> {:error, :unauthorized}
+    end
+  end
+
+  defp lock_current_runner_manager(_subject), do: {:error, :unauthorized}
 
   @doc """
   Internal — Approvals owns the standing-grant cap contract (permission,
@@ -833,7 +892,8 @@ defmodule Emisar.Accounts do
   `settings.max_grant_lifetime_seconds` on the active account, audited as
   `account.max_grant_lifetime_set` in the same transaction. `nil` removes the
   cap; `0` disables standing grants. Returns `{:ok, account}` or
-  `{:error, %Ecto.Changeset{} | :not_found}`.
+  `{:error, %Ecto.Changeset{} | :not_found | :unauthorized}`. The current
+  manager's membership and user are revalidated under locks before the write.
   """
   def put_account_max_grant_lifetime_seconds(account_id, seconds, %Subject{} = subject)
       when is_nil(seconds) or (is_integer(seconds) and seconds >= 0) do
@@ -842,13 +902,40 @@ defmodule Emisar.Accounts do
       |> Account.Query.by_id(account_id)
       |> Authorizer.for_subject(subject)
       |> Repo.fetch_and_update(Account.Query,
-        with: &Account.Changeset.put_max_grant_lifetime_seconds(&1, seconds),
+        with: fn locked ->
+          case lock_current_grant_manager(subject) do
+            :ok -> Account.Changeset.put_max_grant_lifetime_seconds(locked, seconds)
+            {:error, reason} -> reason
+          end
+        end,
         audit: &account_update_audit(&1, &2, subject)
       )
     else
       {:error, :not_found}
     end
   end
+
+  # The active account row is locked by the setter above. Keep the manager's
+  # exact member/user authority stable through the cap write, including the
+  # workspace-wide zero-cap containment exception owned by Approvals.
+  defp lock_current_grant_manager(
+         %Subject{account: %{id: account_id}, actor: %Users.User{id: user_id}} = subject
+       ) do
+    with {:ok, %Membership{user_id: ^user_id}} <-
+           fetch_and_lock_membership(account_id, subject.membership_id),
+         {:ok, _user} <- Users.fetch_and_lock_user_by_id(user_id, Repo),
+         {:ok, _current} <-
+           Auth.fetch_current_subject(
+             Emisar.Approvals.Authorizer.manage_grants_permission(),
+             subject
+           ) do
+      :ok
+    else
+      _ -> {:error, :unauthorized}
+    end
+  end
+
+  defp lock_current_grant_manager(_subject), do: {:error, :unauthorized}
 
   @doc """
   Internal — private admin RPC only, never a tenant-facing mutation. Configures
@@ -1762,6 +1849,14 @@ defmodule Emisar.Accounts do
   def pack_access_selection_values(pack_ids), do: RunnerAccess.pack_selection_values(pack_ids)
 
   @doc """
+  Pure runner-and-pack action hint for an already authorized account resource
+  and current access snapshot. Does not prove identity, role or dispatch readiness.
+  """
+  def action_in_runner_access?(runner, pack_id, %RunnerAccess{} = access) do
+    RunnerAccess.runner_in_scope?(runner, access) and RunnerAccess.pack_in_scope?(pack_id, access)
+  end
+
+  @doc """
   The account facts a grant form's selection is resolved against — its runners
   (and the groups they name) plus the pack ids the account carries.
   """
@@ -2070,14 +2165,8 @@ defmodule Emisar.Accounts do
     end
   end
 
-  defp on_membership_runner_access_changed(%{
-         membership: membership,
-         previous_access: previous_access,
-         runner_access: access
-       }) do
-    broadcast_membership_runner_access_changed(membership)
-    refresh_member_sessions_if_access_changed(previous_access, access, membership)
-  end
+  defp on_membership_runner_access_changed(changes),
+    do: notify_membership_authorization_change(changes)
 
   defp broadcast_membership_runner_access_changed(%Membership{} = membership) do
     Emisar.PubSub.broadcast(
@@ -2105,7 +2194,7 @@ defmodule Emisar.Accounts do
   def peek_active_membership(_account_id, _membership_id), do: nil
 
   @doc """
-  Internal — API-key authentication's active membership/account check inside
+  Internal — API-key authentication's active membership/account/user check inside
   the caller's transaction. This deliberately does not take a membership lock:
   deprovisioning locks the membership before revoking its keys, while raw-secret
   authentication locks the key first. Avoiding the inverse lock order prevents
@@ -2117,6 +2206,7 @@ defmodule Emisar.Accounts do
     |> Membership.Query.by_account_id(account_id)
     |> Membership.Query.by_id(membership_id)
     |> Membership.Query.with_joined_account()
+    |> Membership.Query.with_joined_user()
     |> repo.fetch(Membership.Query)
   end
 
@@ -2529,70 +2619,32 @@ defmodule Emisar.Accounts do
     )
   end
 
-  # after_commit for the operator role change, whose Multi carries the locked
-  # pre-update row as `:target`. Refresh once when either the role or its carried
-  # reach changed, then broadcast the access reset separately for other mounted
-  # team pages.
-  defp on_membership_role_committed(
-         %{target: target, membership: membership, previous_access: previous} = changes
-       ) do
-    broadcast_membership_role_changed(membership)
+  defp on_membership_role_committed(changes),
+    do: notify_membership_authorization_change(changes)
 
-    refresh_member_sessions_if_authorization_changed(
-      target,
-      membership,
-      previous,
-      changes.runner_access
-    )
+  # Scope changes alter action controls, not operational visibility. Notify once
+  # without dropping open forms/output. Role and directory-pending transitions
+  # still remount with current authority; mutations independently recheck it.
+  defp notify_membership_authorization_change(%{
+         target: previous_membership,
+         membership: membership,
+         previous_access: previous_access,
+         runner_access: access
+       }) do
+    cond do
+      previous_membership.role != membership.role or
+          previous_membership.directory_authorization_pending_version !=
+            membership.directory_authorization_pending_version ->
+        broadcast_membership_role_changed(membership)
+        refresh_member_sessions(membership)
 
-    if changes.runner_access == previous,
-      do: :ok,
-      else: broadcast_membership_runner_access_changed(membership)
+      previous_access != access ->
+        broadcast_membership_runner_access_changed(membership)
+
+      true ->
+        :ok
+    end
   end
-
-  # A membership authorization change leaves a mounted LiveView carrying the
-  # OLD `%Subject{}` until its socket reconnects. That is unsafe after a
-  # reduction and confusing after an expansion, so every real role, runner, or
-  # pack access change disconnects the affected user's sockets after commit.
-  # The session rows stay intact: the browser reconnects and rebuilds the
-  # subject from current membership state.
-  #
-  # The gap between COMMIT and that disconnect is a knowingly ACCEPTED window,
-  # not an oversight (round-9 CX1-SEC-01): for the seconds it lasts, an
-  # already-mounted socket can still spend the authority it mounted with. We
-  # accept it because the disconnect closes it without operator action and the
-  # alternative — re-locking and rebuilding the ACTOR's membership inside every
-  # security-sensitive mutation across five contexts — buys a few seconds of
-  # exposure at the price of a second authorization path that can drift from
-  # this one. Durable credentials do NOT ride on the window: keys, device
-  # grants, and standing approval grants are revoked inside the same
-  # transaction as the membership change. Do not "fix" this by hiding UI; the
-  # target-side scope checks are what actually stop cross-tenant work.
-  defp refresh_member_sessions_if_access_changed(access, access, %Membership{}), do: :ok
-
-  defp refresh_member_sessions_if_access_changed(
-         %RunnerAccess{},
-         %RunnerAccess{},
-         %Membership{} = membership
-       ),
-       do: refresh_member_sessions(membership)
-
-  defp refresh_member_sessions_if_authorization_changed(
-         %Membership{role: previous_role},
-         %Membership{role: role},
-         %RunnerAccess{} = previous_access,
-         %RunnerAccess{} = access
-       )
-       when previous_role == role and previous_access == access,
-       do: :ok
-
-  defp refresh_member_sessions_if_authorization_changed(
-         %Membership{},
-         %Membership{} = membership,
-         %RunnerAccess{},
-         %RunnerAccess{}
-       ),
-       do: refresh_member_sessions(membership)
 
   # Everything a membership DELEGATED dies with its authority, in the same
   # transaction as the membership write. Two kinds, and the second is the one
@@ -3259,25 +3311,8 @@ defmodule Emisar.Accounts do
     end
   end
 
-  defp on_membership_authorization_synced(%{
-         target: previous_membership,
-         membership: membership,
-         previous_access: previous_access,
-         runner_access: access
-       }) do
-    broadcast_membership_role_changed(membership)
-
-    if is_integer(previous_membership.directory_authorization_pending_version) do
-      refresh_member_sessions(membership)
-    else
-      refresh_member_sessions_if_authorization_changed(
-        previous_membership,
-        membership,
-        previous_access,
-        access
-      )
-    end
-  end
+  defp on_membership_authorization_synced(changes),
+    do: notify_membership_authorization_change(changes)
 
   @doc """
   Internal — SCIM disable: return role control to operators by clearing the

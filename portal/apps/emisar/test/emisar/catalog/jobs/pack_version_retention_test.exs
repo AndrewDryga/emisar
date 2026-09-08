@@ -52,7 +52,7 @@ defmodule Emisar.Catalog.Jobs.PackVersionRetentionTest do
 
   test "prunes versions unseen past a subscribed account's window (idempotently)" do
     account = Fixtures.Accounts.create_account()
-    Fixtures.Accounts.set_account_settings(account, %{pack_unseen_retention_days: @window_days})
+    Fixtures.Accounts.set_pack_retention_days(account, @window_days)
     stale = stale_pack_version(account)
 
     assert PackVersionRetention.execute([]) == :ok
@@ -64,7 +64,7 @@ defmodule Emisar.Catalog.Jobs.PackVersionRetentionTest do
 
   test "keeps versions seen within the window" do
     account = Fixtures.Accounts.create_account()
-    Fixtures.Accounts.set_account_settings(account, %{pack_unseen_retention_days: @window_days})
+    Fixtures.Accounts.set_pack_retention_days(account, @window_days)
 
     kept =
       Fixtures.Catalog.create_trusted_pack_version(
@@ -90,7 +90,7 @@ defmodule Emisar.Catalog.Jobs.PackVersionRetentionTest do
 
   test "leaves no housekeeping marker for an account with nothing to remove" do
     account = Fixtures.Accounts.create_account()
-    Fixtures.Accounts.set_account_settings(account, %{pack_unseen_retention_days: @window_days})
+    Fixtures.Accounts.set_pack_retention_days(account, @window_days)
 
     assert PackVersionRetention.execute([]) == :ok
     assert PackVersionRetention.execute([]) == :ok
@@ -100,7 +100,7 @@ defmodule Emisar.Catalog.Jobs.PackVersionRetentionTest do
 
   test "the swept version's dispatch pin is gone (fails closed as untrusted)" do
     account = Fixtures.Accounts.create_account()
-    Fixtures.Accounts.set_account_settings(account, %{pack_unseen_retention_days: @window_days})
+    Fixtures.Accounts.set_pack_retention_days(account, @window_days)
     runner = Fixtures.Runners.create_runner(account_id: account.id)
     stale = stale_pack_version(account)
 
@@ -121,7 +121,7 @@ defmodule Emisar.Catalog.Jobs.PackVersionRetentionTest do
     accounts = for _ <- 1..2, do: Fixtures.Accounts.create_account()
 
     for account <- accounts do
-      Fixtures.Accounts.set_account_settings(account, %{pack_unseen_retention_days: @window_days})
+      Fixtures.Accounts.set_pack_retention_days(account, @window_days)
 
       for index <- 1..3 do
         Fixtures.Catalog.create_trusted_pack_version(

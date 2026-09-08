@@ -158,9 +158,10 @@ Structural rules that ride along:
     pairs in the cell beside it. A kind picker's title is "<X> type" so it doesn't collide
     with the "<X>" value picker next to it. Never make a filter double-width just to fill
     space — that was the exact "don't make them double width" correction.
-  - **A scoped reader sees only filters that can narrow their readable slice, and only
-    values that can match it.** Derive the offered vocabulary from the same subject-aware
-    contract that scopes the rows; never branch on a role name in the LiveView. Drop a
+  - **Read filters describe the account inventory the current read role can inspect.**
+    Derive their vocabulary from the same subject-aware read contract as the rows,
+    not the member's action grants. Action and grant pickers separately use current
+    action authority; never branch on a role name in the LiveView. Drop a
     control when zero values remain or its sole remaining value would select the reader's
     whole slice. The backend authorization remains authoritative for hand-edited URLs.
 - **Settings never embed in operational pages** without a PM decision — the current three

@@ -28,7 +28,9 @@ defmodule EmisarWeb.PacksLiveTest do
       assert render_hook(lv, "filter", %{"name" => ["oops"], "risk" => ["bad"]})
     end
 
-    test "lists in-scope packs in full and names the rest for discovery only", %{conn: conn} do
+    test "lists workspace packs in full and disables controls outside pack authority", %{
+      conn: conn
+    } do
       {conn, user, account} = register_and_log_in(conn)
 
       account.id
@@ -45,6 +47,8 @@ defmodule EmisarWeb.PacksLiveTest do
           "actions" => [
             %{
               "id" => "hidden.wipe",
+              "title" => "Wipe the host",
+              "kind" => "exec",
               "pack_id" => "hidden-tools",
               "pack_version" => "7.7",
               "summary" => "Wipe the host",
@@ -76,23 +80,30 @@ defmodule EmisarWeb.PacksLiveTest do
 
       assert html =~ "acme-tools"
       assert html =~ "9.9"
-      assert html =~ "1 pack · 1 version"
+      assert html =~ "2 packs · 2 versions"
       assert has_element?(lv, "#packs.mt-10")
 
-      # The out-of-scope pack is NAMED, and that is all: no version row, no
-      # hash, no action, no trust state, no advertiser.
-      assert html =~ "Packs you can&#39;t access"
-      assert has_element?(lv, "section.mt-12", "Packs you can't access")
+      refute html =~ "Packs you can&#39;t access"
       assert html =~ "hidden-tools"
       # Read the page's TEXT, not its markup: a version like "7.7" also occurs in
       # the coordinates of an inline icon's path data.
       text = html |> LazyHTML.from_fragment() |> LazyHTML.text()
-      refute text =~ "7.7"
-      refute text =~ "hidden.wipe"
-      refute text =~ Fixtures.Catalog.pack_hash("hidden")
+      assert text =~ "7.7"
+      assert text =~ "hidden.wipe"
+      assert text =~ "Managing this version requires access"
+
+      assert has_element?(
+               lv,
+               "button[phx-value-action='delete_pack'][phx-value-pack-id='hidden-tools'][disabled]"
+             )
+
+      assert has_element?(
+               lv,
+               "button[phx-value-action='delete_pack'][phx-value-pack-id='acme-tools']:not([disabled])"
+             )
     end
 
-    test "uses content-start spacing when only out-of-scope packs are visible", %{conn: conn} do
+    test "uses the same pack rows when every pack is outside action scope", %{conn: conn} do
       {conn, user, account} = register_and_log_in(conn)
 
       account.id
@@ -113,12 +124,12 @@ defmodule EmisarWeb.PacksLiveTest do
 
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/packs")
 
-      refute has_element?(lv, "#packs.mt-10")
-      assert has_element?(lv, "section.mt-6", "Packs you can't access")
-      refute has_element?(lv, "section.mt-12", "Packs you can't access")
+      assert has_element?(lv, "#packs.mt-10", "hidden-tools")
+      refute render(lv) =~ "Packs you can&#39;t access"
+      assert has_element?(lv, "button[phx-value-action='delete_pack'][disabled]")
     end
 
-    test "a crafted contents event on an out-of-scope pack reveals nothing", %{conn: conn} do
+    test "reading pack contents does not grant permission to trust them", %{conn: conn} do
       {conn, user, account} = register_and_log_in(conn)
 
       account.id
@@ -135,6 +146,8 @@ defmodule EmisarWeb.PacksLiveTest do
           "actions" => [
             %{
               "id" => "hidden.wipe",
+              "title" => "Wipe the host",
+              "kind" => "exec",
               "pack_id" => "hidden-tools",
               "pack_version" => "7.7",
               "summary" => "Wipe the host",
@@ -168,8 +181,8 @@ defmodule EmisarWeb.PacksLiveTest do
 
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/packs")
 
-      # Discovery names the pack, so its version id is guessable — the contents
-      # read is scoped in the Catalog, not by which chevrons the page drew.
+      # Ordinary contents remain readable, but a crafted mutation still goes
+      # through the context's current authority check.
       html =
         render_hook(lv, "inspect_pack", %{
           "id" => hidden.id,
@@ -177,8 +190,10 @@ defmodule EmisarWeb.PacksLiveTest do
           "version" => "7.7"
         })
 
-      refute html =~ "hidden.wipe"
-      refute html =~ "Wipe the host"
+      assert html =~ "hidden.wipe"
+      assert html =~ "Wipe the host"
+      render_hook(lv, "trust", %{"id" => hidden.id})
+      assert Emisar.Repo.get!(Emisar.Catalog.PackVersion, hidden.id).trust_state == :pending
     end
   end
 
@@ -515,6 +530,24 @@ defmodule EmisarWeb.PacksLiveTest do
 
       on_exit(fn -> :telemetry.detach(handler) end)
 
+      before = :sys.get_state(lv.pid).socket.assigns
+
+      for attrs <- [
+            %{
+              "id" => Ecto.UUID.generate(),
+              "pack-id" => pack_version.pack_id,
+              "version" => pack_version.version
+            },
+            %{"id" => pack_version.id, "pack-id" => "other", "version" => pack_version.version},
+            %{"id" => pack_version.id, "pack-id" => pack_version.pack_id, "version" => "missing"}
+          ] do
+        render_click(lv, "inspect_pack", attrs)
+        assert drain_repo_query_count() == 0
+        after_attempt = :sys.get_state(lv.pid).socket.assigns
+        assert after_attempt.inspected_actions == before.inspected_actions
+        assert after_attempt.open_versions == before.open_versions
+      end
+
       toggle = fn ->
         render_click(lv, "inspect_pack", %{
           "id" => pack_version.id,
@@ -525,14 +558,19 @@ defmodule EmisarWeb.PacksLiveTest do
         drain_repo_query_count()
       end
 
-      # First open reads current membership + scope, then exactly that action
+      # First open reads current identity, then exactly that action
       # list. It still does not rebuild the account projection.
-      assert toggle.() == 3
+      assert toggle.() == 2
 
       # Closing, and re-opening the already-cached list, read nothing.
       assert toggle.() == 0
       assert toggle.() == 0
       assert render(lv) =~ "acme.audit"
+
+      render_click(lv, "filter", %{"name" => "does-not-match"})
+      state = :sys.get_state(lv.pid).socket.assigns
+      assert state.inspected_actions == %{}
+      assert MapSet.size(state.open_versions) == 0
     end
 
     test "a PUBLISHED pack's header links to its registry page; a custom pack's doesn't", %{
@@ -2039,7 +2077,7 @@ defmodule EmisarWeb.PacksLiveTest do
 
     test "an owner turns the retention window back off", %{conn: conn, account: account} do
       _account =
-        Fixtures.Accounts.set_account_settings(account, %{pack_unseen_retention_days: 30})
+        Fixtures.Accounts.set_pack_retention_days(account, 30)
 
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/packs")
 
@@ -2060,7 +2098,7 @@ defmodule EmisarWeb.PacksLiveTest do
       account: account
     } do
       _account =
-        Fixtures.Accounts.set_account_settings(account, %{pack_unseen_retention_days: 30})
+        Fixtures.Accounts.set_pack_retention_days(account, 30)
 
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/packs")
 
@@ -2092,7 +2130,7 @@ defmodule EmisarWeb.PacksLiveTest do
       account: account
     } do
       _account =
-        Fixtures.Accounts.set_account_settings(account, %{pack_unseen_retention_days: 30})
+        Fixtures.Accounts.set_pack_retention_days(account, 30)
 
       _stale = stale_pack_version!(account)
       _subject = Fixtures.Subjects.subject_for(user, account)
@@ -2115,7 +2153,7 @@ defmodule EmisarWeb.PacksLiveTest do
 
     test "a viewer sees the read-only note and crafted events are denied", %{account: account} do
       _account =
-        Fixtures.Accounts.set_account_settings(account, %{pack_unseen_retention_days: 30})
+        Fixtures.Accounts.set_pack_retention_days(account, 30)
 
       stale = stale_pack_version!(account)
 
@@ -2150,7 +2188,7 @@ defmodule EmisarWeb.PacksLiveTest do
 
     test "a pack-restricted admin cannot arm the account-wide schedule", %{account: account} do
       _account =
-        Fixtures.Accounts.set_account_settings(account, %{pack_unseen_retention_days: 30})
+        Fixtures.Accounts.set_pack_retention_days(account, 30)
 
       admin = Fixtures.Users.create_user()
 

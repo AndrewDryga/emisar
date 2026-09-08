@@ -178,6 +178,22 @@ defmodule EmisarWeb.RunbookImportLive do
       {:error, issues} when is_list(issues) ->
         {:noreply, assign(socket, :json_errors, Enum.map(issues, &issue_message/1))}
 
+      {:error, :target_out_of_scope} ->
+        {:noreply,
+         put_flash(
+           socket,
+           :error,
+           "This runbook names runners outside your action access. Choose different targets before importing."
+         )}
+
+      {:error, :pack_out_of_scope} ->
+        {:noreply,
+         put_flash(
+           socket,
+           :error,
+           "This runbook uses packs outside your action access. Choose different packs before importing."
+         )}
+
       {:error, reason} ->
         Logger.error(
           "runbook import failed account_id=#{socket.assigns.current_account.id} " <>

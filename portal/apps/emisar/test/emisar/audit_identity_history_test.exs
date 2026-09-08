@@ -4,8 +4,8 @@ defmodule Emisar.AuditIdentityHistoryTest do
 
   setup do
     account = Fixtures.Accounts.create_account()
-    user = Fixtures.Users.create_user()
-    subject = Fixtures.Subjects.subject_for(user, account, role: :owner)
+    membership = Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
+    subject = Fixtures.Subjects.membership_subject(membership)
     %{account: account, subject: subject}
   end
 
@@ -69,7 +69,8 @@ defmodule Emisar.AuditIdentityHistoryTest do
          account: account
        } do
     billing =
-      Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account, role: :billing_manager)
+      Fixtures.Memberships.create_membership(account_id: account.id, role: "billing_manager")
+      |> Fixtures.Subjects.membership_subject()
 
     visible_member = Fixtures.Users.create_user(full_name: "Visible member")
     hidden_member = Fixtures.Users.create_user(full_name: "Hidden member")
@@ -92,7 +93,8 @@ defmodule Emisar.AuditIdentityHistoryTest do
     account: account
   } do
     billing =
-      Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account, role: :billing_manager)
+      Fixtures.Memberships.create_membership(account_id: account.id, role: "billing_manager")
+      |> Fixtures.Subjects.membership_subject()
 
     foreign_account = Fixtures.Accounts.create_account()
     id = Ecto.UUID.generate()

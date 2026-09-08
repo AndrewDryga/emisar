@@ -80,7 +80,8 @@ defmodule EmisarWeb.RunbookEditorComponents do
   end
 
   defp publish_ready?(assigns) do
-    not assigns.read_only? and changed_or_draft?(assigns) and assigns.form.source.valid? and
+    not assigns.read_only? and is_nil(assigns.authoring_error) and changed_or_draft?(assigns) and
+      assigns.form.source.valid? and
       assigns.definition_issues == [] and assigns.preview.state == :ready
   end
 
@@ -88,6 +89,9 @@ defmodule EmisarWeb.RunbookEditorComponents do
     cond do
       publish_ready?(assigns) ->
         nil
+
+      not is_nil(assigns.authoring_error) ->
+        authoring_access_message(assigns.authoring_error)
 
       not assigns.form.source.valid? ->
         "Fix the errors in Details before publishing."
@@ -107,7 +111,7 @@ defmodule EmisarWeb.RunbookEditorComponents do
         "Resolve the issues before publishing."
 
       assigns.preview.state == :unavailable ->
-        "Checks are unavailable in this read-only view."
+        "Current runners and actions could not be checked."
 
       true ->
         "Publishing is unavailable."
@@ -115,18 +119,28 @@ defmodule EmisarWeb.RunbookEditorComponents do
   end
 
   defp draft_save_ready?(assigns) do
-    not assigns.read_only? and assigns.dirty? and assigns.form.source.valid?
+    not assigns.read_only? and is_nil(assigns.authoring_error) and assigns.dirty? and
+      assigns.form.source.valid?
   end
 
-  # Rendered only for a writable editor, so a dirty draft that is not ready can
-  # only be invalid.
+  # An author can keep editing a draft whose targets are outside current access.
   defp draft_save_blocker(assigns) do
     cond do
       draft_save_ready?(assigns) -> nil
+      not is_nil(assigns.authoring_error) -> authoring_access_message(assigns.authoring_error)
       not assigns.dirty? -> "No unsaved changes."
       true -> "Fix the errors in Details before saving."
     end
   end
+
+  @doc "The action-access restriction shared by editor controls and refused writes."
+  def authoring_access_message(:target_out_of_scope),
+    do: "Choose runners within your action access before saving or publishing."
+
+  def authoring_access_message(:pack_out_of_scope),
+    do: "Choose packs within your action access before saving or publishing."
+
+  def authoring_access_message(_reason), do: "You no longer have permission to save or publish."
 
   defp changed_or_draft?(assigns) do
     assigns.dirty? or
@@ -252,6 +266,7 @@ defmodule EmisarWeb.RunbookEditorComponents do
                   total_stages={length(@draft["stages"])}
                   draft={@draft}
                   catalog={@catalog}
+                  catalog_generation={@catalog_generation}
                   open_panels={@open_panels}
                   definition_issues={@definition_issues}
                   read_only?={@read_only?}
@@ -986,7 +1001,7 @@ defmodule EmisarWeb.RunbookEditorComponents do
       </.event_block>
 
       <p :if={@preview.state == :unavailable} class="text-xs leading-relaxed text-zinc-400">
-        Checks are unavailable in this read-only view.
+        Current runners and actions could not be checked.
       </p>
 
       <div :if={@preview.state == :ready} class="space-y-4">
@@ -995,6 +1010,11 @@ defmodule EmisarWeb.RunbookEditorComponents do
             {@ready_body}
           </:body>
         </.event_block>
+      </div>
+      <div :if={not is_nil(@preview.plan)} class="mt-4 space-y-2">
+        <p :if={@preview.state != :ready} class="text-xs font-medium text-zinc-300">
+          Previous check
+        </p>
         <dl class="space-y-2 text-xs text-zinc-400">
           <.kv label="Stages">{length(@preview.plan["stages"])}</.kv>
           <.kv label="Actions">{@preview.plan["total_items"]}</.kv>

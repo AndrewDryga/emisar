@@ -47,31 +47,33 @@ defmodule Emisar.Runbooks.Compiler do
   end
 
   @doc """
-  Validate the current target, trust, pack, action, and signing facts needed
+  Validate current target references and trusted complete action contracts
   before exposing a runbook through a model-facing discovery surface.
 
-  Typed input values and bindings remain execution-time concerns.
+  Scope, physical availability, signing, typed inputs and bindings remain
+  execution-time concerns. Readability never makes a target executable.
   """
-  @spec validate_availability(map(), Subject.t()) ::
+  @spec validate_model_readability(map(), Subject.t()) ::
           :ok | {:error, [issue()]} | {:error, :unauthorized}
-  def validate_availability(definition, %Subject{} = subject) do
-    with {:ok, [verdict]} <- validate_availability_all([definition], subject), do: verdict
+  def validate_model_readability(definition, %Subject{} = subject) do
+    with {:ok, [verdict]} <- validate_model_readability_all([definition], subject), do: verdict
   end
 
   @doc """
-  The same availability verdict as `validate_availability/2`, for several
+  The same availability verdict as `validate_model_readability/2`, for several
   definitions, in order.
 
   Discovery asks the identical question of every live runbook, and the fleet,
   trust and contract facts behind the answer are account-wide — so the fleet is
   read ONCE and the catalog is resolved in reads bounded by
   `Catalog.max_candidate_requests/0`, rather than per runbook. Each definition
-  still gets its own verdict: one that names an offline runner or an untrusted
-  pack never hides its healthy siblings.
+  still gets its own verdict: one that names a missing runner or an untrusted
+  pack never hides its trusted siblings.
   """
-  @spec validate_availability_all([map()], Subject.t()) ::
+  @spec validate_model_readability_all([map()], Subject.t()) ::
           {:ok, [:ok | {:error, [issue()]}]} | {:error, :unauthorized}
-  def validate_availability_all(definitions, %Subject{} = subject) when is_list(definitions) do
+  def validate_model_readability_all(definitions, %Subject{} = subject)
+      when is_list(definitions) do
     prepared = Enum.map(definitions, &prepare_availability/1)
 
     with {:ok, resolved_targets} <- resolve_shared_targets(prepared, subject) do
@@ -91,7 +93,7 @@ defmodule Emisar.Runbooks.Compiler do
 
   # One fleet read answers every definition's targets. A single unresolvable ref
   # halts that shared pass, so it is recorded as unresolved and the rest are
-  # resolved again — an offline-targeting runbook must not hide the healthy
+  # resolved again — a missing-target runbook must not hide the trusted
   # ones, while a fleet that resolves cleanly pays exactly one read.
   defp resolve_shared_targets(prepared, %Subject{} = subject) do
     prepared
@@ -103,7 +105,7 @@ defmodule Emisar.Runbooks.Compiler do
   defp resolve_shared_targets([], resolved, %Subject{}), do: {:ok, resolved}
 
   defp resolve_shared_targets(targets, resolved, %Subject{} = subject) do
-    case Runners.resolve_runbook_target_sets(targets, subject) do
+    case Runners.resolve_model_runbook_target_sets(targets, subject) do
       {:ok, target_sets} ->
         {:ok, Map.merge(resolved, Map.new(Enum.zip(targets, target_sets)))}
 
@@ -134,8 +136,7 @@ defmodule Emisar.Runbooks.Compiler do
   end
 
   defp staged_requests(steps, target_sets) do
-    with :ok <- validate_fan_out(target_sets),
-         :ok <- validate_unsigned_targets(steps, target_sets) do
+    with :ok <- validate_fan_out(target_sets) do
       {:ok, steps, target_sets, candidate_requests(steps, target_sets)}
     end
   end
@@ -172,7 +173,9 @@ defmodule Emisar.Runbooks.Compiler do
     requests = batch |> Enum.flat_map(&stage_requests/1) |> Enum.uniq()
     runners = requests |> Enum.map(& &1.runner) |> Enum.uniq_by(& &1.id)
 
-    resolve_candidates(requests, runners, subject)
+    requests
+    |> Catalog.resolve_runbook_readable_candidates(runners, subject)
+    |> candidate_resolution_result()
   end
 
   defp stage_requests({:ok, _steps, _target_sets, requests}), do: requests
@@ -377,7 +380,13 @@ defmodule Emisar.Runbooks.Compiler do
   end
 
   defp resolve_candidates(requests, runners, subject) do
-    case Catalog.resolve_runbook_candidates(requests, runners, subject) do
+    requests
+    |> Catalog.resolve_runbook_candidates(runners, subject)
+    |> candidate_resolution_result()
+  end
+
+  defp candidate_resolution_result(result) do
+    case result do
       {:error, :candidate_catalog_too_large} ->
         {:error,
          [

@@ -5,13 +5,23 @@ defmodule EmisarWeb.RunnerDetailLive do
   alias EmisarWeb.{Permissions, TransportReason, URLHelpers}
 
   def mount(%{"id" => id}, _session, socket) do
-    membership = socket.assigns.current_membership
+    socket =
+      socket
+      |> assign(:page_title, "Runner")
+      |> assign(:runner, nil)
+      |> assign(:loading?, true)
+      |> assign(:base_url, URLHelpers.derive_base_url(socket))
+      |> ConfirmDialog.init()
 
     if connected?(socket) do
-      Accounts.subscribe_account_team(socket.assigns.current_account.id)
       Runners.subscribe_account_credentials(socket.assigns.current_account.id)
+      mount_runner(id, socket)
+    else
+      {:ok, socket}
     end
+  end
 
+  defp mount_runner(id, socket) do
     case Runners.fetch_runner_by_id(
            id,
            socket.assigns.current_subject,
@@ -26,22 +36,7 @@ defmodule EmisarWeb.RunnerDetailLive do
          |> push_navigate(to: ~p"/app/#{socket.assigns.current_account}/runners")}
 
       {:ok, runner} ->
-        # Per-user runner ACLs (#238): treat out-of-scope as not-found
-        # rather than 403 — don't leak the existence of runners the
-        # operator's scope doesn't grant access to.
-        if Runners.runner_in_scope?(runner, membership) do
-          {:ok,
-           socket
-           |> assign(:page_title, runner.name)
-           |> assign(:base_url, URLHelpers.derive_base_url(socket))
-           |> assign_runner(runner)
-           |> ConfirmDialog.init()}
-        else
-          {:ok,
-           socket
-           |> put_flash(:error, "Runner not found.")
-           |> push_navigate(to: ~p"/app/#{socket.assigns.current_account}/runners")}
-        end
+        {:ok, socket |> assign(:page_title, runner.name) |> assign_runner(runner)}
     end
   end
 
@@ -49,24 +44,37 @@ defmodule EmisarWeb.RunnerDetailLive do
   # columns, so every path that changes the runner re-projects it in the same
   # step — a presence diff and an enable/disable alike.
   defp assign_runner(socket, runner) do
-    access = Accounts.runner_access_for_subject(socket.assigns.current_subject)
-
     socket
-    |> assign(:runner_display_access, access)
     |> project_runner(runner)
+    |> refresh_action_access()
   end
 
-  # Display facts are invalidated by membership access changes. Presence only
-  # changes connection metadata; mutations still authorize through the context.
-  defp project_runner(socket, runner) do
-    access = socket.assigns.runner_display_access
+  defp refresh_action_access(socket) do
+    subject = socket.assigns.current_subject
+    runner_id = socket.assigns.runner.id
 
+    can_manage? =
+      case Runners.management_by_runner_ids([runner_id], subject) do
+        {:ok, %{runners: runners}} -> Map.get(runners, runner_id, false)
+        {:error, _reason} -> false
+      end
+
+    socket
+    |> assign(:can_manage_runner?, can_manage?)
+    |> assign(:runner_action_access, Accounts.runner_access_for_subject(subject))
+  end
+
+  # Presence changes only connection metadata. Action access is projected
+  # separately; mutations still authorize through the context.
+  defp project_runner(socket, runner) do
     socket
     |> assign(:runner, runner)
     |> assign(:credential, Runners.credential_facts(runner))
-    |> assign(:readiness, Runners.runner_readiness(runner, access))
-    |> assign(:pack_access_restricted?, access.pack_mode == :restricted)
+    |> assign(:readiness, Runners.runner_readiness(runner))
   end
+
+  def handle_params(_params, _uri, %{assigns: %{runner: nil}} = socket),
+    do: {:noreply, socket}
 
   def handle_params(params, _uri, socket),
     do: {:noreply, load_lists(socket, socket.assigns.runner, params)}
@@ -176,7 +184,7 @@ defmodule EmisarWeb.RunnerDetailLive do
         {:list_changed, :team, "membership.runner_access_changed", user_id},
         %{assigns: %{current_user: %{id: user_id}}} = socket
       ) do
-    {:noreply, refresh_current_runner(socket)}
+    {:noreply, refresh_action_access(socket)}
   end
 
   def handle_info(_, socket), do: {:noreply, socket}
@@ -344,13 +352,15 @@ defmodule EmisarWeb.RunnerDetailLive do
         <%!-- The group is CONTEXT, not a link — there's no per-group page and the
              runners list has no group filter, so a link would go nowhere. Render
              it dimmer than the clickable "Runners" so it doesn't read as one. --%>
-        <span class="inline-flex items-center text-zinc-400">
+        <span :if={@runner} class="inline-flex items-center text-zinc-400">
           <span class="font-medium">{@runner.group}</span>
           <span class="mx-2 text-zinc-700" aria-hidden="true">/</span>
         </span>
-        <span class="font-mono text-lg tracking-tight text-zinc-50 sm:text-xl">{@runner.name}</span>
+        <span class="font-mono text-lg tracking-tight text-zinc-50 sm:text-xl">
+          {if @runner, do: @runner.name, else: "Runner"}
+        </span>
       </:title>
-      <:actions>
+      <:actions :if={@runner}>
         <%!-- This runner's slice of the audit trail (events whose target is it):
              registrations, trust decisions, state changes. A BUTTON — the
              title-row action slot speaks one grammar across detail pages (run
@@ -374,7 +384,8 @@ defmodule EmisarWeb.RunnerDetailLive do
 
       <%!-- Keep the major detail sections 48px apart; the shell owns the gap
            between the page introduction and this wrapper. --%>
-      <div class="mt-4 space-y-12">
+      <.loading_state :if={is_nil(@runner)} />
+      <div :if={@runner} class="mt-4 space-y-12">
         <%!-- Identity: the vital-stats grid and the labels/disconnect row are ONE
              block — the row is a hairline continuation of the grid — so they stay
              tight together, above the 48px gap to the next section. --%>
@@ -526,11 +537,7 @@ defmodule EmisarWeb.RunnerDetailLive do
             "lg:col-span-2 lg:col-start-1 lg:row-start-1 lg:flex lg:flex-col",
             paired_placeholders? && "lg:self-stretch"
           ]}>
-            <.section_header title="Actions" count={@actions_metadata.count}>
-              <:subtitle :if={@pack_access_restricted?}>
-                Your pack access limits this list to actions from packs you can use.
-              </:subtitle>
-            </.section_header>
+            <.section_header title="Actions" count={@actions_metadata.count} />
 
             <%!-- The catalog runs the shared LiveTable :cards shell so its Search
                + Pack + Risk filters render in the standard bar and the list stays
@@ -572,6 +579,16 @@ defmodule EmisarWeb.RunnerDetailLive do
                         <%!-- Viewers read the catalog; the Run affordance isn't
                            theirs to have (§4 — hidden, not dead). --%>
                         <span></span>
+                      <% not action_in_scope?(@runner, action, @runner_action_access) -> %>
+                        <.tooltip
+                          id={"action-access-lock-#{action.id}"}
+                          text="Outside your action access. Ask an owner or admin to update your runner or pack access."
+                          class="shrink-0"
+                        >
+                          <.button size={:sm} variant={:secondary} disabled icon="state.locked">
+                            Run
+                          </.button>
+                        </.tooltip>
                       <% action.dispatch_block_reason in [:pack_untrusted, :pack_retired] -> %>
                         <%!-- Keep the advertised capability visible for diagnosis, but
                            make the catalog's current trust decision explicit before an
@@ -774,7 +791,8 @@ defmodule EmisarWeb.RunnerDetailLive do
             tone={:neutral}
             show_action={Runners.subject_can_manage_runners?(@current_subject)}
             disabled={
-              @credential.pending? or not @credential.known? or @credential.expired? or
+              not @can_manage_runner? or @credential.pending? or not @credential.known? or
+                @credential.expired? or
                 not @runner.credential_rotation_supported or not is_nil(@runner.disabled_at)
             }
             phx-click={open_confirm("rotate-runner-key")}
@@ -784,6 +802,8 @@ defmodule EmisarWeb.RunnerDetailLive do
             </:heading>
             <:body>
               <%= cond do %>
+                <% Runners.subject_can_manage_runners?(@current_subject) and not @can_manage_runner? -> %>
+                  This runner is outside your management access.
                 <% @credential.expired? -> %>
                   The key this runner used has expired. Reconnect the runner; if registration fails,
                   use a new enrollment key.
@@ -807,7 +827,7 @@ defmodule EmisarWeb.RunnerDetailLive do
             {if @credential.pending?, do: "Rotation requested", else: "Rotate key"}
           </.confirm_zone>
           <.confirm_dialog
-            :if={Runners.subject_can_manage_runners?(@current_subject)}
+            :if={@can_manage_runner?}
             id="rotate-runner-key"
             title="Rotate this runner's key?"
             confirm_label="Rotate key"
@@ -830,10 +850,14 @@ defmodule EmisarWeb.RunnerDetailLive do
            of these. --%>
         <section :if={not @loading? and Runners.subject_can_manage_runners?(@current_subject)}>
           <.section_header title="Danger zone" />
+          <p :if={not @can_manage_runner?} class="mb-4 text-sm text-zinc-400">
+            This runner is outside your management access.
+          </p>
           <div class="divide-y divide-zinc-800/70">
             <.confirm_zone
               :if={@readiness.connection.state != :disabled}
               id="disable-runner"
+              disabled={not @can_manage_runner?}
               title="Disable this runner"
               confirm="Blocks new actions and connections until you enable it again."
               confirm_label="Disable runner"
@@ -849,6 +873,7 @@ defmodule EmisarWeb.RunnerDetailLive do
               :if={@readiness.connection.state == :disabled}
               tone={:success}
               title="Enable this runner"
+              disabled={not @can_manage_runner?}
               phx-click="enable"
             >
               <:body>
@@ -864,6 +889,7 @@ defmodule EmisarWeb.RunnerDetailLive do
             <.confirm_zone
               :if={@readiness.connection.state != :online}
               title="Delete this runner"
+              disabled={not @can_manage_runner?}
               phx-click={show_confirm_dialog("delete-runner")}
             >
               <:body>
@@ -875,7 +901,7 @@ defmodule EmisarWeb.RunnerDetailLive do
           </div>
 
           <.confirm_dialog
-            :if={@readiness.connection.state != :online}
+            :if={@can_manage_runner? and @readiness.connection.state != :online}
             id="delete-runner"
             title="Delete this runner"
             confirm_label="Delete runner"
@@ -906,6 +932,10 @@ defmodule EmisarWeb.RunnerDetailLive do
   defp heartbeat_at(%{heartbeat: %{connected_at: %DateTime{} = ts}}), do: ts
 
   defp heartbeat_at(_readiness), do: nil
+
+  defp action_in_scope?(runner, action, access) do
+    Accounts.action_in_runner_access?(runner, action.pack_id, access)
+  end
 
   # Labels are stored as a `:map` so the keys are strings and the order
   # is non-deterministic. Sort for stable rendering.

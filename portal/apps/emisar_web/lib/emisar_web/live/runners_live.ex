@@ -48,6 +48,19 @@ defmodule EmisarWeb.RunnersLive do
   def handle_info({:runner_credentials_changed, _id}, socket),
     do: {:noreply, schedule_reload(socket)}
 
+  def handle_info(
+        {:list_changed, :team, "membership.runner_access_changed", user_id},
+        %{assigns: %{current_user: %{id: user_id}}} = socket
+      ) do
+    socket = refresh_action_access(socket)
+
+    {:noreply,
+     maybe_mint_install(
+       socket,
+       socket.assigns.show_wizard? and socket.assigns.can_install_runners?
+     )}
+  end
+
   # The empty-state wizard's grace period elapsed with no runner — reveal its
   # troubleshooting checklist (a runner joining first re-runs load/2, which drops
   # show_wizard? and shows the list, pre-empting this).
@@ -201,8 +214,6 @@ defmodule EmisarWeb.RunnersLive do
     |> assign(:runners, [])
     |> assign(:metadata, %Emisar.Repo.Paginator.Metadata{count: 0, limit: 0})
     |> assign(:show_wizard?, false)
-    |> assign(:has_runner_access?, false)
-    |> assign(:has_full_runner_access?, false)
     |> assign(:can_install_runners?, false)
     |> assign(:can_manage_retention?, false)
     |> assign(:filter_params, params)
@@ -216,23 +227,10 @@ defmodule EmisarWeb.RunnersLive do
   defp load(socket, params) do
     filters = Runners.runner_filters()
     opts = LiveTable.params_to_opts(params, filters)
-    runner_access = Runners.runner_access_facts_for_subject(socket.assigns.current_subject)
-
-    # Both predicates read the member's current runner access from the database.
-    # Resolve them here rather than in the template, which re-runs on every
-    # render, and let the domain keep composing them — the web must never
-    # rebuild "permission AND full access" out of the facts above.
-    can_install_runners? = Runners.subject_can_install_runners?(socket.assigns.current_subject)
-
-    can_manage_retention? =
-      Runners.subject_can_manage_inactive_retention?(socket.assigns.current_subject)
-
-    # Runners derives current access from the subject, so the URL cannot select
-    # a broader membership. Rows, group summaries, and fleet posture all use the
-    # same scoped fleet; counts must not reveal inaccessible runners.
+    socket = refresh_action_access(socket)
 
     # Fleet posture — counts, signature mode, and the reasons behind them — is
-    # projected from the complete accessible set, not the current page. That one
+    # projected from the complete account fleet, not the current page. That one
     # read also answers the account-wide signed-only question, so a whole-fleet
     # notice never disagrees with the counters beside it.
     fleet = load_fleet_status(socket.assigns.current_subject)
@@ -259,18 +257,14 @@ defmodule EmisarWeb.RunnersLive do
         # minted root-capable install key on every visit. A filtered miss is an
         # empty RESULT, never an empty fleet.
         show_wizard? =
-          runner_access.full_access? and runners == [] and meta.count == 0 and
+          runners == [] and meta.count == 0 and
             not LiveTable.has_active_filters?(params, filters)
 
         socket
-        |> maybe_mint_install(show_wizard? and can_install_runners?)
+        |> maybe_mint_install(show_wizard? and socket.assigns.can_install_runners?)
         |> assign(:runners, runners)
         |> assign(:metadata, meta)
         |> assign(:show_wizard?, show_wizard?)
-        |> assign(:has_runner_access?, runner_access.has_access?)
-        |> assign(:can_install_runners?, can_install_runners?)
-        |> assign(:can_manage_retention?, can_manage_retention?)
-        |> assign(:has_full_runner_access?, runner_access.full_access?)
         |> assign(:filter_params, params)
         |> assign(:filters, filters)
         |> assign(:groups, groups)
@@ -286,8 +280,6 @@ defmodule EmisarWeb.RunnersLive do
         |> assign(:runners, [])
         |> assign(:metadata, %Emisar.Repo.Paginator.Metadata{count: 0, limit: 0})
         |> assign(:show_wizard?, false)
-        |> assign(:has_runner_access?, runner_access.has_access?)
-        |> assign(:has_full_runner_access?, runner_access.full_access?)
         |> assign(:filter_params, params)
         |> assign(:filters, filters)
         |> assign(:groups, [])
@@ -299,6 +291,14 @@ defmodule EmisarWeb.RunnersLive do
       {:error, _} ->
         load(socket, %{})
     end
+  end
+
+  defp refresh_action_access(socket) do
+    subject = socket.assigns.current_subject
+
+    socket
+    |> assign(:can_install_runners?, Runners.subject_can_install_runners?(subject))
+    |> assign(:can_manage_retention?, Runners.subject_can_manage_inactive_retention?(subject))
   end
 
   # Mint the install one-liner the first time an empty fleet renders on the live
@@ -406,28 +406,6 @@ defmodule EmisarWeb.RunnersLive do
           <%!-- Dead/pre-connect render — defer the onboarding pitch until the
                live socket confirms there really are no runners. --%>
           <.loading_state />
-        <% not @has_runner_access? or
-             (not @has_full_runner_access? and @metadata.count == 0 and
-                not LiveTable.has_active_filters?(@filter_params, @filters)) -> %>
-          <%!-- Public help remains useful without runner access; fleet data and
-               housekeeping stay in the accessible-fleet branch below. --%>
-          <div class="grid grid-cols-1 gap-x-10 gap-y-8 xl:grid-cols-[minmax(0,1fr)_22rem] xl:items-start">
-            <div class="min-w-0">
-              <.empty_state
-                icon="product.runner"
-                title="You do not have access to any runners"
-              >
-                <%= if @has_runner_access? do %>
-                  Ask an owner or admin to update your runner access.
-                <% else %>
-                  Ask an owner or admin to grant you access.
-                <% end %>
-              </.empty_state>
-            </div>
-            <div id="runners-supporting-rail">
-              <.runner_help />
-            </div>
-          </div>
         <% true -> %>
           <%!-- The fleet leads; practical help uses a fixed 22rem rail at xl.
                Below that split, help and housekeeping follow the list in

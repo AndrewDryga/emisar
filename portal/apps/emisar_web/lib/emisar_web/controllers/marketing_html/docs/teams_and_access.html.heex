@@ -4,7 +4,7 @@
   <section class="py-12 sm:py-16">
     <.docs_layout
       current="teams-and-access"
-      updated="September 7, 2026"
+      updated="September 8, 2026"
       toc={[
         {"roles", "Roles"},
         {"inviting", "Inviting your team"},
@@ -15,9 +15,8 @@
     >
       <.docs_header current="teams-and-access">
         <:dek>
-          Roles control what a member can do, runner scopes control which hosts they reach,
-          and pack scopes control which actions they can run there. An API key inherits its
-          owner's access, so limiting a person also limits their agent.
+          Roles control what members can do. Runner and pack access limits where they can act.
+          An API key inherits its owner's action access.
         </:dek>
       </.docs_header>
 
@@ -105,7 +104,7 @@
 
       <.docs_h2 id="runner-scopes">Per-member scope: runners and packs</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        Admins, operators, and viewers can be restricted to specific runners and packs.
+        Runner and pack grants limit action permissions for admins, operators, and viewers.
         Set access from Actions → Edit access on <a
           href={~p"/app/team"}
           class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
@@ -124,7 +123,8 @@
         <li class="flex items-start gap-2.5">
           <span class="flex-none text-zinc-500">—</span>
           <span>
-            A <strong class="text-zinc-200">runner scope</strong> grants access to one specific
+            A <strong class="text-zinc-200">runner scope</strong>
+            grants action access to one specific
             host. Use it for a contractor who needs exactly one machine.
           </span>
         </li>
@@ -136,20 +136,20 @@
         on database hosts without gaining
         <.docs_inline_code>shell</.docs_inline_code>
         access; a runner group alone cannot express that, because restricted packs exist on
-        most hosts. The two dimensions combine: a member reaches only runners in their runner
-        scope, and on those runners only packs in their pack scope.
+        most hosts. The two dimensions combine: a member can act only on runners in their runner
+        scope, using packs in their pack scope.
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        Scope controls what a member can see and start: out-of-scope runners and packs
-        disappear from fleet, catalog, and dispatch surfaces. History is different — runs and
-        audit events stay account-wide, and can name runners a member can no longer reach.
+        Members with access to operational pages can see the workspace's runners, packs,
+        runs, output, approvals, and runbooks. Runner and pack scope limits actions, not what
+        they can view.
         An API key inherits its owner's scope, so narrowing a member to
         <.docs_inline_code>cassandra-*</.docs_inline_code>
         narrows their agent with it, with no per-key settings to update. Every scope change is
         audited.
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        An admin scoped to one group cannot reach the rest of the fleet. Owners are exempt
+        An admin scoped to one group cannot act on the rest of the fleet. Owners are exempt
         from runner and pack scoping, but not from policy, required approvals, pack trust,
         suspension, or the account boundary. Nobody can edit their own access.
       </p>

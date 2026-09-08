@@ -17,6 +17,18 @@ defmodule Emisar.AccountsTest do
   alias Emisar.Users
   alias Emisar.Users.User
 
+  describe "action_in_runner_access?/3" do
+    test "both runner and pack grants must cover the action" do
+      runner = %{id: Ecto.UUID.generate(), group: "database"}
+      {:ok, access} = RunnerAccess.new(:restricted, ["database"], [], :restricted, ["postgres"])
+      assert Accounts.action_in_runner_access?(runner, "postgres", access)
+      refute Accounts.action_in_runner_access?(runner, "linux-core", access)
+      refute Accounts.action_in_runner_access?(%{runner | group: "web"}, "postgres", access)
+      refute Accounts.action_in_runner_access?(runner, "postgres", RunnerAccess.none())
+      assert Accounts.action_in_runner_access?(runner, "postgres", RunnerAccess.all())
+    end
+  end
+
   defmodule RecordingSessionDisconnector do
     def disconnect_live_sessions(topics) do
       send(self(), {:membership_activation_disconnect, topics})
@@ -1740,13 +1752,58 @@ defmodule Emisar.AccountsTest do
   end
 
   describe "put_account_pack_retention_days/3" do
-    # No denial test on purpose: this is an `@doc "Internal"` writer with no
-    # permission gate of its own — `Catalog.update_pack_retention_settings/3` owns it — so the
-    # scope check below (`for_subject/2`) is the whole contract Accounts holds.
     setup do
       account = Fixtures.Accounts.create_account()
-      subject = Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account)
+      membership = Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
+      subject = Fixtures.Subjects.membership_subject(membership)
       %{account: account, subject: subject}
+    end
+
+    test "rechecks the current manager and all-pack authority", %{account: account} do
+      membership = Fixtures.Memberships.create_membership(account_id: account.id, role: "admin")
+      subject = Fixtures.Subjects.membership_subject(membership)
+      {:ok, restricted} = RunnerAccess.restricted(["db"], [])
+      Fixtures.Memberships.force_runner_access(membership, restricted)
+      assert {:ok, _} = Accounts.put_account_pack_retention_days(account.id, 30, subject)
+
+      {:ok, packs} = RunnerAccess.new(:all, [], [], :restricted, ["postgres"])
+      Fixtures.Memberships.force_runner_access(membership, packs)
+
+      assert {:error, :unauthorized} =
+               Accounts.put_account_pack_retention_days(account.id, nil, subject)
+
+      Fixtures.Memberships.force_runner_access(membership, RunnerAccess.all())
+      Fixtures.Memberships.force_role(membership, "viewer")
+
+      assert {:error, :unauthorized} =
+               Accounts.put_account_pack_retention_days(account.id, 1, subject)
+
+      assert Repo.reload!(account).settings.pack_unseen_retention_days == 30
+    end
+
+    test "generic account updates cannot set or clear Catalog's schedule", %{
+      account: account,
+      subject: subject
+    } do
+      for attrs <- [
+            %{settings: %{pack_unseen_retention_days: 30}},
+            %{"settings" => %{"pack_unseen_retention_days" => 30}}
+          ] do
+        assert {:error, %Ecto.Changeset{}} = Accounts.update_account(account, attrs, subject)
+      end
+
+      configured = Fixtures.Accounts.set_pack_retention_days(account, 30)
+
+      for attrs <- [
+            %{settings: %{pack_unseen_retention_days: nil}},
+            %{"settings" => %{"pack_unseen_retention_days" => ""}},
+            %{settings: nil}
+          ] do
+        assert {:error, %Ecto.Changeset{}} = Accounts.update_account(configured, attrs, subject)
+      end
+
+      assert Repo.reload!(account).settings.pack_unseen_retention_days == 30
+      refute Repo.exists?(Audit.Event)
     end
 
     test "writes the canonical window Catalog validated", %{account: account, subject: subject} do
@@ -1756,7 +1813,7 @@ defmodule Emisar.AccountsTest do
     end
 
     test "nil turns automatic cleanup off", %{account: account, subject: subject} do
-      Fixtures.Accounts.set_account_settings(account, %{pack_unseen_retention_days: 30})
+      Fixtures.Accounts.set_pack_retention_days(account, 30)
 
       assert {:ok, updated} = Accounts.put_account_pack_retention_days(account.id, nil, subject)
       assert updated.settings.pack_unseen_retention_days == nil
@@ -1800,12 +1857,10 @@ defmodule Emisar.AccountsTest do
   end
 
   describe "put_account_runner_inactive_retention_hours/3" do
-    # No denial test on purpose: this is an `@doc "Internal"` writer with no
-    # permission gate of its own — `Runners.update_inactive_retention_settings/3` owns it — so the
-    # scope check below (`for_subject/2`) is the whole contract Accounts holds.
     setup do
       account = Fixtures.Accounts.create_account()
-      subject = Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account)
+      membership = Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
+      subject = Fixtures.Subjects.membership_subject(membership)
       %{account: account, subject: subject}
     end
 
@@ -1827,10 +1882,9 @@ defmodule Emisar.AccountsTest do
     end
 
     test "leaves every other setting alone", %{account: account, subject: subject} do
-      Fixtures.Accounts.set_account_settings(account, %{
-        require_mfa: true,
-        pack_unseen_retention_days: 30
-      })
+      account
+      |> Fixtures.Accounts.set_account_settings(%{require_mfa: true})
+      |> Fixtures.Accounts.set_pack_retention_days(30)
 
       assert {:ok, updated} =
                Accounts.put_account_runner_inactive_retention_hours(account.id, 6, subject)
@@ -1866,13 +1920,28 @@ defmodule Emisar.AccountsTest do
   end
 
   describe "put_account_max_grant_lifetime_seconds/3" do
-    # No denial test on purpose: this is an `@doc "Internal"` writer with no
-    # permission gate of its own — `Approvals.update_grant_lifetime_settings/3` owns it — so the
-    # scope check below (`for_subject/2`) is the whole contract Accounts holds.
+    # Approvals owns the setting's meaning; this writer also freezes current
+    # manager authority through the audited account write.
     setup do
       account = Fixtures.Accounts.create_account()
-      subject = Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account)
+      membership = Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
+      subject = Fixtures.Subjects.membership_subject(membership)
       %{account: account, subject: subject}
+    end
+
+    test "a demoted manager cannot use an old subject to change the cap", %{
+      account: account,
+      subject: subject
+    } do
+      account.id
+      |> Fixtures.Memberships.fetch_membership(subject.actor.id)
+      |> Fixtures.Memberships.force_role("operator")
+
+      assert Accounts.put_account_max_grant_lifetime_seconds(account.id, 0, subject) ==
+               {:error, :unauthorized}
+
+      refute Repo.reload!(account).settings.max_grant_lifetime_seconds
+      refute Repo.exists?(Audit.Event)
     end
 
     test "writes the canonical cap Approvals validated, with its own audit event", %{
@@ -1904,10 +1973,9 @@ defmodule Emisar.AccountsTest do
     end
 
     test "leaves every other setting alone", %{account: account, subject: subject} do
-      Fixtures.Accounts.set_account_settings(account, %{
-        require_mfa: true,
-        pack_unseen_retention_days: 30
-      })
+      account
+      |> Fixtures.Accounts.set_account_settings(%{require_mfa: true})
+      |> Fixtures.Accounts.set_pack_retention_days(30)
 
       assert {:ok, updated} =
                Accounts.put_account_max_grant_lifetime_seconds(account.id, 3_600, subject)

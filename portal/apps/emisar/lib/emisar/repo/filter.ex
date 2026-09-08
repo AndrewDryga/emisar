@@ -51,6 +51,7 @@ defmodule Emisar.Repo.Filter do
           valid_values: values() | nil,
           fun: fun(),
           default: term() | nil,
+          prompt: String.t(),
           span: :half | :row_start | :full
         }
 
@@ -73,6 +74,7 @@ defmodule Emisar.Repo.Filter do
             valid_values: nil,
             fun: nil,
             default: nil,
+            prompt: "All",
             span: :half,
             search: false
 

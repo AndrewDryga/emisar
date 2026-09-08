@@ -1665,7 +1665,7 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
     assert {:ok, [], _meta} = Runs.list_runs(subject)
   end
 
-  test "runbook reads and execution fail closed for hidden or signed-only targets", %{
+  test "runbook reads stay shared while target scope and signing still block execution", %{
     conn: conn,
     account: account,
     subject: subject,
@@ -1677,16 +1677,42 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
       setup_runner!(account, subject, "signed", group: "restricted", enforce_signatures: true)
 
     _visible_runbook = publish_runbook!(subject, "visible-book", %{"runner_id" => [visible.id]})
-    _hidden_runbook = publish_runbook!(subject, "hidden-book", %{"runner_id" => [signed.id]})
+    _signed_runbook = publish_runbook!(subject, "signed-book", %{"runner_id" => [signed.id]})
 
     {:ok, db_access} = Emisar.Accounts.RunnerAccess.restricted(["db"], [])
     Fixtures.Memberships.force_runner_access(membership, db_access)
 
     listed = call(conn, "list_runbooks", %{})
-    assert Enum.map(listed["runbooks"], & &1["slug"]) == ["visible-book"]
+    assert Enum.map(listed["runbooks"], & &1["slug"]) == ["signed-book", "visible-book"]
 
-    hidden = call(conn, "get_runbook", %{"slug" => "hidden-book"})
-    assert hidden["error"]["code"] == "runbook_not_found"
+    shared = call(conn, "get_runbook", %{"slug" => "signed-book"})
+    assert shared["ok"]
+    assert shared["runbook"]["runbook_ref"] == "signed-book@1"
+
+    assert get_in(shared, [
+             "runbook",
+             "definition",
+             "stages",
+             Access.at(0),
+             "steps",
+             Access.at(0),
+             "targets",
+             "refs"
+           ]) == ["runner:" <> runner_ref(signed)]
+
+    denied =
+      call(
+        conn,
+        "execute_runbook",
+        %{"runbook_ref" => "signed-book@1", "reason" => "Inspect signed host"},
+        "op_424NN9NMDZ1T76NARWCKM5A0D6"
+      )
+
+    assert denied["error"]["code"] == "unknown_target"
+    assert denied["dispatch_started"] == false
+    refute Repo.exists?(Operation)
+    refute Repo.exists?(RunbookExecution)
+    refute Repo.exists?(ActionRun)
 
     Fixtures.Memberships.force_runner_access(membership, Emisar.Accounts.RunnerAccess.all())
 
@@ -1694,13 +1720,15 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
       call(
         conn,
         "execute_runbook",
-        %{"runbook_ref" => "hidden-book@1", "reason" => "Inspect signed host"},
+        %{"runbook_ref" => "signed-book@1", "reason" => "Inspect signed host"},
         "op_324NN9NMDZ1T76NARWCKM5A0D6"
       )
 
     assert rejected["error"]["code"] == "signed_runbook_unsupported"
     assert rejected["dispatch_started"] == false
     refute Repo.exists?(Operation)
+    refute Repo.exists?(RunbookExecution)
+    refute Repo.exists?(ActionRun)
   end
 
   test "recent history paginates at fifteen and survives credential rotation", %{

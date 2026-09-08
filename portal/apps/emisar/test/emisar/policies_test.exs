@@ -771,7 +771,9 @@ defmodule Emisar.PoliciesTest do
       {_owner, account, _owner_subject} = Fixtures.Subjects.owner_subject()
 
       operator =
-        Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account, role: :operator)
+        Fixtures.Subjects.membership_subject(
+          Fixtures.Memberships.create_membership(account_id: account.id, role: "operator")
+        )
 
       assert {:ok, %Policy{}} = Policies.fetch_policy(operator)
 
@@ -863,24 +865,22 @@ defmodule Emisar.PoliciesTest do
       assert {:ok, [], _metadata} = Policies.list_scoped_policy_summaries(subject_b)
     end
 
-    # A ruleset names its target and spells out what may run there, so the list
-    # is the fleet — plus its rules — by another name.
-    test "a restricted member reads only the rulesets whose target they reach" do
+    test "a restricted member reads all account rulesets" do
       {_owner, account, owner} = Fixtures.Subjects.owner_subject()
       db = Fixtures.Runners.create_runner(account_id: account.id, group: "db", connected?: false)
 
       Fixtures.Runners.create_runner(account_id: account.id, group: "edge", connected?: false)
 
       {:ok, db_policy} = Policies.save_scoped_rules(allow_all_rules(), :runner, db.id, owner)
-      {:ok, _edge_policy} = Policies.save_scoped_rules(deny_all_rules(), :group, "edge", owner)
+      {:ok, edge_policy} = Policies.save_scoped_rules(deny_all_rules(), :group, "edge", owner)
 
       member = restricted_member(account, owner, "operator", ["db"])
 
-      assert {:ok, [listed], _metadata} = Policies.list_scoped_policy_summaries(member)
-      assert listed.id == db_policy.id
+      assert {:ok, listed, _metadata} = Policies.list_scoped_policy_summaries(member)
+      assert MapSet.new(listed, & &1.id) == MapSet.new([db_policy.id, edge_policy.id])
     end
 
-    test "a member with no runner access reads no rulesets" do
+    test "a member with no runner access still reads account rulesets" do
       {_owner, account, owner} = Fixtures.Subjects.owner_subject()
       runner = Fixtures.Runners.create_runner(account_id: account.id, connected?: false)
       {:ok, _} = Policies.save_scoped_rules(allow_all_rules(), :runner, runner.id, owner)
@@ -893,7 +893,7 @@ defmodule Emisar.PoliciesTest do
       {:ok, _updated} =
         Accounts.update_membership_runner_access(member_membership, RunnerAccess.none(), owner)
 
-      assert {:ok, [], _metadata} = Policies.list_scoped_policy_summaries(member)
+      assert {:ok, [_policy], _metadata} = Policies.list_scoped_policy_summaries(member)
     end
 
     # Group names are not account-unique, and the narrowing matches on the name.
@@ -952,7 +952,7 @@ defmodule Emisar.PoliciesTest do
 
       admin = restricted_member(account, owner, "admin", ["db"])
 
-      assert Policies.delete_scoped_policy(policy, admin) == {:error, :runner_not_found}
+      assert Policies.delete_scoped_policy(policy, admin) == {:error, :unauthorized}
       assert {:ok, [_still_live], _metadata} = Policies.list_scoped_policy_summaries(owner)
     end
 
@@ -1095,10 +1095,10 @@ defmodule Emisar.PoliciesTest do
       admin = restricted_member(account, owner, "admin", ["db"])
 
       assert Policies.save_scoped_rules(deny_all_rules(), :runner, edge.id, admin) ==
-               {:error, :runner_not_found}
+               {:error, :unauthorized}
 
       assert Policies.save_scoped_rules(deny_all_rules(), :group, "edge", admin) ==
-               {:error, :group_not_found}
+               {:error, :unauthorized}
 
       # A group nobody has enrolled answers exactly as an out-of-reach one does,
       # so the save can never be used to enumerate group names.
@@ -1249,7 +1249,8 @@ defmodule Emisar.PoliciesTest do
                can_manage?: true,
                has_runner_access?: true,
                can_manage_scoped?: true,
-               can_manage_account?: true
+               can_manage_account?: true,
+               targets: %{}
              }
 
       {:ok, runner_restricted} = RunnerAccess.restricted(["db"], [])
@@ -1261,7 +1262,8 @@ defmodule Emisar.PoliciesTest do
                can_manage?: true,
                has_runner_access?: true,
                can_manage_scoped?: true,
-               can_manage_account?: false
+               can_manage_account?: false,
+               targets: %{}
              }
 
       {:ok, pack_restricted} = RunnerAccess.new(:all, [], [], :restricted, ["postgres"])
@@ -1273,7 +1275,8 @@ defmodule Emisar.PoliciesTest do
                can_manage?: true,
                has_runner_access?: true,
                can_manage_scoped?: false,
-               can_manage_account?: false
+               can_manage_account?: false,
+               targets: %{}
              }
     end
   end

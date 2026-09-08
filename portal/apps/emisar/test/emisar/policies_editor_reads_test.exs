@@ -97,27 +97,29 @@ defmodule Emisar.PoliciesEditorReadsTest do
       assert {:ok, [], _} = Policies.list_scoped_policy_summaries(other)
     end
 
-    test "reads fresh restricted reach, including explicitly granted empty groups", %{
+    test "reads saved targets independently of action scope, including empty groups", %{
       account: account,
       user: user
     } do
       empty = scoped(account, user, :group, "empty")
-      scoped(account, user, :group, "hidden")
+      hidden = scoped(account, user, :group, "hidden")
       member = member(account, ["empty"])
 
-      assert {:ok, [%{id: id}], _} =
+      assert {:ok, rows, _} =
                Policies.list_scoped_policy_summaries(Fixtures.Subjects.membership_subject(member))
 
-      assert id == empty.id
+      assert MapSet.new(rows, & &1.id) == MapSet.new([empty.id, hidden.id])
       Fixtures.Memberships.force_runner_access(member, RunnerAccess.none())
 
-      assert {:ok, [], _} =
+      assert {:ok, rows, _} =
                Policies.list_scoped_policy_summaries(Fixtures.Subjects.membership_subject(member))
+
+      assert MapSet.new(rows, & &1.id) == MapSet.new([empty.id, hidden.id])
     end
   end
 
   describe "fetch_scoped_policy_by_id/2" do
-    test "loads exactly one full policy and refuses foreign, hidden, malformed and unauthorized ids",
+    test "loads one full policy regardless of action scope and refuses foreign, malformed and unauthorized ids",
          %{subject: subject, account: account, denied: denied, user: user} do
       policy = scoped(account, user, :group, "db")
       assert {:ok, loaded} = Policies.fetch_scoped_policy_by_id(policy.id, subject)
@@ -125,7 +127,7 @@ defmodule Emisar.PoliciesEditorReadsTest do
       {_, _, other} = Fixtures.Subjects.owner_subject()
       assert {:error, :not_found} = Policies.fetch_scoped_policy_by_id(policy.id, other)
       restricted = account |> member(["elsewhere"]) |> Fixtures.Subjects.membership_subject()
-      assert {:error, :not_found} = Policies.fetch_scoped_policy_by_id(policy.id, restricted)
+      assert {:ok, ^policy} = Policies.fetch_scoped_policy_by_id(policy.id, restricted)
       assert {:error, :not_found} = Policies.fetch_scoped_policy_by_id("bad", subject)
       assert {:error, :unauthorized} = Policies.fetch_scoped_policy_by_id(policy.id, denied)
     end
@@ -288,6 +290,121 @@ defmodule Emisar.PoliciesEditorReadsTest do
     end
   end
 
+  describe "policy_management_capabilities/2" do
+    test "uses complete current target authority, including empty groups and typed identities", %{
+      account: account,
+      subject: owner,
+      user: user
+    } do
+      first =
+        Fixtures.Runners.create_runner(account_id: account.id, group: "db", connected?: false)
+
+      second =
+        Fixtures.Runners.create_runner(account_id: account.id, group: "db", connected?: false)
+
+      foreign = Fixtures.Runners.create_runner(connected?: false)
+      deleted = Fixtures.Runners.create_runner(account_id: account.id, connected?: false)
+      Fixtures.Runners.mark_deleted(deleted)
+      scoped(account, user, :group, "empty")
+      scoped(account, user, :group, first.id)
+      membership = Fixtures.Memberships.create_membership(account_id: account.id, role: "admin")
+      subject = Fixtures.Subjects.membership_subject(membership)
+
+      targets = [
+        {:runner, first.id},
+        {:runner, second.id},
+        {:group, "db"},
+        {:group, "empty"},
+        {:group, first.id},
+        {:runner, foreign.id},
+        {:runner, deleted.id},
+        {:runner, "bad"}
+      ]
+
+      {:ok, partial} = RunnerAccess.restricted(["empty"], [first.id])
+      Fixtures.Memberships.force_runner_access(membership, partial)
+      hints = Policies.policy_management_capabilities(subject, targets).targets
+      assert hints[{:runner, first.id}]
+      assert hints[{:group, "empty"}]
+      refute hints[{:runner, second.id}]
+      refute hints[{:group, "db"}]
+      refute hints[{:group, first.id}]
+      for id <- [foreign.id, deleted.id, "bad"], do: refute(hints[{:runner, id}])
+
+      {:ok, complete} = RunnerAccess.restricted([], [first.id, second.id])
+      Fixtures.Memberships.force_runner_access(membership, complete)
+      assert Policies.policy_management_capabilities(subject, targets).targets[{:group, "db"}]
+      Fixtures.Runners.mark_deleted(first)
+      Fixtures.Runners.mark_deleted(second)
+      refute Policies.policy_management_capabilities(subject, targets).targets[{:group, "db"}]
+      assert Policies.policy_management_capabilities(owner, targets).targets[{:group, "empty"}]
+    end
+
+    test "current identity, management permission and pack scope all gate hints", %{
+      account: account
+    } do
+      membership = Fixtures.Memberships.create_membership(account_id: account.id, role: "admin")
+      subject = Fixtures.Subjects.membership_subject(membership)
+      targets = [{:group, "empty"}]
+      assert Policies.policy_management_capabilities(subject, targets).targets[{:group, "empty"}]
+
+      attenuated = %{
+        subject
+        | permissions:
+            MapSet.delete(subject.permissions, Policies.Authorizer.manage_policies_permission())
+      }
+
+      refute Policies.policy_management_capabilities(attenuated, targets).targets[
+               {:group, "empty"}
+             ]
+
+      {:ok, access} = RunnerAccess.new(:all, [], [], :restricted, ["postgres"])
+      Fixtures.Memberships.force_runner_access(membership, access)
+      refute Policies.policy_management_capabilities(subject, targets).targets[{:group, "empty"}]
+      Fixtures.Memberships.force_runner_access(membership, RunnerAccess.none())
+      refute Policies.policy_management_capabilities(subject, targets).targets[{:group, "empty"}]
+      Fixtures.Memberships.force_runner_access(membership, RunnerAccess.all())
+      Fixtures.Memberships.force_role(membership, "viewer")
+      refute Policies.policy_management_capabilities(subject, targets).targets[{:group, "empty"}]
+      Fixtures.Memberships.suspend_membership(membership)
+      refute Policies.policy_management_capabilities(subject, targets).targets[{:group, "empty"}]
+    end
+
+    test "all requested targets receive hints beyond a single batch", %{
+      account: account,
+      subject: subject
+    } do
+      runners =
+        for _ <- 1..101,
+            do: Fixtures.Runners.create_runner(account_id: account.id, connected?: false)
+
+      targets = Enum.map(runners, &{:runner, &1.id})
+      ref = make_ref()
+      owner = self()
+
+      :telemetry.attach(
+        ref,
+        [:emisar, :repo, :query],
+        fn _, _, metadata, _ ->
+          if self() == owner and String.contains?(metadata.query, "UNION"),
+            do: send(owner, {ref, :target_query})
+        end,
+        nil
+      )
+
+      try do
+        hints = Policies.policy_management_capabilities(subject, targets ++ targets).targets
+        assert map_size(hints) == 101
+        assert Enum.all?(targets, &hints[&1])
+        assert_receive {^ref, :target_query}
+        assert_receive {^ref, :target_query}
+        refute_receive {^ref, :target_query}
+      after
+        :telemetry.detach(ref)
+      end
+    end
+  end
+
   describe "list_action_risks/3" do
     test "groups worst semantic risks and keyset-pages more than 100 actions", %{
       account: account,
@@ -327,7 +444,7 @@ defmodule Emisar.PoliciesEditorReadsTest do
       assert length(last) == 3
     end
 
-    test "enforces current runner and pack access and account isolation", %{
+    test "shares catalog risks outside action access while preserving account isolation", %{
       account: account,
       denied: denied
     } do
@@ -348,9 +465,10 @@ defmodule Emisar.PoliciesEditorReadsTest do
       {:ok, access} = RunnerAccess.new(:restricted, ["db"], [], :restricted, ["test"])
       Fixtures.Memberships.force_runner_access(member, access)
       subject = Fixtures.Subjects.membership_subject(member)
-      assert {:ok, [%{action_id: "db.allowed"}], _} = Catalog.list_action_risks(:account, subject)
+      assert {:ok, risks, _} = Catalog.list_action_risks(:account, subject)
+      assert Enum.map(risks, & &1.action_id) == ["db.allowed", "db.hidden", "db.wrong-pack"]
       Fixtures.Memberships.force_runner_access(member, RunnerAccess.none())
-      assert {:ok, [], _} = Catalog.list_action_risks(:account, subject)
+      assert {:ok, ^risks, _} = Catalog.list_action_risks(:account, subject)
       assert {:error, :unauthorized} = Catalog.list_action_risks(:account, denied)
       {_, _, other} = Fixtures.Subjects.owner_subject()
       assert {:ok, [], _} = Catalog.list_action_risks(:account, other)
@@ -409,7 +527,7 @@ defmodule Emisar.PoliciesEditorReadsTest do
       assert preview.unmatched_override_indexes == MapSet.new([3])
     end
 
-    test "distinguishes an empty catalog from no access, and rejects hidden saved references", %{
+    test "shows an empty catalog without action access and rejects foreign saved references", %{
       subject: subject,
       denied: denied,
       account: account,
@@ -428,7 +546,7 @@ defmodule Emisar.PoliciesEditorReadsTest do
       member = member(account, ["db"])
       Fixtures.Memberships.force_runner_access(member, RunnerAccess.none())
 
-      assert {:error, :no_access} =
+      assert {:ok, %{total: 0}} =
                Policies.preview_policy(
                  input,
                  :account,
@@ -449,7 +567,7 @@ defmodule Emisar.PoliciesEditorReadsTest do
   end
 
   describe "preview_current?/2" do
-    test "refuses publication after access changes or the subject loses permissions", %{
+    test "keeps a preview after scope changes but refuses lost read authority", %{
       account: account,
       denied: denied,
       subject: owner
@@ -465,10 +583,12 @@ defmodule Emisar.PoliciesEditorReadsTest do
       assert {:ok, account_preview} = Policies.preview_policy(input, :account, owner)
       refute Policies.preview_current?(account_preview, other)
       Fixtures.Memberships.force_runner_access(member, RunnerAccess.none())
+      assert Policies.preview_current?(preview, subject)
+      Fixtures.Memberships.suspend_membership(member)
       refute Policies.preview_current?(preview, subject)
     end
 
-    test "refuses a runner moved outside a granted group even when the grant itself is unchanged",
+    test "keeps a saved runner preview when the runner moves outside action scope",
          %{account: account, user: user} do
       runner =
         Fixtures.Runners.create_runner(account_id: account.id, group: "db", connected?: false)
@@ -479,7 +599,7 @@ defmodule Emisar.PoliciesEditorReadsTest do
       assert {:ok, preview} = Policies.preview_policy(input, policy.id, subject)
       assert Policies.preview_current?(preview, subject)
       Fixtures.Runners.move_to_group(runner, "hidden")
-      refute Policies.preview_current?(preview, subject)
+      assert Policies.preview_current?(preview, subject)
     end
 
     test "refuses a removed saved policy", %{subject: subject, account: account, user: user} do

@@ -802,7 +802,7 @@ defmodule EmisarWeb.CoreComponents do
   end
 
   defp menu_item_base do
-    "emisar-icon-mono flex w-full items-center gap-2 rounded px-3 py-2 text-left transition-colors"
+    "emisar-icon-mono flex w-full items-center gap-2 rounded px-3 py-2 text-left transition-colors disabled:pointer-events-none disabled:opacity-40"
   end
 
   # Toned rows tint like their ghost-button siblings. Neutral steps to
@@ -4662,6 +4662,7 @@ defmodule EmisarWeb.CoreComponents do
       title={@title}
       confirm_label={@confirm_label}
       pending_label={@pending_label}
+      disabled={Map.get(@rest, :disabled, false)}
       tone={@modal_tone}
       on_confirm={@on_confirm |> close_confirm(@id)}
     >

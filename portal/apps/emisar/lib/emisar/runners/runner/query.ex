@@ -67,7 +67,9 @@ defmodule Emisar.Runners.Runner.Query do
   end
 
   def select_scope_facts(queryable),
-    do: select(queryable, [runners: r], %{id: r.id, group: r.group})
+    do: select(queryable, [runners: r], %{id: r.id, group: r.group, deleted_at: r.deleted_at})
+
+  def ordered_by_id(queryable), do: order_by(queryable, [runners: r], asc: r.id)
 
   @doc "Only identity, advertisement and connection fields used by model discovery."
   def select_model_fields(queryable) do
@@ -146,6 +148,40 @@ defmodule Emisar.Runners.Runner.Query do
   """
   def by_scope_values(queryable, runner_ids, groups),
     do: where(queryable, [runners: r], r.id in ^runner_ids or r.group in ^groups)
+
+  def outside_scope_values(queryable, runner_ids, groups) do
+    where(
+      queryable,
+      [runners: r],
+      not coalesce(r.id in ^runner_ids or r.group in ^groups, false)
+    )
+  end
+
+  # A group grant covers the whole current group, not whichever members a
+  # scoped runner query happened to return. Include offline/disabled members;
+  # availability is a separate execution question.
+  def in_completely_accessible_groups(queryable, %Emisar.Accounts.RunnerAccess{mode: :all}),
+    do: queryable
+
+  def in_completely_accessible_groups(queryable, %Emisar.Accounts.RunnerAccess{mode: :none}),
+    do: none(queryable)
+
+  def in_completely_accessible_groups(
+        queryable,
+        %Emisar.Accounts.RunnerAccess{runner_ids: runner_ids, groups: groups}
+      ) do
+    outside =
+      not_deleted()
+      |> outside_scope_values(runner_ids, groups)
+      |> where(
+        [runners: r],
+        r.account_id == parent_as(:runners).account_id and
+          r.group == parent_as(:runners).group
+      )
+      |> select([runners: _], 1)
+
+    where(queryable, [runners: _], not exists(outside))
+  end
 
   def ordered_by_group_name(queryable),
     do: order_by(queryable, [runners: r], asc: r.group, asc: r.name)

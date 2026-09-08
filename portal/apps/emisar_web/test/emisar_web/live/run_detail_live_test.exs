@@ -832,6 +832,43 @@ defmodule EmisarWeb.RunDetailLiveTest do
     assert Repo.reload!(run).status == :cancelling
   end
 
+  test "scope loss keeps run output and disables cancellation, including an already-open confirmation",
+       %{
+         conn: conn
+       } do
+    {conn, user, account} = register_and_log_in(conn)
+    membership = Fixtures.Memberships.fetch_membership(account.id, user.id)
+    membership = Fixtures.Memberships.force_role(membership, "admin")
+    run = run_with(account, %{status: "running"})
+
+    assert {:ok, _event} =
+             Runs.append_event(run, %{
+               seq: 1,
+               kind: "progress",
+               stream: "stdout",
+               payload: %{"chunk" => "Output remains readable"}
+             })
+
+    {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runs/#{run.id}")
+    assert has_element?(lv, "#cancel-run-confirm:not([disabled])")
+    output_state = :sys.get_state(lv.pid).socket.assigns.output_state
+
+    Fixtures.Memberships.force_runner_access(membership, Emisar.Accounts.RunnerAccess.none())
+    send(lv.pid, {:list_changed, :team, "membership.runner_access_changed", user.id})
+    assert render(lv) =~ "Cancelling requires action access"
+    assert render(lv) =~ "Output remains readable"
+    assert has_element?(lv, "#cancel-run-confirm[disabled]")
+    assert :sys.get_state(lv.pid).socket.assigns.output_state == output_state
+    assert :sys.get_state(lv.pid).socket.assigns.run.id == run.id
+    render_click(lv, "cancel", %{})
+    assert Repo.reload!(run).status == :running
+
+    Fixtures.Memberships.force_runner_access(membership, Emisar.Accounts.RunnerAccess.all())
+    send(lv.pid, {:list_changed, :team, "membership.runner_access_changed", user.id})
+    render(lv)
+    assert has_element?(lv, "#cancel-run-confirm:not([disabled])")
+  end
+
   test "an approval hold can be cancelled before it reaches the runner", %{conn: conn} do
     {conn, user, account} = register_and_log_in(conn)
     run = run_with(account, %{status: :pending_approval})

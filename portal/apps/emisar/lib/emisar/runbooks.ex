@@ -125,8 +125,8 @@ defmodule Emisar.Runbooks do
   `{:ok, [runbook], %Metadata{}} | {:error, :unauthorized | :invalid_cursor}`.
   """
   def list_runbooks(%Subject{} = subject, opts \\ []) do
-    with :ok <-
-           Auth.Authorizer.ensure_has_permissions(subject, Authorizer.view_runbooks_permission()) do
+    with {:ok, subject} <-
+           Auth.fetch_current_subject(Authorizer.view_runbooks_permission(), subject) do
       Runbook.Query.not_deleted()
       |> Runbook.Query.ordered_by_title()
       |> Authorizer.for_subject(subject)
@@ -160,8 +160,8 @@ defmodule Emisar.Runbooks do
   """
   def risk_by_runbooks(runbooks, %Subject{} = subject)
       when is_list(runbooks) and length(runbooks) <= @max_risk_runbook_ids do
-    with :ok <-
-           Auth.Authorizer.ensure_has_permissions(subject, Authorizer.view_runbooks_permission()) do
+    with {:ok, subject} <-
+           Auth.fetch_current_subject(Authorizer.view_runbooks_permission(), subject) do
       visible_ids = visible_runbook_ids(Enum.map(runbooks, & &1.id), subject)
       visible_runbooks = Enum.filter(runbooks, &MapSet.member?(visible_ids, &1.id))
 
@@ -212,13 +212,14 @@ defmodule Emisar.Runbooks do
 
   @doc """
   Lists every live runbook a model may discover. Requires `view_runbooks`;
-  scoped to the subject's account, then narrowed to the rows whose CURRENT
-  execution contract is still available. Returns
+  scoped to the subject's account, then narrowed to current trusted complete
+  action contracts. Action scope and physical readiness are execution gates, not
+  discovery gates. Returns
   `{:ok, [runbook]} | {:error, :unauthorized}`.
   """
   def list_model_visible_runbooks(%Subject{} = subject) do
-    with :ok <-
-           Auth.Authorizer.ensure_has_permissions(subject, Authorizer.view_runbooks_permission()) do
+    with {:ok, subject} <-
+           Auth.fetch_current_subject(Authorizer.view_runbooks_permission(), subject) do
       runbooks =
         Runbook.Query.not_deleted()
         |> Runbook.Query.live()
@@ -229,7 +230,7 @@ defmodule Emisar.Runbooks do
       # facts are account-wide, so asking per runbook made discovery cost a
       # fleet read and a catalog resolution for every row it listed.
       with {:ok, verdicts} <-
-             Compiler.validate_availability_all(Enum.map(runbooks, & &1.definition), subject) do
+             Compiler.validate_model_readability_all(Enum.map(runbooks, & &1.definition), subject) do
         {:ok, runbooks |> Enum.zip(verdicts) |> Enum.flat_map(&model_visible_runbook/1)}
       end
     end
@@ -246,8 +247,8 @@ defmodule Emisar.Runbooks do
   repair it. Requires `view_runbooks`; scoped to the subject's account.
   """
   def list_model_draft_runbooks(%Subject{} = subject) do
-    with :ok <-
-           Auth.Authorizer.ensure_has_permissions(subject, Authorizer.view_runbooks_permission()) do
+    with {:ok, subject} <-
+           Auth.fetch_current_subject(Authorizer.view_runbooks_permission(), subject) do
       runbooks =
         Runbook.Query.not_deleted()
         |> Runbook.Query.has_draft()
@@ -262,12 +263,12 @@ defmodule Emisar.Runbooks do
   Fetches the live runbook one slug names, for a model to read. Requires
   `view_runbooks`; scoped to the subject's account. Returns
   `{:ok, runbook} | {:error, :not_found | :unauthorized}` — a never-published,
-  cross-account, missing, or currently unavailable runbook is all `:not_found`,
-  so discovery never confirms a runbook the caller may not execute.
+  cross-account, missing, or untrusted runbook is all `:not_found`.
+  A readable runbook is not proof of permission or readiness to execute it.
   """
   def fetch_model_visible_runbook(slug, %Subject{} = subject) when is_binary(slug) do
-    with :ok <-
-           Auth.Authorizer.ensure_has_permissions(subject, Authorizer.view_runbooks_permission()),
+    with {:ok, subject} <-
+           Auth.fetch_current_subject(Authorizer.view_runbooks_permission(), subject),
          {:ok, runbook} <- fetch_live_runbook_by_slug(slug, subject) do
       if model_visible?(runbook, subject), do: {:ok, runbook}, else: {:error, :not_found}
     end
@@ -281,8 +282,8 @@ defmodule Emisar.Runbooks do
   not a read gate because the caller may be inspecting the draft to repair it.
   """
   def fetch_model_runbook_draft(slug, %Subject{} = subject) when is_binary(slug) do
-    with :ok <-
-           Auth.Authorizer.ensure_has_permissions(subject, Authorizer.view_runbooks_permission()) do
+    with {:ok, subject} <-
+           Auth.fetch_current_subject(Authorizer.view_runbooks_permission(), subject) do
       Runbook.Query.not_deleted()
       |> Runbook.Query.by_slug(slug)
       |> Runbook.Query.has_draft()
@@ -299,15 +300,14 @@ defmodule Emisar.Runbooks do
     |> Repo.fetch(Runbook.Query)
   end
 
-  # Discovery answers one question — could this runbook run right now? Every
-  # availability failure (missing target, untrusted or retired pack, changed
-  # contract) is the same answer to a model: it isn't there.
+  # Models may read trusted account-wide contracts even without an executable
+  # target. Missing references or unproven descriptors still stay out of discovery.
   defp model_visible?(%Runbook{} = runbook, %Subject{} = subject),
-    do: Compiler.validate_availability(runbook.definition, subject) == :ok
+    do: Compiler.validate_model_readability(runbook.definition, subject) == :ok
 
   def fetch_runbook_by_id(id, %Subject{} = subject) do
-    with :ok <-
-           Auth.Authorizer.ensure_has_permissions(subject, Authorizer.view_runbooks_permission()),
+    with {:ok, subject} <-
+           Auth.fetch_current_subject(Authorizer.view_runbooks_permission(), subject),
          true <- Repo.valid_uuid?(id) do
       Runbook.Query.not_deleted()
       |> Runbook.Query.by_id(id)
@@ -321,8 +321,8 @@ defmodule Emisar.Runbooks do
 
   @doc "Fetches one account-scoped runbook execution visible to the subject."
   def fetch_execution_by_id(execution_id, %Subject{} = subject) when is_binary(execution_id) do
-    with :ok <-
-           Auth.Authorizer.ensure_has_permissions(subject, Authorizer.view_runbooks_permission()),
+    with {:ok, subject} <-
+           Auth.fetch_current_subject(Authorizer.view_runbooks_permission(), subject),
          true <- Repo.valid_uuid?(execution_id) do
       RunbookExecution.Query.by_id(execution_id)
       |> Authorizer.for_subject(subject)
@@ -341,8 +341,8 @@ defmodule Emisar.Runbooks do
   """
   def fetch_execution_result(execution_id, %Subject{} = subject)
       when is_binary(execution_id) do
-    with :ok <-
-           Auth.Authorizer.ensure_has_permissions(subject, Authorizer.view_runbooks_permission()),
+    with {:ok, subject} <-
+           Auth.fetch_current_subject(Authorizer.view_runbooks_permission(), subject),
          true <- Repo.valid_uuid?(execution_id),
          {:ok, execution} <- fetch_execution_result_row(execution_id, subject),
          {:ok, runbook} <- fetch_runbook_for_execution(execution, subject),
@@ -375,8 +375,8 @@ defmodule Emisar.Runbooks do
   is its own `definition` snapshot, because the runbook row moves on at publish.
   """
   def fetch_runbook_for_execution(%RunbookExecution{} = execution, %Subject{} = subject) do
-    with :ok <-
-           Auth.Authorizer.ensure_has_permissions(subject, Authorizer.view_runbooks_permission()),
+    with {:ok, subject} <-
+           Auth.fetch_current_subject(Authorizer.view_runbooks_permission(), subject),
          :ok <- Subject.ensure_in_account(subject, execution.account_id) do
       Runbook.Query.all()
       |> Runbook.Query.by_id(execution.runbook_id)
@@ -445,7 +445,10 @@ defmodule Emisar.Runbooks do
   end
 
   defp insert_runbook(changeset, %Subject{} = subject) do
-    Multi.new()
+    authoring_authority_multi(subject, draft_creation_permission())
+    |> Multi.run(:author_access, fn _repo, _changes ->
+      with :ok <- ensure_authored_changeset_in_access(changeset, subject), do: {:ok, :authorized}
+    end)
     |> Multi.insert(:runbook, changeset)
     |> Multi.insert(:audit, fn %{runbook: runbook} ->
       Audit.Events.runbook_created(subject, runbook)
@@ -510,7 +513,12 @@ defmodule Emisar.Runbooks do
   end
 
   defp commit_mcp_draft(facts, id, operation_attrs, %Subject{account: account} = subject) do
-    with {:ok, multi} <- MCPOperations.reserve_in_multi(Multi.new(), operation_attrs, subject),
+    with {:ok, multi} <-
+           MCPOperations.reserve_in_multi(
+             authoring_authority_multi(subject, mcp_authoring_permission()),
+             operation_attrs,
+             subject
+           ),
          multi =
            Multi.merge(multi, fn
              %{mcp_operation: %{fresh?: false}} ->
@@ -539,6 +547,16 @@ defmodule Emisar.Runbooks do
       {:error, %Ecto.Changeset{} = changeset} -> map_derived_id_conflict(changeset)
       {:error, reason} -> {:error, reason}
     end
+  end
+
+  defp mcp_dispatch_authority_multi(subject) do
+    Multi.new()
+    |> Multi.run(:mcp_dispatch_account, fn repo, _changes ->
+      Accounts.fetch_and_lock_account(subject.account.id, repo: repo)
+    end)
+    |> Multi.run(:mcp_dispatch_access, fn repo, _changes ->
+      Runs.fetch_and_lock_dispatch_access(subject, repo: repo)
+    end)
   end
 
   # The MCP resource id is derived from the operation; past the 24h dedup window a
@@ -661,7 +679,12 @@ defmodule Emisar.Runbooks do
   end
 
   defp commit_mcp_draft_update(facts, id, operation_attrs, %Subject{} = subject) do
-    with {:ok, multi} <- MCPOperations.reserve_in_multi(Multi.new(), operation_attrs, subject),
+    with {:ok, multi} <-
+           MCPOperations.reserve_in_multi(
+             authoring_authority_multi(subject, mcp_authoring_permission()),
+             operation_attrs,
+             subject
+           ),
          multi =
            Multi.merge(multi, fn
              %{mcp_operation: %{fresh?: false}} ->
@@ -740,16 +763,10 @@ defmodule Emisar.Runbooks do
   """
   def save_draft(%Runbook{} = runbook, attrs, base_sha, %Subject{} = subject)
       when is_binary(base_sha) do
-    with :ok <-
-           Auth.Authorizer.ensure_has_permissions(
-             subject,
-             Authorizer.author_runbooks_permission()
-           ),
+    with {:ok, subject} <-
+           Auth.fetch_current_subject(Authorizer.author_runbooks_permission(), subject),
          :ok <- Subject.ensure_in_account(subject, runbook.account_id) do
-      Runbook.Query.not_deleted()
-      |> Runbook.Query.by_id(runbook.id)
-      |> Authorizer.for_subject(subject)
-      |> Repo.fetch_and_update(Runbook.Query,
+      update_authored_runbook(runbook, subject, Authorizer.author_runbooks_permission(),
         with: &save_draft_when_current(&1, attrs, base_sha, subject),
         audit: &Audit.Events.runbook_updated(subject, &2.data, &1, "draft_saved"),
         after_commit: &broadcast_runbook_updated/1
@@ -783,13 +800,10 @@ defmodule Emisar.Runbooks do
   `{:ok, runbook} | {:error, changeset | [Definition.issue()] | :no_draft | :target_out_of_scope | :pack_out_of_scope | :unauthorized | :not_found}`.
   """
   def publish_draft(%Runbook{} = runbook, %Subject{} = subject) do
-    with :ok <-
-           Auth.Authorizer.ensure_has_permissions(
-             subject,
-             Authorizer.author_runbooks_permission()
-           ),
+    with {:ok, subject} <-
+           Auth.fetch_current_subject(Authorizer.author_runbooks_permission(), subject),
          :ok <- Subject.ensure_in_account(subject, runbook.account_id) do
-      Multi.new()
+      authoring_authority_multi(subject, Authorizer.author_runbooks_permission())
       |> Multi.run(:locked_runbook, fn repo, _changes ->
         fetch_locked_runbook(runbook.id, subject, repo)
       end)
@@ -867,16 +881,10 @@ defmodule Emisar.Runbooks do
   `{:ok, runbook} | {:error, :never_published | :no_draft | :unauthorized | :not_found}`.
   """
   def discard_draft(%Runbook{} = runbook, %Subject{} = subject) do
-    with :ok <-
-           Auth.Authorizer.ensure_has_permissions(
-             subject,
-             Authorizer.author_runbooks_permission()
-           ),
+    with {:ok, subject} <-
+           Auth.fetch_current_subject(Authorizer.author_runbooks_permission(), subject),
          :ok <- Subject.ensure_in_account(subject, runbook.account_id) do
-      Runbook.Query.not_deleted()
-      |> Runbook.Query.by_id(runbook.id)
-      |> Authorizer.for_subject(subject)
-      |> Repo.fetch_and_update(Runbook.Query,
+      update_authored_runbook(runbook, subject, Authorizer.author_runbooks_permission(),
         with: &discard_draft_when_live/1,
         audit: &Audit.Events.runbook_updated(subject, &2.data, &1, "draft_discarded"),
         after_commit: &broadcast_runbook_updated/1
@@ -897,16 +905,10 @@ defmodule Emisar.Runbooks do
   `{:ok, runbook}` or `{:error, :unauthorized | :not_found}`.
   """
   def delete_runbook(%Runbook{} = runbook, %Subject{} = subject) do
-    with :ok <-
-           Auth.Authorizer.ensure_has_permissions(
-             subject,
-             Authorizer.manage_runbooks_permission()
-           ),
+    with {:ok, subject} <-
+           Auth.fetch_current_subject(Authorizer.manage_runbooks_permission(), subject),
          :ok <- Subject.ensure_in_account(subject, runbook.account_id) do
-      Runbook.Query.not_deleted()
-      |> Runbook.Query.by_id(runbook.id)
-      |> Authorizer.for_subject(subject)
-      |> Repo.fetch_and_update(Runbook.Query,
+      update_authored_runbook(runbook, subject, Authorizer.manage_runbooks_permission(),
         with: &Runbook.Changeset.delete/1,
         audit: &Audit.Events.runbook_deleted(subject, &1),
         after_commit: &broadcast_runbook_deleted/1
@@ -1004,11 +1006,8 @@ defmodule Emisar.Runbooks do
     input_values = Keyword.get(opts, :input_values, %{})
     selection_seed = Keyword.get_lazy(opts, :target_selection_seed, &new_target_selection_seed/0)
 
-    with :ok <-
-           Auth.Authorizer.ensure_has_permissions(
-             subject,
-             Emisar.Runs.Authorizer.dispatch_run_permission()
-           ),
+    with {:ok, subject} <-
+           Auth.fetch_current_subject(Emisar.Runs.Authorizer.dispatch_run_permission(), subject),
          :ok <- Subject.ensure_in_account(subject, runbook.account_id),
          :ok <- ensure_live(runbook),
          :ok <- ensure_membership(subject),
@@ -1109,7 +1108,12 @@ defmodule Emisar.Runbooks do
          kind,
          %Subject{} = subject
        ) do
-    with {:ok, multi} <- MCPOperations.reserve_in_multi(Multi.new(), operation_attrs, subject),
+    with {:ok, multi} <-
+           MCPOperations.reserve_in_multi(
+             mcp_dispatch_authority_multi(subject),
+             operation_attrs,
+             subject
+           ),
          multi =
            Multi.merge(multi, fn
              %{mcp_operation: %{fresh?: false}} ->
@@ -1165,7 +1169,13 @@ defmodule Emisar.Runbooks do
   # asked for slug@2 must be told 3 is live, not silently handed 3's content.
   defp fetch_runbook_for_mcp_execution(%{runbook_ref: runbook_ref}, :published, subject) do
     with {:ok, {slug, version}} <- parse_runbook_ref(runbook_ref),
-         {:ok, runbook} <- fetch_live_runbook_by_slug(slug, subject),
+         query =
+           Runbook.Query.not_deleted()
+           |> Runbook.Query.by_slug(slug)
+           |> Runbook.Query.live()
+           |> Runbook.Query.lock_for_update()
+           |> Authorizer.for_subject(subject),
+         {:ok, runbook} <- Repo.fetch(query, Runbook.Query),
          true <- runbook.live_version == version do
       {:ok, runbook}
     else
@@ -1246,11 +1256,8 @@ defmodule Emisar.Runbooks do
         %Subject{} = subject
       )
       when is_binary(selection_seed) and selection_seed != "" do
-    with :ok <-
-           Auth.Authorizer.ensure_has_permissions(
-             subject,
-             Emisar.Runs.Authorizer.dispatch_run_permission()
-           ),
+    with {:ok, subject} <-
+           Auth.fetch_current_subject(Emisar.Runs.Authorizer.dispatch_run_permission(), subject),
          :ok <- Subject.ensure_in_account(subject, runbook.account_id),
          {:ok, compiled} <-
            Compiler.compile(runbook.definition, input_values, selection_seed, subject) do
@@ -1301,11 +1308,8 @@ defmodule Emisar.Runbooks do
   """
   def resolve_definition_plan(definition, input_values, %Subject{} = subject)
       when is_map(input_values) do
-    with :ok <-
-           Auth.Authorizer.ensure_has_permissions(
-             subject,
-             Emisar.Runs.Authorizer.dispatch_run_permission()
-           ),
+    with {:ok, subject} <-
+           Auth.fetch_current_subject(Emisar.Runs.Authorizer.dispatch_run_permission(), subject),
          {:ok, compiled} <-
            Compiler.compile(definition, input_values, new_target_selection_seed(), subject) do
       {:ok,
@@ -1344,17 +1348,18 @@ defmodule Emisar.Runbooks do
           {:ok, EditorProjection.t()}
           | {:error, :unauthorized | :not_found | :candidate_catalog_too_large}
   def editor_projection(%Subject{} = subject) do
-    with :ok <-
-           Auth.Authorizer.ensure_has_permissions(
-             subject,
-             Authorizer.view_runbooks_permission()
-           ),
-         {:ok, runners} <-
-           Runners.list_all_runners_for_account(subject, preload: [:online?]),
-         available = Runners.available_runbook_targets(runners),
+    with {:ok, subject} <-
+           Auth.fetch_current_subject(Authorizer.view_runbooks_permission(), subject),
+         {:ok, %{targets: available, groups: groups}} <-
+           Runners.runbook_target_projection(subject),
          {:ok, catalog} <-
            Catalog.build_editor_projection(Enum.map(available, & &1.runner), subject) do
-      {:ok, %EditorProjection{targets: Enum.map(available, &editor_target/1), catalog: catalog}}
+      {:ok,
+       %EditorProjection{
+         targets: Enum.map(available, &editor_target/1),
+         groups: groups,
+         catalog: catalog
+       }}
     end
   end
 
@@ -1378,17 +1383,27 @@ defmodule Emisar.Runbooks do
     do: {:error, :unknown_target}
 
   def editor_target_runners(%EditorProjection{} = projection, refs, "all") when is_list(refs),
-    do: Runners.select_runbook_target_runners(refs, projection.targets)
+    do: select_editor_targets(projection, refs)
 
   def editor_target_runners(
         %EditorProjection{} = projection,
         ["group:" <> _group = ref],
         "random_one"
       ),
-      do: Runners.select_runbook_target_runners([ref], projection.targets)
+      do: select_editor_targets(projection, [ref])
 
   def editor_target_runners(%EditorProjection{}, _refs, _selection),
     do: {:error, :unknown_target}
+
+  defp select_editor_targets(projection, refs) do
+    if Enum.all?(refs, fn
+         "group:" <> group -> group in projection.groups
+         "runner:" <> _ref -> true
+         _ref -> false
+       end),
+       do: Runners.select_runbook_target_runners(refs, projection.targets),
+       else: {:error, :unknown_target}
+  end
 
   @doc """
   The actions the runners covered by one editor step's targets can execute
@@ -1429,11 +1444,8 @@ defmodule Emisar.Runbooks do
 
   @doc "Validates one unsaved definition through the context-owned strict contract."
   def validate_definition(definition, %Subject{} = subject) do
-    with :ok <-
-           Auth.Authorizer.ensure_has_permissions(
-             subject,
-             Authorizer.view_runbooks_permission()
-           ) do
+    with {:ok, _subject} <-
+           Auth.fetch_current_subject(Authorizer.view_runbooks_permission(), subject) do
       validate_definition(definition)
     end
   end
@@ -1456,8 +1468,8 @@ defmodule Emisar.Runbooks do
         limit \\ 10
       )
       when is_integer(limit) and limit >= 1 and limit <= 25 do
-    with :ok <-
-           Auth.Authorizer.ensure_has_permissions(subject, Authorizer.view_runbooks_permission()),
+    with {:ok, subject} <-
+           Auth.fetch_current_subject(Authorizer.view_runbooks_permission(), subject),
          :ok <- Subject.ensure_in_account(subject, runbook.account_id) do
       executions =
         RunbookExecution.Query.by_runbook_id(runbook.id)
@@ -1474,8 +1486,8 @@ defmodule Emisar.Runbooks do
   @doc "Lists a bounded recent execution history across the subject's visible runbooks."
   def list_recent_executions(%Subject{} = subject, limit \\ 5)
       when is_integer(limit) and limit >= 1 and limit <= 25 do
-    with :ok <-
-           Auth.Authorizer.ensure_has_permissions(subject, Authorizer.view_runbooks_permission()) do
+    with {:ok, subject} <-
+           Auth.fetch_current_subject(Authorizer.view_runbooks_permission(), subject) do
       executions =
         RunbookExecution.Query.all()
         |> RunbookExecution.Query.ordered_by_recent()
@@ -1698,6 +1710,68 @@ defmodule Emisar.Runbooks do
 
   # -- Authorization ---------------------------------------------------
 
+  defp draft_creation_permission do
+    {:one_of, [Authorizer.author_runbooks_permission(), Authorizer.draft_runbooks_permission()]}
+  end
+
+  defp mcp_authoring_permission do
+    {:one_of, [Authorizer.manage_runbooks_permission(), Authorizer.draft_runbooks_permission()]}
+  end
+
+  # Even an empty draft needs a current author. Target checks cannot supply that
+  # proof: an incomplete definition may legitimately name no infrastructure.
+  defp authoring_authority_multi(subject, permission) do
+    Multi.new()
+    |> Multi.run(:author_account, fn repo, _changes ->
+      Accounts.fetch_and_lock_account(subject.account.id, repo: repo)
+    end)
+    |> Multi.run(:author, fn repo, _changes ->
+      with {:ok, membership} <-
+             Accounts.fetch_and_lock_membership(subject.account.id, subject.membership_id,
+               repo: repo
+             ),
+           {:ok, _user} <- Users.fetch_and_lock_user_by_id(membership.user_id, repo),
+           true <-
+             is_nil(Subject.api_key_id(subject)) or
+               ApiKeys.api_key_usable_in_account?(
+                 repo,
+                 Subject.api_key_id(subject),
+                 subject.account.id
+               ),
+           {:ok, current} <- Auth.fetch_current_subject(permission, subject) do
+        {:ok, current}
+      else
+        _ -> {:error, :unauthorized}
+      end
+    end)
+  end
+
+  defp update_authored_runbook(runbook, subject, permission, opts) do
+    change = Keyword.fetch!(opts, :with)
+    audit = Keyword.fetch!(opts, :audit)
+    after_commit = Keyword.fetch!(opts, :after_commit)
+
+    authoring_authority_multi(subject, permission)
+    |> Multi.run(:source_runbook, fn repo, _changes ->
+      fetch_locked_runbook(runbook.id, subject, repo)
+    end)
+    |> Multi.run(:changeset, fn _repo, %{source_runbook: source} ->
+      case change.(source) do
+        %Ecto.Changeset{} = changeset -> {:ok, changeset}
+        reason -> {:error, reason}
+      end
+    end)
+    |> Multi.update(:runbook, & &1.changeset)
+    |> Multi.insert(:audit, fn %{runbook: updated, changeset: changeset} ->
+      if is_function(audit, 2), do: audit.(updated, changeset), else: audit.(updated)
+    end)
+    |> Repo.commit_multi(after_commit: &after_commit.(&1.runbook))
+    |> case do
+      {:ok, %{runbook: updated}} -> {:ok, updated}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
   @doc "True when the subject may view runbooks (the console nav + section gate)."
   def subject_can_view_runbooks?(%Subject{} = subject),
     do: Auth.Authorizer.has_permission?(subject, Authorizer.view_runbooks_permission())
@@ -1774,6 +1848,20 @@ defmodule Emisar.Runbooks do
   defp expand_definition(_definition), do: []
 
   # -- Authoring scope --------------------------------------------------
+
+  @doc """
+  Advisory authoring authority for a canonical editor definition. Checks the
+  current author and every named runner/group/pack, separately from definition
+  validity and deployment readiness. Incomplete drafts remain editable.
+  Returns `{:ok, :authorized}` or `{:error, reason}`. Writes repeat these checks.
+  """
+  def definition_authoring_access(definition, %Subject{} = subject) do
+    with {:ok, subject} <-
+           Auth.fetch_current_subject(Authorizer.author_runbooks_permission(), subject),
+         :ok <- ensure_definition_in_author_access(definition, subject) do
+      {:ok, :authorized}
+    end
+  end
 
   # The definition the author is WRITING, read back off the cast changeset so
   # the guard and the write cannot disagree. An invalid changeset passes: its

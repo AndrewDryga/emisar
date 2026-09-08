@@ -290,11 +290,12 @@ defmodule Emisar.ApprovalsTest do
       assert Repo.reload!(denied).decision_reason == "Not needed"
     end
 
-    test "requires permission and current target access without leaking another account", %{
-      account: account,
-      subject: subject,
-      request: request
-    } do
+    test "requires read permission and separates current target access without leaking another account",
+         %{
+           account: account,
+           subject: subject,
+           request: request
+         } do
       denied = Fixtures.Subjects.permissionless_subject(account)
       assert {:error, :unauthorized} = Approvals.fetch_approval_review(request.id, denied)
       {_user, _other_account, foreign} = Fixtures.Subjects.owner_subject()
@@ -307,7 +308,8 @@ defmodule Emisar.ApprovalsTest do
         all_runner_pack_access(["another-pack"])
       )
 
-      assert {:error, :not_found} = Approvals.fetch_approval_review(request.id, subject)
+      assert {:ok, %{target_authorized?: false, can_decide?: true}} =
+               Approvals.fetch_approval_review(request.id, subject)
     end
 
     test "runbook rechecks retain a frozen pending execution through failure and restoration", %{
@@ -685,7 +687,7 @@ defmodule Emisar.ApprovalsTest do
       assert {:ok, [], _metadata} = Approvals.list_pending_approval_requests(subject_b)
     end
 
-    test "runner access filters the queue, badge, detail, and decision authority" do
+    test "runner access filters actionable requests and badges, not shared requests or details" do
       account = Fixtures.Accounts.create_account()
       db_runner = Fixtures.Runners.create_runner(account_id: account.id, group: "database")
       web_runner = Fixtures.Runners.create_runner(account_id: account.id, group: "web")
@@ -705,14 +707,16 @@ defmodule Emisar.ApprovalsTest do
         |> operator_subject()
         |> subject_with_runner_access(database_access)
 
+      assert {:ok, shared, %{count: 2}} = Approvals.list_pending_approval_requests(subject)
+      assert Enum.map(shared, & &1.id) == [db_request.id, web_request.id]
+
       assert {:ok, [%Request{id: id}], _meta} =
-               Approvals.list_pending_approval_requests(subject)
+               Approvals.list_pending_approval_requests(subject, view: :needs_decision)
 
       assert id == db_request.id
       assert Approvals.count_pending_approval_requests(subject) == 1
 
-      assert Approvals.fetch_approval_request_by_id(web_request.id, subject) ==
-               {:error, :not_found}
+      assert {:ok, %Request{}} = Approvals.fetch_approval_request_by_id(web_request.id, subject)
 
       assert Approvals.deny_request(web_request, subject, "forged") == {:error, :not_found}
       assert Repo.reload!(web_request).status == :pending
@@ -721,14 +725,18 @@ defmodule Emisar.ApprovalsTest do
                Approvals.deny_request(db_request, subject, "in scope")
     end
 
-    test "pack access filters every request read and both decision paths" do
+    test "pack access gates decisions and the actionable queue, while all requests stay readable" do
       {subject, _key, request} = approvable_mcp_run()
 
       subject = subject_with_runner_access(subject, all_runner_pack_access(["postgres"]))
 
-      assert {:ok, [], _metadata} = Approvals.list_pending_approval_requests(subject)
+      assert {:ok, [%Request{}], _metadata} = Approvals.list_pending_approval_requests(subject)
+
+      assert {:ok, [], _metadata} =
+               Approvals.list_pending_approval_requests(subject, view: :needs_decision)
+
       assert Approvals.count_pending_approval_requests(subject) == 0
-      assert Approvals.fetch_approval_request_by_id(request.id, subject) == {:error, :not_found}
+      assert {:ok, %Request{}} = Approvals.fetch_approval_request_by_id(request.id, subject)
       assert Approvals.approve_request(request, subject, "forged") == {:error, :not_found}
       assert Approvals.deny_request(request, subject, "forged") == {:error, :not_found}
       assert Repo.reload!(request).status == :pending
@@ -799,7 +807,10 @@ defmodule Emisar.ApprovalsTest do
 
       pack_partial = subject_with_runner_access(subject, all_runner_pack_access(["postgres"]))
 
-      assert Approvals.fetch_approval_request_by_id(request.id, pack_partial) ==
+      assert {:ok, %{target_authorized?: false}} =
+               Approvals.fetch_approval_review(request.id, pack_partial)
+
+      assert Approvals.deny_request(request, pack_partial, "partial packs") ==
                {:error, :not_found}
 
       all_packs =
@@ -825,7 +836,10 @@ defmodule Emisar.ApprovalsTest do
 
       runner_partial = subject_with_runner_access(subject, one_runner)
 
-      assert Approvals.fetch_approval_request_by_id(request.id, runner_partial) ==
+      assert {:ok, %{target_authorized?: false}} =
+               Approvals.fetch_approval_review(request.id, runner_partial)
+
+      assert Approvals.deny_request(request, runner_partial, "partial runners") ==
                {:error, :not_found}
     end
 
@@ -839,7 +853,9 @@ defmodule Emisar.ApprovalsTest do
         |> ActionRun.Query.by_id(run.id)
         |> Repo.update_all(set: [pack_ref: "not-a-pack-ref"])
 
-      assert Approvals.fetch_approval_request_by_id(request.id, subject) == {:error, :not_found}
+      assert {:ok, %{target_authorized?: false}} =
+               Approvals.fetch_approval_review(request.id, subject)
+
       assert Approvals.deny_request(request, subject, "corrupt") == {:error, :not_found}
 
       {requester, execution_account, execution_subject} = Fixtures.Subjects.owner_subject()
@@ -851,8 +867,8 @@ defmodule Emisar.ApprovalsTest do
         Runbooks.ExecutionItem.Query.by_execution_id(execution_request.runbook_execution_id)
         |> Repo.delete_all()
 
-      assert Approvals.fetch_approval_request_by_id(execution_request.id, execution_subject) ==
-               {:error, :not_found}
+      assert {:ok, %{target_authorized?: false}} =
+               Approvals.fetch_approval_review(execution_request.id, execution_subject)
     end
   end
 
@@ -1212,7 +1228,7 @@ defmodule Emisar.ApprovalsTest do
                {:ok, %{action_request.id => nil, execution_request.id => nil}}
     end
 
-    test "answers only for requests the caller's current runner access reaches" do
+    test "answers shared request risks independently of the caller's action scope" do
       account = Fixtures.Accounts.create_account()
       db_runner = Fixtures.Runners.create_runner(account_id: account.id, group: "database")
       web_runner = Fixtures.Runners.create_runner(account_id: account.id, group: "web")
@@ -1223,7 +1239,7 @@ defmodule Emisar.ApprovalsTest do
 
       {:ok, db_request} = Approvals.create_request(db_run, Fixtures.Users.create_user().id, nil)
 
-      {:ok, _web_request} =
+      {:ok, web_request} =
         Approvals.create_request(web_run, Fixtures.Users.create_user().id, nil)
 
       {:ok, database_access} = Accounts.RunnerAccess.restricted(["database"], [])
@@ -1233,13 +1249,8 @@ defmodule Emisar.ApprovalsTest do
         |> operator_subject()
         |> subject_with_runner_access(database_access)
 
-      {:ok, [%Request{id: visible_id}], _metadata} =
-        Approvals.list_pending_approval_requests(subject)
-
-      assert visible_id == db_request.id
-
-      assert Approvals.risk_by_request_ids([db_request.id], subject) ==
-               {:ok, %{db_request.id => :high}}
+      assert Approvals.risk_by_request_ids([db_request.id, web_request.id], subject) ==
+               {:ok, %{db_request.id => :high, web_request.id => :critical}}
     end
 
     test "omits another account's request and ids that resolve to nothing" do
@@ -1929,6 +1940,69 @@ defmodule Emisar.ApprovalsTest do
       assert id == request.id
       assert decider.email in notified_recipients()
     end
+
+    test "a delayed initial prompt skips expired, decided and already-voted requests", %{
+      account: account,
+      run: run,
+      decider: decider
+    } do
+      {:ok, request} = Approvals.create_request(run, Fixtures.Users.create_user().id, "review")
+      assert decider.email in notified_recipients()
+
+      request
+      |> Ecto.Changeset.change(expires_at: DateTime.add(DateTime.utc_now(), -1))
+      |> Repo.update!()
+
+      assert Approvals.notify_request_created(request, run) == :ok
+      assert notified_recipients() == []
+
+      request |> Ecto.Changeset.change(status: :approved) |> Repo.update!()
+      assert Approvals.notify_request_created(request, run) == :ok
+      assert notified_recipients() == []
+
+      request
+      |> Repo.reload!()
+      |> Ecto.Changeset.change(status: :pending, expires_at: nil, min_approvals: 2)
+      |> Repo.update!()
+
+      Decision.Changeset.create(account.id, request.id, decider.id, %{
+        decision: :approve,
+        decided_at: DateTime.utc_now()
+      })
+      |> Repo.insert!()
+
+      assert Approvals.notify_request_created(request, run) == :ok
+      assert notified_recipients() == []
+
+      other = distinct_member(account, :admin)
+      assert Approvals.notify_request_created(request, run) == :ok
+      assert notified_recipients() == [other.actor.email]
+    end
+
+    test "initial prompts check current runner membership, not a stale preload", %{
+      account: account,
+      run: run,
+      decider: decider
+    } do
+      runner = Repo.get!(Emisar.Runners.Runner, run.runner_id)
+      runner |> Ecto.Changeset.change(group: "before") |> Repo.update!()
+      run = Repo.preload(run, :runner)
+      membership = Fixtures.Memberships.fetch_membership(account.id, decider.id)
+      Fixtures.Memberships.force_role(membership, "admin")
+      {:ok, access} = Accounts.RunnerAccess.new(:restricted, ["before"], [])
+      Fixtures.Memberships.force_runner_access(membership, access)
+
+      {:ok, request} = Approvals.create_request(run, Fixtures.Users.create_user().id, "review")
+      assert decider.email in notified_recipients()
+      runner |> Ecto.Changeset.change(group: "after") |> Repo.update!()
+      assert Approvals.notify_request_created(request, run) == :ok
+      assert notified_recipients() == []
+
+      Fixtures.Memberships.force_runner_access(membership, Accounts.RunnerAccess.all())
+      Fixtures.Runners.mark_deleted(runner)
+      assert Approvals.notify_request_created(request, run) == :ok
+      assert notified_recipients() == []
+    end
   end
 
   describe "request_facts/2" do
@@ -2134,6 +2208,54 @@ defmodule Emisar.ApprovalsTest do
   end
 
   describe "approve_request/3" do
+    test "approve and deny reject stale, inactive, and attenuated human authority before any effects" do
+      for decide <- [&Approvals.approve_request/2, &Approvals.deny_request/2],
+          invalidate <- [
+            &Fixtures.Memberships.force_role(&1, "viewer"),
+            &Fixtures.Memberships.suspend_membership/1,
+            &Fixtures.Memberships.mark_membership_as_deleted/1,
+            &Fixtures.Memberships.mark_directory_authorization_pending(&1, 2)
+          ] do
+        %{account: account, request: request, run: run} = gated_request(min_approvals: 2)
+        request = Repo.reload!(request)
+        run = Repo.reload!(run)
+        admin = distinct_member(account, :admin)
+        membership = Fixtures.Memberships.fetch_membership(account.id, admin.actor.id)
+        invalidate.(membership)
+        events = Repo.all(Audit.Event)
+
+        assert decide.(request, admin) == {:error, :unauthorized}
+        assert Repo.reload!(request) == request
+        assert Repo.reload!(run) == run
+        assert approved_count(request.id) == 0
+        assert Repo.all(Audit.Event) == events
+      end
+
+      %{account: account, request: request} = gated_request(min_approvals: 2)
+      admin = distinct_member(account, :admin)
+      attenuated = %{admin | permissions: MapSet.new()}
+      assert Approvals.approve_request(request, attenuated) == {:error, :unauthorized}
+      assert Approvals.deny_request(request, attenuated) == {:error, :unauthorized}
+      refute_received {:cloud_to_runner, _, %{"type" => "run_action"}}
+    end
+
+    test "ordinary failed-preflight cleanup cannot be triggered by a demoted approver" do
+      account = Fixtures.Accounts.create_account()
+      admin = distinct_member(account, :admin)
+
+      request =
+        Fixtures.Approvals.create_execution_request(account, admin.actor, executable?: false)
+
+      membership = Fixtures.Memberships.fetch_membership(account.id, admin.actor.id)
+      Fixtures.Memberships.force_role(membership, "viewer")
+
+      assert Approvals.approve_request(request, admin) == {:error, :unauthorized}
+      assert Repo.reload!(request) == request
+
+      assert Repo.get!(Runbooks.RunbookExecution, request.runbook_execution_id).status ==
+               :pending_approval
+    end
+
     setup do
       {account, run} = run_fixture()
       subject = operator_subject(account)
@@ -3737,6 +3859,16 @@ defmodule Emisar.ApprovalsTest do
   end
 
   describe "deny_request/3" do
+    test "current scope permits denial on a disabled offline runner with no action catalog" do
+      %{account: account, request: request, runner: runner} = gated_request(min_approvals: 2)
+      admin = distinct_member(account, :admin)
+      Fixtures.Runners.disable_runner(runner)
+      Fixtures.Catalog.delete_actions_for_runner(runner.id)
+
+      assert {:ok, {%Request{status: :denied}, %ActionRun{status: :cancelled}}} =
+               Approvals.deny_request(request, admin, "Do not run this")
+    end
+
     setup do
       {account, run} = run_fixture()
       subject = operator_subject(account)
@@ -4200,7 +4332,7 @@ defmodule Emisar.ApprovalsTest do
       refute_receive {:approval_updated, _}, 100
     end
 
-    test "a restricted same-account subscriber gets only an id it cannot dereference" do
+    test "a restricted same-account subscriber can inspect shared decision history" do
       account = Fixtures.Accounts.create_account()
       database_runner = Fixtures.Runners.create_runner(account_id: account.id, group: "database")
       web_runner = Fixtures.Runners.create_runner(account_id: account.id, group: "web")
@@ -4218,8 +4350,8 @@ defmodule Emisar.ApprovalsTest do
       assert_receive {:approval_updated, request_id}
       assert request_id == request.id
 
-      assert Approvals.fetch_approval_request_by_id(request_id, restricted_subject) ==
-               {:error, :not_found}
+      assert {:ok, %Request{status: :denied}} =
+               Approvals.fetch_approval_request_by_id(request_id, restricted_subject)
 
       refute database_runner.id == web_runner.id
     end
@@ -5393,7 +5525,7 @@ defmodule Emisar.ApprovalsTest do
       assert {:ok, [], _} = Approvals.list_grants_for_account(subject_b)
     end
 
-    test "restricted managers see and revoke only grants within runner and pack access" do
+    test "restricted managers may revoke one permitted grant but cannot partially revoke all" do
       account = Fixtures.Accounts.create_account()
       user = Fixtures.Users.create_user()
       {_, key} = Fixtures.ApiKeys.create_api_key(account_id: account.id, created_by_id: user.id)
@@ -5433,13 +5565,18 @@ defmodule Emisar.ApprovalsTest do
         |> operator_subject()
         |> subject_with_runner_access(database_access)
 
-      assert {:ok, [%Grant{id: id}], _meta} = Approvals.list_grants_for_account(subject)
-      assert id == db_grant.id
-      assert Approvals.fetch_grant_by_id(denied_pack.id, subject) == {:error, :not_found}
-      assert Approvals.fetch_grant_by_id(web_grant.id, subject) == {:error, :not_found}
+      assert {:ok, grants, %{count: 4}} = Approvals.list_grants_for_account(subject)
+
+      assert MapSet.new(grants, & &1.id) ==
+               MapSet.new([db_grant.id, denied_pack.id, web_grant.id, wildcard.id])
+
+      assert {:ok, %Grant{}} = Approvals.fetch_grant_by_id(denied_pack.id, subject)
+      assert {:ok, %Grant{}} = Approvals.fetch_grant_by_id(web_grant.id, subject)
       assert Approvals.revoke_grant(web_grant, subject) == {:error, :not_found}
 
-      assert Approvals.revoke_all_grants(subject) === {:ok, 1}
+      assert Approvals.revoke_all_grants(subject) === {:error, :unauthorized}
+      refute Repo.reload!(db_grant).revoked_at
+      assert {:ok, _revoked} = Approvals.revoke_grant(db_grant, subject)
       assert Repo.reload!(db_grant).revoked_at
       refute Repo.reload!(denied_pack).revoked_at
       refute Repo.reload!(web_grant).revoked_at

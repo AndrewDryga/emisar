@@ -65,7 +65,7 @@ defmodule EmisarWeb.RunnerScope do
       loading?={@loading?}
       load_error={@load_error}
       empty?={@empty?}
-      empty_message="No runners registered yet."
+      empty_message="No runners available to grant."
       class={@class}
       {@rest}
     >
@@ -259,7 +259,7 @@ defmodule EmisarWeb.RunnerScope do
   report "No packs on the selected runners" for packs it never read.
   """
   def account_pack_advertisements(%Subject{} = subject) do
-    case Catalog.list_pack_advertisements(subject) do
+    case Catalog.list_action_scope_pack_advertisements(subject) do
       {:ok, advertisements} -> {advertisements, false}
       {:error, _reason} -> {%{}, Catalog.subject_can_view_packs?(subject)}
     end
@@ -306,11 +306,12 @@ defmodule EmisarWeb.RunnerScope do
   defp pack_empty_message(mode, []) when mode != "all",
     do: "Choose runners first — the packs they carry appear here."
 
-  defp pack_empty_message(_mode, _runner_ids), do: "No packs on the selected runners."
+  defp pack_empty_message(_mode, _runner_ids),
+    do: "No packs available to grant on the selected runners."
 
   attr :name, :string, required: true, doc: ~s(checkbox field name, e.g. "pack_scope[]")
   attr :packs, :list, required: true, doc: "`[%{id: _, runner_count: _}]` from packs_in_scope/3"
-  attr :empty_message, :string, default: "No packs on the selected runners."
+  attr :empty_message, :string, default: "No packs available to grant on the selected runners."
   attr :selected, :list, default: [], doc: ~s(chosen "pack:id" values)
   attr :label, :string, default: nil
   attr :locked, :list, default: [], doc: "inherited selections, displayed but never submitted"

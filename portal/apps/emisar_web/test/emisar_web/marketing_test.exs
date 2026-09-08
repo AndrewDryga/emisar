@@ -1278,7 +1278,7 @@ defmodule EmisarWeb.MarketingTest do
       assert html =~ "Signed dispatch (Ed25519 or ECDSA P-256 leaf keys)"
       refute html =~ "Signed dispatch (Ed25519)"
       assert html =~ "Confirm\n            &amp; Apply"
-      assert html =~ "out-of-scope hosts from current fleet and dispatch surfaces"
+      assert html =~ "runner and pack access limits where people and agents can act"
       refute html =~ "members never see out-of-scope hosts"
     end
 
@@ -2006,7 +2006,7 @@ defmodule EmisarWeb.MarketingTest do
     test "authentication docs expose review dates without a dead edit action", %{conn: conn} do
       review_dates = [
         {"/docs/authentication", "August 23, 2026"},
-        {"/docs/teams-and-access", "September 7, 2026"},
+        {"/docs/teams-and-access", "September 8, 2026"},
         {"/docs/sso", "September 7, 2026"},
         {"/docs/scim", "September 7, 2026"}
       ]

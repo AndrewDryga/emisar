@@ -708,7 +708,12 @@ defmodule Emisar.AuditTest do
   describe "list_events/2 (paginated + filterable)" do
     setup do
       account = Fixtures.Accounts.create_account()
-      subject = Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account, role: :owner)
+
+      subject =
+        Fixtures.Subjects.membership_subject(
+          Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
+        )
+
       %{account: account, subject: subject}
     end
 
@@ -1120,7 +1125,9 @@ defmodule Emisar.AuditTest do
       account_a = Fixtures.Accounts.create_account()
 
       subject_a =
-        Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account_a, role: :owner)
+        Fixtures.Subjects.membership_subject(
+          Fixtures.Memberships.create_membership(account_id: account_a.id, role: "owner")
+        )
 
       account_b = Fixtures.Accounts.create_account()
       actor = Ecto.UUID.generate()
@@ -1140,7 +1147,12 @@ defmodule Emisar.AuditTest do
   describe "the From/To window is inclusive on both bounds" do
     setup do
       account = Fixtures.Accounts.create_account()
-      subject = Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account, role: :owner)
+
+      subject =
+        Fixtures.Subjects.membership_subject(
+          Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
+        )
+
       %{account: account, subject: subject}
     end
 
@@ -1174,7 +1186,12 @@ defmodule Emisar.AuditTest do
   describe "keyset pagination: empty / last page yields no further cursor" do
     setup do
       account = Fixtures.Accounts.create_account()
-      subject = Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account, role: :owner)
+
+      subject =
+        Fixtures.Subjects.membership_subject(
+          Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
+        )
+
       %{account: account, subject: subject}
     end
 
@@ -1431,7 +1448,9 @@ defmodule Emisar.AuditTest do
       account_a = Fixtures.Accounts.create_account()
 
       subject_a =
-        Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account_a, role: :owner)
+        Fixtures.Subjects.membership_subject(
+          Fixtures.Memberships.create_membership(account_id: account_a.id, role: "owner")
+        )
 
       user_b = Fixtures.Users.create_user()
       account_b = Fixtures.Accounts.create_account()
@@ -1446,7 +1465,12 @@ defmodule Emisar.AuditTest do
 
     test "a kind with no resolvable actors yields no options" do
       account = Fixtures.Accounts.create_account()
-      subject = Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account, role: :owner)
+
+      subject =
+        Fixtures.Subjects.membership_subject(
+          Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
+        )
+
       {:ok, _} = Audit.log(account.id, "x", actor_kind: "system", actor_id: Ecto.UUID.generate())
 
       assert {:ok, [], _metadata} = Audit.list_actor_options("system", subject)
@@ -1479,10 +1503,8 @@ defmodule Emisar.AuditTest do
       account_a = Fixtures.Accounts.create_account()
 
       subject_b =
-        Fixtures.Subjects.subject_for(
-          Fixtures.Users.create_user(),
-          Fixtures.Accounts.create_account(),
-          role: :owner
+        Fixtures.Subjects.membership_subject(
+          Fixtures.Memberships.create_membership(role: "owner")
         )
 
       user_a = Fixtures.Users.create_user()
@@ -1499,7 +1521,11 @@ defmodule Emisar.AuditTest do
     # label and is dropped → the picker has zero options (intentional).
     test "a resolver-less subject kind yields no options" do
       account = Fixtures.Accounts.create_account()
-      subject = Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account, role: :owner)
+
+      subject =
+        Fixtures.Subjects.membership_subject(
+          Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
+        )
 
       {:ok, _} =
         Audit.log(account.id, "policy.updated",
@@ -1571,7 +1597,12 @@ defmodule Emisar.AuditTest do
     setup do
       account = Fixtures.Accounts.create_account()
       Fixtures.Accounts.create_subscription(account, "team")
-      subject = Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account, role: :owner)
+
+      subject =
+        Fixtures.Subjects.membership_subject(
+          Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
+        )
+
       %{account: account, subject: subject}
     end
 
@@ -1653,14 +1684,21 @@ defmodule Emisar.AuditTest do
       Fixtures.Accounts.create_subscription(account_b, "team")
 
       subject_b =
-        Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account_b, role: :owner)
+        Fixtures.Subjects.membership_subject(
+          Fixtures.Memberships.create_membership(account_id: account_b.id, role: "owner")
+        )
 
       assert Audit.list_for_export(subject_b, event_types: ["user.signed_in"]) == {:ok, []}
     end
 
     test "a free account is refused — the SIEM sweep is the paid surface" do
       account = Fixtures.Accounts.create_account()
-      subject = Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account, role: :owner)
+
+      subject =
+        Fixtures.Subjects.membership_subject(
+          Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
+        )
+
       _ = seed_export_events(account, 1)
 
       assert Audit.list_for_export(subject) == {:error, :audit_export_not_available}
@@ -1679,7 +1717,11 @@ defmodule Emisar.AuditTest do
 
     test "a granted entitlement enables the sweep on an otherwise ineligible plan" do
       account = Fixtures.Accounts.create_account()
-      subject = Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account, role: :owner)
+
+      subject =
+        Fixtures.Subjects.membership_subject(
+          Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
+        )
 
       Fixtures.Accounts.create_subscription(account, "starter-2027",
         entitlements: %{"features_audit_export_enabled?" => true}
@@ -1711,7 +1753,12 @@ defmodule Emisar.AuditTest do
     setup do
       account = Fixtures.Accounts.create_account()
       Fixtures.Accounts.create_subscription(account, "team")
-      subject = Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account, role: :owner)
+
+      subject =
+        Fixtures.Subjects.membership_subject(
+          Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
+        )
+
       %{account: account, subject: subject}
     end
 
@@ -1729,7 +1776,12 @@ defmodule Emisar.AuditTest do
 
     test "a free account is refused while its in-console trail stays readable" do
       account = Fixtures.Accounts.create_account()
-      subject = Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account, role: :owner)
+
+      subject =
+        Fixtures.Subjects.membership_subject(
+          Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
+        )
+
       {:ok, _event} = Audit.log(account.id, "user.signed_in", actor_kind: "user")
 
       assert Audit.list_events_for_export(subject) == {:error, :audit_export_not_available}
@@ -1763,7 +1815,9 @@ defmodule Emisar.AuditTest do
       Fixtures.Accounts.create_subscription(account_b, "team")
 
       subject_b =
-        Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account_b, role: :owner)
+        Fixtures.Subjects.membership_subject(
+          Fixtures.Memberships.create_membership(account_id: account_b.id, role: "owner")
+        )
 
       assert {:ok, [], _meta} =
                Audit.list_events_for_export(subject_b, filter: [event_type: ["user.signed_in"]])
@@ -1862,7 +1916,12 @@ defmodule Emisar.AuditTest do
   describe "fetch_event_by_id/2" do
     test "returns the event inside the subject's account" do
       account = Fixtures.Accounts.create_account()
-      subject = Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account, role: :owner)
+
+      subject =
+        Fixtures.Subjects.membership_subject(
+          Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
+        )
+
       {:ok, event} = Audit.log(account.id, "user.signed_in", actor_kind: "user")
 
       assert {:ok, fetched} = Audit.fetch_event_by_id(event.id, subject)
@@ -1882,10 +1941,8 @@ defmodule Emisar.AuditTest do
       {:ok, event_a} = Audit.log(account_a.id, "user.signed_in", actor_kind: "user")
 
       subject_b =
-        Fixtures.Subjects.subject_for(
-          Fixtures.Users.create_user(),
-          Fixtures.Accounts.create_account(),
-          role: :owner
+        Fixtures.Subjects.membership_subject(
+          Fixtures.Memberships.create_membership(role: "owner")
         )
 
       assert Audit.fetch_event_by_id(event_a.id, subject_b) == {:error, :not_found}
@@ -1893,10 +1950,8 @@ defmodule Emisar.AuditTest do
 
     test "a malformed id is a clean :not_found" do
       subject =
-        Fixtures.Subjects.subject_for(
-          Fixtures.Users.create_user(),
-          Fixtures.Accounts.create_account(),
-          role: :owner
+        Fixtures.Subjects.membership_subject(
+          Fixtures.Memberships.create_membership(role: "owner")
         )
 
       assert Audit.fetch_event_by_id("not-a-uuid", subject) == {:error, :not_found}
@@ -2695,7 +2750,12 @@ defmodule Emisar.AuditTest do
   describe "the emitted event types ARE the Type vocabulary" do
     setup do
       account = Fixtures.Accounts.create_account()
-      subject = Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account, role: :owner)
+
+      subject =
+        Fixtures.Subjects.membership_subject(
+          Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
+        )
+
       %{account: account, subject: subject}
     end
 

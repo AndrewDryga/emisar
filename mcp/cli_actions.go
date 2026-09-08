@@ -70,8 +70,10 @@ func renderCLIGetAction(w io.Writer, raw []byte, account string) (string, bool) 
 		}
 	}
 	writeCLIActionArguments(&out, action.ArgsSchema)
-	if command := cliActionRunTemplateForOS(action, account, runtime.GOOS); command != "" {
-		fmt.Fprintf(&out, "\n%s\n  %s\n", cliStyledText(w, "1", "Run"), command)
+	if len(result.CompatibleRunners) > 0 {
+		if command := cliActionRunTemplateForOS(action, account, runtime.GOOS); command != "" {
+			fmt.Fprintf(&out, "\n%s\n  %s\n", cliStyledText(w, "1", "Run"), command)
+		}
 	}
 
 	fmt.Fprintf(&out, "\n%s (%d)\n", cliStyledText(w, "1", "Compatible runners"), len(result.CompatibleRunners))

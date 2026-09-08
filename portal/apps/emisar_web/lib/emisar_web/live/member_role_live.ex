@@ -165,7 +165,7 @@ defmodule EmisarWeb.MemberRoleLive do
   defp access_error(reason), do: MemberErrors.message(reason)
 
   defp load_runners(subject) do
-    case Runners.list_all_runners_for_account(subject) do
+    case Runners.list_runners_in_action_scope(subject) do
       {:ok, runners} -> {runners, false}
       {:error, _reason} -> {[], true}
     end

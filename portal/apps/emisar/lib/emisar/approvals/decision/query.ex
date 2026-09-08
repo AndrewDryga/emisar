@@ -10,6 +10,12 @@ defmodule Emisar.Approvals.Decision.Query do
   def by_request_id(queryable \\ all(), request_id),
     do: where(queryable, [approval_decisions: d], d.request_id == ^request_id)
 
+  def by_decider_ids(queryable, ids),
+    do: where(queryable, [approval_decisions: d], d.decider_id in ^ids)
+
+  def select_decider_ids(queryable),
+    do: select(queryable, [approval_decisions: d], d.decider_id)
+
   def ordered_by_decided(queryable \\ all()),
     do: order_by(queryable, [approval_decisions: d], asc: d.decided_at)
 

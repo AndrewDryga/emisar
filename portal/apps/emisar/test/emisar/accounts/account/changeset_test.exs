@@ -64,6 +64,13 @@ defmodule Emisar.Accounts.Account.ChangesetTest do
       assert "must be greater than 0" in errors_on(invalid).settings.pack_unseen_retention_days
     end
 
+    test "refuses the Catalog-owned cleanup schedule on generic creation" do
+      invalid = changeset(settings: %{pack_unseen_retention_days: 30})
+      refute invalid.valid?
+
+      assert "is set through the pack settings" in errors_on(invalid).settings.pack_unseen_retention_days
+    end
+
     test "refuses the runner-inactivity window Runners owns" do
       invalid = changeset(settings: %{runner_inactive_retention_hours: 24})
 

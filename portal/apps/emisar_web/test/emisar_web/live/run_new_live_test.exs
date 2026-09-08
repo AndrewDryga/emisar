@@ -108,6 +108,35 @@ defmodule EmisarWeb.RunNewLiveTest do
     refute html =~ "Invalid:"
   end
 
+  test "scope changes preserve entered arguments and reason while updating dispatch controls", %{
+    conn: conn
+  } do
+    {conn, user, account} = register_and_log_in(conn)
+    membership = Fixtures.Memberships.fetch_membership(account.id, user.id)
+    membership = Fixtures.Memberships.force_role(membership, "admin")
+    {runner, action} = action_with_required_arg(account)
+    {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runs/new/#{runner.id}/#{action.action_id}")
+    params = %{"args" => %{"path" => "/var/log/service.log"}, "reason" => "Investigate an error"}
+    render_change(lv, "validate", params)
+    assert has_element?(lv, "#dispatch_form button:not([disabled])", "Run on")
+
+    Fixtures.Memberships.force_runner_access(membership, Emisar.Accounts.RunnerAccess.none())
+    send(lv.pid, {:list_changed, :team, "membership.runner_access_changed", user.id})
+    assert render(lv) =~ "Outside your action access"
+    assert has_element?(lv, "#dispatch_form button[disabled]", "Run on")
+    assert has_element?(lv, ~s(input[name="args[path]"][value="/var/log/service.log"]))
+    assert has_element?(lv, "textarea[name=reason]", "Investigate an error")
+
+    render_click(lv, "dispatch", params)
+    refute Repo.one(Runs.ActionRun)
+
+    Fixtures.Memberships.force_runner_access(membership, Emisar.Accounts.RunnerAccess.all())
+    send(lv.pid, {:list_changed, :team, "membership.runner_access_changed", user.id})
+    render(lv)
+    assert has_element?(lv, "#dispatch_form button:not([disabled])", "Run on")
+    assert has_element?(lv, "textarea[name=reason]", "Investigate an error")
+  end
+
   # the action-context panel (title + description) and the
   # meta strip (risk / kind / pack) render, with one arg input per declared arg
   # plus the reason textarea.
@@ -717,13 +746,9 @@ defmodule EmisarWeb.RunNewLiveTest do
     assert log =~ "reason=:invalid_policy_approval"
   end
 
-  # An operator scoped to a DIFFERENT runner group cannot even open the dispatch
-  # form: the action read is scope-narrowed, so an out-of-scope host's action id,
-  # title, risk, and full args schema stay hidden rather than rendering a page
-  # whose submit is then refused. That is the existence-hiding /docs/teams-and-access
-  # promises. Dispatch is still independently re-checked against the membership's
-  # CURRENT scope, so a grant revoked mid-session bites there too.
-  test "a runner outside the operator's scope cannot open the dispatch form", %{conn: conn} do
+  test "a runner outside the operator's action scope remains readable but cannot dispatch", %{
+    conn: conn
+  } do
     {_owner_conn, owner, account} = register_and_log_in(conn)
     {runner, action} = action_with_required_arg(account)
     Fixtures.Policies.create_policy(account_id: account.id, created_by_id: owner.id)
@@ -741,10 +766,19 @@ defmodule EmisarWeb.RunNewLiveTest do
     {:ok, access} = Emisar.Accounts.RunnerAccess.restricted(["locked-out"], [])
     Fixtures.Memberships.force_runner_access(membership, access)
 
-    assert {:error, {:live_redirect, %{flash: %{"error" => "Action not found."}}}} =
+    assert {:ok, lv, html} =
              build_conn()
              |> log_in_user(operator)
              |> live(~p"/app/#{account}/runs/new/#{runner.id}/#{action.action_id}")
+
+    assert html =~ action.action_id
+    assert html =~ "Outside your action access"
+    assert has_element?(lv, "#dispatch_form button[disabled]", "Run on")
+
+    render_click(lv, "dispatch", %{
+      "args" => %{"path" => "/var/log/service.log"},
+      "reason" => "inspect"
+    })
 
     assert {:ok, [], _} = Runs.list_recent_runs(owner_subject(owner, account), limit: 50)
   end

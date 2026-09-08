@@ -4,7 +4,7 @@ defmodule Emisar.Runners.ScopeTarget.Query do
 
   # A SQL projection, not a materialized fleet: only the caller's page crosses
   # the database boundary. Explicit grants keep an empty group selectable.
-  def all(runners, account_id, granted_groups) do
+  def all(runners, group_runners, account_id, granted_groups) do
     runner_targets =
       select(runners, [runners: r], %{
         account_id: r.account_id,
@@ -16,7 +16,7 @@ defmodule Emisar.Runners.ScopeTarget.Query do
       })
 
     groups =
-      runners
+      group_runners
       |> where([runners: r], not is_nil(r.group) and r.group != "")
       |> select([runners: r], %{
         account_id: r.account_id,

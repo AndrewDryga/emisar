@@ -179,11 +179,8 @@ defmodule Emisar.Runs do
   without N+1 queries.
   """
   def list_runs(%Subject{} = subject, opts \\ []) do
-    with :ok <-
-           Auth.Authorizer.ensure_has_permissions(
-             subject,
-             Authorizer.view_runs_permission()
-           ) do
+    with {:ok, subject} <-
+           Auth.fetch_current_subject(Authorizer.view_runs_permission(), subject) do
       {preloads, opts} = Keyword.pop(opts, :preload, [])
 
       # Run history grows without bound, including within a filter. Keep small
@@ -207,11 +204,8 @@ defmodule Emisar.Runs do
   "Dispatched by"). `%Subject{}` needs `view_runs`.
   """
   def list_run_operator_options(%Subject{} = subject) do
-    with :ok <-
-           Auth.Authorizer.ensure_has_permissions(
-             subject,
-             Authorizer.view_runs_permission()
-           ) do
+    with {:ok, subject} <-
+           Auth.fetch_current_subject(Authorizer.view_runs_permission(), subject) do
       options =
         ActionRun.Query.all()
         |> ActionRun.Query.operator_options()
@@ -228,11 +222,8 @@ defmodule Emisar.Runs do
   "Dispatched by"). `%Subject{}` needs `view_runs`.
   """
   def list_run_runbook_options(%Subject{} = subject) do
-    with :ok <-
-           Auth.Authorizer.ensure_has_permissions(
-             subject,
-             Authorizer.view_runs_permission()
-           ) do
+    with {:ok, subject} <-
+           Auth.fetch_current_subject(Authorizer.view_runs_permission(), subject) do
       options =
         ActionRun.Query.all()
         |> ActionRun.Query.runbook_options()
@@ -256,11 +247,8 @@ defmodule Emisar.Runs do
   total aggregate when a fixed snippet already has its count elsewhere.
   """
   def list_recent_runs(%Subject{} = subject, opts \\ []) do
-    with :ok <-
-           Auth.Authorizer.ensure_has_permissions(
-             subject,
-             Authorizer.view_runs_permission()
-           ) do
+    with {:ok, subject} <-
+           Auth.fetch_current_subject(Authorizer.view_runs_permission(), subject) do
       {preloads, opts} = Keyword.pop(opts, :preload, [])
       {scope, opts} = Keyword.pop(opts, :scope, :account)
       {runner_id, opts} = Keyword.pop(opts, :runner_id)
@@ -281,11 +269,8 @@ defmodule Emisar.Runs do
   @doc "Lists fixed-contract MCP history with lineage scope and keyset pagination."
   def list_recent_mcp_runs(filters, %Subject{} = subject, page_opts)
       when is_map(filters) and is_list(page_opts) do
-    with :ok <-
-           Auth.Authorizer.ensure_has_permissions(
-             subject,
-             Authorizer.view_runs_permission()
-           ) do
+    with {:ok, subject} <-
+           Auth.fetch_current_subject(Authorizer.view_runs_permission(), subject) do
       ActionRun.Query.all()
       |> ActionRun.Query.fixed_mcp_contract()
       |> apply_mcp_history_scope(filters[:scope], subject)
@@ -429,11 +414,8 @@ defmodule Emisar.Runs do
   Returns `{:ok, [run], %Paginator.Metadata{}}`.
   """
   def list_recent_runs_for_runner(runner_id, %Subject{} = subject, opts \\ []) do
-    with :ok <-
-           Auth.Authorizer.ensure_has_permissions(
-             subject,
-             Authorizer.view_runs_permission()
-           ) do
+    with {:ok, subject} <-
+           Auth.fetch_current_subject(Authorizer.view_runs_permission(), subject) do
       ActionRun.Query.all()
       |> ActionRun.Query.by_runner_id(runner_id)
       |> Authorizer.for_subject(subject)
@@ -442,11 +424,8 @@ defmodule Emisar.Runs do
   end
 
   def fetch_run_by_id(id, %Subject{} = subject, opts \\ []) do
-    with :ok <-
-           Auth.Authorizer.ensure_has_permissions(
-             subject,
-             Authorizer.view_runs_permission()
-           ),
+    with {:ok, subject} <-
+           Auth.fetch_current_subject(Authorizer.view_runs_permission(), subject),
          true <- Repo.valid_uuid?(id) do
       {preloads, opts} = Keyword.pop(opts, :preload, [])
 
@@ -561,11 +540,8 @@ defmodule Emisar.Runs do
 
   @doc "Fetches one run carrying the complete fixed MCP history contract."
   def fetch_mcp_run_by_id(id, %Subject{} = subject) do
-    with :ok <-
-           Auth.Authorizer.ensure_has_permissions(
-             subject,
-             Authorizer.view_runs_permission()
-           ),
+    with {:ok, subject} <-
+           Auth.fetch_current_subject(Authorizer.view_runs_permission(), subject),
          true <- Repo.valid_uuid?(id) do
       ActionRun.Query.all()
       |> ActionRun.Query.fixed_mcp_contract()
@@ -581,11 +557,8 @@ defmodule Emisar.Runs do
   @doc "Lists every run in one runbook execution through the caller's account scope."
   def list_runs_by_runbook_execution(execution_id, %Subject{} = subject)
       when is_binary(execution_id) do
-    with :ok <-
-           Auth.Authorizer.ensure_has_permissions(
-             subject,
-             Authorizer.view_runs_permission()
-           ) do
+    with {:ok, subject} <-
+           Auth.fetch_current_subject(Authorizer.view_runs_permission(), subject) do
       runs =
         ActionRun.Query.all()
         |> ActionRun.Query.by_runbook_execution_id(execution_id)
@@ -601,11 +574,8 @@ defmodule Emisar.Runs do
   @doc "Lists only the latest physical attempt for each item in one runbook execution."
   def list_latest_runbook_attempts(execution_id, %Subject{} = subject)
       when is_binary(execution_id) do
-    with :ok <-
-           Auth.Authorizer.ensure_has_permissions(
-             subject,
-             Authorizer.view_runs_permission()
-           ) do
+    with {:ok, subject} <-
+           Auth.fetch_current_subject(Authorizer.view_runs_permission(), subject) do
       runs =
         ActionRun.Query.all()
         |> ActionRun.Query.by_runbook_execution_id(execution_id)
@@ -793,6 +763,7 @@ defmodule Emisar.Runs do
     result =
       Multi.new()
       |> put_active_account_lock(attrs[:account_id], :active_account)
+      |> put_subject_dispatch_admission(attrs)
       |> Multi.insert(:run, ActionRun.Changeset.create(attrs))
       |> put_run_audit_event()
       |> put_decision_audit(opts[:audit])
@@ -824,6 +795,14 @@ defmodule Emisar.Runs do
     do: Map.put(attrs, :attestation, Attestation.envelope(attestation))
 
   defp strip_unproven_attestation(attrs), do: attrs
+
+  defp put_subject_dispatch_admission(multi, %{audit_subject: %Subject{}} = attrs) do
+    Multi.run(multi, :dispatch_admission, fn repo, _changes ->
+      authorize_dispatch_attrs(repo, attrs)
+    end)
+  end
+
+  defp put_subject_dispatch_admission(multi, _attrs), do: multi
 
   defp resolve_initiating_membership(%{initiating_membership_id: id} = attrs)
        when is_binary(id),
@@ -877,11 +856,8 @@ defmodule Emisar.Runs do
   an `:attestation` here is a claim nobody proved.
   """
   def dispatch_run(attrs, %Subject{account: %{id: account_id}} = subject) do
-    with :ok <-
-           Auth.Authorizer.ensure_has_permissions(
-             subject,
-             Authorizer.dispatch_run_permission()
-           ),
+    with {:ok, subject} <-
+           Auth.fetch_current_subject(Authorizer.dispatch_run_permission(), subject),
          :ok <- require_subject_membership(subject) do
       attrs
       |> put_dispatcher_context(subject)
@@ -918,11 +894,14 @@ defmodule Emisar.Runs do
          {:ok, contract} <-
            fetch_dispatch_contract(account_id, runner_id, action_id, attrs[:pack_ref], attrs),
          action = contract.action,
+         {:ok, pack_ref} <-
+           Catalog.MCPProjection.pack_ref(action.pack_id, action.pack_version, contract.pack_hash),
          :ok <- pack_in_membership_scope(action.pack_id, account_id, membership_id),
          :ok <- ensure_primary_executable_available(action) do
       attrs
       |> persist_initiating_membership()
       |> put_action_arguments(contract)
+      |> Map.put(:pack_ref, pack_ref)
       |> Map.put(:runner_ref, runner_ref)
       |> Map.put(:expected_pack_hash, contract.pack_hash)
       |> Map.put(:requires_approval, false)
@@ -954,11 +933,8 @@ defmodule Emisar.Runs do
   """
   def dispatch_mcp_action(facts, %Subject{actor: %ApiKeys.ApiKey{}} = subject)
       when is_map(facts) do
-    with :ok <-
-           Auth.Authorizer.ensure_has_permissions(
-             subject,
-             Authorizer.dispatch_run_permission()
-           ),
+    with {:ok, subject} <-
+           Auth.fetch_current_subject(Authorizer.dispatch_run_permission(), subject),
          :ok <- require_subject_membership(subject),
          {:ok, facts} <- normalize_mcp_action_facts(facts) do
       commit_mcp_action(facts, mcp_action_operation_attrs(facts), subject, true)
@@ -1452,12 +1428,15 @@ defmodule Emisar.Runs do
          :ok <- ensure_frozen_runbook_contract(attrs, contract),
          :ok <- ensure_runbook_item_identity(attrs, account_id),
          action = contract.action,
+         {:ok, pack_ref} <-
+           Catalog.MCPProjection.pack_ref(action.pack_id, action.pack_version, contract.pack_hash),
          :ok <- pack_in_membership_scope(action.pack_id, account_id, membership_id),
          :ok <- ensure_primary_executable_available(action) do
       attrs =
         attrs
         |> persist_initiating_membership()
         |> put_action_arguments(contract)
+        |> Map.put(:pack_ref, pack_ref)
         |> Map.put(:runner_ref, runner_ref)
         |> Map.put(:expected_pack_hash, contract.pack_hash)
         |> Map.put(:requires_approval, false)
@@ -1607,6 +1586,9 @@ defmodule Emisar.Runs do
       |> Map.put(:queued_at, DateTime.utc_now())
 
     multi
+    |> Multi.run({:dispatch_admission, audit_suffix}, fn repo, _changes ->
+      authorize_dispatch_attrs(repo, attrs)
+    end)
     |> Multi.insert(run_key, ActionRun.Changeset.create(attrs))
     |> append_atomic_run_audit(run_key, attrs[:status], audit_suffix)
     |> append_mcp_approval(run_key, plan[:approval])
@@ -1703,11 +1685,8 @@ defmodule Emisar.Runs do
   @doc "Lists the complete target set persisted under one MCP operation row."
   def list_runs_by_mcp_operation(operation_record_id, %Subject{} = subject)
       when is_binary(operation_record_id) do
-    with :ok <-
-           Auth.Authorizer.ensure_has_permissions(
-             subject,
-             Authorizer.view_runs_permission()
-           ) do
+    with {:ok, subject} <-
+           Auth.fetch_current_subject(Authorizer.view_runs_permission(), subject) do
       runs =
         ActionRun.Query.all()
         |> ActionRun.Query.by_mcp_operation_record_id(operation_record_id)
@@ -1726,11 +1705,8 @@ defmodule Emisar.Runs do
   poll never pays a fetch per run.
   """
   def list_unsettled_run_ids(run_ids, %Subject{} = subject) when is_list(run_ids) do
-    with :ok <-
-           Auth.Authorizer.ensure_has_permissions(
-             subject,
-             Authorizer.view_runs_permission()
-           ) do
+    with {:ok, subject} <-
+           Auth.fetch_current_subject(Authorizer.view_runs_permission(), subject) do
       unsettled =
         ActionRun.Query.all()
         |> ActionRun.Query.by_ids(run_ids)
@@ -2819,6 +2795,30 @@ defmodule Emisar.Runs do
   end
 
   @doc """
+  Advisory cancellation control for an already loaded run or complete execution
+  target set (at most 256 items). Uses current identity, runner groups and frozen
+  pack refs without locking. Offline or disabled targets remain cancellable;
+  missing, deleted or foreign targets do not. Mutations recheck under their locks.
+  """
+  def cancellation_allowed?(targets, %Subject{} = subject) do
+    with {:ok, subject} <-
+           Auth.fetch_current_subject(Authorizer.cancel_run_permission(), subject),
+         true <- is_list(targets) and targets != [] and length(targets) <= 256,
+         access = Accounts.runner_access_for_subject(subject),
+         true <- Enum.all?(targets, &frozen_pack_in_scope?(&1, subject.account.id, access)) do
+      runner_ids = targets |> Enum.map(& &1.runner_id) |> Enum.uniq()
+      runners = Emisar.Runners.runner_scope_facts_for_ids(subject.account.id, runner_ids)
+
+      length(runners) == length(runner_ids) and
+        Enum.all?(runners, fn runner ->
+          is_nil(runner.deleted_at) and Accounts.RunnerAccess.runner_in_scope?(runner, access)
+        end)
+    else
+      _ -> false
+    end
+  end
+
+  @doc """
   Cloud-initiated cancellation. Marks the run as cancelling and tells
   the runner to terminate. Idempotent if the run is already terminal.
   """
@@ -2838,9 +2838,18 @@ defmodule Emisar.Runs do
 
     Multi.new()
     |> put_active_account_lock(run.account_id, :active_account)
-    |> request_run_cancellation_in_multi(run.id, reason)
+    |> Multi.run(:cancellation_access, fn repo, _changes ->
+      fetch_and_lock_cancellation_access(subject, repo: repo)
+    end)
+    |> request_run_cancellation_in_multi(run, reason)
     |> add_cancel_requested_audit(subject, reason)
-    |> Emisar.Approvals.cancel_request_for_run_in_multi(run.id)
+    |> Multi.merge(fn
+      %{run_cancel: {outcome, _run}} when outcome in [:cancelled, :cancelling, :retry] ->
+        Emisar.Approvals.cancel_request_for_run_in_multi(Multi.new(), run.id)
+
+      _changes ->
+        Multi.run(Multi.new(), :request_cancel, fn _repo, _changes -> {:ok, :none} end)
+    end)
     |> Repo.commit_multi(
       after_commit: fn changes ->
         deliver_cancel_to_runner(changes.run_cancel)
@@ -2850,6 +2859,82 @@ defmodule Emisar.Runs do
     )
     |> cancellation_request_result()
   end
+
+  @doc """
+  Internal — current human cancellation authority inside the caller's account
+  transaction. Lock the actor's exact membership and user before target locks;
+  a stale role, suspended seat, or mismatched actor cannot cancel visible work.
+  API clients retain their own role and have no cancellation permission.
+  """
+  def fetch_and_lock_cancellation_access(subject, opts \\ [])
+
+  def fetch_and_lock_cancellation_access(
+        %Subject{account: %Accounts.Account{} = account, actor: %Users.User{id: user_id}} =
+          subject,
+        opts
+      ) do
+    repo = Keyword.get(opts, :repo, Repo)
+
+    with :ok <-
+           Auth.Authorizer.ensure_has_permissions(subject, Authorizer.cancel_run_permission()),
+         {:ok, membership} <-
+           Accounts.fetch_and_lock_membership(account.id, subject.membership_id, repo: repo),
+         true <- membership.user_id == user_id,
+         {:ok, user} <- Users.fetch_and_lock_user_by_id(user_id, repo),
+         current_subject = Subject.for_user(user, account, membership, subject.context),
+         :ok <-
+           Auth.Authorizer.ensure_has_permissions(
+             current_subject,
+             Authorizer.cancel_run_permission()
+           ) do
+      {:ok, Accounts.runner_access_for_locked_membership(repo, membership)}
+    else
+      _ -> {:error, :unauthorized}
+    end
+  end
+
+  def fetch_and_lock_cancellation_access(_subject, _opts), do: {:error, :unauthorized}
+
+  @doc """
+  Internal — authorize every frozen cancellation target using current runner
+  groups and the persisted pack refs, never today's catalog or dispatch readiness.
+  The caller holds its account, actor and target run/execution locks already.
+  """
+  def ensure_cancellation_targets_authorized(account_id, targets, access, opts \\ []) do
+    with true <- is_list(targets) and targets != [] and length(targets) <= 256,
+         true <- Enum.all?(targets, &frozen_pack_in_scope?(&1, account_id, access)),
+         runner_ids = targets |> Enum.map(& &1.runner_id) |> Enum.uniq(),
+         {:ok, runners} <-
+           Emisar.Runners.fetch_and_lock_cancellation_runners(account_id, runner_ids, opts),
+         true <- Enum.all?(runners, &Accounts.RunnerAccess.runner_in_scope?(&1, access)) do
+      :ok
+    else
+      _ -> {:error, :unauthorized}
+    end
+  end
+
+  defp frozen_pack_in_scope?(
+         %{account_id: account_id, runner_id: runner_id, pack_ref: nil},
+         account_id,
+         access
+       ),
+       do: Repo.valid_uuid?(runner_id) and Accounts.RunnerAccess.pack_in_scope?(nil, access)
+
+  defp frozen_pack_in_scope?(
+         %{account_id: account_id, runner_id: runner_id, pack_ref: ref},
+         account_id,
+         access
+       )
+       when is_binary(ref) do
+    with true <- Repo.valid_uuid?(runner_id),
+         {:ok, {pack_id, _version, _hash}} <- Catalog.MCPProjection.parse_pack_ref(ref) do
+      Accounts.RunnerAccess.pack_in_scope?(pack_id, access)
+    else
+      _ -> false
+    end
+  end
+
+  defp frozen_pack_in_scope?(_target, _account_id, _access), do: false
 
   # -- State transitions ----------------------------------------------
   #
@@ -3038,10 +3123,10 @@ defmodule Emisar.Runs do
     :ok
   end
 
-  defp request_run_cancellation_in_multi(multi, run_id, reason) do
+  defp request_run_cancellation_in_multi(multi, run, reason) do
     multi
-    |> Multi.run(:run_cancel, fn repo, _changes ->
-      request_run_cancellation_locked(repo, run_id, reason)
+    |> Multi.run(:run_cancel, fn repo, %{cancellation_access: access} ->
+      request_run_cancellation_locked(repo, run, access, reason)
     end)
     |> Multi.run(:run_cancel_audit, fn
       repo, %{run_cancel: {:cancelled, run}} -> repo.insert(Audit.run_event_changeset(run))
@@ -3089,17 +3174,30 @@ defmodule Emisar.Runs do
 
   defp broadcast_cancellation(_), do: :ok
 
-  defp request_run_cancellation_locked(repo, run_id, reason) do
+  defp request_run_cancellation_locked(repo, expected_run, access, reason) do
     loaded_run =
       ActionRun.Query.all()
-      |> ActionRun.Query.by_id(run_id)
+      |> ActionRun.Query.by_account_id(expected_run.account_id)
+      |> ActionRun.Query.by_id(expected_run.id)
       |> ActionRun.Query.lock_for_update()
       |> repo.one()
 
-    request_loaded_run_cancellation(repo, loaded_run, reason)
-  end
+    cond do
+      is_nil(loaded_run) ->
+        {:ok, :no_run}
 
-  defp request_loaded_run_cancellation(_repo, nil, _reason), do: {:ok, :no_run}
+      ActionRun.terminal?(loaded_run.status) ->
+        {:ok, {:noop, loaded_run}}
+
+      true ->
+        with :ok <-
+               ensure_cancellation_targets_authorized(loaded_run.account_id, [loaded_run], access,
+                 repo: repo
+               ) do
+          request_loaded_run_cancellation(repo, loaded_run, reason)
+        end
+    end
+  end
 
   defp request_loaded_run_cancellation(repo, %ActionRun{status: status} = run, reason)
        when status in [:pending, :pending_approval] do
@@ -3682,6 +3780,107 @@ defmodule Emisar.Runs do
     end
   end
 
+  @doc """
+  Internal — current dispatch authority under the caller's active-account lock.
+  Lock the exact member, user and credential before target rows. Original
+  permission attenuation and authenticated credential identity remain binding.
+  """
+  def fetch_and_lock_dispatch_access(subject, opts \\ [])
+
+  def fetch_and_lock_dispatch_access(%Subject{account: %Accounts.Account{}} = subject, opts) do
+    repo = Keyword.get(opts, :repo, Repo)
+
+    with :ok <-
+           Auth.Authorizer.ensure_has_permissions(subject, Authorizer.dispatch_run_permission()),
+         {:ok, user_id} <- dispatch_user_id(subject),
+         true <- Repo.valid_uuid?(user_id) and Repo.valid_uuid?(subject.actor.id),
+         {:ok, membership} <-
+           Accounts.fetch_and_lock_membership(subject.account.id, subject.membership_id,
+             repo: repo
+           ),
+         true <- membership.user_id == user_id,
+         {:ok, _user} <- Users.fetch_and_lock_user_by_id(user_id, repo),
+         :ok <- lock_dispatch_key(repo, subject),
+         {:ok, _subject} <-
+           Auth.fetch_current_subject(Authorizer.dispatch_run_permission(), subject) do
+      {:ok, Accounts.runner_access_for_locked_membership(repo, membership)}
+    else
+      _ -> {:error, :unauthorized}
+    end
+  end
+
+  def fetch_and_lock_dispatch_access(_subject, _opts), do: {:error, :unauthorized}
+
+  defp dispatch_user_id(%Subject{actor: %Users.User{id: id}}), do: {:ok, id}
+
+  defp dispatch_user_id(%Subject{actor: %ApiKeys.ApiKey{kind: :mcp, created_by_id: id}}),
+    do: {:ok, id}
+
+  defp dispatch_user_id(_subject), do: {:error, :unauthorized}
+
+  defp lock_dispatch_key(_repo, %Subject{actor: %Users.User{}}), do: :ok
+
+  defp lock_dispatch_key(repo, %Subject{
+         account: %{id: account_id},
+         actor: %ApiKeys.ApiKey{id: id}
+       }) do
+    if ApiKeys.api_key_usable_in_account?(repo, id, account_id),
+      do: :ok,
+      else: {:error, :unauthorized}
+  end
+
+  defp authorize_dispatch_attrs(
+         repo,
+         %{audit_subject: %Subject{account: %Accounts.Account{}} = subject} = attrs
+       ) do
+    with true <- Map.get(attrs, :account_id) == subject.account.id,
+         true <- Map.get(attrs, :initiating_membership_id) == subject.membership_id,
+         true <- dispatcher_matches_attrs?(subject, attrs),
+         {:ok, access} <- fetch_and_lock_dispatch_access(subject, repo: repo),
+         :ok <- ensure_dispatch_target_access(repo, attrs, access) do
+      {:ok, :authorized}
+    else
+      _ -> {:error, :unauthorized}
+    end
+  end
+
+  defp authorize_dispatch_attrs(_repo, %{audit_subject: %Subject{}}),
+    do: {:error, :unauthorized}
+
+  defp authorize_dispatch_attrs(repo, attrs) do
+    run = %ActionRun{
+      account_id: attrs[:account_id],
+      runner_id: attrs[:runner_id],
+      pack_ref: attrs[:pack_ref],
+      initiating_membership_id: attrs[:initiating_membership_id],
+      requested_by_id: attrs[:requested_by_id],
+      api_key_id: attrs[:api_key_id]
+    }
+
+    with :ok <- ensure_run_initiator_authorized(repo, run), do: {:ok, :authorized}
+  end
+
+  defp dispatcher_matches_attrs?(%Subject{actor: %Users.User{id: id}}, attrs),
+    do: Map.get(attrs, :requested_by_id) == id and is_nil(Map.get(attrs, :api_key_id))
+
+  defp dispatcher_matches_attrs?(%Subject{actor: %ApiKeys.ApiKey{id: id}}, attrs),
+    do: Map.get(attrs, :api_key_id) == id and is_nil(Map.get(attrs, :requested_by_id))
+
+  defp dispatcher_matches_attrs?(_subject, _attrs), do: false
+
+  defp ensure_dispatch_target_access(repo, target, access) do
+    with {:ok, runner} <-
+           Emisar.Runners.fetch_and_lock_active_runner(target.runner_id, target.account_id,
+             repo: repo
+           ),
+         true <- Accounts.RunnerAccess.runner_in_scope?(runner, access),
+         true <- frozen_pack_in_scope?(target, target.account_id, access) do
+      :ok
+    else
+      _ -> {:error, :unauthorized}
+    end
+  end
+
   @doc "Internal - approval release revalidates the exact initiating membership and credential."
   def ensure_run_initiator_authorized(repo, %ActionRun{} = run) do
     with {:ok, membership} <-
@@ -3690,41 +3889,33 @@ defmodule Emisar.Runs do
              run.account_id,
              run.initiating_membership_id
            ),
-         {:ok, runner} <-
-           Emisar.Runners.fetch_and_lock_active_runner(
-             run.runner_id,
-             run.account_id,
-             repo: repo
-           ),
+         {:ok, user} <- Users.fetch_and_lock_user_by_id(membership.user_id, repo),
+         true <- initiating_identity_authorized?(repo, run, membership, user),
          access = Accounts.runner_access_for_locked_membership(repo, membership),
-         true <- Accounts.RunnerAccess.runner_in_scope?(runner, access),
-         true <- run_pack_in_scope?(run, access),
-         true <- initiating_api_key_usable?(repo, run) do
+         :ok <- ensure_dispatch_target_access(repo, run, access) do
       :ok
     else
       _ -> {:error, :initiator_no_longer_authorized}
     end
   end
 
-  # The run row carries no pack id, so the action's pack is re-resolved — but
-  # only for a grant that actually restricts packs, so an unrestricted release
-  # never depends on the action still being advertised.
-  defp run_pack_in_scope?(%ActionRun{}, %Accounts.RunnerAccess{pack_mode: :all}), do: true
-
-  defp run_pack_in_scope?(%ActionRun{} = run, %Accounts.RunnerAccess{} = access) do
-    case Catalog.fetch_action_for_account(run.action_id, run.runner_id, run.account_id) do
-      {:ok, action} -> Accounts.RunnerAccess.pack_in_scope?(action.pack_id, access)
-      {:error, :not_found} -> false
-    end
+  defp initiating_identity_authorized?(_repo, %ActionRun{api_key_id: nil} = run, membership, user) do
+    run.requested_by_id == user.id and
+      MapSet.member?(
+        Auth.Permissions.for_role(Subject.effective_membership_role(membership)),
+        Authorizer.dispatch_run_permission()
+      )
   end
 
-  defp initiating_api_key_usable?(_repo, %ActionRun{api_key_id: nil}), do: true
-
-  defp initiating_api_key_usable?(
-         repo,
-         %ActionRun{api_key_id: api_key_id, account_id: account_id}
-       ),
-       do: ApiKeys.api_key_usable_in_account?(repo, api_key_id, account_id)
+  defp initiating_identity_authorized?(repo, run, membership, user) do
+    with true <- ApiKeys.api_key_usable_in_account?(repo, run.api_key_id, run.account_id),
+         %ApiKeys.ApiKey{kind: :mcp} = key <- ApiKeys.peek_api_key_by_id(run.api_key_id) do
+      key.account_id == run.account_id and key.created_by_membership_id == membership.id and
+        key.created_by_id == user.id and run.requested_by_id in [nil, user.id]
+    else
+      _ -> false
+    end
+  end
 
   @doc """
   Internal -- Approvals releases its locked, approved run into a fresh
@@ -3771,8 +3962,8 @@ defmodule Emisar.Runs do
   """
   def list_recent_events_for_run(%ActionRun{} = run, limit, %Subject{} = subject)
       when is_integer(limit) do
-    with :ok <-
-           Auth.Authorizer.ensure_has_permissions(subject, Authorizer.view_runs_permission()),
+    with {:ok, subject} <-
+           Auth.fetch_current_subject(Authorizer.view_runs_permission(), subject),
          :ok <- ensure_all_runs_visible([run.id], subject) do
       events =
         RunEvent.Query.all()
@@ -3814,8 +4005,8 @@ defmodule Emisar.Runs do
 
     with :ok <- validate_run_ids(run_ids),
          {:ok, max_chunk_bytes} <- tail_chunk_bytes(run_ids, limit, opts),
-         :ok <-
-           Auth.Authorizer.ensure_has_permissions(subject, Authorizer.view_runs_permission()),
+         {:ok, subject} <-
+           Auth.fetch_current_subject(Authorizer.view_runs_permission(), subject),
          :ok <- ensure_all_runs_visible(run_ids, subject) do
       events =
         run_ids
@@ -4143,13 +4334,6 @@ defmodule Emisar.Runs do
   @doc "Whether `subject` may dispatch action runs (operator+)."
   def subject_can_dispatch_run?(%Subject{} = subject),
     do: Auth.Authorizer.has_permission?(subject, Authorizer.dispatch_run_permission())
-
-  @doc "Whether a current membership role may dispatch action runs."
-  def role_can_dispatch_run?(role) when is_atom(role) do
-    Authorizer.dispatch_run_permission() in Authorizer.list_permissions_for_role(role)
-  end
-
-  def role_can_dispatch_run?(_role), do: false
 
   @doc "Whether `subject` may cancel action runs (operator+)."
   def subject_can_cancel_run?(%Subject{} = subject),

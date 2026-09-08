@@ -113,6 +113,94 @@ defmodule EmisarWeb.PoliciesPerformanceLiveTest do
     settle(lv)
   end
 
+  test "scope changes preserve dirty editors and previews while refreshing each target's controls",
+       %{
+         conn: conn,
+         account: account,
+         user: user,
+         subject: owner
+       } do
+    policy = scoped(account, user, "db")
+    Fixtures.Runners.create_runner(account_id: account.id, group: "free", connected?: false)
+    Fixtures.Runners.create_runner(account_id: account.id, group: "other", connected?: false)
+    membership = Fixtures.Memberships.create_membership(account_id: account.id, role: "admin")
+    admin = Fixtures.Subjects.membership_subject(membership)
+    {:ok, lv, _} = live(log_in_user(conn, admin.actor), ~p"/app/#{account}/policies")
+    render_click(lv, "open_ruleset", %{"uid" => policy.id})
+    render_click(lv, "add_ruleset", %{})
+    uid = List.last(assigns(lv).rulesets).uid
+    assert has_element?(lv, "#policy-target-#{uid}:not([disabled])")
+    render_hook(lv, "set_target", %{"uid" => uid, "target" => "group:free"})
+
+    for editor <- ["account", policy.id, uid] do
+      render_hook(lv, "form_change", %{
+        "editor" => editor,
+        "policy" => %{"defaults" => %{"low" => "deny"}}
+      })
+    end
+
+    settle(lv)
+    before = assigns(lv)
+    {:ok, restricted} = Emisar.Accounts.RunnerAccess.restricted(["other"], [])
+    {:ok, _} = Emisar.Accounts.update_membership_runner_access(membership, restricted, owner)
+    render(lv)
+    after_change = assigns(lv)
+    assert after_change.account == before.account
+    assert after_change.rulesets == before.rulesets
+    assert after_change.filter_params == before.filter_params
+    assert after_change.preview_active == before.preview_active
+
+    for id <- ["account", policy.id, uid],
+        do: refute(has_element?(lv, "#policy-form-#{id} button[type=submit]"))
+
+    assert has_element?(lv, "#policy-target-#{uid}:not([disabled])")
+
+    assert has_element?(
+             lv,
+             "#policy-target-#{uid} option[value='group:free'][disabled][selected]"
+           )
+
+    original =
+      Emisar.Repo.peek(Policies.Policy.Query.all() |> Policies.Policy.Query.by_id(policy.id))
+
+    render_hook(lv, "save", %{"editor" => policy.id})
+    render_click(lv, "remove_ruleset", %{"uid" => policy.id})
+
+    assert Emisar.Repo.peek(Policies.Policy.Query.all() |> Policies.Policy.Query.by_id(policy.id)) ==
+             original
+
+    assert editor(lv, policy.id).defaults["low"] == "deny"
+
+    # The denied draft remains retargetable, and local removal needs no write authority.
+    render_hook(lv, "set_target", %{"uid" => uid, "target" => "group:other"})
+    assert has_element?(lv, "#policy-form-#{uid} button[type=submit]")
+
+    {:ok, _} =
+      Emisar.Accounts.update_membership_runner_access(
+        membership,
+        Emisar.Accounts.RunnerAccess.none(),
+        owner
+      )
+
+    render(lv)
+    assert has_element?(lv, "button[phx-click='remove_ruleset'][phx-value-uid='#{uid}']")
+    render_click(lv, "remove_ruleset", %{"uid" => uid})
+    refute Enum.any?(assigns(lv).rulesets, &(&1.uid == uid))
+
+    {:ok, _} =
+      Emisar.Accounts.update_membership_runner_access(
+        membership,
+        Emisar.Accounts.RunnerAccess.all(),
+        owner
+      )
+
+    render(lv)
+    assert has_element?(lv, "#policy-form-#{policy.id} button[type=submit]")
+    assert has_element?(lv, "#policy-form-account button[type=submit]")
+    assert editor(lv, policy.id).defaults["low"] == "deny"
+    settle(lv)
+  end
+
   test "invalid target searches preserve the last valid search, selected target and draft", %{
     account: account,
     conn: conn
@@ -315,39 +403,70 @@ defmodule EmisarWeb.PoliciesPerformanceLiveTest do
     assert {:ok, %{total: 1}} = assigns(lv).account.preview
   end
 
-  test "a revoked target is not published after a held query completes", %{
-    conn: conn,
-    account: account,
-    user: user
-  } do
-    runner =
-      Fixtures.Runners.create_runner(account_id: account.id, group: "db", connected?: false)
+  for invalidation <- [:action_scope, :read_authority] do
+    test "a held preview respects current #{invalidation} without confusing read and action authority",
+         %{
+           conn: conn,
+           account: account,
+           user: user
+         } do
+      runner =
+        Fixtures.Runners.create_runner(account_id: account.id, group: "db", connected?: false)
 
-    policy =
-      Fixtures.Policies.create_policy(
-        account_id: account.id,
-        created_by_id: user.id,
-        scope_type: :runner,
-        scope_value: runner.id
-      )
+      policy =
+        Fixtures.Policies.create_policy(
+          account_id: account.id,
+          created_by_id: user.id,
+          scope_type: :runner,
+          scope_value: runner.id
+        )
 
-    member = Fixtures.Memberships.create_membership(account_id: account.id, role: "admin")
-    {:ok, access} = Emisar.Accounts.RunnerAccess.restricted(["db"], [])
-    Fixtures.Memberships.force_runner_access(member, access)
-    member_subject = Fixtures.Subjects.membership_subject(member)
-    conn = log_in_user(conn, member_subject.actor)
-    {:ok, lv, _} = live(conn, ~p"/app/#{account}/policies")
-    settle(lv)
-    hold_next_preview(account.id)
-    render_click(lv, "open_ruleset", %{"uid" => policy.id})
-    assert_receive {:held_preview, task}, 2_000
-    Fixtures.Runners.move_to_group(runner, "hidden")
-    send(task, :continue_preview)
-    settle(lv)
-    assert {:error, :unauthorized} = editor(lv, policy.id).preview
+      member = Fixtures.Memberships.create_membership(account_id: account.id, role: "admin")
+      {:ok, access} = Emisar.Accounts.RunnerAccess.restricted(["db"], [])
+      Fixtures.Memberships.force_runner_access(member, access)
+      member_subject = Fixtures.Subjects.membership_subject(member)
+      conn = log_in_user(conn, member_subject.actor)
+      {:ok, lv, _} = live(conn, ~p"/app/#{account}/policies")
+      settle(lv)
+      hold_next_preview(account.id)
+      render_click(lv, "open_ruleset", %{"uid" => policy.id})
+      assert_receive {:held_preview, task}, 2_000
 
-    refute lv |> element("#policy-rail-#{policy.id}") |> render() =~
-             "No actions advertised on this target"
+      case unquote(invalidation) do
+        :action_scope ->
+          owner = Fixtures.Subjects.subject_for(user, account)
+
+          {:ok, _} =
+            Emisar.Accounts.update_membership_runner_access(
+              member,
+              Emisar.Accounts.RunnerAccess.none(),
+              owner
+            )
+
+          render(lv)
+
+          assert assigns(lv).preview_active ==
+                   {:policy_preview, policy.id, editor(lv, policy.id).preview_generation}
+
+          refute has_element?(lv, "#policy-form-#{policy.id} button[type=submit]")
+
+        :read_authority ->
+          Fixtures.Memberships.suspend_membership(member)
+      end
+
+      send(task, :continue_preview)
+      settle(lv)
+
+      if unquote(invalidation) == :action_scope do
+        assert {:ok, %{target: {:runner, id}}} = editor(lv, policy.id).preview
+        assert id == runner.id
+      else
+        assert {:error, :unauthorized} = editor(lv, policy.id).preview
+
+        refute lv |> element("#policy-rail-#{policy.id}") |> render() =~
+                 "No actions advertised on this target"
+      end
+    end
   end
 
   test "a removed selected runner remains identifiable without losing the draft target", %{

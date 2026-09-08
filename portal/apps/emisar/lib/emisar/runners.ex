@@ -27,6 +27,7 @@ defmodule Emisar.Runners do
   alias Emisar.RequestContext
   alias Emisar.Runners.{Authorizer, ConnectionChange, EnrollmentKey, InactiveRetentionInput}
   alias Emisar.Runners.{Presence, Runner, Token}
+  alias Emisar.Users
   require Logger
 
   # 13 chars for "emkey-enroll-" + 16 random chars => 29.
@@ -123,17 +124,78 @@ defmodule Emisar.Runners do
   @doc "Internal — SQL target projection for an already authorized current access snapshot."
   def scope_targets_query(account_id, %Accounts.RunnerAccess{} = access) do
     groups = if access.mode == :restricted, do: access.groups, else: []
+    group_runners = complete_group_runners_query(account_id, access)
 
     Runner.Query.not_deleted()
     |> Runner.Query.by_account_id(account_id)
     |> scope_to_runner_access(access)
-    |> Emisar.Runners.ScopeTarget.Query.all(account_id, groups)
+    |> Emisar.Runners.ScopeTarget.Query.all(group_runners, account_id, groups)
+  end
+
+  defp complete_group_runners_query(account_id, access) do
+    Runner.Query.not_deleted()
+    |> Runner.Query.by_account_id(account_id)
+    |> Runner.Query.in_completely_accessible_groups(access)
+  end
+
+  defp complete_group_names(account_id, access) do
+    groups =
+      account_id
+      |> complete_group_runners_query(access)
+      |> Runner.Query.select_distinct_groups()
+      |> Repo.all()
+
+    MapSet.new(groups ++ access.groups)
+  end
+
+  @doc """
+  Internal — prove complete current group authority inside an action mutation.
+  The caller holds the account and exact actor locks and supplies the access
+  read under them. Check committed membership of the named groups without
+  locking the fleet. Later entrants follow the normal dynamic group policy;
+  execution separately authorizes its exact selected targets.
+
+  Explicit group and all-runner grants include empty/pre-enrollment groups.
+  ID-only grants must cover every actual group member. No connection, enabled,
+  pack or catalog requirement applies. Returns `:ok` or `{:error, :unauthorized}`.
+  """
+  def ensure_group_access(
+        account_id,
+        groups,
+        %Accounts.RunnerAccess{} = access,
+        opts \\ []
+      )
+      when is_binary(account_id) and is_list(groups) do
+    repo = Keyword.get(opts, :repo, Repo)
+
+    if Repo.valid_uuid?(account_id) and Enum.all?(groups, &(is_binary(&1) and &1 != "")) do
+      remaining = Enum.reject(groups, &(&1 in access.groups))
+
+      if access.mode == :all or remaining == [] do
+        :ok
+      else
+        permitted =
+          account_id
+          |> complete_group_runners_query(access)
+          |> Runner.Query.by_groups(remaining)
+          |> Runner.Query.select_distinct_groups()
+          |> repo.all()
+          |> MapSet.new()
+
+        if Enum.all?(remaining, &MapSet.member?(permitted, &1)),
+          do: :ok,
+          else: {:error, :unauthorized}
+      end
+    else
+      {:error, :unauthorized}
+    end
   end
 
   @doc """
   Internal — bounded account-scoped facts for checking a previously authorized
-  resource against current membership runner access. Missing or cross-account
-  ids stay missing so the caller can fail closed.
+  resource against current membership runner access. Includes deletion status so
+  historical notification receipts can retain their targets; action callers must
+  reject deleted targets. Missing and cross-account ids stay missing.
   """
   def runner_scope_facts_for_ids(account_id, ids)
       when is_binary(account_id) and is_list(ids) and length(ids) <= 256 do
@@ -147,6 +209,35 @@ defmodule Emisar.Runners do
   end
 
   def runner_scope_facts_for_ids(_account_id, _ids), do: []
+
+  @doc """
+  Internal — lock the complete runner target set for an already-authorized
+  cancellation. Current groups remain stable through the caller's transaction.
+  Deleted or foreign targets fail closed; disabled and offline runners remain
+  cancellable. The account lock is acquired by the caller before these sorted locks.
+  """
+  def fetch_and_lock_cancellation_runners(account_id, ids, opts \\ []) do
+    repo = Keyword.get(opts, :repo, Repo)
+
+    with true <- Repo.valid_uuid?(account_id),
+         true <- is_list(ids) and ids != [] and length(ids) <= 256,
+         true <- Enum.all?(ids, &Repo.valid_uuid?/1) do
+      ids = Enum.uniq(ids)
+
+      runners =
+        Runner.Query.not_deleted()
+        |> Runner.Query.by_account_id(account_id)
+        |> Runner.Query.by_ids(ids)
+        |> Runner.Query.ordered_by_id()
+        |> Runner.Query.select_scope_facts()
+        |> Runner.Query.lock_for_update()
+        |> repo.all()
+
+      if length(runners) == length(ids), do: {:ok, runners}, else: {:error, :not_found}
+    else
+      _ -> {:error, :not_found}
+    end
+  end
 
   @doc """
   Internal — the account facts one runner-access selection is allowlisted
@@ -204,18 +295,15 @@ defmodule Emisar.Runners do
   @doc """
   Paginated, filterable runner listing for the RunnersLive UI —
   `:group` / `:status` opts narrow the set. The authenticated subject's
-  runner access applies in the query before pagination: `none` returns no rows,
-  `all` is unrestricted, and `restricted` filters by stored groups and ids.
+  account and current read permission apply before pagination. Action grants
+  do not hide runners from an operational reader.
   Pass `preload: [:online?]` when the caller renders live connection facts.
   Returns `{:ok, [runner], %Paginator.Metadata{}}`. MCP paths that need the
-  complete accessible fleet use `list_all_runners_for_account/2` instead.
+  complete readable fleet use `list_all_runners_for_account/2` instead.
   """
   def list_runners_for_account(%Subject{} = subject, opts \\ []) do
-    with :ok <-
-           Auth.Authorizer.ensure_has_permissions(
-             subject,
-             Authorizer.view_runners_permission()
-           ) do
+    with {:ok, subject} <-
+           Auth.fetch_current_subject(Authorizer.view_runners_permission(), subject) do
       {group, opts} = Keyword.pop(opts, :group)
       {status, opts} = Keyword.pop(opts, :status)
 
@@ -223,34 +311,25 @@ defmodule Emisar.Runners do
       |> Runner.Query.ordered_by_group_name()
       |> maybe_by_group(group)
       |> maybe_by_connection(subject, status)
-      |> scope_to_subject_membership(subject)
       |> Authorizer.for_subject(subject)
       |> Repo.list(Runner.Query, opts)
     end
   end
 
   @doc """
-  Every non-deleted runner visible to the subject's membership — the COMPLETE
-  scoped set, deliberately un-paginated. Pass `preload: [:online?]` when the
-  caller needs live connection facts.
-
-  The MCP path: `tools/list`, dispatch resolution, and runner
-  inventory must see every accessible runner (no status/group filter), not a
-  page. The UI uses the paginated
-  `list_runners_for_account/2`. Returns `{:ok, runners}`.
+  Every non-deleted runner in the current subject's account, without pagination.
+  Pass `preload: [:online?]` for live connection facts. This is a shared read,
+  not proof of permission to act. Execution and access editors use
+  `list_runners_in_action_scope/2`. Returns `{:ok, runners}`.
   """
   def list_all_runners_for_account(%Subject{} = subject, opts \\ []) do
-    with :ok <-
-           Auth.Authorizer.ensure_has_permissions(
-             subject,
-             Authorizer.view_runners_permission()
-           ) do
+    with {:ok, subject} <-
+           Auth.fetch_current_subject(Authorizer.view_runners_permission(), subject) do
       preloads = Keyword.get(opts, :preload, [])
 
       runners =
         Runner.Query.not_deleted()
         |> Runner.Query.ordered_by_group_name()
-        |> scope_to_subject_membership(subject)
         |> Authorizer.for_subject(subject)
         |> Repo.all()
         |> apply_runner_preloads(preloads)
@@ -260,20 +339,41 @@ defmodule Emisar.Runners do
   end
 
   @doc """
-  Slim, freshly scoped runner facts for model discovery, with live connection
+  Current action-scope runner candidates for execution and access editors.
+  Deliberately separate from shared inventory. Requires current `view_runners`;
+  callers must also enforce their operation's verb, pack scope and runtime gates.
+  Returns `{:ok, runners}`; a valid no-action grant returns an empty list.
+  """
+  def list_runners_in_action_scope(%Subject{} = subject, opts \\ []) do
+    with {:ok, subject} <-
+           Auth.fetch_current_subject(Authorizer.view_runners_permission(), subject) do
+      runners =
+        Runner.Query.not_deleted()
+        |> Runner.Query.ordered_by_group_name()
+        |> scope_to_subject_membership(subject)
+        |> Authorizer.for_subject(subject)
+        |> Repo.all()
+        |> apply_runner_preloads(Keyword.get(opts, :preload, []))
+
+      {:ok, runners}
+    end
+  end
+
+  @doc """
+  Slim account-wide runner facts for model discovery, with live connection
   fields. `:ids` optionally narrows hydration to selected inventory rows; it
-  never bypasses current membership, account or runner scope. Returns `{:ok, runners}`.
+  never bypasses current read identity or account isolation. Action eligibility
+  is projected separately by Catalog. Returns `{:ok, runners}`.
   """
   def list_model_runners(%Subject{} = subject, opts \\ []) do
-    with :ok <-
-           Auth.Authorizer.ensure_has_permissions(subject, Authorizer.view_runners_permission()) do
+    with {:ok, subject} <-
+           Auth.fetch_current_subject(Authorizer.view_runners_permission(), subject) do
       query = Runner.Query.not_deleted()
       query = if ids = Keyword.get(opts, :ids), do: Runner.Query.by_ids(query, ids), else: query
 
       runners =
         query
         |> Runner.Query.select_model_fields()
-        |> scope_to_subject_membership(subject)
         |> Authorizer.for_subject(subject)
         |> Repo.all()
         |> apply_runner_preloads([:online?])
@@ -283,13 +383,13 @@ defmodule Emisar.Runners do
   end
 
   @doc """
-  Rechecks that every supplied runner id is currently visible, without loading
+  Rechecks that every supplied runner id is in current action scope, without loading
   fleet payloads. Requires `view_runners`; a missing, deleted, foreign, or
   out-of-scope id fails the whole set with `{:error, :unauthorized}`.
   """
-  def ensure_runner_ids_visible(ids, %Subject{} = subject) when is_list(ids) do
-    with :ok <-
-           Auth.Authorizer.ensure_has_permissions(subject, Authorizer.view_runners_permission()),
+  def ensure_runner_ids_in_action_scope(ids, %Subject{} = subject) when is_list(ids) do
+    with {:ok, subject} <-
+           Auth.fetch_current_subject(Authorizer.view_runners_permission(), subject),
          true <- Enum.all?(ids, &Repo.valid_uuid?/1) do
       ids = Enum.uniq(ids)
 
@@ -313,20 +413,52 @@ defmodule Emisar.Runners do
   never reads Presence. Requires `view_runners`.
   """
   def list_runner_options(%Subject{} = subject) do
-    with :ok <-
-           Auth.Authorizer.ensure_has_permissions(
-             subject,
-             Authorizer.view_runners_permission()
-           ) do
+    with {:ok, subject} <-
+           Auth.fetch_current_subject(Authorizer.view_runners_permission(), subject) do
       options =
         Runner.Query.not_deleted()
         |> Runner.Query.ordered_by_name()
         |> Runner.Query.select_options()
-        |> scope_to_subject_membership(subject)
         |> Authorizer.for_subject(subject)
         |> Repo.all()
 
       {:ok, options}
+    end
+  end
+
+  @doc """
+  Current runner-management hints for a bounded readable page. Read once on load
+  or actor-access invalidation, never per row or heartbeat. The role flag is
+  separate from each runner's authority; missing/foreign/deleted IDs never gain
+  a positive hint. Runner lifecycle does not require pack access or availability.
+  Mutations repeat the proof under locks. Requires `view_runners`.
+  """
+  def management_by_runner_ids(ids, %Subject{} = subject)
+      when is_list(ids) and length(ids) <= 100 do
+    with {:ok, subject} <-
+           Auth.fetch_current_subject(Authorizer.view_runners_permission(), subject),
+         true <- Enum.all?(ids, &Repo.valid_uuid?/1) do
+      can_manage? =
+        Auth.Authorizer.has_permission?(subject, Authorizer.manage_runners_permission())
+
+      allowed =
+        if can_manage? and ids != [] do
+          Runner.Query.not_deleted()
+          |> Runner.Query.by_ids(ids)
+          |> Runner.Query.select_scope_facts()
+          |> scope_to_subject_membership(subject)
+          |> Authorizer.for_subject(subject)
+          |> Repo.all()
+          |> MapSet.new(& &1.id)
+        else
+          MapSet.new()
+        end
+
+      {:ok,
+       %{can_manage?: can_manage?, runners: Map.new(ids, &{&1, MapSet.member?(allowed, &1)})}}
+    else
+      false -> {:error, :not_found}
+      {:error, reason} -> {:error, reason}
     end
   end
 
@@ -339,77 +471,118 @@ defmodule Emisar.Runners do
 
   `limit` is required and caps the read. Returns
   `{:ok, facts, %{coverage: :complete | :partial}}` — `:partial` when the
-  subject cannot see the whole account fleet or their visible fleet has more
-  runners than `limit`, so a caller can never read a short scoped list as "no
-  runner is on it".
+  account fleet has more runners than `limit`. Action scope never changes
+  coverage, and this bounded preview is not an action-authorization check.
   """
   def list_pack_advertisement_facts(limit, %Subject{} = subject)
       when is_integer(limit) and limit > 0 do
-    with :ok <-
-           Auth.Authorizer.ensure_has_permissions(
-             subject,
-             Authorizer.view_runners_permission()
-           ) do
-      access = Accounts.runner_access_for_subject(subject)
-
-      # One row past the cap is the sentinel that says the visible fleet
-      # overflows it. Restricted reach is inherently partial account coverage,
-      # even when every visible row fits.
+    with {:ok, subject} <-
+           Auth.fetch_current_subject(Authorizer.view_runners_permission(), subject) do
+      # One row past the cap proves whether the account fleet overflows it.
       facts =
         Runner.Query.not_deleted()
         |> Runner.Query.ordered_by_group_name()
         |> Runner.Query.select_pack_advertisement_facts()
-        |> scope_to_runner_access(access)
         |> Authorizer.for_subject(subject)
         |> Runner.Query.limit_to(limit + 1)
         |> Repo.all()
 
-      partial? = length(facts) > limit or access.mode != :all
+      partial? = length(facts) > limit
       coverage = if partial?, do: :partial, else: :complete
 
       {:ok, Enum.take(facts, limit), %{coverage: coverage}}
     end
   end
 
-  @doc "Resolves several strict targets through one bounded, scoped fleet read."
-  def resolve_runbook_target_sets(targets, %Subject{} = subject) when is_list(targets) do
+  @doc """
+  Current runbook action targets and completely authorized group names.
+  Uses one account fleet read. Group coverage is checked before excluding
+  out-of-scope, offline or disabled runners. Requires current `view_runners`.
+  Returns `{:ok, %{targets: targets, groups: groups}}` or an authorization error.
+  """
+  def runbook_target_projection(%Subject{} = subject) do
     with {:ok, runners} <- list_all_runners_for_account(subject, preload: [:online?]) do
-      available = available_runbook_targets(runners)
+      access = Accounts.runner_access_for_subject(subject)
 
-      targets
-      |> Enum.with_index()
-      |> Enum.reduce_while({:ok, []}, fn
-        {%{"selection" => selection, "refs" => refs}, index}, {:ok, selected}
-        when selection in ["all", "random_one"] and is_list(refs) ->
-          case select_runbook_target_runners(refs, available) do
-            {:ok, target_runners} ->
-              target_set = %{
-                selection: selection,
-                refs: refs,
-                runners: target_runners,
-                group: selected_group(selection, refs)
-              }
+      groups =
+        runners
+        |> Enum.group_by(& &1.group)
+        |> Enum.filter(fn {group, members} ->
+          group not in [nil, ""] and
+            Enum.all?(members, &Accounts.RunnerAccess.runner_in_scope?(&1, access))
+        end)
+        |> Enum.map(&elem(&1, 0))
 
-              {:cont, {:ok, [target_set | selected]}}
+      available =
+        runners
+        |> Enum.filter(&Accounts.RunnerAccess.runner_in_scope?(&1, access))
+        |> available_runbook_targets()
 
-            {:error, :unknown_target} ->
-              {:halt, {:error, {:unknown_target, index}}}
-          end
+      {:ok, %{targets: available, groups: Enum.sort(Enum.uniq(groups ++ access.groups))}}
+    end
+  end
 
-        {_target, index}, _selected ->
-          {:halt, {:error, {:unknown_target, index}}}
-      end)
-      |> case do
-        {:ok, selected} -> {:ok, Enum.reverse(selected)}
-        {:error, {:unknown_target, _index}} = error -> error
-      end
+  @doc "Resolves several strict targets through one account fleet projection."
+  def resolve_runbook_target_sets(targets, %Subject{} = subject) when is_list(targets) do
+    with {:ok, projection} <- runbook_target_projection(subject) do
+      resolve_target_sets(targets, MapSet.new(projection.groups), projection.targets)
+    end
+  end
+
+  @doc "Resolve account-wide current target facts for trusted model reads, independent of action readiness."
+  def resolve_model_runbook_target_sets(targets, %Subject{} = subject) when is_list(targets) do
+    with {:ok, runners} <- list_all_runners_for_account(subject) do
+      facts = Enum.flat_map(runners, &runbook_runner_fact/1)
+      resolve_target_sets(targets, MapSet.new(facts, & &1.group), facts)
+    end
+  end
+
+  defp resolve_target_sets(targets, groups, available) do
+    targets
+    |> Enum.with_index()
+    |> Enum.reduce_while({:ok, []}, fn
+      {%{"selection" => selection, "refs" => refs}, index}, {:ok, selected}
+      when selection in ["all", "random_one"] and is_list(refs) ->
+        case select_authorized_runbook_targets(refs, groups, available) do
+          {:ok, target_runners} ->
+            target_set = %{
+              selection: selection,
+              refs: refs,
+              runners: target_runners,
+              group: selected_group(selection, refs)
+            }
+
+            {:cont, {:ok, [target_set | selected]}}
+
+          {:error, :unknown_target} ->
+            {:halt, {:error, {:unknown_target, index}}}
+        end
+
+      {_target, index}, _selected ->
+        {:halt, {:error, {:unknown_target, index}}}
+    end)
+    |> case do
+      {:ok, selected} -> {:ok, Enum.reverse(selected)}
+      {:error, {:unknown_target, _index}} = error -> error
+    end
+  end
+
+  defp select_authorized_runbook_targets(refs, groups, available) do
+    if Enum.all?(refs, fn
+         "group:" <> group -> MapSet.member?(groups, group)
+         "runner:" <> _ref -> true
+         _ref -> false
+       end) do
+      select_runbook_target_runners(refs, available)
+    else
+      {:error, :unknown_target}
     end
   end
 
   @doc """
   Internal — the scope values `access` reaches in `account_id`, as
   `{runner_ids, groups}`: the non-deleted runners the grant selects, and the
-  group names those runners declare plus the groups the grant names outright (a
+  groups completely covered by those runners plus the groups the grant names outright (a
   granted group with no runner enrolled yet is still a name the member holds).
 
   ONE definition of "which runner and group names may this member name", so a
@@ -426,7 +599,7 @@ defmodule Emisar.Runners do
       |> Runner.Query.select_scope_facts()
       |> Repo.all()
 
-    groups = facts |> Enum.map(& &1.group) |> Enum.concat(access.groups) |> Enum.uniq()
+    groups = account_id |> complete_group_names(access) |> MapSet.to_list()
 
     {Enum.map(facts, & &1.id), groups}
   end
@@ -443,7 +616,10 @@ defmodule Emisar.Runners do
   returns `{:ok, [ref]}` (empty when every ref is in scope).
   """
   def refs_outside_runner_access(refs, %Subject{} = subject) when is_list(refs) do
-    refs_outside_access(refs, Accounts.runner_access_for_subject(subject), subject)
+    with {:ok, subject} <-
+           Auth.fetch_current_subject(Authorizer.view_runners_permission(), subject) do
+      refs_outside_access(refs, Accounts.runner_access_for_subject(subject), subject)
+    end
   end
 
   # An unrestricted member excludes nothing, so there is no fleet to read and no
@@ -452,10 +628,10 @@ defmodule Emisar.Runners do
   # authorization's. Only a RESTRICTED member's refs are matched against a fleet.
   defp refs_outside_access(_refs, %Accounts.RunnerAccess{mode: :all}, %Subject{}), do: {:ok, []}
 
-  defp refs_outside_access(refs, %Accounts.RunnerAccess{}, %Subject{} = subject) do
-    with {:ok, runners} <- list_all_runners_for_account(subject) do
+  defp refs_outside_access(refs, %Accounts.RunnerAccess{} = access, %Subject{} = subject) do
+    with {:ok, runners} <- list_runners_in_action_scope(subject) do
       reachable = Enum.flat_map(runners, &runbook_runner/1)
-      groups = MapSet.new(reachable, & &1.group)
+      groups = complete_group_names(subject.account.id, access)
       runner_refs = MapSet.new(reachable, & &1.runner_ref)
 
       {:ok, Enum.reject(refs, &ref_in_runner_access?(&1, groups, runner_refs))}
@@ -538,7 +714,10 @@ defmodule Emisar.Runners do
     end
   end
 
-  defp runbook_runner(%Runner{disabled_at: nil} = runner) do
+  defp runbook_runner(%Runner{disabled_at: nil} = runner), do: runbook_runner_fact(runner)
+  defp runbook_runner(%Runner{}), do: []
+
+  defp runbook_runner_fact(%Runner{} = runner) do
     case public_ref(runner) do
       {:ok, runner_ref} ->
         [
@@ -556,8 +735,6 @@ defmodule Emisar.Runners do
         []
     end
   end
-
-  defp runbook_runner(%Runner{}), do: []
 
   defp selected_group("random_one", ["group:" <> group]), do: group
   defp selected_group(_selection, _refs), do: nil
@@ -603,14 +780,10 @@ defmodule Emisar.Runners do
   set (groups, not runners) — no pagination needed.
   """
   def list_group_summaries(%Subject{} = subject) do
-    with :ok <-
-           Auth.Authorizer.ensure_has_permissions(
-             subject,
-             Authorizer.view_runners_permission()
-           ) do
+    with {:ok, subject} <-
+           Auth.fetch_current_subject(Authorizer.view_runners_permission(), subject) do
       rows =
         Runner.Query.not_deleted()
-        |> scope_to_subject_membership(subject)
         |> Runner.Query.group_summary()
         |> Authorizer.for_subject(subject)
         |> Repo.all()
@@ -620,15 +793,11 @@ defmodule Emisar.Runners do
   end
 
   def fetch_runner_by_id(id, %Subject{} = subject, opts \\ []) do
-    with :ok <-
-           Auth.Authorizer.ensure_has_permissions(
-             subject,
-             Authorizer.view_runners_permission()
-           ),
+    with {:ok, subject} <-
+           Auth.fetch_current_subject(Authorizer.view_runners_permission(), subject),
          true <- Repo.valid_uuid?(id) do
       Runner.Query.not_deleted()
       |> Runner.Query.by_id(id)
-      |> scope_to_subject_membership(subject)
       |> Authorizer.for_subject(subject)
       |> Repo.fetch(Runner.Query, opts)
     else
@@ -643,14 +812,10 @@ defmodule Emisar.Runners do
   :unauthorized}`. Used to resolve a runner the agent named (MCP `recent_runs`).
   """
   def fetch_runner_by_name(name, %Subject{} = subject, opts \\ []) when is_binary(name) do
-    with :ok <-
-           Auth.Authorizer.ensure_has_permissions(
-             subject,
-             Authorizer.view_runners_permission()
-           ) do
+    with {:ok, subject} <-
+           Auth.fetch_current_subject(Authorizer.view_runners_permission(), subject) do
       Runner.Query.not_deleted()
       |> Runner.Query.by_name(name)
-      |> scope_to_subject_membership(subject)
       |> Authorizer.for_subject(subject)
       |> Repo.fetch(Runner.Query, opts)
     end
@@ -830,46 +995,79 @@ defmodule Emisar.Runners do
   successfully connects, not merely when the refresh endpoint mints it.
   """
   def request_credential_rotation(%Runner{} = runner, %Subject{} = subject) do
-    with :ok <-
-           Auth.Authorizer.ensure_has_permissions(subject, Authorizer.manage_runners_permission()),
-         :ok <- Subject.ensure_in_account(subject, runner.account_id, :not_found),
-         :ok <- ensure_current_credential_manager(subject) do
-      Runner.Query.not_deleted()
-      |> Runner.Query.with_active_account()
-      |> Runner.Query.by_id(runner.id)
-      |> Runner.Query.by_account_id(runner.account_id)
-      |> Runner.Query.with_preloaded_connection_token()
-      |> scope_to_subject_membership(subject)
-      |> Authorizer.for_subject(subject)
-      |> Repo.fetch_and_update(Runner.Query,
-        with: &credential_rotation_changeset/1,
-        audit: fn requested, changeset ->
-          if Map.has_key?(changeset.changes, :credential_rotation_requested_at),
-            do: Audit.Events.runner_credential_rotation_requested(subject, requested)
-        end,
-        after_commit: &broadcast_requested_runner_rotation/1
-      )
+    with {:ok, subject} <-
+           Auth.fetch_current_subject(Authorizer.manage_runners_permission(), subject),
+         :ok <- Subject.ensure_in_account(subject, runner.account_id, :not_found) do
+      runner_administration_multi(subject, Authorizer.manage_runners_permission())
+      |> Multi.run(:locked_runner, fn repo, %{manager: manager} ->
+        Runner.Query.not_deleted()
+        |> Runner.Query.by_id(runner.id)
+        |> Runner.Query.with_preloaded_connection_token()
+        |> Runner.Query.lock_for_update()
+        |> scope_to_runner_access(manager.access)
+        |> Authorizer.for_subject(manager.subject)
+        |> repo.fetch(Runner.Query)
+      end)
+      |> Multi.run(:rotation, fn _repo, %{locked_runner: locked} ->
+        case credential_rotation_changeset(locked) do
+          %Ecto.Changeset{} = changeset -> {:ok, changeset}
+          reason -> {:error, reason}
+        end
+      end)
+      |> Multi.update(:runner, & &1.rotation)
+      |> Multi.run(:audit, fn repo, %{manager: manager, runner: requested, rotation: changeset} ->
+        if Map.has_key?(changeset.changes, :credential_rotation_requested_at) do
+          requested
+          |> then(&Audit.Events.runner_credential_rotation_requested(manager.subject, &1))
+          |> repo.insert()
+        else
+          {:ok, nil}
+        end
+      end)
+      |> Repo.commit_multi(after_commit: &broadcast_requested_runner_rotation(&1.runner))
+      |> runner_mutation_result()
     end
   end
 
-  defp ensure_current_credential_manager(%Subject{} = subject) do
-    with {:ok, membership} <-
-           Accounts.fetch_active_membership(Repo, subject.account.id, subject.membership_id),
-         true <- membership.user_id == Subject.actor_id(subject) do
-      permissions =
-        membership |> Subject.effective_membership_role() |> Auth.Permissions.for_role()
+  # The account lock precedes the exact actor locks, then each caller locks its
+  # runner/key targets. Current scope rows are stable under the membership lock.
+  # This is operator administration only, never a heartbeat/socket hot path.
+  defp runner_administration_multi(subject, permission) do
+    Multi.new()
+    |> Multi.run(:active_account, fn repo, _changes ->
+      Accounts.fetch_and_lock_account(subject.account.id, repo: repo)
+    end)
+    |> Multi.run(:manager, fn repo, _changes ->
+      fetch_locked_runner_manager(repo, subject, permission)
+    end)
+  end
 
-      current_subject = %{subject | permissions: permissions}
-
-      Auth.Authorizer.ensure_has_permissions(
-        current_subject,
-        Authorizer.manage_runners_permission()
-      )
+  defp fetch_locked_runner_manager(
+         repo,
+         %Subject{account: %{id: account_id}, actor: %Users.User{id: user_id}} = subject,
+         permission
+       ) do
+    with {:ok, %Accounts.Membership{user_id: ^user_id}} <-
+           Accounts.fetch_and_lock_membership(account_id, subject.membership_id, repo: repo),
+         {:ok, _user} <- Users.fetch_and_lock_user_by_id(user_id, repo),
+         {:ok, current} <- Auth.fetch_current_subject(permission, subject) do
+      {:ok, %{subject: current, access: Accounts.runner_access_for_subject(current)}}
     else
-      false -> {:error, :unauthorized}
-      {:error, reason} -> {:error, reason}
+      _ -> {:error, :unauthorized}
     end
   end
+
+  defp fetch_locked_runner_manager(_repo, _subject, _permission),
+    do: {:error, :unauthorized}
+
+  defp require_full_runner_access(multi) do
+    Multi.run(multi, :full_runner_access, fn _repo, %{manager: manager} ->
+      if manager.access.mode == :all, do: {:ok, :authorized}, else: {:error, :unauthorized}
+    end)
+  end
+
+  defp runner_mutation_result({:ok, %{runner: runner}}), do: {:ok, runner}
+  defp runner_mutation_result({:error, reason}), do: {:error, reason}
 
   defp credential_rotation_changeset(%Runner{} = runner) do
     facts = credential_facts(runner)
@@ -915,21 +1113,18 @@ defmodule Emisar.Runners do
   end
 
   def disable_runner(%Runner{} = runner, %Subject{} = subject) do
-    with :ok <-
-           Auth.Authorizer.ensure_has_permissions(
-             subject,
-             Authorizer.manage_runners_permission()
-           ) do
-      Multi.new()
-      |> Multi.run(:runner, fn _repo, _changes ->
+    with {:ok, subject} <-
+           Auth.fetch_current_subject(Authorizer.manage_runners_permission(), subject) do
+      runner_administration_multi(subject, Authorizer.manage_runners_permission())
+      |> Multi.run(:runner, fn repo, %{manager: manager} ->
         Runner.Query.not_deleted()
         |> Runner.Query.by_id(runner.id)
-        |> scope_to_subject_membership(subject)
-        |> Authorizer.for_subject(subject)
-        |> Repo.fetch_and_update(Runner.Query, with: &Runner.Changeset.disable/1)
+        |> scope_to_runner_access(manager.access)
+        |> Authorizer.for_subject(manager.subject)
+        |> repo.fetch_and_update(Runner.Query, with: &Runner.Changeset.disable/1)
       end)
-      |> Multi.insert(:audit, fn %{runner: disabled} ->
-        Audit.Events.runner_disabled(subject, disabled)
+      |> Multi.insert(:audit, fn %{runner: disabled, manager: manager} ->
+        Audit.Events.runner_disabled(manager.subject, disabled)
       end)
       |> request_runner_quantity_sync()
       |> Repo.commit_multi(after_commit: &broadcast_runner_disabled(&1.runner))
@@ -948,32 +1143,22 @@ defmodule Emisar.Runners do
   runner ceiling. Returns `{:ok, runner}` otherwise.
   """
   def enable_runner(%Runner{} = runner, %Subject{} = subject) do
-    with :ok <-
-           Auth.Authorizer.ensure_has_permissions(
-             subject,
-             Authorizer.manage_runners_permission()
-           ),
+    with {:ok, subject} <-
+           Auth.fetch_current_subject(Authorizer.manage_runners_permission(), subject),
          :ok <- Subject.ensure_in_account(subject, runner.account_id) do
-      Multi.new()
-      # Lock the account so a concurrent enable/register can't both pass the
-      # plan-limit count and claim the last slot (TOCTOU).
-      |> Multi.run(:lock_account, fn repo, _ ->
-        Accounts.fetch_and_lock_account(runner.account_id, repo: repo)
-      end)
-      # ensure_in_account proved runner.account_id == subject.account.id, so the
-      # subject's own account feeds the count — no preload.
-      |> Multi.run(:limit, fn _repo, _ ->
-        case Billing.check_limit(subject.account, :runners) do
+      runner_administration_multi(subject, Authorizer.manage_runners_permission())
+      |> Multi.run(:limit, fn _repo, %{active_account: account} ->
+        case Billing.check_limit(account, :runners) do
           :ok -> {:ok, :ok}
           {:error, :over_limit, plan, limit} -> {:error, {:over_limit, plan, limit}}
         end
       end)
-      |> Multi.run(:runner, fn _repo, _ ->
+      |> Multi.run(:runner, fn repo, %{manager: manager} ->
         Runner.Query.not_deleted()
         |> Runner.Query.by_id(runner.id)
-        |> scope_to_subject_membership(subject)
-        |> Authorizer.for_subject(subject)
-        |> Repo.fetch_and_update(Runner.Query, with: &Runner.Changeset.enable/1)
+        |> scope_to_runner_access(manager.access)
+        |> Authorizer.for_subject(manager.subject)
+        |> repo.fetch_and_update(Runner.Query, with: &Runner.Changeset.enable/1)
       end)
       # The audit row belongs to the OUTER multi, not the nested
       # fetch_and_update's `:audit`: a nested call joins this transaction and
@@ -981,8 +1166,8 @@ defmodule Emisar.Runners do
       # `runner.enabled` to subscribers even when this commit later fails.
       # Inserted here it commits with the enable, and commit_multi broadcasts it
       # once — after the only commit there is.
-      |> Multi.insert(:audit, fn %{runner: enabled} ->
-        Audit.Events.runner_enabled(subject, enabled)
+      |> Multi.insert(:audit, fn %{runner: enabled, manager: manager} ->
+        Audit.Events.runner_enabled(manager.subject, enabled)
       end)
       |> request_runner_quantity_sync()
       |> Repo.commit_multi()
@@ -1000,21 +1185,18 @@ defmodule Emisar.Runners do
   historical references (audit events, run rows) remain intact.
   """
   def delete_runner(%Runner{} = runner, %Subject{} = subject) do
-    with :ok <-
-           Auth.Authorizer.ensure_has_permissions(
-             subject,
-             Authorizer.manage_runners_permission()
-           ) do
-      Multi.new()
-      |> Multi.run(:runner, fn _repo, _changes ->
+    with {:ok, subject} <-
+           Auth.fetch_current_subject(Authorizer.manage_runners_permission(), subject) do
+      runner_administration_multi(subject, Authorizer.manage_runners_permission())
+      |> Multi.run(:runner, fn repo, %{manager: manager} ->
         Runner.Query.not_deleted()
         |> Runner.Query.by_id(runner.id)
-        |> scope_to_subject_membership(subject)
-        |> Authorizer.for_subject(subject)
-        |> Repo.fetch_and_update(Runner.Query, with: &Runner.Changeset.delete/1)
+        |> scope_to_runner_access(manager.access)
+        |> Authorizer.for_subject(manager.subject)
+        |> repo.fetch_and_update(Runner.Query, with: &Runner.Changeset.delete/1)
       end)
-      |> Multi.insert(:audit, fn %{runner: deleted} ->
-        Audit.Events.runner_deleted(subject, deleted)
+      |> Multi.insert(:audit, fn %{runner: deleted, manager: manager} ->
+        Audit.Events.runner_deleted(manager.subject, deleted)
       end)
       |> request_runner_quantity_sync()
       |> Repo.commit_multi(after_commit: &broadcast_runner_revoked(&1.runner))
@@ -1052,11 +1234,8 @@ defmodule Emisar.Runners do
         attrs,
         %Subject{} = subject
       ) do
-    with :ok <-
-           Auth.Authorizer.ensure_has_permissions(
-             subject,
-             Authorizer.manage_runners_permission()
-           ),
+    with {:ok, subject} <-
+           Auth.fetch_current_subject(Authorizer.manage_runners_permission(), subject),
          :ok <- Subject.ensure_in_account(subject, account.id),
          :ok <- ensure_full_runner_access(subject),
          {:ok, %InactiveRetentionInput{hours: hours}} <- inactive_retention_input(attrs) do
@@ -1101,11 +1280,8 @@ defmodule Emisar.Runners do
   `{:ok, deleted_count}`.
   """
   def sweep_inactive_runners(%Subject{} = subject) do
-    with :ok <-
-           Auth.Authorizer.ensure_has_permissions(
-             subject,
-             Authorizer.manage_runners_permission()
-           ),
+    with {:ok, subject} <-
+           Auth.fetch_current_subject(Authorizer.manage_runners_permission(), subject),
          {:ok, hours} <- fetch_inactive_retention_hours(subject) do
       delete_inactive_runners(subject.account.id, hours, subject)
     end
@@ -1166,8 +1342,8 @@ defmodule Emisar.Runners do
   end
 
   defp delete_inactive_runner_batch(account_id, hours, subject, cutoff, limit, cursor) do
-    Multi.new()
-    |> Multi.run(:runners, fn repo, _changes ->
+    runner_sweep_multi(account_id, subject)
+    |> Multi.run(:runners, fn repo, changes ->
       queryable =
         Runner.Query.not_deleted()
         |> Runner.Query.by_account_id(account_id)
@@ -1177,7 +1353,7 @@ defmodule Emisar.Runners do
         |> Runner.Query.after_id(cursor)
         |> Runner.Query.retention_batch(limit)
         |> Runner.Query.lock_for_update()
-        |> scope_sweep_to_subject(subject)
+        |> scope_sweep_to_manager(Map.get(changes, :manager))
 
       {:ok, repo.all(queryable)}
     end)
@@ -1204,6 +1380,19 @@ defmodule Emisar.Runners do
     |> Repo.commit_multi()
   end
 
+  defp runner_sweep_multi(_account_id, nil), do: Multi.new()
+
+  defp runner_sweep_multi(account_id, %Subject{} = subject) do
+    Multi.new()
+    |> Multi.run(:account_scope, fn _repo, _changes ->
+      case Subject.ensure_in_account(subject, account_id) do
+        :ok -> {:ok, :authorized}
+        {:error, reason} -> {:error, reason}
+      end
+    end)
+    |> Multi.append(runner_administration_multi(subject, Authorizer.manage_runners_permission()))
+  end
+
   # No marker when nothing was removed — scheduled housekeeping must not
   # manufacture audit noise on inactive accounts.
   defp record_inactivity_sweep(_repo, [], _hours, _subject), do: {:ok, :nothing_removed}
@@ -1217,10 +1406,10 @@ defmodule Emisar.Runners do
   # access, exactly as delete_runner is — a runner-scope-restricted admin must
   # not delete beyond their scope. The nightly job passes no subject and stays
   # account-wide; an owner (or any all-access member) resolves to unrestricted.
-  defp scope_sweep_to_subject(queryable, %Subject{} = subject),
-    do: queryable |> scope_to_subject_membership(subject) |> Authorizer.for_subject(subject)
+  defp scope_sweep_to_manager(queryable, %{subject: subject, access: access}),
+    do: queryable |> scope_to_runner_access(access) |> Authorizer.for_subject(subject)
 
-  defp scope_sweep_to_subject(queryable, nil), do: queryable
+  defp scope_sweep_to_manager(queryable, nil), do: queryable
 
   @doc """
   Internal — the bounded candidate `{pack_id, version}` pairs protected from
@@ -1252,6 +1441,30 @@ defmodule Emisar.Runners do
     |> Runner.Query.by_account_id(account_id)
     |> Emisar.Runners.PackReference.Query.advertised_refs(refs)
     |> repo.all()
+  end
+
+  @doc """
+  Internal — bounded pack/version candidates with a current advertiser outside
+  an already-authorized runner grant. Hash, connection and trust state do not
+  narrow a global version's blast radius. Returns at most 500 pairs, without
+  loading runner pack maps. Checks committed advertisements; console callers
+  use this only as a hint and must reauthorize the write.
+  """
+  def list_pack_refs_outside_runner_access(account_id, refs, access, opts \\ [])
+      when is_binary(account_id) and is_list(refs) and length(refs) <= 500 do
+    repo = Keyword.get(opts, :repo, Repo)
+
+    case access do
+      %Accounts.RunnerAccess{mode: :all} ->
+        []
+
+      %Accounts.RunnerAccess{} ->
+        Runner.Query.not_deleted()
+        |> Runner.Query.by_account_id(account_id)
+        |> Runner.Query.outside_scope_values(access.runner_ids, access.groups)
+        |> Emisar.Runners.PackReference.Query.advertised_refs(refs)
+        |> repo.all()
+    end
   end
 
   @doc """
@@ -1657,19 +1870,7 @@ defmodule Emisar.Runners do
 
   `now` is injectable so a caller can project a fixed instant.
   """
-  def runner_readiness(runner, now_or_access \\ DateTime.utc_now())
-
-  def runner_readiness(%Runner{} = runner, %Accounts.RunnerAccess{} = access) do
-    degraded_packs =
-      Enum.filter(runner.degraded_packs || [], fn
-        %{"pack" => pack_id} -> Accounts.RunnerAccess.pack_in_scope?(pack_id, access)
-        _malformed -> false
-      end)
-
-    runner_readiness(%{runner | degraded_packs: degraded_packs}, DateTime.utc_now())
-  end
-
-  def runner_readiness(%Runner{} = runner, %DateTime{} = now) do
+  def runner_readiness(%Runner{} = runner, %DateTime{} = now \\ DateTime.utc_now()) do
     connection = readiness_connection(runner)
     signatures = readiness_signatures(runner)
 
@@ -1705,7 +1906,7 @@ defmodule Emisar.Runners do
   end
 
   @doc """
-  The subject's complete scoped fleet as counts, one fleet-wide signature mode,
+  The account's complete readable fleet as counts, one fleet-wide signature mode,
   and the stable reason atoms a surface turns into copy — counted in the
   database, because the nav, the runners index, and the fleet-dependent nudges
   all ask on common paths, so no runner row is materialized. Connection and
@@ -1714,26 +1915,21 @@ defmodule Emisar.Runners do
   — a disabled runner's posture isn't actionable — and `signature_mode` is
   computed over that same active set, so a disabled non-enforcing runner can't
   keep a fleet from reading signed-only. The
-  `view_runners` permission, the membership's CURRENT runner access, and the
-  Authorizer's account scope all apply, so a runner the caller can't see never
-  reaches the counts; Presence stays the authority on who is online and whose
+  current `view_runners` permission and Authorizer's account scope apply.
+  Action scope does not change physical health; Presence is the authority on who is online and whose
   heartbeat has aged out. `:now` projects a fixed instant. Returns
   `{:ok, status} | {:error, :unauthorized}`.
   """
   def fetch_fleet_status(subject, opts \\ [])
 
   def fetch_fleet_status(%Subject{account: %{id: account_id}} = subject, opts) do
-    with :ok <-
-           Auth.Authorizer.ensure_has_permissions(
-             subject,
-             Authorizer.view_runners_permission()
-           ) do
+    with {:ok, subject} <-
+           Auth.fetch_current_subject(Authorizer.view_runners_permission(), subject) do
       now = Keyword.get(opts, :now, DateTime.utc_now())
       metas = connection_metas(account_id)
 
       aggregate =
         Runner.Query.not_deleted()
-        |> scope_to_subject_membership(subject)
         |> Runner.Query.fleet_status(Map.keys(metas), stale_heartbeat_ids(metas, now))
         |> Authorizer.for_subject(subject)
         |> Repo.one()
@@ -1905,12 +2101,11 @@ defmodule Emisar.Runners do
   matching row and never touches Presence. Fails closed without `view_runners`.
   """
   def any_runners?(%Subject{} = subject) do
-    case Auth.Authorizer.ensure_has_permissions(subject, Authorizer.view_runners_permission()) do
-      :ok ->
+    case Auth.fetch_current_subject(Authorizer.view_runners_permission(), subject) do
+      {:ok, subject} ->
         queryable =
           Runner.Query.not_deleted()
           |> Runner.Query.not_disabled()
-          |> scope_to_subject_membership(subject)
           |> Authorizer.for_subject(subject)
 
         Repo.exists?(queryable)
@@ -2021,11 +2216,8 @@ defmodule Emisar.Runners do
   end
 
   def list_enrollment_keys(%Subject{} = subject, opts \\ []) do
-    with :ok <-
-           Auth.Authorizer.ensure_has_permissions(
-             subject,
-             Authorizer.manage_enrollment_keys_permission()
-           ) do
+    with {:ok, subject} <-
+           Auth.fetch_current_subject(Authorizer.manage_enrollment_keys_permission(), subject) do
       {preloads, opts} = Keyword.pop(opts, :preload, [])
 
       # The FULL inventory on purpose — a wizard-minted enrollment key is a
@@ -2063,23 +2255,21 @@ defmodule Emisar.Runners do
   and never stored.
   """
   def create_enrollment_key(attrs, %Subject{account: account} = subject) do
-    with :ok <-
-           Auth.Authorizer.ensure_has_permissions(
-             subject,
-             Authorizer.manage_enrollment_keys_permission()
-           ),
+    with {:ok, subject} <-
+           Auth.fetch_current_subject(Authorizer.manage_enrollment_keys_permission(), subject),
          :ok <- ensure_full_runner_access(subject) do
       account_id = account.id
       user_id = Subject.actor_id(subject)
       {raw, prefix, hash} = Crypto.mint("emkey-enroll-", @enrollment_key_prefix_size)
 
-      Multi.new()
+      runner_administration_multi(subject, Authorizer.manage_enrollment_keys_permission())
+      |> require_full_runner_access()
       |> Multi.insert(
         :key,
         EnrollmentKey.Changeset.create(account_id, user_id, prefix, hash, attrs)
       )
-      |> Multi.insert(:audit, fn %{key: key} ->
-        Audit.Events.enrollment_key_created(subject, key)
+      |> Multi.insert(:audit, fn %{key: key, manager: manager} ->
+        Audit.Events.enrollment_key_created(manager.subject, key)
       end)
       |> Repo.commit_multi(after_commit: &broadcast_enrollment_key_created(&1.key))
       |> case do
@@ -2297,11 +2487,8 @@ defmodule Emisar.Runners do
   `enrollment_key.bound` with `auto: true`. Unused keys expire after 24 hours.
   """
   def mint_install_key(%Subject{account: account} = subject, opts \\ []) do
-    with :ok <-
-           Auth.Authorizer.ensure_has_permissions(
-             subject,
-             Authorizer.issue_install_key_permission()
-           ),
+    with {:ok, subject} <-
+           Auth.fetch_current_subject(Authorizer.issue_install_key_permission(), subject),
          :ok <- ensure_full_runner_access(subject) do
       account_id = account.id
       user_id = Subject.actor_id(subject)
@@ -2310,7 +2497,8 @@ defmodule Emisar.Runners do
 
       {raw, prefix, hash} = Crypto.mint("emkey-enroll-", @enrollment_key_prefix_size)
 
-      Multi.new()
+      runner_administration_multi(subject, Authorizer.issue_install_key_permission())
+      |> require_full_runner_access()
       # Insert first, then evict — so the account never momentarily has
       # zero auto-unused keys (which would race against concurrent
       # console mounts).
@@ -2368,43 +2556,50 @@ defmodule Emisar.Runners do
   # revoking needs just the plain `manage_enrollment_keys` permission: a
   # scope-limited admin must be able to kill a dangerous fleet-wide key during an
   # incident, and taking capability away is safe at any reach. Account scoping
-  # still holds — the idempotent clause's `ensure_in_account` and the mutating
-  # clause's `for_subject` keep a caller to their own account's keys.
+  # still holds — both revocation and its no-op case authorize the locked,
+  # persisted key through the current subject's account scope.
   #
   # Revoking an already-revoked key is an idempotent no-op — re-stamping
   # revoked_at (plus a fresh audit row + broadcast) would move the revocation
   # time and pollute the trail. Still permission-gated so an unauthorized
   # caller is rejected, not silently OK'd.
-  def revoke_enrollment_key(%EnrollmentKey{revoked_at: revoked_at} = key, %Subject{} = subject)
-      when not is_nil(revoked_at) do
-    with :ok <-
-           Auth.Authorizer.ensure_has_permissions(
-             subject,
-             Authorizer.manage_enrollment_keys_permission()
-           ),
-         :ok <- Subject.ensure_in_account(subject, key.account_id) do
-      {:ok, key}
-    end
-  end
-
   def revoke_enrollment_key(%EnrollmentKey{} = key, %Subject{} = subject) do
-    with :ok <-
-           Auth.Authorizer.ensure_has_permissions(
-             subject,
-             Authorizer.manage_enrollment_keys_permission()
-           ) do
-      by_user_id = Subject.actor_id(subject)
-
-      EnrollmentKey.Query.not_deleted()
-      |> EnrollmentKey.Query.by_id(key.id)
-      |> Authorizer.for_subject(subject)
-      |> Repo.fetch_and_update(EnrollmentKey.Query,
-        with: &EnrollmentKey.Changeset.revoke(&1, by_user_id),
-        audit: &Audit.Events.enrollment_key_revoked(subject, &1),
-        after_commit: &broadcast_enrollment_key_revoked/1
-      )
+    with {:ok, subject} <-
+           Auth.fetch_current_subject(Authorizer.manage_enrollment_keys_permission(), subject) do
+      runner_administration_multi(subject, Authorizer.manage_enrollment_keys_permission())
+      |> Multi.run(:locked_key, fn repo, %{manager: manager} ->
+        EnrollmentKey.Query.not_deleted()
+        |> EnrollmentKey.Query.by_id(key.id)
+        |> EnrollmentKey.Query.lock_for_update()
+        |> Authorizer.for_subject(manager.subject)
+        |> repo.fetch(EnrollmentKey.Query)
+      end)
+      |> Multi.run(:key, fn repo, %{locked_key: locked, manager: manager} ->
+        if locked.revoked_at do
+          {:ok, locked}
+        else
+          locked
+          |> EnrollmentKey.Changeset.revoke(Subject.actor_id(manager.subject))
+          |> repo.update()
+        end
+      end)
+      |> Multi.run(:audit, fn repo, %{locked_key: locked, key: revoked, manager: manager} ->
+        if locked.revoked_at,
+          do: {:ok, nil},
+          else: repo.insert(Audit.Events.enrollment_key_revoked(manager.subject, revoked))
+      end)
+      |> Repo.commit_multi(after_commit: &broadcast_new_enrollment_revocation/1)
+      |> case do
+        {:ok, %{key: revoked}} -> {:ok, revoked}
+        {:error, reason} -> {:error, reason}
+      end
     end
   end
+
+  defp broadcast_new_enrollment_revocation(%{locked_key: %{revoked_at: nil}, key: key}),
+    do: broadcast_enrollment_key_revoked(key)
+
+  defp broadcast_new_enrollment_revocation(_changes), do: :ok
 
   @doc """
   Peeks at the presented raw secret, resolving it to an `%EnrollmentKey{}`.
@@ -2738,8 +2933,7 @@ defmodule Emisar.Runners do
   member of that group starts dispatching to it.
   """
   def subject_can_install_runners?(%Subject{} = subject) do
-    Auth.Authorizer.has_permission?(subject, Authorizer.issue_install_key_permission()) and
-      full_runner_access?(subject)
+    current_full_runner_permission?(subject, Authorizer.issue_install_key_permission())
   end
 
   @doc "Whether `subject` may list runner enrollment keys (admin+)."
@@ -2756,7 +2950,7 @@ defmodule Emisar.Runners do
   MINTING a key requires the same fleet reach — only creation can widen reach.
   """
   def subject_can_create_enrollment_keys?(%Subject{} = subject),
-    do: subject_can_manage_enrollment_keys?(subject) and full_runner_access?(subject)
+    do: current_full_runner_permission?(subject, Authorizer.manage_enrollment_keys_permission())
 
   @doc """
   Whether `subject` may revoke an enrollment key. Revoke is containment — it only
@@ -2773,7 +2967,14 @@ defmodule Emisar.Runners do
   access, since the schedule sweeps the whole fleet.
   """
   def subject_can_manage_inactive_retention?(%Subject{} = subject),
-    do: subject_can_manage_runners?(subject) and full_runner_access?(subject)
+    do: current_full_runner_permission?(subject, Authorizer.manage_runners_permission())
+
+  defp current_full_runner_permission?(subject, permission) do
+    case Auth.fetch_current_subject(permission, subject) do
+      {:ok, current} -> full_runner_access?(current)
+      {:error, _reason} -> false
+    end
+  end
 
   # Current access, re-read on every call: a narrowed scope takes the schedule
   # away from an open session immediately, and a stale snapshot never widens it.

@@ -50,18 +50,6 @@ defmodule Emisar.Policies.Policy.Query do
   def cursor_fields,
     do: [{:policies, :asc, :scope_type}, {:policies, :asc, :scope_value}, {:policies, :asc, :id}]
 
-  def by_scope_targets(queryable, targets) do
-    reachable =
-      from(t in subquery(targets),
-        where:
-          t.scope_type == parent_as(:policies).scope_type and
-            t.scope_value == parent_as(:policies).scope_value,
-        select: 1
-      )
-
-    where(queryable, exists(subquery(reachable)))
-  end
-
   def by_scope(queryable, scope_type, scope_value) do
     where(
       queryable,

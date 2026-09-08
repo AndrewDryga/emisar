@@ -1,6 +1,6 @@
 defmodule EmisarWeb.PacksLive do
   @moduledoc """
-  Pack inventory + trust state within the member's current pack access.
+  Account-wide pack inventory and trust state, with scoped management controls.
 
   Each `(pack_id, version)` is one row holding the trusted hash + an
   optional pending hash. The page surfaces:
@@ -71,7 +71,7 @@ defmodule EmisarWeb.PacksLive do
        |> assign(:pack_count, 0)
        |> assign(:version_count, 0)
        |> assign(:pending_count, 0)
-       |> assign(:out_of_scope_pack_ids, [])
+       |> assign(:can_manage_packs?, false)
        |> assign(:can_manage_pack_retention?, false)
        |> stream(:packs, [])}
     end
@@ -110,16 +110,13 @@ defmodule EmisarWeb.PacksLive do
         |> assign(:load_error?, false)
         |> assign(:pack_count, projection.pack_count)
         |> assign(:version_count, projection.version_count)
-        # Pending counts + the sidebar badge reflect the member's current pack
-        # access, not the current search filter — only the rendered groups
-        # narrow. The badge counts every accessible decision (pending reviews
-        # + retired-blocked); the page's
+        # Pending counts + the sidebar badge reflect the full account, not
+        # the current search filter. The badge counts pending reviews and
+        # retired-blocked versions; the page's
         # amber callout stays trust-review-only — retired versions carry
         # their own rose notice per row.
         |> assign(:pending_count, projection.pending_count)
-        # Discovery only — the Catalog hands this list pack IDS and nothing
-        # else, so the section below has no fact to render and no row to act on.
-        |> assign(:out_of_scope_pack_ids, projection.out_of_scope_pack_ids)
+        |> assign(:can_manage_packs?, projection.can_manage?)
         # Every lifecycle/trust judgment a row renders — trust + retirement
         # state, the pending decision's contents and diff, who advertises it,
         # and the remedy each state offers — comes from the Catalog, keyed by
@@ -144,9 +141,11 @@ defmodule EmisarWeb.PacksLive do
         |> assign(:pack_count, 0)
         |> assign(:version_count, 0)
         |> assign(:pending_count, 0)
-        |> assign(:out_of_scope_pack_ids, [])
+        |> assign(:can_manage_packs?, false)
         |> assign(:version_facts, %{})
         |> assign(:matched_actions, %{})
+        |> assign(:open_versions, MapSet.new())
+        |> assign(:inspected_actions, %{})
         |> assign(:group_cache, %{})
         |> stream(:packs, [], reset: true)
     end
@@ -176,9 +175,8 @@ defmodule EmisarWeb.PacksLive do
   defp normalize_name(name) when is_binary(name), do: String.trim(name)
   defp normalize_name(_), do: ""
 
-  # Everything the page renders, from one Catalog read: the rows in current
-  # pack access, the filtered groups, the actions each version advertises, and
-  # the counts.
+  # Everything the page renders, from one Catalog read: account-wide rows,
+  # scoped management hints, filtered groups, advertised actions, and counts.
   # Rejected rows stay listed (quietly — no review alert) so an admin mistake is
   # visible and reversible: the row offers Trust to adopt the refused bytes or
   # restore revoked trust. Dispatch fails closed on them either way.
@@ -197,8 +195,10 @@ defmodule EmisarWeb.PacksLive do
   # disclosure renders immediately (the projection already holds them) — merged
   # over whatever `inspect_pack` lazily cached.
   defp seed_action_lists(inspected, projection) do
-    projection.groups
-    |> Enum.flat_map(& &1.versions)
+    versions = Enum.flat_map(projection.groups, & &1.versions)
+    inspected = Map.take(inspected, Enum.map(versions, & &1.id))
+
+    versions
     |> Enum.filter(&Map.has_key?(projection.matched_action_ids, &1.id))
     |> Enum.reduce(inspected, fn version, acc ->
       Map.put(acc, version.id, version_actions(projection, version))
@@ -517,16 +517,22 @@ defmodule EmisarWeb.PacksLive do
         %{"id" => id, "pack-id" => pack_id, "version" => version},
         socket
       ) do
-    socket =
-      if MapSet.member?(socket.assigns.open_versions, id) do
-        update(socket, :open_versions, &MapSet.delete(&1, id))
-      else
-        socket
-        |> maybe_load_actions(id, pack_id, version)
-        |> update(:open_versions, &MapSet.put(&1, id))
-      end
+    case cached_version(socket.assigns.group_cache, id) do
+      {^pack_id, %{version: ^version} = cached} ->
+        socket =
+          if MapSet.member?(socket.assigns.open_versions, cached.id) do
+            update(socket, :open_versions, &MapSet.delete(&1, cached.id))
+          else
+            socket
+            |> maybe_load_actions(cached.id, cached.pack_id, cached.version)
+            |> update(:open_versions, &MapSet.put(&1, cached.id))
+          end
 
-    {:noreply, reinsert_pack_group(socket, pack_id)}
+        {:noreply, reinsert_pack_group(socket, cached.pack_id)}
+
+      _ ->
+        {:noreply, socket}
+    end
   end
 
   def handle_event("inspect_pack", _params, socket), do: {:noreply, socket}
@@ -688,14 +694,18 @@ defmodule EmisarWeb.PacksLive do
 
     case console_projection(socket) do
       {:ok, projection} ->
+        auto_opened = MapSet.new(Map.keys(socket.assigns.matched_actions))
+
         socket =
           socket
           |> assign(:pack_count, projection.pack_count)
           |> assign(:version_count, projection.version_count)
           |> assign(:pending_count, projection.pending_count)
+          |> assign(:can_manage_packs?, projection.can_manage?)
           |> assign(:version_facts, projection.version_facts)
           |> assign(:matched_actions, projection.matched_action_ids)
           |> assign(:group_cache, group_cache(projection.groups))
+          |> update(:open_versions, &still_open_versions(&1, auto_opened, projection))
           |> update(:inspected_actions, &seed_action_lists(&1, projection))
 
         case find_group(projection, pack_id) do
@@ -716,6 +726,12 @@ defmodule EmisarWeb.PacksLive do
   # change which durable runner advertisements the page renders.
   def handle_info({:pack_trust_changed, _account_id}, socket),
     do: {:noreply, queue_refresh(socket)}
+
+  def handle_info(
+        {:list_changed, :team, "membership.runner_access_changed", user_id},
+        %{assigns: %{current_user: %{id: user_id}}} = socket
+      ),
+      do: {:noreply, queue_refresh(socket)}
 
   def handle_info(:refresh_packs, socket),
     do: {:noreply, socket |> assign(:refresh_queued?, false) |> load_packs()}
@@ -1376,7 +1392,7 @@ defmodule EmisarWeb.PacksLive do
                connected. --%>
           <.empty_state
             :if={
-              @pack_count == 0 and @out_of_scope_pack_ids == [] and @name_filter == "" and
+              @pack_count == 0 and @name_filter == "" and
                 @risk_filter == "" and not @load_error? and not @loading?
             }
             icon="product.pack"
@@ -1474,7 +1490,7 @@ defmodule EmisarWeb.PacksLive do
                      double-labels the same fact and reads as a second, conflicting
                      status. --%>
                 <.button
-                  :if={Catalog.subject_can_manage_packs?(@current_subject)}
+                  :if={@can_manage_packs?}
                   variant={:secondary}
                   tone={:rose}
                   size={:sm}
@@ -1483,6 +1499,8 @@ defmodule EmisarWeb.PacksLive do
                   phx-click="open_pack_action"
                   phx-value-action="delete_pack"
                   phx-value-pack-id={pack.id}
+                  disabled={!pack.can_delete?}
+                  title={if !pack.can_delete?, do: "Your access does not include managing this pack."}
                 >
                   Remove
                 </.button>
@@ -1541,7 +1559,7 @@ defmodule EmisarWeb.PacksLive do
                          a one-item dropdown is ceremony, so it stays the house brand
                          link: navigation is never button chrome (§2). --%>
                     <div class="ml-auto flex shrink-0 items-center gap-2">
-                      <%= if Catalog.subject_can_manage_packs?(@current_subject) do %>
+                      <%= if @can_manage_packs? do %>
                         <.dropdown
                           class="inline-block shrink-0 text-left"
                           summary_class="rounded px-2 py-1 text-xs font-medium text-zinc-300 ring-1 ring-zinc-800 hover:bg-zinc-900"
@@ -1568,6 +1586,7 @@ defmodule EmisarWeb.PacksLive do
                             phx-click="open_pack_action"
                             phx-value-action="trust"
                             phx-value-id={v.id}
+                            disabled={!@version_facts[v.id].can_manage?}
                           >
                             {pack_action_label(%{
                               action: "trust",
@@ -1580,6 +1599,7 @@ defmodule EmisarWeb.PacksLive do
                             phx-click="open_pack_action"
                             phx-value-action="revoke_trust"
                             phx-value-id={v.id}
+                            disabled={!@version_facts[v.id].can_manage?}
                           >
                             Revoke trust
                           </.menu_item>
@@ -1589,6 +1609,7 @@ defmodule EmisarWeb.PacksLive do
                             phx-click="open_pack_action"
                             phx-value-action="delete_version"
                             phx-value-id={v.id}
+                            disabled={!@version_facts[v.id].can_manage?}
                           >
                             Remove
                           </.menu_item>
@@ -1606,6 +1627,13 @@ defmodule EmisarWeb.PacksLive do
                     </div>
                   </div>
 
+                  <p
+                    :if={@can_manage_packs? and !@version_facts[v.id].can_manage?}
+                    class="mt-1.5 pl-8 text-xs text-zinc-400"
+                  >
+                    Managing this version requires access to the pack and every runner using it.
+                  </p>
+
                   <.version_contents
                     :if={
                       @version_facts[v.id].trust_state == :trusted and
@@ -1621,7 +1649,7 @@ defmodule EmisarWeb.PacksLive do
                     version={v}
                     pack_id={pack.id}
                     fact={@version_facts[v.id]}
-                    can_manage={Catalog.subject_can_manage_packs?(@current_subject)}
+                    can_manage={@version_facts[v.id].can_manage?}
                   />
 
                   <%!-- A rejected version stays listed quietly — no alert, no
@@ -1640,7 +1668,7 @@ defmodule EmisarWeb.PacksLive do
                     pack_id={pack.id}
                     fact={@version_facts[v.id]}
                     matched={@matched_actions[v.id]}
-                    can_manage={Catalog.subject_can_manage_packs?(@current_subject)}
+                    can_manage={@version_facts[v.id].can_manage?}
                   />
                 </li>
               </ul>
@@ -1659,29 +1687,6 @@ defmodule EmisarWeb.PacksLive do
           <p :if={@pack_count > 0} class="mt-4 text-xs text-zinc-400">
             {count_footer(@pack_count, @version_count)}
           </p>
-
-          <%!-- Discovery: the rest of the workspace's packs, by name, so a
-               member can ask for the one they need. IDENTITY ONLY — the
-               Catalog's projection carries pack ids here and nothing else, so
-               there is no version row, trust state, contents, advertiser or
-               control to render. Chips, not rows: nothing here is actionable,
-               and a row shape would promise otherwise. --%>
-          <section
-            :if={@out_of_scope_pack_ids != []}
-            class={if @pack_count == 0, do: "mt-6", else: "mt-12"}
-          >
-            <.section_header
-              title="Packs you can't access"
-              count={length(@out_of_scope_pack_ids)}
-            >
-              <:subtitle>
-                Ask an owner or admin for access to these packs and their actions.
-              </:subtitle>
-            </.section_header>
-            <div class="mt-4 flex flex-wrap gap-2">
-              <.chip :for={pack_id <- @out_of_scope_pack_ids} mono>{pack_id}</.chip>
-            </div>
-          </section>
         </div>
 
         <aside class="space-y-6">

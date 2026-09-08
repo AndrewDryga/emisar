@@ -17,7 +17,7 @@ defmodule EmisarWeb.RunbookRunLive do
   @item_page_size 25
 
   def mount(%{"id" => id} = params, _session, socket) do
-    if Runs.subject_can_dispatch_run?(socket.assigns.current_subject) do
+    if Runbooks.subject_can_view_runbooks?(socket.assigns.current_subject) do
       if connected?(socket),
         do: mount_runbook(id, Map.has_key?(params, "execution_id"), socket),
         else: mount_disconnected(socket)
@@ -26,7 +26,7 @@ defmodule EmisarWeb.RunbookRunLive do
        socket
        |> put_flash(
          :error,
-         "You don't have permission to run runbooks. Ask an owner or admin to grant you an operator role."
+         "You don't have permission to view runbooks."
        )
        |> push_navigate(to: ~p"/app/#{socket.assigns.current_account}/runbooks")}
     end
@@ -37,6 +37,10 @@ defmodule EmisarWeb.RunbookRunLive do
      socket
      |> assign(:page_title, "Runbook")
      |> assign(:runbook, nil)
+     |> assign(:runbook_id, nil)
+     |> assign(:can_dispatch?, Runs.subject_can_dispatch_run?(socket.assigns.current_subject))
+     |> assign(:can_cancel_execution?, false)
+     |> assign(:access_review_required?, false)
      |> assign(:loaded?, false)
      |> assign(:reason, "")
      |> assign(:input_raw, %{})
@@ -61,11 +65,19 @@ defmodule EmisarWeb.RunbookRunLive do
      |> assign(:subscribed_execution_id, nil)}
   end
 
-  defp mount_runbook(id, execution_detail?, socket) do
+  # Execution history owns its retained parent, including a deleted runbook.
+  # Resolve that exact account-scoped execution in handle_params, not today's
+  # nondeleted runbook or a dispatch permission at mount.
+  defp mount_runbook(id, true, socket) do
+    {:ok, socket} = mount_disconnected(socket)
+    {:ok, assign(socket, :runbook_id, id)}
+  end
+
+  defp mount_runbook(id, false, socket) do
     case Runbooks.fetch_runbook_by_id(id, socket.assigns.current_subject) do
       # Only published content is dispatchable, so a runbook that has never
       # published one is sent back to the editor rather than a dead form.
-      {:ok, %Runbooks.Runbook{live_version: nil} = runbook} when not execution_detail? ->
+      {:ok, %Runbooks.Runbook{live_version: nil} = runbook} ->
         {:ok,
          socket
          |> put_flash(:info, "Publish this runbook before running it.")
@@ -78,6 +90,13 @@ defmodule EmisarWeb.RunbookRunLive do
           socket
           |> assign(:page_title, "Run #{runbook.title}")
           |> assign(:runbook, runbook)
+          |> assign(:runbook_id, id)
+          |> assign(
+            :can_dispatch?,
+            Runs.subject_can_dispatch_run?(socket.assigns.current_subject)
+          )
+          |> assign(:can_cancel_execution?, false)
+          |> assign(:access_review_required?, false)
           |> assign(:loaded?, false)
           |> assign(:reason, "")
           |> assign(:input_raw, initial_input_raw(runbook.definition))
@@ -111,7 +130,7 @@ defmodule EmisarWeb.RunbookRunLive do
     end
   end
 
-  def handle_params(_params, _uri, %{assigns: %{runbook: nil}} = socket),
+  def handle_params(_params, _uri, %{assigns: %{runbook_id: nil}} = socket),
     do: {:noreply, socket}
 
   def handle_params(%{"execution_id" => execution_id}, _uri, socket) do
@@ -163,6 +182,17 @@ defmodule EmisarWeb.RunbookRunLive do
     )
   end
 
+  def handle_event("recheck_plan", _params, %{assigns: %{result: nil}} = socket) do
+    {:noreply,
+     socket
+     |> invalidate_review()
+     |> assign(:access_review_required?, false)
+     |> assign(:review_notice, nil)
+     |> run_preflight()}
+  end
+
+  def handle_event("recheck_plan", _params, socket), do: {:noreply, socket}
+
   def handle_event("run_again", _params, socket) do
     {:noreply,
      push_patch(socket,
@@ -202,6 +232,28 @@ defmodule EmisarWeb.RunbookRunLive do
   end
 
   def handle_info({:run_preflight, _stale_generation}, socket), do: {:noreply, socket}
+
+  def handle_info(
+        {:list_changed, :team, "membership.runner_access_changed", user_id},
+        %{assigns: %{current_user: %{id: user_id}}} = socket
+      ) do
+    # The shared membership hook has refreshed this exact identity and handles
+    # read-authority loss before forwarding a same-role access change.
+    socket =
+      socket
+      |> assign(:can_dispatch?, Runs.subject_can_dispatch_run?(socket.assigns.current_subject))
+      |> invalidate_review()
+
+    if socket.assigns.result do
+      {:noreply, refresh_cancellation_access(socket)}
+    else
+      {:noreply,
+       socket
+       |> assign(:access_review_required?, true)
+       |> assign(:preflight, %{socket.assigns.preflight | state: :stale})
+       |> assign(:review_notice, "Your access changed. Recheck this plan before starting.")}
+    end
+  end
 
   def handle_info(
         {:runbook_execution_updated, execution_id},
@@ -263,6 +315,9 @@ defmodule EmisarWeb.RunbookRunLive do
     review = socket.assigns.review
 
     cond do
+      socket.assigns.access_review_required? ->
+        {:noreply, socket}
+
       String.trim(socket.assigns.reason) == "" ->
         {:noreply, put_flash(socket, :error, "Add a reason before starting.")}
 
@@ -350,6 +405,9 @@ defmodule EmisarWeb.RunbookRunLive do
 
   defp cancel_execution(socket), do: {:noreply, socket}
 
+  defp schedule_preflight(%{assigns: %{access_review_required?: true}} = socket),
+    do: invalidate_review(socket)
+
   defp schedule_preflight(%{assigns: %{result: nil}} = socket) do
     socket = invalidate_review(socket)
     generation = socket.assigns.preflight_generation
@@ -398,6 +456,18 @@ defmodule EmisarWeb.RunbookRunLive do
   end
 
   defp run_preflight(socket) do
+    if socket.assigns.can_dispatch?,
+      do: run_action_preflight(socket),
+      else: readonly_preflight(socket)
+  end
+
+  defp readonly_preflight(socket) do
+    socket
+    |> invalidate_review()
+    |> assign(:preflight, %{state: :read_only, plan: nil, issues: []})
+  end
+
+  defp run_action_preflight(socket) do
     case Runbooks.cast_form_inputs(socket.assigns.runbook.definition, socket.assigns.input_raw) do
       {:ok, %{values: input_values}} ->
         socket
@@ -451,11 +521,12 @@ defmodule EmisarWeb.RunbookRunLive do
     socket = cancel_execution_reload(socket)
 
     case Runbooks.fetch_execution_result(execution_id, socket.assigns.current_subject) do
-      {:ok, result} when result.execution.runbook_id == socket.assigns.runbook.id ->
+      {:ok, result} when result.execution.runbook_id == socket.assigns.runbook_id ->
         projection = Runbooks.execution_projection(result)
 
         socket =
           socket
+          |> assign(:runbook, result.runbook)
           |> assign(:result, result)
           |> assign(:projection, projection)
           |> assign(:item_facts, item_facts_by_id(projection))
@@ -468,6 +539,7 @@ defmodule EmisarWeb.RunbookRunLive do
           |> assign(:recent_executions, [])
           |> assign(:recent_executions_error?, false)
           |> assign(:page_title, execution_page_title(result))
+          |> refresh_cancellation_access()
 
         if projection.execution.waitable?,
           do: socket,
@@ -479,7 +551,7 @@ defmodule EmisarWeb.RunbookRunLive do
         |> clear_execution_result()
         |> put_flash(:error, "This execution is no longer visible.")
         |> push_navigate(
-          to: ~p"/app/#{socket.assigns.current_account}/runbooks/#{socket.assigns.runbook.id}/run"
+          to: ~p"/app/#{socket.assigns.current_account}/runbooks/#{socket.assigns.runbook_id}/run"
         )
 
       {:ok, _other_runbook_result} ->
@@ -488,7 +560,7 @@ defmodule EmisarWeb.RunbookRunLive do
         |> clear_execution_result()
         |> put_flash(:error, "Execution not found for this runbook.")
         |> push_navigate(
-          to: ~p"/app/#{socket.assigns.current_account}/runbooks/#{socket.assigns.runbook.id}/run"
+          to: ~p"/app/#{socket.assigns.current_account}/runbooks/#{socket.assigns.runbook_id}/run"
         )
     end
   end
@@ -503,6 +575,7 @@ defmodule EmisarWeb.RunbookRunLive do
     |> clear_execution_result()
     |> assign(:reason, "")
     |> assign(:review_notice, nil)
+    |> assign(:access_review_required?, false)
     |> assign(:target_selection_seed, Runbooks.new_target_selection_seed())
     |> assign(:input_raw, initial_input_raw(socket.assigns.runbook.definition))
     |> assign(:touched_inputs, MapSet.new())
@@ -517,6 +590,17 @@ defmodule EmisarWeb.RunbookRunLive do
     |> assign(:attempts_by_item, %{})
     |> assign(:events_by_attempt, %{})
     |> assign(:approval_request, nil)
+    |> assign(:can_cancel_execution?, false)
+  end
+
+  defp refresh_cancellation_access(socket) do
+    result = socket.assigns.result
+
+    allowed? =
+      result && not socket.assigns.projection.execution.terminal? &&
+        Runs.cancellation_allowed?(result.execution.items, socket.assigns.current_subject)
+
+    assign(socket, :can_cancel_execution?, allowed? == true)
   end
 
   # Only the field the operator actually changed reveals its validation — a
@@ -714,7 +798,8 @@ defmodule EmisarWeb.RunbookRunLive do
   defp wait_label(_item), do: nil
 
   defp can_start?(assigns) do
-    assigns.preflight.state == :ready and not is_nil(assigns.review) and
+    assigns.can_dispatch? and not assigns.access_review_required? and
+      assigns.preflight.state == :ready and not is_nil(assigns.review) and
       String.trim(assigns.reason) != "" and
       assigns.input_errors == %{}
   end
@@ -828,6 +913,7 @@ defmodule EmisarWeb.RunbookRunLive do
           pending_label="Cancelling…"
           variant={:secondary}
           tone={:rose}
+          disabled={not @can_cancel_execution?}
           on_confirm={JS.push("cancel_execution")}
         >
           <:body>
@@ -835,6 +921,13 @@ defmodule EmisarWeb.RunbookRunLive do
           </:body>
           Cancel execution
         </.confirm_button>
+        <p
+          :if={@projection && not @projection.execution.terminal? && not @can_cancel_execution?}
+          id="runbook-cancellation-access"
+          class="max-w-xs text-xs text-zinc-400"
+        >
+          Cancellation requires permission for every runner and pack in this execution.
+        </p>
         <.button
           :if={
             @projection && @projection.execution.terminal? &&
@@ -842,6 +935,7 @@ defmodule EmisarWeb.RunbookRunLive do
           }
           variant={:secondary}
           phx-click="run_again"
+          disabled={not @can_dispatch? or not is_nil(@runbook.deleted_at)}
         >
           Run again
         </.button>
@@ -868,7 +962,7 @@ defmodule EmisarWeb.RunbookRunLive do
         />
 
         <.run_form
-          :if={@loaded? && is_nil(@result) && @runbook.live_version}
+          :if={@loaded? && @runbook && is_nil(@result) && @runbook.live_version}
           runbook={@runbook}
           reason={@reason}
           input_raw={@input_raw}
@@ -879,6 +973,8 @@ defmodule EmisarWeb.RunbookRunLive do
           review_notice={@review_notice}
           expanded_stages={@expanded_plan_stages}
           can_start?={can_start?(assigns)}
+          can_dispatch?={@can_dispatch?}
+          access_review_required?={@access_review_required?}
           current_account={@current_account}
           recent_executions={@recent_executions}
           recent_executions_error?={@recent_executions_error?}
@@ -898,6 +994,8 @@ defmodule EmisarWeb.RunbookRunLive do
   attr :review_notice, :string, default: nil
   attr :expanded_stages, :any, required: true
   attr :can_start?, :boolean, required: true
+  attr :can_dispatch?, :boolean, required: true
+  attr :access_review_required?, :boolean, required: true
   attr :current_account, :map, required: true
   attr :recent_executions, :list, required: true
   attr :recent_executions_error?, :boolean, default: false
@@ -941,6 +1039,15 @@ defmodule EmisarWeb.RunbookRunLive do
               Release {@runbook.live_version}. Enter the input values and explain why you're running this runbook.
             </:subtitle>
           </.section_header>
+          <p :if={not @can_dispatch?} id="runbook-read-only" class="mb-5 text-sm text-zinc-400">
+            Your role can view this runbook, but cannot start it.
+            <.link
+              navigate={~p"/app/#{@current_account}/runbooks/#{@runbook.id}/edit"}
+              class="text-brand-400 hover:text-brand-300"
+            >
+              View definition
+            </.link>
+          </p>
           <form
             id="runbook-run-form"
             phx-change="run_form_changed"
@@ -961,6 +1068,7 @@ defmodule EmisarWeb.RunbookRunLive do
                     step={input_step(input)}
                     required={input["required"]}
                     autocomplete={if(input["sensitive"], do: "off")}
+                    disabled={not @can_dispatch?}
                   />
                   <p class="mt-1 text-[11px] leading-relaxed text-zinc-400">
                     {input["description"]}
@@ -982,6 +1090,7 @@ defmodule EmisarWeb.RunbookRunLive do
                   rows="3"
                   required
                   placeholder="Why this runbook should run now"
+                  disabled={not @can_dispatch?}
                 />
               </div>
             </div>
@@ -993,6 +1102,17 @@ defmodule EmisarWeb.RunbookRunLive do
                 <.error>{@review_notice}</.error>
               </div>
               <.button
+                :if={@access_review_required?}
+                id="recheck-runbook-plan"
+                type="button"
+                variant={:secondary}
+                phx-click="recheck_plan"
+                phx-disable-with="Rechecking…"
+                disabled={not @can_dispatch?}
+              >
+                Recheck plan
+              </.button>
+              <.button
                 id="start-runbook-button"
                 type="submit"
                 variant={if @can_start?, do: :primary, else: :secondary}
@@ -1003,6 +1123,10 @@ defmodule EmisarWeb.RunbookRunLive do
               </.button>
               <p class="text-xs text-zinc-400">
                 <%= cond do %>
+                  <% not @can_dispatch? -> %>
+                    An operator role is required to start executions.
+                  <% @access_review_required? -> %>
+                    The displayed plan has not been rechecked against your current access.
                   <% @preflight_view.state == :loading -> %>
                     Checking the current plan…
                   <% @preflight_view.state == :awaiting_input -> %>
@@ -1056,7 +1180,7 @@ defmodule EmisarWeb.RunbookRunLive do
     ~H"""
     <section id="current-runbook-plan">
       <.section_header title="Plan">
-        <:badge :if={@preflight.state == :ready && @preflight.plan["approval_required"]}>
+        <:badge :if={@preflight.plan && @preflight.plan["approval_required"]}>
           <.chip tone={:amber}>Approval required</.chip>
         </:badge>
       </.section_header>
@@ -1091,7 +1215,7 @@ defmodule EmisarWeb.RunbookRunLive do
         </:body>
       </.event_block>
 
-      <div :if={@preflight.state == :ready} class="space-y-8">
+      <div :if={@preflight.plan && @preflight.state in [:ready, :stale]} class="space-y-8">
         <.plan_stage
           :for={stage <- @preflight.plan["stages"]}
           stage={stage}

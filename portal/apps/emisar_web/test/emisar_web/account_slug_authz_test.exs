@@ -20,12 +20,15 @@ defmodule EmisarWeb.AccountSlugAuthzTest do
 
     test "shared account topics have one subscription per live socket", %{conn: conn} do
       {conn, _user, account} = register_and_log_in(conn)
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
 
       for path <- [
             ~p"/app/#{account}",
             ~p"/app/#{account}/approvals",
             ~p"/app/#{account}/runners",
-            ~p"/app/#{account}/runners/install"
+            ~p"/app/#{account}/runners/install",
+            ~p"/app/#{account}/settings/team",
+            ~p"/app/#{account}/runners/#{runner.id}"
           ] do
         assert {:ok, view, _html} = live(conn, path)
 
@@ -36,6 +39,40 @@ defmodule EmisarWeb.AccountSlugAuthzTest do
           |> Enum.filter(fn {_topic, count} -> count > 1 end)
 
         assert duplicates == []
+        assert "account:#{account.id}:team" in Registry.keys(Emisar.PubSub.Server, view.pid)
+      end
+    end
+
+    for change <- [:role, :directory_pending, :replacement_membership] do
+      test "a scope event remounts instead of accepting #{change}", %{conn: conn} do
+        {conn, user, account} = register_and_log_in(conn)
+        membership = Fixtures.Memberships.fetch_membership(account.id, user.id)
+        Fixtures.Memberships.force_role(membership, "admin")
+        {:ok, view, _html} = live(conn, ~p"/app/#{account}/runs")
+
+        case unquote(change) do
+          :role ->
+            Fixtures.Memberships.force_role(membership, "viewer")
+
+          :directory_pending ->
+            membership
+            |> Ecto.Changeset.change(directory_authorization_pending_version: 1)
+            |> Emisar.Repo.update!()
+
+          :replacement_membership ->
+            membership
+            |> Ecto.Changeset.change(deleted_at: DateTime.utc_now())
+            |> Emisar.Repo.update!()
+
+            Fixtures.Memberships.create_membership(
+              account_id: account.id,
+              user_id: user.id,
+              role: "admin"
+            )
+        end
+
+        send(view.pid, {:list_changed, :team, "membership.runner_access_changed", user.id})
+        assert_redirect(view, ~p"/app/#{account}")
       end
     end
 

@@ -70,6 +70,13 @@ defmodule Emisar.Fixtures.Accounts do
     |> Repo.update!()
   end
 
+  @doc "Test helper: set the Catalog-owned cleanup window the generic path refuses."
+  def set_pack_retention_days(%Account{} = account, days) do
+    account
+    |> Account.Changeset.put_pack_retention_days(days)
+    |> Repo.update!()
+  end
+
   @doc """
   Forces an unusable inactivity window past validation, to arrange the corrupt
   stored state a sweep must refuse to act on.

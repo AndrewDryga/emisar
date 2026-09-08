@@ -1,12 +1,12 @@
 defmodule EmisarWeb.RunNewLive do
   use EmisarWeb, :live_view
-  alias Emisar.{ActionContract, Catalog, Runners, Runs}
+  alias Emisar.{Accounts, ActionContract, Catalog, Runners, Runs}
   alias EmisarWeb.Permissions
   require Logger
 
   def mount(%{"runner_id" => runner_id, "action_id" => action_id}, _session, socket) do
     case Catalog.fetch_action_by_id(action_id, runner_id, socket.assigns.current_subject) do
-      {:error, :not_found} ->
+      {:error, _reason} ->
         {:ok,
          socket
          |> put_flash(:error, "Action not found.")
@@ -44,8 +44,24 @@ defmodule EmisarWeb.RunNewLive do
          |> assign(
            :can_dispatch?,
            Runs.subject_can_dispatch_run?(socket.assigns.current_subject)
-         )}
+         )
+         |> refresh_action_access()}
     end
+  end
+
+  defp refresh_action_access(socket) do
+    runner = socket.assigns.runner
+
+    in_scope? =
+      if runner do
+        access = Accounts.runner_access_for_subject(socket.assigns.current_subject)
+
+        Accounts.action_in_runner_access?(runner, socket.assigns.action.pack_id, access)
+      else
+        false
+      end
+
+    assign(socket, :in_action_scope?, in_scope?)
   end
 
   defp lookup_runner(runner_id, socket) do
@@ -55,7 +71,7 @@ defmodule EmisarWeb.RunNewLive do
            preload: [:online?]
          ) do
       {:ok, r} -> r
-      {:error, :not_found} -> nil
+      {:error, _reason} -> nil
     end
   end
 
@@ -292,6 +308,19 @@ defmodule EmisarWeb.RunNewLive do
     )
   end
 
+  def handle_info(
+        {:list_changed, :team, "membership.runner_access_changed", user_id},
+        %{assigns: %{current_user: %{id: user_id}}} = socket
+      ) do
+    runner = lookup_runner(socket.assigns.runner_id, socket)
+
+    {:noreply,
+     socket
+     |> assign(:runner, runner)
+     |> assign(:readiness, runner && Runners.runner_readiness(runner))
+     |> refresh_action_access()}
+  end
+
   # No-op for the broadcasts the on_mount badge/fleet hooks forward (approvals,
   # pack trust, runner presence). The hooks own those nav cues; this page ignores them.
   def handle_info(_msg, socket), do: {:noreply, socket}
@@ -471,6 +500,7 @@ defmodule EmisarWeb.RunNewLive do
                     not dispatch_confirm_required?(@action)
                 }
                 phx-disable-with="Starting…"
+                disabled={not @in_action_scope?}
               >
                 Run on {(@runner && @runner.name) || "runner"}
               </.button>
@@ -481,6 +511,7 @@ defmodule EmisarWeb.RunNewLive do
                 }
                 type="button"
                 phx-click={open_confirm("confirm-dispatch")}
+                disabled={not @in_action_scope?}
               >
                 Run on {(@runner && @runner.name) || "runner"}
               </.button>
@@ -490,7 +521,14 @@ defmodule EmisarWeb.RunNewLive do
                 class="hidden"
                 tabindex="-1"
                 aria-hidden="true"
+                disabled={not @in_action_scope?}
               ></button>
+              <p
+                :if={not is_nil(@runner) and @can_dispatch? and not @in_action_scope?}
+                class="text-sm text-zinc-400"
+              >
+                Outside your action access. Ask an owner or admin to update your runner or pack access.
+              </p>
               <%!-- Disabled runner — also buttonless, but the remedy is on the
                    runner's own page rather than in an MCP client. --%>
               <p
@@ -516,6 +554,7 @@ defmodule EmisarWeb.RunNewLive do
           <.confirm_dialog
             :if={@action && dispatch_confirm_required?(@action)}
             id="confirm-dispatch"
+            disabled={not @in_action_scope?}
             title="Run this action?"
             confirm_label="Run action"
             pending_label="Starting…"

@@ -57,13 +57,13 @@ defmodule Emisar.PoliciesApprovalRequirementsTest do
                {:ok, %{min_approvals: :varies, allow_self_approval: :varies}}
     end
 
-    test "restricted access includes the default but excludes hidden and foreign targets" do
+    test "restricted action access includes all readable account targets but excludes foreign targets" do
       membership = Fixtures.Memberships.create_membership(role: "viewer")
       {:ok, access} = RunnerAccess.restricted(["databases"], [])
       Fixtures.Memberships.force_runner_access(membership, access)
       subject = Fixtures.Subjects.membership_subject(membership)
       Fixtures.Runners.create_runner(account_id: membership.account_id, group: "databases")
-      hidden = Fixtures.Runners.create_runner(account_id: membership.account_id, group: "web")
+      other = Fixtures.Runners.create_runner(account_id: membership.account_id, group: "web")
       Fixtures.Policies.create_policy(account_id: membership.account_id)
 
       Fixtures.Policies.create_policy(
@@ -76,7 +76,7 @@ defmodule Emisar.PoliciesApprovalRequirementsTest do
       Fixtures.Policies.create_policy(
         account_id: membership.account_id,
         scope_type: :runner,
-        scope_value: hidden.id,
+        scope_value: other.id,
         rules: approval_rules(7, false)
       )
 
@@ -90,7 +90,7 @@ defmodule Emisar.PoliciesApprovalRequirementsTest do
       Fixtures.Policies.create_policy(rules: approval_rules(11, false))
 
       assert Policies.fetch_approval_requirements_summary(subject) ==
-               {:ok, %{min_approvals: 1, allow_self_approval: :varies}}
+               {:ok, %{min_approvals: :varies, allow_self_approval: :varies}}
     end
 
     test "missing default does not borrow another account's settings or invent defaults" do

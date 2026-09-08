@@ -104,7 +104,7 @@ defmodule Emisar.CatalogModelReadsTest do
                {:error, :not_found}
     end
 
-    test "stale selections do not bypass fresh runner or pack grants", %{
+    test "stale selections retain shared metadata but cannot bypass current action grants", %{
       account: account,
       subject: subject,
       membership: membership
@@ -117,15 +117,117 @@ defmodule Emisar.CatalogModelReadsTest do
       {:ok, access} = Accounts.RunnerAccess.new(:all, [], [], :restricted, ["acme"])
       Fixtures.Memberships.force_runner_access(membership, access)
 
-      assert {:ok, %{packs: [%{pack_id: "acme"}]}} =
+      assert {:ok, snapshot} =
                Catalog.model_catalog(subject, runner_ids: [runner.id], pack_refs: refs)
+
+      assert Enum.map(snapshot.packs, &{&1.pack_id, &1.availability}) ==
+               [{"acme", "executable"}, {"other", "unavailable"}]
+
+      assert Enum.all?(snapshot.packs, &(&1.issues == []))
+      assert Enum.all?(List.last(snapshot.packs).actions, &(&1.compatible_runner_ids == []))
 
       other = Fixtures.Runners.create_runner(account_id: account.id)
       {:ok, access} = Accounts.RunnerAccess.new(:restricted, [], [other.id])
       Fixtures.Memberships.force_runner_access(membership, access)
 
-      assert {:ok, %{packs: [], runners: []}} =
+      assert {:ok, snapshot} =
                Catalog.model_catalog(subject, runner_ids: [runner.id], pack_refs: refs)
+
+      assert Enum.map(snapshot.runners, & &1.id) == [runner.id]
+      assert length(snapshot.packs) == 2
+      assert Enum.all?(snapshot.packs, &(&1.availability == "unavailable" and &1.issues == []))
+
+      assert Enum.all?(snapshot.packs, fn pack ->
+               Enum.all?(pack.actions, &(&1.compatible_runner_ids == [])) and
+                 pack.compatibility[runner.id].compatible_action_ids == []
+             end)
+    end
+
+    test "read roles and none or empty-pack grants share facts without offering unauthorized targets",
+         %{
+           account: account,
+           subject: subject
+         } do
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
+      advertise(runner, ["acme", "other"])
+      trust_all(subject)
+      {:ok, empty_packs} = Accounts.RunnerAccess.new(:all, [], [], :restricted, [])
+      {:ok, one_pack} = Accounts.RunnerAccess.new(:all, [], [], :restricted, ["acme"])
+
+      for role <- ["admin", "operator", "viewer"],
+          {access, executable_packs} <- [
+            {Accounts.RunnerAccess.all(), ["acme", "other"]},
+            {Accounts.RunnerAccess.none(), []},
+            {empty_packs, []},
+            {one_pack, ["acme"]}
+          ] do
+        membership = Fixtures.Memberships.create_membership(account_id: account.id, role: role)
+        Fixtures.Memberships.force_runner_access(membership, access)
+        reader = Fixtures.Subjects.membership_subject(membership)
+        expected = if role == "viewer", do: [], else: executable_packs
+        assert {:ok, snapshot} = Catalog.model_catalog(reader)
+        assert Enum.map(snapshot.runners, & &1.id) == [runner.id]
+        assert Enum.map(snapshot.packs, & &1.pack_id) == ["acme", "other"]
+        assert Enum.all?(snapshot.runners, &(&1.status == "connected" and &1.issues == []))
+
+        for pack <- snapshot.packs do
+          eligible = pack.pack_id in expected
+          ids = if eligible, do: [runner.id], else: []
+          assert pack.availability == if(eligible, do: "executable", else: "unavailable")
+          assert pack.issues == []
+          assert Enum.all?(pack.actions, &(&1.compatible_runner_ids == ids))
+          assert pack.compatibility[runner.id].descriptor_match?
+
+          assert {:ok, %{action: %{"title" => "inspect"}, runners: compatible}} =
+                   Catalog.resolve_model_action(
+                     pack.pack_id <> ".inspect",
+                     pack.pack_ref,
+                     [],
+                     reader
+                   )
+
+          assert Enum.map(compatible, & &1.id) == ids
+        end
+      end
+    end
+
+    test "shared discovery still rejects a stale role and deleted identity", %{
+      account: account,
+      subject: subject,
+      membership: membership
+    } do
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
+      advertise(runner, ["acme"])
+      trust_all(subject)
+      Fixtures.Memberships.force_role(membership, "billing_manager")
+      assert Catalog.model_inventory(subject) == {:error, :unauthorized}
+      assert Catalog.model_catalog(subject) == {:error, :unauthorized}
+      membership |> Repo.reload!() |> Fixtures.Memberships.force_role("admin")
+      Fixtures.Users.mark_user_as_deleted(subject.actor)
+      assert Catalog.model_inventory(subject) == {:error, :unauthorized}
+      assert Catalog.model_catalog(subject) == {:error, :unauthorized}
+    end
+
+    test "inventory fingerprint changes with effective group authority while identities stay the same",
+         %{
+           account: account,
+           subject: subject,
+           membership: membership
+         } do
+      runner = Fixtures.Runners.create_runner(account_id: account.id, group: "staging")
+      advertise(runner, ["acme"])
+      trust_all(subject)
+      {:ok, access} = Accounts.RunnerAccess.new(:restricted, ["staging"], [])
+      Fixtures.Memberships.force_runner_access(membership, access)
+      assert {:ok, before} = Catalog.model_inventory(subject)
+      Fixtures.Runners.move_to_group(runner, "production")
+      assert {:ok, after_move} = Catalog.model_inventory(subject)
+
+      assert Enum.map(before.runners, & &1.runner_ref) ==
+               Enum.map(after_move.runners, & &1.runner_ref)
+
+      assert before.packs == after_move.packs
+      refute before.action_scope_fingerprint == after_move.action_scope_fingerprint
     end
 
     test "explicit runner refs fail as a whole and foreign selections stay hidden", %{

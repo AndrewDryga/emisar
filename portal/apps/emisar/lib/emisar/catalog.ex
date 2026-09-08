@@ -39,6 +39,7 @@ defmodule Emisar.Catalog do
   alias Emisar.Catalog.{MCPProjection, PackBaseline, PackRetentionInput}
   alias Emisar.Catalog.{PackVersion, PublishedRegistry}
   alias Emisar.Catalog.{RunnerAction, TrustedManifest}
+  alias Emisar.Users
   require Logger
 
   def start_link(opts) do
@@ -654,22 +655,20 @@ defmodule Emisar.Catalog do
   `{:error, :nothing_to_trust}` for a rejected row with no recorded hash, and
   `{:error, {:descriptor_mismatch, action_id, runner_names}}` when the fleet's
   advertisements for the pending hash disagree about an action — trust stays
-  blocked (fail-closed) and the UI names the disagreeing runners.
+  blocked (fail-closed) and the UI names the disagreeing runners. Every version
+  mutation requires current management permission and authority over the pack,
+  all current advertisers (regardless of hash), and residual action owners.
+  Incomplete authority returns `{:error, :unauthorized}` before lifecycle checks.
   """
   def trust_pack_version(pack_version_id, %Subject{} = subject) do
-    with :ok <-
-           Auth.Authorizer.ensure_has_permissions(
-             subject,
-             Authorizer.manage_catalog_permission()
-           ) do
-      overridden_by_id = Subject.actor_id(subject)
-
-      Multi.new()
-      |> Multi.run(:before, fn repo, _changes ->
-        lock_trustable_pack_version(repo, pack_version_id, subject)
+    with {:ok, subject} <-
+           Auth.fetch_current_subject(Authorizer.manage_catalog_permission(), subject) do
+      pack_version_management_multi(pack_version_id, subject)
+      |> Multi.run(:trustable, fn _repo, %{before: pack_version} ->
+        judge_trustable(pack_version)
       end)
-      |> Multi.run(:manifest, fn repo, %{before: pack_version} ->
-        trusted_manifest_source(repo, pack_version, subject)
+      |> Multi.run(:manifest, fn repo, %{before: pack_version, manager: manager} ->
+        trusted_manifest_source(repo, pack_version, manager.subject)
       end)
       # Trusting a RETIRED version IS the override — an explicit,
       # permission-gated action. Compute it inside the transaction (retirement
@@ -680,11 +679,17 @@ defmodule Emisar.Catalog do
         {:ok, PackBaseline.retired?(pack_version.pack_id, pack_version.version)}
       end)
       |> Multi.run(:pack_version, fn repo,
-                                     %{before: pack_version, manifest: manifest, retired: retired} ->
-        repo.update(trust_changeset(pack_version, manifest, retired, overridden_by_id))
+                                     %{
+                                       before: pack_version,
+                                       manifest: manifest,
+                                       retired: retired,
+                                       manager: manager
+                                     } ->
+        actor_id = Subject.actor_id(manager.subject)
+        repo.update(trust_changeset(pack_version, manifest, retired, actor_id))
       end)
-      |> Multi.insert(:audit, fn %{before: pack_version, retired: retired} ->
-        Audit.Events.pack_trust_adopted(subject, pack_version, retired)
+      |> Multi.insert(:audit, fn %{before: pack_version, retired: retired, manager: manager} ->
+        Audit.Events.pack_trust_adopted(manager.subject, pack_version, retired)
       end)
       |> Repo.commit_multi(
         after_commit: fn %{pack_version: updated} ->
@@ -720,20 +725,17 @@ defmodule Emisar.Catalog do
       review; only a genuinely NEW hash flips it back to `:pending`.
   """
   def reject_pack_version(pack_version_id, %Subject{} = subject) do
-    with :ok <-
-           Auth.Authorizer.ensure_has_permissions(
-             subject,
-             Authorizer.manage_catalog_permission()
-           ) do
-      Multi.new()
-      |> Multi.run(:before, fn repo, _changes ->
-        lock_pending_pack_version(repo, pack_version_id, subject)
+    with {:ok, subject} <-
+           Auth.fetch_current_subject(Authorizer.manage_catalog_permission(), subject) do
+      pack_version_management_multi(pack_version_id, subject)
+      |> Multi.run(:pending, fn _repo, %{before: pack_version} ->
+        judge_pending(pack_version)
       end)
       |> Multi.run(:pack_version, fn repo, %{before: pending} ->
         repo.update(reject_changeset(pending))
       end)
-      |> Multi.insert(:audit, fn %{before: pending} ->
-        Audit.Events.pack_trust_rejected(subject, pending)
+      |> Multi.insert(:audit, fn %{before: pending, manager: manager} ->
+        Audit.Events.pack_trust_rejected(manager.subject, pending)
       end)
       |> Repo.commit_multi(
         after_commit: fn %{pack_version: pack_version} ->
@@ -793,35 +795,27 @@ defmodule Emisar.Catalog do
   cross-account.
   """
   def override_pack_retirement(pack_version_id, %Subject{} = subject) do
-    with :ok <-
-           Auth.Authorizer.ensure_has_permissions(
-             subject,
-             Authorizer.manage_catalog_permission()
-           ) do
-      overridden_by_id = Subject.actor_id(subject)
+    with {:ok, subject} <-
+           Auth.fetch_current_subject(Authorizer.manage_catalog_permission(), subject) do
+      pack_version_management_multi(pack_version_id, subject)
+      |> Multi.run(:pack_version, fn repo, %{before: pack_version, manager: manager} ->
+        actor_id = Subject.actor_id(manager.subject)
 
-      if Repo.valid_uuid?(pack_version_id) do
-        PackVersion.Query.all()
-        |> PackVersion.Query.by_id(pack_version_id)
-        |> scope_pack_versions_to_subject(subject)
-        |> Authorizer.for_subject(subject)
-        |> Repo.fetch_and_update(PackVersion.Query,
-          with: &override_retirement_changeset(&1, overridden_by_id),
-          audit: &Audit.Events.pack_retirement_overridden(subject, &1),
-          after_commit: fn updated ->
-            broadcast_pack_trust(updated.account_id)
-            :ok
-          end
-        )
-      else
-        {:error, :not_found}
-      end
+        case override_retirement_changeset(pack_version, actor_id) do
+          %Ecto.Changeset{} = changeset -> repo.update(changeset)
+          reason -> {:error, reason}
+        end
+      end)
+      |> Multi.insert(:audit, fn %{pack_version: pack_version, manager: manager} ->
+        Audit.Events.pack_retirement_overridden(manager.subject, pack_version)
+      end)
+      |> commit_pack_version_change()
     end
   end
 
   # Only a TRUSTED row can be overridden (the override re-enables dispatch for
   # a version trusted before it was retired). Any other state aborts the
-  # fetch_and_update as `{:error, :not_trusted}`.
+  # transaction as `{:error, :not_trusted}`.
   defp override_retirement_changeset(
          %PackVersion{trust_state: :trusted} = pack_version,
          overridden_by_id
@@ -840,27 +834,19 @@ defmodule Emisar.Catalog do
   non-trusted row and `{:error, :not_found}` cross-account.
   """
   def revoke_pack_version_trust(pack_version_id, %Subject{} = subject) do
-    with :ok <-
-           Auth.Authorizer.ensure_has_permissions(
-             subject,
-             Authorizer.manage_catalog_permission()
-           ) do
-      if Repo.valid_uuid?(pack_version_id) do
-        PackVersion.Query.all()
-        |> PackVersion.Query.by_id(pack_version_id)
-        |> scope_pack_versions_to_subject(subject)
-        |> Authorizer.for_subject(subject)
-        |> Repo.fetch_and_update(PackVersion.Query,
-          with: &revoke_trust_changeset/1,
-          audit: &Audit.Events.pack_trust_revoked(subject, &1),
-          after_commit: fn updated ->
-            broadcast_pack_trust(updated.account_id)
-            :ok
-          end
-        )
-      else
-        {:error, :not_found}
-      end
+    with {:ok, subject} <-
+           Auth.fetch_current_subject(Authorizer.manage_catalog_permission(), subject) do
+      pack_version_management_multi(pack_version_id, subject)
+      |> Multi.run(:pack_version, fn repo, %{before: pack_version} ->
+        case revoke_trust_changeset(pack_version) do
+          %Ecto.Changeset{} = changeset -> repo.update(changeset)
+          reason -> {:error, reason}
+        end
+      end)
+      |> Multi.insert(:audit, fn %{pack_version: pack_version, manager: manager} ->
+        Audit.Events.pack_trust_revoked(manager.subject, pack_version)
+      end)
+      |> commit_pack_version_change()
     end
   end
 
@@ -870,54 +856,88 @@ defmodule Emisar.Catalog do
 
   defp revoke_trust_changeset(%PackVersion{}), do: :not_trusted
 
-  # Locked, account-scoped re-read shared by the trust-state deciders
-  # (`FOR NO KEY UPDATE`): two operators racing decisions on the same row
-  # serialize, and the loser judges the winner's already-flipped state
-  # instead of overwriting it. Pack access is judged on the LOCKED row rather
-  # than on the id the caller sent, so the pack whose trust is being decided is
-  # the pack that was checked.
+  # Serialize the trust decision, not the fleet. Check current committed targets
+  # after locking the version; later advertisements inherit the workspace's
+  # version decision normally. Dispatch still checks the exact trusted manifest
+  # and current target authority. Unrelated runner updates must not wait here.
+  defp pack_version_management_multi(pack_version_id, subject) do
+    catalog_manager_multi(subject)
+    |> Multi.run(:before, fn repo, %{manager: manager} ->
+      with {:ok, pack_version} <- lock_pack_version(repo, pack_version_id, manager.subject),
+           true <- Accounts.RunnerAccess.pack_in_scope?(pack_version.pack_id, manager.access),
+           [] <-
+             pack_refs_outside_management(
+               [{pack_version.pack_id, pack_version.version}],
+               manager.subject,
+               manager.access,
+               repo: repo
+             ) do
+        {:ok, pack_version}
+      else
+        {:error, _reason} = error -> error
+        _ -> {:error, :unauthorized}
+      end
+    end)
+  end
+
+  defp catalog_manager_multi(subject) do
+    Multi.new()
+    |> Multi.run(:account, fn repo, _changes ->
+      Accounts.fetch_and_lock_account(subject.account.id, repo: repo)
+    end)
+    |> Multi.run(:manager, fn repo, _changes ->
+      fetch_locked_catalog_manager(repo, subject)
+    end)
+  end
+
+  defp fetch_locked_catalog_manager(
+         repo,
+         %Subject{actor: %Users.User{id: user_id}, account: account} = subject
+       ) do
+    with {:ok, membership} <-
+           Accounts.fetch_and_lock_membership(account.id, subject.membership_id, repo: repo),
+         true <- membership.user_id == user_id,
+         {:ok, _user} <- Users.fetch_and_lock_user_by_id(user_id, repo),
+         {:ok, subject} <-
+           Auth.fetch_current_subject(Authorizer.manage_catalog_permission(), subject) do
+      {:ok,
+       %{
+         subject: subject,
+         access: Accounts.runner_access_for_locked_membership(repo, membership)
+       }}
+    else
+      _ -> {:error, :unauthorized}
+    end
+  end
+
+  defp fetch_locked_catalog_manager(_repo, _subject), do: {:error, :unauthorized}
+
+  defp commit_pack_version_change(multi) do
+    multi
+    |> Repo.commit_multi(
+      after_commit: fn %{pack_version: pack_version} ->
+        broadcast_pack_trust(pack_version.account_id)
+        :ok
+      end
+    )
+    |> case do
+      {:ok, %{pack_version: pack_version}} -> {:ok, pack_version}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  # Scope is judged on the locked version before any trust/lifecycle guard.
   defp lock_pack_version(repo, pack_version_id, %Subject{} = subject) do
     if Repo.valid_uuid?(pack_version_id) do
       queryable =
         PackVersion.Query.all()
         |> PackVersion.Query.by_id(pack_version_id)
-        |> scope_pack_versions_to_subject(subject)
         |> PackVersion.Query.lock_for_update()
         |> Authorizer.for_subject(subject)
 
       repo.fetch(queryable, PackVersion.Query)
     else
       {:error, :not_found}
-    end
-  end
-
-  # Both dimensions `list_console_packs/2` narrows by — pack access AND the
-  # runners the member can reach — so a version the console never showed cannot
-  # be decided from an id lifted out of the audit trail. Composed into the
-  # statement that locks the row, an out-of-scope version answers `:not_found`,
-  # the same answer a cross-account id gets and before any state guard could
-  # report whether it is trusted. Access is re-read here rather than taken from
-  # the session, so a scope narrowed mid-session takes the decision away from an
-  # already-open page immediately.
-  defp scope_pack_versions_to_subject(queryable, %Subject{} = subject) do
-    access = Accounts.runner_access_for_subject(subject)
-
-    queryable
-    |> scope_pack_versions_to_packs(access)
-    |> scope_pack_versions_to_visible_runners(visible_deployments(subject, access))
-  end
-
-  # Reach a pack and you may decide its versions; cannot reach it and the pack
-  # does not exist for you.
-  defp pack_in_scope?(%PackVersion{} = pack_version, %Subject{} = subject) do
-    access = Accounts.runner_access_for_subject(subject)
-    Accounts.RunnerAccess.pack_in_scope?(pack_version.pack_id, access)
-  end
-
-  # Reject decides a live pending review only.
-  defp lock_pending_pack_version(repo, pack_version_id, %Subject{} = subject) do
-    with {:ok, pack_version} <- lock_pack_version(repo, pack_version_id, subject) do
-      judge_pending(pack_version)
     end
   end
 
@@ -931,12 +951,6 @@ defmodule Emisar.Catalog do
   # bytes / restore revoked trust). A rejected row with nothing recorded (a
   # pre-revoke-era reject that cleared both hashes) has nothing to adopt
   # until a runner advertises the pack again.
-  defp lock_trustable_pack_version(repo, pack_version_id, %Subject{} = subject) do
-    with {:ok, pack_version} <- lock_pack_version(repo, pack_version_id, subject) do
-      judge_trustable(pack_version)
-    end
-  end
-
   defp judge_trustable(%PackVersion{trust_state: :pending, pending_hash: hash} = pack_version)
        when not is_nil(hash),
        do: {:ok, pack_version}
@@ -960,16 +974,10 @@ defmodule Emisar.Catalog do
   Requires `manage_catalog`; `{:error, :not_found}` cross-account.
   """
   def delete_pack_version(pack_version_id, %Subject{} = subject) do
-    with :ok <-
-           Auth.Authorizer.ensure_has_permissions(
-             subject,
-             Authorizer.manage_catalog_permission()
-           ) do
-      Multi.new()
-      |> Multi.run(:pack_version, fn repo, _changes ->
-        lock_pack_version(repo, pack_version_id, subject)
-      end)
-      |> Multi.run(:actions, fn repo, %{pack_version: pack_version} ->
+    with {:ok, subject} <-
+           Auth.fetch_current_subject(Authorizer.manage_catalog_permission(), subject) do
+      pack_version_management_multi(pack_version_id, subject)
+      |> Multi.run(:actions, fn repo, %{before: pack_version} ->
         queryable =
           RunnerAction.Query.all()
           |> RunnerAction.Query.by_account_id(pack_version.account_id)
@@ -978,9 +986,13 @@ defmodule Emisar.Catalog do
         {count, _} = repo.delete_all(queryable)
         {:ok, count}
       end)
-      |> Multi.delete(:deleted, fn %{pack_version: pack_version} -> pack_version end)
-      |> Multi.insert(:audit, fn %{pack_version: pack_version, actions: action_count} ->
-        Audit.Events.pack_version_deleted(subject, pack_version, action_count)
+      |> Multi.delete(:pack_version, fn %{before: pack_version} -> pack_version end)
+      |> Multi.insert(:audit, fn %{
+                                   before: pack_version,
+                                   actions: action_count,
+                                   manager: manager
+                                 } ->
+        Audit.Events.pack_version_deleted(manager.subject, pack_version, action_count)
       end)
       |> Repo.commit_multi(
         after_commit: fn %{pack_version: pack_version} ->
@@ -1004,14 +1016,11 @@ defmodule Emisar.Catalog do
   the account has no versions of `pack_id`.
   """
   def delete_pack(pack_id, %Subject{} = subject) when is_binary(pack_id) do
-    with :ok <-
-           Auth.Authorizer.ensure_has_permissions(
-             subject,
-             Authorizer.manage_catalog_permission()
-           ) do
-      Multi.new()
-      |> Multi.run(:versions, fn repo, _changes ->
-        lock_pack_versions_by_pack_id(repo, pack_id, subject)
+    with {:ok, subject} <-
+           Auth.fetch_current_subject(Authorizer.manage_catalog_permission(), subject) do
+      catalog_manager_multi(subject)
+      |> Multi.run(:versions, fn repo, %{manager: manager} ->
+        lock_pack_versions_by_pack_id(repo, pack_id, manager.subject, manager.access)
       end)
       |> Multi.run(:actions, fn repo, %{versions: [version | _]} ->
         queryable =
@@ -1033,8 +1042,8 @@ defmodule Emisar.Catalog do
         {count, _} = repo.delete_all(queryable)
         {:ok, count}
       end)
-      |> Multi.insert(:audit, fn %{versions: versions, actions: action_count} ->
-        Audit.Events.pack_deleted(subject, pack_id, versions, action_count)
+      |> Multi.insert(:audit, fn %{versions: versions, actions: action_count, manager: manager} ->
+        Audit.Events.pack_deleted(manager.subject, pack_id, versions, action_count)
       end)
       |> Repo.commit_multi(
         after_commit: fn %{versions: [version | _]} ->
@@ -1053,7 +1062,7 @@ defmodule Emisar.Catalog do
   # whole-pack delete works from this exact set, so a version observed after
   # the lock re-inserts (documented semantics) instead of vanishing silently.
   # Pack access is judged on a locked row, not on the `pack_id` argument.
-  defp lock_pack_versions_by_pack_id(repo, pack_id, %Subject{} = subject) do
+  defp lock_pack_versions_by_pack_id(repo, pack_id, %Subject{} = subject, access) do
     queryable =
       PackVersion.Query.all()
       |> PackVersion.Query.by_pack_id(pack_id)
@@ -1062,7 +1071,7 @@ defmodule Emisar.Catalog do
 
     case repo.all(queryable) do
       [] -> {:error, :not_found}
-      [version | _] = versions -> judge_pack_reach(versions, version, subject)
+      [version | _] = versions -> judge_pack_reach(versions, version, access)
     end
   end
 
@@ -1073,8 +1082,10 @@ defmodule Emisar.Catalog do
   # who may manage that pack may delete it whole, even if some versions are
   # deployed only on runners outside their reach. (Founder decision, 2026-08-28,
   # answering the D-5 sibling question: pack-level delete stays pack-scoped.)
-  defp judge_pack_reach(versions, %PackVersion{} = version, %Subject{} = subject) do
-    if pack_in_scope?(version, subject), do: {:ok, versions}, else: {:error, :not_found}
+  defp judge_pack_reach(versions, %PackVersion{} = version, access) do
+    if Accounts.RunnerAccess.pack_in_scope?(version.pack_id, access),
+      do: {:ok, versions},
+      else: {:error, :unauthorized}
   end
 
   # -- Retention ---------------------------------------------------------
@@ -1099,11 +1110,8 @@ defmodule Emisar.Catalog do
   `{:error, %Ecto.Changeset{} | :unauthorized | :not_found}`.
   """
   def update_pack_retention_settings(%Accounts.Account{} = account, attrs, %Subject{} = subject) do
-    with :ok <-
-           Auth.Authorizer.ensure_has_permissions(
-             subject,
-             Authorizer.manage_catalog_permission()
-           ),
+    with {:ok, subject} <-
+           Auth.fetch_current_subject(Authorizer.manage_catalog_permission(), subject),
          :ok <- Subject.ensure_in_account(subject, account.id),
          :ok <- ensure_full_pack_access(subject),
          {:ok, %PackRetentionInput{days: days}} <- pack_retention_input(attrs) do
@@ -1148,11 +1156,8 @@ defmodule Emisar.Catalog do
   `{:ok, deleted_count}`.
   """
   def sweep_unseen_pack_versions(%Subject{} = subject) do
-    with :ok <-
-           Auth.Authorizer.ensure_has_permissions(
-             subject,
-             Authorizer.manage_catalog_permission()
-           ),
+    with {:ok, subject} <-
+           Auth.fetch_current_subject(Authorizer.manage_catalog_permission(), subject),
          {:ok, days} <- fetch_retention_days(subject) do
       delete_unseen_pack_versions(subject.account.id, days, subject)
     end
@@ -1189,6 +1194,7 @@ defmodule Emisar.Catalog do
     delete_pack_version_batches(
       account_id,
       queryable,
+      subject,
       fn repo, candidates ->
         with {:ok, visible} <- visible_retention_candidates(candidates, subject, repo) do
           refs = Enum.map(visible, &{&1.pack_id, &1.version})
@@ -1224,6 +1230,7 @@ defmodule Emisar.Catalog do
     delete_pack_version_batches(
       account_id,
       queryable,
+      nil,
       fn repo, candidates ->
         retired = Enum.filter(candidates, &PackBaseline.retired?(&1.pack_id, &1.version))
         refs = Enum.map(retired, &{&1.pack_id, &1.version})
@@ -1235,14 +1242,25 @@ defmodule Emisar.Catalog do
     )
   end
 
-  defp delete_pack_version_batches(account_id, queryable, select_versions, record, opts) do
+  defp delete_pack_version_batches(account_id, queryable, subject, select_versions, record, opts) do
     limit = opts |> Keyword.get(:batch_size, 100) |> max(1) |> min(100)
-    delete_pack_version_batches(account_id, queryable, select_versions, record, limit, nil, 0)
+
+    delete_pack_version_batches(
+      account_id,
+      queryable,
+      subject,
+      select_versions,
+      record,
+      limit,
+      nil,
+      0
+    )
   end
 
   defp delete_pack_version_batches(
          account_id,
          queryable,
+         subject,
          select_versions,
          record,
          limit,
@@ -1250,7 +1268,15 @@ defmodule Emisar.Catalog do
          total
        ) do
     result =
-      delete_pack_version_batch(account_id, queryable, select_versions, record, limit, cursor)
+      delete_pack_version_batch(
+        account_id,
+        queryable,
+        subject,
+        select_versions,
+        record,
+        limit,
+        cursor
+      )
 
     case result do
       {:ok, %{candidates: []}} ->
@@ -1265,6 +1291,7 @@ defmodule Emisar.Catalog do
         delete_pack_version_batches(
           account_id,
           queryable,
+          subject,
           select_versions,
           record,
           limit,
@@ -1277,8 +1304,16 @@ defmodule Emisar.Catalog do
     end
   end
 
-  defp delete_pack_version_batch(account_id, queryable, select_versions, record, limit, cursor) do
-    Multi.new()
+  defp delete_pack_version_batch(
+         account_id,
+         queryable,
+         subject,
+         select_versions,
+         record,
+         limit,
+         cursor
+       ) do
+    pack_sweep_multi(account_id, subject)
     |> Multi.run(:candidates, fn repo, _changes ->
       queryable =
         queryable
@@ -1315,6 +1350,19 @@ defmodule Emisar.Catalog do
         :ok
       end
     )
+  end
+
+  defp pack_sweep_multi(_account_id, nil), do: Multi.new()
+
+  defp pack_sweep_multi(account_id, %Subject{} = subject) do
+    Multi.new()
+    |> Multi.run(:account_scope, fn _repo, _changes ->
+      case Subject.ensure_in_account(subject, account_id) do
+        :ok -> {:ok, :authorized}
+        {:error, reason} -> {:error, reason}
+      end
+    end)
+    |> Multi.append(catalog_manager_multi(subject))
   end
 
   defp visible_retention_candidates(candidates, nil, _repo), do: {:ok, candidates}
@@ -1834,17 +1882,12 @@ defmodule Emisar.Catalog do
   def list_actions_for_runner(runner_id, %Subject{} = subject, opts \\ []) do
     # No pre-ordering: the query module's cursor drives the ORDER BY so it
     # matches the keyset WHERE.
-    queryable =
-      RunnerAction.Query.all()
-      |> RunnerAction.Query.by_runner_id(runner_id)
-      |> scope_actions_to_subject_membership(subject)
-      |> Authorizer.for_subject(subject)
-
-    with :ok <-
-           Auth.Authorizer.ensure_has_permissions(
-             subject,
-             Authorizer.view_catalog_permission()
-           ),
+    with {:ok, subject} <-
+           Auth.fetch_current_subject(Authorizer.view_catalog_permission(), subject),
+         queryable =
+           RunnerAction.Query.all()
+           |> RunnerAction.Query.by_runner_id(runner_id)
+           |> Authorizer.for_subject(subject),
          {:ok, actions, metadata} <-
            Repo.list(queryable, RunnerAction.Query, opts) do
       {:ok, annotate_dispatch_blocks(actions, subject), metadata}
@@ -1897,23 +1940,15 @@ defmodule Emisar.Catalog do
   end
 
   @doc """
-  Every pack id the account knows, sorted — the choices a member's or directory
-  grant's pack scope may name. Requires `view_catalog`; scoped by
+  Every pack id the account knows, sorted. These are shared inventory facts,
+  not proof that the caller may grant access to a pack. Requires `view_catalog`; scoped by
   `Authorizer.for_subject/2`. Returns `{:ok, [pack_id]}`.
   """
   def list_account_pack_ids(%Subject{} = subject) do
-    with :ok <-
-           Auth.Authorizer.ensure_has_permissions(
-             subject,
-             Authorizer.view_catalog_permission()
-           ) do
-      access = Accounts.runner_access_for_subject(subject)
-      visible_deployments = visible_deployments(subject, access)
-
+    with {:ok, subject} <-
+           Auth.fetch_current_subject(Authorizer.view_catalog_permission(), subject) do
       pack_ids =
         PackVersion.Query.all()
-        |> scope_pack_versions_to_packs(access)
-        |> scope_pack_versions_to_visible_runners(visible_deployments)
         |> PackVersion.Query.distinct_pack_ids()
         |> Authorizer.for_subject(subject)
         |> Repo.all()
@@ -1922,27 +1957,16 @@ defmodule Emisar.Catalog do
     end
   end
 
-  @doc """
-  Which runners advertise which pack, as `%{pack_id => [runner_id]}` — what a
-  grant editor needs to offer only the packs the chosen runners actually carry,
-  and to say how many of them each one is on. Requires `view_catalog`; scoped by
-  `Authorizer.for_subject/2`. Returns `{:ok, map}`.
-  """
-  def list_pack_advertisements(%Subject{} = subject) do
-    with :ok <-
-           Auth.Authorizer.ensure_has_permissions(
-             subject,
-             Authorizer.view_catalog_permission()
-           ) do
-      pairs =
+  @doc "Current runner/pack action-scope advertisements for grant editors, not shared inventory."
+  def list_action_scope_pack_advertisements(%Subject{} = subject) do
+    with {:ok, subject} <-
+           Auth.fetch_current_subject(Authorizer.view_catalog_permission(), subject) do
+      advertisements =
         RunnerAction.Query.all()
         |> scope_actions_to_subject_membership(subject)
         |> RunnerAction.Query.distinct_pack_runner_pairs()
         |> Authorizer.for_subject(subject)
         |> Repo.all()
-
-      advertisements =
-        pairs
         |> Enum.reject(fn {pack_id, _runner_id} -> pack_id in [nil, ""] end)
         |> Enum.group_by(&elem(&1, 0), &elem(&1, 1))
 
@@ -1969,15 +1993,11 @@ defmodule Emisar.Catalog do
   returns `{:ok, [{pack_id, label}]}` sorted for a stable dropdown.
   """
   def list_action_pack_options_for_runner(runner_id, %Subject{} = subject) do
-    with :ok <-
-           Auth.Authorizer.ensure_has_permissions(
-             subject,
-             Authorizer.view_catalog_permission()
-           ) do
+    with {:ok, subject} <-
+           Auth.fetch_current_subject(Authorizer.view_catalog_permission(), subject) do
       pack_ids =
         RunnerAction.Query.all()
         |> RunnerAction.Query.by_runner_id(runner_id)
-        |> scope_actions_to_subject_membership(subject)
         |> RunnerAction.Query.distinct_pack_ids()
         |> Authorizer.for_subject(subject)
         |> Repo.all()
@@ -1988,27 +2008,25 @@ defmodule Emisar.Catalog do
 
   @doc """
   The model-facing catalog snapshot for the subject's account: every exact
-  trusted pack ref projected onto the fleet the subject may reach, as
+  trusted pack ref projected onto the account's fleet, as
   `%{packs: [...], runners: [...]}`.
 
   This is the single model-visible projection. Untrusted, rejected, revoked,
-  hash-mismatched, incomplete, retired, and out-of-scope refs are absent;
+  hash-mismatched, incomplete, and retired refs are absent;
   offline or drifted trusted deployments remain visible only as unavailable
-  diagnostics, never compatible targets. Requires `view_catalog` (plus the
-  runner-scope gate the fleet read applies); returns `{:ok, snapshot}` or
+  diagnostics, never compatible targets. Current runner/pack action permissions
+  and the dispatch verb narrow compatible targets, not readable metadata.
+  Requires `view_catalog` and `view_runners`; returns `{:ok, snapshot}` or
   `{:error, :unauthorized}`.
 
   `:runner_ids` and `:pack_refs` narrow expensive hydration after discovery;
-  omitted selections mean all current scoped deployments. `:pack_headers`
+  omitted selections mean all current account deployments. `:pack_headers`
   supplies the same request's complete slim inventory for the pack-wide
   version-skew diagnostic only. None of these options grants access or trust.
   """
   @spec model_catalog(Subject.t(), keyword()) :: {:ok, map()} | {:error, :unauthorized}
   def model_catalog(%Subject{} = subject, opts \\ []) do
-    with :ok <-
-           Auth.Authorizer.ensure_has_permissions(subject, Authorizer.view_catalog_permission()) do
-      model_snapshot(subject, opts)
-    end
+    model_snapshot(subject, opts)
   end
 
   @doc """
@@ -2018,22 +2036,28 @@ defmodule Emisar.Catalog do
   Requires the same catalog and runner permissions as the full projection.
   """
   def model_inventory(%Subject{} = subject) do
-    with :ok <-
-           Auth.Authorizer.ensure_has_permissions(subject, Authorizer.view_catalog_permission()),
+    with {:ok, subject} <-
+           Auth.fetch_current_subject(Authorizer.view_catalog_permission(), subject),
          {:ok, runners} <- Runners.list_model_runners(subject) do
       access = Accounts.runner_access_for_subject(subject)
-      runners = Enum.map(runners, &scope_runner_pack_facts(&1, access))
 
       headers =
         PackVersion.Query.all()
         |> PackVersion.Query.by_trusted_deployments(model_pack_deployments(runners))
         |> PackVersion.Query.model_visible()
         |> PackVersion.Query.select_model_headers()
-        |> scope_pack_versions_to_packs(access)
         |> Authorizer.for_subject(subject)
         |> Repo.all()
 
-      {:ok, MCPProjection.inventory(headers, runners)}
+      inventory =
+        headers
+        |> MCPProjection.inventory(runners)
+        |> Map.put(
+          :action_scope_fingerprint,
+          model_action_scope_fingerprint(runners, access, subject)
+        )
+
+      {:ok, inventory}
     end
   end
 
@@ -2071,14 +2095,15 @@ defmodule Emisar.Catalog do
   end
 
   # Selections are hints, never authorization. Every hydration re-reads current
-  # membership/runner/pack scope and current trust. Complete sibling action rows
+  # read identity, action permissions and current trust. Complete sibling action rows
   # remain essential: an extra or changed advertisement invalidates the whole
   # deployment even when the caller asks for just one action.
   defp model_snapshot(%Subject{} = subject, opts) do
-    with {:ok, runners} <-
+    with {:ok, subject} <-
+           Auth.fetch_current_subject(Authorizer.view_catalog_permission(), subject),
+         {:ok, runners} <-
            Runners.list_model_runners(subject, ids: Keyword.get(opts, :runner_ids)) do
       access = Accounts.runner_access_for_subject(subject)
-      runners = Enum.map(runners, &scope_runner_pack_facts(&1, access))
       pack_refs = Keyword.get(opts, :pack_refs)
 
       deployments = model_deployments(runners, pack_refs)
@@ -2092,7 +2117,6 @@ defmodule Emisar.Catalog do
         PackVersion.Query.all()
         |> PackVersion.Query.by_trusted_deployments(pack_deployments)
         |> PackVersion.Query.model_visible()
-        |> scope_pack_versions_to_packs(access)
         |> Authorizer.for_subject(subject)
         |> Repo.all()
 
@@ -2109,14 +2133,15 @@ defmodule Emisar.Catalog do
         RunnerAction.Query.all()
         |> RunnerAction.Query.by_deployments(deployments)
         |> RunnerAction.Query.select_manifest_match_columns()
-        |> scope_actions_to_subject_membership(subject)
         |> Authorizer.for_subject(subject)
         |> Repo.all()
 
-      {:ok,
-       MCPProjection.build(pack_versions, actions, runners,
-         pack_headers: Keyword.get(opts, :pack_headers)
-       )}
+      snapshot =
+        pack_versions
+        |> MCPProjection.build(actions, runners, pack_headers: Keyword.get(opts, :pack_headers))
+        |> scope_model_action_eligibility(runners, access, subject)
+
+      {:ok, snapshot}
     end
   end
 
@@ -2135,22 +2160,64 @@ defmodule Emisar.Catalog do
     |> Enum.uniq()
   end
 
-  defp scope_runner_pack_facts(runner, %Accounts.RunnerAccess{} = access) do
-    packs =
-      (runner.packs || %{})
-      |> Enum.filter(fn {pack_id, _deployment} ->
-        Accounts.RunnerAccess.pack_in_scope?(pack_id, access)
-      end)
-      |> Map.new()
+  # Physical diagnostics are computed first. Removing action authority must not
+  # turn a healthy deployment into a missing-executable or disconnected warning.
+  # Use raw durable id/group facts, never sanitized model-facing display labels.
+  defp scope_model_action_eligibility(snapshot, runners, access, subject) do
+    eligible_ids = runners |> model_action_runner_ids(access, subject) |> MapSet.new()
+    packs = Enum.map(snapshot.packs, &scope_model_pack_actions(&1, eligible_ids, access))
+    %{snapshot | packs: packs}
+  end
 
-    degraded_packs =
-      (runner.degraded_packs || [])
-      |> Enum.filter(fn
-        %{"pack" => pack_id} -> Accounts.RunnerAccess.pack_in_scope?(pack_id, access)
-        _malformed -> false
+  defp scope_model_pack_actions(pack, eligible_ids, access) do
+    eligible_ids =
+      if Accounts.RunnerAccess.pack_in_scope?(pack.pack_id, access),
+        do: eligible_ids,
+        else: MapSet.new()
+
+    actions =
+      Enum.map(pack.actions, fn action ->
+        ids = Enum.filter(action.compatible_runner_ids, &MapSet.member?(eligible_ids, &1))
+        %{action | compatible_runner_ids: ids}
       end)
 
-    %{runner | packs: packs, degraded_packs: degraded_packs}
+    compatibility =
+      Map.new(pack.compatibility, fn {id, deployment} ->
+        action_ids =
+          if MapSet.member?(eligible_ids, id), do: deployment.compatible_action_ids, else: []
+
+        {id, %{deployment | compatible_action_ids: action_ids}}
+      end)
+
+    availability =
+      if Enum.any?(actions, &(&1.compatible_runner_ids != [])),
+        do: "executable",
+        else: "unavailable"
+
+    %{pack | actions: actions, compatibility: compatibility, availability: availability}
+  end
+
+  defp model_action_runner_ids(runners, access, subject) do
+    if Auth.Authorizer.has_permission?(subject, Emisar.Runs.Authorizer.dispatch_run_permission()) do
+      runners
+      |> Enum.filter(&Accounts.RunnerAccess.runner_in_scope?(&1, access))
+      |> Enum.map(& &1.id)
+      |> Enum.sort()
+    else
+      []
+    end
+  end
+
+  # Shared inventory identities no longer change when permissions change. Bind
+  # continuations to the current grants AND effective target ids, so moving a
+  # runner out of a granted group also invalidates an old eligibility page.
+  defp model_action_scope_fingerprint(runners, access, subject) do
+    {access.mode, Enum.sort(access.groups), Enum.sort(access.runner_ids), access.pack_mode,
+     Enum.sort(access.pack_ids),
+     Auth.Authorizer.has_permission?(subject, Emisar.Runs.Authorizer.dispatch_run_permission()),
+     model_action_runner_ids(runners, access, subject)}
+    |> :erlang.term_to_binary()
+    |> Emisar.Crypto.hash_hex()
   end
 
   defp requested_model_runner_ids(runners, []), do: {:ok, Enum.map(runners, & &1.id)}
@@ -2200,14 +2267,23 @@ defmodule Emisar.Catalog do
   """
   def resolve_runbook_candidates(requests, runners, %Subject{} = subject)
       when is_list(requests) and is_list(runners) do
+    resolve_runbook_candidates(requests, runners, subject, :execute)
+  end
+
+  @doc "Bounded exact trusted descriptor candidates for account-wide model reads, without execution eligibility."
+  def resolve_runbook_readable_candidates(requests, runners, %Subject{} = subject)
+      when is_list(requests) and is_list(runners) do
+    resolve_runbook_candidates(requests, runners, subject, :read)
+  end
+
+  defp resolve_runbook_candidates(requests, runners, subject, purpose) do
     with true <- length(requests) <= @max_candidate_requests,
-         :ok <-
-           Auth.Authorizer.ensure_has_permissions(
-             subject,
-             Authorizer.view_catalog_permission()
-           ),
+         {:ok, subject} <-
+           Auth.fetch_current_subject(Authorizer.view_catalog_permission(), subject),
+         :ok <- ensure_runners_in_account(runners, subject),
+         :ok <- ensure_candidate_runner_scope(runners, subject, purpose),
          deployments = requested_deployments(requests, runners),
-         {:ok, actions} <- deployment_actions(deployments, subject),
+         {:ok, actions} <- deployment_actions(deployments, subject, purpose),
          {:ok, pack_versions} <- deployment_pack_versions(deployments, subject) do
       requested_runner_ids = MapSet.new(requests, & &1.runner_id)
       requested_runners = Enum.filter(runners, &MapSet.member?(requested_runner_ids, &1.id))
@@ -2216,7 +2292,7 @@ defmodule Emisar.Catalog do
       candidates =
         Map.new(requests, fn request ->
           key = {request.runner_id, request.pack_id, request.action_id}
-          {key, runbook_candidates(snapshot, request)}
+          {key, runbook_candidates(snapshot, request, purpose)}
         end)
 
       {:ok, candidates}
@@ -2225,6 +2301,11 @@ defmodule Emisar.Catalog do
       other -> other
     end
   end
+
+  defp ensure_candidate_runner_scope(_runners, _subject, :read), do: :ok
+
+  defp ensure_candidate_runner_scope(runners, subject, :execute),
+    do: Runners.ensure_runner_ids_in_action_scope(Enum.map(runners, & &1.id), subject)
 
   defp requested_deployments(requests, runners) do
     runners_by_id = Map.new(runners, &{&1.id, &1})
@@ -2263,7 +2344,7 @@ defmodule Emisar.Catalog do
              Authorizer.view_catalog_permission()
            ),
          :ok <- ensure_runners_in_account(runners, subject),
-         :ok <- Runners.ensure_runner_ids_visible(Enum.map(runners, & &1.id), subject),
+         :ok <- Runners.ensure_runner_ids_in_action_scope(Enum.map(runners, & &1.id), subject),
          [_deployment | _rest] = deployments <- runner_deployments(runners),
          {:ok, actions} <- deployment_actions(deployments, subject),
          {:ok, pack_versions} <- deployment_pack_versions(deployments, subject) do
@@ -2470,14 +2551,14 @@ defmodule Emisar.Catalog do
     |> Enum.uniq()
   end
 
-  defp deployment_actions(deployments, subject) do
+  defp deployment_actions(deployments, subject, purpose \\ :execute) do
     max_actions = length(deployments) * TrustedManifest.max_actions()
 
     actions =
       RunnerAction.Query.all()
       |> RunnerAction.Query.by_deployments(deployments)
       |> RunnerAction.Query.select_manifest_match_columns()
-      |> scope_actions_to_pack_access(subject)
+      |> scope_candidate_actions(subject, purpose)
       |> RunnerAction.Query.limit_to(max_actions + 1)
       |> Authorizer.for_subject(subject)
       |> Repo.all()
@@ -2494,6 +2575,11 @@ defmodule Emisar.Catalog do
       else: {:error, :candidate_catalog_too_large}
   end
 
+  defp scope_candidate_actions(query, _subject, :read), do: query
+
+  defp scope_candidate_actions(query, subject, :execute),
+    do: scope_actions_to_pack_access(query, subject)
+
   defp deployment_pack_versions(deployments, subject) do
     pack_refs =
       deployments
@@ -2509,13 +2595,16 @@ defmodule Emisar.Catalog do
     {:ok, pack_versions}
   end
 
-  defp runbook_candidates(snapshot, request) do
+  defp runbook_candidates(snapshot, request, purpose) do
     snapshot.packs
     |> Enum.filter(&(&1.pack_id == request.pack_id))
     |> Enum.flat_map(fn pack ->
       case Enum.find(pack.actions, &(&1["action_id"] == request.action_id)) do
         %{compatible_runner_ids: runner_ids} = descriptor ->
-          if request.runner_id in runner_ids do
+          readable? = get_in(pack.compatibility, [request.runner_id, :descriptor_match?]) == true
+
+          if (purpose == :read and readable?) or
+               (purpose == :execute and request.runner_id in runner_ids) do
             [
               %{
                 runner_id: request.runner_id,
@@ -2545,8 +2634,8 @@ defmodule Emisar.Catalog do
   account scoping as the other catalog reads; returns `{:ok, %{}}` for an
   empty id list without touching the DB.
 
-  Only `action_id`s a runner the caller may reach advertises appear in the map —
-  an unobserved or out-of-scope step is simply absent, which `max_risk/1` treats
+  Only `action_id`s advertised in the account appear in the map —
+  an unobserved step is simply absent, which `max_risk/1` treats
   conservatively (no false-low). Folds the rows through
   `most_severe_risk_by_action/1`, so an action advertised by several runners at
   mixed risk keeps the worst.
@@ -2562,15 +2651,11 @@ defmodule Emisar.Catalog do
   end
 
   def risk_by_action_ids(action_ids, %Subject{} = subject) when is_list(action_ids) do
-    with :ok <-
-           Auth.Authorizer.ensure_has_permissions(
-             subject,
-             Authorizer.view_catalog_permission()
-           ) do
+    with {:ok, subject} <-
+           Auth.fetch_current_subject(Authorizer.view_catalog_permission(), subject) do
       actions =
         RunnerAction.Query.all()
         |> RunnerAction.Query.by_action_ids(action_ids)
-        |> scope_actions_to_subject_membership(subject)
         |> Authorizer.for_subject(subject)
         |> Repo.all()
 
@@ -2582,20 +2667,16 @@ defmodule Emisar.Catalog do
   `%{{runner_id, action_id} => risk}` for exact runner/action pairs, in ONE
   query — the approvals queue resolves every
   pending request's own frozen action without a read per card. Requires
-  `view_catalog`; rows are scoped to the caller's CURRENT membership runner
-  access and their account.
+  `view_catalog`; rows are shared within the caller's current account.
 
-  A pair whose runner or action is unknown, malformed, out of the caller's
-  runner scope, or in another account is simply absent, so a caller shows no
+  A pair whose runner or action is unknown, malformed, or in another account
+  is simply absent, so a caller shows no
   risk rather than a wrong one. An empty list still runs the permission gate.
   Returns `{:ok, %{{runner_id, action_id} => risk}}` or `{:error, :unauthorized}`.
   """
   def risk_by_runner_action_pairs(pairs, %Subject{} = subject) when is_list(pairs) do
-    with :ok <-
-           Auth.Authorizer.ensure_has_permissions(
-             subject,
-             Authorizer.view_catalog_permission()
-           ) do
+    with {:ok, subject} <-
+           Auth.fetch_current_subject(Authorizer.view_catalog_permission(), subject) do
       {:ok, pairs |> Enum.filter(&resolvable_pair?/1) |> risk_by_pair(subject)}
     end
   end
@@ -2611,7 +2692,6 @@ defmodule Emisar.Catalog do
     rows =
       RunnerAction.Query.all()
       |> RunnerAction.Query.by_runner_action_pairs(pairs)
-      |> scope_actions_to_subject_membership(subject)
       |> RunnerAction.Query.select_action_risk_rows()
       |> Authorizer.for_subject(subject)
       |> Repo.all()
@@ -2619,9 +2699,8 @@ defmodule Emisar.Catalog do
     Map.new(rows, fn {runner_id, action_id, risk} -> {{runner_id, action_id}, risk} end)
   end
 
-  # Membership runner access is current authorization data, not session state:
-  # resolve it on every risk read so a narrowed scope takes effect immediately
-  # on open sessions and old API keys.
+  # Only execution-oriented candidates use these grant filters. Ordinary
+  # inventory/risk reads above are account-wide and must not authorize actions.
   defp scope_actions_to_subject_membership(queryable, %Subject{} = subject) do
     access = Accounts.runner_access_for_subject(subject)
 
@@ -2639,8 +2718,8 @@ defmodule Emisar.Catalog do
     do: RunnerAction.Query.by_runner_scope_values(queryable, access.runner_ids, access.groups)
 
   # The pack dimension of the same grant. Reads that scope their runners through
-  # a fleet read compose THIS on top, so a member restricted to some packs never
-  # sees — or selects — an action outside them.
+  # an action-scoped fleet read compose THIS on top, so the editor never offers
+  # an action the member cannot select.
   defp scope_actions_to_pack_access(queryable, %Subject{} = subject),
     do: scope_actions_to_packs(queryable, Accounts.runner_access_for_subject(subject))
 
@@ -2651,42 +2730,6 @@ defmodule Emisar.Catalog do
 
   defp scope_actions_to_packs(queryable, %Accounts.RunnerAccess{pack_mode: :restricted} = access),
     do: RunnerAction.Query.by_pack_ids(queryable, access.pack_ids)
-
-  defp scope_pack_versions_to_packs(queryable, %Accounts.RunnerAccess{mode: :none}),
-    do: PackVersion.Query.none(queryable)
-
-  defp scope_pack_versions_to_packs(queryable, %Accounts.RunnerAccess{pack_mode: :all}),
-    do: queryable
-
-  defp scope_pack_versions_to_packs(
-         queryable,
-         %Accounts.RunnerAccess{pack_mode: :restricted} = access
-       ),
-       do: PackVersion.Query.by_pack_ids(queryable, access.pack_ids)
-
-  defp visible_deployments(_subject, %Accounts.RunnerAccess{mode: :all}), do: :all
-  defp visible_deployments(_subject, %Accounts.RunnerAccess{mode: :none}), do: []
-
-  defp visible_deployments(%Subject{} = subject, %Accounts.RunnerAccess{mode: :restricted}) do
-    case Runners.list_all_runners_for_account(subject) do
-      {:ok, runners} ->
-        runners
-        |> Enum.flat_map(fn runner ->
-          for {pack_id, %{"version" => version, "hash" => hash}} <- runner.packs || %{},
-              is_binary(pack_id) and is_binary(version) and is_binary(hash),
-              do: {pack_id, version, hash}
-        end)
-        |> Enum.uniq()
-
-      {:error, _reason} ->
-        []
-    end
-  end
-
-  defp scope_pack_versions_to_visible_runners(queryable, :all), do: queryable
-
-  defp scope_pack_versions_to_visible_runners(queryable, deployments),
-    do: PackVersion.Query.by_deployments(queryable, deployments)
 
   # Severity rank for `RunnerAction.risk` (an Ecto.Enum) — lets us pick the
   # WORST risk when the same action is advertised by more than one runner.
@@ -2755,13 +2798,12 @@ defmodule Emisar.Catalog do
     end)
   end
 
-  @doc "Pages distinct action ids and their worst semantic risk under current runner and pack access."
+  @doc "Pages distinct action ids and their worst semantic risk within the account."
   def list_action_risks(target, %Subject{} = subject, opts \\ []) do
-    with :ok <-
-           Auth.Authorizer.ensure_has_permissions(subject, Authorizer.view_catalog_permission()) do
+    with {:ok, subject} <-
+           Auth.fetch_current_subject(Authorizer.view_catalog_permission(), subject) do
       RunnerAction.Query.all()
       |> Emisar.Catalog.ActionRisk.Query.for_target(target)
-      |> scope_actions_to_subject_membership(subject)
       |> Emisar.Catalog.ActionRisk.Query.aggregate()
       |> Authorizer.for_subject(subject)
       |> Repo.list(Emisar.Catalog.ActionRisk.Query, Keyword.put(opts, :count, false))
@@ -2778,21 +2820,23 @@ defmodule Emisar.Catalog do
   end
 
   @doc """
-  The worst risk per action across selected runners, for the dashboard.
-  `view_catalog` gated + account-scoped (`for_subject`, so a foreign runner id
-  contributes nothing); an empty id list is the empty map, still gated.
+  The worst risk per action within current runner and pack action scope, for
+  the dashboard's first-action prompt. This is not shared catalog inventory.
+  Requires `view_catalog`; a foreign runner contributes nothing and an empty
+  id list returns an empty map, still permission-gated.
   `{:ok, %{action_id => risk}}`.
   """
-  def action_risks_for_runner_ids([], %Subject{} = subject) do
+  def action_scope_risks_for_runner_ids([], %Subject{} = subject) do
     with :ok <-
            Auth.Authorizer.ensure_has_permissions(subject, Authorizer.view_catalog_permission()) do
       {:ok, %{}}
     end
   end
 
-  def action_risks_for_runner_ids(runner_ids, %Subject{} = subject) when is_list(runner_ids) do
-    with :ok <-
-           Auth.Authorizer.ensure_has_permissions(subject, Authorizer.view_catalog_permission()) do
+  def action_scope_risks_for_runner_ids(runner_ids, %Subject{} = subject)
+      when is_list(runner_ids) do
+    with {:ok, subject} <-
+           Auth.fetch_current_subject(Authorizer.view_catalog_permission(), subject) do
       rows =
         RunnerAction.Query.all()
         |> RunnerAction.Query.by_runner_ids(runner_ids)
@@ -2810,22 +2854,12 @@ defmodule Emisar.Catalog do
   the subject's account.
   """
   def fetch_action_by_id(action_id, runner_id, %Subject{} = subject) do
-    with :ok <-
-           Auth.Authorizer.ensure_has_permissions(
-             subject,
-             Authorizer.view_catalog_permission()
-           ),
+    with {:ok, subject} <-
+           Auth.fetch_current_subject(Authorizer.view_catalog_permission(), subject),
          true <- Repo.valid_uuid?(runner_id) do
-      # Narrow by the member's runner scope, like risk_by_action_ids/2 above.
-      # Without it, an operator scoped to one host could open
-      # /runs/new/<other-runner>/<action> and read the action's id, title, risk
-      # and full args schema — dispatch was refused, but the existence and shape
-      # of an out-of-scope host's action leaked, against the existence-hiding
-      # promise on /docs/teams-and-access.
       RunnerAction.Query.all()
       |> RunnerAction.Query.by_runner_id(runner_id)
       |> RunnerAction.Query.by_action_id(action_id)
-      |> scope_actions_to_subject_membership(subject)
       |> Authorizer.for_subject(subject)
       |> Repo.fetch(RunnerAction.Query)
     else
@@ -2849,18 +2883,11 @@ defmodule Emisar.Catalog do
   end
 
   def list_pack_versions(%Subject{} = subject, opts \\ []) do
-    with :ok <-
-           Auth.Authorizer.ensure_has_permissions(
-             subject,
-             Authorizer.view_catalog_permission()
-           ) do
+    with {:ok, subject} <-
+           Auth.fetch_current_subject(Authorizer.view_catalog_permission(), subject) do
       {preloads, opts} = Keyword.pop(opts, :preload, [])
-      access = Accounts.runner_access_for_subject(subject)
-      visible_deployments = visible_deployments(subject, access)
 
       PackVersion.Query.all()
-      |> scope_pack_versions_to_packs(access)
-      |> scope_pack_versions_to_visible_runners(visible_deployments)
       |> apply_pack_version_preloads(preloads)
       |> Authorizer.for_subject(subject)
       |> Repo.list(PackVersion.Query, opts)
@@ -2880,22 +2907,19 @@ defmodule Emisar.Catalog do
   pack id alone contributes none and the page leaves it collapsed.
 
   Advertised actions are read only when a filter is active or a pending version
-  needs its contents, so an unfiltered, nothing-pending page pays for no action
-  read and keeps its per-disclosure lazy loading (`list_pack_actions/3`). The
+  needs its contents, so an unfiltered, nothing-pending page reads no action
+  descriptors and keeps its per-disclosure lazy loading (`list_pack_actions/3`). The
   fleet's advertisement facts are read once, and only when some row's lifecycle
   actually depends on who is running it.
 
-  Returns `{:ok, projection}` — `pack_versions` (every row in the member's
-  current pack access, bounded, ordered by pack id then version; browse rows
+  Returns `{:ok, projection}` — `pack_versions` (account-wide, bounded,
+  ordered by pack id then version; browse rows
   omit `trusted_manifest`, and only rows carrying a decision — pending trust,
   or an overridden retirement — come back whole with the overrider preloaded),
   `groups` (`%{id: pack_id,
-  versions: [...], update: nil | %{version, hash}}` over the visible rows,
+  versions: [...], can_delete?: boolean, update: nil | %{version, hash}}` over the visible rows,
   packs ascending and versions newest-seen first), `actions_by_pack_ref`,
-  `matched_action_ids`,
-  `out_of_scope_pack_ids` (the account's other pack ids — identity only, for
-  discovery; empty under a `:risk` filter, which cannot be judged without
-  reading actions the member may not see), and
+  `matched_action_ids`, and
   `version_facts` (see `list_console_packs/2`'s fact map) keyed by pack-version
   id, and the visible `pack_count`/`version_count`, `pending_count`, and
   `decision_count` — or `{:error, :unauthorized}`.
@@ -2908,20 +2932,20 @@ defmodule Emisar.Catalog do
   (`%{coverage: :not_needed | :complete | :partial, runners: [...]}`),
   `current_version`, `retired?` / `retirement_blocked?` /
   `retirement_successor` (+ `_hash`) / `retirement_remedy`, `update_successor`
-  (+ `_hash`), and the `override` attribution.
+  (+ `_hash`), and the `override` attribution. Each fact also carries `can_manage?`,
+  a complete-target hint computed in at most two slim batch queries, separate
+  from the truncated advertiser preview. The top-level `can_manage?` is the
+  current role permission; neither hint replaces the mutation's locked check.
   """
   def list_console_packs(filters, %Subject{} = subject) when is_map(filters) do
-    with :ok <-
-           Auth.Authorizer.ensure_has_permissions(subject, Authorizer.view_catalog_permission()) do
+    with {:ok, subject} <-
+           Auth.fetch_current_subject(Authorizer.view_catalog_permission(), subject) do
       name = filters |> Map.get(:name, "") |> String.downcase()
       risk = Map.get(filters, :risk, "")
       access = Accounts.runner_access_for_subject(subject)
-      visible_deployments = visible_deployments(subject, access)
 
       pack_versions =
         PackVersion.Query.all()
-        |> scope_pack_versions_to_packs(access)
-        |> scope_pack_versions_to_visible_runners(visible_deployments)
         |> PackVersion.Query.ordered_by_pack()
         |> PackVersion.Query.select_without_manifest()
         |> PackVersion.Query.limit_to(@console_pack_version_limit)
@@ -2929,21 +2953,41 @@ defmodule Emisar.Catalog do
         |> Repo.all()
         |> hydrate_decision_rows(subject)
 
-      action_rows = console_action_rows(pack_versions, name, risk, access, subject)
+      action_rows = console_action_rows(pack_versions, name, risk, subject)
 
       actions_by_pack_ref =
         Map.new(action_rows, fn {pack_ref, actions} ->
-          {pack_ref, ConsoleProjection.most_severe_actions_by_id(actions)}
+          {pack_ref,
+           actions
+           |> ConsoleProjection.most_severe_actions_by_id()
+           |> ConsoleProjection.action_summaries()}
         end)
 
       with {:ok, advertising} <- console_advertising(pack_versions, subject) do
+        can_manage? = subject_can_manage_packs?(subject)
+        manageable_ids = manageable_pack_version_ids(pack_versions, subject, access, can_manage?)
+
         version_facts =
           ConsoleProjection.console_version_facts(pack_versions, action_rows, advertising)
+          |> Map.new(fn {id, fact} ->
+            {id, Map.put(fact, :can_manage?, MapSet.member?(manageable_ids, id))}
+          end)
 
         {visible, matched_ids} =
           ConsoleProjection.console_filter(pack_versions, name, risk, actions_by_pack_ref)
 
-        groups = ConsoleProjection.console_groups(visible, pack_versions)
+        groups =
+          visible
+          |> ConsoleProjection.console_groups(pack_versions)
+          |> Enum.map(fn group ->
+            # Whole-pack deletion intentionally has pack-only authority;
+            # version-specific mutations require complete target coverage.
+            Map.put(
+              group,
+              :can_delete?,
+              can_manage? and Accounts.RunnerAccess.pack_in_scope?(group.id, access)
+            )
+          end)
 
         {:ok,
          %{
@@ -2951,8 +2995,8 @@ defmodule Emisar.Catalog do
            groups: groups,
            actions_by_pack_ref: actions_by_pack_ref,
            matched_action_ids: matched_ids,
-           out_of_scope_pack_ids: out_of_scope_pack_ids(pack_versions, name, risk, subject),
            version_facts: version_facts,
+           can_manage?: can_manage?,
            pack_count: length(groups),
            version_count: length(visible),
            pending_count: Enum.count(pack_versions, &(&1.trust_state == :pending)),
@@ -2961,6 +3005,40 @@ defmodule Emisar.Catalog do
          }}
       end
     end
+  end
+
+  defp manageable_pack_version_ids(_versions, _subject, _access, false), do: MapSet.new()
+
+  defp manageable_pack_version_ids(versions, subject, access, true) do
+    candidates = Enum.filter(versions, &Accounts.RunnerAccess.pack_in_scope?(&1.pack_id, access))
+    refs = Enum.map(candidates, &{&1.pack_id, &1.version})
+    denied = refs |> pack_refs_outside_management(subject, access) |> MapSet.new()
+
+    candidates
+    |> Enum.reject(&MapSet.member?(denied, {&1.pack_id, &1.version}))
+    |> MapSet.new(& &1.id)
+  end
+
+  defp pack_refs_outside_management(refs, subject, access, opts \\ [])
+  defp pack_refs_outside_management([], _subject, _access, _opts), do: []
+
+  defp pack_refs_outside_management(refs, subject, access, opts) do
+    repo = Keyword.get(opts, :repo, Repo)
+
+    advertisements =
+      Runners.list_pack_refs_outside_runner_access(subject.account.id, refs, access, repo: repo)
+
+    # Do not skip this for all-runner grants: an unresolved or foreign residual
+    # owner is never proof of authority, even when every valid runner is allowed.
+    residual_owners =
+      RunnerAction.Query.all()
+      |> RunnerAction.Query.by_pack_refs(refs)
+      |> RunnerAction.Query.outside_runner_access(access)
+      |> RunnerAction.Query.distinct_pack_refs()
+      |> Authorizer.for_subject(subject)
+      |> repo.all()
+
+    Enum.uniq(advertisements ++ residual_owners)
   end
 
   # The browse read drops `trusted_manifest` (the table's heaviest column) and
@@ -2991,8 +3069,8 @@ defmodule Emisar.Catalog do
   end
 
   # Action rows grouped by `{pack_id, version}`, read only when the page needs
-  # them and only as wide as each need: a live filter matches over the whole
-  # account's rows in summary columns, while a pending version's trust card
+  # them and only as wide as each need: a live filter matches over the bounded
+  # candidate versions in summary columns, while a pending version's trust card
   # reads its own pairs WHOLE — the manifest diff compares every descriptor
   # field, so summary rows would silently blind it. Kept as RAW rows either way
   # (no dedupe here) so a pending review can select its exact hash BEFORE the
@@ -3001,7 +3079,6 @@ defmodule Emisar.Catalog do
          pack_versions,
          name,
          risk,
-         %Accounts.RunnerAccess{} = access,
          %Subject{} = subject
        ) do
     pending_pairs =
@@ -3009,22 +3086,21 @@ defmodule Emisar.Catalog do
           do: {version.pack_id, version.version}
 
     Map.merge(
-      filter_match_action_rows(name, risk, access, subject),
-      pending_decision_action_rows(pending_pairs, access, subject)
+      filter_match_action_rows(pack_versions, name, risk, subject),
+      pending_decision_action_rows(pending_pairs, subject)
     )
   end
 
-  defp filter_match_action_rows("", "", %Accounts.RunnerAccess{}, %Subject{}), do: %{}
+  defp filter_match_action_rows(_versions, "", "", %Subject{}), do: %{}
 
   defp filter_match_action_rows(
+         versions,
          _name,
          _risk,
-         %Accounts.RunnerAccess{} = access,
          %Subject{} = subject
        ) do
     RunnerAction.Query.all()
-    |> scope_actions_to_runners(access)
-    |> scope_actions_to_packs(access)
+    |> RunnerAction.Query.by_pack_refs(Enum.map(versions, &{&1.pack_id, &1.version}))
     |> RunnerAction.Query.ordered_by_action()
     |> RunnerAction.Query.select_console_columns()
     |> Authorizer.for_subject(subject)
@@ -3032,17 +3108,14 @@ defmodule Emisar.Catalog do
     |> Enum.group_by(&{&1.pack_id, &1.pack_version})
   end
 
-  defp pending_decision_action_rows([], %Accounts.RunnerAccess{}, %Subject{}), do: %{}
+  defp pending_decision_action_rows([], %Subject{}), do: %{}
 
   defp pending_decision_action_rows(
          pending_pairs,
-         %Accounts.RunnerAccess{} = access,
          %Subject{} = subject
        ) do
     RunnerAction.Query.all()
     |> RunnerAction.Query.by_pack_refs(pending_pairs)
-    |> scope_actions_to_runners(access)
-    |> scope_actions_to_packs(access)
     |> RunnerAction.Query.ordered_by_action()
     |> Authorizer.for_subject(subject)
     |> Repo.all()
@@ -3070,31 +3143,6 @@ defmodule Emisar.Catalog do
     end
   end
 
-  # Discovery: the pack ids in this account that the member's own pack or runner
-  # access does not reach, so the console can say a pack EXISTS without handing
-  # over anything about it. Identity only, and structurally so — the read
-  # selects `pack_id` and nothing else (`distinct_pack_ids/1`), so no trust
-  # state, action, advertiser, version or decision fact about an out-of-scope
-  # pack is produced for a caller to render by accident. The name filter still
-  # applies because the id is all we matched on anyway; a RISK filter returns
-  # none, since judging an out-of-scope pack's risk would mean reading its
-  # actions — exactly what the member may not see.
-  defp out_of_scope_pack_ids(pack_versions, name, "", %Subject{} = subject) do
-    in_scope = MapSet.new(pack_versions, & &1.pack_id)
-
-    PackVersion.Query.all()
-    |> PackVersion.Query.distinct_pack_ids()
-    |> Authorizer.for_subject(subject)
-    |> Repo.all()
-    |> Enum.reject(&MapSet.member?(in_scope, &1))
-    |> Enum.filter(fn pack_id ->
-      pack_id |> String.downcase() |> String.contains?(name)
-    end)
-    |> Enum.sort()
-  end
-
-  defp out_of_scope_pack_ids(_pack_versions, _name, _risk, _subject), do: []
-
   # Rendering concern: the Packs page passes `preload:
   # [:retirement_overridden_by]` only where it renders the retirement-override
   # note; a counting caller omits it and pays for no join. Unknown atoms raise.
@@ -3112,15 +3160,11 @@ defmodule Emisar.Catalog do
   `{:ok, [%RunnerAction{}]}`.
   """
   def list_pack_actions(pack_id, pack_version, %Subject{} = subject) do
-    with :ok <-
-           Auth.Authorizer.ensure_has_permissions(subject, Authorizer.view_catalog_permission()) do
-      access = Accounts.runner_access_for_subject(subject)
-
+    with {:ok, subject} <-
+           Auth.fetch_current_subject(Authorizer.view_catalog_permission(), subject) do
       actions =
         RunnerAction.Query.all()
         |> RunnerAction.Query.by_pack(pack_id, pack_version)
-        |> scope_actions_to_runners(access)
-        |> scope_actions_to_packs(access)
         |> RunnerAction.Query.ordered_by_action()
         |> RunnerAction.Query.select_console_columns()
         |> Authorizer.for_subject(subject)
@@ -3132,7 +3176,7 @@ defmodule Emisar.Catalog do
   end
 
   @doc """
-  Cheap count of pack versions in the member's current pack access awaiting an
+  Cheap account-wide count of pack versions awaiting an
   operator decision — pending trust reviews PLUS retired-blocked trusted versions (see
   `pack_version_needs_decision?/1`) — drives the sidebar + dashboard badge.
   Same Subject gate + account scoping as `list_pack_versions/2`; returns `0`
@@ -3140,19 +3184,14 @@ defmodule Emisar.Catalog do
   of erroring.
   """
   def count_pack_versions_needing_decision(%Subject{} = subject) do
-    case Auth.Authorizer.ensure_has_permissions(subject, Authorizer.view_catalog_permission()) do
-      :ok ->
-        access = Accounts.runner_access_for_subject(subject)
-        visible_deployments = visible_deployments(subject, access)
-
+    case Auth.fetch_current_subject(Authorizer.view_catalog_permission(), subject) do
+      {:ok, subject} ->
         pending =
           PackVersion.Query.pending()
-          |> scope_pack_versions_to_packs(access)
-          |> scope_pack_versions_to_visible_runners(visible_deployments)
           |> Authorizer.for_subject(subject)
           |> Repo.aggregate(:count)
 
-        pending + count_retired_blocked(access, visible_deployments, subject)
+        pending + count_retired_blocked(subject)
 
       _ ->
         0
@@ -3162,18 +3201,12 @@ defmodule Emisar.Catalog do
   # Retirement lives in the published catalog snapshot (`PackBaseline`), not in
   # a column, so the version comparison happens in Elixir over a narrow read:
   # trusted, unoverridden rows of the packs that carry a watermark at all.
-  defp count_retired_blocked(
-         %Accounts.RunnerAccess{} = access,
-         visible_deployments,
-         %Subject{} = subject
-       ) do
+  defp count_retired_blocked(%Subject{} = subject) do
     watermarked_pack_ids = Map.keys(PackBaseline.retired_below())
 
     queryable =
       PackVersion.Query.trusted_unoverridden()
       |> PackVersion.Query.by_pack_ids(watermarked_pack_ids)
-      |> scope_pack_versions_to_packs(access)
-      |> scope_pack_versions_to_visible_runners(visible_deployments)
       |> PackVersion.Query.select_decision_fields()
       |> Authorizer.for_subject(subject)
 
@@ -3250,8 +3283,12 @@ defmodule Emisar.Catalog do
     do: Auth.Authorizer.has_permission?(subject, Authorizer.manage_catalog_permission())
 
   @doc "Whether `subject` may change the account-wide pack-retention schedule."
-  def subject_can_manage_pack_retention?(%Subject{} = subject),
-    do: subject_can_manage_packs?(subject) and full_pack_access?(subject)
+  def subject_can_manage_pack_retention?(%Subject{} = subject) do
+    case Auth.fetch_current_subject(Authorizer.manage_catalog_permission(), subject) do
+      {:ok, current} -> full_pack_access?(current)
+      {:error, _reason} -> false
+    end
+  end
 
   # Current access, re-read on every call: a narrowed pack scope takes the
   # account-wide schedule away from an open session immediately.

@@ -168,8 +168,8 @@ its actions from itself:
 | Runbook binds output from the wrong host | Output bindings may name only an earlier stage and must resolve to one unique producer or the same runner across fan-out. Ambiguous correlation fails preflight. |
 | Pack fleet moves after runbook review | Preflight plans every item against the exact trusted pack its frozen runner deploys and freezes the full pack ref, hash, and action contract. Every later attempt rechecks those frozen facts. |
 | Partial fleet mutation after target drift | The complete expanded target set must be in caller scope before creation; later authorization or trust loss halts before the next attempt or stage. Already-running peers only settle their real outcome. |
-| One-runner group selection hides an incompatible or unauthorized peer | Preflight validates every online member in the subject-visible group before deterministically freezing one exact runner. The plan and approval retain the source group; a later disconnect halts instead of reselecting. |
-| Approval hides a wider execution fan-out | Any item that requires approval opens one approval over the complete frozen execution before any action run exists; approver runner scope is checked against every item at notification, visibility, and decision. |
+| One-runner group selection hides an incompatible or unauthorized peer | Preflight checks authority over the complete current group before availability filtering, validates compatible available members, then deterministically freezes one exact runner. The plan and approval retain the source group; a later disconnect halts instead of reselecting. |
+| Approval hides a wider execution fan-out | Any item that requires approval opens one approval over the complete frozen execution before any action run exists; approver runner and pack scope is checked against every item for initial decision notifications, the actionable queue, and decisions. Read-only approval visibility stays account-wide. |
 | An approval quorum is bypassed without accountable evidence | A current account owner or admin may deliberately use break-glass approval. Their active membership and role are rechecked under lock; a non-blank reason is mandatory; and one `approval.overridden` event records the actor, reason, approvals present, required quorum, reviews waived, and whether requester separation was waived. The operation creates neither an approval vote nor a standing grant. Target scope, expiry, cancellation, pack trust, dispatch-signature freshness, initiating-member authorization, and runner admission still apply. This is explicit owner/admin authority: quorum and self-approval rules do not protect against a malicious or compromised owner/admin. |
 | Pack swapped on disk after trust         | Runner recomputes the cloud-pinned trusted hash before execution. |
 | Pack sets `LD_PRELOAD`/`BASH_ENV`        | Hijack-vector env vars rejected at pack validation.           |
@@ -201,6 +201,10 @@ its actions from itself:
 
 The runner-side guarantees above pair with the control plane's own model:
 
+- Current account identity and the existing read role govern shared operational
+  inventory, trusted model catalogs, history, approvals, definitions and stored
+  output. Runner and pack scope limits actions, not confidentiality within an
+  account. Fresh diagnostic commands are actions and require current target access.
 - Every bearer credential is hashed at rest — sessions, email tokens,
   invitations, API keys, runner auth keys, per-runner tokens, OAuth
   access/refresh tokens, MFA recovery codes. A database leak yields no
@@ -210,8 +214,8 @@ The runner-side guarantees above pair with the control plane's own model:
 - An MCP credential is an `:mcp`-kind API key or an OAuth token (PKCE
   S256 only). It carries no per-key authorization scope of its own: what
   it may do is decided by the account's policy, the approval gate, and
-  the runner ACL of the operator who minted it, which narrows the hosts
-  it can touch at all.
+  the runner and pack ACL of the operator who minted it, which narrows the
+  hosts and packs it can act on.
 - Operator sign-in supports TOTP MFA with one-shot hashed recovery
   codes; approvals and credential lifecycles are all audited.
 - Emisar staff reach a customer workspace through a read-only console at

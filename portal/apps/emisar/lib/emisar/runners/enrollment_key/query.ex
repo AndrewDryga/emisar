@@ -3,6 +3,8 @@ defmodule Emisar.Runners.EnrollmentKey.Query do
   alias Emisar.Repo.Filter
   alias Emisar.Users
 
+  def lock_for_update(queryable), do: lock(queryable, "FOR NO KEY UPDATE")
+
   def all,
     do: from(enrollment_keys in Emisar.Runners.EnrollmentKey, as: :enrollment_keys)
 

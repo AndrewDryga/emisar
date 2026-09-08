@@ -4,7 +4,7 @@
   <section class="py-12 sm:py-16">
     <.docs_layout
       current="troubleshooting"
-      updated="August 23, 2026"
+      updated="September 8, 2026"
       toc={[
         {"where", "Where the fixes live"},
         {"dispatch", "An action will not dispatch"},
@@ -83,8 +83,8 @@
           </thead>
           <tbody class="divide-y divide-zinc-900 text-zinc-300">
             <%= for {seen, cause, {owner_path, owner}} <- [
-              {"The runner or the action is not offered at all",
-               "Runner scope. A member or key sees only the hosts it was granted. An out-of-scope runner is hidden instead of refused.",
+              {"The runner or action is visible, but cannot be selected",
+               "Runner or pack access does not allow this target. Ask an administrator to review your access.",
                {~p"/docs/teams-and-access", "Teams & access"}},
               {"Dispatch is refused before a run appears",
                "Pack trust. A pending or drifted content hash is not dispatchable, by design.",

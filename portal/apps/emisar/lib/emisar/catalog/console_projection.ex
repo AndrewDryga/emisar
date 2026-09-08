@@ -2,7 +2,7 @@ defmodule Emisar.Catalog.ConsoleProjection do
   @moduledoc """
   Turns already-fetched catalog rows into what the Packs page renders.
 
-  Everything here is pure — no Repo, no Query module, no `%Subject{}` — and that
+  Everything here is pure — no Repo, no query execution, no `%Subject{}` — and that
   was measured before it moved: the transitive closure of these functions never
   reaches the database. That is the whole reason it is its own module. Inside
   `Emisar.Catalog` they were private and only reachable through a Subject-gated
@@ -13,7 +13,7 @@ defmodule Emisar.Catalog.ConsoleProjection do
   them, so the dependency runs one way.
   """
 
-  alias Emisar.Catalog.{ActionSetDiff, PackBaseline, PackVersion}
+  alias Emisar.Catalog.{ActionSetDiff, PackBaseline, PackVersion, RunnerAction}
   alias Emisar.Users
 
   # Severity order. Catalog's own risk folding reads it back through
@@ -165,7 +165,7 @@ defmodule Emisar.Catalog.ConsoleProjection do
       display_state: (blocked? && "retired") || to_string(pack_version.trust_state),
       trust_review?: pack_version.trust_state == :pending,
       needs_decision?: pack_version_needs_decision?(pack_version),
-      actions: actions,
+      actions: action_summaries(actions),
       action_changes: action_set_changes(pack_version, actions),
       advertising: advertising_fact,
       current_version: PackBaseline.current_version(pack_version.pack_id),
@@ -178,6 +178,13 @@ defmodule Emisar.Catalog.ConsoleProjection do
       update_successor_hash: shipped_hash(pack_version.pack_id, update_successor),
       override: override_attribution(pack_version)
     }
+  end
+
+  # Keep full descriptors through the exact-hash trust diff, then retain only
+  # the fields rendered in the action list, matching its lazy query projection.
+  def action_summaries(actions) do
+    fields = RunnerAction.Query.console_columns()
+    Enum.map(actions, &struct(RunnerAction, Map.take(&1, fields)))
   end
 
   # What trusting THIS decision would authorize: the rows carrying the exact

@@ -1432,6 +1432,63 @@ defmodule Emisar.SSOGroupsTest do
       scim_provider()
     end
 
+    test "unchanged role and access mappings do not interrupt member authorization", %{
+      provider: provider,
+      subject: subject,
+      account: account
+    } do
+      %{identity: identity} = provision(provider, "okta|unchanged-mapping")
+      Fixtures.Runners.create_runner(account_id: account.id, group: "database")
+
+      assert {:ok, group} =
+               SSO.scim_upsert_group(provider, %{
+                 external_id: "grp-unchanged",
+                 member_ids: [identity.id]
+               })
+
+      assert {:ok, role_mapping} =
+               SSO.create_group_mapping(
+                 provider,
+                 %{directory_group_id: group.id, role: :operator},
+                 subject
+               )
+
+      access_attrs = %{
+        directory_group_id: group.id,
+        runner_access_mode: :restricted,
+        scope: ["group:database"],
+        pack_access_mode: :all
+      }
+
+      assert {:ok, access_mapping} =
+               SSO.create_group_runner_access_mapping(provider, access_attrs, subject)
+
+      membership = Fixtures.Memberships.fetch_membership(account.id, identity.user_id)
+      Accounts.subscribe_account_team(account.id)
+      version = Repo.reload!(provider).authorization_version
+
+      assert {:ok, _mapping} = SSO.update_group_mapping(role_mapping, %{role: :operator}, subject)
+
+      assert {:ok, _mapping} =
+               SSO.update_group_runner_access_mapping(
+                 Repo.reload!(access_mapping),
+                 Map.delete(access_attrs, :directory_group_id),
+                 subject
+               )
+
+      assert Repo.reload!(provider).authorization_version == version
+      assert Repo.reload!(membership).directory_authorization_pending_version == nil
+      refute_receive {:list_changed, :team, _, _}, 100
+
+      assert {:ok, _mapping} =
+               SSO.update_group_mapping(role_mapping, %{role: :admin}, subject)
+
+      assert Repo.reload!(provider).authorization_version > version
+      assert role_of(account.id, identity.user_id) == :admin
+      user_id = identity.user_id
+      assert_receive {:list_changed, :team, "membership.role_changed", ^user_id}
+    end
+
     test "create, update, and delete immediately apply the group's current role", %{
       provider: provider,
       subject: subject,

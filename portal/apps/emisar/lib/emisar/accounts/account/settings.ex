@@ -30,7 +30,9 @@ defmodule Emisar.Accounts.Account.Settings do
     field :support_slack_url, :string
   end
 
-  @fields ~w[require_mfa require_sso monthly_report_opt_out pack_unseen_retention_days]a
+  @fields ~w[require_mfa require_sso monthly_report_opt_out]a
+  # Catalog owns the account-wide pack cleanup schedule and its all-pack gate.
+  @catalog_owned_field :pack_unseen_retention_days
   # `Emisar.Approvals` owns the standing-grant cap end to end — the permission,
   # the meaning of 0 (the account-wide kill switch), and the revocation sweep
   # that has to follow it — so the generic settings path casts it only to refuse
@@ -48,7 +50,13 @@ defmodule Emisar.Accounts.Account.Settings do
 
   def changeset(%__MODULE__{} = settings, attrs) do
     settings
-    |> cast(attrs, [@approvals_owned_field, @runners_owned_field, @admin_owned_field | @fields])
+    |> cast(attrs, [
+      @catalog_owned_field,
+      @approvals_owned_field,
+      @runners_owned_field,
+      @admin_owned_field | @fields
+    ])
+    |> reject_owned_change(@catalog_owned_field, "is set through the pack settings")
     |> reject_owned_change(@approvals_owned_field, "is set through the approval settings")
     |> reject_owned_change(@runners_owned_field, "is set through the runner settings")
     |> reject_owned_change(@admin_owned_field, "is set by Emisar support")
@@ -73,6 +81,13 @@ defmodule Emisar.Accounts.Account.Settings do
   def runner_inactive_retention_changeset(%__MODULE__{} = settings, attrs) do
     settings
     |> cast(attrs, [@runners_owned_field])
+    |> validate_bounds()
+  end
+
+  @doc "Internal — the cleanup window Catalog authorized. nil turns the sweep off."
+  def pack_retention_changeset(%__MODULE__{} = settings, attrs) do
+    settings
+    |> cast(attrs, [@catalog_owned_field])
     |> validate_bounds()
   end
 

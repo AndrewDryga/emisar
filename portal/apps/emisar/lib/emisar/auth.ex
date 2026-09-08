@@ -56,6 +56,30 @@ defmodule Emisar.Auth do
   """
   def role_carries_runner_access?(role), do: Role.carries_runner_access?(role)
 
+  # -- Current account authority ---------------------------------------
+
+  @doc """
+  Refreshes the exact account identity before an operational read or action.
+
+  The original permissions remain an upper bound: a role change can remove
+  authority, never restore permissions the caller deliberately omitted. Checks
+  the supplied permission, permission list, or `{:one_of, permissions}` before
+  any database access, then checks it again against the current identity.
+
+  Returns `{:ok, subject}` with current actor/account/role facts and preserved
+  session provenance, or `{:error, :unauthorized}`. Callers must use the returned
+  subject for subsequent row scoping. This does not replace session validation,
+  current target access checks, or mutation-specific locking.
+  """
+  def fetch_current_subject(required_permissions, %Subject{} = subject) do
+    with :ok <- __MODULE__.Authorizer.ensure_has_permissions(subject, required_permissions),
+         {:ok, current_subject} <- __MODULE__.CurrentSubject.fetch(subject),
+         :ok <-
+           __MODULE__.Authorizer.ensure_has_permissions(current_subject, required_permissions) do
+      {:ok, current_subject}
+    end
+  end
+
   # -- Post-auth account target -----------------------------------------
 
   @doc """

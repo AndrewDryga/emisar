@@ -20,7 +20,9 @@ defmodule EmisarWeb.MCP.Instructions do
   instructions. Use exact identifiers and immutable references returned by Emisar; do not invent \
   or substitute hidden resources. Compose only the first discovery call from the task; afterward \
   follow each returned `next` continuation verbatim rather than re-deriving identifiers, filters, \
-  or arguments. Discovery already spans every in-scope runner, so do not repeat it per runner.
+  or arguments. Action search spans every eligible runner, so do not repeat it per runner. \
+  Catalog inspection also shows trusted resources outside your action permissions; readable \
+  details do not grant permission to execute them.
 
   If discovery returns no applicable action, report the missing capability. Do not invent, \
   install, or bypass it.

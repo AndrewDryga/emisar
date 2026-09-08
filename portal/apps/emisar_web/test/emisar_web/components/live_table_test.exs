@@ -68,7 +68,11 @@ defmodule EmisarWeb.LiveTableTest do
            |> Enum.empty?()
 
     assert document |> LazyHTML.query("select[name=directory_group_id]") |> Enum.empty?()
-    refute document |> LazyHTML.query("input[name=search][value=Maya]") |> Enum.empty?()
+
+    refute document
+           |> LazyHTML.query("input[name=synced_members_search][value=Maya]")
+           |> Enum.empty?()
+
     refute document |> LazyHTML.query("#{dropdown} a[aria-current=true]") |> Enum.empty?()
 
     [choice] =
@@ -317,6 +321,69 @@ defmodule EmisarWeb.LiveTableTest do
     end
   end
 
+  describe "apply_filter/5" do
+    test "prefixed filtering preserves sibling pages and explicit All over a default" do
+      filters = [%Filter{name: :view, default: "needs_decision"}]
+
+      current = %{
+        "account_id_or_slug" => "acme",
+        "pending_view" => "needs_decision",
+        "pending_after" => "reset-me",
+        "pending_before" => "also-reset",
+        "grants_after" => "keep-grants",
+        "decided_before" => "keep-history"
+      }
+
+      socket =
+        LiveTable.apply_filter(
+          %Phoenix.LiveView.Socket{},
+          "/app/acme/approvals",
+          %{"pending_view" => "", "grants_after" => "not-owned", "_target" => ["pending_view"]},
+          filters,
+          prefix: "pending_",
+          current_params: current
+        )
+
+      assert {:live, :patch, %{to: path}} = socket.redirected
+
+      assert Plug.Conn.Query.decode(URI.parse(path).query) == %{
+               "pending_view" => "",
+               "grants_after" => "keep-grants",
+               "decided_before" => "keep-history"
+             }
+    end
+
+    test "list values round trip and ordinary empty filters reset their own page" do
+      filters = [list_filter(:category), string_filter(:name)]
+
+      socket =
+        LiveTable.apply_filter(
+          %Phoenix.LiveView.Socket{},
+          "/app/acme/audit",
+          %{
+            "category" => ["access", "fleet"],
+            "name" => "",
+            "after" => "old",
+            "_target" => ["category"]
+          },
+          filters
+        )
+
+      assert {:live, :patch, %{to: path}} = socket.redirected
+      assert Plug.Conn.Query.decode(URI.parse(path).query) == %{"category" => ["access", "fleet"]}
+
+      cleared =
+        LiveTable.apply_filter(
+          %Phoenix.LiveView.Socket{},
+          "/app/acme/audit",
+          %{"name" => ""},
+          filters
+        )
+
+      assert {:live, :patch, %{to: "/app/acme/audit"}} = cleared.redirected
+    end
+  end
+
   describe "has_active_filters?/2 — a default is the baseline, not an applied filter" do
     test "a filter sitting at its default (absent param) is NOT active" do
       filters = [%{list_filter(:status) | default: "live"}]
@@ -443,12 +510,12 @@ defmodule EmisarWeb.LiveTableTest do
 
         assert document
                |> LazyHTML.query(
-                 "#things-filter select[name=status] option[value=active][selected]"
+                 "#things-filter select[name=#{prefix}status] option[value=active][selected]"
                )
                |> Enum.count() == 1
 
         assert document
-               |> LazyHTML.query("#things-filter select[name=status] option[value='']")
+               |> LazyHTML.query("#things-filter select[name=#{prefix}status] option[value='']")
                |> Enum.count() == 1
 
         assert document |> LazyHTML.query("#things-filter [disabled]") |> Enum.empty?()

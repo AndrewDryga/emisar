@@ -146,7 +146,7 @@ defmodule EmisarWeb.DashboardLive do
   end
 
   # First run only. The checklist's "ask your agent to run an action" step needs
-  # the ONLINE runners' advertised actions, so this path reads the scoped fleet
+  # the ONLINE runners' advertised actions, so this path reads the shared fleet
   # — one read serving both the pillar's two integers and the ids the catalog
   # lookup needs.
   defp refresh_setup_fleet(socket) do
@@ -161,7 +161,7 @@ defmodule EmisarWeb.DashboardLive do
     # the fleet pillar can't drift from the runners page.
     readiness = Enum.map(runners, &Runners.runner_readiness/1)
     online_runner_ids = for %{connection: %{state: :online}} = r <- readiness, do: r.runner_id
-    actions_read = Catalog.action_risks_for_runner_ids(online_runner_ids, subject)
+    actions_read = Catalog.action_scope_risks_for_runner_ids(online_runner_ids, subject)
 
     actions_advertised? =
       case actions_read do
@@ -229,6 +229,7 @@ defmodule EmisarWeb.DashboardLive do
   defp refresh_approvals(socket) do
     read =
       Approvals.list_pending_approval_requests(socket.assigns.current_subject,
+        view: :needs_decision,
         page: [limit: 5],
         count: false
       )

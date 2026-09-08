@@ -31,7 +31,7 @@ defmodule Emisar.Approvals.Request.Query do
     do: where(queryable, [requests: r], r.status == ^status)
 
   # PostgreSQL equivalent of Catalog.MCPProjection's canonical pack-ref
-  # contract. Approval visibility is evaluated in SQL for pagination/counting,
+  # contract. Decision eligibility is evaluated in SQL for pagination/counting,
   # so corrupt frozen identities must be rejected here rather than filtered
   # after the page has already been sliced.
   @canonical_pack_ref_pattern "^[a-z][a-z0-9_-]*@[0-9]+([.][0-9]+)*(-[0-9A-Za-z.-]+)?([+][0-9A-Za-z.-]+)?/sha256:[0-9a-f]{64}$"
@@ -42,7 +42,7 @@ defmodule Emisar.Approvals.Request.Query do
   # Long on purpose — do not "simplify to the Grant sibling's 4 lines". A grant
   # targets ONE runner and one pack_ref, so its filter decomposes trivially. A
   # request targets one of TWO shapes, and the second is the hard one: a
-  # runbook-execution request is visible only when the execution HAS items and
+  # runbook-execution request is actionable only when the execution HAS items and
   # NO item falls outside the caller's reach — the exists/not-exists pair below
   # is that all-items check, written as a double negation because SQL has no
   # FORALL. The four near-twin `case access` blocks cannot be extracted either:
@@ -142,7 +142,7 @@ defmodule Emisar.Approvals.Request.Query do
       dynamic(
         [runbook_execution_items: item],
         item.runbook_execution_id == parent_as(:requests).runbook_execution_id and
-          not (^item_allowed)
+          not coalesce(^item_allowed, false)
       )
 
     disallowed_execution_item =
@@ -196,6 +196,29 @@ defmodule Emisar.Approvals.Request.Query do
 
   def pending(queryable \\ all()),
     do: where(queryable, [requests: r], r.status == :pending)
+
+  # Apply before pagination and badge counts. Target access is a separate
+  # predicate: expiry, separation of duties and an existing vote do not hide
+  # the request from the workspace's shared review/history surface.
+  def awaiting_decision_by(queryable, user_id, now) do
+    decision =
+      Emisar.Approvals.Decision.Query.all()
+      |> where(
+        [approval_decisions: decision],
+        decision.account_id == parent_as(:requests).account_id and
+          decision.request_id == parent_as(:requests).id and decision.decider_id == ^user_id
+      )
+      |> select([approval_decisions: _decision], 1)
+
+    queryable
+    |> pending()
+    |> where(
+      [requests: request],
+      (is_nil(request.expires_at) or request.expires_at > ^now) and
+        (request.allow_self_approval or is_nil(request.requested_by_id) or
+           request.requested_by_id != ^user_id) and not exists(decision)
+    )
+  end
 
   def decided(queryable \\ all()),
     do: where(queryable, [requests: r], r.status != :pending)

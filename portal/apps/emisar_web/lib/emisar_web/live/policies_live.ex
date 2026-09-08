@@ -82,7 +82,6 @@ defmodule EmisarWeb.PoliciesLive do
 
   defp load_all(socket) do
     subject = socket.assigns.current_subject
-    capabilities = Policies.policy_management_capabilities(subject)
 
     {account_policy, account_error?} =
       case Policies.fetch_policy(subject) do
@@ -94,13 +93,38 @@ defmodule EmisarWeb.PoliciesLive do
     socket
     |> assign(:loading?, not account_error?)
     |> assign(:account_error?, account_error?)
-    |> assign(:can_manage?, capabilities.can_manage?)
-    |> assign(:has_runner_access?, capabilities.has_runner_access?)
-    |> assign(:can_manage_scoped?, capabilities.can_manage_scoped?)
-    |> assign(:can_manage_account?, capabilities.can_manage_account?)
+    |> refresh_management_capabilities()
     |> assign(:account, if(account_error?, do: nil, else: build_account_editor(account_policy)))
     |> refresh_target_availability()
     |> schedule_preview("account", 0)
+  end
+
+  defp refresh_management_capabilities(socket) do
+    targets =
+      Enum.flat_map(socket.assigns.rulesets, fn editor ->
+        selected =
+          if editor.scope_type in [:runner, :group],
+            do: [{editor.scope_type, editor.scope_value}],
+            else: []
+
+        options =
+          for option <- Map.get(editor, :target_options, []) do
+            {if(option.scope_type == "runner", do: :runner, else: :group), option.scope_value}
+          end
+
+        selected ++ options
+      end)
+
+    capabilities =
+      Policies.policy_management_capabilities(socket.assigns.current_subject, targets)
+
+    assign(socket,
+      can_manage?: capabilities.can_manage?,
+      has_runner_access?: capabilities.has_runner_access?,
+      can_manage_scoped?: capabilities.can_manage_scoped?,
+      can_manage_account?: capabilities.can_manage_account?,
+      target_management: capabilities.targets
+    )
   end
 
   defp load_summaries(socket, params, keep_uid \\ nil) do
@@ -221,6 +245,7 @@ defmodule EmisarWeb.PoliciesLive do
           {:noreply,
            socket
            |> assign(:rulesets, socket.assigns.rulesets ++ [editor])
+           |> refresh_management_capabilities()
            |> schedule_preview(uid, 0)}
 
         {:error, _} ->
@@ -699,6 +724,7 @@ defmodule EmisarWeb.PoliciesLive do
               target_error: nil
           }
         )
+        |> refresh_management_capabilities()
 
       {:error, :invalid_search} ->
         put_editor(socket, uid, fn editor ->
@@ -743,6 +769,7 @@ defmodule EmisarWeb.PoliciesLive do
                 selected_target: target
             }
           )
+          |> refresh_management_capabilities()
           |> refresh_target_availability()
         end
 
@@ -762,10 +789,11 @@ defmodule EmisarWeb.PoliciesLive do
       uid,
       &%{&1 | scope_type: nil, scope_value: "", target_label: "", selected_target: nil}
     )
+    |> refresh_management_capabilities()
     |> refresh_target_availability()
   end
 
-  defp target_options(ruleset, rulesets) do
+  defp target_options(ruleset, rulesets, management) do
     reserved = MapSet.new(reserved_targets(rulesets, ruleset.uid))
 
     rows =
@@ -778,7 +806,7 @@ defmodule EmisarWeb.PoliciesLive do
     |> Enum.map(fn row ->
       type = if row.scope_type == "runner", do: :runner, else: :group
       taken? = row.taken? or MapSet.member?(reserved, {type, row.scope_value})
-      unavailable? = Map.get(row, :unavailable?, false)
+      unavailable? = not Map.get(management, {type, row.scope_value}, false)
 
       suffix =
         cond do
@@ -852,6 +880,13 @@ defmodule EmisarWeb.PoliciesLive do
       _ ->
         {:noreply, socket}
     end
+  end
+
+  def handle_info(
+        {:list_changed, :team, "membership.runner_access_changed", user_id},
+        %{assigns: %{current_user: %{id: user_id}}} = socket
+      ) do
+    {:noreply, socket |> refresh_management_capabilities() |> refresh_target_availability()}
   end
 
   # Badge/fleet broadcasts do not change an operator's working draft.
@@ -951,8 +986,11 @@ defmodule EmisarWeb.PoliciesLive do
             <.doc_link href={~p"/docs/policies-and-approvals"}>Policy docs</.doc_link>
           </.page_intro>
 
-          <p :if={@has_runner_access? and not @can_manage?} class="text-xs text-zinc-400">
+          <p :if={not @can_manage?} class="text-xs text-zinc-400">
             You can view the policy, but only owners and admins can change it.
+          </p>
+          <p :if={@can_manage? and not @has_runner_access?} class="text-xs text-zinc-400">
+            You can view all policies. Editing requires access to the affected runners and all packs.
           </p>
           <p
             :if={@has_runner_access? and @can_manage? and not @can_manage_scoped?}
@@ -969,7 +1007,7 @@ defmodule EmisarWeb.PoliciesLive do
              self-contained controls and the earned amber warnings. --%>
         <section id="default-policy">
           <.section_header title="Default policy">
-            <:badge :if={not @has_runner_access?}>
+            <:badge :if={not @can_manage_account?}>
               <.chip
                 id="policy-read-only"
                 tone={:neutral}
@@ -980,13 +1018,7 @@ defmodule EmisarWeb.PoliciesLive do
               </.chip>
             </:badge>
             <:subtitle>
-              <%= if @has_runner_access? do %>
-                Applies when a runner has no matching runner or group ruleset.
-              <% else %>
-                <span id="policy-runner-access-notice">
-                  You don't have access to any runners. You can view only the default policy.
-                </span>
-              <% end %>
+              Applies when a runner has no matching runner or group ruleset.
             </:subtitle>
             <%!-- Navigation, but the SAME verb repeats on every targeted-ruleset
                  header below, where the Remove peer forces the bordered face —
@@ -1037,13 +1069,12 @@ defmodule EmisarWeb.PoliciesLive do
                 overrides={@account.overrides}
                 approval={@account.approval}
                 catalog_path={~p"/app/#{@current_account}/packs"}
-                catalog_visible?={@has_runner_access?}
               />
             </aside>
           </div>
         </section>
 
-        <section :if={@has_runner_access?}>
+        <section>
           <.section_header title="Targeted rulesets">
             <:subtitle>
               A ruleset <strong class="text-zinc-300">replaces</strong>
@@ -1070,7 +1101,7 @@ defmodule EmisarWeb.PoliciesLive do
             }
             class="text-sm text-zinc-400"
           >
-            No targeted rulesets for the runners you can access.
+            No targeted rulesets yet.
           </p>
 
           <div id="saved-policies" phx-update="stream" class="divide-y divide-zinc-800/70">
@@ -1106,7 +1137,15 @@ defmodule EmisarWeb.PoliciesLive do
                 account_approval={@account.approval}
                 rulesets={@rulesets}
                 filter_params={@filter_params}
-                can_manage={@can_manage_scoped?}
+                can_choose_target={@can_manage_scoped?}
+                can_remove={
+                  @can_manage_account? or
+                    Map.get(@target_management, {ruleset.scope_type, ruleset.scope_value}, false)
+                }
+                can_manage={
+                  Map.get(@target_management, {ruleset.scope_type, ruleset.scope_value}, false)
+                }
+                target_management={@target_management}
                 catalog_path={~p"/app/#{@current_account}/packs"}
               />
             </div>
@@ -1148,7 +1187,6 @@ defmodule EmisarWeb.PoliciesLive do
   attr :overrides, :list, required: true
   attr :approval, :map, required: true
   attr :catalog_path, :string, required: true, doc: "link to the full action catalog (Packs)"
-  attr :catalog_visible?, :boolean, default: true
 
   # The side rail: apply the LIVE rules to the target's catalog and preview the
   # decision — allow / needs-approval / deny, with a few example actions — so the
@@ -1198,13 +1236,7 @@ defmodule EmisarWeb.PoliciesLive do
         <%!-- No catalog yet: the empty note stands in as the subtitle — no
              "…for your fleet's 0 actions." line to state a count of nothing. --%>
         <p
-          :if={@total == 0 and not @catalog_visible?}
-          class="mt-1 text-xs leading-relaxed text-zinc-400"
-        >
-          No actions are available to preview with your current access.
-        </p>
-        <p
-          :if={@total == 0 and @catalog_visible?}
+          :if={@total == 0}
           class="mt-1 text-xs leading-relaxed text-zinc-400"
         >
           <%= if @editor_id == "account" do %>
@@ -1317,6 +1349,9 @@ defmodule EmisarWeb.PoliciesLive do
   attr :rulesets, :list, required: true
   attr :filter_params, :map, required: true
   attr :can_manage, :boolean, required: true
+  attr :can_choose_target, :boolean, required: true
+  attr :can_remove, :boolean, required: true
+  attr :target_management, :map, required: true
   attr :catalog_path, :string, required: true, doc: "link to the full action catalog (Packs)"
 
   # A NAKED unit in the rulesets stack (the runbook step grammar) — the
@@ -1362,7 +1397,7 @@ defmodule EmisarWeb.PoliciesLive do
                 View audit trail
               </.button>
               <.confirm_button
-                :if={@can_manage}
+                :if={@can_remove}
                 id={"remove-ruleset-#{@ruleset.uid}"}
                 title="Remove this ruleset?"
                 confirm_label="Remove"
@@ -1398,6 +1433,7 @@ defmodule EmisarWeb.PoliciesLive do
               label="Find a runner or group"
               value={@ruleset.target_search}
               phx-debounce="300"
+              disabled={not @can_choose_target}
             />
           </form>
           <%!-- Unsaved ruleset: the target picker with a red Remove aligned to the
@@ -1420,14 +1456,13 @@ defmodule EmisarWeb.PoliciesLive do
                 name="target"
                 label="Apply this ruleset to"
                 label_variant={:eyebrow}
-                disabled={not @can_manage}
+                disabled={not @can_choose_target}
                 prompt="Choose a runner or group…"
                 prompt_selected={is_nil(@ruleset.scope_type)}
-                options={target_options(@ruleset, @rulesets)}
+                options={target_options(@ruleset, @rulesets, @target_management)}
               />
             </form>
             <.button
-              :if={@can_manage}
               variant={:secondary}
               tone={:rose}
               size={:lg}
@@ -1455,6 +1490,10 @@ defmodule EmisarWeb.PoliciesLive do
             page_count={length(@ruleset.target_options)}
           />
         <% end %>
+
+        <p :if={@ruleset.scope_type && not @can_manage} class="mt-4 text-xs text-zinc-400">
+          Read-only. Editing requires permission for every runner in this target and all packs.
+        </p>
 
         <.policy_fields
           :if={@ruleset.scope_type}

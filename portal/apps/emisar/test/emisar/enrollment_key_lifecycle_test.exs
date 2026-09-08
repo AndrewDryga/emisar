@@ -63,6 +63,8 @@ defmodule Emisar.EnrollmentKeyLifecycleTest do
 
   test "Active excludes expired, revoked, deleted, spent, and exhausted reusable keys" do
     account = Fixtures.Accounts.create_account()
+    membership = Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
+    subject = Fixtures.Subjects.membership_subject(membership)
     {_, active} = Fixtures.Runners.create_enrollment_key(account_id: account.id)
 
     {_, reusable} =
@@ -83,7 +85,6 @@ defmodule Emisar.EnrollmentKeyLifecycleTest do
 
     Fixtures.Runners.spend_enrollment_key(exhausted)
 
-    subject = Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account)
     assert {:ok, keys, _} = Runners.list_enrollment_keys(subject, filter: [status: ["active"]])
     assert MapSet.new(keys, & &1.id) == MapSet.new([active.id, reusable.id])
 
@@ -96,10 +97,11 @@ defmodule Emisar.EnrollmentKeyLifecycleTest do
 
   test "source filtering preserves account isolation and console origin after enrollment" do
     account = Fixtures.Accounts.create_account()
+    membership = Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
+    subject = Fixtures.Subjects.membership_subject(membership)
     {raw, console} = Fixtures.Runners.create_install_key(account_id: account.id)
     {_, manual} = Fixtures.Runners.create_enrollment_key(account_id: account.id)
     Fixtures.Runners.create_install_key()
-    subject = Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account)
 
     assert {:ok, [key], _} = Runners.list_enrollment_keys(subject, filter: [source: ["console"]])
     assert key.id == console.id
@@ -117,7 +119,9 @@ defmodule Emisar.EnrollmentKeyLifecycleTest do
     assert Runners.enrollment_key_status(key) == :spent
     refute EnrollmentKey.auto_unused?(key)
 
-    viewer = Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account, role: :viewer)
+    viewer =
+      Fixtures.Memberships.create_membership(account_id: account.id, role: "viewer")
+      |> Fixtures.Subjects.membership_subject()
 
     assert {:error, :unauthorized} =
              Runners.list_enrollment_keys(viewer, filter: [source: ["console"]])

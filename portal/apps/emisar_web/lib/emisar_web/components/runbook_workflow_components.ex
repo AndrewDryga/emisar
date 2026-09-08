@@ -313,6 +313,7 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
   attr :total_stages, :integer, required: true
   attr :draft, :map, required: true
   attr :catalog, :map, required: true
+  attr :catalog_generation, :integer, required: true
   attr :open_panels, :any, required: true
   attr :definition_issues, :list, required: true
   attr :read_only?, :boolean, required: true
@@ -438,6 +439,7 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
             stage_index={@stage_index}
             draft={@draft}
             catalog={@catalog}
+            catalog_generation={@catalog_generation}
             open_panels={@open_panels}
             definition_issues={@definition_issues}
             read_only?={@read_only?}
@@ -462,6 +464,7 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
   attr :stage_index, :integer, required: true
   attr :draft, :map, required: true
   attr :catalog, :map, required: true
+  attr :catalog_generation, :integer, required: true
   attr :open_panels, :any, required: true
   attr :definition_issues, :list, required: true
   attr :read_only?, :boolean, required: true
@@ -1044,7 +1047,7 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
         true -> action_id
       end
 
-    pool_id = RunbookEditorCatalog.action_pool_id(refs, selection)
+    pool_id = RunbookEditorCatalog.action_pool_id(refs, selection, assigns.catalog_generation)
     picker_key = :erlang.phash2({choice, pool_id, extra_groups})
 
     assigns

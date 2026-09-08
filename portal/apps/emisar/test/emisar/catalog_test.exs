@@ -1631,10 +1631,7 @@ defmodule Emisar.CatalogTest do
       assert unchanged.hash == nil
     end
 
-    # A trust decision is not a way to enumerate the fleet: the error names only
-    # the disagreeing runners this member already reaches, so a runner-restricted
-    # operator learns no name the runners list would withhold.
-    test "the disagreement names only the runners the deciding member can reach", %{
+    test "incomplete target authority is denied before descriptor disagreement", %{
       account: account,
       subject: subject,
       runner: first_runner
@@ -1666,12 +1663,7 @@ defmodule Emisar.CatalogTest do
 
       assert {:ok, [pending], _} = Catalog.list_pack_versions(subject)
 
-      assert {:error, {:descriptor_mismatch, "custom.inspect", runner_names}} =
-               Catalog.trust_pack_version(pending.id, narrowed)
-
-      assert runner_names == [first_runner.name]
-
-      # Still fail-closed — narrowing the NAMES never widens the decision.
+      assert Catalog.trust_pack_version(pending.id, narrowed) == {:error, :unauthorized}
       assert Repo.reload!(pending).trust_state == :pending
     end
 
@@ -1861,9 +1853,7 @@ defmodule Emisar.CatalogTest do
       assert trusted.trust_state == :trusted
     end
 
-    # The mirror: the list hides this pack from them, so the mutation must answer
-    # exactly as it would for a version that is not there.
-    test "a pack-restricted member cannot trust a version the list hides from them", %{
+    test "a pack-restricted member can read a version but cannot trust it without authority", %{
       account: account,
       subject: subject,
       runner: runner
@@ -1877,20 +1867,19 @@ defmodule Emisar.CatalogTest do
       {:ok, [pack_version], _} = Catalog.list_pack_versions(subject)
       restricted = pack_restricted_subject(account, ["something-else"])
 
-      assert {:ok, [], _} = Catalog.list_pack_versions(restricted)
+      assert {:ok, [%PackVersion{id: visible_id}], _} = Catalog.list_pack_versions(restricted)
+      assert visible_id == pack_version.id
 
-      assert Catalog.trust_pack_version(pack_version.id, restricted) == {:error, :not_found}
+      assert Catalog.trust_pack_version(pack_version.id, restricted) == {:error, :unauthorized}
       assert Repo.reload!(pack_version).trust_state == :pending
     end
 
-    # The console list narrows by pack access AND by the runners the member
-    # reaches, so a version only out-of-reach hosts deploy is decided by nobody
-    # who cannot see it — an id lifted out of the audit trail included.
-    test "a runner-restricted member cannot trust a version only hidden runners deploy", %{
-      account: account,
-      subject: subject,
-      runner: runner
-    } do
+    test "a runner-restricted member cannot trust a version used by runners outside action scope",
+         %{
+           account: account,
+           subject: subject,
+           runner: runner
+         } do
       reachable = Fixtures.Runners.create_runner(account_id: account.id)
 
       _ =
@@ -1902,9 +1891,11 @@ defmodule Emisar.CatalogTest do
       {:ok, [pack_version], _} = Catalog.list_pack_versions(subject)
       restricted = runner_restricted_subject(account, [reachable.id])
 
-      assert {:ok, %{pack_versions: []}} = Catalog.list_console_packs(%{}, restricted)
+      assert {:ok, projection} = Catalog.list_console_packs(%{}, restricted)
+      assert length(projection.pack_versions) == 1
+      refute projection.version_facts[pack_version.id].can_manage?
 
-      assert Catalog.trust_pack_version(pack_version.id, restricted) == {:error, :not_found}
+      assert Catalog.trust_pack_version(pack_version.id, restricted) == {:error, :unauthorized}
       assert Repo.reload!(pack_version).trust_state == :pending
     end
   end
@@ -2125,7 +2116,7 @@ defmodule Emisar.CatalogTest do
       {:ok, [pack_version], _} = Catalog.list_pack_versions(subject)
       restricted = pack_restricted_subject(account, ["something-else"])
 
-      assert Catalog.reject_pack_version(pack_version.id, restricted) == {:error, :not_found}
+      assert Catalog.reject_pack_version(pack_version.id, restricted) == {:error, :unauthorized}
       assert Repo.reload!(pack_version).trust_state == :pending
     end
   end
@@ -2208,7 +2199,7 @@ defmodule Emisar.CatalogTest do
     # This mutation reaches the row by id rather than through the shared lock, so
     # its own guard judges the pack — and judges it BEFORE the trust state, so a
     # refusal cannot report whether an unreachable version is trusted.
-    test "a pack-restricted member gets :not_found, never :not_trusted", %{
+    test "a pack-restricted member gets :unauthorized, never :not_trusted", %{
       account: account,
       subject: subject,
       runner: runner
@@ -2223,21 +2214,22 @@ defmodule Emisar.CatalogTest do
       pending = Enum.find(versions, &(&1.pack_id == "hidden"))
       restricted = pack_restricted_subject(account, ["something-else"])
 
-      assert Catalog.override_pack_retirement(pending.id, restricted) == {:error, :not_found}
+      assert Catalog.override_pack_retirement(pending.id, restricted) == {:error, :unauthorized}
     end
 
-    # The same reach the console list narrows by: a version only an out-of-reach
-    # runner deploys is invisible, so it cannot be overridden from an id lifted
-    # out of the audit trail — the runner dimension, not just pack access.
-    test "a runner-restricted member cannot override a version only hidden runners deploy", %{
+    test "a runner-restricted member cannot override a version used outside action scope", %{
       account: account,
       pack_version: pack_version
     } do
       reachable = Fixtures.Runners.create_runner(account_id: account.id)
       restricted = runner_restricted_subject(account, [reachable.id])
 
-      assert {:ok, %{pack_versions: []}} = Catalog.list_console_packs(%{}, restricted)
-      assert Catalog.override_pack_retirement(pack_version.id, restricted) == {:error, :not_found}
+      assert {:ok, projection} = Catalog.list_console_packs(%{}, restricted)
+      assert length(projection.pack_versions) == 1
+      refute projection.version_facts[pack_version.id].can_manage?
+
+      assert Catalog.override_pack_retirement(pack_version.id, restricted) ==
+               {:error, :unauthorized}
     end
   end
 
@@ -2284,20 +2276,19 @@ defmodule Emisar.CatalogTest do
       assert audit.payload["revoked_hash"] == Fixtures.Catalog.pack_hash("sha256:OK")
     end
 
-    # The runner dimension, matching the console list: a trusted version only an
-    # out-of-reach runner deploys cannot be revoked from an id lifted out of the
-    # audit trail.
-    test "a runner-restricted member cannot revoke a version only hidden runners deploy", %{
+    test "a runner-restricted member cannot revoke a version used outside action scope", %{
       account: account,
       pack_version: pack_version
     } do
       reachable = Fixtures.Runners.create_runner(account_id: account.id)
       restricted = runner_restricted_subject(account, [reachable.id])
 
-      assert {:ok, %{pack_versions: []}} = Catalog.list_console_packs(%{}, restricted)
+      assert {:ok, projection} = Catalog.list_console_packs(%{}, restricted)
+      assert length(projection.pack_versions) == 1
+      refute projection.version_facts[pack_version.id].can_manage?
 
       assert Catalog.revoke_pack_version_trust(pack_version.id, restricted) ==
-               {:error, :not_found}
+               {:error, :unauthorized}
 
       assert Repo.reload!(pack_version).trust_state == :trusted
     end
@@ -2385,16 +2376,16 @@ defmodule Emisar.CatalogTest do
     end
 
     # Same guard as the retirement override, and the same ordering: the pack is
-    # judged before the trust state, so the refusal says :not_found rather than
+    # judged before the trust state, so the refusal says :unauthorized rather than
     # confirming a trusted version sits behind it.
-    test "a pack-restricted member gets :not_found and the trust survives", %{
+    test "a pack-restricted member gets :unauthorized and the trust survives", %{
       account: account,
       pack_version: pack_version
     } do
       restricted = pack_restricted_subject(account, ["something-else"])
 
       assert Catalog.revoke_pack_version_trust(pack_version.id, restricted) ==
-               {:error, :not_found}
+               {:error, :unauthorized}
 
       assert Repo.reload!(pack_version).trust_state == :trusted
     end
@@ -2510,7 +2501,7 @@ defmodule Emisar.CatalogTest do
     } do
       restricted = pack_restricted_subject(account, ["something-else"])
 
-      assert Catalog.delete_pack_version(pack_version.id, restricted) == {:error, :not_found}
+      assert Catalog.delete_pack_version(pack_version.id, restricted) == {:error, :unauthorized}
       assert Repo.reload!(pack_version)
     end
   end
@@ -2624,7 +2615,7 @@ defmodule Emisar.CatalogTest do
     } do
       restricted = pack_restricted_subject(account, ["something-else"])
 
-      assert Catalog.delete_pack("custom", restricted) == {:error, :not_found}
+      assert Catalog.delete_pack("custom", restricted) == {:error, :unauthorized}
 
       assert {:ok, versions, _} = Catalog.list_pack_versions(subject)
       assert Enum.any?(versions, &(&1.pack_id == "custom"))
@@ -2683,6 +2674,27 @@ defmodule Emisar.CatalogTest do
       %{user: user, account: account, subject: subject}
     end
 
+    test "runner-restricted managers retain the schedule, but current role loss denies every entry",
+         %{account: account} do
+      membership = Fixtures.Memberships.create_membership(account_id: account.id, role: "admin")
+      subject = Fixtures.Subjects.membership_subject(membership)
+      {:ok, access} = Accounts.RunnerAccess.restricted(["db"], [])
+      Fixtures.Memberships.force_runner_access(membership, access)
+      assert Catalog.subject_can_manage_pack_retention?(subject)
+
+      assert {:ok, _} =
+               Catalog.update_pack_retention_settings(account, %{"days" => "30"}, subject)
+
+      Fixtures.Memberships.force_role(membership, "viewer")
+      refute Catalog.subject_can_manage_pack_retention?(subject)
+
+      assert {:error, :unauthorized} =
+               Catalog.update_pack_retention_settings(account, %{"days" => "1"}, subject)
+
+      assert {:error, :unauthorized} = Catalog.sweep_unseen_pack_versions(subject)
+      assert Repo.reload!(account).settings.pack_unseen_retention_days == 30
+    end
+
     test "an owner turns cleanup on with the raw form period", %{
       user: user,
       account: account,
@@ -2704,7 +2716,7 @@ defmodule Emisar.CatalogTest do
     end
 
     test "a blank period turns cleanup off", %{account: account, subject: subject} do
-      Fixtures.Accounts.set_account_settings(account, %{pack_unseen_retention_days: 30})
+      Fixtures.Accounts.set_pack_retention_days(account, 30)
 
       assert {:ok, updated} =
                Catalog.update_pack_retention_settings(account, %{"days" => ""}, subject)
@@ -2718,7 +2730,7 @@ defmodule Emisar.CatalogTest do
       account: account,
       subject: subject
     } do
-      Fixtures.Accounts.set_account_settings(account, %{pack_unseen_retention_days: 30})
+      Fixtures.Accounts.set_pack_retention_days(account, 30)
 
       assert {:error, changeset} =
                Catalog.update_pack_retention_settings(account, %{"days" => "0"}, subject)
@@ -2785,7 +2797,7 @@ defmodule Emisar.CatalogTest do
   describe "pack_retention_days/1" do
     test "a positive stored period is the sweep's window" do
       account = Fixtures.Accounts.create_account()
-      account = Fixtures.Accounts.set_account_settings(account, %{pack_unseen_retention_days: 14})
+      account = Fixtures.Accounts.set_pack_retention_days(account, 14)
 
       assert Catalog.pack_retention_days(account) == {:ok, 14}
       assert Catalog.pack_retention_days(account.settings) == {:ok, 14}
@@ -2835,7 +2847,7 @@ defmodule Emisar.CatalogTest do
       # scenarios here target versions whose advertiser is durably gone.
       Fixtures.Runners.mark_disconnected_at(runner, forty_days_ago)
 
-      account = Fixtures.Accounts.set_account_settings(account, %{pack_unseen_retention_days: 30})
+      account = Fixtures.Accounts.set_pack_retention_days(account, 30)
 
       %{user: user, account: account, subject: subject, runner: runner, stale: stale}
     end
@@ -2920,7 +2932,7 @@ defmodule Emisar.CatalogTest do
       account: account,
       subject: subject
     } do
-      Fixtures.Accounts.set_account_settings(account, %{pack_unseen_retention_days: nil})
+      Fixtures.Accounts.set_pack_retention_days(account, nil)
 
       assert Catalog.sweep_unseen_pack_versions(subject) == {:error, :retention_disabled}
     end
@@ -3651,7 +3663,7 @@ defmodule Emisar.CatalogTest do
                Catalog.list_actions_for_runner(runner.id, subject, filter: [risk: ["critical"]])
     end
 
-    test "current access scopes rows, filters, counts, and pagination", %{
+    test "action grants do not narrow rows, filters, counts, or pagination", %{
       account: account,
       subject: subject,
       runner: runner
@@ -3689,10 +3701,12 @@ defmodule Emisar.CatalogTest do
 
       force_runner_access(account, subject, postgres_only)
 
-      assert {:ok, [%RunnerAction{action_id: "postgres.status"}], %{count: 1}} =
+      assert {:ok, rows, %{count: 2}} =
                Catalog.list_actions_for_runner(runner.id, subject, count: true)
 
-      assert {:ok, [], %{count: 0}} =
+      assert Enum.sort(Enum.map(rows, & &1.action_id)) == ["linux.reboot_host", "postgres.status"]
+
+      assert {:ok, [%RunnerAction{action_id: "linux.reboot_host"}], %{count: 1}} =
                Catalog.list_actions_for_runner(runner.id, subject,
                  count: true,
                  filter: [risk: ["critical"]]
@@ -3732,7 +3746,7 @@ defmodule Emisar.CatalogTest do
     end
   end
 
-  describe "list_pack_advertisements/1" do
+  describe "list_action_scope_pack_advertisements/1" do
     test "maps each pack to the runners advertising it" do
       {account, subject} = account_with_owner()
       edge = Fixtures.Runners.create_runner(account_id: account.id, group: "edge")
@@ -3752,13 +3766,13 @@ defmodule Emisar.CatalogTest do
         pack_id: "postgres"
       )
 
-      assert {:ok, advertisements} = Catalog.list_pack_advertisements(subject)
+      assert {:ok, advertisements} = Catalog.list_action_scope_pack_advertisements(subject)
       assert Map.keys(advertisements) |> Enum.sort() == ["linux-core", "postgres"]
       assert Enum.sort(advertisements["linux-core"]) == Enum.sort([edge.id, data.id])
       assert advertisements["postgres"] == [data.id]
     end
 
-    test "applies current runner and pack access" do
+    test "grant editor advertisements require current runner and pack action access" do
       {account, subject} = account_with_owner()
 
       subject =
@@ -3793,7 +3807,7 @@ defmodule Emisar.CatalogTest do
 
       force_runner_access(account, subject, data_postgres)
 
-      assert Catalog.list_pack_advertisements(subject) ==
+      assert Catalog.list_action_scope_pack_advertisements(subject) ==
                {:ok, %{"postgres" => [data.id]}}
     end
 
@@ -3803,14 +3817,14 @@ defmodule Emisar.CatalogTest do
       Fixtures.Catalog.create_action(runner: runner, pack_id: "linux-core")
 
       {_other_account, other_subject} = account_with_owner()
-      assert Catalog.list_pack_advertisements(other_subject) == {:ok, %{}}
+      assert Catalog.list_action_scope_pack_advertisements(other_subject) == {:ok, %{}}
     end
 
     test "a subject without view_catalog is denied" do
       {account, _subject} = account_with_owner()
       no_view = %Emisar.Auth.Subject{account: account, role: :runner, permissions: MapSet.new()}
 
-      assert Catalog.list_pack_advertisements(no_view) == {:error, :unauthorized}
+      assert Catalog.list_action_scope_pack_advertisements(no_view) == {:error, :unauthorized}
     end
   end
 
@@ -3943,7 +3957,7 @@ defmodule Emisar.CatalogTest do
       assert Catalog.model_catalog(other_subject) == {:ok, %{packs: [], runners: []}}
     end
 
-    test "narrowed runner access drops the unreachable runner and its pack" do
+    test "narrowed runner action access keeps readable inventory without executable targets" do
       {account, subject} = account_with_owner()
 
       subject =
@@ -3964,16 +3978,27 @@ defmodule Emisar.CatalogTest do
       force_runner_access(account, subject, database_only)
 
       assert {:ok, snapshot} = Catalog.model_catalog(subject)
-      assert Enum.map(snapshot.packs, & &1.pack_id) == ["demo"]
+      assert Enum.map(snapshot.packs, & &1.pack_id) == ["demo", "web"]
+      assert List.last(snapshot.packs).availability == "unavailable"
+      assert Enum.all?(List.last(snapshot.packs).actions, &(&1.compatible_runner_ids == []))
 
       assert {:ok, database_ref} = Runners.public_ref(database_runner)
-      assert Enum.map(snapshot.runners, & &1.runner_ref) == [database_ref]
+      assert {:ok, web_ref} = Runners.public_ref(web_runner)
+
+      assert Enum.sort(Enum.map(snapshot.runners, & &1.runner_ref)) ==
+               Enum.sort([database_ref, web_ref])
 
       force_runner_access(account, subject, Accounts.RunnerAccess.none())
-      assert Catalog.model_catalog(subject) == {:ok, %{packs: [], runners: []}}
+      assert {:ok, readonly} = Catalog.model_catalog(subject)
+      assert length(readonly.runners) == 2
+      assert Enum.all?(readonly.packs, &(&1.availability == "unavailable"))
+
+      assert Enum.all?(readonly.packs, fn pack ->
+               Enum.all?(pack.actions, &(&1.compatible_runner_ids == []))
+             end)
     end
 
-    test "pack access strips denied manifests and degraded diagnostics" do
+    test "pack action access does not hide trusted manifests or degraded diagnostics" do
       {account, subject} = account_with_owner()
 
       subject =
@@ -4015,11 +4040,12 @@ defmodule Emisar.CatalogTest do
       force_runner_access(account, subject, demo_only)
       assert {:ok, snapshot} = Catalog.model_catalog(subject)
 
-      assert Enum.map(snapshot.packs, & &1.pack_id) == ["demo"]
+      assert Enum.map(snapshot.packs, & &1.pack_id) == ["demo", "hidden"]
       assert [%{packs: packs, issues: issues}] = snapshot.runners
-      assert Map.keys(packs) == ["demo"]
+      assert Enum.sort(Map.keys(packs)) == ["demo", "hidden"]
       assert Enum.any?(issues, &(&1.message =~ "allowed failure"))
-      refute inspect(snapshot) =~ "hidden"
+      assert Enum.any?(issues, &(&1.message =~ "denied failure"))
+      assert Enum.all?(List.last(snapshot.packs).actions, &(&1.compatible_runner_ids == []))
     end
   end
 
@@ -4307,10 +4333,7 @@ defmodule Emisar.CatalogTest do
       assert Catalog.resolve_runbook_candidates([], [], narrowed) == {:error, :unauthorized}
     end
 
-    # Both scoped reads behind this resolver are account-filtered, so a foreign
-    # subject gets the empty candidate list — the fail-closed answer for a
-    # request whose runner it may not see, not a leak and not a raise.
-    test "resolves no candidate for a subject in another account" do
+    test "refuses supplied runners from another account" do
       {account, subject} = account_with_owner()
       runner = Fixtures.Runners.create_runner(account_id: account.id)
 
@@ -4341,7 +4364,150 @@ defmodule Emisar.CatalogTest do
       {_other_account, other_subject} = account_with_owner()
 
       assert Catalog.resolve_runbook_candidates([request], [runner], other_subject) ==
-               {:ok, %{{runner.id, "demo", "demo.inspect"} => []}}
+               {:error, :not_found}
+    end
+  end
+
+  describe "resolve_runbook_readable_candidates/3" do
+    test "retirement still withholds trusted descriptors until an explicit override" do
+      {account, subject} = account_with_owner()
+      pack_id = retired_pack_id()
+      runner = Fixtures.Runners.create_runner(account_id: account.id, connected?: false)
+
+      payload =
+        state_payload(
+          packs: %{pack_id => %{"version" => "0.0.0", "hash" => "readable-retired"}},
+          actions: [action("demo.inspect", pack_id: pack_id)]
+        )
+
+      assert {:ok, _} = Catalog.observe_state(runner, payload)
+      assert {:ok, [version], _} = Catalog.list_pack_versions(subject)
+      assert {:ok, trusted} = Catalog.trust_pack_version(version.id, subject)
+
+      # A version trusted before the published retirement watermark advanced
+      # has a complete manifest, but no deliberate retirement override.
+      trusted
+      |> Ecto.Changeset.change(retirement_overridden_at: nil, retirement_overridden_by_id: nil)
+      |> Repo.update!()
+
+      assert {:ok, [runner]} = Runners.list_all_runners_for_account(subject)
+      assert {:ok, ref} = Runners.public_ref(runner)
+
+      request = %{
+        runner_id: runner.id,
+        runner_ref: ref,
+        pack_id: pack_id,
+        action_id: "demo.inspect"
+      }
+
+      key = {runner.id, pack_id, "demo.inspect"}
+
+      assert {:ok, candidates} =
+               Catalog.resolve_runbook_readable_candidates([request], [runner], subject)
+
+      assert candidates[key] == []
+      assert {:ok, _} = Catalog.override_pack_retirement(version.id, subject)
+
+      assert {:ok, candidates} =
+               Catalog.resolve_runbook_readable_candidates([request], [runner], subject)
+
+      assert [_] = candidates[key]
+      changed = put_in(payload, ["packs", pack_id, "hash"], "unreviewed-bytes")
+      assert {:ok, _} = Catalog.observe_state(runner, changed)
+      assert {:ok, [runner]} = Runners.list_all_runners_for_account(subject)
+
+      assert {:ok, candidates} =
+               Catalog.resolve_runbook_readable_candidates([request], [runner], subject)
+
+      assert candidates[key] == []
+    end
+
+    test "reads trusted descriptors with no executable targets, but still requires complete descriptor proof" do
+      {account, owner} = account_with_owner()
+      runner = Fixtures.Runners.create_runner(account_id: account.id, connected?: false)
+      actions = [action("demo.inspect", pack_id: "demo"), action("demo.sibling", pack_id: "demo")]
+
+      payload =
+        state_payload(
+          packs: %{"demo" => %{"version" => "1.2.3", "hash" => "readable"}},
+          actions: actions
+        )
+
+      assert {:ok, _} = Catalog.observe_state(runner, payload)
+      assert {:ok, [version], _} = Catalog.list_pack_versions(owner)
+      assert {:ok, _} = Catalog.trust_pack_version(version.id, owner)
+      membership = Fixtures.Memberships.create_membership(account_id: account.id, role: "viewer")
+      Fixtures.Memberships.force_runner_access(membership, Emisar.Accounts.RunnerAccess.none())
+      subject = Fixtures.Subjects.membership_subject(membership)
+      assert {:ok, [runner]} = Runners.list_all_runners_for_account(subject, preload: [:online?])
+      assert {:ok, ref} = Runners.public_ref(runner)
+
+      request = %{
+        runner_id: runner.id,
+        runner_ref: ref,
+        pack_id: "demo",
+        action_id: "demo.inspect"
+      }
+
+      key = {runner.id, "demo", "demo.inspect"}
+
+      assert {:ok, candidates} =
+               Catalog.resolve_runbook_readable_candidates([request], [runner], subject)
+
+      assert [%{descriptor: %{"action_id" => "demo.inspect"}}] = candidates[key]
+      assert {:error, _} = Catalog.resolve_runbook_candidates([request], [runner], subject)
+
+      assert Catalog.resolve_runbook_readable_candidates(
+               List.duplicate(request, 257),
+               [runner],
+               subject
+             ) == {:error, :fan_out_too_large}
+
+      [inspect_action, sibling] = actions
+
+      drifted =
+        Map.put(payload, "actions", [
+          inspect_action,
+          Map.put(sibling, "description", "Unreviewed sibling instructions")
+        ])
+
+      assert {:ok, _} = Catalog.observe_state(runner, drifted)
+
+      assert {:ok, candidates} =
+               Catalog.resolve_runbook_readable_candidates([request], [runner], subject)
+
+      assert candidates[key] == []
+      assert {:ok, _} = Catalog.observe_state(runner, payload)
+
+      assert {:ok, candidates} =
+               Catalog.resolve_runbook_readable_candidates([request], [runner], subject)
+
+      assert [_] = candidates[key]
+      assert {:ok, _} = Catalog.revoke_pack_version_trust(version.id, owner)
+
+      assert {:ok, candidates} =
+               Catalog.resolve_runbook_readable_candidates([request], [runner], subject)
+
+      assert candidates[key] == []
+    end
+
+    test "denies stale and permissionless readers and rejects foreign runners" do
+      {account, subject} = account_with_owner()
+      foreign = Fixtures.Runners.create_runner()
+
+      assert Catalog.resolve_runbook_readable_candidates([], [foreign], subject) ==
+               {:error, :not_found}
+
+      assert Catalog.resolve_runbook_readable_candidates([], [], %{
+               subject
+               | permissions: MapSet.new()
+             }) == {:error, :unauthorized}
+
+      membership = Fixtures.Memberships.fetch_membership(account.id, subject.actor.id)
+      Fixtures.Memberships.suspend_membership(membership)
+
+      assert Catalog.resolve_runbook_readable_candidates([], [], subject) ==
+               {:error, :unauthorized}
     end
   end
 
@@ -4680,7 +4846,7 @@ defmodule Emisar.CatalogTest do
       assert {:ok, %{}} = Catalog.risk_by_action_ids(["secret.op"], other_subject)
     end
 
-    test "sees only the risks advertised by runners the caller's access reaches", %{
+    test "sees account-wide risks outside current runner action access", %{
       account: account,
       subject: subject
     } do
@@ -4708,12 +4874,13 @@ defmodule Emisar.CatalogTest do
       {:ok, database_only} = Accounts.RunnerAccess.restricted(["database"], [])
       force_runner_access(account, subject, database_only)
 
-      # The critical advertisement lives on a runner this member cannot reach,
-      # so it must not raise the tier they see.
-      assert Catalog.risk_by_action_ids(["shared.op"], subject) == {:ok, %{"shared.op" => :low}}
+      assert Catalog.risk_by_action_ids(["shared.op"], subject) ==
+               {:ok, %{"shared.op" => :critical}}
 
       force_runner_access(account, subject, Accounts.RunnerAccess.none())
-      assert Catalog.risk_by_action_ids(["shared.op"], subject) == {:ok, %{}}
+
+      assert Catalog.risk_by_action_ids(["shared.op"], subject) ==
+               {:ok, %{"shared.op" => :critical}}
     end
 
     test "a subject without view_catalog is denied", %{account: account} do
@@ -4771,7 +4938,7 @@ defmodule Emisar.CatalogTest do
              }
     end
 
-    test "answers only for runners the caller's current access reaches", %{
+    test "answers for account runners outside current action access", %{
       account: account,
       subject: subject
     } do
@@ -4802,10 +4969,14 @@ defmodule Emisar.CatalogTest do
       pairs = [{db_runner.id, "shared.op"}, {web_runner.id, "shared.op"}]
 
       assert Catalog.risk_by_runner_action_pairs(pairs, subject) ==
-               {:ok, %{{db_runner.id, "shared.op"} => :high}}
+               {:ok,
+                %{{db_runner.id, "shared.op"} => :high, {web_runner.id, "shared.op"} => :critical}}
 
       force_runner_access(account, subject, Accounts.RunnerAccess.none())
-      assert Catalog.risk_by_runner_action_pairs(pairs, subject) == {:ok, %{}}
+
+      assert Catalog.risk_by_runner_action_pairs(pairs, subject) ==
+               {:ok,
+                %{{db_runner.id, "shared.op"} => :high, {web_runner.id, "shared.op"} => :critical}}
     end
 
     test "omits cross-account, unobserved, and malformed pairs", %{
@@ -4899,7 +5070,7 @@ defmodule Emisar.CatalogTest do
     end
   end
 
-  describe "action_risks_for_runner_ids/2" do
+  describe "action_scope_risks_for_runner_ids/2" do
     setup do
       {account, subject} = account_with_owner()
       %{account: account, subject: subject}
@@ -4931,16 +5102,16 @@ defmodule Emisar.CatalogTest do
         )
 
       # A "group" of r1 + r2: shared.op dedups to its worst (critical); `other` is out of scope.
-      assert {:ok, risks} = Catalog.action_risks_for_runner_ids([r1.id, r2.id], subject)
+      assert {:ok, risks} = Catalog.action_scope_risks_for_runner_ids([r1.id, r2.id], subject)
       assert risks == %{"shared.op" => :critical, "r1.only" => :high}
 
       # One runner sees only its own rows — shared.op is low on r1 alone.
-      assert {:ok, r1_only} = Catalog.action_risks_for_runner_ids([r1.id], subject)
+      assert {:ok, r1_only} = Catalog.action_scope_risks_for_runner_ids([r1.id], subject)
       assert r1_only == %{"shared.op" => :low, "r1.only" => :high}
     end
 
     test "an empty runner-id list is the empty map", %{subject: subject} do
-      assert {:ok, %{}} = Catalog.action_risks_for_runner_ids([], subject)
+      assert {:ok, %{}} = Catalog.action_scope_risks_for_runner_ids([], subject)
     end
 
     test "current pack access excludes denied risks", %{account: account, subject: subject} do
@@ -4972,7 +5143,7 @@ defmodule Emisar.CatalogTest do
       force_runner_access(account, subject, postgres_only)
 
       assert {:ok, %{"postgres.status" => :low}} =
-               Catalog.action_risks_for_runner_ids([runner.id], subject)
+               Catalog.action_scope_risks_for_runner_ids([runner.id], subject)
     end
 
     test "is account-scoped — a foreign runner id contributes nothing", %{account: account} do
@@ -4985,14 +5156,14 @@ defmodule Emisar.CatalogTest do
         )
 
       {_other_account, other_subject} = account_with_owner()
-      assert {:ok, %{}} = Catalog.action_risks_for_runner_ids([runner.id], other_subject)
+      assert {:ok, %{}} = Catalog.action_scope_risks_for_runner_ids([runner.id], other_subject)
     end
 
     test "a subject without view_catalog is denied — empty and non-empty", %{account: account} do
       no_view = %Emisar.Auth.Subject{account: account, role: :runner, permissions: MapSet.new()}
 
-      assert Catalog.action_risks_for_runner_ids(["r"], no_view) == {:error, :unauthorized}
-      assert Catalog.action_risks_for_runner_ids([], no_view) == {:error, :unauthorized}
+      assert Catalog.action_scope_risks_for_runner_ids(["r"], no_view) == {:error, :unauthorized}
+      assert Catalog.action_scope_risks_for_runner_ids([], no_view) == {:error, :unauthorized}
     end
   end
 
@@ -5099,7 +5270,7 @@ defmodule Emisar.CatalogTest do
       assert {:ok, [], _} = Catalog.list_pack_versions(subject_b)
     end
 
-    test "current pack access scopes pack-version rows", %{
+    test "pack-version rows remain readable outside current pack action access", %{
       account: account,
       subject: subject,
       runner: runner
@@ -5126,11 +5297,11 @@ defmodule Emisar.CatalogTest do
 
       force_runner_access(account, subject, postgres_only)
 
-      assert {:ok, [%PackVersion{pack_id: "postgres"}], _meta} =
-               Catalog.list_pack_versions(subject)
+      assert {:ok, versions, _meta} = Catalog.list_pack_versions(subject)
+      assert Enum.sort(Enum.map(versions, & &1.pack_id)) == ["linux-core", "postgres"]
     end
 
-    test "all packs excludes versions deployed only on denied runners", %{
+    test "includes versions deployed only on runners outside action scope", %{
       account: account,
       subject: subject,
       runner: allowed_runner
@@ -5159,11 +5330,11 @@ defmodule Emisar.CatalogTest do
       {:ok, database_only} = Accounts.RunnerAccess.restricted(["database"], [])
       force_runner_access(account, subject, database_only)
 
-      assert {:ok, [%PackVersion{pack_id: "postgres"}], _meta} =
-               Catalog.list_pack_versions(subject)
+      assert {:ok, versions, _meta} = Catalog.list_pack_versions(subject)
+      assert Enum.sort(Enum.map(versions, & &1.pack_id)) == ["linux-core", "postgres"]
     end
 
-    test "hidden hash drift on a shared version is not disclosed", %{
+    test "hash drift on a shared version remains readable outside action scope", %{
       account: account,
       subject: subject
     } do
@@ -5191,10 +5362,14 @@ defmodule Emisar.CatalogTest do
       {:ok, database_only} = Accounts.RunnerAccess.restricted(["database"], [])
       force_runner_access(account, subject, database_only)
 
-      assert {:ok, [], _meta} = Catalog.list_pack_versions(subject)
+      assert {:ok, [%PackVersion{pack_id: "acme", pending_hash: pending}], _meta} =
+               Catalog.list_pack_versions(subject)
+
+      assert pending == Fixtures.Catalog.pack_hash("hidden")
       assert {:ok, projection} = Catalog.list_console_packs(%{}, subject)
-      assert projection.pack_versions == []
-      assert Catalog.count_pack_versions_needing_decision(subject) == 0
+      assert [%PackVersion{id: version_id}] = projection.pack_versions
+      refute projection.version_facts[version_id].can_manage?
+      assert Catalog.count_pack_versions_needing_decision(subject) == 1
     end
 
     test "a subject without view_catalog is denied", %{account: account} do
@@ -5333,7 +5508,7 @@ defmodule Emisar.CatalogTest do
       assert projection.decision_count == 2
     end
 
-    test "current pack access scopes rows, actions, and decision counts", %{
+    test "current pack action access does not narrow rows, actions, or decision counts", %{
       account: account,
       subject: subject,
       runner: runner
@@ -5350,14 +5525,19 @@ defmodule Emisar.CatalogTest do
 
       assert {:ok, projection} = Catalog.list_console_packs(%{risk: "high"}, subject)
 
-      assert Enum.map(projection.pack_versions, & &1.pack_id) == ["acme"]
+      assert Enum.map(projection.pack_versions, & &1.pack_id) == ["acme", "zeta"]
       assert Enum.map(projection.groups, & &1.id) == ["acme"]
-      assert Map.keys(projection.actions_by_pack_ref) == [{"acme", "1.0"}]
-      assert projection.pending_count == 1
-      assert projection.decision_count == 1
+
+      assert Enum.sort(Map.keys(projection.actions_by_pack_ref)) == [
+               {"acme", "1.0"},
+               {"zeta", "1.0"}
+             ]
+
+      assert projection.pending_count == 2
+      assert projection.decision_count == 2
     end
 
-    test "names the account's other packs for discovery, and nothing else about them", %{
+    test "shares pack contents but keeps management hints scoped", %{
       account: account,
       subject: subject,
       runner: runner
@@ -5374,16 +5554,17 @@ defmodule Emisar.CatalogTest do
 
       assert {:ok, projection} = Catalog.list_console_packs(%{}, subject)
 
-      assert projection.out_of_scope_pack_ids == ["zeta"]
-      # Identity and only identity: zeta's version, hash, action and trust state
-      # are absent from the whole projection, not merely unrendered.
-      refute inspect(projection) =~ "zeta-hash"
-      refute inspect(projection) =~ "web.reload"
-      assert Enum.map(projection.groups, & &1.id) == ["acme"]
-      assert projection.pack_count == 1
+      assert inspect(projection) =~ "web.reload"
+      assert Enum.map(projection.groups, & &1.id) == ["acme", "zeta"]
+      assert projection.pack_count == 2
+      [acme, zeta] = projection.groups
+      assert acme.can_delete?
+      refute zeta.can_delete?
+      assert projection.version_facts[hd(acme.versions).id].can_manage?
+      refute projection.version_facts[hd(zeta.versions).id].can_manage?
     end
 
-    test "a pack reachable only through a denied runner is named for discovery", %{
+    test "a pack on a runner outside action scope stays readable but not manageable", %{
       account: account,
       subject: subject
     } do
@@ -5413,11 +5594,13 @@ defmodule Emisar.CatalogTest do
 
       assert {:ok, projection} = Catalog.list_console_packs(%{}, subject)
 
-      assert Enum.map(projection.groups, & &1.id) == ["postgres"]
-      assert projection.out_of_scope_pack_ids == ["nginx"]
+      assert Enum.map(projection.groups, & &1.id) == ["nginx", "postgres"]
+      [nginx, postgres] = projection.groups
+      refute projection.version_facts[hd(nginx.versions).id].can_manage?
+      assert projection.version_facts[hd(postgres.versions).id].can_manage?
     end
 
-    test "a risk filter names no out-of-scope pack — its risk cannot be judged", %{
+    test "a risk filter includes matching packs outside action scope", %{
       account: account,
       subject: subject,
       runner: runner
@@ -5434,7 +5617,7 @@ defmodule Emisar.CatalogTest do
 
       assert {:ok, projection} = Catalog.list_console_packs(%{risk: "low"}, subject)
 
-      assert projection.out_of_scope_pack_ids == []
+      assert Enum.map(projection.groups, & &1.id) == ["acme", "zeta"]
     end
 
     test "the name filter narrows discovery on the pack id", %{
@@ -5453,10 +5636,10 @@ defmodule Emisar.CatalogTest do
       force_runner_access(account, subject, acme_only)
 
       assert {:ok, hit} = Catalog.list_console_packs(%{name: "zet"}, subject)
-      assert hit.out_of_scope_pack_ids == ["zeta"]
+      assert Enum.map(hit.groups, & &1.id) == ["zeta"]
 
       assert {:ok, miss} = Catalog.list_console_packs(%{name: "nothing"}, subject)
-      assert miss.out_of_scope_pack_ids == []
+      assert miss.groups == []
     end
 
     test "discovery never names another account's packs", %{
@@ -5484,13 +5667,13 @@ defmodule Emisar.CatalogTest do
       force_runner_access(account, subject, acme_only)
 
       assert {:ok, projection} = Catalog.list_console_packs(%{}, subject)
-      assert projection.out_of_scope_pack_ids == ["zeta"]
+      assert Enum.map(projection.groups, & &1.id) == ["acme", "zeta"]
 
       assert {:ok, other_projection} = Catalog.list_console_packs(%{}, other_subject)
-      assert other_projection.out_of_scope_pack_ids == []
+      assert Enum.map(other_projection.groups, & &1.id) == ["tenant-b-pack"]
     end
 
-    test "an unrestricted member reaches every pack, so discovery names none", %{
+    test "an unrestricted member can manage every account pack", %{
       subject: subject,
       runner: runner
     } do
@@ -5499,10 +5682,11 @@ defmodule Emisar.CatalogTest do
       assert {:ok, projection} = Catalog.list_console_packs(%{}, subject)
 
       assert Enum.map(projection.groups, & &1.id) == ["acme", "zeta"]
-      assert projection.out_of_scope_pack_ids == []
+      assert Enum.all?(projection.groups, & &1.can_delete?)
+      assert Enum.all?(projection.version_facts, fn {_id, fact} -> fact.can_manage? end)
     end
 
-    test "current runner access keeps denied actions out of pack filters", %{
+    test "pack filters include actions outside current runner action access", %{
       account: account,
       subject: subject
     } do
@@ -5539,15 +5723,15 @@ defmodule Emisar.CatalogTest do
       force_runner_access(account, subject, database_acme)
 
       assert {:ok, critical_projection} = Catalog.list_console_packs(%{risk: "critical"}, subject)
-      assert critical_projection.groups == []
-      refute inspect(critical_projection) =~ "acme.destroy"
+      assert Enum.map(critical_projection.groups, & &1.id) == ["acme"]
+      assert inspect(critical_projection) =~ "acme.destroy"
 
       assert {:ok, low_projection} = Catalog.list_console_packs(%{risk: "low"}, subject)
       assert Enum.map(low_projection.groups, & &1.id) == ["acme"]
       assert inspect(low_projection) =~ "acme.status"
     end
 
-    test "all packs excludes rows and counts deployed only on denied runners", %{
+    test "shared rows and decision counts include runners outside action scope", %{
       account: account,
       subject: subject
     } do
@@ -5576,12 +5760,12 @@ defmodule Emisar.CatalogTest do
       force_runner_access(account, subject, database_only)
 
       assert {:ok, projection} = Catalog.list_console_packs(%{}, subject)
-      assert Enum.map(projection.pack_versions, & &1.pack_id) == ["postgres"]
-      assert projection.pack_count == 1
-      assert projection.version_count == 1
-      assert projection.pending_count == 1
-      assert projection.decision_count == 1
-      assert Catalog.count_pack_versions_needing_decision(subject) == 1
+      assert Enum.map(projection.pack_versions, & &1.pack_id) == ["linux-core", "postgres"]
+      assert projection.pack_count == 2
+      assert projection.version_count == 2
+      assert projection.pending_count == 2
+      assert projection.decision_count == 2
+      assert Catalog.count_pack_versions_needing_decision(subject) == 2
     end
 
     test "a name that only matches the pack id keeps the version and highlights no action", %{
@@ -5707,7 +5891,7 @@ defmodule Emisar.CatalogTest do
       assert projection.version_count == 3
     end
 
-    test "actions are read only when a filter is live or a version is pending", %{
+    test "action descriptors are read only when a filter is live or a version is pending", %{
       subject: subject,
       runner: runner
     } do
@@ -5721,7 +5905,7 @@ defmodule Emisar.CatalogTest do
       end
 
       # Nothing pending and no filter: the disclosures stay lazy, so the page
-      # pays for no action read at all.
+      # pays for no action descriptor read.
       assert {:ok, trusted} = Catalog.list_console_packs(%{}, subject)
       assert trusted.actions_by_pack_ref == %{}
       assert trusted.pending_count == 0
@@ -5784,10 +5968,10 @@ defmodule Emisar.CatalogTest do
       assert large_queries == small_queries
       # One slim pack-version read, the pending rows' whole-row re-read, the
       # summary filter-match read, the pending pairs' whole action read, the
-      # projection's current membership + scope reads, and a bounded fleet read
-      # with its own current membership + scope reads for the pending rows'
-      # blast radius.
-      assert small_queries == 9
+      # projection's current membership + scope reads, and a bounded shared
+      # fleet read with its fresh current identity check. The current console
+      # identity and residual-owner management hint add two constant queries.
+      assert small_queries == 10
 
       for pack_version <- small.pack_versions do
         {:ok, _trusted} = Catalog.trust_pack_version(pack_version.id, small_subject)
@@ -5796,13 +5980,58 @@ defmodule Emisar.CatalogTest do
       _ = drain_repo_query_count()
       assert {:ok, lazy} = Catalog.list_console_packs(%{}, small_subject)
 
-      # With no filter and nothing pending, only the current membership + scope
-      # reads, the pack-version query, and the discovery pack-id read remain;
-      # action contents stay lazy until the operator opens a disclosure. The
-      # discovery read is one distinct-id scan whatever the fleet's size — and
-      # under a risk filter (above) it isn't made at all.
-      assert drain_repo_query_count() == 4
+      # Current identity/access, slim versions, and the residual-owner authority
+      # query remain. Action contents stay lazy until a disclosure is opened.
+      assert drain_repo_query_count() == 5
       assert lazy.actions_by_pack_ref == %{}
+    end
+
+    test "filter action rows stay within candidate pack versions", %{
+      subject: subject,
+      runner: runner
+    } do
+      observe_console_catalog(runner)
+
+      Fixtures.Catalog.create_action(
+        runner: runner,
+        action_id: "orphan.run",
+        pack_id: "orphan",
+        pack_version: "1.0",
+        pack_hash: "orphan",
+        risk: "high"
+      )
+
+      assert {:ok, projection} = Catalog.list_console_packs(%{risk: "high"}, subject)
+      refute Map.has_key?(projection.actions_by_pack_ref, {"orphan", "1.0"})
+      assert Map.has_key?(projection.actions_by_pack_ref, {"acme", "1.0"})
+    end
+
+    test "a descriptor-only trust change survives filtering without retaining descriptors in display facts",
+         %{subject: subject, runner: runner} do
+      trust_with_actions(runner, subject, "old", [
+        action("acme.status", pack_id: "acme", description: "before")
+      ])
+
+      {:ok, _} =
+        Catalog.observe_state(
+          runner,
+          state_payload(
+            packs: %{"acme" => %{"version" => "1.0", "hash" => "new"}},
+            actions: [action("acme.status", pack_id: "acme", description: "after")]
+          )
+        )
+
+      assert {:ok, projection} = Catalog.list_console_packs(%{name: "acme"}, subject)
+      fact = version_fact(projection, "acme", "1.0")
+      assert [%{changed_fields: fields}] = fact.action_changes.changed
+      assert "description" in fields
+
+      for row <- fact.actions ++ projection.actions_by_pack_ref[{"acme", "1.0"}] do
+        assert row.action_id == "acme.status"
+        assert is_nil(row.description)
+        assert row.args_schema == %{}
+        assert row.examples == []
+      end
     end
 
     test "denies a subject without view-catalog permission" do
@@ -6075,7 +6304,7 @@ defmodule Emisar.CatalogTest do
       assert fact.update_successor == nil
     end
 
-    test "retired advertiser names stay inside the subject's current runner access", %{
+    test "retired advertisers remain readable outside current action scope", %{
       account: account,
       subject: subject
     } do
@@ -6118,9 +6347,10 @@ defmodule Emisar.CatalogTest do
       assert {:ok, projection} = Catalog.list_console_packs(%{}, subject)
       fact = version_fact(projection, pack_id, "0.0.0")
 
-      assert fact.advertising.coverage == :partial
-      assert Enum.map(fact.advertising.runners, & &1.name) == ["database-visible"]
-      refute inspect(fact.advertising) =~ "web-hidden-secret"
+      assert fact.advertising.coverage == :complete
+
+      assert Enum.map(fact.advertising.runners, & &1.name) ==
+               ["database-visible", "web-hidden-secret"]
     end
 
     test "a retired trusted version nobody advertises may be removed", %{
@@ -6403,7 +6633,7 @@ defmodule Emisar.CatalogTest do
       assert {:ok, database_actions} = Catalog.list_pack_actions("acme", "2.0", subject)
 
       assert Enum.map(database_actions, &{&1.action_id, &1.risk}) == [
-               {"acme.reload", :high},
+               {"acme.reload", :critical},
                {"acme.status", :low}
              ]
 
@@ -6411,7 +6641,8 @@ defmodule Emisar.CatalogTest do
         Accounts.RunnerAccess.new(:all, [], [], :restricted, ["postgres"])
 
       force_runner_access(account, subject, other_pack_only)
-      assert Catalog.list_pack_actions("acme", "2.0", subject) == {:ok, []}
+      assert {:ok, still_readable} = Catalog.list_pack_actions("acme", "2.0", subject)
+      assert Enum.map(still_readable, & &1.action_id) == ["acme.reload", "acme.status"]
 
       # Another account sees none of this account's pack actions.
       {_account, other_subject} = account_with_owner()
@@ -6627,7 +6858,7 @@ defmodule Emisar.CatalogTest do
       assert Catalog.count_pack_versions_needing_decision(other_subject) == 1
     end
 
-    test "counts only decisions in current pack access" do
+    test "counts decisions outside current pack action access too" do
       {account, subject} = account_with_owner()
 
       subject =
@@ -6653,7 +6884,7 @@ defmodule Emisar.CatalogTest do
         Accounts.RunnerAccess.new(:all, [], [], :restricted, ["linux-core"])
 
       force_runner_access(account, subject, linux_only)
-      assert Catalog.count_pack_versions_needing_decision(subject) == 1
+      assert Catalog.count_pack_versions_needing_decision(subject) == 2
     end
 
     test "counts a retired-blocked trusted version, and stops once resolved" do

@@ -2,8 +2,7 @@
 
 **Rule.** Scope every mechanism to the inputs and deployments this product
 actually has, not to the fully general problem the subsystem could someday
-face. Three recurring shapes, all corrected in the 2026-07-20 MCP-wave
-simplification:
+face. Recurring shapes:
 
 1. **First-party-authored inputs get an authoring-time lint, not a runtime
    exactness subsystem.** Pack YAML is written by us and reviewed; a value
@@ -22,6 +21,15 @@ simplification:
    validating every MCP call), the per-callsite checks it makes unreachable
    are deleted, not kept "defensively" — dead branches only accumulate drift
    and reviewers.
+4. **Locks protect consequential invariants, not every possible ordering.**
+   Keep short, owned transactions for current authority, single-use credentials,
+   reviewed executable contracts, atomic decisions and audit. Do not freeze a
+   fleet to serialize unrelated hosts joining a group or advertising a shared
+   pack version: later entrants already inherit those workspace decisions.
+   Check committed group/advertiser coverage and protect the actual mutation
+   targets. Any broader lock or retry protocol needs a concrete serious failure
+   that those existing boundaries do not prevent, weighed against normal
+   contention and maintenance cost.
 
 **Why.** Each shape reads as rigor but is pure carry cost: the exact-number
 pipeline (~2,100 lines + a forked dep) protected a number population of zero;

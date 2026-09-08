@@ -243,8 +243,9 @@ defmodule EmisarWeb.ApprovalsLiveTest do
     assert render_hook(lv, "set_max_grant_lifetime", %{})
   end
 
-  test "explains when pack access narrows the approval collections", %{conn: conn} do
-    {_owner_conn, _owner, account} = register_and_log_in(conn)
+  test "the actionable filter defaults on, while All requests includes other packs", %{conn: conn} do
+    {_owner_conn, owner, account} = register_and_log_in(conn)
+    request = pending_request!(account, owner.id, "reboot outside the admin's pack access")
     admin = Fixtures.Users.create_user()
 
     membership =
@@ -258,14 +259,25 @@ defmodule EmisarWeb.ApprovalsLiveTest do
     Fixtures.Memberships.force_runner_access(membership, restricted)
 
     admin_conn = build_conn() |> log_in_user(admin)
-    {:ok, _lv, html} = live(admin_conn, ~p"/app/#{account}/approvals")
+    {:ok, lv, _html} = live(admin_conn, ~p"/app/#{account}/approvals")
 
-    assert html =~
-             "Only requests and grants for packs you can access are shown."
+    assert has_element?(lv, "select[name=pending_view] option[value=needs_decision][selected]")
+    refute has_element?(lv, ~s(a[href="/app/#{account.slug}/approvals/#{request.id}"]))
+
+    lv |> form("#pending-filter", %{"pending_view" => ""}) |> render_change()
+    assert_patch(lv, ~p"/app/#{account}/approvals?pending_view=")
+    assert has_element?(lv, ~s(a[href="/app/#{account.slug}/approvals/#{request.id}"]))
+
+    assert has_element?(
+             lv,
+             "select[name=pending_view] option[value=''][selected]",
+             "All requests"
+           )
   end
 
-  test "the pack-access notice follows current access, not the mount snapshot", %{conn: conn} do
-    {_owner_conn, _owner, account} = register_and_log_in(conn)
+  test "the actionable filter uses current access without hiding shared history", %{conn: conn} do
+    {_owner_conn, owner, account} = register_and_log_in(conn)
+    request = pending_request!(account, owner.id, "review after changing pack access")
     admin = Fixtures.Users.create_user()
 
     membership =
@@ -276,15 +288,16 @@ defmodule EmisarWeb.ApprovalsLiveTest do
       )
 
     admin_conn = build_conn() |> log_in_user(admin)
-    {:ok, lv, html} = live(admin_conn, ~p"/app/#{account}/approvals")
-
-    refute html =~ "Your pack access limits this page"
+    {:ok, lv, _html} = live(admin_conn, ~p"/app/#{account}/approvals")
+    assert has_element?(lv, ~s(a[href="/app/#{account.slug}/approvals/#{request.id}"]))
 
     {:ok, restricted} = Accounts.RunnerAccess.new(:all, [], [], :restricted, ["postgres"])
     Fixtures.Memberships.force_runner_access(membership, restricted)
 
-    assert render_patch(lv, ~p"/app/#{account}/approvals") =~
-             "Only requests and grants for packs you can access are shown."
+    render_patch(lv, ~p"/app/#{account}/approvals")
+    refute has_element?(lv, ~s(a[href="/app/#{account.slug}/approvals/#{request.id}"]))
+    render_patch(lv, ~p"/app/#{account}/approvals?pending_view=")
+    assert has_element?(lv, ~s(a[href="/app/#{account.slug}/approvals/#{request.id}"]))
   end
 
   test "labels a requester with this account's directory name", %{conn: conn} do
@@ -372,8 +385,9 @@ defmodule EmisarWeb.ApprovalsLiveTest do
     # rather than urgent.
     Fixtures.Approvals.set_request_expiry(request, DateTime.utc_now())
 
-    {:ok, _lv, html} = live(conn, ~p"/app/#{account}/approvals")
-
+    {:ok, lv, _html} = live(conn, ~p"/app/#{account}/approvals")
+    refute has_element?(lv, ~s(a[href="/app/#{account.slug}/approvals/#{request.id}"]))
+    html = render_patch(lv, ~p"/app/#{account}/approvals?pending_view=")
     assert html =~ "expired"
     assert html =~ "state.expiry"
     refute html =~ "text-amber-400"
@@ -444,7 +458,7 @@ defmodule EmisarWeb.ApprovalsLiveTest do
     assert html =~ "Grant revoked."
   end
 
-  test "an owner confirms and revokes every standing grant in their access", %{conn: conn} do
+  test "an owner confirms and revokes every active standing grant", %{conn: conn} do
     {conn, user, account} = register_and_log_in(conn)
     subject = Fixtures.Subjects.subject_for(user, account)
 
@@ -461,7 +475,7 @@ defmodule EmisarWeb.ApprovalsLiveTest do
     html = confirm_dialog(lv, "revoke-all-grants-dialog", "Revoke all grants")
 
     assert html =~ "1 grant revoked."
-    refute has_element?(lv, "#revoke-all-grants")
+    assert has_element?(lv, "#revoke-all-grants[disabled]")
     assert {:ok, [], _metadata} = Approvals.list_grants_for_account(subject)
 
     {:ok, events, _metadata} = Audit.list_events(subject)
@@ -491,6 +505,54 @@ defmodule EmisarWeb.ApprovalsLiveTest do
     refute html =~ ~r/expires<time/
     assert html =~ ~r/last used\s<time/
     refute html =~ ~r/last used<time/
+  end
+
+  test "shared grants retain per-target controls and Revoke all checks beyond this page", %{
+    conn: conn
+  } do
+    {_conn, owner, account} = register_and_log_in(conn)
+    admin = Fixtures.Users.create_user()
+
+    membership =
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        user_id: admin.id,
+        role: "admin"
+      )
+
+    runner = Fixtures.Runners.create_runner(account_id: account.id)
+    {:ok, access} = Accounts.RunnerAccess.new(:restricted, [], [runner.id])
+    Fixtures.Memberships.force_runner_access(membership, access)
+    {_, key} = Fixtures.ApiKeys.create_api_key(account_id: account.id, created_by_id: owner.id)
+
+    denied =
+      Fixtures.Approvals.create_grant(
+        account_id: account.id,
+        api_key_id: key.id,
+        granted_by_id: owner.id,
+        runner_id: nil
+      )
+
+    for _ <- 1..10 do
+      Fixtures.Approvals.create_grant(
+        account_id: account.id,
+        api_key_id: key.id,
+        granted_by_id: owner.id,
+        runner_id: runner.id
+      )
+    end
+
+    {:ok, lv, _html} = build_conn() |> log_in_user(admin) |> live(~p"/app/#{account}/approvals")
+    assert has_element?(lv, "#grants-pager", "10 / 11")
+    assert has_element?(lv, "#revoke-all-grants[disabled]")
+    refute has_element?(lv, "#revoke-all-grants-dialog")
+    assert render(lv) =~ "Revoke all requires action access"
+
+    lv |> element("#grants-pager a", "Next") |> render_click()
+    assert has_element?(lv, "#revoke-all-grants[disabled]")
+    assert render(lv) =~ "Outside your action access"
+    render_click(lv, "revoke_grant", %{"id" => denied.id})
+    assert Repo.reload!(denied).revoked_at == nil
   end
 
   test "revoking an unknown grant flashes not-found", %{conn: conn} do
@@ -626,8 +688,7 @@ defmodule EmisarWeb.ApprovalsLiveTest do
 
     refute html =~ "account-B secret reboot"
     refute html =~ "account-B grant"
-    # A's own page reads as genuinely empty, not as B's data.
-    assert html =~ "No pending approvals"
+    assert html =~ "Nothing needs your decision"
   end
 
   test "a pending-load error renders the danger empty-state, not an empty queue", %{conn: conn} do
@@ -651,13 +712,29 @@ defmodule EmisarWeb.ApprovalsLiveTest do
     # with the link to /policies that explains where approvals come from.
     {conn, _user, account} = register_and_log_in(conn)
 
-    {:ok, _lv, html} = live(conn, ~p"/app/#{account}/approvals")
+    {:ok, _lv, html} = live(conn, ~p"/app/#{account}/approvals?pending_view=")
 
     assert html =~ "No pending approvals"
     assert html =~ ~s(data-icon="product.approval")
     refute html =~ "Couldn&#39;t load pending approvals"
     # The empty-state points the operator at the policy that gates runs.
     assert html =~ ~p"/app/#{account}/policies"
+  end
+
+  test "an empty actionable view does not claim the workspace has no requests", %{conn: conn} do
+    {conn, user, account} = register_and_log_in(conn)
+    request = pending_request!(account, user.id, "Waiting for another person")
+    request |> Ecto.Changeset.change(allow_self_approval: false) |> Repo.update!()
+
+    {:ok, lv, html} = live(conn, ~p"/app/#{account}/approvals")
+    assert html =~ "Nothing needs your decision"
+    assert html =~ "Choose All requests in the View filter"
+    refute html =~ "No pending approvals"
+    refute html =~ "Waiting for another person"
+
+    html = render_patch(lv, ~p"/app/#{account}/approvals?pending_view=")
+    assert html =~ "Waiting for another person"
+    refute html =~ "Nothing needs your decision"
   end
 
   test "empty grants and empty decided sections each show their explanatory empty-state", %{
@@ -675,7 +752,7 @@ defmodule EmisarWeb.ApprovalsLiveTest do
     assert has_element?(lv, ~s(#pending-empty [data-icon="product.approval"]))
     assert has_element?(lv, ~s(#grants-empty [data-icon="product.approval"]))
     assert has_element?(lv, ~s(#decided-empty [data-icon="product.approval"]))
-    refute has_element?(lv, "#revoke-all-grants")
+    assert has_element?(lv, "#revoke-all-grants[disabled]")
   end
 
   test "grants and decided load errors say the read failed, never that there is nothing", %{
@@ -700,8 +777,8 @@ defmodule EmisarWeb.ApprovalsLiveTest do
     refute html =~ "No decisions yet"
     # Pending read fine — its own section is unaffected.
     refute html =~ "Couldn&#39;t load pending approvals"
-    assert html =~ "No pending approvals"
-    refute has_element?(lv, "#revoke-all-grants")
+    assert html =~ "Nothing needs your decision"
+    assert has_element?(lv, "#revoke-all-grants[disabled]")
   end
 
   test "an operator's crafted revoke_grant is denied gracefully", %{conn: conn} do

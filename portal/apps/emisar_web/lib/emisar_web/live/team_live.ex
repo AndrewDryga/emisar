@@ -17,9 +17,6 @@ defmodule EmisarWeb.TeamLive do
   # is what leaves a billing manager a read-only Team page instead of a nav link
   # that flashes and bounces. Same shape as the Billing page.
   def mount(_params, _session, socket) do
-    if connected?(socket),
-      do: Accounts.subscribe_account_team(socket.assigns.current_account.id)
-
     {:ok,
      socket
      |> assign(:page_title, "Team")
@@ -1062,7 +1059,7 @@ defmodule EmisarWeb.TeamLive do
         # rides along: a scope editor that shows "No runners registered yet." on
         # a failed read invites an admin to widen a grant they can't see.
         {runners, runner_load_error?} =
-          case Emisar.Runners.list_all_runners_for_account(socket.assigns.current_subject) do
+          case Emisar.Runners.list_runners_in_action_scope(socket.assigns.current_subject) do
             {:ok, runners} -> {runners, false}
             {:error, _} -> {[], Runners.subject_can_view_runners?(socket.assigns.current_subject)}
           end
@@ -1128,7 +1125,7 @@ defmodule EmisarWeb.TeamLive do
     {advertisements, pack_load_error?} =
       RunnerScope.account_pack_advertisements(socket.assigns.current_subject)
 
-    case Runners.list_all_runners_for_account(socket.assigns.current_subject) do
+    case Runners.list_runners_in_action_scope(socket.assigns.current_subject) do
       {:ok, runners} ->
         socket
         |> assign(:loading?, false)
@@ -1716,7 +1713,7 @@ defmodule EmisarWeb.TeamLive do
                   attached_value="restricted"
                 >
                   <:card value="none" title="No runners">
-                    They can join the workspace but cannot view or act on runners.
+                    They can view workspace activity but cannot act on runners.
                   </:card>
                   <:card value="all" title="All runners">
                     Includes every current and future runner in this workspace.
@@ -2557,7 +2554,7 @@ defmodule EmisarWeb.TeamLive do
                             attached_value="restricted"
                           >
                             <:card value="none" title="No runners">
-                              Keep the member in the workspace without runner reach.
+                              They can view workspace activity but cannot act on runners.
                             </:card>
                             <:card value="all" title="All runners">
                               Grant every current and future runner in this workspace.

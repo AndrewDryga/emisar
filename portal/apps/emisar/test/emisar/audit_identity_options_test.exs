@@ -313,9 +313,8 @@ defmodule Emisar.AuditIdentityOptionsTest do
       account: account
     } do
       billing =
-        Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account,
-          role: :billing_manager
-        )
+        Fixtures.Memberships.create_membership(account_id: account.id, role: "billing_manager")
+        |> Fixtures.Subjects.membership_subject()
 
       id = Ecto.UUID.generate()
       hidden_id = Ecto.UUID.generate()

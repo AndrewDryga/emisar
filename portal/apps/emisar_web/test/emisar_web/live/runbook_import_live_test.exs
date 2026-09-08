@@ -2,6 +2,41 @@ defmodule EmisarWeb.RunbookImportLiveTest do
   use EmisarWeb.ConnCase, async: true
   alias Emisar.Runbooks
 
+  for dimension <- [:runners, :packs] do
+    test "import explains #{dimension} scope loss and retains the entered definition", %{
+      conn: conn
+    } do
+      {conn, user, account} = register_and_log_in(conn)
+
+      membership =
+        Fixtures.Memberships.fetch_membership(account.id, user.id)
+        |> Fixtures.Memberships.force_role("admin")
+
+      encoded = Jason.encode!(Fixtures.Runbooks.default_definition())
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runbooks/import")
+
+      {:ok, access} =
+        case unquote(dimension) do
+          :runners -> Emisar.Accounts.RunnerAccess.new(:none)
+          :packs -> Emisar.Accounts.RunnerAccess.new(:all, [], [], :restricted, [])
+        end
+
+      Fixtures.Memberships.force_runner_access(membership, access)
+
+      html =
+        lv
+        |> form("#runbook-import-form", %{
+          "import" => %{"title" => "Scoped draft", "json" => encoded}
+        })
+        |> render_submit()
+
+      assert html =~ "outside your action access"
+      assert has_element?(lv, "#runbook-import-title[value='Scoped draft']")
+      assert :sys.get_state(lv.pid).socket.assigns.import_form.params["json"] == encoded
+      refute Emisar.Repo.exists?(Runbooks.Runbook)
+    end
+  end
+
   test "imports pasted canonical JSON as a draft and opens the editor", %{conn: conn} do
     {conn, user, account} = register_and_log_in(conn)
     definition = Emisar.Fixtures.Runbooks.default_definition()

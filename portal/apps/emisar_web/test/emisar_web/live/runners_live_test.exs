@@ -333,7 +333,7 @@ defmodule EmisarWeb.RunnersLiveTest do
       assert assigns.show_wizard?
     end
 
-    test "a member with no runner access sees a permission state, not empty-fleet onboarding",
+    test "a member with no runner access sees an empty fleet without an install key",
          %{conn: conn} do
       {_owner_conn, _owner, account} = register_and_log_in(conn)
       member = Fixtures.Users.create_user()
@@ -350,24 +350,22 @@ defmodule EmisarWeb.RunnersLiveTest do
         |> log_in_user(member)
         |> live(~p"/app/#{account}/runners")
 
-      assert html =~ "You do not have access to any runners"
-      assert html =~ "have access to any runners"
-      assert has_element?(lv, "#runners-supporting-rail #runner-explainer", "Runner basics")
-      assert has_element?(lv, ~s|#runner-explainer a[href="/docs/use-a-published-pack"]|)
-      assert has_element?(lv, ~s|#runner-explainer a[href="/docs/runner-fleet#groups-labels"]|)
+      assert html =~ "No runners yet."
+      assert html =~ "Ask a teammate who has both to connect a runner"
+      assert has_element?(lv, ~s|a[href="/docs/runner-fleet"]|, "Runner docs")
       refute has_element?(lv, "#runners-cleanup")
-      refute html =~ "No runners yet."
       refute html =~ "EMISAR_ENROLLMENT_KEY"
       refute html =~ "Connect a runner"
 
       assigns = :sys.get_state(lv.pid).socket.assigns
-      refute assigns.has_runner_access?
-      refute assigns.show_wizard?
+      refute assigns.can_install_runners?
+      assert assigns.show_wizard?
       assert assigns.install_command == nil
     end
 
     test "an empty restricted scope does not claim that the account has no runners", %{conn: conn} do
       {_owner_conn, _owner, account} = register_and_log_in(conn)
+      runner = Fixtures.Runners.create_runner(account_id: account.id, group: "staging")
       member = Fixtures.Users.create_user()
 
       membership =
@@ -385,16 +383,16 @@ defmodule EmisarWeb.RunnersLiveTest do
         |> log_in_user(member)
         |> live(~p"/app/#{account}/runners")
 
-      assert html =~ "You do not have access to any runners"
-      assert html =~ "Ask an owner or admin to update your runner access"
+      assert html =~ runner.name
       assert has_element?(lv, "#runners-supporting-rail #runner-explainer", "Runner basics")
-      refute has_element?(lv, "#runners-cleanup")
+      assert has_element?(lv, "#runners-cleanup")
+      refute has_element?(lv, "#runner-retention-form")
+      refute has_element?(lv, "#runners-cleanup-now-confirm")
       refute html =~ "No runners yet."
       refute html =~ "EMISAR_ENROLLMENT_KEY"
 
       assigns = :sys.get_state(lv.pid).socket.assigns
-      assert assigns.has_runner_access?
-      refute assigns.has_full_runner_access?
+      refute assigns.can_install_runners?
       refute assigns.show_wizard?
     end
 
@@ -445,9 +443,7 @@ defmodule EmisarWeb.RunnersLiveTest do
       refute html =~ "Couldn't load your fleet"
     end
 
-    # Rows, group totals, and fleet health derive from the same current membership
-    # access. An operator cannot infer inaccessible runner inventory from counts.
-    test "operator access filters rows and aggregate counts", %{conn: conn} do
+    test "operator action access does not hide fleet rows or aggregate counts", %{conn: conn} do
       {_owner_conn, _owner, account} = register_and_log_in(conn)
 
       in_scope =
@@ -480,11 +476,9 @@ defmodule EmisarWeb.RunnersLiveTest do
       {:ok, _lv, html} =
         build_conn() |> log_in_user(operator) |> live(~p"/app/#{account}/runners")
 
-      # Only the in-scope runner appears as a list row…
       assert html =~ "in-scope-runner"
-      refute html =~ "out-of-scope-runner"
-      assert html =~ "1 runner total"
-      refute html =~ "2 runners total"
+      assert html =~ "out-of-scope-runner"
+      assert html =~ "2 runners total"
     end
 
     test "the fleet health strip summarizes the whole account's runner states", %{conn: conn} do

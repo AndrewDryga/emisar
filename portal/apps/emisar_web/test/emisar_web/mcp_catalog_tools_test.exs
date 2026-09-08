@@ -260,8 +260,8 @@ defmodule EmisarWeb.MCPCatalogToolsTest do
     refute encoded =~ "hostile"
     assert Enum.any?(hd(all["packs"])["issues"], &(&1["code"] == "descriptor_mismatch"))
 
-    # find_actions now answers the way get_action does for the same condition: the
-    # action IS deployed and trusted, and nothing in scope can execute it.
+    # Executable search distinguishes a missing action from a trusted action
+    # whose deployment needs attention. Direct reads still inspect its contract.
     # Returning ok with an empty candidate list made the model report the
     # capability as nonexistent — the server instructions tell it to do exactly
     # that on an empty discovery — when the real answer is that a runner needs
@@ -282,8 +282,10 @@ defmodule EmisarWeb.MCPCatalogToolsTest do
     unavailable_detail =
       call(conn, "get_action", %{"action_id" => "demo.action7", "pack_ref" => pack_ref})
 
-    assert unavailable_detail["error"]["code"] == "action_unavailable"
-    assert unavailable_detail["error"]["next"]["tool"] == "list_runners"
+    assert unavailable_detail["ok"]
+    assert unavailable_detail["action"]["title"] == "Safe action 7"
+    assert unavailable_detail["compatible_runners"] == []
+    refute Jason.encode!(unavailable_detail) =~ "IGNORE POLICY"
   end
 
   test "a pack at the trusted-manifest action ceiling stays inside the published schema", %{
@@ -621,7 +623,9 @@ defmodule EmisarWeb.MCPCatalogToolsTest do
         "action_id" => "beam.epmd_names"
       })
 
-    assert detail["error"]["code"] == "action_unavailable"
+    assert detail["ok"]
+    assert detail["action"]["action_id"] == "beam.epmd_names"
+    assert detail["compatible_runners"] == []
 
     [listed_runner] = call(conn, "list_runners", %{})["runners"]
 
@@ -722,6 +726,15 @@ defmodule EmisarWeb.MCPCatalogToolsTest do
     refute exact["more_compatible_runners"]
     assert exact["next"] == nil
 
+    filtered_explicit =
+      call(
+        conn,
+        "get_action",
+        Map.merge(arguments, %{"runner_refs" => runner_refs, "target" => "db-01"})
+      )
+
+    assert filtered_explicit["error"]["code"] == "invalid_args"
+
     # An explicit list is all-or-nothing: one ref that cannot execute this exact
     # trusted action refuses the whole call rather than answering with a subset.
     bystander = Fixtures.Runners.create_runner(account_id: account.id, name: "bystander")
@@ -764,7 +777,7 @@ defmodule EmisarWeb.MCPCatalogToolsTest do
     assert_receive {:cloud_to_runner, _generation, _payload}, 500
   end
 
-  test "API-key runner scope and account boundary are applied before projection", %{
+  test "API-key action scope narrows eligibility while inventory remains account-wide", %{
     conn: conn,
     account: account,
     subject: subject,
@@ -786,12 +799,25 @@ defmodule EmisarWeb.MCPCatalogToolsTest do
     Fixtures.Memberships.force_runner_access(membership, access)
 
     runners = call(conn, "list_runners", %{})
-    assert Enum.map(runners["runners"], & &1["name"]) == ["allowed"]
+    assert Enum.map(runners["runners"], & &1["name"]) == ["allowed", "hidden"]
+    assert Enum.all?(runners["runners"], &(&1["status"] == "connected" and &1["issues"] == []))
 
     packs = call(conn, "list_packs", %{"include" => "all"})
 
-    assert Enum.map(packs["packs"], & &1["pack_ref"])
-           |> Enum.all?(&String.starts_with?(&1, "visible@"))
+    assert Enum.map(packs["packs"], & &1["availability"]) == ["unavailable", "executable"]
+    hidden_ref = hd(packs["packs"])["pack_ref"]
+    assert String.starts_with?(hidden_ref, "hidden@")
+
+    assert call(conn, "list_packs", %{})["packs"] |> Enum.map(& &1["pack_ref"]) ==
+             [List.last(packs["packs"])["pack_ref"]]
+
+    detail = call(conn, "get_action", %{"action_id" => "hidden.read", "pack_ref" => hidden_ref})
+    assert detail["ok"]
+    assert detail["compatible_runners"] == []
+
+    assert call(conn, "list_runners", %{"pack_ref" => hidden_ref, "action_id" => "hidden.read"})[
+             "runners"
+           ] == []
 
     foreign = Fixtures.Accounts.create_account()
     foreign_runner = Fixtures.Runners.create_runner(account_id: foreign.id, name: "foreign")
@@ -832,10 +858,14 @@ defmodule EmisarWeb.MCPCatalogToolsTest do
 
     Fixtures.Memberships.force_runner_access(membership, visible_only)
 
-    assert [%{"pack_ref" => "visible@" <> _rest}] =
+    assert [
+             %{"pack_ref" => "hidden@" <> _, "availability" => "unavailable"},
+             %{"pack_ref" => "visible@" <> _, "availability" => "executable"}
+           ] =
              call(conn, "list_packs", %{"include" => "all"})["packs"]
 
-    assert call(conn, "find_actions", %{"action_id" => "hidden.read"})["candidates"] == []
+    assert call(conn, "find_actions", %{"action_id" => "hidden.read"})["error"]["code"] ==
+             "action_unavailable"
 
     stale_page =
       call(conn, "list_packs", %{
@@ -847,7 +877,7 @@ defmodule EmisarWeb.MCPCatalogToolsTest do
     assert stale_page["error"]["code"] == "invalid_cursor"
   end
 
-  test "the console's out-of-scope pack discovery never reaches the model catalog", %{
+  test "trusted packs outside action scope remain inspectable without executable candidates", %{
     conn: conn,
     account: account,
     subject: subject,
@@ -869,17 +899,54 @@ defmodule EmisarWeb.MCPCatalogToolsTest do
     {:ok, visible_only} = Emisar.Accounts.RunnerAccess.new(:all, [], [], :restricted, ["visible"])
     Fixtures.Memberships.force_runner_access(membership, visible_only)
 
-    # The console names an out-of-scope pack so an operator can ask for access.
-    # A model catalog must not: a pack ref it can never dispatch is a
-    # hallucination target, and this surface stays trusted-and-in-scope only.
-    console_subject = Fixtures.Subjects.membership_subject(membership)
-    assert {:ok, console} = Emisar.Catalog.list_console_packs(%{}, console_subject)
-    assert console.out_of_scope_pack_ids == ["hidden"]
-
     packs = call(conn, "list_packs", %{"include" => "all"})["packs"]
 
-    assert [%{"pack_ref" => "visible@1.0.0/" <> _digest}] = packs
-    refute inspect(packs) =~ "hidden"
+    assert [
+             %{"pack_ref" => "hidden@1.0.0/" <> _, "availability" => "unavailable"},
+             %{"pack_ref" => "visible@1.0.0/" <> _, "availability" => "executable"}
+           ] = packs
+
+    assert hd(packs)["issues"] == []
+    assert Enum.all?(hd(packs)["actions"], &(&1["availability"] == "unavailable"))
+  end
+
+  test "moving a runner out of the granted group invalidates cursors without hiding its inventory",
+       %{
+         conn: conn,
+         account: account,
+         subject: subject,
+         membership: membership
+       } do
+    runner = Fixtures.Runners.create_runner(account_id: account.id, group: "staging")
+
+    observe!(
+      runner,
+      %{
+        "alpha" => %{"version" => "1.0.0", "hash" => @hash},
+        "beta" => %{"version" => "1.0.0", "hash" => @hash}
+      },
+      [action("alpha.read", "alpha"), action("beta.read", "beta")]
+    )
+
+    trust_all!(subject)
+    {:ok, access} = Emisar.Accounts.RunnerAccess.new(:restricted, ["staging"], [])
+    Fixtures.Memberships.force_runner_access(membership, access)
+    before = call(conn, "list_packs", %{"include" => "all", "limit" => 1})
+    assert is_binary(before["next_cursor"])
+    Fixtures.Runners.move_to_group(runner, "production")
+    after_move = call(conn, "list_packs", %{"include" => "all"})
+    assert length(after_move["packs"]) == 2
+    assert Enum.all?(after_move["packs"], &(&1["availability"] == "unavailable"))
+    assert length(call(conn, "list_runners", %{})["runners"]) == 1
+
+    stale =
+      call(conn, "list_packs", %{
+        "include" => "all",
+        "limit" => 1,
+        "cursor" => before["next_cursor"]
+      })
+
+    assert stale["error"]["code"] == "invalid_cursor"
   end
 
   test "an already-issued API key is rejected when its membership is suspended", %{

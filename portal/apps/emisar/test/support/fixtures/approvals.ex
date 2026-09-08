@@ -279,7 +279,7 @@ defmodule Emisar.Fixtures.Approvals do
 
     defaults = %{
       action_id: "linux.uptime",
-      pack_ref: "linux-core@1.0.0",
+      pack_ref: Fixtures.Catalog.default_pack_ref(),
       granted_by_id: attrs[:granted_by_id] || Fixtures.Users.create_user().id,
       granted_at: DateTime.utc_now()
     }

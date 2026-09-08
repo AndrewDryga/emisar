@@ -97,6 +97,45 @@ defmodule Emisar.Catalog.RunnerAction.Query do
     |> where([scope_runner: r], r.id in ^runner_ids or r.group in ^groups)
   end
 
+  @doc """
+  Complete version authority includes residual action owners, even tombstones
+  no longer advertising the version. A missing or foreign owner fails closed
+  even with all-runner access. This is deliberately not the live-runner join
+  used by action discovery, and does not inspect the action's hash or content.
+  """
+  def outside_runner_access(queryable, access) do
+    queryable =
+      with_named_binding(queryable, :management_runner, fn queryable, binding ->
+        join(
+          queryable,
+          :left,
+          [runner_actions: a],
+          runner in ^Emisar.Runners.Runner.Query.all(),
+          on: a.runner_id == runner.id and a.account_id == runner.account_id,
+          as: ^binding
+        )
+      end)
+
+    case access do
+      %Emisar.Accounts.RunnerAccess{mode: :all} ->
+        where(queryable, [management_runner: r], is_nil(r.id))
+
+      %Emisar.Accounts.RunnerAccess{} ->
+        where(
+          queryable,
+          [management_runner: r],
+          is_nil(r.id) or
+            not coalesce(r.id in ^access.runner_ids or r.group in ^access.groups, false)
+        )
+    end
+  end
+
+  def distinct_pack_refs(queryable) do
+    queryable
+    |> distinct(true)
+    |> select([runner_actions: a], {a.pack_id, a.pack_version})
+  end
+
   def select_action_risk_rows(queryable),
     do: select(queryable, [runner_actions: a], {a.runner_id, a.action_id, a.risk})
 
@@ -121,6 +160,8 @@ defmodule Emisar.Catalog.RunnerAction.Query do
   # rows whole via `by_pack_refs/2`.
   @console_columns ~w[id action_id pack_id pack_version pack_hash title kind risk]a
 
+  def console_columns, do: @console_columns
+
   def select_console_columns(queryable),
     do: select(queryable, [runner_actions: a], struct(a, ^@console_columns))
 
@@ -135,21 +176,25 @@ defmodule Emisar.Catalog.RunnerAction.Query do
   @doc """
   Restrict to an exact set of `{pack_id, version}` pairs — the console reads a
   pending review's advertised rows without loading the whole account catalog.
-  The caller bounds the list (pending reviews are few, so the OR form stays
-  cheap; a fleet-sized set belongs in `by_deployments/2`'s tuple match).
+  The caller bounds the list. A tuple match keeps the 500-version management
+  hint batch from building one OR branch for every candidate.
   """
   def by_pack_refs(queryable, []), do: none(queryable)
 
   def by_pack_refs(queryable, pack_refs) when is_list(pack_refs) do
-    predicate =
-      Enum.reduce(pack_refs, dynamic(false), fn {pack_id, version}, predicate ->
-        dynamic(
-          [runner_actions: a],
-          ^predicate or (a.pack_id == ^pack_id and a.pack_version == ^version)
-        )
-      end)
+    {pack_ids, versions} = Enum.unzip(pack_refs)
 
-    where(queryable, ^predicate)
+    where(
+      queryable,
+      [runner_actions: a],
+      fragment(
+        "(?, ?) IN (SELECT * FROM unnest(?::text[], ?::text[]))",
+        a.pack_id,
+        a.pack_version,
+        ^pack_ids,
+        ^versions
+      )
+    )
   end
 
   def by_pack_id(queryable, pack_id),

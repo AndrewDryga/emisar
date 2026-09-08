@@ -4,7 +4,7 @@
   <section class="py-12 sm:py-16">
     <.docs_layout
       current="architecture"
-      updated="August 23, 2026"
+      updated="September 8, 2026"
       toc={[
         {"components", "The four pieces"},
         {"flow", "One action, end to end"},
@@ -61,7 +61,7 @@
             <%= for {component, where, responsibility} <- [
               {"Control plane",
                "Hosted by us",
-               "The control plane authenticates every caller and applies account and runner scope. It pins the trusted pack version and hash. It evaluates policy, runs approvals, composes runbooks, and keeps searchable audit history."},
+               "The control plane authenticates every caller and enforces account access and action permissions. It pins the trusted pack version and hash. It evaluates policy, runs approvals, composes runbooks, and keeps searchable audit history."},
               {"Runner",
                "Your host, one per host, outbound only",
                "Loads and hashes local packs, decides what this host advertises, re-validates every argument, executes, redacts output before it leaves, and writes a hash-chained local journal."},
@@ -101,7 +101,7 @@
         <li>
           <strong class="text-zinc-200">A caller asks for one declared action.</strong>
           The control plane authenticates an operator session, API key, or OAuth client. It then
-          applies runner and pack scope to discovery and targeting.
+          applies runner and pack scope to executable candidates and targeting.
         </li>
         <li>
           <strong class="text-zinc-200">The control plane resolves the exact pack.</strong>
@@ -152,7 +152,7 @@
               {"Who the caller is", "Control plane",
                "Sessions, API keys, OAuth clients, and runner tokens all authenticate here. Every bearer credential is stored hashed."},
               {"Which hosts a person or key can touch", "Control plane",
-               "Runner scope narrows the catalog itself, so an out-of-scope host is invisible rather than refused."},
+               "Runner and pack access limits actions. Members with operational read access can still inspect the workspace's fleet and catalog."},
               {"Which pack version and hash is trusted", "Control plane",
                "Trust binds one exact content hash — auto-pinned when the published catalog it reads carries that hash, decided by an admin otherwise. Installing bytes on a host does not trust them."},
               {"Allow, deny, or ask a human", "Control plane",

@@ -34,6 +34,13 @@ func TestCLIFixedToolsHavePurposeBuiltHumanOutput(t *testing.T) {
 			wantNone: []string{`"runner_refs":["db-1~abc"]`, `"args":{"database":"primary"}`, "Action example: Primary database", "db-1.local · group database", "Runner ref"},
 		},
 		{
+			name:     "read-only action detail",
+			tool:     getActionToolName,
+			result:   `{"ok":true,"action":{"action_id":"postgres.status","pack_ref":"postgres@1/sha256:abc","title":"Postgres status","risk":"low","args_schema":{"type":"object"}},"compatible_runners":[],"more_compatible_runners":false}`,
+			want:     []string{"Postgres status", "Compatible runners (0)", "None currently available."},
+			wantNone: []string{"Run\n", "emisar-mcp run_action", "<runner-ref>"},
+		},
+		{
 			name:   "action result",
 			tool:   runActionToolName,
 			result: `{"ok":true,"operation_id":"op-1","action_id":"postgres.status","pack_ref":"postgres@1/sha256:abc","runs":[{"run_id":"run-1","operation_id":"op-1","action_id":"postgres.status","pack_ref":"postgres@1/sha256:abc","runner_ref":"db-1~abc","status":"success","exit_code":0,"duration_ms":1250,"stdout":"primary\nhealthy","structured_output":{"role":"primary"}}]}`,
@@ -77,7 +84,7 @@ func TestCLIFixedToolsHavePurposeBuiltHumanOutput(t *testing.T) {
 				"1. Inspect — sequential, 1 step", "status — postgres.status",
 				"Pack postgres · Target one of group:database",
 				"Args database=primary · previous=output:discover.database · threshold=input:lag_threshold",
-				"Run\n  emisar-mcp execute_runbook",
+				"Request a run\n  emisar-mcp execute_runbook", "emisar checks access and execution requirements before starting.",
 				`emisar-mcp execute_runbook '{"runbook_ref":"database-check@3","reason":"<reason>","input_values":<input-values-json>}'`,
 			},
 		},
@@ -279,6 +286,11 @@ func TestCLIGetRunbookDraftUsesExactEditableExecutionTemplate(t *testing.T) {
 	want := `emisar-mcp --account immersive execute_runbook '{"slug":"database-check","allow_draft":true,"definition_sha256":"abc123","reason":"<reason>","input_values":<input-values-json>}'`
 	if !strings.Contains(stdout.String(), want) {
 		t.Fatalf("output missing %q:\n%s", want, stdout.String())
+	}
+	for _, notice := range []string{"Request a draft test", "emisar checks access and execution requirements before starting."} {
+		if !strings.Contains(stdout.String(), notice) {
+			t.Fatalf("output missing %q:\n%s", notice, stdout.String())
+		}
 	}
 	for _, unwanted := range []string{`"runbook_ref"`, `"input_values":{}`, "Action example"} {
 		if strings.Contains(stdout.String(), unwanted) {

@@ -7,6 +7,10 @@ defmodule Emisar.Approvals.Grant.Query do
   def by_id(queryable, id),
     do: where(queryable, [grants: g], g.id == ^id)
 
+  def by_ids(queryable, ids), do: where(queryable, [grants: g], g.id in ^ids)
+
+  def select_ids(queryable), do: select(queryable, [grants: g], g.id)
+
   def by_account_id(queryable, account_id),
     do: where(queryable, [grants: g], g.account_id == ^account_id)
 
@@ -27,6 +31,10 @@ defmodule Emisar.Approvals.Grant.Query do
 
   def ordered_by_granted(queryable),
     do: order_by(queryable, [grants: g], asc: g.granted_at)
+
+  def ordered_by_id(queryable), do: order_by(queryable, [grants: g], asc: g.id)
+
+  def lock_for_update(queryable), do: lock(queryable, "FOR NO KEY UPDATE")
 
   @doc """
   Selects the whole row so `Repo.update_all/3` can RETURN what it changed — the
@@ -49,52 +57,69 @@ defmodule Emisar.Approvals.Grant.Query do
     do: where(queryable, [grants: g], g.pack_ref == ^pack_ref)
 
   def by_target_access(queryable, %Emisar.Accounts.RunnerAccess{} = access) do
-    queryable
-    |> by_runner_access(access)
-    |> by_pack_access(access)
+    {queryable, allowed} = target_access(queryable, access)
+    where(queryable, ^allowed)
   end
 
-  def by_runner_access(queryable, %Emisar.Accounts.RunnerAccess{mode: :none}),
-    do: where(queryable, [grants: _], false)
+  def outside_target_access(queryable, %Emisar.Accounts.RunnerAccess{} = access) do
+    {queryable, allowed} = target_access(queryable, access)
+    denied = dynamic(not coalesce(^allowed, false))
+    where(queryable, ^denied)
+  end
 
-  def by_runner_access(queryable, %Emisar.Accounts.RunnerAccess{mode: :all}), do: queryable
+  # The same frozen identity/current target rules as the locked revocation
+  # guard. A wildcard requires all runners; a concrete target must still exist
+  # in this account. Offline and disabled runners remain valid targets.
+  defp target_access(queryable, access) do
+    queryable =
+      with_named_binding(queryable, :scope_runner, fn queryable, binding ->
+        join(
+          queryable,
+          :left,
+          [grants: grant],
+          runner in ^Emisar.Runners.Runner.Query.not_deleted(),
+          on: grant.runner_id == runner.id and grant.account_id == runner.account_id,
+          as: ^binding
+        )
+      end)
 
-  def by_runner_access(
-        queryable,
-        %Emisar.Accounts.RunnerAccess{mode: :restricted, runner_ids: runner_ids, groups: groups}
-      ) do
-    queryable
-    |> with_named_binding(:scope_runner, fn queryable, binding ->
-      join(
-        queryable,
-        :inner,
+    runner_allowed =
+      case access do
+        %{mode: :none} ->
+          dynamic(false)
+
+        %{mode: :all} ->
+          dynamic(
+            [grants: grant, scope_runner: runner],
+            is_nil(grant.runner_id) or not is_nil(runner.id)
+          )
+
+        %{mode: :restricted, runner_ids: ids, groups: groups} ->
+          dynamic(
+            [scope_runner: runner],
+            not is_nil(runner.id) and (runner.id in ^ids or runner.group in ^groups)
+          )
+      end
+
+    pack_allowed =
+      case access do
+        %{pack_mode: :all} ->
+          dynamic(true)
+
+        %{pack_mode: :restricted, pack_ids: ids} ->
+          dynamic([grants: grant], fragment("split_part(?, '@', 1)", grant.pack_ref) in ^ids)
+      end
+
+    canonical =
+      "^[a-z][a-z0-9_-]*@[0-9]+([.][0-9]+)*(-[0-9A-Za-z.-]+)?([+][0-9A-Za-z.-]+)?/sha256:[0-9a-f]{64}$"
+
+    allowed =
+      dynamic(
         [grants: grant],
-        runner in ^Emisar.Runners.Runner.Query.all(),
-        on: grant.runner_id == runner.id,
-        as: ^binding
+        fragment("? ~ ?", grant.pack_ref, ^canonical) and ^pack_allowed and ^runner_allowed
       )
-    end)
-    |> where(
-      [scope_runner: runner],
-      runner.id in ^runner_ids or runner.group in ^groups
-    )
-  end
 
-  defp by_pack_access(queryable, %Emisar.Accounts.RunnerAccess{mode: :none}),
-    do: where(queryable, [grants: _], false)
-
-  defp by_pack_access(queryable, %Emisar.Accounts.RunnerAccess{pack_mode: :all}),
-    do: queryable
-
-  defp by_pack_access(
-         queryable,
-         %Emisar.Accounts.RunnerAccess{pack_mode: :restricted, pack_ids: pack_ids}
-       ) do
-    where(
-      queryable,
-      [grants: g],
-      fragment("split_part(?, '@', 1)", g.pack_ref) in ^pack_ids
-    )
+    {queryable, allowed}
   end
 
   @doc """

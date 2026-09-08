@@ -153,6 +153,50 @@ defmodule EmisarWeb.ConsoleRefreshPerformanceTest do
     assert :sys.get_state(view.pid).socket.assigns.shell_chrome.pending_approvals_count == 0
   end
 
+  test "scope events refresh the exact member once without broadening the subject", %{
+    conn: conn,
+    user: user,
+    account: account
+  } do
+    membership = Fixtures.Memberships.fetch_membership(account.id, user.id)
+    Fixtures.Memberships.force_role(membership, "admin")
+    {:ok, view, _html} = live(conn, ~p"/app/#{account}/runs?source=operator")
+    permission = Emisar.Runs.Authorizer.dispatch_run_permission()
+
+    :sys.replace_state(view.pid, fn state ->
+      update_in(state.socket.assigns.current_subject.permissions, &MapSet.delete(&1, permission))
+    end)
+
+    original = :sys.get_state(view.pid).socket.assigns
+    Fixtures.Memberships.force_runner_access(membership, Accounts.RunnerAccess.none())
+
+    assert capture_queries(view.pid, fn ->
+             send(
+               view.pid,
+               {:list_changed, :team, "membership.runner_access_changed", Ecto.UUID.generate()}
+             )
+
+             render(view)
+           end) == []
+
+    queries =
+      capture_queries(view.pid, fn ->
+        Emisar.PubSub.broadcast(
+          "account:#{account.id}:team",
+          {:list_changed, :team, "membership.runner_access_changed", user.id}
+        )
+
+        render(view)
+      end)
+
+    assert length(queries) == 1
+    refreshed = :sys.get_state(view.pid).socket.assigns
+    assert refreshed.current_subject == original.current_subject
+    assert refreshed.current_membership.runner_access_mode == :none
+    assert refreshed.filter_params == original.filter_params
+    assert MapSet.member?(refreshed.pending_badge_recomputes, :approvals)
+  end
+
   defp heartbeat(id, load) do
     %{
       event: "presence_diff",

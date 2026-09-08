@@ -1153,11 +1153,13 @@ defmodule EmisarWeb.PoliciesLiveTest do
       assert after_attempt.vsn == before.vsn
     end
 
-    test "an admin with no runner access sees a permission state, not an empty account", %{
+    test "an admin with no runner access sees shared policies and read-only controls", %{
       account: account,
       subject: subject
     } do
-      Fixtures.Runners.create_runner(account_id: account.id, name: "db-1", group: "db")
+      runner = Fixtures.Runners.create_runner(account_id: account.id, name: "db-1", group: "db")
+      Fixtures.Catalog.create_action(runner: runner, action_id: "db.status")
+      {:ok, scoped} = Policies.save_scoped_rules(deny_all(), :runner, runner.id, subject)
       membership = Fixtures.Memberships.create_membership(account_id: account.id, role: "admin")
 
       {:ok, _updated} =
@@ -1170,8 +1172,7 @@ defmodule EmisarWeb.PoliciesLiveTest do
       admin_conn = log_in_user(build_conn(), Emisar.Repo.preload(membership, :user).user)
       {:ok, lv, html} = live(admin_conn, ~p"/app/#{account}/policies")
 
-      assert rendered_text(html) =~
-               "You don't have access to any runners. You can view only the default policy."
+      assert rendered_text(html) =~ "You can view all policies."
 
       assert has_element?(
                lv,
@@ -1191,21 +1192,11 @@ defmodule EmisarWeb.PoliciesLiveTest do
 
       refute has_element?(lv, "#policy-read-only.-translate-y-px")
 
-      assert has_element?(
-               lv,
-               "#default-policy > header p #policy-runner-access-notice",
-               "You can view only the default policy."
-             )
-
-      refute html =~ "Applies when a runner has no matching runner or group ruleset."
-
-      refute html =~ "unless a targeted ruleset below overrides it"
-      refute html =~ "Targeted rulesets"
-
-      assert settle_previews(lv) =~
-               "No actions are available to preview with your current access."
-
-      refute html =~ "once a runner reports its catalog"
+      assert html =~ "Applies when a runner has no matching runner or group ruleset."
+      assert html =~ "Targeted rulesets"
+      assert render_click(lv, "open_ruleset", %{"uid" => scoped.id}) =~ "db-1"
+      refute has_element?(lv, "#policy-form-#{scoped.id} button[type=submit]")
+      assert settle_previews(lv) =~ "reported action"
       refute has_element?(lv, "#policy-form-account button[type=submit]")
       refute has_element?(lv, "#add-ruleset-row")
     end
@@ -1283,6 +1274,9 @@ defmodule EmisarWeb.PoliciesLiveTest do
       refute html =~ "ghost-1"
       assert html =~ runner.id
       assert html =~ "Remove"
+      refute has_element?(lv, "#policy-form-#{scoped.id} button[type=submit]")
+      render_click(lv, "remove_ruleset", %{"uid" => scoped.id})
+      assert Emisar.Repo.reload!(scoped).deleted_at
     end
 
     test "remove_ruleset with an unknown uid is a no-op (no crash)", %{

@@ -56,6 +56,23 @@ defmodule EmisarWeb.RunbookEditorCatalogTest do
     end
   end
 
+  test "partial group access retains individual choices without presenting them as the whole group" do
+    catalog = %{projection(@schema) | groups: []}
+    [target] = catalog.targets
+
+    for selection <- ["all", "random_one"] do
+      options = RunbookEditorCatalog.target_options(catalog, ["group:default"], selection)
+      saved = Enum.find(options, &(&1.value == "group:default"))
+      assert saved.selected
+      assert saved.unavailable
+      refute saved.disabled
+      refute saved.label =~ "online"
+      assert Enum.any?(options, &(&1.value == "runner:" <> target.runner_ref))
+      refute RunbookEditorCatalog.target_available?(catalog, "group:default")
+      refute Enum.any?(options, &(&1.value == "group:default" and not &1[:unavailable]))
+    end
+  end
+
   test "every text extractor reads the selected text stream" do
     catalog = projection(@schema)
 

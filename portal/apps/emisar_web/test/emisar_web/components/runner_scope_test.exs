@@ -203,7 +203,7 @@ defmodule EmisarWeb.RunnerScopeTest do
           load_error: RunnerScope.pack_load_error(true)
         )
 
-      refute html =~ "No packs on the selected runners."
+      refute html =~ "No packs available to grant on the selected runners."
       assert html =~ "a read error, not an empty catalog"
     end
 
@@ -311,7 +311,7 @@ defmodule EmisarWeb.RunnerScopeTest do
           selected: []
         )
 
-      assert html =~ "No runners registered yet."
+      assert html =~ "No runners available to grant."
     end
 
     test "a failed runner read says so instead of showing the no-runners empty state" do
@@ -325,7 +325,7 @@ defmodule EmisarWeb.RunnerScopeTest do
 
       # An admin choosing a member's reach must never be told the fleet is
       # empty when the fleet is simply unread.
-      refute html =~ "No runners registered yet."
+      refute html =~ "No runners available to grant."
       assert html =~ "a read error, not an empty fleet"
     end
 
@@ -337,7 +337,7 @@ defmodule EmisarWeb.RunnerScopeTest do
           selected: ["group:retired"]
         )
 
-      refute html =~ "No runners registered yet."
+      refute html =~ "No runners available to grant."
       assert html =~ "Unavailable"
       assert html =~ "unavailable"
       # Ticked, and the tag closes right after its value — so unlike a "via

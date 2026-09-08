@@ -459,7 +459,12 @@ defmodule EmisarWeb.LiveTable do
     ~H"""
     <div class={filter_label_class(@active?)}>
       <span id={"#{@dropdown_id}-label"} class="mb-1">{@filter.title}</span>
-      <input type="hidden" hidden name={@filter.name} value={List.first(@selected) || ""} />
+      <input
+        type="hidden"
+        hidden
+        name={"#{@prefix}#{@filter.name}"}
+        value={List.first(@selected) || ""}
+      />
       <CoreComponents.dropdown
         id={@dropdown_id}
         align={:left}
@@ -469,7 +474,11 @@ defmodule EmisarWeb.LiveTable do
         panel_class="z-30 mt-1 w-72 max-w-[calc(100vw-2rem)] p-2 text-xs"
       >
         <:trigger>
-          <span class="min-w-0 truncate">{combobox_selected_label(@groups, List.first(@selected))}</span>
+          <span class="min-w-0 truncate">{combobox_selected_label(
+            @groups,
+            List.first(@selected),
+            @filter.prompt
+          )}</span>
           <CoreComponents.icon name="action.disclose" class="h-4 w-4 shrink-0 text-zinc-500" />
         </:trigger>
         <CoreComponents.input
@@ -496,7 +505,7 @@ defmodule EmisarWeb.LiveTable do
             tone={if @active?, do: :neutral, else: :brand}
             aria-current={if not @active?, do: "true"}
           >
-            All
+            {@filter.prompt}
           </CoreComponents.menu_item>
           <%= for {label, options} <- @groups do %>
             <p :if={label} class="px-3 pb-1 pt-2 font-medium text-zinc-400">{label}</p>
@@ -596,12 +605,12 @@ defmodule EmisarWeb.LiveTable do
     <label class={filter_label_class(@active?)}>
       <span class="mb-1">{@filter.title}</span>
       <CoreComponents.searchable_select
-        id={"filter-#{@filter.name}-#{@selected || "all"}-#{@choices_key}"}
-        name={to_string(@filter.name)}
+        id={"filter-#{@prefix}#{@filter.name}-#{@selected || "all"}-#{@choices_key}"}
+        name={"#{@prefix}#{@filter.name}"}
         value={@selected || ""}
-        selected_label={combobox_selected_label(@groups, @selected)}
+        selected_label={combobox_selected_label(@groups, @selected, @filter.prompt)}
         groups={@combobox_groups}
-        blank_label="All"
+        blank_label={@filter.prompt}
         active?={@active?}
         size={:sm}
         aria_label={@filter.title}
@@ -621,10 +630,10 @@ defmodule EmisarWeb.LiveTable do
     <label class={filter_label_class(@active?)}>
       <span class="mb-1">{@filter.title}</span>
       <CoreComponents.select
-        name={to_string(@filter.name)}
+        name={"#{@prefix}#{@filter.name}"}
         size={:filter}
         active?={@active?}
-        prompt="All"
+        prompt={@filter.prompt}
         prompt_selected={@selected in [[], [""]]}
         options={filter_select_options(@groups, @selected)}
       />
@@ -645,7 +654,7 @@ defmodule EmisarWeb.LiveTable do
       ]}>
         <input
           type="checkbox"
-          name={@filter.name}
+          name={"#{@prefix}#{@filter.name}"}
           value="true"
           checked={@value == "true"}
           class="h-4 w-4 rounded border-zinc-700 bg-zinc-950 text-brand-500 focus:ring-brand-500 disabled:cursor-not-allowed"
@@ -667,7 +676,7 @@ defmodule EmisarWeb.LiveTable do
            (no bound) — debouncing to blur waits for the committed value. --%>
       <input
         type="datetime-local"
-        name={@filter.name}
+        name={"#{@prefix}#{@filter.name}"}
         value={@value}
         phx-debounce="blur"
         class={[
@@ -687,7 +696,7 @@ defmodule EmisarWeb.LiveTable do
       <span class="mb-1">{@filter.title}</span>
       <input
         type="text"
-        name={@filter.name}
+        name={"#{@prefix}#{@filter.name}"}
         value={@value}
         phx-debounce="300"
         class={[
@@ -702,10 +711,9 @@ defmodule EmisarWeb.LiveTable do
   # The trigger's face: a picked event reads "Group · Label" (a bare child
   # label like "Created" says nothing about WHAT was created); a group
   # sentinel's label is already self-describing. "All" when nothing is picked.
-  defp combobox_selected_label(_groups, nil), do: "All"
-  defp combobox_selected_label(_groups, ""), do: "All"
+  defp combobox_selected_label(_groups, selected, prompt) when selected in [nil, ""], do: prompt
 
-  defp combobox_selected_label(groups, selected) do
+  defp combobox_selected_label(groups, selected, _prompt) do
     Enum.find_value(groups, selected, fn {group_label, options} ->
       case List.keyfind(options, selected, 0) do
         nil -> nil
@@ -1134,25 +1142,38 @@ defmodule EmisarWeb.LiveTable do
   the URL, where `filter_value/3` reads it as an override — dropping it would
   resolve back to the default on the next load, snapping the control away
   from the operator's choice.
+
+  With multiple lists, pass `prefix:` and `current_params:`. Form controls use
+  that prefix; only this list's filters and cursors are replaced. Other lists'
+  filters and pages stay in the URL.
   """
-  def apply_filter(socket, path, params, filters \\ []) when is_map(params) do
+  def apply_filter(socket, path, params, filters \\ [], opts \\ []) when is_map(params) do
+    prefix = Keyword.get(opts, :prefix, "")
+    current_params = Keyword.get(opts, :current_params, %{})
+    owned_keys = Enum.map(filters, &"#{prefix}#{&1.name}")
+
     defaulted =
       for %Filter{default: default, name: name} <- filters,
           not is_nil(default),
-          do: to_string(name)
+          do: "#{prefix}#{name}"
 
     # Plug.Conn.Query.encode (NOT URI.encode_query) so a list-valued filter —
     # `category: ["access", "fleet"]` from a multi-select picker — encodes as
     # `category[]=access&category[]=fleet` and round-trips back to a list.
     # URI.encode_query flattens a list to one mangled value ("accessfleet").
-    query =
+    submitted =
       params
-      |> Map.drop(["_target"])
+      |> then(fn params -> if filters == [], do: params, else: Map.take(params, owned_keys) end)
+      |> Map.drop(["_target", "#{prefix}after", "#{prefix}before"])
       |> Enum.reject(fn {k, v} -> v in [nil, ""] and k not in defaulted end)
-      |> Plug.Conn.Query.encode()
+      |> Map.new()
 
-    to = if query == "", do: path, else: "#{path}?#{query}"
-    Phoenix.LiveView.push_patch(socket, to: to)
+    params =
+      current_params
+      |> Map.drop(["#{prefix}after", "#{prefix}before" | owned_keys])
+      |> Map.merge(submitted)
+
+    Phoenix.LiveView.push_patch(socket, to: filter_path(path, params))
   end
 
   @doc "Change one URL filter, preserving sibling filters and resetting only its list's cursors."

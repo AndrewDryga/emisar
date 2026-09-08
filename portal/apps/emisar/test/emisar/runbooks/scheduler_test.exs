@@ -349,6 +349,64 @@ defmodule Emisar.Runbooks.SchedulerTest do
     assert length(runs(account.id, result.execution_id)) == 1
   end
 
+  for mismatch <- [:requested_user, :initiating_member, :key_creator, :deleted_user] do
+    test "delayed execution refuses #{mismatch} before the next physical attempt", %{
+      account: account,
+      subject: subject,
+      runner: runner
+    } do
+      runbook =
+        published_runbook(
+          subject,
+          definition([
+            stage("inspect", "sequential", 1, [step("check", runner.group)]),
+            stage("change", "sequential", 1, [step("apply", runner.group)])
+          ])
+        )
+
+      assert {:ok, result} =
+               Runbooks.dispatch_runbook(runbook, "Current initiating identity", subject)
+
+      assert [first] = runs(account.id, result.execution_id)
+      other = Fixtures.Memberships.create_membership(account_id: account.id, role: "operator")
+
+      changes =
+        case unquote(mismatch) do
+          :requested_user ->
+            %{requested_by_id: other.user_id}
+
+          :initiating_member ->
+            %{initiating_membership_id: other.id}
+
+          :key_creator ->
+            {_raw, key} =
+              Fixtures.ApiKeys.create_api_key(
+                account_id: account.id,
+                created_by_id: other.user_id
+              )
+
+            %{api_key_id: key.id}
+
+          :deleted_user ->
+            Fixtures.Users.mark_user_as_deleted(subject.actor)
+            %{}
+        end
+
+      execution(result.execution_id) |> Ecto.Changeset.change(changes) |> Repo.update!()
+
+      assert {:ok, _} =
+               Fixtures.Runs.finish(first, %{
+                 "status" => "success",
+                 "structured_output" => %{"ready" => true}
+               })
+
+      halted = execution(result.execution_id)
+      assert halted.status == :halted
+      assert halted.terminal_code == "authorization_lost"
+      assert length(runs(account.id, result.execution_id)) == 1
+    end
+  end
+
   test "membership suspension halts before the next stage", %{
     account: account,
     subject: subject,
@@ -840,6 +898,86 @@ defmodule Emisar.Runbooks.SchedulerTest do
   end
 
   describe "after_active_runbook_attempts_cancelled/2" do
+    test "a completed out-of-scope target still blocks whole-execution cancellation", %{
+      account: account,
+      subject: subject,
+      runner: runner
+    } do
+      production = trusted_runner(account, subject, group: "production")
+      Runners.subscribe_runner_transport(production)
+
+      runbook =
+        published_runbook(
+          subject,
+          definition([
+            stage("first", "sequential", 1, [step("inspect", runner.group)]),
+            stage("later", "sequential", 1, [step("apply", production.group)])
+          ])
+        )
+
+      assert {:ok, result} = Runbooks.dispatch_runbook(runbook, "cancel scoped work", subject)
+      assert [first] = runs(account.id, result.execution_id)
+
+      assert {:ok, completed} =
+               Fixtures.Runs.finish(first, %{
+                 "status" => "success",
+                 "structured_output" => %{"ready" => true}
+               })
+
+      assert [_, active] = runs(account.id, result.execution_id)
+      assert completed.status == :success
+      assert active.runner_id == production.id
+      membership = Fixtures.Memberships.create_membership(account_id: account.id)
+      {:ok, access} = RunnerAccess.new(:restricted, [], [production.id])
+      membership = Fixtures.Memberships.force_runner_access(membership, access)
+      scoped = Fixtures.Subjects.membership_subject(membership)
+      execution_before = execution(result.execution_id)
+      items_before = Repo.all(ExecutionItem)
+      audit_before = Repo.all(Audit.Event)
+
+      assert Runbooks.cancel_execution(result.execution_id, scoped) == {:error, :unauthorized}
+      assert execution(result.execution_id) == execution_before
+      assert Repo.all(ExecutionItem) == items_before
+      assert Repo.reload!(active) == active
+      assert Repo.all(Audit.Event) == audit_before
+      refute_received {:cloud_to_runner, _, %{"type" => "cancel"}}
+    end
+
+    test "a future out-of-scope target prevents cancellation of already-running work", %{
+      account: account,
+      subject: subject,
+      runner: runner
+    } do
+      production = trusted_runner(account, subject, group: "production")
+
+      runbook =
+        published_runbook(
+          subject,
+          definition([
+            stage("first", "sequential", 1, [step("inspect", runner.group)]),
+            stage("later", "sequential", 1, [step("apply", production.group)])
+          ])
+        )
+
+      assert {:ok, result} = Runbooks.dispatch_runbook(runbook, "cancel scoped work", subject)
+      assert [run] = runs(account.id, result.execution_id)
+      assert_receive {:cloud_to_runner, _, %{"type" => "run_action"}}
+      membership = Fixtures.Memberships.create_membership(account_id: account.id)
+      {:ok, access} = RunnerAccess.new(:restricted, [], [runner.id])
+      membership = Fixtures.Memberships.force_runner_access(membership, access)
+      scoped = Fixtures.Subjects.membership_subject(membership)
+      execution_before = execution(result.execution_id)
+      items_before = Repo.all(ExecutionItem)
+      audit_before = Repo.all(Audit.Event)
+
+      assert Runbooks.cancel_execution(result.execution_id, scoped) == {:error, :unauthorized}
+      assert execution(result.execution_id) == execution_before
+      assert Repo.all(ExecutionItem) == items_before
+      assert Repo.reload!(run) == run
+      assert Repo.all(Audit.Event) == audit_before
+      refute_received {:cloud_to_runner, _, %{"type" => "cancel"}}
+    end
+
     test "cancelling an active execution requests cancellation of running attempts", %{
       account: account,
       subject: subject,

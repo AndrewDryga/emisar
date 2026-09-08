@@ -10,7 +10,7 @@ defmodule Emisar.Runbooks.EditorProjection do
 
   alias Emisar.Catalog
 
-  defstruct targets: [], catalog: %Catalog.EditorProjection{}
+  defstruct targets: [], groups: [], catalog: %Catalog.EditorProjection{}
 
   @type target :: %{
           id: String.t(),
@@ -28,5 +28,9 @@ defmodule Emisar.Runbooks.EditorProjection do
           args: [map()]
         }
 
-  @type t :: %__MODULE__{targets: [target()], catalog: Catalog.EditorProjection.t()}
+  @type t :: %__MODULE__{
+          targets: [target()],
+          groups: [String.t()],
+          catalog: Catalog.EditorProjection.t()
+        }
 end

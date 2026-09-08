@@ -14,7 +14,7 @@ defmodule EmisarWeb.ApprovalsLive do
     3. **Recent decisions** — last 25 approve/deny calls for history.
   """
   use EmisarWeb, :live_view
-  alias Emisar.{Accounts, Approvals, Audit, Policies, Runners}
+  alias Emisar.{Approvals, Audit, Policies, Runners}
   alias EmisarWeb.{ConfirmDialog, LiveTable, Permissions}
   alias Phoenix.LiveView.JS
 
@@ -25,10 +25,6 @@ defmodule EmisarWeb.ApprovalsLive do
      socket
      |> ConfirmDialog.init()
      |> assign(:page_title, "Approvals")
-     # The notice describes the list, so it is derived where the list is —
-     # `load/2` re-reads current access on every load and debounced refresh. The
-     # dead render has no rows yet, so it makes no claim about them.
-     |> assign(:pack_access_restricted?, false)
      |> assign(:reload_scheduled?, false)}
   end
 
@@ -46,6 +42,12 @@ defmodule EmisarWeb.ApprovalsLive do
   # every open sockets pays the full page load per event — coalesce like the
   # dashboard/runs feeds do.
   def handle_info({:approval_updated, _}, socket), do: {:noreply, schedule_reload(socket)}
+
+  def handle_info(
+        {:list_changed, :team, "membership.runner_access_changed", user_id},
+        %{assigns: %{current_user: %{id: user_id}}} = socket
+      ),
+      do: {:noreply, schedule_reload(socket)}
 
   def handle_info(:reload_approvals, socket),
     do: {:noreply, socket |> assign(:reload_scheduled?, false) |> reload()}
@@ -68,6 +70,18 @@ defmodule EmisarWeb.ApprovalsLive do
 
   def handle_event("confirm_reset", _params, socket),
     do: {:noreply, ConfirmDialog.reset(socket)}
+
+  def handle_event("filter", params, socket) do
+    {:noreply,
+     LiveTable.apply_filter(
+       socket,
+       ~p"/app/#{socket.assigns.current_account}/approvals",
+       params,
+       socket.assigns.pending_filters,
+       prefix: "pending_",
+       current_params: socket.assigns.filter_params
+     )}
+  end
 
   def handle_event("revoke_grant", %{"id" => id}, socket) do
     Permissions.gated(
@@ -156,12 +170,6 @@ defmodule EmisarWeb.ApprovalsLive do
          |> reload()
          |> put_flash(:info, grants_revoked_flash(revoked_count))}
 
-      {:error, :grants_partially_revoked, revoked_count, _reason} ->
-        {:noreply,
-         socket
-         |> reload()
-         |> put_flash(:error, grants_partially_revoked_flash(revoked_count))}
-
       {:error, :unauthorized} ->
         {:noreply, put_flash(socket, :error, "You don't have permission to do that.")}
 
@@ -173,12 +181,17 @@ defmodule EmisarWeb.ApprovalsLive do
 
   defp load(socket, params) do
     subject = socket.assigns.current_subject
+    pending_filters = Approvals.pending_request_filters(subject)
+    view = Map.get(params, "pending_view", hd(pending_filters).default)
+    view = if view == "needs_decision", do: :needs_decision, else: :all
 
     # Three tables share one page — compact 10-row pages keep every section
     # scannable (the Paginator's 20/the decided read's 100 defaults let one
     # busy section swallow the page); the pager takes over past that.
     pending_opts =
-      LiveTable.params_to_opts(params, [], prefix: "pending_") |> put_page_limit(10)
+      LiveTable.params_to_opts(params, [], prefix: "pending_")
+      |> put_page_limit(10)
+      |> Keyword.put(:view, view)
 
     grants_opts = LiveTable.params_to_opts(params, [], prefix: "grants_") |> put_page_limit(10)
     decided_opts = LiveTable.params_to_opts(params, [], prefix: "decided_") |> put_page_limit(10)
@@ -201,6 +214,7 @@ defmodule EmisarWeb.ApprovalsLive do
     can_manage_grants? = Approvals.subject_can_manage_grants?(subject)
     grants_error? = grants_failed? and can_manage_grants?
     grants_denied? = grants_failed? and not can_manage_grants?
+    grant_management = grant_management(grants, subject, grants_failed?)
 
     # Decided-only AT THE QUERY — the old "all minus pending" client-side
     # subtraction made the pager count include pending rows it never showed
@@ -218,15 +232,9 @@ defmodule EmisarWeb.ApprovalsLive do
     approval_event_refs = approval_event_refs(grants, subject)
 
     socket
-    # The rows above were narrowed by CURRENT pack access, read fresh inside
-    # each list call. Derive the notice from the same projection rather than the
-    # mount-time membership snapshot, or a member whose access is narrowed (or
-    # widened) mid-session keeps reading the wrong explanation for a list that
-    # already changed underneath them.
-    |> assign(
-      :pack_access_restricted?,
-      Accounts.runner_access_for_subject(subject).pack_mode == :restricted
-    )
+    |> assign(:pending_filters, pending_filters)
+    |> assign(:pending_view, view)
+    |> assign(:grant_management, grant_management)
     |> assign(:pending, pending)
     |> assign(:pending_request_facts, pending_facts)
     |> assign(:pending_metadata, pending_meta)
@@ -442,16 +450,17 @@ defmodule EmisarWeb.ApprovalsLive do
     "#{revoked_count} #{plural(revoked_count, "grant")} revoked."
   end
 
-  defp grants_partially_revoked_flash(0) do
-    "No grants revoked. Some grants may still be active. Try Revoke all again."
+  defp grant_management(grants, subject, false) do
+    case Approvals.grant_management_by_ids(Enum.map(grants, & &1.id), subject) do
+      {:ok, hints} -> hints
+      {:error, _} -> %{grants: %{}, all_authorized?: false}
+    end
   end
 
-  defp grants_partially_revoked_flash(revoked_count) do
-    "#{revoked_count} #{plural(revoked_count, "grant")} revoked. Some grants may still be active. Try Revoke all again."
-  end
+  defp grant_management(_grants, _subject, true), do: %{grants: %{}, all_authorized?: false}
 
-  defp can_revoke_all_grants?(subject, metadata, grants_error?) do
-    not grants_error? and metadata.count > 0 and Approvals.subject_can_manage_grants?(subject)
+  defp can_revoke_all_grants?(metadata, grants_error?, management) do
+    not grants_error? and metadata.count > 0 and management.all_authorized?
   end
 
   # What a member who can't change the cap reads in its place. Worded like the
@@ -505,9 +514,6 @@ defmodule EmisarWeb.ApprovalsLive do
         Review actions waiting for approval. Open a request to see what will run,
         where, and why before you approve or deny it.
         <.doc_link href={~p"/docs/policies-and-approvals"}>Approvals docs</.doc_link>
-        <span :if={@pack_access_restricted?} class="mt-2 block">
-          Only requests and grants for packs you can access are shown.
-        </span>
       </.page_intro>
 
       <.loading_state :if={not connected?(@socket)} />
@@ -529,6 +535,7 @@ defmodule EmisarWeb.ApprovalsLive do
               rows={@pending}
               metadata={@pending_metadata}
               filter_params={@filter_params}
+              filters={@pending_filters}
               wrapper_class="divide-y divide-zinc-800/70"
             >
               <%!-- Canvas rows, not amber boxes — amber stays on the STATUS (the
@@ -599,7 +606,14 @@ defmodule EmisarWeb.ApprovalsLive do
                   Requests may still be waiting for approval. Refresh the page to try again.
                 </.empty_state>
                 <.empty_state
-                  :if={not @pending_error?}
+                  :if={not @pending_error? and @pending_view == :needs_decision}
+                  icon="product.approval"
+                  title="Nothing needs your decision"
+                >
+                  Choose All requests in the View filter to see the rest of the workspace's requests.
+                </.empty_state>
+                <.empty_state
+                  :if={not @pending_error? and @pending_view == :all}
                   icon="product.approval"
                   title="No pending approvals"
                 >
@@ -638,18 +652,15 @@ defmodule EmisarWeb.ApprovalsLive do
               <:subtitle :if={grants_disabled?(@current_account)}>
                 Disabled — every approval is single-use.
               </:subtitle>
-              <:actions :if={
-                can_revoke_all_grants?(
-                  @current_subject,
-                  @grants_metadata,
-                  @grants_error?
-                )
-              }>
+              <:actions :if={Approvals.subject_can_manage_grants?(@current_subject)}>
                 <.button
                   id="revoke-all-grants"
                   variant={:secondary}
                   tone={:rose}
                   size={:sm}
+                  disabled={
+                    not can_revoke_all_grants?(@grants_metadata, @grants_error?, @grant_management)
+                  }
                   phx-click={show_confirm_dialog("revoke-all-grants-dialog")}
                 >
                   Revoke all
@@ -660,9 +671,9 @@ defmodule EmisarWeb.ApprovalsLive do
             <.confirm_dialog
               :if={
                 can_revoke_all_grants?(
-                  @current_subject,
                   @grants_metadata,
-                  @grants_error?
+                  @grants_error?,
+                  @grant_management
                 )
               }
               id="revoke-all-grants-dialog"
@@ -676,9 +687,19 @@ defmodule EmisarWeb.ApprovalsLive do
               }
             >
               <:body>
-                Revoke all active grants within your runner and pack access, including grants on other pages.
+                Revoke every active grant in this workspace, including grants on other pages.
               </:body>
             </.confirm_dialog>
+
+            <p
+              :if={
+                @grants_metadata.count > 0 and not @grants_error? and
+                  not @grant_management.all_authorized?
+              }
+              class="mb-4 text-xs text-zinc-400"
+            >
+              Revoke all requires action access to every active grant's runner and pack.
+            </p>
 
             <LiveTable.live_table
               layout={:cards}
@@ -762,6 +783,7 @@ defmodule EmisarWeb.ApprovalsLive do
                     </.button>
                     <.confirm_button
                       :if={Approvals.subject_can_manage_grants?(@current_subject)}
+                      disabled={not Map.get(@grant_management.grants, g.id, false)}
                       id={"revoke-grant-#{g.id}"}
                       title="Revoke this grant?"
                       confirm_label="Revoke grant"
@@ -777,6 +799,12 @@ defmodule EmisarWeb.ApprovalsLive do
                       </:body>
                       Revoke
                     </.confirm_button>
+                    <span
+                      :if={not Map.get(@grant_management.grants, g.id, false)}
+                      class="text-xs text-zinc-400"
+                    >
+                      Outside your action access
+                    </span>
                   </:actions>
                 </.list_row>
               </:item>

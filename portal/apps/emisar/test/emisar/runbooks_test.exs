@@ -320,6 +320,34 @@ defmodule Emisar.RunbooksTest do
   end
 
   describe "list_model_visible_runbooks/1" do
+    test "trusted releases remain readable without executable targets, but scope and availability still block compilation" do
+      {_user, account, owner} = Fixtures.Subjects.owner_subject()
+      runner = trusted_runner(account, owner, connected?: false)
+      Fixtures.Runners.disable_runner(runner)
+      runbook = create_runbook(owner) |> Fixtures.Runbooks.publish_runbook()
+      viewer = scoped_membership_subject(account, "viewer", Emisar.Accounts.RunnerAccess.none())
+
+      operator =
+        scoped_membership_subject(account, "operator", Emisar.Accounts.RunnerAccess.none())
+
+      for reader <- [viewer, operator] do
+        assert {:ok, [readable]} = Runbooks.list_model_visible_runbooks(reader)
+        assert readable.id == runbook.id
+        assert {:ok, ^readable} = Runbooks.fetch_model_visible_runbook(runbook.slug, reader)
+      end
+
+      assert {:error, _} = Runbooks.resolve_plan(runbook, operator)
+
+      assert {:error, :unauthorized} =
+               Runbooks.dispatch_runbook(runbook, "Not authorized", viewer)
+
+      refute Repo.exists?(RunbookExecution)
+      [version] = Fixtures.Catalog.list_pack_versions(account.id)
+      assert {:ok, _} = Catalog.revoke_pack_version_trust(version.id, owner)
+      assert Runbooks.list_model_visible_runbooks(operator) == {:ok, []}
+      assert Runbooks.fetch_model_visible_runbook(runbook.slug, viewer) == {:error, :not_found}
+    end
+
     test "returns every live runbook and skips the never-published" do
       {_user, account, subject} = Fixtures.Subjects.owner_subject()
       runner = trusted_runner(account, subject)
@@ -413,10 +441,11 @@ defmodule Emisar.RunbooksTest do
       :telemetry.detach(handler)
 
       assert length(runbooks) == 8
-      # One row read, one fleet read (membership + scope + runners), and one
-      # catalog resolution (access + actions + pack versions). Compiling each
-      # runbook on its own cost 57 queries for this same page.
-      assert queries <= 8
+      # One row read, one fleet read (current identity + membership + scope + runners),
+      # a current membership/scope recheck before complete-group resolution, and
+      # one catalog resolution (access + actions + pack versions). These reads
+      # are shared by all eight runbooks, not repeated for each definition.
+      assert queries <= 11
     end
   end
 
@@ -622,6 +651,31 @@ defmodule Emisar.RunbooksTest do
   end
 
   describe "fetch_execution_result/2" do
+    test "retained history is shared after parent and runner deletion but still requires a current account identity" do
+      fixture = mcp_execution_fixture()
+      Fixtures.Runbooks.mark_runbook_as_deleted(fixture.runbook)
+      Fixtures.Runners.mark_deleted(fixture.runner)
+
+      reader =
+        scoped_membership_subject(fixture.account, "viewer", Emisar.Accounts.RunnerAccess.none())
+
+      assert {:ok, result} = Runbooks.fetch_execution_result(fixture.execution_id, reader)
+      assert result.runbook.id == fixture.runbook.id
+      assert result.runbook.deleted_at != nil
+      assert [%{runner_id: runner_id}] = result.execution.items
+      assert runner_id == fixture.runner.id
+      {_user, _account, foreign} = Fixtures.Subjects.owner_subject()
+
+      assert Runbooks.fetch_execution_result(fixture.execution_id, foreign) ==
+               {:error, :not_found}
+
+      membership = Fixtures.Memberships.fetch_membership(fixture.account.id, reader.actor.id)
+      Fixtures.Memberships.suspend_membership(membership)
+
+      assert Runbooks.fetch_execution_result(fixture.execution_id, reader) ==
+               {:error, :unauthorized}
+    end
+
     test "returns durable stages, items, and only the latest physical attempt" do
       fixture = mcp_execution_fixture()
 
@@ -1040,6 +1094,7 @@ defmodule Emisar.RunbooksTest do
 
     test "missing actor rows degrade honestly" do
       {user, account, owner} = Fixtures.Subjects.owner_subject()
+      reader = membership_subject(account, "viewer")
       _policy = Fixtures.Policies.create_policy(account_id: account.id)
       runner = trusted_runner(account, owner)
       Runners.subscribe_runner_transport(runner)
@@ -1053,7 +1108,8 @@ defmodule Emisar.RunbooksTest do
 
       Fixtures.Users.mark_user_as_deleted(user)
 
-      assert {:ok, result} = Runbooks.fetch_execution_result(execution_id, owner)
+      assert Runbooks.fetch_execution_result(execution_id, owner) == {:error, :unauthorized}
+      assert {:ok, result} = Runbooks.fetch_execution_result(execution_id, reader)
       assert Runbooks.execution_who_via(result.execution) == {nil, nil}
 
       # A key-dispatched execution whose key row is gone still names its channel.
@@ -1129,6 +1185,56 @@ defmodule Emisar.RunbooksTest do
   end
 
   describe "create_runbook/2" do
+    for loss <- [:demotion, :deleted_user, :suspension] do
+      test "even an empty draft refuses a stale author after #{loss}" do
+        {user, account, subject} = Fixtures.Subjects.owner_subject()
+        existing = create_runbook(subject, definition: Map.put(definition(), "stages", []))
+        membership = Fixtures.Memberships.fetch_membership(account.id, user.id)
+
+        case unquote(loss) do
+          :demotion -> Fixtures.Memberships.force_role(membership, "viewer")
+          :deleted_user -> Fixtures.Users.mark_user_as_deleted(user)
+          :suspension -> Fixtures.Memberships.suspend_membership(membership)
+        end
+
+        audit_count = Repo.aggregate(Emisar.Audit.Event, :count)
+        attrs = runbook_attrs(definition: Map.put(definition(), "stages", []))
+        assert Runbooks.create_runbook(attrs, subject) == {:error, :unauthorized}
+
+        assert Runbooks.save_draft(
+                 existing,
+                 %{"title" => "Stale edit"},
+                 base_sha(existing),
+                 subject
+               ) == {:error, :unauthorized}
+
+        assert Runbooks.publish_draft(existing, subject) == {:error, :unauthorized}
+        assert Runbooks.delete_runbook(existing, subject) == {:error, :unauthorized}
+        assert Repo.reload!(existing) == existing
+        assert Repo.aggregate(Runbooks.Runbook, :count) == 1
+        assert Repo.aggregate(Emisar.Audit.Event, :count) == audit_count
+      end
+    end
+
+    test "a current scoped author can save an empty draft and a granted pre-enrollment target, not an uncovered whole group" do
+      {_user, account, _owner} = Fixtures.Subjects.owner_subject()
+      first = Fixtures.Runners.create_runner(account_id: account.id, group: "database")
+      Fixtures.Runners.create_runner(account_id: account.id, group: "database", connected?: false)
+      {:ok, access} = Emisar.Accounts.RunnerAccess.restricted(["future"], [first.id])
+      author = scoped_membership_subject(account, "operator", access)
+
+      assert {:ok, _empty} =
+               Runbooks.create_runbook(
+                 runbook_attrs(definition: Map.put(definition(), "stages", [])),
+                 author
+               )
+
+      assert {:ok, _future} =
+               Runbooks.create_runbook(runbook_attrs(definition: definition("future")), author)
+
+      assert Runbooks.create_runbook(runbook_attrs(), author) == {:error, :target_out_of_scope}
+    end
+
     test "creates a never-published runbook holding its first draft, derives its slug, audits it" do
       {_user, account, subject} = Fixtures.Subjects.owner_subject()
       Runbooks.subscribe_account_runbooks(account.id)
@@ -1259,6 +1365,16 @@ defmodule Emisar.RunbooksTest do
   end
 
   describe "create_or_replay_mcp_draft/2" do
+    test "an expired key cannot create an empty draft or reserve an operation" do
+      {_user, account, owner} = Fixtures.Subjects.owner_subject()
+      subject = api_client_subject(account, owner, "Expired author")
+      facts = mcp_draft_facts(definition: Map.put(definition(), "stages", []))
+      Fixtures.ApiKeys.backdate_api_key_expiry(subject.actor)
+      assert Runbooks.create_or_replay_mcp_draft(facts, subject) == {:error, :unauthorized}
+      refute Repo.exists?(Runbooks.Runbook)
+      refute Repo.exists?(MCPOperations.Operation)
+    end
+
     test "creates and replays exactly once, then rejects changed facts" do
       {_user, account, owner} = Fixtures.Subjects.owner_subject()
       subject = api_client_subject(account, owner, "draft replay")
@@ -2196,6 +2312,175 @@ defmodule Emisar.RunbooksTest do
                {:error, :not_found}
 
       refute Repo.exists?(RunbookExecution)
+    end
+  end
+
+  describe "compiled execution admission" do
+    test "keeps the exact reviewed release and selected targets when unrelated current facts advance" do
+      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      Fixtures.Policies.create_policy(account_id: account.id)
+      runner = trusted_runner(account, subject)
+      runbook = create_runbook(subject) |> Fixtures.Runbooks.publish_runbook()
+
+      assert {:ok, compiled} =
+               Runbooks.Compiler.compile(runbook.definition, %{}, "fixed-seed", subject)
+
+      execution_id = Repo.generate_id()
+
+      multi =
+        Runbooks.Scheduler.compose_creation(
+          Multi.new(),
+          runbook,
+          compiled,
+          "Reviewed release",
+          subject,
+          execution_id
+        )
+
+      attrs = %{
+        "draft_definition" =>
+          Map.put(runbook.definition, "context_markdown", "New release instructions")
+      }
+
+      latest =
+        runbook |> Fixtures.Runbooks.revise_draft(attrs) |> Fixtures.Runbooks.publish_runbook()
+
+      assert latest.live_version == 2
+      extra = trusted_runner(account, subject)
+
+      assert {:ok, changes} = Repo.commit_multi(multi)
+      execution = changes[{:runbook_execution, execution_id}]
+      assert execution.runbook_version == 1
+      assert execution.definition == runbook.definition
+      assert execution.frozen_plan == compiled.plan
+
+      assert [%{runner_id: runner_id}] =
+               ExecutionItem.Query.by_execution_id(execution_id) |> Repo.all()
+
+      assert runner_id == runner.id
+      refute runner_id == extra.id
+      refute Repo.exists?(Runs.ActionRun)
+    end
+
+    for loss <- [:demotion, :deleted_user, :suspension, :foreign_member, :attenuation] do
+      test "composed creation rechecks #{loss} before inserting any execution effects" do
+        {user, account, owner} = Fixtures.Subjects.owner_subject()
+        Fixtures.Policies.create_policy(account_id: account.id)
+        trusted_runner(account, owner)
+        runbook = create_runbook(owner) |> Fixtures.Runbooks.publish_runbook()
+
+        assert {:ok, compiled} =
+                 Runbooks.Compiler.compile(runbook.definition, %{}, "fixed-seed", owner)
+
+        membership = Fixtures.Memberships.fetch_membership(account.id, user.id)
+        execution_id = Repo.generate_id()
+
+        subject =
+          case unquote(loss) do
+            :attenuation ->
+              %{
+                owner
+                | permissions:
+                    MapSet.delete(owner.permissions, Runs.Authorizer.dispatch_run_permission())
+              }
+
+            :foreign_member ->
+              %{owner | membership_id: Fixtures.Memberships.create_membership().id}
+
+            _ ->
+              owner
+          end
+
+        multi =
+          Runbooks.Scheduler.compose_creation(
+            Multi.new(),
+            runbook,
+            compiled,
+            "Frozen review",
+            subject,
+            execution_id
+          )
+
+        case unquote(loss) do
+          :demotion -> Fixtures.Memberships.force_role(membership, "viewer")
+          :deleted_user -> Fixtures.Users.mark_user_as_deleted(user)
+          :suspension -> Fixtures.Memberships.suspend_membership(membership)
+          _ -> :ok
+        end
+
+        audit_count = Repo.aggregate(Emisar.Audit.Event, :count)
+        assert Repo.commit_multi(multi) == {:error, :unauthorized}
+        refute Repo.exists?(RunbookExecution)
+        refute Repo.exists?(ExecutionItem)
+        refute Repo.exists?(ExecutionStage)
+        refute Repo.exists?(Approvals.Request)
+        refute Repo.exists?(Runs.ActionRun)
+        assert Repo.aggregate(Emisar.Audit.Event, :count) == audit_count
+      end
+    end
+
+    for change <- [:partial_group, :pack_scope, :malformed_pack, :moved_target, :deleted_target] do
+      test "compiled target #{change} never creates a partial execution or substitutes a new plan" do
+        {user, account, owner} = Fixtures.Subjects.owner_subject()
+        Fixtures.Policies.create_policy(account_id: account.id)
+        runner = trusted_runner(account, owner)
+        second = trusted_runner(account, owner)
+        runbook = create_runbook(owner) |> Fixtures.Runbooks.publish_runbook()
+
+        membership =
+          Fixtures.Memberships.fetch_membership(account.id, user.id)
+          |> Fixtures.Memberships.force_role("admin")
+
+        subject = Fixtures.Subjects.membership_subject(membership)
+
+        assert {:ok, compiled} =
+                 Runbooks.Compiler.compile(runbook.definition, %{}, "fixed-seed", subject)
+
+        compiled =
+          if unquote(change) == :malformed_pack,
+            do: %{compiled | items: Enum.map(compiled.items, &%{&1 | pack_ref: "linux-core"})},
+            else: compiled
+
+        multi =
+          Runbooks.Scheduler.compose_creation(
+            Multi.new(),
+            runbook,
+            compiled,
+            "Frozen targets",
+            subject,
+            Repo.generate_id()
+          )
+
+        case unquote(change) do
+          :partial_group ->
+            {:ok, access} = Emisar.Accounts.RunnerAccess.restricted([], [runner.id])
+            Fixtures.Memberships.force_runner_access(membership, access)
+            Fixtures.Runners.disable_runner(second)
+
+          :pack_scope ->
+            {:ok, access} = Emisar.Accounts.RunnerAccess.new(:all, [], [], :restricted, ["other"])
+            Fixtures.Memberships.force_runner_access(membership, access)
+
+          :moved_target ->
+            Fixtures.Runners.move_to_group(runner, "elsewhere")
+
+          :deleted_target ->
+            Fixtures.Runners.mark_deleted(runner)
+
+          :malformed_pack ->
+            :ok
+        end
+
+        expected = if unquote(change) == :moved_target, do: :review_changed, else: :unauthorized
+        audit_count = Repo.aggregate(Emisar.Audit.Event, :count)
+        assert Repo.commit_multi(multi) == {:error, expected}
+        refute Repo.exists?(RunbookExecution)
+        refute Repo.exists?(ExecutionItem)
+        refute Repo.exists?(ExecutionStage)
+        refute Repo.exists?(Approvals.Request)
+        refute Repo.exists?(Runs.ActionRun)
+        assert Repo.aggregate(Emisar.Audit.Event, :count) == audit_count
+      end
     end
   end
 

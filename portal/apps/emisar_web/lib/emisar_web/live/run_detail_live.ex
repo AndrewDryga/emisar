@@ -80,6 +80,7 @@ defmodule EmisarWeb.RunDetailLive do
          socket
          |> assign(:page_title, "Run #{run.action_id}")
          |> assign(:run, run)
+         |> refresh_action_access()
          |> assign(:action_args, visible_action_args(run, subject))
          |> assign(:approval_request, approval_request)
          |> assign(:approval_decider, approval_decider)
@@ -100,7 +101,7 @@ defmodule EmisarWeb.RunDetailLive do
   defp lookup_approval(subject, run) do
     case Approvals.fetch_approval_request_by_run_id(run.id, subject) do
       {:ok, req} -> req
-      {:error, :not_found} -> nil
+      {:error, _reason} -> nil
     end
   end
 
@@ -150,6 +151,7 @@ defmodule EmisarWeb.RunDetailLive do
     {:noreply,
      socket
      |> assign(:run, run)
+     |> refresh_action_access()
      |> assign(:action_args, visible_action_args(run, socket.assigns.current_subject))
      |> assign(:approval_request, approval_request)
      |> assign(:approval_decider, approval_decider(approval_request))
@@ -182,7 +184,22 @@ defmodule EmisarWeb.RunDetailLive do
     {:noreply, assign(socket, :runner_connection, connection)}
   end
 
+  def handle_info(
+        {:list_changed, :team, "membership.runner_access_changed", user_id},
+        %{assigns: %{current_user: %{id: user_id}}} = socket
+      ) do
+    {:noreply, refresh_action_access(socket)}
+  end
+
   def handle_info(_, socket), do: {:noreply, socket}
+
+  defp refresh_action_access(socket) do
+    can_cancel? =
+      connected?(socket) and not Runs.terminal_status?(socket.assigns.run.status) and
+        Runs.cancellation_allowed?([socket.assigns.run], socket.assigns.current_subject)
+
+    assign(socket, :can_cancel?, can_cancel?)
+  end
 
   # Runs owns the decode + sensitivity replacement; an unauthorized or
   # undecodable projection renders no Arguments panel at all.
@@ -340,6 +357,7 @@ defmodule EmisarWeb.RunDetailLive do
               Runs.subject_can_cancel_run?(@current_subject)
           }
           id="cancel-run"
+          disabled={not @can_cancel?}
           title="Cancel this run?"
           confirm_label="Cancel run"
           on_confirm={JS.push("cancel")}
@@ -356,6 +374,15 @@ defmodule EmisarWeb.RunDetailLive do
           </:body>
           Cancel run
         </.confirm_button>
+        <p
+          :if={
+            @run.status in [:sent, :running, :pending, :pending_approval] and
+              Runs.subject_can_cancel_run?(@current_subject) and not @can_cancel?
+          }
+          class="text-sm text-zinc-400"
+        >
+          Cancelling requires action access to this run's runner and pack.
+        </p>
       </:actions>
 
       <%!-- The page owns its rhythm (design-system §3.3): ONE space-y-12 child

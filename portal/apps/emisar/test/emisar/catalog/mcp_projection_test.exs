@@ -195,7 +195,12 @@ defmodule Emisar.Catalog.MCPProjectionTest do
       group: "default",
       labels: %{},
       packs: %{},
-      degraded_packs: [%{"pack" => "acme"}, %{"reason" => "no pack named"}],
+      degraded_packs: [
+        %{"pack" => "acme"},
+        %{"reason" => "no pack named"},
+        %{"pack" => "other", "reason" => "missing configuration"},
+        %{"pack" => "other", "reason" => "missing configuration"}
+      ],
       online?: true,
       enforce_signatures: false
     }
@@ -203,7 +208,11 @@ defmodule Emisar.Catalog.MCPProjectionTest do
     assert %{runners: [projected]} = MCPProjection.build([], [], [runner])
 
     assert Enum.filter(projected.issues, &(&1.code == "pack_load_failed")) == [
-             %{code: "pack_load_failed", message: "Pack acme failed to load on this runner."}
+             %{code: "pack_load_failed", message: "Pack acme failed to load on this runner."},
+             %{
+               code: "pack_load_failed",
+               message: "Pack other failed to load on this runner: missing configuration"
+             }
            ]
   end
 

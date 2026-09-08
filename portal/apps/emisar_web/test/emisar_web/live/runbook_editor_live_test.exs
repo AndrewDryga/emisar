@@ -301,7 +301,7 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
       assert has_element?(
                lv,
                "#runbook-stage-0-step-0-target-options",
-               "No online, enabled runners in this group are accessible to you"
+               "This group is outside your action access or has no available runners"
              )
 
       refute html =~ "All available runners in default (unavailable)"
@@ -309,7 +309,7 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
       assert has_element?(
                lv,
                ~s(#runbook-stage-0-step-0-target-options button[data-target-kind="group_all"][phx-click="remove_target"][phx-value-target="group:default"][phx-value-selection="all"]),
-               "default group No online, enabled runners in this group are accessible to you Unavailable"
+               "default group This group is outside your action access or has no available runners Unavailable"
              )
 
       refute has_element?(lv, "#runbook-stage-0-step-0-targets > .mt-2.space-y-2")
@@ -1435,6 +1435,147 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
       assert runbook.live_version == 1
       assert runbook.draft_definition == nil
       assert Repo.one!(Release).version == 1
+    end
+
+    for dimension <- [:runners, :packs] do
+      test "#{dimension} access refresh preserves the dirty editor and previous check", %{
+        conn: conn,
+        user: user,
+        account: account
+      } do
+        arrange_current_action(account, user)
+
+        membership =
+          Fixtures.Memberships.fetch_membership(account.id, user.id)
+          |> Fixtures.Memberships.force_role("admin")
+
+        {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runbooks/new")
+
+        output = %{
+          RunbookDraft.output()
+          | "id" => "observed",
+            "extract_type" => "contains",
+            "expression" => "uptime"
+        }
+
+        draft =
+          put_in(valid_draft(), ["stages", Access.at(0), "steps", Access.at(0), "outputs"], [
+            output
+          ])
+
+        change(lv, draft)
+        generation = :sys.get_state(lv.pid).socket.assigns.preview_generation
+        send(lv.pid, {:runbook_preview, generation})
+        assert render(lv) =~ "Ready to publish"
+        render_click(lv, "toggle_panel", %{"key" => "preserved-panel"})
+        render_click(lv, "review_publish", %{})
+        before = :sys.get_state(lv.pid).socket.assigns
+
+        {:ok, narrowed} =
+          case unquote(dimension) do
+            :runners -> Emisar.Accounts.RunnerAccess.new(:none)
+            :packs -> Emisar.Accounts.RunnerAccess.new(:all, [], [], :restricted, [])
+          end
+
+        Fixtures.Memberships.force_runner_access(membership, narrowed)
+        send(lv.pid, {:list_changed, :team, "membership.runner_access_changed", user.id})
+        html = render(lv)
+        after_change = :sys.get_state(lv.pid).socket.assigns
+
+        for key <- [:draft, :form, :baseline, :base_sha, :dirty?, :open_panels] do
+          assert Map.fetch!(after_change, key) == Map.fetch!(before, key)
+        end
+
+        refute after_change.read_only?
+        assert after_change.publish_review == nil
+        assert after_change.preview.plan == before.preview.plan
+        assert after_change.preview.checked_at == before.preview.checked_at
+        assert html =~ "Previous check"
+        refute html =~ "Ready to publish"
+        assert has_element?(lv, "#runbook-actions-desktop-save[disabled]")
+        assert has_element?(lv, "#runbook-actions-desktop-publish[disabled]")
+
+        send(lv.pid, {:runbook_preview, before.preview_generation})
+        render(lv)
+
+        assert :sys.get_state(lv.pid).socket.assigns.preview_generation ==
+                 after_change.preview_generation
+
+        send(lv.pid, {:runbook_preview, after_change.preview_generation})
+        assert render(lv) =~ "Previous check"
+        assert :sys.get_state(lv.pid).socket.assigns.preview.plan == before.preview.plan
+        assert render_click(lv, "save", %{}) =~ "within your action access"
+        render_click(lv, "publish", %{})
+        refute Repo.exists?(Runbook)
+
+        Fixtures.Memberships.force_runner_access(membership, Emisar.Accounts.RunnerAccess.all())
+        send(lv.pid, {:list_changed, :team, "membership.runner_access_changed", user.id})
+        render(lv)
+        restored = :sys.get_state(lv.pid).socket.assigns
+        assert restored.authoring_error == nil
+        assert restored.draft == before.draft
+        assert has_element?(lv, "#runbook-actions-desktop-save:not([disabled])")
+        send(lv.pid, {:runbook_preview, restored.preview_generation})
+        assert render(lv) =~ "Ready to publish"
+      end
+    end
+
+    test "catalog refresh replaces hydrated action pools without changing selected values", %{
+      conn: conn,
+      user: user,
+      account: account
+    } do
+      arrange_current_action(account, user)
+
+      membership =
+        Fixtures.Memberships.fetch_membership(account.id, user.id)
+        |> Fixtures.Memberships.force_role("admin")
+
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runbooks/new")
+      change(lv, valid_draft())
+
+      [source] =
+        Regex.run(~r/data-combobox-source="([^"]+)"/, render(lv), capture: :all_but_first)
+
+      render_hook(lv, "load_action_pool", %{"stage" => "0", "step" => "0", "source" => source})
+      before = :sys.get_state(lv.pid).socket.assigns
+      assert before.action_pool.id == source
+
+      send(
+        lv.pid,
+        {:list_changed, :team, "membership.runner_access_changed", Ecto.UUID.generate()}
+      )
+
+      render(lv)
+      assert :sys.get_state(lv.pid).socket.assigns.catalog_generation == before.catalog_generation
+
+      {:ok, access} = Emisar.Accounts.RunnerAccess.new(:all, [], [], :restricted, ["linux-core"])
+      Fixtures.Memberships.force_runner_access(membership, access)
+      send(lv.pid, {:list_changed, :team, "membership.runner_access_changed", user.id})
+      html = render(lv)
+      [new_source] = Regex.run(~r/data-combobox-source="([^"]+)"/, html, capture: :all_but_first)
+      assert new_source != source
+      assert :sys.get_state(lv.pid).socket.assigns.draft == before.draft
+      assert :sys.get_state(lv.pid).socket.assigns.authoring_error == nil
+      render_hook(lv, "load_action_pool", %{"stage" => "0", "step" => "0", "source" => source})
+      assert :sys.get_state(lv.pid).socket.assigns.action_pool == nil
+
+      html =
+        render_hook(lv, "load_action_pool", %{
+          "stage" => "0",
+          "step" => "0",
+          "source" => new_source
+        })
+
+      assert html =~ ~s(data-value="linux-core|linux.uptime")
+
+      {:ok, denied} = Emisar.Accounts.RunnerAccess.new(:all, [], [], :restricted, [])
+      Fixtures.Memberships.force_runner_access(membership, denied)
+      send(lv.pid, {:list_changed, :team, "membership.runner_access_changed", user.id})
+      render(lv)
+      repaired = put_in(before.draft, ["stages", Access.at(0), "steps"], [])
+      change(lv, repaired)
+      assert has_element?(lv, "#runbook-actions-desktop-save:not([disabled])")
     end
 
     test "a stale ready preview cannot publish once current state breaks", %{

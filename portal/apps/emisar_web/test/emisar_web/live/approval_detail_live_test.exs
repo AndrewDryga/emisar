@@ -47,6 +47,7 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
         reason: "needs review",
         args: %{},
         initiating_membership_id: initiating_membership.id,
+        requested_by_id: requested_by.id,
         pack_ref: Fixtures.Catalog.default_pack_ref(),
         expected_pack_hash: Fixtures.Catalog.default_pack_hash(),
         status: :pending_approval
@@ -985,7 +986,7 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
     refute has_element?(lv, "#approval-decision-form button[name=decision][value=approve]")
   end
 
-  test "revoked pack access blocks a stale denial and leaves the approval page", %{conn: conn} do
+  test "revoked pack access blocks a stale denial and keeps the request readable", %{conn: conn} do
     {conn, user, account} = register_and_log_in(conn)
 
     account.id
@@ -1013,8 +1014,9 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
     |> form("form[phx-submit='decide']", %{})
     |> render_submit(%{"decision" => "deny"})
 
-    flash = assert_redirect(lv, ~p"/app/#{account}/approvals")
-    assert flash["error"] == "Approval is no longer available under your current access."
+    assert has_element?(lv, "#approval-access-required")
+    assert has_element?(lv, "#approval-decision-form button[value=deny][disabled]")
+    assert has_element?(lv, "#approval-decision-form button[value=approve][disabled]")
     assert Repo.reload!(request).status == :pending
   end
 
@@ -1284,8 +1286,8 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
     Fixtures.Memberships.force_runner_access(membership, access)
 
     lv |> element("#approval-availability button", "Recheck") |> render_click()
-    flash = assert_redirect(lv, ~p"/app/#{account}/approvals")
-    assert flash["error"] == "Approval is no longer available under your current access."
+    assert has_element?(lv, "#approval-access-required")
+    assert has_element?(lv, "#approval-decision-form button[value=deny][disabled]")
     assert Repo.reload!(request).status == :pending
   end
 
@@ -1368,7 +1370,7 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
     {:ok, lv, html} = live(conn, ~p"/app/#{account}/approvals/#{request.id}")
 
     assert html =~ "Runner offline"
-    assert html =~ "The runner is offline, but you can still approve this request."
+    assert html =~ "The runner is offline. The run can start only"
 
     run = Repo.get!(Runs.ActionRun, request.run_id)
 
@@ -1659,6 +1661,7 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
         reason: "needs review",
         args: %{},
         initiating_membership_id: owner_membership.id,
+        requested_by_id: owner.id,
         pack_ref: Fixtures.Catalog.default_pack_ref(),
         expected_pack_hash: Fixtures.Catalog.default_pack_hash(),
         status: :pending_approval
@@ -1784,10 +1787,9 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
     refute has_element?(lv, ~s([data-shot="approval-verdict"]), user.full_name)
   end
 
-  test "a soft-deleted target runner makes the approval unavailable", %{conn: conn} do
-    # Approval visibility is the same fail-closed target check used by the
-    # decision transaction. A runner removed after the request was created
-    # cannot leave behind a decision surface for an invalid target.
+  test "a soft-deleted target runner leaves readable history without decision authority", %{
+    conn: conn
+  } do
     {conn, user, account} = register_and_log_in(conn)
     request = pending_request(account, user)
 
@@ -1801,11 +1803,10 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
     |> Emisar.Runners.Runner.Query.by_id(runner_id)
     |> Repo.update_all(set: [deleted_at: DateTime.utc_now()])
 
-    assert {:error, {:live_redirect, %{to: path, flash: flash}}} =
-             live(conn, ~p"/app/#{account}/approvals/#{request.id}")
-
-    assert path == ~p"/app/#{account}/approvals"
-    assert flash_message(flash, "error") == "Approval not found."
+    {:ok, lv, _html} = live(conn, ~p"/app/#{account}/approvals/#{request.id}")
+    assert has_element?(lv, "#approval-access-required")
+    assert has_element?(lv, "#approval-decision-form button[value=deny][disabled]")
+    refute has_element?(lv, "#approval-decision-form button[value=approve]:not([disabled])")
     assert Repo.reload!(request).status == :pending
   end
 
@@ -1842,13 +1843,5 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
     assert html =~ "Former member"
     # Sanity: the decision panel still rendered (the owner can decide).
     assert html =~ "approval-decision-form"
-  end
-
-  defp flash_message(flash, key) when is_map(flash), do: flash[key]
-
-  defp flash_message(flash, key) when is_binary(flash) do
-    EmisarWeb.Endpoint
-    |> Phoenix.LiveView.Utils.verify_flash(flash)
-    |> Map.get(key)
   end
 end

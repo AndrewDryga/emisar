@@ -28,7 +28,7 @@ defmodule Emisar.Policies do
       }
   """
   alias Ecto.Multi
-  alias Emisar.{Accounts, Audit, Auth, Catalog, Repo, Runners}
+  alias Emisar.{Accounts, Audit, Auth, Catalog, Repo, Runners, Users}
   alias Emisar.Auth.Subject
   alias Emisar.Policies.{Authorizer, Glob, Policy, Target}
 
@@ -336,8 +336,8 @@ defmodule Emisar.Policies do
   # -- Subject-gated CRUD ---------------------------------------------
 
   def fetch_policy(%Subject{} = subject) do
-    with :ok <-
-           Auth.Authorizer.ensure_has_permissions(subject, Authorizer.view_policies_permission()) do
+    with {:ok, subject} <-
+           Auth.fetch_current_subject(Authorizer.view_policies_permission(), subject) do
       Policy.Query.not_deleted()
       |> Policy.Query.account_scope()
       |> Authorizer.for_subject(subject)
@@ -346,7 +346,7 @@ defmodule Emisar.Policies do
   end
 
   @doc """
-  Summarizes current approval settings in the account default and reachable
+  Summarizes current approval settings in the account default and saved
   runner/group rulesets. Existing requests retain their saved requirements.
 
   Returns a common approver count (or `:varies`) and whether self-approval is
@@ -367,13 +367,10 @@ defmodule Emisar.Policies do
     end
   end
 
-  # The default is read separately: scope_to_runner_access/2 intentionally
-  # includes only reachable runner/group targets for restricted members.
   defp scoped_approval_settings(subject) do
     rules =
       Policy.Query.not_deleted()
       |> Policy.Query.scoped_overrides()
-      |> scope_to_runner_access(subject)
       |> Policy.Query.distinct_approval_rules(@approval_summary_config_limit + 1)
       |> Authorizer.for_subject(subject)
       |> Repo.all()
@@ -458,10 +455,10 @@ defmodule Emisar.Policies do
 
   defp approval_snapshot(_decision, _policy), do: nil
 
-  @doc "Lists a bounded page of reachable saved targets, without policy rules."
+  @doc "Lists a bounded page of saved account targets, without policy rules."
   def list_scoped_policy_summaries(%Subject{} = subject, opts \\ []) do
-    with :ok <-
-           Auth.Authorizer.ensure_has_permissions(subject, Authorizer.view_policies_permission()),
+    with {:ok, subject} <-
+           Auth.fetch_current_subject(Authorizer.view_policies_permission(), subject),
          {:ok, summaries, metadata} <- scoped_summary_page(subject, opts) do
       summaries =
         Enum.map(summaries, fn summary ->
@@ -488,21 +485,19 @@ defmodule Emisar.Policies do
   defp scoped_summary_page(subject, opts) do
     Policy.Query.not_deleted()
     |> Policy.Query.scoped_overrides()
-    |> scope_to_runner_access(subject)
     |> Policy.Query.select_summary()
     |> Authorizer.for_subject(subject)
     |> Repo.list(Policy.Query, bounded_page(opts, 25, :auto))
   end
 
-  @doc "Loads one reachable saved editor; foreign, deleted and hidden rows are not found."
+  @doc "Loads one saved editor; foreign and deleted rows are not found."
   def fetch_scoped_policy_by_id(id, %Subject{} = subject) do
-    with :ok <-
-           Auth.Authorizer.ensure_has_permissions(subject, Authorizer.view_policies_permission()),
+    with {:ok, subject} <-
+           Auth.fetch_current_subject(Authorizer.view_policies_permission(), subject),
          true <- Repo.valid_uuid?(id) do
       Policy.Query.not_deleted()
       |> Policy.Query.scoped_overrides()
       |> Policy.Query.by_id(id)
-      |> scope_to_runner_access(subject)
       |> Authorizer.for_subject(subject)
       |> Repo.fetch(Policy.Query)
     else
@@ -518,8 +513,8 @@ defmodule Emisar.Policies do
   search terms longer than 512 bytes.
   """
   def list_scope_target_options(search, %Subject{} = subject, opts \\ []) do
-    with :ok <-
-           Auth.Authorizer.ensure_has_permissions(subject, Authorizer.view_policies_permission()),
+    with {:ok, subject} <-
+           Auth.fetch_current_subject(Authorizer.view_policies_permission(), subject),
          {:ok, search} <- target_search(search) do
       target_query(subject)
       |> Target.Query.with_policy()
@@ -540,8 +535,8 @@ defmodule Emisar.Policies do
   @doc "Resolves a selected target independently of its current search page."
   def fetch_scope_target_option(scope_type, scope_value, %Subject{} = subject)
       when scope_type in [:runner, :group] and is_binary(scope_value) do
-    with :ok <-
-           Auth.Authorizer.ensure_has_permissions(subject, Authorizer.view_policies_permission()) do
+    with {:ok, subject} <-
+           Auth.fetch_current_subject(Authorizer.view_policies_permission(), subject) do
       target_query(subject)
       |> Target.Query.by_scope(scope_type, scope_value)
       |> Target.Query.with_policy()
@@ -552,8 +547,8 @@ defmodule Emisar.Policies do
 
   @doc "Whether any reachable target remains after saved policies and all open drafts."
   def scope_target_available?(reserved, %Subject{} = subject) when is_list(reserved) do
-    with :ok <-
-           Auth.Authorizer.ensure_has_permissions(subject, Authorizer.view_policies_permission()) do
+    with {:ok, subject} <-
+           Auth.fetch_current_subject(Authorizer.view_policies_permission(), subject) do
       available? =
         target_query(subject)
         |> Target.Query.with_policy()
@@ -577,21 +572,6 @@ defmodule Emisar.Policies do
     opts |> Keyword.put(:page, page) |> Keyword.put(:count, count)
   end
 
-  # Per-member runner access is the third gate: `Authorizer.for_subject/2` scopes
-  # to the account, this scopes to the hosts within it. `all` needs no narrowing
-  # and must not pay for a fleet read; every other mode resolves the exact scope
-  # values the member may name.
-  defp scope_to_runner_access(queryable, %Subject{} = subject) do
-    case Accounts.runner_access_for_subject(subject) do
-      %Accounts.RunnerAccess{mode: :all} ->
-        queryable
-
-      access ->
-        targets = Runners.scope_targets_query(subject.account.id, access)
-        Policy.Query.by_scope_targets(queryable, targets)
-    end
-  end
-
   @doc """
   Soft-delete a runner/group override: that runner/group falls back to the
   next-broader scope (group, then the account default) on the next dispatch.
@@ -611,10 +591,13 @@ defmodule Emisar.Policies do
       |> Multi.run(:active_account, fn repo, _changes ->
         Accounts.fetch_and_lock_account(subject.account.id, repo: repo)
       end)
+      |> Multi.run(:access, fn repo, _changes ->
+        fetch_and_lock_policy_access(repo, subject)
+      end)
       # Judge scope on the LOCKED, subject-scoped row, not the caller's struct:
       # a foreign policy scopes out to :not_found, and a member whose runner
       # access has since narrowed can no longer spend a row they still hold.
-      |> Multi.run(:loaded_policy, fn repo, _changes ->
+      |> Multi.run(:loaded_policy, fn repo, %{access: access} ->
         query =
           Policy.Query.not_deleted()
           |> Policy.Query.scoped_overrides()
@@ -623,12 +606,13 @@ defmodule Emisar.Policies do
           |> Authorizer.for_subject(subject)
 
         with {:ok, loaded_policy} <- repo.fetch(query, Policy.Query),
-             :ok <- ensure_policy_mutation_access(loaded_policy.scope_type, subject),
+             :ok <- ensure_policy_access(loaded_policy.scope_type, access),
              :ok <-
-               ensure_scope_in_reach(
-                 loaded_policy.scope_type,
-                 loaded_policy.scope_value,
-                 subject
+               ensure_policy_removal_target(
+                 loaded_policy,
+                 subject.account.id,
+                 access,
+                 repo
                ) do
           {:ok, loaded_policy}
         end
@@ -692,7 +676,7 @@ defmodule Emisar.Policies do
              Authorizer.manage_policies_permission()
            ),
          :ok <- ensure_policy_mutation_access(scope_type, subject),
-         :ok <- ensure_scope_in_reach(scope_type, scope_value, subject) do
+         :ok <- ensure_policy_target_shape(scope_type, scope_value) do
       changeset =
         Policy.Changeset.create(%{
           account_id: account_id,
@@ -705,6 +689,14 @@ defmodule Emisar.Policies do
       Multi.new()
       |> Multi.run(:active_account, fn repo, _changes ->
         Accounts.fetch_and_lock_account(account_id, repo: repo)
+      end)
+      |> Multi.run(:access, fn repo, _changes ->
+        with {:ok, access} <- fetch_and_lock_policy_access(repo, subject),
+             :ok <- ensure_policy_access(scope_type, access),
+             :ok <-
+               ensure_and_lock_policy_target(scope_type, scope_value, account_id, access, repo) do
+          {:ok, access}
+        end
       end)
       |> Multi.run(:before, fn repo, _changes ->
         {:ok, peek_scoped_policy(repo, account_id, scope_type, scope_value)}
@@ -742,10 +734,65 @@ defmodule Emisar.Policies do
   def subject_can_manage_policies?(%Subject{} = subject),
     do: Auth.Authorizer.has_permission?(subject, Authorizer.manage_policies_permission())
 
-  @doc "The current reach-aware capabilities the policy editor renders."
-  def policy_management_capabilities(%Subject{} = subject) do
-    can_manage? = subject_can_manage_policies?(subject)
-    access = Accounts.runner_access_for_subject(subject)
+  @doc """
+  Current policy-editor capabilities, including hints for concrete runner/group
+  targets. Queries are batched; saved policies and their previews stay readable
+  outside action access. These hints never replace mutation authorization.
+  """
+  def policy_management_capabilities(%Subject{} = subject, targets \\ []) do
+    case Auth.fetch_current_subject(Authorizer.view_policies_permission(), subject) do
+      {:ok, subject} ->
+        access = Accounts.runner_access_for_subject(subject)
+        capabilities = policy_capabilities(subject_can_manage_policies?(subject), access)
+
+        Map.put(
+          capabilities,
+          :targets,
+          policy_target_capabilities(targets, capabilities, subject.account.id, access)
+        )
+
+      {:error, _reason} ->
+        policy_capabilities(false, Accounts.RunnerAccess.none())
+        |> Map.put(:targets, Map.new(targets, &{&1, false}))
+    end
+  end
+
+  defp policy_target_capabilities(targets, %{can_manage_scoped?: false}, _account_id, _access),
+    do: Map.new(targets, &{&1, false})
+
+  defp policy_target_capabilities(targets, _capabilities, account_id, access) do
+    {granted_groups, remaining} =
+      targets
+      |> Enum.uniq()
+      |> Enum.split_with(fn
+        {:group, group} when is_binary(group) and group != "" ->
+          access.mode == :all or group in access.groups
+
+        _ ->
+          false
+      end)
+
+    allowed =
+      remaining
+      |> Enum.chunk_every(100)
+      |> Enum.flat_map(fn batch ->
+        account_id
+        |> Runners.scope_targets_query(access)
+        |> Target.Query.all()
+        |> Target.Query.by_scopes(batch)
+        |> Target.Query.select_scope_identity()
+        |> Repo.all()
+        |> Enum.map(fn {type, value} ->
+          {if(type == "runner", do: :runner, else: :group), value}
+        end)
+      end)
+      |> Enum.concat(granted_groups)
+      |> MapSet.new()
+
+    Map.new(targets, &{&1, MapSet.member?(allowed, &1)})
+  end
+
+  defp policy_capabilities(can_manage?, access) do
     has_runner_access? = access.mode != :none
     has_all_runner_access? = access.mode == :all
     has_all_pack_access? = access.pack_mode == :all
@@ -830,110 +877,155 @@ defmodule Emisar.Policies do
   # needs the whole pack dimension. The account default also governs every
   # runner; a targeted override stays confined by the reach check below.
   defp ensure_policy_mutation_access(:account, %Subject{} = subject) do
-    case Accounts.runner_access_for_subject(subject) do
-      %Accounts.RunnerAccess{mode: :all, pack_mode: :all} -> :ok
-      _access -> {:error, :unauthorized}
-    end
+    ensure_policy_access(:account, Accounts.runner_access_for_subject(subject))
   end
 
   defp ensure_policy_mutation_access(scope_type, %Subject{} = subject)
        when scope_type in [:runner, :group] do
-    case Accounts.runner_access_for_subject(subject) do
-      %Accounts.RunnerAccess{pack_mode: :all} -> :ok
-      _access -> {:error, :unauthorized}
+    ensure_policy_access(scope_type, Accounts.runner_access_for_subject(subject))
+  end
+
+  defp fetch_and_lock_policy_access(repo, %Subject{actor: %Users.User{id: user_id}} = subject) do
+    with {:ok, membership} <-
+           Accounts.fetch_and_lock_membership(subject.account.id, subject.membership_id,
+             repo: repo
+           ),
+         true <- membership.user_id == user_id,
+         {:ok, _user} <- Users.fetch_and_lock_user_by_id(user_id, repo),
+         {:ok, _subject} <-
+           Auth.fetch_current_subject(Authorizer.manage_policies_permission(), subject) do
+      {:ok, Accounts.runner_access_for_locked_membership(repo, membership)}
+    else
+      _ -> {:error, :unauthorized}
     end
   end
 
-  # A ruleset's scope names the hosts it governs, so a writer may only name one
-  # their OWN runner access reaches — the editor's picker is not the check
-  # (IL-15), and a crafted event carries whatever it likes. The account default
-  # has no host scope to judge after the whole-fleet gate above.
-  defp ensure_scope_in_reach(:account, _scope_value, %Subject{}), do: :ok
+  defp fetch_and_lock_policy_access(_repo, _subject), do: {:error, :unauthorized}
 
-  defp ensure_scope_in_reach(:runner, runner_id, %Subject{} = subject) do
-    if target_reachable?(:runner, runner_id, subject), do: :ok, else: {:error, :runner_not_found}
+  defp ensure_policy_access(:account, %Accounts.RunnerAccess{mode: :all, pack_mode: :all}),
+    do: :ok
+
+  defp ensure_policy_access(scope_type, %Accounts.RunnerAccess{pack_mode: :all})
+       when scope_type in [:runner, :group],
+       do: :ok
+
+  defp ensure_policy_access(_scope_type, _access), do: {:error, :unauthorized}
+
+  defp ensure_policy_target_shape(:account, _value), do: :ok
+
+  defp ensure_policy_target_shape(:runner, value) do
+    if Repo.valid_uuid?(value), do: :ok, else: {:error, :runner_not_found}
   end
 
-  # A group is a NAME, not a host, and an UNRESTRICTED writer can already see
-  # every group there is — so naming one nothing is enrolled in yet leaks nothing
-  # and stays legal: a setup flow writes the ruleset, then enrolls the hosts into
-  # it. A narrowed writer has to hold the group, and there reach is the check
-  # rather than mere existence — replying "no such group" for one they cannot see
-  # would turn the save into a group-name oracle, so unknown and out-of-reach
-  # give them one answer. The empty name is nobody's group either way.
-  defp ensure_scope_in_reach(:group, group, %Subject{} = subject)
-       when is_binary(group) and group != "" do
-    case Accounts.runner_access_for_subject(subject) do
-      %Accounts.RunnerAccess{mode: :all} ->
+  defp ensure_policy_target_shape(:group, value) when is_binary(value) and value != "", do: :ok
+  defp ensure_policy_target_shape(:group, _value), do: {:error, :group_not_found}
+
+  # An unrestricted manager may remove a dangling override after its runner was
+  # deleted. The account-scoped policy and current all-pack gate are already checked.
+  defp ensure_policy_removal_target(_policy, _account_id, %{mode: :all}, _repo), do: :ok
+
+  defp ensure_policy_removal_target(policy, account_id, access, repo) do
+    ensure_and_lock_policy_target(
+      policy.scope_type,
+      policy.scope_value,
+      account_id,
+      access,
+      repo
+    )
+  end
+
+  defp ensure_and_lock_policy_target(:account, _value, _account_id, _access, _repo), do: :ok
+
+  defp ensure_and_lock_policy_target(:runner, id, account_id, access, repo) do
+    with {:ok, [runner]} <-
+           Runners.fetch_and_lock_cancellation_runners(account_id, [id], repo: repo),
+         true <- Accounts.RunnerAccess.runner_in_scope?(runner, access) do
+      :ok
+    else
+      false -> {:error, :unauthorized}
+      {:error, _reason} -> {:error, :runner_not_found}
+    end
+  end
+
+  defp ensure_and_lock_policy_target(:group, "", _account_id, _access, _repo),
+    do: {:error, :group_not_found}
+
+  defp ensure_and_lock_policy_target(:group, group, account_id, access, repo) do
+    case Runners.ensure_group_access(account_id, [group], access, repo: repo) do
+      :ok ->
         :ok
 
-      _access ->
-        if target_reachable?(:group, group, subject), do: :ok, else: {:error, :group_not_found}
+      {:error, _reason} ->
+        if known_scope_target?(:group, group, account_id) or saved_group?(group, account_id),
+          do: {:error, :unauthorized},
+          else: {:error, :group_not_found}
     end
   end
 
-  defp ensure_scope_in_reach(:group, _group, %Subject{}), do: {:error, :group_not_found}
+  defp known_scope_target?(type, value, account_id) do
+    account_id
+    |> Runners.scope_targets_query(Accounts.RunnerAccess.all())
+    |> Target.Query.all()
+    |> Target.Query.by_scope(type, value)
+    |> Repo.exists?()
+  end
 
-  defp target_reachable?(scope_type, value, subject) do
-    target_query(subject)
-    |> Target.Query.by_scope(scope_type, value)
-    |> Authorizer.for_subject(subject)
+  defp saved_group?(group, account_id) do
+    Policy.Query.not_deleted()
+    |> Policy.Query.by_account_id(account_id)
+    |> Policy.Query.by_scope(:group, group)
     |> Repo.exists?()
   end
 
   @doc "Computes a policy preview in bounded, freshly authorized catalog batches."
   def preview_policy(input, editor_ref, %Subject{} = subject, opts \\ []) do
-    with :ok <-
-           Auth.Authorizer.ensure_has_permissions(subject, Authorizer.view_policies_permission()),
+    with {:ok, subject} <-
+           Auth.fetch_current_subject(Authorizer.view_policies_permission(), subject),
          :ok <- validate_preview_input(input),
          {:ok, target} <- preview_target(editor_ref, subject) do
-      access = Accounts.runner_access_for_subject(subject)
+      rules = build_rules(input)
 
-      if access.mode == :none or access.pack_mode == :none do
-        {:error, :no_access}
-      else
-        rules = build_rules(input)
+      matchers =
+        for {row, index} <- Enum.with_index(input.overrides),
+            pattern = String.trim(row["action"] || ""),
+            pattern != "",
+            do: {index, Glob.compile(pattern)}
 
-        matchers =
-          for {row, index} <- Enum.with_index(input.overrides),
-              pattern = String.trim(row["action"] || ""),
-              pattern != "",
-              do: {index, Glob.compile(pattern)}
+      state = %{
+        total: 0,
+        account_id: subject.account.id,
+        editor_ref: editor_ref,
+        target: target,
+        outcome: empty_outcome(),
+        breakdown: Map.new(@risk_tiers, &{&1, 0}),
+        unmatched_override_indexes: MapSet.new(matchers, &elem(&1, 0))
+      }
 
-        state = %{
-          total: 0,
-          account_id: subject.account.id,
-          access_snapshot: access,
-          editor_ref: editor_ref,
-          target: target,
-          outcome: empty_outcome(),
-          breakdown: Map.new(@risk_tiers, &{&1, 0}),
-          unmatched_override_indexes: MapSet.new(matchers, &elem(&1, 0))
-        }
+      plan = %{
+        target: target,
+        editor_ref: editor_ref,
+        defaults: defaults_for(rules),
+        overrides: compile_overrides(overrides_for(rules)),
+        matchers: matchers,
+        cancelled?: Keyword.get(opts, :cancelled?, fn -> false end)
+      }
 
-        plan = %{
-          target: target,
-          editor_ref: editor_ref,
-          access: access,
-          defaults: defaults_for(rules),
-          overrides: compile_overrides(overrides_for(rules)),
-          matchers: matchers,
-          cancelled?: Keyword.get(opts, :cancelled?, fn -> false end)
-        }
-
-        preview_batches(plan, subject, state, nil)
-      end
+      preview_batches(plan, subject, state, nil)
     end
   end
 
   @doc "Rechecks a completed background preview immediately before the web adapter publishes it."
   def preview_current?(
-        %{account_id: account_id, access_snapshot: access, editor_ref: ref, target: target},
+        %{account_id: account_id, editor_ref: ref, target: target},
         %Subject{} = subject
       ) do
-    account_id == subject.account.id and subject_can_view_policies?(subject) and
-      Accounts.runner_access_for_subject(subject) == access and
+    with true <- account_id == subject.account.id,
+         {:ok, subject} <-
+           Auth.fetch_current_subject(Authorizer.view_policies_permission(), subject) do
       preview_target(ref, subject) == {:ok, target}
+    else
+      _ -> false
+    end
   end
 
   defp validate_preview_input(%{overrides: overrides} = input)
@@ -953,7 +1045,6 @@ defmodule Emisar.Policies do
       Policy.Query.not_deleted()
       |> Policy.Query.scoped_overrides()
       |> Policy.Query.by_id(id)
-      |> scope_to_runner_access(subject)
       |> Policy.Query.select_scope()
       |> Authorizer.for_subject(subject)
       |> Repo.fetch(Policy.Query)
@@ -968,10 +1059,20 @@ defmodule Emisar.Policies do
 
   defp preview_target({type, value}, subject)
        when type in [:runner, :group] and is_binary(value) do
-    with :ok <- ensure_scope_in_reach(type, value, subject), do: {:ok, {type, value}}
+    if known_scope_target?(type, value, subject.account.id) or
+         preview_empty_group?(type, value, subject),
+       do: {:ok, {type, value}},
+       else: {:error, :not_found}
   end
 
   defp preview_target(_, _subject), do: {:error, :not_found}
+
+  defp preview_empty_group?(:group, group, subject) when group != "" do
+    access = Accounts.runner_access_for_subject(subject)
+    access.mode == :all or group in access.groups or saved_group?(group, subject.account.id)
+  end
+
+  defp preview_empty_group?(_type, _value, _subject), do: false
 
   defp preview_batches(plan, subject, state, cursor) do
     with :ok <- preview_continues(plan, subject),
@@ -1016,11 +1117,14 @@ defmodule Emisar.Policies do
   end
 
   defp preview_continues(plan, subject) do
-    cond do
-      plan.cancelled?.() -> {:error, :cancelled}
-      Accounts.runner_access_for_subject(subject) != plan.access -> {:error, :unauthorized}
-      preview_target(plan.editor_ref, subject) != {:ok, plan.target} -> {:error, :unauthorized}
-      true -> :ok
+    with false <- plan.cancelled?.(),
+         {:ok, subject} <-
+           Auth.fetch_current_subject(Authorizer.view_policies_permission(), subject),
+         {:ok, target} when target == plan.target <- preview_target(plan.editor_ref, subject) do
+      :ok
+    else
+      true -> {:error, :cancelled}
+      _ -> {:error, :unauthorized}
     end
   end
 

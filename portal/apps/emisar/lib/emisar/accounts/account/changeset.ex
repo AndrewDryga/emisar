@@ -45,6 +45,14 @@ defmodule Emisar.Accounts.Account.Changeset do
     |> changeset()
   end
 
+  @doc "Internal — writes the pack cleanup window Catalog owns. nil turns the sweep off."
+  def put_pack_retention_days(%Account{} = account, days) do
+    account
+    |> cast(%{settings: %{pack_unseen_retention_days: days}}, [])
+    |> cast_embed(:settings, with: &Account.Settings.pack_retention_changeset/2)
+    |> changeset()
+  end
+
   @doc "Internal — writes the support channel configured through the private admin pack."
   def put_support_slack_url(%Account{} = account, url) do
     account

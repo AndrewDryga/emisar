@@ -304,7 +304,10 @@ defmodule Emisar.Runbooks.ExecutionApprovalTest do
     assert {:ok, _result} = Runbooks.dispatch_runbook(runbook, "scope approval", subject)
     refute approver.actor.email in notified_recipients()
 
-    assert {:ok, [], _metadata} = Approvals.list_pending_approval_requests(approver)
+    assert {:ok, [_request], _metadata} = Approvals.list_pending_approval_requests(approver)
+
+    assert {:ok, [], _metadata} =
+             Approvals.list_pending_approval_requests(approver, view: :needs_decision)
 
     {:ok, both_runners} = RunnerAccess.restricted([], [first.id, second.id])
     _membership = Fixtures.Memberships.force_runner_access(approver_membership, both_runners)
@@ -361,6 +364,33 @@ defmodule Emisar.Runbooks.ExecutionApprovalTest do
     assert event.payload["runbook_execution_id"] == result.execution_id
 
     assert Approvals.approve_request(expired, approver, "too late") == {:error, :expired}
+  end
+
+  test "deleted targets suppress new prompts but retain scoped expiry receipts", %{
+    approver: approver,
+    runner: runner,
+    subject: subject
+  } do
+    runbook = published_runbook(subject, required_definition(runner.group))
+    assert {:ok, result} = Runbooks.dispatch_runbook(runbook, "maintenance window", subject)
+    assert {:ok, [request], _metadata} = Approvals.list_pending_approval_requests(approver)
+    assert approver.actor.email in notified_recipients()
+
+    Fixtures.Runners.mark_deleted(runner)
+
+    assert ExUnit.CaptureLog.capture_log(fn ->
+             assert :ok =
+                      Approvals.after_runbook_execution_request_committed(%{
+                        {:runbook_execution_approval_request, result.execution_id} => request
+                      })
+           end) =~ "runbook_execution_approval_notification_scope_failed"
+
+    assert notified_recipients() == []
+    now = DateTime.utc_now()
+    Fixtures.Approvals.set_request_expiry(request, DateTime.add(now, -1))
+    assert Approvals.expire_overdue_requests(now) == 1
+    assert approver.actor.email in notified_recipients()
+    assert Repo.reload!(request).status == :expired
   end
 
   test "membership loss at decision halts and closes the pending request", %{

@@ -2,8 +2,8 @@ defmodule EmisarWeb.MCP.CatalogTools do
   @moduledoc """
   Fixed MCP catalog tool implementation.
 
-  `Emisar.Catalog` owns authorization, account isolation, the caller's runner
-  scope, and the exact-hash trusted projection of hostile runner
+  `Emisar.Catalog` owns authorization, account isolation, action eligibility,
+  and the exact-hash trusted projection of hostile runner
   advertisements. This module only filters, ranks, paginates, and shapes
   bounded model-facing responses over that snapshot.
   """
@@ -85,7 +85,7 @@ defmodule EmisarWeb.MCP.CatalogTools do
     case Catalog.model_inventory(subject) do
       {:ok, snapshot} ->
         scope =
-          [subject.account.id, api_key.credential_lineage_id] ++
+          [subject.account.id, api_key.credential_lineage_id, snapshot.action_scope_fingerprint] ++
             Enum.map(snapshot.runners, & &1.runner_ref) ++
             Enum.map(snapshot.packs, & &1.pack_ref)
 
@@ -283,38 +283,41 @@ defmodule EmisarWeb.MCP.CatalogTools do
   end
 
   # An empty `runner_refs` asks for every compatible runner; an explicit list is
-  # all-or-nothing, and the domain fails it closed. `target` is the model's
-  # free-text narrowing over what already resolved, so it stays here.
+  # all-or-nothing; the schema makes refs and the free-text target mutually
+  # exclusive. An implicit lookup can inspect a trusted contract without any
+  # currently eligible runner.
   defp get_action(subject, args) do
-    with {:ok, resolved} <-
-           Catalog.resolve_model_action(args.action_id, args.pack_ref, args.runner_refs, subject),
-         runners = target_matches(resolved.runners, args.target),
-         [_runner | _rest] <- runners do
-      runner_limit = if args.runner_refs == [], do: @default_limit, else: length(args.runner_refs)
-      {runners, more?} = split_more(runners, runner_limit)
-      action = resolved.action
+    case Catalog.resolve_model_action(args.action_id, args.pack_ref, args.runner_refs, subject) do
+      {:ok, resolved} ->
+        runners = target_matches(resolved.runners, args.target)
 
-      {:ok,
-       %{
-         ok: true,
-         observed_at: observed_at(),
-         action:
-           %{
-             action_id: action["action_id"],
-             pack_ref: resolved.pack.pack_ref,
-             title: action["title"],
-             description: action["description"],
-             risk: action["risk"],
-             side_effects: action["side_effects"],
-             args_schema: ToolSchema.action_args_schema(action),
-             examples: action["examples"]
-           }
-           |> maybe_put_output_schema(action["output_schema"]),
-         compatible_runners: Enum.map(runners, &runner_brief/1),
-         more_compatible_runners: more?,
-         next: compatible_runners_next(resolved.pack, action, args, more?)
-       }}
-    else
+        runner_limit =
+          if args.runner_refs == [], do: @default_limit, else: length(args.runner_refs)
+
+        {runners, more?} = split_more(runners, runner_limit)
+        action = resolved.action
+
+        {:ok,
+         %{
+           ok: true,
+           observed_at: observed_at(),
+           action:
+             %{
+               action_id: action["action_id"],
+               pack_ref: resolved.pack.pack_ref,
+               title: action["title"],
+               description: action["description"],
+               risk: action["risk"],
+               side_effects: action["side_effects"],
+               args_schema: ToolSchema.action_args_schema(action),
+               examples: action["examples"]
+             }
+             |> maybe_put_output_schema(action["output_schema"]),
+           compatible_runners: Enum.map(runners, &runner_brief/1),
+           more_compatible_runners: more?,
+           next: compatible_runners_next(resolved.pack, action, args, more?)
+         }}
+
       {:error, :unauthorized} ->
         {:error, error("not_allowed", "This key cannot read catalog data.")}
 
@@ -322,7 +325,7 @@ defmodule EmisarWeb.MCP.CatalogTools do
         payload =
           error(
             "action_unavailable",
-            "No in-scope connected runner can execute this exact trusted action."
+            "This trusted action is unavailable, or not every requested runner can execute it."
           )
 
         next = %{
@@ -551,8 +554,9 @@ defmodule EmisarWeb.MCP.CatalogTools do
     |> List.first()
   end
 
-  # The same answer get_action already gives for the same condition. The
-  # continuation carries pack_ref as well as action_id because list_runners
+  # Search requires an executable target; get_action can still describe the
+  # trusted contract with no eligible targets. The continuation carries
+  # pack_ref as well as action_id because list_runners
   # REQUIRES the pack once an action is named — an action id alone is ambiguous
   # across packs, and find_actions can be filtered by action_id on its own.
   defp unavailable_action_error(args, pack_ref) do

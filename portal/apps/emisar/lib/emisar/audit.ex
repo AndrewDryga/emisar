@@ -354,7 +354,7 @@ defmodule Emisar.Audit do
   `Emisar.Repo.list/3` options (`:filter`, `:page`).
   """
   def list_events(%Subject{} = subject, opts \\ []) do
-    with :ok <- ensure_can_read_audit(subject) do
+    with {:ok, subject} <- fetch_audit_reader(subject) do
       # actor_id / target_id ride as opts — the dynamic "by actor" / "by
       # subject" pickers aren't in the static filters/0 list, so they can't go
       # through :filter. Everything else is a LiveTable filter, applied via :filter.
@@ -387,7 +387,7 @@ defmodule Emisar.Audit do
   no entries.
   """
   def approval_event_refs(request_ids, %Subject{} = subject) when is_list(request_ids) do
-    with :ok <- ensure_can_read_audit(subject) do
+    with {:ok, subject} <- fetch_audit_reader(subject) do
       ids = request_ids |> Enum.filter(&Repo.valid_uuid?/1) |> Enum.uniq() |> Enum.take(100)
 
       events =
@@ -477,7 +477,7 @@ defmodule Emisar.Audit do
   end
 
   defp list_identity_options(kind, side, subject, opts) do
-    with :ok <- ensure_can_read_audit(subject),
+    with {:ok, subject} <- fetch_audit_reader(subject),
          :ok <- validate_identity_kind(kind, side),
          {:ok, search} <- identity_search(Keyword.get(opts, :search, "")) do
       events = Event.Query.all() |> Authorizer.for_subject(subject)
@@ -595,7 +595,7 @@ defmodule Emisar.Audit do
   @max_export_limit 1_000
 
   def list_for_export(%Subject{} = subject, opts \\ []) do
-    with :ok <- ensure_can_export_audit(subject) do
+    with {:ok, subject} <- fetch_audit_exporter(subject) do
       types = Keyword.get(opts, :event_types, [])
       limit = clamp_export_limit(Keyword.get(opts, :limit, @default_export_limit))
 
@@ -621,7 +621,7 @@ defmodule Emisar.Audit do
   `{:error, :unauthorized | :audit_export_not_available}`.
   """
   def list_events_for_export(%Subject{} = subject, opts \\ []) do
-    with :ok <- ensure_can_export_audit(subject) do
+    with {:ok, subject} <- fetch_audit_exporter(subject) do
       list_events(subject, opts)
     end
   end
@@ -684,7 +684,7 @@ defmodule Emisar.Audit do
   `{:ok, event} | {:error, :not_found}`.
   """
   def fetch_event_by_id(id, %Subject{} = subject) do
-    with :ok <- ensure_can_read_audit(subject),
+    with {:ok, subject} <- fetch_audit_reader(subject),
          true <- Repo.valid_uuid?(id) do
       Event.Query.all()
       |> Event.Query.by_id(id)
@@ -735,8 +735,11 @@ defmodule Emisar.Audit do
   """
   def resolve_references(events, %Subject{account: %{id: account_id}} = subject)
       when is_list(events) do
-    case ensure_can_read_audit(subject) do
-      :ok ->
+    case fetch_audit_reader(subject) do
+      {:ok, subject} ->
+        types = Authorizer.readable_event_types(subject)
+        events = Enum.filter(events, &(types == :all or &1.event_type in types))
+
         refs =
           events
           |> Enum.flat_map(fn event ->
@@ -1013,7 +1016,7 @@ defmodule Emisar.Audit do
   the static filter vocabulary remains the validation boundary.
   """
   def available_event_kinds(%Subject{} = subject) do
-    with :ok <- ensure_can_read_audit(subject) do
+    with {:ok, subject} <- fetch_audit_reader(subject) do
       scoped = Event.Query.all() |> Authorizer.for_subject(subject)
 
       {:ok,
@@ -1044,7 +1047,8 @@ defmodule Emisar.Audit do
   narrowed to values present in the subject's readable rows.
   """
   def available_event_filters(type_param, params, %Subject{} = subject) do
-    with {:ok, kinds} <- available_event_kinds(subject) do
+    with {:ok, subject} <- fetch_audit_reader(subject),
+         {:ok, kinds} <- available_event_kinds(subject) do
       filters = applicable_event_filters(type_param, params, subject)
       {:ok, Event.Query.present_kind_filters(filters, kinds, params)}
     end
@@ -1080,17 +1084,17 @@ defmodule Emisar.Audit do
   @doc """
   True when the subject may take the record OUT of the product — the gate behind
   the CSV and SIEM export controls. The plan entitlement is a separate,
-  account-level check; `ensure_can_export_audit/1` is authoritative for both.
+  account-level check; `fetch_audit_exporter/1` is authoritative for both.
   """
   def subject_can_export_audit?(%Subject{} = subject),
     do: Auth.Authorizer.has_permission?(subject, Authorizer.view_audit_permission())
 
   # Either audit permission opens a read — how MUCH of the trail comes back is
   # `Authorizer.for_subject/2`'s call, not this gate's.
-  defp ensure_can_read_audit(%Subject{} = subject) do
-    Auth.Authorizer.ensure_has_permissions(
-      subject,
-      {:one_of, [Authorizer.view_audit_permission(), Authorizer.view_billing_audit_permission()]}
+  defp fetch_audit_reader(%Subject{} = subject) do
+    Auth.fetch_current_subject(
+      {:one_of, [Authorizer.view_audit_permission(), Authorizer.view_billing_audit_permission()]},
+      subject
     )
   end
 
@@ -1099,11 +1103,11 @@ defmodule Emisar.Audit do
   # courtesy navigation/copy; this gate is authoritative for both export reads.
   # Deliberately the FULL-trail permission: taking the record out of the product
   # is an owner/admin/SIEM act, not part of the finance seat's read.
-  defp ensure_can_export_audit(%Subject{account: account} = subject) do
-    with :ok <-
-           Auth.Authorizer.ensure_has_permissions(subject, Authorizer.view_audit_permission()) do
-      if Billing.audit_export_available?(account),
-        do: :ok,
+  defp fetch_audit_exporter(%Subject{} = subject) do
+    with {:ok, subject} <-
+           Auth.fetch_current_subject(Authorizer.view_audit_permission(), subject) do
+      if Billing.audit_export_available?(subject.account),
+        do: {:ok, subject},
         else: {:error, :audit_export_not_available}
     end
   end
