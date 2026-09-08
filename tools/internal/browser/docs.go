@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"math"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -15,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/chromedp/cdproto/page"
 	"github.com/chromedp/chromedp"
 )
 
@@ -184,10 +184,10 @@ var docsShots = []shot{
 	// framing the docs were written against; a page's worth of rows is the seed's
 	// job to exercise, not a teaching image's.
 	{Name: "runs", Path: "/app/demo/runs", Anchor: Anchor{Selector: "#runs"}, Width: 1280, TopCSS: 870, Output: "screenshots/runs.webp"},
-	{Name: "agents", Path: "/app/demo/agents", Anchor: Anchor{Selector: "#agents"}, Width: docsWidth, TopCSS: 900, Output: "screenshots/agents.webp"},
+	{Name: "agents", Path: "/app/demo/agents", Anchor: Anchor{Selector: "#agents"}, Width: docsWidth, CropPadding: 4, TopCSS: 900, Output: "screenshots/agents.webp"},
 	{Name: "packs", Path: "/app/demo/packs", Anchor: Anchor{Selector: "#packs"}, Width: docsWidth, Rows: 3, RowSelector: "#packs > li", Output: "screenshots/packs.webp"},
 	{Name: "run-detail", Path: "/app/demo/runs?status[]=success", Clicks: []string{navigateRowLink(`a[href*="/runs/"]`, "caddy.reload_config", "#run-output")}, Anchor: Anchor{Selector: "#shell-canvas"}, Width: 1280, TopCSS: 1450, Output: "screenshots/run-detail.webp"},
-	{Name: "run-form", Path: "/app/demo/runners", Clicks: []string{navigateRowLink(`a[href*="/runners/"]`, "edge-fra-01", "#actions"), findLogAction, navigateHrefSuffix(`a[href*="/runs/new/"]`, "/linux.grep_log", "#dispatch_form")}, Anchor: Anchor{Selector: "#shell-canvas"}, Width: 1280, TopCSS: 1600, Output: "screenshots/run-form.webp"},
+	{Name: "run-form", Path: "/app/demo/runners", Clicks: []string{navigateRowLink(`a[href*="/runners/"]`, "edge-fra-01", "#actions"), findLogAction, navigateHrefSuffix(`a[href*="/runs/new/"]`, "/linux.grep_log", "#dispatch_form")}, Anchor: Anchor{Selector: "#shell-canvas"}, Width: 1280, TopCSS: 1680, Output: "screenshots/run-form.webp"},
 	// Runbooks use one production-shaped seeded procedure across the complete
 	// guide. Content-addressed navigation avoids whichever audit draft happens to
 	// sort first, while the narrow anchors keep each image about the step beside
@@ -221,7 +221,7 @@ var docsShots = []shot{
 	// One shot per field group, matching the page's own three h3 sections; the
 	// per-provider guides own the vendor-specific variants of the same form.
 	{Name: "sso-connection-fields", Path: "/app/demo/settings/sso/new", Clicks: []string{showProductionHost}, Anchor: Anchor{Heading: "OIDC connection", Climb: "section"}, Width: docsWidth, Output: "docs/sso/sso-connection-fields.webp"},
-	{Name: "sso-provisioning-fields", Path: "/app/demo/settings/sso/new", Anchor: Anchor{Heading: "Member access", Climb: "section"}, Width: docsWidth, Output: "docs/sso/sso-provisioning-fields.webp"},
+	{Name: "sso-provisioning-fields", Path: "/app/demo/settings/sso/new", Anchor: Anchor{Heading: "Member access", Climb: "section"}, Width: docsWidth, CropPadding: 4, Output: "docs/sso/sso-provisioning-fields.webp"},
 	{Name: "sso-activation-fields", Path: "/app/demo/settings/sso/new", Anchor: Anchor{Heading: "Sign-in security", Climb: "section"}, Width: docsWidth, Output: "docs/sso/sso-activation-fields.webp"},
 	// The two halves of group→role sync: the mappings an admin authors, and the
 	// synced roster they land on. Both are seeded directory state (seeds.exs maps
@@ -778,56 +778,49 @@ func captureDocElement(session *Session, config DocsConfig, s shot) (string, err
 	return rgbHex(color), nil
 }
 
-// Crop a full-page capture using the rendered element's bounds. Chrome's node
-// capture can shift an off-origin crop after viewport changes; full-page capture
-// keeps the page and its crop in one coordinate system.
+// Capture the element in CSS page coordinates. Inferring a raster crop from an
+// implicit full-page capture can clip content when Chrome changes its surface
+// geometry during capture, even when the DOM bounds are unchanged afterward.
 func captureDocCrop(session *Session, selector, path string, padding int) error {
 	quoted, _ := json.Marshal(selector)
-	type bounds struct{ X, Y, Width, Height, PageWidth float64 }
+	type bounds struct{ X, Y, Width, Height float64 }
 	var box bounds
 	script := `(function(){const el=document.querySelector(` + string(quoted) + `);const b=el.getBoundingClientRect();
 const p=` + strconv.Itoa(padding) + `,page=document.documentElement;
 const x=Math.max(0,b.x+scrollX-p),y=Math.max(0,b.y+scrollY-p);
 const right=Math.min(page.scrollWidth,b.right+scrollX+p),bottom=Math.min(page.scrollHeight,b.bottom+scrollY+p);
-return {X:x,Y:y,Width:right-x,Height:bottom-y,PageWidth:page.scrollWidth}})()`
-	full := strings.TrimSuffix(path, ".png") + "-full.png"
-	// A full-page capture can itself force layout of deferred content. Retry
-	// when that changes the crop, rather than applying stale coordinates.
+return {X:x,Y:y,Width:right-x,Height:bottom-y}})()`
+	ctx, cancel := context.WithTimeout(session.Context, 30*time.Second)
+	defer cancel()
+	// Capturing can force layout of deferred content. Retry if it moves the crop.
 	for attempt := 0; ; attempt++ {
-		if err := chromedp.Run(session.Context, chromedp.Evaluate(script, &box)); err != nil {
+		if err := chromedp.Run(ctx, chromedp.Evaluate(script, &box)); err != nil {
 			return err
 		}
-		if box.Width <= 0 || box.Height <= 0 || box.PageWidth <= 0 {
+		if box.Width <= 0 || box.Height <= 0 {
 			return fmt.Errorf("docs crop has empty bounds")
 		}
-		if err := session.FullScreenshot(full); err != nil {
+		var shotBytes []byte
+		if err := chromedp.Run(ctx, chromedp.ActionFunc(func(ctx context.Context) error {
+			var err error
+			shotBytes, err = page.CaptureScreenshot().
+				WithClip(&page.Viewport{X: box.X, Y: box.Y, Width: box.Width, Height: box.Height, Scale: 1}).
+				WithCaptureBeyondViewport(true).Do(ctx)
+			return err
+		})); err != nil {
 			return err
 		}
 		var after bounds
-		if err := chromedp.Run(session.Context, chromedp.Evaluate(script, &after)); err != nil {
+		if err := chromedp.Run(ctx, chromedp.Evaluate(script, &after)); err != nil {
 			return err
 		}
 		if box == after {
-			break
+			return writeImage(path, shotBytes)
 		}
 		if attempt == 2 {
 			return fmt.Errorf("docs crop moved during capture")
 		}
 	}
-	pixels, err := imageCommand("identify", "-format", "%w", full)
-	if err != nil {
-		return err
-	}
-	width, err := strconv.ParseFloat(strings.TrimSpace(string(pixels)), 64)
-	if err != nil {
-		return err
-	}
-	scale := width / box.PageWidth
-	crop := fmt.Sprintf("%dx%d+%d+%d", int(math.Round(box.Width*scale)), int(math.Round(box.Height*scale)), int(math.Round(box.X*scale)), int(math.Round(box.Y*scale)))
-	if output, err := imageCommand("convert", full, "-crop", crop, "+repage", path); err != nil {
-		return fmt.Errorf("crop docs image: %w: %s", err, bytes.TrimSpace(output))
-	}
-	return nil
 }
 
 func imageCommand(tool string, args ...string) ([]byte, error) {

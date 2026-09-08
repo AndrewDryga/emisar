@@ -471,7 +471,7 @@ approval_definition = %{
   "context_markdown" =>
     "## Change window\n\n" <>
       "- Confirm the candidate config has passed `caddy validate`.\n" <>
-      "- Keep the incident channel open while both edge nodes reload.\n\n" <>
+      "- Keep the incident channel open during the reload.\n\n" <>
       "## Rollback\n\n" <>
       "Restore the previous config and run this runbook again with its path.",
   "inputs" => [

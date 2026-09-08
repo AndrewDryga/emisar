@@ -133,6 +133,46 @@ func TestDocsCropKeepsBothEdgesAfterViewportChange(t *testing.T) {
 		}
 	}
 
+	// Console crops sit inside a flexible shell and a two-column editor. Check
+	// all four corners and the outside padding after changing that viewport too.
+	if err := session.Viewport(1680, 2800, 2, false); err != nil {
+		t.Fatal(err)
+	}
+	if err := chromedp.Run(session.Context, chromedp.Evaluate(`document.documentElement.innerHTML=
+	'<head><style>*{box-sizing:border-box}body{margin:0;background:#00ff00}.shell{display:flex}.sidebar{width:256px;flex:none;position:sticky;top:0}.canvas{flex:1;min-width:0}.content{overflow-x:clip;padding:32px}.editor{display:grid;grid-template-columns:minmax(0,1fr) 340px;gap:48px;padding-top:432.5px}#nested-crop{height:467px;border:4px solid #ffff00;background:#ff0000}footer{height:2000px}</style></head><body><div class="shell"><aside class="sidebar"></aside><div class="canvas"><main class="content"><div class="editor"><main><div id="nested-crop"></div><footer></footer></main><aside></aside></div></main></div></div></body>'`, nil)); err != nil {
+		t.Fatal(err)
+	}
+	if err := session.Viewport(1440, 2800, 2, false); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := captureDocElement(session, DocsConfig{Temp: dir}, shot{Name: "nested", Anchor: Anchor{Selector: "#nested-crop"}, CropPadding: 4}); err != nil {
+		t.Fatal(err)
+	}
+	nestedFile, err := os.Open(filepath.Join(dir, "nested.png"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer nestedFile.Close()
+	nested, err := png.Decode(nestedFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if nested.Bounds().Dx() != 1480 || nested.Bounds().Dy() != 950 {
+		t.Fatalf("nested crop bounds = %v", nested.Bounds())
+	}
+	for _, point := range [][2]int{{10, 10}, {1469, 10}, {10, 939}, {1469, 939}} {
+		r, g, b, _ := nested.At(point[0], point[1]).RGBA()
+		if r != 65535 || g != 65535 || b != 0 {
+			t.Fatalf("nested crop lost corner %v", point)
+		}
+	}
+	for _, point := range [][2]int{{2, 475}, {1477, 475}, {740, 2}, {740, 947}} {
+		r, g, b, _ := nested.At(point[0], point[1]).RGBA()
+		if r != 0 || g != 65535 || b != 0 {
+			t.Fatalf("nested crop lost padding %v", point)
+		}
+	}
+
 	// A real run with arguments reaches farther down than the old loop crop.
 	// The overlay coordinates must use the same height as the exported frames.
 	var targetsJSON string
