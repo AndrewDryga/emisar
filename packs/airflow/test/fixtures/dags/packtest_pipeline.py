@@ -9,7 +9,10 @@ from __future__ import annotations
 
 import datetime
 
-from airflow.sdk import dag, task
+try:
+    from airflow.sdk import dag, task
+except ImportError:
+    from airflow.decorators import dag, task
 
 START_DATE = datetime.datetime(2026, 1, 1, tzinfo=datetime.timezone.utc)
 
@@ -33,6 +36,12 @@ def packtest_pipeline() -> None:
         print(f"packtest load complete rows={rows}")
 
     load(extract())
+
+    @task
+    def mapped(value: int) -> int:
+        return value
+
+    mapped.expand(value=[1, 2])
 
 
 packtest_pipeline()

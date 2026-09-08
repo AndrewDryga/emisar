@@ -1,6 +1,6 @@
 schema_version: 1
 id: airflow.dag_warnings
-title: List DAG warnings (GET /api/v2/dagWarnings)
+title: List DAG warnings (GET /api/{version}/dagWarnings)
 kind: script
 risk: low
 description: >
@@ -9,7 +9,7 @@ description: >
   parses. These do not break parsing, so they are invisible until a task
   queues forever against a missing pool.
 side_effects:
-  - One read-only HTTP GET to the Airflow /api/v2/dagWarnings endpoint.
+  - One read-only HTTP GET to the Airflow /api/{version}/dagWarnings endpoint.
   - Read-only — never writes or mutates data.
 search_terms:
   - non-existent pool

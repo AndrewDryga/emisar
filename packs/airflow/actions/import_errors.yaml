@@ -1,6 +1,6 @@
 schema_version: 1
 id: airflow.import_errors
-title: List DAG import errors (GET /api/v2/importErrors)
+title: List DAG import errors (GET /api/{version}/importErrors)
 kind: script
 risk: low
 description: >
@@ -9,7 +9,7 @@ description: >
   and to a deploy that silently stopped scheduling: a file with an import error
   contributes no DAGs at all.
 side_effects:
-  - One read-only HTTP GET to the Airflow /api/v2/importErrors endpoint.
+  - One read-only HTTP GET to the Airflow /api/{version}/importErrors endpoint.
   - Read-only — never writes or mutates data.
   - Returns the Python traceback recorded for each failing DAG file.
 search_terms:
@@ -22,7 +22,7 @@ args:
     type: string
     required: false
     default: ""
-    description: Substring the DAG file path must contain. Empty lists every import error.
+    description: Airflow 3 DAG-file substring filter. Leave empty on Airflow 2.
     validation:
       pattern: "^[A-Za-z0-9._/-]{0,512}$"
       max_length: 512

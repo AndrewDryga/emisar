@@ -8,6 +8,9 @@ description: >
   Marking a stuck task success unblocks its downstream work — and asserts that
   the work happened when it did not, so use it only when you have confirmed the
   effect by other means. failed stops the branch; skipped passes it over.
+  Airflow 2 also clears failed or upstream-failed downstream tasks so they can
+  resume, even when include_downstream is false. It cannot combine a mapped
+  task with include_downstream=true.
 side_effects:
   - Changes the task instance's state in the metadata database without executing the task.
   - Downstream tasks proceed or stop according to the new state and their trigger rules.

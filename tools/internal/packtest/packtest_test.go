@@ -527,6 +527,123 @@ func TestVersionsRequireOneDefaultUniqueTagsAndExactDigests(t *testing.T) {
 	}
 }
 
+func TestVersionCasesAndCredentialValidation(t *testing.T) {
+	versions := []Version{
+		{Version: "2", Digest: testDigest("a"), Default: true},
+		{Version: "1", Digest: testDigest("b"), Env: map[string]string{"PASSWORD": "packtest-canary-version-password"}},
+	}
+	plan := Plan{
+		Services: []string{"fixture"}, Versions: versions,
+		SecretEnv: []string{"PASSWORD"}, Env: map[string]string{"PASSWORD": "packtest-canary-base-password"},
+		Cases: []Case{
+			{Action: "example.read", Versions: []string{"1"}, Expect: Expectation{StdoutContains: []string{"ok"}}},
+			{Name: "common", Action: "example.read", Expect: Expectation{StdoutContains: []string{"ok"}}},
+		},
+	}
+	actions := map[string]actionDefinition{"example.read": {ID: "example.read", Risk: "low"}}
+	if err := validatePlan("example", plan, actions); err != nil {
+		t.Fatal(err)
+	}
+	if !(CaseRef{}).SupportsVersion("2") || !(CaseRef{Versions: []string{"1"}}).SupportsVersion("1") || (CaseRef{Versions: []string{"1"}}).SupportsVersion("2") {
+		t.Fatal("version selectors did not preserve common and family-specific cases")
+	}
+	plan.Versions[1].Env["PASSWORD"] = "unmarked-credential"
+	if err := validatePlan("example", plan, actions); err == nil || !strings.Contains(err.Error(), "version 1") {
+		t.Fatalf("version credential validation: %v", err)
+	}
+	plan.Versions[1].Env["PASSWORD"] = "packtest-canary-version-password"
+	for _, selected := range [][]string{{"missing"}, {"1", "1"}} {
+		plan.Cases[0].Versions = selected
+		if err := validatePlan("example", plan, actions); err == nil || !strings.Contains(err.Error(), "unknown or duplicate version") {
+			t.Fatalf("selector validation: %v", err)
+		}
+	}
+	plan.Cases[0].Versions = []string{"1"}
+	plan.Shards = 2
+	if err := validatePlan("example", plan, actions); err == nil || !strings.Contains(err.Error(), "version 2 has 1 cases for 2 shards") {
+		t.Fatalf("empty family shard validation: %v", err)
+	}
+}
+
+func TestSelectVersionRejectsUnknownFamiliesAndPrecedesShards(t *testing.T) {
+	plan := PlanRef{Name: "example", Versions: []Version{{Version: "1"}, {Version: "2"}}, Cases: []CaseRef{
+		{ID: "a", Versions: []string{"1"}}, {ID: "b", Versions: []string{"2"}},
+		{ID: "c", Versions: []string{"1"}}, {ID: "d", Versions: []string{"2"}},
+	}}
+	for _, version := range []string{"", "3"} {
+		if _, err := SelectVersion(plan, version); err == nil {
+			t.Fatalf("accepted unknown family %q", version)
+		}
+	}
+	selected, err := SelectVersion(plan, "1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := SelectShard(selected.Cases, 2, 2); len(got) != 1 || got[0].ID != "c" {
+		t.Fatalf("family shard: %+v", got)
+	}
+	plan.Cases = []CaseRef{{ID: "common"}}
+	if _, err := SelectVersion(plan, "3"); err != nil {
+		t.Fatalf("common ad hoc version: %v", err)
+	}
+	plan.Versions[0].Env = map[string]string{"MODE": "basic"}
+	if _, err := SelectVersion(plan, "3"); err == nil {
+		t.Fatal("accepted unknown version with family environment")
+	}
+}
+
+func TestRunAppliesVersionEnvironmentBeforeCaseOverrides(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("fixture executable is POSIX shell")
+	}
+	root := t.TempDir()
+	packDir := filepath.Join(root, "packs", "example")
+	write(t, filepath.Join(packDir, "pack.yaml"), "id: example\nversion: 0.1.0\n")
+	write(t, filepath.Join(packDir, "actions", "read.yaml"), "id: example.read\nrisk: low\n")
+	write(t, filepath.Join(packDir, "test", "cases.yaml"), `services: [fixture]
+versions:
+  - version: "2"
+    digest: "@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    default: true
+  - version: "1"
+    digest: "@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    env: {MODE: basic, PASSWORD: packtest-canary-version-password}
+secret_env: [PASSWORD]
+env: {MODE: bearer, PASSWORD: packtest-canary-base-password}
+cases:
+  - name: common
+    action: example.read
+    expect: {stdout_contains: [basic]}
+  - name: override
+    versions: ["1"]
+    action: example.read
+    env: {MODE: override}
+    expect: {stdout_contains: [override]}
+  - name: bearer
+    versions: ["2"]
+    action: example.read
+    expect: {stdout_contains: [bearer]}
+`)
+	emisar := filepath.Join(root, "emisar")
+	writeExecutable(t, emisar, "#!/bin/sh\nprintf '{\"status\":\"success\",\"exit_code\":0,\"stdout\":\"%s\"}\\n' \"$MODE\"\n")
+	harnessConfig := filepath.Join(root, "config.yaml")
+	write(t, harnessConfig, "events:\n  jsonl_path: "+filepath.Join(root, "events.jsonl")+"\n")
+	write(t, filepath.Join(root, "events.jsonl"), "")
+	var output bytes.Buffer
+	totals, err := Run(Config{Emisar: emisar, PacksDir: filepath.Join(root, "packs"), Config: harnessConfig,
+		Reports: filepath.Join(root, "reports"), Out: &output, BaseEnv: append(os.Environ(), "PACKTEST_VERSION=1")})
+	if err != nil || totals.Pass != 2 || totals.Fail != 0 {
+		t.Fatalf("totals=%+v err=%v\n%s", totals, err, output.String())
+	}
+	writeExecutable(t, emisar, "#!/bin/sh\nprintf '{\"status\":\"success\",\"exit_code\":0,\"stdout\":\"%s %s\"}\\n' \"$MODE\" \"$PASSWORD\"\n")
+	output.Reset()
+	totals, err = Run(Config{Emisar: emisar, PacksDir: filepath.Join(root, "packs"), Config: harnessConfig,
+		Reports: filepath.Join(root, "reports-leak"), Out: &output, BaseEnv: append(os.Environ(), "PACKTEST_VERSION=1")})
+	if err == nil || totals.Fail != 2 || !strings.Contains(output.String(), "secret canary PASSWORD leaked") {
+		t.Fatalf("version secret was not checked: %+v %v\n%s", totals, err, output.String())
+	}
+}
+
 func TestMatrixPreservesPlanAndVersionOrder(t *testing.T) {
 	plans := []PlanRef{
 		{Name: "alpha", Versions: []Version{

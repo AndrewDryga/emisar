@@ -94,15 +94,22 @@ func (a *App) packTest(ctx context.Context, pattern string, names []string, case
 	if err != nil {
 		return err
 	}
+	requestedVersionEnv, err := packTestVersionEnv(len(plans), os.LookupEnv)
+	if err != nil {
+		return err
+	}
+	for i, plan := range plans {
+		version := resolvedPackTestVersionEnv(plan, requestedVersionEnv)["PACKTEST_VERSION"]
+		plans[i], err = packtest.SelectVersion(plan, version)
+		if err != nil {
+			return err
+		}
+	}
 	plans, err = selectPackTestShard(plans, shard)
 	if err != nil {
 		return err
 	}
 	plans, err = selectPackTestCase(plans, caseID)
-	if err != nil {
-		return err
-	}
-	requestedVersionEnv, err := packTestVersionEnv(len(plans), os.LookupEnv)
 	if err != nil {
 		return err
 	}
@@ -197,6 +204,9 @@ func (a *App) packTest(ctx context.Context, pattern string, names []string, case
 				ComposeExtra: overrides[plan.Name],
 			})
 		}
+	}
+	if len(queued) == 0 {
+		return fmt.Errorf("no selected cases support the requested SUT version")
 	}
 	jobs := make(chan packTestJob, len(queued))
 	results := make(chan packTestCaseResult, len(queued))
@@ -571,8 +581,11 @@ func (a *App) runPackTestCase(ctx context.Context, baseCompose, runnerImage stri
 	setupErr := a.run(ctx, a.Root, env, "docker", setupArgs...)
 	var runErr error
 	if setupErr == nil {
-		runArgs := append(compose, "run", "--rm", "--no-deps", "--entrypoint", "/opt/emisar/bin/packtest",
-			"runner-tools", "--pack", job.Plan.Name, "--case", job.Case.ID, "--reports", "/tmp/packtest-reports")
+		runArgs := append(compose, "run", "--rm", "--no-deps", "--entrypoint", "/opt/emisar/bin/packtest")
+		if version := job.VersionEnv["PACKTEST_VERSION"]; version != "" {
+			runArgs = append(runArgs, "-e", "PACKTEST_VERSION="+version)
+		}
+		runArgs = append(runArgs, "runner-tools", "--pack", job.Plan.Name, "--case", job.Case.ID, "--reports", "/tmp/packtest-reports")
 		runErr = a.run(ctx, a.Root, env, "docker", runArgs...)
 	} else {
 		runErr = fmt.Errorf("setup: %w", setupErr)

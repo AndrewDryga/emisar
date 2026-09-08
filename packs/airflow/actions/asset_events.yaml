@@ -1,6 +1,6 @@
 schema_version: 1
 id: airflow.asset_events
-title: List asset events (GET /api/v2/assets/events)
+title: List asset events (GET /api/v2/assets/events) (Airflow 3 only)
 kind: script
 risk: low
 description: >

@@ -48,6 +48,7 @@ type Step struct {
 }
 
 type Case struct {
+	Versions     []string          `yaml:"versions,omitempty"`
 	Name         string            `yaml:"name,omitempty"`
 	Action       string            `yaml:"action"`
 	RunnerUser   string            `yaml:"runner_user,omitempty"`
@@ -68,9 +69,10 @@ type Defaults struct {
 }
 
 type Version struct {
-	Version string `yaml:"version"`
-	Digest  string `yaml:"digest"`
-	Default bool   `yaml:"default,omitempty"`
+	Version string            `yaml:"version"`
+	Digest  string            `yaml:"digest"`
+	Default bool              `yaml:"default,omitempty"`
+	Env     map[string]string `yaml:"env,omitempty"`
 }
 
 type Runner struct {
@@ -94,6 +96,36 @@ type CaseRef struct {
 	ID         string
 	Action     string
 	RunnerUser string
+	Versions   []string
+}
+
+// SupportsVersion keeps family-specific success and denial cases explicit.
+func (test CaseRef) SupportsVersion(version string) bool {
+	return len(test.Versions) == 0 || slices.Contains(test.Versions, version)
+}
+
+// SelectVersion filters before sharding so every emitted CI row has work.
+// Ad hoc digest-pinned versions remain valid for family-independent plans.
+func SelectVersion(plan PlanRef, name string) (PlanRef, error) {
+	known, familySpecific := false, false
+	for _, version := range plan.Versions {
+		known = known || version.Version == name
+		familySpecific = familySpecific || len(version.Env) > 0
+	}
+	for _, test := range plan.Cases {
+		familySpecific = familySpecific || len(test.Versions) > 0
+	}
+	if !known && familySpecific {
+		return PlanRef{}, fmt.Errorf("pack %s needs a declared version row for %q because its cases or environment differ by version", plan.Name, name)
+	}
+	selected := make([]CaseRef, 0, len(plan.Cases))
+	for _, test := range plan.Cases {
+		if test.SupportsVersion(name) {
+			selected = append(selected, test)
+		}
+	}
+	plan.Cases = selected
+	return plan, nil
 }
 
 type PlanRef struct {
@@ -216,6 +248,7 @@ func Discover(packsDir, pattern string, names ...string) ([]PlanRef, error) {
 				ID:         test.ID(),
 				Action:     test.Action,
 				RunnerUser: effectiveRunnerUser(plan.Runner.User, test.RunnerUser),
+				Versions:   test.Versions,
 			})
 		}
 		plans = append(plans, PlanRef{
@@ -564,12 +597,49 @@ func validatePlan(pack string, plan Plan, actions map[string]actionDefinition) e
 	if plan.Shards < 0 || plan.Shards > len(plan.Cases) {
 		return fmt.Errorf("shards must be between 1 and the %d declared cases", len(plan.Cases))
 	}
+	for _, version := range plan.Versions {
+		selected := 0
+		for _, test := range plan.Cases {
+			if (CaseRef{Versions: test.Versions}).SupportsVersion(version.Version) {
+				selected++
+			}
+		}
+		if selected < max(plan.Shards, 1) {
+			return fmt.Errorf("version %s has %d cases for %d shards", version.Version, selected, max(plan.Shards, 1))
+		}
+	}
 	if plan.Workers < 0 || plan.Workers > packTestMaxWorkers {
 		return fmt.Errorf("workers must be between 1 and %d", packTestMaxWorkers)
 	}
 	seen := make(map[string]bool, len(plan.Cases))
 	for i, test := range plan.Cases {
 		location := fmt.Sprintf("cases[%d]", i)
+		selected := make(map[string]bool)
+		for _, name := range test.Versions {
+			known := false
+			for _, version := range plan.Versions {
+				known = known || version.Version == name
+			}
+			if !known || selected[name] {
+				return fmt.Errorf("%s has unknown or duplicate version %q", location, name)
+			}
+			selected[name] = true
+		}
+		for _, version := range plan.Versions {
+			if len(selected) > 0 && !selected[version.Version] {
+				continue
+			}
+			base := make(map[string]string, len(plan.Env)+len(version.Env))
+			for key, value := range plan.Env {
+				base[key] = value
+			}
+			for key, value := range version.Env {
+				base[key] = value
+			}
+			if err := validateCaseSecretEnv(plan.SecretEnv, base, test.Env, test.UnsetEnv); err != nil {
+				return fmt.Errorf("%s version %s: %w", location, version.Version, err)
+			}
+		}
 		action, ok := actions[test.Action]
 		if !ok {
 			return fmt.Errorf("%s action %q does not exist in pack %s", location, test.Action, pack)
@@ -981,12 +1051,33 @@ func runPack(config Config, ref PlanRef, output io.Writer) (Totals, error) {
 		}
 	}
 	env := environment(config.BaseEnv, plan.Env)
+	versionName := ref.DefaultVersion().Version
+	for _, value := range config.BaseEnv {
+		if strings.HasPrefix(value, "PACKTEST_VERSION=") {
+			versionName = strings.TrimPrefix(value, "PACKTEST_VERSION=")
+		}
+	}
+	for _, version := range plan.Versions {
+		if version.Version == versionName {
+			env = environment(env, version.Env)
+		}
+	}
+	selected, err := SelectVersion(ref, versionName)
+	if err != nil {
+		return Totals{}, err
+	}
 	covered := make(map[string]bool, len(plan.Cases))
-	for _, test := range plan.Cases {
+	for _, test := range selected.Cases {
 		covered[test.Action] = true
 	}
 	totals := Totals{Actions: len(actions), Behavior: len(covered), Contract: len(actions) - len(covered)}
 	for _, test := range tests {
+		if !(CaseRef{Versions: test.Versions}).SupportsVersion(versionName) {
+			if config.Case != "" {
+				return Totals{}, fmt.Errorf("case %s does not support version %s", test.ID(), versionName)
+			}
+			continue
+		}
 		started := time.Now()
 		if err := runCase(config, plan, test, actions[test.Action], env); err != nil {
 			fmt.Fprintf(output, "FAIL %s duration=%s\n%s\n",

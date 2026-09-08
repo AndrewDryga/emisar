@@ -1,6 +1,6 @@
 schema_version: 1
 id: airflow.backfill_cancel
-title: Cancel a backfill (PUT /api/v2/backfills/{backfill_id}/cancel)
+title: Cancel a backfill (PUT /api/v2/backfills/{backfill_id}/cancel) (Airflow 3 only)
 kind: script
 risk: high
 description: >

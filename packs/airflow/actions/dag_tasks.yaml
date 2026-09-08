@@ -1,6 +1,6 @@
 schema_version: 1
 id: airflow.dag_tasks
-title: List a DAG's tasks (GET /api/v2/dags/{dag_id}/tasks)
+title: List a DAG's tasks (GET /api/{version}/dags/{dag_id}/tasks)
 kind: script
 risk: low
 description: >
@@ -9,7 +9,7 @@ description: >
   before clearing a task or reasoning about which downstream work a failure
   blocks.
 side_effects:
-  - One read-only HTTP GET to the Airflow /api/v2/dags/{dag_id}/tasks endpoint.
+  - One read-only HTTP GET to the Airflow /api/{version}/dags/{dag_id}/tasks endpoint.
   - Read-only — never writes or mutates data.
 search_terms:
   - dag tasks

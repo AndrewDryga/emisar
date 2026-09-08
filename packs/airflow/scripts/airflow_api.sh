@@ -1,5 +1,5 @@
 #!/bin/bash
-# Fixed Apache Airflow 3 REST API (/api/v2) operations for the "airflow" pack.
+# Fixed Apache Airflow 2 (/api/v1) and 3 (/api/v2) REST API operations.
 # The caller selects one packaged subcommand and supplies typed values; it never
 # supplies shell code, a URL host, a request path, or a JSON body.
 #
@@ -10,7 +10,8 @@
 set -euo pipefail
 
 readonly base="${AIRFLOW_URL:-http://127.0.0.1:8080}"
-readonly api="$base/api/v2"
+readonly api_version="${AIRFLOW_API_VERSION:-v2}"
+readonly api="$base/api/$api_version"
 readonly connect_timeout=10
 readonly max_time=45
 readonly max_response_bytes=33554432
@@ -71,6 +72,10 @@ bounded_transfer() (
 resolve_token() {
   [[ -z $token_resolved ]] || return 0
   token_resolved=yes
+  if [[ $api_version == v1 ]]; then
+    [[ -z ${AIRFLOW_API_TOKEN:-} ]] || fail "AIRFLOW_API_TOKEN requires AIRFLOW_API_VERSION=v2; Airflow 2 uses AIRFLOW_USERNAME and AIRFLOW_PASSWORD with basic_auth"
+    return 0
+  fi
   if [[ -n ${AIRFLOW_API_TOKEN:-} ]]; then
     token=$AIRFLOW_API_TOKEN
     return 0
@@ -88,6 +93,10 @@ resolve_token() {
 }
 
 auth_header() {
+  if [[ $api_version == v1 && -n ${AIRFLOW_USERNAME:-} && -n ${AIRFLOW_PASSWORD:-} ]]; then
+    jq -nr '"Authorization: Basic " + ((env.AIRFLOW_USERNAME + ":" + env.AIRFLOW_PASSWORD) | @base64)'
+    return 0
+  fi
   [[ -z $token ]] || printf 'Authorization: Bearer %s\n' "$token"
   return 0
 }
@@ -141,13 +150,26 @@ add_list_param() {
   done
 }
 
+v2_only() { [[ $api_version == v2 ]] || fail "$1 requires Airflow 3 (AIRFLOW_API_VERSION=v2)"; }
+
+v2_filter() {
+  [[ $api_version == v2 || -z $2 ]] || fail "$1 is not supported by Airflow 2 (AIRFLOW_API_VERSION=v1); omit this filter"
+}
+
 # ---------------------------------------------------------------- reads
 
-health() { request GET "$api/monitor/health"; }
+health() {
+  if [[ $api_version == v1 ]]; then api_get "$api/health";
+  else request GET "$api/monitor/health"; fi
+}
 
-version() { request GET "$api/version"; }
+version() {
+  if [[ $api_version == v1 ]]; then api_get "$api/version";
+  else request GET "$api/version"; fi
+}
 
 jobs() {
+  v2_only airflow.jobs
   reset_query
   add_param job_type "$1"
   add_param is_alive "$2"
@@ -162,8 +184,10 @@ dags() {
   add_param dag_id_pattern "$1"
   add_list_param tags "$2"
   add_param paused "$3"
+  v2_filter last_dag_run_state "$4"
   add_param last_dag_run_state "$4"
-  add_param exclude_stale "$5"
+  if [[ $api_version == v1 ]]; then add_param only_active "$5";
+  else add_param exclude_stale "$5"; fi
   add_param limit "$6"
   add_param offset "$7"
   add_param order_by "$8"
@@ -176,13 +200,17 @@ dag_details() { api_get "$api/dags/$1/details"; }
 
 dag_stats() {
   reset_query
-  add_list_param dag_ids "$1"
+  if [[ $api_version == v1 ]]; then
+    [[ -n $1 ]] || fail "Airflow 2 dag_stats requires explicit dag_ids"
+    add_param dag_ids "$1"
+  else add_list_param dag_ids "$1"; fi
   api_get "$api/dagStats" "${query[@]}"
 }
 
 dag_tasks() { api_get "$api/dags/$1/tasks"; }
 
 import_errors() {
+  v2_filter filename_pattern "$1"
   reset_query
   add_param filename_pattern "$1"
   add_param limit "$2"
@@ -198,6 +226,7 @@ dag_warnings() {
 }
 
 pools() {
+  v2_filter pool_name_pattern "$1"
   reset_query
   add_param pool_name_pattern "$1"
   add_param limit "$2"
@@ -205,6 +234,10 @@ pools() {
 }
 
 providers() {
+  if [[ $api_version == v1 ]]; then
+    api_get "$api/providers" | jq -ce --argjson limit "$1" '{providers: .providers[:$limit]}'
+    return
+  fi
   reset_query
   add_param limit "$1"
   api_get "$api/providers" "${query[@]}"
@@ -220,16 +253,17 @@ providers() {
 # vocabulary — "has_password" included, and since it covers non-string values
 # it would report "[REDACTED]" for both true and false.
 connections() {
+  v2_filter connection_id_pattern "$1"
   reset_query
   add_param connection_id_pattern "$1"
   add_param limit "$2"
   api_get "$api/connections" "${query[@]}" |
-    jq -ce '{
+    jq -ce --arg version "$api_version" '{
       total_entries,
       connections: [.connections[]? | {
         connection_id, conn_type, description, host, port, schema, login,
-        has_auth: ((.password // "") != ""),
-        has_extra: ((.extra // "") != "")
+        has_auth: (if $version == "v1" then null else ((.password // "") != "") end),
+        has_extra: (if $version == "v1" then null else ((.extra // "") != "") end)
       }]
     }'
 }
@@ -237,6 +271,7 @@ connections() {
 # Variable VALUES are arbitrary operator-authored strings — API keys and DSNs
 # live there routinely — so this lists what exists and never what it holds.
 variables() {
+  v2_filter variable_key_pattern "$1"
   reset_query
   add_param variable_key_pattern "$1"
   add_param limit "$2"
@@ -262,6 +297,7 @@ event_logs() {
 }
 
 assets() {
+  v2_only airflow.assets
   reset_query
   add_param name_pattern "$1"
   add_list_param dag_ids "$2"
@@ -271,6 +307,7 @@ assets() {
 }
 
 asset_events() {
+  v2_only airflow.asset_events
   reset_query
   add_param asset_id "$1"
   add_param source_dag_id "$2"
@@ -280,24 +317,42 @@ asset_events() {
 }
 
 dag_runs() {
+  v2_filter run_type "$3"
   reset_query
   add_param state "$2"
   add_param run_type "$3"
   add_param start_date_gte "$4"
   add_param limit "$5"
-  add_param order_by "$6"
+  local order=$6
+  if [[ $api_version == v1 ]]; then
+    case "$order" in run_after) order=execution_date ;; -run_after) order=-execution_date ;; esac
+  fi
+  add_param order_by "$order"
   api_get "$api/dags/$1/dagRuns" "${query[@]}"
 }
 
 dag_run() { api_get "$api/dags/$1/dagRuns/$2"; }
 
 task_instances() {
+  v2_filter order_by "$7"
+  local order=$7
+  [[ $api_version != v2 || -n $order ]] || order=-start_date
+  if [[ $api_version == v1 && -n $3 ]]; then
+    api_json POST /dags/~/dagRuns/~/taskInstances/list "$(jq -nc \
+      --arg dag "$1" --arg run "$2" --arg task "$3" --arg state "$4" --arg pool "$5" --argjson limit "$6" '
+      {page_limit:$limit, task_ids:[$task]}
+      + (if $dag == "~" then {} else {dag_ids:[$dag]} end)
+      + (if $run == "~" then {} else {dag_run_ids:[$run]} end)
+      + (if $state == "" then {} else {state:[$state]} end)
+      + (if $pool == "" then {} else {pool:[$pool]} end)')"
+    return
+  fi
   reset_query
   add_param task_id "$3"
   add_param state "$4"
   add_param pool "$5"
   add_param limit "$6"
-  add_param order_by "$7"
+  add_param order_by "$order"
   api_get "$api/dags/$1/dagRuns/$2/taskInstances" "${query[@]}"
 }
 
@@ -330,7 +385,7 @@ task_log() {
                    + ((.lineno // 0) | tostring) + " in " + (.name // "") ]
                | join(""))
         ] | join("");
-      .content[]?
+      if (.content | type) == "string" then .content else .content[]? end
       | if type == "string" then .
         else ([(.timestamp // empty), (.level // empty), .event] | join(" ")) + traceback
         end
@@ -338,6 +393,7 @@ task_log() {
 }
 
 backfills() {
+  v2_only airflow.backfills
   reset_query
   add_param dag_id "$1"
   add_param limit "$2"
@@ -362,15 +418,24 @@ trigger() {
     + (if env.AF_NOTE == "" then {} else {note: env.AF_NOTE} end)
     + (if env.AF_CONF == "" then {} else {conf: (env.AF_CONF | fromjson)} end)
   ') || fail "conf must be a JSON object"
+  if [[ $api_version == v1 ]]; then
+    body=$(printf '%s' "$body" | jq -c 'if .logical_date == null then del(.logical_date) else . end')
+  fi
   api_json POST "/dags/$1/dagRuns" "$body"
 }
 
 set_dag_run_state() {
-  api_json PATCH "/dags/$1/dagRuns/$2?update_mask=state" \
+  local path="/dags/$1/dagRuns/$2"
+  [[ $api_version == v1 ]] || path="$path?update_mask=state"
+  api_json PATCH "$path" \
     "$(jq -nc --arg state "$3" '{state: $state}')"
 }
 
 clear_dag_run() {
+  if [[ $api_version == v1 ]]; then
+    clear_task_instances "$1" "$3" "$2" "" "$4" false
+    return
+  fi
   api_json POST "/dags/$1/dagRuns/$2/clear" \
     "$(jq -nc --argjson dry "$3" --argjson only_failed "$4" \
       '{dry_run: $dry, only_failed: $only_failed}')"
@@ -395,6 +460,18 @@ clear_task_instances() {
 
 set_task_instance_state() {
   local path="/dags/$1/dagRuns/$2/taskInstances/$3"
+  if [[ $api_version == v1 ]]; then
+    if [[ $6 == true ]]; then
+      [[ $4 == -1 ]] || fail "Airflow 2 cannot update mapped task instances with include_downstream=true"
+      api_json POST "/dags/$1/updateTaskInstancesState" "$(jq -nc --arg run "$2" --arg task "$3" --arg state "$5" \
+        '{dag_run_id:$run, task_id:$task, new_state:$state, dry_run:false, include_upstream:false, include_downstream:true, include_future:false, include_past:false}')"
+    else
+      [[ $4 == -1 ]] || path="$path/$4"
+      api_json PATCH "$path" "$(jq -nc --arg state "$5" '{new_state:$state, dry_run:false}')" >/dev/null
+      task_instance "$1" "$2" "$3" "$4"
+    fi
+    return
+  fi
   [[ $4 == "-1" ]] || path="$path?map_index=$4"
   api_json PATCH "$path" \
     "$(jq -nc --arg state "$5" --argjson downstream "$6" \
@@ -415,6 +492,10 @@ delete_dag_run() {
 # replaced. That also keeps the action from depending on defaults for fields it
 # was never asked to change.
 set_pool_slots() {
+  if [[ $api_version == v1 ]]; then
+    api_json PATCH "/pools/$1?update_mask=slots" "$(jq -nc --argjson slots "$2" '{slots:$slots}')"
+    return
+  fi
   resolve_token
   local body
   body=$(request GET "$api/pools/$1" |
@@ -424,6 +505,7 @@ set_pool_slots() {
 }
 
 create_backfill() {
+  v2_only airflow.backfill_create
   api_json POST /backfills "$(jq -nc \
     --arg dag_id "$1" \
     --arg from_date "$2" \
@@ -438,16 +520,26 @@ create_backfill() {
 }
 
 cancel_backfill() {
+  v2_only airflow.backfill_cancel
   resolve_token
   request PUT "$api/backfills/$1/cancel"
 }
 
 pause_backfill() {
+  v2_only airflow.backfill_pause
   resolve_token
   request PUT "$api/backfills/$1/pause"
 }
 
 validate_base
+case "$api_version" in
+  v1|v2) ;;
+  *) fail "AIRFLOW_API_VERSION must be v1 (Airflow 2) or v2 (Airflow 3)" ;;
+esac
+if [[ $api_version == v1 || -z ${AIRFLOW_API_TOKEN:-} ]] &&
+   [[ -n ${AIRFLOW_USERNAME:-} && -z ${AIRFLOW_PASSWORD:-} || -z ${AIRFLOW_USERNAME:-} && -n ${AIRFLOW_PASSWORD:-} ]]; then
+  fail "AIRFLOW_USERNAME and AIRFLOW_PASSWORD must be set together"
+fi
 
 command=${1:-}
 shift || true

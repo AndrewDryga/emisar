@@ -1,6 +1,6 @@
 schema_version: 1
 id: airflow.dags
-title: List DAGs (GET /api/v2/dags)
+title: List DAGs (GET /api/{version}/dags)
 kind: script
 risk: low
 description: >
@@ -9,7 +9,7 @@ description: >
   paused state, or the state of the most recent run — `last_dag_run_state:
   failed` is the fastest way to see everything that is broken right now.
 side_effects:
-  - One read-only HTTP GET to the Airflow /api/v2/dags endpoint.
+  - One read-only HTTP GET to the Airflow /api/{version}/dags endpoint.
   - Read-only — never writes or mutates data.
 search_terms:
   - list dags
@@ -44,7 +44,7 @@ args:
     type: string
     required: false
     default: ""
-    description: Restrict to DAGs whose most recent run is in this state.
+    description: Airflow 3 only. Restrict to DAGs whose most recent run is in this state.
     validation:
       enum: ["", "queued", "running", "success", "failed"]
   - name: exclude_stale
@@ -70,7 +70,7 @@ args:
     type: string
     required: false
     default: "dag_id"
-    description: Sort field, prefixed with - for descending.
+    description: Sort field, prefixed with - for descending. Airflow 2 supports only dag_id or -dag_id.
     validation:
       pattern: "^-?[a-z_]{1,64}$"
       max_length: 65
@@ -95,7 +95,7 @@ output:
 examples:
   - title: Every DAG
     args: {}
-  - title: DAGs whose last run failed
+  - title: DAGs whose last run failed (Airflow 3 only)
     args: {last_dag_run_state: failed}
   - title: One team's DAGs
     args: {tags: "platform,ingest"}

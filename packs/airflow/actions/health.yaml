@@ -1,6 +1,6 @@
 schema_version: 1
 id: airflow.health
-title: GET /api/v2/monitor/health
+title: Check Airflow control-plane health
 kind: script
 risk: low
 description: >
@@ -10,7 +10,7 @@ description: >
   "unhealthy" explains an entire fleet of queued-but-never-started runs. Needs
   no credentials.
 side_effects:
-  - One read-only HTTP GET to the Airflow /api/v2/monitor/health endpoint.
+  - One read-only HTTP GET to /api/v1/health on Airflow 2 or /api/v2/monitor/health on Airflow 3.
   - Read-only — never writes or mutates data.
 search_terms:
   - scheduler down

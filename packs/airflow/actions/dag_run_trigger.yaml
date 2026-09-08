@@ -1,6 +1,6 @@
 schema_version: 1
 id: airflow.dag_run_trigger
-title: Trigger a DAG run (POST /api/v2/dags/{dag_id}/dagRuns)
+title: Trigger a DAG run (POST /api/{version}/dags/{dag_id}/dagRuns)
 kind: script
 risk: high
 description: >

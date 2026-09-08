@@ -9,6 +9,7 @@ set -euo pipefail
 state_dir=/opt/airflow/state
 seed_dag=packtest_pipeline
 fail_dag=packtest_failing
+major=$(airflow version | tail -n 1 | cut -d. -f1)
 
 log() { printf 'seed: %s\n' "$1" >&2; }
 
@@ -28,7 +29,9 @@ wait_for_dag() {
 # document, so the JSON array is picked out of the noise rather than parsed
 # from the whole stream.
 run_state() {
-	airflow dags list-runs "$1" -o json 2>/dev/null |
+	local dag_args=("$1")
+	[[ $major != 2 ]] || dag_args=(--dag-id "$1")
+	airflow dags list-runs "${dag_args[@]}" -o json 2>/dev/null |
 		python3 -c '
 import json, sys
 for line in sys.stdin:

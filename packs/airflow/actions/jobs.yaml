@@ -1,6 +1,6 @@
 schema_version: 1
 id: airflow.jobs
-title: List Airflow jobs (GET /api/v2/jobs)
+title: List Airflow jobs (GET /api/v2/jobs) (Airflow 3 only)
 kind: script
 risk: low
 description: >

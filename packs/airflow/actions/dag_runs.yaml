@@ -1,6 +1,6 @@
 schema_version: 1
 id: airflow.dag_runs
-title: List DAG runs (GET /api/v2/dags/{dag_id}/dagRuns)
+title: List DAG runs (GET /api/{version}/dags/{dag_id}/dagRuns)
 kind: script
 risk: low
 description: >
@@ -9,7 +9,7 @@ description: >
   once — combined with `state: failed` that is the one call that answers "what
   failed in the last hour".
 side_effects:
-  - One read-only HTTP GET to the Airflow /api/v2/dags/{dag_id}/dagRuns endpoint.
+  - One read-only HTTP GET to the Airflow /api/{version}/dags/{dag_id}/dagRuns endpoint.
   - Read-only — never writes or mutates data.
 search_terms:
   - failed runs
@@ -36,7 +36,7 @@ args:
     type: string
     required: false
     default: ""
-    description: Restrict to runs of this type. Empty lists every type.
+    description: Airflow 3 run-type filter. Leave empty on Airflow 2.
     validation:
       enum: ["", "backfill", "scheduled", "manual", "operator_triggered", "asset_triggered", "asset_materialization"]
   - name: start_date_gte
@@ -57,7 +57,7 @@ args:
     type: string
     required: false
     default: "-run_after"
-    description: Sort field, prefixed with - for descending.
+    description: Sort field, prefixed with - for descending. Airflow 2 maps run_after to execution_date (logical date).
     validation:
       pattern: "^-?[a-z_]{1,64}$"
       max_length: 65

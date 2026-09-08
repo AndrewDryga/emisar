@@ -1,6 +1,6 @@
 schema_version: 1
 id: airflow.event_logs
-title: List Airflow event log entries (GET /api/v2/eventLogs)
+title: List Airflow event log entries (GET /api/{version}/eventLogs)
 kind: script
 risk: low
 description: >
@@ -8,7 +8,7 @@ description: >
   task, or edited a variable, with the owner and timestamp. Read it to answer
   "who changed this and when" after an unexplained state change.
 side_effects:
-  - One read-only HTTP GET to the Airflow /api/v2/eventLogs endpoint.
+  - One read-only HTTP GET to the Airflow /api/{version}/eventLogs endpoint.
   - Read-only — never writes or mutates data.
   - Discloses which users acted on which DAGs.
 search_terms:

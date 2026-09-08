@@ -9,7 +9,7 @@ description: >
   DAG and run: `state: failed` finds every failing task in the deployment,
   `state: queued` with a pool filter shows what a saturated pool is holding up.
 side_effects:
-  - One read-only HTTP GET to the Airflow task-instance list endpoint.
+  - One read-only HTTP GET, or an Airflow 2 batch-read POST when filtering by task_id.
   - Read-only — never writes or mutates data.
 search_terms:
   - failed tasks
@@ -66,10 +66,10 @@ args:
   - name: order_by
     type: string
     required: false
-    default: "-start_date"
-    description: Sort field, prefixed with - for descending.
+    default: ""
+    description: Airflow 3 sort field, prefixed with - for descending. Empty uses -start_date on Airflow 3 and native API order on Airflow 2; Airflow 2 requires empty.
     validation:
-      pattern: "^-?[a-z_]{1,64}$"
+      pattern: "^(-?[a-z_]{1,64})?$"
       max_length: 65
 execution:
   script: {path: scripts/airflow_api.sh, interpreter: /bin/bash}

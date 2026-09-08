@@ -963,6 +963,7 @@ func TestRunPackTestCaseAlwaysTearsDownItsComposeProject(t *testing.T) {
 	baseCompose := filepath.Join("dev", "test-packs", "compose.yaml")
 	job := packTestJob{
 		InvocationID: "run-1",
+		VersionEnv:   map[string]string{"PACKTEST_VERSION": "18.4"},
 		Plan: packtest.PlanRef{
 			Name:     "postgres",
 			Path:     filepath.Join("packs", "postgres", "test", "cases.yaml"),
@@ -972,7 +973,7 @@ func TestRunPackTestCaseAlwaysTearsDownItsComposeProject(t *testing.T) {
 	}
 	compose := "compose -f " + baseCompose + " -f " + filepath.Join("packs", "postgres", "test", "compose.yaml") + " "
 	up := compose + "up -d --wait postgres"
-	run := compose + "run --rm --no-deps --entrypoint /opt/emisar/bin/packtest runner-tools " +
+	run := compose + "run --rm --no-deps --entrypoint /opt/emisar/bin/packtest -e PACKTEST_VERSION=18.4 runner-tools " +
 		"--pack postgres --case uptime --reports /tmp/packtest-reports"
 	down := compose + "down -v --remove-orphans"
 

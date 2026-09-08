@@ -1,6 +1,6 @@
 schema_version: 1
 id: airflow.backfill_create
-title: Start a backfill (POST /api/v2/backfills)
+title: Start a backfill (POST /api/v2/backfills) (Airflow 3 only)
 kind: script
 risk: high
 description: >

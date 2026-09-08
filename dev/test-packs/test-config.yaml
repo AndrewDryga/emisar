@@ -27,6 +27,7 @@ execution:
   # allowlisted here or the action gets a silent "auth missing".
   inherit_env:
     - AIRFLOW_API_TOKEN
+    - AIRFLOW_API_VERSION
     - AIRFLOW_PASSWORD
     - AIRFLOW_URL
     - AIRFLOW_USERNAME

@@ -1,6 +1,6 @@
 schema_version: 1
 id: airflow.assets
-title: List assets (GET /api/v2/assets)
+title: List assets (GET /api/v2/assets) (Airflow 3 only)
 kind: script
 risk: low
 description: >

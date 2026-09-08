@@ -8,7 +8,10 @@ from __future__ import annotations
 
 import datetime
 
-from airflow.sdk import dag, task
+try:
+    from airflow.sdk import dag, task
+except ImportError:
+    from airflow.decorators import dag, task
 
 START_DATE = datetime.datetime(2026, 1, 1, tzinfo=datetime.timezone.utc)
 

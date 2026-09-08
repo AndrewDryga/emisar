@@ -1,6 +1,6 @@
 schema_version: 1
 id: airflow.pool_set_slots
-title: Set a pool's slot count (PATCH /api/v2/pools/{pool_name})
+title: Set a pool's slot count (PATCH /api/{version}/pools/{pool_name})
 kind: script
 risk: medium
 description: >

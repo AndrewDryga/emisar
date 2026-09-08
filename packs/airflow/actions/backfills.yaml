@@ -1,6 +1,6 @@
 schema_version: 1
 id: airflow.backfills
-title: List backfills (GET /api/v2/backfills)
+title: List backfills (GET /api/v2/backfills) (Airflow 3 only)
 kind: script
 risk: low
 description: >

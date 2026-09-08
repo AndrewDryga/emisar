@@ -60,6 +60,18 @@ Version rows are support promises, not a release archive. Declare the newest
 supported release and the oldest supported family for high-use databases and
 orchestrators. Do not enumerate every intermediate patch.
 
+A version row may set `env` defaults for that API family. These override the
+plan's environment and are themselves overridden by a case's `env`/`unset_env`;
+credential canary validation applies to the resulting environment for every
+supported case. Cases without `versions` run on every row. A case may name
+declared version tags in `versions: ["2.10.4-python3.11"]` when an API family
+has a different response or must explicitly reject an unsupported operation.
+Keep success and denial cases for those differences; version selection is not
+an escape hatch for a broken supported behavior.
+Every version must have at least as many selected cases as declared shards;
+family selection happens before sharding. Plans with family-specific cases or
+environment defaults require a declared version row rather than an ad hoc tag.
+
 ## Plan shape
 
 ```yaml

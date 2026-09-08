@@ -1,6 +1,6 @@
 schema_version: 1
 id: airflow.variables
-title: List variable inventory (GET /api/v2/variables)
+title: List variable inventory (GET /api/{version}/variables)
 kind: script
 risk: low
 description: >
@@ -9,8 +9,9 @@ description: >
   — an Airflow variable routinely holds an API key or a DSN, and no redaction
   pattern can be trusted to catch every shape — so this answers "does this
   variable exist and is it set", never "what is it".
+  Airflow 2 does not expose encryption status, so is_encrypted is null (unknown).
 side_effects:
-  - One read-only HTTP GET to the Airflow /api/v2/variables endpoint.
+  - One read-only HTTP GET to the Airflow /api/{version}/variables endpoint.
   - Read-only — never writes or mutates data.
   - Returns variable keys and value length only; values are removed on the host.
 search_terms:
@@ -22,7 +23,7 @@ args:
     type: string
     required: false
     default: ""
-    description: Substring the variable key must contain. Empty lists every variable.
+    description: Airflow 3 variable-key substring filter. Leave empty on Airflow 2.
     validation:
       pattern: "^[A-Za-z0-9._-]{0,250}$"
       max_length: 250

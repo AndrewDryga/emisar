@@ -1,6 +1,6 @@
 schema_version: 1
 id: airflow.dag_details
-title: GET /api/v2/dags/{dag_id}/details
+title: GET /api/{version}/dags/{dag_id}/details
 kind: script
 risk: low
 description: >
@@ -9,7 +9,7 @@ description: >
   asset schedule, and the file it was parsed from. This is what to read before
   unpausing a DAG, because it says whether catchup will backfill.
 side_effects:
-  - One read-only HTTP GET to the Airflow /api/v2/dags/{dag_id}/details endpoint.
+  - One read-only HTTP GET to the Airflow /api/{version}/dags/{dag_id}/details endpoint.
   - Read-only — never writes or mutates data.
   - Includes DAG-level default_args and params as the DAG author wrote them.
 search_terms:

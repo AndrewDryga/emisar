@@ -8,6 +8,7 @@ description: >
   This is the standard "retry last night's failure" action, and the cleared
   tasks execute for real with all their side effects. Run
   airflow.dag_run_clear_preview first to see exactly what it will touch.
+  Airflow 2 returns affected task references; Airflow 3 returns the DAG run.
 side_effects:
   - Resets the matching task instances and re-queues them for execution.
   - Cleared tasks run again with their real side effects, including writes and third-party calls.

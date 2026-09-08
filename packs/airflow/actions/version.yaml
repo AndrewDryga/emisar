@@ -1,6 +1,6 @@
 schema_version: 1
 id: airflow.version
-title: GET /api/v2/version
+title: GET /api/{version}/version
 kind: script
 risk: low
 description: >
@@ -8,7 +8,7 @@ description: >
   confirm which release a host is on before reading a version-specific field or
   filing an upgrade. Needs no credentials.
 side_effects:
-  - One read-only HTTP GET to the Airflow /api/v2/version endpoint.
+  - One read-only HTTP GET to the Airflow /api/{version}/version endpoint.
   - Read-only — never writes or mutates data.
 search_terms:
   - airflow version

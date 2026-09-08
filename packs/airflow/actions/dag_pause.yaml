@@ -1,6 +1,6 @@
 schema_version: 1
 id: airflow.dag_pause
-title: Pause a DAG (PATCH /api/v2/dags/{dag_id})
+title: Pause a DAG (PATCH /api/{version}/dags/{dag_id})
 kind: script
 risk: medium
 description: >

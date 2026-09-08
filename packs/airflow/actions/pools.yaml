@@ -1,6 +1,6 @@
 schema_version: 1
 id: airflow.pools
-title: List pools (GET /api/v2/pools)
+title: List pools (GET /api/{version}/pools)
 kind: script
 risk: low
 description: >
@@ -8,7 +8,7 @@ description: >
   queued, scheduled, deferred, and open. A pool with zero open slots is the
   usual reason tasks sit queued while the scheduler looks healthy.
 side_effects:
-  - One read-only HTTP GET to the Airflow /api/v2/pools endpoint.
+  - One read-only HTTP GET to the Airflow /api/{version}/pools endpoint.
   - Read-only — never writes or mutates data.
 search_terms:
   - pool slots
@@ -20,7 +20,7 @@ args:
     type: string
     required: false
     default: ""
-    description: Substring the pool name must contain. Empty lists every pool.
+    description: Airflow 3 pool-name substring filter. Leave empty on Airflow 2.
     validation:
       pattern: "^[A-Za-z0-9._-]{0,256}$"
       max_length: 256

@@ -1,6 +1,6 @@
 schema_version: 1
 id: airflow.dag_unpause
-title: Unpause a DAG (PATCH /api/v2/dags/{dag_id})
+title: Unpause a DAG (PATCH /api/{version}/dags/{dag_id})
 kind: script
 risk: high
 description: >

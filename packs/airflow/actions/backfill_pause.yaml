@@ -1,6 +1,6 @@
 schema_version: 1
 id: airflow.backfill_pause
-title: Pause a backfill (PUT /api/v2/backfills/{backfill_id}/pause)
+title: Pause a backfill (PUT /api/v2/backfills/{backfill_id}/pause) (Airflow 3 only)
 kind: script
 risk: medium
 description: >

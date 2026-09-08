@@ -1,6 +1,6 @@
 schema_version: 1
 id: airflow.task_instances_clear
-title: Clear and re-run task instances (POST /api/v2/dags/{dag_id}/clearTaskInstances)
+title: Clear and re-run task instances (POST /api/{version}/dags/{dag_id}/clearTaskInstances)
 kind: script
 risk: high
 description: >

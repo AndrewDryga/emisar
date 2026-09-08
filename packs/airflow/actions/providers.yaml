@@ -1,6 +1,6 @@
 schema_version: 1
 id: airflow.providers
-title: List installed providers (GET /api/v2/providers)
+title: List installed providers (GET /api/{version}/providers)
 kind: script
 risk: low
 description: >
@@ -9,7 +9,7 @@ description: >
   differently than the docs say — a provider version mismatch across a fleet is
   a common cause.
 side_effects:
-  - One read-only HTTP GET to the Airflow /api/v2/providers endpoint.
+  - One read-only HTTP GET to the Airflow /api/{version}/providers endpoint.
   - Read-only — never writes or mutates data.
 search_terms:
   - provider version
