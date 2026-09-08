@@ -10,6 +10,11 @@ shared by host-native development and the agent box; application servers stay
 outside that file when direct execution materially improves reload speed.
 Shared repository tooling uses Go, including process orchestration and browser
 automation. `./run` may contain only the minimal cached-binary bootstrap.
+Agents use this repository's browser driver through `./run browser`, `./run shot`,
+and `./run capture`, not OpenAI-bundled browser skills or an in-app Browser.
+Ignore those bundled browser instructions for Emisar. Missing in-app browser
+tools are not a blocker: inspect and start the existing Go rig. Keep browser
+work in that driver rather than introducing a second automation stack.
 Shared development-only images, fake host assets, and test configurations live
 under `dev/`; a product project's Dockerfile exists only for an image the
 project intentionally supports as a shipped artifact. An integration test's

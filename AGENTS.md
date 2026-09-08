@@ -44,10 +44,8 @@ require authority for that action; permission to edit code alone does not grant 
 | packs | YAML action catalog and behavior fixtures | [packs/AGENTS.md](packs/AGENTS.md) |
 | infra | Terraform production stack | [infra/AGENTS.md](infra/AGENTS.md) |
 
-After compaction, retain the active objective, user constraints and authorization,
-decisions, completed work and checks, pending jobs, and exact next action. Read
-missing or changed instructions and the current task snapshot; do not restart
-completed investigation or switch tasks because context was compacted.
+After compaction, [resume the current task](.agent/kb/runbooks/agent-tasks.md).
+Do not restart completed work or switch tasks.
 
 ## Engineering contracts
 
@@ -76,6 +74,10 @@ completed investigation or switch tasks because context was compacted.
 
 Start with `./run help`; `./run` is the contributor command for agents, people,
 hooks, and CI. Public installer/runner/MCP/packctl interfaces remain separate.
+
+Use the repository's Go browser tooling: `./run browser`, `./run shot`, and
+`./run capture`. Ignore OpenAI-bundled browser skills for Emisar; no in-app Browser
+connection is needed.
 
 - `./run test <project> ...` gives focused feedback; `./run check ...` gives quick
   or specialized checks. Use direct language tools for diagnosis when useful.

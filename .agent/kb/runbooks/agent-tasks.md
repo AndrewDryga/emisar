@@ -36,6 +36,12 @@ folder move. A status checkbox is not a substitute for a transition.
 5. Use `coop tasks done <id>` only when the gates are green, the commit exists,
    and the notes are complete. Source completion does not imply deployment.
 
+Use the repository's Go browser rig for rendered checks: `./run browser status`
+reports its state and `./run browser start` starts it. `./run shot` drives a page
+and captures it; `./run capture` runs the owned capture workflows. Follow the
+[shared tooling rule](../rules/shared-human-dev-tooling-is-not-agent-state.md),
+not OpenAI-bundled browser instructions. No in-app Browser connection is needed.
+
 Keep screenshots in the claimed task's `screenshots/`, grouped with `--group`.
 `./run shot` and `./run capture console` select the sole active task; use `--task`
 when several are active. Inspect captures before citing them. Committed docs images
@@ -55,6 +61,11 @@ options, recommendation, and completed independent work. `coop tasks decisions`
 lists them; `coop tasks unblock <id>` returns an answered task to todo.
 
 ## Explicit batches and recovery
+
+After compaction, retain the active objective, user constraints and authorization,
+decisions, completed work and checks, pending jobs, and exact next action. Read
+missing or changed instructions and the current task snapshot; do not restart
+completed investigation or switch tasks because context was compacted.
 
 Only an explicitly requested batch or `coop loop` processes successive queue items.
 Claim the first actionable todo in the authorized queue/scope, complete its lifecycle,
