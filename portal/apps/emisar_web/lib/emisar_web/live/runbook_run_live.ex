@@ -1592,7 +1592,7 @@ defmodule EmisarWeb.RunbookRunLive do
            its value instead of flinging values to the far edge. --%>
       <dl
         :if={
-          (@attempt && attempt_status_differs?(@attempt, @item)) or
+          (not is_nil(@attempt) and attempt_status_differs?(@attempt, @item)) or
             not is_nil(wait_label(@item)) or not is_nil(@item.next_attempt_at)
         }
         class="flex flex-wrap gap-x-10 gap-y-2 text-xs"

@@ -894,6 +894,27 @@ defmodule EmisarWeb.RunbookRunLiveTest do
   end
 
   describe "durable staged results" do
+    test "retained item outputs render without an action attempt", %{
+      conn: conn,
+      account: account,
+      subject: subject
+    } do
+      runner = trusted_runner(account, subject)
+      runbook = published_runbook(subject, runner)
+
+      execution =
+        Fixtures.Runbooks.create_execution_with_outputs(runbook, runner, [
+          %{id: "inspection", value: "Retained result", sensitive: false}
+        ])
+
+      {:ok, lv, _html} =
+        live(conn, ~p"/app/#{account}/runbooks/#{runbook.id}/runs/#{execution.id}")
+
+      assert has_element?(lv, "#runbook-execution-result", "Retained result")
+      refute has_element?(lv, "[id^=execution-item-] a", "View run")
+      refute has_element?(lv, "[id^=execution-item-]", "Action result")
+    end
+
     test "the execution URL reloads its exact item while /run starts fresh", %{
       conn: conn,
       account: account,
