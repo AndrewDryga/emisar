@@ -30,7 +30,7 @@ defmodule Emisar.Audit do
   alias Emisar.Audit.{Authorizer, CSVExport, Event, Events, IdentityOption}
   alias Emisar.Auth
   alias Emisar.Auth.Subject
-  alias Emisar.{Billing, Crypto, Repo, RequestContext, Runs, SafeText}
+  alias Emisar.{Billing, Crypto, Policies, Repo, RequestContext, Runs, SafeText}
 
   def start_link(opts) do
     Supervisor.start_link(__MODULE__, opts, name: __MODULE__.Supervisor)
@@ -232,7 +232,8 @@ defmodule Emisar.Audit do
               local_audit_failed: if(run.local_audit_failed, do: true),
               # The caller's justification and the policy snapshot explain why
               # this dispatch was allowed, held, or denied. Keep the runner's
-              # terminal detail under `reason` so the two meanings never collide.
+              # cancellation detail under `reason` and failure detail under
+              # `error_message` so these meanings never collide.
               dispatch_reason: run.reason,
               policy_id: run.policy_id,
               policy_decision: run.policy_decision,
@@ -240,6 +241,7 @@ defmodule Emisar.Audit do
               policy_version: run.policy_version,
               matched_rules: run.matched_rules,
               reason: run.reason_text,
+              error_message: run.error_message,
               # Self-reported MCP client metadata snapshotted at dispatch, so a
               # terminal event logged long after (from the runner socket) still
               # carries it. Empty → dropped by compact, so non-MCP rows stay lean.
@@ -719,8 +721,9 @@ defmodule Emisar.Audit do
 
   @doc """
   Bulk-resolves the labels for every actor + subject referenced by the
-  given events. Returns a nested map: `%{kind => %{id => label}}`. The
-  ids are trusted (they were stamped on the audit row at write time
+  given events. Returns live labels as `%{kind => %{id => label}}` and
+  readable historical fallbacks under `"historical"`, keyed by `{kind, side}`
+  then ID. The ids are trusted (they were stamped on the audit row at write time
   inside an already-authorized parent transaction); we only project
   display labels.
 
@@ -730,15 +733,57 @@ defmodule Emisar.Audit do
   resolve a name/email belonging to another account (defense-in-depth).
   Correctly-scoped ids are unaffected.
   """
-  def resolve_references(events, %Subject{account: %{id: account_id}}) when is_list(events) do
+  def resolve_references(events, %Subject{account: %{id: account_id}} = subject)
+      when is_list(events) do
+    case ensure_can_read_audit(subject) do
+      :ok ->
+        refs =
+          events
+          |> Enum.flat_map(fn event ->
+            [{event.actor_kind, event.actor_id}, {event.target_kind, event.target_id}]
+          end)
+          |> Enum.reject(fn {_, id} -> is_nil(id) end)
+          |> Enum.uniq()
+          |> Enum.group_by(fn {kind, _} -> kind end, fn {_, id} -> id end)
+          |> resolve_labels(account_id)
+
+        Map.put(refs, "historical", historical_reference_labels(events, refs, subject))
+
+      {:error, :unauthorized} ->
+        %{}
+    end
+  end
+
+  # Only unresolved names need history, bounded to this rendered page's IDs.
+  # The readable event scope also prevents a billing-only reader from learning
+  # a name stored exclusively in the account's operational history.
+  defp historical_reference_labels(events, refs, subject) do
+    readable = Event.Query.all() |> Authorizer.for_subject(subject)
+
     events
     |> Enum.flat_map(fn event ->
-      [{event.actor_kind, event.actor_id}, {event.target_kind, event.target_id}]
+      [
+        {{event.actor_kind, :actor}, event.actor_id, event.actor_label},
+        {{event.target_kind, :target}, event.target_id, event.target_label}
+      ]
     end)
-    |> Enum.reject(fn {_, id} -> is_nil(id) end)
-    |> Enum.uniq()
-    |> Enum.group_by(fn {kind, _} -> kind end, fn {_, id} -> id end)
-    |> resolve_labels(account_id)
+    |> Enum.filter(fn {{kind, side}, id, label} ->
+      current_account? = side == :target and kind == "account" and id == subject.account.id
+
+      not current_account? and is_binary(kind) and is_binary(id) and label in [nil, ""] and
+        get_in(refs, [kind, id]) in [nil, ""]
+    end)
+    |> Enum.group_by(fn {identity, _, _} -> identity end, fn {_, id, _} -> id end)
+    |> Enum.reduce(%{}, fn {{kind, side}, ids}, labels ->
+      resolved =
+        kind
+        |> IdentityOption.Query.labels_for_ids(side, subject.account.id, readable, Enum.uniq(ids))
+        |> Authorizer.for_subject(subject)
+        |> Repo.all()
+        |> Map.new()
+
+      Map.put(labels, {kind, side}, resolved)
+    end)
   end
 
   # Resolve a %{kind => [id]} map to %{kind => %{id => label}}, each kind's
@@ -905,12 +950,37 @@ defmodule Emisar.Audit do
 
   # -- UI metadata -----------------------------------------------------
 
+  @doc """
+  The policy changes recorded by an already-loaded audit payload. Recomputes
+  from saved before/after snapshots when both are present so older receipts
+  also expose approval and rule-order changes. Never reads the current policy;
+  incomplete historical payloads keep their recorded changes instead.
+  """
+  def policy_changes(payload) when is_map(payload) do
+    before_rules = Map.get(payload, :before, Map.get(payload, "before"))
+    after_rules = Map.get(payload, :after, Map.get(payload, "after"))
+    changes = Map.get(payload, :changes, Map.get(payload, "changes"))
+
+    cond do
+      is_map(before_rules) and is_map(after_rules) ->
+        Policies.diff_rules(before_rules, after_rules)
+
+      is_map(changes) ->
+        changes
+
+      true ->
+        %{}
+    end
+  end
+
+  def policy_changes(_payload), do: %{}
+
   @doc "The known `{event_type, label}` pairs — the audit list's event-type labels."
   def known_event_type_values, do: Event.Query.known_event_type_values()
 
   @doc """
   The event's outcome class from its type suffix — `:danger | :warn | :pass |
-  :neutral`. One source for the audit dots and the Outcome filter.
+  :neutral`. One source for the audit list and detail colors.
   """
   def event_outcome(event_type), do: Event.Query.outcome(event_type)
 
@@ -960,6 +1030,14 @@ defmodule Emisar.Audit do
   """
   def applicable_event_filters(type_param, params, %Subject{} = subject),
     do: Event.Query.applicable_filters(event_filters(subject), type_param, params)
+
+  @doc """
+  Keeps selected event types or groups compatible with a category selection.
+  Pure taxonomy metadata for changing a filter; no account data is read.
+  An empty category selection leaves the types unchanged.
+  """
+  def compatible_event_types(type_param, category_param),
+    do: Event.Query.compatible_event_types(type_param, category_param)
 
   @doc """
   The applicable audit filters for the console, with actor and target kinds

@@ -26,6 +26,7 @@ defmodule Emisar.Runners.Token do
 
     belongs_to :runner, Emisar.Runners.Runner, where: [deleted_at: nil]
     belongs_to :issued_via_key, Emisar.Runners.EnrollmentKey, where: [deleted_at: nil]
+    belongs_to :replaces, __MODULE__
 
     timestamps()
   end

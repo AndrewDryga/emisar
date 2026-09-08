@@ -136,12 +136,17 @@ defmodule Emisar.Runbooks.Scheduler do
       |> Multi.run(:scheduler_action, &choose_action/2)
       |> Multi.merge(&compose_action/1)
 
-    case Repo.commit_multi(multi,
-           after_commit: fn changes ->
-             Runs.after_composed_dispatches_committed(changes)
-             after_advance_committed(changes)
-           end
-         ) do
+    result =
+      multi
+      |> Repo.commit_multi(
+        after_commit: fn changes ->
+          Runs.after_composed_dispatches_committed(changes)
+          after_advance_committed(changes)
+        end
+      )
+      |> Audit.Rejection.finish()
+
+    case result do
       {:ok, changes} ->
         continue_after_action(changes)
 
@@ -221,10 +226,19 @@ defmodule Emisar.Runbooks.Scheduler do
 
   defp recheck_execution_item(item, execution) do
     attrs = %{
+      audit_execution: execution,
+      audit_execution_item: item,
       runner_id: item.runner_id,
       action_id: item.action_id,
       pack_ref: item.pack_ref,
       requested_by_membership_id: execution.initiating_membership_id,
+      requested_by_id: execution.requested_by_id,
+      api_key_id: execution.api_key_id,
+      operation_id: execution.operation_id,
+      runbook_id: execution.runbook_id,
+      runbook_execution_id: execution.id,
+      runbook_execution_item_id: item.id,
+      runbook_step_id: item.step_id,
       runbook_pack_hash: item.pack_hash,
       runbook_action_contract: item.action_contract
     }
@@ -717,6 +731,8 @@ defmodule Emisar.Runbooks.Scheduler do
     item = attempt.item
 
     %{
+      audit_execution: execution,
+      audit_execution_item: item,
       runner_id: item.runner_id,
       action_id: item.action_id,
       args_raw: attempt.args_raw,

@@ -71,6 +71,8 @@ defmodule Emisar.Runners.EnrollmentKey.Changeset do
   end
 
   def mint_install(account_id, user_id, prefix, hash, attrs \\ %{}) do
+    now = DateTime.utc_now()
+
     %EnrollmentKey{}
     |> cast(attrs, [:description])
     |> put_default_value(:description, "Console install command")
@@ -79,7 +81,8 @@ defmodule Emisar.Runners.EnrollmentKey.Changeset do
     |> put_change(:key_prefix, prefix)
     |> put_change(:key_hash, hash)
     |> put_change(:reusable, false)
-    |> put_change(:auto_generated_at, DateTime.utc_now())
+    |> put_change(:auto_generated_at, now)
+    |> put_change(:expires_at, DateTime.add(now, 24 * 3_600, :second))
     |> validate_required([:account_id])
   end
 

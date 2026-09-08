@@ -72,6 +72,7 @@ defmodule Emisar.Runners.Runner.Changeset do
       :degraded_packs,
       :group,
       :enforce_signatures,
+      :credential_rotation_supported,
       :max_attestation_age_seconds
     ])
     |> validate_advertised_fields()
@@ -152,15 +153,21 @@ defmodule Emisar.Runners.Runner.Changeset do
 
   # Connect/disconnect stamp the durable "last seen" history only.
   # "Online now" is Phoenix.Presence — there's no status column to flip.
-  def connected(%Runner{} = runner, lease_id, lease_expires_at) do
+  def connected(%Runner{} = runner, lease_id, lease_expires_at, token_id \\ nil) do
     change(runner,
       last_connected_at: DateTime.utc_now(),
       last_disconnect_reason: nil,
       connection_generation: runner.connection_generation + 1,
       connection_lease_id: lease_id,
-      connection_lease_expires_at: lease_expires_at
+      connection_lease_expires_at: lease_expires_at,
+      connection_token_id: token_id
     )
   end
+
+  def request_credential_rotation(%Runner{} = runner),
+    do: change(runner, credential_rotation_requested_at: DateTime.utc_now())
+
+  def keep_credential_rotation(%Runner{} = runner), do: change(runner)
 
   def renew_connection(%Runner{} = runner, lease_expires_at),
     do: change(runner, connection_lease_expires_at: lease_expires_at)

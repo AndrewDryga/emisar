@@ -194,6 +194,55 @@ defmodule Emisar.Runbooks.DefinitionTest do
       assert Enum.all?(issues, &(&1.code == "invalid_definition"))
     end
 
+    test "accepts JSON Pointer for every canonical source and text extractors for either stream" do
+      extracts = [
+        %{"type" => "json_pointer", "expression" => "/ready"},
+        %{"type" => "contains", "expression" => "ready"},
+        %{"type" => "grep", "expression" => "ready"},
+        %{"type" => "regex", "expression" => "ready", "capture" => "0"}
+      ]
+
+      for source <- ~w(structured_output stdout stderr),
+          extract <- extracts,
+          source != "structured_output" or extract["type"] == "json_pointer" do
+        definition =
+          put_in(
+            valid_definition(),
+            ["stages", Access.at(0), "steps", Access.at(0), "outputs"],
+            [Map.put(output("ready", extract), "source", source)]
+          )
+
+        assert {:ok, ^definition} = Definition.validate(definition)
+      end
+    end
+
+    test "rejects structured text extraction with an indexed actionable error" do
+      for type <- ~w(contains grep regex) do
+        extract = %{"type" => type, "expression" => "ready"}
+        extract = if type == "regex", do: Map.put(extract, "capture", "0"), else: extract
+
+        definition =
+          put_in(
+            valid_definition(),
+            ["stages", Access.at(0), "steps", Access.at(0), "outputs"],
+            [Map.put(output("ready", extract), "source", "structured_output")]
+          )
+
+        assert {:error,
+                [
+                  %{
+                    code: "invalid_definition",
+                    path: "/stages/0/steps/0/outputs/0/extract/type",
+                    message: "Structured output requires a JSON Pointer extractor."
+                  }
+                ]} = Definition.validate(definition)
+
+        # An incomplete draft can be saved for repair, but cannot pass the
+        # strict publication/execution contract above.
+        assert {:ok, ^definition} = Definition.validate_draft(definition)
+      end
+    end
+
     test "validates JSON pointers, bounded regexes, and wait arithmetic" do
       definition =
         valid_definition()

@@ -178,13 +178,13 @@
       "type": "object",
       "additionalProperties": true,
       "x-maxEncodedUtf8Bytes": 8192,
-      "description": "The complete bounded Draft 2020-12 object schema enforced by the runner after output redaction. Present only for actions that opt into typed results."
+      "description": "The complete bounded Draft 2020-12 object schema for redacted stdout, enforced by the runner and portal. Present only for actions that opt into typed results."
     },
     "structured_output": {
       "type": "object",
       "additionalProperties": true,
       "x-maxEncodedUtf8Bytes": 8192,
-      "description": "Runner-redacted output that passed the action's declared output schema."
+      "description": "JSON from redacted stdout, validated against the action's declared output_schema by the runner and portal. Never derived from stderr."
     },
     "wait_short": {
       "type": "string",
@@ -1245,7 +1245,7 @@
     },
     "get_action": {
       "title": "Get action",
-      "description": "Get the exact argument schema, risk, side effects, and compatible runners for one action in one immutable pack_ref. Call this before run_action.",
+      "description": "Get the exact argument schema, optional output_schema for stdout JSON, risk, side effects, and compatible runners for one action in one immutable pack_ref. Call this before run_action or authoring a runbook step.",
       "annotations": {"readOnlyHint": true, "destructiveHint": false, "idempotentHint": true, "openWorldHint": false},
       "inputSchema": {
         "type": "object",

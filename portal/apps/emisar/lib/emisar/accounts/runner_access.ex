@@ -7,7 +7,7 @@ defmodule Emisar.Accounts.RunnerAccess do
   no scope values, `restricted` is the union of runner groups and runner ids.
   The pack dimension narrows that reach further: `all` packs (the default, so a
   grant that never mentions packs behaves exactly as before) or `restricted` to
-  an explicit pack list. The two dimensions intersect — a member reaches a
+  an explicit pack list (an empty list means no packs). The two dimensions intersect — a member reaches a
   runner only when the runner is in the runner scope, and may run an action only
   when its pack is in the pack scope.
 
@@ -79,12 +79,15 @@ defmodule Emisar.Accounts.RunnerAccess do
   finance seat) reaches no pack either, so its grant is always `none/0`;
   assigning the role RESETS both dimensions rather than refusing, which is what
   keeps a directory that maps one group to the seat and another to runners from
-  failing its whole sync. Every other role keeps what it was given.
+  failing its whole sync. Owners always carry all runners and packs; other
+  roles keep what they were given.
 
   Applied to the `%RunnerAccess{}` VALUE before a write, so the membership's own
   columns and its `user_runner_scopes` rows are written from one source and
   cannot disagree.
   """
+  def for_role(role, %__MODULE__{}) when role in [:owner, "owner"], do: all()
+
   def for_role(role, %__MODULE__{} = access) do
     if Emisar.Auth.Role.carries_runner_access?(role), do: access, else: none()
   end
@@ -565,7 +568,10 @@ defmodule Emisar.Accounts.RunnerAccess do
   defp validate_pack_shape(:none, :all, []), do: :ok
   defp validate_pack_shape(:none, _pack_mode, _pack_ids), do: {:error, :invalid_pack_access}
   defp validate_pack_shape(_mode, :all, []), do: :ok
-  defp validate_pack_shape(_mode, :restricted, [_ | _]), do: :ok
+  # An explicitly empty pack scope grants runner visibility, but no actions.
+  # The Selected packs input still rejects accidental empty submissions in
+  # ensure_packs_allowlisted/2; a dedicated No packs choice writes this shape.
+  defp validate_pack_shape(_mode, :restricted, pack_ids) when is_list(pack_ids), do: :ok
   defp validate_pack_shape(_mode, _pack_mode, _pack_ids), do: {:error, :invalid_pack_access}
 
   defp validate_persisted_rows(%__MODULE__{mode: :none}, [

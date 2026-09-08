@@ -18,7 +18,7 @@ for arg in "$@"; do
   separator=", "
 done
 
-[ "$arg_count" -le 3 ] || { echo "too many admin action arguments" >&2; exit 2; }
+[ "$arg_count" -le 4 ] || { echo "too many admin action arguments" >&2; exit 2; }
 
 encoded_action_id=$(encode "$action_id")
 

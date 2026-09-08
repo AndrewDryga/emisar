@@ -23,10 +23,6 @@ defmodule Emisar.SSO.GroupRoleMapping.Query do
   def by_directory_group_ids(queryable, directory_group_ids),
     do: where(queryable, [mappings: m], m.directory_group_id in ^directory_group_ids)
 
-  def with_preloaded_directory_group(queryable) do
-    preload(queryable, directory_group: ^Emisar.SSO.DirectoryGroup.Query.all())
-  end
-
   def lock_for_update(queryable), do: lock(queryable, "FOR NO KEY UPDATE")
 
   # {provider_id, count} rows — the per-connection group-mapping tallies for the

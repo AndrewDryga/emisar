@@ -19,7 +19,7 @@ defmodule Emisar.Accounts.Account.Changeset do
   def update(%Account{} = account, attrs) do
     account
     |> cast(attrs, @fields)
-    |> cast_embed(:settings, with: &Account.Settings.changeset/2)
+    |> cast_embed(:settings, required: true, with: &Account.Settings.changeset/2)
     |> changeset()
   end
 
@@ -42,6 +42,14 @@ defmodule Emisar.Accounts.Account.Changeset do
     account
     |> cast(%{settings: %{runner_inactive_retention_hours: hours}}, [])
     |> cast_embed(:settings, with: &Account.Settings.runner_inactive_retention_changeset/2)
+    |> changeset()
+  end
+
+  @doc "Internal — writes the support channel configured through the private admin pack."
+  def put_support_slack_url(%Account{} = account, url) do
+    account
+    |> cast(%{settings: %{support_slack_url: url}}, [])
+    |> cast_embed(:settings, with: &Account.Settings.support_slack_changeset/2)
     |> changeset()
   end
 

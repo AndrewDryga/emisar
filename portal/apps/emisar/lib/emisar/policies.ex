@@ -35,6 +35,9 @@ defmodule Emisar.Policies do
   @risk_tiers ~w(low medium high critical)
   @decisions ~w(allow require_approval deny)
   @max_min_approvals 2_147_483_647
+  # A help summary is bounded independently of the number of targeted policies.
+  # This is a read-work bound, never a limit on saved policy configurations.
+  @approval_summary_config_limit 100
 
   # Conservative default for a fresh account: low+medium auto-run,
   # high needs approval, critical is blocked outright.
@@ -339,6 +342,63 @@ defmodule Emisar.Policies do
       |> Policy.Query.account_scope()
       |> Authorizer.for_subject(subject)
       |> Repo.fetch(Policy.Query)
+    end
+  end
+
+  @doc """
+  Summarizes current approval settings in the account default and reachable
+  runner/group rulesets. Existing requests retain their saved requirements.
+
+  Returns a common approver count (or `:varies`) and whether self-approval is
+  uniformly allowed, forbidden, or varies. Missing/invalid settings and an
+  oversized set of distinct configurations return an error, not assumed defaults.
+  """
+  def fetch_approval_requirements_summary(%Subject{} = subject) do
+    with {:ok, policy} <- fetch_policy(subject),
+         {:ok, default} <- approval_settings_for(policy.rules),
+         {:ok, scoped} <- scoped_approval_settings(subject) do
+      settings = [default | scoped]
+
+      {:ok,
+       %{
+         min_approvals: common_approval_setting(settings, :min_approvals),
+         allow_self_approval: common_approval_setting(settings, :allow_self_approval)
+       }}
+    end
+  end
+
+  # The default is read separately: scope_to_runner_access/2 intentionally
+  # includes only reachable runner/group targets for restricted members.
+  defp scoped_approval_settings(subject) do
+    rules =
+      Policy.Query.not_deleted()
+      |> Policy.Query.scoped_overrides()
+      |> scope_to_runner_access(subject)
+      |> Policy.Query.distinct_approval_rules(@approval_summary_config_limit + 1)
+      |> Authorizer.for_subject(subject)
+      |> Repo.all()
+
+    validate_summary_settings(rules)
+  end
+
+  defp validate_summary_settings(rules) when length(rules) > @approval_summary_config_limit,
+    do: {:error, :approval_summary_too_complex}
+
+  defp validate_summary_settings(rules) do
+    Enum.reduce_while(rules, {:ok, []}, fn rules, {:ok, settings} ->
+      case approval_settings_for(rules) do
+        {:ok, setting} -> {:cont, {:ok, [setting | settings]}}
+        {:error, reason} -> {:halt, {:error, reason}}
+      end
+    end)
+  end
+
+  defp common_approval_setting(settings, field) do
+    values = settings |> Enum.map(&Map.fetch!(&1, field)) |> Enum.uniq()
+
+    case values do
+      [value] -> value
+      _values -> :varies
     end
   end
 
@@ -1105,6 +1165,7 @@ defmodule Emisar.Policies do
 
     %{
       "defaults" => diff_defaults(defaults_for(before_rules), defaults_for(after_rules)),
+      "approval" => diff_approval(approval_for(before_rules), approval_for(after_rules)),
       "overrides" => diff_overrides(overrides_for(before_rules), overrides_for(after_rules))
     }
   end
@@ -1131,6 +1192,26 @@ defmodule Emisar.Policies do
 
   defp overrides_for(_), do: []
 
+  defp approval_for(rules) when is_map(rules) do
+    case rules["approval"] do
+      %{} = approval -> approval
+      _ -> %{}
+    end
+  end
+
+  defp approval_for(_), do: %{}
+
+  defp diff_approval(before_approval, after_approval) do
+    Enum.reduce(~w[min_approvals allow_self_approval], %{}, fn field, changes ->
+      before_value = before_approval[field]
+      after_value = after_approval[field]
+
+      if before_value == after_value,
+        do: changes,
+        else: Map.put(changes, field, %{"from" => before_value, "to" => after_value})
+    end)
+  end
+
   # Per-tier diff: %{"high" => %{"from" => "allow", "to" => "require_approval"}, ...}.
   # Tiers that didn't change are omitted so the audit detail can
   # highlight only what moved.
@@ -1149,47 +1230,65 @@ defmodule Emisar.Policies do
     |> Enum.into(%{})
   end
 
-  # Overrides are keyed by `action` for diffing — an override with the
-  # same action glob in both lists is the "same" override even if
-  # name or decision changed. Yields `%{added: [...], removed: [...],
-  # changed: [%{"action" => "x", "from" => %{...}, "to" => %{...}}]}`.
+  # First-match order matters, and duplicate action globs are valid. Pair exact
+  # rows first, consuming one occurrence at a time, then pair the remaining rows
+  # with the same action in list order. Without stable rule IDs this preserves
+  # all additions/removals without inventing identity across different globs.
   defp diff_overrides(before_list, after_list) do
-    before_map = overrides_by_action(before_list)
-    after_map = overrides_by_action(after_list)
+    {unchanged, before_remaining, after_remaining} =
+      pair_overrides(indexed_overrides(before_list), indexed_overrides(after_list), fn
+        {before_override, _}, {after_override, _} -> before_override == after_override
+      end)
 
-    before_keys = MapSet.new(Map.keys(before_map))
-    after_keys = MapSet.new(Map.keys(after_map))
-
-    added =
-      after_keys
-      |> MapSet.difference(before_keys)
-      |> Enum.map(&after_map[&1])
-
-    removed =
-      before_keys
-      |> MapSet.difference(after_keys)
-      |> Enum.map(&before_map[&1])
+    {modified, removed, added} =
+      pair_overrides(before_remaining, after_remaining, fn
+        {before_override, _}, {after_override, _} ->
+          before_override["action"] == after_override["action"]
+      end)
 
     changed =
-      before_keys
-      |> MapSet.intersection(after_keys)
-      |> Enum.flat_map(fn action ->
-        before_override = before_map[action]
-        after_override = after_map[action]
+      Enum.map(modified, fn {{before_override, _}, {after_override, _}} ->
+        %{
+          "action" => after_override["action"],
+          "from" => before_override,
+          "to" => after_override
+        }
+      end)
 
-        if before_override == after_override do
-          []
-        else
-          [%{"action" => action, "from" => before_override, "to" => after_override}]
+    # Compare the relative order of retained rows. Inserting or removing a row
+    # shifts positions but does not, on its own, reorder the surviving rules.
+    after_indexes =
+      (unchanged ++ modified)
+      |> Enum.sort_by(fn {{_, before_index}, _} -> before_index end)
+      |> Enum.map(fn {_, {_, after_index}} -> after_index end)
+
+    %{
+      "added" => Enum.map(added, &elem(&1, 0)),
+      "removed" => Enum.map(removed, &elem(&1, 0)),
+      "changed" => changed,
+      "order_changed" => after_indexes != Enum.sort(after_indexes)
+    }
+  end
+
+  defp indexed_overrides(overrides) do
+    overrides
+    |> Enum.with_index()
+    |> Enum.filter(fn {override, _} -> is_map(override) and is_binary(override["action"]) end)
+  end
+
+  defp pair_overrides(before_entries, after_entries, matches?) do
+    {pairs, remaining_before, remaining_after} =
+      Enum.reduce(after_entries, {[], before_entries, []}, fn after_entry,
+                                                              {pairs, pending, unmatched} ->
+        case Enum.split_while(pending, &(not matches?.(&1, after_entry))) do
+          {_prefix, []} ->
+            {pairs, pending, [after_entry | unmatched]}
+
+          {prefix, [before_entry | suffix]} ->
+            {[{before_entry, after_entry} | pairs], prefix ++ suffix, unmatched}
         end
       end)
 
-    %{"added" => added, "removed" => removed, "changed" => changed}
-  end
-
-  defp overrides_by_action(overrides) do
-    overrides
-    |> Enum.filter(fn override -> is_map(override) and is_binary(override["action"]) end)
-    |> Map.new(&{&1["action"], &1})
+    {Enum.reverse(pairs), remaining_before, Enum.reverse(remaining_after)}
   end
 end

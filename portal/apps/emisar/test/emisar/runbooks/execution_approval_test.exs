@@ -62,6 +62,12 @@ defmodule Emisar.Runbooks.ExecutionApprovalTest do
     assert {:ok, {_approved, :runbook_execution}} =
              Approvals.approve_request(request, approver, "change window confirmed")
 
+    for event_type <- ["approval.decision_recorded", "approval.approved"] do
+      assert [event] = approval_events(request.id, event_type)
+      assert event.payload["runbook_execution_id"] == result.execution_id
+      assert event.payload["run_id"] == nil
+    end
+
     assert [run] = Runs.list_runs_for_runbook_execution(account.id, result.execution_id)
     assert run.runbook_step_id == "inspect"
     assert run.expected_pack_hash == @hash
@@ -160,6 +166,11 @@ defmodule Emisar.Runbooks.ExecutionApprovalTest do
     assert execution.status == :halted
     assert execution.terminal_code == "approval_denied"
     assert Runs.list_runs_for_runbook_execution(account.id, result.execution_id) == []
+    assert [denied] = approval_events(request.id, "approval.denied")
+    assert denied.payload["runbook_execution_id"] == result.execution_id
+    assert [decision] = approval_events(request.id, "approval.decision_recorded")
+    assert decision.payload["decision"] == "deny"
+    assert decision.payload["runbook_execution_id"] == result.execution_id
   end
 
   test "a fresh policy denial vetoes approval", %{
@@ -280,7 +291,13 @@ defmodule Emisar.Runbooks.ExecutionApprovalTest do
     halted = execution(result.execution_id)
     assert halted.status == :halted
     assert halted.terminal_code == "approval_expired"
+
+    assert halted.terminal_message ==
+             "Approval expired before all required approvals were received."
+
     assert Runs.list_runs_for_runbook_execution(account.id, result.execution_id) == []
+    assert [event] = approval_events(request.id, "approval.expired")
+    assert event.payload["runbook_execution_id"] == result.execution_id
 
     assert Approvals.approve_request(expired, approver, "too late") == {:error, :expired}
   end
@@ -370,6 +387,59 @@ defmodule Emisar.Runbooks.ExecutionApprovalTest do
       )
 
     Fixtures.Subjects.membership_subject(membership)
+  end
+
+  test "a failed approval preflight records one receipt despite the locked cleanup recheck",
+       %{account: _account, subject: _subject, approver: _approver, runner: _runner} = context do
+    assert_blocked_execution_receipt(context, :approve)
+  end
+
+  test "a failed override preflight keeps the same error and one initiating-actor receipt",
+       %{account: _account, subject: _subject, approver: _approver, runner: _runner} = context do
+    assert_blocked_execution_receipt(context, :override)
+  end
+
+  defp assert_blocked_execution_receipt(
+         %{account: account, subject: subject, approver: approver, runner: runner},
+         decision
+       ) do
+    runbook = published_runbook(subject, required_definition(runner.group))
+
+    assert {:ok, result} =
+             Runbooks.dispatch_runbook(runbook, "trust changed during review", subject)
+
+    assert {:ok, [request], _metadata} = Approvals.list_pending_approval_requests(approver)
+    assert [version] = Fixtures.Catalog.list_pack_versions(account.id)
+    assert {:ok, _version} = Catalog.revoke_pack_version_trust(version.id, subject)
+
+    outcome =
+      case decision do
+        :approve -> Approvals.approve_request(request, approver, "reviewed")
+        :override -> Approvals.override_request(request, "incident response", approver)
+      end
+
+    assert outcome == {:error, :runbook_execution_not_approvable}
+    assert Repo.reload!(request).status == :cancelled
+    assert execution(result.execution_id).status == :halted
+    assert Runs.list_runs_for_runbook_execution(account.id, result.execution_id) == []
+
+    assert [blocked] =
+             Emisar.Audit.Event
+             |> Repo.all()
+             |> Enum.filter(&(&1.event_type == "dispatch_blocked_pack_untrusted"))
+
+    assert blocked.actor_kind == "user"
+    assert blocked.actor_id == subject.actor.id
+    assert blocked.target_id == version.id
+    assert blocked.payload["runbook_execution_id"] == result.execution_id
+    assert blocked.payload["runbook_id"] == runbook.id
+    assert blocked.payload["runbook_step_id"] == "inspect"
+  end
+
+  defp approval_events(request_id, event_type) do
+    Emisar.Audit.Event
+    |> Repo.all()
+    |> Enum.filter(&(&1.event_type == event_type and &1.target_id == request_id))
   end
 
   defp trusted_runner(account, subject, opts \\ []) do

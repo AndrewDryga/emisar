@@ -38,22 +38,24 @@ defmodule Emisar.Auth.Role do
   """
   def description(role) when is_atom(role), do: role |> Atom.to_string() |> description()
 
-  def description("owner"),
-    do: "Full control of the workspace, including billing and adding or removing other owners."
+  def description("owner") do
+    "Owners can manage the entire account, including billing and other owners, and access all runners and packs."
+  end
 
   def description("admin") do
-    "Manages members, runners, policies, and billing, and approves actions. Can't add or remove owners."
+    "Admins can manage members, runners, policies, and billing, and approve actions. They can't add or remove owners."
   end
 
   def description("billing_manager") do
-    "Manages the subscription, payment method, and invoices. Also reads the member list and billing events in the audit trail — no runners, actions, or policy."
+    "Billing managers can manage the subscription, payment method, and invoices. They can also view the member list and billing events in the audit trail, but have no access to runners, actions, or policy."
   end
 
-  def description("operator"),
-    do: "Dispatches actions and approves them. No team, policy, or billing management."
+  def description("operator") do
+    "Operators can run actions, handle approvals, and create, edit, and publish runbooks."
+  end
 
   def description("viewer") do
-    "Read-only across runs, runners, approvals, and audit — can't dispatch or change anything."
+    "Viewers have read-only access across runs, runners, approvals, and audit — can't dispatch or change anything."
   end
 
   def description(_), do: nil

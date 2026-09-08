@@ -1035,6 +1035,7 @@ defmodule Emisar.Approvals do
          {:ok, input} <- decision_input(attrs) do
       record_decision(request, subject, :approve, reason, input)
     end
+    |> Audit.Rejection.finish()
   end
 
   @doc """
@@ -1119,6 +1120,13 @@ defmodule Emisar.Approvals do
         {:ok, changes} ->
           decision_result(changes)
 
+        {:error, %Audit.Rejection{reason: {:override_preflight_failed, reason}} = rejection} ->
+          resolve_override_preflight_failure(
+            request,
+            Audit.Rejection.with_reason(rejection, reason),
+            subject
+          )
+
         {:error, {:override_preflight_failed, reason}} ->
           resolve_override_preflight_failure(request, reason, subject)
 
@@ -1126,6 +1134,7 @@ defmodule Emisar.Approvals do
           {:error, reason}
       end
     end
+    |> Audit.Rejection.finish()
   end
 
   @doc """
@@ -1393,7 +1402,7 @@ defmodule Emisar.Approvals do
   # against the trusted bytes would ship the new ones. Deny needs no trust
   # check — it cancels.
   defp recheck_trust(:approve, %Request{run_id: run_id}) when is_binary(run_id),
-    do: Runs.recheck_run_pack_trust(run_id)
+    do: Runs.recheck_run_pack_trust_for_approval(run_id)
 
   defp recheck_trust(
          :approve,
@@ -1412,7 +1421,7 @@ defmodule Emisar.Approvals do
   defp recheck_trust(:deny, _request), do: :ok
 
   defp recheck_override_trust(%Request{run_id: run_id}, _subject) when is_binary(run_id),
-    do: Runs.recheck_run_pack_trust(run_id)
+    do: Runs.recheck_run_pack_trust_for_approval(run_id)
 
   defp recheck_override_trust(
          %Request{runbook_execution_id: execution_id} = request,
@@ -1434,12 +1443,17 @@ defmodule Emisar.Approvals do
          :ok <- check_attestation_fresh(:approve, request) do
       {:ok, :approvable}
     else
-      {:error, reason} -> {:error, {:override_preflight_failed, reason}}
+      {:error, reason} ->
+        {:error,
+         Audit.Rejection.with_reason(
+           reason,
+           {:override_preflight_failed, Audit.Rejection.reason(reason)}
+         )}
     end
   end
 
   defp recheck_locked_override_trust(%Request{run_id: run_id}) when is_binary(run_id),
-    do: Runs.recheck_run_pack_trust(run_id)
+    do: Runs.recheck_run_pack_trust_for_approval(run_id)
 
   defp recheck_locked_override_trust(%Request{runbook_execution_id: execution_id})
        when is_binary(execution_id),
@@ -1460,7 +1474,7 @@ defmodule Emisar.Approvals do
   defp resolve_override_preflight_failure(%Request{}, reason, %Subject{}), do: {:error, reason}
 
   defp halt_unapprovable_execution(request, initial_reason, override_subject \\ nil) do
-    {code, message} = execution_recheck_failure(initial_reason)
+    {code, message} = execution_recheck_failure(Audit.Rejection.reason(initial_reason))
     now = DateTime.utc_now()
 
     result =
@@ -1507,10 +1521,17 @@ defmodule Emisar.Approvals do
       )
 
     case result do
-      {:error, :became_approvable} -> :ok
-      {:ok, _changes} -> {:error, :runbook_execution_not_approvable}
-      {:error, :unauthorized} -> {:error, :unauthorized}
-      {:error, _reason} -> {:error, :runbook_execution_not_approvable}
+      {:error, :became_approvable} ->
+        :ok
+
+      {:ok, _changes} ->
+        {:error, Audit.Rejection.with_reason(initial_reason, :runbook_execution_not_approvable)}
+
+      {:error, :unauthorized} ->
+        {:error, Audit.Rejection.with_reason(initial_reason, :unauthorized)}
+
+      {:error, _reason} ->
+        {:error, Audit.Rejection.with_reason(initial_reason, :runbook_execution_not_approvable)}
     end
   end
 
@@ -2759,8 +2780,13 @@ defmodule Emisar.Approvals do
     )
   end
 
-  defp maybe_cancel_expired_target(multi, %Request{run_id: run_id}) when is_binary(run_id),
-    do: Runs.cancel_run_in_multi(multi, run_id, "approval expired without decision")
+  defp maybe_cancel_expired_target(multi, %Request{run_id: run_id}) when is_binary(run_id) do
+    Runs.cancel_run_in_multi(
+      multi,
+      run_id,
+      "Approval expired before all required approvals were received."
+    )
+  end
 
   defp maybe_cancel_expired_target(
          multi,
@@ -2771,7 +2797,7 @@ defmodule Emisar.Approvals do
       multi,
       execution_id,
       "approval_expired",
-      "Approval expired without a decision."
+      "Approval expired before all required approvals were received."
     )
   end
 

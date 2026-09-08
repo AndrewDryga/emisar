@@ -67,7 +67,8 @@ defmodule Emisar.Runners do
   @impl Supervisor
   def init(_opts) do
     children = [
-      job_module("InactiveRunnerRetention")
+      job_module("InactiveRunnerRetention"),
+      job_module("InstallKeyRetention")
     ]
 
     Supervisor.init(children, strategy: :one_for_one)
@@ -821,6 +822,98 @@ defmodule Emisar.Runners do
 
   # -- Runners: mutations ----------------------------------------------
 
+  @doc """
+  Requests an early connection-key refresh, without revealing a secret or
+  changing expiry. Requires manage_runners and current access to this runner.
+  Offline supported runners keep the request until they reconnect; repeated
+  pending requests are idempotent. A replacement is adopted only when it
+  successfully connects, not merely when the refresh endpoint mints it.
+  """
+  def request_credential_rotation(%Runner{} = runner, %Subject{} = subject) do
+    with :ok <-
+           Auth.Authorizer.ensure_has_permissions(subject, Authorizer.manage_runners_permission()),
+         :ok <- Subject.ensure_in_account(subject, runner.account_id, :not_found),
+         :ok <- ensure_current_credential_manager(subject) do
+      Runner.Query.not_deleted()
+      |> Runner.Query.with_active_account()
+      |> Runner.Query.by_id(runner.id)
+      |> Runner.Query.by_account_id(runner.account_id)
+      |> Runner.Query.with_preloaded_connection_token()
+      |> scope_to_subject_membership(subject)
+      |> Authorizer.for_subject(subject)
+      |> Repo.fetch_and_update(Runner.Query,
+        with: &credential_rotation_changeset/1,
+        audit: fn requested, changeset ->
+          if Map.has_key?(changeset.changes, :credential_rotation_requested_at),
+            do: Audit.Events.runner_credential_rotation_requested(subject, requested)
+        end,
+        after_commit: &broadcast_requested_runner_rotation/1
+      )
+    end
+  end
+
+  defp ensure_current_credential_manager(%Subject{} = subject) do
+    with {:ok, membership} <-
+           Accounts.fetch_active_membership(Repo, subject.account.id, subject.membership_id),
+         true <- membership.user_id == Subject.actor_id(subject) do
+      permissions =
+        membership |> Subject.effective_membership_role() |> Auth.Permissions.for_role()
+
+      current_subject = %{subject | permissions: permissions}
+
+      Auth.Authorizer.ensure_has_permissions(
+        current_subject,
+        Authorizer.manage_runners_permission()
+      )
+    else
+      false -> {:error, :unauthorized}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  defp credential_rotation_changeset(%Runner{} = runner) do
+    facts = credential_facts(runner)
+
+    cond do
+      runner.disabled_at -> :runner_disabled
+      not runner.credential_rotation_supported -> :rotation_not_supported
+      not facts.known? -> :token_unavailable
+      facts.expired? -> :token_expired
+      facts.pending? -> Runner.Changeset.keep_credential_rotation(runner)
+      true -> Runner.Changeset.request_credential_rotation(runner)
+    end
+  end
+
+  @doc "Connection credential facts for an already authorized runner with connection_token preloaded."
+  def credential_facts(%Runner{connection_token: %Token{} = token} = runner) do
+    %{
+      known?: true,
+      expires_at: token.expires_at,
+      expired?: ensure_token_not_expired(token) != :ok,
+      pending?: credential_rotation_requested?(runner, token.issued_at)
+    }
+  end
+
+  def credential_facts(%Runner{}),
+    do: %{known?: false, expires_at: nil, expired?: false, pending?: false}
+
+  @doc "Internal — whether an authenticated connection still uses a credential older than the request."
+  def credential_rotation_requested?(
+        %Runner{credential_rotation_requested_at: %DateTime{} = requested},
+        %DateTime{} = issued
+      ),
+      do: DateTime.compare(issued, requested) != :gt
+
+  def credential_rotation_requested?(%Runner{}, _issued), do: false
+
+  @doc "Internal — credential refresh envelope for this already-authenticated runner connection, or nil."
+  def credential_rotation_message(%Runner{} = runner, token_prefix, token_issued_at) do
+    if runner.credential_rotation_supported and
+         credential_rotation_requested?(runner, token_issued_at) do
+      %{"type" => "refresh_credentials", "protocol_version" => 1, "token_prefix" => token_prefix}
+    end
+  end
+
   def disable_runner(%Runner{} = runner, %Subject{} = subject) do
     with :ok <-
            Auth.Authorizer.ensure_has_permissions(
@@ -1259,6 +1352,7 @@ defmodule Emisar.Runners do
           # missing/false value clears it, so flipping enforcement off in config
           # propagates on the next reconnect.
           enforce_signatures: payload["enforce_signatures"] == true,
+          credential_rotation_supported: payload["credential_rotation_supported"] == true,
           # The freshness window the runner advertises when enforcing; nil clears it.
           max_attestation_age_seconds: payload["max_attestation_age_seconds"],
           # Packs the runner's loader skipped, so the console and MCP can say
@@ -1267,6 +1361,13 @@ defmodule Emisar.Runners do
           # advertisement without the field (or an older runner) resets to [].
           degraded_packs: normalize_degraded_packs(payload["degraded_packs"])
         })
+      end,
+      after_commit: fn runner, changeset ->
+        if Map.has_key?(changeset.changes, :credential_rotation_supported) do
+          broadcast_runner_credentials_changed(runner)
+        end
+
+        :ok
       end
     )
   end
@@ -1330,8 +1431,15 @@ defmodule Emisar.Runners do
       |> Runner.Query.by_account_id(runner.account_id)
       |> Runner.Query.lease_available(now)
       |> Repo.fetch_and_update(Runner.Query,
-        with: &Runner.Changeset.connected(&1, lease_id, lease_expires_at),
-        audit: &Audit.Events.runner_connected(&1, token_id, context)
+        with: &Runner.Changeset.connected(&1, lease_id, lease_expires_at, token_id),
+        audit: &Audit.Events.runner_connected(&1, token_id, context),
+        after_commit: fn runner, changeset ->
+          if Map.has_key?(changeset.changes, :connection_token_id) do
+            broadcast_runner_credentials_changed(runner)
+          end
+
+          :ok
+        end
       )
 
     with {:ok, claimed} <- normalize_connection_claim(result, runner) do
@@ -1412,7 +1520,8 @@ defmodule Emisar.Runners do
 
   @doc """
   Internal — renews the socket's ownership lease and refreshes its Presence
-  metadata. A superseded socket gets `{:error, :not_found}` and must close.
+  metadata, returning the current runner. A superseded socket gets
+  `{:error, :not_found}` and must close.
   """
   def record_heartbeat(account_id, runner_id, generation, lease_id, action_load) do
     queryable =
@@ -1422,14 +1531,16 @@ defmodule Emisar.Runners do
       |> Runner.Query.by_id(runner_id)
       |> Runner.Query.by_connection_lease(generation, lease_id)
 
-    with {:ok, _runner} <- renew_connection_lease(queryable) do
-      Presence.update(self(), Presence.topic(account_id), runner_id, fn meta ->
-        %{
-          meta
-          | action_load: action_load || meta.action_load,
-            last_heartbeat_at: System.system_time(:second)
-        }
-      end)
+    with {:ok, runner} <- renew_connection_lease(queryable),
+         {:ok, _ref} <-
+           Presence.update(self(), Presence.topic(account_id), runner_id, fn meta ->
+             %{
+               meta
+               | action_load: action_load || meta.action_load,
+                 last_heartbeat_at: System.system_time(:second)
+             }
+           end) do
+      {:ok, runner}
     end
   end
 
@@ -1898,6 +2009,17 @@ defmodule Emisar.Runners do
   @doc "The enrollment-keys table's `%Repo.Filter{}` list."
   def enrollment_key_filters, do: EnrollmentKey.Query.filters()
 
+  @doc "Returns an enrollment key's current status for the console."
+  def enrollment_key_status(%EnrollmentKey{} = key) do
+    cond do
+      key.revoked_at -> :revoked
+      key.expires_at && DateTime.compare(key.expires_at, DateTime.utc_now()) != :gt -> :expired
+      not key.reusable and key.uses_count > 0 -> :spent
+      key.max_uses && key.uses_count >= key.max_uses -> :spent
+      true -> :active
+    end
+  end
+
   def list_enrollment_keys(%Subject{} = subject, opts \\ []) do
     with :ok <-
            Auth.Authorizer.ensure_has_permissions(
@@ -2006,6 +2128,27 @@ defmodule Emisar.Runners do
   @doc "Subscribe the caller to this account's runner presence diffs."
   def subscribe_connections(account_id) do
     Emisar.PubSub.subscribe(Presence.topic(account_id))
+  end
+
+  @doc "Subscribe to connection credential changes in this account."
+  def subscribe_account_credentials(account_id),
+    do: Emisar.PubSub.subscribe("account:#{account_id}:runner_credentials")
+
+  defp broadcast_runner_credentials_changed(%Runner{} = runner) do
+    Emisar.PubSub.broadcast(
+      "account:#{runner.account_id}:runner_credentials",
+      {:runner_credentials_changed, runner.id}
+    )
+  end
+
+  defp broadcast_requested_runner_rotation(%Runner{connection_token: %Token{} = token} = runner) do
+    message = credential_rotation_message(runner, token.token_prefix, token.issued_at)
+
+    if message do
+      _ = deliver_to_runner(runner.account_id, runner.id, runner.connection_generation, message)
+    end
+
+    broadcast_runner_credentials_changed(runner)
   end
 
   @doc "Subscribe the caller to the account's enrollment-key list changes (`{:list_changed, :enrollment_key, …}`)."
@@ -2150,8 +2293,8 @@ defmodule Emisar.Runners do
 
   Returns `{:ok, raw_secret, key}` or `{:error, :unauthorized}`. No audit log on
   mint — auto-gen is noise. Once a runner registers with the key,
-  `consume_enrollment_key/1` clears the auto flag and audit logs
-  `enrollment_key.bound` with `auto: true`.
+  `consume_enrollment_key/1` records its use and audit logs
+  `enrollment_key.bound` with `auto: true`. Unused keys expire after 24 hours.
   """
   def mint_install_key(%Subject{account: account} = subject, opts \\ []) do
     with :ok <-
@@ -2191,6 +2334,33 @@ defmodule Emisar.Runners do
 
     EnrollmentKey.Query.evictable_install_overflow(account_id, cap, protected_floor)
     |> Repo.delete_all()
+  end
+
+  @doc "Internal — deletes unused, expired console install keys for one account in bounded batches."
+  def delete_expired_install_keys(account_id, opts \\ []) do
+    batch_size = opts |> Keyword.get(:batch_size, 100) |> max(1) |> min(1_000)
+    delete_expired_install_key_batches(account_id, DateTime.utc_now(), batch_size, 0)
+  end
+
+  defp delete_expired_install_key_batches(account_id, now, batch_size, total) do
+    ids =
+      account_id
+      |> EnrollmentKey.Query.prunable_install_ids(now, batch_size)
+      |> Repo.all()
+
+    # Recheck eligibility in the DELETE, not just the candidate read. A key
+    # consumed in between must survive with its runner/token references intact.
+    {deleted, _} =
+      account_id
+      |> EnrollmentKey.Query.expired_unused_install_keys(now)
+      |> EnrollmentKey.Query.by_ids(ids)
+      |> Repo.delete_all()
+
+    if length(ids) == batch_size do
+      delete_expired_install_key_batches(account_id, now, batch_size, total + deleted)
+    else
+      {:ok, total + deleted}
+    end
   end
 
   # Revoke is CONTAINMENT — it only takes a key's power away. Unlike minting
@@ -2299,7 +2469,8 @@ defmodule Emisar.Runners do
 
     {:ok, token} =
       Token.Changeset.create(runner.id, issued_via_key_id, prefix, hash,
-        lifetime_seconds: @token_lifetime_seconds
+        lifetime_seconds: @token_lifetime_seconds,
+        replaces_id: Keyword.get(opts, :replaces_id)
       )
       |> repo.insert()
 
@@ -2320,10 +2491,10 @@ defmodule Emisar.Runners do
   working credential and refreshes again on the next connect. That property is
   what makes rotation safe to enable before expiry is enforced.
   """
-  def refresh_runner_token(raw) when is_binary(raw) do
-    case verify_runner_token(raw) do
+  def refresh_runner_token(raw, context \\ %RequestContext{}) when is_binary(raw) do
+    case verify_runner_token(raw, context) do
       {:ok, %Token{} = token, %Runner{} = runner} ->
-        if token_refresh_due?(token) do
+        if token_refresh_due?(token) or credential_rotation_requested?(runner, token.issued_at) do
           rotate_runner_token(token, runner)
         else
           {:error, :not_due}
@@ -2336,14 +2507,39 @@ defmodule Emisar.Runners do
 
   defp rotate_runner_token(%Token{} = token, %Runner{} = runner) do
     Multi.new()
-    |> Multi.run(:successor, fn repo, _changes ->
-      {:ok, mint_runner_token(runner, token.issued_via_key_id, repo: repo)}
+    |> Multi.run(:runner, fn repo, _changes ->
+      fetch_and_lock_active_runner(runner.id, runner.account_id, repo: repo)
     end)
-    |> Multi.update(
-      :retired,
-      Token.Changeset.retire_after(token, @token_retirement_grace_seconds)
-    )
-    |> Repo.commit_multi()
+    |> Multi.run(:source, fn repo, %{runner: loaded_runner} ->
+      queryable =
+        Token.Query.all()
+        |> Token.Query.by_id(token.id)
+        |> Token.Query.by_runner_id(loaded_runner.id)
+        |> Token.Query.lock_for_update()
+
+      with {:ok, loaded_token} <- repo.fetch(queryable, Token.Query),
+           :ok <- ensure_runner_and_account_enabled(loaded_runner),
+           :ok <- ensure_token_not_expired(loaded_token),
+           true <-
+             token_refresh_due?(loaded_token) or
+               credential_rotation_requested?(loaded_runner, loaded_token.issued_at) do
+        {:ok, loaded_token}
+      else
+        false -> {:error, :not_due}
+        {:error, reason} -> {:error, reason}
+      end
+    end)
+    |> Multi.run(:successor, fn repo, %{source: source, runner: loaded_runner} ->
+      {:ok,
+       mint_runner_token(loaded_runner, source.issued_via_key_id,
+         repo: repo,
+         replaces_id: source.id
+       )}
+    end)
+    |> Multi.update(:retired, fn %{source: source} ->
+      Token.Changeset.retire_after(source, @token_retirement_grace_seconds)
+    end)
+    |> Repo.commit_multi(after_commit: &broadcast_runner_credentials_changed(&1.runner))
     |> case do
       {:ok, %{successor: {raw, token}}} -> {:ok, raw, token_refresh_after(token)}
       {:error, reason} -> {:error, reason}
@@ -2379,9 +2575,14 @@ defmodule Emisar.Runners do
   Internal — runner socket upgrade controller, before any Subject exists:
   verifies a presented runner token. Returns `{:ok, token, runner}`,
   `{:error, :runner_disabled}`, `{:error, :account_disabled}`,
-  `{:error, :token_expired}`, or `{:error, :token_invalid}`.
+  `{:error, :token_expired}`, `{:error, :token_invalid}`, or
+  `{:error, :authentication_unavailable}` if its transactional receipt fails.
+
+  First authenticated use of a refresh successor records the replacement-key
+  receipt atomically with `last_used_at`. It does not end the previous key's
+  grace window or claim that a later WebSocket connection succeeded.
   """
-  def verify_runner_token(raw) when is_binary(raw) do
+  def verify_runner_token(raw, context \\ %RequestContext{}) when is_binary(raw) do
     if String.length(raw) < @token_prefix_size do
       {:error, :token_invalid}
     else
@@ -2390,19 +2591,92 @@ defmodule Emisar.Runners do
       token_queryable = Token.Query.all() |> Token.Query.by_prefix(prefix)
 
       with %Token{} = token <- Repo.peek(token_queryable),
-           true <- Crypto.secure_compare(token.token_hash, hash),
-           runner_queryable = Runner.Query.not_deleted() |> Runner.Query.by_id(token.runner_id),
-           %Runner{} = runner <- Repo.peek(runner_queryable),
-           :ok <- ensure_runner_and_account_enabled(runner),
-           :ok <- ensure_token_not_expired(token) do
-        {:ok, _} = token |> Token.Changeset.usage() |> Repo.update()
-        {:ok, token, runner}
+           true <- Crypto.secure_compare(token.token_hash, hash) do
+        authenticate_runner_token(token, hash, context)
       else
-        {:error, reason} -> {:error, reason}
         _ -> {:error, :token_invalid}
       end
     end
   end
+
+  # Match refresh's runner -> token lock order. The prefix lookup above rejects
+  # forged secrets cheaply; only the locked reread authorizes and stamps use.
+  defp authenticate_runner_token(token, hash, context) do
+    Multi.new()
+    |> Multi.run(:runner, fn repo, _changes ->
+      queryable =
+        Runner.Query.not_deleted()
+        |> Runner.Query.by_id(token.runner_id)
+        |> Runner.Query.lock_for_update()
+
+      repo.fetch(queryable, Runner.Query)
+    end)
+    |> Multi.run(:candidate, fn repo, %{runner: runner} ->
+      fetch_authenticated_runner_token(repo, token.id, runner, hash)
+    end)
+    |> Multi.run(:previous, fn repo, %{candidate: candidate} ->
+      fetch_runner_token_predecessor(repo, candidate)
+    end)
+    |> Multi.update(:token, fn %{candidate: candidate} -> Token.Changeset.usage(candidate) end)
+    |> Multi.run(:audit, fn repo, changes ->
+      record_runner_token_replacement(repo, changes, context)
+    end)
+    |> Repo.commit_multi()
+    |> case do
+      {:ok, %{token: updated, runner: runner}} ->
+        {:ok, updated, runner}
+
+      {:error, :not_found} ->
+        {:error, :token_invalid}
+
+      {:error, reason}
+      when reason in [:token_invalid, :token_expired, :runner_disabled, :account_disabled] ->
+        {:error, reason}
+
+      {:error, _reason} ->
+        {:error, :authentication_unavailable}
+    end
+  end
+
+  defp fetch_authenticated_runner_token(repo, token_id, runner, hash) do
+    queryable =
+      Token.Query.all()
+      |> Token.Query.by_id(token_id)
+      |> Token.Query.by_runner_id(runner.id)
+      |> Token.Query.lock_for_update()
+
+    with {:ok, candidate} <- repo.fetch(queryable, Token.Query),
+         true <- Crypto.secure_compare(candidate.token_hash, hash),
+         :ok <- ensure_runner_and_account_enabled(runner),
+         :ok <- ensure_token_not_expired(candidate) do
+      {:ok, candidate}
+    else
+      false -> {:error, :token_invalid}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  defp fetch_runner_token_predecessor(repo, %Token{last_used_at: nil, replaces_id: id} = token)
+       when is_binary(id) do
+    queryable =
+      Token.Query.all()
+      |> Token.Query.by_id(id)
+      |> Token.Query.by_runner_id(token.runner_id)
+
+    repo.fetch(queryable, Token.Query)
+  end
+
+  defp fetch_runner_token_predecessor(_repo, %Token{}), do: {:ok, nil}
+
+  defp record_runner_token_replacement(
+         repo,
+         %{runner: runner, token: token, previous: %Token{} = previous},
+         context
+       ) do
+    repo.insert(Audit.Events.runner_credential_rotated(runner, token, previous, context))
+  end
+
+  defp record_runner_token_replacement(_repo, _changes, _context), do: {:ok, nil}
 
   defp ensure_runner_and_account_enabled(%Runner{disabled_at: nil} = runner) do
     case Accounts.fetch_account_by_id_or_slug_including_disabled(runner.account_id) do
@@ -2541,7 +2815,6 @@ defmodule Emisar.Runners do
 
   defp register_with_external_id(key, attrs, external_id, context) do
     key = Repo.preload(key, :account)
-    was_auto? = EnrollmentKey.auto_unused?(key)
 
     Multi.new()
     # Lock the account row FIRST so concurrent registrations for this account
@@ -2555,12 +2828,11 @@ defmodule Emisar.Runners do
     |> Multi.run(:authorize_key, fn repo, _changes ->
       authorize_registration(repo, key, external_id)
     end)
-    # Surface the auto→permanent promotion. The mint itself is deliberately
-    # silent (would flood the log), so binding is where the key first
-    # becomes visible.
-    |> maybe_audit_enrollment_key_bound(key, was_auto?)
     |> Multi.run(:registration, fn repo, _changes ->
       register_or_reuse_runner(repo, key, attrs, external_id)
+    end)
+    |> Multi.run(:enrollment_key_bound, fn repo, changes ->
+      maybe_audit_enrollment_key_bound(repo, key, changes, context)
     end)
     |> maybe_audit_runner_registered(key, context)
     |> Multi.run(:quantity_sync, fn repo, %{registration: {_runner, fresh?}} ->
@@ -2608,10 +2880,17 @@ defmodule Emisar.Runners do
 
   defp registration_external_id(_attrs), do: {:error, :invalid_external_id}
 
-  defp maybe_audit_enrollment_key_bound(multi, _key, false), do: multi
+  # A retried registration may hold a stale unused-key snapshot. The locked
+  # consume outcome, not that snapshot, proves this transaction used it first.
+  defp maybe_audit_enrollment_key_bound(
+         repo,
+         %EnrollmentKey{auto_generated_at: %DateTime{}} = key,
+         %{authorize_key: :consumed, registration: {runner, _fresh?}},
+         context
+       ),
+       do: repo.insert(Audit.Events.enrollment_key_bound(key, runner, context))
 
-  defp maybe_audit_enrollment_key_bound(multi, key, true),
-    do: Multi.insert(multi, :enrollment_key_bound, Audit.Events.enrollment_key_bound(key))
+  defp maybe_audit_enrollment_key_bound(_repo, _key, _changes, _context), do: {:ok, nil}
 
   # Only a brand-new seat is audited as a registration — a reconnecting
   # runner that already has a row isn't.

@@ -1232,6 +1232,12 @@ defmodule Emisar.RunsTest do
       pack: pack,
       advertised_action: advertised_action
     } do
+      subject =
+        account.id
+        |> Fixtures.Memberships.fetch_membership(subject.actor.id)
+        |> Fixtures.Memberships.force_role("admin")
+        |> Fixtures.Subjects.membership_subject()
+
       run =
         Fixtures.Runs.create_run(
           account_id: account.id,
@@ -2223,11 +2229,38 @@ defmodule Emisar.RunsTest do
       account = Fixtures.Accounts.create_account()
       _ = Fixtures.Policies.create_policy(account_id: account.id)
       subject = owner_subject_for(account)
+
+      subject = %{
+        subject
+        | context: %RequestContext{
+            ip_address: "203.0.113.7",
+            user_agent: "Audit regression client",
+            request_id: "request-audit-rejection"
+          }
+      }
+
       runner = Fixtures.Runners.create_runner(account_id: account.id, enforce_signatures: true)
       _ = Fixtures.Catalog.create_action(runner: runner, action_id: "linux.uptime", risk: "low")
 
+      forged_execution_id = Ecto.UUID.generate()
+
       {:error, :runner_requires_attestation} =
-        Runs.dispatch_run(base_attrs(account.id, runner.id), subject)
+        Runs.dispatch_run(
+          base_attrs(account.id, runner.id, %{
+            audit_subject: no_permissions_subject(account),
+            ip_address: "attacker-controlled",
+            audit_execution: %Emisar.Runbooks.RunbookExecution{id: forged_execution_id},
+            audit_execution_item: %Emisar.Runbooks.ExecutionItem{
+              runbook_execution_id: forged_execution_id,
+              step_id: "forged-step"
+            },
+            runbook_execution_id: forged_execution_id,
+            runbook_step_id: "forged-step",
+            source: "runbook",
+            expected_pack_hash: "forged-hash"
+          }),
+          subject
+        )
 
       {:ok, events, _} = Emisar.Audit.list_events(subject, page: [limit: 50])
       blocked = Enum.find(events, &(&1.event_type == "dispatch_blocked_requires_attestation"))
@@ -2235,7 +2268,70 @@ defmodule Emisar.RunsTest do
       assert blocked
       assert blocked.target_kind == "runner"
       assert blocked.target_id == runner.id
-      assert blocked.payload["action_id"] == "linux.uptime"
+      assert blocked.payload["requested_action_id"] == "linux.uptime"
+      assert blocked.actor_kind == "user"
+      assert blocked.actor_id == subject.actor.id
+      assert blocked.ip_address == "203.0.113.7"
+      assert blocked.user_agent == "Audit regression client"
+      assert blocked.request_id == "request-audit-rejection"
+      refute Map.has_key?(blocked.payload, "source")
+      refute Map.has_key?(blocked.payload, "runbook_execution_id")
+      refute Map.has_key?(blocked.payload, "runbook_step_id")
+      refute Map.has_key?(blocked.payload, "expected_pack_hash")
+    end
+
+    test "signature rejection keeps its error without exposing an out-of-scope runner" do
+      account = Fixtures.Accounts.create_account()
+      subject = owner_subject_for(account)
+
+      subject =
+        account.id
+        |> Fixtures.Memberships.fetch_membership(subject.actor.id)
+        |> Fixtures.Memberships.force_role("admin")
+        |> Fixtures.Subjects.membership_subject()
+
+      runner = Fixtures.Runners.create_runner(account_id: account.id, enforce_signatures: true)
+      membership = Fixtures.Memberships.fetch_membership(account.id, subject.actor.id)
+      {:ok, access} = Emisar.Accounts.RunnerAccess.restricted(["unrelated-group"], [])
+      Fixtures.Memberships.force_runner_access(membership, access)
+
+      assert Runs.dispatch_run(base_attrs(account.id, runner.id), subject) ==
+               {:error, :runner_requires_attestation}
+
+      assert [blocked] = dispatch_rejections()
+      assert blocked.event_type == "dispatch_blocked_target_unavailable"
+      assert blocked.target_id == nil
+      assert blocked.target_label == nil
+      refute Map.has_key?(blocked.payload, "runner_id")
+    end
+
+    test "pack rejection keeps its error without exposing an out-of-scope pack" do
+      account = Fixtures.Accounts.create_account()
+      subject = owner_subject_for(account)
+
+      subject =
+        account.id
+        |> Fixtures.Memberships.fetch_membership(subject.actor.id)
+        |> Fixtures.Memberships.force_role("admin")
+        |> Fixtures.Subjects.membership_subject()
+
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
+      _ = Fixtures.Catalog.create_action(runner: runner, action_id: "linux.uptime")
+      [version] = Fixtures.Catalog.list_pack_versions(account.id)
+      assert {:ok, _version} = Catalog.revoke_pack_version_trust(version.id, subject)
+      membership = Fixtures.Memberships.fetch_membership(account.id, subject.actor.id)
+      {:ok, access} = Emisar.Accounts.RunnerAccess.new(:all, [], [], :restricted, ["other-pack"])
+      Fixtures.Memberships.force_runner_access(membership, access)
+
+      assert Runs.dispatch_run(base_attrs(account.id, runner.id), subject) ==
+               {:error, :pack_untrusted}
+
+      assert [blocked] = dispatch_rejections()
+      assert blocked.event_type == "dispatch_blocked_target_unavailable"
+      assert blocked.target_id == nil
+      assert blocked.target_label == nil
+      refute Map.has_key?(blocked.payload, "pack_id")
+      refute Map.has_key?(blocked.payload, "version")
     end
 
     test "a failed run insert leaves no run row, no audit row, and fires no broadcast" do
@@ -2386,10 +2482,42 @@ defmodule Emisar.RunsTest do
       assert {:ok, multi} =
                Runs.compose_dispatch_batch_in_multi(Multi.new(), [target], subject, :unsigned)
 
-      assert {:error, {:dispatch_batch, :unsigned}, :runner_requires_attestation, _changes} =
+      assert {:error, {:dispatch_batch, :unsigned}, %Audit.Rejection{} = rejection, _changes} =
                Repo.transaction(multi)
 
+      assert Audit.Rejection.finish({:error, rejection}) ==
+               {:error, :runner_requires_attestation}
+
+      assert [blocked] = dispatch_rejections("dispatch_blocked_requires_attestation")
+      assert blocked.actor_id == subject.actor.id
       refute Repo.one(ActionRun)
+    end
+
+    test "create_run preserves a composed rejection receipt after rolling its own row back" do
+      %{account: account, subject: subject, runners: [runner], key: key} =
+        mcp_fanout_fixture(["low"])
+
+      assert {:ok, runner} =
+               Emisar.Runners.apply_state(runner, %{
+                 "enforce_signatures" => true,
+                 "max_attestation_age_seconds" => 3_600
+               })
+
+      target = mcp_target_attrs(runner, key, "op_334NN9NMDZ1T76NARWCKM5A0D6")
+
+      assert Runs.create_run(base_attrs(account.id, runner.id),
+               compose: fn multi ->
+                 {:ok, composed} =
+                   Runs.compose_dispatch_batch_in_multi(multi, [target], subject, :unsigned)
+
+                 composed
+               end
+             ) == {:error, :runner_requires_attestation}
+
+      refute Repo.exists?(ActionRun)
+      assert [blocked] = dispatch_rejections("dispatch_blocked_requires_attestation")
+      assert blocked.actor_id == subject.actor.id
+      assert blocked.target_id == runner.id
     end
   end
 
@@ -2471,6 +2599,8 @@ defmodule Emisar.RunsTest do
 
       assert Runs.dispatch_mcp_action(facts, no_permissions_subject(account)) ==
                {:error, :unauthorized}
+
+      assert dispatch_rejections() == []
     end
 
     test "a stale MCP subject cannot reserve or create fan-out work" do
@@ -2481,6 +2611,7 @@ defmodule Emisar.RunsTest do
 
       assert Runs.dispatch_mcp_action(facts, subject) == {:error, :not_found}
       refute Repo.exists?(ActionRun)
+      assert dispatch_rejections() == []
     end
 
     test "rejects a permission-bearing subject without a concrete membership" do
@@ -2489,6 +2620,7 @@ defmodule Emisar.RunsTest do
       unbound = %{subject | membership_id: nil}
 
       assert Runs.dispatch_mcp_action(facts, unbound) == {:error, :runner_out_of_scope}
+      assert dispatch_rejections() == []
     end
 
     test "rejects a runner ref that another account owns" do
@@ -2505,6 +2637,15 @@ defmodule Emisar.RunsTest do
                {:error, :target_contract_changed}
 
       refute Repo.exists?(MCPOperations.Operation)
+      assert [blocked] = dispatch_rejections()
+      assert blocked.event_type == "dispatch_blocked_target_unavailable"
+      assert blocked.account_id == account_b.id
+      assert blocked.actor_id == key_b.id
+      assert blocked.target_id == nil
+      assert blocked.target_label == nil
+      refute Map.has_key?(blocked.payload, "runner_id")
+      refute Map.has_key?(blocked.payload, "runner_refs")
+      refute Jason.encode!(blocked.payload) =~ runner_a.id
     end
 
     test "persists the optional evidence/expected justification chain on each run" do
@@ -2681,6 +2822,11 @@ defmodule Emisar.RunsTest do
       refute Repo.exists?(MCPOperations.Operation)
       refute Repo.exists?(ActionRun)
       refute_receive {:cloud_to_runner, _generation, _}, 100
+      assert [blocked] = dispatch_rejections("dispatch_blocked_target_unavailable")
+      assert blocked.account_id == account.id
+      assert blocked.actor_kind == "api_key"
+      assert blocked.actor_id == subject.actor.id
+      assert blocked.payload["operation_id"] == facts.operation_id
     end
 
     test "rejects arguments the trusted contract does not accept" do
@@ -2885,6 +3031,11 @@ defmodule Emisar.RunsTest do
 
       refute Repo.one(MCPOperations.Operation)
       refute Repo.one(ActionRun)
+      assert [blocked] = dispatch_rejections("dispatch_blocked_requires_attestation")
+      assert blocked.actor_kind == "api_key"
+      assert blocked.actor_id == subject.actor.id
+      assert blocked.target_id == enforcing_runner.id
+      assert blocked.payload["operation_id"] == facts.operation_id
     end
 
     test "every bound fact must agree with the call before any run is persisted" do
@@ -3167,7 +3318,7 @@ defmodule Emisar.RunsTest do
       Fixtures.Memberships.create_membership(
         account_id: account.id,
         user_id: user.id,
-        role: "owner"
+        role: "admin"
       )
 
     owner_subject = Emisar.Auth.Subject.for_user(user, account, membership)
@@ -3262,6 +3413,15 @@ defmodule Emisar.RunsTest do
     }
   end
 
+  defp dispatch_rejections(event_type \\ nil) do
+    Audit.Event
+    |> Repo.all()
+    |> Enum.filter(fn event ->
+      String.starts_with?(event.event_type, "dispatch_blocked_") and
+        (is_nil(event_type) or event.event_type == event_type)
+    end)
+  end
+
   defp mcp_runner_refs(runners) do
     Enum.map(runners, fn runner ->
       {:ok, runner_ref} = Emisar.Runners.public_ref(runner)
@@ -3320,7 +3480,7 @@ defmodule Emisar.RunsTest do
     %{changes: changes, runner: runner}
   end
 
-  describe "recheck_run_pack_trust/1" do
+  describe "recheck_run_pack_trust_for_approval/1" do
     setup do
       account = Fixtures.Accounts.create_account()
       runner = Fixtures.Runners.create_runner(account_id: account.id)
@@ -3354,7 +3514,7 @@ defmodule Emisar.RunsTest do
       )
       |> Repo.update!()
 
-      assert Runs.recheck_run_pack_trust(run.id) == {:error, :action_unavailable}
+      assert Runs.recheck_run_pack_trust_for_approval(run.id) == {:error, :action_unavailable}
     end
 
     test "refuses a run whose action pack drifted to :pending", %{
@@ -3395,7 +3555,36 @@ defmodule Emisar.RunsTest do
           args: %{}
         })
 
-      assert Runs.recheck_run_pack_trust(run.id) == {:error, :pack_untrusted}
+      assert {:error, %Emisar.Audit.Rejection{reason: :pack_untrusted}} =
+               Runs.recheck_run_pack_trust_for_approval(run.id)
+
+      assert dispatch_rejections("dispatch_blocked_pack_untrusted") == []
+    end
+
+    test "a changed trusted hash retains the parked run's frozen identity", %{
+      account: account,
+      runner: runner
+    } do
+      _ = Fixtures.Catalog.create_action(runner: runner, action_id: "linux.uptime")
+
+      {:ok, run} =
+        Runs.create_run(%{
+          account_id: account.id,
+          runner_id: runner.id,
+          action_id: "linux.uptime",
+          source: "operator",
+          args: %{},
+          expected_pack_hash: "sha256:" <> String.duplicate("f", 64)
+        })
+
+      assert {:error, %Emisar.Audit.Rejection{reason: :pack_untrusted, event: event}} =
+               Runs.recheck_run_pack_trust_for_approval(run.id)
+
+      assert {:ok, blocked} = Ecto.Changeset.apply_action(event, :insert)
+      assert dispatch_rejections("dispatch_blocked_pack_untrusted") == []
+      assert blocked.payload.run_id == run.id
+      assert blocked.payload.expected_pack_hash == run.expected_pack_hash
+      assert blocked.payload.action_id == run.action_id
     end
 
     test "refuses a packless run when the runner no longer advertises the action", %{
@@ -3413,7 +3602,7 @@ defmodule Emisar.RunsTest do
           args: %{}
         })
 
-      assert Runs.recheck_run_pack_trust(run.id) == {:error, :action_not_found}
+      assert Runs.recheck_run_pack_trust_for_approval(run.id) == {:error, :action_not_found}
     end
 
     test "refuses a versioned run when its advertised action disappeared", %{
@@ -3430,7 +3619,7 @@ defmodule Emisar.RunsTest do
           expected_pack_hash: "sha256:AUTHORIZED"
         })
 
-      assert Runs.recheck_run_pack_trust(run.id) == {:error, :action_not_found}
+      assert Runs.recheck_run_pack_trust_for_approval(run.id) == {:error, :action_not_found}
     end
   end
 
@@ -4056,6 +4245,13 @@ defmodule Emisar.RunsTest do
       # Redelivery must NOT ship a hash-less envelope — it refuses the run.
       assert Runs.redeliver_to_runner(run) == {:error, :pack_untrusted}
       assert Runs.peek_run_by_id(run.id).status == :refused
+      assert [blocked] = dispatch_rejections("dispatch_blocked_pack_untrusted")
+      assert blocked.actor_id == subject.actor.id
+      assert blocked.payload["run_id"] == run.id
+      assert blocked.request_id == run.request_id
+
+      assert Runs.redeliver_to_runner(run) == {:error, :not_dispatchable}
+      assert dispatch_rejections("dispatch_blocked_pack_untrusted") == [blocked]
     end
 
     test "refuses redelivery after trust moves away from the snapshotted hash" do
@@ -6069,6 +6265,13 @@ defmodule Emisar.RunsTest do
       _database_runner = Fixtures.Runners.create_runner(account_id: account.id, group: "database")
       web_runner = Fixtures.Runners.create_runner(account_id: account.id, group: "web")
       subject = owner_subject_for(account)
+
+      subject =
+        account.id
+        |> Fixtures.Memberships.fetch_membership(subject.actor.id)
+        |> Fixtures.Memberships.force_role("admin")
+        |> Fixtures.Subjects.membership_subject()
+
       membership = Fixtures.Memberships.fetch_membership(account.id, subject.actor.id)
       {:ok, database_access} = Emisar.Accounts.RunnerAccess.restricted(["database"], [])
       Fixtures.Memberships.force_runner_access(membership, database_access)

@@ -36,7 +36,7 @@ defmodule Emisar.Runbooks.Scheduler.Settlement do
     do: {:error, "denied_by_policy", "Current policy denied the action.", []}
 
   defp attempt_outcome(%Runs.ActionRun{status: :refused}, _item),
-    do: {:error, "runner_refused", "The runner refused the action.", []}
+    do: {:error, "runner_refused", "The action was refused.", []}
 
   defp attempt_outcome(%Runs.ActionRun{status: :cancelled}, _item),
     do: {:error, "cancelled", "The action attempt was cancelled.", []}

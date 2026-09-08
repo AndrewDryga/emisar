@@ -263,8 +263,128 @@ defmodule Emisar.SSOIdentityLinkTest do
       assert facts.provider_id == context.provider.id
       assert facts.provider_name == "Workforce"
       refute facts.linked?
+      refute facts.user_verified?
+      refute facts.removable?
+      assert facts.removal_blocked_reason == :not_linked
       refute Map.has_key?(facts, :issuer)
       refute Map.has_key?(facts, :client_id)
+    end
+
+    test "workspace links need user verification; verified links can be removed",
+         %{account: _account, provider: _provider, subject: _subject, user: _user} = context do
+      identity =
+        Fixtures.SSO.create_user_identity(%{
+          account_id: context.account.id,
+          provider_id: context.provider.id,
+          user_id: context.user.id
+        })
+
+      assert {:ok, [facts]} = SSO.list_self_service_identity_facts(context.subject)
+      assert facts.linked?
+      refute facts.user_verified?
+      refute facts.removable?
+      assert facts.removal_blocked_reason == :identity_not_user_verified
+
+      identity |> Ecto.Changeset.change(created_by: :user) |> Repo.update!()
+      assert {:ok, [facts]} = SSO.list_self_service_identity_facts(context.subject)
+      assert facts.user_verified?
+      assert facts.removable?
+      assert is_nil(facts.removal_blocked_reason)
+    end
+
+    test "only a usable alternative unblocks required-SSO removal",
+         %{account: _account, provider: _provider, subject: _subject, user: _user} = context do
+      link_identity(context)
+      Fixtures.Accounts.set_account_settings(context.account, %{require_sso: true})
+
+      for state <- [:disabled, :deleted_provider, :retired, :deleted_identity] do
+        provider =
+          Fixtures.SSO.create_identity_provider(
+            account_id: context.account.id,
+            kind: :openid_connect
+          )
+
+        identity =
+          Fixtures.SSO.create_user_identity(%{
+            account_id: context.account.id,
+            provider_id: provider.id,
+            user_id: context.user.id
+          })
+
+        case state do
+          :disabled ->
+            Fixtures.SSO.disable_provider(provider)
+
+          :deleted_provider ->
+            Fixtures.SSO.mark_provider_deleted(provider)
+
+          :retired ->
+            identity
+            |> Ecto.Changeset.change(provider_identifier_retired_at: DateTime.utc_now())
+            |> Repo.update!()
+
+          :deleted_identity ->
+            identity |> Ecto.Changeset.change(deleted_at: DateTime.utc_now()) |> Repo.update!()
+        end
+
+        assert {:ok, facts} = SSO.list_self_service_identity_facts(context.subject)
+        refute Enum.find(facts, &(&1.provider_id == context.provider.id)).removable?
+        Fixtures.SSO.disable_provider(provider)
+      end
+
+      assert {:ok, facts} = SSO.list_self_service_identity_facts(context.subject)
+      current = Enum.find(facts, &(&1.provider_id == context.provider.id))
+      assert current.user_verified?
+      refute current.removable?
+      assert current.removal_blocked_reason == :required_sso_identity
+
+      alternative =
+        Fixtures.SSO.create_identity_provider(
+          account_id: context.account.id,
+          kind: :openid_connect
+        )
+
+      Fixtures.SSO.create_user_identity(%{
+        account_id: context.account.id,
+        provider_id: alternative.id,
+        user_id: context.user.id
+      })
+
+      assert {:ok, facts} = SSO.list_self_service_identity_facts(context.subject)
+      assert Enum.find(facts, &(&1.provider_id == context.provider.id)).removable?
+    end
+
+    test "denied subjects cannot read methods and other users or accounts cannot supply alternatives",
+         %{account: _account, provider: _provider, subject: _subject, user: _user} = context do
+      denied = %{context.subject | permissions: MapSet.new()}
+      assert SSO.list_self_service_identity_facts(denied) == {:error, :unauthorized}
+
+      other_user = Fixtures.Users.create_user()
+
+      Fixtures.SSO.create_user_identity(%{
+        account_id: context.account.id,
+        provider_id: context.provider.id,
+        user_id: other_user.id
+      })
+
+      assert {:ok, [facts]} = SSO.list_self_service_identity_facts(context.subject)
+      refute facts.linked?
+      assert is_nil(facts.identity_id)
+
+      {_, foreign_account, _} = Fixtures.Subjects.owner_subject(%{plan: "enterprise"})
+      foreign_provider = Fixtures.SSO.create_identity_provider(account_id: foreign_account.id)
+
+      Fixtures.SSO.create_user_identity(%{
+        account_id: foreign_account.id,
+        provider_id: foreign_provider.id,
+        user_id: context.user.id
+      })
+
+      link_identity(context)
+      Fixtures.Accounts.set_account_settings(context.account, %{require_sso: true})
+      assert {:ok, [facts]} = SSO.list_self_service_identity_facts(context.subject)
+      assert facts.provider_id == context.provider.id
+      assert facts.removal_blocked_reason == :required_sso_identity
     end
   end
 
@@ -489,6 +609,35 @@ defmodule Emisar.SSOIdentityLinkTest do
   end
 
   describe "unlink_identity/4" do
+    test "a stale allowed presentation never bypasses the locked required-SSO check",
+         %{account: _account, provider: _provider, subject: _subject, user: _user} = context do
+      identity = link_identity(context)
+
+      alternative =
+        Fixtures.SSO.create_identity_provider(
+          account_id: context.account.id,
+          kind: :openid_connect
+        )
+
+      Fixtures.SSO.create_user_identity(%{
+        account_id: context.account.id,
+        provider_id: alternative.id,
+        user_id: context.user.id
+      })
+
+      Fixtures.Accounts.set_account_settings(context.account, %{require_sso: true})
+      assert {:ok, facts} = SSO.list_self_service_identity_facts(context.subject)
+      assert Enum.find(facts, &(&1.provider_id == context.provider.id)).removable?
+
+      Fixtures.SSO.disable_provider(alternative)
+      proof = local_proof(context, :unlink)
+
+      assert SSO.unlink_identity(identity.id, proof, context.session_digest, context.subject) ==
+               {:error, :required_sso_identity}
+
+      refute Repo.reload!(identity).deleted_at
+    end
+
     test "removes the binding and only revokes sessions created through it",
          %{provider: _provider, subject: _subject, user: _user} = context do
       identity = link_identity(context)

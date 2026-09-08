@@ -46,6 +46,7 @@ defmodule Emisar.Accounts.InvitationInput do
     |> validate_required([:email])
     |> Emisar.EmailAddress.validate(:email)
     |> validate_inclusion(:role, roles())
+    |> normalize_owner_access()
     |> validate_inclusion(:runner_access_mode, modes())
     |> validate_inclusion(:pack_access_mode, pack_modes())
     |> validate_runner_access(allowlist)
@@ -56,6 +57,18 @@ defmodule Emisar.Accounts.InvitationInput do
   defp roles, do: Enum.map(Emisar.Auth.roles(), &Atom.to_string/1)
   defp modes, do: Enum.map(RunnerAccess.modes(), &Atom.to_string/1)
   defp pack_modes, do: Enum.map(RunnerAccess.pack_modes(), &Atom.to_string/1)
+
+  defp normalize_owner_access(changeset) do
+    if get_field(changeset, :role) == "owner" do
+      changeset
+      |> put_change(:runner_access_mode, "all")
+      |> put_change(:scope, [])
+      |> put_change(:pack_access_mode, "all")
+      |> put_change(:pack_scope, [])
+    else
+      changeset
+    end
+  end
 
   defp validate_runner_access(%Ecto.Changeset{} = changeset, allowlist) do
     mode = get_field(changeset, :runner_access_mode)

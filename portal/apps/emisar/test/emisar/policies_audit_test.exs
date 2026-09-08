@@ -103,5 +103,32 @@ defmodule Emisar.PoliciesAuditTest do
       assert from["decision"] == "allow"
       assert to["decision"] == "deny"
     end
+
+    test "saved receipts retain approval changes and duplicate-rule order", %{subject: subject} do
+      deny = %{"name" => "Block services", "action" => "service.*", "decision" => "deny"}
+      allow = %{"name" => "Allow services", "action" => "service.*", "decision" => "allow"}
+      starting = Map.put(Policies.default_rules(), "overrides", [deny, allow])
+      assert {:ok, _} = Policies.save_rules(starting, subject)
+
+      next =
+        starting
+        |> Map.put("overrides", [allow, deny])
+        |> Map.put("approval", %{"min_approvals" => 2, "allow_self_approval" => false})
+
+      assert {:ok, _} = Policies.save_rules(next, subject)
+
+      assert {:ok, [latest | _], _} =
+               Audit.list_events(subject, filter: [event_type: ["policy.updated"]])
+
+      assert latest.payload["before"] == starting
+      assert latest.payload["after"] == next
+      assert latest.payload["changes"]["overrides"]["order_changed"]
+      assert latest.payload["changes"]["overrides"]["changed"] == []
+
+      assert latest.payload["changes"]["approval"] == %{
+               "min_approvals" => %{"from" => 1, "to" => 2},
+               "allow_self_approval" => %{"from" => true, "to" => false}
+             }
+    end
   end
 end

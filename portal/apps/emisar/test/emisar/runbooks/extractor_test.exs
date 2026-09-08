@@ -25,6 +25,26 @@ defmodule Emisar.Runbooks.ExtractorTest do
       assert result.raw == %{"state" => "streaming"}
     end
 
+    test "missing schema-validated stdout cannot be extracted as a null root" do
+      outputs = [output("result", "structured_output", "json_pointer", "")]
+
+      for materialized <- [%{}, %{"structured_output" => nil}] do
+        assert {:error, "extraction_failed", message, _evidence} =
+                 Extractor.extract_outputs(outputs, materialized)
+
+        assert message == "Schema-validated stdout is unavailable."
+      end
+    end
+
+    test "a JSON null document in either text stream is a valid root value" do
+      for source <- ["stdout", "stderr"] do
+        outputs = [output("result", source, "json_pointer", "")]
+
+        assert {:ok, result} = Extractor.extract_outputs(outputs, %{source => "null"})
+        assert result.raw == %{"result" => nil}
+      end
+    end
+
     test "rejects malformed JSON text and unresolved pointers" do
       json_output = [output("state", "stdout", "json_pointer", "/state")]
 

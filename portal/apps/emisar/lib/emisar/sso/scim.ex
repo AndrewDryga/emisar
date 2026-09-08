@@ -293,8 +293,7 @@ defmodule Emisar.SSO.SCIM do
       mapped_access =
         runner_access_mappings
         |> Enum.filter(&(&1.directory_group_id in group_ids))
-        |> Enum.map(&runner_access_mapping_access/1)
-        |> Accounts.RunnerAccess.union()
+        |> then(&Emisar.SSO.GroupAccess.effective(provider_runner_access(current), &1))
 
       {:ok,
        %{

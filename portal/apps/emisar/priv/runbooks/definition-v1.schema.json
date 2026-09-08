@@ -243,12 +243,29 @@
       "additionalProperties": false,
       "properties": {
         "id": {"$ref": "#/$defs/stable_id"},
-        "source": {"enum": ["structured_output", "stdout", "stderr"]},
+        "source": {
+          "enum": ["structured_output", "stdout", "stderr"],
+          "description": "For new stdout JSON Pointer bindings, use structured_output when get_action returns action.output_schema: it is redacted stdout validated against that schema, never stderr. Otherwise use stdout text. Stderr JSON uses stderr. Text extractors always use stdout/stderr. Preserve existing sources on unrelated edits."
+        },
         "sensitive": {"type": "boolean"},
         "extract": {"$ref": "#/$defs/extractor"}
-      }
+      },
+      "allOf": [
+        {
+          "if": {
+            "required": ["source"],
+            "properties": {"source": {"const": "structured_output"}}
+          },
+          "then": {
+            "properties": {
+              "extract": {"properties": {"type": {"const": "json_pointer"}}}
+            }
+          }
+        }
+      ]
     },
     "extractor": {
+      "description": "JSON Pointer selects a field such as /status; stdout/stderr must contain one complete valid JSON document. Contains, literal grep, and bounded regex read text only. Missing source data or a missing JSON Pointer path fails extraction.",
       "oneOf": [
         {
           "type": "object",

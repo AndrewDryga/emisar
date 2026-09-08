@@ -244,8 +244,8 @@ defmodule Emisar.Catalog do
         {:error, :not_found} -> {:error, connection_reason(connection)}
       end
     end)
-    |> Multi.run(:pins, fn _repo, _changes ->
-      observe_packs(runner.account_id, packs, now)
+    |> Multi.run(:pins, fn _repo, %{owner: active_runner} ->
+      observe_packs(active_runner, packs, now)
     end)
     |> Repo.commit_multi()
     |> case do
@@ -346,7 +346,7 @@ defmodule Emisar.Catalog do
   # of issuing (and serializing) up to 128 statements. RETURNING hands back the
   # canonical row for each drift judgment. The conflict update deliberately
   # never touches trust fields — the existing row's state machine must be
-  # JUDGED (judge_drift/4), not replaced.
+  # JUDGED (judge_drift/5), not replaced.
   #
   # Pin decision on first sight:
   #
@@ -364,10 +364,10 @@ defmodule Emisar.Catalog do
   # Results are all materialized before reducing the pending flag: reducing
   # with Enum.any?/2 over the work itself would stop after the first change and
   # silently skip later packs.
-  defp observe_packs(account_id, packs, now) do
+  defp observe_packs(%Runners.Runner{} = runner, packs, now) do
     observations =
       packs
-      |> Enum.map(&pack_observation(account_id, &1, now))
+      |> Enum.map(&pack_observation(runner.account_id, &1, now))
       |> Enum.reject(&is_nil/1)
       |> Enum.sort_by(&{&1.pack_id, &1.version})
 
@@ -379,7 +379,7 @@ defmodule Emisar.Catalog do
     results =
       Enum.map(observations, fn observation ->
         pack_version = Map.fetch!(returned_by_ref, {observation.pack_id, observation.version})
-        judge_pack_observation(pack_version, observation, now)
+        judge_pack_observation(pack_version, observation, runner, now)
       end)
 
     case Enum.find(results, &match?({:error, _reason}, &1)) do
@@ -469,6 +469,7 @@ defmodule Emisar.Catalog do
   defp judge_pack_observation(
          %PackVersion{id: candidate_id} = pack_version,
          %{candidate_id: candidate_id} = observation,
+         runner,
          _now
        ) do
     audit =
@@ -476,7 +477,8 @@ defmodule Emisar.Catalog do
         pack_version,
         observation.verdict.audit_event,
         observation.advertised,
-        observation.verdict.baseline
+        observation.verdict.baseline,
+        runner
       )
 
     case Audit.record(audit) do
@@ -488,8 +490,8 @@ defmodule Emisar.Catalog do
     end
   end
 
-  defp judge_pack_observation(%PackVersion{} = pack_version, observation, now) do
-    judge_drift(pack_version, observation.advertised, observation.verdict, now)
+  defp judge_pack_observation(%PackVersion{} = pack_version, observation, runner, now) do
+    judge_drift(pack_version, observation.advertised, observation.verdict, runner, now)
   end
 
   # The pin these advertised bytes earn, judged purely against the published
@@ -542,14 +544,14 @@ defmodule Emisar.Catalog do
   # A previously recorded pending_hash is deliberately kept until an
   # operator decides via Trust/Reject, not by whichever runner
   # heartbeats next — the one exception being bytes the release has since
-  # published itself (reconcile_baseline_pending/3).
-  defp judge_drift(%PackVersion{} = pack_version, advertised, verdict, now) do
+  # published itself (reconcile_baseline_pending/4).
+  defp judge_drift(%PackVersion{} = pack_version, advertised, verdict, runner, now) do
     cond do
       pack_version.hash == advertised ->
         restore_baseline_manifest(pack_version)
 
       pack_version.pending_hash == advertised ->
-        reconcile_baseline_pending(pack_version, advertised, verdict)
+        reconcile_baseline_pending(pack_version, advertised, verdict, runner)
 
       true ->
         result =
@@ -559,7 +561,9 @@ defmodule Emisar.Catalog do
 
         case result do
           {:ok, _updated} ->
-            case Audit.record(Audit.Events.pack_trust_drift_detected(pack_version, advertised)) do
+            audit = Audit.Events.pack_trust_drift_detected(pack_version, advertised, runner)
+
+            case Audit.record(audit) do
               {:ok, _event} -> :pending_changed
               {:error, changeset} -> {:error, changeset}
             end
@@ -581,7 +585,8 @@ defmodule Emisar.Catalog do
   defp reconcile_baseline_pending(
          %PackVersion{trust_state: :pending, hash: nil} = pack_version,
          advertised,
-         %{trust_state: :trusted, trusted_manifest: %{} = manifest} = verdict
+         %{trust_state: :trusted, trusted_manifest: %{} = manifest} = verdict,
+         runner
        ) do
     changeset = PackVersion.Changeset.trust(pack_version, manifest)
 
@@ -592,7 +597,8 @@ defmodule Emisar.Catalog do
             updated,
             :pack_trust_baseline_reconciled,
             advertised,
-            verdict.baseline
+            verdict.baseline,
+            runner
           )
 
         case Audit.record(audit) do
@@ -605,7 +611,7 @@ defmodule Emisar.Catalog do
     end
   end
 
-  defp reconcile_baseline_pending(%PackVersion{}, _advertised, _verdict), do: :ok
+  defp reconcile_baseline_pending(%PackVersion{}, _advertised, _verdict, _runner), do: :ok
 
   # Rows trusted before complete manifests existed are upgraded only from the
   # published catalog and only when the exact trusted hash still matches.
@@ -2280,7 +2286,7 @@ defmodule Emisar.Catalog do
   narrows the executable set instead of hiding the action, and at least one
   trusted candidate must remain. An action whose capable runners disagree on
   risk, arguments, or output shape is absent rather than reconciled. Returns
-  the ordered `[%{pack_id, action_id, title, risk, args}]`.
+  the ordered `[%{pack_id, action_id, title, risk, args, output_schema}]`.
   """
   @spec common_actions(EditorProjection.t(), [String.t()]) :: [map()]
   def common_actions(%EditorProjection{}, []), do: []
@@ -2395,6 +2401,7 @@ defmodule Emisar.Catalog do
       action_id: action_id,
       title: candidate.descriptor["title"],
       risk: contract["risk"],
+      output_schema: contract["output_schema"],
       args: get_in(contract, ["args_schema", "args"]) || []
     }
   end

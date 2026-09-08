@@ -4,7 +4,7 @@ defmodule Emisar.CatalogModelReadsTest do
 
   setup do
     account = Fixtures.Accounts.create_account()
-    membership = Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
+    membership = Fixtures.Memberships.create_membership(account_id: account.id, role: "admin")
     subject = Fixtures.Subjects.membership_subject(membership)
     %{account: account, subject: subject, membership: membership}
   end

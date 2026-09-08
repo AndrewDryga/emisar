@@ -66,6 +66,7 @@ config :emisar, Emisar.Audit.Jobs.Retention, enabled: false
 config :emisar, Emisar.Auth.Jobs.TokenRetention, enabled: false
 config :emisar, Emisar.Catalog.Jobs.PackVersionRetention, enabled: false
 config :emisar, Emisar.Runners.Jobs.InactiveRunnerRetention, enabled: false
+config :emisar, Emisar.Runners.Jobs.InstallKeyRetention, enabled: false
 config :emisar, Emisar.Runs.Jobs.FleetObservability, enabled: false
 config :emisar, Emisar.Billing.Jobs.ProcessedEventRetention, enabled: false
 config :emisar, Emisar.Billing.Jobs.SyncPaddleCustomers, enabled: false

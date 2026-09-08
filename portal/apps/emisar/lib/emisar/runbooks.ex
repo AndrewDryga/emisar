@@ -697,7 +697,7 @@ defmodule Emisar.Runbooks do
       Runbook.Changeset.draft(source, attrs)
     end)
     |> Multi.insert(:audit, fn %{source_runbook: source, runbook: runbook} ->
-      Audit.Events.runbook_updated(subject, source, runbook)
+      Audit.Events.runbook_updated(subject, source, runbook, "draft_saved")
     end)
   end
 
@@ -751,7 +751,7 @@ defmodule Emisar.Runbooks do
       |> Authorizer.for_subject(subject)
       |> Repo.fetch_and_update(Runbook.Query,
         with: &save_draft_when_current(&1, attrs, base_sha, subject),
-        audit: &Audit.Events.runbook_updated(subject, &2.data, &1),
+        audit: &Audit.Events.runbook_updated(subject, &2.data, &1, "draft_saved"),
         after_commit: &broadcast_runbook_updated/1
       )
     end
@@ -878,7 +878,7 @@ defmodule Emisar.Runbooks do
       |> Authorizer.for_subject(subject)
       |> Repo.fetch_and_update(Runbook.Query,
         with: &discard_draft_when_live/1,
-        audit: &Audit.Events.runbook_updated(subject, &2.data, &1),
+        audit: &Audit.Events.runbook_updated(subject, &2.data, &1, "draft_discarded"),
         after_commit: &broadcast_runbook_updated/1
       )
     end

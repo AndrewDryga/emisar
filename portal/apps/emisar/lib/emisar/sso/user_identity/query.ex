@@ -1,5 +1,6 @@
 defmodule Emisar.SSO.UserIdentity.Query do
   use Emisar, :query
+  alias Emisar.Repo.{Filter, Like}
   alias Emisar.SSO.UserIdentity
 
   def all,
@@ -42,6 +43,18 @@ defmodule Emisar.SSO.UserIdentity.Query do
 
   def by_user_id(queryable, user_id),
     do: where(queryable, [identities: i], i.user_id == ^user_id)
+
+  def by_directory_group(queryable, group_id, account_id, provider_id) do
+    identity_ids =
+      Emisar.SSO.DirectoryGroupMember.Query.not_deleted()
+      |> Emisar.SSO.DirectoryGroupMember.Query.by_account_id(account_id)
+      |> Emisar.SSO.DirectoryGroupMember.Query.by_provider_id(provider_id)
+      |> Emisar.SSO.DirectoryGroupMember.Query.by_directory_group_id(group_id)
+      |> Emisar.SSO.DirectoryGroupMember.Query.with_directory_roster()
+      |> Emisar.SSO.DirectoryGroupMember.Query.select_roster_identity_ids()
+
+    where(queryable, [identities: i], i.id in subquery(identity_ids))
+  end
 
   @doc """
   Row lock for the SCIM update transition (`FOR NO KEY UPDATE`): concurrent
@@ -256,4 +269,36 @@ defmodule Emisar.SSO.UserIdentity.Query do
   @impl Emisar.Repo.Query
   def cursor_fields,
     do: [{:identities, :desc, :inserted_at}, {:identities, :desc, :id}]
+
+  @impl Emisar.Repo.Query
+  def filters do
+    [
+      %Filter{
+        name: :search,
+        title: "Name or email",
+        type: :string,
+        fun: fn queryable, term ->
+          queryable =
+            queryable
+            |> with_joined_user()
+            |> join(:left, [identities: identity], member in Emisar.Accounts.Membership,
+              as: :search_membership,
+              on:
+                member.account_id == identity.account_id and member.user_id == identity.user_id and
+                  is_nil(member.deleted_at)
+            )
+
+          pattern = Like.contains(term)
+
+          {queryable,
+           dynamic(
+             [user: user, search_membership: member],
+             ilike(member.directory_display_name, ^pattern) or
+               (not is_nil(member.id) and ilike(user.full_name, ^pattern)) or
+               ilike(user.email, ^pattern)
+           )}
+        end
+      }
+    ]
+  end
 end

@@ -43,14 +43,16 @@ defmodule Emisar.RunnerAccessTest do
       refute RunnerAccess.covers?(RunnerAccess.none(), db)
     end
 
-    test "normalizes a restricted pack scope and rejects an unusable one" do
+    test "normalizes pack scopes, including explicit no-packs, and rejects malformed shapes" do
       assert {:ok, access} =
                RunnerAccess.new(:all, [], [], :restricted, [" shell ", "postgres", "postgres"])
 
       assert access.pack_mode == :restricted
       assert access.pack_ids == ["postgres", "shell"]
 
-      assert RunnerAccess.new(:all, [], [], :restricted, []) == {:error, :invalid_pack_access}
+      assert {:ok, no_packs} = RunnerAccess.new(:all, [], [], :restricted, [])
+      refute RunnerAccess.pack_in_scope?("postgres", no_packs)
+      assert RunnerAccess.covers?(access, no_packs)
       assert RunnerAccess.new(:all, [], [], :all, ["postgres"]) == {:error, :invalid_pack_access}
       assert RunnerAccess.new(:all, [], [], "everything", []) == {:error, :invalid_pack_access}
     end
@@ -593,8 +595,10 @@ defmodule Emisar.RunnerAccessTest do
 
   describe "runner_access_for_subject/1" do
     test "re-reads the current active membership instead of trusting subject state" do
-      {account, owner, subject} = account_with_owner()
+      {account, owner, _owner_subject} = account_with_owner()
       {:ok, membership} = Accounts.fetch_membership_for_session(owner, nil)
+      membership = Fixtures.Memberships.force_role(membership, "admin")
+      subject = Fixtures.Subjects.membership_subject(membership)
       assert Accounts.runner_access_for_subject(subject) == RunnerAccess.all()
 
       Fixtures.Memberships.force_runner_access(membership, RunnerAccess.none())
@@ -855,7 +859,7 @@ defmodule Emisar.RunnerAccessTest do
       assert Accounts.runner_access_for_membership(account.id, member.id) == access
     end
 
-    test "a human owner keeps the owner role while directory runner access still reconciles" do
+    test "a human owner keeps the owner role and full access during directory sync" do
       {account, owner, _owner_subject} = account_with_owner()
       {:ok, membership} = Accounts.fetch_membership_for_session(owner, nil)
       provider = Fixtures.SSO.create_identity_provider(account_id: account.id)
@@ -874,7 +878,7 @@ defmodule Emisar.RunnerAccessTest do
       assert updated.directory_provider_id == provider.id
 
       assert Accounts.runner_access_for_membership(account.id, membership.id) ==
-               RunnerAccess.none()
+               RunnerAccess.all()
     end
 
     # Role and reach are recomputed from two independent mapping tables, so one
@@ -930,9 +934,11 @@ defmodule Emisar.RunnerAccessTest do
 
   describe "enforcement at dispatch time" do
     test "the authenticated membership is re-read and forged attrs are ignored" do
-      {account, owner, owner_subject} = account_with_owner()
+      {account, owner, _owner_subject} = account_with_owner()
       runner = Fixtures.Runners.create_runner(account_id: account.id, group: "app")
       {:ok, membership} = Accounts.fetch_membership_for_session(owner, nil)
+      membership = Fixtures.Memberships.force_role(membership, "admin")
+      subject = Fixtures.Subjects.membership_subject(membership)
       {:ok, restricted} = RunnerAccess.restricted(["db"], [])
 
       _membership = Fixtures.Memberships.force_runner_access(membership, restricted)
@@ -946,15 +952,17 @@ defmodule Emisar.RunnerAccessTest do
                  reason: "test",
                  requested_by_membership_id: forged.id
                },
-               owner_subject
+               subject
              ) == {:error, :runner_out_of_scope}
     end
 
     test "an offline queued run is not sent after its initiating access is revoked" do
-      {account, owner, owner_subject} = account_with_owner()
+      {account, owner, _owner_subject} = account_with_owner()
       runner = Fixtures.Runners.create_runner(account_id: account.id, group: "app")
       _action = Fixtures.Catalog.create_action(runner: runner, action_id: "linux.uptime")
       {:ok, membership} = Accounts.fetch_membership_for_session(owner, nil)
+      membership = Fixtures.Memberships.force_role(membership, "admin")
+      subject = Fixtures.Subjects.membership_subject(membership)
 
       {:ok, run} =
         Runs.create_run(%{
@@ -975,11 +983,18 @@ defmodule Emisar.RunnerAccessTest do
       assert Runs.peek_run_by_id(run.id).status == :pending
       refute_receive {:cloud_to_runner, _generation, _payload}, 100
 
-      assert Accounts.runner_access_for_subject(owner_subject) == RunnerAccess.none()
+      assert Accounts.runner_access_for_subject(subject) == RunnerAccess.none()
     end
 
     test "an action outside the member's packs is refused even on a reachable runner" do
       {account, owner, owner_subject} = account_with_owner()
+
+      owner_subject =
+        account.id
+        |> Fixtures.Memberships.fetch_membership(owner_subject.actor.id)
+        |> Fixtures.Memberships.force_role("admin")
+        |> Fixtures.Subjects.membership_subject()
+
       runner = Fixtures.Runners.create_runner(account_id: account.id, group: "app")
 
       # The action must be dispatch-healthy (versioned + trusted) so the ONLY
@@ -1037,6 +1052,7 @@ defmodule Emisar.RunnerAccessTest do
       )
 
       {:ok, membership} = Accounts.fetch_membership_for_session(owner, nil)
+      membership = Fixtures.Memberships.force_role(membership, "admin")
 
       {:ok, run} =
         Runs.create_run(%{

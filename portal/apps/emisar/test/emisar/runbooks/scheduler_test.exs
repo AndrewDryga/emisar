@@ -457,6 +457,12 @@ defmodule Emisar.Runbooks.SchedulerTest do
     subject: subject,
     runner: runner
   } do
+    subject =
+      account.id
+      |> Fixtures.Memberships.fetch_membership(subject.actor.id)
+      |> Fixtures.Memberships.force_role("admin")
+      |> Fixtures.Subjects.membership_subject()
+
     runbook =
       published_runbook(
         subject,
@@ -514,6 +520,20 @@ defmodule Emisar.Runbooks.SchedulerTest do
     assert halted.terminal_code == "dispatch_failed"
     assert halted.terminal_message == "The frozen pack is no longer trusted."
     assert length(runs(account.id, result.execution_id)) == 1
+
+    assert [blocked] =
+             Audit.Event
+             |> Repo.all()
+             |> Enum.filter(&(&1.event_type == "dispatch_blocked_pack_untrusted"))
+
+    assert blocked.actor_kind == "user"
+    assert blocked.actor_id == subject.actor.id
+    assert blocked.target_id == version.id
+    assert blocked.payload["runbook_execution_id"] == result.execution_id
+    assert blocked.payload["runbook_id"] == runbook.id
+    assert blocked.payload["runbook_step_id"] == "apply"
+    assert blocked.payload["source"] == "runbook"
+    assert blocked.payload["expected_pack_hash"] == @hash
   end
 
   test "the recovery sweep enforces the execution deadline without reopening it", %{

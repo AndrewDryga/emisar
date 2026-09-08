@@ -74,7 +74,7 @@ defmodule Emisar.AuthTest do
   describe "role_description/1" do
     test "describes a known role and stays nil for an unknown one" do
       assert Auth.role_description(:owner) ==
-               "Full control of the workspace, including billing and adding or removing other owners."
+               "Owners can manage the entire account, including billing and other owners, and access all runners and packs."
 
       assert Auth.role_description("unknown") == nil
     end

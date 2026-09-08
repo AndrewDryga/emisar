@@ -443,6 +443,58 @@ defmodule Emisar.AccountsTest do
     end
   end
 
+  describe "put_support_slack_url/2" do
+    test "sets and clears only the addressed account's support channel" do
+      account = Fixtures.Accounts.create_account()
+      other = Fixtures.Accounts.create_account()
+      url = "https://workspace.slack.com/archives/C01234567"
+
+      assert {:ok, configured} = Accounts.put_support_slack_url(account.id, url)
+      assert configured.settings.support_slack_url == url
+      assert is_nil(Repo.reload!(other).settings.support_slack_url)
+      assert {:ok, cleared} = Accounts.put_support_slack_url(account.id, nil)
+      assert is_nil(cleared.settings.support_slack_url)
+    end
+
+    test "rejects invalid values and missing or deleted accounts" do
+      account = Fixtures.Accounts.create_account()
+      too_long = "https://workspace.slack.com/archives/C" <> String.duplicate("A", 512)
+      assert {:error, changeset} = Accounts.put_support_slack_url(account.id, too_long)
+      refute changeset.valid?
+      assert is_nil(Repo.reload!(account).settings.support_slack_url)
+      deleted = Fixtures.Accounts.mark_account_as_deleted(account)
+
+      for id <- [deleted.id, Ecto.UUID.generate(), "invalid"] do
+        assert Accounts.put_support_slack_url(id, nil) == {:error, :not_found}
+      end
+    end
+
+    test "tenant owners cannot replace or clear support settings, including the whole embed" do
+      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      url = "https://workspace.slack.com/archives/C01234567"
+      assert {:ok, account} = Accounts.put_support_slack_url(account.id, url)
+
+      for attrs <- [
+            %{settings: %{support_slack_url: "https://workspace.slack.com/archives/C98765432"}},
+            %{"settings" => %{"support_slack_url" => ""}},
+            %{settings: nil},
+            %{"settings" => nil}
+          ] do
+        assert {:error, %Ecto.Changeset{}} = Accounts.update_account(account, attrs, subject)
+        assert Repo.reload!(account).settings.support_slack_url == url
+      end
+
+      {_other_user, _other_account, foreign_subject} = Fixtures.Subjects.owner_subject()
+
+      assert {:error, :unauthorized} =
+               Accounts.update_account(
+                 account,
+                 %{settings: %{support_slack_url: nil}},
+                 foreign_subject
+               )
+    end
+  end
+
   describe "fetch_account_settings/1" do
     test "returns the account's embedded settings value" do
       account = Fixtures.Accounts.create_account()
@@ -1223,6 +1275,15 @@ defmodule Emisar.AccountsTest do
       assert membership.role == :owner
       assert membership.user_id == user.id
       assert membership.account_id == account.id
+
+      signup =
+        AuditEvent.Query.all()
+        |> AuditEvent.Query.by_event_type("user.signed_up")
+        |> Repo.one()
+
+      assert signup.account_id == account.id
+      assert signup.actor_id == user.id
+      assert signup.target_id == user.id
     end
 
     test "records an ordinary sign-in without creating workspace rows" do
@@ -1233,6 +1294,23 @@ defmodule Emisar.AccountsTest do
 
       refute Repo.one(Account)
       refute Repo.one(Membership)
+      refute Repo.one(AuditEvent)
+    end
+
+    test "a failed final transaction rolls back account creation and signup receipts" do
+      user = Fixtures.Users.create_user(confirmed?: false)
+      registration = %{account_name: "Rolled back workspace", full_name: user.full_name}
+
+      assert {:error, :after_registration, :cancelled, _changes} =
+               Multi.new()
+               |> Multi.put(:registration_user, user)
+               |> Accounts.put_owner_registration(registration)
+               |> Multi.error(:after_registration, :cancelled)
+               |> Repo.transaction()
+
+      refute Repo.one(Account)
+      refute Repo.one(Membership)
+      refute Repo.one(AuditEvent)
     end
   end
 
@@ -2282,6 +2360,8 @@ defmodule Emisar.AccountsTest do
       refute facts_by_id[owner_membership.id].role_editable?
       refute facts_by_id[other_owner.id].self_owner?
       assert facts_by_id[other_owner.id].role_editable?
+      assert facts_by_id[other_owner.id].manageable?
+      refute facts_by_id[owner_membership.id].manageable?
 
       assert {:ok, admin_facts, _metadata} =
                Accounts.list_team_member_facts(account, admin_subject)
@@ -2289,6 +2369,22 @@ defmodule Emisar.AccountsTest do
       admin_facts_by_id = Map.new(admin_facts, &{&1.membership.id, &1})
       refute admin_facts_by_id[admin_membership.id].self_owner?
       assert admin_facts_by_id[admin_membership.id].role_editable?
+      refute admin_facts_by_id[admin_membership.id].manageable?
+      refute admin_facts_by_id[other_owner.id].role_editable?
+      refute admin_facts_by_id[other_owner.id].runner_access_editable?
+      refute admin_facts_by_id[other_owner.id].manageable?
+
+      assert Accounts.subject_can_assign_member_role?(:admin, admin_subject)
+      refute Accounts.subject_can_assign_member_role?(:owner, admin_subject)
+      assert Accounts.subject_can_assign_member_role?(:owner, subject)
+
+      foreign = Fixtures.Memberships.create_membership(role: "viewer")
+      refute Accounts.subject_can_manage_member?(foreign, subject)
+
+      viewer = Fixtures.Memberships.create_membership(account_id: account.id, role: "viewer")
+      viewer_subject = Fixtures.Subjects.membership_subject(viewer)
+      refute Accounts.subject_can_assign_member_role?(:viewer, viewer_subject)
+      refute Accounts.subject_can_manage_member?(admin_membership, viewer_subject)
     end
 
     test "directory ownership closes role and runner-access editing", %{
@@ -3878,7 +3974,7 @@ defmodule Emisar.AccountsTest do
     end
   end
 
-  describe "update_membership_role/3" do
+  describe "update_membership_role/4" do
     test "the last active owner can't demote themselves; with a second owner it works" do
       account = Fixtures.Accounts.create_account()
       owner = Fixtures.Users.create_user()
@@ -3907,7 +4003,9 @@ defmodule Emisar.AccountsTest do
       )
 
       assert {:ok, %Membership{role: :admin}} =
-               Accounts.update_membership_role(owner_membership, "admin", subject)
+               Accounts.update_membership_role(owner_membership, "admin", subject,
+                 runner_access: RunnerAccess.all()
+               )
     end
 
     test "re-submitting the role the member already holds writes no audit row" do
@@ -3934,7 +4032,9 @@ defmodule Emisar.AccountsTest do
         )
 
       assert {:ok, %Membership{role: :admin}} =
-               Accounts.update_membership_role(pending_owner, "admin", subject)
+               Accounts.update_membership_role(pending_owner, "admin", subject,
+                 runner_access: RunnerAccess.all()
+               )
     end
 
     test "demoting a member revokes the API keys they minted" do
@@ -5149,7 +5249,7 @@ defmodule Emisar.AccountsTest do
       assert Repo.reload!(member).role == :viewer
     end
 
-    test "leaves an account owner's role alone while still syncing their reach" do
+    test "preserves an account owner's role and full access during directory sync" do
       account = Fixtures.Accounts.create_account()
       provider = provider_fixture(account)
       owner = Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
@@ -5158,7 +5258,7 @@ defmodule Emisar.AccountsTest do
       assert {:ok, %Membership{role: :owner}} =
                Accounts.sync_set_membership_authorization(owner, :admin, access, provider)
 
-      assert Accounts.runner_access_for_membership(account.id, owner.id) == access
+      assert Accounts.runner_access_for_membership(account.id, owner.id) == RunnerAccess.all()
     end
 
     test "rejects a membership outside the provider's account" do
@@ -6984,8 +7084,7 @@ defmodule Emisar.AccountsTest do
     end
 
     test "an admin cannot resend an owner invitation" do
-      account = Fixtures.Accounts.create_account()
-      owner_subject = Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account)
+      {_owner, account, owner_subject} = Fixtures.Subjects.owner_subject()
 
       {:ok, %{membership: membership}} =
         Accounts.invite_user_to_account(
@@ -7053,6 +7152,14 @@ defmodule Emisar.AccountsTest do
 
       assert result.delivery == {:ok, :suppressed}
       refute Map.has_key?(result, :invitation_token)
+
+      resent =
+        AuditEvent.Query.all()
+        |> AuditEvent.Query.by_event_type("membership.invitation_resent")
+        |> Repo.one()
+
+      assert resent.target_id == membership.user_id
+      assert resent.payload["role"] == "operator"
 
       refute Repo.reload!(membership).invitation_token_digest ==
                membership.invitation_token_digest
@@ -8014,6 +8121,46 @@ defmodule Emisar.AccountsTest do
 
       refute Accounts.subject_can_manage_team?(operator_subject)
       refute Accounts.subject_can_manage_team?(viewer_subject)
+    end
+  end
+
+  describe "subject_can_assign_member_role?/2" do
+    test "an Owner can assign all roles, an Admin cannot assign Owner, and a Viewer cannot assign roles" do
+      account = Fixtures.Accounts.create_account()
+
+      for {actor_role, allowed} <- [
+            {:owner, [:owner, :admin, :operator, :viewer, :billing_manager]},
+            {:admin, [:admin, :operator, :viewer, :billing_manager]},
+            {:viewer, []}
+          ] do
+        member = Fixtures.Memberships.create_membership(account_id: account.id, role: actor_role)
+        subject = Fixtures.Subjects.membership_subject(member)
+
+        for role <- [:owner, :admin, :operator, :viewer, :billing_manager] do
+          assert Accounts.subject_can_assign_member_role?(role, subject) == role in allowed
+        end
+      end
+    end
+  end
+
+  describe "subject_can_manage_member?/2" do
+    test "requires another account-local member within the actor's role authority" do
+      account = Fixtures.Accounts.create_account()
+      owner = Fixtures.Memberships.create_membership(account_id: account.id, role: :owner)
+      admin = Fixtures.Memberships.create_membership(account_id: account.id, role: :admin)
+      viewer = Fixtures.Memberships.create_membership(account_id: account.id, role: :viewer)
+      foreign = Fixtures.Memberships.create_membership(role: :viewer)
+      owner_subject = Fixtures.Subjects.membership_subject(owner)
+      admin_subject = Fixtures.Subjects.membership_subject(admin)
+      viewer_subject = Fixtures.Subjects.membership_subject(viewer)
+
+      assert Accounts.subject_can_manage_member?(admin, owner_subject)
+      assert Accounts.subject_can_manage_member?(viewer, admin_subject)
+      refute Accounts.subject_can_manage_member?(owner, admin_subject)
+      refute Accounts.subject_can_manage_member?(admin, viewer_subject)
+      refute Accounts.subject_can_manage_member?(owner, owner_subject)
+      refute Accounts.subject_can_manage_member?(admin, admin_subject)
+      refute Accounts.subject_can_manage_member?(foreign, owner_subject)
     end
   end
 

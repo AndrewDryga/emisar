@@ -25,9 +25,10 @@ defmodule Emisar.Runners.EnrollmentKey.Query do
         name: :status,
         title: "Status",
         type: {:list, :string},
+        span: :half,
         # Single-select dropdown (LiveTable adds the "All" option that clears
         # the filter). The list shape lets a value arrive as ["active"].
-        # Fresh visits hide revoked keys by default; the default renders as the
+        # Fresh visits show usable keys by default; the default renders as the
         # BASELINE, never as an applied filter (design-console-ux §7.4).
         default: "active",
         values: [
@@ -35,22 +36,42 @@ defmodule Emisar.Runners.EnrollmentKey.Query do
           {"revoked", "Revoked"}
         ],
         fun: fn queryable, statuses ->
+          usable = usable_condition(DateTime.utc_now())
+
           dyn =
             cond do
               "active" in statuses and "revoked" in statuses ->
-                dynamic([enrollment_keys: k], true)
+                dynamic([enrollment_keys: k], ^usable or not is_nil(k.revoked_at))
 
               "revoked" in statuses ->
                 dynamic([enrollment_keys: k], not is_nil(k.revoked_at))
 
               "active" in statuses ->
-                dynamic([enrollment_keys: k], is_nil(k.revoked_at))
+                usable
 
               true ->
                 dynamic([enrollment_keys: k], true)
             end
 
           {queryable, dyn}
+        end
+      },
+      %Filter{
+        name: :source,
+        title: "Source",
+        type: {:list, :string},
+        span: :half,
+        default: "",
+        values: [{"manual", "Created manually"}, {"console", "Runner setup"}],
+        fun: fn queryable, sources ->
+          condition =
+            case Enum.uniq(sources) do
+              ["manual"] -> dynamic([enrollment_keys: k], is_nil(k.auto_generated_at))
+              ["console"] -> dynamic([enrollment_keys: k], not is_nil(k.auto_generated_at))
+              _ -> dynamic([enrollment_keys: k], true)
+            end
+
+          {queryable, condition}
         end
       }
     ]
@@ -63,9 +84,25 @@ defmodule Emisar.Runners.EnrollmentKey.Query do
     where(
       queryable,
       [enrollment_keys: k],
-      not is_nil(k.auto_generated_at) and is_nil(k.last_used_at)
+      not is_nil(k.auto_generated_at) and is_nil(k.last_used_at) and k.uses_count == 0
     )
   end
+
+  def expired_unused_install_keys(account_id, now) do
+    auto_unused()
+    |> by_account_id(account_id)
+    |> where([enrollment_keys: k], k.expires_at <= ^now)
+  end
+
+  def prunable_install_ids(account_id, now, batch_size) do
+    expired_unused_install_keys(account_id, now)
+    |> order_by([enrollment_keys: k], asc: k.id)
+    |> limit(^batch_size)
+    |> select([enrollment_keys: k], k.id)
+  end
+
+  def by_ids(queryable, ids),
+    do: where(queryable, [enrollment_keys: k], k.id in ^ids)
 
   @doc "Install-key ring overflow. Matches the api_key variant — see ApiKey.Query."
   def evictable_install_overflow(account_id, cap, protected_floor) do
@@ -76,7 +113,7 @@ defmodule Emisar.Runners.EnrollmentKey.Query do
       |> offset(^cap)
       |> select([enrollment_keys: k], k.id)
 
-    all()
+    auto_unused()
     |> by_account_id(account_id)
     |> where(
       [enrollment_keys: k],
@@ -93,25 +130,27 @@ defmodule Emisar.Runners.EnrollmentKey.Query do
   def consumable_by_id(id, now) do
     all()
     |> where([enrollment_keys: k], k.id == ^id)
-    |> where([enrollment_keys: k], is_nil(k.revoked_at))
-    |> where([enrollment_keys: k], is_nil(k.deleted_at))
-    |> where([enrollment_keys: k], is_nil(k.expires_at) or k.expires_at > ^now)
-    |> where(
+    |> where(^usable_condition(now))
+  end
+
+  defp usable_condition(now) do
+    dynamic(
       [enrollment_keys: k],
-      (k.reusable and (is_nil(k.max_uses) or k.uses_count < k.max_uses)) or
-        (not k.reusable and k.uses_count == 0)
+      is_nil(k.revoked_at) and is_nil(k.deleted_at) and
+        (is_nil(k.expires_at) or k.expires_at > ^now) and
+        ((k.reusable and (is_nil(k.max_uses) or k.uses_count < k.max_uses)) or
+           (not k.reusable and k.uses_count == 0))
     )
   end
 
   @doc """
-  Charge one consumption (`inc: uses_count, set: last_used_at`,
-  clearing `auto_generated_at` so the key is no longer eligible for
-  ring eviction).
+  Charge one consumption (`inc: uses_count, set: last_used_at`), retaining its
+  console origin. Used keys are no longer eligible for cleanup.
   """
   def consume_one(queryable, now) do
     update(queryable,
       inc: [uses_count: 1],
-      set: [last_used_at: ^now, updated_at: ^now, auto_generated_at: nil]
+      set: [last_used_at: ^now, updated_at: ^now]
     )
   end
 

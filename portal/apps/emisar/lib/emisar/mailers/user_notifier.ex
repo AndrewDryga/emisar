@@ -83,9 +83,8 @@ defmodule Emisar.Mailers.UserNotifier do
           "."
         ),
         {:paragraph,
-         "This link works once and expires in 7 days. Keep using your current email until you confirm the new one."},
-        {:paragraph,
-         "If you didn't request this change, don't use the link. Your sign-in email will stay the same."},
+         "Your sign-in email is now #{email}. Use the link to confirm this address. It works once and expires in 7 days."},
+        {:paragraph, "If you didn't request this change, contact support@emisar.dev."},
         {:section, "Request details"},
         {:pre, request_details(context)}
       ],
@@ -598,6 +597,10 @@ defmodule Emisar.Mailers.UserNotifier do
   defp invitation_runner_access(_membership), do: "No runners"
 
   defp invitation_pack_access(%{pack_access_mode: :all}), do: "All packs"
+
+  defp invitation_pack_access(%{pack_access_mode: :restricted, pack_scope_pack_ids: []}),
+    do: "No packs"
+
   defp invitation_pack_access(%{pack_access_mode: :restricted}), do: "Selected packs"
   defp invitation_pack_access(_membership), do: "No packs"
 

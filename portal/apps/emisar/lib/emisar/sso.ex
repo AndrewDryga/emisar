@@ -19,6 +19,7 @@ defmodule Emisar.SSO do
   alias Emisar.{Accounts, Audit, Auth, Billing, Catalog, Crypto, Repo, Runners, Users}
   alias Emisar.Auth.Subject
   alias Emisar.SSO.{Authorizer, DirectoryGroup, DirectoryGroupMember}
+  alias Emisar.SSO.GroupAccess
   alias Emisar.SSO.GroupRoleMapping
   alias Emisar.SSO.GroupRunnerAccessMapping
   alias Emisar.SSO.{IdentityProvider, IssuerUrl, LinkRequest, OIDC, ProviderKind}
@@ -140,6 +141,121 @@ defmodule Emisar.SSO do
     end)
   end
 
+  @doc "At most three distinct directory groups per visible user, with the full count. Requires manage_sso."
+  def member_group_summaries(user_ids, %Subject{} = subject, opts \\ []) do
+    with :ok <- ensure_can_manage_sso(subject),
+         true <-
+           is_list(user_ids) and length(user_ids) <= 100 and
+             Enum.all?(user_ids, &Repo.valid_uuid?/1),
+         :ok <- validate_group_provider_option(opts) do
+      rows =
+        directory_roster_query(subject, opts)
+        |> DirectoryGroupMember.Query.by_roster_user_ids(user_ids)
+        |> DirectoryGroupMember.Query.first_groups_per_user(3)
+        |> Authorizer.for_subject(subject)
+        |> Repo.all()
+
+      summaries = Map.new(user_ids, &{&1, %{groups: [], count: 0}})
+
+      {:ok,
+       Enum.reduce(rows, summaries, fn row, acc ->
+         Map.update!(acc, row.user_id, fn summary ->
+           %{groups: summary.groups ++ [Map.drop(row, [:user_id, :total])], count: row.total}
+         end)
+       end)}
+    else
+      false -> {:error, :invalid_request}
+      error -> error
+    end
+  end
+
+  @doc "One searchable page of a member's groups, across providers unless provider_id is supplied."
+  def list_member_groups(user_id, %Subject{} = subject, opts \\ []) do
+    with :ok <- ensure_can_manage_sso(subject),
+         true <- Repo.valid_uuid?(user_id),
+         :ok <- validate_group_provider_option(opts) do
+      {provider_id, opts} = Keyword.pop(opts, :provider_id)
+
+      DirectoryGroup.Query.not_deleted()
+      |> DirectoryGroup.Query.by_account_id(subject.account.id)
+      |> DirectoryGroup.Query.for_roster_user(user_id, subject.account.id)
+      |> maybe_group_provider(provider_id)
+      |> DirectoryGroup.Query.with_live_provider()
+      |> DirectoryGroup.Query.select_directory_labels()
+      |> Authorizer.for_subject(subject)
+      |> Repo.list(DirectoryGroup.Query, opts)
+    else
+      false -> {:error, :not_found}
+      error -> error
+    end
+  end
+
+  @doc "Narrow current group identity for a roster filter; no provider configuration is returned."
+  def fetch_directory_group_facts(id, %Subject{} = subject, opts \\ []) do
+    with :ok <- ensure_can_manage_sso(subject),
+         true <- Repo.valid_uuid?(id),
+         :ok <- validate_group_provider_option(opts) do
+      DirectoryGroup.Query.not_deleted()
+      |> DirectoryGroup.Query.by_id(id)
+      |> maybe_group_provider(Keyword.get(opts, :provider_id))
+      |> DirectoryGroup.Query.with_live_provider()
+      |> DirectoryGroup.Query.select_directory_labels()
+      |> Authorizer.for_subject(subject)
+      |> Repo.fetch(DirectoryGroup.Query)
+    else
+      false -> {:error, :not_found}
+      error -> error
+    end
+  end
+
+  @doc "Searchable, paginated directory group choices, optionally scoped to one connection. Requires manage_sso."
+  def list_directory_groups(%Subject{} = subject, opts \\ []) do
+    with :ok <- ensure_can_manage_sso(subject),
+         :ok <- validate_group_provider_option(opts),
+         :ok <- validate_directory_group_search(opts) do
+      {provider_id, opts} = Keyword.pop(opts, :provider_id)
+
+      DirectoryGroup.Query.not_deleted()
+      |> maybe_group_provider(provider_id)
+      |> DirectoryGroup.Query.with_live_provider()
+      |> DirectoryGroup.Query.select_directory_labels()
+      |> Authorizer.for_subject(subject)
+      |> Repo.list(DirectoryGroup.Query, opts)
+    end
+  end
+
+  defp validate_directory_group_search(opts) do
+    search = opts |> Keyword.get(:filter, []) |> Keyword.get(:search, "")
+
+    if is_binary(search) and byte_size(search) <= 512 and String.valid?(search) and
+         not String.contains?(search, <<0>>), do: :ok, else: {:error, :invalid_request}
+  end
+
+  def directory_group_filters, do: DirectoryGroup.Query.filters()
+  def directory_member_filters, do: UserIdentity.Query.filters()
+
+  defp directory_roster_query(subject, opts) do
+    queryable =
+      DirectoryGroupMember.Query.not_deleted()
+      |> DirectoryGroupMember.Query.by_account_id(subject.account.id)
+      |> DirectoryGroupMember.Query.with_directory_roster()
+
+    case Keyword.get(opts, :provider_id) do
+      nil -> queryable
+      id -> DirectoryGroupMember.Query.by_provider_id(queryable, id)
+    end
+  end
+
+  defp maybe_group_provider(queryable, nil), do: queryable
+  defp maybe_group_provider(queryable, id), do: DirectoryGroup.Query.by_provider_id(queryable, id)
+
+  defp validate_group_provider_option(opts) do
+    case Keyword.get(opts, :provider_id) do
+      nil -> :ok
+      id -> if Repo.valid_uuid?(id), do: :ok, else: {:error, :not_found}
+    end
+  end
+
   @doc """
   Internal — Accounts' admin profile edit: true when the user's profile is
   directory-owned in this account — they hold a live identity under a
@@ -166,14 +282,29 @@ defmodule Emisar.SSO do
   the account. Returns `{:ok, [%UserIdentity{}], %Paginator.Metadata{}}`.
   """
   def list_synced_users(%IdentityProvider{} = provider, %Subject{} = subject, opts \\ []) do
-    with {:ok, provider} <- fetch_provider_by_id(provider.id, subject) do
+    {group_id, opts} = Keyword.pop(opts, :directory_group_id)
+
+    with {:ok, provider} <- fetch_provider_by_id(provider.id, subject),
+         {:ok, queryable} <- synced_user_query(provider, group_id, subject) do
       # No `ordered_by_recent/1`: the query module's `cursor_fields/0` is that
       # same order, and `Repo.list/3` applies it.
-      UserIdentity.Query.not_deleted()
-      |> UserIdentity.Query.by_provider_id(provider.id)
+      queryable
       |> UserIdentity.Query.with_preloaded_user()
       |> Authorizer.for_subject(subject)
       |> Repo.list(UserIdentity.Query, opts)
+    end
+  end
+
+  defp synced_user_query(provider, nil, _subject) do
+    {:ok, UserIdentity.Query.not_deleted() |> UserIdentity.Query.by_provider_id(provider.id)}
+  end
+
+  defp synced_user_query(provider, group_id, subject) do
+    with {:ok, group} <- fetch_directory_group_facts(group_id, subject, provider_id: provider.id) do
+      {:ok,
+       UserIdentity.Query.not_deleted()
+       |> UserIdentity.Query.by_provider_id(provider.id)
+       |> UserIdentity.Query.by_directory_group(group.id, provider.account_id, provider.id)}
     end
   end
 
@@ -222,6 +353,19 @@ defmodule Emisar.SSO do
     else
       false -> {:error, :not_found}
       other -> other
+    end
+  end
+
+  @doc "Whether identities have fixed this connection's issuer, client ID, and identifier claim."
+  def provider_identity_namespace_locked?(%IdentityProvider{id: id}, %Subject{} = subject) do
+    with {:ok, provider} <- fetch_provider_by_id(id, subject) do
+      locked? =
+        UserIdentity.Query.not_deleted()
+        |> UserIdentity.Query.by_provider_id(provider.id)
+        |> Authorizer.for_subject(subject)
+        |> Repo.exists?()
+
+      {:ok, locked?}
     end
   end
 
@@ -278,6 +422,19 @@ defmodule Emisar.SSO do
   def change_group_mapping(%GroupRoleMapping{} = mapping, attrs),
     do: GroupRoleMapping.Changeset.update(mapping, attrs)
 
+  @doc "Pure runner and pack defaults from an already loaded connection."
+  def group_access_defaults(%IdentityProvider{} = provider), do: GroupAccess.defaults(provider)
+
+  @doc "Pure combined selection values for connection defaults and explicit group additions."
+  def group_access_selection(default, additions), do: GroupAccess.selection(default, additions)
+
+  @doc "Pure explicit additions from combined selections; inherited access is never persisted as a group grant."
+  def group_access_additions(default, params, presentation, runners),
+    do: GroupAccess.additions(default, params, presentation, runners)
+
+  @doc "Whether explicit group additions grant neither runners nor packs."
+  def empty_group_access?(additions), do: GroupAccess.empty?(additions)
+
   @doc """
   Changeset for an IdP group runner-access mapping form, as `{:ok, changeset}`
   for a subject holding `manage_sso` and `{:error, :unauthorized}` otherwise.
@@ -324,7 +481,10 @@ defmodule Emisar.SSO do
   @identity_link_reauthentication_max_age_seconds 120
   @identity_link_reauthentication_clock_skew_seconds 30
 
-  @doc "The enabled SSO methods this user may link from the current workspace."
+  @doc """
+  The enabled SSO methods this user may link from the current workspace, with
+  removal eligibility for presentation. Unlinking rechecks policy under lock.
+  """
   def list_self_service_identity_facts(
         %Subject{actor: %Users.User{id: user_id}, account: %{id: account_id}} = subject
       ) do
@@ -348,17 +508,31 @@ defmodule Emisar.SSO do
         |> Repo.all()
         |> Map.new(&{&1.provider_id, &1})
 
+      requires_sso? = account_requires_sso?(account_id)
+      linked_count = Enum.count(providers, &active_identity?(Map.get(identities, &1.id)))
+
       {:ok,
        Enum.map(providers, fn provider ->
          identity = Map.get(identities, provider.id)
+         linked? = active_identity?(identity)
+         user_verified? = linked? and identity.created_by == :user
+
+         removal_blocked_reason =
+           cond do
+             not linked? -> :not_linked
+             not user_verified? -> :identity_not_user_verified
+             requires_sso? and linked_count == 1 -> :required_sso_identity
+             true -> nil
+           end
 
          %{
            provider_id: provider.id,
            provider_name: provider.name,
-           linked?: active_identity?(identity),
-           removable?: active_identity?(identity) and identity.created_by == :user,
-           identity_id: identity && identity.id,
-           verified_at: identity && identity.last_seen_at
+           linked?: linked?,
+           user_verified?: user_verified?,
+           removable?: is_nil(removal_blocked_reason),
+           removal_blocked_reason: removal_blocked_reason,
+           identity_id: identity && identity.id
          }
        end)}
     end
@@ -1083,8 +1257,8 @@ defmodule Emisar.SSO do
   end
 
   @doc """
-  Probe an operator-supplied issuer's OIDC discovery document — the "Test
-  connection" capstone, proving the issuer is reachable and serves a valid
+  Probe an operator-supplied issuer's OIDC discovery document — the "Check
+  issuer" button, proving the issuer is reachable and serves a valid
   discovery doc *before* a connection is saved. `manage_sso` + Team or Enterprise;
   writes no row. The issuer is attacker-influenceable, so it's SSRF-validated
   (https + not a private/loopback/metadata host) before the fetch. Returns
@@ -1244,12 +1418,20 @@ defmodule Emisar.SSO do
     end
   end
 
-  # Switching to a per-customer provider clears an issuer WE prefilled — never
-  # one the operator typed.
+  # Preset issuer choices must not carry over to another kind's new connection.
+  defp put_kind_issuer(attrs, %{kind: :jumpcloud}) do
+    # Region selection owns this value. Clear another kind's fixed prefill, but
+    # let the changeset reject any other unsupported issuer instead of hiding it.
+    case fetch_attr(attrs, :issuer) do
+      {:ok, "https://accounts.google.com"} -> put_attr(attrs, :issuer, "")
+      _ -> attrs
+    end
+  end
+
   defp put_kind_issuer(attrs, %{fixed_issuer: nil}) do
     prefilled? =
       case fetch_attr(attrs, :issuer) do
-        {:ok, issuer} -> issuer in ProviderKind.fixed_issuers()
+        {:ok, issuer} -> issuer in ProviderKind.preset_issuers()
         :error -> false
       end
 
@@ -1403,7 +1585,11 @@ defmodule Emisar.SSO do
       attrs,
       account_id,
       @mapping_scope_fields,
-      runner_access_mapping_access(mapping)
+      %{
+        groups: mapping.runner_scope_groups,
+        runner_ids: mapping.runner_scope_runner_ids,
+        pack_ids: mapping.pack_scope_pack_ids
+      }
     )
   end
 
@@ -1412,7 +1598,7 @@ defmodule Emisar.SSO do
   # dropped here, and the selection is resolved against `account_id`'s live
   # runners and known packs, so a crafted submission can never widen reach past
   # what the account offers.
-  defp put_runner_selection(attrs, account_id, fields, %Accounts.RunnerAccess{} = stored) do
+  defp put_runner_selection(attrs, account_id, fields, stored) do
     stored_values = Accounts.RunnerAccess.selection_values(stored.groups, stored.runner_ids)
     values = submitted_scope_values(attrs, fields.scope, fields.mode, stored_values)
 
@@ -1655,6 +1841,25 @@ defmodule Emisar.SSO do
         :ok
     end
   end
+
+  @doc "Internal — a fail-closed membership transition's current directory version, without reversing the provider/membership lock order."
+  def directory_authorization_version(account_id, provider_id, repo)
+      when is_binary(provider_id) do
+    # A tombstoned provider still identifies the pending handoff; the retry
+    # worker will release its directory ownership without restoring access.
+    provider =
+      IdentityProvider.Query.all()
+      |> IdentityProvider.Query.by_account_id(account_id)
+      |> IdentityProvider.Query.by_id(provider_id)
+      |> repo.peek()
+
+    case provider do
+      %IdentityProvider{authorization_version: version} -> version
+      nil -> 0
+    end
+  end
+
+  def directory_authorization_version(_account_id, _provider_id, _repo), do: 0
 
   defp reconcile_pending_from_provider(provider, membership) do
     case peek_identity(provider, membership.user_id) do
@@ -2741,24 +2946,14 @@ defmodule Emisar.SSO do
   # -- Directory sync (SCIM) — group→role mapping config (Subject-gated) --
 
   @doc """
-  One page of the group resources a provider has synced via SCIM, each with its
-  distinct member count and its current role / runner-access mappings, so
-  paginating the editable lists cannot make an off-page mapping look absent.
-
-  A directory pushes as many groups as it likes, so this is a keyset page in
-  arrival order (`DirectoryGroup.Query.cursor_fields/0`), not the whole
-  directory; the mapping picker searches through `search_synced_groups/3`
-  instead of scanning this list. `manage_sso` + Enterprise; account-scoped.
-  Returns `{:ok, rows, %Paginator.Metadata{}}`.
+  One account-scoped page of synced groups and retired groups with saved role
+  or access mappings. Retired rows remain removable after directory deletion or a SCIM
+  reset; they are not candidates for new mappings. Requires `manage_sso`.
   """
-  def list_synced_groups(%IdentityProvider{} = provider, %Subject{} = subject, opts \\ []) do
-    # Existence comes from the GROUP rows, the same source the SCIM reads use.
-    # Deriving it from member rows meant an empty group — which the directory has
-    # genuinely pushed — could not be picked for a mapping, because the console
-    # could not see it at all.
+  def list_group_access(%IdentityProvider{} = provider, %Subject{} = subject, opts \\ []) do
     with {:ok, provider} <- fetch_provider_by_id(provider.id, subject),
          queryable =
-           DirectoryGroup.Query.not_deleted()
+           DirectoryGroup.Query.active_or_mapped()
            |> DirectoryGroup.Query.by_account_id(provider.account_id)
            |> DirectoryGroup.Query.by_provider_id(provider.id)
            |> Authorizer.for_subject(subject),
@@ -2793,16 +2988,15 @@ defmodule Emisar.SSO do
     end
   end
 
-  # Counts are read for the PAGE's groups only; the mapping maps stay
-  # provider-wide because they are the admin-authored config the page already
-  # lists in full elsewhere.
+  # Counts and mappings are bounded to the page's groups.
   defp annotate_synced_groups(groups, %IdentityProvider{} = provider, %Subject{} = subject) do
     group_ids = Enum.map(groups, & &1.id)
 
     counts =
-      DirectoryGroupMember.Query.not_deleted()
+      directory_roster_query(subject, provider_id: provider.id)
       |> DirectoryGroupMember.Query.by_directory_group_ids(group_ids)
-      |> DirectoryGroupMember.Query.group_counts_for_provider(provider.id)
+      |> DirectoryGroupMember.Query.roster_group_counts()
+      |> Authorizer.for_subject(subject)
       |> Repo.all()
       |> Map.new(&{&1.directory_group_id, &1})
 
@@ -2825,29 +3019,25 @@ defmodule Emisar.SSO do
       |> Repo.all()
       |> Map.new(&{&1.directory_group_id, &1})
 
+    default_access = provider_runner_access(provider)
+
     Enum.map(groups, fn group ->
       counted = Map.get(counts, group.id, %{})
+      access_mapping = Map.get(runner_access_mappings, group.id)
 
       %{
         id: group.id,
         external_group_id: group.external_group_id,
         display: group.display,
+        retired?: not is_nil(group.deleted_at),
         member_count: Map.get(counted, :member_count, 0),
         mapping: Map.get(role_mappings, group.id),
-        runner_access_mapping: Map.get(runner_access_mappings, group.id)
+        runner_access_mapping: access_mapping,
+        # A row shows this connection and group's access, not a member's final
+        # access across all groups. Editors still use the explicit mapping.
+        access: GroupAccess.effective(default_access, List.wrap(access_mapping))
       }
     end)
-  end
-
-  @doc "List a provider's group→role mappings. `manage_sso` + enterprise; account-scoped."
-  def list_group_mappings(%IdentityProvider{id: provider_id}, %Subject{} = subject, opts \\ []) do
-    with :ok <- ensure_can_manage_sso(subject) do
-      GroupRoleMapping.Query.not_deleted()
-      |> GroupRoleMapping.Query.by_provider_id(provider_id)
-      |> GroupRoleMapping.Query.with_preloaded_directory_group()
-      |> Authorizer.for_subject(subject)
-      |> Repo.list(GroupRoleMapping.Query, opts)
-    end
   end
 
   @doc """
@@ -2980,21 +3170,6 @@ defmodule Emisar.SSO do
     end
   end
 
-  @doc "List a provider's explicit IdP-group runner-access mappings."
-  def list_group_runner_access_mappings(
-        %IdentityProvider{id: provider_id},
-        %Subject{} = subject,
-        opts \\ []
-      ) do
-    with :ok <- ensure_can_manage_sso(subject) do
-      GroupRunnerAccessMapping.Query.not_deleted()
-      |> GroupRunnerAccessMapping.Query.by_provider_id(provider_id)
-      |> GroupRunnerAccessMapping.Query.with_preloaded_directory_group()
-      |> Authorizer.for_subject(subject)
-      |> Repo.list(GroupRunnerAccessMapping.Query, opts)
-    end
-  end
-
   @doc "Create an explicit additive runner-access grant for one synced IdP group."
   def create_group_runner_access_mapping(
         %IdentityProvider{} = provider,
@@ -3014,7 +3189,7 @@ defmodule Emisar.SSO do
              attrs,
              allowlist
            ),
-         {:ok, access} <- runner_access_mapping_from_changeset(form),
+         {:ok, access} <- runner_access_mapping_from_changeset(form, provider),
          :ok <- Accounts.ensure_runner_access_grant_allowed(subject, access) do
       Multi.new()
       |> put_directory_mapping_fence(subject.account.id)
@@ -3024,6 +3199,11 @@ defmodule Emisar.SSO do
           provider.id,
           Ecto.Changeset.get_field(form, :directory_group_id)
         )
+      end)
+      |> Multi.run(:grant_allowed, fn _repo, %{authorization_change: %{provider: current}} ->
+        with {:ok, access} <- runner_access_mapping_from_changeset(form, current),
+             :ok <- Accounts.ensure_runner_access_grant_allowed(subject, access),
+             do: {:ok, true}
       end)
       |> Multi.insert(:mapping, fn %{authorization_change: %{group: group}} ->
         GroupRunnerAccessMapping.Changeset.create(
@@ -3067,11 +3247,12 @@ defmodule Emisar.SSO do
         |> Authorizer.for_subject(subject)
         |> Repo.fetch(GroupRunnerAccessMapping.Query)
       end)
-      |> Multi.run(:validated_mapping, fn _repo, %{locked_mapping: mapping} ->
+      |> Multi.run(:validated_mapping, fn _repo,
+                                          %{locked_mapping: mapping, locked_provider: provider} ->
         {attrs, allowlist} = mapping_selection(attrs, mapping.account_id, mapping)
         changeset = GroupRunnerAccessMapping.Changeset.update(mapping, attrs, allowlist)
 
-        with {:ok, access} <- runner_access_mapping_from_changeset(changeset),
+        with {:ok, access} <- runner_access_mapping_from_changeset(changeset, provider),
              :ok <- Accounts.ensure_runner_access_grant_allowed(subject, access) do
           {:ok, changeset}
         end
@@ -3166,12 +3347,12 @@ defmodule Emisar.SSO do
     end)
   end
 
-  defp runner_access_mapping_from_changeset(%Ecto.Changeset{} = changeset) do
+  defp runner_access_mapping_from_changeset(%Ecto.Changeset{} = changeset, provider) do
     if changeset.valid? do
-      changeset
-      |> Ecto.Changeset.apply_changes()
-      |> runner_access_mapping_access()
-      |> then(&{:ok, &1})
+      GroupAccess.authorization_access(
+        provider_runner_access(provider),
+        Ecto.Changeset.apply_changes(changeset)
+      )
     else
       {:error, changeset}
     end
@@ -3919,7 +4100,7 @@ defmodule Emisar.SSO do
   @doc """
   The one issuer this kind serves every customer from — the value the console
   shows locked, and the one a create is normalized to. Nil when the issuer is
-  per-customer or the kind is unknown. Takes the atom or its string form.
+  regional, per-customer, or the kind is unknown. Takes the atom or its string form.
   """
   def provider_fixed_issuer(kind) do
     case ProviderKind.fetch(kind) do
@@ -3927,6 +4108,9 @@ defmodule Emisar.SSO do
       :error -> nil
     end
   end
+
+  @doc "Supported region names and exact issuer URLs for a provider kind."
+  def provider_issuer_regions(kind), do: ProviderKind.issuer_regions(kind)
 
   @doc """
   The claim this kind carries a stable identity in (`:sub`, or `:oid` for Entra's
@@ -3942,27 +4126,6 @@ defmodule Emisar.SSO do
 
   @doc "True when directory sync (SCIM) is available for this provider kind."
   def supports_scim?(kind), do: ProviderKind.supports_scim?(kind)
-
-  @doc """
-  True when this connection's directory has pushed to us within the last day —
-  directory sync is enabled on a SCIM-capable connection whose
-  `scim_last_seen_at` is between now and 24 hours old. Setup is done, so the console stops showing the
-  "point your IdP at this connection" steps. Never synced, disabled, a kind that
-  can't sync, a future stamp, or a full day of silence are all false.
-  """
-  def provider_sync_recent?(provider, now \\ DateTime.utc_now())
-
-  def provider_sync_recent?(
-        %IdentityProvider{scim_enabled: true, scim_last_seen_at: %DateTime{} = at} = provider,
-        %DateTime{} = now
-      ) do
-    age = DateTime.diff(now, at, :microsecond)
-
-    ProviderKind.supports_scim?(provider.kind) and age >= 0 and
-      age < 24 * 60 * 60 * 1_000_000
-  end
-
-  def provider_sync_recent?(%IdentityProvider{}, %DateTime{}), do: false
 
   @doc """
   True when sessions via this provider satisfy MFA (decision 4 / N2) — drives

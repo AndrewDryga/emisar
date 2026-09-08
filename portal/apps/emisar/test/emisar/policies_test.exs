@@ -1644,6 +1644,119 @@ defmodule Emisar.PoliciesTest do
       assert [%{"action" => "b.*"}] = diff["overrides"]["removed"]
       assert [%{"action" => "c.*", "from" => _, "to" => _}] = diff["overrides"]["changed"]
     end
+
+    test "reports both approval requirements, including a change to false" do
+      before_rules = Policies.default_rules()
+
+      after_rules =
+        Map.put(before_rules, "approval", %{
+          "min_approvals" => 2,
+          "allow_self_approval" => false
+        })
+
+      assert Policies.diff_rules(before_rules, after_rules)["approval"] == %{
+               "min_approvals" => %{"from" => 1, "to" => 2},
+               "allow_self_approval" => %{"from" => true, "to" => false}
+             }
+
+      assert Policies.diff_rules(after_rules, after_rules)["approval"] == %{}
+    end
+
+    test "reordering overlapping rules is visible without reporting content changes" do
+      broad = %{"action" => "service.*", "decision" => "allow"}
+      narrow = %{"action" => "service.restart", "decision" => "deny"}
+
+      changes =
+        Policies.diff_rules(%{"overrides" => [broad, narrow]}, %{
+          "overrides" => [narrow, broad]
+        })
+
+      assert changes["overrides"] == %{
+               "added" => [],
+               "removed" => [],
+               "changed" => [],
+               "order_changed" => true
+             }
+    end
+
+    test "duplicate action patterns retain every changed and removed occurrence" do
+      first = %{"action" => "service.*", "decision" => "deny"}
+      second = %{"action" => "service.*", "decision" => "allow"}
+      edited = %{first | "decision" => "require_approval"}
+
+      changes =
+        Policies.diff_rules(%{"overrides" => [first, second]}, %{
+          "overrides" => [edited, second]
+        })
+
+      assert changes["overrides"]["changed"] == [
+               %{"action" => "service.*", "from" => first, "to" => edited}
+             ]
+
+      refute changes["overrides"]["order_changed"]
+
+      removed =
+        Policies.diff_rules(%{"overrides" => [first, second]}, %{"overrides" => [second]})
+
+      assert removed["overrides"]["removed"] == [first]
+      assert removed["overrides"]["changed"] == []
+      refute removed["overrides"]["order_changed"]
+    end
+
+    test "swapping duplicate action patterns records first-match order" do
+      first = %{"action" => "service.*", "decision" => "deny"}
+      second = %{"action" => "service.*", "decision" => "allow"}
+
+      changes =
+        Policies.diff_rules(%{"overrides" => [first, second]}, %{
+          "overrides" => [second, first]
+        })
+
+      assert changes["overrides"]["order_changed"]
+      assert changes["overrides"]["changed"] == []
+    end
+
+    test "identical duplicates keep their multiplicity and additions keep authored order" do
+      repeated = %{"action" => "service.*", "decision" => "deny"}
+      added = %{"action" => "disk.*", "decision" => "allow"}
+
+      changes =
+        Policies.diff_rules(%{"overrides" => [repeated]}, %{
+          "overrides" => [added, repeated, repeated]
+        })
+
+      assert changes["overrides"]["added"] == [added, repeated]
+      assert changes["overrides"]["removed"] == []
+      assert changes["overrides"]["changed"] == []
+      refute changes["overrides"]["order_changed"]
+    end
+
+    test "a reordered rule can also change its name or decision" do
+      first = %{"action" => "service.*", "decision" => "deny"}
+      second = %{"action" => "disk.*", "decision" => "allow"}
+      edited = Map.put(first, "name", "Service guard")
+
+      changes =
+        Policies.diff_rules(%{"overrides" => [first, second]}, %{
+          "overrides" => [second, edited]
+        })
+
+      assert changes["overrides"]["order_changed"]
+
+      assert changes["overrides"]["changed"] == [
+               %{"action" => "service.*", "from" => first, "to" => edited}
+             ]
+    end
+
+    test "malformed saved sections do not fabricate approval defaults or crash" do
+      before_rules = %{"approval" => [], "overrides" => [nil, "invalid", %{}]}
+      after_rules = %{"approval" => %{"min_approvals" => 2}, "overrides" => %{}}
+
+      changes = Policies.diff_rules(before_rules, after_rules)
+      assert changes["approval"] == %{"min_approvals" => %{"from" => nil, "to" => 2}}
+      assert changes["overrides"]["changed"] == []
+      refute changes["overrides"]["order_changed"]
+    end
   end
 
   # Allow/deny-everything rule shapes for the scoped-CRUD describes above.

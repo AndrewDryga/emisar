@@ -133,8 +133,19 @@ defmodule Emisar.Runbooks.Extractor do
   defp maybe_put_sensitive(names, _id, false), do: names
 
   defp extract_one(%{"source" => source, "extract" => extract}, materialized) do
-    value = Map.get(materialized, source)
+    with {:ok, value} <- source_value(source, materialized) do
+      extract_value(extract, value)
+    end
+  end
 
+  defp source_value("structured_output", %{"structured_output" => %{} = value}), do: {:ok, value}
+
+  defp source_value("structured_output", _materialized),
+    do: {:error, "Schema-validated stdout is unavailable."}
+
+  defp source_value(source, materialized), do: {:ok, Map.get(materialized, source)}
+
+  defp extract_value(extract, value) do
     case extract do
       %{"type" => "json_pointer", "expression" => expression} ->
         with {:ok, json} <- json_source(value) do

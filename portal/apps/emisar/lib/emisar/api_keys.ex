@@ -264,7 +264,11 @@ defmodule Emisar.ApiKeys do
       usable?: key_usable?(key, now),
       used?: not is_nil(key.last_used_at),
       revoked?: not is_nil(key.revoked_at),
-      rotatable?: is_nil(key.revoked_at) and not oauth_backing?(key),
+      rotatable?:
+        is_nil(key.revoked_at) and is_nil(key.rotated_to_id) and not oauth_backing?(key),
+      auto_rotation_supported?: key.auto_rotation_supported,
+      rotation_requested?: not is_nil(key.rotation_requested_at) and key_usable?(key, now),
+      successor_pending?: not is_nil(key.rotated_to_id) and key_usable?(key, now),
       oauth_backing?: oauth_backing?(key),
       last_used_at: key.last_used_at,
       expires_at: key.expires_at,
@@ -508,33 +512,7 @@ defmodule Emisar.ApiKeys do
     # current-subject/source checks below are the actual authorization.
     with :ok <- ensure_can_manage_key(key, subject),
          :ok <- Subject.ensure_in_account(subject, key.account_id, :not_found) do
-      Multi.new()
-      |> put_active_account_lock(subject.account.id)
-      |> put_current_subject(subject)
-      |> put_key_owner_membership(key.created_by_membership_id)
-      |> Multi.run(:source, fn repo,
-                               %{
-                                 active_account: account,
-                                 current_subject: current_subject,
-                                 key_owner_membership: owner_membership
-                               } ->
-        source_queryable =
-          ApiKey.Query.not_deleted()
-          |> ApiKey.Query.by_id(key.id)
-          |> ApiKey.Query.by_account_id(account.id)
-          |> ApiKey.Query.lock_for_update()
-
-        with {:ok, source} <- repo.fetch(source_queryable, ApiKey.Query),
-             true <- source.created_by_membership_id == owner_membership.id,
-             :ok <- ensure_membership_can_use_key(owner_membership, source.kind),
-             :ok <- ensure_can_manage_key(source, current_subject),
-             :ok <- ensure_rotatable(source) do
-          {:ok, source}
-        else
-          false -> {:error, :not_found}
-          {:error, reason} -> {:error, reason}
-        end
-      end)
+      key_rotation_multi(key, subject)
       |> Multi.run(:kind_available, fn repo, %{active_account: account, source: source} ->
         ensure_key_kind_available(source.kind, account.id, repo)
       end)
@@ -553,8 +531,15 @@ defmodule Emisar.ApiKeys do
           credential_lineage_id: source.credential_lineage_id
         )
       end)
-      |> Multi.insert(:audit, fn %{current_subject: current_subject, key: successor} ->
-        Audit.Events.api_key_created(current_subject, successor)
+      |> Multi.update(:rotated_source, fn %{source: source, key: successor} ->
+        ApiKey.Changeset.rotated(source, successor.id)
+      end)
+      |> Multi.insert(:audit, fn %{
+                                   current_subject: current_subject,
+                                   key: successor,
+                                   source: source
+                                 } ->
+        Audit.Events.api_key_created(current_subject, successor, source)
       end)
       |> Repo.commit_multi(after_commit: &broadcast_api_key_created(&1.key))
       |> case do
@@ -563,6 +548,108 @@ defmodule Emisar.ApiKeys do
       end
     end
   end
+
+  @doc """
+  Requests client-completed rotation without revealing a secret or changing
+  expiry. Uses the same current human/member authorization as manual rotation.
+  Returns `{:ok, key}` while waiting for the client's next request, or
+  `{:error, :manual_required}` when an authorized, unsuperseded key needs manual
+  setup. Repeated pending requests are idempotent; other errors never imply
+  permission to mint a manual successor.
+  """
+  def request_api_key_rotation(%ApiKey{} = key, %Subject{} = subject) do
+    with :ok <- ensure_can_manage_key(key, subject),
+         :ok <- Subject.ensure_in_account(subject, key.account_id, :not_found) do
+      key_rotation_multi(key, subject)
+      |> Multi.run(:eligible, fn repo, %{source: source} ->
+        cond do
+          not key_usable?(source, DateTime.utc_now()) -> {:error, :manual_required}
+          source.rotation_requested_at -> {:ok, :already_requested}
+          source.kind != :mcp or not source.auto_rotation_supported -> {:error, :manual_required}
+          ensure_lineage_within_max_age(repo, source) != :ok -> {:error, :manual_required}
+          true -> {:ok, :request}
+        end
+      end)
+      |> Multi.update(:key, fn %{source: source} -> ApiKey.Changeset.request_rotation(source) end)
+      |> Multi.run(:audit, fn repo, changes ->
+        if changes.eligible == :request do
+          changes.current_subject
+          |> Audit.Events.api_key_rotation_requested(changes.key)
+          |> repo.insert()
+        else
+          {:ok, nil}
+        end
+      end)
+      |> Repo.commit_multi(after_commit: &broadcast_requested_api_key_rotation/1)
+      |> case do
+        {:ok, %{key: requested}} -> {:ok, requested}
+        {:error, reason} -> {:error, reason}
+      end
+    end
+  end
+
+  defp key_rotation_multi(key, subject) do
+    Multi.new()
+    |> put_active_account_lock(subject.account.id)
+    |> put_current_subject(subject)
+    |> put_key_owner_membership(key.created_by_membership_id)
+    |> Multi.run(:source, fn repo,
+                             %{
+                               current_subject: current_subject,
+                               key_owner_membership: owner_membership
+                             } ->
+      source_queryable =
+        ApiKey.Query.not_deleted()
+        |> ApiKey.Query.by_id(key.id)
+        |> ApiKey.Query.by_account_id(key.account_id)
+        |> ApiKey.Query.lock_for_update()
+        |> Authorizer.for_subject(current_subject)
+
+      with {:ok, source} <- repo.fetch(source_queryable, ApiKey.Query),
+           true <- source.created_by_membership_id == owner_membership.id,
+           :ok <- ensure_membership_can_use_key(owner_membership, source.kind),
+           :ok <- ensure_can_manage_key(source, current_subject),
+           :ok <- ensure_rotatable(source) do
+        {:ok, source}
+      else
+        false -> {:error, :not_found}
+        {:error, reason} -> {:error, reason}
+      end
+    end)
+  end
+
+  @doc """
+  Internal — authenticated MCP transport observation. A valid client-prepared
+  proposal proves rotation support; absent/invalid proposals clear the hint.
+  Possession scopes this update to the calling key, never a browser-supplied ID.
+  The hint grants no authority and does not cancel an operator's pending request.
+  """
+  def record_auto_rotation_support(prefix, hash, %Subject{actor: %ApiKey{} = key} = subject) do
+    supported = valid_rotation_material?(prefix, hash)
+
+    result =
+      ApiKey.Query.not_deleted()
+      |> ApiKey.Query.by_id(key.id)
+      |> ApiKey.Query.by_account_id(key.account_id)
+      |> ApiKey.Query.by_kind(:mcp)
+      |> ApiKey.Query.not_revoked()
+      |> ApiKey.Query.not_expired(DateTime.utc_now())
+      |> ApiKey.Query.expiring()
+      |> ApiKey.Query.by_rotation_support(not supported)
+      |> Authorizer.for_subject(subject)
+      |> Repo.fetch_and_update(ApiKey.Query,
+        with: &ApiKey.Changeset.record_rotation_support(&1, supported),
+        after_commit: &broadcast_api_key_rotation_support/1
+      )
+
+    case result do
+      {:error, :not_found} -> {:ok, :unchanged}
+      other -> other
+    end
+  end
+
+  def record_auto_rotation_support(_prefix, _hash, %Subject{}),
+    do: {:error, :unauthorized}
 
   @doc """
   Installs the calling MCP key's client-generated rotation successor.
@@ -677,7 +764,9 @@ defmodule Emisar.ApiKeys do
   defp auto_rotation_eligible?(%ApiKey{} = key) do
     now = DateTime.utc_now()
 
-    key.kind == :mcp and key_usable?(key, now) and expiry(key.expires_at, now) == :expiring_soon
+    key.kind == :mcp and not is_nil(key.expires_at) and key_usable?(key, now) and
+      (expiry(key.expires_at, now) == :expiring_soon or not is_nil(key.rotation_requested_at) or
+         not is_nil(key.rotated_to_id))
   end
 
   # Gate ONLY the creation of a fresh successor — the idempotent-retry clause
@@ -750,15 +839,7 @@ defmodule Emisar.ApiKeys do
   defp mark_auto_rotation(_repo, _source, %{created?: false}), do: {:ok, :already_marked}
 
   defp mark_auto_rotation(repo, source, %{key: successor, created?: true}) do
-    queryable =
-      ApiKey.Query.all()
-      |> ApiKey.Query.by_id(source.id)
-      |> ApiKey.Query.not_rotated()
-
-    case repo.update_all(queryable, set: [rotated_to_id: successor.id]) do
-      {1, _} -> {:ok, successor.id}
-      {0, _} -> {:error, :already_rotated}
-    end
+    source |> ApiKey.Changeset.rotated(successor.id) |> repo.update()
   end
 
   defp insert_auto_rotation_audit(_repo, _subject, _source, %{created?: false}),
@@ -796,6 +877,9 @@ defmodule Emisar.ApiKeys do
   # already hides Rotate here, so this only rejects a crafted event (IL-15).
   defp ensure_rotatable(%ApiKey{revoked_at: revoked}) when not is_nil(revoked),
     do: {:error, :revoked}
+
+  defp ensure_rotatable(%ApiKey{rotated_to_id: id}) when not is_nil(id),
+    do: {:error, :already_rotated}
 
   defp ensure_rotatable(%ApiKey{} = source) do
     if oauth_backing?(source), do: {:error, :oauth_backing}, else: :ok
@@ -932,6 +1016,22 @@ defmodule Emisar.ApiKeys do
     Emisar.PubSub.broadcast(
       account_api_keys_topic(key.account_id),
       {:list_changed, :api_key, "api_key.revoked", key.id}
+    )
+  end
+
+  defp broadcast_requested_api_key_rotation(%{eligible: :request, key: key}) do
+    Emisar.PubSub.broadcast(
+      account_api_keys_topic(key.account_id),
+      {:list_changed, :api_key, "api_key.rotation_requested", key.id}
+    )
+  end
+
+  defp broadcast_requested_api_key_rotation(_changes), do: :ok
+
+  defp broadcast_api_key_rotation_support(%ApiKey{} = key) do
+    Emisar.PubSub.broadcast(
+      account_api_keys_topic(key.account_id),
+      {:list_changed, :api_key, "api_key.rotation_support_changed", key.id}
     )
   end
 

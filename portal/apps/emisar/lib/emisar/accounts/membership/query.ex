@@ -1,6 +1,6 @@
 defmodule Emisar.Accounts.Membership.Query do
   use Emisar, :query
-  alias Emisar.Auth
+  alias Emisar.{ApiKeys, Auth}
   alias Emisar.Repo.{Filter, Like}
 
   def all,
@@ -37,6 +37,18 @@ defmodule Emisar.Accounts.Membership.Query do
 
   def by_account_id(queryable, account_id),
     do: where(queryable, [memberships: m], m.account_id == ^account_id)
+
+  # Read credential validity and membership scope in one database snapshot.
+  # A revoked or expired bearer cannot resolve the membership's current scope.
+  def by_active_api_key_id(queryable, key_id, now) do
+    join(queryable, :inner, [memberships: m], key in ApiKeys.ApiKey,
+      as: :scope_api_key,
+      on:
+        key.id == ^key_id and key.created_by_membership_id == m.id and
+          key.account_id == m.account_id and is_nil(key.deleted_at) and
+          is_nil(key.revoked_at) and (is_nil(key.expires_at) or key.expires_at > ^now)
+    )
+  end
 
   @doc "Scope to the membership whose (non-deleted) account has this slug. Slug is citext, so the match is case-insensitive."
   def by_account_slug(queryable, slug),

@@ -276,6 +276,20 @@ defmodule Emisar.Runbooks.Definition do
     Enum.map(fields, &unsupported_schema_issue(base, &1))
   end
 
+  defp schema_error_issues(%{
+         rule: :const,
+         path: ["type", "extract", _output, "outputs", _step, "steps", _stage, "stages"] = path,
+         context: %{contrast: "json_pointer"}
+       }) do
+    [
+      issue(
+        "invalid_definition",
+        pointer(schema_path(path)),
+        "Structured output requires a JSON Pointer extractor."
+      )
+    ]
+  end
+
   defp schema_error_issues(error) do
     [
       issue(
@@ -644,24 +658,10 @@ defmodule Emisar.Runbooks.Definition do
       extract = output["extract"]
       path = "#{base}/outputs/#{index}/extract/expression"
 
-      source_issues(output, "#{base}/outputs/#{index}/source") ++
-        expression_size_issues(extract["expression"], path) ++
+      expression_size_issues(extract["expression"], path) ++
         extractor_expression_issues(extract, path)
     end)
   end
-
-  defp source_issues(%{"source" => "structured_output", "extract" => %{"type" => type}}, path)
-       when type != "json_pointer" do
-    [
-      issue(
-        "invalid_definition",
-        path,
-        "Structured output requires a JSON Pointer extractor."
-      )
-    ]
-  end
-
-  defp source_issues(_output, _path), do: []
 
   defp expression_size_issues(expression, path) do
     if byte_size(expression) <= limit!(:max_expression_bytes) do

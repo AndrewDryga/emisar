@@ -20,6 +20,8 @@ defmodule Emisar.Runners.Runner do
     field :connection_generation, :integer, default: 0
     field :connection_lease_id, Ecto.UUID
     field :connection_lease_expires_at, :utc_datetime_usec
+    field :credential_rotation_supported, :boolean, default: false
+    field :credential_rotation_requested_at, :utc_datetime_usec
     field :packs, :map, default: %{}
     # Packs the runner's loader skipped at boot (unparseable/invalid on disk),
     # advertised on runner_state: [%{"pack" => name, "reason" => text}],
@@ -52,6 +54,7 @@ defmodule Emisar.Runners.Runner do
 
     belongs_to :account, Emisar.Accounts.Account, where: [deleted_at: nil]
     belongs_to :bootstrap_enrollment_key, Emisar.Runners.EnrollmentKey, where: [deleted_at: nil]
+    belongs_to :connection_token, Emisar.Runners.Token
 
     has_many :tokens, Emisar.Runners.Token
     has_many :actions, Emisar.Catalog.RunnerAction

@@ -4,6 +4,8 @@ defmodule Emisar.Runners.Token.Query do
   def all,
     do: from(tokens in Emisar.Runners.Token, as: :tokens)
 
+  def lock_for_update(queryable), do: lock(queryable, "FOR UPDATE")
+
   def by_id(queryable, id),
     do: where(queryable, [tokens: t], t.id == ^id)
 

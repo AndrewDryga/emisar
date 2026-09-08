@@ -15,6 +15,16 @@ defmodule Emisar.Audit.IdentityOption.Query do
     logged |> union_all(^historical) |> options_query()
   end
 
+  @doc "Resolve a bounded set of visible identities using the same evidence as the pickers."
+  def labels_for_ids(kind, side, account_id, readable_events, ids) do
+    {_, id_field, _} = identity_fields(side)
+    events = where(readable_events, [events: e], field(e, ^id_field) in ^ids)
+
+    kind
+    |> all(side, account_id, events)
+    |> select([audit_identity_options: o], {o.id, o.label})
+  end
+
   # The pinned selection is not part of the page: its cursor must never become
   # the boundary of a page it was not in. The actor's existing zero-event lookup
   # is intentional; a target needs readable event evidence even for its name.
@@ -95,6 +105,7 @@ defmodule Emisar.Audit.IdentityOption.Query do
 
   defp identity_events(queryable, kind, side) do
     {kind_field, id_field, label_field} = identity_fields(side)
+    user_target? = kind == "user" and side == :target
 
     events =
       queryable
@@ -102,7 +113,14 @@ defmodule Emisar.Audit.IdentityOption.Query do
       |> select([events: e], %{
         account_id: e.account_id,
         id: field(e, ^id_field),
-        label: field(e, ^label_field),
+        label:
+          fragment(
+            "COALESCE(NULLIF(BTRIM(?), ''), CASE WHEN ? AND ? = 'membership.renamed_via_scim' THEN NULLIF(BTRIM(?->>'to'), '') END)",
+            field(e, ^label_field),
+            ^user_target?,
+            e.event_type,
+            e.payload
+          ),
         occurred_at: e.occurred_at,
         event_id: e.id
       })

@@ -125,6 +125,15 @@ defmodule Emisar.ApiKeys.ApiKey.Changeset do
   def record_client_info(%ApiKey{} = key, info) when is_map(info),
     do: change(key, last_client_info: info)
 
+  def record_rotation_support(%ApiKey{} = key, supported),
+    do: change(key, auto_rotation_supported: supported)
+
+  def request_rotation(%ApiKey{} = key),
+    do: change(key, rotation_requested_at: key.rotation_requested_at || DateTime.utc_now())
+
+  def rotated(%ApiKey{} = key, successor_id),
+    do: change(key, rotated_to_id: successor_id, rotation_requested_at: nil)
+
   def revoke(%ApiKey{} = key, by_user_id) do
     change(key, revoked_at: DateTime.utc_now(), revoked_by_id: by_user_id)
   end

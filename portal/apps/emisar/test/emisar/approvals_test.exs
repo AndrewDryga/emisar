@@ -55,10 +55,10 @@ defmodule Emisar.ApprovalsTest do
       Fixtures.Memberships.create_membership(
         account_id: account.id,
         user_id: operator.id,
-        role: "owner"
+        role: "admin"
       )
 
-    Fixtures.Subjects.subject_for(operator, account, role: :owner)
+    Fixtures.Subjects.subject_for(operator, account, role: :admin)
   end
 
   # A frozen execution plan carrying exactly the risk tiers under test — `nil`
@@ -169,10 +169,10 @@ defmodule Emisar.ApprovalsTest do
       Fixtures.Memberships.create_membership(
         account_id: account.id,
         user_id: user.id,
-        role: "owner"
+        role: "admin"
       )
 
-    subject = Fixtures.Subjects.subject_for(user, account, role: :owner)
+    subject = Fixtures.Subjects.subject_for(user, account, role: :admin)
     {_, key} = Fixtures.ApiKeys.create_api_key(account_id: account.id, created_by_id: user.id)
     runner = Fixtures.Runners.create_runner(account_id: account.id)
     observe_trusted_grant_action(account, user, runner, "high")
@@ -548,6 +548,12 @@ defmodule Emisar.ApprovalsTest do
 
     test "whole-execution approvals require every frozen runner and pack" do
       {requester, account, subject} = Fixtures.Subjects.owner_subject()
+
+      subject =
+        account.id
+        |> Fixtures.Memberships.fetch_membership(subject.actor.id)
+        |> Fixtures.Memberships.force_role("admin")
+        |> Fixtures.Subjects.membership_subject()
 
       stage_plan =
         execution_stage_plan(["medium", "high"])
@@ -2349,6 +2355,14 @@ defmodule Emisar.ApprovalsTest do
       # minting an UNCAPPED grant even when the operator set a cap.
       [grant] = Fixtures.Approvals.grants_for_api_key(key.id)
       assert grant.max_uses == 5
+
+      approved =
+        Audit.Event
+        |> Repo.all()
+        |> Enum.find(&(&1.event_type == "approval.approved" and &1.target_id == request.id))
+
+      assert approved.payload["grant_max_uses"] == 5
+      assert approved.payload["grant_id"] == grant.id
     end
 
     test "preloads the originating run so the UI can show the locked args", %{
@@ -2735,6 +2749,25 @@ defmodule Emisar.ApprovalsTest do
   end
 
   describe "approve_request — min_approvals threshold" do
+    test "expiry after a partial vote does not claim that no decision was made" do
+      %{account: account, request: request, run: run} = gated_request(min_approvals: 2)
+      operator = distinct_operator(account)
+
+      assert {:ok, {%Request{status: :pending}, :pending}} =
+               Approvals.approve_request(request, operator, "first review complete")
+
+      now = DateTime.utc_now()
+      request |> Ecto.Changeset.change(expires_at: DateTime.add(now, -1)) |> Repo.update!()
+
+      assert Approvals.expire_overdue_requests(now) == 1
+
+      assert Repo.reload!(run).reason_text ==
+               "Approval expired before all required approvals were received."
+
+      assert approved_count(request.id) == 1
+      assert Repo.reload!(request).status == :expired
+    end
+
     test "min_approvals: 2 — first approve records pending (no dispatch), second distinct operator finalizes + dispatches" do
       %{account: account, request: request, run: run} = gated_request(min_approvals: 2)
       a = distinct_operator(account)
@@ -2951,12 +2984,12 @@ defmodule Emisar.ApprovalsTest do
 
     test "current runner access is rechecked from the locked membership" do
       %{account: account, request: request} = gated_request(min_approvals: 2)
-      owner = distinct_member(account, :owner)
-      membership = Fixtures.Memberships.fetch_membership(account.id, owner.actor.id)
+      admin = distinct_member(account, :admin)
+      membership = Fixtures.Memberships.fetch_membership(account.id, admin.actor.id)
 
       Fixtures.Memberships.force_runner_access(membership, Accounts.RunnerAccess.none())
 
-      assert Approvals.override_request(request, "scope was revoked", owner) ==
+      assert Approvals.override_request(request, "scope was revoked", admin) ==
                {:error, :not_found}
 
       assert %Request{status: :pending} = Repo.reload!(request)
@@ -3686,7 +3719,7 @@ defmodule Emisar.ApprovalsTest do
     end
 
     # only APPROVE re-gates pack trust (recheck_trust(:approve)
-    # → recheck_run_pack_trust; recheck_trust(:deny) is a flat :ok). Deny cancels the
+    # → recheck_run_pack_trust_for_approval; recheck_trust(:deny) is a flat :ok). Deny cancels the
     # run, it never ships bytes, so a drifted-to-:pending pack must NOT block the
     # operator from denying — the same drift that fails the approve closed lets the
     # deny through and cancels the held run.
@@ -4996,6 +5029,12 @@ defmodule Emisar.ApprovalsTest do
       subject: subject,
       key: key
     } do
+      subject =
+        account.id
+        |> Fixtures.Memberships.fetch_membership(subject.actor.id)
+        |> Fixtures.Memberships.force_role("admin")
+        |> Fixtures.Subjects.membership_subject()
+
       db_runner = Fixtures.Runners.create_runner(account_id: account.id, group: "database")
       web_runner = Fixtures.Runners.create_runner(account_id: account.id, group: "web")
       db_grant = insert_grant(account, key, runner_id: db_runner.id, granted_by_id: user.id)

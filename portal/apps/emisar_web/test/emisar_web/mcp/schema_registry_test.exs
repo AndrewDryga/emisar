@@ -117,10 +117,10 @@ defmodule EmisarWeb.MCP.SchemaRegistryTest do
 
     # The wire catalog stays lean: response schemas live in the internal
     # contracts, never in tools/list. Every session pays for this in tokens, so
-    # the ceiling moves only when a tool gains real capability — this move is
-    # for recent_runs' closed status set, which lets recovery skip successful
-    # fan-out rows instead of paying to page through them.
-    assert byte_size(Jason.encode!(tools)) <= 34_304
+    # Budget 2 KiB above the prior ceiling for output-source guidance and the
+    # extractor constraint, bundled once per draft tool. Keep the full wire
+    # frame bound below as a separate limit.
+    assert byte_size(Jason.encode!(tools)) <= 36_352
 
     frame = %{
       jsonrpc: "2.0",
@@ -198,6 +198,53 @@ defmodule EmisarWeb.MCP.SchemaRegistryTest do
 
     assert targets["refs"]["description"] ==
              "`group:<group_name>` targets the group's online membership, resolved at execution start; prefer it over enumerating `runner:<runner_ref>` refs."
+  end
+
+  test "both draft tool schemas explain output sources and reject structured text extractors" do
+    extracts = [
+      %{"type" => "json_pointer", "expression" => "/status"},
+      %{"type" => "contains", "expression" => "ready"},
+      %{"type" => "grep", "expression" => "ready"},
+      %{"type" => "regex", "expression" => "ready", "capture" => "0"}
+    ]
+
+    for name <- ~w(create_runbook_draft update_runbook_draft) do
+      tool = Enum.find(SchemaRegistry.tools(), &(&1["name"] == name))
+      definitions = tool["inputSchema"]["$defs"]
+      output = definitions["runbook_definition_v1_output"]
+
+      assert output["properties"]["source"]["description"] =~ "action.output_schema"
+      assert output["properties"]["source"]["description"] =~ "redacted stdout"
+      assert output["properties"]["source"]["description"] =~ "never stderr"
+
+      assert definitions["runbook_definition_v1_extractor"]["description"] =~
+               "one complete valid JSON document"
+
+      # Validate the actual bundled output contract, not the generic input
+      # adapter: that adapter intentionally defers definitions to the domain.
+      schema = %{
+        "$schema" => tool["inputSchema"]["$schema"],
+        "$defs" => definitions,
+        "$ref" => "#/$defs/runbook_definition_v1_output"
+      }
+
+      assert {:ok, schema} = JSONSchex.compile(schema, format_assertion: true)
+
+      for source <- ~w(structured_output stdout stderr), extract <- extracts do
+        value = %{
+          "id" => "status",
+          "source" => source,
+          "sensitive" => false,
+          "extract" => extract
+        }
+
+        if source == "structured_output" and extract["type"] != "json_pointer" do
+          assert {:error, _errors} = JSONSchex.validate(schema, value)
+        else
+          assert JSONSchex.validate(schema, value) == :ok
+        end
+      end
+    end
   end
 
   test "omitted typed output requires one immediate wait continuation" do

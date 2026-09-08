@@ -810,7 +810,7 @@ defmodule Emisar.Runs do
         {:ok, run}
 
       {:error, reason} ->
-        {:error, reason}
+        Audit.Rejection.finish({:error, reason})
     end
   end
 
@@ -916,7 +916,7 @@ defmodule Emisar.Runs do
          :ok <- runner_in_membership_scope(runner_id, account_id, membership_id),
          {:ok, runner_ref} <- public_runner_ref(runner_id),
          {:ok, contract} <-
-           fetch_dispatch_contract(account_id, runner_id, action_id, attrs[:pack_ref]),
+           fetch_dispatch_contract(account_id, runner_id, action_id, attrs[:pack_ref], attrs),
          action = contract.action,
          :ok <- pack_in_membership_scope(action.pack_id, account_id, membership_id),
          :ok <- ensure_primary_executable_available(action) do
@@ -928,6 +928,7 @@ defmodule Emisar.Runs do
       |> Map.put(:requires_approval, false)
       |> evaluate_and_dispatch(account_id, contract.descriptor)
     end
+    |> Audit.Rejection.finish()
   end
 
   @doc """
@@ -1052,7 +1053,7 @@ defmodule Emisar.Runs do
           commit_mcp_action(facts, operation_attrs, subject, false)
 
         other ->
-          other
+          Audit.Rejection.finish(other)
       end
     end
   end
@@ -1075,7 +1076,7 @@ defmodule Emisar.Runs do
   defp plan_fresh_mcp_action(facts, subject) do
     with {:ok, targets, action} <- resolve_mcp_action_targets(facts, subject),
          :ok <- validate_mcp_action_args(facts.args, action),
-         {:ok, attestation} <- preflight_attestation(facts, targets, subject.account.id) do
+         {:ok, attestation} <- preflight_attestation(facts, targets, subject) do
       {:ok, Enum.map(targets, &mcp_target_attrs(&1, facts, attestation, subject))}
     end
   end
@@ -1089,7 +1090,13 @@ defmodule Emisar.Runs do
         {:ok, Enum.map(runners, &%{id: &1.id, runner_ref: &1.runner_ref}), action}
 
       {:error, :not_found} ->
-        {:error, :target_contract_changed}
+        attrs = put_dispatcher_context(facts, subject)
+
+        {:error,
+         Audit.Rejection.new(
+           :target_contract_changed,
+           Audit.Events.dispatch_blocked_target_unavailable(subject.account.id, attrs)
+         )}
 
       {:error, reason} ->
         {:error, reason}
@@ -1135,22 +1142,34 @@ defmodule Emisar.Runs do
 
   # The envelope is bound to the refs of the runners this account actually
   # scopes — never to refs the caller sent.
-  defp preflight_attestation(facts, targets, account_id) do
-    with {:ok, runners} <- scoped_target_runners(Enum.map(targets, & &1.id), account_id) do
-      resolve_attestation(facts, runners)
+  defp preflight_attestation(facts, targets, subject) do
+    with {:ok, runners} <- scoped_target_runners(Enum.map(targets, & &1.id), subject.account.id) do
+      resolve_attestation(facts, runners, subject)
     end
   end
 
-  defp resolve_attestation(%{attestation_headers: []}, runners) do
+  defp resolve_attestation(%{attestation_headers: []} = facts, runners, subject) do
     case Enum.filter(runners, & &1.enforce_signatures) do
-      [] -> {:ok, nil}
-      enforcing -> {:error, {:signature_required, Enum.map(enforcing, & &1.runner_ref)}}
+      [] ->
+        {:ok, nil}
+
+      [first | _rest] = enforcing ->
+        attrs =
+          facts
+          |> put_dispatcher_context(subject)
+          |> put_dispatcher_identity(subject)
+
+        {:error,
+         Audit.Rejection.new(
+           {:signature_required, Enum.map(enforcing, & &1.runner_ref)},
+           blocked_attestation_event(subject.account.id, first.id, attrs)
+         )}
     end
   end
 
   # The signed claim covers ONE operation, so it binds the exact argument bytes,
   # reason, and origin of this call plus the scoped refs it fans out to.
-  defp resolve_attestation(facts, runners) do
+  defp resolve_attestation(facts, runners, _subject) do
     signed_facts = %{
       action_id: facts.action_id,
       pack_ref: facts.pack_ref,
@@ -1193,7 +1212,8 @@ defmodule Emisar.Runs do
     with true <- Emisar.Runners.runner_in_account?(runner_id, account_id),
          %Emisar.Runners.Runner{} = runner <- Emisar.Runners.peek_runner_by_id(runner_id),
          {:ok, runner_ref} <- Catalog.MCPProjection.runner_ref(runner) do
-      {:ok, %{runner_ref: runner_ref, enforce_signatures: runner.enforce_signatures}}
+      {:ok,
+       %{id: runner.id, runner_ref: runner_ref, enforce_signatures: runner.enforce_signatures}}
     else
       _ -> {:error, :runner_not_found}
     end
@@ -1243,6 +1263,10 @@ defmodule Emisar.Runs do
   Multi keys. Planning runs inside the outer transaction; delivery, broadcasts,
   and approval notifications must be invoked after the outer commit through
   `after_composed_dispatches_committed/1`.
+
+  On failure, the owning domain passes the rolled-back `{:error, reason}` to
+  `Audit.Rejection.finish/1` before returning it. This preserves a blocked-attempt
+  receipt without committing any of the batch's runs or parent resource.
   """
   def compose_dispatch_batch_in_multi(multi, target_attrs, subject, namespace, opts \\ [])
 
@@ -1411,7 +1435,7 @@ defmodule Emisar.Runs do
     membership_id = Map.get(attrs, :requested_by_membership_id)
     # Reserving an operation record is what the signed MCP fan-out — and only it
     # — does, so it doubles as the proof that this plan came through
-    # `preflight_attestation/4`.
+    # `preflight_attestation/3`.
     signed_fanout? = is_binary(operation_record_id)
 
     with :ok <- require_runner(runner_id),
@@ -1424,7 +1448,7 @@ defmodule Emisar.Runs do
          :ok <- runner_in_membership_scope(runner_id, account_id, membership_id),
          {:ok, runner_ref} <- public_runner_ref(runner_id),
          {:ok, contract} <-
-           fetch_dispatch_contract(account_id, runner_id, action_id, attrs[:pack_ref]),
+           fetch_dispatch_contract(account_id, runner_id, action_id, attrs[:pack_ref], attrs),
          :ok <- ensure_frozen_runbook_contract(attrs, contract),
          :ok <- ensure_runbook_item_identity(attrs, account_id),
          action = contract.action,
@@ -1725,14 +1749,21 @@ defmodule Emisar.Runs do
   # the action to where it came from and carries the caller's correlation
   # metadata. A subject-less internal dispatch carries none, which is correct:
   # no request, no dispatcher.
-  defp put_dispatcher_context(attrs, %Subject{context: %RequestContext{} = context}) do
+  # Scheduler-owned audit snapshots are never accepted at a Subject ingress.
+  defp put_dispatcher_context(attrs, %Subject{context: %RequestContext{} = context} = subject) do
     attrs
+    |> Map.drop([:audit_execution, :audit_execution_item])
+    |> Map.put(:audit_subject, subject)
     |> Map.put(:ip_address, context.ip_address)
     |> Map.put(:user_agent, context.user_agent)
     |> Map.put(:mcp_client_metadata, context.mcp_client_metadata)
   end
 
-  defp put_dispatcher_context(attrs, _subject), do: attrs
+  defp put_dispatcher_context(attrs, %Subject{} = subject) do
+    attrs
+    |> Map.drop([:audit_execution, :audit_execution_item])
+    |> Map.put(:audit_subject, subject)
+  end
 
   # The authenticated subject, not wire attrs, owns both dispatch attribution
   # and the runner-scope membership. This keeps a boundary regression from
@@ -1786,7 +1817,7 @@ defmodule Emisar.Runs do
          :ok <- require_action(attrs[:action_id]),
          :ok <- runner_in_account(runner_id, account_id),
          :ok <- runner_online(runner_id, account_id),
-         false <- Emisar.Runners.runner_enforces_signatures?(runner_id, account_id),
+         :ok <- refuse_unsigned_dispatch(attrs, runner_id, account_id),
          :ok <-
            runner_in_membership_scope(
              runner_id,
@@ -1798,7 +1829,8 @@ defmodule Emisar.Runs do
              account_id,
              runner_id,
              attrs[:action_id],
-             attrs[:pack_ref]
+             attrs[:pack_ref],
+             attrs
            ),
          :ok <- ensure_frozen_runbook_contract(attrs, contract),
          :ok <-
@@ -1811,7 +1843,6 @@ defmodule Emisar.Runs do
          :ok <- current_runbook_policy_allows?(attrs, account_id, contract.descriptor) do
       :ok
     else
-      true -> {:error, :runner_requires_attestation}
       {:error, _reason} = error -> error
     end
   end
@@ -1841,11 +1872,12 @@ defmodule Emisar.Runs do
   pack to `:pending`) would have the operator's approval ship the new,
   untrusted bytes. Fails closed: every resolution failure propagates, so a
   run whose advertised action has since vanished cannot be approved either.
-  Returns `:ok` or `{:error, :action_not_found | :pack_untrusted |
-  :pack_retired | :action_unavailable}` — the caller refuses the approval on
-  error.
+  Returns `:ok` or `{:error, reason}`. Pack-trust failures carry an
+  `Audit.Rejection` with the pending receipt; the approval boundary records it
+  only after its transaction rolls back. Other resolution failures remain
+  plain reasons such as `:action_not_found` and `:action_unavailable`.
   """
-  def recheck_run_pack_trust(run_id) when is_binary(run_id) do
+  def recheck_run_pack_trust_for_approval(run_id) when is_binary(run_id) do
     run_id |> fetch_run!() |> recheck_snapshotted_pack_trust()
   end
 
@@ -2072,16 +2104,6 @@ defmodule Emisar.Runs do
     end
   end
 
-  # Authoritative lookup. The runner has already advertised this action
-  # via `Catalog.observe_state`; if the catalog row is missing the
-  # action simply doesn't exist on that runner and we refuse to dispatch.
-  defp fetch_advertised_action(runner_id, action_id, account_id) do
-    case Emisar.Catalog.fetch_action_for_account(action_id, runner_id, account_id) do
-      {:error, :not_found} -> {:error, :action_not_found}
-      {:ok, action} -> {:ok, action}
-    end
-  end
-
   # Nil is a rolling-upgrade advertisement from an older runner. Only a
   # definite false removes an action; this host fact can never make an
   # untrusted or mismatched descriptor executable.
@@ -2091,7 +2113,7 @@ defmodule Emisar.Runs do
   defp ensure_primary_executable_available(_action), do: :ok
 
   # `%Attestation{}` is an ordinary Elixir struct, so holding one proves nothing
-  # about who built it or what it was bound to. Only `preflight_attestation/4`
+  # about who built it or what it was bound to. Only `preflight_attestation/3`
   # mints one, and only after validating the raw header against the exact facts
   # of the fan-out it is about to reserve — so the batch composers refuse a
   # caller's `:attestation` outright, map or struct, before an operation
@@ -2126,49 +2148,81 @@ defmodule Emisar.Runs do
 
   defp refuse_unsigned_dispatch(attrs, runner_id, account_id) do
     if Emisar.Runners.runner_enforces_signatures?(runner_id, account_id) do
-      Audit.record(
-        Audit.Events.dispatch_blocked_requires_attestation(
-          account_id,
-          runner_id,
-          attrs[:action_id]
-        )
-      )
-
-      {:error, :runner_requires_attestation}
+      {:error,
+       Audit.Rejection.new(
+         :runner_requires_attestation,
+         blocked_attestation_event(account_id, runner_id, attrs)
+       )}
     else
       :ok
     end
   end
 
-  defp fetch_dispatch_contract(account_id, runner_id, action_id, pack_ref) do
+  defp blocked_attestation_event(account_id, runner_id, attrs) do
+    case runner_in_membership_scope(runner_id, account_id, dispatch_audit_membership_id(attrs)) do
+      :ok ->
+        Audit.Events.dispatch_blocked_requires_attestation(account_id, runner_id, attrs)
+
+      {:error, _reason} ->
+        Audit.Events.dispatch_blocked_target_unavailable(account_id, attrs)
+    end
+  end
+
+  defp fetch_dispatch_contract(account_id, runner_id, action_id, pack_ref, attrs) do
     case Catalog.fetch_dispatch_contract(Repo, account_id, runner_id, action_id, pack_ref) do
       {:ok, _contract} = ok ->
         ok
 
       {:error, :pack_untrusted, pack_info} ->
-        audit_dispatch_contract_error(
-          account_id,
-          runner_id,
-          action_id,
-          &Audit.Events.dispatch_blocked_pack_untrusted(account_id, pack_info, &1)
-        )
-
-        {:error, :pack_untrusted}
+        {:error,
+         Audit.Rejection.new(
+           :pack_untrusted,
+           blocked_pack_event(account_id, pack_info, attrs, :untrusted)
+         )}
 
       {:error, :pack_retired, pack_version} ->
-        audit_dispatch_contract_error(
-          account_id,
-          runner_id,
-          action_id,
-          &Audit.Events.dispatch_blocked_pack_retired(account_id, pack_version, &1)
-        )
-
-        {:error, :pack_retired}
+        {:error,
+         Audit.Rejection.new(
+           :pack_retired,
+           blocked_pack_event(account_id, pack_version, attrs, :retired)
+         )}
 
       other ->
         other
     end
   end
+
+  defp blocked_pack_event(account_id, :no_pin, attrs, :untrusted) do
+    membership_id = dispatch_audit_membership_id(attrs)
+
+    with :ok <- runner_in_membership_scope(Map.get(attrs, :runner_id), account_id, membership_id),
+         {:ok, {pack_id, _version, _hash}} <-
+           Catalog.MCPProjection.parse_pack_ref(Map.get(attrs, :pack_ref)),
+         :ok <- pack_in_membership_scope(pack_id, account_id, membership_id) do
+      Audit.Events.dispatch_blocked_pack_untrusted(account_id, :no_pin, attrs)
+    else
+      _ -> Audit.Events.dispatch_blocked_target_unavailable(account_id, attrs)
+    end
+  end
+
+  defp blocked_pack_event(account_id, pack, attrs, kind) do
+    membership_id = dispatch_audit_membership_id(attrs)
+
+    with :ok <- runner_in_membership_scope(Map.get(attrs, :runner_id), account_id, membership_id),
+         :ok <- pack_in_membership_scope(pack.pack_id, account_id, membership_id) do
+      if kind == :untrusted do
+        Audit.Events.dispatch_blocked_pack_untrusted(account_id, pack, attrs)
+      else
+        Audit.Events.dispatch_blocked_pack_retired(account_id, pack, attrs)
+      end
+    else
+      {:error, _reason} ->
+        Audit.Events.dispatch_blocked_target_unavailable(account_id, attrs)
+    end
+  end
+
+  defp dispatch_audit_membership_id(attrs),
+    do: Map.get(attrs, :requested_by_membership_id) || Map.get(attrs, :initiating_membership_id)
 
   defp ensure_frozen_runbook_contract(
          %{
@@ -2202,13 +2256,6 @@ defmodule Emisar.Runs do
   end
 
   defp ensure_runbook_item_identity(_attrs, _account_id), do: :ok
-
-  defp audit_dispatch_contract_error(account_id, runner_id, action_id, event_fun) do
-    case fetch_advertised_action(runner_id, action_id, account_id) do
-      {:ok, action} -> Audit.record(event_fun.(action))
-      {:error, :action_not_found} -> :ok
-    end
-  end
 
   # The policy sees catalog-authoritative risk + kind so a caller can't
   # spoof "low" to bypass a `:require_approval` on `high`.
@@ -2660,7 +2707,7 @@ defmodule Emisar.Runs do
           "pack trust changed after this run was authorized — re-trust the pack in /app/packs and re-dispatch"
         )
 
-        {:error, reason}
+        Audit.Rejection.finish({:error, reason})
     end
   end
 
@@ -2724,20 +2771,25 @@ defmodule Emisar.Runs do
              run.account_id,
              run.runner_id,
              run.action_id,
-             run.pack_ref
+             run.pack_ref,
+             run
            ),
-         :ok <- ensure_primary_executable_available(contract.action),
-         true <- contract.pack_hash == run.expected_pack_hash do
-      :ok
-    else
-      # Current trust no longer matches the run's snapshotted hash — a trust
-      # decision moved underneath the parked run.
-      false ->
-        {:error, :pack_untrusted}
-
-      {:error, reason} ->
-        {:error, reason}
+         :ok <- ensure_primary_executable_available(contract.action) do
+      ensure_snapshotted_pack_hash(run, contract)
     end
+  end
+
+  defp ensure_snapshotted_pack_hash(%ActionRun{expected_pack_hash: hash}, %{pack_hash: hash}),
+    do: :ok
+
+  defp ensure_snapshotted_pack_hash(%ActionRun{} = run, contract) do
+    pack = %{id: nil, pack_id: contract.action.pack_id, version: contract.action.pack_version}
+
+    {:error,
+     Audit.Rejection.new(
+       :pack_untrusted,
+       blocked_pack_event(run.account_id, pack, run, :untrusted)
+     )}
   end
 
   @doc """

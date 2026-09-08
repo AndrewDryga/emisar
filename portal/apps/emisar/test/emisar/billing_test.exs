@@ -128,11 +128,11 @@ defmodule Emisar.BillingTest do
       assert plans["enterprise"].runners_limit == :unlimited
     end
 
-    test "enterprise names the dedicated Slack support channel the pricing page promises" do
+    test "enterprise names both support channels the pricing page promises" do
       # The exact phrase the pricing card + comparison table use — the plan
       # contract and the public promise must stay one string.
       assert Keyword.fetch!(Billing.plans()["enterprise"].features, :support) ==
-               "Dedicated Slack support channel"
+               "Slack and email support"
     end
   end
 
@@ -1066,7 +1066,8 @@ defmodule Emisar.BillingTest do
       account: account,
       subject: subject
     } do
-      account = %{account | paddle_customer_id: "ctm_existing_01"}
+      account =
+        account |> Ecto.Changeset.change(paddle_customer_id: "ctm_existing_01") |> Repo.update!()
 
       assert {:ok, url} = Billing.open_billing_portal(account, subject)
       assert url =~ "/app?status=stub-portal"
@@ -1074,7 +1075,9 @@ defmodule Emisar.BillingTest do
 
     test "an owner of another account is refused", %{account: account} do
       {_user_b, _account_b, subject_b} = Fixtures.Subjects.owner_subject()
-      account = %{account | paddle_customer_id: "ctm_existing_01"}
+
+      account =
+        account |> Ecto.Changeset.change(paddle_customer_id: "ctm_existing_01") |> Repo.update!()
 
       assert Billing.open_billing_portal(account, subject_b) == {:error, :unauthorized}
     end
@@ -1094,7 +1097,8 @@ defmodule Emisar.BillingTest do
       account: account,
       subject: subject
     } do
-      account = %{account | paddle_customer_id: "ctm_invoices_02"}
+      account =
+        account |> Ecto.Changeset.change(paddle_customer_id: "ctm_invoices_02") |> Repo.update!()
 
       # Paddle's contract is minor-unit digits. `Integer.parse` stops at the
       # first non-digit, so "20.00" came back as 20 — twenty CENTS — and
@@ -1108,7 +1112,8 @@ defmodule Emisar.BillingTest do
       account: account,
       subject: subject
     } do
-      account = %{account | paddle_customer_id: "ctm_invoices_01"}
+      account =
+        account |> Ecto.Changeset.change(paddle_customer_id: "ctm_invoices_01") |> Repo.update!()
 
       assert {:ok, [first | _] = invoices} = Billing.list_recent_invoices(account, subject)
       assert length(invoices) == 3
@@ -1121,14 +1126,18 @@ defmodule Emisar.BillingTest do
 
     test "an owner of another account is refused", %{account: account} do
       {_user_b, _account_b, subject_b} = Fixtures.Subjects.owner_subject()
-      account = %{account | paddle_customer_id: "ctm_invoices_01"}
+
+      account =
+        account |> Ecto.Changeset.change(paddle_customer_id: "ctm_invoices_01") |> Repo.update!()
 
       assert Billing.list_recent_invoices(account, subject_b) == {:error, :unauthorized}
     end
 
     test "a subject without view_billing permission is refused", %{account: account} do
       subject = Fixtures.Subjects.permissionless_subject(account)
-      account = %{account | paddle_customer_id: "ctm_invoices_01"}
+
+      account =
+        account |> Ecto.Changeset.change(paddle_customer_id: "ctm_invoices_01") |> Repo.update!()
 
       assert Billing.list_recent_invoices(account, subject) == {:error, :unauthorized}
     end
@@ -1136,12 +1145,13 @@ defmodule Emisar.BillingTest do
     # An admin runs the account and answers for what it spends; the billing
     # manager IS the finance seat. Both read the ledger without holding manage.
     test "an admin and a billing manager read the ledger", %{account: account} do
-      account = %{account | paddle_customer_id: "ctm_invoices_01"}
+      account =
+        account |> Ecto.Changeset.change(paddle_customer_id: "ctm_invoices_01") |> Repo.update!()
 
       for role <- ["admin", "billing_manager"] do
         subject = role_subject(account, role)
 
-        assert {:ok, _invoices} = Billing.list_recent_invoices(account, subject)
+        assert {:ok, [_ | _]} = Billing.list_recent_invoices(account, subject)
       end
     end
 
@@ -1149,7 +1159,8 @@ defmodule Emisar.BillingTest do
     # the money behind them.
     test "an operator and a viewer are refused — view_billing is not the ledger",
          %{account: account} do
-      account = %{account | paddle_customer_id: "ctm_invoices_01"}
+      account =
+        account |> Ecto.Changeset.change(paddle_customer_id: "ctm_invoices_01") |> Repo.update!()
 
       for role <- ["operator", "viewer"] do
         subject = role_subject(account, role)
@@ -1162,7 +1173,11 @@ defmodule Emisar.BillingTest do
   describe "invoice_pdf_url/3" do
     setup do
       {_user, account, subject} = Fixtures.Subjects.owner_subject()
-      %{account: %{account | paddle_customer_id: "ctm_invoices_01"}, subject: subject}
+
+      account =
+        account |> Ecto.Changeset.change(paddle_customer_id: "ctm_invoices_01") |> Repo.update!()
+
+      %{account: account, subject: subject}
     end
 
     test "returns a signed PDF URL for one of the account's own invoices", %{
@@ -2921,6 +2936,68 @@ defmodule Emisar.BillingTest do
     end
   end
 
+  describe "support_channels/2" do
+    test "support follows the effective plan and uses fresh account settings" do
+      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      url = "https://workspace.slack.com/archives/C01234567"
+      assert {:ok, _} = Emisar.Accounts.put_support_slack_url(account.id, url)
+
+      for {plan, status, expected} <- [
+            {"free", "active", %{email?: false, slack_url: nil}},
+            {"team", "active", %{email?: true, slack_url: nil}},
+            {"enterprise", "active", %{email?: true, slack_url: url}},
+            {"enterprise", "complimentary", %{email?: true, slack_url: url}},
+            {"enterprise", "canceled", %{email?: false, slack_url: nil}},
+            {"enterprise", "paused", %{email?: false, slack_url: nil}},
+            {"enterprise", "unknown", %{email?: false, slack_url: nil}}
+          ] do
+        Fixtures.Accounts.create_subscription(account, plan, status: status)
+        assert {:ok, ^expected} = Billing.support_channels(account, subject)
+        assert {:ok, %{support_channels: ^expected}} = Billing.billing_summary(account, subject)
+      end
+
+      Fixtures.Accounts.create_subscription(account, "enterprise", status: "active")
+      assert {:ok, _} = Emisar.Accounts.put_support_slack_url(account.id, nil)
+      assert {:ok, %{email?: true, slack_url: nil}} = Billing.support_channels(account, subject)
+    end
+
+    test "scheduled expiry removes support before the status webhook arrives" do
+      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+
+      assert {:ok, _} =
+               Emisar.Accounts.put_support_slack_url(
+                 account.id,
+                 "https://workspace.slack.com/archives/C01234567"
+               )
+
+      Fixtures.Accounts.create_subscription(account, "enterprise",
+        scheduled_change_action: "cancel",
+        scheduled_change_effective_at: DateTime.add(DateTime.utc_now(), -1, :second)
+      )
+
+      assert {:ok, %{email?: false, slack_url: nil}} = Billing.support_channels(account, subject)
+    end
+
+    test "permission and account gates protect channel reads" do
+      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      other = Fixtures.Accounts.create_account(plan: "enterprise")
+
+      assert {:ok, _} =
+               Emisar.Accounts.put_support_slack_url(
+                 other.id,
+                 "https://workspace.slack.com/archives/C01234567"
+               )
+
+      assert {:error, :unauthorized} = Billing.support_channels(other, subject)
+
+      assert {:error, :unauthorized} =
+               Billing.support_channels(
+                 account,
+                 Fixtures.Subjects.permissionless_subject(account)
+               )
+    end
+  end
+
   describe "billing_summary/2" do
     test "rolls plan limits + live counts + subscription mirror into one map" do
       {_user, account, subject} = Fixtures.Subjects.owner_subject()
@@ -2952,6 +3029,55 @@ defmodule Emisar.BillingTest do
       assert summary.period_total_cents == 40_000
       # The monthly fields stay the monthly rate — both are exposed.
       assert summary.monthly_per_runner_cents == 2000
+    end
+
+    test "a complimentary plan retains its entitlements without a recurring charge" do
+      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      Fixtures.Runners.create_runner(account_id: account.id)
+      assert {:ok, _subscription} = Billing.grant_complimentary_plan(account, "team")
+
+      assert {:ok, summary} = Billing.billing_summary(account, subject)
+      assert summary.plan == "team"
+      assert summary.subscription_source == "complimentary"
+      assert summary.runner_limit == 100
+      assert summary.features == %{sso: true, scim: false, audit_export: true}
+      assert summary.period_total_cents == 0
+      assert summary.monthly_per_runner_cents == 0
+      assert summary.monthly_total_cents == 0
+      refute summary.subscription_managed?
+      refute summary.billing_portal_available?
+    end
+
+    test "summary rereads customer availability from the account, not the caller's snapshot" do
+      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      assert {:ok, before} = Billing.billing_summary(account, subject)
+      refute before.billing_portal_available?
+
+      account
+      |> Ecto.Changeset.change(paddle_customer_id: "ctm_summary_fresh")
+      |> Repo.update!()
+
+      assert {:ok, after_update} = Billing.billing_summary(account, subject)
+      assert after_update.billing_portal_available?
+      assert {:ok, _url} = Billing.open_billing_portal(account, subject)
+      assert {:ok, [_ | _]} = Billing.list_recent_invoices(account, subject)
+      assert {:ok, _url} = Billing.invoice_pdf_url(account, "txn_stub_1", subject)
+    end
+
+    test "an existing provider subscription remains managed after losing paid access" do
+      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+
+      for status <- ["paused", "some_unmodeled_status", "canceled"] do
+        Fixtures.Accounts.create_subscription(account, "team",
+          status: status,
+          paddle_subscription_id: "sub_managed_state"
+        )
+
+        assert {:ok, summary} = Billing.billing_summary(account, subject)
+        assert summary.plan == "free"
+        assert summary.subscription_source == "paddle"
+        assert summary.subscription_managed? == (status != "canceled")
+      end
     end
 
     test "the mirrored Paddle price wins over the compiled catalog, currency and all" do
@@ -2989,7 +3115,10 @@ defmodule Emisar.BillingTest do
       entitlements = %{
         "runners_limit" => 250,
         "members_limit" => 10,
-        "audit_retention_days" => 180
+        "audit_retention_days" => 180,
+        "features_sso_enabled?" => false,
+        "features_scim_enabled?" => true,
+        "features_audit_export_enabled?" => false
       }
 
       Fixtures.Accounts.create_subscription(account, "team", entitlements: entitlements)
@@ -2998,6 +3127,7 @@ defmodule Emisar.BillingTest do
       assert summary.runner_limit == 250
       assert summary.member_limit == 10
       assert summary.audit_retention_days == 180
+      assert summary.features == %{sso: false, scim: true, audit_export: false}
     end
 
     test "an unknown plan slug shows its capitalized name and no self-serve price" do
@@ -3235,7 +3365,9 @@ defmodule Emisar.BillingVendorErrorTest do
 
     test "a non-url portal-session result is passed through, not crashed" do
       {_user, account, subject} = Fixtures.Subjects.owner_subject()
-      account = %{account | paddle_customer_id: "ctm_existing_01"}
+
+      account =
+        account |> Ecto.Changeset.change(paddle_customer_id: "ctm_existing_01") |> Repo.update!()
 
       assert Billing.open_billing_portal(account, subject) == {:error, :paddle_unavailable}
     end

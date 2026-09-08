@@ -806,7 +806,7 @@ defmodule Emisar.SSOTest do
       {:ok, okta} = SSO.change_provider(%IdentityProvider{}, %{"kind" => "okta"}, subject)
 
       assert Ecto.Changeset.get_field(google, :issuer) == "https://accounts.google.com"
-      assert Ecto.Changeset.get_field(jumpcloud, :issuer) == "https://oauth.id.jumpcloud.com/"
+      assert Ecto.Changeset.get_field(jumpcloud, :issuer) == nil
       assert Ecto.Changeset.get_field(entra, :identifier_claim) == :oid
       assert Ecto.Changeset.get_field(okta, :identifier_claim) == :sub
       # A per-customer issuer is the operator's to type.
@@ -820,6 +820,24 @@ defmodule Emisar.SSOTest do
 
       assert {:ok, changeset} = SSO.change_provider(%IdentityProvider{}, params, subject)
       assert "can't be blank" in errors_on(changeset).issuer
+    end
+
+    test "regional issuer selections survive validation but clear when the kind changes", %{
+      subject: subject
+    } do
+      for issuer <- [
+            "https://oauth.id.jumpcloud.com/",
+            "https://oauth.id.eu.jumpcloud.com/",
+            "https://oauth.id.in.jumpcloud.com/"
+          ] do
+        params = %{"kind" => "jumpcloud", "issuer" => issuer}
+        assert {:ok, selected} = SSO.change_provider(%IdentityProvider{}, params, subject)
+        assert selected.changes.issuer == issuer
+
+        params = Map.put(params, "kind", "okta")
+        assert {:ok, switched} = SSO.change_provider(%IdentityProvider{}, params, subject)
+        assert "can't be blank" in errors_on(switched).issuer
+      end
     end
 
     test "an existing connection's changeset never carries its stored client secret", %{
@@ -1309,22 +1327,37 @@ defmodule Emisar.SSOTest do
              ) == {:error, :runner_access_exceeds_subject}
     end
 
-    test "JumpCloud is an accepted provider kind" do
-      {_user, _account, subject} = enterprise_owner()
+    test "JumpCloud stores the selected region and starts disabled" do
+      {_user, account, subject} = enterprise_owner()
 
       assert :jumpcloud in SSO.identity_provider_kinds()
 
-      assert {:ok, %IdentityProvider{kind: :jumpcloud}} =
-               SSO.configure_provider(
-                 %{
-                   kind: :jumpcloud,
-                   name: "JumpCloud",
-                   issuer: "https://oauth.id.jumpcloud.com/",
-                   client_id: "cid",
-                   client_secret: "secret"
-                 },
-                 subject
-               )
+      for issuer <- [
+            "https://oauth.id.jumpcloud.com/",
+            "https://oauth.id.eu.jumpcloud.com/",
+            "https://oauth.id.in.jumpcloud.com/"
+          ] do
+        attrs = Fixtures.SSO.identity_provider_attrs(kind: :jumpcloud, issuer: issuer)
+
+        assert {:ok, provider} = SSO.configure_provider(attrs, subject)
+        assert provider.kind == :jumpcloud
+        assert provider.account_id == account.id
+        assert provider.issuer == issuer
+        refute provider.enabled
+      end
+    end
+
+    test "JumpCloud requires a supported region rather than silently choosing one" do
+      {_user, _account, subject} = enterprise_owner()
+
+      for issuer <- [nil, "", "https://idp.test", "https://accounts.google.com"] do
+        attrs = Fixtures.SSO.identity_provider_attrs(kind: :jumpcloud, issuer: issuer)
+
+        assert {:error, %Ecto.Changeset{} = changeset} = SSO.configure_provider(attrs, subject)
+        assert Map.has_key?(errors_on(changeset), :issuer)
+      end
+
+      refute Repo.one(IdentityProvider)
     end
 
     test "the issuer must be an https URL" do
@@ -1621,6 +1654,92 @@ defmodule Emisar.SSOTest do
 
       assert updated.name == "Renamed"
       assert updated.client_secret == "the-customer-s-secret"
+    end
+  end
+
+  describe "JumpCloud region updates" do
+    setup do
+      {user, account, subject} = enterprise_owner()
+      provider = provider_fixture(account, kind: :jumpcloud)
+      %{user: user, account: account, subject: subject, provider: provider}
+    end
+
+    test "preserves an existing US connection on an unrelated edit", %{
+      subject: subject,
+      provider: provider
+    } do
+      assert {:ok, updated} = SSO.update_provider(provider, %{name: "Work JumpCloud"}, subject)
+      assert updated.issuer == "https://oauth.id.jumpcloud.com/"
+      assert updated.client_secret == provider.client_secret
+    end
+
+    test "changing region requires the client secret", %{subject: subject, provider: provider} do
+      attrs = %{issuer: "https://oauth.id.eu.jumpcloud.com/"}
+
+      assert SSO.update_provider(provider, attrs, subject) == {:error, :client_secret_required}
+      assert Repo.reload!(provider).issuer == "https://oauth.id.jumpcloud.com/"
+
+      assert {:ok, updated} =
+               SSO.update_provider(
+                 provider,
+                 Map.put(attrs, :client_secret, "eu-client-secret"),
+                 subject
+               )
+
+      assert updated.issuer == "https://oauth.id.eu.jumpcloud.com/"
+      assert updated.client_secret == "eu-client-secret"
+    end
+
+    test "a forged kind cannot bypass the regional issuer restriction", %{
+      subject: subject,
+      provider: provider
+    } do
+      attrs = %{kind: :okta, issuer: "https://attacker.test", client_secret: "supplied"}
+
+      assert {:error, %Ecto.Changeset{} = changeset} =
+               SSO.update_provider(provider, attrs, subject)
+
+      assert "must match a supported JumpCloud region" in errors_on(changeset).issuer
+      assert Repo.reload!(provider).issuer == provider.issuer
+      assert Repo.reload!(provider).kind == :jumpcloud
+    end
+
+    test "a linked identity locks the region even when the secret is supplied", %{
+      user: user,
+      account: account,
+      subject: subject,
+      provider: provider
+    } do
+      Fixtures.SSO.create_user_identity(
+        account_id: account.id,
+        provider_id: provider.id,
+        user_id: user.id
+      )
+
+      attrs = %{issuer: "https://oauth.id.in.jumpcloud.com/", client_secret: "supplied"}
+
+      assert SSO.update_provider(provider, attrs, subject) == {:error, :identity_namespace_locked}
+      assert Repo.reload!(provider).issuer == provider.issuer
+    end
+
+    test "viewers and another account cannot change the region", %{
+      account: account,
+      provider: provider
+    } do
+      {_other_user, _other_account, other_subject} = enterprise_owner()
+      viewer = viewer_in(account)
+      attrs = %{issuer: "https://oauth.id.eu.jumpcloud.com/", client_secret: "supplied"}
+
+      assert SSO.update_provider(provider, attrs, viewer) == {:error, :unauthorized}
+      assert SSO.update_provider(provider, attrs, other_subject) == {:error, :not_found}
+
+      assert SSO.configure_provider(
+               Fixtures.SSO.identity_provider_attrs(kind: :jumpcloud),
+               viewer
+             ) ==
+               {:error, :unauthorized}
+
+      assert Repo.reload!(provider).issuer == provider.issuer
     end
   end
 
@@ -3388,6 +3507,29 @@ defmodule Emisar.SSOTest do
                SSO.update_provider(now_true, %{satisfies_mfa: true}, subject)
 
       assert {:ok, ^user, _session} = Auth.fetch_user_and_token_by_session_token(token)
+    end
+  end
+
+  describe "provider_identity_namespace_locked?/2" do
+    setup do
+      scim_provider()
+    end
+
+    test "the namespace-lock read follows live identities, with permission and account isolation",
+         %{
+           provider: provider,
+           subject: subject,
+           account: account
+         } do
+      assert SSO.provider_identity_namespace_locked?(provider, subject) == {:ok, false}
+      _ = provision(provider, "okta|namespace-lock")
+      assert SSO.provider_identity_namespace_locked?(provider, subject) == {:ok, true}
+
+      assert SSO.provider_identity_namespace_locked?(provider, viewer_in(account)) ==
+               {:error, :unauthorized}
+
+      {_user, _account, stranger} = enterprise_owner()
+      assert SSO.provider_identity_namespace_locked?(provider, stranger) == {:error, :not_found}
     end
   end
 
@@ -5841,6 +5983,30 @@ defmodule Emisar.SSOTest do
 
   # -- recompute_role_for_identity/2 (provider-scoped) -----------------
 
+  describe "directory_authorization_version/3" do
+    test "reads the latest account-bound version, including a pending handoff's deleted provider" do
+      provider = Fixtures.SSO.create_identity_provider()
+      assert SSO.directory_authorization_version(provider.account_id, provider.id, Repo) == 0
+      updated = provider |> Ecto.Changeset.change(authorization_version: 7) |> Repo.update!()
+      assert SSO.directory_authorization_version(provider.account_id, provider.id, Repo) == 7
+      Fixtures.SSO.mark_provider_deleted(updated)
+      assert SSO.directory_authorization_version(provider.account_id, provider.id, Repo) == 7
+    end
+
+    test "missing, unbound and cross-account providers cannot supply a directory version" do
+      provider = Fixtures.SSO.create_identity_provider()
+      provider |> Ecto.Changeset.change(authorization_version: 9) |> Repo.update!()
+      other = Fixtures.Accounts.create_account()
+
+      assert SSO.directory_authorization_version(other.id, provider.id, Repo) == 0
+
+      assert SSO.directory_authorization_version(provider.account_id, Ecto.UUID.generate(), Repo) ==
+               0
+
+      assert SSO.directory_authorization_version(provider.account_id, nil, Repo) == 0
+    end
+  end
+
   describe "recompute_role_for_identity/2" do
     setup do
       scim_provider()
@@ -6160,7 +6326,7 @@ defmodule Emisar.SSOTest do
       assert {:ok, disabled} = SSO.disable_scim(provider, subject)
       {:ok, reenabled, _raw} = SSO.enable_scim(disabled, subject)
 
-      assert {:ok, [], _metadata} = SSO.list_synced_groups(reenabled, subject)
+      assert {:ok, []} = SSO.search_synced_groups(reenabled, "", subject)
 
       # SCIM does not order Users before Groups. Until the directory pushes
       # groups, there is no snapshot to reason from — so a user-first re-sync
@@ -6236,9 +6402,9 @@ defmodule Emisar.SSOTest do
     end
   end
 
-  # -- list_synced_groups/3 --------------------------------------------
+  # -- Group access readout --------------------------------------------
 
-  describe "list_synced_groups/3" do
+  describe "list_group_access/3" do
     setup do
       scim_provider()
     end
@@ -6264,7 +6430,7 @@ defmodule Emisar.SSOTest do
           member_ids: [id2.id]
         })
 
-      assert {:ok, groups, metadata} = SSO.list_synced_groups(provider, subject)
+      assert {:ok, groups, metadata} = SSO.list_group_access(provider, subject)
       assert metadata.count == 2
 
       # Arrival order — the keyset the readout pages on, not the display name,
@@ -6307,14 +6473,14 @@ defmodule Emisar.SSOTest do
           })
       end
 
-      assert {:ok, first, metadata} = SSO.list_synced_groups(provider, subject)
+      assert {:ok, first, metadata} = SSO.list_group_access(provider, subject)
       assert length(first) == 20
       assert metadata.count == 25
 
       cursor = metadata.next_page_cursor
 
       assert {:ok, second, _metadata} =
-               SSO.list_synced_groups(provider, subject, page: [cursor: cursor])
+               SSO.list_group_access(provider, subject, page: [cursor: cursor])
 
       assert length(second) == 5
       walked = Enum.map(first ++ second, & &1.external_group_id)
@@ -6325,7 +6491,7 @@ defmodule Emisar.SSOTest do
       {_u, account, subject} = Fixtures.Subjects.owner_subject(%{plan: "team"})
       provider = provider_fixture(account)
 
-      assert {:ok, [], _metadata} = SSO.list_synced_groups(provider, subject)
+      assert {:ok, [], _metadata} = SSO.list_group_access(provider, subject)
     end
 
     test "is account-scoped — another account's enterprise owner can't read it", %{
@@ -6333,7 +6499,7 @@ defmodule Emisar.SSOTest do
     } do
       {_u, _account_b, subject_b} = enterprise_owner()
 
-      assert SSO.list_synced_groups(provider, subject_b) == {:error, :not_found}
+      assert SSO.list_group_access(provider, subject_b) == {:error, :not_found}
     end
   end
 
@@ -6403,9 +6569,9 @@ defmodule Emisar.SSOTest do
     end
   end
 
-  # -- list_group_mappings/3 -------------------------------------------
+  # -- Group role readout -------------------------------------------
 
-  describe "list_group_mappings/3" do
+  describe "list_group_access/3 — role mappings" do
     setup do
       scim_provider()
     end
@@ -6421,19 +6587,25 @@ defmodule Emisar.SSOTest do
           subject
         )
 
-      assert {:ok, [listed], _meta} = SSO.list_group_mappings(provider, subject)
+      assert {:ok, group_rows, _meta} =
+               SSO.list_group_access(provider, subject, page: [limit: 100])
+
+      assert [listed] = Enum.flat_map(group_rows, &List.wrap(&1.mapping))
       assert listed.id == mapping.id
     end
 
     test "denies a viewer (no manage_sso)", %{provider: provider, account: account} do
-      assert SSO.list_group_mappings(provider, viewer_in(account)) == {:error, :unauthorized}
+      assert SSO.list_group_access(provider, viewer_in(account)) == {:error, :unauthorized}
     end
 
     test "a downgraded plan still reads its mappings — removing one needs no plan" do
       {_u, account, subject} = Fixtures.Subjects.owner_subject(%{plan: "team"})
       provider = provider_fixture(account)
 
-      assert {:ok, [], _meta} = SSO.list_group_mappings(provider, subject)
+      assert {:ok, group_rows, _meta} =
+               SSO.list_group_access(provider, subject, page: [limit: 100])
+
+      assert [] = Enum.flat_map(group_rows, &List.wrap(&1.mapping))
     end
 
     test "is account-scoped — B sees none of A's mappings", %{
@@ -6449,7 +6621,7 @@ defmodule Emisar.SSOTest do
           subject
         )
 
-      assert {:ok, [], _meta} = SSO.list_group_mappings(provider, sb)
+      assert SSO.list_group_access(provider, sb) == {:error, :not_found}
     end
   end
 
@@ -6507,9 +6679,8 @@ defmodule Emisar.SSOTest do
                  subject
                )
 
-      # The unique index on (provider_id, external_group_id) maps the violation
-      # onto the first constraint field, :provider_id.
-      assert "has already been taken" in errors_on(changeset).provider_id
+      assert "This group already has a role mapping." in errors_on(changeset).directory_group_id
+      refute Map.has_key?(errors_on(changeset), :provider_id)
     end
 
     test "denies a viewer (no manage_sso)", %{provider: provider, account: account} do
@@ -6660,7 +6831,11 @@ defmodule Emisar.SSOTest do
 
       assert {:ok, deleted} = SSO.delete_group_mapping(mapping, subject)
       assert deleted.deleted_at
-      assert {:ok, [], _meta} = SSO.list_group_mappings(provider, subject)
+
+      assert {:ok, group_rows, _meta} =
+               SSO.list_group_access(provider, subject, page: [limit: 100])
+
+      assert [] = Enum.flat_map(group_rows, &List.wrap(&1.mapping))
     end
 
     test "denies a viewer without manage_sso", %{
@@ -6695,7 +6870,7 @@ defmodule Emisar.SSOTest do
     end
   end
 
-  describe "list_group_runner_access_mappings/3" do
+  describe "list_group_access/3 — runner and pack mappings" do
     setup do
       scim_provider()
     end
@@ -6718,20 +6893,21 @@ defmodule Emisar.SSOTest do
           subject
         )
 
-      assert {:ok, [listed], _meta} =
-               SSO.list_group_runner_access_mappings(provider, subject)
+      assert {:ok, group_rows, _meta} =
+               SSO.list_group_access(provider, subject, page: [limit: 100])
+
+      assert [listed] = Enum.flat_map(group_rows, &List.wrap(&1.runner_access_mapping))
 
       assert listed.id == mapping.id
     end
 
     test "is permission and account scoped", %{provider: provider, account: account} do
-      assert SSO.list_group_runner_access_mappings(provider, viewer_in(account)) ==
+      assert SSO.list_group_access(provider, viewer_in(account)) ==
                {:error, :unauthorized}
 
       {_user, _other_account, other_subject} = enterprise_owner()
 
-      assert {:ok, [], _meta} =
-               SSO.list_group_runner_access_mappings(provider, other_subject)
+      assert SSO.list_group_access(provider, other_subject) == {:error, :not_found}
     end
   end
 
@@ -7080,7 +7256,11 @@ defmodule Emisar.SSOTest do
 
       assert {:ok, deleted} = SSO.delete_group_runner_access_mapping(mapping, subject)
       assert deleted.deleted_at
-      assert {:ok, [], _meta} = SSO.list_group_runner_access_mappings(provider, subject)
+
+      assert {:ok, group_rows, _meta} =
+               SSO.list_group_access(provider, subject, page: [limit: 100])
+
+      assert [] = Enum.flat_map(group_rows, &List.wrap(&1.runner_access_mapping))
     end
 
     test "denies a viewer without manage_sso", %{
@@ -8805,9 +8985,9 @@ defmodule Emisar.SSOTest do
   end
 
   describe "provider_fixed_issuer/1" do
-    test "only Google Workspace and JumpCloud serve one issuer for every customer" do
+    test "only Google Workspace serves one issuer for every customer" do
       assert SSO.provider_fixed_issuer(:google_workspace) == "https://accounts.google.com"
-      assert SSO.provider_fixed_issuer(:jumpcloud) == "https://oauth.id.jumpcloud.com/"
+      assert SSO.provider_fixed_issuer(:jumpcloud) == nil
       assert SSO.provider_fixed_issuer(:okta) == nil
       assert SSO.provider_fixed_issuer(:entra) == nil
       assert SSO.provider_fixed_issuer(:keycloak) == nil
@@ -8815,12 +8995,30 @@ defmodule Emisar.SSOTest do
     end
 
     test "reads the string form the console posts, and nil for anything unknown" do
-      assert SSO.provider_fixed_issuer("jumpcloud") == "https://oauth.id.jumpcloud.com/"
+      assert SSO.provider_fixed_issuer("google_workspace") == "https://accounts.google.com"
+      assert SSO.provider_fixed_issuer("jumpcloud") == nil
       assert SSO.provider_fixed_issuer("okta") == nil
       assert SSO.provider_fixed_issuer("not_a_provider") == nil
       assert SSO.provider_fixed_issuer(:not_a_provider) == nil
       assert SSO.provider_fixed_issuer("") == nil
       assert SSO.provider_fixed_issuer(nil) == nil
+    end
+  end
+
+  describe "provider_issuer_regions/1" do
+    test "returns exact JumpCloud regions for atom and form values" do
+      expected = [
+        {"United States", "https://oauth.id.jumpcloud.com/"},
+        {"Europe", "https://oauth.id.eu.jumpcloud.com/"},
+        {"India", "https://oauth.id.in.jumpcloud.com/"}
+      ]
+
+      assert SSO.provider_issuer_regions(:jumpcloud) == expected
+      assert SSO.provider_issuer_regions("jumpcloud") == expected
+
+      for kind <- [:google_workspace, "okta", "not_a_provider", nil] do
+        assert SSO.provider_issuer_regions(kind) == []
+      end
     end
   end
 
@@ -8857,49 +9055,6 @@ defmodule Emisar.SSOTest do
       refute SSO.supports_scim?("not_a_provider")
       refute SSO.supports_scim?(:not_a_provider)
       refute SSO.supports_scim?(nil)
-    end
-  end
-
-  describe "provider_sync_recent?/2" do
-    test "true for enabled directory sync on a capable connection within the day" do
-      now = ~U[2026-08-03 12:00:00.000000Z]
-      provider = %IdentityProvider{kind: :okta, scim_enabled: true, scim_last_seen_at: now}
-
-      assert SSO.provider_sync_recent?(provider, now)
-
-      assert SSO.provider_sync_recent?(
-               %{provider | scim_last_seen_at: DateTime.add(now, -86_399)},
-               now
-             )
-
-      # The one-arity form reads the current time.
-      assert SSO.provider_sync_recent?(%{provider | scim_last_seen_at: DateTime.utc_now()})
-    end
-
-    test "false when the connection never synced, is off, or can't sync at all" do
-      now = ~U[2026-08-03 12:00:00.000000Z]
-      provider = %IdentityProvider{kind: :okta, scim_enabled: true, scim_last_seen_at: now}
-
-      refute SSO.provider_sync_recent?(%{provider | scim_last_seen_at: nil}, now)
-      refute SSO.provider_sync_recent?(%{provider | scim_enabled: false}, now)
-      refute SSO.provider_sync_recent?(%{provider | kind: :google_workspace}, now)
-    end
-
-    test "false at exactly a day old, past it, and for a stamp in the future" do
-      now = ~U[2026-08-03 12:00:00.000000Z]
-      provider = %IdentityProvider{kind: :okta, scim_enabled: true}
-
-      a_day_ago = %{provider | scim_last_seen_at: DateTime.add(now, -86_400)}
-      last_week = %{provider | scim_last_seen_at: DateTime.add(now, -7 * 86_400)}
-      ahead_of_us = %{provider | scim_last_seen_at: DateTime.add(now, 60)}
-      barely_ahead = %{provider | scim_last_seen_at: DateTime.add(now, 1, :microsecond)}
-
-      # A clock-skewed IdP must not read as freshly synced — the window is
-      # "between now and a day ago", both ends closed against nonsense.
-      refute SSO.provider_sync_recent?(a_day_ago, now)
-      refute SSO.provider_sync_recent?(last_week, now)
-      refute SSO.provider_sync_recent?(ahead_of_us, now)
-      refute SSO.provider_sync_recent?(barely_ahead, now)
     end
   end
 

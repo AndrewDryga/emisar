@@ -15,7 +15,7 @@ defmodule Emisar.Audit.Events do
   alias Emisar.Audit
   alias Emisar.Auth.Subject
   alias Emisar.RequestContext
-  alias Emisar.{Runbooks, Runners, Runs, SSO, Users}
+  alias Emisar.{Runbooks, Runners, Runs, SafeText, SSO, Users}
 
   # Staff access renders to the CUSTOMER as the team, never the employee:
   # `actor_id` keeps internal traceability while this label keeps a support
@@ -49,33 +49,66 @@ defmodule Emisar.Audit.Events do
     )
   end
 
-  def account_updated(%Subject{} = subject, %Accounts.Account{} = account) do
-    Audit.changeset(
-      account.id,
-      "account.updated",
-      actor(subject) ++
-        [
-          target_kind: "account",
-          target_id: account.id,
-          target_label: account.name,
-          payload: %{name: account.name, slug: account.slug}
-        ]
-    )
+  def account_updated(
+        %Subject{} = subject,
+        %Accounts.Account{id: account_id} = before_account,
+        %Accounts.Account{id: account_id} = account
+      ) do
+    account_update_event(before_account, account, actor(subject))
   end
 
   @doc """
-  The emailed `List-Unsubscribe` link flipped a report preference. The signed
-  token IS the authorization on that path, so there is no actor to name — the
-  row is `system`, like the sweepers'.
+  Trusted internal account-setting changes, including signed report unsubscribe
+  links and private admin RPC. There is no tenant actor to name; the private
+  admin action separately records the dispatching staff member and reason.
   """
-  def account_updated(%Accounts.Account{} = account) do
-    Audit.changeset(account.id, "account.updated",
-      actor_kind: "system",
-      target_kind: "account",
-      target_id: account.id,
-      target_label: account.name,
-      payload: %{name: account.name, slug: account.slug}
-    )
+  def account_updated(
+        %Accounts.Account{id: account_id} = before_account,
+        %Accounts.Account{id: account_id} = account
+      ) do
+    account_update_event(before_account, account, actor_kind: "system")
+  end
+
+  @account_audit_fields ~w[name slug]a
+  @account_settings_audit_fields ~w[monthly_report_opt_out pack_unseen_retention_days
+                                   runner_inactive_retention_hours support_slack_url]a
+
+  defp account_update_event(before_account, account, actor_attrs) do
+    changes = account_update_changes(before_account, account)
+
+    if map_size(changes) > 0 do
+      Audit.changeset(
+        account.id,
+        "account.updated",
+        actor_attrs ++
+          [
+            target_kind: "account",
+            target_id: account.id,
+            target_label: account.name,
+            payload: %{changes: changes}
+          ]
+      )
+    end
+  end
+
+  # These values are safe to retain in the customer-visible audit trail.
+  # Security requirements have dedicated events; billing internals are excluded.
+  defp account_update_values(account) do
+    account
+    |> Map.take(@account_audit_fields)
+    |> Map.merge(Map.take(account.settings, @account_settings_audit_fields))
+  end
+
+  defp account_update_changes(before_account, account) do
+    before_values = account_update_values(before_account)
+
+    Enum.reduce(account_update_values(account), %{}, fn {field, value}, changes ->
+      before_value = Map.fetch!(before_values, field)
+
+      if before_value == value,
+        do: changes,
+        else: Map.put(changes, field, %{before: before_value, after: value})
+    end)
   end
 
   def account_require_mfa_set(%Subject{} = subject, %Accounts.Account{} = account) do
@@ -333,6 +366,24 @@ defmodule Emisar.Audit.Events do
     )
   end
 
+  def membership_invitation_resent(
+        %Subject{} = subject,
+        %Accounts.Membership{user: %Users.User{} = user} = membership,
+        %Accounts.RunnerAccess{} = access
+      ) do
+    Audit.changeset(
+      membership.account_id,
+      "membership.invitation_resent",
+      actor(subject) ++
+        [
+          target_kind: "user",
+          target_id: user.id,
+          target_label: user.email,
+          payload: %{role: membership.role, runner_access: runner_access_payload(access)}
+        ]
+    )
+  end
+
   # Self-service accept (no Subject): the user accepting is the actor.
   def user_invitation_accepted(%Users.User{} = user, %Accounts.Membership{} = membership) do
     Audit.changeset(membership.account_id, "user.invitation_accepted",
@@ -428,6 +479,33 @@ defmodule Emisar.Audit.Events do
   def runner_disabled(%Subject{} = subject, %Runners.Runner{} = runner),
     do: runner_event(subject, runner, "runner.disabled")
 
+  def runner_credential_rotation_requested(%Subject{} = subject, %Runners.Runner{} = runner),
+    do: runner_event(subject, runner, "runner.credential_rotation_requested")
+
+  def runner_credential_rotated(
+        %Runners.Runner{} = runner,
+        %Runners.Token{} = token,
+        %Runners.Token{} = previous,
+        %RequestContext{} = context
+      ) do
+    Audit.changeset(runner.account_id, "runner.credential_rotated",
+      actor_kind: "runner",
+      actor_id: runner.id,
+      actor_label: runner.name,
+      target_kind: "runner",
+      target_id: runner.id,
+      target_label: runner.name,
+      context: context,
+      payload: %{
+        token_id: token.id,
+        token_prefix: token.token_prefix,
+        replaces_id: previous.id,
+        previous_token_prefix: previous.token_prefix,
+        expires_at: token.expires_at
+      }
+    )
+  end
+
   def runner_enabled(%Subject{} = subject, %Runners.Runner{} = runner),
     do: runner_event(subject, runner, "runner.enabled")
 
@@ -444,7 +522,13 @@ defmodule Emisar.Audit.Events do
         [
           target_kind: "enrollment_key",
           target_id: key.id,
-          payload: %{prefix: key.key_prefix, reusable: key.reusable}
+          target_label: key.description,
+          payload: %{
+            prefix: key.key_prefix,
+            reusable: key.reusable,
+            max_uses: key.max_uses,
+            expires_at: key.expires_at
+          }
         ]
     )
   end
@@ -458,20 +542,33 @@ defmodule Emisar.Audit.Events do
     )
   end
 
-  # Auto-generated install key promoted to permanent when a runner first
-  # binds with it — system actor (no user is acting), mirroring api_key_bound.
-  def enrollment_key_bound(%Runners.EnrollmentKey{} = key) do
+  # First successful registration with a console setup key; the runner facts
+  # come from the registered row, not unvalidated registration parameters.
+  def enrollment_key_bound(
+        %Runners.EnrollmentKey{} = key,
+        %Runners.Runner{} = runner,
+        %RequestContext{} = context
+      ) do
     Audit.changeset(key.account_id, "enrollment_key.bound",
       actor_kind: "system",
       target_kind: "enrollment_key",
       target_id: key.id,
-      payload: %{prefix: key.key_prefix, auto: true}
+      target_label: key.description,
+      context: context,
+      payload: %{
+        prefix: key.key_prefix,
+        auto: true,
+        runner_id: runner.id,
+        runner_name: runner.name,
+        hostname: runner.hostname,
+        group: runner.group
+      }
     )
   end
 
   # -- API keys --------------------------------------------------------
 
-  def api_key_created(%Subject{} = subject, %ApiKeys.ApiKey{} = key) do
+  def api_key_created(%Subject{} = subject, %ApiKeys.ApiKey{} = key, source \\ nil) do
     Audit.changeset(
       key.account_id,
       "api_key.created",
@@ -480,9 +577,17 @@ defmodule Emisar.Audit.Events do
           target_kind: "api_key",
           target_id: key.id,
           target_label: key.name,
-          payload: %{prefix: key.key_prefix, kind: key.kind}
+          payload: api_key_creation_payload(key, source)
         ]
     )
+  end
+
+  defp api_key_creation_payload(key, nil),
+    do: %{prefix: key.key_prefix, kind: key.kind, replaces_id: key.replaces_id}
+
+  defp api_key_creation_payload(key, %ApiKeys.ApiKey{} = source)
+       when key.replaces_id == source.id and key.account_id == source.account_id do
+    key |> api_key_creation_payload(nil) |> Map.put(:replaces_prefix, source.key_prefix)
   end
 
   # A key minted when an approved device grant is claimed — the poll has no
@@ -606,6 +711,15 @@ defmodule Emisar.Audit.Events do
     )
   end
 
+  def api_key_rotation_requested(%Subject{} = subject, %ApiKeys.ApiKey{} = key) do
+    Audit.changeset(
+      key.account_id,
+      "api_key.rotation_requested",
+      actor(subject) ++
+        [target_kind: "api_key", target_id: key.id, target_label: key.name]
+    )
+  end
+
   # Auto-bind during OAuth/MCP issuance — no user is acting, so the actor
   # is the system rather than a `%Subject{}`.
   def api_key_bound(%ApiKeys.ApiKey{} = key) do
@@ -703,12 +817,15 @@ defmodule Emisar.Audit.Events do
   def runbook_updated(
         %Subject{} = subject,
         %Runbooks.Runbook{} = old,
-        %Runbooks.Runbook{} = runbook
-      ) do
+        %Runbooks.Runbook{} = runbook,
+        operation
+      )
+      when operation in ["draft_saved", "draft_discarded"] do
     runbook_event(subject, runbook, "runbook.updated", %{
       name: runbook.name,
       title: runbook.title,
       from_title: old.title,
+      operation: operation,
       version: runbook.live_version
     })
   end
@@ -1076,9 +1193,15 @@ defmodule Emisar.Audit.Events do
   end
 
   # System-actor pack pins observed during a runner_state sync (no operator
-  # is acting). pack_pinned/4 covers all three first-sight outcomes — the
+  # is acting). pack_pinned/5 covers all three first-sight outcomes — the
   # `event_type` atom distinguishes baseline-match / mismatch / review.
-  def pack_pinned(%Catalog.PackVersion{} = pack_version, event_type, advertised, baseline) do
+  def pack_pinned(
+        %Catalog.PackVersion{} = pack_version,
+        event_type,
+        advertised,
+        baseline,
+        %Runners.Runner{} = runner
+      ) do
     Audit.changeset(pack_version.account_id, event_type,
       actor_kind: "system",
       target_kind: "pack_version",
@@ -1090,14 +1213,22 @@ defmodule Emisar.Audit.Events do
         trusted_hash: pack_version.hash,
         pending_hash: pack_version.pending_hash,
         advertised: advertised,
-        baseline: baseline
+        baseline: baseline,
+        runner_id: runner.id,
+        runner_name: runner.name,
+        hostname: runner.hostname,
+        group: runner.group
       }
     )
   end
 
   # A runner advertised bytes that diverge from the trusted hash — keep
   # trusted, record the new pending. System actor.
-  def pack_trust_drift_detected(%Catalog.PackVersion{} = pack_version, advertised) do
+  def pack_trust_drift_detected(
+        %Catalog.PackVersion{} = pack_version,
+        advertised,
+        %Runners.Runner{} = runner
+      ) do
     Audit.changeset(pack_version.account_id, "pack_trust_drift_detected",
       actor_kind: "system",
       target_kind: "pack_version",
@@ -1108,7 +1239,11 @@ defmodule Emisar.Audit.Events do
         version: pack_version.version,
         trusted_hash: pack_version.hash,
         previous_pending: pack_version.pending_hash,
-        pending_hash: advertised
+        pending_hash: advertised,
+        runner_id: runner.id,
+        runner_name: runner.name,
+        hostname: runner.hostname,
+        group: runner.group
       }
     )
   end
@@ -1183,6 +1318,7 @@ defmodule Emisar.Audit.Events do
           target_id: request.id,
           payload: %{
             run_id: request.run_id,
+            runbook_execution_id: request.runbook_execution_id,
             decision: decision,
             reason: reason,
             approved_count: count,
@@ -1208,10 +1344,12 @@ defmodule Emisar.Audit.Events do
           target_id: request.id,
           payload: %{
             run_id: request.run_id,
+            runbook_execution_id: request.runbook_execution_id,
             reason: reason,
             grant_id: grant && grant.id,
             grant_duration: grant && grant_attrs.duration,
-            grant_scope: grant && grant_attrs.scope
+            grant_scope: grant && grant_attrs.scope,
+            grant_max_uses: grant && grant.max_uses
           }
         ]
     )
@@ -1253,19 +1391,26 @@ defmodule Emisar.Audit.Events do
         [
           target_kind: "approval_request",
           target_id: request.id,
-          payload: %{run_id: request.run_id, reason: reason}
+          payload: %{
+            run_id: request.run_id,
+            runbook_execution_id: request.runbook_execution_id,
+            reason: reason
+          }
         ]
     )
   end
 
-  # Auto-rejected by the ApprovalExpiry sweep when no operator decided in
-  # time — system actor, no acting subject.
+  # Expired before all required approvals arrived — system actor, no acting subject.
   def approval_expired(%Approvals.Request{} = request) do
     Audit.changeset(request.account_id, "approval.expired",
       actor_kind: "system",
       target_kind: "approval_request",
       target_id: request.id,
-      payload: %{run_id: request.run_id, expires_at: request.expires_at}
+      payload: %{
+        run_id: request.run_id,
+        runbook_execution_id: request.runbook_execution_id,
+        expires_at: request.expires_at
+      }
     )
   end
 
@@ -1310,73 +1455,160 @@ defmodule Emisar.Audit.Events do
 
   # -- Runs (dispatch decisions, cancel) -------------------------------
 
-  # Dispatch refused because the action's pack hash diverges from what an
-  # operator trusted — system actor (the trust gate runs inside an
-  # already-authorized dispatch, with no acting subject).
+  # The gate supplies its exact rejected pack snapshot and the authenticated
+  # dispatcher (or durable initiator for a later approval/delivery recheck).
   def dispatch_blocked_pack_untrusted(
         account_id,
         %{id: pv_id, pack_id: pack_id, version: version},
-        action
+        attrs
       ) do
-    Audit.changeset(account_id, "dispatch_blocked_pack_untrusted",
-      actor_kind: "system",
-      target_kind: "pack_version",
-      target_id: pv_id,
-      target_label: "#{pack_id}@#{version}",
-      payload: %{
-        pack_id: pack_id,
-        version: version,
-        action_id: action.action_id,
-        runner_id: action.runner_id
-      }
+    Audit.changeset(
+      account_id,
+      "dispatch_blocked_pack_untrusted",
+      dispatch_actor(attrs) ++
+        [
+          target_kind: "pack_version",
+          target_id: pv_id,
+          target_label: "#{pack_id}@#{version}",
+          payload: Map.merge(dispatch_payload(attrs), %{pack_id: pack_id, version: version})
+        ]
     )
   end
 
-  # No pin row exists for a versioned pack — dispatch failed CLOSED. Derived
-  # from the action (no PackVersion struct to key the target on).
-  def dispatch_blocked_pack_untrusted(account_id, :no_pin, action) do
-    Audit.changeset(account_id, "dispatch_blocked_pack_untrusted",
-      actor_kind: "system",
-      target_kind: "pack_version",
-      target_label: "#{action.pack_id}@#{action.pack_version}",
-      payload: %{
-        pack_id: action.pack_id,
-        version: action.pack_version,
-        action_id: action.action_id,
-        runner_id: action.runner_id
-      }
+  # No exact pack snapshot was returned. Name the already-scoped runner only;
+  # do not look up a later advertisement and mistake it for the rejected one.
+  def dispatch_blocked_pack_untrusted(account_id, :no_pin, attrs) do
+    Audit.changeset(
+      account_id,
+      "dispatch_blocked_pack_untrusted",
+      dispatch_actor(attrs) ++
+        [
+          target_kind: "runner",
+          target_id: Map.get(attrs, :runner_id),
+          payload: dispatch_payload(attrs)
+        ]
     )
   end
 
-  # Dispatch refused because the action's pack version was RETIRED by the
-  # shipped catalog (a critical fix shipped a newer version) and no admin has
-  # overridden it. System actor.
-  def dispatch_blocked_pack_retired(account_id, %Catalog.PackVersion{} = pack_version, action) do
-    Audit.changeset(account_id, "dispatch_blocked_pack_retired",
-      actor_kind: "system",
-      target_kind: "pack_version",
-      target_id: pack_version.id,
-      target_label: "#{pack_version.pack_id}@#{pack_version.version}",
-      payload: %{
-        pack_id: pack_version.pack_id,
-        version: pack_version.version,
-        action_id: action.action_id,
-        runner_id: action.runner_id
-      }
+  def dispatch_blocked_pack_retired(account_id, %Catalog.PackVersion{} = pack_version, attrs) do
+    Audit.changeset(
+      account_id,
+      "dispatch_blocked_pack_retired",
+      dispatch_actor(attrs) ++
+        [
+          target_kind: "pack_version",
+          target_id: pack_version.id,
+          target_label: "#{pack_version.pack_id}@#{pack_version.version}",
+          payload:
+            Map.merge(dispatch_payload(attrs), %{
+              pack_id: pack_version.pack_id,
+              version: pack_version.version
+            })
+        ]
     )
   end
 
-  # Dispatch refused because the target runner advertises that it enforces
-  # client signatures, so the portal won't send its own (operator/runbook)
-  # unsigned run to it — only a signed MCP call gets through. System actor (the
-  # gate runs inside an already-authorized dispatch, with no acting subject).
-  def dispatch_blocked_requires_attestation(account_id, runner_id, action_id) do
-    Audit.changeset(account_id, "dispatch_blocked_requires_attestation",
-      actor_kind: "system",
-      target_kind: "runner",
-      target_id: runner_id,
-      payload: %{action_id: action_id}
+  def dispatch_blocked_requires_attestation(account_id, runner_id, attrs) do
+    Audit.changeset(
+      account_id,
+      "dispatch_blocked_requires_attestation",
+      dispatch_actor(attrs) ++
+        [target_kind: "runner", target_id: runner_id, payload: dispatch_payload(attrs)]
     )
+  end
+
+  # Opaque lookup failures can include foreign or out-of-scope references.
+  # Record the caller's own attempt, never resolved target or trust facts.
+  def dispatch_blocked_target_unavailable(account_id, attrs) do
+    Audit.changeset(
+      account_id,
+      "dispatch_blocked_target_unavailable",
+      dispatch_actor(attrs) ++
+        [
+          payload:
+            bounded_dispatch_fields(%{
+              requested_action_id: Map.get(attrs, :action_id),
+              requested_pack_ref: Map.get(attrs, :pack_ref),
+              operation_id: Map.get(attrs, :operation_id)
+            })
+        ]
+    )
+  end
+
+  defp dispatch_actor(%{audit_subject: %Subject{} = subject}), do: actor(subject)
+
+  defp dispatch_actor(%{audit_execution: %Runbooks.RunbookExecution{} = execution}),
+    do: dispatch_actor(execution)
+
+  defp dispatch_actor(attrs) do
+    actor_kind =
+      cond do
+        is_binary(Map.get(attrs, :requested_by_id)) -> "user"
+        is_binary(Map.get(attrs, :api_key_id)) -> "api_key"
+        true -> "system"
+      end
+
+    [
+      actor_kind: actor_kind,
+      actor_id: Map.get(attrs, :requested_by_id) || Map.get(attrs, :api_key_id),
+      ip_address: Map.get(attrs, :ip_address),
+      user_agent: Map.get(attrs, :user_agent),
+      request_id: Map.get(attrs, :request_id)
+    ]
+  end
+
+  defp dispatch_payload(%Runs.ActionRun{} = run) do
+    run
+    |> Map.take([
+      :action_id,
+      :runner_id,
+      :pack_ref,
+      :expected_pack_hash,
+      :operation_id,
+      :source,
+      :runbook_id,
+      :runbook_execution_id,
+      :runbook_execution_item_id,
+      :runbook_step_id
+    ])
+    |> Map.put(:run_id, run.id)
+    |> Map.put(:source, if(run.source, do: to_string(run.source)))
+    |> bounded_dispatch_fields()
+  end
+
+  defp dispatch_payload(%{
+         audit_execution: %Runbooks.RunbookExecution{id: execution_id} = execution,
+         audit_execution_item: %Runbooks.ExecutionItem{runbook_execution_id: execution_id} = item
+       }) do
+    bounded_dispatch_fields(%{
+      action_id: item.action_id,
+      runner_id: item.runner_id,
+      pack_ref: item.pack_ref,
+      expected_pack_hash: item.pack_hash,
+      operation_id: execution.operation_id,
+      source: "runbook",
+      runbook_id: execution.runbook_id,
+      runbook_execution_id: execution.id,
+      runbook_execution_item_id: item.id,
+      runbook_step_id: item.step_id
+    })
+  end
+
+  defp dispatch_payload(attrs) do
+    bounded_dispatch_fields(%{
+      requested_action_id: Map.get(attrs, :action_id),
+      requested_pack_ref: Map.get(attrs, :pack_ref),
+      operation_id: Map.get(attrs, :operation_id),
+      runner_id: Map.get(attrs, :runner_id)
+    })
+  end
+
+  # These receipts precede ActionRun input validation. Never retain raw args,
+  # justification, attestation, or arbitrary caller attrs at this earlier gate.
+  defp bounded_dispatch_fields(fields) do
+    for {key, value} <- fields, is_binary(value), into: %{} do
+      {key, value |> SafeText.strip() |> String.slice(0, 255)}
+    end
   end
 
   def run_cancel_requested(%Subject{} = subject, %Runs.ActionRun{} = run, reason) do
@@ -1496,6 +1728,7 @@ defmodule Emisar.Audit.Events do
       actor_label: provider.name,
       target_kind: "user",
       target_id: membership.user_id,
+      target_label: display_name,
       payload: %{
         provider_id: provider.id,
         provider_kind: to_string(provider.kind),
@@ -1533,6 +1766,7 @@ defmodule Emisar.Audit.Events do
       actor_label: provider.name,
       target_kind: "user",
       target_id: membership.user_id,
+      target_label: membership.directory_display_name,
       payload: %{
         provider_id: provider.id,
         provider_kind: to_string(provider.kind),
@@ -1555,6 +1789,7 @@ defmodule Emisar.Audit.Events do
       actor_label: provider.name,
       target_kind: "user",
       target_id: membership.user_id,
+      target_label: membership.directory_display_name,
       payload: %{
         provider_id: provider.id,
         provider_kind: to_string(provider.kind),
@@ -1575,6 +1810,7 @@ defmodule Emisar.Audit.Events do
       actor_label: provider.name,
       target_kind: "user",
       target_id: membership.user_id,
+      target_label: membership.directory_display_name,
       payload: %{provider_id: provider.id, provider_kind: to_string(provider.kind)}
     )
   end
@@ -1919,24 +2155,28 @@ defmodule Emisar.Audit.Events do
   # -- Billing ---------------------------------------------------------
 
   @doc """
-  The account's plan changed (Paddle webhook / sync). System actor, no user.
+  The account's subscription plan, status, access, or scheduled change changed.
+  System actor, no user (Paddle webhook / sync or an internal support write).
   DISTINCT from the Mixpanel `Analytics.Events.subscription_changed` — this is the
   in-app AUDIT trail (so a downgrade-to-wipe leaves evidence), not analytics.
   """
   def subscription_changed(account_id, from_plan, to_plan, opts \\ [])
       when is_binary(account_id) do
+    # Keep explicit nil snapshots: clearing a scheduled change is meaningful,
+    # unlike a historical payload that never recorded the field. Only these
+    # safe subscription facts belong in the customer-visible receipt.
+    fields = ~w[
+      from_state to_state from_status to_status
+      from_subscribed_plan to_subscribed_plan
+      from_scheduled_change_action to_scheduled_change_action
+      from_scheduled_change_effective_at to_scheduled_change_effective_at
+    ]a
+
     payload =
-      %{from: from_plan, to: to_plan}
-      |> Emisar.Maps.put_present(:from_state, opts[:from_state])
-      |> Emisar.Maps.put_present(:to_state, opts[:to_state])
-      |> Emisar.Maps.put_present(:from_status, opts[:from_status])
-      |> Emisar.Maps.put_present(:to_status, opts[:to_status])
-      |> Emisar.Maps.put_present(:subscribed_plan, opts[:subscribed_plan])
-      |> Emisar.Maps.put_present(:scheduled_change_action, opts[:scheduled_change_action])
-      |> Emisar.Maps.put_present(
-        :scheduled_change_effective_at,
-        opts[:scheduled_change_effective_at]
-      )
+      opts
+      |> Keyword.take(fields)
+      |> Map.new()
+      |> Map.merge(%{from: from_plan, to: to_plan})
 
     Audit.changeset(account_id, "subscription.changed",
       actor_kind: "system",

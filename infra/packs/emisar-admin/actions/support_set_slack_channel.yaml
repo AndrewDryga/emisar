@@ -1,0 +1,33 @@
+schema_version: 1
+id: emisar.admin.support.set_slack_channel
+title: Set Slack support channel
+kind: script
+risk: high
+description: Set or clear an account's shared Slack support channel link, shown on Enterprise.
+side_effects: [Changes the support destination shown to this account's Enterprise members.]
+args:
+  - name: account
+    type: string
+    required: true
+    description: Exact account UUID or slug.
+    validation: {max_length: 128}
+  - name: url
+    type: string
+    required: false
+    default: ""
+    description: HTTPS Slack channel URL (app.slack.com/client or workspace.slack.com/archives). Leave blank to remove the link.
+    validation: {max_length: 512}
+  - name: reason
+    type: string
+    required: true
+    description: Support reason recorded in the action audit.
+    validation: {max_length: 500}
+execution:
+  script: {path: scripts/callback.sh, interpreter: /bin/sh}
+  argv:
+    - "emisar.admin.support.set_slack_channel"
+    - "account={{ args.account }}"
+    - "url={{ args.url }}"
+    - "reason={{ args.reason }}"
+  timeout: 30s
+output: {parser: json, parser_required: true, max_stdout_bytes: 65536, max_stderr_bytes: 8192}

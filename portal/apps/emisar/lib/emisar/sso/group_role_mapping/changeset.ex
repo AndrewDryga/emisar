@@ -48,7 +48,9 @@ defmodule Emisar.SSO.GroupRoleMapping.Changeset do
     |> validate_length(:external_group_display, max: @max_string_length, count: :codepoints)
     |> validate_exclusion(:role, [:owner], message: "directory sync cannot grant owner")
     |> unique_constraint([:provider_id, :directory_group_id],
-      name: :sso_group_role_mappings_provider_group_id_index
+      name: :sso_group_role_mappings_provider_group_id_index,
+      error_key: :directory_group_id,
+      message: "This group already has a role mapping."
     )
     |> foreign_key_constraint(:directory_group_id,
       name: :sso_group_role_mapping_directory_group_fkey

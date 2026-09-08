@@ -120,6 +120,42 @@ defmodule Emisar.Fixtures.Runners do
     {raw, key}
   end
 
+  @doc "Creates a console install key, with optional persisted lifecycle state for tests."
+  def create_install_key(attrs \\ %{}) do
+    attrs = Map.new(attrs)
+    account_id = attrs[:account_id] || Fixtures.Accounts.create_account().id
+    user_id = attrs[:created_by_id] || Fixtures.Users.create_user().id
+
+    membership =
+      Fixtures.Memberships.fetch_membership(account_id, user_id) ||
+        Fixtures.Memberships.create_membership(
+          account_id: account_id,
+          user_id: user_id,
+          role: "owner"
+        )
+
+    subject = Fixtures.Subjects.membership_subject(membership)
+    {:ok, raw, key} = Runners.mint_install_key(subject)
+    {raw, set_enrollment_key_state(key, attrs)}
+  end
+
+  @doc "Sets enrollment lifecycle state without exercising an unrelated registration or revocation."
+  def set_enrollment_key_state(%EnrollmentKey{} = key, attrs) do
+    changes =
+      attrs
+      |> Map.new()
+      |> Map.take([
+        :auto_generated_at,
+        :expires_at,
+        :last_used_at,
+        :uses_count,
+        :revoked_at,
+        :deleted_at
+      ])
+
+    key |> Ecto.Changeset.change(changes) |> Repo.update!()
+  end
+
   @doc """
   Enrollment key persisted from a caller-supplied raw secret — the seed/dev
   bootstrap shape (`EnrollmentKey.Changeset.create_with_secret/4`). Tests use
@@ -253,6 +289,18 @@ defmodule Emisar.Fixtures.Runners do
   def expire_token(%Token{} = token) do
     token
     |> Ecto.Changeset.change(expires_at: DateTime.add(DateTime.utc_now(), -1, :second))
+    |> Repo.update!()
+  end
+
+  def create_token(%Runner{} = runner, opts \\ []),
+    do: Runners.mint_runner_token(runner, nil, opts)
+
+  def set_connection_credential(%Runner{} = runner, %Token{} = token, supported \\ true) do
+    runner
+    |> Ecto.Changeset.change(
+      connection_token_id: token.id,
+      credential_rotation_supported: supported
+    )
     |> Repo.update!()
   end
 end

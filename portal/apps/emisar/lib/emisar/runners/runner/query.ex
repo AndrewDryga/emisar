@@ -334,7 +334,14 @@ defmodule Emisar.Runners.Runner.Query do
     do: [{:runners, :asc, :group}, {:runners, :asc, :name}, {:runners, :asc, :id}]
 
   @impl Emisar.Repo.Query
-  def preloads, do: [online?: &Emisar.Runners.preload_runners_presence/1]
+  def preloads do
+    [
+      online?: &Emisar.Runners.preload_runners_presence/1,
+      connection_token: {Emisar.Runners.Token.Query.all(), []}
+    ]
+  end
+
+  def with_preloaded_connection_token(queryable), do: preload(queryable, :connection_token)
 
   @impl Emisar.Repo.Query
   def filters,

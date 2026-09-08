@@ -1635,6 +1635,9 @@ defmodule Emisar.RunbooksTest do
         |> Enum.find(&(&1.event_type == "runbook.updated"))
 
       assert updated_event.target_id == runbook.id
+      assert updated_event.payload["operation"] == "draft_saved"
+      assert updated_event.payload["from_title"] == runbook.title
+      assert updated_event.payload["title"] == "Second"
 
       {_user, _account, other_subject} = Fixtures.Subjects.owner_subject()
 
@@ -1916,6 +1919,12 @@ defmodule Emisar.RunbooksTest do
       assert discarded.draft_definition == nil
       assert discarded.definition == live.definition
       assert discarded.live_version == 1
+
+      assert Enum.any?(Repo.all(Emisar.Audit.Event), fn event ->
+               event.event_type == "runbook.updated" and event.target_id == live.id and
+                 event.payload["operation"] == "draft_discarded"
+             end)
+
       assert_receive {:list_changed, :runbook, "runbook.updated", runbook_id}
       assert runbook_id == live.id
     end
@@ -3592,6 +3601,13 @@ defmodule Emisar.RunbooksTest do
 
   defp mcp_execution_fixture do
     {_user, account, owner} = Fixtures.Subjects.owner_subject()
+
+    owner =
+      account.id
+      |> Fixtures.Memberships.fetch_membership(owner.actor.id)
+      |> Fixtures.Memberships.force_role("admin")
+      |> Fixtures.Subjects.membership_subject()
+
     _policy = Fixtures.Policies.create_policy(account_id: account.id)
     subject = api_client_subject(account, owner, "execution client")
     runner = trusted_runner(account, owner)

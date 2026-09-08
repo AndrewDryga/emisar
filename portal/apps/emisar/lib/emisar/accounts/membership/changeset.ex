@@ -39,6 +39,30 @@ defmodule Emisar.Accounts.Membership.Changeset do
     |> put_access_the_role_carries()
   end
 
+  def update_role_and_access(%Membership{} = membership, role, %RunnerAccess{} = access) do
+    membership
+    |> update(%{role: role})
+    |> put_runner_access(access)
+    |> put_access_the_role_carries()
+  end
+
+  def return_to_directory(%Ecto.Changeset{} = changeset, version) do
+    pending = max(get_field(changeset, :directory_authorization_pending_version) || 0, version)
+
+    if is_binary(get_field(changeset, :directory_provider_id)) do
+      changeset
+      |> put_change(:directory_managed, true)
+      |> put_change(:directory_authorization_pending_version, pending)
+    else
+      # An already-deleted provider cannot reconcile. Keep the explicit none
+      # grant and suspension state, and return configuration to the account.
+      changeset
+      |> put_change(:directory_managed, false)
+      |> put_change(:runner_access_directory_managed, false)
+      |> put_change(:directory_authorization_pending_version, nil)
+    end
+  end
+
   # Directory sync sets the role AND marks it directory-managed, so the operator
   # role-change path rejects a manual change to it (the lock is domain-owned, not
   # UI-only). `role` is a validated atom off the sync path.
@@ -167,8 +191,10 @@ defmodule Emisar.Accounts.Membership.Changeset do
   defp put_access_the_role_carries(changeset) do
     role = get_field(changeset, :role)
 
-    if Emisar.Auth.Role.carries_runner_access?(role),
-      do: changeset,
-      else: put_runner_access(changeset, RunnerAccess.none())
+    cond do
+      role == :owner -> put_runner_access(changeset, RunnerAccess.all())
+      Emisar.Auth.Role.carries_runner_access?(role) -> changeset
+      true -> put_runner_access(changeset, RunnerAccess.none())
+    end
   end
 end

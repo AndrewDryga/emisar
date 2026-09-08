@@ -321,7 +321,14 @@ defmodule Emisar.RunnersTest do
 
   describe "ensure_runner_ids_visible/2" do
     test "checks the whole current scope without trusting supplied runner facts" do
-      {user, account, subject} = Fixtures.Subjects.owner_subject()
+      {user, account, _owner} = Fixtures.Subjects.owner_subject()
+      membership = Fixtures.Memberships.fetch_membership(account.id, user.id)
+
+      subject =
+        membership
+        |> Fixtures.Memberships.force_role("admin")
+        |> Fixtures.Subjects.membership_subject()
+
       allowed = Fixtures.Runners.create_runner(account_id: account.id, group: "database")
       hidden = Fixtures.Runners.create_runner(account_id: account.id, group: "web")
       foreign = Fixtures.Runners.create_runner()
@@ -454,6 +461,12 @@ defmodule Emisar.RunnersTest do
 
     test "returns only current runner scope and marks account coverage partial" do
       {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      membership = Fixtures.Memberships.fetch_membership(account.id, subject.actor.id)
+
+      subject =
+        membership
+        |> Fixtures.Memberships.force_role("admin")
+        |> Fixtures.Subjects.membership_subject()
 
       visible =
         Fixtures.Runners.create_runner(
@@ -531,7 +544,11 @@ defmodule Emisar.RunnersTest do
       Fixtures.Runners.create_runner(account_id: account.id, group: "database")
       Fixtures.Runners.create_runner(account_id: account.id, group: "web")
 
-      membership = Fixtures.Memberships.fetch_membership(account.id, user.id)
+      membership =
+        account.id
+        |> Fixtures.Memberships.fetch_membership(user.id)
+        |> Fixtures.Memberships.force_role("admin")
+
       {:ok, access} = Accounts.RunnerAccess.restricted(["database"], [])
       Fixtures.Memberships.force_runner_access(membership, access)
       subject = Fixtures.Subjects.membership_subject(membership)
@@ -633,7 +650,11 @@ defmodule Emisar.RunnersTest do
 
       Fixtures.Runners.create_runner(account_id: account.id, name: "web-1", group: "web")
 
-      membership = Fixtures.Memberships.fetch_membership(account.id, user.id)
+      membership =
+        account.id
+        |> Fixtures.Memberships.fetch_membership(user.id)
+        |> Fixtures.Memberships.force_role("admin")
+
       {:ok, access} = Accounts.RunnerAccess.restricted(["database"], [])
       Fixtures.Memberships.force_runner_access(membership, access)
       subject = Fixtures.Subjects.membership_subject(membership)
@@ -656,7 +677,11 @@ defmodule Emisar.RunnersTest do
         connected?: false
       )
 
-      membership = Fixtures.Memberships.fetch_membership(account.id, user.id)
+      membership =
+        account.id
+        |> Fixtures.Memberships.fetch_membership(user.id)
+        |> Fixtures.Memberships.force_role("admin")
+
       {:ok, access} = Accounts.RunnerAccess.restricted(["database"], [])
       Fixtures.Memberships.force_runner_access(membership, access)
       subject = Fixtures.Subjects.membership_subject(membership)
@@ -668,7 +693,11 @@ defmodule Emisar.RunnersTest do
       {account, user, _subject} = account_with_owner_subject()
       Fixtures.Runners.create_runner(account_id: account.id, group: "database")
 
-      membership = Fixtures.Memberships.fetch_membership(account.id, user.id)
+      membership =
+        account.id
+        |> Fixtures.Memberships.fetch_membership(user.id)
+        |> Fixtures.Memberships.force_role("admin")
+
       Fixtures.Memberships.force_runner_access(membership, Accounts.RunnerAccess.none())
       subject = Fixtures.Subjects.membership_subject(membership)
 
@@ -2009,9 +2038,10 @@ defmodule Emisar.RunnersTest do
       runner = Fixtures.Runners.create_runner(connected?: false)
       refute Runners.online?(runner.account_id, runner.id)
       context = %RequestContext{ip_address: "10.0.0.1"}
+      {_raw, token} = Fixtures.Runners.create_token(runner)
 
       assert {:ok, %Runner{last_connected_at: %DateTime{}}} =
-               Runners.connect_runner(runner, "tok-123", context)
+               Runners.connect_runner(runner, token.id, context)
 
       assert Runners.online?(runner.account_id, runner.id)
 
@@ -2020,7 +2050,7 @@ defmodule Emisar.RunnersTest do
       assert event.account_id == runner.account_id
       assert event.actor_kind == "runner"
       assert event.target_id == runner.id
-      assert event.payload["token_id"] == "tok-123"
+      assert event.payload["token_id"] == token.id
       assert event.ip_address == "10.0.0.1"
     end
 
@@ -2190,7 +2220,7 @@ defmodule Emisar.RunnersTest do
       runner = Fixtures.Runners.create_runner(connected?: false)
       {:ok, claimed} = Runners.connect_runner(runner)
 
-      assert {:ok, _presence_ref} =
+      assert {:ok, %Runner{} = heartbeat_runner} =
                Runners.record_heartbeat(
                  runner.account_id,
                  runner.id,
@@ -2198,6 +2228,8 @@ defmodule Emisar.RunnersTest do
                  claimed.connection_lease_id,
                  7
                )
+
+      assert heartbeat_runner.id == runner.id
 
       renewed = Repo.reload!(claimed)
 
@@ -2975,7 +3007,7 @@ defmodule Emisar.RunnersTest do
 
   describe "enrollment_key_filters/0" do
     test "carries the enrollment-keys table's filters" do
-      assert Enum.map(Runners.enrollment_key_filters(), & &1.name) == [:status]
+      assert Enum.map(Runners.enrollment_key_filters(), & &1.name) == [:status, :source]
     end
   end
 
@@ -3610,7 +3642,7 @@ defmodule Emisar.RunnersTest do
     end
   end
 
-  describe "refresh_runner_token/1" do
+  describe "refresh_runner_token/2" do
     test "a token too young to rotate is answered, not refused" do
       runner = Fixtures.Runners.create_runner(connected?: false)
       {raw, _token} = Runners.mint_runner_token(runner)
@@ -3716,7 +3748,7 @@ defmodule Emisar.RunnersTest do
     end
   end
 
-  describe "verify_runner_token/1" do
+  describe "verify_runner_token/2" do
     test "returns {:ok, token, runner} for a valid raw token and bumps last_used_at" do
       runner = Fixtures.Runners.create_runner(connected?: false)
       {raw, token} = Runners.mint_runner_token(runner)
@@ -4509,7 +4541,7 @@ defmodule Emisar.RunnersTest do
       assert failures == 7, "expected 7 :enrollment_key_invalid failures, got #{failures}"
     end
 
-    test "promotes an auto-generated install key to permanent on first use" do
+    test "preserves console origin and excludes a used install key from cleanup" do
       {_account, _user, subject} = account_with_owner_subject()
       {:ok, raw, key} = Runners.mint_install_key(subject)
       assert EnrollmentKey.auto_unused?(key)
@@ -4521,13 +4553,14 @@ defmodule Emisar.RunnersTest do
                  external_id: "ext-#{System.unique_integer([:positive])}"
                })
 
-      # auto_generated_at cleared, last_used_at set, key now visible.
+      # Origin survives enrollment, but a used key is no longer evictable.
       reloaded =
         EnrollmentKey.Query.all()
         |> EnrollmentKey.Query.by_id(key.id)
         |> Repo.fetch!(EnrollmentKey.Query)
 
-      assert is_nil(reloaded.auto_generated_at)
+      assert reloaded.auto_generated_at == key.auto_generated_at
+      refute EnrollmentKey.auto_unused?(reloaded)
       assert reloaded.last_used_at != nil
       assert {:ok, [%EnrollmentKey{id: id}], _} = Runners.list_enrollment_keys(subject)
       assert id == key.id

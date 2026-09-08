@@ -21,12 +21,8 @@ defmodule Emisar.Runners.EnrollmentKey do
     field :revoked_at, :utc_datetime_usec
     field :deleted_at, :utc_datetime_usec
 
-    # Set when the console auto-mints this key for the install
-    # command. Cleared the moment a runner successfully registers with
-    # it (at which point the key becomes permanent and visible in
-    # lists). While this is non-nil AND last_used_at is nil, the key
-    # is "tentative": invisible in UI, subject to ring eviction beyond
-    # the per-account cap.
+    # Permanent origin marker for console install keys. Cleanup additionally
+    # requires no recorded use; enrollment never erases the key's source.
     field :auto_generated_at, :utc_datetime_usec
 
     belongs_to :account, Emisar.Accounts.Account, where: [deleted_at: nil]
@@ -38,11 +34,11 @@ defmodule Emisar.Runners.EnrollmentKey do
 
   @doc """
   True when the key is auto-generated AND has never been used. Drives
-  UI visibility (hidden) and ring eviction (only auto-unused keys get
-  evicted; once bound, the key stays).
+  cleanup eligibility (only auto-unused keys get evicted; once bound, the key stays).
   """
   def auto_unused?(%__MODULE__{auto_generated_at: nil}), do: false
   def auto_unused?(%__MODULE__{last_used_at: ts}) when not is_nil(ts), do: false
+  def auto_unused?(%__MODULE__{uses_count: count}) when count > 0, do: false
   def auto_unused?(%__MODULE__{}), do: true
 
   @doc "Is this key currently presentable for a runner registration?"
@@ -50,7 +46,7 @@ defmodule Emisar.Runners.EnrollmentKey do
     cond do
       not is_nil(key.revoked_at) -> false
       not is_nil(key.deleted_at) -> false
-      key.expires_at && DateTime.compare(DateTime.utc_now(), key.expires_at) == :gt -> false
+      key.expires_at && DateTime.compare(DateTime.utc_now(), key.expires_at) != :lt -> false
       not key.reusable and key.uses_count > 0 -> false
       key.max_uses && key.uses_count >= key.max_uses -> false
       true -> true

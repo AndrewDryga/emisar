@@ -553,6 +553,9 @@ defmodule Emisar.Accounts do
 
     multi
     |> put_account_with_owner(account_attrs, :registration_user)
+    |> Multi.insert(:user_signed_up, fn %{account: account, registration_user: user} ->
+      Audit.Events.user_signed_up(user, account)
+    end)
     |> Multi.put(:registration, true)
   end
 
@@ -629,10 +632,8 @@ defmodule Emisar.Accounts do
   Internal — onboarding: an existing user stands up another workspace, so unlike
   `begin_owner_registration/2` there is a user row already but still no `%Subject{}` for
   the new tenant. Creates an account with the given user as `:owner`, wrapped
-  in a transaction so a half-created account is impossible. Audit-logs both
-  `user.signed_up` (the new user) and `account.created` (the new tenant) —
-  together they form the "this person stood up a new team" trace operators need
-  for billing/abuse review.
+  in a transaction so a half-created account is impossible. `account.created`
+  records the user who created it; an existing user has not signed up again.
   """
   def create_account_with_owner(account_attrs, %Users.User{} = user) do
     Multi.new()
@@ -724,10 +725,6 @@ defmodule Emisar.Accounts do
       user = Map.fetch!(changes, user_key)
       Audit.Events.account_created(account, user)
     end)
-    |> Multi.insert(:user_signed_up, fn %{account: account} = changes ->
-      user = Map.fetch!(changes, user_key)
-      Audit.Events.user_signed_up(user, account)
-    end)
   end
 
   defp tag_signup_error(_step, {:ok, row}), do: {:ok, row}
@@ -746,8 +743,8 @@ defmodule Emisar.Accounts do
   `EmisarWeb.UserAuth.on_mount(:ensure_mfa_compliant)` until they enroll
   (owners included) — so turning it on requires the caller to be enrolled
   themselves (`{:error, :mfa_enrollment_required}`). Turning it off is always
-  allowed. A security change is audited as `account.require_mfa_set`,
-  everything else as `account.updated`.
+  allowed. Each changed security requirement gets its dedicated audit event;
+  other changed fields are recorded together in `account.updated`.
   """
   def update_account(%Account{} = account, attrs, %Subject{} = subject) do
     with :ok <-
@@ -847,6 +844,25 @@ defmodule Emisar.Accounts do
       |> Repo.fetch_and_update(Account.Query,
         with: &Account.Changeset.put_max_grant_lifetime_seconds(&1, seconds),
         audit: &account_update_audit(&1, &2, subject)
+      )
+    else
+      {:error, :not_found}
+    end
+  end
+
+  @doc """
+  Internal — private admin RPC only, never a tenant-facing mutation. Configures
+  or clears one account's support channel under the account row lock. The
+  private action run records the staff actor and reason; this transaction also
+  records the account-setting change. Generic account settings reject this field.
+  """
+  def put_support_slack_url(account_id, url) do
+    if Repo.valid_uuid?(account_id) do
+      Account.Query.not_deleted()
+      |> Account.Query.by_id(account_id)
+      |> Repo.fetch_and_update(Account.Query,
+        with: &Account.Changeset.put_support_slack_url(&1, url),
+        audit: fn updated, changeset -> Audit.Events.account_updated(changeset.data, updated) end
       )
     else
       {:error, :not_found}
@@ -954,11 +970,9 @@ defmodule Emisar.Accounts do
         build_event.(subject, account)
       end
 
-    case events do
-      [] -> Audit.Events.account_updated(subject, account)
-      [event] -> event
-      events -> events
-    end
+    general_event = Audit.Events.account_updated(subject, changeset.data, account)
+
+    Enum.reject(events ++ [general_event], &is_nil/1)
   end
 
   # The settings embed's own changes (the nested cast_embed changeset), or %{}
@@ -1172,8 +1186,14 @@ defmodule Emisar.Accounts do
       mfa_enrolled?: mfa_enrolled?,
       confirmation_pending?: confirmation_pending?,
       runner_access: Map.get(access_by_membership, membership.id, RunnerAccess.none()),
-      runner_access_editable?: not membership.runner_access_directory_managed,
-      role_editable?: not self_owner? and not membership.directory_managed,
+      manageable?: subject_can_manage_member?(membership, subject),
+      runner_access_editable?:
+        subject_can_manage_member?(membership, subject) and
+          membership.role != :owner and
+          not membership.runner_access_directory_managed,
+      role_editable?:
+        subject_can_assign_member_role?(membership.role, subject) and not self_owner? and
+          not membership.directory_managed,
       resend_invitation?: pending_invitation? and not disabled?,
       resend_confirmation?:
         confirmation_pending? and membership.user_id == Subject.actor_id(subject),
@@ -1755,6 +1775,29 @@ defmodule Emisar.Accounts do
   """
   def runner_access_for_subject(%Subject{
         account: %Account{id: account_id},
+        actor: %ApiKeys.ApiKey{id: key_id},
+        membership_id: membership_id
+      }) do
+    if Repo.valid_uuid?(account_id) and Repo.valid_uuid?(membership_id) and
+         Repo.valid_uuid?(key_id) do
+      membership =
+        Membership.Query.authorized()
+        |> Membership.Query.by_account_id(account_id)
+        |> Membership.Query.by_id(membership_id)
+        |> Membership.Query.by_active_api_key_id(key_id, DateTime.utc_now())
+        |> Repo.peek()
+
+      case membership do
+        %Membership{} = membership -> load_runner_access(Repo, membership)
+        nil -> RunnerAccess.none()
+      end
+    else
+      RunnerAccess.none()
+    end
+  end
+
+  def runner_access_for_subject(%Subject{
+        account: %Account{id: account_id},
         membership_id: membership_id
       }) do
     runner_access_for_membership(account_id, membership_id)
@@ -1835,6 +1878,7 @@ defmodule Emisar.Accounts do
       end)
       |> Multi.run(:runner_access_guard, fn _repo, %{target: target} ->
         with :ok <- ensure_can_modify_membership(target, subject),
+             :ok <- ensure_runner_access_editable_role(target),
              :ok <- ensure_runner_access_grant_allowed(subject, access),
              :ok <- ensure_role_carries_runner_access(target, access),
              :ok <- ensure_runner_access_not_directory_managed(target) do
@@ -1894,6 +1938,11 @@ defmodule Emisar.Accounts do
        do: {:error, :runner_access_managed_by_directory}
 
   defp ensure_runner_access_not_directory_managed(%Membership{}), do: :ok
+
+  defp ensure_runner_access_editable_role(%Membership{role: :owner}),
+    do: {:error, :owner_access_is_account_wide}
+
+  defp ensure_runner_access_editable_role(%Membership{}), do: :ok
 
   # ASSIGNING a role that carries no reach resets it (`RunnerAccess.for_role/2`);
   # editing the reach of someone who already holds that role is a contradiction
@@ -2311,6 +2360,11 @@ defmodule Emisar.Accounts do
   `{:error, :member_runner_access_exceeds_subject}`. A change that only removes
   permissions is a narrowing and stays open.
 
+  Owner always grants all runners and packs. Existing agent credentials remain
+  valid and inherit the expanded scope. Demoting an Owner requires
+  `runner_access: %RunnerAccess{}`; directory-owned Owners instead use
+  `return_owner_to_directory/2`. `expected_role` rejects a stale role editor.
+
   The caller passes their `%Subject{}` so the guard runs at the domain
   boundary, not just in LiveView templates.
 
@@ -2320,14 +2374,18 @@ defmodule Emisar.Accounts do
   the sync write path), so the domain enforces this itself — no caller-supplied
   hint, no UI trust.
   """
-  def update_membership_role(%Membership{} = membership, new_role, %Subject{} = subject) do
+  def update_membership_role(
+        %Membership{} = membership,
+        new_role,
+        %Subject{} = subject,
+        opts \\ []
+      ) do
     with :ok <-
            Auth.Authorizer.ensure_has_permissions(subject, Authorizer.manage_team_permission()),
          :ok <- ensure_subject_in_account(subject, membership.account_id),
          {:ok, new_role} <- cast_new_role(membership, new_role) do
-      # A role that carries no runner reach resets it, so this spans two tables
-      # and needs a Multi: the nested `fetch_and_update` joins this transaction
-      # and keeps only its `:audit`, and the side effects ride the outer commit.
+      # Role, scope rows, credential retirement, and audit commit together.
+      # Session refresh and list notifications wait for the outer commit.
       Multi.new()
       |> put_membership_account_lock(membership.account_id)
       |> Multi.run(:target, fn repo, _changes ->
@@ -2336,14 +2394,24 @@ defmodule Emisar.Accounts do
       |> Multi.run(:previous_access, fn repo, %{target: target} ->
         {:ok, load_runner_access(repo, target)}
       end)
-      |> Multi.run(:membership, fn repo, _changes ->
-        write_membership_role(repo, membership, new_role, subject)
+      |> Multi.run(:next_access, fn _repo, %{target: target, previous_access: previous} ->
+        with :ok <- ensure_expected_membership_role(target, opts),
+             :ok <- ensure_role_not_directory_managed(target),
+             :ok <- ensure_role_change_allowed(target, new_role, subject),
+             :ok <- ensure_demotion_keeps_an_owner(target, new_role),
+             {:ok, access} <- role_change_access(target, new_role, previous, opts),
+             :ok <- ensure_role_change_within_subject_reach(target, new_role, access, subject) do
+          {:ok, access}
+        end
+      end)
+      |> Multi.run(:membership, fn repo, %{target: target, next_access: access} ->
+        write_membership_role(repo, target, new_role, access, subject, opts)
       end)
       |> Multi.run(:credential_revocation, fn repo, %{target: target, membership: updated} ->
         maybe_revoke_reduced_member_credentials(repo, target.role, updated)
       end)
-      |> Multi.run(:runner_access, fn repo, %{membership: updated, previous_access: previous} ->
-        reset_runner_access_the_role_carries(repo, updated, previous)
+      |> Multi.run(:runner_access, fn repo, %{membership: updated, next_access: access} ->
+        replace_runner_access_rows(repo, updated.id, access)
       end)
       |> Multi.run(:runner_access_audit, fn repo, changes ->
         insert_runner_access_audit(repo, subject, changes, changes.runner_access)
@@ -2356,22 +2424,81 @@ defmodule Emisar.Accounts do
     end
   end
 
-  defp write_membership_role(repo, %Membership{} = membership, new_role, %Subject{} = subject) do
+  @doc "Return an Owner's role and access to their directory, denying runner access until sync completes."
+  def return_owner_to_directory(%Membership{} = membership, %Subject{} = subject) do
+    update_membership_role(membership, :viewer, subject,
+      runner_access: :directory,
+      expected_role: :owner
+    )
+  end
+
+  defp ensure_expected_membership_role(%Membership{role: role}, opts) do
+    case Keyword.fetch(opts, :expected_role) do
+      {:ok, expected} when expected != role -> {:error, :membership_role_changed}
+      _ -> :ok
+    end
+  end
+
+  defp role_change_access(
+         %Membership{role: :owner, runner_access_directory_managed: true},
+         new_role,
+         _previous,
+         opts
+       )
+       when new_role != :owner do
+    if new_role == :viewer and Keyword.get(opts, :runner_access) == :directory,
+      do: {:ok, RunnerAccess.none()},
+      else: {:error, :owner_demotion_requires_directory}
+  end
+
+  defp role_change_access(%Membership{role: :owner}, new_role, _previous, opts)
+       when new_role != :owner do
+    case Keyword.get(opts, :runner_access) do
+      %RunnerAccess{} = access ->
+        if RunnerAccess.for_role(new_role, access) == access,
+          do: {:ok, access},
+          else: {:error, :role_carries_no_runner_access}
+
+      _ ->
+        {:error, :owner_demotion_requires_access}
+    end
+  end
+
+  defp role_change_access(%Membership{}, new_role, previous, opts) do
+    if Keyword.get(opts, :runner_access) == :directory,
+      do: {:error, :owner_demotion_requires_directory},
+      else: {:ok, RunnerAccess.for_role(new_role, previous)}
+  end
+
+  defp write_membership_role(
+         repo,
+         %Membership{} = membership,
+         new_role,
+         access,
+         %Subject{} = subject,
+         opts
+       ) do
     Membership.Query.not_deleted()
     |> Membership.Query.by_id(membership.id)
     |> Authorizer.for_subject(subject)
     |> repo.fetch_and_update(Membership.Query,
       with: fn loaded_membership ->
-        # The guards judge the row's CURRENT state under the lock — the caller's
-        # struct is a stale socket snapshot. `directory_managed` is judged here
-        # too, so a stale UI or crafted event can't slip a synced-role change past.
-        with :ok <- ensure_role_not_directory_managed(loaded_membership),
-             :ok <- ensure_role_change_allowed(loaded_membership, new_role, subject),
-             :ok <- ensure_role_change_within_subject_reach(loaded_membership, new_role, subject),
-             :ok <- ensure_demotion_keeps_an_owner(loaded_membership, new_role) do
-          Membership.Changeset.update(loaded_membership, %{role: new_role})
+        # The outer Multi holds this row locked across authorization, the role
+        # and access write, and credential retirement.
+        changeset =
+          Membership.Changeset.update_role_and_access(loaded_membership, new_role, access)
+
+        if Keyword.get(opts, :runner_access) == :directory do
+          version =
+            SSO.directory_authorization_version(
+              membership.account_id,
+              membership.directory_provider_id,
+              repo
+            )
+
+          Membership.Changeset.return_to_directory(changeset, version)
         else
-          {:error, reason} -> reason
+          changeset
         end
       end,
       # `changeset.data` is the locked pre-update row — the audit
@@ -2380,27 +2507,11 @@ defmodule Emisar.Accounts do
       # `from: :admin, to: :admin` row would make the trail unreadable, so a
       # no-op writes nothing. (A capture can't skip &1, so this stays a fn.)
       audit: fn _updated, changeset ->
-        if changeset.changes == %{},
+        if changeset.data.role == new_role,
           do: nil,
           else: Audit.Events.membership_role_changed(subject, changeset.data, new_role)
       end
     )
-  end
-
-  # The membership's own columns come from `Membership.Changeset`; the normalized
-  # `user_runner_scopes` rows can only be rewritten here, so both go through
-  # `RunnerAccess.for_role/2` and cannot end up describing different reach. A
-  # role that keeps its access writes nothing.
-  defp reset_runner_access_the_role_carries(
-         repo,
-         %Membership{} = membership,
-         %RunnerAccess{} = previous
-       ) do
-    access = RunnerAccess.for_role(membership.role, previous)
-
-    if access == previous,
-      do: {:ok, previous},
-      else: replace_runner_access_rows(repo, membership.id, access)
   end
 
   # -- PubSub ----------------------------------------------------------
@@ -2612,26 +2723,19 @@ defmodule Emisar.Accounts do
     end
   end
 
-  # Nondelegation — the cap invitations (`validate_invitation/3`) and access edits
-  # (`update_membership_runner_access/3`) already run: you may not hand out reach
-  # you don't hold yourself. A role change carries no access of its own, so only a
-  # change that ADDS permissions is a grant, and what the stronger role would
-  # wield is the member's EXISTING runner and pack access, read here under the
-  # lock. Without this a scoped admin promotes a member whose access exceeds
-  # theirs and gains a peer who can widen them right back. A change that only
-  # removes permissions is a narrowing and stays open, so a scoped admin can
-  # always reduce a member they cannot fully reach. The break-glass staff subject
-  # is exempt inside the cap itself, so a support-run promotion is never refused
-  # for reach it was never meant to hold.
+  # Cap both permission grants and the explicit access chosen on Owner demotion.
+  # Other pure role reductions retain existing reach and remain available to a
+  # scoped admin even when the target has wider access.
   defp ensure_role_change_within_subject_reach(
          %Membership{} = membership,
          new_role,
+         access,
          %Subject{} = subject
        ) do
-    if Auth.Permissions.role_covers_role?(membership.role, new_role) do
+    if membership.role != :owner and Auth.Permissions.role_covers_role?(membership.role, new_role) do
       :ok
     else
-      case ensure_runner_access_grant_allowed(subject, load_runner_access(Repo, membership)) do
+      case ensure_runner_access_grant_allowed(subject, access) do
         :ok ->
           :ok
 
@@ -4171,10 +4275,9 @@ defmodule Emisar.Accounts do
           end
         end,
         audit: fn updated ->
-          Audit.Events.user_invited(
+          Audit.Events.membership_invitation_resent(
             subject,
-            updated.user,
-            updated.role,
+            updated,
             load_runner_access(Repo, updated)
           )
         end,
@@ -4609,9 +4712,7 @@ defmodule Emisar.Accounts do
         with: &Account.Changeset.update(&1, %{settings: %{monthly_report_opt_out: true}}),
         # An unauthenticated bearer changes account configuration here, so the
         # owner needs the row; a repeat click changes nothing and writes none.
-        audit: fn updated, changeset ->
-          if changeset.changes == %{}, do: nil, else: Audit.Events.account_updated(updated)
-        end
+        audit: &Audit.Events.account_updated(&2.data, &1)
       )
     end
   end
@@ -4740,6 +4841,18 @@ defmodule Emisar.Accounts do
   @doc "Whether `subject` may manage team memberships (admin+)."
   def subject_can_manage_team?(%Subject{} = subject),
     do: Auth.Authorizer.has_permission?(subject, Authorizer.manage_team_permission())
+
+  @doc "Whether a member role is within the subject's team-management authority."
+  def subject_can_assign_member_role?(role, %Subject{} = subject) do
+    subject_can_manage_team?(subject) and Auth.Permissions.covers_role?(subject, role)
+  end
+
+  @doc "Whether the subject may manage this other member; mutations recheck current state."
+  def subject_can_manage_member?(%Membership{} = membership, %Subject{} = subject) do
+    membership.account_id == subject.account.id and
+      membership.user_id != Subject.user_id(subject) and
+      subject_can_assign_member_role?(membership.role, subject)
+  end
 
   @doc """
   Whether `subject` may change the account itself — its name and non-security

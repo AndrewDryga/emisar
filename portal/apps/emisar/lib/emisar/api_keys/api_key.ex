@@ -26,6 +26,8 @@ defmodule Emisar.ApiKeys.ApiKey do
     field :kind, Ecto.Enum, values: [:mcp, :audit_export], default: :mcp
 
     field :expires_at, :utc_datetime_usec
+    field :auto_rotation_supported, :boolean, default: false
+    field :rotation_requested_at, :utc_datetime_usec
     field :last_used_at, :utc_datetime_usec
     field :revoked_at, :utc_datetime_usec
     field :deleted_at, :utc_datetime_usec
@@ -49,7 +51,7 @@ defmodule Emisar.ApiKeys.ApiKey do
     belongs_to :account, Emisar.Accounts.Account, where: [deleted_at: nil]
     belongs_to :created_by, Emisar.Users.User, where: [deleted_at: nil]
     belongs_to :revoked_by, Emisar.Users.User, where: [deleted_at: nil]
-    # Successor installed by auto-rotation — non-nil marks this key superseded
+    # Installed successor — non-nil marks this key superseded
     # and makes retries of the same client-prepared proposal idempotent.
     belongs_to :rotated_to, Emisar.ApiKeys.ApiKey, where: [deleted_at: nil]
     # The rotation back-link: the key this one was minted to replace. Set at

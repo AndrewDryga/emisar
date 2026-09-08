@@ -765,8 +765,17 @@ defmodule EmisarWeb.MCPRpcController do
   # idempotently and acknowledges the digest; retrying on ordinary requests lets
   # a long-lived bridge cross into the rotation window without reconnecting.
   defp maybe_acknowledge_rotation(conn) do
-    with true <- bridge_client?(conn),
-         {:ok, prefix, hash} <- rotation_proposal(conn),
+    proposal = if bridge_client?(conn), do: rotation_proposal(conn), else: :error
+
+    {prefix, hash} =
+      case proposal do
+        {:ok, prefix, hash} -> {prefix, hash}
+        :error -> {nil, nil}
+      end
+
+    _ = ApiKeys.record_auto_rotation_support(prefix, hash, conn.assigns.current_subject)
+
+    with {:ok, prefix, hash} <- proposal,
          {:ok, _successor} <-
            ApiKeys.install_auto_rotation_successor(
              prefix,

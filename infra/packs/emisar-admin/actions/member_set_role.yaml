@@ -3,8 +3,8 @@ id: emisar.admin.member.set_role
 title: Set account member role
 kind: script
 risk: high
-description: Change one member's role while preserving last-owner and directory-managed guards.
-side_effects: [Changes the member's permissions and may disconnect sessions after a reduction.]
+description: Change a member's role with explicit access on Owner demotion. Choose directory to return an Owner's role and access to directory sync.
+side_effects: [Changes permissions and access; revokes credentials on role reduction.]
 args:
   - name: account
     type: string
@@ -19,8 +19,13 @@ args:
   - name: role
     type: string
     required: true
-    description: New account role.
-    validation: {enum: [owner, admin, billing_manager, operator, viewer]}
+    description: New account role, or directory to return an Owner to directory-managed role and access.
+    validation: {enum: [owner, admin, billing_manager, operator, viewer, directory]}
+  - name: runner_access
+    type: string
+    required: false
+    description: Required when demoting a locally managed Owner; all grants all runners and packs, none grants neither. Use Team for selected access.
+    validation: {enum: [all, none]}
 execution:
   script: {path: scripts/callback.sh, interpreter: /bin/sh}
   argv:
@@ -28,5 +33,6 @@ execution:
     - "account={{ args.account }}"
     - "member={{ args.member }}"
     - "role={{ args.role }}"
+    - "runner_access={{ args.runner_access? }}"
   timeout: 60s
 output: {parser: json, parser_required: true, max_stdout_bytes: 65536, max_stderr_bytes: 8192}

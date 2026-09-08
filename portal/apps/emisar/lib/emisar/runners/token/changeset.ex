@@ -6,6 +6,16 @@ defmodule Emisar.Runners.Token.Changeset do
   use Emisar, :changeset
   alias Emisar.Runners.Token
 
+  @create_fields [
+    :runner_id,
+    :token_prefix,
+    :token_hash,
+    :issued_via_key_id,
+    :issued_at,
+    :expires_at,
+    :replaces_id
+  ]
+
   def create(runner_id, issued_via_key_id, prefix, hash, opts \\ [])
       when is_binary(runner_id) do
     now = DateTime.utc_now()
@@ -26,11 +36,13 @@ defmodule Emisar.Runners.Token.Changeset do
         token_hash: hash,
         issued_via_key_id: issued_via_key_id,
         issued_at: now,
-        expires_at: expires_at
+        expires_at: expires_at,
+        replaces_id: Keyword.get(opts, :replaces_id)
       },
-      [:runner_id, :token_prefix, :token_hash, :issued_via_key_id, :issued_at, :expires_at]
+      @create_fields
     )
     |> validate_required([:runner_id, :token_prefix, :token_hash, :issued_at])
+    |> foreign_key_constraint(:replaces_id)
   end
 
   def usage(%Token{} = token), do: change(token, last_used_at: DateTime.utc_now())
@@ -42,6 +54,13 @@ defmodule Emisar.Runners.Token.Changeset do
   the grace window instead of being locked out by its own refresh.
   """
   def retire_after(%Token{} = token, grace_seconds) when is_integer(grace_seconds) do
-    change(token, expires_at: DateTime.add(DateTime.utc_now(), grace_seconds, :second))
+    grace_end = DateTime.add(DateTime.utc_now(), grace_seconds, :second)
+
+    expires_at =
+      if token.expires_at && DateTime.compare(token.expires_at, grace_end) == :lt,
+        do: token.expires_at,
+        else: grace_end
+
+    change(token, expires_at: expires_at)
   end
 end

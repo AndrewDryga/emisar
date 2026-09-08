@@ -1059,6 +1059,17 @@ defmodule Emisar.ApiKeysTest do
       assert successor.replaces_id == original.id
       assert successor.credential_lineage_id == original.credential_lineage_id
 
+      events = Enum.filter(Repo.all(Audit.Event), &(&1.event_type == "api_key.created"))
+      original_event = Enum.find(events, &(&1.target_id == original.id))
+      replacement_event = Enum.find(events, &(&1.target_id == successor.id))
+      assert original_event.payload["replaces_id"] == nil
+      refute Map.has_key?(original_event.payload, "replaces_prefix")
+      assert replacement_event.account_id == original.account_id
+      assert replacement_event.actor_id == subject.actor.id
+      assert replacement_event.payload["replaces_id"] == original.id
+      assert replacement_event.payload["replaces_prefix"] == original.key_prefix
+      refute Jason.encode!(replacement_event.payload) =~ new_raw
+
       # The old key isn't revoked — it overlaps until the successor's first
       # use (or a manual revoke).
       {:ok, reloaded} = ApiKeys.fetch_api_key_by_id(original.id, subject)
@@ -1712,7 +1723,11 @@ defmodule Emisar.ApiKeysTest do
       pending = pending |> Ecto.Changeset.change(replaces_id: nil) |> Repo.update!()
 
       assert {:ok, leaf_raw, leaf} = ApiKeys.rotate_api_key(pending, subject)
-      assert {:ok, branch_raw, branch} = ApiKeys.rotate_api_key(source, subject)
+
+      {branch_raw, branch} =
+        Fixtures.ApiKeys.create_api_key(account_id: account.id, created_by_id: user.id)
+
+      branch = Fixtures.ApiKeys.force_replaces(branch, source.id)
       assert {:ok, unrelated_raw, unrelated} = ApiKeys.create_key(%{name: "unrelated"}, subject)
 
       assert {:ok, %ApiKey{id: source_id}} = ApiKeys.revoke_api_key(source, subject)

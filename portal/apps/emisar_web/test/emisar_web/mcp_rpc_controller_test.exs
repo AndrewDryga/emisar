@@ -794,6 +794,55 @@ defmodule EmisarWeb.MCPRpcControllerTest do
   end
 
   describe "Streamable HTTP transport" do
+    test "an early rotation is observed, requested, and acknowledged by the existing bridge protocol",
+         %{
+           raw: raw,
+           key: key,
+           subject: subject
+         } do
+      {_successor_raw, prefix, hash} = Crypto.mint("emk-", 12)
+      encoded_hash = Base.encode16(hash, case: :lower)
+
+      request =
+        build_conn()
+        |> authorize(raw)
+        |> put_req_header("user-agent", "emisar-mcp/1.0.0")
+        |> put_req_header("x-emisar-rotation-prefix", prefix)
+        |> put_req_header("x-emisar-rotation-hash", encoded_hash)
+
+      early = rpc(request, "ping")
+      assert json_response(early, 200)["result"] == %{}
+      assert get_resp_header(early, "x-emisar-rotation-ack") == []
+      assert Repo.reload!(key).auto_rotation_supported
+      assert Repo.reload!(key).expires_at == key.expires_at
+
+      assert {:ok, _requested} = ApiKeys.request_api_key_rotation(key, subject)
+      rotated = rpc(request, "ping")
+      assert get_resp_header(rotated, "x-emisar-rotation-ack") == [encoded_hash]
+      retry = rpc(request, "ping")
+      assert get_resp_header(retry, "x-emisar-rotation-ack") == [encoded_hash]
+      assert Repo.reload!(key).rotated_to_id
+    end
+
+    test "a bridge without a valid proposal does not advertise automatic rotation support", %{
+      raw: raw,
+      key: key
+    } do
+      key = Fixtures.ApiKeys.mark_rotation_supported(key)
+
+      response =
+        build_conn()
+        |> authorize(raw)
+        |> put_req_header("user-agent", "emisar-mcp/1.0.0")
+        |> put_req_header("x-emisar-rotation-prefix", "invalid-key!")
+        |> put_req_header("x-emisar-rotation-hash", String.duplicate("a", 64))
+        |> rpc("ping")
+
+      assert json_response(response, 200)["result"] == %{}
+      assert get_resp_header(response, "x-emisar-rotation-ack") == []
+      refute Repo.reload!(key).auto_rotation_supported
+    end
+
     test "GET and DELETE never open or terminate a session", %{conn: conn} do
       get_response = get(conn, ~p"/api/mcp/rpc")
       assert json_response(get_response, 405)["error"] =~ "only accepts POST"

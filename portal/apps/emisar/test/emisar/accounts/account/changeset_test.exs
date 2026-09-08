@@ -73,6 +73,45 @@ defmodule Emisar.Accounts.Account.ChangesetTest do
     end
   end
 
+  describe "staff-owned Slack support settings" do
+    test "generic create and update cannot configure or clear the channel" do
+      url = "https://workspace.slack.com/archives/G01234567"
+      refute changeset(settings: %{support_slack_url: url}).valid?
+      account = Fixtures.Accounts.create_account()
+
+      refute Account.Changeset.update(account, %{settings: %{support_slack_url: url}}).valid?
+      configured = Account.Changeset.put_support_slack_url(account, url) |> apply_changes()
+
+      for attrs <- [
+            %{settings: %{support_slack_url: nil}},
+            %{"settings" => %{"support_slack_url" => ""}},
+            %{settings: nil},
+            %{"settings" => nil}
+          ] do
+        refute Account.Changeset.update(configured, attrs).valid?
+      end
+    end
+
+    test "accepts channel URLs and clearing, but bounds the URL length" do
+      account = Fixtures.Accounts.create_account()
+
+      for url <- [
+            "https://app.slack.com/client/T01234567/C01234567",
+            "https://workspace.slack.com/archives/G01234567"
+          ] do
+        change = Account.Changeset.put_support_slack_url(account, url)
+        assert change.valid?
+        configured = apply_changes(change)
+        assert configured.settings.support_slack_url == url
+        cleared = Account.Changeset.put_support_slack_url(configured, "") |> apply_changes()
+        assert is_nil(cleared.settings.support_slack_url)
+      end
+
+      too_long = "https://workspace.slack.com/archives/C" <> String.duplicate("A", 512)
+      refute Account.Changeset.put_support_slack_url(account, too_long).valid?
+    end
+  end
+
   describe "put_max_grant_lifetime_seconds/2" do
     setup do
       %{account: Fixtures.Accounts.create_account()}

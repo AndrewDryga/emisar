@@ -1,8 +1,8 @@
 defmodule Emisar.SSO.ProviderKind do
   @moduledoc """
   The identity-provider kinds emisar supports, and the facts that are FIXED per
-  kind: the one issuer the provider serves every customer from, the claim its
-  tokens carry a stable identity in, and whether it can push SCIM directory sync.
+  kind: fixed or regional issuers, the claim its tokens carry a stable identity
+  in, and whether it can push SCIM directory sync.
 
   One list drives the `kind` enum, the console's picker, and the normalization
   `Emisar.SSO` applies on create and update — so a kind can't be supported in one
@@ -28,26 +28,31 @@ defmodule Emisar.SSO.ProviderKind do
     },
     okta: %{fixed_issuer: nil, identifier_claim: :sub, supports_scim?: true},
     entra: %{fixed_issuer: nil, identifier_claim: :oid, supports_scim?: true},
-    jumpcloud: %{
-      fixed_issuer: "https://oauth.id.jumpcloud.com/",
-      identifier_claim: :sub,
-      supports_scim?: true
-    },
+    jumpcloud: %{fixed_issuer: nil, identifier_claim: :sub, supports_scim?: true},
     keycloak: %{fixed_issuer: nil, identifier_claim: :sub, supports_scim?: true},
     openid_connect: %{fixed_issuer: nil, identifier_claim: :sub, supports_scim?: true}
   ]
 
   @kinds Keyword.keys(@metadata)
   @by_name Map.new(@kinds, &{Atom.to_string(&1), &1})
-  @fixed_issuers Enum.flat_map(@metadata, fn {_kind, metadata} ->
-                   List.wrap(metadata.fixed_issuer)
-                 end)
+  @jumpcloud_regions [
+    {"United States", "https://oauth.id.jumpcloud.com/"},
+    {"Europe", "https://oauth.id.eu.jumpcloud.com/"},
+    {"India", "https://oauth.id.in.jumpcloud.com/"}
+  ]
+  @preset_issuers Enum.flat_map(@metadata, fn {_kind, metadata} ->
+                    List.wrap(metadata.fixed_issuer)
+                  end) ++ Enum.map(@jumpcloud_regions, &elem(&1, 1))
 
   @doc "Every supported kind, in the order the console offers them."
   def all, do: @kinds
 
-  @doc "Every issuer that belongs to a fixed-issuer kind — what a prefill may clear."
-  def fixed_issuers, do: @fixed_issuers
+  @doc "Known fixed or regional issuers that a provider-type switch may clear."
+  def preset_issuers, do: @preset_issuers
+
+  @doc "Supported region names and exact issuers; empty when the kind has no region choice."
+  def issuer_regions(kind) when kind in [:jumpcloud, "jumpcloud"], do: @jumpcloud_regions
+  def issuer_regions(_kind), do: []
 
   @doc """
   A kind's fixed facts, from the atom or its string form:

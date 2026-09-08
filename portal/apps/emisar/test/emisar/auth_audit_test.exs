@@ -640,7 +640,34 @@ defmodule Emisar.AuthAuditTest do
   end
 
   describe "Accounts account lifecycle" do
-    test "create_account_with_owner audits account.created and user.signed_up" do
+    test "completed owner registration records one signup and a replay records none" do
+      user = Fixtures.Users.create_user(confirmed?: false)
+      context = %RequestContext{}
+      registration = %{account_name: "New owner account", full_name: user.full_name}
+
+      assert {:ok, %{token_id: token_id, nonce: nonce, delivery: {:ok, :sent}}} =
+               Auth.request_magic_link(user, context, owner_registration: registration)
+
+      assert_received {:email, sent}
+      [_, ^token_id, secret] = Regex.run(~r"/sign_in/magic/([^/]+)/([0-9A-Z]{6})", sent.text_body)
+
+      assert {:ok, _user} = Auth.verify_magic_link(token_id, secret, nonce)
+
+      assert {:ok, registered, _session, :no_target, true} =
+               Auth.complete_magic_link_sign_in(user.id, token_id, nil, context)
+
+      signup = Audit.Event.Query.all() |> Audit.Event.Query.by_event_type("user.signed_up")
+      assert %Audit.Event{} = event = Repo.one(signup)
+      assert event.actor_id == registered.id
+      assert event.target_id == registered.id
+
+      assert Auth.complete_magic_link_sign_in(user.id, token_id, nil, context) ==
+               {:error, :invalid_or_expired}
+
+      assert Repo.one(signup).id == event.id
+    end
+
+    test "create_account_with_owner records account creation without another signup" do
       user = Fixtures.Users.create_user()
       slug = "tenant-#{System.unique_integer()}"
 
@@ -654,17 +681,20 @@ defmodule Emisar.AuthAuditTest do
       assert created.payload["plan"] == "free"
       assert created.payload["slug"] == slug
 
-      assert [signup] = events_of(account, "user.signed_up")
-      assert signup.actor_id == user.id
+      assert created.actor_id == user.id
+      assert events_of(account, "user.signed_up") == []
     end
 
-    test "update_account audits account.updated with snapshot" do
+    test "update_account audits its changed fields with before and after values" do
       {_user, account, subject} = Fixtures.Subjects.owner_subject()
 
       {:ok, updated} = Accounts.update_account(account, %{name: "Renamed"}, subject)
 
       assert [event] = events_of(updated, "account.updated")
-      assert event.payload["name"] == "Renamed"
+
+      assert event.payload == %{
+               "changes" => %{"name" => %{"before" => account.name, "after" => "Renamed"}}
+             }
     end
   end
 

@@ -276,16 +276,8 @@ defmodule Emisar.SSO.Provisioning do
     group_access =
       mappings
       |> Enum.filter(&(&1.directory_group_id in group_ids))
-      |> Enum.map(&runner_access_mapping_access/1)
 
-    Accounts.RunnerAccess.union([provider_runner_access(provider) | group_access])
-  end
-
-  def runner_access_mapping_access(%GroupRunnerAccessMapping{} = mapping) do
-    case Accounts.RunnerAccess.from_prefixed_fields(mapping, :runner) do
-      {:ok, access} -> access
-      {:error, _reason} -> Accounts.RunnerAccess.none()
-    end
+    Emisar.SSO.GroupAccess.effective(provider_runner_access(provider), group_access)
   end
 
   # The most-privileged mapped role over a set of group ids.

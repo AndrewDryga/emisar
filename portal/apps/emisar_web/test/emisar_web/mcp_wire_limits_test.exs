@@ -65,7 +65,7 @@ defmodule EmisarWeb.MCPWireLimitsTest do
     # The golden pins both directions in one map and does not label them, so the
     # portal→runner names are stated here; everything left is what the socket
     # must accept. A frame added on either side lands on this assertion.
-    outbound = ~w(ack_result action_result_typed cancel run_action shutdown)
+    outbound = ~w(ack_result action_result_typed cancel refresh_credentials run_action shutdown)
     inbound = Map.keys(golden["frames"]) -- outbound
 
     assert Enum.sort(word_list!(socket, "known_runner_message_types")) == Enum.sort(inbound)

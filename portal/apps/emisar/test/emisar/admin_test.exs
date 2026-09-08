@@ -490,13 +490,66 @@ defmodule Emisar.AdminTest do
                  [
                    "account=#{account.slug}",
                    "new_owner=#{next_owner.email}",
-                   "previous_owner=#{previous_owner.email}"
+                   "previous_owner=#{previous_owner.email}",
+                   "previous_owner_access=all"
                  ]
                )
 
       assert promoted.role == :owner
       assert promoted.email == next_owner.email
       assert Repo.reload!(previous_membership).role == :admin
+    end
+
+    test "Owner demotion requires an explicit access choice" do
+      {_user, account, _subject} = Fixtures.Subjects.owner_subject()
+      target = Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
+      args = ["account=#{account.slug}", "member=#{target.id}", "role=admin"]
+
+      assert Admin.execute("emisar.admin.member.set_role", args) ==
+               {:error, :owner_demotion_requires_access}
+
+      assert Repo.reload!(target).role == :owner
+
+      assert {:ok, demoted} =
+               Admin.execute("emisar.admin.member.set_role", args ++ ["runner_access=none"])
+
+      assert demoted.role == :admin
+
+      assert Emisar.Accounts.runner_access_for_membership(account.id, target.id) ==
+               Emisar.Accounts.RunnerAccess.none()
+    end
+
+    test "ownership transfer checks the previous Owner's access choice before promotion" do
+      {_user, account, _subject} = Fixtures.Subjects.owner_subject()
+
+      previous_owner =
+        Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
+
+      next_owner =
+        Fixtures.Memberships.create_membership(account_id: account.id, role: "operator")
+
+      assert Admin.execute("emisar.admin.owner.transfer", [
+               "account=#{account.slug}",
+               "new_owner=#{next_owner.id}",
+               "previous_owner=#{previous_owner.id}"
+             ]) == {:error, :owner_demotion_requires_access}
+
+      assert Repo.reload!(next_owner).role == :operator
+      assert Repo.reload!(previous_owner).role == :owner
+    end
+
+    test "Owner demotion cannot target a member in another account" do
+      {_user, account, _subject} = Fixtures.Subjects.owner_subject()
+      foreign_owner = Fixtures.Memberships.create_membership(role: "owner")
+
+      assert Admin.execute("emisar.admin.member.set_role", [
+               "account=#{account.slug}",
+               "member=#{foreign_owner.id}",
+               "role=admin",
+               "runner_access=none"
+             ]) == {:error, :not_found}
+
+      assert Repo.reload!(foreign_owner).role == :owner
     end
 
     test "rejects malformed, duplicate, excessive, and non-admin arguments" do
@@ -506,10 +559,83 @@ defmodule Emisar.AdminTest do
       assert Admin.execute("emisar.admin.account.show", ["account=one", "account=two"]) ==
                {:error, :invalid_admin_arguments}
 
-      assert Admin.execute("emisar.admin.account.show", ["a=1", "b=2", "c=3", "d=4"]) ==
+      assert Admin.execute("emisar.admin.account.show", ["a=1", "b=2", "c=3", "d=4", "e=5"]) ==
                {:error, :invalid_admin_request}
 
       assert Admin.execute("linux.uptime", []) == {:error, :invalid_admin_request}
+    end
+
+    test "Slack support configuration is scoped, audited, repeatable and removable" do
+      account = Fixtures.Accounts.create_account()
+      other = Fixtures.Accounts.create_account()
+      Fixtures.Accounts.set_account_settings(account, %{monthly_report_opt_out: true})
+      url = "https://app.slack.com/client/T01234567/C01234567"
+      args = ["account=#{account.slug}", "url=#{url}", "reason=Support channel agreed"]
+
+      assert {:ok, %{id: id, support_slack_url: ^url}} =
+               Admin.execute("emisar.admin.support.set_slack_channel", args)
+
+      assert id == account.id
+      assert Repo.reload!(account).settings.monthly_report_opt_out
+      refute Repo.reload!(other).settings.support_slack_url
+
+      events =
+        Repo.all(Audit.Event)
+        |> Enum.filter(&Map.has_key?(&1.payload["changes"] || %{}, "support_slack_url"))
+
+      assert [event] = events
+      assert event.account_id == account.id
+      assert event.event_type == "account.updated"
+      assert event.payload["changes"]["support_slack_url"] == %{"before" => nil, "after" => url}
+
+      event_count = length(Repo.all(Audit.Event))
+      assert {:ok, _} = Admin.execute("emisar.admin.support.set_slack_channel", args)
+      assert length(Repo.all(Audit.Event)) == event_count
+
+      assert {:ok, %{support_slack_url: nil}} =
+               Admin.execute("emisar.admin.support.set_slack_channel", [
+                 "account=#{account.id}",
+                 "url=",
+                 "reason=Channel retired"
+               ])
+
+      refute Repo.reload!(account).settings.support_slack_url
+    end
+
+    test "Slack support rejects unsafe destinations and missing audit reasons without changes" do
+      account = Fixtures.Accounts.create_account()
+
+      for url <- [
+            "https://evil.example/archives/C01234567",
+            "https://app.slack.com.evil.example/client/T01234567/C01234567",
+            "https://evil.example@app.slack.com/client/T01234567/C01234567",
+            "http://app.slack.com/client/T01234567/C01234567",
+            "javascript:alert(1)",
+            "https://app.slack.com:8443/client/T01234567/C01234567",
+            "https://app.slack.com/client/T01234567/C01234567?redirect=https://evil.example",
+            "https://app.slack.com/client/T01234567/C01234567#message",
+            "https://join.slack.com/t/workspace/shared_invite/token",
+            "https://workspace.slack.com/archives/C01234567/p12345",
+            "https://app.slack.com/client/T01234567/../C01234567"
+          ] do
+        assert {:error, %Ecto.Changeset{}} =
+                 Admin.execute("emisar.admin.support.set_slack_channel", [
+                   "account=#{account.id}",
+                   "url=#{url}",
+                   "reason=Support setup"
+                 ])
+      end
+
+      for reason <- ["", "   ", String.duplicate("a", 501)] do
+        assert {:error, :invalid_reason} =
+                 Admin.execute("emisar.admin.support.set_slack_channel", [
+                   "account=#{account.id}",
+                   "url=https://workspace.slack.com/archives/C01234567",
+                   "reason=#{reason}"
+                 ])
+      end
+
+      refute Repo.reload!(account).settings.support_slack_url
     end
 
     test "complimentary plans use the existing subscription posture" do

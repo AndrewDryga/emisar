@@ -35,10 +35,6 @@ defmodule Emisar.SSO.GroupRunnerAccessMapping.Query do
     )
   end
 
-  def with_preloaded_directory_group(queryable \\ all()) do
-    preload(queryable, directory_group: ^Emisar.SSO.DirectoryGroup.Query.all())
-  end
-
   def lock_for_update(queryable), do: lock(queryable, "FOR NO KEY UPDATE")
 
   @impl Emisar.Repo.Query

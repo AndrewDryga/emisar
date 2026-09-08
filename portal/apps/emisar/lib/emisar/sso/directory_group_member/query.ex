@@ -29,6 +29,127 @@ defmodule Emisar.SSO.DirectoryGroupMember.Query do
   def by_account_id(queryable \\ all(), account_id),
     do: where(queryable, [group_members: g], g.account_id == ^account_id)
 
+  # Roster relationships, not authorization grants: suspended/deactivated people
+  # remain members. Every join fences both the workspace and the connection.
+  def with_directory_roster(queryable) do
+    queryable
+    |> join(:inner, [group_members: link], identity in Emisar.SSO.UserIdentity,
+      as: :directory_identity,
+      on:
+        identity.id == link.user_identity_id and identity.account_id == link.account_id and
+          identity.provider_id == link.provider_id and is_nil(identity.deleted_at) and
+          is_nil(identity.scim_deleted_at)
+    )
+    |> join(:inner, [group_members: link], group in Emisar.SSO.DirectoryGroup,
+      as: :directory_group,
+      on:
+        group.id == link.directory_group_id and group.account_id == link.account_id and
+          group.provider_id == link.provider_id and is_nil(group.deleted_at)
+    )
+    |> join(:inner, [group_members: link], provider in Emisar.SSO.IdentityProvider,
+      as: :directory_provider,
+      on:
+        provider.id == link.provider_id and provider.account_id == link.account_id and
+          is_nil(provider.deleted_at)
+    )
+    |> join(:inner, [directory_identity: identity], member in Emisar.Accounts.Membership,
+      as: :directory_member,
+      on:
+        member.user_id == identity.user_id and member.account_id == identity.account_id and
+          is_nil(member.deleted_at)
+    )
+    |> join(:inner, [directory_identity: identity], user in Emisar.Users.User,
+      as: :directory_user,
+      on: user.id == identity.user_id and is_nil(user.deleted_at)
+    )
+  end
+
+  def by_roster_user_ids(queryable, ids),
+    do: where(queryable, [directory_identity: i], i.user_id in ^ids)
+
+  def select_roster_group_ids(queryable),
+    do: select(queryable, [group_members: l], l.directory_group_id)
+
+  def select_roster_identity_ids(queryable),
+    do: select(queryable, [directory_identity: i], i.id)
+
+  def roster_group_counts(queryable) do
+    queryable
+    |> group_by([group_members: link], link.directory_group_id)
+    |> select([group_members: link, directory_identity: identity], %{
+      directory_group_id: link.directory_group_id,
+      member_count: count(identity.user_id, :distinct)
+    })
+  end
+
+  # Rank distinct groups across ALL of a person's provider identities. Keep the
+  # outer base table so Authorizer can still add its account fence.
+  def first_groups_per_user(queryable, limit) do
+    distinct_groups =
+      queryable
+      |> distinct([directory_identity: identity, directory_group: group], [
+        identity.user_id,
+        group.id
+      ])
+      |> select(
+        [
+          group_members: link,
+          directory_identity: identity,
+          directory_group: group,
+          directory_provider: provider
+        ],
+        %{
+          link_id: link.id,
+          user_id: identity.user_id,
+          id: group.id,
+          provider_id: group.provider_id,
+          provider_name: provider.name,
+          display: group.display,
+          external_group_id: group.external_group_id
+        }
+      )
+
+    ranked =
+      from(group in subquery(distinct_groups),
+        as: :group_facts,
+        windows: [
+          person: [partition_by: group.user_id],
+          ordered: [
+            partition_by: group.user_id,
+            order_by: [
+              asc:
+                fragment(
+                  "lower(coalesce(nullif(btrim(?), ''), ?, ?::text))",
+                  group.display,
+                  group.external_group_id,
+                  group.id
+                ),
+              asc: group.provider_name,
+              asc: group.id
+            ]
+          ]
+        ],
+        select:
+          merge(group, %{position: over(row_number(), :ordered), total: over(count(), :person)})
+      )
+
+    all()
+    |> join(:inner, [group_members: link], group in subquery(ranked),
+      as: :group_facts,
+      on: group.link_id == link.id and group.position <= ^limit
+    )
+    |> order_by([group_facts: group], asc: group.user_id, asc: group.position)
+    |> select([group_facts: g], %{
+      user_id: type(g.user_id, Ecto.UUID),
+      id: type(g.id, Ecto.UUID),
+      provider_id: type(g.provider_id, Ecto.UUID),
+      provider_name: g.provider_name,
+      display: g.display,
+      external_group_id: g.external_group_id,
+      total: g.total
+    })
+  end
+
   def with_joined_scim_identity(queryable \\ all()) do
     identities =
       Emisar.SSO.UserIdentity.Query.not_deleted()

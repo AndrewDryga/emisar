@@ -63,6 +63,12 @@ defmodule Emisar.ApiKeys.ApiKey.Query do
   def not_rotated(queryable \\ all()),
     do: where(queryable, [api_keys: k], is_nil(k.rotated_to_id))
 
+  def expiring(queryable \\ all()),
+    do: where(queryable, [api_keys: k], not is_nil(k.expires_at))
+
+  def by_rotation_support(queryable, supported),
+    do: where(queryable, [api_keys: k], k.auto_rotation_supported == ^supported)
+
   def lock_for_update(queryable), do: lock(queryable, "FOR UPDATE")
 
   @doc """

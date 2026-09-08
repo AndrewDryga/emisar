@@ -3,6 +3,10 @@ defmodule Emisar.SSO.GroupRunnerAccessMapping do
   Explicit additive runner access granted by one immutable, server-owned SCIM
   directory-group resource.
 
+  Runner and pack additions are independent: runner `none` adds no runners;
+  an empty restricted pack list adds no packs. Resolve all matched mappings
+  together with the current provider defaults before creating canonical access.
+
   Role mappings remain separate because an IdP group may grant either concern,
   both, or neither, and runner access can contain several group/runner scopes.
   The external id and display fields are read-only audit/rollback snapshots;
@@ -10,7 +14,7 @@ defmodule Emisar.SSO.GroupRunnerAccessMapping do
   """
   use Emisar, :schema
 
-  @runner_access_modes [:all, :restricted]
+  @runner_access_modes [:none, :all, :restricted]
   @pack_access_modes Emisar.Accounts.RunnerAccess.pack_modes()
 
   schema "sso_directory_group_runner_access_mappings" do

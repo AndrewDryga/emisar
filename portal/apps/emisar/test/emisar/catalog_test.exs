@@ -951,6 +951,38 @@ defmodule Emisar.CatalogTest do
 
       assert Enum.sort(Enum.map(first_sight, & &1.target_label)) ==
                ["audit-alpha@1.0", "audit-bravo@1.0", "audit-charlie@1.0"]
+
+      assert Enum.all?(first_sight, &(&1.payload["runner_id"] == runner.id))
+      assert Enum.all?(first_sight, &(&1.payload["runner_name"] == runner.name))
+      assert Enum.all?(first_sight, &(&1.payload["hostname"] == payload["hostname"]))
+      assert Enum.all?(first_sight, &(&1.payload["group"] == runner.group))
+    end
+
+    test "drift records the reporting runner and keeps its historical group" do
+      account = Fixtures.Accounts.create_account()
+      first = Fixtures.Runners.create_runner(account_id: account.id, group: "first")
+      second = Fixtures.Runners.create_runner(account_id: account.id, group: "second")
+
+      initial =
+        state_payload(packs: %{"reported-pack" => %{"version" => "1.0", "hash" => "initial"}})
+
+      changed =
+        state_payload(packs: %{"reported-pack" => %{"version" => "1.0", "hash" => "changed"}})
+
+      assert {:ok, _runner} = Catalog.observe_state(first, initial)
+      assert {:ok, _runner} = Catalog.observe_state(second, changed)
+
+      assert [event] =
+               Enum.filter(Repo.all(Audit.Event), &(&1.event_type == "pack_trust_drift_detected"))
+
+      assert event.account_id == account.id
+      assert event.actor_kind == "system"
+      assert event.target_kind == "pack_version"
+      assert event.payload["runner_id"] == second.id
+      assert event.payload["runner_name"] == second.name
+      assert event.payload["group"] == "second"
+      Fixtures.Runners.move_to_group(second, "renamed")
+      assert Repo.reload!(event).payload["group"] == "second"
     end
 
     test "one batch processes known, fresh, drifted, and malformed packs independently" do
@@ -1086,7 +1118,10 @@ defmodule Emisar.CatalogTest do
       assert pack_version.hash == nil
 
       {:ok, events, _} = Audit.list_events(subject)
-      assert Enum.count(events, &(&1.event_type == "pack_trust_review_required")) == 1
+      assert [event] = Enum.filter(events, &(&1.event_type == "pack_trust_review_required"))
+      assert event.payload["runner_id"] in [runner_a.id, runner_b.id]
+      reporting_runner = Enum.find([runner_a, runner_b], &(&1.id == event.payload["runner_id"]))
+      assert event.payload["runner_name"] == reporting_runner.name
     end
 
     test "advertising the trusted hash again after approval → no-op (just touches last_seen)" do
@@ -1262,6 +1297,8 @@ defmodule Emisar.CatalogTest do
       assert audit.payload["pending_hash"] == nil
       assert audit.payload["advertised"] == pack["content_hash"]
       assert audit.payload["baseline"] == pack["content_hash"]
+      assert audit.payload["runner_id"] == runner.id
+      assert audit.payload["runner_name"] == runner.name
     end
 
     test "reconciliation broadcasts the account's pack-trust change" do
@@ -3619,6 +3656,12 @@ defmodule Emisar.CatalogTest do
       subject: subject,
       runner: runner
     } do
+      subject =
+        account.id
+        |> Fixtures.Memberships.fetch_membership(subject.actor.id)
+        |> Fixtures.Memberships.force_role("admin")
+        |> Fixtures.Subjects.membership_subject()
+
       Fixtures.Catalog.create_action(
         runner: runner,
         action_id: "postgres.status",
@@ -3717,6 +3760,13 @@ defmodule Emisar.CatalogTest do
 
     test "applies current runner and pack access" do
       {account, subject} = account_with_owner()
+
+      subject =
+        account.id
+        |> Fixtures.Memberships.fetch_membership(subject.actor.id)
+        |> Fixtures.Memberships.force_role("admin")
+        |> Fixtures.Subjects.membership_subject()
+
       data = Fixtures.Runners.create_runner(account_id: account.id, group: "data")
       web = Fixtures.Runners.create_runner(account_id: account.id, group: "web")
 
@@ -3896,6 +3946,12 @@ defmodule Emisar.CatalogTest do
     test "narrowed runner access drops the unreachable runner and its pack" do
       {account, subject} = account_with_owner()
 
+      subject =
+        account.id
+        |> Fixtures.Memberships.fetch_membership(subject.actor.id)
+        |> Fixtures.Memberships.force_role("admin")
+        |> Fixtures.Subjects.membership_subject()
+
       database_runner =
         Fixtures.Runners.create_runner(account_id: account.id, group: "database")
 
@@ -3919,6 +3975,13 @@ defmodule Emisar.CatalogTest do
 
     test "pack access strips denied manifests and degraded diagnostics" do
       {account, subject} = account_with_owner()
+
+      subject =
+        account.id
+        |> Fixtures.Memberships.fetch_membership(subject.actor.id)
+        |> Fixtures.Memberships.force_role("admin")
+        |> Fixtures.Subjects.membership_subject()
+
       runner = Fixtures.Runners.create_runner(account_id: account.id)
 
       {:ok, _runner} =
@@ -4343,6 +4406,13 @@ defmodule Emisar.CatalogTest do
 
     test "a same-account runner outside the subject's current scope is denied" do
       {account, subject} = account_with_owner()
+
+      subject =
+        account.id
+        |> Fixtures.Memberships.fetch_membership(subject.actor.id)
+        |> Fixtures.Memberships.force_role("admin")
+        |> Fixtures.Subjects.membership_subject()
+
       allowed = advertise_editor_action(account, subject, version: "1.0.0")
       restricted = advertise_editor_action(account, subject, version: "1.1.0")
       assert {:ok, allowed_only} = Accounts.RunnerAccess.restricted([], [allowed.id])
@@ -4378,6 +4448,7 @@ defmodule Emisar.CatalogTest do
                action_id: "demo.inspect",
                title: "demo.inspect",
                risk: "low",
+               output_schema: nil,
                args: []
              }
     end
@@ -4613,6 +4684,12 @@ defmodule Emisar.CatalogTest do
       account: account,
       subject: subject
     } do
+      subject =
+        account.id
+        |> Fixtures.Memberships.fetch_membership(subject.actor.id)
+        |> Fixtures.Memberships.force_role("admin")
+        |> Fixtures.Subjects.membership_subject()
+
       db_runner = Fixtures.Runners.create_runner(account_id: account.id, group: "database")
       web_runner = Fixtures.Runners.create_runner(account_id: account.id, group: "web")
 
@@ -4698,6 +4775,12 @@ defmodule Emisar.CatalogTest do
       account: account,
       subject: subject
     } do
+      subject =
+        account.id
+        |> Fixtures.Memberships.fetch_membership(subject.actor.id)
+        |> Fixtures.Memberships.force_role("admin")
+        |> Fixtures.Subjects.membership_subject()
+
       db_runner = Fixtures.Runners.create_runner(account_id: account.id, group: "database")
       web_runner = Fixtures.Runners.create_runner(account_id: account.id, group: "web")
 
@@ -4861,6 +4944,12 @@ defmodule Emisar.CatalogTest do
     end
 
     test "current pack access excludes denied risks", %{account: account, subject: subject} do
+      subject =
+        account.id
+        |> Fixtures.Memberships.fetch_membership(subject.actor.id)
+        |> Fixtures.Memberships.force_role("admin")
+        |> Fixtures.Subjects.membership_subject()
+
       runner = Fixtures.Runners.create_runner(account_id: account.id)
 
       Fixtures.Catalog.create_action(
@@ -5015,6 +5104,12 @@ defmodule Emisar.CatalogTest do
       subject: subject,
       runner: runner
     } do
+      subject =
+        account.id
+        |> Fixtures.Memberships.fetch_membership(subject.actor.id)
+        |> Fixtures.Memberships.force_role("admin")
+        |> Fixtures.Subjects.membership_subject()
+
       {:ok, _} =
         Catalog.observe_state(
           runner,
@@ -5040,6 +5135,12 @@ defmodule Emisar.CatalogTest do
       subject: subject,
       runner: allowed_runner
     } do
+      subject =
+        account.id
+        |> Fixtures.Memberships.fetch_membership(subject.actor.id)
+        |> Fixtures.Memberships.force_role("admin")
+        |> Fixtures.Subjects.membership_subject()
+
       allowed_runner = Repo.update!(Ecto.Changeset.change(allowed_runner, group: "database"))
       hidden_runner = Fixtures.Runners.create_runner(account_id: account.id, group: "web")
 
@@ -5066,6 +5167,12 @@ defmodule Emisar.CatalogTest do
       account: account,
       subject: subject
     } do
+      subject =
+        account.id
+        |> Fixtures.Memberships.fetch_membership(subject.actor.id)
+        |> Fixtures.Memberships.force_role("admin")
+        |> Fixtures.Subjects.membership_subject()
+
       database = Fixtures.Runners.create_runner(account_id: account.id, group: "database")
       web = Fixtures.Runners.create_runner(account_id: account.id, group: "web")
 
@@ -5231,6 +5338,12 @@ defmodule Emisar.CatalogTest do
       subject: subject,
       runner: runner
     } do
+      subject =
+        account.id
+        |> Fixtures.Memberships.fetch_membership(subject.actor.id)
+        |> Fixtures.Memberships.force_role("admin")
+        |> Fixtures.Subjects.membership_subject()
+
       observe_console_catalog(runner)
       {:ok, acme_only} = Accounts.RunnerAccess.new(:all, [], [], :restricted, ["acme"])
       force_runner_access(account, subject, acme_only)
@@ -5249,6 +5362,12 @@ defmodule Emisar.CatalogTest do
       subject: subject,
       runner: runner
     } do
+      subject =
+        account.id
+        |> Fixtures.Memberships.fetch_membership(subject.actor.id)
+        |> Fixtures.Memberships.force_role("admin")
+        |> Fixtures.Subjects.membership_subject()
+
       observe_console_catalog(runner)
       {:ok, acme_only} = Accounts.RunnerAccess.new(:all, [], [], :restricted, ["acme"])
       force_runner_access(account, subject, acme_only)
@@ -5268,6 +5387,12 @@ defmodule Emisar.CatalogTest do
       account: account,
       subject: subject
     } do
+      subject =
+        account.id
+        |> Fixtures.Memberships.fetch_membership(subject.actor.id)
+        |> Fixtures.Memberships.force_role("admin")
+        |> Fixtures.Subjects.membership_subject()
+
       database = Fixtures.Runners.create_runner(account_id: account.id, group: "database")
       web = Fixtures.Runners.create_runner(account_id: account.id, group: "web")
 
@@ -5297,6 +5422,12 @@ defmodule Emisar.CatalogTest do
       subject: subject,
       runner: runner
     } do
+      subject =
+        account.id
+        |> Fixtures.Memberships.fetch_membership(subject.actor.id)
+        |> Fixtures.Memberships.force_role("admin")
+        |> Fixtures.Subjects.membership_subject()
+
       observe_console_catalog(runner)
       {:ok, acme_only} = Accounts.RunnerAccess.new(:all, [], [], :restricted, ["acme"])
       force_runner_access(account, subject, acme_only)
@@ -5311,6 +5442,12 @@ defmodule Emisar.CatalogTest do
       subject: subject,
       runner: runner
     } do
+      subject =
+        account.id
+        |> Fixtures.Memberships.fetch_membership(subject.actor.id)
+        |> Fixtures.Memberships.force_role("admin")
+        |> Fixtures.Subjects.membership_subject()
+
       observe_console_catalog(runner)
       {:ok, acme_only} = Accounts.RunnerAccess.new(:all, [], [], :restricted, ["acme"])
       force_runner_access(account, subject, acme_only)
@@ -5327,6 +5464,12 @@ defmodule Emisar.CatalogTest do
       subject: subject,
       runner: runner
     } do
+      subject =
+        account.id
+        |> Fixtures.Memberships.fetch_membership(subject.actor.id)
+        |> Fixtures.Memberships.force_role("admin")
+        |> Fixtures.Subjects.membership_subject()
+
       observe_console_catalog(runner)
       {other_account, other_subject} = account_with_owner()
       other_runner = Fixtures.Runners.create_runner(account_id: other_account.id)
@@ -5363,6 +5506,12 @@ defmodule Emisar.CatalogTest do
       account: account,
       subject: subject
     } do
+      subject =
+        account.id
+        |> Fixtures.Memberships.fetch_membership(subject.actor.id)
+        |> Fixtures.Memberships.force_role("admin")
+        |> Fixtures.Subjects.membership_subject()
+
       database = Fixtures.Runners.create_runner(account_id: account.id, group: "database")
       web = Fixtures.Runners.create_runner(account_id: account.id, group: "web")
 
@@ -5402,6 +5551,12 @@ defmodule Emisar.CatalogTest do
       account: account,
       subject: subject
     } do
+      subject =
+        account.id
+        |> Fixtures.Memberships.fetch_membership(subject.actor.id)
+        |> Fixtures.Memberships.force_role("admin")
+        |> Fixtures.Subjects.membership_subject()
+
       database = Fixtures.Runners.create_runner(account_id: account.id, group: "database")
       web = Fixtures.Runners.create_runner(account_id: account.id, group: "web")
 
@@ -5924,6 +6079,12 @@ defmodule Emisar.CatalogTest do
       account: account,
       subject: subject
     } do
+      subject =
+        account.id
+        |> Fixtures.Memberships.fetch_membership(subject.actor.id)
+        |> Fixtures.Memberships.force_role("admin")
+        |> Fixtures.Subjects.membership_subject()
+
       pack_id = retired_pack_id()
 
       pack_version =
@@ -6198,6 +6359,13 @@ defmodule Emisar.CatalogTest do
   describe "list_pack_actions/3" do
     test "returns the distinct actions a pack version advertises, scoped to the account" do
       {account, subject} = account_with_owner()
+
+      subject =
+        account.id
+        |> Fixtures.Memberships.fetch_membership(subject.actor.id)
+        |> Fixtures.Memberships.force_role("admin")
+        |> Fixtures.Subjects.membership_subject()
+
       runner = Fixtures.Runners.create_runner(account_id: account.id, group: "database")
       other_runner = Fixtures.Runners.create_runner(account_id: account.id, group: "web")
 
@@ -6461,6 +6629,13 @@ defmodule Emisar.CatalogTest do
 
     test "counts only decisions in current pack access" do
       {account, subject} = account_with_owner()
+
+      subject =
+        account.id
+        |> Fixtures.Memberships.fetch_membership(subject.actor.id)
+        |> Fixtures.Memberships.force_role("admin")
+        |> Fixtures.Subjects.membership_subject()
+
       runner = Fixtures.Runners.create_runner(account_id: account.id)
 
       {:ok, _} =

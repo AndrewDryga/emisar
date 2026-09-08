@@ -1,6 +1,7 @@
 defmodule Emisar.SSO.IdentityProvider.Changeset do
   use Emisar, :changeset
   alias Emisar.SSO.IdentityProvider
+  alias Emisar.SSO.ProviderKind
 
   # `kind` is set once at create (the IdP preset); update casts the rest. The
   # persisted `default_runner_scope_*` / `default_pack_scope_*` arrays are
@@ -99,6 +100,7 @@ defmodule Emisar.SSO.IdentityProvider.Changeset do
       allowlist
     )
     |> validate_issuer()
+    |> validate_issuer_region()
     |> normalize_allowed_email_domain()
     |> unique_constraint([:account_id, :kind],
       name: :sso_identity_providers_account_kind_enabled_index
@@ -113,7 +115,7 @@ defmodule Emisar.SSO.IdentityProvider.Changeset do
   # The issuer is the discovery base + the iss we exact-match the ID token
   # against — it must be an https URL with a host (R2/H3, no plaintext OIDC), and
   # not a private/loopback/metadata target (the login fetch is an SSRF surface;
-  # `IssuerUrl` is the same guard the "Test connection" capstone runs).
+  # `IssuerUrl` is the same guard the "Check issuer" action runs).
   defp validate_issuer(changeset) do
     validate_change(changeset, :issuer, fn :issuer, issuer ->
       case Emisar.SSO.IssuerUrl.validate(issuer) do
@@ -122,6 +124,20 @@ defmodule Emisar.SSO.IdentityProvider.Changeset do
         {:error, :blocked_issuer} -> [issuer: "can't be a private or loopback address"]
       end
     end)
+  end
+
+  defp validate_issuer_region(changeset) do
+    case ProviderKind.issuer_regions(get_field(changeset, :kind)) do
+      [] ->
+        changeset
+
+      regions ->
+        issuers = Enum.map(regions, &elem(&1, 1))
+
+        validate_inclusion(changeset, :issuer, issuers,
+          message: "must match a supported JumpCloud region"
+        )
+    end
   end
 
   # Stored citext (case-insensitive), so no downcase; just trim + strip a

@@ -1042,7 +1042,10 @@ defmodule Emisar.SSOGroupsTest do
       # direct recompute entry point demotes them to the provider default_role
       # (:viewer) — least-privilege on directory removal (#3), never a stale
       # elevated role.
-      {:ok, [mapping], _meta} = SSO.list_group_mappings(provider, subject)
+      assert {:ok, group_rows, _meta} =
+               SSO.list_group_access(provider, subject, page: [limit: 100])
+
+      assert [mapping] = Enum.flat_map(group_rows, &List.wrap(&1.mapping))
       {:ok, _} = SSO.delete_group_mapping(mapping, subject)
 
       assert {:ok, %Accounts.Membership{role: :viewer}} =
@@ -1103,7 +1106,7 @@ defmodule Emisar.SSOGroupsTest do
 
   # -- Sync: the map-after-first-sync picker source --------------------
 
-  describe "list_synced_groups/3 — synced groups with member counts" do
+  describe "list_group_access/3 — synced groups with member counts" do
     setup do
       scim_provider()
     end
@@ -1144,7 +1147,7 @@ defmodule Emisar.SSOGroupsTest do
         )
 
       # Arrival order; the count is distinct members per group.
-      assert {:ok, groups, _metadata} = SSO.list_synced_groups(provider, subject)
+      assert {:ok, groups, _metadata} = SSO.list_group_access(provider, subject)
 
       assert [ops_group, admin_group] = groups
       assert admin_group.external_group_id == "grp-adm"
@@ -1161,7 +1164,7 @@ defmodule Emisar.SSOGroupsTest do
       {_u, account, subject} = Fixtures.Subjects.owner_subject(%{plan: "team"})
       provider = provider_fixture(account, %{})
 
-      assert {:ok, [], _metadata} = SSO.list_synced_groups(provider, subject)
+      assert {:ok, [], _metadata} = SSO.list_group_access(provider, subject)
     end
 
     test "is account-scoped — another account's enterprise owner can't read it", %{
@@ -1169,13 +1172,204 @@ defmodule Emisar.SSOGroupsTest do
     } do
       {_u, _account_b, subject_b} = enterprise_owner()
 
-      assert SSO.list_synced_groups(provider, subject_b) == {:error, :not_found}
+      assert SSO.list_group_access(provider, subject_b) == {:error, :not_found}
+    end
+  end
+
+  describe "list_group_access/3" do
+    test "pages each group once and retains retired role-only, access-only and combined mappings" do
+      %{provider: provider, subject: subject} = scim_provider()
+
+      entries =
+        for kind <- [:role, :access, :both] do
+          {:ok, group} =
+            SSO.scim_upsert_group(provider, %{
+              external_id: "retired-#{kind}",
+              display: "Retired #{kind}",
+              member_ids: []
+            })
+
+          role =
+            if kind in [:role, :both] do
+              {:ok, mapping} =
+                SSO.create_group_mapping(
+                  provider,
+                  %{directory_group_id: group.id, role: :operator},
+                  subject
+                )
+
+              mapping
+            end
+
+          access =
+            if kind in [:access, :both] do
+              {:ok, mapping} =
+                SSO.create_group_runner_access_mapping(
+                  provider,
+                  %{directory_group_id: group.id, runner_access_mode: :all},
+                  subject
+                )
+
+              mapping
+            end
+
+          assert {:ok, _} = SSO.scim_delete_group(provider, group.id)
+          {group, role, access}
+        end
+
+      assert {:ok, rows, metadata} = SSO.list_group_access(provider, subject)
+      assert metadata.count == 3
+      assert Enum.all?(rows, & &1.retired?)
+      ids = Enum.map(entries, fn {group, _, _} -> group.id end)
+      assert Enum.map(rows, & &1.id) == ids
+
+      assert Enum.map(walk_pages(&SSO.list_group_access(provider, subject, &1), 2), & &1.id) ==
+               ids
+
+      assert {:ok, []} = SSO.search_synced_groups(provider, "", subject)
+
+      {_group, role, access} = List.last(entries)
+      assert {:ok, _} = SSO.delete_group_mapping(role, subject)
+      assert {:ok, retained, _} = SSO.list_group_access(provider, subject)
+      assert Enum.map(retained, & &1.id) == ids
+      assert List.last(retained).runner_access_mapping.id == access.id
+      assert is_nil(List.last(retained).mapping)
+
+      assert {:ok, _} = SSO.delete_group_runner_access_mapping(access, subject)
+      assert {:ok, remaining, _} = SSO.list_group_access(provider, subject)
+      assert Enum.map(remaining, & &1.id) == Enum.take(ids, 2)
+    end
+
+    test "returns default plus group access without replacing the explicit grant" do
+      %{provider: provider, subject: subject, account: account} =
+        scim_provider(%{default_runner_access_mode: :all, default_pack_access_mode: :all})
+
+      runner = Fixtures.Runners.create_runner(account_id: account.id, group: "database")
+
+      {:ok, unmapped} =
+        SSO.scim_upsert_group(
+          provider,
+          %{external_id: "defaults", display: "Defaults", member_ids: []}
+        )
+
+      {:ok, mapping} =
+        create_group_runner_access_mapping(
+          provider,
+          %{
+            external_group_id: "extra",
+            runner_access_mode: :restricted,
+            scope: ["runner:#{runner.id}"]
+          },
+          subject
+        )
+
+      assert {:ok, rows, _} = SSO.list_group_access(provider, subject)
+      default_row = Enum.find(rows, &(&1.id == unmapped.id))
+      mapped_row = Enum.find(rows, &(&1.id == mapping.directory_group_id))
+      assert default_row.access == Accounts.RunnerAccess.all()
+      assert is_nil(default_row.runner_access_mapping)
+      assert mapped_row.access == Accounts.RunnerAccess.all()
+      assert mapped_row.runner_access_mapping.runner_access_mode == :restricted
+      assert mapped_row.runner_access_mapping.runner_scope_runner_ids == [runner.id]
+
+      assert {:ok, provider} =
+               SSO.update_provider(provider, %{default_runner_access_mode: :none}, subject)
+
+      assert {:ok, rows, _} = SSO.list_group_access(provider, subject)
+      default_row = Enum.find(rows, &(&1.id == unmapped.id))
+      mapped_row = Enum.find(rows, &(&1.id == mapping.directory_group_id))
+      assert default_row.access == Accounts.RunnerAccess.none()
+      assert mapped_row.access.mode == :restricted
+      assert mapped_row.access.runner_ids == [runner.id]
+    end
+
+    test "pages live groups and retained mappings without losing or duplicating rows" do
+      %{provider: provider, subject: subject} = scim_provider()
+
+      entries =
+        for n <- 1..6 do
+          attrs = %{external_id: "group-#{n}", display: "Group #{n}", member_ids: []}
+          {:ok, group} = SSO.scim_upsert_group(provider, attrs)
+
+          mapping =
+            if rem(n, 2) == 1 do
+              attrs = %{directory_group_id: group.id, role: :operator}
+              {:ok, mapping} = SSO.create_group_mapping(provider, attrs, subject)
+              mapping
+            end
+
+          {group, mapping}
+        end
+
+      [{retired, mapping}, {unmapped, nil} | live_entries] = entries
+      assert {:ok, _} = SSO.scim_delete_group(provider, retired.id)
+      assert {:ok, _} = SSO.scim_delete_group(provider, unmapped.id)
+
+      assert {:ok, [retired_row | live_rows], _metadata} =
+               SSO.list_group_access(provider, subject)
+
+      assert retired_row.id == retired.id
+      assert retired_row.retired?
+      assert retired_row.mapping.id == mapping.id
+      assert retired_row.member_count == 0
+      assert Enum.map(live_rows, & &1.id) == Enum.map(live_entries, fn {group, _} -> group.id end)
+      assert Enum.all?(live_rows, &(not &1.retired?))
+
+      walked = walk_pages(&SSO.list_group_access(provider, subject, &1), 2)
+      assert Enum.map(walked, & &1.id) == Enum.map([retired_row | live_rows], & &1.id)
+      assert {:ok, pickable} = SSO.search_synced_groups(provider, "", subject)
+      assert MapSet.new(pickable, & &1.id) == MapSet.new(live_rows, & &1.id)
+
+      assert {:ok, _} = SSO.delete_group_mapping(mapping, subject)
+      assert {:ok, ^live_rows, _metadata} = SSO.list_group_access(provider, subject)
+    end
+
+    test "retained mappings remain visible after SCIM is disabled and enabled again" do
+      %{provider: provider, subject: subject} = scim_provider()
+      attrs = %{external_group_id: "retained", role: :operator}
+      {:ok, mapping} = create_group_mapping(provider, attrs, subject)
+
+      assert {:ok, provider} = SSO.disable_scim(provider, subject)
+      assert {:ok, provider, _token} = SSO.enable_scim(provider, subject)
+      assert {:ok, [group], _metadata} = SSO.list_group_access(provider, subject)
+      assert group.retired?
+      assert group.mapping.id == mapping.id
+      assert {:ok, []} = SSO.search_synced_groups(provider, "", subject)
+
+      assert {:ok, _} = SSO.delete_group_mapping(mapping, subject)
+      assert {:ok, [], _metadata} = SSO.list_group_access(provider, subject)
+    end
+
+    test "a downgraded plan can still read its groups and access" do
+      account = Fixtures.Accounts.create_account(%{plan: "team"})
+      user = Fixtures.Users.create_user()
+      subject = Fixtures.Subjects.subject_for(user, account)
+      provider = provider_fixture(account, %{})
+
+      assert {:ok, [], _metadata} = SSO.list_group_access(provider, subject)
+    end
+
+    test "a viewer cannot read groups and access" do
+      %{provider: provider, account: account} = scim_provider()
+      user = Fixtures.Users.create_user()
+      subject = Fixtures.Subjects.subject_for(user, account, role: :viewer)
+
+      assert SSO.list_group_access(provider, subject) == {:error, :unauthorized}
+    end
+
+    test "another account's owner cannot read groups and access" do
+      %{provider: provider} = scim_provider()
+      account = Fixtures.Accounts.create_account(%{plan: "enterprise"})
+      user = Fixtures.Users.create_user()
+      subject = Fixtures.Subjects.subject_for(user, account)
+
+      assert SSO.list_group_access(provider, subject) == {:error, :not_found}
     end
   end
 
   # -- Config: list + pagination ---------------------------------------
 
-  describe "list_group_mappings/3 keyset pagination" do
+  describe "list_group_access/3 keyset pagination" do
     test "a multi-page walk returns every immutable group mapping once" do
       %{provider: provider, subject: subject} = scim_provider()
 
@@ -1188,14 +1382,17 @@ defmodule Emisar.SSOGroupsTest do
           )
       end
 
-      {:ok, all, _} = SSO.list_group_mappings(provider, subject)
+      assert {:ok, group_rows, _} =
+               SSO.list_group_access(provider, subject, page: [limit: 100])
+
+      all = Enum.flat_map(group_rows, &List.wrap(&1.mapping))
       directory_group_ids = Enum.map(all, & &1.directory_group_id)
       assert directory_group_ids == Enum.sort(directory_group_ids)
-      reference_order = Enum.map(all, & &1.id)
+      reference_order = directory_group_ids
 
       # A cursor that disagreed with the UUID ORDER BY would skip or duplicate
       # rows across pages.
-      walked = walk_pages(&SSO.list_group_mappings(provider, subject, &1), 2)
+      walked = walk_pages(&SSO.list_group_access(provider, subject, &1), 2)
       assert Enum.map(walked, & &1.id) == reference_order
     end
   end
@@ -1308,9 +1505,8 @@ defmodule Emisar.SSOGroupsTest do
                  subject
                )
 
-      # The unique index on (provider_id, directory_group_id) maps the violation
-      # onto the first constraint field, :provider_id.
-      assert "has already been taken" in errors_on(changeset).provider_id
+      assert "This group already has a role mapping." in errors_on(changeset).directory_group_id
+      refute Map.has_key?(errors_on(changeset), :provider_id)
     end
 
     test "external group attributes cannot retarget or rename a mapping", %{
@@ -1360,7 +1556,10 @@ defmodule Emisar.SSOGroupsTest do
                  subject
                )
 
-      assert {:ok, [listed], _meta} = SSO.list_group_mappings(provider, subject)
+      assert {:ok, group_rows, _meta} =
+               SSO.list_group_access(provider, subject, page: [limit: 100])
+
+      assert [listed] = Enum.flat_map(group_rows, &List.wrap(&1.mapping))
       assert listed.id == mapping.id
 
       assert {:ok, updated} = SSO.update_group_mapping(mapping, %{role: :operator}, subject)
@@ -1387,7 +1586,7 @@ defmodule Emisar.SSOGroupsTest do
                viewer_subject
              ) == {:error, :unauthorized}
 
-      assert SSO.list_group_mappings(provider, viewer_subject) == {:error, :unauthorized}
+      assert SSO.list_group_access(provider, viewer_subject) == {:error, :unauthorized}
 
       # Denial: a Team plan can configure OIDC but not SCIM group mappings.
       {_u, _team_account, team_subject} = Fixtures.Subjects.owner_subject(%{plan: "team"})
@@ -1399,7 +1598,7 @@ defmodule Emisar.SSOGroupsTest do
              ) == {:error, :directory_sync_not_available}
 
       # Cross-account: account B's enterprise owner cannot touch account A's
-      # provider's mappings (create can't find the provider; list scopes empty).
+      # provider or its mappings (both reads and writes are not_found).
       {_ub, _account_b, subject_b} = enterprise_owner()
 
       assert create_group_mapping(
@@ -1411,7 +1610,7 @@ defmodule Emisar.SSOGroupsTest do
       {:ok, mapping_a} =
         create_group_mapping(provider, %{external_group_id: "grp-5", role: :admin}, subject)
 
-      assert {:ok, [], _meta} = SSO.list_group_mappings(provider, subject_b)
+      assert SSO.list_group_access(provider, subject_b) == {:error, :not_found}
       # And B can't update/delete A's mapping (row-scoped to B's account).
       assert SSO.update_group_mapping(mapping_a, %{role: :viewer}, subject_b) ==
                {:error, :not_found}

@@ -3,6 +3,78 @@ defmodule Emisar.AuditTest do
   alias Emisar.{Approvals, Audit, RequestContext, Runs, SSO}
   alias Emisar.Fixtures
 
+  describe "policy_changes/1" do
+    test "recovers changes from saved snapshots even when an older diff omitted them" do
+      first = %{"action" => "service.*", "decision" => "deny"}
+      second = %{"action" => "service.*", "decision" => "allow"}
+
+      before_rules = %{
+        "overrides" => [first, second],
+        "approval" => %{"min_approvals" => 1, "allow_self_approval" => true}
+      }
+
+      after_rules = %{
+        "overrides" => [second, first],
+        "approval" => %{"min_approvals" => 2, "allow_self_approval" => false}
+      }
+
+      changes =
+        Audit.policy_changes(%{
+          "before" => before_rules,
+          "after" => after_rules,
+          "changes" => %{"defaults" => %{}, "overrides" => %{}}
+        })
+
+      assert changes["overrides"]["order_changed"]
+      assert changes["approval"]["min_approvals"] == %{"from" => 1, "to" => 2}
+      assert changes["approval"]["allow_self_approval"] == %{"from" => true, "to" => false}
+      refute Repo.one(Audit.Event)
+    end
+
+    test "preserves recorded changes when either historical snapshot is missing or malformed" do
+      recorded = %{"defaults" => %{"high" => %{"from" => "allow", "to" => "deny"}}}
+
+      for snapshots <- [
+            %{},
+            %{"before" => %{}},
+            %{"after" => %{}},
+            %{"before" => nil, "after" => %{}},
+            %{"before" => %{}, "after" => []}
+          ] do
+        assert Audit.policy_changes(Map.put(snapshots, "changes", recorded)) == recorded
+      end
+    end
+
+    test "accepts atom and mixed snapshot keys without replacing explicit nils" do
+      before_rules = %{"approval" => %{"allow_self_approval" => true}}
+      after_rules = %{"approval" => %{"allow_self_approval" => false}}
+      recorded = %{"approval" => %{"min_approvals" => %{"from" => 1, "to" => 2}}}
+
+      for payload <- [
+            %{before: before_rules, after: after_rules},
+            %{"before" => before_rules, :after => after_rules}
+          ] do
+        assert Audit.policy_changes(payload)["approval"]["allow_self_approval"] ==
+                 %{"from" => true, "to" => false}
+      end
+
+      assert Audit.policy_changes(%{changes: recorded}) == recorded
+
+      assert Audit.policy_changes(%{
+               "before" => before_rules,
+               "after" => after_rules,
+               :before => nil,
+               :changes => recorded
+             }) == recorded
+    end
+
+    test "missing or malformed recorded changes safely return an empty map" do
+      for payload <- [nil, [], "invalid", %{}, %{"changes" => nil}, %{"changes" => []}] do
+        assert Audit.policy_changes(payload) == %{}
+      end
+    end
+  end
+
   describe "log/3 with a %RequestContext{}" do
     setup do
       account = Fixtures.Accounts.create_account()
@@ -134,9 +206,10 @@ defmodule Emisar.AuditTest do
         )
 
       subject = Fixtures.Subjects.subject_for(user, account, role: :owner)
+      updated = %{account | name: "Renamed"}
 
       assert {:ok, %Audit.Event{} = event} =
-               Audit.record(Audit.Events.account_updated(subject, account))
+               Audit.record(Audit.Events.account_updated(subject, account, updated))
 
       assert event.event_type == "account.updated"
       assert event.account_id == account.id
@@ -259,6 +332,28 @@ defmodule Emisar.AuditTest do
   end
 
   describe "run_event_changeset/1" do
+    test "retains failure detail separately from the dispatch and cancellation reasons" do
+      account = Fixtures.Accounts.create_account()
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
+
+      {:ok, run} =
+        Runs.create_run(%{
+          account_id: account.id,
+          runner_id: runner.id,
+          action_id: "linux.uptime",
+          source: "operator",
+          args: %{},
+          reason: "Investigate availability"
+        })
+
+      assert {:ok, failed} = Runs.mark_refused(run, "Required\u202E executable is missing")
+      payload = failed |> Audit.run_event_changeset() |> Ecto.Changeset.get_field(:payload)
+
+      assert payload[:error_message] == "Required executable is missing"
+      assert payload[:dispatch_reason] == "Investigate availability"
+      refute Map.has_key?(payload, :reason)
+    end
+
     # request_id is promoted to a first-class field (not buried in payload),
     # and nil payload keys are compacted so a
     # freshly-created run's row doesn't bloat with still-empty fields.
@@ -494,8 +589,9 @@ defmodule Emisar.AuditTest do
       }
 
       subject = Fixtures.Subjects.subject_for(user, account, role: :owner, context: context)
+      updated = %{account | name: "Renamed"}
 
-      {:ok, event} = Audit.record(Audit.Events.account_updated(subject, account))
+      {:ok, event} = Audit.record(Audit.Events.account_updated(subject, account, updated))
 
       # Actor identity comes off the subject…
       assert event.actor_kind == "user"
@@ -512,8 +608,9 @@ defmodule Emisar.AuditTest do
       account: account
     } do
       subject = Fixtures.Subjects.subject_for(user, account, role: :owner)
+      updated = %{account | name: "Renamed"}
 
-      {:ok, event} = Audit.record(Audit.Events.account_updated(subject, account))
+      {:ok, event} = Audit.record(Audit.Events.account_updated(subject, account, updated))
 
       assert event.actor_id == user.id
       assert event.ip_address == nil
@@ -535,7 +632,8 @@ defmodule Emisar.AuditTest do
           user_identity_id: identity_id
         )
 
-      {:ok, event} = Audit.record(Audit.Events.account_updated(subject, account))
+      updated = %{account | name: "Renamed"}
+      {:ok, event} = Audit.record(Audit.Events.account_updated(subject, account, updated))
 
       # How the actor authenticated rides the subject onto every audit row
       # (decision 6) — string method for the column, the mfa flag, and the
@@ -550,8 +648,9 @@ defmodule Emisar.AuditTest do
       account: account
     } do
       subject = Fixtures.Subjects.subject_for(user, account, role: :owner)
+      updated = %{account | name: "Renamed"}
 
-      {:ok, event} = Audit.record(Audit.Events.account_updated(subject, account))
+      {:ok, event} = Audit.record(Audit.Events.account_updated(subject, account, updated))
 
       assert event.auth_method == nil
       assert event.user_identity_id == nil
@@ -845,34 +944,6 @@ defmodule Emisar.AuditTest do
     # filters) — no crash, nothing hidden.
     test "the hide_noise filter is retired" do
       refute Enum.any?(Audit.Event.Query.filters(), &(&1.name == :hide_noise))
-    end
-
-    test "outcome filter narrows to failures+denials (danger) and removals (warn) by suffix", %{
-      account: account,
-      subject: subject
-    } do
-      {:ok, _} = Audit.log(account.id, "action_run.failed", actor_kind: "system")
-      {:ok, _} = Audit.log(account.id, "approval.denied", actor_kind: "user")
-      {:ok, _} = Audit.log(account.id, "enrollment_key.revoked", actor_kind: "user")
-      {:ok, _} = Audit.log(account.id, "approval.approved", actor_kind: "user")
-
-      # "danger" keeps the failure AND the denial; the revocation and the pass are excluded.
-      {:ok, danger, _} = Audit.list_events(subject, filter: [outcome: ["danger"]])
-      kept_danger = Enum.map(danger, & &1.event_type) |> Enum.sort()
-      assert kept_danger == ["action_run.failed", "approval.denied"]
-
-      # "warn" is what was taken away, never a denial.
-      {:ok, warn, _} = Audit.list_events(subject, filter: [outcome: ["warn"]])
-      assert Enum.map(warn, & &1.event_type) == ["enrollment_key.revoked"]
-
-      # Both outcomes keep all three, still dropping the pass.
-      {:ok, both, _} = Audit.list_events(subject, filter: [outcome: ["danger", "warn"]])
-      kept = Enum.map(both, & &1.event_type) |> Enum.sort()
-      assert kept == ["action_run.failed", "approval.denied", "enrollment_key.revoked"]
-
-      # "pass" keeps only the yes-verdict.
-      {:ok, passes, _} = Audit.list_events(subject, filter: [outcome: ["pass"]])
-      assert Enum.map(passes, & &1.event_type) == ["approval.approved"]
     end
 
     test "the Type filter scopes to a whole group via the 'All <group>' option", %{
@@ -2003,6 +2074,109 @@ defmodule Emisar.AuditTest do
       assert refs["api_key"][api_key.id] == api_key.name
     end
 
+    test "a former member resolves from the latest readable directory name, not their global name",
+         %{
+           account: account,
+           subject: subject
+         } do
+      departed = Fixtures.Users.create_user(full_name: "Current name outside this account")
+
+      membership =
+        Fixtures.Memberships.create_membership(account_id: account.id, user_id: departed.id)
+
+      Fixtures.Memberships.mark_membership_as_deleted(membership)
+      now = DateTime.utc_now()
+
+      {:ok, _} =
+        Audit.log(account.id, "user.provisioned_via_scim",
+          target_kind: "user",
+          target_id: departed.id,
+          target_label: "former@example.com",
+          occurred_at: DateTime.add(now, -120, :second)
+        )
+
+      {:ok, _} =
+        Audit.log(account.id, "membership.renamed_via_scim",
+          target_kind: "user",
+          target_id: departed.id,
+          payload: %{from: "Old directory name", to: "Recorded directory name"},
+          occurred_at: DateTime.add(now, -60, :second)
+        )
+
+      {:ok, event} =
+        Audit.log(account.id, "membership.role_synced_via_scim",
+          target_kind: "user",
+          target_id: departed.id,
+          payload: %{from: "viewer", to: "admin"},
+          occurred_at: now
+        )
+
+      refs = Audit.resolve_references([event], subject)
+
+      refute Map.has_key?(refs["user"], departed.id)
+      assert refs["historical"][{"user", :target}][departed.id] == "Recorded directory name"
+      assert {:ok, options, _} = Audit.list_target_options("user", subject)
+      assert {departed.id, "Recorded directory name"} in options
+      assert Repo.get!(Audit.Event, event.id).target_label == nil
+    end
+
+    test "historical actor and target names stay separate", %{account: account, subject: subject} do
+      missing_id = Ecto.UUID.generate()
+
+      {:ok, _} =
+        Audit.log(account.id, "membership.renamed_via_scim",
+          actor_kind: "user",
+          actor_id: missing_id,
+          target_kind: "user",
+          target_id: missing_id,
+          payload: %{to: "Target directory name"}
+        )
+
+      {:ok, event} =
+        Audit.log(account.id, "membership.role_synced_via_scim",
+          actor_kind: "user",
+          actor_id: missing_id,
+          target_kind: "user",
+          target_id: missing_id
+        )
+
+      refs = Audit.resolve_references([event], subject)
+
+      assert refs["historical"][{"user", :target}][missing_id] == "Target directory name"
+      refute refs["historical"][{"user", :actor}][missing_id]
+    end
+
+    test "billing-only readers cannot recover names from operational history", %{account: account} do
+      subject =
+        Fixtures.Subjects.build_subject(
+          account: account,
+          permissions: Emisar.Auth.Permissions.for_role(:billing_manager)
+        )
+
+      missing_id = Ecto.UUID.generate()
+
+      {:ok, _} =
+        Audit.log(account.id, "user.provisioned_via_scim",
+          target_kind: "user",
+          target_id: missing_id,
+          target_label: "Hidden operational name"
+        )
+
+      {:ok, event} =
+        Audit.log(account.id, "subscription.changed", target_kind: "user", target_id: missing_id)
+
+      refs = Audit.resolve_references([event], subject)
+
+      refute refs["historical"][{"user", :target}][missing_id]
+    end
+
+    test "read permission is required to resolve any identity", %{account: account, user: user} do
+      {:ok, event} = Audit.log(account.id, "user.touched", actor_kind: "user", actor_id: user.id)
+
+      assert Audit.resolve_references([event], Fixtures.Subjects.permissionless_subject(account)) ==
+               %{}
+    end
+
     test "missing records (deleted since the event) are simply absent" do
       account = Fixtures.Accounts.create_account()
       ghost_id = Ecto.UUID.generate()
@@ -2037,6 +2211,16 @@ defmodule Emisar.AuditTest do
       user_b = Fixtures.Users.create_user()
       _ = Fixtures.Memberships.create_membership(account_id: account_b.id, user_id: user_b.id)
 
+      {:ok, _} =
+        Audit.log(account_b.id, "cross.account",
+          actor_kind: "user",
+          actor_id: user_b.id,
+          actor_label: "Other account user",
+          target_kind: "runner",
+          target_id: runner_b.id,
+          target_label: "Other account runner"
+        )
+
       # A mis-stamped audit row in account A pointing at B's ids.
       {:ok, event} =
         Audit.log(account_a.id, "cross.account",
@@ -2050,6 +2234,8 @@ defmodule Emisar.AuditTest do
 
       refute Map.has_key?(refs["user"], user_b.id)
       refute Map.has_key?(refs["runner"], runner_b.id)
+      refute refs["historical"][{"user", :actor}][user_b.id]
+      refute refs["historical"][{"runner", :target}][runner_b.id]
     end
 
     test "resolves enrollment_key, action_run, approval_request, and runbook labels", %{
@@ -2171,9 +2357,13 @@ defmodule Emisar.AuditTest do
     test "carries the {type, label} pairs the audit list renders" do
       values = Audit.known_event_type_values()
 
-      assert {"audit.exported", "Audit log exported"} in values
+      assert {"audit.exported", "Audit events read for export"} in values
+      assert {"session.account_switched", "User switched to this account"} in values
+      assert {"membership.invitation_resent", "Invitation resend requested"} in values
+      assert {"runner.credential_rotated", "Runner replacement key used"} in values
+      assert {"dispatch_blocked_target_unavailable", "Action request rejected"} in values
       assert {"action_run.failed", "Run failed"} in values
-      assert {"approval.overridden", "Approval review requirement overridden"} in values
+      assert {"approval.overridden", "Approval requirements overridden"} in values
       assert {"oauth.refresh_token_reused", "OAuth refresh token reused"} in values
       assert Enum.all?(values, fn {type, label} -> is_binary(type) and is_binary(label) end)
     end
@@ -2185,7 +2375,7 @@ defmodule Emisar.AuditTest do
                   action_run.failed action_run.error runner.error action_run.timed_out
                   approval.denied action_run.denied action_run.refused
                   pack_trust_rejected runner.version_rejected
-                  oauth.refresh_token_reused] do
+                  oauth.refresh_token_reused dispatch_blocked_target_unavailable] do
         assert Audit.event_outcome(t) == :danger, "expected #{t} to be :danger"
       end
     end
@@ -2221,39 +2411,6 @@ defmodule Emisar.AuditTest do
     test "nil and non-binary fall back to :neutral" do
       assert Audit.event_outcome(nil) == :neutral
       assert Audit.event_outcome(42) == :neutral
-    end
-
-    # the row dot tone (web) and the "Outcome" filter both
-    # read the SAME outcome/1 classifier, so they can never disagree. Drive the
-    # filter end-to-end through list_events: log one known type of each tone and
-    # assert the filter keeps exactly the rows outcome/1 calls danger/warn — i.e.
-    # the filter genuinely resolves through outcome/1, not a parallel copy.
-    test "the Outcome filter narrows to exactly the rows outcome/1 classifies" do
-      account = Fixtures.Accounts.create_account()
-      subject = Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account, role: :owner)
-
-      # Real known types, one per tone (outcome/1: danger / warn / pass / neutral).
-      {:ok, _} = Audit.log(account.id, "action_run.failed", actor_kind: "system")
-      {:ok, _} = Audit.log(account.id, "approval.denied", actor_kind: "user")
-      {:ok, _} = Audit.log(account.id, "enrollment_key.revoked", actor_kind: "user")
-      {:ok, _} = Audit.log(account.id, "approval.approved", actor_kind: "user")
-      {:ok, _} = Audit.log(account.id, "runner.connected", actor_kind: "runner")
-
-      assert Audit.event_outcome("action_run.failed") == :danger
-      assert Audit.event_outcome("approval.denied") == :danger
-      assert Audit.event_outcome("enrollment_key.revoked") == :warn
-      assert Audit.event_outcome("approval.approved") == :pass
-      assert Audit.event_outcome("runner.connected") == :neutral
-
-      {:ok, danger, _} = Audit.list_events(subject, filter: [outcome: ["danger"]])
-
-      assert Enum.sort(Enum.map(danger, & &1.event_type)) ==
-               ["action_run.failed", "approval.denied"]
-
-      {:ok, both, _} = Audit.list_events(subject, filter: [outcome: ["danger", "warn"]])
-
-      assert Enum.sort(Enum.map(both, & &1.event_type)) ==
-               ["action_run.failed", "approval.denied", "enrollment_key.revoked"]
     end
   end
 
@@ -2294,10 +2451,9 @@ defmodule Emisar.AuditTest do
     test "carries the facet panel's filters in panel order" do
       assert Enum.map(Audit.event_filters(full_trail_subject()), & &1.name) == [
                :category,
+               :event_type,
                :from,
                :to,
-               :event_type,
-               :outcome,
                :request_id,
                :auth_method,
                :actor_kind,
@@ -2403,6 +2559,54 @@ defmodule Emisar.AuditTest do
   end
 
   describe "applicable_event_filters/3" do
+    test "Category and Type share a row, with Type choices narrowed by Category" do
+      filters =
+        Audit.applicable_event_filters(nil, %{"category" => "fleet"}, full_trail_subject())
+
+      [category, type | _] = filters
+      assert category.name == :category
+      assert category.span == :half
+      assert type.name == :event_type
+      assert type.span == :half
+      assert Enum.map(type.values, &elem(&1, 0)) == ["Runner"]
+
+      assert {"user.sign_in_failed", "Sign-in failed"} in type.valid_values
+    end
+
+    test "All categories restores the full Type choices" do
+      full_type = Enum.find(Audit.event_filters(full_trail_subject()), &(&1.name == :event_type))
+
+      for category <- [nil, "", []] do
+        filters =
+          Audit.applicable_event_filters(nil, %{"category" => category}, full_trail_subject())
+
+        type = Enum.find(filters, &(&1.name == :event_type))
+        assert type.values == full_type.values
+      end
+    end
+
+    test "multiple categories combine their Type choices" do
+      filters =
+        Audit.applicable_event_filters(
+          nil,
+          %{"category" => ["fleet", "activity"]},
+          full_trail_subject()
+        )
+
+      type = Enum.find(filters, &(&1.name == :event_type))
+      assert Enum.sort(Enum.map(type.values, &elem(&1, 0))) == ["Run", "Runbook", "Runner"]
+    end
+
+    test "Category cannot restore Type choices withheld from a billing-only reader" do
+      subject =
+        Fixtures.Subjects.build_subject(
+          permissions: Emisar.Auth.Permissions.for_role(:billing_manager)
+        )
+
+      filters = Audit.applicable_event_filters(nil, %{"category" => "fleet"}, subject)
+      refute Enum.any?(filters, &(&1.name in [:category, :event_type]))
+    end
+
     test "no Type selected drops the request-scoped facets and keeps Target type" do
       names = Enum.map(Audit.applicable_event_filters(nil, %{}, full_trail_subject()), & &1.name)
 
@@ -2416,6 +2620,23 @@ defmodule Emisar.AuditTest do
         Audit.applicable_event_filters(nil, %{"request_id" => "req_x"}, full_trail_subject())
 
       assert :request_id in Enum.map(filters, & &1.name)
+    end
+  end
+
+  describe "compatible_event_types/2" do
+    test "keeps compatible individual types and whole groups" do
+      types = ["runner.connected", "group:Runner", "user.sign_in_failed", "group:Sign-in"]
+
+      assert Audit.compatible_event_types(types, "fleet") == ["runner.connected", "group:Runner"]
+      assert Audit.compatible_event_types("user.sign_in_failed", ["fleet"]) == []
+      assert Audit.compatible_event_types(types, ["fleet", "access"]) == types
+    end
+
+    test "clearing Category preserves Type and unknown categories cannot match" do
+      assert Audit.compatible_event_types("runner.connected", "") == ["runner.connected"]
+      assert Audit.compatible_event_types(["group:Runner"], nil) == ["group:Runner"]
+      assert Audit.compatible_event_types(nil, "fleet") == []
+      assert Audit.compatible_event_types("runner.connected", "unknown") == []
     end
   end
 
@@ -2478,13 +2699,13 @@ defmodule Emisar.AuditTest do
       %{account: account, subject: subject}
     end
 
-    # The Severity and Category facets resolve to a literal `event_type IN (…)`
+    # The Category facet resolves to a literal `event_type IN (…)`
     # built from these lists, so a type that is emitted but unlisted is a row the
     # operator's filter silently withholds. Eight had drifted that way — the six
     # BA-1 found plus the two run outcomes (FL-1) — and the test that used to sit
     # here pinned two of them as EXPECTED. Assert the set relation instead, so the
     # next builder cannot ship a type the audit page cannot narrow to.
-    test "every type a builder can emit is selectable, with a severity and a category" do
+    test "every type a builder can emit is selectable and has a category" do
       known = Audit.Event.Query.known_event_type_values() |> Enum.map(&elem(&1, 0))
 
       group_of_type =
@@ -2500,7 +2721,7 @@ defmodule Emisar.AuditTest do
       assert ungrouped == []
     end
 
-    test "the Category and Severity facets return the types they used to drop", %{
+    test "the Category facet returns the types it used to drop", %{
       account: account,
       subject: subject
     } do
@@ -2522,16 +2743,6 @@ defmodule Emisar.AuditTest do
           end)
 
         assert length(reachable) == 1, "#{type} is in #{length(reachable)} categories"
-
-        outcome = Audit.Event.Query.outcome(type)
-
-        if outcome != :neutral do
-          {:ok, rows, _meta} =
-            Audit.list_events(subject, filter: [outcome: [Atom.to_string(outcome)]])
-
-          assert Enum.any?(rows, &(&1.id == event.id)),
-                 "#{type} is not returned by Severity=#{outcome}"
-        end
       end
     end
 
@@ -2588,6 +2799,49 @@ defmodule Emisar.AuditTest do
       # Fresh insert returns atom-keyed payload (JSON string-keying is a reload
       # concern) — same convention as the run_event_changeset test above.
       assert event.payload[:provider_id] == provider.id
+    end
+
+    test "SCIM membership receipts preserve the directory display name" do
+      account = Fixtures.Accounts.create_account()
+
+      membership =
+        Fixtures.Memberships.create_membership(account_id: account.id)
+        |> Fixtures.Memberships.sync_display_name("Directory member")
+
+      provider = %SSO.IdentityProvider{
+        id: Repo.generate_id(),
+        account_id: account.id,
+        name: "Okta",
+        kind: :okta
+      }
+
+      before_access = Emisar.Accounts.RunnerAccess.none()
+      after_access = Emisar.Accounts.RunnerAccess.all()
+
+      changesets = [
+        Audit.Events.membership_deprovisioned_via_scim(membership, provider),
+        Audit.Events.membership_reprovisioned_via_scim(membership, provider),
+        Audit.Events.membership_role_synced_via_scim(membership, provider, :admin),
+        Audit.Events.membership_runner_access_synced_via_scim(
+          membership,
+          provider,
+          before_access,
+          after_access
+        )
+      ]
+
+      for changeset <- changesets do
+        assert {:ok, event} = Audit.record(changeset)
+        assert event.target_id == membership.user_id
+        assert event.target_label == "Directory member"
+      end
+
+      assert {:ok, renamed} =
+               Audit.record(
+                 Audit.Events.membership_renamed_via_scim(membership, provider, "New name")
+               )
+
+      assert renamed.target_label == "New name"
     end
 
     # (taxonomy half) — `directory_sync` is deliberately NOT

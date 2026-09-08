@@ -17,9 +17,9 @@ defmodule Emisar.Audit.Event.Query do
   @known_event_types [
     {"account.created", "Account created"},
     {"account.updated", "Account updated"},
-    {"account.require_mfa_set", "MFA enforcement toggled"},
-    {"account.require_sso_set", "SSO enforcement toggled"},
-    {"account.max_grant_lifetime_set", "Max grant lifetime set"},
+    {"account.require_mfa_set", "MFA requirement changed"},
+    {"account.require_sso_set", "SSO requirement changed"},
+    {"account.max_grant_lifetime_set", "Maximum grant lifetime changed"},
     {"account.disabled", "Account disabled"},
     {"account.enabled", "Account enabled"},
     {"account.closed", "Account closed"},
@@ -27,85 +27,90 @@ defmodule Emisar.Audit.Event.Query do
     {"runner.connected", "Runner connected"},
     {"runner.disconnected", "Runner disconnected"},
     {"runner.disabled", "Runner disabled"},
+    {"runner.credential_rotation_requested", "Runner key rotation requested"},
+    {"runner.credential_rotated", "Runner replacement key used"},
     {"runner.enabled", "Runner enabled"},
     {"runner.deleted", "Runner deleted"},
     {"runner.error", "Runner error"},
-    {"runner.version_rejected", "Runner version rejected"},
-    {"runner.retention_swept", "Runner fleet pruned (retention)"},
+    {"runner.version_rejected", "Runner connection blocked: unsupported version"},
+    {"runner.retention_swept", "Offline runners cleaned up"},
     {"enrollment_key.created", "Enrollment key created"},
     {"enrollment_key.revoked", "Enrollment key revoked"},
-    {"enrollment_key.bound", "Enrollment key bound to runner"},
+    {"enrollment_key.bound", "Enrollment key used for registration"},
     {"api_key.created", "API key created"},
+    {"api_key.rotation_requested", "API key rotation requested"},
     {"api_key.revoked", "API key revoked"},
-    {"api_key.bound", "API key first use"},
-    {"api_key.auto_rotated", "API key auto-rotated"},
-    {"api_key.retired_by_rotation", "API key retired by rotation"},
-    {"api_key.device_grant_approved", "Agent connect approved"},
-    {"api_key.device_grant_denied", "Agent connect denied"},
+    {"api_key.bound", "API key used for the first time"},
+    {"api_key.auto_rotated", "API key rotation started"},
+    {"api_key.retired_by_rotation", "Previous API key revoked after rotation"},
+    {"api_key.device_grant_approved", "Agent connection approved"},
+    {"api_key.device_grant_denied", "Agent connection denied"},
     {"oauth.consent_granted", "OAuth client authorized"},
     {"oauth.refresh_token_reused", "OAuth refresh token reused"},
-    {"pack_trust_baseline_match", "Pack auto-trusted (baseline match)"},
-    {"pack_trust_baseline_mismatch", "Pack pinned to baseline (drift)"},
-    {"pack_trust_baseline_reconciled", "Pack auto-trusted (baseline caught up)"},
-    {"pack_trust_review_required", "Pack pending review"},
-    {"pack_trust_drift_detected", "Pack drift detected"},
+    {"pack_trust_baseline_match", "Pack automatically trusted"},
+    {"pack_trust_baseline_mismatch", "Pack differs from published version"},
+    {"pack_trust_baseline_reconciled", "Pack trusted after catalog update"},
+    {"pack_trust_review_required", "Pack needs review"},
+    {"pack_trust_drift_detected", "New pack contents reported"},
     {"pack_trust_adopted", "Pack hash trusted"},
     {"pack_trust_rejected", "Pack hash rejected"},
     {"pack_trust_revoked", "Pack trust revoked"},
-    {"pack_retirement_overridden", "Pack retirement overridden"},
+    {"pack_retirement_overridden", "Pack retirement restriction overridden"},
     {"pack_version_deleted", "Pack version deleted"},
     {"pack_deleted", "Pack deleted"},
-    {"pack_retention_swept", "Pack catalog pruned (retention)"},
-    {"pack_retirement_swept", "Pack catalog pruned (retired versions)"},
-    {"dispatch_blocked_pack_untrusted", "Dispatch blocked (pack untrusted)"},
-    {"dispatch_blocked_pack_retired", "Dispatch blocked (pack retired)"},
-    {"dispatch_blocked_requires_attestation", "Dispatch blocked (unsigned)"},
+    {"pack_retention_swept", "Unused pack versions cleaned up"},
+    {"pack_retirement_swept", "Retired pack versions cleaned up"},
+    {"dispatch_blocked_pack_untrusted", "Action blocked: pack not trusted"},
+    {"dispatch_blocked_pack_retired", "Action blocked: pack version retired"},
+    {"dispatch_blocked_requires_attestation", "Action blocked: signature required"},
+    {"dispatch_blocked_target_unavailable", "Action request rejected"},
     {"user.signed_up", "User signed up"},
     {"user.signed_in", "User signed in"},
     {"user.signed_out", "User signed out"},
-    {"session.account_switched", "Account switched"},
+    {"session.account_switched", "User switched to this account"},
     {"user.sign_in_failed", "Sign-in failed"},
     {"user.invited", "User invited"},
-    {"user.invitation_accepted", "User accepted invitation"},
+    {"user.invitation_accepted", "Invitation accepted"},
     {"user.email_confirmed", "Email confirmed"},
     {"user.email_change_requested", "Email change requested"},
     {"user.email_change_code_failed", "Email change confirmation failed"},
     {"user.oidc_identity_step_up_requested", "Sign-in method confirmation requested"},
     {"user.oidc_identity_step_up_failed", "Sign-in method confirmation failed"},
-    {"user.oidc_identity_step_up_rate_limited", "Sign-in method confirmation rate limited"},
-    {"user.email_change_rate_limited", "Email change rate limited"},
+    {"user.oidc_identity_step_up_rate_limited", "Sign-in method confirmation limit reached"},
+    {"user.email_change_rate_limited", "Email change request limit reached"},
     {"user.email_changed", "Email changed"},
-    {"user.inbox_step_up_rate_limited", "Inbox step-up rate limited"},
+    {"user.inbox_step_up_rate_limited", "Email verification attempt limit reached"},
     {"user.profile_updated", "Profile updated"},
     {"user.updated_by_admin", "Profile edited by admin"},
-    {"user.magic_link_issued", "Magic link issued"},
+    {"user.magic_link_issued", "Sign-in link created"},
     {"user.mfa_enrollment_requested", "MFA enrollment requested"},
     {"user.mfa_enrollment_failed", "MFA enrollment confirmation failed"},
     {"user.mfa_enabled", "MFA enabled"},
     {"user.mfa_disabled", "MFA disabled"},
     {"user.mfa_verified", "MFA verified"},
-    {"user.mfa_failed", "MFA failed"},
-    {"user.mfa_rate_limited", "MFA rate limited"},
+    {"user.mfa_failed", "MFA verification failed"},
+    {"user.mfa_rate_limited", "MFA request limit reached"},
     {"user.mfa_recovery_code_used", "MFA recovery code used"},
     {"user.mfa_recovery_codes_regenerated", "MFA recovery codes regenerated"},
     {"user.mfa_reset_by_admin", "MFA reset by admin"},
     {"user.session_revoked", "Session revoked"},
     {"user.other_sessions_revoked", "Other sessions revoked"},
-    {"user.sessions_revoked", "Sessions revoked by admin"},
-    {"membership.role_changed", "Role changed"},
+    {"user.sessions_revoked", "All sessions revoked by admin"},
+    {"membership.role_changed", "Member role changed"},
     {"membership.removed", "Member removed"},
-    {"membership.erased", "Member erased with their user account"},
+    {"membership.erased", "Member’s user account deleted"},
     {"membership.suspended", "Member suspended"},
     {"membership.reinstated", "Member reinstated"},
     {"membership.invitation_accepted", "Invitation accepted"},
+    {"membership.invitation_resent", "Invitation resend requested"},
     {"membership.runner_access_changed", "Runner access changed"},
     {"policy.updated", "Policy updated"},
-    {"policy.scope_deleted", "Policy scope deleted"},
+    {"policy.scope_deleted", "Targeted ruleset deleted"},
     {"runbook.created", "Runbook created"},
     {"runbook.updated", "Runbook updated"},
     {"runbook.published", "Runbook published"},
     {"runbook.deleted", "Runbook deleted"},
-    {"runbook.dispatched", "Runbook dispatched"},
+    {"runbook.dispatched", "Runbook execution requested"},
     {"runbook.execution_succeeded", "Runbook execution succeeded"},
     {"runbook.execution_halted", "Runbook execution halted"},
     {"runbook.execution_cancelled", "Runbook execution cancelled"},
@@ -118,37 +123,37 @@ defmodule Emisar.Audit.Event.Query do
     {"runbook.item_failed", "Runbook item failed"},
     {"runbook.item_cancelled", "Runbook item cancelled"},
     {"approval.approved", "Approval granted"},
-    {"approval.overridden", "Approval review requirement overridden"},
+    {"approval.overridden", "Approval requirements overridden"},
     {"approval.denied", "Approval denied"},
     {"approval.expired", "Approval expired"},
-    {"approval.decision_recorded", "Approval vote recorded"},
+    {"approval.decision_recorded", "Approval decision recorded"},
     {"approval.grant_used", "Standing grant used"},
     {"approval.grant_revoked", "Standing grant revoked"},
-    {"run.cancel_requested", "Run cancel requested"},
+    {"run.cancel_requested", "Run cancellation requested"},
     {"action_run.success", "Run succeeded"},
     {"action_run.failed", "Run failed"},
-    {"action_run.error", "Run errored"},
-    {"action_run.validation_failed", "Run output rejected"},
-    {"action_run.unknown_action", "Run action unknown"},
-    {"action_run.refused", "Run refused (signature / pack)"},
+    {"action_run.error", "Run error"},
+    {"action_run.validation_failed", "Run validation failed"},
+    {"action_run.unknown_action", "Action not found on runner"},
+    {"action_run.refused", "Run refused"},
     {"action_run.cancelled", "Run cancelled"},
     {"action_run.timed_out", "Run timed out"},
     {"action_run.denied", "Run denied by policy"},
     {"action_run.pending_approval", "Run awaiting approval"},
-    {"user.provisioned_via_sso", "User provisioned (SSO JIT)"},
-    {"user.provisioned_via_scim", "User provisioned (SCIM)"},
+    {"user.provisioned_via_sso", "User created (SSO)"},
+    {"user.provisioned_via_scim", "User created (SCIM)"},
     {"user.renamed_via_scim", "User renamed (SCIM)"},
-    {"membership.renamed_via_scim", "Member renamed (SCIM)"},
-    {"membership.deprovisioned_via_scim", "Member deprovisioned (SCIM)"},
-    {"membership.reprovisioned_via_scim", "Member reprovisioned (SCIM)"},
+    {"membership.renamed_via_scim", "Member display name changed (SCIM)"},
+    {"membership.deprovisioned_via_scim", "Member suspended (SCIM)"},
+    {"membership.reprovisioned_via_scim", "Member reinstated (SCIM)"},
     {"membership.role_synced_via_scim", "Member role synced (SCIM)"},
     {"membership.runner_access_synced_via_scim", "Member runner access synced (SCIM)"},
-    {"sso.group_mapping_created", "SSO group mapping created"},
-    {"sso.group_mapping_updated", "SSO group mapping updated"},
-    {"sso.group_mapping_deleted", "SSO group mapping deleted"},
-    {"sso.group_runner_access_mapping_created", "SSO group runner access created"},
-    {"sso.group_runner_access_mapping_updated", "SSO group runner access updated"},
-    {"sso.group_runner_access_mapping_deleted", "SSO group runner access deleted"},
+    {"sso.group_mapping_created", "SSO group role mapping created"},
+    {"sso.group_mapping_updated", "SSO group role mapping updated"},
+    {"sso.group_mapping_deleted", "SSO group role mapping deleted"},
+    {"sso.group_runner_access_mapping_created", "SSO group runner access mapping created"},
+    {"sso.group_runner_access_mapping_updated", "SSO group runner access mapping updated"},
+    {"sso.group_runner_access_mapping_deleted", "SSO group runner access mapping deleted"},
     {"sso.provider_configured", "SSO provider configured"},
     {"sso.provider_updated", "SSO provider updated"},
     {"sso.provider_deleted", "SSO provider deleted"},
@@ -158,9 +163,9 @@ defmodule Emisar.Audit.Event.Query do
     {"sso.existing_user_linked", "SSO identity linked to an existing user"},
     {"sso.link_request_approved", "SSO link request approved"},
     {"sso.link_request_dismissed", "SSO link request dismissed"},
-    {"audit.exported", "Audit log exported"},
-    {"audit.retention_swept", "Audit log pruned (retention)"},
-    {"subscription.changed", "Subscription plan changed"},
+    {"audit.exported", "Audit events read for export"},
+    {"audit.retention_swept", "Expired audit events removed"},
+    {"subscription.changed", "Subscription updated"},
     {"staff.account_viewed", "Staff viewed account"}
   ]
 
@@ -170,7 +175,6 @@ defmodule Emisar.Audit.Event.Query do
   # removal/limit (`:warn`), a pass verdict (`:pass` — the gate saying YES: a
   # run succeeding, an approval landing, a grant or consent letting something
   # through), or routine (`:neutral`). The audit list/detail dots color by this
-  # AND the "Severity" filter narrows by it, so the two can never disagree —
   # one source, read by both (the web reads it, never copies it). Lifecycle
   # positives (connected, enabled, accepted, confirmed) stay :neutral on
   # purpose: green marks verdicts, not activity, or it becomes wallpaper.
@@ -190,6 +194,7 @@ defmodule Emisar.Audit.Event.Query do
   def outcome(event_type) when is_binary(event_type) do
     cond do
       event_type == "oauth.refresh_token_reused" -> :danger
+      event_type == "dispatch_blocked_target_unavailable" -> :danger
       event_type == "approval.overridden" -> :warn
       String.ends_with?(event_type, @danger_suffixes) -> :danger
       String.ends_with?(event_type, @warn_suffixes) -> :warn
@@ -208,9 +213,9 @@ defmodule Emisar.Audit.Event.Query do
      [
        {"account.created", "Created"},
        {"account.updated", "Updated"},
-       {"account.require_mfa_set", "MFA enforcement toggled"},
-       {"account.require_sso_set", "SSO enforcement toggled"},
-       {"account.max_grant_lifetime_set", "Max grant lifetime set"},
+       {"account.require_mfa_set", "MFA requirement changed"},
+       {"account.require_sso_set", "SSO requirement changed"},
+       {"account.max_grant_lifetime_set", "Maximum grant lifetime changed"},
        {"account.disabled", "Disabled"},
        {"account.enabled", "Enabled"},
        {"account.closed", "Closed"}
@@ -221,46 +226,49 @@ defmodule Emisar.Audit.Event.Query do
        {"runner.connected", "Connected"},
        {"runner.disconnected", "Disconnected"},
        {"runner.disabled", "Disabled"},
+       {"runner.credential_rotation_requested", "Key rotation requested"},
+       {"runner.credential_rotated", "Replacement key used"},
        {"runner.enabled", "Enabled"},
        {"runner.deleted", "Deleted"},
        {"runner.error", "Error"},
-       {"runner.version_rejected", "Version rejected"},
-       {"runner.retention_swept", "Fleet pruned (retention)"},
-       {"dispatch_blocked_requires_attestation", "Dispatch blocked (unsigned)"}
+       {"runner.version_rejected", "Connection blocked: unsupported version"},
+       {"runner.retention_swept", "Offline runners cleaned up"},
+       {"dispatch_blocked_requires_attestation", "Action blocked: signature required"}
      ]},
     {"Pack trust",
      [
-       {"pack_trust_baseline_match", "Auto-trusted (baseline)"},
-       {"pack_trust_baseline_mismatch", "Pinned to baseline (drift)"},
-       {"pack_trust_baseline_reconciled", "Auto-trusted (baseline caught up)"},
-       {"pack_trust_review_required", "Pending review"},
-       {"pack_trust_drift_detected", "Drift detected"},
+       {"pack_trust_baseline_match", "Automatically trusted"},
+       {"pack_trust_baseline_mismatch", "Differs from published version"},
+       {"pack_trust_baseline_reconciled", "Trusted after catalog update"},
+       {"pack_trust_review_required", "Needs review"},
+       {"pack_trust_drift_detected", "New contents reported"},
        {"pack_trust_adopted", "Hash trusted"},
        {"pack_trust_rejected", "Hash rejected"},
        {"pack_trust_revoked", "Trust revoked"},
-       {"pack_retirement_overridden", "Retirement overridden"},
+       {"pack_retirement_overridden", "Retirement restriction overridden"},
        {"pack_version_deleted", "Version deleted"},
        {"pack_deleted", "Pack deleted"},
-       {"pack_retention_swept", "Catalog pruned (retention)"},
-       {"pack_retirement_swept", "Catalog pruned (retired versions)"},
-       {"dispatch_blocked_pack_untrusted", "Dispatch blocked"},
-       {"dispatch_blocked_pack_retired", "Dispatch blocked (retired)"}
+       {"pack_retention_swept", "Unused versions cleaned up"},
+       {"pack_retirement_swept", "Retired versions cleaned up"},
+       {"dispatch_blocked_pack_untrusted", "Action blocked: pack not trusted"},
+       {"dispatch_blocked_pack_retired", "Action blocked: pack version retired"}
      ]},
     {"Enrollment key",
      [
        {"enrollment_key.created", "Created"},
        {"enrollment_key.revoked", "Revoked"},
-       {"enrollment_key.bound", "Bound to runner"}
+       {"enrollment_key.bound", "Used for registration"}
      ]},
     {"API key",
      [
        {"api_key.created", "Created"},
+       {"api_key.rotation_requested", "Rotation requested"},
        {"api_key.revoked", "Revoked"},
-       {"api_key.bound", "First use"},
-       {"api_key.auto_rotated", "Auto-rotated"},
-       {"api_key.retired_by_rotation", "Retired by rotation"},
-       {"api_key.device_grant_approved", "Agent connect approved"},
-       {"api_key.device_grant_denied", "Agent connect denied"},
+       {"api_key.bound", "Used for the first time"},
+       {"api_key.auto_rotated", "Rotation started"},
+       {"api_key.retired_by_rotation", "Previous key revoked after rotation"},
+       {"api_key.device_grant_approved", "Agent connection approved"},
+       {"api_key.device_grant_denied", "Agent connection denied"},
        {"oauth.consent_granted", "OAuth client authorized"},
        {"oauth.refresh_token_reused", "Refresh token reused"}
      ]},
@@ -269,9 +277,9 @@ defmodule Emisar.Audit.Event.Query do
        {"user.signed_up", "Signed up"},
        {"user.signed_in", "Signed in"},
        {"user.signed_out", "Signed out"},
-       {"session.account_switched", "Switched account"},
+       {"session.account_switched", "Switched to this account"},
        {"user.sign_in_failed", "Sign-in failed"},
-       {"user.magic_link_issued", "Magic link issued"},
+       {"user.magic_link_issued", "Sign-in link created"},
        {"user.email_confirmed", "Email confirmed"}
      ]},
     {"User security",
@@ -280,10 +288,10 @@ defmodule Emisar.Audit.Event.Query do
        {"user.email_change_code_failed", "Email change confirmation failed"},
        {"user.oidc_identity_step_up_requested", "Sign-in method confirmation requested"},
        {"user.oidc_identity_step_up_failed", "Sign-in method confirmation failed"},
-       {"user.oidc_identity_step_up_rate_limited", "Sign-in method confirmation rate limited"},
-       {"user.email_change_rate_limited", "Email change rate limited"},
+       {"user.oidc_identity_step_up_rate_limited", "Sign-in method confirmation limit reached"},
+       {"user.email_change_rate_limited", "Email change request limit reached"},
        {"user.email_changed", "Email changed"},
-       {"user.inbox_step_up_rate_limited", "Inbox step-up rate limited"},
+       {"user.inbox_step_up_rate_limited", "Email verification attempt limit reached"},
        {"user.profile_updated", "Profile updated"},
        {"user.updated_by_admin", "Profile edited by admin"},
        {"user.mfa_enrollment_requested", "MFA enrollment requested"},
@@ -291,23 +299,24 @@ defmodule Emisar.Audit.Event.Query do
        {"user.mfa_enabled", "MFA enabled"},
        {"user.mfa_disabled", "MFA disabled"},
        {"user.mfa_verified", "MFA verified"},
-       {"user.mfa_failed", "MFA failed"},
-       {"user.mfa_rate_limited", "MFA rate limited"},
+       {"user.mfa_failed", "MFA verification failed"},
+       {"user.mfa_rate_limited", "MFA request limit reached"},
        {"user.mfa_recovery_code_used", "MFA recovery code used"},
        {"user.mfa_recovery_codes_regenerated", "MFA recovery codes regenerated"},
        {"user.mfa_reset_by_admin", "MFA reset by admin"},
        {"user.session_revoked", "Session revoked"},
        {"user.other_sessions_revoked", "Other sessions revoked"},
-       {"user.sessions_revoked", "Sessions revoked by admin"}
+       {"user.sessions_revoked", "All sessions revoked by admin"}
      ]},
     {"Team",
      [
        {"user.invited", "Invited"},
        {"user.invitation_accepted", "Invitation accepted"},
        {"membership.invitation_accepted", "Invitation accepted (existing user)"},
+       {"membership.invitation_resent", "Invitation resend requested"},
        {"membership.role_changed", "Role changed"},
        {"membership.removed", "Member removed"},
-       {"membership.erased", "Erased with their user account"},
+       {"membership.erased", "User account deleted"},
        {"membership.suspended", "Member suspended"},
        {"membership.reinstated", "Member reinstated"},
        {"membership.runner_access_changed", "Runner access changed"}
@@ -315,15 +324,15 @@ defmodule Emisar.Audit.Event.Query do
     {"Policy",
      [
        {"policy.updated", "Updated"},
-       {"policy.scope_deleted", "Scope deleted"}
+       {"policy.scope_deleted", "Targeted ruleset deleted"}
      ]},
     {"Runbook",
      [
        {"runbook.created", "Created"},
-       {"runbook.updated", "Updated (new version)"},
+       {"runbook.updated", "Updated"},
        {"runbook.published", "Published"},
        {"runbook.deleted", "Deleted"},
-       {"runbook.dispatched", "Dispatched"},
+       {"runbook.dispatched", "Execution requested"},
        {"runbook.execution_succeeded", "Execution succeeded"},
        {"runbook.execution_halted", "Execution halted"},
        {"runbook.execution_cancelled", "Execution cancelled"},
@@ -339,22 +348,23 @@ defmodule Emisar.Audit.Event.Query do
     {"Approval",
      [
        {"approval.approved", "Granted"},
-       {"approval.overridden", "Review requirement overridden"},
+       {"approval.overridden", "Requirements overridden"},
        {"approval.denied", "Denied"},
        {"approval.expired", "Expired"},
-       {"approval.decision_recorded", "Vote recorded"},
+       {"approval.decision_recorded", "Decision recorded"},
        {"approval.grant_used", "Standing grant used"},
        {"approval.grant_revoked", "Standing grant revoked"}
      ]},
     {"Run",
      [
-       {"run.cancel_requested", "Cancel requested"},
+       {"run.cancel_requested", "Cancellation requested"},
+       {"dispatch_blocked_target_unavailable", "Action request rejected"},
        {"action_run.success", "Succeeded"},
        {"action_run.failed", "Failed"},
-       {"action_run.error", "Errored"},
+       {"action_run.error", "Error"},
        {"action_run.validation_failed", "Validation failed"},
-       {"action_run.unknown_action", "Unknown action"},
-       {"action_run.refused", "Refused (signature / pack)"},
+       {"action_run.unknown_action", "Action not found"},
+       {"action_run.refused", "Refused"},
        {"action_run.cancelled", "Cancelled"},
        {"action_run.timed_out", "Timed out"},
        {"action_run.denied", "Denied by policy"},
@@ -362,20 +372,20 @@ defmodule Emisar.Audit.Event.Query do
      ]},
     {"SSO / Directory",
      [
-       {"user.provisioned_via_sso", "User provisioned (SSO)"},
-       {"user.provisioned_via_scim", "User provisioned (SCIM)"},
+       {"user.provisioned_via_sso", "User created (SSO)"},
+       {"user.provisioned_via_scim", "User created (SCIM)"},
        {"user.renamed_via_scim", "User renamed (SCIM)"},
-       {"membership.renamed_via_scim", "Member renamed"},
-       {"membership.deprovisioned_via_scim", "Member deprovisioned"},
-       {"membership.reprovisioned_via_scim", "Member reprovisioned"},
+       {"membership.renamed_via_scim", "Member display name changed"},
+       {"membership.deprovisioned_via_scim", "Member suspended"},
+       {"membership.reprovisioned_via_scim", "Member reinstated"},
        {"membership.role_synced_via_scim", "Role synced"},
        {"membership.runner_access_synced_via_scim", "Runner access synced"},
-       {"sso.group_mapping_created", "Group mapping created"},
-       {"sso.group_mapping_updated", "Group mapping updated"},
-       {"sso.group_mapping_deleted", "Group mapping deleted"},
-       {"sso.group_runner_access_mapping_created", "Group runner access created"},
-       {"sso.group_runner_access_mapping_updated", "Group runner access updated"},
-       {"sso.group_runner_access_mapping_deleted", "Group runner access deleted"},
+       {"sso.group_mapping_created", "Group role mapping created"},
+       {"sso.group_mapping_updated", "Group role mapping updated"},
+       {"sso.group_mapping_deleted", "Group role mapping deleted"},
+       {"sso.group_runner_access_mapping_created", "Group runner access mapping created"},
+       {"sso.group_runner_access_mapping_updated", "Group runner access mapping updated"},
+       {"sso.group_runner_access_mapping_deleted", "Group runner access mapping deleted"},
        {"sso.provider_configured", "Provider configured"},
        {"sso.provider_updated", "Provider updated"},
        {"sso.provider_deleted", "Provider deleted"},
@@ -388,12 +398,12 @@ defmodule Emisar.Audit.Event.Query do
      ]},
     {"Audit",
      [
-       {"audit.exported", "Exported"},
-       {"audit.retention_swept", "Pruned (retention)"}
+       {"audit.exported", "Read for export"},
+       {"audit.retention_swept", "Expired events removed"}
      ]},
     {"Billing",
      [
-       {"subscription.changed", "Plan changed"}
+       {"subscription.changed", "Updated"}
      ]},
     {"Emisar staff",
      [
@@ -496,7 +506,7 @@ defmodule Emisar.Audit.Event.Query do
   # The full legal set for the Type filter — every specific event type plus
   # every `group:<label>` sentinel — used for VALIDATION (the collapsed dropdown
   # hides sparse groups' sub-types, but a specific type is still a legal filter
-  # value from a programmatic caller / the outcome filter's expansion).
+  # value from a programmatic caller).
   def event_type_valid_values do
     sentinels = for {label, _} <- @grouped_event_types, do: {"group:" <> label, label}
 
@@ -707,25 +717,35 @@ defmodule Emisar.Audit.Event.Query do
   def filters,
     do: [
       # `span` lays the filters out as a stacked panel (LiveTable's two-column
-      # grid): a Date row (From/To), a Type/Outcome row, then Request ID,
+      # grid): Category/Type, From/To, then Request ID,
       # Sign-in method, Actor type, and Subject each on their own line. Request
       # ID + Sign-in method are CONDITIONAL — the audit LiveView drops them for
       # event types that never carry a request context / a sign-in (see
       # applicable_filters/2), so they show only when they can actually match.
       # Inclusive date bounds (a "From 10:00" pick includes 10:00:00).
-      # Category is the COARSEST lens — its own full-width row at the top of the
-      # panel, and the audit page's quick chips drive this same facet — so a
-      # reviewer can focus decisions/access/activity out of the runner-connect
-      # churn without hunting the 90-option Type combobox (UI-017).
+      # Category narrows the Type choices beside it. The quick chips drive the
+      # same facet, so both controls use the same event taxonomy.
       %Filter{
         name: :category,
         title: "Category",
         type: {:list, :string},
-        span: :full,
+        span: :half,
         values: category_values(),
         fun: fn queryable, categories ->
           types = event_types_for_categories(categories)
           {queryable, dynamic([events: e], e.event_type in ^types)}
+        end
+      },
+      %Filter{
+        name: :event_type,
+        title: "Event type",
+        type: {:list, :string},
+        span: :half,
+        search: true,
+        values: event_type_filter_options(),
+        valid_values: event_type_valid_values(),
+        fun: fn queryable, types ->
+          {queryable, dynamic([events: e], e.event_type in ^expand_event_type_groups(types))}
         end
       },
       %Filter{
@@ -741,33 +761,6 @@ defmodule Emisar.Audit.Event.Query do
         type: :datetime,
         span: :half,
         fun: fn queryable, ts -> {queryable, dynamic([events: e], e.occurred_at <= ^ts)} end
-      },
-      %Filter{
-        name: :event_type,
-        title: "Type",
-        type: {:list, :string},
-        span: :half,
-        search: true,
-        values: event_type_filter_options(),
-        valid_values: event_type_valid_values(),
-        fun: fn queryable, types ->
-          {queryable, dynamic([events: e], e.event_type in ^expand_event_type_groups(types))}
-        end
-      },
-      %Filter{
-        name: :outcome,
-        title: "Severity",
-        type: {:list, :string},
-        span: :half,
-        values: [
-          {"danger", "Failures & denials"},
-          {"warn", "Removals & limits"},
-          {"pass", "Successes & approvals"}
-        ],
-        fun: fn queryable, outcomes ->
-          types = event_types_for_outcomes(outcomes)
-          {queryable, dynamic([events: e], e.event_type in ^types)}
-        end
       },
       # Request-id trace: paste the leading part of a request_id to pull every
       # event tied to it. Anchored LIKE keeps the account/request_id prefix index
@@ -843,61 +836,63 @@ defmodule Emisar.Audit.Event.Query do
   # event is written.
   @event_type_meta %{
     "account.created" =>
-      {false, false, true, "An inbox-proved signup created a workspace and owner membership."},
-    "account.updated" => {true, true, true, "An admin changed the workspace's name or slug."},
-    "account.require_mfa_set" =>
-      {true, true, true, "An admin toggled the workspace-wide multi-factor requirement."},
-    "account.require_sso_set" =>
-      {true, true, true, "An admin toggled the workspace-wide single sign-on requirement."},
+      {false, false, true, "An account and its owner membership were created."},
+    "account.updated" => {true, true, true, "Account details or settings changed."},
+    "account.require_mfa_set" => {true, true, true, "The requirement to use MFA changed."},
+    "account.require_sso_set" => {true, true, true, "The requirement to use SSO changed."},
     "account.max_grant_lifetime_set" =>
-      {true, true, true, "An admin capped how long a standing approval grant may live."},
+      {true, true, true,
+       "The maximum standing-grant lifetime changed, or standing grants were disabled."},
     "account.disabled" =>
       {false, false, true, "Emisar staff suspended this workspace — its members are signed out."},
     "account.enabled" => {false, false, true, "Emisar staff lifted a workspace suspension."},
     "account.closed" =>
-      {true, true, true,
-       "An owner closed the workspace — it is tombstoned and its plan cancelled."},
-    "runner.registered" =>
-      {true, false, false,
-       "A runner enrolled with the control plane (its first HTTP registration)."},
-    "runner.connected" =>
-      {false, false, false, "A runner's live socket came up — it can now receive actions."},
-    "runner.disconnected" =>
-      {false, false, false, "A runner's live socket dropped (shutdown, network, or restart)."},
+      {true, true, true, "The account was closed after subscription cleanup completed."},
+    "runner.registered" => {true, false, false, "A runner registered with emisar."},
+    "runner.connected" => {false, false, false, "A runner connected to emisar."},
+    "runner.disconnected" => {false, false, false, "A runner disconnected from emisar."},
     "runner.disabled" =>
       {true, true, true, "An operator disabled a runner — dispatches to it are refused."},
+    "runner.credential_rotation_requested" =>
+      {true, true, true, "An operator requested an early runner connection-key rotation."},
+    "runner.credential_rotated" =>
+      {true, false, false,
+       "The runner authenticated with a replacement connection key for the first time. The previous key keeps its remaining grace period."},
     "runner.enabled" =>
       {true, true, true, "An operator re-enabled a previously disabled runner."},
     "runner.deleted" =>
       {true, true, true, "An operator removed a runner from the fleet (audit history is kept)."},
     "runner.error" =>
-      {true, false, false, "A runner reported an internal error over its socket."},
+      {true, false, false, "A runner reported an error. The event records its code and message."},
     "runner.version_rejected" =>
       {true, false, false,
        "A runner was refused because its version is below the enforced minimum."},
     "runner.retention_swept" =>
       {false, false, true,
-       "Runner retention removed runners no socket reached within the account's window."},
-    "enrollment_key.created" =>
-      {true, true, true, "An operator minted a runner bootstrap/enrollment key."},
+       "Runners offline beyond the cleanup period were removed. Disabled runners were kept."},
+    "enrollment_key.created" => {true, true, true, "A runner enrollment key was created."},
     "enrollment_key.revoked" =>
       {true, true, true,
        "An operator revoked a runner enrollment key — future registrations with it fail."},
     "enrollment_key.bound" =>
-      {true, false, true,
-       "A runner presented an enrollment key for the first time and was bound to it."},
-    "api_key.created" => {true, true, true, "An operator minted an LLM-agent or export API key."},
+      {true, false, true, "A runner setup key was used for registration for the first time."},
+    "api_key.created" =>
+      {true, true, true, "An API key was created for an AI agent or audit export."},
+    "api_key.rotation_requested" =>
+      {true, true, true, "An operator requested automatic rotation on the agent's next call."},
     "api_key.revoked" =>
       {true, true, true, "An operator revoked an API key — its next call gets a 401."},
     "api_key.bound" =>
+      {true, false, true, "An automatically generated API key was used for the first time."},
+    "api_key.auto_rotated" =>
       {true, false, true,
-       "An API key was used for the first time (its client identified itself)."},
-    "api_key.auto_rotated" => {true, false, true, "The system rotated an API key automatically."},
+       "A replacement key was created through automatic rotation. The previous key is revoked when its replacement is first used."},
     "api_key.retired_by_rotation" =>
       {true, false, true,
        "A rotated key's successor was used for the first time — the key it replaces was revoked automatically."},
     "api_key.device_grant_approved" =>
-      {true, true, true, "An operator approved an agent's connect request and issued its key."},
+      {true, true, true,
+       "A user approved an agent’s connection request. The installer can now collect its key."},
     "api_key.device_grant_denied" =>
       {true, true, true, "An operator denied an agent's connect request — no key was issued."},
     "oauth.consent_granted" =>
@@ -907,55 +902,57 @@ defmodule Emisar.Audit.Event.Query do
        "A spent OAuth refresh token was presented again, so the connection was revoked."},
     "pack_trust_baseline_match" =>
       {false, false, true,
-       "A runner advertised a pack matching the compiled-in baseline — auto-trusted."},
+       "A runner reported a pack whose content hash matches the published catalog, so it was trusted automatically."},
     "pack_trust_baseline_mismatch" =>
       {false, false, true,
-       "A runner advertised a pack differing from the baseline — pinned pending review."},
+       "A runner reported different contents for a published pack version. The published hash was kept while the reported hash awaits review."},
     "pack_trust_baseline_reconciled" =>
       {false, false, true,
-       "A pack version awaiting review advertised bytes a later release publishes — auto-trusted."},
+       "A previously unrecognized pack now matches the published catalog and was trusted automatically."},
     "pack_trust_review_required" =>
-      {false, false, true, "A pack version needs an operator's trust decision before it can run."},
+      {false, false, true,
+       "A reported pack version was not recognized in the published catalog and needs a trust decision."},
     "pack_trust_drift_detected" =>
-      {false, false, true, "A runner's pack contents changed under an already-trusted version."},
+      {false, false, true,
+       "A runner reported new contents for a known pack version. The new hash needs review."},
     "pack_trust_adopted" =>
-      {true, true, true, "An operator trusted a pack hash — runners advertising it may execute."},
+      {true, true, true, "A user trusted this content hash for the pack version."},
     "pack_trust_rejected" =>
-      {true, true, true, "An operator rejected a pack hash — dispatches with it are refused."},
+      {true, true, true,
+       "A user rejected the reported hash. Any previously trusted hash was kept."},
     "pack_trust_revoked" =>
       {true, true, true,
        "An operator revoked trust in a pack version — dispatches with it are refused."},
     "pack_version_deleted" =>
       {true, true, true,
-       "An operator removed an observed pack version — a runner still advertising it re-inserts it."},
+       "A pack version’s catalog records were removed. Pack files on runners were not removed."},
     "pack_deleted" =>
-      {true, true, true, "An operator removed every observed version of a pack from the catalog."},
+      {true, true, true,
+       "The recorded versions of a pack were removed from the account’s catalog. Pack files on runners were not removed."},
     "pack_retention_swept" =>
-      {false, false, true,
-       "Pack retention removed versions no runner advertised within the account's window."},
+      {false, false, true, "Pack versions not reported within the cleanup period were removed."},
     "pack_retirement_swept" =>
-      {false, false, true,
-       "Daily catalog bookkeeping removed retired pack versions no runner advertised anymore."},
+      {false, false, true, "Retired pack versions no longer reported by runners were removed."},
     "pack_retirement_overridden" =>
       {true, true, true,
-       "An admin re-trusted a retired pack version — dispatches with it are allowed again."},
+       "A user removed the retirement restriction from this trusted pack version. Other action rules still apply."},
     "dispatch_blocked_pack_untrusted" =>
-      {true, false, true, "A dispatch was refused because the runner's pack isn't trusted."},
+      {true, true, true, "An action was blocked because its pack was not trusted."},
     "dispatch_blocked_pack_retired" =>
-      {true, false, true,
-       "A dispatch was refused because the runner's pack version was retired — a fixed version is available."},
+      {true, true, true, "An action was blocked because its pack version was retired."},
     "dispatch_blocked_requires_attestation" =>
-      {true, false, true,
-       "A dispatch was refused because the request wasn't signed (attestation required)."},
-    "user.signed_up" =>
-      {false, false, false, "A new user registered (the method rides the event payload)."},
+      {true, true, true, "An action was blocked because the required signature was missing."},
+    "dispatch_blocked_target_unavailable" =>
+      {true, true, false,
+       "An action request was rejected because its target was unavailable to the requester."},
+    "user.signed_up" => {false, false, false, "A new user registered with emisar."},
     "user.signed_in" =>
       {true, false, false,
-       "A session was established (the method — magic link / SSO — rides the payload)."},
+       "A user signed in to emisar. The summary shows the sign-in method when recorded."},
     "user.signed_out" => {true, false, false, "A user ended their session."},
     "session.account_switched" =>
       {false, false, false,
-       "A member switched their active workspace (the tenant-entry receipt)."},
+       "A user switched to this account. The role shown is the role they held here at the time."},
     "user.sign_in_failed" =>
       {true, false, false, "A sign-in attempt failed (wrong or expired code, bad link)."},
     "user.invited" => {true, true, true, "An admin invited a teammate into the workspace."},
@@ -968,7 +965,8 @@ defmodule Emisar.Audit.Event.Query do
     "user.email_change_code_failed" =>
       {true, false, false, "An emailed email-change confirmation code was wrong or expired."},
     "user.oidc_identity_step_up_requested" =>
-      {true, true, false, "A user requested fresh proof before changing an SSO sign-in method."},
+      {true, true, false,
+       "A user requested confirmation before linking, removing, or testing an SSO sign-in method."},
     "user.oidc_identity_step_up_failed" =>
       {true, false, false,
        "An emailed SSO sign-in method confirmation code was wrong or expired."},
@@ -984,20 +982,18 @@ defmodule Emisar.Audit.Event.Query do
        "A current-inbox credential proof was refused after the user reached its attempt limit."},
     "user.profile_updated" => {true, true, false, "A user edited their own profile."},
     "user.updated_by_admin" => {true, true, true, "An admin edited a teammate's profile."},
-    "user.magic_link_issued" =>
-      {true, false, false, "A sign-in code/link was requested and emailed (consumed or not)."},
+    "user.magic_link_issued" => {true, false, false, "A sign-in link and code were created."},
     "user.mfa_enrollment_requested" =>
       {true, false, false,
        "A user requested a current-inbox challenge before enrolling an authenticator."},
     "user.mfa_enrollment_failed" =>
       {true, false, false, "An emailed MFA-enrollment confirmation code was wrong or expired."},
     "user.mfa_enabled" => {true, true, false, "A user enrolled a second factor."},
-    "user.mfa_disabled" =>
-      {true, true, false, "A user (or admin) removed a second-factor enrollment."},
+    "user.mfa_disabled" => {true, true, false, "A user disabled their MFA."},
     "user.mfa_verified" =>
       {true, true, false,
-       "A second factor was accepted — `factor` names it, and `session_verified` marks the row where a live session's assurance was upgraded."},
-    "user.mfa_failed" => {true, false, false, "A second-factor challenge failed during sign-in."},
+       "An MFA code was accepted, or an existing session was marked MFA-verified."},
+    "user.mfa_failed" => {true, false, false, "An MFA verification attempt failed."},
     "user.mfa_rate_limited" =>
       {true, false, false,
        "A user reached an MFA credential limit and another attempt was refused."},
@@ -1021,20 +1017,24 @@ defmodule Emisar.Audit.Event.Query do
     "membership.reinstated" => {true, true, true, "An admin reinstated a suspended member."},
     "membership.invitation_accepted" =>
       {true, false, false, "An existing user accepted an invitation into this workspace."},
+    "membership.invitation_resent" =>
+      {true, true, true,
+       "A user requested a fresh invitation. This does not confirm email delivery."},
     "membership.runner_access_changed" =>
       {true, true, true, "An admin changed which runners a member may target."},
     "policy.updated" =>
-      {true, true, true, "An admin changed the action policy (tier defaults or overrides)."},
+      {true, true, true, "Default rules, action overrides, or approval requirements changed."},
     "policy.scope_deleted" =>
       {true, true, true,
-       "An admin removed a runner or group override — that scope falls back to the account default."},
+       "A runner or group ruleset was deleted. The remaining applicable rules determine the policy."},
     "runbook.created" => {true, true, true, "An operator created a runbook draft."},
-    "runbook.updated" => {true, true, true, "An operator edited a runbook (new version)."},
+    "runbook.updated" => {true, true, true, "A runbook draft was saved or discarded."},
     "runbook.published" =>
       {true, true, true, "An operator published a runbook version for dispatch."},
     "runbook.deleted" => {true, true, true, "An operator deleted a runbook."},
     "runbook.dispatched" =>
-      {true, true, true, "A runbook run started — its steps dispatch in order."},
+      {true, true, true,
+       "A runbook execution was requested. It may need approval before its actions can start."},
     "runbook.execution_succeeded" =>
       {false, false, true, "Every logical item succeeded and the runbook execution completed."},
     "runbook.execution_halted" =>
@@ -1057,34 +1057,39 @@ defmodule Emisar.Audit.Event.Query do
     "runbook.item_cancelled" =>
       {true, true, true, "An operator cancellation closed a logical runbook item."},
     "approval.approved" =>
-      {true, true, true, "An approver granted a held action (optionally with a standing grant)."},
+      {true, true, true,
+       "An approval request was granted, optionally with a standing grant for an action."},
     "approval.overridden" =>
       {true, true, true,
        "An owner or admin released held work without the remaining required reviews."},
-    "approval.denied" => {true, true, true, "An approver denied a held action."},
+    "approval.denied" => {true, true, true, "An approval request was denied."},
     "approval.expired" =>
-      {false, false, true, "A held approval request lapsed without a decision (system sweep)."},
+      {false, false, true, "An approval request expired before receiving all required approvals."},
     "approval.decision_recorded" =>
       {true, true, true,
-       "An approver cast a vote on a held action — the release itself is a separate event."},
+       "An approver approved or denied a request. Final approval or denial is recorded separately."},
     "approval.grant_used" =>
       {true, false, true, "A standing grant auto-approved a matching action."},
-    "approval.grant_revoked" => {true, true, true, "An operator revoked a standing grant."},
-    "run.cancel_requested" => {true, true, true, "Someone asked to cancel an in-flight run."},
+    "approval.grant_revoked" =>
+      {true, true, true,
+       "A standing grant was revoked by a user or because its approver’s membership changed."},
+    "run.cancel_requested" => {true, true, true, "Someone requested cancellation of a run."},
     "action_run.success" =>
       {true, false, true, "A dispatched action completed successfully on its runner."},
     "action_run.failed" =>
-      {true, false, true, "A dispatched action exited non-zero on its runner."},
+      {true, false, true,
+       "An action failed, or the runner returned an unrecognized result status."},
     "action_run.error" =>
       {true, false, true, "A dispatched action errored before/while executing."},
     "action_run.validation_failed" =>
-      {true, false, true,
-       "A runner's structured output did not match the action's declared output schema."},
+      {true, false, true, "The action’s input or output did not pass validation."},
     "action_run.unknown_action" =>
       {true, false, true, "A runner reported it does not have the dispatched action."},
     "action_run.refused" =>
-      {true, false, true, "A runner refused an action (signature or pack mismatch)."},
-    "action_run.cancelled" => {true, false, true, "An in-flight action was cancelled."},
+      {true, false, true,
+       "An action was refused by emisar or the runner because an execution requirement was not met."},
+    "action_run.cancelled" =>
+      {true, false, true, "A run was cancelled before or during execution."},
     "action_run.timed_out" => {true, false, true, "A dispatched action exceeded its time limit."},
     "action_run.denied" => {true, false, true, "Policy denied an action at dispatch."},
     "action_run.pending_approval" =>
@@ -1133,14 +1138,17 @@ defmodule Emisar.Audit.Event.Query do
       {true, true, true, "An admin changed an identity provider's configuration."},
     "sso.provider_deleted" => {true, true, true, "An admin removed an identity provider."},
     "sso.link_request_approved" =>
-      {true, true, true, "A user approved linking their SSO identity to an existing account."},
+      {true, true, true, "An admin approved an SSO request and created a user."},
     "sso.link_request_dismissed" =>
-      {true, true, true, "A user dismissed an SSO identity-link request."},
-    "audit.exported" => {true, false, true, "Audit events were exported as CSV or to a SIEM."},
+      {true, true, true, "An admin dismissed an SSO request without adding or linking a user."},
+    "audit.exported" =>
+      {true, false, true,
+       "Audit events were read for CSV or API export. This does not confirm a complete download or delivery to a SIEM."},
     "audit.retention_swept" =>
-      {false, false, false, "The retention sweep pruned events past their retain-until date."},
+      {false, false, false, "Audit events past their retention period were removed."},
     "subscription.changed" =>
-      {false, false, true, "The billing plan or paid-access state changed."},
+      {false, false, true,
+       "The subscription’s plan, status, paid access, or scheduled changes were updated."},
     "staff.account_viewed" =>
       {false, false, true, "Emisar staff opened this workspace in the internal support console."}
   }
@@ -1178,7 +1186,9 @@ defmodule Emisar.Audit.Event.Query do
   def applicable_filters(filters, type_param, params \\ %{}) do
     types = List.wrap(type_param)
 
-    Enum.reject(filters, fn filter ->
+    filters
+    |> category_type_choices(params["category"])
+    |> Enum.reject(fn filter ->
       cond do
         filter.name not in @conditional_filter_names -> false
         # A conditional facet with a LIVE value stays applicable (and visible)
@@ -1192,7 +1202,38 @@ defmodule Emisar.Audit.Event.Query do
     end)
   end
 
-  @event_type_vocabulary_filter_names [:category, :event_type, :outcome]
+  @doc "Keeps selected event types or groups that belong to the selected categories."
+  def compatible_event_types(type_param, category_param) do
+    types = nonblank_values(type_param)
+
+    case nonblank_values(category_param) do
+      [] ->
+        types
+
+      categories ->
+        allowed = MapSet.new(event_types_for_categories(categories))
+        Enum.filter(types, &reaches?(:event_type, &1, allowed))
+    end
+  end
+
+  defp category_type_choices(filters, category_param) do
+    case nonblank_values(category_param) do
+      [] ->
+        filters
+
+      categories ->
+        allowed = MapSet.new(event_types_for_categories(categories))
+
+        Enum.map(filters, fn
+          %Filter{name: :event_type} = filter -> narrow_filter_values(filter, allowed)
+          filter -> filter
+        end)
+    end
+  end
+
+  defp nonblank_values(param), do: param |> List.wrap() |> Enum.reject(&(&1 in [nil, ""]))
+
+  @event_type_vocabulary_filter_names [:category, :event_type]
   @kind_filter_names [:actor_kind, :target_kind]
 
   @doc """
@@ -1253,9 +1294,8 @@ defmodule Emisar.Audit.Event.Query do
     %{filter | values: groups}
   end
 
-  defp narrow_filter_values(%Filter{name: name} = filter, allowed)
-       when name in [:category, :outcome] do
-    %{filter | values: Enum.filter(filter.values, &reaches?(name, elem(&1, 0), allowed))}
+  defp narrow_filter_values(%Filter{name: :category} = filter, allowed) do
+    %{filter | values: Enum.filter(filter.values, &reaches?(:category, elem(&1, 0), allowed))}
   end
 
   defp narrow_filter_values(%Filter{name: name} = filter, allowed)
@@ -1312,7 +1352,6 @@ defmodule Emisar.Audit.Event.Query do
   # own `fun` runs at query time, so an option's advertised reach is its real one.
   defp selected_types(:event_type, value), do: MapSet.new(expand_event_type_groups([value]))
   defp selected_types(:category, value), do: MapSet.new(event_types_for_categories([value]))
-  defp selected_types(:outcome, value), do: MapSet.new(event_types_for_outcomes([value]))
 
   defp param_present?(params, name) do
     case Map.get(params, to_string(name)) do
@@ -1324,13 +1363,6 @@ defmodule Emisar.Audit.Event.Query do
   end
 
   defp any_type_supports?(types, name), do: Enum.any?(types, &type_supports?(name, &1))
-
-  # The known event types whose suffix outcome (outcome/1) is one of `outcomes`
-  # — the "Outcome" filter resolves to these, so a danger/warn pick narrows to
-  # exactly the rows the audit dots color rose/amber.
-  defp event_types_for_outcomes(outcomes) do
-    for {type, _label} <- @known_event_types, Atom.to_string(outcome(type)) in outcomes, do: type
-  end
 
   # The event types in any of the selected review `categories` — each domain
   # group maps to exactly one category (@category_of_group), so this composes

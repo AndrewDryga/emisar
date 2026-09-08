@@ -1,12 +1,34 @@
 defmodule Emisar.SSO.DirectoryGroup.Query do
   use Emisar, :query
-  alias Emisar.Repo.Like
+  alias Emisar.Repo.{Filter, Like}
   alias Emisar.SSO.DirectoryGroup
+  alias Emisar.SSO.{GroupRoleMapping, GroupRunnerAccessMapping}
 
   def all, do: from(groups in DirectoryGroup, as: :groups)
 
   def not_deleted(queryable \\ all()),
     do: where(queryable, [groups: g], is_nil(g.deleted_at))
+
+  # Keep saved mappings manageable after a group is retired by SCIM or disable.
+  def active_or_mapped(queryable \\ all()) do
+    queryable
+    |> join(:left, [groups: g], mapping in GroupRoleMapping,
+      as: :role_mapping,
+      on:
+        mapping.directory_group_id == g.id and mapping.provider_id == g.provider_id and
+          mapping.account_id == g.account_id and is_nil(mapping.deleted_at)
+    )
+    |> join(:left, [groups: g], mapping in GroupRunnerAccessMapping,
+      as: :access_mapping,
+      on:
+        mapping.directory_group_id == g.id and mapping.provider_id == g.provider_id and
+          mapping.account_id == g.account_id and is_nil(mapping.deleted_at)
+    )
+    |> where(
+      [groups: g, role_mapping: role, access_mapping: access],
+      is_nil(g.deleted_at) or not is_nil(role.id) or not is_nil(access.id)
+    )
+  end
 
   def none(queryable), do: where(queryable, false)
 
@@ -21,6 +43,37 @@ defmodule Emisar.SSO.DirectoryGroup.Query do
 
   def by_external_group_id(queryable, external_group_id),
     do: where(queryable, [groups: g], g.external_group_id == ^external_group_id)
+
+  def for_roster_user(queryable, user_id, account_id) do
+    group_ids =
+      Emisar.SSO.DirectoryGroupMember.Query.not_deleted()
+      |> Emisar.SSO.DirectoryGroupMember.Query.by_account_id(account_id)
+      |> Emisar.SSO.DirectoryGroupMember.Query.with_directory_roster()
+      |> Emisar.SSO.DirectoryGroupMember.Query.by_roster_user_ids([user_id])
+      |> Emisar.SSO.DirectoryGroupMember.Query.select_roster_group_ids()
+
+    where(queryable, [groups: g], g.id in subquery(group_ids))
+  end
+
+  def with_live_provider(queryable) do
+    join(queryable, :inner, [groups: group], provider in Emisar.SSO.IdentityProvider,
+      as: :directory_provider,
+      on:
+        provider.id == group.provider_id and provider.account_id == group.account_id and
+          is_nil(provider.deleted_at)
+    )
+  end
+
+  def select_directory_labels(queryable) do
+    select(queryable, [groups: g, directory_provider: p], %{
+      id: g.id,
+      provider_id: g.provider_id,
+      provider_name: p.name,
+      display: g.display,
+      external_group_id: g.external_group_id,
+      inserted_at: g.inserted_at
+    })
+  end
 
   # Okta omits externalId on Group POST, then remembers our returned resource id
   # and probes it as `externalId eq "<id>"` before subsequent pushes. Match only
@@ -117,4 +170,25 @@ defmodule Emisar.SSO.DirectoryGroup.Query do
 
   @impl Emisar.Repo.Query
   def preloads, do: []
+
+  @impl Emisar.Repo.Query
+  def filters do
+    [
+      %Filter{
+        name: :search,
+        title: "Group name or ID",
+        type: :string,
+        fun: fn queryable, term ->
+          pattern = Like.contains(term)
+
+          {queryable,
+           dynamic(
+             [groups: group],
+             ilike(group.display, ^pattern) or ilike(group.external_group_id, ^pattern) or
+               ilike(fragment("?::text", group.id), ^pattern)
+           )}
+        end
+      }
+    ]
+  end
 end

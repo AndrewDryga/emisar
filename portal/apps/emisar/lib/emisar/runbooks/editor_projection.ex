@@ -24,6 +24,7 @@ defmodule Emisar.Runbooks.EditorProjection do
           action_id: String.t(),
           title: String.t() | nil,
           risk: String.t() | nil,
+          output_schema: map() | nil,
           args: [map()]
         }
 

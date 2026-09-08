@@ -25,6 +25,9 @@ defmodule Emisar.Accounts.Account.Settings do
     # nil = keep forever · N = the hourly Runners sweep (and the runners page
     # "Clean up now") soft-deletes runners cleanly offline for N hours.
     field :runner_inactive_retention_hours, :integer
+    # Staff configures the shared Enterprise support channel; tenants cannot
+    # redirect another member's support link through account settings.
+    field :support_slack_url, :string
   end
 
   @fields ~w[require_mfa require_sso monthly_report_opt_out pack_unseen_retention_days]a
@@ -40,12 +43,15 @@ defmodule Emisar.Accounts.Account.Settings do
   # here would arm a fleet-wide destructive sweep through the plain account
   # update, past every one of those gates.
   @runners_owned_field :runner_inactive_retention_hours
+  @admin_owned_field :support_slack_url
+  @slack_channel_url ~r/\Ahttps:\/\/(?:app\.slack\.com\/client\/T[A-Z0-9]+\/[CG][A-Z0-9]+|[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.slack\.com\/archives\/[CG][A-Z0-9]+)\z/
 
   def changeset(%__MODULE__{} = settings, attrs) do
     settings
-    |> cast(attrs, [@approvals_owned_field, @runners_owned_field | @fields])
+    |> cast(attrs, [@approvals_owned_field, @runners_owned_field, @admin_owned_field | @fields])
     |> reject_owned_change(@approvals_owned_field, "is set through the approval settings")
     |> reject_owned_change(@runners_owned_field, "is set through the runner settings")
+    |> reject_owned_change(@admin_owned_field, "is set by Emisar support")
     |> validate_bounds()
   end
 
@@ -68,6 +74,16 @@ defmodule Emisar.Accounts.Account.Settings do
     settings
     |> cast(attrs, [@runners_owned_field])
     |> validate_bounds()
+  end
+
+  @doc "Internal — staff-owned Slack channel link. A blank value removes the link."
+  def support_slack_changeset(%__MODULE__{} = settings, attrs) do
+    settings
+    |> cast(attrs, [@admin_owned_field])
+    |> validate_length(@admin_owned_field, max: 512)
+    |> validate_format(@admin_owned_field, @slack_channel_url,
+      message: "must be an HTTPS Slack channel URL, without query parameters or a fragment"
+    )
   end
 
   defp reject_owned_change(changeset, field, message) do

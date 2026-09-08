@@ -37,6 +37,7 @@ defmodule Emisar.Admin do
     Emisar.MCPOperations.Jobs.ReplayRetention,
     Emisar.OAuth.Jobs.Cleanup,
     Emisar.Runners.Jobs.InactiveRunnerRetention,
+    Emisar.Runners.Jobs.InstallKeyRetention,
     Emisar.Runbooks.Jobs.AdvanceExecutions,
     Emisar.Runbooks.Jobs.ExecutionRetention,
     Emisar.Runs.Jobs.ActionRunRetention,
@@ -169,7 +170,7 @@ defmodule Emisar.Admin do
 
   @doc "Execute one action from the trusted, colocated private admin pack."
   def execute("emisar.admin." <> _ = action_id, encoded_args)
-      when is_list(encoded_args) and length(encoded_args) <= 3 do
+      when is_list(encoded_args) and length(encoded_args) <= 4 do
     with {:ok, args} <- decode_args(encoded_args) do
       dispatch(action_id, args)
     end
@@ -220,6 +221,19 @@ defmodule Emisar.Admin do
 
           {:ok, account |> account_result() |> Map.put(:created, true)}
         end
+    end
+  end
+
+  defp dispatch(
+         "emisar.admin.support.set_slack_channel",
+         %{"url" => url, "reason" => reason} = args
+       ) do
+    with true <-
+           (String.trim(reason) != "" and byte_size(reason) <= 500) ||
+             {:error, :invalid_reason},
+         {:ok, account} <- fetch_account(args),
+         {:ok, account} <- Accounts.put_support_slack_url(account.id, url) do
+      {:ok, account_result(account)}
     end
   end
 
@@ -314,7 +328,7 @@ defmodule Emisar.Admin do
          "emisar.admin.member.set_role",
          %{"role" => role} = args
        ) do
-    mutate_member(args, &Accounts.update_membership_role(&1, role, &2))
+    mutate_member(args, &set_member_role(&1, role, &2, args["runner_access"]))
   end
 
   defp dispatch("emisar.admin.sessions.revoke", args),
@@ -330,8 +344,9 @@ defmodule Emisar.Admin do
     with {:ok, account} <- fetch_account(args),
          target_subject = support_subject(account),
          {:ok, next_owner} <- fetch_membership(account.id, new_owner),
+         {:ok, demotion} <- owner_demotion_plan(account, args),
          {:ok, promoted} <- Accounts.update_membership_role(next_owner, "owner", target_subject),
-         :ok <- maybe_demote_previous_owner(account, args["previous_owner"], target_subject) do
+         :ok <- maybe_demote_previous_owner(demotion, target_subject) do
       # Same as mutate_member: the written row carries no :user preload.
       {:ok, membership_result(%{promoted | user: next_owner.user})}
     end
@@ -472,12 +487,68 @@ defmodule Emisar.Admin do
   defp normalize_member_mutation(:ok, membership), do: {:ok, membership_result(membership)}
   defp normalize_member_mutation({:error, reason}, _membership), do: {:error, reason}
 
-  defp maybe_demote_previous_owner(_account, nil, _subject), do: :ok
-  defp maybe_demote_previous_owner(_account, "", _subject), do: :ok
+  defp set_member_role(membership, "directory", subject, _access),
+    do: Accounts.return_owner_to_directory(membership, subject)
 
-  defp maybe_demote_previous_owner(account, previous_owner, subject) do
-    with {:ok, membership} <- fetch_membership(account.id, previous_owner),
-         {:ok, _membership} <- Accounts.update_membership_role(membership, "admin", subject) do
+  defp set_member_role(%Accounts.Membership{role: :owner} = membership, role, subject, selection)
+       when role != "owner" do
+    with {:ok, access} <- owner_demotion_access(membership, selection) do
+      Accounts.update_membership_role(membership, role, subject,
+        runner_access: access,
+        expected_role: :owner
+      )
+    end
+  end
+
+  defp set_member_role(membership, role, subject, _selection),
+    do: Accounts.update_membership_role(membership, role, subject)
+
+  defp owner_demotion_plan(account, args) do
+    case args["previous_owner"] do
+      ref when ref in [nil, ""] ->
+        {:ok, nil}
+
+      ref ->
+        with {:ok, membership} <- fetch_membership(account.id, ref),
+             {:ok, access} <- owner_demotion_access(membership, args["previous_owner_access"]) do
+          {:ok, {membership, access}}
+        end
+    end
+  end
+
+  defp owner_demotion_access(
+         %Accounts.Membership{role: :owner, runner_access_directory_managed: true},
+         "directory"
+       ),
+       do: {:ok, :directory}
+
+  defp owner_demotion_access(
+         %Accounts.Membership{role: :owner, runner_access_directory_managed: true},
+         _selection
+       ),
+       do: {:error, :owner_demotion_requires_directory}
+
+  defp owner_demotion_access(%Accounts.Membership{role: :owner}, "all"),
+    do: {:ok, Accounts.RunnerAccess.all()}
+
+  defp owner_demotion_access(%Accounts.Membership{role: :owner}, "none"),
+    do: {:ok, Accounts.RunnerAccess.none()}
+
+  defp owner_demotion_access(_membership, _selection),
+    do: {:error, :owner_demotion_requires_access}
+
+  defp maybe_demote_previous_owner(nil, _subject), do: :ok
+
+  defp maybe_demote_previous_owner({membership, :directory}, subject) do
+    with {:ok, _membership} <- Accounts.return_owner_to_directory(membership, subject), do: :ok
+  end
+
+  defp maybe_demote_previous_owner({membership, access}, subject) do
+    with {:ok, _membership} <-
+           Accounts.update_membership_role(membership, "admin", subject,
+             runner_access: access,
+             expected_role: :owner
+           ) do
       :ok
     end
   end
@@ -513,6 +584,7 @@ defmodule Emisar.Admin do
       name: account.name,
       slug: account.slug,
       disabled: not is_nil(account.disabled_at),
+      support_slack_url: account.settings.support_slack_url,
       created_at: account.inserted_at
     }
   end

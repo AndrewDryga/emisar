@@ -26,21 +26,7 @@ defmodule Emisar.Fixtures.SSO do
     account_id = attrs[:account_id] || Emisar.Fixtures.Accounts.create_account().id
     {scope, attrs} = Map.split(attrs, @runner_scope_fields)
 
-    provider_attrs =
-      Map.merge(
-        %{
-          kind: :okta,
-          name: "Okta #{Emisar.Fixtures.Random.unique_int()}",
-          # Unique per call so a test can mint several providers on one account
-          # without tripping the per-account issuer/client_id uniqueness.
-          issuer: "https://idp-#{Emisar.Fixtures.Random.unique_int()}.test",
-          client_id: "cid-#{Emisar.Fixtures.Random.unique_int()}",
-          client_secret: "secret",
-          enabled: true,
-          default_role: :viewer
-        },
-        Map.delete(attrs, :account_id)
-      )
+    provider_attrs = identity_provider_attrs(Map.delete(attrs, :account_id))
 
     {:ok, provider} =
       account_id
@@ -49,6 +35,29 @@ defmodule Emisar.Fixtures.SSO do
       |> Repo.insert()
 
     provider
+  end
+
+  @doc "Valid provider attributes without inserting a row; JumpCloud defaults to the US fixture region."
+  def identity_provider_attrs(attrs \\ %{}) do
+    attrs = Map.new(attrs)
+
+    issuer =
+      if attrs[:kind] in [:jumpcloud, "jumpcloud"],
+        do: "https://oauth.id.jumpcloud.com/",
+        else: "https://idp-#{Emisar.Fixtures.Random.unique_int()}.test"
+
+    Map.merge(
+      %{
+        kind: :okta,
+        name: "Okta #{Emisar.Fixtures.Random.unique_int()}",
+        issuer: issuer,
+        client_id: "cid-#{Emisar.Fixtures.Random.unique_int()}",
+        client_secret: "secret",
+        enabled: true,
+        default_role: :viewer
+      },
+      attrs
+    )
   end
 
   @doc "Disables a provider directly — the state an operator's disable leaves, minus its session sweeps."
@@ -94,6 +103,63 @@ defmodule Emisar.Fixtures.SSO do
       |> Repo.insert()
 
     identity
+  end
+
+  @doc "A directory-linked roster member, with optional existing user and membership."
+  def create_directory_member(provider, attrs \\ %{}) do
+    attrs = Map.new(attrs)
+
+    user =
+      attrs[:user] || Emisar.Fixtures.Users.create_user(Map.take(attrs, [:full_name, :email]))
+
+    membership =
+      attrs[:membership] ||
+        Emisar.Fixtures.Memberships.create_membership(
+          account_id: provider.account_id,
+          user_id: user.id,
+          role: attrs[:role] || "operator"
+        )
+
+    identity =
+      create_user_identity(%{
+        account_id: provider.account_id,
+        provider_id: provider.id,
+        user_id: user.id,
+        provisioned_via: :scim,
+        scim_external_id: "scim-#{Emisar.Fixtures.Random.unique_int()}",
+        scim_active: Map.get(attrs, :scim_active, true)
+      })
+
+    %{user: user, membership: membership, identity: identity}
+  end
+
+  @doc "A synced group and its explicit directory identity links, without reconciliation side effects."
+  def create_directory_group(provider, attrs \\ %{}) do
+    attrs = Map.new(attrs)
+    external_id = attrs[:external_group_id] || "group-#{Emisar.Fixtures.Random.unique_int()}"
+
+    group =
+      Emisar.SSO.DirectoryGroup.Changeset.create(
+        provider.account_id,
+        provider.id,
+        external_id,
+        attrs[:display]
+      )
+      |> Repo.insert!()
+
+    Enum.each(
+      Map.get(attrs, :identities, []),
+      &Repo.insert!(%Emisar.SSO.DirectoryGroupMember{
+        account_id: provider.account_id,
+        provider_id: provider.id,
+        directory_group_id: group.id,
+        user_identity_id: &1.id,
+        external_group_id: group.external_group_id,
+        external_group_display: group.display
+      })
+    )
+
+    group
   end
 
   @doc """

@@ -8,6 +8,15 @@ defmodule Emisar.Fixtures.ApiKeys do
   alias Emisar.{ApiKeys, Fixtures, Repo, Users}
   alias Emisar.ApiKeys.DeviceGrant
 
+  @doc "Creates an approved, unclaimed device grant for credential lifecycle tests."
+  def create_approved_device_grant(subject) do
+    {:ok, _device_code, _user_code, pending} =
+      ApiKeys.open_device_grant(["claude-code"], %Emisar.RequestContext{})
+
+    {:ok, grant} = ApiKeys.approve_device_grant(pending, subject)
+    grant
+  end
+
   @doc "Backdates a device grant's expiry (default: a minute ago), returning the updated row."
   def backdate_device_grant_expiry(%DeviceGrant{} = grant, expires_at \\ nil) do
     expires_at = expires_at || DateTime.add(DateTime.utc_now(), -60, :second)
@@ -82,6 +91,9 @@ defmodule Emisar.Fixtures.ApiKeys do
   def mark_used(%ApiKeys.ApiKey{} = key) do
     key |> ApiKeys.ApiKey.Changeset.usage() |> Repo.update!()
   end
+
+  def mark_rotation_supported(%ApiKeys.ApiKey{} = key),
+    do: key |> ApiKeys.ApiKey.Changeset.record_rotation_support(true) |> Repo.update!()
 
   @doc """
   Backdates a key's usage stamp past the rewrite window, so a test can prove

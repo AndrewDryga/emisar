@@ -60,27 +60,29 @@ defmodule Emisar.ApprovalsConcurrencyTest do
     end)
   end
 
-  test "a concurrent runner group change closes a restricted owner's override scope" do
+  test "a concurrent runner group change closes a restricted admin's override scope" do
     unboxed_request(fn %{
                          request: request,
-                         owner: owner,
                          owner_membership: owner_membership,
                          runner: runner,
                          run: run
                        } ->
       {:ok, restricted} = Accounts.RunnerAccess.restricted([runner.group], [])
 
-      {:ok, _membership} =
+      {:ok, membership} =
         Repo.transaction(fn ->
-          Fixtures.Memberships.force_runner_access(owner_membership, restricted)
+          owner_membership
+          |> Fixtures.Memberships.force_role("admin")
+          |> Fixtures.Memberships.force_runner_access(restricted)
         end)
 
+      admin = Fixtures.Subjects.membership_subject(membership)
       parent = self()
 
       group_changer =
         unboxed_task(fn ->
           Repo.transaction(fn ->
-            {:ok, _runner} = Runners.apply_state(runner, %{"group" => "moved-out-of-scope"})
+            Fixtures.Runners.move_to_group(runner, "moved-out-of-scope")
             send(parent, {:group_change_ready, backend_pid()})
 
             receive do
@@ -94,7 +96,7 @@ defmodule Emisar.ApprovalsConcurrencyTest do
       override =
         unboxed_task(fn ->
           send(parent, {:override_ready, backend_pid()})
-          Approvals.override_request(request, "Emergency release", owner)
+          Approvals.override_request(request, "Emergency release", admin)
         end)
 
       try do

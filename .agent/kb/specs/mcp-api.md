@@ -20,6 +20,14 @@ further by their pack scope. That set changes as runners connect, packs change, 
 scope changes. Emisar remains the source of truth; its scope, trust, policy,
 approval, and audit controls are the authorization boundary.
 
+The Owner role always carries account-wide runner and pack access; Admin and
+Operator memberships can be scoped. Owner-owned keys still use the fixed
+`api_client` permissions, not Owner permissions. Promotion to Owner preserves
+existing valid keys (including OAuth backing keys and rotation successors) and
+approved device grants. Connected agents inherit the member's current runner and
+pack scope without reconnecting. Revocation, expiry, suspension, policy, approval,
+trust and account-isolation checks still apply.
+
 The product problem is broader than catalog size. Operators routinely receive a
 shell command, Python script, or copied configuration they do not fully
 understand. Repetition turns that into blind copy-paste: an agent chose the
@@ -690,6 +698,11 @@ Natural-language search does not mix unavailable items into results.
 schema, and a bounded set of compatible runners. Compact discovery calls do not
 repeat either schema.
 
+`action.output_schema`, when present, describes JSON from redacted stdout that
+the runner and portal validate independently. This is the `structured_output`
+result, never parsed stderr. Use its declared fields when authoring runbook
+JSON Pointer outputs; do not infer a schema from an action's name or sample log.
+
 ### Input
 
 ```json
@@ -1353,8 +1366,8 @@ distinct. The summary never copies runner output, a runner's recorded failure
 text, a policy reason, an approver's denial reason, or the dispatching
 operator's own reason. Where the exact cause matters, follow `run_url`.
 When a typed action succeeds, the summary may also carry the exact redacted
-`structured_output` object that passed the pack schema. The object is never
-partially truncated. Multi-run responses allocate a separate 64 KiB aggregate
+`structured_output` object from stdout that passed the pack schema. The object
+is never partially truncated. Multi-run responses allocate a separate 64 KiB aggregate
 budget; a result that does not fit its deterministic share instead carries
 `structured_output_omitted: true` plus the exact immediate
 `wait_for_run({run_id, timeout: "0"})` continuation that returns the narrower
@@ -1591,6 +1604,10 @@ not-found error — `runbook_not_found` when no live release answers the slug,
   }
 }
 ```
+
+The `healthy` output above assumes the action's declared `output_schema` includes
+that field. `structured_output` is schema-validated stdout, not a third stream;
+see [Runbook output sources](#runbook-output-sources) for the authoring contract.
 
 A published read names the live release in `runbook_ref` and always carries
 `draft_definition_sha256` — the digest of the unpublished change waiting behind
@@ -1912,6 +1929,48 @@ changes. The scheduler still rechecks current authority before each later
 dispatch; if authority was lost, the execution halts with
 `authorization_lost` before creating that attempt. Cancellation stops
 observation, never the runbook.
+
+### Runbook output sources
+
+Before creating or updating a definition, inspect `get_action` for each action's
+current contract. `action.output_schema`, when present, names the fields available
+in schema-validated stdout. The canonical definition supports these combinations:
+
+| `source` | Reads from | Supported `extract.type` |
+| --- | --- | --- |
+| `structured_output` | Redacted stdout validated against the declared output schema by the runner and portal; never stderr. | `json_pointer` only |
+| `stdout` | Redacted stdout text. | `json_pointer`, `contains`, `grep`, `regex` |
+| `stderr` | Redacted stderr text. | `json_pointer`, `contains`, `grep`, `regex` |
+
+For new stdout JSON Pointer bindings, choose `structured_output` when the action
+declares an output schema; otherwise choose `stdout`. For JSON written to stderr,
+choose `stderr`, even when the action also declares a stdout schema.
+JSON Pointer parses one complete document, not JSON mixed with log lines.
+Unavailable source data, invalid JSON, or a missing path fails extraction.
+Text extraction requires complete, untruncated output within the declared budget;
+a separately recorded structured result does not depend on streamed text being
+available. `contains` tests literal text, `grep` selects literal matching lines,
+and `regex` uses a bounded expression with an explicit capture.
+
+For an action whose output schema declares `healthy`, use:
+
+```json
+{"id": "healthy", "source": "structured_output", "sensitive": false, "extract": {"type": "json_pointer", "expression": "/healthy"}}
+```
+
+For an action that writes a JSON document to stderr, use:
+
+```json
+{"id": "status", "source": "stderr", "sensitive": false, "extract": {"type": "json_pointer", "expression": "/status"}}
+```
+
+The editor presents stdout and stderr as the two streams; a schema-validated
+binding is labeled stdout while retaining `structured_output` in JSON. Preserve
+existing source values during unrelated edits. Changing a source changes what
+the runbook reads and its definition hash; it is not a cosmetic label change.
+The published schema encodes the source/extractor restriction, and strict
+publication and execution validation enforces it. The incomplete-draft safety
+envelope remains separate; saving a draft does not prove it can execute.
 
 ### `create_runbook_draft`
 

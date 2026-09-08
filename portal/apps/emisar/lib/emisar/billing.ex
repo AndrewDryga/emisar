@@ -35,12 +35,8 @@ defmodule Emisar.Billing do
         runners: "3 runners",
         members: "1 user",
         audit_retention: "7-day audit retention"
-        # No support entry: "Community support" named a channel that does not
-        # exist — no Discord, forum, or Discussions anywhere — while /support
-        # offers email help with no plan qualifier. Free claims no distinct
-        # support channel rather than an imaginary one; the comparison table
-        # renders the em-dash it already renders for any absent feature, and
-        # Team's "Email support" stays the real differentiator.
+        # Free is self-serve; product support starts with Team. Billing,
+        # account recovery and security reporting remain separate paths.
       ]
     },
     "team" => %{
@@ -72,7 +68,7 @@ defmodule Emisar.Billing do
         scim: "SCIM directory sync",
         audit_retention: "365-day audit retention",
         security_review: "Security and procurement review",
-        support: "Dedicated Slack support channel",
+        support: "Slack and email support",
         deployment_planning: "Design-partner deployment planning",
         rollout_support: "Rollout support"
       ]
@@ -168,13 +164,7 @@ defmodule Emisar.Billing do
   def entitlement_state(%Subscription{}, _now), do: :unresolved
 
   defp scheduled_entitlement_state(%Subscription{} = subscription, now) do
-    action =
-      subscription.scheduled_change_action ||
-        if(subscription.cancel_at_period_end, do: "cancel")
-
-    effective_at =
-      subscription.scheduled_change_effective_at ||
-        if(subscription.cancel_at_period_end, do: subscription.current_period_end)
+    {action, effective_at} = scheduled_change(subscription)
 
     cond do
       is_nil(action) ->
@@ -186,6 +176,17 @@ defmodule Emisar.Billing do
       true ->
         :unresolved
     end
+  end
+
+  defp scheduled_change(nil), do: {nil, nil}
+
+  defp scheduled_change(%Subscription{} = subscription) do
+    {
+      subscription.scheduled_change_action ||
+        if(subscription.cancel_at_period_end, do: "cancel"),
+      subscription.scheduled_change_effective_at ||
+        if(subscription.cancel_at_period_end, do: subscription.current_period_end)
+    }
   end
 
   defp base_entitlement_state(%Subscription{status: status})
@@ -294,6 +295,14 @@ defmodule Emisar.Billing do
   # The catalog stays the fallback for an account that has never subscribed, and
   # for a legacy row the reconciliation job has not backfilled yet.
   defp period_total_cents(subscription, posture, cycle, runner_count)
+
+  defp period_total_cents(
+         %Subscription{paddle_subscription_id: nil, status: "complimentary"},
+         _posture,
+         _cycle,
+         _runner_count
+       ),
+       do: {0, "USD"}
 
   defp period_total_cents(
          %Subscription{unit_price_amount: amount, currency_code: code, quantity: quantity},
@@ -1055,14 +1064,15 @@ defmodule Emisar.Billing do
 
   defp entitlement_snapshot(subscription) do
     posture = effective_plan(subscription)
+    {scheduled_action, scheduled_at} = scheduled_change(subscription)
 
     %{
       plan: posture.plan_name,
       subscribed_plan: posture.stored_plan_name,
       entitlement_state: posture.entitlement_state,
       subscription_status: subscription && subscription.status,
-      scheduled_change_action: subscription && subscription.scheduled_change_action,
-      scheduled_change_effective_at: subscription && subscription.scheduled_change_effective_at
+      scheduled_change_action: scheduled_action,
+      scheduled_change_effective_at: scheduled_at
     }
   end
 
@@ -1077,9 +1087,12 @@ defmodule Emisar.Billing do
       to_state: new_snapshot.entitlement_state,
       from_status: old_snapshot.subscription_status,
       to_status: new_snapshot.subscription_status,
-      subscribed_plan: new_snapshot.subscribed_plan,
-      scheduled_change_action: new_snapshot.scheduled_change_action,
-      scheduled_change_effective_at: new_snapshot.scheduled_change_effective_at
+      from_subscribed_plan: old_snapshot.subscribed_plan,
+      to_subscribed_plan: new_snapshot.subscribed_plan,
+      from_scheduled_change_action: old_snapshot.scheduled_change_action,
+      to_scheduled_change_action: new_snapshot.scheduled_change_action,
+      from_scheduled_change_effective_at: old_snapshot.scheduled_change_effective_at,
+      to_scheduled_change_effective_at: new_snapshot.scheduled_change_effective_at
     )
   end
 
@@ -1234,7 +1247,8 @@ defmodule Emisar.Billing do
              subject,
              Authorizer.manage_billing_permission()
            ),
-         :ok <- Subject.ensure_in_account(subject, account.id, :unauthorized) do
+         :ok <- Subject.ensure_in_account(subject, account.id, :unauthorized),
+         {:ok, account} <- Accounts.fetch_account_by_id(account.id) do
       do_open_billing_portal(account)
     end
   end
@@ -1279,7 +1293,8 @@ defmodule Emisar.Billing do
              subject,
              Authorizer.view_invoices_permission()
            ),
-         :ok <- Subject.ensure_in_account(subject, account.id, :unauthorized) do
+         :ok <- Subject.ensure_in_account(subject, account.id, :unauthorized),
+         {:ok, account} <- Accounts.fetch_account_by_id(account.id) do
       do_list_recent_invoices(account, opts)
     end
   end
@@ -1296,6 +1311,7 @@ defmodule Emisar.Billing do
     with :ok <-
            Auth.Authorizer.ensure_has_permissions(subject, Authorizer.view_invoices_permission()),
          :ok <- Subject.ensure_in_account(subject, account.id, :unauthorized),
+         {:ok, account} <- Accounts.fetch_account_by_id(account.id),
          {:ok, invoices} <- do_list_recent_invoices(account, limit: 24),
          true <- Enum.any?(invoices, &(&1.id == transaction_id)) do
       Emisar.Billing.PaddleClient.get_transaction_invoice(transaction_id)
@@ -2186,6 +2202,24 @@ defmodule Emisar.Billing do
     end
   end
 
+  @doc "Product-support channels for this account's effective plan, without usage or provider reads."
+  def support_channels(%Accounts.Account{} = account, %Subject{} = subject) do
+    with :ok <-
+           Auth.Authorizer.ensure_has_permissions(subject, Authorizer.view_billing_permission()),
+         :ok <- Subject.ensure_in_account(subject, account.id, :unauthorized),
+         {:ok, account} <- Accounts.fetch_account_by_id(account.id) do
+      posture = account.id |> peek_subscription_for_account() |> effective_plan()
+      {:ok, support_channels_for(account, posture)}
+    end
+  end
+
+  defp support_channels_for(account, posture) do
+    %{
+      email?: posture.plan_name != "free",
+      slack_url: if(posture.plan_name == "enterprise", do: account.settings.support_slack_url)
+    }
+  end
+
   @doc """
   Pricing + utilization summary for an account at the current period.
 
@@ -2193,6 +2227,9 @@ defmodule Emisar.Billing do
   operators *before* they hit the wall (`X / 3` with a near-limit
   badge), not after the next runner install fails with a 402 buried
   in `journalctl`.
+
+  Reads the current billing customer after authorizing the caller's account;
+  a long-lived console session may predate the first checkout.
   """
   def billing_summary(%Accounts.Account{} = account, %Subject{} = subject) do
     with :ok <-
@@ -2200,7 +2237,8 @@ defmodule Emisar.Billing do
              subject,
              Authorizer.view_billing_permission()
            ),
-         :ok <- Subject.ensure_in_account(subject, account.id, :unauthorized) do
+         :ok <- Subject.ensure_in_account(subject, account.id, :unauthorized),
+         {:ok, account} <- Accounts.fetch_account_by_id(account.id) do
       subscription = peek_subscription_for_account(account.id)
       posture = effective_plan(subscription)
       entitled_subscription = if entitled_state?(posture.entitlement_state), do: subscription
@@ -2208,7 +2246,11 @@ defmodule Emisar.Billing do
       member_count = current_count(account, :members)
       # nil pricing for a plan this build doesn't know (a slug minted in
       # Paddle) — the UI treats it like custom pricing, not free's $0.
-      monthly_cents = posture.known_plan && posture.known_plan.monthly_price_cents
+      monthly_cents =
+        if plan_source(subscription) == "complimentary",
+          do: 0,
+          else: posture.known_plan && posture.known_plan.monthly_price_cents
+
       # The mirrored cadence prices the period: an annual subscriber's summary
       # must read "$X/yr" at the annual per-runner rate, not the monthly one.
       cycle = subscription_cycle(entitled_subscription)
@@ -2220,6 +2262,7 @@ defmodule Emisar.Billing do
        %{
          plan: posture.plan_name,
          plan_name: plan_display_name(posture),
+         support_channels: support_channels_for(account, posture),
          runner_count: runner_count,
          runner_limit: entitled_limit(posture, :runners_limit),
          member_count: member_count,
@@ -2235,6 +2278,31 @@ defmodule Emisar.Billing do
          # Subscription state mirrored from Paddle webhooks. nil when
          # the account is on a free plan and has never subscribed.
          subscription_status: subscription && subscription.status,
+         subscription_source: plan_source(subscription),
+         subscription_managed?:
+           not is_nil(subscription) and is_binary(subscription.paddle_subscription_id) and
+             subscription.status != "canceled",
+         billing_portal_available?: is_binary(account.paddle_customer_id),
+         features: %{
+           sso:
+             entitled_feature(
+               posture,
+               "features_sso_enabled?",
+               posture.plan_name in ["team", "enterprise"]
+             ),
+           scim:
+             entitled_feature(
+               posture,
+               "features_scim_enabled?",
+               posture.plan_name == "enterprise"
+             ),
+           audit_export:
+             entitled_feature(
+               posture,
+               "features_audit_export_enabled?",
+               posture.plan_name in ["team", "enterprise"]
+             )
+         },
          current_period_end: subscription && subscription.current_period_end,
          cancel_at_period_end: subscription && subscription.cancel_at_period_end,
          scheduled_change_action: subscription && subscription.scheduled_change_action,

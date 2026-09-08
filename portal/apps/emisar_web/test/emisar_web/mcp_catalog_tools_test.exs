@@ -14,10 +14,10 @@ defmodule EmisarWeb.MCPCatalogToolsTest do
       Fixtures.Memberships.create_membership(
         account_id: account.id,
         user_id: user.id,
-        role: "owner"
+        role: "admin"
       )
 
-    subject = Fixtures.Subjects.subject_for(user, account, role: :owner)
+    subject = Fixtures.Subjects.membership_subject(membership)
     _policy = Fixtures.Policies.create_policy(account_id: account.id, created_by_id: user.id)
     {:ok, raw, key} = ApiKeys.create_key(%{name: "catalog", kind: :mcp}, subject)
 

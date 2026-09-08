@@ -38,6 +38,15 @@ defmodule Emisar.Policies.Policy.Query do
   def select_scope(queryable),
     do: select(queryable, [policies: p], map(p, [:scope_type, :scope_value]))
 
+  # Fetch only distinct approval configurations, not every policy's rules.
+  # The caller requests one extra value to detect an incomplete summary.
+  def distinct_approval_rules(queryable, max_configs) do
+    queryable
+    |> select([policies: p], %{"approval" => fragment("?->'approval'", p.rules)})
+    |> distinct(true)
+    |> limit(^max_configs)
+  end
+
   def cursor_fields,
     do: [{:policies, :asc, :scope_type}, {:policies, :asc, :scope_value}, {:policies, :asc, :id}]
 

@@ -55,7 +55,11 @@ defmodule Emisar.Fixtures.Memberships do
       |> Membership.Changeset.update(%{role: role})
       |> Repo.update()
 
-    updated
+    if updated.role == :owner do
+      force_runner_access(updated, RunnerAccess.all())
+    else
+      updated
+    end
   end
 
   @doc """
@@ -64,7 +68,13 @@ defmodule Emisar.Fixtures.Memberships do
   caller's state without exercising nondelegation or emitting an audit event.
   """
   def force_runner_access(%Membership{} = membership, %RunnerAccess{} = access) do
+    {:ok, updated} = Repo.transact(fn -> do_force_runner_access(membership, access) end)
+    updated
+  end
+
+  defp do_force_runner_access(membership, access) do
     membership = Repo.reload!(membership)
+    access = RunnerAccess.for_role(membership.role, access)
 
     {:ok, _result} =
       Ecto.Adapters.SQL.query(
@@ -103,7 +113,14 @@ defmodule Emisar.Fixtures.Memberships do
         []
       )
 
-    updated
+    {:ok, updated}
+  end
+
+  @doc "Marks a membership's directory authorization as pending without running reconciliation."
+  def mark_directory_authorization_pending(%Membership{} = membership, version) do
+    membership
+    |> Ecto.Changeset.change(directory_authorization_pending_version: version)
+    |> Repo.update!()
   end
 
   @doc "Suspends a membership (sets `disabled_at`) directly, returning the updated struct."
