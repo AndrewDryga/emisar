@@ -63,7 +63,7 @@ defmodule EmisarWeb.ProfileLiveTest do
       {conn, _user, account} = register_and_log_in(conn)
       {:ok, lv, html} = live(conn, ~p"/app/#{account}/settings/profile")
 
-      assert html =~ "We send your sign-in links to this address."
+      assert html =~ "Personal details"
       refute has_element?(lv, "#email_form")
       assert has_element?(lv, "#change-email", "Change email")
 
@@ -571,7 +571,7 @@ defmodule EmisarWeb.ProfileLiveTest do
       %{account: account, conn: conn, provider: provider, user: user}
     end
 
-    test "lists an enabled workspace provider and explains the account-wide consequence", %{
+    test "lists an enabled workspace provider with linking guidance", %{
       conn: conn,
       account: account,
       provider: provider
@@ -579,7 +579,7 @@ defmodule EmisarWeb.ProfileLiveTest do
       {:ok, lv, html} = live(conn, ~p"/app/#{account}/settings/profile")
 
       assert html =~ "Sign-in methods"
-      assert html =~ "A linked method signs you in to your profile."
+      assert has_element?(lv, "#single-sign-on-help", "We recommend linking the methods you use.")
       assert has_element?(lv, "#oidc-identity-#{provider.id}", "Workforce Okta")
       assert has_element?(lv, "#link-oidc-#{provider.id}", "Link")
 
@@ -865,13 +865,13 @@ defmodule EmisarWeb.ProfileLiveTest do
       assert length(sessions) == 2
     end
 
-    test "caps the page at 15 sessions and pages the rest", %{
+    test "caps the page at 10 sessions and pages the rest", %{
       conn: conn,
       user: user,
       account: account
     } do
-      # 15 more devices on top of the current session — 16 total, one past a page.
-      for n <- 1..15 do
+      # 10 more devices on top of the current session — 11 total, one past a page.
+      for n <- 1..10 do
         Fixtures.Auth.create_session_token!(user, :magic_link, nil, %{
           ip_address: "203.0.113.#{n}",
           user_agent: "Mozilla/5.0 (X11; Linux x86_64) Chrome/124.0"
@@ -880,12 +880,12 @@ defmodule EmisarWeb.ProfileLiveTest do
 
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/profile")
 
-      # Page one holds exactly 15 rows and a pager that names the 16 total.
-      assert rendered_session_rows(lv) == 15
-      assert has_element?(lv, "#active-sessions-pager", "16")
+      # Page one holds exactly 10 rows and a pager that names the 11 total.
+      assert rendered_session_rows(lv) == 10
+      assert has_element?(lv, "#active-sessions-pager", "11")
       assert has_element?(lv, "#active-sessions-pager a", "Next")
 
-      # Following Next patches to page two — the 16th session, and the way back.
+      # Following Next patches to page two — the 11th session, and the way back.
       html = lv |> element("#active-sessions-pager a", "Next") |> render_click()
       assert rendered_session_rows(lv) == 1
       assert html =~ "Prev"
@@ -901,7 +901,7 @@ defmodule EmisarWeb.ProfileLiveTest do
       assert has_element?(lv, "#active-sessions-pager a", "Back to first page")
 
       lv |> element("#active-sessions-pager a", "Back to first page") |> render_click()
-      assert rendered_session_rows(lv) == 15
+      assert rendered_session_rows(lv) == 10
     end
 
     test "a session with no user agent shows the unknown-device mark", %{
@@ -1029,15 +1029,11 @@ defmodule EmisarWeb.ProfileLiveTest do
       assert render_click(lv, "revoke_other_sessions", %{}) =~ "No other sessions to sign out."
     end
 
-    test "the session list is capped at 100 — the bound the page passes", %{
+    test "large session lists stay bounded in the context and on the page", %{
       conn: conn,
       user: user,
       account: account
     } do
-      # The page reads sessions with `page: [limit: 100]`, so even a user with
-      # more than 100 active sessions can never blow up the assigns/DOM. Prove
-      # the cap with the SAME opts the LV uses (seeding 101 and reading back).
-
       # 100 more sessions (register_and_log_in already created one) → 101 total.
       for _ <- 1..100, do: Fixtures.Auth.create_session_token!(user, :magic_link, nil)
 
@@ -1045,10 +1041,10 @@ defmodule EmisarWeb.ProfileLiveTest do
       {:ok, sessions, _meta} = Auth.list_sessions_for_user(nil, subject, page: [limit: 100])
       assert length(sessions) == 100
 
-      # And the page mounts + renders under that load — the "Sign out everywhere
-      # else" control shows (>1 session), proving the list assigned without blowing
-      # up the socket.
-      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/settings/profile")
+      # The page renders only ten while exposing the total and bulk action.
+      {:ok, lv, html} = live(conn, ~p"/app/#{account}/settings/profile")
+      assert rendered_session_rows(lv) == 10
+      assert has_element?(lv, "#active-sessions-pager", "101")
       assert html =~ "Sign out everywhere else"
     end
 
@@ -1227,11 +1223,17 @@ defmodule EmisarWeb.ProfileLiveTest do
       {:ok, lv, html} = live(conn, ~p"/app/#{account}/settings/profile")
 
       refute html =~ "mfa-setup-key"
+      assert has_element?(lv, "#multi-factor-authentication", "Not enabled")
+      assert has_element?(lv, "#multi-factor-authentication", "Recommended")
+      refute html =~ "First verify your email"
+      refute html =~ "Keep your recovery codes somewhere"
+      refute html =~ "Email verification code"
       refute_received {:email, _}
 
       html = render_click(lv, "start_mfa", %{})
 
       assert html =~ "Email verification code"
+      refute has_element?(lv, "#multi-factor-authentication", "Not enabled")
       refute html =~ "mfa-setup-key"
       assert_received {:email, _}
     end

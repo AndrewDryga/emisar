@@ -81,13 +81,13 @@ defmodule EmisarWeb.ProfileLive do
     end
   end
 
-  # 15 a page: a heavy automation account can hold ~100 sessions, and an
+  # 10 a page: a heavy automation account can hold ~100 sessions, and an
   # ungrouped wall of near-identical rows buries the one unfamiliar device an
   # operator is scanning for. Cursor-paginated (UserToken.Query.cursor_fields).
   defp load_sessions(socket, params) do
     socket = assign(socket, :sessions_loaded?, true)
     opts = LiveTable.params_to_opts(params)
-    list_opts = Keyword.put(opts, :page, Keyword.put(opts[:page], :limit, 15))
+    list_opts = Keyword.put(opts, :page, Keyword.put(opts[:page], :limit, 10))
 
     presented_digest = socket.assigns.current_auth.token
 
@@ -974,179 +974,189 @@ defmodule EmisarWeb.ProfileLive do
         id="profile-layout"
         class="grid grid-cols-1 gap-x-12 gap-y-12 xl:grid-cols-[minmax(0,1fr)_18rem] xl:items-start"
       >
-        <.section_with_note id="display-name">
+        <.section_with_note id="personal-details">
           <:header>
-            <.section_header title="Display name">
-              <:subtitle>How you appear to other members.</:subtitle>
-            </.section_header>
+            <.section_header title="Personal details" />
           </:header>
-          <div :if={not @profile_editing?} class="flex flex-wrap items-center justify-between gap-3">
-            <p class="min-w-0 break-words text-sm text-zinc-200">
-              {@current_user.full_name || "No display name"}
-            </p>
-            <.button id="change-name" variant={:secondary} size={:sm} phx-click="edit_profile">
-              Change name
-            </.button>
-          </div>
-          <.simple_form
-            :if={@profile_editing?}
-            for={@profile_form}
-            id="profile_form"
-            class="max-w-2xl"
-            phx-change="validate_profile"
-            phx-submit="save_profile"
-            phx-mounted={JS.focus(to: "#profile_full_name")}
-            phx-remove={JS.focus(to: "#change-name")}
-          >
-            <%!-- No field label — the section title already says "Display name"
+          <dl class="divide-y divide-zinc-800/70">
+            <div id="display-name" class="pb-4">
+              <dt class="mb-1 text-sm text-zinc-400">Display name</dt>
+              <dd>
+                <div
+                  :if={not @profile_editing?}
+                  class="flex flex-wrap items-center justify-between gap-3"
+                >
+                  <p class="min-w-0 break-words text-base text-zinc-100">
+                    {@current_user.full_name || "No display name"}
+                  </p>
+                  <.button id="change-name" variant={:secondary} size={:sm} phx-click="edit_profile">
+                    Change name
+                  </.button>
+                </div>
+                <.simple_form
+                  :if={@profile_editing?}
+                  for={@profile_form}
+                  id="profile_form"
+                  class="max-w-2xl"
+                  phx-change="validate_profile"
+                  phx-submit="save_profile"
+                  phx-mounted={JS.focus(to: "#profile_full_name")}
+                  phx-remove={JS.focus(to: "#change-name")}
+                >
+                  <%!-- No repeated field label — the row already says "Display name"
                  (one voice on a single-field section); aria-label keeps the
                  accessible name. --%>
-            <.input
-              field={@profile_form[:full_name]}
-              type="text"
-              aria-label="Display name"
-              autocomplete="name"
-              placeholder="Ada Lovelace"
-            />
-            <:actions>
-              <.button
-                variant={if @profile_form.source.changes == %{}, do: :secondary, else: :primary}
-                disabled={@profile_form.source.changes == %{}}
-                phx-disable-with="Saving..."
-              >
-                Save
-              </.button>
-              <.button variant={:ghost} type="button" phx-click="cancel_profile_edit">
-                Cancel
-              </.button>
-            </:actions>
-          </.simple_form>
-        </.section_with_note>
-
-        <.section_with_note id="email">
-          <:header>
-            <.section_header title="Email">
-              <:subtitle>We send your sign-in links to this address.</:subtitle>
-            </.section_header>
-          </:header>
-          <%= case @email_step do %>
-            <% :idle -> %>
-              <div class="flex flex-wrap items-center justify-between gap-3">
-                <div class="min-w-0">
-                  <p class="break-all text-sm text-zinc-200">
-                    {@current_user.email || "No email address"}
-                  </p>
-                  <p
-                    :if={is_nil(@current_user.email) and is_nil(@current_user.mfa_enabled_at)}
-                    class="mt-1 text-xs text-zinc-400"
-                  >
-                    Your profile has no email address. Ask your workspace administrator for help,
-                    or contact support@emisar.dev.
-                  </p>
-                  <p
-                    :if={@current_user.email && is_nil(@current_user.confirmed_at)}
-                    class="mt-1 text-xs text-zinc-400"
-                  >
-                    Awaiting confirmation
-                  </p>
-                </div>
-                <.button
-                  id="change-email"
-                  variant={:secondary}
-                  size={:sm}
-                  phx-click="edit_email"
-                  disabled={is_nil(@current_user.email) and is_nil(@current_user.mfa_enabled_at)}
-                >
-                  Change email
-                </.button>
-              </div>
-            <% :edit -> %>
-              <.simple_form
-                for={@email_form}
-                id="email_form"
-                class="max-w-2xl"
-                phx-change="validate_email"
-                phx-submit="save_email"
-              >
-                <p class="text-sm text-zinc-300">Enter your new email address.</p>
-                <.input
-                  field={@email_form[:email]}
-                  type="email"
-                  aria-label="New email address"
-                  autocomplete="email"
-                  required
-                />
-                <.error :if={@email_step_error}>{@email_step_error}</.error>
-                <:actions>
-                  <.button
-                    variant={if @email_form.source.changes == %{}, do: :secondary, else: :primary}
-                    disabled={@email_form.source.changes == %{}}
-                    phx-disable-with="Checking..."
-                  >
-                    Continue
-                  </.button>
-                  <.button variant={:ghost} type="button" phx-click="cancel_email_change">
-                    Cancel
-                  </.button>
-                </:actions>
-              </.simple_form>
-            <% step -> %>
-              <.simple_form
-                for={@email_step_form}
-                id="email_step_form"
-                class="max-w-2xl"
-                phx-submit="confirm_email_change"
-              >
-                <p class="text-sm text-zinc-300">
-                  To change your email to <span class="break-all font-medium text-zinc-100">{@pending_new_email}</span>,
-                  <%= if step == :code do %>
-                    enter the 6-digit code sent to <span class="break-all">{@current_user.email}</span>.
-                  <% else %>
-                    enter the 6-digit code from your authenticator app.
-                  <% end %>
-                </p>
-                <.code_input
-                  id="email-step-code"
-                  name="email_step[code]"
-                  numeric
-                  label={if step == :totp, do: "Authenticator code", else: "Confirmation code"}
-                  error={@email_step_error}
-                />
-                <:actions>
-                  <.button phx-disable-with="Changing...">Change email</.button>
-                  <.button
-                    :if={step == :code}
-                    variant={:secondary}
-                    size={:md}
-                    type="button"
-                    phx-click="resend_email_code"
-                  >
-                    Resend code
-                  </.button>
-                  <.button
-                    variant={:ghost}
-                    size={:md}
-                    type="button"
-                    phx-click="cancel_email_change"
-                  >
-                    Cancel
-                  </.button>
-                </:actions>
-              </.simple_form>
-          <% end %>
+                  <.input
+                    field={@profile_form[:full_name]}
+                    type="text"
+                    aria-label="Display name"
+                    autocomplete="name"
+                    placeholder="Ada Lovelace"
+                  />
+                  <:actions>
+                    <.button
+                      variant={if @profile_form.source.changes == %{}, do: :secondary, else: :primary}
+                      disabled={@profile_form.source.changes == %{}}
+                      phx-disable-with="Saving..."
+                    >
+                      Save
+                    </.button>
+                    <.button variant={:ghost} type="button" phx-click="cancel_profile_edit">
+                      Cancel
+                    </.button>
+                  </:actions>
+                </.simple_form>
+              </dd>
+            </div>
+            <div id="email" class="pt-4">
+              <dt class="mb-1 text-sm text-zinc-400">Email</dt>
+              <dd>
+                <%= case @email_step do %>
+                  <% :idle -> %>
+                    <div class="flex flex-wrap items-center justify-between gap-3">
+                      <div class="min-w-0">
+                        <p class="break-all text-base text-zinc-100">
+                          {@current_user.email || "No email address"}
+                        </p>
+                        <p
+                          :if={is_nil(@current_user.email) and is_nil(@current_user.mfa_enabled_at)}
+                          class="mt-1 text-xs text-zinc-400"
+                        >
+                          Your profile has no email address. Ask your workspace administrator for help,
+                          or contact support@emisar.dev.
+                        </p>
+                        <p
+                          :if={@current_user.email && is_nil(@current_user.confirmed_at)}
+                          class="mt-1 text-xs text-zinc-400"
+                        >
+                          Awaiting confirmation
+                        </p>
+                      </div>
+                      <.button
+                        id="change-email"
+                        variant={:secondary}
+                        size={:sm}
+                        phx-click="edit_email"
+                        disabled={
+                          is_nil(@current_user.email) and is_nil(@current_user.mfa_enabled_at)
+                        }
+                      >
+                        Change email
+                      </.button>
+                    </div>
+                  <% :edit -> %>
+                    <.simple_form
+                      for={@email_form}
+                      id="email_form"
+                      class="max-w-2xl"
+                      phx-change="validate_email"
+                      phx-submit="save_email"
+                    >
+                      <p class="text-sm text-zinc-300">Enter your new email address.</p>
+                      <.input
+                        field={@email_form[:email]}
+                        type="email"
+                        aria-label="New email address"
+                        autocomplete="email"
+                        required
+                      />
+                      <.error :if={@email_step_error}>{@email_step_error}</.error>
+                      <:actions>
+                        <.button
+                          variant={
+                            if @email_form.source.changes == %{}, do: :secondary, else: :primary
+                          }
+                          disabled={@email_form.source.changes == %{}}
+                          phx-disable-with="Checking..."
+                        >
+                          Continue
+                        </.button>
+                        <.button variant={:ghost} type="button" phx-click="cancel_email_change">
+                          Cancel
+                        </.button>
+                      </:actions>
+                    </.simple_form>
+                  <% step -> %>
+                    <.simple_form
+                      for={@email_step_form}
+                      id="email_step_form"
+                      class="max-w-2xl"
+                      phx-submit="confirm_email_change"
+                    >
+                      <p class="text-sm text-zinc-300">
+                        To change your email to <span class="break-all font-medium text-zinc-100">{@pending_new_email}</span>,
+                        <%= if step == :code do %>
+                          enter the 6-digit code sent to <span class="break-all">{@current_user.email}</span>.
+                        <% else %>
+                          enter the 6-digit code from your authenticator app.
+                        <% end %>
+                      </p>
+                      <.code_input
+                        id="email-step-code"
+                        name="email_step[code]"
+                        numeric
+                        label={if step == :totp, do: "Authenticator code", else: "Confirmation code"}
+                        error={@email_step_error}
+                      />
+                      <:actions>
+                        <.button phx-disable-with="Changing...">Change email</.button>
+                        <.button
+                          :if={step == :code}
+                          variant={:secondary}
+                          size={:md}
+                          type="button"
+                          phx-click="resend_email_code"
+                        >
+                          Resend code
+                        </.button>
+                        <.button
+                          variant={:ghost}
+                          size={:md}
+                          type="button"
+                          phx-click="cancel_email_change"
+                        >
+                          Cancel
+                        </.button>
+                      </:actions>
+                    </.simple_form>
+                <% end %>
+              </dd>
+            </div>
+          </dl>
         </.section_with_note>
 
         <.section_with_note id="single-sign-on">
           <:header>
             <.section_header title="Sign-in methods">
               <:subtitle>
-                Link your profile to a sign-in provider available in this workspace.
+                Sign-in methods you can link to your profile in this workspace.
               </:subtitle>
             </.section_header>
           </:header>
           <:note>
-            A linked method signs you in to your profile. Each workspace can still require
-            its own sign-in provider or MFA.
+            We recommend linking the methods you use. This can avoid waiting for an administrator
+            to connect your first sign-in to your existing profile. Each workspace has its own
+            sign-in methods and access requirements.
             <.doc_link href="/docs/sso">About single sign-on</.doc_link>
           </:note>
 
@@ -1274,11 +1284,6 @@ defmodule EmisarWeb.ProfileLive do
               <:subtitle>Use an authenticator app for an extra check when you sign in.</:subtitle>
             </.section_header>
           </:header>
-          <:note>
-            Keep your recovery codes somewhere you can reach without your authenticator,
-            such as a password manager on another device.
-            <.doc_link href="/security">About sign-in security</.doc_link>
-          </:note>
 
           <%= cond do %>
             <% @mfa_recovery_codes -> %>
@@ -1444,13 +1449,13 @@ defmodule EmisarWeb.ProfileLive do
                 </:actions>
               </.mfa_enrollment>
             <% true -> %>
-              <p class="text-sm text-zinc-200">Not enabled</p>
-              <p class="mt-2 text-sm text-zinc-400">
-                First verify your email, then connect your authenticator app.
-              </p>
+              <div class="flex flex-wrap items-center gap-2">
+                <.chip tone={:amber}>Not enabled</.chip>
+                <span class="text-sm text-zinc-400">Recommended</span>
+              </div>
               <.error :if={@mfa_start_error}>{@mfa_start_error}</.error>
               <.button
-                variant={:secondary}
+                variant={:primary}
                 phx-click="start_mfa"
                 phx-disable-with="Sending…"
                 size={:md}
@@ -1490,7 +1495,7 @@ defmodule EmisarWeb.ProfileLive do
           </:note>
 
           <%!-- No max-height: the scroll cap cropped the next row to a ~10px
-               sliver that read as a rendering bug. Long lists paginate (15 a
+               sliver that read as a rendering bug. Long lists paginate (10 a
                page) instead of scrolling, so "Sign out everywhere else" and the
                pager below carry the long-list affordance. space-y-4 spaces the
                pager off the list only when the pager renders (its :if drops the
