@@ -20,6 +20,11 @@ whole frozen operation, say that no later approval prompt will occur. Describe
 policy, access, trust, or availability rechecks as conditions that can stop
 dispatch, not as gates that may ask the operator again.
 
+The Your decision panel does not repeat the approver count already shown in the
+header. Put explanatory recheck/reuse copy and its docs link below the decision
+buttons; keep blocking errors and self-approval restrictions beside the controls
+they affect.
+
 ## Why
 
 An operator can judge a path, port, service, or timeout. They cannot infer the

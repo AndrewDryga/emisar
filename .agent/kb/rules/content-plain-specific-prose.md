@@ -32,6 +32,9 @@ writer first.
 - Explain a fact once, in the order the reader needs it. Do not follow an
   abstract summary with a paraphrase of the same behavior.
 - Use active verbs and the ordinary word when it is equally precise.
+- Preserve product-name styling in prose and UI: `co:op` is lowercase with a
+  colon, including in headings. Its executable, paths, URLs, and configuration
+  identifiers remain `coop`.
 - Call a standard operation by its standard name — a key is *exchanged* for a
   token (the industry's own term), never "traded". A coined verb reads cute
   once and costs a search hit forever.

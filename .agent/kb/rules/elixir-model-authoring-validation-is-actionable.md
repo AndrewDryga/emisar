@@ -7,6 +7,13 @@ schema for authoring guidance. At runtime, defer that owned subtree past any
 generic adapter validator that would remove array indexes, collapse paths, or
 truncate the domain report.
 
+When an editor changes how a schema-backed field is presented, update the
+canonical schema's descriptions and expressible constraints, served MCP
+guidance, and authoring examples together. Preserve the distinct contract for
+incomplete drafts and actionable indexed errors when moving a semantic check
+into JSON Schema. A UI label change does not authorize rewriting saved values
+or their content hashes.
+
 The response is bounded and machine-repairable: include the total issue count,
 exact JSON Pointer paths, stable codes and messages, the ordered visible issue
 list, and a boolean saying whether the list was truncated. Never echo submitted

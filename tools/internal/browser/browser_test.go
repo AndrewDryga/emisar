@@ -192,6 +192,36 @@ func TestShotFillsInputsAndNotifiesTheForm(t *testing.T) {
 	}
 }
 
+func TestFindHrefMatchesConsoleListLinksWithoutTableMarkup(t *testing.T) {
+	if _, err := ResolveChrome(); err != nil {
+		t.Skip(err)
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`<a href="/app/demo/runners/keys">Install keys</a><ul><li><a href="/app/demo/runners/11111111-1111-7111-8111-111111111111">Runner</a></li><li><a href="/app/demo/audit/22222222-2222-7222-8222-222222222222">Event details</a></li></ul>`))
+	}))
+	defer server.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	session, err := New(Config{InBox: testInBox()}).isolatedSessionWithOptions(ctx, server.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer session.Close()
+	if err := session.Navigate("/"); err != nil {
+		t.Fatal(err)
+	}
+	for _, test := range []struct{ pattern, want string }{
+		{`/app/demo/runners/[0-9a-f-]{36}$`, "/app/demo/runners/11111111-1111-7111-8111-111111111111"},
+		{`/app/demo/audit/[0-9a-f-]{36}$`, "/app/demo/audit/22222222-2222-7222-8222-222222222222"},
+		{`/app/demo/approvals/[0-9a-f-]{36}$`, ""},
+	} {
+		got, err := findHref(session, test.pattern, "")
+		if err != nil || got != test.want {
+			t.Errorf("findHref(%q) = %q, %v; want %q", test.pattern, got, err, test.want)
+		}
+	}
+}
+
 func TestRGBHex(t *testing.T) {
 	if got := rgbHex("rgba(9, 10, 255, 1)"); got != "#090aff" {
 		t.Fatalf("rgbHex = %s", got)

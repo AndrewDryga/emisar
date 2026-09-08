@@ -134,6 +134,7 @@ Rules:
 - **`use Emisar, :query`** — never `import Ecto.Query` directly.
 - Every helper is composable: takes `Ecto.Queryable.t()`, returns `Ecto.Queryable.t()`. First arg defaults to `all()` so you can either start a chain or extend one. Name that first argument **`queryable`**, not `q`.
 - Use **named bindings** (`as: :widgets`, `as: :requests`) so later helpers don't break when an upstream caller already added a `join`. Reference by `[widgets: w]`, not positionally.
+- Select fields from map-returning subqueries with an explicit map of field expressions, not `map(binding, fields)`. The pinned Ecto planner treats that `map/2` projection as untyped and can return raw 16-byte UUIDs instead of strings. Use `type(field, Ecto.UUID)` where decoding must be explicit; regressions should compare returned IDs with the original schema IDs, including nested values used in links.
 - `not_deleted/1` is the standard partial-index-friendly soft-delete filter; pair it with the changeset's `delete/1` (`deleted_at`).
 - `none/1` is the fail-closed target the Authorizer's `_` fallback returns (§5) — a binding-free `where(queryable, false)`. **`use Emisar, :query` does NOT supply it** (it injects only `import Ecto.Query` + the `@behaviour`), so every query module whose schema has an Authorizer declares its own. Miss it and the fallback is an undefined function on the one path that exists to stop a leak.
 - `cursor_fields/0` and `filters/0` are `Emisar.Repo.Query` callbacks; declare them when the context paginates or filters via `Repo.list/3`.

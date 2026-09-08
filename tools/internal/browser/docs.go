@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -97,10 +98,10 @@ func navigateHrefSuffix(selector, suffix, destination string) string {
 // content exists. Capture waits otherwise race the connected render and leave
 // conditional authoring controls collapsed in the published image.
 func openPanel(button, content string) string {
-	return fmt.Sprintf(`(()=>{if(document.querySelector(%q))return true;const b=document.querySelector(%q);if(!b)return false;b.click();return false})()`, content, button)
+	return fmt.Sprintf(`(()=>{if(document.querySelector(%q)?.checkVisibility())return true;const b=document.querySelector(%q);if(!b)return false;b.click();return false})()`, content, button)
 }
 
-const waitForResolvedRunbookPlan = `(()=>{const el=document.querySelector('#current-runbook-plan-summary');return !!el&&el.textContent.includes('Actions')&&!el.textContent.includes('Checking current state')})()`
+const waitForResolvedRunbookPlan = `(()=>!!document.querySelector('#current-runbook-plan [id^="preflight-stage-"]'))()`
 
 // openPublishReview waits out the editor's delayed publish check before
 // clicking: Publish is disabled until the current-state preflight resolves, so
@@ -110,6 +111,12 @@ const openPublishReview = `(()=>{if(document.querySelector('#runbook-actions-des
 
 const openRunbookTargetPicker = `(()=>{const trigger=document.querySelector('#runbook-stage-1-step-0-target-trigger');if(!trigger)return false;const details=trigger.closest('details');if(!details)return false;if(details.open)return true;trigger.click();return false})()`
 
+func openRunbookStep(stage, step int) string {
+	return fmt.Sprintf(`(()=>{const b=document.querySelector('#runbook-stage-%d-step-%d button[phx-click="toggle_step"]');if(!b)return false;if(b.getAttribute('aria-expanded')==='true')return true;b.click();return false})()`, stage, step)
+}
+
+const findLogAction = `(()=>{if(new URL(location.href).searchParams.get('action')==='linux.grep_log')return !!document.querySelector('a[href$="/linux.grep_log"]');const url=new URL(location.href);url.searchParams.set('action','linux.grep_log');location.href=url.href;return false})()`
+
 // collapseAuditFilters folds the audit facet drawer (it arrives expanded when
 // the URL carries a filter). Self-verifying: reports success only once
 // aria-expanded flips, so a click against the dead pre-connect render (which
@@ -117,15 +124,17 @@ const openRunbookTargetPicker = `(()=>{const trigger=document.querySelector('#ru
 const collapseAuditFilters = `(()=>{const b=document.querySelector('button[phx-click="toggle_filters"]');if(!b)return false;if(b.getAttribute('aria-expanded')==='false')return true;b.click();return false})()`
 
 // clickSSOConnection opens an SSO connection's detail page from the team page.
-// selectEntraProvider configures the Add provider form the way /docs/sso#entra
-// tells an operator to: Entra has no preset, so the kind is Generic OpenID
-// Connect, and the identifier claim MUST be oid rather than the default sub.
-// Both selects are LiveView-backed, so dispatch a change event after setting them.
+// selectEntraProvider selects the Entra preset, which uses oid for the identifier.
+// Provider selection is LiveView-backed, so dispatch a change event.
 // selectGoogleProvider picks the Google Workspace preset, whose issuer emisar
 // fills in and LOCKS — the detail /docs/sso#google-workspace exists to show.
 const selectGoogleProvider = `(()=>{const el=document.querySelector('select[name="provider[kind]"]');if(!el)return false;el.value='google_workspace';el.dispatchEvent(new Event('change',{bubbles:true}));return true})()`
 
 const selectEntraProvider = `(()=>{const set=(sel,val)=>{const el=document.querySelector(sel);if(!el)return false;el.value=val;el.dispatchEvent(new Event('change',{bubbles:true}));return true};return set('select[name="provider[kind]"]','entra')})()`
+
+const selectJumpCloudRegion = `(()=>{const el=document.querySelector('select[name="provider[issuer]"]');if(!el)return false;el.value='https://oauth.id.jumpcloud.com/';el.dispatchEvent(new Event('change',{bubbles:true}));return true})()`
+
+const openSCIMSetup = `(()=>{const el=document.querySelector('details[id^="scim-setup-"]');if(!el)return false;el.open=true;return true})()`
 
 // selectProviderKind picks a provider in the Add-provider form. Each guide's
 // first step tells the reader to choose THEIR provider, so each guide's shot
@@ -140,7 +149,7 @@ func selectProviderKind(kind string) string {
 // flagged it before. Only the host is substituted; no value is invented.
 const showProductionHost = `(()=>{const from=location.origin,to='https://emisar.dev';const walk=document.createTreeWalker(document.body,NodeFilter.SHOW_TEXT);const hits=[];while(walk.nextNode())if(walk.currentNode.nodeValue.includes(from))hits.push(walk.currentNode);hits.forEach(n=>n.nodeValue=n.nodeValue.split(from).join(to));document.querySelectorAll('[data-copy-text]').forEach(el=>el.setAttribute('data-copy-text',el.getAttribute('data-copy-text').split(from).join(to)));return true})()`
 
-const clickSSOConnection = `(()=>{const a=[...document.querySelectorAll('a[href*="/settings/sso/"]')].find(x=>/\/settings\/sso\/[0-9a-f-]{8,}/.test(x.getAttribute('href')));if(!a)return false;location.assign(a.href);return true})()`
+const clickSSOConnection = `(()=>{if(document.querySelector('#connection-settings'))return true;const a=[...document.querySelectorAll('a[href*="/settings/sso/"]')].find(x=>/\/settings\/sso\/[0-9a-f-]{8,}/.test(x.getAttribute('href')));if(!a)return false;location.assign(a.href);return false})()`
 
 // docsShots — one entry per docs screenshot, each cropped to the one feature
 // its page teaches, at docsWidth unless the content genuinely needs more room.
@@ -174,21 +183,21 @@ var docsShots = []shot{
 	// job to exercise, not a teaching image's.
 	{Name: "runs", Path: "/app/demo/runs", Anchor: Anchor{Selector: "#runs"}, Width: 1280, TopCSS: 870, Output: "screenshots/runs.webp"},
 	{Name: "agents", Path: "/app/demo/agents", Anchor: Anchor{Selector: "#agents"}, Width: docsWidth, TopCSS: 900, Output: "screenshots/agents.webp"},
-	{Name: "packs", Path: "/app/demo/packs", Anchor: Anchor{Selector: "#packs"}, Width: docsWidth, TopCSS: 830, Output: "screenshots/packs.webp"},
-	{Name: "run-detail", Path: "/app/demo/runs?status[]=success", Clicks: []string{navigateRowLink(`a[href*="/runs/"]`, "caddy.reload_config", "#run-output")}, Anchor: Anchor{Selector: "#shell-canvas"}, Width: 1280, TopCSS: 940, Output: "screenshots/run-detail.webp"},
-	{Name: "run-form", Path: "/app/demo/runners", Clicks: []string{navigateRowLink(`a[href*="/runners/"]`, "edge-fra-01", "#actions"), navigateHrefSuffix(`a[href*="/runs/new/"]`, "/linux.grep_log", "#dispatch_form")}, Anchor: Anchor{Selector: "#shell-canvas"}, Width: 1280, TopCSS: 1380, Output: "screenshots/run-form.webp"},
+	{Name: "packs", Path: "/app/demo/packs", Anchor: Anchor{Selector: "#packs"}, Width: docsWidth, Rows: 3, RowSelector: "#packs > li", Output: "screenshots/packs.webp"},
+	{Name: "run-detail", Path: "/app/demo/runs?status[]=success", Clicks: []string{navigateRowLink(`a[href*="/runs/"]`, "caddy.reload_config", "#run-output")}, Anchor: Anchor{Selector: "#shell-canvas"}, Width: 1280, TopCSS: 1450, Output: "screenshots/run-detail.webp"},
+	{Name: "run-form", Path: "/app/demo/runners", Clicks: []string{navigateRowLink(`a[href*="/runners/"]`, "edge-fra-01", "#actions"), findLogAction, navigateHrefSuffix(`a[href*="/runs/new/"]`, "/linux.grep_log", "#dispatch_form")}, Anchor: Anchor{Selector: "#shell-canvas"}, Width: 1280, TopCSS: 1600, Output: "screenshots/run-form.webp"},
 	// Runbooks use one production-shaped seeded procedure across the complete
 	// guide. Content-addressed navigation avoids whichever audit draft happens to
 	// sort first, while the narrow anchors keep each image about the step beside
 	// it instead of publishing another full-page wall of controls.
 	{Name: "runbook-import", Path: "/app/demo/runbooks/import", Anchor: Anchor{Selector: "#runbook-import"}, Width: docsWidth, Output: "docs/runbooks/import.webp"},
 	{Name: "runbook-inputs", Path: "/app/demo/runbooks", Clicks: []string{navigateRowLink(`a[href*="/runbooks/"][href$="/edit"]`, "Edge configuration rollout", "#runbook-inputs")}, Anchor: Anchor{Selector: "#runbook-inputs"}, Width: 1440, Output: "docs/runbooks/inputs.webp"},
-	{Name: "runbook-stage", Path: "/app/demo/runbooks", Clicks: []string{navigateRowLink(`a[href*="/runbooks/"][href$="/edit"]`, "Edge configuration rollout", "#runbook-stage-0")}, Anchor: Anchor{Selector: "#runbook-stage-0"}, Width: 1680, TopCSS: 720, Output: "docs/runbooks/stage.webp"},
-	{Name: "runbook-targets", Path: "/app/demo/runbooks", Clicks: []string{navigateRowLink(`a[href*="/runbooks/"][href$="/edit"]`, "Edge configuration rollout", "#runbook-stage-1-step-0"), openRunbookTargetPicker}, Anchor: Anchor{Selector: "#runbook-stage-1-step-0"}, Width: 1440, TopCSS: 900, Output: "docs/runbooks/targets.webp"},
-	{Name: "runbook-arguments", Path: "/app/demo/runbooks", Clicks: []string{navigateRowLink(`a[href*="/runbooks/"][href$="/edit"]`, "Edge configuration rollout", "#runbook-stage-0-step-0-arguments")}, Anchor: Anchor{Selector: "#runbook-stage-0-step-0-arguments"}, Width: 1440, Output: "docs/runbooks/arguments.webp"},
-	{Name: "runbook-outputs", Path: "/app/demo/runbooks", Clicks: []string{navigateRowLink(`a[href*="/runbooks/"][href$="/edit"]`, "Edge configuration rollout", "#runbook-stage-1-step-1-outputs")}, Anchor: Anchor{Selector: "#runbook-stage-1-step-1-outputs"}, Width: 1440, Output: "docs/runbooks/outputs.webp"},
-	{Name: "runbook-conditions", Path: "/app/demo/runbooks", Clicks: []string{navigateRowLink(`a[href*="/runbooks/"][href$="/edit"]`, "Edge configuration rollout", "#runbook-stage-1-step-1-success")}, Anchor: Anchor{Selector: "#runbook-stage-1-step-1-success"}, Width: 1440, Output: "docs/runbooks/conditions.webp"},
-	{Name: "runbook-wait", Path: "/app/demo/runbooks", Clicks: []string{navigateRowLink(`a[href*="/runbooks/"][href$="/edit"]`, "Edge configuration rollout", "#runbook-stage-1-step-1-wait"), openPanel(`#runbook-stage-1-step-1-wait button[phx-click="toggle_panel"]`, "#runbook-stage-1-step-1-wait-controls")}, Anchor: Anchor{Selector: "#runbook-stage-1-step-1-wait"}, Width: 1680, Output: "docs/runbooks/wait.webp"},
+	{Name: "runbook-stage", Path: "/app/demo/runbooks", Clicks: []string{navigateRowLink(`a[href*="/runbooks/"][href$="/edit"]`, "Edge configuration rollout", "#runbook-stage-0"), openRunbookStep(0, 0)}, Anchor: Anchor{Selector: "#runbook-stage-0"}, Width: 1680, TopCSS: 1450, Output: "docs/runbooks/stage.webp"},
+	{Name: "runbook-targets", Path: "/app/demo/runbooks", Clicks: []string{navigateRowLink(`a[href*="/runbooks/"][href$="/edit"]`, "Edge configuration rollout", "#runbook-stage-1-step-0"), openRunbookStep(1, 0), openRunbookTargetPicker}, Anchor: Anchor{Selector: "#runbook-stage-1-step-0"}, Width: 1440, TopCSS: 1100, Output: "docs/runbooks/targets.webp"},
+	{Name: "runbook-arguments", Path: "/app/demo/runbooks", Clicks: []string{navigateRowLink(`a[href*="/runbooks/"][href$="/edit"]`, "Edge configuration rollout", "#runbook-stage-0-step-0-arguments"), openRunbookStep(0, 0)}, Anchor: Anchor{Selector: "#runbook-stage-0-step-0-arguments"}, Width: 1440, Output: "docs/runbooks/arguments.webp"},
+	{Name: "runbook-outputs", Path: "/app/demo/runbooks", Clicks: []string{navigateRowLink(`a[href*="/runbooks/"][href$="/edit"]`, "Edge configuration rollout", "#runbook-stage-1-step-1-outputs"), openRunbookStep(1, 1)}, Anchor: Anchor{Selector: "#runbook-stage-1-step-1-outputs"}, Width: 1440, Output: "docs/runbooks/outputs.webp"},
+	{Name: "runbook-conditions", Path: "/app/demo/runbooks", Clicks: []string{navigateRowLink(`a[href*="/runbooks/"][href$="/edit"]`, "Edge configuration rollout", "#runbook-stage-1-step-1-success"), openRunbookStep(1, 1)}, Anchor: Anchor{Selector: "#runbook-stage-1-step-1-success"}, Width: 1440, Output: "docs/runbooks/conditions.webp"},
+	{Name: "runbook-wait", Path: "/app/demo/runbooks", Clicks: []string{navigateRowLink(`a[href*="/runbooks/"][href$="/edit"]`, "Edge configuration rollout", "#runbook-stage-1-step-1-wait"), openRunbookStep(1, 1), openPanel(`#runbook-stage-1-step-1-wait button[phx-click="toggle_panel"]`, "#runbook-stage-1-step-1-wait-controls")}, Anchor: Anchor{Selector: "#runbook-stage-1-step-1-wait"}, Width: 1680, Output: "docs/runbooks/wait.webp"},
 	// runbook-publish needs a LIVE fleet: Publish stays disabled until the
 	// current-state preflight resolves every target, so capture it against the
 	// packaged stack, never the bare dev server (which has no connected runner
@@ -200,18 +209,18 @@ var docsShots = []shot{
 	// Do NOT add COMPOSE_PROFILES=test — runner-runbook joins the same edge-web
 	// group with a linux-core-only pack set, so the plan this procedure
 	// photographs resolves across two runners instead of the demo host alone.
-	{Name: "runbook-publish", Path: "/app/demo/runbooks", Clicks: []string{navigateRowLink(`a[href*="/runbooks/"][href$="/edit"]`, "Edge configuration rollout", "#runbook-actions-desktop-publish"), openPublishReview}, Anchor: Anchor{Selector: "#shell-canvas"}, Width: 1440, TopCSS: 1060, Output: "docs/runbooks/publish.webp"}, // anchor the PAGE, not the panel — a sub-page crop upscales in the docs column and the type balloons; the crop ends after the review card, before the Publish check section opens. Recapture needs edge-fra-01 online advertising a TRUSTED caddy pack (the ./run smoke stack provides this), or Publish stays disabled and the review panel never opens.
-	{Name: "runbook-start", Path: "/app/demo/runbooks", Clicks: []string{navigateRowLink(`a[href*="/runbooks/"][href$="/run"]`, "Edge configuration rollout", "#runbook-start-execution"), waitForResolvedRunbookPlan}, Anchor: Anchor{Selector: "#shell-canvas"}, Width: 1440, TopCSS: 1050, Output: "docs/runbooks/start.webp"},
+	{Name: "runbook-publish", Path: "/app/demo/runbooks", Clicks: []string{navigateRowLink(`a[href*="/runbooks/"][href$="/edit"]`, "Edge configuration rollout", "#runbook-actions-desktop-publish"), openPublishReview}, Anchor: Anchor{Selector: "#shell-canvas"}, Width: 1440, TopCSS: 1300, Output: "docs/runbooks/publish.webp"}, // anchor the PAGE, not the panel — a sub-page crop upscales in the docs column and the type balloons; the crop ends after the review card, before the Publish check section opens. Recapture needs edge-fra-01 online advertising a TRUSTED caddy pack (the ./run smoke stack provides this), or Publish stays disabled and the review panel never opens.
+	{Name: "runbook-start", Path: "/app/demo/runbooks", Clicks: []string{navigateRowLink(`a[href*="/runbooks/"][href$="/run"]`, "Edge configuration rollout", "#runbook-start-execution"), waitForResolvedRunbookPlan}, Anchor: Anchor{Selector: "#shell-canvas"}, Width: 1440, TopCSS: 1900, Output: "docs/runbooks/start.webp"},
 	{Name: "runbook-approval", Path: "/app/demo/approvals", Clicks: []string{navigateRowLink(`#pending a[href*="/approvals/"]`, "Edge configuration rollout", "#approval-decision-form")}, Anchor: Anchor{Selector: "#shell-canvas"}, Width: 1280, TopCSS: 1120, Output: "docs/runbooks/approval.webp"},
-	{Name: "runbook-result", Path: "/app/demo/runbooks", Clicks: []string{navigateRowLink(`a[href*="/runbooks/"][href$="/run"]`, "Edge configuration rollout", "#runbook-start-execution"), waitForResolvedRunbookPlan, navigateRowLink(`a[href*="/runs/"]`, "completed Tuesday", "#runbook-execution-result")}, Anchor: Anchor{Selector: "#runbook-execution-result"}, Width: 1280, TopCSS: 1650, Output: "docs/runbooks/result.webp"},
-	{Name: "sso-directory-sync", Path: "/app/demo/settings/team", Clicks: []string{clickSSOConnection, showProductionHost}, Anchor: Anchor{Heading: "Directory sync (SCIM)", Climb: "section"}, Width: docsWidth, Output: "docs/sso/sso-directory-sync.webp"},
+	{Name: "runbook-result", Path: "/app/demo/runbooks", Clicks: []string{navigateRowLink(`a[href*="/runbooks/"][href$="/run"]`, "Edge configuration rollout", "#runbook-start-execution"), waitForResolvedRunbookPlan, navigateRowLink(`a[href*="/runs/"]`, "completed Tuesday", "#runbook-execution-result")}, Anchor: Anchor{Selector: "#runbook-execution-result"}, Width: 1280, Output: "docs/runbooks/result.webp"},
+	{Name: "sso-directory-sync", Path: "/app/demo/settings/team", Clicks: []string{clickSSOConnection, openSCIMSetup, showProductionHost}, Anchor: Anchor{Heading: "User provisioning & directory sync", Climb: "section"}, Width: docsWidth, Output: "docs/sso/sso-directory-sync.webp"},
 	// The SSO concept page is vendor-neutral, so these three take the connection
 	// form with NO provider chosen — the generic field set every provider shares.
 	// One shot per field group, matching the page's own three h3 sections; the
 	// per-provider guides own the vendor-specific variants of the same form.
 	{Name: "sso-connection-fields", Path: "/app/demo/settings/sso/new", Clicks: []string{showProductionHost}, Anchor: Anchor{Heading: "OIDC connection", Climb: "section"}, Width: docsWidth, Output: "docs/sso/sso-connection-fields.webp"},
-	{Name: "sso-provisioning-fields", Path: "/app/demo/settings/sso/new", Anchor: Anchor{Heading: "Member provisioning", Climb: "section"}, Width: docsWidth, Output: "docs/sso/sso-provisioning-fields.webp"},
-	{Name: "sso-activation-fields", Path: "/app/demo/settings/sso/new", Anchor: Anchor{Heading: "Security & activation", Climb: "section"}, Width: docsWidth, Output: "docs/sso/sso-activation-fields.webp"},
+	{Name: "sso-provisioning-fields", Path: "/app/demo/settings/sso/new", Anchor: Anchor{Heading: "Member access", Climb: "section"}, Width: docsWidth, Output: "docs/sso/sso-provisioning-fields.webp"},
+	{Name: "sso-activation-fields", Path: "/app/demo/settings/sso/new", Anchor: Anchor{Heading: "Sign-in security", Climb: "section"}, Width: docsWidth, Output: "docs/sso/sso-activation-fields.webp"},
 	// The two halves of group→role sync: the mappings an admin authors, and the
 	// synced roster they land on. Both are seeded directory state (seeds.exs maps
 	// two of three IdP groups, deliberately leaving one unmapped).
@@ -231,13 +240,13 @@ var docsShots = []shot{
 	// The guide told the reader which values to carry and then showed them nothing.
 	{Name: "keycloak-emisar-credentials", Path: "/app/demo/settings/sso/new", Clicks: []string{selectProviderKind("keycloak"), showProductionHost}, Anchor: Anchor{Heading: "OIDC connection", Climb: "section"}, Highlight: []string{"Issuer URL", "Client ID", "Client secret"}, Width: docsWidth, Output: "docs/sso/keycloak-emisar-credentials.webp"},
 	{Name: "entra-emisar-credentials", Path: "/app/demo/settings/sso/new", Clicks: []string{selectEntraProvider, showProductionHost}, Anchor: Anchor{Heading: "OIDC connection", Climb: "section"}, Highlight: []string{"Issuer URL", "Client ID", "Client secret"}, Width: docsWidth, Output: "docs/sso/entra-emisar-credentials.webp"},
-	{Name: "jumpcloud-emisar-credentials", Path: "/app/demo/settings/sso/new", Clicks: []string{selectProviderKind("jumpcloud"), showProductionHost}, Anchor: Anchor{Heading: "OIDC connection", Climb: "section"}, Highlight: []string{"Client ID", "Client secret"}, Width: docsWidth, Output: "docs/sso/jumpcloud-emisar-credentials.webp"},
+	{Name: "jumpcloud-emisar-credentials", Path: "/app/demo/settings/sso/new", Clicks: []string{selectProviderKind("jumpcloud"), selectJumpCloudRegion, showProductionHost}, Anchor: Anchor{Heading: "OIDC connection", Climb: "section"}, Highlight: []string{"JumpCloud region", "Client ID", "Client secret"}, Width: docsWidth, Output: "docs/sso/jumpcloud-emisar-credentials.webp"},
 	{Name: "okta-emisar-credentials", Path: "/app/demo/settings/sso/new", Clicks: []string{selectProviderKind("okta"), showProductionHost}, Anchor: Anchor{Heading: "OIDC connection", Climb: "section"}, Highlight: []string{"Issuer URL", "Client ID", "Client secret"}, Width: docsWidth, Output: "docs/sso/okta-emisar-credentials.webp"},
 
 	// The step names ONE control — Identifier claim — so the shot is that field and
 	// its explanation, outlined. It used to be the entire 3,290px form, which shows
 	// the reader everything and points at nothing.
-	{Name: "scim-group-role-mapping", Path: "/app/demo/settings/team", Clicks: []string{clickSSOConnection}, Anchor: Anchor{Heading: "Role mapping", Climb: "section"}, Width: docsWidth, Output: "docs/sso/scim-group-role-mapping.webp"},
+	{Name: "scim-group-role-mapping", Path: "/app/demo/settings/team", Clicks: []string{clickSSOConnection}, Anchor: Anchor{Heading: "Groups & access", Climb: "section"}, Width: docsWidth, Output: "docs/sso/scim-group-role-mapping.webp"},
 	{Name: "scim-synced-users", Path: "/app/demo/settings/team", Clicks: []string{clickSSOConnection}, Anchor: Anchor{Selector: `[id^="synced-members-"]`}, Width: docsWidth, Output: "docs/sso/scim-synced-users.webp"},
 }
 
@@ -257,7 +266,7 @@ var keycloakShots = []shot{
 // navigate-and-crop shots: captureLoopTake drives the REAL product loop — in
 // an isolated session signed in as Jordan, it opens the seeded pending
 // caddy.reload_config request (agent-initiated, Maya via Claude), types the
-// decision note, clicks Approve and send, waits for the live edge-fra-01
+// decision note, clicks Approve, waits for the live edge-fra-01
 // runner to execute (the dev runner image stubs `caddy`, so the reload exits
 // 0 with believable output), and photographs each stage — so every frame,
 // transition, and audit row is the actual product doing the actual thing.
@@ -317,7 +326,7 @@ const upTo=(el,n)=>{while(el&&n-->0)el=el.parentElement;return el};
 const unionRect=(a,b)=>{if(!a)return b?rect(b):null;if(!b)return rect(a);const ar=a.getBoundingClientRect(),br=b.getBoundingClientRect();
 const x1=Math.min(ar.x,br.x),y1=Math.min(ar.y,br.y),x2=Math.max(ar.x+ar.width,br.x+br.width),y2=Math.max(ar.y+ar.height,br.y+br.height);
 return {x:Math.round((x1-c.x)/c.width*1000)/10,y:Math.round((y1-c.y)/frameH*1000)/10,w:Math.round((x2-x1)/c.width*1000)/10,h:Math.round((y2-y1)/frameH*1000)/10}};
-return JSON.stringify({note:point(q('#approval-decision-form textarea[name="reason"]')),note_rect:rect(q('#approval-decision-form textarea[name="reason"]')),approve:point(q('#approval-decision-form button[value="approve"]')),view_run:point(byText('View run')),view_activity:point(byText('View activity')),command_rect:rect(q('#shell-canvas [id^="approval-command-"]')),action_rect:rect(leaf('Action')&&leaf('Action').parentElement),why_rect:rect(leaf('Why')&&leaf('Why').parentElement),output_rect:rect(leaf('Output')&&upTo(leaf('Output'),2)),auth_rect:unionRect(leafLike('Actor')&&upTo(leafLike('Actor'),2),leafLike('Target')&&upTo(leafLike('Target'),2)),audit_row:point(rowByText('Run succeeded')),audit_row_rect:rect(rowByText('Run succeeded')),payload_rect:rect(q('#audit-payload-json'))})})()`
+return JSON.stringify({note:point(q('#approval-decision-form textarea[name="reason"]')),note_rect:rect(q('#approval-decision-form textarea[name="reason"]')),approve:point(q('#approval-decision-form button[value="approve"]')),view_run:point(byText('View run')),view_activity:point(q('a[href*="/audit?"]')),command_rect:rect(q('#shell-canvas [id^="approval-command-"]')),risk_rect:rect(leaf('Risk')&&leaf('Risk').parentElement),reason_rect:rect(leaf('Request details')?.closest('section')),decisions_rect:rect(q('[data-shot="approval-decisions"]')),output_rect:rect(q('[data-shot="run-output"]')),auth_rect:unionRect(leafLike('Actor')&&upTo(leafLike('Actor'),2),leafLike('Target')&&upTo(leafLike('Target'),2)),audit_row:point(rowByText('Run succeeded')),audit_row_rect:rect(rowByText('Run succeeded')),payload_rect:rect(q('#audit-payload-json'))})})()`
 
 func captureLoopTake(ctx context.Context, manager *Manager, config DocsConfig) (map[string]string, error) {
 	// An isolated session (own profile) so signing in as Jordan never touches
@@ -397,6 +406,7 @@ func captureLoopTake(ctx context.Context, manager *Manager, config DocsConfig) (
 	if err := frame("loop-approval-approved"); err != nil {
 		return nil, err
 	}
+	printTargets(session, manager.Out, "approved")
 
 	// The approved run dispatches to the live runner immediately; follow it
 	// and wait for the terminal success state before shooting.
@@ -414,10 +424,10 @@ func captureLoopTake(ctx context.Context, manager *Manager, config DocsConfig) (
 	}
 	printTargets(session, manager.Out, "run")
 
-	// Frame 5 is the REAL destination of the cursor's "View activity" click on
+	// Frame 5 is the REAL destination of the cursor's "View audit trail" click on
 	// the run page: the audit log pre-filtered to this dispatch's request-id
 	// trace — the filter state in the frame is exactly what the click produces.
-	if err := clickByScript(session, clickText("View activity"), "View activity"); err != nil {
+	if err := clickByScript(session, clickRowLink(`a[href*="/audit?"]`, "View audit trail"), "View audit trail"); err != nil {
 		return nil, err
 	}
 	if err := clickByScript(session, collapseAuditFilters, "audit filter collapse"); err != nil {
@@ -433,7 +443,7 @@ func captureLoopTake(ctx context.Context, manager *Manager, config DocsConfig) (
 	if err := clickByScript(session, clickRowLink(`#audit-events a[href*="/audit/"]`, "Run succeeded"), "Run succeeded audit row"); err != nil {
 		return nil, err
 	}
-	if err := waitText(session, "Payload", 15*time.Second); err != nil {
+	if err := session.Ready(15*time.Second, "#audit-payload-json"); err != nil {
 		return nil, fmt.Errorf("audit event detail did not open: %w", err)
 	}
 	if err := session.Ready(10*time.Second, ""); err != nil {
@@ -739,6 +749,11 @@ func captureDocElement(session *Session, config DocsConfig, s shot) (string, err
 				return "", fmt.Errorf("%s: %w", s.Name, err)
 			}
 		}
+		// Full-page captures start at the document origin. Reset scroll before
+		// measuring so sticky/scroll-linked layout uses that same position.
+		if err := chromedp.Run(session.Context, chromedp.Evaluate(`window.scrollTo({top:0,left:0,behavior:'instant'})`, nil)); err != nil {
+			return "", err
+		}
 		switch err := session.Ready(10*time.Second, selector); {
 		case err == nil:
 			settled = true
@@ -747,7 +762,7 @@ func captureDocElement(session *Session, config DocsConfig, s shot) (string, err
 		}
 	}
 	path := filepath.Join(config.Temp, s.Name+".png")
-	if err := session.ElementScreenshot(selector, path, 2); err != nil {
+	if err := captureDocCrop(session, selector, path); err != nil {
 		return "", err
 	}
 	var color string
@@ -756,6 +771,54 @@ func captureDocElement(session *Session, config DocsConfig, s shot) (string, err
 		return "", err
 	}
 	return rgbHex(color), nil
+}
+
+// Crop a full-page capture using the rendered element's bounds. Chrome's node
+// capture can shift an off-origin crop after viewport changes; full-page capture
+// keeps the page and its crop in one coordinate system.
+func captureDocCrop(session *Session, selector, path string) error {
+	quoted, _ := json.Marshal(selector)
+	type bounds struct{ X, Y, Width, Height, PageWidth float64 }
+	var box bounds
+	script := `(function(){const el=document.querySelector(` + string(quoted) + `);const b=el.getBoundingClientRect();return {X:b.x+scrollX,Y:b.y+scrollY,Width:b.width,Height:b.height,PageWidth:document.documentElement.scrollWidth}})()`
+	full := strings.TrimSuffix(path, ".png") + "-full.png"
+	// A full-page capture can itself force layout of deferred content. Retry
+	// when that changes the crop, rather than applying stale coordinates.
+	for attempt := 0; ; attempt++ {
+		if err := chromedp.Run(session.Context, chromedp.Evaluate(script, &box)); err != nil {
+			return err
+		}
+		if box.Width <= 0 || box.Height <= 0 || box.PageWidth <= 0 {
+			return fmt.Errorf("docs crop has empty bounds")
+		}
+		if err := session.FullScreenshot(full); err != nil {
+			return err
+		}
+		var after bounds
+		if err := chromedp.Run(session.Context, chromedp.Evaluate(script, &after)); err != nil {
+			return err
+		}
+		if box == after {
+			break
+		}
+		if attempt == 2 {
+			return fmt.Errorf("docs crop moved during capture")
+		}
+	}
+	pixels, err := imageCommand("identify", "-format", "%w", full)
+	if err != nil {
+		return err
+	}
+	width, err := strconv.ParseFloat(strings.TrimSpace(string(pixels)), 64)
+	if err != nil {
+		return err
+	}
+	scale := width / box.PageWidth
+	crop := fmt.Sprintf("%dx%d+%d+%d", int(math.Round(box.Width*scale)), int(math.Round(box.Height*scale)), int(math.Round(box.X*scale)), int(math.Round(box.Y*scale)))
+	if output, err := imageCommand("convert", full, "-crop", crop, "+repage", path); err != nil {
+		return fmt.Errorf("crop docs image: %w: %s", err, bytes.TrimSpace(output))
+	}
+	return nil
 }
 
 func imageCommand(tool string, args ...string) ([]byte, error) {

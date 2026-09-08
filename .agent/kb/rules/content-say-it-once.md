@@ -32,6 +32,22 @@ you have something new to add. Every restatement is a sentence that failed the
   it instead of re-explaining it.
 - A quickstart step says what to do and what you get, then links to the full
   walkthrough — it doesn't recap the whole value prop the closing callout carries.
+- Billing identifies the plan in the current-plan strip. A custom plan's support
+  requirement belongs in the existing help section, not a second "Custom plan"
+  callout repeating its identity. Plan-specific help still includes general
+  support; it must not imply that support is limited to billing. Product-support
+  prompts follow the effective plan: Team offers email; Enterprise offers email
+  and its configured shared Slack channel; Free has no product-support prompt.
+  Keep billing/account-access recovery and security reporting separate from
+  included product support, in both the console and public guidance.
+- Billing's upgrade offers follow the current plan, not a universal comparison
+  grid. Free visibly offers both Team and Enterprise so an account can go straight
+  to sales; Team shows the Enterprise additions; Enterprise/custom keeps its
+  management surface. Do not resell benefits the account already has through
+  custom entitlements. Keep current limits, retention and included features
+  visible in the usage rail; do not hide the short feature list in a Plan details
+  disclosure. Paid offers stay compact rather than stretching across the canvas.
+  Prioritize billing recovery over acquisition.
 
 ## Bad
 

@@ -157,6 +157,7 @@ func CaptureConsole(ctx context.Context, manager *Manager, config ConsoleConfig)
 		{"/runbooks", `/runbooks/[^/]+/edit$`, "", "runbook-edit"},
 		{"/runbooks", `/runbooks/[^/]+/run$`, "", "runbook-run"},
 		{"/settings/sso", `/app/` + config.Slug + `/settings/sso/`, "/new", "sso-detail"},
+		{"/audit", `/app/` + config.Slug + `/audit/[0-9a-f-]{36}$`, "", "audit-detail"},
 	}
 	for _, detail := range details {
 		if err := session.Navigate("/app/" + config.Slug + detail.list); err != nil {
@@ -184,7 +185,7 @@ func CaptureConsole(ctx context.Context, manager *Manager, config ConsoleConfig)
 	if err := session.Navigate("/app/" + config.Slug + "/runners"); err != nil {
 		return err
 	}
-	runnerHref, _ := findHref(session, `/app/`+config.Slug+`/runners/`, "/install")
+	runnerHref, _ := findHref(session, `/app/`+config.Slug+`/runners/[0-9a-f-]{36}$`, "")
 	if runnerHref != "" {
 		_ = session.Navigate(runnerHref)
 		runHref, _ := findHref(session, `/runs/new/`, "")
@@ -196,19 +197,6 @@ func CaptureConsole(ctx context.Context, manager *Manager, config ConsoleConfig)
 			}
 		} else {
 			manifest = append(manifest, manifestEntry{Name: "run-new", Note: "skipped - runner has no Run link"})
-		}
-	}
-
-	if err := session.Navigate("/app/" + config.Slug + "/audit"); err == nil {
-		if clickErr := chromedp.Run(session.Context, chromedp.Click("tbody tr", chromedp.ByQuery)); clickErr == nil {
-			_ = session.Ready(10*time.Second, "")
-			entry, shotErr := shootConsole(session, config, "audit-detail", "")
-			manifest = append(manifest, entry)
-			if shotErr != nil {
-				failures++
-			}
-		} else {
-			manifest = append(manifest, manifestEntry{Name: "audit-detail", Note: "skipped - no audit rows"})
 		}
 	}
 

@@ -714,7 +714,7 @@ the commit button, where the operator can reach the action before reading what i
     wrapping box and steps the gap up between dimensions — `gap-x-5`/`gap-y-3` on the
     outer row. At ONE uniform gap the row is a single undifferentiated
     run, so a control from a different dimension reads as a member of whichever group it
-    touches — the audit page's `Problems only` outcome toggle read as the category chips'
+    touches — the audit page's former `Problems only` outcome toggle read as the category chips'
     first chip, and the founder's words were "should either have separator … or be part of
     group on the right. Now it's illogically placed." **A glyph does not fix this**: the
     zinc-700 middot that sat there was too quiet to read as a boundary, the chrome test puts
@@ -731,7 +731,19 @@ the commit button, where the operator can reach the action before reading what i
     toggle. The previous `gap-1.5` chip row made one choice set read as several unrelated
     actions; this joined treatment is the 2026-08-17 correction. Never answer this by
     merging two dimensions into one segmented group — that spells a different question as
-    one control. Sweep: a flex row
+    one control. **A filter dimension must answer an operator question, not expose a
+    color grouping.** Outcome is not severity: a deliberate denial or key revocation
+    is not necessarily a problem, and a successful action is not necessarily harmless.
+    Audit uses time, event type/category, and actor/target filters; do not restore
+    the removed Problems only toggle or Severity dropdown as color-based buckets.
+    **Dependent filters read broad to specific and behave that way:** Category and
+    Type share a row on desktop and stack on narrow screens. Category narrows Type's
+    choices; changing it clears only incompatible selections, including through quick
+    shortcuts. Clearing Category preserves Type. Do not silently broaden an incoming
+    shared URL by discarding one of its explicit constraints. A searchable picker using
+    `phx-update="ignore"` must key its id by both selection and available choices, so
+    its menu updates when the parent changes even if its own value stays All.
+    Sweep: a flex row
     holding two or more `:for` comprehensions of buttons/chips under one uniform gap class,
     and any bare `·`/`•`/`|` element or `w-px` rule sitting between two interactive
     siblings. **Enforcement is review, deliberately**: a source-text check was measured and

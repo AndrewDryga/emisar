@@ -24,6 +24,12 @@ controls, name the layer and state only what that layer proves.
 - Signed dispatch attributes a frame to the customer-authorized MCP bridge and
   its locally held signing key. A person provisions the trust chain but does not
   personally sign every dispatch frame.
+- When introducing co:op alongside emisar, explain the complementary boundaries:
+  co:op limits which files, secrets, and tools the local agent can access;
+  emisar controls what it can do with infrastructure. Use this plain-language
+  explanation in introductions; keep SSH, sockets, and network details in setup
+  instructions. Do not imply that connecting MCP constrains the agent's shell
+  or that co:op blocks outbound networking by default.
 - Runner output claims name runner-side pattern redaction before egress and do
   not promise detection of novel secret shapes. Run history retains bounded
   redacted output; Portal audit events retain decision/execution metadata and
