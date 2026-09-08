@@ -1718,18 +1718,34 @@ defmodule EmisarWeb.ProfileLiveTest do
         Fixtures.Users.enable_mfa!(secret, Fixtures.Subjects.subject_for(user, account))
 
       old_digests = enrolled.mfa_recovery_codes
-      otp = NimbleTOTP.verification_code(secret)
-      assert {:ok, _proof} = Auth.verify_mfa_challenge(enrolled, {:totp, otp})
-
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/profile")
       render_click(lv, "start_regenerate_recovery_codes", %{})
 
-      html =
-        render_submit(lv, "regenerate_recovery_codes", %{
-          "mfa_recovery_regeneration" => %{"code" => otp}
-        })
+      {consumed_bucket, response_bucket} = submit_replayed_mfa_code(lv, enrolled, secret)
 
-      assert html =~ "already used. Wait for the next authenticator code."
+      # An expired code is invalid, not replayed. Retry only that exact branch
+      # after a measured rollover; a same-bucket error must fail this test.
+      {consumed_bucket, response_bucket} =
+        if response_bucket > consumed_bucket and
+             has_element?(
+               lv,
+               "#mfa_recovery_regeneration_form",
+               "That code did not match. Try again."
+             ) do
+          refute has_element?(lv, "#mfa-recovery-codes")
+          assert Emisar.Repo.reload!(user).mfa_recovery_codes == old_digests
+          submit_replayed_mfa_code(lv, enrolled, secret)
+        else
+          {consumed_bucket, response_bucket}
+        end
+
+      assert has_element?(
+               lv,
+               "#mfa_recovery_regeneration_form",
+               "already used. Wait for the next authenticator code."
+             ),
+             "Expected inline replay: consumed bucket #{consumed_bucket}, response bucket #{response_bucket}"
+
       refute has_element?(lv, "#mfa-recovery-codes")
       assert Emisar.Repo.reload!(user).mfa_recovery_codes == old_digests
     end
@@ -1877,6 +1893,20 @@ defmodule EmisarWeb.ProfileLiveTest do
     render_hook(lv, "verify_mfa_enrollment_email", %{
       "mfa_enrollment" => %{"code" => code}
     })
+  end
+
+  defp submit_replayed_mfa_code(lv, user, secret) do
+    sampled_at = DateTime.utc_now()
+    otp = NimbleTOTP.verification_code(secret, time: sampled_at)
+
+    assert {:ok, _proof} =
+             Emisar.Users.verify_and_consume_mfa(user.id, otp, clock: fn -> sampled_at end)
+
+    render_submit(lv, "regenerate_recovery_codes", %{
+      "mfa_recovery_regeneration" => %{"code" => otp}
+    })
+
+    {div(DateTime.to_unix(sampled_at), 30), div(DateTime.to_unix(DateTime.utc_now()), 30)}
   end
 
   # Submits the enrollment form, retrying once across a 30s-window straddle (the

@@ -514,7 +514,22 @@ defmodule Emisar.UsersTest do
                clock: fn -> boundary end
              ) == {:error, :replay}
 
+      next_boundary = DateTime.add(boundary, 30, :second)
+      assert NimbleTOTP.verification_code(secret, time: next_boundary) != code
+
+      assert Users.verify_and_consume_mfa(user.id, code, clock: fn -> next_boundary end) ==
+               {:error, :invalid}
+
+      assert Users.regenerate_user_mfa_recovery_codes(
+               user.id,
+               {:totp, code},
+               rejected_digests,
+               audit: &Audit.user_changesets(&1, "user.mfa_recovery_codes_regenerated"),
+               clock: fn -> next_boundary end
+             ) == {:error, :invalid}
+
       assert Repo.reload!(user).mfa_recovery_codes == new_digests
+      assert Repo.reload!(user).mfa_last_used_at == boundary
     end
 
     test "refuses with :mfa_not_enabled when MFA is off — judged on the locked row" do
