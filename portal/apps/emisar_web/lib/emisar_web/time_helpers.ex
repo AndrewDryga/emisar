@@ -174,7 +174,7 @@ defmodule EmisarWeb.TimeHelpers do
   attr :styled_tooltip, :boolean,
     default: false,
     doc:
-      "Show the hook's full stamp in the shared hover/focus tooltip. It flips at viewport edges and dismisses on Escape. Opt in where the exact stamp matters (the audit trail's relative times)."
+      "Show local date, time, timezone/offset, and exact UTC in the shared hover/focus tooltip. It flips at viewport edges and dismisses on Escape."
 
   def local_time(%{value: nil} = assigns) do
     ~H"<span class={@class}>{@placeholder}</span>"
@@ -207,6 +207,17 @@ defmodule EmisarWeb.TimeHelpers do
   # absence of phx-update="ignore" lets updated() re-read datetime on every
   # patch, so a fresh fallback id is harmless.
   defp render_local_time(%{styled_tooltip: true} = assigns) do
+    utc = assigns.value |> to_datetime() |> DateTime.shift_zone!("Etc/UTC")
+
+    exact_utc =
+      utc |> DateTime.to_iso8601() |> String.replace("T", " ") |> String.trim_trailing("Z")
+
+    assigns =
+      assigns
+      |> assign(:tooltip_date, Calendar.strftime(utc, "%a, %b %-d, %Y"))
+      |> assign(:tooltip_time, Calendar.strftime(utc, "%H:%M:%S"))
+      |> assign(:tooltip_utc, exact_utc)
+
     ~H"""
     <CoreComponents.tooltip id={@tooltip_id} text={@iso} class={@class}>
       <time
@@ -219,6 +230,22 @@ defmodule EmisarWeb.TimeHelpers do
       >
         {@fallback}
       </time>
+      <:content>
+        <span class="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 text-xs font-medium tabular-nums">
+          <span data-time-date>{@tooltip_date}</span>
+          <span data-time-clock class="whitespace-nowrap">{@tooltip_time}</span>
+        </span>
+        <span class="mt-0.5 flex flex-wrap items-baseline gap-x-2 gap-y-0.5 text-zinc-400">
+          <span data-time-zone class="break-words">UTC</span>
+          <span data-time-offset class="tabular-nums"></span>
+        </span>
+        <span class="mt-1.5 flex flex-wrap items-baseline gap-x-2 gap-y-0.5 text-zinc-400">
+          <span>UTC</span>
+          <span data-time-utc class="whitespace-nowrap font-mono tabular-nums">
+            {@tooltip_utc}
+          </span>
+        </span>
+      </:content>
     </CoreComponents.tooltip>
     """
   end

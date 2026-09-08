@@ -98,6 +98,29 @@ defmodule EmisarWeb.Components.CodePanelTest do
       assert html =~ "max-h-64"
     end
 
+    test "wrapped code with a height limit remains scrollable and copyable" do
+      assigns = %{code: Enum.map_join(1..100, "\n", &"line #{&1}")}
+
+      html =
+        rendered_to_string(
+          ~H|<CoreComponents.code_panel label="Definition v1" wrap copy max_h="max-h-96" code={@code} />|
+        )
+
+      document = LazyHTML.from_document(html)
+      pre = LazyHTML.query(document, "pre")
+      [classes] = LazyHTML.attribute(pre, "class")
+
+      assert "max-h-96" in String.split(classes)
+      assert "overflow-auto" in String.split(classes)
+      assert "whitespace-pre-wrap" in String.split(classes)
+      assert LazyHTML.attribute(pre, "tabindex") == ["0"]
+      assert LazyHTML.attribute(pre, "aria-label") == ["Definition v1"]
+
+      assert document
+             |> LazyHTML.query("button[data-copy-text]")
+             |> LazyHTML.attribute("data-copy-text") == [assigns.code]
+    end
+
     test "the code is HTML-escaped — argv/snippets are attacker-influenceable (IL-16)" do
       assigns = %{evil: "<script>alert(1)</script>"}
 

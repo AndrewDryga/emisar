@@ -27,9 +27,10 @@ defmodule EmisarWeb.RunnerScope do
       checkbox: 1,
       choice_cards: 1,
       error: 1,
-      input: 1,
+      icon: 1,
       label: 1,
-      loading_state: 1
+      loading_state: 1,
+      tooltip: 1
     ]
 
   alias Emisar.Accounts
@@ -39,6 +40,7 @@ defmodule EmisarWeb.RunnerScope do
   attr :name, :string, required: true, doc: ~s(checkbox field name, e.g. "scope[]")
   attr :runners, :list, required: true, doc: "the account's runners (need id, name, group)"
   attr :selected, :list, default: [], doc: ~s(chosen "group:x"/"runner:id" values)
+  attr :locked, :list, default: [], doc: "inherited selections, displayed but never submitted"
   attr :label, :string, default: nil
   attr :variant, :atom, default: :standalone, values: [:standalone, :attached]
   attr :submit_error_field, Phoenix.HTML.FormField, default: nil
@@ -72,9 +74,11 @@ defmodule EmisarWeb.RunnerScope do
           name={@name}
           value={group.value}
           checked={group.selected}
+          disabled={group.value in @locked}
           class={group_row_class(group.selected)}
         >
           <span class="flex-1 truncate font-medium text-zinc-100">{group.name}</span>
+          <.inherited_lock :if={group.value in @locked} name={@name} value={group.value} />
           <span class="shrink-0 rounded-full bg-zinc-800/80 px-2 py-0.5 text-[10px] font-medium tabular-nums text-zinc-400">
             {length(group.runners)} {if length(group.runners) == 1, do: "runner", else: "runners"}
           </span>
@@ -89,12 +93,17 @@ defmodule EmisarWeb.RunnerScope do
             name={@name}
             value={runner.value}
             checked={runner.selected or runner.covered}
-            disabled={runner.covered}
+            disabled={runner.covered or runner.value in @locked}
             class={runner_row_class(runner.covered)}
           >
             <span class="flex-1 truncate text-zinc-400">{runner.name}</span>
+            <.inherited_lock
+              :if={runner.value in @locked or group.value in @locked}
+              name={@name}
+              value={runner.value}
+            />
             <span
-              :if={runner.covered}
+              :if={runner.covered and group.value not in @locked}
               class="shrink-0 rounded-full bg-zinc-800 px-2 py-0.5 text-[10px] text-zinc-400"
             >
               via group
@@ -112,9 +121,11 @@ defmodule EmisarWeb.RunnerScope do
           name={@name}
           value={runner.value}
           checked={runner.selected}
+          disabled={runner.value in @locked}
           class="flex min-h-10 cursor-pointer select-none items-center gap-3 py-2 pl-3 pr-3 text-xs transition-colors hover:bg-white/[0.04]"
         >
           <span class="flex-1 truncate text-zinc-300">{runner.name}</span>
+          <.inherited_lock :if={runner.value in @locked} name={@name} value={runner.value} />
         </.checkbox>
       </div>
 
@@ -130,9 +141,11 @@ defmodule EmisarWeb.RunnerScope do
           name={@name}
           value={ref.value}
           checked
+          disabled={ref.value in @locked}
           class="flex min-h-10 cursor-pointer select-none items-center gap-3 py-2 pl-3 pr-3 text-xs transition-colors hover:bg-white/[0.04]"
         >
           <span class={["flex-1 truncate", unavailable_name_class(ref.kind)]}>{ref.name}</span>
+          <.inherited_lock :if={ref.value in @locked} name={@name} value={ref.value} />
           <span class="shrink-0 rounded-full bg-zinc-800 px-2 py-0.5 text-[10px] text-zinc-400">
             unavailable
           </span>
@@ -155,7 +168,6 @@ defmodule EmisarWeb.RunnerScope do
   attr :runner_scope, :list, default: [], doc: ~s(the chosen "group:x"/"runner:id" values)
   attr :runners, :list, required: true, doc: "the account's runners (need id, group)"
   attr :advertisements, :map, required: true, doc: "%{pack_id => [runner_id]} from Catalog"
-  attr :variant, :atom, default: :cards, values: [:cards, :select]
   attr :mode_name, :string, required: true, doc: ~s(mode field name, e.g. "pack_access_mode")
   attr :mode_value, :any, required: true
   attr :scope_name, :string, required: true, doc: ~s(checkbox field name, e.g. "pack_scope[]")
@@ -178,36 +190,6 @@ defmodule EmisarWeb.RunnerScope do
       |> assign(:packs, packs_in_scope(assigns.advertisements, runner_ids, assigns.selected))
       |> assign(:empty_message, pack_empty_message(assigns.runner_mode, runner_ids))
 
-    pack_access_control(assigns)
-  end
-
-  defp pack_access_control(%{variant: :select} = assigns) do
-    ~H"""
-    <div :if={@runner_mode != "none"} class="space-y-2">
-      <.input
-        type="select"
-        name={@mode_name}
-        value={@mode_value}
-        label="Packs"
-        options={[{"All packs", "all"}, {"Selected packs", "restricted"}]}
-      />
-      <p :if={@grant_limited?} class="text-xs leading-relaxed text-zinc-400">
-        You can grant only packs within your own access.
-      </p>
-      <.pack_scope_select
-        :if={to_string(@mode_value) == "restricted"}
-        name={@scope_name}
-        label="Selected packs"
-        packs={@packs}
-        selected={@selected}
-        empty_message={@empty_message}
-        validation_error={@validation_error}
-      />
-    </div>
-    """
-  end
-
-  defp pack_access_control(assigns) do
     ~H"""
     <div :if={@runner_mode != "none"}>
       <%!-- Named, because two card groups stacked flush read as one long radio
@@ -331,6 +313,7 @@ defmodule EmisarWeb.RunnerScope do
   attr :empty_message, :string, default: "No packs on the selected runners."
   attr :selected, :list, default: [], doc: ~s(chosen "pack:id" values)
   attr :label, :string, default: nil
+  attr :locked, :list, default: [], doc: "inherited selections, displayed but never submitted"
   attr :variant, :atom, default: :standalone, values: [:standalone, :attached]
   attr :submit_error_field, Phoenix.HTML.FormField, default: nil
   attr :submit_error_message, :string, default: nil
@@ -363,9 +346,11 @@ defmodule EmisarWeb.RunnerScope do
         name={@name}
         value={pack.value}
         checked={pack.selected}
+        disabled={pack.value in @locked}
         class="flex min-h-10 cursor-pointer select-none items-center gap-3 px-3 py-2 text-xs transition-colors hover:bg-white/[0.04]"
       >
         <span class="flex-1 truncate font-mono text-zinc-300">{pack.name}</span>
+        <.inherited_lock :if={pack.value in @locked} name={@name} value={pack.value} />
         <span class="shrink-0 rounded-full bg-zinc-800/80 px-2 py-0.5 text-[10px] font-medium tabular-nums text-zinc-400">
           {pack.runner_count} {if pack.runner_count == 1, do: "runner", else: "runners"}
         </span>
@@ -383,9 +368,11 @@ defmodule EmisarWeb.RunnerScope do
           name={@name}
           value={pack.value}
           checked
+          disabled={pack.value in @locked}
           class="flex min-h-10 cursor-pointer select-none items-center gap-3 px-3 py-2 text-xs transition-colors hover:bg-white/[0.04]"
         >
           <span class="flex-1 truncate font-mono text-zinc-400">{pack.name}</span>
+          <.inherited_lock :if={pack.value in @locked} name={@name} value={pack.value} />
           <span class="shrink-0 rounded-full bg-zinc-800 px-2 py-0.5 text-[10px] text-zinc-400">
             unavailable
           </span>
@@ -434,6 +421,21 @@ defmodule EmisarWeb.RunnerScope do
   defp unavailable_pack_node(value), do: %{name: value, value: value}
 
   defp empty_pack_nodes?(nodes), do: nodes.available == [] and nodes.unavailable == []
+
+  attr :name, :string, required: true
+  attr :value, :string, required: true
+
+  defp inherited_lock(assigns) do
+    ~H"""
+    <.tooltip
+      text="Included by connection defaults."
+      aria_label="Included by connection defaults."
+      id={"scope-lock-" <> Base.url_encode64(@name <> ":" <> @value, padding: false)}
+    >
+      <.icon name="state.locked" class="h-3.5 w-3.5 text-zinc-400" />
+    </.tooltip>
+    """
+  end
 
   @doc """
   Nested selection tree for the picker: `%{groups: [%{name, value, selected,

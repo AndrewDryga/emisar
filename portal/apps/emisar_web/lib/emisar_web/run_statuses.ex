@@ -8,37 +8,35 @@ defmodule EmisarWeb.RunStatuses do
   @statuses [
     pending:
       {"Pending",
-       "Created and queued. Waiting to be handed to its runner — or waiting for an offline runner to reconnect."},
+       "Queued for the runner. If the runner is offline, the run waits for it to reconnect."},
     pending_approval:
       {"Pending approval",
-       "Policy required human approval. The run waits for an approver. A denial cancels it."},
-    sent: {"Sent", "Handed to the runner over its connection, not yet acknowledged."},
-    running:
-      {"Running", "The runner acknowledged the dispatch and is executing. Output is streaming."},
+       "Waiting for manual approval required by policy. If approval is denied or expires, the run is cancelled."},
+    sent: {"Sent", "Sent to the runner; waiting for it to acknowledge the action."},
+    running: {"Running", "The runner is executing the action. Output appears as it arrives."},
     cancelling:
       {"Cancelling",
-       "You asked to cancel an in-flight run. Waiting for the runner to stop and report its final outcome."},
+       "Cancellation was requested. Waiting for the runner to confirm whether the action stopped."},
     success:
       {"Success",
-       "The action ran and the runner reported success. Any declared structured output validated."},
+       "The runner reported success. Any required structured output passed validation."},
     failed: {"Failed", "The action ran and exited non-zero."},
     error:
       {"Error",
-       "The run did not complete. Its runner went offline, was disabled or removed, disconnected mid-run, or missed the dispatch timeout. The run records the reason."},
+       "The run couldn't complete or its final result wasn't received. Check the recorded error."},
     timed_out: {"Timed out", "The action ran past its time limit and the runner stopped it."},
     validation_failed:
-      {"Validation failed",
-       "The runner's structured output did not match the action's declared output schema."},
-    unknown_action:
-      {"Unknown action", "The runner reported it does not have the dispatched action."},
+      {"Validation failed", "The action's structured output didn't match its required format."},
+    unknown_action: {"Unknown action", "The runner doesn't have this action installed."},
     refused:
       {"Refused",
-       "The runner rejected the dispatch on a pre-execution trust check — a bad, missing, or stale signature, a pack-hash mismatch, or a local admission block. Nothing executed."},
+       "The runner rejected the action during its trust or security checks. The action didn't run."},
     denied:
       {"Denied",
-       "Policy rejected the dispatch when it was created. The runner never received it. The run records the matching rule and reason."},
+       "Policy blocked the action before it reached the runner. Check the matching rule and reason."},
     cancelled:
-      {"Cancelled", "You, or a denied approval, pulled the run back. The reason is recorded."}
+      {"Cancelled",
+       "The run was cancelled before it started or stopped by the runner. Check the recorded reason."}
   ]
 
   @doc "The ordered `{label, meaning}` pairs, in /docs/runs status-table order."

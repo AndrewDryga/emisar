@@ -9,11 +9,11 @@ defmodule EmisarWeb.RunStatusesTest do
 
       assert List.first(pairs) ==
                {"Pending",
-                "Created and queued. Waiting to be handed to its runner — or waiting for an offline runner to reconnect."}
+                "Queued for the runner. If the runner is offline, the run waits for it to reconnect."}
 
       assert List.last(pairs) ==
                {"Cancelled",
-                "You, or a denied approval, pulled the run back. The reason is recorded."}
+                "The run was cancelled before it started or stopped by the runner. Check the recorded reason."}
 
       assert length(pairs) == 14
     end

@@ -18,6 +18,24 @@ defmodule EmisarWeb.Components.EmptyStateTest do
   end
 
   describe "empty_state/1 tone" do
+    test "a load error can retry in place without a navigation link" do
+      assigns = %{}
+
+      html =
+        rendered_to_string(~H"""
+        <CoreComponents.empty_state title="Couldn't load your sessions" tone={:danger}>
+          Try loading them again.
+          <:actions>
+            <CoreComponents.button variant={:secondary} phx-click="retry_sessions">Retry</CoreComponents.button>
+          </:actions>
+        </CoreComponents.empty_state>
+        """)
+
+      assert html =~ ~s(phx-click="retry_sessions")
+      assert html =~ "Retry"
+      refute html =~ "href="
+    end
+
     test "defaults to zinc — the icon + title are zinc, never rose" do
       html = render_empty_state(%{})
 

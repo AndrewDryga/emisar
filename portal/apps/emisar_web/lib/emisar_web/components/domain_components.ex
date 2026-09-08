@@ -25,6 +25,94 @@ defmodule EmisarWeb.DomainComponents do
   # operator is never told two different things to run.
   @runner_update_command "sudo emisar update"
 
+  @doc "The copyable first-request prompt shared by onboarding and agent setup."
+  attr :id, :string, required: true
+  attr :class, :string, default: nil
+
+  def agent_example_prompt(assigns) do
+    ~H"""
+    <.code_panel
+      id={@id}
+      label="Example prompt"
+      copy
+      copy_label="Copy prompt"
+      wrap
+      class={@class}
+      code="Check my hosts via emisar — load, memory, disk, and any failed services — and flag anything that needs attention."
+    />
+    """
+  end
+
+  @doc "Quiet connection feedback shared by runner and agent setup."
+  attr :id, :string, required: true
+  attr :state, :atom, default: :waiting, values: [:waiting, :delayed, :connected]
+  attr :title, :string, required: true
+  slot :inner_block, required: true
+  slot :details
+
+  def connection_status(assigns) do
+    {tone, title_class} =
+      case assigns.state do
+        :waiting -> {:neutral, "text-zinc-300"}
+        :delayed -> {:amber, "text-amber-300"}
+        :connected -> {:brand, "text-brand-300"}
+      end
+
+    assigns = assigns |> assign(:tone, tone) |> assign(:title_class, title_class)
+
+    ~H"""
+    <div
+      id={@id}
+      role="status"
+      aria-live="polite"
+      aria-atomic="true"
+      data-state={@state}
+      class="flex max-w-prose items-start gap-2.5"
+    >
+      <%!-- (20px primary line - 6px marker) / 2 = 7px. --%>
+      <.status_dot
+        tone={@tone}
+        animate={if @state == :connected, do: :none, else: :pulse}
+        size={:sm}
+        class="mt-[7px]"
+      />
+      <div class="min-w-0">
+        <p class={["text-sm font-medium leading-5", @title_class]}>
+          {@title}
+        </p>
+        <p class="mt-1 text-xs leading-5 text-zinc-400">{render_slot(@inner_block)}</p>
+        <div :if={@details != []} class="mt-4">{render_slot(@details)}</div>
+      </div>
+    </div>
+    """
+  end
+
+  attr :id, :string, required: true
+  attr :facts, :map, required: true
+
+  def runner_key_expiry(assigns) do
+    ~H"""
+    <span id={@id}>
+      <%= cond do %>
+        <% not @facts.known? -> %>
+          Key expiry unknown
+        <% is_nil(@facts.expires_at) -> %>
+          Key has no expiration date
+        <% true -> %>
+          <span class={@facts.expired? && "text-rose-300"}>
+            {if @facts.expired?, do: "Key expired", else: "Key expires"}
+            <TimeHelpers.local_time
+              id={"#{@id}-time"}
+              value={@facts.expires_at}
+              mode={:relative}
+              styled_tooltip
+            />
+          </span>
+      <% end %>
+    </span>
+    """
+  end
+
   @doc """
   Banner shown above billing surfaces when an account is in payment recovery,
   approaching a scheduled end, expired, or waiting for a trustworthy billing
@@ -65,15 +153,16 @@ defmodule EmisarWeb.DomainComponents do
       title={@alert.title}
       class={@class}
     >
-      {@alert.body}
-      <span :if={@alert.show_effective_at && @scheduled_effective_at}>
-        Access changes
+      <%= if @alert.show_effective_at && @scheduled_effective_at do %>
+        Your paid features remain available until
         <TimeHelpers.local_time
           id="subscription-access-changes-at"
           value={@scheduled_effective_at}
           class="inline"
-        />.
-      </span>
+        />. Your account then switches to the Free plan.
+      <% else %>
+        {@alert.body}
+      <% end %>
       <:action :if={@cta != []}>{render_slot(@cta)}</:action>
     </.callout>
     """
@@ -82,43 +171,45 @@ defmodule EmisarWeb.DomainComponents do
   defp subscription_alert(:dunning, _status, _scheduled_action),
     do: %{
       tone: :rose,
-      title: "Payment recovery in progress",
+      title: "Payment overdue",
       body:
-        "Paid features remain available while Paddle retries the payment. Update your payment details before recovery ends.",
+        "Your paid features remain available while payment is retried. Update your payment details.",
       show_effective_at: false
     }
 
   defp subscription_alert(:ending, _status, "pause"),
     do: %{
       tone: :amber,
-      title: "Paid access is scheduled to pause",
-      body: "Paid features remain available until the scheduled pause.",
+      title: "Subscription pausing",
+      body:
+        "Your paid features remain available until the scheduled pause. Your account then switches to the Free plan.",
       show_effective_at: true
     }
 
   defp subscription_alert(:ending, _status, _scheduled_action),
     do: %{
       tone: :amber,
-      title: "Paid access is scheduled to end",
-      body: "Paid features remain available until the scheduled end.",
+      title: "Subscription ending",
+      body:
+        "Your paid features remain available until the scheduled cancellation. Your account then switches to the Free plan.",
       show_effective_at: true
     }
 
-  defp subscription_alert(:expired, "paused", _scheduled_action),
-    do: %{
-      tone: :amber,
-      title: "Paid access paused",
-      body:
-        "This account now uses Free limits. Paid integrations are dormant until the subscription resumes.",
-      show_effective_at: false
-    }
+  defp subscription_alert(:expired, status, scheduled_action)
+       when status == "paused" or (scheduled_action == "pause" and status != "canceled"),
+       do: %{
+         tone: :amber,
+         title: "Subscription paused",
+         body:
+           "This account is on the Free plan. Resume your subscription to restore paid features.",
+         show_effective_at: false
+       }
 
   defp subscription_alert(:expired, _status, _scheduled_action),
     do: %{
       tone: :amber,
       title: "Subscription ended",
-      body:
-        "This account now uses Free limits. Paid integrations are dormant; resubscribe from Billing to restore them.",
+      body: "This account is on the Free plan. Choose a paid plan to restore paid features.",
       show_effective_at: false
     }
 
@@ -126,8 +217,7 @@ defmodule EmisarWeb.DomainComponents do
     do: %{
       tone: :rose,
       title: "Billing status unavailable",
-      body:
-        "Paid features are temporarily unavailable while billing status is verified. Billing, recovery, and cleanup remain available.",
+      body: "We couldn't confirm your subscription. Paid features are temporarily unavailable.",
       show_effective_at: false
     }
 
@@ -240,7 +330,7 @@ defmodule EmisarWeb.DomainComponents do
     assigns = assign(assigns, :source_tooltip, source_tooltip(assigns.source))
 
     ~H"""
-    <span class={["inline-flex min-w-0 items-center gap-1.5 text-zinc-400", @class]}>
+    <span class={["emisar-icon-mono inline-flex min-w-0 items-center gap-1.5 text-zinc-400", @class]}>
       <.tooltip
         id={@id}
         text={@source_tooltip}
@@ -379,7 +469,7 @@ defmodule EmisarWeb.DomainComponents do
     <section :if={is_map(@metadata) and @metadata != %{}} class={@class}>
       <.section_header title="Client metadata">
         <:subtitle>
-          Self-reported by the MCP client for correlation — not verified device posture.
+          Self-reported by the MCP client, not verified by emisar.
         </:subtitle>
       </.section_header>
       <dl class="grid grid-cols-1 gap-x-10 gap-y-3 sm:grid-cols-2">
@@ -663,12 +753,12 @@ defmodule EmisarWeb.DomainComponents do
   # runner, so it never scopes a count to "on this page".
   defp version_upgrade_message(:runner, :single, unsupported, _outdated) when unsupported > 0 do
     "This runner is below the supported range (#{Emisar.Compat.runner_minimum()}). " <>
-      "Run the command on its host. The update preserves its configuration and restarts the service."
+      "Run this command on the host to update and restart the runner without losing its configuration:"
   end
 
   defp version_upgrade_message(:runner, :single, 0, _outdated) do
     "This runner is behind #{version_label(Emisar.Compat.runner_target())}. " <>
-      "Run the command on its host. The update preserves its configuration and restarts the service."
+      "Run this command on the host to update and restart the runner without losing its configuration:"
   end
 
   # `:list` scope — the notice sits above a paginated list, so it scopes the
@@ -676,22 +766,23 @@ defmodule EmisarWeb.DomainComponents do
   # the page holds many). Parallels the agents-list bridge copy below.
   defp version_upgrade_message(:runner, :list, unsupported_count, 0) do
     "#{runner_count_phrase(unsupported_count)} below the supported range " <>
-      "(#{Emisar.Compat.runner_minimum()}). Run the command once on each affected host; " <>
-      "the update preserves its configuration and restarts the service."
+      "(#{Emisar.Compat.runner_minimum()}). " <>
+      "Run this command on each affected host to update and restart the runner " <>
+      "without losing its configuration:"
   end
 
   defp version_upgrade_message(:runner, :list, 0, outdated_count) do
     "#{runner_count_phrase(outdated_count)} behind #{version_label(Emisar.Compat.runner_target())}. " <>
-      "Run the command once on each affected host; " <>
-      "the update preserves its configuration and restarts the service."
+      "Run this command on each affected host to update and restart the runner " <>
+      "without losing its configuration:"
   end
 
   defp version_upgrade_message(:runner, :list, unsupported_count, outdated_count) do
     "On this page, #{version_count_label(unsupported_count, "runner")} below the supported " <>
       "range (#{Emisar.Compat.runner_minimum()}) and " <>
       "#{version_count_label(outdated_count, "runner")} behind #{version_label(Emisar.Compat.runner_target())}. " <>
-      "Run the command once on each affected host; " <>
-      "the update preserves its configuration and restarts the service."
+      "Run this command on each affected host to update and restart the runner " <>
+      "without losing its configuration:"
   end
 
   # MCP agents render only as a page-scoped list (there is no per-agent detail
@@ -734,10 +825,10 @@ defmodule EmisarWeb.DomainComponents do
     <.status_note
       icon="security.posture_warning"
       tone={:rose}
-      title="Install command unavailable over HTTP"
+      title="Open emisar over HTTPS"
       class={@class}
     >
-      Open this portal over HTTPS and refresh. Plain HTTP is allowed only for loopback and private addresses.
+      Install commands require HTTPS, except on localhost or private IP addresses.
     </.status_note>
     """
   end
@@ -747,11 +838,11 @@ defmodule EmisarWeb.DomainComponents do
     <.event_block
       icon="security.posture_warning"
       tone={:rose}
-      title="Install command unavailable over HTTP"
+      title="Open emisar over HTTPS"
       class={@class}
     >
       <:body>
-        Open this portal over HTTPS and refresh. Plain HTTP is allowed only for loopback and private addresses.
+        Install commands require HTTPS, except on localhost or private IP addresses.
       </:body>
     </.event_block>
     """
@@ -766,10 +857,10 @@ defmodule EmisarWeb.DomainComponents do
     <.status_note
       icon="state.warning"
       tone={:rose}
-      title="Could not create the install command"
+      title="Couldn't create the install command"
       class={@class}
     >
-      The portal could not build a safe installer URL. Use the manual install instructions or ask an administrator to check the portal URL.
+      Use the manual installation guide or ask an administrator to check the emisar URL.
     </.status_note>
     """
   end
@@ -779,11 +870,11 @@ defmodule EmisarWeb.DomainComponents do
     <.event_block
       icon="state.warning"
       tone={:rose}
-      title="Could not create the install command"
+      title="Couldn't create the install command"
       class={@class}
     >
       <:body>
-        The portal could not build a safe installer URL. Use the manual install instructions or ask an administrator to check the portal URL.
+        Use the manual installation guide or ask an administrator to check the emisar URL.
       </:body>
     </.event_block>
     """
@@ -796,11 +887,16 @@ defmodule EmisarWeb.DomainComponents do
   grace period with no runner it flips `show_troubleshooting` to reveal a
   checklist (the host must reach `base_url`).
 
-      <.install_wizard install_command={@install_command} />
+      <.install_wizard
+        install_command={@install_command}
+        runners_path={@runners_path}
+        keys_path={@keys_path}
+      />
   """
   attr :install_command, :any, required: true
   attr :base_url, :string, default: nil
   attr :show_troubleshooting, :boolean, default: false
+  attr :runners_path, :string, required: true
   attr :keys_path, :string, required: true
   # The multi-use pointer targets a manage-only page — hide it for callers
   # whose subject can't open it (an in-product link must never 404).
@@ -810,7 +906,7 @@ defmodule EmisarWeb.DomainComponents do
     ~H"""
     <%!-- CONTENT ON CANVAS, task + rail: the left column follows the
          operator's own timeline — act (command + credential), wait (the live
-         ping line), recover (troubleshooting, revealed in place) — then the
+         status row), recover (troubleshooting, revealed in place) — then the
          script's trust facts as reference. The introduction explains the runner
          before the task; supporting guidance and resources form a right rail
          at xl, stacking below when the work canvas
@@ -819,9 +915,9 @@ defmodule EmisarWeb.DomainComponents do
          section chrome (vertical rules belong to the shell). ONE type
          ladder — section_header 16 / body 14 / meta 12; never an uppercase
          eyebrow as a section title. The command is the only contained
-         artifact; the credential note and the wait line are both AMBER
-         (design-system §5/§8.1 — pending and secret-in-hand, not an alarm),
-         and the overdue escalation earns its spine rather than its hue. --%>
+         artifact. The credential note is amber because it contains a secret;
+         normal connection waiting is neutral. After the grace period, that
+         same status turns amber and expands with troubleshooting. --%>
     <div id="runner-install-wizard">
       <.page_intro>
         A runner is the program that runs actions on your server, VM, or container
@@ -835,9 +931,9 @@ defmodule EmisarWeb.DomainComponents do
             <% is_binary(@install_command) -> %>
               <div class="space-y-8">
                 <section>
-                  <.section_header title="Run this on the host" />
+                  <.section_header title="Run on the host" />
                   <p class="mt-3 text-sm leading-relaxed text-zinc-400">
-                    Open a terminal on your Linux or macOS host and paste the command below.
+                    Run this command in a terminal on your Linux or macOS host:
                   </p>
                   <%!-- Copy carries the literal string, including its leading
                        HISTCONTROL space; the compact preview deliberately clips. --%>
@@ -847,10 +943,6 @@ defmodule EmisarWeb.DomainComponents do
                     prompt
                     class="mt-3"
                   />
-                  <%!-- Right where the odd first character raises the question. --%>
-                  <p class="mt-2 text-xs text-zinc-400">
-                    The leading space keeps the key out of your shell history.
-                  </p>
                   <%!-- The one-liner embeds a single-use enrollment key shown
                        only here — a single-secret reveal, so it wears §8.1's
                        naked grammar verbatim: an amber `status_note` at
@@ -859,72 +951,69 @@ defmodule EmisarWeb.DomainComponents do
                   <.status_note
                     icon="identity.credential"
                     tone={:amber}
-                    title="Live credential — won't be shown again"
+                    title="Keep this command private"
                     primary
                     class="mt-5"
                   >
-                    The command runs with <code class="font-mono text-zinc-300">sudo</code>
-                    and carries a <span class="font-medium text-zinc-200">one-time</span>
-                    key: it enrolls exactly one host, then expires. Treat it like a password —
-                    paste it straight onto the host, never into a chat or ticket.
+                    This command uses <code class="font-mono text-zinc-300">sudo</code>
+                    and includes a single-use enrollment key that expires after 24 hours.
+                    Deploying to an autoscaling fleet? Use a
+                    <%= if @show_keys_link do %>
+                      <.link
+                        navigate={@keys_path}
+                        class="font-medium text-brand-400 hover:text-brand-300"
+                      >reusable enrollment key</.link>.
+                    <% else %>
+                      reusable enrollment key.
+                    <% end %>
                   </.status_note>
                 </section>
 
-                <%!-- The page's live status — the naked dot-led wait line
-                     (the wait-room grammar sso_pending copies), directly
-                     under the act it follows so the operator's eye never has
-                     to jump static content to find the page's one live
-                     element. Waiting is this page's NORMAL state, and a
-                     pending placeholder is AMBER (design-system §5) — nothing
-                     is healthy yet, but nothing is wrong either; the ping is
-                     what says the channel is open. --%>
-                <div>
-                  <div class="flex items-start gap-3">
-                    <%!-- mt-[6px]: optically centers the 10px dot on the first
-                         text line (text-sm/relaxed ≈ 23px line box). --%>
-                    <.status_dot tone={:amber} animate={:ping} size={:lg} class="mt-[6px]" />
-                    <p class="text-sm leading-relaxed text-zinc-400">
-                      <span class="font-medium text-zinc-300">Waiting for a runner to connect</span>
-                      — this page advances on its own; you can leave, and the runner will appear in
-                      Runners either way.
-                    </p>
-                  </div>
-
-                  <%!-- After the grace period with no join (the install
-                       page's watchdog flips show_troubleshooting) the likely
-                       funnel failure is a wrong/truncated key, :443
-                       firewalled, or a non-systemd host. Escalates HERE —
-                       beside the wait line the operator is already watching —
-                       and only THIS overdue state wears amber. --%>
-                  <.event_block
-                    :if={@show_troubleshooting}
-                    icon="product.service_status"
-                    tone={:amber}
-                    title="Not seeing it yet?"
-                    class="mt-5"
-                  >
-                    <:body>Check the host:</:body>
-                    <.steps class="mt-3">
+                <%!-- The existing grace period expands this status; it does
+                     not prove failure. Joining still follows the caller's
+                     existing navigation behavior. --%>
+                <.connection_status
+                  id="runner-connection-status"
+                  state={if @show_troubleshooting, do: :delayed, else: :waiting}
+                  title={
+                    if @show_troubleshooting,
+                      do: "Still waiting for your runner",
+                      else: "Waiting for your runner"
+                  }
+                >
+                  <%= if @show_troubleshooting do %>
+                    If you've run the install command, check these on the host:
+                  <% else %>
+                    You can leave this page. Your runner will appear in
+                    <.link
+                      navigate={@runners_path}
+                      class="text-brand-400 hover:text-brand-300"
+                    >Runners</.link>
+                    when it connects.
+                  <% end %>
+                  <:details :if={@show_troubleshooting}>
+                    <.steps>
                       <:step>
-                        It can reach <code class="font-mono text-zinc-300">{@base_url}</code>
-                        from the host (outbound only; nothing needs to listen on the host).
+                        Confirm the host can connect to <code class="break-all font-mono text-zinc-300">{@base_url}</code>.
                       </:step>
                       <:step>
-                        You ran the whole line with <code class="font-mono text-zinc-300">sudo</code>
-                        and the key wasn't truncated on paste.
+                        Make sure you copied and ran the complete command.
                       </:step>
                       <:step>
-                        It runs systemd — watch the runner's own logs with <code class="font-mono text-zinc-300">journalctl -u emisar -f</code>.
+                        Check the installer's output for errors. If installation finished, run <code class="font-mono text-zinc-300">sudo emisar doctor</code>.
                       </:step>
                     </.steps>
-                  </.event_block>
-                </div>
+                    <p class="mt-3 text-sm">
+                      <.doc_link href={~p"/docs/runner-fleet" <> "#never-appears"}>Troubleshooting</.doc_link>
+                    </p>
+                  </:details>
+                </.connection_status>
 
                 <%!-- Reference, not task — reads AFTER the wait line so the
                      act→wait pair stays adjacent; a first-run skeptic scans
                      here before pasting. --%>
                 <section>
-                  <.section_header title="What the script does" />
+                  <.section_header title="What the installer does" />
                   <ul class="space-y-2.5 text-sm leading-relaxed text-zinc-400">
                     <%!-- mt-[3px]: optically centers the 14px check on the first
                          text line (mt-0.5 sat visibly high). --%>
@@ -933,7 +1022,7 @@ defmodule EmisarWeb.DomainComponents do
                         name="state.included"
                         class="mt-[3px] h-3.5 w-3.5 flex-none text-brand-400"
                       />
-                      <span>Verifies the download's SHA-256 before running anything</span>
+                      <span>Checks the runner download's SHA-256 hash before installing it.</span>
                     </li>
                     <li class="flex items-start gap-2.5">
                       <.icon
@@ -941,9 +1030,7 @@ defmodule EmisarWeb.DomainComponents do
                         class="mt-[3px] h-3.5 w-3.5 flex-none text-brand-400"
                       />
                       <span>
-                        Runs the runner as a dedicated
-                        <code class="font-mono text-zinc-300">emisar</code>
-                        user (not root) under a systemd unit
+                        Installs a background service using systemd on Linux or launchd on macOS.
                       </span>
                     </li>
                     <li class="flex items-start gap-2.5">
@@ -951,7 +1038,7 @@ defmodule EmisarWeb.DomainComponents do
                         name="state.included"
                         class="mt-[3px] h-3.5 w-3.5 flex-none text-brand-400"
                       />
-                      <span>Only dials out — nothing listens on the host</span>
+                      <span>Connects to emisar without opening an inbound port.</span>
                     </li>
                   </ul>
                   <div class="mt-4 flex flex-wrap gap-x-6 gap-y-2 text-sm font-medium">
@@ -961,7 +1048,7 @@ defmodule EmisarWeb.DomainComponents do
                       rel="noopener noreferrer"
                       class="text-brand-400 hover:text-brand-300"
                     >
-                      It's a plain shell script — read it first&nbsp;→
+                      View install script&nbsp;→
                     </.link>
                     <.link
                       href={~p"/trust" <> "#release-integrity"}
@@ -969,7 +1056,7 @@ defmodule EmisarWeb.DomainComponents do
                       rel="noopener noreferrer"
                       class="text-brand-400 hover:text-brand-300"
                     >
-                      Verify the release's provenance&nbsp;→
+                      Release verification&nbsp;→
                     </.link>
                   </div>
                 </section>
@@ -978,14 +1065,13 @@ defmodule EmisarWeb.DomainComponents do
               <.event_block
                 icon="state.warning"
                 tone={:rose}
-                title="Could not create the install command"
+                title="Couldn't create the install command"
               >
                 <:body>
-                  Open
-                  <.link navigate={@keys_path} class="font-medium text-brand-400 hover:text-brand-300">
-                    Runners → Enrollment keys
-                  </.link>
-                  and create one manually, or refresh this page to try again.
+                  Refresh the page or <.link
+                    navigate={@keys_path}
+                    class="font-medium text-brand-400 hover:text-brand-300"
+                  >create an enrollment key manually</.link>.
                 </:body>
               </.event_block>
             <% @install_command == :insecure_transport -> %>
@@ -1000,25 +1086,19 @@ defmodule EmisarWeb.DomainComponents do
           <% end %>
         </div>
 
-        <%!-- The reading rail — actions and packs + the other ways in (docs,
-             multi-use keys, packs), true for every wizard state (a failed
-             mint still deserves the manual-install door). Quiet rows on the
-             canvas, never island cards competing with the task. --%>
+        <%!-- Keep the existing resource-list layout and link styling. This
+             review changes content, not the rail's visual design. --%>
         <aside class="mt-10 space-y-8 xl:mt-0">
-          <.docs_rail title="Runner basics">
+          <.docs_rail title="Adding actions">
             <p>
-              Actions are tasks such as checking disk space or restarting a service. Packs are
-              collections of actions you install on a runner. <.doc_link href={
-                ~p"/docs/use-a-published-pack"
-              }>How to install a pack</.doc_link>.
-            </p>
-            <p>
-              Your policies decide which actions are allowed, need approval, or are blocked.
+              A runner advertises and executes actions on your host. Actions come in packs—collections
+              of related tasks. Once your runner is connected, install the packs you need.
+              <.doc_link href={~p"/packs"}>Pack catalog</.doc_link>
             </p>
           </.docs_rail>
 
           <section>
-            <h3 class="mb-3 text-sm font-semibold text-zinc-200">Resources</h3>
+            <h3 class="mb-3 text-sm font-semibold text-zinc-200">Deployment guides</h3>
             <ul class="divide-y divide-zinc-800/70 border-t border-zinc-800/70">
               <li>
                 <.link
@@ -1077,63 +1157,6 @@ defmodule EmisarWeb.DomainComponents do
                 >
                   <div class="min-w-0 flex-1">
                     <div class="text-sm font-medium text-zinc-100">Autoscaling fleets</div>
-                  </div>
-                  <.icon
-                    name="action.external_link"
-                    class="h-4 w-4 shrink-0 text-zinc-500 transition-colors group-hover:text-brand-400"
-                  />
-                </.link>
-              </li>
-              <%!-- The docs rows above cover image-bake/cloud-init; this is
-                   its in-product twin — those paths need a multi-use key,
-                   not the one-shot key baked into the command. Routing for a
-                   different journey lives HERE, off the act→wait timeline. --%>
-              <li :if={@show_keys_link}>
-                <.link
-                  navigate={@keys_path}
-                  class="group -mx-3 flex items-center gap-4 rounded-lg px-3 py-3.5 transition hover:bg-white/[0.04]"
-                >
-                  <div class="min-w-0 flex-1">
-                    <div class="text-sm font-medium text-zinc-100">Enrollment keys</div>
-                    <div class="mt-0.5 text-xs text-zinc-400">
-                      Mint a multi-use key for cloud-init fleets and baked images.
-                    </div>
-                  </div>
-                  <.icon
-                    name="action.next"
-                    class="h-4 w-4 shrink-0 text-zinc-500 transition-colors group-hover:text-brand-400"
-                  />
-                </.link>
-              </li>
-              <li>
-                <.link
-                  href={~p"/packs"}
-                  class="group -mx-3 flex items-center gap-4 rounded-lg px-3 py-3.5 transition hover:bg-white/[0.04]"
-                >
-                  <div class="min-w-0 flex-1">
-                    <div class="text-sm font-medium text-zinc-100">Pack registry</div>
-                    <div class="mt-0.5 text-xs text-zinc-400">
-                      Browse linux-core, cassandra, showcase. Install snippets included.
-                    </div>
-                  </div>
-                  <.icon
-                    name="action.next"
-                    class="h-4 w-4 shrink-0 text-zinc-500 transition-colors group-hover:text-brand-400"
-                  />
-                </.link>
-              </li>
-              <li>
-                <.link
-                  href="https://github.com/andrewdryga/emisar/tree/main/skills"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  class="group -mx-3 flex items-center gap-4 rounded-lg px-3 py-3.5 transition hover:bg-white/[0.04]"
-                >
-                  <div class="min-w-0 flex-1">
-                    <div class="text-sm font-medium text-zinc-100">Use your coding agent</div>
-                    <div class="mt-0.5 text-xs text-zinc-400">
-                      The install-emisar skill walks Claude Code or Codex through this setup.
-                    </div>
                   </div>
                   <.icon
                     name="action.external_link"
@@ -1450,6 +1473,23 @@ defmodule EmisarWeb.DomainComponents do
   @doc "How an SSO identity reached the account, as the word shown beside its provider."
   def provisioned_via_label(:scim), do: "SCIM"
   def provisioned_via_label(:oidc_jit), do: "SSO"
+  def provisioned_via_label(:oidc_link), do: "Linked"
   def provisioned_via_label(:manual), do: "Linked"
-  def provisioned_via_label(_), do: "Synced"
+  def provisioned_via_label(_), do: "Unknown"
+
+  @doc "Explain the identity's origin, not its current sync status."
+  def provisioned_via_tooltip(:scim),
+    do: "Your identity provider added this member through directory sync (SCIM)."
+
+  def provisioned_via_tooltip(:oidc_jit),
+    do: "Added automatically on their first sign-in with this identity provider."
+
+  def provisioned_via_tooltip(:oidc_link),
+    do: "This member linked their existing account by signing in with this identity provider."
+
+  def provisioned_via_tooltip(:manual),
+    do: "An administrator approved this member's connection to the identity provider."
+
+  def provisioned_via_tooltip(_),
+    do: "How this member connected to the identity provider wasn't recorded."
 end

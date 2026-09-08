@@ -38,6 +38,7 @@ defmodule EmisarWeb.LiveTable do
   use EmisarWeb, :verified_routes
   alias Emisar.Repo.Filter
   alias EmisarWeb.CoreComponents
+  alias Phoenix.LiveView.JS
 
   attr :id, :string, required: true
   attr :path, :string, required: true, doc: "verified route the form/page links navigate to"
@@ -144,6 +145,7 @@ defmodule EmisarWeb.LiveTable do
         option_pickers={@filter_option_pickers}
         params={@filter_params}
         layout={@filter_layout}
+        prefix={@prefix}
         hidden={filters_inert?(@rows, @filter_params, @filters, @prefix)}
       />
 
@@ -163,7 +165,7 @@ defmodule EmisarWeb.LiveTable do
           {render_slot(@empty) || "Nothing to show."}
         </.empty_result>
       <% else %>
-        <ul id={@id} class={[@resolved_wrapper_class, @class]}>
+        <ul id={@id} class={["emisar-icon-mono", @resolved_wrapper_class, @class]}>
           {render_slot(@list_header)}
           <%= for {group_label, rows} <- @grouped_rows do %>
             <%= if group_label != nil do %>
@@ -218,6 +220,7 @@ defmodule EmisarWeb.LiveTable do
         option_pickers={@filter_option_pickers}
         params={@filter_params}
         layout={@filter_layout}
+        prefix={@prefix}
         hidden={filters_inert?(@rows, @filter_params, @filters, @prefix)}
       />
 
@@ -247,7 +250,7 @@ defmodule EmisarWeb.LiveTable do
             @responsive && "hidden sm:block"
           ]}
         >
-          <table id={@id} class={["w-full text-sm text-left", @class]}>
+          <table id={@id} class={["emisar-icon-mono w-full text-sm text-left", @class]}>
             <thead class="text-xs uppercase tracking-wider text-zinc-400">
               <tr class="border-b border-zinc-700/80">
                 <th
@@ -283,7 +286,11 @@ defmodule EmisarWeb.LiveTable do
              page authors ONE compact scan card in the :card slot. --%>
         <%!-- NAKED hairline rows (§8.1 — the gray island wrapper is dead);
              the status spine keeps a small left inset so its color reads. --%>
-        <ul :if={@responsive} id={"#{@id}-cards"} class="divide-y divide-zinc-800/70 sm:hidden">
+        <ul
+          :if={@responsive}
+          id={"#{@id}-cards"}
+          class="emisar-icon-mono divide-y divide-zinc-800/70 sm:hidden"
+        >
           <li
             :for={row <- @rows}
             class={["border-l-2 py-3 pl-3", card_spine_class(@card_accent && @card_accent.(row))]}
@@ -347,14 +354,23 @@ defmodule EmisarWeb.LiveTable do
   attr :params, :map, required: true
   attr :option_pickers, :map, default: %{}
   attr :layout, :atom, default: :inline
+  attr :event, :string, default: "filter"
+  attr :prefix, :string, default: ""
   # ACCOUNT-empty hides the bar outright — dead controls above a zero-state
   # pitch push the page's job down (filter-empty keeps live controls, since
   # `filters_inert?` is false while any filter is applied).
   attr :hidden, :boolean, default: false
 
-  defp filter_form(assigns) do
+  def filter_form(assigns) do
+    assigns =
+      assign(
+        assigns,
+        :clear_path,
+        clear_filter_path(assigns.path, assigns.params, assigns.filters, assigns.prefix)
+      )
+
     ~H"""
-    <form :if={not @hidden} id={@id} phx-change="filter" phx-submit="filter" class="space-y-3">
+    <form :if={not @hidden} id={@id} phx-change={@event} phx-submit={@event} class="space-y-3">
       <%!-- `:inline` — a few compact controls flow in one wrapping row. `:stacked`
            — a two-column grid where each filter's `span` picks its row/cell, so a
            kind picker can pair with a revealed value dropdown beside it. Every
@@ -364,7 +380,10 @@ defmodule EmisarWeb.LiveTable do
           <.filter_input
             filter={filter}
             option_picker={Map.get(@option_pickers, filter.name)}
-            value={filter_value(@params, to_string(filter.name), filter)}
+            value={filter_value(@params, "#{@prefix}#{filter.name}", filter)}
+            path={@path}
+            params={@params}
+            prefix={@prefix}
           />
         </div>
         <%!-- Inline: the clear affordance flows as the row's LAST item, riding
@@ -372,16 +391,16 @@ defmodule EmisarWeb.LiveTable do
              (pb centers it against a control's text) — not a lonely line below
              a one-row bar. Wraps along naturally when the filters do. --%>
         <.clear_filters_link
-          :if={@layout == :inline and has_active_filters?(@params, @filters)}
-          path={@path}
+          :if={@layout == :inline and prefixed_active_filters?(@params, @filters, @prefix)}
+          path={@clear_path}
           class="pb-2"
         />
       </div>
       <%!-- Stacked (the audit facet panel): the grid owns the rows, so the
            clear affordance keeps its own line beneath. --%>
       <.clear_filters_link
-        :if={@layout == :stacked and has_active_filters?(@params, @filters)}
-        path={@path}
+        :if={@layout == :stacked and prefixed_active_filters?(@params, @filters, @prefix)}
+        path={@clear_path}
       />
     </form>
     """
@@ -420,6 +439,9 @@ defmodule EmisarWeb.LiveTable do
   attr :filter, :any, required: true
   attr :value, :any, default: nil
   attr :option_picker, :map, default: nil
+  attr :path, :string, required: true
+  attr :params, :map, required: true
+  attr :prefix, :string, default: ""
 
   # Choice pages are host-owned state, separate from the event page URL. The
   # input-level event deliberately overrides the surrounding filter form's
@@ -427,68 +449,128 @@ defmodule EmisarWeb.LiveTable do
   defp filter_input(%{option_picker: %{} = picker} = assigns) do
     assigns =
       assigns
-      |> assign(:selected, List.wrap(assigns.value))
+      |> assign(:selected, List.wrap(picker.selected))
       |> assign(:groups, normalize_groups(assigns.filter.values || []))
-      |> assign(:active?, filter_active?(assigns.filter, assigns.value))
+      |> assign(:active?, filter_active?(assigns.filter, picker.selected))
       |> assign(:picker, picker)
+      |> assign(:stale_choices?, picker.empty? and Map.get(picker, :page, []) != [])
+      |> assign(:dropdown_id, "filter-#{assigns.prefix}#{assigns.filter.name}-choices")
 
     ~H"""
-    <div id={"filter-#{@filter.name}-choices"} class="space-y-2">
-      <label class={filter_label_class(@active?)}>
-        <span class="mb-1">{@filter.title}</span>
-        <CoreComponents.select
-          name={to_string(@filter.name)}
-          size={:filter}
-          active?={@active?}
-          prompt="All"
-          options={filter_select_options(@groups, @selected)}
-        />
-      </label>
-      <CoreComponents.input
-        id={"filter-#{@filter.name}-search"}
-        name={"option_search[#{@filter.name}]"}
-        type="search"
-        value={@picker.search}
-        size={:compact}
-        aria-label={"Search #{@filter.title} choices"}
-        placeholder="Search names"
-        autocomplete="off"
-        maxlength="512"
-        phx-change="search_filter_options"
-        phx-debounce="300"
-      />
-      <p :if={@picker.error} role="status" class="text-xs text-red-400">{@picker.error}</p>
-      <p :if={is_nil(@picker.error) and @picker.empty?} role="status" class="text-xs text-zinc-400">
-        {if @picker.selected, do: "No other matching choices.", else: "No matching choices."}
-      </p>
-      <nav
-        :if={@picker.metadata.previous_page_cursor || @picker.metadata.next_page_cursor}
-        aria-label={"#{@filter.title} choices"}
-        class="flex items-center justify-end gap-2"
+    <div class={filter_label_class(@active?)}>
+      <span id={"#{@dropdown_id}-label"} class="mb-1">{@filter.title}</span>
+      <input type="hidden" hidden name={@filter.name} value={List.first(@selected) || ""} />
+      <CoreComponents.dropdown
+        id={@dropdown_id}
+        align={:left}
+        aria-labelledby={"#{@dropdown_id}-label"}
+        phx-mounted={JS.ignore_attributes("open")}
+        summary_class={"flex w-full items-center justify-between gap-2 rounded-lg border bg-zinc-950 py-1.5 pl-2.5 pr-2 text-xs " <> filter_control_class(@active?)}
+        panel_class="z-30 mt-1 w-72 max-w-[calc(100vw-2rem)] p-2 text-xs"
       >
-        <CoreComponents.button
-          :if={@picker.metadata.previous_page_cursor}
-          type="button"
-          variant={:secondary}
-          size={:sm}
-          phx-click="page_filter_options"
-          phx-value-field={@filter.name}
-          phx-value-direction="previous"
+        <:trigger>
+          <span class="min-w-0 truncate">{combobox_selected_label(@groups, List.first(@selected))}</span>
+          <CoreComponents.icon name="action.disclose" class="h-4 w-4 shrink-0 text-zinc-500" />
+        </:trigger>
+        <CoreComponents.input
+          id={"filter-#{@prefix}#{@filter.name}-search"}
+          name={"option_search[#{@filter.name}]"}
+          type="search"
+          value={@picker.search}
+          size={:compact}
+          aria-label={"Search #{@filter.title} choices"}
+          placeholder="Search names"
+          autocomplete="off"
+          maxlength="512"
+          phx-change="search_filter_options"
+          phx-debounce="300"
+          data-dropdown-search
+        />
+        <div class="scrollbar-control mt-2 max-h-64 overflow-y-auto">
+          <CoreComponents.menu_item
+            patch={filter_option_path(@path, @params, @filter.name, "", @prefix)}
+            phx-click={
+              JS.remove_attribute("open", to: "##{@dropdown_id}")
+              |> JS.focus(to: "##{@dropdown_id} > summary")
+            }
+            tone={if @active?, do: :neutral, else: :brand}
+            aria-current={if not @active?, do: "true"}
+          >
+            All
+          </CoreComponents.menu_item>
+          <%= for {label, options} <- @groups do %>
+            <p :if={label} class="px-3 pb-1 pt-2 font-medium text-zinc-400">{label}</p>
+            <CoreComponents.menu_item
+              :for={option <- options}
+              patch={filter_option_path(@path, @params, @filter.name, option_value(option), @prefix)}
+              phx-click={
+                JS.remove_attribute("open", to: "##{@dropdown_id}")
+                |> JS.focus(to: "##{@dropdown_id} > summary")
+              }
+              tone={if option_value(option) in @selected, do: :brand, else: :neutral}
+              aria-current={if option_value(option) in @selected, do: "true"}
+            >
+              <span class="min-w-0">
+                <span class="block truncate">{option_label(option)}</span>
+                <span :if={option_description(option)} class="block truncate text-zinc-400">{option_description(
+                  option
+                )}</span>
+              </span>
+            </CoreComponents.menu_item>
+          <% end %>
+        </div>
+        <p :if={@picker.error} role="status" class="text-xs text-red-400">{@picker.error}</p>
+        <p :if={is_nil(@picker.error) and @picker.empty?} role="status" class="text-xs text-zinc-400">
+          <%= cond do %>
+            <% @stale_choices? -> %>
+              This page no longer has choices.
+            <% @picker.selected not in [nil, ""] -> %>
+              No other matching choices.
+            <% true -> %>
+              No matching choices.
+          <% end %>
+        </p>
+        <nav
+          :if={
+            @stale_choices? || @picker.metadata.previous_page_cursor ||
+              @picker.metadata.next_page_cursor
+          }
+          aria-label={"#{@filter.title} choices"}
+          class="flex items-center justify-end gap-2"
         >
-          ← Prev
-        </CoreComponents.button>
-        <CoreComponents.button
-          :if={@picker.metadata.next_page_cursor}
-          type="button"
-          variant={:secondary}
-          size={:sm}
-          phx-click="page_filter_options"
-          phx-value-field={@filter.name}
-          phx-value-direction="next"
-        >
-          Next →
-        </CoreComponents.button>
-      </nav>
+          <CoreComponents.button
+            :if={@stale_choices?}
+            type="button"
+            variant={:secondary}
+            size={:sm}
+            phx-click="page_filter_options"
+            phx-value-field={@filter.name}
+            phx-value-direction="first"
+          >Back to first page</CoreComponents.button>
+          <CoreComponents.button
+            :if={@picker.metadata.previous_page_cursor}
+            type="button"
+            variant={:secondary}
+            size={:sm}
+            phx-click="page_filter_options"
+            phx-value-field={@filter.name}
+            phx-value-direction="previous"
+          >
+            ← Prev
+          </CoreComponents.button>
+          <CoreComponents.button
+            :if={@picker.metadata.next_page_cursor}
+            type="button"
+            variant={:secondary}
+            size={:sm}
+            phx-click="page_filter_options"
+            phx-value-field={@filter.name}
+            phx-value-direction="next"
+          >
+            Next →
+          </CoreComponents.button>
+        </nav>
+      </CoreComponents.dropdown>
     </div>
     """
   end
@@ -497,9 +579,9 @@ defmodule EmisarWeb.LiveTable do
   # the audit Type picker's ~90 grouped options). Server renders the full option
   # list once; the Combobox hook does client-side open/close + type-to-filter +
   # selection (writing the hidden input and firing the form's phx-change).
-  # `phx-update="ignore"` + a VALUE-KEYED id make the state model work: unrelated
+  # `phx-update="ignore"` + a value-and-choices-keyed id let unrelated
   # live re-renders (a busy audit stream) leave an open panel + typed query
-  # untouched, while an actual value change (selection, Clear filters) renders a
+  # untouched, while a value or available-choice change renders a
   # fresh node under a new id — server-rendered label, active tint, closed panel.
   defp filter_input(%{filter: %Filter{search: true}} = assigns) do
     assigns =
@@ -508,12 +590,13 @@ defmodule EmisarWeb.LiveTable do
       |> assign(:groups, normalize_groups(assigns.filter.values || []))
       |> assign(:active?, filter_active?(assigns.filter, assigns.value))
       |> assign(:combobox_groups, filter_combobox_groups(assigns.filter.values || []))
+      |> assign(:choices_key, :erlang.phash2(assigns.filter.values))
 
     ~H"""
     <label class={filter_label_class(@active?)}>
       <span class="mb-1">{@filter.title}</span>
       <CoreComponents.searchable_select
-        id={"filter-#{@filter.name}-#{@selected || "all"}"}
+        id={"filter-#{@filter.name}-#{@selected || "all"}-#{@choices_key}"}
         name={to_string(@filter.name)}
         value={@selected || ""}
         selected_label={combobox_selected_label(@groups, @selected)}
@@ -542,6 +625,7 @@ defmodule EmisarWeb.LiveTable do
         size={:filter}
         active?={@active?}
         prompt="All"
+        prompt_selected={@selected in [[], [""]]}
         options={filter_select_options(@groups, @selected)}
       />
     </label>
@@ -619,6 +703,7 @@ defmodule EmisarWeb.LiveTable do
   # label like "Created" says nothing about WHAT was created); a group
   # sentinel's label is already self-describing. "All" when nothing is picked.
   defp combobox_selected_label(_groups, nil), do: "All"
+  defp combobox_selected_label(_groups, ""), do: "All"
 
   defp combobox_selected_label(groups, selected) do
     Enum.find_value(groups, selected, fn {group_label, options} ->
@@ -780,7 +865,7 @@ defmodule EmisarWeb.LiveTable do
   @doc """
   The active (non-default) filters as human "Title: Label" strings — a
   `:collapsible` page's CLOSED toggle narrates what's narrowing the list
-  ("Type: Runner — all events · Severity: Failures & denials") instead of a
+  ("Type: Runner — all events · Actor type: User") instead of a
   bare count. List values resolve through the filter's option labels
   (grouped or flat); datetimes prettify the `T`; a boolean reads as its title.
   """
@@ -816,11 +901,12 @@ defmodule EmisarWeb.LiveTable do
 
   defp active_filter_label(%Filter{} = filter, value), do: "#{filter.title}: #{value}"
 
-  # Filters are inert (rendered disabled) only when there's genuinely nothing to
-  # filter — no rows AND no active filter. An empty result that IS filtered keeps
-  # its controls live so the operator can clear back to the full set.
+  # Empty results do not prove an empty account when a default (such as active
+  # keys) narrows the query. Keep the controls visible so All remains reachable,
+  # without treating defaults as user-applied filters in the clear affordance.
   defp filters_inert?(rows, params, filters, prefix) do
-    Enum.empty?(rows) and not has_active_filters?(params, filters) and
+    Enum.empty?(rows) and not prefixed_active_filters?(params, filters, prefix) and
+      not Enum.any?(filters, &(not is_nil(blank_or_nil(&1.default)))) and
       not has_page_cursor?(params, prefix)
   end
 
@@ -1056,10 +1142,9 @@ defmodule EmisarWeb.LiveTable do
           do: to_string(name)
 
     # Plug.Conn.Query.encode (NOT URI.encode_query) so a list-valued filter —
-    # `outcome: ["danger", "warn"]` from the "Problems only" toggle, a multi-select
-    # picker — encodes as `outcome[]=danger&outcome[]=warn` and round-trips back to
-    # a list. URI.encode_query flattens a list to one mangled value ("dangerwarn"),
-    # which then crashes `"danger" in "dangerwarn"` on the next render.
+    # `category: ["access", "fleet"]` from a multi-select picker — encodes as
+    # `category[]=access&category[]=fleet` and round-trips back to a list.
+    # URI.encode_query flattens a list to one mangled value ("accessfleet").
     query =
       params
       |> Map.drop(["_target"])
@@ -1068,6 +1153,37 @@ defmodule EmisarWeb.LiveTable do
 
     to = if query == "", do: path, else: "#{path}?#{query}"
     Phoenix.LiveView.push_patch(socket, to: to)
+  end
+
+  @doc "Change one URL filter, preserving sibling filters and resetting only its list's cursors."
+  def filter_option_path(path, params, name, value, prefix \\ "") do
+    key = "#{prefix}#{name}"
+    params = Map.drop(params, ["#{prefix}after", "#{prefix}before", key])
+    params = if value in [nil, ""], do: params, else: Map.put(params, key, value)
+    filter_path(path, params)
+  end
+
+  defp clear_filter_path(path, _params, _filters, ""), do: path
+
+  defp clear_filter_path(path, params, filters, prefix) do
+    keys = Enum.map(filters, &"#{prefix}#{&1.name}")
+    filter_path(path, Map.drop(params, ["#{prefix}after", "#{prefix}before" | keys]))
+  end
+
+  defp prefixed_active_filters?(params, filters, prefix) do
+    Enum.any?(filters, fn filter ->
+      value = Map.get(params, "#{prefix}#{filter.name}", filter.default)
+      blank_or_nil(value) != blank_or_nil(filter.default)
+    end)
+  end
+
+  defp filter_path(path, params) do
+    query =
+      params
+      |> Map.drop(["account_id_or_slug", "id", "option_search", "_target"])
+      |> Plug.Conn.Query.encode()
+
+    if query == "", do: path, else: "#{path}?#{query}"
   end
 
   defp cast_filter_value(%Filter{type: {:list, _}}, value) when is_binary(value),

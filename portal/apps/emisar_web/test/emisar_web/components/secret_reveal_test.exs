@@ -37,6 +37,10 @@ defmodule EmisarWeb.Components.SecretRevealTest do
       assert html =~ "Copy all"
       assert html =~ ~s(download="emisar-recovery-codes.txt")
       assert html =~ "aaaa2222bbbb3333%0Acccc4444dddd5555"
+
+      assert html =~
+               ~s(href="data:text/plain;charset=utf-8,aaaa2222bbbb3333%0Acccc4444dddd5555")
+
       assert html =~ "I've saved them"
     end
 

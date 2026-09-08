@@ -32,8 +32,10 @@ defmodule EmisarWeb.Components.VersionUpgradeNoticeTest do
       assert html =~ "1 runner is behind v0.1.0"
       assert html =~ "space-y-4"
       assert html =~ "sudo emisar update"
+      assert html =~ "Run this command on each affected host to update and restart the runner"
+      assert html =~ "without losing its configuration:"
       assert html =~ ~s(data-copy-text="sudo emisar update")
-      assert html =~ "overflow-hidden text-ellipsis whitespace-nowrap"
+      assert html =~ "overflow-hidden text-ellipsis whitespace-pre"
       assert html =~ "min-h-9"
       refute html =~ "overflow-x-auto"
       refute html =~ "Upgrade command"
@@ -75,6 +77,8 @@ defmodule EmisarWeb.Components.VersionUpgradeNoticeTest do
       # A detail page is one runner in context, so "This runner" is correct and
       # the page-scoped count would read wrong.
       assert html =~ "This runner is below the supported range"
+      assert html =~ "Run this command on the host to update and restart the runner"
+      assert html =~ "without losing its configuration:"
       refute html =~ "on this page"
     end
 
@@ -133,7 +137,7 @@ defmodule EmisarWeb.Components.VersionUpgradeNoticeTest do
         />
         """)
 
-      assert html =~ "Install command unavailable over HTTP"
+      assert html =~ "Open emisar over HTTPS"
       refute html =~ "Run the command"
       refute html =~ "id=\"mcp-upgrade-command\""
     end

@@ -18,6 +18,8 @@ import {FlashAutoClose} from "./flash.js"
 import {initOsTabs} from "./os_tabs.js"
 import {positionOverlay} from "./overlay.js"
 import {Tooltip} from "./tooltip.js"
+import {EnrollmentKeyFilters} from "./enrollment_key_filters.js"
+import {DialogFocus} from "./dialog_focus.js"
 
 // `<time>` element formatter. The server renders a UTC fallback into
 // `textContent` (so non-JS users see something) and stamps the ISO
@@ -280,13 +282,24 @@ const LocalTime = {
     const tooltip = mode === "relative"
       ? `${utc} · ${formatAbsolute(dt, false)} (${zone})`
       : iso
-    // Styled timestamps use the shared tooltip component so the bubble can
-    // flip at viewport edges and dismiss on Escape. Keep its initial ISO text
-    // useful before JS, then replace it with the viewer-local exact stamp.
+    // Keep the shared tooltip's structure intact across LiveView patches.
+    // Local date/time leads; timezone and its offset at THIS instant explain
+    // DST, while the server-rendered UTC footer retains full source precision.
     const tooltipId = this.el.dataset.tooltipId
     const tooltipBubble = tooltipId && document.getElementById(tooltipId)
     if (tooltipBubble) {
-      tooltipBubble.textContent = tooltip
+      tooltipBubble.querySelector("[data-time-date]").textContent = dt.toLocaleDateString(undefined, {
+        weekday: "short", year: "numeric", month: "short", day: "numeric"
+      })
+      tooltipBubble.querySelector("[data-time-clock]").textContent = dt.toLocaleTimeString(undefined, {
+        hour: "numeric", minute: "2-digit", second: "2-digit"
+      })
+      tooltipBubble.querySelector("[data-time-zone]").textContent = zone
+      const offset = -dt.getTimezoneOffset()
+      const hours = String(Math.floor(Math.abs(offset) / 60)).padStart(2, "0")
+      const minutes = String(Math.abs(offset) % 60).padStart(2, "0")
+      tooltipBubble.querySelector("[data-time-offset]").textContent =
+        offset === 0 ? "" : `UTC${offset > 0 ? "+" : "−"}${hours}:${minutes}`
       this.el.removeAttribute("title")
     } else {
       this.el.setAttribute("title", tooltip)
@@ -543,34 +556,6 @@ const CodeInput = {
   }
 }
 
-// Return focus to the element that opened a client-side dialog — a
-// <.confirm_dialog> or the shell's mobile nav drawer — when it closes. Those
-// surfaces show/hide entirely via JS commands (no round-trip), so without this
-// the opener's focus falls to <body> on Escape / backdrop / Cancel / the close
-// button — a keyboard or screen-reader operator loses their place (UI-016).
-// phx:show-start fires before the dialog's focus_first moves focus inward, so
-// document.activeElement is still the opener there; phx:hide-end fires once it
-// has fully closed. Tab containment inside the open dialog is Phoenix's own
-// <.focus_wrap> in the markup, not this hook.
-const DialogFocus = {
-  mounted() {
-    this.opener = null
-    this.onShow = () => {
-      const active = document.activeElement
-      if (active && active !== document.body) this.opener = active
-    }
-    this.onHide = () => {
-      if (this.opener && this.opener.isConnected) this.opener.focus()
-      this.opener = null
-    }
-    this.el.addEventListener("phx:show-start", this.onShow)
-    this.el.addEventListener("phx:hide-end", this.onHide)
-  },
-  destroyed() {
-    this.el.removeEventListener("phx:show-start", this.onShow)
-    this.el.removeEventListener("phx:hide-end", this.onHide)
-  }
-}
 
 // LiveView's `phx-disable-with` correctly prevents duplicate pushes, but a
 // natively-disabled button loses keyboard focus until the server replies. Lock
@@ -707,7 +692,7 @@ let liveSocket = new LiveSocket("/live", Socket, {
   disconnectedTimeout: 100,
   logger: portalSocketLogger,
   params: {_csrf_token: csrfToken},
-  hooks: { LocalTime, Combobox, FilterableList, ExpiryCountdown, ResendCooldown, MagicCodeExpiry, CodeInput, FlashAutoClose, Tooltip, DialogFocus, PendingButton, CloseTab, PortalPerformance }
+  hooks: { LocalTime, Combobox, FilterableList, EnrollmentKeyFilters, ExpiryCountdown, ResendCooldown, MagicCodeExpiry, CodeInput, FlashAutoClose, Tooltip, DialogFocus, PendingButton, CloseTab, PortalPerformance }
 })
 
 // Show progress bar on live navigation and form submits

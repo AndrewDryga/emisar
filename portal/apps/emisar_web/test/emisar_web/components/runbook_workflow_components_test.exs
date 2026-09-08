@@ -41,7 +41,7 @@ defmodule EmisarWeb.Components.RunbookWorkflowComponentsTest do
     assert html =~ ~s(data-steps-marker="parallel")
   end
 
-  test "a failed execution-history read says so instead of \"No runs yet.\"" do
+  test "a failed execution-history read says so instead of \"No executions yet.\"" do
     assigns = %{account: %{slug: "test-co"}}
 
     html =
@@ -53,8 +53,8 @@ defmodule EmisarWeb.Components.RunbookWorkflowComponentsTest do
       />
       """)
 
-    refute html =~ "No runs yet."
-    assert html =~ "Couldn&#39;t load recent runs"
-    assert html =~ "not an empty history"
+    refute html =~ "No executions yet."
+    assert html =~ "Couldn&#39;t load recent executions"
+    assert html =~ "Refresh the page to try again."
   end
 end

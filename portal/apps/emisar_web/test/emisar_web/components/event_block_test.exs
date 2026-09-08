@@ -34,6 +34,45 @@ defmodule EmisarWeb.Components.EventBlockTest do
       refute html =~ "bg-amber-500/10"
     end
 
+    test "links only the title when a destination is provided" do
+      assigns = %{}
+
+      html =
+        rendered_to_string(~H"""
+        <CoreComponents.event_block
+          icon="state.awaiting_human"
+          title="Waiting for approval"
+          title_navigate="/app/demo/approvals/request-id"
+        >
+          <:body>The request covers every action and target runner.</:body>
+        </CoreComponents.event_block>
+        """)
+
+      document = LazyHTML.from_document(html)
+      link = LazyHTML.query(document, ~s(a[href="/app/demo/approvals/request-id"]))
+      assert LazyHTML.text(link) =~ "Waiting for approval"
+      refute LazyHTML.text(link) =~ "The request covers"
+      assert LazyHTML.text(document) =~ "The request covers every action and target runner."
+    end
+
+    test "keeps the title as text when no accessible destination is provided" do
+      assigns = %{}
+
+      html =
+        rendered_to_string(~H"""
+        <CoreComponents.event_block
+          icon="state.awaiting_human"
+          title="Waiting for approval"
+          title_navigate={nil}
+        >
+          <:body>The request covers every action and target runner.</:body>
+        </CoreComponents.event_block>
+        """)
+
+      assert html =~ "Waiting for approval"
+      assert html |> LazyHTML.from_document() |> LazyHTML.query("a") |> Enum.empty?()
+    end
+
     test "rose tone marks a dead outcome (cancelled/errored)" do
       assigns = %{}
 

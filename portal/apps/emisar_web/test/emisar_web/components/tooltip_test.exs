@@ -116,7 +116,7 @@ defmodule EmisarWeb.Components.TooltipTest do
       # what lets Copy work on a control that exists only once revealed.
       assert html =~ ~s(id="runner-version-7-command")
       assert html =~ "font-mono"
-      assert html =~ "overflow-hidden text-ellipsis whitespace-nowrap"
+      assert html =~ "overflow-hidden text-ellipsis whitespace-pre"
       assert html =~ ~s(data-copy-text="sudo emisar update")
       refute html =~ "overflow-x-auto"
     end

@@ -40,6 +40,13 @@ export function wireTooltip(el) {
     requestAnimationFrame(position)
   }
 
+  const leave = (event) => {
+    const focused = event.type === "focusout" ? el.contains(event.relatedTarget) : el.contains(document.activeElement)
+    if (!el.matches(":hover") && !focused) {
+      unwatch()
+    }
+  }
+
   // The bubble is an overlay: a click inside it acts on the BUBBLE's content,
   // never on whatever row/link the trigger happens to sit in. Defaults inside
   // the bubble (a link, the Copy button's own handler) still run.
@@ -48,24 +55,34 @@ export function wireTooltip(el) {
   el.addEventListener("keydown", onKey)
   el.addEventListener("mouseenter", rearm)
   el.addEventListener("focusin", rearm)
-  el.addEventListener("mouseleave", unwatch)
-  el.addEventListener("focusout", unwatch)
+  el.addEventListener("mouseleave", leave)
+  el.addEventListener("focusout", leave)
   bubble.addEventListener("click", shield)
 
   return () => {
     el.removeEventListener("keydown", onKey)
     el.removeEventListener("mouseenter", rearm)
     el.removeEventListener("focusin", rearm)
-    el.removeEventListener("mouseleave", unwatch)
-    el.removeEventListener("focusout", unwatch)
+    el.removeEventListener("mouseleave", leave)
+    el.removeEventListener("focusout", leave)
     bubble.removeEventListener("click", shield)
     unwatch()
   }
 }
 
 export const Tooltip = {
-  mounted() { this.unwire = wireTooltip(this.el) },
-  destroyed() { this.unwire?.() }
+  mounted() {
+    this.unwire = wireTooltip(this.el)
+  },
+  updated() {
+    const bubble = this.el.querySelector("[data-tooltip-bubble]")
+    if (bubble && this.el.matches(":hover, :focus-within")) {
+      requestAnimationFrame(() => positionOverlay(this.el, this.el, bubble, bubble.dataset.side))
+    }
+  },
+  destroyed() {
+    this.unwire?.()
+  }
 }
 
 // A static page has no LiveView, so nothing mounts the hook and its DOM never

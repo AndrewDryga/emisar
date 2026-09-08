@@ -33,6 +33,33 @@ defmodule EmisarWeb.Components.ChipTest do
       assert html =~ "ring-rose-500/30"
     end
 
+    test "a title badge exposes the text baseline while centering its icon" do
+      assigns = %{}
+
+      html =
+        rendered_to_string(
+          ~H'<CoreComponents.chip icon="state.locked" baseline>Read-only</CoreComponents.chip>'
+        )
+
+      assert html =~ "Read-only"
+      assert html =~ "inline-flex items-baseline gap-1 align-baseline"
+      assert html =~ ~r/<svg[^>]*class="[^"]*self-center/
+      refute html =~ "translate-y"
+    end
+
+    test "ordinary icon chips keep their centered alignment" do
+      assigns = %{}
+
+      html =
+        rendered_to_string(
+          ~H'<CoreComponents.chip icon="state.locked">Read-only</CoreComponents.chip>'
+        )
+
+      assert html =~ "inline-flex items-center gap-1 align-middle"
+      refute html =~ "items-baseline"
+      refute html =~ "self-center"
+    end
+
     test "upcase renders the status-tag look (uppercase + semibold)" do
       assigns = %{}
 

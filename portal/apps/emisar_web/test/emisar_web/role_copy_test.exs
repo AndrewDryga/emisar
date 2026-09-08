@@ -18,13 +18,32 @@ defmodule EmisarWeb.RoleCopyTest do
 
   describe "change_body/1" do
     test "a privileged role spells out the power granted" do
-      assert RoleCopy.change_body("owner") =~ "can remove or demote you"
+      assert RoleCopy.change_body("owner") =~ "access all runners and packs"
+
+      assert RoleCopy.change_body("owner") =~
+               "They can delete the account and remove or demote you."
+
       assert RoleCopy.change_body("admin") =~ "except adding or removing owners"
-      assert RoleCopy.change_body("operator") =~ "dispatch runs"
+      assert RoleCopy.change_body("operator") =~ "Operators can run actions"
     end
 
     test "any other role states its own contract from the shared description" do
-      assert RoleCopy.change_body("viewer") == Emisar.Auth.role_description("viewer")
+      for role <- ["billing_manager", "operator", "viewer"] do
+        assert RoleCopy.change_body(role) == Emisar.Auth.role_description(role)
+      end
+    end
+  end
+
+  describe "access_hint/1" do
+    test "offers the member action separately for admins and operators only" do
+      for role <- ["admin", "operator"] do
+        assert RoleCopy.access_hint(role) =~ "Actions → Edit access"
+        refute RoleCopy.change_body(role) =~ "Actions → Edit access"
+      end
+
+      for role <- ["owner", "billing_manager", "viewer", "unknown"] do
+        assert RoleCopy.access_hint(role) == nil
+      end
     end
   end
 end

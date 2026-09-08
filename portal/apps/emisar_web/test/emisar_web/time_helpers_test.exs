@@ -69,6 +69,30 @@ defmodule EmisarWeb.TimeHelpersTest do
       refute html =~ "data-styled-tooltip"
       refute html =~ "after:content"
     end
+
+    test "timestamp details have a readable UTC fallback without losing source precision" do
+      for value <- [~U[2026-09-21 21:06:46.419128Z], ~N[2026-09-21 21:06:46.419128]] do
+        assigns = %{value: value}
+
+        html =
+          rendered_to_string(~H"""
+          <.local_time id="precise-time" value={@value} styled_tooltip />
+          """)
+
+        doc = LazyHTML.from_fragment(html)
+
+        field = fn name ->
+          doc |> LazyHTML.query("[data-time-#{name}]") |> LazyHTML.text() |> String.trim()
+        end
+
+        assert field.("date") == "Mon, Sep 21, 2026"
+        assert field.("clock") == "21:06:46"
+        assert field.("zone") == "UTC"
+        assert field.("utc") == "2026-09-21 21:06:46.419128"
+        assert html =~ ~s(datetime="2026-09-21T21:06:46.419128Z")
+        assert html =~ ~s(aria-describedby="precise-time-exact")
+      end
+    end
   end
 
   describe "format_duration/1" do

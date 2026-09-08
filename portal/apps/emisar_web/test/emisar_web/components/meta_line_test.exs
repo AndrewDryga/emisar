@@ -122,7 +122,7 @@ defmodule EmisarWeb.Components.MetaLineTest do
       assert html =~ "https://emisar.dev/a/acme"
       assert html =~ "bg-zinc-950/80"
       # A URL is one line that scrolls, not a break-all block that wraps.
-      assert html =~ "whitespace-nowrap"
+      assert html =~ "whitespace-pre"
       refute html =~ "break-all"
     end
 
@@ -140,7 +140,7 @@ defmodule EmisarWeb.Components.MetaLineTest do
 
       assert html =~ "Remote MCP server URL"
       assert html =~ "min-h-9"
-      assert html =~ "overflow-hidden text-ellipsis whitespace-nowrap"
+      assert html =~ "overflow-hidden text-ellipsis whitespace-pre"
       refute html =~ "overflow-x-auto"
       refute html =~ "min-h-10"
       assert html =~ ~r/>

@@ -21,15 +21,27 @@ defmodule EmisarWeb.RoleCopy do
   pickers already render.
   """
   def change_body("owner") do
-    "Owners have full control — billing, deleting the account, and managing other owners — and can remove or demote you."
+    "Owners can manage the entire account and access all runners and packs. They can delete the account and remove or demote you."
   end
 
   def change_body("admin") do
-    "Admins manage runners, policy, members, approvals, and billing across the whole account — everything an owner can, except adding or removing owners."
+    "Admins can manage runners, policy, members, approvals, and billing across the whole account — everything an owner can, except adding or removing owners."
   end
 
   def change_body("operator"),
-    do: "Operators can dispatch runs to your fleet and approve gated actions."
+    do: Auth.role_description("operator")
 
   def change_body(role), do: Auth.role_description(role)
+
+  @doc "A separate access-editing paragraph for Admin and Operator role confirmations."
+  def access_hint(role) when role in ["admin", "operator"] do
+    "You can limit their access to specific runners, runner groups, or packs from Actions → Edit access on the Team page."
+  end
+
+  def access_hint(_), do: nil
+
+  @doc "The consequences shared by Team and connection member controls."
+  def suspend_body do
+    "This member loses access and is signed out of this account. Their agent credentials and standing approvals are revoked. Restoring access won't restore those credentials or approvals."
+  end
 end

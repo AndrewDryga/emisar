@@ -4,8 +4,9 @@ defmodule EmisarWeb.ShellChrome do
   the chrome around a page rather than to the page itself.
 
   Every one of these is seeded by the `on_mount` hooks in `EmisarWeb.UserAuth`
-  and refreshed by the hooks attached there — no page computes any of them. They
-  used to be seven separate assigns, which meant every console page spelled out
+  and refreshed by the hooks attached there. Billing also refreshes the support
+  channels alongside its plan summary. These used to be seven separate assigns,
+  which meant every console page spelled out
   seven literal `x={@x}` pass-throughs to `<.console_shell>`, and adding an eighth
   cue was an edit in twenty-five files.
 
@@ -14,6 +15,7 @@ defmodule EmisarWeb.ShellChrome do
   """
 
   defstruct switchable_accounts: [],
+            support_channels: %{email?: false, slack_url: nil},
             pending_approvals_count: 0,
             pending_access_requests_count: 0,
             pending_packs_count: 0,

@@ -44,6 +44,21 @@ defmodule EmisarWeb.Components.StatusNoteTest do
       assert html =~ "text-amber-300"
     end
 
+    test "the body can contain separate paragraphs without nesting paragraph elements" do
+      assigns = %{}
+
+      html =
+        rendered_to_string(~H"""
+        <CoreComponents.status_note icon="identity.credential" title="Note">
+          <p>Role capabilities.</p>
+          <p class="mt-3">Access guidance.</p>
+        </CoreComponents.status_note>
+        """)
+
+      paragraphs = html |> LazyHTML.from_document() |> LazyHTML.query("div.text-zinc-400 > p")
+      assert Enum.map(paragraphs, &LazyHTML.text/1) == ["Role capabilities.", "Access guidance."]
+    end
+
     test "primary lifts the title to the page's strongest status voice" do
       assigns = %{}
 

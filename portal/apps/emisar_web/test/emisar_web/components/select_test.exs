@@ -55,6 +55,29 @@ defmodule EmisarWeb.Components.SelectTest do
       refute html =~ ~r/<option[^>]*value="deny"[^>]*disabled/s
     end
 
+    test "grouped options retain selection, disabled state, and escaped labels" do
+      html =
+        render_select(%{
+          name: "status",
+          prompt: "All",
+          options: [
+            %{
+              label: "Key states",
+              options: [
+                %{value: "active", label: "Active", disabled: false, selected: true},
+                %{value: "revoked", label: "<Revoked>", disabled: true, selected: false}
+              ]
+            }
+          ]
+        })
+
+      assert html =~ ~s(<optgroup label="Key states")
+      assert html =~ ~r/<option[^>]*value="active"[^>]*selected/s
+      assert html =~ ~r/<option[^>]*value="revoked"[^>]*disabled/s
+      refute html =~ ~r/<option[^>]*value=""[^>]*selected/s
+      assert html =~ "&lt;Revoked&gt;"
+    end
+
     test "renders the prompt as a leading empty-value option, selectable" do
       html =
         render_select(%{

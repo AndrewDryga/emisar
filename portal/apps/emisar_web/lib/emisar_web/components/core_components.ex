@@ -180,7 +180,7 @@ defmodule EmisarWeb.CoreComponents do
         <%!-- Grouped, not justify-between: a primary + its quiet cancel stay
              associated (design-console-ux — one create-flow footer). A single
              w-full button still spans naturally. --%>
-        <div :for={action <- @actions} class="flex items-center gap-3 pt-2">
+        <div :for={action <- @actions} class="flex flex-wrap items-center gap-3 pt-2">
           {render_slot(action, f)}
         </div>
       </div>
@@ -1075,11 +1075,29 @@ defmodule EmisarWeb.CoreComponents do
         {@rest}
       >
         <option :if={@prompt} value="" selected={@prompt_selected}>{@prompt}</option>
+        <%!-- Keep options inline. A function-component option can become an
+             attribute-less skip placeholder in a partial LiveView patch. The
+             browser then selects the prompt while parsing the patch, and
+             morphdom can copy that selection over the real selected option. --%>
         <%= for entry <- @options do %>
           <optgroup :if={entry[:options]} label={entry.label}>
-            <.select_option :for={option <- entry.options} option={option} />
+            <option
+              :for={option <- entry.options}
+              value={option.value}
+              disabled={option.disabled}
+              selected={option.selected}
+            >
+              {option.label}
+            </option>
           </optgroup>
-          <.select_option :if={is_nil(entry[:options])} option={entry} />
+          <option
+            :if={is_nil(entry[:options])}
+            value={entry.value}
+            disabled={entry.disabled}
+            selected={entry.selected}
+          >
+            {entry.label}
+          </option>
         <% end %>
       </select>
     </div>
@@ -1097,16 +1115,6 @@ defmodule EmisarWeb.CoreComponents do
     do: input_id(name)
 
   defp select_id(_assigns), do: nil
-
-  attr :option, :map, required: true
-
-  defp select_option(assigns) do
-    ~H"""
-    <option value={@option.value} disabled={@option.disabled} selected={@option.selected}>
-      {@option.label}
-    </option>
-    """
-  end
 
   defp select_label_gap(:default), do: "mt-2"
   defp select_label_gap(_tighter), do: "mt-1"
@@ -1449,9 +1457,9 @@ defmodule EmisarWeb.CoreComponents do
         ]}>
           {@title}
         </div>
-        <p :if={@inner_block != []} class="mt-1 text-sm leading-relaxed text-zinc-400">
+        <div :if={@inner_block != []} class="mt-1 text-sm leading-relaxed text-zinc-400">
           {render_slot(@inner_block)}
-        </p>
+        </div>
       </div>
     </div>
     """
@@ -1482,6 +1490,7 @@ defmodule EmisarWeb.CoreComponents do
   attr :tone, :atom, default: :amber, values: [:amber, :rose, :brand, :neutral]
   attr :size, :atom, default: :default, values: [:default, :compact]
   attr :title, :string, default: nil
+  attr :title_navigate, :string, default: nil, doc: "optional destination for the event title"
   attr :class, :string, default: nil
   attr :rest, :global
   slot :body, required: true
@@ -1495,7 +1504,15 @@ defmodule EmisarWeb.CoreComponents do
         <div class={["mt-3 w-0.5 flex-1 rounded-full", event_block_spine_class(@tone)]}></div>
       </div>
       <div class="min-w-0 flex-1">
-        <div :if={@title} class={event_block_title_class(@size)}>{@title}</div>
+        <div :if={@title} class={event_block_title_class(@size)}>
+          <%= if @title_navigate do %>
+            <.link navigate={@title_navigate} class="text-brand-400 hover:text-brand-300">
+              {@title}
+            </.link>
+          <% else %>
+            {@title}
+          <% end %>
+        </div>
         <div class={[@title && "mt-1", event_block_text_size(@size), "leading-relaxed text-zinc-400"]}>
           {render_slot(@body)}
         </div>
@@ -1705,6 +1722,7 @@ defmodule EmisarWeb.CoreComponents do
           current_user={@current_user}
           current_subject={@current_subject}
           section={@section}
+          support_channels={@chrome.support_channels}
           pending_approvals_count={@chrome.pending_approvals_count}
           pending_access_requests_count={@chrome.pending_access_requests_count}
           pending_packs_count={@chrome.pending_packs_count}
@@ -1757,6 +1775,7 @@ defmodule EmisarWeb.CoreComponents do
             current_user={@current_user}
             current_subject={@current_subject}
             section={@section}
+            support_channels={@chrome.support_channels}
             pending_approvals_count={@chrome.pending_approvals_count}
             pending_access_requests_count={@chrome.pending_access_requests_count}
             pending_packs_count={@chrome.pending_packs_count}
@@ -1984,6 +2003,7 @@ defmodule EmisarWeb.CoreComponents do
 
   attr :section, :atom, required: true
   attr :current_subject, :map, required: true
+  attr :support_channels, :map, default: %{email?: false, slack_url: nil}
   attr :pending_approvals_count, :integer, default: 0
   attr :pending_access_requests_count, :integer, default: 0
   attr :pending_packs_count, :integer, default: 0
@@ -2154,8 +2174,19 @@ defmodule EmisarWeb.CoreComponents do
       >
         Status
       </.nav_link_external>
-      <.nav_link_external href={@support_mailto} icon="product.support">
-        Support
+      <.nav_link_external
+        :if={@support_channels.slack_url}
+        href={@support_channels.slack_url}
+        icon="product.support"
+      >
+        Slack support
+      </.nav_link_external>
+      <.nav_link_external
+        :if={@support_channels.email?}
+        href={@support_mailto}
+        icon="product.support"
+      >
+        Email support
       </.nav_link_external>
     </nav>
     """
@@ -2661,6 +2692,8 @@ defmodule EmisarWeb.CoreComponents do
     attr :value, :string, required: true
     attr :icon, :string
     attr :title, :string, required: true
+    attr :disabled, :boolean
+    attr :disabled_reason, :string
   end
 
   def choice_cards(assigns) do
@@ -2671,7 +2704,7 @@ defmodule EmisarWeb.CoreComponents do
         class={
           choice_card_class(
             to_string(@value) == card.value,
-            @disabled,
+            @disabled or card[:disabled] == true,
             to_string(@value) == card.value and @attached_value == card.value
           )
         }
@@ -2681,7 +2714,7 @@ defmodule EmisarWeb.CoreComponents do
           name={@name}
           value={card.value}
           checked={to_string(@value) == card.value}
-          disabled={@disabled}
+          disabled={@disabled or card[:disabled] == true}
           class="sr-only"
         />
         <span :if={card[:icon]} class={choice_card_icon_class(to_string(@value) == card.value)}>
@@ -2694,14 +2727,23 @@ defmodule EmisarWeb.CoreComponents do
                  "choose one" before any hover; the check and active brand ring
                  mark the current pick. The surface and check stay neutral. --%>
             <.icon
-              :if={to_string(@value) == card.value}
+              :if={to_string(@value) == card.value and is_nil(card[:disabled_reason])}
               name="state.selected"
               class="ml-auto h-4 w-4 shrink-0 text-zinc-300"
             />
             <span
-              :if={to_string(@value) != card.value}
+              :if={to_string(@value) != card.value and is_nil(card[:disabled_reason])}
               class="ml-auto h-4 w-4 shrink-0 rounded-full border border-zinc-700"
             ></span>
+            <.tooltip
+              :if={card[:disabled_reason]}
+              text={card.disabled_reason}
+              id={"choice-lock-" <> Base.url_encode64(@name <> ":" <> card.value, padding: false)}
+              aria_label={card.disabled_reason}
+              class="ml-auto"
+            >
+              <.icon name="state.locked" class="h-4 w-4 shrink-0 text-zinc-400" />
+            </.tooltip>
           </span>
           <span class="mt-0.5 block text-xs leading-relaxed text-zinc-400">
             {render_slot(card)}
@@ -2983,9 +3025,7 @@ defmodule EmisarWeb.CoreComponents do
       <code
         :if={rem(idx, 2) == 1}
         class="rounded bg-zinc-900 px-1 py-0.5 font-mono text-[0.92em] text-zinc-300"
-      >
-        {segment}
-      </code>
+      >{segment}</code>
       <span :if={rem(idx, 2) == 0}>{segment}</span>
     <% end %>
     """
@@ -2993,9 +3033,9 @@ defmodule EmisarWeb.CoreComponents do
 
   def inline_code(assigns) do
     ~H"""
-    <code class={[inline_code_surface(@surface), inline_code_size(@size), @class]}>
-      {render_slot(@inner_block)}
-    </code>
+    <code class={[inline_code_surface(@surface), inline_code_size(@size), @class]}>{render_slot(
+      @inner_block
+    )}</code>
     """
   end
 
@@ -3022,6 +3062,8 @@ defmodule EmisarWeb.CoreComponents do
   flow needs to map the value to a named field in another product. The preview
   stays on one clipped line while Copy preserves the complete value. The framed
   multi-line snippet is `code_panel`; this is the compact value row.
+  Preserve literal whitespace in both the preview and Copy, including an
+  intentional leading space in a shell command.
 
       <.code_line id="sso-sign-in-link" value={@sign_in_url} class="mt-3" />
   """
@@ -3049,7 +3091,7 @@ defmodule EmisarWeb.CoreComponents do
         <code
           id={@id}
           phx-no-format
-          class="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap font-mono text-xs leading-5 text-zinc-300"
+          class="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-pre font-mono text-xs leading-5 text-zinc-300"
         >{@value}</code>
         <.copy_button text={@value} class="shrink-0">
           {@copy_label}
@@ -3132,7 +3174,7 @@ defmodule EmisarWeb.CoreComponents do
 
   attr :wrap, :boolean,
     default: false,
-    doc: "wrap long lines instead of scrolling — for prose-y content like an example prompt"
+    doc: "wrap long lines; height-clamped panels still scroll vertically"
 
   attr :class, :string, default: nil
   attr :rest, :global
@@ -3187,8 +3229,8 @@ defmodule EmisarWeb.CoreComponents do
         tabindex={if not @wrap or not is_nil(@max_h), do: "0"}
         aria-label={@label}
         class={[
-          "bg-black/40 p-4 font-mono text-xs text-zinc-300 [font-variant-ligatures:none]",
-          if(@wrap, do: "whitespace-pre-wrap break-words", else: "overflow-auto"),
+          "scrollbar-control overflow-auto bg-black/40 p-4 font-mono text-xs text-zinc-300 [font-variant-ligatures:none]",
+          @wrap && "whitespace-pre-wrap break-words",
           @max_h
         ]}
       ><span :if={@prompt} class="select-none text-zinc-500">$ </span>{@code}</pre>
@@ -3407,9 +3449,11 @@ defmodule EmisarWeb.CoreComponents do
 
   @doc """
   The bare heading-row above a canvas section — the console's ONE section
-  heading (boxed panels are dead, §8.1). A `text-sm` section title, an
-  optional inline `<.count_badge>`, an optional `:subtitle` line, and a
-  right-aligned `:actions` slot.
+  heading (boxed panels are dead, §8.1). A `text-base` section title, an
+  optional inline `<.count_badge>` and `:badge` slot, an optional `:subtitle` line, and a
+  right-aligned `:actions` slot. Use `actions_align={:baseline}` for a text link
+  beside the title; the default keeps controls aligned with the section's bottom.
+  Use `level={3}` for a quieter subsection within a named section.
 
       <.section_header title="Pending" count={@pending_metadata.count} count_tone={:amber} />
       <.section_header title="Targeted rulesets">
@@ -3418,23 +3462,38 @@ defmodule EmisarWeb.CoreComponents do
       </.section_header>
   """
   attr :title, :string, required: true
+  attr :level, :integer, default: 2, values: [2, 3]
   attr :count, :integer, default: nil
   attr :count_tone, :atom, default: :neutral, values: [:amber, :neutral]
+  attr :actions_align, :atom, default: :end, values: [:end, :baseline]
   attr :class, :string, default: nil
+  slot :badge, doc: "status beside the section title"
   slot :subtitle
   slot :actions
 
   def section_header(assigns) do
     ~H"""
-    <header class={["mb-4 flex flex-wrap items-end justify-between gap-3", @class]}>
+    <header class={[
+      "mb-4 flex flex-wrap justify-between gap-3",
+      if(@actions_align == :baseline, do: "items-baseline", else: "items-end"),
+      @class
+    ]}>
       <div class="min-w-0">
-        <div class="flex items-center gap-2">
-          <h2 class="font-display text-base font-semibold tracking-[-0.012em] text-zinc-100">
+        <div class={["flex gap-2", if(@badge == [], do: "items-center", else: "items-baseline")]}>
+          <.dynamic_tag
+            tag_name={"h#{@level}"}
+            class={
+              if @level == 2,
+                do: "font-display text-base font-semibold tracking-[-0.012em] text-zinc-100",
+                else: "text-sm font-medium text-zinc-200"
+            }
+          >
             {@title}
-          </h2>
+          </.dynamic_tag>
           <.count_badge count={@count} tone={@count_tone} />
+          {render_slot(@badge)}
         </div>
-        <p :if={@subtitle != []} class="mt-0.5 max-w-xl text-xs text-zinc-400">
+        <p :if={@subtitle != []} class="mt-0.5 text-xs text-zinc-400">
           {render_slot(@subtitle)}
         </p>
       </div>
@@ -3442,6 +3501,42 @@ defmodule EmisarWeb.CoreComponents do
         {render_slot(@actions)}
       </div>
     </header>
+    """
+  end
+
+  @doc """
+  A console section with an optional help rail. Heading and actions stay on the
+  primary track; the note aligns with the content and follows it on small screens.
+  """
+  attr :id, :string, required: true
+  attr :compact, :boolean, default: false
+  slot :header, required: true
+  slot :inner_block, required: true
+  slot :note
+
+  def section_with_note(assigns) do
+    ~H"""
+    <section
+      id={@id}
+      class={[
+        "grid min-w-0 grid-cols-1 gap-x-12 xl:col-span-2 xl:grid-cols-[minmax(0,1fr)_18rem] xl:items-start",
+        if(@compact, do: "gap-y-2", else: "gap-y-4")
+      ]}
+    >
+      <div class="min-w-0 [&>*:first-child]:mb-0 xl:col-start-1 xl:row-start-1">
+        {render_slot(@header)}
+      </div>
+      <div class="min-w-0 [&>*:first-child]:mt-0 xl:col-start-1 xl:row-start-2">
+        {render_slot(@inner_block)}
+      </div>
+      <aside
+        :if={@note != []}
+        id={"#{@id}-help"}
+        class="max-w-prose text-sm leading-relaxed text-zinc-400 xl:col-start-2 xl:row-start-2 xl:pt-1"
+      >
+        {render_slot(@note)}
+      </aside>
+    </section>
     """
   end
 
@@ -3702,6 +3797,7 @@ defmodule EmisarWeb.CoreComponents do
     doc: "uppercase + semibold weight, for status/label tags"
 
   attr :icon, :string, default: nil, doc: "optional leading icon — renders inline-flex"
+  attr :baseline, :boolean, default: false, doc: "align the label baseline with adjacent text"
   attr :class, :string, default: nil
   attr :rest, :global, doc: "extra attributes (e.g. title for a tooltip)"
   slot :inner_block, required: true
@@ -3711,7 +3807,11 @@ defmodule EmisarWeb.CoreComponents do
     <span
       class={[
         "whitespace-nowrap rounded px-1.5 py-0.5 text-[10px]",
-        @icon && "inline-flex items-center gap-1 align-middle",
+        @icon &&
+          if(@baseline,
+            do: "inline-flex items-baseline gap-1 align-baseline",
+            else: "inline-flex items-center gap-1 align-middle"
+          ),
         if(@upcase, do: "font-semibold uppercase tracking-wider", else: "font-medium"),
         chip_class(@tone),
         @mono && "font-mono",
@@ -3719,7 +3819,11 @@ defmodule EmisarWeb.CoreComponents do
       ]}
       {@rest}
     >
-      <.icon :if={@icon} name={@icon} class="h-3 w-3" />{render_slot(@inner_block)}
+      <.icon
+        :if={@icon}
+        name={@icon}
+        class={if @baseline, do: "h-3 w-3 self-center", else: "h-3 w-3"}
+      />{render_slot(@inner_block)}
     </span>
     """
   end
@@ -3850,6 +3954,10 @@ defmodule EmisarWeb.CoreComponents do
   revealed bubble is pointer-interactive (above) and the clipboard listener is
   delegated at the document, so it reaches a control that only exists on hover.
 
+  Structured facts such as timestamps use the `:content` slot instead of a
+  flattened sentence. It keeps the same accessible trigger and overlay behavior,
+  with a compact padded surface. `text` remains the plain-text fallback.
+
       <.tooltip text="Role is managed by directory sync — change it in your IdP">
         <.chip icon="role.restricted">Operator</.chip>
       </.tooltip>
@@ -3865,6 +3973,7 @@ defmodule EmisarWeb.CoreComponents do
   attr :placement, :atom, default: :top, values: [:top, :bottom]
   attr :align, :atom, default: :right, values: [:left, :right, :responsive]
   attr :class, :any, default: nil, doc: "classes on the wrapper (e.g. shrink-0)"
+  slot :content
   slot :inner_block, required: true
 
   def tooltip(assigns) do
@@ -3910,8 +4019,8 @@ defmodule EmisarWeb.CoreComponents do
         data-tooltip-bubble
         data-side={if(@placement == :bottom, do: "below", else: "above")}
         class={[
-          "pointer-events-none absolute z-30 w-max max-w-xs rounded-lg bg-zinc-800 px-2.5 py-1.5",
-          "text-[11px] font-medium leading-snug text-zinc-100 opacity-0 shadow-xl ring-1 ring-white/10",
+          "pointer-events-none absolute z-30 rounded-lg bg-zinc-800 opacity-0 shadow-xl ring-1 ring-white/10",
+          tooltip_content_classes(@content),
           "transition-opacity duration-100 group-hover/tooltip:opacity-100 group-focus-within/tooltip:opacity-100",
           "group-hover/tooltip:pointer-events-auto group-focus-within/tooltip:pointer-events-auto",
           "before:absolute before:inset-x-0 before:h-2 before:content-['']",
@@ -3920,11 +4029,18 @@ defmodule EmisarWeb.CoreComponents do
           tooltip_align(@align)
         ]}
       >
-        {@text}
+        {if @content == [], do: @text, else: render_slot(@content)}
         <.code_line :if={@command} id={"#{@tooltip_id}-command"} value={@command} class="mt-2" />
       </span>
     </span>
     """
+  end
+
+  defp tooltip_content_classes([]),
+    do: "w-max max-w-xs px-2.5 py-1.5 text-[11px] font-medium leading-snug text-zinc-100"
+
+  defp tooltip_content_classes(_content) do
+    "w-max max-w-[calc(100vw-2rem)] px-2.5 py-2 text-left font-sans text-[11px] font-normal normal-case leading-snug tracking-normal text-zinc-100"
   end
 
   defp tooltip_align(:left), do: "left-0"
@@ -4117,10 +4233,11 @@ defmodule EmisarWeb.CoreComponents do
   end
 
   @doc """
-  Confirmation-zone card — a bordered container with title + body + a `<.button>`
-  it renders itself from the slot label. `tone` colors it and picks the button
-  variant: `:danger` (rose — disable/delete, the default) or `:success` (brand-green
-  — enable/restore), so every consequential-action panel reads alike. Used on
+  Consequential-action row with title + body + a `<.button>` rendered from the
+  slot label. `tone` picks the button treatment: `:danger` (rose — disable/delete,
+  the default), `:success` (brand-green — enable/restore), or `:neutral` (rotation).
+  The optional `:heading` slot supports a live fact in place of the title text;
+  `show_action={false}` keeps the same row readable without a management control. Used on
   detail pages (runner detail, SSO provider, etc.), stacked under a "Danger zone"
   section header in a `divide-y` list.
 
@@ -4148,14 +4265,16 @@ defmodule EmisarWeb.CoreComponents do
       </.confirm_zone>
   """
   slot :body, required: true
+  slot :heading
   slot :inner_block, required: true
   attr :title, :string, required: true
-  attr :tone, :atom, default: :danger, values: [:danger, :success]
+  attr :tone, :atom, default: :danger, values: [:danger, :success, :neutral]
+  attr :show_action, :boolean, default: true
   attr :id, :string, default: nil, doc: "modal id — required with :on_confirm"
   attr :confirm, :string, default: nil, doc: "the modal body — set with :on_confirm"
   attr :confirm_label, :string, default: nil, doc: "the modal's Confirm button text"
   attr :on_confirm, :any, default: nil, doc: "JS the modal's Confirm runs (self-contained)"
-  attr :rest, :global
+  attr :rest, :global, include: ~w(disabled)
 
   # CONTENT ON CANVAS — a destructive/restorative action is a hairline row
   # (title · consequence · toned button), NOT a rose-boxed island. The danger
@@ -4164,10 +4283,13 @@ defmodule EmisarWeb.CoreComponents do
     ~H"""
     <div class="flex flex-col gap-3 py-5 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
       <div class="min-w-0">
-        <h3 class="text-sm font-medium text-zinc-100">{@title}</h3>
+        <h3 class="text-sm font-medium text-zinc-100">
+          {if @heading == [], do: @title, else: render_slot(@heading)}
+        </h3>
         <p class="mt-1 text-xs leading-relaxed text-zinc-400">{render_slot(@body)}</p>
       </div>
       <.button
+        :if={@show_action}
         class="shrink-0 self-start sm:self-auto"
         variant={confirm_zone_button_variant(@tone)}
         tone={confirm_zone_button_tone(@tone)}
@@ -4180,6 +4302,7 @@ defmodule EmisarWeb.CoreComponents do
       </.button>
     </div>
     <.confirm_dialog
+      :if={@show_action}
       id={@id}
       title={@title}
       confirm_label={@confirm_label || @title}
@@ -4194,10 +4317,13 @@ defmodule EmisarWeb.CoreComponents do
     ~H"""
     <div class="flex flex-col gap-3 py-5 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
       <div class="min-w-0">
-        <h3 class="text-sm font-medium text-zinc-100">{@title}</h3>
+        <h3 class="text-sm font-medium text-zinc-100">
+          {if @heading == [], do: @title, else: render_slot(@heading)}
+        </h3>
         <p class="mt-1 text-xs leading-relaxed text-zinc-400">{render_slot(@body)}</p>
       </div>
       <.button
+        :if={@show_action}
         class="shrink-0 self-start sm:self-auto"
         variant={confirm_zone_button_variant(@tone)}
         tone={confirm_zone_button_tone(@tone)}
@@ -4215,9 +4341,11 @@ defmodule EmisarWeb.CoreComponents do
   # a restorative action (enable) — a filled primary so it reads "do this".
   defp confirm_zone_button_variant(:danger), do: :secondary
   defp confirm_zone_button_variant(:success), do: :primary
+  defp confirm_zone_button_variant(:neutral), do: :secondary
 
   defp confirm_zone_button_tone(:danger), do: :rose
   defp confirm_zone_button_tone(:success), do: :brand
+  defp confirm_zone_button_tone(:neutral), do: :neutral
 
   @doc ~S"""
   Centered, danger-toned confirmation modal with a **typed-confirm**: the
@@ -4594,6 +4722,8 @@ defmodule EmisarWeb.CoreComponents do
     attr :value, :string, required: true
   end
 
+  slot :actions, doc: "local recovery controls such as Retry"
+
   def empty_state(assigns) do
     ~H"""
     <div class={[empty_state_wrapper(@variant), @class]}>
@@ -4617,6 +4747,9 @@ defmodule EmisarWeb.CoreComponents do
           {render_slot(cta)} <span aria-hidden="true">→</span>
         </.link>
       <% end %>
+      <div :if={@actions != []} class="mt-4 flex flex-wrap justify-center gap-2">
+        {render_slot(@actions)}
+      </div>
     </div>
     """
   end
@@ -4710,58 +4843,46 @@ defmodule EmisarWeb.CoreComponents do
   attr :codes, :list, required: true, doc: "the reveal-once code list"
   attr :download_name, :string, default: nil, doc: "offer the set as a .txt file"
   slot :inner_block, required: true
-  slot :actions, doc: "acknowledgement controls, rendered in the copy-button row"
+  slot :actions, doc: "acknowledgement controls, rendered below copy and download"
 
   def secret_reveal(assigns) do
     ~H"""
     <div
       id={@id}
-      class="rounded-xl bg-zinc-900/60 p-4 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.05)] ring-1 ring-amber-500/40"
+      class="min-w-0"
     >
-      <div class="flex items-center gap-2">
-        <.icon name="identity.credential" class="h-4 w-4 shrink-0 text-amber-300" />
-        <h3 class="text-sm font-semibold text-amber-100">{@title}</h3>
-      </div>
+      <h3 class="text-sm font-medium text-zinc-200">{@title}</h3>
       <p class="mt-1.5 text-sm leading-relaxed text-zinc-400">{render_slot(@inner_block)}</p>
 
-      <%!-- Each cell IS a copy button, so one code can be grabbed without
-           selecting text; "Copy all" carries the joined set as a
-           data-copy-text literal (no hidden blob element). --%>
-      <ul class="mt-3 space-y-1.5">
+      <ul class="mt-4 grid grid-cols-[repeat(auto-fit,minmax(min(100%,14rem),1fr))] gap-x-6 gap-y-2 rounded-xl border border-dashed border-zinc-800 p-4">
         <li :for={code <- @codes}>
-          <button
-            type="button"
-            data-copy-text={code}
-            data-copy-label-copied="Copied!"
-            title="Click to copy this code"
-            class="block w-full select-all rounded-md border border-zinc-700 bg-black/60 px-3 py-2 text-left font-mono text-sm tracking-wide text-zinc-100 hover:border-zinc-600 hover:bg-black/80"
-          >
-            {code}
-          </button>
+          <.copyable_id value={code} class="text-sm text-zinc-200" />
         </li>
       </ul>
 
       <div class="mt-4 flex flex-wrap items-center gap-3">
-        <button
+        <.button
           type="button"
+          variant={:secondary}
+          size={:sm}
           data-copy-text={Enum.join(@codes, "\n")}
-          data-copy-label-copied="Copied!"
-          class="rounded-lg bg-brand-500/20 px-3 py-1.5 text-xs font-semibold text-brand-200 hover:bg-brand-500/30"
+          data-copy-label-copied="Copied"
         >
           Copy all
-        </button>
+        </.button>
         <%!-- A real file beats the volatile clipboard for a credential
              the operator must keep — clipboards get overwritten. --%>
-        <a
+        <.button
           :if={@download_name}
-          href={"data:text/plain;charset=utf-8," <> URI.encode(Enum.join(@codes, "\n"))}
+          variant={:secondary}
+          size={:sm}
+          href={{:data, "text/plain;charset=utf-8," <> URI.encode(Enum.join(@codes, "\n"))}}
           download={@download_name}
-          class="rounded-lg bg-zinc-800 px-3 py-1.5 text-xs font-semibold text-zinc-200 hover:bg-zinc-700"
         >
           Download .txt
-        </a>
-        {render_slot(@actions)}
+        </.button>
       </div>
+      <div :if={@actions != []} class="mt-6">{render_slot(@actions)}</div>
     </div>
     """
   end

@@ -86,6 +86,7 @@ defmodule EmisarWeb.AuthComponents do
   attr :handoff, :string, default: nil
   attr :trigger_submit, :boolean, default: false
   attr :action, :string, required: true
+  attr :typed, :string, default: ""
 
   def oidc_step_dialog(assigns) do
     assigns =
@@ -103,6 +104,7 @@ defmodule EmisarWeb.AuthComponents do
       aria-modal="true"
       aria-label={@title}
       phx-hook="DialogFocus"
+      data-server-dialog="true"
       phx-window-keydown={@close}
       phx-key="escape"
       data-shot="oidc-step-dialog"
@@ -137,10 +139,21 @@ defmodule EmisarWeb.AuthComponents do
             id={"#{@id}-form"}
             class="mt-6"
             phx-submit="confirm_oidc_step_up"
+            phx-change={@purpose == :unlink && "confirm_typed"}
             phx-trigger-action={@trigger_submit}
             action={@action}
             method="post"
           >
+            <.input
+              :if={@purpose == :unlink}
+              id={"#{@id}-confirm-token"}
+              name="confirm_token"
+              value={@typed}
+              type="text"
+              label={"Type #{@step.provider_name} to confirm"}
+              autocomplete="off"
+              required
+            />
             <p class="text-sm text-zinc-300">
               <%= if @step.factor == :email do %>
                 Enter the 6-digit code sent to {@email}.
@@ -169,11 +182,18 @@ defmodule EmisarWeb.AuthComponents do
             <:actions>
               <.button
                 id={"#{@id}-continue"}
-                class="min-w-28"
+                variant={if @purpose == :unlink, do: :secondary, else: :primary}
+                tone={if @purpose == :unlink, do: :rose, else: nil}
+                disabled={@purpose == :unlink && @typed != @step.provider_name}
+                class="min-w-28 max-w-full break-words"
                 phx-hook="PendingButton"
                 phx-disable-with="Confirming..."
               >
-                Continue
+                <span class="min-w-0 break-words">
+                  {if @purpose == :unlink,
+                    do: "Remove sign-in method",
+                    else: "Continue to #{@step.provider_name}"}
+                </span>
               </.button>
               <.button
                 :if={@step.factor == :email}
@@ -185,8 +205,9 @@ defmodule EmisarWeb.AuthComponents do
                 phx-click="resend_oidc_step_up"
                 phx-disable-with="Sending…"
               >
-                Resend
+                Resend code
               </.button>
+              <.button type="button" variant={:ghost} phx-click={@close}>Cancel</.button>
             </:actions>
           </.simple_form>
         </.focus_wrap>
@@ -200,13 +221,13 @@ defmodule EmisarWeb.AuthComponents do
   defp oidc_step_title(:verify, _provider_name), do: "Verify sign-in"
 
   defp oidc_step_explanation(:link, provider_name),
-    do: "Confirm your current emisar profile before signing in with #{provider_name}."
+    do: "Confirm it's you, then sign in with #{provider_name}."
 
-  defp oidc_step_explanation(:unlink, _provider_name),
-    do: "Confirm your current emisar profile before removing this sign-in method."
+  defp oidc_step_explanation(:unlink, provider_name),
+    do: "You won't be able to sign in with #{provider_name}. Sessions using this method will end."
 
   defp oidc_step_explanation(:verify, provider_name),
-    do: "Confirm your current emisar profile before opening #{provider_name} sign-in."
+    do: "Confirm it's you, then sign in with #{provider_name} to verify this connection."
 
   @doc """
   Two-column auth-flow layout: marketing copy on the left, form on the
@@ -480,8 +501,7 @@ defmodule EmisarWeb.AuthComponents do
            the profile page (email change, disable, regenerate) — one block
            rhythm for the whole step instead of a wrapper with its own gap. --%>
       <p class="text-sm text-zinc-300">
-        We sent a 6-digit code to <span class="font-medium text-zinc-100">{@email}</span>.
-        Enter it before adding an authenticator.
+        Enter the 6-digit code sent to <span class="break-all font-medium text-zinc-100">{@email}</span>.
       </p>
       <.code_input
         id="mfa-enrollment-email-code"
@@ -498,14 +518,14 @@ defmodule EmisarWeb.AuthComponents do
   end
 
   @doc """
-  TOTP enrollment block — the white QR wrapper, the "Can't scan?" setup-URI
+  TOTP enrollment block — the white QR wrapper, the "Can't scan?" setup-key
   disclosure, and ONE `code_input` confirm form (`#mfa_form`, submits
   `confirm_mfa` as `mfa[otp]`). Shared by the profile page's voluntary
   setup (`variant={:split}` — QR beside the guidance) and the enforced-MFA
   interstitial (`:stacked` — centered in the narrow auth card). The page
   passes its own submit/cancel buttons via `:actions`.
 
-      <.mfa_enrollment qr_svg={@mfa_qr_svg} uri={@mfa_uri} form={@mfa_form} variant={:split}>
+      <.mfa_enrollment qr_svg={@mfa_qr_svg} setup_key={@mfa_setup_key} form={@mfa_form} variant={:split}>
         <:instructions>Scan with your authenticator, then confirm.</:instructions>
         <:actions>
           <.button phx-disable-with="Verifying...">Confirm and enable</.button>
@@ -513,7 +533,7 @@ defmodule EmisarWeb.AuthComponents do
       </.mfa_enrollment>
   """
   attr :qr_svg, :string, required: true, doc: "server-generated SVG (MfaQr) — never user input"
-  attr :uri, :string, required: true, doc: "the otpauth:// provisioning URI"
+  attr :setup_key, :string, required: true, doc: "the base32 manual authenticator key"
   attr :form, Phoenix.HTML.Form, required: true
   attr :variant, :atom, default: :stacked, values: [:stacked, :split]
 
@@ -527,7 +547,7 @@ defmodule EmisarWeb.AuthComponents do
   def mfa_enrollment(assigns) do
     ~H"""
     <div class={mfa_enrollment_wrapper(@variant)}>
-      <div class="flex flex-col items-center gap-2">
+      <div class="flex shrink-0 flex-col items-center gap-2">
         <%!-- raw/1 is safe here: the SVG comes from MfaQr rendering OUR
              provisioning URI server-side, never from user input (IL-16). --%>
         <div class="rounded-lg bg-white p-3 [&>svg]:block [&>svg]:h-60 [&>svg]:w-60">
@@ -536,23 +556,18 @@ defmodule EmisarWeb.AuthComponents do
         <p class="text-[11px] text-zinc-400">Scan with your authenticator</p>
       </div>
 
-      <div class="space-y-3">
+      <div class={["min-w-0 space-y-4", @variant == :split && "flex-1 basis-80"]}>
         <p :if={@instructions != []} class="text-sm text-zinc-300">
           {render_slot(@instructions)}
         </p>
 
         <.disclosure>
-          <:summary>Can't scan? Use a setup URI</:summary>
-          <div class="flex items-center gap-2">
-            <code id="mfa-uri" class="flex-1 break-all font-mono text-[11px] text-zinc-200">
-              {@uri}
-            </code>
-            <.copy_button
-              target="#mfa-uri"
-              class="bg-brand-500/20 px-2 text-brand-100 hover:bg-brand-500/30 font-semibold"
-            >
-              Copy
-            </.copy_button>
+          <:summary>Can't scan? Enter a setup key</:summary>
+          <div class="space-y-2">
+            <p class="text-sm text-zinc-400">
+              In your app, choose a time-based key and name it emisar.
+            </p>
+            <.copyable_id id="mfa-setup-key" value={@setup_key} class="text-sm text-zinc-200" />
           </div>
         </.disclosure>
 
@@ -569,5 +584,44 @@ defmodule EmisarWeb.AuthComponents do
 
   defp mfa_enrollment_wrapper(:stacked), do: "space-y-4"
 
-  defp mfa_enrollment_wrapper(:split), do: "grid grid-cols-1 gap-6 sm:grid-cols-[auto_1fr]"
+  # Wrap by available section width, including beside the Profile help rail.
+  defp mfa_enrollment_wrapper(:split), do: "flex flex-wrap items-start gap-6"
+
+  attr :step, :integer, required: true, values: [1, 2, 3]
+
+  def mfa_setup_progress(assigns) do
+    assigns =
+      assign(
+        assigns,
+        :label,
+        Enum.at(["Verify email", "Add authenticator", "Save recovery codes"], assigns.step - 1)
+      )
+
+    ~H"""
+    <p class="mb-4 text-xs text-zinc-400" role="status">
+      Step {@step} of 3 <span aria-hidden="true">·</span> <span class="text-zinc-200">{@label}</span>
+    </p>
+    """
+  end
+
+  @doc "The same explicit saved-codes acknowledgement on voluntary and required MFA setup."
+  attr :saved, :boolean, required: true
+  attr :event, :string, required: true
+  attr :label, :string, default: "Done"
+
+  def recovery_code_acknowledgement(assigns) do
+    ~H"""
+    <div class="space-y-4">
+      <.checkbox
+        id="recovery-codes-saved"
+        phx-click="toggle_codes_saved"
+        checked={@saved}
+        label="I've saved my recovery codes somewhere safe"
+      />
+      <.button phx-click={@event} disabled={not @saved} phx-disable-with="Continuing…">
+        {@label}
+      </.button>
+    </div>
+    """
+  end
 end

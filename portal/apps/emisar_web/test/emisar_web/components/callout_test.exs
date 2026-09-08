@@ -199,8 +199,8 @@ defmodule EmisarWeb.Components.CalloutTest do
           ~H|<DomainComponents.subscription_banner entitlement_state={:dunning} status="past_due" />|
         )
 
-      assert dunning =~ "Payment recovery in progress"
-      assert dunning =~ "Paid features remain available"
+      assert dunning =~ "Payment overdue"
+      assert dunning =~ "paid features remain available"
       assert dunning =~ "bg-rose-400/40"
 
       healthy =
@@ -221,8 +221,8 @@ defmodule EmisarWeb.Components.CalloutTest do
         )
 
       assert expired =~ "Subscription ended"
-      assert expired =~ "Free limits"
-      assert expired =~ "Paid integrations are dormant"
+      assert expired =~ "is on the Free plan"
+      assert expired =~ "restore paid features"
 
       unresolved =
         rendered_to_string(
@@ -230,7 +230,36 @@ defmodule EmisarWeb.Components.CalloutTest do
         )
 
       assert unresolved =~ "Billing status unavailable"
-      assert unresolved =~ "Billing, recovery, and cleanup remain available"
+      assert unresolved =~ "Paid features are temporarily unavailable"
+    end
+
+    test "an expired scheduled pause is paused even before its terminal webhook" do
+      assigns = %{}
+
+      html =
+        rendered_to_string(~H|<DomainComponents.subscription_banner
+  entitlement_state={:expired}
+  status="active"
+  scheduled_action="pause"
+/>|)
+
+      assert html =~ "Subscription paused"
+      refute html =~ "Subscription ended"
+      assert html =~ "is on the Free plan"
+    end
+
+    test "a confirmed cancellation takes precedence over an old pause schedule" do
+      assigns = %{}
+
+      html =
+        rendered_to_string(~H|<DomainComponents.subscription_banner
+  entitlement_state={:expired}
+  status="canceled"
+  scheduled_action="pause"
+/>|)
+
+      assert html =~ "Subscription ended"
+      refute html =~ "Subscription paused"
     end
   end
 end

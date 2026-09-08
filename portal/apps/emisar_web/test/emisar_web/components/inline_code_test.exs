@@ -11,7 +11,10 @@ defmodule EmisarWeb.Components.InlineCodeTest do
       rendered_to_string(~H|<CoreComponents.inline_code text="Run `linux.uptime` now." />|)
 
     assert html =~ "Run "
-    assert html =~ ~r/<code[^>]*>\s*linux\.uptime\s*<\/code>/
+
+    assert html |> LazyHTML.from_fragment() |> LazyHTML.query("code") |> LazyHTML.text() ==
+             "linux.uptime"
+
     assert html =~ " now."
   end
 
@@ -25,6 +28,30 @@ defmodule EmisarWeb.Components.InlineCodeTest do
 
     assert html =~ "bg-zinc-800/60"
     assert html =~ "text-[11px]"
-    assert html =~ ~r/>\s*deny\s*</
+    assert html |> LazyHTML.from_fragment() |> LazyHTML.query("code") |> LazyHTML.text() == "deny"
+  end
+
+  test "preserves intentional spaces without adding template whitespace" do
+    assigns = %{}
+
+    html =
+      rendered_to_string(
+        ~H|<CoreComponents.inline_code>{" coop codex "}</CoreComponents.inline_code>|
+      )
+
+    assert html |> LazyHTML.from_fragment() |> LazyHTML.query("code") |> LazyHTML.text() ==
+             " coop codex "
+  end
+
+  test "escapes literal code content" do
+    assigns = %{value: "<script>alert(1)</script>"}
+
+    html =
+      rendered_to_string(~H|<CoreComponents.inline_code>{@value}</CoreComponents.inline_code>|)
+
+    refute html =~ "<script>"
+
+    assert html |> LazyHTML.from_fragment() |> LazyHTML.query("code") |> LazyHTML.text() ==
+             assigns.value
   end
 end

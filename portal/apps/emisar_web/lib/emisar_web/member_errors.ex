@@ -21,6 +21,11 @@ defmodule EmisarWeb.MemberErrors do
     role_managed_by_directory: "That member's role is set by their identity provider.",
     runner_access_managed_by_directory:
       "That member's runner access is set by their identity provider.",
+    owner_access_is_account_wide: "Owners always have access to all runners and packs.",
+    owner_demotion_requires_access:
+      "Choose the member's access before changing their Owner role.",
+    owner_demotion_requires_directory: "Return this owner's role and access to directory sync.",
+    membership_role_changed: "This member's role changed. Refresh before trying again.",
     runner_access_exceeds_subject: "You can only grant runner access that you currently have.",
     role_carries_no_runner_access:
       "A billing manager has no runner or pack access. Change their role first, then set access.",

@@ -36,6 +36,7 @@ export function initDropdowns() {
       const details = event.target
       if (details instanceof Element && details.matches("[data-dropdown]") && details.open) {
         positionDropdown(details)
+        details.querySelector("[data-dropdown-search]")?.focus({preventScroll: true})
       }
     },
     true
@@ -48,6 +49,8 @@ export function initDropdowns() {
 
   window.addEventListener("resize", reposition)
   window.addEventListener("scroll", reposition, true)
+  // Server-backed search can change an open panel's height after it was placed.
+  document.addEventListener("phx:update", reposition)
 
   // LiveView's phx-click-away covers connected console pages. These delegated
   // handlers complete the native-details behavior for static pages too, and
@@ -59,6 +62,12 @@ export function initDropdowns() {
   })
 
   document.addEventListener("keydown", (event) => {
+    // Searching inside a form picker must never submit its surrounding form.
+    if (event.key === "Enter" && event.target instanceof Element &&
+        event.target.matches("[data-dropdown-search]")) {
+      event.preventDefault()
+      return
+    }
     if (event.key !== "Escape") return
 
     const open = Array.from(openDropdowns())

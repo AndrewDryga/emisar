@@ -17,6 +17,121 @@ defmodule EmisarWeb.LiveTableTest do
   alias Emisar.Repo.Paginator.Metadata
   alias EmisarWeb.LiveTable
 
+  test "bounded filter choices keep search and paging inside the shared dropdown" do
+    filter = %Filter{
+      name: :directory_group_id,
+      title: "Directory group",
+      type: {:list, :string},
+      values: [{"group-a", "Platform", "Okta"}, {"group-b", "Security", "Entra"}]
+    }
+
+    picker = %{
+      selected: "group-a",
+      search: "",
+      empty?: false,
+      error: nil,
+      metadata: %Metadata{next_page_cursor: "next-choices"}
+    }
+
+    params = %{
+      "synced_members_directory_group_id" => "group-a",
+      "synced_members_search" => "Maya",
+      "synced_members_after" => "old-members",
+      "group_access_search" => "SRE",
+      "group_access_after" => "keep-groups"
+    }
+
+    html =
+      render_component(&LiveTable.filter_form/1,
+        id: "member-filters",
+        path: "/app/acme/settings/sso/provider",
+        params: params,
+        filters: [%Filter{name: :search, title: "Name or email", type: :string}, filter],
+        prefix: "synced_members_",
+        event: "filter_directory_members",
+        option_pickers: %{directory_group_id: picker}
+      )
+
+    document = LazyHTML.from_document(html)
+    dropdown = "#filter-synced_members_directory_group_id-choices"
+    [mounted] = document |> LazyHTML.query(dropdown) |> LazyHTML.attribute("phx-mounted")
+    assert mounted =~ "ignore_attrs"
+
+    refute document
+           |> LazyHTML.query("#{dropdown} [data-dropdown-panel] input[data-dropdown-search]")
+           |> Enum.empty?()
+
+    refute document
+           |> LazyHTML.query(
+             "#{dropdown} [data-dropdown-panel] button[phx-click=page_filter_options]"
+           )
+           |> Enum.empty?()
+
+    assert document |> LazyHTML.query("select[name=directory_group_id]") |> Enum.empty?()
+    refute document |> LazyHTML.query("input[name=search][value=Maya]") |> Enum.empty?()
+    refute document |> LazyHTML.query("#{dropdown} a[aria-current=true]") |> Enum.empty?()
+
+    [choice] =
+      document
+      |> LazyHTML.query("#{dropdown} a")
+      |> Enum.filter(&(LazyHTML.text(&1) =~ "Security"))
+
+    [href] = LazyHTML.attribute(choice, "href")
+
+    assert URI.decode_query(URI.parse(href).query) == %{
+             "synced_members_directory_group_id" => "group-b",
+             "synced_members_search" => "Maya",
+             "group_access_search" => "SRE",
+             "group_access_after" => "keep-groups"
+           }
+
+    [clear] =
+      document |> LazyHTML.query("a") |> Enum.filter(&(LazyHTML.text(&1) =~ "Clear filters"))
+
+    [clear_href] = LazyHTML.attribute(clear, "href")
+
+    assert URI.decode_query(URI.parse(clear_href).query) == %{
+             "group_access_search" => "SRE",
+             "group_access_after" => "keep-groups"
+           }
+  end
+
+  test "an empty remote choice page offers recovery without clearing the applied filter" do
+    filter = %Filter{
+      name: :directory_group_id,
+      title: "IdP group",
+      type: {:list, :string},
+      values: [{"chosen", "Platform"}]
+    }
+
+    picker = %{
+      selected: "chosen",
+      search: "Platform",
+      empty?: true,
+      error: nil,
+      metadata: %Metadata{count: 10},
+      page: [cursor: "stale"]
+    }
+
+    html =
+      render_component(&LiveTable.filter_form/1,
+        id: "member-filters",
+        path: "/app/acme/settings/team",
+        params: %{"directory_group_id" => "chosen"},
+        filters: [filter],
+        option_pickers: %{directory_group_id: picker}
+      )
+
+    document = LazyHTML.from_document(html)
+    refute document |> LazyHTML.query("button[phx-value-direction=first]") |> Enum.empty?()
+
+    refute document
+           |> LazyHTML.query("input[name=directory_group_id][value=chosen]")
+           |> Enum.empty?()
+
+    assert html =~ "This page no longer has choices."
+  end
+
   defp string_filter(name) do
     %Filter{name: name, type: :string, fun: fn q, _ -> {q, true} end}
   end
@@ -257,6 +372,7 @@ defmodule EmisarWeb.LiveTableTest do
         """)
 
       assert html =~ ~s(data-icon="action.clear_filters")
+      assert html =~ ~r/<ul id="things" class="[^"]*emisar-icon-mono/
       assert html =~ "emisar-icon h-4 w-4 shrink-0"
       assert html =~ "Clear filters"
       refute html =~ "&times;"
@@ -286,6 +402,87 @@ defmodule EmisarWeb.LiveTableTest do
       assert html =~ "No things yet."
       # The <ul> shouldn't render in the empty branch.
       refute html =~ ~s(<ul id="things")
+    end
+
+    test "an empty default-filtered list keeps the status dropdown usable without a clear affordance" do
+      for layout <- [:cards, :table], prefix <- ["", "keys_"] do
+        assigns = %{
+          layout: layout,
+          prefix: prefix,
+          filters: [
+            %{
+              list_filter(:status)
+              | title: "Status",
+                values: [{"active", "Active"}],
+                default: "active"
+            }
+          ]
+        }
+
+        html =
+          rendered_to_string(~H"""
+          <LiveTable.live_table
+            layout={@layout}
+            id="things"
+            prefix={@prefix}
+            path="/things"
+            rows={[]}
+            metadata={empty_meta()}
+            filter_params={%{}}
+            filters={@filters}
+          >
+            <:col :let={row} label="Name">{row.id}</:col>
+            <:item :let={row}>
+              <li>{row.id}</li>
+            </:item>
+            <:empty>No active things.</:empty>
+          </LiveTable.live_table>
+          """)
+
+        document = LazyHTML.from_document(html)
+
+        assert document
+               |> LazyHTML.query(
+                 "#things-filter select[name=status] option[value=active][selected]"
+               )
+               |> Enum.count() == 1
+
+        assert document
+               |> LazyHTML.query("#things-filter select[name=status] option[value='']")
+               |> Enum.count() == 1
+
+        assert document |> LazyHTML.query("#things-filter [disabled]") |> Enum.empty?()
+        refute html =~ "Clear filters"
+      end
+    end
+
+    test "a genuinely unfiltered empty list still hides its filter bar" do
+      for default <- [nil, "", []] do
+        assigns = %{filters: [%{list_filter(:status) | default: default}]}
+
+        html =
+          rendered_to_string(~H"""
+          <LiveTable.live_table
+            layout={:cards}
+            id="things"
+            path="/things"
+            rows={[]}
+            metadata={empty_meta()}
+            filter_params={%{}}
+            filters={@filters}
+          >
+            <:item :let={row}>
+              <li>{row.id}</li>
+            </:item>
+            <:empty>No things yet.</:empty>
+          </LiveTable.live_table>
+          """)
+
+        assert html
+               |> LazyHTML.from_document()
+               |> LazyHTML.query("#things-filter")
+               |> Enum.empty?()
+      end
     end
 
     test "a stale empty page replaces caller empty copy with a first-page escape" do
@@ -446,7 +643,11 @@ defmodule EmisarWeb.LiveTableTest do
         </LiveTable.live_table>
         """)
 
-      assert html =~ ~s(class="space-y-2 attention-style)
+      assert html
+             |> LazyHTML.from_document()
+             |> LazyHTML.query("ul#pending.space-y-2.attention-style")
+             |> Enum.count() == 1
+
       refute html =~ "divide-y divide-zinc-900"
     end
 
@@ -540,11 +741,13 @@ defmodule EmisarWeb.LiveTableTest do
 
       # The desktop/tablet table (hidden below sm) still renders the :col headers.
       assert html =~ ~s(<table id="runs")
+      assert html =~ ~r/<table id="runs" class="[^"]*emisar-icon-mono/
       assert html =~ "Action"
       assert html =~ "Status"
       # The phone card <ul> is sm:hidden and renders the authored :card slot —
       # no auto-dumped `w-24` uppercase label per column (the old runs wall).
       assert html =~ ~s(id="runs-cards")
+      assert html =~ ~r/<ul id="runs-cards" class="[^"]*emisar-icon-mono/
       assert html =~ "sm:hidden"
       assert html =~ "data-card-action"
       refute html =~ "w-24 shrink-0"

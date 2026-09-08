@@ -40,15 +40,15 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
       variant={:hint}
       tone={:danger}
       icon="state.warning"
-      title="Couldn't load recent runs"
+      title="Couldn't load recent executions"
     >
-      This is a load error, not an empty history. Refresh the page to try again.
+      Refresh the page to try again.
     </.empty_state>
     <p
       :if={not @load_error? and @visible_executions == []}
       class="text-sm leading-6 text-zinc-400"
     >
-      No runs yet.
+      No executions yet.
     </p>
     <ul :if={not @load_error? and @visible_executions != []} class="divide-y divide-zinc-800/70">
       <li :for={execution <- @visible_executions}>
@@ -104,7 +104,7 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
   def qualifier_checkbox(assigns) do
     class =
       [
-        "flex min-h-10 w-full items-center gap-3 rounded-lg px-3 py-2 text-sm text-zinc-300 ring-1 ring-inset ring-zinc-800",
+        "relative flex min-h-8 w-full items-center gap-2 rounded-lg px-2 py-1.5 text-sm leading-5 text-zinc-300 ring-1 ring-inset ring-zinc-800 after:absolute after:inset-x-0 after:-inset-y-1 after:content-['']",
         assigns.class
       ]
       |> Enum.reject(&is_nil/1)
@@ -266,20 +266,20 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
   defp argument_type_label(_type), do: "value"
 
   defp argument_source_options(%{"required" => "true", "sensitive" => "true"}),
-    do: [{"Run-time input", "input"}, {"Prior output", "output"}]
+    do: [{"Input", "input"}, {"Earlier-stage output", "output"}]
 
   defp argument_source_options(%{"required" => "true"}),
-    do: [{"Literal", "literal"}, {"Run-time input", "input"}, {"Prior output", "output"}]
+    do: [{"Fixed value", "literal"}, {"Input", "input"}, {"Earlier-stage output", "output"}]
 
   defp argument_source_options(%{"sensitive" => "true"}),
-    do: [{"Omit", "omit"}, {"Run-time input", "input"}, {"Prior output", "output"}]
+    do: [{"Leave unset", "omit"}, {"Input", "input"}, {"Earlier-stage output", "output"}]
 
   defp argument_source_options(_argument),
     do: [
-      {"Omit", "omit"},
-      {"Literal", "literal"},
-      {"Run-time input", "input"},
-      {"Prior output", "output"}
+      {"Leave unset", "omit"},
+      {"Fixed value", "literal"},
+      {"Input", "input"},
+      {"Earlier-stage output", "output"}
     ]
 
   # An unnamed row falls back to its position, the way a run-time input card
@@ -381,12 +381,12 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
 
       <div
         id={"runbook-stage-#{@stage_index}-overview"}
-        class="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-[9rem_minmax(0,1fr)_10rem_11rem]"
+        class="mt-4 grid items-end gap-3 sm:grid-cols-2 xl:grid-cols-[9rem_minmax(0,1fr)_10rem_11rem]"
       >
         <.input
           name={"draft[stages][#{@stage_index}][id]"}
           value={@stage["id"]}
-          label="Identifier"
+          label="Stage ID"
           label_variant={:eyebrow}
           disabled={@read_only?}
           class="font-mono"
@@ -402,7 +402,7 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
           type="select"
           name={"draft[stages][#{@stage_index}][mode]"}
           value={@stage["mode"]}
-          label="Execution"
+          label="Execution order"
           label_variant={:eyebrow}
           disabled={@read_only?}
           options={[{"Sequential", "sequential"}, {"Parallel", "parallel"}]}
@@ -414,7 +414,7 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
           max="16"
           name={"draft[stages][#{@stage_index}][max_parallel]"}
           value={@stage["max_parallel"]}
-          label="Maximum concurrency"
+          label="Max parallel actions"
           label_variant={:eyebrow}
           disabled={@read_only?}
         />
@@ -610,7 +610,7 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
           <.input
             name={"draft[stages][#{@stage_index}][steps][#{@step_index}][id]"}
             value={@step["id"]}
-            label="Identifier"
+            label="Step ID"
             label_variant={:eyebrow}
             disabled={@read_only?}
             class="font-mono"
@@ -684,6 +684,9 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
         />
         <.wait_editor
           wait={@step["wait"]}
+          risk={@risk}
+          has_conditions?={@step["success"] != []}
+          definition_issues={@definition_issues}
           stage_index={@stage_index}
           step_index={@step_index}
           open_panels={@open_panels}
@@ -871,9 +874,16 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
       available? = RunbookEditorCatalog.target_available?(catalog, ref)
       phrase = target_phrase(catalog, ref, selection)
 
+      label =
+        case {available?, ref} do
+          {true, _ref} -> phrase
+          {false, "group:" <> group} -> "No runners available in #{group}"
+          {false, _ref} -> "#{phrase} (unavailable)"
+        end
+
       %{
         index: index,
-        label: if(available?, do: phrase, else: "#{phrase} (unavailable)"),
+        label: label,
         available?: available?
       }
     end)
@@ -889,7 +899,7 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
     do: "One random runner in #{group}"
 
   defp target_phrase(_catalog, "group:" <> group, _selection),
-    do: "Every runner in #{group}"
+    do: "All available runners in #{group}"
 
   defp target_phrase(catalog, ref, selection),
     do: RunbookEditorCatalog.target_label(catalog, ref, selection)
@@ -971,15 +981,21 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
   defp operator_phrase(operator), do: String.replace(operator, "_", " ")
 
   defp summary_wait_note(%{"enabled" => "true"} = wait) do
-    "observe again every #{wait["interval_seconds"]}s, " <>
-      "for up to #{wait["max_attempts"]} observations or #{wait["timeout_seconds"]}s"
+    "repeat every #{wait["interval_seconds"]}s, " <>
+      "for up to #{wait["max_attempts"]} attempts or #{wait["timeout_seconds"]}s"
   end
 
   defp summary_wait_note(_wait), do: nil
 
-  # Reads mid-phrase ("in structured output"), so it stays lower case.
-  defp source_phrase(%{"source" => "structured_output"}), do: "structured output"
+  defp source_phrase(%{"source" => "structured_output"}), do: "stdout"
   defp source_phrase(%{"source" => source}), do: source
+
+  # Keep a saved validated-stdout binding intact when the form posts unchanged.
+  # It is a representation of stdout, not a third stream for the user to choose.
+  defp output_source_options(%{"source" => "structured_output"}),
+    do: [{"stdout", "structured_output"}, {"stderr", "stderr"}]
+
+  defp output_source_options(_output), do: [{"stdout", "stdout"}, {"stderr", "stderr"}]
 
   # A collapsed step renders a summary line plus its hidden live inputs — the
   # values post, but no picker is reachable, so it pays for NO option catalog:
@@ -1094,7 +1110,6 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
     ~H"""
     <div id={"runbook-stage-#{@stage_index}-step-#{@step_index}-targets"}>
       <.label variant={:eyebrow}>Targets</.label>
-
       <input
         type="hidden"
         name={"draft[stages][#{@stage_index}][steps][#{@step_index}][target_selection]"}
@@ -1444,6 +1459,7 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
             )
           ]}>
             <.input
+              size={:compact}
               type="select"
               name={"draft[stages][#{@stage_index}][steps][#{@step_index}][args][#{index}][source]"}
               value={argument["source"]}
@@ -1499,6 +1515,7 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
 
       <.input
         :if={@argument["source"] == "literal" and @argument["type"] == "boolean"}
+        size={:compact}
         type="select"
         name={"#{@name}[value]"}
         value={@argument["value"]}
@@ -1511,6 +1528,7 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
       />
       <.input
         :if={@argument["source"] == "literal" and @argument["type"] in ["integer", "number"]}
+        size={:compact}
         type="number"
         step={if @argument["type"] == "number", do: "any", else: "1"}
         name={"#{@name}[value]"}
@@ -1526,6 +1544,7 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
           @argument["source"] == "literal" and
             @argument["type"] not in ["boolean", "integer", "number"]
         }
+        size={:compact}
         name={"#{@name}[value]"}
         value={@argument["value"]}
         label="Value"
@@ -1541,10 +1560,11 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
       />
       <.input
         :if={@argument["source"] in ["input", "output"]}
+        size={:compact}
         type="select"
         name={"#{@name}[ref]"}
         value={@argument["ref"]}
-        label={if @argument["source"] == "input", do: "Run-time input", else: "Prior output"}
+        label={if @argument["source"] == "input", do: "Input", else: "Earlier-stage output"}
         label_variant={:eyebrow}
         aria-label={"#{@argument["name"]} reference"}
         disabled={@read_only?}
@@ -1569,11 +1589,11 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
       <div>
         <p class="text-xs font-semibold text-zinc-200">Extracted outputs</p>
         <p class="mt-0.5 text-[11px] text-zinc-400">
-          Keep only the result fields later conditions or stages need.
+          Extract values from this action's output to check its result or use in later stages.
         </p>
       </div>
 
-      <p :if={@step["outputs"] == []} class="mt-3 text-xs text-zinc-400">
+      <p :if={@read_only? and @step["outputs"] == []} class="mt-3 text-xs text-zinc-400">
         No extracted outputs.
       </p>
 
@@ -1581,7 +1601,7 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
         <div
           :for={{output, index} <- Enum.with_index(@step["outputs"])}
           id={"runbook-stage-#{@stage_index}-step-#{@step_index}-output-#{index}"}
-          class="rounded-lg border border-zinc-800/70 p-4"
+          class="@container rounded-lg border border-zinc-800/70 p-4"
         >
           <div class="flex items-center justify-between gap-3">
             <span class="text-[11px] font-semibold uppercase tracking-wider text-zinc-400">
@@ -1604,6 +1624,7 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
               class="grid gap-3 sm:grid-cols-[minmax(0,1fr)_9rem] sm:items-end"
             >
               <.input
+                size={:compact}
                 name={"draft[stages][#{@stage_index}][steps][#{@step_index}][outputs][#{index}][id]"}
                 value={output["id"]}
                 label="Output ID"
@@ -1623,9 +1644,16 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
 
             <div
               id={"runbook-stage-#{@stage_index}-step-#{@step_index}-output-#{index}-extractor"}
-              class="grid gap-3 sm:grid-cols-2 lg:grid-cols-[12rem_12rem_minmax(0,1fr)]"
+              class={[
+                "grid items-end gap-3 @md:grid-cols-2",
+                if(output["extract_type"] == "regex",
+                  do: "@2xl:grid-cols-[12rem_12rem_minmax(0,1fr)_7rem]",
+                  else: "@2xl:grid-cols-[12rem_12rem_minmax(0,1fr)]"
+                )
+              ]}
             >
               <.input
+                size={:compact}
                 type="select"
                 name={"draft[stages][#{@stage_index}][steps][#{@step_index}][outputs][#{index}][source]"}
                 value={output["source"]}
@@ -1633,13 +1661,10 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
                 label_variant={:eyebrow}
                 aria-label={"Output #{index + 1} source"}
                 disabled={@read_only?}
-                options={[
-                  {"Structured output", "structured_output"},
-                  {"stdout", "stdout"},
-                  {"stderr", "stderr"}
-                ]}
+                options={output_source_options(output)}
               />
               <.input
+                size={:compact}
                 type="select"
                 name={"draft[stages][#{@stage_index}][steps][#{@step_index}][outputs][#{index}][extract_type]"}
                 value={output["extract_type"]}
@@ -1655,6 +1680,7 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
                 ]}
               />
               <.input
+                size={:compact}
                 name={"draft[stages][#{@stage_index}][steps][#{@step_index}][outputs][#{index}][expression]"}
                 value={output["expression"]}
                 label="Expression"
@@ -1666,10 +1692,9 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
                 disabled={@read_only?}
                 class="font-mono"
               />
-            </div>
-
-            <div :if={output["extract_type"] == "regex"} class="max-w-36">
               <.input
+                :if={output["extract_type"] == "regex"}
+                size={:compact}
                 name={"draft[stages][#{@stage_index}][steps][#{@step_index}][outputs][#{index}][capture]"}
                 value={output["capture"]}
                 label="Capture group"
@@ -1709,7 +1734,7 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
       <div>
         <p class="text-xs font-semibold text-zinc-200">Success conditions</p>
         <p class="mt-0.5 text-[11px] text-zinc-400">
-          Every condition must pass. Conditions can read only extracted outputs.
+          Check this step's extracted outputs. Every condition must pass for the step to succeed.
         </p>
       </div>
 
@@ -1717,7 +1742,7 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
         Add an extracted output before adding a success condition.
       </p>
       <p :if={@step["outputs"] != [] and @step["success"] == []} class="mt-3 text-xs text-zinc-400">
-        No extra success conditions. A successful action exit is enough.
+        The step succeeds if the action succeeds.
       </p>
 
       <div class="mt-3 space-y-3">
@@ -1745,6 +1770,7 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
             class="mt-4 grid gap-3 lg:grid-cols-[minmax(0,1fr)_13rem_minmax(0,1.5fr)]"
           >
             <.input
+              size={:compact}
               type="select"
               name={"draft[stages][#{@stage_index}][steps][#{@step_index}][success][#{index}][output]"}
               value={condition["output"]}
@@ -1756,6 +1782,7 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
               options={Enum.map(@step["outputs"], &{&1["id"], &1["id"]})}
             />
             <.input
+              size={:compact}
               type="select"
               name={"draft[stages][#{@stage_index}][steps][#{@step_index}][success][#{index}][operator]"}
               value={condition["operator"]}
@@ -1776,6 +1803,7 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
               ]}
             />
             <.input
+              size={:compact}
               name={"draft[stages][#{@stage_index}][steps][#{@step_index}][success][#{index}][value]"}
               value={condition["value"]}
               label="Expected JSON value"
@@ -1801,6 +1829,9 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
   end
 
   attr :wait, :map, required: true
+  attr :risk, :any, required: true
+  attr :has_conditions?, :boolean, required: true
+  attr :definition_issues, :list, required: true
   attr :stage_index, :integer, required: true
   attr :step_index, :integer, required: true
   attr :open_panels, :any, required: true
@@ -1808,7 +1839,15 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
 
   defp wait_editor(assigns) do
     key = "wait-#{assigns.stage_index}-#{assigns.step_index}"
-    assigns = assign(assigns, :panel_key, key)
+    path = "/stages/#{assigns.stage_index}/steps/#{assigns.step_index}/wait"
+
+    assigns =
+      assigns
+      |> assign(:panel_key, key)
+      |> assign(
+        :invalid_limits?,
+        Enum.any?(assigns.definition_issues, &step_issue?(&1.path, path))
+      )
 
     ~H"""
     <div
@@ -1818,9 +1857,33 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
       <.panel_toggle
         panel_key={@panel_key}
         open?={MapSet.member?(@open_panels, @panel_key)}
-        label="Wait policy"
-        hint={if @wait["enabled"] == "true", do: "Observe again", else: "Halt execution"}
+        label="When conditions aren't met"
+        hint={if @wait["enabled"] == "true", do: "Repeat action", else: "Stop execution"}
       />
+      <p
+        id={"runbook-stage-#{@stage_index}-step-#{@step_index}-wait-help"}
+        class="mt-2 text-[11px] text-zinc-400"
+      >
+        <%= cond do %>
+          <% @wait["enabled"] != "true" and not @has_conditions? -> %>
+            This action runs once.
+          <% @wait["enabled"] != "true" -> %>
+            Stop execution if a condition fails.
+          <% is_nil(@risk) -> %>
+            Choose an available low-risk action to configure repeats.
+          <% @risk != "low" -> %>
+            This {@risk}-risk action cannot repeat. Choose Stop execution or a low-risk action.
+          <% not @has_conditions? -> %>
+            Add a success condition to use repeats.
+          <% @invalid_limits? -> %>
+            Enter valid repeat limits.
+          <% true -> %>
+            Repeat every {@wait["interval_seconds"]} seconds until conditions pass, for up to {@wait[
+              "max_attempts"
+            ]} attempts or {@wait["timeout_seconds"]} seconds.
+            Action failures stop the execution.
+        <% end %>
+      </p>
       <%!-- Hidden, not removed: a closed panel that dropped its inputs let the
             next change anywhere in the form reset an authored wait policy. --%>
       <%!-- Fractions, not rem floors: four hard minimums needed 756px inside a
@@ -1834,16 +1897,18 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
         ]}
       >
         <.input
+          size={:compact}
           type="select"
           name={"draft[stages][#{@stage_index}][steps][#{@step_index}][wait][enabled]"}
           value={@wait["enabled"]}
-          label="When conditions fail"
+          label="When conditions aren't met"
           label_variant={:eyebrow}
           disabled={@read_only?}
-          options={[{"Halt execution", "false"}, {"Observe again", "true"}]}
+          options={[{"Stop execution", "false"}, {"Repeat action", "true"}]}
         />
         <.input
           :if={@wait["enabled"] == "true"}
+          size={:compact}
           type="number"
           min="5"
           max="3600"
@@ -1856,6 +1921,7 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
         />
         <.input
           :if={@wait["enabled"] == "true"}
+          size={:compact}
           type="number"
           min="5"
           max="86400"
@@ -1868,12 +1934,14 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
         />
         <.input
           :if={@wait["enabled"] == "true"}
+          size={:compact}
           type="number"
           min="2"
           max="100"
+          step="1"
           name={"draft[stages][#{@stage_index}][steps][#{@step_index}][wait][max_attempts]"}
           value={@wait["max_attempts"]}
-          label="Maximum observations"
+          label="Maximum attempts"
           label_variant={:eyebrow}
           disabled={@read_only?}
           class="tabular-nums"

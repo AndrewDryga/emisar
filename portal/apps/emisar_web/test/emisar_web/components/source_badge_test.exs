@@ -27,6 +27,7 @@ defmodule EmisarWeb.Components.SourceBadgeTest do
           """)
 
         assert html =~ icon
+        assert html =~ "emisar-icon-mono inline-flex"
         assert html =~ ~s(aria-label="#{assigns.tooltip}")
         assert html =~ ~s(role="tooltip")
         assert html =~ ~s(title="Maya Chen")

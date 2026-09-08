@@ -104,10 +104,10 @@ defmodule EmisarWeb.RunbookEditorComponents do
         "Wait for the publish check to finish."
 
       assigns.preview.state == :blocked ->
-        "Resolve the current infrastructure blockers before publishing."
+        "Resolve the issues before publishing."
 
       assigns.preview.state == :unavailable ->
-        "Current infrastructure validation is unavailable."
+        "Checks are unavailable in this read-only view."
 
       true ->
         "Publishing is unavailable."
@@ -136,7 +136,6 @@ defmodule EmisarWeb.RunbookEditorComponents do
   # Discarding falls back to the live release, so a runbook that has never
   # published one has nothing to fall back to.
   defp discardable?(%Runbooks.Runbook{live_version: nil}), do: false
-  defp discardable?(%Runbooks.Runbook{draft_definition: nil}), do: false
   defp discardable?(%Runbooks.Runbook{}), do: true
   defp discardable?(_runbook), do: false
 
@@ -169,6 +168,12 @@ defmodule EmisarWeb.RunbookEditorComponents do
         />
       </:title>
 
+      <.page_intro>
+        Choose actions and target runners, then organize them into stages. Save your workflow
+        as a draft or publish it when ready.
+        <.doc_link href={~p"/docs/runbooks"}>Runbook docs</.doc_link>
+      </.page_intro>
+
       <div :if={not @loaded?} class="mt-8">
         <div role="status" class="flex items-center gap-2 text-sm text-zinc-400">
           <.icon name="state.loading" class="h-4 w-4 animate-spin motion-reduce:animate-none" />
@@ -184,8 +189,8 @@ defmodule EmisarWeb.RunbookEditorComponents do
           title="Read-only runbook"
         >
           <:body>
-            You can inspect the definition and its current validation state. Owners and admins can
-            edit it and publish the next release.
+            You can view this runbook but can't edit or publish it. Ask an owner or admin to
+            grant you an operator role.
           </:body>
         </.event_block>
 
@@ -193,7 +198,7 @@ defmodule EmisarWeb.RunbookEditorComponents do
           :if={@catalog_load_error?}
           icon="state.warning"
           tone={:rose}
-          title="Current catalog could not be loaded"
+          title="Couldn't load runners and actions"
         >
           <:body>
             You can keep editing the draft. Publishing stays unavailable until current runners and
@@ -233,7 +238,8 @@ defmodule EmisarWeb.RunbookEditorComponents do
             <section id="runbook-stages">
               <.section_header title="Stages">
                 <:subtitle>
-                  A stage is a barrier. Every step must succeed before the next stage starts.
+                  Stages run in order. Every action in a stage must succeed before the next
+                  stage starts. Within a stage, actions can run sequentially or in parallel.
                 </:subtitle>
               </.section_header>
 
@@ -293,13 +299,14 @@ defmodule EmisarWeb.RunbookEditorComponents do
               confirm_label="Discard changes"
               icon="action.undo"
               variant={:secondary}
-              tone={:neutral}
+              tone={if changed_or_draft?(assigns), do: :amber, else: :neutral}
+              disabled={not changed_or_draft?(assigns)}
+              aria-label="Discard changes"
               class="w-full justify-center"
               on_confirm={JS.push("discard_draft")}
             >
               <:body>
-                The editor goes back to live v{@runbook.live_version}, which keeps running either
-                way. Unpublished work cannot be recovered.
+                Discard these workflow changes and return to v{@runbook.live_version}.
               </:body>
               Discard changes
             </.confirm_button>
@@ -314,7 +321,7 @@ defmodule EmisarWeb.RunbookEditorComponents do
               }
               id="delete-runbook"
               title="Delete this runbook?"
-              confirm_label="Delete runbook"
+              confirm_label="Delete"
               icon="action.delete"
               variant={:secondary}
               tone={:rose}
@@ -322,10 +329,9 @@ defmodule EmisarWeb.RunbookEditorComponents do
               on_confirm={JS.push("delete")}
             >
               <:body>
-                Removes the runbook and its unpublished changes. Its releases and execution history
-                remain in the audit trail.
+                Removes this runbook and its draft. Existing executions continue.
               </:body>
-              Delete runbook
+              Delete
             </.confirm_button>
           </aside>
         </form>
@@ -378,12 +384,11 @@ defmodule EmisarWeb.RunbookEditorComponents do
     ~H"""
     <div id={@id} class="space-y-4 rounded-xl bg-zinc-950/40 p-5 ring-1 ring-white/10">
       <p :if={is_nil(@review.diff)} class="text-xs leading-relaxed text-zinc-400">
-        First release — publishing creates v{@review.next_version} and makes it what Run dispatches.
+        Publish v{@review.next_version} to make this workflow available to run.
       </p>
       <div :if={@review.diff} class="space-y-3">
         <p class="text-xs leading-relaxed text-zinc-400">
-          These lines replace what runs today. Executions already under way keep the plan they
-          started with.
+          These changes replace the published workflow. Existing executions keep their current plan.
         </p>
         <.publish_diff diff={@review.diff} />
       </div>
@@ -413,13 +418,13 @@ defmodule EmisarWeb.RunbookEditorComponents do
   defp lifecycle_facts(assigns) do
     ~H"""
     <dl id={@id} class={["space-y-2 text-xs text-zinc-400", @class]}>
-      <.kv label="Live">
-        {if(@runbook.live_version, do: "v#{@runbook.live_version}", else: "Never published")}
+      <.kv label="Published version">
+        {if(@runbook.live_version, do: "v#{@runbook.live_version}", else: "Not published")}
       </.kv>
       <%!-- The number Publish will mint, present exactly while the editor's
            content diverges from live — "Draft: Unpublished changes" was a
            label and its synonym, saying nothing the row below could act on. --%>
-      <.kv :if={@runbook.draft_definition || @dirty?} label="Next">
+      <.kv :if={@runbook.draft_definition || @dirty?} label="Next version">
         v{(@runbook.live_version || 0) + 1}
       </.kv>
     </dl>
@@ -516,10 +521,10 @@ defmodule EmisarWeb.RunbookEditorComponents do
   defp context_section(assigns) do
     ~H"""
     <section>
-      <.section_header title="Operator context">
+      <.section_header title="Instructions">
         <:subtitle>
-          Markdown shown before execution. Record prerequisites, stop conditions, and the expected
-          outcome.
+          Explain when to use this runbook, any prerequisites, and the expected outcome.
+          Markdown supported.
         </:subtitle>
       </.section_header>
       <.input
@@ -529,12 +534,12 @@ defmodule EmisarWeb.RunbookEditorComponents do
         rows="7"
         disabled={@read_only?}
         phx-debounce="300"
-        aria-label="Operator context in Markdown"
+        aria-label="Instructions in Markdown"
         class="font-mono text-xs"
       />
       <details :if={String.trim(@draft["context_markdown"]) != ""} class="mt-3">
         <summary class="cursor-pointer text-xs font-medium text-zinc-400 hover:text-zinc-200">
-          Preview context
+          Preview
         </summary>
         <RunbookMarkdown.render
           markdown={@draft["context_markdown"]}
@@ -551,15 +556,18 @@ defmodule EmisarWeb.RunbookEditorComponents do
   defp inputs_section(assigns) do
     ~H"""
     <section id="runbook-inputs">
-      <.section_header title="Run-time inputs">
+      <.section_header title="Inputs">
         <:subtitle>
-          Typed values supplied when the run starts. Sensitive values are masked in plans,
-          approvals, and results.
+          Values supplied when starting the runbook. Mark sensitive inputs to hide their values
+          in plans, approvals, and results.
         </:subtitle>
       </.section_header>
 
-      <p :if={@draft["inputs"] == []} class="mb-3 text-xs leading-relaxed text-zinc-400">
-        No run-time inputs. Add one for a value that should be supplied for each execution.
+      <p
+        :if={@read_only? and @draft["inputs"] == []}
+        class="mb-3 text-xs leading-relaxed text-zinc-400"
+      >
+        No inputs.
       </p>
 
       <div class="max-w-5xl space-y-6">
@@ -608,6 +616,7 @@ defmodule EmisarWeb.RunbookEditorComponents do
           <div class="mt-6 space-y-6">
             <div class="grid gap-4 sm:grid-cols-[16rem_minmax(0,1fr)]">
               <.input
+                size={:compact}
                 name={"draft[inputs][#{index}][id]"}
                 value={input["id"]}
                 label="Input ID"
@@ -616,17 +625,19 @@ defmodule EmisarWeb.RunbookEditorComponents do
                 class="font-mono"
               />
               <.input
+                size={:compact}
                 name={"draft[inputs][#{index}][description]"}
                 value={input["description"]}
                 label="Description"
                 label_variant={:eyebrow}
                 disabled={@read_only?}
-                placeholder="What the operator or LLM should supply"
+                placeholder="What value should be supplied"
               />
             </div>
 
             <div class="grid gap-4 sm:grid-cols-[minmax(0,1fr)_9rem_9rem] sm:items-end">
               <.input
+                size={:compact}
                 type="select"
                 name={"draft[inputs][#{index}][type]"}
                 value={input["type"]}
@@ -634,11 +645,11 @@ defmodule EmisarWeb.RunbookEditorComponents do
                 label_variant={:eyebrow}
                 disabled={@read_only?}
                 options={[
-                  {"String", "string"},
+                  {"String — text", "string"},
                   {"Integer — whole numbers", "integer"},
                   {"Number — decimals allowed", "number"},
-                  {"Boolean", "boolean"},
-                  {"Enum", "enum"}
+                  {"Boolean — true or false", "boolean"},
+                  {"Enum — allowed values", "enum"}
                 ]}
               />
               <RunbookWorkflowComponents.qualifier_checkbox
@@ -667,6 +678,7 @@ defmodule EmisarWeb.RunbookEditorComponents do
                   class="grid grid-cols-[minmax(0,1fr)_6.5rem_2.5rem] items-start gap-2"
                 >
                   <.input
+                    size={:compact}
                     name={"draft[inputs][#{index}][enum_values][#{value_index}][value]"}
                     value={enum_value["value"]}
                     aria-label={"Allowed value #{value_index + 1}"}
@@ -690,7 +702,7 @@ defmodule EmisarWeb.RunbookEditorComponents do
                         String.trim(enum_value["value"] || "") == ""
                     }
                     class={[
-                      "mt-2 inline-flex min-h-10 w-full items-center justify-center gap-2 rounded-lg px-3 text-xs font-medium ring-1 ring-inset transition-colors disabled:cursor-not-allowed disabled:opacity-40",
+                      "relative mt-1 inline-flex min-h-8 w-full items-center justify-center gap-2 rounded-lg px-2 text-xs font-medium ring-1 ring-inset transition-colors after:absolute after:inset-x-0 after:-inset-y-1 after:content-[''] disabled:cursor-not-allowed disabled:opacity-40",
                       if(enum_default?(enum_value),
                         do: "bg-white/[0.04] text-zinc-100 ring-white/25",
                         else:
@@ -715,11 +727,12 @@ defmodule EmisarWeb.RunbookEditorComponents do
                   <.icon_button
                     :if={not @read_only?}
                     icon="action.delete"
+                    size={:compact}
+                    class="-ml-1"
                     label="Remove allowed value"
                     phx-click="remove_enum_value"
                     phx-value-input={index}
                     phx-value-enum={value_index}
-                    class="mt-2 rounded-lg ring-1 ring-inset ring-zinc-800"
                   />
                 </div>
                 <.add_row
@@ -739,6 +752,7 @@ defmodule EmisarWeb.RunbookEditorComponents do
             >
               <.input
                 :if={input["type"] == "string"}
+                size={:compact}
                 name={"draft[inputs][#{index}][default]"}
                 value={input["default"]}
                 label="Default value"
@@ -748,6 +762,7 @@ defmodule EmisarWeb.RunbookEditorComponents do
               />
               <.input
                 :if={input["type"] == "integer"}
+                size={:compact}
                 type="number"
                 step="1"
                 name={"draft[inputs][#{index}][default]"}
@@ -759,6 +774,7 @@ defmodule EmisarWeb.RunbookEditorComponents do
               />
               <.input
                 :if={input["type"] == "number"}
+                size={:compact}
                 type="number"
                 step="any"
                 name={"draft[inputs][#{index}][default]"}
@@ -770,6 +786,7 @@ defmodule EmisarWeb.RunbookEditorComponents do
               />
               <.input
                 :if={input["type"] == "boolean"}
+                size={:compact}
                 type="select"
                 name={"draft[inputs][#{index}][default]"}
                 value={input["default"]}
@@ -780,6 +797,7 @@ defmodule EmisarWeb.RunbookEditorComponents do
               />
               <.input
                 :if={input["type"] in ["integer", "number"]}
+                size={:compact}
                 type="number"
                 step={if(input["type"] == "integer", do: "1", else: "any")}
                 name={"draft[inputs][#{index}][minimum]"}
@@ -790,6 +808,7 @@ defmodule EmisarWeb.RunbookEditorComponents do
               />
               <.input
                 :if={input["type"] in ["integer", "number"]}
+                size={:compact}
                 type="number"
                 step={if(input["type"] == "integer", do: "1", else: "any")}
                 name={"draft[inputs][#{index}][maximum]"}
@@ -800,6 +819,7 @@ defmodule EmisarWeb.RunbookEditorComponents do
               />
               <.input
                 :if={input["type"] == "string"}
+                size={:compact}
                 type="number"
                 min="0"
                 name={"draft[inputs][#{index}][min_length]"}
@@ -810,6 +830,7 @@ defmodule EmisarWeb.RunbookEditorComponents do
               />
               <.input
                 :if={input["type"] == "string"}
+                size={:compact}
                 type="number"
                 min="0"
                 name={"draft[inputs][#{index}][max_length]"}
@@ -885,13 +906,11 @@ defmodule EmisarWeb.RunbookEditorComponents do
   defp publish_panel(assigns) do
     {panel_title, blocked_title, ready_title, ready_body} =
       if live_in_sync?(assigns.runbook, assigns.dirty?) do
-        {"Run check", "Current infrastructure blocks new executions", "Validated",
-         "This definition resolves and can be executed against current runners, " <>
-           "trusted packs, action contracts, and policy."}
+        {"Run check", "Resolve these issues before running", "Checks passed",
+         "The workflow passes checks for current runners, actions, pack trust, and policy."}
       else
-        {"Publish check", "Current infrastructure blocks publication", "Ready to publish",
-         "The definition is valid and resolves against current runners, trusted packs, " <>
-           "action contracts, and policy."}
+        {"Publish check", "Resolve these issues before publishing", "Ready to publish",
+         "The workflow passes checks for current runners, actions, pack trust, and policy."}
       end
 
     assigns =
@@ -912,8 +931,7 @@ defmodule EmisarWeb.RunbookEditorComponents do
         title="Build the first stage"
       >
         <:body>
-          Choose targets and an action. Publication becomes available only after the complete
-          definition resolves against current infrastructure.
+          Choose runners and an action to build your first stage.
         </:body>
       </.event_block>
 
@@ -968,7 +986,7 @@ defmodule EmisarWeb.RunbookEditorComponents do
       </.event_block>
 
       <p :if={@preview.state == :unavailable} class="text-xs leading-relaxed text-zinc-400">
-        Current infrastructure validation is unavailable for this read-only view.
+        Checks are unavailable in this read-only view.
       </p>
 
       <div :if={@preview.state == :ready} class="space-y-4">
@@ -980,10 +998,10 @@ defmodule EmisarWeb.RunbookEditorComponents do
         <dl class="space-y-2 text-xs text-zinc-400">
           <.kv label="Stages">{length(@preview.plan["stages"])}</.kv>
           <.kv label="Actions">{@preview.plan["total_items"]}</.kv>
-          <.kv label="Run approval">
-            {if @preview.plan["approval_required"], do: "Required", else: "Not required"}
+          <.kv label="Approval required">
+            {if @preview.plan["approval_required"], do: "Yes", else: "No"}
           </.kv>
-          <.kv label="Resolved">
+          <.kv label="Last checked">
             <.local_time value={@preview.checked_at} mode={:relative} />
           </.kv>
         </dl>
@@ -998,10 +1016,10 @@ defmodule EmisarWeb.RunbookEditorComponents do
     ~H"""
     <details>
       <summary class="cursor-pointer text-xs font-medium text-zinc-300 hover:text-zinc-100">
-        Canonical JSON
+        Runbook JSON
       </summary>
       <p class="mt-2 text-xs leading-relaxed text-zinc-400">
-        The exact JSON definition saved and exposed to MCP.
+        The JSON definition of the workflow currently in the editor.
       </p>
       <.code_panel
         id="runbook-canonical-json"
