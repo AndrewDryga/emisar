@@ -198,10 +198,188 @@ defmodule EmisarWeb.RunbookRunLiveTest do
       "inputs" => inputs
     })
 
-    render_click(lv, "start", %{})
+    resolve_preflight(lv)
+    lv |> form("#runbook-run-form") |> render_submit()
+  end
+
+  defp resolve_preflight(lv) do
+    generation = :sys.get_state(lv.pid).socket.assigns.preflight_generation
+    send(lv.pid, {:run_preflight, generation})
+    render(lv)
+  end
+
+  defp preview_id(lv) do
+    lv
+    |> render()
+    |> LazyHTML.from_document()
+    |> LazyHTML.query(~s(input[name="preview_id"]))
+    |> LazyHTML.attribute("value")
+    |> List.first()
   end
 
   defp execution, do: Repo.one!(RunbookExecution)
+
+  describe "reviewed Start" do
+    test "untouched browser input markers do not block preview or Start", %{
+      conn: conn,
+      account: account,
+      subject: subject
+    } do
+      args = [%{"name" => "window", "type" => "integer", "required" => true}]
+      runner = trusted_runner(account, subject, args: args)
+      runbook = published_runbook(subject, runner, typed_input: true)
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runbooks/#{runbook.id}/run")
+
+      params = %{
+        "reason" => "Use the default observation window",
+        "inputs" => %{"window" => "30", "_unused_window" => ""}
+      }
+
+      render_change(lv, "run_form_changed", params)
+      resolve_preflight(lv)
+      assert has_element?(lv, "#start-runbook-button:not([disabled])")
+      render_click(lv, "start", Map.put(params, "preview_id", preview_id(lv)))
+      assert execution().reason == params["reason"]
+      assert Jason.decode!(Repo.one!(ExecutionItem).args_raw) == %{"window" => 30}
+    end
+
+    test "browser metadata cleanup still rejects undeclared input names", %{
+      conn: conn,
+      account: account,
+      subject: subject
+    } do
+      runner = trusted_runner(account, subject)
+      runbook = published_runbook(subject, runner)
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runbooks/#{runbook.id}/run")
+
+      params = %{
+        "reason" => "Unexpected input must not run",
+        "inputs" => %{"unexpected" => "value", "_unused_unexpected" => ""}
+      }
+
+      html = render_change(lv, "run_form_changed", params)
+      assert html =~ "Input is not declared by this runbook"
+      assert has_element?(lv, "#start-runbook-button[disabled]")
+      html = render_click(lv, "start", Map.put(params, "preview_id", preview_id(lv)))
+      assert html =~ "Input is not declared by this runbook"
+      refute Repo.exists?(RunbookExecution)
+    end
+
+    test "stale displayed receipts cannot start a newer ready preview", %{
+      conn: conn,
+      account: account,
+      subject: subject
+    } do
+      runner = trusted_runner(account, subject)
+      runbook = published_runbook(subject, runner)
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runbooks/#{runbook.id}/run")
+      resolve_preflight(lv)
+      previous_id = preview_id(lv)
+      params = %{"reason" => "reviewed fleet", "inputs" => %{}}
+      render_change(lv, "run_form_changed", params)
+      resolve_preflight(lv)
+      refute preview_id(lv) == previous_id
+
+      render_click(lv, "start", Map.put(params, "preview_id", previous_id))
+      assert has_element?(lv, "#runbook-review-notice", "Review the updated plan")
+      refute Repo.exists?(RunbookExecution)
+      lv |> form("#runbook-run-form") |> render_submit()
+      assert execution().reason == params["reason"]
+    end
+
+    test "loading Start refreshes without dispatch and old preflight messages cannot replace its receipt",
+         %{conn: conn, account: account, subject: subject} do
+      runner = trusted_runner(account, subject)
+      runbook = published_runbook(subject, runner)
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runbooks/#{runbook.id}/run")
+      params = %{"reason" => "reviewed fleet", "inputs" => %{}}
+      render_click(lv, "start", params)
+      refute Repo.exists?(RunbookExecution)
+      receipt = preview_id(lv)
+      assert receipt != ""
+      send(lv.pid, {:run_preflight, 1})
+      assert preview_id(lv) == receipt
+      lv |> form("#runbook-run-form") |> render_submit()
+      render_click(lv, "start", Map.put(params, "preview_id", receipt))
+      send(lv.pid, {:run_preflight, 1})
+      render(lv)
+      assert Repo.aggregate(RunbookExecution, :count) == 1
+    end
+
+    test "changed targets require a second Start and preserve the submitted reason", %{
+      conn: conn,
+      account: account,
+      subject: subject
+    } do
+      runner = trusted_runner(account, subject)
+      runbook = published_runbook(subject, runner)
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runbooks/#{runbook.id}/run")
+      params = %{"reason" => "reviewed fleet", "inputs" => %{}}
+      render_change(lv, "run_form_changed", params)
+      resolve_preflight(lv)
+      trusted_runner(account, subject)
+      lv |> form("#runbook-run-form") |> render_submit()
+      refute Repo.exists?(RunbookExecution)
+      refute Repo.exists?(Emisar.Approvals.Request)
+      assert has_element?(lv, "#runbook-review-notice")
+      assert render(lv) =~ params["reason"]
+      lv |> form("#runbook-run-form") |> render_submit()
+      assert execution().frozen_plan["total_items"] == 2
+    end
+
+    test "submit casts and preserves inputs that changed without a change event", %{
+      conn: conn,
+      account: account,
+      subject: subject
+    } do
+      args = [
+        %{"name" => "window", "type" => "integer", "required" => true, "sensitive" => false}
+      ]
+
+      runner = trusted_runner(account, subject, args: args)
+      runbook = published_runbook(subject, runner, typed_input: true)
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runbooks/#{runbook.id}/run")
+      resolve_preflight(lv)
+
+      params = %{
+        "reason" => "longer observation",
+        "inputs" => %{"window" => "60"},
+        "preview_id" => preview_id(lv)
+      }
+
+      render_click(lv, "start", params)
+      refute Repo.exists?(RunbookExecution)
+      assert has_element?(lv, ~s(input[name="inputs[window]"][value="60"]))
+      assert has_element?(lv, "#runbook-review-notice")
+      lv |> form("#runbook-run-form") |> render_submit()
+      assert Jason.decode!(Repo.one!(ExecutionItem).args_raw) == %{"window" => 60}
+    end
+
+    test "the displayed release remains pinned if a newer release is published", %{
+      conn: conn,
+      account: account,
+      subject: subject
+    } do
+      runner = trusted_runner(account, subject)
+      original = published_runbook(subject, runner)
+      {:ok, lv, html} = live(conn, ~p"/app/#{account}/runbooks/#{original.id}/run")
+      assert html =~ "Release 1."
+      params = %{"reason" => "original procedure", "inputs" => %{}}
+      render_change(lv, "run_form_changed", params)
+      resolve_preflight(lv)
+
+      attrs = %{
+        "draft_definition" => Map.put(original.definition, "context_markdown", "New procedure")
+      }
+
+      digest = Runbooks.definition_digest(original.definition)
+      assert {:ok, edited} = Runbooks.save_draft(original, attrs, digest, subject)
+      assert Fixtures.Runbooks.publish_runbook(edited).live_version == 2
+      lv |> form("#runbook-run-form") |> render_submit()
+      assert execution().runbook_version == 1
+      assert execution().definition == original.definition
+    end
+  end
 
   defp append_large_preview(run) do
     assert {:ok, _event} =
@@ -318,7 +496,8 @@ defmodule EmisarWeb.RunbookRunLiveTest do
         "inputs" => %{}
       })
 
-      render_click(lv, "start", %{})
+      resolve_preflight(lv)
+      lv |> form("#runbook-run-form") |> render_submit()
 
       assert render(lv) =~
                "The reason contains control or formatting characters. Use plain text and start again."
@@ -541,7 +720,7 @@ defmodule EmisarWeb.RunbookRunLiveTest do
       send(lv.pid, {:run_preflight, 3})
       refute render(lv) =~ "Enter a whole number."
 
-      render_click(lv, "start", %{})
+      lv |> form("#runbook-run-form") |> render_submit()
 
       assert Jason.decode!(Repo.one!(ExecutionItem).args_raw) == %{"window" => 45}
     end

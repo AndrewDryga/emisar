@@ -2199,6 +2199,175 @@ defmodule Emisar.RunbooksTest do
     end
   end
 
+  describe "dispatch_runbook/4 reviewed plans" do
+    for change <- [:added, :removed] do
+      test "requires a new review when a group runner is #{change}" do
+        {_user, account, subject} = Fixtures.Subjects.owner_subject()
+        Fixtures.Policies.create_policy(account_id: account.id)
+        trusted_runner(account, subject)
+        second = trusted_runner(account, subject)
+        runbook = create_runbook(subject) |> Fixtures.Runbooks.publish_runbook()
+        assert {:ok, preview} = Runbooks.resolve_plan(runbook, subject)
+
+        case unquote(change) do
+          :added -> trusted_runner(account, subject)
+          :removed -> Fixtures.Runners.move_to_group(second, "other")
+        end
+
+        assert Runbooks.dispatch_runbook(runbook, "review fleet", subject,
+                 review_digest: preview.review_digest
+               ) == {:error, :review_changed}
+
+        refute Repo.exists?(RunbookExecution)
+        refute Repo.exists?(ExecutionStage)
+        refute Repo.exists?(ExecutionItem)
+        refute Repo.exists?(Approvals.Request)
+        refute Repo.exists?(Runs.ActionRun)
+      end
+    end
+
+    test "a replacement runner with the same public ref still needs a new review" do
+      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      Fixtures.Policies.create_policy(account_id: account.id)
+      original = trusted_runner(account, subject)
+      runbook = create_runbook(subject) |> Fixtures.Runbooks.publish_runbook()
+      assert {:ok, preview} = Runbooks.resolve_plan(runbook, subject)
+      Fixtures.Runners.mark_deleted(original)
+
+      replacement =
+        Fixtures.Runners.create_runner(
+          account_id: account.id,
+          name: original.name,
+          external_id: original.external_id,
+          group: original.group
+        )
+
+      trusted_runner(account, subject, runner: replacement)
+      assert {:ok, replacement_preview} = Runbooks.resolve_plan(runbook, subject)
+      assert replacement_preview.plan == preview.plan
+      refute replacement_preview.review_digest == preview.review_digest
+
+      assert Runbooks.dispatch_runbook(runbook, "review original runner", subject,
+               review_digest: preview.review_digest
+             ) == {:error, :review_changed}
+
+      refute Repo.exists?(RunbookExecution)
+    end
+
+    test "a newer trusted pack cannot replace the reviewed pack" do
+      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      Fixtures.Policies.create_policy(account_id: account.id)
+      runner = trusted_runner(account, subject)
+      runbook = create_runbook(subject) |> Fixtures.Runbooks.publish_runbook()
+      assert {:ok, preview} = Runbooks.resolve_plan(runbook, subject)
+      trusted_runner(account, subject, runner: runner, version: "1.4.3")
+
+      assert Runbooks.dispatch_runbook(runbook, "review pack", subject,
+               review_digest: preview.review_digest
+             ) == {:error, :review_changed}
+
+      refute Repo.exists?(RunbookExecution)
+      refute Repo.exists?(Runs.ActionRun)
+    end
+
+    test "a trust gap cannot silently narrow the reviewed target set" do
+      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      Fixtures.Policies.create_policy(account_id: account.id)
+      trusted_runner(account, subject)
+      trusted_runner(account, subject, version: "1.4.3")
+      runbook = create_runbook(subject) |> Fixtures.Runbooks.publish_runbook()
+      assert {:ok, preview} = Runbooks.resolve_plan(runbook, subject)
+      assert preview.total == 2
+
+      version =
+        Enum.find(Fixtures.Catalog.list_pack_versions(account.id), &(&1.version == "1.4.3"))
+
+      assert {:ok, _version} = Catalog.revoke_pack_version_trust(version.id, subject)
+      assert {:ok, narrowed} = Runbooks.resolve_plan(runbook, subject)
+      assert narrowed.total == 1
+
+      assert Runbooks.dispatch_runbook(runbook, "review fleet", subject,
+               review_digest: preview.review_digest
+             ) == {:error, :review_changed}
+
+      refute Repo.exists?(RunbookExecution)
+    end
+
+    test "sensitive input changes invalidate review even when the redacted plan is identical" do
+      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      Fixtures.Policies.create_policy(account_id: account.id)
+      sensitive_arg = Map.put(arg("seconds", "integer"), "sensitive", true)
+      runner = trusted_runner(account, subject, args: [sensitive_arg])
+
+      definition =
+        put_in(input_definition(runner.group), ["inputs", Access.at(0), "sensitive"], true)
+
+      runbook =
+        create_runbook(subject, definition: definition) |> Fixtures.Runbooks.publish_runbook()
+
+      assert {:ok, before} = Runbooks.resolve_plan(runbook, %{"seconds" => 30}, subject)
+      assert {:ok, after_change} = Runbooks.resolve_plan(runbook, %{"seconds" => 60}, subject)
+      assert before.plan == after_change.plan
+      refute before.review_digest == after_change.review_digest
+      refute before.preview_id == after_change.preview_id
+
+      assert Runbooks.dispatch_runbook(runbook, "review secret", subject,
+               input_values: %{"seconds" => 60},
+               review_digest: before.review_digest
+             ) == {:error, :review_changed}
+
+      refute Repo.exists?(RunbookExecution)
+    end
+
+    test "binds release identity even when its executable plan is unchanged" do
+      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      Fixtures.Policies.create_policy(account_id: account.id)
+      trusted_runner(account, subject)
+      original = create_runbook(subject) |> Fixtures.Runbooks.publish_runbook()
+      assert {:ok, preview} = Runbooks.resolve_plan(original, subject)
+      newer = Fixtures.Runbooks.publish_runbook(original)
+      assert {:ok, newer_preview} = Runbooks.resolve_plan(newer, subject)
+      assert preview.plan == newer_preview.plan
+
+      assert Runbooks.dispatch_runbook(newer, "review release", subject,
+               review_digest: preview.review_digest
+             ) == {:error, :review_changed}
+
+      assert {:ok, result} =
+               Runbooks.dispatch_runbook(original, "review release", subject,
+                 review_digest: preview.review_digest
+               )
+
+      assert fetch_execution(result.execution_id).runbook_version == original.live_version
+      assert result.plan == preview.plan
+    end
+
+    test "review receipts do not bypass permissions or account isolation" do
+      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      Fixtures.Policies.create_policy(account_id: account.id)
+      trusted_runner(account, subject)
+      runbook = create_runbook(subject) |> Fixtures.Runbooks.publish_runbook()
+      assert {:ok, preview} = Runbooks.resolve_plan(runbook, subject)
+      viewer = membership_subject(account, "viewer")
+      {_user, _account, other_subject} = Fixtures.Subjects.owner_subject()
+
+      assert Runbooks.dispatch_runbook(runbook, "review", viewer,
+               review_digest: preview.review_digest
+             ) == {:error, :unauthorized}
+
+      assert Runbooks.dispatch_runbook(runbook, "review", other_subject,
+               review_digest: preview.review_digest
+             ) == {:error, :not_found}
+
+      for digest <- [nil, "", "forged"] do
+        assert Runbooks.dispatch_runbook(runbook, "review", subject, review_digest: digest) ==
+                 {:error, :review_changed}
+      end
+
+      refute Repo.exists?(RunbookExecution)
+    end
+  end
+
   describe "create_or_replay_mcp_execution/2" do
     test "creates the durable execution once and replays it exactly" do
       fixture = mcp_execution_fixture()
@@ -2568,7 +2737,8 @@ defmodule Emisar.RunbooksTest do
 
       assert {:ok, result} =
                Runbooks.dispatch_runbook(runbook, "inspect one worker", subject,
-                 target_selection_seed: seed
+                 target_selection_seed: seed,
+                 review_digest: preview.review_digest
                )
 
       preview_runner =
@@ -3505,11 +3675,13 @@ defmodule Emisar.RunbooksTest do
 
   defp trusted_runner(account, subject, opts \\ []) do
     runner =
-      Fixtures.Runners.create_runner(
-        account_id: account.id,
-        group: Keyword.get(opts, :group, "database"),
-        connected?: Keyword.get(opts, :connected?, true)
-      )
+      Keyword.get_lazy(opts, :runner, fn ->
+        Fixtures.Runners.create_runner(
+          account_id: account.id,
+          group: Keyword.get(opts, :group, "database"),
+          connected?: Keyword.get(opts, :connected?, true)
+        )
+      end)
 
     assert {:ok, runner} =
              Catalog.observe_state(runner, %{

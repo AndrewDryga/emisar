@@ -1,6 +1,6 @@
 defmodule EmisarWeb.RunbookRunLive do
   @moduledoc """
-  Preflight and durable staged execution detail for one runbook's live release
+  Preflight and durable staged execution detail for one pinned published release
   or one explicitly marked draft test.
 
   The LiveView never reconstructs scheduler state from ActionRuns. It renders
@@ -44,6 +44,8 @@ defmodule EmisarWeb.RunbookRunLive do
      |> assign(:touched_inputs, MapSet.new())
      |> assign(:target_selection_seed, nil)
      |> assign(:preflight_generation, 0)
+     |> assign(:review, nil)
+     |> assign(:review_notice, nil)
      |> assign(:preflight, %{state: :idle, plan: nil, issues: []})
      |> assign(:result, nil)
      |> assign(:projection, nil)
@@ -61,7 +63,7 @@ defmodule EmisarWeb.RunbookRunLive do
 
   defp mount_runbook(id, execution_detail?, socket) do
     case Runbooks.fetch_runbook_by_id(id, socket.assigns.current_subject) do
-      # Only the live release is dispatchable, so a runbook that has never
+      # Only published content is dispatchable, so a runbook that has never
       # published one is sent back to the editor rather than a dead form.
       {:ok, %Runbooks.Runbook{live_version: nil} = runbook} when not execution_detail? ->
         {:ok,
@@ -83,6 +85,8 @@ defmodule EmisarWeb.RunbookRunLive do
           |> assign(:touched_inputs, MapSet.new())
           |> assign(:target_selection_seed, Runbooks.new_target_selection_seed())
           |> assign(:preflight_generation, 0)
+          |> assign(:review, nil)
+          |> assign(:review_notice, nil)
           |> assign(:preflight, %{state: :idle, plan: nil, issues: []})
           |> assign(:result, nil)
           |> assign(:projection, nil)
@@ -113,6 +117,7 @@ defmodule EmisarWeb.RunbookRunLive do
   def handle_params(%{"execution_id" => execution_id}, _uri, socket) do
     {:noreply,
      socket
+     |> invalidate_review()
      |> subscribe_execution(execution_id)
      |> load_execution(execution_id)
      |> assign(:loaded?, true)}
@@ -126,9 +131,13 @@ defmodule EmisarWeb.RunbookRunLive do
      |> assign(:loaded?, true)}
   end
 
+  def handle_event("run_form_changed", _params, %{assigns: %{result: result}} = socket)
+      when not is_nil(result),
+      do: {:noreply, socket}
+
   def handle_event("run_form_changed", params, socket) do
     form_result =
-      Runbooks.cast_form_inputs(socket.assigns.runbook.definition, params["inputs"] || %{})
+      Runbooks.cast_form_inputs(socket.assigns.runbook.definition, submitted_inputs(params))
 
     socket =
       socket
@@ -138,11 +147,11 @@ defmodule EmisarWeb.RunbookRunLive do
     {:noreply, apply_form_result(socket, form_result)}
   end
 
-  def handle_event("start", _params, socket) do
+  def handle_event("start", params, socket) do
     Permissions.gated(
       socket,
       Runs.subject_can_dispatch_run?(socket.assigns.current_subject),
-      &start_execution/1
+      &start_execution(&1, params)
     )
   end
 
@@ -185,7 +194,9 @@ defmodule EmisarWeb.RunbookRunLive do
 
   def handle_info(
         {:run_preflight, generation},
-        %{assigns: %{preflight_generation: generation}} = socket
+        %{
+          assigns: %{preflight_generation: generation, result: nil, preflight: %{state: :loading}}
+        } = socket
       ) do
     {:noreply, run_preflight(socket)}
   end
@@ -213,28 +224,54 @@ defmodule EmisarWeb.RunbookRunLive do
 
   def handle_info(_message, socket), do: {:noreply, socket}
 
-  defp start_execution(socket) do
-    socket = touch_all_inputs(socket)
+  defp start_execution(%{assigns: %{result: result}} = socket, _params)
+       when not is_nil(result),
+       do: {:noreply, invalidate_review(socket)}
 
-    case Runbooks.cast_form_inputs(socket.assigns.runbook.definition, socket.assigns.input_raw) do
-      {:ok, %{values: input_values}} ->
+  defp start_execution(socket, params) do
+    reason = if is_binary(params["reason"]), do: params["reason"], else: ""
+    socket = socket |> touch_all_inputs() |> assign(:reason, reason)
+
+    case Runbooks.cast_form_inputs(socket.assigns.runbook.definition, submitted_inputs(params)) do
+      {:ok, %{values: input_values, form_values: form_values}} ->
         socket
+        |> assign(:input_raw, form_values)
         |> assign(:input_errors, %{})
-        |> start_with_reason(input_values)
+        |> start_reviewed_execution(params["preview_id"], input_values)
 
-      {:error, %{field_errors: field_errors}} ->
+      {:error, _errors} = error ->
         {:noreply,
          socket
-         |> assign(:input_errors, field_errors)
+         |> apply_form_result(error)
          |> put_flash(:error, "Fix the input values before starting.")}
     end
   end
 
-  defp start_with_reason(socket, input_values) do
-    if String.trim(socket.assigns.reason) == "" do
-      {:noreply, put_flash(socket, :error, "Add a reason before starting.")}
-    else
-      dispatch_runbook(socket, input_values)
+  # LiveView marks untouched controls inside the nested inputs map. Those
+  # markers are form metadata, not runbook input names. Keep actual unknown
+  # names and malformed shapes so the strict compiler still rejects them.
+  defp submitted_inputs(%{"inputs" => inputs}) when is_map(inputs) do
+    Map.reject(inputs, fn
+      {"_unused_" <> _name, _value} -> true
+      _entry -> false
+    end)
+  end
+
+  defp submitted_inputs(params), do: Map.get(params, "inputs", %{})
+
+  defp start_reviewed_execution(socket, preview_id, input_values) do
+    review = socket.assigns.review
+
+    cond do
+      String.trim(socket.assigns.reason) == "" ->
+        {:noreply, put_flash(socket, :error, "Add a reason before starting.")}
+
+      socket.assigns.preflight.state != :ready or is_nil(review) or
+        preview_id != review.id or input_values != review.input_values ->
+        {:noreply, refresh_review(socket)}
+
+      true ->
+        dispatch_runbook(socket, input_values)
     end
   end
 
@@ -244,22 +281,26 @@ defmodule EmisarWeb.RunbookRunLive do
            socket.assigns.reason,
            socket.assigns.current_subject,
            input_values: input_values,
-           target_selection_seed: socket.assigns.target_selection_seed
+           target_selection_seed: socket.assigns.target_selection_seed,
+           review_digest: socket.assigns.review.digest
          ) do
       {:ok, %{execution_id: execution_id}} ->
         {:noreply,
-         push_patch(socket,
+         push_patch(invalidate_review(socket),
            to:
              ~p"/app/#{socket.assigns.current_account}/runbooks/#{socket.assigns.runbook.id}/runs/#{execution_id}"
          )}
 
       {:error, issues} when is_list(issues) ->
         {:noreply,
-         assign(socket, :preflight, %{
+         assign(invalidate_review(socket), :preflight, %{
            state: :error,
            plan: nil,
            issues: issues
          })}
+
+      {:error, reason} when reason in [:review_changed, :runbook_policy_changed] ->
+        {:noreply, refresh_review(socket)}
 
       {:error, :not_live} ->
         {:noreply,
@@ -310,7 +351,8 @@ defmodule EmisarWeb.RunbookRunLive do
   defp cancel_execution(socket), do: {:noreply, socket}
 
   defp schedule_preflight(%{assigns: %{result: nil}} = socket) do
-    generation = socket.assigns.preflight_generation + 1
+    socket = invalidate_review(socket)
+    generation = socket.assigns.preflight_generation
     Process.send_after(self(), {:run_preflight, generation}, @preflight_delay_ms)
 
     socket
@@ -319,6 +361,19 @@ defmodule EmisarWeb.RunbookRunLive do
   end
 
   defp schedule_preflight(socket), do: socket
+
+  defp invalidate_review(socket) do
+    socket
+    |> assign(:preflight_generation, socket.assigns.preflight_generation + 1)
+    |> assign(:review, nil)
+  end
+
+  defp refresh_review(socket) do
+    socket
+    |> invalidate_review()
+    |> assign(:review_notice, "The plan changed. Review the updated plan before starting.")
+    |> run_preflight()
+  end
 
   defp apply_form_result(socket, {:ok, %{form_values: form_values}}) do
     socket
@@ -334,7 +389,7 @@ defmodule EmisarWeb.RunbookRunLive do
     socket
     |> assign(:input_raw, form_values)
     |> assign(:input_errors, field_errors)
-    |> assign(:preflight_generation, socket.assigns.preflight_generation + 1)
+    |> invalidate_review()
     |> assign(:preflight, %{
       state: :error,
       plan: nil,
@@ -367,8 +422,10 @@ defmodule EmisarWeb.RunbookRunLive do
            socket.assigns.target_selection_seed,
            socket.assigns.current_subject
          ) do
-      {:ok, %{plan: plan}} ->
-        assign(socket, :preflight, %{
+      {:ok, %{plan: plan, review_digest: digest, preview_id: preview_id}} ->
+        socket
+        |> assign(:review, %{id: preview_id, digest: digest, input_values: input_values})
+        |> assign(:preflight, %{
           state: :ready,
           plan: plan,
           issues: []
@@ -445,6 +502,7 @@ defmodule EmisarWeb.RunbookRunLive do
     |> unsubscribe_execution()
     |> clear_execution_result()
     |> assign(:reason, "")
+    |> assign(:review_notice, nil)
     |> assign(:target_selection_seed, Runbooks.new_target_selection_seed())
     |> assign(:input_raw, initial_input_raw(socket.assigns.runbook.definition))
     |> assign(:touched_inputs, MapSet.new())
@@ -656,7 +714,8 @@ defmodule EmisarWeb.RunbookRunLive do
   defp wait_label(_item), do: nil
 
   defp can_start?(assigns) do
-    assigns.preflight.state == :ready and String.trim(assigns.reason) != "" and
+    assigns.preflight.state == :ready and not is_nil(assigns.review) and
+      String.trim(assigns.reason) != "" and
       assigns.input_errors == %{}
   end
 
@@ -816,6 +875,8 @@ defmodule EmisarWeb.RunbookRunLive do
           input_errors={@input_errors}
           touched_inputs={@touched_inputs}
           preflight={@preflight}
+          review_id={if @review, do: @review.id, else: ""}
+          review_notice={@review_notice}
           expanded_stages={@expanded_plan_stages}
           can_start?={can_start?(assigns)}
           current_account={@current_account}
@@ -833,6 +894,8 @@ defmodule EmisarWeb.RunbookRunLive do
   attr :input_errors, :map, required: true
   attr :touched_inputs, :any, required: true
   attr :preflight, :map, required: true
+  attr :review_id, :string, required: true
+  attr :review_notice, :string, default: nil
   attr :expanded_stages, :any, required: true
   attr :can_start?, :boolean, required: true
   attr :current_account, :map, required: true
@@ -875,7 +938,7 @@ defmodule EmisarWeb.RunbookRunLive do
         <section id="runbook-start-execution">
           <.section_header title="Start execution">
             <:subtitle>
-              Enter the input values and explain why you're running this runbook.
+              Release {@runbook.live_version}. Enter the input values and explain why you're running this runbook.
             </:subtitle>
           </.section_header>
           <form
@@ -884,6 +947,7 @@ defmodule EmisarWeb.RunbookRunLive do
             phx-submit="start"
             class="space-y-8"
           >
+            <input type="hidden" name="preview_id" value={@review_id} />
             <div class="space-y-5">
               <div :if={@inputs != []} class="grid gap-4 sm:grid-cols-2">
                 <div :for={input <- @inputs}>
@@ -925,6 +989,9 @@ defmodule EmisarWeb.RunbookRunLive do
             <.plan_details preflight={@preflight_view} expanded_stages={@expanded_stages} />
 
             <div class="flex flex-wrap items-center gap-4 border-t border-zinc-800/70 pt-4">
+              <div :if={@review_notice} id="runbook-review-notice" role="alert" class="w-full">
+                <.error>{@review_notice}</.error>
+              </div>
               <.button
                 id="start-runbook-button"
                 type="submit"

@@ -83,6 +83,67 @@ defmodule Emisar.Runbooks.ExecutionApprovalTest do
              Approvals.list_pending_approval_requests(approver)
   end
 
+  test "reviewed older release survives publication through approval and execution", %{
+    account: account,
+    approver: approver,
+    runner: runner,
+    subject: subject
+  } do
+    original = published_runbook(subject, required_definition(runner.group))
+    assert {:ok, preview} = Runbooks.resolve_plan(original, subject)
+
+    attrs = %{
+      "draft_definition" => Map.put(original.definition, "context_markdown", "New procedure")
+    }
+
+    digest = Runbooks.definition_digest(original.definition)
+    assert {:ok, edited} = Runbooks.save_draft(original, attrs, digest, subject)
+    newer = Fixtures.Runbooks.publish_runbook(edited)
+    assert newer.live_version == original.live_version + 1
+
+    assert {:ok, result} =
+             Runbooks.dispatch_runbook(original, "reviewed original", subject,
+               review_digest: preview.review_digest
+             )
+
+    assert {:ok, [request], _metadata} = Approvals.list_pending_approval_requests(approver)
+    assert request.context["plan"] == preview.plan
+    assert request.context["runbook"]["version"] == original.live_version
+    assert execution(result.execution_id).definition == original.definition
+
+    assert {:ok, {_approved, :runbook_execution}} =
+             Approvals.approve_request(request, approver, "original release reviewed")
+
+    assert [run] = Runs.list_runs_for_runbook_execution(account.id, result.execution_id)
+    assert run.runner_id == runner.id
+    assert run.expected_pack_hash == @hash
+    assert execution(result.execution_id).frozen_plan == preview.plan
+  end
+
+  test "changed approval requirements require review before creating a request", %{
+    account: account,
+    runner: runner,
+    subject: subject
+  } do
+    policy = Fixtures.Policies.create_policy(account_id: account.id)
+    runbook = published_runbook(subject, required_definition(runner.group))
+    assert {:ok, preview} = Runbooks.resolve_plan(runbook, subject)
+
+    rules =
+      policy.rules
+      |> put_in(["defaults", "high"], "require_approval")
+      |> put_in(["defaults", "critical"], "deny")
+
+    Fixtures.Policies.create_policy(account_id: account.id, rules: rules)
+
+    assert Runbooks.dispatch_runbook(runbook, "reviewed original policy", subject,
+             review_digest: preview.review_digest
+           ) == {:error, :review_changed}
+
+    refute Repo.exists?(RunbookExecution)
+    refute Repo.exists?(Request)
+  end
+
   test "an approved execution retries a wait without opening another request", %{
     account: account,
     approver: approver,

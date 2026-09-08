@@ -4,7 +4,7 @@
   <section class="py-12 sm:py-16">
     <.docs_layout
       current="runbooks"
-      updated="August 4, 2026"
+      updated="September 8, 2026"
       toc={[
         {"shortest-path", "The shortest path"},
         {"create", "1. Create or import a draft"},
@@ -336,8 +336,10 @@
         concurrency.
       </p>
       <p class="mt-5 text-base text-zinc-400">
-        Review the plan before you start. Start checks the current runners and action contracts
-        again, so changes since the preview can change the plan. When a step picks one
+        Review the displayed release and plan before you start. Start checks the current runners,
+        action contracts, and policy again. If the plan changed, emisar shows the updated plan
+        for another review without starting an execution. Publishing a newer release does not
+        replace the release already open in your Run page. When a step picks one
         runner from a group, the plan shows which runner it picked and which group that runner
         came from. After the run starts, the plan does not change: emisar does not add or replace
         a target, it uses your arguments exactly as you entered them, and every step stays in its

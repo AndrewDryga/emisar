@@ -9,7 +9,16 @@ against the locked row inside the transaction, and reject a stale write as
 `draft_changed` without reserving an operation or touching content. Use draft
 creation only for a genuinely new runbook.
 
-Only the live release executes by default. A published execution names
+The console opens the live release and pins that published snapshot for review.
+It may still execute that release after a newer one is published, but Start must
+match the rendered opaque preview receipt and submitted typed inputs, then compare
+the freshly compiled executable plan against the server-owned review digest.
+Changes require a new preview and a second deliberate Start; never silently replace
+the release or targets. Invalidate receipts on form changes and successful dispatch.
+The digest binds account, runbook, release, definition, inputs, full executable items,
+and public plan, including redacted values' identity and internal runner IDs.
+
+For MCP, only the live release executes by default. A published execution names
 `slug@release` and that release MUST be the live one — an older number answers
 `not_live` rather than silently running current content. Testing the
 unpublished change is an explicit guarded mode of `execute_runbook`, not a
@@ -30,7 +39,7 @@ new draft hash, run it with `execute_runbook` + `allow_draft: true` + that hash,
 then hand the review URL to an operator.
 
 Bad: create `health-review-v5`; save an edit without the sha it read; let
-ordinary execution reach an unpublished change; execute `health-review@4` after
+ordinary execution reach an unpublished change; use MCP to execute `health-review@4` after
 v5 went live; add `test_runbook_draft` beside `execute_runbook`; or let a
 successful test publish anything.
 

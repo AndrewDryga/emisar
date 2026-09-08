@@ -984,7 +984,7 @@ defmodule Emisar.Runbooks do
   def expand(%Runbook{} = runbook), do: runbook |> current_definition() |> expand_definition()
 
   @doc """
-  Compiles and dispatches a runbook's live release through the durable stage
+  Compiles and dispatches a runbook's pinned published release through the durable stage
   scheduler.
 
   A runbook with nothing published stays unexecutable — it returns
@@ -994,6 +994,10 @@ defmodule Emisar.Runbooks do
   and action contracts before any execution row is created. The resulting plan
   is immutable; current membership, runner scope, policy, lifecycle, trust, and
   content hash are rechecked before each physical attempt.
+
+  Interactive callers pass the `:review_digest` returned by `resolve_plan/4`.
+  A changed executable plan returns `{:error, :review_changed}` before creating
+  anything. Publishing a newer release does not replace the reviewed snapshot.
   """
   def dispatch_runbook(%Runbook{} = runbook, reason, %Subject{} = subject, opts \\ [])
       when is_binary(reason) do
@@ -1010,7 +1014,8 @@ defmodule Emisar.Runbooks do
          :ok <- ensure_membership(subject),
          :ok <- ensure_reason(reason),
          {:ok, compiled} <-
-           Compiler.compile(runbook.definition, input_values, selection_seed, subject) do
+           Compiler.compile(runbook.definition, input_values, selection_seed, subject),
+         :ok <- ensure_review_matches(runbook, compiled, opts) do
       Scheduler.create_execution(runbook, compiled, reason, subject)
     end
   end
@@ -1224,7 +1229,8 @@ defmodule Emisar.Runbooks do
   The returned plan is the exact frozen blast radius the scheduler would use:
   stages, logical steps, selected runners, exact trusted packs, and action
   contract digests. It performs the same authorization and preflight as a
-  dispatch.
+  dispatch. Keep `review_digest` server-side for dispatch comparison; render
+  only the independent opaque `preview_id` to bind a submit to this preview.
   """
   def resolve_plan(%Runbook{} = runbook, %Subject{} = subject),
     do: resolve_plan(runbook, %{}, subject)
@@ -1249,7 +1255,42 @@ defmodule Emisar.Runbooks do
          {:ok, compiled} <-
            Compiler.compile(runbook.definition, input_values, selection_seed, subject) do
       total = compiled.plan["total_items"]
-      {:ok, %{plan: compiled.plan, total: total, stages: length(compiled.plan["stages"])}}
+
+      {:ok,
+       %{
+         plan: compiled.plan,
+         total: total,
+         stages: length(compiled.plan["stages"]),
+         review_digest: review_digest(runbook, compiled),
+         preview_id: Emisar.Crypto.random_secret()
+       }}
+    end
+  end
+
+  # The public plan redacts inputs and omits internal runner identities and
+  # approval settings. Consent must bind those executable facts too. Only the
+  # random preview id is rendered; this digest stays on the server.
+  defp review_digest(runbook, compiled) do
+    Emisar.CanonicalJSON.digest(%{
+      "account_id" => runbook.account_id,
+      "runbook_id" => runbook.id,
+      "version" => runbook.live_version,
+      "definition" => compiled.definition,
+      "inputs_sha256" => compiled.inputs_sha256,
+      "items" => compiled.items,
+      "plan" => compiled.plan
+    })
+  end
+
+  defp ensure_review_matches(runbook, compiled, opts) do
+    case Keyword.fetch(opts, :review_digest) do
+      :error ->
+        :ok
+
+      {:ok, digest} ->
+        if is_binary(digest) and digest == review_digest(runbook, compiled),
+          do: :ok,
+          else: {:error, :review_changed}
     end
   end
 
