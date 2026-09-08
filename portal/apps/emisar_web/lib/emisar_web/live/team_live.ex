@@ -377,9 +377,9 @@ defmodule EmisarWeb.TeamLive do
          |> put_flash(
            :info,
            if opt_out do
-             "Monthly report turned off. Turn it back on here anytime."
+             "Monthly reports are off for every Owner. You can turn them back on here."
            else
-             "Monthly report turned back on — you'll get the next one."
+             "Monthly reports are back on for every Owner."
            end
          )}
 
@@ -2923,7 +2923,7 @@ defmodule EmisarWeb.TeamLive do
           <div class="rounded-xl border border-zinc-800/80 p-4">
             <h4 class="text-sm font-medium text-zinc-100">Monthly report</h4>
             <p class="mt-1 text-xs leading-relaxed text-zinc-400">
-              Email the account owner a monthly summary of activity and security.
+              Email every Owner a monthly summary of activity and security.
             </p>
             <.gated_setting
               id="monthly-report"

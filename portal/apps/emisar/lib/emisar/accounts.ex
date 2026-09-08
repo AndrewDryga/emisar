@@ -4608,7 +4608,8 @@ defmodule Emisar.Accounts do
   lock, but only if the account is still due at `cutoff`. A repeated or
   concurrent pass that already stamped it this month gets
   `{:error, :already_reported}` so the report can't go out twice. Returns
-  `{:ok, account}` on the winning stamp.
+  `{:ok, account}` on the winning stamp. A fresh workspace opt-out returns
+  `{:error, :report_opted_out}`, even if the job holds an older account snapshot.
   """
   def mark_account_report_sent(%Account{} = account, %DateTime{} = cutoff) do
     query =
@@ -4617,6 +4618,9 @@ defmodule Emisar.Accounts do
 
     Repo.fetch_and_update(query, Account.Query, with: &stamp_report_if_due(&1, cutoff))
   end
+
+  defp stamp_report_if_due(%Account{settings: %{monthly_report_opt_out: true}}, _cutoff),
+    do: :report_opted_out
 
   defp stamp_report_if_due(%Account{} = loaded_account, cutoff) do
     # A non-changeset return aborts `fetch_and_update` as `{:error, that_value}`,
@@ -4669,15 +4673,28 @@ defmodule Emisar.Accounts do
   end
 
   @doc """
-  Internal — monthly report job: the single stable, active, confirmed owner to
-  send the account's value report to, or `{:error, :no_recipient}` when none
-  qualifies. Same "stable billing owner" selection the Paddle customer sync uses.
+  Internal — monthly report job: active Owner memberships with confirmed user
+  emails, in bounded membership-id order. Each row preloads its user. Accepts
+  `:limit` and optional `:after_membership_id`; billing-contact selection is separate.
   """
-  def fetch_account_report_recipient(%Account{} = account) do
-    case fetch_stable_billing_owner(account) do
-      {:ok, %Users.User{} = user} -> {:ok, user}
-      {:error, :no_billing_contact} -> {:error, :no_recipient}
-    end
+  def list_account_report_recipients(%Account{} = account, opts \\ []) do
+    query =
+      Membership.Query.authorized()
+      |> Membership.Query.by_account_id(account.id)
+      |> Membership.Query.by_role(:owner)
+      |> Membership.Query.with_confirmed_user_email()
+      |> Membership.Query.with_preloaded_user()
+
+    query =
+      case Keyword.get(opts, :after_membership_id) do
+        id when is_binary(id) -> Membership.Query.after_id(query, id)
+        _ -> query
+      end
+
+    query
+    |> Membership.Query.ordered_by_id()
+    |> Membership.Query.limit_to(Keyword.get(opts, :limit, 100))
+    |> Repo.all()
   end
 
   @doc """

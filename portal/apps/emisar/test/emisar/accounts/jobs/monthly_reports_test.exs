@@ -56,7 +56,7 @@ defmodule Emisar.Accounts.Jobs.MonthlyReportsTest do
       assert email.text_body =~ ~r/Succeeded\s+3$/m
       assert email.text_body =~ "Active runners"
       assert email.text_body =~ "/app/#{account.slug}"
-      assert email.text_body =~ "Unsubscribe: "
+      assert email.text_body =~ "Turn off monthly reports for every Owner in this workspace: "
       assert email.html_body =~ "Open your dashboard"
       assert email.html_body =~ "/app/#{account.slug}"
       assert email.headers["List-Unsubscribe"] =~ "/unsubscribe/monthly-report/"
@@ -75,6 +75,62 @@ defmodule Emisar.Accounts.Jobs.MonthlyReportsTest do
       assert MonthlyReports.execute([]) == :ok
       refute_received {:email, _second}
       assert Repo.reload(account).last_report_sent_at == first_stamp
+    end
+
+    test "emails every Owner across recipient pages, once per month" do
+      %{account: account, owner: owner} = active_account()
+      owners = [owner | for(_ <- 1..3, do: add_owner(account))]
+
+      assert MonthlyReports.execute(limit: 2) == :ok
+
+      recipients =
+        for _ <- owners do
+          assert_receive {:email, email}
+          assert length(email.to) == 1
+          assert email.cc == []
+          assert email.bcc == []
+          assert email.text_body =~ "for every Owner in this workspace"
+          email.to |> hd() |> elem(1)
+        end
+
+      assert Enum.sort(recipients) == Enum.sort(Enum.map(owners, & &1.email))
+      assert MonthlyReports.execute(limit: 2) == :ok
+      refute_received {:email, _}
+    end
+
+    test "a suppressed Owner does not prevent delivery to other Owners" do
+      %{account: account, owner: owner} = active_account()
+      other_owner = add_owner(account)
+      {:ok, _} = Mail.suppress(owner.email, :hard_bounce, "HardBounce")
+
+      assert MonthlyReports.execute(limit: 1) == :ok
+      assert_received {:email, email}
+      assert email.to == [{"", other_owner.email}]
+      refute_received {:email, _}
+      assert Repo.reload!(account).last_report_sent_at
+    end
+
+    test "one failed Owner delivery does not stop later recipients or allow replay" do
+      %{account: account, owner: owner} = active_account()
+      other_owner = add_owner(account)
+      test_pid = self()
+
+      Emisar.Config.put_override(:emisar, :mailer_deliver_error, fn email ->
+        send(test_pid, {:delivery_attempt, email.to})
+        if email.to == [{"", owner.email}], do: {:error, :delivery_unavailable}
+      end)
+
+      assert MonthlyReports.execute(limit: 1) == :ok
+      assert_received {:delivery_attempt, [{"", first_email}]}
+      assert_received {:delivery_attempt, [{"", second_email}]}
+      assert Enum.sort([first_email, second_email]) == Enum.sort([owner.email, other_owner.email])
+      assert_received {:email, email}
+      assert email.to == [{"", other_owner.email}]
+      assert Repo.reload!(account).last_report_sent_at
+
+      assert MonthlyReports.execute(limit: 1) == :ok
+      refute_received {:delivery_attempt, _}
+      refute_received {:email, _}
     end
 
     test "an account with no usage in the window receives nothing" do
@@ -164,5 +220,17 @@ defmodule Emisar.Accounts.Jobs.MonthlyReportsTest do
       assert by_address[owner_b.email].text_body =~ "5 runs recorded"
       assert by_address[owner_b.email].text_body =~ "/app/#{account_b.slug}"
     end
+  end
+
+  defp add_owner(account) do
+    owner = Fixtures.Users.create_user()
+
+    Fixtures.Memberships.create_membership(
+      account_id: account.id,
+      user_id: owner.id,
+      role: "owner"
+    )
+
+    owner
   end
 end

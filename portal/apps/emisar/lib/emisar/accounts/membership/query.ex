@@ -76,6 +76,9 @@ defmodule Emisar.Accounts.Membership.Query do
   def ordered_by_id(queryable),
     do: order_by(queryable, [memberships: m], asc: m.id)
 
+  def after_id(queryable, id),
+    do: where(queryable, [memberships: m], m.id > ^id)
+
   def by_roles(queryable, roles),
     do: where(queryable, [memberships: m], m.role in ^roles)
 

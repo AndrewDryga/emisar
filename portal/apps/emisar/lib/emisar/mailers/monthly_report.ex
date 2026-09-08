@@ -72,7 +72,7 @@ defmodule Emisar.Mailers.MonthlyReport do
       text_approvals(content.approvals),
       text_right_now(content),
       "Open your dashboard:\n  #{content.dashboard_url}",
-      "—\nYou're receiving this monthly report as an owner of #{content.account_name}.\nUnsubscribe: #{content.unsubscribe_url}"
+      "—\nYou're receiving this monthly report as an owner of #{content.account_name}.\nTurn off monthly reports for every Owner in this workspace: #{content.unsubscribe_url}"
     ]
     |> Enum.reject(&is_nil/1)
     |> Enum.join("\n\n")
@@ -348,7 +348,7 @@ defmodule Emisar.Mailers.MonthlyReport do
     <tr>
       <td style="padding:22px 0 0;border-top:1px solid #{@hairline};font-family:#{@font};font-size:12px;line-height:1.7;color:#{@ink_soft};">
         You're receiving this monthly report as an owner of #{HTML.escape(content.account_name)}.<br />
-        <a href="#{HTML.escape(content.unsubscribe_url)}" style="color:#{@brand};text-decoration:underline;">Unsubscribe</a>
+        <a href="#{HTML.escape(content.unsubscribe_url)}" style="color:#{@brand};text-decoration:underline;">Turn off monthly reports for every Owner in this workspace</a>
       </td>
     </tr>
     """

@@ -59,7 +59,9 @@ defmodule Emisar.Mailers.MonthlyReportTest do
       assert rendered.text =~ ~r/Succeeded\s+17$/m
       assert rendered.text =~ ~r/Denied\s+0$/m
       assert rendered.text =~ "/app/fleet-ops"
-      assert rendered.text =~ "Unsubscribe: https://emisar.dev/unsubscribe/monthly-report/token"
+
+      assert rendered.text =~
+               "Turn off monthly reports for every Owner in this workspace: https://emisar.dev/unsubscribe/monthly-report/token"
 
       assert rendered.html =~ ">18</td>"
       assert rendered.html =~ ">17</td>"
@@ -68,7 +70,7 @@ defmodule Emisar.Mailers.MonthlyReportTest do
       assert rendered.html =~ ~s(href="https://emisar.dev/unsubscribe/monthly-report/token")
 
       assert rendered.html =~
-               ~s(style="color:#{Style.brand()};text-decoration:underline;">Unsubscribe</a>)
+               ~s(style="color:#{Style.brand()};text-decoration:underline;">Turn off monthly reports for every Owner in this workspace</a>)
     end
 
     test "greets the recipient by email when they have no name" do

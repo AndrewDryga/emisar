@@ -13,6 +13,8 @@ defmodule EmisarWeb.UnsubscribeControllerTest do
 
       assert html_response(conn, 200) =~ account.name
       assert html_response(conn, 200) =~ "Unsubscribe"
+      assert html_response(conn, 200) =~ "for every Owner in this workspace, not just you"
+      refute html_response(conn, 200) =~ "to this address"
       # A read-only GET (link prefetch) must not opt anyone out.
       refute Repo.reload!(account).settings.monthly_report_opt_out
     end
@@ -29,7 +31,8 @@ defmodule EmisarWeb.UnsubscribeControllerTest do
 
       conn = post(conn, ~p"/unsubscribe/monthly-report/#{token_for(account)}")
 
-      assert html_response(conn, 200) =~ "unsubscribed"
+      assert html_response(conn, 200) =~ "Monthly reports are off"
+      assert html_response(conn, 200) =~ "are off for every Owner in this workspace"
       assert Repo.reload!(account).settings.monthly_report_opt_out
     end
 

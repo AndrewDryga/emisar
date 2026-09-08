@@ -7725,6 +7725,16 @@ defmodule Emisar.AccountsTest do
   end
 
   describe "mark_account_report_sent/2" do
+    test "a fresh opt-out wins over a stale job snapshot" do
+      account = Fixtures.Accounts.create_account()
+      Fixtures.Accounts.set_account_settings(account, %{monthly_report_opt_out: true})
+
+      assert Accounts.mark_account_report_sent(account, ~U[2026-07-01 00:00:00.000000Z]) ==
+               {:error, :report_opted_out}
+
+      refute Repo.reload!(account).last_report_sent_at
+    end
+
     test "stamps last_report_sent_at when the account is due" do
       cutoff = ~U[2026-07-01 00:00:00.000000Z]
       account = Fixtures.Accounts.create_account()
@@ -7883,22 +7893,36 @@ defmodule Emisar.AccountsTest do
     end
   end
 
-  describe "fetch_account_report_recipient/1" do
-    test "returns the stable active confirmed owner" do
+  describe "list_account_report_recipients/2" do
+    test "returns every active confirmed Owner, paginated by membership id" do
       account = Fixtures.Accounts.create_account()
-      owner = Fixtures.Users.create_user()
+      users = for _ <- 1..3, do: Fixtures.Users.create_user()
 
-      Fixtures.Memberships.create_membership(
-        account_id: account.id,
-        user_id: owner.id,
-        role: "owner"
-      )
+      # Different user/membership ordering catches a cursor taken from the user.
+      memberships =
+        for user <- Enum.reverse(users) do
+          Fixtures.Memberships.create_membership(
+            account_id: account.id,
+            user_id: user.id,
+            role: "owner"
+          )
+        end
 
-      assert {:ok, recipient} = Accounts.fetch_account_report_recipient(account)
-      assert recipient.id == owner.id
+      [first, second, third] = Enum.sort_by(memberships, & &1.id)
+      assert [page_one] = Accounts.list_account_report_recipients(account, limit: 1)
+      assert page_one.id == first.id
+      assert page_one.user.id == first.user_id
+
+      assert Enum.map(
+               Accounts.list_account_report_recipients(account,
+                 limit: 2,
+                 after_membership_id: first.id
+               ),
+               & &1.id
+             ) == [second.id, third.id]
     end
 
-    test "returns :no_recipient when the account has no confirmed owner" do
+    test "excludes unconfirmed, suspended, deleted, invited and non-Owner recipients" do
       account = Fixtures.Accounts.create_account()
       unconfirmed = Fixtures.Users.create_user(confirmed?: false)
 
@@ -7908,7 +7932,31 @@ defmodule Emisar.AccountsTest do
         role: "owner"
       )
 
-      assert Accounts.fetch_account_report_recipient(account) == {:error, :no_recipient}
+      Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
+      |> Fixtures.Memberships.suspend_membership()
+
+      Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
+      |> Fixtures.Memberships.mark_membership_as_deleted()
+
+      deleted_user = Fixtures.Users.create_user()
+
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        user_id: deleted_user.id,
+        role: "owner"
+      )
+
+      Fixtures.Users.mark_user_as_deleted(deleted_user)
+
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        role: "owner",
+        invitation_token_digest: Crypto.hash_hex("pending-report-owner")
+      )
+
+      Fixtures.Memberships.create_membership(account_id: account.id, role: "admin")
+
+      assert Accounts.list_account_report_recipients(account) == []
     end
 
     test "does not select another account's owner" do
@@ -7922,7 +7970,7 @@ defmodule Emisar.AccountsTest do
         role: "owner"
       )
 
-      assert Accounts.fetch_account_report_recipient(account) == {:error, :no_recipient}
+      assert Accounts.list_account_report_recipients(account) == []
     end
   end
 

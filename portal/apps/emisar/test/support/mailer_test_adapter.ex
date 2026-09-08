@@ -3,7 +3,8 @@ defmodule Emisar.MailerTestAdapter do
   Test mailer adapter. Delegates to `Swoosh.Adapters.Test` (delivering each
   email to the test process as `{:email, email}`) unless the calling process
   set the `Emisar.Config` override `:mailer_deliver_error` — then it returns
-  that error instead. Lets a delivery-failure path be exercised per-process,
+  that error instead (or calls a per-email callback returning nil or an error).
+  Lets a delivery-failure path be exercised per-process,
   so the test stays `async: true` rather than swapping the global adapter.
   """
 
@@ -11,7 +12,13 @@ defmodule Emisar.MailerTestAdapter do
 
   @impl true
   def deliver(email, config) do
-    case Emisar.Config.get_env(:emisar, :mailer_deliver_error) do
+    result =
+      case Emisar.Config.get_env(:emisar, :mailer_deliver_error) do
+        callback when is_function(callback, 1) -> callback.(email)
+        error -> error
+      end
+
+    case result do
       nil -> Swoosh.Adapters.Test.deliver(email, config)
       error -> error
     end
