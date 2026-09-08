@@ -1,0 +1,24 @@
+schema_version: 1
+id: stripe.refund
+title: Show refund
+kind: script
+risk: low
+description: "Show one Stripe refund with selected diagnostic fields. Includes failure and acquirer-reference details to trace a missing refund."
+side_effects: ["Reads bounded billing information from Stripe."]
+args:
+  - name: id
+    type: string
+    required: true
+    description: "re_ identifier returned by a Stripe read."
+    validation: {"pattern":"^re_[A-Za-z0-9]+$","max_length":255}
+execution:
+  script: {path: scripts/stripe.py, interpreter: python3}
+  argv: [refund]
+  env:
+    ARG_ID: "{{ args.id }}"
+  timeout: 60s
+output:
+  parser: json
+  parser_required: true
+  max_stdout_bytes: 65536
+  max_stderr_bytes: 8192

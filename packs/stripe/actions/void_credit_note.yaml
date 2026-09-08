@@ -1,0 +1,36 @@
+schema_version: 1
+id: stripe.void_credit_note
+title: Void a credit note
+kind: script
+risk: high
+description: "Void one eligible credit note; Stripe enforces whether its invoice state permits reversal."
+side_effects: ["Changes the named customer's billing or dispute state; approval is required under the default policy.","Sends at most one write request; after an ambiguous failure investigate provider state before another correction."]
+args:
+  - name: credit_note
+    type: string
+    required: true
+    description: "cn_ identifier returned by a Stripe read."
+    validation: {"pattern":"^cn_[A-Za-z0-9]+$","max_length":255}
+  - name: mode
+    type: string
+    required: true
+    description: "Explicitly approve the runner's configured Stripe mode."
+    validation: {"enum":["test","live"]}
+  - name: operation_id
+    type: string
+    required: true
+    description: "Stable correction identifier for Stripe Idempotency-Key. Reuse with identical parameters within the provider's retention window (at least 24 hours); reconcile before retrying later."
+    validation: {"pattern":"^[A-Za-z0-9][A-Za-z0-9._:-]*$","max_length":255}
+execution:
+  script: {path: scripts/stripe.py, interpreter: python3}
+  argv: [void_credit_note]
+  env:
+    ARG_CREDIT_NOTE: "{{ args.credit_note }}"
+    ARG_MODE: "{{ args.mode }}"
+    ARG_OPERATION_ID: "{{ args.operation_id }}"
+  timeout: 60s
+output:
+  parser: json
+  parser_required: true
+  max_stdout_bytes: 65536
+  max_stderr_bytes: 8192

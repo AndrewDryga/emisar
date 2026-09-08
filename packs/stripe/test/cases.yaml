@@ -1,0 +1,1375 @@
+---
+services:
+- stripe-api
+versions:
+- version: 3.14.0-alpine3.22
+  digest: "@sha256:8373231e1e906ddfb457748bfc032c4c06ada8c759b7b62d9c73ec2a3c56e710"
+  default: true
+secret_env:
+- STRIPE_API_KEY
+env:
+  STRIPE_API_KEY: sk_test_packtest-canary-stripe-58c9
+  STRIPE_MODE: test
+  STRIPE_FIXTURE_URL: http://stripe-api:8080
+  STRIPE_EVIDENCE_DIR: "/packs/stripe/test/fixtures"
+defaults:
+  expect:
+    stdout_not_empty: true
+    stdout_not_contains:
+    - packtest-canary-private-metadata-120a
+    - packtest-canary-event-client-19cb
+    - packtest-canary-client-secret-824b
+    - packtest-canary-fingerprint-55a1
+    - packtest-canary-receipt-732a
+    - packtest-canary-invoice-919a
+cases:
+- name: stripe.dispute-dp-prefix
+  action: stripe.dispute
+  args: {id: dp_fixture}
+  expect:
+    json:
+      /result/id: dp_fixture
+- action: stripe.customers
+  args:
+    email: ''
+    created_gte: 0
+    created_lte: 0
+    limit: 10
+    cursor: ''
+  expect:
+    json:
+      "/results/0/id": cus_fixture
+      "/pagination/has_more": true
+      "/pagination/next_cursor": cus_fixture_9
+  probes:
+  - name: Read leaves provider billing state unchanged
+    argv:
+    - curl
+    - "-fsS"
+    - http://stripe-api:8080/probe
+    expect:
+      json:
+        "/writes": 0
+- action: stripe.payment_intents
+  args:
+    customer: ''
+    created_gte: 0
+    created_lte: 0
+    limit: 10
+    cursor: ''
+  expect:
+    json:
+      "/results/0/id": pi_fixture
+      "/pagination/has_more": true
+      "/pagination/next_cursor": pi_fixture_9
+- action: stripe.charges
+  args:
+    customer: ''
+    payment_intent: ''
+    created_gte: 0
+    created_lte: 0
+    limit: 10
+    cursor: ''
+  expect:
+    json:
+      "/results/0/id": ch_fixture
+      "/pagination/has_more": true
+      "/pagination/next_cursor": ch_fixture_9
+- action: stripe.refunds
+  args:
+    payment_intent: ''
+    charge: ''
+    created_gte: 0
+    created_lte: 0
+    limit: 10
+    cursor: ''
+  expect:
+    json:
+      "/results/0/id": re_fixture
+      "/pagination/has_more": true
+      "/pagination/next_cursor": re_fixture_9
+- action: stripe.invoices
+  args:
+    customer: ''
+    subscription: ''
+    status: ''
+    created_gte: 0
+    created_lte: 0
+    limit: 10
+    cursor: ''
+  expect:
+    json:
+      "/results/0/id": in_fixture
+      "/pagination/has_more": true
+      "/pagination/next_cursor": in_fixture_9
+- action: stripe.subscriptions
+  args:
+    customer: ''
+    status: all
+    created_gte: 0
+    created_lte: 0
+    limit: 10
+    cursor: ''
+  expect:
+    json:
+      "/results/0/id": sub_fixture
+      "/pagination/has_more": true
+      "/pagination/next_cursor": sub_fixture_9
+- action: stripe.disputes
+  args:
+    payment_intent: ''
+    charge: ''
+    created_gte: 0
+    created_lte: 0
+    limit: 10
+    cursor: ''
+  expect:
+    json:
+      "/results/0/id": du_fixture
+      "/pagination/has_more": true
+      "/pagination/next_cursor": du_fixture_9
+- action: stripe.events
+  args:
+    type: ''
+    created_gte: 0
+    created_lte: 0
+    limit: 10
+    cursor: ''
+  expect:
+    json:
+      "/results/0/id": evt_fixture
+      "/pagination/has_more": true
+      "/pagination/next_cursor": evt_fixture_9
+- action: stripe.balance_transactions
+  args:
+    source: ''
+    payout: ''
+    currency: ''
+    type: ''
+    created_gte: 0
+    created_lte: 0
+    limit: 10
+    cursor: ''
+  expect:
+    json:
+      "/results/0/id": txn_fixture
+      "/pagination/has_more": true
+      "/pagination/next_cursor": txn_fixture_9
+- action: stripe.payouts
+  args:
+    status: ''
+    created_gte: 0
+    created_lte: 0
+    limit: 10
+    cursor: ''
+  expect:
+    json:
+      "/results/0/id": po_fixture
+      "/pagination/has_more": true
+      "/pagination/next_cursor": po_fixture_9
+- action: stripe.credit_notes
+  args:
+    customer: ''
+    invoice: ''
+    limit: 10
+    cursor: ''
+  expect:
+    json:
+      "/results/0/id": cn_fixture
+      "/pagination/has_more": true
+      "/pagination/next_cursor": cn_fixture_9
+- action: stripe.customer
+  args:
+    id: cus_fixture
+  expect:
+    json:
+      "/result/id": cus_fixture
+  probes:
+  - name: Read leaves provider billing state unchanged
+    argv:
+    - curl
+    - "-fsS"
+    - http://stripe-api:8080/probe
+    expect:
+      json:
+        "/writes": 0
+- action: stripe.payment_intent
+  args:
+    id: pi_fixture
+  expect:
+    json:
+      "/result/id": pi_fixture
+- action: stripe.charge
+  args:
+    id: ch_fixture
+  expect:
+    json:
+      "/result/id": ch_fixture
+- action: stripe.refund
+  args:
+    id: re_fixture
+  expect:
+    json:
+      "/result/id": re_fixture
+- action: stripe.invoice
+  args:
+    id: in_fixture
+  expect:
+    json:
+      "/result/id": in_fixture
+- action: stripe.invoice_payment
+  args:
+    id: inpay_fixture
+  expect:
+    json:
+      "/result/id": inpay_fixture
+- action: stripe.subscription
+  args:
+    id: sub_fixture
+  expect:
+    json:
+      "/result/id": sub_fixture
+- action: stripe.dispute
+  args:
+    id: du_fixture
+  expect:
+    json:
+      "/result/id": du_fixture
+- action: stripe.event
+  args:
+    id: evt_fixture
+  expect:
+    json:
+      "/result/id": evt_fixture
+- action: stripe.balance_transaction
+  args:
+    id: txn_fixture
+  expect:
+    json:
+      "/result/id": txn_fixture
+- action: stripe.payout
+  args:
+    id: po_fixture
+  expect:
+    json:
+      "/result/id": po_fixture
+- action: stripe.credit_note
+  args:
+    id: cn_fixture
+  expect:
+    json:
+      "/result/id": cn_fixture
+- action: stripe.file
+  args:
+    id: file_fixture
+  expect:
+    json:
+      "/result/id": file_fixture
+- action: stripe.balance
+  args: {}
+  expect:
+    json:
+      "/result/available/0/amount": 10000
+- action: stripe.invoice_lines
+  args:
+    invoice: in_fixture
+    limit: 10
+    cursor: ''
+  expect:
+    json:
+      "/results/0/id": il_fixture
+      "/pagination/has_more": true
+      "/pagination/next_cursor": il_fixture_9
+  probes:
+  - name: Read leaves provider billing state unchanged
+    argv:
+    - curl
+    - "-fsS"
+    - http://stripe-api:8080/probe
+    expect:
+      json:
+        "/writes": 0
+- action: stripe.invoice_payments
+  args:
+    invoice: in_fixture
+    status: ''
+    limit: 10
+    cursor: ''
+  expect:
+    json:
+      "/results/0/id": inpay_fixture
+      "/pagination/has_more": true
+      "/pagination/next_cursor": inpay_fixture_9
+- action: stripe.subscription_items
+  args:
+    subscription: sub_fixture
+    limit: 10
+    cursor: ''
+  expect:
+    json:
+      "/results/0/id": si_fixture
+      "/pagination/has_more": true
+      "/pagination/next_cursor": si_fixture_9
+- action: stripe.customer_balance_transactions
+  args:
+    customer: cus_fixture
+    limit: 10
+    cursor: ''
+  expect:
+    json:
+      "/results/0/id": cbtxn_fixture
+      "/pagination/has_more": true
+      "/pagination/next_cursor": cbtxn_fixture_9
+- action: stripe.payment_methods
+  args:
+    customer: cus_fixture
+    type: ''
+    limit: 10
+    cursor: ''
+  expect:
+    json:
+      "/results/0/id": pm_fixture
+      "/pagination/has_more": true
+      "/pagination/next_cursor": pm_fixture_9
+- action: stripe.create_refund
+  args:
+    charge: ch_fixture
+    amount: 500
+    currency: usd
+    reason: duplicate
+    reverse_transfer: false
+    refund_application_fee: false
+    mode: test
+    operation_id: correction_fixture
+  expect:
+    json:
+      "/result/id": re_fixture
+  probes:
+  - name: Provider retained the billing correction
+    argv:
+    - curl
+    - "-fsS"
+    - http://stripe-api:8080/probe
+    expect:
+      json:
+        "/writes": 1
+        "/state/refund/correction_applied": true
+        "/state/charge/amount_refunded": 500
+- action: stripe.cancel_refund
+  args:
+    refund: re_fixture
+    mode: test
+    operation_id: correction_fixture
+  expect:
+    json:
+      "/result/id": re_fixture
+  probes:
+  - name: Provider retained the billing correction
+    argv:
+    - curl
+    - "-fsS"
+    - http://stripe-api:8080/probe
+    expect:
+      json:
+        "/writes": 1
+        "/state/refund/correction_applied": true
+        "/state/refund/status": canceled
+  arrange:
+  - argv:
+    - curl
+    - "-fsS"
+    - "-X"
+    - POST
+    - http://stripe-api:8080/arrange/actionable_refund
+- action: stripe.cancel_payment_intent
+  args:
+    payment_intent: pi_fixture
+    reason: duplicate
+    mode: test
+    operation_id: correction_fixture
+  expect:
+    json:
+      "/result/id": pi_fixture
+  probes:
+  - name: Provider retained the billing correction
+    argv:
+    - curl
+    - "-fsS"
+    - http://stripe-api:8080/probe
+    expect:
+      json:
+        "/writes": 1
+        "/state/payment_intent/correction_applied": true
+        "/state/payment_intent/status": canceled
+- action: stripe.capture_payment_intent
+  args:
+    payment_intent: pi_fixture
+    amount: 500
+    currency: usd
+    mode: test
+    operation_id: correction_fixture
+  expect:
+    json:
+      "/result/id": pi_fixture
+  probes:
+  - name: Provider retained the billing correction
+    argv:
+    - curl
+    - "-fsS"
+    - http://stripe-api:8080/probe
+    expect:
+      json:
+        "/writes": 1
+        "/state/payment_intent/correction_applied": true
+        "/state/payment_intent/amount_received": 500
+        "/state/payment_intent/amount_capturable": 0
+- action: stripe.pay_invoice
+  args:
+    invoice: in_fixture
+    expected_amount: 1200
+    currency: usd
+    payment_method: ''
+    mode: test
+    operation_id: correction_fixture
+  expect:
+    json:
+      "/result/id": in_fixture
+  probes:
+  - name: Provider retained the billing correction
+    argv:
+    - curl
+    - "-fsS"
+    - http://stripe-api:8080/probe
+    expect:
+      json:
+        "/writes": 1
+        "/state/invoice/correction_applied": true
+        "/state/invoice/status": paid
+        "/state/invoice/paid_out_of_band": false
+- action: stripe.record_invoice_payment
+  args:
+    invoice: in_fixture
+    expected_amount: 1200
+    currency: usd
+    mode: test
+    operation_id: correction_fixture
+  expect:
+    json:
+      "/result/id": in_fixture
+  probes:
+  - name: Provider retained the billing correction
+    argv:
+    - curl
+    - "-fsS"
+    - http://stripe-api:8080/probe
+    expect:
+      json:
+        "/writes": 1
+        "/state/invoice/correction_applied": true
+        "/state/invoice/status": paid
+        "/state/invoice/paid_out_of_band": true
+- action: stripe.send_invoice
+  args:
+    invoice: in_fixture
+    mode: test
+    operation_id: correction_fixture
+  expect:
+    json:
+      "/result/id": in_fixture
+  probes:
+  - name: Provider retained the billing correction
+    argv:
+    - curl
+    - "-fsS"
+    - http://stripe-api:8080/probe
+    expect:
+      json:
+        "/writes": 1
+        "/state/invoice/correction_applied": true
+        "/state/invoice/last_operation": send
+- action: stripe.finalize_invoice
+  args:
+    invoice: in_fixture
+    mode: test
+    operation_id: correction_fixture
+  expect:
+    json:
+      "/result/id": in_fixture
+  probes:
+  - name: Provider retained the billing correction
+    argv:
+    - curl
+    - "-fsS"
+    - http://stripe-api:8080/probe
+    expect:
+      json:
+        "/writes": 1
+        "/state/invoice/correction_applied": true
+        "/state/invoice/last_operation": finalize
+  arrange:
+  - argv:
+    - curl
+    - "-fsS"
+    - "-X"
+    - POST
+    - http://stripe-api:8080/arrange/draft_invoice
+- action: stripe.void_invoice
+  args:
+    invoice: in_fixture
+    mode: test
+    operation_id: correction_fixture
+  expect:
+    json:
+      "/result/id": in_fixture
+  probes:
+  - name: Provider retained the billing correction
+    argv:
+    - curl
+    - "-fsS"
+    - http://stripe-api:8080/probe
+    expect:
+      json:
+        "/writes": 1
+        "/state/invoice/correction_applied": true
+        "/state/invoice/status": void
+- action: stripe.write_off_invoice
+  args:
+    invoice: in_fixture
+    mode: test
+    operation_id: correction_fixture
+  expect:
+    json:
+      "/result/id": in_fixture
+  probes:
+  - name: Provider retained the billing correction
+    argv:
+    - curl
+    - "-fsS"
+    - http://stripe-api:8080/probe
+    expect:
+      json:
+        "/writes": 1
+        "/state/invoice/correction_applied": true
+        "/state/invoice/status": uncollectible
+- action: stripe.preview_invoice
+  args:
+    subscription: sub_fixture
+  expect:
+    json:
+      "/result/id": upcoming_in_fixture
+      "/result/lines/0/id": il_fixture
+      "/result/lines/0/parent_subscription_item_details_proration": false
+- action: stripe.schedule_subscription_cancel
+  args:
+    subscription: sub_fixture
+    mode: test
+    operation_id: correction_fixture
+  expect:
+    json:
+      "/result/id": sub_fixture
+  probes:
+  - name: Provider retained the billing correction
+    argv:
+    - curl
+    - "-fsS"
+    - http://stripe-api:8080/probe
+    expect:
+      json:
+        "/writes": 1
+        "/state/subscription/correction_applied": true
+        "/state/subscription/cancel_at_period_end": true
+- action: stripe.undo_subscription_cancel
+  args:
+    subscription: sub_fixture
+    mode: test
+    operation_id: correction_fixture
+  expect:
+    json:
+      "/result/id": sub_fixture
+  probes:
+  - name: Provider retained the billing correction
+    argv:
+    - curl
+    - "-fsS"
+    - http://stripe-api:8080/probe
+    expect:
+      json:
+        "/writes": 1
+        "/state/subscription/correction_applied": true
+        "/state/subscription/cancel_at_period_end": false
+  arrange:
+  - argv:
+    - curl
+    - "-fsS"
+    - "-X"
+    - POST
+    - http://stripe-api:8080/arrange/scheduled_cancel
+- action: stripe.resume_collection
+  args:
+    subscription: sub_fixture
+    mode: test
+    operation_id: correction_fixture
+  expect:
+    json:
+      "/result/id": sub_fixture
+  probes:
+  - name: Provider retained the billing correction
+    argv:
+    - curl
+    - "-fsS"
+    - http://stripe-api:8080/probe
+    expect:
+      json:
+        "/writes": 1
+        "/state/subscription/correction_applied": true
+        "/state/subscription/pause_collection":
+  arrange:
+  - argv:
+    - curl
+    - "-fsS"
+    - "-X"
+    - POST
+    - http://stripe-api:8080/arrange/paused_collection
+- action: stripe.cancel_subscription
+  args:
+    subscription: sub_fixture
+    invoice_now: false
+    prorate: false
+    mode: test
+  expect:
+    json:
+      "/result/id": sub_fixture
+  probes:
+  - name: Provider retained the billing correction
+    argv:
+    - curl
+    - "-fsS"
+    - http://stripe-api:8080/probe
+    expect:
+      json:
+        "/writes": 1
+        "/state/subscription/correction_applied": true
+        "/state/subscription/status": canceled
+- action: stripe.resume_subscription
+  args:
+    subscription: sub_fixture
+    billing_cycle_anchor: now
+    mode: test
+    operation_id: correction_fixture
+  expect:
+    json:
+      "/result/id": sub_fixture
+  probes:
+  - name: Provider retained the billing correction
+    argv:
+    - curl
+    - "-fsS"
+    - http://stripe-api:8080/probe
+    expect:
+      json:
+        "/writes": 1
+        "/state/subscription/correction_applied": true
+        "/state/subscription/resumed": true
+  arrange:
+  - argv:
+    - curl
+    - "-fsS"
+    - "-X"
+    - POST
+    - http://stripe-api:8080/arrange/paused_subscription
+- action: stripe.pause_collection
+  args:
+    subscription: sub_fixture
+    behavior: keep_as_draft
+    resumes_at: 0
+    mode: test
+    operation_id: correction_fixture
+  expect:
+    json:
+      "/result/id": sub_fixture
+  probes:
+  - name: Provider retained the billing correction
+    argv:
+    - curl
+    - "-fsS"
+    - http://stripe-api:8080/probe
+    expect:
+      json:
+        "/writes": 1
+        "/state/subscription/correction_applied": true
+        "/state/subscription/pause_collection/behavior": keep_as_draft
+- action: stripe.credit_customer_balance
+  args:
+    customer: cus_fixture
+    amount: 500
+    currency: usd
+    description: Billing correction
+    mode: test
+    operation_id: correction_fixture
+  expect:
+    json:
+      "/result/id": cbtxn_fixture
+  probes:
+  - name: Provider retained the billing correction
+    argv:
+    - curl
+    - "-fsS"
+    - http://stripe-api:8080/probe
+    expect:
+      json:
+        "/writes": 1
+        "/state/customer_balance_transaction/correction_applied": true
+        "/state/customer/balance": -500
+- action: stripe.stage_dispute_text
+  args:
+    dispute: du_fixture
+    field: uncategorized_text
+    content: Reviewed delivery evidence
+    mode: test
+    operation_id: correction_fixture
+  expect:
+    json:
+      "/result/id": du_fixture
+  probes:
+  - name: Provider retained the billing correction
+    argv:
+    - curl
+    - "-fsS"
+    - http://stripe-api:8080/probe
+    expect:
+      json:
+        "/writes": 1
+        "/state/dispute/correction_applied": true
+        "/state/dispute/evidence/uncategorized_text": Reviewed delivery evidence
+        "/state/dispute/evidence_details/submission_count": 0
+- action: stripe.stage_dispute_file
+  args:
+    dispute: du_fixture
+    field: cancellation_policy
+    file: file_fixture
+    mode: test
+    operation_id: correction_fixture
+  expect:
+    json:
+      "/result/id": du_fixture
+  probes:
+  - name: Provider retained the billing correction
+    argv:
+    - curl
+    - "-fsS"
+    - http://stripe-api:8080/probe
+    expect:
+      json:
+        "/writes": 1
+        "/state/dispute/correction_applied": true
+        "/state/dispute/evidence/cancellation_policy": file_fixture
+        "/state/dispute/evidence_details/submission_count": 0
+- action: stripe.upload_dispute_file
+  args:
+    file_name: evidence.pdf
+    expected_file_sha256: '03308495c119eabb4ab52ee7c97f3d2f747c1d94e386886ecf7a93bb46c7ad73'
+    mode: test
+    operation_id: correction_fixture
+  expect:
+    json:
+      "/result/id": file_fixture
+  probes:
+  - name: Provider retained the billing correction
+    argv:
+    - curl
+    - "-fsS"
+    - http://stripe-api:8080/probe
+    expect:
+      json:
+        "/writes": 1
+        "/state/file/correction_applied": true
+        "/state/file/size": 26
+- action: stripe.dispute_evidence
+  args:
+    dispute: du_fixture
+    field: uncategorized_text
+  expect:
+    json:
+      "/result/value": Delivery confirmed
+      "/result/truncated": false
+  probes:
+  - name: Read leaves provider billing state unchanged
+    argv:
+    - curl
+    - "-fsS"
+    - http://stripe-api:8080/probe
+    expect:
+      json:
+        "/writes": 0
+- action: stripe.submit_dispute_evidence
+  args:
+    dispute: du_fixture
+    expected_evidence_sha256: a6318ba3e10764efef19a91923e1487efbbd7f8b5fc89b98787f782ecbb802c4
+    mode: test
+    operation_id: correction_fixture
+  expect:
+    json:
+      "/result/id": du_fixture
+  probes:
+  - name: Provider retained the billing correction
+    argv:
+    - curl
+    - "-fsS"
+    - http://stripe-api:8080/probe
+    expect:
+      json:
+        "/writes": 1
+        "/state/dispute/correction_applied": true
+        "/state/dispute/status": under_review
+        "/state/dispute/evidence_details/submission_count": 1
+- action: stripe.accept_dispute
+  args:
+    dispute: du_fixture
+    mode: test
+    operation_id: correction_fixture
+  expect:
+    json:
+      "/result/id": du_fixture
+  probes:
+  - name: Provider retained the billing correction
+    argv:
+    - curl
+    - "-fsS"
+    - http://stripe-api:8080/probe
+    expect:
+      json:
+        "/writes": 1
+        "/state/dispute/correction_applied": true
+        "/state/dispute/status": lost
+- action: stripe.preview_credit_note
+  args:
+    invoice: in_fixture
+    amount: 500
+    existing_refund: ''
+    existing_refund_amount: 0
+    reason: duplicate
+    credit_amount: 0
+    refund_amount: 0
+    out_of_band_amount: 0
+  expect:
+    json:
+      "/result/id": cn_fixture
+- action: stripe.create_credit_note
+  args:
+    invoice: in_fixture
+    amount: 500
+    currency: usd
+    existing_refund: ''
+    existing_refund_amount: 0
+    reason: duplicate
+    credit_amount: 0
+    refund_amount: 0
+    out_of_band_amount: 0
+    mode: test
+    operation_id: correction_fixture
+  expect:
+    json:
+      "/result/id": cn_fixture
+  probes:
+  - name: Provider retained the billing correction
+    argv:
+    - curl
+    - "-fsS"
+    - http://stripe-api:8080/probe
+    expect:
+      json:
+        "/writes": 1
+        "/state/credit_note/correction_applied": true
+- action: stripe.void_credit_note
+  args:
+    credit_note: cn_fixture
+    mode: test
+    operation_id: correction_fixture
+  expect:
+    json:
+      "/result/id": cn_fixture
+  probes:
+  - name: Provider retained the billing correction
+    argv:
+    - curl
+    - "-fsS"
+    - http://stripe-api:8080/probe
+    expect:
+      json:
+        "/writes": 1
+        "/state/credit_note/correction_applied": true
+        "/state/credit_note/status": void
+- action: stripe.evidence_file_info
+  args:
+    file_name: evidence.pdf
+  expect:
+    json:
+      "/result/sha256": '03308495c119eabb4ab52ee7c97f3d2f747c1d94e386886ecf7a93bb46c7ad73'
+      "/result/size": 26
+- name: stripe.customers-cursor
+  action: stripe.customers
+  args:
+    cursor: cus_fixture_9
+  expect:
+    json:
+      "/results/0/id": cus_fixture_10
+      "/pagination/has_more": false
+      "/pagination/next_cursor":
+  probes:
+  - name: Read leaves provider billing state unchanged
+    argv:
+    - curl
+    - "-fsS"
+    - http://stripe-api:8080/probe
+    expect:
+      json:
+        "/writes": 0
+- name: stripe.customers-maximum-text
+  action: stripe.customers
+  env:
+    STRIPE_ACCOUNT_ID: acct_maximum
+  args:
+    limit: 10
+  expect:
+    json:
+      "/results/0/id": cus_fixture
+      "/pagination/has_more": true
+  probes:
+  - name: Read leaves provider billing state unchanged
+    argv:
+    - curl
+    - "-fsS"
+    - http://stripe-api:8080/probe
+    expect:
+      json:
+        "/writes": 0
+- name: stripe.balance-missing-credential
+  action: stripe.balance
+  expect:
+    status: failure
+    exit:
+    - 1
+    stderr_contains:
+    - STRIPE_API_KEY is missing
+  unset_env:
+  - STRIPE_API_KEY
+- name: stripe.balance-wrong-mode
+  action: stripe.balance
+  expect:
+    status: failure
+    exit:
+    - 1
+    stderr_contains:
+    - does not match STRIPE_MODE
+  env:
+    STRIPE_MODE: live
+- name: stripe.balance-credential-scope
+  action: stripe.balance
+  expect:
+    status: failure
+    exit:
+    - 1
+    stderr_contains:
+    - does not match STRIPE_MODE
+  env:
+    STRIPE_API_KEY: sk_live_packtest-canary-invalid-438a
+- name: stripe.balance-acct_denied
+  action: stripe.balance
+  env:
+    STRIPE_ACCOUNT_ID: acct_denied
+  expect:
+    status: failure
+    exit:
+    - 1
+    stderr_contains:
+    - '"http_status": 403'
+- name: stripe.balance-acct_redirect
+  action: stripe.balance
+  env:
+    STRIPE_ACCOUNT_ID: acct_redirect
+  expect:
+    status: failure
+    exit:
+    - 1
+    stderr_contains:
+    - '"http_status": 302'
+- name: stripe.charge-missing
+  action: stripe.charge
+  args:
+    id: ch_missing
+  expect:
+    status: failure
+    exit:
+    - 1
+    stderr_contains:
+    - resource_missing
+- name: stripe.charge-path-injection
+  action: stripe.charge
+  args:
+    id: ch_../../balance
+  expect:
+    status: failure
+    reason_contains:
+    - must match pattern
+- action: stripe.create_refund
+  args:
+    charge: ch_fixture
+    amount: 500
+    currency: eur
+    reason: duplicate
+    reverse_transfer: false
+    refund_application_fee: false
+    mode: test
+    operation_id: correction_fixture
+  expect:
+    status: failure
+    exit:
+    - 1
+    stderr_contains:
+    - Charge currency differs
+  probes:
+  - argv:
+    - curl
+    - "-fsS"
+    - http://stripe-api:8080/probe
+    expect:
+      json:
+        "/writes": 0
+  name: stripe.create_refund-currency-mismatch
+- action: stripe.pay_invoice
+  args:
+    invoice: in_fixture
+    expected_amount: 1100
+    currency: usd
+    payment_method: ''
+    mode: test
+    operation_id: correction_fixture
+  expect:
+    status: failure
+    exit:
+    - 1
+    stderr_contains:
+    - Invoice balance or currency changed
+  probes:
+  - argv:
+    - curl
+    - "-fsS"
+    - http://stripe-api:8080/probe
+    expect:
+      json:
+        "/writes": 0
+  name: stripe.pay_invoice-stale-balance
+- action: stripe.submit_dispute_evidence
+  args:
+    dispute: du_fixture
+    expected_evidence_sha256: '0000000000000000000000000000000000000000000000000000000000000000'
+    mode: test
+    operation_id: correction_fixture
+  expect:
+    status: failure
+    exit:
+    - 1
+    stderr_contains:
+    - Evidence changed since review
+  probes:
+  - argv:
+    - curl
+    - "-fsS"
+    - http://stripe-api:8080/probe
+    expect:
+      json:
+        "/writes": 0
+  name: stripe.submit_dispute_evidence-changed-evidence
+- action: stripe.upload_dispute_file
+  args:
+    file_name: evidence.pdf
+    expected_file_sha256: '0000000000000000000000000000000000000000000000000000000000000000'
+    mode: test
+    operation_id: correction_fixture
+  expect:
+    status: failure
+    exit:
+    - 1
+    stderr_contains:
+    - Evidence file changed since review
+  probes:
+  - argv:
+    - curl
+    - "-fsS"
+    - http://stripe-api:8080/probe
+    expect:
+      json:
+        "/writes": 0
+  name: stripe.upload_dispute_file-changed-file
+- action: stripe.create_refund
+  args:
+    charge: ch_fixture
+    amount: 500
+    currency: usd
+    reason: duplicate
+    reverse_transfer: false
+    refund_application_fee: false
+    mode: test
+    operation_id: correction_fixture
+  expect:
+    json:
+      "/result/id": re_fixture
+  probes:
+  - name: Provider retained the billing correction
+    argv:
+    - curl
+    - "-fsS"
+    - http://stripe-api:8080/probe
+    expect:
+      json:
+        "/writes": 1
+        "/state/refund/correction_applied": true
+        "/state/charge/amount_refunded": 500
+  name: stripe.create_refund-idempotent-replay
+  arrange:
+  - argv:
+    - env
+    - ARG_CHARGE=ch_fixture
+    - ARG_AMOUNT=500
+    - ARG_CURRENCY=usd
+    - ARG_REASON=duplicate
+    - ARG_REVERSE_TRANSFER=false
+    - ARG_REFUND_APPLICATION_FEE=false
+    - ARG_MODE=test
+    - ARG_OPERATION_ID=correction_fixture
+    - python3
+    - "/packs/stripe/scripts/stripe.py"
+    - create_refund
+    expect:
+      stdout_contains:
+      - re_fixture
+- action: stripe.submit_dispute_evidence
+  args:
+    dispute: du_fixture
+    expected_evidence_sha256: a6318ba3e10764efef19a91923e1487efbbd7f8b5fc89b98787f782ecbb802c4
+    mode: test
+    operation_id: correction_fixture
+  expect:
+    json:
+      "/result/id": du_fixture
+  probes:
+  - name: Provider retained the billing correction
+    argv:
+    - curl
+    - "-fsS"
+    - http://stripe-api:8080/probe
+    expect:
+      json:
+        "/writes": 1
+        "/state/dispute/correction_applied": true
+        "/state/dispute/status": under_review
+        "/state/dispute/evidence_details/submission_count": 1
+  name: stripe.submit_dispute_evidence-idempotent-replay
+  arrange:
+  - argv:
+    - env
+    - ARG_DISPUTE=du_fixture
+    - ARG_EXPECTED_EVIDENCE_SHA256=a6318ba3e10764efef19a91923e1487efbbd7f8b5fc89b98787f782ecbb802c4
+    - ARG_MODE=test
+    - ARG_OPERATION_ID=correction_fixture
+    - python3
+    - "/packs/stripe/scripts/stripe.py"
+    - submit_dispute_evidence
+    expect:
+      stdout_contains:
+      - du_fixture
+- action: stripe.create_refund
+  args:
+    charge: ch_fixture
+    amount: 500
+    currency: usd
+    reason: duplicate
+    reverse_transfer: false
+    refund_application_fee: false
+    mode: test
+    operation_id: correction_fixture
+  expect:
+    status: failure
+    exit:
+    - 1
+    stderr_contains:
+    - '"http_status": 500'
+    - outcome
+  probes:
+  - name: Provider retained the billing correction
+    argv:
+    - curl
+    - "-fsS"
+    - http://stripe-api:8080/probe
+    expect:
+      json:
+        "/writes": 1
+        "/state/refund/correction_applied": true
+        "/state/charge/amount_refunded": 500
+  name: stripe.create_refund-ambiguous-provider-failure
+  env:
+    STRIPE_ACCOUNT_ID: acct_ambiguous
+- name: stripe.customers-no-email-match
+  action: stripe.customers
+  args:
+    email: missing@example.test
+  expect:
+    json:
+      "/results": []
+      "/pagination/has_more": false
+      "/pagination/next_cursor":
+  probes:
+  - argv:
+    - curl
+    - "-fsS"
+    - http://stripe-api:8080/probe
+    expect:
+      json:
+        "/writes": 0
+- action: stripe.cancel_refund
+  args:
+    refund: re_fixture
+    mode: test
+    operation_id: correction_fixture
+  expect:
+    status: failure
+    exit:
+    - 1
+    stderr_contains:
+    - refund_not_cancelable
+  probes:
+  - argv:
+    - curl
+    - "-fsS"
+    - http://stripe-api:8080/probe
+    expect:
+      json:
+        "/writes": 0
+  name: stripe.cancel_refund-already-completed
+- action: stripe.create_refund
+  args:
+    charge: ch_fixture
+    amount: 500
+    currency: usd
+    reason: duplicate
+    reverse_transfer: false
+    refund_application_fee: false
+    mode: test
+    operation_id: correction_fixture
+  expect:
+    status: failure
+    exit:
+    - 1
+    stderr_contains:
+    - idempotency_key_in_use
+  probes:
+  - argv:
+    - curl
+    - "-fsS"
+    - http://stripe-api:8080/probe
+    expect:
+      json:
+        "/writes": 1
+        "/state/charge/amount_refunded": 400
+  name: stripe.create_refund-changed-idempotent-parameters
+  arrange:
+  - argv:
+    - env
+    - ARG_CHARGE=ch_fixture
+    - ARG_AMOUNT=400
+    - ARG_CURRENCY=usd
+    - ARG_REASON=duplicate
+    - ARG_REVERSE_TRANSFER=false
+    - ARG_REFUND_APPLICATION_FEE=false
+    - ARG_MODE=test
+    - ARG_OPERATION_ID=correction_fixture
+    - python3
+    - "/packs/stripe/scripts/stripe.py"
+    - create_refund
+- action: stripe.upload_dispute_file
+  args:
+    file_name: seed.json
+    expected_file_sha256: '03308495c119eabb4ab52ee7c97f3d2f747c1d94e386886ecf7a93bb46c7ad73'
+    mode: test
+    operation_id: correction_fixture
+  expect:
+    status: failure
+    exit:
+    - 1
+    stderr_contains:
+    - Evidence must be PDF
+  probes:
+  - argv:
+    - curl
+    - "-fsS"
+    - http://stripe-api:8080/probe
+    expect:
+      json:
+        "/writes": 0
+  name: stripe.upload_dispute_file-unsupported-file
+- action: stripe.upload_dispute_file
+  args:
+    file_name: evidence.pdf
+    expected_file_sha256: '03308495c119eabb4ab52ee7c97f3d2f747c1d94e386886ecf7a93bb46c7ad73'
+    mode: test
+    operation_id: correction_fixture
+  expect:
+    status: failure
+    exit:
+    - 1
+    stderr_contains:
+    - Invalid input or provider response
+  probes:
+  - argv:
+    - curl
+    - "-fsS"
+    - http://stripe-api:8080/probe
+    expect:
+      json:
+        "/writes": 0
+  name: stripe.upload_dispute_file-symlink
+  arrange:
+  - argv:
+    - mkdir
+    - "-p"
+    - "/tmp/billing-evidence"
+  - argv:
+    - ln
+    - "-s"
+    - "/packs/stripe/test/fixtures/evidence.pdf"
+    - "/tmp/billing-evidence/evidence.pdf"
+  env:
+    STRIPE_EVIDENCE_DIR: "/tmp/billing-evidence"
+- action: stripe.upload_dispute_file
+  args:
+    file_name: oversized.pdf
+    expected_file_sha256: '03308495c119eabb4ab52ee7c97f3d2f747c1d94e386886ecf7a93bb46c7ad73'
+    mode: test
+    operation_id: correction_fixture
+  expect:
+    status: failure
+    exit:
+    - 1
+    stderr_contains:
+    - Evidence must contain
+  probes:
+  - argv:
+    - curl
+    - "-fsS"
+    - http://stripe-api:8080/probe
+    expect:
+      json:
+        "/writes": 0
+  name: stripe.upload_dispute_file-oversized-file
+  arrange:
+  - argv:
+    - mkdir
+    - "-p"
+    - "/tmp/billing-evidence"
+  - argv:
+    - truncate
+    - "-s"
+    - '5000001'
+    - "/tmp/billing-evidence/oversized.pdf"
+  env:
+    STRIPE_EVIDENCE_DIR: "/tmp/billing-evidence"

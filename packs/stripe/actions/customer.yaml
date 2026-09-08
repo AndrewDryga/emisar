@@ -1,0 +1,24 @@
+schema_version: 1
+id: stripe.customer
+title: Show customer
+kind: script
+risk: medium
+description: "Show one Stripe customer with selected diagnostic fields. Includes customer contact details and billing defaults."
+side_effects: ["Reads bounded billing information from Stripe."]
+args:
+  - name: id
+    type: string
+    required: true
+    description: "cus_ identifier returned by a Stripe read."
+    validation: {"pattern":"^cus_[A-Za-z0-9]+$","max_length":255}
+execution:
+  script: {path: scripts/stripe.py, interpreter: python3}
+  argv: [customer]
+  env:
+    ARG_ID: "{{ args.id }}"
+  timeout: 60s
+output:
+  parser: json
+  parser_required: true
+  max_stdout_bytes: 65536
+  max_stderr_bytes: 8192

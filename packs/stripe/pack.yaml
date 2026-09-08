@@ -1,0 +1,99 @@
+schema_version: 1
+id: stripe
+name: Stripe billing operations
+version: 0.1.0
+description: >
+  Investigate Stripe payment failures, duplicate charges, refunds,
+  recurring billing and disputes, and perform reviewed billing corrections.
+vendor: emisar
+homepage: https://emisar.dev/packs/stripe
+requires:
+  os: [linux]
+  binaries: [python3]
+setup:
+  summary: >
+    Uses Python 3.10 or newer with its standard library and system CA certificates.
+    Store credentials in the runner's private environment file and allowlist the
+    variables below in `execution.inherit_env`. Every action uses a fixed API
+    operation; credentials and evidence stay out of process arguments.
+  env:
+    - name: STRIPE_API_KEY
+      required: true
+      description: "Create a restricted API key in [Stripe API keys](https://dashboard.stripe.com/apikeys). Grant read permissions for the billing resources you investigate and write permissions only for enabled corrections; refunds, disputes, files, invoices, subscriptions and customer balance need their corresponding permissions."
+    - name: STRIPE_MODE
+      default: test
+      description: "Use test or live. Must match the key prefix; every correction explicitly confirms this mode."
+    - name: STRIPE_ACCOUNT_ID
+      description: "Optional connected account acct_ ID. Set this on a dedicated runner when operating a Stripe Connect account; actions cannot change the scope."
+    - name: STRIPE_EVIDENCE_DIR
+      description: "Optional absolute directory containing operator-reviewed evidence files readable by the runner. Needed only for evidence_file_info and upload_dispute_file; use regular files, not symlinks."
+  notes:
+    - "Use customers with an exact email, then follow customer, charge, payment intent, invoice, subscription and refund IDs. Amounts are integer smallest currency units; zero-decimal currencies use whole units."
+    - "Inspect refunds for pending/failure reasons and acquirer references. Refunding a charge leaves its subscription active; cancel separately when that is the intended correction."
+    - "Use preview_invoice for renewal diagnostics. Use preview_credit_note before create_credit_note; allocate a paid portion to customer credit, a new refund, an already-issued refund, or an external refund. Credit-note creation suppresses customer email."
+    - "Stripe REST is pinned to 2026-08-26.dahlia. Event summaries preserve the event's original api_version. Events are available for 30 days; list cursors must be reused with the same filters."
+    - "Every mutating POST requires a stable operation_id. Stripe retains idempotency records for at least 24 hours; preserve identical parameters and reconcile before retrying later. No write retries run automatically. DELETE cancellation has no provider idempotency key."
+    - "Place reviewed evidence in STRIPE_EVIDENCE_DIR, inspect it with evidence_file_info, then approve upload_dispute_file with its SHA256. Upload accepts PDF/JPEG/PNG up to 5 MB. stage_dispute_text and stage_dispute_file always send submit=false. Read evidence before separately approving submit_dispute_evidence."
+    - "Dispute submission checks the reviewed evidence hash before submitting. Stripe has no atomic compare-and-submit; coordinate other evidence writers during that operation. Accepting a dispute forfeits the disputed funds."
+    - "Lists return at most ten projected records per run and pagination.next_cursor. Results exclude raw metadata, client secrets, full card/bank data and signed receipt/invoice URLs. Contact and evidence reads have explicit exposure descriptions."
+    - "Local fixtures verify request contracts and failure handling. Live provider compatibility requires a governed read against the operator's configured Stripe account."
+  verify: stripe.balance
+actions:
+  - actions/customers.yaml
+  - actions/payment_intents.yaml
+  - actions/charges.yaml
+  - actions/refunds.yaml
+  - actions/invoices.yaml
+  - actions/subscriptions.yaml
+  - actions/disputes.yaml
+  - actions/events.yaml
+  - actions/balance_transactions.yaml
+  - actions/payouts.yaml
+  - actions/credit_notes.yaml
+  - actions/customer.yaml
+  - actions/payment_intent.yaml
+  - actions/charge.yaml
+  - actions/refund.yaml
+  - actions/invoice.yaml
+  - actions/invoice_payment.yaml
+  - actions/subscription.yaml
+  - actions/dispute.yaml
+  - actions/event.yaml
+  - actions/balance_transaction.yaml
+  - actions/payout.yaml
+  - actions/credit_note.yaml
+  - actions/file.yaml
+  - actions/balance.yaml
+  - actions/invoice_lines.yaml
+  - actions/invoice_payments.yaml
+  - actions/subscription_items.yaml
+  - actions/customer_balance_transactions.yaml
+  - actions/payment_methods.yaml
+  - actions/create_refund.yaml
+  - actions/cancel_refund.yaml
+  - actions/cancel_payment_intent.yaml
+  - actions/capture_payment_intent.yaml
+  - actions/pay_invoice.yaml
+  - actions/record_invoice_payment.yaml
+  - actions/send_invoice.yaml
+  - actions/finalize_invoice.yaml
+  - actions/void_invoice.yaml
+  - actions/write_off_invoice.yaml
+  - actions/preview_invoice.yaml
+  - actions/schedule_subscription_cancel.yaml
+  - actions/undo_subscription_cancel.yaml
+  - actions/resume_collection.yaml
+  - actions/cancel_subscription.yaml
+  - actions/resume_subscription.yaml
+  - actions/pause_collection.yaml
+  - actions/credit_customer_balance.yaml
+  - actions/stage_dispute_text.yaml
+  - actions/stage_dispute_file.yaml
+  - actions/upload_dispute_file.yaml
+  - actions/dispute_evidence.yaml
+  - actions/submit_dispute_evidence.yaml
+  - actions/accept_dispute.yaml
+  - actions/preview_credit_note.yaml
+  - actions/create_credit_note.yaml
+  - actions/void_credit_note.yaml
+  - actions/evidence_file_info.yaml

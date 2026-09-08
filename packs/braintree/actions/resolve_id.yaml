@@ -1,0 +1,30 @@
+schema_version: 1
+id: braintree.resolve_id
+title: Resolve a legacy identifier
+kind: script
+risk: low
+description: "Resolve one control-panel or SDK identifier through Braintree's official ID conversion. Conversion does not prove existence; retrieve the result before correcting it."
+side_effects: ["Reads selected billing information from Braintree."]
+args:
+  - name: legacy_id
+    type: string
+    required: true
+    description: "Exact SDK/control-panel identifier."
+    validation: {"pattern":"^[A-Za-z0-9_-]+$","max_length":255}
+  - name: resource_type
+    type: string
+    required: true
+    description: "Type of the legacy identifier."
+    validation: {"enum":["TRANSACTION","REFUND","CUSTOMER","PAYMENT_METHOD","DISPUTE","RECURRING_BILLING_SUBSCRIPTION","RECURRING_BILLING_SUBSCRIPTION_PLAN"]}
+execution:
+  script: {path: scripts/braintree.py, interpreter: python3}
+  argv: [resolve_id]
+  env:
+    ARG_LEGACY_ID: "{{ args.legacy_id }}"
+    ARG_RESOURCE_TYPE: "{{ args.resource_type }}"
+  timeout: 90s
+output:
+  parser: json
+  parser_required: true
+  max_stdout_bytes: 65536
+  max_stderr_bytes: 8192

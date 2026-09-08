@@ -1,0 +1,36 @@
+schema_version: 1
+id: braintree.submit_dispute_evidence
+title: Submit staged dispute evidence
+kind: script
+risk: high
+description: "Finalize an open dispute and submit its evidence to the processor. Verifies the observed evidence inventory hash; the provider does not offer an atomic compare-and-submit."
+side_effects: ["Changes the specified billing or dispute state; approval is required under the default policy.","This API has no native request deduplication. Sends one write; reconcile any ambiguous outcome before attempting it again."]
+args:
+  - name: dispute_id
+    type: string
+    required: true
+    description: "Braintree GraphQL ID returned by a read or resolve_id; not a legacy control-panel ID."
+    validation: {"pattern":"^[A-Za-z0-9_=+/-]+$","max_length":255}
+  - name: expected_evidence_sha256
+    type: string
+    required: true
+    description: "SHA256 returned by the corresponding read; binds the reviewed content."
+    validation: {"pattern":"^[a-f0-9]{64}$","max_length":64}
+  - name: environment
+    type: string
+    required: true
+    description: "Explicitly approve the runner's configured environment."
+    validation: {"enum":["sandbox","production"]}
+execution:
+  script: {path: scripts/braintree.py, interpreter: python3}
+  argv: [submit_dispute_evidence]
+  env:
+    ARG_DISPUTE_ID: "{{ args.dispute_id }}"
+    ARG_EXPECTED_EVIDENCE_SHA256: "{{ args.expected_evidence_sha256 }}"
+    ARG_ENVIRONMENT: "{{ args.environment }}"
+  timeout: 90s
+output:
+  parser: json
+  parser_required: true
+  max_stdout_bytes: 65536
+  max_stderr_bytes: 8192

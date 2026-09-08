@@ -1,0 +1,24 @@
+schema_version: 1
+id: stripe.preview_invoice
+title: Preview an upcoming invoice
+kind: script
+risk: low
+description: "Show the upcoming invoice for an existing subscription without creating a payable invoice."
+side_effects: ["Reads bounded billing information from Stripe."]
+args:
+  - name: subscription
+    type: string
+    required: true
+    description: "sub_ identifier returned by a Stripe read."
+    validation: {"pattern":"^sub_[A-Za-z0-9]+$","max_length":255}
+execution:
+  script: {path: scripts/stripe.py, interpreter: python3}
+  argv: [preview_invoice]
+  env:
+    ARG_SUBSCRIPTION: "{{ args.subscription }}"
+  timeout: 60s
+output:
+  parser: json
+  parser_required: true
+  max_stdout_bytes: 65536
+  max_stderr_bytes: 8192

@@ -1,0 +1,17 @@
+services:
+  braintree-api:
+    image: emisar-braintree-fixture:${PACKTEST_VERSION:-3.14.0-alpine3.22}
+    build:
+      context: ${EMISAR_ROOT}/packs/braintree/test
+      args:
+        PACKTEST_IMAGE: python:${PACKTEST_VERSION:-3.14.0-alpine3.22}${PACKTEST_DIGEST-}
+    entrypoint: [python3, /fixture/server.py]
+    volumes:
+      - ${EMISAR_ROOT}/packs/braintree/test/fixtures/server.py:/fixture/server.py:ro
+      - ${EMISAR_ROOT}/packs/braintree/test/fixtures/seed.json:/fixture/seed.json:ro
+    healthcheck:
+      test: [CMD, python3, -c, "import urllib.request; urllib.request.urlopen('http://localhost:8080/health')"]
+      interval: 2s
+      start_period: 10s
+      start_interval: 1s
+      retries: 10

@@ -1,0 +1,17 @@
+schema_version: 1
+id: stripe.balance
+title: Show available balance
+kind: script
+risk: low
+description: "Show available, pending, and Connect-reserved balances separately by currency."
+side_effects: ["Reads bounded billing information from Stripe."]
+args: []
+execution:
+  script: {path: scripts/stripe.py, interpreter: python3}
+  argv: [balance]
+  timeout: 60s
+output:
+  parser: json
+  parser_required: true
+  max_stdout_bytes: 65536
+  max_stderr_bytes: 8192

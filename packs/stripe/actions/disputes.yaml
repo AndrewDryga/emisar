@@ -1,0 +1,60 @@
+schema_version: 1
+id: stripe.disputes
+title: List disputes
+kind: script
+risk: low
+description: "List one page of Stripe disputes with linkage, amounts, statuses, and an explicit continuation. Retrieve a returned ID for full diagnostics."
+side_effects: ["Reads bounded billing information from Stripe."]
+args:
+  - name: payment_intent
+    type: string
+    required: false
+    description: "pi_ identifier returned by a Stripe read."
+    default: ""
+    validation: {"pattern":"^(pi_[A-Za-z0-9]+)?$","max_length":255}
+  - name: charge
+    type: string
+    required: false
+    description: "ch_ identifier returned by a Stripe read."
+    default: ""
+    validation: {"pattern":"^(ch_[A-Za-z0-9]+)?$","max_length":255}
+  - name: created_gte
+    type: integer
+    required: false
+    description: "Inclusive Unix timestamp lower bound; 0 omits the filter."
+    default: 0
+    validation: {"min":0,"max":999999999999}
+  - name: created_lte
+    type: integer
+    required: false
+    description: "Inclusive Unix timestamp upper bound; 0 omits the filter."
+    default: 0
+    validation: {"min":0,"max":999999999999}
+  - name: limit
+    type: integer
+    required: false
+    description: "Records in one bounded page; at most ten to keep the projected result within the 64 KiB output limit."
+    default: 10
+    validation: {"min":1,"max":10}
+  - name: cursor
+    type: string
+    required: false
+    description: "Use pagination.next_cursor from the preceding page; keep filters unchanged."
+    default: ""
+    validation: {"pattern":"^[A-Za-z0-9_-]*$","max_length":255}
+execution:
+  script: {path: scripts/stripe.py, interpreter: python3}
+  argv: [disputes]
+  env:
+    ARG_PAYMENT_INTENT: "{{ args.payment_intent }}"
+    ARG_CHARGE: "{{ args.charge }}"
+    ARG_CREATED_GTE: "{{ args.created_gte }}"
+    ARG_CREATED_LTE: "{{ args.created_lte }}"
+    ARG_LIMIT: "{{ args.limit }}"
+    ARG_CURSOR: "{{ args.cursor }}"
+  timeout: 60s
+output:
+  parser: json
+  parser_required: true
+  max_stdout_bytes: 65536
+  max_stderr_bytes: 8192

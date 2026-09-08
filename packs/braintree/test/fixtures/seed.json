@@ -1,0 +1,328 @@
+{
+  "transaction": {
+    "__typename": "Transaction",
+    "id": "transaction_fixture",
+    "legacyId": "tx123",
+    "createdAt": "2026-09-01T00:00:00Z",
+    "status": "SETTLED",
+    "orderId": "order_123",
+    "merchantAccountId": "merchant_usd",
+    "amount": {
+      "value": "12.00",
+      "currencyCode": "USD"
+    },
+    "customer": {
+      "id": "customer_fixture",
+      "legacyId": "cust123"
+    },
+    "paymentMethod": {
+      "id": "method_fixture",
+      "legacyId": "pm123"
+    },
+    "processorAuthorizationResponse": {
+      "legacyCode": "1000",
+      "cvvResponse": "MATCHES",
+      "avsPostalCodeResponse": "MATCHES",
+      "avsStreetAddressResponse": "MATCHES"
+    },
+    "processorSettlementResponse": {
+      "legacyCode": "4000"
+    },
+    "statusHistory": [
+      {
+        "__typename": "GatewayRejectedEvent",
+        "status": "GATEWAY_REJECTED",
+        "timestamp": "2026-09-01T00:00:00Z",
+        "source": "API",
+        "terminal": true,
+        "amount": {
+          "value": "12.00",
+          "currencyCode": "USD"
+        },
+        "gatewayRejectionReason": "CVV",
+        "processorResponse": {
+          "legacyCode": "2000",
+          "cvvResponse": "DOES_NOT_MATCH"
+        }
+      }
+    ],
+    "refunds": [
+      {
+        "__typename": "Refund",
+        "id": "refund_fixture",
+        "legacyId": "rf123",
+        "createdAt": "2026-09-01T00:00:00Z",
+        "status": "SETTLED",
+        "orderId": "refund_123",
+        "merchantAccountId": "merchant_usd",
+        "amount": {
+          "value": "5.00",
+          "currencyCode": "USD"
+        },
+        "refundedTransaction": {
+          "id": "transaction_fixture",
+          "legacyId": "tx123"
+        },
+        "customer": {
+          "id": "customer_fixture",
+          "legacyId": "cust123"
+        },
+        "statusHistory": [],
+        "customFields": [
+          {
+            "name": "credential",
+            "value": "packtest-canary-braintree-custom-477a"
+          }
+        ]
+      }
+    ],
+    "disputes": [
+      {
+        "__typename": "Dispute",
+        "id": "dispute_fixture",
+        "legacyId": "dp123",
+        "status": "OPEN",
+        "type": "CHARGEBACK",
+        "createdAt": "2026-09-01T00:00:00Z",
+        "responseDeadline": "2026-10-01T00:00:00Z",
+        "replyByDate": "2026-10-01",
+        "remainingFileEvidenceStorage": 4000000,
+        "amountDisputed": {
+          "value": "12.00",
+          "currencyCode": "USD"
+        },
+        "amountWon": {
+          "value": "0.00",
+          "currencyCode": "USD"
+        },
+        "transaction": {
+          "id": "transaction_fixture",
+          "legacyId": "tx123"
+        },
+        "evidence": [],
+        "statusHistory": [],
+        "processorResponse": {
+          "reasonCode": "10.4",
+          "reasonDescription": "Fraud"
+        }
+      }
+    ],
+    "disbursementDetails": {
+      "date": "2026-09-02",
+      "amount": {
+        "value": "12.00",
+        "currencyCode": "USD"
+      },
+      "exchangeRate": "1",
+      "fundsHeld": false
+    },
+    "retried": false,
+    "upcomingRetryDate": null,
+    "customFields": [
+      {
+        "name": "credential",
+        "value": "packtest-canary-braintree-custom-477a"
+      }
+    ]
+  },
+  "refund": {
+    "__typename": "Refund",
+    "id": "refund_fixture",
+    "legacyId": "rf123",
+    "createdAt": "2026-09-01T00:00:00Z",
+    "status": "SETTLED",
+    "orderId": "refund_123",
+    "merchantAccountId": "merchant_usd",
+    "amount": {
+      "value": "5.00",
+      "currencyCode": "USD"
+    },
+    "refundedTransaction": {
+      "id": "transaction_fixture",
+      "legacyId": "tx123"
+    },
+    "customer": {
+      "id": "customer_fixture",
+      "legacyId": "cust123"
+    },
+    "statusHistory": [],
+    "customFields": [
+      {
+        "name": "credential",
+        "value": "packtest-canary-braintree-custom-477a"
+      }
+    ]
+  },
+  "customer": {
+    "__typename": "Customer",
+    "id": "customer_fixture",
+    "legacyId": "cust123",
+    "createdAt": "2026-09-01T00:00:00Z",
+    "email": "billing@example.test",
+    "firstName": "Fixture",
+    "lastName": "Customer",
+    "company": "Example",
+    "defaultPaymentMethod": {
+      "id": "method_fixture",
+      "legacyId": "pm123"
+    },
+    "customFields": [
+      {
+        "name": "credential",
+        "value": "packtest-canary-braintree-custom-477a"
+      }
+    ]
+  },
+  "payment_method": {
+    "__typename": "PaymentMethod",
+    "id": "method_fixture",
+    "legacyId": "pm123",
+    "usage": "MULTI_USE",
+    "createdAt": "2026-09-01T00:00:00Z",
+    "customer": {
+      "id": "customer_fixture",
+      "legacyId": "cust123"
+    },
+    "details": {
+      "__typename": "CreditCardDetails",
+      "brandCode": "VISA",
+      "last4": "4242",
+      "expirationMonth": "12",
+      "expirationYear": "2030"
+    },
+    "customFields": [
+      {
+        "name": "credential",
+        "value": "packtest-canary-braintree-custom-477a"
+      }
+    ]
+  },
+  "subscription": {
+    "__typename": "RecurringBillingSubscription",
+    "id": "subscription_fixture",
+    "legacyId": "sub123",
+    "status": "PAST_DUE",
+    "price": "12.00",
+    "balance": "12.00",
+    "planId": "plan_fixture",
+    "paymentMethodId": "method_fixture",
+    "merchantAccountId": "merchant_usd",
+    "failureCount": 1,
+    "daysPastDue": 2,
+    "nextBillingPeriodAmount": "12.00",
+    "currentBillingCycle": 2,
+    "numberOfBillingCycles": 0,
+    "billingDayOfMonth": 1,
+    "timeline": {
+      "createdAt": "2026-09-01T00:00:00Z",
+      "updatedAt": "2026-09-01T00:00:00Z",
+      "firstBillingDate": "2026-08-01",
+      "nextBillingDate": "2026-10-01",
+      "billingPeriodStartDate": "2026-09-01",
+      "billingPeriodEndDate": "2026-09-30",
+      "paidThroughDate": "2026-08-31"
+    },
+    "addOns": [],
+    "discounts": [],
+    "transactionIds": [
+      "transaction_fixture",
+      "transaction_older"
+    ],
+    "customFields": [
+      {
+        "name": "credential",
+        "value": "packtest-canary-braintree-custom-477a"
+      }
+    ]
+  },
+  "dispute": {
+    "__typename": "Dispute",
+    "id": "dispute_fixture",
+    "legacyId": "dp123",
+    "status": "OPEN",
+    "type": "CHARGEBACK",
+    "createdAt": "2026-09-01T00:00:00Z",
+    "responseDeadline": "2026-10-01T00:00:00Z",
+    "replyByDate": "2026-10-01",
+    "remainingFileEvidenceStorage": 4000000,
+    "amountDisputed": {
+      "value": "12.00",
+      "currencyCode": "USD"
+    },
+    "amountWon": {
+      "value": "0.00",
+      "currencyCode": "USD"
+    },
+    "transaction": {
+      "id": "transaction_fixture",
+      "legacyId": "tx123"
+    },
+    "evidence": [
+      {
+        "__typename": "DisputeTextEvidence",
+        "id": "evidence_fixture",
+        "legacyId": "ev123",
+        "category": "GENERAL",
+        "createdAt": "2026-09-01T00:00:00Z",
+        "sentToProcessorAt": null,
+        "content": "Delivery confirmed"
+      }
+    ],
+    "statusHistory": [],
+    "processorResponse": {
+      "reasonCode": "10.4",
+      "reasonDescription": "Fraud"
+    },
+    "customFields": [
+      {
+        "name": "credential",
+        "value": "packtest-canary-braintree-custom-477a"
+      }
+    ]
+  },
+  "plan": {
+    "__typename": "RecurringBillingSubscriptionPlan",
+    "id": "plan_fixture",
+    "legacyId": "plan123",
+    "name": "Monthly",
+    "billingFrequency": 1,
+    "billingDayOfMonth": 1,
+    "numberOfBillingCycles": 0,
+    "price": {
+      "value": "12.00",
+      "currencyCode": "USD"
+    },
+    "createdAt": "2026-09-01T00:00:00Z",
+    "updatedAt": "2026-09-01T00:00:00Z",
+    "customFields": [
+      {
+        "name": "credential",
+        "value": "packtest-canary-braintree-custom-477a"
+      }
+    ]
+  },
+  "merchant": {
+    "id": "merchant_fixture",
+    "status": "ACTIVE",
+    "companyName": "Example merchant",
+    "timezone": "UTC",
+    "customFields": [
+      {
+        "name": "credential",
+        "value": "packtest-canary-braintree-custom-477a"
+      }
+    ]
+  },
+  "merchant_account": {
+    "id": "merchant_usd",
+    "currencyCode": "USD",
+    "status": "ACTIVE",
+    "isDefault": true,
+    "customFields": [
+      {
+        "name": "credential",
+        "value": "packtest-canary-braintree-custom-477a"
+      }
+    ]
+  }
+}

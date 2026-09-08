@@ -1,0 +1,88 @@
+schema_version: 1
+id: braintree.refunds
+title: Search refunds
+kind: script
+risk: low
+description: "List one bounded page of Braintree refunds matching the supplied criteria. Blank optional criteria intentionally impose no filter; returned cursors continue the same search."
+side_effects: ["Reads selected billing information from Braintree."]
+args:
+  - name: customer_id
+    type: string
+    required: false
+    description: "Braintree GraphQL ID returned by a read or resolve_id; not a legacy control-panel ID."
+    default: ""
+    validation: {"pattern":"^[A-Za-z0-9_=+/-]*$","max_length":255}
+  - name: order_id
+    type: string
+    required: false
+    description: "Optional exact order ID."
+    default: ""
+    validation: {"pattern":"^[^\\r\\n]*$","max_length":255}
+  - name: merchant_account_id
+    type: string
+    required: false
+    description: "Optional exact merchant account."
+    default: ""
+    validation: {"pattern":"^[A-Za-z0-9_-]*$","max_length":255}
+  - name: settlement_batch_id
+    type: string
+    required: false
+    description: "Optional settlement batch ID for reconciliation."
+    default: ""
+    validation: {"pattern":"^[A-Za-z0-9_-]*$","max_length":255}
+  - name: currency
+    type: string
+    required: false
+    description: "Optional uppercase currency."
+    default: ""
+    validation: {"pattern":"^([A-Z]{3})?$","max_length":3}
+  - name: status
+    type: string
+    required: false
+    description: "Optional payment status."
+    default: ""
+    validation: {"enum":["","AUTHORIZATION_EXPIRED","AUTHORIZED","AUTHORIZING","FAILED","GATEWAY_REJECTED","PROCESSOR_DECLINED","SETTLED","SETTLEMENT_CONFIRMED","SETTLEMENT_DECLINED","SETTLEMENT_PENDING","SETTLING","SUBMITTED_FOR_SETTLEMENT","VOIDED"]}
+  - name: created_from
+    type: string
+    required: false
+    description: "UTC ISO-8601 timestamp, including Z; used exactly as returned by the provider."
+    default: ""
+    validation: {"pattern":"^([0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]+)?Z)?$","max_length":40}
+  - name: created_to
+    type: string
+    required: false
+    description: "UTC ISO-8601 timestamp, including Z; used exactly as returned by the provider."
+    default: ""
+    validation: {"pattern":"^([0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]+)?Z)?$","max_length":40}
+  - name: limit
+    type: integer
+    required: false
+    description: "Records per page; at most ten to bound the projected result within 64 KiB."
+    default: 10
+    validation: {"min":1,"max":10}
+  - name: cursor
+    type: string
+    required: false
+    description: "Use pagination.next_cursor with unchanged filters."
+    default: ""
+    validation: {"pattern":"^[A-Za-z0-9_=+/:.-]*$","max_length":2048}
+execution:
+  script: {path: scripts/braintree.py, interpreter: python3}
+  argv: [refunds]
+  env:
+    ARG_CUSTOMER_ID: "{{ args.customer_id }}"
+    ARG_ORDER_ID: "{{ args.order_id }}"
+    ARG_MERCHANT_ACCOUNT_ID: "{{ args.merchant_account_id }}"
+    ARG_SETTLEMENT_BATCH_ID: "{{ args.settlement_batch_id }}"
+    ARG_CURRENCY: "{{ args.currency }}"
+    ARG_STATUS: "{{ args.status }}"
+    ARG_CREATED_FROM: "{{ args.created_from }}"
+    ARG_CREATED_TO: "{{ args.created_to }}"
+    ARG_LIMIT: "{{ args.limit }}"
+    ARG_CURSOR: "{{ args.cursor }}"
+  timeout: 90s
+output:
+  parser: json
+  parser_required: true
+  max_stdout_bytes: 65536
+  max_stderr_bytes: 8192

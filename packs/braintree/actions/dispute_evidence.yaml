@@ -1,0 +1,38 @@
+schema_version: 1
+id: braintree.dispute_evidence
+title: List evidence inventory for one dispute
+kind: script
+risk: low
+description: "List one local page of evidence inventory for one dispute. The provider returns an array; offset continues it without silently dropping entries."
+side_effects: ["Reads selected billing information from Braintree."]
+args:
+  - name: id
+    type: string
+    required: true
+    description: "Braintree GraphQL ID returned by a read or resolve_id; not a legacy control-panel ID."
+    validation: {"pattern":"^[A-Za-z0-9_=+/-]+$","max_length":255}
+  - name: limit
+    type: integer
+    required: false
+    description: "Records per local page of a provider array."
+    default: 10
+    validation: {"min":1,"max":10}
+  - name: offset
+    type: integer
+    required: false
+    description: "Use pagination.next_offset from the previous result; the source response is bounded to 8 MiB."
+    default: 0
+    validation: {"min":0,"max":2147483647}
+execution:
+  script: {path: scripts/braintree.py, interpreter: python3}
+  argv: [dispute_evidence]
+  env:
+    ARG_ID: "{{ args.id }}"
+    ARG_LIMIT: "{{ args.limit }}"
+    ARG_OFFSET: "{{ args.offset }}"
+  timeout: 90s
+output:
+  parser: json
+  parser_required: true
+  max_stdout_bytes: 65536
+  max_stderr_bytes: 8192

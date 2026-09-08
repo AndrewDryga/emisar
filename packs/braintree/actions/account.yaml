@@ -1,0 +1,17 @@
+schema_version: 1
+id: braintree.account
+title: Show merchant identity
+kind: script
+risk: low
+description: "Show the authenticated Braintree merchant identity, status, and timezone."
+side_effects: ["Reads selected billing information from Braintree."]
+args: []
+execution:
+  script: {path: scripts/braintree.py, interpreter: python3}
+  argv: [account]
+  timeout: 90s
+output:
+  parser: json
+  parser_required: true
+  max_stdout_bytes: 65536
+  max_stderr_bytes: 8192

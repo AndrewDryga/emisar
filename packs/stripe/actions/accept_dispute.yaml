@@ -1,0 +1,36 @@
+schema_version: 1
+id: stripe.accept_dispute
+title: Accept a dispute
+kind: script
+risk: high
+description: "Close the dispute as lost and accept the disputed amount irreversibly."
+side_effects: ["Changes the named customer's billing or dispute state; approval is required under the default policy.","Sends at most one write request; after an ambiguous failure investigate provider state before another correction."]
+args:
+  - name: dispute
+    type: string
+    required: true
+    description: "dp_ or du_ identifier returned by a Stripe read."
+    validation: {"pattern":"^(dp|du)_[A-Za-z0-9]+$","max_length":255}
+  - name: mode
+    type: string
+    required: true
+    description: "Explicitly approve the runner's configured Stripe mode."
+    validation: {"enum":["test","live"]}
+  - name: operation_id
+    type: string
+    required: true
+    description: "Stable correction identifier for Stripe Idempotency-Key. Reuse with identical parameters within the provider's retention window (at least 24 hours); reconcile before retrying later."
+    validation: {"pattern":"^[A-Za-z0-9][A-Za-z0-9._:-]*$","max_length":255}
+execution:
+  script: {path: scripts/stripe.py, interpreter: python3}
+  argv: [accept_dispute]
+  env:
+    ARG_DISPUTE: "{{ args.dispute }}"
+    ARG_MODE: "{{ args.mode }}"
+    ARG_OPERATION_ID: "{{ args.operation_id }}"
+  timeout: 60s
+output:
+  parser: json
+  parser_required: true
+  max_stdout_bytes: 65536
+  max_stderr_bytes: 8192

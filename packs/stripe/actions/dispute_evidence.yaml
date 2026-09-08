@@ -1,0 +1,30 @@
+schema_version: 1
+id: stripe.dispute_evidence
+title: Show one dispute evidence field
+kind: script
+risk: high
+description: "Show one staged evidence field for review, up to 20000 characters with an explicit truncation flag. May expose sensitive customer evidence."
+side_effects: ["Reads sensitive evidence content into the action result and audit history."]
+args:
+  - name: dispute
+    type: string
+    required: true
+    description: "dp_ or du_ identifier returned by a Stripe read."
+    validation: {"pattern":"^(dp|du)_[A-Za-z0-9]+$","max_length":255}
+  - name: field
+    type: string
+    required: true
+    description: "Evidence field to review."
+    validation: {"enum":["access_activity_log","billing_address","cancellation_policy_disclosure","cancellation_rebuttal","customer_email_address","customer_name","customer_purchase_ip","duplicate_charge_explanation","duplicate_charge_id","product_description","refund_policy_disclosure","refund_refusal_explanation","service_date","shipping_address","shipping_carrier","shipping_date","shipping_tracking_number","uncategorized_text","cancellation_policy","customer_communication","customer_signature","duplicate_charge_documentation","receipt","refund_policy","service_documentation","shipping_documentation","uncategorized_file"]}
+execution:
+  script: {path: scripts/stripe.py, interpreter: python3}
+  argv: [dispute_evidence]
+  env:
+    ARG_DISPUTE: "{{ args.dispute }}"
+    ARG_FIELD: "{{ args.field }}"
+  timeout: 60s
+output:
+  parser: json
+  parser_required: true
+  max_stdout_bytes: 65536
+  max_stderr_bytes: 8192

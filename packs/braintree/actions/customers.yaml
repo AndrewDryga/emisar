@@ -1,0 +1,54 @@
+schema_version: 1
+id: braintree.customers
+title: Search customers
+kind: script
+risk: medium
+description: "List one bounded page of Braintree customers matching the supplied criteria. Blank optional criteria intentionally impose no filter; returned cursors continue the same search."
+side_effects: ["Reads selected billing information from Braintree."]
+args:
+  - name: email
+    type: string
+    required: false
+    description: "Optional exact email; blank intentionally lists all customers."
+    sensitive: true
+    default: ""
+    validation: {"pattern":"^[^\\r\\n]*$","max_length":320}
+  - name: created_from
+    type: string
+    required: false
+    description: "UTC ISO-8601 timestamp, including Z; used exactly as returned by the provider."
+    default: ""
+    validation: {"pattern":"^([0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]+)?Z)?$","max_length":40}
+  - name: created_to
+    type: string
+    required: false
+    description: "UTC ISO-8601 timestamp, including Z; used exactly as returned by the provider."
+    default: ""
+    validation: {"pattern":"^([0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]+)?Z)?$","max_length":40}
+  - name: limit
+    type: integer
+    required: false
+    description: "Records per page; at most ten to bound the projected result within 64 KiB."
+    default: 10
+    validation: {"min":1,"max":10}
+  - name: cursor
+    type: string
+    required: false
+    description: "Use pagination.next_cursor with unchanged filters."
+    default: ""
+    validation: {"pattern":"^[A-Za-z0-9_=+/:.-]*$","max_length":2048}
+execution:
+  script: {path: scripts/braintree.py, interpreter: python3}
+  argv: [customers]
+  env:
+    ARG_EMAIL: "{{ args.email }}"
+    ARG_CREATED_FROM: "{{ args.created_from }}"
+    ARG_CREATED_TO: "{{ args.created_to }}"
+    ARG_LIMIT: "{{ args.limit }}"
+    ARG_CURSOR: "{{ args.cursor }}"
+  timeout: 90s
+output:
+  parser: json
+  parser_required: true
+  max_stdout_bytes: 65536
+  max_stderr_bytes: 8192

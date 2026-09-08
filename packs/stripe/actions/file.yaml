@@ -1,0 +1,24 @@
+schema_version: 1
+id: stripe.file
+title: Show evidence file metadata
+kind: script
+risk: low
+description: "Show one Stripe evidence file metadata with selected diagnostic fields. Returns identifiers and state without raw metadata, client secrets, or signed URLs."
+side_effects: ["Reads bounded billing information from Stripe."]
+args:
+  - name: id
+    type: string
+    required: true
+    description: "file_ identifier returned by a Stripe read."
+    validation: {"pattern":"^file_[A-Za-z0-9]+$","max_length":255}
+execution:
+  script: {path: scripts/stripe.py, interpreter: python3}
+  argv: [file]
+  env:
+    ARG_ID: "{{ args.id }}"
+  timeout: 60s
+output:
+  parser: json
+  parser_required: true
+  max_stdout_bytes: 65536
+  max_stderr_bytes: 8192

@@ -1,0 +1,36 @@
+schema_version: 1
+id: braintree.cancel_subscription
+title: Cancel a subscription
+kind: script
+risk: high
+description: "Cancel one subscription irreversibly; existing transactions and refunds remain in history."
+side_effects: ["Changes the specified billing or dispute state; approval is required under the default policy.","This API has no native request deduplication. Sends one write; reconcile any ambiguous outcome before attempting it again."]
+args:
+  - name: subscription_id
+    type: string
+    required: true
+    description: "Braintree GraphQL ID returned by a read or resolve_id; not a legacy control-panel ID."
+    validation: {"pattern":"^[A-Za-z0-9_=+/-]+$","max_length":255}
+  - name: expected_updated_at
+    type: string
+    required: true
+    description: "UTC ISO-8601 timestamp, including Z; used exactly as returned by the provider."
+    validation: {"pattern":"^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]+)?Z$","max_length":40}
+  - name: environment
+    type: string
+    required: true
+    description: "Explicitly approve the runner's configured environment."
+    validation: {"enum":["sandbox","production"]}
+execution:
+  script: {path: scripts/braintree.py, interpreter: python3}
+  argv: [cancel_subscription]
+  env:
+    ARG_SUBSCRIPTION_ID: "{{ args.subscription_id }}"
+    ARG_EXPECTED_UPDATED_AT: "{{ args.expected_updated_at }}"
+    ARG_ENVIRONMENT: "{{ args.environment }}"
+  timeout: 90s
+output:
+  parser: json
+  parser_required: true
+  max_stdout_bytes: 65536
+  max_stderr_bytes: 8192

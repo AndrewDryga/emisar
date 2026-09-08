@@ -1,0 +1,30 @@
+schema_version: 1
+id: braintree.dispute_evidence_text
+title: Show one dispute text evidence item
+kind: script
+risk: high
+description: "Show one stored text evidence item for review. Returns at most 20000 characters and an explicit truncation flag; this may expose sensitive customer evidence."
+side_effects: ["Reads sensitive dispute evidence into the action result and audit history."]
+args:
+  - name: dispute_id
+    type: string
+    required: true
+    description: "Dispute GraphQL ID."
+    validation: {"pattern":"^[A-Za-z0-9_=+/-]+$","max_length":255}
+  - name: evidence_id
+    type: string
+    required: true
+    description: "Evidence ID from dispute_evidence."
+    validation: {"pattern":"^[A-Za-z0-9_=+/-]+$","max_length":255}
+execution:
+  script: {path: scripts/braintree.py, interpreter: python3}
+  argv: [dispute_evidence_text]
+  env:
+    ARG_DISPUTE_ID: "{{ args.dispute_id }}"
+    ARG_EVIDENCE_ID: "{{ args.evidence_id }}"
+  timeout: 90s
+output:
+  parser: json
+  parser_required: true
+  max_stdout_bytes: 65536
+  max_stderr_bytes: 8192

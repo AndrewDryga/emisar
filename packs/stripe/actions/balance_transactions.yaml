@@ -1,0 +1,74 @@
+schema_version: 1
+id: stripe.balance_transactions
+title: List balance transactions
+kind: script
+risk: low
+description: "List one page of Stripe balance transactions with linkage, amounts, statuses, and an explicit continuation. Payout filtering applies only to automatic payouts."
+side_effects: ["Reads bounded billing information from Stripe."]
+args:
+  - name: source
+    type: string
+    required: false
+    description: "Optional source object ID."
+    default: ""
+    validation: {"pattern":"^[A-Za-z0-9_-]*$","max_length":255}
+  - name: payout
+    type: string
+    required: false
+    description: "po_ identifier returned by a Stripe read."
+    default: ""
+    validation: {"pattern":"^(po_[A-Za-z0-9]+)?$","max_length":255}
+  - name: currency
+    type: string
+    required: false
+    description: "Optional lowercase currency."
+    default: ""
+    validation: {"pattern":"^([a-z]{3})?$","max_length":3}
+  - name: type
+    type: string
+    required: false
+    description: "Optional provider balance-transaction type."
+    default: ""
+    validation: {"pattern":"^[a-z_]*$","max_length":80}
+  - name: created_gte
+    type: integer
+    required: false
+    description: "Inclusive Unix timestamp lower bound; 0 omits the filter."
+    default: 0
+    validation: {"min":0,"max":999999999999}
+  - name: created_lte
+    type: integer
+    required: false
+    description: "Inclusive Unix timestamp upper bound; 0 omits the filter."
+    default: 0
+    validation: {"min":0,"max":999999999999}
+  - name: limit
+    type: integer
+    required: false
+    description: "Records in one bounded page; at most ten to keep the projected result within the 64 KiB output limit."
+    default: 10
+    validation: {"min":1,"max":10}
+  - name: cursor
+    type: string
+    required: false
+    description: "Use pagination.next_cursor from the preceding page; keep filters unchanged."
+    default: ""
+    validation: {"pattern":"^[A-Za-z0-9_-]*$","max_length":255}
+execution:
+  script: {path: scripts/stripe.py, interpreter: python3}
+  argv: [balance_transactions]
+  env:
+    ARG_SOURCE: "{{ args.source }}"
+    ARG_PAYOUT: "{{ args.payout }}"
+    ARG_CURRENCY: "{{ args.currency }}"
+    ARG_TYPE: "{{ args.type }}"
+    ARG_CREATED_GTE: "{{ args.created_gte }}"
+    ARG_CREATED_LTE: "{{ args.created_lte }}"
+    ARG_LIMIT: "{{ args.limit }}"
+    ARG_CURSOR: "{{ args.cursor }}"
+  timeout: 60s
+output:
+  parser: json
+  parser_required: true
+  max_stdout_bytes: 65536
+  max_stderr_bytes: 8192

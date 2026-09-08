@@ -1,0 +1,55 @@
+schema_version: 1
+id: stripe.credit_customer_balance
+title: Credit a customer balance
+kind: script
+risk: high
+description: "Create an immutable negative adjustment in the customer's invoice balance ledger; the positive approved amount becomes credit toward future invoices."
+side_effects: ["Changes the named customer's billing or dispute state; approval is required under the default policy.","Sends at most one write request; after an ambiguous failure investigate provider state before another correction."]
+args:
+  - name: customer
+    type: string
+    required: true
+    description: "cus_ identifier returned by a Stripe read."
+    validation: {"pattern":"^cus_[A-Za-z0-9]+$","max_length":255}
+  - name: amount
+    type: integer
+    required: true
+    description: "Amount in the currency's smallest unit, explicitly approved; maximum eight digits."
+    validation: {"min":1,"max":99999999}
+  - name: currency
+    type: string
+    required: true
+    description: "Three-letter lowercase currency; must match the investigated payment."
+    validation: {"pattern":"^[a-z]{3}$","max_length":3}
+  - name: description
+    type: string
+    required: true
+    description: "Reason for this credit; retained by Stripe."
+    sensitive: true
+    validation: {"pattern":"^[^\\r\\n]+$","max_length":500}
+  - name: mode
+    type: string
+    required: true
+    description: "Explicitly approve the runner's configured Stripe mode."
+    validation: {"enum":["test","live"]}
+  - name: operation_id
+    type: string
+    required: true
+    description: "Stable correction identifier for Stripe Idempotency-Key. Reuse with identical parameters within the provider's retention window (at least 24 hours); reconcile before retrying later."
+    validation: {"pattern":"^[A-Za-z0-9][A-Za-z0-9._:-]*$","max_length":255}
+execution:
+  script: {path: scripts/stripe.py, interpreter: python3}
+  argv: [credit_customer_balance]
+  env:
+    ARG_CUSTOMER: "{{ args.customer }}"
+    ARG_AMOUNT: "{{ args.amount }}"
+    ARG_CURRENCY: "{{ args.currency }}"
+    ARG_DESCRIPTION: "{{ args.description }}"
+    ARG_MODE: "{{ args.mode }}"
+    ARG_OPERATION_ID: "{{ args.operation_id }}"
+  timeout: 60s
+output:
+  parser: json
+  parser_required: true
+  max_stdout_bytes: 65536
+  max_stderr_bytes: 8192

@@ -1,0 +1,42 @@
+schema_version: 1
+id: stripe.submit_dispute_evidence
+title: Submit staged dispute evidence
+kind: script
+risk: high
+description: "Submit the currently staged dispute evidence after checking the reviewed evidence hash. The check and submission are separate provider requests; coordinate other evidence writers during submission."
+side_effects: ["Changes the named customer's billing or dispute state; approval is required under the default policy.","Sends at most one write request; after an ambiguous failure investigate provider state before another correction."]
+args:
+  - name: dispute
+    type: string
+    required: true
+    description: "dp_ or du_ identifier returned by a Stripe read."
+    validation: {"pattern":"^(dp|du)_[A-Za-z0-9]+$","max_length":255}
+  - name: expected_evidence_sha256
+    type: string
+    required: true
+    description: "SHA256 returned by stripe.dispute after reviewing evidence. The provider offers no atomic compare-and-submit."
+    validation: {"pattern":"^[a-f0-9]{64}$","max_length":64}
+  - name: mode
+    type: string
+    required: true
+    description: "Explicitly approve the runner's configured Stripe mode."
+    validation: {"enum":["test","live"]}
+  - name: operation_id
+    type: string
+    required: true
+    description: "Stable correction identifier for Stripe Idempotency-Key. Reuse with identical parameters within the provider's retention window (at least 24 hours); reconcile before retrying later."
+    validation: {"pattern":"^[A-Za-z0-9][A-Za-z0-9._:-]*$","max_length":255}
+execution:
+  script: {path: scripts/stripe.py, interpreter: python3}
+  argv: [submit_dispute_evidence]
+  env:
+    ARG_DISPUTE: "{{ args.dispute }}"
+    ARG_EXPECTED_EVIDENCE_SHA256: "{{ args.expected_evidence_sha256 }}"
+    ARG_MODE: "{{ args.mode }}"
+    ARG_OPERATION_ID: "{{ args.operation_id }}"
+  timeout: 60s
+output:
+  parser: json
+  parser_required: true
+  max_stdout_bytes: 65536
+  max_stderr_bytes: 8192

@@ -1,0 +1,48 @@
+schema_version: 1
+id: braintree.upload_dispute_file
+title: Stage a dispute evidence file
+kind: script
+risk: high
+description: "Upload one reviewed PDF, PNG, or JPEG of at most 4 MB and attach it to the dispute; does not finalize evidence."
+side_effects: ["Changes the specified billing or dispute state; approval is required under the default policy.","This API has no native request deduplication. Sends one write; reconcile any ambiguous outcome before attempting it again."]
+args:
+  - name: dispute_id
+    type: string
+    required: true
+    description: "Braintree GraphQL ID returned by a read or resolve_id; not a legacy control-panel ID."
+    validation: {"pattern":"^[A-Za-z0-9_=+/-]+$","max_length":255}
+  - name: category
+    type: string
+    required: true
+    description: "Supported file evidence category."
+    validation: {"enum":["GENERAL","LEGIT_PAYMENTS_FOR_SAME_MERCHANDISE","MERCHANT_WEBSITE_OR_APP_ACCESS","PROFILE_SETUP_OR_APP_ACCESS","PROOF_OF_3D_SECURE","PROOF_OF_AUTHORIZED_SIGNER","PROOF_OF_DELIVERY","PROOF_OF_DELIVERY_EMP_ADDRESS","PROOF_OF_POSSESSION_OR_USAGE","SIGNED_DELIVERY_FORM","SIGNED_ORDER_FORM","TICKET_PROOF"]}
+  - name: file_name
+    type: string
+    required: true
+    description: "Regular file basename in BRAINTREE_EVIDENCE_DIR; no symlinks or traversal."
+    validation: {"pattern":"^[A-Za-z0-9][A-Za-z0-9._-]*$","max_length":200}
+  - name: expected_file_sha256
+    type: string
+    required: true
+    description: "SHA256 returned by the corresponding read; binds the reviewed content."
+    validation: {"pattern":"^[a-f0-9]{64}$","max_length":64}
+  - name: environment
+    type: string
+    required: true
+    description: "Explicitly approve the runner's configured environment."
+    validation: {"enum":["sandbox","production"]}
+execution:
+  script: {path: scripts/braintree.py, interpreter: python3}
+  argv: [upload_dispute_file]
+  env:
+    ARG_DISPUTE_ID: "{{ args.dispute_id }}"
+    ARG_CATEGORY: "{{ args.category }}"
+    ARG_FILE_NAME: "{{ args.file_name }}"
+    ARG_EXPECTED_FILE_SHA256: "{{ args.expected_file_sha256 }}"
+    ARG_ENVIRONMENT: "{{ args.environment }}"
+  timeout: 90s
+output:
+  parser: json
+  parser_required: true
+  max_stdout_bytes: 65536
+  max_stderr_bytes: 8192

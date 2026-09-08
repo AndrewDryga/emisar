@@ -1,0 +1,71 @@
+schema_version: 1
+id: stripe.preview_credit_note
+title: Preview a credit note
+kind: script
+risk: low
+description: "Preview a credit note allocation before reducing an invoice or refunding a paid amount. Stripe validates that the dispositions match the post-payment amount."
+side_effects: ["Reads bounded billing information from Stripe."]
+args:
+  - name: invoice
+    type: string
+    required: true
+    description: "in_ identifier returned by a Stripe read."
+    validation: {"pattern":"^in_[A-Za-z0-9]+$","max_length":255}
+  - name: amount
+    type: integer
+    required: true
+    description: "Amount in the currency's smallest unit, explicitly approved; maximum eight digits."
+    validation: {"min":1,"max":99999999}
+  - name: existing_refund
+    type: string
+    required: false
+    description: "Optional already-issued refund to allocate without creating another refund."
+    default: ""
+    validation: {"pattern":"^(re_[A-Za-z0-9]+)?$","max_length":255}
+  - name: existing_refund_amount
+    type: integer
+    required: false
+    description: "Amount allocated from the existing refund; must be positive when an existing_refund is specified."
+    default: 0
+    validation: {"min":0,"max":99999999}
+  - name: reason
+    type: string
+    required: true
+    description: "Credit note reason."
+    validation: {"enum":["duplicate","fraudulent","order_change","product_unsatisfactory"]}
+  - name: credit_amount
+    type: integer
+    required: false
+    description: "Post-payment portion credited to the customer's balance."
+    default: 0
+    validation: {"min":0,"max":99999999}
+  - name: refund_amount
+    type: integer
+    required: false
+    description: "Post-payment portion refunded to the original payment method."
+    default: 0
+    validation: {"min":0,"max":99999999}
+  - name: out_of_band_amount
+    type: integer
+    required: false
+    description: "Post-payment portion refunded outside Stripe; must have been paid externally."
+    default: 0
+    validation: {"min":0,"max":99999999}
+execution:
+  script: {path: scripts/stripe.py, interpreter: python3}
+  argv: [preview_credit_note]
+  env:
+    ARG_INVOICE: "{{ args.invoice }}"
+    ARG_AMOUNT: "{{ args.amount }}"
+    ARG_EXISTING_REFUND: "{{ args.existing_refund }}"
+    ARG_EXISTING_REFUND_AMOUNT: "{{ args.existing_refund_amount }}"
+    ARG_REASON: "{{ args.reason }}"
+    ARG_CREDIT_AMOUNT: "{{ args.credit_amount }}"
+    ARG_REFUND_AMOUNT: "{{ args.refund_amount }}"
+    ARG_OUT_OF_BAND_AMOUNT: "{{ args.out_of_band_amount }}"
+  timeout: 60s
+output:
+  parser: json
+  parser_required: true
+  max_stdout_bytes: 65536
+  max_stderr_bytes: 8192

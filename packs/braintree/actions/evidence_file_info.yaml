@@ -1,0 +1,24 @@
+schema_version: 1
+id: braintree.evidence_file_info
+title: Inspect an evidence file
+kind: script
+risk: low
+description: "Show the size, type, and SHA256 of one staged PDF, PNG, or JPEG without exposing file contents."
+side_effects: ["Reads selected billing information from Braintree."]
+args:
+  - name: file_name
+    type: string
+    required: true
+    description: "Regular file basename in BRAINTREE_EVIDENCE_DIR; no symlinks or traversal."
+    validation: {"pattern":"^[A-Za-z0-9][A-Za-z0-9._-]*$","max_length":200}
+execution:
+  script: {path: scripts/braintree.py, interpreter: python3}
+  argv: [evidence_file_info]
+  env:
+    ARG_FILE_NAME: "{{ args.file_name }}"
+  timeout: 90s
+output:
+  parser: json
+  parser_required: true
+  max_stdout_bytes: 65536
+  max_stderr_bytes: 8192

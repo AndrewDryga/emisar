@@ -1,0 +1,42 @@
+schema_version: 1
+id: stripe.upload_dispute_file
+title: Upload a dispute evidence file
+kind: script
+risk: high
+description: "Upload one PDF, PNG, or JPEG of at most 5 MB from STRIPE_EVIDENCE_DIR. Returns its file ID for stage_dispute_file; does not submit the dispute."
+side_effects: ["Changes the named customer's billing or dispute state; approval is required under the default policy.","Sends at most one write request; after an ambiguous failure investigate provider state before another correction."]
+args:
+  - name: file_name
+    type: string
+    required: true
+    description: "Single regular file basename in the operator-configured evidence directory; symlinks and path traversal are refused."
+    validation: {"pattern":"^[A-Za-z0-9][A-Za-z0-9._-]*$","max_length":200}
+  - name: expected_file_sha256
+    type: string
+    required: true
+    description: "SHA256 returned by stripe.evidence_file_info; verifies the approved bytes before upload."
+    validation: {"pattern":"^[a-f0-9]{64}$","max_length":64}
+  - name: mode
+    type: string
+    required: true
+    description: "Explicitly approve the runner's configured Stripe mode."
+    validation: {"enum":["test","live"]}
+  - name: operation_id
+    type: string
+    required: true
+    description: "Stable correction identifier for Stripe Idempotency-Key. Reuse with identical parameters within the provider's retention window (at least 24 hours); reconcile before retrying later."
+    validation: {"pattern":"^[A-Za-z0-9][A-Za-z0-9._:-]*$","max_length":255}
+execution:
+  script: {path: scripts/stripe.py, interpreter: python3}
+  argv: [upload_dispute_file]
+  env:
+    ARG_FILE_NAME: "{{ args.file_name }}"
+    ARG_EXPECTED_FILE_SHA256: "{{ args.expected_file_sha256 }}"
+    ARG_MODE: "{{ args.mode }}"
+    ARG_OPERATION_ID: "{{ args.operation_id }}"
+  timeout: 60s
+output:
+  parser: json
+  parser_required: true
+  max_stdout_bytes: 65536
+  max_stderr_bytes: 8192

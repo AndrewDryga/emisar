@@ -1,0 +1,42 @@
+schema_version: 1
+id: stripe.cancel_payment_intent
+title: Cancel a payment intent
+kind: script
+risk: high
+description: "Cancel a cancelable payment attempt and release its remaining authorization."
+side_effects: ["Changes the named customer's billing or dispute state; approval is required under the default policy.","Sends at most one write request; after an ambiguous failure investigate provider state before another correction."]
+args:
+  - name: payment_intent
+    type: string
+    required: true
+    description: "pi_ identifier returned by a Stripe read."
+    validation: {"pattern":"^pi_[A-Za-z0-9]+$","max_length":255}
+  - name: reason
+    type: string
+    required: true
+    description: "Cancellation reason."
+    validation: {"enum":["duplicate","fraudulent","requested_by_customer","abandoned"]}
+  - name: mode
+    type: string
+    required: true
+    description: "Explicitly approve the runner's configured Stripe mode."
+    validation: {"enum":["test","live"]}
+  - name: operation_id
+    type: string
+    required: true
+    description: "Stable correction identifier for Stripe Idempotency-Key. Reuse with identical parameters within the provider's retention window (at least 24 hours); reconcile before retrying later."
+    validation: {"pattern":"^[A-Za-z0-9][A-Za-z0-9._:-]*$","max_length":255}
+execution:
+  script: {path: scripts/stripe.py, interpreter: python3}
+  argv: [cancel_payment_intent]
+  env:
+    ARG_PAYMENT_INTENT: "{{ args.payment_intent }}"
+    ARG_REASON: "{{ args.reason }}"
+    ARG_MODE: "{{ args.mode }}"
+    ARG_OPERATION_ID: "{{ args.operation_id }}"
+  timeout: 60s
+output:
+  parser: json
+  parser_required: true
+  max_stdout_bytes: 65536
+  max_stderr_bytes: 8192

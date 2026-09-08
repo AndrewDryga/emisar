@@ -1,0 +1,24 @@
+schema_version: 1
+id: stripe.credit_note
+title: Show credit note
+kind: script
+risk: low
+description: "Show one Stripe credit note with selected diagnostic fields. Returns identifiers and state without raw metadata, client secrets, or signed URLs."
+side_effects: ["Reads bounded billing information from Stripe."]
+args:
+  - name: id
+    type: string
+    required: true
+    description: "cn_ identifier returned by a Stripe read."
+    validation: {"pattern":"^cn_[A-Za-z0-9]+$","max_length":255}
+execution:
+  script: {path: scripts/stripe.py, interpreter: python3}
+  argv: [credit_note]
+  env:
+    ARG_ID: "{{ args.id }}"
+  timeout: 60s
+output:
+  parser: json
+  parser_required: true
+  max_stdout_bytes: 65536
+  max_stderr_bytes: 8192

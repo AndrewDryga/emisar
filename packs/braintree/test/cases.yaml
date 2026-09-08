@@ -1,0 +1,1156 @@
+---
+services:
+- braintree-api
+versions:
+- version: 3.14.0-alpine3.22
+  digest: "@sha256:8373231e1e906ddfb457748bfc032c4c06ada8c759b7b62d9c73ec2a3c56e710"
+  default: true
+secret_env:
+- BRAINTREE_PUBLIC_KEY
+- BRAINTREE_PRIVATE_KEY
+env:
+  BRAINTREE_PUBLIC_KEY: packtest-canary-braintree-public-749a
+  BRAINTREE_PRIVATE_KEY: packtest-canary-braintree-private-28ac
+  BRAINTREE_ENVIRONMENT: sandbox
+  BRAINTREE_FIXTURE_URL: http://braintree-api:8080/graphql
+  BRAINTREE_EVIDENCE_DIR: "/packs/braintree/test/fixtures"
+defaults:
+  expect:
+    stdout_not_empty: true
+    stdout_not_contains:
+    - packtest-canary-braintree-custom-477a
+cases:
+- action: braintree.account
+  args: {}
+  expect:
+    json:
+      "/result/id": merchant_fixture
+- action: braintree.merchant_accounts
+  args:
+    limit: 10
+    cursor: ''
+  expect:
+    json:
+      "/results/0/currencyCode": USD
+- action: braintree.resolve_id
+  args:
+    legacy_id: tx123
+    resource_type: TRANSACTION
+  expect:
+    json:
+      "/result/id": transaction_fixture
+- action: braintree.transactions
+  args:
+    customer_id: ''
+    order_id: ''
+    merchant_account_id: ''
+    settlement_batch_id: ''
+    currency: ''
+    status: ''
+    created_from: ''
+    created_to: ''
+    limit: 10
+    cursor: ''
+  expect:
+    json:
+      "/results/0/id": transaction_fixture
+      "/pagination/has_more": true
+      "/pagination/next_cursor": page_10
+- action: braintree.refunds
+  args:
+    customer_id: ''
+    order_id: ''
+    merchant_account_id: ''
+    settlement_batch_id: ''
+    currency: ''
+    status: ''
+    created_from: ''
+    created_to: ''
+    limit: 10
+    cursor: ''
+  expect:
+    json:
+      "/results/0/id": refund_fixture
+      "/pagination/has_more": true
+      "/pagination/next_cursor": page_10
+- action: braintree.customers
+  args:
+    email: ''
+    created_from: ''
+    created_to: ''
+    limit: 10
+    cursor: ''
+  expect:
+    json:
+      "/results/0/id": customer_fixture
+      "/pagination/has_more": true
+      "/pagination/next_cursor": page_10
+  probes:
+  - name: Read leaves billing state unchanged
+    argv:
+    - curl
+    - "-fsS"
+    - http://braintree-api:8080/probe
+    expect:
+      json:
+        "/writes": 0
+- action: braintree.subscriptions
+  args:
+    plan_id: ''
+    merchant_account_id: ''
+    status: ''
+    created_from: ''
+    created_to: ''
+    limit: 10
+    cursor: ''
+  expect:
+    json:
+      "/results/0/id": subscription_fixture
+      "/pagination/has_more": true
+      "/pagination/next_cursor": page_10
+- action: braintree.disputes
+  args:
+    transaction_id: ''
+    status: ''
+    limit: 10
+    cursor: ''
+  expect:
+    json:
+      "/results/0/id": dispute_fixture
+      "/pagination/has_more": true
+      "/pagination/next_cursor": page_10
+- action: braintree.transaction
+  args:
+    id: transaction_fixture
+  expect:
+    json:
+      "/result/id": transaction_fixture
+- action: braintree.refund
+  args:
+    id: refund_fixture
+  expect:
+    json:
+      "/result/id": refund_fixture
+- action: braintree.customer
+  args:
+    id: customer_fixture
+  expect:
+    json:
+      "/result/id": customer_fixture
+  probes:
+  - name: Read leaves billing state unchanged
+    argv:
+    - curl
+    - "-fsS"
+    - http://braintree-api:8080/probe
+    expect:
+      json:
+        "/writes": 0
+- action: braintree.subscription
+  args:
+    id: subscription_fixture
+  expect:
+    json:
+      "/result/id": subscription_fixture
+- action: braintree.dispute
+  args:
+    id: dispute_fixture
+  expect:
+    json:
+      "/result/id": dispute_fixture
+- action: braintree.payment_method
+  args:
+    id: method_fixture
+  expect:
+    json:
+      "/result/id": method_fixture
+- action: braintree.plan
+  args:
+    id: plan_fixture
+  expect:
+    json:
+      "/result/id": plan_fixture
+- action: braintree.customer_payment_methods
+  args:
+    customer_id: customer_fixture
+    limit: 10
+    cursor: ''
+  expect:
+    json:
+      "/results/0/id": method_fixture
+- action: braintree.customer_transactions
+  args:
+    customer_id: customer_fixture
+    limit: 10
+    cursor: ''
+  expect:
+    json:
+      "/results/0/id": transaction_fixture
+- action: braintree.transaction_refunds
+  args:
+    id: transaction_fixture
+    limit: 10
+    offset: 0
+  expect:
+    json:
+      "/results/0/id": refund_fixture
+- action: braintree.transaction_history
+  args:
+    id: transaction_fixture
+    limit: 10
+    offset: 0
+  expect:
+    json:
+      "/results/0/status": GATEWAY_REJECTED
+      "/results/0/gatewayRejectionReason": CVV
+- action: braintree.subscription_transactions
+  args:
+    id: subscription_fixture
+    limit: 10
+    offset: 0
+  expect:
+    json:
+      "/results/0": transaction_fixture
+- action: braintree.dispute_evidence
+  args:
+    id: dispute_fixture
+    limit: 10
+    offset: 0
+  expect:
+    json:
+      "/results/0/id": evidence_fixture
+- action: braintree.evidence_file_info
+  args:
+    file_name: evidence.pdf
+  expect:
+    json:
+      "/result/sha256": '03308495c119eabb4ab52ee7c97f3d2f747c1d94e386886ecf7a93bb46c7ad73'
+      "/result/size": 26
+- action: braintree.refund_transaction
+  args:
+    transaction_id: transaction_fixture
+    merchant_account_id: merchant_usd
+    currency: USD
+    amount: '5.00'
+    order_id: correction_123
+    environment: sandbox
+    operation_id: correction_fixture
+  expect:
+    json:
+      "/result/refund/status": SUBMITTED_FOR_SETTLEMENT
+  probes:
+  - name: Provider retained the correction
+    argv:
+    - curl
+    - "-fsS"
+    - http://braintree-api:8080/probe
+    expect:
+      json:
+        "/writes": 1
+        "/state/transaction/refundedAmount": '5.00'
+- action: braintree.capture_transaction
+  args:
+    transaction_id: transaction_fixture
+    merchant_account_id: merchant_usd
+    currency: USD
+    amount: '5.00'
+    environment: sandbox
+    operation_id: correction_fixture
+  expect:
+    json:
+      "/result/transaction/status": SUBMITTED_FOR_SETTLEMENT
+  arrange:
+  - argv:
+    - curl
+    - "-fsS"
+    - "-X"
+    - POST
+    - http://braintree-api:8080/arrange/authorized
+    expect:
+      stdout_contains:
+      - arranged
+  probes:
+  - name: Provider retained the correction
+    argv:
+    - curl
+    - "-fsS"
+    - http://braintree-api:8080/probe
+    expect:
+      json:
+        "/writes": 1
+        "/state/transaction/status": SUBMITTED_FOR_SETTLEMENT
+        "/state/transaction/amount/value": '5.00'
+- action: braintree.void_transaction
+  args:
+    transaction_id: transaction_fixture
+    merchant_account_id: merchant_usd
+    currency: USD
+    environment: sandbox
+    operation_id: correction_fixture
+  expect:
+    json:
+      "/result/transaction/status": VOIDED
+  arrange:
+  - argv:
+    - curl
+    - "-fsS"
+    - "-X"
+    - POST
+    - http://braintree-api:8080/arrange/authorized
+    expect:
+      stdout_contains:
+      - arranged
+  probes:
+  - name: Provider retained the correction
+    argv:
+    - curl
+    - "-fsS"
+    - http://braintree-api:8080/probe
+    expect:
+      json:
+        "/writes": 1
+        "/state/transaction/status": VOIDED
+- action: braintree.retry_subscription
+  args:
+    subscription_id: subscription_fixture
+    merchant_account_id: merchant_usd
+    currency: USD
+    expected_updated_at: '2026-09-01T00:00:00Z'
+    amount: '12.00'
+    environment: sandbox
+  expect:
+    json:
+      "/result/transaction/status": SUBMITTED_FOR_SETTLEMENT
+  probes:
+  - name: Provider retained the correction
+    argv:
+    - curl
+    - "-fsS"
+    - http://braintree-api:8080/probe
+    expect:
+      json:
+        "/writes": 1
+        "/state/subscription/balance": '0.00'
+        "/state/subscription/status": ACTIVE
+- action: braintree.cancel_subscription
+  args:
+    subscription_id: subscription_fixture
+    expected_updated_at: '2026-09-01T00:00:00Z'
+    environment: sandbox
+  expect:
+    json:
+      "/result/subscription/status": CANCELED
+  probes:
+  - name: Provider retained the correction
+    argv:
+    - curl
+    - "-fsS"
+    - http://braintree-api:8080/probe
+    expect:
+      json:
+        "/writes": 1
+        "/state/subscription/status": CANCELED
+- action: braintree.set_subscription_price
+  args:
+    subscription_id: subscription_fixture
+    merchant_account_id: merchant_usd
+    currency: USD
+    expected_updated_at: '2026-09-01T00:00:00Z'
+    expected_price: '12.00'
+    price: '10.00'
+    environment: sandbox
+  expect:
+    json:
+      "/result/subscription/price": '10.00'
+  arrange:
+  - argv:
+    - curl
+    - "-fsS"
+    - "-X"
+    - POST
+    - http://braintree-api:8080/arrange/active
+    expect:
+      stdout_contains:
+      - arranged
+  probes:
+  - name: Provider retained the correction
+    argv:
+    - curl
+    - "-fsS"
+    - http://braintree-api:8080/probe
+    expect:
+      json:
+        "/writes": 1
+        "/state/subscription/price": '10.00'
+- action: braintree.set_subscription_payment_method
+  args:
+    subscription_id: subscription_fixture
+    expected_updated_at: '2026-09-01T00:00:00Z'
+    expected_payment_method_id: method_fixture
+    payment_method_id: method_new
+    environment: sandbox
+  expect:
+    json:
+      "/result/subscription/paymentMethodId": method_new
+  probes:
+  - name: Provider retained the correction
+    argv:
+    - curl
+    - "-fsS"
+    - http://braintree-api:8080/probe
+    expect:
+      json:
+        "/writes": 1
+        "/state/subscription/paymentMethodId": method_new
+- action: braintree.stage_dispute_text
+  args:
+    dispute_id: dispute_fixture
+    category: GENERAL
+    content: Reviewed delivery evidence
+    environment: sandbox
+  expect:
+    json:
+      "/result/evidence/id": evidence_added
+  probes:
+  - name: Provider retained the correction
+    argv:
+    - curl
+    - "-fsS"
+    - http://braintree-api:8080/probe
+    expect:
+      json:
+        "/writes": 1
+        "/state/dispute/evidence/1/content": Reviewed delivery evidence
+        "/state/dispute/status": OPEN
+- action: braintree.upload_dispute_file
+  args:
+    dispute_id: dispute_fixture
+    category: GENERAL
+    file_name: evidence.pdf
+    expected_file_sha256: '03308495c119eabb4ab52ee7c97f3d2f747c1d94e386886ecf7a93bb46c7ad73'
+    environment: sandbox
+  expect:
+    json:
+      "/result/evidence/id": evidence_added
+  probes:
+  - name: Provider retained the correction
+    argv:
+    - curl
+    - "-fsS"
+    - http://braintree-api:8080/probe
+    expect:
+      json:
+        "/writes": 1
+        "/state/dispute/evidence/1/id": evidence_added
+        "/state/dispute/status": OPEN
+- action: braintree.remove_dispute_evidence
+  args:
+    dispute_id: dispute_fixture
+    evidence_id: evidence_fixture
+    environment: sandbox
+  expect:
+    json:
+      "/result/evidence_has_more": false
+  probes:
+  - name: Provider retained the correction
+    argv:
+    - curl
+    - "-fsS"
+    - http://braintree-api:8080/probe
+    expect:
+      json:
+        "/writes": 1
+        "/state/dispute/evidence": []
+- action: braintree.submit_dispute_evidence
+  args:
+    dispute_id: dispute_fixture
+    expected_evidence_sha256: 5a558d8405abdbb2f49a9937e570bda0b6c4542d8a09cf3e56abaefa1e1e0ac1
+    environment: sandbox
+  expect:
+    json:
+      "/result/dispute/status": DISPUTED
+  probes:
+  - name: Provider retained the correction
+    argv:
+    - curl
+    - "-fsS"
+    - http://braintree-api:8080/probe
+    expect:
+      json:
+        "/writes": 1
+        "/state/dispute/status": DISPUTED
+- action: braintree.accept_dispute
+  args:
+    dispute_id: dispute_fixture
+    environment: sandbox
+  expect:
+    json:
+      "/result/dispute/status": ACCEPTED
+  probes:
+  - name: Provider retained the correction
+    argv:
+    - curl
+    - "-fsS"
+    - http://braintree-api:8080/probe
+    expect:
+      json:
+        "/writes": 1
+        "/state/dispute/status": ACCEPTED
+- action: braintree.dispute_evidence_text
+  args:
+    dispute_id: dispute_fixture
+    evidence_id: evidence_fixture
+  expect:
+    json:
+      "/result/content": Delivery confirmed
+  probes:
+  - name: Read leaves billing state unchanged
+    argv:
+    - curl
+    - "-fsS"
+    - http://braintree-api:8080/probe
+    expect:
+      json:
+        "/writes": 0
+- name: braintree.account-missing-credential
+  action: braintree.account
+  args: {}
+  expect:
+    status: failure
+    exit:
+    - 1
+    stderr_contains:
+    - credentials are missing
+  unset_env:
+  - BRAINTREE_PRIVATE_KEY
+- name: braintree.account-invalid-environment
+  action: braintree.account
+  args: {}
+  expect:
+    status: failure
+    exit:
+    - 1
+    stderr_contains:
+    - must be sandbox or production
+  env:
+    BRAINTREE_ENVIRONMENT: elsewhere
+- name: braintree.account-fixture-credential-boundary
+  action: braintree.account
+  args: {}
+  expect:
+    status: failure
+    exit:
+    - 1
+    stderr_contains:
+    - requires synthetic sandbox credentials
+  env:
+    BRAINTREE_PRIVATE_KEY: packtest-canary-braintree-wrong-417a
+- name: braintree.account-graphql_error
+  action: braintree.account
+  arrange:
+  - argv:
+    - curl
+    - "-fsS"
+    - "-X"
+    - POST
+    - http://braintree-api:8080/arrange/graphql_error
+  expect:
+    status: failure
+    exit:
+    - 1
+    stderr_contains:
+    - GraphQL request failed
+- name: braintree.account-http_error
+  action: braintree.account
+  arrange:
+  - argv:
+    - curl
+    - "-fsS"
+    - "-X"
+    - POST
+    - http://braintree-api:8080/arrange/http_error
+  expect:
+    status: failure
+    exit:
+    - 1
+    stderr_contains:
+    - HTTP 503
+- name: braintree.account-redirect
+  action: braintree.account
+  arrange:
+  - argv:
+    - curl
+    - "-fsS"
+    - "-X"
+    - POST
+    - http://braintree-api:8080/arrange/redirect
+  expect:
+    status: failure
+    exit:
+    - 1
+    stderr_contains:
+    - HTTP 302
+- name: braintree.customers-cursor
+  action: braintree.customers
+  args:
+    cursor: page_10
+  expect:
+    json:
+      "/results/0/id": customer_fixture_10
+      "/pagination/has_more": false
+      "/pagination/next_cursor":
+  probes:
+  - argv:
+    - curl
+    - "-fsS"
+    - http://braintree-api:8080/probe
+    expect:
+      json:
+        "/writes": 0
+- name: braintree.customers-maximum
+  action: braintree.customers
+  args:
+    limit: 10
+  arrange:
+  - argv:
+    - curl
+    - "-fsS"
+    - "-X"
+    - POST
+    - http://braintree-api:8080/arrange/maximum
+  expect:
+    json:
+      "/results/0/id": customer_fixture
+      "/pagination/has_more": true
+  probes:
+  - argv:
+    - curl
+    - "-fsS"
+    - http://braintree-api:8080/probe
+    expect:
+      json:
+        "/writes": 0
+- action: braintree.transaction
+  args:
+    id: customer_fixture
+  expect:
+    status: failure
+    exit:
+    - 1
+    stderr_contains:
+    - resource type differs
+  name: braintree.transaction-wrong-object-type
+  probes:
+  - argv:
+    - curl
+    - "-fsS"
+    - http://braintree-api:8080/probe
+    expect:
+      json:
+        "/writes": 0
+- action: braintree.refund_transaction
+  args:
+    transaction_id: transaction_fixture
+    merchant_account_id: merchant_usd
+    currency: EUR
+    amount: '5.00'
+    order_id: correction_123
+    environment: sandbox
+    operation_id: correction_fixture
+  expect:
+    status: failure
+    exit:
+    - 1
+    stderr_contains:
+    - currency differs
+  probes:
+  - argv:
+    - curl
+    - "-fsS"
+    - http://braintree-api:8080/probe
+    expect:
+      json:
+        "/writes": 0
+  name: braintree.refund_transaction-wrong-currency
+- action: braintree.retry_subscription
+  args:
+    subscription_id: subscription_fixture
+    merchant_account_id: merchant_usd
+    currency: USD
+    expected_updated_at: '2026-09-01T00:00:00Z'
+    amount: '5.00'
+    environment: sandbox
+  expect:
+    status: failure
+    exit:
+    - 1
+    stderr_contains:
+    - exactly the current positive
+  probes:
+  - argv:
+    - curl
+    - "-fsS"
+    - http://braintree-api:8080/probe
+    expect:
+      json:
+        "/writes": 0
+  name: braintree.retry_subscription-reduced-amount
+- action: braintree.retry_subscription
+  args:
+    subscription_id: subscription_fixture
+    merchant_account_id: merchant_usd
+    currency: USD
+    expected_updated_at: '2026-08-01T00:00:00Z'
+    amount: '12.00'
+    environment: sandbox
+  expect:
+    status: failure
+    exit:
+    - 1
+    stderr_contains:
+    - Subscription changed
+  probes:
+  - argv:
+    - curl
+    - "-fsS"
+    - http://braintree-api:8080/probe
+    expect:
+      json:
+        "/writes": 0
+  name: braintree.retry_subscription-stale-review
+- action: braintree.retry_subscription
+  args:
+    subscription_id: subscription_fixture
+    merchant_account_id: merchant_usd
+    currency: EUR
+    expected_updated_at: '2026-09-01T00:00:00Z'
+    amount: '12.00'
+    environment: sandbox
+  expect:
+    status: failure
+    exit:
+    - 1
+    stderr_contains:
+    - currency differs
+  probes:
+  - argv:
+    - curl
+    - "-fsS"
+    - http://braintree-api:8080/probe
+    expect:
+      json:
+        "/writes": 0
+  name: braintree.retry_subscription-wrong-currency
+- action: braintree.submit_dispute_evidence
+  args:
+    dispute_id: dispute_fixture
+    expected_evidence_sha256: '0000000000000000000000000000000000000000000000000000000000000000'
+    environment: sandbox
+  expect:
+    status: failure
+    exit:
+    - 1
+    stderr_contains:
+    - Evidence inventory changed
+  probes:
+  - argv:
+    - curl
+    - "-fsS"
+    - http://braintree-api:8080/probe
+    expect:
+      json:
+        "/writes": 0
+  name: braintree.submit_dispute_evidence-changed-evidence
+- action: braintree.upload_dispute_file
+  args:
+    dispute_id: dispute_fixture
+    category: GENERAL
+    file_name: evidence.pdf
+    expected_file_sha256: '0000000000000000000000000000000000000000000000000000000000000000'
+    environment: sandbox
+  expect:
+    status: failure
+    exit:
+    - 1
+    stderr_contains:
+    - Evidence file changed
+  probes:
+  - argv:
+    - curl
+    - "-fsS"
+    - http://braintree-api:8080/probe
+    expect:
+      json:
+        "/writes": 0
+  name: braintree.upload_dispute_file-changed-file
+- action: braintree.set_subscription_payment_method
+  args:
+    subscription_id: subscription_fixture
+    expected_updated_at: '2026-09-01T00:00:00Z'
+    expected_payment_method_id: method_fixture
+    payment_method_id: method_new
+    environment: sandbox
+  expect:
+    status: failure
+    exit:
+    - 1
+    stderr_contains:
+    - same customer
+  probes:
+  - argv:
+    - curl
+    - "-fsS"
+    - http://braintree-api:8080/probe
+    expect:
+      json:
+        "/writes": 0
+  name: braintree.set_subscription_payment_method-cross-customer
+  arrange:
+  - argv:
+    - curl
+    - "-fsS"
+    - "-X"
+    - POST
+    - http://braintree-api:8080/arrange/cross_customer
+- action: braintree.refund_transaction
+  args:
+    transaction_id: transaction_fixture
+    merchant_account_id: merchant_usd
+    currency: USD
+    amount: '5.00'
+    order_id: correction_123
+    environment: sandbox
+    operation_id: correction_fixture
+  expect:
+    json:
+      "/result/refund/status": SUBMITTED_FOR_SETTLEMENT
+  probes:
+  - name: Provider retained the correction
+    argv:
+    - curl
+    - "-fsS"
+    - http://braintree-api:8080/probe
+    expect:
+      json:
+        "/writes": 1
+        "/state/transaction/refundedAmount": '5.00'
+  name: braintree.refund_transaction-idempotent-replay
+  arrange:
+  - argv:
+    - env
+    - ARG_TRANSACTION_ID=transaction_fixture
+    - ARG_MERCHANT_ACCOUNT_ID=merchant_usd
+    - ARG_CURRENCY=USD
+    - ARG_AMOUNT=5.00
+    - ARG_ORDER_ID=correction_123
+    - ARG_ENVIRONMENT=sandbox
+    - ARG_OPERATION_ID=correction_fixture
+    - python3
+    - "/packs/braintree/scripts/braintree.py"
+    - refund_transaction
+    expect:
+      stdout_contains:
+      - refund_fixture
+- action: braintree.capture_transaction
+  args:
+    transaction_id: transaction_fixture
+    merchant_account_id: merchant_usd
+    currency: USD
+    amount: '5.00'
+    environment: sandbox
+    operation_id: correction_fixture
+  expect:
+    json:
+      "/result/transaction/status": SUBMITTED_FOR_SETTLEMENT
+  arrange:
+  - argv:
+    - curl
+    - "-fsS"
+    - "-X"
+    - POST
+    - http://braintree-api:8080/arrange/authorized
+    expect:
+      stdout_contains:
+      - arranged
+  - argv:
+    - env
+    - ARG_TRANSACTION_ID=transaction_fixture
+    - ARG_MERCHANT_ACCOUNT_ID=merchant_usd
+    - ARG_CURRENCY=USD
+    - ARG_AMOUNT=5.00
+    - ARG_ENVIRONMENT=sandbox
+    - ARG_OPERATION_ID=correction_fixture
+    - python3
+    - "/packs/braintree/scripts/braintree.py"
+    - capture_transaction
+    expect:
+      stdout_contains:
+      - transaction_fixture
+  probes:
+  - name: Provider retained the correction
+    argv:
+    - curl
+    - "-fsS"
+    - http://braintree-api:8080/probe
+    expect:
+      json:
+        "/writes": 1
+        "/state/transaction/status": SUBMITTED_FOR_SETTLEMENT
+        "/state/transaction/amount/value": '5.00'
+  name: braintree.capture_transaction-idempotent-replay
+- action: braintree.void_transaction
+  args:
+    transaction_id: transaction_fixture
+    merchant_account_id: merchant_usd
+    currency: USD
+    environment: sandbox
+    operation_id: correction_fixture
+  expect:
+    json:
+      "/result/transaction/status": VOIDED
+  arrange:
+  - argv:
+    - curl
+    - "-fsS"
+    - "-X"
+    - POST
+    - http://braintree-api:8080/arrange/authorized
+    expect:
+      stdout_contains:
+      - arranged
+  - argv:
+    - env
+    - ARG_TRANSACTION_ID=transaction_fixture
+    - ARG_MERCHANT_ACCOUNT_ID=merchant_usd
+    - ARG_CURRENCY=USD
+    - ARG_ENVIRONMENT=sandbox
+    - ARG_OPERATION_ID=correction_fixture
+    - python3
+    - "/packs/braintree/scripts/braintree.py"
+    - void_transaction
+    expect:
+      stdout_contains:
+      - transaction_fixture
+  probes:
+  - name: Provider retained the correction
+    argv:
+    - curl
+    - "-fsS"
+    - http://braintree-api:8080/probe
+    expect:
+      json:
+        "/writes": 1
+        "/state/transaction/status": VOIDED
+  name: braintree.void_transaction-idempotent-replay
+- action: braintree.refund_transaction
+  args:
+    transaction_id: transaction_fixture
+    merchant_account_id: merchant_usd
+    currency: USD
+    amount: '5.00'
+    order_id: correction_123
+    environment: sandbox
+    operation_id: correction_fixture
+  expect:
+    status: failure
+    exit:
+    - 1
+    stderr_contains:
+    - GraphQL request failed
+  probes:
+  - name: Provider retained the correction
+    argv:
+    - curl
+    - "-fsS"
+    - http://braintree-api:8080/probe
+    expect:
+      json:
+        "/writes": 1
+        "/state/transaction/refundedAmount": '5.00'
+  name: braintree.refund_transaction-ambiguous
+  arrange:
+  - argv:
+    - curl
+    - "-fsS"
+    - "-X"
+    - POST
+    - http://braintree-api:8080/arrange/ambiguous
+- name: braintree.customers-no-email-match
+  action: braintree.customers
+  args:
+    email: missing@example.test
+  expect:
+    json:
+      "/results": []
+      "/pagination/has_more": false
+      "/pagination/next_cursor":
+  probes:
+  - argv:
+    - curl
+    - "-fsS"
+    - http://braintree-api:8080/probe
+    expect:
+      json:
+        "/writes": 0
+- action: braintree.refund_transaction
+  args:
+    transaction_id: transaction_fixture
+    merchant_account_id: merchant_usd
+    currency: USD
+    amount: '5.00'
+    order_id: correction_123
+    environment: sandbox
+    operation_id: correction_fixture
+  expect:
+    status: failure
+    exit:
+    - 1
+    stderr_contains:
+    - Payment correction was declined
+    - PROCESSOR_DECLINED
+  probes:
+  - argv:
+    - curl
+    - "-fsS"
+    - http://braintree-api:8080/probe
+    expect:
+      json:
+        "/writes": 1
+        "/state/transaction/status": PROCESSOR_DECLINED
+  name: braintree.refund_transaction-processor-declined
+  arrange:
+  - argv:
+    - curl
+    - "-fsS"
+    - "-X"
+    - POST
+    - http://braintree-api:8080/arrange/declined
+- action: braintree.refund_transaction
+  args:
+    transaction_id: transaction_fixture
+    merchant_account_id: merchant_usd
+    currency: USD
+    amount: '5.00'
+    order_id: correction_123
+    environment: sandbox
+    operation_id: correction_fixture
+  expect:
+    status: failure
+    exit:
+    - 1
+    stderr_contains:
+    - GraphQL request failed
+    - VALIDATION
+  probes:
+  - argv:
+    - curl
+    - "-fsS"
+    - http://braintree-api:8080/probe
+    expect:
+      json:
+        "/writes": 1
+        "/state/transaction/refundedAmount": '4.00'
+  name: braintree.refund_transaction-changed-idempotent-parameters
+  arrange:
+  - argv:
+    - env
+    - ARG_TRANSACTION_ID=transaction_fixture
+    - ARG_MERCHANT_ACCOUNT_ID=merchant_usd
+    - ARG_CURRENCY=USD
+    - ARG_AMOUNT=4.00
+    - ARG_ORDER_ID=correction_123
+    - ARG_ENVIRONMENT=sandbox
+    - ARG_OPERATION_ID=correction_fixture
+    - python3
+    - "/packs/braintree/scripts/braintree.py"
+    - refund_transaction
+- action: braintree.upload_dispute_file
+  args:
+    dispute_id: dispute_fixture
+    category: GENERAL
+    file_name: seed.json
+    expected_file_sha256: '03308495c119eabb4ab52ee7c97f3d2f747c1d94e386886ecf7a93bb46c7ad73'
+    environment: sandbox
+  expect:
+    status: failure
+    exit:
+    - 1
+    stderr_contains:
+    - Evidence must be PDF
+  probes:
+  - argv:
+    - curl
+    - "-fsS"
+    - http://braintree-api:8080/probe
+    expect:
+      json:
+        "/writes": 0
+  name: braintree.upload_dispute_file-unsupported-file
+- action: braintree.upload_dispute_file
+  args:
+    dispute_id: dispute_fixture
+    category: GENERAL
+    file_name: evidence.pdf
+    expected_file_sha256: '03308495c119eabb4ab52ee7c97f3d2f747c1d94e386886ecf7a93bb46c7ad73'
+    environment: sandbox
+  expect:
+    status: failure
+    exit:
+    - 1
+    stderr_contains:
+    - Invalid input or provider response
+  probes:
+  - argv:
+    - curl
+    - "-fsS"
+    - http://braintree-api:8080/probe
+    expect:
+      json:
+        "/writes": 0
+  name: braintree.upload_dispute_file-symlink
+  arrange:
+  - argv:
+    - mkdir
+    - "-p"
+    - "/tmp/billing-evidence"
+  - argv:
+    - ln
+    - "-s"
+    - "/packs/braintree/test/fixtures/evidence.pdf"
+    - "/tmp/billing-evidence/evidence.pdf"
+  env:
+    BRAINTREE_EVIDENCE_DIR: "/tmp/billing-evidence"
+- action: braintree.upload_dispute_file
+  args:
+    dispute_id: dispute_fixture
+    category: GENERAL
+    file_name: oversized.pdf
+    expected_file_sha256: '03308495c119eabb4ab52ee7c97f3d2f747c1d94e386886ecf7a93bb46c7ad73'
+    environment: sandbox
+  expect:
+    status: failure
+    exit:
+    - 1
+    stderr_contains:
+    - Evidence must contain
+  probes:
+  - argv:
+    - curl
+    - "-fsS"
+    - http://braintree-api:8080/probe
+    expect:
+      json:
+        "/writes": 0
+  name: braintree.upload_dispute_file-oversized-file
+  arrange:
+  - argv:
+    - mkdir
+    - "-p"
+    - "/tmp/billing-evidence"
+  - argv:
+    - truncate
+    - "-s"
+    - '4000001'
+    - "/tmp/billing-evidence/oversized.pdf"
+  env:
+    BRAINTREE_EVIDENCE_DIR: "/tmp/billing-evidence"

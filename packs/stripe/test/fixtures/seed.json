@@ -1,0 +1,431 @@
+{
+  "customer": {
+    "id": "cus_fixture",
+    "object": "customer",
+    "created": 1700000000,
+    "livemode": false,
+    "email": "billing@example.test",
+    "name": "Fixture Customer",
+    "currency": "usd",
+    "balance": 0,
+    "delinquent": false,
+    "invoice_settings": {
+      "default_payment_method": "pm_fixture"
+    },
+    "metadata": {
+      "private_note": "packtest-canary-private-metadata-120a"
+    }
+  },
+  "payment_intent": {
+    "id": "pi_fixture",
+    "object": "payment_intent",
+    "created": 1700000000,
+    "livemode": false,
+    "customer": "cus_fixture",
+    "amount": 1200,
+    "amount_received": 0,
+    "amount_capturable": 1200,
+    "currency": "usd",
+    "status": "requires_capture",
+    "latest_charge": "ch_fixture",
+    "payment_method": "pm_fixture",
+    "last_payment_error": {
+      "type": "card_error",
+      "code": "card_declined",
+      "decline_code": "insufficient_funds"
+    },
+    "client_secret": "packtest-canary-client-secret-824b",
+    "metadata": {
+      "private_note": "packtest-canary-private-metadata-120a"
+    }
+  },
+  "charge": {
+    "id": "ch_fixture",
+    "object": "charge",
+    "created": 1700000000,
+    "livemode": false,
+    "customer": "cus_fixture",
+    "amount": 1200,
+    "amount_captured": 1200,
+    "amount_refunded": 0,
+    "currency": "usd",
+    "status": "succeeded",
+    "paid": true,
+    "captured": true,
+    "disputed": false,
+    "refunded": false,
+    "payment_intent": "pi_fixture",
+    "balance_transaction": "txn_fixture",
+    "outcome": {
+      "type": "authorized",
+      "network_status": "approved_by_network",
+      "risk_level": "normal"
+    },
+    "payment_method_details": {
+      "type": "card",
+      "card": {
+        "brand": "visa",
+        "last4": "4242",
+        "checks": {
+          "cvc_check": "pass",
+          "address_postal_code_check": "pass"
+        }
+      }
+    },
+    "receipt_url": "https://secret.example/packtest-canary-receipt-732a",
+    "metadata": {
+      "private_note": "packtest-canary-private-metadata-120a"
+    }
+  },
+  "refund": {
+    "id": "re_fixture",
+    "object": "refund",
+    "created": 1700000000,
+    "amount": 500,
+    "currency": "usd",
+    "status": "succeeded",
+    "charge": "ch_fixture",
+    "payment_intent": "pi_fixture",
+    "balance_transaction": "txn_fixture",
+    "destination_details": {
+      "card": {
+        "reference": "123456789",
+        "reference_status": "available",
+        "reference_type": "acquirer_reference_number"
+      }
+    },
+    "metadata": {
+      "private_note": "packtest-canary-private-metadata-120a"
+    }
+  },
+  "invoice": {
+    "id": "in_fixture",
+    "object": "invoice",
+    "created": 1700000000,
+    "livemode": false,
+    "customer": "cus_fixture",
+    "status": "open",
+    "currency": "usd",
+    "amount_due": 1200,
+    "amount_paid": 0,
+    "amount_remaining": 1200,
+    "subtotal": 1200,
+    "total": 1200,
+    "attempt_count": 1,
+    "collection_method": "charge_automatically",
+    "parent": {
+      "subscription_details": {
+        "subscription": "sub_fixture"
+      }
+    },
+    "hosted_invoice_url": "https://secret.example/packtest-canary-invoice-919a",
+    "lines": {
+      "data": [
+        {
+          "id": "il_fixture",
+          "object": "line_item",
+          "amount": 1200,
+          "currency": "usd",
+          "quantity": 1,
+          "description": "Monthly plan",
+          "period": {
+            "start": 1700000000,
+            "end": 1702592000
+          },
+          "pricing": {
+            "type": "price_details",
+            "price_details": {
+              "price": "price_fixture",
+              "product": "prod_fixture"
+            }
+          },
+          "parent": {
+            "type": "subscription_item_details",
+            "subscription_item_details": {
+              "subscription": "sub_fixture",
+              "subscription_item": "si_fixture",
+              "proration": false
+            }
+          },
+          "metadata": {
+            "private_note": "packtest-canary-private-metadata-120a"
+          }
+        }
+      ],
+      "has_more": false
+    },
+    "metadata": {
+      "private_note": "packtest-canary-private-metadata-120a"
+    }
+  },
+  "line_item": {
+    "id": "il_fixture",
+    "object": "line_item",
+    "amount": 1200,
+    "currency": "usd",
+    "quantity": 1,
+    "description": "Monthly plan",
+    "period": {
+      "start": 1700000000,
+      "end": 1702592000
+    },
+    "pricing": {
+      "type": "price_details",
+      "price_details": {
+        "price": "price_fixture",
+        "product": "prod_fixture"
+      }
+    },
+    "parent": {
+      "type": "subscription_item_details",
+      "subscription_item_details": {
+        "subscription": "sub_fixture",
+        "subscription_item": "si_fixture",
+        "proration": false
+      }
+    },
+    "metadata": {
+      "private_note": "packtest-canary-private-metadata-120a"
+    }
+  },
+  "invoice_payment": {
+    "id": "inpay_fixture",
+    "object": "invoice_payment",
+    "created": 1700000000,
+    "invoice": "in_fixture",
+    "amount_requested": 1200,
+    "amount_paid": 1200,
+    "currency": "usd",
+    "status": "paid",
+    "payment": {
+      "type": "payment_intent",
+      "payment_intent": "pi_fixture"
+    },
+    "metadata": {
+      "private_note": "packtest-canary-private-metadata-120a"
+    }
+  },
+  "subscription": {
+    "id": "sub_fixture",
+    "object": "subscription",
+    "created": 1700000000,
+    "livemode": false,
+    "customer": "cus_fixture",
+    "status": "active",
+    "currency": "usd",
+    "latest_invoice": "in_fixture",
+    "default_payment_method": "pm_fixture",
+    "collection_method": "charge_automatically",
+    "cancel_at_period_end": false,
+    "pause_collection": null,
+    "items": {
+      "data": [
+        {
+          "id": "si_fixture",
+          "created": 1700000000,
+          "quantity": 1,
+          "current_period_start": 1700000000,
+          "current_period_end": 1702592000,
+          "price": {
+            "id": "price_fixture",
+            "product": "prod_fixture",
+            "currency": "usd",
+            "unit_amount": 1200,
+            "recurring": {
+              "interval": "month",
+              "interval_count": 1
+            }
+          },
+          "metadata": {
+            "private_note": "packtest-canary-private-metadata-120a"
+          }
+        }
+      ],
+      "has_more": false
+    },
+    "metadata": {
+      "private_note": "packtest-canary-private-metadata-120a"
+    }
+  },
+  "subscription_item": {
+    "id": "si_fixture",
+    "created": 1700000000,
+    "quantity": 1,
+    "current_period_start": 1700000000,
+    "current_period_end": 1702592000,
+    "price": {
+      "id": "price_fixture",
+      "product": "prod_fixture",
+      "currency": "usd",
+      "unit_amount": 1200,
+      "recurring": {
+        "interval": "month",
+        "interval_count": 1
+      }
+    },
+    "metadata": {
+      "private_note": "packtest-canary-private-metadata-120a"
+    }
+  },
+  "dispute": {
+    "id": "du_fixture",
+    "object": "dispute",
+    "created": 1700000000,
+    "livemode": false,
+    "charge": "ch_fixture",
+    "payment_intent": "pi_fixture",
+    "amount": 1200,
+    "currency": "usd",
+    "status": "needs_response",
+    "reason": "fraudulent",
+    "is_charge_refundable": true,
+    "evidence_details": {
+      "due_by": 1800000000,
+      "has_evidence": true,
+      "past_due": false,
+      "submission_count": 0
+    },
+    "evidence": {
+      "uncategorized_text": "Delivery confirmed"
+    },
+    "metadata": {
+      "private_note": "packtest-canary-private-metadata-120a"
+    }
+  },
+  "event": {
+    "id": "evt_fixture",
+    "object": "event",
+    "created": 1700000000,
+    "livemode": false,
+    "type": "invoice.payment_failed",
+    "api_version": "2024-06-20",
+    "pending_webhooks": 1,
+    "request": {
+      "id": "req_fixture"
+    },
+    "data": {
+      "object": {
+        "id": "in_fixture",
+        "object": "invoice",
+        "client_secret": "packtest-canary-event-client-19cb"
+      }
+    },
+    "metadata": {
+      "private_note": "packtest-canary-private-metadata-120a"
+    }
+  },
+  "balance_transaction": {
+    "id": "txn_fixture",
+    "object": "balance_transaction",
+    "created": 1700000000,
+    "available_on": 1700000100,
+    "amount": 1200,
+    "currency": "usd",
+    "fee": 65,
+    "net": 1135,
+    "status": "available",
+    "type": "charge",
+    "reporting_category": "charge",
+    "source": "ch_fixture",
+    "metadata": {
+      "private_note": "packtest-canary-private-metadata-120a"
+    }
+  },
+  "customer_balance_transaction": {
+    "id": "cbtxn_fixture",
+    "created": 1700000000,
+    "customer": "cus_fixture",
+    "amount": -500,
+    "currency": "usd",
+    "ending_balance": -500,
+    "type": "adjustment",
+    "metadata": {
+      "private_note": "packtest-canary-private-metadata-120a"
+    }
+  },
+  "payout": {
+    "id": "po_fixture",
+    "created": 1700000000,
+    "livemode": false,
+    "amount": 1000,
+    "currency": "usd",
+    "status": "paid",
+    "arrival_date": 1700200000,
+    "automatic": true,
+    "balance_transaction": "txn_fixture",
+    "reconciliation_status": "completed",
+    "metadata": {
+      "private_note": "packtest-canary-private-metadata-120a"
+    }
+  },
+  "credit_note": {
+    "id": "cn_fixture",
+    "created": 1700000000,
+    "livemode": false,
+    "customer": "cus_fixture",
+    "invoice": "in_fixture",
+    "amount": 500,
+    "currency": "usd",
+    "status": "issued",
+    "type": "pre_payment",
+    "pre_payment_amount": 500,
+    "post_payment_amount": 0,
+    "refunds": [
+      {
+        "refund": "re_fixture",
+        "amount_refunded": 500
+      }
+    ],
+    "metadata": {
+      "private_note": "packtest-canary-private-metadata-120a"
+    }
+  },
+  "payment_method": {
+    "id": "pm_fixture",
+    "created": 1700000000,
+    "customer": "cus_fixture",
+    "type": "card",
+    "card": {
+      "brand": "visa",
+      "last4": "4242",
+      "exp_month": 12,
+      "exp_year": 2030,
+      "funding": "credit",
+      "fingerprint": "packtest-canary-fingerprint-55a1"
+    },
+    "metadata": {
+      "private_note": "packtest-canary-private-metadata-120a"
+    }
+  },
+  "file": {
+    "id": "file_fixture",
+    "created": 1700000000,
+    "purpose": "dispute_evidence",
+    "type": "pdf",
+    "size": 24,
+    "expires_at": 1800000000,
+    "metadata": {
+      "private_note": "packtest-canary-private-metadata-120a"
+    }
+  },
+  "balance": {
+    "object": "balance",
+    "livemode": false,
+    "available": [
+      {
+        "amount": 10000,
+        "currency": "usd"
+      }
+    ],
+    "pending": [
+      {
+        "amount": 1200,
+        "currency": "usd"
+      }
+    ],
+    "connect_reserved": [],
+    "metadata": {
+      "private_note": "packtest-canary-private-metadata-120a"
+    }
+  }
+}

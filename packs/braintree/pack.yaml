@@ -1,0 +1,77 @@
+schema_version: 1
+id: braintree
+name: Braintree billing operations
+version: 0.1.0
+description: >
+  Investigate Braintree payment failures, duplicate charges, refunds,
+  recurring billing and disputes, and perform reviewed billing corrections.
+vendor: emisar
+homepage: https://emisar.dev/packs/braintree
+requires:
+  os: [linux]
+  binaries: [python3]
+setup:
+  summary: >
+    Uses Python 3.10 or newer with its standard library and system CA certificates.
+    Store credentials in the runner's private environment file and allowlist the
+    variables below in `execution.inherit_env`. Every action uses a fixed API
+    operation; credentials and evidence stay out of process arguments.
+  env:
+    - name: BRAINTREE_PUBLIC_KEY
+      required: true
+      description: "Create API credentials in the Braintree Control Panel under API Keys. Use a dedicated user with the billing, transaction and dispute permissions required by enabled actions; sandbox and production credentials are separate."
+    - name: BRAINTREE_PRIVATE_KEY
+      required: true
+      description: "Private key paired with BRAINTREE_PUBLIC_KEY from the same [Braintree API credentials](https://developer.paypal.com/braintree/docs/guides/authorization/overview) entry. Store it only on the runner."
+    - name: BRAINTREE_ENVIRONMENT
+      default: sandbox
+      description: "Use sandbox or production. Every correction must explicitly confirm the configured environment."
+    - name: BRAINTREE_EVIDENCE_DIR
+      description: "Optional absolute directory containing reviewed evidence files readable by the runner. Required only for evidence_file_info and upload_dispute_file; regular PDF, PNG or JPEG files only."
+  notes:
+    - "Use account and merchant_accounts to identify the processing account and currency. Resolve legacy Control Panel or SDK IDs with resolve_id, then retrieve the returned GraphQL ID before acting."
+    - "Amounts are decimal strings in major currency units, supporting whole amounts and two or three decimal places. Preserve currency and merchant-account context throughout an investigation."
+    - "Search customer, transaction, refund, subscription and dispute records, then follow returned links. Customer payment methods and transactions have their own paginated actions; transaction/refund history and subscription transaction IDs have explicit local offsets."
+    - "Refund, capture and void use Braintree apiRequestKey deduplication for 30 days after the initial request completes. Preserve operation_id and identical parameters. Other corrections have no provider request deduplication; never repeat an ambiguous charge or evidence action before reconciliation."
+    - "retry_subscription only collects the entire reviewed positive past-due balance. Braintree clears the whole balance on success, even when a reduced manual retry is used elsewhere. This pack refuses that implicit debt waiver. Subscription changes check updatedAt; this is not an atomic compare-and-write."
+    - "Stage text or a reviewed file, inspect the dispute and evidence, then separately finalize with submit_dispute_evidence. File upload accepts one PDF/JPEG/PNG up to 4 MB and checks the SHA256 returned by evidence_file_info. Finalization verifies the evidence inventory; coordinate other writers because Braintree has no atomic compare-and-submit."
+    - "GraphQL supports the documented evidence categories. PayPal disputes needing EVIDENCE_TYPE, TRACKING_URL or sequence-number grouping must be completed in the Braintree Control Panel; those fields are absent from the public GraphQL input schema."
+    - "Calls use fixed Braintree HTTPS endpoints and Braintree-Version 2026-09-08. GraphQL errors fail the action even when HTTP status is 200. Results exclude arbitrary custom fields, raw payment credentials and signed evidence URLs."
+    - "Local schema-validated fixtures verify request contracts and failure handling. Live provider compatibility requires a governed read against the operator's configured Braintree merchant."
+  verify: braintree.account
+actions:
+  - actions/account.yaml
+  - actions/merchant_accounts.yaml
+  - actions/resolve_id.yaml
+  - actions/transactions.yaml
+  - actions/refunds.yaml
+  - actions/customers.yaml
+  - actions/subscriptions.yaml
+  - actions/disputes.yaml
+  - actions/transaction.yaml
+  - actions/refund.yaml
+  - actions/customer.yaml
+  - actions/subscription.yaml
+  - actions/dispute.yaml
+  - actions/payment_method.yaml
+  - actions/plan.yaml
+  - actions/customer_payment_methods.yaml
+  - actions/customer_transactions.yaml
+  - actions/transaction_refunds.yaml
+  - actions/transaction_history.yaml
+  - actions/subscription_transactions.yaml
+  - actions/dispute_evidence.yaml
+  - actions/evidence_file_info.yaml
+  - actions/refund_transaction.yaml
+  - actions/capture_transaction.yaml
+  - actions/void_transaction.yaml
+  - actions/retry_subscription.yaml
+  - actions/cancel_subscription.yaml
+  - actions/set_subscription_price.yaml
+  - actions/set_subscription_payment_method.yaml
+  - actions/stage_dispute_text.yaml
+  - actions/upload_dispute_file.yaml
+  - actions/remove_dispute_evidence.yaml
+  - actions/submit_dispute_evidence.yaml
+  - actions/accept_dispute.yaml
+  - actions/dispute_evidence_text.yaml

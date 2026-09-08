@@ -1,0 +1,49 @@
+schema_version: 1
+id: stripe.stage_dispute_text
+title: Stage dispute text evidence
+kind: script
+risk: high
+description: "Set one named dispute evidence field with submit=false. Review the case before the separate submit_dispute_evidence action."
+side_effects: ["Changes the named customer's billing or dispute state; approval is required under the default policy.","Sends at most one write request; after an ambiguous failure investigate provider state before another correction."]
+args:
+  - name: dispute
+    type: string
+    required: true
+    description: "dp_ or du_ identifier returned by a Stripe read."
+    validation: {"pattern":"^(dp|du)_[A-Za-z0-9]+$","max_length":255}
+  - name: field
+    type: string
+    required: true
+    description: "Stripe text evidence field."
+    validation: {"enum":["access_activity_log","billing_address","cancellation_policy_disclosure","cancellation_rebuttal","customer_email_address","customer_name","customer_purchase_ip","duplicate_charge_explanation","duplicate_charge_id","product_description","refund_policy_disclosure","refund_refusal_explanation","service_date","shipping_address","shipping_carrier","shipping_date","shipping_tracking_number","uncategorized_text"]}
+  - name: content
+    type: string
+    required: true
+    description: "Evidence text; up to 20000 bytes per action, within Stripe's combined 150000-character limit."
+    sensitive: true
+    validation: {"pattern":"^[\\s\\S]+$","max_length":20000}
+  - name: mode
+    type: string
+    required: true
+    description: "Explicitly approve the runner's configured Stripe mode."
+    validation: {"enum":["test","live"]}
+  - name: operation_id
+    type: string
+    required: true
+    description: "Stable correction identifier for Stripe Idempotency-Key. Reuse with identical parameters within the provider's retention window (at least 24 hours); reconcile before retrying later."
+    validation: {"pattern":"^[A-Za-z0-9][A-Za-z0-9._:-]*$","max_length":255}
+execution:
+  script: {path: scripts/stripe.py, interpreter: python3}
+  argv: [stage_dispute_text]
+  env:
+    ARG_DISPUTE: "{{ args.dispute }}"
+    ARG_FIELD: "{{ args.field }}"
+    ARG_CONTENT: "{{ args.content }}"
+    ARG_MODE: "{{ args.mode }}"
+    ARG_OPERATION_ID: "{{ args.operation_id }}"
+  timeout: 60s
+output:
+  parser: json
+  parser_required: true
+  max_stdout_bytes: 65536
+  max_stderr_bytes: 8192

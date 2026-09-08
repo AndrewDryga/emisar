@@ -1,0 +1,38 @@
+schema_version: 1
+id: braintree.customer_payment_methods
+title: List customer payment methods
+kind: script
+risk: low
+description: "List one page of customer payment methods with continuation for billing investigation."
+side_effects: ["Reads selected billing information from Braintree."]
+args:
+  - name: customer_id
+    type: string
+    required: true
+    description: "Braintree GraphQL ID returned by a read or resolve_id; not a legacy control-panel ID."
+    validation: {"pattern":"^[A-Za-z0-9_=+/-]+$","max_length":255}
+  - name: limit
+    type: integer
+    required: false
+    description: "Records per page; at most ten to bound the projected result within 64 KiB."
+    default: 10
+    validation: {"min":1,"max":10}
+  - name: cursor
+    type: string
+    required: false
+    description: "Use pagination.next_cursor with unchanged filters."
+    default: ""
+    validation: {"pattern":"^[A-Za-z0-9_=+/:.-]*$","max_length":2048}
+execution:
+  script: {path: scripts/braintree.py, interpreter: python3}
+  argv: [customer_payment_methods]
+  env:
+    ARG_CUSTOMER_ID: "{{ args.customer_id }}"
+    ARG_LIMIT: "{{ args.limit }}"
+    ARG_CURSOR: "{{ args.cursor }}"
+  timeout: 90s
+output:
+  parser: json
+  parser_required: true
+  max_stdout_bytes: 65536
+  max_stderr_bytes: 8192

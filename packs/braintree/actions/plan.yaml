@@ -1,0 +1,24 @@
+schema_version: 1
+id: braintree.plan
+title: Show subscription plan
+kind: script
+risk: low
+description: "Show one Braintree subscription plan with diagnostic state and billing linkage. Uses selected fields; excludes raw custom fields and payment credentials. Nested arrays return at most ten entries with explicit overflow flags."
+side_effects: ["Reads selected billing information from Braintree."]
+args:
+  - name: id
+    type: string
+    required: true
+    description: "Braintree GraphQL ID returned by a read or resolve_id; not a legacy control-panel ID."
+    validation: {"pattern":"^[A-Za-z0-9_=+/-]+$","max_length":255}
+execution:
+  script: {path: scripts/braintree.py, interpreter: python3}
+  argv: [plan]
+  env:
+    ARG_ID: "{{ args.id }}"
+  timeout: 90s
+output:
+  parser: json
+  parser_required: true
+  max_stdout_bytes: 65536
+  max_stderr_bytes: 8192
