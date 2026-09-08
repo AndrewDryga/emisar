@@ -1,5 +1,7 @@
 defmodule Emisar.OAuth.ClientMetadataDocumentTest do
-  use Emisar.DataCase, async: true
+  # Real TLS and wall-clock deadlines need an uncontended test window: parallel
+  # suite load can spend the fetch budget before enough fragments are sent.
+  use Emisar.DataCase, async: false
   alias Emisar.OAuth.ClientMetadataDocument
 
   @url "https://app.example.com/oauth/client-metadata.json"
