@@ -1917,7 +1917,7 @@ if existing_runs == [] do
     Approvals.create_request(
       pending1,
       user.id,
-      "Config was validated in CI; needs an admin approval before the edge reload."
+      pending1.reason
     )
 
   backdate_request.(req1, pending1_at)
@@ -1943,7 +1943,7 @@ if existing_runs == [] do
     Approvals.create_request(
       pending2,
       priya.id,
-      "Smoke test is green - needs the deploy captain's sign-off before the restart."
+      pending2.reason
     )
 
   backdate_request.(req2, pending2_at)
@@ -1977,7 +1977,7 @@ if existing_runs == [] do
     |> backdate.(approved_at)
 
   {:ok, %ApprovalRequest{} = approved_req} =
-    Approvals.create_request(approved_run, user.id, "reload after config validation")
+    Approvals.create_request(approved_run, user.id, approved_run.reason)
 
   approved_req = backdate_request.(approved_req, approved_at)
   backdate_dispatch_audit.(approved_run, approved_at)
@@ -2044,7 +2044,7 @@ if existing_runs == [] do
     Approvals.create_request(
       denied_run,
       user.id,
-      "Agent proposed a Postgres reload before the change ticket was approved."
+      denied_run.reason
     )
 
   denied_req = backdate_request.(denied_req, denied_at)

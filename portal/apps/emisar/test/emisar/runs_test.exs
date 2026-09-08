@@ -1930,7 +1930,9 @@ defmodule Emisar.RunsTest do
                  subject
                )
 
-      assert {:ok, [_req], _} = Approvals.list_pending_approval_requests(subject)
+      assert {:ok, [request], _} = Approvals.list_pending_approval_requests(subject)
+      assert request.reason == run.reason
+      refute request.reason == run.policy_reason
       assert {:ok, %{status: :pending_approval}} = Runs.fetch_run_by_id(run.id, subject)
 
       # The gating earns an append-only audit row. `require_approval` no longer

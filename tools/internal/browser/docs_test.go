@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"image/png"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -81,7 +82,7 @@ func TestDocsCropKeepsBothEdgesAfterViewportChange(t *testing.T) {
 	}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html")
-		_, _ = w.Write([]byte(`<!doctype html><style>body{margin:0;background:#00ff00}.spacer{height:1800px}.deferred{content-visibility:auto;contain-intrinsic-size:auto 180px}.deferred>div{height:100px}#crop{margin-left:25vw;width:50vw;height:120px;background:linear-gradient(#ff0000 50%,#0000ff 50%)}</style><div class="spacer"></div><div class="deferred"><div></div></div><div id="crop"></div><div class="spacer"></div>`))
+		_, _ = w.Write([]byte(`<!doctype html><style>body{margin:0;background:#00ff00}.spacer{height:1800px}.deferred{content-visibility:auto;contain-intrinsic-size:auto 180px}.deferred>div{height:100px}#crop{margin-left:25vw;width:50vw;height:120px;background:linear-gradient(#ff0000 50%,#0000ff 50%);outline:2px solid #ffff00}</style><div class="spacer"></div><div class="deferred"><div></div></div><div id="crop"></div><div class="spacer"></div>`))
 	}))
 	defer server.Close()
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
@@ -101,7 +102,7 @@ func TestDocsCropKeepsBothEdgesAfterViewportChange(t *testing.T) {
 		t.Fatal(err)
 	}
 	dir := t.TempDir()
-	if _, err := captureDocElement(session, DocsConfig{Temp: dir}, shot{Name: "edges", Anchor: Anchor{Selector: "#crop"}}); err != nil {
+	if _, err := captureDocElement(session, DocsConfig{Temp: dir}, shot{Name: "edges", Anchor: Anchor{Selector: "#crop"}, CropPadding: 4}); err != nil {
 		t.Fatal(err)
 	}
 	file, err := os.Open(filepath.Join(dir, "edges.png"))
@@ -114,15 +115,45 @@ func TestDocsCropKeepsBothEdgesAfterViewportChange(t *testing.T) {
 		t.Fatal(err)
 	}
 	bounds := picture.Bounds()
-	if bounds.Dx() != 800 || bounds.Dy() != 240 {
+	if bounds.Dx() != 816 || bounds.Dy() != 256 {
 		t.Fatalf("crop bounds = %v", bounds)
 	}
-	red, green, blue, _ := picture.At(400, 2).RGBA()
+	red, green, blue, _ := picture.At(408, 10).RGBA()
 	if red != 65535 || green != 0 || blue != 0 {
 		t.Fatal("top of crop was lost")
 	}
-	red, green, blue, _ = picture.At(400, 237).RGBA()
+	red, green, blue, _ = picture.At(408, 245).RGBA()
 	if red != 0 || green != 0 || blue != 65535 {
 		t.Fatal("bottom of crop was lost")
+	}
+	for _, x := range []int{6, 810} {
+		red, green, blue, _ = picture.At(x, 128).RGBA()
+		if red != 65535 || green != 65535 || blue != 0 {
+			t.Fatalf("outline at x=%d was clipped", x)
+		}
+	}
+
+	// A real run with arguments reaches farther down than the old loop crop.
+	// The overlay coordinates must use the same height as the exported frames.
+	var targetsJSON string
+	if err := chromedp.Run(session.Context,
+		chromedp.Evaluate(`document.body.innerHTML='<div id="shell-canvas" style="width:1280px"><div style="height:1180px"></div><div data-shot="run-output" style="height:120px"></div></div>'`, nil),
+		chromedp.Evaluate(loopTargets, &targetsJSON)); err != nil {
+		t.Fatal(err)
+	}
+	var targets struct {
+		Output struct{ Y, H float64 } `json:"output_rect"`
+	}
+	if err := json.Unmarshal([]byte(targetsJSON), &targets); err != nil {
+		t.Fatal(err)
+	}
+	if targets.Output.Y+targets.Output.H > 100 {
+		t.Fatal("loop output is clipped by the frame")
+	}
+	for _, frame := range loopFrames {
+		wantY := math.Round(1180.0/float64(frame.TopCSS)*1000) / 10
+		if targets.Output.Y != wantY {
+			t.Fatalf("%s overlay y = %v, want %v for its crop", frame.Name, targets.Output.Y, wantY)
+		}
 	}
 }

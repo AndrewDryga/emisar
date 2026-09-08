@@ -54,6 +54,10 @@ writer first.
 - Vary rhythm with the idea, not through arbitrary fragments or decoration.
 - Use humor only when it sharpens the point and preserves trust.
 - State a verified fact directly and qualify the exact uncertainty.
+- Preserve prerequisites, consequences and security conditions when simplifying
+  reviewed copy. If a caveat applies to only one flow, narrow it and move it to
+  that flow instead of deleting it. Compare the facts before and after the edit;
+  shorter wording must not leave the reader with less of the setup contract.
 - Frame normal resilience as the capability — `The runner reconnects on its
   own` — never as tolerance of a failure class (`Disconnects are expected`).
   Any product handles its ordinary events; say what it does.

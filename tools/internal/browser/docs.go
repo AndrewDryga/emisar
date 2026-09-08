@@ -41,6 +41,8 @@ type shot struct {
 	Anchor Anchor
 	Width  int // viewport CSS width; 0 → defaultWidth
 	TopCSS int // keep only the top N CSS pixels of the anchor (0 → whole anchor)
+	// CropPadding includes rings/outlines painted outside the anchor's box.
+	CropPadding int
 	// Rows + RowSelector cap a long list: hide every RowSelector row past the
 	// first Rows before the shot, so the anchor shrinks to its header + those rows
 	// and the tail falls away. RowSelector matches document-wide.
@@ -175,7 +177,7 @@ var docsShots = []shot{
 	// The invite form is one decision surface — email, role, then runner and
 	// pack access — so it is captured WHOLE rather than cropped to an overview:
 	// the controls below the fold are the ones the docs paragraph walks through.
-	{Name: "team-invite", Path: "/app/demo/settings/team/invite", Anchor: Anchor{Selector: "#invite_form"}, Width: docsWidth, Output: "screenshots/team-invite.webp"},
+	{Name: "team-invite", Path: "/app/demo/settings/team/invite", Anchor: Anchor{Selector: "#invite_form"}, Width: docsWidth, CropPadding: 4, Output: "screenshots/team-invite.webp"},
 	// TopCSS on both: these anchor a PAGINATED list, so the crop height follows
 	// whatever the seed happens to hold — the demo account now fills a page, and
 	// uncapped these grew to 2x and 4x their committed height. The caps keep the
@@ -272,7 +274,8 @@ var keycloakShots = []shot{
 // transition, and audit row is the actual product doing the actual thing.
 //
 // #shell-canvas is the console page without the nav rail; TopCSS keeps every
-// frame the same 1280x1180 box (the player windows it to 1280x860 and pans) so the cast can crossfade without reflow.
+// frame the same 1280x1320 box (the player windows it to 1280x860 and pans) so the cast can crossfade without reflow.
+// This includes the run's Arguments panel and the bottom of its output.
 //
 // Preconditions (the take verifies and SKIPs loudly otherwise):
 //   - a fresh `./run reset --seed` with EMISAR_DEV_FIXED_ENROLLMENT_KEY set,
@@ -285,19 +288,21 @@ var keycloakShots = []shot{
 //     RECREATE the container after a reseed (docker rm -f + docker run — a
 //     fresh /var/lib/emisar re-enrolls); a restarted container presents its
 //     old token, gets a 401 from the fresh DB, and exits.
+const loopFrameHeight = 1320
+
 var loopFrames = []shot{
-	{Name: "loop-approval-pending", Anchor: Anchor{Selector: "#shell-canvas"}, Width: 1280, TopCSS: 1180, NoBorder: true, Output: "screenshots/loop/approval-pending.webp"},
-	{Name: "loop-approval-note", Anchor: Anchor{Selector: "#shell-canvas"}, Width: 1280, TopCSS: 1180, NoBorder: true, Output: "screenshots/loop/approval-note.webp"},
-	{Name: "loop-approval-approved", Anchor: Anchor{Selector: "#shell-canvas"}, Width: 1280, TopCSS: 1180, NoBorder: true, Output: "screenshots/loop/approval-approved.webp"},
-	{Name: "loop-run-success", Anchor: Anchor{Selector: "#shell-canvas"}, Width: 1280, TopCSS: 1180, NoBorder: true, Output: "screenshots/loop/run-success.webp"},
+	{Name: "loop-approval-pending", Anchor: Anchor{Selector: "#shell-canvas"}, Width: 1280, TopCSS: loopFrameHeight, NoBorder: true, Output: "screenshots/loop/approval-pending.webp"},
+	{Name: "loop-approval-note", Anchor: Anchor{Selector: "#shell-canvas"}, Width: 1280, TopCSS: loopFrameHeight, NoBorder: true, Output: "screenshots/loop/approval-note.webp"},
+	{Name: "loop-approval-approved", Anchor: Anchor{Selector: "#shell-canvas"}, Width: 1280, TopCSS: loopFrameHeight, NoBorder: true, Output: "screenshots/loop/approval-approved.webp"},
+	{Name: "loop-run-success", Anchor: Anchor{Selector: "#shell-canvas"}, Width: 1280, TopCSS: loopFrameHeight, NoBorder: true, Output: "screenshots/loop/run-success.webp"},
 	// The Run + Approval groups together are the loop's trail; the folded
 	// drawer still narrates them ("Filters — Type: …"), so the narrowing
 	// stays visible while the frame is the timeline itself.
-	{Name: "loop-audit-trail", Anchor: Anchor{Selector: "#shell-canvas"}, Width: 1280, TopCSS: 1180, NoBorder: true, Rows: 11, RowSelector: "#audit-events li", Output: "screenshots/loop/audit-trail.webp"},
+	{Name: "loop-audit-trail", Anchor: Anchor{Selector: "#shell-canvas"}, Width: 1280, TopCSS: loopFrameHeight, NoBorder: true, Rows: 11, RowSelector: "#audit-events li", Output: "screenshots/loop/audit-trail.webp"},
 	// The closing beat: the take clicks the loop's own "Run succeeded" row and
 	// photographs the audit event detail — the forensic close-up (actor,
 	// target, request id, payload) one click deep.
-	{Name: "loop-audit-event", Anchor: Anchor{Selector: "#shell-canvas"}, Width: 1280, TopCSS: 1180, NoBorder: true, Output: "screenshots/loop/audit-event.webp"},
+	{Name: "loop-audit-event", Anchor: Anchor{Selector: "#shell-canvas"}, Width: 1280, TopCSS: loopFrameHeight, NoBorder: true, Output: "screenshots/loop/audit-event.webp"},
 }
 
 // The note Jordan types during the take — it becomes the decision_reason on
@@ -311,8 +316,8 @@ const loopDecisionNote = "validated config, active connections drained, deploy w
 // derived from the canvas WIDTH (width x TopCSS/1280 CSS): the capture crop is
 // proportional, so this holds whatever viewport the capture browser really
 // used (chromedp's emulation override is not reliably honored).
-const loopTargets = `(()=>{const c=document.querySelector('#shell-canvas').getBoundingClientRect();
-const frameH=c.width*1180/1280;
+var loopTargets = `(()=>{const c=document.querySelector('#shell-canvas').getBoundingClientRect();
+const frameH=c.width*` + strconv.Itoa(loopFrameHeight) + `/1280;
 const point=(el)=>{if(!el)return null;const b=el.getBoundingClientRect();
 return {x:Math.round((b.x+b.width/2-c.x)/c.width*1000)/10,y:Math.round((b.y+b.height/2-c.y)/frameH*1000)/10}};
 const rect=(el)=>{if(!el)return null;const b=el.getBoundingClientRect();
@@ -762,7 +767,7 @@ func captureDocElement(session *Session, config DocsConfig, s shot) (string, err
 		}
 	}
 	path := filepath.Join(config.Temp, s.Name+".png")
-	if err := captureDocCrop(session, selector, path); err != nil {
+	if err := captureDocCrop(session, selector, path, s.CropPadding); err != nil {
 		return "", err
 	}
 	var color string
@@ -776,11 +781,15 @@ func captureDocElement(session *Session, config DocsConfig, s shot) (string, err
 // Crop a full-page capture using the rendered element's bounds. Chrome's node
 // capture can shift an off-origin crop after viewport changes; full-page capture
 // keeps the page and its crop in one coordinate system.
-func captureDocCrop(session *Session, selector, path string) error {
+func captureDocCrop(session *Session, selector, path string, padding int) error {
 	quoted, _ := json.Marshal(selector)
 	type bounds struct{ X, Y, Width, Height, PageWidth float64 }
 	var box bounds
-	script := `(function(){const el=document.querySelector(` + string(quoted) + `);const b=el.getBoundingClientRect();return {X:b.x+scrollX,Y:b.y+scrollY,Width:b.width,Height:b.height,PageWidth:document.documentElement.scrollWidth}})()`
+	script := `(function(){const el=document.querySelector(` + string(quoted) + `);const b=el.getBoundingClientRect();
+const p=` + strconv.Itoa(padding) + `,page=document.documentElement;
+const x=Math.max(0,b.x+scrollX-p),y=Math.max(0,b.y+scrollY-p);
+const right=Math.min(page.scrollWidth,b.right+scrollX+p),bottom=Math.min(page.scrollHeight,b.bottom+scrollY+p);
+return {X:x,Y:y,Width:right-x,Height:bottom-y,PageWidth:page.scrollWidth}})()`
 	full := strings.TrimSuffix(path, ".png") + "-full.png"
 	// A full-page capture can itself force layout of deferred content. Retry
 	// when that changes the crop, rather than applying stale coordinates.
