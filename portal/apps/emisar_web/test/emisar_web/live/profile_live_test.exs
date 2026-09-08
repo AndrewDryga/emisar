@@ -863,12 +863,98 @@ defmodule EmisarWeb.ProfileLiveTest do
       # position isn't asserted — the marker, not the slot, orients the operator.
       assert html =~ "This session"
       assert html =~ "198.51.100.4"
-      assert html =~ "Chrome on Linux"
+      assert html =~ "Chrome 124.0 on Linux"
+      assert has_element?(lv, "#active-sessions li", "Email link")
+      assert has_element?(lv, "#active-sessions li", "Sign-in IP:")
+      assert has_element?(lv, "#active-sessions time[data-format=absolute][data-tooltip-id]")
+      refute has_element?(lv, "#active-sessions", "Last active")
       assert has_element?(lv, "#active-sessions li", "This session")
 
       subject = Fixtures.Subjects.subject_for(user, account)
       {:ok, sessions, _meta} = Auth.list_sessions_for_user(nil, subject, page: [limit: 100])
       assert length(sessions) == 2
+    end
+
+    test "shows the recorded sign-in method and honest missing metadata", %{
+      conn: conn,
+      user: user,
+      account: account
+    } do
+      Fixtures.Auth.create_session_token!(user, :sso, nil)
+
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/profile")
+      assert has_element?(lv, "#active-sessions li", "Single sign-on")
+      assert has_element?(lv, "#active-sessions li", "Sign-in IP: Not recorded")
+      assert has_element?(lv, "#active-sessions li", "Unknown device")
+    end
+
+    test "links separately to this user's agents in the current workspace", %{
+      conn: conn,
+      user: user,
+      account: account
+    } do
+      other = Fixtures.Users.create_user()
+
+      membership =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          user_id: other.id,
+          role: "operator"
+        )
+
+      {:ok, _raw, _key} =
+        Emisar.ApiKeys.create_key(
+          %{name: "Someone else's agent"},
+          Fixtures.Subjects.membership_subject(membership)
+        )
+
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/profile")
+      href = ~p"/app/#{account}/agents?#{[owner: user.id]}"
+      assert has_element?(lv, ~s(#sessions-help p + p a[href="#{href}"]), "Review your agents")
+
+      {:ok, agents, _html} =
+        lv |> element("#review-your-agents") |> render_click() |> follow_redirect(conn, href)
+
+      assert has_element?(agents, "select[name=owner] option[selected]", user.email)
+      assert has_element?(agents, "a", "Clear filters")
+      assert render(agents) =~ "No agents match these filters."
+      refute render(agents) =~ "Someone else&#39;s agent"
+    end
+
+    test "does not offer Agents to a billing manager", %{account: account} do
+      user = Fixtures.Users.create_user()
+
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        user_id: user.id,
+        role: "billing_manager"
+      )
+
+      {:ok, lv, _html} =
+        live(log_in_user(build_conn(), user), ~p"/app/#{account}/settings/profile")
+
+      assert has_element?(lv, "#sessions-help", "Don't recognize a session?")
+      refute has_element?(lv, "#review-your-agents")
+    end
+
+    test "the own-agents filter stays readable for a profile without email", %{account: account} do
+      user = Fixtures.Users.create_sso_user()
+
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        user_id: user.id,
+        role: "viewer"
+      )
+
+      conn = log_in_user(build_conn(), user)
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/profile")
+      href = ~p"/app/#{account}/agents?#{[owner: user.id]}"
+
+      {:ok, agents, _html} =
+        lv |> element("#review-your-agents") |> render_click() |> follow_redirect(conn, href)
+
+      assert has_element?(agents, "select[name=owner] option[selected]", "You")
+      assert render(agents) =~ "No agents match these filters."
     end
 
     test "caps the page at 10 sessions and pages the rest", %{
@@ -1164,7 +1250,7 @@ defmodule EmisarWeb.ProfileLiveTest do
       {:ok, _lv, html} = live(conn, ~p"/app/#{account}/settings/profile")
 
       # The row renders from metadata, so the device + IP are visible…
-      assert html =~ "Firefox on Mac"
+      assert html =~ "Firefox 126.0 on Mac"
       assert html =~ "203.0.113.7"
 
       # …but the credential itself never is — not the raw token, not its digest
@@ -1232,6 +1318,7 @@ defmodule EmisarWeb.ProfileLiveTest do
 
       refute html =~ "mfa-setup-key"
       assert has_element?(lv, "#multi-factor-authentication", "Not enabled")
+      assert has_element?(lv, "#mfa-status > button[phx-click=start_mfa]", "Set up MFA")
 
       assert has_element?(
                lv,
@@ -1250,6 +1337,7 @@ defmodule EmisarWeb.ProfileLiveTest do
       assert html =~ "Email verification code"
       refute has_element?(lv, "#multi-factor-authentication-help")
       refute has_element?(lv, "#multi-factor-authentication", "Not enabled")
+      refute has_element?(lv, "#mfa-status")
       refute html =~ "mfa-setup-key"
       assert_received {:email, _}
 

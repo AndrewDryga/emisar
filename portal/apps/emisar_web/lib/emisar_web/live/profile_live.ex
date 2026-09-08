@@ -1,6 +1,6 @@
 defmodule EmisarWeb.ProfileLive do
   use EmisarWeb, :live_view
-  alias Emisar.{Auth, SSO, Users}
+  alias Emisar.{ApiKeys, Auth, SSO, Users}
   alias EmisarWeb.{ConfirmDialog, LiveForm, LiveTable, MfaEnrollment}
   alias EmisarWeb.{MfaErrors, OIDCStepUp, UserAgent}
   alias Phoenix.LiveView.JS
@@ -128,13 +128,18 @@ defmodule EmisarWeb.ProfileLive do
   defp present_session(%Auth.SessionFacts{} = session) do
     %{
       id: session.id,
-      device_label: UserAgent.label(session.user_agent),
+      device_label: UserAgent.label(session.user_agent, version: true),
       icon: UserAgent.icon(session.user_agent),
       current?: session.current?,
       ip_address: session_ip(session.ip_address),
-      inserted_at: session.inserted_at
+      inserted_at: session.inserted_at,
+      sign_in_method: session_sign_in_method(session.auth_method)
     }
   end
+
+  defp session_sign_in_method(:magic_link), do: "Email link"
+  defp session_sign_in_method(:sso), do: "Single sign-on"
+  defp session_sign_in_method(nil), do: nil
 
   def handle_event("edit_profile", _params, socket) do
     {:noreply,
@@ -1306,39 +1311,46 @@ defmodule EmisarWeb.ProfileLive do
                 </:actions>
               </.secret_reveal>
             <% @mfa_facts.enabled? -> %>
-              <p class="text-sm font-medium text-brand-300">Enabled</p>
               <% remaining = @mfa_facts.recovery_codes_remaining %>
-              <div class="mt-2 space-y-1 text-sm">
-                <p class="text-zinc-400">
-                  <span class="tabular-nums">{remaining}</span>
-                  recovery {if remaining == 1, do: "code", else: "codes"} remaining.
-                </p>
-                <p :if={remaining <= 2} class="text-amber-300">
-                  Generate new codes before these run out.
-                </p>
-              </div>
               <div
-                :if={@mfa_recovery_regeneration_step == :idle and @mfa_disable_step == :idle}
-                class="mt-4 flex flex-wrap items-center gap-3"
+                id="mfa-status"
+                class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between"
               >
-                <.button
-                  id="regen-codes"
-                  variant={:secondary}
-                  size={:md}
-                  type="button"
-                  phx-click="start_regenerate_recovery_codes"
+                <div class="min-w-0">
+                  <.chip tone={:brand}>Enabled</.chip>
+                  <div class="mt-2 space-y-1 text-sm">
+                    <p class="text-zinc-400">
+                      <span class="tabular-nums">{remaining}</span>
+                      recovery {if remaining == 1, do: "code", else: "codes"} remaining.
+                    </p>
+                    <p :if={remaining <= 2} class="text-amber-300">
+                      Generate new codes before these run out.
+                    </p>
+                  </div>
+                </div>
+                <div
+                  :if={@mfa_recovery_regeneration_step == :idle and @mfa_disable_step == :idle}
+                  class="flex shrink-0 flex-wrap gap-2 sm:justify-end"
                 >
-                  Generate new recovery codes
-                </.button>
-                <.button
-                  id="disable-mfa"
-                  variant={:secondary}
-                  tone={:rose}
-                  size={:md}
-                  phx-click="start_disable_mfa"
-                >
-                  Disable MFA
-                </.button>
+                  <.button
+                    id="regen-codes"
+                    variant={:secondary}
+                    size={:sm}
+                    type="button"
+                    phx-click="start_regenerate_recovery_codes"
+                  >
+                    Generate new recovery codes
+                  </.button>
+                  <.button
+                    id="disable-mfa"
+                    variant={:secondary}
+                    tone={:rose}
+                    size={:sm}
+                    phx-click="start_disable_mfa"
+                  >
+                    Disable MFA
+                  </.button>
+                </div>
               </div>
               <.simple_form
                 :if={@mfa_recovery_regeneration_step == :code}
@@ -1451,19 +1463,18 @@ defmodule EmisarWeb.ProfileLive do
                 </:actions>
               </.mfa_enrollment>
             <% true -> %>
-              <div>
+              <div id="mfa-status" class="flex flex-wrap items-center justify-between gap-4">
                 <.chip tone={:amber}>Not enabled</.chip>
+                <.button
+                  variant={:primary}
+                  phx-click="start_mfa"
+                  phx-disable-with="Sending…"
+                  size={:sm}
+                >
+                  Set up MFA
+                </.button>
               </div>
               <.error :if={@mfa_start_error}>{@mfa_start_error}</.error>
-              <.button
-                variant={:primary}
-                phx-click="start_mfa"
-                phx-disable-with="Sending…"
-                size={:md}
-                class="mt-4"
-              >
-                Set up MFA
-              </.button>
           <% end %>
         </.section_with_note>
 
@@ -1491,8 +1502,17 @@ defmodule EmisarWeb.ProfileLive do
             </.section_header>
           </:header>
           <:note>
-            Don't recognize a session? Sign it out. That browser or device will need to sign in again.
-            Signing out everywhere else keeps this session open.
+            <p>
+              Don't recognize a session? Sign it out. That browser or device will need to sign in again.
+              Signing out everywhere else keeps this session open.
+            </p>
+            <p :if={ApiKeys.subject_can_view_api_keys?(@current_subject)} class="mt-4">
+              <.link
+                id="review-your-agents"
+                navigate={~p"/app/#{@current_account}/agents?#{[owner: @current_user.id]}"}
+                class="group text-brand-400 hover:text-brand-300"
+              >Review your agents in this workspace&nbsp;<.cta_arrow /></.link>
+            </p>
           </:note>
 
           <%!-- No max-height: the scroll cap cropped the next row to a ~10px
@@ -1534,6 +1554,7 @@ defmodule EmisarWeb.ProfileLive do
                 :for={{dom_id, session} <- @streams.sessions}
                 id={dom_id}
                 icon={session.icon}
+                meta_wrap
               >
                 <:title>
                   <span class="truncate font-medium text-zinc-100">
@@ -1546,12 +1567,19 @@ defmodule EmisarWeb.ProfileLive do
                   </.chip>
                 </:chips>
                 <:meta>
-                  Started
-                  <.local_time
-                    id={"session-started-#{session.id}"}
-                    value={session.inserted_at}
-                    mode={:relative}
-                  /> · <span class="font-mono">{session.ip_address || "—"}</span>
+                  <p>
+                    Signed in
+                    <.local_time
+                      id={"session-started-#{session.id}"}
+                      value={session.inserted_at}
+                      mode={:absolute}
+                      styled_tooltip
+                    /><span :if={session.sign_in_method}> · {session.sign_in_method}</span>
+                  </p>
+                  <p class="mt-1">
+                    Sign-in IP:
+                    <span class="break-all font-mono">{session.ip_address || "Not recorded"}</span>
+                  </p>
                 </:meta>
                 <:actions>
                   <%!-- Neutral, not rose — a routine self-service sign-out shouldn't

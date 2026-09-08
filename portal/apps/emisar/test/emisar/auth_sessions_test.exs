@@ -123,12 +123,24 @@ defmodule Emisar.AuthSessionsTest do
                current?: true,
                ip_address: "198.51.100.7",
                user_agent: "Mozilla/5.0 Firefox/126.0",
+               auth_method: :magic_link,
                inserted_at: %DateTime{}
              } = session
 
       # The whole field set — a credential field can never be added back in.
       assert session |> Map.keys() |> Enum.sort() ==
-               [:__struct__, :current?, :id, :inserted_at, :ip_address, :user_agent]
+               [:__struct__, :auth_method, :current?, :id, :inserted_at, :ip_address, :user_agent]
+    end
+
+    test "projects the recorded SSO method without identity or assurance fields", %{
+      user: user,
+      subject: subject
+    } do
+      token = Fixtures.Auth.create_session_token!(user, :sso, DateTime.utc_now())
+      assert {:ok, [session], _} = Auth.list_sessions_for_user(Crypto.hash(token), subject)
+      assert session.auth_method == :sso
+      refute Map.has_key?(session, :user_identity_id)
+      refute Map.has_key?(session, :mfa_verified_at)
     end
 
     test "a session with no device metadata projects nil display fields", %{

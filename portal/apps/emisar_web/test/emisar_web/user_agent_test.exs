@@ -75,6 +75,21 @@ defmodule EmisarWeb.UserAgentTest do
   end
 
   describe "label/1" do
+    test "session labels include the recognized browser version without changing compact labels" do
+      for {ua, label} <- [
+            {"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) Chrome/124.0",
+             "Chrome 124.0 on Mac"},
+            {"Mozilla/5.0 (Windows NT 10.0) Chrome/124.0 Edg/125.0", "Edge 125.0 on Windows"},
+            {"Version/17.5 Mobile Safari/604.1", "Safari 17.5"},
+            {"Mozilla/5.0 (X11; Linux) Firefox/126.0", "Firefox 126.0 on Linux"},
+            {"Chrome/unknown", "Chrome"},
+            {"curl/8.5.0", "curl/8.5.0"},
+            {nil, "Unknown device"}
+          ] do
+        assert UserAgent.label(ua, version: true) == label
+      end
+    end
+
     test "browser + OS combine with the short everyday names" do
       chrome_mac =
         "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 " <>

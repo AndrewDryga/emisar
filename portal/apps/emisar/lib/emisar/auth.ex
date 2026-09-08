@@ -483,7 +483,8 @@ defmodule Emisar.Auth do
       current?: current_session?(token.token, presented_digest),
       ip_address: session_metadata(token.metadata, "ip_address"),
       user_agent: session_metadata(token.metadata, "user_agent"),
-      inserted_at: token.inserted_at
+      inserted_at: token.inserted_at,
+      auth_method: token.auth_method
     }
   end
 

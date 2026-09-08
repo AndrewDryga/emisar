@@ -115,7 +115,7 @@ defmodule EmisarWeb.AgentsLive do
     |> assign(:member_keys_usable, %{})
     |> assign(:metadata, %Emisar.Repo.Paginator.Metadata{count: 0, limit: 0})
     |> assign(:filter_params, params)
-    |> assign(:filters, with_owner_options(socket.assigns.current_subject))
+    |> assign(:filters, with_owner_options(socket.assigns.current_subject, params))
     |> assign(:active_count, 0)
     |> assign(:idle_count, 0)
     |> assign(:dormant_count, 0)
@@ -639,11 +639,25 @@ defmodule EmisarWeb.AgentsLive do
 
   # Fill the static Owner filter's options with the account's real key creators
   # (the filter's SQL still comes from the Query module's `fun`).
-  defp with_owner_options(subject) do
+  defp with_owner_options(subject, params) do
     owners =
       case ApiKeys.list_key_owner_options(subject) do
         {:ok, options} -> options
         _ -> []
+      end
+
+    # Profile can link to your own agents before you have any. Keep that selected
+    # owner readable without offering every member as an empty filter option.
+    owners =
+      if subject.actor.id in List.wrap(params["owner"]) do
+        List.keystore(
+          owners,
+          subject.actor.id,
+          0,
+          {subject.actor.id, subject.actor.email || "You"}
+        )
+      else
+        owners
       end
 
     Enum.map(ApiKeys.api_key_filters(), fn
@@ -656,7 +670,7 @@ defmodule EmisarWeb.AgentsLive do
     # The status filter defaults to "live" (declared on the filter itself, so
     # LiveTable applies it AND renders it un-highlighted) — no need to inject it
     # into the params here.
-    filters = with_owner_options(socket.assigns.current_subject)
+    filters = with_owner_options(socket.assigns.current_subject, params)
     opts = LiveTable.params_to_opts(params, filters)
 
     case ApiKeys.list_api_keys_for_account(

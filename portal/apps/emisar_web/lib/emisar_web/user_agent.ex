@@ -115,9 +115,20 @@ defmodule EmisarWeb.UserAgent do
   Compact display label built on `parse/1` — "Chrome on Mac", one side
   when only one parses, the first UA token as a last resort, and
   "Unknown device" for a missing UA.
+
+  Pass `version: true` when distinguishing sessions; compact callers omit it.
   """
-  def label(user_agent) when is_binary(user_agent) do
-    case parse(user_agent) do
+  def label(user_agent, opts \\ [])
+
+  def label(user_agent, opts) when is_binary(user_agent) do
+    facts = parse(user_agent)
+
+    browser =
+      if opts[:version] && facts.browser && facts.browser_version,
+        do: "#{display_browser(facts.browser)} #{facts.browser_version}",
+        else: display_browser(facts.browser)
+
+    case %{facts | browser: browser} do
       %{browser: nil, os: nil} -> short_ua(user_agent)
       %{browser: browser, os: nil} -> display_browser(browser)
       %{browser: nil, os: os} -> display_os(os)
@@ -125,7 +136,7 @@ defmodule EmisarWeb.UserAgent do
     end
   end
 
-  def label(_), do: "Unknown device"
+  def label(_, _opts), do: "Unknown device"
 
   @doc """
   The device-class meaning to render — phone / desktop browser / bare Go
