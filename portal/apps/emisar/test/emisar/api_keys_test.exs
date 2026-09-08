@@ -238,6 +238,135 @@ defmodule Emisar.ApiKeysTest do
     end
   end
 
+  describe "list_member_key_expirations/2" do
+    test "summarizes every key for each requested membership without loading credentials" do
+      account = Fixtures.Accounts.create_account()
+      user = Fixtures.Users.create_user()
+      subject = Fixtures.Subjects.subject_for(user, account)
+      now = DateTime.utc_now()
+      early = DateTime.add(now, 3600, :second)
+      late = DateTime.add(now, 7200, :second)
+      attrs = %{account_id: account.id, created_by_id: user.id}
+      {_raw, first} = Fixtures.ApiKeys.create_api_key(Map.put(attrs, :expires_at, early))
+      {_raw, hidden} = Fixtures.ApiKeys.create_api_key(Map.put(attrs, :expires_at, late))
+      Fixtures.ApiKeys.mark_auto_generated(hidden)
+
+      assert ApiKeys.list_member_key_expirations([first.created_by_membership_id], subject) ==
+               {:ok,
+                %{first.created_by_membership_id => %{latest_expiry: late, non_expiring?: false}}}
+    end
+
+    test "includes OAuth backing keys and the latest rotation replacement" do
+      account = Fixtures.Accounts.create_account()
+      subject = member_subject(account, :operator)
+      {:ok, _raw, source} = ApiKeys.create_key(%{name: "rotating"}, subject)
+      {:ok, _raw, successor} = ApiKeys.rotate_api_key(source, subject)
+      Fixtures.ApiKeys.backdate_api_key_expiry(source)
+
+      assert ApiKeys.list_member_key_expirations([subject.membership_id], subject) ==
+               {:ok,
+                %{
+                  subject.membership_id => %{
+                    latest_expiry: successor.expires_at,
+                    non_expiring?: false
+                  }
+                }}
+
+      assert {:ok, _key} =
+               ApiKeys.create_backing_key(
+                 account.id,
+                 Subject.actor_id(subject),
+                 subject.membership_id,
+                 "OAuth"
+               )
+
+      assert ApiKeys.list_member_key_expirations([subject.membership_id], subject) ==
+               {:ok,
+                %{
+                  subject.membership_id => %{
+                    latest_expiry: successor.expires_at,
+                    non_expiring?: true
+                  }
+                }}
+    end
+
+    test "excludes revoked, deleted, unbound, foreign-workspace and audit-export keys" do
+      account = Fixtures.Accounts.create_account()
+      Fixtures.Accounts.create_subscription(account, "team")
+      user = Fixtures.Users.create_user()
+      subject = Fixtures.Subjects.subject_for(user, account)
+      attrs = %{account_id: account.id, created_by_id: user.id}
+      {_raw, revoked} = Fixtures.ApiKeys.create_api_key(attrs)
+      {_raw, deleted} = Fixtures.ApiKeys.create_api_key(attrs)
+      {_raw, unbound} = Fixtures.ApiKeys.create_api_key(attrs)
+      {_raw, _export} = Fixtures.ApiKeys.create_api_key(Map.put(attrs, :kind, :audit_export))
+      Fixtures.ApiKeys.mark_revoked(revoked)
+      Fixtures.ApiKeys.mark_deleted(deleted)
+      Fixtures.ApiKeys.force_membership_unbound(unbound)
+      {_raw, foreign} = Fixtures.ApiKeys.create_api_key(created_by_id: user.id)
+      ids = [revoked.created_by_membership_id, foreign.created_by_membership_id, nil]
+
+      assert ApiKeys.list_member_key_expirations(ids, subject) == {:ok, %{}}
+    end
+
+    test "keeps expired-only summaries so time-based availability can be evaluated" do
+      account = Fixtures.Accounts.create_account()
+      user = Fixtures.Users.create_user()
+      subject = Fixtures.Subjects.subject_for(user, account)
+
+      {_raw, key} =
+        Fixtures.ApiKeys.create_api_key(account_id: account.id, created_by_id: user.id)
+
+      expired = Fixtures.ApiKeys.backdate_api_key_expiry(key)
+
+      assert ApiKeys.list_member_key_expirations([key.created_by_membership_id], subject) ==
+               {:ok,
+                %{
+                  key.created_by_membership_id => %{
+                    latest_expiry: expired.expires_at,
+                    non_expiring?: false
+                  }
+                }}
+    end
+
+    test "validates, deduplicates and bounds membership ids before the read" do
+      account = Fixtures.Accounts.create_account()
+      subject = Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account)
+      {_raw, included} = Fixtures.ApiKeys.create_api_key(account_id: account.id)
+      {_raw, omitted} = Fixtures.ApiKeys.create_api_key(account_id: account.id)
+      ids = [nil, "invalid", included.created_by_membership_id, included.created_by_membership_id]
+
+      ids =
+        ids ++
+          Enum.map(1..99, fn _ -> Ecto.UUID.generate() end) ++ [omitted.created_by_membership_id]
+
+      assert {:ok, expirations} = ApiKeys.list_member_key_expirations(ids, subject)
+      assert Map.keys(expirations) == [included.created_by_membership_id]
+      assert ApiKeys.list_member_key_expirations([], subject) == {:ok, %{}}
+    end
+
+    test "permission is required even for an empty batch" do
+      account = Fixtures.Accounts.create_account()
+      subject = Fixtures.Subjects.permissionless_subject(account)
+
+      assert ApiKeys.list_member_key_expirations([], subject) == {:error, :unauthorized}
+    end
+  end
+
+  describe "member_keys_usable?/2" do
+    test "expiry is strict, missing keys are unavailable, and OAuth keeps a mixed group usable" do
+      now = ~U[2026-09-08 12:00:00Z]
+      expiry = DateTime.add(now, 1, :second)
+
+      assert ApiKeys.member_keys_usable?(%{latest_expiry: expiry, non_expiring?: false}, now)
+      refute ApiKeys.member_keys_usable?(%{latest_expiry: now, non_expiring?: false}, now)
+      refute ApiKeys.member_keys_usable?(%{latest_expiry: now, non_expiring?: false}, expiry)
+      refute ApiKeys.member_keys_usable?(nil, now)
+      assert ApiKeys.member_keys_usable?(%{latest_expiry: nil, non_expiring?: true}, now)
+      assert ApiKeys.member_keys_usable?(%{latest_expiry: now, non_expiring?: true}, expiry)
+    end
+  end
+
   describe "list_audit_export_keys_for_account/2" do
     test "audit-export tokens land on the audit list, never the agents list" do
       {_user, account, subject} = owner_subject_pair()

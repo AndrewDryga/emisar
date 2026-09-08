@@ -180,6 +180,51 @@ defmodule Emisar.ApiKeys do
   end
 
   @doc """
+  Expiry summaries for at most 100 minting memberships in the subject's account.
+  Includes every non-deleted, unrevoked MCP key, including unused generated keys
+  and rotation replacements hidden from the current Agents page. Each value is
+  `%{latest_expiry: DateTime | nil, non_expiring?: boolean}`; absent memberships
+  have no keys. Requires `view_api_keys` and returns `{:ok, summaries}`.
+
+  Lifecycle broadcasts refresh this bounded snapshot. Its expiry facts let the
+  page disable bulk revoke as off-page keys expire, without another query per tick.
+  """
+  def list_member_key_expirations(ids, %Subject{} = subject) when is_list(ids) do
+    with :ok <-
+           Auth.Authorizer.ensure_has_permissions(
+             subject,
+             Authorizer.view_api_keys_permission()
+           ) do
+      ids = ids |> Enum.filter(&Repo.valid_uuid?/1) |> Enum.uniq() |> Enum.take(100)
+
+      expirations =
+        case ids do
+          [] ->
+            []
+
+          ids ->
+            ApiKey.Query.not_deleted()
+            |> ApiKey.Query.by_kind(:mcp)
+            |> ApiKey.Query.by_created_by_membership_ids(ids)
+            |> ApiKey.Query.not_revoked()
+            |> ApiKey.Query.select_member_key_expirations()
+            |> Authorizer.for_subject(subject)
+            |> Repo.all()
+        end
+
+      {:ok, Map.new(expirations)}
+    end
+  end
+
+  @doc "Whether a member's already-authorized expiry summary contains a usable key at `now`."
+  def member_keys_usable?(%{non_expiring?: true}, %DateTime{}), do: true
+
+  def member_keys_usable?(%{latest_expiry: %DateTime{} = expiry}, %DateTime{} = now),
+    do: DateTime.compare(expiry, now) == :gt
+
+  def member_keys_usable?(_expiration, %DateTime{}), do: false
+
+  @doc """
   Lists audit-export tokens (`kind: :audit_export`) for the audit page.
   Same visibility rules + creator preload as the agents list, but scoped
   to the SIEM-export bucket only so the audit page renders just the keys

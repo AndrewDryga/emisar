@@ -34,6 +34,20 @@ defmodule Emisar.ApiKeys.ApiKey.Query do
   def by_created_by_membership_id(queryable, membership_id),
     do: where(queryable, [api_keys: k], k.created_by_membership_id == ^membership_id)
 
+  def by_created_by_membership_ids(queryable, membership_ids),
+    do: where(queryable, [api_keys: k], k.created_by_membership_id in ^membership_ids)
+
+  @doc "One expiry summary per minting membership, without loading its keys."
+  def select_member_key_expirations(queryable) do
+    queryable
+    |> group_by([api_keys: k], k.created_by_membership_id)
+    |> select(
+      [api_keys: k],
+      {k.created_by_membership_id,
+       %{latest_expiry: max(k.expires_at), non_expiring?: count(k.expires_at) < count(k.id)}}
+    )
+  end
+
   def by_credential_lineage_id(queryable \\ all(), lineage_id),
     do: where(queryable, [api_keys: k], k.credential_lineage_id == ^lineage_id)
 

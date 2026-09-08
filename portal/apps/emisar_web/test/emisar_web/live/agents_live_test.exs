@@ -727,6 +727,204 @@ defmodule EmisarWeb.AgentsLiveTest do
       assert %DateTime{} = Repo.reload!(key_two).revoked_at
     end
 
+    test "expired-only keys disable bulk revoke but keep individual cleanup available", %{
+      conn: conn
+    } do
+      {conn, user, account} = register_and_log_in(conn)
+
+      {_raw, key} =
+        Fixtures.ApiKeys.create_api_key(account_id: account.id, created_by_id: user.id)
+
+      Fixtures.ApiKeys.backdate_api_key_expiry(key)
+
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/agents")
+
+      assert has_element?(
+               lv,
+               "#revoke-member-keys-button-#{key.created_by_membership_id}[disabled]"
+             )
+
+      assert has_element?(
+               lv,
+               "#revoke-member-keys-disabled-#{key.created_by_membership_id}",
+               "No active agent keys to revoke."
+             )
+
+      refute has_element?(lv, "#revoke-member-keys-#{key.created_by_membership_id}")
+      assert has_element?(lv, "details button", "Revoke")
+    end
+
+    test "a revoked-only member group has a disabled bulk action", %{conn: conn} do
+      {conn, user, account} = register_and_log_in(conn)
+
+      {_raw, key} =
+        Fixtures.ApiKeys.create_api_key(account_id: account.id, created_by_id: user.id)
+
+      Fixtures.ApiKeys.mark_revoked(key)
+
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/agents?status=revoked")
+
+      assert has_element?(
+               lv,
+               "#revoke-member-keys-button-#{key.created_by_membership_id}[disabled]"
+             )
+    end
+
+    test "a usable key outside the current name and status filters enables bulk revoke", %{
+      conn: conn
+    } do
+      {conn, user, account} = register_and_log_in(conn)
+      attrs = %{account_id: account.id, created_by_id: user.id}
+      {_raw, old} = Fixtures.ApiKeys.create_api_key(Map.put(attrs, :name, "shown"))
+      {_raw, _live} = Fixtures.ApiKeys.create_api_key(Map.put(attrs, :name, "elsewhere"))
+      Fixtures.ApiKeys.mark_revoked(old)
+
+      {:ok, lv, html} = live(conn, ~p"/app/#{account}/agents?name=shown&status=revoked")
+
+      refute html =~ "elsewhere"
+
+      assert has_element?(
+               lv,
+               "#revoke-member-keys-button-#{old.created_by_membership_id}:not([disabled])"
+             )
+
+      assert has_element?(lv, "#revoke-member-keys-#{old.created_by_membership_id}")
+    end
+
+    test "a usable key beyond the first page enables the member action", %{conn: conn} do
+      {conn, user, account} = register_and_log_in(conn)
+      attrs = %{account_id: account.id, created_by_id: user.id}
+
+      {_raw, live_key} =
+        Fixtures.ApiKeys.create_api_key(Map.put(attrs, :name, "off-page-live-key"))
+
+      Fixtures.ApiKeys.backdate_api_key_inserted_at(
+        live_key,
+        DateTime.add(DateTime.utc_now(), -3600, :second)
+      )
+
+      for _ <- 1..21 do
+        {_raw, key} = Fixtures.ApiKeys.create_api_key(attrs)
+        Fixtures.ApiKeys.backdate_api_key_expiry(key)
+      end
+
+      {:ok, lv, html} = live(conn, ~p"/app/#{account}/agents")
+
+      refute html =~ "off-page-live-key"
+
+      assert has_element?(
+               lv,
+               "#revoke-member-keys-button-#{live_key.created_by_membership_id}:not([disabled])"
+             )
+    end
+
+    test "an unused generated key still enables containment from a visible expired row", %{
+      conn: conn
+    } do
+      {conn, user, account} = register_and_log_in(conn)
+      attrs = %{account_id: account.id, created_by_id: user.id}
+      {_raw, expired} = Fixtures.ApiKeys.create_api_key(attrs)
+      Fixtures.ApiKeys.backdate_api_key_expiry(expired)
+      {_raw, hidden} = Fixtures.ApiKeys.create_api_key(Map.put(attrs, :name, "hidden-live-key"))
+      Fixtures.ApiKeys.mark_auto_generated(hidden)
+
+      {:ok, lv, html} = live(conn, ~p"/app/#{account}/agents")
+
+      refute html =~ "hidden-live-key"
+
+      assert has_element?(
+               lv,
+               "#revoke-member-keys-button-#{expired.created_by_membership_id}:not([disabled])"
+             )
+    end
+
+    test "off-filter lifecycle changes refresh bulk availability without moving the filter", %{
+      conn: conn
+    } do
+      {conn, user, account} = register_and_log_in(conn)
+      subject = owner_subject(user, account)
+
+      {_raw, expired} =
+        Fixtures.ApiKeys.create_api_key(
+          account_id: account.id,
+          created_by_id: user.id,
+          name: "shown"
+        )
+
+      Fixtures.ApiKeys.backdate_api_key_expiry(expired)
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/agents?name=shown")
+      button = "#revoke-member-keys-button-#{expired.created_by_membership_id}"
+      assert has_element?(lv, "#{button}[disabled]")
+      ApiKeys.subscribe_account_api_keys(account.id)
+
+      {:ok, _raw, key} = ApiKeys.create_key(%{name: "outside-filter"}, subject)
+      key_id = key.id
+      assert_receive {:list_changed, :api_key, "api_key.created", ^key_id}
+      refute render(lv) =~ "outside-filter"
+      assert has_element?(lv, "#{button}:not([disabled])")
+
+      assert {:ok, _key} = ApiKeys.revoke_api_key(key, subject)
+      assert_receive {:list_changed, :api_key, "api_key.revoked", ^key_id}
+      refute render(lv) =~ "outside-filter"
+      assert has_element?(lv, "#{button}[disabled]")
+    end
+
+    test "a tick disables bulk revoke when the cached off-filter expiry passes", %{conn: conn} do
+      {conn, user, account} = register_and_log_in(conn)
+      attrs = %{account_id: account.id, created_by_id: user.id}
+      {_raw, expired} = Fixtures.ApiKeys.create_api_key(Map.put(attrs, :name, "shown"))
+      Fixtures.ApiKeys.backdate_api_key_expiry(expired)
+      {_raw, active} = Fixtures.ApiKeys.create_api_key(Map.put(attrs, :name, "outside-filter"))
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/agents?name=shown")
+      button = "#revoke-member-keys-button-#{active.created_by_membership_id}"
+      assert has_element?(lv, "#{button}:not([disabled])")
+      deadline = DateTime.add(DateTime.utc_now(), -1, :second)
+
+      :sys.replace_state(
+        lv.pid,
+        &put_in(
+          &1.socket.assigns.member_key_expirations[active.created_by_membership_id].latest_expiry,
+          deadline
+        )
+      )
+
+      send(lv.pid, :tick)
+      refute render(lv) =~ "outside-filter"
+
+      assert has_element?(lv, "#{button}[disabled]")
+    end
+
+    test "an unavailable summary does not claim the member has no active keys", %{conn: conn} do
+      {conn, user, account} = register_and_log_in(conn)
+
+      {_raw, key} =
+        Fixtures.ApiKeys.create_api_key(account_id: account.id, created_by_id: user.id)
+
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/agents")
+
+      :sys.replace_state(lv.pid, &put_in(&1.socket.assigns.member_key_expirations, nil))
+
+      send(lv.pid, :tick)
+      render(lv)
+
+      assert has_element?(
+               lv,
+               "#revoke-member-keys-button-#{key.created_by_membership_id}[disabled]"
+             )
+
+      assert has_element?(
+               lv,
+               "#revoke-member-keys-disabled-#{key.created_by_membership_id}",
+               "Couldn't check keys."
+             )
+
+      refute has_element?(
+               lv,
+               "#revoke-member-keys-disabled-#{key.created_by_membership_id}",
+               "No active agent keys"
+             )
+    end
+
     # IL-15: the hidden button is not the gate — a crafted event from a member
     # without manage lands on the context's denial and revokes nothing.
     test "a crafted bulk revoke on another member's group is refused with a flash",

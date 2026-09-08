@@ -76,6 +76,15 @@ defmodule Emisar.Fixtures.ApiKeys do
     key |> Ecto.Changeset.change(expires_at: expires_at) |> Repo.update!()
   end
 
+  def mark_revoked(%ApiKeys.ApiKey{} = key),
+    do: key |> ApiKeys.ApiKey.Changeset.revoke(key.created_by_id) |> Repo.update!()
+
+  def mark_deleted(%ApiKeys.ApiKey{} = key),
+    do: key |> Ecto.Changeset.change(deleted_at: DateTime.utc_now()) |> Repo.update!()
+
+  def mark_auto_generated(%ApiKeys.ApiKey{} = key),
+    do: key |> Ecto.Changeset.change(auto_generated_at: DateTime.utc_now()) |> Repo.update!()
+
   @doc """
   Backdates a key's `inserted_at`, so a test can age a rotation lineage past the
   auto-rotation ceiling. Returns the updated row.

@@ -111,6 +111,8 @@ defmodule EmisarWeb.AgentsLive do
   defp prepare_disconnected(socket, params) do
     socket
     |> assign(:key_rows, [])
+    |> assign(:member_key_expirations, %{})
+    |> assign(:member_keys_usable, %{})
     |> assign(:metadata, %Emisar.Repo.Paginator.Metadata{count: 0, limit: 0})
     |> assign(:filter_params, params)
     |> assign(:filters, with_owner_options(socket.assigns.current_subject))
@@ -586,6 +588,7 @@ defmodule EmisarWeb.AgentsLive do
 
     socket
     |> assign(:key_rows, rows)
+    |> assign_member_key_availability(now)
     |> assign(:active_count, summary.activity.active)
     |> assign(:idle_count, summary.activity.idle)
     |> assign(:dormant_count, summary.activity.dormant)
@@ -669,6 +672,7 @@ defmodule EmisarWeb.AgentsLive do
 
         socket
         |> assign(:key_rows, rows)
+        |> load_member_key_expirations(keys, now)
         |> assign(:metadata, meta)
         |> assign(:filter_params, params)
         |> assign(:filters, filters)
@@ -687,6 +691,8 @@ defmodule EmisarWeb.AgentsLive do
       {:error, _} when map_size(params) == 0 ->
         socket
         |> assign(:key_rows, [])
+        |> assign(:member_key_expirations, %{})
+        |> assign(:member_keys_usable, %{})
         |> assign(:metadata, %Emisar.Repo.Paginator.Metadata{count: 0, limit: 0})
         |> assign(:filter_params, params)
         |> assign(:filters, filters)
@@ -704,6 +710,42 @@ defmodule EmisarWeb.AgentsLive do
       {:error, _} ->
         load(socket, %{})
     end
+  end
+
+  defp load_member_key_expirations(socket, keys, now) do
+    ids = Enum.map(keys, & &1.created_by_membership_id)
+
+    expirations =
+      case ApiKeys.list_member_key_expirations(ids, socket.assigns.current_subject) do
+        {:ok, expirations} -> expirations
+        {:error, _reason} -> nil
+      end
+
+    socket
+    |> assign(:member_key_expirations, expirations)
+    |> assign_member_key_availability(now)
+  end
+
+  defp assign_member_key_availability(socket, now) do
+    availability =
+      case socket.assigns.member_key_expirations do
+        nil ->
+          nil
+
+        expirations ->
+          Map.new(expirations, fn {id, expiry} ->
+            {id, ApiKeys.member_keys_usable?(expiry, now)}
+          end)
+      end
+
+    assign(socket, :member_keys_usable, availability)
+  end
+
+  defp member_keys_disabled_reason(nil, _membership_id),
+    do: "Couldn't check keys. Refresh the page and try again."
+
+  defp member_keys_disabled_reason(availability, membership_id) do
+    if availability[membership_id], do: nil, else: "No active agent keys to revoke."
   end
 
   # A row pairs the key with the domain's reading of it, plus this control
@@ -1154,10 +1196,13 @@ defmodule EmisarWeb.AgentsLive do
                   membership_id &&
                     ApiKeys.subject_can_revoke_member_keys?(membership_id, @current_subject)
                 }>
+                  <% disabled_reason = member_keys_disabled_reason(@member_keys_usable, membership_id) %>
                   <%!-- The stolen-laptop move: every key this member owns, one
                        act. Typed on the member's name — a live-credential kill
                        keeps the typed confirm (§5). --%>
                   <.button
+                    :if={is_nil(disabled_reason)}
+                    id={"revoke-member-keys-button-#{membership_id}"}
                     size={:sm}
                     variant={:secondary}
                     tone={:rose}
@@ -1165,7 +1210,23 @@ defmodule EmisarWeb.AgentsLive do
                   >
                     Revoke all
                   </.button>
+                  <.tooltip
+                    :if={disabled_reason}
+                    id={"revoke-member-keys-disabled-#{membership_id}"}
+                    text={disabled_reason}
+                  >
+                    <.button
+                      id={"revoke-member-keys-button-#{membership_id}"}
+                      size={:sm}
+                      variant={:secondary}
+                      tone={:rose}
+                      disabled
+                    >
+                      Revoke all
+                    </.button>
+                  </.tooltip>
                   <.confirm_dialog
+                    :if={is_nil(disabled_reason)}
                     id={"revoke-member-keys-#{membership_id}"}
                     title={"Revoke every key #{owner} owns?"}
                     confirm_label="Revoke all keys"
