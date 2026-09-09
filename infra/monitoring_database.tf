@@ -220,6 +220,3 @@ resource "google_monitoring_alert_policy" "db_backup_failed" {
 
   notification_channels = local.paging_notification_channels
 }
-
-# A schedule that stops attempting backups produces no failure event. The
-# independent inventory checker in monitoring_backup.tf covers that silence.

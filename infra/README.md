@@ -35,7 +35,7 @@ Better Stack -> external probes, on-call escalation (severe GCP alarms page in),
 | Identity and delivery | `iam.tf`, `secrets.tf`, `github_oidc.tf` |
 | Distribution | `pack_registry.tf`, `packs/` |
 | Operations | `logging.tf`, `betterstack.tf`, `monitoring.tf`, `monitoring_*.tf` |
-| Rendered payloads and checks | `runtime/{portal,admin-runner,livebook,mta-sts,backup-check}/`, `tests/{render,database}/`; run via `./run` |
+| Rendered payloads and checks | `runtime/{portal,admin-runner,livebook,mta-sts}/`, `tests/{render,database}/`; run via `./run` |
 
 ## Production controls
 
@@ -429,18 +429,8 @@ is excluded. The security evidence sink retains those entries for 400 days.
 
 ## Backup monitoring
 
-A scheduled Workflow checks the database's backup inventory every ten minutes,
-independently of Portal. It follows every page and reports the latest successful
-automated backup's completion time. An alert fires when that backup is at least
-30 hours old or none exists. On-demand backups do not hide a broken automated
-schedule. A separate alert fires if the checker has not reported for 30 minutes.
-
-The 30-hour threshold allows daily backup times to drift. Monitoring reads only
-the checker's recent observations, avoiding Google's 25-hour lookback limit for
-custom and log-based metric alerts. Failed reads or invalid timestamps stop the
-check without publishing a healthy result. After applying, confirm a successful
-Workflow execution and a fresh metric point; a Scheduler success alone only
-confirms that the Workflow was started.
+Failed backup operations trigger a log-based alert. Backup age is not polled;
+a schedule that stops without a failure event does not trigger this alert.
 
 ## Terraform authority
 
@@ -449,10 +439,6 @@ stack, including IAM, WIF, secret containers, and workload resources. Its HCP
 token and apply identity are production-admin credentials. Organization Policy
 administration is intentionally excluded: Google grants that authority above
 the project, where it would also cover unrelated projects in the organization.
-The backup checker adds only Workflow/Scheduler lifecycle permissions to the
-apply identity and `actAs` on its two dedicated service accounts. Its runtime
-identities can list backups and write metrics, or start workflows, respectively;
-they cannot access the database or change its backups.
 
 ## DNS and DNSSEC
 

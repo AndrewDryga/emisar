@@ -57,8 +57,7 @@ defmodule EmisarWeb.Changelog do
          ]},
         {"Platform",
          [
-           "SIEM tokens are paginated, large console reads and catalog refreshes do less repeated work, and retained runbook output remains readable without an associated action attempt.",
-           "Backup monitoring retains its 30-hour threshold and separately detects a checker that has stopped reporting."
+           "SIEM tokens are paginated, large console reads and catalog refreshes do less repeated work, and retained runbook output remains readable without an associated action attempt."
          ]}
       ]
     },

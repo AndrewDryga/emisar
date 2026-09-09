@@ -16,9 +16,6 @@ resource "google_project_service" "apis" {
     "servicenetworking.googleapis.com",
     "monitoring.googleapis.com",
     "logging.googleapis.com",
-    "workflows.googleapis.com",
-    "workflowexecutions.googleapis.com",
-    "cloudscheduler.googleapis.com",
     "iap.googleapis.com",
     # Workload Identity Federation for the GitHub Actions deploy identity
     # (github_oidc.tf): pool/provider live in iam, the token exchange is sts, and

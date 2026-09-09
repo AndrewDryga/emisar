@@ -25,48 +25,6 @@ resource "google_project_iam_member" "terraform_apply_authority" {
   member  = "serviceAccount:terraform@${var.project_id}.iam.gserviceaccount.com"
 }
 
-# HCP already manages project IAM and service accounts. These are only the new
-# service lifecycle calls used by the pinned Workflow/Scheduler resources; no
-# workflow execution, callbacks, or broad service-admin roles are needed.
-resource "google_project_iam_custom_role" "terraform_backup_check" {
-  project     = var.project_id
-  role_id     = "emisarTerraformBackupCheck"
-  title       = "Emisar Terraform Backup Check"
-  description = "Manage the scheduled backup check's Workflow and Scheduler resources."
-  permissions = [
-    "cloudscheduler.jobs.create",
-    "cloudscheduler.jobs.delete",
-    "cloudscheduler.jobs.enable",
-    "cloudscheduler.jobs.get",
-    "cloudscheduler.jobs.update",
-    "workflows.operations.get",
-    "workflows.workflows.create",
-    "workflows.workflows.delete",
-    "workflows.workflows.get",
-    "workflows.workflows.update",
-  ]
-  stage = "GA"
-}
-
-resource "google_project_iam_member" "terraform_backup_check" {
-  project = var.project_id
-  role    = google_project_iam_custom_role.terraform_backup_check.name
-  member  = "serviceAccount:terraform@${var.project_id}.iam.gserviceaccount.com"
-}
-
-# Creating a Workflow or an authenticated Scheduler job requires actAs on its
-# exact identity. Neither grant lets the workflow or scheduler impersonate HCP.
-resource "google_service_account_iam_member" "terraform_backup_check_act_as" {
-  for_each = {
-    checker   = google_service_account.backup_checker.name
-    scheduler = google_service_account.backup_scheduler.name
-  }
-
-  service_account_id = each.value
-  role               = "roles/iam.serviceAccountUser"
-  member             = "serviceAccount:terraform@${var.project_id}.iam.gserviceaccount.com"
-}
-
 resource "google_project_iam_member" "vm_logging" {
   project = var.project_id
   role    = "roles/logging.logWriter"

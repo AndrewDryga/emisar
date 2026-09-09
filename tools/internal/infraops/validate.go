@@ -313,14 +313,6 @@ func (a *App) validateTemplates(ctx context.Context) error {
 		"apply", "-auto-approve", "-input=false", "-state="+state); err != nil {
 		return err
 	}
-	backupWorkflow, err := a.output(ctx, a.Root, nil, "terraform", "-chdir="+renderDir,
-		"output", "-state="+state, "-raw", "backup_workflow")
-	if err != nil {
-		return err
-	}
-	if err := validateBackupWorkflow(backupWorkflow); err != nil {
-		return err
-	}
 	renderedData, err := a.output(ctx, a.Root, nil, "terraform", "-chdir="+renderDir,
 		"output", "-state="+state, "-raw", "cloud_init")
 	if err != nil {
