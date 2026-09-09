@@ -17,6 +17,52 @@ defmodule EmisarWeb.Changelog do
 
   @entries [
     %{
+      date: ~D[2026-09-09],
+      slug: "shared-visibility-and-clearer-reviews",
+      title: "Shared visibility and clearer reviews",
+      tag: "v0.47.0",
+      summary:
+        "Operational roles can now inspect workspace-wide runners, packs, approvals, runbooks, and run history. Actions still require current runner and pack access. Console runbook starts stay bound to the release and plan you reviewed; a changed plan requires another review. Console pages also have simpler guidance, consistent filters, and clearer recovery when something goes wrong.",
+      details: [
+        {"Console",
+         [
+           "SSO groups now show role, runner, and pack access together. Edit roles in place, add access beyond locked connection defaults, and filter members by group without leaving the provider page.",
+           "Profile separates simple name edits from verified email changes, clarifies sign-in methods and MFA, and shows more useful session details with ten sessions per page.",
+           "Approvals distinguish a failed catalog load from an unavailable action or changed contract. Runner and pack access changes keep entered notes, inputs, and unsaved runbook edits while refreshing the controls."
+         ]},
+        {"Security",
+         [
+           "Shared operational reads do not grant permission to execute, cancel, approve, or change access. Use separate workspaces for teams that must not see each other's operational records.",
+           "Owners always have workspace-wide action access. Existing Owner scopes are updated with an audit record; use the Admin role for scoped administration.",
+           "Credential and access changes enforce current membership and resource authority, with clearer audit records. Approval emails for the same request stay in one thread."
+         ]},
+        {"Runner",
+         [
+           "Runner credential rotation uses the authenticated connection. Dispatch journal updates append durable transitions and compact periodically instead of rewriting the whole journal for each change."
+         ]},
+        {"MCP",
+         [
+           "Agent discovery follows the same shared-read and scoped-action rules as the console. Run requests give clearer guidance for recording a reason, evidence, and expected result.",
+           "Automatic Hermes and Goose setup uses their native Windows configuration paths. Setup guidance now includes co:op."
+         ]},
+        {"Packs",
+         [
+           "New Stripe and Braintree packs cover billing investigation, refunds, disputes, and related corrections.",
+           "The Airflow pack supports Airflow 2 (API v1) and Airflow 3 (API v2); jobs, assets, and backfills require Airflow 3.",
+           "GCP can list projects visible to the current credentials, Cloudflare analytics reports GraphQL errors, and pack limits follow backend and per-run constraints."
+         ]},
+        {"Billing",
+         [
+           "Checkout returns to its original workspace even if another tab switches workspaces. Monthly reports go to every Owner, and unsubscribe text explains that it turns reports off for the whole workspace."
+         ]},
+        {"Platform",
+         [
+           "SIEM tokens are paginated, large console reads and catalog refreshes do less repeated work, and retained runbook output remains readable without an associated action attempt.",
+           "Backup monitoring retains its 30-hour threshold and separately detects a checker that has stopped reporting."
+         ]}
+      ]
+    },
+    %{
       date: ~D[2026-09-05],
       slug: "reliable-recovery-and-leaner-internals",
       title: "Reliable recovery and leaner internals",

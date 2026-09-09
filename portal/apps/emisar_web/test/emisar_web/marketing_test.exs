@@ -1415,6 +1415,8 @@ defmodule EmisarWeb.MarketingTest do
       assert html =~ "The v1 failure-path pass"
       assert html =~ "Reliable recovery and leaner internals"
       assert html =~ "Runbook cancellation now survives a control-plane restart"
+      assert html =~ "Shared visibility and clearer reviews"
+      assert html =~ "Actions still require current runner and pack access."
 
       assert html =~
                "This release takes the v1 audit through recovery, revocation, and publication paths"
@@ -1457,6 +1459,7 @@ defmodule EmisarWeb.MarketingTest do
       assert html =~ "v0.44.0"
       assert html =~ "v0.45.0"
       assert html =~ "v0.46.0"
+      assert html =~ "v0.47.0"
       assert html =~ "v0.15.0"
 
       # The first-party RSS feed, the repo, and the "see all" out-link.
