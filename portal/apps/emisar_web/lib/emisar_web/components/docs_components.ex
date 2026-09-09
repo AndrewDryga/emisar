@@ -888,7 +888,6 @@ defmodule EmisarWeb.DocsComponents do
   attr :name, :string, required: true
   attr :connect_href, :string, required: true
   attr :audit_href, :string, required: true
-  attr :policy_href, :string, required: true
 
   def docs_sandbox_connection(assigns) do
     ~H"""
@@ -903,13 +902,10 @@ defmodule EmisarWeb.DocsComponents do
         and select <strong class="text-zinc-200">{@name}</strong>.
       </li>
       <li>
-        Follow the numbered steps shown there. The console generates the key, configuration, and
-        commands for your emisar account.
+        Follow the steps shown there.
       </li>
       <li>
-        Start the agent and send the example prompt. Complete any approval required by your <a href={
-          @policy_href
-        }>emisar policy</a>. When the console shows <strong class="text-zinc-200">Agent connected</strong>, open
+        Start the agent and send the example prompt. When the console shows <strong class="text-zinc-200">Agent connected</strong>, open
         <a
           href={@audit_href}
           class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"

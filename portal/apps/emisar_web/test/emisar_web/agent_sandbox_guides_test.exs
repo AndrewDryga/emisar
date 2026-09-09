@@ -38,9 +38,10 @@ defmodule EmisarWeb.AgentSandboxGuidesTest do
       refute html =~ "Last reviewed"
       assert html =~ ~s(href="/app/agents/connect")
       assert html =~ ~s(href="/app/audit")
-      assert html =~ ~s(href="/docs/policies-and-approvals")
-      assert html =~ "Follow the numbered steps shown there"
-      assert html =~ "generates the key, configuration, and"
+      assert html =~ "Follow the steps shown there."
+      refute html =~ "Follow the numbered steps"
+      refute html =~ "The console generates"
+      refute html =~ "Complete any approval"
       assert html =~ "Agent connected"
       refute html =~ "GitHub CLI"
       refute html =~ "/tmp/install-mcp.sh"
@@ -62,6 +63,21 @@ defmodule EmisarWeb.AgentSandboxGuidesTest do
 
       for claim <- guide.boundary, do: assert(html =~ claim)
     end
+  end
+
+  test "the Docker guide links its isolation limits and recommends co:op for local secrets", %{
+    conn: conn
+  } do
+    html = conn |> get(~p"/docs/connect-docker-sandboxes") |> html_response(200)
+
+    assert html =~ ~s(href="/docs/connect-docker-sandboxes#limits-and-risks")
+    assert html =~ ~s(href="/docs/connect-coop")
+    assert html =~ "the agent can see anything"
+    assert html =~ "potentially leak it"
+    assert html =~ "temporary artifacts"
+    assert html =~ "allowing access only to the"
+    assert html =~ "services the agent needs"
+    refute html =~ "The VM can have its own Docker socket"
   end
 
   test "installer prerequisites do not require optional GitHub CLI", %{conn: conn} do

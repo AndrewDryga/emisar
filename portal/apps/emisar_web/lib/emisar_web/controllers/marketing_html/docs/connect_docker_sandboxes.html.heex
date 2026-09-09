@@ -19,8 +19,11 @@
       </.docs_header>
 
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        Docker Sandboxes isolates the agent from most of your host. The emisar bridge stays on the
-        host, where Docker's gateway can reach it without copying your emisar key into the VM.
+        Docker Sandboxes isolates the agent from <a
+          href={~p"/docs/connect-docker-sandboxes#limits-and-risks"}
+          class="text-brand-400 hover:text-brand-300"
+        >most of your host</a>. The emisar bridge stays on the host, where Docker's gateway can
+        reach it without copying your emisar key into the VM.
       </p>
 
       <.docs_prerequisites>
@@ -47,25 +50,26 @@
         name="Docker Sandboxes"
         connect_href={~p"/app/agents/connect"}
         audit_href={~p"/app/audit"}
-        policy_href={~p"/docs/policies-and-approvals"}
       />
 
       <.docs_h2 id="limits-and-risks">Limits &amp; risks</.docs_h2>
       <ul class="mt-5 list-disc space-y-3 pl-6 text-base leading-7 text-zinc-400">
         <li>
-          Docker shares the project directory with the VM. Remove secret files and mount only the
-          directories the agent needs.
+          Docker shares the project directory with the VM. That means the agent can see anything
+          stored there and potentially leak it, including secrets in
+          <.docs_inline_code>.env</.docs_inline_code>
+          files and temporary artifacts. For stronger isolation from local files, try <.link
+            navigate={~p"/docs/connect-coop"}
+            class="text-brand-400 hover:text-brand-300"
+          >co:op</.link>.
         </li>
         <li>
           The registered MCP launcher runs on the host with your permissions. Keep it and its
           environment file outside the shared project and never let the agent edit them.
         </li>
         <li>
-          The VM can have its own Docker socket. That is not the host Docker socket, but code in the
-          VM can control containers inside the VM.
-        </li>
-        <li>
-          Review the sandbox's network policy to control which services the agent can reach.
+          We recommend reviewing the sandbox's network policy and allowing access only to the
+          services the agent needs.
         </li>
       </ul>
 
