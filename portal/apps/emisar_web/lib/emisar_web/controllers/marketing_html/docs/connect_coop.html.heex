@@ -120,28 +120,12 @@
 FROM ${COOP_BASE_IMAGE}
 
 USER root
-RUN install -d -m 755 /etc/apt/keyrings \
- &amp;&amp; curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
-      -o /etc/apt/keyrings/githubcli-archive-keyring.gpg \
- &amp;&amp; chmod go+r /etc/apt/keyrings/githubcli-archive-keyring.gpg \
- &amp;&amp; printf '%s\n' "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" \
-      &gt; /etc/apt/sources.list.d/github-cli.list \
- &amp;&amp; apt-get update \
- &amp;&amp; apt-get install -y --no-install-recommends gh
-RUN curl -fsSL https://emisar.dev/install-mcp.sh -o /tmp/install-mcp.sh \
- &amp;&amp; bash /tmp/install-mcp.sh --yes --install-dir /usr/local/bin \
- &amp;&amp; install -d -m 700 -o node -g node /config
+RUN curl -fsSL https://emisar.dev/install-mcp.sh | bash -s -- --yes
+RUN install -d -m 700 -o node -g node /config
 USER node</.docs_code>
       <p class="mt-4 text-base leading-7 text-zinc-400">
-        The installer verifies the release and
         <.docs_inline_code>--yes</.docs_inline_code>
-        skips interactive sign-in during the image build. This Dockerfile installs GitHub CLI
-        from its
-        <.link
-          href="https://github.com/cli/cli/blob/trunk/docs/install_linux.md#debian"
-          class="text-brand-400 hover:text-brand-300"
-        >official package repository</.link>
-        so the installer can verify the release attestation. For a different base image, follow the
+        skips interactive sign-in during the image build. For a different base image, follow the
         <.link
           navigate={~p"/docs/connect-cli-agent#stdio-bridge"}
           class="text-brand-400 hover:text-brand-300"

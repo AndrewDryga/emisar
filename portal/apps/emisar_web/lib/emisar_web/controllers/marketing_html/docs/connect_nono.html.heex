@@ -12,7 +12,7 @@
         {"configure", "Configure your agent"},
         {"run", "Run the agent in nono"},
         {"verify", "Verify the connection"},
-        {"boundary", "Know the boundary"},
+        {"limits-and-risks", "Limits & risks"},
         {"rotation", "Rotate the key"}
       ]}
     >
@@ -50,10 +50,6 @@
           >quickstart</.link>
           first if you do not have a runner yet.
         </:item>
-        <:item>
-          GitHub CLI installed so the emisar bridge installer can verify its release attestation.
-          A GitHub login is not required.
-        </:item>
       </.docs_prerequisites>
 
       <.docs_h2 id="start">1. Start the connection</.docs_h2>
@@ -74,10 +70,9 @@
       <.docs_code
         phx-no-format
         label="host shell"
-        copy_text="curl -fsSL https://nono.sh/install.sh | sh\ncurl -fsSL https://emisar.dev/install-mcp.sh -o /tmp/install-mcp.sh\nsudo bash /tmp/install-mcp.sh --yes\nnono --version\nemisar-mcp --version"
+        copy_text="curl -fsSL https://nono.sh/install.sh | sh\ncurl -fsSL https://emisar.dev/install-mcp.sh | sudo bash -s -- --yes\nnono --version\nemisar-mcp --version"
       ><span class="text-zinc-500">$</span> curl -fsSL https://nono.sh/install.sh | sh
-<span class="text-zinc-500">$</span> curl -fsSL https://emisar.dev/install-mcp.sh -o /tmp/install-mcp.sh
-<span class="text-zinc-500">$</span> sudo bash /tmp/install-mcp.sh --yes
+<span class="text-zinc-500">$</span> curl -fsSL https://emisar.dev/install-mcp.sh | sudo bash -s -- --yes
 <span class="text-zinc-500">$</span> nono --version
 <span class="text-zinc-500">$</span> emisar-mcp --version</.docs_code>
       <p class="mt-5 text-base leading-7 text-zinc-400">
@@ -148,7 +143,7 @@
         </li>
       </ol>
 
-      <.docs_h2 id="boundary">Know the boundary</.docs_h2>
+      <.docs_h2 id="limits-and-risks">Limits &amp; risks</.docs_h2>
       <ul class="mt-5 list-disc space-y-3 pl-6 text-base leading-7 text-zinc-400">
         <li>
           nono enforces the profile you run. It does not hide files or permit network destinations

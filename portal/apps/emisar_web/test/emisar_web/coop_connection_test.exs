@@ -35,6 +35,11 @@ defmodule EmisarWeb.CoopConnectionTest do
     assert html =~ "XDG_CONFIG_HOME"
     assert html =~ "EMISAR_SIGNING_KEY"
 
+    assert html =~ "curl -fsSL https://emisar.dev/install-mcp.sh | bash -s -- --yes"
+
+    refute html =~ "GitHub CLI"
+    refute html =~ "/tmp/install-mcp.sh"
+
     for path <- ~w(/docs /docs/quickstart /docs/connect-cli-agent /sitemap.xml) do
       assert conn |> get(path) |> response(200) =~ "/docs/connect-coop"
     end
@@ -142,7 +147,9 @@ defmodule EmisarWeb.CoopConnectionTest do
 
     assert dockerfile == documented_dockerfile
     assert dockerfile =~ "FROM ${COOP_BASE_IMAGE}"
-    assert dockerfile =~ "bash /tmp/install-mcp.sh --yes --install-dir /usr/local/bin"
+
+    assert dockerfile =~ "curl -fsSL https://emisar.dev/install-mcp.sh | bash -s -- --yes"
+
     assert dockerfile =~ "install -d -m 700 -o node -g node /config"
   end
 

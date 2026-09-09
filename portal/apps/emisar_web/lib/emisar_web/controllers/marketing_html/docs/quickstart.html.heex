@@ -33,18 +33,10 @@
         </:item>
         <:item><code class="text-zinc-300">sudo</code> on that host.</:item>
         <:item>
-          GitHub CLI with
-          <.docs_inline_code>gh attestation verify --bundle</.docs_inline_code>
-          on the host, and on any workstation where you install the stdio bridge. A GitHub login
-          is not required.
-        </:item>
-        <:item>
           Allow outbound HTTPS to <code class="text-zinc-300">emisar.dev:443</code>
           for the runner, installer, and release files, and to
           <code class="text-zinc-300">registry.emisar.dev:443</code>
-          for action packs. Release verification also needs
-          <code class="text-zinc-300">tuf-repo-cdn.sigstore.dev:443</code>
-          and <code class="text-zinc-300">tuf-repo.github.com:443</code>.
+          for action packs.
         </:item>
       </.docs_prerequisites>
 

@@ -71,17 +71,8 @@ defmodule EmisarWeb.AgentClientConfig do
     FROM ${COOP_BASE_IMAGE}
 
     USER root
-    RUN install -d -m 755 /etc/apt/keyrings \
-     && curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
-          -o /etc/apt/keyrings/githubcli-archive-keyring.gpg \
-     && chmod go+r /etc/apt/keyrings/githubcli-archive-keyring.gpg \
-     && printf '%s\n' "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" \
-          > /etc/apt/sources.list.d/github-cli.list \
-     && apt-get update \
-     && apt-get install -y --no-install-recommends gh
-    RUN curl -fsSL https://emisar.dev/install-mcp.sh -o /tmp/install-mcp.sh \
-     && bash /tmp/install-mcp.sh --yes --install-dir /usr/local/bin \
-     && install -d -m 700 -o node -g node /config
+    RUN curl -fsSL https://emisar.dev/install-mcp.sh | bash -s -- --yes
+    RUN install -d -m 700 -o node -g node /config
     USER node
     """
   end

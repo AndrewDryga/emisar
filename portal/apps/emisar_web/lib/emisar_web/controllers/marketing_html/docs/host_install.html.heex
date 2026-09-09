@@ -39,21 +39,15 @@
         </:item>
         <:item><code class="text-zinc-300">sudo</code> on that host.</:item>
         <:item>
-          GitHub CLI with <.docs_inline_code>gh attestation verify --bundle</.docs_inline_code>. A GitHub login is
-          not required.
-        </:item>
-        <:item>
           Outbound HTTPS to <code class="text-zinc-300">emisar.dev:443</code>
           for the control plane, installer, and release files, plus
           <code class="text-zinc-300">registry.emisar.dev:443</code>
-          for action packs, <code class="text-zinc-300">tuf-repo-cdn.sigstore.dev:443</code>, and
-          <code class="text-zinc-300">tuf-repo.github.com:443</code>
-          for release verification. See
+          for action packs. See
           <.link
             navigate={~p"/docs/network-requirements"}
             class="text-brand-400 hover:text-brand-300"
           >Network requirements</.link>
-          for the required public trust-root hosts and optional GitHub fallback domains.
+          for optional attestation verification.
         </:item>
       </.docs_prerequisites>
 

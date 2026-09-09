@@ -12,7 +12,7 @@
         {"container", "Restrict the container"},
         {"configure", "Configure the agent"},
         {"verify", "Verify the connection"},
-        {"boundary", "Know the boundary"},
+        {"limits-and-risks", "Limits & risks"},
         {"rebuild", "Rebuild and rotate"}
       ]}
     >
@@ -63,26 +63,15 @@
 
       <.docs_h2 id="image">2. Add the bridge to the image</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        Add the GitHub CLI and emisar bridge to your existing Dev Container Dockerfile. The GitHub
-        CLI lets the installer verify the bridge's release attestation. This complete example uses
-        the same Debian-based image as the qualification; merge the two
-        <.docs_inline_code>RUN</.docs_inline_code>
-        steps into your image if it already has a base and agent toolchain.
+        Add the emisar bridge to your existing Dev Container Dockerfile. This complete example
+        uses the same Debian-based image as the qualification; keep your existing base and agent
+        toolchain if you already have them.
       </p>
       <.docs_code phx-no-format label=".devcontainer/Dockerfile">FROM node:22-bookworm
 
 USER root
-RUN install -d -m 755 /etc/apt/keyrings \
- &amp;&amp; curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
-      -o /etc/apt/keyrings/githubcli-archive-keyring.gpg \
- &amp;&amp; chmod go+r /etc/apt/keyrings/githubcli-archive-keyring.gpg \
- &amp;&amp; printf '%s\n' "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" \
-      &gt; /etc/apt/sources.list.d/github-cli.list \
- &amp;&amp; apt-get update \
- &amp;&amp; apt-get install -y --no-install-recommends gh
-RUN curl -fsSL https://emisar.dev/install-mcp.sh -o /tmp/install-mcp.sh \
- &amp;&amp; bash /tmp/install-mcp.sh --yes --install-dir /usr/local/bin \
- &amp;&amp; install -d -m 700 -o node -g node /config
+RUN curl -fsSL https://emisar.dev/install-mcp.sh | bash -s -- --yes
+RUN install -d -m 700 -o node -g node /config
 USER node</.docs_code>
 
       <.docs_h2 id="container">3. Restrict the container</.docs_h2>
@@ -157,7 +146,7 @@ env = { EMISAR_URL = "https://emisar.dev", EMISAR_API_KEY = "emk-replace-with-yo
         </li>
       </ol>
 
-      <.docs_h2 id="boundary">Know the boundary</.docs_h2>
+      <.docs_h2 id="limits-and-risks">Limits &amp; risks</.docs_h2>
       <ul class="mt-5 list-disc space-y-3 pl-6 text-base leading-7 text-zinc-400">
         <li>
           A Dev Container can read every file mounted into it. Remove project secrets and avoid

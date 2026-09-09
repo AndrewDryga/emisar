@@ -476,8 +476,8 @@ defmodule EmisarWeb.DocsComponents do
           <li class="flex items-start gap-2.5">
             <span class="flex-none text-zinc-500">—</span>
             <span>
-              authenticates the signed release checksum with GitHub CLI, then checks the archive
-              against that SHA-256 value;
+              checks the archive against its SHA-256 checksum and, when GitHub CLI is installed,
+              authenticates the signed checksum first;
             </span>
           </li>
           <li class="flex items-start gap-2.5">
@@ -877,26 +877,6 @@ defmodule EmisarWeb.DocsComponents do
         </li>
       </ul>
     </.docs_callout>
-    """
-  end
-
-  @doc """
-  The required verifier dependency next to a standalone installer recipe.
-
-  Full install pages put this in their prerequisites. A page whose main job is
-  something else still needs the dependency beside the command it asks the
-  reader to run, so those recipes share one sentence.
-  """
-  def docs_release_verifier_prerequisite(assigns) do
-    ~H"""
-    <p class="mt-5 text-base leading-7 text-zinc-400">
-      Before running the installer, add GitHub CLI with
-      <.docs_inline_code>gh attestation verify --bundle</.docs_inline_code>
-      and allow the public trust-root hosts in <.link
-        href="/docs/network-requirements#installers"
-        class="text-brand-400 hover:text-brand-300"
-      >Network requirements</.link>. A GitHub login is not required.
-    </p>
     """
   end
 

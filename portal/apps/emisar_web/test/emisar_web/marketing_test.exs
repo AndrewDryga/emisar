@@ -2548,11 +2548,11 @@ defmodule EmisarWeb.MarketingTest do
         assert html =~ "emisar.dev:443", "#{path} is missing the primary Emisar domain"
         assert html =~ "registry.emisar.dev:443", "#{path} is missing the pack registry domain"
 
-        assert html =~ "tuf-repo-cdn.sigstore.dev:443",
-               "#{path} is missing the public trust-root domain"
+        refute html =~ "tuf-repo-cdn.sigstore.dev:443",
+               "#{path} presents optional attestation egress as required"
 
-        assert html =~ "tuf-repo.github.com:443",
-               "#{path} is missing the GitHub trust-root domain"
+        refute html =~ "tuf-repo.github.com:443",
+               "#{path} presents optional attestation egress as required"
 
         refute html =~ "api.github.com", "#{path} still presents GitHub as normal egress"
         refute html =~ "GCS", "#{path} exposes the release backing store"

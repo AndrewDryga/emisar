@@ -13,7 +13,7 @@
         {"register", "Register emisar"},
         {"run", "Run the agent"},
         {"verify", "Verify the connection"},
-        {"boundary", "Know the boundary"},
+        {"limits-and-risks", "Limits & risks"},
         {"cleanup", "Remove the setup"}
       ]}
     >
@@ -55,10 +55,6 @@
           >quickstart</.link>
           sets up a runner and its first action.
         </:item>
-        <:item>
-          GitHub CLI installed so the emisar bridge installer can verify its release attestation.
-          A GitHub login is not required.
-        </:item>
       </.docs_prerequisites>
 
       <.docs_h2 id="start">1. Start the connection</.docs_h2>
@@ -81,10 +77,9 @@
       <.docs_code
         phx-no-format
         label="host shell"
-        copy_text="sbx login\ncurl -fsSL https://emisar.dev/install-mcp.sh -o /tmp/install-mcp.sh\nsudo bash /tmp/install-mcp.sh --yes\nemisar-mcp --version"
+        copy_text="sbx login\ncurl -fsSL https://emisar.dev/install-mcp.sh | sudo bash -s -- --yes\nemisar-mcp --version"
       ><span class="text-zinc-500">$</span> sbx login
-<span class="text-zinc-500">$</span> curl -fsSL https://emisar.dev/install-mcp.sh -o /tmp/install-mcp.sh
-<span class="text-zinc-500">$</span> sudo bash /tmp/install-mcp.sh --yes
+<span class="text-zinc-500">$</span> curl -fsSL https://emisar.dev/install-mcp.sh | sudo bash -s -- --yes
 <span class="text-zinc-500">$</span> emisar-mcp --version</.docs_code>
 
       <.docs_h2 id="launcher">3. Create the host launcher</.docs_h2>
@@ -169,7 +164,7 @@ exec /usr/local/bin/emisar-mcp</.docs_code>
         </li>
       </ol>
 
-      <.docs_h2 id="boundary">Know the boundary</.docs_h2>
+      <.docs_h2 id="limits-and-risks">Limits &amp; risks</.docs_h2>
       <ul class="mt-5 list-disc space-y-3 pl-6 text-base leading-7 text-zinc-400">
         <li>
           Docker shares the project directory with the VM. Remove secret files and mount only the
