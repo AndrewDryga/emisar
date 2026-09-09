@@ -1,0 +1,212 @@
+<div class="bg-zinc-950 text-zinc-100" phx-no-curly-interpolation>
+  <.marketing_nav current_user={@current_user} current={:docs} />
+
+  <section class="py-12 sm:py-16">
+    <.docs_layout
+      current="connect-docker-sandboxes"
+      updated="September 9, 2026"
+      evidence="The MCP gateway and an audited action were live-tested with Docker Sandboxes 0.39.0 on macOS on September 7, 2026; a signed-in agent was not part of that test."
+      toc={[
+        {"start", "Start the connection"},
+        {"install", "Install the host tools"},
+        {"launcher", "Create the host launcher"},
+        {"register", "Register emisar"},
+        {"run", "Run the agent"},
+        {"verify", "Verify the connection"},
+        {"boundary", "Know the boundary"},
+        {"cleanup", "Remove the setup"}
+      ]}
+    >
+      <.docs_header current="connect-docker-sandboxes">
+        <:dek>
+          Run a coding agent in a Docker microVM and give it emisar through Docker's MCP gateway.
+        </:dek>
+      </.docs_header>
+
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        Docker Sandboxes isolates the agent from most of your host. The emisar bridge stays on the
+        host, where Docker's gateway can reach it without copying your emisar key into the VM.
+        If you want the shortest local setup, start with <.link
+          navigate={~p"/docs/connect-coop"}
+          class="text-brand-400 hover:text-brand-300"
+        >co:op</.link>.
+      </p>
+
+      <.docs_prerequisites>
+        <:item>
+          Docker Sandboxes installed on a supported macOS or Ubuntu host, and a Docker account.
+          Follow Docker's <.link
+            href="https://docs.docker.com/ai/sandboxes/install/"
+            class="text-brand-400 hover:text-brand-300"
+          >installation guide</.link>.
+          This walkthrough uses a POSIX host launcher; Windows needs an equivalent owner-only
+          launcher.
+        </:item>
+        <:item>
+          A coding agent supported by <.docs_inline_code>sbx run</.docs_inline_code>, signed in on
+          the host, and a project directory containing only files the agent should be able to edit.
+        </:item>
+        <:item>
+          An emisar account with permission to connect an agent and at least one runner online.
+          The
+          <.link
+            navigate={~p"/docs/quickstart"}
+            class="text-brand-400 hover:text-brand-300"
+          >quickstart</.link>
+          sets up a runner and its first action.
+        </:item>
+        <:item>
+          GitHub CLI installed so the emisar bridge installer can verify its release attestation.
+          A GitHub login is not required.
+        </:item>
+      </.docs_prerequisites>
+
+      <.docs_h2 id="start">1. Start the connection</.docs_h2>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        Open <a
+          href={~p"/app/agents/connect"}
+          class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
+        >Connect an agent</a>, choose <strong class="text-zinc-200">Custom</strong>, and create a
+        dedicated key named <strong class="text-zinc-200">Docker Sandboxes</strong>. Keep the page
+        open: the key is shown only once.
+      </p>
+
+      <.docs_h2 id="install">2. Install the host tools</.docs_h2>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        Install Docker Sandboxes with Docker's platform instructions, then sign in and install the
+        emisar bridge on the host. The
+        <.docs_inline_code>--yes</.docs_inline_code>
+        flag installs the bridge without trying to configure a host agent.
+      </p>
+      <.docs_code
+        phx-no-format
+        label="host shell"
+        copy_text="sbx login\ncurl -fsSL https://emisar.dev/install-mcp.sh -o /tmp/install-mcp.sh\nsudo bash /tmp/install-mcp.sh --yes\nemisar-mcp --version"
+      ><span class="text-zinc-500">$</span> sbx login
+<span class="text-zinc-500">$</span> curl -fsSL https://emisar.dev/install-mcp.sh -o /tmp/install-mcp.sh
+<span class="text-zinc-500">$</span> sudo bash /tmp/install-mcp.sh --yes
+<span class="text-zinc-500">$</span> emisar-mcp --version</.docs_code>
+
+      <.docs_h2 id="launcher">3. Create the host launcher</.docs_h2>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        Keep the key and launcher outside the project directory shared with the VM. Create
+        <.docs_inline_code>~/.config/emisar/docker-sandboxes/bridge.env</.docs_inline_code>
+        with the values below, replacing the key with the one from step 1.
+      </p>
+      <.docs_code phx-no-format label="bridge.env">EMISAR_URL=https://emisar.dev
+EMISAR_API_KEY=emk-replace-with-your-key
+EMISAR_CLIENT=docker-sandboxes</.docs_code>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        Save this executable as <.docs_inline_code>~/.config/emisar/docker-sandboxes/launch-emisar</.docs_inline_code>:
+      </p>
+      <.docs_code phx-no-format label="launch-emisar">#!/bin/sh
+set -a
+. "$HOME/.config/emisar/docker-sandboxes/bridge.env"
+set +a
+exec /usr/local/bin/emisar-mcp</.docs_code>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        Restrict both files to your user. Docker will run the launcher on the host, outside the
+        sandbox.
+      </p>
+      <.docs_code
+        phx-no-format
+        label="host shell"
+        copy_text="chmod 700 ~/.config/emisar/docker-sandboxes\nchmod 600 ~/.config/emisar/docker-sandboxes/bridge.env\nchmod 700 ~/.config/emisar/docker-sandboxes/launch-emisar"
+      ><span class="text-zinc-500">$</span> chmod 700 ~/.config/emisar/docker-sandboxes
+<span class="text-zinc-500">$</span> chmod 600 ~/.config/emisar/docker-sandboxes/bridge.env
+<span class="text-zinc-500">$</span> chmod 700 ~/.config/emisar/docker-sandboxes/launch-emisar</.docs_code>
+
+      <.docs_h2 id="register">4. Register emisar</.docs_h2>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        Register the trusted launcher as a local MCP server, then check the registration. The list
+        should show
+        <.docs_inline_code>emisar</.docs_inline_code>
+        as a local command.
+      </p>
+      <.docs_code
+        phx-no-format
+        label="host shell"
+        copy_text="sbx mcp add emisar --command $HOME/.config/emisar/docker-sandboxes/launch-emisar\nsbx mcp ls"
+      ><span class="text-zinc-500">$</span> sbx mcp add emisar --command "$HOME/.config/emisar/docker-sandboxes/launch-emisar"
+<span class="text-zinc-500">$</span> sbx mcp ls</.docs_code>
+
+      <.docs_h2 id="run">5. Run the agent</.docs_h2>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        From the project directory, start a new sandbox with emisar preloaded in static MCP mode.
+        This example uses Codex; replace
+        <.docs_inline_code>codex</.docs_inline_code>
+        with another agent listed in Docker's <.link
+          href="https://docs.docker.com/reference/cli/sbx/create/"
+          class="text-brand-400 hover:text-brand-300"
+        >supported agent commands</.link>.
+      </p>
+      <.docs_code
+        phx-no-format
+        label="host shell"
+        copy_text="sbx run codex --name emisar-agent --static-mcp emisar ."
+      ><span class="text-zinc-500">$</span> sbx run codex --name emisar-agent --static-mcp emisar .</.docs_code>
+
+      <.docs_h2 id="verify">6. Verify the connection</.docs_h2>
+      <ol class="mt-5 list-decimal space-y-3 pl-6 text-base leading-7 text-zinc-400">
+        <li>Confirm that the agent lists the emisar MCP tools.</li>
+        <li>
+          Ask: <strong class="font-medium text-zinc-200">Use emisar to find a runner with
+          linux.uptime, run it, and show me the output.</strong>
+        </li>
+        <li>
+          Complete any approval required by your <.link
+            navigate={~p"/docs/policies-and-approvals"}
+            class="text-brand-400 hover:text-brand-300"
+          >emisar policy</.link>.
+        </li>
+        <li>
+          Open
+          <a
+            href={~p"/app/audit"}
+            class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
+          >Audit</a>
+          and confirm the action, runner, operator, and result.
+        </li>
+      </ol>
+
+      <.docs_h2 id="boundary">Know the boundary</.docs_h2>
+      <ul class="mt-5 list-disc space-y-3 pl-6 text-base leading-7 text-zinc-400">
+        <li>
+          Docker shares the project directory with the VM. Remove secret files and mount only the
+          directories the agent needs.
+        </li>
+        <li>
+          The registered MCP command runs on the host with your permissions. Keep the launcher and
+          environment file out of the shared project and never let the agent edit them.
+        </li>
+        <li>
+          The emisar key and its rotated successor remain on the host. The VM reaches the bridge
+          through Docker's gateway; it does not need the raw key.
+        </li>
+        <li>
+          The VM can have its own Docker socket. That is not the host Docker socket, but code in the
+          VM can control containers inside the VM.
+        </li>
+      </ul>
+
+      <.docs_h2 id="cleanup">Remove the setup</.docs_h2>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        When you no longer need this sandbox, remove its VM and MCP registration. Then revoke the
+        dedicated key from
+        <a
+          href={~p"/app/agents"}
+          class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
+        >AI agents</a>
+        before deleting the owner-only launcher files.
+      </p>
+      <.docs_code
+        phx-no-format
+        label="host shell"
+        copy_text="sbx rm emisar-agent\nsbx mcp rm emisar"
+      ><span class="text-zinc-500">$</span> sbx rm emisar-agent
+<span class="text-zinc-500">$</span> sbx mcp rm emisar</.docs_code>
+    </.docs_layout>
+  </section>
+
+  <.marketing_footer />
+</div>

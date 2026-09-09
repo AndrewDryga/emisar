@@ -287,6 +287,24 @@ defmodule EmisarWeb.MarketingStructuralTest do
          ]},
         {"/docs/connect-cli-agent",
          [{"/app/agents/connect", "Connect an agent"}, {"/app/audit", "Audit"}]},
+        {"/docs/connect-docker-sandboxes",
+         [
+           {"/app/agents/connect", "Connect an agent"},
+           {"/app/audit", "Audit"},
+           {"/app/agents", "AI agents"}
+         ]},
+        {"/docs/connect-nono",
+         [
+           {"/app/agents/connect", "Connect an agent"},
+           {"/app/audit", "Audit"},
+           {"/app/agents", "AI agents"}
+         ]},
+        {"/docs/connect-dev-containers",
+         [
+           {"/app/agents/connect", "Connect an agent"},
+           {"/app/audit", "Audit"},
+           {"/app/agents", "AI agents"}
+         ]},
         {"/docs/use-a-published-pack",
          [
            {"/app/packs", "Packs"},

@@ -1,0 +1,199 @@
+<div class="bg-zinc-950 text-zinc-100" phx-no-curly-interpolation>
+  <.marketing_nav current_user={@current_user} current={:docs} />
+
+  <section class="py-12 sm:py-16">
+    <.docs_layout
+      current="connect-dev-containers"
+      updated="September 9, 2026"
+      evidence="The container build, MCP transport, key rotation, container recreation, and an audited action were live-tested with Dev Containers CLI 0.89.0 on September 7, 2026; VS Code and a signed-in agent were not part of that test."
+      toc={[
+        {"start", "Start the connection"},
+        {"image", "Add the bridge to the image"},
+        {"container", "Restrict the container"},
+        {"configure", "Configure the agent"},
+        {"verify", "Verify the connection"},
+        {"boundary", "Know the boundary"},
+        {"rebuild", "Rebuild and rotate"}
+      ]}
+    >
+      <.docs_header current="connect-dev-containers">
+        <:dek>
+          Put a CLI agent and the emisar bridge inside a development container with a small host
+          filesystem view and no extra Linux capabilities.
+        </:dek>
+      </.docs_header>
+
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        A Dev Container is useful when your project already has a containerized toolchain. This
+        guide runs the CLI agent from the container terminal. It does not treat the VS Code
+        extension, forwarded credentials, or a mounted host Docker socket as isolated by default.
+      </p>
+
+      <.docs_prerequisites>
+        <:item>
+          Docker and either the VS Code Dev Containers extension or the standalone Dev Containers
+          CLI. Start from a working
+          <.docs_inline_code>.devcontainer</.docs_inline_code>
+          setup that already includes your CLI agent and its runtime.
+        </:item>
+        <:item>
+          A non-root container user. The example below uses the
+          <.docs_inline_code>node</.docs_inline_code>
+          user from <.docs_inline_code>node:22-bookworm</.docs_inline_code>.
+        </:item>
+        <:item>
+          An emisar account with permission to connect an agent and at least one runner online.
+          Complete the
+          <.link
+            navigate={~p"/docs/quickstart"}
+            class="text-brand-400 hover:text-brand-300"
+          >quickstart</.link>
+          first if you do not have a runner yet.
+        </:item>
+      </.docs_prerequisites>
+
+      <.docs_h2 id="start">1. Start the connection</.docs_h2>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        Open <a
+          href={~p"/app/agents/connect"}
+          class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
+        >Connect an agent</a>, choose the CLI agent you will run, select <strong class="text-zinc-200">Linux</strong>, and expand <strong class="text-zinc-200">Set up manually</strong>. Keep the page open so you can copy
+        its reveal-once key into the container after the image is built.
+      </p>
+
+      <.docs_h2 id="image">2. Add the bridge to the image</.docs_h2>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        Add the GitHub CLI and emisar bridge to your existing Dev Container Dockerfile. The GitHub
+        CLI lets the installer verify the bridge's release attestation. This complete example uses
+        the same Debian-based image as the qualification; merge the two
+        <.docs_inline_code>RUN</.docs_inline_code>
+        steps into your image if it already has a base and agent toolchain.
+      </p>
+      <.docs_code phx-no-format label=".devcontainer/Dockerfile">FROM node:22-bookworm
+
+USER root
+RUN install -d -m 755 /etc/apt/keyrings \
+ &amp;&amp; curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
+      -o /etc/apt/keyrings/githubcli-archive-keyring.gpg \
+ &amp;&amp; chmod go+r /etc/apt/keyrings/githubcli-archive-keyring.gpg \
+ &amp;&amp; printf '%s\n' "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" \
+      &gt; /etc/apt/sources.list.d/github-cli.list \
+ &amp;&amp; apt-get update \
+ &amp;&amp; apt-get install -y --no-install-recommends gh
+RUN curl -fsSL https://emisar.dev/install-mcp.sh -o /tmp/install-mcp.sh \
+ &amp;&amp; bash /tmp/install-mcp.sh --yes --install-dir /usr/local/bin \
+ &amp;&amp; install -d -m 700 -o node -g node /config
+USER node</.docs_code>
+
+      <.docs_h2 id="container">3. Restrict the container</.docs_h2>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        Add the bridge-state volume and process restrictions to <.docs_inline_code>.devcontainer/devcontainer.json</.docs_inline_code>.
+        Keep the rest of your existing build and editor settings.
+      </p>
+      <.docs_code phx-no-format label=".devcontainer/devcontainer.json">{
+  "name": "emisar agent",
+  "build": { "dockerfile": "Dockerfile" },
+  "containerUser": "node",
+  "remoteUser": "node",
+  "updateRemoteUserUID": false,
+  "userEnvProbe": "none",
+  "mounts": [
+    "source=emisar-devcontainer-config,target=/config,type=volume"
+  ],
+  "runArgs": [
+    "--cap-drop=ALL",
+    "--security-opt=no-new-privileges"
+  ]
+}</.docs_code>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        Rebuild and reopen the container. In VS Code, use <strong class="text-zinc-200">Dev Containers: Rebuild Container</strong>. With the CLI,
+        run <.docs_inline_code>devcontainer up --workspace-folder .</.docs_inline_code>.
+      </p>
+
+      <.docs_h2 id="configure">4. Configure the agent</.docs_h2>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        In the container, save the configuration from step 1 at the Linux path shown by the
+        console. Change its bridge command to
+        <.docs_inline_code>/usr/local/bin/emisar-mcp</.docs_inline_code>
+        if needed, and add
+        <.docs_inline_code>XDG_CONFIG_HOME=/config</.docs_inline_code>
+        to the bridge environment. That volume retains the bridge's rotated successor when the
+        container is replaced.
+      </p>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        For Codex, save this as <.docs_inline_code>~/.codex/config.toml</.docs_inline_code>, replacing
+        the key with the value shown in the console:
+      </p>
+      <.docs_code phx-no-format label="~/.codex/config.toml">[mcp_servers.emisar]
+command = "/usr/local/bin/emisar-mcp"
+env = { EMISAR_URL = "https://emisar.dev", EMISAR_API_KEY = "emk-replace-with-your-key", EMISAR_CLIENT = "codex", XDG_CONFIG_HOME = "/config" }</.docs_code>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        Merge this table with existing Codex settings rather than replacing the file. For another
+        agent, use the config shape and path shown by Connect an agent, then add the same
+        <.docs_inline_code>XDG_CONFIG_HOME</.docs_inline_code>
+        variable to its emisar server environment. Keep the key out of the Dockerfile, <.docs_inline_code>devcontainer.json</.docs_inline_code>, image layers, and repository.
+      </p>
+
+      <.docs_h2 id="verify">5. Verify the connection</.docs_h2>
+      <ol class="mt-5 list-decimal space-y-3 pl-6 text-base leading-7 text-zinc-400">
+        <li>Start a fresh agent process in the container and confirm that it lists emisar.</li>
+        <li>
+          Ask: <strong class="font-medium text-zinc-200">Use emisar to find a runner with
+          linux.uptime, run it, and show me the output.</strong>
+        </li>
+        <li>
+          Complete any approval required by your <.link
+            navigate={~p"/docs/policies-and-approvals"}
+            class="text-brand-400 hover:text-brand-300"
+          >emisar policy</.link>.
+        </li>
+        <li>
+          Open
+          <a
+            href={~p"/app/audit"}
+            class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
+          >Audit</a>
+          and confirm the action, runner, operator, and result.
+        </li>
+      </ol>
+
+      <.docs_h2 id="boundary">Know the boundary</.docs_h2>
+      <ul class="mt-5 list-disc space-y-3 pl-6 text-base leading-7 text-zinc-400">
+        <li>
+          A Dev Container can read every file mounted into it. Remove project secrets and avoid
+          mounting your home directory, SSH agent, cloud configuration, or host Docker socket.
+        </li>
+        <li>
+          The configuration above drops Linux capabilities and blocks privilege escalation. It
+          does not restrict outbound networking, and it does not hide secrets already present in
+          the project workspace.
+        </li>
+        <li>
+          VS Code can share Git credentials or forward an SSH agent. Review its
+          <.link
+            href="https://code.visualstudio.com/remote/advancedcontainers/sharing-git-credentials"
+            class="text-brand-400 hover:text-brand-300"
+          >credential-sharing settings</.link>
+          separately before treating an editor session as isolated.
+        </li>
+      </ul>
+
+      <.docs_h2 id="rebuild">Rebuild and rotate</.docs_h2>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        Keep the
+        <.docs_inline_code>emisar-devcontainer-config</.docs_inline_code>
+        volume when rebuilding. The tested bridge retained its rotated successor there and accepted
+        the original bootstrap configuration after the container was recreated. The agent's own
+        config is not in that volume: preserve it in a separate private volume or provision it
+        again after a rebuild. If the state volume is lost, create a fresh key from
+        <a
+          href={~p"/app/agents"}
+          class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
+        >AI agents</a>
+        and replace the old config.
+      </p>
+    </.docs_layout>
+  </section>
+
+  <.marketing_footer />
+</div>

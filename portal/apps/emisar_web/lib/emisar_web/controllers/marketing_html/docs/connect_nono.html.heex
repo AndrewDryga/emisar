@@ -1,0 +1,182 @@
+<div class="bg-zinc-950 text-zinc-100" phx-no-curly-interpolation>
+  <.marketing_nav current_user={@current_user} current={:docs} />
+
+  <section class="py-12 sm:py-16">
+    <.docs_layout
+      current="connect-nono"
+      updated="September 9, 2026"
+      evidence="The sandboxed MCP transport and an audited action were live-tested with nono 0.75.0 on macOS on September 7, 2026; a signed-in agent was not part of that test."
+      toc={[
+        {"start", "Start the connection"},
+        {"install", "Install nono and the bridge"},
+        {"configure", "Configure your agent"},
+        {"run", "Run the agent in nono"},
+        {"verify", "Verify the connection"},
+        {"boundary", "Know the boundary"},
+        {"rotation", "Rotate the key"}
+      ]}
+    >
+      <.docs_header current="connect-nono">
+        <:dek>
+          Run a local CLI agent under nono's operating-system sandbox and extend that control to
+          infrastructure and third-party tools with emisar.
+        </:dek>
+      </.docs_header>
+
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        nono limits the files, environment variables, commands, and network destinations available
+        to a local process. emisar separately limits the infrastructure actions that process can
+        request. This guide uses nono's maintained agent profiles and adds emisar to the network
+        allowlist.
+      </p>
+
+      <.docs_prerequisites>
+        <:item>
+          A macOS or Linux computer and a CLI agent available in nono's <.link
+            href="https://registry.nono.sh"
+            class="text-brand-400 hover:text-brand-300"
+          >profile registry</.link>.
+        </:item>
+        <:item>
+          The agent installed and signed in. Keep its provider credentials in the location its
+          nono profile expects; do not copy them into the project.
+        </:item>
+        <:item>
+          An emisar account with permission to connect an agent and at least one runner online.
+          Complete the
+          <.link
+            navigate={~p"/docs/quickstart"}
+            class="text-brand-400 hover:text-brand-300"
+          >quickstart</.link>
+          first if you do not have a runner yet.
+        </:item>
+        <:item>
+          GitHub CLI installed so the emisar bridge installer can verify its release attestation.
+          A GitHub login is not required.
+        </:item>
+      </.docs_prerequisites>
+
+      <.docs_h2 id="start">1. Start the connection</.docs_h2>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        Open <a
+          href={~p"/app/agents/connect"}
+          class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
+        >Connect an agent</a>, choose the CLI agent you will run under nono, select your host
+        operating system, and expand <strong class="text-zinc-200">Set up manually</strong>.
+        Keep the page open while you install the bridge and save the generated configuration.
+      </p>
+
+      <.docs_h2 id="install">2. Install nono and the bridge</.docs_h2>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        Install nono with its public installer, then install the emisar bridge without its
+        interactive client setup. You will use the client-specific configuration from step 1.
+      </p>
+      <.docs_code
+        phx-no-format
+        label="host shell"
+        copy_text="curl -fsSL https://nono.sh/install.sh | sh\ncurl -fsSL https://emisar.dev/install-mcp.sh -o /tmp/install-mcp.sh\nsudo bash /tmp/install-mcp.sh --yes\nnono --version\nemisar-mcp --version"
+      ><span class="text-zinc-500">$</span> curl -fsSL https://nono.sh/install.sh | sh
+<span class="text-zinc-500">$</span> curl -fsSL https://emisar.dev/install-mcp.sh -o /tmp/install-mcp.sh
+<span class="text-zinc-500">$</span> sudo bash /tmp/install-mcp.sh --yes
+<span class="text-zinc-500">$</span> nono --version
+<span class="text-zinc-500">$</span> emisar-mcp --version</.docs_code>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        Homebrew users can install nono with <.docs_inline_code>brew install nono</.docs_inline_code>.
+        Other package-manager options are in nono's <.link
+          href="https://github.com/nolabs-ai/nono#quickstart"
+          class="text-brand-400 hover:text-brand-300"
+        >
+          installation guide
+        </.link>.
+      </p>
+
+      <.docs_h2 id="configure">3. Configure your agent</.docs_h2>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        Copy the generated emisar entry from the console into the client configuration path shown
+        there. Merge it with existing settings and MCP servers. Keep that file outside the project,
+        readable only by your user; it contains the reveal-once emisar key.
+      </p>
+      <.docs_callout kind={:note} title="Use the bridge, not direct HTTP">
+        <p>
+          The tested path runs
+          <.docs_inline_code>emisar-mcp</.docs_inline_code>
+          as a child of the sandboxed agent. A direct HTTPS MCP configuration has different
+          credential storage and rotation behavior and is not this walkthrough.
+        </p>
+      </.docs_callout>
+
+      <.docs_h2 id="run">4. Run the agent in nono</.docs_h2>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        From the project directory, find the maintained profile and run the agent with
+        <.docs_inline_code>emisar.dev</.docs_inline_code>
+        added to its network allowlist. This example uses Codex; replace both
+        <.docs_inline_code>codex</.docs_inline_code>
+        values with your agent's registry name and executable.
+      </p>
+      <.docs_code
+        phx-no-format
+        label="host shell"
+        copy_text="nono search codex\nnono run --profile nolabs-ai/codex --allow-domain emisar.dev -- codex"
+      ><span class="text-zinc-500">$</span> nono search codex
+<span class="text-zinc-500">$</span> nono run --profile nolabs-ai/codex --allow-domain emisar.dev -- codex</.docs_code>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        Review the profile before accepting any suggested expansion. The working directory is where
+        the agent is expected to read and write; a request for your whole home directory, SSH keys,
+        cloud credentials, or container socket changes the boundary materially.
+      </p>
+
+      <.docs_h2 id="verify">5. Verify the connection</.docs_h2>
+      <ol class="mt-5 list-decimal space-y-3 pl-6 text-base leading-7 text-zinc-400">
+        <li>Use your agent's MCP status command and confirm that emisar is connected.</li>
+        <li>
+          Ask: <strong class="font-medium text-zinc-200">Use emisar to find a runner with
+          linux.uptime, run it, and show me the output.</strong>
+        </li>
+        <li>
+          Complete any approval required by your <.link
+            navigate={~p"/docs/policies-and-approvals"}
+            class="text-brand-400 hover:text-brand-300"
+          >emisar policy</.link>.
+        </li>
+        <li>
+          Open
+          <a
+            href={~p"/app/audit"}
+            class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
+          >Audit</a>
+          and confirm the action, runner, operator, and result.
+        </li>
+      </ol>
+
+      <.docs_h2 id="boundary">Know the boundary</.docs_h2>
+      <ul class="mt-5 list-disc space-y-3 pl-6 text-base leading-7 text-zinc-400">
+        <li>
+          nono enforces the profile you run. It does not hide files or permit network destinations
+          that the profile itself allows, including files in the working directory.
+        </li>
+        <li>
+          The agent can use the emisar key in its own MCP configuration. That key reaches only the
+          runners and actions allowed to its owner, and every accepted action is audited.
+        </li>
+        <li>
+          Keep emisar policy and approval rules in place even if the agent locally trusts or
+          auto-approves the emisar MCP server.
+        </li>
+      </ul>
+
+      <.docs_h2 id="rotation">Rotate the key</.docs_h2>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        The strict macOS profile used for qualification made the bridge's credential state
+        read-only, so automatic key rotation was disabled. Treat rotation as manual in this setup:
+        rotate the key from <a
+          href={~p"/app/agents"}
+          class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
+        >AI agents</a>, replace it in the private client configuration, and start a fresh nono
+        session. Do not grant the sandbox an entire credential directory just to enable automatic
+        rotation.
+      </p>
+    </.docs_layout>
+  </section>
+
+  <.marketing_footer />
+</div>

@@ -170,7 +170,12 @@ defmodule EmisarWeb.DocsNav do
               icon: "agent.chatgpt",
               keywords: "chatgpt openai developer mode connector oauth remote mcp",
               desc: "Add emisar to ChatGPT through Developer mode — no key to manage."
-            },
+            }
+          ]
+        },
+        %{
+          label: "Agent sandboxes",
+          pages: [
             %{
               slug: "connect-coop",
               title: "co:op",
@@ -181,6 +186,37 @@ defmodule EmisarWeb.DocsNav do
                 "Run AI agents in a local sandbox and control what they can do with your infrastructure."
             },
             %{
+              slug: "connect-docker-sandboxes",
+              title: "Docker Sandboxes",
+              path: "/docs/connect-docker-sandboxes",
+              icon: "infrastructure.container",
+              keywords: "docker sandboxes sbx microvm mcp gateway codex claude gemini",
+              desc:
+                "Connect emisar through Docker's host-side MCP gateway and run an agent in an isolated microVM."
+            },
+            %{
+              slug: "connect-nono",
+              title: "nono",
+              path: "/docs/connect-nono",
+              icon: "interface.cli",
+              keywords: "nono sandbox seatbelt landlock codex claude opencode local",
+              desc:
+                "Run a CLI agent under nono's operating-system sandbox with emisar on its network allowlist."
+            },
+            %{
+              slug: "connect-dev-containers",
+              title: "Dev Containers",
+              path: "/docs/connect-dev-containers",
+              icon: "infrastructure.container",
+              keywords: "dev containers devcontainer vscode docker codex container sandbox",
+              desc: "Put a CLI agent and the emisar bridge in a restricted development container."
+            }
+          ]
+        },
+        %{
+          label: "The fleet",
+          pages: [
+            %{
               slug: "connect-multiple-accounts",
               title: "Multiple accounts",
               path: "/docs/connect-multiple-accounts",
@@ -189,12 +225,7 @@ defmodule EmisarWeb.DocsNav do
                 "multiple accounts staging production alias accounts use --account switch",
               desc:
                 "One MCP server entry per account, the CLI's stored accounts, and one cloud connector per account."
-            }
-          ]
-        },
-        %{
-          label: "The fleet",
-          pages: [
+            },
             %{
               slug: "agents-and-keys",
               title: "Manage agents & keys",
