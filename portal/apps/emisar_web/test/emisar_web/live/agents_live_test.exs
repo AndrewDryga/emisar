@@ -31,6 +31,37 @@ defmodule EmisarWeb.AgentsLiveTest do
       refute html =~ "EMISAR_API_KEY"
     end
 
+    test "the sandbox picker exposes every supported guide without minting a key", %{conn: conn} do
+      {conn, _user, account} = register_and_log_in(conn)
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/agents")
+
+      labels =
+        lv
+        |> element("#agent-sandbox-options")
+        |> render()
+        |> LazyHTML.from_fragment()
+        |> LazyHTML.query("button")
+        |> Enum.map(&(&1 |> LazyHTML.text() |> String.trim()))
+
+      assert labels == ["co:op", "Docker Sandboxes", "nono", "Dev Containers"]
+
+      for {id, title, path} <- [
+            {"docker_sandboxes", "Docker Sandboxes", "/docs/connect-docker-sandboxes"},
+            {"nono", "nono", "/docs/connect-nono"},
+            {"dev_containers", "Dev Containers", "/docs/connect-dev-containers"}
+          ] do
+        lv
+        |> element(
+          "#agent-sandbox-options button[phx-click='select_sandbox'][phx-value-client='#{id}']"
+        )
+        |> render_click()
+
+        assert has_element?(lv, "#sandbox-guide-#{id}", title)
+        assert has_element?(lv, "#sandbox-guide-#{id} a[href='#{path}']", "Open the")
+        assert Repo.all(ApiKey) == []
+      end
+    end
+
     # Before any client is picked, the panel is just the picker — no mint,
     # no snippet, no reserved dead space below the tabs.
     test "no client picked → picker only, nothing minted", %{conn: conn} do
@@ -52,6 +83,17 @@ defmodule EmisarWeb.AgentsLiveTest do
 
       assert html =~ "Connect an agent"
       refute has_element?(lv, "#custom-key-create-step")
+      assert Repo.all(ApiKey) == []
+    end
+
+    test "select_sandbox ignores an option the picker never rendered", %{conn: conn} do
+      {conn, _user, account} = register_and_log_in(conn)
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/agents/connect")
+
+      html = render_click(lv, "select_sandbox", %{"client" => "bogus"})
+
+      assert html =~ "Connect an agent"
+      refute has_element?(lv, "[id^='sandbox-guide-']")
       assert Repo.all(ApiKey) == []
     end
 

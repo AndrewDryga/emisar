@@ -49,6 +49,8 @@ defmodule EmisarWeb.AgentsLive do
   # the "I need a tighter scope" affordance discoverable next to the
   # client tabs, not hidden in a collapsed details further down.
   @client_ids ~w(chatgpt claude_web claude_code cursor vscode claude_desktop codex gemini copilot windsurf zed opencode goose grok openclaw pi hermes coop custom)
+  @sandbox_guide_ids ~w(docker_sandboxes nono dev_containers)
+  @sandbox_ids ["coop" | @sandbox_guide_ids]
 
   def mount(_params, _session, socket) do
     if connected?(socket) do
@@ -81,6 +83,7 @@ defmodule EmisarWeb.AgentsLive do
      |> assign(:snippet_open?, false)
      |> assign(:bridge_paths, AgentClientConfig.default_paths())
      |> assign(:selected_client, nil)
+     |> assign(:selected_sandbox, nil)
      |> assign(:base_url, URLHelpers.derive_base_url(socket))
      # Which install command to open on. `get_connect_info/2` is nil on the
      # dead render, which lands on the Linux default and corrects itself the
@@ -151,6 +154,7 @@ defmodule EmisarWeb.AgentsLive do
         {:noreply,
          socket
          |> assign(:selected_client, "custom")
+         |> assign(:selected_sandbox, nil)
          |> assign(:quick_secret, nil)
          |> assign(:quick_key_id, nil)
          |> assign(:quick_connected?, false)
@@ -163,6 +167,7 @@ defmodule EmisarWeb.AgentsLive do
     {:noreply,
      socket
      |> assign(:selected_client, id)
+     |> assign(:selected_sandbox, nil)
      |> assign(:quick_secret, nil)
      |> assign(:quick_key_id, nil)
      |> assign(:quick_connected?, false)
@@ -179,6 +184,7 @@ defmodule EmisarWeb.AgentsLive do
         else
           socket
           |> assign(:selected_client, "coop")
+          |> assign(:selected_sandbox, nil)
           |> assign(:quick_secret, nil)
           |> assign(:quick_key_id, nil)
           |> assign(:quick_connected?, false)
@@ -190,6 +196,24 @@ defmodule EmisarWeb.AgentsLive do
     )
   end
 
+  def handle_event("select_sandbox", %{"client" => id}, socket)
+      when id in @sandbox_guide_ids do
+    # These choices explain how a sandbox wraps one of the client connections
+    # above. They do not mint a key: the guide sends the operator through the
+    # existing client or Custom flow whose permission checks own that action.
+    {:noreply,
+     socket
+     |> assign(:selected_client, nil)
+     |> assign(:selected_sandbox, id)
+     |> assign(:quick_secret, nil)
+     |> assign(:quick_key_id, nil)
+     |> assign(:quick_connected?, false)
+     |> assign(:snippet_open?, false)
+     |> clear_connection_wait()}
+  end
+
+  def handle_event("select_sandbox", _params, socket), do: {:noreply, socket}
+
   def handle_event("select_client", %{"client" => id}, socket) when id in @client_ids do
     # Picking a local client mints NOTHING — the installer's device-grant
     # approval mints the keys, and the manual snippet mints its own lazily on
@@ -197,6 +221,7 @@ defmodule EmisarWeb.AgentsLive do
     {:noreply,
      socket
      |> assign(:selected_client, id)
+     |> assign(:selected_sandbox, nil)
      |> assign(:quick_secret, nil)
      |> assign(:quick_key_id, nil)
      |> assign(:quick_connected?, false)
@@ -868,6 +893,9 @@ defmodule EmisarWeb.AgentsLive do
     "pi" => "Pi",
     "hermes" => "Hermes",
     "coop" => "co:op",
+    "docker_sandboxes" => "Docker Sandboxes",
+    "nono" => "nono",
+    "dev_containers" => "Dev Containers",
     "custom" => "Custom"
   }
 
@@ -900,6 +928,42 @@ defmodule EmisarWeb.AgentsLive do
 
   defp cli_agent_ids, do: Enum.reject(local_client_ids(), &(&1 in @editor_client_ids))
   defp editor_client_ids, do: Enum.filter(local_client_ids(), &(&1 in @editor_client_ids))
+
+  defp sandbox_ids, do: @sandbox_ids
+
+  defp sandbox_guide("docker_sandboxes") do
+    %{
+      title: "Docker Sandboxes",
+      path: ~p"/docs/connect-docker-sandboxes",
+      summary:
+        "Run an agent in an isolated Docker microVM and connect it through Docker's host-side MCP gateway.",
+      next:
+        "Create a Custom key for Docker Sandboxes, then follow the guide to install the bridge and register its host launcher."
+    }
+  end
+
+  defp sandbox_guide("nono") do
+    %{
+      title: "nono",
+      path: ~p"/docs/connect-nono",
+      summary:
+        "Run a CLI agent with its file, environment, command, and network access constrained by a nono profile.",
+      next:
+        "Choose the CLI agent above and use manual setup. The guide shows how to install the bridge and allow emisar through the sandbox."
+    }
+  end
+
+  defp sandbox_guide("dev_containers") do
+    %{
+      title: "Dev Containers",
+      path: ~p"/docs/connect-dev-containers",
+      summary: "Run a CLI agent and the emisar bridge inside your development container.",
+      next:
+        "Choose the CLI agent above, select Linux, and use manual setup. The guide shows how to restrict the container and retain rotated credentials."
+    }
+  end
+
+  defp sandbox_guide(_id), do: nil
 
   defp config_target_is_file?(%{location: location}), do: not is_nil(location)
 
@@ -1036,6 +1100,7 @@ defmodule EmisarWeb.AgentsLive do
         configs_for={&client_config(&1, @base_url, @quick_secret || "emk-…", &2, @bridge_paths[&2])}
         bridge_paths={@bridge_paths}
         selected_client={@selected_client}
+        selected_sandbox={@selected_sandbox}
         base_url={@base_url}
         detected_os={@detected_os}
         quick_secret={@quick_secret}
@@ -1103,6 +1168,7 @@ defmodule EmisarWeb.AgentsLive do
             }
             bridge_paths={@bridge_paths}
             selected_client={@selected_client}
+            selected_sandbox={@selected_sandbox}
             base_url={@base_url}
             detected_os={@detected_os}
             quick_secret={@quick_secret}
@@ -1626,6 +1692,7 @@ defmodule EmisarWeb.AgentsLive do
   attr :configs_for, :any, required: true
   attr :bridge_paths, :map, required: true
   attr :selected_client, :any, required: true
+  attr :selected_sandbox, :any, required: true
   attr :base_url, :string, required: true
   attr :detected_os, :atom, required: true
   attr :quick_secret, :string, default: nil
@@ -1675,6 +1742,7 @@ defmodule EmisarWeb.AgentsLive do
     assigns =
       assigns
       |> assign(:config, config)
+      |> assign(:sandbox_guide, sandbox_guide(assigns.selected_sandbox))
       |> assign(:variants, variants)
       |> assign(:connection_state, connection_state)
       |> assign(:connection_title, connection_title)
@@ -1746,8 +1814,14 @@ defmodule EmisarWeb.AgentsLive do
           <p class="mt-6 text-[11px] font-medium uppercase tracking-wider text-zinc-400">
             Agent sandboxes
           </p>
-          <div class="mt-2.5 flex flex-wrap gap-1.5">
-            <.client_tab id="coop" label="co:op" selected={"coop" == @selected_client} />
+          <div id="agent-sandbox-options" class="mt-2.5 flex flex-wrap gap-1.5">
+            <.client_tab
+              :for={id <- sandbox_ids()}
+              id={id}
+              label={client_label(id)}
+              event={if id == "coop", do: "select_client", else: "select_sandbox"}
+              selected={if id == "coop", do: @selected_client == id, else: @selected_sandbox == id}
+            />
           </div>
 
           <p class="mt-6 text-[11px] font-medium uppercase tracking-wider text-zinc-400">
@@ -1774,10 +1848,27 @@ defmodule EmisarWeb.AgentsLive do
            local client is chosen too; it's part of the per-client setup,
            not a standalone step. --%>
         <%= cond do %>
-          <% is_nil(@selected_client) -> %>
+          <% is_nil(@selected_client) and is_nil(@selected_sandbox) -> %>
             <%!-- Nothing picked → nothing rendered: the picker is the prompt;
                480px of reserved dead space buried the agents list. --%>
             <span></span>
+          <% @sandbox_guide -> %>
+            <section
+              id={"sandbox-guide-#{@selected_sandbox}"}
+              class="mt-6 space-y-4 border-t border-zinc-800/70 pt-6"
+            >
+              <.section_header level={3} title={@sandbox_guide.title}>
+                <:subtitle>{@sandbox_guide.summary}</:subtitle>
+              </.section_header>
+              <p class="max-w-prose text-pretty text-sm leading-relaxed text-zinc-400">
+                {@sandbox_guide.next}
+              </p>
+              <p class="text-sm">
+                <.doc_link href={@sandbox_guide.path}>
+                  Open the {@sandbox_guide.title} guide
+                </.doc_link>
+              </p>
+            </section>
           <% @selected_client == "custom" -> %>
             <div id="custom-key-flow" class="mt-6 border-t border-zinc-800/70 pt-6">
               <%= if @quick_secret do %>
@@ -2334,13 +2425,14 @@ defmodule EmisarWeb.AgentsLive do
 
   attr :id, :string, required: true
   attr :label, :string, required: true
+  attr :event, :string, default: "select_client"
   attr :selected, :boolean, default: false
 
   defp client_tab(assigns) do
     ~H"""
     <button
       type="button"
-      phx-click="select_client"
+      phx-click={@event}
       phx-value-client={@id}
       class={[
         "inline-flex min-h-10 min-w-10 items-center justify-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium transition",
