@@ -7,9 +7,9 @@ versions:
   - version: "2.10.4-python3.11"
     digest: "@sha256:5afa55b7c6087112770605f9b9851afd665f5c7f3719b390fcb4bd28a47a7f9a"
     env: {AIRFLOW_API_VERSION: v1}
-# Each case boots a complete Airflow standalone service and database. Forty
-# cases cannot finish inside one 20-minute CI row even though each case passes.
-shards: 3
+# Each fresh stack takes over two minutes in CI. Five shards keep the two-worker
+# waves inside the execution budget while leaving time for cleanup and reports.
+shards: 5
 # Each case starts scheduler, webserver, triggerer and metadata database.
 # Two concurrent stacks keep provider imports inside Airflow 2's startup bound.
 workers: 2
