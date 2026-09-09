@@ -2,8 +2,8 @@ defmodule EmisarWeb.Plugs.Analytics do
   @moduledoc """
   Server-side funnel pageview tracking. On an eligible browser GET it fires a
   `page_viewed` once the response is known to be a 200 HTML render. A bounded
-  first-touch UTM map rides the existing encrypted session; the anonymous id
-  remains a cookieless weekly hash (see `EmisarWeb.Analytics`). No-op for
+  first-touch traffic attribution rides the existing encrypted session; the
+  anonymous id remains a cookieless weekly hash (see `EmisarWeb.Analytics`). No-op for
   non-GET requests and `/app/*` — console pageviews come from the LiveView
   `:track_pageviews` on_mount hook instead (console navigation is over the
   websocket, so there's no controller request for this plug to see).

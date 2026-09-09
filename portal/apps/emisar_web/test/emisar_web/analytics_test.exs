@@ -17,8 +17,8 @@ defmodule EmisarWeb.AnalyticsTest do
     test "a marketing GET fires page_viewed with a cookieless $device: id", %{conn: conn} do
       conn = get(conn, ~p"/pricing")
 
-      # No browser identifier is stored; campaign metadata is only written
-      # when a UTM exists.
+      # No browser identifier is stored; attribution metadata is written only
+      # when a UTM or external referrer exists.
       refute Plug.Conn.get_session(conn, :analytics_device_id)
       assert_receive {:mixpanel_track, [%{"event" => "page_viewed", "properties" => props}]}
       assert props["path"] == "/pricing"
@@ -68,6 +68,8 @@ defmodule EmisarWeb.AnalyticsTest do
       assert props["path"] == "/accept_invitation/:token"
       assert props["$current_url"] == "http://www.example.com/accept_invitation/:token"
       assert props["$referrer"] == "https://emisar.dev/accept_invitation/:token"
+      assert props["$initial_referrer"] == "https://emisar.dev/"
+      assert props["$initial_referring_domain"] == "emisar.dev"
       refute inspect(props) =~ "request-secret"
       refute inspect(props) =~ "referrer-secret"
     end
@@ -84,6 +86,71 @@ defmodule EmisarWeb.AnalyticsTest do
       assert props["$referrer"] == "https://emisar.dev/sign_in/sso/callback"
       refute inspect(props) =~ "credential"
       refute inspect(props) =~ "handoff"
+    end
+
+    test "first external referrer persists without its path or credentials", %{conn: conn} do
+      conn =
+        conn
+        |> put_req_header(
+          "referer",
+          "https://partner.example/articles/sandbox?invite=private-token#offer"
+        )
+        |> get(~p"/pricing")
+
+      assert_receive {:mixpanel_track, [%{"event" => "page_viewed", "properties" => props}]}
+      assert props["$initial_referrer"] == "https://partner.example/"
+      assert props["$initial_referring_domain"] == "partner.example"
+
+      stored = get_session(conn, :analytics_campaign_attribution)
+      assert stored["$initial_referrer"] == "https://partner.example/"
+      assert stored["$initial_referring_domain"] == "partner.example"
+      refute inspect(stored) =~ "articles"
+      refute inspect(stored) =~ "private-token"
+
+      conn
+      |> recycle()
+      |> put_req_header("user-agent", @browser_user_agent)
+      |> put_req_header("referer", "https://later.example/path?secret=other")
+      |> get("/security?utm_source=partner&utm_campaign=launch")
+
+      assert_receive {:mixpanel_track, [%{"event" => "page_viewed", "properties" => props}]}
+      assert props["$initial_referrer"] == "https://partner.example/"
+      assert props["$initial_referring_domain"] == "partner.example"
+      assert props["utm_source"] == "partner"
+      assert props["utm_campaign"] == "launch"
+    end
+
+    test "first external referrer values are byte-bounded", %{conn: conn} do
+      long_host =
+        [70, 70, 70, 70]
+        |> Enum.map_join(".", &String.duplicate("a", &1))
+
+      conn =
+        conn
+        |> put_req_header("referer", "https://#{long_host}/private-path")
+        |> get(~p"/pricing")
+
+      assert_receive {:mixpanel_track, [%{"event" => "page_viewed"}]}
+
+      stored = get_session(conn, :analytics_campaign_attribution)
+      assert byte_size(stored["$initial_referrer"]) == 255
+      assert byte_size(stored["$initial_referring_domain"]) == 255
+      refute inspect(stored) =~ "private-path"
+    end
+
+    test "same-site and invalid referrers never become an acquisition source", %{conn: conn} do
+      for referrer <- [
+            "http://www.example.com/pricing?internal=secret",
+            "https://example.com/",
+            "not a URL",
+            "javascript:alert(1)"
+          ] do
+        conn |> put_req_header("referer", referrer) |> get(~p"/pricing")
+
+        assert_receive {:mixpanel_track, [%{"event" => "page_viewed", "properties" => props}]}
+        refute Map.has_key?(props, "$initial_referrer")
+        refute Map.has_key?(props, "$initial_referring_domain")
+      end
     end
 
     test "tracks regardless of DNT / GPC (server-side first-party — nothing to opt out of)",
@@ -221,7 +288,11 @@ defmodule EmisarWeb.AnalyticsTest do
   end
 
   test "footer subscribe carries the session's first-touch attribution", %{conn: conn} do
-    conn = get(conn, "/?utm_source=x&utm_medium=paid_social&utm_campaign=launch")
+    conn =
+      conn
+      |> put_req_header("referer", "https://directory.example/listing?lead=private")
+      |> get("/?utm_source=x&utm_medium=paid_social&utm_campaign=launch")
+
     assert_receive {:mixpanel_track, [%{"event" => "page_viewed"}]}
 
     email = "lead-#{System.unique_integer([:positive])}@example.com"
@@ -232,6 +303,8 @@ defmodule EmisarWeb.AnalyticsTest do
     assert props["utm_source"] == "x"
     assert props["utm_medium"] == "paid_social"
     assert props["utm_campaign"] == "launch"
+    assert props["$initial_referrer"] == "https://directory.example/"
+    assert props["$initial_referring_domain"] == "directory.example"
   end
 
   describe "identity" do
@@ -297,10 +370,9 @@ defmodule EmisarWeb.AnalyticsTest do
       enable_x_conversions()
 
       conn =
-        get(
-          conn,
-          "/?utm_source=x&utm_medium=paid_social&utm_campaign=launch&twclid=x-click-123"
-        )
+        conn
+        |> put_req_header("referer", "https://partner.example/guide?invite=private")
+        |> get("/?utm_source=x&utm_medium=paid_social&utm_campaign=launch&twclid=x-click-123")
 
       assert_receive {:mixpanel_track, [%{"event" => "page_viewed"}]}
 
@@ -324,18 +396,24 @@ defmodule EmisarWeb.AnalyticsTest do
       assert started["utm_source"] == "x"
       assert started["utm_medium"] == "paid_social"
       assert started["utm_campaign"] == "launch"
+      assert started["$initial_referrer"] == "https://partner.example/"
+      assert started["$initial_referring_domain"] == "partner.example"
 
       assert_receive {:mixpanel_engage, [set_update, %{"$set_once" => set_once}]}
       assert set_update["$set"]["$email"] == user.email
       assert set_once["initial_utm_source"] == "x"
       assert set_once["initial_utm_medium"] == "paid_social"
       assert set_once["initial_utm_campaign"] == "launch"
+      assert set_once["$initial_referrer"] == "https://partner.example/"
+      assert set_once["$initial_referring_domain"] == "partner.example"
 
       assert_receive {:mixpanel_track, [%{"event" => "sign_up_completed", "properties" => props}]}
 
       assert props["utm_source"] == "x"
       assert props["utm_medium"] == "paid_social"
       assert props["utm_campaign"] == "launch"
+      assert props["$initial_referrer"] == "https://partner.example/"
+      assert props["$initial_referring_domain"] == "partner.example"
 
       assert_receive {:x_ads_signup, conversion}
       assert conversion.x_click_id == "x-click-123"

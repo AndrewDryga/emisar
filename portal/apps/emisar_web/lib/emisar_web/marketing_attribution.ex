@@ -1,9 +1,9 @@
 defmodule EmisarWeb.MarketingAttribution do
   @moduledoc """
-  Browser-session boundary for first-touch campaign attribution.
+  Browser-session boundary for first-touch traffic attribution.
 
-  Only an allowlisted, byte-bounded set of flat query values enters the
-  encrypted session. Mixpanel consumes the UTM campaign map; X conversion
+  Only allowlisted, byte-bounded values enter the encrypted session. Mixpanel
+  consumes the UTM campaign and external-referrer properties; X conversion
   delivery may consume `twclid` unless the browser sends Global Privacy Control.
   """
 
@@ -12,16 +12,20 @@ defmodule EmisarWeb.MarketingAttribution do
   # deployment that moves ownership out of EmisarWeb.Analytics.
   @session_key :analytics_campaign_attribution
   @campaign_params ~w(utm_source utm_medium utm_campaign utm_term utm_content)
-  @stored_params @campaign_params ++ ["twclid"]
+  @campaign_touch_params @campaign_params ++ ["twclid"]
+  @referrer_params ["$initial_referrer", "$initial_referring_domain"]
+  @analytics_params @campaign_params ++ @referrer_params
+  @stored_params @campaign_touch_params ++ @referrer_params
   @value_max_bytes 255
 
-  @doc "Persist bounded first-touch attribution in the existing encrypted session."
+  @doc "Persist bounded first-touch campaign and external-referrer attribution."
   def capture(conn) do
     stored = session_params(conn)
     current = current_params(conn)
+    attribution = merge_first_touch(stored, current)
 
-    if map_size(stored) == 0 and map_size(current) > 0 do
-      put_session(conn, @session_key, current)
+    if attribution != stored do
+      put_session(conn, @session_key, attribution)
     else
       conn
     end
@@ -36,17 +40,17 @@ defmodule EmisarWeb.MarketingAttribution do
     end
   end
 
-  @doc "Return the current first-touch campaign and eligible X click identifier."
+  @doc "Return the first-touch analytics attribution and eligible X click identifier."
   def current(conn) do
     params = first_touch_params(conn)
 
     %{
-      campaign: Map.take(params, @campaign_params),
+      campaign: Map.take(params, @analytics_params),
       x_click_id: eligible_x_click_id(conn, params)
     }
   end
 
-  @doc "Return only the UTM campaign properties suitable for product analytics."
+  @doc "Return the first-touch properties suitable for product analytics."
   def campaign(conn), do: current(conn).campaign
 
   defp global_privacy_control?(conn) do
@@ -56,20 +60,85 @@ defmodule EmisarWeb.MarketingAttribution do
   end
 
   defp first_touch_params(conn) do
-    case session_params(conn) do
-      stored when map_size(stored) > 0 -> stored
-      _ -> current_params(conn)
-    end
+    merge_first_touch(session_params(conn), current_params(conn))
   end
 
   defp current_params(conn) do
-    params =
+    query_params =
       conn
       |> fetch_query_params()
       |> Map.fetch!(:query_params)
       |> normalize()
 
+    referrer_params = conn |> external_referrer_params() |> normalize()
+    params = Map.merge(query_params, referrer_params)
+
     if global_privacy_control?(conn), do: Map.delete(params, "twclid"), else: params
+  end
+
+  defp merge_first_touch(stored, current) do
+    stored
+    |> put_first_group(current, @campaign_touch_params)
+    |> put_first_group(current, @referrer_params)
+  end
+
+  defp put_first_group(stored, current, keys) do
+    if Enum.any?(keys, &Map.has_key?(stored, &1)) do
+      stored
+    else
+      Map.merge(stored, Map.take(current, keys))
+    end
+  end
+
+  defp external_referrer_params(conn) do
+    referrer = conn |> get_req_header("referer") |> List.first() |> parse_http_referrer()
+
+    case referrer do
+      %URI{} = uri ->
+        host = normalize_host(uri.host)
+
+        if same_site?(normalize_host(conn.host), host) do
+          %{}
+        else
+          %{
+            "$initial_referrer" => referrer_origin(uri, host),
+            "$initial_referring_domain" => host
+          }
+        end
+
+      nil ->
+        %{}
+    end
+  end
+
+  defp parse_http_referrer(referrer) when is_binary(referrer) do
+    case URI.parse(referrer) do
+      %URI{scheme: scheme, host: host} = uri
+      when is_binary(scheme) and is_binary(host) and host != "" ->
+        if String.downcase(scheme) in ["http", "https"], do: uri
+
+      _ ->
+        nil
+    end
+  end
+
+  defp parse_http_referrer(_referrer), do: nil
+
+  defp referrer_origin(uri, host) do
+    URI.to_string(%URI{
+      scheme: String.downcase(uri.scheme),
+      host: host,
+      port: uri.port,
+      path: "/"
+    })
+  end
+
+  defp normalize_host(host), do: host |> String.downcase() |> String.trim_trailing(".")
+
+  defp same_site?(request_host, referrer_host) do
+    request_host == referrer_host or
+      String.ends_with?(request_host, "." <> referrer_host) or
+      String.ends_with?(referrer_host, "." <> request_host)
   end
 
   defp session_params(conn) do

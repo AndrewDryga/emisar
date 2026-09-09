@@ -8,7 +8,8 @@ defmodule EmisarWeb.Analytics do
   `user.id` (from the necessary auth session). The only cookie the site sets is
   the functional CSRF/session cookie — never an analytics identifier. That
   encrypted session carries bounded first-touch attribution until sign-in so
-  pageviews and conversions in the same browser session keep their campaign.
+  pageviews and conversions in the same browser session keep their traffic
+  source.
 
   This Mixpanel path is first-party product analytics, not advertising
   conversion measurement, so it has no DNT/GPC opt-out gate. Provider click
@@ -193,7 +194,13 @@ defmodule EmisarWeb.Analytics do
   defp people_attribution_opts(attribution, true) when map_size(attribution) == 0, do: []
 
   defp people_attribution_opts(attribution, true) do
-    initial = Map.new(attribution, fn {key, value} -> {"initial_#{key}", value} end)
+    initial =
+      Map.new(attribution, fn
+        {"$initial_referrer" = key, value} -> {key, value}
+        {"$initial_referring_domain" = key, value} -> {key, value}
+        {key, value} -> {"initial_#{key}", value}
+      end)
+
     [set_once: initial]
   end
 
