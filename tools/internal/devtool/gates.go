@@ -66,6 +66,7 @@ const (
 	checkUsage = `usage: ./run check <target>
 
   changed                    compile and check changed Portal source files
+  docs                       validate repository documentation
   portal                     compile, format-check, and run Credo
   staged                     validate staged migrations and source formatting
   infra-templates            render and validate production cloud-init
@@ -75,7 +76,8 @@ const (
 `
 	testUsage = `usage: ./run test <target> [args]
 
-  portal <mix-test-args...>  run focused, --stale, --failed, or listening Portal tests
+  portal <mix-test-args...>  run focused, stale, failed, or listening Portal tests
+  portal --profile [args...] report the 20 slowest selected tests without serializing
   runner [go-test-args...]   run all runner tests, or pass focused go test arguments
   mcp [go-test-args...]      run all MCP tests, or pass focused go test arguments
   tools [go-test-args...]    run all tooling tests, or pass focused go test arguments
@@ -90,7 +92,7 @@ const (
 `
 	gateUsage = `usage: ./run gate <target> [--coverage FILE]
 
-  portal                     compile, format, Credo, audits, Sobelow, and tests
+  portal [--changed]         check affected apps locally, or run the complete gate
   runner                     format, boundaries, vet, staticcheck, tidy, attest
                              parity, race tests, cross-build, and the installer
   mcp                        the runner phases, plus the stdlib-only assertion
@@ -151,14 +153,21 @@ func (a *App) test(ctx context.Context, args []string) error {
 	target, rest := args[0], args[1:]
 	switch target {
 	case "portal":
-		if len(rest) == 0 {
-			return usage("usage: ./run test portal <paths...|--stale|--failed>")
+		clean, profile, err := portalTestMode(rest)
+		if err != nil {
+			return err
+		}
+		if len(clean) == 0 && !profile {
+			return usage("usage: ./run test portal [--profile] <paths...|--stale|--failed>")
 		}
 		_, env, err := a.up(ctx)
 		if err != nil {
 			return err
 		}
-		return a.portalTests(ctx, env, rest)
+		if profile && len(clean) == 0 {
+			return a.portalProfile(ctx, env)
+		}
+		return a.portalTests(ctx, env, clean, profile)
 	case "runner", "mcp", "tools":
 		arguments := append([]string{"test"}, rest...)
 		if len(rest) == 0 {
@@ -469,7 +478,7 @@ func (a *App) portalGate(ctx context.Context) error {
 		return err
 	}
 	return a.gatePhase("portal test suites", func() error {
-		return a.portalTestOutput(ctx, env)
+		return a.portalTestOutput(ctx, env, a.portalTestSuites(), false)
 	})
 }
 
@@ -669,16 +678,21 @@ func (a *App) gate(ctx context.Context, args []string) error {
 		return usage("%s", gateUsage)
 	}
 	target, rest := args[0], args[1:]
+	if target == "portal" {
+		switch {
+		case len(rest) == 0:
+			return a.portalGate(ctx)
+		case len(rest) == 1 && rest[0] == "--changed":
+			return a.changedPortalGate(ctx)
+		default:
+			return usage("usage: ./run gate portal [--changed]")
+		}
+	}
 	coverage, err := parseCoverage(rest)
 	if err != nil {
 		return err
 	}
 	switch target {
-	case "portal":
-		if coverage != "" {
-			return usage("usage: ./run gate portal")
-		}
-		return a.portalGate(ctx)
 	case "runner", "mcp":
 		return a.goGate(ctx, target, coverage)
 	case "packs":

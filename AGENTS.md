@@ -81,8 +81,9 @@ connection is needed.
 
 - `./run test <project> ...` gives focused feedback; `./run check ...` gives quick
   or specialized checks. Use direct language tools for diagnosis when useful.
-- Finish with `./run gate <project>` for every touched project: portal, runner,
-  mcp, packs, infra, or tooling. `./run gate all` covers the repository.
+- Finish locally with `./run gate <project>`. Portal uses
+  `./run gate portal --changed`; use the complete gate before a push or release and in CI.
+  `./run gate all` covers the repository.
 - During implementation, run focused checks after coherent edits. Fix a failure
   before building dependent work on it; investigate and repair within the task.
   An initial red check is not a reason to hand the task back.
@@ -146,9 +147,7 @@ Fix matching instances within the task; queue a larger sweep separately. Add a
 mechanical check when it reliably detects a real defect, not a wording preference.
 Detailed rule examples belong behind the index, not in the always-loaded manual.
 
-After changing manuals, skills, tool wrappers, hooks, or queue conventions, run
-`./run check agent-setup` and `./run gate tooling`. The check verifies discovery,
-the root-plus-project 32 KiB instruction budget, skill metadata, KB indexing,
-and absence of a project-global Stop hook. Keep command/check logic in `tools/`,
-entered through `./run`. Model upgrade evidence and behavioral review cases live
-in [.agent/kb/runbooks/agent-maintenance.md](.agent/kb/runbooks/agent-maintenance.md).
+After changing only manuals, skills, or KB, run `./run check agent-setup` and
+`./run check docs`. Executable agent tooling also requires `./run gate tooling`.
+The setup check enforces discovery, instruction budgets, metadata, KB indexing,
+and hook policy. Keep shared commands in `tools/`, entered through `./run`.

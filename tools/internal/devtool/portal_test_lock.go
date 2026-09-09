@@ -9,14 +9,13 @@ import (
 
 // portalTestLock serializes portal test runs that share a database.
 //
-// portal/config/test.exs names the database emisar_test$MIX_TEST_PARTITION, and
-// nothing sets that variable — not this tool, not CI — so every run against one
-// Postgres uses the same database and the same Ecto sandbox. That is fine until a
-// run reaches ecto.migrate with a pending migration: its DDL takes ACCESS
-// EXCLUSIVE, a concurrent run's queries block behind it, and DBConnection's query
-// timeout then cancels them. The suite reports 57014 query_canceled and
-// client-exited noise, the output guard fails, and the failure names whichever
-// tests happened to be running rather than anything that is wrong with them.
+// portal/config/test.exs names the database emisar_test$MIX_TEST_PARTITION.
+// Focused commands leave the partition empty; the complete gate gives each app a
+// stable partition so its suites can run concurrently. Runs that resolve to one
+// database still need this lock: ecto.migrate DDL can take ACCESS EXCLUSIVE,
+// block another run's queries, and make DBConnection cancel them at its timeout.
+// The suite then reports 57014 query_canceled and client-exited noise against
+// whichever tests happened to be running rather than the migration that caused it.
 //
 // Waiting is the cheap side of that trade: the second run pays the first run's
 // duration once, instead of a person re-reading a suite's worth of false

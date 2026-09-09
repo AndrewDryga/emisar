@@ -30,6 +30,7 @@ Use the real domain-namespaced Fixtures modules in test/support, with separate
 happy, denial, and cross-account cases for the API behavior. Match existing test
 order and arrange only the state each case requires.
 
-Use focused tests while implementing. The lead runs the final ./run gate portal
-and obtains a trust-boundary review before committing. Complete all requested
-layers; a context-only request does not itself authorize adding a LiveView.
+Use focused tests while implementing. The lead runs `./run gate portal --changed`
+and obtains a trust-boundary review before committing, then runs the complete
+`./run gate portal` before pushing. Complete all requested layers; a context-only
+request does not itself authorize adding a LiveView.

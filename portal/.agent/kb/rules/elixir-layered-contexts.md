@@ -343,8 +343,9 @@ Two layers — mechanical rules run by machines, judgment rules by review:
    `EmisarWeb.TemplateHygieneTest`.**
 
    Run focused Credo checks after coherent `.ex`/`.exs` edits, before building
-   dependent work on them. The full Credo check remains inside the final
-   `./run gate portal`; it must report zero before committing.
+   dependent work on them. The changed-file Credo check runs inside
+   `./run gate portal --changed` before a local commit. The full Credo check
+   remains inside `./run gate portal` before a push or release.
 
    **What is covered mechanically is `.credo.exs` — read it there, not here.**
    The rules with a check say so at the rule (**Credo-enforced**

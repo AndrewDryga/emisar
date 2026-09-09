@@ -59,7 +59,8 @@ controller file, read it and check:
   `connected?(socket)` guard before `subscribe`; no `assign_new` for per-mount
   values.
 - **IL-11** — no shim/flag/deprecated-kept/corrective-migration-on-unshipped.
-- **IL-20** — if the change claims "done", green `./run gate portal` output is present.
+- **IL-20** — a done local change has green `./run gate portal --changed`
+  output; a pushed or release-ready change has green `./run gate portal` output.
 
 ## Step 3 — report
 

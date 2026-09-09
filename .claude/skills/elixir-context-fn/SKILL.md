@@ -30,5 +30,6 @@ inside an after_commit callback or nest after_commit under another transaction.
 Reuse permission accessors; introduce a new one only for a new capability and wire
 its role grants. State the function's contract in its documentation.
 Cover happy, denial, and cross-account behavior for both reads and writes.
-Use focused checks while working; the lead owns the final ./run gate portal and
-the relevant trust-boundary review.
+Use focused checks while working; the lead owns `./run gate portal --changed`,
+the relevant trust-boundary review, and the complete `./run gate portal` before
+pushing.

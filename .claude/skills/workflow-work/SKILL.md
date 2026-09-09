@@ -28,11 +28,14 @@ behavior and security contracts. For a material scope or authority change, compl
 independent work and ask for that decision. Nearby unrelated issues belong in a
 follow-up. Use targeted edits unless most of the file is changing.
 
-The lead reviews delegated changes and runs each touched project's canonical
-`./run gate <project>` on the final tree. Delegates provide focused check evidence;
-a handoff does not itself require duplicate full gates. Rerun or broaden verification
-after changes, failures, or unresolved concerns. Agent/tooling work also requires
-`./run check agent-setup` and `./run gate tooling`.
+The lead reviews delegated changes and runs each touched project's local final
+gate on the final tree. Portal uses `./run gate portal --changed`; run the complete
+`./run gate portal` before a push or release. Other projects use
+`./run gate <project>`. Delegates provide focused check evidence; a handoff does
+not itself require duplicate full gates. Rerun or broaden verification after
+changes, failures, or unresolved concerns. Manual, skill, and KB-only work needs
+`./run check agent-setup` plus `./run check docs`; executable tooling changes also
+need `./run gate tooling`.
 
 Finish the lifecycle required by AGENTS.md: focused commit, task notes, and
 completion state. Report actual outcomes and validation, distinguishing source

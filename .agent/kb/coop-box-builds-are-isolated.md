@@ -3,10 +3,10 @@ name: coop-box-builds-are-isolated
 description: how host and Coop development share workspace-local service URLs while keeping platform-specific build output isolated
 subsystem: agent-stack
 sources: [.agent/Dockerfile, .agent/project.yaml, dev/compose.yml, run, tools/internal/devtool, portal/config/dev.exs, portal/config/test.exs]
-updated: 2026-07-24
+updated: 2026-09-10
 ---
 
-Six constraints make every gate run green inside a coop box; break any one and you get
+Seven constraints make every gate run green inside a coop box; break any one and you get
 confusing, hard-to-attribute failures:
 
 1. **Direct box database, forwarded host database:** `.agent/project.yaml` gives every
@@ -36,12 +36,12 @@ confusing, hard-to-attribute failures:
    keeping the gate read-only toward the tree it verifies. The host keeps
    `portal/deps/` in the repo for editor navigation and deps-source reading.
 
-3. **The output-hygiene guard needs a warm dep tree:** on a cold build root the guard's
-   first scanned step (`ecto.create`) compiles every dependency, and THIRD-PARTY compile
-   warnings (sentry's `unused require Logger`) trip the pollution regex on noise that
-   isn't ours. The Go portal gate warms `mix deps.compile` UNSCANNED first;
-   emisar's own apps still compile inside the scanned steps, so our warnings are still
-   caught.
+3. **The output-hygiene guard needs a compiled tree:** on a cold build root the guard's
+   first scanned step (`ecto.create`) would compile every dependency, and third-party
+   warnings could trip the pollution regex on noise that is not ours. The Portal gate's
+   test-environment compile prepares the shared build before either partition starts, and
+   both app suites use `--no-compile`. The packs gate has no full compile phase, so it keeps
+   its unscanned dependency warm-up before its captured database and focused test steps.
 
 4. **Serve has one owner:** `./run serve` holds an advisory lock scoped by
    workspace and listen port. A second launcher fails before invoking Mix, and
@@ -83,6 +83,8 @@ Coop-owned behavior and cache layers.
 Related rules: [human development tooling is not agent state](rules/shared-human-dev-tooling-is-not-agent-state.md) and [Docker inputs enter at their narrowest layer](rules/shared-docker-inputs-enter-at-narrowest-layer.md).
 
 ## Changelog
+- 2026-09-10 — made the Portal test-environment compile the one build preparation step;
+  parallel app shards now reuse it instead of compiling dependencies again.
 - 2026-08-04 — added read-only workspace status, exact-project dependency logs,
   workspace-bound psql, and an IEx serve mode on the existing supervised lifecycle
 - 2026-08-04 — made repository commands restore absent Coop-declared sidecar

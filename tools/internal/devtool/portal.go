@@ -8,8 +8,11 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"sort"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/andrewdryga/emisar/tools/internal/toolutil"
 )
@@ -47,41 +50,130 @@ func (a *App) runCaptured(ctx context.Context, label, dir string, env map[string
 	})
 }
 
-func (a *App) portalTestOutput(ctx context.Context, env map[string]string) error {
-	testEnv := make(map[string]string, len(env)+1)
+type portalTestSuite struct {
+	name      string
+	partition string
+	dir       string
+	args      []string
+}
+
+type portalTestSuiteResult struct {
+	suite    portalTestSuite
+	output   []byte
+	duration time.Duration
+	err      error
+}
+
+func (a *App) portalTestSuites() []portalTestSuite {
+	return []portalTestSuite{
+		{
+			name:      "emisar",
+			partition: "_emisar",
+			dir:       filepath.Join(a.Portal, "apps", "emisar"),
+			args:      []string{"test", "--no-compile"},
+		},
+		{
+			name:      "emisar_web",
+			partition: "_emisar_web",
+			dir:       filepath.Join(a.Portal, "apps", "emisar_web"),
+			// Bypass emisar_web's test alias because the shard prepares its
+			// partition once before the captured test run.
+			args: []string{"cmd", "mix", "test", "--no-compile"},
+		},
+	}
+}
+
+func cloneEnv(env map[string]string) map[string]string {
+	cloned := make(map[string]string, len(env)+2)
 	for key, value := range env {
-		testEnv[key] = value
+		cloned[key] = value
 	}
-	testEnv["MIX_ENV"] = "test"
-	if err := a.warmPortalTestDependencies(ctx, testEnv); err != nil {
-		return err
+	return cloned
+}
+
+func (a *App) portalTestOutput(ctx context.Context, env map[string]string, suites []portalTestSuite, profile bool) error {
+	if len(suites) == 0 {
+		fmt.Fprintln(a.Out, "no Portal test suites selected")
+		return nil
 	}
-	// Taken after the warm-up, which touches no database, and held across the
-	// migration and both suites — the whole window in which another run's DDL
-	// could cancel these queries.
-	lock, err := a.portalTestLock(testEnv)
-	if err != nil {
-		return err
+
+	if len(suites) > 1 {
+		fmt.Fprintln(a.Out, "running Portal test suites in parallel")
+	} else {
+		fmt.Fprintln(a.Out, "running affected Portal test suite")
 	}
-	defer releasePortalTestLock(lock)
-	if err := a.ensurePortalTestDatabase(ctx, testEnv); err != nil {
-		return err
+	started := time.Now()
+	maxCases := portalTestMaxCases(len(suites))
+	results := make(chan portalTestSuiteResult, len(suites))
+	for _, suite := range suites {
+		suite.args = append(suite.args, "--max-cases", strconv.Itoa(maxCases))
+		go func() {
+			results <- a.runPortalTestSuite(ctx, env, suite, profile)
+		}()
 	}
-	checks := []struct {
-		label string
-		dir   string
-		args  []string
-	}{
-		{"emisar app tests", filepath.Join(a.Portal, "apps", "emisar"), []string{"test"}},
-		{"emisar_web app tests", filepath.Join(a.Portal, "apps", "emisar_web"), []string{"test"}},
+
+	ordered := make(map[string]portalTestSuiteResult, len(suites))
+	for range suites {
+		result := <-results
+		ordered[result.suite.name] = result
 	}
-	for _, check := range checks {
-		if err := a.runCaptured(ctx, check.label, check.dir, testEnv, "mix", check.args...); err != nil {
-			return err
+
+	var firstErr error
+	for _, suite := range suites {
+		result := ordered[suite.name]
+		fmt.Fprintf(a.Out, "\n--- %s test shard (%s) ---\n", suite.name, result.duration.Round(time.Millisecond))
+		copyOutput(a.Out, result.output)
+		if result.err != nil && firstErr == nil {
+			firstErr = fmt.Errorf("%s test shard: %w", suite.name, result.err)
 		}
 	}
-	fmt.Fprintln(a.Out, "ok: portal test output is clean")
+	if firstErr != nil {
+		return firstErr
+	}
+	fmt.Fprintf(a.Out, "ok: Portal test output is clean (%s wall time)\n", elapsedLabel(started))
 	return nil
+}
+
+func portalTestMaxCases(suiteCount int) int {
+	availableCPUs := runtime.GOMAXPROCS(0)
+	if suiteCount > 1 {
+		// Two BEAM runtimes contend for the same host. Keep their combined
+		// ExUnit case concurrency at the CPU count instead of allowing each
+		// process to take Mix's default of twice that count.
+		return max(1, availableCPUs/2)
+	}
+	return availableCPUs * 2
+}
+
+func (a *App) runPortalTestSuite(ctx context.Context, env map[string]string, suite portalTestSuite, profile bool) portalTestSuiteResult {
+	started := time.Now()
+	var output bytes.Buffer
+	shard := *a
+	// Gate shards are non-interactive. Sharing a buffered stdin reader between
+	// two exec copies races and could split accidental input unpredictably.
+	shard.In = nil
+	shard.Out = &output
+	shard.Err = &output
+	testEnv := cloneEnv(env)
+	testEnv["MIX_ENV"] = "test"
+	testEnv["MIX_TEST_PARTITION"] = suite.partition
+	if profile {
+		testEnv["EMISAR_TEST_PROFILE"] = "1"
+	}
+
+	result := portalTestSuiteResult{suite: suite}
+	lock, err := shard.portalTestLock(testEnv)
+	if err == nil {
+		defer releasePortalTestLock(lock)
+		err = shard.ensurePortalTestDatabase(ctx, testEnv)
+	}
+	if err == nil {
+		err = shard.runCaptured(ctx, suite.name+" app tests", suite.dir, testEnv, "mix", suite.args...)
+	}
+	result.output = output.Bytes()
+	result.duration = time.Since(started)
+	result.err = err
+	return result
 }
 
 func (a *App) warmPortalTestDependencies(ctx context.Context, env map[string]string) error {
@@ -110,7 +202,7 @@ func (a *App) ensurePortalTestDatabase(ctx context.Context, env map[string]strin
 }
 
 func (a *App) changedPortalFiles(ctx context.Context) ([]string, error) {
-	changed, err := a.output(ctx, a.Root, nil, "git", "diff", "--name-only", "-z", "--diff-filter=ACMR", "HEAD", "--", "portal")
+	changed, err := a.output(ctx, a.Root, nil, "git", "diff", "--name-only", "-z", "--diff-filter=ACMRD", "HEAD", "--", "portal")
 	if err != nil {
 		return nil, err
 	}
@@ -139,9 +231,10 @@ func (a *App) changedPortalCheck(ctx context.Context) error {
 		fmt.Fprintln(a.Out, "no changed Portal files")
 		return nil
 	}
-	if err := a.run(ctx, a.Portal, nil, "mix", "compile", "--warnings-as-errors"); err != nil {
-		return err
-	}
+	return a.checkChangedPortalPaths(ctx, paths)
+}
+
+func (a *App) checkChangedPortalPaths(ctx context.Context, paths []string) error {
 	formatFiles, credoFiles := []string{}, []string{}
 	for _, path := range paths {
 		absolute := filepath.Join(a.Root, filepath.FromSlash(path))
@@ -157,6 +250,13 @@ func (a *App) changedPortalCheck(ctx context.Context) error {
 			formatFiles = append(formatFiles, relative)
 		}
 	}
+	if len(formatFiles) == 0 && len(credoFiles) == 0 {
+		fmt.Fprintln(a.Out, "no changed Portal source files")
+		return nil
+	}
+	if err := a.run(ctx, a.Portal, nil, "mix", "compile", "--warnings-as-errors"); err != nil {
+		return err
+	}
 	if len(formatFiles) > 0 {
 		fmt.Fprintf(a.Out, "Checking format: %s\n", strings.Join(formatFiles, " "))
 		if err := a.run(ctx, a.Portal, nil, "mix", append([]string{"format", "--check-formatted"}, formatFiles...)...); err != nil {
@@ -170,6 +270,64 @@ func (a *App) changedPortalCheck(ctx context.Context) error {
 		}
 	}
 	return nil
+}
+
+func (a *App) changedPortalGate(ctx context.Context) error {
+	paths, err := a.changedPortalFiles(ctx)
+	if err != nil {
+		return err
+	}
+	if len(paths) == 0 {
+		fmt.Fprintln(a.Out, "no changed Portal files")
+		return nil
+	}
+	if err := a.checkChangedPortalPaths(ctx, paths); err != nil {
+		return err
+	}
+	suites := a.changedPortalTestSuites(paths)
+	if len(suites) == 0 {
+		fmt.Fprintln(a.Out, "no Portal tests needed for documentation-only changes")
+		return nil
+	}
+	testEnv, err := a.portalTestEnv(ctx)
+	if err != nil {
+		return err
+	}
+	if err := a.gatePhase("changed Portal test compile", func() error {
+		return a.run(ctx, a.Portal, testEnv, "mix", "compile", "--warnings-as-errors")
+	}); err != nil {
+		return err
+	}
+	return a.gatePhase("affected Portal test suites", func() error {
+		return a.portalTestOutput(ctx, testEnv, suites, false)
+	})
+}
+
+func (a *App) changedPortalTestSuites(paths []string) []portalTestSuite {
+	suites := a.portalTestSuites()
+	core, web := false, false
+	for _, path := range paths {
+		relative := strings.TrimPrefix(filepath.ToSlash(path), "portal/")
+		if strings.HasPrefix(relative, ".agent/") || filepath.Ext(relative) == ".md" {
+			continue
+		}
+		switch {
+		case strings.HasPrefix(relative, "apps/emisar_web/"):
+			web = true
+		case strings.HasPrefix(relative, "apps/emisar/"):
+			core, web = true, true
+		default:
+			core, web = true, true
+		}
+	}
+	selected := make([]portalTestSuite, 0, 2)
+	if core {
+		selected = append(selected, suites[0])
+	}
+	if web {
+		selected = append(selected, suites[1])
+	}
+	return selected
 }
 
 func portalTestInvocation(portal string, args []string) (string, []string, error) {
@@ -206,7 +364,7 @@ func portalTestInvocation(portal string, args []string) (string, []string, error
 	return filepath.Join(portal, "apps", app), appArgs, nil
 }
 
-func (a *App) portalTests(ctx context.Context, env map[string]string, args []string) error {
+func (a *App) portalTests(ctx context.Context, env map[string]string, args []string, profile bool) error {
 	dir, testArgs, err := portalTestInvocation(a.Portal, args)
 	if err != nil {
 		return err
@@ -216,6 +374,9 @@ func (a *App) portalTests(ctx context.Context, env map[string]string, args []str
 		testEnv[key] = value
 	}
 	testEnv["MIX_ENV"] = "test"
+	if profile {
+		testEnv["EMISAR_TEST_PROFILE"] = "1"
+	}
 	// A focused run is the usual victim rather than the cause — it holds no
 	// migration of its own, and a gate migrating alongside it is what cancels
 	// its queries. Same lock, so the two cannot overlap either way round.
@@ -225,6 +386,39 @@ func (a *App) portalTests(ctx context.Context, env map[string]string, args []str
 	}
 	defer releasePortalTestLock(lock)
 	return a.run(ctx, dir, testEnv, "mix", testArgs...)
+}
+
+func portalTestMode(args []string) ([]string, bool, error) {
+	clean := make([]string, 0, len(args))
+	profile := false
+	for _, argument := range args {
+		if argument != "--profile" {
+			clean = append(clean, argument)
+			continue
+		}
+		if profile {
+			return nil, false, usage("--profile may be passed only once")
+		}
+		profile = true
+	}
+	return clean, profile, nil
+}
+
+func (a *App) portalProfile(ctx context.Context, env map[string]string) error {
+	testEnv := cloneEnv(env)
+	testEnv["MIX_ENV"] = "test"
+	if err := a.gatePhase("Portal profile compile", func() error {
+		return a.run(ctx, a.Portal, testEnv, "mix", "compile", "--warnings-as-errors")
+	}); err != nil {
+		return err
+	}
+	return a.gatePhase("Portal test profile", func() error {
+		return a.portalTestOutput(ctx, testEnv, a.portalTestSuites(), true)
+	})
+}
+
+func (a *App) documentationCheck(ctx context.Context) error {
+	return a.run(ctx, filepath.Join(a.Root, "tools"), nil, "go", "run", "./cmd/doccheck")
 }
 
 func (a *App) agentSetupCheck(ctx context.Context, requireCoop bool) error {
@@ -240,7 +434,7 @@ func (a *App) toolingGate(ctx context.Context, coverage string) error {
 		return err
 	}
 	if err := a.gatePhase("tooling documentation", func() error {
-		return a.run(ctx, filepath.Join(a.Root, "tools"), nil, "go", "run", "./cmd/doccheck")
+		return a.documentationCheck(ctx)
 	}); err != nil {
 		return err
 	}
@@ -392,6 +586,11 @@ func (a *App) check(ctx context.Context, args []string) error {
 			return usage("usage: ./run check changed")
 		}
 		return a.changedPortalCheck(ctx)
+	case "docs":
+		if len(rest) != 0 {
+			return usage("usage: ./run check docs")
+		}
+		return a.documentationCheck(ctx)
 	case "portal":
 		if len(rest) != 0 {
 			return usage("usage: ./run check portal")

@@ -78,4 +78,5 @@ domain sweep engines in top-level `Emisar.Jobs` and do not recreate
 
 ## Finish
 
-Run `./run gate portal` from the repository root.
+Run `./run gate portal --changed` from the repository root. Run the complete
+`./run gate portal` before pushing.

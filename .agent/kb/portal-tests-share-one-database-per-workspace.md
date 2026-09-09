@@ -1,15 +1,18 @@
 ---
 name: portal-tests-share-one-database-per-workspace
-description: why two concurrent portal test runs in one workspace cancel each other's queries, and how to tell that noise apart from a real missing-synchronization defect
+description: how Portal test database partitions and locks prevent concurrent migrations from cancelling another suite's queries
 subsystem: agent-stack
 sources: [portal/config/test.exs, tools/internal/devtool/portal.go, .github/workflows/ci.yml]
-updated: 2026-08-07
+updated: 2026-09-10
 ---
 
 `portal/config/test.exs` names the test database `emisar_test#{System.get_env("MIX_TEST_PARTITION")}`,
-and **nothing sets `MIX_TEST_PARTITION`** — not `./run test`, not the gate, not CI. So every
-portal test run in one workspace shares one database and one Ecto sandbox. Separate coop boxes
-are safe (each gets its own Postgres container); two runs on the same host workspace are not.
+so the command that chooses the partition also chooses the database and its lock. Focused
+`./run test portal ...` commands use the default `emisar_test` database. The complete Portal
+gate uses two persistent databases: `emisar_test_emisar` for the domain app and
+`emisar_test_emisar_web` for the web app. It compiles the umbrella once, then prepares and runs
+those app suites in parallel. Each suite gets one quarter of Mix's default process-level
+ExUnit case budget, so their combined test concurrency stays bounded at the CPU available to the command.
 
 The collision has one mechanism, and it is not the sandbox:
 
@@ -52,13 +55,18 @@ migrating, not at a sync point in the tests it named. One test that keeps reappe
 real thing, and `AGENTS.md` §7 already covers it: flush the LiveView after asserting its
 broadcast, so queued `handle_info` work finishes while the sandbox owner is still alive.
 
-The runs still share a database; what changed is that they no longer overlap on it.
-`./run gate portal` and `./run test portal` both take one exclusive lock — keyed by the
-database `portal/config/test.exs` resolves, so unrelated databases run freely — held across
-the migration and the suites. A second run prints `waiting: another portal test run holds
-<database>` and starts when the first finishes. Per-run `MIX_TEST_PARTITION` was the other
-option and was not taken: it isolates completely but makes every run re-migrate from scratch,
-and waiting out one suite is cheaper than that on every single run.
+Every command takes an exclusive lock keyed by the database that `portal/config/test.exs`
+resolves and holds it across migration and tests. A second command for that database prints
+`waiting: another portal test run holds <database>` and starts when the first finishes.
+Unrelated partitions continue immediately. Stable gate partitions avoid both failure modes:
+the app suites use different databases, and repeat gates reuse already-migrated
+databases instead of creating a new one every time. Focused commands keep the default database
+because making every short run migrate a fresh partition costs more than waiting for another
+focused run.
 
 The lock is per user and per database, so it does not help across machines or containers —
 CI is unaffected either way, since each job already has its own database.
+
+## Changelog
+- 2026-09-10 — the complete gate moved its two app suites onto stable isolated partitions and
+  runs them concurrently after one shared compile; focused commands retain the default database.

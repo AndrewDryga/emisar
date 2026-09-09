@@ -55,7 +55,7 @@ Numbered so Credo, `/elixir-iron-review`, and code review can cite them. **Archi
 
 | # | Law | Why | Detect |
 |---|-----|-----|--------|
-| **IL-20** | **Verify before claiming done.** Run `./run gate portal` and show output. If you can't run it, say so explicitly. | "Should work" has burned us. Generated code that doesn't pass cleanly — including warning/error/log-free test output — doesn't get committed. | A "done" claim with no command output in the transcript. |
+| **IL-20** | **Verify before claiming done.** Run `./run gate portal --changed` and show output; run the complete `./run gate portal` before pushing or releasing. If you can't run the required gate, say so explicitly. | "Should work" has burned us. Generated code that doesn't pass cleanly — including warning/error/log-free test output — doesn't get committed or pushed. | A "done" claim with no required gate output in the transcript. |
 
 
 ## Reference — module by module
@@ -126,10 +126,13 @@ migration; a merged commit alone is not evidence.
 ## Verification
 
 Use focused `./run test portal <path or selector>` checks and focused Credo after
-coherent edits. Finish with `./run gate portal` from the root. It includes
-compile, formatting, Credo, audits, Sobelow, tests, and the test-output guard.
-Fix failures without suppressing warning/error output or weakening checks.
-Never pipe a check through head/tail and lose its exit status.
+coherent edits. Finish local work with `./run gate portal --changed` from the
+root. It runs the changed source checks and the affected app tests. Before a push
+or release, run the complete `./run gate portal`; it includes compile, formatting,
+Credo, audits, Sobelow, both app suites, and the test-output guard. Fix failures
+without suppressing warning/error output or weakening checks. Never pipe a check
+through head/tail and lose its exit status. Use `./run test portal --profile`
+when diagnosing suite time; it reports the slowest tests without serializing them.
 
 The [enforcement reference](.agent/kb/rules/elixir-layered-contexts.md#enforcement)
 routes Elixir AST rules to Credo and appropriate template checks to

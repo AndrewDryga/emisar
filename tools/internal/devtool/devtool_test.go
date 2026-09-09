@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"testing"
@@ -298,6 +299,133 @@ func TestPortalTestInvocationRejectsMixedAppPaths(t *testing.T) {
 	}
 }
 
+func TestPortalTestModeExtractsOneProfileFlag(t *testing.T) {
+	args, profile, err := portalTestMode([]string{"--profile", "test/emisar/runs_test.exs", "--seed", "1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !profile || !slices.Equal(args, []string{"test/emisar/runs_test.exs", "--seed", "1"}) {
+		t.Fatalf("mode = (%v, %t)", args, profile)
+	}
+	if _, _, err := portalTestMode([]string{"--profile", "--profile"}); !IsUsage(err) {
+		t.Fatalf("duplicate profile error = %v", err)
+	}
+}
+
+func TestChangedPortalTestSuitesFollowDependencyDirection(t *testing.T) {
+	app := testApp(t)
+	tests := []struct {
+		name  string
+		paths []string
+		want  []string
+	}{
+		{
+			name:  "web changes run only web",
+			paths: []string{"portal/apps/emisar_web/lib/emisar_web/router.ex"},
+			want:  []string{"emisar_web"},
+		},
+		{
+			name:  "domain changes run domain and dependent web",
+			paths: []string{"portal/apps/emisar/lib/emisar/runs.ex"},
+			want:  []string{"emisar", "emisar_web"},
+		},
+		{
+			name:  "shared config runs both",
+			paths: []string{"portal/config/test.exs"},
+			want:  []string{"emisar", "emisar_web"},
+		},
+		{
+			name:  "documentation runs neither",
+			paths: []string{"portal/README.md", "portal/.agent/kb/rules/example.md"},
+			want:  nil,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			suites := app.changedPortalTestSuites(test.paths)
+			got := make([]string, len(suites))
+			for index, suite := range suites {
+				got[index] = suite.name
+			}
+			if !slices.Equal(got, test.want) {
+				t.Fatalf("suites = %v, want %v", got, test.want)
+			}
+		})
+	}
+}
+
+func TestPortalTestOutputRunsIsolatedShardsConcurrently(t *testing.T) {
+	app := testApp(t)
+	if err := os.MkdirAll(filepath.Join(app.Portal, "apps", "emisar"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(app.Portal, "apps", "emisar_web"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	bin := filepath.Join(app.Root, "fake-bin")
+	if err := os.Mkdir(bin, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	log := filepath.Join(app.Root, "mix.log")
+	syncDir := filepath.Join(app.Root, "sync")
+	if err := os.Mkdir(syncDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	script := `#!/bin/sh
+printf '%s|%s|%s|%s\n' "$MIX_TEST_PARTITION" "$EMISAR_TEST_PROFILE" "$PWD" "$*" >> "$MIX_LOG"
+case " $* " in
+  *" test "*)
+    touch "$SYNC_DIR/$MIX_TEST_PARTITION"
+    i=0
+    while [ "$i" -lt 200 ]; do
+      count=$(find "$SYNC_DIR" -type f | wc -l | tr -d ' ')
+      [ "$count" -ge 2 ] && exit 0
+      i=$((i + 1))
+      sleep 0.01
+    done
+    exit 9
+    ;;
+esac
+`
+	if err := os.WriteFile(filepath.Join(bin, "mix"), []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("MIX_LOG", log)
+	t.Setenv("SYNC_DIR", syncDir)
+	t.Setenv("XDG_RUNTIME_DIR", t.TempDir())
+
+	if err := app.portalTestOutput(t.Context(), nil, app.portalTestSuites(), true); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(log)
+	if err != nil {
+		t.Fatal(err)
+	}
+	commands := string(data)
+	for _, partition := range []string{"_emisar", "_emisar_web"} {
+		if !strings.Contains(commands, partition+"|1|") {
+			t.Fatalf("commands do not carry profile mode on %s:\n%s", partition, commands)
+		}
+	}
+	if strings.Contains(commands, "deps.compile") {
+		t.Fatalf("Portal test output still warms dependencies:\n%s", commands)
+	}
+	if !strings.Contains(commands, "test --no-compile --max-cases") ||
+		!strings.Contains(commands, "cmd mix test --no-compile --max-cases") {
+		t.Fatalf("test shards do not reuse the compiled tree with bounded concurrency:\n%s", commands)
+	}
+}
+
+func TestPortalTestMaxCasesBoundsParallelSuitesWithoutSlowingOneSuite(t *testing.T) {
+	if got, want := portalTestMaxCases(2), max(1, runtime.GOMAXPROCS(0)/2); got != want {
+		t.Fatalf("parallel max cases = %d, want %d", got, want)
+	}
+	if got, want := portalTestMaxCases(1), runtime.GOMAXPROCS(0)*2; got != want {
+		t.Fatalf("single-suite max cases = %d, want %d", got, want)
+	}
+}
+
 func TestStagedCheckFormatsTheIndexNotTheWorkingTree(t *testing.T) {
 	root := t.TempDir()
 	for _, args := range [][]string{
@@ -474,6 +602,53 @@ func TestPortalGateRequiresDatabaseURLInCI(t *testing.T) {
 	err := app.portalGate(context.Background())
 	if err == nil || !strings.Contains(err.Error(), "requires DATABASE_URL") {
 		t.Fatalf("portal gate error = %v", err)
+	}
+}
+
+func TestPortalGateRejectsUnknownModesBeforeStartingServices(t *testing.T) {
+	app := testApp(t)
+	for _, args := range [][]string{
+		{"gate", "portal", "--coverage", "coverage.out"},
+		{"gate", "portal", "--quick"},
+		{"gate", "portal", "--changed", "extra"},
+	} {
+		if err := app.Run(t.Context(), args); !IsUsage(err) {
+			t.Fatalf("%v error = %v, want usage", args, err)
+		}
+	}
+}
+
+func TestDocumentationCheckUsesTheOwnedDoccheckCommand(t *testing.T) {
+	app := testApp(t)
+	if err := os.MkdirAll(filepath.Join(app.Root, "tools"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	bin := filepath.Join(app.Root, "fake-bin")
+	if err := os.Mkdir(bin, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	log := filepath.Join(app.Root, "go.log")
+	script := "#!/bin/sh\nprintf '%s|%s\\n' \"$PWD\" \"$*\" > \"$GO_LOG\"\n"
+	if err := os.WriteFile(filepath.Join(bin, "go"), []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin)
+	t.Setenv("GO_LOG", log)
+
+	if err := app.Run(t.Context(), []string{"check", "docs"}); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(log)
+	if err != nil {
+		t.Fatal(err)
+	}
+	toolsDir, err := filepath.EvalSymlinks(filepath.Join(app.Root, "tools"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := toolsDir + "|run ./cmd/doccheck\n"
+	if string(data) != want {
+		t.Fatalf("docs command = %q, want %q", data, want)
 	}
 }
 
@@ -1483,6 +1658,9 @@ func TestHelpPrintsFocusedGateCommands(t *testing.T) {
 		if !strings.Contains(out.String(), strings.TrimPrefix(command, "gate ")) {
 			t.Fatalf("help does not mention %q:\n%s", command, out.String())
 		}
+	}
+	if !strings.Contains(out.String(), "portal [--changed]") {
+		t.Fatalf("gate help does not explain the affected-app mode:\n%s", out.String())
 	}
 }
 

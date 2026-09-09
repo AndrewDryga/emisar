@@ -25,7 +25,8 @@ First run:
 Fast feedback:
   ./run test portal --stale   Re-run tests affected by recent edits
   ./run check changed         Check changed Portal source files
-  ./run gate portal           Run the complete Portal gate before committing
+  ./run gate portal --changed Verify affected Portal apps before committing
+  ./run gate portal           Run the complete Portal gate before pushing
 
 Local development:
   setup                       Prepare the complete development environment

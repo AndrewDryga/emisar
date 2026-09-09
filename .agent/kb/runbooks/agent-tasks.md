@@ -27,7 +27,9 @@ folder move. A status checkbox is not a substitute for a transition.
    exits while the work continues. `--force` takes over a live claim and needs
    the human to say so.
 2. Implement the requested behavior, preserving unrelated WIP. Run focused checks
-   while working and the touched project's canonical final gate before committing.
+   while working and the touched project's local final gate before committing.
+   Portal uses `./run gate portal --changed`; its complete gate remains required
+   before a push or release and in CI.
 3. Stage only task-owned files/hunks. Make one focused commit ending with
    `Coop-Task: <id>`. `git log` is the changelog; do not create a changelog file.
 4. Append what changed and why to log.md. Overwrite state.md with the completed
