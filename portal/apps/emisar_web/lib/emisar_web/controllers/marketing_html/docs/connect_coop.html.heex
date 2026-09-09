@@ -4,7 +4,7 @@
   <section class="py-12 sm:py-16">
     <.docs_layout
       current="connect-coop"
-      updated="September 7, 2026"
+      updated="September 9, 2026"
       toc={[
         {"start", "Start the connection"},
         {"install", "Install co:op"},
@@ -29,8 +29,8 @@
 
       <.docs_prerequisites>
         <:item>
-          A Linux or macOS computer with Docker running. This walkthrough uses a Docker
-          image and named volume for the emisar bridge.
+          A Linux or macOS computer with Apple container, Docker, or Podman ready to use.
+          This walkthrough uses a container image and named volume for the emisar bridge.
           The installer needs curl, tar, and sha256sum or shasum.
         </:item>
         <:item>An account with the coding-agent provider you want to use through co:op.</:item>
@@ -135,13 +135,12 @@ USER node</.docs_code>
       <.docs_h3 id="bridge-storage">Keep rotated credentials</.docs_h3>
       <p class="mt-3 text-base leading-7 text-zinc-400">
         In your host's <.docs_inline_code>~/.config/coop/coop.conf</.docs_inline_code>,
-        select Docker and add the volume mount. If
+        add the volume mount. If
         <.docs_inline_code>COOP_RUN_ARGS</.docs_inline_code>
         already exists, append the mount to its existing arguments. This setting applies to your
         co:op sessions on this machine.
       </p>
-      <.docs_code phx-no-format label="coop.conf">COOP_RUNTIME=docker
-COOP_RUN_ARGS=-v coop-emisar-config:/config</.docs_code>
+      <.docs_code phx-no-format label="coop.conf">COOP_RUN_ARGS=-v coop-emisar-config:/config</.docs_code>
       <p class="mt-4 text-base leading-7 text-zinc-400">
         Run
         <.docs_inline_code>coop build</.docs_inline_code>
@@ -263,7 +262,7 @@ COOP_RUN_ARGS=-v coop-emisar-config:/config</.docs_code>
       <ul class="mt-4 list-disc space-y-3 pl-6 text-base leading-7 text-zinc-400">
         <li>
           <strong class="text-zinc-200">No container runtime:</strong>
-          install and start Docker, then run
+          install Apple container, Docker, or Podman, then run
           <.docs_inline_code>coop build</.docs_inline_code>
           and <.docs_inline_code>coop doctor</.docs_inline_code>.
         </li>

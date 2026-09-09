@@ -18,6 +18,10 @@ on through a stable customer-facing contract.
   the security design, when it changes a decision there.
 - Name an optional requirement only when the reader may choose the feature or
   fallback that requires it, and label it optional at the point of use.
+- Keep a guide generic across supported runtimes, operating systems, or
+  providers when the public contract and commands are the same. Do not select a
+  specific variant in configuration merely because it was used for one test.
+  Branch only where the reader must actually take a different action.
 
 This is not a ban on limits, warnings, or security properties. State an absence
 when it changes a decision on the page that owns that contract. For example,
@@ -43,6 +47,13 @@ To enable the GitHub release fallback, also allow api.github.com:443,
 github.com:443, and release-assets.githubusercontent.com:443.
 ```
 
+```text
+COOP_RUN_ARGS=-v coop-emisar-config:/config
+```
+
+The shared volume argument works with co:op's supported runtimes, so the guide
+does not add `COOP_RUNTIME=docker`.
+
 ## Bad
 
 ```text
@@ -53,13 +64,20 @@ that storage service or an inbound port.
 The backing store is private implementation, and the second sentence describes
 work the reader was not instructed to do.
 
+```text
+COOP_RUNTIME=docker
+```
+
+This silently replaces automatic runtime selection even though the procedure
+does not require Docker.
+
 ## Sweep
 
 When changing public setup, prerequisites, networking, or integration copy,
 search nearby public surfaces for backing-provider names, internal topology,
-and phrases such as `you do not need`, `needs no`, and `nothing to configure`.
-Keep only statements that change the reader's action or a decision owned by that
-page.
+unnecessary variant selection, and phrases such as `you do not need`, `needs
+no`, and `nothing to configure`. Keep only statements that change the reader's
+action or a decision owned by that page.
 
 ## Enforcement
 

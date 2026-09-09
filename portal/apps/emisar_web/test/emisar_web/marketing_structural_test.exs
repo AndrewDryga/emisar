@@ -426,14 +426,20 @@ defmodule EmisarWeb.MarketingStructuralTest do
       end
     end
 
-    test "every docs page carries quiet review provenance without a dead edit action", %{
+    test "every docs page carries quiet provenance without a dead edit action", %{
       conn: conn
     } do
-      # Review provenance belongs to the shared docs colophon. Contribution
+      # Review or test provenance belongs to the shared docs colophon. Contribution
       # affordances do not: the public repository cannot accept the commit the
       # old GitHub edit flow promised.
       for page <- EmisarWeb.DocsNav.flat() do
         html = conn |> get(page.path) |> html_response(200)
+        doc = LazyHTML.from_document(html)
+
+        provenance =
+          doc
+          |> LazyHTML.query(~s(footer[data-shot="docs-review-metadata"]))
+          |> LazyHTML.text()
 
         assert html =~ ~s(data-shot="docs-review-metadata"),
                "#{page.path}: no shared review colophon"
@@ -441,7 +447,10 @@ defmodule EmisarWeb.MarketingStructuralTest do
         assert html =~ ~s(aria-label="Document maintenance"),
                "#{page.path}: review colophon has no accessible label"
 
-        assert html =~ "Last reviewed", "#{page.path}: no review date"
+        assert provenance =~ "Last reviewed" or
+                 String.contains?(String.downcase(provenance), "tested"),
+               "#{page.path}: no review or test provenance"
+
         refute html =~ "Suggest a change", "#{page.path}: dead edit action returned"
 
         refute html =~ "github.com/andrewdryga/emisar/edit/main/",

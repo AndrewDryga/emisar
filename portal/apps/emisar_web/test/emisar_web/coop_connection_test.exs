@@ -32,6 +32,7 @@ defmodule EmisarWeb.CoopConnectionTest do
     refute html =~ "Create co:op configuration"
     assert html =~ "/usr/local/bin/emisar-mcp"
     assert html =~ "COOP_RUN_ARGS=-v coop-emisar-config:/config"
+    refute html =~ "COOP_RUNTIME="
     assert html =~ "XDG_CONFIG_HOME"
     assert html =~ "EMISAR_SIGNING_KEY"
 
@@ -118,8 +119,8 @@ defmodule EmisarWeb.CoopConnectionTest do
       |> LazyHTML.text()
       |> String.trim()
 
-    assert storage_settings ==
-             "COOP_RUNTIME=docker\nCOOP_RUN_ARGS=-v coop-emisar-config:/config"
+    assert storage_settings == "COOP_RUN_ARGS=-v coop-emisar-config:/config"
+    refute render(lv) =~ "COOP_RUNTIME="
 
     assert has_element?(lv, "#coop-build", "coop build && coop doctor")
     assert has_element?(lv, "#coop-config-step", "Copy the MCP configuration")

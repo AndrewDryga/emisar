@@ -2040,7 +2040,7 @@ defmodule EmisarWeb.MarketingTest do
         html = conn |> get(route) |> html_response(200)
 
         assert html =~ sentence, "missing or drifted evidence on #{route}"
-        assert html =~ "Last reviewed", "missing review provenance on #{route}"
+        refute html =~ "Last reviewed", "duplicate review provenance on #{route}"
       end
     end
 

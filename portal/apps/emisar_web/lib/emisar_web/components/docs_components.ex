@@ -97,9 +97,9 @@ defmodule EmisarWeb.DocsComponents do
   attr :updated, :string, required: true
   attr :evidence, :string, default: nil
 
-  # This is an editorial colophon, not a second navigation bar. Provider
-  # evidence remains a separate promise so certification never masquerades as
-  # page freshness.
+  # This is an editorial colophon, not a second navigation bar. A dated test
+  # result is stronger provenance than a review date, so customer-facing docs
+  # show one or the other rather than stacking both.
   defp docs_maintenance(assigns) do
     ~H"""
     <footer
@@ -111,7 +111,7 @@ defmodule EmisarWeb.DocsComponents do
         <span aria-hidden="true" class="mt-2.5 h-px w-4 flex-none bg-zinc-800"></span>
         <div class="max-w-[17rem]">
           <p :if={@evidence} class="text-pretty">{@evidence}</p>
-          <p class={@evidence && "mt-0.5"}>Last reviewed {@updated}</p>
+          <p :if={!@evidence}>Last reviewed {@updated}</p>
         </div>
       </div>
     </footer>

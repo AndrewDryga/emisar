@@ -5,24 +5,24 @@ defmodule EmisarWeb.AgentSandboxGuidesTest do
     %{
       path: "/docs/connect-docker-sandboxes",
       title: "Docker Sandboxes",
-      evidence: "Docker Sandboxes 0.39.0",
+      evidence: "Tested with Docker Sandboxes 0.39.0 on macOS on September 7, 2026.",
       boundary: ["runs on the host", "network policy"]
     },
     %{
       path: "/docs/connect-nono",
       title: "nono",
-      evidence: "nono 0.75.0",
+      evidence: "Tested with nono 0.75.0 on macOS on September 7, 2026.",
       boundary: ["Automatic key rotation is unavailable", "profile you run"]
     },
     %{
       path: "/docs/connect-dev-containers",
       title: "Dev Containers",
-      evidence: "Dev Containers CLI 0.89.0",
+      evidence: "Tested with Dev Containers CLI 0.89.0 on September 7, 2026.",
       boundary: ["Dropping Linux capabilities", "does not restrict outbound"]
     }
   ]
 
-  test "the sandbox docs defer generated setup to the console and retain qualification boundaries",
+  test "the sandbox docs defer generated setup to the console and keep evidence concise",
        %{
          conn: conn
        } do
@@ -32,8 +32,10 @@ defmodule EmisarWeb.AgentSandboxGuidesTest do
 
       assert doc |> LazyHTML.query("h1") |> LazyHTML.text() |> String.trim() == guide.title
       assert html =~ guide.evidence
-      assert html =~ "signed-in agent"
-      assert html =~ "not part of that test"
+      refute html =~ "signed-in agent"
+      refute html =~ "not part of that test"
+      refute html =~ "live-tested"
+      refute html =~ "Last reviewed"
       assert html =~ ~s(href="/app/agents/connect")
       assert html =~ ~s(href="/app/audit")
       assert html =~ ~s(href="/docs/policies-and-approvals")

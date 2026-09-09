@@ -1,71 +1,68 @@
-# Provider certification evidence is dated
+# Customer-facing test evidence is dated and positive
 
 ## Rule
 
-Every third-party SSO provider guide ends with a literal evidence footer stating
-what the guide was checked against and when.
+A customer-facing guide with durable runtime evidence ends with one short,
+positive sentence that names what was tested and when:
 
-- Live-org or live-tenant verification wording, with its date, is allowed only
-  when durable evidence records that verification against the real provider.
-- Without that evidence, the footer uses guide-review wording and makes no
-  certification claim.
-- Any evidence claim in the `/docs/sso` overview repeats the provider footer's
-  wording and date; it never states a stronger level or a different date.
-- A recertification changes the owning HEEx footer and its exact marketing-test
-  sentence in the same change. Dates are never advanced by editorial work,
-  screenshot recapture, or assumption.
+```text
+Tested with nono 0.75.0 on macOS on September 7, 2026.
+```
+
+- State the product, version, platform when it matters, and test date.
+- Do not append internal qualification language about what the test did not
+  include. Keep the exact scope, omitted lanes, fixtures, and limitations in the
+  task's validation evidence or the owning KB.
+- Show either the dated test sentence or `Last reviewed <date>` in the shared
+  docs colophon, never both. A page without durable runtime evidence uses the
+  review date and makes no test claim.
+- A test claim is allowed only when durable evidence records that verification.
+  Editorial work, screenshot recapture, and assumption never advance its date.
+- Any evidence claim on an overview repeats the guide's wording and date; a
+  summary never claims a stronger level of verification.
+
+This applies to sandbox, provider, and other integration guides. The sentence
+is customer evidence, not a dump of the internal qualification report.
 
 ## Why
 
-"Verified against a live tenant" is a compatibility promise a buyer uses to
-decide whether the integration will work in their own directory. An undated
-claim cannot be aged out, and a date advanced from an unrelated copy edit turns
-that promise into a guess. Keeping the two wordings distinct means a reader can
-tell which guides someone actually ran end to end and which ones were only read.
-The overview inherits the same limit, so a summary cannot promise more than the
-page it links to.
+A buyer needs to know that the documented combination worked and how old that
+proof is. Long caveats about the test harness make a working guide sound
+uncertain, while a second review date repeats weaker provenance beside stronger
+runtime evidence. Detailed limits still matter, but they belong in retained
+engineering evidence rather than the customer-facing footer.
 
 ## Good
 
 ```heex
 <.docs_layout
-  current="integrations-okta"
-  updated="July 31, 2026"
-  evidence="Verified against a live Okta Integrator org on July 27, 2026."
-  source_path="…/docs/integrations/okta.html.heex"
+  current="connect-nono"
+  updated="September 9, 2026"
+  evidence="Tested with nono 0.75.0 on macOS on September 7, 2026."
 >
 ```
 
-```heex
-<.docs_layout
-  current="integrations-keycloak"
-  updated="July 31, 2026"
-  evidence="Guide reviewed July 31, 2026."
-  source_path="…/docs/integrations/keycloak.html.heex"
->
-```
+The rendered footer contains only the `Tested with …` sentence.
 
 ## Bad
 
-```heex
-<%!-- No evidence footer at all; the reader cannot age the claim. --%>
-<.docs_layout current="integrations-entra" updated="July 31, 2026" source_path="…">
-```
-
 ```text
-— one custom application carries sign-in and provisioning together. Certified on
-a live tenant.
+The sandboxed MCP transport and an audited action were live-tested with nono;
+a signed-in agent was not part of that test.
+
+Last reviewed September 9, 2026
 ```
 
-An undated certification sentence, and — worse — one on a provider whose guide
-footer only claims a review.
+The first paragraph exposes internal qualification scope and the second repeats
+weaker provenance.
 
 ## Enforcement
 
-`portal/apps/emisar_web/test/emisar_web/marketing_test.exs` maps each provider
-route to its exact evidence sentence, so a reworded or re-dated footer fails the
-suite. Sweep target when a claim changes: the five provider guides under
-`controllers/marketing_html/docs/integrations/` (`okta`, `jumpcloud`, `entra`,
-`google_workspace`, `keycloak` `.html.heex`), served at `/docs/integrations/*`;
-the guides list in `docs/sso.html.heex`; and that route map in
-`marketing_test.exs`.
+`portal/apps/emisar_web/test/emisar_web/agent_sandbox_guides_test.exs` pins each
+sandbox guide's exact sentence and rejects negative test-scope disclaimers and
+duplicate review provenance. `marketing_test.exs` pins provider evidence, and
+`marketing_structural_test.exs` requires every docs page to render either review
+or test provenance.
+
+When a claim changes, sweep the owning guide, any overview that repeats it, and
+the exact rendered-page assertion in the same change.

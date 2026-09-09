@@ -1935,7 +1935,7 @@ defmodule EmisarWeb.AgentsLive do
               <section id="coop-install-step" class="space-y-4">
                 <.step_header step={1} title="Install co:op" />
                 <div class="ml-6 space-y-4 text-sm text-zinc-400">
-                  <p>On Linux or macOS, start Docker and run:</p>
+                  <p>With Apple container, Docker, or Podman ready to use, run:</p>
                   <.code_line
                     id="coop-install"
                     label="On your computer"
@@ -1978,7 +1978,7 @@ defmodule EmisarWeb.AgentsLive do
                     In
                     <.inline_code>~/.config/coop/coop.conf</.inline_code>
                     on your computer,
-                    add or update these settings. Append the mount if
+                    add this setting. Append the mount if
                     <.inline_code>COOP_RUN_ARGS</.inline_code>
                     already exists.
                     Keep this volume so replacement keys survive new containers.
@@ -1986,7 +1986,7 @@ defmodule EmisarWeb.AgentsLive do
                   <.code_panel
                     id="coop-storage"
                     label="coop.conf"
-                    code={~s(COOP_RUNTIME=docker\nCOOP_RUN_ARGS=-v coop-emisar-config:/config)}
+                    code="COOP_RUN_ARGS=-v coop-emisar-config:/config"
                     copy
                   />
                   <.code_line
