@@ -12,13 +12,13 @@ defmodule EmisarWeb.AgentSandboxGuidesTest do
       path: "/docs/connect-nono",
       title: "nono",
       evidence: "Tested with nono 0.75.0 on macOS on September 7, 2026.",
-      boundary: ["Automatic key rotation is unavailable", "profile you run"]
+      boundary: ["Rotate the key manually", "any file, secret, tool"]
     },
     %{
       path: "/docs/connect-dev-containers",
       title: "Dev Containers",
       evidence: "Tested with Dev Containers CLI 0.89.0 on September 7, 2026.",
-      boundary: ["Dropping Linux capabilities", "does not restrict outbound"]
+      boundary: ["potentially leak anything", "does not restrict outbound"]
     }
   ]
 
@@ -78,6 +78,29 @@ defmodule EmisarWeb.AgentSandboxGuidesTest do
     assert html =~ "allowing access only to the"
     assert html =~ "services the agent needs"
     refute html =~ "The VM can have its own Docker socket"
+  end
+
+  test "the nono and Dev Containers guides link their limits and keep the risks practical", %{
+    conn: conn
+  } do
+    nono = conn |> get(~p"/docs/connect-nono") |> html_response(200)
+
+    dev_containers =
+      conn |> recycle() |> get(~p"/docs/connect-dev-containers") |> html_response(200)
+
+    assert nono =~ ~s(href="/docs/connect-nono#limits-and-risks")
+    assert nono =~ "including everything in its working directory"
+    assert nono =~ "Allow network access only to"
+    refute nono =~ "used for qualification"
+
+    assert dev_containers =~ ~s(href="/docs/connect-dev-containers#limits-and-risks")
+    assert dev_containers =~ ~s(href="/docs/connect-coop")
+    assert dev_containers =~ "secrets in"
+    assert dev_containers =~ "temporary artifacts"
+    assert dev_containers =~ "never mount the host's Docker socket"
+    assert dev_containers =~ "allowing access only to the services the agent needs"
+    refute dev_containers =~ "Dropping Linux capabilities"
+    refute dev_containers =~ "emisar-devcontainer-config"
   end
 
   test "installer prerequisites do not require optional GitHub CLI", %{conn: conn} do

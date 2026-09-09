@@ -20,9 +20,11 @@
       </.docs_header>
 
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        nono limits the files, environment variables, commands, and network destinations available
-        to a local process. emisar separately limits the infrastructure actions that process can
-        request.
+        nono controls local access through an operating-system profile. The agent can still use
+        anything <a
+          href={~p"/docs/connect-nono#limits-and-risks"}
+          class="text-brand-400 hover:text-brand-300"
+        >allowed by that profile</a>.
       </p>
 
       <.docs_prerequisites>
@@ -56,27 +58,26 @@
       <.docs_h2 id="limits-and-risks">Limits &amp; risks</.docs_h2>
       <ul class="mt-5 list-disc space-y-3 pl-6 text-base leading-7 text-zinc-400">
         <li>
-          nono enforces the profile you run. It does not hide files or block network destinations
-          that the profile itself allows, including files in the working directory.
+          The agent can see any file, secret, tool, or network destination allowed by the profile,
+          including everything in its working directory.
         </li>
         <li>
-          The agent can read its own MCP configuration, including its emisar key. emisar policy,
-          approvals, runner scope, and audit still apply to every request.
+          The agent can read the emisar key in its MCP configuration. Allow network access only to
+          the services the agent needs.
         </li>
         <li>
-          Review every file, command, environment, or network permission you add to the profile.
+          Review the profile before each run, especially after adding file, command, environment
+          variable, or network access.
         </li>
       </ul>
 
       <.docs_h2 id="rotation">Rotate the key</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        Automatic key rotation is unavailable in the strict macOS profile used for qualification.
-        Rotate the key from <a
+        Rotate the key manually from <a
           href={~p"/app/agents"}
           class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
         >AI agents</a>, replace it in the private Codex configuration, and start a fresh nono
-        session. Do not grant the sandbox an entire credential directory just to enable automatic
-        rotation.
+        session. Do not give the sandbox access to the whole credential directory to automate this.
       </p>
     </.docs_layout>
   </section>

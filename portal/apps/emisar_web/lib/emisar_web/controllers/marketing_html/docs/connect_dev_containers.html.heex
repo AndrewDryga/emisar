@@ -14,15 +14,17 @@
     >
       <.docs_header current="connect-dev-containers">
         <:dek>
-          Put a CLI agent and the emisar bridge inside a development container with a small host
-          filesystem view and no extra Linux capabilities.
+          Run a CLI agent and the emisar bridge inside your existing development container.
         </:dek>
       </.docs_header>
 
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        A Dev Container is useful when your project already has a containerized toolchain. This
-        guide runs Codex from the container terminal. It does not treat the VS Code extension,
-        forwarded credentials, or a mounted host Docker socket as isolated by default.
+        Dev Containers are useful when your project already has a containerized toolchain. They
+        can isolate the agent from <a
+          href={~p"/docs/connect-dev-containers#limits-and-risks"}
+          class="text-brand-400 hover:text-brand-300"
+        >most of your host</a>, but the agent can still access anything you mount or forward into
+        the container.
       </p>
 
       <.docs_prerequisites>
@@ -53,35 +55,38 @@
       <.docs_h2 id="limits-and-risks">Limits &amp; risks</.docs_h2>
       <ul class="mt-5 list-disc space-y-3 pl-6 text-base leading-7 text-zinc-400">
         <li>
-          A Dev Container can read every file mounted into it. Remove project secrets and avoid
-          mounting your home directory, SSH agent, cloud configuration, or host Docker socket.
+          The agent can see and potentially leak anything mounted into the container, including
+          secrets in
+          <.docs_inline_code>.env</.docs_inline_code>
+          files and temporary artifacts. Mount only the files it needs. For stronger isolation
+          from local files, try <.link
+            navigate={~p"/docs/connect-coop"}
+            class="text-brand-400 hover:text-brand-300"
+          >co:op</.link>.
         </li>
         <li>
-          Dropping Linux capabilities and blocking privilege escalation does not restrict outbound
-          networking or hide secrets already present in the project workspace.
-        </li>
-        <li>
-          VS Code can share Git credentials or forward an SSH agent. Review its
+          VS Code can share Git credentials or forward an SSH agent into the container. Review its
           <.link
             href="https://code.visualstudio.com/remote/advancedcontainers/sharing-git-credentials"
             class="text-brand-400 hover:text-brand-300"
           >credential-sharing settings</.link>
-          before treating an editor session as isolated.
+          before starting the agent, and never mount the host's Docker socket.
+        </li>
+        <li>
+          The default configuration does not restrict outbound network access. We recommend
+          allowing access only to the services the agent needs.
         </li>
       </ul>
 
       <.docs_h2 id="rebuild">Rebuild and rotate</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        Keep the
-        <.docs_inline_code>emisar-devcontainer-config</.docs_inline_code>
-        volume when
-        rebuilding so the bridge retains rotated credentials. If that volume or the agent's private
-        configuration is lost, create a fresh key from
+        Keep the bridge's named volume when rebuilding the container so rotated credentials are
+        retained. If you remove the volume or the agent's private configuration, create a fresh key from
         <a
           href={~p"/app/agents"}
           class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
         >AI agents</a>
-        and replace the old configuration.
+        and reconnect.
       </p>
     </.docs_layout>
   </section>
