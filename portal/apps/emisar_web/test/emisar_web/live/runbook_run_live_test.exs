@@ -469,6 +469,8 @@ defmodule EmisarWeb.RunbookRunLiveTest do
 
       assert html =~ "Confirm the incident"
       assert has_element?(lv, "#runbook-read-only", "cannot start it")
+      assert has_element?(lv, "#runbook-read-only a[href$='/edit']", "View definition")
+      refute has_element?(lv, "#current-runbook-plan")
       assert has_element?(lv, "#start-runbook-button[disabled]")
       render_click(lv, "start", %{"reason" => "Forged start", "inputs" => %{}})
       refute Repo.exists?(RunbookExecution)

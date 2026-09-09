@@ -608,7 +608,7 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
       >
         <div
           id={"runbook-stage-#{@stage_index}-step-#{@step_index}-overview"}
-          class="mt-5 grid gap-4 xl:grid-cols-[9rem_minmax(0,1fr)_minmax(0,1fr)] xl:items-end"
+          class="mt-5 grid grid-cols-1 gap-4 xl:grid-cols-[9rem_minmax(0,1fr)_minmax(0,1fr)] xl:items-end"
         >
           <.input
             name={"draft[stages][#{@stage_index}][steps][#{@step_index}][id]"}
@@ -628,7 +628,7 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
             read_only?={@read_only?}
           />
 
-          <div>
+          <div class="min-w-0">
             <div class="flex min-h-5 items-center justify-between gap-2">
               <.label variant={:eyebrow}>Action</.label>
               <.tooltip
@@ -1111,7 +1111,7 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
       )
 
     ~H"""
-    <div id={"runbook-stage-#{@stage_index}-step-#{@step_index}-targets"}>
+    <div id={"runbook-stage-#{@stage_index}-step-#{@step_index}-targets"} class="min-w-0">
       <.label variant={:eyebrow}>Targets</.label>
       <input
         type="hidden"
@@ -1148,7 +1148,7 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
         panel_position={:flow_on_narrow}
         class="mt-2"
         summary_class={target_summary_class(@unavailable)}
-        panel_class="z-40 mt-2 w-full min-w-[18rem] overflow-hidden text-sm"
+        panel_class="z-40 mt-2 w-full min-w-0 overflow-hidden text-sm xl:min-w-[18rem]"
       >
         <:trigger>
           <span

@@ -1095,7 +1095,11 @@ defmodule EmisarWeb.RunbookRunLive do
               </div>
             </div>
 
-            <.plan_details preflight={@preflight_view} expanded_stages={@expanded_stages} />
+            <.plan_details
+              :if={@can_dispatch?}
+              preflight={@preflight_view}
+              expanded_stages={@expanded_stages}
+            />
 
             <div class="flex flex-wrap items-center gap-4 border-t border-zinc-800/70 pt-4">
               <div :if={@review_notice} id="runbook-review-notice" role="alert" class="w-full">
