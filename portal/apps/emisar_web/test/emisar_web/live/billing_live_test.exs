@@ -708,6 +708,7 @@ defmodule EmisarWeb.BillingLiveTest do
       account: account
     } do
       account = attach_customer(account, "ctm_invoices_lv_01")
+      insert_subscription(account, "active")
 
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/billing")
 
@@ -863,6 +864,7 @@ defmodule EmisarWeb.BillingLiveTest do
       account: account
     } do
       account = attach_customer(account, "ctm_invoices_admin_01")
+      insert_subscription(account, "active")
 
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/billing")
       html = render_async(lv)
@@ -873,11 +875,12 @@ defmodule EmisarWeb.BillingLiveTest do
       assert html =~ "Recent invoices"
       assert has_element?(lv, "button[phx-click='download_invoice'][phx-value-id='txn_stub_1']")
       assert has_element?(lv, "#billing-upgrade-offers")
-      assert has_element?(lv, "button[phx-click='upgrade']")
+      assert has_element?(lv, "#billing-offer-enterprise a", "Contact sales")
     end
 
     test "downloads an invoice PDF", %{conn: conn, account: account} do
       account = attach_customer(account, "ctm_invoices_admin_02")
+      insert_subscription(account, "active")
 
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/billing")
       render_async(lv)
@@ -974,6 +977,7 @@ defmodule EmisarWeb.BillingLiveTest do
       account: account
     } do
       attach_customer(account, "ctm_invoice_limit")
+      insert_subscription(account, "active")
       {:ok, [invoice | _]} = Emisar.Billing.PaddleClient.Stub.list_transactions(%{})
       invoices = for n <- 1..5, do: Map.put(invoice, "id", "txn_recent_#{n}")
       Emisar.Config.put_override(:emisar, :paddle_client, InvoicePaddleClient)
@@ -1006,6 +1010,7 @@ defmodule EmisarWeb.BillingLiveTest do
       account: account
     } do
       account = attach_customer(account, "ctm_async_invoices_01")
+      insert_subscription(account, "active")
 
       {:ok, lv, html} = live(conn, ~p"/app/#{account}/settings/billing")
 
@@ -1037,11 +1042,70 @@ defmodule EmisarWeb.BillingLiveTest do
       refute html =~ "Recent invoices"
     end
 
+    test "Free workspaces hide invoices even with billing details", %{
+      conn: conn,
+      account: account
+    } do
+      attach_customer(account, "ctm_free_invoices")
+      Emisar.Config.put_override(:emisar, :paddle_client, InvoicePaddleClient)
+
+      {:ok, lv, html} = live(conn, ~p"/app/#{account}/settings/billing")
+
+      refute html =~ "Loading invoices"
+      refute html =~ "Recent invoices"
+      html = render_async(lv)
+      refute html =~ "Couldn't load recent invoices"
+      refute html =~ "No invoices yet"
+      refute has_element?(lv, "button[phx-click='retry_invoices']")
+      assert has_element?(lv, "#billing-current-plan button", "Manage billing")
+
+      section_ids =
+        html
+        |> LazyHTML.from_document()
+        |> LazyHTML.query(
+          "#billing-current-plan, #billing-usage, #billing-features, #billing-upgrade-offers"
+        )
+        |> LazyHTML.attribute("id")
+
+      assert section_ids == [
+               "billing-current-plan",
+               "billing-usage",
+               "billing-features",
+               "billing-upgrade-offers"
+             ]
+    end
+
+    test "a paid workspace with no invoices shows an empty state and can refresh", %{
+      conn: conn,
+      account: account
+    } do
+      attach_customer(account, "ctm_empty_invoices")
+      insert_subscription(account, "active")
+      Emisar.Config.put_override(:emisar, :paddle_client, InvoicePaddleClient)
+      Emisar.Config.put_override(:emisar, :billing_test_invoice_result, {:ok, []})
+
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/billing")
+      html = render_async(lv)
+
+      assert html =~ "Recent invoices"
+      assert html =~ "No invoices yet."
+      refute has_element?(lv, "#billing-invoices")
+      assert has_element?(lv, "button[phx-click='manage_billing']", "View all invoices")
+
+      Emisar.Config.put_override(:emisar, :paddle_client, Emisar.Billing.PaddleClient.Stub)
+      lv |> element("button[phx-click='retry_invoices']") |> render_click()
+      html = render_async(lv)
+
+      refute html =~ "No invoices yet."
+      assert has_element?(lv, "#billing-invoices button[phx-value-id='txn_stub_1']")
+    end
+
     test "a Paddle failure shows the inline retry state, and retry recovers", %{
       conn: conn,
       account: account
     } do
       account = attach_customer(account, "ctm_invoices_down_01")
+      insert_subscription(account, "active")
       Emisar.Config.put_override(:emisar, :paddle_client, InvoicePaddleClient)
 
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/billing")
@@ -1322,6 +1386,7 @@ defmodule EmisarWeb.BillingLiveTest do
     test "periodic refresh leaves invoice failures for explicit retry", %{conn: conn} do
       {conn, _user, account} = register_and_log_in(conn)
       attach_customer(account, "ctm_refresh_invoice_failure")
+      insert_subscription(account, "active")
       Emisar.Config.put_override(:emisar, :paddle_client, InvoicePaddleClient)
       Emisar.Config.put_override(:emisar, :billing_test_invoice_owner, self())
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/billing")

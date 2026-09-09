@@ -539,7 +539,7 @@ defmodule EmisarWeb.BillingLive do
             </.button>
           </:cta>
         </.subscription_banner>
-        <div class="grid grid-cols-1 gap-x-10 gap-y-8 xl:grid-cols-[minmax(0,1fr)_22rem] xl:items-start">
+        <div class="grid grid-cols-1 gap-x-10 gap-y-8 xl:grid-cols-[minmax(0,1fr)_22rem] xl:grid-rows-[min-content_1fr] xl:items-start">
           <div class="min-w-0 space-y-8">
             <section id="billing-current-plan">
               <.section_header title="Current plan">
@@ -597,7 +597,7 @@ defmodule EmisarWeb.BillingLive do
             </section>
             <.async_result
               :let={invoices}
-              :if={Billing.subject_can_view_invoices?(@current_subject)}
+              :if={@summary.plan != "free" and Billing.subject_can_view_invoices?(@current_subject)}
               assign={@invoices}
             >
               <:loading>
@@ -649,6 +649,9 @@ defmodule EmisarWeb.BillingLive do
                     </.button>
                   </:actions>
                 </.section_header>
+                <.empty_state :if={invoices == []} variant={:hint}>
+                  No invoices yet.
+                </.empty_state>
                 <ul :if={invoices != []} id="billing-invoices" class="divide-y divide-zinc-800/70">
                   <li
                     :for={invoice <- Enum.take(invoices, 3)}
@@ -693,7 +696,7 @@ defmodule EmisarWeb.BillingLive do
               </section>
             </.async_result>
           </div>
-          <aside class="min-w-0 space-y-8">
+          <aside class="min-w-0 space-y-8 xl:col-start-2 xl:row-start-1 xl:row-span-2">
             <section id="billing-usage">
               <.section_header title="Usage" />
               <div class="space-y-4">
@@ -762,144 +765,148 @@ defmodule EmisarWeb.BillingLive do
               </div>
             </section>
           </aside>
-        </div>
 
-        <section :if={@offers != []} id="billing-upgrade-offers" class="max-w-3xl">
-          <.status_note
-            :if={billing_intent_actionable?(@billing_intent, @summary, @current_subject)}
-            icon="product.billing"
-            tone={:neutral}
-            title={"Review Team for #{@current_account.name}"}
-            class="mb-5"
+          <section
+            :if={@offers != []}
+            id="billing-upgrade-offers"
+            class="min-w-0 max-w-3xl xl:col-start-1 xl:row-start-2"
           >
-            {cycle_label(@cycle)} is selected. Choose Upgrade to Team below to open checkout.
-            Nothing is charged until you confirm there.
-          </.status_note>
-          <.section_header title={
-            if @summary.plan == "free", do: "Upgrade your plan", else: "Upgrade to Enterprise"
-          } />
-          <div class={["grid gap-4", length(@offers) == 2 && "md:grid-cols-2"]}>
-            <%!-- credo:disable-for-next-line Emisar.Checks.NoIslandContainers — paid choices reuse the shared choice-card recipe; a single offer stays on canvas --%>
-            <article
-              :for={plan <- @offers}
-              id={"billing-offer-#{plan.key}"}
-              class={
-                if length(@offers) == 2,
-                  do: "flex min-w-0 flex-col rounded-lg bg-black/20 p-4 ring-1 ring-zinc-800",
-                  else: "grid min-w-0 gap-x-10 gap-y-4 md:grid-cols-2"
-              }
+            <.status_note
+              :if={billing_intent_actionable?(@billing_intent, @summary, @current_subject)}
+              icon="product.billing"
+              tone={:neutral}
+              title={"Review Team for #{@current_account.name}"}
+              class="mb-5"
             >
-              <div>
-                <.section_header
-                  :if={length(@offers) == 2}
-                  level={3}
-                  title={plan.name}
-                  class="min-h-8"
-                >
-                  <:badge :if={
-                    plan.key == "team" and
-                      billing_intent_actionable?(@billing_intent, @summary, @current_subject)
-                  }>
-                    <.chip tone={:neutral}>Selected</.chip>
-                  </:badge>
-                  <:actions :if={plan.key == "team"}>
-                    <div
-                      class="inline-flex rounded-lg p-0.5 text-xs font-medium ring-1 ring-zinc-800"
-                      role="group"
-                      aria-label="Team billing cycle"
-                    >
-                      <button
-                        :for={{value, label} <- [{"month", "Monthly"}, {"year", "Annual"}]}
-                        type="button"
-                        phx-click="set_cycle"
-                        phx-value-cycle={value}
-                        aria-pressed={to_string(@cycle) == value}
-                        class={[
-                          "rounded-md px-3 py-1.5 transition-colors",
-                          if(to_string(@cycle) == value,
-                            do: "bg-zinc-800 text-zinc-100",
-                            else: "text-zinc-400 hover:text-zinc-200"
-                          )
-                        ]}
-                      >
-                        {label}
-                      </button>
-                    </div>
-                  </:actions>
-                </.section_header>
-                <p class="text-sm tabular-nums text-zinc-200">{price_label(plan, @cycle)}</p>
-                <p :if={plan.key == "team"} class="mt-2 text-xs tabular-nums text-zinc-400">
-                  {estimate_label(plan, @summary, @cycle)}
-                  <span
-                    :if={@cycle == :year and Billing.annual_savings_label(plan)}
-                    class="block mt-1"
-                  >
-                    {Billing.annual_savings_label(plan)}
-                  </span>
-                </p>
-              </div>
-              <ul class={[
-                "space-y-1.5 text-xs text-zinc-300",
-                if(length(@offers) == 2,
-                  do: "mt-4 flex-1",
-                  else: "md:col-start-2 md:row-start-1 md:row-span-2"
-                )
-              ]}>
-                <li
-                  :for={{_key, label} <- offer_features(plan, @summary)}
-                  class="flex items-start gap-2"
-                >
-                  <.icon name="state.included" class="h-4 w-4 flex-none text-zinc-400" />
-                  <span>{label}</span>
-                </li>
-              </ul>
-              <div
-                :if={Billing.subject_can_manage_billing?(@current_subject)}
-                class={if length(@offers) == 2, do: "mt-4", else: "md:col-start-1 md:row-start-2"}
+              {cycle_label(@cycle)} is selected. Choose Upgrade to Team below to open checkout.
+              Nothing is charged until you confirm there.
+            </.status_note>
+            <.section_header title={
+              if @summary.plan == "free", do: "Upgrade your plan", else: "Upgrade to Enterprise"
+            } />
+            <div class={["grid gap-4", length(@offers) == 2 && "md:grid-cols-2"]}>
+              <%!-- credo:disable-for-next-line Emisar.Checks.NoIslandContainers — paid choices reuse the shared choice-card recipe; a single offer stays on canvas --%>
+              <article
+                :for={plan <- @offers}
+                id={"billing-offer-#{plan.key}"}
+                class={
+                  if length(@offers) == 2,
+                    do: "flex min-w-0 flex-col rounded-lg bg-black/20 p-4 ring-1 ring-zinc-800",
+                    else: "grid min-w-0 gap-x-10 gap-y-4 md:grid-cols-2"
+                }
               >
-                <%= case plan_action(plan, @summary) do %>
-                  <% :upgrade -> %>
-                    <.button
-                      class="w-full"
-                      size={:sm}
-                      phx-click="upgrade"
-                      phx-value-plan={plan.key}
-                      phx-value-cycle={@cycle}
-                      phx-disable-with="Starting checkout…"
+                <div>
+                  <.section_header
+                    :if={length(@offers) == 2}
+                    level={3}
+                    title={plan.name}
+                    class="min-h-8"
+                  >
+                    <:badge :if={
+                      plan.key == "team" and
+                        billing_intent_actionable?(@billing_intent, @summary, @current_subject)
+                    }>
+                      <.chip tone={:neutral}>Selected</.chip>
+                    </:badge>
+                    <:actions :if={plan.key == "team"}>
+                      <div
+                        class="inline-flex rounded-lg p-0.5 text-xs font-medium ring-1 ring-zinc-800"
+                        role="group"
+                        aria-label="Team billing cycle"
+                      >
+                        <button
+                          :for={{value, label} <- [{"month", "Monthly"}, {"year", "Annual"}]}
+                          type="button"
+                          phx-click="set_cycle"
+                          phx-value-cycle={value}
+                          aria-pressed={to_string(@cycle) == value}
+                          class={[
+                            "rounded-md px-3 py-1.5 transition-colors",
+                            if(to_string(@cycle) == value,
+                              do: "bg-zinc-800 text-zinc-100",
+                              else: "text-zinc-400 hover:text-zinc-200"
+                            )
+                          ]}
+                        >
+                          {label}
+                        </button>
+                      </div>
+                    </:actions>
+                  </.section_header>
+                  <p class="text-sm tabular-nums text-zinc-200">{price_label(plan, @cycle)}</p>
+                  <p :if={plan.key == "team"} class="mt-2 text-xs tabular-nums text-zinc-400">
+                    {estimate_label(plan, @summary, @cycle)}
+                    <span
+                      :if={@cycle == :year and Billing.annual_savings_label(plan)}
+                      class="block mt-1"
                     >
-                      Upgrade to {plan.name}
-                    </.button>
-                  <% :sales -> %>
-                    <.button
-                      variant={:secondary}
-                      class={if length(@offers) == 2, do: "w-full"}
-                      size={:sm}
-                      href={enterprise_sales_mailto(@current_account, @current_user)}
-                    >
-                      Contact sales
-                    </.button>
-                  <% :support -> %>
-                    <.button
-                      variant={:secondary}
-                      size={:sm}
-                      href={billing_support_mailto(@current_account, @current_user)}
-                    >
-                      Contact support
-                    </.button>
-                  <% :manage -> %>
-                    <.button
-                      variant={:secondary}
-                      size={:sm}
-                      phx-click="manage_billing"
-                      phx-disable-with="Opening billing…"
-                    >
-                      Manage billing
-                    </.button>
-                <% end %>
-              </div>
-            </article>
-          </div>
-        </section>
+                      {Billing.annual_savings_label(plan)}
+                    </span>
+                  </p>
+                </div>
+                <ul class={[
+                  "space-y-1.5 text-xs text-zinc-300",
+                  if(length(@offers) == 2,
+                    do: "mt-4 flex-1",
+                    else: "md:col-start-2 md:row-start-1 md:row-span-2"
+                  )
+                ]}>
+                  <li
+                    :for={{_key, label} <- offer_features(plan, @summary)}
+                    class="flex items-start gap-2"
+                  >
+                    <.icon name="state.included" class="h-4 w-4 flex-none text-zinc-400" />
+                    <span>{label}</span>
+                  </li>
+                </ul>
+                <div
+                  :if={Billing.subject_can_manage_billing?(@current_subject)}
+                  class={if length(@offers) == 2, do: "mt-4", else: "md:col-start-1 md:row-start-2"}
+                >
+                  <%= case plan_action(plan, @summary) do %>
+                    <% :upgrade -> %>
+                      <.button
+                        class="w-full"
+                        size={:sm}
+                        phx-click="upgrade"
+                        phx-value-plan={plan.key}
+                        phx-value-cycle={@cycle}
+                        phx-disable-with="Starting checkout…"
+                      >
+                        Upgrade to {plan.name}
+                      </.button>
+                    <% :sales -> %>
+                      <.button
+                        variant={:secondary}
+                        class={if length(@offers) == 2, do: "w-full"}
+                        size={:sm}
+                        href={enterprise_sales_mailto(@current_account, @current_user)}
+                      >
+                        Contact sales
+                      </.button>
+                    <% :support -> %>
+                      <.button
+                        variant={:secondary}
+                        size={:sm}
+                        href={billing_support_mailto(@current_account, @current_user)}
+                      >
+                        Contact support
+                      </.button>
+                    <% :manage -> %>
+                      <.button
+                        variant={:secondary}
+                        size={:sm}
+                        phx-click="manage_billing"
+                        phx-disable-with="Opening billing…"
+                      >
+                        Manage billing
+                      </.button>
+                  <% end %>
+                </div>
+              </article>
+            </div>
+          </section>
+        </div>
       </div>
     </.console_shell>
     """
