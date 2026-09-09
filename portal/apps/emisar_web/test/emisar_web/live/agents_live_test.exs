@@ -88,7 +88,7 @@ defmodule EmisarWeb.AgentsLiveTest do
     end
 
     # test.exs policy: < 0.0.1 unsupported, [0.0.1, 0.1.0) outdated, >= 0.1.0 supported.
-    test "a below-minimum emisar-mcp bridge reads 'unsupported' in the status, not a chip",
+    test "a below-minimum bridge keeps its status and offers a red update icon",
          %{conn: conn} do
       {conn, user, account} = register_and_log_in(conn)
       conn = %{conn | host: "localhost", port: 4000}
@@ -100,11 +100,9 @@ defmodule EmisarWeb.AgentsLiveTest do
 
       {:ok, lv, html} = live(conn, ~p"/app/#{account}/agents")
 
-      # The status pill (text-rose-300) leads with the block itself, and the
-      # separate stale-version chip is suppressed so the row never carries two
-      # red labels for the one fact.
       assert has_element?(lv, "span.text-rose-300", "Unsupported")
-      refute has_element?(lv, "#mcp-version-#{key.id}")
+      assert has_element?(lv, "#mcp-version-#{key.id}-tt.emisar-icon-mono svg.text-rose-400")
+      assert has_element?(lv, "#mcp-version-#{key.id} [data-copy-text]")
 
       assert html =~ "MCP bridge update required"
 
@@ -121,6 +119,7 @@ defmodule EmisarWeb.AgentsLiveTest do
     test "an idle client on an unsupported bridge reads 'unsupported', not 'idle'",
          %{conn: conn} do
       {conn, user, account} = register_and_log_in(conn)
+      conn = %{conn | host: "localhost", port: 4000}
       subject = owner_subject(user, account)
       {:ok, _raw, key} = ApiKeys.create_key(%{name: "StaleBot"}, subject)
 
@@ -138,11 +137,20 @@ defmodule EmisarWeb.AgentsLiveTest do
 
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/agents")
 
-      # A rose-300 pill word is the override itself: a revert would render a
-      # zinc "idle" pill and no rose "unsupported", failing this. The chip is
-      # suppressed so the block reads once.
       assert has_element?(lv, "span.text-rose-300", "Unsupported")
-      refute has_element?(lv, "#mcp-version-#{key.id}")
+      assert has_element?(lv, "#mcp-version-#{key.id}-tt.emisar-icon-mono svg.text-rose-400")
+
+      lv |> element("#mcp-version-#{key.id} [data-os-select='windows']") |> render_click()
+
+      assert has_element?(
+               lv,
+               "#mcp-version-#{key.id} [data-os='windows']:not(.hidden) [data-copy-text]"
+             )
+
+      refute has_element?(lv, "#mcp-version-#{key.id} [data-os='linux']:not(.hidden)")
+
+      render_click(lv, "select_upgrade_os", %{"os" => "invalid"})
+      assert has_element?(lv, "#mcp-version-#{key.id} [data-os='windows']:not(.hidden)")
     end
 
     test "a client on a current emisar-mcp bridge shows no staleness chip", %{conn: conn} do

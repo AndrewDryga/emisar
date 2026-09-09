@@ -488,6 +488,32 @@ defmodule EmisarWeb.BillingLive do
       width={:table}
     >
       <:title>Billing</:title>
+      <:actions :if={
+        not @loading? and not is_nil(@summary) and
+          Billing.subject_can_manage_billing?(@current_subject)
+      }>
+        <.button
+          :if={@summary.billing_portal_available? and @summary.subscription_source != "complimentary"}
+          id="billing-manage"
+          variant={:secondary}
+          phx-click="manage_billing"
+          phx-disable-with="Opening billing…"
+        >
+          Manage billing
+        </.button>
+        <.button
+          :if={
+            @summary.subscription_source == "complimentary" or
+              (not @summary.billing_portal_available? and
+                 (@summary.support_channels.email? or @summary.subscription_managed?))
+          }
+          id="billing-contact-support"
+          variant={:secondary}
+          href={billing_support_mailto(@current_account, @current_user)}
+        >
+          Contact support
+        </.button>
+      </:actions>
 
       <.page_intro>
         See what your plan includes and how much you're using, with billing details and upgrade
@@ -542,32 +568,7 @@ defmodule EmisarWeb.BillingLive do
         <div class="grid grid-cols-1 gap-x-10 gap-y-8 xl:grid-cols-[minmax(0,1fr)_22rem] xl:grid-rows-[min-content_1fr] xl:items-start">
           <div class="min-w-0 space-y-8">
             <section id="billing-current-plan">
-              <.section_header title="Current plan">
-                <:actions :if={Billing.subject_can_manage_billing?(@current_subject)}>
-                  <.button
-                    :if={
-                      @summary.billing_portal_available? and
-                        @summary.subscription_source != "complimentary"
-                    }
-                    variant={:secondary}
-                    phx-click="manage_billing"
-                    phx-disable-with="Opening billing…"
-                  >
-                    Manage billing
-                  </.button>
-                  <.button
-                    :if={
-                      @summary.subscription_source == "complimentary" or
-                        (not @summary.billing_portal_available? and
-                           (@summary.support_channels.email? or @summary.subscription_managed?))
-                    }
-                    variant={:secondary}
-                    href={billing_support_mailto(@current_account, @current_user)}
-                  >
-                    Contact support
-                  </.button>
-                </:actions>
-              </.section_header>
+              <.section_header title="Current plan" />
               <div>
                 <div class="flex flex-wrap items-baseline gap-x-2 gap-y-1">
                   <span class="text-2xl font-semibold text-zinc-50">{@summary.plan_name}</span>

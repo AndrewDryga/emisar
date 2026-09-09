@@ -48,9 +48,14 @@ export function wireTooltip(el) {
   }
 
   // The bubble is an overlay: a click inside it acts on the BUBBLE's content,
-  // never on whatever row/link the trigger happens to sit in. Defaults inside
-  // the bubble (a link, the Copy button's own handler) still run.
-  const shield = (e) => e.stopPropagation()
+  // never on whatever row/link the trigger happens to sit in. Explicit LiveView
+  // controls need to reach its delegated window listener; that listener picks
+  // the inner control instead of an enclosing row. Plain content stays shielded.
+  // Native links and Copy's capture-phase handler still work as before.
+  const shield = (e) => {
+    const control = e.target.closest("[phx-click], [data-phx-link]")
+    if (!control || !bubble.contains(control)) e.stopPropagation()
+  }
 
   el.addEventListener("keydown", onKey)
   el.addEventListener("mouseenter", rearm)

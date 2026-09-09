@@ -239,6 +239,16 @@ defmodule EmisarWeb.AgentsLive do
 
   def handle_event("select_os", _params, socket), do: {:noreply, socket}
 
+  def handle_event("select_upgrade_os", %{"os" => os}, socket) when is_map_key(@platforms, os) do
+    Permissions.gated(
+      socket,
+      ApiKeys.subject_can_view_api_keys?(socket.assigns.current_subject),
+      fn socket -> {:noreply, assign(socket, :detected_os, @platforms[os])} end
+    )
+  end
+
+  def handle_event("select_upgrade_os", _params, socket), do: {:noreply, socket}
+
   def handle_event("bridge_path_changed", %{"os" => os, "path" => path}, socket)
       when is_map_key(@platforms, os) and is_binary(path) and byte_size(path) <= 4096 do
     Permissions.gated(
@@ -1274,15 +1284,14 @@ defmodule EmisarWeb.AgentsLive do
                     v{facts.bridge_version}
                   </span>
                   <.client_status_pill status={facts.status} />
-                  <%!-- The pill already leads with rose "unsupported" when the
-                       bridge is below the minimum (a blocked client isn't
-                       "idle"), so the chip here only surfaces the softer amber
-                       "outdated" — never a second, redundant red label. --%>
+                  <%!-- Status names support; the update icon provides the remedy. --%>
                   <.version_chip
-                    :if={facts.status != :unsupported}
                     kind={:mcp}
                     version={facts.bridge_version}
                     id={"mcp-version-#{key.id}"}
+                    base_url={@base_url}
+                    detected_os={@detected_os}
+                    on_os_change="select_upgrade_os"
                   />
                 </:title>
                 <:meta>

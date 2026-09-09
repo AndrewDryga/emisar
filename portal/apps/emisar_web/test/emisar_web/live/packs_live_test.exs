@@ -836,7 +836,7 @@ defmodule EmisarWeb.PacksLiveTest do
       refute has_element?(lv, ~s([id^="override-"]))
     end
 
-    test "a trusted version below the shipped current shows a quiet update-available note",
+    test "an optional update shows only a header icon with a copyable command",
          %{conn: conn, account: account} do
       # A shipped pack that retires nothing, trusted at a version below its
       # current: outdated-but-safe, so the gentle "update available" hint (never
@@ -856,14 +856,26 @@ defmodule EmisarWeb.PacksLiveTest do
       {:ok, lv, _dead} = live(conn, ~p"/app/#{account}/packs")
       html = render(lv)
 
-      assert html =~ "Update available"
-      assert html =~ "v#{current} is available"
-      assert html =~ "emisar pack install #{pack_id}"
-      # A neutral nudge, not a warning — no rose retired block on this row.
+      assert has_element?(lv, "#packs-#{pack_id} header #pack-upgrade-#{pack_id}-tt")
+      assert has_element?(lv, "#pack-upgrade-#{pack_id}-tt svg.text-zinc-500")
+
+      assert has_element?(
+               lv,
+               "#pack-upgrade-#{pack_id}",
+               "New version (v#{current}) is available"
+             )
+
+      assert has_element?(
+               lv,
+               "#pack-upgrade-#{pack_id} [data-copy-text^='emisar pack install #{pack_id} --hash sha256:']"
+             )
+
+      refute has_element?(lv, "#update-cmd-#{pack_id}")
+      refute has_element?(lv, "#pack-update-#{pack_id}")
       refute html =~ "Retired version"
     end
 
-    test "multiple outdated versions of one pack show a SINGLE update-available note",
+    test "multiple outdated versions of one pack show one update icon",
          %{conn: conn, account: account} do
       # The nudge is a pack-level fact — `newer_version` returns the same current
       # shipped version for every outdated row — so it is said ONCE per pack, not
@@ -889,9 +901,12 @@ defmodule EmisarWeb.PacksLiveTest do
       {:ok, lv, _dead} = live(conn, ~p"/app/#{account}/packs")
       html = render(lv)
 
-      assert html =~ "v#{current} is available"
-      occurrences = Regex.scan(~r/Update available/, html) |> length()
-      assert occurrences == 1
+      assert html =~ "New version (v#{current}) is available"
+
+      assert html
+             |> LazyHTML.from_document()
+             |> LazyHTML.query("#packs-#{pack_id} [data-icon='state.update_available']")
+             |> Enum.count() == 1
     end
 
     test "no update note when the current version is installed beside an older one",
@@ -919,9 +934,7 @@ defmodule EmisarWeb.PacksLiveTest do
       )
 
       {:ok, lv, _dead} = live(conn, ~p"/app/#{account}/packs")
-      html = render(lv)
-
-      refute html =~ "Update available"
+      refute has_element?(lv, "#pack-upgrade-#{pack_id}-tt")
     end
 
     test "a trusted CURRENT version shows no update-available note",
@@ -936,9 +949,7 @@ defmodule EmisarWeb.PacksLiveTest do
       )
 
       {:ok, lv, _dead} = live(conn, ~p"/app/#{account}/packs")
-      html = render(lv)
-
-      refute html =~ "Update available"
+      refute has_element?(lv, "#pack-upgrade-#{pack_id}-tt")
     end
 
     test "a retired version shows the rose retired block and NOT the update-available note",
@@ -958,7 +969,7 @@ defmodule EmisarWeb.PacksLiveTest do
       html = render(lv)
 
       assert html =~ "Retired version"
-      refute html =~ "Update available"
+      refute has_element?(lv, "#pack-upgrade-#{pack_id}-tt")
     end
 
     test "a retired trusted version WITH runners still on it shows the update fix + override CTA",
@@ -991,6 +1002,8 @@ defmodule EmisarWeb.PacksLiveTest do
 
       assert html =~ "Retired version"
       assert html =~ "Update the pack on the runners below."
+      assert has_element?(lv, "#pack-upgrade-#{pack_id}-tt.emisar-icon-mono svg.text-rose-400")
+      assert has_element?(lv, "#pack-upgrade-#{pack_id}", "Update required")
       assert html =~ "Override retirement"
       assert has_element?(lv, "#override-#{pack_version.id}")
       # Removal is futile while a runner re-advertises it, so it's dropped here.

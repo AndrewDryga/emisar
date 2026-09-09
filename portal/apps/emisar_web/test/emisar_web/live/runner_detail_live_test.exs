@@ -215,22 +215,22 @@ defmodule EmisarWeb.RunnerDetailLiveTest do
   end
 
   # test.exs policy: < 0.0.1 unsupported, [0.0.1, 0.1.0) outdated, >= 0.1.0 supported.
-  test "a below-minimum runner shows an 'unsupported' version chip", %{
+  test "a below-minimum runner shows a red required-update icon", %{
     conn: conn,
     account: account
   } do
     runner = Fixtures.Runners.create_runner(account_id: account.id, runner_version: "0.0.0")
 
     {:ok, lv, html} = live(conn, ~p"/app/#{account}/runners/#{runner.id}")
-    assert html =~ "unsupported"
-    assert has_element?(lv, "#runner-version-#{runner.id}-tt", "unsupported")
+    assert has_element?(lv, "#runner-version-#{runner.id}-tt[aria-label='Update required']")
+    assert has_element?(lv, "#runner-version-#{runner.id}-tt.emisar-icon-mono .text-rose-400")
     # Status leads with a caution-toned "connected" (amber, not emerald): up
     # and reachable, but the version chip flags the required upgrade.
     assert has_element?(lv, "span.text-amber-300", "connected")
     assert html =~ "col-span-2 sm:col-span-1"
     assert html =~ "Runner update required"
     assert html =~ "sudo emisar update"
-    assert html =~ "bg-amber-300/40"
+    assert html =~ "bg-rose-400/40"
     refute html =~ "bg-amber-500/10"
     assert html =~ "update and restart the runner without losing its configuration"
   end

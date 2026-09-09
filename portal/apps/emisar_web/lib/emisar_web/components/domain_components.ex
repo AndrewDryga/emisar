@@ -549,12 +549,11 @@ defmodule EmisarWeb.DomainComponents do
   end
 
   @doc """
-  A stale-version warning chip for a runner or the emisar-mcp bridge, driven by
-  the `Emisar.Compat` policy. Renders nothing for a current (`:supported`) or
-  unparseable/missing (`:unknown`) version; an amber "outdated" chip below the
-  recommended line; a rose "unsupported" chip below the minimum. The visible
-  label carries the state (never hover-only) and the tooltip title adds the
-  minimum-version detail.
+  An update icon for a runner or the emisar-mcp bridge, driven by `Emisar.Compat`.
+  Current and unknown versions render nothing. Optional updates stay neutral;
+  versions below the minimum use rose. The tooltip explains the state and gives
+  a copyable update command. MCP commands preserve this deployment's origin and
+  let the operator choose the affected machine's OS.
 
       <.version_chip kind={:runner} version={runner.runner_version} />
   """
@@ -566,12 +565,16 @@ defmodule EmisarWeb.DomainComponents do
     doc: "unique tooltip id — pass a per-row id where the chip repeats"
 
   attr :class, :string, default: nil
+  attr :base_url, :string, default: nil
+  attr :detected_os, :atom, default: :linux, values: [:linux, :windows, :macos]
+  attr :on_os_change, :string, default: nil
 
   def version_chip(assigns) do
     assigns =
       assigns
       |> assign(:status, version_status(assigns.kind, assigns.version))
-      |> assign(:command, version_chip_command(assigns.kind))
+      |> assign(:command, if(assigns.kind == :runner, do: @runner_update_command))
+      |> assign(:mcp_commands, version_chip_mcp_commands(assigns.kind, assigns.base_url))
 
     ~H"""
     <.tooltip
@@ -579,26 +582,34 @@ defmodule EmisarWeb.DomainComponents do
       id={@id}
       text={version_chip_title(@kind, @status, @version)}
       command={@command}
-      aria_label={@status == :outdated && version_chip_title(@kind, @status, @version)}
+      aria_label={if @status == :unsupported, do: "Update required", else: "Update available"}
       align={:responsive}
-      class={@class}
+      class={[@class, @status == :unsupported && "emisar-icon-mono"]}
     >
-      <%!-- Below the minimum is a blocked state and keeps the labelled warning
-           chip. Merely behind the current release still runs and dispatches
-           fine, so it is quiet chrome — one glyph beside the version that
-           explains itself on hover or focus, never a badge shouting beside the
-           host's name (the Packs page words the same fact the same way). It is
-           the DOWNLOAD metaphor, the same glyph the page notice above uses for
-           the same act (§7.49) — an up-arrow read as upload/publish, the
-           opposite direction from what the operator actually does. --%>
-      <.chip :if={@status == :unsupported} tone={:rose} icon="state.warning">
-        unsupported
-      </.chip>
       <.icon
-        :if={@status == :outdated}
         name="state.update_available"
-        class="h-3.5 w-3.5 text-zinc-500"
+        class={"h-3.5 w-3.5 #{if @status == :unsupported, do: "text-rose-400", else: "text-zinc-500"}"}
       />
+      <:content :if={@kind == :mcp}>
+        <div class="w-80 max-w-[calc(100vw-3.25rem)] space-y-2">
+          <p>{version_chip_title(@kind, @status, @version)}</p>
+          <%= case @mcp_commands do %>
+            <% {:ok, commands} -> %>
+              <.os_switch detected={@detected_os} tabs={commands} on_change={@on_os_change} />
+              <div
+                :for={tab <- commands}
+                data-os={tab.os}
+                class={tab.os != @detected_os && "hidden"}
+              >
+                <.code_line id={"#{@id}-command-#{tab.os}"} value={tab.command} />
+              </div>
+            <% {:error, :insecure_base_url} -> %>
+              <p>Open emisar over HTTPS to get a secure install command.</p>
+            <% _error -> %>
+              <p>The install command is unavailable. Reload the page to try again.</p>
+          <% end %>
+        </div>
+      </:content>
     </.tooltip>
     """
   end
@@ -638,7 +649,8 @@ defmodule EmisarWeb.DomainComponents do
   end
 
   defp version_chip_title(:mcp, :unsupported, _version) do
-    "Below the minimum emisar-mcp version #{Emisar.Compat.mcp_minimum()} — upgrade the bridge."
+    "Below the minimum emisar-mcp version #{Emisar.Compat.mcp_minimum()}. " <>
+      "Run the installer on that machine, then restart its LLM client."
   end
 
   defp version_chip_title(:mcp, :outdated, version) do
@@ -646,12 +658,19 @@ defmodule EmisarWeb.DomainComponents do
       "Re-run the installer on that machine, then restart its LLM client."
   end
 
-  # A bridge is upgraded by re-running its installer, and that one-liner carries
-  # the account's own portal URL — too long to read clipped in a bubble, so the
-  # agents-list notice keeps sole ownership of it.
-  defp version_chip_command(:runner), do: @runner_update_command
+  defp version_chip_mcp_commands(:mcp, base_url) when is_binary(base_url) do
+    with {:ok, shell} <- URLHelpers.mcp_install_command(base_url),
+         {:ok, windows} <- URLHelpers.mcp_windows_install_command(base_url) do
+      {:ok,
+       [
+         %{os: :linux, label: "Linux", command: shell},
+         %{os: :windows, label: "Windows", command: windows},
+         %{os: :macos, label: "macOS", command: shell}
+       ]}
+    end
+  end
 
-  defp version_chip_command(:mcp), do: nil
+  defp version_chip_mcp_commands(_kind, _base_url), do: nil
 
   defp version_from(version) when is_binary(version) and version != "",
     do: "; this one is on #{version_label(version)}"
@@ -698,17 +717,15 @@ defmodule EmisarWeb.DomainComponents do
       |> assign(:command, version_upgrade_command(assigns.kind, assigns.base_url))
 
     ~H"""
-    <%!-- Amber only when something is actually below the supported range. An
-         update that has merely shipped is a convenience: what is installed still
-         runs and dispatches, so the notice stays neutral rather than putting the
-         page into a warning state nobody needs to act on today. --%>
+    <%!-- Required updates share the fully rose icon used beside each version.
+         An available update stays neutral: it can wait. --%>
     <.callout
       :if={@status in [:outdated, :unsupported]}
       id={@id}
-      tone={(@status == :unsupported && :amber) || :neutral}
+      tone={(@status == :unsupported && :rose) || :neutral}
       icon="state.update_available"
       title={version_upgrade_title(@kind, @status, @affected_count)}
-      class={@class}
+      class={[@class, @status == :unsupported && "emisar-icon-mono"]}
     >
       <div class="space-y-4">
         <%= case @command do %>

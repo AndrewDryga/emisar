@@ -994,6 +994,14 @@ the commit button, where the operator can reach the action before reading what i
     product/security decision, never as an incidental permission split. Sweep: lifecycle surfaces
     where create/add/invite is gated by a narrower predicate than delete/remove/revoke.
 
+86. **Optional updates stay in the identity row.** A pack's optional update uses one icon
+    beside its name, with the available version and copyable command in its hover/focus
+    tooltip; no separate notice or disclosure row. Required updates retain visible remedies.
+    Below-minimum runner/bridge versions and retired packs still needing updates use a fully
+    rose icon, including its accent strokes. Current, overridden, rejected, or unused retired
+    versions must not acquire a false required-update marker. Agent installer tooltips keep
+    the OS switch so the reader can choose the affected machine, not just the browser's OS.
+
 ## 8. The kit is the contract
 
 - The shared kit lives in `core_components.ex` (+ `EmisarWeb.LiveTable`,

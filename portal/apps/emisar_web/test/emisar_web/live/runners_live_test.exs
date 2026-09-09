@@ -844,7 +844,10 @@ defmodule EmisarWeb.RunnersLiveTest do
       %{conn: conn, account: account}
     end
 
-    test "a below-minimum runner shows an 'unsupported' chip", %{conn: conn, account: account} do
+    test "a below-minimum runner shows a red required-update icon", %{
+      conn: conn,
+      account: account
+    } do
       Fixtures.Runners.create_runner(
         account_id: account.id,
         name: "old",
@@ -852,7 +855,7 @@ defmodule EmisarWeb.RunnersLiveTest do
       )
 
       {:ok, lv, html} = live(conn, ~p"/app/#{account}/runners")
-      assert html =~ "unsupported"
+      assert has_element?(lv, "[aria-label='Update required'] .text-rose-400")
       # Up but below-minimum: the connection badge is toned to caution — amber
       # "connected", not emerald — so it reads "reachable, but the rose chip
       # beside it needs acting on". It keeps the word (unlike the agents pill),

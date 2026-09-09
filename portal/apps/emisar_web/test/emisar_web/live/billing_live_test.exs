@@ -589,7 +589,7 @@ defmodule EmisarWeb.BillingLiveTest do
       {:ok, lv, html} = live(conn, ~p"/app/#{account}/settings/billing")
 
       assert has_element?(lv, "#billing-current-plan", "Legacy-pro")
-      assert has_element?(lv, "#billing-current-plan a", "Contact support")
+      assert has_element?(lv, "#billing-contact-support", "Contact support")
       refute has_element?(lv, "#billing-upgrade-offers")
       refute has_element?(lv, "button[phx-click='set_cycle']")
       refute html =~ "Payment past due"
@@ -1057,7 +1057,8 @@ defmodule EmisarWeb.BillingLiveTest do
       refute html =~ "Couldn't load recent invoices"
       refute html =~ "No invoices yet"
       refute has_element?(lv, "button[phx-click='retry_invoices']")
-      assert has_element?(lv, "#billing-current-plan button", "Manage billing")
+      assert has_element?(lv, "#billing-manage", "Manage billing")
+      refute has_element?(lv, "#billing-current-plan button", "Manage billing")
 
       section_ids =
         html
@@ -1307,7 +1308,7 @@ defmodule EmisarWeb.BillingLiveTest do
 
       assert has_element?(
                lv,
-               "#billing-current-plan a[href^='mailto:support@emisar.dev']",
+               "#billing-contact-support[href^='mailto:support@emisar.dev']",
                "Contact support"
              )
 
@@ -1356,7 +1357,7 @@ defmodule EmisarWeb.BillingLiveTest do
         assert billing_summary(lv).subscription_status == "active"
         # An unconfirmed terminal state is still an existing subscription.
         refute has_element?(lv, "button[phx-click='upgrade']")
-        assert has_element?(lv, "#billing-current-plan button[phx-click='manage_billing']")
+        assert has_element?(lv, "#billing-manage[phx-click='manage_billing']")
         refute has_element?(lv, "#billing-upgrade-offers")
       end
     end
@@ -1421,14 +1422,14 @@ defmodule EmisarWeb.BillingLiveTest do
 
         assert has_element?(
                  lv,
-                 "#billing-current-plan a[href^='mailto:support@emisar.dev']",
+                 "#billing-contact-support[href^='mailto:support@emisar.dev']",
                  "Contact support"
                )
 
         attach_customer(account, "ctm_existing_#{unquote(status)}")
         refresh_billing(lv)
         refute has_element?(lv, "button[phx-click='upgrade']")
-        assert has_element?(lv, "#billing-current-plan button[phx-click='manage_billing']")
+        assert has_element?(lv, "#billing-manage[phx-click='manage_billing']")
       end
     end
 

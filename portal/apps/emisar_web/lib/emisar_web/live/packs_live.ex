@@ -1275,41 +1275,42 @@ defmodule EmisarWeb.PacksLive do
   defp trust_confirm_label(_fact, %{hash: nil}), do: "Trust version"
   defp trust_confirm_label(_fact, _version), do: "Trust new contents"
 
-  attr :pack_id, :string, required: true
-  attr :update, :map, default: nil, doc: "the Catalog's pack-level %{version, hash}, or nil"
+  attr :pack, :map, required: true
+  attr :facts, :map, required: true
 
-  # ONE pack-level "update available" nudge, said once per pack — the Catalog
-  # decides whether the pack has one (a trusted, non-retired version below the
-  # shipped current, with that current version not already installed beside it),
-  # so it is never repeated on each stale version. A convenience, never a
-  # warning: critical changes RETIRE a version. A non-retired version keeps its
-  # existing trust state; policy and other execution checks still apply.
-  # This is the weakest, quietest tier, a neutral
-  # spine below the version rows.
-  defp update_available_note(assigns) do
+  defp pack_update_icon(assigns) do
+    required =
+      Enum.find_value(assigns.pack.versions, fn version ->
+        fact = assigns.facts[version.id]
+        if fact.retirement_blocked? and pending_retired_update?(fact.advertising), do: fact
+      end)
+
+    assigns = assign(assigns, :required, required)
+
     ~H"""
-    <%!-- The same icon-capped spine as a row's retired block, but NEUTRAL and
-         pack-level: a newer version shipped, yet what's installed still runs and
-         dispatches — a heads-up, not a warning, so it never wears rose. The glyph
-         is the DOWNLOAD metaphor the runner surfaces use for the same act
-         (§7.49); an up-arrow pointed the way the operator does not go. --%>
-    <.event_block
-      :if={@update}
-      icon="state.update_available"
-      tone={:neutral}
-      title="Update available"
-      class="mt-4"
+    <.tooltip
+      :if={@required || @pack.update}
+      id={"pack-upgrade-#{@pack.id}"}
+      text={
+        if @required,
+          do: "Update required. This pack has a retired version. Update it on the affected runners.",
+          else: "New version (v#{@pack.update.version}) is available."
+      }
+      command={
+        install_command_string(
+          @pack.id,
+          if(@required, do: @required.retirement_successor_hash, else: @pack.update.hash)
+        )
+      }
+      aria_label={if @required, do: "Pack update required", else: "Pack update available"}
+      align={:responsive}
+      class={["self-center", @required && "emisar-icon-mono"]}
     >
-      <:body>
-        v{@update.version} is available.
-      </:body>
-      <.install_command
-        id={"update-cmd-#{@pack_id}"}
-        pack_id={@pack_id}
-        successor={@update.version}
-        hash={@update.hash}
+      <.icon
+        name="state.update_available"
+        class={"h-3.5 w-3.5 #{if @required, do: "text-rose-400", else: "text-zinc-500"}"}
       />
-    </.event_block>
+    </.tooltip>
     """
   end
 
@@ -1483,6 +1484,7 @@ defmodule EmisarWeb.PacksLive do
             <li :for={{dom_id, pack} <- @streams.packs} id={dom_id}>
               <header class="flex flex-wrap items-baseline gap-x-2.5 gap-y-1 border-b border-zinc-800/70 pb-2.5">
                 <h2 class="font-mono text-base font-semibold text-zinc-100">{pack.id}</h2>
+                <.pack_update_icon pack={pack} facts={@version_facts} />
                 <span class="text-[11px] text-zinc-400">{version_count_label(pack.versions)}</span>
                 <.registry_link pack_id={pack.id} />
                 <%!-- No pack-level status here: each version row carries its own
@@ -1672,13 +1674,6 @@ defmodule EmisarWeb.PacksLive do
                   />
                 </li>
               </ul>
-
-              <%!-- A gentle, pack-level "update available" heads-up — said ONCE
-                   for the whole pack (the successor is the same current shipped
-                   version for every outdated row), not repeated per version.
-                   Retirement takes precedence per row, so this stays silent
-                   under a rose retired block. --%>
-              <.update_available_note pack_id={pack.id} update={pack.update} />
             </li>
           </ul>
 
