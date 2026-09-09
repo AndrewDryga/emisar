@@ -22,6 +22,10 @@ on through a stable customer-facing contract.
   providers when the public contract and commands are the same. Do not select a
   specific variant in configuration merely because it was used for one test.
   Branch only where the reader must actually take a different action.
+- For a third-party dependency, link to its official installation guide and
+  show only the version check needed before the emisar-specific steps. Do not
+  copy the dependency's installer commands into public docs or Console setup;
+  otherwise emisar owns instructions that can silently become stale.
 
 This is not a ban on limits, warnings, or security properties. State an absence
 when it changes a decision on the page that owns that contract. For example,

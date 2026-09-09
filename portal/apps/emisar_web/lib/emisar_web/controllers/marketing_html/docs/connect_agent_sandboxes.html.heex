@@ -1,0 +1,270 @@
+<div class="bg-zinc-950 text-zinc-100">
+  <.marketing_nav current_user={@current_user} current={:docs} />
+
+  <section class="py-12 sm:py-16">
+    <.docs_layout
+      current="connect-agent-sandboxes"
+      updated="September 9, 2026"
+      evidence="Tested with Docker Sandboxes 0.39.0, nono 0.75.0, and Dev Containers CLI 0.89.0 on macOS on September 7, 2026."
+      toc={[
+        {"choose", "Choose a sandbox"},
+        {"connect", "Connect"},
+        {"coop", "co:op — recommended"},
+        {"docker-sandboxes", "Docker Sandboxes"},
+        {"nono", "nono"},
+        {"dev-containers", "Dev Containers"}
+      ]}
+    >
+      <.docs_header current="connect-agent-sandboxes">
+        <:dek>
+          Choose a local sandbox for your coding agent, connect it to emisar, and test one
+          audited infrastructure action.
+        </:dek>
+      </.docs_header>
+
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        We recommend <strong class="text-zinc-200">co:op</strong> for most local setups. It is a
+        free, open-source tool that supports Codex, Claude Code, Gemini CLI, and Grok CLI and lets
+        you control which files, secrets, and tools the agent can access. emisar extends that
+        control to infrastructure and third-party tools.
+      </p>
+
+      <.docs_prerequisites>
+        <:item>
+          An emisar account with permission to connect an agent and at least one runner online.
+          Complete the
+          <.link navigate={~p"/docs/quickstart"} class="text-brand-400 hover:text-brand-300">quickstart</.link>
+          first if you do not have a runner yet.
+        </:item>
+        <:item>
+          A supported sandbox and coding agent from the table below, installed and ready to sign in.
+        </:item>
+      </.docs_prerequisites>
+
+      <.docs_h2 id="choose">Choose a sandbox</.docs_h2>
+      <div class="mt-5 overflow-x-auto rounded-xl border border-zinc-900">
+        <table class="w-full min-w-[660px] text-left text-sm">
+          <thead class="border-b border-zinc-900 text-xs uppercase tracking-wider text-zinc-400">
+            <tr>
+              <th class="px-4 py-3 font-medium">Sandbox</th>
+              <th class="px-4 py-3 font-medium">Supported coding agents</th>
+              <th class="px-4 py-3 font-medium">Good fit when</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-zinc-900 text-zinc-400">
+            <tr>
+              <td class="px-4 py-3 align-top font-semibold text-zinc-100">
+                <a href="#coop" class="text-brand-400 hover:text-brand-300">co:op</a>
+                <span class="block text-xs font-normal text-zinc-400">Recommended</span>
+              </td>
+              <td class="px-4 py-3 align-top text-zinc-300">
+                Codex, Claude Code, Gemini CLI, Grok CLI
+              </td>
+              <td class="px-4 py-3 align-top">
+                You want to choose which local files and tools enter the sandbox.
+              </td>
+            </tr>
+            <tr>
+              <td class="px-4 py-3 align-top font-semibold text-zinc-100">
+                <a href="#docker-sandboxes" class="text-brand-400 hover:text-brand-300">
+                  Docker Sandboxes
+                </a>
+              </td>
+              <td class="px-4 py-3 align-top text-zinc-300">
+                Claude Code, Codex, Devin, Gemini CLI, Kiro, OpenCode
+              </td>
+              <td class="px-4 py-3 align-top">You already use Docker's sandbox workflow.</td>
+            </tr>
+            <tr>
+              <td class="px-4 py-3 align-top font-semibold text-zinc-100">
+                <a href="#nono" class="text-brand-400 hover:text-brand-300">nono</a>
+              </td>
+              <td class="px-4 py-3 align-top text-zinc-300">
+                Any terminal agent with a suitable profile
+              </td>
+              <td class="px-4 py-3 align-top">You prefer an operating-system profile.</td>
+            </tr>
+            <tr>
+              <td class="px-4 py-3 align-top font-semibold text-zinc-100">
+                <a href="#dev-containers" class="text-brand-400 hover:text-brand-300">
+                  Dev Containers
+                </a>
+              </td>
+              <td class="px-4 py-3 align-top text-zinc-300">
+                Any CLI agent installed in the container
+              </td>
+              <td class="px-4 py-3 align-top">Your project already uses a Dev Container.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <.docs_h2 id="connect">Connect</.docs_h2>
+      <ol class="mt-5 list-decimal space-y-3 pl-6 text-base leading-7 text-zinc-400">
+        <li>
+          Open <a
+            href={~p"/app/agents/connect"}
+            class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
+          >Connect an agent</a>, then choose your sandbox under <strong class="text-zinc-200">Agent sandboxes</strong>.
+        </li>
+        <li>Follow the steps shown there.</li>
+        <li>
+          Start the agent and send the example prompt. When the console shows <strong class="text-zinc-200">Agent connected</strong>, open
+          <a
+            href={~p"/app/audit"}
+            class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
+          >Audit</a>
+          to confirm the action, runner, operator, and result.
+        </li>
+      </ol>
+
+      <.docs_h2 id="coop">co:op — recommended</.docs_h2>
+      <.docs_h3 id="coop-requirements">What you need</.docs_h3>
+      <p class="mt-4 text-base leading-7 text-zinc-400">
+        co:op runs the agent in a container on macOS or Linux. Use Apple container, Docker, or
+        Podman as the runtime. The console shows how to install the bridge in the image and keep
+        its rotated credentials in a named volume.
+      </p>
+
+      <.docs_h3 id="coop-limits-and-risks">Limits &amp; risks</.docs_h3>
+      <ul class="mt-4 list-disc space-y-3 pl-6 text-base leading-7 text-zinc-400">
+        <li>
+          Only add the files, secrets, and host tools the agent needs. Use
+          <.docs_inline_code>.coopignore</.docs_inline_code>
+          for project-specific secrets;
+          <.docs_inline_code>.gitignore</.docs_inline_code>
+          does not hide them from the agent.
+        </li>
+        <li>
+          Anything you mount or pass into the sandbox remains available to the agent. Keep
+          production credentials and privileged host sockets out.
+        </li>
+      </ul>
+
+      <.docs_h3 id="coop-tool-prompts">Local tool prompts</.docs_h3>
+      <p class="mt-4 text-base leading-7 text-zinc-400">
+        co:op's default commands skip local permission prompts for tools inside the sandbox. If
+        you customized an agent command with <.docs_inline_code>COOP_CODEX_CMD</.docs_inline_code>, <.docs_inline_code>COOP_CLAUDE_CMD</.docs_inline_code>, <.docs_inline_code>COOP_GEMINI_CMD</.docs_inline_code>, or <.docs_inline_code>COOP_GROK_CMD</.docs_inline_code>, remove that override to restore the
+        default. Your
+        <.link
+          navigate={~p"/docs/policies-and-approvals"}
+          class="text-brand-400 hover:text-brand-300"
+        >emisar policies and approvals</.link>
+        still apply.
+      </p>
+
+      <.docs_h2 id="docker-sandboxes">Docker Sandboxes</.docs_h2>
+      <.docs_h3 id="docker-sandboxes-requirements">What you need</.docs_h3>
+      <p class="mt-4 text-base leading-7 text-zinc-400">
+        Docker Sandboxes runs supported coding agents in a microVM on a supported macOS or Ubuntu
+        host and requires a Docker account. Its
+        <.link
+          href="https://docs.docker.com/ai/sandboxes/mcp-gateway/"
+          class="text-brand-400 hover:text-brand-300"
+        >MCP gateway</.link>
+        connects them to the emisar bridge on the host without copying the emisar key into the VM.
+      </p>
+
+      <.docs_h3 id="docker-sandboxes-limits-and-risks">Limits &amp; risks</.docs_h3>
+      <ul class="mt-4 list-disc space-y-3 pl-6 text-base leading-7 text-zinc-400">
+        <li>
+          Docker shares the project directory with the VM, so the agent can see and potentially
+          leak anything stored there, including secrets in
+          <.docs_inline_code>.env</.docs_inline_code>
+          files and temporary artifacts. For stronger isolation from local files, use <a
+            href="#coop"
+            class="text-brand-400 hover:text-brand-300"
+          >co:op</a>.
+        </li>
+        <li>
+          The registered MCP launcher runs on the host with your permissions. Keep it and its
+          environment file outside the shared project and do not let the agent edit them.
+        </li>
+        <li>
+          We recommend reviewing the sandbox's network policy and allowing access only to the
+          services the agent needs.
+        </li>
+      </ul>
+
+      <.docs_h2 id="nono">nono</.docs_h2>
+      <.docs_h3 id="nono-requirements">What you need</.docs_h3>
+      <p class="mt-4 text-base leading-7 text-zinc-400">
+        nono can run any terminal agent under an operating-system profile on macOS or Linux. Use
+        a suitable maintained profile from nono's
+        <.link href="https://registry.nono.sh" class="text-brand-400 hover:text-brand-300">
+          profile registry
+        </.link>
+        and keep the provider credentials where that profile expects them.
+      </p>
+
+      <.docs_h3 id="nono-limits-and-risks">Limits &amp; risks</.docs_h3>
+      <ul class="mt-4 list-disc space-y-3 pl-6 text-base leading-7 text-zinc-400">
+        <li>
+          The agent can see any file, secret, tool, or network destination allowed by the profile,
+          including everything in its working directory.
+        </li>
+        <li>
+          The agent can read the emisar key in its MCP configuration. Allow network access only to
+          the services the agent needs.
+        </li>
+        <li>
+          Review the profile after adding file, command, environment-variable, or network access.
+        </li>
+      </ul>
+
+      <.docs_h3 id="nono-rotation">Key rotation</.docs_h3>
+      <p class="mt-4 text-base leading-7 text-zinc-400">
+        Rotate the key manually from <a
+          href={~p"/app/agents"}
+          class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
+        >AI agents</a>, replace it in the private agent configuration, and start a fresh nono
+        session. Do not give the sandbox the whole credential directory to automate this.
+      </p>
+
+      <.docs_h2 id="dev-containers">Dev Containers</.docs_h2>
+      <.docs_h3 id="dev-containers-requirements">What you need</.docs_h3>
+      <p class="mt-4 text-base leading-7 text-zinc-400">
+        A Dev Container runs a CLI agent and the emisar bridge inside a project that already has a working
+        <.docs_inline_code>.devcontainer</.docs_inline_code>
+        setup. You need Docker and either the VS Code Dev Containers extension or the standalone
+        Dev Containers CLI. Run the agent as a non-root user inside the container.
+      </p>
+
+      <.docs_h3 id="dev-containers-limits-and-risks">Limits &amp; risks</.docs_h3>
+      <ul class="mt-4 list-disc space-y-3 pl-6 text-base leading-7 text-zinc-400">
+        <li>
+          The agent can see and potentially leak anything mounted into the container, including
+          secrets in
+          <.docs_inline_code>.env</.docs_inline_code>
+          files and temporary artifacts. Mount only the files it needs. For stronger isolation
+          from local files, use <a href="#coop" class="text-brand-400 hover:text-brand-300">co:op</a>.
+        </li>
+        <li>
+          VS Code can share Git credentials or forward an SSH agent into the container. Review its
+          <.link
+            href="https://code.visualstudio.com/remote/advancedcontainers/sharing-git-credentials"
+            class="text-brand-400 hover:text-brand-300"
+          >credential-sharing settings</.link>
+          before starting the agent, and never mount the host's Docker socket.
+        </li>
+        <li>
+          The default configuration does not restrict outbound network access. We recommend
+          allowing access only to the services the agent needs.
+        </li>
+      </ul>
+
+      <.docs_h3 id="dev-containers-rotation">Rebuilds and rotation</.docs_h3>
+      <p class="mt-4 text-base leading-7 text-zinc-400">
+        Keep the bridge's named volume when rebuilding the container so rotated credentials are
+        retained. If you remove the volume or private configuration, create a fresh key from
+        <a
+          href={~p"/app/agents"}
+          class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
+        >AI agents</a>
+        and reconnect.
+      </p>
+    </.docs_layout>
+  </section>
+
+  <.marketing_footer />
+</div>

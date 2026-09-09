@@ -1,106 +1,132 @@
 defmodule EmisarWeb.AgentSandboxGuidesTest do
   use EmisarWeb.ConnCase, async: true
 
-  @guides [
-    %{
-      path: "/docs/connect-docker-sandboxes",
-      title: "Docker Sandboxes",
-      evidence: "Tested with Docker Sandboxes 0.39.0 on macOS on September 7, 2026.",
-      boundary: ["runs on the host", "network policy"]
-    },
-    %{
-      path: "/docs/connect-nono",
-      title: "nono",
-      evidence: "Tested with nono 0.75.0 on macOS on September 7, 2026.",
-      boundary: ["Rotate the key manually", "any file, secret, tool"]
-    },
-    %{
-      path: "/docs/connect-dev-containers",
-      title: "Dev Containers",
-      evidence: "Tested with Dev Containers CLI 0.89.0 on September 7, 2026.",
-      boundary: ["potentially leak anything", "does not restrict outbound"]
-    }
-  ]
+  @path "/docs/connect-agent-sandboxes"
+  @legacy_paths %{
+    "/docs/connect-coop" => "#coop",
+    "/docs/connect-docker-sandboxes" => "#docker-sandboxes",
+    "/docs/connect-nono" => "#nono",
+    "/docs/connect-dev-containers" => "#dev-containers"
+  }
 
-  test "the sandbox docs defer generated setup to the console and keep evidence concise",
-       %{
-         conn: conn
-       } do
-    for guide <- @guides do
-      html = conn |> recycle() |> get(guide.path) |> html_response(200)
-      doc = LazyHTML.from_document(html)
+  test "one sandbox guide compares the supported coding agents and recommends co:op", %{
+    conn: conn
+  } do
+    html = conn |> get(@path) |> html_response(200)
+    doc = LazyHTML.from_document(html)
 
-      assert doc |> LazyHTML.query("h1") |> LazyHTML.text() |> String.trim() == guide.title
-      assert html =~ guide.evidence
-      refute html =~ "signed-in agent"
-      refute html =~ "not part of that test"
-      refute html =~ "live-tested"
-      refute html =~ "Last reviewed"
-      assert html =~ ~s(href="/app/agents/connect")
-      assert html =~ ~s(href="/app/audit")
-      assert html =~ "Follow the steps shown there."
-      refute html =~ "Follow the numbered steps"
-      refute html =~ "The console generates"
-      refute html =~ "Complete any approval"
-      assert html =~ "Agent connected"
-      refute html =~ "GitHub CLI"
-      refute html =~ "/tmp/install-mcp.sh"
-      refute html =~ "install-mcp.sh"
-      refute html =~ "EMISAR_API_KEY"
-      refute html =~ "Set up manually"
-      refute html =~ "linux.uptime"
-      refute html =~ "<pre"
+    assert doc |> LazyHTML.query("h1") |> LazyHTML.text() |> String.trim() ==
+             "Agent sandboxes"
 
-      heading =
-        doc
-        |> LazyHTML.query("h2#limits-and-risks")
-        |> LazyHTML.text()
-        |> String.trim()
-        |> String.trim_trailing("#")
-        |> String.trim()
+    assert html =~ "We recommend"
+    assert html =~ "free, open-source"
 
-      assert heading == "Limits & risks"
+    rows =
+      doc
+      |> LazyHTML.query("h2#choose + div tbody tr")
+      |> Enum.map(&(&1 |> LazyHTML.text() |> String.replace(~r/\s+/, " ") |> String.trim()))
 
-      for claim <- guide.boundary, do: assert(html =~ claim)
+    assert rows == [
+             "co:op Recommended Codex, Claude Code, Gemini CLI, Grok CLI You want to choose which local files and tools enter the sandbox.",
+             "Docker Sandboxes Claude Code, Codex, Devin, Gemini CLI, Kiro, OpenCode You already use Docker's sandbox workflow.",
+             "nono Any terminal agent with a suitable profile You prefer an operating-system profile.",
+             "Dev Containers Any CLI agent installed in the container Your project already uses a Dev Container."
+           ]
+
+    assert html =~ "https://docs.docker.com/ai/sandboxes/mcp-gateway/"
+    assert html =~ "https://registry.nono.sh"
+  end
+
+  test "the guide defers generated setup to the console and keeps one simple test", %{conn: conn} do
+    html = conn |> get(@path) |> html_response(200)
+
+    assert html =~ ~s(href="/app/agents/connect")
+    assert html =~ ~s(href="/app/audit")
+    assert html =~ "Follow the steps shown there."
+    assert html =~ "Agent connected"
+    refute html =~ "EMISAR_API_KEY"
+    refute html =~ "install-mcp.sh"
+    refute html =~ "Set up manually"
+    refute html =~ "<pre"
+  end
+
+  test "each sandbox keeps its requirements, lifecycle quirk, and own limits", %{conn: conn} do
+    html = conn |> get(@path) |> html_response(200)
+    doc = LazyHTML.from_document(html)
+
+    for id <- ~w(coop docker-sandboxes nono dev-containers) do
+      assert doc |> LazyHTML.query("h2##{id}") |> Enum.count() == 1
+      assert doc |> LazyHTML.query("h3##{id}-limits-and-risks") |> Enum.count() == 1
+    end
+
+    assert html =~ ".coopignore"
+    assert html =~ ".gitignore"
+    assert html =~ "Anything you mount or pass into the sandbox"
+    assert html =~ "COOP_CODEX_CMD"
+    assert html =~ "COOP_CLAUDE_CMD"
+    assert html =~ "COOP_GEMINI_CMD"
+    assert html =~ "COOP_GROK_CMD"
+
+    assert html =~ "Docker shares the project directory"
+    assert html =~ "temporary artifacts"
+    assert html =~ "MCP launcher runs on the host"
+
+    assert html =~ "including everything in its working directory"
+    assert html =~ "Rotate the key manually"
+
+    assert html =~ "credential-sharing settings"
+    assert html =~ "never mount the host's Docker socket"
+    assert html =~ "The default configuration does not restrict outbound network access"
+    refute html =~ "runs Codex"
+    refute html =~ "Codex profile"
+    refute html =~ "private Codex configuration"
+  end
+
+  test "runtime evidence stays positive and concise", %{conn: conn} do
+    html = conn |> get(@path) |> html_response(200)
+
+    assert html =~
+             "Tested with Docker Sandboxes 0.39.0, nono 0.75.0, and Dev Containers CLI 0.89.0 on macOS on September 7, 2026."
+
+    refute html =~ "Last reviewed"
+    refute html =~ "signed-in agent"
+    refute html =~ "not part of that test"
+    refute html =~ "live-tested"
+  end
+
+  test "legacy sandbox guide URLs redirect permanently to their sections", %{conn: conn} do
+    for {path, fragment} <- @legacy_paths do
+      response = conn |> recycle() |> get(path)
+
+      assert redirected_to(response, :moved_permanently) == @path <> fragment
     end
   end
 
-  test "the Docker guide links its isolation limits and recommends co:op for local secrets", %{
-    conn: conn
-  } do
-    html = conn |> get(~p"/docs/connect-docker-sandboxes") |> html_response(200)
+  test "the docs index and sitemap publish only the canonical guide", %{conn: conn} do
+    for source <- ["/docs", "/sitemap.xml"] do
+      body = conn |> recycle() |> get(source) |> response(200)
 
-    assert html =~ ~s(href="/docs/connect-docker-sandboxes#limits-and-risks")
-    assert html =~ ~s(href="/docs/connect-coop")
-    assert html =~ "the agent can see anything"
-    assert html =~ "potentially leak it"
-    assert html =~ "temporary artifacts"
-    assert html =~ "allowing access only to the"
-    assert html =~ "services the agent needs"
-    refute html =~ "The VM can have its own Docker socket"
+      assert body =~ @path
+      for path <- Map.keys(@legacy_paths), do: refute(body =~ path)
+    end
   end
 
-  test "the nono and Dev Containers guides link their limits and keep the risks practical", %{
-    conn: conn
-  } do
-    nono = conn |> get(~p"/docs/connect-nono") |> html_response(200)
+  test "agent sandboxes is one page in the Connect navigation section" do
+    sections =
+      EmisarWeb.DocsNav.groups()
+      |> Enum.find(&(&1.label == "AI agents"))
+      |> Map.fetch!(:sections)
 
-    dev_containers =
-      conn |> recycle() |> get(~p"/docs/connect-dev-containers") |> html_response(200)
+    connect = Enum.find(sections, &(&1.label == "Connect"))
 
-    assert nono =~ ~s(href="/docs/connect-nono#limits-and-risks")
-    assert nono =~ "including everything in its working directory"
-    assert nono =~ "Allow network access only to"
-    refute nono =~ "used for qualification"
+    assert Enum.map(connect.pages, & &1.slug) == [
+             "connect-cli-agent",
+             "connect-claude-ai",
+             "connect-chatgpt",
+             "connect-agent-sandboxes"
+           ]
 
-    assert dev_containers =~ ~s(href="/docs/connect-dev-containers#limits-and-risks")
-    assert dev_containers =~ ~s(href="/docs/connect-coop")
-    assert dev_containers =~ "secrets in"
-    assert dev_containers =~ "temporary artifacts"
-    assert dev_containers =~ "never mount the host's Docker socket"
-    assert dev_containers =~ "allowing access only to the services the agent needs"
-    refute dev_containers =~ "Dropping Linux capabilities"
-    refute dev_containers =~ "emisar-devcontainer-config"
+    refute Enum.any?(sections, &(&1.label == "Agent sandboxes"))
   end
 
   test "installer prerequisites do not require optional GitHub CLI", %{conn: conn} do
@@ -123,30 +149,5 @@ defmodule EmisarWeb.AgentSandboxGuidesTest do
       refute prerequisites =~ "GitHub CLI"
       refute prerequisites =~ "gh attestation"
     end
-  end
-
-  test "the docs index and sitemap discover every sandbox guide", %{conn: conn} do
-    for source <- ["/docs", "/sitemap.xml"] do
-      body = conn |> recycle() |> get(source) |> response(200)
-
-      for guide <- @guides do
-        assert body =~ guide.path
-      end
-    end
-  end
-
-  test "agent sandboxes are a dedicated navigation section led by co:op" do
-    section =
-      EmisarWeb.DocsNav.groups()
-      |> Enum.find(&(&1.label == "AI agents"))
-      |> Map.fetch!(:sections)
-      |> Enum.find(&(&1.label == "Agent sandboxes"))
-
-    assert Enum.map(section.pages, & &1.slug) == [
-             "connect-coop",
-             "connect-docker-sandboxes",
-             "connect-nono",
-             "connect-dev-containers"
-           ]
   end
 end

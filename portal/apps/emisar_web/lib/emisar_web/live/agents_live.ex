@@ -944,27 +944,19 @@ defmodule EmisarWeb.AgentsLive do
 
   defp sandbox_guide("docker_sandboxes") do
     %{
-      title: "Docker Sandboxes",
-      path: ~p"/docs/connect-docker-sandboxes",
-      summary:
-        "Run Codex in an isolated Docker microVM and connect it through Docker's host-side MCP gateway."
+      path: ~p"/docs/connect-agent-sandboxes#docker-sandboxes"
     }
   end
 
   defp sandbox_guide("nono") do
     %{
-      title: "nono",
-      path: ~p"/docs/connect-nono",
-      summary:
-        "Run Codex with its file, environment, command, and network access constrained by a nono profile."
+      path: ~p"/docs/connect-agent-sandboxes#nono"
     }
   end
 
   defp sandbox_guide("dev_containers") do
     %{
-      title: "Dev Containers",
-      path: ~p"/docs/connect-dev-containers",
-      summary: "Run Codex and the emisar bridge inside your development container."
+      path: ~p"/docs/connect-agent-sandboxes#dev-containers"
     }
   end
 
@@ -1761,10 +1753,11 @@ defmodule EmisarWeb.AgentsLive do
       |> assign(:setup_label, client_label(assigns.selected_sandbox || assigns.selected_client))
       |> assign(
         :connection_step,
-        if(assigns.selected_client == "coop" or not is_nil(assigns.selected_sandbox),
-          do: 4,
-          else: 2
-        )
+        cond do
+          assigns.selected_sandbox == "dev_containers" -> 5
+          assigns.selected_client == "coop" or not is_nil(assigns.selected_sandbox) -> 4
+          true -> 2
+        end
       )
       |> assign(
         :connection_url,
@@ -1882,7 +1875,6 @@ defmodule EmisarWeb.AgentsLive do
           <% @sandbox_guide -> %>
             <.sandbox_setup
               sandbox={@selected_sandbox}
-              guide={@sandbox_guide}
               setup={@sandbox_setup}
               ready?={is_binary(@quick_secret)}
             />
@@ -1930,19 +1922,22 @@ defmodule EmisarWeb.AgentsLive do
                 co:op is a free, open-source tool for running AI agents in a local sandbox.
                 It limits access to files, secrets, and tools on your machine; emisar extends that
                 control to your infrastructure and third-party tools.
-                <.doc_link href={~p"/docs/connect-coop"}>Full co:op guide</.doc_link>
+                <.doc_link href={~p"/docs/connect-agent-sandboxes#coop"}>Read about co:op</.doc_link>
               </p>
               <section id="coop-install-step" class="space-y-4">
-                <.step_header step={1} title="Install co:op" />
+                <.step_header step={1} title="Make sure co:op is installed" />
                 <div class="ml-6 space-y-4 text-sm text-zinc-400">
-                  <p>With Apple container, Docker, or Podman ready to use, run:</p>
+                  <p>
+                    Follow co:op's <.doc_link href="https://github.com/AndrewDryga/coop#install">official installation guide</.doc_link>,
+                    then check that it is available:
+                  </p>
                   <.code_line
-                    id="coop-install"
+                    id="coop-version"
                     label="On your computer"
-                    value="curl -fsSL https://raw.githubusercontent.com/AndrewDryga/coop/main/install.sh | sh"
+                    value="coop version"
                   />
                   <p>
-                    Follow any PATH instructions, then initialize your repository and sign in.
+                    Initialize your repository and sign in.
                     Replace
                     <.inline_code>codex</.inline_code>
                     with <.inline_code>claude</.inline_code>, <.inline_code>gemini</.inline_code>, or
@@ -2033,6 +2028,22 @@ defmodule EmisarWeb.AgentsLive do
                     </div>
                   <% end %>
                 </div>
+              </section>
+              <section id="coop-limits" class="ml-6 max-w-prose space-y-3">
+                <h3 class="text-base font-semibold leading-6 text-zinc-200">Limits &amp; risks</h3>
+                <ul class="list-disc space-y-2 pl-5 text-sm text-zinc-400">
+                  <li>
+                    Only add the files, secrets, and host tools the agent needs. Use
+                    <.inline_code>.coopignore</.inline_code>
+                    for project-specific secrets;
+                    <.inline_code>.gitignore</.inline_code>
+                    does not hide them from the agent.
+                  </li>
+                  <li>
+                    Anything you mount or pass into the sandbox remains available to the agent.
+                    Keep production credentials and privileged host sockets out.
+                  </li>
+                </ul>
               </section>
             </div>
           <% @config && @config.kind == :remote -> %>
@@ -2218,7 +2229,7 @@ defmodule EmisarWeb.AgentsLive do
                 <% @selected_client == "coop" -> %>
                   Start a fresh session from your repository, then send the example prompt.
                 <% @selected_sandbox -> %>
-                  Start the sandboxed Codex session, then send the example prompt.
+                  Start the sandboxed agent session, then send the example prompt.
                 <% @selected_client == "custom" -> %>
                   Add an MCP server in your app and choose Streamable HTTP.
                 <% true -> %>
@@ -2301,7 +2312,7 @@ defmodule EmisarWeb.AgentsLive do
                   </p>
                   <p>
                     If you've customized your agent's command, follow the <.doc_link href={
-                      ~p"/docs/connect-coop#tool-permissions"
+                      ~p"/docs/connect-agent-sandboxes#coop-tool-prompts"
                     }>co:op tool-permission guide</.doc_link>.
                     Your
                     <.doc_link href={~p"/docs/policies-and-approvals"}>emisar policies and approvals</.doc_link>
@@ -2353,9 +2364,9 @@ defmodule EmisarWeb.AgentsLive do
                         and check that the host launcher
                         starts without an error.
                       <% @selected_sandbox == "nono" -> %>
-                        Check the Codex configuration and the emisar domain allowed by the nono command.
+                        Check the agent's MCP configuration and the emisar domain allowed by the nono command.
                       <% @selected_sandbox == "dev_containers" -> %>
-                        Check the Codex configuration and run
+                        Check the agent's MCP configuration and run
                         <.inline_code>emisar-mcp --version</.inline_code>
                         inside the rebuilt container.
                       <% true -> %>
@@ -2420,7 +2431,6 @@ defmodule EmisarWeb.AgentsLive do
   end
 
   attr :sandbox, :string, required: true
-  attr :guide, :map, required: true
   attr :setup, :map, required: true
   attr :ready?, :boolean, required: true
 
@@ -2430,31 +2440,26 @@ defmodule EmisarWeb.AgentsLive do
       id={"sandbox-guide-#{@sandbox}"}
       class="mt-6 space-y-8 border-t border-zinc-800/70 pt-6"
     >
-      <div class="max-w-prose space-y-2 text-sm leading-relaxed text-zinc-400">
-        <p>{@guide.summary}</p>
-        <p>
-          This walkthrough uses Codex.
-          <.doc_link href={@guide.path}>Read about {@guide.title}</.doc_link>
-        </p>
-      </div>
-
       <%= if @ready? do %>
         <%= case @sandbox do %>
           <% "docker_sandboxes" -> %>
             <section id="docker-sandboxes-host-tools" class="space-y-4">
-              <.step_header step={1} title="Install the host tools" />
+              <.step_header step={1} title="Check the host tools" />
               <div class="ml-6 space-y-4 text-sm text-zinc-400">
                 <p>
-                  Install Docker Sandboxes using Docker's <.doc_link href="https://docs.docker.com/ai/sandboxes/install/">platform instructions</.doc_link>,
-                  then sign in and install the emisar bridge on your computer. This walkthrough
-                  supports macOS and Ubuntu; Windows needs an equivalent owner-only launcher.
+                  Follow Docker's
+                  <.doc_link href="https://docs.docker.com/ai/sandboxes/install/">Docker Sandboxes installation guide</.doc_link>
+                  and the <.doc_link href={~p"/docs/connect-cli-agent#install-bridge"}>emisar bridge installation guide</.doc_link>.
+                  Then check that both tools are available:
                 </p>
                 <.code_panel
-                  id="docker-sandboxes-install"
+                  id="docker-sandboxes-versions"
                   label="On your computer"
-                  code={@setup.install}
+                  code={@setup.versions}
                   copy
                 />
+                <p>Sign in to Docker before continuing:</p>
+                <.code_line id="docker-sandboxes-login" value="sbx login" />
               </div>
             </section>
 
@@ -2513,32 +2518,54 @@ defmodule EmisarWeb.AgentsLive do
                   code={@setup.register}
                   copy
                 />
+                <p>
+                  The connection test below uses Codex. See the
+                  <.doc_link href={~p"/docs/connect-agent-sandboxes#docker-sandboxes"}>Agent sandboxes guide</.doc_link>
+                  for the other agents supported by Docker's MCP gateway.
+                </p>
               </div>
             </section>
 
             <section id="docker-sandboxes-limits" class="ml-6 max-w-prose space-y-3">
               <h3 class="text-base font-semibold leading-6 text-zinc-200">Limits &amp; risks</h3>
               <ul class="list-disc space-y-2 pl-5 text-sm text-zinc-400">
-                <li>The agent can read and change the project you give the sandbox.</li>
-                <li>The host launcher runs with your computer's permissions.</li>
-                <li>The sandbox can create containers inside its own Docker environment.</li>
-                <li>Review the sandbox's network policy to control which services it can reach.</li>
+                <li>
+                  Docker shares the project directory with the VM, so the agent can see and
+                  potentially leak anything stored there, including secrets in
+                  <.inline_code>.env</.inline_code>
+                  files and temporary artifacts. For stronger isolation from local files, use <.doc_link href={
+                    ~p"/docs/connect-agent-sandboxes#coop"
+                  }>co:op</.doc_link>.
+                </li>
+                <li>
+                  The registered MCP launcher runs on the host with your permissions. Keep it and
+                  its environment file outside the shared project and do not let the agent edit them.
+                </li>
+                <li>
+                  We recommend reviewing the sandbox's network policy and allowing access only to
+                  the services the agent needs.
+                </li>
               </ul>
             </section>
           <% "nono" -> %>
             <section id="nono-install-step" class="space-y-4">
-              <.step_header step={1} title="Install nono and the bridge" />
+              <.step_header step={1} title="Check nono and the bridge" />
               <div class="ml-6 space-y-4 text-sm text-zinc-400">
-                <p>Install both tools on your computer and check that they start.</p>
-                <.code_panel id="nono-install" label="On your computer" code={@setup.install} copy />
+                <p>
+                  Follow nono's
+                  <.doc_link href="https://nono.sh/#install">official installation guide</.doc_link>
+                  and the <.doc_link href={~p"/docs/connect-cli-agent#install-bridge"}>emisar bridge installation guide</.doc_link>.
+                  Then check that both tools are available:
+                </p>
+                <.code_panel id="nono-versions" label="On your computer" code={@setup.versions} copy />
               </div>
             </section>
 
             <section id="nono-config-step" class="space-y-4">
-              <.step_header step={2} title="Configure Codex" />
+              <.step_header step={2} title="Configure your AI agent" />
               <div class="ml-6 space-y-4 text-sm text-zinc-400">
                 <p>
-                  Merge this entry into <.inline_code>~/.codex/config.toml</.inline_code>.
+                  This example uses Codex. Merge this entry into <.inline_code>~/.codex/config.toml</.inline_code>.
                   Preserve your other MCP servers and keep the file private; it contains the API
                   key shown only during this setup.
                 </p>
@@ -2555,6 +2582,11 @@ defmodule EmisarWeb.AgentsLive do
                   <.inline_code>env</.inline_code>
                   table.
                 </p>
+                <p>
+                  To use another agent, follow its configuration in
+                  <.doc_link href={~p"/docs/connect-cli-agent"}>Connect a CLI agent</.doc_link>
+                  and run it with a matching nono profile.
+                </p>
               </div>
             </section>
 
@@ -2562,8 +2594,8 @@ defmodule EmisarWeb.AgentsLive do
               <.step_header step={3} title="Review the sandbox profile" />
               <div class="ml-6 space-y-4 text-sm text-zinc-400">
                 <p>
-                  Review the maintained Codex profile before running it. Start in the repository
-                  Codex should access, and add file, command, or network access only when needed.
+                  Review the maintained Codex profile used by this example. Start in the repository
+                  the agent should access, and add file, command, or network access only when needed.
                 </p>
                 <.code_panel
                   id="nono-profile"
@@ -2577,16 +2609,45 @@ defmodule EmisarWeb.AgentsLive do
             <section id="nono-limits" class="ml-6 max-w-prose space-y-3">
               <h3 class="text-base font-semibold leading-6 text-zinc-200">Limits &amp; risks</h3>
               <ul class="list-disc space-y-2 pl-5 text-sm text-zinc-400">
-                <li>The profile you run is the sandbox boundary; review every access you add.</li>
-                <li>Codex can read its own configuration, including this setup key.</li>
                 <li>
-                  Automatic bridge key rotation is unavailable in the strict profile; rotate it manually.
+                  The agent can see any file, secret, tool, or network destination allowed by the
+                  profile, including everything in its working directory.
+                </li>
+                <li>
+                  The agent can read the emisar key in its MCP configuration. Allow network access
+                  only to the services the agent needs.
+                </li>
+                <li>
+                  Review the profile after adding file, command, environment-variable, or network access.
                 </li>
               </ul>
+              <p class="text-sm text-zinc-400">
+                Rotate the key manually from <.link
+                  navigate={~p"/app/agents"}
+                  class="text-brand-400 hover:text-brand-300"
+                >AI agents</.link>, replace it in the private agent configuration, and start a fresh
+                nono session. Do not give the sandbox the whole credential directory to automate this.
+              </p>
             </section>
           <% "dev_containers" -> %>
+            <section id="dev-containers-tools-step" class="space-y-4">
+              <.step_header step={1} title="Check Dev Containers" />
+              <div class="ml-6 space-y-4 text-sm text-zinc-400">
+                <p>
+                  Follow the <.doc_link href="https://code.visualstudio.com/docs/devcontainers/devcontainer-cli#_installation">official Dev Containers installation guide</.doc_link>,
+                  then check that Docker and the Dev Containers CLI are available:
+                </p>
+                <.code_panel
+                  id="dev-containers-versions"
+                  label="On your computer"
+                  code={@setup.versions}
+                  copy
+                />
+              </div>
+            </section>
+
             <section id="dev-containers-image-step" class="space-y-4">
-              <.step_header step={1} title="Install the bridge in the container" />
+              <.step_header step={2} title="Add the bridge to the container" />
               <div class="ml-6 space-y-4 text-sm text-zinc-400">
                 <p>
                   Add these lines to <.inline_code>.devcontainer/Dockerfile</.inline_code>.
@@ -2602,7 +2663,7 @@ defmodule EmisarWeb.AgentsLive do
             </section>
 
             <section id="dev-containers-config-step" class="space-y-4">
-              <.step_header step={2} title="Restrict and rebuild the container" />
+              <.step_header step={3} title="Restrict and rebuild the container" />
               <div class="ml-6 space-y-4 text-sm text-zinc-400">
                 <p>
                   Merge these settings into <.inline_code>.devcontainer/devcontainer.json</.inline_code>.
@@ -2625,10 +2686,10 @@ defmodule EmisarWeb.AgentsLive do
             </section>
 
             <section id="dev-containers-agent-step" class="space-y-4">
-              <.step_header step={3} title="Configure Codex in the container" />
+              <.step_header step={4} title="Configure your AI agent in the container" />
               <div class="ml-6 space-y-4 text-sm text-zinc-400">
                 <p>
-                  Inside the rebuilt container, merge this entry into <.inline_code>~/.codex/config.toml</.inline_code>. Keep the API key out of the
+                  This example uses Codex. Inside the rebuilt container, merge this entry into <.inline_code>~/.codex/config.toml</.inline_code>. Keep the API key out of the
                   Dockerfile, dev container settings, image layers, and repository.
                 </p>
                 <.code_panel
@@ -2651,16 +2712,35 @@ defmodule EmisarWeb.AgentsLive do
                   <.inline_code>env</.inline_code>
                   table.
                 </p>
+                <p>
+                  To use another agent, follow its configuration in <.doc_link href={
+                    ~p"/docs/connect-cli-agent"
+                  }>Connect a CLI agent</.doc_link>.
+                </p>
               </div>
             </section>
 
             <section id="dev-containers-limits" class="ml-6 max-w-prose space-y-3">
               <h3 class="text-base font-semibold leading-6 text-zinc-200">Limits &amp; risks</h3>
               <ul class="list-disc space-y-2 pl-5 text-sm text-zinc-400">
-                <li>The agent can read every file mounted into the container.</li>
-                <li>This configuration does not restrict outbound network access.</li>
                 <li>
-                  Your editor may share Git or SSH credentials separately from this configuration.
+                  The agent can see and potentially leak anything mounted into the container,
+                  including secrets in
+                  <.inline_code>.env</.inline_code>
+                  files and temporary artifacts. Mount only the files it needs. For stronger
+                  isolation from local files, use <.doc_link href={
+                    ~p"/docs/connect-agent-sandboxes#coop"
+                  }>co:op</.doc_link>.
+                </li>
+                <li>
+                  VS Code can share Git credentials or forward an SSH agent into the container.
+                  Review its
+                  <.doc_link href="https://code.visualstudio.com/remote/advancedcontainers/sharing-git-credentials">credential-sharing settings</.doc_link>
+                  before starting the agent, and never mount the host's Docker socket.
+                </li>
+                <li>
+                  The default configuration does not restrict outbound network access. We
+                  recommend allowing access only to the services the agent needs.
                 </li>
               </ul>
             </section>

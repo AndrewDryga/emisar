@@ -19,30 +19,25 @@ defmodule EmisarWeb.CoopConnectionTest do
            }
   end
 
-  test "the public walkthrough is discoverable and documents the container boundary", %{
+  test "the public sandbox guide is discoverable and documents the co:op boundary", %{
     conn: conn
   } do
-    html = conn |> get(~p"/docs/connect-coop") |> html_response(200)
+    html = conn |> get(~p"/docs/connect-agent-sandboxes") |> html_response(200)
     doc = LazyHTML.from_document(html)
 
-    assert doc |> LazyHTML.query("h1") |> LazyHTML.text() |> String.trim() == "co:op"
+    assert doc |> LazyHTML.query("h1") |> LazyHTML.text() |> String.trim() ==
+             "Agent sandboxes"
+
+    assert doc |> LazyHTML.query("h2#coop") |> Enum.count() == 1
     assert html =~ ~s(href="/app/agents/connect")
     assert html =~ ~s(href="/app/audit")
-    assert html =~ "Copy the MCP configuration"
-    refute html =~ "Create co:op configuration"
-    assert html =~ "/usr/local/bin/emisar-mcp"
-    assert html =~ "COOP_RUN_ARGS=-v coop-emisar-config:/config"
+    assert html =~ ".coopignore"
+    refute html =~ "EMISAR_API_KEY"
     refute html =~ "COOP_RUNTIME="
-    assert html =~ "XDG_CONFIG_HOME"
-    assert html =~ "EMISAR_SIGNING_KEY"
-
-    assert html =~ "curl -fsSL https://emisar.dev/install-mcp.sh | bash -s -- --yes"
-
-    refute html =~ "GitHub CLI"
-    refute html =~ "/tmp/install-mcp.sh"
+    refute html =~ "install-mcp.sh"
 
     for path <- ~w(/docs /docs/quickstart /docs/connect-cli-agent /sitemap.xml) do
-      assert conn |> get(path) |> response(200) =~ "/docs/connect-coop"
+      assert conn |> get(path) |> response(200) =~ "/docs/connect-agent-sandboxes"
     end
   end
 
@@ -56,7 +51,15 @@ defmodule EmisarWeb.CoopConnectionTest do
 
     assert has_element?(lv, "p", "Agent sandboxes")
     refute has_element?(lv, "p", "Agent containers")
-    assert has_element?(lv, "#coop-install")
+    assert has_element?(lv, "#coop-version", "coop version")
+
+    assert has_element?(
+             lv,
+             "#coop-install-step a[href='https://github.com/AndrewDryga/coop#install']",
+             "official installation guide"
+           )
+
+    assert has_element?(lv, "#coop-limits", "Limits & risks")
     assert has_element?(lv, "#coop-start", "coop codex")
     refute has_element?(lv, "#install-mcp-cmd")
     assert has_element?(lv, "#coop-config")
@@ -97,7 +100,9 @@ defmodule EmisarWeb.CoopConnectionTest do
     {:ok, lv, _} = live(conn, ~p"/app/#{account}/agents/connect")
     render_click(lv, "select_client", %{"client" => "coop"})
 
-    assert has_element?(lv, "#coop-install-step", "Install co:op")
+    assert has_element?(lv, "#coop-install-step", "Make sure co:op is installed")
+    assert has_element?(lv, "#coop-version", "coop version")
+    refute render(lv) =~ "raw.githubusercontent.com/AndrewDryga/coop/main/install.sh"
 
     init_commands =
       lv
@@ -137,16 +142,6 @@ defmodule EmisarWeb.CoopConnectionTest do
       |> LazyHTML.text()
       |> String.trim()
 
-    documented_dockerfile =
-      conn
-      |> get(~p"/docs/connect-coop")
-      |> html_response(200)
-      |> LazyHTML.from_document()
-      |> LazyHTML.query("pre")
-      |> Enum.map(&(&1 |> LazyHTML.text() |> String.trim()))
-      |> Enum.find(&String.starts_with?(&1, "ARG COOP_BASE_IMAGE=coop-box"))
-
-    assert dockerfile == documented_dockerfile
     assert dockerfile =~ "FROM ${COOP_BASE_IMAGE}"
 
     assert dockerfile =~ "curl -fsSL https://emisar.dev/install-mcp.sh | bash -s -- --yes"
@@ -184,7 +179,10 @@ defmodule EmisarWeb.CoopConnectionTest do
     assert has_element?(lv, "#coop-tool-prompts", "all tools inside the sandbox")
     [key] = Repo.all(ApiKey)
 
-    for path <- ["/docs/connect-coop#tool-permissions", "/docs/policies-and-approvals"] do
+    for path <- [
+          "/docs/connect-agent-sandboxes#coop-tool-prompts",
+          "/docs/policies-and-approvals"
+        ] do
       assert has_element?(lv, "#coop-tool-prompts a[href='#{path}']")
       uri = URI.parse(path)
       html = conn |> get(uri.path) |> html_response(200)

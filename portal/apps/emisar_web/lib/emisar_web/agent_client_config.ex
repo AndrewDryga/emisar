@@ -80,8 +80,7 @@ defmodule EmisarWeb.AgentClientConfig do
   def sandbox_setup("docker_sandboxes", url, key) do
     %{
       connection_url: url,
-      install:
-        "sbx login\ncurl -fsSL https://emisar.dev/install-mcp.sh | sudo bash -s -- --yes\nemisar-mcp --version",
+      versions: "sbx version\nemisar-mcp --version",
       bridge_env:
         Enum.map_join(
           [
@@ -113,8 +112,7 @@ defmodule EmisarWeb.AgentClientConfig do
 
     %{
       connection_url: connection_url,
-      install:
-        "curl -fsSL https://nono.sh/install.sh | sh\ncurl -fsSL https://emisar.dev/install-mcp.sh | sudo bash -s -- --yes\nnono --version\nemisar-mcp --version",
+      versions: "nono --version\nemisar-mcp --version",
       agent_config:
         codex_config(
           "/usr/local/bin/emisar-mcp",
@@ -137,6 +135,7 @@ defmodule EmisarWeb.AgentClientConfig do
     %{
       connection_url: connection_url,
       local_http?: allow_insecure?,
+      versions: "docker --version\ndevcontainer --version",
       dockerfile: dev_container_dockerfile(),
       devcontainer: dev_container_config(),
       rebuild: "devcontainer up --workspace-folder .",

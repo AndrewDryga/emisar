@@ -880,42 +880,6 @@ defmodule EmisarWeb.DocsComponents do
     """
   end
 
-  @doc """
-  The short handoff from a sandbox overview to its account-specific console
-  setup. The console owns generated credentials, commands, and verification;
-  public docs retain the stable product boundary and risks.
-  """
-  attr :name, :string, required: true
-  attr :connect_href, :string, required: true
-  attr :audit_href, :string, required: true
-
-  def docs_sandbox_connection(assigns) do
-    ~H"""
-    <.docs_h2 id="connect">Connect {@name}</.docs_h2>
-    <ol class="mt-5 list-decimal space-y-3 pl-6 text-base leading-7 text-zinc-400">
-      <li>
-        Open
-        <a
-          href={@connect_href}
-          class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
-        >Connect an agent</a>
-        and select <strong class="text-zinc-200">{@name}</strong>.
-      </li>
-      <li>
-        Follow the steps shown there.
-      </li>
-      <li>
-        Start the agent and send the example prompt. When the console shows <strong class="text-zinc-200">Agent connected</strong>, open
-        <a
-          href={@audit_href}
-          class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
-        >Audit</a>
-        to confirm the action, runner, operator, and result.
-      </li>
-    </ol>
-    """
-  end
-
   defp docs_callout_box(:note), do: "border-zinc-800 bg-zinc-950/60"
   defp docs_callout_box(:tip), do: "border-brand-900/40 bg-brand-950/20"
   defp docs_callout_box(:warn), do: "border-amber-900/40 bg-amber-950/15"

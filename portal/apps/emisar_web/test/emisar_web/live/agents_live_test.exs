@@ -47,13 +47,13 @@ defmodule EmisarWeb.AgentsLiveTest do
 
       assert labels == ["co:op", "Docker Sandboxes", "nono", "Dev Containers"]
 
-      for {id, title, path, sections} <- [
-            {"docker_sandboxes", "Docker Sandboxes", "/docs/connect-docker-sandboxes",
+      for {id, title, sections} <- [
+            {"docker_sandboxes", "Docker Sandboxes",
              ~w(docker-sandboxes-host-tools docker-sandboxes-bridge docker-sandboxes-register docker-sandboxes-limits)},
-            {"nono", "nono", "/docs/connect-nono",
+            {"nono", "nono",
              ~w(nono-install-step nono-config-step nono-profile-step nono-limits)},
-            {"dev_containers", "Dev Containers", "/docs/connect-dev-containers",
-             ~w(dev-containers-image-step dev-containers-config-step dev-containers-agent-step dev-containers-limits)}
+            {"dev_containers", "Dev Containers",
+             ~w(dev-containers-tools-step dev-containers-image-step dev-containers-config-step dev-containers-agent-step dev-containers-limits)}
           ] do
         lv
         |> element(
@@ -63,12 +63,12 @@ defmodule EmisarWeb.AgentsLiveTest do
 
         html = render(lv)
         assert has_element?(lv, "#sandbox-guide-#{id}", title)
-        assert has_element?(lv, "#sandbox-guide-#{id} a[href='#{path}']", "Read about")
         assert html =~ "EMISAR_API_KEY"
         assert html =~ "emk-"
         assert has_element?(lv, "##{id}-start")
         assert has_element?(lv, "#agent-connect-step", "Connect your agent")
-        assert has_element?(lv, "#agent-connect-step", "Start the sandboxed Codex session")
+        assert has_element?(lv, "#agent-connect-step", "Start the sandboxed agent session")
+        refute html =~ "This walkthrough uses Codex."
 
         for section <- sections, do: assert(has_element?(lv, "##{section}"))
 
@@ -88,6 +88,65 @@ defmodule EmisarWeb.AgentsLiveTest do
       assert Enum.all?(keys, &(&1.account_id == account.id))
       membership_id = owner_subject(user, account).membership_id
       assert Enum.all?(keys, &(&1.created_by_membership_id == membership_id))
+    end
+
+    test "sandbox setup checks upstream tools without copying their installers", %{conn: conn} do
+      {conn, _user, account} = register_and_log_in(conn)
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/agents/connect")
+
+      for {id, selector, command, href} <- [
+            {"docker_sandboxes", "#docker-sandboxes-versions", "sbx version",
+             "https://docs.docker.com/ai/sandboxes/install/"},
+            {"nono", "#nono-versions", "nono --version", "https://nono.sh/#install"},
+            {"dev_containers", "#dev-containers-versions", "devcontainer --version",
+             "https://code.visualstudio.com/docs/devcontainers/devcontainer-cli#_installation"}
+          ] do
+        lv
+        |> element(
+          "#agent-sandbox-options button[phx-click='select_sandbox'][phx-value-client='#{id}']"
+        )
+        |> render_click()
+
+        assert has_element?(lv, selector, command)
+        assert has_element?(lv, "#sandbox-guide-#{id} a[href='#{href}']")
+        refute render(lv) =~ "https://nono.sh/install.sh"
+      end
+    end
+
+    test "sandbox risks match the public guide and agent-specific setup is labeled as an example",
+         %{conn: conn} do
+      {conn, _user, account} = register_and_log_in(conn)
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/agents/connect")
+
+      lv |> render_click("select_client", %{"client" => "coop"})
+      assert has_element?(lv, "#coop-limits", ".coopignore")
+      assert has_element?(lv, "#coop-limits", ".gitignore")
+      assert has_element?(lv, "#coop-limits", "Anything you mount or pass")
+
+      lv |> render_click("select_sandbox", %{"client" => "docker_sandboxes"})
+      assert has_element?(lv, "#docker-sandboxes-limits", "temporary artifacts")
+      assert has_element?(lv, "#docker-sandboxes-limits", "registered MCP launcher")
+      refute has_element?(lv, "#docker-sandboxes-limits", "create containers")
+
+      lv |> render_click("select_sandbox", %{"client" => "nono"})
+      assert has_element?(lv, "#nono-config-step", "Configure your AI agent")
+      assert has_element?(lv, "#nono-config-step", "This example uses Codex")
+      assert has_element?(lv, "#nono-config-step a[href='/docs/connect-cli-agent']")
+      assert has_element?(lv, "#nono-limits", "including everything in its working directory")
+      assert has_element?(lv, "#nono-limits", "Rotate the key manually")
+
+      lv |> render_click("select_sandbox", %{"client" => "dev_containers"})
+
+      assert has_element?(
+               lv,
+               "#dev-containers-agent-step",
+               "Configure your AI agent in the container"
+             )
+
+      assert has_element?(lv, "#dev-containers-agent-step", "This example uses Codex")
+      assert has_element?(lv, "#dev-containers-agent-step a[href='/docs/connect-cli-agent']")
+      assert has_element?(lv, "#dev-containers-limits", "potentially leak anything mounted")
+      assert has_element?(lv, "#dev-containers-limits", "credential-sharing settings")
     end
 
     # Before any client is picked, the panel is just the picker — no mint,
