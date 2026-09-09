@@ -59,7 +59,8 @@ defmodule EmisarWeb.CoopConnectionTest do
              "official installation guide"
            )
 
-    assert has_element?(lv, "#coop-limits", "Limits & risks")
+    assert has_element?(lv, "#coop-limits", "Recommendations")
+    refute has_element?(lv, "#coop-tool-prompts")
     assert has_element?(lv, "#coop-start", "coop codex")
     refute has_element?(lv, "#install-mcp-cmd")
     assert has_element?(lv, "#coop-config")
@@ -167,46 +168,6 @@ defmodule EmisarWeb.CoopConnectionTest do
     assert render_click(lv, "reveal_snippet", %{}) =~ "You don&#39;t have permission to do that."
     assert Repo.all(ApiKey) == []
     refute has_element?(lv, "#coop-config")
-  end
-
-  test "optional co:op tool-prompt guidance is collapsed and links to working docs", %{conn: conn} do
-    {conn, _user, account} = register_and_log_in(conn)
-    {:ok, lv, _} = live(conn, ~p"/app/#{account}/agents/connect")
-    render_click(lv, "select_client", %{"client" => "coop"})
-
-    assert has_element?(lv, "#agent-connect-step details#coop-tool-prompts summary", "optional")
-    refute has_element?(lv, "#coop-tool-prompts[open]")
-    assert has_element?(lv, "#coop-tool-prompts", "all tools inside the sandbox")
-    [key] = Repo.all(ApiKey)
-
-    for path <- [
-          "/docs/connect-agent-sandboxes#coop-tool-prompts",
-          "/docs/policies-and-approvals"
-        ] do
-      assert has_element?(lv, "#coop-tool-prompts a[href='#{path}']")
-      uri = URI.parse(path)
-      html = conn |> get(uri.path) |> html_response(200)
-
-      if uri.fragment do
-        assert html
-               |> LazyHTML.from_document()
-               |> LazyHTML.query("##{uri.fragment}")
-               |> Enum.count() ==
-                 1
-
-        for agent <- ~w(CODEX CLAUDE GEMINI GROK) do
-          assert html =~ "COOP_#{agent}_CMD"
-        end
-      end
-    end
-
-    render_click(lv, "select_client", %{"client" => "coop"})
-    assert has_element?(lv, "#coop-tool-prompts")
-    refute has_element?(lv, "#coop-tool-prompts[open]")
-    assert Repo.all(ApiKey) == [key]
-
-    render_click(lv, "select_client", %{"client" => "codex"})
-    refute has_element?(lv, "#coop-tool-prompts")
   end
 
   test "an operator's automatic key stays in the current account despite forged scope", %{

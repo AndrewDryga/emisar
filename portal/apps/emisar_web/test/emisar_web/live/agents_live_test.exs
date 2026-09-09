@@ -193,6 +193,9 @@ defmodule EmisarWeb.AgentsLiveTest do
       assert html =~ "Connect an agent"
       assert has_element?(lv, "h3", "What's an AI agent?")
       assert html =~ "An AI agent is an app, such as Claude, ChatGPT, or Cursor"
+      assert has_element?(lv, "a[href='/docs/connect-agent-sandboxes#coop']", "co:op")
+      assert html =~ "The sandbox limits access to local secrets, SSH keys, and CLI tools"
+      refute html =~ "[co:op](...)"
       refute html =~ "Connections and access"
 
       # The local picker partitions by kind — one transport group, two

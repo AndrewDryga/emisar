@@ -9,7 +9,7 @@
       toc={[
         {"choose", "Choose a sandbox"},
         {"connect", "Connect"},
-        {"coop", "co:op — recommended"},
+        {"coop", "co:op"},
         {"docker-sandboxes", "Docker Sandboxes"},
         {"nono", "nono"},
         {"dev-containers", "Dev Containers"}
@@ -17,17 +17,11 @@
     >
       <.docs_header current="connect-agent-sandboxes">
         <:dek>
-          Choose a local sandbox for your coding agent, connect it to emisar, and test one
-          audited infrastructure action.
+          We recommend running AI agents in a sandbox. It limits their access to files, secrets,
+          and tools on your computer, while emisar extends that control to infrastructure and
+          third-party tools.
         </:dek>
       </.docs_header>
-
-      <p class="mt-5 text-base leading-7 text-zinc-400">
-        We recommend <strong class="text-zinc-200">co:op</strong> for most local setups. It is a
-        free, open-source tool that supports Codex, Claude Code, Gemini CLI, and Grok CLI and lets
-        you control which files, secrets, and tools the agent can access. emisar extends that
-        control to infrastructure and third-party tools.
-      </p>
 
       <.docs_prerequisites>
         <:item>
@@ -42,6 +36,14 @@
       </.docs_prerequisites>
 
       <.docs_h2 id="choose">Choose a sandbox</.docs_h2>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        We recommend <strong class="text-zinc-200">co:op</strong> for most local setups. It is a
+        free, open-source tool that supports Codex, Claude Code, Gemini CLI, and Grok CLI and lets
+        you control which files, secrets, and tools the agent can access. It can also coordinate
+        work across models and providers, switch providers during a session, and manage shared
+        task queues.
+      </p>
+
       <div class="mt-5 overflow-x-auto rounded-xl border border-zinc-900">
         <table class="w-full min-w-[660px] text-left text-sm">
           <thead class="border-b border-zinc-900 text-xs uppercase tracking-wider text-zinc-400">
@@ -61,7 +63,8 @@
                 Codex, Claude Code, Gemini CLI, Grok CLI
               </td>
               <td class="px-4 py-3 align-top">
-                You want to choose which local files and tools enter the sandbox.
+                You want precise control over which local files, secrets, and tools the agent can
+                access.
               </td>
             </tr>
             <tr>
@@ -82,7 +85,10 @@
               <td class="px-4 py-3 align-top text-zinc-300">
                 Any terminal agent with a suitable profile
               </td>
-              <td class="px-4 py-3 align-top">You prefer an operating-system profile.</td>
+              <td class="px-4 py-3 align-top">
+                You want fast startup without a container and are comfortable using an
+                operating-system profile as the sandbox boundary.
+              </td>
             </tr>
             <tr>
               <td class="px-4 py-3 align-top font-semibold text-zinc-100">
@@ -99,7 +105,7 @@
         </table>
       </div>
 
-      <.docs_h2 id="connect">Connect</.docs_h2>
+      <.docs_h2 id="connect">Connect a sandbox</.docs_h2>
       <ol class="mt-5 list-decimal space-y-3 pl-6 text-base leading-7 text-zinc-400">
         <li>
           Open <a
@@ -118,7 +124,7 @@
         </li>
       </ol>
 
-      <.docs_h2 id="coop">co:op — recommended</.docs_h2>
+      <.docs_h2 id="coop">co:op</.docs_h2>
       <.docs_h3 id="coop-requirements">What you need</.docs_h3>
       <p class="mt-4 text-base leading-7 text-zinc-400">
         co:op runs the agent in a container on macOS or Linux. Use Apple container, Docker, or
@@ -126,7 +132,7 @@
         its rotated credentials in a named volume.
       </p>
 
-      <.docs_h3 id="coop-limits-and-risks">Limits &amp; risks</.docs_h3>
+      <.docs_h3 id="coop-limits-and-risks">Recommendations</.docs_h3>
       <ul class="mt-4 list-disc space-y-3 pl-6 text-base leading-7 text-zinc-400">
         <li>
           Only add the files, secrets, and host tools the agent needs. Use
@@ -139,19 +145,14 @@
           Anything you mount or pass into the sandbox remains available to the agent. Keep
           production credentials and privileged host sockets out.
         </li>
+        <li>
+          Run
+          <.docs_inline_code>coop doctor</.docs_inline_code>
+          after setup to verify the sandbox. Run
+          <.docs_inline_code>coop check-secrets</.docs_inline_code>
+          regularly to find secrets hidden in your repository.
+        </li>
       </ul>
-
-      <.docs_h3 id="coop-tool-prompts">Local tool prompts</.docs_h3>
-      <p class="mt-4 text-base leading-7 text-zinc-400">
-        co:op's default commands skip local permission prompts for tools inside the sandbox. If
-        you customized an agent command with <.docs_inline_code>COOP_CODEX_CMD</.docs_inline_code>, <.docs_inline_code>COOP_CLAUDE_CMD</.docs_inline_code>, <.docs_inline_code>COOP_GEMINI_CMD</.docs_inline_code>, or <.docs_inline_code>COOP_GROK_CMD</.docs_inline_code>, remove that override to restore the
-        default. Your
-        <.link
-          navigate={~p"/docs/policies-and-approvals"}
-          class="text-brand-400 hover:text-brand-300"
-        >emisar policies and approvals</.link>
-        still apply.
-      </p>
 
       <.docs_h2 id="docker-sandboxes">Docker Sandboxes</.docs_h2>
       <.docs_h3 id="docker-sandboxes-requirements">What you need</.docs_h3>

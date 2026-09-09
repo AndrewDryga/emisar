@@ -23,13 +23,13 @@ defmodule EmisarWeb.AgentSandboxGuidesTest do
 
     rows =
       doc
-      |> LazyHTML.query("h2#choose + div tbody tr")
+      |> LazyHTML.query("h2#choose ~ div tbody tr")
       |> Enum.map(&(&1 |> LazyHTML.text() |> String.replace(~r/\s+/, " ") |> String.trim()))
 
     assert rows == [
-             "co:op Recommended Codex, Claude Code, Gemini CLI, Grok CLI You want to choose which local files and tools enter the sandbox.",
+             "co:op Recommended Codex, Claude Code, Gemini CLI, Grok CLI You want precise control over which local files, secrets, and tools the agent can access.",
              "Docker Sandboxes Claude Code, Codex, Devin, Gemini CLI, Kiro, OpenCode You already use Docker's sandbox workflow.",
-             "nono Any terminal agent with a suitable profile You prefer an operating-system profile.",
+             "nono Any terminal agent with a suitable profile You want fast startup without a container and are comfortable using an operating-system profile as the sandbox boundary.",
              "Dev Containers Any CLI agent installed in the container Your project already uses a Dev Container."
            ]
 
@@ -62,10 +62,9 @@ defmodule EmisarWeb.AgentSandboxGuidesTest do
     assert html =~ ".coopignore"
     assert html =~ ".gitignore"
     assert html =~ "Anything you mount or pass into the sandbox"
-    assert html =~ "COOP_CODEX_CMD"
-    assert html =~ "COOP_CLAUDE_CMD"
-    assert html =~ "COOP_GEMINI_CMD"
-    assert html =~ "COOP_GROK_CMD"
+    assert html =~ "coop doctor"
+    assert html =~ "coop check-secrets"
+    refute html =~ "COOP_*_CMD"
 
     assert html =~ "Docker shares the project directory"
     assert html =~ "temporary artifacts"

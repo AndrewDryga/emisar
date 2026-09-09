@@ -1918,12 +1918,6 @@ defmodule EmisarWeb.AgentsLive do
             </div>
           <% @config && @config.kind == :coop -> %>
             <div id="coop-setup" class="mt-6 space-y-8 border-t border-zinc-800/70 pt-6">
-              <p class="text-sm text-zinc-400">
-                co:op is a free, open-source tool for running AI agents in a local sandbox.
-                It limits access to files, secrets, and tools on your machine; emisar extends that
-                control to your infrastructure and third-party tools.
-                <.doc_link href={~p"/docs/connect-agent-sandboxes#coop"}>Read about co:op</.doc_link>
-              </p>
               <section id="coop-install-step" class="space-y-4">
                 <.step_header step={1} title="Make sure co:op is installed" />
                 <div class="ml-6 space-y-4 text-sm text-zinc-400">
@@ -2030,7 +2024,7 @@ defmodule EmisarWeb.AgentsLive do
                 </div>
               </section>
               <section id="coop-limits" class="ml-6 max-w-prose space-y-3">
-                <h3 class="text-base font-semibold leading-6 text-zinc-200">Limits &amp; risks</h3>
+                <h3 class="text-base font-semibold leading-6 text-zinc-200">Recommendations</h3>
                 <ul class="list-disc space-y-2 pl-5 text-sm text-zinc-400">
                   <li>
                     Only add the files, secrets, and host tools the agent needs. Use
@@ -2299,27 +2293,6 @@ defmodule EmisarWeb.AgentsLive do
                   class="text-brand-400 hover:text-brand-300"
                 >Audit</.link>.
               </p>
-              <.disclosure id="coop-tool-prompts" size={:md}>
-                <:summary>
-                  <span class="font-medium">
-                    Skip emisar tool-call prompts <span class="text-zinc-400">(optional)</span>
-                  </span>
-                </:summary>
-                <div class="space-y-3 text-sm text-zinc-400">
-                  <p>
-                    co:op's default agent commands already skip local permission prompts for all
-                    tools inside the sandbox, including emisar.
-                  </p>
-                  <p>
-                    If you've customized your agent's command, follow the <.doc_link href={
-                      ~p"/docs/connect-agent-sandboxes#coop-tool-prompts"
-                    }>co:op tool-permission guide</.doc_link>.
-                    Your
-                    <.doc_link href={~p"/docs/policies-and-approvals"}>emisar policies and approvals</.doc_link>
-                    still apply.
-                  </p>
-                </div>
-              </.disclosure>
             <% else %>
               <.agent_example_prompt id="agent-example-prompt" />
             <% end %>
@@ -2423,6 +2396,15 @@ defmodule EmisarWeb.AgentsLive do
             emisar connects that app to your infrastructure. Ask it to investigate an incident
             across your fleet, carry out recovery steps, and verify the result using the
             actions you make available.
+          </p>
+          <p>
+            For local agents, pair emisar with an agent sandbox such as <.doc_link href={
+              ~p"/docs/connect-agent-sandboxes#coop"
+            }>co:op</.doc_link>. The sandbox limits access to local secrets, SSH keys, and CLI tools
+            such as
+            <.inline_code>gcloud</.inline_code>
+            or <.inline_code>aws</.inline_code>. emisar extends that control to infrastructure and
+            third-party tools.
           </p>
         </.docs_rail>
       </div>
