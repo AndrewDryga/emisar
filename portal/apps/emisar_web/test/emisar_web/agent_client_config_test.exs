@@ -236,6 +236,67 @@ defmodule EmisarWeb.AgentClientConfigTest do
     end
   end
 
+  describe "sandbox_setup/3" do
+    test "Docker Sandboxes keeps the generated key in the host environment file" do
+      setup =
+        AgentClientConfig.sandbox_setup(
+          "docker_sandboxes",
+          "https://control.example",
+          "emk-test'value"
+        )
+
+      assert setup.bridge_env =~ "EMISAR_URL='https://control.example'"
+      assert setup.bridge_env =~ ~S|EMISAR_API_KEY='emk-test'"'"'value'|
+      assert setup.bridge_env =~ "EMISAR_CLIENT='docker-sandboxes'"
+      assert setup.launcher =~ ~S|. "$HOME/.config/emisar/docker-sandboxes/bridge.env"|
+      assert setup.register =~ "sbx mcp add emisar"
+      assert setup.start =~ "--static-mcp emisar"
+      refute setup.launcher =~ "emk-test"
+      refute setup.register =~ "emk-test"
+      refute setup.start =~ "emk-test"
+    end
+
+    test "nono uses a literal loopback address and the same host in its allow rule" do
+      setup = AgentClientConfig.sandbox_setup("nono", "http://localhost:43659/", "emk-test")
+
+      assert setup.connection_url == "http://127.0.0.1:43659/"
+      assert setup.agent_config =~ ~s|EMISAR_URL = "http://127.0.0.1:43659/"|
+      assert setup.agent_config =~ ~s|EMISAR_API_KEY = "emk-test"|
+      assert setup.start =~ "--allow-domain '127.0.0.1'"
+      refute setup.start =~ "emk-test"
+    end
+
+    test "Dev Containers adapts local URLs without placing a key in build configuration" do
+      local =
+        AgentClientConfig.sandbox_setup(
+          "dev_containers",
+          "http://localhost:43659/",
+          "emk-test"
+        )
+
+      assert local.connection_url == "http://host.docker.internal:43659/"
+      assert local.local_http?
+      assert local.agent_config =~ ~s|EMISAR_URL = "http://host.docker.internal:43659/"|
+      assert local.agent_config =~ ~s|EMISAR_ALLOW_INSECURE = "1"|
+      assert local.agent_config =~ ~s|XDG_CONFIG_HOME = "/config"|
+      assert local.agent_config =~ ~s|EMISAR_API_KEY = "emk-test"|
+
+      for value <- [local.dockerfile, local.devcontainer, local.rebuild, local.start] do
+        refute value =~ "emk-test"
+      end
+
+      hosted =
+        AgentClientConfig.sandbox_setup(
+          "dev_containers",
+          "https://control.example",
+          "emk-test"
+        )
+
+      refute hosted.local_http?
+      refute hosted.agent_config =~ "EMISAR_ALLOW_INSECURE"
+    end
+  end
+
   describe "version_command/2" do
     test "leaves simple POSIX executable paths unquoted" do
       for os <- [:linux, :macos] do

@@ -31,8 +31,10 @@ defmodule EmisarWeb.AgentsLiveTest do
       refute html =~ "EMISAR_API_KEY"
     end
 
-    test "the sandbox picker exposes every supported guide without minting a key", %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
+    test "the sandbox picker renders complete account-specific setup and mints once", %{
+      conn: conn
+    } do
+      {conn, user, account} = register_and_log_in(conn)
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/agents")
 
       labels =
@@ -45,10 +47,13 @@ defmodule EmisarWeb.AgentsLiveTest do
 
       assert labels == ["co:op", "Docker Sandboxes", "nono", "Dev Containers"]
 
-      for {id, title, path} <- [
-            {"docker_sandboxes", "Docker Sandboxes", "/docs/connect-docker-sandboxes"},
-            {"nono", "nono", "/docs/connect-nono"},
-            {"dev_containers", "Dev Containers", "/docs/connect-dev-containers"}
+      for {id, title, path, sections} <- [
+            {"docker_sandboxes", "Docker Sandboxes", "/docs/connect-docker-sandboxes",
+             ~w(docker-sandboxes-host-tools docker-sandboxes-bridge docker-sandboxes-register docker-sandboxes-limits)},
+            {"nono", "nono", "/docs/connect-nono",
+             ~w(nono-install-step nono-config-step nono-profile-step nono-limits)},
+            {"dev_containers", "Dev Containers", "/docs/connect-dev-containers",
+             ~w(dev-containers-image-step dev-containers-config-step dev-containers-agent-step dev-containers-limits)}
           ] do
         lv
         |> element(
@@ -56,10 +61,33 @@ defmodule EmisarWeb.AgentsLiveTest do
         )
         |> render_click()
 
+        html = render(lv)
         assert has_element?(lv, "#sandbox-guide-#{id}", title)
-        assert has_element?(lv, "#sandbox-guide-#{id} a[href='#{path}']", "Open the")
-        assert Repo.all(ApiKey) == []
+        assert has_element?(lv, "#sandbox-guide-#{id} a[href='#{path}']", "Read about")
+        assert html =~ "EMISAR_API_KEY"
+        assert html =~ "emk-"
+        assert has_element?(lv, "##{id}-start")
+        assert has_element?(lv, "#agent-connect-step", "Connect your agent")
+        assert has_element?(lv, "#agent-connect-step", "Start the sandboxed Codex session")
+
+        for section <- sections, do: assert(has_element?(lv, "##{section}"))
+
+        count = Repo.aggregate(ApiKey, :count)
+        render_click(lv, "select_sandbox", %{"client" => id})
+        assert Repo.aggregate(ApiKey, :count) == count
       end
+
+      keys = Repo.all(ApiKey)
+
+      assert Enum.map(keys, & &1.name) |> Enum.sort() == [
+               "Dev Containers",
+               "Docker Sandboxes",
+               "nono"
+             ]
+
+      assert Enum.all?(keys, &(&1.account_id == account.id))
+      membership_id = owner_subject(user, account).membership_id
+      assert Enum.all?(keys, &(&1.created_by_membership_id == membership_id))
     end
 
     # Before any client is picked, the panel is just the picker — no mint,
@@ -1806,7 +1834,11 @@ defmodule EmisarWeb.AgentsLiveTest do
                "path" => "C:\\bridge.exe"
              }) =~ "You don&#39;t have permission to do that."
 
+      assert render_click(lv, "select_sandbox", %{"client" => "nono"}) =~
+               "You don&#39;t have permission to do that."
+
       refute has_element?(lv, "#manual-setup")
+      refute has_element?(lv, "#sandbox-guide-nono")
       assert Repo.all(ApiKey) == []
     end
 

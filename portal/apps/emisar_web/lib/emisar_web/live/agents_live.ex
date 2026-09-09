@@ -198,18 +198,25 @@ defmodule EmisarWeb.AgentsLive do
 
   def handle_event("select_sandbox", %{"client" => id}, socket)
       when id in @sandbox_guide_ids do
-    # These choices explain how a sandbox wraps one of the client connections
-    # above. They do not mint a key: the guide sends the operator through the
-    # existing client or Custom flow whose permission checks own that action.
-    {:noreply,
-     socket
-     |> assign(:selected_client, nil)
-     |> assign(:selected_sandbox, id)
-     |> assign(:quick_secret, nil)
-     |> assign(:quick_key_id, nil)
-     |> assign(:quick_connected?, false)
-     |> assign(:snippet_open?, false)
-     |> clear_connection_wait()}
+    Permissions.gated(
+      socket,
+      ApiKeys.subject_can_issue_quick_key?(socket.assigns.current_subject),
+      fn socket ->
+        if socket.assigns.selected_sandbox == id and is_binary(socket.assigns.quick_secret) do
+          {:noreply, socket}
+        else
+          socket
+          |> assign(:selected_client, nil)
+          |> assign(:selected_sandbox, id)
+          |> assign(:quick_secret, nil)
+          |> assign(:quick_key_id, nil)
+          |> assign(:quick_connected?, false)
+          |> assign(:snippet_open?, false)
+          |> clear_connection_wait()
+          |> mint_snippet_key()
+        end
+      end
+    )
   end
 
   def handle_event("select_sandbox", _params, socket), do: {:noreply, socket}
@@ -435,10 +442,12 @@ defmodule EmisarWeb.AgentsLive do
     if socket.assigns.quick_connected?, do: clear_connection_wait(socket), else: socket
   end
 
-  # Shared by co:op selection and manual-snippet reveal. The key is named after
-  # the client so it lands on the agents list and audit rows as e.g. "Claude Desktop".
+  # Shared by sandbox selection and manual-snippet reveal. The key is named
+  # after the selected setup so it remains recognizable in the agents list and
+  # audit rows.
   defp mint_snippet_key(socket) do
-    name = client_label(socket.assigns.selected_client)
+    selected = socket.assigns.selected_sandbox || socket.assigns.selected_client
+    name = client_label(selected)
 
     case ApiKeys.mint_quick_key(socket.assigns.current_subject, name: name) do
       {:ok, raw, key} ->
@@ -450,7 +459,9 @@ defmodule EmisarWeb.AgentsLive do
          |> start_connection_wait()
          |> reload()}
 
-      {:error, _reason} when socket.assigns.selected_client == "coop" ->
+      {:error, _reason}
+      when socket.assigns.selected_client == "coop" or
+             socket.assigns.selected_sandbox in @sandbox_guide_ids ->
         {:noreply, socket}
 
       {:error, _reason} ->
@@ -936,9 +947,7 @@ defmodule EmisarWeb.AgentsLive do
       title: "Docker Sandboxes",
       path: ~p"/docs/connect-docker-sandboxes",
       summary:
-        "Run an agent in an isolated Docker microVM and connect it through Docker's host-side MCP gateway.",
-      next:
-        "Create a Custom key for Docker Sandboxes, then follow the guide to install the bridge and register its host launcher."
+        "Run Codex in an isolated Docker microVM and connect it through Docker's host-side MCP gateway."
     }
   end
 
@@ -947,9 +956,7 @@ defmodule EmisarWeb.AgentsLive do
       title: "nono",
       path: ~p"/docs/connect-nono",
       summary:
-        "Run a CLI agent with its file, environment, command, and network access constrained by a nono profile.",
-      next:
-        "Choose the CLI agent above and use manual setup. The guide shows how to install the bridge and allow emisar through the sandbox."
+        "Run Codex with its file, environment, command, and network access constrained by a nono profile."
     }
   end
 
@@ -957,9 +964,7 @@ defmodule EmisarWeb.AgentsLive do
     %{
       title: "Dev Containers",
       path: ~p"/docs/connect-dev-containers",
-      summary: "Run a CLI agent and the emisar bridge inside your development container.",
-      next:
-        "Choose the CLI agent above, select Linux, and use manual setup. The guide shows how to restrict the container and retain rotated credentials."
+      summary: "Run Codex and the emisar bridge inside your development container."
     }
   end
 
@@ -1739,10 +1744,32 @@ defmodule EmisarWeb.AgentsLive do
         :waiting -> "Waiting for your agent"
       end
 
+    sandbox_setup =
+      if assigns.selected_sandbox do
+        AgentClientConfig.sandbox_setup(
+          assigns.selected_sandbox,
+          assigns.base_url,
+          assigns.quick_secret || "emk-…"
+        )
+      end
+
     assigns =
       assigns
       |> assign(:config, config)
       |> assign(:sandbox_guide, sandbox_guide(assigns.selected_sandbox))
+      |> assign(:sandbox_setup, sandbox_setup)
+      |> assign(:setup_label, client_label(assigns.selected_sandbox || assigns.selected_client))
+      |> assign(
+        :connection_step,
+        if(assigns.selected_client == "coop" or not is_nil(assigns.selected_sandbox),
+          do: 4,
+          else: 2
+        )
+      )
+      |> assign(
+        :connection_url,
+        if(sandbox_setup, do: sandbox_setup.connection_url, else: assigns.base_url)
+      )
       |> assign(:variants, variants)
       |> assign(:connection_state, connection_state)
       |> assign(:connection_title, connection_title)
@@ -1853,22 +1880,12 @@ defmodule EmisarWeb.AgentsLive do
                480px of reserved dead space buried the agents list. --%>
             <span></span>
           <% @sandbox_guide -> %>
-            <section
-              id={"sandbox-guide-#{@selected_sandbox}"}
-              class="mt-6 space-y-4 border-t border-zinc-800/70 pt-6"
-            >
-              <.section_header level={3} title={@sandbox_guide.title}>
-                <:subtitle>{@sandbox_guide.summary}</:subtitle>
-              </.section_header>
-              <p class="max-w-prose text-pretty text-sm leading-relaxed text-zinc-400">
-                {@sandbox_guide.next}
-              </p>
-              <p class="text-sm">
-                <.doc_link href={@sandbox_guide.path}>
-                  Open the {@sandbox_guide.title} guide
-                </.doc_link>
-              </p>
-            </section>
+            <.sandbox_setup
+              sandbox={@selected_sandbox}
+              guide={@sandbox_guide}
+              setup={@sandbox_setup}
+              ready?={is_binary(@quick_secret)}
+            />
           <% @selected_client == "custom" -> %>
             <div id="custom-key-flow" class="mt-6 border-t border-zinc-800/70 pt-6">
               <%= if @quick_secret do %>
@@ -2193,13 +2210,15 @@ defmodule EmisarWeb.AgentsLive do
           class="mt-8"
         >
           <.step_header
-            step={if @selected_client == "coop", do: 4, else: 2}
+            step={@connection_step}
             title="Connect your agent"
           >
             <:subtitle>
               <%= cond do %>
                 <% @selected_client == "coop" -> %>
                   Start a fresh session from your repository, then send the example prompt.
+                <% @selected_sandbox -> %>
+                  Start the sandboxed Codex session, then send the example prompt.
                 <% @selected_client == "custom" -> %>
                   Add an MCP server in your app and choose Streamable HTTP.
                 <% true -> %>
@@ -2232,6 +2251,18 @@ defmodule EmisarWeb.AgentsLive do
                 prompt below.
                 <.doc_link href={~p"/docs/connect-cli-agent" <> "#direct-http"}>Direct HTTP setup</.doc_link>
               </p>
+            </div>
+
+            <div :if={@selected_sandbox} class="space-y-3">
+              <.code_line
+                id={"#{@selected_sandbox}-start"}
+                label={
+                  if @selected_sandbox == "dev_containers",
+                    do: "Inside the container",
+                    else: "From your repository"
+                }
+                value={@sandbox_setup.start}
+              />
             </div>
 
             <%= if @selected_client == "coop" do %>
@@ -2301,7 +2332,7 @@ defmodule EmisarWeb.AgentsLive do
                 <% @connection_state == :delayed -> %>
                   If you've finished setup, check the connection in {if @selected_client == "custom",
                     do: "your AI app",
-                    else: client_label(@selected_client)}:
+                    else: @setup_label}:
                 <% true -> %>
                   You can leave this page. Your agent will appear in
                   <.link
@@ -2313,11 +2344,22 @@ defmodule EmisarWeb.AgentsLive do
               <:details :if={@connection_state == :delayed}>
                 <.steps>
                   <:step>
-                    <%= if @selected_client == "custom" do %>
-                      Confirm the server URL and Authorization header match the values above.
-                    <% else %>
-                      Restart {client_label(@selected_client)} and check its MCP connection output
-                      for errors.
+                    <%= cond do %>
+                      <% @selected_client == "custom" -> %>
+                        Confirm the server URL and Authorization header match the values above.
+                      <% @selected_sandbox == "docker_sandboxes" -> %>
+                        Run
+                        <.inline_code>sbx mcp ls</.inline_code>
+                        and check that the host launcher
+                        starts without an error.
+                      <% @selected_sandbox == "nono" -> %>
+                        Check the Codex configuration and the emisar domain allowed by the nono command.
+                      <% @selected_sandbox == "dev_containers" -> %>
+                        Check the Codex configuration and run
+                        <.inline_code>emisar-mcp --version</.inline_code>
+                        inside the rebuilt container.
+                      <% true -> %>
+                        Restart {@setup_label} and check its MCP connection output for errors.
                     <% end %>
                   </:step>
                   <:step :if={@selected_client not in ["custom", "coop"] && @quick_secret}>
@@ -2328,14 +2370,18 @@ defmodule EmisarWeb.AgentsLive do
                     and start a new session.
                   </:step>
                   <:step>
-                    Make sure the computer running your app can reach <code class="break-all font-mono text-zinc-300">{@base_url}</code>.
+                    Make sure the environment running your agent can reach <code class="break-all font-mono text-zinc-300">{@connection_url}</code>.
                   </:step>
                   <:step>
                     Send the example prompt and allow the emisar tool call if your app asks.
                   </:step>
                 </.steps>
                 <p class="mt-3 text-sm">
-                  <.doc_link href={~p"/docs/connect-cli-agent" <> "#troubleshooting"}>Troubleshooting</.doc_link>
+                  <.doc_link href={
+                    if @sandbox_guide,
+                      do: @sandbox_guide.path,
+                      else: ~p"/docs/connect-cli-agent" <> "#troubleshooting"
+                  }>Troubleshooting</.doc_link>
                 </p>
               </:details>
             </.connection_status>
@@ -2370,6 +2416,268 @@ defmodule EmisarWeb.AgentsLive do
         </.docs_rail>
       </div>
     </div>
+    """
+  end
+
+  attr :sandbox, :string, required: true
+  attr :guide, :map, required: true
+  attr :setup, :map, required: true
+  attr :ready?, :boolean, required: true
+
+  defp sandbox_setup(assigns) do
+    ~H"""
+    <section
+      id={"sandbox-guide-#{@sandbox}"}
+      class="mt-6 space-y-8 border-t border-zinc-800/70 pt-6"
+    >
+      <div class="max-w-prose space-y-2 text-sm leading-relaxed text-zinc-400">
+        <p>{@guide.summary}</p>
+        <p>
+          This walkthrough uses Codex.
+          <.doc_link href={@guide.path}>Read about {@guide.title}</.doc_link>
+        </p>
+      </div>
+
+      <%= if @ready? do %>
+        <%= case @sandbox do %>
+          <% "docker_sandboxes" -> %>
+            <section id="docker-sandboxes-host-tools" class="space-y-4">
+              <.step_header step={1} title="Install the host tools" />
+              <div class="ml-6 space-y-4 text-sm text-zinc-400">
+                <p>
+                  Install Docker Sandboxes using Docker's <.doc_link href="https://docs.docker.com/ai/sandboxes/install/">platform instructions</.doc_link>,
+                  then sign in and install the emisar bridge on your computer. This walkthrough
+                  supports macOS and Ubuntu; Windows needs an equivalent owner-only launcher.
+                </p>
+                <.code_panel
+                  id="docker-sandboxes-install"
+                  label="On your computer"
+                  code={@setup.install}
+                  copy
+                />
+              </div>
+            </section>
+
+            <section id="docker-sandboxes-bridge" class="space-y-4">
+              <.step_header step={2} title="Create the host bridge" />
+              <div class="ml-6 space-y-4 text-sm text-zinc-400">
+                <p>
+                  Create <.inline_code>~/.config/emisar/docker-sandboxes</.inline_code>, then
+                  save these two files there. Keep them outside your repository: the environment
+                  file contains the API key shown only during this setup.
+                </p>
+                <.code_line
+                  id="docker-sandboxes-directory"
+                  label="On your computer"
+                  value="mkdir -p ~/.config/emisar/docker-sandboxes"
+                />
+                <.code_panel
+                  id="docker-sandboxes-env"
+                  label="bridge.env"
+                  code={@setup.bridge_env}
+                  copy
+                />
+                <.code_panel
+                  id="docker-sandboxes-launcher"
+                  label="launch-emisar"
+                  code={@setup.launcher}
+                  copy
+                />
+                <.code_panel
+                  id="docker-sandboxes-protect"
+                  label="On your computer"
+                  code={@setup.protect}
+                  copy
+                />
+                <p>
+                  If your runners require signed dispatch, add
+                  <.inline_code>EMISAR_SIGNING_KEY</.inline_code>
+                  and
+                  <.inline_code>EMISAR_SIGNING_CERT</.inline_code>
+                  from <.doc_link href={~p"/docs/signed-dispatch"}>Set up signed dispatch</.doc_link>
+                  to <.inline_code>bridge.env</.inline_code>.
+                </p>
+              </div>
+            </section>
+
+            <section id="docker-sandboxes-register" class="space-y-4">
+              <.step_header step={3} title="Register emisar" />
+              <div class="ml-6 space-y-4 text-sm text-zinc-400">
+                <p>
+                  Register the launcher with Docker's host-side MCP gateway. The API key stays on
+                  your computer instead of entering the sandbox.
+                </p>
+                <.code_panel
+                  id="docker-sandboxes-register-command"
+                  label="On your computer"
+                  code={@setup.register}
+                  copy
+                />
+              </div>
+            </section>
+
+            <section id="docker-sandboxes-limits" class="ml-6 max-w-prose space-y-3">
+              <h3 class="text-base font-semibold leading-6 text-zinc-200">Limits &amp; risks</h3>
+              <ul class="list-disc space-y-2 pl-5 text-sm text-zinc-400">
+                <li>The agent can read and change the project you give the sandbox.</li>
+                <li>The host launcher runs with your computer's permissions.</li>
+                <li>The sandbox can create containers inside its own Docker environment.</li>
+                <li>Review the sandbox's network policy to control which services it can reach.</li>
+              </ul>
+            </section>
+          <% "nono" -> %>
+            <section id="nono-install-step" class="space-y-4">
+              <.step_header step={1} title="Install nono and the bridge" />
+              <div class="ml-6 space-y-4 text-sm text-zinc-400">
+                <p>Install both tools on your computer and check that they start.</p>
+                <.code_panel id="nono-install" label="On your computer" code={@setup.install} copy />
+              </div>
+            </section>
+
+            <section id="nono-config-step" class="space-y-4">
+              <.step_header step={2} title="Configure Codex" />
+              <div class="ml-6 space-y-4 text-sm text-zinc-400">
+                <p>
+                  Merge this entry into <.inline_code>~/.codex/config.toml</.inline_code>.
+                  Preserve your other MCP servers and keep the file private; it contains the API
+                  key shown only during this setup.
+                </p>
+                <.code_panel
+                  id="nono-codex-config"
+                  label="config.toml"
+                  code={@setup.agent_config}
+                  copy
+                />
+                <p>
+                  If your runners require signed dispatch, add the signing credentials from
+                  <.doc_link href={~p"/docs/signed-dispatch"}>Set up signed dispatch</.doc_link>
+                  to the same
+                  <.inline_code>env</.inline_code>
+                  table.
+                </p>
+              </div>
+            </section>
+
+            <section id="nono-profile-step" class="space-y-4">
+              <.step_header step={3} title="Review the sandbox profile" />
+              <div class="ml-6 space-y-4 text-sm text-zinc-400">
+                <p>
+                  Review the maintained Codex profile before running it. Start in the repository
+                  Codex should access, and add file, command, or network access only when needed.
+                </p>
+                <.code_panel
+                  id="nono-profile"
+                  label="From your repository"
+                  code={@setup.profile}
+                  copy
+                />
+              </div>
+            </section>
+
+            <section id="nono-limits" class="ml-6 max-w-prose space-y-3">
+              <h3 class="text-base font-semibold leading-6 text-zinc-200">Limits &amp; risks</h3>
+              <ul class="list-disc space-y-2 pl-5 text-sm text-zinc-400">
+                <li>The profile you run is the sandbox boundary; review every access you add.</li>
+                <li>Codex can read its own configuration, including this setup key.</li>
+                <li>
+                  Automatic bridge key rotation is unavailable in the strict profile; rotate it manually.
+                </li>
+              </ul>
+            </section>
+          <% "dev_containers" -> %>
+            <section id="dev-containers-image-step" class="space-y-4">
+              <.step_header step={1} title="Install the bridge in the container" />
+              <div class="ml-6 space-y-4 text-sm text-zinc-400">
+                <p>
+                  Add these lines to <.inline_code>.devcontainer/Dockerfile</.inline_code>.
+                  If you already have one, keep its base image, toolchain, and final non-root user.
+                </p>
+                <.code_panel
+                  id="dev-containers-dockerfile"
+                  label=".devcontainer/Dockerfile"
+                  code={@setup.dockerfile}
+                  copy
+                />
+              </div>
+            </section>
+
+            <section id="dev-containers-config-step" class="space-y-4">
+              <.step_header step={2} title="Restrict and rebuild the container" />
+              <div class="ml-6 space-y-4 text-sm text-zinc-400">
+                <p>
+                  Merge these settings into <.inline_code>.devcontainer/devcontainer.json</.inline_code>.
+                  The named volume retains rotated bridge credentials when the container is rebuilt.
+                </p>
+                <.code_panel
+                  id="dev-containers-config"
+                  label=".devcontainer/devcontainer.json"
+                  code={@setup.devcontainer}
+                  max_h="max-h-80"
+                  copy
+                />
+                <.code_panel
+                  id="dev-containers-rebuild"
+                  label="From your repository"
+                  code={@setup.rebuild}
+                  copy
+                />
+              </div>
+            </section>
+
+            <section id="dev-containers-agent-step" class="space-y-4">
+              <.step_header step={3} title="Configure Codex in the container" />
+              <div class="ml-6 space-y-4 text-sm text-zinc-400">
+                <p>
+                  Inside the rebuilt container, merge this entry into <.inline_code>~/.codex/config.toml</.inline_code>. Keep the API key out of the
+                  Dockerfile, dev container settings, image layers, and repository.
+                </p>
+                <.code_panel
+                  id="dev-containers-codex-config"
+                  label="Inside the container · ~/.codex/config.toml"
+                  code={@setup.agent_config}
+                  copy
+                />
+                <p :if={@setup.local_http?}>
+                  This local setup uses
+                  <.inline_code>host.docker.internal</.inline_code>
+                  to reach
+                  emisar on your computer and enables plain HTTP only for that local address.
+                  Hosted HTTPS setups do not need the opt-in.
+                </p>
+                <p>
+                  If your runners require signed dispatch, add the signing credentials from
+                  <.doc_link href={~p"/docs/signed-dispatch"}>Set up signed dispatch</.doc_link>
+                  to the same
+                  <.inline_code>env</.inline_code>
+                  table.
+                </p>
+              </div>
+            </section>
+
+            <section id="dev-containers-limits" class="ml-6 max-w-prose space-y-3">
+              <h3 class="text-base font-semibold leading-6 text-zinc-200">Limits &amp; risks</h3>
+              <ul class="list-disc space-y-2 pl-5 text-sm text-zinc-400">
+                <li>The agent can read every file mounted into the container.</li>
+                <li>This configuration does not restrict outbound network access.</li>
+                <li>
+                  Your editor may share Git or SSH credentials separately from this configuration.
+                </li>
+              </ul>
+            </section>
+        <% end %>
+      <% else %>
+        <div id="sandbox-config-error" role="alert" class="space-y-3">
+          <.error>Couldn't prepare the configuration.</.error>
+          <.button
+            variant={:secondary}
+            phx-click="select_sandbox"
+            phx-value-client={@sandbox}
+          >
+            Try again
+          </.button>
+        </div>
+      <% end %>
+    </section>
     """
   end
 

@@ -77,6 +77,112 @@ defmodule EmisarWeb.AgentClientConfig do
     """
   end
 
+  def sandbox_setup("docker_sandboxes", url, key) do
+    %{
+      connection_url: url,
+      install:
+        "sbx login\ncurl -fsSL https://emisar.dev/install-mcp.sh | sudo bash -s -- --yes\nemisar-mcp --version",
+      bridge_env:
+        Enum.map_join(
+          [
+            {"EMISAR_URL", url},
+            {"EMISAR_API_KEY", key},
+            {"EMISAR_CLIENT", "docker-sandboxes"}
+          ],
+          "\n",
+          fn {name, value} -> "#{name}=#{shell_quote(value, :linux)}" end
+        ),
+      launcher: ~S"""
+      #!/bin/sh
+      set -a
+      . "$HOME/.config/emisar/docker-sandboxes/bridge.env"
+      set +a
+      exec /usr/local/bin/emisar-mcp
+      """,
+      protect:
+        "chmod 700 ~/.config/emisar/docker-sandboxes ~/.config/emisar/docker-sandboxes/launch-emisar\nchmod 600 ~/.config/emisar/docker-sandboxes/bridge.env",
+      register:
+        "sbx mcp add emisar --command \"$HOME/.config/emisar/docker-sandboxes/launch-emisar\"\nsbx mcp ls",
+      start: "sbx run codex --name emisar-agent --static-mcp emisar ."
+    }
+  end
+
+  def sandbox_setup("nono", url, key) do
+    connection_url = replace_loopback_host(url, "127.0.0.1")
+    domain = URI.parse(connection_url).host || "emisar.dev"
+
+    %{
+      connection_url: connection_url,
+      install:
+        "curl -fsSL https://nono.sh/install.sh | sh\ncurl -fsSL https://emisar.dev/install-mcp.sh | sudo bash -s -- --yes\nnono --version\nemisar-mcp --version",
+      agent_config:
+        codex_config(
+          "/usr/local/bin/emisar-mcp",
+          connection_url,
+          key,
+          "codex"
+        ),
+      profile: "nono search codex",
+      start:
+        "nono run --profile nolabs-ai/codex --allow-domain #{shell_quote(domain, :linux)} -- codex"
+    }
+  end
+
+  def sandbox_setup("dev_containers", url, key) do
+    connection_url = replace_loopback_host(url, "host.docker.internal")
+    allow_insecure? = URI.parse(connection_url).scheme == "http" and connection_url != url
+
+    extra_env = if allow_insecure?, do: [{"EMISAR_ALLOW_INSECURE", "1"}], else: []
+
+    %{
+      connection_url: connection_url,
+      local_http?: allow_insecure?,
+      dockerfile: dev_container_dockerfile(),
+      devcontainer: dev_container_config(),
+      rebuild: "devcontainer up --workspace-folder .",
+      agent_config:
+        codex_config(
+          "/usr/local/bin/emisar-mcp",
+          connection_url,
+          key,
+          "codex",
+          [{"XDG_CONFIG_HOME", "/config"} | extra_env]
+        ),
+      start: "codex"
+    }
+  end
+
+  def dev_container_dockerfile do
+    ~S"""
+    FROM node:22-bookworm
+
+    USER root
+    RUN curl -fsSL https://emisar.dev/install-mcp.sh | bash -s -- --yes
+    RUN install -d -m 700 -o node -g node /config
+    USER node
+    """
+  end
+
+  def dev_container_config do
+    ~S"""
+    {
+      "name": "emisar agent",
+      "build": { "dockerfile": "Dockerfile" },
+      "containerUser": "node",
+      "remoteUser": "node",
+      "updateRemoteUserUID": false,
+      "userEnvProbe": "none",
+      "mounts": [
+        "source=emisar-devcontainer-config,target=/config,type=volume"
+      ],
+      "runArgs": [
+        "--cap-drop=ALL",
+        "--security-opt=no-new-privileges"
+      ]
+    }
+    """
+  end
+
   def render("coop", url, key, _os, _path) do
     %{
       kind: :coop,
@@ -410,4 +516,34 @@ defmodule EmisarWeb.AgentClientConfig do
   end
 
   defp auto_permit(_client, _os), do: nil
+
+  defp codex_config(command, url, key, client, extra_env \\ []) do
+    env =
+      [
+        {"EMISAR_URL", url},
+        {"EMISAR_API_KEY", key},
+        {"EMISAR_CLIENT", client}
+      ] ++ extra_env
+
+    rendered_env =
+      Enum.map_join(env, ", ", fn {name, value} ->
+        "#{name} = #{Jason.encode!(value)}"
+      end)
+
+    """
+    [mcp_servers.emisar]
+    command = #{Jason.encode!(command)}
+    env = { #{rendered_env} }\
+    """
+  end
+
+  defp replace_loopback_host(url, replacement) do
+    case URI.parse(url) do
+      %URI{host: host} = uri when host in ["localhost", "127.0.0.1", "::1"] ->
+        uri |> Map.put(:host, replacement) |> URI.to_string()
+
+      _uri ->
+        url
+    end
+  end
 end
