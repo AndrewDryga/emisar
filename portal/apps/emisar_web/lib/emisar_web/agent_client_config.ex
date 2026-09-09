@@ -71,7 +71,7 @@ defmodule EmisarWeb.AgentClientConfig do
     FROM ${COOP_BASE_IMAGE}
 
     USER root
-    RUN curl -fsSL https://emisar.dev/install-mcp.sh | bash -s -- --yes
+    RUN curl -fsSL https://emisar.dev/install-mcp.sh | bash -s -- --yes && emisar-mcp --version
     RUN install -d -m 700 -o node -g node /config
     USER node
     """
@@ -80,7 +80,7 @@ defmodule EmisarWeb.AgentClientConfig do
   def sandbox_setup("docker_sandboxes", url, key) do
     %{
       connection_url: url,
-      versions: "sbx version\nemisar-mcp --version",
+      versions: "sbx version",
       bridge_env:
         Enum.map_join(
           [
@@ -112,7 +112,7 @@ defmodule EmisarWeb.AgentClientConfig do
 
     %{
       connection_url: connection_url,
-      versions: "nono --version\nemisar-mcp --version",
+      versions: "nono --version",
       agent_config:
         codex_config(
           "/usr/local/bin/emisar-mcp",
@@ -156,7 +156,7 @@ defmodule EmisarWeb.AgentClientConfig do
     FROM node:22-bookworm
 
     USER root
-    RUN curl -fsSL https://emisar.dev/install-mcp.sh | bash -s -- --yes
+    RUN curl -fsSL https://emisar.dev/install-mcp.sh | bash -s -- --yes && emisar-mcp --version
     RUN install -d -m 700 -o node -g node /config
     USER node
     """

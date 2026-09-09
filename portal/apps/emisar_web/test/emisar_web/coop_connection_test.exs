@@ -114,7 +114,8 @@ defmodule EmisarWeb.CoopConnectionTest do
       |> String.trim()
 
     assert init_commands == "coop init\ncoop login codex"
-    assert has_element?(lv, "#coop-container-step", "Prepare the container")
+    assert has_element?(lv, "#coop-container-step", "Install the emisar bridge in co:op")
+    assert has_element?(lv, "#coop-container-step", "2")
     assert has_element?(lv, "#coop-container-step", "~/.config/coop/coop.conf")
 
     storage_settings =
@@ -146,6 +147,7 @@ defmodule EmisarWeb.CoopConnectionTest do
     assert dockerfile =~ "FROM ${COOP_BASE_IMAGE}"
 
     assert dockerfile =~ "curl -fsSL https://emisar.dev/install-mcp.sh | bash -s -- --yes"
+    assert dockerfile =~ "emisar-mcp --version"
 
     assert dockerfile =~ "install -d -m 700 -o node -g node /config"
   end

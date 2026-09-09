@@ -10,6 +10,11 @@ a short, complete numbered setup path with copyable commands and configuration.
 Do not replace a required setup step with a docs link. The full guide owns the
 longer explanations, uncommon variants, and troubleshooting.
 
+When setup depends on a third-party tool, keep ownership clear. The first step
+links to that tool's official installation guide and checks only that tool. The
+next step installs and checks the emisar-owned component. Do not combine the two
+steps or replace emisar installation with a link to another page.
+
 For a prefilled connection recipe, show required configuration directly after the
 integration is selected. Do not hide it behind an accordion or a separate generation
 button. Collapse only optional guidance.

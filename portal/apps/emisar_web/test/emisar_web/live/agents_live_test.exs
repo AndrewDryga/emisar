@@ -49,9 +49,9 @@ defmodule EmisarWeb.AgentsLiveTest do
 
       for {id, title, sections} <- [
             {"docker_sandboxes", "Docker Sandboxes",
-             ~w(docker-sandboxes-host-tools docker-sandboxes-bridge docker-sandboxes-register docker-sandboxes-limits)},
+             ~w(docker-sandboxes-host-tools docker-sandboxes-install-bridge docker-sandboxes-bridge docker-sandboxes-register docker-sandboxes-limits)},
             {"nono", "nono",
-             ~w(nono-install-step nono-config-step nono-profile-step nono-limits)},
+             ~w(nono-install-step nono-bridge-step nono-config-step nono-profile-step nono-limits)},
             {"dev_containers", "Dev Containers",
              ~w(dev-containers-tools-step dev-containers-image-step dev-containers-config-step dev-containers-agent-step dev-containers-limits)}
           ] do
@@ -90,27 +90,78 @@ defmodule EmisarWeb.AgentsLiveTest do
       assert Enum.all?(keys, &(&1.created_by_membership_id == membership_id))
     end
 
-    test "sandbox setup checks upstream tools without copying their installers", %{conn: conn} do
+    test "sandbox setup separates dependency checks from bridge installation", %{conn: conn} do
       {conn, _user, account} = register_and_log_in(conn)
+      conn = %{conn | host: "localhost", port: 4000}
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/agents/connect")
 
-      for {id, selector, command, href} <- [
-            {"docker_sandboxes", "#docker-sandboxes-versions", "sbx version",
-             "https://docs.docker.com/ai/sandboxes/install/"},
-            {"nono", "#nono-versions", "nono --version", "https://nono.sh/#install"},
-            {"dev_containers", "#dev-containers-versions", "devcontainer --version",
-             "https://code.visualstudio.com/docs/devcontainers/devcontainer-cli#_installation"}
-          ] do
+      install_command =
+        "curl -fsSL http://localhost:4000/install-mcp.sh | sudo EMISAR_URL=http://localhost:4000 bash"
+
+      for {id, dependency_step, versions, command, href, bridge_step, bridge_commands, next_step} <-
+            [
+              {"docker_sandboxes", "#docker-sandboxes-host-tools", "#docker-sandboxes-versions",
+               "sbx version", "https://docs.docker.com/ai/sandboxes/install/",
+               "#docker-sandboxes-install-bridge", "#docker-sandboxes-install-bridge-commands",
+               "#docker-sandboxes-bridge"},
+              {"nono", "#nono-install-step", "#nono-versions", "nono --version",
+               "https://nono.sh/#install", "#nono-bridge-step", "#nono-bridge-step-commands",
+               "#nono-config-step"}
+            ] do
         lv
         |> element(
           "#agent-sandbox-options button[phx-click='select_sandbox'][phx-value-client='#{id}']"
         )
         |> render_click()
 
-        assert has_element?(lv, selector, command)
-        assert has_element?(lv, "#sandbox-guide-#{id} a[href='#{href}']")
-        refute render(lv) =~ "https://nono.sh/install.sh"
+        assert has_element?(lv, versions, command)
+        assert has_element?(lv, "#{dependency_step} a[href='#{href}']")
+        refute has_element?(lv, dependency_step, "emisar-mcp --version")
+        refute has_element?(lv, dependency_step, "install-mcp.sh")
+
+        assert has_element?(lv, bridge_step, "Install the emisar bridge")
+        assert has_element?(lv, bridge_step, "2")
+        assert has_element?(lv, bridge_commands, install_command)
+        assert has_element?(lv, bridge_commands, "emisar-mcp --version")
+        assert has_element?(lv, "#agent-connect-step", "5")
+
+        if id == "docker_sandboxes" do
+          assert has_element?(lv, next_step, "Configure the host bridge")
+        end
+
+        html = render(lv)
+
+        dependency_id = String.trim_leading(dependency_step, "#")
+        bridge_id = String.trim_leading(bridge_step, "#")
+        next_id = String.trim_leading(next_step, "#")
+
+        assert text_position(html, ~s(id="#{dependency_id}")) <
+                 text_position(html, ~s(id="#{bridge_id}"))
+
+        assert text_position(html, ~s(id="#{bridge_id}")) <
+                 text_position(html, ~s(id="#{next_id}"))
       end
+
+      lv
+      |> element(
+        "#agent-sandbox-options button[phx-click='select_sandbox'][phx-value-client='dev_containers']"
+      )
+      |> render_click()
+
+      assert has_element?(lv, "#dev-containers-tools-step", "Check Dev Containers")
+      refute has_element?(lv, "#dev-containers-tools-step", "install-mcp.sh")
+
+      assert has_element?(
+               lv,
+               "#dev-containers-image-step",
+               "Install the emisar bridge in the container"
+             )
+
+      assert has_element?(lv, "#dev-containers-image-step", "2")
+      assert has_element?(lv, "#dev-containers-dockerfile", "install-mcp.sh")
+      assert has_element?(lv, "#dev-containers-dockerfile", "emisar-mcp --version")
+      assert has_element?(lv, "#agent-connect-step", "5")
+      refute render(lv) =~ "https://nono.sh/install.sh"
     end
 
     test "sandbox risks match the public guide and agent-specific setup is labeled as an example",

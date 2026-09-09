@@ -251,7 +251,7 @@ defmodule EmisarWeb.AgentClientConfigTest do
       assert setup.launcher =~ ~S|. "$HOME/.config/emisar/docker-sandboxes/bridge.env"|
       assert setup.register =~ "sbx mcp add emisar"
       assert setup.start =~ "--static-mcp emisar"
-      assert setup.versions == "sbx version\nemisar-mcp --version"
+      assert setup.versions == "sbx version"
       refute Map.has_key?(setup, :install)
       refute setup.launcher =~ "emk-test"
       refute setup.register =~ "emk-test"
@@ -265,7 +265,7 @@ defmodule EmisarWeb.AgentClientConfigTest do
       assert setup.agent_config =~ ~s|EMISAR_URL = "http://127.0.0.1:43659/"|
       assert setup.agent_config =~ ~s|EMISAR_API_KEY = "emk-test"|
       assert setup.start =~ "--allow-domain '127.0.0.1'"
-      assert setup.versions == "nono --version\nemisar-mcp --version"
+      assert setup.versions == "nono --version"
       refute Map.has_key?(setup, :install)
       refute setup.start =~ "emk-test"
     end

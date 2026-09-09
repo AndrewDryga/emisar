@@ -1754,8 +1754,8 @@ defmodule EmisarWeb.AgentsLive do
       |> assign(
         :connection_step,
         cond do
-          assigns.selected_sandbox == "dev_containers" -> 5
-          assigns.selected_client == "coop" or not is_nil(assigns.selected_sandbox) -> 4
+          assigns.selected_sandbox in ["docker_sandboxes", "nono", "dev_containers"] -> 5
+          assigns.selected_client == "coop" -> 4
           true -> 2
         end
       )
@@ -1876,6 +1876,7 @@ defmodule EmisarWeb.AgentsLive do
             <.sandbox_setup
               sandbox={@selected_sandbox}
               setup={@sandbox_setup}
+              base_url={@base_url}
               ready?={is_binary(@quick_secret)}
             />
           <% @selected_client == "custom" -> %>
@@ -1947,7 +1948,7 @@ defmodule EmisarWeb.AgentsLive do
                 </div>
               </section>
               <section id="coop-container-step" class="space-y-4">
-                <.step_header step={2} title="Prepare the container" />
+                <.step_header step={2} title="Install the emisar bridge in co:op" />
                 <div class="ml-6 space-y-4 text-sm text-zinc-400">
                   <p>
                     Create
@@ -2202,7 +2203,7 @@ defmodule EmisarWeb.AgentsLive do
             </div>
         <% end %>
 
-        <%!-- Step 2 — Connect your agent: the live connection status (the
+        <%!-- Final step — Connect your agent: the live connection status (the
              agents analog of the runner-install "waiting → connected"
              watchdog). The snippet/custom paths watch their minted key's id;
              the installer path watches for any key minted after this page
@@ -2414,6 +2415,7 @@ defmodule EmisarWeb.AgentsLive do
 
   attr :sandbox, :string, required: true
   attr :setup, :map, required: true
+  attr :base_url, :string, required: true
   attr :ready?, :boolean, required: true
 
   defp sandbox_setup(assigns) do
@@ -2426,13 +2428,11 @@ defmodule EmisarWeb.AgentsLive do
         <%= case @sandbox do %>
           <% "docker_sandboxes" -> %>
             <section id="docker-sandboxes-host-tools" class="space-y-4">
-              <.step_header step={1} title="Check the host tools" />
+              <.step_header step={1} title="Check Docker Sandboxes" />
               <div class="ml-6 space-y-4 text-sm text-zinc-400">
                 <p>
-                  Follow Docker's
-                  <.doc_link href="https://docs.docker.com/ai/sandboxes/install/">Docker Sandboxes installation guide</.doc_link>
-                  and the <.doc_link href={~p"/docs/connect-cli-agent#install-bridge"}>emisar bridge installation guide</.doc_link>.
-                  Then check that both tools are available:
+                  Follow Docker's <.doc_link href="https://docs.docker.com/ai/sandboxes/install/">official installation guide</.doc_link>,
+                  then check that Docker Sandboxes is available:
                 </p>
                 <.code_panel
                   id="docker-sandboxes-versions"
@@ -2445,8 +2445,13 @@ defmodule EmisarWeb.AgentsLive do
               </div>
             </section>
 
+            <.sandbox_bridge_install_step
+              id="docker-sandboxes-install-bridge"
+              base_url={@base_url}
+            />
+
             <section id="docker-sandboxes-bridge" class="space-y-4">
-              <.step_header step={2} title="Create the host bridge" />
+              <.step_header step={3} title="Configure the host bridge" />
               <div class="ml-6 space-y-4 text-sm text-zinc-400">
                 <p>
                   Create <.inline_code>~/.config/emisar/docker-sandboxes</.inline_code>, then
@@ -2488,7 +2493,7 @@ defmodule EmisarWeb.AgentsLive do
             </section>
 
             <section id="docker-sandboxes-register" class="space-y-4">
-              <.step_header step={3} title="Register emisar" />
+              <.step_header step={4} title="Register emisar" />
               <div class="ml-6 space-y-4 text-sm text-zinc-400">
                 <p>
                   Register the launcher with Docker's host-side MCP gateway. The API key stays on
@@ -2531,20 +2536,20 @@ defmodule EmisarWeb.AgentsLive do
             </section>
           <% "nono" -> %>
             <section id="nono-install-step" class="space-y-4">
-              <.step_header step={1} title="Check nono and the bridge" />
+              <.step_header step={1} title="Check nono" />
               <div class="ml-6 space-y-4 text-sm text-zinc-400">
                 <p>
-                  Follow nono's
-                  <.doc_link href="https://nono.sh/#install">official installation guide</.doc_link>
-                  and the <.doc_link href={~p"/docs/connect-cli-agent#install-bridge"}>emisar bridge installation guide</.doc_link>.
-                  Then check that both tools are available:
+                  Follow nono's <.doc_link href="https://nono.sh/#install">official installation guide</.doc_link>,
+                  then check that nono is available:
                 </p>
                 <.code_panel id="nono-versions" label="On your computer" code={@setup.versions} copy />
               </div>
             </section>
 
+            <.sandbox_bridge_install_step id="nono-bridge-step" base_url={@base_url} />
+
             <section id="nono-config-step" class="space-y-4">
-              <.step_header step={2} title="Configure your AI agent" />
+              <.step_header step={3} title="Configure your AI agent" />
               <div class="ml-6 space-y-4 text-sm text-zinc-400">
                 <p>
                   This example uses Codex. Merge this entry into <.inline_code>~/.codex/config.toml</.inline_code>.
@@ -2573,7 +2578,7 @@ defmodule EmisarWeb.AgentsLive do
             </section>
 
             <section id="nono-profile-step" class="space-y-4">
-              <.step_header step={3} title="Review the sandbox profile" />
+              <.step_header step={4} title="Review the sandbox profile" />
               <div class="ml-6 space-y-4 text-sm text-zinc-400">
                 <p>
                   Review the maintained Codex profile used by this example. Start in the repository
@@ -2629,7 +2634,7 @@ defmodule EmisarWeb.AgentsLive do
             </section>
 
             <section id="dev-containers-image-step" class="space-y-4">
-              <.step_header step={2} title="Add the bridge to the container" />
+              <.step_header step={2} title="Install the emisar bridge in the container" />
               <div class="ml-6 space-y-4 text-sm text-zinc-400">
                 <p>
                   Add these lines to <.inline_code>.devcontainer/Dockerfile</.inline_code>.
@@ -2739,6 +2744,35 @@ defmodule EmisarWeb.AgentsLive do
           </.button>
         </div>
       <% end %>
+    </section>
+    """
+  end
+
+  attr :id, :string, required: true
+  attr :base_url, :string, required: true
+
+  defp sandbox_bridge_install_step(assigns) do
+    assigns = assign(assigns, :install_command, URLHelpers.mcp_install_command(assigns.base_url))
+
+    ~H"""
+    <section id={@id} class="space-y-4">
+      <.step_header step={2} title="Install the emisar bridge" />
+      <div class="ml-6 space-y-4 text-sm text-zinc-400">
+        <p>Run the installer on your computer, then check that the bridge is available:</p>
+        <%= case @install_command do %>
+          <% {:ok, command} -> %>
+            <.code_panel
+              id={"#{@id}-commands"}
+              label="On your computer"
+              code={command <> "\nemisar-mcp --version"}
+              copy
+            />
+          <% {:error, :insecure_base_url} -> %>
+            <.install_transport_refusal />
+          <% _error -> %>
+            <.install_command_unavailable />
+        <% end %>
+      </div>
     </section>
     """
   end
