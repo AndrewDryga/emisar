@@ -18,6 +18,30 @@ defmodule EmisarWeb.Changelog do
   @entries [
     %{
       date: ~D[2026-09-09],
+      slug: "sandboxed-agents-and-clearer-account-pages",
+      title: "Sandboxed agents and clearer account pages",
+      tag: "v0.48.0",
+      summary:
+        "Connect AI agents through co:op, Docker Sandboxes, nono, or Dev Containers from one Console flow. The generated setup stays with the account-specific key, while one guide compares supported agents and explains what each sandbox can still access. Billing now uses clearer invoice states and a more responsive layout, and update notices make required action stand out without turning optional upgrades into warnings.",
+      details: [
+        {"Console",
+         [
+           "Connect an agent now includes complete, account-specific setup for co:op, Docker Sandboxes, nono, and Dev Containers, followed by one connection test and an Audit check.",
+           "Billing management is easier to find, invoice states are clearer, and paid workspaces without invoices now show an explicit empty state.",
+           "Runner and MCP version indicators keep optional updates quiet, distinguish required updates, and provide the relevant update command where you need it."
+         ]},
+        {"Security",
+         [
+           "The agent-sandbox guide compares what each option can still reach, including shared project files, credentials, host tools, and network destinations. co:op is recommended for most local setups."
+         ]},
+        {"Website",
+         [
+           "Four separate sandbox pages are now one task-first guide with a shared connection path, supported-agent comparison, and provider-specific recommendations and risks."
+         ]}
+      ]
+    },
+    %{
+      date: ~D[2026-09-09],
       slug: "shared-visibility-and-clearer-reviews",
       title: "Shared visibility and clearer reviews",
       tag: "v0.47.0",
