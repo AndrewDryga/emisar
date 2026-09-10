@@ -103,6 +103,7 @@ resource "terraform_data" "livebook_backend_ready" {
   # depends on this, so the whole load balancer never gets built: a DR rebuild
   # against a provisioned-but-parked workbench cannot complete. The app twin
   # already short-circuits on a zero expectation; this is the same rule.
+  # EXPECTED_INSTANCES = 1 below: the workbench is a single VM.
   count = var.livebook_enabled && var.livebook_running ? 2 : 0
 
   triggers_replace = [
@@ -113,38 +114,14 @@ resource "terraform_data" "livebook_backend_ready" {
 
   provisioner "local-exec" {
     interpreter = ["/bin/bash", "-c"]
-    command     = <<-EOT
-      set -euo pipefail
-
-      response_file=$(mktemp)
-      trap 'rm -f "$response_file"' EXIT
-      url="https://compute.googleapis.com/compute/v1/projects/$PROJECT_ID/global/backendServices/$BACKEND_SERVICE/getHealth"
-      payload=$(printf '{"group":"%s"}' "$INSTANCE_GROUP")
-
-      for _attempt in $(seq 1 60); do
-        status=$(curl --silent --show-error --connect-timeout 5 --max-time 30 \
-          --output "$response_file" --write-out '%%{http_code}' -X POST \
-          -H "Authorization: Bearer $ACCESS_TOKEN" -H "Content-Type: application/json" \
-          --data "$payload" "$url" || true)
-
-        if [ "$status" = 200 ] && tr -d '[:space:]' < "$response_file" | grep -q '"healthState":"HEALTHY"'; then
-          exit 0
-        fi
-        case "$status" in
-          200|429|5??) sleep 10 ;;
-          *) echo "Livebook backend health returned HTTP $status" >&2; exit 1 ;;
-        esac
-      done
-
-      echo "Livebook backend did not become healthy" >&2
-      exit 1
-    EOT
+    command     = file("${path.module}/runtime/backend-health.sh")
 
     environment = {
-      ACCESS_TOKEN    = ephemeral.google_client_config.current.access_token
-      BACKEND_SERVICE = count.index == 0 ? google_compute_backend_service.livebook[0].name : google_compute_backend_service.livebook_public[0].name
-      INSTANCE_GROUP  = google_compute_instance_group.livebook[0].id
-      PROJECT_ID      = var.project_id
+      ACCESS_TOKEN       = ephemeral.google_client_config.current.access_token
+      BACKEND_SERVICE    = count.index == 0 ? google_compute_backend_service.livebook[0].name : google_compute_backend_service.livebook_public[0].name
+      EXPECTED_INSTANCES = "1"
+      INSTANCE_GROUP     = google_compute_instance_group.livebook[0].id
+      PROJECT_ID         = var.project_id
     }
   }
 }
@@ -200,63 +177,7 @@ resource "terraform_data" "app_backend_ready" {
 
   provisioner "local-exec" {
     interpreter = ["/bin/bash", "-c"]
-    command     = <<-EOT
-      set -euo pipefail
-
-      for tool in curl grep mktemp seq sleep tr wc; do
-        command -v "$tool" >/dev/null || {
-          echo "backend readiness check requires $tool" >&2
-          exit 1
-        }
-      done
-
-      url="https://compute.googleapis.com/compute/v1/projects/$PROJECT_ID/global/backendServices/$BACKEND_SERVICE/getHealth"
-      payload=$(printf '{"group":"%s"}' "$INSTANCE_GROUP")
-      response_file=$(mktemp)
-      trap 'rm -f "$response_file"' EXIT
-
-      for attempt in $(seq 1 60); do
-        if ! status=$(curl --silent --show-error \
-          --connect-timeout 5 --max-time 30 --output "$response_file" \
-          --write-out '%%{http_code}' \
-          -X POST \
-          -H "Authorization: Bearer $ACCESS_TOKEN" \
-          -H "Content-Type: application/json" \
-          --data "$payload" \
-          "$url"); then
-          echo "backend health request failed on attempt $attempt" >&2
-          exit 1
-        fi
-
-        case "$status" in
-          200) ;;
-          429|5??)
-            sleep 10
-            continue
-            ;;
-          401|403)
-            echo "backend health authentication was rejected with HTTP $status" >&2
-            exit 1
-            ;;
-          *)
-            echo "backend health request returned unexpected HTTP $status" >&2
-            exit 1
-            ;;
-        esac
-
-        healthy=$(tr -d '[:space:]' < "$response_file" | \
-          grep -o '"healthState":"HEALTHY"' | wc -l | tr -d ' ') || healthy=0
-
-        if [ "$healthy" -ge "$EXPECTED_INSTANCES" ]; then
-          exit 0
-        fi
-
-        sleep 10
-      done
-
-      echo "backend $BACKEND_SERVICE did not reach $EXPECTED_INSTANCES healthy instances" >&2
-      exit 1
-    EOT
+    command     = file("${path.module}/runtime/backend-health.sh")
 
     environment = {
       ACCESS_TOKEN       = ephemeral.google_client_config.current.access_token
