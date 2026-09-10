@@ -3048,17 +3048,24 @@ defmodule Emisar.AuditTest do
   # bare `pack_version` there is a `target_kind`, not an event type. Run outcomes
   # are interpolated (`"action_run.#{run.status}"`, `audit.ex`), so they come from
   # `Runs.@audited_run_statuses`, the list that decides which ones get a row.
+  # Every source that names an event type: the builders in events.ex, the
+  # `user.*` types Auth and Users log directly, the pack-trust baseline atoms
+  # Catalog emits, and the audited run statuses. A type emitted from a file
+  # this does not read ships silently unfilterable — 29 did.
   defp emitted_event_types do
-    events = File.read!(Path.join(File.cwd!(), "lib/emisar/audit/events.ex"))
-    runs = File.read!(Path.join(File.cwd!(), "lib/emisar/runs.ex"))
+    read = &File.read!(Path.join(File.cwd!(), &1))
+    events = read.("lib/emisar/audit/events.ex")
+    direct = read.("lib/emisar/auth.ex") <> read.("lib/emisar/users.ex")
+    catalog = read.("lib/emisar/catalog.ex")
+    runs = read.("lib/emisar/runs.ex")
 
-    dotted = scan(~r/"([a-z][a-z0-9_]*\.[a-z0-9_]+)"/, events)
+    dotted = scan(~r/"([a-z][a-z0-9_]*\.[a-z0-9_]+)"/, events <> direct)
 
     dotless =
       scan(
         ~r/"((?:pack_trust_|pack_retirement_|pack_retention_|pack_version_|dispatch_blocked_)[a-z0-9_]+|pack_deleted)"/,
         events
-      )
+      ) ++ scan(~r/:(pack_trust_baseline_[a-z_]+)/, catalog)
 
     [_, statuses] = Regex.run(~r/@audited_run_statuses \[(.*?)\]/s, runs)
     run_types = Enum.map(scan(~r/:([a-z_]+)/, statuses), &("action_run." <> &1))
