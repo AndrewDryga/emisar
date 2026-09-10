@@ -836,26 +836,18 @@ func (b *bridge) callCLIContinuation(ctx context.Context, next cliToolResultNext
 }
 
 func validCLIRunContinuation(next cliToolResultNext, runID string) bool {
-	if !validCLIWaitContinuation(next) {
-		return false
-	}
-	var arguments map[string]json.RawMessage
-	if json.Unmarshal(next.Arguments, &arguments) != nil {
-		return false
-	}
-	for key := range arguments {
-		if key != "run_id" && key != "cursor" && key != "timeout" {
-			return false
-		}
-	}
-	if !validCLIOptionalString(arguments, "cursor") || !validCLIOptionalString(arguments, "timeout") {
-		return false
-	}
-	var returnedID string
-	return json.Unmarshal(arguments["run_id"], &returnedID) == nil && returnedID == runID
+	return validCLIWaitTarget(next, "run_id", runID)
 }
 
 func validCLIExecutionContinuation(next cliToolResultNext, executionID string) bool {
+	return validCLIWaitTarget(next, "runbook_execution_id", executionID)
+}
+
+// validCLIWaitTarget accepts a wait_for_run continuation whose arguments name
+// exactly the expected identity under idKey, plus at most the optional cursor
+// and timeout strings. Run and runbook-execution follows differ only in that
+// key.
+func validCLIWaitTarget(next cliToolResultNext, idKey, wantID string) bool {
 	if !validCLIWaitContinuation(next) {
 		return false
 	}
@@ -864,7 +856,7 @@ func validCLIExecutionContinuation(next cliToolResultNext, executionID string) b
 		return false
 	}
 	for key := range arguments {
-		if key != "runbook_execution_id" && key != "cursor" && key != "timeout" {
+		if key != idKey && key != "cursor" && key != "timeout" {
 			return false
 		}
 	}
@@ -872,7 +864,7 @@ func validCLIExecutionContinuation(next cliToolResultNext, executionID string) b
 		return false
 	}
 	var returnedID string
-	return json.Unmarshal(arguments["runbook_execution_id"], &returnedID) == nil && returnedID == executionID
+	return json.Unmarshal(arguments[idKey], &returnedID) == nil && returnedID == wantID
 }
 
 func validCLIWaitContinuation(next cliToolResultNext) bool {
