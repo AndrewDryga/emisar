@@ -1,41 +1,49 @@
-resource "google_logging_metric" "recurrent_job_failures" {
-  name        = "emisar/recurrent_job_failures"
-  description = "Crashes at the shared supervised recurrent-job executor boundary."
-  filter      = "resource.type=\"gce_instance\" AND jsonPayload.message=\"recurrent_job.failed\""
+# The counter metrics the alert policies below evaluate. Every one is a DELTA
+# INT64 count of matching log lines, so only the name, the sentence, and the
+# filter differ; `emisar/<key>` is the live metric name in Cloud Monitoring and
+# renaming a key renames the metric.
+locals {
+  application_log_metrics = {
+    recurrent_job_failures = {
+      description = "Crashes at the shared supervised recurrent-job executor boundary."
+      filter      = "resource.type=\"gce_instance\" AND jsonPayload.message=\"recurrent_job.failed\""
+    }
 
-  metric_descriptor {
-    metric_kind = "DELTA"
-    value_type  = "INT64"
-    unit        = "1"
+    billing_sync_failures = {
+      description = "Paddle lifecycle or billable-runner quantity reconciliation failures."
+      filter      = "resource.type=\"gce_instance\" AND (jsonPayload.message=\"billing_sync.retrieve_failed\" OR jsonPayload.message=\"billing_sync.upsert_failed\" OR jsonPayload.message=\"billing_sync.runner_quantity_failed\" OR jsonPayload.message=\"billing_runner_quantity_sync.failed\" OR jsonPayload.message=\"billing_runner_quantity_sync.crashed\")"
+    }
+
+    cluster_failures = {
+      description = "Final GCE discovery errors or repeated BEAM distribution connection failures."
+      filter      = "resource.type=\"gce_instance\" AND ((severity>=ERROR AND jsonPayload.message:\"cluster discovery failed\") OR jsonPayload.message:\"cluster: can't connect\")"
+    }
+
+    fleet_observability_ticks = {
+      description = "Every fleet.observability emitter tick, regardless of runner or backlog values."
+      filter      = "resource.type=\"gce_instance\" AND jsonPayload.message=\"fleet.observability\""
+    }
+
+    fleet_no_connected_runners = {
+      description = "Emitter ticks reporting zero connected runners fleet-wide (fleet.observability)."
+      filter      = "resource.type=\"gce_instance\" AND jsonPayload.message=\"fleet.observability\" AND jsonPayload.connected_runners=0"
+    }
+
+    # The backlog threshold lives in the filter, so it is tuned by a terraform
+    # apply rather than a portal deploy.
+    dispatch_backlog = {
+      description = "Emitter ticks whose pending-dispatch depth exceeds the backlog threshold (fleet.observability)."
+      filter      = "resource.type=\"gce_instance\" AND jsonPayload.message=\"fleet.observability\" AND jsonPayload.pending_dispatch_depth>${local.dispatch_backlog_alert_threshold}"
+    }
   }
-
-  depends_on = [
-    google_project_service.apis,
-    google_project_iam_member.terraform_apply_authority,
-  ]
 }
 
-resource "google_logging_metric" "billing_sync_failures" {
-  name        = "emisar/billing_sync_failures"
-  description = "Paddle lifecycle or billable-runner quantity reconciliation failures."
-  filter      = "resource.type=\"gce_instance\" AND (jsonPayload.message=\"billing_sync.retrieve_failed\" OR jsonPayload.message=\"billing_sync.upsert_failed\" OR jsonPayload.message=\"billing_sync.runner_quantity_failed\" OR jsonPayload.message=\"billing_runner_quantity_sync.failed\" OR jsonPayload.message=\"billing_runner_quantity_sync.crashed\")"
+resource "google_logging_metric" "application" {
+  for_each = local.application_log_metrics
 
-  metric_descriptor {
-    metric_kind = "DELTA"
-    value_type  = "INT64"
-    unit        = "1"
-  }
-
-  depends_on = [
-    google_project_service.apis,
-    google_project_iam_member.terraform_apply_authority,
-  ]
-}
-
-resource "google_logging_metric" "cluster_failures" {
-  name        = "emisar/cluster_failures"
-  description = "Final GCE discovery errors or repeated BEAM distribution connection failures."
-  filter      = "resource.type=\"gce_instance\" AND ((severity>=ERROR AND jsonPayload.message:\"cluster discovery failed\") OR jsonPayload.message:\"cluster: can't connect\")"
+  name        = "emisar/${each.key}"
+  description = each.value.description
+  filter      = each.value.filter
 
   metric_descriptor {
     metric_kind = "DELTA"
@@ -66,7 +74,7 @@ resource "google_monitoring_alert_policy" "recurrent_job_failures" {
   conditions {
     display_name = "Any Recurrent Job Crash in 5 Minutes"
     condition_threshold {
-      filter          = "resource.type = \"gce_instance\" AND metric.type = \"logging.googleapis.com/user/${google_logging_metric.recurrent_job_failures.name}\""
+      filter          = "resource.type = \"gce_instance\" AND metric.type = \"logging.googleapis.com/user/${google_logging_metric.application["recurrent_job_failures"].name}\""
       comparison      = "COMPARISON_GT"
       threshold_value = 0
       duration        = "0s"
@@ -98,7 +106,7 @@ resource "google_monitoring_alert_policy" "billing_sync_failures" {
   conditions {
     display_name = "Any Paddle Reconciliation Failure in 5 Minutes"
     condition_threshold {
-      filter          = "resource.type = \"gce_instance\" AND metric.type = \"logging.googleapis.com/user/${google_logging_metric.billing_sync_failures.name}\""
+      filter          = "resource.type = \"gce_instance\" AND metric.type = \"logging.googleapis.com/user/${google_logging_metric.application["billing_sync_failures"].name}\""
       comparison      = "COMPARISON_GT"
       threshold_value = 0
       duration        = "0s"
@@ -130,7 +138,7 @@ resource "google_monitoring_alert_policy" "cluster_failures" {
   conditions {
     display_name = "Persistent Peer Discovery or Distribution Failures in 5 Minutes"
     condition_threshold {
-      filter          = "resource.type = \"gce_instance\" AND metric.type = \"logging.googleapis.com/user/${google_logging_metric.cluster_failures.name}\""
+      filter          = "resource.type = \"gce_instance\" AND metric.type = \"logging.googleapis.com/user/${google_logging_metric.application["cluster_failures"].name}\""
       comparison      = "COMPARISON_GT"
       threshold_value = 0
       duration        = "300s"
@@ -153,59 +161,8 @@ resource "google_monitoring_alert_policy" "cluster_failures" {
 # pending_dispatch_depth as JSON numbers — and these counter metrics + alerts
 # watch both its values and its continued presence. Leadership may move the
 # singleton emitter between VMs, so absence detection reduces all VM series to
-# one fleet signal before evaluating the gap.
-resource "google_logging_metric" "fleet_observability_ticks" {
-  name        = "emisar/fleet_observability_ticks"
-  description = "Every fleet.observability emitter tick, regardless of runner or backlog values."
-  filter      = "resource.type=\"gce_instance\" AND jsonPayload.message=\"fleet.observability\""
-
-  metric_descriptor {
-    metric_kind = "DELTA"
-    value_type  = "INT64"
-    unit        = "1"
-  }
-
-  depends_on = [
-    google_project_service.apis,
-    google_project_iam_member.terraform_apply_authority,
-  ]
-}
-
-resource "google_logging_metric" "fleet_no_connected_runners" {
-  name        = "emisar/fleet_no_connected_runners"
-  description = "Emitter ticks reporting zero connected runners fleet-wide (fleet.observability)."
-  filter      = "resource.type=\"gce_instance\" AND jsonPayload.message=\"fleet.observability\" AND jsonPayload.connected_runners=0"
-
-  metric_descriptor {
-    metric_kind = "DELTA"
-    value_type  = "INT64"
-    unit        = "1"
-  }
-
-  depends_on = [
-    google_project_service.apis,
-    google_project_iam_member.terraform_apply_authority,
-  ]
-}
-
-resource "google_logging_metric" "dispatch_backlog" {
-  name        = "emisar/dispatch_backlog"
-  description = "Emitter ticks whose pending-dispatch depth exceeds the backlog threshold (fleet.observability)."
-  # The threshold lives in the filter (local.dispatch_backlog_alert_threshold),
-  # so it is tuned by a terraform apply rather than a portal deploy.
-  filter = "resource.type=\"gce_instance\" AND jsonPayload.message=\"fleet.observability\" AND jsonPayload.pending_dispatch_depth>${local.dispatch_backlog_alert_threshold}"
-
-  metric_descriptor {
-    metric_kind = "DELTA"
-    value_type  = "INT64"
-    unit        = "1"
-  }
-
-  depends_on = [
-    google_project_service.apis,
-    google_project_iam_member.terraform_apply_authority,
-  ]
-}
+# one fleet signal before evaluating the gap. Its three counter metrics are the
+# fleet_* and dispatch_backlog keys in local.application_log_metrics above.
 
 resource "google_monitoring_alert_policy" "fleet_observability_absent" {
   display_name = "Emisar: Fleet Observability Silent"
@@ -224,7 +181,7 @@ resource "google_monitoring_alert_policy" "fleet_observability_absent" {
   conditions {
     display_name = "No Fleet Observability Heartbeat for 5 Minutes"
     condition_absent {
-      filter   = "resource.type = \"gce_instance\" AND metric.type = \"logging.googleapis.com/user/${google_logging_metric.fleet_observability_ticks.name}\""
+      filter   = "resource.type = \"gce_instance\" AND metric.type = \"logging.googleapis.com/user/${google_logging_metric.application["fleet_observability_ticks"].name}\""
       duration = "300s"
       aggregations {
         alignment_period     = "60s"
@@ -254,7 +211,7 @@ resource "google_monitoring_alert_policy" "fleet_no_connected_runners" {
   conditions {
     display_name = "Zero Connected Runners Fleet-Wide for 5 Minutes"
     condition_threshold {
-      filter          = "resource.type = \"gce_instance\" AND metric.type = \"logging.googleapis.com/user/${google_logging_metric.fleet_no_connected_runners.name}\""
+      filter          = "resource.type = \"gce_instance\" AND metric.type = \"logging.googleapis.com/user/${google_logging_metric.application["fleet_no_connected_runners"].name}\""
       comparison      = "COMPARISON_GT"
       threshold_value = 0
       duration        = "300s"
@@ -286,7 +243,7 @@ resource "google_monitoring_alert_policy" "dispatch_backlog" {
   conditions {
     display_name = "Pending Dispatch Backlog Above Threshold for 10 Minutes"
     condition_threshold {
-      filter          = "resource.type = \"gce_instance\" AND metric.type = \"logging.googleapis.com/user/${google_logging_metric.dispatch_backlog.name}\""
+      filter          = "resource.type = \"gce_instance\" AND metric.type = \"logging.googleapis.com/user/${google_logging_metric.application["dispatch_backlog"].name}\""
       comparison      = "COMPARISON_GT"
       threshold_value = 0
       duration        = "600s"
@@ -299,4 +256,34 @@ resource "google_monitoring_alert_policy" "dispatch_backlog" {
   }
 
   notification_channels = local.paging_notification_channels
+}
+
+moved {
+  from = google_logging_metric.recurrent_job_failures
+  to   = google_logging_metric.application["recurrent_job_failures"]
+}
+
+moved {
+  from = google_logging_metric.billing_sync_failures
+  to   = google_logging_metric.application["billing_sync_failures"]
+}
+
+moved {
+  from = google_logging_metric.cluster_failures
+  to   = google_logging_metric.application["cluster_failures"]
+}
+
+moved {
+  from = google_logging_metric.fleet_observability_ticks
+  to   = google_logging_metric.application["fleet_observability_ticks"]
+}
+
+moved {
+  from = google_logging_metric.fleet_no_connected_runners
+  to   = google_logging_metric.application["fleet_no_connected_runners"]
+}
+
+moved {
+  from = google_logging_metric.dispatch_backlog
+  to   = google_logging_metric.application["dispatch_backlog"]
 }

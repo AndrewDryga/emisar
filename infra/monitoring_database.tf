@@ -1,52 +1,54 @@
-resource "google_monitoring_alert_policy" "db_cpu" {
-  display_name = "Emisar: Cloud SQL CPU High"
-  combiner     = "OR"
+# One shape, three utilization signals: the deltas are the metric, the runbook
+# sentence, and — for disk alone — who gets paged. Each key is the resource key
+# AND the `signal` label, so a renamed key renames the policy.
+locals {
+  cloudsql_utilization_alerts = {
+    cpu = {
+      display_name  = "Emisar: Cloud SQL CPU High"
+      condition     = "CPU Above 90% for 5 Minutes"
+      metric        = "metric.type = \"cloudsql.googleapis.com/database/cpu/utilization\""
+      documentation = "Cloud SQL CPU has remained above 90% for five minutes. Use Query Insights and database activity to identify expensive queries, lock contention, connection pressure, or a workload change, and correlate the rise with the most recent Portal rollout before resizing the instance."
+      notify        = local.alert_notification_channels
+    }
 
-  documentation {
-    content   = "Cloud SQL CPU has remained above 90% for five minutes. Use Query Insights and database activity to identify expensive queries, lock contention, connection pressure, or a workload change, and correlate the rise with the most recent Portal rollout before resizing the instance."
-    mime_type = "text/markdown"
-  }
+    disk = {
+      display_name  = "Emisar: Cloud SQL Disk Near Full"
+      condition     = "Disk Above 90% for 5 Minutes"
+      metric        = "metric.type = \"cloudsql.googleapis.com/database/disk/utilization\""
+      documentation = "Cloud SQL disk utilization has remained above 90% for five minutes, leaving little headroom for writes, WAL, maintenance, and temporary work. Check current size, growth rate, automatic-storage settings and quota, then identify unexpected table, index, WAL, or temporary-file growth before capacity is exhausted."
+      notify        = local.paging_notification_channels
+    }
 
-  user_labels = {
-    component = "cloud-sql"
-    signal    = "cpu"
-  }
-
-  conditions {
-    display_name = "CPU Above 90% for 5 Minutes"
-    condition_threshold {
-      filter          = "resource.type = \"cloudsql_database\" AND metric.type = \"cloudsql.googleapis.com/database/cpu/utilization\""
-      comparison      = "COMPARISON_GT"
-      threshold_value = 0.9
-      duration        = "300s"
-      aggregations {
-        alignment_period   = "300s"
-        per_series_aligner = "ALIGN_MEAN"
-      }
+    memory = {
+      display_name  = "Emisar: Cloud SQL Memory High"
+      condition     = "Memory Above 90% for 5 Minutes"
+      metric        = "metric.type = \"cloudsql.googleapis.com/database/memory/utilization\""
+      documentation = "Cloud SQL memory utilization has remained above 90% for five minutes. Correlate the signal with active connections, query workload, cache behavior, swap, latency, and recent application changes; high memory alone is not proof of a leak, so identify the pressure source before restarting or resizing."
+      notify        = local.alert_notification_channels
     }
   }
-
-  notification_channels = local.alert_notification_channels
 }
 
-resource "google_monitoring_alert_policy" "db_disk" {
-  display_name = "Emisar: Cloud SQL Disk Near Full"
+resource "google_monitoring_alert_policy" "cloudsql_utilization" {
+  for_each = local.cloudsql_utilization_alerts
+
+  display_name = each.value.display_name
   combiner     = "OR"
 
   documentation {
-    content   = "Cloud SQL disk utilization has remained above 90% for five minutes, leaving little headroom for writes, WAL, maintenance, and temporary work. Check current size, growth rate, automatic-storage settings and quota, then identify unexpected table, index, WAL, or temporary-file growth before capacity is exhausted."
+    content   = each.value.documentation
     mime_type = "text/markdown"
   }
 
   user_labels = {
     component = "cloud-sql"
-    signal    = "disk"
+    signal    = each.key
   }
 
   conditions {
-    display_name = "Disk Above 90% for 5 Minutes"
+    display_name = each.value.condition
     condition_threshold {
-      filter          = "resource.type = \"cloudsql_database\" AND metric.type = \"cloudsql.googleapis.com/database/disk/utilization\""
+      filter          = "resource.type = \"cloudsql_database\" AND ${each.value.metric}"
       comparison      = "COMPARISON_GT"
       threshold_value = 0.9
       duration        = "300s"
@@ -57,38 +59,7 @@ resource "google_monitoring_alert_policy" "db_disk" {
     }
   }
 
-  notification_channels = local.paging_notification_channels
-}
-
-resource "google_monitoring_alert_policy" "db_memory" {
-  display_name = "Emisar: Cloud SQL Memory High"
-  combiner     = "OR"
-
-  documentation {
-    content   = "Cloud SQL memory utilization has remained above 90% for five minutes. Correlate the signal with active connections, query workload, cache behavior, swap, latency, and recent application changes; high memory alone is not proof of a leak, so identify the pressure source before restarting or resizing."
-    mime_type = "text/markdown"
-  }
-
-  user_labels = {
-    component = "cloud-sql"
-    signal    = "memory"
-  }
-
-  conditions {
-    display_name = "Memory Above 90% for 5 Minutes"
-    condition_threshold {
-      filter          = "resource.type = \"cloudsql_database\" AND metric.type = \"cloudsql.googleapis.com/database/memory/utilization\""
-      comparison      = "COMPARISON_GT"
-      threshold_value = 0.9
-      duration        = "300s"
-      aggregations {
-        alignment_period   = "300s"
-        per_series_aligner = "ALIGN_MEAN"
-      }
-    }
-  }
-
-  notification_channels = local.alert_notification_channels
+  notification_channels = each.value.notify
 }
 
 resource "google_monitoring_alert_policy" "db_down" {
@@ -222,4 +193,19 @@ resource "google_monitoring_alert_policy" "db_backup_failed" {
   }
 
   notification_channels = local.paging_notification_channels
+}
+
+moved {
+  from = google_monitoring_alert_policy.db_cpu
+  to   = google_monitoring_alert_policy.cloudsql_utilization["cpu"]
+}
+
+moved {
+  from = google_monitoring_alert_policy.db_disk
+  to   = google_monitoring_alert_policy.cloudsql_utilization["disk"]
+}
+
+moved {
+  from = google_monitoring_alert_policy.db_memory
+  to   = google_monitoring_alert_policy.cloudsql_utilization["memory"]
 }

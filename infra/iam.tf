@@ -1,3 +1,11 @@
+# The one Cloud SQL scoping control (AGENTS.md rule 2): every grant below is
+# confined to the emisar instance. Written out four times, a fifth grant could
+# be added without it — and `./run ops drill pitr --apply` creates a second
+# instance, so an unscoped grant is a scheduled break, not a hypothetical.
+locals {
+  cloudsql_instance_only_condition = "resource.name == 'projects/${var.project_id}/instances/${google_sql_database_instance.emisar.name}' && resource.type == 'sqladmin.googleapis.com/Instance'"
+}
+
 # ── Least-privilege service account for the portal instances ────────────────
 resource "google_service_account" "vm" {
   depends_on = [google_project_service.apis]
@@ -171,7 +179,7 @@ resource "google_project_iam_member" "vm_cloudsql" {
   condition {
     title       = "emisar_database_only"
     description = "The portal VM may connect and use IAM login only on the emisar instance."
-    expression  = "resource.name == 'projects/${var.project_id}/instances/${google_sql_database_instance.emisar.name}' && resource.type == 'sqladmin.googleapis.com/Instance'"
+    expression  = local.cloudsql_instance_only_condition
   }
 }
 
@@ -188,7 +196,7 @@ resource "google_project_iam_member" "livebook_cloudsql" {
   condition {
     title       = "emisar_livebook_database_only"
     description = "The Livebook VM may connect and use IAM login only on the emisar instance."
-    expression  = "resource.name == 'projects/${var.project_id}/instances/${google_sql_database_instance.emisar.name}' && resource.type == 'sqladmin.googleapis.com/Instance'"
+    expression  = local.cloudsql_instance_only_condition
   }
 }
 
@@ -272,7 +280,7 @@ resource "google_project_iam_member" "database_operator_cloudsql" {
   condition {
     title       = "emisar_database_operator_only"
     description = "This binding permits database operator login only on the emisar instance."
-    expression  = "resource.name == 'projects/${var.project_id}/instances/${google_sql_database_instance.emisar.name}' && resource.type == 'sqladmin.googleapis.com/Instance'"
+    expression  = local.cloudsql_instance_only_condition
   }
 }
 
@@ -286,14 +294,14 @@ resource "google_project_iam_member" "database_operator_studio" {
   role    = "roles/cloudsql.studioUser"
   member  = "user:${var.database_operator_iam_user}"
 
-  # Scoped to the one instance, like every other Cloud SQL grant here. Granted
-  # project-wide it was bounded only by there happening to be a single instance
-  # — and `./run ops drill pitr --apply` creates a second one, so that is a
-  # scheduled break, not a hypothetical.
+  # Scoped to the one instance, like every other Cloud SQL grant here. This
+  # title used to be emisar_database_only, which the portal VM's binding also
+  # carries; a condition title is part of a binding's identity, so only this
+  # one — a human's console access — is renamed to break the collision.
   condition {
-    title       = "emisar_database_only"
+    title       = "emisar_database_operator_studio_only"
     description = "The database operator may open Studio only on the emisar instance."
-    expression  = "resource.name == 'projects/${var.project_id}/instances/${google_sql_database_instance.emisar.name}' && resource.type == 'sqladmin.googleapis.com/Instance'"
+    expression  = local.cloudsql_instance_only_condition
   }
 }
 

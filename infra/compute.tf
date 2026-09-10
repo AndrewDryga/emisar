@@ -84,9 +84,9 @@ locals {
   admin_runner_start_script = templatefile("${path.module}/runtime/admin-runner/start.sh", {
     project_id                = var.project_id
     runner_version            = local.admin_runner_version
-    enrollment_secret_version = google_secret_manager_secret_version.admin_runner_enrollment_key.version
-    tfe_secret_version        = google_secret_manager_secret_version.admin_runner_tfe_token.version
-    sentry_secret_version     = google_secret_manager_secret_version.admin_runner_sentry_token.version
+    enrollment_secret_version = google_secret_manager_secret_version.admin_runner["emisar-admin-runner-enrollment-key"].version
+    tfe_secret_version        = google_secret_manager_secret_version.admin_runner["emisar-admin-runner-tfe-token"].version
+    sentry_secret_version     = google_secret_manager_secret_version.admin_runner["emisar-admin-runner-sentry-token"].version
     pinned_packs              = local.admin_runner_pack_pins
   })
   admin_runner_gcloud_script = templatefile("${path.module}/runtime/admin-runner/gcloud.sh", {
@@ -373,8 +373,7 @@ resource "google_compute_region_instance_group_manager" "emisar" {
     google_sql_database.emisar,
     google_secret_manager_secret_version.release_cookie,
     google_secret_manager_secret_version.optional,
-    google_secret_manager_secret_version.admin_runner_enrollment_key,
-    google_secret_manager_secret_version.admin_runner_tfe_token,
+    google_secret_manager_secret_version.admin_runner,
     google_sql_user.pgaudit_owner,
     google_sql_user.emisar_vm,
   ]
