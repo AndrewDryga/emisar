@@ -14,13 +14,11 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"github.com/chromedp/chromedp"
 	"os"
 	"strconv"
 	"strings"
 	"time"
-
-	"github.com/andrewdryga/emisar/tools/internal/idpcapture"
-	"github.com/chromedp/chromedp"
 
 	capturekit "github.com/andrewdryga/emisar/tools/internal/capture"
 )
@@ -260,7 +258,7 @@ func run(env map[string]string, outDir, credentialsOut string, headless, cleanup
 		if err := chromedp.Run(ctx, chromedp.Sleep(8*time.Second)); err != nil {
 			return err
 		}
-		if err := idpcapture.Screenshot(ctx, outDir, "jc-00-login-step2"); err != nil {
+		if err := capturekit.Screenshot(ctx, outDir, "jc-00-login-step2"); err != nil {
 			return err
 		}
 		if err := focusField(ctx, "password"); err != nil {
@@ -299,7 +297,7 @@ func run(env map[string]string, outDir, credentialsOut string, headless, cleanup
 		return errors.New("JumpCloud rejected the admin sign-in")
 	}
 	fmt.Println("signed in to the JumpCloud admin console")
-	if err := idpcapture.Screenshot(ctx, outDir, "jc-01-after-login"); err != nil {
+	if err := capturekit.Screenshot(ctx, outDir, "jc-01-after-login"); err != nil {
 		return err
 	}
 	return runAuthenticated(ctx, env, outDir, credentialsOut, cleanupApps, oidcOnly, recoverOIDC, explore)
@@ -462,14 +460,14 @@ func cleanupCaptureApplications(ctx context.Context, consoleURL, outDir string) 
 		var why string
 		_ = chromedp.Run(ctx, chromedp.Evaluate(probe, &why))
 		fmt.Printf("  nothing selected — %s\n", why)
-		return idpcapture.Screenshot(ctx, outDir, "jc-cleanup-nothing-selected")
+		return capturekit.Screenshot(ctx, outDir, "jc-cleanup-nothing-selected")
 	}
 	fmt.Println("--- selected for deletion ---")
 	fmt.Println(picked)
 	if err := chromedp.Run(ctx, chromedp.Sleep(2*time.Second)); err != nil {
 		return err
 	}
-	if err := idpcapture.Screenshot(ctx, outDir, "jc-cleanup-selected"); err != nil {
+	if err := capturekit.Screenshot(ctx, outDir, "jc-cleanup-selected"); err != nil {
 		return err
 	}
 	if clicked, err := clickDeep(ctx, "Delete"); err != nil {
@@ -538,7 +536,7 @@ func cleanupCaptureApplications(ctx context.Context, consoleURL, outDir string) 
 	if err := chromedp.Run(ctx, chromedp.Sleep(10*time.Second)); err != nil {
 		return err
 	}
-	return idpcapture.Screenshot(ctx, outDir, "jc-cleanup-done")
+	return capturekit.Screenshot(ctx, outDir, "jc-cleanup-done")
 }
 
 // exploreConsole steps through the console one instruction at a time, taking a
@@ -589,7 +587,7 @@ func exploreConsole(ctx context.Context, env map[string]string, outDir, script s
 			}
 
 		case "shot":
-			if err := idpcapture.Screenshot(ctx, outDir, "explore-"+argument); err != nil {
+			if err := capturekit.Screenshot(ctx, outDir, "explore-"+argument); err != nil {
 				return err
 			}
 			var body string
@@ -658,7 +656,7 @@ func ssoApplicationsFlow(ctx context.Context, env map[string]string, outDir, cre
 		if err := openSavedApp(ctx, env, outDir); err != nil {
 			return err
 		}
-		if err := idpcapture.Screenshot(ctx, outDir, "jc-09-app-detail"); err != nil {
+		if err := capturekit.Screenshot(ctx, outDir, "jc-09-app-detail"); err != nil {
 			return err
 		}
 		if err := captureSavedOIDCScopes(ctx, env, outDir); err != nil {
@@ -707,7 +705,7 @@ func ssoApplicationsFlow(ctx context.Context, env map[string]string, outDir, cre
 	}
 
 	if !reached {
-		_ = idpcapture.Screenshot(ctx, outDir, "jc-02-nav-failed")
+		_ = capturekit.Screenshot(ctx, outDir, "jc-02-nav-failed")
 		return fmt.Errorf("could not reach SSO Applications after 3 attempts")
 	}
 	// Either entry point. A tenant with no applications offers "Get Started"
@@ -720,7 +718,7 @@ func ssoApplicationsFlow(ctx context.Context, env map[string]string, outDir, cre
 			return err
 		}
 	}
-	if err := idpcapture.Screenshot(ctx, outDir, "jc-02-sso-applications"); err != nil {
+	if err := capturekit.Screenshot(ctx, outDir, "jc-02-sso-applications"); err != nil {
 		return err
 	}
 
@@ -779,10 +777,10 @@ func ssoApplicationsFlow(ctx context.Context, env map[string]string, outDir, cre
     .filter(t => t.length < 40)
     .slice(0, 25).join(' | ');
 })()`, &offered))
-		_ = idpcapture.Screenshot(ctx, outDir, "jc-03-no-custom-application")
+		_ = capturekit.Screenshot(ctx, outDir, "jc-03-no-custom-application")
 		return fmt.Errorf("no Custom Application entry; page offers: %s", offered)
 	}
-	if err := idpcapture.Screenshot(ctx, outDir, "jc-03-add-application"); err != nil {
+	if err := capturekit.Screenshot(ctx, outDir, "jc-03-add-application"); err != nil {
 		return err
 	}
 
@@ -802,7 +800,7 @@ func ssoApplicationsFlow(ctx context.Context, env map[string]string, outDir, cre
 		}
 	}
 	if !picked {
-		_ = idpcapture.Screenshot(ctx, outDir, "jc-04-no-custom-tile")
+		_ = capturekit.Screenshot(ctx, outDir, "jc-04-no-custom-tile")
 		_ = capturekit.DescribePage(ctx, nil)
 		return fmt.Errorf("no custom-integration option on the wizard's first step")
 	}
@@ -822,7 +820,7 @@ func ssoApplicationsFlow(ctx context.Context, env map[string]string, outDir, cre
 	if err := highlightControl(ctx, "Manage Single Sign-On (SSO)"); err != nil {
 		return err
 	}
-	if err := idpcapture.Screenshot(ctx, outDir, "jc-05-select-options"); err != nil {
+	if err := capturekit.Screenshot(ctx, outDir, "jc-05-select-options"); err != nil {
 		return err
 	}
 
@@ -841,7 +839,7 @@ func ssoApplicationsFlow(ctx context.Context, env map[string]string, outDir, cre
 	}
 	// Ticking SSO reveals a SAML/OIDC radio pair that defaults to SAML. Choosing
 	// OIDC here is the actual test: does JumpCloud still allow provisioning?
-	oidc, err := idpcapture.ClickRadio(ctx, "Configure SSO with OIDC")
+	oidc, err := capturekit.ClickRadio(ctx, "Configure SSO with OIDC")
 	if err != nil {
 		return err
 	}
@@ -860,7 +858,7 @@ func ssoApplicationsFlow(ctx context.Context, env map[string]string, outDir, cre
 	if err := highlightControl(ctx, "Configure SSO with OIDC"); err != nil {
 		return err
 	}
-	if err := idpcapture.Screenshot(ctx, outDir, "jc-06-options-chosen"); err != nil {
+	if err := capturekit.Screenshot(ctx, outDir, "jc-06-options-chosen"); err != nil {
 		return err
 	}
 	if err := capturekit.DescribePage(ctx, nil); err != nil {
@@ -878,7 +876,7 @@ func ssoApplicationsFlow(ctx context.Context, env map[string]string, outDir, cre
 	// showing an empty Display Label teaches nothing, and shipping one is exactly
 	// what drew "you again did not select right options on the screenshots".
 	if err := capturekit.Highlight(ctx, "Display Label", highlightSettle); err != nil {
-		_ = idpcapture.Screenshot(ctx, outDir, "jc-07-no-general-info")
+		_ = capturekit.Screenshot(ctx, outDir, "jc-07-no-general-info")
 		return fmt.Errorf("next did not advance to Enter General Info: %w", err)
 	}
 	if err := focusField(ctx, "label"); err != nil {
@@ -906,7 +904,7 @@ func ssoApplicationsFlow(ctx context.Context, env map[string]string, outDir, cre
 	if err := capturekit.Highlight(ctx, "Display Label", highlightSettle); err != nil {
 		return err
 	}
-	if err := idpcapture.Screenshot(ctx, outDir, "jc-07-general-info"); err != nil {
+	if err := capturekit.Screenshot(ctx, outDir, "jc-07-general-info"); err != nil {
 		return err
 	}
 	for _, label := range []string{"Next", "Save Application"} {
@@ -924,7 +922,7 @@ func ssoApplicationsFlow(ctx context.Context, env map[string]string, outDir, cre
 	if err := capturekit.Highlight(ctx, "Enabled Features", highlightSettle); err != nil {
 		return err
 	}
-	if err := idpcapture.Screenshot(ctx, outDir, "jc-08-after-save"); err != nil {
+	if err := capturekit.Screenshot(ctx, outDir, "jc-08-after-save"); err != nil {
 		return err
 	}
 	// Past Review is where the OIDC redirect URI and the client credentials live —
@@ -974,19 +972,19 @@ func ssoApplicationsFlow(ctx context.Context, env map[string]string, outDir, cre
 	if err := highlightGroup(ctx, "Redirect URIs", "Add URI"); err != nil {
 		return err
 	}
-	if err := idpcapture.Screenshot(ctx, outDir, "jc-09-oidc-config"); err != nil {
+	if err := capturekit.Screenshot(ctx, outDir, "jc-09-oidc-config"); err != nil {
 		return err
 	}
-	if err := idpcapture.ScreenshotElement(ctx, outDir, "jc-09-oidc-config-docs", "#application-view"); err != nil {
+	if err := capturekit.ScreenshotElement(ctx, outDir, "jc-09-oidc-config-docs", "#application-view"); err != nil {
 		return err
 	}
 	if err := highlightGroup(ctx, "Standard Scopes", "Profile"); err != nil {
 		return err
 	}
-	if err := idpcapture.Screenshot(ctx, outDir, "jc-09-oidc-scopes"); err != nil {
+	if err := capturekit.Screenshot(ctx, outDir, "jc-09-oidc-scopes"); err != nil {
 		return err
 	}
-	if err := idpcapture.ScreenshotElement(ctx, outDir, "jc-09-oidc-scopes-docs", "#application-view"); err != nil {
+	if err := capturekit.ScreenshotElement(ctx, outDir, "jc-09-oidc-scopes-docs", "#application-view"); err != nil {
 		return err
 	}
 	if err := describeFields(ctx); err != nil {
@@ -1014,7 +1012,7 @@ func ssoApplicationsFlow(ctx context.Context, env map[string]string, outDir, cre
 		}
 	}
 	if !clicked {
-		_ = idpcapture.Screenshot(ctx, outDir, "jc-09-no-activate")
+		_ = capturekit.Screenshot(ctx, outDir, "jc-09-no-activate")
 		// Say what WAS clickable, walking shadow roots — "not found" alone cannot
 		// tell a renamed control from a page that had already moved on.
 		const labels = `(() => {
@@ -1106,7 +1104,7 @@ func captureSavedOIDCScopes(ctx context.Context, env map[string]string, outDir s
 	if err := highlightGroup(ctx, "Redirect URIs", "Add URI"); err != nil {
 		return err
 	}
-	if err := idpcapture.ScreenshotElement(ctx, outDir, "jc-09-oidc-config-docs", "#application-view"); err != nil {
+	if err := capturekit.ScreenshotElement(ctx, outDir, "jc-09-oidc-config-docs", "#application-view"); err != nil {
 		return err
 	}
 	for _, scope := range []string{"Email", "Profile"} {
@@ -1117,10 +1115,10 @@ func captureSavedOIDCScopes(ctx context.Context, env map[string]string, outDir s
 	if err := highlightGroup(ctx, "Standard Scopes", "Profile"); err != nil {
 		return err
 	}
-	if err := idpcapture.Screenshot(ctx, outDir, "jc-09-oidc-scopes"); err != nil {
+	if err := capturekit.Screenshot(ctx, outDir, "jc-09-oidc-scopes"); err != nil {
 		return err
 	}
-	return idpcapture.ScreenshotElement(ctx, outDir, "jc-09-oidc-scopes-docs", "#application-view")
+	return capturekit.ScreenshotElement(ctx, outDir, "jc-09-oidc-scopes-docs", "#application-view")
 }
 
 // writeOIDCCredentials captures the one-time activation values before the dialog
@@ -1234,7 +1232,7 @@ func recoverOIDCCredentials(ctx context.Context, env map[string]string, outDir, 
 	if err := chromedp.Run(ctx, chromedp.MouseClickXY(tabAt.X, tabAt.Y), chromedp.Sleep(6*time.Second)); err != nil {
 		return err
 	}
-	if err := idpcapture.Screenshot(ctx, outDir, "jc-recover-sso"); err != nil {
+	if err := capturekit.Screenshot(ctx, outDir, "jc-recover-sso"); err != nil {
 		return err
 	}
 
@@ -1403,7 +1401,7 @@ func openSavedApp(ctx context.Context, env map[string]string, outDir string) err
 		return err
 	}
 	if at == nil {
-		_ = idpcapture.Screenshot(ctx, outDir, "jc-09-cannot-find-fresh-app")
+		_ = capturekit.Screenshot(ctx, outDir, "jc-09-cannot-find-fresh-app")
 		return errors.New("the app just created is not identifiable in the list — run -cleanup-apps first")
 	}
 	if err := chromedp.Run(ctx, chromedp.MouseClickXY(at.X, at.Y), chromedp.Sleep(14*time.Second)); err != nil {
@@ -1481,14 +1479,14 @@ func provisioningTabFlow(ctx context.Context, env map[string]string, outDir stri
 		return err
 	}
 	if opened == "" {
-		_ = idpcapture.Screenshot(ctx, outDir, "jc-09-no-provisioning-tab")
+		_ = capturekit.Screenshot(ctx, outDir, "jc-09-no-provisioning-tab")
 		_ = capturekit.DescribePage(ctx, nil)
 		return fmt.Errorf("no Provisioning / Identity Management tab on the saved app")
 	}
 	if err := chromedp.Run(ctx, chromedp.Sleep(6*time.Second)); err != nil {
 		return err
 	}
-	if err := idpcapture.Screenshot(ctx, outDir, "jc-09-provisioning-tab"); err != nil {
+	if err := capturekit.Screenshot(ctx, outDir, "jc-09-provisioning-tab"); err != nil {
 		return err
 	}
 	var provisioningBody string
@@ -1587,7 +1585,7 @@ func provisioningTabFlow(ctx context.Context, env map[string]string, outDir stri
 	// footer is currently offering until the badge flips.
 	// Look at the footer before driving it. Guessing which control is there cost
 	// many runs; one screenshot and a list of every clickable answers it.
-	_ = idpcapture.Screenshot(ctx, outDir, "jc-10-before-activate")
+	_ = capturekit.Screenshot(ctx, outDir, "jc-10-before-activate")
 
 	var footer string
 	_ = chromedp.Run(ctx, chromedp.Evaluate(`(() => {
@@ -1619,7 +1617,7 @@ func provisioningTabFlow(ctx context.Context, env map[string]string, outDir stri
 	}
 	if !active {
 		if err := activateProvisioning(ctx, 4); err != nil {
-			_ = idpcapture.Screenshot(ctx, outDir, "jc-11-never-activated")
+			_ = capturekit.Screenshot(ctx, outDir, "jc-11-never-activated")
 			return err
 		}
 	}
@@ -1640,7 +1638,7 @@ func provisioningTabFlow(ctx context.Context, env map[string]string, outDir stri
 			return err
 		}
 	}
-	if err := idpcapture.Screenshot(ctx, outDir, "jc-10-scim-filled"); err != nil {
+	if err := capturekit.Screenshot(ctx, outDir, "jc-10-scim-filled"); err != nil {
 		return err
 	}
 
@@ -1649,10 +1647,10 @@ func provisioningTabFlow(ctx context.Context, env map[string]string, outDir stri
 	if err := capturekit.Highlight(ctx, "Provisioning Active", highlightSettle); err != nil {
 		return err
 	}
-	if err := idpcapture.Screenshot(ctx, outDir, "jc-11-activate"); err != nil {
+	if err := capturekit.Screenshot(ctx, outDir, "jc-11-activate"); err != nil {
 		return err
 	}
-	if err := idpcapture.ScreenshotElement(ctx, outDir, "jc-11-activate-docs", "#application-view"); err != nil {
+	if err := capturekit.ScreenshotElement(ctx, outDir, "jc-11-activate-docs", "#application-view"); err != nil {
 		return err
 	}
 

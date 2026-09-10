@@ -17,10 +17,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/chromedp/cdproto/network"
-
-	"github.com/andrewdryga/emisar/tools/internal/idpcapture"
 	"github.com/chromedp/cdproto/emulation"
+	"github.com/chromedp/cdproto/network"
 	"github.com/chromedp/chromedp"
 
 	capturekit "github.com/andrewdryga/emisar/tools/internal/capture"
@@ -131,7 +129,7 @@ func run(env map[string]string, outDir string, headless, cleanupOnly bool, fresh
 		return err
 	}
 	if err := signIn(ctx, env, acceptCloudTOS); err != nil {
-		_ = idpcapture.Screenshot(ctx, outDir, "google-failed")
+		_ = capturekit.Screenshot(ctx, outDir, "google-failed")
 		_ = capturekit.DescribePage(ctx, env)
 		return err
 	}
@@ -149,7 +147,7 @@ func run(env map[string]string, outDir string, headless, cleanupOnly bool, fresh
 	}
 	if freshProject != "" {
 		if err := createProject(ctx, freshProject, outDir); err != nil {
-			_ = idpcapture.Screenshot(ctx, outDir, "google-failed")
+			_ = capturekit.Screenshot(ctx, outDir, "google-failed")
 			_ = capturekit.DescribePage(ctx, env)
 			return err
 		}
@@ -171,14 +169,14 @@ func run(env map[string]string, outDir string, headless, cleanupOnly bool, fresh
 	}
 	if certifyRedirect != "" {
 		if err := certifyClientFlow(ctx, env, outDir, certifyRedirect, certifyCredentials); err != nil {
-			_ = idpcapture.Screenshot(ctx, outDir, "google-failed")
+			_ = capturekit.Screenshot(ctx, outDir, "google-failed")
 			_ = capturekit.DescribePage(ctx, env)
 			return err
 		}
 		return nil
 	}
 	if err := authPlatformFlow(ctx, env, outDir); err != nil {
-		_ = idpcapture.Screenshot(ctx, outDir, "google-failed")
+		_ = capturekit.Screenshot(ctx, outDir, "google-failed")
 		_ = capturekit.DescribePage(ctx, env)
 		return err
 	}
@@ -328,7 +326,7 @@ func createProject(ctx context.Context, name, outDir string) error {
 	deadline := time.Now().Add(4 * time.Minute)
 	for {
 		if time.Now().After(deadline) {
-			_ = idpcapture.Screenshot(ctx, outDir, "google-project-never-ready")
+			_ = capturekit.Screenshot(ctx, outDir, "google-project-never-ready")
 			return fmt.Errorf("project %s never became usable", projectID)
 		}
 		if err := chromedp.Run(ctx, chromedp.Navigate(platform), chromedp.Sleep(8*time.Second)); err != nil {
@@ -720,7 +718,7 @@ func certifyLoginFlow(ctx context.Context, env map[string]string, outDir, beginU
 		chromedp.Evaluate(deepTextScript, &body)); err != nil {
 		return err
 	}
-	_ = idpcapture.Screenshot(ctx, outDir, "google-certify-login")
+	_ = capturekit.Screenshot(ctx, outDir, "google-certify-login")
 	fmt.Printf("  landed on %s\n", routeOnly(location))
 	fmt.Printf("  page says: %s\n", firstLine(redactGoogleText(body, env)))
 
@@ -1017,7 +1015,7 @@ func removeCaptureClients(ctx context.Context, env map[string]string, outDir str
 			// clients to remove" here told an operator their project was clean
 			// while live OAuth secrets sat in it — the exact thing
 			// shared-capture-rigs-own-what-they-create forbids.
-			_ = idpcapture.Screenshot(ctx, outDir, "google-cleanup-unselectable")
+			_ = capturekit.Screenshot(ctx, outDir, "google-cleanup-unselectable")
 			_ = capturekit.DescribePage(ctx, env)
 			return fmt.Errorf("%d client(s) match this rig's names but no row checkbox could be selected", before)
 		}
@@ -1098,7 +1096,7 @@ func removeCaptureClients(ctx context.Context, env map[string]string, outDir str
 			return err
 		}
 		if !pressed {
-			_ = idpcapture.Screenshot(ctx, outDir, "google-cleanup-no-delete-button")
+			_ = capturekit.Screenshot(ctx, outDir, "google-cleanup-no-delete-button")
 			return errors.New("the delete dialog has no enabled Delete button")
 		}
 		if err := chromedp.Run(ctx, chromedp.Sleep(6*time.Second)); err != nil {
@@ -1121,7 +1119,7 @@ func removeCaptureClients(ctx context.Context, env map[string]string, outDir str
 			return err
 		}
 		if after >= before {
-			_ = idpcapture.Screenshot(ctx, outDir, "google-cleanup-stuck")
+			_ = capturekit.Screenshot(ctx, outDir, "google-cleanup-stuck")
 			_ = capturekit.DescribePage(ctx, env)
 			return fmt.Errorf("clicked delete but %d capture client(s) remain", after)
 		}
@@ -1513,14 +1511,14 @@ func capture(ctx context.Context, env map[string]string, outDir, name string, ma
 	if err := chromedp.Run(ctx, chromedp.Sleep(700*time.Millisecond)); err != nil {
 		return err
 	}
-	if err := idpcapture.Screenshot(ctx, outDir, name); err != nil {
+	if err := capturekit.Screenshot(ctx, outDir, name); err != nil {
 		return err
 	}
 	if name == "google-08-client-created" {
 		if err := markGoogleCredentialDialog(ctx); err != nil {
 			return err
 		}
-		return idpcapture.ScreenshotElement(ctx, outDir, name+"-docs", "[data-emisar-docs-google-credentials=true]")
+		return capturekit.ScreenshotElement(ctx, outDir, name+"-docs", "[data-emisar-docs-google-credentials=true]")
 	}
 	height := 900
 	width := 1155
@@ -1534,7 +1532,7 @@ func capture(ctx context.Context, env map[string]string, outDir, name string, ma
 	if err := markGoogleDocsPanel(ctx, width, height); err != nil {
 		return err
 	}
-	return idpcapture.ScreenshotElement(ctx, outDir, name+"-docs", "[data-emisar-docs-google-panel=true]")
+	return capturekit.ScreenshotElement(ctx, outDir, name+"-docs", "[data-emisar-docs-google-panel=true]")
 }
 
 func markGoogleDocsPanel(ctx context.Context, width, height int) error {

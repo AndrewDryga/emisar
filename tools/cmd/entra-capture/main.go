@@ -15,13 +15,11 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"github.com/chromedp/chromedp"
 	"os"
 	"slices"
 	"strings"
 	"time"
-
-	"github.com/andrewdryga/emisar/tools/internal/idpcapture"
-	"github.com/chromedp/chromedp"
 
 	"github.com/andrewdryga/emisar/tools/internal/capture"
 )
@@ -108,7 +106,7 @@ func run(env map[string]string, outDir string, headless bool, opts options) erro
 	frames := trackFrames(ctx)
 
 	if err := signIn(ctx, env, outDir); err != nil {
-		_ = idpcapture.Screenshot(ctx, outDir, "en-login-failed")
+		_ = capture.Screenshot(ctx, outDir, "en-login-failed")
 		_ = capture.DescribePage(ctx, env)
 		return err
 	}
@@ -123,7 +121,7 @@ func run(env map[string]string, outDir string, headless bool, opts options) erro
 	case "inventory":
 		return auditTenant(ctx, env, opts.cleanup)
 	}
-	if err := idpcapture.Screenshot(ctx, outDir, "en-01-signed-in"); err != nil {
+	if err := capture.Screenshot(ctx, outDir, "en-01-signed-in"); err != nil {
 		return err
 	}
 	return appRegistrationFlow(ctx, env, outDir, opts.formOnly, opts.create, opts.credentialsOut)
@@ -280,7 +278,7 @@ func appRegistrationFlow(ctx context.Context, env map[string]string, outDir stri
 	); err != nil {
 		return err
 	}
-	if err := idpcapture.Screenshot(ctx, outDir, "en-03-new-registration-blank"); err != nil {
+	if err := capture.Screenshot(ctx, outDir, "en-03-new-registration-blank"); err != nil {
 		return err
 	}
 
@@ -295,19 +293,19 @@ func appRegistrationFlow(ctx context.Context, env map[string]string, outDir stri
 	// The redirect URI is inert until a platform is chosen — leaving it unset
 	// fails with "Platform is required", which is why the docs say to pick Web.
 	if err := selectPlatform(ctx, "Web"); err != nil {
-		_ = idpcapture.Screenshot(ctx, outDir, "en-04-platform-failed")
+		_ = capture.Screenshot(ctx, outDir, "en-04-platform-failed")
 		return err
 	}
 	if err := highlightRegistrationGroup(ctx); err != nil {
 		return err
 	}
-	if err := idpcapture.Screenshot(ctx, outDir, "en-04-new-registration-filled"); err != nil {
+	if err := capture.Screenshot(ctx, outDir, "en-04-new-registration-filled"); err != nil {
 		return err
 	}
 	if err := markRegistrationDocsViewport(ctx); err != nil {
 		return err
 	}
-	if err := idpcapture.ScreenshotElement(ctx, outDir, "en-04-new-registration-filled-docs", "[data-emisar-docs-entra-registration=true]"); err != nil {
+	if err := capture.ScreenshotElement(ctx, outDir, "en-04-new-registration-filled-docs", "[data-emisar-docs-entra-registration=true]"); err != nil {
 		return err
 	}
 	if formOnly {
@@ -330,12 +328,12 @@ func appRegistrationFlow(ctx context.Context, env map[string]string, outDir stri
 func captureNewAppOverview(ctx context.Context, env map[string]string, outDir, credentialsOut string) error {
 	dismissOverlays(ctx)
 	if err := capture.RequireText(ctx, "Application (client) ID", 90*time.Second); err != nil {
-		_ = idpcapture.Screenshot(ctx, outDir, "en-05-overview-failed")
+		_ = capture.Screenshot(ctx, outDir, "en-05-overview-failed")
 		return fmt.Errorf("app overview never rendered after Register: %w", err)
 	}
 	clientID, err := readClientID(ctx)
 	if err != nil {
-		_ = idpcapture.Screenshot(ctx, outDir, "en-05-overview-failed")
+		_ = capture.Screenshot(ctx, outDir, "en-05-overview-failed")
 		return err
 	}
 	env["ENTRA_CLIENT_ID"] = clientID
@@ -349,7 +347,7 @@ func captureNewAppOverview(ctx context.Context, env map[string]string, outDir, c
 		fmt.Printf("  wrote client id to %s\n", credentialsOut)
 	}
 	_ = capture.Highlight(ctx, "Application (client) ID", highlightSettle)
-	return idpcapture.Screenshot(ctx, outDir, "en-05-app-overview")
+	return capture.Screenshot(ctx, outDir, "en-05-app-overview")
 }
 
 // readClientID pulls the Application (client) ID GUID off the overview blade.
@@ -478,11 +476,11 @@ func openRegisteredApp(ctx context.Context, env map[string]string, outDir string
 		return fmt.Errorf("ENTRA_CLIENT_ID is empty — register the app first")
 	}
 	if err := openService(ctx, "App registrations", "Display name"); err != nil {
-		_ = idpcapture.Screenshot(ctx, outDir, "en-05-overview-failed")
+		_ = capture.Screenshot(ctx, outDir, "en-05-overview-failed")
 		return err
 	}
 	if err := clickTextAtCentre(ctx, "emisar"); err != nil {
-		_ = idpcapture.Screenshot(ctx, outDir, "en-05-app-not-listed")
+		_ = capture.Screenshot(ctx, outDir, "en-05-app-not-listed")
 		return fmt.Errorf("open the emisar app: %w", err)
 	}
 	if err := chromedp.Run(ctx, chromedp.Sleep(15*time.Second)); err != nil {
@@ -490,11 +488,11 @@ func openRegisteredApp(ctx context.Context, env map[string]string, outDir string
 	}
 	dismissOverlays(ctx)
 	if err := capture.RequireText(ctx, "Application (client) ID", 90*time.Second); err != nil {
-		_ = idpcapture.Screenshot(ctx, outDir, "en-05-overview-failed")
+		_ = capture.Screenshot(ctx, outDir, "en-05-overview-failed")
 		return fmt.Errorf("app overview never rendered: %w", err)
 	}
 	_ = capture.Highlight(ctx, "Application (client) ID", highlightSettle)
-	return idpcapture.Screenshot(ctx, outDir, "en-05-app-overview")
+	return capture.Screenshot(ctx, outDir, "en-05-app-overview")
 }
 
 // openService reaches a portal service from the home page's Azure services tiles.

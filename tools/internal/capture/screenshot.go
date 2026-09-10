@@ -1,19 +1,4 @@
-// Package idpcapture holds the browser-driving helpers the identity-provider
-// capture drivers share.
-//
-// Only helpers that are BYTE-IDENTICAL across the drivers live here. The others
-// — clickText, clickContaining, focusField, highlight, tickInSection,
-// deidentifyHost, readEnv — read as duplicates but are not: each provider's
-// console has its own DOM, and the copies differ in selector, in how they treat
-// a miss (warn versus error), and in which environment variables they name.
-//
-// Reconciling those needs each driver re-run against its live tenant, which is
-// the one thing CI cannot do. Moving one here on the assumption that the
-// differences are cosmetic would break a capture silently, and the breakage
-// would only surface the next time someone regenerated that provider's guide.
-// So a helper joins this package when its copies are identical, or when someone
-// has re-captured every affected flow and can say so.
-package idpcapture
+package capture
 
 import (
 	"context"
@@ -23,6 +8,15 @@ import (
 
 	"github.com/chromedp/chromedp"
 )
+
+// Two shelves used to exist for these helpers. idpcapture's rule was that a
+// helper joins only when its copies are byte-identical across the drivers, and
+// the reason still holds for the deliberately per-vendor ones: each console
+// has its own DOM, and the copies differ in selector, in how they treat a
+// miss, and in which environment variables they name. Reconciling those needs
+// each driver re-run against its live tenant, which CI cannot do — so a helper
+// moves here when its copies are identical, or when someone has re-captured
+// every affected flow and can say so.
 
 // Screenshot writes a full-page PNG named name into outDir.
 func Screenshot(ctx context.Context, outDir, name string) error {

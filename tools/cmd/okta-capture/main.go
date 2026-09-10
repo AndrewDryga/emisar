@@ -28,8 +28,6 @@ import (
 	"time"
 
 	"github.com/chromedp/cdproto/runtime"
-
-	"github.com/andrewdryga/emisar/tools/internal/idpcapture"
 	"github.com/chromedp/chromedp"
 
 	"github.com/andrewdryga/emisar/tools/internal/capture"
@@ -598,7 +596,7 @@ func captureFlow(ctx context.Context, env map[string]string, outDir, only string
 		if err := clearMFA(ctx, env); err != nil {
 			return err
 		}
-		if err := idpcapture.Screenshot(ctx, outDir, name); err != nil {
+		if err := capture.Screenshot(ctx, outDir, name); err != nil {
 			return err
 		}
 		switch name {
@@ -606,42 +604,42 @@ func captureFlow(ctx context.Context, env map[string]string, outDir, only string
 			if err := markOIDCCreateDialog(ctx); err != nil {
 				return err
 			}
-			return idpcapture.ScreenshotElement(ctx, outDir, name+"-docs", "[data-emisar-docs-oidc-create=true]")
+			return capture.ScreenshotElement(ctx, outDir, name+"-docs", "[data-emisar-docs-oidc-create=true]")
 		case "oidc-03-new-web-app":
 			if err := markOIDCSettingsPanel(ctx); err != nil {
 				return err
 			}
-			return idpcapture.ScreenshotElement(ctx, outDir, name+"-docs", "[data-emisar-docs-oidc-settings=true]")
+			return capture.ScreenshotElement(ctx, outDir, name+"-docs", "[data-emisar-docs-oidc-settings=true]")
 		case "oidc-04-client-credentials":
 			if err := markOIDCCredentialsPanel(ctx); err != nil {
 				return err
 			}
-			return idpcapture.ScreenshotElement(ctx, outDir, name+"-docs", "[data-emisar-docs-oidc-credentials=true]")
+			return capture.ScreenshotElement(ctx, outDir, name+"-docs", "[data-emisar-docs-oidc-credentials=true]")
 		case "02-catalog-search":
 			if err := markCatalogPanel(ctx); err != nil {
 				return err
 			}
-			return idpcapture.ScreenshotElement(ctx, outDir, name+"-docs", "[data-emisar-docs-catalog=true]")
+			return capture.ScreenshotElement(ctx, outDir, name+"-docs", "[data-emisar-docs-catalog=true]")
 		case "10-test-api-credentials":
 			if err := markCredentialPanel(ctx); err != nil {
 				return err
 			}
-			return idpcapture.ScreenshotElement(ctx, outDir, name+"-docs", "[data-emisar-docs-panel=true]")
+			return capture.ScreenshotElement(ctx, outDir, name+"-docs", "[data-emisar-docs-panel=true]")
 		case "12-to-app-settings":
 			if err := markLifecyclePanel(ctx); err != nil {
 				return err
 			}
-			return idpcapture.ScreenshotElement(ctx, outDir, name+"-docs", "[data-emisar-docs-lifecycle=true]")
+			return capture.ScreenshotElement(ctx, outDir, name+"-docs", "[data-emisar-docs-lifecycle=true]")
 		case "13-assignments":
 			if err := markDocsPanel(ctx, "Assign", "Convert assignments", "data-emisar-docs-assignments", 700, 300, 900); err != nil {
 				return err
 			}
-			return idpcapture.ScreenshotElement(ctx, outDir, name+"-docs", "[data-emisar-docs-assignments=true]")
+			return capture.ScreenshotElement(ctx, outDir, name+"-docs", "[data-emisar-docs-assignments=true]")
 		case "14-push-groups":
 			if err := markDocsPanel(ctx, "Push Groups", "Push Status", "data-emisar-docs-push-groups", 900, 300, 900); err != nil {
 				return err
 			}
-			return idpcapture.ScreenshotElement(ctx, outDir, name+"-docs", "[data-emisar-docs-push-groups=true]")
+			return capture.ScreenshotElement(ctx, outDir, name+"-docs", "[data-emisar-docs-push-groups=true]")
 		default:
 			return nil
 		}
@@ -1878,7 +1876,7 @@ func oidcFlow(
 	// Radios, not links: clicking the label text leaves the input unselected and
 	// Next silently refuses. The application-type choice only renders once a
 	// sign-in method is picked.
-	if picked, err := idpcapture.ClickRadio(ctx, "OIDC - OpenID Connect"); err != nil {
+	if picked, err := capture.ClickRadio(ctx, "OIDC - OpenID Connect"); err != nil {
 		return err
 	} else if !picked {
 		return fmt.Errorf("sign-in method OIDC not offered")
@@ -1886,7 +1884,7 @@ func oidcFlow(
 	if err := settle(3); err != nil {
 		return err
 	}
-	if picked, err := idpcapture.ClickRadio(ctx, "Web Application"); err != nil {
+	if picked, err := capture.ClickRadio(ctx, "Web Application"); err != nil {
 		return err
 	} else if !picked {
 		return fmt.Errorf("application type Web Application not offered")
@@ -1928,7 +1926,7 @@ func oidcFlow(
 	}
 	// Assignment is emisar's job via group→role mapping, so don't grant the whole
 	// org here.
-	if picked, err := idpcapture.ClickRadio(ctx, "Skip group assignment for now"); err != nil {
+	if picked, err := capture.ClickRadio(ctx, "Skip group assignment for now"); err != nil {
 		return err
 	} else if !picked {
 		fmt.Println("  (no group-assignment radio; leaving default)")
