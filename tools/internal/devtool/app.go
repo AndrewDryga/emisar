@@ -9,6 +9,8 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/andrewdryga/emisar/tools/internal/toolutil"
+
 	"github.com/andrewdryga/emisar/tools/internal/infraops"
 )
 
@@ -96,12 +98,10 @@ func ExitCode(err error) int {
 }
 
 type App struct {
+	toolutil.Runner
 	Root   string
 	Portal string
 	Certs  string
-	In     io.Reader
-	Out    io.Writer
-	Err    io.Writer
 
 	certsChanged        bool
 	serviceForwardStops []func()
@@ -109,12 +109,10 @@ type App struct {
 
 func New(root string, in io.Reader, out, errOut io.Writer) *App {
 	return &App{
+		Runner: toolutil.Runner{In: in, Out: out, Err: errOut},
 		Root:   root,
 		Portal: filepath.Join(root, "portal"),
 		Certs:  filepath.Join(root, "dev", "keycloak", "certs", "generated"),
-		In:     in,
-		Out:    out,
-		Err:    errOut,
 	}
 }
 

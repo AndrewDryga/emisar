@@ -1744,6 +1744,12 @@ func writeAttestParityFixture(t *testing.T, root string) {
 func TestRunnerGateUsesModuleDirectoryAndCoverage(t *testing.T) {
 	root := t.TempDir()
 	writeAttestParityFixture(t, root)
+	// The installer parity phase reads both scripts from the root.
+	for _, name := range []string{"install.sh", "install-mcp.sh"} {
+		if err := os.WriteFile(filepath.Join(root, name), []byte("#!/usr/bin/env bash\nusage() { echo u; }\ndo_uninstall() { echo d; }\nfetch_release_files() { echo f; }\nresolve_latest_from_github() { echo r; }\n"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
 	bin := filepath.Join(root, "fake-bin")
 	if err := os.Mkdir(bin, 0o755); err != nil {
 		t.Fatal(err)

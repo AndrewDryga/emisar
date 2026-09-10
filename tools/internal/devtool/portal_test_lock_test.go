@@ -8,6 +8,8 @@ import (
 	"strings"
 	"syscall"
 	"testing"
+
+	"github.com/andrewdryga/emisar/tools/internal/toolutil"
 )
 
 // The key decides which runs serialize, so it has to resolve the database the
@@ -53,7 +55,7 @@ func TestPortalTestDatabaseKeyMirrorsTestConfigResolution(t *testing.T) {
 func TestPortalTestLockSerializesOnlyMatchingDatabases(t *testing.T) {
 	t.Setenv("XDG_RUNTIME_DIR", t.TempDir())
 	output := &bytes.Buffer{}
-	app := &App{Root: t.TempDir(), Out: output}
+	app := &App{Runner: toolutil.Runner{Out: output}, Root: t.TempDir()}
 
 	held, err := app.portalTestLock(map[string]string{"PGPORT": "31372"})
 	if err != nil {

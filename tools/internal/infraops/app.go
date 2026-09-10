@@ -3,7 +3,6 @@
 package infraops
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -44,20 +43,17 @@ func IsUsage(err error) bool {
 
 // App executes infrastructure operations through explicit external CLIs.
 type App struct {
+	toolutil.Runner
 	Root      string
 	Infra     string
-	In        io.Reader
-	Out       io.Writer
-	Err       io.Writer
-	LookPath  func(string) (string, error)
 	GitHubAPI string
 }
 
 // New creates an infrastructure operations application.
 func New(root string, in io.Reader, out, errOut io.Writer) *App {
 	return &App{
-		Root: root, Infra: filepath.Join(root, "infra"),
-		In: in, Out: out, Err: errOut, LookPath: exec.LookPath,
+		Runner: toolutil.Runner{In: in, Out: out, Err: errOut, LookPath: exec.LookPath},
+		Root:   root, Infra: filepath.Join(root, "infra"),
 		GitHubAPI: githubAPI,
 	}
 }
@@ -118,52 +114,20 @@ func (a *App) Run(ctx context.Context, args []string) error {
 	}
 }
 
+// The lowercase names every command in this package calls; the behaviour
+// lives in toolutil.Runner, shared with devtool.
 func (a *App) command(ctx context.Context, dir string, env map[string]string, name string, args ...string) *exec.Cmd {
-	command := exec.CommandContext(ctx, name, args...)
-	command.Dir = dir
-	command.Env = toolutil.MergedEnv(env)
-	command.Stdin = a.In
-	command.Stdout = a.Out
-	command.Stderr = a.Err
-	return command
+	return a.Runner.Command(ctx, dir, env, name, args...)
 }
 
-func (a *App) require(names ...string) error {
-	for _, name := range names {
-		if _, err := a.LookPath(name); err != nil {
-			return fmt.Errorf("%s is required but not installed", name)
-		}
-	}
-	return nil
-}
+func (a *App) require(names ...string) error { return a.Runner.Require(names...) }
 
 func (a *App) run(ctx context.Context, dir string, env map[string]string, name string, args ...string) error {
-	if err := a.require(name); err != nil {
-		return err
-	}
-	if err := a.command(ctx, dir, env, name, args...).Run(); err != nil {
-		return fmt.Errorf("%s %s: %w", name, strings.Join(args, " "), err)
-	}
-	return nil
+	return a.Runner.Run(ctx, dir, env, name, args...)
 }
 
 func (a *App) output(ctx context.Context, dir string, env map[string]string, name string, args ...string) ([]byte, error) {
-	if err := a.require(name); err != nil {
-		return nil, err
-	}
-	command := exec.CommandContext(ctx, name, args...)
-	command.Dir = dir
-	command.Env = toolutil.MergedEnv(env)
-	var stdout, stderr bytes.Buffer
-	command.Stdout = &stdout
-	command.Stderr = &stderr
-	if err := command.Run(); err != nil {
-		if stderr.Len() != 0 {
-			return nil, fmt.Errorf("%s %s: %w: %s", name, strings.Join(args, " "), err, strings.TrimSpace(stderr.String()))
-		}
-		return nil, fmt.Errorf("%s %s: %w", name, strings.Join(args, " "), err)
-	}
-	return stdout.Bytes(), nil
+	return a.Runner.Output(ctx, dir, env, name, args...)
 }
 
 func (a *App) project(ctx context.Context, configured string) (string, error) {
