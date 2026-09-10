@@ -1,0 +1,41 @@
+services:
+  # vtysh is a VTY-socket client, so the runner needs the SUT's /run/frr and
+  # nothing else — the daemons stay in their own container, where creating a
+  # dummy link needs NET_ADMIN. The runner itself stays unprivileged.
+  runner-tools:
+    build:
+      context: ${EMISAR_ROOT}/packs/frr/test
+      dockerfile: Dockerfile
+      target: tools
+      args:
+        PACKTEST_RUNNER_IMAGE: ${PACKTEST_RUNNER_IMAGE:-emisar-runner-tools:latest}
+        PACKTEST_VERSION: ${PACKTEST_VERSION:-13-slim}
+        PACKTEST_DIGEST: ${PACKTEST_DIGEST-}
+    image: emisar-packtest-frr-tools:${PACKTEST_VERSION:-13-slim}
+    volumes:
+      - frrsockets:/run/frr
+
+  frr:
+    build:
+      context: ${EMISAR_ROOT}/packs/frr/test
+      dockerfile: Dockerfile
+      target: sut
+      args:
+        PACKTEST_VERSION: ${PACKTEST_VERSION:-13-slim}
+        PACKTEST_DIGEST: ${PACKTEST_DIGEST-}
+    image: emisar-packtest-frr-sut:${PACKTEST_VERSION:-13-slim}
+    cap_add:
+      - NET_ADMIN
+      - SYS_ADMIN
+    volumes:
+      - frrsockets:/run/frr
+    healthcheck:
+      test: ["CMD-SHELL", "vtysh -c 'show bgp summary' | grep -q 10.0.0.2"]
+      interval: 2s
+      start_period: 30s
+      start_interval: 1s
+      timeout: 5s
+      retries: 30
+
+volumes:
+  frrsockets:

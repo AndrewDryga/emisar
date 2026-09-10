@@ -135,6 +135,26 @@ Keep this for identifiers created by the isolated case. Static inputs belong in
 Only add `test/cases.yaml` when it runs real cases against a disposable SUT.
 Do not create an empty plan to list actions the harness cannot exercise.
 
+A pack with no plan is one of two different things, and the tree cannot tell
+them apart — which is how `frr` shipped two `high` mutators with no behavior
+proof while a working FRR SUT sat in `packs/snmp/test/snmpd-frr/`. These are
+the packs whose actions the harness genuinely cannot run, and why:
+
+| pack | why no plan |
+|---|---|
+| `shell` | break-glass: the operator supplies the command, so there is nothing fixed to assert |
+| `iperf3` | needs two hosts and a saturable link between them |
+| `bonding`, `nic`, `multipath`, `iscsi` | need real NICs, multipath devices, or an iSCSI target |
+| `aws-cost`, `tailscale`, `git-local`, `github-cli` | drive a remote credentialed service with no disposable substitute |
+| `java-jvm` | heavy JVM SUT; verified in CI rather than on a workstation |
+| `cloud-init` | reads a boot that already happened; a container has none |
+
+Anything else without a plan is a gap, not an exemption. The ordinary
+containerizable ones left today are `zot`, `vector`, `podman`, `php-fpm`,
+`python-app`, `nodejs-pm2`, `elixir-beam`, `dnf-rpm`, `rke2`, `nfs`,
+`time-sync`, `wireguard`, and `zfs` — rank them by mutator risk, not by
+action count.
+
 ## Assertions
 
 Action expectations support:
