@@ -34,6 +34,12 @@ defmodule Emisar.Checks.AuthorizerFallbackFailClosed do
       This is defense-in-depth for a future caller that reaches row scoping
       without first passing the permission gate — and for the next query module
       added to such a `case` without its own clause.
+
+      The check reads the queryable's name from the head, so the first
+      parameter must be a plain variable or `pattern = variable`
+      (`%Ecto.Query{aliases: %{x: _}} = queryable`). Any other shape is
+      reported rather than skipped: a clause the check cannot read is a clause
+      it cannot vouch for.
       """
     ]
 
@@ -57,6 +63,7 @@ defmodule Emisar.Checks.AuthorizerFallbackFailClosed do
   defp walk({:def, meta, [head, [do: body]]} = ast, ctx) do
     case for_subject_head(head) do
       {:ok, queryable, subject} -> {ast, judge(ctx, meta, body, queryable, subject)}
+      :unreadable -> {ast, put_issue(ctx, unreadable_issue_for(ctx, meta))}
       :error -> {ast, ctx}
     end
   end
@@ -68,10 +75,31 @@ defmodule Emisar.Checks.AuthorizerFallbackFailClosed do
   # shapes are analyzed identically.
   defp for_subject_head({:when, _, [head, _guard]}), do: for_subject_head(head)
 
-  defp for_subject_head({:for_subject, _, [{queryable, _, _}, subject]}) when is_atom(queryable),
-    do: {:ok, queryable, subject}
+  # `%Ecto.Query{…} = queryable` (or the reverse) names the queryable on one
+  # side of the match. Read that side; the pattern is what the clause
+  # dispatches on. Without this, `{:=, _, _}` matched the plain-variable shape
+  # below and bound the name to the atom `:=`, so every later comparison
+  # against the real variable missed and the clause was waved through.
+  defp for_subject_head({:for_subject, _, [{:=, _, [left, right]}, subject]}) do
+    cond do
+      variable?(right) -> {:ok, variable_name(right), subject}
+      variable?(left) -> {:ok, variable_name(left), subject}
+      true -> :unreadable
+    end
+  end
+
+  defp for_subject_head({:for_subject, _, [first, subject]}) do
+    if variable?(first), do: {:ok, variable_name(first), subject}, else: :unreadable
+  end
 
   defp for_subject_head(_head), do: :error
+
+  # A variable node is `{name, meta, context}` with an atom context; operator
+  # and struct nodes carry a list of arguments there instead.
+  defp variable?({name, _, context}) when is_atom(name) and is_atom(context), do: true
+  defp variable?(_ast), do: false
+
+  defp variable_name({name, _, _}), do: name
 
   defp judge(ctx, meta, body, queryable, subject) do
     open? =
@@ -115,6 +143,18 @@ defmodule Emisar.Checks.AuthorizerFallbackFailClosed do
       _ ->
         false
     end
+  end
+
+  defp unreadable_issue_for(ctx, meta) do
+    format_issue(
+      ctx,
+      message:
+        "Authorizer.for_subject/2 must bind its queryable as a plain variable or " <>
+          "`pattern = variable` so the fail-closed check can read the clause.",
+      trigger: "for_subject",
+      line_no: meta[:line],
+      column: meta[:column]
+    )
   end
 
   defp issue_for(ctx, meta) do

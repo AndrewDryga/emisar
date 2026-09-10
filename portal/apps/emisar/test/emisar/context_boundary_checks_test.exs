@@ -143,6 +143,69 @@ defmodule Emisar.ContextBoundaryChecksTest do
 
       assert issues(authorizer(), source, "apps/emisar/lib/emisar/auth/authorizer.ex") == []
     end
+
+    # The Audit and Policies authorizers dispatch on the query's aliases with a
+    # `%Ecto.Query{…} = queryable` head. That shape used to bind the queryable's
+    # name to the atom `:=`, so an open fallback inside such a clause was never
+    # seen.
+    test "flags an open fallback behind a destructuring head" do
+      source = """
+      defmodule Emisar.Sprockets.Authorizer do
+        def for_subject(%Ecto.Query{aliases: %{sprockets: _}} = queryable, %Subject{account: %{id: account_id}}) do
+          case query_source(queryable) do
+            :sprockets -> Sprocket.Query.by_account_id(queryable, account_id)
+            _source -> queryable
+          end
+        end
+      end
+      """
+
+      assert triggers(authorizer(), source, @authorizer) == ["for_subject"]
+    end
+
+    test "flags an open fallback when the variable is on the left of the match" do
+      source = """
+      defmodule Emisar.Sprockets.Authorizer do
+        def for_subject(queryable = %Ecto.Query{aliases: %{sprockets: _}}, %Subject{account: %{id: account_id}}) do
+          case query_source(queryable) do
+            :sprockets -> Sprocket.Query.by_account_id(queryable, account_id)
+            _source -> queryable
+          end
+        end
+      end
+      """
+
+      assert triggers(authorizer(), source, @authorizer) == ["for_subject"]
+    end
+
+    test "allows a destructuring head whose fallback goes through Query.none/1" do
+      source = """
+      defmodule Emisar.Sprockets.Authorizer do
+        def for_subject(%Ecto.Query{aliases: %{sprockets: _}} = queryable, %Subject{account: %{id: account_id}}) do
+          case query_source(queryable) do
+            :sprockets -> Sprocket.Query.by_account_id(queryable, account_id)
+            _source -> Sprocket.Query.none(queryable)
+          end
+        end
+
+        def for_subject(queryable, _subject), do: Sprocket.Query.none(queryable)
+      end
+      """
+
+      assert issues(authorizer(), source, @authorizer) == []
+    end
+
+    test "reports a head it cannot read instead of skipping the clause" do
+      source = """
+      defmodule Emisar.Sprockets.Authorizer do
+        def for_subject(%Ecto.Query{aliases: %{sprockets: _}}, _subject), do: Sprocket.Query.none(nil)
+      end
+      """
+
+      assert [issue] = issues(authorizer(), source, @authorizer)
+      assert issue.line_no == 2
+      assert issue.message =~ "plain variable or `pattern = variable`"
+    end
   end
 
   describe "Emisar.Checks.ContextPublicFnSubject" do
