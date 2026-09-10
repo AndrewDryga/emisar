@@ -290,6 +290,19 @@ defmodule Emisar.ContextBoundaryChecksTest do
 
       assert issues(map_take_drop(), source, @context) == []
     end
+
+    # The piped spelling used to be invisible: the map rides the pipe, so the
+    # call's own args start at the key list.
+    test "flags the piped spelling too" do
+      source = """
+      defmodule Emisar.Sprockets do
+        def update(sprocket, attrs), do: Sprocket.Changeset.update(sprocket, attrs |> Map.take([:name]))
+        def summarize(payload), do: payload |> Map.take([:status])
+      end
+      """
+
+      assert triggers(map_take_drop(), source, @context) == ["attrs |> Map.take(…)"]
+    end
   end
 
   describe "Emisar.Checks.ContextCryptoBoundary" do

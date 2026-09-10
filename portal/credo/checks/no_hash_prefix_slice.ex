@@ -56,6 +56,33 @@ defmodule Emisar.Checks.NoHashPrefixSlice do
     end
   end
 
+  # String.slice(sha, 0..15) — a range from zero is the same prefix.
+  defp walk(
+         {{:., _, [{:__aliases__, _, [:String]}, :slice]}, meta, [subject, {:.., _, [0, _]}]} =
+           ast,
+         ctx
+       ) do
+    if hashish?(subject) do
+      {ast, put_issue(ctx, issue_for(ctx, meta))}
+    else
+      {ast, ctx}
+    end
+  end
+
+  # sha |> String.slice(0, 16) / sha |> String.slice(0..15) — the subject rides
+  # the pipe, so re-enter with it as the first argument.
+  defp walk(
+         {:|>, _, [subject, {{:., _, [{:__aliases__, _, [:String]}, :slice]}, meta, args}]} =
+           ast,
+         ctx
+       )
+       when is_list(args) do
+    {_, judged} =
+      walk({{:., [], [{:__aliases__, [], [:String]}, :slice]}, meta, [subject | args]}, ctx)
+
+    {ast, judged}
+  end
+
   defp walk(ast, ctx), do: {ast, ctx}
 
   defp hashish?(subject) do

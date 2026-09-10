@@ -38,6 +38,21 @@ defmodule Emisar.Checks.ContextNoMapTakeDrop do
     end
   end
 
+  # attrs |> Map.take([...]) — the piped spelling carries the map on the left
+  # of the pipe, so the call's own args start at the key list.
+  defp walk(
+         {:|>, _, [{arg, _, mod}, {{:., _, [{:__aliases__, meta, [:Map]}, fun]}, _, [_keys]}]} =
+           ast,
+         ctx
+       )
+       when fun in [:take, :drop] and is_atom(arg) and is_atom(mod) do
+    if attrs_like?(arg) do
+      {ast, put_issue(ctx, issue_for(ctx, meta, "#{arg} |> Map.#{fun}(…)"))}
+    else
+      {ast, ctx}
+    end
+  end
+
   defp walk(ast, ctx), do: {ast, ctx}
 
   defp attrs_like?(arg) do

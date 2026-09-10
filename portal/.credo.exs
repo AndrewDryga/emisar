@@ -98,7 +98,7 @@
           {Emisar.Checks.MultilineDoColon, []},
           {Emisar.Checks.NoApplicationPutEnv, []},
           {Emisar.Checks.NoBlankBetweenDirectives, []},
-          {Emisar.Checks.NoDateTimeTruncate, []},
+          {Emisar.Checks.ChangesetNoTruncate, []},
           {Emisar.Checks.NoHashPrefixSlice, []},
           {Emisar.Checks.NoIfOnArgField, []},
           {Emisar.Checks.NoIslandContainers, []},
@@ -188,6 +188,7 @@
           {Credo.Check.Refactor.RedundantWithClauseResult, []},
           {Credo.Check.Refactor.RejectReject, []},
           {Credo.Check.Refactor.UnlessWithElse, []},
+          {Credo.Check.Refactor.UtcNowTruncate, []},
           {Credo.Check.Refactor.WithClauses, []},
 
           #
@@ -217,7 +218,8 @@
           {Credo.Check.Warning.UnusedRegexOperation, []},
           {Credo.Check.Warning.UnusedStringOperation, []},
           {Credo.Check.Warning.UnusedTupleOperation, []},
-          {Credo.Check.Warning.WrongTestFilename, []}
+          {Credo.Check.Warning.WrongTestFilename, []},
+          {Credo.Check.Warning.WrongTestFileExtension, []}
         ],
         disabled: [
           #
@@ -231,13 +233,20 @@
           #  * CyclomaticComplexity counts clause heads, punishing the
           #    multi-clause dispatch tables the house style prefers;
           #    Refactor.Nesting covers the real depth smell.
+          #  * PerceivedComplexity is the same budget under another weighting.
+          #  * CaseTrivialMatches — a one-clause `case` that names its match
+          #    reads fine here and is not a defect.
+          #  * ForbiddenModule — the vendor seam is enforced by the house
+          #    check Emisar.Checks.VendorViaWrapper, which explains why.
+          #  * PreferUnquotedAtoms only runs on Elixir < 1.7; enabled, Credo
+          #    prints a "skipped" banner on every run.
           {Credo.Check.Design.AliasUsage, []},
           {Credo.Check.Readability.ModuleDoc, []},
           {Credo.Check.Refactor.CyclomaticComplexity, []},
-
-          #
-          # Checks scheduled for next check update (opt-in for now)
-          {Credo.Check.Refactor.UtcNowTruncate, []},
+          {Credo.Check.Refactor.PerceivedComplexity, []},
+          {Credo.Check.Refactor.CaseTrivialMatches, []},
+          {Credo.Check.Warning.ForbiddenModule, []},
+          {Credo.Check.Readability.PreferUnquotedAtoms, []},
 
           #
           # Controversial and experimental checks (opt-in, just move the check to `:enabled`

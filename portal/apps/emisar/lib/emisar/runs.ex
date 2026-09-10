@@ -1726,20 +1726,24 @@ defmodule Emisar.Runs do
   # metadata. A subject-less internal dispatch carries none, which is correct:
   # no request, no dispatcher.
   # Scheduler-owned audit snapshots are never accepted at a Subject ingress.
-  defp put_dispatcher_context(attrs, %Subject{context: %RequestContext{} = context} = subject) do
+  defp put_dispatcher_context(attrs, %Subject{} = subject) do
     attrs
+    # A trust-boundary strip of two scheduler-only audit keys. They never reach
+    # a changeset, so this is not the field pre-filtering the check guards.
+    # credo:disable-for-next-line Emisar.Checks.ContextNoMapTakeDrop
     |> Map.drop([:audit_execution, :audit_execution_item])
     |> Map.put(:audit_subject, subject)
+    |> put_request_context(subject.context)
+  end
+
+  defp put_request_context(attrs, %RequestContext{} = context) do
+    attrs
     |> Map.put(:ip_address, context.ip_address)
     |> Map.put(:user_agent, context.user_agent)
     |> Map.put(:mcp_client_metadata, context.mcp_client_metadata)
   end
 
-  defp put_dispatcher_context(attrs, %Subject{} = subject) do
-    attrs
-    |> Map.drop([:audit_execution, :audit_execution_item])
-    |> Map.put(:audit_subject, subject)
-  end
+  defp put_request_context(attrs, _context), do: attrs
 
   # The authenticated subject, not wire attrs, owns both dispatch attribution
   # and the runner-scope membership. This keeps a boundary regression from

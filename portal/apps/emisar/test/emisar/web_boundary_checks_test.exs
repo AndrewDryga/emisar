@@ -538,6 +538,20 @@ defmodule Emisar.WebBoundaryChecksTest do
       assert issues(hash_slice_check(), source, @web_file) == []
     end
 
+    test "flags the range and piped spellings of the same prefix" do
+      source = """
+      defmodule EmisarWeb.Probe do
+        def a(sha), do: String.slice(sha, 0..15)
+        def b(sha), do: sha |> String.slice(0, 16)
+        def c(sha), do: sha |> String.slice(0..15)
+        def d(title), do: title |> String.slice(0, 80)
+      end
+      """
+
+      assert triggers(hash_slice_check(), source, @web_file) ==
+               ["String.slice", "String.slice", "String.slice"]
+    end
+
     test "ignores a context slicing a digest for storage" do
       source = """
       defmodule Emisar.Probe do

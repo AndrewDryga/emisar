@@ -227,31 +227,35 @@ defmodule Emisar.RuntimeSafetyChecksTest do
 
       assert issues(exists_over_count(), source, @context) == []
     end
-  end
 
-  describe "Emisar.Checks.NoDateTimeTruncate" do
-    test "flags truncating utc_now, piped and direct" do
-      piped = """
+    # A sum or a max against zero is a real comparison, and the advice to use
+    # Repo.exists? would be wrong for it; the check used to give it anyway.
+    test "leaves non-count aggregates alone" do
+      source = """
       defmodule Emisar.Sprockets do
-        def now, do: DateTime.utc_now() |> DateTime.truncate(:second)
+        def owes?(queryable), do: Repo.aggregate(queryable, :sum, :amount) > 0
+        def any?(queryable), do: queryable |> Repo.aggregate(:max, :seq) == 0
       end
       """
 
-      direct = """
-      defmodule Emisar.Sprockets do
-        def now, do: DateTime.truncate(DateTime.utc_now(), :second)
-      end
-      """
-
-      assert [issue] = issues(datetime_truncate(), piped, @context)
-      assert issue.check == datetime_truncate()
-      assert issue.trigger == "DateTime.truncate"
-      assert issue.line_no == 2
-      assert issue.message =~ ":utc_datetime_usec"
-
-      assert triggers(datetime_truncate(), direct, @context) == ["DateTime.truncate"]
+      assert issues(exists_over_count(), source, @context) == []
     end
 
+    test "does not lint tests, migrations, or the checks themselves" do
+      source = """
+      defmodule Emisar.SprocketsTest do
+        def any?(queryable), do: Repo.aggregate(queryable, :count) > 0
+      end
+      """
+
+      assert issues(exists_over_count(), source, "apps/emisar/test/emisar/sprockets_test.exs") ==
+               []
+    end
+  end
+
+  describe "Emisar.Checks.ChangesetNoTruncate" do
+    # Truncating utc_now/0 anywhere is the built-in UtcNowTruncate's job (enabled
+    # in .credo.exs); this check owns only the changeset-module rule.
     test "flags any truncate inside a changeset module" do
       source = """
       defmodule Emisar.Sprockets.Sprocket.Changeset do
@@ -261,18 +265,21 @@ defmodule Emisar.RuntimeSafetyChecksTest do
       end
       """
 
-      assert triggers(datetime_truncate(), source, @changeset) == ["DateTime.truncate"]
+      assert [issue] = issues(changeset_truncate(), source, @changeset)
+      assert issue.check == changeset_truncate()
+      assert issue.trigger == "DateTime.truncate"
+      assert issue.line_no == 4
+      assert issue.message =~ ":utc_datetime_usec"
     end
 
-    test "allows utc_now on its own and a truncate outside a changeset" do
+    test "allows a truncate outside a changeset module" do
       source = """
       defmodule Emisar.Sprockets do
-        def now, do: DateTime.utc_now()
         def coarse(row), do: DateTime.truncate(row.inserted_at, :second)
       end
       """
 
-      assert issues(datetime_truncate(), source, @context) == []
+      assert issues(changeset_truncate(), source, @context) == []
     end
   end
 
@@ -415,7 +422,7 @@ defmodule Emisar.RuntimeSafetyChecksTest do
   defp unsafe_deserialization, do: check("NoUnsafeDeserialization")
   defp match_on_value, do: check("MatchOnMapFieldValue")
   defp exists_over_count, do: check("RepoExistsOverCount")
-  defp datetime_truncate, do: check("NoDateTimeTruncate")
+  defp changeset_truncate, do: check("ChangesetNoTruncate")
   defp vendor_wrapper, do: check("VendorViaWrapper")
   defp event_as_data, do: check("BroadcastEventAsData")
   defp inline_broadcast, do: check("InlineBroadcast")
