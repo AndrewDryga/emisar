@@ -12,11 +12,11 @@ facts makes it too easy for an agent to quote an unreviewed claim or expose a
 working document through customer documentation. A visible directory boundary
 keeps public knowledge reusable while preserving useful internal context.
 
-**Good.** Draft campaign creative lives under `kb/internal/marketing/`; an approved
-product fact is written into a public descriptive card or the customer-facing
-document that owns it.
+**Good.** Draft campaign creative lives under `.agent/kb/internal/marketing/`; an
+approved product fact is written into a public descriptive card or the
+customer-facing document that owns it.
 
-**Bad.** A public guide links into `kb/internal/`, a customer skill treats an
+**Bad.** A public guide links into `.agent/kb/internal/`, a customer skill treats an
 internal launch plan as product truth, or credentials are committed because the
 directory is named `internal`.
 

@@ -138,8 +138,9 @@ Use the relevant skill when it improves this task; read it before applying it.
 Public customer skills under `skills/` are a separate, portable product surface.
 
 Keep durable knowledge in the KB. Tracked KB material is customer-safe; internal
-company material belongs in gitignored `kb/internal/`, never secrets/customer data.
-Tasks, decisions, and local evidence are working state, not committed product docs.
+company material belongs in gitignored `.agent/kb/internal/`, never
+secrets/customer data. Tasks, decisions, and local evidence are working state,
+not committed product docs.
 
 When a correction establishes a reusable rule, update its existing owner or add
 a domain-prefixed rule and index entry. Preserve explicit exceptions and scope.
