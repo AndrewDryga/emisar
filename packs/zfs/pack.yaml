@@ -1,7 +1,7 @@
 schema_version: 1
 id: zfs
 name: ZFS pool + dataset operations
-version: 0.1.14
+version: 0.1.15
 retired_below: 0.1.9
 description: >
   Pool status, dataset inventory, snapshot listing, scrub status, ARC
@@ -14,6 +14,10 @@ homepage: https://emisar.dev/packs/zfs
 requires:
   os: [linux]
   binaries: [zpool, zfs]
+
+detect:
+  binaries: [zpool]
+  processes: [zed]
 
 setup:
   summary: >

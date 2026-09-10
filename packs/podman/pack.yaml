@@ -2,7 +2,7 @@ schema_version: 1
 
 id: podman
 name: Podman containers
-version: 0.1.11
+version: 0.1.12
 retired_below: 0.1.8
 description: >
   Read-only inventory + per-container introspection plus narrow mutators
@@ -15,6 +15,10 @@ homepage: https://emisar.dev/packs/podman
 requires:
   os:
     - linux
+  binaries:
+    - podman
+
+detect:
   binaries:
     - podman
 

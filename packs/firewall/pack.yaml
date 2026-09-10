@@ -2,7 +2,7 @@ schema_version: 1
 
 id: firewall
 name: Firewall and netfilter
-version: 0.1.15
+version: 0.1.16
 description: >
   iptables, nftables, conntrack, and traffic-control inspection plus
   narrow operator actions for incident response (block IP, unblock IP,
@@ -18,6 +18,10 @@ requires:
     - iptables
     - nft
     - jq
+
+# No detect on purpose: iptables and nft ship in ordinary Linux base
+# images, so either would recommend this pack on every host rather than
+# on hosts that actually manage a firewall. Install it deliberately.
 
 setup:
   summary: >

@@ -2,7 +2,7 @@ schema_version: 1
 
 id: wireguard
 name: WireGuard VPN
-version: 0.1.10
+version: 0.1.11
 # 0.1.9 and below rated showconf `low`, so an interface dump whose safety rests
 # entirely on two source redactions auto-ran even for an operator who gates
 # `medium`.
@@ -18,6 +18,10 @@ homepage: https://emisar.dev/packs/wireguard
 requires:
   os:
     - linux
+  binaries:
+    - wg
+
+detect:
   binaries:
     - wg
 

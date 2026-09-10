@@ -2,7 +2,7 @@ schema_version: 1
 
 id: cloud-init
 name: cloud-init operations
-version: 0.1.16
+version: 0.1.17
 retired_below: 0.1.11
 description: >
   cloud-init introspection + boot diagnostics + stage re-runs. Use when
@@ -17,6 +17,10 @@ homepage: https://emisar.dev/packs/cloud-init
 requires:
   os:
     - linux
+  binaries:
+    - cloud-init
+
+detect:
   binaries:
     - cloud-init
 
