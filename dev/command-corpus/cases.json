@@ -1,0 +1,200 @@
+{
+  "_comment": "Golden corpus for the two command-line renderers: the runner's expressions.RenderArgv + engine.redactedInvocation (what actually runs and what the journal and cloud record show) and the portal's Emisar.Catalog.CommandPreview (what the operator approves against). The portal module is a hand port of the runner's rendering — argv templating, declared defaults, optional-element dropping, array expansion, scalar formatting, sensitive masking, shell quoting — in another language, and the two had only ever been tested separately. Both suites read this file; a rule that stops holding on either side fails there. `args` is a JSON object kept as a string so each side decodes it the way its dispatch path does (UseNumber / RawJSON) and exact number tokens survive.",
+  "cases": [
+    {
+      "name": "scalar substitution and a declared default",
+      "why": "the runner validates defaults in before templating, so an omitted arg with a default still fills its slot",
+      "binary": "cloud-init",
+      "argv": ["single", "--name={{ args.module }}", "--frequency={{ args.frequency }}"],
+      "specs": [
+        {"name": "module", "type": "string", "required": true},
+        {"name": "frequency", "type": "string", "default": "always"}
+      ],
+      "args": "{\"module\":\"ssh\"}",
+      "want": "cloud-init single --name=ssh --frequency=always"
+    },
+    {
+      "name": "literal command with no placeholders",
+      "why": "a zero-arg action renders exactly its argv",
+      "binary": "cloud-init",
+      "argv": ["status", "--long"],
+      "specs": [],
+      "args": "{}",
+      "want": "cloud-init status --long"
+    },
+    {
+      "name": "whole-expression array expands into tokens",
+      "why": "a list arg that is the entire element becomes one token per item, each quoted on its own",
+      "binary": "grep",
+      "argv": ["-e", "pattern", "{{ args.paths }}"],
+      "specs": [{"name": "paths", "type": "string_array", "required": true}],
+      "args": "{\"paths\":[\"/a\",\"/b c\"]}",
+      "want": "grep -e pattern /a '/b c'"
+    },
+    {
+      "name": "integer and boolean formatting",
+      "why": "an integer renders as its literal and a boolean as true/false",
+      "binary": "tool",
+      "argv": ["--count={{ args.n }}", "--force={{ args.force }}"],
+      "specs": [
+        {"name": "n", "type": "integer", "required": true},
+        {"name": "force", "type": "boolean", "required": true}
+      ],
+      "args": "{\"n\":3,\"force\":true}",
+      "want": "tool --count=3 --force=true"
+    },
+    {
+      "name": "exact JSON number tokens",
+      "why": "the token the caller signed is what runs — never a re-spelled float, never a changed exponent",
+      "binary": "tool",
+      "argv": ["--ratio={{ args.ratio }}", "{{ args.scale }}"],
+      "specs": [
+        {"name": "ratio", "type": "number", "required": true},
+        {"name": "scale", "type": "number", "required": true}
+      ],
+      "args": "{\"ratio\":0.1234567890123456789,\"scale\":1e3}",
+      "want": "tool --ratio=0.1234567890123456789 1e3"
+    },
+    {
+      "name": "spaces and metacharacters are single-quoted",
+      "why": "anything outside the bare-token allowlist is quoted so the recorded line is the shell-safe one",
+      "binary": "sh",
+      "argv": ["-c", "{{ args.script }}"],
+      "specs": [{"name": "script", "type": "string", "required": true}],
+      "args": "{\"script\":\"echo hi; rm x\"}",
+      "want": "sh -c 'echo hi; rm x'"
+    },
+    {
+      "name": "non-ASCII is quoted",
+      "why": "the bare-token allowlist is ASCII by construction",
+      "binary": "tool",
+      "argv": ["{{ args.name }}"],
+      "specs": [{"name": "name", "type": "string", "required": true}],
+      "args": "{\"name\":\"café\"}",
+      "want": "tool 'café'"
+    },
+    {
+      "name": "embedded single quote",
+      "why": "the POSIX close-escape-reopen spelling, on both sides",
+      "binary": "tool",
+      "argv": ["{{ args.name }}"],
+      "specs": [{"name": "name", "type": "string", "required": true}],
+      "args": "{\"name\":\"it's\"}",
+      "want": "tool 'it'\\''s'"
+    },
+    {
+      "name": "empty string renders as a quoted empty token",
+      "why": "an empty non-optional value is still an argument",
+      "binary": "tool",
+      "argv": ["{{ args.empty }}"],
+      "specs": [{"name": "empty", "type": "string", "required": true}],
+      "args": "{\"empty\":\"\"}",
+      "want": "tool ''"
+    },
+    {
+      "name": "inline optional absent drops the element",
+      "why": "-namespace={{ args.ns? }} omits the flag rather than passing -namespace=",
+      "binary": "nomad",
+      "argv": ["job", "status", "-namespace={{ args.ns? }}", "web"],
+      "specs": [{"name": "ns", "type": "string"}],
+      "args": "{}",
+      "want": "nomad job status web"
+    },
+    {
+      "name": "inline optional empty drops the element",
+      "why": "an empty optional value counts as absent",
+      "binary": "nomad",
+      "argv": ["job", "status", "-namespace={{ args.ns? }}", "web"],
+      "specs": [{"name": "ns", "type": "string"}],
+      "args": "{\"ns\":\"\"}",
+      "want": "nomad job status web"
+    },
+    {
+      "name": "inline optional present renders inline",
+      "why": "the flag comes back the moment the value is set",
+      "binary": "nomad",
+      "argv": ["job", "status", "-namespace={{ args.ns? }}", "web"],
+      "specs": [{"name": "ns", "type": "string"}],
+      "args": "{\"ns\":\"prod\"}",
+      "want": "nomad job status -namespace=prod web"
+    },
+    {
+      "name": "whole-expression optional list expands or drops",
+      "why": "an optional whole-element list is dropped when empty and expanded when set",
+      "binary": "cmd",
+      "argv": ["{{ args.tags? }}", "tail"],
+      "specs": [{"name": "tags", "type": "string_array"}],
+      "args": "{\"tags\":[\"-a\",\"-b\"]}",
+      "want": "cmd -a -b tail"
+    },
+    {
+      "name": "whole-expression optional empty list drops",
+      "why": "[] is empty",
+      "binary": "cmd",
+      "argv": ["{{ args.tags? }}", "tail"],
+      "specs": [{"name": "tags", "type": "string_array"}],
+      "args": "{\"tags\":[]}",
+      "want": "cmd tail"
+    },
+    {
+      "name": "zero and false are not empty",
+      "why": "an optional marker drops only absent or empty values, never a falsy one",
+      "binary": "cmd",
+      "argv": ["-n={{ args.n? }}", "-f={{ args.f? }}"],
+      "specs": [
+        {"name": "n", "type": "integer"},
+        {"name": "f", "type": "boolean"}
+      ],
+      "args": "{\"n\":0,\"f\":false}",
+      "want": "cmd -n=0 -f=false"
+    },
+    {
+      "name": "hostile optional value stays inside its own token",
+      "why": "a value carrying shell metacharacters is quoted as one argument, whichever marker resolved it",
+      "binary": "nomad",
+      "argv": ["-namespace={{ args.ns? }}", "status"],
+      "specs": [{"name": "ns", "type": "string"}],
+      "args": "{\"ns\":\"x; rm -rf /\"}",
+      "want": "nomad '-namespace=x; rm -rf /' status"
+    },
+    {
+      "name": "sensitive arg is masked and special characters still quoted",
+      "why": "mirrors the runner's TestRedactedCommand first case",
+      "binary": "/usr/bin/psql",
+      "argv": ["-h", "{{ args.host }}", "--password={{ args.password }}", "a b"],
+      "specs": [
+        {"name": "host", "type": "string", "required": true},
+        {"name": "password", "type": "string", "required": true, "sensitive": true}
+      ],
+      "args": "{\"host\":\"db1\",\"password\":\"hunter2\"}",
+      "want": "/usr/bin/psql -h db1 '--password=[REDACTED]' 'a b'"
+    },
+    {
+      "name": "sensitive value embedded inside a larger token is masked",
+      "why": "mirrors the runner's TestRedactedCommand second case",
+      "binary": "curl",
+      "argv": ["https://u:{{ args.password }}@host/x"],
+      "specs": [{"name": "password", "type": "string", "required": true, "sensitive": true}],
+      "args": "{\"password\":\"hunter2\"}",
+      "want": "curl 'https://u:[REDACTED]@host/x'"
+    },
+    {
+      "name": "every element of a sensitive list is masked",
+      "why": "a list-typed sensitive arg expands into separate tokens and each one is a secret",
+      "binary": "tool",
+      "argv": ["{{ args.keys }}"],
+      "specs": [{"name": "keys", "type": "string_array", "required": true, "sensitive": true}],
+      "args": "{\"keys\":[\"k-one\",\"k-two\"]}",
+      "want": "tool '[REDACTED]' '[REDACTED]'"
+    },
+    {
+      "name": "no sensitive value passes through bare",
+      "why": "mirrors the runner's TestRedactedCommand third case",
+      "binary": "uptime",
+      "argv": ["-p"],
+      "specs": [{"name": "host", "type": "string"}],
+      "args": "{\"host\":\"db1\"}",
+      "want": "uptime -p"
+    }
+  ]
+}
