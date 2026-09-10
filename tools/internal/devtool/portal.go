@@ -236,8 +236,12 @@ func (a *App) changedPortalCheck(ctx context.Context) error {
 
 func (a *App) checkChangedPortalPaths(ctx context.Context, paths []string) error {
 	formatFiles, credoFiles := []string{}, []string{}
+	migrationsChanged := false
 	for _, path := range paths {
 		absolute := filepath.Join(a.Root, filepath.FromSlash(path))
+		if strings.HasPrefix(path, portalMigrationsDir+"/") {
+			migrationsChanged = true
+		}
 		if info, statErr := os.Stat(absolute); statErr != nil || info.IsDir() {
 			continue
 		}
@@ -248,6 +252,11 @@ func (a *App) checkChangedPortalPaths(ctx context.Context, paths []string) error
 			credoFiles = append(credoFiles, relative)
 		case ".heex":
 			formatFiles = append(formatFiles, relative)
+		}
+	}
+	if migrationsChanged {
+		if err := a.checkNewMigrationsSortLast(ctx); err != nil {
+			return err
 		}
 	}
 	if len(formatFiles) == 0 && len(credoFiles) == 0 {

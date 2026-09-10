@@ -17,3 +17,12 @@ Keep migration operations proportional to real data. Check current row counts
 before adding a large backfill or destructive delete. Use a concurrent index or
 batching only when actual table size or traffic makes a blocking operation
 material; do not build a multi-migration rollout for a tiny or empty table.
+
+**Versions.** A new migration's version is greater than every committed one.
+The committed versions are a hand-kept one-per-day counter
+(`YYYYMMDD000000`) that ran ahead of the calendar, so the timestamp
+`mix ecto.gen.migration` stamps today sorts before dozens of shipped files;
+production still applies it (Ecto runs whatever is unapplied), but a fresh
+database runs it in the wrong place. Take the current maximum in
+`priv/repo/migrations/` and add one day. The gate rejects a migration that is
+not on `origin/main` and does not sort after the newest one that is.

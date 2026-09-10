@@ -424,6 +424,11 @@ func (a *App) portalGate(ctx context.Context) error {
 	}); err != nil {
 		return err
 	}
+	if err := a.gatePhase("portal migration order", func() error {
+		return a.checkNewMigrationsSortLast(ctx)
+	}); err != nil {
+		return err
+	}
 	if os.Getenv("CI") == "" {
 		if err := a.gatePhase("portal development services", func() error {
 			_, workspaceEnv, upErr := a.up(ctx)
