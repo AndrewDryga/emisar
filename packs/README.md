@@ -75,8 +75,12 @@ args:
   - name: unit
     type: string
     required: true
+    description: Systemd unit to query.
     validation:
-      enum: [nginx.service, caddy.service]
+      # A generic pack cannot enumerate the services a fleet runs. The pattern
+      # keeps the argument injection-safe; operator policy and the runner's
+      # admission rules decide WHICH unit may be targeted.
+      pattern: "^[a-zA-Z0-9@:_.][a-zA-Z0-9@:_.\\-]{0,127}$"
 
 execution:
   command:
@@ -102,8 +106,10 @@ See [`showcase.json_output`](showcase/actions/json_output.yaml) for the
 executable reference.
 
 The caller chooses `unit`; it cannot replace `systemctl`, add another flag, or
-name a service outside the enum. The runner validates the same schema again on
-the host before execution.
+pass a value the pattern rejects. The runner validates the same schema again on
+the host before execution. A public pack never hardcodes one fleet's service
+names into an `enum`: that list is wrong for the next fleet, and the layer that
+knows a given fleet's units is operator policy, not the pack.
 
 The complete schema, including paths, arrays, script actions, examples, output
 parsers, execution users, and redaction, is at

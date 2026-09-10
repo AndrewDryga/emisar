@@ -38,8 +38,11 @@ args:
     default: 7199
     description: JMX port.
     validation:
-      allowed:
-        - 7199
+      # Two-sided bounds, not a one-value allowlist: a fleet that moved JMX off
+      # 7199 could never call this action, and the default already covers the
+      # common case.
+      min: 1
+      max: 65535
 
 execution:
   command:
