@@ -45,9 +45,4 @@ defmodule Emisar.CredoCheckProbe do
   def triggers(check, source, filename) do
     check |> issues(source, filename) |> Enum.map(& &1.trigger) |> Enum.sort()
   end
-
-  @doc "The sorted line numbers `check` reports — for the checks that carry no trigger."
-  def lines(check, source, filename) do
-    check |> issues(source, filename) |> Enum.map(& &1.line_no) |> Enum.sort()
-  end
 end

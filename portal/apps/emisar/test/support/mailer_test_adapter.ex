@@ -25,13 +25,5 @@ defmodule Emisar.MailerTestAdapter do
   end
 
   @impl true
-  def deliver_many(emails, config) do
-    case Emisar.Config.get_env(:emisar, :mailer_deliver_error) do
-      nil -> Swoosh.Adapters.Test.deliver_many(emails, config)
-      error -> error
-    end
-  end
-
-  @impl true
   def validate_config(_config), do: :ok
 end
