@@ -1,9 +1,9 @@
 ---
 name: architecture
-description: runtime components, request flow, enforcement ownership, runner lifecycle, and deployment shape
+description: runtime components, request flow, runner lifecycle, and deployment shape
 subsystem: agent-stack
 sources: [portal, runner, mcp, packs, tools, infra, .github/workflows]
-updated: 2026-08-13
+updated: 2026-09-10
 ---
 
 # Architecture
@@ -55,30 +55,11 @@ adds an optional signature gate described in
 
 ## Enforcement ownership
 
-| Question | Owner |
-| --- | --- |
-| Who authenticates users, API keys, OAuth clients, and runners? | Control plane |
-| Who decides account policy and approvals? | Control plane and authorized human operators |
-| Who pins the reviewed pack version and content hash? | Control plane |
-| Who validates action arguments immediately before execution? | Runner |
-| Who can narrow the host's advertised and executable actions? | Runner-local admission policy |
-| Who recomputes trusted pack and script bytes? | Runner |
-| Who grants OS privileges to an action? | Host operator, through the runner service user and OS controls |
-| Who stores the searchable audit history? | Control plane |
-| Who stores the local forensic trail? | Runner |
-
-The control plane cannot make the runner execute an unknown action or an
-argument that fails the local schema. The runner does not create approvals,
-evaluate account policy, or compose runbooks. One runner belongs to one
-workspace.
-
-Emisar staff are a separate lane from every role above. The staff console at
-`/admin` reads across tenants — account search plus one account detail view —
-and is gated on a platform `is_admin` flag, an enrolled second factor, and a
-session that proved that factor. It performs no writes: opening an account
-detail appends a `staff.account_viewed` event to that account's own audit
-trail, and every support mutation runs through a private, colocated action pack
-over release RPC rather than the web surface.
+The [security model](specs/security-model.md) owns the split: its
+"Control-plane and runner boundary" section says who decides, who enforces
+the schema, who pins and recomputes pack trust, who grants OS privileges, and
+who keeps which record — and it covers the Emisar-staff lane, including the
+`/ops/live` surface that is neither read-only nor account-attributed.
 
 ## Runner lifecycle
 
@@ -112,6 +93,7 @@ persists only rotated API-key successors in the user's config directory.
 
 ## Changelog
 
+- 2026-09-10 - enforcement ownership and the staff lane route to the security model instead of restating it
 - 2026-08-13 - documented the read-only staff console and its audited account view
 - 2026-07-26 - documented the authoring-time shell-program data-channel boundary
 - 2026-07-22 - moved into the knowledge base and reverified its source map

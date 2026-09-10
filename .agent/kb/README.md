@@ -92,7 +92,7 @@ Related rule: `rules/<domain>-<slug>.md` <!-- link the real rule when applicable
 
 ## Index
 
-- [architecture](architecture.md) — runtime components, request flow, enforcement ownership, runner lifecycle, and deployment shape
+- [architecture](architecture.md) — runtime components, request flow, runner lifecycle, and deployment shape
 - [coop-box-builds-are-isolated](coop-box-builds-are-isolated.md) — host and box use workspace-local service URLs; box BEAM/Go builds live under the coop-cache volume; the portal output guard warms dependencies unscanned
 - [development-keycloak-certificates](development-keycloak-certificates.md) — workspace Keycloak uses a long-lived ignored CA plus a 397-day leaf; macOS trust is fingerprint-specific, automated Chrome is SPKI-scoped, and changed material recreates sidecars
 - [oauth-sign-in-return-to](oauth-sign-in-return-to.md) — a protected OAuth GET stores its exact local path in the signed session; magic-link, registration, and SSO preserve it through consent

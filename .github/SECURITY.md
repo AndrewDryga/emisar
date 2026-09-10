@@ -91,26 +91,6 @@ The following are real vulnerabilities:
 - **Outbox / dedup ring** corruption that causes a result to be sent
   for a request the runner never received.
 
-## Defence-in-depth choices we already made
-
-These are not vulnerabilities to report — they're how the runner is
-designed:
-
-- No inbound listener; the runner dials out to cloud.
-- No command program can be supplied by cloud. Packs declare the binary and
-  argv; fixed shell programs must constrain every substituted argument.
-- Per-action declared limits with min/max bounds; cloud opts are
-  clamped at the runner.
-- Bearer-token / AWS-key / private-key default redactions on every
-  action's output before it leaves the runner.
-- JSONL security log written on every attempt (success, failure,
-  validation_failed, error) — append-only locally.
-- A dedicated unprivileged service user by default, with an optional systemd
-  hardening override for fleets whose action set tolerates those restrictions.
-
-If you spot a gap in this list, please report it via the channels
-above.
-
 ## Safe harbor
 
 If you make a good-faith effort to comply with this policy, we will
