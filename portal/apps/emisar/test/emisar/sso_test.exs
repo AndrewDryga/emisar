@@ -109,7 +109,7 @@ defmodule Emisar.SSOTest do
 
   defmodule RecordingSessionDisconnector do
     def disconnect_live_sessions(topics) do
-      owner = Emisar.Config.fetch_env!(:emisar, :task12_disconnect_test_pid)
+      owner = Emisar.Config.fetch_env!(:emisar, :scim_delete_disconnect_test_pid)
       send(owner, {:scim_delete_disconnect, topics, Emisar.Repo.in_transaction?()})
     end
   end
@@ -4971,7 +4971,7 @@ defmodule Emisar.SSOTest do
         {:emisar, RecordingSessionDisconnector}
       )
 
-      Emisar.Config.put_override(:emisar, :task12_disconnect_test_pid, self())
+      Emisar.Config.put_override(:emisar, :scim_delete_disconnect_test_pid, self())
 
       assert {:ok, %{identity: retired}} = SSO.scim_delete_user(provider, identity.id)
       assert retired.scim_deleted_at
@@ -9203,7 +9203,7 @@ defmodule Emisar.SSOTest do
       {:emisar, RecordingSessionDisconnector}
     )
 
-    Emisar.Config.put_override(:emisar, :task12_disconnect_test_pid, self())
+    Emisar.Config.put_override(:emisar, :scim_delete_disconnect_test_pid, self())
     marker
   end
 

@@ -24,7 +24,7 @@ defmodule Emisar.SSOPolicyConcurrencyTest do
 
   defmodule RecordingSessionDisconnector do
     def disconnect_live_sessions(topics) do
-      owner = Emisar.Config.fetch_env!(:emisar, :task05_disconnect_test_pid)
+      owner = Emisar.Config.fetch_env!(:emisar, :retirement_disconnect_test_pid)
       send(owner, {:retirement_disconnect, topics, Emisar.Repo.in_transaction?()})
     end
   end
@@ -281,7 +281,7 @@ defmodule Emisar.SSOPolicyConcurrencyTest do
                 {:emisar, RecordingSessionDisconnector}
               )
 
-              Config.put_override(:emisar, :task05_disconnect_test_pid, parent)
+              Config.put_override(:emisar, :retirement_disconnect_test_pid, parent)
               send(parent, {:activation_backend, backend_pid()})
 
               Accounts.mark_invitation_accepted(
@@ -571,7 +571,7 @@ defmodule Emisar.SSOPolicyConcurrencyTest do
                   {:emisar, RecordingSessionDisconnector}
                 )
 
-                Config.put_override(:emisar, :task05_disconnect_test_pid, parent)
+                Config.put_override(:emisar, :retirement_disconnect_test_pid, parent)
                 send(parent, {:mint_first_activation_backend, backend_pid()})
 
                 Accounts.mark_invitation_accepted(

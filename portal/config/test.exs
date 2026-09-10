@@ -120,9 +120,6 @@ config :emisar, postmark_webhook_secret: "pm_webhook_test"
 # `owner #PID<...> exited` warnings during teardown.
 config :emisar, notify_approvers_async?: false
 
-# Disable swoosh api client as it is only required for production adapters
-config :swoosh, :api_client, false
-
 # Initialize plugs at runtime for faster test compilation
 config :phoenix, :plug_init_mode, :runtime
 
@@ -139,10 +136,6 @@ config :emisar_web, enable_prometheus_exporter: false
 # samplers run in the supervisor process, outside the async sandbox owner; the
 # sampler functions are tested directly in Emisar.TelemetryTest.
 config :emisar_web, enable_telemetry_poller: false
-
-# Disable Sentry uploads in tests — no DSN means the client short-
-# circuits before any HTTP call.
-config :sentry, dsn: nil
 
 # Rate limiting is disabled in tests so the fast suite doesn't trip the
 # shared fixed-window counters; `Emisar.RateLimiter.check/3` is unit-tested

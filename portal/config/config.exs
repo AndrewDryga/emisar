@@ -162,6 +162,11 @@ config :emisar_web, status_page_url: "https://status.emisar.dev"
 # short-circuits before any HTTP call. The default is intentionally
 # nil so a fork / self-host can't accidentally ship errors to the
 # upstream project's Sentry bucket.
+# No Swoosh HTTP client in any environment by default: Logger/local adapters
+# need none, and Swoosh's default Hackney client is not a project dependency.
+# runtime.exs opts the Postmark adapter into Finch in production.
+config :swoosh, :api_client, false
+
 config :sentry,
   dsn: nil,
   before_send: {EmisarWeb.Application, :scrub_sentry_event},

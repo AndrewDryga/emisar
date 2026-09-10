@@ -76,9 +76,7 @@ func (a *App) portalTestSuites() []portalTestSuite {
 			name:      "emisar_web",
 			partition: "_emisar_web",
 			dir:       filepath.Join(a.Portal, "apps", "emisar_web"),
-			// Bypass emisar_web's test alias because the shard prepares its
-			// partition once before the captured test run.
-			args: []string{"cmd", "mix", "test", "--no-compile"},
+			args:      []string{"test", "--no-compile"},
 		},
 	}
 }

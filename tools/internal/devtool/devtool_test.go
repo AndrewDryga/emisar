@@ -411,8 +411,9 @@ esac
 	if strings.Contains(commands, "deps.compile") {
 		t.Fatalf("Portal test output still warms dependencies:\n%s", commands)
 	}
-	if !strings.Contains(commands, "test --no-compile --max-cases") ||
-		!strings.Contains(commands, "cmd mix test --no-compile --max-cases") {
+	// Both apps run the same plain `mix test`: emisar_web no longer carries a
+	// test alias the shard had to bypass through `mix cmd`.
+	if strings.Count(commands, "|test --no-compile --max-cases") != 2 || strings.Contains(commands, "cmd mix") {
 		t.Fatalf("test shards do not reuse the compiled tree with bounded concurrency:\n%s", commands)
 	}
 }

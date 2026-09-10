@@ -14,9 +14,7 @@ defmodule Emisar.Cluster.GCE do
   Topology `:config` keys:
 
     * `:project_id`       - **required**, GCP project to query.
-    * `:cluster_label`    - label key to filter on (default `"cluster_name"`).
     * `:cluster_value`    - label value to filter on (default `"emisar"`).
-    * `:basename`         - node basename (default `"emisar"`).
     * `:polling_interval` - ms between polls (default 30_000).
     * `:discover_fn`      - 1-arity `fn(config) -> {:ok, [instance]} | {:error, term}`;
                             a test seam defaulting to `Emisar.Cluster.GCE.Client.discover/1`.
@@ -26,6 +24,9 @@ defmodule Emisar.Cluster.GCE do
   alias Cluster.Strategy.State
   alias Emisar.Cluster.GCE.Client
   require Logger
+
+  # Every portal node is `emisar@<internal-ip>`; the release sets the same name.
+  @node_basename "emisar"
 
   @default_polling_interval :timer.seconds(30)
 
@@ -47,10 +48,9 @@ defmodule Emisar.Cluster.GCE do
   @doc false
   def list_cluster_nodes(%State{config: config}) do
     discover_fn = Keyword.get(config, :discover_fn, &Client.discover/1)
-    basename = Keyword.get(config, :basename, "emisar")
 
     with {:ok, instances} <- discover_fn.(config) do
-      {:ok, nodes_from_instances(instances, basename)}
+      {:ok, nodes_from_instances(instances, @node_basename)}
     end
   end
 

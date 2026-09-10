@@ -15,11 +15,10 @@ defmodule Emisar.Cluster.GCE.Client do
   """
   def discover(config) do
     project_id = Keyword.fetch!(config, :project_id)
-    label = Keyword.get(config, :cluster_label, "cluster_name")
     value = Keyword.get(config, :cluster_value, "emisar")
 
     with {:ok, token} <- fetch_access_token(),
-         {:ok, body} <- aggregated_list(project_id, label, value, token),
+         {:ok, body} <- aggregated_list(project_id, "cluster_name", value, token),
          {:ok, %{"items" => items}} <- Jason.decode(body) do
       instances =
         Enum.flat_map(items, fn
