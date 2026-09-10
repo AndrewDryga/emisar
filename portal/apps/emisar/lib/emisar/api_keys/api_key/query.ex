@@ -74,9 +74,6 @@ defmodule Emisar.ApiKeys.ApiKey.Query do
   def not_expired(queryable \\ all(), %DateTime{} = now),
     do: where(queryable, [api_keys: k], is_nil(k.expires_at) or k.expires_at > ^now)
 
-  def not_rotated(queryable \\ all()),
-    do: where(queryable, [api_keys: k], is_nil(k.rotated_to_id))
-
   def expiring(queryable \\ all()),
     do: where(queryable, [api_keys: k], not is_nil(k.expires_at))
 

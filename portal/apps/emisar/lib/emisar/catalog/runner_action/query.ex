@@ -205,9 +205,6 @@ defmodule Emisar.Catalog.RunnerAction.Query do
   def by_pack_ids(queryable, pack_ids) when is_list(pack_ids),
     do: where(queryable, [runner_actions: a], a.pack_id in ^pack_ids)
 
-  def by_pack_version(queryable, pack_version),
-    do: where(queryable, [runner_actions: a], a.pack_version == ^pack_version)
-
   def by_pack_hash(queryable, pack_hash),
     do: where(queryable, [runner_actions: a], a.pack_hash == ^pack_hash)
 
@@ -244,20 +241,14 @@ defmodule Emisar.Catalog.RunnerAction.Query do
   def ordered_by_action(queryable),
     do: order_by(queryable, [runner_actions: a], asc: a.action_id)
 
-  # Ordered by (action_id, id), NOT last_seen_at: that column is in the observe
-  # upsert's replace set, so it moves every time a runner re-advertises. A
-  # keyset cursor over a moving column re-serves the boundary row on the next
-  # page when a runner reconnects mid-list — and, for the account-wide grouped
-  # view where it actually tie-breaks, can skip rows too. `id` is stable and
-  # unique, so the order is fully determined either way.
-  def ordered_by_action_seen(queryable),
-    do: order_by(queryable, [runner_actions: a], asc: a.action_id, asc: a.id)
-
   def limit_to(queryable, limit), do: limit(queryable, ^limit)
 
   # -- Pagination ------------------------------------------------------
 
-  # Matches ordered_by_action_seen/1. Both columns are immutable for a given
+  # (action_id, id), NOT last_seen_at: that column is in the observe upsert's
+  # replace set, so it moves every time a runner re-advertises, and a keyset
+  # cursor over a moving column re-serves the boundary row on the next page
+  # when a runner reconnects mid-list. Both of these are immutable for a given
   # row, which is what makes the cursor stable across a re-advertisement.
   @impl Emisar.Repo.Query
   def cursor_fields,

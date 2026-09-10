@@ -176,22 +176,6 @@ defmodule Emisar.SSO.DirectoryGroupMember.Query do
     end)
   end
 
-  # Each group resource a provider has synced via SCIM with its distinct member
-  # count — powers the synced-groups readout, and (projected to ids) the
-  # map-after-first-sync picker, so an admin keys a role mapping on a group the
-  # IdP has actually synced rather than a guessed id.
-  def group_counts_for_provider(queryable \\ all(), provider_id) do
-    queryable
-    |> with_joined_scim_identity()
-    |> where([group_members: g], g.provider_id == ^provider_id)
-    |> group_by([group_members: g], g.directory_group_id)
-    |> order_by([group_members: g], asc: g.directory_group_id)
-    |> select([group_members: g], %{
-      directory_group_id: g.directory_group_id,
-      member_count: count(g.user_identity_id, :distinct)
-    })
-  end
-
   # Every membership link a provider has, as `{directory_group_id,
   # user_identity_id}` pairs — SCIM Group members reference the server-issued
   # User resource id. The live SCIM identity join makes a retired wire resource

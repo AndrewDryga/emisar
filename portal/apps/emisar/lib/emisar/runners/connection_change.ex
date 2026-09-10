@@ -75,25 +75,6 @@ defmodule Emisar.Runners.ConnectionChange do
 
   def project_connection(current, _runner_id, %__MODULE__{}), do: current
 
-  # The closing intersection is what keeps the set honest: an id the caller may
-  # no longer see — revoked access, a runner deleted since the last projection —
-  # is dropped even when it was already in `online_ids`.
-  @spec project_allowed_online_ids(MapSet.t(String.t()), t(), MapSet.t(String.t())) ::
-          MapSet.t(String.t())
-  def project_allowed_online_ids(
-        %MapSet{} = online_ids,
-        %__MODULE__{} = change,
-        %MapSet{} = allowed_ids
-      ) do
-    joined = change.online |> Map.keys() |> MapSet.new() |> MapSet.intersection(allowed_ids)
-    left = MapSet.intersection(change.offline_ids, allowed_ids)
-
-    online_ids
-    |> MapSet.union(joined)
-    |> MapSet.difference(left)
-    |> MapSet.intersection(allowed_ids)
-  end
-
   defp connection_meta(%{metas: [meta | _]}) do
     %{
       action_load: Map.get(meta, :action_load, 0),
