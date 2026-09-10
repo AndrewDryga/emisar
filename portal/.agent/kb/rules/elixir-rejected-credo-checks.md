@@ -24,7 +24,7 @@ match-asserts a context result with `=` on a path that can return
 and nearly every one is the **accepted house idiom**, not a bug:
 
 - post-gate reads — `{:ok, rows, _} = Runners.list_*_for_account(subject)`,
-  `Catalog.list_all_actions_for_account/1`, `Approvals.list_pending_…/2`. The
+  `Catalog.list_actions_for_runner/3`, `Approvals.list_pending_…/2`. The
   LiveView already gated `mount`, so the `{:error, :unauthorized}` arm is an
   unreachable invariant the developer correctly asserts away.
 - post-gate writes — `ApiKeys.revoke_api_key/2`, `Runners.delete_runner/2`,
@@ -71,8 +71,9 @@ comparison or search*, not a value transform on rendered text:
 
 - the four that reach a template at all are `data-*` attributes feeding
   client-side filtering — `data-search={String.downcase(@blank_label)}`
-  (`core_components.ex:498`), `data-filter-search=` (`runbook_workflow_components.ex`
-  ×2), `data-pack-name=` (`packs.html.heex:102`). None is displayed text.
+  (the `select` component in `core_components.ex`), `data-filter-search=`
+  (`runbook_workflow_components.ex` ×2), `data-pack-name=` (the pack cards in
+  `packs.html.heex`). None is displayed text.
 - the rest are comparison keys: redaction header matching (`application.ex`),
   user-agent sniffing (`plugs/analytics.ex`), UTM normalization
   (`marketing_attribution.ex`), SCIM filter parsing, MCP catalog search, and the

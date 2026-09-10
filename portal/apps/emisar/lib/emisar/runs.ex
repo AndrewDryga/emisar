@@ -3538,8 +3538,8 @@ defmodule Emisar.Runs do
   # Adds the run-event audit insert to a Multi, but only for statuses
   # worth auditing (see `@audited_run_statuses`). Returns `{:ok, nil}`
   # for the skipped intermediate states (and the already-terminal no-op)
-  # so the transaction still commits and `fan_out_audit_events/1` simply
-  # finds no event to broadcast.
+  # so the transaction still commits and the commit's broadcast of committed
+  # rows simply finds no event.
   defp put_run_audit_event(multi) do
     Multi.run(multi, :audit, fn repo, %{run: run} ->
       if is_struct(run, ActionRun) and run.status in @audited_run_statuses do

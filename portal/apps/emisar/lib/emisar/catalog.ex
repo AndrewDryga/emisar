@@ -2736,7 +2736,7 @@ defmodule Emisar.Catalog do
 
   @doc """
   Builds `%{action_id => risk}` from already-fetched `%RunnerAction{}` rows
-  (e.g. from `list_all_actions_for_account/1`), keeping the MOST-SEVERE risk
+  (e.g. from `list_actions_for_runner/3`), keeping the MOST-SEVERE risk
   per action_id. The same action_id can appear on several runners with
   different risk (mixed pack versions, a stale runner). A runbook UI that
   warns before a fleet-wide group dispatch must show the worst a targeted

@@ -4234,7 +4234,7 @@ defmodule Emisar.Accounts do
     end
   end
 
-  # Account-scoped raw SQL for the same reason `validate_runner_access_for_account/2`
+  # Account-scoped raw SQL for the same reason `validate_runner_access_ids/3`
   # is: tenancy stays owned here rather than opening an Accounts -> Runners
   # dependency. Bounded by the selection (RunnerAccess caps it at 256 scopes)
   # and fully parameterized.

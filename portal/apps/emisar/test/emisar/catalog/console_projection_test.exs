@@ -19,7 +19,7 @@ defmodule Emisar.Catalog.ConsoleProjectionTest do
                {:ok, {"nginx", "1.2.0"}}
     end
 
-    # Mirrors observe_pack/3's `info["version"] || "unknown"`, so an
+    # Mirrors observe_packs/3's `info["version"] || "unknown"`, so an
     # advertisement resolves to the very row that pin created. If the two
     # spellings ever drift, the console stops finding rows it created.
     test "a missing version resolves to the same \"unknown\" the pin writes" do

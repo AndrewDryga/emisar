@@ -124,7 +124,7 @@ defmodule Emisar.Catalog.ConsoleProjection do
     end)
   end
 
-  # Mirrors `observe_pack/3`'s `info["version"] || "unknown"` so an
+  # Mirrors `observe_packs/3`'s `info["version"] || "unknown"` so an
   # advertisement resolves to the very row that pin created; anything else is
   # reported as malformed, never silently dropped.
   def advertised_pack_ref({pack_id, info}) when is_binary(pack_id) and is_map(info) do

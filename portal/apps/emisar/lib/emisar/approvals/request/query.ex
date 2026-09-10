@@ -269,7 +269,7 @@ defmodule Emisar.Approvals.Request.Query do
     do: lock(queryable, "FOR NO KEY UPDATE")
 
   @doc """
-  Conditional UPDATE used by `claim_pending/4`: matches only rows still
+  Conditional UPDATE used by `Approvals.guarded_transition/4`: matches only rows still
   `status == "pending"` AND not past `expires_at` — so two concurrent
   operators racing to decide can't both win, and a request that lapsed
   past its expiry can't be approved in the window before the expiry sweep

@@ -180,7 +180,7 @@ defmodule Emisar.Audit.Events do
   Written into the CUSTOMER's own trail on purpose — access transparency: an
   account sees every staff read of its workspace, the same way it sees its own
   members' activity. The row names the TEAM and nothing else: like every staff
-  MUTATION (see `audit_actor_id/1`), it carries no `actor_id`, because a bare
+  MUTATION (see `actor/1`), it carries no `actor_id`, because a bare
   employee id in a customer's trail — and in their CSV and SIEM exports, where
   nothing ever resolves it to a name — lets a customer count the individual
   employees who opened their workspace and correlate the same one across

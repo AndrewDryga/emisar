@@ -155,7 +155,7 @@ defmodule Emisar.Approvals.Grant.Query do
   end
 
   @doc """
-  WHERE clause for `use_grant/1`'s conditional UPDATE: matches the
+  WHERE clause for `Approvals.consume_grant_under_cap/3`'s conditional UPDATE: matches the
   grant only if it's still usable AT the moment of the update.
   """
   def consumable_by_id(id, now) do
