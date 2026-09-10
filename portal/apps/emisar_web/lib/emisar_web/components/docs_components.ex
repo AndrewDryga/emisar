@@ -534,23 +534,50 @@ defmodule EmisarWeb.DocsComponents do
   defp docs_risk_classes("high"), do: "bg-rose-500/10 text-rose-300 ring-rose-500/30"
   defp docs_risk_classes("critical"), do: "bg-rose-600/15 text-rose-200 ring-rose-500/40"
 
+  # The published names of each component's release: the archive an operator
+  # downloads, the checksum file and its Sigstore bundle, the tag the trusted
+  # workflow verifies, and that workflow's path. Seven doc sites used to spell
+  # these out by hand; these are supply-chain verification instructions, so a
+  # workflow rename that missed one page would tell a reader to verify against
+  # a path that no longer exists.
+  @release_artifacts %{
+    runner: %{
+      tarball: "emisar-<version>-linux-amd64.tar.gz",
+      checksums: "SHA256SUMS",
+      bundle: "SHA256SUMS.sigstore.jsonl",
+      tag: "runner-v<version>",
+      workflow: "AndrewDryga/emisar/.github/workflows/runner-release-trusted.yml",
+      macos_tarball: nil,
+      windows_tarball: nil
+    },
+    mcp: %{
+      tarball: "emisar-mcp-<version>-linux-amd64.tar.gz",
+      checksums: "SHA256SUMS-MCP",
+      bundle: "SHA256SUMS-MCP.sigstore.jsonl",
+      tag: "mcp-v<version>",
+      workflow: "AndrewDryga/emisar/.github/workflows/mcp-release-trusted.yml",
+      macos_tarball: "emisar-mcp-<version>-darwin-<arch>.tar.gz",
+      windows_tarball: "emisar-mcp-<version>-windows-<arch>.zip"
+    }
+  }
+
+  @doc "The release artifact names for one component, for templates that write a verify command by hand."
+  def release_artifact(component) when component in [:runner, :mcp],
+    do: Map.fetch!(@release_artifacts, component)
+
   @doc """
   A collapsible "Verify this download" block placed under an install command:
   the download-then-verify commands for the signed checksum metadata and the
   archive bytes with THIS release's artifact names. The runner and emisar-mcp
-  bridge use different names, tags, and trusted workflows, so each install
-  surface passes its own.
+  bridge use different names, tags, and trusted workflows; `component` picks
+  the set.
   """
-  attr :tarball, :string, required: true
-  attr :checksums, :string, required: true
-  attr :bundle, :string, required: true
-  attr :tag, :string, required: true
-  attr :workflow, :string, required: true
+  attr :component, :atom, required: true, values: [:runner, :mcp]
   attr :detected_os, :atom, default: nil
-  attr :macos_tarball, :string, default: nil
-  attr :windows_tarball, :string, default: nil
 
   def docs_verify_download(assigns) do
+    assigns = assign(assigns, release_artifact(assigns.component))
+
     gh_command = """
     gh attestation verify #{assigns.checksums} --bundle #{assigns.bundle} \\
       --repo andrewdryga/emisar \\

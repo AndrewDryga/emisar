@@ -278,23 +278,23 @@
         </p>
         <div class="mt-4 overflow-hidden rounded-lg border border-zinc-900 bg-black/60">
           <pre class="overflow-x-auto p-4 font-mono text-xs leading-6 text-zinc-300"><span class="text-zinc-500"># authenticate the checksum metadata first (use the MCP names for the bridge)</span>
-<span class="text-zinc-500">$</span> gh attestation verify SHA256SUMS --bundle SHA256SUMS.sigstore.jsonl \
+<span class="text-zinc-500">$</span> gh attestation verify {release_artifact(:runner).checksums} --bundle {release_artifact(:runner).bundle} \
     --repo andrewdryga/emisar \
-    --signer-workflow AndrewDryga/emisar/.github/workflows/runner-release-trusted.yml \
-    --source-ref refs/tags/runner-v&lt;version&gt; --deny-self-hosted-runners
+    --signer-workflow {release_artifact(:runner).workflow} \
+    --source-ref refs/tags/{release_artifact(:runner).tag} --deny-self-hosted-runners
 ✓ Verification succeeded!
 …
 
 <span class="text-zinc-500"># verify only the archive you downloaded</span>
-<span class="text-zinc-500">$</span> awk -v file='emisar-&lt;version&gt;-linux-amd64.tar.gz' \
-    '$2 == file &#123; print; found=1 &#125; END &#123; exit !found &#125;' SHA256SUMS | sha256sum -c -
-emisar-&lt;version&gt;-linux-amd64.tar.gz: OK
+<span class="text-zinc-500">$</span> awk -v file='{release_artifact(:runner).tarball}' \
+    '$2 == file &#123; print; found=1 &#125; END &#123; exit !found &#125;' {release_artifact(:runner).checksums} | sha256sum -c -
+{release_artifact(:runner).tarball}: OK
 
 <span class="text-zinc-500"># optional online evidence for the archive and container (requires GitHub authentication)</span>
-<span class="text-zinc-500">$</span> gh attestation verify emisar-&lt;version&gt;-linux-amd64.tar.gz \
+<span class="text-zinc-500">$</span> gh attestation verify {release_artifact(:runner).tarball} \
     --repo andrewdryga/emisar \
-    --signer-workflow AndrewDryga/emisar/.github/workflows/runner-release-trusted.yml \
-    --source-ref refs/tags/runner-v&lt;version&gt; --deny-self-hosted-runners
+    --signer-workflow {release_artifact(:runner).workflow} \
+    --source-ref refs/tags/{release_artifact(:runner).tag} --deny-self-hosted-runners
 <span class="text-zinc-500">$</span> gh attestation verify oci://ghcr.io/andrewdryga/emisar-runner:&lt;version&gt; --owner andrewdryga</pre>
         </div>
         <p class="mt-4 text-base leading-relaxed text-zinc-400">

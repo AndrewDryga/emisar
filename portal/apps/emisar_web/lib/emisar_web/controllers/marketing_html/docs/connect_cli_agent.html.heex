@@ -107,16 +107,7 @@
             copy_text="curl -fsSL https://emisar.dev/install-mcp.sh | sudo bash"
           ><span class="text-zinc-500">$</span> curl -fsSL <span class="text-brand-300">https://emisar.dev/install-mcp.sh</span> | sudo bash</:tab>
         </.os_docs_code>
-        <.docs_verify_download
-          tarball="emisar-mcp-<version>-linux-amd64.tar.gz"
-          checksums="SHA256SUMS-MCP"
-          bundle="SHA256SUMS-MCP.sigstore.jsonl"
-          tag="mcp-v<version>"
-          workflow="AndrewDryga/emisar/.github/workflows/mcp-release-trusted.yml"
-          detected_os={@detected_os}
-          macos_tarball="emisar-mcp-<version>-darwin-<arch>.tar.gz"
-          windows_tarball="emisar-mcp-<version>-windows-<arch>.zip"
-        />
+        <.docs_verify_download component={:mcp} detected_os={@detected_os} />
         <p class="mt-5 text-base leading-7 text-zinc-400">
           The installer then runs <code>emisar-mcp connect</code>, which finds the supported
           clients on this machine and asks about each one. Browser approval creates one key for

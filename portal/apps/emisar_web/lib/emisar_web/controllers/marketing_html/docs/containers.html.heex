@@ -139,10 +139,10 @@
       <.docs_code
         phx-no-format
         label="shell"
-        copy_text="gh attestation verify oci://ghcr.io/andrewdryga/emisar-runner:X.Y.Z --repo andrewdryga/emisar --signer-workflow AndrewDryga/emisar/.github/workflows/runner-release-trusted.yml --source-ref refs/tags/runner-vX.Y.Z --deny-self-hosted-runners"
+        copy_text={"gh attestation verify oci://ghcr.io/andrewdryga/emisar-runner:X.Y.Z --repo andrewdryga/emisar --signer-workflow #{release_artifact(:runner).workflow} --source-ref refs/tags/runner-vX.Y.Z --deny-self-hosted-runners"}
       ><span class="text-zinc-500">$</span> gh attestation verify oci://ghcr.io/andrewdryga/emisar-runner:X.Y.Z \
     --repo andrewdryga/emisar \
-    --signer-workflow AndrewDryga/emisar/.github/workflows/runner-release-trusted.yml \
+    --signer-workflow {release_artifact(:runner).workflow} \
     --source-ref refs/tags/runner-vX.Y.Z \
     --deny-self-hosted-runners</.docs_code>
 
