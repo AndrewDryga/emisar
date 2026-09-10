@@ -2,7 +2,7 @@ schema_version: 1
 id: emisar.admin.member.invite
 title: Invite account member
 kind: script
-risk: medium
+risk: high
 description: Create a member invitation with explicit role and full runner access.
 side_effects: [Creates a user placeholder when needed, creates membership, and sends invitation email.]
 args:
