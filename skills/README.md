@@ -23,17 +23,22 @@ and at least one relevant runner. It can surface a missing declared capability
 and, with the operator's agreement, hand that gap to `author-pack`; it does not
 replace runner onboarding or pack trust.
 
-## OpenAI plugin bundle
+## Cursor plugin bundle
 
-Bundle `install-emisar`, `author-pack`, and
-`respond-to-production-incidents` with the Emisar MCP app. Together they cover
-an empty account with no runners, environment-specific capability gaps, and the
-normal incident workflow. `install-emisar` reuses the plugin's authenticated MCP
-connection for end-to-end proof after the runner comes online.
+The Cursor Marketplace package under `dist/cursor-plugin/` bundles
+`install-emisar`, `author-pack`, and `respond-to-production-incidents` beside
+the hosted Emisar MCP server. Together they cover an empty account with no
+runners, environment-specific capability gaps, and the normal incident
+workflow; `install-emisar` reuses the plugin's authenticated MCP connection for
+end-to-end proof after the runner comes online. The bundled copies are mirrors
+of the files here — `./run check agent-setup` fails when they differ.
 
 Keep `connect-llm` available as a standalone public skill, but do not bundle it
-with the OpenAI plugin. Installing the plugin already establishes that client
+with a plugin. Installing the plugin already establishes that client
 connection, so bundling a second connection workflow would be redundant.
+
+The ChatGPT app (`dist/chatgpt-plugin/`) ships the MCP tools only; it bundles
+no skills.
 
 ## Install directly
 
