@@ -40,7 +40,7 @@ indexes** — in that order.
 cd portal
 # repeated identical SELECTs in dev = N+1 (queries log by default in dev)
 # profile a specific read in iex:
-echo 'Emisar.Repo.explain(:all, Emisar.Runs.ActionRun.Query.not_deleted())' | iex -S mix
+echo 'Emisar.Repo.explain(:all, Emisar.Runs.ActionRun.Query.all())' | iex -S mix
 ```
 Read the LiveView's `mount`/`handle_*` for list assigns; read the context read path
 for preload shape; read the migration for indexes.

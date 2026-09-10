@@ -27,8 +27,9 @@ These already hold globally — defer to them, don't re-implement them:
   reduce)` block already neutralizes transitions/animations/pings site-wide. So
   authored motion is safe by construction; you do **not** add a per-element
   reduced-motion guard. Just don't make motion load-bearing for meaning.
-- **The focus ring is global** — `:focus-visible` paints one indigo ring on every
-  interactive element. Never strip it; never add a bespoke per-component focus style.
+- **The focus ring is global** — `:focus-visible` paints one `brand-400` ring on
+  every interactive element ([design-system §3.6](../../../portal/.agent/kb/rules/design-system.md#36-global-a11y-tokens-already-app-wide--marketing-and-console)).
+  Never strip it; never add a bespoke per-component focus style.
 
 ## Console vs marketing — where motion is allowed
 
@@ -73,9 +74,10 @@ run once. For LiveView show/hide, use `Phoenix.LiveView.JS.transition/show/hide`
 
 ### 5. Split and stagger enter animations (marketing)
 Don't animate one big container. Break the hero into semantic chunks (eyebrow,
-headline, sub, CTA) and stagger each by ~100ms with `animation-delay`. A single
-`@keyframes rise { from { opacity:0; transform: translateY(8px) } to { opacity:1;
-transform:none } }` plus increasing delays reads far better than one block fading in.
+headline, sub, CTA) and stagger them with the shipped `.rise-1…5` classes
+([design-system §3.5](../../../portal/.agent/kb/rules/design-system.md#35-motion-appcss));
+staggered chunks read far better than one block fading in. Don't re-derive the
+keyframes or the delays.
 
 ### 6. Subtle exit animations (marketing)
 Exits should be softer than enters: a small fixed `translateY` (~6–8px) and a fade,
@@ -86,7 +88,8 @@ When an icon changes (copy→check, menu→close, sun→moon), never flip `hidde
 **no motion library**, so use the dependency-free path: keep **both** icons in the
 DOM, one `absolute`-positioned over the other, and cross-fade with CSS transitions on
 `opacity`, `scale`, and `blur` — scale `0.25`→`1`, opacity `0`→`1`, blur `4px`→`0`,
-easing `cubic-bezier(0.2, 0, 0, 1)`. This gives both an enter and an exit for free.
+the one house easing from design-system §3.5. This gives both an enter and an exit
+for free.
 
 ### 8. Font smoothing — already done
 `-webkit-font-smoothing: antialiased` is already on `<body>` (via the `antialiased`

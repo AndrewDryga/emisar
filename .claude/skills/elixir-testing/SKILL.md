@@ -16,9 +16,10 @@ test (`test/emisar/runs_test.exs`, `policies_test.exs`) and match it.
 ## Setup
 
 - Domain: `use Emisar.DataCase, async: true`. Web: `use EmisarWeb.ConnCase`.
-- Fixtures: `test/support/fixtures.ex` — `owner_subject_fixture/1`, `subject_for/2`,
-  role fixtures. Build a **real `%Subject{}`**, not a stub. Add a fixture there if the
-  context needs one; don't inline ad-hoc setup that duplicates an existing fixture.
+- Fixtures: the per-domain `Fixtures.*` modules under `test/support/fixtures/`;
+  `Fixtures.Subjects.owner_subject/1` and `subject_for/3` build a **real
+  `%Subject{}`**, not a stub. Add a fixture there if the context needs one; don't
+  inline ad-hoc setup that duplicates an existing fixture.
 
 ## The three paths (non-negotiable — §7, IL-3)
 

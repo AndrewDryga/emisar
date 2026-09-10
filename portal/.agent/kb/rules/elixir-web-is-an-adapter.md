@@ -83,7 +83,7 @@ These are exactly three, and nothing else joins the list without a rule change:
    function head or a `:if`. They carry a shape, they run no domain code.
 3. **`Emisar.Auth.Subject`** — the universal auth carrier. The web
    authentication boundary is where a Subject is *minted*
-   (`Subject.for_user/4`, `for_api_key/3`, `for_runner/3`), so it may call it
+   (`Subject.for_user/4`, `for_api_key/3`), so it may call it
    fully qualified or aliased.
 
 `EmisarWeb.*` is the web's own namespace and is never matched.

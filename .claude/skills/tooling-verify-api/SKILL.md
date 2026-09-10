@@ -19,7 +19,7 @@ versions this repo actually uses.
    definition, then read it + its `@spec`/`@doc`.
    ```sh
    rg -n 'def fetch_and_update' portal/apps/emisar/lib/emisar/repo.ex
-   rg -n 'def (for_user|for_runner|for_api_key)' portal/apps/emisar/lib/emisar/auth/subject.ex
+   rg -n 'def (for_user|for_api_key)' portal/apps/emisar/lib/emisar/auth/subject.ex
    ```
    For the in-house building blocks (`Repo.fetch/list/fetch_and_update`, `Subject`,
    `Authorizer.build/2`, the `use Emisar, :query|:schema|:changeset` macros), the
