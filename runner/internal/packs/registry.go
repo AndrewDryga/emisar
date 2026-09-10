@@ -86,24 +86,18 @@ func (r *Registry) PackHash(packID string) (string, bool) {
 // relpaths the rehash walks is the same set we computed at load time;
 // added files between then and now don't change the hash, but that's
 // the same boundary the cloud's trust pin is drawn against.
+//
+// It hashes exactly the set PackFiles returns, so what packctl publishes and
+// what the runner re-verifies at dispatch are one read, not two loops that
+// happen to agree.
 func (r *Registry) RecomputePackHash(packID string) (string, error) {
-	pack, ok := r.packs[packID]
-	if !ok {
-		return "", fmt.Errorf("packs: pack %q not loaded", packID)
+	files, err := r.PackFiles(packID)
+	if err != nil {
+		return "", err
 	}
-	entries := r.packHashInputs[packID]
-	if len(entries) == 0 {
-		return "", fmt.Errorf("packs: no hash inputs cached for %q", packID)
-	}
-
-	fresh := make([]hashEntry, len(entries))
-	for i, e := range entries {
-		full := filepath.Join(pack.Root, e.rel)
-		data, err := os.ReadFile(full)
-		if err != nil {
-			return "", fmt.Errorf("packs: rehash %s: %w", full, err)
-		}
-		fresh[i] = hashEntry{rel: e.rel, data: data}
+	fresh := make([]hashEntry, len(files))
+	for i, file := range files {
+		fresh[i] = hashEntry{rel: file.Rel, data: file.Data}
 	}
 	return computePackHash(fresh), nil
 }
