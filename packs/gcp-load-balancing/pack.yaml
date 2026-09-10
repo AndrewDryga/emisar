@@ -2,7 +2,7 @@ schema_version: 1
 
 id: gcp-load-balancing
 name: Google Cloud load-balancing diagnostics
-version: 0.1.2
+version: 0.1.3
 description: >
   Read-only Google Cloud load-balancer topology and health diagnostics for
   backend services, health checks, URL maps, target proxies, forwarding rules,
@@ -12,8 +12,11 @@ vendor: emisar
 homepage: https://emisar.dev/packs/gcp-load-balancing
 
 requires:
-  os: [linux]
-  binaries: [gcloud, jq]
+  os:
+    - linux
+  binaries:
+    - gcloud
+    - jq
 
 setup:
   summary: >

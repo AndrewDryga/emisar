@@ -2,7 +2,7 @@ schema_version: 1
 
 id: mongodb
 name: MongoDB operations
-version: 0.3.11
+version: 0.3.12
 # 0.3.8 and below ran explain_query at `executionStats`, which executes the
 # winning plan, while the action was tiered low — so the shipped default policy
 # auto-ran a full collection scan against a production primary with no human in
@@ -22,7 +22,6 @@ requires:
   binaries:
     - mongosh
 
-# `emisar pack suggest` detection — default process names / ports.
 detect:
   processes:
     - mongod

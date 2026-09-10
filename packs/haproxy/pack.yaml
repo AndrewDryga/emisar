@@ -2,7 +2,7 @@ schema_version: 1
 
 id: haproxy
 name: HAProxy operations
-version: 0.1.14
+version: 0.1.15
 # 0.1.13 and below rated show_errors `low`, so HAProxy's verbatim capture of a
 # failing request — cookies and Authorization headers included — auto-ran.
 retired_below: 0.1.14
@@ -19,7 +19,6 @@ requires:
   binaries:
     - socat
 
-# `emisar pack suggest` detection — default process names / ports.
 detect:
   processes:
     - haproxy

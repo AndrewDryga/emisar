@@ -2,7 +2,7 @@ schema_version: 1
 
 id: gcp-iam
 name: Google Cloud IAM diagnostics
-version: 0.2.0
+version: 0.2.1
 description: >
   Read-only Google Cloud project discovery and IAM diagnostics for workload
   identity providers, workload identity pools, and service-account policies.
@@ -12,8 +12,10 @@ vendor: emisar
 homepage: https://emisar.dev/packs/gcp-iam
 
 requires:
-  os: [linux]
-  binaries: [gcloud]
+  os:
+    - linux
+  binaries:
+    - gcloud
 
 setup:
   summary: >

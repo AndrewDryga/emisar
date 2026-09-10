@@ -2,7 +2,7 @@ schema_version: 1
 
 id: showcase
 name: Showcase pack
-version: 0.2.14
+version: 0.2.15
 description: >
   Synthetic pack that demonstrates every action-schema feature in one
   place: all arg types, every validation, both parsers, both kinds, opts
@@ -13,6 +13,8 @@ homepage: https://emisar.dev/packs/showcase
 
 # script_action declares /bin/bash as its interpreter, so the pack needs it.
 requires:
+  os:
+    - linux
   binaries:
     - bash
 

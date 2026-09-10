@@ -1,7 +1,7 @@
 schema_version: 1
 id: aws-cost
 name: AWS Cost Explorer operations
-version: 0.1.10
+version: 0.1.11
 description: >
   Read-only AWS spend introspection — month-to-date by service, by
   account, forecast, and cost history over a trailing window by dimension.
@@ -10,8 +10,10 @@ vendor: emisar
 homepage: https://emisar.dev/packs/aws-cost
 
 requires:
-  os: [linux]
-  binaries: [aws]
+  os:
+    - linux
+  binaries:
+    - aws
 
 setup:
   summary: >

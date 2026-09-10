@@ -2,7 +2,7 @@ schema_version: 1
 
 id: gcp-monitoring
 name: Google Cloud Logging and Monitoring operations
-version: 0.3.5
+version: 0.3.6
 description: >
   Google Cloud Logging and Monitoring diagnostics plus governed alert
   control: bounded log discovery and queries, metric queries, metric
@@ -15,8 +15,12 @@ vendor: emisar
 homepage: https://emisar.dev/packs/gcp-monitoring
 
 requires:
-  os: [linux]
-  binaries: [gcloud, curl, jq]
+  os:
+    - linux
+  binaries:
+    - gcloud
+    - curl
+    - jq
 
 setup:
   summary: >

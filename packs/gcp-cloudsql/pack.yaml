@@ -2,7 +2,7 @@ schema_version: 1
 
 id: gcp-cloudsql
 name: Google Cloud SQL diagnostics and recovery
-version: 0.3.3
+version: 0.3.4
 description: >
   Cloud SQL diagnostics for instances, databases, users, backups, operations,
   server CA certificates, and Query Insights query rankings, plus governed
@@ -14,8 +14,12 @@ vendor: emisar
 homepage: https://emisar.dev/packs/gcp-cloudsql
 
 requires:
-  os: [linux]
-  binaries: [gcloud, jq, curl]
+  os:
+    - linux
+  binaries:
+    - gcloud
+    - jq
+    - curl
 
 setup:
   summary: >

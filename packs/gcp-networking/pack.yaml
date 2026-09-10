@@ -2,7 +2,7 @@ schema_version: 1
 
 id: gcp-networking
 name: Google Cloud networking diagnostics
-version: 0.1.2
+version: 0.1.3
 description: >
   Read-only Google Cloud VPC, subnet, firewall, route, address, Cloud Router,
   Cloud NAT, VPN, and Interconnect diagnostics. Outputs are fixed projections
@@ -11,8 +11,10 @@ vendor: emisar
 homepage: https://emisar.dev/packs/gcp-networking
 
 requires:
-  os: [linux]
-  binaries: [gcloud]
+  os:
+    - linux
+  binaries:
+    - gcloud
 
 setup:
   summary: >

@@ -2,7 +2,7 @@ schema_version: 1
 
 id: clickhouse
 name: ClickHouse analytics DB
-version: 0.2.14
+version: 0.2.15
 description: >
   ClickHouse server + table introspection — metrics, errors, slow & failed
   queries, parts/partitions, merges, mutations, replication queue, Keeper/ZK
@@ -19,7 +19,6 @@ requires:
   binaries:
     - clickhouse-client
 
-# `emisar pack suggest` detection — default process names / ports.
 detect:
   processes:
     - clickhouse-server

@@ -1,15 +1,17 @@
 schema_version: 1
 id: stripe
 name: Stripe billing operations
-version: 0.1.0
+version: 0.1.1
 description: >
   Investigate Stripe payment failures, duplicate charges, refunds,
   recurring billing and disputes, and perform reviewed billing corrections.
 vendor: emisar
 homepage: https://emisar.dev/packs/stripe
 requires:
-  os: [linux]
-  binaries: [python3]
+  os:
+    - linux
+  binaries:
+    - python3
 setup:
   summary: >
     Uses Python 3.10 or newer with its standard library and system CA certificates.

@@ -2,7 +2,7 @@ schema_version: 1
 
 id: php-fpm
 name: PHP-FPM
-version: 0.1.14
+version: 0.1.15
 # 0.1.13 and below rated fpm_status_full `low`, so per-worker request URIs —
 # live client request data, query strings included — carried a pure-read label.
 retired_below: 0.1.14
@@ -18,7 +18,6 @@ requires:
   os:
     - linux
 
-# `emisar pack suggest` detection — default process names / ports.
 detect:
   processes:
     - php-fpm

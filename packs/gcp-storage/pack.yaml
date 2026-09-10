@@ -2,7 +2,7 @@ schema_version: 1
 
 id: gcp-storage
 name: Google Cloud Storage diagnostics
-version: 0.1.1
+version: 0.1.2
 description: >
   Read-only Cloud Storage diagnostics for buckets, IAM policies, bounded
   object listings, and fixed object metadata. Object bodies, custom metadata
@@ -11,8 +11,11 @@ vendor: emisar
 homepage: https://emisar.dev/packs/gcp-storage
 
 requires:
-  os: [linux]
-  binaries: [gcloud, jq]
+  os:
+    - linux
+  binaries:
+    - gcloud
+    - jq
 
 setup:
   summary: >

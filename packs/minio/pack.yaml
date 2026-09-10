@@ -1,7 +1,7 @@
 schema_version: 1
 id: minio
 name: MinIO operations
-version: 0.1.20
+version: 0.1.21
 # Every version below this one runs `mc admin trace -v`, which prints other
 # clients' request headers — their SigV4 credential and signature, and a
 # presigned URL's query signature, which is a reusable object-access capability
@@ -15,10 +15,11 @@ vendor: emisar
 homepage: https://emisar.dev/packs/minio
 
 requires:
-  os: [linux]
-  binaries: [mc]
+  os:
+    - linux
+  binaries:
+    - mc
 
-# `emisar pack suggest` detection — default process names / ports.
 detect:
   processes:
     - minio

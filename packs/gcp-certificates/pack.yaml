@@ -2,7 +2,7 @@ schema_version: 1
 
 id: gcp-certificates
 name: Google Cloud certificate diagnostics
-version: 0.1.1
+version: 0.1.2
 description: >
   Read-only diagnostics for legacy Compute SSL certificates and Certificate
   Manager certificates, maps, entries, and DNS authorizations. Fixed
@@ -11,8 +11,11 @@ vendor: emisar
 homepage: https://emisar.dev/packs/gcp-certificates
 
 requires:
-  os: [linux]
-  binaries: [gcloud, jq]
+  os:
+    - linux
+  binaries:
+    - gcloud
+    - jq
 
 setup:
   summary: >

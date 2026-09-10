@@ -2,7 +2,7 @@ schema_version: 1
 
 id: oidc-jwks
 name: OIDC and JWKS diagnostics
-version: 0.1.6
+version: 0.1.7
 description: >
   Generic read-only OpenID Connect discovery and JWKS diagnostics, plus local
   key-ID comparison and protected JWT-header inspection. Network actions use
@@ -11,8 +11,13 @@ vendor: emisar
 homepage: https://emisar.dev/packs/oidc-jwks
 
 requires:
-  os: [linux]
-  binaries: [bash, curl, jq, base64]
+  os:
+    - linux
+  binaries:
+    - bash
+    - curl
+    - jq
+    - base64
 
 setup:
   summary: >

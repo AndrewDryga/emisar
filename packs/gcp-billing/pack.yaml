@@ -2,7 +2,7 @@ schema_version: 1
 
 id: gcp-billing
 name: Google Cloud billing and cost analytics
-version: 0.2.4
+version: 0.2.5
 description: >
   Read-only Google Cloud spend analytics — cost by service, project, and SKU,
   a daily trend, and export freshness — read from the Cloud Billing export in
@@ -13,8 +13,12 @@ vendor: emisar
 homepage: https://emisar.dev/packs/gcp-billing
 
 requires:
-  os: [linux]
-  binaries: [gcloud, curl, jq]
+  os:
+    - linux
+  binaries:
+    - gcloud
+    - curl
+    - jq
 
 setup:
   summary: >

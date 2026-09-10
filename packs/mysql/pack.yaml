@@ -2,7 +2,7 @@ schema_version: 1
 
 id: mysql
 name: MySQL / MariaDB operations
-version: 0.1.10
+version: 0.1.11
 description: >
   Read-only MySQL diagnostics plus narrow operator actions for killing
   queries, flushing logs, and analyzing tables. Authenticates via
@@ -17,7 +17,6 @@ requires:
   binaries:
     - mysql
 
-# `emisar pack suggest` detection — default process names / ports.
 detect:
   processes:
     - mysqld

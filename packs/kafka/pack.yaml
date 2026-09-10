@@ -2,7 +2,7 @@ schema_version: 1
 
 id: kafka
 name: Kafka cluster operations
-version: 0.1.12
+version: 0.1.13
 description: >
   Topic introspection, consumer-group lag, broker config, ACLs, and narrow
   mutators (reset_offsets, alter_topic_retention, delete_consumer_group,
@@ -17,7 +17,6 @@ requires:
   binaries:
     - kafka-topics.sh
 
-# `emisar pack suggest` detection — default process names / ports.
 detect:
   binaries:
     - kafka-topics.sh

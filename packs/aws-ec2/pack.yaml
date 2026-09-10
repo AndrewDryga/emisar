@@ -1,7 +1,7 @@
 schema_version: 1
 id: aws-ec2
 name: AWS EC2 operations
-version: 0.1.11
+version: 0.1.12
 description: >
   EC2 instance inventory + state introspection plus narrow mutators
   (stop, start, reboot, terminate). Auth via AWS_PROFILE + AWS_REGION
@@ -10,8 +10,10 @@ vendor: emisar
 homepage: https://emisar.dev/packs/aws-ec2
 
 requires:
-  os: [linux]
-  binaries: [aws]
+  os:
+    - linux
+  binaries:
+    - aws
 
 setup:
   summary: >

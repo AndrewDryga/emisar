@@ -2,7 +2,7 @@ schema_version: 1
 
 id: nomad
 name: HashiCorp Nomad
-version: 0.4.9
+version: 0.4.10
 retired_below: 0.2.8
 description: >
   Deep Nomad operations — full job lifecycle (inspect, history, scale
@@ -35,7 +35,6 @@ requires:
     # its absence surfaced only as a bare 127 from the script.
     - timeout
 
-# `emisar pack suggest` detection — default process names / ports.
 detect:
   processes:
     - nomad
