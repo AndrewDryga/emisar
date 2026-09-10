@@ -26,7 +26,7 @@ defmodule EmisarWeb.AgentsLive do
   use EmisarWeb, :live_view
   alias Emisar.{Accounts, ApiKeys, Compat}
   alias EmisarWeb.{AgentClientConfig, ConfirmDialog, LiveForm, LiveTable}
-  alias EmisarWeb.{Permissions, URLHelpers, UserAgent}
+  alias EmisarWeb.{Permissions, SandboxRisks, URLHelpers, UserAgent}
   alias Phoenix.LiveView.JS
 
   @refresh_ms 15_000
@@ -2024,22 +2024,7 @@ defmodule EmisarWeb.AgentsLive do
                   <% end %>
                 </div>
               </section>
-              <section id="coop-limits" class="ml-6 max-w-prose space-y-3">
-                <h3 class="text-base font-semibold leading-6 text-zinc-200">Recommendations</h3>
-                <ul class="list-disc space-y-2 pl-5 text-sm text-zinc-400">
-                  <li>
-                    Only add the files, secrets, and host tools the agent needs. Use
-                    <.inline_code>.coopignore</.inline_code>
-                    for project-specific secrets;
-                    <.inline_code>.gitignore</.inline_code>
-                    does not hide them from the agent.
-                  </li>
-                  <li>
-                    Anything you mount or pass into the sandbox remains available to the agent.
-                    Keep production credentials and privileged host sockets out.
-                  </li>
-                </ul>
-              </section>
+              <.sandbox_risks id="coop-limits" sandbox="coop" />
             </div>
           <% @config && @config.kind == :remote -> %>
             <div class="mt-6 space-y-8 border-t border-zinc-800/70 pt-6">
@@ -2513,27 +2498,7 @@ defmodule EmisarWeb.AgentsLive do
               </div>
             </section>
 
-            <section id="docker-sandboxes-limits" class="ml-6 max-w-prose space-y-3">
-              <h3 class="text-base font-semibold leading-6 text-zinc-200">Limits &amp; risks</h3>
-              <ul class="list-disc space-y-2 pl-5 text-sm text-zinc-400">
-                <li>
-                  Docker shares the project directory with the VM, so the agent can see and
-                  potentially leak anything stored there, including secrets in
-                  <.inline_code>.env</.inline_code>
-                  files and temporary artifacts. For stronger isolation from local files, use <.doc_link href={
-                    ~p"/docs/connect-agent-sandboxes#coop"
-                  }>co:op</.doc_link>.
-                </li>
-                <li>
-                  The registered MCP launcher runs on the host with your permissions. Keep it and
-                  its environment file outside the shared project and do not let the agent edit them.
-                </li>
-                <li>
-                  We recommend reviewing the sandbox's network policy and allowing access only to
-                  the services the agent needs.
-                </li>
-              </ul>
-            </section>
+            <.sandbox_risks id="docker-sandboxes-limits" sandbox="docker_sandboxes" />
           <% "nono" -> %>
             <section id="nono-install-step" class="space-y-4">
               <.step_header step={1} title="Check nono" />
@@ -2593,29 +2558,7 @@ defmodule EmisarWeb.AgentsLive do
               </div>
             </section>
 
-            <section id="nono-limits" class="ml-6 max-w-prose space-y-3">
-              <h3 class="text-base font-semibold leading-6 text-zinc-200">Limits &amp; risks</h3>
-              <ul class="list-disc space-y-2 pl-5 text-sm text-zinc-400">
-                <li>
-                  The agent can see any file, secret, tool, or network destination allowed by the
-                  profile, including everything in its working directory.
-                </li>
-                <li>
-                  The agent can read the emisar key in its MCP configuration. Allow network access
-                  only to the services the agent needs.
-                </li>
-                <li>
-                  Review the profile after adding file, command, environment-variable, or network access.
-                </li>
-              </ul>
-              <p class="text-sm text-zinc-400">
-                Rotate the key manually from <.link
-                  navigate={~p"/app/agents"}
-                  class="text-brand-400 hover:text-brand-300"
-                >AI agents</.link>, replace it in the private agent configuration, and start a fresh
-                nono session. Do not give the sandbox the whole credential directory to automate this.
-              </p>
-            </section>
+            <.sandbox_risks id="nono-limits" sandbox="nono" />
           <% "dev_containers" -> %>
             <section id="dev-containers-tools-step" class="space-y-4">
               <.step_header step={1} title="Check Dev Containers" />
@@ -2707,30 +2650,7 @@ defmodule EmisarWeb.AgentsLive do
               </div>
             </section>
 
-            <section id="dev-containers-limits" class="ml-6 max-w-prose space-y-3">
-              <h3 class="text-base font-semibold leading-6 text-zinc-200">Limits &amp; risks</h3>
-              <ul class="list-disc space-y-2 pl-5 text-sm text-zinc-400">
-                <li>
-                  The agent can see and potentially leak anything mounted into the container,
-                  including secrets in
-                  <.inline_code>.env</.inline_code>
-                  files and temporary artifacts. Mount only the files it needs. For stronger
-                  isolation from local files, use <.doc_link href={
-                    ~p"/docs/connect-agent-sandboxes#coop"
-                  }>co:op</.doc_link>.
-                </li>
-                <li>
-                  VS Code can share Git credentials or forward an SSH agent into the container.
-                  Review its
-                  <.doc_link href="https://code.visualstudio.com/remote/advancedcontainers/sharing-git-credentials">credential-sharing settings</.doc_link>
-                  before starting the agent, and never mount the host's Docker socket.
-                </li>
-                <li>
-                  The default configuration does not restrict outbound network access. We
-                  recommend allowing access only to the services the agent needs.
-                </li>
-              </ul>
-            </section>
+            <.sandbox_risks id="dev-containers-limits" sandbox="dev_containers" />
         <% end %>
       <% else %>
         <div id="sandbox-config-error" role="alert" class="space-y-3">
@@ -2746,6 +2666,60 @@ defmodule EmisarWeb.AgentsLive do
       <% end %>
     </section>
     """
+  end
+
+  # The risk copy is shared with the public sandboxes guide through
+  # EmisarWeb.SandboxRisks; this renders it with the Console's components.
+  attr :id, :string, required: true
+  attr :sandbox, :string, required: true
+
+  defp sandbox_risks(assigns) do
+    assigns = assign(assigns, :copy, SandboxRisks.fetch!(assigns.sandbox))
+
+    ~H"""
+    <section id={@id} class="ml-6 max-w-prose space-y-3">
+      <h3 class="text-base font-semibold leading-6 text-zinc-200">{@copy.title}</h3>
+      <ul class="list-disc space-y-2 pl-5 text-sm text-zinc-400">
+        <li :for={risk <- @copy.risks}>
+          <.sandbox_risk_segment :for={segment <- risk} segment={segment} />
+        </li>
+      </ul>
+      <p :if={@copy.rotation} class="text-sm text-zinc-400">
+        <.sandbox_risk_segment :for={segment <- @copy.rotation} segment={segment} />
+      </p>
+    </section>
+    """
+  end
+
+  # One-line sigils on purpose: a heredoc's trailing newline would put a space
+  # between a link and the full stop that follows it.
+  attr :segment, :any, required: true
+
+  defp sandbox_risk_segment(%{segment: {:code, code}} = assigns) do
+    assigns = assign(assigns, :code, code)
+    ~H"<.inline_code>{@code}</.inline_code>"
+  end
+
+  defp sandbox_risk_segment(%{segment: {:guide, label, anchor}} = assigns) do
+    assigns =
+      assign(assigns, label: label, href: ~p"/docs/connect-agent-sandboxes" <> "#" <> anchor)
+
+    ~H"<.doc_link href={@href}>{@label}</.doc_link>"
+  end
+
+  defp sandbox_risk_segment(%{segment: {:link, label, url}} = assigns) do
+    assigns = assign(assigns, label: label, href: url)
+    ~H"<.doc_link href={@href}>{@label}</.doc_link>"
+  end
+
+  defp sandbox_risk_segment(%{segment: {:agents, label}} = assigns) do
+    assigns = assign(assigns, :label, label)
+
+    ~H|<.link navigate={~p"/app/agents"} class="text-brand-400 hover:text-brand-300">{@label}</.link>|
+  end
+
+  defp sandbox_risk_segment(%{segment: text} = assigns) when is_binary(text) do
+    ~H"{@segment}"
   end
 
   attr :id, :string, required: true

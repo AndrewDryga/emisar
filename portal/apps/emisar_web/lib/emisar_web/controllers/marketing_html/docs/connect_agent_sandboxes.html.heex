@@ -132,27 +132,7 @@
         its rotated credentials in a named volume.
       </p>
 
-      <.docs_h3 id="coop-limits-and-risks">Recommendations</.docs_h3>
-      <ul class="mt-4 list-disc space-y-3 pl-6 text-base leading-7 text-zinc-400">
-        <li>
-          Only add the files, secrets, and host tools the agent needs. Use
-          <.docs_inline_code>.coopignore</.docs_inline_code>
-          for project-specific secrets;
-          <.docs_inline_code>.gitignore</.docs_inline_code>
-          does not hide them from the agent.
-        </li>
-        <li>
-          Anything you mount or pass into the sandbox remains available to the agent. Keep
-          production credentials and privileged host sockets out.
-        </li>
-        <li>
-          Run
-          <.docs_inline_code>coop doctor</.docs_inline_code>
-          after setup to verify the sandbox. Run
-          <.docs_inline_code>coop check-secrets</.docs_inline_code>
-          regularly to find secrets hidden in your repository.
-        </li>
-      </ul>
+      <.docs_sandbox_risks id="coop-limits-and-risks" sandbox="coop" />
 
       <.docs_h2 id="docker-sandboxes">Docker Sandboxes</.docs_h2>
       <.docs_h3 id="docker-sandboxes-requirements">What you need</.docs_h3>
@@ -166,26 +146,7 @@
         connects them to the emisar bridge on the host without copying the emisar key into the VM.
       </p>
 
-      <.docs_h3 id="docker-sandboxes-limits-and-risks">Limits &amp; risks</.docs_h3>
-      <ul class="mt-4 list-disc space-y-3 pl-6 text-base leading-7 text-zinc-400">
-        <li>
-          Docker shares the project directory with the VM, so the agent can see and potentially
-          leak anything stored there, including secrets in
-          <.docs_inline_code>.env</.docs_inline_code>
-          files and temporary artifacts. For stronger isolation from local files, use <a
-            href="#coop"
-            class="text-brand-400 hover:text-brand-300"
-          >co:op</a>.
-        </li>
-        <li>
-          The registered MCP launcher runs on the host with your permissions. Keep it and its
-          environment file outside the shared project and do not let the agent edit them.
-        </li>
-        <li>
-          We recommend reviewing the sandbox's network policy and allowing access only to the
-          services the agent needs.
-        </li>
-      </ul>
+      <.docs_sandbox_risks id="docker-sandboxes-limits-and-risks" sandbox="docker_sandboxes" />
 
       <.docs_h2 id="nono">nono</.docs_h2>
       <.docs_h3 id="nono-requirements">What you need</.docs_h3>
@@ -198,29 +159,10 @@
         and keep the provider credentials where that profile expects them.
       </p>
 
-      <.docs_h3 id="nono-limits-and-risks">Limits &amp; risks</.docs_h3>
-      <ul class="mt-4 list-disc space-y-3 pl-6 text-base leading-7 text-zinc-400">
-        <li>
-          The agent can see any file, secret, tool, or network destination allowed by the profile,
-          including everything in its working directory.
-        </li>
-        <li>
-          The agent can read the emisar key in its MCP configuration. Allow network access only to
-          the services the agent needs.
-        </li>
-        <li>
-          Review the profile after adding file, command, environment-variable, or network access.
-        </li>
-      </ul>
+      <.docs_sandbox_risks id="nono-limits-and-risks" sandbox="nono" />
 
       <.docs_h3 id="nono-rotation">Key rotation</.docs_h3>
-      <p class="mt-4 text-base leading-7 text-zinc-400">
-        Rotate the key manually from <a
-          href={~p"/app/agents"}
-          class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
-        >AI agents</a>, replace it in the private agent configuration, and start a fresh nono
-        session. Do not give the sandbox the whole credential directory to automate this.
-      </p>
+      <.docs_sandbox_rotation sandbox="nono" />
 
       <.docs_h2 id="dev-containers">Dev Containers</.docs_h2>
       <.docs_h3 id="dev-containers-requirements">What you need</.docs_h3>
@@ -231,39 +173,10 @@
         Dev Containers CLI. Run the agent as a non-root user inside the container.
       </p>
 
-      <.docs_h3 id="dev-containers-limits-and-risks">Limits &amp; risks</.docs_h3>
-      <ul class="mt-4 list-disc space-y-3 pl-6 text-base leading-7 text-zinc-400">
-        <li>
-          The agent can see and potentially leak anything mounted into the container, including
-          secrets in
-          <.docs_inline_code>.env</.docs_inline_code>
-          files and temporary artifacts. Mount only the files it needs. For stronger isolation
-          from local files, use <a href="#coop" class="text-brand-400 hover:text-brand-300">co:op</a>.
-        </li>
-        <li>
-          VS Code can share Git credentials or forward an SSH agent into the container. Review its
-          <.link
-            href="https://code.visualstudio.com/remote/advancedcontainers/sharing-git-credentials"
-            class="text-brand-400 hover:text-brand-300"
-          >credential-sharing settings</.link>
-          before starting the agent, and never mount the host's Docker socket.
-        </li>
-        <li>
-          The default configuration does not restrict outbound network access. We recommend
-          allowing access only to the services the agent needs.
-        </li>
-      </ul>
+      <.docs_sandbox_risks id="dev-containers-limits-and-risks" sandbox="dev_containers" />
 
       <.docs_h3 id="dev-containers-rotation">Rebuilds and rotation</.docs_h3>
-      <p class="mt-4 text-base leading-7 text-zinc-400">
-        Keep the bridge's named volume when rebuilding the container so rotated credentials are
-        retained. If you remove the volume or private configuration, create a fresh key from
-        <a
-          href={~p"/app/agents"}
-          class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
-        >AI agents</a>
-        and reconnect.
-      </p>
+      <.docs_sandbox_rotation sandbox="dev_containers" />
     </.docs_layout>
   </section>
 

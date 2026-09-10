@@ -5,6 +5,7 @@ defmodule EmisarWeb.MarketingHTML do
   See the `marketing_html` directory for all templates available.
   """
   use EmisarWeb, :html
+  alias EmisarWeb.SandboxRisks
 
   embed_templates "marketing_html/*"
   embed_templates "marketing_html/compare/*"
@@ -214,6 +215,72 @@ defmodule EmisarWeb.MarketingHTML do
       </li>
     </ol>
     """
+  end
+
+  # ── Sandbox risk copy shared with the Console ──────────────────────────
+  # The Console's sandbox setup renders the same EmisarWeb.SandboxRisks with
+  # its own components; only the docs styling lives here.
+
+  attr :id, :string, required: true
+  attr :sandbox, :string, required: true
+
+  @doc "One sandbox's Limits & risks heading and list."
+  def docs_sandbox_risks(assigns) do
+    assigns = assign(assigns, :copy, SandboxRisks.fetch!(assigns.sandbox))
+
+    ~H"""
+    <.docs_h3 id={@id}>{@copy.title}</.docs_h3>
+    <ul class="mt-4 list-disc space-y-3 pl-6 text-base leading-7 text-zinc-400">
+      <li :for={risk <- @copy.risks}>
+        <.docs_sandbox_segment :for={segment <- risk} segment={segment} />
+      </li>
+    </ul>
+    """
+  end
+
+  attr :sandbox, :string, required: true
+
+  @doc "One sandbox's rotation paragraph; the page supplies the heading."
+  def docs_sandbox_rotation(assigns) do
+    assigns = assign(assigns, :rotation, SandboxRisks.fetch!(assigns.sandbox).rotation)
+
+    ~H"""
+    <p class="mt-4 text-base leading-7 text-zinc-400">
+      <.docs_sandbox_segment :for={segment <- @rotation} segment={segment} />
+    </p>
+    """
+  end
+
+  # One-line sigils on purpose: a heredoc's trailing newline would put a space
+  # between a link and the full stop that follows it.
+  attr :segment, :any, required: true
+
+  defp docs_sandbox_segment(%{segment: {:code, code}} = assigns) do
+    assigns = assign(assigns, :code, code)
+    ~H"<.docs_inline_code>{@code}</.docs_inline_code>"
+  end
+
+  defp docs_sandbox_segment(%{segment: {:guide, label, anchor}} = assigns) do
+    assigns = assign(assigns, label: label, href: "#" <> anchor)
+    ~H|<a href={@href} class="text-brand-400 hover:text-brand-300">{@label}</a>|
+  end
+
+  defp docs_sandbox_segment(%{segment: {:link, label, url}} = assigns) do
+    assigns = assign(assigns, label: label, href: url)
+    ~H|<.link href={@href} class="text-brand-400 hover:text-brand-300">{@label}</.link>|
+  end
+
+  defp docs_sandbox_segment(%{segment: {:agents, label}} = assigns) do
+    assigns = assign(assigns, :label, label)
+
+    ~H|<a
+  href={~p"/app/agents"}
+  class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
+>{@label}</a>|
+  end
+
+  defp docs_sandbox_segment(%{segment: text} = assigns) when is_binary(text) do
+    ~H"{@segment}"
   end
 
   @doc "What the OAuth sign-in grants — membership-bound key, operator-scoped reach."

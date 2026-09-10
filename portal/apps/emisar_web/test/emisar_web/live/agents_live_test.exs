@@ -3,6 +3,7 @@ defmodule EmisarWeb.AgentsLiveTest do
   alias Emisar.ApiKeys
   alias Emisar.ApiKeys.ApiKey
   alias Emisar.Repo
+  alias EmisarWeb.SandboxRisks
 
   describe "GET /app/agents" do
     test "redirects anonymous users to /sign_in", %{conn: conn} do
@@ -198,6 +199,23 @@ defmodule EmisarWeb.AgentsLiveTest do
       assert has_element?(lv, "#dev-containers-agent-step a[href='/docs/connect-cli-agent']")
       assert has_element?(lv, "#dev-containers-limits", "potentially leak anything mounted")
       assert has_element?(lv, "#dev-containers-limits", "credential-sharing settings")
+
+      # Every sentence of the shared copy reaches the Console; the public guide
+      # renders the same EmisarWeb.SandboxRisks, so the two cannot drift.
+      for {sandbox, id} <- [
+            {"docker_sandboxes", "docker-sandboxes"},
+            {"nono", "nono"},
+            {"dev_containers", "dev-containers"}
+          ] do
+        lv |> render_click("select_sandbox", %{"client" => sandbox})
+        %{risks: risks, rotation: rotation} = SandboxRisks.fetch!(sandbox)
+
+        for segments <- [rotation | risks],
+            segment <- List.wrap(segments),
+            is_binary(segment) and String.length(segment) > 20 do
+          assert has_element?(lv, "##{id}-limits", String.trim(segment))
+        end
+      end
     end
 
     # Before any client is picked, the panel is just the picker — no mint,

@@ -53,31 +53,38 @@ defmodule EmisarWeb.AgentSandboxGuidesTest do
   test "each sandbox keeps its requirements, lifecycle quirk, and own limits", %{conn: conn} do
     html = conn |> get(@path) |> html_response(200)
     doc = LazyHTML.from_document(html)
+    text = doc |> LazyHTML.query("main") |> LazyHTML.text()
 
     for id <- ~w(coop docker-sandboxes nono dev-containers) do
       assert doc |> LazyHTML.query("h2##{id}") |> Enum.count() == 1
       assert doc |> LazyHTML.query("h3##{id}-limits-and-risks") |> Enum.count() == 1
     end
 
-    assert html =~ ".coopignore"
-    assert html =~ ".gitignore"
-    assert html =~ "Anything you mount or pass into the sandbox"
-    assert html =~ "coop doctor"
-    assert html =~ "coop check-secrets"
-    refute html =~ "COOP_*_CMD"
+    assert text =~ ".coopignore"
+    assert text =~ ".gitignore"
+    assert text =~ "Anything you mount or pass into the sandbox"
+    assert text =~ "coop doctor"
+    assert text =~ "coop check-secrets"
+    refute text =~ "COOP_*_CMD"
 
-    assert html =~ "Docker shares the project directory"
-    assert html =~ "temporary artifacts"
-    assert html =~ "MCP launcher runs on the host"
+    assert text =~ "Docker shares the project directory"
+    assert text =~ "temporary artifacts"
+    assert text =~ "MCP launcher runs on the host"
 
-    assert html =~ "including everything in its working directory"
-    assert html =~ "Rotate the key manually"
+    assert text =~ "including everything in its working directory"
+    assert text =~ "Rotate the key manually"
 
-    assert html =~ "credential-sharing settings"
-    assert html =~ "never mount the host's Docker socket"
-    assert html =~ "The default configuration does not restrict outbound network access"
-    refute html =~ "runs Codex"
-    refute html =~ "Codex profile"
+    assert text =~ "credential-sharing settings"
+    assert text =~ "never mount the host's Docker socket"
+    assert text =~ "The default configuration does not restrict outbound network access"
+    refute text =~ "runs Codex"
+    refute text =~ "Codex profile"
+
+    # The shared copy is assembled from segments; a boundary must not render
+    # as a space before the punctuation that follows a link or code span.
+    assert html =~ ~r{>co:op</a>\.}
+    assert html =~ ~r{>AI agents</a>, replace it}
+    assert html =~ ~r{>\.env</code>\s*files}
     refute html =~ "private Codex configuration"
   end
 
