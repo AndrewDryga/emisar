@@ -177,7 +177,7 @@ func applyValidation(a actionspec.Arg, v any) (any, error) {
 
 	// Arrays apply max_items at array scope, scalar validators per-element.
 	if isArrayType(a.Type) {
-		elements, err := elementsOf(v)
+		elements, err := toAnyArray(v)
 		if err != nil {
 			return nil, newError(a.Name, "type", "%s", err.Error())
 		}
@@ -534,26 +534,6 @@ func resolvePathForCheck(p string, tolerateUnreadable bool) (string, error) {
 
 func isArrayType(t actionspec.ArgType) bool {
 	return t == actionspec.ArgStringArray || t == actionspec.ArgIntegerArray
-}
-
-func elementsOf(v any) ([]any, error) {
-	switch arr := v.(type) {
-	case []string:
-		out := make([]any, len(arr))
-		for i, s := range arr {
-			out[i] = s
-		}
-		return out, nil
-	case []int64:
-		out := make([]any, len(arr))
-		for i, n := range arr {
-			out[i] = n
-		}
-		return out, nil
-	case []any:
-		return arr, nil
-	}
-	return nil, fmt.Errorf("not an array: %T", v)
 }
 
 // wrapElementError prepends "element N: " to a validation error so the
