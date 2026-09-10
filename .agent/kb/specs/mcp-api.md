@@ -2,55 +2,13 @@
 
 Status: **Implemented contract. The JSON registry is normative.**
 
-This document specifies the MCP surface that replaces the pre-release
-one-tool-per-action catalog. It is deliberately complete enough for the portal,
-bridge, runner, documentation, tests, and client certification to implement one
-contract without filling in security-sensitive gaps independently.
-
-## Why this change
-
-An account can expose hundreds of actions. Publishing every action as an MCP
-tool makes every client load every name, description, target enum, and JSON
-Schema before the model can choose anything. That wastes context, and some
-clients omit or defer tools when the catalog grows.
-
-Client-maintained action allowlists are not the answer. An API key can inspect
-the account's trusted observed catalog. Executable candidates are limited by the
-minting operator's current runner and pack scope. That set changes as runners
-connect, packs change, and scope changes. Emisar remains the source of truth; its scope, trust, policy,
-approval, and audit controls are the authorization boundary.
-
-The Owner role always carries account-wide runner and pack access; Admin and
-Operator memberships can be scoped. Owner-owned keys still use the fixed
-`api_client` permissions, not Owner permissions. Promotion to Owner preserves
-existing valid keys (including OAuth backing keys and rotation successors) and
-approved device grants. Connected agents inherit the member's current runner and
-pack scope without reconnecting. Revocation, expiry, suspension, policy, approval,
-trust and account-isolation checks still apply.
-
-The product problem is broader than catalog size. Operators routinely receive a
-shell command, Python script, or copied configuration they do not fully
-understand. Repetition turns that into blind copy-paste: an agent chose the
-operation, but a person still executes opaque text outside policy and audit.
-Emisar should instead expose a bounded vocabulary of declared, typed, currently
-trusted actions and execute them through the same governed path every time.
-
-## Goals
-
-- Keep `tools/list` fixed and small.
-- Let a model browse all actions in a currently trusted observed pack with one
-  bounded call.
-- Make natural-language retrieval deterministic, explainable, and measurable.
-- Publish exact input schemas once in `tools/list` without repeating action
-  contracts in every search result.
-- Use readable, identity-bound runner references for every dispatch.
-- Refuse execution when a selected runner no longer has the inspected pack.
-- Bind signed dispatch to action, pack, arguments, targets, reason, and operation.
-- Show only statically executable capabilities by default, with explicit
-  trusted-deployment and fleet diagnostics available through the same response
-  shapes.
-- Keep scope, pack trust, policy, approval, audit, and runner validation
-  authoritative at dispatch time.
+This document specifies the MCP surface. An account can expose hundreds of
+actions, and publishing each one as an MCP tool makes every client load every
+name, description, and schema before the model can choose anything, so the tool
+catalog is fixed and small and actions are discovered through it. The document
+is deliberately complete enough for the portal, bridge, runner, documentation,
+tests, and client certification to implement one contract without filling in
+security-sensitive gaps independently.
 
 ## Non-goals
 
@@ -2291,6 +2249,13 @@ production actions.
 - For signed actions, `reason` is part of the bridge-signed execution intent; it
   remains agent-supplied audit context, not proof of human intent.
 - Free-form metadata and output never become policy inputs.
+- The Owner role always carries account-wide runner and pack access; Admin and
+  Operator memberships can be scoped. Owner-owned keys still use the fixed
+  `api_client` permissions, not Owner permissions. Promotion to Owner preserves
+  existing valid keys (including OAuth backing keys and rotation successors) and
+  approved device grants. Connected agents inherit the member's current runner
+  and pack scope without reconnecting. Revocation, expiry, suspension, policy,
+  approval, trust and account-isolation checks still apply.
 
 ## Rejected shapes
 
@@ -2316,45 +2281,8 @@ production actions.
 - **Long-lived compatibility mode:** the product is pre-release and all
   components change together.
 
-## Implementation and verification plan
+## Constants
 
-1. **Trusted catalog**: expand the trusted pack snapshot to the complete bounded
-   manifest; add scoped pack, runner, candidate, and exact-action reads.
-2. **Portal MCP boundary**: generate the fixed thirteen descriptors from
-   `portal/apps/emisar_web/priv/mcp/api-schemas.json`; publish strict JSON Schema 2020-12
-   inputs/outputs, common results, live cursors, deterministic search, and
-   authenticated operation idempotency without a second signature over HTTPS.
-3. **Operation model**: add durable credential lineages and an operation row
-   whose transaction atomically records policy outcomes, every target run and
-   approval, and only eligible dispatch jobs; expose its minimal typed recovery
-   projection through `get_operation`.
-4. **Bridge and runner**: implement action-attestation v5 fixed vectors,
-   identity-bound refs, exact argument/target preimage carriage, correlated
-   errors, concurrent stdio, cancellation, replay protection, and deadlines.
-5. **Runs and runbooks**: persist `pack_ref`, operation identity, output
-   integrity fields, immutable runbook refs, and the explicit enforcing-runner
-   refusal.
-6. **Tests**: cover happy, denial, cross-account, scope revocation, untrusted,
-   retired, lying runner, target reuse, descriptor drift, >2^53 and decimal
-   numbers in direct and nested runbook arguments, duplicate JSON keys, draft
-   review/publication byte preservation, runbook-ref vectors, fan-out transaction
-   rollback, batch failure propagation, policy mixtures, retry/crash points,
-   key rotation, reused runner names, target-preimage
-   substitution, attestation replay, mismatched continuation identifiers,
-   unsigned-runbook refusal, cancellation races,
-   response bounds, and cross-implementation vectors.
-7. **Documentation and certification**: update wire protocol, signed dispatch,
-   help/install examples, operator docs, and run the committed two-client
-   corpus.
-
-Project gates:
-
-- Portal: `./run gate portal`
-- MCP and runner: `./run gate mcp` and `./run gate runner`.
-- Root: attestation implementation/vector parity, compile and fixture-check all
-  schemas, validate every documentation example, docs check, corpus tests,
-  client certification, and repository CI.
-
-There are no open protocol decisions in this draft. Constants such as result
-budgets, cursor TTL, output previews, and limits are explicit initial values and
-may change only with fixture-backed tests and coordinated documentation.
+Result budgets, cursor TTL, output previews, and limits are explicit values
+fixed by this document and its fixtures. They change only with fixture-backed
+tests and coordinated documentation.
