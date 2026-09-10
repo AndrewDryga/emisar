@@ -15,7 +15,7 @@ repository-owned `./run` command, and report the result separately from the
 canonical gate. These checks stay honest about their boundary because each one
 reintroduces the gap below.
 
-**Why.** `./run gate` is the Definition of Done (creed #4): an agent or
+**Why.** `./run gate` is the Definition of Done (the root manual's *Commands and verification*): an agent or
 contributor takes it green and commits. A check that lives only in CI makes that
 promise false — the gate passes on a tree the job rejects, so the failure is
 discovered after the push, by someone who has already moved on. Worse, it

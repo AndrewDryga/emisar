@@ -18,7 +18,7 @@ the conventions are specific (e.g. the runner never accepts cloud/LLM-controlled
 shell code; open-ended values enter fixed shell programs only through env or
 whole positional argv elements).
 
-## 2. Wear the hats (root AGENTS.md creed)
+## 2. Wear the hats (the root manual's engineering contracts)
 - **Security** especially for `runner/` — it executes commands on hosts. Any
   change to validation / admission / redaction / exec **adds or extends** a
   `*_security_test.go`. Ask: what's the abuse case?

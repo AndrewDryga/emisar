@@ -32,7 +32,7 @@ For **intent** on a non-PR scope, read the commit message(s) in range, or — fo
 
 ## 2. Convene the board (the hats the change earns)
 **Standing hats — always, for any code change:**
-- **Pragmatic staff engineer** — correctness & edge cases, the simplest thing that works, over-engineering, maintainability, "would I approve this PR?" (the staff-correctness lens + the creed).
+- **Pragmatic staff engineer** — correctness & edge cases, the simplest thing that works, over-engineering, maintainability, "would I approve this PR?" (the staff-correctness lens + the root manual's engineering contracts).
 - **Domain expert** — does it fit emisar's architecture + trust model? Load the touched project's `AGENTS.md`: portal → the Iron Laws (`/elixir-iron-review`); runner/mcp → the security posture; packs → the conventions. emisar is an AI-safe infra control plane — flag anything that bends the model.
 - **Security engineer** — lead with the abuse case. **Mandatory — emisar IS a security product** (`/security-engineer`).
 

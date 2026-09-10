@@ -14,7 +14,7 @@ face. Recurring shapes:
    capture/exact activation phases, no v1/v2 dual-read formats, no capability
    handshakes guarding a peer version that never shipped, no migration
    compensators for data an older build "might have written" when no such
-   build ever ran. Greenfield (creed #6) applies to *rollout machinery* too:
+   build ever ran. Greenfield (the root manual's *Engineering contracts*) applies to *rollout machinery* too:
    deploy once, re-review the affected rows, move on.
 3. **A new choke point retires the validators it shadows — in the same
    change.** When one boundary becomes authoritative (published input schemas

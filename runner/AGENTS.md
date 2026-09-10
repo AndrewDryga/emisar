@@ -2,9 +2,9 @@
 
 The `runner` is the on-host binary that actually executes infrastructure actions. It dials **out** to the control plane over a websocket, receives `run_action` commands, **re-validates** every argument against the action schema it loaded locally, executes the pack-authored binary and argv via `os/exec`, streams redacted output back, and journals every attempt to an append-only local JSONL log. Fixed pack-authored shell programs keep open-ended values in environment or positional-argv data channels; only finite choices and two-sided bounded numbers may render into program text. The staging-only `shell` pack is the explicit break-glass exception.
 
-It is the most security-sensitive component in the repo: it runs commands on real hosts. Read the root `../AGENTS.md` (the creed) first — this file is the Go + runner specifics.
+It is the most security-sensitive component in the repo: it runs commands on real hosts. Read the root `../AGENTS.md` first — this file is the Go + runner specifics.
 
-## The gate (verify before claiming done — creed #4)
+## The gate (verify before claiming done)
 
 A change is done only when this is green from the repository root:
 
@@ -73,4 +73,4 @@ Non-negotiable — runner's equivalent of portal's Iron Laws:
 - **Concurrency: signal, don't block.** A coalescing wake-up is a buffered `chan struct{}` with a non-blocking `select { case ch <- struct{}{}: default: }`; a `sync.Mutex` guards per-request state; cancellation is a per-request `context.CancelFunc`. The connect daemon's loops (`senderLoop`, `heartbeatLoop`, `readvertiseLoop`) run independent of the socket lifecycle so in-flight actions survive a reconnect.
 - **JSON is stdlib `encoding/json`** with `json:"snake_case,omitempty"` tags; protocol frames carry a `type` string field.
 - **Small, single-purpose packages**, each named as one lowercase word. Pure types live in `pkg/`; anything with logic + dependencies lives in `internal/`. Match the surrounding file's style exactly.
-- Toolchain is **Go 1.26.6** (`go.work`); deps are deliberately few (`coder/websocket`, `spf13/cobra`, `oklog/ulid`, `yaml.v3`, and `santhosh-tekuri/jsonschema/v6` for typed `output.schema` result validation in `internal/outputschema`). A new dependency on the host runner is new attack surface — justify it in one sentence, and prefer the stdlib.
+- Toolchain is **Go 1.26.6** (`go.work`); deps are deliberately few (`coder/websocket`, `spf13/cobra` and its `spf13/pflag` — direct only so the CLI-surface golden test can walk flag types — `yaml.v3`, and `santhosh-tekuri/jsonschema/v6` for typed `output.schema` result validation in `internal/outputschema`; ULIDs are generated in-tree by `internal/audit` precisely to keep `oklog/ulid` out of the client's supply chain). A new dependency on the host runner is new attack surface — justify it in one sentence, and prefer the stdlib.

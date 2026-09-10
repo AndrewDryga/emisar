@@ -1029,7 +1029,7 @@ does not yet provide every warning or negotiation hook described here.
 ## The greenfield exception changes at 1.0
 
 Before 1.0, emisar's working assumption is that components move together. That
-is why the MCP spec rejected a long-lived compatibility mode and creed #6 says
+is why the MCP spec rejected a long-lived compatibility mode and the root manual's greenfield contract says
 to edit the original and delete dead behavior. At 1.0, the surfaces above are
 like a production-applied database migration: deployed peers and saved operator
 configuration make the published contract real. Treat them as frozen, add a

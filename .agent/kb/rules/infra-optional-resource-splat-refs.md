@@ -26,4 +26,4 @@ Same-lifecycle references are fine and idiomatic: `A[0]` where the consumer's co
 
 **Sweep target.** `grep -nE '\[0\]\.' infra/*.tf`, then for each hit compare the consumer's count condition with the target's; fix any consumer that can outlive its target. Swept 2026-07-17: the instance-group membership was the only divergent-lifecycle hit.
 
-**How it's enforced.** Judgment plus the plan itself — no CI source grep (AGENTS.md creed #8 bans placement-rule greps). Exercising the park/enable dials in a plan is the mechanical check: a violation fails immediately at plan time.
+**How it's enforced.** Judgment plus the plan itself — no CI source grep (the root manual adds a mechanical check only for a real defect, not a placement preference). Exercising the park/enable dials in a plan is the mechanical check: a violation fails immediately at plan time.
