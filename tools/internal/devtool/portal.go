@@ -452,7 +452,9 @@ func (a *App) toolingGate(ctx context.Context, coverage string) error {
 	}); err != nil {
 		return err
 	}
-	if err := a.gatePhase("tooling e2e stack versions", a.checkComposeVersionsMatchCompat); err != nil {
+	if err := a.gatePhase("tooling e2e stack versions", func() error {
+		return a.checkComposeVersionsMatchCompat(ctx)
+	}); err != nil {
 		return err
 	}
 	if err := a.gatePhase("tooling release toolchain", a.checkReleaseToolchainPins); err != nil {

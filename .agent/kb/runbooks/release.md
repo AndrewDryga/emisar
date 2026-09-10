@@ -83,7 +83,11 @@ recreated.
 (`runner-release.yml` / `mcp-release.yml` fire on the tag push). The tag is
 created and verified locally first; an unsigned tag is rejected. Only the named
 release tagger may create these refs, and the immutable-tag ruleset lets nobody
-move or delete them. Cut component tags with `-s` as well:
+move or delete them. Before cutting one, land a commit on `main` that bumps
+`Emisar.Compat`'s `*_recommended` / `*_current` in `portal/config/config.exs`
+and the matching `RUNNER_VERSION` / `MCP_VERSION` build arg in
+`docker-compose.yml` — `./run gate tooling` fails while a release tag is newer
+than the version the portal calls current. Cut component tags with `-s` as well:
 
 ```sh
 git tag -s runner-vX.Y.Z <commit> -m "runner vX.Y.Z"

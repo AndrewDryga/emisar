@@ -48,12 +48,12 @@ config :emisar,
 # deliberately flipped on.
 config :emisar, Emisar.Compat,
   runner_minimum: ">= 0.10.0",
-  runner_recommended: ">= 0.24.0",
-  runner_current: "0.24.0",
+  runner_recommended: ">= 0.27.0",
+  runner_current: "0.27.0",
   runner_enforce: false,
   mcp_minimum: ">= 0.3.0",
-  mcp_recommended: ">= 0.13.0",
-  mcp_current: "0.13.0",
+  mcp_recommended: ">= 0.14.0",
+  mcp_current: "0.14.0",
   mcp_enforce: false
 
 # Configures the mailer
