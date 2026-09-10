@@ -297,6 +297,72 @@ func printTrustBlock(name, caPEM string) {
 	fmt.Println()
 }
 
+// mintedCA is one freshly minted CA: the key to issue with, the certificate
+// every runner trusts, and their encoded forms for printing. `init` and
+// `new-ca` mint the same thing; only what each prints around it differs.
+type mintedCA struct {
+	name    string
+	key     crypto.Signer
+	cert    *x509.Certificate
+	certPEM string
+	keyText string
+}
+
+func mintCAMaterial(alg signingKeyAlg, name string, ttl time.Duration) (mintedCA, error) {
+	if name == "" {
+		name = "emisar-dispatch-ca"
+	}
+	key, err := generateSigningKey(alg)
+	if err != nil {
+		return mintedCA{}, err
+	}
+	der, err := mintCA(key, name, ttl)
+	if err != nil {
+		return mintedCA{}, err
+	}
+	cert, err := x509.ParseCertificate(der)
+	if err != nil {
+		return mintedCA{}, fmt.Errorf("parse CA certificate: %w", err)
+	}
+	keyText, err := encodePrivateKey(key)
+	if err != nil {
+		return mintedCA{}, err
+	}
+	return mintedCA{name: name, key: key, cert: cert, certPEM: encodeCertPEM(der), keyText: keyText}, nil
+}
+
+// mintedLeaf is one issued operator certificate with its private key: the two
+// MCP env vars. `init` and `new-cert` issue the same thing.
+type mintedLeaf struct {
+	name    string
+	cert    *x509.Certificate
+	chain   string
+	keyText string
+}
+
+func mintLeafMaterial(signer crypto.Signer, caCert *x509.Certificate, alg signingKeyAlg, name string, scope attest.Scope, ttl time.Duration) (mintedLeaf, error) {
+	if name == "" {
+		name = "emisar-operator"
+	}
+	key, err := generateSigningKey(alg)
+	if err != nil {
+		return mintedLeaf{}, err
+	}
+	der, err := mintLeaf(signer, caCert, key.Public(), name, scope, ttl)
+	if err != nil {
+		return mintedLeaf{}, err
+	}
+	cert, err := x509.ParseCertificate(der)
+	if err != nil {
+		return mintedLeaf{}, fmt.Errorf("parse issued certificate: %w", err)
+	}
+	keyText, err := encodePrivateKey(key)
+	if err != nil {
+		return mintedLeaf{}, err
+	}
+	return mintedLeaf{name: name, cert: cert, chain: encodeCertChain([][]byte{der}), keyText: keyText}, nil
+}
+
 // signingNewCACmd mints a CA keypair and its self-signed certificate. The
 // CERTIFICATE goes in every runner's signing.trusted_cas (safe to commit); the
 // PRIVATE key is stored OFFLINE and used only by `emisar signing new-cert`.
@@ -323,35 +389,23 @@ https://emisar.dev/docs/signed-dispatch.`,
 			if err != nil {
 				return err
 			}
-			key, err := generateSigningKey(signingKeyAlg(keyAlg))
+			ca, err := mintCAMaterial(signingKeyAlg(keyAlg), caName, ttl)
 			if err != nil {
 				return err
 			}
-			if caName == "" {
-				caName = "emisar-dispatch-ca"
-			}
-			caDER, err := mintCA(key, caName, ttl)
-			if err != nil {
-				return err
-			}
-			caKeyEncoded, err := encodePrivateKey(key)
-			if err != nil {
-				return err
-			}
-			caPEM := encodeCertPEM(caDER)
 
 			if flagJSONOut {
 				out, _ := json.MarshalIndent(map[string]string{
-					"ca_name": caName, "ca_certificate": caPEM, "ca_private_key": caKeyEncoded,
+					"ca_name": ca.name, "ca_certificate": ca.certPEM, "ca_private_key": ca.keyText,
 				}, "", "  ")
 				fmt.Println(string(out))
 				return nil
 			}
-			fmt.Printf("Minted an offline signing CA (%s).\n\n", caName)
+			fmt.Printf("Minted an offline signing CA (%s).\n\n", ca.name)
 			fmt.Print("1. Runner config — add under signing on every runner (the CERTIFICATE is safe to commit):\n\n")
-			printTrustBlock(caName, caPEM)
+			printTrustBlock(ca.name, ca.certPEM)
 			fmt.Print("2. CA PRIVATE key — store this OFFLINE (never on a runner or the control plane):\n\n")
-			fmt.Printf("   %s\n\n", caKeyEncoded)
+			fmt.Printf("   %s\n\n", ca.keyText)
 			fmt.Print("Issue operator certificates with the key in a FILE — on the command line it\n")
 			fmt.Print("lands in shell history and in the process table:\n")
 			fmt.Print("   emisar signing new-cert --ca-key-file <file-holding-the-key-above> --ca-cert <the-certificate-above> --scope group=<g> --ttl 24h\n")
@@ -403,40 +457,24 @@ keeps a leaked certificate usable longer.`,
 			if err != nil {
 				return err
 			}
-			leafKey, err := generateSigningKey(signingKeyAlg(keyAlg))
+			leaf, err := mintLeafMaterial(signer, caCert, signingKeyAlg(keyAlg), keyName, scope, ttl)
 			if err != nil {
 				return err
 			}
-			if keyName == "" {
-				keyName = "emisar-operator"
-			}
-			leafDER, err := mintLeaf(signer, caCert, leafKey.Public(), keyName, scope, ttl)
-			if err != nil {
-				return err
-			}
-			leafKeyEncoded, err := encodePrivateKey(leafKey)
-			if err != nil {
-				return err
-			}
-			leaf, err := x509.ParseCertificate(leafDER)
-			if err != nil {
-				return fmt.Errorf("parse issued certificate: %w", err)
-			}
-			chain := encodeCertChain([][]byte{leafDER})
 
 			if flagJSONOut {
 				out, _ := json.MarshalIndent(map[string]string{
-					"key_name": keyName, "private_key": leafKeyEncoded, "certificate_chain": chain,
-					"not_after": leaf.NotAfter.UTC().Format(time.RFC3339),
+					"key_name": leaf.name, "private_key": leaf.keyText, "certificate_chain": leaf.chain,
+					"not_after": leaf.cert.NotAfter.UTC().Format(time.RFC3339),
 				}, "", "  ")
 				fmt.Println(string(out))
 				return nil
 			}
 			fmt.Printf("Issued a certificate (%s, valid until %s).\n\n",
-				keyName, leaf.NotAfter.UTC().Format(time.RFC3339))
+				leaf.name, leaf.cert.NotAfter.UTC().Format(time.RFC3339))
 			fmt.Print("MCP client — set these env vars (keep the private key SECRET):\n\n")
-			fmt.Printf("   EMISAR_SIGNING_KEY=%s\n", leafKeyEncoded)
-			fmt.Printf("   EMISAR_SIGNING_CERT=%s\n", chain)
+			fmt.Printf("   EMISAR_SIGNING_KEY=%s\n", leaf.keyText)
+			fmt.Printf("   EMISAR_SIGNING_CERT=%s\n", leaf.chain)
 			return nil
 		},
 	}
@@ -514,64 +552,36 @@ this, issue fresh certificates as they expire with "emisar signing new-cert".`,
 				return err
 			}
 			alg := signingKeyAlg(keyAlg)
-			caKey, err := generateSigningKey(alg)
+			// The one-shot on-ramp mints the CA at new-ca's default 5y validity.
+			ca, err := mintCAMaterial(alg, caName, 5*365*24*time.Hour)
 			if err != nil {
 				return err
 			}
-			if caName == "" {
-				caName = "emisar-dispatch-ca"
-			}
-			caDER, err := mintCA(caKey, caName, 5*365*24*time.Hour)
+			leaf, err := mintLeafMaterial(ca.key, ca.cert, alg, "", scope, ttl)
 			if err != nil {
 				return err
 			}
-			caCert, err := x509.ParseCertificate(caDER)
-			if err != nil {
-				return fmt.Errorf("parse CA certificate: %w", err)
-			}
-			leafKey, err := generateSigningKey(alg)
-			if err != nil {
-				return err
-			}
-			leafDER, err := mintLeaf(caKey, caCert, leafKey.Public(), "emisar-operator", scope, ttl)
-			if err != nil {
-				return err
-			}
-			leaf, err := x509.ParseCertificate(leafDER)
-			if err != nil {
-				return fmt.Errorf("parse issued certificate: %w", err)
-			}
-			caKeyEncoded, err := encodePrivateKey(caKey)
-			if err != nil {
-				return err
-			}
-			leafKeyEncoded, err := encodePrivateKey(leafKey)
-			if err != nil {
-				return err
-			}
-			caPEM := encodeCertPEM(caDER)
-			chain := encodeCertChain([][]byte{leafDER})
 
 			if flagJSONOut {
 				out, _ := json.MarshalIndent(map[string]string{
-					"ca_name": caName, "ca_certificate": caPEM, "ca_private_key": caKeyEncoded,
-					"private_key": leafKeyEncoded, "certificate_chain": chain,
-					"not_after": leaf.NotAfter.UTC().Format(time.RFC3339),
+					"ca_name": ca.name, "ca_certificate": ca.certPEM, "ca_private_key": ca.keyText,
+					"private_key": leaf.keyText, "certificate_chain": leaf.chain,
+					"not_after": leaf.cert.NotAfter.UTC().Format(time.RFC3339),
 				}, "", "  ")
 				fmt.Println(string(out))
 				return nil
 			}
 
 			fmt.Printf("Initialized signed dispatch (%s, valid until %s).\n\n",
-				caName, leaf.NotAfter.UTC().Format(time.RFC3339))
+				ca.name, leaf.cert.NotAfter.UTC().Format(time.RFC3339))
 			fmt.Print("1. Runner config — add under signing on every runner (PUBLIC, safe to commit):\n\n")
-			printTrustBlock(caName, caPEM)
+			printTrustBlock(ca.name, ca.certPEM)
 			fmt.Print("2. CA PRIVATE key — store OFFLINE in a file; you re-issue certificates with it as\n")
 			fmt.Print("   they expire (emisar signing new-cert --ca-key-file <that file>):\n\n")
-			fmt.Printf("   %s\n\n", caKeyEncoded)
+			fmt.Printf("   %s\n\n", ca.keyText)
 			fmt.Print("3. MCP client — set these env vars (keep the private key SECRET):\n\n")
-			fmt.Printf("   EMISAR_SIGNING_KEY=%s\n", leafKeyEncoded)
-			fmt.Printf("   EMISAR_SIGNING_CERT=%s\n\n", chain)
+			fmt.Printf("   EMISAR_SIGNING_KEY=%s\n", leaf.keyText)
+			fmt.Printf("   EMISAR_SIGNING_CERT=%s\n\n", leaf.chain)
 			fmt.Print("Restart the runner after applying this config so it opens durable replay state\n")
 			fmt.Print("and advertises enforcement. Never put the CA or leaf private key on the\n")
 			fmt.Print("control plane or in version control.\n")
