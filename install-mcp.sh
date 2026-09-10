@@ -187,7 +187,7 @@ while [ $# -gt 0 ]; do
   esac
 done
 
-log()  { printf '\033[1;34m[install-mcp]\033[0m %s\n' "$*"; }
+log()  { printf '\033[1;34m[install-mcp]\033[0m %s\n' "$*" >&2; }
 warn() { printf '\033[1;33m[install-mcp]\033[0m %s\n' "$*" >&2; }
 die()  { printf '\033[1;31m[install-mcp]\033[0m %s\n' "$*" >&2; exit 1; }
 
@@ -261,7 +261,9 @@ resolve_latest_version() {
       return 0
     else
       status=$?
-      [ "$status" -ne 2 ] || die "the Emisar release mirror returned an invalid MCP latest.json"
+      if [ "$status" -eq 2 ]; then
+        die "the Emisar release mirror returned an invalid MCP latest.json"
+      fi
       warn "Emisar release mirror unavailable — falling back to the GitHub release mirror"
     fi
   fi
@@ -346,9 +348,8 @@ verify_checksum_attestation() {
     rm -f -- "${bundle}"
     die "could not download the checksum signature for ${VERSION}"
   fi
-  if ! command -v gh >/dev/null 2>&1; then
+  command -v gh >/dev/null 2>&1 ||
     die "GitHub CLI is required to verify the checksum signature"
-  fi
   local -a verify_args=(
     attestation verify "${checksums}"
     --bundle "${bundle}"
@@ -357,9 +358,8 @@ verify_checksum_attestation() {
   )
   [ -z "${ATTESTATION_SOURCE_REF}" ] || verify_args+=(--source-ref "${ATTESTATION_SOURCE_REF}")
   [ "${ATTESTATION_DENY_SELF_HOSTED}" = "0" ] || verify_args+=(--deny-self-hosted-runners)
-  if ! gh "${verify_args[@]}" >/dev/null 2>&1; then
+  gh "${verify_args[@]}" >/dev/null 2>&1 ||
     die "the checksum signature for ${VERSION} did not verify against ${ATTESTATION_WORKFLOW}"
-  fi
   log "checksum signature verified  ${ATTESTATION_WORKFLOW}"
 }
 
@@ -368,6 +368,12 @@ verify_checksum_attestation() {
 # the next line of the script. See install.sh for the longer rationale.
 confirm() {
   if truthy "$ASSUME_YES"; then return 0; fi
+
+  # `curl | bash` makes stdin the script content, not a terminal — so a
+  # plain `read` consumes the NEXT LINE of the script and reports an
+  # "empty" answer to every prompt. Try /dev/tty so the operator can
+  # actually answer. No controlling terminal means there is nobody who can
+  # consent, so the safe answer is no; unattended callers must pass --yes.
   if [ -t 0 ]; then
     printf '%s [y/N] ' "$1"
     read -r reply || reply=""
@@ -866,7 +872,9 @@ activate_installations || die "installation failed; rolling back previous instal
 # binary and hands over the terminal.
 
 tty_available() {
-  [ -t 0 ] && return 0
+  if [ -t 0 ]; then
+    return 0
+  fi
   if { exec 3</dev/tty; } 2>/dev/null; then
     exec 3<&-
     return 0

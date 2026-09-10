@@ -401,6 +401,9 @@ func (a *App) installerGate(ctx context.Context, module string) error {
 	}); err != nil {
 		return err
 	}
+	if err := a.gatePhase(module+" installer shared helpers", a.checkInstallerSharedFunctions); err != nil {
+		return err
+	}
 	return a.gatePhase(module+" installer behavior", func() error {
 		return a.run(ctx, a.Root, nil, "go", "run", "./tools/cmd/installtest", module)
 	})
