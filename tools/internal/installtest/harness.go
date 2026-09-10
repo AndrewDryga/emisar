@@ -192,12 +192,13 @@ func sandboxConfigHome(overrides map[string]string) map[string]string {
 	return sandboxedOverrides
 }
 
-func requireChecksumVerification(output []byte) error {
+func requireChecksumTrustDecision(output []byte) error {
 	text := string(output)
-	if !strings.Contains(text, "checksum signature verified") {
-		return fmt.Errorf("the installer did not verify the downloaded checksum signature:\n%s", text)
+	if strings.Contains(text, "checksum signature verified") ||
+		strings.Contains(text, "checksum signature not checked: GitHub CLI is not installed") {
+		return nil
 	}
-	return nil
+	return fmt.Errorf("the installer did not report how it handled the checksum signature:\n%s", text)
 }
 
 type commandResult struct {

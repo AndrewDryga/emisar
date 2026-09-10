@@ -6,12 +6,14 @@ itself in a workflow step. When a workflow calls a linter, scanner, or validator
 directly (`run: mix sobelow`, `go install staticcheck@… && staticcheck ./...`),
 move it into the gate and delete the step in the same change.
 
-The narrow exception is a check that genuinely cannot run on a workstation
-because it needs the CI environment itself: a fresh network advisory feed
-(`govulncheck`, Trivy), a built release image, cross-compilation for platforms
-the contributor does not have, or credentials that only CI holds. Those stay as
-workflow steps — and stay honest about it, because each one reintroduces the
-gap below.
+The narrow exception is a check that genuinely needs a different execution
+boundary: a fresh network advisory feed (`govulncheck`, Trivy), a built release
+image, cross-compilation for another platform, credentials held only by CI, or
+a Docker-based test that needs to create and remove its own containers. That
+access is intentionally unavailable in a Coop box. Keep the exception behind its
+repository-owned `./run` command, and report the result separately from the
+canonical gate. These checks stay honest about their boundary because each one
+reintroduces the gap below.
 
 **Why.** `./run gate` is the Definition of Done (creed #4): an agent or
 contributor takes it green and commits. A check that lives only in CI makes that

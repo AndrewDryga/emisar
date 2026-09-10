@@ -6,6 +6,7 @@ provider "registry.terraform.io/betterstackhq/better-uptime" {
   constraints = "~> 0.21.0"
   hashes = [
     "h1:4wX9oLJvRNIiYM1n6luupABC+UqblEOE0Sj0M2HCJUM=",
+    "h1:UpbpeKm2Kiw6iEiqUIEDrsHFYu/LZzWsGY4sCKHQt5Q=",
     "h1:YA1jko6D6H0vT+ars5DS0UJ2DwtW1utZ4DjamlP/wbg=",
     "h1:n3N1fz0dWg8+x3FL+us6X1LQEg7HCSrljoakt1ckgWI=",
     "zh:04ef03a90b8b632ba4d28e4cd5ca1f31f04ea1eb8e95df2391a991feea1d9491",
@@ -31,6 +32,7 @@ provider "registry.terraform.io/hashicorp/google" {
     "h1:ALcfR9PrN49rz4bO/KkLKfGlOmbKejdzmAl+frMhba8=",
     "h1:AlekfK/kVz+q+zGzJnMgMu0HwyNE4ZYecspHfZ1xAr0=",
     "h1:mWwZAzIiSaNP67Ac416mZkeJ1ZlQy31MMkvOHsSsM2k=",
+    "h1:yWOZeIQIHMn5UA5Agl0Z9kPTpjmWUiKQRz/qWsCoxOQ=",
     "zh:0e905b46ee345a95797ea0ed2e76210c9a3410a253f5b87beee1f793f0be1bb7",
     "zh:5733ab3bb2b8ad78afa6d0c60c31253ef90eefbf342c361be79f87857290a2f9",
     "zh:57d4e829208aa1ba70719d706bfe4e43a4d429ffc30d5273335a9f0d39868b32",
@@ -52,6 +54,7 @@ provider "registry.terraform.io/hashicorp/random" {
   hashes = [
     "h1:OO+IuvQJSPmWdN8AyyIEvPJbLvDQpgX/zbktoa9KsJE=",
     "h1:UlBuNVuCGJ39tTv2c5gz2NRZnQbXfbIWbTzWcth5o74=",
+    "h1:lVDv+0AjDjrLfpmaJbWqUmIw/k3/AHXLc3N4m55SNdo=",
     "h1:o0s5Mk9NXMP60nlheO1r0LsDGGratFb3oL0t7bD2QnM=",
     "zh:161ad0bd9a75768c82f53fb6e7172a9d8be2d4889b012645a34795031aaf1bf1",
     "zh:19dc9a5b17729725ccfc4f45b0500af0ee5bc6b6b160c7adb8f2bf617d2c80ea",

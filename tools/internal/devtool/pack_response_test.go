@@ -256,6 +256,42 @@ func TestPackResponseTransferFailures(t *testing.T) {
 	}
 }
 
+// jq 1.6 exits zero when it receives no input, while newer jq releases exit 4.
+// The pack decides whether an API response is present; a runner's jq version
+// must not turn an empty response into a successful action.
+func TestPackResponseRejectsEmptyWhenJQAcceptsIt(t *testing.T) {
+	for _, pack := range responsePacks() {
+		if pack.emptyOK || pack.name == "pfsense" {
+			continue
+		}
+		t.Run(pack.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				assertResponseRequest(t, pack, r)
+				w.WriteHeader(http.StatusNoContent)
+			}))
+			defer server.Close()
+
+			bin := t.TempDir()
+			if err := os.WriteFile(filepath.Join(bin, "jq"), []byte("#!/bin/sh\ncat >/dev/null\nexit 0\n"), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			temp := t.TempDir()
+			cmd := responseCommand(t, pack, server.URL, temp)
+			for index, value := range cmd.Env {
+				if strings.HasPrefix(value, "PATH=") {
+					cmd.Env[index] = "PATH=" + bin + string(os.PathListSeparator) + strings.TrimPrefix(value, "PATH=")
+				}
+			}
+			var stderr responseOutput
+			cmd.Stderr = &stderr
+			if err := waitResponseCommand(t, cmd); err == nil || !strings.Contains(stderr.first.String(), "empty response") {
+				t.Fatalf("empty response succeeded with jq 1.6 semantics: err=%v stderr=%s", err, &stderr.first)
+			}
+			assertResponseCleanup(t, temp)
+		})
+	}
+}
+
 func TestPackResponseCancellationCleanup(t *testing.T) {
 	for _, pack := range responsePacks() {
 		t.Run(pack.name, func(t *testing.T) {

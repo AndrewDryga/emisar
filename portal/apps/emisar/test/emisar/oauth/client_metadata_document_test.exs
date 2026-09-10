@@ -220,10 +220,8 @@ defmodule Emisar.OAuth.ClientMetadataDocumentTest do
       refute_receive {:connect, _, _, _, _, _}
     end
 
-    @tag :tmp_dir
-    test "bounds a real TLS response that keeps delivering sub-timeout fragments", %{
-      tmp_dir: tmp_dir
-    } do
+    test "bounds a real TLS response that keeps delivering sub-timeout fragments" do
+      tmp_dir = Emisar.TestTempDirectory.create!("oauth-trickling-response")
       {port, peer, certfile} = start_trickling_listener(tmp_dir)
 
       Emisar.Config.put_override(:emisar, ClientMetadataDocument,

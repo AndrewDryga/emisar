@@ -451,7 +451,7 @@ func runnerInstallRollback(h *harness) error {
 	if err != nil {
 		return err
 	}
-	if err := requireChecksumVerification(installed); err != nil {
+	if err := requireChecksumTrustDecision(installed); err != nil {
 		return err
 	}
 	versionOutput, err := h.successful(h.root, nil, filepath.Join(bin, "emisar"), "--version")

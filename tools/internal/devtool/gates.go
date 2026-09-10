@@ -641,6 +641,18 @@ func (a *App) packsGate(ctx context.Context) error {
 
 func (a *App) infraGate(ctx context.Context) error {
 	dir := filepath.Join(a.Root, "infra")
+	var terraformEnv map[string]string
+	if os.Getenv("COOP_BOX") == "1" {
+		// Coop replaces secret-looking Terraform state with an empty stand-in.
+		// Keep validation metadata in a private disposable directory instead of
+		// reading the developer's ignored infra/.terraform state through the box.
+		dataDir, err := os.MkdirTemp("", "emisar-terraform-gate-*")
+		if err != nil {
+			return fmt.Errorf("create isolated Terraform data directory: %w", err)
+		}
+		defer os.RemoveAll(dataDir)
+		terraformEnv = map[string]string{"TF_DATA_DIR": dataDir}
+	}
 	// A pure file read, so it fails in milliseconds before terraform or tflint is
 	// invoked — and it belongs in the gate rather than only a CI step, so a green
 	// local run cannot ship a .tool-versions that disagrees with the workflow pins.
@@ -653,12 +665,16 @@ func (a *App) infraGate(ctx context.Context) error {
 		args  []string
 	}{
 		{"infra Terraform format", "terraform", []string{"fmt", "-check", "-recursive"}},
-		{"infra Terraform initialization", "terraform", []string{"init", "-backend=false", "-input=false"}},
+		{"infra Terraform initialization", "terraform", []string{"init", "-backend=false", "-input=false", "-lockfile=readonly"}},
 		{"infra Terraform validation", "terraform", []string{"validate"}},
 		{"infra TFLint", "tflint", nil},
 	} {
 		if err := a.gatePhase(command.label, func() error {
-			return a.run(ctx, dir, nil, command.name, command.args...)
+			env := map[string]string(nil)
+			if command.name == "terraform" {
+				env = terraformEnv
+			}
+			return a.run(ctx, dir, env, command.name, command.args...)
 		}); err != nil {
 			return err
 		}

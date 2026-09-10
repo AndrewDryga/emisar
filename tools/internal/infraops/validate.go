@@ -232,12 +232,27 @@ func (a *App) validateCloudInit(ctx context.Context, path string, containerized 
 }
 
 func (a *App) validateTemplates(ctx context.Context) error {
-	if err := a.require("docker", "terraform", "bash", "shellcheck"); err != nil {
+	if err := a.require("terraform", "bash", "shellcheck"); err != nil {
 		return err
 	}
-	containerizedCloudInit, err := a.cloudInitValidator(ctx)
-	if err != nil {
-		return err
+	_, dockerErr := a.LookPath("docker")
+	dockerAvailable := dockerErr == nil
+	_, cloudInitErr := a.LookPath("cloud-init")
+	validateCloudInitSchema := cloudInitErr == nil
+	containerizedCloudInit := false
+	if !validateCloudInitSchema && dockerAvailable {
+		var err error
+		containerizedCloudInit, err = a.cloudInitValidator(ctx)
+		if err != nil {
+			return err
+		}
+		validateCloudInitSchema = true
+	}
+	if !dockerAvailable {
+		fmt.Fprintln(a.Out, "skip: Docker-only infrastructure image and runtime checks; run this gate on a trusted host or in CI")
+	}
+	if !validateCloudInitSchema {
+		fmt.Fprintln(a.Out, "skip: cloud-init schema validation because cloud-init and Docker are unavailable")
 	}
 	proxyImage, err := terraformImage(filepath.Join(a.Infra, "compute.tf"), "cloud_sql_proxy_image")
 	if err != nil {
@@ -270,32 +285,34 @@ func (a *App) validateTemplates(ctx context.Context) error {
 	if _, err := os.Stat(adminCallback); err != nil {
 		return fmt.Errorf("private admin callback missing from the HCP upload input: %w", err)
 	}
-	proxyVersion, err := a.output(ctx, a.Root, nil, "docker", "run", "--rm", "--read-only",
-		"--cap-drop=ALL", "--security-opt=no-new-privileges", proxyImage, "--version")
-	if err != nil {
-		return err
-	}
-	if !strings.Contains(string(proxyVersion), "cloud-sql-proxy version "+imageVersion(proxyImage)+"+container") {
-		return fmt.Errorf("unexpected Cloud SQL Auth Proxy version: %s", proxyVersion)
-	}
-	gcloudVersion, err := a.output(ctx, a.Root, nil, "docker", "run", "--rm", "--network", "host",
-		"--read-only", "--cap-drop=ALL", "--security-opt=no-new-privileges",
-		"--tmpfs", "/tmp:rw,noexec,nosuid,nodev,size=64m", "--env", "CLOUDSDK_CONFIG=/tmp/gcloud",
-		gcloudImage, "gcloud", "version")
-	if err != nil {
-		return err
-	}
-	if !strings.Contains(string(gcloudVersion), "Google Cloud SDK "+strings.TrimSuffix(imageVersion(gcloudImage), "-stable")) {
-		return fmt.Errorf("unexpected Google Cloud CLI version: %s", gcloudVersion)
-	}
-	livebookVersion, err := a.output(ctx, a.Root, nil, "docker", "run", "--rm", "--read-only",
-		"--cap-drop=ALL", "--security-opt=no-new-privileges", "--entrypoint", "/app/bin/livebook",
-		livebookImage, "version")
-	if err != nil {
-		return err
-	}
-	if !strings.Contains(string(livebookVersion), "livebook "+imageVersion(livebookImage)) {
-		return fmt.Errorf("unexpected Livebook version: %s", livebookVersion)
+	if dockerAvailable {
+		proxyVersion, err := a.output(ctx, a.Root, nil, "docker", "run", "--rm", "--read-only",
+			"--cap-drop=ALL", "--security-opt=no-new-privileges", proxyImage, "--version")
+		if err != nil {
+			return err
+		}
+		if !strings.Contains(string(proxyVersion), "cloud-sql-proxy version "+imageVersion(proxyImage)+"+container") {
+			return fmt.Errorf("unexpected Cloud SQL Auth Proxy version: %s", proxyVersion)
+		}
+		gcloudVersion, err := a.output(ctx, a.Root, nil, "docker", "run", "--rm", "--network", "host",
+			"--read-only", "--cap-drop=ALL", "--security-opt=no-new-privileges",
+			"--tmpfs", "/tmp:rw,noexec,nosuid,nodev,size=64m", "--env", "CLOUDSDK_CONFIG=/tmp/gcloud",
+			gcloudImage, "gcloud", "version")
+		if err != nil {
+			return err
+		}
+		if !strings.Contains(string(gcloudVersion), "Google Cloud SDK "+strings.TrimSuffix(imageVersion(gcloudImage), "-stable")) {
+			return fmt.Errorf("unexpected Google Cloud CLI version: %s", gcloudVersion)
+		}
+		livebookVersion, err := a.output(ctx, a.Root, nil, "docker", "run", "--rm", "--read-only",
+			"--cap-drop=ALL", "--security-opt=no-new-privileges", "--entrypoint", "/app/bin/livebook",
+			livebookImage, "version")
+		if err != nil {
+			return err
+		}
+		if !strings.Contains(string(livebookVersion), "livebook "+imageVersion(livebookImage)) {
+			return fmt.Errorf("unexpected Livebook version: %s", livebookVersion)
+		}
 	}
 
 	temp, err := os.MkdirTemp("", "emisar-infra-render-*")
@@ -305,15 +322,16 @@ func (a *App) validateTemplates(ctx context.Context) error {
 	defer os.RemoveAll(temp)
 	renderDir := filepath.Join(a.Infra, "tests", "render")
 	state := filepath.Join(temp, "render.tfstate")
-	if _, err := a.output(ctx, a.Root, nil, "terraform", "-chdir="+renderDir,
+	terraformEnv := map[string]string{"TF_DATA_DIR": filepath.Join(temp, "terraform-data")}
+	if _, err := a.output(ctx, a.Root, terraformEnv, "terraform", "-chdir="+renderDir,
 		"init", "-backend=false", "-input=false"); err != nil {
 		return err
 	}
-	if _, err := a.output(ctx, a.Root, nil, "terraform", "-chdir="+renderDir,
+	if _, err := a.output(ctx, a.Root, terraformEnv, "terraform", "-chdir="+renderDir,
 		"apply", "-auto-approve", "-input=false", "-state="+state); err != nil {
 		return err
 	}
-	renderedData, err := a.output(ctx, a.Root, nil, "terraform", "-chdir="+renderDir,
+	renderedData, err := a.output(ctx, a.Root, terraformEnv, "terraform", "-chdir="+renderDir,
 		"output", "-state="+state, "-raw", "cloud_init")
 	if err != nil {
 		return err
@@ -322,7 +340,7 @@ func (a *App) validateTemplates(ctx context.Context) error {
 	if err := os.WriteFile(renderedPath, renderedData, 0o600); err != nil {
 		return err
 	}
-	livebookData, err := a.output(ctx, a.Root, nil, "terraform", "-chdir="+renderDir,
+	livebookData, err := a.output(ctx, a.Root, terraformEnv, "terraform", "-chdir="+renderDir,
 		"output", "-state="+state, "-raw", "livebook_cloud_init")
 	if err != nil {
 		return err
@@ -345,9 +363,11 @@ func (a *App) validateTemplates(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	for _, path := range []string{renderedPath, livebookPath} {
-		if err := a.validateCloudInit(ctx, path, containerizedCloudInit); err != nil {
-			return err
+	if validateCloudInitSchema {
+		for _, path := range []string{renderedPath, livebookPath} {
+			if err := a.validateCloudInit(ctx, path, containerizedCloudInit); err != nil {
+				return err
+			}
 		}
 	}
 
@@ -539,7 +559,7 @@ func (a *App) validateTemplates(ctx context.Context) error {
 			return fmt.Errorf("rendered notebook differs from %s", source)
 		}
 	}
-	if err := a.validateLivebook(ctx, livebookImage, proxyImage, notebooksDir, string(livebookData)); err != nil {
+	if err := a.validateLivebook(ctx, livebookImage, proxyImage, notebooksDir, string(livebookData), dockerAvailable); err != nil {
 		return err
 	}
 	scripts := append(portalScripts, livebookScripts...)
@@ -693,6 +713,7 @@ esac
 func (a *App) validateLivebook(
 	ctx context.Context,
 	livebookImage, proxyImage, notebooksDir, rendered string,
+	dockerAvailable bool,
 ) error {
 	eval := `
 files = Path.wildcard("/notebooks/*.livemd")
@@ -706,12 +727,14 @@ Enum.each(files, fn file ->
   |> Code.string_to_quoted!()
 end)
 `
-	if err := a.run(ctx, a.Root, nil, "docker", "run", "--rm", "--read-only",
-		"--cap-drop=ALL", "--security-opt=no-new-privileges",
-		"--tmpfs", "/data:rw,nosuid,nodev,size=64m",
-		"--mount", "type=bind,src="+notebooksDir+",dst=/notebooks,readonly",
-		"--entrypoint", "/app/bin/livebook", livebookImage, "eval", eval); err != nil {
-		return err
+	if dockerAvailable {
+		if err := a.run(ctx, a.Root, nil, "docker", "run", "--rm", "--read-only",
+			"--cap-drop=ALL", "--security-opt=no-new-privileges",
+			"--tmpfs", "/data:rw,nosuid,nodev,size=64m",
+			"--mount", "type=bind,src="+notebooksDir+",dst=/notebooks,readonly",
+			"--entrypoint", "/app/bin/livebook", livebookImage, "eval", eval); err != nil {
+			return err
+		}
 	}
 	readmeData, err := os.ReadFile(filepath.Join(a.Infra, "README.md"))
 	if err != nil {
@@ -745,6 +768,9 @@ end)
 	}
 	if !strings.Contains(string(loadBalancer), "/public/health") {
 		return fmt.Errorf("load_balancer.tf lacks the Livebook public health path")
+	}
+	if !dockerAvailable {
+		return nil
 	}
 	probe, err := a.output(ctx, a.Root, nil, "docker", "run", "--rm", "--read-only",
 		"--user", "1000:1000", "--cap-drop=ALL", "--security-opt=no-new-privileges",

@@ -239,9 +239,7 @@ defmodule Emisar.OAuthTest do
       assert OAuth.fetch_client(nil) == {:error, :not_found}
     end
 
-    @tag :tmp_dir
-    test "the pinned fetch still verifies TLS — an untrusted certificate is refused",
-         %{tmp_dir: tmp_dir} do
+    test "the pinned fetch still verifies TLS — an untrusted certificate is refused" do
       # The fetch was rewritten from Finch to Mint so it can connect to the exact
       # address `validate_destination/1` approved while carrying the URL's
       # hostname for SNI and certificate verification. Hand-rolling a connection
@@ -252,6 +250,7 @@ defmodule Emisar.OAuthTest do
       # It also proves the rewrite reaches the handshake at all: a broken
       # connect would fail here for the wrong reason and this test could not
       # tell the difference, which is why the listener records the attempt.
+      tmp_dir = Emisar.TestTempDirectory.create!("oauth-untrusted-certificate")
       {:ok, listener} = start_metadata_listener(tmp_dir)
       on_exit(fn -> :ssl.close(listener.socket) end)
 

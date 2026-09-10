@@ -66,6 +66,7 @@ request() (
   bytes=$(wc -c <"$response_dir/body")
   ((bytes <= max_response_bytes && statuses[1] != 63)) || fail "Cloudflare API response exceeded 16 MiB"
   ((statuses[0] == 0 && statuses[1] == 0 && statuses[2] == 0)) || fail "Cloudflare API request failed"
+  ((bytes > 0)) || fail "Cloudflare API returned an empty response"
   cat "$response_dir/body"
 )
 
@@ -79,9 +80,10 @@ respond() {
 }
 
 rest() {
-  local method=$1 path=$2
+  local method=$1 path=$2 response
   shift 2
-  respond "$(request "$method" "$api_base$path" "$@")"
+  response=$(request "$method" "$api_base$path" "$@") || return
+  respond "$response"
 }
 
 rest_json() {

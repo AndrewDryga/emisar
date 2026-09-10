@@ -2,7 +2,8 @@ schema_version: 1
 
 id: cloudflare
 name: Cloudflare edge operations
-version: 0.2.8
+version: 0.2.9
+retired_below: 0.2.9
 description: >
   Governed Cloudflare zone, DNS record, cache-purge, security-posture, TLS,
   analytics, tunnel, load-balancer, Workers, Pages, and audit-log operations.

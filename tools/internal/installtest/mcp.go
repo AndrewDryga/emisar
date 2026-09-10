@@ -127,8 +127,9 @@ log() { printf '%s\n' "$*"; }
 warn() { printf '%s\n' "$*" >&2; }
 die() { printf '%s\n' "$*" >&2; exit 1; }
 command() {
-  if [ "${1:-}" = "-v" ] && [ "${2:-}" = "gh" ] && [ "$MISSING_GH" = "1" ]; then
-    return 1
+  if [ "${1:-}" = "-v" ] && [ "${2:-}" = "gh" ]; then
+    [ "$MISSING_GH" = "1" ] && return 1
+    return 0
   fi
   builtin command "$@"
 }
@@ -504,7 +505,7 @@ func installMCP(h *harness, bin string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if err := requireChecksumVerification(installed); err != nil {
+	if err := requireChecksumTrustDecision(installed); err != nil {
 		return "", err
 	}
 	output, err := h.successful(h.root, nil, filepath.Join(bin, "emisar-mcp"), "--version")

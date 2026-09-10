@@ -53,6 +53,11 @@ curl_protocols() {
 }
 
 request() (
+  local allow_empty=false
+  if [[ "${1:-}" == "--allow-empty" ]]; then
+    allow_empty=true
+    shift
+  fi
   local method=$1 url=$2
   shift 2
   umask 077
@@ -72,12 +77,18 @@ request() (
   bytes=$(wc -c <"$response_dir/body")
   ((bytes <= max_response_bytes && statuses[1] != 63)) || fail "bunny.net API response exceeded 16 MiB"
   ((statuses[0] == 0 && statuses[1] == 0 && statuses[2] == 0)) || fail "bunny.net API request failed"
+  [[ "$allow_empty" == "true" || "$bytes" -gt 0 ]] || fail "bunny.net API returned an empty response"
   cat "$response_dir/body"
 )
 
 request_json() {
   local method=$1 url=$2 body=$3
   request "$method" "$url" -H 'Content-Type: application/json' --data "$body"
+}
+
+request_json_allow_empty() {
+  local method=$1 url=$2 body=$3
+  request --allow-empty "$method" "$url" -H 'Content-Type: application/json' --data "$body"
 }
 
 safe_pull_zone() {
@@ -144,13 +155,13 @@ get_pull_zone() {
 
 update_pull_zone() {
   local pull_zone_id=$1 body=$2
-  request_json POST "$core_base/pullzone/$pull_zone_id" "$body" >/dev/null
+  request_json_allow_empty POST "$core_base/pullzone/$pull_zone_id" "$body" >/dev/null
   get_pull_zone "$pull_zone_id"
 }
 
 mutate_pull_zone_resource() {
   local method=$1 pull_zone_id=$2 resource=$3 body=$4
-  request_json "$method" "$core_base/pullzone/$pull_zone_id/$resource" "$body" >/dev/null
+  request_json_allow_empty "$method" "$core_base/pullzone/$pull_zone_id/$resource" "$body" >/dev/null
   get_pull_zone "$pull_zone_id"
 }
 
@@ -326,7 +337,7 @@ create_pull_zone() {
 }
 
 delete_pull_zone() {
-  request DELETE "$core_base/pullzone/$1" >/dev/null
+  request --allow-empty DELETE "$core_base/pullzone/$1" >/dev/null
   jq -nce --argjson id "$1" '{deleted:true, pull_zone_id:$id}'
 }
 
@@ -419,7 +430,7 @@ blocked_ip_change() {
 
 purge_url() {
   local url=${BUNNY_PURGE_URL:?BUNNY_PURGE_URL is required}
-  request POST "$core_base/purge" -G \
+  request --allow-empty POST "$core_base/purge" -G \
     --data-urlencode "url=$url" \
     --data-urlencode "async=$1" \
     --data-urlencode "exactPath=$2" >/dev/null
@@ -427,12 +438,12 @@ purge_url() {
 }
 
 purge_tag() {
-  request_json POST "$core_base/pullzone/$1/purgeCache" "$(jq -nc --arg tag "$2" '{CacheTag:$tag}')" >/dev/null
+  request_json_allow_empty POST "$core_base/pullzone/$1/purgeCache" "$(jq -nc --arg tag "$2" '{CacheTag:$tag}')" >/dev/null
   jq -nce --argjson id "$1" --arg tag "$2" '{purged:true, scope:"tag", pull_zone_id:$id, cache_tag:$tag}'
 }
 
 purge_all_cache() {
-  request_json POST "$core_base/pullzone/$1/purgeCache" '{}' >/dev/null
+  request_json_allow_empty POST "$core_base/pullzone/$1/purgeCache" '{}' >/dev/null
   jq -nce --argjson id "$1" '{purged:true, scope:"pull_zone", pull_zone_id:$id}'
 }
 

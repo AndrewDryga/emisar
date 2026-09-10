@@ -62,6 +62,11 @@ api_post() {
 }
 
 request() (
+  local allow_empty=false
+  if [[ "${1:-}" == "--allow-empty" ]]; then
+    allow_empty=true
+    shift
+  fi
   # Bound bytes on disk before any caller captures the body in shell memory.
   # head also bounds chunked/close-delimited transfers on older curl versions.
   umask 077
@@ -82,6 +87,7 @@ request() (
     cat "$response_dir/body" >&2
     fail "Databricks rejected the request — request exit status ${statuses[0]}"
   fi
+  [[ "$allow_empty" == "true" || "$bytes" -gt 0 ]] || fail "Databricks API returned an empty response"
   cat "$response_dir/body"
 )
 
@@ -264,7 +270,7 @@ sql_statement() {
 # ended, and that is the honest answer.
 sql_statement_cancel() {
   local statement_id=$1
-  request api_post "/2.0/sql/statements/$statement_id/cancel" >/dev/null
+  request --allow-empty api_post "/2.0/sql/statements/$statement_id/cancel" >/dev/null
   local response
   response=$(request api_get "/2.0/sql/statements/$statement_id")
   printf '%s' "$response" |
@@ -563,7 +569,7 @@ warehouse_get() {
 # re-read reports the state it actually reached — usually STARTING/STOPPING.
 warehouse_action() {
   local verb=$1 warehouse_id=$2
-  request api_post "/2.0/sql/warehouses/$warehouse_id/$verb" >/dev/null
+  request --allow-empty api_post "/2.0/sql/warehouses/$warehouse_id/$verb" >/dev/null
   local response
   response=$(request api_get "/2.0/sql/warehouses/$warehouse_id")
   printf '%s' "$response" |
@@ -774,7 +780,7 @@ job_run_now() {
 
 job_run_cancel() {
   local run_id=$1
-  request api_post "/2.2/jobs/runs/cancel" "$(jq -nc --argjson run_id "$run_id" '{run_id: $run_id}')" >/dev/null
+  request --allow-empty api_post "/2.2/jobs/runs/cancel" "$(jq -nc --argjson run_id "$run_id" '{run_id: $run_id}')" >/dev/null
   local response
   response=$(request api_get_q "/2.2/jobs/runs/get" --data-urlencode "run_id=$run_id")
   printf '%s' "$response" |
@@ -897,7 +903,7 @@ cluster_events() {
 # so the re-read is the only truthful result.
 cluster_action() {
   local verb=$1 cluster_id=$2
-  request api_post "/2.1/clusters/$verb" "$(jq -nc --arg cluster_id "$cluster_id" '{cluster_id: $cluster_id}')" >/dev/null
+  request --allow-empty api_post "/2.1/clusters/$verb" "$(jq -nc --arg cluster_id "$cluster_id" '{cluster_id: $cluster_id}')" >/dev/null
   local response
   response=$(request api_get_q "/2.1/clusters/get" --data-urlencode "cluster_id=$cluster_id")
   printf '%s' "$response" |

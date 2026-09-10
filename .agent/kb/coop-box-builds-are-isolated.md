@@ -1,6 +1,6 @@
 ---
 name: coop-box-builds-are-isolated
-description: how host and Coop development share workspace-local service URLs while keeping platform-specific build output isolated
+description: how host-managed sidecars and Docker-free Coop gates share service URLs while keeping platform-specific build output isolated
 subsystem: agent-stack
 sources: [.agent/Dockerfile, .agent/project.yaml, dev/compose.yml, run, tools/internal/devtool, portal/config/dev.exs, portal/config/test.exs]
 updated: 2026-09-10
@@ -71,6 +71,15 @@ confusing, hard-to-attribute failures:
    the child executable; it retains the same lock, service, proxy, and shutdown
    lifecycle as ordinary serve.
 
+8. **Docker stays outside the box:** `.agent/Dockerfile` does not install the
+   Docker client. Service-aware `COOP_BOX=1` paths use the URLs Coop prepared
+   before launch instead of starting containers. The canonical `./run gate all`
+   path is Docker-free: Terraform metadata and tests that generate secret-looking
+   files use box-local temporary directories, while Docker-only infrastructure
+   probes are reported separately. Tests that need to create their own containers
+   stay outside the box: pack behavior and host-access tests, end-to-end Compose
+   scenarios, and the packaged-stack smoke test.
+
 Coop's shared base owns asdf, login-shell PATH repair, agent CLIs,
 and the localhost sidecar forwarders. Devtool consumes Coop's `COOP_FORWARD` contract
 to restore only an absent listener for the lifetime of a repository command, so a broken
@@ -80,9 +89,11 @@ gate/UI dependencies (`shellcheck`, Chromium, ImageMagick) and platform-specific
 cache locations. Copying the base image setup into this repo would duplicate
 Coop-owned behavior and cache layers.
 
-Related rules: [human development tooling is not agent state](rules/shared-human-dev-tooling-is-not-agent-state.md) and [Docker inputs enter at their narrowest layer](rules/shared-docker-inputs-enter-at-narrowest-layer.md).
+Related rules: [keep Docker out of Coop boxes](rules/shared-coop-box-gates-stay-docker-free.md), [human development tooling is not agent state](rules/shared-human-dev-tooling-is-not-agent-state.md), and [Docker inputs enter at their narrowest layer](rules/shared-docker-inputs-enter-at-narrowest-layer.md).
 
 ## Changelog
+- 2026-09-10 — documented the Docker-free box boundary and separated ordinary
+  project gates from the Docker-based tests that run outside it.
 - 2026-09-10 — made the Portal test-environment compile the one build preparation step;
   parallel app shards now reuse it instead of compiling dependencies again.
 - 2026-08-04 — added read-only workspace status, exact-project dependency logs,

@@ -78,6 +78,11 @@ api_post() {
 }
 
 request() (
+  local allow_empty=false
+  if [[ "${1:-}" == "--allow-empty" ]]; then
+    allow_empty=true
+    shift
+  fi
   # Bound bytes before capture, including transfers without Content-Length.
   umask 077
   response_dir=$(mktemp -d "${TMPDIR:-/tmp}/emisar-hcp-terraform.XXXXXXXX") || exit 1
@@ -97,6 +102,7 @@ request() (
     cat "$response_dir/body" >&2
     fail "HCP Terraform rejected the request — request exit status ${statuses[0]}"
   fi
+  [[ "$allow_empty" == "true" || "$bytes" -gt 0 ]] || fail "HCP Terraform returned an empty response"
   cat "$response_dir/body"
 )
 
@@ -620,7 +626,7 @@ comment_body() {
 run_action() {
   local verb=$1 run_id=$2 comment=$3
   require_id "run_id" "$run_id" "run-"
-  request api_post "/runs/$run_id/actions/$verb" "$(comment_body "$comment")" >/dev/null
+  request --allow-empty api_post "/runs/$run_id/actions/$verb" "$(comment_body "$comment")" >/dev/null
   run_state "$run_id"
 }
 

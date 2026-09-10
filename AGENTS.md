@@ -121,9 +121,9 @@ critic for high-stakes decisions with the same neutral problem statement; check
 the configured providers before claiming independent vendor perspectives.
 Outside Coop, use the runtime's available subagents for the same responsibilities.
 
-In a Coop box, finish or explicitly terminate owned jobs before ending the turn:
-ending the turn destroys the box. Await long-running commands in the same turn;
-asynchronous work is useful only while its owning session remains alive.
+In a Coop box, follow the [Docker-free gate rule](.agent/kb/rules/shared-coop-box-gates-stay-docker-free.md):
+Docker access is intentionally absent. Finish or terminate owned jobs before ending;
+the box is destroyed with the turn, so await long-running commands in that turn.
 
 Give a short initial update, then concise findings and next checks during long
 work. Ground progress claims in this session's evidence. The final answer stands
