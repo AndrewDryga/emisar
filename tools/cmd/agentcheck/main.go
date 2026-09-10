@@ -1295,27 +1295,38 @@ func (o mcpSchemaObject) argumentNames(defs map[string]mcpSchemaObject) map[stri
 	return names
 }
 
-// The Definition of Done binds each commit to its task with a Coop-Task
-// trailer, and `coop` reconciles the queue from it after an interruption. A
-// line git does not PARSE as a trailer is worse than none — it reads as bound
-// and is not — so the commit-msg hook has to exist and stay executable.
-func (c *checker) checkCommitMessageHook() {
-	hook := c.path(".githooks/commit-msg")
-	info, err := os.Stat(hook)
-	if err != nil {
-		c.fail(".githooks/commit-msg is missing; nothing checks that a Coop-Task line parses as a trailer")
-		return
-	}
-	if info.Mode()&0o111 == 0 {
-		c.fail(".githooks/commit-msg is not executable, so git silently skips it")
-	}
-	body, err := os.ReadFile(hook)
-	if err != nil {
-		c.fail(".githooks/commit-msg is unreadable: %v", err)
-		return
-	}
-	if !bytes.Contains(body, []byte("interpret-trailers")) {
-		c.fail(".githooks/commit-msg no longer asks git whether the line is a trailer")
+// The tracked git hooks are enforcement points, and git skips a hook that is
+// missing or not executable without a word. pre-commit is the staged-format
+// gate every committer enters; commit-msg binds each commit to its task with a
+// Coop-Task trailer (a line git does not PARSE as a trailer is worse than none —
+// it reads as bound and is not); prepare-commit-msg chains to Coop's co-author
+// rewrite in a box. Each has to exist, stay executable, and still do its job.
+func (c *checker) checkTrackedGitHooks() {
+	for _, hook := range []struct{ name, job, marker, lost string }{
+		{"pre-commit", "runs the staged-format check on every commit",
+			"check staged", "no longer runs ./run check staged"},
+		{"commit-msg", "checks that a Coop-Task line parses as a trailer",
+			"interpret-trailers", "no longer asks git whether the line is a trailer"},
+		{"prepare-commit-msg", "chains to Coop's co-author trailer hook in a box",
+			"prepare-commit-msg", "no longer chains to Coop's prepare-commit-msg hook"},
+	} {
+		path := c.path(".githooks/" + hook.name)
+		info, err := os.Stat(path)
+		if err != nil {
+			c.fail(".githooks/%s is missing; nothing %s", hook.name, hook.job)
+			continue
+		}
+		if info.Mode()&0o111 == 0 {
+			c.fail(".githooks/%s is not executable, so git silently skips it", hook.name)
+		}
+		body, err := os.ReadFile(path)
+		if err != nil {
+			c.fail(".githooks/%s is unreadable: %v", hook.name, err)
+			continue
+		}
+		if !bytes.Contains(body, []byte(hook.marker)) {
+			c.fail(".githooks/%s %s", hook.name, hook.lost)
+		}
 	}
 }
 
@@ -1393,7 +1404,7 @@ func (c *checker) run(requireCoop bool) int {
 	c.group("public skills have portable metadata and remain separate from contributor skills", c.checkPublicSkills)
 	c.group("public skill MCP tool names exist in the portal-owned API schema", c.checkPublicSkillMCPTools)
 	c.group("no project-global Stop hook or retired sweep sentinel", c.checkNoGlobalStopHook)
-	c.group("the commit-msg hook verifies a Coop-Task line parses as a trailer", c.checkCommitMessageHook)
+	c.group("the tracked git hooks exist, are executable, and still do their jobs", c.checkTrackedGitHooks)
 	c.group("every kb rule is discoverable from a manual or linked rule index", c.checkRulesAreIndexed)
 	c.group("the compatibility spec names every environment variable the installers read", c.checkFrozenInstallerEnv)
 	if len(c.failures) > 0 {

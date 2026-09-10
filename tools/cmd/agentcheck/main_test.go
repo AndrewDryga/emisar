@@ -600,3 +600,58 @@ func TestCheckDistributionLayoutRejectsEmptyMirror(t *testing.T) {
 		t.Fatalf("failures = %#v", check.failures)
 	}
 }
+
+func TestTrackedGitHooksMustExistBeExecutableAndKeepTheirJobs(t *testing.T) {
+	hooks := map[string]string{
+		"pre-commit":         "#!/bin/sh\nexec \"$root/run\" check staged\n",
+		"commit-msg":         "#!/bin/sh\ngit interpret-trailers --parse\n",
+		"prepare-commit-msg": "#!/bin/sh\ncoop_hook=\"$HOME/.config/coop/git-hooks/prepare-commit-msg\"\n",
+	}
+	write := func(t *testing.T, check *checker, mode os.FileMode, overrides map[string]string) {
+		t.Helper()
+		for name, body := range hooks {
+			if override, ok := overrides[name]; ok {
+				body = override
+			}
+			writeTestFile(t, check.root, ".githooks/"+name, body)
+			if err := os.Chmod(filepath.Join(check.root, ".githooks", name), mode); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+
+	check := testChecker(t)
+	write(t, check, 0o755, nil)
+	check.checkTrackedGitHooks()
+	if len(check.failures) != 0 {
+		t.Fatalf("healthy hooks reported: %v", check.failures)
+	}
+
+	// The gap this test closes: pre-commit is the staged-format gate, and a
+	// lost exec bit used to go unnoticed while commit-msg's was guarded.
+	check = testChecker(t)
+	write(t, check, 0o644, nil)
+	check.checkTrackedGitHooks()
+	for _, name := range []string{"pre-commit", "commit-msg", "prepare-commit-msg"} {
+		if !hasFailure(check, ".githooks/"+name+" is not executable") {
+			t.Errorf("non-executable %s not reported: %v", name, check.failures)
+		}
+	}
+
+	check = testChecker(t)
+	write(t, check, 0o755, map[string]string{"pre-commit": "#!/bin/sh\nexit 0\n"})
+	check.checkTrackedGitHooks()
+	if !hasFailure(check, ".githooks/pre-commit no longer runs ./run check staged") {
+		t.Fatalf("pre-commit without the staged check not reported: %v", check.failures)
+	}
+
+	check = testChecker(t)
+	write(t, check, 0o755, nil)
+	if err := os.Remove(filepath.Join(check.root, ".githooks", "prepare-commit-msg")); err != nil {
+		t.Fatal(err)
+	}
+	check.checkTrackedGitHooks()
+	if !hasFailure(check, ".githooks/prepare-commit-msg is missing") {
+		t.Fatalf("missing prepare-commit-msg not reported: %v", check.failures)
+	}
+}
