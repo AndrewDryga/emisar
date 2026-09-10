@@ -187,7 +187,10 @@ resource "google_logging_metric" "cloudsql_backup_failed" {
     value_type  = "INT64"
   }
 
-  depends_on = [google_project_service.apis]
+  depends_on = [
+    google_project_service.apis,
+    google_project_iam_member.terraform_apply_authority,
+  ]
 }
 
 resource "google_monitoring_alert_policy" "db_backup_failed" {

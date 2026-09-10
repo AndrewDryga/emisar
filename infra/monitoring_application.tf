@@ -9,7 +9,10 @@ resource "google_logging_metric" "recurrent_job_failures" {
     unit        = "1"
   }
 
-  depends_on = [google_project_iam_member.terraform_apply_authority]
+  depends_on = [
+    google_project_service.apis,
+    google_project_iam_member.terraform_apply_authority,
+  ]
 }
 
 resource "google_logging_metric" "billing_sync_failures" {
@@ -23,7 +26,10 @@ resource "google_logging_metric" "billing_sync_failures" {
     unit        = "1"
   }
 
-  depends_on = [google_project_iam_member.terraform_apply_authority]
+  depends_on = [
+    google_project_service.apis,
+    google_project_iam_member.terraform_apply_authority,
+  ]
 }
 
 resource "google_logging_metric" "cluster_failures" {
@@ -37,7 +43,10 @@ resource "google_logging_metric" "cluster_failures" {
     unit        = "1"
   }
 
-  depends_on = [google_project_iam_member.terraform_apply_authority]
+  depends_on = [
+    google_project_service.apis,
+    google_project_iam_member.terraform_apply_authority,
+  ]
 }
 
 resource "google_monitoring_alert_policy" "recurrent_job_failures" {
@@ -156,7 +165,10 @@ resource "google_logging_metric" "fleet_observability_ticks" {
     unit        = "1"
   }
 
-  depends_on = [google_project_iam_member.terraform_apply_authority]
+  depends_on = [
+    google_project_service.apis,
+    google_project_iam_member.terraform_apply_authority,
+  ]
 }
 
 resource "google_logging_metric" "fleet_no_connected_runners" {
@@ -170,7 +182,10 @@ resource "google_logging_metric" "fleet_no_connected_runners" {
     unit        = "1"
   }
 
-  depends_on = [google_project_iam_member.terraform_apply_authority]
+  depends_on = [
+    google_project_service.apis,
+    google_project_iam_member.terraform_apply_authority,
+  ]
 }
 
 resource "google_logging_metric" "dispatch_backlog" {
@@ -186,7 +201,10 @@ resource "google_logging_metric" "dispatch_backlog" {
     unit        = "1"
   }
 
-  depends_on = [google_project_iam_member.terraform_apply_authority]
+  depends_on = [
+    google_project_service.apis,
+    google_project_iam_member.terraform_apply_authority,
+  ]
 }
 
 resource "google_monitoring_alert_policy" "fleet_observability_absent" {

@@ -68,7 +68,10 @@ resource "google_logging_metric" "unexpected_secret_access" {
     value_type  = "INT64"
   }
 
-  depends_on = [google_project_service.apis]
+  depends_on = [
+    google_project_service.apis,
+    google_project_iam_member.terraform_apply_authority,
+  ]
 }
 
 resource "google_monitoring_alert_policy" "unexpected_secret_access" {
