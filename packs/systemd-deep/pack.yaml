@@ -2,7 +2,7 @@ schema_version: 1
 
 id: systemd-deep
 name: Systemd deep introspection pack
-version: 0.1.21
+version: 0.2.0
 # 0.1.20 and below let watchdog_status report "no service has a watchdog" for a
 # host where systemctl could not reach the manager at all — a false all-clear
 # from a low, auto-running read.
@@ -10,9 +10,10 @@ retired_below: 0.1.21
 description: >
   Deeper systemd state than linux-core: failed units, list-units,
   timers, cgroup tree, journal disk usage, systemd-analyze for boot
-  diagnosis, plus full operator surface (daemon-reload, start/stop/
-  restart/reload, kill -s signal, mask/unmask, reset-failed) for
-  remediating runtime issues.
+  diagnosis, plus the operator surface linux-core does not carry
+  (daemon-reload, kill -s signal, mask/unmask, reset-failed). The
+  start/stop/restart/reload lifecycle lives in linux-core, which every
+  host installs.
 vendor: emisar
 homepage: https://emisar.dev/packs/systemd-deep
 
@@ -46,10 +47,6 @@ setup:
     - actions:
         - systemd.vacuum_journal
         - systemd.daemon_reload
-        - systemd.unit_start
-        - systemd.unit_stop
-        - systemd.unit_restart
-        - systemd.unit_reload
         - systemd.unit_kill
         - systemd.unit_mask
         - systemd.unit_unmask
@@ -86,10 +83,6 @@ actions:
   - actions/watchdog_status.yaml
   - actions/vacuum_journal.yaml
   - actions/daemon_reload.yaml
-  - actions/unit_start.yaml
-  - actions/unit_stop.yaml
-  - actions/unit_restart.yaml
-  - actions/unit_reload.yaml
   - actions/unit_kill.yaml
   - actions/unit_mask.yaml
   - actions/unit_unmask.yaml

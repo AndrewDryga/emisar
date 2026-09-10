@@ -84,47 +84,6 @@ cases:
       exit: [1]
       stderr_contains: [Failed to connect to bus]
 
-  - action: systemd.unit_start
-    args: {unit: cron.service}
-    arrange:
-      - argv: [systemctl, stop, cron.service]
-    probes:
-      - name: the unit is running
-        argv: [systemctl, is-active, cron.service]
-        expect:
-          stdout_contains: [active]
-
-  - action: systemd.unit_stop
-    args: {unit: cron.service}
-    arrange:
-      - argv: [systemctl, start, cron.service]
-    probes:
-      - name: the unit is no longer running
-        argv: [/bin/sh, -c, "systemctl is-active cron.service; echo probed"]
-        expect:
-          stdout_contains: [inactive, probed]
-
-  # The main PID is what changes when a unit really restarts; asserting it is
-  # still active would pass whether or not anything happened.
-  - action: systemd.unit_restart
-    args: {unit: cron.service}
-    arrange:
-      - argv: [systemctl, start, cron.service]
-      - argv: [/bin/sh, -c, "systemctl show cron.service -p MainPID --value > /run/packtest-mainpid"]
-    probes:
-      - name: the service came back under a new main PID
-        argv: [/bin/sh, -c, "test \"$(systemctl show cron.service -p MainPID --value)\" != \"$(cat /run/packtest-mainpid)\" && systemctl is-active cron.service"]
-        expect:
-          stdout_contains: [active]
-
-  - action: systemd.unit_reload
-    args: {unit: dbus.service}
-    probes:
-      - name: the reloaded unit is still up
-        argv: [systemctl, is-active, dbus.service]
-        expect:
-          stdout_contains: [active]
-
   - action: systemd.unit_kill
     args: {unit: cron.service, signal: SIGKILL}
     arrange:
