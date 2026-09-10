@@ -8,11 +8,13 @@
 #
 # Invoked by docker-compose as `build: { context: ., dockerfile: portal/Dockerfile }`.
 
-# Toolchain defaults track /.tool-versions (the repo-root single source of
-# truth). CI's portal job overrides ELIXIR_VERSION/OTP_VERSION via --build-arg derived
-# from that file; docker-compose and local builds use these defaults — keep them
-# in sync when .tool-versions bumps. (ELIXIR_VERSION drops the asdf `-otp-NN`
-# suffix; the hexpm image tag doesn't carry it.)
+# Toolchain pins track /.tool-versions (the repo-root single source of truth).
+# These defaults ARE the release toolchain: BUILDER_IMAGE below is digest-pinned,
+# so a --build-arg override would only rewrite the tag in front of the digest,
+# which Docker ignores, and no build passes one. `./run gate tooling`
+# (checkReleaseToolchainPins) fails when these drift from .tool-versions.
+# (ELIXIR_VERSION drops the asdf `-otp-NN` suffix; the hexpm image tag doesn't
+# carry it.)
 ARG ELIXIR_VERSION=1.20.2
 ARG OTP_VERSION=29.0.3
 ARG DEBIAN_VERSION=bookworm-20260713-slim
