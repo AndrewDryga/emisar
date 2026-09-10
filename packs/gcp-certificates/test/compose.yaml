@@ -1,7 +1,7 @@
 services:
   runner-tools:
     build:
-      context: ${EMISAR_ROOT}/packs/gcp-certificates/test
+      context: ${EMISAR_ROOT}/dev/test-packs/gcloud
       dockerfile: Dockerfile
       args:
         PACKTEST_RUNNER_IMAGE: ${PACKTEST_RUNNER_IMAGE:-emisar-runner-tools:latest}

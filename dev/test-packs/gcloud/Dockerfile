@@ -1,3 +1,7 @@
+# The gcloud client overlay every gcp-* pack's runner-tools service builds on
+# the shared action-client image. One source here, one per-pack image tag in
+# each compose file, so the packs stay independent rows while the Dockerfile
+# cannot drift ten ways.
 ARG PACKTEST_RUNNER_IMAGE=emisar-runner-tools:latest
 ARG PACKTEST_VERSION=577.0.0-slim
 ARG PACKTEST_DIGEST
