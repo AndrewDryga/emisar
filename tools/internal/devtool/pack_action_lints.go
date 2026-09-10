@@ -10,6 +10,9 @@ import (
 	"go.yaml.in/yaml/v3"
 )
 
+// A slice of the pack schema, not the canonical runner/pkg types: tools does
+// not depend on the runner module. pack_schema_tags_test.go fails when the
+// keys named here stop existing in the canonical source.
 type packActionLintManifest struct {
 	Actions  []string `yaml:"actions"`
 	Requires struct {

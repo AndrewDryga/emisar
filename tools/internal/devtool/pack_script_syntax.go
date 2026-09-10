@@ -36,6 +36,9 @@ var packScriptParsers = map[string]string{
 	"/usr/bin/env sh":   "/bin/sh",
 }
 
+// A slice of the pack schema, not the canonical runner/pkg types: tools does
+// not depend on the runner module. pack_schema_tags_test.go fails when the
+// keys named here stop existing in the canonical source.
 type packScriptAction struct {
 	ID        string `yaml:"id"`
 	Execution struct {
