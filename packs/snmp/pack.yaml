@@ -2,7 +2,7 @@ schema_version: 1
 
 id: snmp
 name: SNMP (net-snmp)
-version: 0.2.4
+version: 0.2.5
 # Older versions could send runner-held credentials to a caller-chosen target.
 retired_below: 0.2.4
 description: >

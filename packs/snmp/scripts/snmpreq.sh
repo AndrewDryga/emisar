@@ -22,7 +22,7 @@
 #   v3:     SNMP_USER, SNMP_LEVEL (noAuthNoPriv|authNoPriv|authPriv, default
 #           authPriv), SNMP_AUTH_PROTO (default SHA) + SNMP_AUTH_PASS,
 #           SNMP_PRIV_PROTO (default AES) + SNMP_PRIV_PASS.
-set -u
+set -eu
 
 tool=$1
 host=$2

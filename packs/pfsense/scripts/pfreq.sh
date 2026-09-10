@@ -28,6 +28,8 @@
 # TLS is verified by default. pfSense ships a self-signed GUI certificate, so
 # set PFSENSE_INSECURE=true to skip verification, or point curl at a CA with
 # the standard CURL_CA_BUNDLE env var to verify properly.
+set -eu
+
 PFSENSE_URL=${PFSENSE_URL:-https://192.168.1.1}
 method=$1
 path=$2
@@ -37,7 +39,9 @@ case $method in
 POST | PUT | PATCH) set -- -H "Content-Type: application/json" "$@" ;;
 esac
 
-[ "${PFSENSE_INSECURE:-}" = "true" ] && set -- -k "$@"
+if [ "${PFSENSE_INSECURE:-}" = "true" ]; then
+	set -- -k "$@"
+fi
 
 if [ -n "${PFSENSE_API_KEY:-}" ]; then
 	printf 'X-API-Key: %s\n' "$PFSENSE_API_KEY" |

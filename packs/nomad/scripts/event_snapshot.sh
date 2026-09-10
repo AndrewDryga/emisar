@@ -19,7 +19,7 @@
 # whitelist + a namespace pattern with no shell/URL metacharacters) before they
 # reach here, so interpolating them into the query string is safe. An empty value
 # drops the whole query param (POSIX ${var:+…}) rather than sending "&topic=".
-set -u
+set -eu
 secs=$1
 topic=$2
 ns=$3

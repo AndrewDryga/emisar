@@ -12,6 +12,8 @@
 # base64-encoded, and streamed to curl as an Authorization header over stdin
 # (-H @-) so they never land in argv, a `ps` listing, or the audit log. Many
 # zot deployments allow anonymous read, in which case leave ZOT_BASICAUTH unset.
+set -eu
+
 ZOT_URL=${ZOT_URL:-http://127.0.0.1:5000}
 method=${1:-GET}
 path=$2

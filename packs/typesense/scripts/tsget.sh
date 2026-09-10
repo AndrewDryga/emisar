@@ -9,6 +9,8 @@
 # API key is read from $TYPESENSE_API_KEY and streamed to curl as the
 # X-TYPESENSE-API-KEY header over stdin (-H @-), so it never lands in argv, a
 # `ps` listing, or the audit log. $TYPESENSE_URL defaults to a local node.
+set -eu
+
 TYPESENSE_URL=${TYPESENSE_URL:-http://127.0.0.1:8108}
 path=$1
 shift

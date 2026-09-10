@@ -56,16 +56,19 @@ type packScriptRef struct {
 	path        string
 }
 
-func validatePackScriptSyntax(ctx context.Context, input packActionLintInput) error {
+// packScriptRefs maps every shell script a pack's actions run to the action
+// ids that run it. Shared by the syntax and failure-floor lints so both see
+// exactly the scripts a dispatch can reach.
+func packScriptRefs(input packActionLintInput) (map[packScriptRef][]string, error) {
 	scripts := make(map[packScriptRef][]string)
 	for _, path := range input.actionPaths {
 		data, err := os.ReadFile(path)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		var action packScriptAction
 		if err := yaml.Unmarshal(data, &action); err != nil {
-			return fmt.Errorf("parse %s: %w", path, err)
+			return nil, fmt.Errorf("parse %s: %w", path, err)
 		}
 		script := action.Execution.Script
 		if script.Path == "" {
@@ -83,6 +86,14 @@ func validatePackScriptSyntax(ctx context.Context, input packActionLintInput) er
 		}
 		ref := packScriptRef{interpreter: parser, path: filepath.Clean(script.Path)}
 		scripts[ref] = append(scripts[ref], action.ID)
+	}
+	return scripts, nil
+}
+
+func validatePackScriptSyntax(ctx context.Context, input packActionLintInput) error {
+	scripts, err := packScriptRefs(input)
+	if err != nil {
+		return err
 	}
 
 	refs := make([]packScriptRef, 0, len(scripts))

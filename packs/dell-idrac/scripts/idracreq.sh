@@ -25,7 +25,7 @@
 # an unverified channel. iDRAC ships a Dell self-signed cert, so either install
 # a CA-signed cert on the iDRAC or set IDRAC_INSECURE=true explicitly to accept
 # the self-signed one; only that exact value skips verification.
-set -u
+set -eu
 
 host=$1
 method=$2
@@ -76,7 +76,9 @@ auth=$(printf '%s:%s' "$IDRAC_USER" "$IDRAC_PASSWORD" | base64 | tr -d '\n')
 # from rewriting the path at all, so the /redfish/v1 prefix survives into the
 # request line even if a dot segment ever gets past the guard above.
 set -- --globoff --path-as-is --proto '=https' -sS -X "$method" -H @- "https://$host/redfish/v1$path"
-[ "${IDRAC_INSECURE:-}" = "true" ] && set -- -k "$@"
+if [ "${IDRAC_INSECURE:-}" = "true" ]; then
+	set -- -k "$@"
+fi
 if [ -n "$body" ]; then
 	set -- "$@" -H "Content-Type: application/json" --data "$body"
 fi
@@ -89,10 +91,12 @@ trap 'rm -f "$body_file"' EXIT INT TERM
 # path, session exhaustion) does NOT make curl exit non-zero by itself, so we
 # inspect the code and fail loudly — while still surfacing the Redfish error
 # body so the operator sees the iDRAC message.
+rc=0
 code=$(printf 'Authorization: Basic %s\nAccept: application/json\n' "$auth" |
-	curl -q "$@" -o "$body_file" -w '%{http_code}')
-rc=$?
-[ -s "$body_file" ] && cat "$body_file"
+	curl -q "$@" -o "$body_file" -w '%{http_code}') || rc=$?
+if [ -s "$body_file" ]; then
+	cat "$body_file"
+fi
 
 if [ "$rc" -ne 0 ]; then
 	echo "dell-idrac: curl failed (exit $rc) reaching iDRAC at $host" >&2

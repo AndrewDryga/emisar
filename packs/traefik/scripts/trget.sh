@@ -27,14 +27,20 @@
 # host_readiness.sh and http_services_summary.sh; each pack file is
 # content-hashed on its own, so a sourced helper cannot be shared. Keep the
 # three in step.
+set -eu
+
 TRAEFIK_URL=${TRAEFIK_URL:-http://127.0.0.1:8080}
 K=""
-[ "${TRAEFIK_INSECURE:-}" = "true" ] && K="-k"
+if [ "${TRAEFIK_INSECURE:-}" = "true" ]; then
+	K="-k"
+fi
 path=$1
 shift
 
 base_url=$TRAEFIK_URL
-[ "$path" = "/ping" ] && base_url=${TRAEFIK_PING_URL:-$TRAEFIK_URL}
+if [ "$path" = "/ping" ]; then
+	base_url=${TRAEFIK_PING_URL:-$TRAEFIK_URL}
+fi
 
 if [ -n "${TRAEFIK_BASICAUTH:-}" ]; then
 	printf 'Authorization: Basic %s\n' "$(printf '%s' "$TRAEFIK_BASICAUTH" | base64 | tr -d '\n')" |

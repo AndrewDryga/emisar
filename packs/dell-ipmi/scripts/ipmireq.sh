@@ -30,7 +30,7 @@
 #                   ADMINISTRATOR, more than monitoring needs; OPERATOR covers
 #                   every read plus chassis power control. Drop to USER for a
 #                   read-only account that lacks OPERATOR.
-set -u
+set -eu
 
 host=$1
 shift
@@ -71,10 +71,12 @@ fi
 # coverage varies). Capture stdout so an empty result becomes a real non-zero
 # exit — this pack must fail loudly, never report a misleading empty success.
 # stderr flows through to the action's stderr stream unchanged.
+rc=0
 out=$(ipmitool -I lanplus -H "$host" -U "$IPMI_USER" -E \
-	-C "${IPMI_CIPHER:-3}" -L "${IPMI_PRIVLEVEL:-OPERATOR}" "$@")
-rc=$?
-[ -n "$out" ] && printf '%s\n' "$out"
+	-C "${IPMI_CIPHER:-3}" -L "${IPMI_PRIVLEVEL:-OPERATOR}" "$@") || rc=$?
+if [ -n "$out" ]; then
+	printf '%s\n' "$out"
+fi
 if [ "$rc" -ne 0 ]; then
 	exit "$rc"
 fi

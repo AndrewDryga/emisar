@@ -2,7 +2,7 @@ schema_version: 1
 
 id: traefik
 name: Traefik ingress / reverse proxy
-version: 0.1.23
+version: 0.1.24
 # 0.1.22 and below rated rawdata and http_middlewares `low`, so the live
 # dynamic config — basicAuth user hashes and injected upstream auth headers
 # among it — auto-ran with no approval, three tiers under every sibling proxy's

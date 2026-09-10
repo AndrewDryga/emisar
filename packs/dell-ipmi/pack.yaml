@@ -2,7 +2,7 @@ schema_version: 1
 
 id: dell-ipmi
 name: Dell iDRAC / IPMI (ipmitool)
-version: 0.1.5
+version: 0.1.6
 # Older versions could send runner-held credentials to a caller-chosen target.
 retired_below: 0.1.5
 description: >

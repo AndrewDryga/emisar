@@ -20,15 +20,23 @@
 # streamed over stdin on the read call. Neither token ever lands in argv, a
 # `ps` listing, or the audit log. FlashArrays ship a self-signed certificate,
 # so set PURE_INSECURE=true to skip TLS verification.
+set -eu
+
 PURE_URL=${PURE_URL:-https://192.168.1.1}
 K=""
-[ "${PURE_INSECURE:-}" = "true" ] && K="-k"
+if [ "${PURE_INSECURE:-}" = "true" ]; then
+	K="-k"
+fi
 path=$1
 shift
 
 # Negotiate the highest REST 2.x version the array supports (no auth needed).
-ver=$(curl -q --globoff --proto '=http,https' -fsS $K "$PURE_URL/api/api_version" | grep -oE '2\.[0-9]+' | sort -t. -k2 -n | tail -1)
-[ -n "$ver" ] || ver=2.2
+# `|| true`: a rejected or unparsable probe falls back to 2.2 below rather
+# than aborting under set -e.
+ver=$(curl -q --globoff --proto '=http,https' -fsS $K "$PURE_URL/api/api_version" | grep -oE '2\.[0-9]+' | sort -t. -k2 -n | tail -1 || true)
+if [ -z "$ver" ]; then
+	ver=2.2
+fi
 
 # Exchange the API token for a session token (api-token in -> x-auth-token out).
 sess=$(printf 'api-token: %s\n' "${PURE_API_TOKEN:-}" |
