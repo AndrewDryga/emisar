@@ -38,12 +38,11 @@ drivers. It is not shipped to customers and is not part of the runtime system.
 4. The runner re-hashes the pack, checks local admission, looks up the action,
    re-validates every argument, clamps options to the action envelope, and
    renders the pack-authored argv and environment.
-5. The runner executes through `os/exec`. Most actions call a binary directly.
-   Packs may use a fixed, reviewed `/bin/sh -c` program when shell features are
-   necessary. Open-ended values reach it through environment or whole
-   positional argv elements; only finite choices and two-sided bounded numbers
-   may render into program text. The staging-only `shell` pack is the explicit
-   arbitrary-shell break-glass path.
+5. The runner executes through `os/exec`. Most actions call a binary directly;
+   a pack may use a fixed, reviewed `/bin/sh -c` program, and the
+   [security model](specs/security-model.md) says which values may render
+   into it. The staging-only `shell` pack is the arbitrary-shell break-glass
+   path.
 6. Runner output is redacted before leaving the host; Emisar retains the
    resulting redacted output in run history, while Portal audit events record
    decision and execution metadata. Output is also line-buffered and bounded.

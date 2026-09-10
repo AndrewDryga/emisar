@@ -50,9 +50,7 @@ say so and review the code with lower confidence.
    Inspect hierarchy, alignment, rhythm, typography, image treatment, spacing,
    responsive behavior, and whether the art direction is carried through every
    section. Then run the `design-interface-polish` micro-craft pass for the
-   small details that read as unfinished — concentric border radius, optical
-   alignment, tabular numbers, text-wrap, image outlines, press feedback, and
-   transition specificity.
+   small details that read as unfinished, checked against design-system §3.
 
 5. **Usability and accessibility test.**
    Check scan path, CTA clarity, keyboard/focus states, contrast, reduced motion,

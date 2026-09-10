@@ -312,11 +312,9 @@ This codebase is MVP, pre-release — for **code** there is no legacy to preserv
 
 When refactoring: rip out the old shape, update every caller in the same change, run tests.
 
-The production release runs `/app/bin/migrate` before each instance boots, and each migration applies once. Never edit or delete a migration that production ran; add a forward migration. If production did not run it, fix or delete the original instead of preserving a mistake with repair migrations.
+Migrations are the exception to greenfield: `.agent/kb/rules/elixir-migrations-frozen.md` owns the production-applied boundary (the release runs `/app/bin/migrate` before each instance boots, once per migration), version numbering, and proportionality to real data.
 
 **A concurrent index must recover interrupted DDL.** `IF NOT EXISTS` checks only the name: it can skip an INVALID index and incorrectly finish the migration. `Emisar.Release.migrate/0` holds one Postgres advisory lock across the whole run and uses finite guarded bodies for the historical nontransactional migrations. Recovery keeps a matching valid index, creates a missing one, or uses `REINDEX INDEX CONCURRENTLY` for a matching invalid index; it rejects unexpected definitions and dependencies. Unique replacements become valid before their predecessors are dropped. New concurrent-index migrations use the same exact-definition checks and cover every successful operation prefix, including an all-DDL-complete body with no version row. Never edit an applied or production-unknown migration to add recovery; Ecto remains the owner of version recording.
-
-Git history is not the boundary because `main` publishes plans and a founder applies them later. Establish the production fact before changing an existing migration. Keep the migration proportional to the actual data: use batching, concurrent indexes, or expand/contract only when current table size or a real rolling-version overlap requires them. See `.agent/kb/rules/elixir-migrations-frozen.md`.
 
 A table RENAME must sweep five surfaces in the same change (constraint/index renames, the schema string, explicit `name:` options, `for_subject` `query_source` atom clauses, raw-SQL strings) or IL-4 row scoping silently breaks: `.agent/kb/rules/elixir-table-rename-sweep.md`.
 

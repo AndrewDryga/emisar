@@ -1,6 +1,6 @@
 # runner — how we build (Go, on-host action runner)
 
-The `runner` is the on-host binary that actually executes infrastructure actions. It dials **out** to the control plane over a websocket, receives `run_action` commands, **re-validates** every argument against the action schema it loaded locally, executes the pack-authored binary and argv via `os/exec`, streams redacted output back, and journals every attempt to an append-only local JSONL log. Fixed pack-authored shell programs keep open-ended values in environment or positional-argv data channels; only finite choices and two-sided bounded numbers may render into program text. The staging-only `shell` pack is the explicit break-glass exception.
+The `runner` is the on-host binary that actually executes infrastructure actions. It dials **out** to the control plane over a websocket, receives `run_action` commands, **re-validates** every argument against the action schema it loaded locally, executes the pack-authored binary and argv via `os/exec`, streams redacted output back, and journals every attempt to an append-only local JSONL log.
 
 It is the most security-sensitive component in the repo: it runs commands on real hosts. Read the root `../AGENTS.md` first — this file is the Go + runner specifics.
 

@@ -60,10 +60,8 @@ Do not restart completed work or switch tasks.
   model names, flags, provider behavior, or remote state.
 - Validate hostile input at system boundaries. Preserve authorization, account
   isolation, pack trust, audit, redaction, and denial/abuse coverage.
-- Before 1.0, update callers and remove superseded code together. A migration
-  production already ran is immutable; add a forward migration. Confirmed-unrun
-  migrations are corrected in place. Git history does not prove deployment.
-  From 1.0, public compatibility surfaces also follow
+- Before 1.0, update callers and remove superseded code together. From 1.0,
+  public compatibility surfaces also follow
   [.agent/kb/specs/compatibility.md](.agent/kb/specs/compatibility.md).
 - CI validates; CD publishes the same tested commit and artifacts. Write/OIDC
   permissions and deployment secrets belong in CD, never PR CI. Serialize active
@@ -81,9 +79,9 @@ connection is needed.
 
 - `./run test <project> ...` gives focused feedback; `./run check ...` gives quick
   or specialized checks. Use direct language tools for diagnosis when useful.
-- Finish locally with `./run gate <project>`. Portal uses
-  `./run gate portal --changed`; use the complete gate before a push or release and in CI.
-  `./run gate all` covers the repository.
+- Finish locally with `./run gate <project>`; `./run gate all` covers the
+  repository. The project manual names any changed-only mode and when the
+  complete gate is required.
 - During implementation, run focused checks after coherent edits. Fix a failure
   before building dependent work on it; investigate and repair within the task.
   An initial red check is not a reason to hand the task back.

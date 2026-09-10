@@ -76,8 +76,7 @@ the pixels yourself, then hand the user both paths for review. Full workflow:
 
 Run `./run gate portal --changed` from the repository root, click-test the happy
 path + one error path, and confirm lists stream. Before pushing, run the complete
-`./run gate portal`. Before a rendered surface is done,
-run the `design-interface-polish`
-micro-craft pass (concentric radius, tabular numbers on live counts, hit areas,
-transition specificity) — calm on the console, expressive on marketing. Hand UX
-judgment calls to `/design-ux`; keep this hat on the implementation.
+`./run gate portal`. Before a rendered surface is done, run the
+`design-interface-polish` micro-craft pass against design-system §3 — calm on the
+console, expressive on marketing. Hand UX judgment calls to `/design-ux`; keep this
+hat on the implementation.

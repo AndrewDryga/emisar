@@ -36,8 +36,6 @@ Numbered so Credo, `/elixir-iron-review`, and code review can cite them. **Archi
 | **IL-10** | **`:preload` routes through the Query module's `preloads/0`; never `Repo.preload/2` in a context's Subject-gated reads.** | Keeps preload shapes defined in one place per query. (Exception: an *internal* — no-Subject, already-authorized — path that holds a struct and needs its parent assoc uses `Repo.preload(struct, :assoc)` rather than a cross-context `fetch_*_by_id!`: post-commit email helpers, the runner-register billing check.) | `Repo.preload(` inside a Subject-gated read in `lib/emisar/<context>.ex`. → [§1.4](.agent/kb/rules/elixir-layered-contexts.md#14-internal-sweepers--job-only-helpers) |
 | **IL-11** | **Greenfield. No legacy — for CODE.** Delete deprecated code and update every caller in the same change; no shims/flags/"this is the new version" comments. **A migration that ran in production is the exception: never edit or delete it; add a NEW migration. A confirmed-unrun migration stays greenfield.** | For code, every compatibility layer is debt for behavior nobody depends on yet. But prod runs applied migrations exactly once, so editing one never re-applies — prod's schema silently drifts from the code. | A `_v2`/`_old` or a one-value flag in code; editing or deleting a migration known to have run. → [§8](.agent/kb/rules/elixir-layered-contexts.md#8-greenfield-no-legacy) |
 
-> **The migration boundary is whether production ran it.** Git history is not deployment history because production applies are manual. Confirmed-unrun migrations should be corrected in place; `.agent/kb/rules/elixir-migrations-frozen.md` explains the rule.
-
 ### Phoenix-safety laws
 
 | # | Law | Why | Detect |
@@ -118,21 +116,21 @@ tests proportional to the behavior; preserve concurrency and failure evidence.
 
 ### 8. Migrations
 
-[§8](.agent/kb/rules/elixir-layered-contexts.md#8-greenfield-no-legacy) and
-[elixir-migrations-frozen.md](.agent/kb/rules/elixir-migrations-frozen.md) own the
-production-applied boundary. Confirm deployment state before editing an existing
-migration; a merged commit alone is not evidence.
+[elixir-migrations-frozen.md](.agent/kb/rules/elixir-migrations-frozen.md) owns the
+production-applied boundary, version numbering, and proportionality;
+[§8](.agent/kb/rules/elixir-layered-contexts.md#8-greenfield-no-legacy) covers
+concurrent-index recovery and table renames.
 
 ## Verification
 
 Use focused `./run test portal <path or selector>` checks and focused Credo after
-coherent edits. Finish local work with `./run gate portal --changed` from the
-root. It runs the changed source checks and the affected app tests. Before a push
-or release, run the complete `./run gate portal`; it includes compile, formatting,
-Credo, audits, Sobelow, both app suites, and the test-output guard. Fix failures
-without suppressing warning/error output or weakening checks. Never pipe a check
-through head/tail and lose its exit status. Use `./run test portal --profile`
-when diagnosing suite time; it reports the slowest tests without serializing them.
+coherent edits, then the gates IL-20 names, from the root. `--changed` runs the
+changed source checks and the affected app tests; the complete gate adds compile,
+formatting, Credo, audits, Sobelow, both app suites, and the test-output guard.
+Fix failures without suppressing warning/error output or weakening checks. Never
+pipe a check through head/tail and lose its exit status. Use
+`./run test portal --profile` when diagnosing suite time; it reports the slowest
+tests without serializing them.
 
 The [enforcement reference](.agent/kb/rules/elixir-layered-contexts.md#enforcement)
 routes Elixir AST rules to Credo and appropriate template checks to

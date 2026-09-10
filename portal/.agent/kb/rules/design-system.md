@@ -226,6 +226,10 @@ use `brand-*` for accent, primary action, links, and success/allowed/healthy.
 - **Radius — concentric:** outer cards `rounded-2xl`; inner elements step down
   (`rounded-lg`, `rounded-md`); chips `rounded`/`rounded-full`; icon tiles
   `rounded-lg`. A child's radius is never larger than its parent's.
+- **Hit area:** every interactive control is at least `40×40px` even when its
+  glyph is smaller (icon buttons, close `×`, row actions) — extend the target
+  with padding or a pseudo-element, never by enlarging the icon; hit areas
+  never overlap.
 - **Section rhythm (marketing):** `py-24 sm:py-32` between sections; content in
   `mx-auto max-w-7xl px-6 lg:px-8`; prose columns `max-w-2xl/3xl`.
 - **Console rhythm — the shell OWNS inter-block spacing; don't hand-roll `mt-*`
@@ -302,6 +306,8 @@ Decorative, non-animating, `aria-hidden`, used **sparingly** (1–2 per page):
 - **One easing:** `cubic-bezier(0.16, 1, 0.3, 1)` (gentle expo-out). Short
   distances (`12–16px`). Standard durations `0.7s` (reveal/rise), `~0.2s`
   (hover/state).
+- **Transitions name their properties** (`transition-colors`,
+  `transition-transform`, `transition-opacity`), never `transition-all`.
 - `.rise-1…5` — pure-CSS staggered hero assembly (delays `0/.08/.16/.24/.34s`);
   no-JS safe.
 - `[data-reveal]` under `.js-reveal` — on-scroll reveals via `reveal.js`
@@ -525,9 +531,8 @@ site — emerald, type, semantics, crafted detail — while staying a calm tool.
    `emerald-400` accents are fine; document any kept emerald with a why).
 
 ### 7.2 Component craft pass (the "feels like the same team" work)
-Run the `design-interface-polish` micro-craft on the console shells: concentric
-radii, tabular-nums on every live count (runs, runners, audit), real hit areas
-(≥40px), specific transitions (not `transition-all`), calm row hover, handled
+Apply §3 (tokens, radius, hit areas, motion) and the `design-interface-polish`
+detail principles on the console shells, with calm row hover and handled
 empty/loading/error/offline states. Reuse the shared `stat`/
 `status_badge`/`chip`/`button`/`LiveTable` everywhere — replace any hand-rolled
 card/chip/stat with the shared primitive.

@@ -136,13 +136,11 @@ feels inevitable:
   inside cards.
 - Use stable dimensions for tables, metric tiles, toolbars, and controls so
   loading text, badges, hover states, and live numbers do not shift layout.
-- Use `tabular-nums` for counts, durations, money, timestamps, and live values.
-- Use `text-balance` for headings and `text-pretty` for explanatory copy where
-  it improves wrapping.
-- On dark UI, elevation usually comes from a subtle surface step plus
-  `ring-white/10`, not heavy shadow or hard `border-zinc-700`.
 - Motion in the console only communicates real state change. No decorative
   hover choreography.
+- Type, numerals, radius, elevation, hit areas, and motion values are fixed by
+  [design-system §3](../../../portal/.agent/kb/rules/design-system.md#3-tokens);
+  apply them, don't restate them.
 
 ## Words Are UX
 
@@ -162,12 +160,12 @@ Microcopy is design material here. A mislabeled control is a misclick.
 
 - Real labels, logical focus order, visible focus ring.
 - Keyboard path for primary flows and destructive confirmations.
-- At least 40x40px hit areas for interactive controls.
+- Real hit areas on every control (design-system §3.3).
 - Color is never the only signal; pair with text/icon/shape.
 - Loading is visible and non-blocking where possible.
 - Errors remain on screen until understood or resolved.
 - Mobile/narrow layouts keep actions reachable and text readable.
-- Respect reduced motion; never make motion load-bearing for meaning.
+- Never make motion load-bearing for meaning (reduced motion is global, §3.5).
 
 ## Review Checklist
 
