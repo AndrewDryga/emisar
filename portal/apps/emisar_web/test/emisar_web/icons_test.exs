@@ -68,6 +68,25 @@ defmodule EmisarWeb.IconsTest do
       assert Icons.compact_tokens() -- Icons.tokens() == []
     end
 
+    # The registry compiles whatever is on disk and the one-owner test above
+    # only says a meaning is not drawn twice — it never asked whether the
+    # meaning is used. Ten masters accumulated that nothing rendered.
+    test "every meaning is asked for by a template, a component, or a test" do
+      sources =
+        [
+          Path.join([__DIR__, "..", "..", "lib", "**", "*.{ex,heex}"]),
+          Path.join([__DIR__, "**", "*.exs"])
+        ]
+        |> Enum.flat_map(&Path.wildcard/1)
+        |> Enum.map(&File.read!/1)
+        |> IO.iodata_to_binary()
+
+      unused = Enum.reject(Icons.tokens(), &String.contains?(sources, "\"" <> &1 <> "\""))
+
+      assert unused == [],
+             "no template, component, or test names these meanings: #{inspect(unused)}"
+    end
+
     test "every master is one XML-valid document on a system grid" do
       # A regular master lives on the shared 24 grid; a compact may instead be
       # a native 16-grid cut that renders 1:1 for pixel-crisp small sizes.

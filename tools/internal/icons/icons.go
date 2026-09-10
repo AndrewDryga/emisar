@@ -39,7 +39,7 @@ const (
 // deliberate glyph sizes — every professional set draws these smaller than
 // containers (the Heroicons × is 47% of its box).
 var keepGlyphSize = set(
-	"action/add", "action/approve", "action/back", "action/close",
+	"action/add", "action/approve", "action/close",
 	"action/disclose", "action/download", "action/execute", "action/menu",
 	"action/move_down", "action/move_up", "action/next", "action/publish",
 	"action/refresh", "action/remove", "action/search", "action/select",
@@ -53,7 +53,7 @@ var keepGlyphSize = set(
 var noCut = set(
 	"action/retry", "communication/prompt_suppressed", "security/redacted",
 	"state/magic_link_sent", "state/offline", "state/revoked", "state/selected",
-	"trust/untrusted", "action/replay", "action/restore",
+	"trust/untrusted", "action/replay",
 	"infrastructure/kubernetes", "infrastructure/nomad",
 )
 
