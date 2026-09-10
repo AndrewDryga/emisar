@@ -6,7 +6,7 @@ sources: [.agent/Dockerfile, .agent/project.yaml, dev/compose.yml, run, tools/in
 updated: 2026-09-10
 ---
 
-Seven constraints make every gate run green inside a coop box; break any one and you get
+Eight constraints make every gate run green inside a coop box; break any one and you get
 confusing, hard-to-attribute failures:
 
 1. **Direct box database, forwarded host database:** `.agent/project.yaml` gives every

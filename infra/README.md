@@ -4,7 +4,7 @@ This directory is the production Terraform configuration for the emisar control
 plane. HCP Terraform workspace `Dryga/emisar` owns state and applies. GitHub CD
 uploads reviewed configurations and creates saved plans; it never applies them.
 
-See [`.github/DEPLOYMENT.md`](../.github/DEPLOYMENT.md) for the public delivery,
+See [the deployment runbook](../.agent/kb/runbooks/deployment.md) for the public delivery,
 rollout, and rollback contract.
 
 ```text

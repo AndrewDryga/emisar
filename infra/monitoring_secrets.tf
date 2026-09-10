@@ -32,7 +32,7 @@ locals {
     ["terraform@${var.project_id}.iam.gserviceaccount.com"],
   )
 
-  # HCP runs plans as a SECOND identity (.github/DEPLOYMENT.md): read-only
+  # HCP runs plans as a SECOND identity (.agent/kb/runbooks/deployment.md): read-only
   # review roles, deliberately without secretmanager.versions.access. The
   # exclusion above was written when there was one Terraform identity, so a
   # refresh that touches a secret version is audited as a PERMISSION_DENIED by a

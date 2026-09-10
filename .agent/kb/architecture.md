@@ -103,7 +103,7 @@ replayed dispatch from silently becoming a second execution.
 The hosted portal runs on Google Cloud behind a global load balancer with
 private application instances and Cloud SQL. CI validates a commit; main-only
 CD publishes the tested image and creates a saved HCP Terraform plan; a human
-reviews and applies that plan. See [`.github/DEPLOYMENT.md`](../../.github/DEPLOYMENT.md)
+reviews and applies that plan. See [the deployment runbook](runbooks/deployment.md)
 and [`infra/README.md`](../../infra/README.md).
 
 The runner exposes no inbound network listener. Its durable local state is the

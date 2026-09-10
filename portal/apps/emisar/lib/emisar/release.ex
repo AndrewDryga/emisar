@@ -5,7 +5,7 @@ defmodule Emisar.Release do
   lives here and gets invoked via `bin/emisar eval`. There is no
   rollback task on purpose: applied migrations are frozen and an
   application rollback redeploys a prior image without reversing DB
-  changes (.github/DEPLOYMENT.md).
+  changes (.agent/kb/runbooks/deployment.md).
   """
 
   @app :emisar

@@ -124,11 +124,16 @@ Related rule: `rules/<domain>-<slug>.md` <!-- link the real rule when applicable
   rotation procedures by credential class
 - [release](runbooks/release.md) — canonical product and component release
   procedure
-- [First durable-checkout rollout](runbooks/billing-checkout-cutover.md) — quiescent old producers, forward migration, and unresolved legacy payment links
+- [deployment](runbooks/deployment.md) — how a tested main commit becomes the
+  running portal: image publication, the HCP Terraform plan, and the manual apply
 
-Normative rules live under each project's `kb/rules/`. Search the
-[shared rule index](rules/README.md) and [Portal rule index](../../portal/.agent/kb/rules/README.md)
-for relevant entries; other project manuals carry their shorter indexes.
+One-shot rollouts stay listed until their production apply is confirmed, then leave:
+
+- [First durable-checkout rollout](runbooks/billing-checkout-cutover.md) — quiescent old producers, forward migration `20261025000000`, and unresolved legacy payment links; delete once that migration is confirmed applied in production
+
+Normative rules live in the [shared rule index](rules/README.md) and, for
+Portal-only rules, the [Portal rule index](../../portal/.agent/kb/rules/README.md);
+the other project manuals link the shared rules they need directly.
 The manuals route to these references without loading every rule.
 
 - [Agent tasks](runbooks/agent-tasks.md) — lifecycle, explicit batches, decisions, and recovery

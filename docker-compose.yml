@@ -11,7 +11,7 @@
 # ║   stack end-to-end with zero ceremony. Do NOT copy these       ║
 # ║   values to a real deployment.                                 ║
 # ║                                                                ║
-# ║   For production deploy: see .github/DEPLOYMENT.md.           ║
+# ║   For production deploy: .agent/kb/runbooks/deployment.md.     ║
 # ║                                                                ║
 # ╚════════════════════════════════════════════════════════════════╝
 #

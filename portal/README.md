@@ -45,7 +45,7 @@ previous failures. The full pre-commit surface remains `./run gate portal`.
 
 The repository-root `docker-compose.yml` starts the complete local stack,
 including sample runners. Production delivery is documented in
-[`.github/DEPLOYMENT.md`](../.github/DEPLOYMENT.md).
+[the deployment runbook](../.agent/kb/runbooks/deployment.md).
 
 ## Gate
 
