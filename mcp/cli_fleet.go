@@ -59,30 +59,6 @@ type cliFleetAction struct {
 	Next     cliToolResultNext `json:"next"`
 }
 
-func writeCLIFleetOutput(w io.Writer, toolName string, arguments, raw []byte, account string) (bool, error) {
-	if err := validateStrictJSON(raw); err != nil {
-		return false, nil
-	}
-
-	var rendered string
-	var ok bool
-	switch toolName {
-	case listRunnersToolName:
-		rendered, ok = renderCLIListRunners(w, raw, account)
-	case listPacksToolName:
-		rendered, ok = renderCLIListPacks(w, arguments, raw, account)
-	case findActionsToolName:
-		rendered, ok = renderCLIFindActions(w, arguments, raw, account)
-	default:
-		return false, nil
-	}
-	if !ok {
-		return false, nil
-	}
-	_, err := io.WriteString(w, rendered)
-	return true, err
-}
-
 func renderCLIListRunners(w io.Writer, raw []byte, account string) (string, bool) {
 	var result struct {
 		OK      bool `json:"ok"`

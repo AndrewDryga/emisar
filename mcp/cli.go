@@ -484,11 +484,6 @@ func writeCLIToolOutputWithSchema(
 	if exactJSON {
 		return writePrettyJSON(w, raw)
 	}
-	if successful {
-		if handled, err := writeCLIFleetOutput(w, toolName, arguments, raw, account); handled {
-			return err
-		}
-	}
 	if handled, err := writeCLIOperatorOutput(w, toolName, arguments, raw, inputSchema, account, successful); handled {
 		return err
 	}

@@ -87,6 +87,12 @@ func writeCLIOperatorOutput(
 	var rendered string
 	var ok bool
 	switch toolName {
+	case listRunnersToolName:
+		rendered, ok = renderCLIListRunners(w, raw, account)
+	case listPacksToolName:
+		rendered, ok = renderCLIListPacks(w, arguments, raw, account)
+	case findActionsToolName:
+		rendered, ok = renderCLIFindActions(w, arguments, raw, account)
 	case getActionToolName:
 		rendered, ok = renderCLIGetAction(w, raw, account)
 	case runActionToolName:
