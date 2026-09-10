@@ -22,8 +22,6 @@ args:
     validation:
       pattern: "^[a-zA-Z0-9@:_.][a-zA-Z0-9@:_.\\-]{0,127}$"
 
-# The execution contract matches systemd.unit_stop — same command, same
-# deadline, whichever pack the operator installed.
 execution:
   command:
     binary: systemctl

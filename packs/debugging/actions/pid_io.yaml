@@ -6,14 +6,16 @@ kind: exec
 risk: low
 
 description: >
-  Read /proc/<pid>/io — bytes read/written (logical + physical),
-  syscall counts, cancelled writes. Use to find which process is
-  driving disk I/O. Pair with `debugging.iostat` for the disk side.
-
+  Show `/proc/<pid>/io` for one process — bytes read and written (logical and
+  physical), syscall counts, and cancelled writes. Use to find which process is
+  driving disk I/O.
 side_effects:
   - One /proc read.
   - Read-only.
 
+search_terms:
+  - io hog
+  - disk io per process
 args:
   - name: pid
     type: integer
@@ -24,8 +26,9 @@ args:
       max: 4194304
 
 execution:
-  # The execution contract matches forensics.pid_io — same command, same deadline
-  # and caps, whichever pack the operator installed.
+  # The execution contract AND the operator-facing copy match forensics.pid_io —
+  # same command, deadline, caps, and words, whichever pack the
+  # operator installed.
   command:
     binary: cat
     argv:
@@ -38,6 +41,6 @@ output:
   max_stderr_bytes: 4096
 
 examples:
-  - title: I/O counters for PID 4321
+  - title: PID 1
     args:
-      pid: 4321
+      pid: 1

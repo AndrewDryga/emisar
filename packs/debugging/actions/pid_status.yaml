@@ -1,19 +1,21 @@
 schema_version: 1
 
 id: debugging.pid_status
-title: Process /proc status block
+title: Process status block
 kind: exec
 risk: low
 
 description: >
-  Dump /proc/<pid>/status — capabilities, uid/gid, signal masks,
-  RSS, peak RSS, voluntary/involuntary context switches, OOM score.
-  More detail than `ps` for one PID. Read-only.
-
+  Show `/proc/<pid>/status` for one process — uid/gid, capability set, signal
+  masks, RSS and peak RSS, voluntary and involuntary context switches, and OOM
+  score. More detail than `ps` for one PID.
 side_effects:
   - One /proc read.
   - Read-only.
 
+search_terms:
+  - process capabilities
+  - oom score
 args:
   - name: pid
     type: integer
@@ -24,8 +26,9 @@ args:
       max: 4194304
 
 execution:
-  # The execution contract matches forensics.pid_status — same command, same deadline
-  # and caps, whichever pack the operator installed.
+  # The execution contract AND the operator-facing copy match forensics.pid_status —
+  # same command, deadline, caps, and words, whichever pack the
+  # operator installed.
   command:
     binary: cat
     argv:
@@ -38,6 +41,6 @@ output:
   max_stderr_bytes: 4096
 
 examples:
-  - title: Status for PID 4321
+  - title: PID 1
     args:
-      pid: 4321
+      pid: 1
