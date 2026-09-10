@@ -7,7 +7,7 @@ defmodule Emisar.Runs.Jobs.ActionRunRetention do
     every: :timer.hours(24),
     initial_delay: :timer.minutes(5)
 
-  alias Emisar.{Accounts, Billing, Jobs, Repo, Runs}
+  alias Emisar.{Accounts, Billing, Jobs, Runs}
   require Logger
 
   @accounts_per_page 100
@@ -31,19 +31,8 @@ defmodule Emisar.Runs.Jobs.ActionRunRetention do
     retention_days = Billing.account_audit_retention_days(account.id)
     cutoff = DateTime.utc_now() |> DateTime.add(-retention_days * 86_400, :second)
 
-    deleted_total + delete_in_batches(account.id, cutoff, 0)
-  end
-
-  defp delete_in_batches(account_id, cutoff, deleted_total) do
-    ids = account_id |> Runs.ActionRun.Query.prunable_ids(cutoff, @batch_size) |> Repo.all()
-    {deleted_count, _} = ids |> Runs.ActionRun.Query.by_ids() |> Repo.delete_all()
-    deleted_total = deleted_total + deleted_count
-
-    if length(ids) == @batch_size do
-      delete_in_batches(account_id, cutoff, deleted_total)
-    else
-      deleted_total
-    end
+    deleted_total +
+      Jobs.Sweep.delete_in_batches(Runs.ActionRun.Query, account.id, cutoff, @batch_size)
   end
 
   defp list_accounts(limit, cursor),

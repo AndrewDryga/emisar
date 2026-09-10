@@ -53,6 +53,32 @@ defmodule Emisar.Jobs.Sweep do
     reduce_from(limit, nil, :ok, fetch_page, reduce_row, sweep_name(handle_row))
   end
 
+  @doc """
+  Deletes an account's prunable rows in batches until a short batch proves the
+  cutoff is reached, and returns how many rows went.
+
+  `query` is the schema's Query module: `prunable_ids(account_id, cutoff, limit)`
+  selects the next batch of ids and `by_ids(ids)` narrows a delete to them. The
+  retention sweeps shared this loop the way they shared the paging loop above —
+  copied, and one level down.
+  """
+  def delete_in_batches(query, account_id, cutoff, batch_size)
+      when is_atom(query) and is_integer(batch_size) and batch_size > 0 do
+    delete_batches(query, account_id, cutoff, batch_size, 0)
+  end
+
+  defp delete_batches(query, account_id, cutoff, batch_size, deleted_total) do
+    ids = account_id |> query.prunable_ids(cutoff, batch_size) |> Emisar.Repo.all()
+    {deleted_count, _} = ids |> query.by_ids() |> Emisar.Repo.delete_all()
+    deleted_total = deleted_total + deleted_count
+
+    if length(ids) == batch_size do
+      delete_batches(query, account_id, cutoff, batch_size, deleted_total)
+    else
+      deleted_total
+    end
+  end
+
   defp reduce_from(limit, cursor, acc, fetch_page, reduce_row, sweep) do
     rows = fetch_page.(limit, cursor)
     acc = Enum.reduce(rows, acc, &reduce_row_safely(&1, &2, reduce_row, sweep))
