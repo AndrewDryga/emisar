@@ -49,21 +49,27 @@ resource "google_dns_managed_zone" "emisar" {
   depends_on = [google_project_service.apis]
 }
 
-# ── Apex A/AAAA → Google HTTPS load balancer (anycast) ───────────────────────
-resource "google_dns_record_set" "a" {
-  name         = "${var.domain}."
-  managed_zone = google_dns_managed_zone.emisar.name
-  type         = "A"
-  ttl          = 300
-  rrdatas      = [google_compute_global_address.ipv4.address]
-}
+# ── A/AAAA → Google HTTPS load balancer (anycast) ────────────────────────────
+# Every hostname in local.served_hostnames (certificates.tf) that carries its
+# own address records: the apex, the registry, and the Livebook workbench. A/AAAA
+# on purpose for the registry, not a CNAME to the apex — it is an independent
+# serving surface even though both frontends currently use the same anycast IPs.
+resource "google_dns_record_set" "address" {
+  for_each = {
+    for pair in setproduct(
+      [for key, host in local.active_hostnames : key if host.address_records],
+      ["A", "AAAA"]
+      ) : "${pair[0]}-${pair[1]}" => {
+      domain = local.served_hostnames[pair[0]].domain
+      type   = pair[1]
+    }
+  }
 
-resource "google_dns_record_set" "aaaa" {
-  name         = "${var.domain}."
+  name         = "${each.value.domain}."
   managed_zone = google_dns_managed_zone.emisar.name
-  type         = "AAAA"
+  type         = each.value.type
   ttl          = 300
-  rrdatas      = [google_compute_global_address.ipv6.address]
+  rrdatas      = [each.value.type == "A" ? google_compute_global_address.ipv4.address : google_compute_global_address.ipv6.address]
 }
 
 # www resolves to the shared LB; host rules in load_balancer.tf redirect it to the apex.
@@ -75,90 +81,19 @@ resource "google_dns_record_set" "www" {
   rrdatas      = ["${var.domain}."]
 }
 
-resource "google_dns_record_set" "livebook_a" {
-  count = var.livebook_enabled ? 1 : 0
-
-  name         = "livebook.${var.domain}."
-  managed_zone = google_dns_managed_zone.emisar.name
-  type         = "A"
-  ttl          = 300
-  rrdatas      = [google_compute_global_address.ipv4.address]
-}
-
-resource "google_dns_record_set" "livebook_aaaa" {
-  count = var.livebook_enabled ? 1 : 0
-
-  name         = "livebook.${var.domain}."
-  managed_zone = google_dns_managed_zone.emisar.name
-  type         = "AAAA"
-  ttl          = 300
-  rrdatas      = [google_compute_global_address.ipv6.address]
-}
-
 # ── TLS: Certificate Manager DNS authorization ────────────────────────────────
 # Proves domain control so the Google-managed cert (certificates.tf) provisions. One record
 # per SAN — apex, www, and mta-sts (the latter two CNAME to the apex/LB, so they
 # ride the same cert). Published into our own zone, so the cert goes ACTIVE minutes
 # while these records remain authoritative.
 resource "google_dns_record_set" "cert_auth" {
-  name         = google_certificate_manager_dns_authorization.emisar.dns_resource_record[0].name
-  managed_zone = google_dns_managed_zone.emisar.name
-  type         = google_certificate_manager_dns_authorization.emisar.dns_resource_record[0].type
-  ttl          = 300
-  rrdatas      = [google_certificate_manager_dns_authorization.emisar.dns_resource_record[0].data]
-}
+  for_each = local.active_hostnames
 
-resource "google_dns_record_set" "cert_auth_www" {
-  name         = google_certificate_manager_dns_authorization.www.dns_resource_record[0].name
+  name         = google_certificate_manager_dns_authorization.served[each.key].dns_resource_record[0].name
   managed_zone = google_dns_managed_zone.emisar.name
-  type         = google_certificate_manager_dns_authorization.www.dns_resource_record[0].type
+  type         = google_certificate_manager_dns_authorization.served[each.key].dns_resource_record[0].type
   ttl          = 300
-  rrdatas      = [google_certificate_manager_dns_authorization.www.dns_resource_record[0].data]
-}
-
-resource "google_dns_record_set" "cert_auth_mta_sts" {
-  name         = google_certificate_manager_dns_authorization.mta_sts.dns_resource_record[0].name
-  managed_zone = google_dns_managed_zone.emisar.name
-  type         = google_certificate_manager_dns_authorization.mta_sts.dns_resource_record[0].type
-  ttl          = 300
-  rrdatas      = [google_certificate_manager_dns_authorization.mta_sts.dns_resource_record[0].data]
-}
-
-resource "google_dns_record_set" "cert_auth_livebook" {
-  count = var.livebook_enabled ? 1 : 0
-
-  name         = google_certificate_manager_dns_authorization.livebook[0].dns_resource_record[0].name
-  managed_zone = google_dns_managed_zone.emisar.name
-  type         = google_certificate_manager_dns_authorization.livebook[0].dns_resource_record[0].type
-  ttl          = 300
-  rrdatas      = [google_certificate_manager_dns_authorization.livebook[0].dns_resource_record[0].data]
-}
-
-# ── Pack registry host → the same LB anycast IPs ─────────────────────────────
-# A/AAAA on purpose, not a CNAME to the apex: the registry host is an independent
-# serving surface even though both frontends currently use the same anycast IPs.
-resource "google_dns_record_set" "registry_a" {
-  name         = "registry.${var.domain}."
-  managed_zone = google_dns_managed_zone.emisar.name
-  type         = "A"
-  ttl          = 300
-  rrdatas      = [google_compute_global_address.ipv4.address]
-}
-
-resource "google_dns_record_set" "registry_aaaa" {
-  name         = "registry.${var.domain}."
-  managed_zone = google_dns_managed_zone.emisar.name
-  type         = "AAAA"
-  ttl          = 300
-  rrdatas      = [google_compute_global_address.ipv6.address]
-}
-
-resource "google_dns_record_set" "cert_auth_registry" {
-  name         = google_certificate_manager_dns_authorization.registry.dns_resource_record[0].name
-  managed_zone = google_dns_managed_zone.emisar.name
-  type         = google_certificate_manager_dns_authorization.registry.dns_resource_record[0].type
-  ttl          = 300
-  rrdatas      = [google_certificate_manager_dns_authorization.registry.dns_resource_record[0].data]
+  rrdatas      = [google_certificate_manager_dns_authorization.served[each.key].dns_resource_record[0].data]
 }
 
 # ── Google Workspace inbound mail ─────────────────────────────────────────────
@@ -326,4 +261,59 @@ resource "google_dns_record_set" "github_org_verification" {
   type         = "TXT"
   ttl          = 3600
   rrdatas      = ["\"080664a769\""]
+}
+
+moved {
+  from = google_dns_record_set.a
+  to   = google_dns_record_set.address["apex-A"]
+}
+
+moved {
+  from = google_dns_record_set.aaaa
+  to   = google_dns_record_set.address["apex-AAAA"]
+}
+
+moved {
+  from = google_dns_record_set.registry_a
+  to   = google_dns_record_set.address["registry-A"]
+}
+
+moved {
+  from = google_dns_record_set.registry_aaaa
+  to   = google_dns_record_set.address["registry-AAAA"]
+}
+
+moved {
+  from = google_dns_record_set.livebook_a[0]
+  to   = google_dns_record_set.address["livebook-A"]
+}
+
+moved {
+  from = google_dns_record_set.livebook_aaaa[0]
+  to   = google_dns_record_set.address["livebook-AAAA"]
+}
+
+moved {
+  from = google_dns_record_set.cert_auth
+  to   = google_dns_record_set.cert_auth["apex"]
+}
+
+moved {
+  from = google_dns_record_set.cert_auth_www
+  to   = google_dns_record_set.cert_auth["www"]
+}
+
+moved {
+  from = google_dns_record_set.cert_auth_mta_sts
+  to   = google_dns_record_set.cert_auth["mta_sts"]
+}
+
+moved {
+  from = google_dns_record_set.cert_auth_registry
+  to   = google_dns_record_set.cert_auth["registry"]
+}
+
+moved {
+  from = google_dns_record_set.cert_auth_livebook[0]
+  to   = google_dns_record_set.cert_auth["livebook"]
 }
