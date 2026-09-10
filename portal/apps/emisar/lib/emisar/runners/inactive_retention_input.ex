@@ -9,6 +9,7 @@ defmodule Emisar.Runners.InactiveRetentionInput do
   """
   use Ecto.Schema
   import Ecto.Changeset
+  import Emisar.Repo.Changeset, only: [castable: 1]
 
   @primary_key false
   embedded_schema do
@@ -28,7 +29,4 @@ defmodule Emisar.Runners.InactiveRetentionInput do
     |> cast(castable(attrs), @fields)
     |> validate_number(:hours, greater_than: 0)
   end
-
-  defp castable(attrs) when is_list(attrs), do: Map.new(attrs)
-  defp castable(attrs) when is_map(attrs), do: attrs
 end

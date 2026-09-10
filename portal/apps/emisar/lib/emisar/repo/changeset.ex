@@ -6,6 +6,16 @@ defmodule Emisar.Repo.Changeset do
   import Ecto.Changeset
 
   @doc """
+  The map `cast/3` accepts, from either shape a context hands an input
+  changeset: a string-keyed browser map, or the atom-keyed map / keyword
+  list a caller builds in code. Four one-field input schemas each carried
+  this pair of clauses.
+  """
+  @spec castable(map() | keyword()) :: map()
+  def castable(attrs) when is_list(attrs), do: Map.new(attrs)
+  def castable(attrs) when is_map(attrs), do: attrs
+
+  @doc """
   Put `field` to `value` only when it's nil or unset. `value` may be
   a literal, a 0-arity function (lazy default), or a 1-arity function
   taking the current changeset.

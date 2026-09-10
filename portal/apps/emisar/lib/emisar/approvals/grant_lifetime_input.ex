@@ -9,6 +9,7 @@ defmodule Emisar.Approvals.GrantLifetimeInput do
   """
   use Ecto.Schema
   import Ecto.Changeset
+  import Emisar.Repo.Changeset, only: [castable: 1]
 
   @primary_key false
   embedded_schema do
@@ -29,7 +30,4 @@ defmodule Emisar.Approvals.GrantLifetimeInput do
     |> cast(castable(attrs), @fields)
     |> validate_number(:seconds, greater_than_or_equal_to: 0)
   end
-
-  defp castable(attrs) when is_list(attrs), do: Map.new(attrs)
-  defp castable(attrs) when is_map(attrs), do: attrs
 end
