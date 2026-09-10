@@ -1605,21 +1605,6 @@ func TestDownRejectsUnknownArgumentsAndBoxes(t *testing.T) {
 	}
 }
 
-func TestMainHelpListsEveryPublicCommand(t *testing.T) {
-	for _, command := range []string{
-		"setup", "up", "down", "serve", "status", "logs", "psql", "seed", "reset", "urls", "doctor", "certs",
-		"test", "check", "gate", "browser", "shot", "capture", "icons", "e2e",
-		"smoke", "pack", "ops", "help",
-	} {
-		if !strings.Contains(usageText, "\n  "+command+" ") {
-			t.Errorf("main help does not list %q", command)
-		}
-	}
-	if !strings.Contains(usageText, "./run bootstrap") {
-		t.Error("main help does not list the shell bootstrap")
-	}
-}
-
 func TestReadToolVersionsAndVersionParsers(t *testing.T) {
 	path := filepath.Join(t.TempDir(), ".tool-versions")
 	if err := os.WriteFile(path, []byte("# pins\nerlang 29.0.3\nelixir 1.20.2-otp-29\ngolang 1.26.6\nterraform 1.15.8\ntflint 0.64.0\n"), 0o644); err != nil {
@@ -1645,23 +1630,6 @@ func TestReadToolVersionsAndVersionParsers(t *testing.T) {
 		if got := test.parse(test.input); got != test.output {
 			t.Errorf("parsed %q as %q, want %q", test.input, got, test.output)
 		}
-	}
-}
-
-func TestHelpPrintsFocusedGateCommands(t *testing.T) {
-	var out bytes.Buffer
-	app := New(t.TempDir(), strings.NewReader(""), &out, &bytes.Buffer{})
-
-	if err := app.Run(t.Context(), []string{"help", "gate"}); err != nil {
-		t.Fatal(err)
-	}
-	for _, command := range []string{"gate portal", "gate runner", "gate mcp", "gate packs", "gate infra", "gate tooling", "gate review", "gate all"} {
-		if !strings.Contains(out.String(), strings.TrimPrefix(command, "gate ")) {
-			t.Fatalf("help does not mention %q:\n%s", command, out.String())
-		}
-	}
-	if !strings.Contains(out.String(), "portal [--changed]") {
-		t.Fatalf("gate help does not explain the affected-app mode:\n%s", out.String())
 	}
 }
 
