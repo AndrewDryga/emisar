@@ -4,7 +4,7 @@ title: Product engagement and retention
 kind: script
 risk: low
 description: Return the 50 most active accounts with run counts and last-use timestamps.
-side_effects: [Read-only aggregate analytics.]
+side_effects: [Read-only.]
 args:
   - name: days
     type: integer

@@ -4,7 +4,7 @@ title: Run reliability analytics
 kind: script
 risk: low
 description: Return run statuses and the 20 most-used actions for a date window.
-side_effects: [Read-only aggregate analytics.]
+side_effects: [Read-only.]
 args:
   - name: days
     type: integer

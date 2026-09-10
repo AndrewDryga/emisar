@@ -33,7 +33,7 @@ locals {
     if id != "emisar-database-url" && (id != "emisar-release-cookie" || var.release_cookie_ready)
   }
 
-  # The two PROVIDER-GENERATED secrets, whose value has no payload to hash: a
+  # The three PROVIDER-GENERATED secrets, whose value has no payload to hash: a
   # deliberately edited generation is the only rotation signal they have.
   # Changing one writes a new version for only that secret; its computed version
   # is rendered into cloud-init, so the instance template rolls and replacement
@@ -44,8 +44,9 @@ locals {
   # long after that change — a counter nothing read, under a comment promising
   # that editing it would rotate them.
   secret_generations = {
-    "emisar-secret-key-base" = 1
-    "emisar-release-cookie"  = 1
+    "emisar-secret-key-base"          = 1
+    "emisar-release-cookie"           = 1
+    "emisar-livebook-secret-key-base" = 1
   }
 
   # Externally-issued credentials, one TFC workspace variable each.
@@ -310,7 +311,7 @@ resource "google_secret_manager_secret_version" "livebook_secret_key_base" {
 
   secret                 = google_secret_manager_secret.livebook_secret_key_base[0].id
   secret_data_wo         = ephemeral.random_password.livebook_secret_key_base[0].result
-  secret_data_wo_version = 1
+  secret_data_wo_version = local.secret_generations["emisar-livebook-secret-key-base"]
   deletion_policy        = "ABANDON"
 }
 

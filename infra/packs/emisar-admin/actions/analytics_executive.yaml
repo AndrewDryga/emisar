@@ -4,7 +4,7 @@ title: Product executive summary
 kind: script
 risk: low
 description: Return bounded product growth and run-status totals for a date window.
-side_effects: [Read-only aggregate analytics.]
+side_effects: [Read-only.]
 args:
   - name: days
     type: integer

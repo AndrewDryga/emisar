@@ -176,6 +176,10 @@ resource "betteruptime_monitor" "pack_registry_ipv6" {
   remember_cookies = false
   verify_ssl       = true
   ip_version       = "ipv6"
+
+  # No expiry watch here on purpose: both address families are served by the one
+  # registry certificate, so the IPv4 monitor's ssl_expiration/domain_expiration
+  # already cover it and a second copy would page twice for the same renewal.
 }
 
 # ── Public status page ────────────────────────────────────────────────────────

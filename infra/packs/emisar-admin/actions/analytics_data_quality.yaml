@@ -4,7 +4,7 @@ title: Product data quality
 kind: script
 risk: low
 description: Return canonical row counts used to spot ingestion or retention discontinuities.
-side_effects: [Read-only aggregate analytics.]
+side_effects: [Read-only.]
 args: []
 execution:
   script: {path: scripts/callback.sh, interpreter: /bin/sh}

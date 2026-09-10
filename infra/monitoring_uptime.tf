@@ -108,7 +108,7 @@ resource "google_monitoring_alert_policy" "pack_registry_checks" {
   }
 
   conditions {
-    display_name = "Semantic check failed"
+    display_name = "Semantic Check Failed"
     condition_threshold {
       filter          = "resource.type = \"uptime_url\" AND metric.type = \"monitoring.googleapis.com/uptime_check/check_passed\" AND metric.label.check_id = \"${google_monitoring_uptime_check_config.pack_registry_semantic.uptime_check_id}\""
       comparison      = "COMPARISON_GT"

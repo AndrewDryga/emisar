@@ -28,5 +28,4 @@ crash.*.log
 .tflint.hcl
 AGENTS.md
 README.md
-/scripts/
 tests/

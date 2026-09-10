@@ -11,6 +11,12 @@ resource "google_storage_bucket" "mta_sts" {
   public_access_prevention    = "inherited"
   force_destroy               = false
 
+  # The same label the pack-registry bucket carries: these two are the stack's
+  # public-read buckets.
+  labels = {
+    surface = "public-artifacts"
+  }
+
   lifecycle {
     prevent_destroy = true
   }

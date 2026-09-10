@@ -120,6 +120,10 @@ if [ "$installed_version" != "$expected_version" ]; then
   release_tag="runner-v${runner_version}"
   release_name="emisar-${runner_version}-linux-$${runner_arch}"
   tarball="$${release_name}.tar.gz"
+  # emisar.dev here and registry.emisar.dev below are the vendor's distribution
+  # surface, deliberately not var.domain: a workspace on another domain still
+  # installs the vendor-signed runner and packs, the same way var.container_image
+  # pins the portal image to the vendor's GHCR.
   release_base="https://emisar.dev/releases/runner/$${release_tag}"
   github_release_base="https://github.com/andrewdryga/emisar/releases/download/$${release_tag}"
   bundle_dir=$(mktemp -d /run/emisar-admin-runner/release.XXXXXX)

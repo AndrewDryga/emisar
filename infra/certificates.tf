@@ -101,3 +101,31 @@ resource "google_certificate_manager_certificate_map_entry" "livebook" {
   hostname     = "livebook.${var.domain}"
 }
 
+# registry.<domain> gets its OWN managed cert, not a new SAN on the emisar cert:
+# adding a SAN
+# re-provisions the existing cert, briefly risking apex TLS during replacement for a
+# hostname that has nothing to do with the console. The shared certificate map
+# selects certs purely by SNI, so an independent cert + map entry is the
+# isolation-preserving way to add a served hostname.
+resource "google_certificate_manager_dns_authorization" "registry" {
+  name        = "emisar-dnsauth-registry"
+  domain      = "registry.${var.domain}"
+  description = "DNS authorization for the pack-registry serving domain"
+  depends_on  = [google_project_service.apis]
+}
+
+resource "google_certificate_manager_certificate" "registry" {
+  name = "emisar-cert-registry"
+  managed {
+    domains            = ["registry.${var.domain}"]
+    dns_authorizations = [google_certificate_manager_dns_authorization.registry.id]
+  }
+  depends_on = [google_project_service.apis]
+}
+
+resource "google_certificate_manager_certificate_map_entry" "registry" {
+  name         = "emisar-certmap-entry-registry"
+  map          = google_certificate_manager_certificate_map.emisar.name
+  certificates = [google_certificate_manager_certificate.registry.id]
+  hostname     = "registry.${var.domain}"
+}

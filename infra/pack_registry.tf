@@ -47,9 +47,12 @@ resource "google_storage_bucket" "pack_registry" {
 resource "google_project_iam_custom_role" "pack_registry_public_reader" {
   depends_on = [google_project_service.apis]
 
-  project     = var.project_id
+  project = var.project_id
+  # Granted on the pack-registry bucket AND the MTA-STS bucket (mta_sts.tf);
+  # only the role_id still reads as registry-specific, and renaming it deletes
+  # and recreates the role, dropping both bindings mid-apply.
   role_id     = "packRegistryPublicReader"
-  title       = "Public Object Reader"
+  title       = "Emisar Public Object Reader"
   description = "Anonymous GET access to explicitly public objects without bucket listing."
   permissions = ["storage.objects.get"]
   stage       = "GA"
@@ -91,7 +94,7 @@ resource "google_project_iam_custom_role" "pack_registry_pointer_publisher" {
 
   project     = var.project_id
   role_id     = "packRegistryPointerPublisher"
-  title       = "Pack Registry Pointer Publisher"
+  title       = "Emisar Pack Registry Pointer Publisher"
   description = "Create, replace, or delete only the live pack-registry pointer objects."
   permissions = [
     "storage.objects.create",
@@ -149,7 +152,7 @@ resource "google_project_iam_custom_role" "release_pointer_publisher" {
 
   project     = var.project_id
   role_id     = "releasePointerPublisher"
-  title       = "Binary Release Pointer Publisher"
+  title       = "Emisar Binary Release Pointer Publisher"
   description = "Create, replace, or delete only the runner and MCP latest-release pointers."
   permissions = [
     "storage.objects.create",
@@ -207,32 +210,4 @@ resource "google_compute_backend_bucket" "pack_registry" {
     cache_mode = "USE_ORIGIN_HEADERS"
   }
   depends_on = [google_project_service.apis]
-}
-
-# Its OWN managed cert, not a new SAN on the emisar cert (certificates.tf): adding a SAN
-# re-provisions the existing cert, briefly risking apex TLS during replacement for a
-# hostname that has nothing to do with the console. The shared certificate map
-# selects certs purely by SNI, so an independent cert + map entry is the
-# isolation-preserving way to add a served hostname.
-resource "google_certificate_manager_dns_authorization" "registry" {
-  name        = "emisar-dnsauth-registry"
-  domain      = "registry.${var.domain}"
-  description = "DNS authorization for the pack-registry serving domain"
-  depends_on  = [google_project_service.apis]
-}
-
-resource "google_certificate_manager_certificate" "registry" {
-  name = "emisar-cert-registry"
-  managed {
-    domains            = ["registry.${var.domain}"]
-    dns_authorizations = [google_certificate_manager_dns_authorization.registry.id]
-  }
-  depends_on = [google_project_service.apis]
-}
-
-resource "google_certificate_manager_certificate_map_entry" "registry" {
-  name         = "emisar-certmap-entry-registry"
-  map          = google_certificate_manager_certificate_map.emisar.name
-  certificates = [google_certificate_manager_certificate.registry.id]
-  hostname     = "registry.${var.domain}"
 }

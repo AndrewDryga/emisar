@@ -4,7 +4,7 @@ title: MCP adoption analytics
 kind: script
 risk: low
 description: Return MCP run and account counts grouped by reported client family.
-side_effects: [Read-only aggregate analytics.]
+side_effects: [Read-only.]
 args:
   - name: days
     type: integer

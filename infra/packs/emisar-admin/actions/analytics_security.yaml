@@ -4,7 +4,7 @@ title: Security and approval analytics
 kind: script
 risk: low
 description: Return approval-request counts grouped by decision status for a date window.
-side_effects: [Read-only aggregate analytics.]
+side_effects: [Read-only.]
 args:
   - name: days
     type: integer

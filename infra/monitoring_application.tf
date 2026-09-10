@@ -64,7 +64,7 @@ resource "google_monitoring_alert_policy" "recurrent_job_failures" {
   }
 
   conditions {
-    display_name = "Any recurrent job crash in 5 minutes"
+    display_name = "Any Recurrent Job Crash in 5 Minutes"
     condition_threshold {
       filter          = "resource.type = \"gce_instance\" AND metric.type = \"logging.googleapis.com/user/${google_logging_metric.recurrent_job_failures.name}\""
       comparison      = "COMPARISON_GT"
@@ -96,7 +96,7 @@ resource "google_monitoring_alert_policy" "billing_sync_failures" {
   }
 
   conditions {
-    display_name = "Any Paddle reconciliation failure in 5 minutes"
+    display_name = "Any Paddle Reconciliation Failure in 5 Minutes"
     condition_threshold {
       filter          = "resource.type = \"gce_instance\" AND metric.type = \"logging.googleapis.com/user/${google_logging_metric.billing_sync_failures.name}\""
       comparison      = "COMPARISON_GT"
@@ -128,7 +128,7 @@ resource "google_monitoring_alert_policy" "cluster_failures" {
   }
 
   conditions {
-    display_name = "Persistent peer discovery or distribution failures in 5 minutes"
+    display_name = "Persistent Peer Discovery or Distribution Failures in 5 Minutes"
     condition_threshold {
       filter          = "resource.type = \"gce_instance\" AND metric.type = \"logging.googleapis.com/user/${google_logging_metric.cluster_failures.name}\""
       comparison      = "COMPARISON_GT"
@@ -222,7 +222,7 @@ resource "google_monitoring_alert_policy" "fleet_observability_absent" {
   }
 
   conditions {
-    display_name = "No fleet observability heartbeat for 5 minutes"
+    display_name = "No Fleet Observability Heartbeat for 5 Minutes"
     condition_absent {
       filter   = "resource.type = \"gce_instance\" AND metric.type = \"logging.googleapis.com/user/${google_logging_metric.fleet_observability_ticks.name}\""
       duration = "300s"
@@ -252,7 +252,7 @@ resource "google_monitoring_alert_policy" "fleet_no_connected_runners" {
   }
 
   conditions {
-    display_name = "Zero connected runners fleet-wide for 5 minutes"
+    display_name = "Zero Connected Runners Fleet-Wide for 5 Minutes"
     condition_threshold {
       filter          = "resource.type = \"gce_instance\" AND metric.type = \"logging.googleapis.com/user/${google_logging_metric.fleet_no_connected_runners.name}\""
       comparison      = "COMPARISON_GT"
@@ -284,7 +284,7 @@ resource "google_monitoring_alert_policy" "dispatch_backlog" {
   }
 
   conditions {
-    display_name = "Pending dispatch backlog above threshold for 10 minutes"
+    display_name = "Pending Dispatch Backlog Above Threshold for 10 Minutes"
     condition_threshold {
       filter          = "resource.type = \"gce_instance\" AND metric.type = \"logging.googleapis.com/user/${google_logging_metric.dispatch_backlog.name}\""
       comparison      = "COMPARISON_GT"
