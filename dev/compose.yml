@@ -5,7 +5,9 @@
 # inside the box.
 services:
   db:
-    image: postgres:18.4-alpine
+    # Same digest as docker-compose.yml: the tag names the version, the digest
+    # pins the exact index so a republished tag cannot change what the gates run.
+    image: postgres:18.4-alpine@sha256:9a8afca54e7861fd90fab5fdf4c42477a6b1cb7d293595148e674e0a3181de15
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
@@ -22,7 +24,7 @@ services:
       retries: 20
 
   keycloak:
-    image: quay.io/keycloak/keycloak:26.7.0
+    image: quay.io/keycloak/keycloak:26.7.0@sha256:0f198be292568439d700cdbfb893e69a6009bb43a94a06a945b1d3d506c76b13
     command:
       - start-dev
       - --import-realm

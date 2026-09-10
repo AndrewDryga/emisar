@@ -457,6 +457,9 @@ func (a *App) toolingGate(ctx context.Context, coverage string) error {
 	}); err != nil {
 		return err
 	}
+	if err := a.gatePhase("tooling shared service image pins", a.checkSharedServiceImagePins); err != nil {
+		return err
+	}
 	if err := a.gatePhase("tooling release toolchain", a.checkReleaseToolchainPins); err != nil {
 		return err
 	}

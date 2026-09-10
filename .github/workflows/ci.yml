@@ -100,7 +100,7 @@ jobs:
       postgres:
         # Track prod's Cloud SQL major (POSTGRES_18, infra/database.tf) so the
         # suite runs against what production runs.
-        image: &postgres-image postgres:18-alpine@sha256:9a8afca54e7861fd90fab5fdf4c42477a6b1cb7d293595148e674e0a3181de15
+        image: &postgres-image postgres:18.4-alpine@sha256:9a8afca54e7861fd90fab5fdf4c42477a6b1cb7d293595148e674e0a3181de15
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres

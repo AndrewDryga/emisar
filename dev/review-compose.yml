@@ -1,7 +1,8 @@
 # Minimal dependency stack for Coop's disposable publication-review candidate.
 services:
   db:
-    image: postgres:18.4-alpine
+    # Same digest as docker-compose.yml; this stack decides whether a PR opens.
+    image: postgres:18.4-alpine@sha256:9a8afca54e7861fd90fab5fdf4c42477a6b1cb7d293595148e674e0a3181de15
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
