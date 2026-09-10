@@ -10,9 +10,9 @@ allowed-tools: Read, Grep, Glob, Bash, Agent
 
 Convene a board of expert hats; each reviews the change through ONE lens **in parallel**;
 then YOU (the parent) synthesize one ranked verdict and an ordered plan to fix everything.
-This is the heavyweight, on-demand review — point it at a PR, a branch, a commit/range, or your
+This is the on-demand review — point it at a PR, a branch, a commit/range, or your
 uncommitted local changes. It combines the staff-correctness, security, and
-`/review-ship` product lenses into one panel, across **all** areas (portal/runner/mcp/packs).
+product lenses into one panel, across **all** areas (portal/runner/mcp/packs).
 **Read-only: the board reviews; it never edits.** The deliverable is a *fix plan*, not just notes.
 
 ## 1. Scope the change — PR, branch, commit, range, or local edits
@@ -88,4 +88,6 @@ Keep it honest and short. If it's clean: **"SHIP — nothing blocking"** + the f
 **Then offer to queue it:** the BLOCKER/MAJOR items become tasks in the touched project's `.agent/tasks/00_todo/` (via `coop tasks add`), so `coop loop` can drain the fixes to a ship-ready bar. Queue on the user's go — never silently.
 
 ## Relationship to the focused reviews
-`/review-board` convenes them all; the single-lens tools are its building blocks and stay for fast, focused runs: `/elixir-iron-review` (laws), `/security-engineer`, `/debug-investigate` (failures), `/design-ux`, etc. `/review-ship` is the lighter, proportional *in-loop* self-review to run per item; `/review-board` is the heavyweight on-demand whole-PR review that ends in a plan.
+`/review-board` convenes them all; the single-lens tools are its building blocks and stay for fast, focused runs: `/elixir-iron-review` (laws), `/security-engineer`, `/debug-investigate` (failures), `/design-ux`, etc.
+
+**Proportional in-loop self-review** of one item is the same skill, sized down: the standing hats only (plus the hats the diff plainly earns), `≤250 words` per hat, and the verdict without the queued fix plan. There is no separate lighter skill.
