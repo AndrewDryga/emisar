@@ -29,9 +29,9 @@ require authority for that action; permission to edit code alone does not grant 
 
 1. Read this manual and the touched project's AGENTS.md in full.
 2. Read [.agent/kb/README.md](.agent/kb/README.md) for knowledge routing. Search the
-   [shared rule index](.agent/kb/rules/README.md) and the project's rule index for
-   the task's domain; read matching entries and linked rules before editing.
-   Load the relevant material, not every reference.
+   [shared rule index](.agent/kb/rules/README.md), and the project's rule index
+   where one exists, for the task's domain; read matching entries and linked
+   rules before editing. Load the relevant material, not every reference.
 3. Inspect the working tree. For the current task, read its `state.md` first,
    then `log.md` and `task.md`. Use `coop tasks ls` to find an existing task.
    Never take over another agent's active claim or resume an unrelated todo.
