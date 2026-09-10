@@ -53,6 +53,7 @@ Browser and UI:
   browser <action>            Manage the persistent browser: start, stop, status
   shot <path> [options]       Save UI proof under the active task
   capture <docs|console|idp>  Regenerate docs assets, audit the console, or drive a live IdP rig
+  icons <snap|cut|analyze>    Snap the icon masters, cut the 16px set, or audit the cuts
 
 Cross-component scenarios:
   e2e <sso|signing|billing>   Exercise a complete development scenario
@@ -220,6 +221,8 @@ func (a *App) Run(ctx context.Context, args []string) error {
 		return a.shot(ctx, rest)
 	case "capture":
 		return a.capture(ctx, rest)
+	case "icons":
+		return a.icons(rest)
 	case "e2e":
 		return a.e2e(ctx, rest)
 	case "ops":

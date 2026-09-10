@@ -441,6 +441,21 @@ func TestSelect(t *testing.T) {
 		resetHard(t, root, base)
 	})
 
+	// The command corpus is the parity check between the runner's renderer and
+	// the Portal's approval preview, so changing it has to run both.
+	t.Run("the shared command corpus selects the runner and the Portal", func(t *testing.T) {
+		writeFixture(t, root, "dev/command-corpus/cases.json", "{}\n")
+		commitAll(t, root, "command corpus")
+		selection, err := Select(context.Background(), root, "pull_request", base)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !selection.Runner || !selection.Portal {
+			t.Fatalf("corpus selection = %+v", selection)
+		}
+		resetHard(t, root, base)
+	})
+
 	t.Run("installer harness selects affected Go clients", func(t *testing.T) {
 		for _, test := range []struct {
 			name       string
@@ -637,21 +652,6 @@ func TestSelect(t *testing.T) {
 		}
 		if data, err := os.ReadFile(summary); err != nil || !strings.Contains(string(data), "MCP - Windows | run") {
 			t.Fatalf("selection summary = %q, %v", data, err)
-		}
-		resetHard(t, root, base)
-	})
-
-	// The repository's only JavaScript lockfile; depgate reads it, so a bump
-	// that selected no dep-age job would sail past the cooldown it exists for.
-	t.Run("the npm lockfile selects dependency age", func(t *testing.T) {
-		writeFixture(t, root, "tools/cmd/entra-capture/package-lock.json", "{}\n")
-		commitAll(t, root, "npm lockfile")
-		selection, err := Select(context.Background(), root, "pull_request", base)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if !selection.Deps {
-			t.Fatalf("npm lockfile selection = %+v", selection)
 		}
 		resetHard(t, root, base)
 	})

@@ -137,6 +137,14 @@ func (selection *Selection) include(file string) {
 	// the module boundary forbids sharing their code, so the corpus IS the
 	// parity check and a change to it has to run both suites.
 	jsonCorpus := strings.HasPrefix(file, "dev/json-corpus/")
+	// dev/command-corpus is the same shape one language boundary over: the
+	// runner renders the command that runs and the Portal renders the one the
+	// operator approves, and only this corpus proves they agree.
+	if strings.HasPrefix(file, "dev/command-corpus/") {
+		selection.Runner = true
+		selection.Portal = true
+		selection.PortalRelease = true
+	}
 	sharedInstallerHarness := toolutil.HasAnyPrefix(file, "tools/cmd/installtest/", "tools/internal/installtest/harness")
 	runnerInstallerHarness := sharedInstallerHarness || strings.HasPrefix(file, "tools/internal/installtest/runner")
 	mcpInstallerHarness := sharedInstallerHarness || strings.HasPrefix(file, "tools/internal/installtest/mcp")
@@ -215,7 +223,7 @@ func (selection *Selection) include(file string) {
 	if strings.HasPrefix(file, "infra/") || file == ".tool-versions" {
 		selection.Infra = true
 	}
-	if slices.Contains([]string{"portal/mix.lock", "runner/go.mod", "runner/go.sum", "mcp/go.mod", "mcp/go.sum", "tools/go.mod", "tools/go.sum", "tools/cmd/entra-capture/package-lock.json", ".dep-age-allow"}, file) || strings.HasPrefix(file, "tools/cmd/depgate/") {
+	if slices.Contains([]string{"portal/mix.lock", "runner/go.mod", "runner/go.sum", "mcp/go.mod", "mcp/go.sum", "tools/go.mod", "tools/go.sum", ".dep-age-allow"}, file) || strings.HasPrefix(file, "tools/cmd/depgate/") {
 		selection.Deps = true
 	}
 	// The selector is workflow control code: validate every branch it can route

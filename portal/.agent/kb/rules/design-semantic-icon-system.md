@@ -111,7 +111,7 @@ it is reached through its semantic token and its provenance stays recorded.
   same centered 24-unit grid, round caps and joins, and geometric-precision
   rendering. A local weight override is reserved for genuinely finer internal
   anatomy and needs native-size evidence. **The 24-grid masters sit on the
-  half grid too** (`assets/icons/snap24.mjs`, displacement ≤0.25u): 24px
+  half grid too** (`./run icons snap`, displacement ≤0.25u): 24px
   renders 1:1 with the 1.5px stroke, and a half-grid coordinate doubled — the
   48px render — stays integer, so every first-party size is device-aligned.
   The masked/pixel-tuned exemptions keep their sub-quarter optical nudges.
@@ -136,7 +136,7 @@ it is reached through its semantic token and its provenance stays recorded.
 - **A compact cut on the NATIVE 16-unit grid, rendered 1:1, is the crisp
   path.** Projecting the 24 grid into a small box puts every coordinate
   between pixels — uniform blur no stroke weight fixes (the founder's "can we
-  make icons more clear/sharp"). The cutter (`assets/icons/cut16.mjs`) scales
+  make icons more clear/sharp"). The cutter (`./run icons cut`) scales
   each 24-grid drawing 2/3, OPTICALLY NORMALIZES it, and snaps to the half
   grid; masked, pixel-tuned, and transformed masters stay on the 24 grid and
   keep the zoomed projection.

@@ -1,6 +1,9 @@
 // Command entra-capture drives a live Microsoft Entra tenant to produce the
-// /docs/sso#entra walkthrough screenshots, the way okta-capture and
-// jumpcloud-capture do for theirs.
+// /docs/integrations/entra walkthrough screenshots, the way okta-capture and
+// jumpcloud-capture do for theirs. -flow picks the walkthrough half: the app
+// registration form (the default), the saved app's overview and secrets, the
+// enterprise application and its user assignment, the provisioning blade, or
+// the tenant inventory that lists and removes what the other flows created.
 //
 // Entra's sign-in is a four-screen sequence (email → password → TOTP → "stay
 // signed in"), each rendered by the same SPA, so every step waits on the NEXT
@@ -13,6 +16,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"slices"
 	"strings"
 	"time"
 
@@ -26,15 +30,38 @@ import (
 // admin center repaints a blade after the ring lands.
 const highlightSettle = 700 * time.Millisecond
 
+// A run is one flow with the flags that flow reads.
+type options struct {
+	flow           string
+	formOnly       bool // registration: the filled form, no app created
+	create         bool // registration: allowed to register a new app
+	credentialsOut string
+	galleryOnly    bool // enterprise-app: stop after the Create-your-own screen
+	provisioning   provisioningOptions
+	cleanup        bool // inventory: delete what the flows created
+}
+
+var flows = []string{"registration", "app", "enterprise-app", "provisioning", "inventory"}
+
 func main() {
 	env := flag.String("env", "portal/.agent/secrets/entra-trial.env", "env file with the tenant credentials")
 	outDir := flag.String("out", "", "directory for the captured PNGs")
 	headless := flag.Bool("headless", true, "run Chrome headless")
-	formOnly := flag.Bool("form-only", false, "capture the filled registration form without creating an app")
-	create := flag.Bool("create", false, "register a new app (refused by default so a re-run cannot mint duplicates)")
-	credentialsOut := flag.String("credentials-out", "", "write the registered app's client id to this ignored env file")
+	var opts options
+	flag.StringVar(&opts.flow, "flow", "registration", "walkthrough to capture: "+strings.Join(flows, ", "))
+	flag.BoolVar(&opts.formOnly, "form-only", false, "registration: capture the filled registration form without creating an app")
+	flag.BoolVar(&opts.create, "create", false, "registration: register a new app (refused by default so a re-run cannot mint duplicates)")
+	flag.StringVar(&opts.credentialsOut, "credentials-out", "", "registration: write the registered app's client id to this ignored env file")
+	flag.BoolVar(&opts.galleryOnly, "gallery-only", false, "enterprise-app: stop after the Create-your-own-application screen")
+	flag.BoolVar(&opts.provisioning.mappings, "mappings", false, "provisioning: capture the attribute mapping and the opened externalId row")
+	flag.BoolVar(&opts.provisioning.connectivity, "connectivity", false, "provisioning: capture the saved Connectivity credentials, masked")
+	flag.BoolVar(&opts.provisioning.provisioningOnly, "provisioning-only", false, "provisioning: stop after the Provisioning blade")
+	flag.BoolVar(&opts.cleanup, "cleanup", false, "inventory: delete the app registrations and enterprise applications this rig created")
 	flag.Parse()
 
+	if !slices.Contains(flows, opts.flow) {
+		fail(fmt.Errorf("unknown -flow %q; one of %s", opts.flow, strings.Join(flows, ", ")))
+	}
 	// Required, and never defaulted to a shared /tmp path: the captures are of a
 	// live IdP console, so they must land in a directory the operator chose.
 	if *outDir == "" {
@@ -47,7 +74,7 @@ func main() {
 	if err := os.MkdirAll(*outDir, 0o700); err != nil {
 		fail(err)
 	}
-	if err := run(values, *outDir, *headless, *formOnly, *create, *credentialsOut); err != nil {
+	if err := run(values, *outDir, *headless, opts); err != nil {
 		fail(err)
 	}
 }
@@ -58,34 +85,48 @@ func fail(err error) {
 }
 
 // readEnv loads this rig's credentials, letting the process environment win
-// for its per-run keys. The parser is shared so the four rigs cannot drift.
+// for its per-run keys: the app a previous run registered, and the SCIM
+// enterprise application's display name and ids (-flow inventory lists them).
+// The parser is shared so the four rigs cannot drift.
 func readEnv(path string) (map[string]string, error) {
-	return capture.ReadEnv(path)
+	return capture.ReadEnv(path, "ENTRA_CLIENT_ID", "ENTRA_SCIM_APP_NAME", "ENTRA_SCIM_SERVICE_PRINCIPAL_ID", "ENTRA_SCIM_APP_ID")
 }
 
-func run(env map[string]string, outDir string, headless, formOnly, create bool, credentialsOut string) error {
-	opts := append(chromedp.DefaultExecAllocatorOptions[:],
+func run(env map[string]string, outDir string, headless bool, opts options) error {
+	execOpts := append(chromedp.DefaultExecAllocatorOptions[:],
 		chromedp.Flag("headless", headless),
 		chromedp.WindowSize(1440, 1000),
 	)
-	allocator, cancelAllocator := chromedp.NewExecAllocator(context.Background(), opts...)
+	allocator, cancelAllocator := chromedp.NewExecAllocator(context.Background(), execOpts...)
 	defer cancelAllocator()
 
 	ctx, cancel := chromedp.NewContext(allocator)
 	defer cancel()
-	ctx, cancelTimeout := context.WithTimeout(ctx, 12*time.Minute)
+	ctx, cancelTimeout := context.WithTimeout(ctx, 15*time.Minute)
 	defer cancelTimeout()
+	// Before the first navigation, so no blade's frame context is missed.
+	frames := trackFrames(ctx)
 
 	if err := signIn(ctx, env, outDir); err != nil {
 		_ = idpcapture.Screenshot(ctx, outDir, "en-login-failed")
-		_ = capture.DescribePage(ctx, nil)
+		_ = capture.DescribePage(ctx, env)
 		return err
 	}
 	fmt.Println("  signed in")
+	switch opts.flow {
+	case "app":
+		return appFlow(ctx, frames, env, outDir)
+	case "enterprise-app":
+		return enterpriseAppFlow(ctx, frames, env, outDir, opts.galleryOnly)
+	case "provisioning":
+		return provisioningFlow(ctx, frames, env, outDir, opts.provisioning)
+	case "inventory":
+		return auditTenant(ctx, env, opts.cleanup)
+	}
 	if err := idpcapture.Screenshot(ctx, outDir, "en-01-signed-in"); err != nil {
 		return err
 	}
-	return appRegistrationFlow(ctx, env, outDir, formOnly, create, credentialsOut)
+	return appRegistrationFlow(ctx, env, outDir, opts.formOnly, opts.create, opts.credentialsOut)
 }
 
 // signIn walks Microsoft's sign-in sequence. Every screen lives in ONE DOM that
@@ -143,6 +184,34 @@ func settle(ctx context.Context, env map[string]string) error {
 			_ = chromedp.Run(ctx, chromedp.Click(`#idBtn_Back`, chromedp.ByQuery))
 			_ = chromedp.Run(ctx, chromedp.Sleep(4*time.Second))
 
+		// The password step's click occasionally lands before its button is
+		// live, and the form then sits filled but unsubmitted for the whole
+		// deadline. Still on that screen a poll later means exactly that, so
+		// submit it again.
+		case strings.Contains(body, "Enter password"):
+			fmt.Println("  password screen still showing — submitting again")
+			_ = chromedp.Run(ctx, chromedp.Click(`#idSIButton9`, chromedp.ByQuery))
+			_ = chromedp.Run(ctx, chromedp.Sleep(5*time.Second))
+
+		// Some sign-ins put a method chooser before the code prompt. Pick the
+		// authenticator code, which the tenant's TOTP secret answers.
+		case strings.Contains(body, "Verify your identity"):
+			fmt.Println("  choosing the verification code method")
+			if _, err := capture.ClickText(ctx, "Use a verification code"); err != nil {
+				return err
+			}
+			_ = chromedp.Run(ctx, chromedp.Sleep(4*time.Second))
+
+		// Microsoft's nudge to enrol a second verification method sits between
+		// the passcode and the portal on this tenant. "Not now" keeps the
+		// tenant's MFA exactly as the walkthrough documents it.
+		case strings.Contains(body, "Let's keep your account secure"):
+			fmt.Println("  declining the extra verification method")
+			if _, err := capture.ClickText(ctx, "Not now"); err != nil {
+				return err
+			}
+			_ = chromedp.Run(ctx, chromedp.Sleep(4*time.Second))
+
 		case strings.Contains(body, "Create a resource"),
 			strings.Contains(body, "Microsoft Entra admin center"),
 			strings.Contains(body, "All resources"):
@@ -198,11 +267,11 @@ func appRegistrationFlow(ctx context.Context, env map[string]string, outDir stri
 	// Pre-create refusal: the App registrations list blade does not render here,
 	// so the rig cannot auto-check for an existing emisar app. Rather than mint a
 	// silent duplicate, refuse unless the operator explicitly opts in with
-	// -create (after confirming with entra-inventory.mjs). form-only never
-	// creates, so it is exempt.
+	// -create (after confirming with -flow inventory). form-only never creates,
+	// so it is exempt.
 	if !formOnly && !create {
 		return errors.New("refusing to register a new app: no ENTRA_CLIENT_ID is set and -create was not passed. " +
-			"Run entra-inventory.mjs to confirm no emisar app already exists, then pass -create — or set " +
+			"Run -flow inventory to confirm no emisar app already exists, then pass -create — or set " +
 			"ENTRA_CLIENT_ID to resume the existing one")
 	}
 	if err := chromedp.Run(ctx,
@@ -463,11 +532,14 @@ func openService(ctx context.Context, tile, expect string) error {
 
 // dismissOverlays closes the NPS survey and teaching callouts the portal throws
 // up unpredictably. They cover the very panel a step is trying to show, and they
-// appear on no fixed schedule, so every capture point clears them first.
+// appear on no fixed schedule, so every capture point clears them first. A
+// blade's own header carries a Close button too, and the same label; clicking
+// it closed the Enterprise applications blade and shot the portal home page.
 func dismissOverlays(ctx context.Context) {
 	const script = `(() => {
   let closed = 0;
   for (const el of document.querySelectorAll('button,[role=button],a')) {
+    if (el.closest('.fxs-blade-header')) continue;
     const label = ((el.getAttribute('aria-label') || '') + ' ' + (el.title || '')).toLowerCase();
     if (/close|dismiss|not now|maybe later|no thanks/.test(label)) {
       const box = el.getBoundingClientRect();

@@ -189,7 +189,7 @@ const (
 // appVerdict decides what a cleanup run does with one Okta application.
 //
 // The keeper is identified by something it CARRIES, never by a name the filter
-// happens to miss — the same shape entra-inventory.mjs uses, and for the same
+// happens to miss — the same shape entra-capture's inventory uses, and for the same
 // reason. Two applications are RESUMED rather than recreated: the saved SCIM app
 // (OKTA_SCIM_APP_ID) and the OIDC app (OKTA_OIDC_APP_NAME, which defaults to the
 // bare word "emisar"). Both match /emisar/, so -cleanup deactivated and deleted

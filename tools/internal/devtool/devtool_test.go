@@ -1607,7 +1607,7 @@ func TestDownRejectsUnknownArgumentsAndBoxes(t *testing.T) {
 func TestMainHelpListsEveryPublicCommand(t *testing.T) {
 	for _, command := range []string{
 		"setup", "up", "down", "serve", "status", "logs", "psql", "seed", "reset", "urls", "doctor", "certs",
-		"test", "check", "gate", "browser", "shot", "capture", "e2e",
+		"test", "check", "gate", "browser", "shot", "capture", "icons", "e2e",
 		"smoke", "pack", "ops", "help",
 	} {
 		if !strings.Contains(usageText, "\n  "+command+" ") {

@@ -9,9 +9,9 @@
 # silent flag or a CI override.
 #
 # One entry per line:  <ecosystem> <package> <version> <expires> <reason>
-#   ecosystem  hex | go | npm
+#   ecosystem  hex | go
 #   package    exact package/module name as it appears in the lockfile
-#   version    exact version being allowed (hex/npm: "1.2.3", go: "v1.2.3")
+#   version    exact version being allowed (hex: "1.2.3", go: "v1.2.3")
 #   expires    REQUIRED, YYYY-MM-DD — the last day this exemption applies
 #   reason     REQUIRED, non-empty — the CVE / advisory id and why it can't wait
 #
