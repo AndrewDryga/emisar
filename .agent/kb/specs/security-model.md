@@ -1,3 +1,9 @@
+---
+name: security-model
+sources: [runner/internal/engine, runner/internal/admission, runner/internal/validation, runner/internal/redact, runner/internal/packs, runner/internal/attest, portal/apps/emisar/lib/emisar/auth/authorizer.ex, portal/apps/emisar/lib/emisar/policies.ex, portal/apps/emisar/lib/emisar/runs.ex]
+updated: 2026-09-09
+---
+
 # Security model
 
 ## What emisar gives you

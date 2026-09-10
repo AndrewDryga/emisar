@@ -1,3 +1,9 @@
+---
+name: key-compromise
+sources: [portal/apps/emisar/lib/emisar/api_keys.ex, portal/apps/emisar/lib/emisar/oauth.ex, portal/apps/emisar/lib/emisar/runners.ex, portal/apps/emisar/lib/emisar/crypto.ex, portal/apps/emisar_web/priv/static/.well-known/mcp-registry-auth, infra/iam.tf]
+updated: 2026-09-03
+---
+
 # Key-compromise response
 
 Use this runbook when a credential may have been copied, logged, or used by an

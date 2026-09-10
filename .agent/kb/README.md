@@ -69,7 +69,9 @@ DELETE it — a card that contradicts the code is worse than no card.
 ## Card format
 
 One fact per file: frontmatter, a short body (under a screen), and a small changelog so
-an outdated card is obvious.
+an outdated card is obvious. Specs and runbooks carry the same `name`, `sources`, and
+`updated` frontmatter and are held to it the same way; they skip `description` and
+`subsystem` because their index lines are written by hand, and they may say `must`.
 
 ```
 ---

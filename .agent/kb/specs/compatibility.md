@@ -1,3 +1,9 @@
+---
+name: compatibility
+sources: [runner/pkg/packspec, runner/pkg/actionspec, runner/testdata/cli_surface.golden, portal/apps/emisar_web/priv/mcp/api-schemas.json, portal/apps/emisar/lib/emisar/canonical_json.ex, install.sh, install-mcp.sh, runner/release/container-packs.txt]
+updated: 2026-09-10
+---
+
 # Compatibility and deprecation policy
 
 emisar is pre-1.0 today. That is why the portal, runner, MCP bridge, packs, and

@@ -1,3 +1,9 @@
+---
+name: agent-tasks
+sources: [.agent/tasks/README.md, .githooks/commit-msg, tools/internal/devtool/screenshots.go, tools/internal/devtool/browser.go]
+updated: 2026-09-10
+---
+
 # Agent tasks and batch execution
 
 Read this when creating, claiming, completing, recovering, or batch-processing

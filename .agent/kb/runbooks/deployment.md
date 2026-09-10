@@ -1,3 +1,9 @@
+---
+name: deployment
+sources: [.github/workflows/ci.yml, .github/workflows/cd.yml, infra/iam.tf, portal/config/runtime.exs, portal/apps/emisar/lib/emisar/release.ex]
+updated: 2026-09-10
+---
+
 # CI/CD production setup
 
 Workflow files are public. Store only secret **names**, never values, in the

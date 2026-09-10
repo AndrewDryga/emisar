@@ -311,8 +311,27 @@ func TestCheckKnowledgeCardsSeparatesInternalMaterialAndRejectsLegacyDirectories
 func TestCheckKnowledgeCardsAcceptsSpecsAndRunbooksButRejectsRetiredRoots(t *testing.T) {
 	check := testChecker(t)
 	writeTestFile(t, check.root, ".agent/kb/README.md", "# Knowledge\n")
-	writeTestFile(t, check.root, ".agent/kb/specs/wire-protocol.md", "# Protocol\n\nClients must send a version.\n")
-	writeTestFile(t, check.root, ".agent/kb/runbooks/release.md", "# Release\n\nNever publish an unsigned tag.\n")
+	writeTestFile(t, check.root, "runner/internal/cloud/client.go", "package cloud\n")
+	writeTestFile(t, check.root, ".agent/kb/specs/wire-protocol.md", `---
+name: wire-protocol
+sources: [runner/internal/cloud]
+updated: 2026-09-08
+---
+
+# Protocol
+
+Clients must send a version.
+`)
+	writeTestFile(t, check.root, ".agent/kb/runbooks/release.md", `---
+name: release
+sources: [runner/internal/cloud/client.go]
+updated: 2026-09-10
+---
+
+# Release
+
+Never publish an unsigned tag.
+`)
 	writeTestFile(t, check.root, "docs/stale.md", "# Stale\n")
 	writeTestFile(t, check.root, "distribution/stale.md", "# Stale\n")
 
@@ -329,6 +348,41 @@ func TestCheckKnowledgeCardsAcceptsSpecsAndRunbooksButRejectsRetiredRoots(t *tes
 	}
 	if hasFailure(check, ".agent/kb/runbooks/release.md") {
 		t.Fatalf("runbook was parsed as a descriptive card: %#v", check.failures)
+	}
+}
+
+// Normative files may say "must", but they still name their sources and
+// their last check against them; a stale changelog counts there too.
+func TestCheckKnowledgeCardsRequiresSpecAndRunbookStalenessMetadata(t *testing.T) {
+	check := testChecker(t)
+	writeTestFile(t, check.root, ".agent/kb/README.md", "# Knowledge\n")
+	writeTestFile(t, check.root, ".agent/kb/specs/security-model.md", "# Security model\n\nThe runner must re-validate.\n")
+	writeTestFile(t, check.root, ".agent/kb/runbooks/release.md", `---
+name: cut-release
+sources: [tools/missing.go]
+updated: 2026-09-01
+---
+
+# Release
+
+## Changelog
+- 2026-09-05 — added the tag step
+`)
+
+	check.checkKnowledgeCards()
+
+	for _, expected := range []string{
+		".agent/kb/specs/security-model.md: missing opening frontmatter delimiter",
+		`name is "cut-release", expected "release"`,
+		`source "tools/missing.go" does not exist`,
+		"updated is 2026-09-01 but the newest changelog entry is 2026-09-05",
+	} {
+		if !hasFailure(check, expected) {
+			t.Errorf("missing failure %q in %#v", expected, check.failures)
+		}
+	}
+	if hasFailure(check, "normative policy language") {
+		t.Fatalf("a spec was held to the descriptive-language rule: %#v", check.failures)
 	}
 }
 

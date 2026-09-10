@@ -587,6 +587,17 @@ func isKnowledgeCard(relative string, entry fs.DirEntry) bool {
 		!isKnowledgeSpec(relative) && !isKnowledgeRunbook(relative)
 }
 
+// A spec or runbook is normative, so it may say "must" and is indexed by
+// hand; it still names the code it describes and when it was last checked
+// against it, because the security contracts are the KB's largest and
+// least-read surface.
+func isKnowledgeContract(relative string, entry fs.DirEntry) bool {
+	if entry.IsDir() || entry.Name() == "README.md" || !strings.HasSuffix(entry.Name(), ".md") {
+		return false
+	}
+	return (isKnowledgeSpec(relative) || isKnowledgeRunbook(relative)) && !isInternalKnowledge(relative)
+}
+
 func isLegacyKnowledgeDirectory(relative string) bool {
 	return relative == ".agent/reference" || relative == ".agent/rules" ||
 		strings.HasSuffix(relative, "/.agent/reference") || strings.HasSuffix(relative, "/.agent/rules")
@@ -677,7 +688,8 @@ func (c *checker) checkKnowledgeCards() {
 			c.fail("retired %s is back; durable knowledge lives under .agent/kb", relative)
 			return
 		}
-		if !isKnowledgeCard(relative, entry) {
+		contract := isKnowledgeContract(relative, entry)
+		if !isKnowledgeCard(relative, entry) && !contract {
 			return
 		}
 		data, err := os.ReadFile(c.path(relative))
@@ -695,16 +707,6 @@ func (c *checker) checkKnowledgeCards() {
 		if name != expectedName {
 			c.fail("%s name is %q, expected %q", relative, name, expectedName)
 		}
-		description := strings.Join(strings.Fields(metadataString(metadata, "description")), " ")
-		if description == "" {
-			c.fail("%s missing frontmatter description", relative)
-		} else if cardPolicy.MatchString(description) {
-			c.fail("%s description uses normative policy language; move the constraint to .agent/kb/rules", relative)
-		}
-		subsystem := metadataString(metadata, "subsystem")
-		if !allowedSubsystems[subsystem] {
-			c.fail("%s subsystem %q is not recognized", relative, subsystem)
-		}
 		updated := metadataDate(metadata, "updated")
 		if _, err := time.Parse("2006-01-02", updated); err != nil {
 			c.fail("%s updated %q must use YYYY-MM-DD", relative, updated)
@@ -718,6 +720,24 @@ func (c *checker) checkKnowledgeCards() {
 				c.fail("%s source %q does not exist", relative, source)
 			}
 		}
+		// `updated` is the staleness signal the KB README leans on; a changelog
+		// entry newer than it puts the card in the wrong triage bucket.
+		if newest := newestChangelogDate(data); newest != "" && updated != "" && newest > updated {
+			c.fail("%s: updated is %s but the newest changelog entry is %s", relative, updated, newest)
+		}
+		if contract {
+			return
+		}
+		description := strings.Join(strings.Fields(metadataString(metadata, "description")), " ")
+		if description == "" {
+			c.fail("%s missing frontmatter description", relative)
+		} else if cardPolicy.MatchString(description) {
+			c.fail("%s description uses normative policy language; move the constraint to .agent/kb/rules", relative)
+		}
+		subsystem := metadataString(metadata, "subsystem")
+		if !allowedSubsystems[subsystem] {
+			c.fail("%s subsystem %q is not recognized", relative, subsystem)
+		}
 		lines, err := cardPolicyLines(data)
 		if err != nil {
 			c.fail("%s: %v", relative, err)
@@ -730,11 +750,6 @@ func (c *checker) checkKnowledgeCards() {
 		// the card's own description, verbatim — six of ten had drifted apart.
 		if description != "" && !strings.Contains(indexText, "["+name+"]("+name+".md) — "+description) {
 			c.fail("%s: .agent/kb/README.md does not carry its description verbatim as `- [%s](%s.md) — <description>`", relative, name, name)
-		}
-		// `updated` is the staleness signal the KB README leans on; a changelog
-		// entry newer than it puts the card in the wrong triage bucket.
-		if newest := newestChangelogDate(data); newest != "" && updated != "" && newest > updated {
-			c.fail("%s: updated is %s but the newest changelog entry is %s", relative, updated, newest)
 		}
 	})
 }

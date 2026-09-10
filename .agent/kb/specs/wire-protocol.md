@@ -1,3 +1,9 @@
+---
+name: wire-protocol
+sources: [runner/internal/cloud, runner/internal/attest, mcp/internal/attest, portal/apps/emisar_web/lib/emisar_web/runner_socket.ex, portal/apps/emisar_web/lib/emisar_web/runner_socket_drain.ex]
+updated: 2026-09-08
+---
+
 # Runner wire protocol
 
 The runner and portal communicate over one TLS websocket initiated by the

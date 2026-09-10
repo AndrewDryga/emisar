@@ -1,7 +1,12 @@
+---
+name: agent-maintenance
+sources: [AGENTS.md, .agent/presets/frontier/preset.yaml, .agent/loop.yaml, .claude/skills, tools/cmd/agentcheck/main.go]
+updated: 2026-09-05
+---
+
 # Maintaining agent instructions
 
 Use this when upgrading models or changing manuals, skills, or orchestration.
-Review date: 2026-09-05.
 
 ## Instruction ownership
 

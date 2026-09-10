@@ -1,3 +1,9 @@
+---
+name: mcp-api
+sources: [portal/apps/emisar_web/priv/mcp/api-schemas.json, portal/apps/emisar_web/lib/emisar_web/controllers/mcp, portal/apps/emisar_web/lib/emisar_web/controllers/mcp_rpc_controller.ex, portal/apps/emisar/lib/emisar/mcp_operations.ex, mcp/protocol.go]
+updated: 2026-09-10
+---
+
 # MCP action API specification
 
 Status: **Implemented contract. The JSON registry is normative.**

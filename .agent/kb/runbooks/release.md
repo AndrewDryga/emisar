@@ -1,3 +1,9 @@
+---
+name: release
+sources: [portal/apps/emisar_web/lib/emisar_web/changelog.ex, portal/config/config.exs, .github/workflows/runner-release.yml, .github/workflows/mcp-release.yml, .github/workflows/mcp-eval.yml, tools/cmd/mcpeval/config.go, packs/PUBLISHING.md]
+updated: 2026-09-10
+---
+
 # Cutting an emisar release
 
 A release is one **product version** on the website changelog, with a matching

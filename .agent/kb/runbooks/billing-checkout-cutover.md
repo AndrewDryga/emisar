@@ -1,3 +1,9 @@
+---
+name: billing-checkout-cutover
+sources: [portal/apps/emisar/lib/emisar/billing.ex, portal/apps/emisar/priv/repo/migrations/20261025000000_track_checkout_and_subscription_recovery.exs]
+updated: 2026-09-05
+---
+
 # First durable-checkout rollout
 
 This procedure applies when replacing checkout producers that predate durable

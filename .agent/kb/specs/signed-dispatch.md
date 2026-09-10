@@ -1,3 +1,9 @@
+---
+name: signed-dispatch
+sources: [mcp/sign.go, mcp/internal/attest, runner/internal/signing, runner/internal/attest, portal/apps/emisar/lib/emisar/runs/attestation.ex, portal/apps/emisar/lib/emisar/runs.ex]
+updated: 2026-09-03
+---
+
 # Signed dispatch (bridge-attested dispatch)
 
 A runner can be told to **refuse the control plane's authority**: with signing

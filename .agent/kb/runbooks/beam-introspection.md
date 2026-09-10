@@ -1,3 +1,9 @@
+---
+name: beam-introspection
+sources: [portal/apps/emisar/mix.exs, infra/monitoring_application.tf]
+updated: 2026-08-27
+---
+
 # Inspecting a running portal node
 
 Use this when a production portal node is slow, leaking memory, or wedged, and
