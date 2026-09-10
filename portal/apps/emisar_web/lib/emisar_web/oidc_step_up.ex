@@ -95,11 +95,8 @@ defmodule EmisarWeb.OIDCStepUp do
     end
   end
 
-  defp wrong_code_message(:mfa),
-    do: "That authenticator or recovery code didn't match. Try again."
-
-  defp wrong_code_message(:email),
-    do: "That code is incorrect or expired. Try again or request a new code."
+  defp wrong_code_message(:mfa), do: MfaErrors.message(:step_up_factor_invalid)
+  defp wrong_code_message(:email), do: MfaErrors.message(:email_code_invalid)
 
   @doc "Issues a replacement code for an emailed step-up already in progress."
   def resend(socket, step, code_input_id) do

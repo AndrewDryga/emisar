@@ -1,7 +1,7 @@
 defmodule EmisarWeb.TeamLive do
   use EmisarWeb, :live_view
   alias Emisar.{Accounts, Audit, Runners, SSO}
-  alias EmisarWeb.{ConfirmDialog, LiveForm, LiveTable, MemberErrors}
+  alias EmisarWeb.{ConfirmDialog, LiveForm, LiveTable, MemberErrors, MfaErrors}
   alias EmisarWeb.{Permissions, RoleCopy, RunnerScope}
   alias Phoenix.LiveView.JS
 
@@ -977,23 +977,11 @@ defmodule EmisarWeb.TeamLive do
        |> push_navigate(to: ~p"/app/#{socket.assigns.current_account}/settings/team")}
     else
       {:error, :rate_limited} ->
-        {:noreply,
-         assign(
-           socket,
-           :mfa_reset_error,
-           "Too many attempts. Wait a few minutes, then try again."
-         )}
+        {:noreply, assign(socket, :mfa_reset_error, MfaErrors.message(:rate_limited))}
 
       {:error, reason} when reason in [:invalid, :replay] ->
         {:noreply,
-         assign(
-           socket,
-           :mfa_reset_error,
-           if(socket.assigns.mfa_reset_mode == :totp,
-             do: "That authenticator code didn't match. Check it and try again.",
-             else: "That recovery code didn't match or has already been used."
-           )
-         )}
+         assign(socket, :mfa_reset_error, MfaErrors.challenge(socket.assigns.mfa_reset_mode))}
 
       {:error, reason}
       when reason in [

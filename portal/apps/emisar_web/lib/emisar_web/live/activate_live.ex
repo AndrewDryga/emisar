@@ -11,7 +11,7 @@ defmodule EmisarWeb.ActivateLive do
   """
   use EmisarWeb, :live_view
   alias Emisar.{Accounts, ApiKeys, Throttle}
-  alias EmisarWeb.Permissions
+  alias EmisarWeb.{MfaErrors, Permissions}
 
   def mount(_params, _session, socket) do
     # IL-18: the selector read runs on the connected mount only; a
@@ -123,7 +123,7 @@ defmodule EmisarWeb.ActivateLive do
     if Throttle.check("device_code_lookup", user_id, 20, 900_000) != :ok do
       assign(socket,
         grant: nil,
-        lookup_error: "Too many attempts. Wait a few minutes and try again."
+        lookup_error: MfaErrors.message(:rate_limited)
       )
     else
       do_lookup(socket, code)

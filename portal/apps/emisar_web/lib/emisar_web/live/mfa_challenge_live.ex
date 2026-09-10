@@ -1,7 +1,7 @@
 defmodule EmisarWeb.MfaChallengeLive do
   use EmisarWeb, :live_view
   alias Emisar.{Auth, Users}
-  alias EmisarWeb.{MfaChallengeHandoff, RequestContext}
+  alias EmisarWeb.{MfaChallengeHandoff, MfaErrors, RequestContext}
 
   # The second factor, after a magic link has verified email possession. The
   # partial-auth session (`:mfa_pending_user_id`) names the user but grants no
@@ -68,19 +68,12 @@ defmodule EmisarWeb.MfaChallengeLive do
         {:noreply, redirect(socket, to: ~p"/sign_in/mfa/complete?#{[handoff: handoff]}")}
 
       {:error, :rate_limited} ->
-        {:noreply,
-         assign(socket, :error, "Too many attempts. Wait a few minutes, then try again.")}
+        {:noreply, assign(socket, :error, MfaErrors.message(:rate_limited))}
 
       {:error, _} ->
-        {:noreply, assign(socket, :error, error_message(socket.assigns.mode))}
+        {:noreply, assign(socket, :error, MfaErrors.challenge(socket.assigns.mode))}
     end
   end
-
-  defp error_message(:totp),
-    do: "That code didn't match. Check your authenticator app and try again."
-
-  defp error_message(:recovery),
-    do: "That recovery code didn't match or has already been used."
 
   # Ten minutes, matching the controller's mfa_complete deadline: a marker left
   # in a shared browser is not a standing invitation to finish signing in later.

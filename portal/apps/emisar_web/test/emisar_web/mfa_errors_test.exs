@@ -33,17 +33,30 @@ defmodule EmisarWeb.MfaErrorsTest do
       assert MfaErrors.message(:invalid_otp) ==
                "That code didn't match. Try the latest code from your authenticator."
     end
+
+    test "a refused challenge is worded by factor, for the challenge, setup, and reset pages" do
+      assert MfaErrors.challenge(:totp) ==
+               "That code didn't match. Check your authenticator app and try again."
+
+      assert MfaErrors.challenge(:recovery) ==
+               "That recovery code didn't match or has already been used."
+    end
   end
 
-  describe "the enrollment surfaces" do
+  describe "the code-entry surfaces" do
     # The drift these files used to carry was invisible until someone read both.
-    # This asserts the sentences are no longer written in either page.
+    # This asserts the sentences are no longer written in any page that shows one.
     @sources [
       "lib/emisar_web/live/mfa_setup_live.ex",
-      "lib/emisar_web/live/profile_live.ex"
+      "lib/emisar_web/live/profile_live.ex",
+      "lib/emisar_web/live/mfa_challenge_live.ex",
+      "lib/emisar_web/live/team_live.ex",
+      "lib/emisar_web/live/magic_link_live.ex",
+      "lib/emisar_web/live/activate_live.ex",
+      "lib/emisar_web/oidc_step_up.ex"
     ]
 
-    test "neither page hand-writes a sentence MfaErrors owns" do
+    test "no page hand-writes a sentence MfaErrors owns" do
       for relative <- @sources, reason <- MfaErrors.reasons() do
         source = File.read!(Path.join(__DIR__, "../../" <> relative))
         sentence = MfaErrors.message(reason)

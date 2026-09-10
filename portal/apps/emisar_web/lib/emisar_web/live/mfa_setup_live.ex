@@ -246,11 +246,7 @@ defmodule EmisarWeb.MfaSetupLive do
 
         {:error, :invalid} ->
           {:noreply,
-           assign(
-             socket,
-             :mfa_enrollment_email_error,
-             "That code is incorrect or expired. Try again or request a new code."
-           )}
+           assign(socket, :mfa_enrollment_email_error, MfaErrors.message(:email_code_invalid))}
 
         {:error, :rate_limited} ->
           {:noreply,
@@ -418,16 +414,10 @@ defmodule EmisarWeb.MfaSetupLive do
          assign(
            socket,
            :mfa_challenge_error,
-           challenge_error(socket.assigns.mfa_challenge_mode)
+           MfaErrors.challenge(socket.assigns.mfa_challenge_mode)
          )}
     end
   end
-
-  defp challenge_error(:totp),
-    do: "That code didn't match. Check your authenticator app and try again."
-
-  defp challenge_error(:recovery),
-    do: "That recovery code didn't match or has already been used."
 
   defp assign_mfa_form(socket) do
     assign(socket, :mfa_form, to_form(%{"otp" => ""}, as: "mfa"))

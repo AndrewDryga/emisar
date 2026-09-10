@@ -1,7 +1,7 @@
 defmodule EmisarWeb.MagicLinkLive do
   use EmisarWeb, :live_view
   alias Emisar.{Auth, Throttle}
-  alias EmisarWeb.{MagicLinkHandoff, RequestContext, ReturnTo}
+  alias EmisarWeb.{MagicLinkHandoff, MfaErrors, RequestContext, ReturnTo}
 
   # The email form POSTs to `UserSessionController.magic_link_start` (a controller,
   # because issuing the split token sets a signed nonce cookie a LiveView can't).
@@ -63,7 +63,7 @@ defmodule EmisarWeb.MagicLinkLive do
       # Told "that code didn't match", every one of them retypes a code that was
       # never wrong and then spends the separate resend budget burning it.
       {:error, :rate_limited} ->
-        {:noreply, reject_code(socket, "Too many attempts. Wait a few minutes and try again.")}
+        {:noreply, reject_code(socket, MfaErrors.message(:rate_limited))}
 
       _ ->
         {:noreply,

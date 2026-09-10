@@ -3249,7 +3249,7 @@ defmodule EmisarWeb.TeamLiveTest do
 
       html = render_hook(lv, "verify_reset_totp", %{"otp" => wrong_code})
 
-      assert html =~ "That authenticator code didn"
+      assert html =~ "That code didn&#39;t match. Check your authenticator app and try again."
       refute is_nil(Emisar.Repo.reload!(member).mfa_enabled_at)
     end
   end

@@ -466,11 +466,7 @@ defmodule EmisarWeb.ProfileLive do
 
         {:error, :invalid} ->
           {:noreply,
-           assign(
-             socket,
-             :mfa_enrollment_email_error,
-             "That code is incorrect or expired. Try again or request a new code."
-           )}
+           assign(socket, :mfa_enrollment_email_error, MfaErrors.message(:email_code_invalid))}
 
         {:error, :rate_limited} ->
           {:noreply,
@@ -882,8 +878,7 @@ defmodule EmisarWeb.ProfileLive do
 
   defp step_up_error(:totp), do: MfaErrors.message(:invalid_otp)
 
-  defp step_up_error(_),
-    do: "That code is incorrect or expired. Try again or request a new code."
+  defp step_up_error(_), do: MfaErrors.message(:email_code_invalid)
 
   defp complete_oidc_step_up(socket, %{purpose: :unlink} = step, proof) do
     case SSO.unlink_identity(
