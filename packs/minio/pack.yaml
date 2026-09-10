@@ -1,7 +1,7 @@
 schema_version: 1
 id: minio
 name: MinIO operations
-version: 0.1.19
+version: 0.1.20
 # Every version below this one runs `mc admin trace -v`, which prints other
 # clients' request headers — their SigV4 credential and signature, and a
 # presigned URL's query signature, which is a reusable object-access capability

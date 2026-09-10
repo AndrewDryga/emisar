@@ -17,7 +17,7 @@ execution:
   command:
     binary: dnf
     argv: ["autoremove", "-y"]
-  timeout: 600s
+  timeout: 10m
   cancel_grace: 60s
 output:
   parser: text

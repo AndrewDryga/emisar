@@ -46,7 +46,7 @@ args:
 execution:
   script: {path: scripts/airflow_api.sh, interpreter: /bin/bash}
   argv: [clear-dag-run, "{{ args.dag_id }}", "{{ args.dag_run_id }}", "false", "{{ args.only_failed }}"]
-  timeout: 120s
+  timeout: 2m
 output:
   parser: json
   parser_required: true

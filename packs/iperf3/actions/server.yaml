@@ -56,7 +56,7 @@ execution:
     PORT: "{{ args.port }}"
     IDLE_TIMEOUT: "{{ args.idle_timeout }}"
     BIND: "{{ args.bind }}"
-  timeout: 120s
+  timeout: 2m
 output:
   parser: json
   max_stdout_bytes: 1048576

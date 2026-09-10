@@ -17,7 +17,7 @@ execution:
     argv:
       - "-c"
       - "curl -q -fsS --globoff --proto =http,https -X POST \"${PROM_URL:-http://127.0.0.1:9090}/api/v1/admin/tsdb/clean_tombstones\""
-  timeout: 120s
+  timeout: 2m
 output:
   parser: text
   max_stdout_bytes: 4096

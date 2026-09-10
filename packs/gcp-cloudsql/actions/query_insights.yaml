@@ -67,7 +67,7 @@ execution:
     - "{{ args.metric }}"
     - "{{ args.window_minutes }}"
     - "{{ args.top_n }}"
-  timeout: 120s
+  timeout: 2m
 output:
   parser: json
   parser_required: true

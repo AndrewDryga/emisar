@@ -47,7 +47,7 @@ execution:
       - "--zone={{ args.zone }}"
       - "--format=json(name,status,zone,lastStartTimestamp,lastStopTimestamp)"
       - --quiet
-  timeout: 120s
+  timeout: 2m
 output:
   parser: json
   parser_required: true

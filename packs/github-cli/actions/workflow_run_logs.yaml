@@ -35,7 +35,7 @@ execution:
       - "--repo"
       - "{{ args.repo }}"
       - "--log-failed"
-  timeout: 120s
+  timeout: 2m
 output:
   parser: text
   max_stdout_bytes: 4194304

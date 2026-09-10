@@ -21,7 +21,7 @@ execution:
   command:
     binary: dnf
     argv: ["reinstall", "-y", "{{ args.package }}"]
-  timeout: 600s
+  timeout: 10m
   cancel_grace: 60s
 output:
   parser: text

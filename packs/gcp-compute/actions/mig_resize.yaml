@@ -62,7 +62,7 @@ execution:
     - "{{ args.location }}"
     - "{{ args.project }}"
     - "{{ args.size }}"
-  timeout: 180s
+  timeout: 3m
 output:
   parser: json
   parser_required: true

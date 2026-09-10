@@ -76,7 +76,7 @@ execution:
     - "{{ args.limit }}"
     - "{{ args.max_scan_gb }}"
     - "{{ args.service }}"
-  timeout: 180s
+  timeout: 3m
 output:
   parser: json
   parser_required: true

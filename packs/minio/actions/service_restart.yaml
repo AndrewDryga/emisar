@@ -26,7 +26,7 @@ execution:
     # terminal (every runner dispatch) the command dies with "Unable to
     # initialize service restart UI" before reporting the restart.
     argv: ["admin", "service", "restart", "{{ args.alias }}", "--json"]
-  timeout: 600s
+  timeout: 10m
   cancel_grace: 60s
 output:
   parser: text

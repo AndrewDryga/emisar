@@ -68,7 +68,7 @@ execution:
     - "{{ args.task_ids }}"
     - "{{ args.only_failed }}"
     - "{{ args.include_downstream }}"
-  timeout: 120s
+  timeout: 2m
 output:
   parser: json
   parser_required: true

@@ -40,7 +40,7 @@ execution:
     - "{{ args.query }}"
     - "{{ args.window }}"
     - "{{ args.step }}"
-  timeout: 120s
+  timeout: 2m
 output:
   parser: json
   max_stdout_bytes: 4194304

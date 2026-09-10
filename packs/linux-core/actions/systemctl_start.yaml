@@ -29,7 +29,7 @@ execution:
     argv:
       - "start"
       - "{{ args.unit }}"
-  timeout: 120s
+  timeout: 2m
 
 output:
   parser: text

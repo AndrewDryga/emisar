@@ -59,7 +59,7 @@ execution:
     - "1"
     - "{{ args.max_scan_gb }}"
     - ""
-  timeout: 180s
+  timeout: 3m
 output:
   parser: json
   parser_required: true

@@ -51,7 +51,7 @@ execution:
     path: scripts/nomad_nsr.sh
     interpreter: /bin/sh
   argv: ["{{ args.namespace }}", "", "action", "-job", "{{ args.job }}", "-group", "{{ args.group }}", "-task", "{{ args.task }}", "--", "{{ args.action_name }}"]
-  timeout: 120s
+  timeout: 2m
 output:
   parser: text
   max_stdout_bytes: 262144

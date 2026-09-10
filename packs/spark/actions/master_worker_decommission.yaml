@@ -33,7 +33,7 @@ args:
 execution:
   script: {path: scripts/spark_api.sh, interpreter: /bin/bash}
   argv: [master-worker-decommission, "{{ args.host }}"]
-  timeout: 120s
+  timeout: 2m
 output:
   parser: json
   parser_required: true

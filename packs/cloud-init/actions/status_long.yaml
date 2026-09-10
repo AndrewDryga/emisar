@@ -22,7 +22,7 @@ execution:
     argv:
       - "-c"
       - "if [ '{{ args.block }}' = 'true' ]; then cloud-init status --long --wait; else cloud-init status --long; fi"
-  timeout: 300s
+  timeout: 5m
 output:
   parser: text
   max_stdout_bytes: 32768

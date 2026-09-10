@@ -57,7 +57,7 @@ execution:
       - "-perm"
       - "-0002"
       - "-print"
-  timeout: 120s
+  timeout: 2m
 output:
   parser: text
   max_stdout_bytes: 524288

@@ -38,7 +38,7 @@ execution:
     argv:
       - "restart"
       - "{{ args.unit }}"
-  timeout: 120s
+  timeout: 2m
   cancel_grace: 30s
 
 output:

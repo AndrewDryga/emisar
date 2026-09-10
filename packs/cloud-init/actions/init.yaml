@@ -20,7 +20,7 @@ execution:
     # `cloud-init init` instead" (verified against cloud-init 26.1's
     # cloudinit/cmd/main.py). Do not "migrate" this away.
     argv: ["init"]
-  timeout: 300s
+  timeout: 5m
   cancel_grace: 30s
 output:
   parser: text

@@ -74,7 +74,7 @@ execution:
     - "{{ args.reprocess_behavior }}"
     - "{{ args.max_active_runs }}"
     - "{{ args.run_backwards }}"
-  timeout: 120s
+  timeout: 2m
 output:
   parser: json
   parser_required: true

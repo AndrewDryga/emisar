@@ -2,7 +2,7 @@ schema_version: 1
 
 id: gcp-dns
 name: Google Cloud DNS diagnostics and record control
-version: 0.2.1
+version: 0.2.2
 description: >
   Cloud DNS diagnostics plus governed exact-record control: managed-zone,
   DNSSEC, server-policy, response-policy, and exact-record reads, and

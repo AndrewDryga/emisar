@@ -41,7 +41,7 @@ execution:
       - "emisar"
       - "{{ args.dataset }}"
       - "{{ args.snap }}"
-  timeout: 300s
+  timeout: 5m
   cancel_grace: 30s
 output:
   parser: text

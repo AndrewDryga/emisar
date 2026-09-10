@@ -2,7 +2,7 @@ schema_version: 1
 
 id: iperf3
 name: iperf3 network throughput
-version: 0.1.1
+version: 0.1.2
 description: >
   Active network throughput measurement with iperf3 — TCP bandwidth and
   UDP jitter / packet loss — between two nodes in the fleet. Run the

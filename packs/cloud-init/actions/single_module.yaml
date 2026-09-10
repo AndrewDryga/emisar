@@ -32,7 +32,7 @@ execution:
   command:
     binary: cloud-init
     argv: ["single", "--name={{ args.module }}", "--frequency={{ args.frequency }}"]
-  timeout: 300s
+  timeout: 5m
   cancel_grace: 30s
 output:
   parser: text

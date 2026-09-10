@@ -48,7 +48,7 @@ execution:
       - "--zone={{ args.zone }}"
       - --format=json
       - --quiet
-  timeout: 300s
+  timeout: 5m
 output:
   parser: json
   parser_required: true

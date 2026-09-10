@@ -29,7 +29,7 @@ execution:
   command:
     binary: zfs
     argv: ["destroy", "{{ args.dataset }}@{{ args.snap }}"]
-  timeout: 120s
+  timeout: 2m
 output:
   parser: text
   max_stdout_bytes: 4096

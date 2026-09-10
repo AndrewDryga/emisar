@@ -34,7 +34,7 @@ execution:
       - "emisar"
       - "{{ args.db_name }}"
       - "{{ args.collection }}"
-  timeout: 1800s
+  timeout: 30m
   cancel_grace: 60s
 output:
   parser: text
