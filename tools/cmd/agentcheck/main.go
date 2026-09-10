@@ -740,10 +740,41 @@ func (c *checker) gitIgnored(relative string) (bool, error) {
 	return false, err
 }
 
+var cursorPluginManifestVersion = regexp.MustCompile(`"version":\s*"([^"]+)"`)
+var cursorPluginChangelogVersion = regexp.MustCompile(`(?m)^## \[([0-9]+\.[0-9]+\.[0-9]+)\]`)
+
+// The plugin's payload changed five times after its 0.1.0 entry while the
+// manifest still said 0.1.0 — a Marketplace build labelled 0.1.0 would have
+// carried different install instructions than this tree's 0.1.0. PUBLISHING.md
+// asks for the bump; this makes forgetting it a failure.
+func (c *checker) checkCursorPluginVersionMatchesChangelog() {
+	manifest, err := os.ReadFile(c.path("dist/cursor-plugin/.cursor-plugin/plugin.json"))
+	if err != nil {
+		c.fail("reading the Cursor plugin manifest: %v", err)
+		return
+	}
+	changelog, err := os.ReadFile(c.path("dist/cursor-plugin/CHANGELOG.md"))
+	if err != nil {
+		c.fail("reading the Cursor plugin changelog: %v", err)
+		return
+	}
+	manifestMatch := cursorPluginManifestVersion.FindSubmatch(manifest)
+	changelogMatch := cursorPluginChangelogVersion.FindSubmatch(changelog)
+	if manifestMatch == nil || changelogMatch == nil {
+		c.fail("the Cursor plugin manifest and changelog must both declare a version")
+		return
+	}
+	if string(manifestMatch[1]) != string(changelogMatch[1]) {
+		c.fail("dist/cursor-plugin: plugin.json declares %s but the newest CHANGELOG.md entry is %s; bump both when the payload changes",
+			manifestMatch[1], changelogMatch[1])
+	}
+}
+
 func (c *checker) checkDistributionLayout() {
 	if _, err := os.Stat(c.path("dist/cursor-plugin")); err != nil {
 		c.fail("dist/cursor-plugin is required as the tracked Cursor package")
 	}
+	c.checkCursorPluginVersionMatchesChangelog()
 	for _, test := range []struct {
 		path    string
 		ignored bool

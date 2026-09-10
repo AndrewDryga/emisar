@@ -340,6 +340,8 @@ func TestCheckDistributionLayoutUsesGitIgnorePolicy(t *testing.T) {
 	}
 	writeTestFile(t, check.root, ".gitignore", "/dist/*\n!/dist/cursor-plugin/\n")
 	writeTestFile(t, check.root, "dist/cursor-plugin/README.md", "# Cursor\n")
+	writeTestFile(t, check.root, "dist/cursor-plugin/.cursor-plugin/plugin.json", `{"name": "emisar", "version": "0.2.0"}`)
+	writeTestFile(t, check.root, "dist/cursor-plugin/CHANGELOG.md", "# Changelog\n\n## [0.2.0] — 2026-09-10\n")
 	for _, skill := range []string{"author-pack", "install-emisar", "respond-to-production-incidents"} {
 		writeTestFile(t, check.root, "skills/"+skill+"/SKILL.md", "# "+skill+"\n")
 		writeTestFile(t, check.root, "dist/cursor-plugin/skills/"+skill+"/SKILL.md", "# "+skill+"\n")
@@ -653,5 +655,23 @@ func TestTrackedGitHooksMustExistBeExecutableAndKeepTheirJobs(t *testing.T) {
 	check.checkTrackedGitHooks()
 	if !hasFailure(check, ".githooks/prepare-commit-msg is missing") {
 		t.Fatalf("missing prepare-commit-msg not reported: %v", check.failures)
+	}
+}
+
+func TestCursorPluginVersionMatchesChangelog(t *testing.T) {
+	check := testChecker(t)
+	writeTestFile(t, check.root, "dist/cursor-plugin/.cursor-plugin/plugin.json", `{"name": "emisar", "version": "0.2.0"}`)
+	writeTestFile(t, check.root, "dist/cursor-plugin/CHANGELOG.md", "# Changelog\n\n## [0.2.0] — 2026-09-10\n\n## [0.1.0] — 2026-08-05\n")
+	check.checkCursorPluginVersionMatchesChangelog()
+	if len(check.failures) != 0 {
+		t.Fatalf("matching versions reported: %v", check.failures)
+	}
+
+	check = testChecker(t)
+	writeTestFile(t, check.root, "dist/cursor-plugin/.cursor-plugin/plugin.json", `{"name": "emisar", "version": "0.1.0"}`)
+	writeTestFile(t, check.root, "dist/cursor-plugin/CHANGELOG.md", "# Changelog\n\n## [0.2.0] — 2026-09-10\n")
+	check.checkCursorPluginVersionMatchesChangelog()
+	if !hasFailure(check, "plugin.json declares 0.1.0 but the newest CHANGELOG.md entry is 0.2.0") {
+		t.Fatalf("drift not reported: %v", check.failures)
 	}
 }

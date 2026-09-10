@@ -1,7 +1,7 @@
 {
   "name": "emisar",
   "displayName": "Emisar",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Connect Cursor to infrastructure through Emisar's declared, policy-controlled actions, approvals, and audit.",
   "author": {
     "name": "Emisar",

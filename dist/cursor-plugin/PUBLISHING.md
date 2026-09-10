@@ -20,10 +20,13 @@ credentials, rules, hooks, agents, subagents, or executable code.
    with no access to real infrastructure.
 5. Confirm every run is attributed and present in the audit log, then destroy
    the disposable account and runner.
-6. Bump the manifest version and `CHANGELOG.md` for later releases. For the
-   initial release, create a signed `v0.1.0` tag and submit the public plugin
-   repository through Cursor's publisher portal.
+6. Bump the manifest version and add the `CHANGELOG.md` entry; the setup check
+   fails when the two disagree. Tag the public plugin repository with the same
+   version, signed.
 7. After approval, verify a clean Marketplace install and OAuth flow.
+
+The initial `v0.1.0` submission went through Cursor's publisher portal on
+2026-08-05.
 
 Never place reviewer credentials, OAuth tokens, screenshots of private account
 data, or submission correspondence in this public directory. Store operational
