@@ -662,6 +662,8 @@ func (c *checker) checkKnowledgeCards() {
 		"portal":      true,
 		"runner":      true,
 	}
+	indexBytes, _ := os.ReadFile(c.path(".agent/kb/README.md"))
+	indexText := strings.Join(strings.Fields(string(indexBytes)), " ")
 	c.walkRepository(func(relative string, entry fs.DirEntry) {
 		if entry.IsDir() && relative == "docs" {
 			c.fail("retired docs/ is back; repository knowledge lives under .agent/kb")
@@ -693,7 +695,7 @@ func (c *checker) checkKnowledgeCards() {
 		if name != expectedName {
 			c.fail("%s name is %q, expected %q", relative, name, expectedName)
 		}
-		description := metadataString(metadata, "description")
+		description := strings.Join(strings.Fields(metadataString(metadata, "description")), " ")
 		if description == "" {
 			c.fail("%s missing frontmatter description", relative)
 		} else if cardPolicy.MatchString(description) {
@@ -724,7 +726,35 @@ func (c *checker) checkKnowledgeCards() {
 		for _, line := range lines {
 			c.fail("%s:%d uses normative policy language; move the constraint to .agent/kb/rules", relative, line)
 		}
+		// The index is what an agent reads at boot, so its one-line entry must be
+		// the card's own description, verbatim — six of ten had drifted apart.
+		if description != "" && !strings.Contains(indexText, "["+name+"]("+name+".md) — "+description) {
+			c.fail("%s: .agent/kb/README.md does not carry its description verbatim as `- [%s](%s.md) — <description>`", relative, name, name)
+		}
+		// `updated` is the staleness signal the KB README leans on; a changelog
+		// entry newer than it puts the card in the wrong triage bucket.
+		if newest := newestChangelogDate(data); newest != "" && updated != "" && newest > updated {
+			c.fail("%s: updated is %s but the newest changelog entry is %s", relative, updated, newest)
+		}
 	})
+}
+
+var changelogEntryDate = regexp.MustCompile(`(?m)^- (\d{4}-\d{2}-\d{2}) — `)
+
+// newestChangelogDate is the latest dated entry under a card's `## Changelog`,
+// or "" when the card has no changelog.
+func newestChangelogDate(data []byte) string {
+	_, changelog, found := bytes.Cut(data, []byte("\n## Changelog"))
+	if !found {
+		return ""
+	}
+	newest := ""
+	for _, match := range changelogEntryDate.FindAllSubmatch(changelog, -1) {
+		if date := string(match[1]); date > newest {
+			newest = date
+		}
+	}
+	return newest
 }
 
 func (c *checker) gitIgnored(relative string) (bool, error) {

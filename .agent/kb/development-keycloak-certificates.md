@@ -1,9 +1,9 @@
 ---
 name: development-keycloak-certificates
-description: workspace Keycloak certificate generation, macOS browser trust, and automated Chromium trust boundaries
+description: workspace Keycloak uses a long-lived ignored CA plus a 397-day leaf; macOS trust is fingerprint-specific, automated Chrome is SPKI-scoped, and changed material recreates sidecars
 subsystem: agent-stack
 sources: [run, tools/internal/devtool/certs.go, tools/internal/browser/manager.go]
-updated: 2026-07-22
+updated: 2026-08-04
 ---
 
 Each workspace generates an ignored CA and Keycloak leaf under

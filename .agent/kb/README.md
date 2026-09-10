@@ -90,17 +90,16 @@ Related rule: `rules/<domain>-<slug>.md` <!-- link the real rule when applicable
 
 ## Index
 
-- [architecture](architecture.md) — runtime components, request flow,
-  enforcement ownership, runner lifecycle, and deployment shape
+- [architecture](architecture.md) — runtime components, request flow, enforcement ownership, runner lifecycle, and deployment shape
 - [coop-box-builds-are-isolated](coop-box-builds-are-isolated.md) — host and box use workspace-local service URLs; box BEAM/Go builds live under the coop-cache volume; the portal output guard warms dependencies unscanned
 - [development-keycloak-certificates](development-keycloak-certificates.md) — workspace Keycloak uses a long-lived ignored CA plus a 397-day leaf; macOS trust is fingerprint-specific, automated Chrome is SPKI-scoped, and changed material recreates sidecars
 - [oauth-sign-in-return-to](oauth-sign-in-return-to.md) — a protected OAuth GET stores its exact local path in the signed session; magic-link, registration, and SSO preserve it through consent
 - [oauth-consent-form-action](oauth-consent-form-action.md) — ChatGPT's sandboxed OAuth document needs a consent-only HTTPS form-action source; rejected requests and every other page keep the strict self-only policy
-- [runner-enrollment-key-rotation](runner-enrollment-key-rotation.md) — a changed enrollment key re-registers the configured id or hostname and replaces the cached token
-- [portal-image-delivery-follows-main](portal-image-delivery-follows-main.md) — every successful main push publishes its exact tested portal image; production planning has no stale-image fallback, and health reports the embedded source revision
-- [portal-tests-share-one-database-per-workspace](portal-tests-share-one-database-per-workspace.md) — focused Portal tests serialize on their shared database, while the complete gate runs its app suites concurrently on stable isolated partitions
-- [portal-token-map](portal-token-map.md) — every bearer credential the portal mints (table, prefix, owning context, mint/verify/revoke); deliberately no single tokens table
-- [billing-checkout-recovery](billing-checkout-recovery.md) — one-shot checkout reservations, exact provider binding, durable duplicate cleanup, and account closure
+- [runner-enrollment-key-rotation](runner-enrollment-key-rotation.md) — A changed enrollment key re-registers the configured id or hostname and replaces the cached token
+- [portal-image-delivery-follows-main](portal-image-delivery-follows-main.md) — Every successful main push publishes its exact tested portal image; production planning has no stale-image fallback, and the deployed revision is proven from the image label and /app/REVISION rather than reported by the anonymous health probes.
+- [portal-tests-share-one-database-per-workspace](portal-tests-share-one-database-per-workspace.md) — how Portal test database partitions and locks prevent concurrent migrations from cancelling another suite's queries
+- [portal-token-map](portal-token-map.md) — Every bearer credential the portal mints, its table, prefix, owning context, and mint/verify/revoke entry points — there is deliberately no single tokens table.
+- [billing-checkout-recovery](billing-checkout-recovery.md) — one-shot checkout reservations, exact provider binding, durable duplicate-subscription cleanup, and account closure
 
 ### Specifications
 

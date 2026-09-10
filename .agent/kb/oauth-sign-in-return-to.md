@@ -1,6 +1,6 @@
 ---
 name: oauth-sign-in-return-to
-description: how magic-link, registration, and SSO sign-in preserve a protected OAuth GET path through consent
+description: a protected OAuth GET stores its exact local path in the signed session; magic-link, registration, and SSO preserve it through consent
 subsystem: portal
 sources: [portal/apps/emisar_web/lib/emisar_web/user_auth.ex, portal/apps/emisar_web/lib/emisar_web/controllers/user_session_controller.ex, portal/apps/emisar_web/lib/emisar_web/controllers/sso_controller.ex]
 updated: 2026-08-02

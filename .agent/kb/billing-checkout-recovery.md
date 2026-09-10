@@ -1,6 +1,6 @@
 ---
 name: billing-checkout-recovery
-description: One-shot checkout reservations, exact provider binding, and durable duplicate-subscription cleanup
+description: one-shot checkout reservations, exact provider binding, durable duplicate-subscription cleanup, and account closure
 subsystem: portal
 sources: [portal/apps/emisar/lib/emisar/billing.ex, portal/apps/emisar/lib/emisar/billing/checkouts.ex, portal/apps/emisar/lib/emisar/billing/subscription_retirements.ex, portal/apps/emisar/lib/emisar/billing/jobs/sync_subscriptions.ex, portal/apps/emisar/lib/emisar/accounts.ex]
 updated: 2026-09-05

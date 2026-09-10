@@ -206,7 +206,8 @@ func TestCheckPublicSkillsRejectsContributorOnlyLists(t *testing.T) {
 
 func TestCheckKnowledgeCardsAcceptsDescriptiveFacts(t *testing.T) {
 	check := testChecker(t)
-	writeTestFile(t, check.root, ".agent/kb/README.md", "# Knowledge\n")
+	writeTestFile(t, check.root, ".agent/kb/README.md",
+		"# Knowledge\n\n- [dev-loop](dev-loop.md) — how the development loop resolves services\n")
 	writeTestFile(t, check.root, "run", "#!/usr/bin/env bash\n")
 	writeTestFile(t, check.root, ".agent/kb/dev-loop.md", `---
 name: dev-loop
@@ -673,5 +674,52 @@ func TestCursorPluginVersionMatchesChangelog(t *testing.T) {
 	check.checkCursorPluginVersionMatchesChangelog()
 	if !hasFailure(check, "plugin.json declares 0.1.0 but the newest CHANGELOG.md entry is 0.2.0") {
 		t.Fatalf("drift not reported: %v", check.failures)
+	}
+}
+
+func TestKnowledgeCardIndexAndChangelogAgree(t *testing.T) {
+	card := func(description, updated, changelog string) string {
+		return "---\nname: sample-card\ndescription: " + description + "\nsubsystem: portal\nsources: [README.md]\nupdated: " + updated + "\n---\n\nA descriptive body.\n" + changelog
+	}
+	setup := func(t *testing.T, description, updated, changelog, index string) *checker {
+		t.Helper()
+		check := testChecker(t)
+		writeTestFile(t, check.root, "README.md", "root\n")
+		writeTestFile(t, check.root, ".agent/kb/README.md", "# kb\n\n## Index\n\n"+index+"\n")
+		writeTestFile(t, check.root, ".agent/kb/sample-card.md", card(description, updated, changelog))
+		return check
+	}
+
+	check := setup(t, "what the card maps", "2026-08-04",
+		"\n## Changelog\n- 2026-08-04 — refreshed\n- 2026-07-01 — created\n",
+		"- [sample-card](sample-card.md) — what the card maps")
+	check.checkKnowledgeCards()
+	if len(check.failures) != 0 {
+		t.Fatalf("healthy card reported: %v", check.failures)
+	}
+
+	// The index entry is the card's description, verbatim; a hand-edited copy
+	// that drifted is exactly what an agent reads at boot.
+	check = setup(t, "what the card maps", "2026-08-04", "",
+		"- [sample-card](sample-card.md) — what the index claims instead")
+	check.checkKnowledgeCards()
+	if !hasFailure(check, "does not carry its description verbatim") {
+		t.Fatalf("drifted index entry not reported: %v", check.failures)
+	}
+
+	// A wrapped index line still matches once whitespace is folded.
+	check = setup(t, "what the card maps", "2026-08-04", "",
+		"- [sample-card](sample-card.md) — what the\n  card maps")
+	check.checkKnowledgeCards()
+	if hasFailure(check, "does not carry its description verbatim") {
+		t.Fatalf("wrapped index entry rejected: %v", check.failures)
+	}
+
+	check = setup(t, "what the card maps", "2026-07-22",
+		"\n## Changelog\n- 2026-08-04 — split validation\n- 2026-07-22 — created\n",
+		"- [sample-card](sample-card.md) — what the card maps")
+	check.checkKnowledgeCards()
+	if !hasFailure(check, "updated is 2026-07-22 but the newest changelog entry is 2026-08-04") {
+		t.Fatalf("stale updated not reported: %v", check.failures)
 	}
 }

@@ -1,6 +1,6 @@
 ---
 name: coop-box-builds-are-isolated
-description: how host-managed sidecars and Docker-free Coop gates share service URLs while keeping platform-specific build output isolated
+description: host and box use workspace-local service URLs; box BEAM/Go builds live under the coop-cache volume; the portal output guard warms dependencies unscanned
 subsystem: agent-stack
 sources: [.agent/Dockerfile, .agent/project.yaml, dev/compose.yml, run, tools/internal/devtool, portal/config/dev.exs, portal/config/test.exs]
 updated: 2026-09-10
