@@ -114,7 +114,11 @@ func (a *App) packTest(ctx context.Context, pattern string, names []string, case
 		return err
 	}
 	invocationID := packTestInvocationID(time.Now(), os.Getpid())
-	reports := filepath.Join(harness, "reports", invocationID)
+	reportsRoot := filepath.Join(harness, "reports")
+	if err := prunePackTestReports(reportsRoot, packTestReportsKept-1); err != nil {
+		return err
+	}
+	reports := filepath.Join(reportsRoot, invocationID)
 	if err := os.MkdirAll(reports, 0o755); err != nil {
 		return err
 	}
@@ -890,6 +894,42 @@ func resolvedPackTestVersionEnv(plan packtest.PlanRef, requested map[string]stri
 
 func packTestInvocationID(now time.Time, pid int) string {
 	return fmt.Sprintf("%s-%d", now.UTC().Format("20060102T150405.000000000Z"), pid)
+}
+
+// packTestReportsKept is how many invocation report directories survive a new
+// run, the new one included. Reports exist to read the log of the run that
+// just failed; nothing ever removed them, and a checkout that ran the harness
+// for a month held hundreds of directories.
+const packTestReportsKept = 10
+
+// prunePackTestReports removes all but the newest `keep` invocation
+// directories. Invocation ids start with a UTC timestamp, so name order is
+// time order, and a concurrent run's fresh directory is always among the
+// newest.
+func prunePackTestReports(root string, keep int) error {
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+	var names []string
+	for _, entry := range entries {
+		if entry.IsDir() {
+			names = append(names, entry.Name())
+		}
+	}
+	sort.Strings(names)
+	if len(names) <= keep {
+		return nil
+	}
+	for _, name := range names[:len(names)-keep] {
+		if err := os.RemoveAll(filepath.Join(root, name)); err != nil {
+			return fmt.Errorf("pruning old pack test reports: %w", err)
+		}
+	}
+	return nil
 }
 
 // packTestRunnerImage names the shared client image after the bytes that

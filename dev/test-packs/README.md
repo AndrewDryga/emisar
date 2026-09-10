@@ -189,7 +189,8 @@ dev/test-packs/reports/<invocation>/<pack>.log
 dev/test-packs/reports/<invocation>/<pack>/<case>.log
 ```
 
-Each command prints its invocation-specific report directory. That same
+Each command prints its invocation-specific report directory and keeps the ten
+newest invocations, removing older ones before it starts. That same
 invocation identity isolates its Compose projects, so separate commands may
 exercise the same pack and case concurrently without sharing containers,
 volumes, networks, or report files. The shared client image is the deliberate
