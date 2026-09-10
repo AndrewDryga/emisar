@@ -86,8 +86,8 @@ func fail(err error) {
 
 // readEnv loads this rig's credentials, letting the process environment win
 // for its per-run keys: the app a previous run registered, and the SCIM
-// enterprise application's display name and ids (-flow inventory lists them).
-// The parser is shared so the four rigs cannot drift.
+// enterprise application's display name and ids, which the flows otherwise
+// resolve through Graph. The parser is shared so the four rigs cannot drift.
 func readEnv(path string) (map[string]string, error) {
 	return capture.ReadEnv(path, "ENTRA_CLIENT_ID", "ENTRA_SCIM_APP_NAME", "ENTRA_SCIM_SERVICE_PRINCIPAL_ID", "ENTRA_SCIM_APP_ID")
 }

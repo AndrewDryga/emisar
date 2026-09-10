@@ -45,7 +45,7 @@ var keepGlyphSize = set(
 	"action/refresh", "action/remove", "action/search", "action/select",
 	"action/sign_out", "action/sync", "action/undo", "action/upload",
 	"breadcrumb/separator", "diagram/flow_down", "diagram/flow_right",
-	"state/cancelled", "state/denied", "state/included",
+	"state/cancelled", "state/included", "state/not_included",
 )
 
 // Masked, pixel-tuned, transformed, or official artwork: no native cut —

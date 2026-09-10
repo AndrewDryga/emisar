@@ -83,10 +83,14 @@ silently. Okta's inventory covers applications, users AND api-tokens — a
 long-lived credential is the last thing that should sit unlisted in a tenant,
 whoever created it. Entra's covers both halves of what its rig makes — app
 registrations and enterprise applications — follows Graph's paging to the last
-row (a page cap under-lists as silently as a bad filter), and spares the keepers
-by the ids they carry (the saved `ENTRA_CLIENT_ID` walkthrough app and the
-`ENTRA_SCIM_APP_ID` enterprise application the provisioning flow resumes), never
-by a name the delete filter happens to miss.
+row (a page cap under-lists as silently as a bad filter), claims only the exact
+name its registration form types (`emisar`; a `/emisar/` substring also matched
+the `… certification` objects the provider certification runs sign in against),
+and spares the keepers by the ids they carry (the saved `ENTRA_CLIENT_ID`
+walkthrough app and the `ENTRA_SCIM_APP_ID` enterprise application the
+provisioning flow resumes, resolved through Graph by display name when the
+credentials file does not pin it), never by a name the delete filter happens to
+miss.
 
 A rig that cannot enumerate says it cannot enumerate; "nothing to clean up" is a
 claim, and a claim needs a listing behind it.

@@ -21,6 +21,19 @@ import (
 // route built by hand lands on "Dashboard not found" where the portal's own
 // navigation routes.
 
+// The SCIM enterprise application the provisioning screens are captured from:
+// the provider certification's directory-sync app, named the way the other
+// rigs name theirs. ENTRA_SCIM_APP_NAME overrides it for a tenant that named
+// its own.
+const defaultSCIMAppName = "emisar directory sync certification"
+
+func scimAppName(env map[string]string) string {
+	if name := env["ENTRA_SCIM_APP_NAME"]; name != "" {
+		return name
+	}
+	return defaultSCIMAppName
+}
+
 // outlineStyle is how a step's control is ringed. The app blades clip a CSS
 // outline, so they get a fixed-position ring instead; toolbars render their
 // label beside a glyph, so a containment match stands in for an exact one.
@@ -210,13 +223,7 @@ func appFlow(ctx context.Context, frames *frameContexts, env map[string]string, 
 // the people to sync. Both live in the Enterprise applications area rather than
 // App registrations, and neither needs a provisioning configuration.
 func enterpriseAppFlow(ctx context.Context, frames *frameContexts, env map[string]string, outDir string, galleryOnly bool) error {
-	// The SCIM enterprise application, by the display name the tenant shows —
-	// tenant state, like the ids, so it comes from the credentials file rather
-	// than a name baked in here that the tenant has since moved away from.
-	appName := env["ENTRA_SCIM_APP_NAME"]
-	if appName == "" && !galleryOnly {
-		return errors.New("ENTRA_SCIM_APP_NAME is required to open the enterprise application (see -flow inventory)")
-	}
+	appName := scimAppName(env)
 	if err := chromedp.Run(ctx, chromedp.EmulateViewport(1520, 950)); err != nil {
 		return err
 	}
@@ -345,10 +352,19 @@ type provisioningOptions struct {
 // credentials. The working routes are `#view/<Ext>/<Blade>/~/<Menu>/<params>`
 // — learned by reading the URLs the portal itself produced.
 func provisioningFlow(ctx context.Context, frames *frameContexts, env map[string]string, outDir string, opts provisioningOptions) error {
-	principal, appID := env["ENTRA_SCIM_SERVICE_PRINCIPAL_ID"], env["ENTRA_SCIM_APP_ID"]
-	if principal == "" || appID == "" {
-		return errors.New("ENTRA_SCIM_SERVICE_PRINCIPAL_ID and ENTRA_SCIM_APP_ID are required")
+	// The ids come from the credentials file when it pins them, and from Graph
+	// by the app's display name when it does not — a second-long lookup beats
+	// copying two GUIDs out of an inventory run by hand.
+	if env["ENTRA_SCIM_SERVICE_PRINCIPAL_ID"] == "" || env["ENTRA_SCIM_APP_ID"] == "" {
+		g, err := openGraph(ctx)
+		if err != nil {
+			return err
+		}
+		if err := resolveSCIMApp(ctx, g, env); err != nil {
+			return err
+		}
 	}
+	principal, appID := env["ENTRA_SCIM_SERVICE_PRINCIPAL_ID"], env["ENTRA_SCIM_APP_ID"]
 	if err := chromedp.Run(ctx,
 		chromedp.EmulateViewport(1440, 1000),
 		chromedp.Navigate("https://portal.azure.com/#view/Microsoft_AAD_IAM/ManagedAppMenuBlade/~/Provisioning/objectId/"+principal+"/appId/"+appID),
