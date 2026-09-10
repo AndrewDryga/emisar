@@ -34,8 +34,6 @@ defmodule Emisar.Mailers.MonthlyReport do
   @stat_tracks 5
   @track_width trunc(100 / @stat_tracks)
 
-  @preview_pad Style.preview_pad()
-
   @doc """
   Builds the report email as `%{subject: binary, text: binary, html: binary}`.
 
@@ -131,60 +129,25 @@ defmodule Emisar.Mailers.MonthlyReport do
   # -- HTML ----------------------------------------------------------------
 
   defp html(content) do
-    """
-    <!DOCTYPE html>
-    <html lang="en">
-      <head>
-        <meta charset="utf-8" />
-        <meta name="viewport" content="width=device-width,initial-scale=1" />
-        <meta name="color-scheme" content="dark" />
-        <meta name="supported-color-schemes" content="dark" />
-        <title>#{HTML.escape(content.account_name)} — #{content.period}</title>
-        <!-- The report is designed dark; this tells a client that would otherwise force its own dark mode that the colors are already handled. -->
-        <style>:root { color-scheme: dark; supported-color-schemes: dark; }</style>
-      </head>
-      <body style="margin:0;padding:0;background-color:#{@ground};">
-        #{preview(content.runs)}
-        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#{@ground};">
-          <tr>
-            <td align="center" style="padding:40px 20px;">
-              <table role="presentation" align="center" width="600" cellpadding="0" cellspacing="0" border="0" style="width:100%;max-width:600px;">
-                #{masthead()}
-                #{heading(content)}
-                #{runs_card(content.runs)}
-                #{approvals_card(content.approvals)}
-                #{right_now(content)}
-                #{dashboard_button(content.dashboard_url)}
-                #{footer(content)}
-              </table>
-            </td>
-          </tr>
-        </table>
-      </body>
-    </html>
-    """
+    Style.document(
+      "#{content.account_name} — #{content.period}",
+      preview(content.runs),
+      600,
+      """
+      #{Style.masthead()}
+      #{heading(content)}
+      #{runs_card(content.runs)}
+      #{approvals_card(content.approvals)}
+      #{right_now(content)}
+      #{dashboard_button(content.dashboard_url)}
+      #{footer(content)}
+      """
+    )
   end
 
   # The inbox snippet — the numbers, before anyone opens anything.
   defp preview(runs) do
-    text =
-      "#{number(runs.total)} #{run_label(runs.total)} · #{number(runs.success)} succeeded · #{number(runs.failed)} failed"
-
-    ~s(<div style="display:none;max-height:0;overflow:hidden;mso-hide:all;">#{HTML.escape(text)}#{@preview_pad}</div>)
-  end
-
-  # The lockup carries its own dark ground (SVG doesn't render in Gmail), because
-  # a client that force-inverts the email cannot invert an image with it — a
-  # transparent white-ink logo would be white ink on a white ground. The alt text
-  # is styled so a client with images blocked still shows the wordmark.
-  defp masthead do
-    """
-    <tr>
-      <td style="padding:0 0 20px;">
-        <img src="#{PublicUrl.url("/images/brand/emisar-email-logo.png")}" width="166" height="50" alt="emisar" style="display:block;border:0;outline:none;text-decoration:none;width:166px;height:50px;font-family:#{@font};font-size:19px;font-weight:600;letter-spacing:-0.01em;color:#{@ink};" />
-      </td>
-    </tr>
-    """
+    "#{number(runs.total)} #{run_label(runs.total)} · #{number(runs.success)} succeeded · #{number(runs.failed)} failed"
   end
 
   defp heading(content) do

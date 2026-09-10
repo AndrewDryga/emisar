@@ -10,7 +10,6 @@ defmodule Emisar.Mailers.Transactional do
   """
   alias Emisar.Mailers.HTML
   alias Emisar.Mailers.Style
-  alias Emisar.PublicUrl
 
   @ground Style.ground()
   @surface Style.surface()
@@ -21,7 +20,6 @@ defmodule Emisar.Mailers.Transactional do
   @rose Style.rose()
   @amber Style.amber()
   @font Style.font()
-  @preview_pad Style.preview_pad()
 
   @type fact_value :: binary() | {:link, binary(), binary()}
   @type block ::
@@ -99,47 +97,15 @@ defmodule Emisar.Mailers.Transactional do
   defp text_action({label, url}), do: "#{label}:\n\n#{url}"
 
   defp html(content) do
-    """
-    <!DOCTYPE html>
-    <html lang="en">
-      <head>
-        <meta charset="utf-8" />
-        <meta name="viewport" content="width=device-width,initial-scale=1" />
-        <meta name="color-scheme" content="dark" />
-        <meta name="supported-color-schemes" content="dark" />
-        <title>#{HTML.escape(content.title)}</title>
-        <style>:root { color-scheme: dark; supported-color-schemes: dark; }</style>
-      </head>
-      <body style="margin:0;padding:0;background-color:#{@ground};">
-        <div style="display:none;max-height:0;overflow:hidden;mso-hide:all;">#{HTML.escape(content.preview)}#{@preview_pad}</div>
-        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#{@ground};">
-          <tr>
-            <td align="center" style="padding:40px 20px;">
-              <table role="presentation" align="center" width="560" cellpadding="0" cellspacing="0" border="0" style="width:100%;max-width:560px;">
-                #{masthead()}
-                <tr>
-                  <td style="padding:0 0 24px;font-family:#{@font};font-size:15px;line-height:1.65;color:#{@ink_soft};">Hi #{HTML.escape(content.recipient)},</td>
-                </tr>
-                #{Enum.map_join(content.blocks, &html_block/1)}
-                #{html_actions(content.action, content.secondary_action)}
-                #{html_footer(content.footer)}
-              </table>
-            </td>
-          </tr>
-        </table>
-      </body>
-    </html>
-    """
-  end
-
-  defp masthead do
-    """
+    Style.document(content.title, content.preview, 560, """
+    #{Style.masthead()}
     <tr>
-      <td style="padding:0 0 20px;">
-        <img src="#{PublicUrl.url("/images/brand/emisar-email-logo.png")}" width="166" height="50" alt="emisar" style="display:block;border:0;outline:none;text-decoration:none;width:166px;height:50px;font-family:#{@font};font-size:19px;font-weight:600;color:#{@ink};" />
-      </td>
+      <td style="padding:0 0 24px;font-family:#{@font};font-size:15px;line-height:1.65;color:#{@ink_soft};">Hi #{HTML.escape(content.recipient)},</td>
     </tr>
-    """
+    #{Enum.map_join(content.blocks, &html_block/1)}
+    #{html_actions(content.action, content.secondary_action)}
+    #{html_footer(content.footer)}
+    """)
   end
 
   defp html_block({:paragraph, paragraph}) do
