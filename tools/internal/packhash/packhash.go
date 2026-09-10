@@ -11,10 +11,17 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 )
 
 const goldenPath = "portal/apps/emisar/test/emisar/catalog/published_registry_test.exs"
+
+// GoldenPacks are the packs whose content hash the Portal test pins byte for
+// byte: redis (exec-only actions) and cassandra (a script-kind action) between
+// them exercise every hash input. Every loop here and the `pack check` route
+// in devtool read this one list.
+var GoldenPacks = []string{"redis", "cassandra"}
 
 var (
 	hashLine   = regexp.MustCompile(`sha256:[0-9a-f]{64}`)
@@ -40,7 +47,7 @@ func parseGoldens(data []byte) (map[string]golden, error) {
 	found := make(map[string]golden)
 	for _, line := range lines {
 		text := string(line)
-		for _, pack := range []string{"redis", "cassandra"} {
+		for _, pack := range GoldenPacks {
 			if strings.Contains(text, `get("`+pack+`").content_hash ==`) {
 				pending = pack
 				distance = 0
@@ -69,7 +76,7 @@ func parseGoldens(data []byte) (map[string]golden, error) {
 		}
 		offset += len(line)
 	}
-	for _, pack := range []string{"redis", "cassandra"} {
+	for _, pack := range GoldenPacks {
 		if _, ok := found[pack]; !ok {
 			return nil, fmt.Errorf("%s does not contain the %s content hash golden", goldenPath, pack)
 		}
@@ -126,8 +133,8 @@ func Check(root, configuredBinary string, write bool, out io.Writer) error {
 		return err
 	}
 
-	current := make(map[string]string, 2)
-	for _, pack := range []string{"redis", "cassandra"} {
+	current := make(map[string]string, len(GoldenPacks))
+	for _, pack := range GoldenPacks {
 		current[pack], err = currentHash(root, binary, pack)
 		if err != nil {
 			return err
@@ -135,10 +142,11 @@ func Check(root, configuredBinary string, write bool, out io.Writer) error {
 	}
 
 	if write {
-		ordered := []golden{goldens["redis"], goldens["cassandra"]}
-		if ordered[0].start > ordered[1].start {
-			ordered[0], ordered[1] = ordered[1], ordered[0]
+		ordered := make([]golden, 0, len(GoldenPacks))
+		for _, pack := range GoldenPacks {
+			ordered = append(ordered, goldens[pack])
 		}
+		sort.Slice(ordered, func(i, j int) bool { return ordered[i].start < ordered[j].start })
 		var rewritten bytes.Buffer
 		cursor := 0
 		for _, entry := range ordered {
@@ -150,13 +158,17 @@ func Check(root, configuredBinary string, write bool, out io.Writer) error {
 		if err := os.WriteFile(path, rewritten.Bytes(), 0o644); err != nil {
 			return fmt.Errorf("writing %s: %w", goldenPath, err)
 		}
-		fmt.Fprintf(out, "refreshed %s (redis=%s cassandra=%s)\n", goldenPath, current["redis"], current["cassandra"])
+		refreshed := make([]string, 0, len(GoldenPacks))
+		for _, pack := range GoldenPacks {
+			refreshed = append(refreshed, pack+"="+current[pack])
+		}
+		fmt.Fprintf(out, "refreshed %s (%s)\n", goldenPath, strings.Join(refreshed, " "))
 		fmt.Fprintln(out, "run: (cd portal/apps/emisar && mix test test/emisar/catalog/published_registry_test.exs)")
 		return nil
 	}
 
 	var stale []string
-	for _, pack := range []string{"redis", "cassandra"} {
+	for _, pack := range GoldenPacks {
 		if current[pack] != goldens[pack].hash {
 			stale = append(stale, fmt.Sprintf("  %s: golden %s != actual %s",
 				pack, goldens[pack].hash, current[pack]))

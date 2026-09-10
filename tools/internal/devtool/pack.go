@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -1044,7 +1045,7 @@ func (a *App) pack(ctx context.Context, args []string) error {
 		if err := validatePackVersions(filepath.Join(a.Root, "packs", name)); err != nil {
 			return err
 		}
-		if name == "redis" || name == "cassandra" {
+		if slices.Contains(packhash.GoldenPacks, name) {
 			return packhash.Check(a.Root, filepath.Join(a.Root, "bin", "emisar"), false, a.Out)
 		}
 		return nil
