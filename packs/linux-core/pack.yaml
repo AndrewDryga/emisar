@@ -2,7 +2,7 @@ schema_version: 1
 
 id: linux-core
 name: Linux core operations pack
-version: 0.4.14
+version: 0.4.15
 # 0.4.9 and below let journalctl_grep answer a truncated slice exactly like a
 # clean window, so "that error never appeared" was indistinguishable from
 # "we only searched the last 2,000 entries".
@@ -18,6 +18,16 @@ homepage: https://emisar.dev/packs/linux-core
 requires:
   os:
     - linux
+  binaries:
+    - dmidecode
+    - free
+    - journalctl
+    - last
+    - lscpu
+    - shutdown
+    - smartctl
+    - systemctl
+    - uptime
 
 setup:
   summary: >

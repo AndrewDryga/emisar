@@ -2,7 +2,7 @@ schema_version: 1
 
 id: php-fpm
 name: PHP-FPM
-version: 0.1.15
+version: 0.1.16
 # 0.1.13 and below rated fpm_status_full `low`, so per-worker request URIs —
 # live client request data, query strings included — carried a pure-read label.
 retired_below: 0.1.14
@@ -17,6 +17,8 @@ homepage: https://emisar.dev/packs/php-fpm
 requires:
   os:
     - linux
+  binaries:
+    - php
 
 detect:
   processes:

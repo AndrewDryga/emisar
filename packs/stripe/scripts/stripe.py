@@ -252,8 +252,8 @@ def path_for(template):
 def list_objects(client, op):
     path, kind, filters = LISTS[op]
     params = {"limit": integer("limit")}
-    if arg("cursor"):
-        params["starting_after"] = arg("cursor")
+    if arg("page_cursor"):
+        params["starting_after"] = arg("page_cursor")
     for name in filters.split():
         value = arg(name)
         if value and value != "0":

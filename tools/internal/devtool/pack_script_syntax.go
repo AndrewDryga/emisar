@@ -42,6 +42,9 @@ var packScriptParsers = map[string]string{
 type packScriptAction struct {
 	ID        string `yaml:"id"`
 	Execution struct {
+		Command struct {
+			Binary string `yaml:"binary"`
+		} `yaml:"command"`
 		Script struct {
 			Path        string `yaml:"path"`
 			Interpreter string `yaml:"interpreter"`

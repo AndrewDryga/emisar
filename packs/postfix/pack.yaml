@@ -2,7 +2,7 @@ schema_version: 1
 
 id: postfix
 name: Postfix mail server
-version: 0.1.18
+version: 0.1.19
 # 0.1.17 and below answered "every queue is 0" when the runner could not read
 # the spool — the default for a non-root runner — so a backed-up queue read as
 # healthy on a low, auto-running action.
@@ -19,6 +19,14 @@ homepage: https://emisar.dev/packs/postfix
 requires:
   os:
     - linux
+  binaries:
+    - mailq
+    - postcat
+    - postconf
+    - postfix
+    - postqueue
+    - postsuper
+    - qshape
 
 # `emisar pack suggest` detection: a postfix-specific CLI. The master
 # process is generically named `master`, and :25 is shared by every MTA —

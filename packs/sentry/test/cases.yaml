@@ -48,7 +48,7 @@ cases:
 
   - name: sentry.list_issues-follows-the-cursor
     action: sentry.list_issues
-    args: {organization: acme, project: backend, limit: 1, cursor: "1700000000000:1:0"}
+    args: {organization: acme, project: backend, limit: 1, page_cursor: "1700000000000:1:0"}
     expect:
       json:
         /results/0/id: "1234567891"

@@ -1,7 +1,7 @@
 schema_version: 1
 id: stripe
 name: Stripe billing operations
-version: 0.1.1
+version: 0.1.2
 description: >
   Investigate Stripe payment failures, duplicate charges, refunds,
   recurring billing and disputes, and perform reviewed billing corrections.

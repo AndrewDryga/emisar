@@ -2,7 +2,7 @@ schema_version: 1
 
 id: debugging
 name: Linux debugging toolkit
-version: 0.2.25
+version: 0.2.26
 retired_below: 0.2.14
 description: >
   General-purpose Linux diagnostics + low-level remediation: process
@@ -17,8 +17,13 @@ requires:
   os:
     - linux
   binaries:
+    - iostat
+    - ping
     - ps
+    - sar
     - ss
+    - sysctl
+    - vmstat
 
 setup:
   summary: >

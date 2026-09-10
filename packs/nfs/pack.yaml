@@ -2,7 +2,7 @@ schema_version: 1
 
 id: nfs
 name: NFS server + client
-version: 0.1.10
+version: 0.1.11
 description: >
   Inspect a host's NFS exports, mounted shares, RPC state, active client
   connections. Plus two narrow operator actions: exportfs -r (re-export) and
@@ -14,6 +14,11 @@ homepage: https://emisar.dev/packs/nfs
 requires:
   os:
     - linux
+  binaries:
+    - exportfs
+    - nfsstat
+    - rpcinfo
+    - showmount
 
 detect:
   processes:

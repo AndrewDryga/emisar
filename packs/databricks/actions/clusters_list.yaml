@@ -34,7 +34,7 @@ args:
     type: string
     required: false
     default: ""
-    description: Opaque continuation token from the previous page.
+    description: Opaque continuation cursor from the previous result. Pass the token that result returned, with the other arguments unchanged.
     validation:
       max_length: 2048
 execution:

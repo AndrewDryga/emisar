@@ -16,7 +16,7 @@ args:
     type: string
     required: false
     default: ""
-    description: Opaque AWS CLI pagination cursor from a previous result.
+    description: Opaque continuation cursor from the previous result. Pass the token that result returned, with the other arguments unchanged.
     validation: {pattern: "^[A-Za-z0-9+/=_-]*$", max_length: 4096}
 execution:
   script: {path: scripts/rds_read.sh, interpreter: /bin/sh}

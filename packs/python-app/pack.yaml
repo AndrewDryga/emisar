@@ -2,7 +2,7 @@ schema_version: 1
 
 id: python-app
 name: Python application runtime
-version: 0.1.13
+version: 0.1.14
 description: >
   Inspect a Python deployment — interpreter + venv state, pip
   inventory + freeze, dependency conflicts, outdated packages, sys.path.
@@ -14,6 +14,8 @@ homepage: https://emisar.dev/packs/python-app
 requires:
   os:
     - linux
+  binaries:
+    - python3
 
 setup:
   summary: >

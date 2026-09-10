@@ -23,10 +23,10 @@ args:
     description: "Records in one bounded page; at most ten to keep the projected result within the 64 KiB output limit."
     default: 10
     validation: {"min":1,"max":10}
-  - name: cursor
+  - name: page_cursor
     type: string
     required: false
-    description: "Use pagination.next_cursor from the preceding page; keep filters unchanged."
+    description: Opaque continuation cursor from the previous result. Pass the token that result returned, with the other arguments unchanged.
     default: ""
     validation: {"pattern":"^[A-Za-z0-9_-]*$","max_length":255}
 execution:
@@ -36,7 +36,7 @@ execution:
     ARG_CUSTOMER: "{{ args.customer }}"
     ARG_TYPE: "{{ args.type }}"
     ARG_LIMIT: "{{ args.limit }}"
-    ARG_CURSOR: "{{ args.cursor }}"
+    ARG_PAGE_CURSOR: "{{ args.page_cursor }}"
   timeout: 60s
 output:
   parser: json

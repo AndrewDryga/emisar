@@ -1,7 +1,7 @@
 schema_version: 1
 id: aws-s3
 name: AWS S3 operations
-version: 0.1.10
+version: 0.1.11
 retired_below: 0.1.4
 description: >
   Read-only S3 diagnostics for bounded bucket and object inventory, access,

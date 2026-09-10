@@ -12,10 +12,10 @@ args:
     description: "Records per page; at most ten to bound the projected result within 64 KiB."
     default: 10
     validation: {"min":1,"max":10}
-  - name: cursor
+  - name: page_cursor
     type: string
     required: false
-    description: "Use pagination.next_cursor with unchanged filters."
+    description: Opaque continuation cursor from the previous result. Pass the token that result returned, with the other arguments unchanged.
     default: ""
     validation: {"pattern":"^[A-Za-z0-9_=+/:.-]*$","max_length":2048}
 execution:
@@ -23,7 +23,7 @@ execution:
   argv: [merchant_accounts]
   env:
     ARG_LIMIT: "{{ args.limit }}"
-    ARG_CURSOR: "{{ args.cursor }}"
+    ARG_PAGE_CURSOR: "{{ args.page_cursor }}"
   timeout: 90s
 output:
   parser: json

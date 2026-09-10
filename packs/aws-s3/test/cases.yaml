@@ -79,7 +79,7 @@ cases:
     cleanup:
       - argv: [aws, s3, rb, "s3://emisar-packtest-objects", --force]
   # The cursor must survive the runner's default redaction in both directions:
-  # a page_cursor the caller feeds back reaches S3, and the emitted
+  # a cursor the caller feeds back reaches S3, and the emitted
   # next_page_cursor is the real token, not [REDACTED].
   - name: s3.list-objects-cursor-round-trips
     action: s3.list_objects

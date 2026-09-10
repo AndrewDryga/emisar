@@ -222,7 +222,7 @@ def search(client, op):
         values["amount"] = {"currencyCode": {"is": arg("currency")}}
     field = "recurringBillingSubscriptions" if op == "subscriptions" else op
     query = "query BillingSearch($input:" + input_type + "!,$first:Int!,$after:String){ " + connection_query(field + "(input:$input,first:$first,after:$after)", shape) + " }"
-    return page(client.request(query, {"input": values, "first": int(arg("limit")), "after": arg("cursor") or None})[field], shape)
+    return page(client.request(query, {"input": values, "first": int(arg("limit")), "after": arg("page_cursor") or None})[field], shape)
 
 
 def file_bytes():
@@ -272,7 +272,7 @@ def run(client, op):
     if op == "merchant_accounts":
         shape = leaves("id currencyCode status isDefault")
         query = "query BillingAccounts($first:Int!,$after:String){viewer{merchant{" + connection_query("merchantAccounts(first:$first,after:$after)", shape) + "}}}"
-        return page(client.request(query, {"first": int(arg("limit")), "after": arg("cursor") or None})["viewer"]["merchant"]["merchantAccounts"], shape)
+        return page(client.request(query, {"first": int(arg("limit")), "after": arg("page_cursor") or None})["viewer"]["merchant"]["merchantAccounts"], shape)
     if op == "resolve_id":
         data = client.request("query BillingResolve($input:IdsFromLegacyIdsInput!){idsFromLegacyIds(input:$input)}",
                               {"input": {"ids": [{"legacyId": arg("legacy_id"), "type": arg("resource_type")}]}})
@@ -280,7 +280,7 @@ def run(client, op):
     if op in ("customer_payment_methods", "customer_transactions"):
         field, shape = ("paymentMethods", PAYMENT_METHOD) if op == "customer_payment_methods" else ("transactions", PAYMENT)
         query = "query BillingCustomerPage($id:ID!,$first:Int!,$after:String){node(id:$id){... on Customer{" + connection_query(field + "(first:$first,after:$after)", shape) + "}}}"
-        data = client.request(query, {"id": arg("customer_id"), "first": int(arg("limit")), "after": arg("cursor") or None})
+        data = client.request(query, {"id": arg("customer_id"), "first": int(arg("limit")), "after": arg("page_cursor") or None})
         if not data.get("node") or field not in data["node"]:
             raise Failure("Customer not found")
         return page(data["node"][field], shape)

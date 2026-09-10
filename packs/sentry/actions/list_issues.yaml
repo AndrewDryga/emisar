@@ -52,17 +52,17 @@ args:
     default: 5
     description: Issues returned in this page.
     validation: {min: 1, max: 5}
-  - name: cursor
+  - name: page_cursor
     type: string
     required: false
     default: ""
-    description: Continuation cursor from a previous page's pagination.next_cursor.
+    description: Opaque continuation cursor from the previous result. Pass the token that result returned, with the other arguments unchanged.
     validation:
       pattern: "^[0-9A-Za-z:_=-]{0,120}$"
       max_length: 120
 execution:
   script: {path: scripts/sentry_api.sh, interpreter: /bin/bash}
-  argv: [list-issues, "{{ args.organization }}", "{{ args.project }}", "{{ args.query }}", "{{ args.stats_period }}", "{{ args.sort }}", "{{ args.limit }}", "{{ args.cursor }}"]
+  argv: [list-issues, "{{ args.organization }}", "{{ args.project }}", "{{ args.query }}", "{{ args.stats_period }}", "{{ args.sort }}", "{{ args.limit }}", "{{ args.page_cursor }}"]
   timeout: 30s
 output:
   parser: json

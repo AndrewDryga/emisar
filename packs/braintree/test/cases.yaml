@@ -28,7 +28,7 @@ cases:
 - action: braintree.merchant_accounts
   args:
     limit: 10
-    cursor: ''
+    page_cursor: ''
   expect:
     json:
       "/results/0/currencyCode": USD
@@ -50,7 +50,7 @@ cases:
     created_from: ''
     created_to: ''
     limit: 10
-    cursor: ''
+    page_cursor: ''
   expect:
     json:
       "/results/0/id": transaction_fixture
@@ -67,7 +67,7 @@ cases:
     created_from: ''
     created_to: ''
     limit: 10
-    cursor: ''
+    page_cursor: ''
   expect:
     json:
       "/results/0/id": refund_fixture
@@ -79,7 +79,7 @@ cases:
     created_from: ''
     created_to: ''
     limit: 10
-    cursor: ''
+    page_cursor: ''
   expect:
     json:
       "/results/0/id": customer_fixture
@@ -102,7 +102,7 @@ cases:
     created_from: ''
     created_to: ''
     limit: 10
-    cursor: ''
+    page_cursor: ''
   expect:
     json:
       "/results/0/id": subscription_fixture
@@ -113,7 +113,7 @@ cases:
     transaction_id: ''
     status: ''
     limit: 10
-    cursor: ''
+    page_cursor: ''
   expect:
     json:
       "/results/0/id": dispute_fixture
@@ -174,7 +174,7 @@ cases:
   args:
     customer_id: customer_fixture
     limit: 10
-    cursor: ''
+    page_cursor: ''
   expect:
     json:
       "/results/0/id": method_fixture
@@ -182,7 +182,7 @@ cases:
   args:
     customer_id: customer_fixture
     limit: 10
-    cursor: ''
+    page_cursor: ''
   expect:
     json:
       "/results/0/id": transaction_fixture
@@ -593,7 +593,7 @@ cases:
 - name: braintree.customers-cursor
   action: braintree.customers
   args:
-    cursor: page_10
+    page_cursor: page_10
   expect:
     json:
       "/results/0/id": customer_fixture_10

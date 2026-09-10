@@ -35,7 +35,7 @@ cases:
     created_gte: 0
     created_lte: 0
     limit: 10
-    cursor: ''
+    page_cursor: ''
   expect:
     json:
       "/results/0/id": cus_fixture
@@ -56,7 +56,7 @@ cases:
     created_gte: 0
     created_lte: 0
     limit: 10
-    cursor: ''
+    page_cursor: ''
   expect:
     json:
       "/results/0/id": pi_fixture
@@ -69,7 +69,7 @@ cases:
     created_gte: 0
     created_lte: 0
     limit: 10
-    cursor: ''
+    page_cursor: ''
   expect:
     json:
       "/results/0/id": ch_fixture
@@ -82,7 +82,7 @@ cases:
     created_gte: 0
     created_lte: 0
     limit: 10
-    cursor: ''
+    page_cursor: ''
   expect:
     json:
       "/results/0/id": re_fixture
@@ -96,7 +96,7 @@ cases:
     created_gte: 0
     created_lte: 0
     limit: 10
-    cursor: ''
+    page_cursor: ''
   expect:
     json:
       "/results/0/id": in_fixture
@@ -109,7 +109,7 @@ cases:
     created_gte: 0
     created_lte: 0
     limit: 10
-    cursor: ''
+    page_cursor: ''
   expect:
     json:
       "/results/0/id": sub_fixture
@@ -122,7 +122,7 @@ cases:
     created_gte: 0
     created_lte: 0
     limit: 10
-    cursor: ''
+    page_cursor: ''
   expect:
     json:
       "/results/0/id": du_fixture
@@ -134,7 +134,7 @@ cases:
     created_gte: 0
     created_lte: 0
     limit: 10
-    cursor: ''
+    page_cursor: ''
   expect:
     json:
       "/results/0/id": evt_fixture
@@ -149,7 +149,7 @@ cases:
     created_gte: 0
     created_lte: 0
     limit: 10
-    cursor: ''
+    page_cursor: ''
   expect:
     json:
       "/results/0/id": txn_fixture
@@ -161,7 +161,7 @@ cases:
     created_gte: 0
     created_lte: 0
     limit: 10
-    cursor: ''
+    page_cursor: ''
   expect:
     json:
       "/results/0/id": po_fixture
@@ -172,7 +172,7 @@ cases:
     customer: ''
     invoice: ''
     limit: 10
-    cursor: ''
+    page_cursor: ''
   expect:
     json:
       "/results/0/id": cn_fixture
@@ -274,7 +274,7 @@ cases:
   args:
     invoice: in_fixture
     limit: 10
-    cursor: ''
+    page_cursor: ''
   expect:
     json:
       "/results/0/id": il_fixture
@@ -294,7 +294,7 @@ cases:
     invoice: in_fixture
     status: ''
     limit: 10
-    cursor: ''
+    page_cursor: ''
   expect:
     json:
       "/results/0/id": inpay_fixture
@@ -304,7 +304,7 @@ cases:
   args:
     subscription: sub_fixture
     limit: 10
-    cursor: ''
+    page_cursor: ''
   expect:
     json:
       "/results/0/id": si_fixture
@@ -314,7 +314,7 @@ cases:
   args:
     customer: cus_fixture
     limit: 10
-    cursor: ''
+    page_cursor: ''
   expect:
     json:
       "/results/0/id": cbtxn_fixture
@@ -325,7 +325,7 @@ cases:
     customer: cus_fixture
     type: ''
     limit: 10
-    cursor: ''
+    page_cursor: ''
   expect:
     json:
       "/results/0/id": pm_fixture
@@ -909,7 +909,7 @@ cases:
 - name: stripe.customers-cursor
   action: stripe.customers
   args:
-    cursor: cus_fixture_9
+    page_cursor: cus_fixture_9
   expect:
     json:
       "/results/0/id": cus_fixture_10

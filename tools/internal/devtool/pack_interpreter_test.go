@@ -73,3 +73,76 @@ func TestValidatePackInterpreterBinaries_PosixShellNeedsNoDeclaration(t *testing
 		t.Fatalf("/bin/sh should need no declaration, got %v", err)
 	}
 }
+
+const execAction = `id: p.c
+execution:
+  command:
+    binary: smartctl
+    argv: ["--scan"]
+`
+
+const coreutilAction = `id: p.d
+execution:
+  command:
+    binary: cat
+    argv: ["/proc/meminfo"]
+`
+
+const absoluteAction = `id: p.e
+execution:
+  command:
+    binary: /bin/sh
+    argv: ["-c", "echo hi"]
+`
+
+// The exec half of the same gap: `emisar pack info` LookPaths exactly what
+// requires.binaries names, so an undeclared smartctl fails at dispatch with no
+// pre-flight signal. Eighteen packs sat here.
+func TestValidatePackInterpreterBinaries_FlagsUndeclaredExecBinary(t *testing.T) {
+	dir := writePackInterpreterFixture(t,
+		"requires:\n  binaries:\n    - curl\n",
+		map[string]string{"c.yaml": execAction})
+
+	err := validatePackInterpreterBinaries(fixturePackActionLintInput(t, dir, "curl"))
+	if err == nil || !strings.Contains(err.Error(), "smartctl") || !strings.Contains(err.Error(), "c.yaml") {
+		t.Fatalf("error should name the binary and the action file, got %v", err)
+	}
+}
+
+func TestValidatePackInterpreterBinaries_AcceptsDeclaredExecBinary(t *testing.T) {
+	dir := writePackInterpreterFixture(t,
+		"requires:\n  binaries:\n    - smartctl\n",
+		map[string]string{"c.yaml": execAction})
+
+	if err := validatePackInterpreterBinaries(fixturePackActionLintInput(t, dir, "smartctl")); err != nil {
+		t.Fatalf("declared smartctl should pass, got %v", err)
+	}
+}
+
+// Coreutils are on every host, and /bin/sh is the one sanctioned absolute
+// path — declaring either would be noise in hundreds of actions.
+func TestValidatePackInterpreterBinaries_UbiquitousAndAbsoluteBinariesAreExempt(t *testing.T) {
+	dir := writePackInterpreterFixture(t,
+		"requires:\n  binaries:\n    - curl\n",
+		map[string]string{"d.yaml": coreutilAction, "e.yaml": absoluteAction})
+
+	if err := validatePackInterpreterBinaries(fixturePackActionLintInput(t, dir, "curl")); err != nil {
+		t.Fatalf("coreutils and /bin/sh should need no declaration, got %v", err)
+	}
+}
+
+func TestExecBinaryLintCoversTheShippedCatalog(t *testing.T) {
+	manifests, err := filepath.Glob(filepath.Join("..", "..", "..", "packs", "*", "pack.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(manifests) == 0 {
+		t.Fatal("no pack manifests found")
+	}
+	for _, manifest := range manifests {
+		packDir := filepath.Dir(manifest)
+		if err := validatePackInterpreterBinaries(mustLoadPackActionLintInput(t, packDir)); err != nil {
+			t.Errorf("%s: %v", filepath.Base(packDir), err)
+		}
+	}
+}

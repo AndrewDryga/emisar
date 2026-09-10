@@ -2,7 +2,7 @@ schema_version: 1
 
 id: cloud-init
 name: cloud-init operations
-version: 0.1.18
+version: 0.1.19
 retired_below: 0.1.11
 description: >
   cloud-init introspection + boot diagnostics + stage re-runs. Use when
@@ -19,6 +19,7 @@ requires:
     - linux
   binaries:
     - cloud-init
+    - journalctl
 
 detect:
   binaries:

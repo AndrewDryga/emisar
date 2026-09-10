@@ -2,7 +2,7 @@ schema_version: 1
 
 id: sentry
 name: Sentry error monitoring
-version: 0.1.7
+version: 0.1.8
 # 0.1.6 and below rated issue_tags `low`, so up to a megabyte of raw
 # application tag values — end-user identifiers, request URLs — auto-ran even
 # for an operator who gates `medium`.

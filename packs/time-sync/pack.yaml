@@ -2,7 +2,7 @@ schema_version: 1
 
 id: time-sync
 name: Time sync diagnostics
-version: 0.1.12
+version: 0.1.13
 description: >
   Clock-sync state for a Linux host on either time daemon: Chrony tracking and
   sources, the NTPsec peer table, current time, drift estimate, timezone, plus
@@ -14,6 +14,10 @@ homepage: https://emisar.dev/packs/time-sync
 requires:
   os:
     - linux
+  binaries:
+    - chronyc
+    - ntpq
+    - timedatectl
 
 # `emisar pack suggest` detection — the daemon that owns the clock, either one.
 detect:

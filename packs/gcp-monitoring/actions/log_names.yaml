@@ -32,7 +32,8 @@ args:
     required: false
     default: ""
     description: >
-      Opaque continuation cursor from the previous result. Provider cursors
+      Opaque continuation cursor from the previous result. Pass the token that
+      result returned, with the other arguments unchanged. Provider cursors
       containing unsupported characters or exceeding 1,024 bytes are omitted
       from output and cannot be continued through this action.
     validation:
