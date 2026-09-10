@@ -3093,14 +3093,7 @@ defmodule Emisar.SSO do
       Multi.new()
       |> put_directory_mapping_fence(subject.account.id)
       |> put_mapping_provider_lock(provider_id, subject)
-      |> Multi.run(:locked_mapping, fn _repo, %{locked_provider: provider} ->
-        GroupRoleMapping.Query.not_deleted()
-        |> GroupRoleMapping.Query.by_provider_id(provider.id)
-        |> GroupRoleMapping.Query.by_id(id)
-        |> GroupRoleMapping.Query.lock_for_update()
-        |> Authorizer.for_subject(subject)
-        |> Repo.fetch(GroupRoleMapping.Query)
-      end)
+      |> put_locked_mapping(GroupRoleMapping.Query, id, subject)
       |> Multi.run(:validated_mapping, fn _repo, %{locked_mapping: mapping} ->
         changeset = GroupRoleMapping.Changeset.update(mapping, attrs)
         if changeset.valid?, do: {:ok, changeset}, else: {:error, changeset}
@@ -3136,14 +3129,7 @@ defmodule Emisar.SSO do
       Multi.new()
       |> put_directory_mapping_fence(subject.account.id)
       |> put_mapping_provider_lock(provider_id, subject)
-      |> Multi.run(:locked_mapping, fn _repo, %{locked_provider: provider} ->
-        GroupRoleMapping.Query.not_deleted()
-        |> GroupRoleMapping.Query.by_provider_id(provider.id)
-        |> GroupRoleMapping.Query.by_id(id)
-        |> GroupRoleMapping.Query.lock_for_update()
-        |> Authorizer.for_subject(subject)
-        |> Repo.fetch(GroupRoleMapping.Query)
-      end)
+      |> put_locked_mapping(GroupRoleMapping.Query, id, subject)
       |> Multi.run(:authorization_change, fn _repo,
                                              %{
                                                locked_provider: provider,
@@ -3239,14 +3225,7 @@ defmodule Emisar.SSO do
       Multi.new()
       |> put_directory_mapping_fence(subject.account.id)
       |> put_mapping_provider_lock(provider_id, subject)
-      |> Multi.run(:locked_mapping, fn _repo, %{locked_provider: provider} ->
-        GroupRunnerAccessMapping.Query.not_deleted()
-        |> GroupRunnerAccessMapping.Query.by_provider_id(provider.id)
-        |> GroupRunnerAccessMapping.Query.by_id(id)
-        |> GroupRunnerAccessMapping.Query.lock_for_update()
-        |> Authorizer.for_subject(subject)
-        |> Repo.fetch(GroupRunnerAccessMapping.Query)
-      end)
+      |> put_locked_mapping(GroupRunnerAccessMapping.Query, id, subject)
       |> Multi.run(:validated_mapping, fn _repo,
                                           %{locked_mapping: mapping, locked_provider: provider} ->
         {attrs, allowlist} = mapping_selection(attrs, mapping.account_id, mapping)
@@ -3299,14 +3278,7 @@ defmodule Emisar.SSO do
       Multi.new()
       |> put_directory_mapping_fence(subject.account.id)
       |> put_mapping_provider_lock(provider_id, subject)
-      |> Multi.run(:locked_mapping, fn _repo, %{locked_provider: provider} ->
-        GroupRunnerAccessMapping.Query.not_deleted()
-        |> GroupRunnerAccessMapping.Query.by_provider_id(provider.id)
-        |> GroupRunnerAccessMapping.Query.by_id(id)
-        |> GroupRunnerAccessMapping.Query.lock_for_update()
-        |> Authorizer.for_subject(subject)
-        |> Repo.fetch(GroupRunnerAccessMapping.Query)
-      end)
+      |> put_locked_mapping(GroupRunnerAccessMapping.Query, id, subject)
       |> Multi.run(:authorization_change, fn _repo,
                                              %{
                                                locked_provider: provider,
@@ -3346,6 +3318,20 @@ defmodule Emisar.SSO do
   # writes lock provider -> group before touching mapping snapshots. Every
   # operator mapping mutation keeps that order, so a rename cannot deadlock
   # against an update/delete that grabbed the mapping row first.
+  # The mapping row under the provider lock: not deleted, that provider's, this
+  # id, `FOR UPDATE`, and account-scoped — the same read every mapping mutation
+  # opens with, for either mapping schema.
+  defp put_locked_mapping(multi, query, id, %Subject{} = subject) do
+    Multi.run(multi, :locked_mapping, fn _repo, %{locked_provider: provider} ->
+      query.not_deleted()
+      |> query.by_provider_id(provider.id)
+      |> query.by_id(id)
+      |> query.lock_for_update()
+      |> Authorizer.for_subject(subject)
+      |> Repo.fetch(query)
+    end)
+  end
+
   defp put_mapping_provider_lock(multi, provider_id, %Subject{} = subject) do
     Multi.run(multi, :locked_provider, fn _repo, _changes ->
       IdentityProvider.Query.not_deleted()
