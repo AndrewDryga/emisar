@@ -337,13 +337,15 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
     # request reviewed. Keep its stored arguments, not a newly resolved command.
     {conn, user, account} = register_and_log_in(conn)
     runner = Fixtures.Runners.create_runner(account_id: account.id)
-    {_action, pack_ref} = trusted_published_action(runner, "systemd-deep", "systemd.unit_restart")
+
+    {_action, pack_ref} =
+      trusted_published_action(runner, "linux-core", "linux.systemctl_restart")
 
     {:ok, run} =
       Runs.create_run(%{
         account_id: account.id,
         runner_id: runner.id,
-        action_id: "systemd.unit_restart",
+        action_id: "linux.systemctl_restart",
         source: "operator",
         reason: "restart the api",
         args: %{"unit" => "checkout-api.service"},

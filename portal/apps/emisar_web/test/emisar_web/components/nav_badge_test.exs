@@ -1,6 +1,6 @@
 defmodule EmisarWeb.Components.NavBadgeTest do
   @moduledoc """
-  Renders `EmisarWeb.CoreComponents.nav_link/1` with various badge
+  Renders `EmisarWeb.ShellComponents.nav_link/1` with various badge
   inputs and asserts the pill is shown / hidden / capped as documented.
   The visual styling itself isn't asserted — that lives in CSS — but
   the badge text and presence are part of the public contract.
@@ -8,20 +8,20 @@ defmodule EmisarWeb.Components.NavBadgeTest do
   use ExUnit.Case, async: true
   import Phoenix.Component
   import Phoenix.LiveViewTest
-  alias EmisarWeb.CoreComponents
+  alias EmisarWeb.ShellComponents
 
   defp render_link(badge) do
     assigns = %{badge: badge}
 
     rendered_to_string(~H"""
-    <CoreComponents.nav_link
+    <ShellComponents.nav_link
       to="/app/approvals"
       active={false}
       icon="security.posture"
       badge={@badge}
     >
       Approvals
-    </CoreComponents.nav_link>
+    </ShellComponents.nav_link>
     """)
   end
 

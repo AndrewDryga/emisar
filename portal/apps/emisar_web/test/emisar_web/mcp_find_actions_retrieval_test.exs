@@ -56,7 +56,7 @@ defmodule EmisarWeb.MCPFindActionsRetrievalTest do
     {"recent kernel messages", ~w(debugging.dmesg_tail)},
     {"software raid array status", ~w(linux.mdadm_status)},
     {"smart health of a disk", ~w(linux.disk_smart)},
-    {"restart a systemd service", ~w(linux.systemctl_restart systemd.unit_restart)},
+    {"restart a systemd service", ~w(linux.systemctl_restart)},
     {"which systemd units failed", ~w(systemd.failed_units)},
     {"why is boot slow", ~w(systemd.analyze_blame systemd.analyze_critical_chain)},
     {"how much disk is the journal using", ~w(systemd.journal_disk_usage)},

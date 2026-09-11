@@ -84,6 +84,8 @@ defmodule EmisarWeb do
       # the marketing, auth and console-domain components that used to live
       # beside them. Every view still gets every component, so no call site
       # changes — the split is about which file you read, not what is in scope.
+      # The authenticated console's chrome (shell, sidebar, topbar, nav).
+      import EmisarWeb.ShellComponents
       import EmisarWeb.MarketingComponents
       import EmisarWeb.AuthComponents
       import EmisarWeb.DomainComponents

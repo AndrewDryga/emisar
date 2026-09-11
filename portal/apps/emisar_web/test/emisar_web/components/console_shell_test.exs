@@ -4,7 +4,7 @@ defmodule EmisarWeb.Components.ConsoleShellTest do
   import Phoenix.LiveViewTest
   alias Emisar.{Accounts, Users}
   alias Emisar.Auth.Subject
-  alias EmisarWeb.CoreComponents
+  alias EmisarWeb.ShellComponents
 
   describe "console_shell/1" do
     test "renders the current workspace with the selected square avatar" do
@@ -43,7 +43,7 @@ defmodule EmisarWeb.Components.ConsoleShellTest do
 
       html =
         rendered_to_string(~H"""
-        <CoreComponents.console_shell
+        <ShellComponents.console_shell
           current_account={@current_account}
           current_subject={@current_subject}
           current_user={@current_user}
@@ -51,7 +51,7 @@ defmodule EmisarWeb.Components.ConsoleShellTest do
         >
           <:title>Dashboard</:title>
           Dashboard content
-        </CoreComponents.console_shell>
+        </ShellComponents.console_shell>
         """)
 
       assert [_, _] = Regex.scan(~r/bg-brand-500 text-zinc-950/, html)
