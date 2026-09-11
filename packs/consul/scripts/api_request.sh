@@ -38,7 +38,7 @@ fi
 
 if [ -n "${CONSUL_HTTP_TOKEN:-}" ]; then
 	printf 'X-Consul-Token: %s\n' "$CONSUL_HTTP_TOKEN" |
-		curl -q -fsS --globoff --proto '=http,https' -H @- -X "$method" "$@" "$base_url$path"
+		curl -q --globoff --proto '=http,https' -fsS -H @- -X "$method" "$@" "$base_url$path"
 else
-	curl -q -fsS --globoff --proto '=http,https' -X "$method" "$@" "$base_url$path"
+	curl -q --globoff --proto '=http,https' -fsS -X "$method" "$@" "$base_url$path"
 fi

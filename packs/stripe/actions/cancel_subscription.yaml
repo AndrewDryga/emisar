@@ -38,3 +38,10 @@ output:
   parser_required: true
   max_stdout_bytes: 65536
   max_stderr_bytes: 8192
+examples:
+  - title: Cancel a subscription after a chargeback
+    args:
+      subscription: "sub_1PqL31CZ6qsJmT1aT5cFyLw3"
+      invoice_now: false
+      prorate: false
+      mode: "test"

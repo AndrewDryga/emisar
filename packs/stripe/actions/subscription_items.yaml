@@ -36,3 +36,7 @@ output:
   parser_required: true
   max_stdout_bytes: 65536
   max_stderr_bytes: 8192
+examples:
+  - title: Show what a subscription bills for
+    args:
+      subscription: "sub_1PqL31CZ6qsJmT1aT5cFyLw3"

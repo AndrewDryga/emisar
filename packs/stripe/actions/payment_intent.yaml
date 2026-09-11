@@ -22,3 +22,7 @@ output:
   parser_required: true
   max_stdout_bytes: 65536
   max_stderr_bytes: 8192
+examples:
+  - title: Diagnose a declined payment
+    args:
+      id: "pi_3PqL2wCZ6qsJmT1a1YbKcNfH"

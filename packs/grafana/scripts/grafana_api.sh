@@ -36,7 +36,9 @@ auth_config() {
 }
 
 request() {
-  auth_config | curl -q --config - --fail --silent --show-error --globoff \
+  # --fail-with-body: Grafana answers a rejected request with {"message": ...},
+  # which is the whole diagnosis for a wrong org, folder, or token scope.
+  auth_config | curl -q --config - --fail-with-body --silent --show-error --globoff \
     --proto '=http,https' --connect-timeout 10 --max-time 60 \
     --max-filesize 4194304 "$@"
 }

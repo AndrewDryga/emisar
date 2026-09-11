@@ -51,7 +51,9 @@ auth_config() {
 }
 
 request() {
-  auth_config | curl -q --config - --fail --silent --show-error --globoff \
+  # --fail-with-body: Artifactory answers a rejected request with a JSON
+  # {"errors": [...]} body naming the repository or permission at fault.
+  auth_config | curl -q --config - --fail-with-body --silent --show-error --globoff \
     --proto '=http,https' --connect-timeout 10 --max-time 60 \
     --max-filesize 4194304 "$@"
 }

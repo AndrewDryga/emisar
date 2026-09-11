@@ -2,7 +2,7 @@ schema_version: 1
 
 id: grafana
 name: Grafana
-version: 0.1.17
+version: 0.1.18
 # 0.1.16 and below returned the datasource document verbatim, so a URL's
 # basic-auth userinfo and the plugin-authored jsonData object reached the model
 # at a no-approval tier. 0.1.13 and below shipped settings as low risk, so the

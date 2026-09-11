@@ -69,3 +69,9 @@ output:
   parser_required: true
   max_stdout_bytes: 65536
   max_stderr_bytes: 8192
+examples:
+  - title: Preview a credit before issuing it
+    args:
+      invoice: "in_1PqL2yCZ6qsJmT1aR4dGpZ8W"
+      amount: 2500
+      reason: "duplicate"

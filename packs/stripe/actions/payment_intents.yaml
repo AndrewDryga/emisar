@@ -51,3 +51,6 @@ output:
   parser_required: true
   max_stdout_bytes: 65536
   max_stderr_bytes: 8192
+examples:
+  - title: List recent payment attempts
+    args: {}

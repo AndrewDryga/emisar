@@ -29,7 +29,7 @@ consul_get() {
 	fi
 	[ -n "${CONSUL_CLIENT_CERT:-}" ] && set -- --cert "$CONSUL_CLIENT_CERT" "$@"
 	[ -n "${CONSUL_CLIENT_KEY:-}" ] && set -- --key "$CONSUL_CLIENT_KEY" "$@"
-	curl -q -fsS --globoff --proto '=http,https' \
+	curl -q --globoff --proto '=http,https' -fsS \
 		--connect-timeout 2 --max-time 10 \
 		-H @"$headers" "$@" "$base_url$path" >"$destination"
 }

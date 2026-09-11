@@ -46,3 +46,11 @@ output:
   parser_required: true
   max_stdout_bytes: 65536
   max_stderr_bytes: 8192
+examples:
+  - title: Stage delivery proof for a dispute
+    args:
+      dispute: "dp_1PqL33CZ6qsJmT1aH8sWkY2N"
+      field: "cancellation_policy"
+      file: "file_1PqL35CZ6qsJmT1aXo9BvTqL"
+      mode: "test"
+      operation_id: "emisar-2026-09-11-a1b2c3"

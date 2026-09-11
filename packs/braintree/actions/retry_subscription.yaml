@@ -52,3 +52,12 @@ output:
   parser_required: true
   max_stdout_bytes: 65536
   max_stderr_bytes: 8192
+examples:
+  - title: Retry a past-due subscription
+    args:
+      subscription_id: "b4x7kq"
+      merchant_account_id: "emisar_usd"
+      currency: "USD"
+      expected_updated_at: "2026-09-10T18:04:11Z"
+      amount: "24.99"
+      environment: "sandbox"

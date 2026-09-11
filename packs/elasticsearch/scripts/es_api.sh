@@ -39,7 +39,7 @@ auth_header() {
 # $1 method, $2 path (already assembled by a subcommand from its own arguments).
 request() {
   local method="$1" path="$2"
-  auth_header | curl -q -fsS --globoff --proto '=http,https' \
+  auth_header | curl -q --globoff --proto '=http,https' -fsS \
     --connect-timeout 10 --max-time 3600 --max-filesize 8388608 \
     -H @- -X "$method" "$api$path"
 }

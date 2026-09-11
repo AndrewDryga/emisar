@@ -1,7 +1,7 @@
 schema_version: 1
 id: braintree
 name: Braintree billing operations
-version: 0.1.2
+version: 0.2.0
 description: >
   Investigate Braintree payment failures, duplicate charges, refunds,
   recurring billing and disputes, and perform reviewed billing corrections.

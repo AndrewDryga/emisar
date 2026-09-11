@@ -21,7 +21,10 @@ auth_config() {
 }
 
 request() {
-  auth_config | curl -q --config - --fail --silent --show-error --globoff \
+  # --fail-with-body, like gcp-cloudsql and gcp-billing: a GCP error body is
+  # {"error": {"code", "message", "status"}}, and dropping it leaves the
+  # operator with an exit code and nothing to act on.
+  auth_config | curl -q --config - --fail-with-body --silent --show-error --globoff \
     --proto '=https' --connect-timeout 10 --max-time 60 \
     --max-filesize 4194304 "$@"
 }

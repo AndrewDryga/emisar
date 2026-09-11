@@ -43,3 +43,7 @@ output:
   parser_required: true
   max_stdout_bytes: 65536
   max_stderr_bytes: 8192
+examples:
+  - title: See every payment attempt on an invoice
+    args:
+      invoice: "in_1PqL2yCZ6qsJmT1aR4dGpZ8W"

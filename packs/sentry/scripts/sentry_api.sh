@@ -29,7 +29,9 @@ auth_config() {
 }
 
 request() {
-  auth_config | curl -q --config - --fail --silent --show-error --globoff \
+  # --fail-with-body: Sentry answers a rejected request with {"detail": ...},
+  # which names the missing scope or the unknown project.
+  auth_config | curl -q --config - --fail-with-body --silent --show-error --globoff \
     --proto '=http,https' --connect-timeout 10 --max-time 60 \
     --max-filesize 8388608 "$@"
 }

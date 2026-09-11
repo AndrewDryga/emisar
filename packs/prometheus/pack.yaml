@@ -2,7 +2,7 @@ schema_version: 1
 
 id: prometheus
 name: Prometheus operations
-version: 0.1.21
+version: 0.1.22
 # Older versions allowed low-risk range queries with unbounded evaluation cost,
 # and let the caller pick the admin mutators' base URL instead of `PROM_URL` —
 # a delete against the wrong server, and a POST at any host the model named.

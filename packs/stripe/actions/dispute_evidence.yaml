@@ -28,3 +28,8 @@ output:
   parser_required: true
   max_stdout_bytes: 65536
   max_stderr_bytes: 8192
+examples:
+  - title: Check one evidence field before submitting
+    args:
+      dispute: "dp_1PqL33CZ6qsJmT1aH8sWkY2N"
+      field: "access_activity_log"

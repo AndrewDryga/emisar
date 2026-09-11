@@ -41,3 +41,10 @@ output:
   parser_required: true
   max_stdout_bytes: 65536
   max_stderr_bytes: 8192
+examples:
+  - title: Stage the shipping narrative for a dispute
+    args:
+      dispute_id: "dispute_8xk2p4"
+      category: "CARRIER_NAME"
+      content: "Signed delivery confirmation, 2026-09-04, tracking 1Z999AA10123456784."
+      environment: "sandbox"

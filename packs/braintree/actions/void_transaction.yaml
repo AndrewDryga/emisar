@@ -46,3 +46,11 @@ output:
   parser_required: true
   max_stdout_bytes: 65536
   max_stderr_bytes: 8192
+examples:
+  - title: Void an authorization taken in error
+    args:
+      transaction_id: "7mq2xk9p"
+      merchant_account_id: "emisar_usd"
+      currency: "USD"
+      environment: "sandbox"
+      operation_id: "emisar-2026-09-11-a1b2c3"

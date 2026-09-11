@@ -46,3 +46,11 @@ output:
   parser_required: true
   max_stdout_bytes: 65536
   max_stderr_bytes: 8192
+examples:
+  - title: Move a subscription to the customer's new card
+    args:
+      subscription_id: "b4x7kq"
+      expected_updated_at: "2026-09-10T18:04:11Z"
+      expected_payment_method_id: "c91mza"
+      payment_method_id: "f28kdp"
+      environment: "sandbox"

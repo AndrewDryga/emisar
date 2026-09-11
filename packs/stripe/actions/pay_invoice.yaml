@@ -53,3 +53,11 @@ output:
   parser_required: true
   max_stdout_bytes: 65536
   max_stderr_bytes: 8192
+examples:
+  - title: Retry collection after the customer fixed their card
+    args:
+      invoice: "in_1PqL2yCZ6qsJmT1aR4dGpZ8W"
+      expected_amount: 4990
+      currency: "usd"
+      mode: "test"
+      operation_id: "emisar-2026-09-11-a1b2c3"

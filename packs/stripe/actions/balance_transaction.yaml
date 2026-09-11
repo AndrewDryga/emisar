@@ -22,3 +22,7 @@ output:
   parser_required: true
   max_stdout_bytes: 65536
   max_stderr_bytes: 8192
+examples:
+  - title: Trace one ledger entry to its source
+    args:
+      id: "txn_1PqL2vCZ6qsJmT1aK7dQxRnM"

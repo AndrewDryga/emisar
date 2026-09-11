@@ -34,3 +34,9 @@ output:
   parser_required: true
   max_stdout_bytes: 65536
   max_stderr_bytes: 8192
+examples:
+  - title: Cancel a refund that has not left yet
+    args:
+      refund: "re_3PqL2zCZ6qsJmT1a0MnVjQpD"
+      mode: "test"
+      operation_id: "emisar-2026-09-11-a1b2c3"

@@ -22,3 +22,7 @@ output:
   parser_required: true
   max_stdout_bytes: 65536
   max_stderr_bytes: 8192
+examples:
+  - title: Show what a credit note actually covered
+    args:
+      id: "cn_1PqL30CZ6qsJmT1aVn7xQ2Rd"

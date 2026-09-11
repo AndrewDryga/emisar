@@ -46,3 +46,11 @@ output:
   parser_required: true
   max_stdout_bytes: 65536
   max_stderr_bytes: 8192
+examples:
+  - title: Stage the signed delivery form
+    args:
+      dispute_id: "dispute_8xk2p4"
+      category: "GENERAL"
+      file_name: "delivery-confirmation.pdf"
+      expected_file_sha256: "b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9"
+      environment: "sandbox"

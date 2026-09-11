@@ -28,3 +28,8 @@ output:
   parser_required: true
   max_stdout_bytes: 65536
   max_stderr_bytes: 8192
+examples:
+  - title: Accept a dispute we will not contest
+    args:
+      dispute_id: "dispute_8xk2p4"
+      environment: "sandbox"
