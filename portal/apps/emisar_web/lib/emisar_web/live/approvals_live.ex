@@ -623,7 +623,6 @@ defmodule EmisarWeb.ApprovalsLive do
               <%= if @approval_requirements_help do %>
                 {@approval_requirements_help}{" "}
               <% end %>
-              Each request shows its approval requirements and expiry.
             </p>
             <p>
               Runbooks use one approval request per execution, covering all actions and target runners.

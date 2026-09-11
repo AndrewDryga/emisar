@@ -36,12 +36,6 @@ defmodule EmisarWeb.ApprovalsLiveTest do
 
     assert has_element?(lv, "#approval-requirements-help", "You can't approve your own requests.")
 
-    assert has_element?(
-             lv,
-             "#approval-requirements-help",
-             "Each request shows its approval requirements and expiry."
-           )
-
     assert Repo.reload!(request).min_approvals == 1
     assert Repo.reload!(request).allow_self_approval
   end
@@ -90,12 +84,6 @@ defmodule EmisarWeb.ApprovalsLiveTest do
     Fixtures.Policies.corrupt_approval_settings(policy, :missing)
 
     {:ok, lv, _html} = live(conn, ~p"/app/#{account}/approvals")
-
-    assert has_element?(
-             lv,
-             "#approval-requirements-help",
-             "Each request shows its approval requirements and expiry."
-           )
 
     refute has_element?(lv, "#approval-requirements-help", "Current policies require")
     refute has_element?(lv, "#approval-requirements-help", "You can approve your own requests.")
