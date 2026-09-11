@@ -37,7 +37,7 @@ Top-level files are the cobra CLI commands: `connect` (the long-running daemon),
 
 | Package | Owns |
 |---|---|
-| `internal/cloud/` | the outbound websocket client — connect loop, message (de)serialization, reconnect backoff |
+| `internal/cloud/` | the outbound websocket client, split by concern: `client.go` (type, session lifecycle, reconnect), `client_dispatch.go` (frame admission and reservations), `client_gates.go` (the signed-dispatch and pack-trust gates), `client_outbox.go` (the queue and background loops) |
 | `internal/engine/` | the action pipeline: validate → clamp cloud opts → execute → redact → journal |
 | `internal/executor/` | the `os/exec` wrapper — ctx cancellation, stdout/stderr streaming, SIGTERM→SIGKILL grace |
 | `internal/packs/` | pack loader + in-memory registry (YAML parse, SHA-256 content hash) |
