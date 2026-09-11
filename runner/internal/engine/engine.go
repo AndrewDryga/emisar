@@ -369,10 +369,7 @@ func (e *Engine) Run(ctx context.Context, req Request) (*Result, error) {
 	// compromised portal that dispatches it anyway is refused here, with a
 	// host-side journal entry, exactly like an allow/deny block.
 	if ok, reason := policy.AdmitRisk(act.Risk); !ok {
-		ev := e.baseEvent(req, audit.EventActionBlockedByAdmission, now)
-		ev.PackID = act.PackID
-		ev.ActionID = act.ID
-		ev.Metadata = metaFor(act)
+		ev := e.actionEvent(req, act, audit.EventActionBlockedByAdmission, now)
 		ev.Request = &audit.RequestInfo{Reason: req.Reason}
 		ev.Error = reason
 		return e.refuse(ctx, ev, StatusBlockedByAdmission, act.ID, reason), nil
@@ -381,10 +378,7 @@ func (e *Engine) Run(ctx context.Context, req Request) (*Result, error) {
 	cleanArgs, err := validation.Validate(act.Args, req.Args, e.ProtectedPaths)
 	if err != nil {
 		detail := validationFailureDetail(err, req.Args, act.Args)
-		ev := e.baseEvent(req, audit.EventValidationFailed, now)
-		ev.PackID = act.PackID
-		ev.ActionID = act.ID
-		ev.Metadata = metaFor(act)
+		ev := e.actionEvent(req, act, audit.EventValidationFailed, now)
 		ev.Request = &audit.RequestInfo{Reason: req.Reason}
 		ev.Error = detail
 		return e.refuse(ctx, ev, StatusValidationFailed, act.ID, detail), nil
@@ -503,10 +497,7 @@ func (e *Engine) Run(ctx context.Context, req Request) (*Result, error) {
 		}
 	}
 
-	started := e.baseEvent(req, audit.EventExecutionStarted, time.Now().UTC())
-	started.PackID = act.PackID
-	started.ActionID = act.ID
-	started.Metadata = metaFor(act)
+	started := e.actionEvent(req, act, audit.EventExecutionStarted, time.Now().UTC())
 	started.Request = e.requestInfo(req, redactArgs(combinedRedactor, cleanArgs, act.Args))
 	startArgv, startCommand := redactedInvocation(combinedRedactor, plan.Binary, plan.Argv, cleanArgs, act.Args)
 	started.Execution = executionStartInfo(plan, scriptSHA, startArgv)
@@ -575,82 +566,21 @@ func (e *Engine) Run(ctx context.Context, req Request) (*Result, error) {
 		hits = redact.MergeHits(hs1, hs2)
 	}
 
-	evType := audit.EventExecutionCompleted
-	status := StatusSuccess
-	if execRes.Status == executor.StatusTimeout {
-		evType = audit.EventExecutionFailed
-		status = StatusTimedOut
-	} else if execRes.Status == executor.StatusCancelled {
-		evType = audit.EventActionCancelled
-		status = StatusCancelled
-	} else if execRes.Status == executor.StatusFailed {
-		evType = audit.EventExecutionFailed
-		status = StatusError
-	} else if execRes.ExitCode != 0 && !successExit(execRes.ExitCode, act.Execution.SuccessExitCodes) {
-		status = StatusFailed
-	}
-
-	var (
-		parsed           any
-		structuredOutput json.RawMessage
-		parserError      string
-		resultError      string
-		reason           = reasonForStatus(status, execRes)
-	)
-	if status == StatusSuccess && jsonRedactionFailed {
-		status = StatusValidationFailed
-		reason = "output_redaction_invalid_json"
-		resultError = "output redaction could not preserve the JSON document"
-		parserError = resultError
-	} else if status == StatusSuccess && redactionOverflow {
-		status = StatusValidationFailed
-		reason = "output_redaction_exceeded_limit"
-		resultError = "redacted structured output exceeded its byte limit"
-		parserError = resultError
-	} else if status == StatusSuccess && act.Output.HasSchema() {
-		if execRes.Truncated.Stdout {
-			status = StatusValidationFailed
-			reason = "output_truncated"
-			resultError = "structured output was truncated before validation"
-			parserError = resultError
-		} else {
-			validator, ok := reg.OutputSchema(act.ID)
-			if !ok {
-				status = StatusValidationFailed
-				reason = "output_schema_unavailable"
-				resultError = "structured output schema is unavailable"
-				parserError = resultError
-			} else if value, raw, validationError := validator.Validate([]byte(redactedStdout)); validationError != nil {
-				status = StatusValidationFailed
-				reason = validationError.Code
-				resultError = validationError.Message
-				parserError = validationError.Message
-			} else {
-				parsed = value
-				structuredOutput = raw
-			}
-		}
-	} else if !act.Output.HasSchema() {
-		parsed, parserError = parseOutput(act.Output.Parser, redactedStdout)
-		if status == StatusSuccess && act.Output.ParserRequired && parserError != "" {
-			status = StatusValidationFailed
-			reason = "output_invalid_json"
-			resultError = "required output is not valid JSON"
-		}
-	}
-	if status == StatusValidationFailed {
-		evType = audit.EventValidationFailed
-	}
+	out := e.classifyOutcome(act, reg, execRes, redactedStdout, jsonRedactionFailed, redactionOverflow)
+	evType := out.eventType
+	status := out.status
+	parsed := out.parsed
+	structuredOutput := out.structuredOutput
+	parserError := out.parserError
+	resultError := out.resultError
+	reason := out.reason
 
 	// The exact command that ran, with sensitive arg values masked for every
 	// durable or remote representation. Raw argv exists only inside the live
 	// executor result and is discarded after this method returns.
 	auditArgv, executedCommand := redactedInvocation(combinedRedactor, execRes.Binary, execRes.Argv, cleanArgs, act.Args)
 
-	ev := e.baseEvent(req, evType, time.Now().UTC())
-	ev.PackID = act.PackID
-	ev.ActionID = act.ID
-	ev.Metadata = metaFor(act)
+	ev := e.actionEvent(req, act, evType, time.Now().UTC())
 	ev.Request = e.requestInfo(req, redactArgs(combinedRedactor, cleanArgs, act.Args))
 	ev.Execution = e.executionInfo(execRes, redactedStdout, redactedStderr, scriptSHA, plan, auditArgv)
 	ev.Execution.ExecutedCommand = executedCommand
@@ -765,10 +695,7 @@ func (e *Engine) emitExecError(ctx context.Context, req Request, act *actionspec
 	cleanArgs map[string]any, err error) (*Result, error) {
 	combinedRedactor := e.combinedRedactor(act, cleanArgs)
 	detail := redactInvocationValue(combinedRedactor, err.Error(), cleanArgs, act.Args)
-	ev := e.baseEvent(req, audit.EventExecutionFailed, time.Now().UTC())
-	ev.PackID = act.PackID
-	ev.ActionID = act.ID
-	ev.Metadata = metaFor(act)
+	ev := e.actionEvent(req, act, audit.EventExecutionFailed, time.Now().UTC())
 	ev.Request = e.requestInfo(req, redactArgs(combinedRedactor, cleanArgs, act.Args))
 	ev.Error = detail
 	journaled := e.journal(ctx, ev)
@@ -779,6 +706,130 @@ func (e *Engine) emitExecError(ctx context.Context, req Request, act *actionspec
 		ActionID:         act.ID,
 		Reason:           detail,
 	}, nil
+}
+
+// actionEvent stamps the identity every event about a KNOWN action carries:
+// its pack, its id, and the metadata the journal indexes it by. Five sites
+// wrote those three lines out — four refusals and the execution events — and a
+// site that missed one produced a journal entry indistinguishable from an
+// event about some other action.
+// outcome is what the classification stage decides: how the run ended, what
+// the journal calls it, and the parsed or schema-validated output. It exists
+// so `Run` reads as the pipeline runner/AGENTS.md names — validate, clamp,
+// execute, redact, journal — instead of carrying twenty-five live locals
+// through a hundred lines of branching.
+type outcome struct {
+	status           Status
+	eventType        audit.EventType
+	reason           string
+	resultError      string
+	parsed           any
+	structuredOutput json.RawMessage
+	parserError      string
+}
+
+// classifyOutcome turns the executor's result and the redaction pass into the
+// run's status. The order matters and is deliberate: how the process ended
+// comes first, then whether redaction could keep the structured document
+// intact, then the action's own output schema. A redaction failure downgrades
+// a successful exit, because output that could not be redacted must not be
+// reported as a success.
+func (e *Engine) classifyOutcome(
+	act *actionspec.Action,
+	reg *packs.Registry,
+	execRes *executor.Result,
+	redactedStdout string,
+	jsonRedactionFailed bool,
+	redactionOverflow bool,
+) outcome {
+	out := outcome{eventType: audit.EventExecutionCompleted, status: StatusSuccess}
+
+	switch {
+	case execRes.Status == executor.StatusTimeout:
+		out.eventType = audit.EventExecutionFailed
+		out.status = StatusTimedOut
+	case execRes.Status == executor.StatusCancelled:
+		out.eventType = audit.EventActionCancelled
+		out.status = StatusCancelled
+	case execRes.Status == executor.StatusFailed:
+		out.eventType = audit.EventExecutionFailed
+		out.status = StatusError
+	case execRes.ExitCode != 0 && !successExit(execRes.ExitCode, act.Execution.SuccessExitCodes):
+		out.status = StatusFailed
+	}
+	out.reason = reasonForStatus(out.status, execRes)
+
+	switch {
+	case out.status == StatusSuccess && jsonRedactionFailed:
+		out.status = StatusValidationFailed
+		out.reason = "output_redaction_invalid_json"
+		out.resultError = "output redaction could not preserve the JSON document"
+		out.parserError = out.resultError
+	case out.status == StatusSuccess && redactionOverflow:
+		out.status = StatusValidationFailed
+		out.reason = "output_redaction_exceeded_limit"
+		out.resultError = "redacted structured output exceeded its byte limit"
+		out.parserError = out.resultError
+	case out.status == StatusSuccess && act.Output.HasSchema():
+		e.validateStructuredOutput(act, reg, execRes, redactedStdout, &out)
+	case !act.Output.HasSchema():
+		out.parsed, out.parserError = parseOutput(act.Output.Parser, redactedStdout)
+		if out.status == StatusSuccess && act.Output.ParserRequired && out.parserError != "" {
+			out.status = StatusValidationFailed
+			out.reason = "output_invalid_json"
+			out.resultError = "required output is not valid JSON"
+		}
+	}
+	if out.status == StatusValidationFailed {
+		out.eventType = audit.EventValidationFailed
+	}
+	return out
+}
+
+// validateStructuredOutput checks a successful run's stdout against the
+// action's declared schema. Truncated output fails closed: a document cut
+// short may still parse, and reporting it as validated would hand the model a
+// partial result it cannot tell from a whole one.
+func (e *Engine) validateStructuredOutput(
+	act *actionspec.Action,
+	reg *packs.Registry,
+	execRes *executor.Result,
+	redactedStdout string,
+	out *outcome,
+) {
+	if execRes.Truncated.Stdout {
+		out.status = StatusValidationFailed
+		out.reason = "output_truncated"
+		out.resultError = "structured output was truncated before validation"
+		out.parserError = out.resultError
+		return
+	}
+	validator, ok := reg.OutputSchema(act.ID)
+	if !ok {
+		out.status = StatusValidationFailed
+		out.reason = "output_schema_unavailable"
+		out.resultError = "structured output schema is unavailable"
+		out.parserError = out.resultError
+		return
+	}
+	value, raw, validationError := validator.Validate([]byte(redactedStdout))
+	if validationError != nil {
+		out.status = StatusValidationFailed
+		out.reason = validationError.Code
+		out.resultError = validationError.Message
+		out.parserError = validationError.Message
+		return
+	}
+	out.parsed = value
+	out.structuredOutput = raw
+}
+
+func (e *Engine) actionEvent(req Request, act *actionspec.Action, t audit.EventType, now time.Time) audit.Event {
+	ev := e.baseEvent(req, t, now)
+	ev.PackID = act.PackID
+	ev.ActionID = act.ID
+	ev.Metadata = metaFor(act)
+	return ev
 }
 
 func (e *Engine) baseEvent(req Request, t audit.EventType, now time.Time) audit.Event {
