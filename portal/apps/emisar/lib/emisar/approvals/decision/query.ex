@@ -10,6 +10,9 @@ defmodule Emisar.Approvals.Decision.Query do
   def by_request_id(queryable \\ all(), request_id),
     do: where(queryable, [approval_decisions: d], d.request_id == ^request_id)
 
+  def by_request_ids(queryable \\ all(), request_ids) when is_list(request_ids),
+    do: where(queryable, [approval_decisions: d], d.request_id in ^request_ids)
+
   def by_decider_ids(queryable, ids),
     do: where(queryable, [approval_decisions: d], d.decider_id in ^ids)
 
@@ -30,6 +33,20 @@ defmodule Emisar.Approvals.Decision.Query do
     |> by_request_id(request_id)
     |> where([approval_decisions: d], d.decision == :approve)
     |> select([approval_decisions: d], count(d.decider_id, :distinct))
+  end
+
+  @doc """
+  Distinct approvers PER request — the same `COUNT(DISTINCT decider_id)` as
+  `approved_distinct_decider_count/1`, grouped so one query tallies a whole page
+  of requests instead of one round trip each. Requests with no approve vote are
+  absent from the result; the caller reads them as zero.
+  """
+  def approved_distinct_decider_counts(request_ids) when is_list(request_ids) do
+    all()
+    |> by_request_ids(request_ids)
+    |> where([approval_decisions: d], d.decision == :approve)
+    |> group_by([approval_decisions: d], d.request_id)
+    |> select([approval_decisions: d], {d.request_id, count(d.decider_id, :distinct)})
   end
 
   @doc "Left-join + preload the (non-deleted) deciding user, idempotently."

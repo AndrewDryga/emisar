@@ -1,7 +1,7 @@
 ---
 name: mcp-api
 sources: [portal/apps/emisar_web/priv/mcp/api-schemas.json, portal/apps/emisar_web/lib/emisar_web/controllers/mcp, portal/apps/emisar_web/lib/emisar_web/controllers/mcp_rpc_controller.ex, portal/apps/emisar/lib/emisar/mcp_operations.ex, mcp/protocol.go]
-updated: 2026-09-10
+updated: 2026-09-11
 ---
 
 # MCP action API specification
@@ -1038,6 +1038,87 @@ Current policy still runs first, so a deny cannot be bypassed. Grant usability,
 current scope, pack trust, retirement, certificate validity, and attestation
 freshness are re-evaluated in the same transaction that creates the dispatch.
 
+### Review receipt
+
+A run policy gated for approval carries a `review` object in every summary and
+tail frame, so a client that renders the decision elsewhere reports what the
+approver was actually shown rather than a status word. A run policy never gated
+carries no `review` at all; its absence never means "nobody voted".
+
+```json
+{
+  "review": {
+    "request_id": "01a08f81-cb81-7273-801b-ce6ad6321a77",
+    "status": "approved",
+    "required_approvals": 2,
+    "approved_count": 1,
+    "argument_count": 1,
+    "reason": "Check whether /srv filled before the reload storm.",
+    "evidence": "The alert at 20:50 UTC named /srv on this host.",
+    "expected": "A usage line for /srv, so the investigation can close.",
+    "command": {"kind": "preview", "text": "df -P -h /srv", "truncated": false},
+    "decisions": [
+      {
+        "actor": "Jane Doe",
+        "decision": "approve",
+        "decided_at": "2026-09-11T08:07:23.379141Z",
+        "reason": "Read-only query; no configuration changes."
+      }
+    ],
+    "override": {
+      "actor": "Alex Admin",
+      "reason": "A second reviewer is unavailable; we need this read-only check during the incident.",
+      "approved_count": 1,
+      "required_approvals": 2,
+      "waived_approvals": 1,
+      "decided_at": "2026-09-11T08:07:23.488276Z"
+    }
+  }
+}
+```
+
+`status` is the review's own outcome — `pending`, `approved`, `denied`,
+`expired`, or `cancelled` — and is independent of the run status: a released run
+reports `approved` while it runs, and a pending request past its deadline reads
+`expired` before any sweep rewrites it. `required_approvals` is the count
+snapshotted when the request was filed, so a later policy edit cannot move it,
+and `approved_count` counts DISTINCT approvers: a repeated or replayed vote
+never raises it, and an override never adds to it.
+
+`reason`, `evidence`, and `expected` are the approver-facing justification
+chain snapshotted with the request, with the run's own `sensitive` argument
+values masked out; text whose secrets can no longer be read is dropped rather
+than forwarded. `argument_count` is how many top-level arguments the run
+carries — the values themselves stay in Emisar.
+
+`command` is the line the review decided against: `executed` is the runner's own
+recorded receipt, and `preview` is rendered from the hash-proven published pack
+while the review is still `pending`, never from a runner's mutable
+advertisement. A decided review reports only what actually ran, because a
+preview re-rendered afterwards would describe the catalog as it stands now
+rather than the dispatch those reviewers judged. Both forms are secret-masked
+and bounded, and `truncated` covers the runner's own cap as well as that bound.
+A command Emisar cannot prove is absent rather than reconstructed.
+
+`decisions` lists the recorded votes oldest first, each with the name this
+account currently knows the reviewer by (absent for someone it no longer knows —
+their vote still stands), the vote, its time, and that reviewer's own note when
+they left one. A request with more votes than the page holds returns its most
+recent ones — a deny finalizes on the spot and the approve that meets quorum is
+the last vote, so the decision itself is always present — and counts the older
+ones in `decisions_omitted`.
+
+`override` appears only from its own `approval.overridden` audit receipt, never
+inferred from a short tally. It carries the mandatory reason an override cannot
+be recorded without, the real tally it released, the requirement it waived, and
+how many reviews that waived. An override is not a vote and never appears in
+`decisions`.
+
+The receipt requires the same run-read access and account membership as the run
+summary carrying it; the approvals permission belongs to deciding, not to
+reading what was decided. A foreign account's review is indistinguishable from
+absence.
+
 ### Stale target contract
 
 ```json
@@ -1330,8 +1411,8 @@ Every run summary carries `operation_id`, exact `action_id` and `pack_ref`,
 Status is the closed outcome classification: a failed execution, control-plane
 error, timeout, trust refusal, policy denial, and operator cancellation remain
 distinct. The summary never copies runner output, a runner's recorded failure
-text, a policy reason, an approver's denial reason, or the dispatching
-operator's own reason. Where the exact cause matters, follow `run_url`.
+text, or a policy reason. Where the exact cause matters, follow `run_url`. A run
+a human reviewed instead carries its own `review` receipt, described below.
 When a typed action succeeds, the summary may also carry the exact redacted
 `structured_output` object from stdout that passed the pack schema. The object
 is never partially truncated. Multi-run responses allocate a separate 64 KiB aggregate

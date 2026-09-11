@@ -133,6 +133,54 @@ defmodule Emisar.Fixtures.Catalog do
   end
 
   @doc """
+  Advertises one PUBLISHED pack action exactly as its baseline manifest declares
+  it, and trusts that exact version + hash — the shape a dispatch contract can
+  actually resolve, because the advertised descriptor equals the trusted
+  manifest's and the snapshotted hash proves which bytes were authorized.
+
+  Use it wherever a test needs the trusted contract behind a run (a command
+  preview, an approval recheck) rather than the bare advertisement
+  `create_action/1` builds. Returns `{action, pack_ref}`; defaults to
+  `linux-core`'s `linux.disk_usage`.
+  """
+  def create_published_action(attrs \\ %{}) do
+    attrs = Map.new(attrs)
+    runner = attrs[:runner] || raise ":runner is required"
+    pack_id = attrs[:pack_id] || "linux-core"
+    action_id = attrs[:action_id] || "linux.disk_usage"
+    pack = Catalog.PublishedRegistry.get(pack_id)
+    manifest = Catalog.PackBaseline.manifest(pack_id, pack.version, pack.content_hash)
+    descriptor = manifest["actions"][action_id]
+
+    action =
+      ~w(title description kind risk side_effects args_schema output_schema examples)a
+      |> Map.new(&{&1, descriptor[Atom.to_string(&1)]})
+      |> Map.merge(%{
+        runner: runner,
+        action_id: action_id,
+        pack_id: pack_id,
+        pack_version: pack.version,
+        pack_hash: pack.content_hash
+      })
+      |> create_action()
+      |> Ecto.Changeset.change(
+        summary: descriptor["summary"],
+        search_terms: descriptor["search_terms"]
+      )
+      |> Repo.update!()
+
+    create_trusted_pack_version(
+      account_id: runner.account_id,
+      pack_id: pack_id,
+      version: pack.version,
+      hash: pack.content_hash,
+      trusted_manifest: manifest
+    )
+
+    {action, "#{pack_id}@#{pack.version}/#{pack.content_hash}"}
+  end
+
+  @doc """
   Inserts a TRUSTED pack version row directly — the shape a version trusted
   under an older release has after a newer release raises the pack's
   retirement watermark: trusted, retired, and NO override stamp.

@@ -36,6 +36,16 @@ defmodule Emisar.Approvals do
   # the `Runs` dispatch sweeps; a backlog drains over consecutive 5-minute ticks.
   @sweep_batch 2_000
 
+  # A vote only commits while its request is still pending, so a quorum bounds
+  # its own history in practice — but `min_approvals` is operator-configured and
+  # this receipt travels in a size-budgeted response, so the projected history
+  # carries its own ceiling and says how many it left behind. The ceiling keeps
+  # the NEWEST votes: a deny finalizes on the spot and the approve that meets
+  # quorum is the last one, so the decision itself is always the final vote —
+  # keeping the oldest instead would show a page of approvals under a status
+  # nothing in the list accounts for.
+  @max_projected_decisions 20
+
   # The approver's decision note is free text typed into a textarea. Nothing
   # bounded it: decide_pending/5 writes through a bare update_all, so there is no
   # changeset in the path, and the column was varchar(255) — a note past that
@@ -449,6 +459,195 @@ defmodule Emisar.Approvals do
       |> Request.Query.by_runbook_execution_id(execution_id)
       |> Request.Query.by_account_id(account_id)
       |> Repo.fetch(Request.Query)
+    end
+  end
+
+  @doc """
+  The complete review receipt for each gated run in `runs`, keyed by run id —
+  what a human approver was shown and what they decided.
+
+  This is the read a remote teammate repaints a chat card from, so the exact
+  authorization of `fetch_request_for_visible_run/2` applies rather than the
+  console's approvals permission: `view_runs`, the caller's own account, and
+  only the request attached to that account's own run. A run policy never gated
+  has no receipt and simply does not appear; absence is never "nobody voted".
+
+  Each receipt carries the request id, the effective `status` (a pending request
+  past its deadline reads `:expired`), the snapshotted `required_approvals`, the
+  DISTINCT `approved_count`, the approver-facing `reason`/`evidence`/`expected`
+  snapshot with the run's own secrets masked out, how many arguments the run
+  carries, the trusted `command` receipt when one is provable, the most recent
+  votes oldest first (with `decisions_omitted` counting any older ones the
+  ceiling left behind) each carrying the name THIS account knows the reviewer
+  by and that vote's own retained note, and an `override` only when its explicit
+  `approval.overridden` audit receipt exists — carrying the real tally it
+  released, the requirement it waived, and its mandatory reason. An override is
+  never inferred from a short tally and never becomes a vote.
+
+  Returns `{:ok, %{run_id => receipt}}`, `{:error, :unauthorized}`, or
+  `{:error, :not_found}` for a run outside the caller's account.
+  """
+  def project_reviews_for_visible_runs(runs, %Subject{} = subject) when is_list(runs) do
+    with {:ok, subject} <-
+           Auth.fetch_current_subject(Runs.Authorizer.view_runs_permission(), subject),
+         :ok <- ensure_runs_in_account(runs, subject) do
+      {:ok, runs |> Enum.filter(&gated_run?/1) |> build_run_reviews(subject)}
+    end
+  end
+
+  # `requires_approval` is stamped when policy parked the run and never cleared,
+  # so it still identifies a released or denied run as one a human reviewed.
+  defp gated_run?(%Runs.ActionRun{requires_approval: true}), do: true
+  defp gated_run?(%Runs.ActionRun{status: :pending_approval}), do: true
+  defp gated_run?(%Runs.ActionRun{}), do: false
+
+  defp ensure_runs_in_account(runs, subject) do
+    Enum.reduce_while(runs, :ok, fn run, :ok ->
+      case Subject.ensure_in_account(subject, run.account_id) do
+        :ok -> {:cont, :ok}
+        {:error, reason} -> {:halt, {:error, reason}}
+      end
+    end)
+  end
+
+  defp build_run_reviews([], _subject), do: %{}
+
+  defp build_run_reviews(runs, subject) do
+    # One query per fact for the whole page. A per-run fetch here is the same
+    # N+1 the run summaries already learned to batch, and a wait loop re-reads
+    # these every poll.
+    requests =
+      Request.Query.all()
+      |> Request.Query.by_run_ids(Enum.map(runs, & &1.id))
+      |> Authorizer.for_subject(subject)
+      |> Repo.all()
+
+    request_ids = Enum.map(requests, & &1.id)
+
+    decisions =
+      Decision.Query.all()
+      |> Decision.Query.by_request_ids(request_ids)
+      |> Decision.Query.ordered_by_decided()
+      |> Authorizer.for_subject(subject)
+      |> Repo.all()
+      |> Enum.group_by(& &1.request_id)
+
+    counts =
+      request_ids
+      |> Decision.Query.approved_distinct_decider_counts()
+      |> Repo.all()
+      |> Map.new()
+
+    receipts = Audit.approval_decision_receipts(request_ids, subject.account.id)
+    labels = review_actor_labels(decisions, receipts, subject)
+    runs_by_id = Map.new(runs, &{&1.id, &1})
+    now = DateTime.utc_now()
+
+    Map.new(requests, fn request ->
+      run = Map.fetch!(runs_by_id, request.run_id)
+      receipt = Map.get(receipts, request.id, %{decisions: %{}, override: nil})
+
+      {request.run_id,
+       review_receipt(request, run, subject, %{
+         count: Map.get(counts, request.id, 0),
+         decisions: Map.get(decisions, request.id, []),
+         labels: labels,
+         now: now,
+         receipt: receipt
+       })}
+    end)
+  end
+
+  defp review_actor_labels(decisions, receipts, subject) do
+    decider_ids = for {_request_id, votes} <- decisions, vote <- votes, do: vote.decider_id
+    override_ids = for {_request_id, %{override: %{actor_id: id}}} <- receipts, do: id
+
+    Accounts.user_labels_for_ids(decider_ids ++ override_ids, subject.account.id)
+  end
+
+  defp review_receipt(%Request{} = request, run, subject, facts) do
+    status = request_facts(request, facts.now).status
+
+    %{
+      request_id: request.id,
+      status: status,
+      required_approvals: request.min_approvals,
+      approved_count: facts.count,
+      argument_count: run_argument_count(run, subject),
+      reason: masked_run_text(run, request.reason),
+      evidence: masked_run_text(run, request.evidence),
+      expected: masked_run_text(run, request.expected),
+      command: projected_command(run, subject, status),
+      decisions: projected_decisions(facts.decisions, facts.receipt, facts.labels),
+      decisions_omitted: max(length(facts.decisions) - @max_projected_decisions, 0),
+      override: projected_override(facts.receipt.override, facts.labels)
+    }
+  end
+
+  defp projected_decisions(decisions, receipt, labels) do
+    decisions
+    |> Enum.take(-@max_projected_decisions)
+    |> Enum.map(fn decision ->
+      %{
+        actor: Map.get(labels, decision.decider_id),
+        decision: decision.decision,
+        decided_at: decision.decided_at,
+        reason: Map.get(receipt.decisions, decision.decider_id)
+      }
+    end)
+  end
+
+  defp projected_override(nil, _labels), do: nil
+
+  defp projected_override(override, labels) do
+    %{
+      actor: Map.get(labels, override.actor_id),
+      reason: override.reason,
+      approved_count: override.approved_count,
+      required_approvals: override.min_approvals,
+      waived_approvals: override.waived_approvals,
+      decided_at: override.decided_at
+    }
+  end
+
+  # A receipt of what actually ran belongs to every review. A PREVIEW is a claim
+  # about what will run, so it belongs only to a review that can still act on it:
+  # re-rendering one for a decided request would describe the catalog as it
+  # stands today, not the dispatch that was refused — and would resolve the
+  # trusted contract once per row of a history page.
+  defp projected_command(%Runs.ActionRun{executed_command: executed} = run, subject, _status)
+       when is_binary(executed) and executed != "",
+       do: run_command(run, subject)
+
+  # The EFFECTIVE status, so a request whose deadline passed before the sweep
+  # rewrote it stops offering a preview too: nothing can release that run, and a
+  # line describing a dispatch that can no longer happen is not a receipt.
+  defp projected_command(run, subject, :pending), do: run_command(run, subject)
+  defp projected_command(_run, _subject, _status), do: nil
+
+  defp run_command(run, subject) do
+    case Runs.project_run_command(run, subject) do
+      {:ok, command} -> command
+      {:error, _reason} -> nil
+    end
+  end
+
+  # The run's arguments stay in Emisar; the count is what lets a remote card say
+  # how much detail its one command line is standing in for.
+  defp run_argument_count(run, subject) do
+    case Runs.project_action_args(run, subject) do
+      {:ok, args} -> map_size(args)
+      _unreadable -> nil
+    end
+  end
+
+  defp masked_run_text(_run, nil), do: nil
+  defp masked_run_text(_run, ""), do: nil
+
+  defp masked_run_text(run, text) do
+    case Runs.mask_run_text(run, text) do
+      {:ok, masked} -> masked
+      :error -> nil
     end
   end
 

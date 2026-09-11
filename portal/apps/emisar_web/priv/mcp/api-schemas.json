@@ -345,6 +345,7 @@
         "structured_output": {"$ref": "#/$defs/structured_output"},
         "structured_output_omitted": {"const": true, "description": "A structured result exists but was omitted intact to keep this response within its output budget."},
         "approval": {"$ref": "#/$defs/approval"},
+        "review": {"$ref": "#/$defs/review"},
         "wait_until": {"$ref": "#/$defs/timestamp"},
         "next": {"$ref": "#/$defs/next_tail"},
         "run_url": {"type": "string", "format": "uri", "maxLength": 2048}
@@ -688,6 +689,115 @@
         "expires_at": {"$ref": "#/$defs/timestamp"}
       }
     },
+    "review": {
+      "type": "object",
+      "description": "The receipt of the human review this run stood through: what an approver was shown, and what each of them decided. Present only for a run policy gated for approval — absence means it was never gated, never that nobody voted.",
+      "required": ["request_id", "status", "required_approvals", "approved_count", "decisions"],
+      "additionalProperties": false,
+      "properties": {
+        "request_id": {"type": "string", "minLength": 1, "maxLength": 80},
+        "status": {
+          "enum": ["pending", "approved", "denied", "expired", "cancelled"],
+          "description": "The review's own outcome, distinct from the run status. A pending request past its deadline reads `expired`."
+        },
+        "required_approvals": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Distinct approvals this request was created requiring. A later policy edit cannot move it."
+        },
+        "approved_count": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Distinct approvers so far. A repeated vote by one approver never raises it, and an override never adds to it."
+        },
+        "argument_count": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Top-level arguments the run was dispatched with. Their values stay in Emisar; the count says how much detail one command line stands in for."
+        },
+        "reason": {"$ref": "#/$defs/reason"},
+        "evidence": {"$ref": "#/$defs/evidence"},
+        "expected": {"$ref": "#/$defs/expected"},
+        "command": {
+          "type": "object",
+          "description": "The command line this review decided against. `executed` is the runner's own recorded receipt; `preview` is rendered from the hash-proven published pack while the review is still pending. A decided review reports only what actually ran, and a command Emisar cannot prove is absent — never a reconstruction.",
+          "required": ["kind", "text", "truncated"],
+          "additionalProperties": false,
+          "properties": {
+            "kind": {"enum": ["preview", "executed"]},
+            "text": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 2000,
+              "description": "Secret-masked, shell-quoted command line."
+            },
+            "truncated": {
+              "type": "boolean",
+              "description": "True when the runner's remote copy or this bounded receipt omitted bytes."
+            }
+          }
+        },
+        "decisions": {
+          "type": "array",
+          "description": "The most recent recorded votes, oldest first among themselves; the decision itself is always the last one. An override is not a vote and never appears here.",
+          "maxItems": 20,
+          "items": {
+            "type": "object",
+            "required": ["decision", "decided_at"],
+            "additionalProperties": false,
+            "properties": {
+              "actor": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 255,
+                "description": "The name this account knows the reviewer by. Absent for someone it no longer knows; their vote still stands."
+              },
+              "decision": {"enum": ["approve", "deny"]},
+              "decided_at": {"$ref": "#/$defs/timestamp"},
+              "reason": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 2000,
+                "description": "That reviewer's own note for this decision, when they left one."
+              }
+            }
+          }
+        },
+        "decisions_omitted": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Older votes the returned history left behind; the complete trail stays on the approval page."
+        },
+        "override": {
+          "type": "object",
+          "description": "An owner or admin released the run without its remaining reviews. Reported only from its own audit receipt, never inferred from a short tally, and never a substitute for a missing vote.",
+          "required": ["reason", "approved_count", "required_approvals", "waived_approvals", "decided_at"],
+          "additionalProperties": false,
+          "properties": {
+            "actor": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 255,
+              "description": "The name this account knows the overriding owner or admin by."
+            },
+            "reason": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 2000,
+              "description": "The mandatory explanation an override cannot be recorded without."
+            },
+            "approved_count": {"type": "integer", "minimum": 0},
+            "required_approvals": {"type": "integer", "minimum": 1},
+            "waived_approvals": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Reviews the override released the run without."
+            },
+            "decided_at": {"$ref": "#/$defs/timestamp"}
+          }
+        }
+      }
+    },
     "run_status": {
       "type": "string",
       "enum": [
@@ -735,6 +845,7 @@
         "truncated_stdout": {"type": "boolean"},
         "truncated_stderr": {"type": "boolean"},
         "approval": {"$ref": "#/$defs/approval"},
+        "review": {"$ref": "#/$defs/review"},
         "wait_until": {"$ref": "#/$defs/timestamp"},
         "next": {"$ref": "#/$defs/next_wait"},
         "run_url": {"type": "string", "format": "uri", "maxLength": 2048}

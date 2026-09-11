@@ -25,6 +25,8 @@ defmodule Emisar.Runs do
   require Logger
 
   @sent_dispatch_deadline_secs 600
+  # One bounded receipt of a command line; the console page renders it in full.
+  @max_projected_command_characters 2_000
   # DispatchTimeout loads both sweeps into memory every 60 seconds, fleet-wide
   # and unbounded. A wide runner outage parks tens of thousands of runs, the
   # tick then takes longer than its own interval, and dispatch timeouts stop
@@ -495,15 +497,7 @@ defmodule Emisar.Runs do
       when is_binary(run_id) do
     with {:ok, run} <- fetch_run_by_id(run_id, subject),
          :ok <- ensure_advertisement_matches_run(advertised_action, run),
-         {:ok, args} <- decode_action_args(run.args_raw),
-         {:ok, action} <-
-           Catalog.PublishedRegistry.resolve_action(
-             advertised_action.pack_id,
-             advertised_action.action_id,
-             run.expected_pack_hash,
-             advertised_action.pack_hash
-           ),
-         {:ok, line} <- Catalog.CommandPreview.render(action, args, run.sensitive_arg_names) do
+         {:ok, line} <- render_trusted_command(run, advertised_action) do
       {:ok, line}
     else
       # The catalog and the renderer both fail closed with a bare `:error`;
@@ -512,6 +506,93 @@ defmodule Emisar.Runs do
       {:error, reason} -> {:error, reason}
     end
   end
+
+  @doc """
+  Internal — the command line one already-authorized run stands behind, for a
+  read-only receipt of what ran or what an approver is deciding against:
+  `{:ok, %{kind: :executed | :preview, text: line, truncated: boolean}}`.
+
+  A run that executed reports the runner's OWN recorded `executed_command`,
+  masked by the runner and flagged when the remote copy was bounded — a receipt,
+  never a reconstruction. A run that has not executed reports the same trusted
+  preview the approval page renders, resolved from the run's snapshotted action
+  and hash-proven published pack rather than any runner advertisement. The line
+  is bounded here (the flag also carries that cut), because this receipt travels
+  in a size-budgeted response; the console's own `project_action_command/3` is
+  unbounded.
+
+  Fails closed with `{:error, :no_command_preview}` when neither exists — pack
+  drift, an unknown action, or an unresolvable argument reference — so a caller
+  renders no command rather than a guess. Requires `view_runs` and the run's
+  own account.
+  """
+  def project_run_command(%ActionRun{} = run, %Subject{} = subject) do
+    with :ok <-
+           Auth.Authorizer.ensure_has_permissions(subject, Authorizer.view_runs_permission()),
+         :ok <- Subject.ensure_in_account(subject, run.account_id) do
+      run_command(run)
+    end
+  end
+
+  defp run_command(%ActionRun{executed_command: executed} = run)
+       when is_binary(executed) and executed != "" do
+    {text, cut?} = bounded_command(executed)
+    {:ok, %{kind: :executed, text: text, truncated: run.executed_command_truncated or cut?}}
+  end
+
+  defp run_command(%ActionRun{} = run) do
+    with {:ok, action} <- fetch_snapshotted_action(run),
+         {:ok, line} <- render_trusted_command(run, action) do
+      {text, cut?} = bounded_command(line)
+      {:ok, %{kind: :preview, text: text, truncated: cut?}}
+    else
+      _unprovable -> {:error, :no_command_preview}
+    end
+  end
+
+  defp bounded_command(line) do
+    case String.split_at(line, @max_projected_command_characters) do
+      {kept, ""} -> {kept, false}
+      {kept, _rest} -> {kept, true}
+    end
+  end
+
+  defp render_trusted_command(%ActionRun{} = run, %Catalog.RunnerAction{} = advertised_action) do
+    with {:ok, args} <- decode_action_args(run.args_raw),
+         {:ok, action} <-
+           Catalog.PublishedRegistry.resolve_action(
+             advertised_action.pack_id,
+             advertised_action.action_id,
+             run.expected_pack_hash,
+             advertised_action.pack_hash
+           ) do
+      Catalog.CommandPreview.render(action, args, run.sensitive_arg_names)
+    end
+  end
+
+  @doc """
+  Internal — masks the run's own sensitive argument values out of free text it
+  wrote (its dispatch reason, evidence, expected outcome) before that text
+  leaves the console for a bounded receipt.
+
+  `:error` when the run declares sensitive arguments whose stored bytes no
+  longer decode: the secrets are then unknown, so the text is dropped rather
+  than forwarded unmasked. A run declaring none has nothing to mask.
+  """
+  def mask_run_text(%ActionRun{sensitive_arg_names: []}, text) when is_binary(text),
+    do: {:ok, text}
+
+  def mask_run_text(%ActionRun{} = run, text) when is_binary(text) do
+    case decode_action_args(run.args_raw) do
+      {:ok, args} ->
+        {:ok, Catalog.CommandPreview.mask_secrets(text, args, run.sensitive_arg_names)}
+
+      {:error, _reason} ->
+        :error
+    end
+  end
+
+  def mask_run_text(%ActionRun{}, _text), do: :error
 
   defp ensure_advertisement_matches_run(%Catalog.RunnerAction{} = action, %ActionRun{} = run) do
     if action.account_id == run.account_id and action.runner_id == run.runner_id and

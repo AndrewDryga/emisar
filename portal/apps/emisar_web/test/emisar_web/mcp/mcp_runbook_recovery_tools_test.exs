@@ -2882,6 +2882,7 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
     approval_run =
       create_mcp_history_run!(account, runner, key, 4, %{
         status: :pending_approval,
+        requires_approval: true,
         policy_decision: "require_approval",
         policy_reason: "Default for high-risk actions"
       })
@@ -2904,11 +2905,219 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
 
     assert approval_summary["status"] == "cancelled"
 
+    # A run a human reviewed carries that review's own receipt: the approver's
+    # note is what a remote card names the decision by. Everything the POLICY
+    # said about the run, and every other run's dispatch reason, stays out.
+    assert %{"status" => "denied", "decisions" => [decision]} = approval_summary["review"]
+    assert decision["reason"] == "not during the change freeze"
+
     encoded = Jason.encode!(summaries)
     refute encoded =~ secret
     refute encoded =~ "block-critical"
     refute encoded =~ "critical-risk actions"
-    refute encoded =~ "change freeze"
+
+    for summary <- [default_summary, explicit_summary, generic_summary] do
+      refute Map.has_key?(summary, "review")
+    end
+  end
+
+  test "a gated run's summary carries the receipt its approvers decided against", %{
+    conn: conn,
+    account: account,
+    subject: subject,
+    user: user,
+    key: key,
+    membership: membership
+  } do
+    runner = setup_runner!(account, subject, "review-node")
+    {_action, pack_ref} = Fixtures.Catalog.create_published_action(runner: runner)
+    pack = Emisar.Catalog.PublishedRegistry.get("linux-core")
+    reason = "Check whether /srv filled before the reload storm."
+
+    run =
+      create_mcp_history_run!(account, runner, key, 1, %{
+        action_id: "linux.disk_usage",
+        pack_ref: pack_ref,
+        expected_pack_hash: pack.content_hash,
+        status: :pending_approval,
+        requires_approval: true,
+        initiating_membership_id: membership.id,
+        args_raw: ~s({"paths":["/srv"]}),
+        reason: reason,
+        evidence: "The alert at 20:50 UTC named /srv.",
+        expected: "A usage line for /srv."
+      })
+
+    # The dispatch reason IS the request's reason on the real path
+    # (`Runs.create_gated_run` passes `attrs[:reason]` straight through).
+    {:ok, request} = Approvals.create_request(run, user.id, reason, min_approvals: 2)
+    first = named_reviewer(account, "Jane Doe")
+
+    assert {:ok, {%{status: :pending}, :pending}} =
+             Approvals.approve_request(request, first, "Read-only; no configuration changes.")
+
+    held = call(conn, "wait_for_run", %{"run_id" => run.id, "timeout" => "0"})["run"]
+    review = held["review"]
+
+    assert review["request_id"] == request.id
+    assert review["status"] == "pending"
+    assert review["required_approvals"] == 2
+    assert review["approved_count"] == 1
+    assert review["argument_count"] == 1
+    assert review["reason"] == reason
+    assert review["evidence"] == "The alert at 20:50 UTC named /srv."
+    assert review["expected"] == "A usage line for /srv."
+    refute Map.has_key?(review, "override")
+
+    # The command is the trusted preview rendered from the hash-proven published
+    # pack — what the approver decides against, not a reconstruction.
+    assert review["command"] == %{
+             "kind" => "preview",
+             "text" => "df -P -h /srv",
+             "truncated" => false
+           }
+
+    assert [
+             %{
+               "actor" => "Jane Doe",
+               "decision" => "approve",
+               "reason" => "Read-only; no configuration changes."
+             } = vote
+           ] = review["decisions"]
+
+    assert {:ok, _decided_at, 0} = DateTime.from_iso8601(vote["decided_at"])
+
+    # An override releases the run without a second vote: the real tally and the
+    # snapshotted requirement survive, and no reviewer is invented.
+    admin = named_reviewer(account, "Alex Admin")
+
+    assert {:ok, {%{status: :approved}, _released}} =
+             Approvals.override_request(request, "The second reviewer is on a plane.", admin)
+
+    released = call(conn, "wait_for_run", %{"run_id" => run.id, "timeout" => "0"})["run"]
+
+    assert released["review"]["status"] == "approved"
+    assert released["review"]["approved_count"] == 1
+    assert Enum.map(released["review"]["decisions"], & &1["actor"]) == ["Jane Doe"]
+
+    # The review is decided and the run has not reported a command of its own,
+    # so nothing stands in for one: a preview re-rendered now would describe
+    # today's catalog rather than the dispatch these reviewers released.
+    refute Map.has_key?(released["review"], "command")
+
+    assert released["review"]["override"] == %{
+             "actor" => "Alex Admin",
+             "reason" => "The second reviewer is on a plane.",
+             "approved_count" => 1,
+             "required_approvals" => 2,
+             "waived_approvals" => 1,
+             "decided_at" => released["review"]["override"]["decided_at"]
+           }
+  end
+
+  test "the published review example is what wait_for_run returns", %{
+    conn: conn,
+    account: account,
+    subject: subject,
+    user: user,
+    key: key,
+    membership: membership
+  } do
+    # Responder renders its Slack review card from these exact bytes, so the
+    # committed example is compared against the live projection rather than
+    # maintained beside it.
+    runner = setup_runner!(account, subject, "example-node")
+    {_action, pack_ref} = Fixtures.Catalog.create_published_action(runner: runner)
+    pack = Emisar.Catalog.PublishedRegistry.get("linux-core")
+
+    run =
+      create_mcp_history_run!(account, runner, key, 1, %{
+        action_id: "linux.disk_usage",
+        pack_ref: pack_ref,
+        expected_pack_hash: pack.content_hash,
+        status: :pending_approval,
+        requires_approval: true,
+        initiating_membership_id: membership.id,
+        args_raw: ~s({"paths":["/srv"]}),
+        reason: "Check whether /srv filled before the reload storm.",
+        evidence: "The alert at 20:50 UTC named /srv on this host.",
+        expected: "A usage line for /srv, so the investigation can close."
+      })
+
+    {:ok, request} =
+      Approvals.create_request(run, user.id, run.reason, min_approvals: 2)
+
+    reviewer = named_reviewer(account, "Jane Doe")
+
+    assert {:ok, {%{status: :pending}, :pending}} =
+             Approvals.approve_request(
+               request,
+               reviewer,
+               "Read-only query; no configuration changes."
+             )
+
+    admin = named_reviewer(account, "Alex Admin")
+
+    assert {:ok, {%{status: :approved}, _released}} =
+             Approvals.override_request(
+               request,
+               "A second reviewer is unavailable; we need this read-only check during the incident.",
+               admin
+             )
+
+    # The override released the run, so the runner ran it and recorded the
+    # command it executed — the receipt that replaces the pending preview.
+    Repo.get!(Emisar.Runs.ActionRun, run.id)
+    |> Ecto.Changeset.change(executed_command: "df -P -h /srv")
+    |> Repo.update!()
+
+    live = call(conn, "wait_for_run", %{"run_id" => run.id, "timeout" => "0"})
+
+    # The committed bytes are held to the published contract in their own right,
+    # then to the live projection field for field — so neither an edit to the
+    # example nor a drift in the projection can pass as the other.
+    assert_valid_tool_result("wait_for_run", published_review_example())
+    assert stable_example(live) == stable_example(published_review_example())
+  end
+
+  @review_example_path Path.expand("../../fixtures/mcp/wait_for_run_review_v1.json", __DIR__)
+  @external_resource @review_example_path
+
+  defp published_review_example,
+    do: @review_example_path |> File.read!() |> Jason.decode!()
+
+  # Ids, hosts and clock readings differ per run; every other byte is contract.
+  defp stable_example(%{} = document) do
+    Map.new(document, fn {key, value} ->
+      cond do
+        key in ~w(run_id operation_id request_id runner_ref run_url pack_ref cursor) ->
+          {key, "<#{key}>"}
+
+        key in ~w(created_at finished_at decided_at wait_until expires_at) ->
+          {key, "<#{key}>"}
+
+        true ->
+          {key, stable_example(value)}
+      end
+    end)
+  end
+
+  defp stable_example(values) when is_list(values), do: Enum.map(values, &stable_example/1)
+  defp stable_example(value), do: value
+
+  test "an ungated run carries no review receipt at all", %{
+    conn: conn,
+    account: account,
+    subject: subject,
+    key: key
+  } do
+    runner = setup_runner!(account, subject, "ungated-node")
+    run = create_mcp_history_run!(account, runner, key, 1, %{status: :success})
+
+    summary = call(conn, "wait_for_run", %{"run_id" => run.id, "timeout" => "0"})["run"]
+
+    # Absence means policy never gated it — never "nobody voted".
+    refute Map.has_key?(summary, "review")
   end
 
   test "wait_for_run rejects a deadline above the repeatable 60-second window", %{conn: conn} do
@@ -3007,6 +3216,19 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
   end
 
   defp authorize(conn, raw), do: put_req_header(conn, "authorization", "Bearer " <> raw)
+
+  defp named_reviewer(account, full_name) do
+    user = Fixtures.Users.create_user(full_name: full_name)
+
+    membership =
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        user_id: user.id,
+        role: "admin"
+      )
+
+    Fixtures.Subjects.membership_subject(membership)
+  end
 
   defp call(conn, name, arguments, operation_id \\ nil) do
     conn =

@@ -431,6 +431,29 @@ defmodule Emisar.ApprovalsTest do
   # A fresh operator (owner) in the account, distinct from any other.
   defp distinct_operator(account), do: distinct_member(account, :owner)
 
+  # One run's receipt out of the page projection the run summaries call.
+  defp project_review(run, subject) do
+    with {:ok, reviews} <- Approvals.project_reviews_for_visible_runs([run], subject) do
+      case Map.fetch(reviews, run.id) do
+        {:ok, review} -> {:ok, review}
+        :error -> {:error, :not_found}
+      end
+    end
+  end
+
+  defp named_reviewer(account, full_name) do
+    user = Fixtures.Users.create_user(full_name: full_name)
+
+    membership =
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        user_id: user.id,
+        role: "admin"
+      )
+
+    Fixtures.Subjects.membership_subject(membership)
+  end
+
   # Count of distinct approve votes recorded on a request.
   defp approved_count(request_id) do
     Repo.one(Decision.Query.approved_distinct_decider_count(request_id))
@@ -571,6 +594,46 @@ defmodule Emisar.ApprovalsTest do
       requester_id: requester,
       requester_subject: requester_subject
     }
+  end
+
+  # `gated_request/1` advertises the shared fixture pack, which no published
+  # catalog knows — so its runs can never render a command preview. This is the
+  # same request over a PUBLISHED action, for the receipt that shows one.
+  defp provable_gated_request(opts) do
+    account = Fixtures.Accounts.create_account()
+    runner = Fixtures.Runners.create_runner(account_id: account.id)
+    {_action, pack_ref} = Fixtures.Catalog.create_published_action(runner: runner)
+    pack = Catalog.PublishedRegistry.get("linux-core")
+    initiator = Fixtures.Users.create_user()
+
+    initiating_membership =
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        user_id: initiator.id,
+        role: "operator"
+      )
+
+    {:ok, run} =
+      Runs.create_run(%{
+        account_id: account.id,
+        runner_id: runner.id,
+        action_id: "linux.disk_usage",
+        source: "operator",
+        requested_by_id: initiator.id,
+        initiating_membership_id: initiating_membership.id,
+        args: %{"paths" => ["/srv"]},
+        pack_ref: pack_ref,
+        expected_pack_hash: pack.content_hash,
+        requires_approval: true,
+        status: :pending_approval
+      })
+
+    {:ok, request} =
+      Approvals.create_request(run, initiator.id, "needs review",
+        min_approvals: Keyword.get(opts, :min_approvals, 1)
+      )
+
+    %{account: account, runner: runner, run: run, request: request}
   end
 
   defp distinct_member(account, role) do
@@ -1348,6 +1411,196 @@ defmodule Emisar.ApprovalsTest do
       }
 
       assert Approvals.fetch_request_for_visible_runbook_execution(execution, no_permissions) ==
+               {:error, :unauthorized}
+    end
+  end
+
+  describe "project_reviews_for_visible_runs/2" do
+    # Responder repaints one Slack message from this receipt through an MCP key,
+    # which holds no approvals permission. The gate mirrors
+    # fetch_request_for_visible_run/2: run-view + account membership, then only
+    # this run's own request, so nothing an approver can see is invented and
+    # nothing another account decided leaks.
+    test "an API client reads its gated run's votes, tally, labels and vote reasons" do
+      %{account: account, request: request, run: run} = gated_request(min_approvals: 2)
+      owner = operator_subject(account)
+      {:ok, _raw, key} = Emisar.ApiKeys.create_key(%{name: "slack bridge"}, owner)
+      subject = Emisar.Auth.Subject.for_api_key(key, account)
+
+      first = named_reviewer(account, "Jane Doe")
+      second = named_reviewer(account, "Sam Reviewer")
+
+      assert {:ok, {%Request{status: :pending}, :pending}} =
+               Approvals.approve_request(
+                 request,
+                 first,
+                 "Read-only query; no configuration changes."
+               )
+
+      assert {:ok, partial} = project_review(run, subject)
+
+      assert partial.request_id == request.id
+      assert partial.status == :pending
+      assert partial.required_approvals == 2
+      assert partial.approved_count == 1
+      assert partial.override == nil
+
+      assert [%{actor: "Jane Doe", decision: :approve, decided_at: %DateTime{}} = vote] =
+               partial.decisions
+
+      assert vote.reason == "Read-only query; no configuration changes."
+
+      assert {:ok, _} =
+               Approvals.deny_request(
+                 request,
+                 second,
+                 "Please narrow the query to the affected service."
+               )
+
+      assert {:ok, denied} = project_review(run, subject)
+      assert denied.status == :denied
+      # A denial is terminal and keeps the earlier grant; the tally never grows.
+      assert denied.approved_count == 1
+
+      assert [
+               %{actor: "Jane Doe", decision: :approve},
+               %{actor: "Sam Reviewer", decision: :deny} = denial
+             ] =
+               denied.decisions
+
+      assert denial.reason == "Please narrow the query to the affected service."
+
+      # A reviewer this account no longer knows keeps their vote but not a name:
+      # the label is the membership's fact, never a guess from a global profile.
+      account.id
+      |> Fixtures.Memberships.fetch_membership(first.actor.id)
+      |> Fixtures.Memberships.mark_membership_as_deleted()
+
+      assert {:ok, %{decisions: [%{actor: nil, decision: :approve} | _]}} =
+               project_review(run, subject)
+    end
+
+    test "an override is reported only from its audit receipt and mints no vote" do
+      %{account: account, request: request, run: run} = gated_request(min_approvals: 3)
+      subject = operator_subject(account)
+      reviewer = named_reviewer(account, "Jane Doe")
+      admin = named_reviewer(account, "Alex Admin")
+
+      assert {:ok, _} = Approvals.approve_request(request, reviewer, nil)
+
+      assert {:ok, review} = project_review(run, subject)
+      assert review.override == nil
+      assert Enum.map(review.decisions, & &1.reason) == [nil]
+
+      assert {:ok, {%Request{status: :approved}, %ActionRun{}}} =
+               Approvals.override_request(
+                 request,
+                 "A second reviewer is unavailable; we need this read-only check during the incident.",
+                 admin
+               )
+
+      assert {:ok, overridden} = project_review(run, subject)
+      assert overridden.status == :approved
+      assert overridden.required_approvals == 3
+      assert overridden.approved_count == 1
+      assert [%{actor: "Jane Doe", decision: :approve}] = overridden.decisions
+
+      assert %{
+               actor: "Alex Admin",
+               approved_count: 1,
+               required_approvals: 3,
+               waived_approvals: 2,
+               decided_at: %DateTime{}
+             } = overridden.override
+
+      assert overridden.override.reason ==
+               "A second reviewer is unavailable; we need this read-only check during the incident."
+    end
+
+    test "a pending request past its deadline reads expired and keeps the earlier vote" do
+      %{account: account, request: request, run: run} = provable_gated_request(min_approvals: 2)
+      subject = operator_subject(account)
+      reviewer = named_reviewer(account, "Jane Doe")
+
+      assert {:ok, _} = Approvals.approve_request(request, reviewer, nil)
+
+      # While it can still be released, the review carries the trusted line it
+      # is being decided against.
+      assert {:ok, %{status: :pending, command: %{kind: :preview}}} = project_review(run, subject)
+
+      request
+      |> Ecto.Changeset.change(expires_at: DateTime.add(DateTime.utc_now(), -60, :second))
+      |> Repo.update!()
+
+      assert {:ok, review} = project_review(run, subject)
+      assert review.status == :expired
+      assert review.approved_count == 1
+      assert [%{actor: "Jane Doe", decision: :approve}] = review.decisions
+
+      # The deadline passed, so nothing can release this run any more: a line
+      # describing a dispatch that can no longer happen is not a receipt, and
+      # the effective status — not the row the sweep has yet to rewrite — is
+      # what stops it.
+      assert review.command == nil
+    end
+
+    # The receipt is bounded because it rides a size-budgeted response, and the
+    # bound keeps the NEWEST votes: a deny finalizes on the spot and the approve
+    # that meets quorum is the last one, so the vote that decided the review is
+    # the one truncation would otherwise drop.
+    test "a history past the bound keeps the deciding vote and counts what it left" do
+      %{account: account, request: request, run: run} = gated_request(min_approvals: 25)
+      subject = operator_subject(account)
+
+      for index <- 1..21 do
+        reviewer = named_reviewer(account, "Reviewer #{index}")
+
+        assert {:ok, {%Request{status: :pending}, :pending}} =
+                 Approvals.approve_request(request, reviewer, "Vote #{index}.")
+      end
+
+      decider = named_reviewer(account, "Last Word")
+
+      assert {:ok, {%Request{status: :denied}, %ActionRun{}}} =
+               Approvals.deny_request(request, decider, "Not during the freeze.")
+
+      assert {:ok, review} = project_review(run, subject)
+
+      assert review.status == :denied
+      assert review.approved_count == 21
+      assert length(review.decisions) == 20
+      assert review.decisions_omitted == 2
+
+      assert List.last(review.decisions) == %{
+               actor: "Last Word",
+               decision: :deny,
+               decided_at: List.last(review.decisions).decided_at,
+               reason: "Not during the freeze."
+             }
+
+      # Oldest first WITHIN the page: the two votes it left behind are the two
+      # oldest, so the page opens on the third reviewer.
+      assert [%{actor: "Reviewer 3"} | _rest] = review.decisions
+    end
+
+    test "is not_found without a request or across accounts and unauthorized without view_runs" do
+      {account, ungated} = run_fixture()
+      subject = operator_subject(account)
+
+      assert project_review(ungated, subject) == {:error, :not_found}
+
+      %{account: other_account, run: foreign_run} = gated_request(min_approvals: 2)
+
+      assert project_review(foreign_run, subject) ==
+               {:error, :not_found}
+
+      no_permissions = %Emisar.Auth.Subject{
+        account: other_account,
+        role: :viewer,
+        permissions: MapSet.new()
+      }
+
+      assert project_review(foreign_run, no_permissions) ==
                {:error, :unauthorized}
     end
   end

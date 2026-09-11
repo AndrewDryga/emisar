@@ -277,6 +277,21 @@ defmodule Emisar.Catalog.CommandPreview do
       else: decimal
   end
 
+  @doc """
+  Masks every string form of `args`' sensitive values out of free text, the way
+  a rendered command line masks them.
+
+  Free text a caller wrote — a dispatch reason, the evidence behind it — is not
+  a template, so nothing resolves an argument into it; but the caller may have
+  typed a secret value there by hand, and this text travels to surfaces the
+  argument itself never reaches. `names` is the run's own `sensitive_arg_names`
+  snapshot, so a value the action stopped declaring sensitive still masks. Pure.
+  """
+  @spec mask_secrets(String.t(), map(), [String.t()]) :: String.t()
+  def mask_secrets(text, args, names)
+      when is_binary(text) and is_map(args) and is_list(names),
+      do: mask(text, sensitive_values(args, [], names))
+
   # Every string form of every sensitive value, longest first. `mask/2` already
   # matches leftmost-longest, so the order is not what keeps an overlapping
   # secret (`abc` inside `abc123`) whole — it keeps this list shaped like the

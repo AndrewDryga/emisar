@@ -1355,6 +1355,182 @@ defmodule Emisar.RunsTest do
     end
   end
 
+  describe "project_run_command/2" do
+    # The same published `linux.disk_usage` contract as project_action_command/3
+    # above — here the run resolves its own snapshotted action, because a remote
+    # receipt has no advertisement to hand in.
+    setup do
+      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
+      pack = Catalog.PublishedRegistry.get("linux-core")
+      {_action, pack_ref} = Fixtures.Catalog.create_published_action(runner: runner)
+
+      %{account: account, subject: subject, runner: runner, pack: pack, pack_ref: pack_ref}
+    end
+
+    test "a run that executed reports the runner's receipt, not a fresh rendering", %{
+      account: account,
+      subject: subject,
+      runner: runner,
+      pack: pack,
+      pack_ref: pack_ref
+    } do
+      run =
+        Fixtures.Runs.create_run(
+          account_id: account.id,
+          runner_id: runner.id,
+          action_id: "linux.disk_usage",
+          pack_ref: pack_ref,
+          status: :success,
+          expected_pack_hash: pack.content_hash
+        )
+
+      executed =
+        run
+        |> Ecto.Changeset.change(
+          executed_command: "df -P -h /srv",
+          executed_command_truncated: true
+        )
+        |> Repo.update!()
+
+      assert Runs.project_run_command(executed, subject) ==
+               {:ok, %{kind: :executed, text: "df -P -h /srv", truncated: true}}
+    end
+
+    test "a parked run renders the trusted preview with its own secrets masked", %{
+      account: account,
+      subject: subject,
+      runner: runner,
+      pack: pack,
+      pack_ref: pack_ref
+    } do
+      run =
+        Fixtures.Runs.create_run(
+          account_id: account.id,
+          runner_id: runner.id,
+          action_id: "linux.disk_usage",
+          pack_ref: pack_ref,
+          status: :pending_approval,
+          args_raw: ~s({"paths":["/srv/alpha"]}),
+          sensitive_arg_names: ["paths"],
+          expected_pack_hash: pack.content_hash
+        )
+
+      assert Runs.project_run_command(run, subject) ==
+               {:ok, %{kind: :preview, text: "df -P -h '[REDACTED]'", truncated: false}}
+    end
+
+    test "bounds a long receipt and says so rather than shipping the whole line", %{
+      account: account,
+      subject: subject,
+      runner: runner,
+      pack: pack,
+      pack_ref: pack_ref
+    } do
+      line = "df -P -h " <> String.duplicate("a", 4_000)
+
+      run =
+        Fixtures.Runs.create_run(
+          account_id: account.id,
+          runner_id: runner.id,
+          action_id: "linux.disk_usage",
+          pack_ref: pack_ref,
+          status: :success,
+          expected_pack_hash: pack.content_hash
+        )
+
+      executed = run |> Ecto.Changeset.change(executed_command: line) |> Repo.update!()
+
+      assert {:ok, %{kind: :executed, text: text, truncated: true}} =
+               Runs.project_run_command(executed, subject)
+
+      assert String.length(text) == 2_000
+      assert String.starts_with?(text, "df -P -h ")
+    end
+
+    test "fails closed with no command when the hash proof drifted", %{
+      account: account,
+      subject: subject,
+      runner: runner,
+      pack_ref: pack_ref
+    } do
+      run =
+        Fixtures.Runs.create_run(
+          account_id: account.id,
+          runner_id: runner.id,
+          action_id: "linux.disk_usage",
+          pack_ref: pack_ref,
+          status: :pending_approval,
+          expected_pack_hash: "sha256:" <> String.duplicate("0", 64)
+        )
+
+      assert Runs.project_run_command(run, subject) == {:error, :no_command_preview}
+    end
+
+    test "refuses a same-account subject without view_runs and another account's run", %{
+      account: account,
+      runner: runner,
+      pack: pack,
+      pack_ref: pack_ref
+    } do
+      run =
+        Fixtures.Runs.create_run(
+          account_id: account.id,
+          runner_id: runner.id,
+          action_id: "linux.disk_usage",
+          pack_ref: pack_ref,
+          status: :pending_approval,
+          expected_pack_hash: pack.content_hash
+        )
+
+      assert Runs.project_run_command(run, no_permissions_subject(account)) ==
+               {:error, :unauthorized}
+
+      {_user, _other_account, other_subject} = Fixtures.Subjects.owner_subject()
+      assert Runs.project_run_command(run, other_subject) == {:error, :not_found}
+    end
+  end
+
+  describe "mask_run_text/2" do
+    test "masks a secret the caller typed into its own free text" do
+      account = Fixtures.Accounts.create_account()
+
+      run =
+        Fixtures.Runs.create_run(
+          account_id: account.id,
+          args_raw: ~s({"token":"hunter2"}),
+          sensitive_arg_names: ["token"]
+        )
+
+      assert Runs.mask_run_text(run, "Rotating after hunter2 leaked in the ticket") ==
+               {:ok, "Rotating after [REDACTED] leaked in the ticket"}
+    end
+
+    test "drops the text when the declared secrets can no longer be read" do
+      account = Fixtures.Accounts.create_account()
+
+      run =
+        Fixtures.Runs.create_run(
+          account_id: account.id,
+          args_raw: ~s({"token":"hunter2"}),
+          sensitive_arg_names: ["token"]
+        )
+
+      malformed = Fixtures.Runs.put_malformed_args_raw(run, ~s({"token":"hunter2",}))
+
+      # Unknown secrets are not the same as no secrets: forwarding the text
+      # unmasked would publish exactly the value the snapshot exists to hide.
+      assert Runs.mask_run_text(malformed, "Rotating after hunter2 leaked") == :error
+    end
+
+    test "a run declaring no secrets carries its text through untouched" do
+      account = Fixtures.Accounts.create_account()
+      run = Fixtures.Runs.create_run(account_id: account.id)
+
+      assert Runs.mask_run_text(run, "Check host health") == {:ok, "Check host health"}
+    end
+  end
+
   describe "fetch_mcp_run_by_id/2" do
     test "returns the exact fixed-contract run across scope changes, but not across accounts" do
       %{

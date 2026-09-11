@@ -450,6 +450,73 @@ defmodule Emisar.Audit do
   defp empty_approval_refs, do: %{final: nil, override: nil, decisions: %{}}
 
   @doc """
+  Internal — the retained decision NOTES for approval requests, keyed by request
+  id: `%{request_id => %{decisions: %{actor_id => reason}, override: %{...} |
+  nil}}`.
+
+  An `Emisar.Approvals.Decision` row records the vote, never the operator's
+  note, so a surface that names a reviewer's own words reads them from that
+  vote's audit event — and an override is reported only from its explicit
+  `approval.overridden` receipt, with the tally and requirement it waived.
+  Takes an already-authorized `account_id` rather than a `%Subject{}` (§1.4)
+  and scopes every row to it, so a request id from another account resolves to
+  nothing.
+  """
+  def approval_decision_receipts(request_ids, account_id)
+      when is_list(request_ids) and is_binary(account_id) do
+    ids = request_ids |> Enum.filter(&Repo.valid_uuid?/1) |> Enum.uniq() |> Enum.take(100)
+
+    case ids do
+      [] ->
+        %{}
+
+      ids ->
+        Event.Query.all()
+        |> Event.Query.by_account_id(account_id)
+        |> Event.Query.by_target_kind("approval_request")
+        |> Event.Query.by_target_ids(ids)
+        |> Event.Query.by_event_types(~w[approval.decision_recorded approval.overridden])
+        |> Event.Query.ordered_by_recent()
+        |> Event.Query.limit_to(2_000)
+        |> Repo.all()
+        |> Enum.reduce(%{}, &put_decision_receipt/2)
+    end
+  end
+
+  defp put_decision_receipt(%Event{event_type: "approval.decision_recorded"} = event, receipts) do
+    update_in(
+      receipts,
+      [Access.key(event.target_id, empty_decision_receipts())],
+      &update_in(&1, [:decisions], fn decisions ->
+        Map.put_new(decisions, event.actor_id, event.payload["reason"])
+      end)
+    )
+  end
+
+  defp put_decision_receipt(%Event{event_type: "approval.overridden"} = event, receipts) do
+    update_in(
+      receipts,
+      [Access.key(event.target_id, empty_decision_receipts())],
+      fn request_receipts ->
+        %{request_receipts | override: request_receipts.override || override_receipt(event)}
+      end
+    )
+  end
+
+  defp override_receipt(%Event{} = event) do
+    %{
+      actor_id: event.actor_id,
+      reason: event.payload["reason"],
+      approved_count: event.payload["approved_count"],
+      min_approvals: event.payload["min_approvals"],
+      waived_approvals: event.payload["remaining_approvals_waived"],
+      decided_at: event.occurred_at
+    }
+  end
+
+  defp empty_decision_receipts, do: %{decisions: %{}, override: nil}
+
+  @doc """
   Searchable actors from the caller's readable audit history, sorted by label
   and id. Returns `{:ok, [{id, label}], metadata}` with at most 50 page choices.
   `:search` is a literal case-insensitive substring (at most 512 bytes); `:page`

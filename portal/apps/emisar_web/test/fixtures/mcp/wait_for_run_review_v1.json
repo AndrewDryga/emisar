@@ -1,0 +1,53 @@
+{
+  "ok": true,
+  "run": {
+    "run_id": "019f61cf-59b4-71d9-a78c-4ece74d1e164",
+    "operation_id": "op_01J0D85Q1BKR5W6N7E2T4Y8P3C",
+    "action_id": "linux.disk_usage",
+    "pack_ref": "linux-core@0.5.0/sha256:f4f5f29abc2aa8ccef433224da60d01159ba1434d6749172ef3795583d794bcf",
+    "runner_ref": "nomad-hvn01~f5e3a96782c44bd31186fcaa14ba6efb",
+    "status": "sent",
+    "created_at": "2026-09-11T08:07:23.232041Z",
+    "review": {
+      "request_id": "01a08f81-cb81-7273-801b-ce6ad6321a77",
+      "status": "approved",
+      "required_approvals": 2,
+      "approved_count": 1,
+      "argument_count": 1,
+      "reason": "Check whether /srv filled before the reload storm.",
+      "evidence": "The alert at 20:50 UTC named /srv on this host.",
+      "expected": "A usage line for /srv, so the investigation can close.",
+      "command": {
+        "kind": "executed",
+        "text": "df -P -h /srv",
+        "truncated": false
+      },
+      "decisions": [
+        {
+          "actor": "Jane Doe",
+          "decision": "approve",
+          "decided_at": "2026-09-11T08:07:23.379141Z",
+          "reason": "Read-only query; no configuration changes."
+        }
+      ],
+      "override": {
+        "actor": "Alex Admin",
+        "reason": "A second reviewer is unavailable; we need this read-only check during the incident.",
+        "approved_count": 1,
+        "required_approvals": 2,
+        "waived_approvals": 1,
+        "decided_at": "2026-09-11T08:07:23.488276Z"
+      }
+    },
+    "wait_until": "2026-09-11T08:17:23.487131Z",
+    "next": {
+      "tool": "wait_for_run",
+      "arguments": {
+        "run_id": "019f61cf-59b4-71d9-a78c-4ece74d1e164",
+        "cursor": "<opaque>",
+        "timeout": "60s"
+      }
+    },
+    "run_url": "https://emisar.dev/app/example/runs/019f61cf-59b4-71d9-a78c-4ece74d1e164"
+  }
+}

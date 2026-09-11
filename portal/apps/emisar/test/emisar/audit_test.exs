@@ -1363,6 +1363,73 @@ defmodule Emisar.AuditTest do
     end
   end
 
+  describe "approval_decision_receipts/2" do
+    setup do
+      {_user, account, _subject} = Fixtures.Subjects.owner_subject()
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
+      run = Fixtures.Runs.create_run(account_id: account.id, runner_id: runner.id)
+      request = Fixtures.Approvals.create_request(account_id: account.id, run_id: run.id)
+
+      %{account: account, request: request}
+    end
+
+    test "returns each reviewer's own note and the override receipt", %{
+      account: account,
+      request: request
+    } do
+      reviewer = Fixtures.Users.create_user()
+      admin = Fixtures.Users.create_user()
+
+      {:ok, _vote} =
+        Audit.log(account.id, "approval.decision_recorded",
+          actor_kind: "user",
+          actor_id: reviewer.id,
+          target_kind: "approval_request",
+          target_id: request.id,
+          payload: %{"reason" => "Read-only query.", "decision" => "approve"}
+        )
+
+      {:ok, _override} =
+        Audit.log(account.id, "approval.overridden",
+          actor_kind: "user",
+          actor_id: admin.id,
+          target_kind: "approval_request",
+          target_id: request.id,
+          payload: %{
+            "reason" => "The second reviewer is unavailable.",
+            "approved_count" => 1,
+            "min_approvals" => 2,
+            "remaining_approvals_waived" => 1
+          }
+        )
+
+      receipts = Audit.approval_decision_receipts([request.id], account.id)
+
+      assert receipts[request.id].decisions == %{reviewer.id => "Read-only query."}
+
+      assert %{
+               actor_id: actor_id,
+               reason: "The second reviewer is unavailable.",
+               approved_count: 1,
+               min_approvals: 2,
+               waived_approvals: 1,
+               decided_at: %DateTime{}
+             } = receipts[request.id].override
+
+      assert actor_id == admin.id
+    end
+
+    test "reads nothing for another account's request or an invalid id", %{request: request} do
+      other_account = Fixtures.Accounts.create_account()
+
+      # The account is the scope, not the id: a caller holding a real request id
+      # from elsewhere still resolves to nothing.
+      assert Audit.approval_decision_receipts([request.id], other_account.id) == %{}
+      assert Audit.approval_decision_receipts(["not-a-uuid"], other_account.id) == %{}
+      assert Audit.approval_decision_receipts([], other_account.id) == %{}
+    end
+  end
+
   describe "list_actor_options/3 (the dynamic actor picker)" do
     setup do
       account = Fixtures.Accounts.create_account()

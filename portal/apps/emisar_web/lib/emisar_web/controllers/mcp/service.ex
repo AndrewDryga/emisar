@@ -84,12 +84,14 @@ defmodule EmisarWeb.MCP.Service do
     # per-summary fetch here was a 4-queries-per-row N+1 on the two
     # fastest-growing tables.
     events_by_run = run_events_by_id(runs, subject, summary_opts[:stream_cap])
+    reviews_by_run = run_reviews_by_id(runs, subject)
 
     Enum.map(runs, fn run ->
       fixed_run_summary(
         run,
         subject,
-        [events: Map.get(events_by_run, run.id, [])] ++ summary_opts
+        [events: Map.get(events_by_run, run.id, []), review: Map.get(reviews_by_run, run.id)] ++
+          summary_opts
       )
     end)
   end
@@ -110,6 +112,12 @@ defmodule EmisarWeb.MCP.Service do
         :error -> Map.get(run_events_by_id([run], subject, stream_cap), run.id, [])
       end
 
+    review =
+      case Keyword.fetch(opts, :review) do
+        {:ok, review} -> review
+        :error -> Map.get(run_reviews_by_id([run], subject), run.id)
+      end
+
     output_preview = run_output_preview(run, events, stream_cap)
     structured_output = structured_output_summary(run.structured_output, structured_output_cap)
 
@@ -117,7 +125,7 @@ defmodule EmisarWeb.MCP.Service do
       fixed_run_next(run, subject, structured_output, tail_scope, output_preview)
 
     run
-    |> base_run_fields(subject)
+    |> base_run_fields(subject, review)
     |> Map.put(:next, next)
     |> Map.merge(structured_output)
     |> Map.merge(stream_summary(run, output_preview, :stdout))
@@ -148,7 +156,8 @@ defmodule EmisarWeb.MCP.Service do
       segments: segments,
       structured_output: structured_output,
       read_more?: read_more?,
-      gap?: gap?
+      gap?: gap?,
+      review: Map.get(run_reviews_by_id([run], subject), run.id)
     }
 
     build = &tail_summary(context, &1)
@@ -187,7 +196,7 @@ defmodule EmisarWeb.MCP.Service do
     pruned? = not more? and Runs.terminal_status?(context.run.status) and remaining > 0
 
     context.run
-    |> base_run_fields(context.subject)
+    |> base_run_fields(context.subject, context.review)
     |> Map.put(:output, output)
     |> Map.put(:next, tail_next(context.run, more?, cursor))
     |> flag_output_gap(context.gap? or pruned?)
@@ -198,7 +207,7 @@ defmodule EmisarWeb.MCP.Service do
   defp flag_output_gap(summary, false), do: summary
   defp flag_output_gap(summary, true), do: Map.put(summary, :output_complete, false)
 
-  defp base_run_fields(run, subject) do
+  defp base_run_fields(run, subject, review) do
     facts = Runs.run_outcome_facts(run)
     {approval, approval_wait_until} = fixed_approval(run, subject, facts.approval_pending?)
 
@@ -218,9 +227,73 @@ defmodule EmisarWeb.MCP.Service do
       output_complete: if(facts.output_complete == false, do: false),
       local_audit_failed: if(facts.local_audit_failed?, do: true),
       approval: approval,
+      review: fixed_review(review),
       wait_until: approval_wait_until || facts.dispatch_deadline_at,
       run_url: "#{EmisarWeb.Endpoint.url()}/app/#{subject.account.slug}/runs/#{run.id}"
     }
+  end
+
+  # The receipt of the human review this run stood through: what the approver
+  # was shown, and what each of them decided. Absent for a run policy never
+  # gated. Approvals owns the authorization, the masking and the bounds; this
+  # only spells its atoms the way the wire contract publishes them.
+  defp fixed_review(nil), do: nil
+
+  defp fixed_review(review) do
+    %{
+      request_id: review.request_id,
+      status: to_string(review.status),
+      required_approvals: review.required_approvals,
+      approved_count: review.approved_count,
+      argument_count: review.argument_count,
+      reason: review.reason,
+      evidence: review.evidence,
+      expected: review.expected,
+      command: fixed_review_command(review.command),
+      decisions: Enum.map(review.decisions, &fixed_review_decision/1),
+      decisions_omitted: if(review.decisions_omitted > 0, do: review.decisions_omitted),
+      override: fixed_review_override(review.override)
+    }
+    |> drop_nil_values()
+  end
+
+  defp fixed_review_command(nil), do: nil
+
+  defp fixed_review_command(command),
+    do: %{kind: to_string(command.kind), text: command.text, truncated: command.truncated}
+
+  defp fixed_review_decision(decision) do
+    %{
+      actor: decision.actor,
+      decision: to_string(decision.decision),
+      decided_at: decision.decided_at,
+      reason: decision.reason
+    }
+    |> drop_nil_values()
+  end
+
+  defp fixed_review_override(nil), do: nil
+
+  defp fixed_review_override(override) do
+    %{
+      actor: override.actor,
+      reason: override.reason,
+      approved_count: override.approved_count,
+      required_approvals: override.required_approvals,
+      waived_approvals: override.waived_approvals,
+      decided_at: override.decided_at
+    }
+    |> drop_nil_values()
+  end
+
+  # The runs reached this render through the caller's own authorized read, so a
+  # refusal here is not a denial to report — it is an impossible state whose
+  # only honest rendering is no receipt at all.
+  defp run_reviews_by_id(runs, subject) do
+    case Approvals.project_reviews_for_visible_runs(runs, subject) do
+      {:ok, reviews} -> reviews
+      {:error, _reason} -> %{}
+    end
   end
 
   defp drop_nil_values(map),
