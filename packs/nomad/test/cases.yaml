@@ -72,6 +72,16 @@ cases:
   - action: nomad.operator_scheduler_get_config
     expect:
       stdout_contains: [Scheduler Algorithm]
+  # The window elapsing is this action's normal end: `timeout` exits 124 and the
+  # script must still print what it collected and exit 0. From index=1 the broker
+  # replays its buffer, so a job registered before the read is always in it.
+  - action: nomad.event_snapshot
+    args:
+      seconds: 2
+    arrange:
+      - argv: [nomad, job, run, -detach, /packs/nomad/test/fixtures/inspect.nomad.hcl]
+    expect:
+      stdout_contains: ['"Topic":"Job"', '"ID":"packtest-inspect"']
   - action: nomad.job_health_snapshot
     args:
       job: packtest-health

@@ -34,8 +34,8 @@ url="/v1/event/stream?index=1${topic:+&topic=$topic}${ns:+&namespace=$ns}"
 snapshot=$(mktemp) || exit 1
 trap 'rm -f "$snapshot"' EXIT
 
-timeout "$secs" nomad operator api "$url" > "$snapshot"
-status=$?
+status=0
+timeout "$secs" nomad operator api "$url" > "$snapshot" || status=$?
 
 head -c 262144 "$snapshot"
 
