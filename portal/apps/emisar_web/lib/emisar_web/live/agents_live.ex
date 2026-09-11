@@ -1918,114 +1918,7 @@ defmodule EmisarWeb.AgentsLive do
               <% end %>
             </div>
           <% @config && @config.kind == :coop -> %>
-            <div id="coop-setup" class="mt-6 space-y-8 border-t border-zinc-800/70 pt-6">
-              <section id="coop-install-step" class="space-y-4">
-                <.step_header step={1} title="Make sure co:op is installed" />
-                <div class="ml-6 space-y-4 text-sm text-zinc-400">
-                  <p>
-                    Follow co:op's <.doc_link href="https://github.com/AndrewDryga/coop#install">official installation guide</.doc_link>,
-                    then check that it is available:
-                  </p>
-                  <.code_line
-                    id="coop-version"
-                    label="On your computer"
-                    value="coop version"
-                  />
-                  <p>
-                    Initialize your repository and sign in.
-                    Replace
-                    <.inline_code>codex</.inline_code>
-                    with <.inline_code>claude</.inline_code>, <.inline_code>gemini</.inline_code>, or
-                    <.inline_code>grok</.inline_code>
-                    for another agent.
-                  </p>
-                  <.code_panel
-                    id="coop-init"
-                    label="From your repository"
-                    code={~s(coop init\ncoop login codex)}
-                    copy
-                  />
-                </div>
-              </section>
-              <section id="coop-container-step" class="space-y-4">
-                <.step_header step={2} title="Install the emisar bridge in co:op" />
-                <div class="ml-6 space-y-4 text-sm text-zinc-400">
-                  <p>
-                    Create
-                    <.inline_code>.agent/Dockerfile</.inline_code>
-                    with this content.
-                    If you already have one, add the installation steps and keep your existing
-                    toolchain and final user; give that user ownership of <.inline_code>/config</.inline_code>.
-                  </p>
-                  <.code_panel
-                    id="coop-dockerfile"
-                    label=".agent/Dockerfile"
-                    code={AgentClientConfig.coop_dockerfile()}
-                    max_h="max-h-64"
-                    copy
-                  />
-                  <p>
-                    In
-                    <.inline_code>~/.config/coop/coop.conf</.inline_code>
-                    on your computer,
-                    add this setting. Append the mount if
-                    <.inline_code>COOP_RUN_ARGS</.inline_code>
-                    already exists.
-                    Keep this volume so replacement keys survive new containers.
-                  </p>
-                  <.code_panel
-                    id="coop-storage"
-                    label="coop.conf"
-                    code="COOP_RUN_ARGS=-v coop-emisar-config:/config"
-                    copy
-                  />
-                  <.code_line
-                    id="coop-build"
-                    label="From your repository"
-                    value="coop build && coop doctor"
-                  />
-                </div>
-              </section>
-              <section id="coop-config-step" class="space-y-4">
-                <.step_header step={3} title="Copy the MCP configuration" />
-                <div class="ml-6">
-                  <%= if @quick_secret do %>
-                    <div class="space-y-5 text-sm text-zinc-400">
-                      <p>
-                        Merge this emisar entry into
-                        <.inline_code>~/.config/coop/agents/mcp.json</.inline_code>
-                        on your computer, preserving other servers. Create the file and parent
-                        directories if needed. Keep it outside your repository and readable only by
-                        your user; this key is shown only during setup.
-                      </p>
-                      <.code_panel
-                        id="coop-config"
-                        label="mcp.json"
-                        code={@config.body}
-                        copy
-                      />
-                      <p>
-                        If your runners require signed dispatch, add the signing credentials from <.doc_link href={
-                          ~p"/docs/signed-dispatch"
-                        }>Set up signed dispatch</.doc_link>.
-                      </p>
-                    </div>
-                  <% else %>
-                    <div id="coop-config-error" role="alert" class="space-y-3">
-                      <.error>Couldn't prepare the configuration.</.error>
-                      <.button
-                        variant={:secondary}
-                        phx-click="select_client"
-                        phx-value-client="coop"
-                      >
-                        Try again
-                      </.button>
-                    </div>
-                  <% end %>
-                </div>
-              </section>
-              <.sandbox_risks id="coop-limits" sandbox="coop" />
-            </div>
+            <.coop_setup config={@config} quick_secret={@quick_secret} />
           <% @config && @config.kind == :remote -> %>
             <div class="mt-6 space-y-8 border-t border-zinc-800/70 pt-6">
               <.remote_mcp_panel
@@ -2042,150 +1935,16 @@ defmodule EmisarWeb.AgentsLive do
               />
             </div>
           <% @config -> %>
-            <div class="mt-6 space-y-8 border-t border-zinc-800/70 pt-6">
-              <div :if={@selected_client == "pi"} class="space-y-3 text-sm text-zinc-400">
-                <p>
-                  Pi needs an MCP extension. Install the third-party
-                  <.doc_link href="https://github.com/nicobailon/pi-mcp-adapter">pi-mcp-adapter</.doc_link>
-                  before connecting emisar:
-                </p>
-                <.code_line id="pi-install-adapter" value="pi install npm:pi-mcp-adapter" />
-              </div>
-              <p
-                :if={@selected_client in ["hermes", "goose"] && @detected_os == :windows}
-                class="text-sm text-zinc-400"
-              >
-                On Windows, use manual setup below to save the configuration in the right folder.
-              </p>
-              <.local_install_block base_url={@base_url} detected_os={@detected_os} />
-
-              <%!-- Manual setup is the fallback — the installer writes the
-                   config itself, so this stays collapsed and mints its key
-                   LAZILY on reveal (no key exists until someone actually
-                   wants the snippet). `open` is server-owned: the summary
-                   click round-trips, mints once, and re-renders the details
-                   in its true state. Two body shapes, and the lead-in must
-                   not lie about which: a config-file client (Claude Desktop,
-                   Cursor, …) pastes the snippet INTO a file — the path is the
-                   load-bearing step — while a command client (Claude Code)
-                   RUNS the snippet in a terminal. --%>
-              <.disclosure
-                id="manual-setup"
-                size={:md}
-                open={@snippet_open?}
-                summary_click="reveal_snippet"
-              >
-                <:summary>
-                  <span class="font-medium">
-                    Set up {client_label(@selected_client)} manually
-                  </span>
-                </:summary>
-                <%= if @quick_secret do %>
-                  <ol class="list-decimal space-y-6 pl-5 text-sm text-zinc-400">
-                    <li class="space-y-3">
-                      <p class="font-medium text-zinc-200">Download and check the bridge</p>
-                      <div
-                        :for={variant <- @variants}
-                        id={"manual-path-#{variant.os}"}
-                        data-os={variant.os}
-                        class={["space-y-3", variant.os != @detected_os && "hidden"]}
-                      >
-                        <p>
-                          The emisar MCP bridge connects your AI app to emisar.
-                          <%= if variant.downloads != [] do %>
-                            Download it for {variant.label}:<%= for {{label, href}, index} <- Enum.with_index(variant.downloads) do %>
-                              {if index == 0, do: " ", else: " or "}<.doc_link href={href}>{label}</.doc_link>
-                            <% end %>.
-                            Extract the archive, keep the executable in a permanent folder, and enter
-                            its full path below. If it's already installed, use its existing path.
-                          <% else %>
-                            Install it using the command above, then enter its full path below.
-                          <% end %>
-                        </p>
-                        <.bridge_path_form os={variant.os} path={@bridge_paths[variant.os]} />
-                      </div>
-                    </li>
-                    <li class="space-y-3">
-                      <p class="font-medium text-zinc-200">
-                        Add emisar to {client_label(@selected_client)}
-                      </p>
-                      <div
-                        :for={variant <- @variants}
-                        data-os={variant.os}
-                        class={["space-y-3", variant.os != @detected_os && "hidden"]}
-                      >
-                        <%= cond do %>
-                          <% @selected_client == "claude_desktop" -> %>
-                            <p>
-                              In Claude Desktop, open Settings → Developer → Edit Config.
-                              Merge the snippet into the file and save it. These settings connect
-                              Desktop Chat, not the Code tab.
-                            </p>
-                          <% @selected_client == "vscode" -> %>
-                            <p>
-                              Open the Command Palette and run MCP: Open User Configuration.
-                              Merge the snippet into the file for your current profile and save it.
-                            </p>
-                          <% config_target_is_file?(variant.config) -> %>
-                            <p>
-                              Open
-                              <.inline_code surface={:prominent} size={:sm} class="break-all">
-                                {variant.config.location}
-                              </.inline_code>
-                              and merge the snippet into your configuration. If the file doesn't
-                              exist, create it and any missing folders. Save the file.
-                            </p>
-                          <% true -> %>
-                            <p>
-                              Run the command in {if variant.os == :windows,
-                                do: "PowerShell",
-                                else: "your terminal"}.
-                            </p>
-                        <% end %>
-                      </div>
-                      <.code_panel
-                        :if={Map.get(@config, :secret_separate, false)}
-                        id={"secret-#{@selected_client}"}
-                        label="API key"
-                        annotation="paste when the client prompts; shown once"
-                        copy
-                        copy_label="Copy key"
-                        code={@quick_secret}
-                      />
-                      <p class="text-xs text-zinc-400">
-                        {if @config.secret_separate,
-                          do: "The snippet does not contain your API key.",
-                          else: "The snippet contains your API key; keep the configuration private."}
-                      </p>
-                      <.os_code_panel
-                        id={"snippet-#{@selected_client}"}
-                        detected={@detected_os}
-                        on_change="select_os"
-                      >
-                        <:tab
-                          :for={variant <- @variants}
-                          os={variant.os}
-                          label={variant.label}
-                          code={variant.config.body}
-                          unavailable="Enter a full executable path above to generate this snippet."
-                        />
-                      </.os_code_panel>
-                    </li>
-                    <li class="space-y-3">
-                      <p class="font-medium text-zinc-200">Check the connection</p>
-                      <p :for={instruction <- AgentClientConfig.connection_steps(@selected_client)}>
-                        {instruction}
-                      </p>
-                      <p class="text-xs text-zinc-400">
-                        <.doc_link href={~p"/docs/connect-cli-agent" <> "#troubleshooting"}>Troubleshooting</.doc_link>
-                      </p>
-                    </li>
-                  </ol>
-                <% else %>
-                  <p class="text-sm text-zinc-400">Creating your API key…</p>
-                <% end %>
-              </.disclosure>
-            </div>
+            <.local_client_setup
+              config={@config}
+              variants={@variants}
+              selected_client={@selected_client}
+              base_url={@base_url}
+              bridge_paths={@bridge_paths}
+              detected_os={@detected_os}
+              quick_secret={@quick_secret}
+              snippet_open?={@snippet_open?}
+            />
         <% end %>
 
         <%!-- Final step — Connect your agent: the live connection status (the
@@ -2394,6 +2153,286 @@ defmodule EmisarWeb.AgentsLive do
           </p>
         </.docs_rail>
       </div>
+    </div>
+    """
+  end
+
+  # The co:op sandbox's own connect steps. Split out of connect_panel/1, which
+  # had grown to 703 lines around a four-branch cond — one branch per client
+  # surface — while the file already defined the smaller pieces each branch
+  # calls.
+  attr :config, :any, required: true
+  attr :quick_secret, :any, default: nil
+
+  defp coop_setup(assigns) do
+    ~H"""
+    <div id="coop-setup" class="mt-6 space-y-8 border-t border-zinc-800/70 pt-6">
+      <section id="coop-install-step" class="space-y-4">
+        <.step_header step={1} title="Make sure co:op is installed" />
+        <div class="ml-6 space-y-4 text-sm text-zinc-400">
+          <p>
+            Follow co:op's <.doc_link href="https://github.com/AndrewDryga/coop#install">official installation guide</.doc_link>,
+            then check that it is available:
+          </p>
+          <.code_line
+            id="coop-version"
+            label="On your computer"
+            value="coop version"
+          />
+          <p>
+            Initialize your repository and sign in.
+            Replace
+            <.inline_code>codex</.inline_code>
+            with <.inline_code>claude</.inline_code>, <.inline_code>gemini</.inline_code>, or
+            <.inline_code>grok</.inline_code>
+            for another agent.
+          </p>
+          <.code_panel
+            id="coop-init"
+            label="From your repository"
+            code={~s(coop init\ncoop login codex)}
+            copy
+          />
+        </div>
+      </section>
+      <section id="coop-container-step" class="space-y-4">
+        <.step_header step={2} title="Install the emisar bridge in co:op" />
+        <div class="ml-6 space-y-4 text-sm text-zinc-400">
+          <p>
+            Create
+            <.inline_code>.agent/Dockerfile</.inline_code>
+            with this content.
+            If you already have one, add the installation steps and keep your existing
+            toolchain and final user; give that user ownership of <.inline_code>/config</.inline_code>.
+          </p>
+          <.code_panel
+            id="coop-dockerfile"
+            label=".agent/Dockerfile"
+            code={AgentClientConfig.coop_dockerfile()}
+            max_h="max-h-64"
+            copy
+          />
+          <p>
+            In
+            <.inline_code>~/.config/coop/coop.conf</.inline_code>
+            on your computer,
+            add this setting. Append the mount if
+            <.inline_code>COOP_RUN_ARGS</.inline_code>
+            already exists.
+            Keep this volume so replacement keys survive new containers.
+          </p>
+          <.code_panel
+            id="coop-storage"
+            label="coop.conf"
+            code="COOP_RUN_ARGS=-v coop-emisar-config:/config"
+            copy
+          />
+          <.code_line
+            id="coop-build"
+            label="From your repository"
+            value="coop build && coop doctor"
+          />
+        </div>
+      </section>
+      <section id="coop-config-step" class="space-y-4">
+        <.step_header step={3} title="Copy the MCP configuration" />
+        <div class="ml-6">
+          <%= if @quick_secret do %>
+            <div class="space-y-5 text-sm text-zinc-400">
+              <p>
+                Merge this emisar entry into
+                <.inline_code>~/.config/coop/agents/mcp.json</.inline_code>
+                on your computer, preserving other servers. Create the file and parent
+                directories if needed. Keep it outside your repository and readable only by
+                your user; this key is shown only during setup.
+              </p>
+              <.code_panel
+                id="coop-config"
+                label="mcp.json"
+                code={@config.body}
+                copy
+              />
+              <p>
+                If your runners require signed dispatch, add the signing credentials from <.doc_link href={
+                  ~p"/docs/signed-dispatch"
+                }>Set up signed dispatch</.doc_link>.
+              </p>
+            </div>
+          <% else %>
+            <div id="coop-config-error" role="alert" class="space-y-3">
+              <.error>Couldn't prepare the configuration.</.error>
+              <.button
+                variant={:secondary}
+                phx-click="select_client"
+                phx-value-client="coop"
+              >
+                Try again
+              </.button>
+            </div>
+          <% end %>
+        </div>
+      </section>
+      <.sandbox_risks id="coop-limits" sandbox="coop" />
+    </div>
+    """
+  end
+
+  # A local MCP client's connect steps: install the bridge for this OS, then
+  # add emisar to the client's own configuration.
+  attr :config, :any, required: true
+  attr :variants, :list, required: true
+  attr :selected_client, :any, required: true
+  attr :base_url, :string, required: true
+  attr :bridge_paths, :map, required: true
+  attr :detected_os, :atom, required: true
+  attr :quick_secret, :any, default: nil
+  attr :snippet_open?, :boolean, default: false
+
+  defp local_client_setup(assigns) do
+    ~H"""
+    <div class="mt-6 space-y-8 border-t border-zinc-800/70 pt-6">
+      <div :if={@selected_client == "pi"} class="space-y-3 text-sm text-zinc-400">
+        <p>
+          Pi needs an MCP extension. Install the third-party
+          <.doc_link href="https://github.com/nicobailon/pi-mcp-adapter">pi-mcp-adapter</.doc_link>
+          before connecting emisar:
+        </p>
+        <.code_line id="pi-install-adapter" value="pi install npm:pi-mcp-adapter" />
+      </div>
+      <p
+        :if={@selected_client in ["hermes", "goose"] && @detected_os == :windows}
+        class="text-sm text-zinc-400"
+      >
+        On Windows, use manual setup below to save the configuration in the right folder.
+      </p>
+      <.local_install_block base_url={@base_url} detected_os={@detected_os} />
+
+      <%!-- Manual setup is the fallback — the installer writes the
+               config itself, so this stays collapsed and mints its key
+               LAZILY on reveal (no key exists until someone actually
+               wants the snippet). `open` is server-owned: the summary
+               click round-trips, mints once, and re-renders the details
+               in its true state. Two body shapes, and the lead-in must
+               not lie about which: a config-file client (Claude Desktop,
+               Cursor, …) pastes the snippet INTO a file — the path is the
+               load-bearing step — while a command client (Claude Code)
+               RUNS the snippet in a terminal. --%>
+      <.disclosure
+        id="manual-setup"
+        size={:md}
+        open={@snippet_open?}
+        summary_click="reveal_snippet"
+      >
+        <:summary>
+          <span class="font-medium">
+            Set up {client_label(@selected_client)} manually
+          </span>
+        </:summary>
+        <%= if @quick_secret do %>
+          <ol class="list-decimal space-y-6 pl-5 text-sm text-zinc-400">
+            <li class="space-y-3">
+              <p class="font-medium text-zinc-200">Download and check the bridge</p>
+              <div
+                :for={variant <- @variants}
+                id={"manual-path-#{variant.os}"}
+                data-os={variant.os}
+                class={["space-y-3", variant.os != @detected_os && "hidden"]}
+              >
+                <p>
+                  The emisar MCP bridge connects your AI app to emisar.
+                  <%= if variant.downloads != [] do %>
+                    Download it for {variant.label}:<%= for {{label, href}, index} <- Enum.with_index(variant.downloads) do %>
+                      {if index == 0, do: " ", else: " or "}<.doc_link href={href}>{label}</.doc_link>
+                    <% end %>.
+                    Extract the archive, keep the executable in a permanent folder, and enter
+                    its full path below. If it's already installed, use its existing path.
+                  <% else %>
+                    Install it using the command above, then enter its full path below.
+                  <% end %>
+                </p>
+                <.bridge_path_form os={variant.os} path={@bridge_paths[variant.os]} />
+              </div>
+            </li>
+            <li class="space-y-3">
+              <p class="font-medium text-zinc-200">
+                Add emisar to {client_label(@selected_client)}
+              </p>
+              <div
+                :for={variant <- @variants}
+                data-os={variant.os}
+                class={["space-y-3", variant.os != @detected_os && "hidden"]}
+              >
+                <%= cond do %>
+                  <% @selected_client == "claude_desktop" -> %>
+                    <p>
+                      In Claude Desktop, open Settings → Developer → Edit Config.
+                      Merge the snippet into the file and save it. These settings connect
+                      Desktop Chat, not the Code tab.
+                    </p>
+                  <% @selected_client == "vscode" -> %>
+                    <p>
+                      Open the Command Palette and run MCP: Open User Configuration.
+                      Merge the snippet into the file for your current profile and save it.
+                    </p>
+                  <% config_target_is_file?(variant.config) -> %>
+                    <p>
+                      Open
+                      <.inline_code surface={:prominent} size={:sm} class="break-all">
+                        {variant.config.location}
+                      </.inline_code>
+                      and merge the snippet into your configuration. If the file doesn't
+                      exist, create it and any missing folders. Save the file.
+                    </p>
+                  <% true -> %>
+                    <p>
+                      Run the command in {if variant.os == :windows,
+                        do: "PowerShell",
+                        else: "your terminal"}.
+                    </p>
+                <% end %>
+              </div>
+              <.code_panel
+                :if={Map.get(@config, :secret_separate, false)}
+                id={"secret-#{@selected_client}"}
+                label="API key"
+                annotation="paste when the client prompts; shown once"
+                copy
+                copy_label="Copy key"
+                code={@quick_secret}
+              />
+              <p class="text-xs text-zinc-400">
+                {if @config.secret_separate,
+                  do: "The snippet does not contain your API key.",
+                  else: "The snippet contains your API key; keep the configuration private."}
+              </p>
+              <.os_code_panel
+                id={"snippet-#{@selected_client}"}
+                detected={@detected_os}
+                on_change="select_os"
+              >
+                <:tab
+                  :for={variant <- @variants}
+                  os={variant.os}
+                  label={variant.label}
+                  code={variant.config.body}
+                  unavailable="Enter a full executable path above to generate this snippet."
+                />
+              </.os_code_panel>
+            </li>
+            <li class="space-y-3">
+              <p class="font-medium text-zinc-200">Check the connection</p>
+              <p :for={instruction <- AgentClientConfig.connection_steps(@selected_client)}>
+                {instruction}
+              </p>
+              <p class="text-xs text-zinc-400">
+                <.doc_link href={~p"/docs/connect-cli-agent" <> "#troubleshooting"}>Troubleshooting</.doc_link>
+              </p>
+            </li>
+          </ol>
+        <% else %>
+          <p class="text-sm text-zinc-400">Creating your API key…</p>
+        <% end %>
+      </.disclosure>
     </div>
     """
   end
