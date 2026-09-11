@@ -214,7 +214,7 @@ volumes:
 ```
 
 Each pins a fixed `runner.id` (the durable `external_id`) that **matches the
-`external_id` the seed writes on that runner's row** (`apps/emisar/priv/repo/seeds.exs`).
+`external_id` the seed writes on that runner's row** (`apps/emisar/priv/repo/seeds/fleet.exs`).
 Because runner identity is `(account, external_id)`, the live container
 *adopts* its pre-seeded row on register — coming up **online** while keeping
 the seeded run history, approvals, grants, and trusted pack catalog — instead

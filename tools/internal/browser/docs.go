@@ -224,7 +224,7 @@ var docsShots = []shot{
 	{Name: "sso-provisioning-fields", Path: "/app/demo/settings/sso/new", Anchor: Anchor{Heading: "Member access", Climb: "section"}, Width: docsWidth, CropPadding: 4, Output: "docs/sso/sso-provisioning-fields.webp"},
 	{Name: "sso-activation-fields", Path: "/app/demo/settings/sso/new", Anchor: Anchor{Heading: "Sign-in security", Climb: "section"}, Width: docsWidth, Output: "docs/sso/sso-activation-fields.webp"},
 	// The two halves of group→role sync: the mappings an admin authors, and the
-	// synced roster they land on. Both are seeded directory state (seeds.exs maps
+	// synced roster they land on. Both are seeded directory state (seeds/sso.exs maps
 	// two of three IdP groups, deliberately leaving one unmapped).
 	// The step names the issuer and the two credential fields, so the shot is that
 	// block — not the whole 3,788px form it used to be.

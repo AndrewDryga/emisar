@@ -237,13 +237,15 @@ func (selection *Selection) include(file string) {
 	// mcp/internal/signing package, and naming one here meant a change to
 	// attested dispatch on the bridge side skipped the required check entirely.
 	// Both scenarios boot through the shared demo seeder before reaching their
-	// own assertions, so a seed change is a behavior input to both.
+	// own assertions, so a seed change is a behavior input to both. The seeder
+	// is seeds.exs plus the seeds/ section modules it requires, so match the
+	// directory by prefix rather than the one entry file.
 	// The portal side enters by PREFIX, not by three named files: naming
 	// runs.ex and runs/attestation.ex left their siblings selecting nothing —
 	// runners.ex ingests the runner's enforce_signatures advertisement and is
 	// what stops dispatching unsigned, and runs/action_run/changeset.ex is what
 	// refuses an attestation that did not validate.
-	sharedE2ESeed := file == "portal/apps/emisar/priv/repo/seeds.exs"
+	sharedE2ESeed := toolutil.HasAnyPrefix(file, "portal/apps/emisar/priv/repo/seeds")
 	if toolutil.HasAnyPrefix(
 		file,
 		"tools/cmd/signing-e2e/",

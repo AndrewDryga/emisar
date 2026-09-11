@@ -177,9 +177,9 @@ defmodule Emisar.ContextCoverageTest do
   defp format_function({name, arity}), do: "#{name}/#{arity}"
 
   # Every `lib/` source across both apps, so a caller in the web adapter counts
-  # just as much as one in a sibling context — plus `seeds.exs`, which is
-  # committed non-test code that `./run seed` must keep running, so a function
-  # only the seeds drive is consumed, not dead.
+  # just as much as one in a sibling context — plus the seed script and its
+  # `seeds/` section modules, which are committed non-test code that `./run seed`
+  # must keep running, so a function only the seeds drive is consumed, not dead.
   #
   # Each source is reduced to the names it CALLS, read off its AST. Matching the
   # source TEXT instead counted a name written in a `@doc` heredoc or a comment,
@@ -192,6 +192,9 @@ defmodule Emisar.ContextCoverageTest do
     ]
     |> Enum.flat_map(&Path.wildcard(Path.join(&1, "**/*.{ex,heex}")))
     |> Enum.concat(Path.wildcard(Path.join([__DIR__, "..", "..", "priv", "repo", "seeds.exs"])))
+    |> Enum.concat(
+      Path.wildcard(Path.join([__DIR__, "..", "..", "priv", "repo", "seeds", "*.exs"]))
+    )
     |> Enum.map(&{Path.expand(&1), called_names(&1)})
   end
 

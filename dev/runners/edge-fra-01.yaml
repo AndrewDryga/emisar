@@ -5,7 +5,7 @@ schema_version: 1
 #
 # `runner.id` is the durable external_id the runner presents on register.
 # It MUST match the external_id the seed pins on this runner's row
-# (apps/emisar/priv/repo/seeds.exs) so the live container ADOPTS the
+# (apps/emisar/priv/repo/seeds/fleet.exs) so the live container ADOPTS the
 # pre-seeded "edge-fra-01" row — inheriting its name, run history,
 # approvals, and grants — instead of registering a second, empty runner.
 runner:
