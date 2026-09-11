@@ -29,7 +29,7 @@ defmodule EmisarWeb.PoliciesLiveTest do
       assert html =~ "if they have permission to approve."
 
       assert rendered_text(html) =~
-               "For AI-agent requests, self-approval also includes the agent's owner."
+               "For AI-agent requests, self-approval means approval by the agent's owner."
 
       # Defaults render every tier with a select.
       assert html =~ ~s(name="policy[defaults][low]")

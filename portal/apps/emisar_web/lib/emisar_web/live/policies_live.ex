@@ -1659,7 +1659,7 @@ defmodule EmisarWeb.PoliciesLive do
         </h3>
         <p class="mt-0.5 text-xs text-zinc-400">
           Applies to actions that require approval.
-          For AI-agent requests, self-approval also includes the agent's owner.
+          For AI-agent requests, self-approval means approval by the agent's owner.
         </p>
 
         <%!-- The two cards name WHO may approve — self-labeling, so no separate
