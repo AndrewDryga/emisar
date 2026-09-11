@@ -1,9 +1,12 @@
 version: 2
 
 # One entry per ecosystem; multi-directory entries share the identical weekly
-# cadence and release-age cooldown every ecosystem uses (Dependabot groups and
-# opens PRs per directory). The dep-age CI gate enforces the same windows on
-# the lock diffs themselves, so a hand-made bump can't dodge the cooldown.
+# cadence and the same 7-day release-age floor (Dependabot groups and opens PRs
+# per directory). Only mix and gomod can hold major and minor bumps past that
+# floor — GitHub supports the semver-* cooldown keys for those ecosystems, while
+# terraform, docker, and github-actions accept `default-days` alone. The dep-age
+# CI gate enforces the mix/gomod windows on the lock diffs themselves, so a
+# hand-made bump can't dodge the cooldown.
 updates:
   - package-ecosystem: "mix"
     directory: "/portal"
@@ -51,9 +54,6 @@ updates:
     open-pull-requests-limit: 2
     cooldown:
       default-days: 7
-      semver-major-days: 30
-      semver-minor-days: 14
-      semver-patch-days: 7
     groups:
       terraform-minor-patch:
         patterns: ["*"]
@@ -83,9 +83,6 @@ updates:
     open-pull-requests-limit: 2
     cooldown:
       default-days: 7
-      semver-major-days: 30
-      semver-minor-days: 14
-      semver-patch-days: 7
 
   - package-ecosystem: "github-actions"
     directory: "/"
@@ -97,9 +94,6 @@ updates:
     open-pull-requests-limit: 2
     cooldown:
       default-days: 7
-      semver-major-days: 30
-      semver-minor-days: 14
-      semver-patch-days: 7
     groups:
       github-actions-minor-patch:
         patterns: ["*"]
