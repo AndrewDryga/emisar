@@ -51,6 +51,34 @@ risk: low
 # a sweep: "every *_start action becomes high" — erases per-product judgment
 ```
 
+## Three families judged once (2026-09-11)
+
+These came out of a catalog-wide comparison that found the same operation
+tiered two ways. Each is decided here so the next pack copies a decision
+rather than a neighbour.
+
+**Reload a daemon's config — `high`.** Twelve of thirteen reload actions
+already said so; `f2b.reload` said `medium` and moved up. A reload applies
+whatever is on disk RIGHT NOW, so the change is not bounded by the action's
+arguments the way `medium` requires: a reloaded nginx changes routing, a
+reloaded bind changes what the world resolves, a reloaded fail2ban changes
+who is banned. The operator approving it is approving a file they did not
+pass.
+
+**Cancel one running query — `high`.** `postgres.cancel_query` said so;
+`cockroach.cancel_query` said `medium` and moved up. Both cancel exactly one
+statement and leave the connection open, so the argument for `medium` is
+real — but the two are the same real-life event on the same wire protocol,
+and a tier that depends on which engine answers is the drift this rule
+exists to stop. Up, not down: the unsafe direction removes a gate.
+
+**Start a workload — it depends, and that is correct.**
+`ec2.start_instance` and `gcp-compute.instance_start` are `high`; they bring
+up a billable machine with its own inbound surface. `nomad.job_start`,
+`rmq.start_app` and `databricks.cluster_start` are `medium`; they schedule
+work inside a cluster that is already running and already exposed. Same verb,
+different real-life event — which is rule 1, not a violation of it.
+
 **How it's enforced.** Review against this rule; no mechanical check —
 "returns raw log content" is a judgment about output semantics that YAML
 inspection cannot make reliably. The 2026-08-28 sweep re-tiered 40 readers

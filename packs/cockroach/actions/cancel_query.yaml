@@ -2,7 +2,7 @@ schema_version: 1
 id: cockroach.cancel_query
 title: Cancel a running query (CANCEL QUERY)
 kind: exec
-risk: medium
+risk: high
 description: >
   Stop one in-flight query by its query_id (from cluster_queries). The query
   ends with an error; the session/connection stays open. Use to kill a runaway

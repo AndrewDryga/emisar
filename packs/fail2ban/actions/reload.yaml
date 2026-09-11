@@ -2,7 +2,7 @@ schema_version: 1
 id: f2b.reload
 title: fail2ban-client reload [jail]
 kind: exec
-risk: medium
+risk: high
 description: >
   Reload fail2ban config. Without a jail, reloads everything. With
   a jail, reloads that jail only (its filter, action, and settings).
