@@ -316,18 +316,29 @@ func (c *checker) checkManualExamples() {
 	})
 }
 
+// coopVerbs is every task verb the manuals, the task runbook, the skills, or
+// .agent/loop.yaml tell an agent to run. Keep it matched to what they promise.
+var coopVerbs = []string{"ls", "add", "claim", "release", "block", "unblock", "done", "decisions"}
+
+// checkCoop proves the installed coop still accepts the surface the manuals
+// hand agents. It probes the verbs instead of matching help prose: coop
+// v9.0.0-226 reworded `tasks --help` — dropping the literal "ls [--all]" and
+// the numbered state directories — without retiring a single verb, so pinning
+// that wording failed the gate over a cosmetic release. A verb that really goes
+// away still fails, because `coop tasks <verb> --help` exits non-zero for a
+// command coop does not know. The state-directory half of the old pin lives on
+// in checkTaskDirs: a coop that archived anywhere but 99_done/ would leave a
+// task.md under an unrecognized state, which that check rejects.
 func (c *checker) checkCoop() {
-	help, err := c.command("coop", "tasks", "--help")
-	if err != nil {
-		c.fail("coop tasks --help failed: %v", err)
-		return
+	// --help resolves the verb without moving a task, so the audit stays
+	// read-only against this checkout's real queues.
+	for _, verb := range coopVerbs {
+		if _, err := c.command("coop", "tasks", verb, "--help"); err != nil {
+			c.fail("coop no longer supports 'tasks %s': %v", verb, err)
+		}
 	}
-	if !bytes.Contains(help, []byte("ls [--all]")) {
-		c.fail("coop help no longer advertises 'tasks ls'")
-	}
-	if !bytes.Contains(help, []byte("99_done/")) {
-		c.fail("coop help no longer advertises 99_done/")
-	}
+	// The live listing smoke: --all spans every project queue, so it proves
+	// queue discovery resolves rather than only that the verb parses.
 	if _, err := c.command("coop", "tasks", "ls", "--all"); err != nil {
 		c.fail("coop tasks ls --all failed: %v", err)
 	}
