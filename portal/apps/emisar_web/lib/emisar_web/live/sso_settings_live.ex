@@ -3,6 +3,7 @@ defmodule EmisarWeb.SSOSettingsLive do
   alias Emisar.{Accounts, Runners, SSO}
   alias EmisarWeb.{ConfirmDialog, DirectoryGroups, GroupAccessForm, LiveForm, LiveTable}
   alias EmisarWeb.{MailTo, MemberErrors, OIDCStepUp, Permissions, RoleCopy, RunnerScope}
+  alias EmisarWeb.SSOProviderKind
   alias Phoenix.LiveView.JS
 
   @group_access_prefix "group_access_"
@@ -2004,8 +2005,10 @@ defmodule EmisarWeb.SSOSettingsLive do
                 <p class="text-[10px] font-semibold uppercase tracking-wider text-zinc-400">Docs</p>
                 <ul class="mt-3 space-y-2">
                   <li>
-                    <.doc_link href={docs_path_for_kind(to_string(@provider.kind))}>
-                      Setting up {setup_kind_label(to_string(@provider.kind))}
+                    <.doc_link href={
+                      SSOProviderKind.docs_path(@provider.kind) || ~p"/docs/sso#generic-oidc"
+                    }>
+                      Setting up {SSOProviderKind.get(@provider.kind, :label)}
                     </.doc_link>
                   </li>
                   <li :if={SSO.supports_scim?(@provider.kind)}>
@@ -2382,7 +2385,7 @@ defmodule EmisarWeb.SSOSettingsLive do
             field={@form[:name]}
             type="text"
             label="Display name"
-            placeholder={name_placeholder(@kind)}
+            placeholder={SSOProviderKind.get(@kind, :name_placeholder)}
           />
         </div>
       </section>
@@ -2428,14 +2431,14 @@ defmodule EmisarWeb.SSOSettingsLive do
                   {fixed}
                 </div>
                 <p class="mt-1 text-[11px] leading-relaxed text-zinc-400">
-                  Fixed for {setup_kind_label(@kind)} — the same for every org, so there's nothing to set.
+                  Fixed for {SSOProviderKind.get(@kind, :label)} — the same for every org, so there's nothing to set.
                 </p>
               <% true -> %>
                 <.input
                   field={@form[:issuer]}
                   type="url"
                   label="Issuer URL"
-                  placeholder={issuer_hint(@kind)}
+                  placeholder={SSOProviderKind.get(@kind, :issuer)}
                   class="font-mono"
                   disabled={@namespace_locked?}
                 />
@@ -2472,7 +2475,7 @@ defmodule EmisarWeb.SSOSettingsLive do
               disabled={@namespace_locked?}
             />
             <p class="mt-1 text-[11px] leading-relaxed text-zinc-400">
-              How emisar recognises a returning member. Never their email — people change those. {identifier_claim_hint(
+              How emisar recognises a returning member. Never their email — people change those. {SSOProviderKind.identifier_claim_hint(
                 @kind
               )}
             </p>
@@ -2617,14 +2620,15 @@ defmodule EmisarWeb.SSOSettingsLive do
          column is separated by AIR, never boxed; the code_lines inside are the
          earned artifacts. --%>
     <div>
-      <p class="text-sm font-medium text-zinc-200">Setting up {setup_kind_label(@kind)}</p>
+      <p class="text-sm font-medium text-zinc-200">Setting up {SSOProviderKind.get(@kind, :label)}</p>
       <.steps class="mt-3">
         <:step :if={@kind == "google_workspace"}>
           In Google Auth Platform, set <span class="text-zinc-300">Audience</span>
           to <span class="text-zinc-300">Internal</span>.
         </:step>
         <:step>
-          Create an OAuth / OIDC <span class="text-zinc-300">web app</span> {oidc_app_hint(@kind)}.
+          Create an OAuth / OIDC
+          <span class="text-zinc-300">web app</span> {SSOProviderKind.get(@kind, :oidc_app)}.
         </:step>
         <:step>
           Register this <span class="text-zinc-300">redirect URI</span>
@@ -2636,7 +2640,7 @@ defmodule EmisarWeb.SSOSettingsLive do
         </:step>
         <:step :if={@kind != "jumpcloud" and is_nil(SSO.provider_fixed_issuer(@kind))}>
           Set the <span class="text-zinc-300">Issuer URL</span>
-          to <span class="font-mono text-zinc-300">{issuer_hint(@kind)}</span>.
+          to <span class="font-mono text-zinc-300">{SSOProviderKind.get(@kind, :issuer)}</span>.
           <span class="text-zinc-400">{issuer_where_hint(@kind)}</span>
         </:step>
         <:step>
@@ -2649,55 +2653,26 @@ defmodule EmisarWeb.SSOSettingsLive do
         </:step>
       </.steps>
       <p class="mt-3 text-sm leading-relaxed text-zinc-400">
-        {provider_directory_note(@kind)}
+        {SSOProviderKind.get(@kind, :directory_note)}
       </p>
       <%!-- Only show this for providers with a documented per-client DPoP switch. --%>
-      <p :if={dpop_relevant?(@kind)} class="mt-3 text-sm leading-relaxed text-zinc-400">
+      <p
+        :if={SSOProviderKind.dpop_relevant?(@kind)}
+        class="mt-3 text-sm leading-relaxed text-zinc-400"
+      >
         Leave the requirement for <span class="text-zinc-300">DPoP-bound tokens</span> off.
       </p>
       <%!-- The docs link closes the rail on its own line, the shape `docs_rail`
            uses on the list pages ("Runner docs"): `text-sm` on the HOST, since
            `doc_link` carries no `text-*` of its own. --%>
       <p class="mt-4 text-sm">
-        <.doc_link href={docs_path_for_kind(@kind)}>{docs_link_label(@kind)}</.doc_link>
+        <.doc_link href={SSOProviderKind.docs_path(@kind) || ~p"/docs/sso#generic-oidc"}>{SSOProviderKind.docs_link_label(
+          @kind
+        )}</.doc_link>
       </p>
     </div>
     """
   end
-
-  # Directory setup differs by provider. First-sign-in behavior belongs to the
-  # New members setting, not this provider-only guide.
-  defp provider_directory_note("okta"),
-    do: "Directory sync is a second Okta app — this one only signs people in."
-
-  defp provider_directory_note("entra"),
-    do: "This is the app registration; directory sync is a separate enterprise application."
-
-  defp provider_directory_note("jumpcloud"),
-    do: "One JumpCloud application covers both this and directory sync."
-
-  defp provider_directory_note("keycloak"),
-    do: "Directory sync requires a third-party Keycloak extension."
-
-  defp provider_directory_note("google_workspace") do
-    "Google Workspace doesn't support directory sync with emisar."
-  end
-
-  # Steps 1 and 3 already say "confidential client" and "discovery document", so
-  # the generic line has to stay on the directory axis like the named ones do.
-  defp provider_directory_note(_) do
-    "Directory sync requires a provider that can send SCIM updates."
-  end
-
-  # Deep-link to the provider's own guide rather than the top of the docs. The
-  # label says what the page IS, the house shape ("Runner docs"); a label that
-  # promised screenshots needed a per-provider honesty split, because only four
-  # of the guides have full console coverage. Naming the page plainly removes
-  # the claim, and with it the split.
-  defp docs_link_label(kind) when kind in ~w[okta entra jumpcloud keycloak google_workspace],
-    do: "Step-by-step guide"
-
-  defp docs_link_label(_), do: "Single sign-on docs"
 
   # `oid` exists for exactly one provider. Offering it under Keycloak or Google
   # invites an admin to pick a claim their IdP never issues, which fails at the
@@ -2728,119 +2703,27 @@ defmodule EmisarWeb.SSOSettingsLive do
     end
   end
 
-  # Entra's `sub` differs per application, so `oid` is the only claim that joins
-  # sign-in to the directory — which is why it is the only one offered. The
-  # reasoning belongs in the Entra guide; here the operator needs the fact.
-  defp identifier_claim_hint("entra") do
-    "Entra gives every app a different `sub`, so emisar uses `oid` — the id directory sync sends."
-  end
-
-  # One option, nothing to decide: justifying why the list is short is our
-  # bookkeeping, not the operator's.
-  defp identifier_claim_hint(_), do: ""
-
-  defp docs_path_for_kind("google_workspace"), do: ~p"/docs/integrations/google-workspace"
-  defp docs_path_for_kind("okta"), do: ~p"/docs/integrations/okta"
-  defp docs_path_for_kind("entra"), do: ~p"/docs/integrations/entra"
-  defp docs_path_for_kind("jumpcloud"), do: ~p"/docs/integrations/jumpcloud"
-  defp docs_path_for_kind("keycloak"), do: ~p"/docs/integrations/keycloak"
-  defp docs_path_for_kind(_), do: ~p"/docs/sso#generic-oidc"
-
-  defp setup_kind_label("google_workspace"), do: "Google Workspace"
-  defp setup_kind_label("okta"), do: "Okta"
-  defp setup_kind_label("entra"), do: "Microsoft Entra"
-  defp setup_kind_label("jumpcloud"), do: "JumpCloud"
-  defp setup_kind_label("keycloak"), do: "Keycloak"
-  defp setup_kind_label(_), do: "a generic OIDC provider"
-
-  defp oidc_app_hint("google_workspace") do
-    "in Google Cloud Console → Google Auth Platform → Clients → Create client (Web application)"
-  end
-
-  defp oidc_app_hint("entra") do
-    "in the Microsoft Entra admin center → App registrations → New registration, with a Web redirect URI"
-  end
-
-  defp oidc_app_hint("okta") do
-    "in the Okta admin console → Applications → Create App Integration → OIDC, Web Application"
-  end
-
-  defp oidc_app_hint("jumpcloud") do
-    "in the JumpCloud admin console → SSO Applications → Add New Application → Custom Application, with the OIDC connector enabled"
-  end
-
-  defp oidc_app_hint("keycloak") do
-    "in the Keycloak admin console → Clients → Create client → OpenID Connect (enable Client authentication)"
-  end
-
-  defp oidc_app_hint(_), do: "with your provider — a confidential web client with a client secret"
-
-  defp issuer_hint("google_workspace"), do: "https://accounts.google.com"
-  defp issuer_hint("okta"), do: "https://YOUR-ORG.okta.com"
-  defp issuer_hint("entra"), do: "https://login.microsoftonline.com/YOUR-TENANT-ID/v2.0"
-  defp issuer_hint("keycloak"), do: "https://YOUR-HOST/realms/YOUR-REALM"
-  defp issuer_hint(_), do: "your provider's OIDC issuer URL (the discovery base)"
-
-  # The display-name placeholder — a plausible name for the picked provider, so
-  # the example never contradicts the selected kind (no "Acme Okta" under Google).
-  defp name_placeholder("entra"), do: "Acme Entra"
-  defp name_placeholder("google_workspace"), do: "Acme Google Workspace"
-  defp name_placeholder("okta"), do: "Acme Okta"
-  defp name_placeholder("jumpcloud"), do: "Acme JumpCloud"
-  defp name_placeholder("keycloak"), do: "Acme Keycloak"
-  defp name_placeholder(_), do: "Company SSO"
-
-  defp dpop_relevant?(kind), do: kind in ~w[okta keycloak]
-
   # Whether a form checkbox field currently reads as on (params post "true";
   # the loaded struct carries a boolean).
   defp checkbox_on?(field), do: field.value in [true, "true"]
 
-  # Where to FIND the issuer — it's an org/realm-level value, not on the app
-  # page, which is the usual point of confusion.
-  defp issuer_where_hint("okta") do
-    "Copy your org URL from the account menu in the Okta admin console. Use the org URL without -admin or an /oauth2/… path."
-  end
+  # Where to FIND the issuer — it is an org/realm-level value, not on the app
+  # page, which is the usual point of confusion. A provider with no entry gets
+  # the generic sentence, which has to carry the `<code>` markup the named ones
+  # do not need.
+  defp issuer_where_hint(kind) do
+    assigns = %{hint: SSOProviderKind.get(kind, :issuer_where)}
 
-  defp issuer_where_hint("google_workspace"),
-    do: "Always this exact value for Google — nothing to look up."
-
-  defp issuer_where_hint("entra") do
-    "Build it from your Directory (tenant) ID, on the app registration's Overview. The trailing `/v2.0` selects Entra's v2.0 endpoint — without it you get v1.0 tokens."
-  end
-
-  defp issuer_where_hint("keycloak") do
-    "Your realm's base URL; Realm settings → Endpoints → OpenID Endpoint Configuration confirms the exact value."
-  end
-
-  defp issuer_where_hint(assigns) do
     ~H"""
-    Whatever URL serves its OIDC discovery document at <code>/.well-known/openid-configuration</code>
-    — emisar fetches it from there.
+    <%= if @hint do %>
+      {@hint}
+    <% else %>
+      Whatever URL serves its OIDC discovery document at
+      <code>/.well-known/openid-configuration</code>
+      — emisar fetches it from there.
+    <% end %>
     """
   end
-
-  defp scim_location_hint(:okta) do
-    "in a SEPARATE Okta app — Okta's OIDC login app can't do SCIM. Add the \"SCIM 2.0 Test App (Header Auth)\" from the OIN catalog (its Sign-On tab is unused — SCIM lives entirely on the Provisioning tab): Configure API Integration → Enable, configure the Base URL and API token as described in step 2, then enable Create / Update / Deactivate. Okta sends the token as a raw header with no `Bearer` scheme, which emisar accepts"
-  end
-
-  defp scim_location_hint(:jumpcloud) do
-    "on a JumpCloud application's Provisioning tab — one custom app can carry both sign-in and provisioning, so tick \"Export users to this app\" alongside SSO (its SAML/OIDC sub-choice defaults to SAML). Configure the Base URL and Token as described in step 2, then Test Connection → Activate (their form discards the config if you press Save instead)"
-  end
-
-  # Keycloak has no outbound SCIM: its own SCIM support (26.6+) makes Keycloak a
-  # SCIM *server* others provision INTO, which is the opposite direction. Saying
-  # "look in your provider's SCIM settings" sends an admin hunting for a screen
-  # that doesn't exist, so name the gap and the way around it.
-  defp scim_location_hint(:entra) do
-    "on a separate ENTERPRISE APPLICATION, not this app registration — Entra splits sign-in and provisioning across two objects. Create a non-gallery app, then Provisioning → Automatic, with the URL in step 2 as Tenant URL and the `ems-` token as Secret Token. Remap externalId to objectId, or the directory and this connection will disagree about who someone is"
-  end
-
-  defp scim_location_hint(:keycloak) do
-    "from a SCIM plugin on your Keycloak — Keycloak ships no outbound provisioning of its own, so this needs a third-party extension, which you configure and support"
-  end
-
-  defp scim_location_hint(_), do: "in your provider's SCIM / user-provisioning settings"
 
   # The kind currently selected in the form (string), for the live setup guide;
   # defaults to the first option — what the select shows before any change.
@@ -3020,7 +2903,7 @@ defmodule EmisarWeb.SSOSettingsLive do
           </summary>
           <.steps class="mt-3 pl-5">
             <:step>
-              Enable SCIM provisioning {scim_location_hint(@provider.kind)}.
+              Enable SCIM provisioning {SSOProviderKind.get(@provider.kind, :scim_location)}.
             </:step>
             <:step>
               <p>Set the connector's SCIM endpoint to this base URL:</p>
