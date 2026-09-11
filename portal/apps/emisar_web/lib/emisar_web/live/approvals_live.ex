@@ -18,8 +18,6 @@ defmodule EmisarWeb.ApprovalsLive do
   alias EmisarWeb.{ConfirmDialog, LiveTable, Permissions}
   alias Phoenix.LiveView.JS
 
-  @reload_debounce_ms 500
-
   def mount(_params, _session, socket) do
     {:ok,
      socket
@@ -41,27 +39,19 @@ defmodule EmisarWeb.ApprovalsLive do
   # A runbook deciding a batch of approvals broadcasts once per request, and
   # every open sockets pays the full page load per event — coalesce like the
   # dashboard/runs feeds do.
-  def handle_info({:approval_updated, _}, socket), do: {:noreply, schedule_reload(socket)}
+  def handle_info({:approval_updated, _}, socket),
+    do: {:noreply, LiveTable.schedule_reload(socket, :reload_approvals)}
 
   def handle_info(
         {:list_changed, :team, "membership.runner_access_changed", user_id},
         %{assigns: %{current_user: %{id: user_id}}} = socket
       ),
-      do: {:noreply, schedule_reload(socket)}
+      do: {:noreply, LiveTable.schedule_reload(socket, :reload_approvals)}
 
   def handle_info(:reload_approvals, socket),
-    do: {:noreply, socket |> assign(:reload_scheduled?, false) |> reload()}
+    do: {:noreply, socket |> LiveTable.reload_drained() |> reload()}
 
   def handle_info(_, socket), do: {:noreply, socket}
-
-  defp schedule_reload(socket) do
-    if socket.assigns.reload_scheduled? do
-      socket
-    else
-      Process.send_after(self(), :reload_approvals, @reload_debounce_ms)
-      assign(socket, :reload_scheduled?, true)
-    end
-  end
 
   defp reload(socket), do: load(socket, socket.assigns[:filter_params] || %{})
 

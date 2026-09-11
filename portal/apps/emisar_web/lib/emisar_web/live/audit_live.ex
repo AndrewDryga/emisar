@@ -10,7 +10,6 @@ defmodule EmisarWeb.AuditLive do
   alias Emisar.{ApiKeys, Audit, Billing}
   alias EmisarWeb.{AuditSummary, LiveTable}
 
-  @reload_debounce_ms 500
   @identity_fields %{
     "actor_id" => {:actor_id, "actor_kind", :actor},
     "target_id" => {:target_id, "target_kind", :target}
@@ -73,10 +72,11 @@ defmodule EmisarWeb.AuditLive do
     |> assign(:load_error?, false)
   end
 
-  def handle_info({:audit_event, _event}, socket), do: {:noreply, schedule_reload(socket)}
+  def handle_info({:audit_event, _event}, socket),
+    do: {:noreply, LiveTable.schedule_reload(socket, :reload_audit)}
 
   def handle_info(:reload_audit, socket),
-    do: {:noreply, socket |> assign(:reload_scheduled?, false) |> reload()}
+    do: {:noreply, socket |> LiveTable.reload_drained() |> reload()}
 
   def handle_info(_, socket), do: {:noreply, socket}
 
@@ -84,13 +84,6 @@ defmodule EmisarWeb.AuditLive do
   # latter ran two DISTINCT scans for every broadcast even while the panel was
   # collapsed; keep the already-assigned filter state and refresh only rows.
   defp reload(socket), do: load_events(socket, socket.assigns[:filter_params] || %{})
-
-  defp schedule_reload(%{assigns: %{reload_scheduled?: true}} = socket), do: socket
-
-  defp schedule_reload(socket) do
-    Process.send_after(self(), :reload_audit, @reload_debounce_ms)
-    assign(socket, :reload_scheduled?, true)
-  end
 
   def handle_event("toggle_filters", _params, %{assigns: %{filters_open?: false}} = socket) do
     socket = assign(socket, :filters_open?, true)

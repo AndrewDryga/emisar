@@ -2,12 +2,9 @@ defmodule EmisarWeb.RunnersLive do
   use EmisarWeb, :live_view
   alias Emisar.Compat
   alias Emisar.Runners
-  alias EmisarWeb.FleetStates
   alias EmisarWeb.LiveTable
   alias EmisarWeb.RunnerInstall
   alias EmisarWeb.URLHelpers
-
-  @reload_debounce_ms 500
 
   def mount(_params, _session, socket) do
     if connected?(socket),
@@ -35,7 +32,7 @@ defmodule EmisarWeb.RunnersLive do
     change = Runners.normalize_connection_change(event)
 
     if Runners.connection_topology_changed?(change) do
-      {:noreply, schedule_reload(socket)}
+      {:noreply, LiveTable.schedule_reload(socket, :reload_runners)}
     else
       runners = Enum.map(socket.assigns.runners, &Runners.project_runner_connection(&1, change))
       {:noreply, assign(socket, :runners, runners)}
@@ -43,10 +40,10 @@ defmodule EmisarWeb.RunnersLive do
   end
 
   def handle_info(:reload_runners, socket),
-    do: {:noreply, socket |> assign(:reload_scheduled?, false) |> reload()}
+    do: {:noreply, socket |> LiveTable.reload_drained() |> reload()}
 
   def handle_info({:runner_credentials_changed, _id}, socket),
-    do: {:noreply, schedule_reload(socket)}
+    do: {:noreply, LiveTable.schedule_reload(socket, :reload_runners)}
 
   def handle_info(
         {:list_changed, :team, "membership.runner_access_changed", user_id},
@@ -201,13 +198,6 @@ defmodule EmisarWeb.RunnersLive do
 
   # PubSub-driven refresh — re-run the current page/filter.
   defp reload(socket), do: load(socket, socket.assigns[:filter_params] || %{})
-
-  defp schedule_reload(%{assigns: %{reload_scheduled?: true}} = socket), do: socket
-
-  defp schedule_reload(socket) do
-    Process.send_after(self(), :reload_runners, @reload_debounce_ms)
-    assign(socket, :reload_scheduled?, true)
-  end
 
   defp prepare_disconnected(socket, params) do
     socket
@@ -454,38 +444,7 @@ defmodule EmisarWeb.RunnersLive do
              dashboard pillar grammar: healthy counts stay quiet, offline wears
              amber (needs attention, not failed — the ONE tone the fact wears
              everywhere). --%>
-              <div class="flex flex-wrap items-center gap-x-5 gap-y-1 pb-4 text-xs">
-                <span class="flex items-center gap-1.5">
-                  <%!-- Zero connected is not a healthy state: green is a real
-                       pass/healthy fact (design-system §3.1), so the dot only
-                       goes brand once a host is actually reachable. --%>
-                  <.status_dot
-                    tone={if @fleet.counts.online > 0, do: :brand, else: :neutral}
-                    size={:sm}
-                  />
-                  <span class="tabular-nums text-zinc-400">
-                    {@fleet.counts.online} {FleetStates.label(:online)}
-                  </span>
-                </span>
-                <span :if={@fleet.counts.offline > 0} class="flex items-center gap-1.5">
-                  <.status_dot tone={:amber} size={:sm} />
-                  <span class="tabular-nums text-amber-300">
-                    {@fleet.counts.offline} {FleetStates.label(:offline)}
-                  </span>
-                </span>
-                <span :if={@fleet.counts.pending > 0} class="flex items-center gap-1.5">
-                  <.status_dot tone={:amber} size={:sm} />
-                  <span class="tabular-nums text-amber-300">
-                    {@fleet.counts.pending} {FleetStates.label(:pending)}
-                  </span>
-                </span>
-                <span :if={@fleet.counts.disabled > 0} class="flex items-center gap-1.5">
-                  <.status_dot tone={:neutral} size={:sm} />
-                  <span class="tabular-nums text-zinc-400">
-                    {@fleet.counts.disabled} {FleetStates.label(:disabled)}
-                  </span>
-                </span>
-              </div>
+              <.fleet_posture counts={@fleet.counts} />
 
               <%!-- Group headers show accessible totals; the runners list below
              is paginated and may show fewer rows per
@@ -593,31 +552,22 @@ defmodule EmisarWeb.RunnersLive do
               <.runner_help />
 
               <div class="mt-6 max-w-md xl:max-w-none">
-                <h3 class="text-[11px] font-semibold uppercase tracking-wider text-zinc-400">
-                  Housekeeping
-                </h3>
-                <%!-- credo:disable-for-next-line Emisar.Checks.NoIslandContainers — self-contained control card, the team-security rail grammar --%>
-                <div id="runners-cleanup" class="mt-3 rounded-xl border border-zinc-800/80 p-4">
-                  <h4 class="text-sm font-medium text-zinc-100">Automatic cleanup</h4>
-                  <p class="mt-1 text-xs leading-relaxed text-zinc-400">
+                <.retention_card
+                  id="runners-cleanup"
+                  setting_id="runner-retention"
+                  can_change?={@can_manage_retention?}
+                  value={retention_value_label(@retention_hours)}
+                  who_can_change="Only owners and admins can change this."
+                  form_id="runner-retention-form"
+                  change_event="set_runner_retention"
+                  select_name="hours"
+                  select_label="Remove runners offline for"
+                  options={runner_retention_options(@retention_hours)}
+                >
+                  <:description>
                     Remove runners offline for the selected period, skipping disabled runners.
                     Cleaned-up hosts must register again.
-                  </p>
-                  <.gated_setting
-                    id="runner-retention"
-                    can_change?={@can_manage_retention?}
-                    value={retention_value_label(@retention_hours)}
-                    who_can_change="Only owners and admins can change this."
-                    class="mt-3"
-                  >
-                    <form id="runner-retention-form" phx-change="set_runner_retention">
-                      <.select
-                        name="hours"
-                        aria-label="Remove runners offline for"
-                        options={runner_retention_options(@retention_hours)}
-                      />
-                    </form>
-                  </.gated_setting>
+                  </:description>
                   <%!-- A runner-scoped admin can't set the account-wide schedule but can
                        still run the manual sweep — it's narrowed to their own scope. --%>
                   <.confirm_button
@@ -637,7 +587,7 @@ defmodule EmisarWeb.RunnersLive do
                     </:body>
                     Clean up now
                   </.confirm_button>
-                </div>
+                </.retention_card>
               </div>
             </div>
           </div>

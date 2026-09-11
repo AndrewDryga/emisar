@@ -1704,57 +1704,44 @@ defmodule EmisarWeb.PacksLive do
             </p>
           </.docs_rail>
 
-          <div>
-            <h3 class="text-[11px] font-semibold uppercase tracking-wider text-zinc-400">
-              Housekeeping
-            </h3>
-            <%!-- credo:disable-for-next-line Emisar.Checks.NoIslandContainers — self-contained control card, the team-security rail grammar --%>
-            <div id="packs-cleanup" class="mt-3 rounded-xl border border-zinc-800/80 p-4">
-              <h4 class="text-sm font-medium text-zinc-100">Automatic cleanup</h4>
-              <p class="mt-1 text-xs leading-relaxed text-zinc-400">
-                Automatically remove unused retired versions and versions no longer reported by runners.
-                <.doc_link href={~p"/docs/pack-updates#cleanup"}>Details</.doc_link>
-              </p>
-              <.gated_setting
-                id="pack-retention"
-                can_change?={@can_manage_pack_retention?}
-                value={
-                  pack_retention_value_label(@current_account.settings.pack_unseen_retention_days)
-                }
-                who_can_change="Only owners and admins with full pack access can change this."
-                class="mt-3"
+          <.retention_card
+            id="packs-cleanup"
+            setting_id="pack-retention"
+            can_change?={@can_manage_pack_retention?}
+            value={pack_retention_value_label(@current_account.settings.pack_unseen_retention_days)}
+            who_can_change="Only owners and admins with full pack access can change this."
+            form_id="pack-retention-form"
+            change_event="set_pack_retention"
+            select_name="days"
+            select_label="Remove pack versions not reported for"
+            options={pack_retention_options(@current_account.settings.pack_unseen_retention_days)}
+          >
+            <:description>
+              Automatically remove unused retired versions and versions no longer reported by runners.
+              <.doc_link href={~p"/docs/pack-updates#cleanup"}>Details</.doc_link>
+            </:description>
+            <:gated>
+              <.confirm_button
+                :if={@current_account.settings.pack_unseen_retention_days}
+                id="packs-cleanup-now"
+                variant={:secondary}
+                tone={:neutral}
+                size={:lg}
+                class="mt-3 w-full"
+                title="Clean up old pack versions?"
+                confirm_label="Clean up now"
+                on_confirm={JS.push("cleanup_now")}
               >
-                <form id="pack-retention-form" phx-change="set_pack_retention">
-                  <.select
-                    name="days"
-                    aria-label="Remove pack versions not reported for"
-                    options={
-                      pack_retention_options(@current_account.settings.pack_unseen_retention_days)
-                    }
-                  />
-                </form>
-                <.confirm_button
-                  :if={@current_account.settings.pack_unseen_retention_days}
-                  id="packs-cleanup-now"
-                  variant={:secondary}
-                  tone={:neutral}
-                  size={:lg}
-                  class="mt-3 w-full"
-                  title="Clean up old pack versions?"
-                  confirm_label="Clean up now"
-                  on_confirm={JS.push("cleanup_now")}
-                >
-                  <:body>
-                    Remove versions not reported for {days_phrase(
-                      @current_account.settings.pack_unseen_retention_days
-                    )}, including their trust decisions. Versions still loaded by connected or
-                    disabled runners are kept.
-                  </:body>
-                  Clean up now
-                </.confirm_button>
-              </.gated_setting>
-            </div>
-          </div>
+                <:body>
+                  Remove versions not reported for {days_phrase(
+                    @current_account.settings.pack_unseen_retention_days
+                  )}, including their trust decisions. Versions still loaded by connected or
+                  disabled runners are kept.
+                </:body>
+                Clean up now
+              </.confirm_button>
+            </:gated>
+          </.retention_card>
         </aside>
       </div>
 

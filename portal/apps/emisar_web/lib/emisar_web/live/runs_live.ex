@@ -10,8 +10,6 @@ defmodule EmisarWeb.RunsLive do
   alias Emisar.{ApiKeys, Runners, Runs}
   alias EmisarWeb.LiveTable
 
-  @reload_debounce_ms 500
-
   def mount(_params, _session, socket) do
     if connected?(socket),
       do: Runs.subscribe_account_runs(socket.assigns.current_account.id)
@@ -63,11 +61,11 @@ defmodule EmisarWeb.RunsLive do
   end
 
   def handle_info({:run_updated, _run}, socket) do
-    {:noreply, schedule_reload(socket)}
+    {:noreply, LiveTable.schedule_reload(socket, :reload_runs)}
   end
 
   def handle_info(:reload_runs, socket),
-    do: {:noreply, socket |> assign(:reload_scheduled?, false) |> reload_runs()}
+    do: {:noreply, socket |> LiveTable.reload_drained() |> reload_runs()}
 
   # Total catch-all: the badge hooks forward EVERY account-topic broadcast
   # (runner connection, approval, pack updates) to every authenticated LV, so
@@ -126,13 +124,6 @@ defmodule EmisarWeb.RunsLive do
 
   defp reload_runs(socket) do
     load_runs(socket, socket.assigns.filter_params, socket.assigns.filters)
-  end
-
-  defp schedule_reload(%{assigns: %{reload_scheduled?: true}} = socket), do: socket
-
-  defp schedule_reload(socket) do
-    Process.send_after(self(), :reload_runs, @reload_debounce_ms)
-    assign(socket, :reload_scheduled?, true)
   end
 
   # The Runner filter's options are per-account, so inject the account's runners

@@ -1,8 +1,7 @@
 defmodule EmisarWeb.DashboardLive do
   use EmisarWeb, :live_view
   alias Emisar.{Accounts, ApiKeys, Approvals, Billing, Catalog, Runners, Runs, SSO}
-
-  @reload_debounce_ms 500
+  alias EmisarWeb.LiveTable
 
   def mount(_params, _session, socket) do
     subject = socket.assigns.current_subject
@@ -59,7 +58,7 @@ defmodule EmisarWeb.DashboardLive do
     socket =
       socket.assigns.pending_refreshes
       |> Enum.reduce(socket, &refresh_domain/2)
-      |> assign(:refresh_scheduled?, false)
+      |> assign(:reload_scheduled?, false)
       |> assign(:pending_refreshes, [])
       |> assign_current_setup_state()
 
@@ -71,15 +70,9 @@ defmodule EmisarWeb.DashboardLive do
   def handle_info(_msg, socket), do: {:noreply, socket}
 
   defp schedule_refresh(socket, domain) do
-    pending_refreshes = Enum.uniq([domain | socket.assigns.pending_refreshes])
-    socket = assign(socket, :pending_refreshes, pending_refreshes)
-
-    if socket.assigns.refresh_scheduled? do
-      socket
-    else
-      Process.send_after(self(), :refresh_dashboard, @reload_debounce_ms)
-      assign(socket, :refresh_scheduled?, true)
-    end
+    socket
+    |> assign(:pending_refreshes, Enum.uniq([domain | socket.assigns.pending_refreshes]))
+    |> LiveTable.schedule_reload(:refresh_dashboard)
   end
 
   defp load(socket) do
@@ -98,7 +91,7 @@ defmodule EmisarWeb.DashboardLive do
     socket
     |> assign(:page_title, "Dashboard")
     |> assign(:loading?, false)
-    |> assign(:refresh_scheduled?, false)
+    |> assign(:reload_scheduled?, false)
     |> assign(:pending_refreshes, [])
     |> assign(:setup_reads, %{api_keys: read_ok?(api_keys_read)})
     # Only the first-run fleet read answers this; the counted path past the

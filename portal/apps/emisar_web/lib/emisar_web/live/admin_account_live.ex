@@ -16,7 +16,6 @@ defmodule EmisarWeb.AdminAccountLive do
   use EmisarWeb, :live_view
   import EmisarWeb.StaffComponents
   alias Emisar.{Accounts, Admin, Auth}
-  alias EmisarWeb.FleetStates
 
   def mount(%{"id" => id}, _session, socket) do
     # IL-18: mount runs twice. The connected guard keeps the eight-query
@@ -197,43 +196,18 @@ defmodule EmisarWeb.AdminAccountLive do
 
         <div>
           <.section_header title="Fleet" />
-          <%!-- The runners page's posture line, verbatim — same dots, same
-               words, same healthy-by-absence rule. These counts read the durable
-               connect/disconnect columns rather than presence, but they answer
-               the four states `Runners.connection_state/1` names, so staff and
-               the customer describe one fleet in one vocabulary. --%>
-          <div class="flex flex-wrap items-center gap-x-5 gap-y-1 pb-4 text-xs">
-            <span class="flex items-center gap-1.5">
-              <.status_dot
-                tone={if @overview.fleet.counts.connected > 0, do: :brand, else: :neutral}
-                size={:sm}
-              />
-              <span class="tabular-nums text-zinc-400">
-                {@overview.fleet.counts.connected} {FleetStates.label(:online)}
-              </span>
-            </span>
-            <span :if={@overview.fleet.counts.disconnected > 0} class="flex items-center gap-1.5">
-              <.status_dot tone={:amber} size={:sm} />
-              <span class="tabular-nums text-amber-300">
-                {@overview.fleet.counts.disconnected} {FleetStates.label(:offline)}
-              </span>
-            </span>
-            <span
-              :if={@overview.fleet.counts.never_connected > 0}
-              class="flex items-center gap-1.5"
-            >
-              <.status_dot tone={:amber} size={:sm} />
-              <span class="tabular-nums text-amber-300">
-                {@overview.fleet.counts.never_connected} {FleetStates.label(:pending)}
-              </span>
-            </span>
-            <span :if={@overview.fleet.counts.disabled > 0} class="flex items-center gap-1.5">
-              <.status_dot tone={:neutral} size={:sm} />
-              <span class="tabular-nums text-zinc-400">
-                {@overview.fleet.counts.disabled} {FleetStates.label(:disabled)}
-              </span>
-            </span>
-          </div>
+          <%!-- These counts read the durable connect/disconnect columns rather
+               than presence, but they answer the four states
+               `Runners.connection_state/1` names, so staff and the customer
+               describe one fleet in one vocabulary. --%>
+          <.fleet_posture counts={
+            %{
+              online: @overview.fleet.counts.connected,
+              offline: @overview.fleet.counts.disconnected,
+              pending: @overview.fleet.counts.never_connected,
+              disabled: @overview.fleet.counts.disabled
+            }
+          } />
 
           <.empty_state
             :if={@overview.fleet.runners == []}

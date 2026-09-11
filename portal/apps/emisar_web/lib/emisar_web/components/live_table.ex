@@ -40,6 +40,10 @@ defmodule EmisarWeb.LiveTable do
   alias EmisarWeb.CoreComponents
   alias Phoenix.LiveView.JS
 
+  # Long enough to swallow a broadcast storm, short enough that a list still
+  # feels live. One value for every list page.
+  @reload_debounce_ms 500
+
   attr :id, :string, required: true
   attr :path, :string, required: true, doc: "verified route the form/page links navigate to"
   attr :rows, :list, required: true
@@ -1121,6 +1125,35 @@ defmodule EmisarWeb.LiveTable do
 
     [filter: filter_kv, page: page_kv]
   end
+
+  @doc """
+  Debounce a live list's reload.
+
+  A broadcast storm — a runbook deciding twenty approvals, a fleet
+  reconnecting — otherwise costs every open socket one full page load per
+  event. The first message schedules a reload; the rest coalesce into it, and
+  the page clears the flag when the timer fires:
+
+      def handle_info({:approval_updated, _}, socket),
+        do: {:noreply, LiveTable.schedule_reload(socket, :reload_approvals)}
+
+      def handle_info(:reload_approvals, socket),
+        do: {:noreply, socket |> LiveTable.reload_drained() |> reload()}
+
+  Five list pages wrote this out, each with its own copy of the guard and of
+  the 500 ms. The message stays the caller's, because what it reloads does.
+  """
+  def schedule_reload(socket, message, debounce_ms \\ @reload_debounce_ms) do
+    if socket.assigns[:reload_scheduled?] do
+      socket
+    else
+      Process.send_after(self(), message, debounce_ms)
+      assign(socket, :reload_scheduled?, true)
+    end
+  end
+
+  @doc "Clear the debounce flag as the scheduled reload runs."
+  def reload_drained(socket), do: assign(socket, :reload_scheduled?, false)
 
   @doc """
   Patch to the filtered URL from a `phx-change` on the filter form.

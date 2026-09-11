@@ -25,6 +25,109 @@ defmodule EmisarWeb.DomainComponents do
   # operator is never told two different things to run.
   @runner_update_command "sudo emisar update"
 
+  @doc """
+  The fleet posture line: how many runners are online, and — only when there
+  are any — how many are offline, pending, or disabled.
+
+  Two pages answer the same question about the same fleet: the operator's
+  runners page and the staff account view. The staff view reads durable
+  connect/disconnect columns rather than live presence, so it normalises its
+  own keys at the call site; everything after that — the dots, the words, and
+  the healthy-by-absence rule — is this component, which is what the comment
+  on the staff copy used to promise in prose.
+
+  Zero online is not a healthy state: green is a real pass/healthy fact
+  (design-system §3.1), so the dot only goes brand once a host is reachable.
+  """
+  attr :counts, :map,
+    required: true,
+    doc: "%{online:, offline:, pending:, disabled:} — the caller maps its own key names"
+
+  def fleet_posture(assigns) do
+    ~H"""
+    <div class="flex flex-wrap items-center gap-x-5 gap-y-1 pb-4 text-xs">
+      <span class="flex items-center gap-1.5">
+        <.status_dot tone={if @counts.online > 0, do: :brand, else: :neutral} size={:sm} />
+        <span class="tabular-nums text-zinc-400">
+          {@counts.online} {FleetStates.label(:online)}
+        </span>
+      </span>
+      <span :if={@counts.offline > 0} class="flex items-center gap-1.5">
+        <.status_dot tone={:amber} size={:sm} />
+        <span class="tabular-nums text-amber-300">
+          {@counts.offline} {FleetStates.label(:offline)}
+        </span>
+      </span>
+      <span :if={@counts.pending > 0} class="flex items-center gap-1.5">
+        <.status_dot tone={:amber} size={:sm} />
+        <span class="tabular-nums text-amber-300">
+          {@counts.pending} {FleetStates.label(:pending)}
+        </span>
+      </span>
+      <span :if={@counts.disabled > 0} class="flex items-center gap-1.5">
+        <.status_dot tone={:neutral} size={:sm} />
+        <span class="tabular-nums text-zinc-400">
+          {@counts.disabled} {FleetStates.label(:disabled)}
+        </span>
+      </span>
+    </div>
+    """
+  end
+
+  @doc """
+  The "Automatic cleanup" card in a list page's rail: how long before this page
+  stops keeping something, with the schedule behind the usual lock.
+
+  Packs and runners both retire what nobody reports any more, and both put that
+  control in the same place with the same frame — down to the island-container
+  exception it earns as a self-contained control card. The period, the sentence
+  explaining it, and the manual-sweep button are each page's own, because they
+  describe different things going away.
+  """
+  attr :id, :string, required: true, doc: ~s(the card, e.g. "packs-cleanup")
+  attr :setting_id, :string, required: true, doc: ~s(the gate, e.g. "pack-retention")
+  attr :can_change?, :boolean, required: true
+  attr :value, :string, required: true, doc: "the current period, for the locked branch"
+  attr :who_can_change, :string, required: true
+  attr :form_id, :string, required: true
+  attr :change_event, :string, required: true
+  attr :select_name, :string, required: true
+  attr :select_label, :string, required: true
+  attr :options, :list, required: true
+  slot :description, required: true, doc: "what this page stops keeping"
+  slot :gated, doc: "more of the control, shown only to someone who may change it"
+  slot :inner_block, doc: "anything outside the gate — the manual sweep button"
+
+  def retention_card(assigns) do
+    ~H"""
+    <div>
+      <h3 class="text-[11px] font-semibold uppercase tracking-wider text-zinc-400">
+        Housekeeping
+      </h3>
+      <%!-- credo:disable-for-next-line Emisar.Checks.NoIslandContainers — self-contained control card, the team-security rail grammar --%>
+      <div id={@id} class="mt-3 rounded-xl border border-zinc-800/80 p-4">
+        <h4 class="text-sm font-medium text-zinc-100">Automatic cleanup</h4>
+        <p class="mt-1 text-xs leading-relaxed text-zinc-400">
+          {render_slot(@description)}
+        </p>
+        <.gated_setting
+          id={@setting_id}
+          can_change?={@can_change?}
+          value={@value}
+          who_can_change={@who_can_change}
+          class="mt-3"
+        >
+          <form id={@form_id} phx-change={@change_event}>
+            <.select name={@select_name} aria-label={@select_label} options={@options} />
+          </form>
+          {render_slot(@gated)}
+        </.gated_setting>
+        {render_slot(@inner_block)}
+      </div>
+    </div>
+    """
+  end
+
   @doc "The copyable first-request prompt shared by onboarding and agent setup."
   attr :id, :string, required: true
   attr :class, :string, default: nil
