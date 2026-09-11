@@ -213,6 +213,8 @@ concept.
 
 ## Color and accessibility
 
+- `product.runbook` stays monochrome in both regular and compact masters:
+  its connector uses `currentColor`, like its nodes, with no accent class.
 - Base anatomy uses `currentColor`. Brand, amber, and rose may reinforce pass/
   added, pending/caution, and deny/failure, following `design-system.md`.
   Color is never the only carrier of meaning: every icon remains distinct and
@@ -341,4 +343,3 @@ grep.
   different: a 15–20% tint (`docs_callout`) stays near the page background,
   so light accents keep their contrast and stay colored. Enforced:
   `EmisarWeb.Components.FlashTest` pins `emisar-icon-mono` on the flash.
-
