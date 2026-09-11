@@ -7,6 +7,10 @@ description: Issue a DNSSEC-validating query. Returns RRSIG records and the AD (
 side_effects:
   - One DNS query with DO bit set.
   - Read-only.
+search_terms:
+  - dnssec validation
+  - is the chain signed
+
 args:
   - name: name
     type: string

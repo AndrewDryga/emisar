@@ -7,6 +7,10 @@ description: 'Show the libmagic-detected type of one file (e.g. "ELF 64-bit exec
 side_effects:
   - One read of the first few KB of the file.
   - Read-only.
+search_terms:
+  - what kind of file is this
+  - is this a binary
+
 args:
   - name: path
     type: path

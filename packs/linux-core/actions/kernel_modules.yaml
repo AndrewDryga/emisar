@@ -14,6 +14,10 @@ side_effects:
   - One lsmod invocation.
   - Read-only.
 
+search_terms:
+  - is this module loaded
+  - missing kernel module
+
 args: []
 
 execution:

@@ -7,6 +7,10 @@ description: 'Show the boot-time critical path leading to one unit — useful fo
 side_effects:
   - One systemd-analyze invocation.
   - Read-only.
+search_terms:
+  - boot critical path
+  - why does startup wait
+
 args:
   - name: unit
     type: string

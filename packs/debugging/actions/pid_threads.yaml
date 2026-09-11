@@ -14,6 +14,10 @@ side_effects:
   - One ps invocation.
   - Read-only.
 
+search_terms:
+  - thread count
+  - runaway threads
+
 args:
   - name: pid
     type: integer

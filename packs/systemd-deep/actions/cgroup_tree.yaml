@@ -7,6 +7,10 @@ description: '`systemd-cgls` — the full cgroup hierarchy with process names. U
 side_effects:
   - One systemd-cgls invocation.
   - Read-only.
+search_terms:
+  - what is in this slice
+  - unit resource hierarchy
+
 args: []
 execution:
   command:

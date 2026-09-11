@@ -7,6 +7,10 @@ description: Find files under one path modified within the last N minutes. Usefu
 side_effects:
   - One file-system traversal.
   - Read-only.
+search_terms:
+  - what changed recently
+  - recently modified files
+
 args:
   - name: path
     type: path

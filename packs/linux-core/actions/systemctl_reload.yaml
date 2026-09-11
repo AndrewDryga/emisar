@@ -15,6 +15,10 @@ side_effects:
   - Sends SIGHUP (or the configured reload signal) to the unit.
   - Unit re-reads its config; existing workers continue.
 
+search_terms:
+  - reload config without downtime
+  - apply new config
+
 args:
   - name: unit
     type: string

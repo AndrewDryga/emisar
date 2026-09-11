@@ -17,6 +17,10 @@ side_effects:
   - One journalctl invocation.
   - Read-only, but exposes cron command lines (may include inline secrets).
 
+search_terms:
+  - cron job did not run
+  - scheduled job missing
+
 args:
   - name: count
     type: integer

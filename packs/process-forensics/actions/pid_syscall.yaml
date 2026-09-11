@@ -7,6 +7,10 @@ description: Show current syscall (or "running" if user-space). Snapshot of wher
 side_effects:
   - One /proc read.
   - Read-only.
+search_terms:
+  - what syscall is it stuck in
+  - process is hung
+
 args:
   - name: pid
     type: integer

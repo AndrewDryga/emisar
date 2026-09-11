@@ -15,6 +15,10 @@ side_effects:
   - Reads /etc/sudoers and ls of /etc/sudoers.d/.
   - Requires root or sudo-readable perms.
 
+search_terms:
+  - who has sudo
+  - unexpected sudo access
+
 args: []
 
 execution:

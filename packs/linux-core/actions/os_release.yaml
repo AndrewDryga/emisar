@@ -14,6 +14,10 @@ side_effects:
   - Two file/utility reads.
   - Read-only.
 
+search_terms:
+  - which distro
+  - kernel version
+
 args: []
 
 execution:

@@ -14,6 +14,10 @@ side_effects:
   - One last invocation.
   - Reads the host's login-history database (legacy wtmp or wtmpdb).
 
+search_terms:
+  - who logged in
+  - recent logins
+
 args:
   - name: count
     type: integer

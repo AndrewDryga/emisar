@@ -7,6 +7,10 @@ description: Search recursively under one path. Bounded to 500 matches.
 side_effects:
   - Recursive file-system traversal + read of matched files.
   - Read-only.
+search_terms:
+  - search a directory
+  - find a string across files
+
 args:
   - name: path
     type: path

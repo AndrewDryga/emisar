@@ -15,6 +15,10 @@ side_effects:
   - One /proc read.
   - Read-only.
 
+search_terms:
+  - ulimit for a process
+  - hit a resource limit
+
 args:
   - name: pid
     type: integer

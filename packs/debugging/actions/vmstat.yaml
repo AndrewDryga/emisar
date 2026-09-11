@@ -15,6 +15,10 @@ side_effects:
   - One vmstat invocation lasting N seconds.
   - Read-only.
 
+search_terms:
+  - system is slow
+  - cpu io and memory at a glance
+
 args:
   - name: samples
     type: integer

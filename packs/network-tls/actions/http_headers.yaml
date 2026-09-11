@@ -10,6 +10,10 @@ description: >
 side_effects:
   - One curl HEAD request.
   - Read-only.
+search_terms:
+  - what headers does it return
+  - check a redirect
+
 args:
   - name: url
     type: string

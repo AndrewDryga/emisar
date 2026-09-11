@@ -20,6 +20,10 @@ side_effects:
   - Output may contain operational secrets — redactor scrubs known patterns.
   - Does not modify anything.
 
+search_terms:
+  - search the logs
+  - find an error in a log file
+
 args:
   - name: file
     type: path

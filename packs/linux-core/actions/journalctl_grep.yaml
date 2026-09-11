@@ -20,6 +20,10 @@ side_effects:
   - Output is run through the runner's redactor before egress.
   - Read-only; does not modify anything.
 
+search_terms:
+  - find this error in the journal
+  - search a unit's log
+
 args:
   - name: unit
     type: string

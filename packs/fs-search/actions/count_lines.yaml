@@ -7,6 +7,10 @@ description: Count lines in one file.
 side_effects:
   - One read of the file.
   - Read-only.
+search_terms:
+  - how many lines
+  - count entries in a file
+
 args:
   - name: path
     type: path

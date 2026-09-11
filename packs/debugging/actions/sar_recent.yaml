@@ -15,6 +15,10 @@ side_effects:
   - One sar invocation running ~15s.
   - Read-only.
 
+search_terms:
+  - historical cpu and io
+  - what happened an hour ago
+
 args: []
 
 execution:

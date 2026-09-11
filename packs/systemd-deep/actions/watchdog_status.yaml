@@ -7,6 +7,10 @@ description: 'List every unit with a non-zero WatchdogUSec property — services
 side_effects:
   - Iterates systemctl show across all units.
   - Read-only.
+search_terms:
+  - watchdog
+  - service restart loop
+
 args: []
 execution:
   command:

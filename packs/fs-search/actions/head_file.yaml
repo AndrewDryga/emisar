@@ -7,6 +7,10 @@ description: Show the first N lines of one file.
 side_effects:
   - One read of the file.
   - Read-only.
+search_terms:
+  - start of a file
+  - read the first lines
+
 args:
   - name: path
     type: path

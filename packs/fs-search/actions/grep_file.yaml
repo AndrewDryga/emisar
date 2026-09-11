@@ -7,6 +7,10 @@ description: Show matching lines in one file. Pattern is treated as POSIX ERE.
 side_effects:
   - One read of the file.
   - Read-only.
+search_terms:
+  - search one file
+  - find a string in a file
+
 args:
   - name: path
     type: path

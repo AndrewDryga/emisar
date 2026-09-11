@@ -14,6 +14,10 @@ description: >
 side_effects:
   - One systemctl invocation.
   - Read-only, but exposes the unit's Environment= values and ExecStart (may include secrets).
+search_terms:
+  - unit properties
+  - what environment does this unit have
+
 args:
   - name: unit
     type: string

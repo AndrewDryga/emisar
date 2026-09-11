@@ -14,6 +14,10 @@ side_effects:
   - One ls -l on /proc/<pid>/fd.
   - Read-only.
 
+search_terms:
+  - which files is it holding
+  - open file descriptors
+
 args:
   - name: pid
     type: integer

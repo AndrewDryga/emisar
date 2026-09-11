@@ -7,6 +7,10 @@ description: List directory contents in long format.
 side_effects:
   - One directory read.
   - Read-only.
+search_terms:
+  - list a directory
+  - file permissions and owner
+
 args:
   - name: path
     type: path

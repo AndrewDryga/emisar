@@ -10,6 +10,10 @@ description: >
 side_effects:
   - Unit cannot be started until unmasked.
   - Dependency chains referencing this unit may fail to activate.
+search_terms:
+  - stop a unit starting at all
+  - block a service
+
 args:
   - name: unit
     type: string

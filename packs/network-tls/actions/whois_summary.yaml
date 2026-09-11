@@ -7,6 +7,10 @@ description: Show filtered whois output — registrar, dates, name servers. Use 
 side_effects:
   - One whois query to the registry.
   - Read-only.
+search_terms:
+  - who owns this domain
+  - domain expiry
+
 args:
   - name: domain
     type: string

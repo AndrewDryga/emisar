@@ -19,6 +19,10 @@ side_effects:
   - Reads /proc/<pid>/environ — requires a matching uid, root, or the process-inspection capabilities in this pack's host-access recipe.
   - Read-only, but exposes the process's full environment (may include secrets).
 
+search_terms:
+  - process environment
+  - what variables did it start with
+
 args:
   - name: pid
     type: integer

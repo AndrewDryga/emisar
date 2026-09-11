@@ -7,6 +7,10 @@ description: '`journalctl -b -p err` — the most recent 100 error-priority log 
 side_effects:
   - One journalctl invocation.
   - Read-only.
+search_terms:
+  - errors since boot
+  - what failed at startup
+
 args: []
 execution:
   command:

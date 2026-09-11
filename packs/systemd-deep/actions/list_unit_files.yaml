@@ -7,6 +7,10 @@ description: '`systemctl list-unit-files --type=service` — every service file 
 side_effects:
   - One systemctl invocation.
   - Read-only.
+search_terms:
+  - is this unit enabled
+  - what units exist
+
 args: []
 execution:
   command:

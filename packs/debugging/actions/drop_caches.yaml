@@ -13,6 +13,10 @@ side_effects:
   - Page cache emptied (1), or slab caches emptied (2), or both (3).
   - Brief I/O spike as caches repopulate.
   - Production read latency increases until warm.
+search_terms:
+  - free page cache
+  - reclaim cached memory
+
 args:
   - name: mode
     type: integer

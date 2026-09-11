@@ -7,6 +7,10 @@ description: Show memory map for one PID. Use to see loaded libraries + heap/sta
 side_effects:
   - One /proc read.
   - Read-only.
+search_terms:
+  - process memory map
+  - which libraries is it using
+
 args:
   - name: pid
     type: integer

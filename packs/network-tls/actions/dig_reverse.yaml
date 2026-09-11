@@ -7,6 +7,10 @@ description: 'Look up the reverse PTR record for an IPv4 or IPv6 address (`dig -
 side_effects:
   - One DNS query.
   - Read-only.
+search_terms:
+  - reverse dns
+  - ptr record for an ip
+
 args:
   - name: ip
     type: string

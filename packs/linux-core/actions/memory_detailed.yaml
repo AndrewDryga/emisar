@@ -14,6 +14,10 @@ side_effects:
   - One read of /proc/meminfo.
   - Read-only.
 
+search_terms:
+  - memory breakdown
+  - how much is cached
+
 args: []
 
 execution:

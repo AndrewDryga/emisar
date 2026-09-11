@@ -16,6 +16,10 @@ side_effects:
   - Reads /proc/<pid>/fd, /proc/<pid>/comm, and /proc/<pid>/limits.
   - Descriptor targets and process environment are not read.
 
+search_terms:
+  - too many open files
+  - fd count for a process
+
 args:
   - name: pid
     type: integer

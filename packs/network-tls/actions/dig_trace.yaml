@@ -8,6 +8,10 @@ description: >
 side_effects:
   - Multiple DNS queries down the delegation tree.
   - Read-only.
+search_terms:
+  - dns delegation
+  - which nameserver answers
+
 args:
   - name: name
     type: string

@@ -12,6 +12,10 @@ side_effects:
   - Kernel tunable updated for current boot.
   - Effect varies — net buffers, vm overcommit, kernel.panic, etc.
   - Not persistent across reboot.
+search_terms:
+  - change a kernel parameter
+  - tune sysctl
+
 args:
   - name: key
     type: string

@@ -7,6 +7,10 @@ description: Undo `mask` for one unit. The unit can be started again.
 side_effects:
   - Unit no longer masked.
   - Unit not started — explicit start still needed.
+search_terms:
+  - unmask a service
+  - unit refuses to start after masking
+
 args:
   - name: unit
     type: string

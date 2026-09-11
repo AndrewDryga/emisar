@@ -15,6 +15,10 @@ side_effects:
   - Starts the unit (and any required dependencies).
   - Triggers ExecStartPre/Post hooks declared in the unit.
 
+search_terms:
+  - service is down
+  - bring a service up
+
 args:
   - name: unit
     type: string

@@ -14,6 +14,10 @@ side_effects:
   - Creates symlinks under /etc/systemd/system/.
   - Idempotent — re-running on an already-enabled unit is a no-op.
 
+search_terms:
+  - start a service at boot
+  - enable a unit
+
 args:
   - name: unit
     type: string

@@ -14,6 +14,10 @@ side_effects:
   - Reads /proc/meminfo via the free utility.
   - Touches no files.
 
+search_terms:
+  - out of memory
+  - swapping
+
 args: []
 
 execution:

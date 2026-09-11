@@ -14,6 +14,10 @@ side_effects:
   - SIGTERMs (then SIGKILLs) the unit's processes.
   - Triggers ExecStop/ExecStopPost hooks.
 
+search_terms:
+  - take a service down
+  - stop a service for maintenance
+
 args:
   - name: unit
     type: string

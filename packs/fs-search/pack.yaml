@@ -2,7 +2,7 @@ schema_version: 1
 
 id: fs-search
 name: Filesystem search and inspection
-version: 0.1.20
+version: 0.2.0
 # 0.1.15 and below rated head_file, grep_file and grep_recursive low while
 # they return raw file content, so an operator who gates medium had those three
 # auto-run beside an already-gated tail_file. 0.1.11 and below let a low-risk,

@@ -7,6 +7,10 @@ description: 'Show three batched cgtop samples — CPU + memory + IO + tasks per
 side_effects:
   - One systemd-cgtop invocation lasting ~3s.
   - Read-only.
+search_terms:
+  - which service is using the cpu
+  - resource hog by unit
+
 args: []
 execution:
   command:

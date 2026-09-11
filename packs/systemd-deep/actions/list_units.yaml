@@ -7,6 +7,10 @@ description: '`systemctl list-units --type=service --all` — every service know
 side_effects:
   - One systemctl invocation.
   - Read-only.
+search_terms:
+  - what is running
+  - unit state
+
 args: []
 execution:
   command:

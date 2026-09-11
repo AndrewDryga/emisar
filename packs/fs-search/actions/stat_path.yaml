@@ -7,6 +7,10 @@ description: Show inode + timestamps + permissions for one path.
 side_effects:
   - One stat() call.
   - Read-only.
+search_terms:
+  - file permissions
+  - when was this file changed
+
 args:
   - name: path
     type: path

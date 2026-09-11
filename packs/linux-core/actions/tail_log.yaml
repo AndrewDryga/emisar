@@ -19,6 +19,10 @@ side_effects:
   - Output may contain operational secrets — redactor scrubs known patterns.
   - Does not modify anything.
 
+search_terms:
+  - read the end of a log
+  - what does the log say
+
 args:
   - name: file
     type: path

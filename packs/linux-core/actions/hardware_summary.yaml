@@ -17,6 +17,10 @@ side_effects:
   - One dmidecode invocation.
   - Read-only.
 
+search_terms:
+  - what hardware is this
+  - server model and serial
+
 args: []
 
 execution:

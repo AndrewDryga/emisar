@@ -14,6 +14,10 @@ side_effects:
   - Three LVM CLI invocations.
   - Read-only.
 
+search_terms:
+  - volume group is full
+  - extend a logical volume
+
 args: []
 
 execution:

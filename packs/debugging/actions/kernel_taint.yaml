@@ -15,6 +15,10 @@ side_effects:
   - Two /proc reads.
   - Read-only.
 
+search_terms:
+  - tainted kernel
+  - unsupported module loaded
+
 args: []
 
 execution:
