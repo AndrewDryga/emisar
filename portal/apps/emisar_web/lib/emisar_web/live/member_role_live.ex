@@ -210,11 +210,23 @@ defmodule EmisarWeb.MemberRoleLive do
           <fieldset>
             <legend class="text-sm font-medium text-zinc-300">Access after the change</legend>
             <input type="hidden" name="access[runner_access_mode]" value="" />
-            <.choice_cards
-              name="access[runner_access_mode]"
-              value={@form[:runner_access_mode].value}
-              class="mt-2.5"
-              attached_value="restricted"
+            <.access_scope_fields
+              runner_mode_name="access[runner_access_mode]"
+              runner_mode_value={@form[:runner_access_mode].value}
+              runner_scope_name="access[scope][]"
+              runner_scope_selected={List.wrap(@form[:scope].value)}
+              pack_mode_name="access[pack_access_mode]"
+              pack_mode_value={@form[:pack_access_mode].value || "all"}
+              pack_scope_name="access[pack_scope][]"
+              pack_scope_selected={List.wrap(@form[:pack_scope].value)}
+              runners={@runners}
+              advertisements={@advertisements}
+              runner_load_error?={@runner_load_error?}
+              pack_load_error?={@pack_load_error?}
+              pack_access?={
+                @form[:runner_access_mode].value in ["all", "restricted"] and
+                  @role not in ["billing_manager", "directory"]
+              }
             >
               <:card
                 :if={@role == "directory"}
@@ -240,34 +252,8 @@ defmodule EmisarWeb.MemberRoleLive do
               >
                 Choose runner groups or individual runners.
               </:card>
-            </.choice_cards>
-            <.runner_scope_select
-              :if={
-                @form[:runner_access_mode].value == "restricted" and
-                  @role not in ["billing_manager", "directory"]
-              }
-              name="access[scope][]"
-              variant={:attached}
-              runners={@runners}
-              selected={List.wrap(@form[:scope].value)}
-              load_error={RunnerScope.runner_load_error(@runner_load_error?)}
-            />
+            </.access_scope_fields>
           </fieldset>
-          <.pack_access_field
-            :if={
-              @form[:runner_access_mode].value in ["all", "restricted"] and
-                @role not in ["billing_manager", "directory"]
-            }
-            runner_mode={@form[:runner_access_mode].value}
-            runner_scope={List.wrap(@form[:scope].value)}
-            runners={@runners}
-            advertisements={@advertisements}
-            load_error={RunnerScope.pack_load_error(@pack_load_error?)}
-            mode_name="access[pack_access_mode]"
-            mode_value={@form[:pack_access_mode].value || "all"}
-            scope_name="access[pack_scope][]"
-            selected={List.wrap(@form[:pack_scope].value)}
-          />
           <.error :if={@error}>{@error}</.error>
           <:actions>
             <.button tone={:amber} variant={:secondary} phx-disable-with="Changing…">Change role</.button>

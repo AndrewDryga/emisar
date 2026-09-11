@@ -956,7 +956,7 @@ defmodule EmisarWeb.TeamLiveTest do
                "Operators can run actions, handle approvals, and create, edit, and publish runbooks."
 
       assert has_element?(lv, "input[name='invite[runner_access_mode]'][value='none']:checked")
-      assert html =~ "They can view workspace activity but cannot act on runners."
+      assert html =~ "No permission to act on runners."
     end
 
     test "an invalid email renders inline on the field, not in a flash", %{conn: conn} do

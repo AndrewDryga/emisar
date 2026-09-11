@@ -1691,56 +1691,24 @@ defmodule EmisarWeb.TeamLive do
               <%!-- The eyebrows below already say the two decisions, so this line
                     spends itself on the one thing they cannot: why the first card
                     is preselected. --%>
-              <div class="mt-3">
-                <.label variant={:eyebrow}>Runners</.label>
-              </div>
-              <div class="mt-2">
-                <.choice_cards
-                  name="invite[runner_access_mode]"
-                  value={@form[:runner_access_mode].value}
-                  attached_value="restricted"
-                >
-                  <:card value="none" title="No runners">
-                    They can view workspace activity but cannot act on runners.
-                  </:card>
-                  <:card value="all" title="All runners">
-                    Includes every current and future runner in this workspace.
-                  </:card>
-                  <:card value="restricted" title="Selected runners">
-                    Limit access to named runner groups or individual runners.
-                  </:card>
-                </.choice_cards>
-
-                <.runner_scope_select
-                  :if={@form[:runner_access_mode].value == "restricted"}
-                  name="invite[scope][]"
-                  variant={:attached}
-                  runners={@runners}
-                  selected={List.wrap(@form[:scope].value)}
-                  submit_error_field={@form[:runner_access_mode]}
-                  submit_error_message="Choose at least one runner group or runner for selected access."
-                  loading?={@loading?}
-                  load_error={RunnerScope.runner_load_error(@runner_load_error?)}
-                />
-              </div>
-
-              <div class="mt-4">
-                <.pack_access_field
-                  runner_mode={to_string(@form[:runner_access_mode].value)}
-                  runner_scope={List.wrap(@form[:scope].value)}
-                  runners={@runners}
-                  advertisements={@pack_advertisements}
-                  grant_limited?={@pack_access_restricted?}
-                  load_error={RunnerScope.pack_load_error(@pack_load_error?)}
-                  mode_name="invite[pack_access_mode]"
-                  mode_value={@form[:pack_access_mode].value}
-                  scope_name="invite[pack_scope][]"
-                  selected={List.wrap(@form[:pack_scope].value)}
-                  submit_error_field={@form[:pack_access_mode]}
-                  submit_error_message="Choose at least one pack for selected pack access."
-                  loading?={@loading?}
-                />
-              </div>
+              <.access_scope_fields
+                runner_mode_name="invite[runner_access_mode]"
+                runner_mode_value={@form[:runner_access_mode].value}
+                runner_scope_name="invite[scope][]"
+                runner_scope_selected={List.wrap(@form[:scope].value)}
+                pack_mode_name="invite[pack_access_mode]"
+                pack_mode_value={@form[:pack_access_mode].value}
+                pack_scope_name="invite[pack_scope][]"
+                pack_scope_selected={List.wrap(@form[:pack_scope].value)}
+                runners={@runners}
+                advertisements={@pack_advertisements}
+                grant_limited?={@pack_access_restricted?}
+                loading?={@loading?}
+                runner_load_error?={@runner_load_error?}
+                pack_load_error?={@pack_load_error?}
+                runner_submit_error_field={@form[:runner_access_mode]}
+                pack_submit_error_field={@form[:pack_access_mode]}
+              />
             </fieldset>
 
             <:actions>

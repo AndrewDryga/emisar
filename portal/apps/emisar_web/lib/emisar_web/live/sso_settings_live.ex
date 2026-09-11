@@ -2522,54 +2522,23 @@ defmodule EmisarWeb.SSOSettingsLive do
                 New members start with this access.
               <% end %>
             </p>
-            <div class="mt-2">
-              <.label variant={:eyebrow}>Runners</.label>
-            </div>
-            <div class="mt-2">
-              <.choice_cards
-                name="provider[default_runner_access_mode]"
-                value={@form[:default_runner_access_mode].value}
-                attached_value="restricted"
-              >
-                <:card value="none" title="No runners">
-                  No permission to act on runners.
-                </:card>
-                <:card value="all" title="All runners">
-                  Access to all current and future runners.
-                </:card>
-                <:card value="restricted" title="Selected runners">
-                  Access to selected runner groups or runners.
-                </:card>
-              </.choice_cards>
-
-              <.runner_scope_select
-                :if={restricted_runner_access?(@form[:default_runner_access_mode].value)}
-                name="provider[default_runner_scope][]"
-                variant={:attached}
-                runners={@runners}
-                selected={List.wrap(@form[:default_runner_scope].value)}
-                submit_error_field={@form[:default_runner_access_mode]}
-                submit_error_message="Choose at least one runner group or runner for selected access."
-                load_error={RunnerScope.runner_load_error(@runner_load_error?)}
-              />
-            </div>
-
-            <div class="mt-4">
-              <.pack_access_field
-                runner_mode={to_string(@form[:default_runner_access_mode].value)}
-                runner_scope={List.wrap(@form[:default_runner_scope].value)}
-                runners={@runners}
-                advertisements={@pack_advertisements}
-                grant_limited?={@pack_access_restricted?}
-                load_error={RunnerScope.pack_load_error(@pack_load_error?)}
-                mode_name="provider[default_pack_access_mode]"
-                mode_value={@form[:default_pack_access_mode].value}
-                scope_name="provider[default_pack_scope][]"
-                selected={List.wrap(@form[:default_pack_scope].value)}
-                submit_error_field={@form[:default_pack_access_mode]}
-                submit_error_message="Choose at least one pack for selected pack access."
-              />
-            </div>
+            <.access_scope_fields
+              runner_mode_name="provider[default_runner_access_mode]"
+              runner_mode_value={@form[:default_runner_access_mode].value}
+              runner_scope_name="provider[default_runner_scope][]"
+              runner_scope_selected={List.wrap(@form[:default_runner_scope].value)}
+              pack_mode_name="provider[default_pack_access_mode]"
+              pack_mode_value={@form[:default_pack_access_mode].value}
+              pack_scope_name="provider[default_pack_scope][]"
+              pack_scope_selected={List.wrap(@form[:default_pack_scope].value)}
+              runners={@runners}
+              advertisements={@pack_advertisements}
+              grant_limited?={@pack_access_restricted?}
+              runner_load_error?={@runner_load_error?}
+              pack_load_error?={@pack_load_error?}
+              runner_submit_error_field={@form[:default_runner_access_mode]}
+              pack_submit_error_field={@form[:default_pack_access_mode]}
+            />
           </div>
           <div class="sm:col-span-2">
             <.input
@@ -4224,8 +4193,6 @@ defmodule EmisarWeb.SSOSettingsLive do
     Enum.map(access.groups, &{:group, &1}) ++
       Enum.map(access.runner_ids, &{:runner, &1})
   end
-
-  defp restricted_runner_access?(mode), do: mode in [:restricted, "restricted"]
 
   defp provisioner_label(:jit), do: "Add on first sign-in"
   defp provisioner_label(:manual), do: "Require approval"

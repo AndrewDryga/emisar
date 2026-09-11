@@ -228,6 +228,114 @@ defmodule EmisarWeb.RunnerScope do
   end
 
   @doc """
+  The access fieldset every grant form asks: which runners, then which packs on
+  them. Four forms rendered their own copy of it — the invite form, the team
+  scope editor, the SSO provider defaults, and the role editor — and the three
+  choices had drifted into three different descriptions of the same thing.
+
+  The caller supplies the field names (they differ per form: `invite[...]`,
+  `provider[default_...]`, bare) and where the values come from; the copy, the
+  attached-card wiring and the two submit-error sentences live here. A form
+  with its own choices — the role editor, whose cards depend on the role —
+  passes a `:cards` slot and keeps them.
+  """
+  attr :runner_mode_name, :string, required: true
+  attr :runner_mode_value, :any, required: true
+  attr :runner_scope_name, :string, required: true
+  attr :runner_scope_selected, :list, default: []
+  attr :pack_mode_name, :string, required: true
+  attr :pack_mode_value, :any, required: true
+  attr :pack_scope_name, :string, required: true
+  attr :pack_scope_selected, :list, default: []
+  attr :runners, :list, required: true
+  attr :advertisements, :map, required: true
+  attr :grant_limited?, :boolean, default: false
+  attr :loading?, :boolean, default: false
+  attr :runner_load_error?, :boolean, default: false
+  attr :pack_load_error?, :boolean, default: false
+
+  attr :runner_submit_error_field, Phoenix.HTML.FormField,
+    default: nil,
+    doc: "form-backed callers point the runner error at the mode field"
+
+  attr :pack_submit_error_field, Phoenix.HTML.FormField, default: nil
+
+  attr :runner_validation_error, :string,
+    default: nil,
+    doc: "assign-backed callers pass the string"
+
+  attr :pack_validation_error, :string, default: nil
+
+  attr :pack_access?, :boolean,
+    default: true,
+    doc: "false where the runner choice itself rules packs out (a directory or billing-only role)"
+
+  slot :card, doc: "override the three standard choices (the role editor does)" do
+    attr :value, :string, required: true
+    attr :title, :string, required: true
+  end
+
+  def access_scope_fields(assigns) do
+    ~H"""
+    <div class="mt-2">
+      <.label variant={:eyebrow}>Runners</.label>
+    </div>
+    <div class="mt-2">
+      <.choice_cards
+        name={@runner_mode_name}
+        value={@runner_mode_value}
+        attached_value="restricted"
+      >
+        <:card :for={card <- @card} value={card.value} title={card.title}>
+          {render_slot(card)}
+        </:card>
+        <:card :if={@card == []} value="none" title="No runners">
+          No permission to act on runners.
+        </:card>
+        <:card :if={@card == []} value="all" title="All runners">
+          Every current and future runner in this workspace.
+        </:card>
+        <:card :if={@card == []} value="restricted" title="Selected runners">
+          Only the runner groups or runners chosen below.
+        </:card>
+      </.choice_cards>
+
+      <.runner_scope_select
+        :if={to_string(@runner_mode_value) == "restricted"}
+        name={@runner_scope_name}
+        variant={:attached}
+        runners={@runners}
+        selected={@runner_scope_selected}
+        submit_error_field={@runner_submit_error_field}
+        submit_error_message="Choose at least one runner group or runner for selected access."
+        validation_error={@runner_validation_error}
+        loading?={@loading?}
+        load_error={runner_load_error(@runner_load_error?)}
+      />
+    </div>
+
+    <div :if={@pack_access?} class="mt-4">
+      <.pack_access_field
+        runner_mode={to_string(@runner_mode_value)}
+        runner_scope={@runner_scope_selected}
+        runners={@runners}
+        advertisements={@advertisements}
+        grant_limited?={@grant_limited?}
+        load_error={pack_load_error(@pack_load_error?)}
+        mode_name={@pack_mode_name}
+        mode_value={@pack_mode_value}
+        scope_name={@pack_scope_name}
+        selected={@pack_scope_selected}
+        submit_error_field={@pack_submit_error_field}
+        submit_error_message="Choose at least one pack for selected pack access."
+        validation_error={@pack_validation_error}
+        loading?={@loading?}
+      />
+    </div>
+    """
+  end
+
+  @doc """
   The `load_error` message for a failed runner read, or `nil`. The picker's own
   empty state ("No runners registered yet.") would otherwise invite an admin to
   widen a grant because the fleet it reaches looks empty.
