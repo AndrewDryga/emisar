@@ -665,6 +665,603 @@ defmodule EmisarWeb.TeamLive do
   defp keep_pack_selection(_socket, params), do: params
 
   # Groups lead — a group is the wider grant, so the visible tags start there.
+  # The invite form. Split out of render/1, which carried four unrelated
+  # screens — invite, MFA reset, the roster, and the security rail — in one
+  # 1,514-line body.
+  attr :can_manage_team?, :any, required: true
+  attr :current_account, :any, required: true
+  attr :form, :any, required: true
+  attr :invite_delivery, :any, required: true
+  attr :invited_access, :any, required: true
+  attr :invited_email, :any, required: true
+  attr :invited_membership, :any, required: true
+  attr :loading?, :any, required: true
+  attr :pack_access_restricted?, :any, required: true
+  attr :pack_advertisements, :any, required: true
+  attr :pack_load_error?, :any, required: true
+  attr :roles, :any, required: true
+  attr :runner_load_error?, :any, required: true
+  attr :runners, :any, required: true
+  attr :runners_by_id, :any, required: true
+
+  defp invite_form(assigns) do
+    ~H"""
+    <div class="mt-4 max-w-2xl">
+      <.empty_state
+        :if={not @can_manage_team?}
+        variant={:bare}
+        tone={:danger}
+        icon="state.locked"
+        title="You can't invite members"
+      >
+        Only owners and admins can invite members.
+      </.empty_state>
+
+      <%!-- Sent is the settled destination of this focused flow, so it gets a
+           calm receipt. Delivery problems still use the attention spine
+           because the operator has to act. --%>
+      <.invite_result
+        :if={@can_manage_team? and @invited_email}
+        email={@invited_email}
+        membership={@invited_membership}
+        access={@invited_access}
+        runners_by_id={@runners_by_id}
+        delivery={@invite_delivery}
+      >
+        <div class="mt-6 flex flex-wrap items-center gap-3">
+          <.button phx-click="invite_another" icon="action.add">Invite another</.button>
+          <.button navigate={~p"/app/#{@current_account}/settings/team"} variant={:secondary}>
+            View members
+          </.button>
+        </div>
+      </.invite_result>
+
+      <div :if={@can_manage_team? and is_nil(@invited_email)}>
+        <p class="text-sm leading-relaxed text-zinc-400">
+          We'll email an invitation to join <span class="font-medium text-zinc-300">{@current_account.name}</span>.
+        </p>
+
+        <.simple_form
+          for={@form}
+          id="invite_form"
+          phx-change="validate"
+          phx-submit="invite"
+          class="mt-6 space-y-5"
+        >
+          <.input
+            field={@form[:email]}
+            type="email"
+            label="Email address"
+            placeholder="name@company.com"
+            autocomplete="off"
+            required
+          />
+
+          <fieldset>
+            <legend class="text-sm font-medium text-zinc-300">Role</legend>
+            <.choice_cards
+              name="invite[role]"
+              value={@form[:role].value}
+              class="mt-2.5"
+            >
+              <:card
+                :for={role <- @roles}
+                :if={Emisar.Auth.role_description(role)}
+                value={role}
+                title={Emisar.Auth.role_label(role)}
+              >
+                {Emisar.Auth.role_description(role)}
+              </:card>
+            </.choice_cards>
+          </fieldset>
+
+          <%!-- A role that reaches no runners keeps the fieldset — the value is
+                still a fact of the invite — but states it as the locked chip the
+                roster uses for a value someone else decides. Leaving the pickers
+                up would offer a choice `InvitationInput` resets on the very next
+                change event, which reads as a broken control. --%>
+          <fieldset :if={not Emisar.Auth.role_carries_runner_access?(@form[:role].value)}>
+            <legend class="text-sm font-medium text-zinc-300">Access</legend>
+            <p class="mt-0.5 text-xs text-zinc-400">
+              {Emisar.Auth.role_label(@form[:role].value)} manages billing only.
+            </p>
+            <div class="mt-3 flex flex-wrap items-center gap-2">
+              <.chip icon="role.restricted">No runners</.chip>
+              <.chip icon="role.restricted">No packs</.chip>
+            </div>
+          </fieldset>
+
+          <fieldset :if={@form[:role].value == "owner"}>
+            <legend class="text-sm font-medium text-zinc-300">Access</legend>
+            <div class="mt-3 flex flex-wrap items-center gap-2">
+              <.chip>All runners</.chip>
+              <.chip>All packs</.chip>
+            </div>
+          </fieldset>
+
+          <fieldset :if={
+            @form[:role].value != "owner" and
+              Emisar.Auth.role_carries_runner_access?(@form[:role].value)
+          }>
+            <legend class="text-sm font-medium text-zinc-300">Access</legend>
+            <%!-- The eyebrows below already say the two decisions, so this line
+                  spends itself on the one thing they cannot: why the first card
+                  is preselected. --%>
+            <.access_scope_fields
+              runner_mode_name="invite[runner_access_mode]"
+              runner_mode_value={@form[:runner_access_mode].value}
+              runner_scope_name="invite[scope][]"
+              runner_scope_selected={List.wrap(@form[:scope].value)}
+              pack_mode_name="invite[pack_access_mode]"
+              pack_mode_value={@form[:pack_access_mode].value}
+              pack_scope_name="invite[pack_scope][]"
+              pack_scope_selected={List.wrap(@form[:pack_scope].value)}
+              runners={@runners}
+              advertisements={@pack_advertisements}
+              grant_limited?={@pack_access_restricted?}
+              loading?={@loading?}
+              runner_load_error?={@runner_load_error?}
+              pack_load_error?={@pack_load_error?}
+              runner_submit_error_field={@form[:runner_access_mode]}
+              pack_submit_error_field={@form[:pack_access_mode]}
+            />
+          </fieldset>
+
+          <:actions>
+            <.button phx-disable-with="Sending…">Send invite</.button>
+            <.button navigate={~p"/app/#{@current_account}/settings/team"} variant={:ghost}>
+              Cancel
+            </.button>
+          </:actions>
+        </.simple_form>
+      </div>
+    </div>
+    """
+  end
+
+  # The member MFA reset screen: verify the acting admin, then reset.
+  attr :current_account, :any, required: true
+  attr :current_user, :any, required: true
+  attr :loading?, :any, required: true
+  attr :mfa_reset_error, :any, required: true
+  attr :mfa_reset_mode, :any, required: true
+  attr :mfa_reset_recovery_form, :any, required: true
+  attr :mfa_reset_sso_facts, :any, required: true
+  attr :mfa_reset_target, :any, required: true
+
+  defp mfa_reset_form(assigns) do
+    ~H"""
+    <div class="mt-4 max-w-xl">
+      <.loading_state :if={@loading?} />
+
+      <div :if={not @loading? and @mfa_reset_target}>
+        <% target = @mfa_reset_target.user %>
+        <.status_note
+          icon="state.warning"
+          tone={:amber}
+          title="Reset authenticator"
+          primary
+        >
+          <span class="font-medium text-zinc-200">
+            {Accounts.user_display_name(target) || target.email || "this member"}
+          </span>'s authenticator and recovery codes will be removed, and all their sessions ended.
+          Confirm they requested this reset before continuing.
+        </.status_note>
+
+        <div class="mt-7">
+          <%= if @current_user.mfa_enabled_at do %>
+            <%= if @mfa_reset_mode == :totp do %>
+              <.simple_form for={%{}} id="member-mfa-reset-totp" phx-submit="verify_reset_totp">
+                <.code_input
+                  id="member-mfa-reset-otp"
+                  name="otp"
+                  numeric
+                  label="Your authenticator code"
+                  error={@mfa_reset_error}
+                />
+                <:actions>
+                  <.button variant={:secondary} tone={:rose} phx-disable-with="Verifying…">
+                    Verify and reset MFA
+                  </.button>
+                  <.button
+                    :if={@mfa_reset_sso_facts}
+                    href={
+                      ~p"/app/#{@current_account}/settings/team/#{@mfa_reset_target.id}/reset_mfa/sso"
+                    }
+                    method="post"
+                    variant={:secondary}
+                    tone={:rose}
+                  >
+                    Verify with {@mfa_reset_sso_facts.provider_name} and reset MFA
+                  </.button>
+                  <.button
+                    navigate={~p"/app/#{@current_account}/settings/team"}
+                    variant={:ghost}
+                  >
+                    Cancel
+                  </.button>
+                </:actions>
+              </.simple_form>
+
+              <button
+                type="button"
+                phx-click="use_reset_recovery"
+                class="mt-5 text-sm font-medium text-brand-400 hover:text-brand-300"
+              >
+                Use a recovery code instead
+              </button>
+            <% else %>
+              <.simple_form
+                for={@mfa_reset_recovery_form}
+                id="member-mfa-reset-recovery"
+                phx-submit="verify_reset_recovery"
+              >
+                <.input
+                  field={@mfa_reset_recovery_form[:code]}
+                  type="text"
+                  label="Your recovery code"
+                  autocomplete="one-time-code"
+                  required
+                />
+                <.error :if={@mfa_reset_error}>{@mfa_reset_error}</.error>
+                <:actions>
+                  <.button variant={:secondary} tone={:rose} phx-disable-with="Verifying…">
+                    Verify and reset MFA
+                  </.button>
+                  <.button
+                    navigate={~p"/app/#{@current_account}/settings/team"}
+                    variant={:ghost}
+                  >
+                    Cancel
+                  </.button>
+                </:actions>
+              </.simple_form>
+
+              <button
+                type="button"
+                phx-click="use_reset_totp"
+                class="mt-5 text-sm font-medium text-brand-400 hover:text-brand-300"
+              >
+                Use an authenticator code instead
+              </button>
+            <% end %>
+          <% else %>
+            <%= if @mfa_reset_sso_facts do %>
+              <p class="text-sm leading-relaxed text-zinc-400">
+                Reauthenticate with your identity provider before this reset can continue.
+              </p>
+              <div class="mt-5 flex flex-wrap gap-3">
+                <.button
+                  href={
+                    ~p"/app/#{@current_account}/settings/team/#{@mfa_reset_target.id}/reset_mfa/sso"
+                  }
+                  method="post"
+                  variant={:secondary}
+                  tone={:rose}
+                >
+                  Verify with {@mfa_reset_sso_facts.provider_name} and reset MFA
+                </.button>
+                <.button
+                  navigate={~p"/app/#{@current_account}/settings/team"}
+                  variant={:ghost}
+                >
+                  Cancel
+                </.button>
+              </div>
+            <% else %>
+              <.empty_state
+                variant={:bare}
+                tone={:danger}
+                icon="state.locked"
+                title="A second factor is required"
+              >
+                Set up MFA in your profile, then return here to reset this member's factor.
+                <div class="mt-4">
+                  <.button
+                    navigate={~p"/app/#{@current_account}/settings/profile"}
+                    variant={:secondary}
+                  >
+                    Open profile
+                  </.button>
+                </div>
+              </.empty_state>
+            <% end %>
+          <% end %>
+        </div>
+      </div>
+    </div>
+    """
+  end
+
+  # The Team page's side rail: MFA posture, SSO connections, directory sync.
+  attr :current_account, :any, required: true
+  attr :current_subject, :any, required: true
+  attr :enabled_sso_provider_count, :any, required: true
+  attr :provider_facts, :any, required: true
+  attr :require_sso_available?, :any, required: true
+  attr :security_facts, :any, required: true
+  attr :sso_load_error?, :any, required: true
+  attr :sync_stats, :any, required: true
+  attr :sync_stats_error?, :any, required: true
+
+  defp security_rail(assigns) do
+    ~H"""
+    <aside class="space-y-4">
+      <h3 class="text-[11px] font-semibold uppercase tracking-wider text-zinc-400">Security</h3>
+
+      <%!-- ── Multi-factor authentication ── --%>
+      <.event_block
+        :if={not @security_facts.available?}
+        id="team-security-unavailable"
+        icon="state.warning"
+        tone={:amber}
+        title="Couldn't load sign-in settings"
+      >
+        <:body>Refresh the page to try again.</:body>
+      </.event_block>
+      <%!-- credo:disable-for-next-line Emisar.Checks.NoIslandContainers — a self-contained security control, boxed per the screenshot --%>
+      <div class="rounded-xl border border-zinc-800/80 p-4">
+        <h4 class="text-sm font-medium text-zinc-100">Multi-factor authentication</h4>
+        <p class="mt-1 text-xs leading-relaxed text-zinc-400">
+          Require a second factor before members can use this account.
+        </p>
+        <p :if={@security_facts.available?} class="mt-3 flex flex-wrap items-center gap-2 text-xs">
+          <span class="flex items-center gap-1.5">
+            <span class="text-zinc-400">
+              Authenticator set up:
+              <span id="mfa-enrolled-count" class="font-medium tabular-nums text-zinc-200">
+                {@security_facts.mfa_enrolled}
+              </span>
+              of
+              <span class="font-medium tabular-nums text-zinc-200">
+                {@security_facts.mfa_total}
+              </span>
+              {if @security_facts.mfa_total == 1, do: "member", else: "members"}
+            </span>
+          </span>
+        </p>
+        <%!-- No "Enforced" chip on the facts line above: the button's own verb
+             says it for a member who can change it, and the locked value says it
+             for one who can't — a chip as well would state it twice. --%>
+        <.gated_setting
+          id="require-mfa"
+          can_change?={
+            @security_facts.available? and
+              Accounts.subject_can_manage_account_security?(@current_subject)
+          }
+          value={mfa_enforcement_value_label(@security_facts.mfa_enforcement)}
+          who_can_change="Only owners and admins can change this."
+          class="mt-4"
+        >
+          <%= if @security_facts.mfa_enforcement == :actor_not_enrolled do %>
+            <.tooltip
+              text="Enable MFA on your own profile first — otherwise you'd lock yourself out."
+              placement={:bottom}
+              class="shrink-0"
+            >
+              <.mfa_confirm_button
+                require_mfa={false}
+                disabled={true}
+              />
+            </.tooltip>
+          <% else %>
+            <.mfa_confirm_button
+              require_mfa={@security_facts.mfa_enforcement == :enforced}
+              disabled={false}
+            />
+          <% end %>
+        </.gated_setting>
+      </div>
+
+      <%!-- ── Single sign-on connections ── --%>
+      <%!-- The id is a documented deep-link target: /settings/sso lands here
+           via its anchored redirect, and /docs/sso points operators at it. --%>
+      <%!-- credo:disable-for-next-line Emisar.Checks.NoIslandContainers — a self-contained security control, boxed per the screenshot --%>
+      <div id="single-sign-on" class="rounded-xl border border-zinc-800/80 p-4">
+        <h4 class="text-sm font-medium text-zinc-100">Single sign-on</h4>
+        <p class="mt-1 text-xs leading-relaxed text-zinc-400">
+          Let members sign in through your identity provider.
+        </p>
+        <%!-- The whole list fits: a connection is unique per provider kind
+             (one Okta, one Google, …), so there are at most a handful. --%>
+        <ul :if={@provider_facts != []} class="mt-3 space-y-0.5">
+          <li :for={provider <- @provider_facts}>
+            <.link
+              id={"sso-provider-#{provider.id}"}
+              navigate={~p"/app/#{@current_account}/settings/sso/#{provider.id}"}
+              class="group -mx-2 flex items-center gap-2.5 rounded-md px-2 py-2 transition-colors hover:bg-white/[0.04]"
+            >
+              <div class="min-w-0 flex-1">
+                <span class="flex items-center gap-2 text-sm leading-tight text-zinc-200">
+                  <span class="truncate">{provider.name}</span>
+                  <span :if={not provider.enabled?} class="shrink-0 text-[10px] text-zinc-400">
+                    Disabled
+                  </span>
+                </span>
+                <%!-- Directory-sync status, one quiet line pulled up snug under
+                     the name: how much the sync has pulled in (users + distinct
+                     groups) and how fresh it is. Only for a SCIM connection; JIT
+                     provisions on sign-in and has nothing to show here. --%>
+                <span
+                  :if={provider.directory_sync?}
+                  class="mt-0.5 block text-[11px] leading-tight text-zinc-400"
+                >
+                  <%!-- Zeroes from a failed stats read would report a live sync
+                       as pulling nothing in. --%>
+                  <span :if={@sync_stats_error?}>Sync counts unavailable</span>
+                  <% stats = Map.get(@sync_stats, provider.id, %{users: 0, groups: 0}) %>
+                  <span :if={not @sync_stats_error?}>
+                    {sync_count(stats.users, "user")} · {sync_count(stats.groups, "group")}
+                  </span>
+                  <span :if={provider.last_synced_at} class="text-brand-300/90">
+                    · connected
+                    <.local_time
+                      id={"provider-synced-#{provider.id}"}
+                      value={provider.last_synced_at}
+                      mode={:relative}
+                    />
+                  </span>
+                  <span :if={is_nil(provider.last_synced_at)} class="text-amber-300/90">
+                    · never connected
+                  </span>
+                </span>
+              </div>
+              <.icon
+                name="breadcrumb.separator"
+                class="h-3.5 w-3.5 shrink-0 text-zinc-500 group-hover:text-zinc-400"
+              />
+            </.link>
+          </li>
+        </ul>
+        <.empty_state
+          :if={@sso_load_error?}
+          variant={:hint}
+          tone={:danger}
+          icon="state.warning"
+          title="Couldn't load single sign-on"
+          class="mt-3"
+        >
+          Refresh the page to try again.
+        </.empty_state>
+        <%!-- The setup action owns the empty state. Members without SSO
+             management access still see the narrow read-only posture. --%>
+        <.gated_setting
+          :if={not @sso_load_error? or SSO.subject_can_manage_sso?(@current_subject)}
+          id="sso-connections"
+          can_change?={SSO.subject_can_manage_sso?(@current_subject)}
+          value={sso_connections_value_label(@enabled_sso_provider_count)}
+          who_can_change="Only owners and admins can change this."
+          class="mt-4"
+        >
+          <%= if SSO.subject_can_configure_sso?(@current_subject) do %>
+            <.button
+              id="add-sso-connection"
+              navigate={~p"/app/#{@current_account}/settings/sso/new"}
+              variant={:secondary}
+              size={:sm}
+              icon="action.add"
+            >
+              Add connection
+            </.button>
+          <% else %>
+            <.tooltip
+              id="add-sso-connection-plan"
+              text="Single sign-on requires the Team plan or above."
+              placement={:bottom}
+              class="shrink-0"
+            >
+              <.button
+                id="add-sso-connection"
+                type="button"
+                variant={:secondary}
+                size={:sm}
+                icon="state.locked"
+                disabled
+                aria-describedby="add-sso-connection-plan"
+              >
+                Add connection
+              </.button>
+            </.tooltip>
+          <% end %>
+        </.gated_setting>
+        <%!-- Enforcement stays with the connections it governs; sharing
+             the sign-in link belongs to the page's member actions. --%>
+        <div
+          :if={
+            @provider_facts != [] or @enabled_sso_provider_count > 0 or
+              @security_facts.sso_required? == true
+          }
+          data-role="require-sso-section"
+          class="mt-4 border-t border-zinc-800/70 pt-3"
+        >
+          <p class="text-[11px] font-medium text-zinc-300">Require single sign-on</p>
+          <p class="mt-0.5 text-[11px] leading-relaxed text-zinc-400">
+            Disable all other sign-in methods for this account.
+          </p>
+          <%!-- The "Required" tag that rode the title line is gone: the button's
+               verb states it for a member who can change it, the locked value for
+               one who can't, and neither said it when SSO was NOT required. --%>
+          <.gated_setting
+            id="require-sso"
+            can_change?={
+              @security_facts.available? and not @sso_load_error? and
+                Accounts.subject_can_manage_account_security?(@current_subject)
+            }
+            value={sso_required_value_label(@security_facts.sso_required?)}
+            who_can_change="Only owners and admins can change this."
+            class="mt-3"
+          >
+            <%= cond do %>
+              <% @security_facts.sso_required? -> %>
+                <.confirm_button
+                  id="require-sso"
+                  variant={:secondary}
+                  tone={:neutral}
+                  size={:sm}
+                  title="Stop requiring single sign-on?"
+                  confirm_label="Stop requiring"
+                  on_confirm={JS.push("toggle_require_sso")}
+                >
+                  <:body>Members will be able to sign in with a magic link again.</:body>
+                  Stop requiring SSO
+                </.confirm_button>
+              <% @require_sso_available? -> %>
+                <.confirm_button
+                  id="require-sso"
+                  variant={:secondary}
+                  tone={:neutral}
+                  size={:sm}
+                  title="Require single sign-on for everyone?"
+                  confirm_label="Require SSO"
+                  on_confirm={JS.push("toggle_require_sso")}
+                >
+                  <:body>
+                    Members who signed in another way are stopped the next time they navigate and
+                    have to sign in again through your provider — if it's misconfigured, they're
+                    locked out. Confirm SSO works first.
+                  </:body>
+                  Require SSO
+                </.confirm_button>
+              <% true -> %>
+                <span class="text-[11px] text-zinc-400">Add an enabled connection first</span>
+            <% end %>
+          </.gated_setting>
+        </div>
+      </div>
+
+      <%!-- ===== Notifications ===== account-wide email preferences, distinct
+           from the security knobs above (owner/admin, but not a security change). --%>
+      <h3 class="pt-2 text-[11px] font-semibold uppercase tracking-wider text-zinc-400">
+        Notifications
+      </h3>
+
+      <%!-- ── Monthly report ── --%>
+      <%!-- credo:disable-for-next-line Emisar.Checks.NoIslandContainers — a self-contained account preference, boxed like the security cards --%>
+      <div class="rounded-xl border border-zinc-800/80 p-4">
+        <h4 class="text-sm font-medium text-zinc-100">Monthly report</h4>
+        <p class="mt-1 text-xs leading-relaxed text-zinc-400">
+          Email every Owner a monthly summary of activity and security.
+        </p>
+        <.gated_setting
+          id="monthly-report"
+          can_change?={Accounts.subject_can_manage_account?(@current_subject)}
+          value={monthly_report_value_label(@current_account.settings.monthly_report_opt_out)}
+          who_can_change="Only owners and admins can change this."
+          class="mt-4"
+        >
+          <.switch
+            on={not @current_account.settings.monthly_report_opt_out}
+            on_label="Turn off"
+            off_label="Turn on"
+            aria-label="Monthly account-health report email"
+            phx-click="toggle_monthly_report"
+          />
+        </.gated_setting>
+      </div>
+    </aside>
+    """
+  end
+
   defp scope_tag_items(%Accounts.RunnerAccess{} = access) do
     Enum.map(access.groups, &{:group, &1}) ++ Enum.map(access.runner_ids, &{:runner, &1})
   end
@@ -1590,277 +2187,36 @@ defmodule EmisarWeb.TeamLive do
            success step (Invite another / Back to members) instead of a flash.
            NAKED on the canvas (§8.1: forms are naked — the inputs and the
            role cards are the controls; the panel around them was an island). --%>
-      <div :if={@live_action == :new} class="mt-4 max-w-2xl">
-        <.empty_state
-          :if={not @can_manage_team?}
-          variant={:bare}
-          tone={:danger}
-          icon="state.locked"
-          title="You can't invite members"
-        >
-          Only owners and admins can invite members.
-        </.empty_state>
+      <.invite_form
+        :if={@live_action == :new}
+        can_manage_team?={@can_manage_team?}
+        current_account={@current_account}
+        form={@form}
+        invite_delivery={@invite_delivery}
+        invited_access={@invited_access}
+        invited_email={@invited_email}
+        invited_membership={@invited_membership}
+        loading?={@loading?}
+        pack_access_restricted?={@pack_access_restricted?}
+        pack_advertisements={@pack_advertisements}
+        pack_load_error?={@pack_load_error?}
+        roles={@roles}
+        runner_load_error?={@runner_load_error?}
+        runners={@runners}
+        runners_by_id={@runners_by_id}
+      />
 
-        <%!-- Sent is the settled destination of this focused flow, so it gets a
-             calm receipt. Delivery problems still use the attention spine
-             because the operator has to act. --%>
-        <.invite_result
-          :if={@can_manage_team? and @invited_email}
-          email={@invited_email}
-          membership={@invited_membership}
-          access={@invited_access}
-          runners_by_id={@runners_by_id}
-          delivery={@invite_delivery}
-        >
-          <div class="mt-6 flex flex-wrap items-center gap-3">
-            <.button phx-click="invite_another" icon="action.add">Invite another</.button>
-            <.button navigate={~p"/app/#{@current_account}/settings/team"} variant={:secondary}>
-              View members
-            </.button>
-          </div>
-        </.invite_result>
-
-        <div :if={@can_manage_team? and is_nil(@invited_email)}>
-          <p class="text-sm leading-relaxed text-zinc-400">
-            We'll email an invitation to join <span class="font-medium text-zinc-300">{@current_account.name}</span>.
-          </p>
-
-          <.simple_form
-            for={@form}
-            id="invite_form"
-            phx-change="validate"
-            phx-submit="invite"
-            class="mt-6 space-y-5"
-          >
-            <.input
-              field={@form[:email]}
-              type="email"
-              label="Email address"
-              placeholder="name@company.com"
-              autocomplete="off"
-              required
-            />
-
-            <fieldset>
-              <legend class="text-sm font-medium text-zinc-300">Role</legend>
-              <.choice_cards
-                name="invite[role]"
-                value={@form[:role].value}
-                class="mt-2.5"
-              >
-                <:card
-                  :for={role <- @roles}
-                  :if={Emisar.Auth.role_description(role)}
-                  value={role}
-                  title={Emisar.Auth.role_label(role)}
-                >
-                  {Emisar.Auth.role_description(role)}
-                </:card>
-              </.choice_cards>
-            </fieldset>
-
-            <%!-- A role that reaches no runners keeps the fieldset — the value is
-                  still a fact of the invite — but states it as the locked chip the
-                  roster uses for a value someone else decides. Leaving the pickers
-                  up would offer a choice `InvitationInput` resets on the very next
-                  change event, which reads as a broken control. --%>
-            <fieldset :if={not Emisar.Auth.role_carries_runner_access?(@form[:role].value)}>
-              <legend class="text-sm font-medium text-zinc-300">Access</legend>
-              <p class="mt-0.5 text-xs text-zinc-400">
-                {Emisar.Auth.role_label(@form[:role].value)} manages billing only.
-              </p>
-              <div class="mt-3 flex flex-wrap items-center gap-2">
-                <.chip icon="role.restricted">No runners</.chip>
-                <.chip icon="role.restricted">No packs</.chip>
-              </div>
-            </fieldset>
-
-            <fieldset :if={@form[:role].value == "owner"}>
-              <legend class="text-sm font-medium text-zinc-300">Access</legend>
-              <div class="mt-3 flex flex-wrap items-center gap-2">
-                <.chip>All runners</.chip>
-                <.chip>All packs</.chip>
-              </div>
-            </fieldset>
-
-            <fieldset :if={
-              @form[:role].value != "owner" and
-                Emisar.Auth.role_carries_runner_access?(@form[:role].value)
-            }>
-              <legend class="text-sm font-medium text-zinc-300">Access</legend>
-              <%!-- The eyebrows below already say the two decisions, so this line
-                    spends itself on the one thing they cannot: why the first card
-                    is preselected. --%>
-              <.access_scope_fields
-                runner_mode_name="invite[runner_access_mode]"
-                runner_mode_value={@form[:runner_access_mode].value}
-                runner_scope_name="invite[scope][]"
-                runner_scope_selected={List.wrap(@form[:scope].value)}
-                pack_mode_name="invite[pack_access_mode]"
-                pack_mode_value={@form[:pack_access_mode].value}
-                pack_scope_name="invite[pack_scope][]"
-                pack_scope_selected={List.wrap(@form[:pack_scope].value)}
-                runners={@runners}
-                advertisements={@pack_advertisements}
-                grant_limited?={@pack_access_restricted?}
-                loading?={@loading?}
-                runner_load_error?={@runner_load_error?}
-                pack_load_error?={@pack_load_error?}
-                runner_submit_error_field={@form[:runner_access_mode]}
-                pack_submit_error_field={@form[:pack_access_mode]}
-              />
-            </fieldset>
-
-            <:actions>
-              <.button phx-disable-with="Sending…">Send invite</.button>
-              <.button navigate={~p"/app/#{@current_account}/settings/team"} variant={:ghost}>
-                Cancel
-              </.button>
-            </:actions>
-          </.simple_form>
-        </div>
-      </div>
-
-      <div :if={@live_action == :reset_mfa} class="mt-4 max-w-xl">
-        <.loading_state :if={@loading?} />
-
-        <div :if={not @loading? and @mfa_reset_target}>
-          <% target = @mfa_reset_target.user %>
-          <.status_note
-            icon="state.warning"
-            tone={:amber}
-            title="Reset authenticator"
-            primary
-          >
-            <span class="font-medium text-zinc-200">
-              {Accounts.user_display_name(target) || target.email || "this member"}
-            </span>'s authenticator and recovery codes will be removed, and all their sessions ended.
-            Confirm they requested this reset before continuing.
-          </.status_note>
-
-          <div class="mt-7">
-            <%= if @current_user.mfa_enabled_at do %>
-              <%= if @mfa_reset_mode == :totp do %>
-                <.simple_form for={%{}} id="member-mfa-reset-totp" phx-submit="verify_reset_totp">
-                  <.code_input
-                    id="member-mfa-reset-otp"
-                    name="otp"
-                    numeric
-                    label="Your authenticator code"
-                    error={@mfa_reset_error}
-                  />
-                  <:actions>
-                    <.button variant={:secondary} tone={:rose} phx-disable-with="Verifying…">
-                      Verify and reset MFA
-                    </.button>
-                    <.button
-                      :if={@mfa_reset_sso_facts}
-                      href={
-                        ~p"/app/#{@current_account}/settings/team/#{@mfa_reset_target.id}/reset_mfa/sso"
-                      }
-                      method="post"
-                      variant={:secondary}
-                      tone={:rose}
-                    >
-                      Verify with {@mfa_reset_sso_facts.provider_name} and reset MFA
-                    </.button>
-                    <.button
-                      navigate={~p"/app/#{@current_account}/settings/team"}
-                      variant={:ghost}
-                    >
-                      Cancel
-                    </.button>
-                  </:actions>
-                </.simple_form>
-
-                <button
-                  type="button"
-                  phx-click="use_reset_recovery"
-                  class="mt-5 text-sm font-medium text-brand-400 hover:text-brand-300"
-                >
-                  Use a recovery code instead
-                </button>
-              <% else %>
-                <.simple_form
-                  for={@mfa_reset_recovery_form}
-                  id="member-mfa-reset-recovery"
-                  phx-submit="verify_reset_recovery"
-                >
-                  <.input
-                    field={@mfa_reset_recovery_form[:code]}
-                    type="text"
-                    label="Your recovery code"
-                    autocomplete="one-time-code"
-                    required
-                  />
-                  <.error :if={@mfa_reset_error}>{@mfa_reset_error}</.error>
-                  <:actions>
-                    <.button variant={:secondary} tone={:rose} phx-disable-with="Verifying…">
-                      Verify and reset MFA
-                    </.button>
-                    <.button
-                      navigate={~p"/app/#{@current_account}/settings/team"}
-                      variant={:ghost}
-                    >
-                      Cancel
-                    </.button>
-                  </:actions>
-                </.simple_form>
-
-                <button
-                  type="button"
-                  phx-click="use_reset_totp"
-                  class="mt-5 text-sm font-medium text-brand-400 hover:text-brand-300"
-                >
-                  Use an authenticator code instead
-                </button>
-              <% end %>
-            <% else %>
-              <%= if @mfa_reset_sso_facts do %>
-                <p class="text-sm leading-relaxed text-zinc-400">
-                  Reauthenticate with your identity provider before this reset can continue.
-                </p>
-                <div class="mt-5 flex flex-wrap gap-3">
-                  <.button
-                    href={
-                      ~p"/app/#{@current_account}/settings/team/#{@mfa_reset_target.id}/reset_mfa/sso"
-                    }
-                    method="post"
-                    variant={:secondary}
-                    tone={:rose}
-                  >
-                    Verify with {@mfa_reset_sso_facts.provider_name} and reset MFA
-                  </.button>
-                  <.button
-                    navigate={~p"/app/#{@current_account}/settings/team"}
-                    variant={:ghost}
-                  >
-                    Cancel
-                  </.button>
-                </div>
-              <% else %>
-                <.empty_state
-                  variant={:bare}
-                  tone={:danger}
-                  icon="state.locked"
-                  title="A second factor is required"
-                >
-                  Set up MFA in your profile, then return here to reset this member's factor.
-                  <div class="mt-4">
-                    <.button
-                      navigate={~p"/app/#{@current_account}/settings/profile"}
-                      variant={:secondary}
-                    >
-                      Open profile
-                    </.button>
-                  </div>
-                </.empty_state>
-              <% end %>
-            <% end %>
-          </div>
-        </div>
-      </div>
-
+      <.mfa_reset_form
+        :if={@live_action == :reset_mfa}
+        current_account={@current_account}
+        current_user={@current_user}
+        loading?={@loading?}
+        mfa_reset_error={@mfa_reset_error}
+        mfa_reset_mode={@mfa_reset_mode}
+        mfa_reset_recovery_form={@mfa_reset_recovery_form}
+        mfa_reset_sso_facts={@mfa_reset_sso_facts}
+        mfa_reset_target={@mfa_reset_target}
+      />
       <.loading_state :if={@live_action == :index and @loading?} />
 
       <%!-- Single-column list. Each row is a member: avatar, name +
@@ -2622,279 +2978,17 @@ defmodule EmisarWeb.TeamLive do
              cards full width under the roster. SSO carries a provider list and
              two settings sections, so pairing it with a short card only left one
              of them stretched down its height. --%>
-        <aside class="space-y-4">
-          <h3 class="text-[11px] font-semibold uppercase tracking-wider text-zinc-400">Security</h3>
-
-          <%!-- ── Multi-factor authentication ── --%>
-          <.event_block
-            :if={not @security_facts.available?}
-            id="team-security-unavailable"
-            icon="state.warning"
-            tone={:amber}
-            title="Couldn't load sign-in settings"
-          >
-            <:body>Refresh the page to try again.</:body>
-          </.event_block>
-          <%!-- credo:disable-for-next-line Emisar.Checks.NoIslandContainers — a self-contained security control, boxed per the screenshot --%>
-          <div class="rounded-xl border border-zinc-800/80 p-4">
-            <h4 class="text-sm font-medium text-zinc-100">Multi-factor authentication</h4>
-            <p class="mt-1 text-xs leading-relaxed text-zinc-400">
-              Require a second factor before members can use this account.
-            </p>
-            <p :if={@security_facts.available?} class="mt-3 flex flex-wrap items-center gap-2 text-xs">
-              <span class="flex items-center gap-1.5">
-                <span class="text-zinc-400">
-                  Authenticator set up:
-                  <span id="mfa-enrolled-count" class="font-medium tabular-nums text-zinc-200">
-                    {@security_facts.mfa_enrolled}
-                  </span>
-                  of
-                  <span class="font-medium tabular-nums text-zinc-200">
-                    {@security_facts.mfa_total}
-                  </span>
-                  {if @security_facts.mfa_total == 1, do: "member", else: "members"}
-                </span>
-              </span>
-            </p>
-            <%!-- No "Enforced" chip on the facts line above: the button's own verb
-                 says it for a member who can change it, and the locked value says it
-                 for one who can't — a chip as well would state it twice. --%>
-            <.gated_setting
-              id="require-mfa"
-              can_change?={
-                @security_facts.available? and
-                  Accounts.subject_can_manage_account_security?(@current_subject)
-              }
-              value={mfa_enforcement_value_label(@security_facts.mfa_enforcement)}
-              who_can_change="Only owners and admins can change this."
-              class="mt-4"
-            >
-              <%= if @security_facts.mfa_enforcement == :actor_not_enrolled do %>
-                <.tooltip
-                  text="Enable MFA on your own profile first — otherwise you'd lock yourself out."
-                  placement={:bottom}
-                  class="shrink-0"
-                >
-                  <.mfa_confirm_button
-                    require_mfa={false}
-                    disabled={true}
-                  />
-                </.tooltip>
-              <% else %>
-                <.mfa_confirm_button
-                  require_mfa={@security_facts.mfa_enforcement == :enforced}
-                  disabled={false}
-                />
-              <% end %>
-            </.gated_setting>
-          </div>
-
-          <%!-- ── Single sign-on connections ── --%>
-          <%!-- The id is a documented deep-link target: /settings/sso lands here
-               via its anchored redirect, and /docs/sso points operators at it. --%>
-          <%!-- credo:disable-for-next-line Emisar.Checks.NoIslandContainers — a self-contained security control, boxed per the screenshot --%>
-          <div id="single-sign-on" class="rounded-xl border border-zinc-800/80 p-4">
-            <h4 class="text-sm font-medium text-zinc-100">Single sign-on</h4>
-            <p class="mt-1 text-xs leading-relaxed text-zinc-400">
-              Let members sign in through your identity provider.
-            </p>
-            <%!-- The whole list fits: a connection is unique per provider kind
-                 (one Okta, one Google, …), so there are at most a handful. --%>
-            <ul :if={@provider_facts != []} class="mt-3 space-y-0.5">
-              <li :for={provider <- @provider_facts}>
-                <.link
-                  id={"sso-provider-#{provider.id}"}
-                  navigate={~p"/app/#{@current_account}/settings/sso/#{provider.id}"}
-                  class="group -mx-2 flex items-center gap-2.5 rounded-md px-2 py-2 transition-colors hover:bg-white/[0.04]"
-                >
-                  <div class="min-w-0 flex-1">
-                    <span class="flex items-center gap-2 text-sm leading-tight text-zinc-200">
-                      <span class="truncate">{provider.name}</span>
-                      <span :if={not provider.enabled?} class="shrink-0 text-[10px] text-zinc-400">
-                        Disabled
-                      </span>
-                    </span>
-                    <%!-- Directory-sync status, one quiet line pulled up snug under
-                         the name: how much the sync has pulled in (users + distinct
-                         groups) and how fresh it is. Only for a SCIM connection; JIT
-                         provisions on sign-in and has nothing to show here. --%>
-                    <span
-                      :if={provider.directory_sync?}
-                      class="mt-0.5 block text-[11px] leading-tight text-zinc-400"
-                    >
-                      <%!-- Zeroes from a failed stats read would report a live sync
-                           as pulling nothing in. --%>
-                      <span :if={@sync_stats_error?}>Sync counts unavailable</span>
-                      <% stats = Map.get(@sync_stats, provider.id, %{users: 0, groups: 0}) %>
-                      <span :if={not @sync_stats_error?}>
-                        {sync_count(stats.users, "user")} · {sync_count(stats.groups, "group")}
-                      </span>
-                      <span :if={provider.last_synced_at} class="text-brand-300/90">
-                        · connected
-                        <.local_time
-                          id={"provider-synced-#{provider.id}"}
-                          value={provider.last_synced_at}
-                          mode={:relative}
-                        />
-                      </span>
-                      <span :if={is_nil(provider.last_synced_at)} class="text-amber-300/90">
-                        · never connected
-                      </span>
-                    </span>
-                  </div>
-                  <.icon
-                    name="breadcrumb.separator"
-                    class="h-3.5 w-3.5 shrink-0 text-zinc-500 group-hover:text-zinc-400"
-                  />
-                </.link>
-              </li>
-            </ul>
-            <.empty_state
-              :if={@sso_load_error?}
-              variant={:hint}
-              tone={:danger}
-              icon="state.warning"
-              title="Couldn't load single sign-on"
-              class="mt-3"
-            >
-              Refresh the page to try again.
-            </.empty_state>
-            <%!-- The setup action owns the empty state. Members without SSO
-                 management access still see the narrow read-only posture. --%>
-            <.gated_setting
-              :if={not @sso_load_error? or SSO.subject_can_manage_sso?(@current_subject)}
-              id="sso-connections"
-              can_change?={SSO.subject_can_manage_sso?(@current_subject)}
-              value={sso_connections_value_label(@enabled_sso_provider_count)}
-              who_can_change="Only owners and admins can change this."
-              class="mt-4"
-            >
-              <%= if SSO.subject_can_configure_sso?(@current_subject) do %>
-                <.button
-                  id="add-sso-connection"
-                  navigate={~p"/app/#{@current_account}/settings/sso/new"}
-                  variant={:secondary}
-                  size={:sm}
-                  icon="action.add"
-                >
-                  Add connection
-                </.button>
-              <% else %>
-                <.tooltip
-                  id="add-sso-connection-plan"
-                  text="Single sign-on requires the Team plan or above."
-                  placement={:bottom}
-                  class="shrink-0"
-                >
-                  <.button
-                    id="add-sso-connection"
-                    type="button"
-                    variant={:secondary}
-                    size={:sm}
-                    icon="state.locked"
-                    disabled
-                    aria-describedby="add-sso-connection-plan"
-                  >
-                    Add connection
-                  </.button>
-                </.tooltip>
-              <% end %>
-            </.gated_setting>
-            <%!-- Enforcement stays with the connections it governs; sharing
-                 the sign-in link belongs to the page's member actions. --%>
-            <div
-              :if={
-                @provider_facts != [] or @enabled_sso_provider_count > 0 or
-                  @security_facts.sso_required? == true
-              }
-              data-role="require-sso-section"
-              class="mt-4 border-t border-zinc-800/70 pt-3"
-            >
-              <p class="text-[11px] font-medium text-zinc-300">Require single sign-on</p>
-              <p class="mt-0.5 text-[11px] leading-relaxed text-zinc-400">
-                Disable all other sign-in methods for this account.
-              </p>
-              <%!-- The "Required" tag that rode the title line is gone: the button's
-                   verb states it for a member who can change it, the locked value for
-                   one who can't, and neither said it when SSO was NOT required. --%>
-              <.gated_setting
-                id="require-sso"
-                can_change?={
-                  @security_facts.available? and not @sso_load_error? and
-                    Accounts.subject_can_manage_account_security?(@current_subject)
-                }
-                value={sso_required_value_label(@security_facts.sso_required?)}
-                who_can_change="Only owners and admins can change this."
-                class="mt-3"
-              >
-                <%= cond do %>
-                  <% @security_facts.sso_required? -> %>
-                    <.confirm_button
-                      id="require-sso"
-                      variant={:secondary}
-                      tone={:neutral}
-                      size={:sm}
-                      title="Stop requiring single sign-on?"
-                      confirm_label="Stop requiring"
-                      on_confirm={JS.push("toggle_require_sso")}
-                    >
-                      <:body>Members will be able to sign in with a magic link again.</:body>
-                      Stop requiring SSO
-                    </.confirm_button>
-                  <% @require_sso_available? -> %>
-                    <.confirm_button
-                      id="require-sso"
-                      variant={:secondary}
-                      tone={:neutral}
-                      size={:sm}
-                      title="Require single sign-on for everyone?"
-                      confirm_label="Require SSO"
-                      on_confirm={JS.push("toggle_require_sso")}
-                    >
-                      <:body>
-                        Members who signed in another way are stopped the next time they navigate and
-                        have to sign in again through your provider — if it's misconfigured, they're
-                        locked out. Confirm SSO works first.
-                      </:body>
-                      Require SSO
-                    </.confirm_button>
-                  <% true -> %>
-                    <span class="text-[11px] text-zinc-400">Add an enabled connection first</span>
-                <% end %>
-              </.gated_setting>
-            </div>
-          </div>
-
-          <%!-- ===== Notifications ===== account-wide email preferences, distinct
-               from the security knobs above (owner/admin, but not a security change). --%>
-          <h3 class="pt-2 text-[11px] font-semibold uppercase tracking-wider text-zinc-400">
-            Notifications
-          </h3>
-
-          <%!-- ── Monthly report ── --%>
-          <%!-- credo:disable-for-next-line Emisar.Checks.NoIslandContainers — a self-contained account preference, boxed like the security cards --%>
-          <div class="rounded-xl border border-zinc-800/80 p-4">
-            <h4 class="text-sm font-medium text-zinc-100">Monthly report</h4>
-            <p class="mt-1 text-xs leading-relaxed text-zinc-400">
-              Email every Owner a monthly summary of activity and security.
-            </p>
-            <.gated_setting
-              id="monthly-report"
-              can_change?={Accounts.subject_can_manage_account?(@current_subject)}
-              value={monthly_report_value_label(@current_account.settings.monthly_report_opt_out)}
-              who_can_change="Only owners and admins can change this."
-              class="mt-4"
-            >
-              <.switch
-                on={not @current_account.settings.monthly_report_opt_out}
-                on_label="Turn off"
-                off_label="Turn on"
-                aria-label="Monthly account-health report email"
-                phx-click="toggle_monthly_report"
-              />
-            </.gated_setting>
-          </div>
-        </aside>
+        <.security_rail
+          current_account={@current_account}
+          current_subject={@current_subject}
+          enabled_sso_provider_count={@enabled_sso_provider_count}
+          provider_facts={@provider_facts}
+          require_sso_available?={@require_sso_available?}
+          security_facts={@security_facts}
+          sso_load_error?={@sso_load_error?}
+          sync_stats={@sync_stats}
+          sync_stats_error?={@sync_stats_error?}
+        />
       </div>
     </.console_shell>
     """
