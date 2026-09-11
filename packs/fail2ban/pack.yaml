@@ -3,6 +3,7 @@ schema_version: 1
 id: fail2ban
 name: fail2ban
 version: 0.2.0
+retired_below: 0.2.0
 description: >
   fail2ban inventory + per-jail banned-IP listings plus operator mutators
   for incident response: ban an IP into a jail, unban a false positive,
