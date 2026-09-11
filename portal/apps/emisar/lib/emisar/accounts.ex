@@ -29,7 +29,7 @@ defmodule Emisar.Accounts do
 
   defp job_module(name), do: Module.safe_concat([__MODULE__, "Jobs", name])
 
-  # -- Accounts ---------------------------------------------------------
+  # -- Accounts --------------------------------------------------------
 
   # Account lookups by id / slug are pre-authentication — they're how
   # `UserAuth.assign_current_account` and the public `/onboarding` path
@@ -411,7 +411,7 @@ defmodule Emisar.Accounts do
     :ok
   end
 
-  # -- PubSub -----------------------------------------------------------
+  # -- PubSub ----------------------------------------------------------
 
   @doc "Subscribe to reversible account lifecycle changes."
   def subscribe_account_lifecycle(account_id),
@@ -1089,7 +1089,7 @@ defmodule Emisar.Accounts do
     if taken?, do: do_suggest(base, attempt + 1), else: candidate
   end
 
-  # -- Memberships ------------------------------------------------------
+  # -- Memberships -----------------------------------------------------
 
   @doc """
   Memberships of `account` (the team page). The subject must be a member
@@ -1829,6 +1829,8 @@ defmodule Emisar.Accounts do
 
   defp directory_provider_id(%SSO.IdentityProvider{id: id}, true), do: id
   defp directory_provider_id(_provider, _managed?), do: nil
+
+  # -- Runner and pack access ------------------------------------------
 
   @doc """
   Canonical runner access for a picker's explicit mode plus the raw
@@ -3400,6 +3402,8 @@ defmodule Emisar.Accounts do
   defp ensure_directory_provider_matches(%Membership{}, %SSO.IdentityProvider{}),
     do: {:error, :directory_authorization_provider_conflict}
 
+  # -- Member MFA reset ------------------------------------------------
+
   @doc """
   Verify the acting administrator's current local TOTP or recovery code and
   return the short-lived, purpose-bound proof for resetting `membership`'s MFA.
@@ -3814,6 +3818,8 @@ defmodule Emisar.Accounts do
 
   defp ensure_current_authorization_version(%Membership{}, %SSO.IdentityProvider{}), do: :ok
 
+  # -- Directory authorization bookkeeping -----------------------------
+
   @doc "Internal - atomically mark a provider's affected memberships fail-closed until reconciliation."
   def mark_directory_authorization_pending(
         repo,
@@ -4056,6 +4062,8 @@ defmodule Emisar.Accounts do
       {:error, :insufficient_privileges}
     end
   end
+
+  # -- Invitations -----------------------------------------------------
 
   @doc """
   Builds the invitation changeset for one raw submission (`email`, `role`,
@@ -4579,7 +4587,7 @@ defmodule Emisar.Accounts do
     end)
   end
 
-  # -- Internal (Billing flows) -------------------------------------------
+  # -- Internal (Billing flows) ----------------------------------------
   # Account/membership reads + the one account write the Billing context
   # needs. Billing owns the plan/limit semantics; the row mechanics stay
   # here. Never exposed to LiveView/controllers/MCP.
@@ -4883,7 +4891,7 @@ defmodule Emisar.Accounts do
   defp sync_paddle_customer_if_current(%Account{} = account, _customer_id, _owner_id),
     do: Ecto.Changeset.change(account)
 
-  # -- Authorization ----------------------------------------------------
+  # -- Authorization ---------------------------------------------------
 
   @doc "Whether `subject` may manage team memberships (admin+)."
   def subject_can_manage_team?(%Subject{} = subject),

@@ -17,7 +17,7 @@ defmodule EmisarWeb.MCPWireLimitsTest do
   alias EmisarWeb.CachedBodyReader
   alias EmisarWeb.MCP.{ResponseBudget, ToolSchema}
 
-  @repo_root Path.expand("../../../../..", __DIR__)
+  @repo_root Path.expand("../../../../../..", __DIR__)
 
   test "the MCP request-body boundary is the bridge's frame ceiling" do
     limit = go_constant!("mcp/main.go", "maxFrameBytes")
