@@ -209,12 +209,20 @@ defmodule Emisar.Seeds.Fleet do
         "description" => "Shows systemd properties for one unit.",
         "args" => [%{"name" => "unit", "type" => "string", "required" => true}]
       }),
-      Helpers.action_descriptor("systemd-deep", %{
-        "id" => "systemd.unit_restart",
-        "title" => "systemctl restart <unit>",
+      # The unit lifecycle lives in linux-core, so the API host carries that
+      # pack's restart beside the systemd-deep reads; the pending approval and
+      # the old cancellation in the run history both dispatch it.
+      Helpers.action_descriptor("linux-core", %{
+        "id" => "linux.systemctl_restart",
+        "title" => "Restart a systemd unit",
         "risk" => "high",
-        "description" => "Restarts one workload-bearing systemd unit.",
-        "side_effects" => ["Service stopped then started."],
+        "description" =>
+          "Restart a named systemd unit. Clients see an outage of seconds to " <>
+            "minutes depending on the unit; prefer diagnosis first.",
+        "side_effects" => [
+          "Stops the named unit, then starts it.",
+          "Disconnects existing clients of the unit."
+        ],
         "args" => [%{"name" => "unit", "type" => "string", "required" => true}]
       })
     ]

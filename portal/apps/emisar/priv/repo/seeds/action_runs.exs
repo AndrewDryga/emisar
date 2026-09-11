@@ -372,7 +372,7 @@ defmodule Emisar.Seeds.ActionRuns do
         ctx
         |> insert_run(%{
           runner_id: api.id,
-          action_id: "systemd.unit_restart",
+          action_id: "linux.systemctl_restart",
           args: %{"unit" => "checkout-api.service"},
           reason: "cancel after canary rollback completed elsewhere",
           requested_by_id: jordan.id,
@@ -454,7 +454,7 @@ defmodule Emisar.Seeds.ActionRuns do
       ctx
       |> insert_run(%{
         runner_id: api.id,
-        action_id: "systemd.unit_restart",
+        action_id: "linux.systemctl_restart",
         args: %{"unit" => "checkout-api.service"},
         reason: "restart checkout-api after deploy smoke test",
         requested_by_id: priya.id,
