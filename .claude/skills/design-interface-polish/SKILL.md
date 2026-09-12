@@ -32,7 +32,7 @@ section, never a number from memory:
 - the one easing, the shipped `.rise-1…5` stagger, named transition properties
   (never `transition-all`), and the global reduced-motion block — §3.5
 - the global focus ring and selection — §3.6
-- press feedback (`active:scale-[0.96]`) — the button primitives in §4
+- press feedback (a slight scale-down on the marketing CTA) — the button primitives in §4
 
 ## Console vs marketing — where motion is allowed
 
