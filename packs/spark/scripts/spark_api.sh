@@ -99,9 +99,15 @@ add_param() {
 # A driver UI serves exactly one application, so the kill endpoints — which are
 # not application-scoped — resolve it rather than making the caller supply an
 # id they cannot see from the UI.
+#
+# The capture takes its own status: `set -e` is not inherited into a command
+# substitution, and every call here is one (`app_id=$(driver_app_id)`), so a
+# bare assignment would discard an unreachable driver UI and leave the empty
+# check below answering "no application is running" — the opposite fact about
+# the deployment, on a kill path.
 driver_app_id() {
   local id
-  id=$(api_get "$driver_base/api/v1/applications" | jq -r '.[0].id // empty')
+  id=$(api_get "$driver_base/api/v1/applications" | jq -r '.[0].id // empty') || exit $?
   [[ -n $id ]] || fail "no application is running on the driver UI at $driver_base"
   printf '%s' "$id"
 }

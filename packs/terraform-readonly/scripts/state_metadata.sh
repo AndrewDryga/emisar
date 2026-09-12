@@ -92,7 +92,11 @@ candidate_path() {
     fail "candidate state file escapes the configured directory"
   [[ -f "$candidate" && -r "$candidate" ]] ||
     fail "candidate state file must be a readable regular file"
-  size=$(stat -c %s -- "$candidate")
+  # Both captures take their own status. `set -e` is not inherited into a
+  # command substitution and this function is reached through one, so a bare
+  # assignment leaves `size` empty — which bash reads as 0 in the arithmetic
+  # below, passing the bound rather than refusing it.
+  size=$(stat -c %s -- "$candidate") || exit $?
   ((size <= max_state_bytes)) || fail "candidate Terraform state exceeded 64 MiB"
   printf '%s\n' "$candidate"
 }
@@ -100,7 +104,12 @@ candidate_path() {
 file_metadata() {
   local filename=$1
   local candidate
-  candidate=$(candidate_path "$filename")
+  # `compare` calls this as `candidate=$(file_metadata "$filename")`, and
+  # `set -e` does not reach into that substitution: without the status taken
+  # here, a rejected candidate falls through to the redirect below with an
+  # empty path, so what ends the run is `: No such file or directory` rather
+  # than the refusal candidate_path already printed.
+  candidate=$(candidate_path "$filename") || exit $?
   project_metadata candidate <"$candidate"
 }
 

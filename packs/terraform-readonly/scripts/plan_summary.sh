@@ -267,7 +267,11 @@ plan_path() {
   plan=$(realpath -e -- "$root/$filename") || fail "plan file does not exist"
   [[ "$plan" == "$root/"* ]] || fail "plan file escapes the configured directory"
   [[ -f "$plan" && -r "$plan" ]] || fail "plan file must be a readable regular file"
-  size=$(stat -c %s -- "$plan")
+  # The capture takes its own status. `set -e` is not inherited into a command
+  # substitution and this function is reached through one, so a bare assignment
+  # leaves `size` empty — which bash reads as 0 in the arithmetic below,
+  # passing the bound rather than refusing it.
+  size=$(stat -c %s -- "$plan") || exit $?
   ((size <= max_plan_bytes)) || fail "saved plan exceeded 32 MiB"
   printf '%s\n' "$plan"
 }
