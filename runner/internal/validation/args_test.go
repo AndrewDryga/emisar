@@ -134,6 +134,56 @@ func TestValidate_AllowedPathsDenied(t *testing.T) {
 	}
 }
 
+// Deny rules exclude the locations they name; they do not confine the argument
+// to a directory. Only a nonempty allowed_paths/allowed_prefixes list does
+// that, which is why pack guidance requires one on an argument a command really
+// reads or writes — a deny-only rule leaves every other resolvable absolute
+// path admissible. Everything here lives under t.TempDir(), so nothing real is
+// named or read.
+func TestValidate_DenyOnlyAdmitsEveryUnlistedPath(t *testing.T) {
+	dir := t.TempDir()
+	logs := filepath.Join(dir, "logs")
+	if err := os.MkdirAll(logs, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	secret := filepath.Join(dir, "secret.env")
+	if err := os.WriteFile(secret, []byte("TOKEN=x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	inDirectory := filepath.Join(logs, "app.log")
+	elsewhere := filepath.Join(t.TempDir(), "other.env")
+
+	denyOnly := []actionspec.Arg{{
+		Name: "p", Type: actionspec.ArgPath,
+		Validation: &actionspec.Validation{DeniedPaths: []string{secret}},
+	}}
+	if _, err := Validate(denyOnly, map[string]any{"p": secret}, nil); err == nil {
+		t.Fatal("the named path should fail denied_paths")
+	}
+	if _, err := Validate(denyOnly, map[string]any{"p": inDirectory}, nil); err != nil {
+		t.Fatalf("the intended in-directory read should pass: %v", err)
+	}
+	// The defect the guidance has to name: an unlisted location outside the
+	// directory the author had in mind is accepted all the same.
+	if _, err := Validate(denyOnly, map[string]any{"p": elsewhere}, nil); err != nil {
+		t.Fatalf("deny-only admits an unlisted path, so this must pass: %v", err)
+	}
+
+	allowlisted := []actionspec.Arg{{
+		Name: "p", Type: actionspec.ArgPath,
+		Validation: &actionspec.Validation{
+			AllowedPrefixes: []string{logs},
+			DeniedPaths:     []string{secret},
+		},
+	}}
+	if _, err := Validate(allowlisted, map[string]any{"p": inDirectory}, nil); err != nil {
+		t.Fatalf("the in-directory read must still pass under the allowlist: %v", err)
+	}
+	if _, err := Validate(allowlisted, map[string]any{"p": elsewhere}, nil); err == nil {
+		t.Fatal("the same unlisted path must fail allowed_prefixes")
+	}
+}
+
 func TestValidate_RootPrefix(t *testing.T) {
 	// A "/" prefix must cover every absolute path, not just the exact
 	// string "/". Otherwise allowed_prefixes:["/"] rejects everything

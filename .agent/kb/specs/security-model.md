@@ -168,7 +168,7 @@ its actions from itself:
 | LLM constructs a malicious shell string  | It cannot choose the binary or command program; the loader rejects open-ended values in shell program text and requires data-only env/argv channels. The arbitrary-shell pack is staging-only, critical-risk, and default-denied. |
 | LLM passes unexpected arguments          | Unknown args rejected; declared schema enforced on runner.     |
 | Cloud bug sends bogus opts (huge timeout)| Opts clamped to action min/max.                               |
-| LLM tries to read /etc/shadow            | Path arg `denied_paths`; OS perms still apply.                |
+| LLM tries to read /etc/shadow            | Path arg `allowed_prefixes`/`allowed_paths` confine it to the intended location (`denied_*` only carves extra exclusions out of that allowlist, and alone admits every unnamed path); the runner's own config/state roots are refused whatever the pack declares; OS perms still apply. |
 | Output contains a stray bearer token     | Default + per-action redaction rules; size caps.              |
 | Runaway process                          | Timeouts enforced via `context.WithTimeout`.                  |
 | Output flood                             | Stdout/stderr byte caps; buffered progress is bounded, dropped chunks are counted structurally, and portal summaries mark incomplete delivery. |

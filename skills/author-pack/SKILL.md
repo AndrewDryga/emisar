@@ -123,8 +123,11 @@ Decide these per action, and write them down — they become the YAML:
   DoS hole. **An anchored pattern is not path containment**: `.` and `/` are
   ordinary characters, so `^/var/log/myapp/.*` still matches
   `/var/log/myapp/../../etc/shadow`. A path the command reads or writes must
-  declare `allowed_prefixes` (or `allowed_paths`/`denied_paths`) — that is
-  what activates the runner's symlink-resolving containment.
+  declare a nonempty `allowed_prefixes` or `allowed_paths` — those are the
+  only fields that confine it to a location. `denied_prefixes`/`denied_paths`
+  are optional extra exclusions, not containment: any of the four turns on the
+  runner's symlink-resolving canonical pass, but a deny-only rule refuses the
+  paths it names and accepts every other absolute path.
 - **A private pack may hardcode the fleet.** Unlike generic public packs,
   yours can enum the exact unit names, databases, and hosts it operates —
   tighter than any pattern. Use that advantage.

@@ -24,6 +24,10 @@ uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - `install-emisar` diagnoses a runner that installs but never joins the fleet
   from the host log instead of guessing, and names what a `401`, `409`, or
   `402` registration failure means and the operator's remedy for each.
+- `author-pack` requires a nonempty `allowed_prefixes` or `allowed_paths` to
+  contain a path argument, and describes `denied_prefixes`/`denied_paths` as
+  optional extra exclusions rather than containment — a deny-only rule
+  resolves the value canonically but still admits every path it did not name.
 - README and skill text re-synced with the public `skills/` copies.
 
 ## [0.1.0] — 2026-08-05
