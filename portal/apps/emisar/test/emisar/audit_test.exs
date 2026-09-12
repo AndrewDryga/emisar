@@ -2895,6 +2895,64 @@ defmodule Emisar.AuditTest do
     end
   end
 
+  # The proof above is only as wide as the source `emitted_event_types/0` reads.
+  # It used to read five named files, so a literal logged from `audit/multi.ex`
+  # or from a web module — neither of which carried one — would have shipped
+  # unfilterable without failing anything. These pin the widened reach.
+  describe "the scan that proves the vocabulary reads every emitting module" do
+    test "its roots are every umbrella app's lib tree, not a list of files" do
+      apps = Path.wildcard(Path.expand("../*", File.cwd!())) |> Enum.filter(&File.dir?/1)
+
+      assert Enum.sort(Enum.map(source_roots(), &Path.dirname/1)) == Enum.sort(apps)
+
+      # The two the five-file list never reached.
+      assert File.exists?(Path.join(File.cwd!(), "lib/emisar/audit/multi.ex"))
+      assert Enum.any?(source_roots(), &(Path.wildcard(Path.join(&1, "**/*.heex")) != []))
+    end
+
+    test "a stray literal in a module the old file list never read is caught" do
+      dir = Path.join(System.tmp_dir!(), "audit_scan_#{System.unique_integer([:positive])}")
+      on_exit(fn -> File.rm_rf!(dir) end)
+      File.mkdir_p!(Path.join(dir, "emisar_web/live"))
+
+      File.write!(Path.join(dir, "emisar_web/live/stray_live.ex"), """
+      defmodule EmisarWeb.StrayLive do
+        def handle_event("stray", _params, socket) do
+          {:ok, _event} = Audit.log(socket.assigns.account.id, "stray.logged_from_the_web")
+          {:noreply, socket}
+        end
+      end
+      """)
+
+      File.write!(Path.join(dir, "emisar_web/live/stray_multi.ex"), """
+      defmodule Emisar.StrayMulti do
+        def revoke(multi, user) do
+          Emisar.Audit.Multi.log_for_user(multi, :audit, user, "stray.logged_from_a_multi",
+            payload_fn: fn _changes -> %{note: "not.a.type"} end
+          )
+        end
+      end
+      """)
+
+      assert Enum.sort(call_site_event_types([dir])) ==
+               ~w[stray.logged_from_a_multi stray.logged_from_the_web]
+
+      # And a stray type is only useful if the vocabulary proof then rejects it:
+      # neither is in the table, so `known_event_type_values/0` would not cover it.
+      known = Audit.Event.Query.known_event_type_values() |> Enum.map(&elem(&1, 0))
+      assert Enum.reject(call_site_event_types([dir]), &(&1 in known)) != []
+    end
+
+    test "it still finds the literals the real tree emits at a call site" do
+      emitted = call_site_event_types(source_roots())
+
+      # events.ex (`Audit.changeset/3`), auth.ex and users.ex (`Audit.Multi.log_for_user/5`).
+      assert "account.created" in emitted
+      assert "user.signed_out" in emitted
+      assert "user.signed_in" in emitted
+    end
+  end
+
   describe "directory_sync is a distinct actor class" do
     # an inbound-SCIM event stamps the actor as
     # `directory_sync` + the provider id (so an auditor sees WHICH directory
@@ -3102,20 +3160,47 @@ defmodule Emisar.AuditTest do
     |> Enum.map(&elem(&1, 0))
   end
 
+  # What an event_type literal looks like. A DOTTED literal is unambiguous; the
+  # dotless pack/dispatch families are matched by their exact prefixes, because a
+  # bare `pack_version` is a `target_kind`, not an event type.
+  @dotted_type ~S"[a-z][a-z0-9_]*\.[a-z0-9_]+"
+  @dotless_type ~S"(?:pack_trust_|pack_retirement_|pack_retention_|pack_version_|dispatch_blocked_)[a-z0-9_]+|pack_deleted"
+
+  # A type literal named AT one of the type-bearing audit entry points. The args
+  # ahead of it are ids, atoms or `nil` — never a string — so the first literal
+  # after the opening paren (allowing one level of nested call) is the type. When
+  # the type is a variable (`Audit.Multi.log_for_user(multi, :rate_limit_audit,
+  # user, event_type, …)`) nothing matches, which is correct: the literal lives at
+  # the wrapper's caller instead, in a file the whole-file scan below reads.
+  @audit_call_site ~r/
+    (?:Emisar\.)?Audit\.(?:Multi\.)?(?:log|log_for_user|changeset|user_changesets)\(
+    (?:[^"()]|\([^"()]*\))*
+    "(#{@dotted_type}|#{@dotless_type})"
+  /x
+
   # Every event_type string literal a builder passes to `Audit.changeset/3`,
   # read from the Audit.Events source. Grounds builder-vs-dropdown assertions in
   # actual builder code instead of hand-copied event lists.
-  # Every builder in `Audit.Events` names its type as a literal — either directly
-  # to `Audit.changeset/3` or through one of the module's own `*_event` wrappers,
-  # so a scan of that file catches both. A DOTTED literal is unambiguous; the
-  # dotless pack/dispatch families are matched by their exact prefixes, because a
-  # bare `pack_version` there is a `target_kind`, not an event type. Run outcomes
-  # are interpolated (`"action_run.#{run.status}"`, `audit.ex`), so they come from
-  # `Runs.@audited_run_statuses`, the list that decides which ones get a row.
-  # Every source that names an event type: the builders in events.ex, the
-  # `user.*` types Auth and Users log directly, the pack-trust baseline atoms
-  # Catalog emits, and the audited run statuses. A type emitted from a file
-  # this does not read ships silently unfilterable — 29 did.
+  #
+  # A module names a type in one of two shapes, and each gets its own scan:
+  #
+  #   * AT the audit entry point — `call_site_event_types/1` reads those out of
+  #     every `.ex`/`.heex` in every umbrella app, so a literal added to
+  #     `audit/multi.ex`, to a LiveView, or to a context that does not emit today
+  #     is caught the day it lands. No file list to keep.
+  #   * through a module-private wrapper that forwards to an entry point
+  #     (`member_event(subject, membership, "membership.suspended")` in events.ex,
+  #     `log_security_attempt_exhausted(multi, user, "user.mfa_rate_limited", …)`
+  #     in auth.ex). No call-site regex sees those, so the three audit-dense
+  #     modules are ALSO scanned whole-file: every dotted literal in them is an
+  #     event type by construction. That scan cannot be widened past those three —
+  #     a web module's "action.add" is an icon name and `runs.ex`'s
+  #     "postgres.uptime" an action id, neither an event type.
+  #
+  # Run outcomes are interpolated (`"action_run.#{run.status}"`, `audit.ex`), so
+  # they come from `Runs.@audited_run_statuses`, the list that decides which ones
+  # get a row, and the pack-trust baselines are atoms Catalog emits. A type
+  # emitted from a file this does not read ships silently unfilterable — 29 did.
   defp emitted_event_types do
     read = &File.read!(Path.join(File.cwd!(), &1))
     events = read.("lib/emisar/audit/events.ex")
@@ -3123,18 +3208,26 @@ defmodule Emisar.AuditTest do
     catalog = read.("lib/emisar/catalog.ex")
     runs = read.("lib/emisar/runs.ex")
 
-    dotted = scan(~r/"([a-z][a-z0-9_]*\.[a-z0-9_]+)"/, events <> direct)
+    dotted = scan(~r/"(#{@dotted_type})"/, events <> direct)
 
     dotless =
-      scan(
-        ~r/"((?:pack_trust_|pack_retirement_|pack_retention_|pack_version_|dispatch_blocked_)[a-z0-9_]+|pack_deleted)"/,
-        events
-      ) ++ scan(~r/:(pack_trust_baseline_[a-z_]+)/, catalog)
+      scan(~r/"(#{@dotless_type})"/, events) ++
+        scan(~r/:(pack_trust_baseline_[a-z_]+)/, catalog)
 
     [_, statuses] = Regex.run(~r/@audited_run_statuses \[(.*?)\]/s, runs)
     run_types = Enum.map(scan(~r/:([a-z_]+)/, statuses), &("action_run." <> &1))
 
-    Enum.uniq(dotted ++ dotless ++ run_types)
+    Enum.uniq(dotted ++ dotless ++ run_types ++ call_site_event_types(source_roots()))
+  end
+
+  # Every umbrella app's lib tree, from the test's cwd (`apps/emisar`), so a new
+  # app — or a new module in an existing one — needs no edit here to be covered.
+  defp source_roots, do: Path.wildcard(Path.expand("../*/lib", File.cwd!()))
+
+  defp call_site_event_types(roots) do
+    roots
+    |> Enum.flat_map(&Path.wildcard(Path.join(&1, "**/*.{ex,heex}")))
+    |> Enum.flat_map(&scan(@audit_call_site, File.read!(&1)))
   end
 
   defp scan(regex, source) do
