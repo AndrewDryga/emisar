@@ -49,16 +49,19 @@ cases:
     expect:
       stdout_contains: [packtest, messages_ready]
   - action: rmq.close_connection
-    # Open and HOLD an AMQP connection (a pika client with heartbeats off that
-    # sleeps), resolve its connection pid from list_connections, then close it.
+    # Open and HOLD two AMQP connections (pika clients with heartbeats off that
+    # sleep), resolve the holder's connection pid from list_connections, then
+    # close that one alone.
     args:
       note: "packtest closing it"
     arrange:
       - argv: [/bin/sh, -c, 'rabbitmqctl add_user packtest-holder packtest-holder-pw && rabbitmqctl set_permissions packtest-holder ".*" ".*" ".*"']
+      - argv: [/bin/sh, -c, 'rabbitmqctl add_user packtest-keeper packtest-keeper-pw && rabbitmqctl set_permissions packtest-keeper ".*" ".*" ".*"']
       - argv: ["/bin/sh", "-c", "nohup python3 -c 'import pika; c=pika.BlockingConnection(pika.ConnectionParameters(host=\"rabbitmq\", credentials=pika.PlainCredentials(\"packtest-holder\",\"packtest-holder-pw\"), heartbeat=0, client_properties={\"connection_name\":\"packtest-holder\"})); c.sleep(300)' >/tmp/packtest-rmq-holder.log 2>&1 &"]
-      - argv: [/bin/sh, -c, 'rabbitmqctl -q list_connections user | grep -c packtest-holder']
+      - argv: ["/bin/sh", "-c", "nohup python3 -c 'import pika; c=pika.BlockingConnection(pika.ConnectionParameters(host=\"rabbitmq\", credentials=pika.PlainCredentials(\"packtest-keeper\",\"packtest-keeper-pw\"), heartbeat=0, client_properties={\"connection_name\":\"packtest-keeper\"})); c.sleep(300)' >/tmp/packtest-rmq-keeper.log 2>&1 &"]
+      - argv: [rabbitmqctl, -q, list_connections, user]
         expect:
-          stdout_contains: ["1"]
+          stdout_contains: [packtest-holder, packtest-keeper]
         retry_for: 15s
         retry_every: 500ms
     resolve_args:
@@ -68,10 +71,18 @@ cases:
         retry_every: 500ms
     expect:
       status: success
+    # Absence alone cannot prove a close: a node that died between the action
+    # and the probe also lists no packtest-holder. The probe reads the raw
+    # connection listing and asserts the untouched keeper connection is still
+    # there before asserting the holder is gone, so an unreachable node fails
+    # the case instead of passing it — and the close is proved to have dropped
+    # the resolved pid rather than every connection.
     probes:
-      - argv: [/bin/sh, -c, 'rabbitmqctl -q list_connections user | grep -c packtest-holder || true']
+      - name: the held connection is gone and the other one survives
+        argv: [rabbitmqctl, -q, list_connections, user]
         expect:
-          stdout_contains: ["0"]
+          stdout_contains: [packtest-keeper]
+          stdout_not_contains: [packtest-holder]
         retry_for: 15s
         retry_every: 500ms
   - action: rmq.list_exchanges

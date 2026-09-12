@@ -72,12 +72,22 @@ cases:
     arrange:
       - argv: [/bin/sh, -c, 'printf "m1\nm2\nm3\n" | kafka-console-producer.sh --bootstrap-server kafka:9092 --topic orders']
       - argv: [/bin/sh, -c, 'kafka-console-consumer.sh --bootstrap-server kafka:9092 --topic orders --group packtest-delete-group --from-beginning --timeout-ms 5000 --consumer-property enable.auto.commit=true --consumer-property auto.commit.interval.ms=500 >/dev/null 2>&1 || true']
+      # A second empty group the delete must leave alone, so the probe has a
+      # listing entry only a reachable broker can produce.
+      - argv: [/bin/sh, -c, 'kafka-console-consumer.sh --bootstrap-server kafka:9092 --topic orders --group packtest-keep-group --from-beginning --timeout-ms 5000 --consumer-property enable.auto.commit=true --consumer-property auto.commit.interval.ms=500 >/dev/null 2>&1 || true']
     expect:
       stdout_contains: [packtest-delete-group, successful]
+    # Absence alone cannot prove the delete: an unreachable broker also lists no
+    # packtest-delete-group. The probe reads the raw group listing and asserts
+    # the untouched group is still there before asserting the deleted one is
+    # gone, so a broker that died between the action and the probe fails the
+    # case instead of passing it.
     probes:
-      - argv: [/bin/sh, -c, 'kafka-consumer-groups.sh --bootstrap-server kafka:9092 --list | grep -c packtest-delete-group || true']
+      - name: the group is gone and the untouched one is still listed
+        argv: [kafka-consumer-groups.sh, --bootstrap-server, kafka:9092, --list]
         expect:
-          stdout_contains: ["0"]
+          stdout_contains: [packtest-keep-group]
+          stdout_not_contains: [packtest-delete-group]
   - action: kafka.leader_partitions
     expect:
       stdout_contains: ["2 1"]
