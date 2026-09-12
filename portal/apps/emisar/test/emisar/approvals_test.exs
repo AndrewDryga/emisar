@@ -649,6 +649,15 @@ defmodule Emisar.ApprovalsTest do
     Fixtures.Subjects.membership_subject(membership)
   end
 
+  # A real owner-member holding exactly these permissions and nothing else.
+  # `Auth.CurrentSubject` re-reads the membership and INTERSECTS the caller's
+  # snapshot with the role's own set, so the trim survives that refresh and the
+  # subject stays a truthful stand-in for a narrower principal.
+  defp subject_holding(account, permissions) do
+    subject = distinct_member(account, :owner)
+    %{subject | permissions: MapSet.new(permissions)}
+  end
+
   defp stale_signed_gated_request do
     account = Fixtures.Accounts.create_account()
     runner = Fixtures.Runners.create_runner(account_id: account.id)
@@ -1602,6 +1611,51 @@ defmodule Emisar.ApprovalsTest do
 
       assert project_review(foreign_run, no_permissions) ==
                {:error, :unauthorized}
+    end
+
+    # The receipt rides run-view, never the approvals permission: reading the
+    # review of a run you can already see is a strictly smaller grant than
+    # view_approvals, which also lists every request in the account. The
+    # asymmetry with list_decisions_for_request/2 is the rule, not a gap — both
+    # halves are pinned here so neither drifts toward the other.
+    test "view_runs alone reads the receipt its own run carries, and still cannot address the request" do
+      %{account: account, request: request, run: run} = gated_request(min_approvals: 2)
+      reviewer = named_reviewer(account, "Jane Doe")
+
+      assert {:ok, {%Request{status: :pending}, :pending}} =
+               Approvals.approve_request(request, reviewer, "Read-only query.")
+
+      subject = subject_holding(account, [Runs.Authorizer.view_runs_permission()])
+
+      assert {:ok, review} = project_review(run, subject)
+      assert review.request_id == request.id
+      assert review.approved_count == 1
+
+      assert [%{actor: "Jane Doe", decision: :approve, reason: "Read-only query."}] =
+               review.decisions
+
+      assert Approvals.list_decisions_for_request(request, subject) == {:error, :unauthorized}
+    end
+
+    test "view_approvals is not run-view, and neither permission crosses accounts" do
+      %{account: account, request: request, run: run} = gated_request(min_approvals: 2)
+      reviewer = named_reviewer(account, "Jane Doe")
+      assert {:ok, _} = Approvals.approve_request(request, reviewer, nil)
+
+      approvals_only =
+        subject_holding(account, [Approvals.Authorizer.view_approvals_permission()])
+
+      assert project_review(run, approvals_only) == {:error, :unauthorized}
+      # Refused by the run gate, not by a missing row: this caller reads the
+      # very same vote through the request-addressed list.
+      assert {:ok, [%Decision{decision: :approve}]} =
+               Approvals.list_decisions_for_request(request, approvals_only)
+
+      outsider =
+        Fixtures.Accounts.create_account()
+        |> subject_holding([Runs.Authorizer.view_runs_permission()])
+
+      assert project_review(run, outsider) == {:error, :not_found}
     end
   end
 

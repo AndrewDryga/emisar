@@ -18,6 +18,16 @@ defmodule Emisar.Approvals do
        explicit re-confirm horizon) and an arg-match scope (exact /
        any) — those choices populate a new `Approvals.Grant` so the
        LLM doesn't have to ask again next time within that window.
+
+  Two permissions read a decision, and the split is deliberate: the review
+  receipt a run carries (`project_reviews_for_visible_runs/2`) takes only
+  `Runs.Authorizer.view_runs_permission()` plus the caller's own account plus
+  the request attached to that account's own run, while the request-addressed
+  reads (`list_decisions_for_request/2`, `approved_count_for_request/2`) take
+  `Authorizer.view_approvals_permission()`. Reading the review of a run you can
+  already see is a strictly smaller grant than the approvals permission, which
+  also lists every request in the account — so the asymmetry is the rule, not a
+  gap to close.
   """
   use Supervisor
   alias Ecto.Multi
@@ -655,6 +665,10 @@ defmodule Emisar.Approvals do
   The recorded votes on a request, oldest first, with each decider preloaded
   for the UI tally. Requires `view` on approvals; account-scoped (via the
   `:approval_decisions` Authorizer clause). Returns `{:ok, [decision]}`.
+
+  This read is addressed by request, so it needs the wider approvals permission
+  even though `project_reviews_for_visible_runs/2` reports the same votes to a
+  caller holding only `view_runs` — see the deliberate split in the module doc.
   """
   def list_decisions_for_request(%Request{} = request, %Subject{} = subject) do
     with {:ok, subject} <-

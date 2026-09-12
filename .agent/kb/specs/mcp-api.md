@@ -1131,9 +1131,13 @@ review was released without quorum and adds the `override` object above; the
 example at the top of this section is that shape.
 
 The receipt requires the same run-read access and account membership as the run
-summary carrying it; the approvals permission belongs to deciding, not to
-reading what was decided. A foreign account's review is indistinguishable from
-absence.
+summary carrying it — run-view permission, the caller's own account, and only
+the request attached to that account's own run — never the wider approvals
+permission the console's request-addressed reads take. Reading the review of a
+run you can already see is a strictly smaller grant than that permission, which
+also lists every pending request in the account, so a key that may read runs
+but not browse approvals still repaints its own card. A foreign account's review
+is indistinguishable from absence.
 
 ### Stale target contract
 
