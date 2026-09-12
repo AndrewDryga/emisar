@@ -54,11 +54,19 @@ func (a *App) capture(ctx context.Context, args []string) error {
 			return err
 		}
 	}
-	// `capture docs` scripts the local Keycloak for the sign-in shots; the
+	// `capture docs` scripts the local Keycloak for the SSO client shots, and
+	// only for those: the shot names decide, so re-shooting a Portal page — or
+	// the approval-loop take — runs in a workspace that has no Keycloak. The
 	// console audit never leaves the Portal.
 	needs := []workspaceDependency{needPortal}
 	if args[0] == "docs" {
-		needs = append(needs, needKeycloak)
+		keycloak, err := devbrowser.DocsSelectionNeedsKeycloak(args[1:])
+		if err != nil {
+			return err
+		}
+		if keycloak {
+			needs = append(needs, needKeycloak)
+		}
 	}
 	manager, workspace, err := a.startBrowser(ctx, needs...)
 	if err != nil {

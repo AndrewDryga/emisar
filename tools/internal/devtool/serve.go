@@ -206,6 +206,16 @@ func (a *App) serveDetached(ctx context.Context) error {
 		fmt.Fprintf(a.Out, "already serving at %s\n", workspace.PortalURL)
 		return nil
 	}
+	// Only a NEW server needs the rest: the child is this same command's
+	// foreground serve, which loads every dependency and then configures
+	// Keycloak and the database before Phoenix starts. Requiring them here, and
+	// only here, refuses an absent service by name — while `already serving` and
+	// `--status` keep answering in a workspace that holds the Portal alone. A
+	// child that exits on a missing service opens no port, so without this the
+	// parent spent three minutes waiting and then blamed the port.
+	if _, err := a.loadWorkspace(ctx, everyDependency...); err != nil {
+		return err
+	}
 	logPath, err := a.serveLogPath()
 	if err != nil {
 		return err
@@ -215,6 +225,22 @@ func (a *App) serveDetached(ctx context.Context) error {
 		return err
 	}
 	defer logFile.Close()
+	if err := a.launchDetached(logFile); err != nil {
+		return err
+	}
+	if err := waitForPortState(ctx, port, true, 3*time.Minute); err != nil {
+		return fmt.Errorf("%w — see %s", err, logPath)
+	}
+	fmt.Fprintf(a.Out, "serving at %s (detached, log: %s)\n", workspace.PortalURL, logPath)
+	return nil
+}
+
+// launchDetached re-execs this command as a foreground serve in its own
+// session, writing both streams to the detached log.
+func (a *App) launchDetached(logFile *os.File) error {
+	if a.launchDetachedServe != nil {
+		return a.launchDetachedServe(logFile)
+	}
 	executable, err := os.Executable()
 	if err != nil {
 		return err
@@ -227,14 +253,7 @@ func (a *App) serveDetached(ctx context.Context) error {
 	if err := command.Start(); err != nil {
 		return err
 	}
-	if err := command.Process.Release(); err != nil {
-		return err
-	}
-	if err := waitForPortState(ctx, port, true, 3*time.Minute); err != nil {
-		return fmt.Errorf("%w — see %s", err, logPath)
-	}
-	fmt.Fprintf(a.Out, "serving at %s (detached, log: %s)\n", workspace.PortalURL, logPath)
-	return nil
+	return command.Process.Release()
 }
 
 // Waits for the port to reach `want` — listening for a start, quiet for a stop.

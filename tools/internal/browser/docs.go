@@ -557,6 +557,21 @@ func selectShots(only []string) ([]shot, bool, error) {
 	return selected, runLoop, nil
 }
 
+// DocsSelectionNeedsKeycloak reports whether the same selection CaptureDocs
+// would run reaches the Keycloak admin console, so a caller can require the
+// service only when it is actually driven — a Portal-only re-shoot works in a
+// workspace that was never granted Keycloak. It resolves the names through
+// selectShots, which keeps one source of truth for what a name selects, and
+// returns the unknown-name error before any browser or service is touched.
+func DocsSelectionNeedsKeycloak(only []string) (bool, error) {
+	shots, _, err := selectShots(only)
+	if err != nil {
+		return false, err
+	}
+	_, keycloak := splitShots(shots)
+	return len(keycloak) > 0, nil
+}
+
 func splitShots(shots []shot) (portal, keycloak []shot) {
 	for _, s := range shots {
 		if s.Keycloak {

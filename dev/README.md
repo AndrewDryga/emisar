@@ -193,7 +193,9 @@ capturing.
 the documentation. `./run capture console` walks the signed-out and
 authenticated console at desktop and mobile widths, writing the audit under the
 active task's `screenshots/console-audit/` directory. Both require an active
-seeded workspace and reuse the persistent browser. Documentation captures are
+seeded workspace and reuse the persistent browser. Naming shots after
+`capture docs` limits the run to them, and only a selection that includes the
+`keycloak-*` SSO steps requires the Keycloak service. Documentation captures are
 committed product assets, while console captures are disposable task evidence.
 Automated Chromium allows only the active Keycloak leaf certificate's SPKI;
 certificate validation is not disabled globally.
