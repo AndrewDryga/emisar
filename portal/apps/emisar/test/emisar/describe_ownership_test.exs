@@ -18,8 +18,8 @@ defmodule Emisar.DescribeOwnershipTest do
 
   # Same name, genuinely different module under test — not a collision.
   @coincidences ~w(
-    parse/1 create/1 validate/1 validate/2 escape/1 all/0 execute/1 form/1
-    digest/1 fetch/1 label/1 tarball_url/2
+    parse/1 create/1 validate/1 validate/2 escape/1 execute/1 form/1
+    digest/1 fetch/1 tarball_url/2
   )
 
   # Four more were merged in the same pass: the invitation functions
@@ -62,7 +62,7 @@ defmodule Emisar.DescribeOwnershipTest do
       |> Enum.filter(fn {name, paths} ->
         # A describe whose name is not a function reference (prose like
         # "bearer auth") says nothing about ownership.
-        String.match?(name, ~r|^[a-z_]+[?!]?/\d$|) and
+        String.match?(name, ~r|^[a-z_]+[?!]?/\d+$|) and
           name not in @coincidences and name not in @known and
           length(Enum.uniq(paths)) > 1
       end)
