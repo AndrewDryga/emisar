@@ -28,6 +28,11 @@ import (
 // admin center repaints a blade after the ring lands.
 const highlightSettle = 700 * time.Millisecond
 
+// The display name the registration form types, and therefore the only name the
+// inventory claims as ours. One constant for both so the filter cannot drift
+// from the form and start sparing the duplicates it was written to find.
+const registrationAppName = "emisar"
+
 // A run is one flow with the flags that flow reads.
 type options struct {
 	flow           string
@@ -284,7 +289,7 @@ func appRegistrationFlow(ctx context.Context, env map[string]string, outDir stri
 
 	// Fill the form BEFORE shooting — a walkthrough frame showing an empty
 	// required field reads as though the field is optional.
-	if err := fillField(ctx, "name", "emisar"); err != nil {
+	if err := fillField(ctx, "name", registrationAppName); err != nil {
 		fmt.Println("  WARN name:", err)
 	}
 	if err := fillField(ctx, "redirect", "https://emisar.dev/sign_in/sso/callback"); err != nil {
@@ -479,7 +484,7 @@ func openRegisteredApp(ctx context.Context, env map[string]string, outDir string
 		_ = capture.Screenshot(ctx, outDir, "en-05-overview-failed")
 		return err
 	}
-	if err := clickTextAtCentre(ctx, "emisar"); err != nil {
+	if err := clickTextAtCentre(ctx, registrationAppName); err != nil {
 		_ = capture.Screenshot(ctx, outDir, "en-05-app-not-listed")
 		return fmt.Errorf("open the emisar app: %w", err)
 	}

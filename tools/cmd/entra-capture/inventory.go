@@ -187,20 +187,47 @@ type graphCollection struct {
 	mine                       []graphRow
 }
 
-// auditTenant lists every app registration and enterprise application with a
-// verdict, and removes the ones that are ours when remove is set.
+// The three verdicts a row can get. Padded so the audit's columns line up
+// whichever one is printed.
+const (
+	verdictKeep   = "keep   "
+	verdictDelete = "DELETE "
+	verdictSpare  = "spare  "
+)
+
+// appVerdict decides what a cleanup run does with one app registration or
+// enterprise application.
 //
-// Ours is exactly the name this rig gives what it creates — "emisar", the
-// registration form's display name — never a substring. The tenant also holds
-// the "emisar login certification" and "emisar directory sync certification"
-// objects the provider certification runs sign in and provision against; a
-// `/emisar/` match claimed both, the accident okta-capture's filter had first.
-// A keeper is identified by something it carries, never by a name the filter
+// A keeper is identified by something it CARRIES, never by a name the filter
 // happens to miss: the saved walkthrough app registration whose appId is
 // ENTRA_CLIENT_ID, and the SCIM enterprise application whose appId is
 // ENTRA_SCIM_APP_ID (resolved through Graph when the file does not pin it).
 // The registration, app, and provisioning flows resume those by id instead of
 // creating yet another duplicate, so deleting either breaks the next run.
+//
+// Ours is exactly the name this rig gives what it creates — the display name the
+// registration form types — never a substring and never another casing of it.
+// The tenant also holds the "emisar login certification" and "emisar directory
+// sync certification" objects the provider certification runs sign in and
+// provision against; a `/emisar/` match claimed both, the accident
+// okta-capture's filter had first. Graph returns displayName as it was typed, so
+// a row named "Emisar" is someone else's object rather than a duplicate of ours;
+// Graph's $filter eq DOES fold, which is why servicePrincipalNamed re-checks its
+// matches here in Go.
+func appVerdict(row graphRow, env map[string]string) string {
+	for _, key := range []string{"ENTRA_CLIENT_ID", "ENTRA_SCIM_APP_ID"} {
+		if env[key] != "" && row.AppID == env[key] {
+			return verdictKeep
+		}
+	}
+	if row.DisplayName == registrationAppName {
+		return verdictDelete
+	}
+	return verdictSpare
+}
+
+// auditTenant lists every app registration and enterprise application with a
+// verdict, and removes the ones that are ours when remove is set.
 func auditTenant(ctx context.Context, env map[string]string, remove bool) error {
 	if err := chromedp.Run(ctx, chromedp.EmulateViewport(1520, 950)); err != nil {
 		return err
@@ -212,25 +239,6 @@ func auditTenant(ctx context.Context, env map[string]string, remove bool) error 
 	if err := resolveSCIMApp(ctx, g, env); err != nil {
 		fmt.Println("  WARN", err)
 	}
-	keeper := func(row graphRow) bool {
-		for _, key := range []string{"ENTRA_CLIENT_ID", "ENTRA_SCIM_APP_ID"} {
-			if env[key] != "" && row.AppID == env[key] {
-				return true
-			}
-		}
-		return false
-	}
-	ours := func(row graphRow) bool { return strings.EqualFold(row.DisplayName, "emisar") && !keeper(row) }
-	verdict := func(row graphRow) string {
-		switch {
-		case keeper(row):
-			return "keep   "
-		case ours(row):
-			return "DELETE "
-		}
-		return "spare  "
-	}
-
 	// Both halves of what the rig creates. Deleting an application also takes
 	// its service principal with it, so the cleanup below removes service
 	// principals FIRST — a delete against a row that just vanished reads as a
@@ -249,11 +257,11 @@ func auditTenant(ctx context.Context, env map[string]string, remove bool) error 
 		// the SCIM enterprise application, and this listing is where to read them.
 		fmt.Printf("--- every %s, and what this run will do with it ---\n", strings.TrimSuffix(section.label, "s"))
 		for _, row := range rows {
-			fmt.Printf("  %s %-44s %s  app %s\n", verdict(row), row.DisplayName, row.ID, row.AppID)
+			fmt.Printf("  %s %-44s %s  app %s\n", appVerdict(row, env), row.DisplayName, row.ID, row.AppID)
 		}
 		fmt.Println("--- anything spared that this rig created is a filter gap, not a clean tenant ---")
 		for _, row := range rows {
-			if ours(row) {
+			if appVerdict(row, env) == verdictDelete {
 				section.mine = append(section.mine, row)
 			}
 		}
