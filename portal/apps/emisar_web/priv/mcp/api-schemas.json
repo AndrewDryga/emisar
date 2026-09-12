@@ -208,6 +208,13 @@
       "maxLength": 2000,
       "pattern": "\\S"
     },
+    "review_reason": {
+      "type": "string",
+      "description": "The justification an approver was shown, secret-masked. Reported as snapshotted, so it does not carry the 12-character floor this API asks of its own callers: a console-dispatched run is only held to a nonblank reason, and masking a long secret down to the redaction marker can shrink one below it. Text whose secrets can no longer be read is absent rather than forwarded.",
+      "minLength": 1,
+      "maxLength": 2000,
+      "pattern": "\\S"
+    },
     "evidence": {
       "type": "string",
       "description": "Optional: explain observations and why they matter, then add supporting references. Include only checks performed and state uncertainty. Emisar does not verify them.",
@@ -715,7 +722,7 @@
           "minimum": 0,
           "description": "Top-level arguments the run was dispatched with. Their values stay in Emisar; the count says how much detail one command line stands in for."
         },
-        "reason": {"$ref": "#/$defs/reason"},
+        "reason": {"$ref": "#/$defs/review_reason"},
         "evidence": {"$ref": "#/$defs/evidence"},
         "expected": {"$ref": "#/$defs/expected"},
         "command": {

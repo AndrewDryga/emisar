@@ -767,7 +767,7 @@ never relies on pagination or truncation.
 | `pack_ref` | Required exact ref returned with the action. |
 | `runner_refs` | Required exact refs, 1 through 16, distinct. |
 | `args` | Required object validated against this action in this pack; `{}` for none. |
-| `reason` | Required nonblank UTF-8 justification, at most 2000 characters. |
+| `reason` | Required nonblank UTF-8 justification, at least 12 and at most 2000 characters. |
 | `evidence` | Optional nonblank justification, at most 4000 characters: what was already observed — prior findings or the run ids inspected — that motivates this action. |
 | `expected` | Optional nonblank justification, at most 2000 characters: the outcome that would confirm the action worked. |
 | `wait` | `0`, or an integer duration in `ms`/`s`; default and maximum 60 seconds. |
@@ -1088,8 +1088,14 @@ never raises it, and an override never adds to it.
 `reason`, `evidence`, and `expected` are the approver-facing justification
 chain snapshotted with the request, with the run's own `sensitive` argument
 values masked out; text whose secrets can no longer be read is dropped rather
-than forwarded. `argument_count` is how many top-level arguments the run
-carries — the values themselves stay in Emisar.
+than forwarded. All three are reported as snapshotted and masked: each is
+nonblank and at most its input bound, but the receipt's `reason` does NOT carry
+the 12-character minimum `run_action` asks of its own callers. Masking replaces
+a sensitive value with a ten-character marker, so a justification that quotes
+the argument it is about arrives shorter than any reason this API would accept
+as input. A client that re-validates a receipt against the input contract
+rejects its own history. `argument_count` is how many top-level arguments the
+run carries — the values themselves stay in Emisar.
 
 `command` is the line the review decided against: `executed` is the runner's own
 recorded receipt, and `preview` is rendered from the hash-proven published pack

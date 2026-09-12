@@ -3120,6 +3120,83 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
     refute Map.has_key?(summary, "review")
   end
 
+  # Why `review.reason` cannot carry the 12-character floor this API asks of its
+  # own callers: the run whose justification it reports is only held to a
+  # NONBLANK reason (`ActionRun.Changeset.create/1` validates the maximum alone),
+  # and the approver-facing snapshot is masked before it is published. A console
+  # dispatch never reaches this contract — it records no operation id, and every
+  # MCP run read requires one — so masking is the reachable shrink, and both
+  # halves are pinned here rather than assumed.
+  test "a console-dispatched run's short reason never reaches the published receipt", %{
+    conn: conn,
+    account: account,
+    subject: subject,
+    user: user,
+    key: key,
+    membership: membership
+  } do
+    runner = setup_runner!(account, subject, "console-node")
+
+    # The console form rejects only a blank reason, so an operator's "ok"
+    # dispatches and reaches an approver exactly as typed.
+    run =
+      create_mcp_history_run!(account, runner, key, 1, %{
+        source: :operator,
+        api_key_id: nil,
+        operation_id: nil,
+        status: :pending_approval,
+        requires_approval: true,
+        initiating_membership_id: membership.id,
+        reason: "ok"
+      })
+
+    assert {:ok, _request} = Approvals.create_request(run, user.id, run.reason)
+
+    # Not a denial to report as one: a run with no operation id is outside the
+    # fixed MCP history contract, so this API cannot see it at all.
+    result = call(conn, "wait_for_run", %{"run_id" => run.id, "timeout" => "0"})
+
+    assert result["error"]["code"] == "run_not_found"
+
+    # Loosening that gate would publish this run's two-character reason, so the
+    # receipt's own floor must stay below what `run_action` demands as input.
+    assert Repo.reload!(run).reason == "ok"
+  end
+
+  test "a reason masked down to the redaction marker still satisfies the published receipt", %{
+    conn: conn,
+    account: account,
+    subject: subject,
+    user: user,
+    key: key,
+    membership: membership
+  } do
+    runner = setup_runner!(account, subject, "masked-node")
+    token = "tok_live_9f3c1b7de2a45806"
+
+    # A justification that quotes the sensitive argument it is about: the
+    # approver-facing snapshot masks the run's own secrets, and the marker is
+    # shorter than the value it replaced.
+    run =
+      create_mcp_history_run!(account, runner, key, 1, %{
+        status: :pending_approval,
+        requires_approval: true,
+        initiating_membership_id: membership.id,
+        sensitive_arg_names: ["token"],
+        args_raw: Jason.encode!(%{"token" => token}),
+        reason: token
+      })
+
+    assert {:ok, _request} = Approvals.create_request(run, user.id, run.reason)
+
+    review = call(conn, "wait_for_run", %{"run_id" => run.id, "timeout" => "0"})["run"]["review"]
+
+    # `[REDACTED]` is ten characters — shorter than any reason this API accepts
+    # as input, and the secret is gone rather than forwarded.
+    assert review["reason"] == "[REDACTED]"
+    refute review["reason"] =~ token
+  end
+
   test "wait_for_run rejects a deadline above the repeatable 60-second window", %{conn: conn} do
     result =
       call(conn, "wait_for_run", %{
