@@ -1432,7 +1432,8 @@ Status is the closed outcome classification: a failed execution, control-plane
 error, timeout, trust refusal, policy denial, and operator cancellation remain
 distinct. The summary never copies runner output, a runner's recorded failure
 text, or a policy reason. Where the exact cause matters, follow `run_url`. A run
-a human reviewed instead carries its own `review` receipt, described below.
+a human reviewed instead carries its own `review` receipt, described in
+[Review receipt](#review-receipt).
 When a typed action succeeds, the summary may also carry the exact redacted
 `structured_output` object from stdout that passed the pack schema. The object
 is never partially truncated. Multi-run responses allocate a separate 64 KiB aggregate
