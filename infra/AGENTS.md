@@ -14,12 +14,15 @@ mapping; this file is the rules.
 ```
 
 Run it from the repository root. It checks Terraform formatting, initializes
-without the remote backend, validates, runs TFLint, and renders and validates
-the production cloud-init templates. CI runs the same gate with no cloud
-credentials. The app-side clustering (`Emisar.Cluster.GCE` +
-`…/gce/client.ex`, `application.ex`, `runtime.exs`, `rel/env.sh.eex`, `mix.exs`)
-lives in `portal/` and is gated by `./run gate portal`. A live `plan`/`apply`
-is the separate, credentials-gated deploy step.
+without the remote backend, validates, runs TFLint, renders and validates
+the production cloud-init templates, and loads `packs/emisar-admin/` with the
+runner built from this tree — the private pack is never published, so this gate
+is the only thing that reads its specs before an admin-runner boots on them.
+CI runs the same gate with no cloud credentials. The app-side clustering
+(`Emisar.Cluster.GCE` + `…/gce/client.ex`, `application.ex`, `runtime.exs`,
+`rel/env.sh.eex`, `mix.exs`) lives in `portal/` and is gated by
+`./run gate portal`. A live `plan`/`apply` is the separate, credentials-gated
+deploy step.
 
 ## Non-negotiable rules
 

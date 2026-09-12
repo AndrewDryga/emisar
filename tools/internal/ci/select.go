@@ -220,7 +220,18 @@ func (selection *Selection) include(file string) {
 	if packRuntimeSource || toolutil.HasAnyPrefix(file, "runner/internal/packs/", "runner/internal/catalog/", "runner/cmd/packctl/", "runner/pkg/packspec/", "runner/pkg/actionspec/") || slices.Contains([]string{"runner/pack.go", "runner/main.go", "runner/go.mod", "runner/go.sum", "go.work", "go.work.sum"}, file) {
 		selection.PacksRelease = true
 	}
-	if strings.HasPrefix(file, "infra/") || file == ".tool-versions" {
+	// The infra gate validates the private emisar-admin pack by building the
+	// runner and loading the pack with it, because nothing else ever parses those
+	// specs before an admin-runner boots on them. So the loader and the schema it
+	// enforces are infra inputs: tightening a duration, an enum, an arg rule or a
+	// template reference can reject that pack from a commit that touches no
+	// infra/ file, and the gate would first fail on whoever pushed next. The
+	// public-catalog half of the same coupling is the Packs selection above.
+	adminPackLoader := toolutil.HasAnyPrefix(file,
+		"runner/internal/packs/", "runner/internal/validation/", "runner/internal/expressions/",
+		"runner/internal/outputschema/", "runner/pkg/actionspec/", "runner/pkg/packspec/",
+	) || slices.Contains([]string{"runner/pack.go", "runner/main.go", "runner/go.mod", "runner/go.sum", "go.work", "go.work.sum"}, file)
+	if strings.HasPrefix(file, "infra/") || file == ".tool-versions" || adminPackLoader {
 		selection.Infra = true
 	}
 	if slices.Contains([]string{"portal/mix.lock", "runner/go.mod", "runner/go.sum", "mcp/go.mod", "mcp/go.sum", "tools/go.mod", "tools/go.sum", ".dep-age-allow"}, file) || strings.HasPrefix(file, "tools/cmd/depgate/") {

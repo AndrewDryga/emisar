@@ -97,7 +97,8 @@ const (
                              parity, race tests, cross-build, and the installer
   mcp                        the runner phases, plus the stdlib-only assertion
   packs                      validate packs, hashes, catalog, and focused Portal tests
-  infra                      format, initialize, validate, lint, and test templates
+  infra                      format, initialize, validate, lint, test templates,
+                             and schema-validate the private admin pack
   tooling                    the Go tooling phases, plus docs, workflow lint,
                              agent setup, dependency age, and shell scripts
   review                     run canonical gates selected from Coop's pinned review base

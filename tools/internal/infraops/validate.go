@@ -57,47 +57,6 @@ func imageVersion(image string) string {
 // adminRunnerPins returns the pin lines from the single-source file that
 // compute.tf and tests/render read with file(), so the gate asserts the same
 // bytes production applies instead of a third hand-copy that can drift.
-// callback.sh drops the action id and refuses more than four remaining
-// arguments, so an action with a sixth argv entry passes pack validation,
-// deploys, and only fails when an operator runs it mid-incident. The ceiling
-// belongs where the author can see it.
-const adminActionArgvCeiling = 5
-
-func checkAdminActionArgvCeiling(pack string) error {
-	entries, err := os.ReadDir(filepath.Join(pack, "actions"))
-	if err != nil {
-		return err
-	}
-	for _, entry := range entries {
-		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".yaml") {
-			continue
-		}
-		data, err := os.ReadFile(filepath.Join(pack, "actions", entry.Name()))
-		if err != nil {
-			return err
-		}
-		var action struct {
-			Execution struct {
-				Script struct {
-					Path string `yaml:"path"`
-				} `yaml:"script"`
-				Argv []string `yaml:"argv"`
-			} `yaml:"execution"`
-		}
-		if err := yaml.Unmarshal(data, &action); err != nil {
-			return fmt.Errorf("reading %s: %w", entry.Name(), err)
-		}
-		if !strings.HasSuffix(action.Execution.Script.Path, "callback.sh") {
-			continue
-		}
-		if len(action.Execution.Argv) > adminActionArgvCeiling {
-			return fmt.Errorf("%s passes %d argv entries; callback.sh accepts the action id plus at most %d arguments",
-				entry.Name(), len(action.Execution.Argv), adminActionArgvCeiling-1)
-		}
-	}
-	return nil
-}
-
 func adminRunnerPins(path string) ([]string, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -273,7 +232,8 @@ func (a *App) validateCloudInit(ctx context.Context, path string, containerized 
 }
 
 func (a *App) validateTemplates(ctx context.Context) error {
-	if err := a.require("terraform", "bash", "shellcheck"); err != nil {
+	// go builds the runner this phase validates the private admin pack with.
+	if err := a.require("terraform", "bash", "shellcheck", "go"); err != nil {
 		return err
 	}
 	_, dockerErr := a.LookPath("docker")
@@ -323,7 +283,7 @@ func (a *App) validateTemplates(ctx context.Context) error {
 	if _, err := os.Stat(adminCallback); err != nil {
 		return fmt.Errorf("private admin callback missing from the HCP upload input: %w", err)
 	}
-	if err := checkAdminActionArgvCeiling(filepath.Join(a.Infra, "packs", "emisar-admin")); err != nil {
+	if err := a.validateAdminPack(ctx, filepath.Join(a.Infra, "packs", "emisar-admin")); err != nil {
 		return err
 	}
 	if dockerAvailable {

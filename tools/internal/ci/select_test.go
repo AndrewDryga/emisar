@@ -618,6 +618,33 @@ func TestSelect(t *testing.T) {
 		resetHard(t, root, base)
 	})
 
+	// The infra gate validates infra/packs/emisar-admin with the runner it builds
+	// from this tree, so the loader's own source has to route to that job — a
+	// tightened enum or template rule can reject the private pack from a commit
+	// that touches no infra/ file.
+	t.Run("the pack loader selects infra", func(t *testing.T) {
+		for _, file := range []string{
+			"runner/internal/packs/loader.go",
+			"runner/internal/validation/args.go",
+			"runner/internal/expressions/expressions.go",
+			"runner/internal/outputschema/outputschema.go",
+			"runner/pkg/actionspec/action.go",
+			"runner/pkg/packspec/pack.go",
+			"runner/pack.go",
+		} {
+			writeFixture(t, root, file, "package fixture\n")
+			commitAll(t, root, "pack loader")
+			selection, err := Select(context.Background(), root, "pull_request", base)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !selection.Infra {
+				t.Fatalf("%s did not select infra: %+v", file, selection)
+			}
+			resetHard(t, root, base)
+		}
+	})
+
 	t.Run("installer selects portal not infra", func(t *testing.T) {
 		writeFixture(t, root, "install.sh", "#!/bin/sh\n")
 		commitAll(t, root, "installer")
