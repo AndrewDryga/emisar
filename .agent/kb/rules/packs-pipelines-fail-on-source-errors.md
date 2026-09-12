@@ -1,11 +1,11 @@
 # Rule: shell pipelines fail on source errors
 
-**Rule.** A pack action whose `/bin/sh -c` program pipes a command into `tail`,
-`head`, `sort`, or `awk` must guarantee that a failure of the *source* command
-fails the action. Guard the input before the pipeline — `[ -r "$path" ]` for a
-file, `[ -d "$path" ]` for a directory — or capture the source's status and
-`exit` with it. A read action that finds nothing must be distinguishable from a
-read action whose input was not there.
+**Rule.** A pack action that pipes a command into `tail`, `head`, `sort`, or
+`awk` — in a `/bin/sh -c` program or in a packaged script — must guarantee that
+a failure of the *source* command fails the action. Guard the input before the
+pipeline — `[ -r "$path" ]` for a file, `[ -d "$path" ]` for a directory — or
+capture the source's status and `exit` with it. A read action that finds nothing
+must be distinguishable from a read action whose input was not there.
 
 **Why.** A shell pipeline exits with the status of its **last** command. In
 `grep -E ' 5[0-9][0-9] ' "$1" | tail -n 100`, `tail` succeeds whatever `grep`
@@ -18,10 +18,25 @@ operator or an LLM uses to answer "are we serving errors?". "No 5xx in the last
 production and must not share a result. The same masking hides an unreachable
 broker, a dead cluster, and — in `nginx -T` — a config that does not parse.
 
-**Do not reach for `set -o pipefail`.** `grep` exits `1` when it matches
-nothing, which is the *good* outcome for an error-log search. Under `pipefail` a
-clean log becomes a failed action, trading a false all-clear for a false alarm.
-It is also not POSIX `sh`. Guard the input instead.
+**In an inline `sh` program, do not reach for `set -o pipefail`.** `grep` exits
+`1` when it matches nothing, which is the *good* outcome for an error-log
+search. Under `pipefail` a clean log becomes a failed action, trading a false
+all-clear for a false alarm. It is also not POSIX `sh`: a `/bin/sh -c` program
+cannot rely on it, and busybox `ash` does not have it. Guard the input instead.
+
+**A packaged bash script already carries `pipefail`, and keeps it.** The failure
+floor in `packs/AGENTS.md` requires `set -euo pipefail` under bash — enforced by
+`validatePackScriptFlags` in `tools/internal/devtool/pack_script_flags.go` — so
+there the source's failure already fails the pipeline, and a guard mostly buys a
+readable message instead of a bare non-zero exit. What `pipefail` does not do is
+retire the overloads; it moves them. A step whose non-zero status is genuinely
+expected — a no-match `grep`, an `lsof` that found nothing — says so in place
+(`|| true`, `|| rc=$?`, an `if`), exactly as the floor bullet asks. And it makes
+the capture shape *more* necessary, not less: `head` exiting early SIGPIPEs the
+source, which `pipefail` then reports as a failed run of a script that worked
+(`jmap -histo:live | head -50` every time). Never drop `pipefail` from a bash
+script to quiet one of these — that re-arms the false all-clear for every other
+pipeline in the file. Fix the step.
 
 **Good.**
 
