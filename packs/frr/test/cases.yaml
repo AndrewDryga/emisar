@@ -60,8 +60,13 @@ cases:
       - argv: [/bin/sh, -c, "vtysh -c 'show bgp neighbor 10.0.0.2' | grep -q 'Administratively shut down'"]
         retry_for: 10s
         retry_every: 200ms
+    # Absence alone cannot prove a re-advertise: an unreachable bgpd also prints
+    # no shutdown marker. The probe reads the raw neighbor block and asserts the
+    # neighbor line is there before asserting the marker is not, so a daemon that
+    # died between the action and the probe fails the case instead of passing it.
     probes:
       - name: the neighbor is no longer administratively down
-        argv: [/bin/sh, -c, "vtysh -c 'show bgp neighbor 10.0.0.2' | grep -c 'Administratively shut down' || true"]
+        argv: [vtysh, -c, "show bgp neighbor 10.0.0.2"]
         expect:
-          stdout_contains: ["0"]
+          stdout_contains: ["BGP neighbor is 10.0.0.2"]
+          stdout_not_contains: ["Administratively shut down"]
