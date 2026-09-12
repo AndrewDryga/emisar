@@ -1132,22 +1132,22 @@ defmodule EmisarWeb.SSODirectoryComponents do
 
   # Group role mappings are editable only while directory-sync config is available.
 
-  def role_lock_tip(true), do: "Role is managed by directory sync — set it in Groups & access"
+  defp role_lock_tip(true), do: "Role is managed by directory sync — set it in Groups & access"
 
-  def role_lock_tip(false),
+  defp role_lock_tip(false),
     do: "Role is managed by directory sync — change this member's groups in your IdP"
 
-  def role_label(role), do: Emisar.Auth.role_label(role)
+  defp role_label(role), do: Emisar.Auth.role_label(role)
 
-  def members_label(1), do: "1 member"
-  def members_label(count), do: "#{count} members"
+  defp members_label(1), do: "1 member"
+  defp members_label(count), do: "#{count} members"
 
-  def mapping_runner_reach_phrase(:none), do: "None"
-  def mapping_runner_reach_phrase(:all), do: "All"
-  def mapping_runner_reach_phrase(:restricted), do: nil
+  defp mapping_runner_reach_phrase(:none), do: "None"
+  defp mapping_runner_reach_phrase(:all), do: "All"
+  defp mapping_runner_reach_phrase(:restricted), do: nil
 
   # Groups lead — a group is the wider grant, so the visible tags start there.
-  def access_scope_tag_items(access) do
+  defp access_scope_tag_items(access) do
     Enum.map(access.groups, &{:group, &1}) ++
       Enum.map(access.runner_ids, &{:runner, &1})
   end
