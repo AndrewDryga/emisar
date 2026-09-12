@@ -280,6 +280,8 @@ defmodule EmisarWeb.RunnerScope do
   end
 
   def access_scope_fields(assigns) do
+    assigns = assign(assigns, :restricted_offered?, restricted_offered?(assigns.card))
+
     ~H"""
     <%!-- Named for the same reason the pack half is, and dropped by the caller
           whose cards are not a runner choice at all: an eyebrow that misnames
@@ -307,8 +309,12 @@ defmodule EmisarWeb.RunnerScope do
         </:card>
       </.choice_cards>
 
+      <%!-- The picker attaches to the "Selected runners" card, so it renders only
+            when that card is offered: a role whose cards rule runners out (a
+            directory or billing-only role) never gets an empty picker from a
+            forged restricted mode. The domain re-validates the mode regardless. --%>
       <.runner_scope_select
-        :if={to_string(@runner_mode_value) == "restricted"}
+        :if={@restricted_offered? and to_string(@runner_mode_value) == "restricted"}
         name={@runner_scope_name}
         variant={:attached}
         runners={@runners}
@@ -341,6 +347,9 @@ defmodule EmisarWeb.RunnerScope do
     </div>
     """
   end
+
+  defp restricted_offered?([]), do: true
+  defp restricted_offered?(cards), do: Enum.any?(cards, &(&1.value == "restricted"))
 
   @doc """
   The `load_error` message for a failed runner read, or `nil`. The picker's own

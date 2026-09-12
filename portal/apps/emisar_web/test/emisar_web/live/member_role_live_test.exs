@@ -86,6 +86,50 @@ defmodule EmisarWeb.MemberRoleLiveTest do
     assert has_element?(view, "#owner-role-form")
   end
 
+  test "a forged restricted mode never attaches a runner picker to a billing-only role", %{
+    conn: conn
+  } do
+    {conn, _user, account} = register_and_log_in(conn)
+    Fixtures.Runners.create_runner(account_id: account.id)
+    target = Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
+
+    {:ok, view, _html} =
+      live(conn, ~p"/app/#{account}/settings/team/#{target.id}/change-role/billing_manager")
+
+    refute has_element?(view, "input[type='radio'][value='restricted']")
+
+    html =
+      render_change(view, "validate", %{"access" => %{"runner_access_mode" => "restricted"}})
+
+    refute html =~ "No runners available to grant."
+    refute has_element?(view, "input[name='access[scope][]']")
+    refute has_element?(view, "input[name='access[pack_access_mode]']")
+
+    assert render_submit(view, "save", %{"access" => %{"runner_access_mode" => "restricted"}}) =~
+             "Choose their runner access"
+
+    assert Repo.reload!(target).role == :owner
+  end
+
+  test "the admin demotion attaches the runner picker to the selected-runners card", %{
+    conn: conn
+  } do
+    {conn, _user, account} = register_and_log_in(conn)
+    runner = Fixtures.Runners.create_runner(account_id: account.id)
+    target = Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
+
+    {:ok, view, _html} =
+      live(conn, ~p"/app/#{account}/settings/team/#{target.id}/change-role/admin")
+
+    refute has_element?(view, "input[name='access[scope][]']")
+
+    view
+    |> form("#owner-role-form", access: %{runner_access_mode: "restricted"})
+    |> render_change()
+
+    assert has_element?(view, "input[name='access[scope][]'][value='runner:#{runner.id}']")
+  end
+
   test "directory-owned Owners offer an explicit return to directory role and access", %{
     conn: conn
   } do
