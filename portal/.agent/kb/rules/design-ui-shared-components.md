@@ -15,7 +15,7 @@ its Tailwind. The canonical surfaces:
 | Attention callout / banner strip | `<.callout tone= title= icon=>` defaults to the icon-capped vertical spine and always resolves a real `hero-*` icon; `navigate` makes the whole unit a link. `variant={:strip}` is reserved for a flush shell-wide interruption. `offline_notice`/`subscription_banner` only map domain state to tone/copy. A command or prescribed action belongs inside this callout, so warning + remedy remain one surface. | a hand-rolled `flex … rounded-lg … bg-amber-500/10 ring-1` or dashed alert box, a bare line with no visible icon, a callout followed by a sibling code artifact, or using the shell strip for an ordinary in-page alert |
 | Naked status note (canvas) | `<.status_note icon= tone= title= primary>` — toned icon lead + title + body, NO spine, for a passive fact ABOUT the surface (posture fact, reach statement); `primary` = the page's strongest status voice (semibold). | a hand-rolled `flex items-start gap-3` + `mt-0.5 h-4 w-4` icon + title/body divs, or using a status note for an operational alert that needs the shared spine |
 | Event block | `<.event_block icon= tone={:amber\|:rose\|:brand\|:neutral} title=>` + `:body` slot + payload in the default slot — the explicit alert form when title, explanation, artifact, and actions must stay one unit. Its required `hero-*` icon caps the same spine as `<.callout>`. `:amber` = pending/attention; `:rose` = a dead outcome; `:brand` = a positive result carrying real content. | a `border-l-2` wrapper, a boxed or dashed alert, an empty/invisible icon, or three floating elements for one result |
-| Status dot | `<.status_dot tone= size= pulse ping>` — composed by `status_badge`, `summary_stat`, connection/health/outcome dots | a raw `h-1.5 w-1.5 rounded-full bg-*-400` span or a bespoke animate-ping pair |
+| Status dot | `<.status_dot tone= size= pulse ping>` — composed by `status_badge`, `fleet_posture`, connection/health/outcome dots | a raw `h-1.5 w-1.5 rounded-full bg-*-400` span or a bespoke animate-ping pair |
 | Setup connection status | `<.connection_status id= state={:waiting\|:delayed\|:connected} title=>` — shared runner/agent setup row; neutral waiting pulse, amber delayed pulse with optional `:details`, static green when connected; one polite live region | separate waiting layouts per installer, amber for normal waiting, duplicate timeout alerts, or a decorative progress card |
 | Framed code / snippet | `<.code_panel label= code= annotation= copy prompt max_h=>` — code rides the ATTR so the formatter can't leak whitespace into the `<pre>` (run-output's streaming terminal is the one sanctioned hand-roll) | a `border … bg-black/… <pre>` block with a copy-button header |
 | User-authored artifact | `<.artifact_panel>` — a quiet framed surface for operational Markdown or another authored artifact that must remain distinct from surrounding controls | naked authored instructions that blend into page copy, or a one-off wash/ring wrapper |
@@ -323,7 +323,7 @@ hand-rolling shapes that already had a home.
 
 ```heex
 <div class="overflow-hidden rounded-xl border border-zinc-900 bg-zinc-950/40">…</div>
-<.card padding=""><header class="border-b border-zinc-900 px-4 py-2">…</header>…</.card>
+<section><header class="border-b border-zinc-900 px-4 py-2"><h2>Recent runs</h2></header>…</section>
 <span class="rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase …">Trusted</span>
 <div class="flex … rounded-lg bg-amber-500/10 p-3 ring-1 ring-amber-500/30">…</div>
 ```
@@ -333,8 +333,8 @@ deliberate one-off from a drift). Before adding markup, grep `core_components.ex
 the shape; if you find yourself typing `rounded-xl border border-zinc-900
 bg-zinc-950/40`, `bg-amber-500/10 … ring-1`, or `mx-auto max-w-`, stop — there's a
 component. Two sanctioned hand-rolls, both noted at their call sites: the packs
-pack-row (a stream `<li>` wrapping a nested version list — can't be a `<div>`
-`<.card>`, isn't a flat `<.list_row>`) and the run-detail output terminal (streams
+pack-row (a stream `<li>` wrapping a nested version list — has to stay an `<li>`,
+and a flat `<.list_row>` can't hold it) and the run-detail output terminal (streams
 chunk spans into its `<pre>`, which `<.code_panel>`'s static `code` attr can't).
 
 The page-level layer on top of this rule — archetypes, the ONE tone vocabulary, the

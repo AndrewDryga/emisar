@@ -134,7 +134,7 @@ use `brand-*` for accent, primary action, links, and success/allowed/healthy.
 > `emerald-400` is the only exception). The shared-component **tone vocabulary is
 > SEMANTIC** — `:brand` (healthy/pass), `:amber` (pending/caution), `:rose`
 > (deny/danger), `:neutral` (identity/metadata) — across
-> `chip`/`list_row`/`count_badge`/`summary_stat`/`section_header`. There is **no**
+> `chip`/`list_row`/`count_badge`/`section_header`. There is **no**
 > `:indigo`/`:emerald`/`:default`/`:zinc` tone atom: those were dead/lying aliases
 > (two byte-identical greens that painted neutral metadata green, diluting "emerald
 > = passed the gate") and are gone. **Color names a MEANING, never a hue or
@@ -254,10 +254,11 @@ use `brand-*` for accent, primary action, links, and success/allowed/healthy.
   VISIBLE).** Three planes, no gray hairline borders on surfaces:
   1. **GROUND** — the work canvas is TRUE BLACK (`<main>` `bg-black` + the faint
      brand top wash); the zinc-950 sidebar/topbar read as separate chrome.
-  2. **ISLAND** — every card/panel/table/meta-strip/wizard/pillar lifts onto
+  2. **ISLAND** — every code panel/table/meta-strip/wizard lifts onto
      `bg-zinc-900/60 ring-1 ring-white/[0.07]
      shadow-[inset_0_1px_0_0_rgba(255,255,255,0.05)]` (edge-as-LIGHT + a 1px
-     inset top highlight). ONE recipe on `<.card>`; LiveTable wrappers and the
+     inset top highlight). ONE recipe, carried by `<.code_panel>`,
+     `<.os_code_panel>` and `<.meta_strip>`; LiveTable wrappers and the
      one-off surfaces follow it. In-island hairlines/dividers are
      `border-white/[0.06]` / `divide-white/[0.06]`; recessed in-island bands
      (group headers, output-terminal headers) sit on `bg-black/30`.
