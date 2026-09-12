@@ -1,7 +1,7 @@
 ---
 name: security-model
 sources: [runner/internal/engine, runner/internal/admission, runner/internal/validation, runner/internal/redact, runner/internal/packs, runner/internal/attest, portal/apps/emisar/lib/emisar/auth/authorizer.ex, portal/apps/emisar/lib/emisar/policies.ex, portal/apps/emisar/lib/emisar/runs.ex]
-updated: 2026-09-09
+updated: 2026-09-12
 ---
 
 # Security model
@@ -39,10 +39,13 @@ updated: 2026-09-09
 6. **Clamped opts.** Per-call opts (`timeout_ms`, `max_*_bytes`) are clamped
    to the action's declared min/max envelope. A misbehaving cloud cannot
    ask for a 100h timeout on an action that declares a 30s ceiling.
-7. **Output redaction.** Bearer tokens, GitHub tokens,
-   private-key blocks, and common `password=`/`secret=`/`token=`
-   assignments are masked by default. Pack authors can add per-action
-   rules. Redaction runs **before** the chunk leaves the runner.
+7. **Output redaction.** Bearer and basic auth, JWTs, vendor API keys and
+   tokens, private-key blocks, URL credentials, cookie headers, and common
+   `password=`/`secret=`/`token=` assignments are masked by default. That
+   list is illustrative; `DefaultRules` in
+   [`runner/internal/redact/rules.go`](../../../runner/internal/redact/rules.go)
+   is the source of truth for the exact default set. Pack authors can add
+   per-action rules. Redaction runs **before** the chunk leaves the runner.
 8. **Limits.** Every action has a timeout and stdout/stderr byte ceiling.
    Cloud opts can lower these but not raise them above the action's max.
    When an action declares `user:`, the runner resolves that local
