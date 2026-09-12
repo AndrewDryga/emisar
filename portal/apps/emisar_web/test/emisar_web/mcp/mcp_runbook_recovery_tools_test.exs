@@ -3015,7 +3015,7 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
            }
   end
 
-  test "the published review example is what wait_for_run returns", %{
+  test "the published overridden review example is what wait_for_run returns", %{
     conn: conn,
     account: account,
     subject: subject,
@@ -3076,21 +3076,119 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
     # The committed bytes are held to the published contract in their own right,
     # then to the live projection field for field — so neither an edit to the
     # example nor a drift in the projection can pass as the other.
-    assert_valid_tool_result("wait_for_run", published_review_example())
-    assert stable_example(live) == stable_example(published_review_example())
+    assert_valid_tool_result("wait_for_run", published_review_example(:overridden))
+    assert stable_example(live) == stable_example(published_review_example(:overridden))
   end
 
-  @review_example_path Path.expand("../../fixtures/mcp/wait_for_run_review_v1.json", __DIR__)
-  @external_resource @review_example_path
+  test "the published pending review example is what wait_for_run returns", %{
+    conn: conn,
+    account: account,
+    subject: subject,
+    user: user,
+    key: key,
+    membership: membership
+  } do
+    # The shape a remote card renders while it is still asking for votes: the
+    # command is the preview rendered from the hash-proven pack, and no override
+    # exists yet. Pinned as bytes for the same reason the decided shape is.
+    runner = setup_runner!(account, subject, "pending-example-node")
+    {_action, pack_ref} = Fixtures.Catalog.create_published_action(runner: runner)
+    pack = Emisar.Catalog.PublishedRegistry.get("linux-core")
 
-  defp published_review_example,
-    do: @review_example_path |> File.read!() |> Jason.decode!()
+    run =
+      create_mcp_history_run!(account, runner, key, 1, %{
+        action_id: "linux.disk_usage",
+        pack_ref: pack_ref,
+        expected_pack_hash: pack.content_hash,
+        status: :pending_approval,
+        requires_approval: true,
+        initiating_membership_id: membership.id,
+        args_raw: ~s({"paths":["/srv"]}),
+        reason: "Check whether /srv filled before the reload storm.",
+        evidence: "The alert at 20:50 UTC named /srv on this host.",
+        expected: "A usage line for /srv, so the investigation can close."
+      })
+
+    {:ok, request} = Approvals.create_request(run, user.id, run.reason, min_approvals: 2)
+    reviewer = named_reviewer(account, "Jane Doe")
+
+    assert {:ok, {%{status: :pending}, :pending}} =
+             Approvals.approve_request(
+               request,
+               reviewer,
+               "Read-only query; no configuration changes."
+             )
+
+    live = call(conn, "wait_for_run", %{"run_id" => run.id, "timeout" => "0"})
+
+    assert_valid_tool_result("wait_for_run", published_review_example(:pending))
+    assert stable_example(live) == stable_example(published_review_example(:pending))
+  end
+
+  test "the published denied review example is what wait_for_run returns", %{
+    conn: conn,
+    account: account,
+    subject: subject,
+    user: user,
+    key: key,
+    membership: membership
+  } do
+    # The plainly decided shape, with nothing waived and nothing executed: a
+    # denial finalizes on the spot, so the receipt is the deny vote alone and
+    # the run it cancelled carries no command to report.
+    runner = setup_runner!(account, subject, "denied-example-node")
+    {_action, pack_ref} = Fixtures.Catalog.create_published_action(runner: runner)
+    pack = Emisar.Catalog.PublishedRegistry.get("linux-core")
+
+    run =
+      create_mcp_history_run!(account, runner, key, 1, %{
+        action_id: "linux.disk_usage",
+        pack_ref: pack_ref,
+        expected_pack_hash: pack.content_hash,
+        status: :pending_approval,
+        requires_approval: true,
+        initiating_membership_id: membership.id,
+        args_raw: ~s({"paths":["/srv"]}),
+        reason: "Check whether /srv filled before the reload storm.",
+        evidence: "The alert at 20:50 UTC named /srv on this host.",
+        expected: "A usage line for /srv, so the investigation can close."
+      })
+
+    {:ok, request} = Approvals.create_request(run, user.id, run.reason)
+    reviewer = named_reviewer(account, "Jane Doe")
+
+    assert {:ok, {%{status: :denied}, %{status: :cancelled}}} =
+             Approvals.deny_request(request, reviewer, "Not during the change freeze.")
+
+    live = call(conn, "wait_for_run", %{"run_id" => run.id, "timeout" => "0"})
+
+    assert_valid_tool_result("wait_for_run", published_review_example(:denied))
+    assert stable_example(live) == stable_example(published_review_example(:denied))
+  end
+
+  @review_example_paths %{
+    pending: "wait_for_run_review_pending_v1.json",
+    denied: "wait_for_run_review_denied_v1.json",
+    overridden: "wait_for_run_review_v1.json"
+  }
+
+  for {_shape, file} <- @review_example_paths do
+    @external_resource Path.expand("../../fixtures/mcp/#{file}", __DIR__)
+  end
+
+  defp published_review_example(shape) do
+    @review_example_paths
+    |> Map.fetch!(shape)
+    |> then(&Path.expand("../../fixtures/mcp/#{&1}", __DIR__))
+    |> File.read!()
+    |> Jason.decode!()
+  end
 
   # Ids, hosts and clock readings differ per run; every other byte is contract.
   defp stable_example(%{} = document) do
     Map.new(document, fn {key, value} ->
       cond do
-        key in ~w(run_id operation_id request_id runner_ref run_url pack_ref cursor) ->
+        key in ~w(run_id operation_id request_id runner_ref run_url url pack_ref cursor) ->
           {key, "<#{key}>"}
 
         key in ~w(created_at finished_at decided_at wait_until expires_at) ->

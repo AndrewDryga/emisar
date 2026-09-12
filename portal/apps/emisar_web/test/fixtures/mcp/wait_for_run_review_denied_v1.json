@@ -1,0 +1,33 @@
+{
+  "ok": true,
+  "run": {
+    "run_id": "019f61cf-59b4-71d9-a78c-4ece74d1e164",
+    "operation_id": "op_01J0D85Q1BKR5W6N7E2T4Y8P3C",
+    "action_id": "linux.disk_usage",
+    "pack_ref": "linux-core@0.5.0/sha256:f4f5f29abc2aa8ccef433224da60d01159ba1434d6749172ef3795583d794bcf",
+    "runner_ref": "nomad-hvn01~f5e3a96782c44bd31186fcaa14ba6efb",
+    "status": "cancelled",
+    "created_at": "2026-09-11T08:07:23.232041Z",
+    "finished_at": "2026-09-11T08:07:23.379141Z",
+    "output_complete": false,
+    "review": {
+      "request_id": "01a08f81-cb81-7273-801b-ce6ad6321a77",
+      "status": "denied",
+      "required_approvals": 1,
+      "approved_count": 0,
+      "argument_count": 1,
+      "reason": "Check whether /srv filled before the reload storm.",
+      "evidence": "The alert at 20:50 UTC named /srv on this host.",
+      "expected": "A usage line for /srv, so the investigation can close.",
+      "decisions": [
+        {
+          "actor": "Jane Doe",
+          "decision": "deny",
+          "decided_at": "2026-09-11T08:07:23.379141Z",
+          "reason": "Not during the change freeze."
+        }
+      ]
+    },
+    "run_url": "https://emisar.dev/app/example/runs/019f61cf-59b4-71d9-a78c-4ece74d1e164"
+  }
+}

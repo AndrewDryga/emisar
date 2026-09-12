@@ -1056,7 +1056,7 @@ carries no `review` at all; its absence never means "nobody voted".
     "reason": "Check whether /srv filled before the reload storm.",
     "evidence": "The alert at 20:50 UTC named /srv on this host.",
     "expected": "A usage line for /srv, so the investigation can close.",
-    "command": {"kind": "preview", "text": "df -P -h /srv", "truncated": false},
+    "command": {"kind": "executed", "text": "df -P -h /srv", "truncated": false},
     "decisions": [
       {
         "actor": "Jane Doe",
@@ -1119,6 +1119,16 @@ inferred from a short tally. It carries the mandatory reason an override cannot
 be recorded without, the real tally it released, the requirement it waived, and
 how many reviews that waived. An override is not a vote and never appears in
 `decisions`.
+
+Three shapes exhaust the receipt, and a client that renders it elsewhere handles
+all three. A **pending** review is still collecting votes: `command` is the
+preview, `override` is absent, and the summary around it still carries its
+`approval` object and `wait_until` deadline. A **decided** review reached its
+own outcome on the votes alone, so `override` is absent and `command` appears
+only when the run recorded one it executed — a denial finalizes on the spot and
+cancels the run, which therefore reports no command at all. An **overridden**
+review was released without quorum and adds the `override` object above; the
+example at the top of this section is that shape.
 
 The receipt requires the same run-read access and account membership as the run
 summary carrying it; the approvals permission belongs to deciding, not to
