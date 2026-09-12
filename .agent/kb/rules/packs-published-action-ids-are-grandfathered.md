@@ -29,9 +29,11 @@ internal spelling. Three consumers key on the exact string:
 That is the same reasoning the `gcp.` note already carried, generalized: it was
 never specific to gcp.
 
-**The published namespaces (52 pack→namespace pairs that are not the pack id).**
-Regenerate with the pack id from each `packs/*/pack.yaml` against the first
-segment of each `actions/*.yaml` id.
+**The current-source namespaces (52 pack→namespace pairs that are not the pack
+id).** This is what `packs/` publishes *today*, not a history of every namespace
+ever published — the grandfather above is wider than this list. Regenerate with
+the pack id from each `packs/*/pack.yaml` against the first segment of each
+`actions/*.yaml` id.
 
 *A hyphen segment of the pack id (16)* — the qualifier drops:
 `apache-httpd`→`httpd.`, `dell-idrac`→`idrac.`, `dell-ipmi`→`ipmi.`,
@@ -61,6 +63,17 @@ since `gcp-compute.` prefix-matches the query `gcp` exactly as `gcp.` does.
 `victorialogs`→`vl.`, `victoriametrics`→`vm.`, `wireguard`→`wg.`,
 `zookeeper`→`zk.`
 
+**Retired spellings live outside that list, and no list can close it.** The
+bundled catalog artifact still carries `dnf-rpm` 0.1.10 and 0.1.12 with both
+`dnf.*` and `rpm.*` ids; 0.1.13 and the current 0.1.14 are `rpm.*` only
+(`portal/apps/emisar/priv/packs/catalog.json`). So `dnf.` is a published
+namespace that the 52 pairs above do not contain. Catalog history is also a
+bounded window — the build keeps the last `DefaultPreviousKept = 3` versions per
+pack (`runner/internal/catalog/catalog.go:36`) — so neither current source nor
+retained history can enumerate every namespace ever published. The 52 are the
+inventory you can regenerate; the grandfather covering **every** published id is
+the protection, and it does not depend on listing them.
+
 **Sweep target.** A commit that renames an action id in an already-published pack
 on namespace grounds alone, with no founder decision recorded — including a
 plausible-looking "consistency" pass over the abbreviations above. A **new** pack
@@ -68,9 +81,10 @@ whose namespace is not its pack id is the opposite case and is in scope to fix
 before it publishes.
 
 **How it's enforced.** Review, not tooling. No check compares a pack id to its
-action namespaces, and adding one would have to encode all 52 exemptions to stay
-green — the list above is that inventory. When a pack's namespace does change by
-founder decision, it is a contract change: bump `version`, rebuild the bundled
+action namespaces. One would have to allow at least the 52 current pairs above
+to stay green, and even then it could only ever read the current tree — not the
+published ids the grandfather actually protects. When a pack's namespace does
+change by founder decision, it is a contract change: bump `version`, rebuild the bundled
 catalog artifact in the same commit
 ([derived artifacts land with the change](packs-derived-artifacts-land-with-the-change.md)),
 and treat the old ids as retired spellings the fleet still runs.
