@@ -1,6 +1,6 @@
 ---
 name: security-model
-sources: [runner/internal/engine, runner/internal/admission, runner/internal/validation, runner/internal/redact, runner/internal/packs, runner/internal/attest, portal/apps/emisar/lib/emisar/auth/authorizer.ex, portal/apps/emisar/lib/emisar/policies.ex, portal/apps/emisar/lib/emisar/runs.ex]
+sources: [runner/internal/engine, runner/internal/admission, runner/internal/validation, runner/internal/redact, runner/internal/packs, runner/internal/attest, portal/apps/emisar/lib/emisar/auth/authorizer.ex, portal/apps/emisar/lib/emisar/policies.ex, portal/apps/emisar/lib/emisar/runs.ex, portal/apps/emisar/lib/emisar/runners/runner.ex]
 updated: 2026-09-12
 ---
 
@@ -210,6 +210,11 @@ its actions from itself:
 
 The runner-side guarantees above pair with the control plane's own model:
 
+- A runner belongs to exactly one account. `runners.account_id` is non-null and a
+  runner's name is unique inside that account; enrollment resolves the account
+  from the key the host registered with. There is no shared or cross-account
+  runner, so every dispatch, policy row, and audit event for a host stays inside
+  the one account that enrolled it.
 - Current account identity and the existing read role govern shared operational
   inventory, trusted model catalogs, history, approvals, definitions and stored
   output. Runner and pack scope limits actions, not confidentiality within an
