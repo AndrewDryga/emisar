@@ -101,9 +101,6 @@ defmodule EmisarWeb.SSOProviderKind do
     }
   }
 
-  @doc "The kinds with their own guide — the ones whose docs link promises steps."
-  def guided, do: Map.keys(@kinds)
-
   @doc """
   One field for one kind. `kind` may be the atom the schema stores or its
   string form; an unknown kind gets the generic answer, which is the one an
