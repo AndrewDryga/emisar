@@ -517,6 +517,11 @@ func (a *App) validatePacks(ctx context.Context) error {
 	if len(manifests) == 0 {
 		return fmt.Errorf("no pack manifests found under packs/")
 	}
+	// A pure file read against the manifests already globbed above, so it costs
+	// nothing and reports before the per-pack validate loop buries it.
+	if err := checkPackCatalogSummary(a.Root, manifests); err != nil {
+		return err
+	}
 	var failures []string
 	for _, manifest := range manifests {
 		packDir := filepath.Dir(manifest)
