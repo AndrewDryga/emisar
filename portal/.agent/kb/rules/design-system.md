@@ -361,31 +361,40 @@ genuinely missing (then it's shared, not one-off).
   Sweep: `inline-flex items-center` on any link whose label is a sentence, and
   any `<.icon name="hero-arrow-right">` or literal "→"/`&rarr;` inside a link.
 
-### Brand / gate
+### Brand / gate (`marketing_components.ex`)
 `brand`, `gate_mark`.
 
-### Marketing kit (the Gate primitives — `core_components.ex`, marketing-only)
-- `gate_frame state={:pass|:pending|:deny|:neutral}` — brackets content like the
-  logo (state-tinted border).
-- `scan_line animate? state` — the decision-point hairline + optional sweep.
-- `state_chip state={:pass|:pending|:deny} label?` — the semantic outcome chip
-  (thin wrapper over `<.chip>`; default words Allowed/Approval/Denied).
-- `code_block` — the one framed code/terminal surface.
-- `marketing_heading tag scale class` — the display type scale (§3.2).
-- `marketing_button size icon external? block?` — brand-filled CTA
-  (`active:scale-[0.96]`, trailing-icon nudge on hover). **Primary marketing CTA
-  is always "Start free."**
-- `marketing_nav`, `marketing_footer`, `marketing_cta`, `marketing_nav_link`,
-  `marketing_mobile_link`, `external_link`.
+### Marketing kit (the Gate primitives — marketing-only; home file per entry)
+- `scan_line animate? state` (`core_components.ex`) — the decision-point hairline
+  + optional sweep.
+- `state_chip state={:pass|:pending|:deny} label?` (`core_components.ex`) — the
+  semantic outcome chip (thin wrapper over `<.chip>`; default words
+  Allowed/Approval/Denied).
+- `docs_code label copy_id copy_text` (`docs_components.ex`) — the one framed
+  code/terminal surface on marketing and docs pages; the console's framed
+  snippet is `code_panel` (`core_components.ex`).
+- `marketing_heading tag scale class` (`marketing_components.ex`) — the display
+  type scale (§3.2).
+- `marketing_button size icon external? block?` (`marketing_components.ex`) —
+  brand-filled CTA (`active:scale-[0.96]`, trailing-icon nudge on hover).
+  **Primary marketing CTA is always "Start free."**
+- `marketing_nav`, `marketing_footer`, `marketing_cta`
+  (`marketing_components.ex`) · `external_link` (`core_components.ex`). The nav's
+  own desktop and mobile link shapes are `defp` helpers of `marketing_nav` —
+  extend the nav rather than reaching for them.
 
-### Shared chrome & data (used by the console — `core_components.ex`)
-- `button` (tones: primary/caution/danger + link tones), `icon_button`, `menu`.
-- `chip`, `risk_pill`, `status_badge` — semantic status (see §3.1; success
-  variants currently `emerald-*` → migrate to `brand-*`).
-- `input`, error/notice/`alert`/flash — forms + feedback (rose error tier).
-- `stat` (tile) · `meta_strip` (strip) — the stat pair; pick by
-  shape (see design-ui-shared-components rule). `summary_dot` (emerald/amber/rose).
-- `subscription_banner`, `modal`, typed-confirm dialogs.
+### Shared chrome & data (used by the console — `core_components.ex` unless noted)
+- `button` (tones: primary/caution/danger + link tones), `icon_button`,
+  `dropdown` + `menu_item`.
+- `chip`, `risk_pill` (`domain_components.ex`), `status_badge` — semantic status
+  (see §3.1; success variants currently `emerald-*` → migrate to `brand-*`).
+- `input`, `error`, `callout`/`status_note`, `flash`/`flash_group` — forms +
+  feedback (rose error tier).
+- `meta_strip` + `meta_field` — the bordered key-value strip under a detail-page
+  title (see design-ui-shared-components rule). `status_dot`
+  (neutral/brand/amber/rose).
+- `subscription_banner` (`domain_components.ex`), `confirm_dialog` /
+  `confirm_zone` — typed-confirm dialogs.
 - **`EmisarWeb.LiveTable`** — every list/table (stateless, URL-driven). Never
   hand-roll pagination/sort/filter.
 
@@ -641,8 +650,10 @@ after being taught, so every one is checked EVERY time, mechanically:
   Tailwind default — `zinc`/`amber`/`rose`/Heroicons).
 - **CSS layer:** `assets/css/app.css` (`@font-face` Inter, `.font-display`, the
   a11y tokens, materiality primitives, all motion keyframes).
-- **Components:** `lib/emisar_web/components/core_components.ex` (the kit + shared
-  chrome). `EmisarWeb.LiveTable` for lists.
+- **Components:** `lib/emisar_web/components/core_components.ex` (shared chrome),
+  `marketing_components.ex` (the marketing kit), `docs_components.ex` (docs
+  surfaces), `domain_components.ex` (emisar-specific chrome).
+  `EmisarWeb.LiveTable` for lists.
 - **Logo assets:** `priv/static/images/brand/`, favicon family at the static root.
 - **Engagement history + locked decisions:** `[[marketing-redesign-gate-direction]]`
   (memory). **Component/shape rules:** `.agent/kb/rules/design-ui-shared-components.md`.
