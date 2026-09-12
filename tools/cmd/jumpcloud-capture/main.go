@@ -14,11 +14,12 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"github.com/chromedp/chromedp"
 	"os"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/chromedp/chromedp"
 
 	capturekit "github.com/andrewdryga/emisar/tools/internal/capture"
 )

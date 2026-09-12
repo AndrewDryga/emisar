@@ -15,11 +15,12 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"github.com/chromedp/chromedp"
 	"os"
 	"slices"
 	"strings"
 	"time"
+
+	"github.com/chromedp/chromedp"
 
 	"github.com/andrewdryga/emisar/tools/internal/capture"
 )
