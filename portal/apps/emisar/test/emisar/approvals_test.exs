@@ -42,7 +42,7 @@ defmodule Emisar.ApprovalsTest do
         # A real require-approval run is parked :pending_approval — the approval
         # finalizer only dispatches a run still in that state, so the fixture
         # must reflect the invariant (not the :pending default).
-        status: :pending_approval
+        status: Keyword.get(opts, :status, :pending_approval)
       })
 
     {account, run}
@@ -1638,6 +1638,44 @@ defmodule Emisar.ApprovalsTest do
       assert Enum.count(full_page, &(&1 =~ ~s|"catalog_runner_actions"|)) == 1
       refute Enum.any?(full_page, &(String.upcase(&1) =~ "FOR UPDATE"))
       refute Enum.any?(full_page, &(String.upcase(&1) =~ "FOR NO KEY UPDATE"))
+    end
+
+    # Every run summary and every poll of a wait loop projects reviews for its
+    # page, and most pages gate nothing. Refreshing the caller's membership for
+    # a page that has no receipt to read would tax every listing with a query
+    # that can only ever produce an empty map.
+    test "a page with no gated run answers empty without touching the database" do
+      {account, ungated} = run_fixture(status: :pending)
+      subject = operator_subject(account)
+
+      test_pid = self()
+      handler = {__MODULE__, test_pid, make_ref()}
+
+      :ok =
+        :telemetry.attach(
+          handler,
+          [:emisar, :repo, :query],
+          fn _event, _measurements, metadata, _config ->
+            send(test_pid, {:approvals_repo_query, self(), metadata.query})
+          end,
+          nil
+        )
+
+      on_exit(fn -> :telemetry.detach(handler) end)
+      _ = drain_approvals_queries(test_pid)
+
+      assert Approvals.project_reviews_for_visible_runs([ungated], subject) == {:ok, %{}}
+      assert drain_approvals_queries(test_pid) == []
+
+      # The gated path still pays for the membership refresh: skipping it is a
+      # short-circuit on an empty read, never a weaker gate.
+      %{run: gated} = gated_request(min_approvals: 2)
+      _ = drain_approvals_queries(test_pid)
+
+      assert {:error, :not_found} =
+               Approvals.project_reviews_for_visible_runs([ungated, gated], subject)
+
+      assert Enum.any?(drain_approvals_queries(test_pid), &(&1 =~ ~s|"account_memberships"|))
     end
 
     # The receipt is bounded because it rides a size-budgeted response, and the

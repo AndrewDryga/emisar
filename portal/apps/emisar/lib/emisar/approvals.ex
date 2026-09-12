@@ -495,13 +495,22 @@ defmodule Emisar.Approvals do
   never inferred from a short tally and never becomes a vote.
 
   Returns `{:ok, %{run_id => receipt}}`, `{:error, :unauthorized}`, or
-  `{:error, :not_found}` for a run outside the caller's account.
+  `{:error, :not_found}` for a run outside the caller's account. A page
+  carrying no gated run has nothing to read, so it answers `{:ok, %{}}` without
+  refreshing the caller's membership — every run summary and poll pays for this
+  projection, and most pages gate nothing.
   """
   def project_reviews_for_visible_runs(runs, %Subject{} = subject) when is_list(runs) do
-    with {:ok, subject} <-
-           Auth.fetch_current_subject(Runs.Authorizer.view_runs_permission(), subject),
-         :ok <- ensure_runs_in_account(runs, subject) do
-      {:ok, runs |> Enum.filter(&gated_run?/1) |> build_run_reviews(subject)}
+    case Enum.filter(runs, &gated_run?/1) do
+      [] ->
+        {:ok, %{}}
+
+      gated ->
+        with {:ok, subject} <-
+               Auth.fetch_current_subject(Runs.Authorizer.view_runs_permission(), subject),
+             :ok <- ensure_runs_in_account(runs, subject) do
+          {:ok, build_run_reviews(gated, subject)}
+        end
     end
   end
 
@@ -519,8 +528,6 @@ defmodule Emisar.Approvals do
       end
     end)
   end
-
-  defp build_run_reviews([], _subject), do: %{}
 
   defp build_run_reviews(runs, subject) do
     # One query per fact for the whole page. A per-run fetch here is the same
