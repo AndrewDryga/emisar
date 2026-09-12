@@ -72,19 +72,28 @@ defmodule EmisarWeb.IconsTest do
     # only says a meaning is not drawn twice — it never asked whether the
     # meaning is used. Ten masters accumulated that nothing rendered.
     test "every meaning is asked for by a template, a component, or a test" do
-      sources =
-        [
-          Path.join([__DIR__, "..", "..", "lib", "**", "*.{ex,heex}"]),
-          Path.join([__DIR__, "**", "*.exs"])
-        ]
-        |> Enum.flat_map(&Path.wildcard/1)
-        |> Enum.map(&File.read!/1)
-        |> IO.iodata_to_binary()
-
-      unused = Enum.reject(Icons.tokens(), &String.contains?(sources, "\"" <> &1 <> "\""))
+      sources = scanned_paths() |> Enum.map(&File.read!/1) |> IO.iodata_to_binary()
+      unused = unused_in(sources, Icons.tokens())
 
       assert unused == [],
              "no template, component, or test names these meanings: #{inspect(unused)}"
+    end
+
+    test "the scan cannot answer itself with the meanings it names" do
+      # The assertions in this file name most of the registry, so scanning it
+      # would report every one of them as reached however many templates had
+      # dropped them — the scan would be answering with its own question.
+      sources = scanned_paths() |> Enum.map(&File.read!/1) |> IO.iodata_to_binary()
+      refute sources =~ "the scan cannot answer itself"
+
+      only_retry_survives = ~s(<.icon name="action.retry" class="h-4 w-4" />)
+
+      assert unused_in(only_retry_survives, [
+               "action.retry",
+               "action.clear_filters",
+               "action.approve",
+               "state.included"
+             ]) == ["action.clear_filters", "action.approve", "state.included"]
     end
 
     test "every master is one XML-valid document on a system grid" do
@@ -237,7 +246,6 @@ defmodule EmisarWeb.IconsTest do
         {"action.approve", "state.included"},
         {"action.next", "diagram.flow_right"},
         {"action.move_down", "diagram.flow_down"},
-        {"action.remove", "state.not_included"},
         {"docs.upgrade", "state.update_available"},
         {"story.dispatch", "trust.signed_dispatch"}
       ]
@@ -256,5 +264,20 @@ defmodule EmisarWeb.IconsTest do
         refute String.starts_with?(token, "vendor.")
       end
     end
+  end
+
+  # Everything that can ask for a meaning, minus this file: it names tokens to
+  # assert about them, which is not a call site.
+  defp scanned_paths do
+    [
+      Path.join([__DIR__, "..", "..", "lib", "**", "*.{ex,heex}"]),
+      Path.join([__DIR__, "**", "*.exs"])
+    ]
+    |> Enum.flat_map(&Path.wildcard/1)
+    |> Enum.reject(&(Path.expand(&1) == Path.expand(__ENV__.file)))
+  end
+
+  defp unused_in(sources, tokens) do
+    Enum.reject(tokens, &String.contains?(sources, ~s("#{&1}")))
   end
 end
