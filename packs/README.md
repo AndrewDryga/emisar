@@ -78,8 +78,8 @@ args:
     description: Systemd unit to query.
     validation:
       # A generic pack cannot enumerate the services a fleet runs. The pattern
-      # keeps the argument injection-safe; operator policy and the runner's
-      # admission rules decide WHICH unit may be targeted.
+      # keeps the argument injection-safe; the action's risk tier decides
+      # whether the run needs a human approval.
       pattern: "^[a-zA-Z0-9@:_.][a-zA-Z0-9@:_.\\-]{0,127}$"
 
 execution:
@@ -108,8 +108,16 @@ executable reference.
 The caller chooses `unit`; it cannot replace `systemctl`, add another flag, or
 pass a value the pattern rejects. The runner validates the same schema again on
 the host before execution. A public pack never hardcodes one fleet's service
-names into an `enum`: that list is wrong for the next fleet, and the layer that
-knows a given fleet's units is operator policy, not the pack.
+names into an `enum`: that list is wrong for the next fleet.
+
+Nothing below the pack filters by argument value. Account policy keys off the
+risk tier and the action id, and the runner's admission gate is action-id
+allow/deny patterns plus a risk ceiling — it hides whole actions from a host,
+not particular targets. So the tier is what stands between a caller and a
+given unit: it decides whether the run proceeds on its own or waits for a
+human, and an approver sees the resolved unit in the run's arguments — and in
+the exact command, when the runner's pack is provably the published one —
+before deciding. Label the tier honestly.
 
 The complete schema, including paths, arrays, script actions, examples, output
 parsers, execution users, and redaction, is at
