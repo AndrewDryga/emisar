@@ -2,7 +2,7 @@
 name: oauth-consent-form-action
 description: ChatGPT's sandboxed OAuth document needs the consent response's form-action to allow the https scheme plus the endpoint and registered-callback origins; rejected requests and every other page keep the strict self-only policy
 subsystem: portal
-sources: [portal/apps/emisar_web/lib/emisar_web/controllers/oauth_controller.ex, portal/apps/emisar_web/lib/emisar_web/plugs/content_security_policy.ex]
+sources: [portal/apps/emisar_web/lib/emisar_web/controllers/oauth_controller.ex, portal/apps/emisar/lib/emisar/oauth.ex, portal/apps/emisar_web/lib/emisar_web/plugs/content_security_policy.ex]
 updated: 2026-09-10
 ---
 
