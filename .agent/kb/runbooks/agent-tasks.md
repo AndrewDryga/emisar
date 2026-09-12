@@ -1,7 +1,7 @@
 ---
 name: agent-tasks
 sources: [.agent/tasks/README.md, .githooks/commit-msg, tools/internal/devtool/screenshots.go, tools/internal/devtool/browser.go]
-updated: 2026-09-10
+updated: 2026-09-12
 ---
 
 # Agent tasks and batch execution
@@ -17,8 +17,9 @@ Read state, log, then the specification before resuming the current task.
 The directory is the status: `00_todo`, `10_in_progress`, `50_blocked`, `99_done`.
 Task state, backlog, decisions, and screenshots are local and gitignored.
 
-The host CLI owns transitions. In a Coop box without `coop`, make the corresponding
-folder move. A status checkbox is not a substitute for a transition.
+The host CLI owns transitions. A Coop loop box uses its supplied `coop-tasks` MCP
+tools; never move task folders by hand or bypass a lease. A box without that channel
+leaves transitions to host orchestration. A status checkbox is not a transition.
 
 ## Implement one task
 

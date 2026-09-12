@@ -344,6 +344,20 @@ func (c *checker) checkCoop() {
 	}
 }
 
+func (c *checker) checkCoopAvailability(requireCoop bool) {
+	if !requireCoop && os.Getenv("COOP_BOX") == "1" {
+		fmt.Fprintln(c.out, "not applicable: host Coop CLI compatibility (the CLI is intentionally absent in boxes; loop task control uses coop-tasks MCP)")
+		return
+	}
+	if _, err := exec.LookPath("coop"); err == nil {
+		c.group("Coop task commands and queue listing work", c.checkCoop)
+	} else if requireCoop {
+		c.fail("coop is required for the live task-command compatibility check")
+	} else {
+		fmt.Fprintln(c.out, "skip: Coop live command contract (coop is not installed)")
+	}
+}
+
 func (c *checker) checkReviewGate() {
 	data, err := os.ReadFile(c.path(".agent/project.yaml"))
 	if err != nil {
@@ -1474,13 +1488,7 @@ func (c *checker) run(requireCoop bool) int {
 	c.group("deprecated workspace and project agent logs are absent", c.checkDeprecatedAgentLogs)
 	c.group("skills use current review commands and product/security wording", c.checkSkillText)
 	c.group("manual code examples define only fictional modules", c.checkManualExamples)
-	if _, err := exec.LookPath("coop"); err == nil {
-		c.group("Coop task commands and queue listing work", c.checkCoop)
-	} else if requireCoop {
-		c.fail("coop is required for the live task-command compatibility check")
-	} else {
-		fmt.Fprintln(c.out, "skip: Coop live command contract (coop is not installed)")
-	}
+	c.checkCoopAvailability(requireCoop)
 	c.group("task queues use expected state names", c.checkTaskDirs)
 	c.group("Coop review gates the exact rebased candidate through ./run gate review", c.checkReviewGate)
 	c.group("rule filenames use domain prefixes", c.checkRuleNames)

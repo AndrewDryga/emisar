@@ -632,7 +632,7 @@ func (a *App) check(ctx context.Context, args []string) error {
 		if len(rest) != 0 {
 			return usage("usage: ./run check agent-setup")
 		}
-		return a.agentSetupCheck(ctx, true)
+		return a.agentSetupCheck(ctx, !a.inBox())
 	case "deps":
 		return a.depAgeCheck(ctx, rest)
 	default:

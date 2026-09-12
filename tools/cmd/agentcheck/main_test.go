@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"io"
 	"os"
 	"os/exec"
@@ -9,9 +10,54 @@ import (
 	"testing"
 )
 
+func TestCoopAvailabilityKeepsHostRequirementAndExplainsBoxBoundary(t *testing.T) {
+	for _, tc := range []struct {
+		name, box, message string
+		required, fails    bool
+	}{
+		{"strict host", "", "coop is required", true, true},
+		{"box", "1", "not applicable: host Coop CLI compatibility", false, false},
+		{"explicit strict still wins", "1", "coop is required", true, true},
+		{"optional host", "", "skip: Coop live command contract", false, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("PATH", t.TempDir())
+			t.Setenv("COOP_BOX", tc.box)
+			var output bytes.Buffer
+			check := testChecker(t)
+			check.out, check.errOut = &output, &output
+			check.checkCoopAvailability(tc.required)
+			if (len(check.failures) > 0) != tc.fails || !strings.Contains(output.String(), tc.message) {
+				t.Fatalf("failures = %v, output = %q", check.failures, output.String())
+			}
+		})
+	}
+}
+
 func testChecker(t *testing.T) *checker {
 	t.Helper()
 	return &checker{root: t.TempDir(), out: io.Discard, errOut: io.Discard}
+}
+
+func TestBoxAvailabilityDoesNotInvokeHostCLIFromPath(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("PATH", dir)
+	t.Setenv("COOP_BOX", "1")
+	marker := filepath.Join(dir, "invoked")
+	t.Setenv("COOP_TEST_INVOKED", marker)
+	if err := os.WriteFile(filepath.Join(dir, "coop"), []byte("#!/bin/sh\n: > \"$COOP_TEST_INVOKED\"\nexit 1\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	var output bytes.Buffer
+	check := testChecker(t)
+	check.out, check.errOut = &output, &output
+	check.checkCoopAvailability(false)
+	if len(check.failures) != 0 || !strings.Contains(output.String(), "not applicable: host Coop CLI compatibility") {
+		t.Fatalf("failures = %v, output = %q", check.failures, output.String())
+	}
+	if _, err := os.Stat(marker); !os.IsNotExist(err) {
+		t.Fatalf("box invoked host-only CLI: %v", err)
+	}
 }
 
 func writeTestFile(t *testing.T, root, path, contents string) {

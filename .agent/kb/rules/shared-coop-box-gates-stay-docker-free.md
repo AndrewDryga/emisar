@@ -25,6 +25,12 @@ then the affected project gate in the box. Do not wait for a Docker-based test
 when the change does not touch it. When container proof is part of acceptance,
 keep the task open until the trusted host or CI result is available.
 
+The host `coop` CLI is intentionally absent too. `./run check agent-setup` runs
+every repository setup check in either environment; its host-CLI compatibility
+probe is explicitly not applicable inside a box and remains required on the host.
+Coop owns task-channel runtime conformance in `coop doctor`; loop agents use the
+provided `coop-tasks` MCP tools, not a mounted host CLI or manual task-folder moves.
+
 **Good.** Portal tests use the existing `db` and `keycloak` sidecars, then
 `./run gate portal --changed` verifies the affected apps. A pack change gets its
 authoring gate in the box and its behavior matrix on a trusted Docker host or CI.
