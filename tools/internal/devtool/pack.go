@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"slices"
 	"sort"
@@ -903,6 +904,11 @@ func packTestInvocationID(now time.Time, pid int) string {
 // for a month held hundreds of directories.
 const packTestReportsKept = 10
 
+// packTestInvocationDir matches the names packTestInvocationID produces.
+// Pruning only ever considers those: a directory the harness did not create is
+// not the harness's to delete, however early it sorts.
+var packTestInvocationDir = regexp.MustCompile(`^[0-9]{8}T[0-9]{6}\.[0-9]{9}Z-[0-9]+$`)
+
 // prunePackTestReports removes all but the newest `keep` invocation
 // directories. Invocation ids start with a UTC timestamp, so name order is
 // time order, and a concurrent run's fresh directory is always among the
@@ -917,7 +923,7 @@ func prunePackTestReports(root string, keep int) error {
 	}
 	var names []string
 	for _, entry := range entries {
-		if entry.IsDir() {
+		if entry.IsDir() && packTestInvocationDir.MatchString(entry.Name()) {
 			names = append(names, entry.Name())
 		}
 	}

@@ -5,13 +5,14 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestPrunePackTestReportsKeepsTheNewest(t *testing.T) {
 	root := t.TempDir()
 	for _, name := range []string{
 		"20260901T000000.000000000Z-1", "20260902T000000.000000000Z-1", "20260903T000000.000000000Z-1",
-		"20260904T000000.000000000Z-1", "stray.txt",
+		"20260904T000000.000000000Z-1", "0-keep", "stray.txt",
 	} {
 		path := filepath.Join(root, name)
 		if strings.HasSuffix(name, ".txt") {
@@ -35,12 +36,21 @@ func TestPrunePackTestReportsKeepsTheNewest(t *testing.T) {
 	for _, entry := range entries {
 		names = append(names, entry.Name())
 	}
-	want := []string{"20260903T000000.000000000Z-1", "20260904T000000.000000000Z-1", "stray.txt"}
+	// 0-keep sorts before every timestamp but is not an invocation id: the
+	// harness did not create it, so the harness does not delete it.
+	want := []string{"0-keep", "20260903T000000.000000000Z-1", "20260904T000000.000000000Z-1", "stray.txt"}
 	if strings.Join(names, ",") != strings.Join(want, ",") {
 		t.Fatalf("kept %v, want %v", names, want)
 	}
 	// A missing root is not an error: the first run has nothing to prune.
 	if err := prunePackTestReports(filepath.Join(root, "absent"), 2); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestPackTestInvocationDirMatchesGeneratedIDs(t *testing.T) {
+	id := packTestInvocationID(time.Date(2026, 7, 23, 20, 5, 6, 789, time.UTC), 42)
+	if !packTestInvocationDir.MatchString(id) {
+		t.Fatalf("%q does not match the pruning pattern; pruning would keep every report forever", id)
 	}
 }
