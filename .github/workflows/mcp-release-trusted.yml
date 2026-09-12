@@ -222,7 +222,7 @@ jobs:
         # back in automatically once the repo is public. See
         # runner-release.yml for the same guard + rationale.
         if: ${{ !github.event.repository.private }}
-        uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4
         with:
           subject-path: ${{ steps.archive.outputs.path }}
 
@@ -324,7 +324,7 @@ jobs:
       - name: Attest release checksum metadata
         id: checksum_provenance
         if: ${{ !github.event.repository.private && steps.existing_checksum_provenance.outputs.found != 'true' }}
-        uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4
         with:
           subject-path: release/SHA256SUMS-MCP
 
@@ -396,7 +396,7 @@ jobs:
           cmp release/SHA256SUMS-MCP.sigstore.jsonl /tmp/published-SHA256SUMS-MCP.sigstore.jsonl
 
       - name: Publish GitHub release mirror
-        uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3.0.2
+        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
         with:
           tag_name: ${{ steps.ver.outputs.tag }}
           name: "MCP Bridge v${{ steps.ver.outputs.version }}"
