@@ -1411,7 +1411,7 @@ func (c *checker) checkTrackedGitHooks() {
 		{"pre-commit", "runs the staged-format check on every commit",
 			"check staged", "no longer runs ./run check staged"},
 		{"commit-msg", "checks that a Coop-Task line parses as a trailer",
-			"interpret-trailers", "no longer asks git whether the line is a trailer"},
+			`--parse <"$message"`, "no longer asks git whether the line is a trailer"},
 		{"prepare-commit-msg", "chains to Coop's co-author trailer hook in a box",
 			`exec "$coop_hook"`, "no longer chains to Coop's prepare-commit-msg hook"},
 	} {

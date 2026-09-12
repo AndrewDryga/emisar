@@ -707,7 +707,7 @@ func TestCheckDistributionLayoutRejectsEmptyMirror(t *testing.T) {
 func TestTrackedGitHooksMustExistBeExecutableAndKeepTheirJobs(t *testing.T) {
 	hooks := map[string]string{
 		"pre-commit":         "#!/bin/sh\nexec \"$root/run\" check staged\n",
-		"commit-msg":         "#!/bin/sh\ngit interpret-trailers --parse\n",
+		"commit-msg":         "#!/bin/sh\ngit interpret-trailers --parse <\"$message\" | grep -qi '^Coop-Task:'\n",
 		"prepare-commit-msg": "#!/bin/sh\ncoop_hook=\"$HOME/.config/coop/git-hooks/prepare-commit-msg\"\n[ -x \"$coop_hook\" ] && exec \"$coop_hook\" \"$@\"\n",
 	}
 	write := func(t *testing.T, check *checker, mode os.FileMode, overrides map[string]string) {
@@ -746,6 +746,18 @@ func TestTrackedGitHooksMustExistBeExecutableAndKeepTheirJobs(t *testing.T) {
 	check.checkTrackedGitHooks()
 	if !hasFailure(check, ".githooks/pre-commit no longer runs ./run check staged") {
 		t.Fatalf("pre-commit without the staged check not reported: %v", check.failures)
+	}
+
+	// The real hook's operator advice repeats `interpret-trailers`, so that
+	// marker matched a body gutted down to the error message it prints when the
+	// parse already failed. Only the redirect proves it still parses the file.
+	check = testChecker(t)
+	write(t, check, 0o755, map[string]string{
+		"commit-msg": "#!/bin/sh\nprintf 'Verify with: git interpret-trailers --parse <your-message>\\n' >&2\nexit 0\n",
+	})
+	check.checkTrackedGitHooks()
+	if !hasFailure(check, ".githooks/commit-msg no longer asks git whether the line is a trailer") {
+		t.Fatalf("advice-only commit-msg not reported: %v", check.failures)
 	}
 
 	// The real hook's comment names prepare-commit-msg, so a marker of that
