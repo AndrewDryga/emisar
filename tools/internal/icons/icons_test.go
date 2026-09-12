@@ -175,6 +175,34 @@ func TestMalformedMasterNamesTheIcon(t *testing.T) {
 	}
 }
 
+// A master can lose its <svg> wrapper: truncated mid-write, hand-edited, or saved
+// as a bare fragment. The body regexp then matches nothing, and both readers that
+// index its capture have to name the icon instead of indexing an empty match.
+func TestMasterWithoutAnSvgWrapperNamesTheIcon(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "state"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// A bare fragment: no wrapper at all.
+	if err := os.WriteFile(filepath.Join(root, "state/wrapperless.svg"), []byte("<path d=\"M1 1L2 2\"/>\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Cut(root); err == nil || !strings.Contains(err.Error(), "state/wrapperless") {
+		t.Fatalf("Cut error = %v, want one naming state/wrapperless", err)
+	}
+
+	// A cut truncated after its opening tag still declares the 16 viewBox, so the
+	// auditor reaches it and names it with the dotted token.
+	cut := `<svg viewBox="0 0 16 16"><path d="M5.5 8L7.5 10"/>`
+	if err := os.WriteFile(filepath.Join(root, "state/wrapperless.16.svg"), []byte(cut), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Analyze(root); err == nil || !strings.Contains(err.Error(), "state.wrapperless") {
+		t.Fatalf("Analyze error = %v, want one naming state.wrapperless", err)
+	}
+}
+
 func TestSnapAndCutRegenerateAMaster(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()

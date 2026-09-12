@@ -72,6 +72,19 @@ var (
 	handCutMarker = "data-hand-cut"
 )
 
+// drawing reads a master's body out of its <svg> wrapper. A file that lost the
+// wrapper — truncated mid-write, hand-edited, or saved as a bare fragment —
+// matches nothing, so the reader names the icon instead of indexing an empty
+// match. name is the caller's own key: "namespace/name" for masters, the dotted
+// token for cuts.
+func drawing(src []byte, name string) (string, error) {
+	match := svgBody.FindStringSubmatch(string(src))
+	if match == nil {
+		return "", fmt.Errorf("icon %s: no <svg> wrapper around the drawing", name)
+	}
+	return strings.TrimSpace(match[1]), nil
+}
+
 // Snap rounds the 24-grid regular masters onto the half grid in place and
 // reports how many files changed. Control points snap to the quarter grid.
 // Masked, pixel-tuned, transformed, and official-artwork masters are exempt —
@@ -141,7 +154,10 @@ func Cut(root string) (CutReport, error) {
 			report.Skipped = append(report.Skipped, key+" (defs/transform)")
 			return nil
 		}
-		body := strings.TrimSpace(svgBody.FindStringSubmatch(string(src))[1])
+		body, err := drawing(src, key)
+		if err != nil {
+			return err
+		}
 
 		// Pass 1: scale 24 → 16 with no snap, so the optical pass measures truth.
 		raw, err := transformBody(body, transform{
@@ -239,7 +255,11 @@ func Analyze(root string) ([]Row, error) {
 			return nil
 		}
 		token := ns + "." + strings.TrimSuffix(name, ".16.svg")
-		points, arcRatio, err := bodyPoints(svgBody.FindStringSubmatch(string(src))[1])
+		body, err := drawing(src, token)
+		if err != nil {
+			return err
+		}
+		points, arcRatio, err := bodyPoints(body)
 		if err != nil {
 			return fmt.Errorf("icon %s: %w", token, err)
 		}
