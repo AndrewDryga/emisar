@@ -619,10 +619,8 @@ defmodule EmisarWeb.ApprovalsLive do
           </div>
 
           <.docs_rail title="Approval requirements">
-            <p id="approval-requirements-help">
-              <%= if @approval_requirements_help do %>
-                {@approval_requirements_help}{" "}
-              <% end %>
+            <p :if={@approval_requirements_help} id="approval-requirements-help">
+              {@approval_requirements_help}
             </p>
             <p>
               Runbooks use one approval request per execution, covering all actions and target runners.

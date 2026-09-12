@@ -85,8 +85,7 @@ defmodule EmisarWeb.ApprovalsLiveTest do
 
     {:ok, lv, _html} = live(conn, ~p"/app/#{account}/approvals")
 
-    refute has_element?(lv, "#approval-requirements-help", "Current policies require")
-    refute has_element?(lv, "#approval-requirements-help", "You can approve your own requests.")
+    refute has_element?(lv, "#approval-requirements-help")
   end
 
   test "policy help does not tell a viewer that they can approve requests", %{conn: conn} do
