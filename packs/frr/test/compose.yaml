@@ -24,6 +24,12 @@ services:
         PACKTEST_VERSION: ${PACKTEST_VERSION:-13-slim}
         PACKTEST_DIGEST: ${PACKTEST_DIGEST-}
     image: emisar-packtest-frr-sut:${PACKTEST_VERSION:-13-slim}
+    # NET_ADMIN creates the dummy link the daemons run on. SYS_ADMIN is FRR's
+    # own requirement, not the fixture's: zebra, bgpd, and bfdd each list
+    # ZCAP_SYS_ADMIN in the permitted set libfrr's zprivs keeps across the drop
+    # to the frr user, and capset(2) refuses to grant a capability the container
+    # never had — Docker's default set carries neither of these. Without it each
+    # daemon exits on "initial cap_set_proc failed" and no VTY socket appears.
     cap_add:
       - NET_ADMIN
       - SYS_ADMIN
