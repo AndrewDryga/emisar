@@ -200,3 +200,33 @@ cases:
         argv: [docker, compose, -f, /opt/running/docker-compose.yml, exec, -T, app, wc, -l, /tmp/starts]
         expect:
           stdout_contains: ["2 /tmp/starts"]
+
+  # compose_images reports what the DAEMON says the project's containers were
+  # created from, so it needs that same stack up. Its size refusal and its
+  # capture live in tools/internal/devtool/pack_compose_images_test.go, which
+  # drives the script through a stub producer; this is the only row where the
+  # document the script's jq reads is Compose's real one — an array of one
+  # object per created container, which is what `type == "array"` requires and
+  # what a `null` from a project with no containers is projected around.
+  #
+  # The fixture pins its image by digest, and that is where the projection is
+  # worth pinning. Compose derives Repository and Tag from the reference the
+  # container carries (reference.ParseDockerRef), and a digest-only reference is
+  # Canonical, never Tagged — so Tag is the EMPTY string here. `<none>` is the
+  # table formatter's substitution for an empty field and never reaches
+  # --format json, so asserting it would assert the wrong formatter.
+  - action: docker.compose_images
+    args: {file: /opt/running/docker-compose.yml}
+    arrange:
+      - argv: [docker, compose, -f, /opt/running/docker-compose.yml, up, -d, --wait]
+    expect:
+      # The image ID the action's description promises; the inventory is keyed
+      # by container, not by the service's configured image reference.
+      stdout_contains: ["sha256:"]
+      json:
+        # The project name is the fixture directory's basename and Compose joins
+        # the container name with "-", so the one created container is
+        # <project>-<service>-1.
+        /0/ContainerName: running-app-1
+        /0/Repository: alpine
+        /0/Tag: ""
