@@ -11,6 +11,13 @@ uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - `install-emisar` now requires the signed release checksums and verifies them
   before installing or upgrading a runner, and names the runner's group, id,
   and labels the way the console does.
+- `install-emisar` requires HTTPS for installer downloads, and permits plain
+  HTTP only for loopback and literal private addresses that pass a `python3`
+  origin check.
+- `install-emisar` downloads the installer with the conventional
+  `curl -fsSL`.
+- `author-pack` builds `packctl` from the signed release tag the runners were
+  installed from, instead of `go install …@latest`.
 - All three skills call `list_packs` with the argument it accepts.
 - `install-emisar` follows the v0.48.0 console flows for account setup and
   runner enrollment.
