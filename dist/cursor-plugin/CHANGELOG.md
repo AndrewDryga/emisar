@@ -21,8 +21,9 @@ uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - `author-pack` builds `packctl` from the signed release tag the runners were
   installed from, instead of `go install …@latest`.
 - All three skills call `list_packs` with the argument it accepts.
-- `install-emisar` follows the v0.48.0 console flows for account setup and
-  runner enrollment.
+- `install-emisar` diagnoses a runner that installs but never joins the fleet
+  from the host log instead of guessing, and names what a `401`, `409`, or
+  `402` registration failure means and the operator's remedy for each.
 - README and skill text re-synced with the public `skills/` copies.
 
 ## [0.1.0] — 2026-08-05
