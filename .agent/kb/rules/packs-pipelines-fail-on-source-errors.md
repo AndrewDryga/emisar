@@ -21,8 +21,12 @@ broker, a dead cluster, and — in `nginx -T` — a config that does not parse.
 **In an inline `sh` program, do not reach for `set -o pipefail`.** `grep` exits
 `1` when it matches nothing, which is the *good* outcome for an error-log
 search. Under `pipefail` a clean log becomes a failed action, trading a false
-all-clear for a false alarm. It is also not POSIX `sh`: a `/bin/sh -c` program
-cannot rely on it, and busybox `ash` does not have it. Guard the input instead.
+all-clear for a false alarm. The option is also not portable across the shells
+`/bin/sh` can be: `dash`, the `/bin/sh` on Debian and Ubuntu, rejects
+`set -o pipefail` outright, while busybox `ash` on a current Alpine accepts it.
+A pack does not pick the host's `/bin/sh` — `packs/AGENTS.md` promises only that
+one is there — so an inline program cannot rely on the option either way. Guard
+the input instead.
 
 **A packaged bash script already carries `pipefail`, and keeps it.** The failure
 floor in `packs/AGENTS.md` requires `set -euo pipefail` under bash — enforced by
@@ -34,9 +38,14 @@ expected — a no-match `grep`, an `lsof` that found nothing — says so in plac
 (`|| true`, `|| rc=$?`, an `if`), exactly as the floor bullet asks. And it makes
 the capture shape *more* necessary, not less: `head` exiting early SIGPIPEs the
 source, which `pipefail` then reports as a failed run of a script that worked
-(`jmap -histo:live | head -50` every time). Never drop `pipefail` from a bash
-script to quiet one of these — that re-arms the false all-clear for every other
-pipeline in the file. Fix the step.
+(`jmap -histo:live | head -50` every time). Capturing only *moves* that SIGPIPE
+onto the replay, so under a floor the capture has to be written for one: bound
+the display with a reader that consumes its input, and take the source's status
+with `|| status=$?`, because `set -e` ends the script at a bare
+`dump=$(src); status=$?` before the captured diagnostic is ever printed. The
+shape below does both. Never drop `pipefail` from a bash script to quiet one of
+these — that re-arms the false all-clear for every other pipeline in the file.
+Fix the step.
 
 **Good.**
 
@@ -45,11 +54,27 @@ pipeline in the file. Fix the step.
 grep -E ' 5[0-9][0-9] ' "$1" | tail -n 100
 ```
 
+Capture the source's status, then replay a bounded view of what it printed.
+This shape holds in an inline `-c` program and in a packaged script under
+either failure floor:
+
 ```sh
-dump=$(nginx -T 2>&1); status=$?
-printf '%s\n' "$dump" | head -800
+status=0
+dump=$(nginx -T 2>&1) || status=$?
+printf '%s\n' "$dump" | awk 'NR <= 800'
 exit $status
 ```
+
+Both halves are load-bearing under a floor. `|| status=$?` rather than
+`; status=$?`, because `set -e` ends the script *at the assignment* when the
+source fails: the action exits with the source's status having printed none of
+the captured diagnostic — the evidence the capture existed to keep. And
+`awk 'NR <= 800'` rather than `head -800`, because `head` exits at its limit
+and SIGPIPEs the `printf`, which under bash's `pipefail` is exit `141` for a
+run that *succeeded*; `awk` applies the same bound and reads to the end. An
+inline `-c` program sets no floor, so the plainer `; status=$?` and `head -800`
+are correct there and that is what `nginx.config_dump` ships — it is copying
+that line into a packaged script that breaks it.
 
 Pick the input before consuming it, so a fallback actually runs:
 
@@ -60,6 +85,11 @@ else echo "no readable mail log at /var/log/mail.log or /var/log/maillog" >&2; e
 fi
 grep -F "$P" "$log" | head -2000
 ```
+
+That last `head` is an inline-`sh` shape: it takes the pipeline's status, and a
+SIGPIPEd `grep` behind it is invisible. The same line in a bash script under
+`pipefail` fails every run with more than 2000 matches, so bound it there with
+`awk 'NR <= 2000'` — or say the early exit is expected, in place.
 
 **Bad.**
 
@@ -91,9 +121,10 @@ A source that runs a *command* — `kubectl`, `nomad`, `jmap`, a cluster CLI —
 no such overload: its own status is the truth and the pipe is the only thing
 discarding it. Propagate, via the capture shape above. Capture rather than a
 live pipe, for two reasons beyond the exit code: `head`'s early exit can no
-longer SIGPIPE the source (`jmap -histo:live` always exceeds `head -50`, so a
-live pipe would fail every *successful* run), and a mid-pipeline `grep`
-no-match stops mattering. Command substitution takes stdout only — leave stderr
+longer SIGPIPE the *source* (`jmap -histo:live` always exceeds `head -50`, so a
+live pipe under `pipefail` would fail every *successful* run), and a
+mid-pipeline `grep` no-match stops mattering. Capture does not by itself retire
+the SIGPIPE — read the replay to its end, as above. Command substitution takes stdout only — leave stderr
 flowing, it is the evidence channel.
 
 "Empty output is a legitimate answer" is not a reason to skip propagation — it
@@ -115,8 +146,9 @@ rather than shipping a guard that enforces nothing:
 - the source exits 0 on failure (`gdb -batch` returns 0 when the attach fails),
 - its non-zero is benign (`lsof` exits 1 for "no matching files"),
 - an unbounded stream makes capture impossible and `head` SIGPIPEs the source
-  by design (`conntrack -L | head -1000`) — reach for a cheap same-privilege
-  precondition probe instead,
+  by design (`conntrack -L | head -1000`, an inline `sh` program; under bash's
+  `pipefail` that expected exit has to be said in place) — reach for a cheap
+  same-privilege precondition probe instead,
 - a same-subsystem precondition already runs first (`conntrack -C` under
   `set -e` needs the same netlink privileges as `-L`).
 
