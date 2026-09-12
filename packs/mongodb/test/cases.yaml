@@ -92,10 +92,11 @@ cases:
         argv: [mongosh, --nodb, --quiet, --eval, 'db=new Mongo(process.env.MONGO_URI).getDB("admin");db.adminCommand({configureFailPoint:"hangAfterInitializingIndexBuild",mode:"off"})']
         expect:
           stdout_contains: ["ok: 1"]
+      # Exact comparison, not a substring match on "1": see drop_index below.
       - name: the other users index completes
-        argv: [mongosh, --nodb, --quiet, --eval, 'db=new Mongo(process.env.MONGO_URI).getDB("admin");print(db.getSiblingDB("packtest").orders.getIndexes().filter(function(index){return index.name==="packtest_cross_user_1"}).length)']
+        argv: [/bin/sh, -c, 'test "$(mongosh --nodb --quiet --eval "db=new Mongo(process.env.MONGO_URI).getDB(\"admin\");print(db.getSiblingDB(\"packtest\").orders.getIndexes().filter(function(i){return i.name===\"packtest_cross_user_1\"}).length)")" = 1 && echo index-build-completed']
         expect:
-          stdout_contains: ["1"]
+          stdout_contains: [index-build-completed]
         retry_for: 15s
         retry_every: 250ms
   - action: mongo.drop_index
@@ -130,10 +131,11 @@ cases:
         retry_every: 500ms
     expect:
       stdout_contains: ["attempting to kill op"]
+    # Exact comparison, not a substring match on "0": see drop_index above.
     probes:
-      - argv: [mongosh, --nodb, --quiet, --eval, "db=new Mongo(process.env.MONGO_URI).getDB('admin');print(db.currentOp(true).inprog.filter(function(o){return o.active && o.ns==='packtest.killop_fixture'}).length)"]
+      - argv: [/bin/sh, -c, 'test "$(mongosh --nodb --quiet --eval "db=new Mongo(process.env.MONGO_URI).getDB(\"admin\");print(db.currentOp(true).inprog.filter(function(o){return o.active && o.ns===\"packtest.killop_fixture\"}).length)")" = 0 && echo kill-op-drained']
         expect:
-          stdout_contains: ["0"]
+          stdout_contains: [kill-op-drained]
         retry_for: 15s
         retry_every: 500ms
   - action: mongo.profiler_status
@@ -162,7 +164,8 @@ cases:
     args: {db_name: packtest, collection: orders}
     expect:
       stdout_contains: ["ok: 1"]
+    # Exact comparison, not a substring match on "3": see drop_index above.
     probes:
-      - argv: [/bin/sh, -c, 'mongosh --nodb --quiet --eval "db=new Mongo(process.env.MONGO_URI).getDB(\"packtest\");print(JSON.stringify(db.orders.countDocuments()))"']
+      - argv: [/bin/sh, -c, 'test "$(mongosh --nodb --quiet --eval "db=new Mongo(process.env.MONGO_URI).getDB(\"packtest\");print(JSON.stringify(db.orders.countDocuments()))")" = 3 && echo compact-rows-kept']
         expect:
-          stdout_contains: ["3"]
+          stdout_contains: [compact-rows-kept]

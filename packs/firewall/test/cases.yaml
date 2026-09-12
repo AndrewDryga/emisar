@@ -81,8 +81,11 @@ cases:
     arrange:
       - argv: [iptables, -I, INPUT, -s, 198.51.100.7, -j, DROP]
       - argv: [iptables, -I, INPUT, -s, 203.0.113.9, -j, DROP]
+    # stdout_contains matches a substring, so asserting "1" on the rule count
+    # also accepts a chain still holding 10 or 100 lines. Compare the count
+    # exactly in the shell and assert the token that comparison prints instead.
     probes:
       - name: the chain holds its policy and nothing else
-        argv: [/bin/sh, -c, "iptables -S INPUT | grep -c ."]
+        argv: [/bin/sh, -c, "test \"$(iptables -S INPUT | grep -c .)\" = 1 && echo flush-chain-policy-only"]
         expect:
-          stdout_contains: ["1"]
+          stdout_contains: [flush-chain-policy-only]

@@ -211,16 +211,20 @@ cases:
     expect:
       stdout_contains: ['"status":"FAILED"']
     probes:
+      # stdout_contains matches a substring, so asserting "1" on the failed-job
+      # count also accepts 10 or 21 of them. Compare the count exactly in the
+      # shell and assert the token that comparison prints instead.
       - name: the job reads back failed on the driver
         argv:
           - /bin/sh
           - -c
           - |
             app=$(curl -fsS "$SPARK_UI_URL/api/v1/applications" | jq -r '.[0].id')
-            curl -fsS "$SPARK_UI_URL/api/v1/applications/$app/jobs" |
-              jq -c '[.[] | select(.status == "FAILED")] | length'
+            failed=$(curl -fsS "$SPARK_UI_URL/api/v1/applications/$app/jobs" |
+              jq -c '[.[] | select(.status == "FAILED")] | length')
+            test "$failed" = 1 && echo job-kill-one-failed
         expect:
-          stdout_contains: ["1"]
+          stdout_contains: [job-kill-one-failed]
 
   - action: spark.stage_kill
     resolve_args:

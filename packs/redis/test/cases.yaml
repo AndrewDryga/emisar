@@ -69,11 +69,16 @@ cases:
     expect:
       stdout_contains: [requirepass, "[REDACTED]"]
       stdout_not_contains: [packtest-canary-redis-c08d17]
+  # Four cases below assert a count the ACTION itself prints, so there is no
+  # shell to wrap the comparison in. stdout_contains would match a substring —
+  # "1" is satisfied by 10, 11 or 21 — so they assert the whole document with
+  # the empty JSON pointer instead: redis-cli prints the integer reply bare,
+  # which parses as JSON and compares exactly.
   - action: redis.dbsize
     arrange:
       - argv: [redis-cli, SET, packtest:ready, "yes"]
     expect:
-      stdout_contains: ["1"]
+      json: {"": 1}
     cleanup:
       - argv: [redis-cli, DEL, packtest:ready]
   - action: redis.info
@@ -123,8 +128,9 @@ cases:
     args: {key: "packtest:value"}
     arrange:
       - argv: [redis-cli, SET, "packtest:value", "fixture-value"]
+    # Exact whole-document comparison: see dbsize above.
     expect:
-      stdout_contains: ["1"]
+      json: {"": 1}
     cleanup:
       - argv: [redis-cli, DEL, "packtest:value"]
   - action: redis.randomkey
@@ -245,8 +251,9 @@ cases:
     args: {key: "packtest:stream"}
     arrange:
       - argv: [redis-cli, XADD, "packtest:stream", "*", event, ready]
+    # Exact whole-document comparison: see dbsize above.
     expect:
-      stdout_contains: ["1"]
+      json: {"": 1}
     cleanup:
       - argv: [redis-cli, DEL, "packtest:stream"]
   - action: redis.config_set
@@ -287,8 +294,10 @@ cases:
         argv: [/bin/sh, -c, "redis-cli CLIENT LIST | sed -n 's/^id=\\([0-9][0-9]*\\).*name=packtest-victim .*/\\1/p'"]
         retry_for: 10s
         retry_every: 250ms
+    # Exactly one client killed, not merely a reply containing "1": see dbsize
+    # above. A filtered CLIENT KILL that matched 10 clients must not pass here.
     expect:
-      stdout_contains: ["1"]
+      json: {"": 1}
     probes:
       - argv: [/bin/sh, -c, "! redis-cli CLIENT LIST | grep -q 'name=packtest-victim ' && echo disconnected"]
         expect:
@@ -305,10 +314,11 @@ cases:
     args: {db: 1, mode: SYNC}
     arrange:
       - argv: [redis-cli, -n, "1", SET, packtest:flushdb, present]
+    # Exact comparison, not a substring match on "0": see flushall below.
     probes:
-      - argv: [redis-cli, -n, "1", DBSIZE]
+      - argv: [/bin/sh, -c, 'test "$(redis-cli -n 1 DBSIZE)" = 0 && echo flush-db-empty']
         expect:
-          stdout_contains: ["0"]
+          stdout_contains: [flush-db-empty]
   - action: redis.flushall
     args: {mode: SYNC}
     arrange:

@@ -16,10 +16,11 @@ cases:
       - argv: [mysql, -e, "CREATE TABLE testdb.packtest_analyze (id INT PRIMARY KEY); INSERT INTO testdb.packtest_analyze VALUES (1)"]
     expect:
       stdout_contains: [testdb.packtest_analyze, status, OK]
+    # Exact comparison, not a substring match on "1": see kill_connection below.
     probes:
-      - argv: [mysql, -NBe, "SELECT COUNT(*) FROM testdb.packtest_analyze"]
+      - argv: ["/bin/sh", "-c", "test \"$(mysql -NBe \"SELECT COUNT(*) FROM testdb.packtest_analyze\")\" = 1 && echo analyze-table-row-kept"]
         expect:
-          stdout_contains: ["1"]
+          stdout_contains: [analyze-table-row-kept]
     cleanup:
       - argv: [mysql, -e, "DROP TABLE IF EXISTS testdb.packtest_analyze"]
   - action: mysql.connections_summary
@@ -82,10 +83,11 @@ cases:
       - argv: [mysql, -e, "CREATE TABLE testdb.packtest_optimize (id INT PRIMARY KEY); INSERT INTO testdb.packtest_optimize VALUES (1)"]
     expect:
       stdout_contains: [testdb.packtest_optimize, status, OK]
+    # Exact comparison, not a substring match on "1": see kill_connection above.
     probes:
-      - argv: [mysql, -NBe, "SELECT COUNT(*) FROM testdb.packtest_optimize"]
+      - argv: ["/bin/sh", "-c", "test \"$(mysql -NBe \"SELECT COUNT(*) FROM testdb.packtest_optimize\")\" = 1 && echo optimize-table-row-kept"]
         expect:
-          stdout_contains: ["1"]
+          stdout_contains: [optimize-table-row-kept]
     cleanup:
       - argv: [mysql, -e, "DROP TABLE IF EXISTS testdb.packtest_optimize"]
   - action: mysql.processlist

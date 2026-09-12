@@ -43,23 +43,27 @@ cases:
       stdout_contains: ["version()", "uptime()"]
   - action: ch.optimize_table
     args: {database: default, table: packtest_events}
+    # stdout_contains matches a substring, so asserting "3" on a bare count also
+    # accepts 13, 30 or 300 rows. Compare the count exactly in the shell and
+    # assert the token that comparison prints instead.
     probes:
-      - argv: [/bin/sh, -c, 'clickhouse-client --host clickhouse --user "$CH_USER" --password "$CH_PASSWORD" --query "SELECT count() FROM default.packtest_events"']
+      - argv: [/bin/sh, -c, 'test "$(clickhouse-client --host clickhouse --user "$CH_USER" --password "$CH_PASSWORD" --query "SELECT count() FROM default.packtest_events")" = 3 && echo ch-optimize-rows-kept']
         expect:
-          stdout_contains: ["3"]
+          stdout_contains: [ch-optimize-rows-kept]
   - action: ch.kill_query
     args: {query_id: packtest-kill-query}
     arrange:
       - argv: [/bin/sh, -c, 'nohup clickhouse-client --host clickhouse --user "$CH_USER" --password "$CH_PASSWORD" --query_id packtest-kill-query --query "SELECT sleepEachRow(1) FROM numbers(120) SETTINGS max_block_size=1" >/tmp/packtest-kill-query.log 2>&1 &']
-      - argv: [/bin/sh, -c, 'clickhouse-client --host clickhouse --user "$CH_USER" --password "$CH_PASSWORD" --query "SELECT count() FROM system.processes WHERE query_id = ''packtest-kill-query''"']
+      # Exact comparison, not a substring match on "1": see optimize_table above.
+      - argv: [/bin/sh, -c, 'test "$(clickhouse-client --host clickhouse --user "$CH_USER" --password "$CH_PASSWORD" --query "SELECT count() FROM system.processes WHERE query_id = ''packtest-kill-query''")" = 1 && echo ch-kill-query-running']
         expect:
-          stdout_contains: ["1"]
+          stdout_contains: [ch-kill-query-running]
         retry_for: 10s
         retry_every: 250ms
     probes:
-      - argv: [/bin/sh, -c, 'clickhouse-client --host clickhouse --user "$CH_USER" --password "$CH_PASSWORD" --query "SELECT count() FROM system.processes WHERE query_id = ''packtest-kill-query''"']
+      - argv: [/bin/sh, -c, 'test "$(clickhouse-client --host clickhouse --user "$CH_USER" --password "$CH_PASSWORD" --query "SELECT count() FROM system.processes WHERE query_id = ''packtest-kill-query''")" = 0 && echo ch-kill-query-gone']
         expect:
-          stdout_contains: ["0"]
+          stdout_contains: [ch-kill-query-gone]
         retry_for: 10s
         retry_every: 250ms
   - action: ch.kill_mutation
@@ -71,9 +75,10 @@ cases:
     arrange:
       - argv: [/bin/sh, -c, 'clickhouse-client --host clickhouse --user "$CH_USER" --password "$CH_PASSWORD" --query "SYSTEM STOP MERGES default.packtest_events"']
       - argv: [/bin/sh, -c, 'clickhouse-client --host clickhouse --user "$CH_USER" --password "$CH_PASSWORD" --query "ALTER TABLE default.packtest_events UPDATE duration_ms = duration_ms WHERE 1"']
-      - argv: [/bin/sh, -c, 'clickhouse-client --host clickhouse --user "$CH_USER" --password "$CH_PASSWORD" --query "SELECT count() FROM system.mutations WHERE database = ''default'' AND table = ''packtest_events'' AND is_done = 0"']
+      # Exact comparison, not a substring match on "1": see optimize_table above.
+      - argv: [/bin/sh, -c, 'test "$(clickhouse-client --host clickhouse --user "$CH_USER" --password "$CH_PASSWORD" --query "SELECT count() FROM system.mutations WHERE database = ''default'' AND table = ''packtest_events'' AND is_done = 0")" = 1 && echo ch-mutation-queued']
         expect:
-          stdout_contains: ["1"]
+          stdout_contains: [ch-mutation-queued]
         retry_for: 10s
         retry_every: 250ms
     resolve_args:
@@ -84,13 +89,15 @@ cases:
     expect:
       stdout_contains: [packtest_events]
     probes:
-      - argv: [/bin/sh, -c, 'clickhouse-client --host clickhouse --user "$CH_USER" --password "$CH_PASSWORD" --query "SELECT count() FROM system.mutations WHERE database = ''default'' AND table = ''packtest_events'' AND is_done = 0"']
+      - argv: [/bin/sh, -c, 'test "$(clickhouse-client --host clickhouse --user "$CH_USER" --password "$CH_PASSWORD" --query "SELECT count() FROM system.mutations WHERE database = ''default'' AND table = ''packtest_events'' AND is_done = 0")" = 0 && echo ch-mutation-gone']
         expect:
-          stdout_contains: ["0"]
+          stdout_contains: [ch-mutation-gone]
         retry_for: 15s
         retry_every: 500ms
   - action: ch.reload_config
+    # The liveness answer is one row, so compare it exactly: a substring match on
+    # "1" accepted any output that happened to carry the digit.
     probes:
-      - argv: [/bin/sh, -c, 'clickhouse-client --host clickhouse --user "$CH_USER" --password "$CH_PASSWORD" --query "SELECT 1"']
+      - argv: [/bin/sh, -c, 'test "$(clickhouse-client --host clickhouse --user "$CH_USER" --password "$CH_PASSWORD" --query "SELECT 1")" = 1 && echo ch-reload-config-alive']
         expect:
-          stdout_contains: ["1"]
+          stdout_contains: [ch-reload-config-alive]

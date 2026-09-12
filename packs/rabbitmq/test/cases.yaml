@@ -104,9 +104,13 @@ cases:
     args: {vhost: /, queue: packtest}
     arrange:
       - argv: [rabbitmqadmin, -u, guest, -p, guest, publish, message, --routing-key, packtest, --payload, ready, --non-interactive]
+    # stdout_contains matches each needle independently anywhere in the output,
+    # so [packtest, "0"] accepted any listing carrying both — a queue depth of
+    # 10, or a "0" belonging to some other queue's row. Pick packtest's own
+    # messages_ready column and compare it exactly instead.
     probes:
-      - argv: [rabbitmqctl, list_queues, name, messages_ready]
+      - argv: [/bin/sh, -c, "test \"$(rabbitmqctl -q list_queues name messages_ready | awk '$1 == \"packtest\" {print $2}')\" = 0 && echo purge-queue-empty"]
         expect:
-          stdout_contains: [packtest, "0"]
+          stdout_contains: [purge-queue-empty]
     cleanup:
       - argv: [rabbitmqadmin, -u, guest, -p, guest, publish, message, --routing-key, packtest, --payload, ready, --non-interactive]
