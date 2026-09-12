@@ -91,8 +91,17 @@ node's own system tables and reads no config file at all,
 peers are contacted later while current gossip continues unchanged, and
 `cassandra.nodetool_reloadssl` swaps keystore material for new connections
 only and fails on unreadable material before it can break them. That is the
-line for the next reload action: `high` when the reload applies on-disk state
-to live service behavior, `medium` when it does not.
+line for the next reload action, and it is narrower than "does it reach live
+behavior": `high` when the reload hands an unpassed file the work the service
+is already doing — routing, resolution, who is banned — because nothing in the
+action's arguments bounds what that file says. The four above stay `medium` on
+the specific ground each one states, not on a general claim about live traffic:
+the new definition waits for a separate gated action, no file is read at all,
+the change only governs which peers are contacted later, or — `reloadssl` — the
+swap is one kind of material, validated before it can take effect, leaving
+established sessions on their current session. New connections *are* live
+service behavior; that is why the short version of this line is wrong. A reload
+matching none of those four grounds is `high`.
 
 **Cancel one running query — `high`.** `postgres.cancel_query` said so;
 `cockroach.cancel_query` said `medium` and moved up. Both cancel exactly one
