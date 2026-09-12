@@ -284,9 +284,14 @@ resource "google_project_iam_member" "database_operator_cloudsql" {
   }
 }
 
-# Cloud SQL Studio needs project-scoped console discovery permissions that an
-# instance condition would deny. Database authentication remains confined to
-# emisar because that is the only instance where database.tf creates this IAM user.
+# roles/cloudsql.studioUser spans two services, so the condition below splits it:
+# its cloudsql.* permissions are checked against the instance and are granted,
+# while serviceusage.services.get/list are checked against the project, where the
+# condition is false — this binding withholds them. That trade is deliberate: a
+# PITR drill creates a second instance, and an unconditioned grant would open
+# Studio on the restored copy too. If Studio cannot confirm the Cloud SQL Admin
+# API is enabled, give the operator Service Usage read in its own unconditioned
+# binding rather than widening this one.
 resource "google_project_iam_member" "database_operator_studio" {
   count = nonsensitive(var.database_operator_iam_user != null) ? 1 : 0
 
