@@ -18,7 +18,10 @@ import (
 	"time"
 )
 
-func (a *App) up(ctx context.Context) (Workspace, map[string]string, error) {
+// up starts the workspace services and reports the URLs and environment for
+// the dependencies the caller named. Readiness stays with the caller: `serve`
+// has to lose its port race before it spends two minutes waiting on Keycloak.
+func (a *App) up(ctx context.Context, needs ...workspaceDependency) (Workspace, map[string]string, error) {
 	if !a.inBox() {
 		if err := a.generateCertificates(false); err != nil {
 			return Workspace{}, nil, err
@@ -32,7 +35,7 @@ func (a *App) up(ctx context.Context) (Workspace, map[string]string, error) {
 			return Workspace{}, nil, err
 		}
 	}
-	workspace, err := a.loadWorkspace(ctx)
+	workspace, err := a.loadWorkspace(ctx, needs...)
 	if err != nil {
 		return Workspace{}, nil, err
 	}
@@ -99,7 +102,7 @@ func waitUntil(ctx context.Context, attempts int, delay time.Duration, check fun
 	return last
 }
 
-func (a *App) waitForDependencies(ctx context.Context, workspace Workspace) error {
+func (a *App) waitForDatabase(ctx context.Context, workspace Workspace) error {
 	database, err := url.Parse(workspace.DatabaseURL)
 	if err != nil {
 		return err
@@ -114,7 +117,10 @@ func (a *App) waitForDependencies(ctx context.Context, workspace Workspace) erro
 	if err != nil {
 		return fmt.Errorf("waiting for Postgres at %s: %w", workspace.DatabaseURL, err)
 	}
+	return nil
+}
 
+func (a *App) waitForKeycloak(ctx context.Context, workspace Workspace) error {
 	client, err := a.tlsClient()
 	if err != nil {
 		return err
@@ -139,6 +145,31 @@ func (a *App) waitForDependencies(ctx context.Context, workspace Workspace) erro
 		return fmt.Errorf("waiting for Keycloak at %s: %w", workspace.KeycloakURL, err)
 	}
 	return nil
+}
+
+// waitForDependencies is the full-workspace readiness wait, for the commands
+// that go on to serve or configure both services.
+func (a *App) waitForDependencies(ctx context.Context, workspace Workspace) error {
+	if err := a.waitForDatabase(ctx, workspace); err != nil {
+		return err
+	}
+	return a.waitForKeycloak(ctx, workspace)
+}
+
+// upForDatabase is the route every test and gate phase takes: the Portal test
+// environment reads DATABASE_URL and nothing else, so these phases require and
+// wait for Postgres alone. They used to demand a Keycloak URL they never
+// contacted, and to wait for nothing at all — an absent database surfaced as a
+// Postgrex failure partway through `ecto.create`.
+func (a *App) upForDatabase(ctx context.Context) (map[string]string, error) {
+	workspace, env, err := a.up(ctx, needDatabase)
+	if err != nil {
+		return nil, err
+	}
+	if err := a.waitForDatabase(ctx, workspace); err != nil {
+		return nil, err
+	}
+	return env, nil
 }
 
 func doJSON(ctx context.Context, client *http.Client, method, endpoint, token string, body any, target any) error {
@@ -253,7 +284,7 @@ func (a *App) setup(ctx context.Context) error {
 	if err := a.installGitHooks(ctx); err != nil {
 		return err
 	}
-	workspace, env, err := a.up(ctx)
+	workspace, env, err := a.up(ctx, everyDependency...)
 	if err != nil {
 		return err
 	}
@@ -286,7 +317,7 @@ func (a *App) installGitHooks(ctx context.Context) error {
 }
 
 func (a *App) seed(ctx context.Context) error {
-	workspace, env, err := a.up(ctx)
+	workspace, env, err := a.up(ctx, everyDependency...)
 	if err != nil {
 		return err
 	}
@@ -321,7 +352,7 @@ func (a *App) reset(ctx context.Context, args []string) error {
 			return fmt.Errorf("database reset cancelled")
 		}
 	}
-	workspace, env, err := a.up(ctx)
+	workspace, env, err := a.up(ctx, everyDependency...)
 	if err != nil {
 		return err
 	}
@@ -343,7 +374,7 @@ func (a *App) doctor(ctx context.Context) error {
 	if err := a.checkDevelopmentTools(ctx); err != nil {
 		return err
 	}
-	workspace, _, err := a.up(ctx)
+	workspace, _, err := a.up(ctx, everyDependency...)
 	if err != nil {
 		return err
 	}

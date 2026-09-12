@@ -16,8 +16,8 @@ import (
 	devbrowser "github.com/andrewdryga/emisar/tools/internal/browser"
 )
 
-func (a *App) browserManager(ctx context.Context) (*devbrowser.Manager, Workspace, error) {
-	workspace, err := a.loadWorkspace(ctx)
+func (a *App) browserManager(ctx context.Context, needs ...workspaceDependency) (*devbrowser.Manager, Workspace, error) {
+	workspace, err := a.loadWorkspace(ctx, needs...)
 	if err != nil {
 		return nil, Workspace{}, err
 	}
@@ -67,8 +67,8 @@ func (a *App) ensureImageTools() error {
 	return nil
 }
 
-func (a *App) startBrowser(ctx context.Context) (*devbrowser.Manager, Workspace, error) {
-	manager, workspace, err := a.browserManager(ctx)
+func (a *App) startBrowser(ctx context.Context, needs ...workspaceDependency) (*devbrowser.Manager, Workspace, error) {
+	manager, workspace, err := a.browserManager(ctx, needs...)
 	if err != nil {
 		return nil, Workspace{}, err
 	}
@@ -90,10 +90,10 @@ func (a *App) browserCommand(ctx context.Context, args []string) error {
 	}
 	switch args[0] {
 	case "start":
-		_, _, err := a.startBrowser(ctx)
+		_, _, err := a.startBrowser(ctx, needPortal)
 		return err
 	case "stop":
-		manager, _, err := a.browserManager(ctx)
+		manager, _, err := a.browserManager(ctx, needPortal)
 		if err != nil {
 			return err
 		}
@@ -103,7 +103,7 @@ func (a *App) browserCommand(ctx context.Context, args []string) error {
 		fmt.Fprintln(a.Out, "browser stopped")
 		return nil
 	case "status":
-		manager, _, err := a.browserManager(ctx)
+		manager, _, err := a.browserManager(ctx, needPortal)
 		if err != nil {
 			return err
 		}
@@ -193,7 +193,7 @@ func (a *App) shot(ctx context.Context, args []string) error {
 	}
 	command.options.Out = output
 	fmt.Fprintf(a.Out, "screenshot task %s -> %s\n", task.ID, output)
-	manager, workspace, err := a.startBrowser(ctx)
+	manager, workspace, err := a.startBrowser(ctx, needPortal)
 	if err != nil {
 		return err
 	}

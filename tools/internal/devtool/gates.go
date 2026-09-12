@@ -160,7 +160,7 @@ func (a *App) test(ctx context.Context, args []string) error {
 		if len(clean) == 0 && !profile {
 			return usage("usage: ./run test portal [--profile] <paths...|--stale|--failed>")
 		}
-		_, env, err := a.up(ctx)
+		env, err := a.upForDatabase(ctx)
 		if err != nil {
 			return err
 		}
@@ -434,7 +434,7 @@ func (a *App) portalGate(ctx context.Context) error {
 	}
 	if os.Getenv("CI") == "" {
 		if err := a.gatePhase("portal development services", func() error {
-			_, workspaceEnv, upErr := a.up(ctx)
+			workspaceEnv, upErr := a.upForDatabase(ctx)
 			env = workspaceEnv
 			return upErr
 		}); err != nil {
@@ -497,7 +497,7 @@ func (a *App) portalTestEnv(ctx context.Context) (map[string]string, error) {
 		}
 		return map[string]string{"MIX_ENV": "test"}, nil
 	}
-	_, env, err := a.up(ctx)
+	env, err := a.upForDatabase(ctx)
 	if err != nil {
 		return nil, err
 	}

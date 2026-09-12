@@ -90,7 +90,7 @@ func boxServiceAddresses() map[int]string {
 }
 
 func (a *App) status(ctx context.Context) error {
-	workspace, err := a.loadWorkspace(ctx)
+	workspace, err := a.loadWorkspace(ctx, everyDependency...)
 	if err != nil {
 		return err
 	}
@@ -198,7 +198,7 @@ func (a *App) logs(ctx context.Context, args []string) error {
 }
 
 func (a *App) psql(ctx context.Context, args []string) error {
-	workspace, err := a.loadWorkspace(ctx)
+	workspace, err := a.loadWorkspace(ctx, needDatabase)
 	if err != nil {
 		return err
 	}

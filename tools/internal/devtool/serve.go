@@ -194,7 +194,7 @@ func (a *App) serveLogPath() (string, error) {
 // survives the shell — or the agent turn — that asked for it. The CHILD takes
 // the flock, which keeps `already owns Phoenix` working unchanged.
 func (a *App) serveDetached(ctx context.Context) error {
-	workspace, _, err := a.up(ctx)
+	workspace, _, err := a.up(ctx, needPortal)
 	if err != nil {
 		return err
 	}
@@ -256,7 +256,7 @@ func waitForPortState(ctx context.Context, port int, want bool, limit time.Durat
 // Stops whatever holds the port, detached or not: the pid in the lock file owns
 // a whole process group, so the group signal reaches Phoenix itself.
 func (a *App) serveStop(ctx context.Context) error {
-	workspace, _, err := a.up(ctx)
+	workspace, _, err := a.up(ctx, needPortal)
 	if err != nil {
 		return err
 	}
@@ -288,7 +288,7 @@ func (a *App) serveStop(ctx context.Context) error {
 }
 
 func (a *App) serveStatus(ctx context.Context) error {
-	workspace, _, err := a.up(ctx)
+	workspace, _, err := a.up(ctx, needPortal)
 	if err != nil {
 		return err
 	}
@@ -338,7 +338,7 @@ func serveInvocation(interactive bool) (string, []string) {
 }
 
 func (a *App) serve(ctx context.Context, interactive bool) error {
-	workspace, env, err := a.up(ctx)
+	workspace, env, err := a.up(ctx, everyDependency...)
 	if err != nil {
 		return err
 	}

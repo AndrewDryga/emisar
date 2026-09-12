@@ -54,7 +54,13 @@ func (a *App) capture(ctx context.Context, args []string) error {
 			return err
 		}
 	}
-	manager, workspace, err := a.startBrowser(ctx)
+	// `capture docs` scripts the local Keycloak for the sign-in shots; the
+	// console audit never leaves the Portal.
+	needs := []workspaceDependency{needPortal}
+	if args[0] == "docs" {
+		needs = append(needs, needKeycloak)
+	}
+	manager, workspace, err := a.startBrowser(ctx, needs...)
 	if err != nil {
 		return err
 	}

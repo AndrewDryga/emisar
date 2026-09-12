@@ -356,7 +356,7 @@ func (a *App) e2eBilling(ctx context.Context) error {
 	if err := a.seed(ctx); err != nil {
 		return err
 	}
-	workspace, err := a.loadWorkspace(ctx)
+	workspace, err := a.loadWorkspace(ctx, needDatabase)
 	if err != nil {
 		return err
 	}
