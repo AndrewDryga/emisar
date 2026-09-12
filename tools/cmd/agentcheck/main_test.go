@@ -708,7 +708,7 @@ func TestTrackedGitHooksMustExistBeExecutableAndKeepTheirJobs(t *testing.T) {
 	hooks := map[string]string{
 		"pre-commit":         "#!/bin/sh\nexec \"$root/run\" check staged\n",
 		"commit-msg":         "#!/bin/sh\ngit interpret-trailers --parse\n",
-		"prepare-commit-msg": "#!/bin/sh\ncoop_hook=\"$HOME/.config/coop/git-hooks/prepare-commit-msg\"\n",
+		"prepare-commit-msg": "#!/bin/sh\ncoop_hook=\"$HOME/.config/coop/git-hooks/prepare-commit-msg\"\n[ -x \"$coop_hook\" ] && exec \"$coop_hook\" \"$@\"\n",
 	}
 	write := func(t *testing.T, check *checker, mode os.FileMode, overrides map[string]string) {
 		t.Helper()
@@ -746,6 +746,18 @@ func TestTrackedGitHooksMustExistBeExecutableAndKeepTheirJobs(t *testing.T) {
 	check.checkTrackedGitHooks()
 	if !hasFailure(check, ".githooks/pre-commit no longer runs ./run check staged") {
 		t.Fatalf("pre-commit without the staged check not reported: %v", check.failures)
+	}
+
+	// The real hook's comment names prepare-commit-msg, so a marker of that
+	// literal matched the prose and the guard could never fail for this hook.
+	// Only the line that execs Coop's hook proves the chain is still there.
+	check = testChecker(t)
+	write(t, check, 0o755, map[string]string{
+		"prepare-commit-msg": "#!/bin/sh\n# Chain to coop's prepare-commit-msg (the co-author trailer rewrite).\nexit 0\n",
+	})
+	check.checkTrackedGitHooks()
+	if !hasFailure(check, ".githooks/prepare-commit-msg no longer chains to Coop's prepare-commit-msg hook") {
+		t.Fatalf("comment-only prepare-commit-msg not reported: %v", check.failures)
 	}
 
 	check = testChecker(t)

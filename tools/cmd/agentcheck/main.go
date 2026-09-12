@@ -1402,6 +1402,10 @@ func (o mcpSchemaObject) argumentNames(defs map[string]mcpSchemaObject) map[stri
 // Coop-Task trailer (a line git does not PARSE as a trailer is worse than none —
 // it reads as bound and is not); prepare-commit-msg chains to Coop's co-author
 // rewrite in a box. Each has to exist, stay executable, and still do its job.
+//
+// Each marker is the line that DOES the work, never text the hook's own comment
+// or error message repeats: a marker the prose already contains cannot fail, so
+// a body gutted down to its comment would still pass as healthy.
 func (c *checker) checkTrackedGitHooks() {
 	for _, hook := range []struct{ name, job, marker, lost string }{
 		{"pre-commit", "runs the staged-format check on every commit",
@@ -1409,7 +1413,7 @@ func (c *checker) checkTrackedGitHooks() {
 		{"commit-msg", "checks that a Coop-Task line parses as a trailer",
 			"interpret-trailers", "no longer asks git whether the line is a trailer"},
 		{"prepare-commit-msg", "chains to Coop's co-author trailer hook in a box",
-			"prepare-commit-msg", "no longer chains to Coop's prepare-commit-msg hook"},
+			`exec "$coop_hook"`, "no longer chains to Coop's prepare-commit-msg hook"},
 	} {
 		path := c.path(".githooks/" + hook.name)
 		info, err := os.Stat(path)
