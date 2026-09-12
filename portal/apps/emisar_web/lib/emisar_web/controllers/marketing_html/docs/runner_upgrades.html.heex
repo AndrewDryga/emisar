@@ -208,7 +208,10 @@
       <p class="mt-5 text-base leading-7 text-zinc-400">
         The update touches only the binary: <.docs_inline_code>config.yaml</.docs_inline_code>, <.docs_inline_code>runner.env</.docs_inline_code>, the cached token, installed packs, the dispatch log, and the local
         audit journal all stay as they are. Before the service stops, it authenticates the signed
-        checksum metadata, verifies the archive against it, and checks the staged binary's version.
+        checksum metadata, verifies the archive against it, checks the staged binary's version, and
+        runs that staged binary against your existing <.docs_inline_code>config.yaml</.docs_inline_code>. A runner that refuses the config is refused here, in its
+        own words — the installer exits nonzero with nothing touched, and the service keeps serving
+        on the version it already had.
       </p>
       <.docs_callout kind={:warn} title="The service does stop">
         <p>
