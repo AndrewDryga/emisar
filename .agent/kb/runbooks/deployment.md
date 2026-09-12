@@ -1,7 +1,7 @@
 ---
 name: deployment
-sources: [.github/workflows/ci.yml, .github/workflows/cd.yml, infra/iam.tf, portal/config/runtime.exs, portal/apps/emisar/lib/emisar/release.ex]
-updated: 2026-09-03
+sources: [.github/workflows/ci.yml, .github/workflows/cd.yml, infra/iam.tf, infra/github_oidc.tf, infra/versions.tf, portal/config/runtime.exs, portal/apps/emisar/lib/emisar/release.ex]
+updated: 2026-09-12
 ---
 
 # CI/CD production setup
@@ -68,8 +68,12 @@ impersonate `terraform@emisar.iam.gserviceaccount.com` through an
 apply-phase-only WIF binding and service-specific administrative roles. The
 workspace records its required `roles/logging.configWriter` binding in
 `infra/iam.tf`; bootstrap it once before the first apply that creates Logging
-configuration. The provider condition is pinned to workspace
-`Dryga/emisar/emisar` and the `plan`/`apply` phases. Never restore the pool-wide
+configuration. Nothing under `infra/` manages the pool behind those
+credentials; the only pool here is `github-actions` in `infra/github_oidc.tf`,
+for the pack and release publishers. Verify the HCP provider's condition in the
+GCP console, not from this tree: it must admit only the workspace
+`infra/versions.tf` names — organization `Dryga`, project `emisar`, workspace
+`emisar` — and only the `plan`/`apply` phases. Never restore the pool-wide
 impersonation binding or `roles/editor`. The single workspace owns the complete
 production stack, so its HCP token and apply identity are production-admin
 credentials.
