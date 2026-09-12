@@ -113,60 +113,192 @@ func validatePackScriptHelperBinaries(input packActionLintInput) error {
 		filepath.Base(input.packDir), strings.Join(reports, "; "))
 }
 
-// scriptRunsCommand reports whether a shell program runs `name`, looking for the
-// bare word outside comments and outside single-quoted spans.
+// Words that precede another command instead of taking their own arguments, so
+// the word after one is still a command position: `if jq -e . f`, `! jq …`,
+// `{ jq …; }`. Everything else consumes the rest of its simple command as
+// arguments, which is what tells `jq -r .` apart from `printf '%s\n' jq`.
+var shellCommandPrefixWords = map[string]bool{
+	"!": true, "{": true, "}": true, "if": true, "then": true, "elif": true,
+	"else": true, "do": true, "while": true, "until": true, "time": true,
+}
+
+// shellScanFrame is one command scope: the whole program, or the inside of a
+// `$( … )` / backtick substitution. Each scope tracks its own word and its own
+// command position, because `detail="$(jq -r . "$f")"` runs jq in a fresh scope
+// while the word around it keeps reading as an assignment.
+type shellScanFrame struct {
+	closer    byte // ')' inside $( … ), '`' inside a backtick span, 0 for the program
+	depth     int  // nested ( … ) within this scope
+	double    bool // inside a double-quoted span
+	command   bool // the next word that ends here starts a command
+	inWord    bool
+	wordStart int
+}
+
+// scriptRunsCommand reports whether a shell program RUNS `name` — the word in a
+// COMMAND position, not every mention of it. A word-boundary match anywhere
+// outside single quotes attributes a dependency to `printf '%s\n' "jq
+// unavailable"`, which invokes only printf; the diagnostic an action prints when
+// a helper is missing is the one place the helper's name is guaranteed to appear
+// without being run.
 //
-// Comments are the case this has to get right, because the scripts that invoke
-// jq are also the ones that EXPLAIN jq: docker.compose_config carries three
-// comments naming it, one of them about a builtin it deliberately avoids. A `#`
-// counts as a comment only at the start of a word — the same rule the jq-builtin
-// scanner uses — which keeps a `#` inside a value from swallowing the rest of
-// the line. A single-quoted span is skipped because that is where a jq FILTER is
-// authored, never a command; skipping it also means quoted filter text can never
-// be mistaken for an invocation, which is the conservative direction.
+// The supported static forms, and they are the whole contract:
+//
+//   - A command position is the start of the program and the word after `\n`,
+//     `;`, `|`, `&`, `&&`, `||`, `(`, `)`, a `$( … )` or backtick substitution's
+//     opening, one of shellCommandPrefixWords, or a `NAME=value` assignment
+//     prefix. Every later word in that simple command is an argument.
+//   - A single-quoted span is literal text — where a jq FILTER is authored,
+//     never a command — and is skipped whole.
+//   - A double-quoted span is NOT skipped: a `$( … )` or backtick inside one
+//     opens a real command scope, which is how `"$(jq -r .)"` keeps its
+//     attribution. The quoted text itself is part of the surrounding word, so
+//     `"jq unavailable"` stays one argument.
+//   - `#` opens a comment only at the start of a word and only outside double
+//     quotes. Comments matter because the scripts that invoke jq are also the
+//     ones that EXPLAIN jq: docker.compose_config carries three such comments.
+//   - A command word may be quoted (`'jq' .`) or a path (`/usr/bin/jq .`).
+//
+// What it deliberately does not model, because this is a token scanner and not a
+// shell: a command supplied to another command (`xargs jq`, `sh -c 'jq …'`), a
+// command named by expansion (`${JQ:-jq}`), a heredoc body, a `case` pattern,
+// and a redirection target in front of the command word (`> jq cmd`). The first
+// two under-report and the rest over-report; no shipped pack uses any of them.
 func scriptRunsCommand(program, name string) bool {
-	const (
-		code = iota
-		single
-		double
-	)
-	state := code
+	frames := []shellScanFrame{{command: true}}
 	comment := false
 	for index := 0; index < len(program); index++ {
+		frame := &frames[len(frames)-1]
 		character := program[index]
 		switch {
 		case comment:
-			// The quoting state is untouched across a comment, so a jq comment
-			// inside a single-quoted filter resumes that same span at newline.
 			if character == '\n' {
 				comment = false
+				frame.command = true
 			}
+		case character == '\\' && index+1 < len(program) && program[index+1] == '\n':
+			// A line continuation joins the two halves of one command, so it
+			// must not end the word or reopen a command position.
+			index++
 		case character == '\\':
 			// Unquoted or double-quoted, a backslash escapes the next byte;
 			// reading a \' as an opening quote inverts everything after it.
-			if state != single {
+			frame.beginWord(index)
+			index++
+		case frame.double:
+			switch {
+			case character == '"':
+				frame.double = false
+			case character == '$' && index+1 < len(program) && program[index+1] == '(':
 				index++
+				frames = append(frames, shellScanFrame{closer: ')', command: true})
+			case character == '`':
+				frames = append(frames, shellScanFrame{closer: '`', command: true})
 			}
-		case character == '\'' && state == code:
-			state = single
-		case character == '\'' && state == single:
-			state = code
-		case character == '"' && state == code:
-			state = double
-		case character == '"' && state == double:
-			state = code
-		case character == '#' && state != double && jqStartsWord(program, index):
+		case character == '"':
+			frame.beginWord(index)
+			frame.double = true
+		case character == '\'':
+			frame.beginWord(index)
+			if end := strings.IndexByte(program[index+1:], '\''); end >= 0 {
+				index += end + 1
+			} else {
+				index = len(program)
+			}
+		case character == '#' && !frame.inWord:
 			comment = true
-		case state != single && strings.HasPrefix(program[index:], name):
-			end := index + len(name)
-			if (index == 0 || !jqIdentifierByte(program[index-1])) &&
-				(end == len(program) || !jqIdentifierByte(program[end])) {
+		case character == '$' && index+1 < len(program) && program[index+1] == '(':
+			frame.beginWord(index)
+			index++
+			frames = append(frames, shellScanFrame{closer: ')', command: true})
+		case character == '`':
+			frame.beginWord(index)
+			frames = append(frames, shellScanFrame{closer: '`', command: true})
+		case frame.closer != 0 && character == frame.closer && frame.depth == 0:
+			if frame.finishWord(program, name, index) {
 				return true
 			}
-			index = end - 1
+			frames = frames[:len(frames)-1]
+		case jqShellDelimiter(character):
+			if frame.finishWord(program, name, index) {
+				return true
+			}
+			switch character {
+			case '\n', ';', '|', '&':
+				frame.command = true
+			case '(':
+				frame.depth++
+				frame.command = true
+			case ')':
+				if frame.depth > 0 {
+					frame.depth--
+				}
+				frame.command = true
+			}
+			// A space, a tab, and a redirection operator leave the position
+			// alone: `cmd > jq` writes a file, it does not run one.
+		default:
+			frame.beginWord(index)
+		}
+	}
+	// An unterminated substitution still ran what it held, so every open scope's
+	// trailing word counts.
+	for index := len(frames) - 1; index >= 0; index-- {
+		if frames[index].finishWord(program, name, len(program)) {
+			return true
 		}
 	}
 	return false
+}
+
+func (frame *shellScanFrame) beginWord(index int) {
+	if !frame.inWord {
+		frame.inWord, frame.wordStart = true, index
+	}
+}
+
+// finishWord closes the word ending at end and reports whether it was a command
+// position holding `name`.
+func (frame *shellScanFrame) finishWord(program, name string, end int) bool {
+	if !frame.inWord {
+		return false
+	}
+	word := program[frame.wordStart:end]
+	frame.inWord = false
+	if !frame.command {
+		return false
+	}
+	if shellCommandPrefixWords[word] || shellAssignmentPrefix(word) {
+		return false
+	}
+	frame.command = false
+	return jqCommandName(shellUnquoteWord(word)) == name
+}
+
+// shellAssignmentPrefix reports whether a word at a command position is a
+// `NAME=value` prefix, which keeps the command position open for the word after
+// it — and is also how `jq_filter=.Names` stays out of this check.
+func shellAssignmentPrefix(word string) bool {
+	assign := strings.IndexByte(word, '=')
+	if assign <= 0 || !jqIdentifierStart(word[0]) {
+		return false
+	}
+	for index := 1; index < assign; index++ {
+		if !jqIdentifierByte(word[index]) {
+			return false
+		}
+	}
+	return true
+}
+
+// shellUnquoteWord drops the quote characters a command word may carry, so
+// `'jq'` and `"jq"` read as the command they run. It is not a general unquote:
+// the result is only ever compared against a bare helper name.
+func shellUnquoteWord(word string) string {
+	if !strings.ContainsAny(word, `'"`) {
+		return word
+	}
+	return strings.NewReplacer("'", "", `"`, "").Replace(word)
 }
 
 func validatePackInterpreterBinaries(input packActionLintInput) error {

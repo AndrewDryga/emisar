@@ -73,18 +73,48 @@ the shell text an action dispatches counts.
 (`tools/internal/devtool/pack_interpreter.go`, chained from
 `validatePackActionLints` and run by `./run check packs`) reads each action's
 shell source through `actionShellSource` and reports a helper it runs that the
-manifest does not declare. `scriptRunsCommand` matches the bare word outside
-comments and outside single-quoted spans, so a jq filter's own text and a
-comment explaining jq are both skipped while the invocation beside them is not.
+manifest does not declare.
+
+`scriptRunsCommand` looks for the name in a COMMAND position, not every mention
+of it. A word-boundary match anywhere outside single quotes attributed a
+dependency to `printf '%s\n' "jq unavailable"`, which invokes only printf — and
+the diagnostic an action prints when a helper is MISSING is the one place the
+name is guaranteed to appear without being run. The supported static forms are
+the whole contract:
+
+- A command position is the start of the program and the word after `\n`, `;`,
+  `|`, `&`, `&&`, `||`, `(`, `)`, a `$( … )` or backtick opening, one of the
+  prefix words (`if`, `then`, `elif`, `else`, `do`, `while`, `until`, `!`,
+  `time`, `{`, `}`), or a `NAME=value` assignment prefix. Every later word in
+  that simple command is an argument.
+- A single-quoted span is literal text — where a jq FILTER is authored, never a
+  command — and is skipped whole.
+- A double-quoted span is NOT skipped: a `$( … )` or backtick inside one opens a
+  real command scope, which is how `detail="$(jq -r . "$f")"` keeps its
+  attribution, while the quoted text itself stays part of one word.
+- `#` opens a comment only at the start of a word and only outside double
+  quotes.
+- A command word may be quoted (`'jq' .`) or a path (`/usr/bin/jq .`).
+
+It is a token scanner, not a shell, and deliberately does not model: a command
+supplied to another command (`xargs jq`, `sh -c 'jq …'`), a command named by
+expansion (`${JQ:-jq}`), a heredoc body, a `case` pattern, or a redirection
+target in front of the command word (`> jq cmd`). The first two under-report and
+the rest over-report; no shipped pack uses any of them, and an author who needs
+one declares the helper by hand.
 
 `TestValidatePackScriptHelperBinaries` pins the fixtures: an undeclared helper
 in a packaged script fires, a declared one passes, a commented mention alone
 does not fire, a commented mention beside a real call still does, a name inside
 an identifier (`jq_filter=`) is not a call, and an inline `-c` program is read
-like a script. `TestScriptHelperBinaryLintCoversTheShippedCatalog` runs the
-check over every shipped pack and then, with the declarations ignored, asserts
-the detector still attributes jq to all 28 packs that run it — a check that
-detected nothing would pass the catalog too.
+like a script. Command position has its own rows on both sides — a quoted
+diagnostic argument, a bare diagnostic argument and foreign filter text are not
+calls; a substitution inside a double-quoted word, a quoted command word, an
+assignment-prefixed call and a call after `if !` are.
+`TestScriptHelperBinaryLintCoversTheShippedCatalog` runs the check over every
+shipped pack and then, with the declarations ignored, asserts the detector still
+attributes jq to all 28 packs that run it — a check that detected nothing would
+pass the catalog too.
 
 Related references:
 [jq filters stay on core jq](packs-jq-filters-stay-on-core-jq.md) and

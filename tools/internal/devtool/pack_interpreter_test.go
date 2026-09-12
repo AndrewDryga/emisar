@@ -204,6 +204,65 @@ func TestValidatePackScriptHelperBinaries(t *testing.T) {
 			action:   jqInlineAction,
 			wantFail: true,
 		},
+		// The diagnostic an action prints when a helper is MISSING is the one
+		// place the name is guaranteed to appear without being run, quoted or
+		// bare. Both spellings invoke only printf.
+		{
+			name:     "a quoted diagnostic argument naming the helper is not a call",
+			declared: []string{"bash"},
+			action:   jqScriptAction,
+			script: "#!/bin/bash\nset -euo pipefail\n" +
+				"if ! command -v docker >/dev/null; then\n" +
+				"  printf '%s\\n' \"jq unavailable\" >&2\n  exit 1\nfi\n" +
+				"docker ps --format '{{.Names}}'\n",
+		},
+		{
+			name:     "a bare argument naming the helper is not a call",
+			declared: []string{"bash"},
+			action:   jqScriptAction,
+			script:   "#!/bin/bash\nset -euo pipefail\nprintf 'missing: %s\\n' jq >&2\nexit 1\n",
+		},
+		// A command substitution inside a double-quoted word is a real command
+		// scope, so attribution has to survive it — this is what a fix that
+		// skipped every double-quoted span would lose.
+		{
+			name:     "a command substitution inside a double-quoted word still fires",
+			declared: []string{"bash"},
+			action:   jqScriptAction,
+			script: "#!/bin/bash\nset -euo pipefail\n" +
+				"detail=\"$(jq -r '.error.message' \"$response\")\"\nprintf '%s\\n' \"$detail\"\n",
+			wantFail: true,
+		},
+		{
+			name:     "a quoted command word is still a call",
+			declared: []string{"bash"},
+			action:   jqScriptAction,
+			script:   "#!/bin/bash\nset -euo pipefail\ndocker ps --format json | 'jq' -ce .\n",
+			wantFail: true,
+		},
+		{
+			name:     "a call led by an assignment prefix is still a call",
+			declared: []string{"bash"},
+			action:   jqScriptAction,
+			script:   "#!/bin/bash\nset -euo pipefail\nJQ_COLORS=0 jq -nce '{ok: true}'\n",
+			wantFail: true,
+		},
+		{
+			name:     "a call after a shell keyword is still a call",
+			declared: []string{"bash"},
+			action:   jqScriptAction,
+			script:   "#!/bin/bash\nset -euo pipefail\nif ! jq -e . plan.json; then exit 1; fi\n",
+			wantFail: true,
+		},
+		// The name inside a single-quoted jq filter, and the filter text the
+		// catalog actually ships, are not invocations.
+		{
+			name:     "filter text naming the helper is not a call",
+			declared: []string{"bash"},
+			action:   jqScriptAction,
+			script: "#!/bin/bash\nset -euo pipefail\n" +
+				"awk '{print $1}' hosts.txt | sed 's/jq/json/'\n",
+		},
 	}
 
 	for _, test := range tests {
