@@ -227,6 +227,7 @@ defmodule EmisarWeb.MemberRoleLive do
                 @form[:runner_access_mode].value in ["all", "restricted"] and
                   @role not in ["billing_manager", "directory"]
               }
+              eyebrow={if @role == "directory", do: nil, else: "Runners"}
             >
               <:card
                 :if={@role == "directory"}

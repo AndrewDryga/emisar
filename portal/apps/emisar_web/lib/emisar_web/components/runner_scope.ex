@@ -270,6 +270,10 @@ defmodule EmisarWeb.RunnerScope do
     default: true,
     doc: "false where the runner choice itself rules packs out (a directory or billing-only role)"
 
+  attr :eyebrow, :string,
+    default: "Runners",
+    doc: "names the runner decision; nil omits it where the choices aren't runners"
+
   slot :card, doc: "override the three standard choices (the role editor does)" do
     attr :value, :string, required: true
     attr :title, :string, required: true
@@ -277,8 +281,11 @@ defmodule EmisarWeb.RunnerScope do
 
   def access_scope_fields(assigns) do
     ~H"""
-    <div class="mt-2">
-      <.label variant={:eyebrow}>Runners</.label>
+    <%!-- Named for the same reason the pack half is, and dropped by the caller
+          whose cards are not a runner choice at all: an eyebrow that misnames
+          the decision under it is worse than the legend standing alone. --%>
+    <div :if={@eyebrow} class="mt-2">
+      <.label variant={:eyebrow}>{@eyebrow}</.label>
     </div>
     <div class="mt-2">
       <.choice_cards

@@ -55,6 +55,7 @@ defmodule EmisarWeb.MemberRoleLiveTest do
       live(conn, ~p"/app/#{account}/settings/team/#{target.id}/change-role/admin")
 
     refute has_element?(view, "input[type='radio'][checked]")
+    assert has_element?(view, "#owner-role-form label", "Runners")
     html = view |> form("#owner-role-form") |> render_submit()
     assert html =~ "Choose their runner access"
     assert Repo.reload!(target).role == :owner
@@ -105,6 +106,8 @@ defmodule EmisarWeb.MemberRoleLiveTest do
     assert has_element?(view, "input[type='radio'][value='directory']")
     refute has_element?(view, "input[type='radio'][value='all']")
     assert render(view) =~ "Directory sync will set their role and access"
+    # The one card is not a runner choice, so no eyebrow may claim it is.
+    refute has_element?(view, "#owner-role-form label", "Runners")
     assert Accounts.subscribe_account_team(account.id) == :ok
 
     view
