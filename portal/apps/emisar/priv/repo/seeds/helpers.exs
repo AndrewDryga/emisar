@@ -198,6 +198,14 @@ defmodule Emisar.Seeds.Helpers do
     end)
   end
 
+  @doc "One shipped action descriptor, by id, from the pack's current baseline."
+  def baseline_action_descriptor(pack_id, action_id) do
+    pack_id
+    |> baseline_action_descriptors()
+    |> Enum.find(&(&1["id"] == action_id)) ||
+      raise "missing shipped action #{action_id} in pack #{pack_id}"
+  end
+
   @doc "Aggregates stream chunks so terminal byte counts read believably."
   def chunks_bytes(chunks, stream) do
     chunks

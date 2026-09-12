@@ -211,20 +211,10 @@ defmodule Emisar.Seeds.Fleet do
       }),
       # The unit lifecycle lives in linux-core, so the API host carries that
       # pack's restart beside the systemd-deep reads; the pending approval and
-      # the old cancellation in the run history both dispatch it.
-      Helpers.action_descriptor("linux-core", %{
-        "id" => "linux.systemctl_restart",
-        "title" => "Restart a systemd unit",
-        "risk" => "high",
-        "description" =>
-          "Restart a named systemd unit. Clients see an outage of seconds to " <>
-            "minutes depending on the unit; prefer diagnosis first.",
-        "side_effects" => [
-          "Stops the named unit, then starts it.",
-          "Disconnects existing clients of the unit."
-        ],
-        "args" => [%{"name" => "unit", "type" => "string", "required" => true}]
-      })
+      # the old cancellation in the run history both dispatch it. It advertises
+      # the shipped descriptor, so the run page shows the pack's own description
+      # and every side effect, exactly as a live runner would.
+      Helpers.baseline_action_descriptor("linux-core", "linux.systemctl_restart")
     ]
   end
 
