@@ -530,8 +530,8 @@ site — emerald, type, semantics, crafted detail — while staying a calm tool.
    with the `brand` equivalent. There is **no** indigo in the target system.
 2. **Green semantic: `emerald-*` → `brand-*`.** Unify the success/pass/connected/
    approved/published green onto `brand` (`status_badge`, `button` primary
-   `bg-emerald-500 → bg-brand-500`, `notice` success, `summary_dot(:emerald)`,
-   menu/icon-button "success", the auth-layout check bullets). `brand-400 ≈
+   `bg-emerald-500 → bg-brand-500`, `callout` `tone={:brand}`, `menu_item`
+   `tone={:brand}`, the `auth_layout` check bullets). `brand-400 ≈
    emerald-400`, so it's visually safe and kills the two-greens smell.
 3. **Keep** `amber` (pending/caution), `rose` (danger/error), `zinc` (neutral)
    — they're already the target. Keep the global focus ring + selection.
@@ -542,9 +542,10 @@ site — emerald, type, semantics, crafted detail — while staying a calm tool.
 ### 7.2 Component craft pass (the "feels like the same team" work)
 Apply §3 (tokens, radius, hit areas, motion) and the `design-interface-polish`
 detail principles on the console shells, with calm row hover and handled
-empty/loading/error/offline states. Reuse the shared `stat`/
-`status_badge`/`chip`/`button`/`LiveTable` everywhere — replace any hand-rolled
-card/chip/stat with the shared primitive.
+empty/loading/error/offline states. Reuse the shared `status_badge`/`chip`/
+`button`/`count_badge`/`live_table` everywhere — replace a hand-rolled chip or
+count with the shared primitive. There is no shared `stat` and no `card`: a
+hand-rolled island gets DELETED, not swapped (`Emisar.Checks.NoIslandContainers`).
 
 ### 7.3 Priority order (highest-traffic operator surfaces first)
 1. App shell / nav (`<.brand>` already new) + dashboard (CON-001).

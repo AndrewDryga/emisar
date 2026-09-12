@@ -271,11 +271,17 @@ Preserve identifiers, brand names, and acronyms; the explicit `upcase` status
 variant remains an intentional exception. Set the copy correctly rather than
 applying CSS capitalization to arbitrary badge contents.
 
-**The stat trio** — three count/number components that look alike and get confused.
+**The stat trio** — three count/number shapes that look alike and get confused.
 Pick by *where it lives*:
 
-- **`<.stat label= value= hint=>`** — a dashboard **KPI tile**: a big `text-3xl`
-  number in its own `<.card>`. For the dashboard's top metrics grid only.
+- **`<.fleet_posture counts=>`** (`DomainComponents`) — the naked **posture line
+  under a LIST page title**: a `<.status_dot>` plus a count per state, rendering
+  only the states that are non-zero.
+- **The dashboard's big KPI figure is `pillar`, a `defp` private to
+  `dashboard_live.ex`** — naked display typography on the canvas, deliberately
+  unboxed. It is NOT a shared component: there is no `<.stat>`, and no `<.card>`
+  to put one in (both deleted — see the Canvas section row above). Don't reach
+  for either from another page, and don't hand-roll a substitute.
 - **`<.meta_strip cols=>` + `<.meta_field label=>`** — the bordered horizontal
   **key-value strip under a DETAIL page title** (a run's runner / risk / pack / time).
   Uppercase label over value, not a count.
