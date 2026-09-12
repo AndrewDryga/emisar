@@ -51,7 +51,9 @@ Fix the step.
 inherit `errexit` into `$( )` unless `shopt -s inherit_errexit` is set, so a
 helper the script calls as `services=$(bounded_list --services)` runs with the
 floor effectively off inside it — `bash -c 'set -euo pipefail; o=$( false; echo
-in )'` prints `in` and exits 0. There a bare `value=$(src)` ends nothing: the
+in ); printf "%s\n" "$o"'` prints `in` and exits 0 — the replay of `$o` is what
+shows the `false` that should have ended the script ending nothing at all.
+There a bare `value=$(src)` ends nothing: the
 source's failure is discarded, the function carries on with an empty value, and
 the action reports a successful read of nothing. That is this rule's false
 all-clear reintroduced *inside* a script that set the floor correctly on line 2,

@@ -3,6 +3,13 @@ set -euo pipefail
 
 file=$1
 readonly max_section_bytes=65536
+# The reader below ends every capture with this byte and bounded_section strips
+# it again. It exists because command substitution strips TRAILING NEWLINES:
+# without a non-newline byte at the end, a 65,537-byte section whose last byte
+# is a newline arrives as 65,536 and passes the bound it just broke. A control
+# byte is used because no Compose name ends in one, and the summary below
+# collapses controls anyway if one ever did.
+readonly capture_sentinel=$'\x1f'
 
 compose_config() {
   docker compose -f "$file" --profile '*' config \
@@ -13,17 +20,47 @@ compose_config_json() {
   compose_config --no-normalize --format json
 }
 
+# Keep one byte past the bound and throw the rest away, so what this script
+# holds per section is fixed whatever the operator's file produces. Capturing a
+# section whole instead makes `docker compose config` on a large stack the size
+# of this shell's heap: a 256 MiB service section ends the action on bash's own
+# `xrealloc: cannot allocate` rather than the authored message below.
+#
+# `cat >/dev/null` is the load-bearing half. `head -c` on its own closes the
+# pipe at its limit and SIGPIPEs the producer, which `pipefail` then reports as
+# a failed run of a parse that in fact succeeded — the bare 141 this action was
+# filed for. Draining lets the producer reach its own exit, so the status the
+# pipeline returns is the producer's real one. `head -c` passes on no more than
+# it is asked for, and whatever it read beyond the bound is over the bound
+# anyway, so the drain's completeness only has to keep the producer writing.
+retain_bounded_section() {
+  head -c "$((max_section_bytes + 1))"
+  cat >/dev/null
+  printf '%s' "$capture_sentinel"
+}
+
+# The size is measured in BYTES, by `wc -c`, because the bound is bytes.
+# `${#value}` counts CHARACTERS, so under any UTF-8 locale a section of
+# multibyte names passes a bound it exceeds by up to four times.
 bounded_section() {
-  local value=$1
-  ((${#value} <= max_section_bytes)) || {
+  local captured=$1
+  local value=${captured%"$capture_sentinel"}
+  # The marker is retain_bounded_section's half of the contract; without it the
+  # measurement below is off by whatever the capture lost, so refuse instead.
+  [ "$value" != "$captured" ] || {
+    printf '%s\n' "Compose config summary section lost its capture marker" >&2
+    exit 1
+  }
+  local bytes
+  bytes=$(printf '%s' "$value" | wc -c) || exit $?
+  ((bytes <= max_section_bytes)) || {
     printf '%s\n' "Compose config summary section exceeded 64 KiB" >&2
     exit 1
   }
   printf '%s' "$value"
 }
 
-# Each helper below captures its section whole and takes the source's status with
-# `|| exit $?`. Both halves are load-bearing.
+# Each helper below takes its whole pipeline's status in place with `|| exit $?`.
 #
 # `set -e` is NOT inherited into a command substitution — and every call here is
 # one, `services=$(bounded_list --services)` — so a bare assignment leaves a
@@ -31,23 +68,19 @@ bounded_section() {
 # it passes the size check, and the action reports `valid: true` with an empty
 # list and exit 0. That is the false all-clear
 # `.agent/kb/rules/packs-pipelines-fail-on-source-errors.md` is about, on a read
-# an operator uses to decide whether a stack parses.
-#
-# And no `head -c`: it exits at its limit and SIGPIPEs the producer, which
-# `pipefail` reports as a failed run of a successful parse, and it clips the
-# value to one byte past the bound, so the check above could only ever see that
-# clip rather than the section's real size.
+# an operator uses to decide whether a stack parses. With `pipefail`, the same
+# `|| exit $?` also carries a failure of `jq` or of the reader itself.
 bounded_list() {
-  local value
-  value=$(compose_config "$1") || exit $?
-  bounded_section "$value"
+  local captured
+  captured=$(compose_config "$1" | retain_bounded_section) || exit $?
+  bounded_section "$captured"
 }
 
 bounded_json_list() {
   local filter=$1
-  local value
-  value=$(compose_config_json | jq -r "$filter") || exit $?
-  bounded_section "$value"
+  local captured
+  captured=$(compose_config_json | jq -r "$filter" | retain_bounded_section) || exit $?
+  bounded_section "$captured"
 }
 
 # Parse the complete file first, without resolving environment or interpolation.
