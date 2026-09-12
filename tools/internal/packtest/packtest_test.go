@@ -267,17 +267,74 @@ func TestRunStepRetriesAtTheConfiguredDeadline(t *testing.T) {
 	}
 }
 
+// TestExecuteTimesOutHungCommands pins the deadline as a real bound on return,
+// not just as the text of the error. The `sleep & wait` shape is the one that
+// used to break it: a bytes.Buffer stdout is an OS pipe the forked `sleep`
+// inherits, so killing the direct shell left Wait blocked on an EOF the
+// descendant owned and a 100ms deadline returned after 2.0s.
 func TestExecuteTimesOutHungCommands(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("fixture executable is POSIX shell")
 	}
 	previous := commandTimeout
-	commandTimeout = 10 * time.Millisecond
+	commandTimeout = 100 * time.Millisecond
 	t.Cleanup(func() { commandTimeout = previous })
 
-	_, err := execute([]string{"/bin/sh", "-c", "sleep 1"}, os.Environ())
-	if err == nil || !strings.Contains(err.Error(), "command timed out after 10ms") {
-		t.Fatalf("execute error = %v", err)
+	for _, test := range []struct {
+		name    string
+		program string
+	}{
+		{"direct child hangs", "sleep 5"},
+		{"descendant inherits the output pipes", "sleep 5 & wait"},
+		{"descendant is a grandchild", "/bin/sh -c 'sleep 5' & wait"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			start := time.Now()
+			result, err := execute([]string{"/bin/sh", "-c", test.program}, os.Environ())
+			elapsed := time.Since(start)
+
+			if err == nil || !strings.Contains(err.Error(), "command timed out after 100ms") {
+				t.Fatalf("execute error = %v", err)
+			}
+			// The command it timed out on sleeps 5s. A generous bound still
+			// separates "the deadline returned" from "the descendant did".
+			if elapsed > 2*time.Second {
+				t.Fatalf("execute returned after %s, deadline was %s", elapsed, commandTimeout)
+			}
+			if result.stdout != "" || result.stderr != "" {
+				t.Fatalf("partial diagnostics = %q / %q", result.stdout, result.stderr)
+			}
+		})
+	}
+}
+
+// TestExecuteKeepsOutputAndExitCodesUnderContainment guards the compatibility
+// half: every command now runs in its own process group with a WaitDelay, and
+// none of that may change what an ordinary or failing command reports.
+func TestExecuteKeepsOutputAndExitCodesUnderContainment(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("fixture executable is POSIX shell")
+	}
+	for _, test := range []struct {
+		name     string
+		program  string
+		exitCode int
+		stdout   string
+		stderr   string
+	}{
+		{"success", "printf ready", 0, "ready", ""},
+		{"failure keeps both streams", "printf out; printf err >&2; exit 3", 3, "out", "err"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			result, err := execute([]string{"/bin/sh", "-c", test.program}, os.Environ())
+			if err != nil {
+				t.Fatalf("execute error = %v", err)
+			}
+			if result.exitCode != test.exitCode || result.stdout != test.stdout || result.stderr != test.stderr {
+				t.Fatalf("execute = exit %d, stdout %q, stderr %q; want exit %d, stdout %q, stderr %q",
+					result.exitCode, result.stdout, result.stderr, test.exitCode, test.stdout, test.stderr)
+			}
+		})
 	}
 }
 

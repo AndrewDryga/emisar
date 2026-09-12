@@ -26,6 +26,15 @@ import (
 
 var commandTimeout = 30 * time.Second
 
+// waitDelay bounds how long Run keeps waiting on the command's output pipes
+// once the command itself is finished or cancelled. containCommand removes the
+// ordinary descendant with its leader, so this is the backstop for one that
+// left the group (setsid, its own Setpgid) and still holds the inherited
+// stdout/stderr: without it Wait blocks on an EOF that process owns, and the
+// deadline bounds nothing. It is not a second timeout knob — packs cannot set
+// it, and on the containment path it is never reached.
+var waitDelay = 5 * time.Second
+
 type Expectation struct {
 	Status            string         `yaml:"status,omitempty"`
 	Exit              []int          `yaml:"exit,omitempty"`
@@ -1331,11 +1340,30 @@ func execute(argv, env []string) (commandResult, error) {
 	defer cancel()
 	command := exec.CommandContext(ctx, argv[0], argv[1:]...)
 	command.Env = env
+	// A bytes.Buffer makes os/exec hand the child a real OS pipe and copy from
+	// it, and every process the command forks inherits that pipe. So the
+	// deadline on its own does not bound Run: it kills the direct child, then
+	// Wait blocks on an EOF a surviving descendant still owns. Measured, a
+	// 100ms deadline on `/bin/sh -c 'sleep 2 & wait'` returned after 2.0s.
+	// containCommand makes the deadline reach the descendant, and waitDelay
+	// caps the drain if one escaped the group.
 	var stdout, stderr bytes.Buffer
 	command.Stdout = &stdout
 	command.Stderr = &stderr
+	containCommand(command)
+	command.WaitDelay = waitDelay
 	err := command.Run()
 	if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+		// os/exec only calls Cancel while it is still watching the context, and
+		// it stops watching as soon as the leader is reaped. A command whose
+		// shell exits before the deadline while a descendant keeps the output
+		// pipes open therefore blows the deadline with nothing ever signalling
+		// the group. Signal it here as well — the case that timed out is about
+		// to have its disposable fixture torn down and re-arranged under it.
+		// Only on this path: an arrange step that deliberately backgrounds a
+		// helper with its output redirected to a file returns inside the
+		// deadline, and that helper is meant to outlive the step.
+		stopCommandGroup(command)
 		return commandResult{stdout: stdout.String(), stderr: stderr.String()},
 			fmt.Errorf("command timed out after %s: %s", commandTimeout, strings.Join(argv, " "))
 	}
@@ -1343,6 +1371,15 @@ func execute(argv, env []string) (commandResult, error) {
 	if err != nil {
 		var exitErr *exec.ExitError
 		if !errors.As(err, &exitErr) {
+			// The command finished inside the deadline but something it
+			// spawned kept its output open past waitDelay. Report it as the
+			// harness problem it is, with whatever was captured first, rather
+			// than as os/exec's bare "WaitDelay expired".
+			if errors.Is(err, exec.ErrWaitDelay) {
+				return commandResult{stdout: stdout.String(), stderr: stderr.String()},
+					fmt.Errorf("command exited but a descendant held its output past %s: %s",
+						waitDelay, strings.Join(argv, " "))
+			}
 			return commandResult{}, err
 		}
 		exitCode = exitErr.ExitCode()
