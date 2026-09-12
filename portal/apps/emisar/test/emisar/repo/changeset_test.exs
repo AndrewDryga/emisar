@@ -1,7 +1,8 @@
 defmodule Emisar.Repo.ChangesetTest do
   @moduledoc """
   The shared `Emisar.Repo.Changeset` helpers, exercised on schemaless changesets
-  to keep them pure: `put_default_value/3` (fill a field only if it's unset — the
+  to keep them pure: `castable/1` (normalize an input schema's attrs for
+  `cast/3`), `put_default_value/3` (fill a field only if it's unset — the
   literal, lazy 0-arity fn, changeset-aware 1-arity fn, and copy-from-another-
   field forms together) and `validate_json_size/3` (cap a serialized field size).
   """
@@ -15,6 +16,13 @@ defmodule Emisar.Repo.ChangesetTest do
   defp changeset(data \\ %{}) do
     base = %{name: nil, slug: nil, legal_name: nil}
     change({Map.merge(base, data), @types})
+  end
+
+  describe "castable/1" do
+    test "normalizes a keyword list and leaves either map shape alone" do
+      assert RepoChangeset.castable(hours: 24) == %{hours: 24}
+      assert RepoChangeset.castable(%{"hours" => "24"}) == %{"hours" => "24"}
+    end
   end
 
   describe "put_default_value/3" do

@@ -8,8 +8,8 @@ defmodule Emisar.Repo.Changeset do
   @doc """
   The map `cast/3` accepts, from either shape a context hands an input
   changeset: a string-keyed browser map, or the atom-keyed map / keyword
-  list a caller builds in code. Four one-field input schemas each carried
-  this pair of clauses.
+  list a caller builds in code. Four never-persisted input schemas each
+  carried this pair of clauses.
   """
   @spec castable(map() | keyword()) :: map()
   def castable(attrs) when is_list(attrs), do: Map.new(attrs)
