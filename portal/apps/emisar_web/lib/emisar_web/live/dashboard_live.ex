@@ -58,7 +58,7 @@ defmodule EmisarWeb.DashboardLive do
     socket =
       socket.assigns.pending_refreshes
       |> Enum.reduce(socket, &refresh_domain/2)
-      |> assign(:reload_scheduled?, false)
+      |> LiveTable.reload_drained()
       |> assign(:pending_refreshes, [])
       |> assign_current_setup_state()
 
