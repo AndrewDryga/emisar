@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 	"syscall"
+	"time"
 )
 
 type runnerCheck struct {
@@ -60,6 +61,7 @@ func runnerChecks() []runnerCheck {
 		{"binary installation rollback", true, runnerInstallRollback},
 		{"binary activation transaction", false, runnerActivationTransaction},
 		{"service stays stopped when rollback cannot restore", false, runnerFailedRestoreService},
+		{"failed service stop reported truthfully", false, runnerFailedServiceStopReport},
 		{"signal-interrupted rollback", false, runnerSignalRollback},
 		{"installed pack repair", false, runnerPackRepair},
 		{"systemd activation", false, runnerSystemdActive},
@@ -862,12 +864,33 @@ exec /bin/mv "$@"
 	// which stubs `rm` because that path deletes a real /etc unit file. Here
 	// rollback_service no-ops and `rm` stays the real one, cleaning only the
 	// staging directory.
+	// The stubs record every service command and answer the state queries
+	// consistently with what they were asked to do: a manager that claimed the
+	// unit was still loaded after its own successful bootout would make
+	// stop_failed_service report the failure it now reports honestly.
 	const body = `
 die() { printf 'DIE: %s\n' "$*" >&2; exit 1; }
 warn() { printf 'WARN: %s\n' "$*" >&2; }
 log() { :; }
-systemctl() { printf 'systemctl %s\n' "$*" >>"$TRACE"; }
-launchctl() { printf 'launchctl %s\n' "$*" >>"$TRACE"; }
+systemctl() {
+  printf 'systemctl %s\n' "$*" >>"$TRACE"
+  case "$1" in
+    is-active) if [ -e "$TRACE.stopped" ]; then echo inactive; return 3; fi; echo active ;;
+    stop) : >"$TRACE.stopped" ;;
+  esac
+  return 0
+}
+launchctl() {
+  printf 'launchctl %s\n' "$*" >>"$TRACE"
+  case "$1" in
+    print)
+      if [ "$2" = system ]; then return 0; fi
+      if [ -e "$TRACE.stopped" ]; then return 113; fi
+      ;;
+    bootout) : >"$TRACE.stopped" ;;
+  esac
+  return 0
+}
 restore_enrollment_state() { :; }
 rollback_install_receipt() { :; }
 STAGE_DIR=""
@@ -884,10 +907,7 @@ INSTALL_TRANSACTION=1
 activate_binary
 exit 37
 `
-	names := []string{
-		"stage_binary", "activate_binary", "rollback_binary", "cleanup_stage_dir",
-		"restore_previous_service", "stop_failed_service", "rollback_service", "finish_install",
-	}
+	names := failedInstallFunctions
 	action := map[string][2]string{
 		"systemd": {"systemctl start emisar.service", "systemctl stop emisar.service"},
 		"launchd": {
@@ -1037,6 +1057,422 @@ echo "emisar version 9.9.9"
 		}
 	}
 	return nil
+}
+
+// failedInstallFunctions is the real cleanup path a failed installation runs:
+// stage, activate, roll back, then the EXIT trap deciding what to do with the
+// service. Both failed-rollback checks drive exactly these.
+var failedInstallFunctions = []string{
+	"stage_binary", "activate_binary", "rollback_binary", "cleanup_stage_dir",
+	"restore_previous_service", "stop_failed_service", "report_unstopped_service",
+	"rollback_service", "finish_install",
+}
+
+// stop_failed_service keeps the unit down because BIN_DIR/emisar is the build
+// whose installation just failed. The stop itself can fail — an unreachable
+// manager, a unit that will not stop — and the helper used to print "keeping
+// emisar.service stopped" BEFORE running the command, then discard the failure
+// and the manager's reason for it with `>/dev/null 2>&1 || true`. The operator
+// read that the failed runner was down while it kept serving.
+//
+// So each claim must repeat what the manager answered, and the four outcomes
+// must stay apart: a confirmed stop, a unit that is genuinely absent (which is
+// what rollback_service leaves behind for a unit this run created), a manager
+// that cannot answer, and a service still running. Unknown is not absence.
+//
+// Every case drives the real staging, activation, rollback and EXIT trap
+// against a fake service manager that actually starts a process, so the
+// negative cases prove that process is still alive and never described as
+// stopped. Only mv, rm, systemctl and launchctl are faked: the fake rm records
+// the unit path instead of deleting it, so no host service, unit file or plist
+// is touched.
+func runnerFailedServiceStopReport(h *harness) error {
+	installer := h.repoPath("install.sh")
+	root := h.path("failed-stop")
+	fakeBin := filepath.Join(root, "fake-bin")
+	if err := h.mkdir(fakeBin); err != nil {
+		return err
+	}
+	// The fake service. It writes its own pid and clears it on SIGTERM, so
+	// "still running" is a live process, not a leftover file. Its output goes
+	// to a file: a background child holding the harness pipe would keep
+	// CombinedOutput waiting for a service that never exits.
+	serviceBin := filepath.Join(root, "fake-service")
+	if err := fakeExecutable(serviceBin, `
+trap 'rm -f "$1"; exit 0' TERM INT
+printf '%s\n' "$$" >"$1"
+while true; do sleep 0.1; done
+`); err != nil {
+		return err
+	}
+	if err := fakeExecutable(filepath.Join(fakeBin, "mv"), `
+case "$*" in *emisar.previous*) echo "mv: simulated failure" >&2; exit 1;; esac
+exec /bin/mv "$@"
+`); err != nil {
+		return err
+	}
+	// rollback_service deletes the unit it created. Record that path and mark
+	// the unit gone instead of removing a real file; everything else — the
+	// staging directory this cleanup also removes — is a real rm.
+	if err := fakeExecutable(filepath.Join(fakeBin, "rm"), `
+for argument in "$@"; do
+  case "${argument}" in
+    /etc/*|/Library/*)
+      printf 'rm %s\n' "$*" >>"${FAKE_STATE}/trace"
+      : >"${FAKE_STATE}/unit-removed"
+      exit 0
+      ;;
+  esac
+done
+exec /bin/rm "$@"
+`); err != nil {
+		return err
+	}
+	const managerCommon = `
+pidfile="${FAKE_STATE}/pid"
+alive() { [ -f "${pidfile}" ] && kill -0 "$(cat "${pidfile}")" 2>/dev/null; }
+start_fake() { "${SERVICE_BIN}" "${pidfile}" >>"${FAKE_STATE}/service.log" 2>&1 </dev/null & }
+stop_fake() {
+  [ -f "${pidfile}" ] || return 0
+  kill "$(cat "${pidfile}")" 2>/dev/null || :
+  for _ in 1 2 3 4 5 6 7 8 9 10; do [ -f "${pidfile}" ] || break; sleep 0.2; done
+}
+gone() { [ "${FAKE_MODE}" = absent ] || [ -e "${FAKE_STATE}/unit-removed" ]; }
+printf '%s %s\n' "${0##*/}" "$*" >>"${FAKE_STATE}/trace"
+`
+	if err := fakeExecutable(filepath.Join(fakeBin, "systemctl"), managerCommon+`
+if [ "${FAKE_MODE}" = unavailable ]; then
+  echo "Failed to connect to bus: No such file or directory" >&2
+  exit 1
+fi
+if gone; then
+  case "$1" in
+    is-active) echo unknown; exit 4 ;;
+    stop) echo "Failed to stop emisar.service: Unit emisar.service not loaded." >&2; exit 5 ;;
+  esac
+  exit 0
+fi
+case "$1" in
+  is-active) if alive; then echo active; exit 0; fi; echo inactive; exit 3 ;;
+  start|restart) start_fake; exit 0 ;;
+  disable) case "$*" in *--now*) stop_fake ;; esac; exit 0 ;;
+  stop)
+    if [ "${FAKE_STOP_FAILS}" = 1 ]; then
+      echo "Failed to stop emisar.service: Connection timed out" >&2
+      exit 1
+    fi
+    stop_fake
+    ;;
+esac
+exit 0
+`); err != nil {
+		return err
+	}
+	if err := fakeExecutable(filepath.Join(fakeBin, "launchctl"), managerCommon+`
+if [ "${FAKE_MODE}" = unavailable ]; then
+  echo "Could not connect to the launchd system domain: 5: Input/output error" >&2
+  exit 1
+fi
+case "$1" in
+  print)
+    if [ "$2" = system ]; then exit 0; fi
+    if gone || ! alive; then exit 113; fi
+    exit 0
+    ;;
+  bootstrap) start_fake; exit 0 ;;
+  bootout)
+    if [ "${FAKE_STOP_FAILS}" = 1 ]; then
+      echo "Boot-out failed: 5: Input/output error" >&2
+      exit 5
+    fi
+    if gone || ! alive; then
+      echo "Boot-out failed: 3: No such process" >&2
+      exit 3
+    fi
+    stop_fake
+    ;;
+esac
+exit 0
+`); err != nil {
+		return err
+	}
+
+	// SERVICE_WAS_RUNNING=1 throughout: restore_previous_service would restart
+	// the failed build if finish_install took the wrong branch, so the start
+	// count below is a real refusal, not a vacuous one. START names how the
+	// service this run leaves behind was started — through the manager, or
+	// directly, which is the only way to have one running while the manager
+	// cannot answer.
+	const body = `
+die() { printf 'DIE: %s\n' "$*" >&2; exit 1; }
+warn() { printf 'WARN: %s\n' "$*" >&2; }
+log() { printf 'LOG: %s\n' "$*" >&2; }
+restore_enrollment_state() { :; }
+rollback_install_receipt() { :; }
+STAGE_DIR=""
+STAGED_BINARY=""
+BACKUP_BINARY=""
+BINARY_ACTIVATED=0
+BINARY_RESTORE_FAILED=0
+SERVICE_UNIT_CREATED="${UNIT_CREATED}"
+INSTALL_TRANSACTION=0
+tmp=""
+trap 'finish_install $?' EXIT
+stage_binary "$RELEASE"
+INSTALL_TRANSACTION=1
+activate_binary
+case "${START}" in
+  manager)
+    case "${INIT}" in
+      systemd) systemctl start emisar.service ;;
+      launchd) launchctl bootstrap system /Library/LaunchDaemons/com.emisar.runner.plist ;;
+    esac
+    ;;
+  direct) "${SERVICE_BIN}" "${FAKE_STATE}/pid" >>"${FAKE_STATE}/service.log" 2>&1 </dev/null & ;;
+esac
+exit 37
+`
+
+	for _, testCase := range []struct {
+		name        string
+		init        string
+		mode        string
+		stopFails   bool
+		start       string
+		unitCreated bool
+		running     bool
+		wants       []string
+		forbids     []string
+	}{
+		{
+			name: "systemd-stop-fails", init: "systemd", mode: "normal", stopFails: true,
+			start: "manager", running: true,
+			wants: []string{
+				"emisar.service is still active",
+				"Failed to stop emisar.service: Connection timed out",
+				"MAY STILL BE RUNNING",
+				"stop it before anything else: systemctl stop emisar.service",
+			},
+			forbids: []string{"keeping emisar.service stopped"},
+		},
+		{
+			name: "launchd-bootout-fails", init: "launchd", mode: "normal", stopFails: true,
+			start: "manager", running: true,
+			wants: []string{
+				"com.emisar.runner is still loaded",
+				"Boot-out failed: 5: Input/output error",
+				"MAY STILL BE RUNNING",
+				"stop it before anything else: launchctl bootout system/com.emisar.runner",
+			},
+			forbids: []string{"keeping com.emisar.runner unloaded"},
+		},
+		{
+			name: "systemd-stop-confirmed", init: "systemd", mode: "normal", start: "manager",
+			wants:   []string{"keeping emisar.service stopped: it would run the binary that failed to install"},
+			forbids: []string{"MAY STILL BE RUNNING", "is still active"},
+		},
+		{
+			name: "launchd-bootout-confirmed", init: "launchd", mode: "normal", start: "manager",
+			wants:   []string{"keeping com.emisar.runner unloaded: it would run the binary that failed to install"},
+			forbids: []string{"MAY STILL BE RUNNING", "is still loaded"},
+		},
+		{
+			name: "systemd-unit-absent", init: "systemd", mode: "absent",
+			wants:   []string{"no emisar.service unit on this host to stop"},
+			forbids: []string{"MAY STILL BE RUNNING", "keeping emisar.service stopped"},
+		},
+		{
+			name: "launchd-not-loaded", init: "launchd", mode: "absent",
+			wants:   []string{"no com.emisar.runner loaded on this host to unload"},
+			forbids: []string{"MAY STILL BE RUNNING", "keeping com.emisar.runner unloaded"},
+		},
+		{
+			name: "systemd-manager-unavailable", init: "systemd", mode: "unavailable",
+			start: "direct", running: true,
+			wants: []string{
+				"could not stop emisar.service, and systemd did not report its state",
+				"Failed to connect to bus: No such file or directory",
+				"MAY STILL BE RUNNING",
+			},
+			forbids: []string{"keeping emisar.service stopped", "no emisar.service unit on this host"},
+		},
+		{
+			name: "launchd-manager-unavailable", init: "launchd", mode: "unavailable",
+			start: "direct", running: true,
+			wants: []string{
+				"could not ask launchd whether com.emisar.runner is loaded",
+				"MAY STILL BE RUNNING",
+			},
+			forbids: []string{"keeping com.emisar.runner unloaded", "no com.emisar.runner loaded on this host"},
+		},
+		{
+			name: "systemd-new-unit-removed", init: "systemd", mode: "normal", start: "manager",
+			unitCreated: true,
+			wants: []string{
+				"removed the service unit this run created",
+				"no emisar.service unit on this host to stop",
+			},
+			forbids: []string{"MAY STILL BE RUNNING", "keeping emisar.service stopped"},
+		},
+		{
+			name: "launchd-new-plist-removed", init: "launchd", mode: "normal", start: "manager",
+			unitCreated: true,
+			wants: []string{
+				"removed the service unit this run created",
+				"no com.emisar.runner loaded on this host to unload",
+			},
+			forbids: []string{"MAY STILL BE RUNNING", "keeping com.emisar.runner unloaded"},
+		},
+	} {
+		caseRoot := filepath.Join(root, testCase.name)
+		bin := filepath.Join(caseRoot, "bin")
+		release := filepath.Join(caseRoot, "release")
+		state := filepath.Join(caseRoot, "state")
+		if err := h.mkdir(bin, release, state); err != nil {
+			return err
+		}
+		if err := fakeExecutable(filepath.Join(release, "emisar"), `
+echo "emisar version 9.9.9"
+`); err != nil {
+			return err
+		}
+		if err := writeFile(filepath.Join(bin, "emisar"), "old runner\n", 0o755); err != nil {
+			return err
+		}
+		stopFails := "0"
+		if testCase.stopFails {
+			stopFails = "1"
+		}
+		unitCreated := "0"
+		if testCase.unitCreated {
+			unitCreated = "1"
+		}
+		result := h.functions(installer, failedInstallFunctions, body, map[string]string{
+			"PATH":                fakeBin + string(os.PathListSeparator) + os.Getenv("PATH"),
+			"BIN_DIR":             bin,
+			"RELEASE":             release,
+			"VERSION":             "runner-v9.9.9",
+			"INIT":                testCase.init,
+			"SERVICE_WAS_RUNNING": "1",
+			"SERVICE_STARTED":     "0",
+			"UNIT_CREATED":        unitCreated,
+			"START":               testCase.start,
+			"FAKE_STATE":          state,
+			"FAKE_MODE":           testCase.mode,
+			"FAKE_STOP_FAILS":     stopFails,
+			"SERVICE_BIN":         serviceBin,
+		})
+		// Whatever the assertions find, no fake service outlives this check.
+		defer terminateFakeService(state)
+		output := string(result.output)
+		if code := exitCode(result.err); code != 37 {
+			return fmt.Errorf("%s: finish_install exited %d, want the installation's own 37:\n%s",
+				testCase.name, code, output)
+		}
+		for _, want := range testCase.wants {
+			if !strings.Contains(output, want) {
+				return fmt.Errorf("%s: the cleanup never reported %q:\n%s", testCase.name, want, output)
+			}
+		}
+		for _, forbidden := range testCase.forbids {
+			if strings.Contains(output, forbidden) {
+				return fmt.Errorf("%s: the cleanup claimed %q against what the manager answered:\n%s",
+					testCase.name, forbidden, output)
+			}
+		}
+		// The rollback is incomplete however the stop went, and the recovery
+		// copy must survive at exactly the path the operator is handed.
+		if !strings.Contains(output, "previous binary could NOT be restored") {
+			return fmt.Errorf("%s: the operator was not told the rollback is incomplete:\n%s",
+				testCase.name, output)
+		}
+		recovery := lineValue(output, "could not restore the previous binary from ")
+		if recovery == "" {
+			return fmt.Errorf("%s: the failed restoration named no recovery copy:\n%s", testCase.name, output)
+		}
+		if err := exactFile(recovery, "old runner\n"); err != nil {
+			return fmt.Errorf("%s: the recovery copy did not survive the failed rollback: %w", testCase.name, err)
+		}
+		if !strings.Contains(output, "mv -f '"+recovery+"' '"+filepath.Join(bin, "emisar")+"'") {
+			return fmt.Errorf("%s: the manual recovery guidance does not name the kept copy:\n%s",
+				testCase.name, output)
+		}
+		if err := containsFile(filepath.Join(bin, "emisar"), `echo "emisar version 9.9.9"`); err != nil {
+			return fmt.Errorf("%s: the failed rollback also removed the live binary: %w", testCase.name, err)
+		}
+
+		recorded, err := os.ReadFile(filepath.Join(state, "trace"))
+		if err != nil && !os.IsNotExist(err) {
+			return fmt.Errorf("%s: %w", testCase.name, err)
+		}
+		starts := 0
+		if testCase.start == "manager" {
+			starts = 1
+		}
+		command := "systemctl start emisar.service"
+		if testCase.init == "launchd" {
+			command = "launchctl bootstrap system /Library/LaunchDaemons/com.emisar.runner.plist"
+		}
+		if got := strings.Count(string(recorded), command); got != starts {
+			return fmt.Errorf("%s: %q ran %d times, want %d — the cleanup restarted the failed build:\n%s",
+				testCase.name, command, got, starts, recorded)
+		}
+		if testCase.unitCreated {
+			unit := "rm -f /etc/systemd/system/emisar.service"
+			if testCase.init == "launchd" {
+				unit = "rm -f /Library/LaunchDaemons/com.emisar.runner.plist"
+			}
+			if !strings.Contains(string(recorded), unit) {
+				return fmt.Errorf("%s: the unit this run created was not rolled back:\n%s",
+					testCase.name, recorded)
+			}
+		}
+
+		pid, alive := fakeServiceAlive(state)
+		if testCase.running {
+			if !alive {
+				return fmt.Errorf("%s: the fake service was gone, so the case never proved an unstopped runner is reported:\n%s",
+					testCase.name, output)
+			}
+			terminateFakeService(state)
+			continue
+		}
+		if alive {
+			return fmt.Errorf("%s: the service the cleanup reported as stopped is still running as pid %d:\n%s",
+				testCase.name, pid, output)
+		}
+	}
+	return nil
+}
+
+// fakeServiceAlive reports the fake service's pid and whether that process is
+// still there. The service clears its own pid file on SIGTERM, so a stale file
+// alone never reads as running.
+func fakeServiceAlive(state string) (int, bool) {
+	data, err := os.ReadFile(filepath.Join(state, "pid"))
+	if err != nil {
+		return 0, false
+	}
+	pid, err := strconv.Atoi(strings.TrimSpace(string(data)))
+	if err != nil || pid <= 0 {
+		return 0, false
+	}
+	return pid, syscall.Kill(pid, 0) == nil
+}
+
+func terminateFakeService(state string) {
+	pid, alive := fakeServiceAlive(state)
+	if !alive {
+		return
+	}
+	_ = syscall.Kill(pid, syscall.SIGTERM)
+	for attempt := 0; attempt < 20; attempt++ {
+		if _, alive := fakeServiceAlive(state); !alive {
+			return
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	_ = syscall.Kill(pid, syscall.SIGKILL)
 }
 
 // lineValue returns the rest of the line following label's first occurrence,

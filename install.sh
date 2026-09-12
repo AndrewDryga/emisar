@@ -1812,19 +1812,101 @@ restore_previous_service() {
 # upgrade, or leaving one this run already started, runs exactly that binary.
 # Stop unconditionally rather than only when this run stopped or started it —
 # the point is that the failed runner is not running when we exit, whatever
-# started it — and stay quiet about a unit rollback_service may already have
-# removed. --no-service (INIT=none) has no unit and falls through.
+# started it. --no-service (INIT=none) has no unit and falls through.
+#
+# Every line below is a claim the operator acts on, so each one repeats what the
+# service manager actually answered. Announcing the stop first and then running
+# it under `>/dev/null 2>&1 || true` told the operator the failed runner was
+# down whenever the stop failed — while it kept serving — and swallowed the
+# manager's reason for failing. The affirmative claim is now made only after a
+# stop the manager confirmed, or a state that says the unit is not running.
+# A unit rollback_service already removed is a known absence; a manager that
+# cannot answer is not absence, and is reported as the uncertainty it is.
 stop_failed_service() {
+  local state stop_out stop_rc
   case "${INIT}" in
     systemd)
-      warn "keeping emisar.service stopped: it would run the binary that failed to install"
-      systemctl stop emisar.service >/dev/null 2>&1 || true
+      # "unknown" is systemd's own answer for a unit it does not have — what
+      # rollback_service leaves behind when this run created the unit.
+      state="$(systemctl is-active emisar.service 2>/dev/null)" || :
+      if [ "${state}" = "unknown" ]; then
+        warn "no emisar.service unit on this host to stop"
+        return 0
+      fi
+      if stop_out="$(systemctl stop emisar.service 2>&1)"; then
+        stop_rc=0
+      else
+        stop_rc=$?
+      fi
+      state="$(systemctl is-active emisar.service 2>/dev/null)" || :
+      case "${state}" in
+        active | activating | reloading | deactivating)
+          report_unstopped_service "emisar.service is still ${state}" \
+            "systemctl stop emisar.service" "${stop_out}"
+          ;;
+        inactive | failed)
+          warn "keeping emisar.service stopped: it would run the binary that failed to install"
+          ;;
+        *)
+          if [ "${stop_rc}" -eq 0 ]; then
+            warn "keeping emisar.service stopped: it would run the binary that failed to install"
+          else
+            report_unstopped_service \
+              "could not stop emisar.service, and systemd did not report its state" \
+              "systemctl stop emisar.service" "${stop_out}"
+          fi
+          ;;
+      esac
       ;;
     launchd)
-      warn "keeping com.emisar.runner unloaded: it would run the binary that failed to install"
-      launchctl bootout system/com.emisar.runner >/dev/null 2>&1 || true
+      local label="system/com.emisar.runner"
+      # launchd has no is-active: the label either prints or it does not. A
+      # print that fails is absence only when the system domain itself still
+      # prints — otherwise it is launchctl unable to answer.
+      if ! launchctl print "${label}" >/dev/null 2>&1; then
+        if launchctl print system >/dev/null 2>&1; then
+          warn "no com.emisar.runner loaded on this host to unload"
+        else
+          report_unstopped_service \
+            "could not ask launchd whether com.emisar.runner is loaded" \
+            "launchctl bootout ${label}" ""
+        fi
+        return 0
+      fi
+      if stop_out="$(launchctl bootout "${label}" 2>&1)"; then
+        stop_rc=0
+      else
+        stop_rc=$?
+      fi
+      if launchctl print "${label}" >/dev/null 2>&1; then
+        report_unstopped_service "com.emisar.runner is still loaded" \
+          "launchctl bootout ${label}" "${stop_out}"
+      elif [ "${stop_rc}" -eq 0 ] || launchctl print system >/dev/null 2>&1; then
+        warn "keeping com.emisar.runner unloaded: it would run the binary that failed to install"
+      else
+        report_unstopped_service "could not confirm com.emisar.runner is unloaded" \
+          "launchctl bootout ${label}" "${stop_out}"
+      fi
       ;;
   esac
+}
+
+# The one conclusion the operator must not have to infer: the build that failed
+# to install may still be serving. Say so, keep the manager's own diagnostic —
+# it carries the reason the stop did not take — and hand over the single bounded
+# command that finishes the job. The unit is the only thing this installer owns,
+# so recovery never becomes a hunt for processes to kill.
+report_unstopped_service() {
+  local finding="$1" remedy="$2" diagnostic="$3" line
+  warn "${finding}"
+  if [ -n "${diagnostic}" ]; then
+    while IFS= read -r line; do
+      [ -n "${line}" ] || continue
+      warn "  ${line}"
+    done <<<"${diagnostic}"
+  fi
+  warn "the runner that failed to install MAY STILL BE RUNNING"
+  warn "stop it before anything else: ${remedy}"
 }
 
 # Undo a service unit THIS run created. Only for a fresh install: an upgrade's
