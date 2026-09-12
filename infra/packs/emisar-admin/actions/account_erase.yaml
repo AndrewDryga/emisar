@@ -30,5 +30,5 @@ execution:
     - "account_id={{ args.account_id }}"
     - "confirmation={{ args.confirmation }}"
     - "reason={{ args.reason }}"
-  timeout: 120s
+  timeout: 2m
 output: {parser: json, parser_required: true, max_stdout_bytes: 65536, max_stderr_bytes: 8192}
