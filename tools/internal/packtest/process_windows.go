@@ -11,5 +11,8 @@ import "os/exec"
 // deadline holds; what is missing is the containment, not the timeout.
 func containCommand(*exec.Cmd) {}
 
-// stopCommandGroup is a no-op for the same reason.
+// stopCommandGroup is a no-op for the same reason, on the deadline path and on
+// the cut-short drain alike. Neither file is exercised on Windows: the process
+// tests are !windows, so this side is compile-checked and bounded-return only
+// until someone runs the harness there.
 func stopCommandGroup(*exec.Cmd) {}

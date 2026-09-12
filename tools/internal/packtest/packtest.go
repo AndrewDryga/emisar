@@ -1376,6 +1376,16 @@ func execute(argv, env []string) (commandResult, error) {
 			// harness problem it is, with whatever was captured first, rather
 			// than as os/exec's bare "WaitDelay expired".
 			if errors.Is(err, exec.ErrWaitDelay) {
+				// The leader was reaped before the deadline, so os/exec had
+				// already stopped watching the context and Cancel never ran:
+				// nothing has signalled the group. This step has failed and its
+				// case is about to have the disposable fixture torn down and
+				// re-arranged, so remove what is left of the command's own
+				// group, the same as the deadline path. WaitDelay closed the
+				// pipes; it does not end the process holding them. A descendant
+				// that left the group (setsid, its own Setpgid) is still out of
+				// reach — draining is bounded, containment is not claimed.
+				stopCommandGroup(command)
 				return commandResult{stdout: stdout.String(), stderr: stderr.String()},
 					fmt.Errorf("command exited but a descendant held its output past %s: %s",
 						waitDelay, strings.Join(argv, " "))

@@ -74,6 +74,12 @@ func TestExecuteKillsTimedOutCommandDescendants(t *testing.T) {
 // WaitDelay ends the wait. A pack hits this by backgrounding a helper without
 // redirecting its output; the error has to say that rather than blame a
 // deadline that never expired.
+//
+// Returning on time is only half of it. This step has failed, and the case that
+// owns it is about to have its disposable fixture torn down and re-arranged, so
+// the descendant that held the output must not outlive the failure either. The
+// evidence is its own pid plus the marker it would write three seconds later:
+// the drain cap alone bounds the return while leaving that process running.
 func TestExecuteBoundsWaitWhenLeaderExitsHoldingOutput(t *testing.T) {
 	previousDelay := waitDelay
 	waitDelay = 200 * time.Millisecond
@@ -84,21 +90,97 @@ func TestExecuteBoundsWaitWhenLeaderExitsHoldingOutput(t *testing.T) {
 
 	root := t.TempDir()
 	pidFile := filepath.Join(root, "pid")
+	marker := filepath.Join(root, "mutated")
 	cleanupDescendant(t, pidFile)
 
+	// The held-open sleep still runs far past the cap, so the elapsed bound
+	// below stays about the cap and not about the descendant finishing. The
+	// mutation sits 3s in: the group signal lands with the 200ms cap, so only a
+	// host that stalled for most of three seconds could let it through.
+	program := "/bin/sh -c 'sleep 3; : > " + marker + "; sleep 30' & echo $! > " + pidFile + "; exit 0"
+
 	start := time.Now()
-	result, err := execute([]string{"/bin/sh", "-c",
-		"sleep 30 & echo $! > " + pidFile + "; exit 0"}, os.Environ())
+	result, err := execute([]string{"/bin/sh", "-c", program}, os.Environ())
 	elapsed := time.Since(start)
 
-	// The descendant sleeps 30s; anything near that is Wait blocking on the
-	// pipe it holds rather than the cap ending the drain.
+	// The descendant holds the pipe for 33s; anything near that is Wait
+	// blocking on it rather than the cap ending the drain.
 	if elapsed > 5*time.Second {
 		t.Fatalf("execute returned after %s, WaitDelay was %s", elapsed, waitDelay)
 	}
 	// Not the timeout error: the deadline never fired, the drain cap did.
 	if err == nil || !strings.Contains(err.Error(), "held its output past 200ms") {
 		t.Fatalf("execute error = %v, result = %+v", err, result)
+	}
+
+	pid := descendantPID(t, pidFile)
+	deadline := time.Now().Add(5 * time.Second)
+	for syscall.Kill(pid, 0) == nil {
+		if time.Now().After(deadline) {
+			t.Fatalf("descendant pid %d still alive 5s after the drain cap failed the step", pid)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+
+	// Independent of the pid check: let the moment the descendant would have
+	// mutated the fixture pass, then confirm it never did.
+	time.Sleep(time.Until(start.Add(3500 * time.Millisecond)))
+	if _, err := os.Stat(marker); !os.IsNotExist(err) {
+		t.Fatalf("descendant that failed the drain mutated its fixture: stat %s = %v", marker, err)
+	}
+}
+
+// TestExecuteKeepsSuccessfulBackgroundHelpersAlive is the limit on that
+// cleanup. An arrange step that deliberately backgrounds a helper redirects its
+// output, so the leader's exit closes the pipes, Wait returns cleanly, and the
+// helper is meant to outlive the step and serve the case that follows. The
+// cleanup belongs to the failed drain alone; killing every command's group on
+// the way out would tear those helpers down.
+func TestExecuteKeepsSuccessfulBackgroundHelpersAlive(t *testing.T) {
+	previousDelay := waitDelay
+	waitDelay = 200 * time.Millisecond
+	t.Cleanup(func() { waitDelay = previousDelay })
+	previousTimeout := commandTimeout
+	commandTimeout = 30 * time.Second
+	t.Cleanup(func() { commandTimeout = previousTimeout })
+
+	root := t.TempDir()
+	pidFile := filepath.Join(root, "pid")
+	marker := filepath.Join(root, "arranged")
+	cleanupDescendant(t, pidFile)
+
+	// Output redirected to a file, exactly as a pack backgrounds a helper: the
+	// inherited pipes close with the leader, so this is the success path.
+	program := "/bin/sh -c 'sleep 1; : > " + marker + "; sleep 30' > /dev/null 2>&1 & " +
+		"echo $! > " + pidFile + "; echo arranged; exit 0"
+
+	start := time.Now()
+	result, err := execute([]string{"/bin/sh", "-c", program}, os.Environ())
+	if err != nil {
+		t.Fatalf("execute error = %v, result = %+v", err, result)
+	}
+	if elapsed := time.Since(start); elapsed > 5*time.Second {
+		t.Fatalf("execute returned after %s; the redirected helper should not hold the drain", elapsed)
+	}
+	if result.exitCode != 0 || !strings.Contains(result.stdout, "arranged") {
+		t.Fatalf("execute result = %+v", result)
+	}
+
+	// The helper's own work lands a second later. It has to still be there to
+	// do it, and the marker is the state the next step would depend on.
+	pid := descendantPID(t, pidFile)
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		if _, statErr := os.Stat(marker); statErr == nil {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("backgrounded helper pid %d never arranged %s", pid, marker)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	if err := syscall.Kill(pid, 0); err != nil {
+		t.Fatalf("backgrounded helper pid %d did not survive its successful step: %v", pid, err)
 	}
 }
 

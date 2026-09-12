@@ -38,9 +38,10 @@ func containCommand(command *exec.Cmd) {
 	}
 }
 
-// stopCommandGroup removes what is left of a timed-out command's group, for
-// the deadlines os/exec's own cancellation never reaches. A group with no
-// members left is the normal case and reports nothing.
+// stopCommandGroup removes what is left of a failed command's group, for the
+// paths os/exec's own cancellation never reaches: a deadline that landed after
+// the leader was reaped, and a drain the WaitDelay had to cut short. A group
+// with no members left is the normal case and reports nothing.
 func stopCommandGroup(command *exec.Cmd) {
 	_ = killCommandGroup(command)
 }
