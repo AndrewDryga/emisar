@@ -1,8 +1,12 @@
 package devtool
 
 import (
+	"go/ast"
+	"go/parser"
+	"go/token"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -94,4 +98,60 @@ func TestEveryShippedPackVersionIsPublishable(t *testing.T) {
 	if checked == 0 {
 		t.Fatal("no packs were checked; the path is wrong")
 	}
+}
+
+// This lint was written to stop an unpublishable version reaching release time,
+// and for a while it could not: its only call site was `./run pack check <pack>`,
+// a command a person types. CI reaches packs through `./run check packs` alone,
+// so `1.0.0-rc1` in packs/ passed CI green and failed at publication anyway.
+//
+// The rule, stated so the next per-pack lint cannot repeat it: every
+// validatePack* check the single-pack command applies must also run in the
+// repo-wide loop.
+func TestRepoWidePackValidationRunsEveryPerPackLint(t *testing.T) {
+	repoWide := packLintCalls(t, "gates.go", "validatePacks")
+	perPack := packLintCalls(t, "pack.go", "pack")
+	for _, lint := range perPack {
+		if !slices.Contains(repoWide, lint) {
+			t.Errorf("%s runs in ./run pack check but not in validatePacks, so CI never applies it", lint)
+		}
+	}
+	// Guards the test itself: a rename that empties either side would otherwise
+	// pass vacuously.
+	if !slices.Contains(perPack, "validatePackVersions") {
+		t.Errorf("pack check no longer applies the version lint; calls found: %v", perPack)
+	}
+}
+
+// packLintCalls reports the validatePack* functions called inside one function,
+// read from the source rather than executed: validatePacks builds bin/emisar and
+// shells out per pack, so running it cannot say which lints it applied.
+func packLintCalls(t *testing.T, file, function string) []string {
+	t.Helper()
+	parsed, err := parser.ParseFile(token.NewFileSet(), file, nil, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var calls []string
+	for _, decl := range parsed.Decls {
+		fn, ok := decl.(*ast.FuncDecl)
+		if !ok || fn.Name.Name != function {
+			continue
+		}
+		ast.Inspect(fn.Body, func(node ast.Node) bool {
+			call, ok := node.(*ast.CallExpr)
+			if !ok {
+				return true
+			}
+			if name, ok := call.Fun.(*ast.Ident); ok && strings.HasPrefix(name.Name, "validatePack") {
+				calls = append(calls, name.Name)
+			}
+			return true
+		})
+	}
+	if len(calls) == 0 {
+		t.Fatalf("%s: no validatePack* calls found in %s", file, function)
+	}
+	slices.Sort(calls)
+	return slices.Compact(calls)
 }

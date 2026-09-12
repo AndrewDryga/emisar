@@ -536,6 +536,12 @@ func (a *App) validatePacks(ctx context.Context) error {
 		} else if err := validatePackActionLints(ctx, packDir); err != nil {
 			fmt.Fprintln(a.Err, err)
 			failures = append(failures, filepath.Base(packDir))
+		} else if err := validatePackVersions(packDir); err != nil {
+			// Repo-wide, not only in `./run pack check`: CI reaches packs through
+			// `./run check packs` alone, so a version wired to the manual command
+			// left an unpublishable pack green in CI and failing in CD.
+			fmt.Fprintln(a.Err, err)
+			failures = append(failures, filepath.Base(packDir))
 		}
 	}
 	if len(failures) > 0 {
