@@ -60,10 +60,20 @@ updates:
         update-types: ["minor", "patch"]
 
   - package-ecosystem: "docker"
-    # Docker directories are not recursive — every Dockerfile/compose location is
-    # listed. "/" is the root docker-compose.yml (the signing-e2e/sso-e2e stack);
-    # "/runner/release" is the published ghcr emisar-runner image customers pull,
-    # which shares portal's debian base and must be bumped alongside it.
+    # Docker directories are not recursive, so every location Dependabot can
+    # usefully bump is listed. "/" is the root docker-compose.yml (the
+    # signing-e2e/sso-e2e stack); "/runner/release" is the published ghcr
+    # emisar-runner image customers pull, which shares portal's debian base and
+    # must be bumped alongside it. Four repository-owned files stay outside the
+    # lane on purpose. dev/compose.yml and dev/review-compose.yml mirror the root
+    # Postgres and Keycloak pins byte for byte, and Dependabot opens PRs per
+    # directory: listing "/dev" would move one mirror off the reference on its
+    # own and fail the shared service image pins phase of `./run gate tooling`,
+    # so only "/" is bumped and the mirrors travel in the same commit.
+    # .agent/Dockerfile and dev/test-packs/gcloud/Dockerfile build FROM an ARG
+    # Dependabot cannot resolve; the coop box base is the operator's, and the
+    # gcloud version is owned by each packs/gcp-*/test/cases.yaml (the pack gate
+    # makes compose default PACKTEST_VERSION to it), so no bump is lost.
     directories:
       - "/"
       - "/portal"
