@@ -2832,20 +2832,17 @@ defmodule Emisar.AuditTest do
     # BA-1 found plus the two run outcomes (FL-1) — and the test that used to sit
     # here pinned two of them as EXPECTED. Assert the set relation instead, so the
     # next builder cannot ship a type the audit page cannot narrow to.
+    #
+    # One relation covers the category too: `known_event_type_values/0` and
+    # `grouped_event_type_values/0` are both comprehensions over the single
+    # `@event_types` table, so a selectable type carries a group by construction,
+    # and every group carries a category ("every event-type group maps to a
+    # category, so no event is orphaned from the lens" pins that half).
     test "every type a builder can emit is selectable and has a category" do
       known = Audit.Event.Query.known_event_type_values() |> Enum.map(&elem(&1, 0))
 
-      group_of_type =
-        for {group, options} <- Audit.Event.Query.grouped_event_type_values(),
-            {type, _label} <- options,
-            into: %{},
-            do: {type, group}
-
       unselectable = Enum.reject(emitted_event_types(), &(&1 in known))
       assert unselectable == []
-
-      ungrouped = Enum.reject(emitted_event_types(), &Map.has_key?(group_of_type, &1))
-      assert ungrouped == []
     end
 
     test "the Category facet returns the types it used to drop", %{
