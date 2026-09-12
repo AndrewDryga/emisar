@@ -307,6 +307,10 @@ fi
 # Logging helpers
 # -----------------------------------------------------------------------
 
+# log()/warn()/die() ALL write to stderr. Function return values come
+# back via stdout (e.g. `download_release` printf's the extracted dir).
+# A stdout-bound log() would leak into command substitutions and corrupt
+# the captured value — caused a "binary missing" misreport in 0.1.0.
 log()   { printf '\033[1;34m[install]\033[0m %s\n' "$*" >&2; }
 warn()  { printf '\033[1;33m[install]\033[0m %s\n' "$*" >&2; }
 die()   { printf '\033[1;31m[install]\033[0m %s\n' "$*" >&2; exit 1; }
@@ -336,10 +340,6 @@ For containers, cloud shells, CI runners, or hosts where you supervise the runne
 If you are reusing a portal-generated one-liner, keep its EMISAR_ENROLLMENT_KEY/EMISAR_URL values and replace the final 'bash' with:
   bash -s -- --no-service"
 }
-# log()/warn()/die() ALL write to stderr. Function return values come
-# back via stdout (e.g. `download_release` printf's the extracted dir).
-# A stdout-bound log() would leak into command substitutions and corrupt
-# the captured value — caused a "binary missing" misreport in 0.1.0.
 confirm() {
   if truthy "$ASSUME_YES"; then return 0; fi
 
