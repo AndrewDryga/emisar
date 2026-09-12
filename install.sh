@@ -1398,6 +1398,36 @@ stage_binary() {
   log "verified: ${ver_output}"
 }
 
+# A runner that refuses the host's config crash-loops the moment it starts —
+# runner 0.24.0 did, over a config key it had dropped — and the loader rejects
+# unknown keys, so a config written years ago by an older skeleton is exactly
+# the file at risk. Discovered after the service is stopped, that costs a
+# fleet-wide outage and a vague "did not stay active" before rollback puts the
+# old binary back; discovered here it is a refusal that changes nothing. Run
+# the STAGED binary against the host config through a verb that loads the
+# config and exits without connecting. `--packs-dir` REPLACES the configured
+# pack list, so pointing it at an empty root-owned directory leaves config
+# rejection as the only way this can fail — the refusal can then name
+# config.yaml truthfully. Always repeat the binary's own lines: discarding them
+# is how a rejected config was once reported as an unrelated failure.
+check_staged_config() {
+  local cfg="${ETC_DIR}/config.yaml"
+  # A fresh install has no host config to preflight — the skeleton this run is
+  # about to write is generated for this very binary.
+  [ -f "${cfg}" ] || return 0
+  local nopacks="${STAGE_DIR}/no-packs" refusal line
+  mkdir -m 700 "${nopacks}" || die "could not stage the config preflight directory"
+  if refusal="$({ "${STAGED_BINARY}" --config "${cfg}" \
+       action list --packs-dir "${nopacks}" >/dev/null; } 2>&1)"; then
+    log "verified: runner ${VERSION#runner-v} accepts ${cfg}"
+    return 0
+  fi
+  if [ -n "${refusal}" ]; then
+    while IFS= read -r line; do warn "  ${line}"; done <<<"${refusal}"
+  fi
+  die "runner ${VERSION#runner-v} refuses the existing ${cfg} (see above); the current install is untouched"
+}
+
 
 activate_binary() {
   local target="${BIN_DIR}/emisar"
@@ -1849,8 +1879,11 @@ do_install() {
   fi
 
   # Download, stage, and execute the new binary before interrupting a running
-  # service. Architecture/version failures leave the current runner untouched.
+  # service. Architecture/version/config failures leave the current runner
+  # untouched: both checks run before INSTALL_TRANSACTION flips on, while the
+  # existing service is still serving.
   stage_binary "${extracted}"
+  check_staged_config
   INSTALL_TRANSACTION=1
   if [ -e "${INSTALL_RECEIPT_PATH}" ] || [ -e "${INSTALL_RECEIPT_LOCATOR}" ]; then
     RECEIPT_PREEXISTED=1

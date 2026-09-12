@@ -67,6 +67,7 @@ func runnerChecks() []runnerCheck {
 		{"latest release resolution", false, runnerLatestRelease},
 		{"fresh-install service rollback", false, runnerFreshServiceRollback},
 		{"config value validation", false, runnerConfigValueValidation},
+		{"staged binary rejects the config", false, runnerStagedConfigPreflight},
 		{"runner id override in config skeleton", false, runnerIDOverride},
 	}
 }
@@ -1244,6 +1245,116 @@ download_release runner-v9.9.9 "$tmp"
 	}
 	if !strings.Contains(string(output), "CHECKSUM SIGNATURE REACHED") {
 		return fmt.Errorf("the verified path never authenticated the checksum:\n%s", output)
+	}
+	return nil
+}
+
+// A staged runner that refuses the host's config must be caught BEFORE the
+// running service is stopped: runner 0.24.0 dropped a config key every host
+// installed before 2026-08-06 still carried, and discovering that after the
+// stop costs an outage plus a rollback that reports "did not stay active"
+// instead of naming the config. Drive check_staged_config directly against
+// fake staged binaries so the refusal, the accepted upgrade, and the
+// fresh-install case are all proven without a real download.
+func runnerStagedConfigPreflight(h *harness) error {
+	root := h.path("staged-config-preflight")
+	etc := filepath.Join(root, "etc")
+	if err := h.mkdir(etc); err != nil {
+		return err
+	}
+	config := filepath.Join(etc, "config.yaml")
+	if err := writeFile(config, "schema_version: 1\npaths:\n  work_dir: /var/lib/emisar/work\n", 0o600); err != nil {
+		return err
+	}
+	// The fake records the argv it was handed, so the case can prove the
+	// preflight really pinned --packs-dir at an empty directory. Without that
+	// pin a broken pack dir in the host config fails the same command, and a
+	// refusal naming config.yaml would be blaming the wrong file.
+	argv := filepath.Join(root, "argv")
+	stagedBinary := func(mode string) (string, string, error) {
+		stage := filepath.Join(root, "stage-"+mode)
+		if err := h.mkdir(stage); err != nil {
+			return "", "", err
+		}
+		binary := filepath.Join(stage, "emisar")
+		body := `printf '%s\n' "$*" >>"` + argv + `"
+`
+		if mode == "rejects" {
+			body += `printf 'error: config: parse %s: yaml: unmarshal errors:\n  line 3: field work_dir not found in type config.Paths\n' "$2" >&2
+exit 1
+`
+		} else {
+			body += "exit 0\n"
+		}
+		return stage, binary, fakeExecutable(binary, body)
+	}
+
+	stage, binary, err := stagedBinary("rejects")
+	if err != nil {
+		return err
+	}
+	body := `
+die() { printf 'DIE: %s\n' "$*" >&2; exit 1; }
+warn() { printf 'WARN: %s\n' "$*" >&2; }
+log() { printf 'LOG: %s\n' "$*"; }
+VERSION=runner-v0.24.0
+check_staged_config
+printf 'REACHED THE SERVICE STOP\n'
+`
+	env := map[string]string{"STAGED_BINARY": binary, "STAGE_DIR": stage, "ETC_DIR": etc}
+	rejected := h.functions(h.repoPath("install.sh"), []string{"check_staged_config"}, body, env)
+	if err := expectFailure(rejected, "refuses the existing "+config); err != nil {
+		return fmt.Errorf("a staged binary that rejects the host config: %w", err)
+	}
+	if !strings.Contains(string(rejected.output), "the current install is untouched") {
+		return fmt.Errorf("the refusal did not say the install was left alone:\n%s", rejected.output)
+	}
+	if !strings.Contains(string(rejected.output), "field work_dir not found") {
+		return fmt.Errorf("the refusal hid the binary's own error:\n%s", rejected.output)
+	}
+	if strings.Contains(string(rejected.output), "REACHED THE SERVICE STOP") {
+		return fmt.Errorf("the upgrade continued toward stopping the service:\n%s", rejected.output)
+	}
+
+	// The control: an accepting binary must not be refused, or the preflight
+	// would block every upgrade rather than the broken ones.
+	stage, binary, err = stagedBinary("accepts")
+	if err != nil {
+		return err
+	}
+	env = map[string]string{"STAGED_BINARY": binary, "STAGE_DIR": stage, "ETC_DIR": etc}
+	accepted, err := requireOutput(h.functions(h.repoPath("install.sh"), []string{"check_staged_config"}, body, env))
+	if err != nil {
+		return fmt.Errorf("a staged binary that accepts the host config was refused: %w", err)
+	}
+	if !strings.Contains(string(accepted), "REACHED THE SERVICE STOP") {
+		return fmt.Errorf("an accepted config did not continue the upgrade:\n%s", accepted)
+	}
+
+	recorded, err := os.ReadFile(argv)
+	if err != nil {
+		return fmt.Errorf("reading the staged binary's argv: %w", err)
+	}
+	for _, want := range []string{"--config " + config, "--packs-dir " + stage + "/no-packs"} {
+		if !strings.Contains(string(recorded), want) {
+			return fmt.Errorf("the preflight did not run with %q:\n%s", want, recorded)
+		}
+	}
+
+	// A fresh install has no host config to preflight; the skeleton this run
+	// writes is generated for the very binary being staged.
+	fresh := filepath.Join(root, "etc-fresh")
+	if err := h.mkdir(fresh); err != nil {
+		return err
+	}
+	env["ETC_DIR"] = fresh
+	env["STAGED_BINARY"] = filepath.Join(root, "does-not-exist")
+	output, err := requireOutput(h.functions(h.repoPath("install.sh"), []string{"check_staged_config"}, body, env))
+	if err != nil {
+		return fmt.Errorf("a fresh install was refused for having no config yet: %w", err)
+	}
+	if !strings.Contains(string(output), "REACHED THE SERVICE STOP") {
+		return fmt.Errorf("a fresh install did not continue the install:\n%s", output)
 	}
 	return nil
 }

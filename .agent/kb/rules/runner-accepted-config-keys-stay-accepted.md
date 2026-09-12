@@ -2,8 +2,8 @@
 name: runner-accepted-config-keys-stay-accepted
 description: A config key the runner ever accepted keeps loading — it becomes an ignored, warned-about field, never an unknown-key rejection
 subsystem: runner
-sources: [runner/internal/config/config.go, runner/internal/config/loader_test.go, runner/connect.go, runner/doctor.go, install.sh]
-updated: 2026-09-03
+sources: [runner/internal/config/config.go, runner/internal/config/loader_test.go, runner/connect.go, runner/doctor.go, install.sh, tools/internal/installtest/runner.go]
+updated: 2026-09-12
 ---
 
 # Accepted config keys stay accepted
@@ -17,9 +17,12 @@ loses its purpose stays in the struct as a field the runner reads nowhere:
 reports it. It is never deleted while a fielded config may still carry the
 line; removal goes through the deprecation path in
 `.agent/kb/specs/compatibility.md` with evidence that no supported install
-still writes or carries it. `install.sh` runs the staged binary against the
-host's config BEFORE the service stops, so a rejection is a refusal that
-repeats the binary's own message, never a crash loop.
+still writes or carries it. `install.sh`'s `check_staged_config` runs the
+staged binary as `--config ${ETC_DIR}/config.yaml action list --packs-dir
+<empty dir>` BEFORE the service stops — a verb that loads the config and exits
+without connecting, with the pack list pinned empty so config rejection is the
+only way it can fail. A rejection is then a refusal that repeats the binary's
+own message and leaves the running service alone, never a crash loop.
 
 ## Why
 
@@ -58,4 +61,6 @@ install.sh`) and extend the loader fixture `legacyInstallerConfig`.
 
 `TestLoad_AcceptsEveryKeyAnEarlierInstallerWrote` loads the 2026-08-05
 installer skeleton verbatim; the installer harness check "staged binary
-rejects the config" proves the pre-stop refusal.
+rejects the config" (`./run test install runner`) proves the pre-stop refusal,
+that an accepting binary still upgrades, and that the preflight pins
+`--packs-dir` so a broken pack dir is never reported as a rejected config.
