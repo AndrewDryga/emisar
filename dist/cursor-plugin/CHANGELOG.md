@@ -8,9 +8,11 @@ uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
-- `install-emisar` now requires the signed release checksums and verifies them
-  before installing or upgrading a runner, and names the runner's group, id,
-  and labels the way the console does.
+- `install-emisar` verifies the signed release checksums before installing or
+  upgrading a runner when GitHub CLI is present, and otherwise asks before
+  continuing on the release checksum alone — warning and continuing under
+  `--yes`. It also names the runner's group, id, and labels the way the console
+  does.
 - `install-emisar` requires HTTPS for installer downloads, and permits plain
   HTTP only for loopback and literal private addresses that pass a `python3`
   origin check.
