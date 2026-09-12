@@ -1463,6 +1463,12 @@ rollback_binary() {
       log "restored previous binary after failed upgrade"
     else
       warn "could not restore the previous binary from ${BACKUP_BINARY}"
+      # That copy is now the host's only previous binary, and cleanup_stage_dir
+      # deletes exactly it. Drop the installer's claim on the staging directory
+      # instead of cleaning it, so the operator keeps the path just named.
+      STAGE_DIR=""
+      BINARY_ACTIVATED=0
+      return 0
     fi
   elif [ "${BINARY_ACTIVATED}" = "1" ]; then
     rm -f "${target}"
@@ -1473,11 +1479,18 @@ rollback_binary() {
 }
 
 # cleanup_stage_dir ends the binary transaction: it removes the staged binary
-# when activation never ran and the recovery copy once the install committed,
-# then the private directory itself.
+# when activation never ran, the recovery copy once the install committed, and
+# the config preflight's empty pack root, then the private directory itself.
+# Every entry is named: the directory holds a root-owned binary, so a stray
+# `rm -rf` of a path built from --bin-dir is not a cleanup this script gets to
+# make. An entry this installer did not create therefore survives, and the
+# rmdir below reports the directory it could not remove.
 cleanup_stage_dir() {
   [ -n "${STAGE_DIR}" ] || return 0
   rm -f "${STAGE_DIR}/emisar" "${STAGE_DIR}/emisar.previous"
+  if [ -d "${STAGE_DIR}/no-packs" ]; then
+    rmdir "${STAGE_DIR}/no-packs" || :
+  fi
   rmdir "${STAGE_DIR}" || warn "could not remove the staging directory ${STAGE_DIR}"
   STAGE_DIR=""
   STAGED_BINARY=""
@@ -1817,6 +1830,13 @@ finish_install() {
     restore_previous_service
     warn "installation failed; restored the previous runner and service state"
   fi
+  # A failure BEFORE the transaction opened — a staged binary that will not run,
+  # or a host config the new runner refuses — never reaches rollback_binary, and
+  # what it leaves in BIN_DIR is a root-owned copy of a runner this host
+  # deliberately did not install. Idempotent: the branch above already cleared
+  # STAGE_DIR, except where restoring the previous binary failed and the copy
+  # inside it is deliberately kept.
+  cleanup_stage_dir
   [ -z "${tmp:-}" ] || rm -rf "${tmp}"
   exit "$rc"
 }

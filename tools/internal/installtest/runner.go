@@ -574,8 +574,14 @@ func runnerActivationTransaction(h *harness) error {
 	if err := h.mkdir(fakeBin); err != nil {
 		return err
 	}
+	// MV_FAIL_PREVIOUS lets a case fail only the rename that restores the
+	// recovery copy — the one rollback path where the staging directory holds
+	// the host's last previous binary.
 	if err := fakeExecutable(filepath.Join(fakeBin, "mv"), `
 printf 'mv %s\n' "$*" >>"$MV_CALLS"
+if [ "${MV_FAIL_PREVIOUS:-0}" = "1" ]; then
+  case "$*" in *emisar.previous*) echo "mv: simulated failure" >&2; exit 1;; esac
+fi
 exec /bin/mv "$@"
 `); err != nil {
 		return err
@@ -585,16 +591,23 @@ die() { printf 'DIE: %s\n' "$*" >&2; exit 1; }
 warn() { printf 'WARN: %s\n' "$*" >&2; }
 log() { :; }
 BIN_DIR="$BIN"
+ETC_DIR="$ETC"
 STAGE_DIR=""
 STAGED_BINARY=""
 BACKUP_BINARY=""
 BINARY_ACTIVATED=0
 `
-	names := []string{"stage_binary", "activate_binary", "rollback_binary", "cleanup_stage_dir"}
+	names := []string{"stage_binary", "check_staged_config", "activate_binary", "rollback_binary", "cleanup_stage_dir"}
 	scenario := func(name string, previous bool, body string) (string, []byte, error) {
 		bin := filepath.Join(root, name, "bin")
 		src := filepath.Join(root, name, "release")
-		if err := h.mkdir(bin, src); err != nil {
+		etc := filepath.Join(root, name, "etc")
+		if err := h.mkdir(bin, src, etc); err != nil {
+			return "", nil, err
+		}
+		// Present for every scenario so the one that preflights the config finds
+		// a host file; the others never call check_staged_config.
+		if err := writeFile(filepath.Join(etc, "config.yaml"), "schema_version: 1\n", 0o600); err != nil {
 			return "", nil, err
 		}
 		if err := fakeExecutable(filepath.Join(src, "emisar"), `
@@ -613,6 +626,7 @@ echo "emisar version 9.9.9"
 		result := h.functions(installer, names, stubs+body, map[string]string{
 			"PATH":     fakeBin + string(os.PathListSeparator) + os.Getenv("PATH"),
 			"BIN":      bin,
+			"ETC":      etc,
 			"RELEASE":  src,
 			"VERSION":  "runner-v9.9.9",
 			"MV_CALLS": calls,
@@ -695,6 +709,30 @@ cleanup_stage_dir
 		return fmt.Errorf("committed upgrade: %w", err)
 	}
 
+	// Committed upgrade of a host that HAS a config: the preflight's empty pack
+	// root is an entry of the staging directory too, and a cleanup that only
+	// knew the two binaries left it — and a "could not remove the staging
+	// directory" warning — behind on every such upgrade.
+	bin, output, err = scenario("preflight", true, `
+stage_binary "$RELEASE"
+check_staged_config
+if [ -d "${STAGE_DIR}/no-packs" ]; then printf 'PREFLIGHT DIR CREATED\n'; fi
+activate_binary
+cleanup_stage_dir
+`)
+	if err != nil {
+		return err
+	}
+	if !strings.Contains(string(output), "PREFLIGHT DIR CREATED") {
+		return fmt.Errorf("the preflight never made the pack root this case cleans up:\n%s", output)
+	}
+	if strings.Contains(string(output), "WARN") {
+		return fmt.Errorf("a committed upgrade warned about its own staging directory:\n%s", output)
+	}
+	if err := leftovers(bin); err != nil {
+		return fmt.Errorf("committed upgrade after the config preflight: %w", err)
+	}
+
 	// Failed upgrade: rollback restores the previous binary from the copy.
 	bin, _, err = scenario("rollback", true, `
 stage_binary "$RELEASE"
@@ -711,6 +749,36 @@ rollback_binary
 		return fmt.Errorf("rolled-back upgrade: %w", err)
 	}
 
+	// Rollback that cannot restore: the copy it failed to move back is the only
+	// previous binary the host has left, and cleanup deletes exactly that name.
+	// The installer must drop its claim on the staging directory instead, so
+	// neither this function nor finish_install removes the operator's last
+	// recovery path after naming it.
+	_, output, err = scenario("recovery", true, `
+stage_binary "$RELEASE"
+activate_binary
+export MV_FAIL_PREVIOUS=1
+rollback_binary
+printf 'HELD STAGE_DIR [%s]\n' "${STAGE_DIR}"
+printf 'HELD BACKUP [%s]\n' "${BACKUP_BINARY}"
+`)
+	if err != nil {
+		return err
+	}
+	if !strings.Contains(string(output), "could not restore the previous binary") {
+		return fmt.Errorf("a failed restore did not tell the operator:\n%s", output)
+	}
+	if !strings.Contains(string(output), "HELD STAGE_DIR []") {
+		return fmt.Errorf("a failed restore kept the staging directory claimed for cleanup:\n%s", output)
+	}
+	backup := bracketed(string(output), "HELD BACKUP ")
+	if backup == "" {
+		return fmt.Errorf("a failed restore did not keep the recovery copy it warned about:\n%s", output)
+	}
+	if err := exactFile(backup, "old runner\n"); err != nil {
+		return fmt.Errorf("cleanup deleted the recovery copy a failed restore left: %w", err)
+	}
+
 	// Failed fresh install: rollback removes the binary it activated.
 	bin, _, err = scenario("fresh", false, `
 stage_binary "$RELEASE"
@@ -724,6 +792,20 @@ rollback_binary
 		return fmt.Errorf("rollback kept the binary of a failed fresh install: %w", err)
 	}
 	return leftovers(bin)
+}
+
+// bracketed pulls the value a case printed as `<label>[<value>]`, which
+// survives the warnings and stub chatter that share the combined output.
+func bracketed(output, label string) string {
+	_, rest, found := strings.Cut(output, label+"[")
+	if !found {
+		return ""
+	}
+	value, _, found := strings.Cut(rest, "]")
+	if !found {
+		return ""
+	}
+	return value
 }
 
 // stageDirOf reads the private stage directory back out of the recorded
@@ -1355,6 +1437,76 @@ printf 'REACHED THE SERVICE STOP\n'
 	}
 	if !strings.Contains(string(output), "REACHED THE SERVICE STOP") {
 		return fmt.Errorf("a fresh install did not continue the install:\n%s", output)
+	}
+
+	// The refusal lands BEFORE the transaction opens, so finish_install skips
+	// rollback_binary and with it the only cleanup there was: what stayed in
+	// BIN_DIR was a root-owned copy of the very runner this host refused, plus
+	// the preflight's pack root. Drive the real staging, preflight and EXIT trap
+	// together — the install stays untouched and the exit status stands, but the
+	// installer takes its own staging with it.
+	refusedBin := filepath.Join(root, "refused", "bin")
+	release := filepath.Join(root, "refused", "release")
+	if err := h.mkdir(refusedBin, release); err != nil {
+		return err
+	}
+	if err := writeFile(filepath.Join(refusedBin, "emisar"), "old runner\n", 0o755); err != nil {
+		return err
+	}
+	if err := fakeExecutable(filepath.Join(release, "emisar"), `
+case "$*" in
+  *--version*) echo "emisar version 9.9.9";;
+  *) echo "error: field work_dir not found in type config.Paths" >&2; exit 1;;
+esac
+`); err != nil {
+		return err
+	}
+	refused := h.functions(h.repoPath("install.sh"),
+		[]string{"stage_binary", "check_staged_config", "rollback_binary", "cleanup_stage_dir", "finish_install"}, `
+die() { printf 'DIE: %s\n' "$*" >&2; exit 1; }
+warn() { printf 'WARN: %s\n' "$*" >&2; }
+log() { :; }
+restore_enrollment_state() { :; }
+restore_previous_service() { :; }
+rollback_install_receipt() { :; }
+rollback_service() { :; }
+STAGE_DIR=""
+STAGED_BINARY=""
+BACKUP_BINARY=""
+BINARY_ACTIVATED=0
+INSTALL_TRANSACTION=0
+tmp=""
+trap 'finish_install $?' EXIT
+stage_binary "$RELEASE"
+check_staged_config
+INSTALL_TRANSACTION=1
+printf 'REACHED THE SERVICE STOP\n'
+`, map[string]string{
+			"BIN_DIR": refusedBin,
+			"ETC_DIR": etc,
+			"RELEASE": release,
+			"VERSION": "runner-v9.9.9",
+		})
+	if err := expectFailure(refused, "the current install is untouched"); err != nil {
+		return fmt.Errorf("a refused host config under the EXIT trap: %w", err)
+	}
+	if code := exitCode(refused.err); code != 1 {
+		return fmt.Errorf("the refusal exited %d, want the refusal's own 1:\n%s", code, refused.output)
+	}
+	if strings.Contains(string(refused.output), "REACHED THE SERVICE STOP") {
+		return fmt.Errorf("the refusal continued toward stopping the service:\n%s", refused.output)
+	}
+	if err := exactFile(filepath.Join(refusedBin, "emisar"), "old runner\n"); err != nil {
+		return fmt.Errorf("the refusal changed the installed binary: %w", err)
+	}
+	entries, err := os.ReadDir(refusedBin)
+	if err != nil {
+		return err
+	}
+	for _, entry := range entries {
+		if entry.Name() != "emisar" {
+			return fmt.Errorf("the refusal left %s behind in BIN_DIR:\n%s", entry.Name(), refused.output)
+		}
 	}
 	return nil
 }
