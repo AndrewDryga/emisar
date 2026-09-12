@@ -17,6 +17,7 @@ Task scope, authorization, and correction handling follow the [root manual](../.
 - [Pattern dispatch](elixir-dispatch-on-pattern.md) — choose clause heads for input shapes
 - [Inline form errors](elixir-inline-form-errors.md) — keep fixable errors beside inputs
 - [Branch heads](elixir-no-pipe-in-branch-head.md) — bind a pipeline before matching it
+- [Applied migrations are frozen](elixir-migrations-frozen.md) — Never edit, rename, or delete a migration that production ran; add a new migration. A new migration's version is greater than every committed one.
 - [Table renames](elixir-table-rename-sweep.md) — update schema, constraints, and row-scope callers together
 
 ## House conventions
