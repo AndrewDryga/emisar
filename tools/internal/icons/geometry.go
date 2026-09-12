@@ -38,7 +38,7 @@ func parsePath(d string) ([]segment, error) {
 	tokens := absoluteTokens.FindAllString(d, -1)
 	var segments []segment
 	i, x, y, sx, sy := 0, 0.0, 0.0, 0.0, 0.0
-	truncated := false
+	truncated, groups := false, 0
 	read := func() float64 {
 		if i >= len(tokens) {
 			truncated = true
@@ -48,14 +48,32 @@ func parsePath(d string) ([]segment, error) {
 		i++
 		return v
 	}
-	more := func() bool { return i < len(tokens) && !letter.MatchString(tokens[i]) }
+	// group reports whether the command in hand has another whole operand group
+	// of n numbers to read, so a group is read entirely or not at all. A group
+	// stopped short — by the end of the path or by the next command's letter —
+	// is malformed, and so is a command that never got a first group: every
+	// command but the closepaths takes operands. Either sets truncated.
+	group := func(n int) bool {
+		for k := 0; k < n; k++ {
+			if i+k < len(tokens) && !letter.MatchString(tokens[i+k]) {
+				continue
+			}
+			if k > 0 || groups == 0 {
+				truncated = true
+			}
+			return false
+		}
+		groups++
+		return true
+	}
 	for i < len(tokens) {
 		cmd := tokens[i]
 		i++
+		groups = 0
 		switch cmd {
 		case "M":
 			first := true
-			for more() {
+			for group(2) {
 				x, y = read(), read()
 				if first {
 					sx, sy, first = x, y, false
@@ -65,52 +83,52 @@ func parsePath(d string) ([]segment, error) {
 				segments = append(segments, segment{kind: 'M', x: x, y: y})
 			}
 		case "L":
-			for more() {
+			for group(2) {
 				nx, ny := read(), read()
 				segments = append(segments, segment{kind: 'L', x0: x, y0: y, x: nx, y: ny})
 				x, y = nx, ny
 			}
 		case "H":
-			for more() {
+			for group(1) {
 				nx := read()
 				segments = append(segments, segment{kind: 'L', x0: x, y0: y, x: nx, y: y})
 				x = nx
 			}
 		case "V":
-			for more() {
+			for group(1) {
 				ny := read()
 				segments = append(segments, segment{kind: 'L', x0: x, y0: y, x: x, y: ny})
 				y = ny
 			}
 		case "C":
-			for more() {
+			for group(6) {
 				seg := segment{kind: 'C', x0: x, y0: y}
 				seg.c1x, seg.c1y, seg.c2x, seg.c2y, seg.x, seg.y = read(), read(), read(), read(), read(), read()
 				segments = append(segments, seg)
 				x, y = seg.x, seg.y
 			}
 		case "S":
-			for more() {
+			for group(4) {
 				seg := segment{kind: 'C', x0: x, y0: y, c1x: x, c1y: y}
 				seg.c2x, seg.c2y, seg.x, seg.y = read(), read(), read(), read()
 				segments = append(segments, seg)
 				x, y = seg.x, seg.y
 			}
 		case "Q":
-			for more() {
+			for group(4) {
 				seg := segment{kind: 'Q', x0: x, y0: y}
 				seg.cx, seg.cy, seg.x, seg.y = read(), read(), read(), read()
 				segments = append(segments, seg)
 				x, y = seg.x, seg.y
 			}
 		case "T":
-			for more() {
+			for group(2) {
 				nx, ny := read(), read()
 				segments = append(segments, segment{kind: 'L', x0: x, y0: y, x: nx, y: ny})
 				x, y = nx, ny
 			}
 		case "A":
-			for more() {
+			for group(7) {
 				seg := segment{kind: 'A', x0: x, y0: y}
 				seg.rx, seg.ry, seg.rot, seg.large, seg.sweep, seg.x, seg.y = read(), read(), read(), read(), read(), read(), read()
 				segments = append(segments, seg)

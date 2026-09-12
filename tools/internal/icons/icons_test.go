@@ -100,6 +100,47 @@ func TestTruncatedPathIsAnErrorNotAPanic(t *testing.T) {
 	}
 }
 
+// Short of its operands also covers a command carrying no operand group at all:
+// a trailing letter, or a group cut off by the next command instead of by the end
+// of the path. Bounding only the operands that get read left those parsing clean,
+// and the rewriter then dropped the command from its output without a word.
+func TestCommandWithoutACompleteOperandGroupIsAnError(t *testing.T) {
+	t.Parallel()
+	snap := transform{
+		x: halfGrid, y: halfGrid, controlX: quarterGrid, controlY: quarterGrid, radius: halfGrid, dot: halfGrid,
+	}
+	malformed := []string{
+		"M",                  // nothing but a moveto
+		"M1 1L",              // a trailing lineto
+		"M1 1H",              // a trailing horizontal
+		"M1 1A6 6 0 1 0",     // an arc with no endpoint and no following token
+		"M1 1L2M3 3",         // a lineto pair interrupted by the next moveto
+		"M1 1C1 2 3 4 5M6 6", // a cubic interrupted by the next moveto
+		"M1 1L2 2C",          // a trailing cubic after complete operands
+	}
+	for _, d := range malformed {
+		if _, err := parsePath(d); err == nil {
+			t.Errorf("parsePath(%q) = nil error, want a malformed-path error", d)
+		}
+		if _, err := rebuildPath(d, snap); err == nil {
+			t.Errorf("rebuildPath(%q) = nil error, want a malformed-path error", d)
+		}
+	}
+	// Negative controls: the supported grammar still parses, including repeated
+	// operand groups, the zero-operand closepaths, and a closepath mid-path.
+	for _, d := range []string{
+		"M2 2H6V6.5Z", "M1 1L2 2 3 3z", "M2 8A6 6 0 1 0 14 8Z",
+		"M1 1 2 2 3 3", "M1 1L2 2ZM4 4L5 5Z", "M1 1Q2 2 3 3T4 4S5 5 6 6",
+	} {
+		if _, err := parsePath(d); err != nil {
+			t.Errorf("parsePath(%q): %v", d, err)
+		}
+		if _, err := rebuildPath(d, snap); err != nil {
+			t.Errorf("rebuildPath(%q): %v", d, err)
+		}
+	}
+}
+
 // The error a caller sees names the icon it came from, so an operator can find
 // the master that needs fixing.
 func TestMalformedMasterNamesTheIcon(t *testing.T) {

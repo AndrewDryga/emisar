@@ -46,7 +46,7 @@ func rebuildPath(d string, t transform) (string, error) {
 	tokens := pathTokens.FindAllString(d, -1)
 	var out []string
 	i, x, y, sx, sy := 0, 0.0, 0.0, 0.0, 0.0
-	truncated := false
+	truncated, groups := false, 0
 	read := func() float64 {
 		if i >= len(tokens) {
 			truncated = true
@@ -56,15 +56,33 @@ func rebuildPath(d string, t transform) (string, error) {
 		i++
 		return v
 	}
-	more := func() bool { return i < len(tokens) && !letter.MatchString(tokens[i]) }
+	// group reports whether the command in hand has another whole operand group
+	// of n numbers to read, so a group is read entirely or not at all. A group
+	// stopped short — by the end of the path or by the next command's letter —
+	// is malformed, and so is a command that never got a first group: every
+	// command but the closepaths takes operands. Either sets truncated.
+	group := func(n int) bool {
+		for k := 0; k < n; k++ {
+			if i+k < len(tokens) && !letter.MatchString(tokens[i+k]) {
+				continue
+			}
+			if k > 0 || groups == 0 {
+				truncated = true
+			}
+			return false
+		}
+		groups++
+		return true
+	}
 	for i < len(tokens) {
 		cmd := tokens[i]
 		i++
+		groups = 0
 		rel := cmd == strings.ToLower(cmd) && cmd != "z" && cmd != "Z"
 		switch strings.ToUpper(cmd) {
 		case "M":
 			first := true
-			for more() {
+			for group(2) {
 				px, py := read(), read()
 				if rel && !(first && len(out) == 0) {
 					x, y = x+px, y+py
@@ -81,50 +99,50 @@ func rebuildPath(d string, t transform) (string, error) {
 				}
 			}
 		case "L":
-			for more() {
+			for group(2) {
 				px, py := read(), read()
 				x, y = absolute(rel, x, px), absolute(rel, y, py)
 				out = append(out, "L"+format(t.x(x))+" "+format(t.y(y)))
 			}
 		case "H":
-			for more() {
+			for group(1) {
 				x = absolute(rel, x, read())
 				out = append(out, "H"+format(t.x(x)))
 			}
 		case "V":
-			for more() {
+			for group(1) {
 				y = absolute(rel, y, read())
 				out = append(out, "V"+format(t.y(y)))
 			}
 		case "C":
-			for more() {
+			for group(6) {
 				c := [6]float64{read(), read(), read(), read(), read(), read()}
 				a := [6]float64{absolute(rel, x, c[0]), absolute(rel, y, c[1]), absolute(rel, x, c[2]), absolute(rel, y, c[3]), absolute(rel, x, c[4]), absolute(rel, y, c[5])}
 				x, y = a[4], a[5]
 				out = append(out, "C"+format(t.controlX(a[0]))+" "+format(t.controlY(a[1]))+" "+format(t.controlX(a[2]))+" "+format(t.controlY(a[3]))+" "+format(t.x(a[4]))+" "+format(t.y(a[5])))
 			}
 		case "S":
-			for more() {
+			for group(4) {
 				c := [4]float64{read(), read(), read(), read()}
 				a := [4]float64{absolute(rel, x, c[0]), absolute(rel, y, c[1]), absolute(rel, x, c[2]), absolute(rel, y, c[3])}
 				x, y = a[2], a[3]
 				out = append(out, "S"+format(t.controlX(a[0]))+" "+format(t.controlY(a[1]))+" "+format(t.x(a[2]))+" "+format(t.y(a[3])))
 			}
 		case "Q":
-			for more() {
+			for group(4) {
 				c := [4]float64{read(), read(), read(), read()}
 				a := [4]float64{absolute(rel, x, c[0]), absolute(rel, y, c[1]), absolute(rel, x, c[2]), absolute(rel, y, c[3])}
 				x, y = a[2], a[3]
 				out = append(out, "Q"+format(t.controlX(a[0]))+" "+format(t.controlY(a[1]))+" "+format(t.x(a[2]))+" "+format(t.y(a[3])))
 			}
 		case "T":
-			for more() {
+			for group(2) {
 				px, py := read(), read()
 				x, y = absolute(rel, x, px), absolute(rel, y, py)
 				out = append(out, "T"+format(t.x(x))+" "+format(t.y(y)))
 			}
 		case "A":
-			for more() {
+			for group(7) {
 				rx, ry, rot, large, sweep := read(), read(), read(), read(), read()
 				px, py := read(), read()
 				x, y = absolute(rel, x, px), absolute(rel, y, py)
