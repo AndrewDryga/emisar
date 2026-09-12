@@ -3314,10 +3314,6 @@ defmodule Emisar.SSO do
     |> put_directory_sync_entitlement(account_id)
   end
 
-  # After the shared account -> subscription entitlement fence, SCIM mapping
-  # writes lock provider -> group before touching mapping snapshots. Every
-  # operator mapping mutation keeps that order, so a rename cannot deadlock
-  # against an update/delete that grabbed the mapping row first.
   # The mapping row under the provider lock: not deleted, that provider's, this
   # id, `FOR UPDATE`, and account-scoped — the same read every mapping mutation
   # opens with, for either mapping schema.
@@ -3332,6 +3328,10 @@ defmodule Emisar.SSO do
     end)
   end
 
+  # After the shared account -> subscription entitlement fence, SCIM mapping
+  # writes lock provider -> group before touching mapping snapshots. Every
+  # operator mapping mutation keeps that order, so a rename cannot deadlock
+  # against an update/delete that grabbed the mapping row first.
   defp put_mapping_provider_lock(multi, provider_id, %Subject{} = subject) do
     Multi.run(multi, :locked_provider, fn _repo, _changes ->
       IdentityProvider.Query.not_deleted()
