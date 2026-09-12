@@ -74,6 +74,11 @@ updates:
     # Dependabot cannot resolve; the coop box base is the operator's, and the
     # gcloud version is owned by each packs/gcp-*/test/cases.yaml (the pack gate
     # makes compose default PACKTEST_VERSION to it), so no bump is lost.
+    # This list is not prose alone: the dependabot docker coverage phase of
+    # `./run gate tooling` walks the repository for build files and fails on any
+    # whose directory matches neither a glob below nor an entry in
+    # dependabotDockerExclusions (tools/internal/devtool/dependabot_docker.go),
+    # which carries the same four reasons. Add a location to one or the other.
     directories:
       - "/"
       - "/portal"
