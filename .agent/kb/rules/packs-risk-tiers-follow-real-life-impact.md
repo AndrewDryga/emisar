@@ -27,9 +27,9 @@ consequences:
    that generates sustained, link-saturating traffic — real congestion on a
    shared path — as against a cheap `ping` or `curl`. Reserve `low` for reads
    and cheap, bounded probes. Sweep signal: a `low` action that starts a
-   server, passes `--listen`/`-s`, binds a port, or floods a link. `iperf3`
-   ships uniformly `medium` for exactly these reasons — `server` for the
-   inbound port, `client` and `udp` for the saturating traffic.
+   server, passes `--listen`/`-s`, binds a port, or floods a link. In
+   `iperf3`, `server` is `medium` for the inbound port, and `client` and `udp`
+   for the saturating traffic.
 
 The ceiling from [[packs-redaction-completeness-follows-a-closed-key-space]]
 still holds: a generic log reader stays at `medium` — going higher takes a
