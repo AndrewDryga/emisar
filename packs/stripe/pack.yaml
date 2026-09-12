@@ -1,7 +1,7 @@
 schema_version: 1
 id: stripe
 name: Stripe billing operations
-version: 0.2.0
+version: 0.2.1
 description: >
   Investigate Stripe payment failures, duplicate charges, refunds,
   recurring billing and disputes, and perform reviewed billing corrections.
@@ -37,7 +37,7 @@ setup:
     - "Every mutating POST requires a stable operation_id. Stripe retains idempotency records for at least 24 hours; preserve identical parameters and reconcile before retrying later. No write retries run automatically. DELETE cancellation has no provider idempotency key."
     - "Place reviewed evidence in STRIPE_EVIDENCE_DIR, inspect it with evidence_file_info, then approve upload_dispute_file with its SHA256. Upload accepts PDF/JPEG/PNG up to 5 MB. stage_dispute_text and stage_dispute_file always send submit=false. Read evidence before separately approving submit_dispute_evidence."
     - "Dispute submission checks the reviewed evidence hash before submitting. Stripe has no atomic compare-and-submit; coordinate other evidence writers during that operation. Accepting a dispute forfeits the disputed funds."
-    - "Lists return at most ten projected records per run and pagination.next_cursor. Results exclude raw metadata, client secrets, full card/bank data and signed receipt/invoice URLs. Contact and evidence reads have explicit exposure descriptions."
+    - "Lists return at most ten projected records per run and pagination.next_page_cursor. Results exclude raw metadata, client secrets, full card/bank data and signed receipt/invoice URLs. Contact and evidence reads have explicit exposure descriptions."
     - "Local fixtures verify request contracts and failure handling. Live provider compatibility requires a governed read against the operator's configured Stripe account."
   verify: stripe.balance
 actions:

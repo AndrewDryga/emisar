@@ -269,7 +269,7 @@ def list_objects(client, op):
     if cursor is not None and (not isinstance(cursor, str) or len(cursor) > 255):
         raise Failure("Invalid continuation ID")
     return {"results": [project(row, kind, True) for row in rows],
-            "pagination": {"has_more": data["has_more"], "next_cursor": cursor}}
+            "pagination": {"has_more": data["has_more"], "next_page_cursor": cursor}}
 
 
 def evidence_file():

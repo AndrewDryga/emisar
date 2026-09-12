@@ -19,7 +19,7 @@ cases:
       json:
         /results/0/slug: acme
         /pagination/has_more: false
-        /pagination/next_cursor: null
+        /pagination/next_page_cursor: null
 
   - action: sentry.list_projects
     args: {organization: acme}
@@ -44,7 +44,7 @@ cases:
       json:
         /results/0/id: "1234567890"
         /pagination/has_more: true
-        /pagination/next_cursor: "1700000000000:1:0"
+        /pagination/next_page_cursor: "1700000000000:1:0"
 
   - name: sentry.list_issues-follows-the-cursor
     action: sentry.list_issues
@@ -62,7 +62,7 @@ cases:
         /results/0/id: "1234567800"
         /results/4/id: "1234567804"
         /pagination/has_more: true
-        /pagination/next_cursor: "1700000000000:1:0"
+        /pagination/next_page_cursor: "1700000000000:1:0"
 
   - action: sentry.issue_details
     args: {organization: acme, issue_id: "1234567890"}

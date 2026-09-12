@@ -55,7 +55,7 @@ cases:
     json:
       "/results/0/id": transaction_fixture
       "/pagination/has_more": true
-      "/pagination/next_cursor": page_10
+      "/pagination/next_page_cursor": page_10
 - action: braintree.refunds
   args:
     customer_id: ''
@@ -72,7 +72,7 @@ cases:
     json:
       "/results/0/id": refund_fixture
       "/pagination/has_more": true
-      "/pagination/next_cursor": page_10
+      "/pagination/next_page_cursor": page_10
 - action: braintree.customers
   args:
     email: ''
@@ -84,7 +84,7 @@ cases:
     json:
       "/results/0/id": customer_fixture
       "/pagination/has_more": true
-      "/pagination/next_cursor": page_10
+      "/pagination/next_page_cursor": page_10
   probes:
   - name: Read leaves billing state unchanged
     argv:
@@ -107,7 +107,7 @@ cases:
     json:
       "/results/0/id": subscription_fixture
       "/pagination/has_more": true
-      "/pagination/next_cursor": page_10
+      "/pagination/next_page_cursor": page_10
 - action: braintree.disputes
   args:
     transaction_id: ''
@@ -118,7 +118,7 @@ cases:
     json:
       "/results/0/id": dispute_fixture
       "/pagination/has_more": true
-      "/pagination/next_cursor": page_10
+      "/pagination/next_page_cursor": page_10
 - action: braintree.transaction
   args:
     id: transaction_fixture
@@ -598,7 +598,7 @@ cases:
     json:
       "/results/0/id": customer_fixture_10
       "/pagination/has_more": false
-      "/pagination/next_cursor":
+      "/pagination/next_page_cursor":
   probes:
   - argv:
     - curl
@@ -983,7 +983,7 @@ cases:
     json:
       "/results": []
       "/pagination/has_more": false
-      "/pagination/next_cursor":
+      "/pagination/next_page_cursor":
   probes:
   - argv:
     - curl

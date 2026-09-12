@@ -53,18 +53,18 @@ def clipped($chars; $encoded_bytes):
 
 # Sentry paginates through Link response headers, so a body-only fetch would
 # silently drop the continuation. Paged reads emit
-# {results, pagination: {next_cursor, has_more}} instead of the raw body.
+# {results, pagination: {next_page_cursor, has_more}} instead of the raw body.
 request_paged() {
-  local response crlf=$'\r\n\r\n' headers body next_cursor="" has_more=false
+  local response crlf=$'\r\n\r\n' headers body next_page_cursor="" has_more=false
   response=$(request --include "$@")
   headers=${response%%"$crlf"*}
   body=${response#*"$crlf"}
   if [[ "$headers" =~ rel=\"next\"\;\ results=\"true\"\;\ cursor=\"([^\"]+)\" ]]; then
-    next_cursor="${BASH_REMATCH[1]}"
+    next_page_cursor="${BASH_REMATCH[1]}"
     has_more=true
   fi
-  printf '%s' "$body" | jq -ce --arg cursor "$next_cursor" --argjson more "$has_more" \
-    '{results: ., pagination: {next_cursor: (if $cursor == "" then null else $cursor end), has_more: $more}}'
+  printf '%s' "$body" | jq -ce --arg cursor "$next_page_cursor" --argjson more "$has_more" \
+    '{results: ., pagination: {next_page_cursor: (if $cursor == "" then null else $cursor end), has_more: $more}}'
 }
 
 with_cursor() {

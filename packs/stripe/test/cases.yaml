@@ -40,7 +40,7 @@ cases:
     json:
       "/results/0/id": cus_fixture
       "/pagination/has_more": true
-      "/pagination/next_cursor": cus_fixture_9
+      "/pagination/next_page_cursor": cus_fixture_9
   probes:
   - name: Read leaves provider billing state unchanged
     argv:
@@ -61,7 +61,7 @@ cases:
     json:
       "/results/0/id": pi_fixture
       "/pagination/has_more": true
-      "/pagination/next_cursor": pi_fixture_9
+      "/pagination/next_page_cursor": pi_fixture_9
 - action: stripe.charges
   args:
     customer: ''
@@ -74,7 +74,7 @@ cases:
     json:
       "/results/0/id": ch_fixture
       "/pagination/has_more": true
-      "/pagination/next_cursor": ch_fixture_9
+      "/pagination/next_page_cursor": ch_fixture_9
 - action: stripe.refunds
   args:
     payment_intent: ''
@@ -87,7 +87,7 @@ cases:
     json:
       "/results/0/id": re_fixture
       "/pagination/has_more": true
-      "/pagination/next_cursor": re_fixture_9
+      "/pagination/next_page_cursor": re_fixture_9
 - action: stripe.invoices
   args:
     customer: ''
@@ -101,7 +101,7 @@ cases:
     json:
       "/results/0/id": in_fixture
       "/pagination/has_more": true
-      "/pagination/next_cursor": in_fixture_9
+      "/pagination/next_page_cursor": in_fixture_9
 - action: stripe.subscriptions
   args:
     customer: ''
@@ -114,7 +114,7 @@ cases:
     json:
       "/results/0/id": sub_fixture
       "/pagination/has_more": true
-      "/pagination/next_cursor": sub_fixture_9
+      "/pagination/next_page_cursor": sub_fixture_9
 - action: stripe.disputes
   args:
     payment_intent: ''
@@ -127,7 +127,7 @@ cases:
     json:
       "/results/0/id": du_fixture
       "/pagination/has_more": true
-      "/pagination/next_cursor": du_fixture_9
+      "/pagination/next_page_cursor": du_fixture_9
 - action: stripe.events
   args:
     type: ''
@@ -139,7 +139,7 @@ cases:
     json:
       "/results/0/id": evt_fixture
       "/pagination/has_more": true
-      "/pagination/next_cursor": evt_fixture_9
+      "/pagination/next_page_cursor": evt_fixture_9
 - action: stripe.balance_transactions
   args:
     source: ''
@@ -154,7 +154,7 @@ cases:
     json:
       "/results/0/id": txn_fixture
       "/pagination/has_more": true
-      "/pagination/next_cursor": txn_fixture_9
+      "/pagination/next_page_cursor": txn_fixture_9
 - action: stripe.payouts
   args:
     status: ''
@@ -166,7 +166,7 @@ cases:
     json:
       "/results/0/id": po_fixture
       "/pagination/has_more": true
-      "/pagination/next_cursor": po_fixture_9
+      "/pagination/next_page_cursor": po_fixture_9
 - action: stripe.credit_notes
   args:
     customer: ''
@@ -177,7 +177,7 @@ cases:
     json:
       "/results/0/id": cn_fixture
       "/pagination/has_more": true
-      "/pagination/next_cursor": cn_fixture_9
+      "/pagination/next_page_cursor": cn_fixture_9
 - action: stripe.customer
   args:
     id: cus_fixture
@@ -279,7 +279,7 @@ cases:
     json:
       "/results/0/id": il_fixture
       "/pagination/has_more": true
-      "/pagination/next_cursor": il_fixture_9
+      "/pagination/next_page_cursor": il_fixture_9
   probes:
   - name: Read leaves provider billing state unchanged
     argv:
@@ -299,7 +299,7 @@ cases:
     json:
       "/results/0/id": inpay_fixture
       "/pagination/has_more": true
-      "/pagination/next_cursor": inpay_fixture_9
+      "/pagination/next_page_cursor": inpay_fixture_9
 - action: stripe.subscription_items
   args:
     subscription: sub_fixture
@@ -309,7 +309,7 @@ cases:
     json:
       "/results/0/id": si_fixture
       "/pagination/has_more": true
-      "/pagination/next_cursor": si_fixture_9
+      "/pagination/next_page_cursor": si_fixture_9
 - action: stripe.customer_balance_transactions
   args:
     customer: cus_fixture
@@ -319,7 +319,7 @@ cases:
     json:
       "/results/0/id": cbtxn_fixture
       "/pagination/has_more": true
-      "/pagination/next_cursor": cbtxn_fixture_9
+      "/pagination/next_page_cursor": cbtxn_fixture_9
 - action: stripe.payment_methods
   args:
     customer: cus_fixture
@@ -330,7 +330,7 @@ cases:
     json:
       "/results/0/id": pm_fixture
       "/pagination/has_more": true
-      "/pagination/next_cursor": pm_fixture_9
+      "/pagination/next_page_cursor": pm_fixture_9
 - action: stripe.create_refund
   args:
     charge: ch_fixture
@@ -914,7 +914,7 @@ cases:
     json:
       "/results/0/id": cus_fixture_10
       "/pagination/has_more": false
-      "/pagination/next_cursor":
+      "/pagination/next_page_cursor":
   probes:
   - name: Read leaves provider billing state unchanged
     argv:
@@ -1217,7 +1217,7 @@ cases:
     json:
       "/results": []
       "/pagination/has_more": false
-      "/pagination/next_cursor":
+      "/pagination/next_page_cursor":
   probes:
   - argv:
     - curl

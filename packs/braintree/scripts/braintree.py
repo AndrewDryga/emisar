@@ -197,7 +197,7 @@ def page(connection, shape):
     if not isinstance(info.get("hasNextPage"), bool) or (cursor is not None and (not isinstance(cursor, str) or len(cursor) > 2048)):
         raise Failure("Invalid provider continuation")
     return {"results": [project(edge["node"], shape) for edge in connection["edges"]],
-            "pagination": {"has_more": info["hasNextPage"], "next_cursor": cursor if info["hasNextPage"] else None}}
+            "pagination": {"has_more": info["hasNextPage"], "next_page_cursor": cursor if info["hasNextPage"] else None}}
 
 
 def connection_query(field, shape):
