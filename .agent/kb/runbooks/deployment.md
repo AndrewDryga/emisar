@@ -1,7 +1,7 @@
 ---
 name: deployment
 sources: [.github/workflows/ci.yml, .github/workflows/cd.yml, infra/iam.tf, portal/config/runtime.exs, portal/apps/emisar/lib/emisar/release.ex]
-updated: 2026-09-10
+updated: 2026-09-03
 ---
 
 # CI/CD production setup
