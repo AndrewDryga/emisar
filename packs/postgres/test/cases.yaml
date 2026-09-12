@@ -124,10 +124,13 @@ cases:
         retry_every: 250ms
     expect:
       stdout_contains: ["t"]
+    # stdout_contains matches a substring, so asserting "0" on a bare count also
+    # accepts 10, 20 or 100 active backends. Compare the count exactly in the
+    # shell and assert the token that comparison prints instead.
     probes:
-      - argv: [psql, -XAt, -c, "SELECT count(*) FROM pg_stat_activity WHERE application_name = 'packtest-cancel-query' AND state = 'active'"]
+      - argv: ["/bin/sh", "-c", "test \"$(psql -XAt -c \"SELECT count(*) FROM pg_stat_activity WHERE application_name = 'packtest-cancel-query' AND state = 'active'\")\" = 0 && echo cancel-query-drained"]
         expect:
-          stdout_contains: ["0"]
+          stdout_contains: [cancel-query-drained]
         retry_for: 10s
         retry_every: 250ms
   - action: postgres.terminate_backend
@@ -140,10 +143,11 @@ cases:
         retry_every: 250ms
     expect:
       stdout_contains: ["t"]
+    # Exact comparison, not a substring match on "0": see cancel_query above.
     probes:
-      - argv: [psql, -XAt, -c, "SELECT count(*) FROM pg_stat_activity WHERE application_name = 'packtest-terminate-backend'"]
+      - argv: ["/bin/sh", "-c", "test \"$(psql -XAt -c \"SELECT count(*) FROM pg_stat_activity WHERE application_name = 'packtest-terminate-backend'\")\" = 0 && echo terminate-backend-drained"]
         expect:
-          stdout_contains: ["0"]
+          stdout_contains: [terminate-backend-drained]
         retry_for: 10s
         retry_every: 250ms
   - action: postgres.kill_idle
@@ -160,10 +164,11 @@ cases:
       - argv: [psql, -XAt, -v, "ON_ERROR_STOP=1", -c, "SELECT pg_sleep(20)"]
     expect:
       stdout_contains: [packtest-kill-idle]
+    # Exact comparison, not a substring match on "0": see cancel_query above.
     probes:
-      - argv: [psql, -XAt, -c, "SELECT count(*) FROM pg_stat_activity WHERE application_name = 'packtest-kill-idle' AND state = 'idle in transaction'"]
+      - argv: ["/bin/sh", "-c", "test \"$(psql -XAt -c \"SELECT count(*) FROM pg_stat_activity WHERE application_name = 'packtest-kill-idle' AND state = 'idle in transaction'\")\" = 0 && echo kill-idle-drained"]
         expect:
-          stdout_contains: ["0"]
+          stdout_contains: [kill-idle-drained]
         retry_for: 10s
         retry_every: 250ms
   - name: postgres.uptime-missing-credentials

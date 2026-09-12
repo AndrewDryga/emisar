@@ -108,10 +108,14 @@ cases:
       - argv: [/bin/sh, -c, 'mongosh --nodb --quiet --eval "db=new Mongo(process.env.MONGO_URI).getDB(\"admin\");db.getSiblingDB(\"packtest\").getCollection(\"orders\").createIndex({packtest_drop_field:1},{name:\"packtest_drop_idx\"})"']
     expect:
       stdout_contains: [nIndexesWas]
+    # stdout_contains matches a substring, so asserting "0" on the surviving
+    # index count also accepts 10 or 100 of them. Compare the count exactly in
+    # the shell and assert the token that comparison prints instead.
     probes:
-      - argv: [/bin/sh, -c, 'mongosh --nodb --quiet --eval "db=new Mongo(process.env.MONGO_URI).getDB(\"admin\");print(db.getSiblingDB(\"packtest\").getCollection(\"orders\").getIndexes().filter(function(i){return i.name===\"packtest_drop_idx\"}).length)"']
+      - name: the dropped index is gone
+        argv: [/bin/sh, -c, 'test "$(mongosh --nodb --quiet --eval "db=new Mongo(process.env.MONGO_URI).getDB(\"admin\");print(db.getSiblingDB(\"packtest\").getCollection(\"orders\").getIndexes().filter(function(i){return i.name===\"packtest_drop_idx\"}).length)")" = 0 && echo drop-index-gone']
         expect:
-          stdout_contains: ["0"]
+          stdout_contains: [drop-index-gone]
   - action: mongo.kill_op
     # Start a long, interruptible op — a find over many docs whose $where sleeps
     # ~50ms per doc, so mongod checks for a kill between docs — identified by its

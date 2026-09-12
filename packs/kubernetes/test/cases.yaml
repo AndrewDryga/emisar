@@ -186,10 +186,14 @@ cases:
     args: {namespace: default, name: harness-deployment, replicas: 0}
     expect:
       stdout_contains: [scaled]
+    # stdout_contains matches a substring, so asserting "0" on the replica count
+    # also accepts a deployment left at 10 or 100 replicas. Compare the count
+    # exactly in the shell, the same way the cordon probes above read a field.
     probes:
-      - argv: [kubectl, get, deployment, harness-deployment, -o, "jsonpath={.spec.replicas}"]
+      - name: deployment is scaled to zero
+        argv: [/bin/sh, -c, 'test "$(kubectl get deployment harness-deployment -o jsonpath={.spec.replicas})" = 0 && echo scaled-to-zero']
         expect:
-          stdout_contains: ["0"]
+          stdout_contains: [scaled-to-zero]
     cleanup:
       - argv: [kubectl, scale, deployment/harness-deployment, "--replicas=1"]
   - action: kubernetes.set_image

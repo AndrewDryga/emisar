@@ -47,10 +47,13 @@ cases:
         argv: [mysql, -NBe, "SELECT id FROM performance_schema.processlist WHERE info LIKE '%packtest_kill_connection%' AND id <> CONNECTION_ID() LIMIT 1"]
         retry_for: 10s
         retry_every: 250ms
+    # stdout_contains matches a substring, so asserting "0" on a bare count also
+    # accepts 10, 20 or 100 surviving threads. Compare the count exactly in the
+    # shell and assert the token that comparison prints instead.
     probes:
-      - argv: [mysql, -NBe, "SELECT COUNT(*) FROM performance_schema.processlist WHERE info LIKE '%packtest_kill_connection%' AND id <> CONNECTION_ID()"]
+      - argv: ["/bin/sh", "-c", "test \"$(mysql -NBe \"SELECT COUNT(*) FROM performance_schema.processlist WHERE info LIKE '%packtest_kill_connection%' AND id <> CONNECTION_ID()\")\" = 0 && echo kill-connection-drained"]
         expect:
-          stdout_contains: ["0"]
+          stdout_contains: [kill-connection-drained]
         retry_for: 10s
         retry_every: 250ms
   - action: mysql.kill_query
@@ -61,10 +64,11 @@ cases:
         argv: [mysql, -NBe, "SELECT id FROM performance_schema.processlist WHERE info LIKE '%packtest_kill_query%' AND id <> CONNECTION_ID() LIMIT 1"]
         retry_for: 10s
         retry_every: 250ms
+    # Exact comparison, not a substring match on "0": see kill_connection above.
     probes:
-      - argv: [mysql, -NBe, "SELECT COUNT(*) FROM performance_schema.processlist WHERE info LIKE '%packtest_kill_query%' AND id <> CONNECTION_ID()"]
+      - argv: ["/bin/sh", "-c", "test \"$(mysql -NBe \"SELECT COUNT(*) FROM performance_schema.processlist WHERE info LIKE '%packtest_kill_query%' AND id <> CONNECTION_ID()\")\" = 0 && echo kill-query-drained"]
         expect:
-          stdout_contains: ["0"]
+          stdout_contains: [kill-query-drained]
         retry_for: 10s
         retry_every: 250ms
   - action: mysql.open_tables
