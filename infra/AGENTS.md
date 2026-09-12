@@ -58,7 +58,10 @@ is the separate, credentials-gated deploy step.
    instances are safe. Applied portal migrations stay frozen (portal AGENTS.md §8).
 9. **Portal rollouts preserve serving capacity.** Reserve exactly the steady-state
    fleet with automatic consumption and let the rollout surge use on-demand
-   capacity; a stockout may delay deployment but must not remove a serving VM.
+   capacity; a stockout may delay deployment but must not remove a serving VM,
+   and it is never bought off with a reserved slot or warm spare that idles
+   between rollouts
+   ([rule](../.agent/kb/rules/infra-no-standing-spend-for-transient-scarcity.md)).
    Auto-healing uses DB-independent `/healthz`; the load balancer uses DB-aware
    `/readyz`. Never collapse the probes or return to delete-before-create updates.
    A regional MIG's fixed surge must be at least its zone count; keep
@@ -89,7 +92,10 @@ is the separate, credentials-gated deploy step.
 11. **Infrastructure helpers stay out of the portal image.** Run the Cloud SQL
    Auth Proxy as a separately pinned, cloud-init-managed container. Install a
    host-native helper such as the private self-administration runner from its
-   pinned, checksum-verified release and supervise it with systemd. The portal
+   pinned, checksum-verified release and supervise it with systemd; that runner
+   enters the BEAM through the colocated release's `bin/emisar rpc` and never a
+   second transport
+   ([rule](../.agent/kb/rules/infra-colocated-admin-release-rpc.md)). The portal
    Dockerfile contains only the application release; never use it as a bundle for
    binaries that COS can install directly. COS mounts writable persistent paths
    `noexec`: invoke stored scripts through their interpreter, keep durable helper
@@ -111,7 +117,11 @@ Comments explain **why** (the abuse case, the ordering
 hazard, the SOC 2 control), never restate the resource. One concern per file
 (`network`/`compute`/`database`/`load_balancer`/`secrets`/`iam`/`monitoring_*`/`dns`). Values that vary
 or carry a security decision are variables with a description that IS the
-documentation. **This is a PUBLIC repo — committed defaults are a generic
+documentation. A resource that can outlive a count-gated resource it references
+reads it as a splat (`A[*].attr`), never a hard `A[0]` index that bakes
+existence into the graph
+([rule](../.agent/kb/rules/infra-optional-resource-splat-refs.md)).
+**This is a PUBLIC repo — committed defaults are a generic
 reference configuration, never the production deployment's actual shape.**
 Environment sizing (machine type, node count, DB tier/availability/disk) and
 contact addresses are Terraform Cloud workspace variables; never commit values,

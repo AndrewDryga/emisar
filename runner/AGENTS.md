@@ -52,6 +52,15 @@ Top-level files are the cobra CLI commands: `connect` (the long-running daemon),
 `.agent/kb/specs/security-model.md` (repo root) carry the boot sequence, wire
 message types, and validation invariants in full.
 
+Two contracts bind identity and config loading. External identity defaults to
+the current hostname, so replacing a host enrolls a new runner and no generated
+identifier is ever minted or persisted
+([rule](../.agent/kb/rules/runner-host-identity-follows-hostname.md)). The
+loader rejects unknown keys, so a key the runner ever accepted stays loadable as
+an ignored, warned-about field rather than becoming a rejection on configs
+already fielded
+([rule](../.agent/kb/rules/runner-accepted-config-keys-stay-accepted.md)).
+
 ## Security posture (this binary runs commands on hosts)
 
 Non-negotiable — runner's equivalent of portal's Iron Laws:
@@ -59,7 +68,7 @@ Non-negotiable — runner's equivalent of portal's Iron Laws:
 - **No shell the cloud/LLM controls.** Actions run via `os/exec` — the binary + argv come literally from the pack YAML. Many actions' binary IS `/bin/sh` with a fixed `-c '<pipeline>'` program (for pipes, `${VAR:-default}`, etc.), but that program is authored, never cloud-supplied. The loader rejects open-ended strings, paths, arrays, and one-sided numeric args referenced in `-c` program text; authors pass them through `execution.env` or as whole positional argv elements after the program. Only finite `enum`/`allowed` choices and two-sided bounded numbers may render into fixed program text. A regex constrains an input's shape; it is not a shell-isolation boundary. The `shell` pack is the lone break-glass: there the operator supplies the whole command (arbitrary `/bin/sh -c`, `risk: critical`, default-denied).
 - **Validate everything the cloud sends.** The only trusted input is the action *ID* (looked up in the local registry). Every argument is re-validated against the action's declared schema before execution — unknown args rejected, types coerced, defaults applied before evaluation.
 - **Pack trust is pinned.** Packs are administrator-installed trusted content and system installs keep their trees root-owned; do not add descriptor-execution machinery for mutations that already require administrator access. The cloud sends `expected_pack_hash`; re-hash the on-disk pack and refuse to run on mismatch as pragmatic defense in depth. Never execute a pack the operator hasn't trusted.
-- **Host readiness never rewrites descriptor identity.** Advertise the complete action descriptor set for manifest verification. Mutable host facts, such as a missing primary executable, travel separately and may only remove executable targets; never hide a descriptor or relax hash/manifest matching because a prerequisite is absent.
+- **Host readiness never rewrites descriptor identity.** Advertise the complete action descriptor set for manifest verification. Mutable host facts, such as a missing primary executable, travel separately and may only remove executable targets; never hide a descriptor or relax hash/manifest matching because a prerequisite is absent ([rule](../.agent/kb/rules/runner-host-readiness-separate-from-descriptors.md)).
 - **Paths are contained.** Clean path args, check them against the allow/deny globs, block symlink traversal (`filepath.EvalSymlinks` + containment) — see `args_symlink_test.go`, `loader_symlink_test.go`.
 - **Output is redacted on the way out**, line by line, before it leaves the host.
 - **Least privilege.** Run as non-root where possible; installed packs are world-readable so a sudo-install stays readable to the service user.

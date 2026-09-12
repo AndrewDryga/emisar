@@ -135,7 +135,7 @@ One-shot rollouts stay listed until their production apply is confirmed, then le
 
 Normative rules live in the [shared rule index](rules/README.md) and, for
 Portal-only rules, the [Portal rule index](../../portal/.agent/kb/rules/README.md);
-the other project manuals link the shared rules they need directly.
+a project manual also links the shared rules its own domain owns directly.
 The manuals route to these references without loading every rule.
 
 - [Agent tasks](runbooks/agent-tasks.md) — lifecycle, explicit batches, decisions, and recovery
