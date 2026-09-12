@@ -33,11 +33,17 @@ services:
     cap_add:
       - NET_ADMIN
       - SYS_ADMIN
-    # The OSPF peer lives in its own network namespace, and creating one means
-    # bind-mounting it under /var/run/netns. Docker's default AppArmor profile
-    # denies that mount regardless of SYS_ADMIN, so this fixture works on a
-    # Docker Desktop VM (no AppArmor) and fails on an Ubuntu host. Scoped to
-    # this disposable SUT; the runner image it exercises is unaffected.
+    # SYS_ADMIN has two independent reasons, so dropping either one keeps it.
+    # FRR's own: zebra, bgpd, and ospfd each list ZCAP_SYS_ADMIN in the
+    # permitted set libfrr's zprivs keeps across the drop to the frr user, and
+    # capset(2) refuses to grant a capability the container never had — so
+    # without it every daemon exits on "initial cap_set_proc failed" and no MIB
+    # is ever registered. The fixture's: the OSPF peer lives in its own network
+    # namespace, and creating one means bind-mounting it under /var/run/netns.
+    # Docker's default AppArmor profile denies that mount regardless of
+    # SYS_ADMIN, so this fixture works on a Docker Desktop VM (no AppArmor) and
+    # fails on an Ubuntu host. Scoped to this disposable SUT; the runner image
+    # it exercises is unaffected.
     security_opt:
       - apparmor:unconfined
     healthcheck:
