@@ -100,6 +100,10 @@ is the separate, credentials-gated deploy step.
    binaries that COS can install directly. COS mounts writable persistent paths
    `noexec`: invoke stored scripts through their interpreter, keep durable helper
    state under `/var`, and place boot-recreatable executables under `/run`.
+   **Every byte change under `packs/emisar-admin/` bumps that pack's `version`,
+   and only the apply that ships it enforces a fix** — it is never published, so
+   `retired_below` retires nothing there
+   ([rule](../.agent/kb/rules/packs-private-packs-have-no-retirement-floor.md)).
 12. **Validate notebook runtimes in their real writable paths.** Livebook's
    `Mix.install/1` executes downloaded build tools from `HOME`, so its bounded,
    ephemeral home tmpfs must opt into `exec` while retaining `nosuid` and `nodev`.
