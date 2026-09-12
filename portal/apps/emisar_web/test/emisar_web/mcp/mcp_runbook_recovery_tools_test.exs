@@ -2846,7 +2846,7 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
     refute Map.has_key?(recovered, "next")
   end
 
-  test "recent history explains policy denials and approval rejections without operator input", %{
+  test "recent history explains denials by status and carries only the approver's own note", %{
     conn: conn,
     account: account,
     subject: subject,
