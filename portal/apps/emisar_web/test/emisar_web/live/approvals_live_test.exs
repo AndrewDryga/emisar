@@ -78,7 +78,7 @@ defmodule EmisarWeb.ApprovalsLiveTest do
            )
   end
 
-  test "invalid policy settings leave neutral request-level guidance", %{conn: conn} do
+  test "invalid policy settings render no policy-derived approval help", %{conn: conn} do
     {conn, _user, account} = register_and_log_in(conn)
     policy = Fixtures.Policies.create_policy(account_id: account.id)
     Fixtures.Policies.corrupt_approval_settings(policy, :missing)
