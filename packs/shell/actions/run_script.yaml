@@ -33,7 +33,7 @@ execution:
     argv: ["-c", "{{ args.script }}"]
   timeout: 60s
   timeout_min: 1s
-  timeout_max: 600s
+  timeout_max: 10m
 output:
   parser: text
   max_stdout_bytes: 65536

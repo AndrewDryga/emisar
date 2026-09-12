@@ -28,7 +28,7 @@ execution:
     - "{{ args.container }}"
   timeout: 30s
   timeout_min: 5s
-  timeout_max: 120s
+  timeout_max: 2m
 output:
   parser: text
   max_stdout_bytes: 65536
