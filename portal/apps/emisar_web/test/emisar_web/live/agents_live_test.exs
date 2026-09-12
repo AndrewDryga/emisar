@@ -199,6 +199,8 @@ defmodule EmisarWeb.AgentsLiveTest do
       assert has_element?(lv, "#dev-containers-agent-step a[href='/docs/connect-cli-agent']")
       assert has_element?(lv, "#dev-containers-limits", "potentially leak anything mounted")
       assert has_element?(lv, "#dev-containers-limits", "credential-sharing settings")
+      # The named-volume fact is the shared rotation paragraph's; step 3 does not restate it.
+      refute has_element?(lv, "#dev-containers-config-step", "named volume")
 
       # Every sentence of the shared copy reaches the Console; the public guide
       # renders the same EmisarWeb.SandboxRisks, so the two cannot drift.

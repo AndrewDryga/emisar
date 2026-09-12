@@ -2636,7 +2636,6 @@ defmodule EmisarWeb.AgentsLive do
               <div class="ml-6 space-y-4 text-sm text-zinc-400">
                 <p>
                   Merge these settings into <.inline_code>.devcontainer/devcontainer.json</.inline_code>.
-                  The named volume retains rotated bridge credentials when the container is rebuilt.
                 </p>
                 <.code_panel
                   id="dev-containers-config"
