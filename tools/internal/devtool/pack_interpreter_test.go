@@ -131,7 +131,134 @@ func TestValidatePackInterpreterBinaries_UbiquitousAndAbsoluteBinariesAreExempt(
 	}
 }
 
-func TestExecBinaryLintCoversTheShippedCatalog(t *testing.T) {
+const jqScriptAction = `id: p.jq
+execution:
+  script:
+    path: scripts/jq.sh
+    interpreter: /bin/bash
+`
+
+const jqInlineAction = `id: p.inline
+execution:
+  command:
+    binary: /bin/sh
+    argv: ["-c", "docker compose ls --format json | jq -ce '.[] | .Name'"]
+`
+
+// The third face of the gap: a helper the script text itself runs. Every case
+// pins the packaged-script or inline-program text, because that is the only
+// place this dependency is written down.
+func TestValidatePackScriptHelperBinaries(t *testing.T) {
+	tests := []struct {
+		name     string
+		declared []string
+		action   string
+		script   string
+		wantFail bool
+	}{
+		{
+			name:     "undeclared jq in a packaged script",
+			declared: []string{"bash"},
+			action:   jqScriptAction,
+			script:   "#!/bin/bash\nset -euo pipefail\ndocker ps --format json | jq -ce .\n",
+			wantFail: true,
+		},
+		{
+			name:     "declared jq passes",
+			declared: []string{"bash", "jq"},
+			action:   jqScriptAction,
+			script:   "#!/bin/bash\nset -euo pipefail\ndocker ps --format json | jq -ce .\n",
+		},
+		// The scripts that run jq are also the ones that explain it, so a
+		// comment naming it is not a dependency: docker.compose_config carries
+		// three, one of them about a builtin it deliberately avoids.
+		{
+			name:     "a commented mention is not a dependency",
+			declared: []string{"bash"},
+			action:   jqScriptAction,
+			script: "#!/bin/bash\nset -euo pipefail\n" +
+				"# Spelled without jq so it runs on a host that has none.\n" +
+				"docker ps --format '{{.Names}}'\n",
+		},
+		// And the comment skipping must not hide the invocation beside it.
+		{
+			name:     "a commented mention beside a real call still fires",
+			declared: []string{"bash"},
+			action:   jqScriptAction,
+			script: "#!/bin/bash\nset -euo pipefail\n" +
+				"# gsub needs Oniguruma, which jq's minimal build omits.\n" +
+				"docker ps --format json | jq -ce .\n",
+			wantFail: true,
+		},
+		// A word-boundary match, so a variable that merely carries the name is
+		// not an invocation.
+		{
+			name:     "a name that only appears inside an identifier is not a call",
+			declared: []string{"bash"},
+			action:   jqScriptAction,
+			script:   "#!/bin/bash\nset -euo pipefail\njq_filter=.Names\nprintf '%s\\n' \"$jq_filter\"\n",
+		},
+		{
+			name:     "undeclared jq in an inline -c program",
+			declared: []string{"docker"},
+			action:   jqInlineAction,
+			wantFail: true,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			dir := writePackInterpreterFixture(t, "", map[string]string{"a.yaml": test.action})
+			if test.script != "" {
+				writePackActionLintFile(t, dir, "scripts/jq.sh", test.script)
+			}
+
+			err := validatePackScriptHelperBinaries(
+				fixturePackActionLintInput(t, dir, test.declared...))
+			if !test.wantFail {
+				if err != nil {
+					t.Fatalf("want no finding, got %v", err)
+				}
+				return
+			}
+			if err == nil {
+				t.Fatal("an action running jq with jq undeclared must fail")
+			}
+			if !strings.Contains(err.Error(), "jq") ||
+				!strings.Contains(err.Error(), "requires.binaries") {
+				t.Fatalf("error should name the binary and the manifest key, got %v", err)
+			}
+		})
+	}
+}
+
+func TestScriptHelperBinaryLintCoversTheShippedCatalog(t *testing.T) {
+	packDirs := shippedPackDirs(t)
+	for _, packDir := range packDirs {
+		if err := validatePackScriptHelperBinaries(mustLoadPackActionLintInput(t, packDir)); err != nil {
+			t.Errorf("%s: %v", filepath.Base(packDir), err)
+		}
+	}
+
+	// A check that detects nothing would pass the catalog too, so prove it
+	// actually reads the shipped script text: with the declarations ignored, the
+	// packs that run jq must ALL be flagged. 28 do — 27 declared it before this
+	// check existed and docker is the one that did not.
+	flagged := 0
+	for _, packDir := range packDirs {
+		input := mustLoadPackActionLintInput(t, packDir)
+		input.requiredBinaries = map[string]bool{}
+		if err := validatePackScriptHelperBinaries(input); err != nil {
+			flagged++
+		}
+	}
+	if flagged < 28 {
+		t.Errorf("detected jq in %d packs, want at least the 28 that run it", flagged)
+	}
+}
+
+func shippedPackDirs(t *testing.T) []string {
+	t.Helper()
 	manifests, err := filepath.Glob(filepath.Join("..", "..", "..", "packs", "*", "pack.yaml"))
 	if err != nil {
 		t.Fatal(err)
@@ -139,8 +266,15 @@ func TestExecBinaryLintCoversTheShippedCatalog(t *testing.T) {
 	if len(manifests) == 0 {
 		t.Fatal("no pack manifests found")
 	}
+	dirs := make([]string, 0, len(manifests))
 	for _, manifest := range manifests {
-		packDir := filepath.Dir(manifest)
+		dirs = append(dirs, filepath.Dir(manifest))
+	}
+	return dirs
+}
+
+func TestExecBinaryLintCoversTheShippedCatalog(t *testing.T) {
+	for _, packDir := range shippedPackDirs(t) {
 		if err := validatePackInterpreterBinaries(mustLoadPackActionLintInput(t, packDir)); err != nil {
 			t.Errorf("%s: %v", filepath.Base(packDir), err)
 		}

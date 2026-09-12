@@ -78,5 +78,8 @@ func validatePackActionLints(ctx context.Context, packDir string) error {
 	if err := validatePackScriptFlags(input); err != nil {
 		return err
 	}
-	return validatePackInterpreterBinaries(input)
+	if err := validatePackInterpreterBinaries(input); err != nil {
+		return err
+	}
+	return validatePackScriptHelperBinaries(input)
 }
