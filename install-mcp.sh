@@ -363,9 +363,7 @@ verify_checksum_attestation() {
   log "checksum signature verified  ${ATTESTATION_WORKFLOW}"
 }
 
-# Same TTY-fallback prompt the runner installer uses — curl|bash makes
-# stdin the script content, not a terminal, so a plain `read` consumes
-# the next line of the script. See install.sh for the longer rationale.
+# install.sh's confirm(), kept identical by the installer parity check.
 confirm() {
   if truthy "$ASSUME_YES"; then return 0; fi
 
