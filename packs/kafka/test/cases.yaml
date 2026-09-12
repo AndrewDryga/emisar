@@ -88,12 +88,24 @@ cases:
         expect:
           stdout_contains: [packtest-keep-group]
           stdout_not_contains: [packtest-delete-group]
+  # The action ends in `sort | uniq -c`, so it prints one padded
+  # `<count> <broker>` row per broker -- `      2 1` for the seeded topic's two
+  # partitions, both led by broker 1. packtest matches needles as substrings, so
+  # a bare "2 1" is also a substring of `     12 1` and of `      2 10`: broker 1
+  # leading twelve partitions, or broker 10 leading two, would both pass. The
+  # needle carries the whole row instead -- uniq -c's padding space in front of
+  # the count, and the line break after the broker id -- which pins both columns.
   - action: kafka.leader_partitions
     expect:
-      stdout_contains: ["2 1"]
+      stdout_contains: [" 2 1\n"]
+  # Both health reads print nothing on a healthy cluster, so the probe below is
+  # the cluster-state proof. `exit: [0]` alone would also accept a run that
+  # reported every seeded partition as broken, so the expect names the topic the
+  # report must not mention.
   - action: kafka.under_replicated
     expect:
       exit: [0]
+      stdout_not_contains: [orders]
     probes:
       - argv: [/bin/sh, -c, 'test -z "$(kafka-topics.sh --bootstrap-server kafka:9092 --describe --under-replicated-partitions)" && echo fully-replicated']
         expect:
@@ -101,6 +113,7 @@ cases:
   - action: kafka.unavailable_partitions
     expect:
       exit: [0]
+      stdout_not_contains: [orders]
     probes:
       - argv: [/bin/sh, -c, 'test -z "$(kafka-topics.sh --bootstrap-server kafka:9092 --describe --unavailable-partitions)" && echo all-partitions-available']
         expect:
