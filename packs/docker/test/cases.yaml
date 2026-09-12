@@ -68,6 +68,23 @@ cases:
         /truncated/volumes: 2
         /truncated/profiles: 2
 
+  # The 64 KiB bound is on the section `docker compose config` prints, not on
+  # the file: 360 service names of 200 characters is 72,360 bytes against a
+  # 65,536-byte budget. The action has to say so and fail, because a summary
+  # assembled from a clipped section is a confidently wrong answer about which
+  # services a stack defines — and the script reaches that message only because
+  # it captures each section whole. Bounding the capture with `head -c` clipped
+  # it to the bound (so the size could never be measured) and SIGPIPEd the
+  # producer into a 141 under `pipefail`.
+  - name: docker.compose_config-refuses-a-section-past-64-kib
+    action: docker.compose_config
+    args: {file: /opt/oversized/docker-compose.yml}
+    expect:
+      status: failure
+      exit: [1]
+      reason_contains: [process exited with code 1]
+      stderr_contains: ["Compose config summary section exceeded 64 KiB"]
+
   # The fixture image is pinned by digest and pulled into the case's own empty
   # daemon, so nothing here depends on what the host happens to have cached.
   - action: docker.inspect

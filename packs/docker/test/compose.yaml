@@ -13,6 +13,7 @@ services:
       # root, so the fixture is mounted where a real stack would live.
       - ${EMISAR_ROOT}/packs/docker/test/fixtures/docker-compose.yml:/opt/stack/docker-compose.yml:ro
       - ${EMISAR_ROOT}/packs/docker/test/fixtures/worst-case-compose.yml:/opt/worst-case/docker-compose.yml:ro
+      - ${EMISAR_ROOT}/packs/docker/test/fixtures/oversized-section-compose.yml:/opt/oversized/docker-compose.yml:ro
       # compose_restart drives a stack rather than parsing one, so its fixture
       # is brought up in the case's own daemon.
       - ${EMISAR_ROOT}/packs/docker/test/fixtures/running-stack.yml:/opt/running/docker-compose.yml:ro

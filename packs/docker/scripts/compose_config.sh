@@ -13,9 +13,8 @@ compose_config_json() {
   compose_config --no-normalize --format json
 }
 
-bounded_list() {
-  local value
-  value=$(compose_config "$1" | head -c "$((max_section_bytes + 1))")
+bounded_section() {
+  local value=$1
   ((${#value} <= max_section_bytes)) || {
     printf '%s\n' "Compose config summary section exceeded 64 KiB" >&2
     exit 1
@@ -23,16 +22,32 @@ bounded_list() {
   printf '%s' "$value"
 }
 
+# Each helper below captures its section whole and takes the source's status with
+# `|| exit $?`. Both halves are load-bearing.
+#
+# `set -e` is NOT inherited into a command substitution — and every call here is
+# one, `services=$(bounded_list --services)` — so a bare assignment leaves a
+# failed `docker compose config` discarded mid-function: the section is empty,
+# it passes the size check, and the action reports `valid: true` with an empty
+# list and exit 0. That is the false all-clear
+# `.agent/kb/rules/packs-pipelines-fail-on-source-errors.md` is about, on a read
+# an operator uses to decide whether a stack parses.
+#
+# And no `head -c`: it exits at its limit and SIGPIPEs the producer, which
+# `pipefail` reports as a failed run of a successful parse, and it clips the
+# value to one byte past the bound, so the check above could only ever see that
+# clip rather than the section's real size.
+bounded_list() {
+  local value
+  value=$(compose_config "$1") || exit $?
+  bounded_section "$value"
+}
+
 bounded_json_list() {
   local filter=$1
   local value
-  value=$(compose_config_json | jq -r "$filter" |
-    head -c "$((max_section_bytes + 1))")
-  ((${#value} <= max_section_bytes)) || {
-    printf '%s\n' "Compose config summary section exceeded 64 KiB" >&2
-    exit 1
-  }
-  printf '%s' "$value"
+  value=$(compose_config_json | jq -r "$filter") || exit $?
+  bounded_section "$value"
 }
 
 # Parse the complete file first, without resolving environment or interpolation.

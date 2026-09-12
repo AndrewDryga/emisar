@@ -47,6 +47,22 @@ shape below does both. Never drop `pipefail` from a bash script to quiet one of
 these — that re-arms the false all-clear for every other pipeline in the file.
 Fix the step.
 
+**And the floor stops at the edge of a command substitution.** Bash does not
+inherit `errexit` into `$( )` unless `shopt -s inherit_errexit` is set, so a
+helper the script calls as `services=$(bounded_list --services)` runs with the
+floor effectively off inside it — `bash -c 'set -euo pipefail; o=$( false; echo
+in )'` prints `in` and exits 0. There a bare `value=$(src)` ends nothing: the
+source's failure is discarded, the function carries on with an empty value, and
+the action reports a successful read of nothing. That is this rule's false
+all-clear reintroduced *inside* a script that set the floor correctly on line 2,
+and it is the opposite failure from the one above — not an exit before the
+diagnostic prints, but no exit at all. So in any helper reached through a
+substitution, take the status in place with `|| exit $?` (or `|| status=$?` when
+a captured diagnostic still has to be printed) rather than relying on `set -e`
+to reach into one. `docker.compose_config` shipped exactly this: every section
+was captured in such a helper, so a failed `docker compose config` summarized as
+`{"valid": true, "services": []}` with exit 0.
+
 **Good.**
 
 ```sh
