@@ -59,6 +59,7 @@ func runnerChecks() []runnerCheck {
 		{"enrollment state transitions", true, runnerEnrollmentState},
 		{"binary installation rollback", true, runnerInstallRollback},
 		{"binary activation transaction", false, runnerActivationTransaction},
+		{"service stays stopped when rollback cannot restore", false, runnerFailedRestoreService},
 		{"signal-interrupted rollback", false, runnerSignalRollback},
 		{"installed pack repair", false, runnerPackRepair},
 		{"systemd activation", false, runnerSystemdActive},
@@ -818,6 +819,236 @@ func stageDirOf(bin string, renames []byte) string {
 		}
 	}
 	return ""
+}
+
+// A rollback that could not put the previous binary back leaves BIN_DIR/emisar
+// naming the build whose installation just failed. finish_install used to call
+// restore_previous_service anyway and then announce that it had "restored the
+// previous runner and service state": the host was restarted onto the failed
+// binary, and the operator was told the opposite. The same applies to a failure
+// AFTER start_service succeeded — that service is already running the failed
+// build and nothing stopped it.
+//
+// So the rollback outcome must reach finish_install, which then keeps the
+// runner stopped, keeps the recovery copy at the exact path it names, tells the
+// operator recovery is manual, and still exits with the installation's own
+// status. The successful rollback and the failed fresh install are the controls:
+// they must still restart the old runner and clean up as before.
+//
+// Every case drives the real staging, activation, rollback and EXIT trap; only
+// the restoring rename and the service commands are faked, so no host service is
+// touched.
+func runnerFailedRestoreService(h *harness) error {
+	installer := h.repoPath("install.sh")
+	root := h.path("failed-restore")
+	fakeBin := filepath.Join(root, "fake-bin")
+	if err := h.mkdir(fakeBin); err != nil {
+		return err
+	}
+	// Fail only the rename that restores the recovery copy. Activation's own
+	// rename still commits, so each case reaches rollback with the new binary
+	// live — the state the hazard needs.
+	if err := fakeExecutable(filepath.Join(fakeBin, "mv"), `
+if [ "${MV_FAIL_PREVIOUS:-0}" = "1" ]; then
+  case "$*" in *emisar.previous*) echo "mv: simulated failure" >&2; exit 1;; esac
+fi
+exec /bin/mv "$@"
+`); err != nil {
+		return err
+	}
+
+	// SERVICE_UNIT_CREATED stays 0 in every case: the unit-creating half of
+	// rollback_service belongs to the fresh-install service rollback check,
+	// which stubs `rm` because that path deletes a real /etc unit file. Here
+	// rollback_service no-ops and `rm` stays the real one, cleaning only the
+	// staging directory.
+	const body = `
+die() { printf 'DIE: %s\n' "$*" >&2; exit 1; }
+warn() { printf 'WARN: %s\n' "$*" >&2; }
+log() { :; }
+systemctl() { printf 'systemctl %s\n' "$*" >>"$TRACE"; }
+launchctl() { printf 'launchctl %s\n' "$*" >>"$TRACE"; }
+restore_enrollment_state() { :; }
+rollback_install_receipt() { :; }
+STAGE_DIR=""
+STAGED_BINARY=""
+BACKUP_BINARY=""
+BINARY_ACTIVATED=0
+BINARY_RESTORE_FAILED=0
+SERVICE_UNIT_CREATED=0
+INSTALL_TRANSACTION=0
+tmp=""
+trap 'finish_install $?' EXIT
+stage_binary "$RELEASE"
+INSTALL_TRANSACTION=1
+activate_binary
+exit 37
+`
+	names := []string{
+		"stage_binary", "activate_binary", "rollback_binary", "cleanup_stage_dir",
+		"restore_previous_service", "stop_failed_service", "rollback_service", "finish_install",
+	}
+	action := map[string][2]string{
+		"systemd": {"systemctl start emisar.service", "systemctl stop emisar.service"},
+		"launchd": {
+			"launchctl bootstrap system /Library/LaunchDaemons/com.emisar.runner.plist",
+			"launchctl bootout system/com.emisar.runner",
+		},
+	}
+
+	for _, testCase := range []struct {
+		name        string
+		init        string
+		wasRunning  string
+		started     string
+		failRestore bool
+		previous    bool
+	}{
+		{"systemd-was-running", "systemd", "1", "0", true, true},
+		{"systemd-was-stopped", "systemd", "0", "0", true, true},
+		{"systemd-already-started", "systemd", "0", "1", true, true},
+		{"launchd-was-running", "launchd", "1", "0", true, true},
+		{"launchd-already-started", "launchd", "0", "1", true, true},
+		{"systemd-restored", "systemd", "1", "0", false, true},
+		{"launchd-restored", "launchd", "1", "0", false, true},
+		{"fresh-failure", "systemd", "0", "0", false, false},
+	} {
+		caseRoot := filepath.Join(root, testCase.name)
+		bin := filepath.Join(caseRoot, "bin")
+		release := filepath.Join(caseRoot, "release")
+		trace := filepath.Join(caseRoot, "trace")
+		if err := h.mkdir(bin, release); err != nil {
+			return err
+		}
+		if err := fakeExecutable(filepath.Join(release, "emisar"), `
+echo "emisar version 9.9.9"
+`); err != nil {
+			return err
+		}
+		if testCase.previous {
+			if err := writeFile(filepath.Join(bin, "emisar"), "old runner\n", 0o755); err != nil {
+				return err
+			}
+		}
+		failRestore := "0"
+		if testCase.failRestore {
+			failRestore = "1"
+		}
+		result := h.functions(installer, names, body, map[string]string{
+			"PATH":                fakeBin + string(os.PathListSeparator) + os.Getenv("PATH"),
+			"BIN_DIR":             bin,
+			"RELEASE":             release,
+			"TRACE":               trace,
+			"VERSION":             "runner-v9.9.9",
+			"INIT":                testCase.init,
+			"SERVICE_WAS_RUNNING": testCase.wasRunning,
+			"SERVICE_STARTED":     testCase.started,
+			"MV_FAIL_PREVIOUS":    failRestore,
+		})
+		output := string(result.output)
+		// The installation's own status, not the rollback's: the operator's
+		// automation reads it to tell a failed upgrade from a clean one.
+		if code := exitCode(result.err); code != 37 {
+			return fmt.Errorf("%s: finish_install exited %d, want the installation's own 37:\n%s",
+				testCase.name, code, output)
+		}
+		var missing, forbidden string
+		traced, err := os.ReadFile(trace)
+		if err != nil && !os.IsNotExist(err) {
+			return fmt.Errorf("%s: %w", testCase.name, err)
+		}
+		recorded := string(traced)
+		start, stop := action[testCase.init][0], action[testCase.init][1]
+		if testCase.failRestore {
+			missing, forbidden = stop, start
+		} else {
+			missing, forbidden = start, stop
+		}
+		if testCase.previous && !strings.Contains(recorded, missing) {
+			return fmt.Errorf("%s: no %q in the recorded service actions:\n%s\n%s",
+				testCase.name, missing, recorded, output)
+		}
+		if strings.Contains(recorded, forbidden) {
+			return fmt.Errorf("%s: the rollback ran %q:\n%s\n%s",
+				testCase.name, forbidden, recorded, output)
+		}
+
+		if !testCase.failRestore {
+			if strings.Contains(output, "could not restore") {
+				return fmt.Errorf("%s: a rollback that restored the binary warned it had not:\n%s",
+					testCase.name, output)
+			}
+			if !strings.Contains(output, "restored the previous runner and service state") {
+				return fmt.Errorf("%s: a completed rollback did not report it:\n%s", testCase.name, output)
+			}
+			if testCase.previous {
+				if err := exactFile(filepath.Join(bin, "emisar"), "old runner\n"); err != nil {
+					return fmt.Errorf("%s: rollback did not restore the previous binary: %w", testCase.name, err)
+				}
+			} else if err := requireAbsent(filepath.Join(bin, "emisar")); err != nil {
+				return fmt.Errorf("%s: rollback kept the binary of a failed fresh install: %w", testCase.name, err)
+			}
+			entries, err := os.ReadDir(bin)
+			if err != nil {
+				return err
+			}
+			for _, entry := range entries {
+				if entry.Name() != "emisar" {
+					return fmt.Errorf("%s: a completed rollback left %s behind in BIN_DIR:\n%s",
+						testCase.name, entry.Name(), output)
+				}
+			}
+			continue
+		}
+
+		if strings.Contains(output, "restored the previous runner and service state") {
+			return fmt.Errorf("%s: a failed restoration still claimed the previous state was restored:\n%s",
+				testCase.name, output)
+		}
+		if !strings.Contains(output, "previous binary could NOT be restored") {
+			return fmt.Errorf("%s: the operator was not told the rollback is incomplete:\n%s",
+				testCase.name, output)
+		}
+		if !strings.Contains(output, filepath.Join(bin, "emisar")+" is the build that failed to install") {
+			return fmt.Errorf("%s: the summary did not name what BIN_DIR/emisar now holds:\n%s",
+				testCase.name, output)
+		}
+		// The stopped service is a claim only the init-aware function may make,
+		// and it is the one the operator acts on.
+		if !strings.Contains(output, "it would run the binary that failed to install") {
+			return fmt.Errorf("%s: the operator was not told why the runner stays down:\n%s",
+				testCase.name, output)
+		}
+		// The recovery copy is the host's only previous binary now. It must
+		// survive at exactly the path the operator was handed.
+		recovery := lineValue(output, "could not restore the previous binary from ")
+		if recovery == "" {
+			return fmt.Errorf("%s: the failed restoration named no recovery copy:\n%s", testCase.name, output)
+		}
+		if err := exactFile(recovery, "old runner\n"); err != nil {
+			return fmt.Errorf("%s: the recovery copy did not survive the failed rollback: %w", testCase.name, err)
+		}
+		if !strings.Contains(output, "mv -f '"+recovery+"' '"+filepath.Join(bin, "emisar")+"'") {
+			return fmt.Errorf("%s: the manual recovery guidance does not name the kept copy:\n%s",
+				testCase.name, output)
+		}
+		if err := containsFile(filepath.Join(bin, "emisar"), `echo "emisar version 9.9.9"`); err != nil {
+			return fmt.Errorf("%s: the failed rollback also removed the live binary: %w", testCase.name, err)
+		}
+	}
+	return nil
+}
+
+// lineValue returns the rest of the line following label's first occurrence,
+// which is how the installer's warnings carry a path through output that also
+// carries stub chatter.
+func lineValue(output, label string) string {
+	_, rest, found := strings.Cut(output, label)
+	if !found {
+		return ""
+	}
+	value, _, _ := strings.Cut(rest, "\n")
+	return strings.TrimSpace(value)
 }
 
 // A bare signal fires the EXIT trap with $?=0, which finish_install's rc-guard

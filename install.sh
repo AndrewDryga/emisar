@@ -1291,6 +1291,11 @@ STAGE_DIR=""
 STAGED_BINARY=""
 BACKUP_BINARY=""
 BINARY_ACTIVATED=0
+# Set by rollback_binary when the restoring rename failed, so BIN_DIR/emisar is
+# still the build whose installation failed. finish_install reads it instead of
+# treating a warning as a completed rollback: a service restarted on that path
+# runs the failed binary under a "restored the previous state" conclusion.
+BINARY_RESTORE_FAILED=0
 # Set by drop_config_skeleton, read by start_service and print_next_steps.
 # Lowercase like the rest of this script's own state: it is not a knob, and an
 # uppercase name with an env-style default let an exported value decide whether
@@ -1468,6 +1473,7 @@ rollback_binary() {
       # instead of cleaning it, so the operator keeps the path just named.
       STAGE_DIR=""
       BINARY_ACTIVATED=0
+      BINARY_RESTORE_FAILED=1
       return 0
     fi
   elif [ "${BINARY_ACTIVATED}" = "1" ]; then
@@ -1800,6 +1806,27 @@ restore_previous_service() {
   esac
 }
 
+# Keep the service down when rollback could not put the previous binary back.
+# BIN_DIR/emisar is then the build whose installation just failed, so there is
+# nothing to restart into: restarting the service that was running before the
+# upgrade, or leaving one this run already started, runs exactly that binary.
+# Stop unconditionally rather than only when this run stopped or started it —
+# the point is that the failed runner is not running when we exit, whatever
+# started it — and stay quiet about a unit rollback_service may already have
+# removed. --no-service (INIT=none) has no unit and falls through.
+stop_failed_service() {
+  case "${INIT}" in
+    systemd)
+      warn "keeping emisar.service stopped: it would run the binary that failed to install"
+      systemctl stop emisar.service >/dev/null 2>&1 || true
+      ;;
+    launchd)
+      warn "keeping com.emisar.runner unloaded: it would run the binary that failed to install"
+      launchctl bootout system/com.emisar.runner >/dev/null 2>&1 || true
+      ;;
+  esac
+}
+
 # Undo a service unit THIS run created. Only for a fresh install: an upgrade's
 # unit predates us and belongs to the installation we are restoring.
 rollback_service() {
@@ -1827,8 +1854,17 @@ finish_install() {
     restore_enrollment_state
     rollback_service
     rollback_install_receipt
-    restore_previous_service
-    warn "installation failed; restored the previous runner and service state"
+    if [ "${BINARY_RESTORE_FAILED}" = "1" ]; then
+      stop_failed_service
+      # Only stop_failed_service knows whether this host has a unit to keep
+      # stopped, so it makes that claim and these lines stay about the binary.
+      warn "installation failed and the previous binary could NOT be restored"
+      warn "${BIN_DIR}/emisar is the build that failed to install"
+      warn "recover manually: mv -f '${BACKUP_BINARY}' '${BIN_DIR}/emisar', then restart the runner"
+    else
+      restore_previous_service
+      warn "installation failed; restored the previous runner and service state"
+    fi
   fi
   # A failure BEFORE the transaction opened — a staged binary that will not run,
   # or a host config the new runner refuses — never reaches rollback_binary, and
