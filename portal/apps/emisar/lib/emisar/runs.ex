@@ -508,45 +508,90 @@ defmodule Emisar.Runs do
   end
 
   @doc """
-  Internal — the command line one already-authorized run stands behind, for a
+  Internal — the command line each already-authorized run stands behind, for a
   read-only receipt of what ran or what an approver is deciding against:
-  `{:ok, %{kind: :executed | :preview, text: line, truncated: boolean}}`.
+  `{:ok, %{run_id => %{kind: :executed | :preview, text: line, truncated:
+  boolean}}}` over a page of runs.
 
   A run that executed reports the runner's OWN recorded `executed_command`,
   masked by the runner and flagged when the remote copy was bounded — a receipt,
   never a reconstruction. A run that has not executed reports the same trusted
-  preview the approval page renders, resolved from the run's snapshotted action
-  and hash-proven published pack rather than any runner advertisement. The line
-  is bounded here (the flag also carries that cut), because this receipt travels
-  in a size-budgeted response; the console's own `project_action_command/3` is
-  unbounded.
+  preview the approval page renders: the template and arg declarations come
+  from the published pack that the run's snapshotted `expected_pack_hash` AND
+  the runner's advertised hash both prove (`PublishedRegistry.resolve_action/4`),
+  never from the advertisement itself. The advertisements for the whole page
+  are one plain read; this is a receipt, not the dispatch gate, so it takes
+  none of the row locks `fetch_dispatch_contract/5` holds for a transaction.
+  The line is bounded here (the flag also carries that cut), because this
+  receipt travels in a size-budgeted response; the console's own
+  `project_action_command/3` is unbounded.
 
-  Fails closed with `{:error, :no_command_preview}` when neither exists — pack
-  drift, an unknown action, or an unresolvable argument reference — so a caller
-  renders no command rather than a guess. Requires `view_runs` and the run's
-  own account.
+  A run with neither — pack drift, an unknown or no longer advertised action,
+  or an unresolvable argument reference — is absent from the map, so a caller
+  renders no command rather than a guess. Requires `view_runs` and every run
+  in the subject's own account; `{:error, :unauthorized | :not_found}` otherwise.
   """
-  def project_run_command(%ActionRun{} = run, %Subject{} = subject) do
+  def project_run_commands(runs, %Subject{} = subject) when is_list(runs) do
     with :ok <-
            Auth.Authorizer.ensure_has_permissions(subject, Authorizer.view_runs_permission()),
-         :ok <- Subject.ensure_in_account(subject, run.account_id) do
-      run_command(run)
+         :ok <- ensure_runs_in_account(runs, subject) do
+      {:ok, run_commands(runs, subject.account.id)}
     end
   end
 
-  defp run_command(%ActionRun{executed_command: executed} = run)
-       when is_binary(executed) and executed != "" do
-    {text, cut?} = bounded_command(executed)
-    {:ok, %{kind: :executed, text: text, truncated: run.executed_command_truncated or cut?}}
+  defp ensure_runs_in_account(runs, subject) do
+    Enum.reduce_while(runs, :ok, fn run, :ok ->
+      case Subject.ensure_in_account(subject, run.account_id) do
+        :ok -> {:cont, :ok}
+        {:error, reason} -> {:halt, {:error, reason}}
+      end
+    end)
   end
 
-  defp run_command(%ActionRun{} = run) do
-    with {:ok, action} <- fetch_snapshotted_action(run),
-         {:ok, line} <- render_trusted_command(run, action) do
-      {text, cut?} = bounded_command(line)
-      {:ok, %{kind: :preview, text: text, truncated: cut?}}
-    else
-      _unprovable -> {:error, :no_command_preview}
+  defp run_commands([], _account_id), do: %{}
+
+  defp run_commands(runs, account_id) do
+    {executed, parked} = Enum.split_with(runs, &executed_command?/1)
+    advertised = advertised_actions_for_runs(parked, account_id)
+
+    receipts = Enum.map(executed, &{&1.id, executed_command_receipt(&1)})
+
+    previews =
+      Enum.flat_map(parked, fn run ->
+        case preview_command(run, Map.get(advertised, {run.runner_id, run.action_id})) do
+          {:ok, command} -> [{run.id, command}]
+          :error -> []
+        end
+      end)
+
+    Map.new(receipts ++ previews)
+  end
+
+  defp executed_command?(%ActionRun{executed_command: executed}),
+    do: is_binary(executed) and executed != ""
+
+  defp executed_command_receipt(%ActionRun{executed_command: executed} = run) do
+    {text, cut?} = bounded_command(executed)
+    %{kind: :executed, text: text, truncated: run.executed_command_truncated or cut?}
+  end
+
+  # One read for the page, scoped by the account every run was just held to,
+  # so the pairs are bounded by the page and never answer for another tenant.
+  defp advertised_actions_for_runs(runs, account_id) do
+    pairs = Enum.map(runs, &{&1.runner_id, &1.action_id})
+    Catalog.actions_for_account_pairs(account_id, pairs)
+  end
+
+  defp preview_command(%ActionRun{}, nil), do: :error
+
+  defp preview_command(%ActionRun{} = run, %Catalog.RunnerAction{} = advertised_action) do
+    case render_trusted_command(run, advertised_action) do
+      {:ok, line} ->
+        {text, cut?} = bounded_command(line)
+        {:ok, %{kind: :preview, text: text, truncated: cut?}}
+
+      _unprovable ->
+        :error
     end
   end
 

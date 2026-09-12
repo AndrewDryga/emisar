@@ -636,6 +636,48 @@ defmodule Emisar.ApprovalsTest do
     %{account: account, runner: runner, run: run, request: request}
   end
 
+  # Another provable gated run on the same runner, so a page holds several.
+  defp provable_gated_run(account, runner, path) do
+    pack = Catalog.PublishedRegistry.get("linux-core")
+    initiator = Fixtures.Users.create_user()
+
+    initiating_membership =
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        user_id: initiator.id,
+        role: "operator"
+      )
+
+    {:ok, run} =
+      Runs.create_run(%{
+        account_id: account.id,
+        runner_id: runner.id,
+        action_id: "linux.disk_usage",
+        source: "operator",
+        requested_by_id: initiator.id,
+        initiating_membership_id: initiating_membership.id,
+        args: %{"paths" => [path]},
+        pack_ref: "linux-core@#{pack.version}/#{pack.content_hash}",
+        expected_pack_hash: pack.content_hash,
+        requires_approval: true,
+        status: :pending_approval
+      })
+
+    {:ok, _request} =
+      Approvals.create_request(run, initiator.id, "needs review", min_approvals: 2)
+
+    run
+  end
+
+  defp drain_approvals_queries(pid, queries \\ []) do
+    receive do
+      {:approvals_repo_query, ^pid, query} -> drain_approvals_queries(pid, [query | queries])
+      {:approvals_repo_query, _other_pid, _query} -> drain_approvals_queries(pid, queries)
+    after
+      0 -> Enum.reverse(queries)
+    end
+  end
+
   defp distinct_member(account, role) do
     user = Fixtures.Users.create_user()
 
@@ -1551,6 +1593,51 @@ defmodule Emisar.ApprovalsTest do
       # the effective status — not the row the sweep has yet to rewrite — is
       # what stops it.
       assert review.command == nil
+    end
+
+    # Every wait_for_run poll and every recent-runs page reads this, so the page
+    # costs a fixed number of queries however many pending gated runs it holds,
+    # and none of them is the dispatch transaction's row lock: a receipt must
+    # never queue behind, or briefly block, an in-flight dispatch or trust write.
+    test "a page of pending gated runs costs a fixed query count and takes no row lock" do
+      %{account: account, runner: runner, run: first} = provable_gated_request(min_approvals: 2)
+      subject = operator_subject(account)
+
+      rest =
+        for path <- ["/srv/beta", "/srv/gamma"], do: provable_gated_run(account, runner, path)
+
+      runs = [first | rest]
+
+      test_pid = self()
+      handler = {__MODULE__, test_pid, make_ref()}
+
+      :ok =
+        :telemetry.attach(
+          handler,
+          [:emisar, :repo, :query],
+          fn _event, _measurements, metadata, _config ->
+            send(test_pid, {:approvals_repo_query, self(), metadata.query})
+          end,
+          nil
+        )
+
+      on_exit(fn -> :telemetry.detach(handler) end)
+
+      assert {:ok, reviews} = Approvals.project_reviews_for_visible_runs([first], subject)
+      assert %{command: %{kind: :preview, text: "df -P -h /srv"}} = reviews[first.id]
+      one_row = drain_approvals_queries(test_pid)
+
+      assert {:ok, reviews} = Approvals.project_reviews_for_visible_runs(runs, subject)
+
+      assert Enum.map(runs, &reviews[&1.id].command.text) ==
+               ["df -P -h /srv", "df -P -h /srv/beta", "df -P -h /srv/gamma"]
+
+      full_page = drain_approvals_queries(test_pid)
+
+      assert length(full_page) == length(one_row)
+      assert Enum.count(full_page, &(&1 =~ ~s|"catalog_runner_actions"|)) == 1
+      refute Enum.any?(full_page, &(String.upcase(&1) =~ "FOR UPDATE"))
+      refute Enum.any?(full_page, &(String.upcase(&1) =~ "FOR NO KEY UPDATE"))
     end
 
     # The receipt is bounded because it rides a size-budgeted response, and the

@@ -1355,9 +1355,9 @@ defmodule Emisar.RunsTest do
     end
   end
 
-  describe "project_run_command/2" do
+  describe "project_run_commands/2" do
     # The same published `linux.disk_usage` contract as project_action_command/3
-    # above — here the run resolves its own snapshotted action, because a remote
+    # above — here each run resolves its own advertisement, because a remote
     # receipt has no advertisement to hand in.
     setup do
       {_user, account, subject} = Fixtures.Subjects.owner_subject()
@@ -1393,8 +1393,8 @@ defmodule Emisar.RunsTest do
         )
         |> Repo.update!()
 
-      assert Runs.project_run_command(executed, subject) ==
-               {:ok, %{kind: :executed, text: "df -P -h /srv", truncated: true}}
+      assert Runs.project_run_commands([executed], subject) ==
+               {:ok, %{run.id => %{kind: :executed, text: "df -P -h /srv", truncated: true}}}
     end
 
     test "a parked run renders the trusted preview with its own secrets masked", %{
@@ -1416,8 +1416,60 @@ defmodule Emisar.RunsTest do
           expected_pack_hash: pack.content_hash
         )
 
-      assert Runs.project_run_command(run, subject) ==
-               {:ok, %{kind: :preview, text: "df -P -h '[REDACTED]'", truncated: false}}
+      assert Runs.project_run_commands([run], subject) ==
+               {:ok,
+                %{run.id => %{kind: :preview, text: "df -P -h '[REDACTED]'", truncated: false}}}
+    end
+
+    # A wait loop re-reads this every poll and a recent-runs page carries up to
+    # a hundred rows, so the page's advertisements are ONE plain read: never a
+    # fetch per run, and never the dispatch transaction's row locks, which
+    # would queue every poll behind an in-flight dispatch or trust write.
+    test "resolves a page of parked runs in one read that takes no row lock", %{
+      account: account,
+      subject: subject,
+      runner: runner,
+      pack: pack,
+      pack_ref: pack_ref
+    } do
+      runs =
+        for path <- ["/srv/alpha", "/srv/beta", "/srv/gamma"] do
+          Fixtures.Runs.create_run(
+            account_id: account.id,
+            runner_id: runner.id,
+            action_id: "linux.disk_usage",
+            pack_ref: pack_ref,
+            status: :pending_approval,
+            args_raw: ~s({"paths":["#{path}"]}),
+            expected_pack_hash: pack.content_hash
+          )
+        end
+
+      test_pid = self()
+      handler = {__MODULE__, test_pid, make_ref()}
+
+      :ok =
+        :telemetry.attach(
+          handler,
+          [:emisar, :repo, :query],
+          fn _event, _measurements, metadata, _config ->
+            send(test_pid, {:runs_repo_query, self(), metadata.query})
+          end,
+          nil
+        )
+
+      on_exit(fn -> :telemetry.detach(handler) end)
+
+      assert {:ok, commands} = Runs.project_run_commands(runs, subject)
+
+      assert Enum.map(runs, &commands[&1.id].text) ==
+               ["df -P -h /srv/alpha", "df -P -h /srv/beta", "df -P -h /srv/gamma"]
+
+      queries = drain_runs_queries(test_pid)
+      assert length(queries) == 1
+      assert hd(queries) =~ ~s|"catalog_runner_actions"|
+      refute Enum.any?(queries, &(String.upcase(&1) =~ "FOR UPDATE"))
+      refute Enum.any?(queries, &(String.upcase(&1) =~ "FOR NO KEY UPDATE"))
     end
 
     test "bounds a long receipt and says so rather than shipping the whole line", %{
@@ -1440,9 +1492,10 @@ defmodule Emisar.RunsTest do
         )
 
       executed = run |> Ecto.Changeset.change(executed_command: line) |> Repo.update!()
+      run_id = run.id
 
-      assert {:ok, %{kind: :executed, text: text, truncated: true}} =
-               Runs.project_run_command(executed, subject)
+      assert {:ok, %{^run_id => %{kind: :executed, text: text, truncated: true}}} =
+               Runs.project_run_commands([executed], subject)
 
       assert String.length(text) == 2_000
       assert String.starts_with?(text, "df -P -h ")
@@ -1452,6 +1505,7 @@ defmodule Emisar.RunsTest do
       account: account,
       subject: subject,
       runner: runner,
+      pack: pack,
       pack_ref: pack_ref
     } do
       run =
@@ -1464,7 +1518,23 @@ defmodule Emisar.RunsTest do
           expected_pack_hash: "sha256:" <> String.duplicate("0", 64)
         )
 
-      assert Runs.project_run_command(run, subject) == {:error, :no_command_preview}
+      assert Runs.project_run_commands([run], subject) == {:ok, %{}}
+
+      # An action the runner no longer advertises has no hash to prove the
+      # published template with, so the run carries no line either.
+      Fixtures.Catalog.delete_actions_for_runner(runner.id)
+
+      provable =
+        Fixtures.Runs.create_run(
+          account_id: account.id,
+          runner_id: runner.id,
+          action_id: "linux.disk_usage",
+          pack_ref: pack_ref,
+          status: :pending_approval,
+          expected_pack_hash: pack.content_hash
+        )
+
+      assert Runs.project_run_commands([provable], subject) == {:ok, %{}}
     end
 
     test "refuses a same-account subject without view_runs and another account's run", %{
@@ -1483,11 +1553,11 @@ defmodule Emisar.RunsTest do
           expected_pack_hash: pack.content_hash
         )
 
-      assert Runs.project_run_command(run, no_permissions_subject(account)) ==
+      assert Runs.project_run_commands([run], no_permissions_subject(account)) ==
                {:error, :unauthorized}
 
       {_user, _other_account, other_subject} = Fixtures.Subjects.owner_subject()
-      assert Runs.project_run_command(run, other_subject) == {:error, :not_found}
+      assert Runs.project_run_commands([run], other_subject) == {:error, :not_found}
     end
   end
 

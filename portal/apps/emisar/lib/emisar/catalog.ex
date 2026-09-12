@@ -2882,6 +2882,26 @@ defmodule Emisar.Catalog do
     |> Repo.fetch(RunnerAction.Query)
   end
 
+  @doc """
+  Internal: the advertised rows behind an explicit account's exact
+  `{runner_id, action_id}` pairs, in ONE plain read — `%{{runner_id,
+  action_id} => %RunnerAction{}}`. A pair the account holds no advertisement
+  for is simply absent. The caller bounds the list and already authorized the
+  account; this is the read-only counterpart of `fetch_action_for_account/3`
+  for a page of runs (the review receipts a run summary carries), not the
+  dispatch gate: it takes no row lock, so a poll never queues behind, or
+  briefly blocks, an in-flight dispatch or trust write.
+  """
+  def actions_for_account_pairs(_account_id, []), do: %{}
+
+  def actions_for_account_pairs(account_id, pairs) when is_list(pairs) do
+    RunnerAction.Query.all()
+    |> RunnerAction.Query.by_account_id(account_id)
+    |> RunnerAction.Query.by_runner_action_pairs(Enum.uniq(pairs))
+    |> Repo.all()
+    |> Map.new(&{{&1.runner_id, &1.action_id}, &1})
+  end
+
   def list_pack_versions(%Subject{} = subject, opts \\ []) do
     with {:ok, subject} <-
            Auth.fetch_current_subject(Authorizer.view_catalog_permission(), subject) do

@@ -552,6 +552,8 @@ defmodule Emisar.Approvals do
     labels = review_actor_labels(decisions, receipts, subject)
     runs_by_id = Map.new(runs, &{&1.id, &1})
     now = DateTime.utc_now()
+    statuses = Map.new(requests, &{&1.run_id, request_facts(&1, now).status})
+    commands = review_commands(runs, statuses, subject)
 
     Map.new(requests, fn request ->
       run = Map.fetch!(runs_by_id, request.run_id)
@@ -562,11 +564,36 @@ defmodule Emisar.Approvals do
          count: Map.get(counts, request.id, 0),
          decisions: Map.get(decisions, request.id, []),
          labels: labels,
-         now: now,
+         status: Map.fetch!(statuses, request.run_id),
+         command: Map.get(commands, run.id),
          receipt: receipt
        })}
     end)
   end
+
+  # A receipt of what actually ran belongs to every review. A PREVIEW is a claim
+  # about what will run, so it belongs only to a review that can still act on it:
+  # re-rendering one for a decided request would describe the catalog as it
+  # stands today, not the dispatch that was refused. The EFFECTIVE status
+  # decides, so a request whose deadline passed before the sweep rewrote it
+  # stops offering a preview too: nothing can release that run, and a line
+  # describing a dispatch that can no longer happen is not a receipt. The runs
+  # that do carry one are resolved together, one read for the page.
+  defp review_commands(runs, statuses, subject) do
+    wanted = Enum.filter(runs, &command_wanted?(&1, Map.get(statuses, &1.id)))
+
+    case Runs.project_run_commands(wanted, subject) do
+      {:ok, commands} -> commands
+      {:error, _reason} -> %{}
+    end
+  end
+
+  defp command_wanted?(%Runs.ActionRun{executed_command: executed}, _status)
+       when is_binary(executed) and executed != "",
+       do: true
+
+  defp command_wanted?(_run, :pending), do: true
+  defp command_wanted?(_run, _status), do: false
 
   defp review_actor_labels(decisions, receipts, subject) do
     decider_ids = for {_request_id, votes} <- decisions, vote <- votes, do: vote.decider_id
@@ -576,18 +603,16 @@ defmodule Emisar.Approvals do
   end
 
   defp review_receipt(%Request{} = request, run, subject, facts) do
-    status = request_facts(request, facts.now).status
-
     %{
       request_id: request.id,
-      status: status,
+      status: facts.status,
       required_approvals: request.min_approvals,
       approved_count: facts.count,
       argument_count: run_argument_count(run, subject),
       reason: masked_run_text(run, request.reason),
       evidence: masked_run_text(run, request.evidence),
       expected: masked_run_text(run, request.expected),
-      command: projected_command(run, subject, status),
+      command: facts.command,
       decisions: projected_decisions(facts.decisions, facts.receipt, facts.labels),
       decisions_omitted: max(length(facts.decisions) - @max_projected_decisions, 0),
       override: projected_override(facts.receipt.override, facts.labels)
@@ -618,28 +643,6 @@ defmodule Emisar.Approvals do
       waived_approvals: override.waived_approvals,
       decided_at: override.decided_at
     }
-  end
-
-  # A receipt of what actually ran belongs to every review. A PREVIEW is a claim
-  # about what will run, so it belongs only to a review that can still act on it:
-  # re-rendering one for a decided request would describe the catalog as it
-  # stands today, not the dispatch that was refused — and would resolve the
-  # trusted contract once per row of a history page.
-  defp projected_command(%Runs.ActionRun{executed_command: executed} = run, subject, _status)
-       when is_binary(executed) and executed != "",
-       do: run_command(run, subject)
-
-  # The EFFECTIVE status, so a request whose deadline passed before the sweep
-  # rewrote it stops offering a preview too: nothing can release that run, and a
-  # line describing a dispatch that can no longer happen is not a receipt.
-  defp projected_command(run, subject, :pending), do: run_command(run, subject)
-  defp projected_command(_run, _subject, _status), do: nil
-
-  defp run_command(run, subject) do
-    case Runs.project_run_command(run, subject) do
-      {:ok, command} -> command
-      {:error, _reason} -> nil
-    end
   end
 
   # The run's arguments stay in Emisar; the count is what lets a remote card say

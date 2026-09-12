@@ -5241,6 +5241,46 @@ defmodule Emisar.CatalogTest do
     end
   end
 
+  describe "actions_for_account_pairs/2" do
+    test "resolves the account's exact pairs in one read and leaves the rest absent" do
+      account = Fixtures.Accounts.create_account()
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
+      other_runner = Fixtures.Runners.create_runner(account_id: account.id)
+      _ = Fixtures.Catalog.create_action(runner: runner, action_id: "linux.uptime")
+      _ = Fixtures.Catalog.create_action(runner: runner, action_id: "linux.disk_usage")
+      _ = Fixtures.Catalog.create_action(runner: other_runner, action_id: "linux.uptime")
+
+      pairs = [
+        {runner.id, "linux.uptime"},
+        # A page holds several runs of the same action; the pair is read once.
+        {runner.id, "linux.uptime"},
+        {other_runner.id, "linux.disk_usage"},
+        {runner.id, "nope.do"}
+      ]
+
+      runner_id = runner.id
+
+      assert %{{^runner_id, "linux.uptime"} => %RunnerAction{runner_id: ^runner_id}} =
+               actions = Catalog.actions_for_account_pairs(account.id, pairs)
+
+      # Never the cross-product: other_runner advertises linux.uptime and
+      # runner advertises linux.disk_usage, but nobody asked for either.
+      assert map_size(actions) == 1
+    end
+
+    test "is account-scoped — another account's id resolves nothing, and no pairs read nothing" do
+      account = Fixtures.Accounts.create_account()
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
+      _ = Fixtures.Catalog.create_action(runner: runner, action_id: "linux.uptime")
+      other_account = Fixtures.Accounts.create_account()
+
+      assert Catalog.actions_for_account_pairs(other_account.id, [{runner.id, "linux.uptime"}]) ==
+               %{}
+
+      assert Catalog.actions_for_account_pairs(account.id, []) == %{}
+    end
+  end
+
   describe "list_pack_versions/2" do
     setup do
       {_user, account, subject} = Fixtures.Subjects.owner_subject()
