@@ -523,6 +523,10 @@ func (a *App) validatePacks(ctx context.Context) error {
 	if err := checkPackCatalogSummary(a.Root, manifests); err != nil {
 		return err
 	}
+	// Cross-pack, so it cannot live in the per-pack lint loop below.
+	if err := checkPackTwinActions(a.Root, manifests); err != nil {
+		return err
+	}
 	var failures []string
 	for _, manifest := range manifests {
 		packDir := filepath.Dir(manifest)
