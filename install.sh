@@ -1859,17 +1859,23 @@ stop_failed_service() {
       esac
       ;;
     launchd)
-      local label="system/com.emisar.runner"
+      local label="system/com.emisar.runner" probe_out="" domain_out=""
       # launchd has no is-active: the label either prints or it does not. A
       # print that fails is absence only when the system domain itself still
-      # prints — otherwise it is launchctl unable to answer.
-      if ! launchctl print "${label}" >/dev/null 2>&1; then
-        if launchctl print system >/dev/null 2>&1; then
+      # prints — otherwise it is launchctl unable to answer. A print that
+      # succeeds dumps the whole domain it was asked about, so capture both
+      # probes and report their output only where the probe itself failed:
+      # what launchctl printed then is its reason, not a service tree.
+      if ! probe_out="$(launchctl print "${label}" 2>&1)"; then
+        if domain_out="$(launchctl print system 2>&1)"; then
           warn "no com.emisar.runner loaded on this host to unload"
         else
+          # Both probes failed for the same reason — launchctl could not answer
+          # — so the domain probe's words carry it, and the label probe's stand
+          # in when the domain probe said nothing at all.
           report_unstopped_service \
             "could not ask launchd whether com.emisar.runner is loaded" \
-            "launchctl bootout ${label}" ""
+            "launchctl bootout ${label}" "${domain_out:-${probe_out}}"
         fi
         return 0
       fi
@@ -1881,11 +1887,14 @@ stop_failed_service() {
       if launchctl print "${label}" >/dev/null 2>&1; then
         report_unstopped_service "com.emisar.runner is still loaded" \
           "launchctl bootout ${label}" "${stop_out}"
-      elif [ "${stop_rc}" -eq 0 ] || launchctl print system >/dev/null 2>&1; then
+      elif [ "${stop_rc}" -eq 0 ] || domain_out="$(launchctl print system 2>&1)"; then
         warn "keeping com.emisar.runner unloaded: it would run the binary that failed to install"
       else
+        # The label stopped answering because launchctl did, not because the
+        # unit went away. Both halves of that say why: the bootout's failure,
+        # and the domain probe that could not confirm what it left behind.
         report_unstopped_service "could not confirm com.emisar.runner is unloaded" \
-          "launchctl bootout ${label}" "${stop_out}"
+          "launchctl bootout ${label}" "$(printf '%s\n%s' "${stop_out}" "${domain_out}")"
       fi
       ;;
   esac

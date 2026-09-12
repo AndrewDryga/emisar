@@ -1080,6 +1080,10 @@ var failedInstallFunctions = []string{
 // what rollback_service leaves behind for a unit this run created), a manager
 // that cannot answer, and a service still running. Unknown is not absence.
 //
+// "Repeat what the manager answered" cuts both ways on launchd, whose probes
+// answer a success by dumping the whole domain: a failed probe's reason has to
+// reach the report, and a successful one's service tree never may.
+//
 // Every case drives the real staging, activation, rollback and EXIT trap
 // against a fake service manager that actually starts a process, so the
 // negative cases prove that process is still alive and never described as
@@ -1168,20 +1172,35 @@ exit 0
 `); err != nil {
 		return err
 	}
+	// `launchctl print` answers by dumping the whole domain it was asked about,
+	// so this fake prints one too — tagged, and carrying the kind of host
+	// detail the real one carries. A check that asserts the diagnostic without
+	// it would not notice the installer pasting a service tree into a warning.
 	if err := fakeExecutable(filepath.Join(fakeBin, "launchctl"), managerCommon+`
-if [ "${FAKE_MODE}" = unavailable ]; then
+if [ "${FAKE_MODE}" = unavailable ] || [ -e "${FAKE_STATE}/manager-gone" ]; then
   echo "Could not connect to the launchd system domain: 5: Input/output error" >&2
   exit 1
 fi
+domain_tree() {
+  printf '%s = {\n\tLAUNCHD-DOMAIN-TREE\n\tenvironment = { PATH => /usr/bin }\n\tactive count = 214\n}\n' "$1"
+}
 case "$1" in
   print)
-    if [ "$2" = system ]; then exit 0; fi
-    if gone || ! alive; then exit 113; fi
+    if [ "$2" = system ]; then domain_tree system; exit 0; fi
+    if gone || ! alive; then
+      echo "Could not find service \"com.emisar.runner\" in domain for system" >&2
+      exit 113
+    fi
+    domain_tree com.emisar.runner
     exit 0
     ;;
   bootstrap) start_fake; exit 0 ;;
   bootout)
-    if [ "${FAKE_STOP_FAILS}" = 1 ]; then
+    # The manager that dies during its own bootout: the stop fails as above and
+    # every later probe is unanswerable too, which is the state the report has
+    # to keep apart from an unload launchd confirmed.
+    if [ "${FAKE_MODE}" = dies-on-bootout ]; then : >"${FAKE_STATE}/manager-gone"; fi
+    if [ "${FAKE_MODE}" = dies-on-bootout ] || [ "${FAKE_STOP_FAILS}" = 1 ]; then
       echo "Boot-out failed: 5: Input/output error" >&2
       exit 5
     fi
@@ -1301,9 +1320,34 @@ exit 37
 			start: "direct", running: true,
 			wants: []string{
 				"could not ask launchd whether com.emisar.runner is loaded",
+				// Both probes failed, and the reason they failed is the whole
+				// value of the report: "could not ask" alone tells the operator
+				// nothing they can act on.
+				"Could not connect to the launchd system domain: 5: Input/output error",
 				"MAY STILL BE RUNNING",
+				"stop it before anything else: launchctl bootout system/com.emisar.runner",
 			},
 			forbids: []string{"keeping com.emisar.runner unloaded", "no com.emisar.runner loaded on this host"},
+		},
+		{
+			// launchd answers the first probe, then goes away under its own
+			// bootout: the unit is neither confirmed unloaded nor known to be
+			// loaded, and both the failed stop and the unanswerable domain
+			// probe say why.
+			name: "launchd-manager-dies-on-bootout", init: "launchd", mode: "dies-on-bootout",
+			start: "manager", running: true,
+			wants: []string{
+				"could not confirm com.emisar.runner is unloaded",
+				"Boot-out failed: 5: Input/output error",
+				"Could not connect to the launchd system domain: 5: Input/output error",
+				"MAY STILL BE RUNNING",
+				"stop it before anything else: launchctl bootout system/com.emisar.runner",
+			},
+			forbids: []string{
+				"keeping com.emisar.runner unloaded",
+				"com.emisar.runner is still loaded",
+				"no com.emisar.runner loaded on this host",
+			},
 		},
 		{
 			name: "systemd-new-unit-removed", init: "systemd", mode: "normal", start: "manager",
@@ -1379,6 +1423,13 @@ echo "emisar version 9.9.9"
 				return fmt.Errorf("%s: the cleanup claimed %q against what the manager answered:\n%s",
 					testCase.name, forbidden, output)
 			}
+		}
+		// A probe that succeeded answered with the domain's whole contents.
+		// Keeping a failed probe's reason must not turn into pasting that into
+		// the operator's report on the paths where the probe worked.
+		if strings.Contains(output, "LAUNCHD-DOMAIN-TREE") {
+			return fmt.Errorf("%s: the cleanup dumped a launchd domain tree into its report:\n%s",
+				testCase.name, output)
 		}
 		// The rollback is incomplete however the stop went, and the recovery
 		// copy must survive at exactly the path the operator is handed.
