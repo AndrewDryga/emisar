@@ -133,14 +133,23 @@ use `brand-*` for accent, primary action, links, and success/allowed/healthy.
 > `indigo-*`/`emerald-*` classes remain (the marketing demo terminal's deliberate
 > `emerald-400` is the only exception). The shared-component **tone vocabulary is
 > SEMANTIC** — `:brand` (healthy/pass), `:amber` (pending/caution), `:rose`
-> (deny/danger), `:neutral` (identity/metadata) — across
-> `chip`/`list_row`/`count_badge`/`section_header`. There is **no**
-> `:indigo`/`:emerald`/`:default`/`:zinc` tone atom: those were dead/lying aliases
+> (deny/danger), `:neutral` (identity/metadata) — across the components that
+> declare an `attr :tone`, among them
+> `chip`/`status_badge`/`status_dot`/`count_badge`. Each whitelists only the
+> subset it renders, so the four are the vocabulary, not every component's menu
+> (`count_badge` has no `:rose`). Two shapes that look like carriers are not:
+> `list_row` takes no `tone=` at all — a row's color rides on the `chip` or
+> `status_badge` in its slots — and `section_header` spells its only tone
+> `count_tone` (`[:amber, :neutral]`), which colors the count beside the title
+> and nothing else. No policy-outcome tone is
+> `:indigo`/`:emerald`/`:default`/`:zinc`: those were dead/lying aliases
 > (two byte-identical greens that painted neutral metadata green, diluting "emerald
-> = passed the gate") and are gone. **Color names a MEANING, never a hue or
+> = passed the gate") and are gone. (`empty_state` keeps a deliberate
+> `tone={:zinc}`/`:danger` pair, but that axis is "is this emptiness fine or a
+> failure", not a policy outcome.) **Color names a MEANING, never a hue or
 > convenience** — a metadata label ("You", a scope, the current plan, a reusable
 > key) is `:neutral`, not green; green is reserved for a real pass/healthy state
-> (trusted, enabled, online, enrolled). **Enforcement:** each component's `attr
+> (trusted, enabled, online, enrolled). **Enforcement:** each carrier's `attr
 > ..., values: [...]` whitelist makes a stray `tone={:indigo}` a compile error
 > under `--warnings-as-errors`, and the tone-class clauses carry no catch-all, so a
 > computed dead atom raises instead of silently rendering neutral.
