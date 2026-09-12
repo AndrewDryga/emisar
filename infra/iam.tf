@@ -294,12 +294,12 @@ resource "google_project_iam_member" "database_operator_studio" {
   role    = "roles/cloudsql.studioUser"
   member  = "user:${var.database_operator_iam_user}"
 
-  # Scoped to the one instance, like every other Cloud SQL grant here. This
-  # title used to be emisar_database_only, which the portal VM's binding also
-  # carries; a condition title is part of a binding's identity, so only this
-  # one — a human's console access — is renamed to break the collision.
+  # A condition title is part of a binding's identity (the provider keys a member
+  # on project/role/member/title), so renaming this one destroys and recreates a
+  # live operator's Studio access. Sharing emisar_database_only with the portal
+  # VM's binding is not a collision — those differ in both role and member.
   condition {
-    title       = "emisar_database_operator_studio_only"
+    title       = "emisar_database_only"
     description = "The database operator may open Studio only on the emisar instance."
     expression  = local.cloudsql_instance_only_condition
   }
