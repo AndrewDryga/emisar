@@ -55,10 +55,21 @@ def clipped($chars; $encoded_bytes):
 # silently drop the continuation. Paged reads emit
 # {results, pagination: {next_page_cursor, has_more}} instead of the raw body.
 request_paged() {
-  local response crlf=$'\r\n\r\n' headers body next_page_cursor="" has_more=false
-  response=$(request --include "$@")
+  local response crlf=$'\r\n\r\n' headers body next_page_cursor="" has_more=false rc=0
+  response=$(request --include "$@") || rc=$?
   headers=${response%%"$crlf"*}
   body=${response#*"$crlf"}
+  # --fail-with-body kept the {"detail": ...} in $body, where `set -e` on the
+  # assignment would have ended the run before anything printed it: the
+  # operator would see curl's `(22)` line and nothing to act on. Only the body
+  # goes out — the response headers are not the diagnosis and may carry a
+  # cookie.
+  if (( rc != 0 )); then
+    if [[ -n "$body" ]]; then
+      printf '%s\n' "$body" >&2
+    fi
+    exit "$rc"
+  fi
   if [[ "$headers" =~ rel=\"next\"\;\ results=\"true\"\;\ cursor=\"([^\"]+)\" ]]; then
     next_page_cursor="${BASH_REMATCH[1]}"
     has_more=true
@@ -118,8 +129,16 @@ issue_details() {
 }
 
 issue_latest_event() {
-  local response
-  response=$(request "$api/organizations/$1/issues/$2/events/latest/")
+  local response rc=0
+  response=$(request "$api/organizations/$1/issues/$2/events/latest/") || rc=$?
+  # Same capture guard as request_paged: the error body is in $response, and
+  # nothing else would ever print it.
+  if (( rc != 0 )); then
+    if [[ -n "$response" ]]; then
+      printf '%s\n' "$response" >&2
+    fi
+    exit "$rc"
+  fi
   printf '%s' "$response" | jq -ce "$projection_helpers"'
     def values($kind):
       [.entries[]? | select(.type == $kind) | .data.values[]?];

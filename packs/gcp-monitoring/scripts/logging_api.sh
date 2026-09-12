@@ -29,6 +29,24 @@ request() {
     --max-filesize 4194304 "$@"
 }
 
+# Capture the response instead of streaming it, and print the error body the
+# script would otherwise swallow: --fail-with-body writes the body to the
+# destination, so on a 4xx/5xx `set -e` would end the run before anything read
+# it and the EXIT trap would delete it, leaving the operator with curl's
+# `(22)` line alone. curl's --max-filesize still bounds what reaches stderr.
+request_to() {
+  capture=$1
+  shift
+  rc=0
+  request "$@" >"$capture" || rc=$?
+  if [ "$rc" -ne 0 ]; then
+    if [ -s "$capture" ]; then
+      cat "$capture" >&2
+    fi
+    exit "$rc"
+  fi
+}
+
 umask 077
 tmp=$(mktemp -d "${TMPDIR:-/tmp}/emisar-gcp-logging.XXXXXX")
 trap 'rm -rf -- "$tmp"' EXIT HUP INT TERM
@@ -42,7 +60,7 @@ case "$mode" in
     if [ -n "$page_cursor" ]; then
       set -- "$@" --data-urlencode "pageToken=$page_cursor"
     fi
-    request "$@" "$api_base/v2/projects/$project/logs" >"$tmp/response.json"
+    request_to "$tmp/response.json" "$@" "$api_base/v2/projects/$project/logs"
 
     jq -ce --argjson page_size "$page_size" '
       def controls_collapsed:
@@ -115,10 +133,10 @@ case "$mode" in
           pageSize: $page_size
         }
       ' >"$tmp/request.json"
-    request --request POST \
+    request_to "$tmp/response.json" --request POST \
       --header 'Content-Type: application/json' \
       --data-binary "@$tmp/request.json" \
-      "$api_base/v2/entries:list" >"$tmp/response.json"
+      "$api_base/v2/entries:list"
     printf '%s' "$access_token" >"$tmp/access-token"
 
     jq -ce \

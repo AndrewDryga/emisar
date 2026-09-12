@@ -192,6 +192,9 @@ cases:
         expect:
           stdout_contains: ["key_active:true"]
 
+  # Paged reads capture the response to split its Link header, so the script
+  # has to print Sentry's {"detail": ...} itself — that is the line naming the
+  # missing scope or the unknown project, and nothing else would emit it.
   - name: sentry.list_organizations-invalid-token
     action: sentry.list_organizations
     env:
@@ -200,7 +203,20 @@ cases:
       status: failure
       exit: [22]
       reason_contains: [process exited with code 22]
-      stderr_contains: ["curl: (22)"]
+      stderr_contains: ["curl: (22)", '{"detail":"Invalid token"}']
+
+  # The other capture site: the latest-event read is projected by jq, so its
+  # response is captured too.
+  - name: sentry.issue_latest_event-prints-the-provider-error-body
+    action: sentry.issue_latest_event
+    args: {organization: acme, issue_id: "9999999999"}
+    expect:
+      status: failure
+      exit: [22]
+      reason_contains: [process exited with code 22]
+      stderr_contains:
+        - "curl: (22)"
+        - '{"detail":"The requested resource does not exist"}'
 
   - name: sentry.list_organizations-rejects-a-non-http-url
     action: sentry.list_organizations

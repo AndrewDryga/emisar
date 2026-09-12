@@ -208,6 +208,17 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         if not self.authorized():
             return
+        # Any read whose query carries the sentinel answers a structured 5xx,
+        # so a case can drive a provider error through the capture sites in
+        # monitoring_api.sh. The hyphen spelling is for interconnect, whose
+        # attachment name may not contain an underscore.
+        if any(s in urlparse(self.path).query
+               for s in ("provider_failure", "provider-failure")):
+            self.write_json(
+                503,
+                {"error": {"code": 503, "message": "fixture unavailable"}},
+            )
+            return
         payload = response(self.path)
         if payload is None:
             self.write_json(

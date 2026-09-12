@@ -29,6 +29,24 @@ request() {
     --max-filesize 4194304 "$@"
 }
 
+# Capture the response instead of streaming it, and print the error body the
+# script would otherwise swallow: --fail-with-body writes the body to the
+# destination, so on a 4xx/5xx `set -e` would end the run before anything read
+# it and the EXIT trap would delete it, leaving the operator with curl's
+# `(22)` line alone. curl's --max-filesize still bounds what reaches stderr.
+request_to() {
+  capture=$1
+  shift
+  rc=0
+  request "$@" >"$capture" || rc=$?
+  if [ "$rc" -ne 0 ]; then
+    if [ -s "$capture" ]; then
+      cat "$capture" >&2
+    fi
+    exit "$rc"
+  fi
+}
+
 # The runner's default redaction blanks any `token`-compound JSON key, so a raw
 # `nextPageToken` never reaches the model and multi-page reads silently stop at
 # page 1. Rename it to `next_page_cursor` (the `page_cursor` arg feeds it back).
@@ -78,7 +96,7 @@ case "$mode" in
     fi
     out=$(mktemp "${TMPDIR:-/tmp}/emisar-gcp-monitoring.XXXXXX")
     trap 'rm -f -- "$out"' EXIT HUP INT TERM
-    request "$@" "$api_base/v3/projects/$project/timeSeries" >"$out"
+    request_to "$out" "$@" "$api_base/v3/projects/$project/timeSeries"
     rename_next_page_token "$out"
     ;;
 
@@ -99,7 +117,7 @@ case "$mode" in
     fi
     out=$(mktemp "${TMPDIR:-/tmp}/emisar-gcp-monitoring.XXXXXX")
     trap 'rm -f -- "$out"' EXIT HUP INT TERM
-    request "$@" "$api_base/v3/projects/$project/metricDescriptors" >"$out"
+    request_to "$out" "$@" "$api_base/v3/projects/$project/metricDescriptors"
     rename_next_page_token "$out"
     ;;
 
@@ -136,11 +154,13 @@ case "$mode" in
     tmp=$(mktemp -d "${TMPDIR:-/tmp}/emisar-gcp-monitoring.XXXXXX")
     trap 'rm -rf -- "$tmp"' EXIT HUP INT TERM
 
+    # request_to rather than curl's own --output: --output takes the error body
+    # too, so the operator needs the same print-then-fail guard here.
     metric_request() {
       metric=$1
       aligner=$2
       destination=$3
-      request --get \
+      request_to "$destination" --get \
         --data-urlencode "filter=metric.type = \"$metric\" AND ($resource_filter)" \
         --data-urlencode "interval.startTime=$start_time" \
         --data-urlencode "interval.endTime=$end_time" \
@@ -148,7 +168,6 @@ case "$mode" in
         --data-urlencode "aggregation.perSeriesAligner=$aligner" \
         --data-urlencode "view=FULL" \
         --data-urlencode "pageSize=1000" \
-        --output "$destination" \
         "$api_base/v3/projects/$project/timeSeries"
     }
 

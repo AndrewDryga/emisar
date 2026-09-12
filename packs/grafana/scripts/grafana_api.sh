@@ -79,8 +79,19 @@ case "$mode" in
   alerting-state) request "$api_base/api/alertmanager/grafana/api/v2/alerts" ;;
   # Captured, not piped live: a pipeline exits with jq's status, so a 401 from
   # curl would be projected into an empty array and read as "no datasources".
+  # Capturing means this branch owns the failure report too — --fail-with-body
+  # put Grafana's {"message": ...} in the variable, and `set -e` on the
+  # assignment would end the run before anything printed it, leaving the
+  # operator with curl's `(22)` line and no wrong-org/folder/scope diagnosis.
   datasources)
-    datasources_response=$(request "$api_base/api/datasources")
+    rc=0
+    datasources_response=$(request "$api_base/api/datasources") || rc=$?
+    if [ "$rc" -ne 0 ]; then
+      if [ -n "$datasources_response" ]; then
+        printf '%s\n' "$datasources_response" >&2
+      fi
+      exit "$rc"
+    fi
     printf '%s' "$datasources_response" | safe_datasources
     ;;
   health) request "$api_base/api/health" ;;

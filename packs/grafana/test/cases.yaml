@@ -46,6 +46,19 @@ cases:
   - action: grafana.users
     expect:
       stdout_contains: [admin]
+  # datasources is the one capture site in this pack — it buffers the response
+  # so jq cannot project a 401 into an empty array — so it has to print the
+  # error body itself. The assertion is on Grafana's {"message": ...} envelope,
+  # which every version emits; the wording inside it is not stable across them.
+  - name: grafana.datasources-prints-the-provider-error-body
+    action: grafana.datasources
+    env:
+      GRAFANA_PASSWORD: packtest-canary-grafana-invalid-2e4a
+    expect:
+      status: failure
+      exit: [22]
+      reason_contains: [process exited with code 22]
+      stderr_contains: ["curl: (22)", '"message"']
   - name: grafana.users-invalid-credentials
     action: grafana.users
     env:
