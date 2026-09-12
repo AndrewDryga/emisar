@@ -92,6 +92,69 @@
       "want": "tool ''"
     },
     {
+      "name": "dollar expansions are quoted, never expanded",
+      "why": "$HOME and $(id) are shell syntax only if the quoting lets them be; single quotes make both literal, on both sides",
+      "binary": "sh",
+      "argv": ["-c", "{{ args.script }}"],
+      "specs": [{"name": "script", "type": "string", "required": true}],
+      "args": "{\"script\":\"echo $HOME $(id)\"}",
+      "want": "sh -c 'echo $HOME $(id)'"
+    },
+    {
+      "name": "backtick substitution is quoted, never executed",
+      "why": "a backtick is outside the bare-token allowlist, so the token is quoted whole and `id` stays text",
+      "binary": "tool",
+      "argv": ["--msg={{ args.msg }}"],
+      "specs": [{"name": "msg", "type": "string", "required": true}],
+      "args": "{\"msg\":\"`id`\"}",
+      "want": "tool '--msg=`id`'"
+    },
+    {
+      "name": "double quotes pass through unescaped",
+      "why": "a double quote is literal inside single quotes; a renderer that escaped it would diverge from one that does not",
+      "binary": "tool",
+      "argv": ["{{ args.msg }}"],
+      "specs": [{"name": "msg", "type": "string", "required": true}],
+      "args": "{\"msg\":\"say \\\"hi\\\"\"}",
+      "want": "tool 'say \"hi\"'"
+    },
+    {
+      "name": "backslashes pass through unescaped",
+      "why": "a backslash is literal inside single quotes, so doubling it would change the value the operator approves",
+      "binary": "tool",
+      "argv": ["{{ args.path }}"],
+      "specs": [{"name": "path", "type": "string", "required": true}],
+      "args": "{\"path\":\"C:\\\\tmp\\\\x\"}",
+      "want": "tool 'C:\\tmp\\x'"
+    },
+    {
+      "name": "a backslash next to a single quote",
+      "why": "the sharpest disagreement: the close-escape-reopen spelling runs beside a literal backslash, and neither may escape the other",
+      "binary": "tool",
+      "argv": ["{{ args.name }}"],
+      "specs": [{"name": "name", "type": "string", "required": true}],
+      "args": "{\"name\":\"a\\\\'b\"}",
+      "want": "tool 'a\\'\\''b'"
+    },
+    {
+      "name": "a newline inside a value stays inside its token",
+      "why": "an unquoted newline would end the recorded line and make the rest read as a second command",
+      "binary": "tool",
+      "argv": ["{{ args.msg }}"],
+      "specs": [{"name": "msg", "type": "string", "required": true}],
+      "args": "{\"msg\":\"first\\nsecond\"}",
+      "want": "tool 'first\nsecond'"
+    },
+    {
+      "name": "a leading-dash value renders bare as its own token",
+      "why": "RenderArgv's option-injection note — an argv array stops shell injection, not the target's own option parsing — so the preview shows the flag-looking token exactly as the binary will see it",
+      "binary": "curl",
+      "argv": ["{{ args.url }}"],
+      "specs": [{"name": "url", "type": "string", "required": true}],
+      "args": "{\"url\":\"-o/etc/x\"}",
+      "want": "curl -o/etc/x"
+    },
+    {
       "name": "inline optional absent drops the element",
       "why": "-namespace={{ args.ns? }} omits the flag rather than passing -namespace=",
       "binary": "nomad",
