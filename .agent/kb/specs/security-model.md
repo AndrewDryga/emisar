@@ -293,3 +293,11 @@ available.
 - Audit the JSONL log for `dispatch_refused`, `validation_failed`,
   `execution_failed`, and `execution_started` events without a later terminal
   event for the same request — they're often the most interesting signal.
+
+## Changelog
+
+- 2026-09-12 — restored the one-runner-one-account tenancy fact in the
+  control-plane boundary section, verified against `runners.account_id`
+  (`null: false`), the per-account `name`/`external_id` unique indexes, and
+  `register_via_enrollment_key/3` resolving and locking the account from the
+  enrollment key; added `runners/runner.ex` to `sources`
