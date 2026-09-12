@@ -207,17 +207,40 @@ func (selection *Selection) include(file string) {
 	}, file) {
 		selection.Tools = true
 	}
+	// Every gate that decides whether a pack is acceptable does it the same way:
+	// by running `emisar pack validate <dir>`, which is packs.LoadOne. So this is
+	// that command's import closure, and a change to any of it can reject a pack
+	// that was valid yesterday — the public catalog in the packs gate, the private
+	// emisar-admin pack in the infra gate. Route all three jobs from one predicate
+	// so the two halves of that coupling can never drift apart again.
+	//
+	// The closure is the loader's, not the binary's. runner/internal/config and
+	// runner/internal/httpsecurity link into the same binary but are reached only
+	// from internal/packs/fetch.go, the install-over-HTTP path; validating a
+	// directory never calls them. runner/internal/jsonvalue is in, because
+	// outputschema.Compile runs at load time and bounds the declared schema with
+	// it, so tightening its depth or node limits rejects a published pack exactly
+	// the way a tightened schema rule does.
+	packLoader := toolutil.HasAnyPrefix(file,
+		"runner/internal/packs/", "runner/internal/validation/", "runner/internal/expressions/",
+		"runner/internal/outputschema/", "runner/internal/jsonvalue/",
+		"runner/pkg/actionspec/", "runner/pkg/packspec/",
+	) || slices.Contains([]string{"runner/pack.go", "runner/main.go", "runner/go.mod", "runner/go.sum", "go.work", "go.work.sum"}, file)
+	// The catalog builder and its publisher are pack-job inputs but not loader
+	// inputs: validatePacks ends in checkCatalogReproduction, so code that BUILDS
+	// the catalog must run the job that proves the committed catalog still
+	// reproduces. They stay off the Infra condition, which loads one pack from
+	// disk and never builds a catalog.
+	packCatalogBuilder := toolutil.HasAnyPrefix(file, "runner/internal/catalog/", "runner/cmd/packctl/")
 	// Pack behavior plans are validation inputs but are not loaded into registry
-	// artifacts. Every runtime input below deliberately matches PacksRelease:
-	// validatePacks ends in checkCatalogReproduction, so code that BUILDS the
-	// catalog must run the job that proves the committed catalog still reproduces.
-	if packFile || packRegistryPointerContract || toolutil.HasAnyPrefix(file, "runner/internal/packs/", "runner/internal/catalog/", "runner/cmd/packctl/", "runner/pkg/packspec/", "runner/pkg/actionspec/") || slices.Contains([]string{"runner/pack.go", "runner/main.go", "runner/go.mod", "runner/go.sum", "go.work", "go.work.sum"}, file) {
+	// artifacts. Every runtime input below deliberately matches PacksRelease.
+	if packFile || packRegistryPointerContract || packLoader || packCatalogBuilder {
 		selection.Packs = true
 	}
 	if toolutil.HasAnyPrefix(file, "dev/test-host-access/", "tools/internal/hostaccess/") {
 		selection.Packs = true
 	}
-	if packRuntimeSource || toolutil.HasAnyPrefix(file, "runner/internal/packs/", "runner/internal/catalog/", "runner/cmd/packctl/", "runner/pkg/packspec/", "runner/pkg/actionspec/") || slices.Contains([]string{"runner/pack.go", "runner/main.go", "runner/go.mod", "runner/go.sum", "go.work", "go.work.sum"}, file) {
+	if packRuntimeSource || packLoader || packCatalogBuilder {
 		selection.PacksRelease = true
 	}
 	// The infra gate validates the private emisar-admin pack by building the
@@ -225,13 +248,8 @@ func (selection *Selection) include(file string) {
 	// specs before an admin-runner boots on them. So the loader and the schema it
 	// enforces are infra inputs: tightening a duration, an enum, an arg rule or a
 	// template reference can reject that pack from a commit that touches no
-	// infra/ file, and the gate would first fail on whoever pushed next. The
-	// public-catalog half of the same coupling is the Packs selection above.
-	adminPackLoader := toolutil.HasAnyPrefix(file,
-		"runner/internal/packs/", "runner/internal/validation/", "runner/internal/expressions/",
-		"runner/internal/outputschema/", "runner/pkg/actionspec/", "runner/pkg/packspec/",
-	) || slices.Contains([]string{"runner/pack.go", "runner/main.go", "runner/go.mod", "runner/go.sum", "go.work", "go.work.sum"}, file)
-	if strings.HasPrefix(file, "infra/") || file == ".tool-versions" || adminPackLoader {
+	// infra/ file, and the gate would first fail on whoever pushed next.
+	if strings.HasPrefix(file, "infra/") || file == ".tool-versions" || packLoader {
 		selection.Infra = true
 	}
 	if slices.Contains([]string{"portal/mix.lock", "runner/go.mod", "runner/go.sum", "mcp/go.mod", "mcp/go.sum", "tools/go.mod", "tools/go.sum", ".dep-age-allow"}, file) || strings.HasPrefix(file, "tools/cmd/depgate/") {

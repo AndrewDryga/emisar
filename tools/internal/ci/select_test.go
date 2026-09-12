@@ -618,16 +618,21 @@ func TestSelect(t *testing.T) {
 		resetHard(t, root, base)
 	})
 
-	// The infra gate validates infra/packs/emisar-admin with the runner it builds
-	// from this tree, so the loader's own source has to route to that job — a
-	// tightened enum or template rule can reject the private pack from a commit
-	// that touches no infra/ file.
-	t.Run("the pack loader selects infra", func(t *testing.T) {
+	// Both pack gates decide validity by running `emisar pack validate`, so every
+	// package that command links has to route to both: the infra gate loads
+	// infra/packs/emisar-admin with the runner it builds from this tree, and the
+	// packs gate loads all 101 public packs. A tightened arg rule, template
+	// reference or output-schema bound otherwise rejects a published pack from a
+	// commit that selects neither job, and the failure lands on whoever pushed
+	// next. Keep this list equal to `go list -deps ./internal/packs` minus the
+	// fetch-only packages (config, httpsecurity).
+	t.Run("the pack loader selects both pack gates", func(t *testing.T) {
 		for _, file := range []string{
 			"runner/internal/packs/loader.go",
 			"runner/internal/validation/args.go",
 			"runner/internal/expressions/expressions.go",
 			"runner/internal/outputschema/outputschema.go",
+			"runner/internal/jsonvalue/jsonvalue.go",
 			"runner/pkg/actionspec/action.go",
 			"runner/pkg/packspec/pack.go",
 			"runner/pack.go",
@@ -638,8 +643,29 @@ func TestSelect(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if !selection.Infra {
-				t.Fatalf("%s did not select infra: %+v", file, selection)
+			if !selection.Infra || !selection.Packs || !selection.PacksRelease {
+				t.Fatalf("%s did not select every pack gate: %+v", file, selection)
+			}
+			resetHard(t, root, base)
+		}
+	})
+
+	// The catalog builder and the publisher are not loaded by `pack validate`, so
+	// they stay on the packs side only: routing them to infra would run terraform
+	// on a packctl change for nothing.
+	t.Run("the catalog builder selects packs but not infra", func(t *testing.T) {
+		for _, file := range []string{
+			"runner/internal/catalog/build.go",
+			"runner/cmd/packctl/main.go",
+		} {
+			writeFixture(t, root, file, "package fixture\n")
+			commitAll(t, root, "catalog builder")
+			selection, err := Select(context.Background(), root, "pull_request", base)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !selection.Packs || !selection.PacksRelease || selection.Infra {
+				t.Fatalf("catalog builder selection for %s = %+v", file, selection)
 			}
 			resetHard(t, root, base)
 		}
