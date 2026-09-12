@@ -25,13 +25,20 @@ import (
 //     size of this shell's heap, and it put the bound on bash's *character*
 //     count of a value command substitution had already stripped the trailing
 //     newline from, so a 65,537-byte section ending in a newline and a 65,538-
-//     byte section of two-byte characters both passed the 64 KiB bound.
+//     byte section of two-byte characters both passed the 64 KiB bound;
+//   - and bounding it again with `head -c … | cat >/dev/null` put two more
+//     commands inside that same `$( )`, where a failure of either was dropped
+//     on the floor by the `printf` that follows them: the reader's status never
+//     reached the pipeline, so `pipefail` reported the producer's 0 and the
+//     action answered `{"valid": true, "services": []}` with exit 0 again.
 //
 // The behavior plan in packs/docker/test/cases.yaml covers the overflow refusal
 // against a real daemon. It cannot reach these rows: no Compose file makes a
 // later `docker compose config` call fail while the preflight parse succeeds,
-// and byte-exact boundary and multibyte sections are not something a fixture
-// file can dictate. The stub producer is the seam for both.
+// none makes `head` or the drain fail at all, and byte-exact boundary and
+// multibyte sections are not something a fixture file can dictate. The stub
+// producer is the seam for the first two, and the stub readers below for the
+// third.
 const composeConfigStubDocker = `#!/bin/bash
 set -uo pipefail
 what=other
@@ -60,6 +67,42 @@ case $what in
     ;;
 esac
 `
+
+// The reader stubs. Each is installed only for the row that injects into it, so
+// no other row pays an extra process per capture — which the RLIMIT_AS row in
+// particular could not afford.
+//
+// Each one has to fail NARROWLY. `cat` is both the drain and how the producer
+// above prints a section from a file, and `jq` is both the list filter and the
+// closing summary; a stub that failed every call would prove the script notices
+// a broken PATH rather than that it carries a reader's status out of the
+// capture. So the drain is the argument-less `cat`, and the list filter is the
+// `jq -r`; everything else execs the real binary.
+const (
+	composeConfigStubHead = `#!/bin/bash
+if [ -n "${STUB_HEAD_RC:-}" ]; then
+  printf 'stub: head failed\n' >&2
+  exit "$STUB_HEAD_RC"
+fi
+exec %s "$@"
+`
+	composeConfigStubCat = `#!/bin/bash
+if [ -n "${STUB_CAT_RC:-}" ] && [ "$#" -eq 0 ]; then
+  printf 'stub: drain failed\n' >&2
+  exit "$STUB_CAT_RC"
+fi
+exec %s "$@"
+`
+	composeConfigStubJq = `#!/bin/bash
+for arg in "$@"; do
+  if [ -n "${STUB_JQ_RC:-}" ] && [ "$arg" = "-r" ]; then
+    printf 'stub: jq failed\n' >&2
+    exit "$STUB_JQ_RC"
+  fi
+done
+exec %s "$@"
+`
+)
 
 // The bound the script enforces, and the message it owes the operator.
 const (
@@ -118,6 +161,47 @@ func TestDockerComposeConfigPropagatesLaterCallFailures(t *testing.T) {
 			}
 			if strings.Contains(run.stdout, "valid") {
 				t.Fatalf("a failed source still produced a summary: %q", run.stdout)
+			}
+		})
+	}
+}
+
+// The producer is not the only thing in a capture that can fail. `head`, the
+// drain and the list `jq` all run inside the same command substitution, and a
+// failure of any of them means the script does not have the section it is about
+// to summarize — so it owes the operator that status, not a summary. Only `jq`
+// gets this for free: it is a pipeline element, so `pipefail` carries it. The
+// reader and the drain are commands INSIDE the last element, and what they
+// return is whatever the function chose to return after them.
+func TestDockerComposeConfigPropagatesReaderFailures(t *testing.T) {
+	tests := []struct {
+		name string
+		env  []string
+		exit int
+	}{
+		// Left uncarried this is the worst row of the three: the capture is
+		// empty, the sentinel still marks it complete, an empty section is
+		// under the bound, and the operator reads `valid: true` with no
+		// services as "this stack parses and declares nothing".
+		{name: "bounded reader", env: []string{"STUB_HEAD_RC=7"}, exit: 7},
+		// The drain runs after the reader already succeeded, so the capture is
+		// intact and only the producer's own exit is lost. Still a failure: the
+		// script cannot tell whether the producer finished or died behind it.
+		{name: "drain", env: []string{"STUB_CAT_RC=9"}, exit: 9},
+		// The second producer in the JSON helper's pipe. `pipefail` covers this
+		// one, and the row is here so a future reader fix cannot swallow it on
+		// the way past — the reader returning 0 for jq's failure is exactly the
+		// shape that hid the two above.
+		{name: "list jq", env: []string{"STUB_JQ_RC=6"}, exit: 6},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			run := runComposeConfig(t, test.env, 0)
+			if run.exit != test.exit {
+				t.Fatalf("exit = %d, want %d (stderr %q)", run.exit, test.exit, run.stderr)
+			}
+			if strings.Contains(run.stdout, "valid") {
+				t.Fatalf("a failed capture still produced a summary: %q", run.stdout)
 			}
 		})
 	}
@@ -248,7 +332,9 @@ type composeConfigRun struct {
 
 // runComposeConfig executes the packaged script with the stub `docker` first on
 // PATH. capKiB, when non-zero, caps the script's address space so a capture
-// that grows with the producer cannot complete.
+// that grows with the producer cannot complete. A row that names a reader's
+// injection variable in env also gets that reader stubbed ahead of the real
+// binary; every other row runs against the real ones.
 func runComposeConfig(t *testing.T, env []string, capKiB int) composeConfigRun {
 	t.Helper()
 	script := filepath.Join("..", "..", "..", "packs", "docker", "scripts", "compose_config.sh")
@@ -258,6 +344,25 @@ func runComposeConfig(t *testing.T, env []string, capKiB int) composeConfigRun {
 	bin := t.TempDir()
 	if err := os.WriteFile(filepath.Join(bin, "docker"), []byte(composeConfigStubDocker), 0o755); err != nil {
 		t.Fatal(err)
+	}
+	for _, reader := range []struct{ variable, name, stub string }{
+		{"STUB_HEAD_RC=", "head", composeConfigStubHead},
+		{"STUB_CAT_RC=", "cat", composeConfigStubCat},
+		{"STUB_JQ_RC=", "jq", composeConfigStubJq},
+	} {
+		if !composeConfigEnvHas(env, reader.variable) {
+			continue
+		}
+		// The stub execs the real binary by absolute path: it is first on the
+		// script's PATH, so resolving the name again would find itself.
+		real, err := exec.LookPath(reader.name)
+		if err != nil {
+			t.Fatalf("locate %s: %v", reader.name, err)
+		}
+		body := fmt.Sprintf(reader.stub, real)
+		if err := os.WriteFile(filepath.Join(bin, reader.name), []byte(body), 0o755); err != nil {
+			t.Fatal(err)
+		}
 	}
 	var cmd *exec.Cmd
 	if capKiB > 0 {
@@ -284,6 +389,15 @@ func runComposeConfig(t *testing.T, env []string, capKiB int) composeConfigRun {
 		t.Fatalf("run script: %v", err)
 	}
 	return run
+}
+
+func composeConfigEnvHas(env []string, prefix string) bool {
+	for _, entry := range env {
+		if strings.HasPrefix(entry, prefix) {
+			return true
+		}
+	}
+	return false
 }
 
 // composeConfigSection builds exactly total bytes: unit repeated and truncated

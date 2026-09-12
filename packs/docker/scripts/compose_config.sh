@@ -27,15 +27,35 @@ compose_config_json() {
 # `xrealloc: cannot allocate` rather than the authored message below.
 #
 # `cat >/dev/null` is the load-bearing half. `head -c` on its own closes the
-# pipe at its limit and SIGPIPEs the producer, which `pipefail` then reports as
-# a failed run of a parse that in fact succeeded — the bare 141 this action was
-# filed for. Draining lets the producer reach its own exit, so the status the
-# pipeline returns is the producer's real one. `head -c` passes on no more than
-# it is asked for, and whatever it read beyond the bound is over the bound
-# anyway, so the drain's completeness only has to keep the producer writing.
+# pipe at its limit and SIGPIPEs the producer; `|| exit $?` on the pipeline in
+# `bounded_list` takes that 141 before the size check below ever runs, so the
+# action would answer a parse that in fact succeeded with a bare 141 instead of
+# the authored 64 KiB message. (That is this shape's failure mode, not the
+# predecessor's: there the capture was a bare assignment whose status nothing
+# read, so the same SIGPIPE was discarded along with every other failure inside
+# the substitution and the size refusal still won.) Draining lets the producer
+# reach its own exit, so the status the pipeline returns is the producer's real
+# one. `head -c` passes on no more than it is asked for, and whatever it read
+# beyond the bound is over the bound anyway, so the drain's completeness only
+# has to keep the producer writing.
+#
+# The reader's OWN failures have to be carried by hand. `set -e` does not reach
+# in here either (see bounded_list below), and `printf` returning 0 as the last
+# command makes the function's status 0 whatever `head` and `cat` did: the
+# pipeline then reports the producer's 0, `|| exit $?` has nothing to carry, and
+# the sentinel still marks an EMPTY capture as a complete section — `valid:
+# true` with no services on a read an operator uses to decide whether a stack
+# parses. So both statuses are saved and returned, and the sentinel is emitted
+# only once both halves have succeeded. The drain runs even after the reader
+# failed, so a failing `head` does not also SIGPIPE the producer into a status
+# that would bury the real one.
 retain_bounded_section() {
-  head -c "$((max_section_bytes + 1))"
-  cat >/dev/null
+  local read_status=0
+  local drain_status=0
+  head -c "$((max_section_bytes + 1))" || read_status=$?
+  cat >/dev/null || drain_status=$?
+  ((read_status == 0)) || return "$read_status"
+  ((drain_status == 0)) || return "$drain_status"
   printf '%s' "$capture_sentinel"
 }
 
@@ -69,7 +89,10 @@ bounded_section() {
 # list and exit 0. That is the false all-clear
 # `.agent/kb/rules/packs-pipelines-fail-on-source-errors.md` is about, on a read
 # an operator uses to decide whether a stack parses. With `pipefail`, the same
-# `|| exit $?` also carries a failure of `jq` or of the reader itself.
+# `|| exit $?` also carries a failure of `jq`, which exits on its own status —
+# and a failure of the reader only because `retain_bounded_section` returns one
+# by hand; `pipefail` sees a pipeline element's status, never a failure inside
+# one that went on to exit 0.
 bounded_list() {
   local captured
   captured=$(compose_config "$1" | retain_bounded_section) || exit $?
