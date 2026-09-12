@@ -81,7 +81,18 @@ whatever is on disk RIGHT NOW, so the change is not bounded by the action's
 arguments the way `medium` requires: a reloaded nginx changes routing, a
 reloaded bind changes what the world resolves, a reloaded fail2ban changes
 who is banned. The operator approving it is approving a file they did not
-pass.
+pass. Four reloads stay `medium` deliberately, because none of them puts an
+unpassed file into effect for work the service is already doing:
+`systemd.daemon_reload` re-indexes unit files and leaves every running unit on
+its old definition until a restart action gates the change,
+`cassandra.nodetool_reloadlocalschema` rebuilds in-memory schema from the
+node's own system tables and reads no config file at all,
+`cassandra.nodetool_reloadseeds` replaces a seed list that only governs which
+peers are contacted later while current gossip continues unchanged, and
+`cassandra.nodetool_reloadssl` swaps keystore material for new connections
+only and fails on unreadable material before it can break them. That is the
+line for the next reload action: `high` when the reload applies on-disk state
+to live service behavior, `medium` when it does not.
 
 **Cancel one running query — `high`.** `postgres.cancel_query` said so;
 `cockroach.cancel_query` said `medium` and moved up. Both cancel exactly one
