@@ -1,6 +1,6 @@
 ---
 name: runner-enrollment-key-rotation
-description: A changed enrollment key re-registers the configured id or hostname and replaces the cached token
+description: a changed enrollment key re-registers the configured id or hostname and replaces the cached token
 subsystem: runner
 sources: [install.sh, runner/internal/cloud/websocket.go, runner/connect.go]
 updated: 2026-07-26
