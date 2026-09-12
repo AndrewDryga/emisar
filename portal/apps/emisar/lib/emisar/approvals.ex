@@ -545,6 +545,7 @@ defmodule Emisar.Approvals do
     counts =
       request_ids
       |> Decision.Query.approved_distinct_decider_counts()
+      |> Authorizer.for_subject(subject)
       |> Repo.all()
       |> Map.new()
 
