@@ -2,6 +2,7 @@ package icons
 
 import (
 	"bytes"
+	"math"
 	"os"
 	"path/filepath"
 	"strings"
@@ -42,6 +43,11 @@ func TestNumberSemanticsMatchJavaScript(t *testing.T) {
 		if got := toFixed(c.in, c.digits); got != c.want {
 			t.Errorf("toFixed(%v, %d) = %v, want %v", c.in, c.digits, got, c.want)
 		}
+	}
+	// The JavaScript divided 1.5 by 1.55 at runtime. Folding that back into a Go
+	// constant expression evaluates it exactly and lands one ulp high (…ef8).
+	if bits := math.Float64bits(strokeFactor); bits != 0x3feef7bdef7bdef7 {
+		t.Errorf("strokeFactor bits = %016x, want 3feef7bdef7bdef7", bits)
 	}
 }
 

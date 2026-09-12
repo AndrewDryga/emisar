@@ -19,12 +19,17 @@ import (
 // Every 16-grid cut opens the same way; the body is the only thing that varies.
 const cutHeader = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">`
 
-// The cutter scales 24 → 16, and its stroke rides the same scale corrected to
-// the 1.5 rendered weight.
-const (
-	cutScale     = 2.0 / 3.0
-	strokeFactor = 1.5 / 1.55
-)
+// The cutter scales 24 → 16, and its stroke rides the same scale corrected
+// from the 1.55 drawn weight to the 1.5 rendered one.
+const cutScale = 2.0 / 3.0
+
+// The correction has to divide at runtime. As a constant expression Go
+// evaluates 1.5 / 1.55 in exact arithmetic and rounds once (…ef8); the
+// JavaScript this port reproduces divides two float64s and lands one ulp below
+// (…ef7). Two variables force the float64 division. (2/3 folds identically
+// either way, so cutScale stays a constant.)
+var drawnWeight, renderedWeight = 1.55, 1.5
+var strokeFactor = renderedWeight / drawnWeight
 
 // Ink targets (stroke included) per optical archetype, and the growth cap that
 // keeps small-drawn objects from violent rescaling.
