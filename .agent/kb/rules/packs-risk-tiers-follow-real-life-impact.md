@@ -134,6 +134,38 @@ up a billable machine with its own inbound surface. `nomad.job_start`,
 work inside a cluster that is already running and already exposed. Same verb,
 different real-life event — which is rule 1, not a violation of it.
 
+## A parsed or derived read stays `low` (ssl-local, 2026-09-12)
+
+The floor in rule 2 is about what an action **emits**, not what it reads, and
+the whole-filesystem packs are where that distinction decides the tier. In
+`fs-search`, `head_file`/`tail_file`/`grep_file`/`grep_recursive` are `medium`
+because they echo the file's bytes, while `sha256_file`/`count_lines`/
+`file_type` read the whole of an arbitrary file and stay `low` because they
+return a digest, a count, a type. "Reads content" is therefore not the cut;
+"returns content" is.
+
+`ssl-local`'s seven actions were reviewed against that line and **stay `low`**,
+with the reasoning authored above `risk` in its `cert_text` action. Six of them
+take an absolute path under the deny-only exception in
+[[packs-path-args-need-real-containment]], so the tier is the whole gate. It
+holds because openssl is a *format parser* here: measured over seven file shapes
+(a `.pgpass`, a `.env`, a bare RSA key, an encrypted key, PEM armor around a
+secret, a cert+key bundle, a leaf cert), every non-matching file exits nonzero
+with empty stdout and openssl names the **path** in its error, never a line of
+the file. The only files these commands return anything about are valid
+certificates and PKCS#12 bags — and a certificate is public by design, it
+crosses the wire in cleartext on every handshake. `ssl.key_modulus` is the one
+that looks worst and is the clearest case: it returns a SHA-256 of the RSA
+modulus, and the modulus is a field *of* the certificate.
+
+The generalization for the next pack: an action pointed at an arbitrary path
+that returns a **parse of a public-by-design format, a digest, a verdict, a
+count, or filenames** may stay `low`. An action that returns the file's bytes is
+`medium` whatever binary reads them. Do not re-tier the first group up for
+resembling the second — that gates reads which cannot emit a secret while
+leaving `fs.sha256_file` at `low`, which is rule 1's drift in the other
+direction.
+
 **How it's enforced.** Review against this rule; no mechanical check —
 "returns raw log content" is a judgment about output semantics that YAML
 inspection cannot make reliably, and so is "opens a listener", which lives in

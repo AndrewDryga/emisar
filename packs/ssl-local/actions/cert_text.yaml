@@ -2,6 +2,42 @@ schema_version: 1
 id: ssl.cert_text
 title: openssl x509 -text -noout
 kind: exec
+# TIER DECISION (2026-09-12) — authored once here for all seven ssl-local
+# actions; the other six carry a pointer to this comment. Six of them take an
+# absolute path bounded only by the pattern plus a partial denylist. That is
+# the deliberate exception in packs-path-args-need-real-containment.md, where
+# the tier is the whole gate — so the tier has to be argued, not inherited.
+# All seven stay `low`.
+#
+# The line fs-search already drew is about what an action EMITS, not what it
+# reads. fs.sha256_file, fs.count_lines and fs.file_type read arbitrary file
+# content through the same deny-only path arg and are `low`; head_file,
+# tail_file, grep_file and grep_recursive are `medium` — and those four are
+# exactly the ones that echo the file's bytes. Nothing in ssl-local echoes
+# bytes: openssl is a format parser here, so the output is bounded by the
+# x509/PKCS#12 grammar rather than by the file.
+#
+# Measured, not assumed (OpenSSL 3.0.20; 35 invocations of the five argvs these
+# actions ship over seven file shapes — a .pgpass, a .env, a bare RSA key, an
+# encrypted key, PEM armor wrapped around a secret, a cert+key bundle, a leaf
+# cert): every non-matching file exits nonzero with empty stdout, and openssl
+# names the PATH in its error, never a line of the file. No canary and no
+# PRIVATE KEY block reached any stream. The failure cases in test/cases.yaml
+# pin that boundary.
+#
+# So the only files these commands return anything about are valid
+# certificates and PKCS#12 bags — and a certificate is public by design; it
+# crosses the wire in cleartext on every TLS handshake. key_modulus returns a
+# SHA-256 of the RSA modulus, and the modulus is a field OF the certificate:
+# already public, and hashing it is fs.sha256_file's shape exactly.
+# verify_chain returns a verdict; find_certs returns filenames. The private key
+# is the secret in this domain, and nothing here reaches it — `-noout`/`-nokeys`
+# hold even on a combined bundle, and an encrypted key fails outright.
+#
+# Re-tiering these to `medium` would gate reads that cannot emit a secret while
+# leaving fs.sha256_file — same arbitrary path, same full-content read — at
+# `low`. That is the drift rule 1 of
+# packs-risk-tiers-follow-real-life-impact.md exists to stop, not a fix.
 risk: low
 description: Dump a human-readable x509 certificate.
 side_effects:
@@ -14,13 +50,28 @@ args:
     description: Cert file.
     validation:
       pattern: "^/[a-zA-Z0-9_./\\-]{1,512}$"
+      # These exclusions match the `low` fs-search readers entry for entry,
+      # with one deliberate omission: fs-search also denies /etc/ssl/private,
+      # and reading it is THIS pack's job. Authored once here; the same block
+      # ships on every ssl-local action. Not containment — see the tier
+      # decision above — but there is no reason for two whole-filesystem packs
+      # to carve out different exclusions. The emisar roots are additionally
+      # refused at runtime from the runner's own configured paths
+      # (refuseProtectedPaths, runner/internal/validation/args.go).
       denied_paths:
         - /etc/shadow
         - /etc/gshadow
         - /etc/shadow-
         - /etc/gshadow-
+        - /etc/sudoers
+        - /proc/kcore
       denied_prefixes:
         - /root/.ssh
+        - /etc/ssh
+        - /etc/sudoers.d
+        - /etc/emisar
+        - /var/lib/emisar
+        - /var/log/emisar
 execution:
   command:
     binary: openssl

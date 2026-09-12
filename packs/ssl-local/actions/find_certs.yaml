@@ -2,6 +2,9 @@ schema_version: 1
 id: ssl.find_certs
 title: find *.pem *.crt *.cer under <path>
 kind: exec
+# `low` deliberately, on an arbitrary-path traversal: it returns filenames, not
+# file contents — the same shape as fs.find_by_name at `low`. The tier decision
+# is authored once above this pack's cert_text action.
 risk: low
 description: List certificate-like files under one path.
 side_effects:
@@ -20,8 +23,15 @@ args:
         - /etc/gshadow
         - /etc/shadow-
         - /etc/gshadow-
+        - /etc/sudoers
+        - /proc/kcore
       denied_prefixes:
         - /root/.ssh
+        - /etc/ssh
+        - /etc/sudoers.d
+        - /etc/emisar
+        - /var/lib/emisar
+        - /var/log/emisar
 execution:
   command:
     binary: /bin/sh

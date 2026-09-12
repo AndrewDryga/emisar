@@ -88,11 +88,16 @@ in-directory read passing while turning that third value into an
 `fs-search`, `ssl-local`, `nomad.alloc_fs_tail` — has no directory to allowlist
 without hardcoding a fleet, which [[packs-target-args-gate-on-risk-tier]]
 forbids. There the deny lists are a partial exclusion and the **risk tier is
-the whole gate**: tier the action for
-the worst file it can read, which is why `fs.head_file`/`fs.grep_file` are
-`medium` while the metadata-only `fs.stat_path`/`fs.ls_long` are `low`. Taking
-that exception is a deliberate design statement about the action's purpose, not
-a shortcut for an argument that was meant to stay in one directory.
+the whole gate**: tier the action for what it can **emit** from the worst file
+it can read. `fs.head_file`/`fs.grep_file` are `medium` because they echo the
+file's bytes; `fs.stat_path`/`fs.ls_long` are `low` on metadata — and so are
+`fs.sha256_file`/`fs.count_lines`/`fs.file_type`, which read the whole of an
+arbitrary file and stay `low` because they return a derivation rather than the
+content. Read-vs-metadata is the wrong cut and mis-tiers that middle group;
+[[packs-risk-tiers-follow-real-life-impact]] carries the emit-based line and
+ssl-local's worked decision. Taking that exception is a deliberate design
+statement about the action's purpose, not a shortcut for an argument that was
+meant to stay in one directory.
 
 **Sweep signal.** Any path argument a command dereferences whose
 `validation:` block has no nonempty `allowed_prefixes` or `allowed_paths`, and

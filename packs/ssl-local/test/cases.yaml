@@ -63,3 +63,47 @@ cases:
     expect:
       stdout_contains: ["Bag Attributes"]
       stdout_not_contains: ["-----BEGIN PRIVATE KEY-----", "-----BEGIN ENCRYPTED PRIVATE KEY-----"]
+
+  # The three cases below pin the boundary the pack's `low` tier rests on —
+  # the reasoning is authored above `risk` in actions/cert_text.yaml. Six of
+  # these actions take an absolute path bounded only by a pattern and a
+  # partial denylist, so the claim that has to hold is: pointed at a file that
+  # is NOT the format it expects, the action fails and returns none of the
+  # file. not-a-cert.txt is secret-bearing (a .pgpass-shaped line) and carries
+  # a canary, so "none of the file" is asserted rather than assumed. The
+  # positive assertion is the harness's own failure reason rather than
+  # openssl's wording, which differs between OpenSSL 1.1 and 3.x; what has to
+  # hold is that the action FAILS instead of returning content.
+  - name: ssl.cert-text-refuses-a-secret-file-and-echoes-nothing
+    action: ssl.cert_text
+    args: {path: /etc/ssl/packtest/not-a-cert.txt}
+    expect:
+      status: failure
+      exit: [1]
+      reason_contains: ["process exited with code 1"]
+      stdout_not_contains: ["packtest-file-secret-9f3a2b"]
+      stderr_not_contains: ["packtest-file-secret-9f3a2b"]
+
+  - name: ssl.key-modulus-refuses-a-secret-file-and-echoes-nothing
+    action: ssl.key_modulus
+    args: {path: /etc/ssl/packtest/not-a-cert.txt}
+    expect:
+      status: failure
+      exit: [1]
+      reason_contains: ["process exited with code 1"]
+      stdout_not_contains: ["packtest-file-secret-9f3a2b"]
+      stderr_not_contains: ["packtest-file-secret-9f3a2b"]
+
+  # An encrypted key must fail, NOT return the SHA-256 of the empty string
+  # (e3b0c442…) as if it were this key's modulus hash — two hosts that both
+  # failed would otherwise appear to hold the same key.
+  - name: ssl.key-modulus-fails-on-an-encrypted-key-rather-than-hashing-nothing
+    action: ssl.key_modulus
+    args: {path: /etc/ssl/packtest/leaf-encrypted.key}
+    expect:
+      status: failure
+      exit: [1]
+      reason_contains: ["process exited with code 1"]
+      stdout_not_contains:
+        - "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        - "-----BEGIN RSA PRIVATE KEY-----"

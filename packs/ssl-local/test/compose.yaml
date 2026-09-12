@@ -39,10 +39,24 @@ services:
         cat leaf.crt leaf.key >combined.pem
         openssl pkcs12 -export -inkey leaf.key -in leaf.crt -out leaf.p12 \
           -passout pass:packtest-p12-pass >/dev/null 2>&1
-        chmod 0644 ca.crt ca.key leaf.crt leaf.key combined.pem leaf.p12
+        # A file whose CONTENT is a secret and whose FORMAT is not a
+        # certificate — the shape the pack's tier decision turns on (authored
+        # above actions/cert_text.yaml's `risk`). openssl has to refuse it and
+        # echo none of it; the canary is what proves the second half.
+        printf '%s\n%s\n' \
+          'deploy:packtest-file-secret-9f3a2b' \
+          'db.internal:5432:orders:emisar:packtest-file-secret-9f3a2b' \
+          >not-a-cert.txt
+        # A passphrase-protected key. openssl cannot read it unattended, and
+        # must FAIL rather than hash an empty modulus — the regression the
+        # argv comment in actions/key_modulus.yaml describes.
+        openssl rsa -in leaf.key -aes256 -passout pass:packtest-key-pass \
+          -out leaf-encrypted.key >/dev/null 2>&1
+        chmod 0644 ca.crt ca.key leaf.crt leaf.key combined.pem leaf.p12 \
+          not-a-cert.txt leaf-encrypted.key
         exec sleep infinity
     healthcheck:
-      test: [CMD-SHELL, "test -s /out/combined.pem && test -s /out/leaf.p12"]
+      test: [CMD-SHELL, "test -s /out/combined.pem && test -s /out/leaf.p12 && test -s /out/not-a-cert.txt && test -s /out/leaf-encrypted.key"]
       interval: 2s
       start_period: 60s
       start_interval: 1s

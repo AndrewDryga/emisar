@@ -2,6 +2,11 @@ schema_version: 1
 id: ssl.key_modulus
 title: openssl rsa -modulus | sha256
 kind: exec
+# `low` deliberately, on an arbitrary-path read, and this is the action of the
+# seven where that is least obvious: it is pointed AT a private key. What it
+# returns is a SHA-256 of the RSA modulus, and the modulus is a field of the
+# certificate — already public. The tier decision and the measurement behind
+# it are authored once above this pack's cert_text action.
 risk: low
 description: >
   Show the hash of the RSA private key's modulus. Compare to the modulus hash of a cert (via `openssl x509 -modulus`) to confirm key + cert match. NEVER prints the key itself.
@@ -20,8 +25,15 @@ args:
         - /etc/gshadow
         - /etc/shadow-
         - /etc/gshadow-
+        - /etc/sudoers
+        - /proc/kcore
       denied_prefixes:
         - /root/.ssh
+        - /etc/ssh
+        - /etc/sudoers.d
+        - /etc/emisar
+        - /var/lib/emisar
+        - /var/log/emisar
 execution:
   command:
     binary: /bin/sh

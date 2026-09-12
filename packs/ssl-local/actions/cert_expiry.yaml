@@ -2,6 +2,8 @@ schema_version: 1
 id: ssl.cert_expiry
 title: openssl x509 -enddate -subject
 kind: exec
+# `low` deliberately, on an arbitrary-path read: the tier decision and the
+# measurement behind it are authored once above this pack's cert_text action.
 risk: low
 description: Show cert expiry date + subject. Quick way to answer "is this about to expire?".
 side_effects:
@@ -19,8 +21,15 @@ args:
         - /etc/gshadow
         - /etc/shadow-
         - /etc/gshadow-
+        - /etc/sudoers
+        - /proc/kcore
       denied_prefixes:
         - /root/.ssh
+        - /etc/ssh
+        - /etc/sudoers.d
+        - /etc/emisar
+        - /var/lib/emisar
+        - /var/log/emisar
 execution:
   command:
     binary: openssl

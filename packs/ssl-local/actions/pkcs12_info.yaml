@@ -2,6 +2,11 @@ schema_version: 1
 id: ssl.pkcs12_info
 title: openssl pkcs12 -nokeys -info
 kind: exec
+# `low`, and the one action of the seven whose path arg is genuinely CONTAINED
+# by the allowed_prefixes below rather than gated by the tier alone. `-nokeys`
+# plus the operator-supplied bundle password keep the key out of the output.
+# The pack-wide tier decision is authored once above this pack's cert_text
+# action.
 risk: low
 description: >
   Inspect a PKCS#12 bundle's bag contents — cert subjects, key types — without exporting the private key. Requires the bundle's password via PK12_PASSWORD env var on the runner host (or empty for password-less bundles).
@@ -24,8 +29,15 @@ args:
         - /etc/gshadow
         - /etc/shadow-
         - /etc/gshadow-
+        - /etc/sudoers
+        - /proc/kcore
       denied_prefixes:
         - /root/.ssh
+        - /etc/ssh
+        - /etc/sudoers.d
+        - /etc/emisar
+        - /var/lib/emisar
+        - /var/log/emisar
 execution:
   command:
     binary: /bin/sh

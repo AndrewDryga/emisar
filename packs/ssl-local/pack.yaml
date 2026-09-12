@@ -2,7 +2,11 @@ schema_version: 1
 
 id: ssl-local
 name: Local SSL/TLS cert inspection
-version: 0.1.15
+version: 0.1.16
+# Unchanged by the 0.1.16 tier decision: that commit closed no hole. It records
+# why the seven actions stay `low` and widens a denylist that already returned
+# nothing for the paths it now names, so retiring 0.1.15 fleet-wide would fail
+# a safe version closed.
 retired_below: 0.1.7
 description: >
   Inspect TLS certificates and keys on the local filesystem — find PEMs
