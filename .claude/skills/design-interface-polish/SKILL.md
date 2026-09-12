@@ -25,7 +25,7 @@ apply it when building or reviewing any rendered HEEx/Tailwind surface.
 home for the values; a polish pass checks the surface against it and cites the
 section, never a number from memory:
 
-- concentric radius, elevation on dark (surface step + `ring-white/10`, no hard
+- concentric radius, elevation on dark (surface step + a light ring, no hard
   borders), and the minimum hit area — §3.3
 - tabular numerals on anything that updates in place, `text-balance` /
   `text-pretty` — §3.2
