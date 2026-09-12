@@ -1,6 +1,7 @@
 package icons
 
 import (
+	"fmt"
 	"regexp"
 	"strconv"
 	"strings"
@@ -39,12 +40,18 @@ var (
 
 // rebuildPath absolutizes d and maps every coordinate through t. A relative
 // moveto that opens the path is absolute by definition; every later pair after
-// a moveto is an implicit lineto.
-func rebuildPath(d string, t transform) string {
+// a moveto is an implicit lineto. A command short of its operands (only a
+// hand-edited master can produce one) is an error, not a panic.
+func rebuildPath(d string, t transform) (string, error) {
 	tokens := pathTokens.FindAllString(d, -1)
 	var out []string
 	i, x, y, sx, sy := 0, 0.0, 0.0, 0.0, 0.0
+	truncated := false
 	read := func() float64 {
+		if i >= len(tokens) {
+			truncated = true
+			return 0
+		}
 		v, _ := strconv.ParseFloat(tokens[i], 64)
 		i++
 		return v
@@ -128,7 +135,10 @@ func rebuildPath(d string, t transform) string {
 			out = append(out, "Z")
 		}
 	}
-	return strings.Join(out, "")
+	if truncated {
+		return "", fmt.Errorf("malformed path data %q: a command is short of its operands", d)
+	}
+	return strings.Join(out, ""), nil
 }
 
 func absolute(rel bool, current, v float64) float64 {
@@ -139,7 +149,7 @@ func absolute(rel bool, current, v float64) float64 {
 }
 
 // transformBody rewrites every drawable element in an svg body through t.
-func transformBody(body string, t transform) string {
+func transformBody(body string, t transform) (string, error) {
 	var out strings.Builder
 	last := 0
 	for _, loc := range element.FindAllStringSubmatchIndex(body, -1) {
@@ -147,19 +157,34 @@ func transformBody(body string, t transform) string {
 		if closing := "</" + body[loc[2]:loc[3]] + ">"; strings.HasPrefix(body[end:], closing) {
 			end += len(closing)
 		}
+		rewritten, err := rewriteElement(body[start:end], t)
+		if err != nil {
+			return "", err
+		}
 		out.WriteString(body[last:start])
-		out.WriteString(rewriteElement(body[start:end], t))
+		out.WriteString(rewritten)
 		last = end
 	}
 	out.WriteString(body[last:])
-	return out.String()
+	return out.String(), nil
 }
 
-func rewriteElement(tag string, t transform) string {
+func rewriteElement(tag string, t transform) (string, error) {
 	dot := dotMarker.MatchString(tag)
+	// Only the d rewrite can fail, and replace's callback cannot report it — so
+	// it is caught here, before the attribute passes run on a half-rewritten tag.
+	var pathErr error
 	tag = replace(dAttribute, tag, func(groups []string) string {
-		return `d="` + rebuildPath(groups[1], t) + `"`
+		d, err := rebuildPath(groups[1], t)
+		if err != nil {
+			pathErr = err
+			return groups[0]
+		}
+		return `d="` + d + `"`
 	})
+	if pathErr != nil {
+		return "", pathErr
+	}
 	tag = replace(xAttribute, tag, func(groups []string) string {
 		return groups[1] + `="` + format(t.x(number(groups[2]))) + `"`
 	})
@@ -181,7 +206,7 @@ func rewriteElement(tag string, t transform) string {
 			return `stroke-width="` + format(t.strokeWidth(number(groups[1]))) + `"`
 		})
 	}
-	return tag
+	return tag, nil
 }
 
 func number(s string) float64 {

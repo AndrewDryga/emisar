@@ -1,6 +1,7 @@
 package icons
 
 import (
+	"fmt"
 	"math"
 	"regexp"
 	"strconv"
@@ -31,12 +32,18 @@ var (
 
 // parsePath reads absolute commands into segments. Implicit linetos after a
 // moveto record the subpath start as their origin, which is what the sampler
-// has always measured.
-func parsePath(d string) []segment {
+// has always measured. A command short of its operands (only a hand-edited
+// master can produce one) is an error, not a panic.
+func parsePath(d string) ([]segment, error) {
 	tokens := absoluteTokens.FindAllString(d, -1)
 	var segments []segment
 	i, x, y, sx, sy := 0, 0.0, 0.0, 0.0, 0.0
+	truncated := false
 	read := func() float64 {
+		if i >= len(tokens) {
+			truncated = true
+			return 0
+		}
 		v, _ := strconv.ParseFloat(tokens[i], 64)
 		i++
 		return v
@@ -114,7 +121,10 @@ func parsePath(d string) []segment {
 			x, y = sx, sy
 		}
 	}
-	return segments
+	if truncated {
+		return nil, fmt.Errorf("malformed path data %q: a command is short of its operands", d)
+	}
+	return segments, nil
 }
 
 type point [2]float64
@@ -193,10 +203,13 @@ func sample(segments []segment) []point {
 
 // bodyPoints samples every path, circle, and rect in an svg body, and reports
 // how much of the drawing is curved — the round/square archetype signal.
-func bodyPoints(body string) (points []point, arcRatio float64) {
+func bodyPoints(body string) (points []point, arcRatio float64, err error) {
 	arcish, total := 0, 0
 	for _, m := range pathElement.FindAllStringSubmatch(body, -1) {
-		segments := parsePath(m[1])
+		segments, err := parsePath(m[1])
+		if err != nil {
+			return nil, 0, err
+		}
 		for _, s := range segments {
 			total++
 			if s.kind == 'A' || s.kind == 'C' {
@@ -224,7 +237,7 @@ func bodyPoints(body string) (points []point, arcRatio float64) {
 	if total > 0 {
 		arcRatio = float64(arcish) / float64(total)
 	}
-	return points, arcRatio
+	return points, arcRatio, nil
 }
 
 // attribute reads a numeric attribute off one element's tag, 0 when absent.

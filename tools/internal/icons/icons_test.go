@@ -65,9 +65,72 @@ func TestRebuildPathAbsolutizesAndSnaps(t *testing.T) {
 		{"M2 8a6.2 6.2 0 1 0 12.3 0", "M2 8A6 6 0 1 0 14.5 8"},
 	}
 	for _, c := range cases {
-		if got := rebuildPath(c.in, snap); got != c.want {
+		got, err := rebuildPath(c.in, snap)
+		if err != nil {
+			t.Errorf("rebuildPath(%q): %v", c.in, err)
+			continue
+		}
+		if got != c.want {
 			t.Errorf("rebuildPath(%q) = %q, want %q", c.in, got, c.want)
 		}
+	}
+}
+
+// A hand-edited master can hold a command short of its operands. Both tokenizers
+// have to report that, because the JavaScript they port carried the short read
+// through as NaN and Go indexes out of range instead.
+func TestTruncatedPathIsAnErrorNotAPanic(t *testing.T) {
+	t.Parallel()
+	snap := transform{
+		x: halfGrid, y: halfGrid, controlX: quarterGrid, controlY: quarterGrid, radius: halfGrid, dot: halfGrid,
+	}
+	// A cubic missing its final coordinate, an arc missing its endpoint, and a
+	// lineto with an odd operand count.
+	for _, d := range []string{"M1 1C1 2 3 4 5", "M2 8A6 6 0 1 0 14", "M1 1L4"} {
+		if _, err := parsePath(d); err == nil {
+			t.Errorf("parsePath(%q) = nil error, want a malformed-path error", d)
+		}
+		if _, err := rebuildPath(d, snap); err == nil {
+			t.Errorf("rebuildPath(%q) = nil error, want a malformed-path error", d)
+		}
+	}
+	// A well-formed path still parses.
+	if _, err := parsePath("M1 1C1 2 3 4 5 6"); err != nil {
+		t.Errorf("a well-formed cubic errored: %v", err)
+	}
+}
+
+// The error a caller sees names the icon it came from, so an operator can find
+// the master that needs fixing.
+func TestMalformedMasterNamesTheIcon(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "state"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	master := `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+  <path d="M8 12.2C11 15 16 9"/>
+</svg>
+`
+	if err := os.WriteFile(filepath.Join(root, "state/broken.svg"), []byte(master), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := Snap(root)
+	if err == nil || !strings.Contains(err.Error(), "state/broken") {
+		t.Fatalf("Snap error = %v, want one naming state/broken", err)
+	}
+	if _, err := Cut(root); err == nil || !strings.Contains(err.Error(), "state/broken") {
+		t.Fatalf("Cut error = %v, want one naming state/broken", err)
+	}
+
+	// Analyze reads the 16-grid cuts, and names them with the dotted token.
+	cut := `<svg viewBox="0 0 16 16"><path d="M5.5 8C7.5 10 10.5"/></svg>`
+	if err := os.WriteFile(filepath.Join(root, "state/broken.16.svg"), []byte(cut), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Analyze(root); err == nil || !strings.Contains(err.Error(), "state.broken") {
+		t.Fatalf("Analyze error = %v, want one naming state.broken", err)
 	}
 }
 

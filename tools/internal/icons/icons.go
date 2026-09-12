@@ -95,7 +95,10 @@ func Snap(root string) (int, error) {
 		if unsnappable.Match(src) {
 			return nil
 		}
-		out := transformBody(string(src), snap)
+		out, err := transformBody(string(src), snap)
+		if err != nil {
+			return fmt.Errorf("icon %s: %w", key, err)
+		}
 		if out == string(src) {
 			return nil
 		}
@@ -141,15 +144,21 @@ func Cut(root string) (CutReport, error) {
 		body := strings.TrimSpace(svgBody.FindStringSubmatch(string(src))[1])
 
 		// Pass 1: scale 24 → 16 with no snap, so the optical pass measures truth.
-		raw := transformBody(body, transform{
+		raw, err := transformBody(body, transform{
 			x: scaleDown, y: scaleDown, controlX: scaleDown, controlY: scaleDown,
 			radius: scaleDown, dot: scaleDown, strokeWidth: stroke,
 		})
+		if err != nil {
+			return fmt.Errorf("icon %s: %w", key, err)
+		}
 
 		// Pass 2: optical normalization — archetype target with capped growth,
 		// recentered on the box.
 		scale, cx, cy := 1.0, 8.0, 8.0
-		points, arcRatio := bodyPoints(raw)
+		points, arcRatio, err := bodyPoints(raw)
+		if err != nil {
+			return fmt.Errorf("icon %s: %w", key, err)
+		}
 		if len(points) > 0 {
 			b := bounds(points)
 			cx, cy = b.cx, b.cy
@@ -167,10 +176,13 @@ func Cut(root string) (CutReport, error) {
 		py := func(v float64) float64 { return halfGrid(float64((v-cy)*scale) + 8) }
 		pr := func(v float64) float64 { return halfGrid(v * scale) }
 		prDot := func(v float64) float64 { return math.Max(0.75, quarterGrid(v*scale)) }
-		out := transformBody(raw, transform{
+		out, err := transformBody(raw, transform{
 			x: px, y: py, controlX: px, controlY: py,
 			radius: pr, dot: prDot, strokeWidth: stroke,
 		})
+		if err != nil {
+			return fmt.Errorf("icon %s: %w", key, err)
+		}
 
 		report.Written++
 		return os.WriteFile(cutPath, []byte(cutHeader+"\n  "+out+"\n</svg>\n"), 0o644)
@@ -226,7 +238,11 @@ func Analyze(root string) ([]Row, error) {
 		if !strings.Contains(string(src), `viewBox="0 0 16 16"`) {
 			return nil
 		}
-		points, arcRatio := bodyPoints(svgBody.FindStringSubmatch(string(src))[1])
+		token := ns + "." + strings.TrimSuffix(name, ".16.svg")
+		points, arcRatio, err := bodyPoints(svgBody.FindStringSubmatch(string(src))[1])
+		if err != nil {
+			return fmt.Errorf("icon %s: %w", token, err)
+		}
 		if len(points) == 0 {
 			return nil
 		}
@@ -235,7 +251,7 @@ func Analyze(root string) ([]Row, error) {
 		class := classify(b, arcRatio, false)
 		major := math.Max(inkW, inkH)
 		rows = append(rows, Row{
-			Token:   ns + "." + strings.TrimSuffix(name, ".16.svg"),
+			Token:   token,
 			Class:   class,
 			Major:   toFixed(major, 2),
 			W:       toFixed(inkW, 2),
