@@ -50,6 +50,11 @@ cases:
   # so jq cannot project a 401 into an empty array — so it has to print the
   # error body itself. The assertion is on Grafana's {"message": ...} envelope,
   # which every version emits; the wording inside it is not stable across them.
+  #
+  # The exclusion pins the other half: the body goes to stderr and not also to
+  # stdout, which on a success carries safe_datasources' projection. stdout is
+  # otherwise unchecked here, since stdout_not_empty is merged for successful
+  # actions only. Same envelope key as the stderr needle, for the same reason.
   - name: grafana.datasources-prints-the-provider-error-body
     action: grafana.datasources
     env:
@@ -59,6 +64,7 @@ cases:
       exit: [22]
       reason_contains: [process exited with code 22]
       stderr_contains: ["curl: (22)", '"message"']
+      stdout_not_contains: ['"message"']
   - name: grafana.users-invalid-credentials
     action: grafana.users
     env:

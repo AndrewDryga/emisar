@@ -98,6 +98,12 @@ cases:
   # The response is captured to a file the EXIT trap deletes, so the script has
   # to print the provider's body itself; without that the operator gets the
   # curl (22) line and nothing naming what failed.
+  #
+  # The body belongs on stderr and only there: stdout is the action's parsed
+  # result, and a second copy of an error body on it would be read as output.
+  # stdout_not_empty is a success-only default (mergeActionExpectation), so
+  # without this exclusion nothing here looks at stdout at all. The needle is
+  # the fixture's own sentinel, not provider wording.
   - name: gcp.log_entries-propagates-provider-errors
     action: gcp.log_entries
     args:
@@ -108,6 +114,7 @@ cases:
       exit: [22]
       reason_contains: [process exited with code 22]
       stderr_contains: ["curl: (22)", "fixture unavailable"]
+      stdout_not_contains: ["fixture unavailable"]
   - name: gcp.log_entries-rejects-filter-syntax-in-resource-type
     action: gcp.log_entries
     args:
@@ -177,6 +184,7 @@ cases:
       exit: [22]
       reason_contains: [process exited with code 22]
       stderr_contains: ["curl: (22)", "fixture unavailable"]
+      stdout_not_contains: ["fixture unavailable"]
   - action: gcp.metric_descriptors
     args:
       project: example-prod
@@ -234,6 +242,7 @@ cases:
       exit: [22]
       reason_contains: [process exited with code 22]
       stderr_contains: ["curl: (22)", "fixture unavailable"]
+      stdout_not_contains: ["fixture unavailable"]
   - name: gcp.interconnect_utilization-rejects-a-window-that-overflows-the-page
     action: gcp.interconnect_utilization
     args:
