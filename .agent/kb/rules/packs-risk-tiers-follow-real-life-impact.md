@@ -1,7 +1,7 @@
-# Risk tiers follow real-life impact, with a floor for raw-content readers
+# Risk tiers follow real-life impact, with floors for raw content and inbound exposure
 
 **Rule.** An action's `risk` tier states what the action does to the real
-system and what its output exposes — judged per action, per product. Two
+system and what its output exposes — judged per action, per product. Three
 consequences:
 
 1. **Never re-tier by verb class.** Actions sharing a verb ("start",
@@ -19,6 +19,17 @@ consequences:
    enumerate. Vendor-structured status, typed event streams, aggregates, and
    metadata (counts, names, positions, sizes) may stay `low`. The same
    real-life read gets the same tier regardless of which binary performs it.
+3. **Inbound exposure and link saturation floor at `medium`.** `low` promises
+   no *inbound* exposure and no heavy blast radius — not merely no host
+   mutation. An action that starts a server, opens a listener, or binds a port
+   is at least `medium` even when it is transient and touches no files:
+   opening the host to inbound connections *is* the state change. So is a probe
+   that generates sustained, link-saturating traffic — real congestion on a
+   shared path — as against a cheap `ping` or `curl`. Reserve `low` for reads
+   and cheap, bounded probes. Sweep signal: a `low` action that starts a
+   server, passes `--listen`/`-s`, binds a port, or floods a link. `iperf3`
+   ships uniformly `medium` for exactly these reasons — `server` for the
+   inbound port, `client` and `udp` for the saturating traffic.
 
 The ceiling from [[packs-redaction-completeness-follows-a-closed-key-space]]
 still holds: a generic log reader stays at `medium` — going higher takes a
@@ -30,7 +41,10 @@ note). Such a written decision always wins over both the floor and any sweep.
 an operator. A class-swept tier is wrong in both directions at once: it
 under-gates the database restart and over-gates the exporter. And a `low`
 raw-log read hands an LLM (and the audit trail) whatever the application
-printed, which is exactly the content the operator never enumerated.
+printed, which is exactly the content the operator never enumerated. A `low`
+listener is the same failure on the write side: the shipped default auto-runs
+it, so the host takes inbound connections — or a shared link congests — with
+no human in the loop, on a tier that promised a look rather than a change.
 
 **✅ Good**
 
@@ -39,6 +53,8 @@ printed, which is exactly the content the operator never enumerated.
 risk: medium
 # kubernetes/events_recent — typed k8s events, structured messages
 risk: low
+# iperf3/server — a one-shot inbound listener, no files touched
+risk: medium
 # ec2.start_instance high, databricks.warehouse_start medium — different
 # real-life blast radius, same verb: correct.
 ```
@@ -47,6 +63,8 @@ risk: low
 
 ```yaml
 # linux.tail_log at low: raw file content rated as if it were a status read
+risk: low
+# iperf3.client at low: a link-saturating probe rated like `ping`
 risk: low
 # a sweep: "every *_start action becomes high" — erases per-product judgment
 ```
@@ -81,5 +99,6 @@ different real-life event — which is rule 1, not a violation of it.
 
 **How it's enforced.** Review against this rule; no mechanical check —
 "returns raw log content" is a judgment about output semantics that YAML
-inspection cannot make reliably. The 2026-08-28 sweep re-tiered 40 readers
-and left the deliberate exceptions in place.
+inspection cannot make reliably, and so is "opens a listener", which lives in
+an argv template or a packaged script rather than in a field. The 2026-08-28
+sweep re-tiered 40 readers and left the deliberate exceptions in place.
