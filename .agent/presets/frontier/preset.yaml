@@ -11,7 +11,7 @@
 # Frontier reasoning at high effort, with cross-provider rate-limit fallback.
 # Targets verified 2026-09-05; see kb/runbooks/agent-maintenance.md.
 lead:
-  agent: [claude:claude-fable-5-1/high, codex:gpt-6-astra/high]
+  agent: [claude:claude-fable-5-1/high, codex:gpt-6-astra/xhigh]
   prompt: roles/lead.md
 
 roles:
