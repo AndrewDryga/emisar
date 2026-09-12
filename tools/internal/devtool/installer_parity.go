@@ -21,6 +21,36 @@ import (
 // genuinely component-specific.
 var installerScripts = [2]string{"install.sh", "install-mcp.sh"}
 
+// The helpers both installers define today. The comparison below is only as
+// wide as what installerFunctions extracts, so a style drift that hides a
+// helper from it — `function name {`, or a body whose closing brace is
+// indented — would quietly shrink the compared set and let a copy drift
+// unnoticed. Pinning the set turns that into a failure. Adding or retiring a
+// shared helper is a deliberate edit to this list.
+var installerSharedFunctions = []string{
+	"accept_missing_verifier",
+	"confirm",
+	"die",
+	"do_uninstall",
+	"fetch_release_files",
+	"github_api",
+	"github_release_base",
+	"log",
+	"mirror_release_base",
+	"normalize_version",
+	"release_manifest_tag",
+	"require_immutable_release",
+	"require_value",
+	"resolve_latest_from_github",
+	"resolve_latest_version",
+	"select_attestation_policy",
+	"truthy",
+	"tty_available",
+	"usage",
+	"verify_checksum_attestation",
+	"warn",
+}
+
 // Functions the two installers implement differently on purpose.
 var installerDivergentFunctions = map[string]string{
 	"usage":                      "each installer documents its own flags",
@@ -98,13 +128,24 @@ func (a *App) checkInstallerSharedFunctions() error {
 		}
 	}
 	sort.Strings(shared)
+	pinned := map[string]bool{}
+	for _, name := range installerSharedFunctions {
+		pinned[name] = true
+	}
 	for _, name := range shared {
+		if !pinned[name] {
+			problems = append(problems, name+" (shared by both installers but missing from installerSharedFunctions)")
+		}
+		delete(pinned, name)
 		if _, ok := installerDivergentFunctions[name]; ok {
 			continue
 		}
 		if normalizeInstallerFunction(scripts[0][name]) != normalizeInstallerFunction(scripts[1][name]) {
-			problems = append(problems, name)
+			problems = append(problems, name+" (bodies differ beyond the product noun)")
 		}
+	}
+	for name := range pinned {
+		problems = append(problems, name+" (pinned as shared but no longer extracted from both installers; a `function name {` header or an indented closing brace hides a helper from the comparison)")
 	}
 	for name := range installerDivergentFunctions {
 		if _, ok := scripts[0][name]; !ok {
@@ -115,7 +156,7 @@ func (a *App) checkInstallerSharedFunctions() error {
 	}
 	if len(problems) > 0 {
 		sort.Strings(problems)
-		return fmt.Errorf("install.sh and install-mcp.sh implement these shared helpers differently beyond the product noun; make them identical or record why in installerDivergentFunctions:\n  %s",
+		return fmt.Errorf("install.sh and install-mcp.sh no longer share the helpers they are pinned to share, or share one they implement differently beyond the product noun; make the bodies identical, or record the change in installerSharedFunctions and installerDivergentFunctions:\n  %s",
 			strings.Join(problems, "\n  "))
 	}
 	fmt.Fprintf(a.Out, "verified: %d helpers shared by install.sh and install-mcp.sh agree (%d recorded as divergent on purpose)\n",
