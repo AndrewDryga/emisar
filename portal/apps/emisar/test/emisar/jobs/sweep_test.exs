@@ -73,6 +73,22 @@ defmodule Emisar.Jobs.SweepTest do
     end
   end
 
+  # The action-run Query with every call reported to the test process before it
+  # is delegated, so a test can count the reads a sweep made while the real Repo
+  # still selects and deletes the rows. The sweep runs in the test process, so
+  # `self()` here is the test.
+  defmodule ObservedQuery do
+    def prunable_ids(account_id, cutoff, limit) do
+      send(self(), {:read, limit})
+      ActionRun.Query.prunable_ids(account_id, cutoff, limit)
+    end
+
+    def by_ids(ids) do
+      send(self(), {:delete, length(ids)})
+      ActionRun.Query.by_ids(ids)
+    end
+  end
+
   describe "delete_in_batches/4" do
     setup do
       account = Fixtures.Accounts.create_account()
@@ -87,8 +103,10 @@ defmodule Emisar.Jobs.SweepTest do
       fresh = finished_run(runner, DateTime.utc_now())
       foreign = finished_run(Fixtures.Runners.create_runner(), @long_ago)
 
-      # One batch would report 2; only the recursion reaches all five.
-      assert Sweep.delete_in_batches(ActionRun.Query, account.id, cutoff(), 2) == 5
+      # One batch would report 2; only the recursion reaches all five, and the
+      # short third batch stops it without a fourth read.
+      assert Sweep.delete_in_batches(ObservedQuery, account.id, cutoff(), 2) == 5
+      assert observed_queries() == [read: 2, delete: 2, read: 2, delete: 2, read: 2, delete: 1]
 
       assert Enum.all?(prunable, &is_nil(Repo.reload(&1)))
       assert Repo.reload(fresh)
@@ -103,10 +121,23 @@ defmodule Emisar.Jobs.SweepTest do
 
       # Exactly two full batches: the source is exhausted, but only the empty
       # third read proves it, so the tail must not be silently dropped.
-      assert Sweep.delete_in_batches(ActionRun.Query, account.id, cutoff(), 2) == 4
+      assert Sweep.delete_in_batches(ObservedQuery, account.id, cutoff(), 2) == 4
+      assert observed_queries() == [read: 2, delete: 2, read: 2, delete: 2, read: 2, delete: 0]
       assert Enum.all?(prunable, &is_nil(Repo.reload(&1)))
 
-      assert Sweep.delete_in_batches(ActionRun.Query, account.id, cutoff(), 2) == 0
+      # An exhausted source is one empty read, not a full page's worth of asking.
+      assert Sweep.delete_in_batches(ObservedQuery, account.id, cutoff(), 2) == 0
+      assert observed_queries() == [read: 2, delete: 0]
+    end
+  end
+
+  # Every query `ObservedQuery` reported since the last call, in call order:
+  # `read:` carries the batch size asked for, `delete:` how many ids it got.
+  defp observed_queries do
+    receive do
+      {kind, count} when kind in [:read, :delete] -> [{kind, count} | observed_queries()]
+    after
+      0 -> []
     end
   end
 
