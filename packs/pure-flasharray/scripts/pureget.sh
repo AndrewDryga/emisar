@@ -31,9 +31,10 @@ path=$1
 shift
 
 # Negotiate the highest REST 2.x version the array supports (no auth needed).
-# `|| true`: a rejected or unparsable probe falls back to 2.2 below rather
-# than aborting under set -e.
-ver=$(curl -q --globoff --proto '=http,https' -fsS $K "$PURE_URL/api/api_version" | grep -oE '2\.[0-9]+' | sort -t. -k2 -n | tail -1 || true)
+# The pipeline reports the status of `tail`, which succeeds on empty input, so
+# a rejected or unparsable probe leaves $ver empty and falls back to 2.2 below
+# instead of aborting under set -e.
+ver=$(curl -q --globoff --proto '=http,https' -fsS $K "$PURE_URL/api/api_version" | grep -oE '2\.[0-9]+' | sort -t. -k2 -n | tail -1)
 if [ -z "$ver" ]; then
 	ver=2.2
 fi
