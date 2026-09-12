@@ -332,24 +332,38 @@ type composeConfigRun struct {
 
 // runComposeConfig executes the packaged script with the stub `docker` first on
 // PATH. capKiB, when non-zero, caps the script's address space so a capture
-// that grows with the producer cannot complete. A row that names a reader's
-// injection variable in env also gets that reader stubbed ahead of the real
-// binary; every other row runs against the real ones.
+// that grows with the producer cannot complete.
 func runComposeConfig(t *testing.T, env []string, capKiB int) composeConfigRun {
 	t.Helper()
 	script := filepath.Join("..", "..", "..", "packs", "docker", "scripts", "compose_config.sh")
 	if _, err := os.Stat(script); err != nil {
 		t.Fatalf("packaged script: %v", err)
 	}
-	bin := t.TempDir()
-	if err := os.WriteFile(filepath.Join(bin, "docker"), []byte(composeConfigStubDocker), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	for _, reader := range []struct{ variable, name, stub string }{
+	return runPackagedComposeScript(t, script, composeConfigStubDocker, []readerStub{
 		{"STUB_HEAD_RC=", "head", composeConfigStubHead},
 		{"STUB_CAT_RC=", "cat", composeConfigStubCat},
 		{"STUB_JQ_RC=", "jq", composeConfigStubJq},
-	} {
+	}, env, capKiB)
+}
+
+// readerStub names the injection variable that switches a reader stub on, the
+// binary it shadows, and its body — a printf template taking the real binary's
+// absolute path.
+type readerStub struct{ variable, name, stub string }
+
+// runPackagedComposeScript runs one of the docker pack's packaged scripts with
+// the stub `docker` first on PATH, under the multibyte locale the byte-bound
+// rows need. A row that names a reader's injection variable in env also gets
+// that reader stubbed ahead of the real binary; every other row runs against
+// the real ones, so no row pays an extra process per capture it did not ask
+// for — which the RLIMIT_AS rows in particular could not afford.
+func runPackagedComposeScript(t *testing.T, script, producerStub string, readers []readerStub, env []string, capKiB int) composeConfigRun {
+	t.Helper()
+	bin := t.TempDir()
+	if err := os.WriteFile(filepath.Join(bin, "docker"), []byte(producerStub), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, reader := range readers {
 		if !composeConfigEnvHas(env, reader.variable) {
 			continue
 		}
@@ -368,7 +382,7 @@ func runComposeConfig(t *testing.T, env []string, capKiB int) composeConfigRun {
 	if capKiB > 0 {
 		cmd = exec.Command("bash", "-c",
 			fmt.Sprintf("ulimit -v %d; exec bash \"$1\" \"$2\"", capKiB),
-			"compose_config", script, "/opt/stack/docker-compose.yml")
+			filepath.Base(script), script, "/opt/stack/docker-compose.yml")
 	} else {
 		cmd = exec.Command("bash", script, "/opt/stack/docker-compose.yml")
 	}
