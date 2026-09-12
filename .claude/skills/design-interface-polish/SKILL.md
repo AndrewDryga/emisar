@@ -115,7 +115,7 @@ principle's table entirely if nothing needed to change (no empty tables).
 #### Concentric border radius (design-system §3.3)
 | Before | After |
 | --- | --- |
-| `rounded-2xl` card (`p-2`) + `rounded-2xl` inner button | inner → `rounded-lg` (`16 = 8 + 8`) |
+| `rounded-2xl` card + `rounded-2xl` inner icon tile | inner → `rounded-lg` (step down the scale; a child is never larger than its parent) |
 
 #### Icon swaps
 | Before | After |
