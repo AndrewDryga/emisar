@@ -254,6 +254,46 @@ func TestValidatePackScriptHelperBinaries(t *testing.T) {
 			script:   "#!/bin/bash\nset -euo pipefail\nif ! jq -e . plan.json; then exit 1; fi\n",
 			wantFail: true,
 		},
+		// A backtick substitution is a command scope like `$( … )`, so its
+		// CLOSING backtick has to end that scope instead of opening a second
+		// one: otherwise every word after the span reads as a fresh command and
+		// the diagnostic argument beside it is attributed.
+		{
+			name:     "an argument after a closed backtick substitution is not a call",
+			declared: []string{"bash"},
+			action:   jqScriptAction,
+			script: "#!/bin/bash\nset -euo pipefail\n" +
+				"if ! command -v docker >/dev/null; then\n" +
+				"  printf '%s missing: %s\\n' `date -u +%FT%TZ` jq >&2\n  exit 1\nfi\n" +
+				"docker ps --format '{{.Names}}'\n",
+		},
+		{
+			name:     "jq inside a backtick substitution is a call",
+			declared: []string{"bash"},
+			action:   jqScriptAction,
+			script: "#!/bin/bash\nset -euo pipefail\n" +
+				"names=`jq -r '.[].Name' plan.json`\nprintf '%s\\n' \"$names\"\n",
+			wantFail: true,
+		},
+		{
+			name:     "jq inside a double-quoted backtick substitution is a call",
+			declared: []string{"bash"},
+			action:   jqScriptAction,
+			script: "#!/bin/bash\nset -euo pipefail\n" +
+				"detail=\"`jq -r '.error.message' \"$response\"`\"\nprintf '%s\\n' \"$detail\"\n",
+			wantFail: true,
+		},
+		// And closing the scope must restore the SURROUNDING position, not swallow
+		// the rest of the program: the call on the next line still counts.
+		{
+			name:     "a call after a closed backtick substitution is still a call",
+			declared: []string{"bash"},
+			action:   jqScriptAction,
+			script: "#!/bin/bash\nset -euo pipefail\n" +
+				"stamp=`date -u +%FT%TZ`\n" +
+				"docker ps --format json | jq -ce --arg at \"$stamp\" .\n",
+			wantFail: true,
+		},
 		// The name inside a single-quoted jq filter, and the filter text the
 		// catalog actually ships, are not invocations.
 		{

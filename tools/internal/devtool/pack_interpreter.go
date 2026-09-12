@@ -207,6 +207,16 @@ func scriptRunsCommand(program, name string) bool {
 			}
 		case character == '#' && !frame.inWord:
 			comment = true
+		// Closing the current scope comes FIRST: a backtick is its own closer, so
+		// matching it as a new opening instead leaves the span open forever and
+		// every word after it reads as a fresh command — which attributed the
+		// `jq` argument in `printf '%s\n' `date -u` jq`. Popping restores the
+		// surrounding scope's word and command-versus-argument position.
+		case frame.closer != 0 && character == frame.closer && frame.depth == 0:
+			if frame.finishWord(program, name, index) {
+				return true
+			}
+			frames = frames[:len(frames)-1]
 		case character == '$' && index+1 < len(program) && program[index+1] == '(':
 			frame.beginWord(index)
 			index++
@@ -214,11 +224,6 @@ func scriptRunsCommand(program, name string) bool {
 		case character == '`':
 			frame.beginWord(index)
 			frames = append(frames, shellScanFrame{closer: '`', command: true})
-		case frame.closer != 0 && character == frame.closer && frame.depth == 0:
-			if frame.finishWord(program, name, index) {
-				return true
-			}
-			frames = frames[:len(frames)-1]
 		case jqShellDelimiter(character):
 			if frame.finishWord(program, name, index) {
 				return true
