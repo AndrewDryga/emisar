@@ -33,18 +33,24 @@ var (
 
 const erlangVersionExpression = `Root = code:root_dir(), Release = erlang:system_info(otp_release), {ok, Data} = file:read_file(filename:join([Root, "releases", Release, "OTP_VERSION"])), io:format("~s", [string:trim(binary_to_list(Data))]), halt().`
 
+// The two binaries the infra gate drives. The prerequisite check and the gate
+// itself resolve them the same way, so one definition keeps the command, the
+// flag, and the .tool-versions key they are compared against in one place.
+var infraPinnedTools = []pinnedTool{
+	{Name: "Terraform", Pin: "terraform", Command: "terraform", Args: []string{"version"}, Parse: regexpVersion(terraformVersionPattern)},
+	{Name: "TFLint", Pin: "tflint", Command: "tflint", Args: []string{"--version"}, Parse: regexpVersion(tflintVersionPattern)},
+}
+
 func (a *App) checkDevelopmentTools(ctx context.Context) error {
 	pins, err := readToolVersions(filepath.Join(a.Root, ".tool-versions"))
 	if err != nil {
 		return fmt.Errorf("read pinned development tools: %w; run './run bootstrap'", err)
 	}
-	checks := []pinnedTool{
+	checks := append([]pinnedTool{
 		{Name: "Go", Pin: "golang", Command: "go", Args: []string{"version"}, Parse: regexpVersion(goVersionPattern)},
 		{Name: "Erlang/OTP", Pin: "erlang", Command: "erl", Args: []string{"-noshell", "-eval", erlangVersionExpression}, Parse: strings.TrimSpace},
 		{Name: "Elixir", Pin: "elixir", Command: "elixir", Args: []string{"--version"}, Parse: parseElixirVersion},
-		{Name: "Terraform", Pin: "terraform", Command: "terraform", Args: []string{"version"}, Parse: regexpVersion(terraformVersionPattern)},
-		{Name: "TFLint", Pin: "tflint", Command: "tflint", Args: []string{"--version"}, Parse: regexpVersion(tflintVersionPattern)},
-	}
+	}, infraPinnedTools...)
 
 	var failures []string
 	for _, check := range checks {

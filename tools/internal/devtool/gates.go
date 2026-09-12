@@ -667,6 +667,11 @@ func (a *App) infraGate(ctx context.Context) error {
 	if err := a.gatePhase("infra toolchain pins", a.checkInfraToolchainPins); err != nil {
 		return err
 	}
+	if err := a.gatePhase("infra toolchain versions", func() error {
+		return a.checkInfraToolVersions(ctx)
+	}); err != nil {
+		return err
+	}
 	for _, command := range []struct {
 		label string
 		name  string

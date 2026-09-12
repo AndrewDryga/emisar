@@ -1,6 +1,7 @@
 package devtool
 
 import (
+	"context"
 	"fmt"
 	"path/filepath"
 )
@@ -38,5 +39,33 @@ func (a *App) checkInfraToolchainPins() error {
 		}
 	}
 	fmt.Fprintln(a.Out, "verified: .tool-versions terraform and tflint match the CI workflow's checksum-pinned versions")
+	return nil
+}
+
+// Agreeing pins only promise the version CI installs; the gate still lints with
+// whatever terraform and tflint PATH resolves, and an older tflint quietly
+// misses the rules the pinned release enforces. Run the binaries the following
+// phases will run and refuse the gate when either is not the pinned release, so
+// a local green means the same linter CI ran.
+func (a *App) checkInfraToolVersions(ctx context.Context) error {
+	pins, err := readToolVersions(filepath.Join(a.Root, ".tool-versions"))
+	if err != nil {
+		return fmt.Errorf("read pinned development tools: %w", err)
+	}
+	for _, tool := range infraPinnedTools {
+		want := pins[tool.Pin]
+		if want == "" {
+			return fmt.Errorf(".tool-versions does not pin %s", tool.Pin)
+		}
+		output, outputErr := a.output(ctx, a.Root, nil, tool.Command, tool.Args...)
+		if outputErr != nil {
+			return fmt.Errorf("%s %s is required to run the infra gate: %w; run './run bootstrap'", tool.Name, want, outputErr)
+		}
+		if actual := tool.Parse(string(output)); actual != want {
+			return fmt.Errorf("%s on PATH is %s, but .tool-versions pins %s; "+
+				"the gate must run the release CI installs — run './run bootstrap'", tool.Name, actual, want)
+		}
+		fmt.Fprintf(a.Out, "verified: %s %s on PATH matches the .tool-versions pin\n", tool.Name, want)
+	}
 	return nil
 }
