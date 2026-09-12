@@ -37,6 +37,23 @@ written per-action decision in the action's own description (e.g.
 `airflow.task_log`'s approval note, `linux.cron_recent`'s inline-credential
 note). Such a written decision always wins over both the floor and any sweep.
 
+**The four tiers, against the shipped default policy.** The account's policy
+maps tiers to gates; the shipped default auto-runs `low` **and** `medium`,
+requires approval for `high`, and denies `critical`. So under that default the
+tier is a promise about what may happen with no human in the loop, and
+mislabeling one tier lower bypasses the approval gate.
+
+- `low` — reads of structured status, aggregates, and metadata, with no
+  secret-bearing output, no inbound exposure, and no heavy blast radius.
+- `medium` — bounded, recoverable state changes, and any read that returns raw
+  log or application free text (file tails, journal lines, container stdout,
+  stored-log queries — content no redaction list can enumerate).
+- `high` — destructive mutations, AND any read that dumps arbitrary
+  secret-bearing state (a full config dump, an environment/property dump,
+  message bodies, crontab command lines). Redaction is pattern-bound and
+  cannot make such a dump safe.
+- `critical` — unrestricted, and default-denied.
+
 **Why.** The tier drives policy defaults — what auto-runs and what waits for
 an operator. A class-swept tier is wrong in both directions at once: it
 under-gates the database restart and over-gates the exporter. And a `low`
