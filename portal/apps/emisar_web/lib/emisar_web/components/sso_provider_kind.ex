@@ -62,9 +62,6 @@ defmodule EmisarWeb.SSOProviderKind do
         "in the Microsoft Entra admin center → App registrations → New registration, with a Web redirect URI",
       directory_note:
         "This is the app registration; directory sync is a separate enterprise application.",
-      # Keycloak has no outbound SCIM: its own SCIM support (26.6+) makes it a
-      # SCIM *server* others provision INTO, the opposite direction. Naming the
-      # gap beats sending an admin hunting for a screen that doesn't exist.
       scim_location:
         "on a separate ENTERPRISE APPLICATION, not this app registration — Entra splits sign-in and provisioning across two objects. Create a non-gallery app, then Provisioning → Automatic, with the URL in step 2 as Tenant URL and the `ems-` token as Secret Token. Remap externalId to objectId, or the directory and this connection will disagree about who someone is",
       name_placeholder: "Acme Entra",
@@ -94,6 +91,9 @@ defmodule EmisarWeb.SSOProviderKind do
       oidc_app:
         "in the Keycloak admin console → Clients → Create client → OpenID Connect (enable Client authentication)",
       directory_note: "Directory sync requires a third-party Keycloak extension.",
+      # Keycloak has no outbound SCIM: its own SCIM support (26.6+) makes it a
+      # SCIM *server* others provision INTO, the opposite direction. Naming the
+      # gap beats sending an admin hunting for a screen that doesn't exist.
       scim_location:
         "from a SCIM plugin on your Keycloak — Keycloak ships no outbound provisioning of its own, so this needs a third-party extension, which you configure and support",
       name_placeholder: "Acme Keycloak",
