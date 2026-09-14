@@ -1786,25 +1786,38 @@ defmodule EmisarWeb.ApprovalDetailLive do
       ]
   end
 
-  defp displayed_decisions(%Approvals.Request{} = request, [], _decisions_error?, _refs)
-       when request.status in [:approved, :denied] do
-    [
-      %{
-        id: request.id,
-        decider_id: request.decided_by_id,
-        decision: if(request.status == :approved, do: :approve, else: :deny),
-        decided_at: request.decided_at
-      }
-    ]
-  end
+  # Only a proven ordinary finalization may stand in for absent vote rows. An
+  # override writes the same final columns but is not a vote, and the request's
+  # durable marker outlives the `approval.overridden` receipt audit retention
+  # deletes — so a pruned override never reappears as its overrider's approval.
+  # `nil` is unknown historical provenance and cannot justify a vote either.
+  defp displayed_decisions(%Approvals.Request{overridden: false} = request, [], _err?, _refs)
+       when request.status in [:approved, :denied],
+       do: [final_decision(request)]
 
   defp displayed_decisions(_request, decisions, false, _refs), do: decisions
 
-  defp displayed_decisions(%Approvals.Request{} = request, _decisions, true, refs)
+  # A failed decisions read leaves the loaded rows untrustworthy, so a proven
+  # ordinary finalization shows its final columns alone.
+  defp displayed_decisions(
+         %Approvals.Request{overridden: false} = request,
+         _decisions,
+         true,
+         _refs
+       )
        when request.status in [:approved, :denied],
-       do: displayed_decisions(request, [], true, refs)
+       do: [final_decision(request)]
 
   defp displayed_decisions(_request, _decisions, true, _refs), do: []
+
+  defp final_decision(%Approvals.Request{} = request) do
+    %{
+      id: request.id,
+      decider_id: request.decided_by_id,
+      decision: if(request.status == :approved, do: :approve, else: :deny),
+      decided_at: request.decided_at
+    }
+  end
 
   defp decision_event_id(%{override: event_id}, _request, %{decision: :override}),
     do: event_id

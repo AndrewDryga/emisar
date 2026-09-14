@@ -15,6 +15,15 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
     assert Approvals.subscribe_account_approvals(account.id) == :ok
   end
 
+  # What audit retention leaves behind: the override's receipt is gone, the
+  # request row (and its durable `overridden` marker) is not.
+  defp prune_override_receipt(request) do
+    Audit.Event.Query.all()
+    |> Audit.Event.Query.by_target_id(request.id)
+    |> Audit.Event.Query.by_event_type("approval.overridden")
+    |> Repo.delete_all()
+  end
+
   defp assert_approval_broadcast(lv, request) do
     request_id = request.id
     assert_receive {:approval_updated, ^request_id}
@@ -1787,6 +1796,106 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
     assert has_element?(lv, ~s([data-shot="approval-decisions"]), user.full_name)
     assert has_element?(lv, ~s([data-shot="approval-decisions"]), "Reviewed the final plan.")
     refute has_element?(lv, ~s([data-shot="approval-verdict"]), user.full_name)
+  end
+
+  test "a pruned override receipt never turns its overrider into an approver", %{conn: conn} do
+    # Audit retention deletes the `approval.overridden` receipt long before the
+    # request row goes anywhere. Without it the page holds the same final
+    # columns an ordinary finalization writes — the durable `overridden` marker
+    # is the only thing left that tells the two apart, and with no vote rows to
+    # show, the overrider must not be printed as the approver.
+    {conn, owner, account} = register_and_log_in(conn)
+    request = pending_request(account, owner, min_approvals: 3)
+
+    {:ok, lv, _html} = live(conn, ~p"/app/#{account}/approvals/#{request.id}")
+
+    lv
+    |> form("#approval-override-form")
+    |> render_change(%{"reason" => "Restore the production database now"})
+
+    assert confirm_dialog(lv, "override-approval-reviews", "Approve with override") =~
+             "Approval override recorded."
+
+    assert {1, _} = prune_override_receipt(request)
+    assert Repo.reload!(request).overridden
+
+    {:ok, lv, _html} = live(conn, ~p"/app/#{account}/approvals/#{request.id}")
+
+    assert has_element?(lv, ~s([data-shot="approval-verdict"]), "approved")
+    refute has_element?(lv, ~s([data-shot="approval-decisions"]))
+  end
+
+  test "a pruned override keeps the real votes and never lists its overrider as an approver", %{
+    conn: conn
+  } do
+    # The other half of the pruned-receipt state: votes already recorded stay
+    # the vote trail, and the override adds nothing to it.
+    {conn, owner, account} = register_and_log_in(conn)
+    request = pending_request(account, owner, min_approvals: 3)
+
+    approver = Fixtures.Users.create_user(full_name: "Casey Approver")
+
+    _ =
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        user_id: approver.id,
+        role: "operator"
+      )
+
+    {:ok, {%Approvals.Request{status: :pending}, :pending}} =
+      Approvals.approve_request(
+        request,
+        Fixtures.Subjects.subject_for(approver, account),
+        "first"
+      )
+
+    {:ok, lv, _html} = live(conn, ~p"/app/#{account}/approvals/#{request.id}")
+
+    lv
+    |> form("#approval-override-form")
+    |> render_change(%{"reason" => "Restore the production database now"})
+
+    assert confirm_dialog(lv, "override-approval-reviews", "Approve with override") =~
+             "Approval override recorded."
+
+    assert {1, _} = prune_override_receipt(request)
+    assert Repo.reload!(request).overridden
+
+    {:ok, lv, _html} = live(conn, ~p"/app/#{account}/approvals/#{request.id}")
+
+    assert has_element?(lv, ~s([data-shot="approval-verdict"]), "approved")
+    # The recorded vote is still the vote trail; the overrider is not added to it.
+    assert has_element?(lv, ~s([data-shot="approval-decisions"]), "Casey Approver")
+    refute has_element?(lv, ~s([data-shot="approval-decisions"]), owner.full_name)
+
+    refute has_element?(
+             lv,
+             ~s([data-shot="approval-decisions"]),
+             "overrode the review requirement"
+           )
+  end
+
+  test "a finalization with unknown provenance is not presented as a vote", %{conn: conn} do
+    # Pre-marker history: nothing proves this request was finalized ordinarily
+    # rather than released by override, so its final columns stay out of the
+    # ledger instead of naming their decider an approver.
+    {conn, user, account} = register_and_log_in(conn)
+
+    request =
+      Fixtures.Approvals.create_request(%{
+        account_id: account.id,
+        status: :approved,
+        decided_by_id: user.id,
+        decision_reason: "Reviewed the final plan."
+      })
+
+    request |> Ecto.Changeset.change(overridden: nil) |> Repo.update!()
+    assert is_nil(Repo.reload!(request).overridden)
+
+    {:ok, lv, _html} = live(conn, ~p"/app/#{account}/approvals/#{request.id}")
+
+    assert has_element?(lv, ~s([data-shot="approval-verdict"]), "approved")
+    refute has_element?(lv, ~s([data-shot="approval-decisions"]))
   end
 
   test "a soft-deleted target runner leaves readable history without decision authority", %{
