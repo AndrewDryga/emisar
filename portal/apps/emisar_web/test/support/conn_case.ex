@@ -58,16 +58,17 @@ defmodule EmisarWeb.ConnCase do
     {plan, account_overrides} =
       attrs |> Map.get(:account, %{}) |> Map.new() |> Map.pop(:plan, "free")
 
-    account_attrs = Map.merge(%{name: "Test Co"}, account_overrides)
+    # A unique default slug, as `Fixtures.Accounts.account_attrs/1` builds. Deriving
+    # one from the name reads the table before inserting, and an async test's
+    # sandbox transaction cannot see another test's uncommitted `test-co`, so two
+    # tests would queue on the `accounts.slug` unique index instead of colliding.
+    account_attrs =
+      Map.merge(%{name: "Test Co", slug: Fixtures.Random.unique_slug()}, account_overrides)
 
     {:ok, user} = Emisar.Users.register_user(user_attrs)
     user = Fixtures.Users.confirm_user(user)
 
-    {:ok, account} =
-      Emisar.Accounts.create_account_with_owner(
-        Map.put(account_attrs, :slug, Emisar.Accounts.suggest_unique_slug(account_attrs.name)),
-        user
-      )
+    {:ok, account} = Emisar.Accounts.create_account_with_owner(account_attrs, user)
 
     if plan != "free", do: Fixtures.Accounts.create_subscription(account, plan)
 

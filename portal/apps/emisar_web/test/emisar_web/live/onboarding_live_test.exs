@@ -28,7 +28,8 @@ defmodule EmisarWeb.OnboardingLiveTest do
       # `suggest_unique_slug` appends a counter when the base
       # slug is taken, so a second workspace named identically to an existing one
       # gets a distinct slug; both accounts survive.
-      {conn, _user, existing} = register_and_log_in(conn, %{account: %{name: "Collide Co"}})
+      {conn, _user, existing} =
+        register_and_log_in(conn, %{account: %{name: "Collide Co", slug: "collide-co"}})
 
       {:ok, lv, _html} = live(conn, ~p"/onboarding")
 
