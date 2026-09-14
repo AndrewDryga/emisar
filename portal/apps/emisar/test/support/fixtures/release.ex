@@ -47,7 +47,7 @@ defmodule Emisar.Fixtures.Release do
   end
 
   def isolated_schema(fun) do
-    schema = "index_recovery_#{System.unique_integer([:positive])}"
+    schema = scratch_schema()
     sql("CREATE SCHEMA #{quote_name(schema)}")
 
     try do
@@ -65,7 +65,7 @@ defmodule Emisar.Fixtures.Release do
       |> Keyword.put(:pool_size, pool_size)
 
     {:ok, pid} = __MODULE__.MigrationRepo.start_link(config)
-    schema = "index_recovery_#{System.unique_integer([:positive])}"
+    schema = scratch_schema()
     sql("CREATE SCHEMA #{quote_name(schema)}", [], __MODULE__.MigrationRepo)
 
     try do
@@ -74,6 +74,17 @@ defmodule Emisar.Fixtures.Release do
       sql("DROP SCHEMA #{quote_name(schema)} CASCADE", [], __MODULE__.MigrationRepo)
       Supervisor.stop(pid)
     end
+  end
+
+  # System.unique_integer keeps two scratch schemas apart inside one VM, but its
+  # counter restarts with the next one. A schema the after-block never dropped —
+  # a killed or crashed run — would then collide with the same ordinal on every
+  # later run, failing the file permanently until someone dropped it by hand. The
+  # random half is generated per call rather than in a module attribute, which a
+  # cached beam would freeze into the same value for every run that reuses it.
+  defp scratch_schema do
+    token = Base.encode16(:crypto.strong_rand_bytes(8), case: :lower)
+    "index_recovery_#{System.unique_integer([:positive])}_#{token}"
   end
 
   def create_tables(schema, repo \\ Repo) do
