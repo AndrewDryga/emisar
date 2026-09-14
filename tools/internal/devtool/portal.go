@@ -44,6 +44,16 @@ func (a *App) mixFormatArgs(args ...string) []string {
 	return append([]string{"format", "--dot-formatter", filepath.Join(a.Portal, ".formatter.exs")}, args...)
 }
 
+// fixPortalFormat is the writing half of every Portal format check: the same
+// argv, without --check-formatted. It is a command rather than a line in a
+// message because the workaround is not something a contributor should have to
+// retype — `cd portal && mix format` on a box holding another checkout's cached
+// dot formatter rewrites the umbrella's own inputs only, leaving every
+// apps/*/lib and apps/*/test file the gate just rejected exactly as it was.
+func (a *App) fixPortalFormat(ctx context.Context) error {
+	return a.run(ctx, a.Portal, nil, "mix", a.mixFormatArgs()...)
+}
+
 func (a *App) runCaptured(ctx context.Context, label, dir string, env map[string]string, name string, args ...string) error {
 	return a.gatePhase(label, func() error {
 		command := exec.CommandContext(ctx, name, args...)
@@ -629,8 +639,11 @@ func (a *App) check(ctx context.Context, args []string) error {
 		}
 		return a.documentationCheck(ctx)
 	case "portal":
+		if len(rest) == 1 && rest[0] == "--fix" {
+			return a.fixPortalFormat(ctx)
+		}
 		if len(rest) != 0 {
-			return usage("usage: ./run check portal")
+			return usage("usage: ./run check portal [--fix]")
 		}
 		for _, arguments := range [][]string{
 			{"compile", "--warnings-as-errors"},

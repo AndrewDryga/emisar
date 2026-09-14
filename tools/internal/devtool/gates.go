@@ -68,6 +68,7 @@ const (
   changed                    compile and check changed Portal source files
   docs                       validate repository documentation
   portal                     compile, format-check, and run Credo
+  portal --fix               reformat Portal sources instead of checking them
   staged                     validate staged migrations and source formatting
   infra-templates            render and validate production cloud-init
   packs                      validate every pack and cross-language hash golden

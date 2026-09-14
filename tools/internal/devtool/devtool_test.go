@@ -565,6 +565,12 @@ func TestStagedCheckFormatsPortalIndexBlobsWithTheirFilename(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "staged Portal files are not formatted") {
 		t.Fatalf("staged check error = %v", err)
 	}
+	// The remediation is the repository command, which builds the same argv from
+	// mixFormatArgs. Spelling a raw mix invocation here duplicated the dot
+	// formatter workaround as prose, where it could drift from the check.
+	if !strings.Contains(err.Error(), "./run check portal --fix") {
+		t.Fatalf("staged check error does not name the fix command: %v", err)
+	}
 	invocation, readErr := os.ReadFile(log)
 	if readErr != nil {
 		t.Fatal(readErr)
@@ -577,6 +583,44 @@ func TestStagedCheckFormatsPortalIndexBlobsWithTheirFilename(t *testing.T) {
 	// this staged blob is measured against.
 	if !strings.Contains(string(invocation), "--dot-formatter "+filepath.Join(root, "portal", ".formatter.exs")) {
 		t.Fatalf("mix invocation did not name the dot formatter: %q", invocation)
+	}
+}
+
+// `./run check portal --fix` is the writing half of `./run check portal`: one
+// `mix format` carrying the absolute dot formatter, and no --check-formatted.
+// Run through the dispatcher with a recording mix, so this pins the command a
+// contributor is told to type rather than the helper behind it.
+func TestCheckPortalFixRunsTheWritingFormatArgv(t *testing.T) {
+	root := t.TempDir()
+	bin := filepath.Join(root, "bin")
+	if err := os.MkdirAll(filepath.Join(root, "portal"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(bin, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	log := filepath.Join(root, "mix.log")
+	script := "#!/bin/sh\nprintf '%s\\n' \"$*\" >> \"$MIX_LOG\"\n"
+	if err := os.WriteFile(filepath.Join(bin, "mix"), []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("MIX_LOG", log)
+
+	app := New(root, strings.NewReader(""), &bytes.Buffer{}, &bytes.Buffer{})
+	if err := app.Run(t.Context(), []string{"check", "portal", "--fix"}); err != nil {
+		t.Fatal(err)
+	}
+	invocation, err := os.ReadFile(log)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "format --dot-formatter " + filepath.Join(root, "portal", ".formatter.exs")
+	if got := strings.TrimSpace(string(invocation)); got != want {
+		t.Fatalf("check portal --fix ran mix %q, want %q", got, want)
+	}
+	if err := app.Run(t.Context(), []string{"check", "portal", "--fix", "extra"}); !IsUsage(err) {
+		t.Fatalf("check portal --fix extra error = %v, want usage", err)
 	}
 }
 

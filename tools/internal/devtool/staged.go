@@ -94,10 +94,12 @@ func (a *App) checkStagedPortalFormat(ctx context.Context) error {
 		}
 	}
 	if len(unformatted) != 0 {
-		// The remediation names the dot formatter for the same reason the check
-		// does: a bare `mix format` on a box with a foreign cached dot formatter
-		// rewrites nothing under apps/ and leaves the commit refused again.
-		return fmt.Errorf("staged Portal files are not formatted:\n%s\nrun: cd portal && mix format --dot-formatter \"$PWD/.formatter.exs\"",
+		// The remediation is the repository command rather than a raw mix
+		// invocation: it builds the same argv from mixFormatArgs, so the dot
+		// formatter workaround cannot drift out of step with the check here, and a
+		// bare `mix format` on a box with a foreign cached dot formatter rewrites
+		// nothing under apps/ and leaves the commit refused again.
+		return fmt.Errorf("staged Portal files are not formatted:\n%s\nrun: ./run check portal --fix",
 			strings.Join(unformatted, "\n"))
 	}
 	return nil

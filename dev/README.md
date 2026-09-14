@@ -92,6 +92,7 @@ Common feedback commands:
 ./run test portal --stale --listen-on-stdin
 ./run test portal apps/emisar_web/test/emisar_web/marketing_test.exs
 ./run check portal
+./run check portal --fix
 ./run check staged
 ./run check infra-templates
 ./run check packs

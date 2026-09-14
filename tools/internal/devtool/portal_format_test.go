@@ -39,6 +39,15 @@ end
 	probeMisformatted = "defmodule Probe do\ndef  value( x ) do\n    x\n  end\nend\n"
 )
 
+func readProbeSource(t *testing.T, path string) string {
+	t.Helper()
+	source, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(source)
+}
+
 func writePortalFormatFixture(t *testing.T, root, appSource string) {
 	t.Helper()
 	for path, source := range map[string]string{
@@ -154,5 +163,65 @@ func TestMixFormatArgsSeeAppSourcesUnderAForeignCachedDotFormatter(t *testing.T)
 	}
 	if code, output := runMixFormat(t, second, buildRoot, depsPath, app.mixFormatArgs("--check-formatted")...); code != 0 {
 		t.Fatalf("the Portal format argv exited %d on a formatted tree: %s", code, output)
+	}
+}
+
+// The fixing path has to carry the same workaround as the checking one, or the
+// gate and the commit hook keep refusing files the contributor just formatted:
+// on a box holding another checkout's cached dot formatter, `cd portal && mix
+// format` rewrites the umbrella's own inputs only and never touches apps/*/lib
+// or apps/*/test. Same reproduction as the check pin — one checkout writes the
+// manifest and is deleted, a second inherits it — against the argv that
+// `./run check portal --fix` runs.
+//
+// Requires mix, so like the check pin this runs on contributor machines and
+// coop boxes rather than in the Go-only tools CI job.
+func TestPortalFormatFixRewritesAppSourcesUnderAForeignCachedDotFormatter(t *testing.T) {
+	if _, err := exec.LookPath("mix"); err != nil {
+		t.Skip("mix is not on PATH")
+	}
+	base := t.TempDir()
+	buildRoot := filepath.Join(base, "build")
+	depsPath := filepath.Join(base, "deps")
+
+	first := filepath.Join(base, "first")
+	writePortalFormatFixture(t, first, probeFormatted)
+	if code, output := runMixFormat(t, first, buildRoot, depsPath, "format", "--check-formatted"); code != 0 {
+		t.Fatalf("seeding run exited %d, want 0: %s", code, output)
+	}
+	if _, err := os.Stat(filepath.Join(buildRoot, "dev", ".mix", "cached_dot_formatter")); err != nil {
+		t.Fatalf("mix wrote no cached dot formatter, so this pins nothing: %v", err)
+	}
+	if err := os.RemoveAll(first); err != nil {
+		t.Fatal(err)
+	}
+
+	second := filepath.Join(base, "second")
+	writePortalFormatFixture(t, second, probeMisformatted)
+	app := New(second, strings.NewReader(""), &bytes.Buffer{}, &bytes.Buffer{})
+	appSource := filepath.Join(second, "portal", "apps", "probe", "lib", "probe.ex")
+
+	// The invocation a contributor reaches for unaided, and the reason this
+	// command exists: it leaves the app source exactly as it found it.
+	if code, output := runMixFormat(t, second, buildRoot, depsPath, "format"); code != 0 {
+		t.Fatalf("bare `mix format` exited %d: %s", code, output)
+	}
+	if readProbeSource(t, appSource) != probeMisformatted {
+		t.Logf("bare `mix format` now rewrites app sources; if Mix stopped reusing a " +
+			"foreign cached dot formatter, the --dot-formatter in mixFormatArgs can be revisited")
+		if err := os.WriteFile(appSource, []byte(probeMisformatted), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	if code, output := runMixFormat(t, second, buildRoot, depsPath, app.mixFormatArgs()...); code != 0 {
+		t.Fatalf("the Portal format-fix argv exited %d: %s", code, output)
+	}
+	if readProbeSource(t, appSource) == probeMisformatted {
+		t.Fatal("the Portal format-fix argv left the misformatted app source unchanged")
+	}
+	// What the contributor is actually owed: the check that refused them passes.
+	if code, output := runMixFormat(t, second, buildRoot, depsPath, app.mixFormatArgs("--check-formatted")...); code != 0 {
+		t.Fatalf("the Portal format check still fails after the fix: exit %d: %s", code, output)
 	}
 }
