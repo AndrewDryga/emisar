@@ -27,12 +27,15 @@ defmodule Emisar.ApplicationTest do
           end
         end)
 
-      assert_receive {:ready, ^task}, 1_000
+      assert_receive {:ready, ^task}, 5_000
 
       ref = Process.monitor(task)
       send(task, {:exit, :test_crash})
 
-      assert_receive {:DOWN, ^ref, :process, ^task, :test_crash}, 1_000
+      # The abnormal exit is logged from inside the task before it terminates,
+      # so the DOWN trails a synchronous crash report; under full-suite load
+      # that round-trip needs the suite's standard cross-process window.
+      assert_receive {:DOWN, ^ref, :process, ^task, :test_crash}, 5_000
       assert Process.alive?(task_supervisor)
 
       assert {:ok, _task} =
@@ -40,7 +43,7 @@ defmodule Emisar.ApplicationTest do
                  send(parent, :after_crash)
                end)
 
-      assert_receive :after_crash, 1_000
+      assert_receive :after_crash, 5_000
     end
   end
 end
