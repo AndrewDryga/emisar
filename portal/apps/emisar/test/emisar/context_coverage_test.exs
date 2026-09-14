@@ -28,14 +28,19 @@ defmodule Emisar.ContextCoverageTest do
   calls, or nobody tests) without a compiler-grade call graph.
 
   Infra modules (`Repo`, `PubSub`, `Crypto`, `Telemetry`, …) are not domain
-  contexts and are out of scope. When a NEW context is added, add it to
+  contexts and are out of scope. `Jobs.Sweep` is the one exception, listed by
+  its path under `lib/emisar/`: it is three public functions every recurrent
+  sweep depends on for correctness, and `delete_in_batches/4` shipped with no
+  describe and sat that way for weeks until a review found it by hand. Both
+  checks fit it — its callers are the jobs in `lib/`, so a Sweep helper nothing
+  calls is dead surface like any other. When a NEW context is added, add it to
   `@contexts` below (and to its test).
   """
   use ExUnit.Case, async: true
 
   @contexts ~w[
-    accounts admin api_keys approvals audit auth billing catalog mail marketing mcp_operations
-    oauth policies runbooks runners runs sso users
+    accounts admin api_keys approvals audit auth billing catalog jobs/sweep mail marketing
+    mcp_operations oauth policies runbooks runners runs sso users
   ]a
 
   @otp_lifecycle_callbacks MapSet.new([{"init", 1}, {"start_link", 1}])
