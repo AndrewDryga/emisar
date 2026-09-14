@@ -1,7 +1,7 @@
 ---
 name: mcp-api
 sources: [portal/apps/emisar_web/priv/mcp/api-schemas.json, portal/apps/emisar_web/lib/emisar_web/controllers/mcp, portal/apps/emisar_web/lib/emisar_web/controllers/mcp_rpc_controller.ex, portal/apps/emisar/lib/emisar/mcp_operations.ex, mcp/protocol.go]
-updated: 2026-09-12
+updated: 2026-09-14
 ---
 
 # MCP action API specification
@@ -1120,15 +1120,27 @@ be recorded without, the real tally it released, the requirement it waived, and
 how many reviews that waived. An override is not a vote and never appears in
 `decisions`.
 
-Three shapes exhaust the receipt, and a client that renders it elsewhere handles
-all three. A **pending** review is still collecting votes: `command` is the
-preview, `override` is absent, and the summary around it still carries its
-`approval` object and `wait_until` deadline. A **decided** review reached its
-own outcome on the votes alone, so `override` is absent and `command` appears
-only when the run recorded one it executed — a denial finalizes on the spot and
-cancels the run, which therefore reports no command at all. An **overridden**
-review was released without quorum and adds the `override` object above; the
-example at the top of this section is that shape.
+The three committed examples — the pending and denied receipts among the test
+fixtures, and the overridden one at the top of this section — are the shapes a
+client meets most often, not the whole receipt. `status` takes any of the five
+values the schema enumerates, and `override` is separate evidence beside a
+status, never a sixth one. A **pending** review is still collecting votes:
+`command` is the preview, `override` is absent, and the summary around it still
+carries its `approval` object and `wait_until` deadline. A review the votes
+finalized reads **approved** or **denied** with `override` absent, and
+`command` appears only when the run recorded one it executed — a denial
+finalizes on the spot and cancels the run, which therefore reports no command
+at all. An **overridden** review was released without quorum: its `status` is
+`approved`, it adds the `override` object above, and the example at the top of
+this section is that shape. Two more outcomes reach a terminal status with no
+vote and no override. A pending request whose deadline passed reads
+**expired** — the effective status, reported before the expiry sweep rewrites
+the row — and a run cancelled while it waited flips its request to
+**cancelled** in the same transaction. Neither run ever dispatched, so neither
+receipt carries a `command`, and `decisions` lists only the votes that arrived
+before the outcome, which may be none. A client that renders the receipt
+elsewhere handles every status the schema names, not only the three the
+fixtures show.
 
 The receipt requires the same run-read access and account membership as the run
 summary carrying it — run-view permission, the caller's own account, and only
