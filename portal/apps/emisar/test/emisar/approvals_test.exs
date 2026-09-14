@@ -602,7 +602,7 @@ defmodule Emisar.ApprovalsTest do
   defp provable_gated_request(opts) do
     account = Fixtures.Accounts.create_account()
     runner = Fixtures.Runners.create_runner(account_id: account.id)
-    {_action, pack_ref} = Fixtures.Catalog.create_published_action(runner: runner)
+    {action, pack_ref} = Fixtures.Catalog.create_published_action(runner: runner)
     pack = Catalog.PublishedRegistry.get("linux-core")
     initiator = Fixtures.Users.create_user()
 
@@ -633,7 +633,7 @@ defmodule Emisar.ApprovalsTest do
         min_approvals: Keyword.get(opts, :min_approvals, 1)
       )
 
-    %{account: account, runner: runner, run: run, request: request}
+    %{account: account, action: action, runner: runner, run: run, request: request}
   end
 
   # Another provable gated run on the same runner, so a page holds several.
@@ -1645,6 +1645,42 @@ defmodule Emisar.ApprovalsTest do
       # the effective status — not the row the sweep has yet to rewrite — is
       # what stops it.
       assert review.command == nil
+    end
+
+    # A preview is proven by the run's snapshotted `expected_pack_hash` and the
+    # runner's advertised hash — deliberately NOT by dispatch eligibility — so
+    # an approver can still read what a pending request would run after its
+    # executable went missing, which is exactly the fact they need to refuse it
+    # for. Release is the gate: `approve_request` re-checks availability and
+    # keeps the run parked. Both halves are pinned together here, because each
+    # alone reads as a bug in the other.
+    test "a pending run whose executable vanished keeps its preview and still cannot be released" do
+      %{account: account, action: action, runner: runner, request: request, run: run} =
+        provable_gated_request(min_approvals: 1)
+
+      subject = operator_subject(account)
+      approver = named_reviewer(account, "Dana Reviewer")
+      Emisar.Runners.subscribe_runner_transport(runner)
+
+      assert {:ok, %{status: :pending, command: %{kind: :preview, text: "df -P -h /srv"}}} =
+               project_review(run, subject)
+
+      # ONLY the advertised executable changes; the hash proof both sides read
+      # is untouched.
+      action
+      |> Ecto.Changeset.change(primary_executable_available: false, missing_executable: "df")
+      |> Repo.update!()
+
+      assert {:ok, %{status: :pending, command: %{kind: :preview, text: "df -P -h /srv"}}} =
+               project_review(run, subject)
+
+      assert Approvals.approve_request(request, approver, "release it") ==
+               {:error, :action_unavailable}
+
+      assert %Request{status: :pending} = Repo.reload!(request)
+      assert %ActionRun{status: :pending_approval} = Repo.reload!(run)
+      assert approved_count(request.id) == 0
+      refute_receive {:cloud_to_runner, _generation, _}, 100
     end
 
     # Every wait_for_run poll and every recent-runs page reads this, so the page
