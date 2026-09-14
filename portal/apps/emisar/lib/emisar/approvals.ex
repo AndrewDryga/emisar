@@ -767,7 +767,13 @@ defmodule Emisar.Approvals do
     with {:ok, subject} <-
            Auth.fetch_current_subject(Authorizer.view_approvals_permission(), subject),
          {:ok, _request} <- fetch_readable_request(request.id, subject) do
-      {:ok, Repo.one(Decision.Query.approved_distinct_decider_count(request.id))}
+      count =
+        request.id
+        |> Decision.Query.approved_distinct_decider_count()
+        |> Authorizer.for_subject(subject)
+        |> Repo.one()
+
+      {:ok, count}
     end
   end
 
