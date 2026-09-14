@@ -60,9 +60,7 @@ defmodule Emisar.DescribeOwnershipTest do
       end)
       |> Enum.group_by(fn {name, _path} -> name end, fn {_name, path} -> path end)
       |> Enum.filter(fn {name, paths} ->
-        # A describe whose name is not a function reference (prose like
-        # "bearer auth") says nothing about ownership.
-        String.match?(name, ~r|^[a-z_]+[?!]?/\d+$|) and
+        function_reference?(name) and
           name not in @coincidences and name not in @known and
           length(Enum.uniq(paths)) > 1
       end)
@@ -78,4 +76,21 @@ defmodule Emisar.DescribeOwnershipTest do
            #{Enum.join(collisions, "\n")}
            """
   end
+
+  # The scanner's one name predicate, pinned here because the suite has no
+  # multi-digit arity to exercise it: with `/\d$` an `example/10` read as prose
+  # and silently skipped the very check this file exists to make.
+  test "a function reference is a name and any-width arity, never prose" do
+    assert function_reference?("example/1")
+    assert function_reference?("example/10")
+    assert function_reference?("predicate?/12")
+    assert function_reference?("bang!/2")
+    refute function_reference?("bearer auth")
+    refute function_reference?("example/")
+    refute function_reference?("Example/1")
+  end
+
+  # A describe whose name is not a function reference (prose like
+  # "bearer auth") says nothing about ownership.
+  defp function_reference?(name), do: String.match?(name, ~r|^[a-z_]+[?!]?/\d+$|)
 end
