@@ -293,7 +293,8 @@ defmodule EmisarWeb.MCP.Service do
       actor: decision.actor,
       decision: to_string(decision.decision),
       decided_at: decision.decided_at,
-      reason: decision.reason
+      reason: decision.reason,
+      reason_truncated: if(decision.reason_truncated, do: true)
     }
     |> drop_nil_values()
   end
@@ -304,6 +305,7 @@ defmodule EmisarWeb.MCP.Service do
     %{
       actor: override.actor,
       reason: override.reason,
+      reason_truncated: if(override.reason_truncated, do: true),
       approved_count: override.approved_count,
       required_approvals: override.required_approvals,
       waived_approvals: override.waived_approvals,

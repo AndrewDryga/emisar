@@ -772,7 +772,7 @@
         },
         "decisions": {
           "type": "array",
-          "description": "The most recent recorded votes, oldest first among themselves; the decision itself is always the last one. An override is not a vote and never appears here.",
+          "description": "The most recent recorded votes, oldest first among themselves; the decision itself is always the last one. An override is not a vote and never appears here. The list answers to two ceilings, both keeping the newest votes and both counted in `decisions_omitted`: at most 20 votes, and a shared 6000-byte allowance spent in JSON-encoded bytes so a page of maximal multi-byte notes shortens this list rather than exceeding the response budget. An ordinary vote costs about 175 of those bytes, so all 20 normally appear.",
           "maxItems": 20,
           "items": {
             "type": "object",
@@ -783,15 +783,19 @@
                 "type": "string",
                 "minLength": 1,
                 "maxLength": 255,
-                "description": "The name this account knows the reviewer by. Absent for someone it no longer knows; their vote still stands."
+                "description": "The name this account knows the reviewer by. Absent for someone it no longer knows; their vote still stands. Never cut — its own column bounds it — but it does spend the list's shared allowance beside its note."
               },
               "decision": {"enum": ["approve", "deny"]},
               "decided_at": {"$ref": "#/$defs/timestamp"},
               "reason": {
                 "type": "string",
                 "minLength": 1,
-                "maxLength": 2000,
-                "description": "That reviewer's own note for this decision, when they left one."
+                "maxLength": 1000,
+                "description": "That reviewer's own note for this decision, when they left one. Bounded here at this ceiling counted in JSON-encoded bytes, so multi-byte text and text heavy in backslashes or quotes is cut below it in characters, never mid code point; `reason_truncated` says when it was cut. The complete note stays on the approval page."
+              },
+              "reason_truncated": {
+                "const": true,
+                "description": "Present only when `reason` is a cut of the note the reviewer wrote, never `false`: they wrote more than this receipt holds."
               }
             }
           }
@@ -799,7 +803,7 @@
         "decisions_omitted": {
           "type": "integer",
           "minimum": 1,
-          "description": "Older votes the returned history left behind; the complete trail stays on the approval page."
+          "description": "Older votes the returned history left behind, whether to the 20-vote ceiling or to the shared byte allowance; the complete trail stays on the approval page."
         },
         "override": {
           "type": "object",
@@ -816,8 +820,12 @@
             "reason": {
               "type": "string",
               "minLength": 1,
-              "maxLength": 2000,
-              "description": "The mandatory explanation an override cannot be recorded without."
+              "maxLength": 1000,
+              "description": "The mandatory explanation an override cannot be recorded without. Bounded like a vote's note, in JSON-encoded bytes; `reason_truncated` says when it was cut and the complete text stays on the approval page. An override is always reported, never dropped for room: a released run must account for what released it."
+            },
+            "reason_truncated": {
+              "const": true,
+              "description": "Present only when `reason` is a cut of the explanation recorded with the override, never `false`."
             },
             "approved_count": {"type": "integer", "minimum": 0},
             "required_approvals": {"type": "integer", "minimum": 1},

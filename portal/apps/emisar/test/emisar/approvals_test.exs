@@ -1797,12 +1797,118 @@ defmodule Emisar.ApprovalsTest do
                actor: "Last Word",
                decision: :deny,
                decided_at: List.last(review.decisions).decided_at,
-               reason: "Not during the freeze."
+               reason: "Not during the freeze.",
+               reason_truncated: false
              }
 
       # Oldest first WITHIN the page: the two votes it left behind are the two
       # oldest, so the page opens on the third reviewer.
       assert [%{actor: "Reviewer 3"} | _rest] = review.decisions
+
+      # Ordinary notes cost the shared byte allowance almost nothing, so the
+      # count ceiling is what bound this page — not the budget below.
+      refute Enum.any?(review.decisions, & &1.reason_truncated)
+    end
+
+    # `@max_projected_decisions` caps a COUNT, and a note's input ceiling counts
+    # GRAPHEMES, so between them nothing bounded the bytes 20 votes cost the
+    # page frame the receipt rides. The votes therefore share a byte allowance
+    # as well, spent newest-first like the count ceiling and left behind in the
+    # same `decisions_omitted` — a shorter, honest history instead of a page the
+    # client cannot read at all.
+    test "maximal multi-byte notes shorten the vote history and are counted as omitted" do
+      %{account: account, request: request, run: run} = gated_request(min_approvals: 25)
+      subject = operator_subject(account)
+
+      # Legal at the input ceiling — 2,000 graphemes — and 6,000 bytes.
+      note = String.duplicate("界", 2_000)
+      assert String.length(note) == 2_000
+      assert byte_size(note) == 6_000
+
+      for index <- 1..20 do
+        reviewer = named_reviewer(account, "Reviewer #{index}")
+
+        assert {:ok, {%Request{status: :pending}, :pending}} =
+                 Approvals.approve_request(request, reviewer, note)
+      end
+
+      assert {:ok, review} = project_review(run, subject)
+
+      # The tally is the real one: shortening the projected history never
+      # changes how many people actually approved.
+      assert review.approved_count == 20
+      assert review.decisions != []
+      assert length(review.decisions) < 20
+      assert review.decisions_omitted == 20 - length(review.decisions)
+
+      # Kept newest and CONTIGUOUS: a gap in the middle would read as a record
+      # of who abstained. The last vote is the most recent one.
+      kept = Enum.map(review.decisions, & &1.actor)
+      expected_from = 20 - length(kept) + 1
+      assert kept == Enum.map(expected_from..20, &"Reviewer #{&1}")
+
+      for decision <- review.decisions do
+        assert decision.reason_truncated
+        # Cut in ENCODED bytes, below the ceiling in characters, on a code
+        # point boundary — and the prefix is genuinely that reviewer's note.
+        assert byte_size(decision.reason) <= 1_000
+        assert String.valid?(decision.reason)
+        assert String.starts_with?(note, decision.reason)
+      end
+    end
+
+    # The stored note is a record of what an approver wrote and is never
+    # rewritten to fit a wire budget; only the projection is bounded.
+    test "the bounded projection leaves the stored decision note whole" do
+      %{account: account, request: request, run: run} = gated_request(min_approvals: 25)
+      subject = operator_subject(account)
+      note = String.duplicate("界", 2_000)
+      reviewer = named_reviewer(account, "Reviewer 1")
+      request_id = request.id
+
+      assert {:ok, {%Request{status: :pending}, :pending}} =
+               Approvals.approve_request(request, reviewer, note)
+
+      assert {:ok, review} = project_review(run, subject)
+      assert [%{reason_truncated: true}] = review.decisions
+      assert byte_size(List.first(review.decisions).reason) <= 1_000
+
+      # The note lives on its `approval.decision_recorded` audit receipt, and
+      # that row still holds every byte the approver typed.
+      receipts = Audit.approval_decision_receipts([request.id], account.id)
+      assert %{^request_id => %{decisions: stored}} = receipts
+      assert Map.values(stored) == [note]
+    end
+
+    # An override is WHY the run was released. It spends the same note bound and
+    # carries the same flag, but never the vote list's shared allowance: dropping
+    # it for room would leave a released run with no account of what released it.
+    test "an override's maximal reason is bounded and flagged, never dropped for room" do
+      %{account: account, request: request, run: run} = gated_request(min_approvals: 25)
+      subject = operator_subject(account)
+      note = String.duplicate("界", 2_000)
+
+      for index <- 1..20 do
+        reviewer = named_reviewer(account, "Reviewer #{index}")
+
+        assert {:ok, {%Request{status: :pending}, :pending}} =
+                 Approvals.approve_request(request, reviewer, note)
+      end
+
+      owner = named_reviewer(account, "Alex Admin")
+
+      assert {:ok, {%Request{status: :approved}, _released}} =
+               Approvals.override_request(request, note, owner)
+
+      assert {:ok, review} = project_review(run, subject)
+
+      assert review.override.actor == "Alex Admin"
+      assert review.override.reason_truncated
+      assert byte_size(review.override.reason) <= 1_000
+      assert String.valid?(review.override.reason)
+      assert String.starts_with?(note, review.override.reason)
+      # Still not a vote, and still not counted as one.
+      assert review.approved_count == 20
     end
 
     # The receipt's text ceiling is spent in JSON-ENCODED BYTES, the unit its

@@ -1138,7 +1138,26 @@ their vote still stands), the vote, its time, and that reviewer's own note when
 they left one. A request with more votes than the page holds returns its most
 recent ones — a deny finalizes on the spot and the approve that meets quorum is
 the last vote, so the decision itself is always present — and counts the older
-ones in `decisions_omitted`. A proven ordinary single-approver decision without
+ones in `decisions_omitted`.
+
+Two ceilings decide how many that is, both keeping the newest votes and both
+counted in that one number: at most 20 votes, and a shared 6,000-byte allowance
+the votes spend in JSON-encoded bytes. The second exists because the first
+bounds a count, not a size. A note's input contract caps it at 2,000
+**graphemes**, and a grapheme is as many bytes as its writer appends, so twenty
+maximal notes in a non-Latin script encoded to 290,934 bytes against a 65,536-byte
+page budget — and a run summary can shed only its output preview, so the receipt
+did not shrink, it became unreadable. Each note is now bounded at 1,000 encoded
+bytes with a `reason_truncated` flag present only when true, and the shared
+allowance shortens the list when even that cannot fit. A reviewer's name is not
+cut — its own column already bounds it in bytes — but it spends the allowance
+beside its note. An ordinary vote costs about 175 of those bytes, so all 20
+still appear; the complete trail, uncut, stays on the approval page. The
+`override` object's reason spends the same 1,000-byte bound and the same flag,
+and an override is never dropped for room — a released run must account for what
+released it.
+
+A proven ordinary single-approver decision without
 per-vote rows lists the decision its own record holds — the decider, time,
 and note. The request's durable override marker prevents an override from
 becoming a vote after audit retention removes its receipt. Historical requests

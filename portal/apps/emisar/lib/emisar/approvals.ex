@@ -66,6 +66,30 @@ defmodule Emisar.Approvals do
   # dispatch reason's cap so both justification surfaces accept the same length.
   @max_decision_reason 2000
 
+  # That ceiling counts GRAPHEMES, and a grapheme is as many bytes as its writer
+  # appends, so it bounds not one byte of the frame this receipt rides. Twenty
+  # maximal notes are 40,000 graphemes: written in a non-Latin script a fully
+  # voted receipt encoded to 290,934 bytes against the 64 KiB model page budget,
+  # and `fixed_run_summary/3` can shed only OUTPUT preview — so the receipt did
+  # not shrink, it became unreadable. The projection bounds the note in
+  # JSON-ENCODED BYTES, the unit the frame spends (`Emisar.EncodedText`), and
+  # flags the cut: a clipped note published as the whole one misrepresents what
+  # the approver wrote, which is the one thing this receipt is for.
+  @max_projected_decision_reason_bytes 1_000
+
+  # A per-note bound still does not bound the LIST: twenty of them is twenty
+  # times whatever each costs, and the reviewer NAME beside each one spends the
+  # frame too (bounded already, but by its column — `varchar(255)`, or 254 bytes
+  # for the email fallback — which is 510 encoded bytes of backslashes, not a
+  # number this projection chose). So the votes share one ceiling, spent
+  # newest-first like `@max_projected_decisions` and left behind in the same
+  # `decisions_omitted` count: an ordinary receipt (a name and a sentence, ~175
+  # bytes a vote) still publishes all twenty, while maximal multi-byte votes
+  # shorten the list rather than lose the page. The allowance covers each vote's
+  # own keys, verb and ISO-8601 timestamp beside its two texts.
+  @projected_decision_overhead_bytes 120
+  @max_projected_decisions_bytes 6_000
+
   # A deny also writes a terminal reason onto the held work, and those columns
   # are much smaller than the note: `action_runs.reason_text` is varchar(255)
   # validated in CODE POINTS, and a halted runbook execution's
@@ -467,9 +491,11 @@ defmodule Emisar.Approvals do
   DISTINCT `approved_count`, the approver-facing `reason`/`evidence`/`expected`
   snapshot with the run's own secrets masked out, how many arguments the run
   carries, the trusted `command` receipt when one is provable, the most recent
-  votes oldest first (with `decisions_omitted` counting any older ones the
-  ceiling left behind) each carrying the name THIS account knows the reviewer
-  by and that vote's own retained note, and an `override` only when its explicit
+  votes oldest first (with `decisions_omitted` counting any older ones either
+  ceiling left behind — the 20-vote count and the shared byte allowance the
+  votes spend) each carrying the name THIS account knows the reviewer by and
+  that vote's own retained note, bounded in encoded bytes and flagged
+  `reason_truncated` when cut, and an `override` only when its explicit
   `approval.overridden` audit receipt exists — carrying the real tally it
   released, the requirement it waived, and its mandatory reason. An override is
   never inferred from a short tally and never becomes a vote. The request's
@@ -619,7 +645,12 @@ defmodule Emisar.Approvals do
       expected_truncated: expected_cut?,
       command: facts.command,
       decisions: decisions,
-      decisions_omitted: max(length(facts.decisions) - @max_projected_decisions, 0),
+      # Counted from what the projection actually KEPT, so the two ceilings the
+      # list answers to — the vote count and the shared byte budget — are both
+      # reported by the one number a reader already trusts. The pre-vote-row
+      # clause synthesizes a decision from no rows at all, so the count floors
+      # at zero rather than going negative.
+      decisions_omitted: max(length(facts.decisions) - length(decisions), 0),
       override: projected_override(facts.receipt.override, facts.labels)
     }
   end
@@ -636,12 +667,12 @@ defmodule Emisar.Approvals do
     decision = if status == :approved, do: :approve, else: :deny
 
     {[
-       %{
-         actor: Map.get(labels, request.decided_by_id),
-         decision: decision,
-         decided_at: request.decided_at,
-         reason: presence(request.decision_reason)
-       }
+       projected_decision(
+         Map.get(labels, request.decided_by_id),
+         decision,
+         request.decided_at,
+         presence(request.decision_reason)
+       )
      ], if(decision == :approve, do: 1, else: 0)}
   end
 
@@ -650,26 +681,78 @@ defmodule Emisar.Approvals do
       facts.decisions
       |> Enum.take(-@max_projected_decisions)
       |> Enum.map(fn decision ->
-        %{
-          actor: Map.get(facts.labels, decision.decider_id),
-          decision: decision.decision,
-          decided_at: decision.decided_at,
-          reason: Map.get(facts.receipt.decisions, decision.decider_id)
-        }
+        projected_decision(
+          Map.get(facts.labels, decision.decider_id),
+          decision.decision,
+          decision.decided_at,
+          Map.get(facts.receipt.decisions, decision.decider_id)
+        )
       end)
+      |> within_decisions_budget()
 
     {decisions, facts.count}
   end
+
+  defp projected_decision(actor, decision, decided_at, reason) do
+    {reason, reason_cut?} = bounded_text(reason, @max_projected_decision_reason_bytes)
+
+    %{
+      actor: actor,
+      decision: decision,
+      decided_at: decided_at,
+      reason: reason,
+      reason_truncated: reason_cut?
+    }
+  end
+
+  # Absent text is never "cut", and an empty string carries nothing to keep.
+  defp bounded_text(nil, _limit), do: {nil, false}
+  defp bounded_text("", _limit), do: {nil, false}
+  defp bounded_text(text, limit), do: EncodedText.bound(text, limit)
+
+  # The votes are oldest first and the ceiling keeps the NEWEST, so the budget is
+  # spent from the end backwards — a vote that would overrun it is left behind
+  # exactly like one past the count ceiling, and the ones already taken stay.
+  # Stopping at the first overrun rather than skipping past it keeps the kept
+  # votes CONTIGUOUS and newest: a gap in the middle would read as a record of
+  # who abstained.
+  defp within_decisions_budget(decisions) do
+    decisions
+    |> Enum.reverse()
+    |> Enum.reduce_while({[], 0}, fn decision, {kept, spent} ->
+      case spent + projected_decision_bytes(decision) do
+        spent when spent <= @max_projected_decisions_bytes -> {:cont, {[decision | kept], spent}}
+        _over -> {:halt, {kept, spent}}
+      end
+    end)
+    |> elem(0)
+  end
+
+  defp projected_decision_bytes(decision) do
+    @projected_decision_overhead_bytes + text_bytes(decision.actor) +
+      text_bytes(decision.reason)
+  end
+
+  defp text_bytes(nil), do: 0
+  defp text_bytes(text), do: EncodedText.size(text)
 
   defp presence(text) when is_binary(text) and text != "", do: text
   defp presence(_text), do: nil
 
   defp projected_override(nil, _labels), do: nil
 
+  # An override's mandatory reason is the same free text under the same
+  # grapheme-counted ceiling as a vote's note, and it rides the same frame, so
+  # it spends the same bound. It is never part of the vote list's shared
+  # allowance: an override is WHY the run was released, and dropping it for room
+  # would leave a released run with no account of what released it.
   defp projected_override(override, labels) do
+    {reason, reason_cut?} = bounded_text(override.reason, @max_projected_decision_reason_bytes)
+
     %{
       actor: Map.get(labels, override.actor_id),
-      reason: override.reason,
+      reason: reason,
+      reason_truncated: reason_cut?,
       approved_count: override.approved_count,
       required_approvals: override.min_approvals,
       waived_approvals: override.waived_approvals,

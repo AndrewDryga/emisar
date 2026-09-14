@@ -3638,6 +3638,174 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
     end
   end
 
+  # The justification chain and the command line learned to spend encoded bytes,
+  # but the VOTES had no byte bound at all: `@max_projected_decisions` caps a
+  # count, and each of those 20 votes carried a note capped at 2,000 graphemes
+  # and a reviewer name capped at 255. A grapheme is as many bytes as its writer
+  # appends, so a policy with a high `min_approvals` whose reviewers write in a
+  # non-Latin script encoded to 335,073 bytes — five times the model page budget.
+  # A run summary sheds only its OUTPUT preview, so the receipt could not shrink:
+  # `wait_for_run` answered `response_too_large` and the client, whose whole
+  # reason for calling was to read who approved this, got nothing.
+  test "a fully voted receipt of maximal multi-byte notes stays inside the page budget", %{
+    conn: conn,
+    account: account,
+    subject: subject,
+    user: user,
+    key: key,
+    membership: membership
+  } do
+    runner = setup_runner!(account, subject, "fully-voted-node")
+    {_action, pack_ref} = Fixtures.Catalog.create_published_action(runner: runner)
+    pack = Emisar.Catalog.PublishedRegistry.get("linux-core")
+
+    # At their ceilings, and legal. The note is capped in GRAPHEMES (2,000), so
+    # CJK spends three bytes apiece where the cap counts one. The name is capped
+    # by its `varchar(255)` column, which does count bytes — so its worst case
+    # is 255 backslashes, each one byte that JSON escapes to two.
+    note = String.duplicate("界", 2_000)
+    name = String.duplicate("\\", 255)
+    assert String.length(note) == 2_000
+    assert byte_size(note) == 6_000
+    assert byte_size(name) == 255
+
+    run =
+      create_mcp_history_run!(account, runner, key, 1, %{
+        action_id: "linux.disk_usage",
+        pack_ref: pack_ref,
+        expected_pack_hash: pack.content_hash,
+        args_raw: ~s({"paths":["/srv"]}),
+        status: :pending_approval,
+        requires_approval: true,
+        initiating_membership_id: membership.id,
+        # The justification chain at its own ceilings too, so this is the whole
+        # worst case rather than the votes measured on an otherwise empty page.
+        reason: String.duplicate("界", 2_000),
+        evidence: String.duplicate("界", 4_000),
+        expected: String.duplicate("界", 2_000)
+      })
+
+    {:ok, request} = Approvals.create_request(run, user.id, run.reason, min_approvals: 25)
+
+    # More votes than the count ceiling holds, each maximal.
+    for index <- 1..22 do
+      reviewer = named_reviewer(account, name)
+
+      assert {:ok, {%{status: :pending}, :pending}} =
+               Approvals.approve_request(request, reviewer, note),
+             "vote #{index}"
+    end
+
+    owner = named_reviewer(account, name)
+
+    assert {:ok, {%{status: :approved}, _released}} =
+             Approvals.override_request(request, note, owner)
+
+    # ...and a maximal executed command line beside them.
+    Repo.reload!(run)
+    |> Ecto.Changeset.change(executed_command: String.duplicate("\\", 4_000))
+    |> Repo.update!()
+
+    response =
+      rpc(conn, "tools/call", %{
+        "name" => "wait_for_run",
+        "arguments" => %{"run_id" => run.id, "timeout" => "0"}
+      })
+
+    assert byte_size(response.resp_body) <= ResponseBudget.max_model_page_frame_bytes()
+    result = response |> json_response(200) |> get_in(["result", "structuredContent"])
+    # The service's own contract: the page fits beside a maximal request id.
+    assert ResponseBudget.fits_model_page?(result)
+
+    review = result["run"]["review"]
+    decisions = review["decisions"]
+
+    # The shared allowance, not the count ceiling, is what shortened this list —
+    # and every vote it left behind is counted, so the receipt never claims to
+    # be the whole trail.
+    assert length(decisions) < 20
+    assert decisions != []
+    assert review["decisions_omitted"] == 22 - length(decisions)
+
+    # Each cut is FLAGGED. A clipped note published as whole would misrepresent
+    # what the approver wrote, which is the one thing this receipt is for.
+    for vote <- decisions do
+      assert vote["reason_truncated"] == true
+      assert String.starts_with?(note, vote["reason"])
+      assert String.valid?(vote["reason"])
+      # Bounded in ENCODED bytes, so multi-byte text is cut below the ceiling
+      # `maxLength` counts rather than at it, and never mid code point.
+      assert byte_size(vote["reason"]) <= 1_000
+      # The name is not cut — its column bounds it — but it was charged for.
+      assert vote["actor"] == name
+      refute Map.has_key?(vote, "actor_truncated")
+    end
+
+    # An override is never dropped for room: a released run must account for
+    # what released it.
+    assert review["override"]["reason_truncated"] == true
+    assert String.starts_with?(note, review["override"]["reason"])
+    assert byte_size(review["override"]["reason"]) <= 1_000
+
+    # The rest of the receipt is at its ceilings too, so the page that fit above
+    # is the real worst case and not a receipt measured on an empty page.
+    assert review["reason_truncated"] == true
+    assert review["evidence_truncated"] == true
+    assert review["expected_truncated"] == true
+    assert review["command"]["kind"] == "executed"
+    assert review["command"]["truncated"] == true
+  end
+
+  # The bound is for hostile and multi-byte text, not for ordinary reviews: a
+  # full quorum of plain notes is published whole, all 20 of them, with no flag
+  # a client has to distinguish from absent.
+  test "an ordinary fully voted receipt keeps all 20 votes uncut and unflagged", %{
+    conn: conn,
+    account: account,
+    subject: subject,
+    user: user,
+    key: key,
+    membership: membership
+  } do
+    runner = setup_runner!(account, subject, "ordinary-quorum-node")
+    {_action, pack_ref} = Fixtures.Catalog.create_published_action(runner: runner)
+    pack = Emisar.Catalog.PublishedRegistry.get("linux-core")
+    note = "Read-only; no configuration changes on the box."
+
+    run =
+      create_mcp_history_run!(account, runner, key, 1, %{
+        action_id: "linux.disk_usage",
+        pack_ref: pack_ref,
+        expected_pack_hash: pack.content_hash,
+        args_raw: ~s({"paths":["/srv"]}),
+        status: :pending_approval,
+        requires_approval: true,
+        initiating_membership_id: membership.id,
+        reason: "Rotate the node before the maintenance window closes."
+      })
+
+    {:ok, request} = Approvals.create_request(run, user.id, run.reason, min_approvals: 25)
+
+    for index <- 1..20 do
+      reviewer = named_reviewer(account, "Reviewer #{index}")
+
+      assert {:ok, {%{status: :pending}, :pending}} =
+               Approvals.approve_request(request, reviewer, note)
+    end
+
+    result = call(conn, "wait_for_run", %{"run_id" => run.id, "timeout" => "0"})
+    assert ResponseBudget.fits_model_page?(result)
+
+    review = result["run"]["review"]
+    assert length(review["decisions"]) == 20
+    refute Map.has_key?(review, "decisions_omitted")
+
+    for vote <- review["decisions"] do
+      assert vote["reason"] == note
+      refute Map.has_key?(vote, "reason_truncated")
+    end
+  end
+
   # A justification that fits carries no truncation flag at all, so a client
   # never has to distinguish `false` from absent.
   test "a justification within its ceiling is published whole with no flag", %{

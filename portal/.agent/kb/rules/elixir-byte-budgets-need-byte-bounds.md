@@ -113,6 +113,13 @@ end
   counts. JSON Schema `maxLength` counts **code points**, and `String.slice/3`
   counts graphemes — a combining cluster carries two code points per grapheme
   past a limit that looks obeyed.
+- A ceiling on the NUMBER of items in a size-budgeted collection, with no
+  ceiling on what each item costs. A count is not a size: the review receipt
+  capped its vote history at 20 and each note at 2,000 graphemes, and twenty
+  maximal CJK notes still encoded to 290,934 bytes against a 65,536-byte page.
+  Bound the item AND give the collection a shared byte allowance, spent in the
+  order the collection already prefers, so what it drops is reported by the
+  count it already publishes.
 
 Swept 2026-08-08: the runbook projection was the only collapsing size gate.
 `ResponseBudget.encode_frame/1` (`:response_too_large`), the draft envelope
@@ -128,5 +135,10 @@ count, the envelope allowance covering the worst-case wrapper, and the code
 point slice; `runbook/changeset_test.exs` pins CJK and emoji metadata that pass
 the character limit and fail the byte one. `mcp_runbook_recovery_tools_test.exs`
 pins the MCP review receipt: a combining-cluster command line, an emoji and a
-backslash executed receipt, and an escape-heavy snapshot preview each go through
-the real tool and are held to `ResponseBudget.fits_model_page?/1`.
+backslash executed receipt, an escape-heavy snapshot preview, and a fully voted
+receipt whose twenty maximal CJK notes ride a maximal justification chain and
+command line each go through the real tool and are held to
+`ResponseBudget.fits_model_page?/1`. `approvals_test.exs` pins the vote list's
+shared allowance separately: what it drops is counted in `decisions_omitted`,
+the votes it keeps are the newest and contiguous, and the stored audit receipt
+still holds every byte of the note.
