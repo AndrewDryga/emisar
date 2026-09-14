@@ -36,22 +36,23 @@ defmodule Emisar.Repo.ChangesetTest do
   describe "put_default_value/3" do
     test "a nil default is a no-op" do
       result = RepoChangeset.put_default_value(changeset(), :name, nil)
-      assert get_field(result, :name) == nil
+      assert result.changes == %{}
     end
 
     test "a literal default fills an unset field" do
       result = RepoChangeset.put_default_value(changeset(), :name, "untitled")
-      assert get_field(result, :name) == "untitled"
+      assert result.changes == %{name: "untitled"}
     end
 
     test "an already-set field is left untouched" do
       result = RepoChangeset.put_default_value(changeset(%{name: "Existing"}), :name, "untitled")
-      assert get_field(result, :name) == "Existing"
+      assert result.changes == %{}
+      assert result.data.name == "Existing"
     end
 
     test "a 0-arity function default is invoked lazily" do
       result = RepoChangeset.put_default_value(changeset(), :slug, fn -> "generated" end)
-      assert get_field(result, :slug) == "generated"
+      assert result.changes == %{slug: "generated"}
     end
 
     test "a 1-arity function default receives the changeset" do
@@ -60,19 +61,19 @@ defmodule Emisar.Repo.ChangesetTest do
           "slug-of-#{get_field(changeset, :name)}"
         end)
 
-      assert get_field(result, :slug) == "slug-of-Acme"
+      assert result.changes == %{slug: "slug-of-Acme"}
     end
 
     test "from: copies another field's value when that field is set" do
       result =
         RepoChangeset.put_default_value(changeset(%{name: "Acme Inc"}), :legal_name, from: :name)
 
-      assert get_field(result, :legal_name) == "Acme Inc"
+      assert result.changes == %{legal_name: "Acme Inc"}
     end
 
     test "from: a field that doesn't resolve leaves the target untouched" do
       result = RepoChangeset.put_default_value(changeset(), :legal_name, from: :nonexistent)
-      assert get_field(result, :legal_name) == nil
+      assert result.changes == %{}
     end
   end
 
