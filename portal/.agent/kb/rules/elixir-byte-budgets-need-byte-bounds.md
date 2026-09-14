@@ -120,6 +120,13 @@ end
   Bound the item AND give the collection a shared byte allowance, spent in the
   order the collection already prefers, so what it drops is reported by the
   count it already publishes.
+- A truncation flag that only ONE consumer renders. A bound added for a
+  size-budgeted frame usually lives in a projection an unbudgeted surface reads
+  too — the review receipt feeds both the MCP page and the console run page —
+  and there the cut still happens while the budget that justified it does not
+  apply. Every surface that prints the bounded value prints the flag beside it:
+  `EncodedText.bound/2` returns a bare prefix, so a console quoting it without
+  the flag publishes a clipped approver's note as the whole one.
 
 Swept 2026-08-08: the runbook projection was the only collapsing size gate.
 `ResponseBudget.encode_frame/1` (`:response_too_large`), the draft envelope
@@ -141,4 +148,6 @@ command line each go through the real tool and are held to
 `ResponseBudget.fits_model_page?/1`. `approvals_test.exs` pins the vote list's
 shared allowance separately: what it drops is counted in `decisions_omitted`,
 the votes it keeps are the newest and contiguous, and the stored audit receipt
-still holds every byte of the note.
+still holds every byte of the note. `run_detail_live_test.exs` pins the console
+side of that same projection: a note past the bound renders its cut instead of
+quoting the clipped text as whole.

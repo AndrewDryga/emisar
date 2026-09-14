@@ -731,8 +731,13 @@ defmodule EmisarWeb.RunDetailLive do
                           class="text-xs tabular-nums text-zinc-400"
                         />
                       </div>
+                      <%!-- The note arrives bounded in encoded bytes: the receipt
+                           is one projection for this page and the MCP frame, and
+                           that frame is budgeted in bytes. So the cut is drawn
+                           here like the bounded command line's, because quotes
+                           around a clipped note publish it as the whole one. --%>
                       <p :if={entry.reason} class="mt-1.5 text-sm leading-relaxed text-zinc-300">
-                        “{entry.reason}”
+                        “{entry.reason}<span :if={entry.reason_truncated} class="text-zinc-500">…</span>”
                       </p>
                     </div>
                   </li>

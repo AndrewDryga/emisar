@@ -301,6 +301,31 @@ defmodule EmisarWeb.RunDetailLiveTest do
     assert has_element?(lv, "#run-approval", "“second”")
   end
 
+  # The receipt is bounded in encoded bytes for the MCP page frame, and this
+  # ledger reads the SAME projection — so a long note reaches the console
+  # already cut. A clipped note inside quotation marks reads as the whole thing
+  # the approver wrote, which is the one claim this ledger must not make.
+  test "a note cut by the receipt's byte bound is marked, never quoted as whole",
+       %{conn: conn} do
+    {conn, user, account} = register_and_log_in(conn)
+    run = gated_run(account, user)
+    {:ok, request} = Approvals.create_request(run, user.id, "reload after validation")
+
+    # Well inside the 2000-grapheme note ceiling an approver may type, and past
+    # the projection's 1000-encoded-byte bound.
+    note = String.duplicate("a", 1_500) <> " and the tail the bound cuts"
+
+    {:ok, _} = Approvals.approve_request(request, reviewer(account, "Jordan Approver"), note)
+
+    {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runs/#{run.id}")
+
+    ledger = lv |> element("#run-approval") |> render()
+
+    assert ledger =~ String.duplicate("a", 1_000)
+    refute ledger =~ "and the tail the bound cuts"
+    assert has_element?(lv, "#run-approval p", "…")
+  end
+
   # The reason the page subscribes to the request at all: a vote below quorum
   # changes the request and leaves the run untouched, so the run feed the page
   # already had cannot repaint it. Without Approvals.subscribe_request the
