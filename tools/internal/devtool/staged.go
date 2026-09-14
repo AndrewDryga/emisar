@@ -74,7 +74,12 @@ func (a *App) checkStagedPortalFormat(ctx context.Context) error {
 			return err
 		}
 		relative := strings.TrimPrefix(filepath.ToSlash(file), "portal/")
-		command := exec.CommandContext(ctx, "mix", "format", "--check-formatted", "--stdin-filename", relative, "-")
+		// mixFormatArgs, not a bare `format`: the cached dot formatter it works
+		// around also decides which app's configuration --stdin-filename resolves
+		// to, so a foreign manifest would check app sources against the umbrella's
+		// own rules instead of their app's.
+		args := append(a.mixFormatArgs("--check-formatted", "--stdin-filename", relative), "-")
+		command := exec.CommandContext(ctx, "mix", args...)
 		command.Dir = a.Portal
 		command.Env = os.Environ()
 		command.Stdin = bytes.NewReader(source)
@@ -89,7 +94,10 @@ func (a *App) checkStagedPortalFormat(ctx context.Context) error {
 		}
 	}
 	if len(unformatted) != 0 {
-		return fmt.Errorf("staged Portal files are not formatted:\n%s\nrun: cd portal && mix format",
+		// The remediation names the dot formatter for the same reason the check
+		// does: a bare `mix format` on a box with a foreign cached dot formatter
+		// rewrites nothing under apps/ and leaves the commit refused again.
+		return fmt.Errorf("staged Portal files are not formatted:\n%s\nrun: cd portal && mix format --dot-formatter \"$PWD/.formatter.exs\"",
 			strings.Join(unformatted, "\n"))
 	}
 	return nil

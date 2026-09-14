@@ -22,6 +22,28 @@ var (
 	pollutionPattern = regexp.MustCompile(`(?mi)(^|[[:space:]])warning:|\[(error|warning)\]|(^|[[:space:]])error:|Postgrex\.Protocol .*disconnected|DBConnection\.ConnectionError`)
 )
 
+// mixFormatArgs builds a `mix format` argv that resolves portal/.formatter.exs —
+// and the apps/* configuration it delegates to — against THIS checkout.
+//
+// Mix caches the resolved :subdirectories configuration in
+// <build path>/.mix/cached_dot_formatter, recording each app's .formatter.exs by
+// ABSOLUTE path. It reuses that entry unless one of those recorded paths is newer
+// than the manifest. Coop boxes share one MIX_BUILD_ROOT across checkouts, so a
+// manifest another checkout wrote survives here: its apps/* paths no longer exist,
+// they expand to nothing rather than to something stale, and the entry therefore
+// never looks stale. A bare `mix format --check-formatted` then silently expands
+// the umbrella's own :inputs only — no apps/*/lib, no apps/*/test — and passes in
+// milliseconds over an unformatted tree, which is how a green gate handed the
+// commit hook files it then refused.
+//
+// Naming the dot formatter by absolute path takes Mix's uncached branch, so every
+// invocation re-reads both apps' configuration from the checkout it is running in.
+// That keeps portal/.formatter.exs the single formatting authority instead of
+// adding a second list of inputs here that could drift from it.
+func (a *App) mixFormatArgs(args ...string) []string {
+	return append([]string{"format", "--dot-formatter", filepath.Join(a.Portal, ".formatter.exs")}, args...)
+}
+
 func (a *App) runCaptured(ctx context.Context, label, dir string, env map[string]string, name string, args ...string) error {
 	return a.gatePhase(label, func() error {
 		command := exec.CommandContext(ctx, name, args...)
@@ -266,7 +288,7 @@ func (a *App) checkChangedPortalPaths(ctx context.Context, paths []string) error
 	}
 	if len(formatFiles) > 0 {
 		fmt.Fprintf(a.Out, "Checking format: %s\n", strings.Join(formatFiles, " "))
-		if err := a.run(ctx, a.Portal, nil, "mix", append([]string{"format", "--check-formatted"}, formatFiles...)...); err != nil {
+		if err := a.run(ctx, a.Portal, nil, "mix", a.mixFormatArgs(append([]string{"--check-formatted"}, formatFiles...)...)...); err != nil {
 			return err
 		}
 	}
@@ -610,7 +632,11 @@ func (a *App) check(ctx context.Context, args []string) error {
 		if len(rest) != 0 {
 			return usage("usage: ./run check portal")
 		}
-		for _, arguments := range [][]string{{"compile", "--warnings-as-errors"}, {"format", "--check-formatted"}, {"credo"}} {
+		for _, arguments := range [][]string{
+			{"compile", "--warnings-as-errors"},
+			a.mixFormatArgs("--check-formatted"),
+			{"credo"},
+		} {
 			if err := a.run(ctx, a.Portal, nil, "mix", arguments...); err != nil {
 				return err
 			}

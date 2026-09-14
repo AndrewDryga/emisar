@@ -572,6 +572,12 @@ func TestStagedCheckFormatsPortalIndexBlobsWithTheirFilename(t *testing.T) {
 	if !strings.Contains(string(invocation), "--stdin-filename apps/emisar_web/lib/probe.heex -") {
 		t.Fatalf("mix invocation = %q", invocation)
 	}
+	// The same argv every Portal format check is built from: without the absolute
+	// dot formatter, a cached one from another checkout decides which app's rules
+	// this staged blob is measured against.
+	if !strings.Contains(string(invocation), "--dot-formatter "+filepath.Join(root, "portal", ".formatter.exs")) {
+		t.Fatalf("mix invocation did not name the dot formatter: %q", invocation)
+	}
 }
 
 func TestRunCapturedRejectsPollution(t *testing.T) {

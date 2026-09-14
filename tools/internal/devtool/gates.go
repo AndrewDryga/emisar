@@ -424,7 +424,7 @@ func (a *App) portalGate(ctx context.Context) error {
 		return err
 	}
 	if err := a.gatePhase("portal format", func() error {
-		return a.run(ctx, a.Portal, nil, "mix", "format", "--check-formatted")
+		return a.run(ctx, a.Portal, nil, "mix", a.mixFormatArgs("--check-formatted")...)
 	}); err != nil {
 		return err
 	}
