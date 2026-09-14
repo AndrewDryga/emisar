@@ -174,17 +174,28 @@ defmodule Emisar.Seeds.Helpers do
     )
   end
 
-  def baseline_action_descriptors(pack_id) do
+  @doc """
+  Every shipped action descriptor for `pack_id` at `version` (nil: the current
+  published version), shaped as a runner advertises them.
+
+  A windowed previous version only carries descriptors when the catalog still
+  retains its actions, so a fixture standing a pack behind fails loudly instead
+  of advertising nothing.
+  """
+  def baseline_action_descriptors(pack_id, version \\ nil) do
     version =
-      PackBaseline.current_version(pack_id) ||
+      version || PackBaseline.current_version(pack_id) ||
         raise "missing current shipped pack version for #{pack_id}"
 
     hash =
       PackBaseline.lookup(pack_id, version) ||
         raise "missing shipped-pack baseline for #{pack_id} #{version}"
 
-    pack_id
-    |> PackBaseline.manifest(version, hash)
+    manifest =
+      PackBaseline.manifest(pack_id, version, hash) ||
+        raise "shipped pack #{pack_id} #{version} retains no action descriptors"
+
+    manifest
     |> get_in(["actions"])
     |> Enum.sort_by(&elem(&1, 0))
     |> Enum.map(fn {action_id, descriptor} ->
@@ -198,12 +209,12 @@ defmodule Emisar.Seeds.Helpers do
     end)
   end
 
-  @doc "One shipped action descriptor, by id, from the pack's current baseline."
-  def baseline_action_descriptor(pack_id, action_id) do
+  @doc "One shipped action descriptor, by id, from the pack's baseline at `version` (nil: current)."
+  def baseline_action_descriptor(pack_id, action_id, version \\ nil) do
     pack_id
-    |> baseline_action_descriptors()
+    |> baseline_action_descriptors(version)
     |> Enum.find(&(&1["id"] == action_id)) ||
-      raise "missing shipped action #{action_id} in pack #{pack_id}"
+      raise "missing shipped action #{action_id} in pack #{pack_id} #{version || "(current)"}"
   end
 
   @doc "Aggregates stream chunks so terminal byte counts read believably."

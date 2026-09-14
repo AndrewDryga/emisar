@@ -160,37 +160,16 @@ defmodule Emisar.Seeds.Fleet do
 
   # -- Catalog: actions on each runner ---------------------------------
 
+  # Every descriptor below comes from the shipped baseline manifest, the same
+  # path the caddy and docker fixtures take, so the catalog shows exactly what a
+  # live runner would advertise (summary, side effects, arg validation, examples)
+  # and cannot drift from the pack on its next edit.
   @doc "The on-host baseline every demo runner advertises."
   def linux_actions do
-    [
-      Helpers.action_descriptor("linux-core", %{
-        "id" => "linux.uptime",
-        "title" => "System uptime and load average",
-        "risk" => "low",
-        "description" => "Reports system uptime and 1/5/15-minute load averages.",
-        "args" => []
-      }),
-      Helpers.action_descriptor("linux-core", %{
-        "id" => "linux.disk_usage",
-        "title" => "Filesystem disk usage",
-        "risk" => "low",
-        "description" => "Reports filesystem usage for supplied paths using df.",
-        "args" => [
-          %{"name" => "paths", "type" => "string_array", "required" => false}
-        ]
-      }),
-      Helpers.action_descriptor("linux-core", %{
-        "id" => "linux.journalctl",
-        "title" => "Recent systemd journal entries",
-        "risk" => "medium",
-        "description" => "Reads recent systemd journal entries for a named unit.",
-        "args" => [
-          %{"name" => "unit", "type" => "string", "required" => true},
-          %{"name" => "since", "type" => "duration", "required" => false},
-          %{"name" => "priority", "type" => "string", "required" => false}
-        ]
-      })
-    ]
+    Enum.map(
+      ~w(linux.uptime linux.disk_usage linux.journalctl),
+      &Helpers.baseline_action_descriptor("linux-core", &1)
+    )
   end
 
   defp api_actions do
@@ -218,34 +197,16 @@ defmodule Emisar.Seeds.Fleet do
     ]
   end
 
+  # The data host advertises postgres one version behind (pack_version_overrides),
+  # so its descriptors come from THAT version's retained manifest — what a runner
+  # on the advertised version actually sends, not the current pack's wording.
   defp postgres_actions do
-    [
-      Helpers.action_descriptor("postgres", %{
-        "id" => "postgres.replication_lag",
-        "title" => "Replication lag (primary view)",
-        "risk" => "low",
-        "description" => "Reports replication slot health from the primary's perspective.",
-        "args" => []
-      }),
-      Helpers.action_descriptor("postgres", %{
-        "id" => "postgres.vacuum_status",
-        "title" => "Autovacuum + bloat snapshot",
-        "risk" => "low",
-        "description" => "Returns dead-tuple counts and vacuum timestamps by table.",
-        "args" => [
-          %{"name" => "schema", "type" => "string", "required" => false},
-          %{"name" => "limit", "type" => "integer", "required" => false}
-        ]
-      }),
-      Helpers.action_descriptor("postgres", %{
-        "id" => "postgres.reload_conf",
-        "title" => "Reload postgresql.conf",
-        "risk" => "high",
-        "description" => "Calls pg_reload_conf() to re-read server config.",
-        "side_effects" => ["Server re-reads postgresql.conf and pg_hba.conf."],
-        "args" => []
-      })
-    ]
+    version = pack_version_overrides()["postgres"]
+
+    Enum.map(
+      ~w(postgres.replication_lag postgres.vacuum_status postgres.reload_conf),
+      &Helpers.baseline_action_descriptor("postgres", &1, version)
+    )
   end
 
   # The demo fleet runs one version behind on postgres so the packs page shows the
