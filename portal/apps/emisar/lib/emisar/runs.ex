@@ -616,6 +616,18 @@ defmodule Emisar.Runs do
   end
 
   @doc """
+  The input ceiling of one justification field (`:reason`, `:evidence`,
+  `:expected`), read from the run changeset so a projection that re-bounds the
+  masked text spends the same number the input contract enforces rather than a
+  copy that can drift. The input counts it in graphemes; the review receipt
+  spends it in JSON-encoded bytes, the unit its page frame is budgeted in.
+  """
+  @spec justification_limit!(:reason | :evidence | :expected) :: pos_integer()
+  def justification_limit!(:reason), do: ActionRun.Changeset.max_reason_length()
+  def justification_limit!(:evidence), do: ActionRun.Changeset.max_evidence_length()
+  def justification_limit!(:expected), do: ActionRun.Changeset.max_expected_length()
+
+  @doc """
   Internal — masks the run's own sensitive argument values out of free text it
   wrote (its dispatch reason, evidence, expected outcome) before that text
   leaves the console for a bounded receipt.

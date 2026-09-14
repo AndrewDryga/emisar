@@ -210,7 +210,21 @@
     },
     "review_reason": {
       "type": "string",
-      "description": "The justification an approver was shown, secret-masked. Reported as snapshotted, so it does not carry the 12-character floor this API asks of its own callers: a console-dispatched run is only held to a nonblank reason, and masking a long secret down to the redaction marker can shrink one below it. Text whose secrets can no longer be read is absent rather than forwarded.",
+      "description": "The justification an approver was shown, secret-masked. It does not carry the 12-character floor this API asks of its own callers: masking replaces a sensitive value with the ten-character redaction marker, so a reason that quotes a long secret shrinks below that floor, and one that quotes a short secret grows. Masked text is bounded here at this ceiling counted in JSON-encoded bytes, so multi-byte text and text heavy in backslashes or quotes is cut below it in characters; `reason_truncated` says when it was cut. Text whose secrets can no longer be read is absent rather than forwarded.",
+      "minLength": 1,
+      "maxLength": 2000,
+      "pattern": "\\S"
+    },
+    "review_evidence": {
+      "type": "string",
+      "description": "The evidence an approver was shown, secret-masked. Masked text is bounded here at this ceiling counted in JSON-encoded bytes, so multi-byte text and text heavy in backslashes or quotes is cut below it in characters; `evidence_truncated` says when it was cut. Text whose secrets can no longer be read is absent rather than forwarded.",
+      "minLength": 1,
+      "maxLength": 4000,
+      "pattern": "\\S"
+    },
+    "review_expected": {
+      "type": "string",
+      "description": "The expected outcome an approver was shown, secret-masked. Masked text is bounded here at this ceiling counted in JSON-encoded bytes, so multi-byte text and text heavy in backslashes or quotes is cut below it in characters; `expected_truncated` says when it was cut. Text whose secrets can no longer be read is absent rather than forwarded.",
       "minLength": 1,
       "maxLength": 2000,
       "pattern": "\\S"
@@ -723,8 +737,20 @@
           "description": "Top-level arguments the run was dispatched with. Their values stay in Emisar; the count says how much detail one command line stands in for."
         },
         "reason": {"$ref": "#/$defs/review_reason"},
-        "evidence": {"$ref": "#/$defs/evidence"},
-        "expected": {"$ref": "#/$defs/expected"},
+        "reason_truncated": {
+          "const": true,
+          "description": "Present only when `reason` is a cut of the masked snapshot, never `false`: the approver read more than this receipt holds."
+        },
+        "evidence": {"$ref": "#/$defs/review_evidence"},
+        "evidence_truncated": {
+          "const": true,
+          "description": "Present only when `evidence` is a cut of the masked snapshot, never `false`."
+        },
+        "expected": {"$ref": "#/$defs/review_expected"},
+        "expected_truncated": {
+          "const": true,
+          "description": "Present only when `expected` is a cut of the masked snapshot, never `false`."
+        },
         "command": {
           "type": "object",
           "description": "The command line this review decided against. `executed` is the runner's own recorded receipt; `preview` is rendered from the hash-proven published pack while the review is still pending. A decided review reports only what actually ran, and a command Emisar cannot prove is absent — never a reconstruction.",

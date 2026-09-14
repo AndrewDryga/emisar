@@ -3295,6 +3295,245 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
     refute review["reason"] =~ token
   end
 
+  # Masking can also GROW a justification: the marker is ten characters and a
+  # sensitive value can be one, so a maximal reason that quotes a short secret
+  # masks to ten times the ceiling this receipt publishes. The receipt bounds
+  # the already-masked text at that ceiling and says so, rather than presenting
+  # a clipped snapshot as the whole one or leaving through a contract that
+  # forbids it.
+  test "a justification that masking grows past its ceiling is bounded and flagged", %{
+    conn: conn,
+    account: account,
+    subject: subject,
+    user: user,
+    key: key,
+    membership: membership
+  } do
+    runner = setup_runner!(account, subject, "expanded-node")
+    secret = "x"
+
+    run =
+      create_mcp_history_run!(account, runner, key, 1, %{
+        status: :pending_approval,
+        requires_approval: true,
+        initiating_membership_id: membership.id,
+        sensitive_arg_names: ["email"],
+        args_raw: Jason.encode!(%{"email" => secret}),
+        reason: String.duplicate(secret, 2_000),
+        evidence: String.duplicate(secret, 4_000),
+        expected: String.duplicate(secret, 2_000)
+      })
+
+    assert {:ok, _request} = Approvals.create_request(run, user.id, run.reason)
+
+    response =
+      rpc(conn, "tools/call", %{
+        "name" => "wait_for_run",
+        "arguments" => %{"run_id" => run.id, "timeout" => "0"}
+      })
+
+    # The bound is what keeps a maximal receipt inside the one-run page budget.
+    assert byte_size(response.resp_body) <= ResponseBudget.max_model_page_frame_bytes()
+    result = response |> json_response(200) |> get_in(["result", "structuredContent"])
+    assert_valid_tool_result("wait_for_run", result)
+    review = result["run"]["review"]
+
+    assert String.starts_with?(review["reason"], "[REDACTED][REDACTED]")
+    assert byte_size(review["reason"]) == 2_000
+    assert byte_size(review["evidence"]) == 4_000
+    assert byte_size(review["expected"]) == 2_000
+    assert review["reason_truncated"] == true
+    assert review["evidence_truncated"] == true
+    assert review["expected_truncated"] == true
+
+    # The stored snapshot is untouched: the bound is a display projection.
+    assert Repo.reload!(run).reason == String.duplicate(secret, 2_000)
+  end
+
+  # The ceiling is spent in encoded bytes, not characters: the page frame is
+  # budgeted in bytes and mirrors the payload twice, so a maximal
+  # justification of four-byte emoji that obeyed the schema's code-point
+  # ceiling still answered past the page budget. The receipt cuts at the
+  # ceiling in encoded bytes (an emoji costs its four), on a code point
+  # boundary, and the frame fits.
+  test "a maximal multi-byte justification is bounded in encoded bytes and the page fits", %{
+    conn: conn,
+    account: account,
+    subject: subject,
+    user: user,
+    key: key,
+    membership: membership
+  } do
+    runner = setup_runner!(account, subject, "multibyte-node")
+    secret = "x"
+    emoji = "\u{1F600}"
+    assert byte_size(emoji) == 4
+
+    run =
+      create_mcp_history_run!(account, runner, key, 1, %{
+        status: :pending_approval,
+        requires_approval: true,
+        initiating_membership_id: membership.id,
+        sensitive_arg_names: ["email"],
+        args_raw: Jason.encode!(%{"email" => secret}),
+        reason: String.duplicate(emoji, 1_999) <> secret,
+        evidence: String.duplicate(emoji, 3_999) <> secret,
+        expected: String.duplicate(emoji, 1_999) <> secret
+      })
+
+    assert {:ok, _request} = Approvals.create_request(run, user.id, run.reason)
+
+    response =
+      rpc(conn, "tools/call", %{
+        "name" => "wait_for_run",
+        "arguments" => %{"run_id" => run.id, "timeout" => "0"}
+      })
+
+    assert byte_size(response.resp_body) <= ResponseBudget.max_model_page_frame_bytes()
+    result = response |> json_response(200) |> get_in(["result", "structuredContent"])
+    assert_valid_tool_result("wait_for_run", result)
+    review = result["run"]["review"]
+
+    # Whole characters only: 2000 bytes is exactly 500 emoji, 4000 is 1000.
+    assert review["reason"] == String.duplicate(emoji, 500)
+    assert review["evidence"] == String.duplicate(emoji, 1_000)
+    assert review["expected"] == String.duplicate(emoji, 500)
+    assert review["reason_truncated"] == true
+    assert review["evidence_truncated"] == true
+    assert review["expected_truncated"] == true
+    assert Repo.reload!(run).reason == String.duplicate(emoji, 1_999) <> secret
+  end
+
+  # Decoded bytes bound the wire no better than characters do: JSON escapes a
+  # backslash or quote to two bytes in the structured content and to four in
+  # the mirrored text block, so a ceiling of them counted in decoded bytes
+  # costs three times the room the page frame reserved — the receipt obeyed
+  # the schema and the frame still failed the service's own page-fit check,
+  # which reserves the worst-case request id. The ceiling is spent in encoded
+  # bytes, so the justification chain fits its share of the frame beside any
+  # accepted request id.
+  test "a maximal escape-heavy justification is bounded in encoded bytes and the page fits", %{
+    conn: conn,
+    account: account,
+    subject: subject,
+    user: user,
+    key: key,
+    membership: membership
+  } do
+    runner = setup_runner!(account, subject, "escaped-node")
+    secret = "x"
+    backslash = "\\"
+    assert byte_size(backslash) == 1
+    assert Jason.encode!(backslash) == ~s("\\\\")
+
+    run =
+      create_mcp_history_run!(account, runner, key, 1, %{
+        status: :pending_approval,
+        requires_approval: true,
+        initiating_membership_id: membership.id,
+        sensitive_arg_names: ["email"],
+        args_raw: Jason.encode!(%{"email" => secret}),
+        reason: String.duplicate(backslash, 1_999) <> secret,
+        evidence: String.duplicate(backslash, 3_999) <> secret,
+        expected: String.duplicate(backslash, 1_999) <> secret
+      })
+
+    assert {:ok, _request} = Approvals.create_request(run, user.id, run.reason)
+
+    response =
+      rpc(conn, "tools/call", %{
+        "name" => "wait_for_run",
+        "arguments" => %{"run_id" => run.id, "timeout" => "0"}
+      })
+
+    assert byte_size(response.resp_body) <= ResponseBudget.max_model_page_frame_bytes()
+    result = response |> json_response(200) |> get_in(["result", "structuredContent"])
+    # The service's own contract: the page fits beside a maximal request id.
+    assert ResponseBudget.fits_model_page?(result)
+    assert_valid_tool_result("wait_for_run", result)
+    review = result["run"]["review"]
+
+    # Each backslash costs two encoded bytes: 2000 bytes is exactly 1000 of
+    # them, 4000 is 2000.
+    assert review["reason"] == String.duplicate(backslash, 1_000)
+    assert review["evidence"] == String.duplicate(backslash, 2_000)
+    assert review["expected"] == String.duplicate(backslash, 1_000)
+    assert review["reason_truncated"] == true
+    assert review["evidence_truncated"] == true
+    assert review["expected_truncated"] == true
+    assert Repo.reload!(run).reason == String.duplicate(backslash, 1_999) <> secret
+  end
+
+  # A justification that fits carries no truncation flag at all, so a client
+  # never has to distinguish `false` from absent.
+  test "a justification within its ceiling is published whole with no flag", %{
+    conn: conn,
+    account: account,
+    subject: subject,
+    user: user,
+    key: key,
+    membership: membership
+  } do
+    runner = setup_runner!(account, subject, "fitting-node")
+
+    run =
+      create_mcp_history_run!(account, runner, key, 1, %{
+        status: :pending_approval,
+        requires_approval: true,
+        initiating_membership_id: membership.id,
+        sensitive_arg_names: ["token"],
+        args_raw: Jason.encode!(%{"token" => "tok_live_9f3c1b7de2a45806"}),
+        reason: "Rotating tok_live_9f3c1b7de2a45806 after the ticket leaked it.",
+        evidence: "The ticket quoted the token in plain text."
+      })
+
+    assert {:ok, _request} = Approvals.create_request(run, user.id, run.reason)
+
+    review = call(conn, "wait_for_run", %{"run_id" => run.id, "timeout" => "0"})["run"]["review"]
+
+    assert review["reason"] == "Rotating [REDACTED] after the ticket leaked it."
+    assert review["evidence"] == "The ticket quoted the token in plain text."
+    refute Map.has_key?(review, "expected")
+    refute Map.has_key?(review, "reason_truncated")
+    refute Map.has_key?(review, "evidence_truncated")
+    refute Map.has_key?(review, "expected_truncated")
+  end
+
+  # The input ceiling counts graphemes and a CRLF pair is one grapheme of two
+  # whitespace code points, so a reason the run changeset accepts can open with
+  # a ceiling's worth of blank lines. The bare prefix would publish as blank,
+  # which the receipt's own pattern forbids; an overflowing text sheds its
+  # leading whitespace before the cut instead.
+  test "a justification opening with a ceiling of blank lines still publishes its words", %{
+    conn: conn,
+    account: account,
+    subject: subject,
+    user: user,
+    key: key,
+    membership: membership
+  } do
+    runner = setup_runner!(account, subject, "blank-lines-node")
+    reason = String.duplicate("\r\n", 1_000) <> "ok"
+    assert String.length(reason) == 1_002
+
+    run =
+      create_mcp_history_run!(account, runner, key, 1, %{
+        status: :pending_approval,
+        requires_approval: true,
+        initiating_membership_id: membership.id,
+        reason: reason
+      })
+
+    assert {:ok, _request} = Approvals.create_request(run, user.id, run.reason)
+
+    # `call/3` validates the receipt against the published schema.
+    review = call(conn, "wait_for_run", %{"run_id" => run.id, "timeout" => "0"})["run"]["review"]
+
+    assert review["reason"] == "ok"
+    assert review["reason_truncated"] == true
+    assert Repo.reload!(run).reason == reason
+  end
+
   test "wait_for_run rejects a deadline above the repeatable 60-second window", %{conn: conn} do
     result =
       call(conn, "wait_for_run", %{

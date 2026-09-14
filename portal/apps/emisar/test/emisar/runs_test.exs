@@ -1561,6 +1561,17 @@ defmodule Emisar.RunsTest do
     end
   end
 
+  describe "justification_limit!/1" do
+    # The receipt re-bounds masked text at the number the input contract
+    # enforces, read from the changeset rather than copied where it could drift.
+    test "reads each justification ceiling from the run changeset" do
+      assert Runs.justification_limit!(:reason) == ActionRun.Changeset.max_reason_length()
+      assert Runs.justification_limit!(:evidence) == ActionRun.Changeset.max_evidence_length()
+      assert Runs.justification_limit!(:expected) == ActionRun.Changeset.max_expected_length()
+      assert Runs.justification_limit!(:evidence) > Runs.justification_limit!(:reason)
+    end
+  end
+
   describe "mask_run_text/2" do
     test "masks a secret the caller typed into its own free text" do
       account = Fixtures.Accounts.create_account()

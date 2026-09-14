@@ -611,15 +611,22 @@ defmodule Emisar.Approvals do
   end
 
   defp review_receipt(%Request{} = request, run, subject, facts) do
+    {reason, reason_cut?} = projected_justification(run, request.reason, :reason)
+    {evidence, evidence_cut?} = projected_justification(run, request.evidence, :evidence)
+    {expected, expected_cut?} = projected_justification(run, request.expected, :expected)
+
     %{
       request_id: request.id,
       status: facts.status,
       required_approvals: request.min_approvals,
       approved_count: facts.count,
       argument_count: run_argument_count(run, subject),
-      reason: masked_run_text(run, request.reason),
-      evidence: masked_run_text(run, request.evidence),
-      expected: masked_run_text(run, request.expected),
+      reason: reason,
+      reason_truncated: reason_cut?,
+      evidence: evidence,
+      evidence_truncated: evidence_cut?,
+      expected: expected,
+      expected_truncated: expected_cut?,
       command: facts.command,
       decisions: projected_decisions(facts.decisions, facts.receipt, facts.labels),
       decisions_omitted: max(length(facts.decisions) - @max_projected_decisions, 0),
@@ -662,15 +669,70 @@ defmodule Emisar.Approvals do
     end
   end
 
-  defp masked_run_text(_run, nil), do: nil
-  defp masked_run_text(_run, ""), do: nil
+  # The justification chain is stored at its input ceilings, but the receipt
+  # publishes it MASKED, and masking is not length-preserving: the marker is
+  # ten characters and a sensitive value can be one, so a maximal reason that
+  # quotes a short secret masks to ten times the ceiling the wire contract
+  # publishes. The receipt bounds the masked text at that ceiling and says when
+  # it cut — a clipped snapshot presented as the whole one would misrepresent
+  # what the approver read. The ceiling is spent in JSON-ENCODED BYTES, the
+  # form the wire carries: the receipt rides a page frame budgeted in bytes and
+  # mirrored twice on the wire, and neither the input ceiling (graphemes) nor
+  # the decoded byte count bounds that. One emoji is four bytes, so a ceiling
+  # of them counted in code points is four times the room the frame reserved;
+  # a backslash or quote is one decoded byte that JSON escapes to two, and to
+  # four inside the mirrored text block, so a ceiling of them counted in
+  # decoded bytes is three times the room. Encoded bytes bound both, and they
+  # also hold the code-point ceiling JSON Schema `maxLength` counts, since no
+  # code point encodes shorter than a byte. The stored snapshot is untouched;
+  # the bound is a display projection, taken AFTER masking so a secret can
+  # never straddle the cut, and the cut lands on a code point boundary so the
+  # text stays valid UTF-8. Text whose secrets can no longer be read is absent
+  # rather than forwarded, and absent text is never "cut".
+  defp projected_justification(_run, nil, _field), do: {nil, false}
+  defp projected_justification(_run, "", _field), do: {nil, false}
 
-  defp masked_run_text(run, text) do
+  defp projected_justification(run, text, field) do
     case Runs.mask_run_text(run, text) do
-      {:ok, masked} -> masked
-      :error -> nil
+      {:ok, masked} -> bounded_encoded_bytes(masked, Runs.justification_limit!(field))
+      :error -> {nil, false}
     end
   end
+
+  # An overflowing text sheds its leading whitespace before the cut. The input
+  # bound counts graphemes and a CRLF pair is one grapheme of two whitespace
+  # code points, so a legal reason can open with a ceiling's worth of blank
+  # lines and its bare prefix would publish as blank — which the contract
+  # forbids. Leading blank lines are the one part of an overflowing text that
+  # says nothing; a text that fits is forwarded exactly as snapshotted.
+  defp bounded_encoded_bytes(text, limit) do
+    if encoded_size(text) <= limit,
+      do: {text, false},
+      else: {text |> String.trim_leading() |> codepoint_prefix_within(limit), true}
+  end
+
+  # The longest prefix of `text` whose encoded form is within `limit` bytes and
+  # ends on a code point boundary. JSON escapes one code point at a time, so
+  # the encoded sizes add up; a code point is never split, so the cut is valid
+  # UTF-8.
+  defp codepoint_prefix_within(text, limit) do
+    text
+    |> String.codepoints()
+    |> Enum.reduce_while({[], 0}, fn codepoint, {kept, size} ->
+      case size + encoded_size(codepoint) do
+        size when size <= limit -> {:cont, {[codepoint | kept], size}}
+        _over -> {:halt, {kept, size}}
+      end
+    end)
+    |> elem(0)
+    |> Enum.reverse()
+    |> IO.iodata_to_binary()
+  end
+
+  # The bytes a string costs inside a JSON document under Jason's default
+  # escaping, the mode the MCP frame is encoded with: its escaped form,
+  # without the enclosing quotes.
+  defp encoded_size(text), do: byte_size(Jason.encode!(text)) - 2
 
   @doc """
   The recorded votes on a request, oldest first, with each decider preloaded

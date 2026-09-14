@@ -60,6 +60,11 @@ defmodule Emisar.Runs.ActionRun.Changeset do
   @max_run_opt_value 9_223_372_036_854_775_807
   @run_opt_keys ~w(timeout_ms max_stdout_bytes max_stderr_bytes)
 
+  @doc "The input ceiling of each justification field, in the graphemes it validates."
+  def max_reason_length, do: @max_reason_length
+  def max_evidence_length, do: @max_evidence_length
+  def max_expected_length, do: @max_expected_length
+
   def create(attrs) do
     attrs = Map.put(attrs, :args_raw, action_args_raw(attrs))
 

@@ -94,6 +94,11 @@ end
   from the bounds of the things it holds.
 - A size comparison sharing an `else` (or a `with` fall-through) with a
   validation or resolution failure.
+- A bound feeding a frame that carries the value as JSON: spend it in
+  **encoded** bytes. `\` and `"` escape to two bytes, and a payload mirrored
+  as a JSON text block escapes them again to four, so a ceiling in decoded
+  bytes bounds the wire at three times the ASCII cost. The review receipt's
+  justification bound counts `Jason.encode!/1` output for this reason.
 - A slice bounding a value against a schema limit: match the unit the schema
   counts. JSON Schema `maxLength` counts **code points**, and `String.slice/3`
   counts graphemes — a combining cluster carries two code points per grapheme

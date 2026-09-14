@@ -1088,14 +1088,26 @@ never raises it, and an override never adds to it.
 `reason`, `evidence`, and `expected` are the approver-facing justification
 chain snapshotted with the request, with the run's own `sensitive` argument
 values masked out; text whose secrets can no longer be read is dropped rather
-than forwarded. All three are reported as snapshotted and masked: each is
-nonblank and at most its input bound, but the receipt's `reason` does NOT carry
-the 12-character minimum `run_action` asks of its own callers. Masking replaces
-a sensitive value with a ten-character marker, so a justification that quotes
-the argument it is about arrives shorter than any reason this API would accept
-as input. A client that re-validates a receipt against the input contract
-rejects its own history. `argument_count` is how many top-level arguments the
-run carries — the values themselves stay in Emisar.
+than forwarded. Each is nonblank and at most its input bound, but the receipt's
+`reason` does NOT carry the 12-character minimum `run_action` asks of its own
+callers. Masking replaces a sensitive value with a ten-character marker and is
+not length-preserving: a justification that quotes a long secret arrives
+shorter than any reason this API would accept as input, and one that quotes a
+short secret grows — a maximal reason quoting a one-character value masks to
+ten times its ceiling. The receipt bounds the masked text at the ceiling the
+schema publishes, spent in JSON-encoded bytes because the page frame it rides
+is budgeted in bytes and a character ceiling bounds nothing there (a ceiling
+of four-byte emoji is four times the room, and a ceiling of backslashes or
+quotes, which JSON escapes once in the structured content and again in the
+mirrored text block, is three times), so multi-byte or escape-heavy text is
+cut below the ceiling in characters and never mid code point. The cut is
+marked with
+`reason_truncated`, `evidence_truncated`, or `expected_truncated`, each
+present only when true, so a clipped snapshot is never presented as the whole
+one the approver read; the stored snapshot itself is never shortened. A client that re-validates a receipt
+against the input contract rejects its own history. `argument_count` is how
+many top-level arguments the run carries — the values themselves stay in
+Emisar.
 
 `command` is the line the review decided against: `executed` is the runner's own
 recorded receipt, and `preview` is rendered from the hash-proven published pack

@@ -1717,6 +1717,63 @@ defmodule Emisar.ApprovalsTest do
       assert [%{actor: "Reviewer 3"} | _rest] = review.decisions
     end
 
+    # The receipt's text ceiling is spent in JSON-ENCODED BYTES, the unit its
+    # page frame is budgeted in; the input ceiling counts graphemes, which
+    # bound nothing on the wire. A justification of three-byte characters
+    # passes the input bound at over twice the ceiling in bytes, and one of
+    # quotes passes it at the ceiling in decoded bytes while JSON escapes each
+    # to two — so the projection must count in its own unit, cut on a code
+    # point boundary, and say when it cut. The snapshot itself is never
+    # shortened.
+    test "a justification past its ceiling in encoded bytes is cut and flagged, a fitting one is not" do
+      {account, run} = run_fixture()
+      subject = operator_subject(account)
+      requester = Fixtures.Users.create_user()
+
+      # 1500 graphemes of a three-byte CJK character: 4500 bytes.
+      cjk = String.duplicate("日", 1_500)
+      assert String.length(cjk) == 1_500
+      assert byte_size(cjk) == 4_500
+
+      assert {:ok, request} = Approvals.create_request(run, requester.id, cjk)
+      assert {:ok, review} = project_review(run, subject)
+
+      # 666 whole characters (1998 bytes): the 667th would split a code point.
+      assert review.reason == String.duplicate("日", 666)
+      assert byte_size(review.reason) <= Runs.justification_limit!(:reason)
+      assert review.reason_truncated == true
+      # Absent text is absent, never "cut".
+      assert review.evidence == nil
+      assert review.evidence_truncated == false
+      assert review.expected == nil
+      assert review.expected_truncated == false
+      assert Repo.reload!(request).reason == cjk
+
+      # 1500 quotes: 1500 decoded bytes, 3000 once JSON escapes each to two.
+      quotes = String.duplicate("\"", 1_500)
+      assert byte_size(quotes) == 1_500
+      assert byte_size(Jason.encode!(quotes)) - 2 == 3_000
+
+      {account, run} = run_fixture()
+      subject = operator_subject(account)
+      assert {:ok, request} = Approvals.create_request(run, requester.id, quotes)
+      assert {:ok, review} = project_review(run, subject)
+
+      # 1000 quotes cost exactly the ceiling on the wire.
+      assert review.reason == String.duplicate("\"", 1_000)
+      assert byte_size(Jason.encode!(review.reason)) - 2 == Runs.justification_limit!(:reason)
+      assert review.reason_truncated == true
+      assert Repo.reload!(request).reason == quotes
+
+      {account, run} = run_fixture()
+      subject = operator_subject(account)
+      assert {:ok, _request} = Approvals.create_request(run, requester.id, "needs review")
+      assert {:ok, review} = project_review(run, subject)
+
+      assert review.reason == "needs review"
+      assert review.reason_truncated == false
+    end
+
     test "is not_found without a request or across accounts and unauthorized without view_runs" do
       {account, ungated} = run_fixture()
       subject = operator_subject(account)
