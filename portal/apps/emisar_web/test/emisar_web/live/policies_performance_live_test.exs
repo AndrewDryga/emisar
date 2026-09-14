@@ -533,11 +533,23 @@ defmodule EmisarWeb.PoliciesPerformanceLiveTest do
     render(lv)
   end
 
-  defp settle(lv) do
+  # Previews run one at a time: each completion chains the next from the queue.
+  # render_async/2 only awaits the processes running when it is called, so a fixed
+  # number of calls leaves the last editors mid-preview whenever the database is
+  # slow enough that the chain outlives them. Loop until nothing is left to run.
+  defp settle(lv, rounds \\ 10)
+
+  defp settle(lv, 0), do: render(lv)
+
+  defp settle(lv, rounds) do
     for editor <- [assigns(lv).account | assigns(lv).rulesets], do: flush_timer(lv, editor.uid)
     render_async(lv, 2_000)
-    if assigns(lv).preview_active, do: render_async(lv, 2_000)
-    render(lv)
+    if settled?(assigns(lv)), do: render(lv), else: settle(lv, rounds - 1)
+  end
+
+  defp settled?(state) do
+    is_nil(state.preview_active) and state.preview_queue == [] and
+      Enum.all?([state.account | state.rulesets], &is_nil(&1.preview_timer))
   end
 
   defp assigns(lv), do: :sys.get_state(lv.pid).socket.assigns
