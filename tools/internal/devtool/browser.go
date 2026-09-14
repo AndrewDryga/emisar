@@ -1,6 +1,7 @@
 package devtool
 
 import (
+	"cmp"
 	"context"
 	"flag"
 	"fmt"
@@ -118,28 +119,79 @@ func (a *App) browserCommand(ctx context.Context, args []string) error {
 	}
 }
 
+// shotCommand is one ./run shot invocation: one or more captures that share a browser session,
+// and so one sign-in. Every bare argument starts a capture; the flags after it belong to it.
 type shotCommand struct {
-	options devbrowser.ShotOptions
-	taskID  string
-	group   string
+	shots  []devbrowser.ShotOptions
+	taskID string
+	group  string
 }
 
+const shotUsage = "usage: ./run shot <path> --label <name> [--task ID] [--group NAME] [--shot NAME|--select CSS|--heading TEXT|--class-contains a,b] [--climb SEL] [--click SEL]... [--fill '#ID=VALUE']... [--width N] [--settle MS] [<path> --label <name> [options]]..."
+
 func parseShot(args []string) (shotCommand, error) {
-	command := shotCommand{options: devbrowser.ShotOptions{Email: os.Getenv("EMAIL"), Width: 1440}}
+	command := shotCommand{}
+	// A bare argument opens a capture group; a flag without "=" takes the next argument as its
+	// value, so a value that looks like a path (a selector, a fill) never opens one by accident.
+	var groups [][]string
+	for index := 0; index < len(args); index++ {
+		if !strings.HasPrefix(args[index], "--") {
+			groups = append(groups, []string{args[index]})
+			continue
+		}
+		if len(groups) == 0 {
+			return command, usage("%s", shotUsage)
+		}
+		last := len(groups) - 1
+		groups[last] = append(groups[last], args[index])
+		if !strings.Contains(args[index], "=") && index+1 < len(args) {
+			index++
+			groups[last] = append(groups[last], args[index])
+		}
+	}
+	if len(groups) == 0 {
+		return command, usage("%s", shotUsage)
+	}
+	labels := map[string]bool{}
+	for _, group := range groups {
+		options, taskID, groupName, err := parseShotGroup(group[0], group[1:])
+		if err != nil {
+			return command, err
+		}
+		// The task and group name the one output directory of the whole batch.
+		if taskID != "" && command.taskID != "" && taskID != command.taskID {
+			return command, usage("shot: one --task per invocation (got %q and %q)", command.taskID, taskID)
+		}
+		if groupName != "" && command.group != "" && groupName != command.group {
+			return command, usage("shot: one --group per invocation (got %q and %q)", command.group, groupName)
+		}
+		if labels[options.Label] {
+			return command, usage("shot: --label %q is used twice; each capture in a batch needs its own label", options.Label)
+		}
+		labels[options.Label] = true
+		command.taskID, command.group = cmp.Or(command.taskID, taskID), cmp.Or(command.group, groupName)
+		command.shots = append(command.shots, options)
+	}
+	return command, nil
+}
+
+func parseShotGroup(path string, args []string) (devbrowser.ShotOptions, string, string, error) {
+	options := devbrowser.ShotOptions{Path: path, Email: os.Getenv("EMAIL"), Width: 1440}
 	flags := flag.NewFlagSet("shot", flag.ContinueOnError)
 	flags.SetOutput(io.Discard)
+	taskID, group := "", ""
 	shot, selector, heading, classContains, climb := "", "", "", "", ""
 	settle := 0
-	flags.StringVar(&command.options.Label, "label", "", "")
-	flags.StringVar(&command.taskID, "task", "", "")
-	flags.StringVar(&command.group, "group", "", "")
+	flags.StringVar(&options.Label, "label", "", "")
+	flags.StringVar(&taskID, "task", "", "")
+	flags.StringVar(&group, "group", "", "")
 	flags.StringVar(&shot, "shot", "", "")
 	flags.StringVar(&selector, "select", "", "")
 	flags.StringVar(&heading, "heading", "", "")
 	flags.StringVar(&classContains, "class-contains", "", "")
 	flags.StringVar(&climb, "climb", "", "")
 	flags.Func("click", "", func(value string) error {
-		command.options.Clicks = append(command.options.Clicks, value)
+		options.Clicks = append(options.Clicks, value)
 		return nil
 	})
 	flags.Func("fill", "", func(value string) error {
@@ -147,39 +199,25 @@ func parseShot(args []string) (shotCommand, error) {
 		if !ok || !regexp.MustCompile(`^#[A-Za-z_][A-Za-z0-9_-]*$`).MatchString(selector) {
 			return fmt.Errorf("fill requires #ID=VALUE (an ID selector, not arbitrary CSS)")
 		}
-		command.options.Fills = append(command.options.Fills, devbrowser.FieldFill{Selector: selector, Value: text})
+		options.Fills = append(options.Fills, devbrowser.FieldFill{Selector: selector, Value: text})
 		return nil
 	})
-	flags.Int64Var(&command.options.Width, "width", 1440, "")
+	flags.Int64Var(&options.Width, "width", 1440, "")
 	flags.IntVar(&settle, "settle", 0, "")
-	path := ""
-	flagArgs := make([]string, 0, len(args))
-	for index := 0; index < len(args); index++ {
-		if !strings.HasPrefix(args[index], "--") && path == "" {
-			path = args[index]
-			continue
-		}
-		flagArgs = append(flagArgs, args[index])
-		if strings.HasPrefix(args[index], "--") && !strings.Contains(args[index], "=") && index+1 < len(args) {
-			index++
-			flagArgs = append(flagArgs, args[index])
-		}
+	if err := flags.Parse(args); err != nil || options.Label == "" || flags.NArg() != 0 {
+		return options, "", "", usage("%s", shotUsage)
 	}
-	if err := flags.Parse(flagArgs); err != nil || path == "" || command.options.Label == "" || flags.NArg() != 0 {
-		return command, usage("usage: ./run shot <path> --label <name> [--task ID] [--group NAME] [--shot NAME|--select CSS|--heading TEXT|--class-contains a,b] [--climb SEL] [--click SEL]... [--fill '#ID=VALUE']... [--width N] [--settle MS]")
-	}
-	command.options.Path = path
-	command.options.Settle = time.Duration(settle) * time.Millisecond
+	options.Settle = time.Duration(settle) * time.Millisecond
 	if shot != "" {
 		selector = `[data-shot='` + strings.ReplaceAll(shot, `'`, `\'`) + `']`
 	}
 	if selector != "" || heading != "" || classContains != "" {
-		command.options.Anchor = &devbrowser.Anchor{Selector: selector, Heading: heading, Climb: climb}
+		options.Anchor = &devbrowser.Anchor{Selector: selector, Heading: heading, Climb: climb}
 		if classContains != "" {
-			command.options.Anchor.ClassContains = strings.Split(classContains, ",")
+			options.Anchor.ClassContains = strings.Split(classContains, ",")
 		}
 	}
-	return command, nil
+	return options, taskID, group, nil
 }
 
 func (a *App) shot(ctx context.Context, args []string) error {
@@ -191,7 +229,6 @@ func (a *App) shot(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
-	command.options.Out = output
 	fmt.Fprintf(a.Out, "screenshot task %s -> %s\n", task.ID, output)
 	manager, workspace, err := a.startBrowser(ctx, needPortal)
 	if err != nil {
@@ -202,12 +239,21 @@ func (a *App) shot(ctx context.Context, args []string) error {
 		return err
 	}
 	defer session.Close()
-	paths, err := session.Shot(command.options)
-	if err != nil {
-		return err
-	}
-	for _, path := range paths {
-		fmt.Fprintln(a.Out, path)
+	// One session for the whole batch: the first capture that lands on /sign_in signs in, and
+	// every later one rides that cookie, so a related set costs one sign-in email, not one each.
+	// Each capture still navigates to its own path afresh, so clicks and fills never bleed over.
+	for _, options := range command.shots {
+		options.Out = output
+		paths, err := session.Shot(options)
+		if err != nil {
+			if len(command.shots) > 1 {
+				return fmt.Errorf("%s: %w", options.Label, err)
+			}
+			return err
+		}
+		for _, path := range paths {
+			fmt.Fprintln(a.Out, path)
+		}
 	}
 	return nil
 }

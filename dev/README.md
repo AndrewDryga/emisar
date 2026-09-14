@@ -171,8 +171,11 @@ Setup, serve, and reset never seed implicitly. `./run seed` is idempotent;
 ## Browser and screenshot tooling
 
 `./run` owns the contributor commands; the chromedp implementation lives in the
-shared `tools` Go module. The persistent browser is shared across captures for
-the active workspace, including inside Coop:
+shared `tools` Go module. On a workstation the browser daemon outlives the
+command that started it, so captures for the active workspace share one warm
+browser and its signed-in session. Inside a Coop box the daemon is tied to the
+command that started it and exits with it, so every invocation there starts its
+own browser, signed out:
 
 ```sh
 ./run browser start
@@ -188,6 +191,18 @@ class fragment as its crop anchor. Use `--width 390` for a mobile capture and
 in-progress task's `screenshots/` directory; use `--task <id>` when several
 tasks are active. With no active task, create and claim even a basic one before
 capturing.
+
+A capture signs in only when its page redirects to `/sign_in`; a public page or
+a browser that is already signed in sends no email. Each sign-in costs one
+magic-link email, and the Portal allows five per address per 15 minutes. Inside
+Coop every invocation starts signed out, so a related set belongs in one
+invocation, where every bare path starts another capture in the same signed-in
+session and `--task` and `--group` apply to all of them:
+
+```sh
+./run shot /app/demo/runs --label runs \
+  /app/demo/approvals --label approvals --shot approval-decisions
+```
 
 `./run capture docs` regenerates the cropped console screenshots embedded in
 the documentation. `./run capture console` walks the signed-out and

@@ -1445,11 +1445,47 @@ func TestParseShotAcceptsTaskOwnedGrouping(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if command.taskID != "task-one" || command.group != "pricing/mobile" || command.options.Path != "/pricing" {
+	if command.taskID != "task-one" || command.group != "pricing/mobile" || command.shots[0].Path != "/pricing" {
 		t.Fatalf("command = %#v", command)
 	}
-	if command.options.Anchor == nil || command.options.Anchor.Heading != "Pricing" {
-		t.Fatalf("anchor = %#v", command.options.Anchor)
+	if command.shots[0].Anchor == nil || command.shots[0].Anchor.Heading != "Pricing" {
+		t.Fatalf("anchor = %#v", command.shots[0].Anchor)
+	}
+}
+
+func TestParseShotGroupsCapturesThatShareOneSession(t *testing.T) {
+	command, err := parseShot([]string{
+		"/app/acme/runs", "--label", "runs", "--task", "task-one",
+		"/app/acme/approvals", "--label", "approvals", "--shot", "approval-decisions", "--click", "#pending a", "--group", "loop",
+		"/app/acme/audit", "--label", "audit", "--width", "390", "--task", "task-one",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if command.taskID != "task-one" || command.group != "loop" || len(command.shots) != 3 {
+		t.Fatalf("command = %#v", command)
+	}
+	if command.shots[0].Path != "/app/acme/runs" || command.shots[0].Anchor != nil || len(command.shots[0].Clicks) != 0 {
+		t.Fatalf("first capture = %#v", command.shots[0])
+	}
+	second := command.shots[1]
+	if second.Path != "/app/acme/approvals" || second.Label != "approvals" || second.Anchor == nil ||
+		second.Anchor.Selector != "[data-shot='approval-decisions']" || !slices.Equal(second.Clicks, []string{"#pending a"}) {
+		t.Fatalf("second capture = %#v", second)
+	}
+	if command.shots[2].Width != 390 || command.shots[1].Width != 1440 {
+		t.Fatalf("widths are not per capture: %#v", command.shots)
+	}
+	for _, args := range [][]string{
+		{"--label", "orphan", "/pricing"},
+		{"/a", "--label", "same", "/b", "--label", "same"},
+		{"/a", "--label", "a", "--task", "one", "/b", "--label", "b", "--task", "two"},
+		{"/a", "--label", "a", "--group", "one", "/b", "--label", "b", "--group", "two"},
+		{"/a", "--label", "a", "/b"},
+	} {
+		if _, err := parseShot(args); err == nil || !IsUsage(err) {
+			t.Errorf("parseShot(%q) = %v, want a usage error", args, err)
+		}
 	}
 }
 
@@ -1463,8 +1499,8 @@ func TestParseShotKeepsRepeatedClicksInOrder(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := []string{"#step-0 [data-expand]", "#step-0 [data-combobox-trigger]"}
-	if !slices.Equal(command.options.Clicks, want) {
-		t.Fatalf("clicks = %#v", command.options.Clicks)
+	if !slices.Equal(command.shots[0].Clicks, want) {
+		t.Fatalf("clicks = %#v", command.shots[0].Clicks)
 	}
 }
 
@@ -1475,8 +1511,8 @@ func TestParseShotUsesEmailOverride(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if command.options.Email != "user@example.test" {
-		t.Fatalf("email = %q", command.options.Email)
+	if command.shots[0].Email != "user@example.test" {
+		t.Fatalf("email = %q", command.shots[0].Email)
 	}
 }
 
@@ -1490,10 +1526,10 @@ func TestParseShotFillsLiteralValuesAfterClicks(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(command.options.Fills) != 2 || command.options.Fills[0].Selector != "#bridge-path-windows" ||
-		command.options.Fills[0].Value != `C:\Users\O'Brien & $operator=one\emisar-mcp.exe` ||
-		command.options.Fills[1].Value != "" {
-		t.Fatalf("fills = %#v", command.options.Fills)
+	if len(command.shots[0].Fills) != 2 || command.shots[0].Fills[0].Selector != "#bridge-path-windows" ||
+		command.shots[0].Fills[0].Value != `C:\Users\O'Brien & $operator=one\emisar-mcp.exe` ||
+		command.shots[0].Fills[1].Value != "" {
+		t.Fatalf("fills = %#v", command.shots[0].Fills)
 	}
 	for _, value := range []string{"missing-separator", "=missing-selector", `[name="path"]=value`, "#id .child=value"} {
 		if _, err := parseShot([]string{"/", "--label", "invalid", "--fill", value}); err == nil {

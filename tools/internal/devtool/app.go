@@ -53,7 +53,7 @@ Test and verify:
 
 Browser and UI:
   browser <action>            Manage the persistent browser: start, stop, status
-  shot <path> [options]       Save UI proof under the active task
+  shot <path> [options]...    Save UI proof under the active task; several paths share one sign-in
   capture <docs|console|idp>  Regenerate docs assets, audit the console, or drive a live IdP rig
   icons <snap|cut|analyze>    Snap the icon masters, cut the 16px set, or audit the cuts
 
