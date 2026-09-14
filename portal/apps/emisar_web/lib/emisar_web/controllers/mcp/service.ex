@@ -100,6 +100,11 @@ defmodule EmisarWeb.MCP.Service do
   Renders one fixed-contract run summary (the tail-snapshot shape). A stream that
   produced no bytes is omitted. Pass `:tail_scope` to seed a live run's `next`
   with a start cursor so the caller can begin streaming its output forward.
+
+  The assembled frame is measured against the model page budget the same way
+  `fixed_run_tail/4` measures its own, and sheds output preview until it fits.
+  What remains under a zero-byte preview — the run's own fields and its review
+  receipt — is bounded by the contracts that produce it, not by this check.
   """
   def fixed_run_summary(run, subject, opts \\ []) do
     stream_cap = Keyword.get(opts, :stream_cap, 16_384)
@@ -118,16 +123,31 @@ defmodule EmisarWeb.MCP.Service do
         :error -> Map.get(run_reviews_by_id([run], subject), run.id)
       end
 
-    output_preview = run_output_preview(run, events, stream_cap)
     structured_output = structured_output_summary(run.structured_output, structured_output_cap)
+
+    # The run's own fields and its review receipt cost one read apiece, so they
+    # are assembled once; only the output preview varies as the frame shrinks.
+    base =
+      run
+      |> base_run_fields(subject, review)
+      |> Map.merge(structured_output)
+
+    build = &summary_at_cap(base, run, subject, events, structured_output, tail_scope, &1)
+    summary = build.(stream_cap)
+
+    if fits_frame?(summary),
+      do: summary,
+      else: build.(largest_fitting(build, 0, stream_cap, 0))
+  end
+
+  defp summary_at_cap(base, run, subject, events, structured_output, tail_scope, stream_cap) do
+    output_preview = run_output_preview(run, events, stream_cap)
 
     {next, drain_vanished?} =
       fixed_run_next(run, subject, structured_output, tail_scope, output_preview)
 
-    run
-    |> base_run_fields(subject, review)
+    base
     |> Map.put(:next, next)
-    |> Map.merge(structured_output)
     |> Map.merge(stream_summary(run, output_preview, :stdout))
     |> Map.merge(stream_summary(run, output_preview, :stderr))
     |> flag_output_gap(drain_vanished?)
@@ -169,20 +189,23 @@ defmodule EmisarWeb.MCP.Service do
     # model whose artifact/context budget is substantially smaller.
     if fits_frame?(summary),
       do: summary,
-      else: build.(largest_fitting_take(build, 0, total, 0))
+      else: build.(largest_fitting(build, 0, total, 0))
   end
 
   defp fits_frame?(summary), do: ResponseBudget.fits_model_page?(%{ok: true, run: summary})
 
-  defp largest_fitting_take(build, lo, hi, best) when lo <= hi do
+  # The largest byte allowance in `lo..hi` whose assembled frame still fits.
+  # Both callers build monotonically in their allowance, so a binary search
+  # finds it in a bounded number of encodings.
+  defp largest_fitting(build, lo, hi, best) when lo <= hi do
     mid = div(lo + hi, 2)
 
     if fits_frame?(build.(mid)),
-      do: largest_fitting_take(build, mid + 1, hi, mid),
-      else: largest_fitting_take(build, lo, mid - 1, best)
+      do: largest_fitting(build, mid + 1, hi, mid),
+      else: largest_fitting(build, lo, mid - 1, best)
   end
 
-  defp largest_fitting_take(_build, _lo, _hi, best), do: best
+  defp largest_fitting(_build, _lo, _hi, best), do: best
 
   defp tail_summary(context, take) do
     {output, {next_seq, next_offset, remaining}, cut?} =

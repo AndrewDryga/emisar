@@ -762,7 +762,7 @@
               "type": "string",
               "minLength": 1,
               "maxLength": 2000,
-              "description": "Secret-masked, shell-quoted command line."
+              "description": "Secret-masked, shell-quoted command line. Bounded here at this ceiling counted in JSON-encoded bytes, so multi-byte text and text heavy in backslashes or quotes is cut below it in characters, never mid code point; `truncated` says when it was cut."
             },
             "truncated": {
               "type": "boolean",

@@ -16,6 +16,7 @@ defmodule Emisar.Runs do
   alias Emisar.Auth.Subject
   alias Emisar.Catalog
   alias Emisar.Crypto
+  alias Emisar.EncodedText
   alias Emisar.MCPOperations
   alias Emisar.RawJSON
   alias Emisar.Repo
@@ -26,7 +27,12 @@ defmodule Emisar.Runs do
 
   @sent_dispatch_deadline_secs 600
   # One bounded receipt of a command line; the console page renders it in full.
-  @max_projected_command_characters 2_000
+  # Spent in JSON-ENCODED BYTES, the unit the MCP page frame this receipt rides
+  # is budgeted in — see `Emisar.EncodedText`. Counted in graphemes it bounded
+  # nothing: a shell-quoted path of combining clusters is an unbounded number of
+  # bytes per grapheme, so a line well inside the character ceiling answered
+  # past the whole 64 KiB page budget.
+  @max_projected_command_bytes 2_000
   # DispatchTimeout loads both sweeps into memory every 60 seconds, fleet-wide
   # and unbounded. A wide runner outage parks tens of thousands of runs, the
   # tick then takes longer than its own interval, and dispatch timeouts stop
@@ -522,9 +528,9 @@ defmodule Emisar.Runs do
   never from the advertisement itself. The advertisements for the whole page
   are one plain read; this is a receipt, not the dispatch gate, so it takes
   none of the row locks `fetch_dispatch_contract/5` holds for a transaction.
-  The line is bounded here (the flag also carries that cut), because this
-  receipt travels in a size-budgeted response; the console's own
-  `project_action_command/3` is unbounded.
+  The line is bounded here in JSON-encoded bytes (the flag also carries that
+  cut), because this receipt travels in a response budgeted in exactly those
+  bytes; the console's own `project_action_command/3` is unbounded.
 
   A run with neither — pack drift, an unknown or no longer advertised action,
   or an unresolvable argument reference — is absent from the map, so a caller
@@ -595,12 +601,10 @@ defmodule Emisar.Runs do
     end
   end
 
-  defp bounded_command(line) do
-    case String.split_at(line, @max_projected_command_characters) do
-      {kept, ""} -> {kept, false}
-      {kept, _rest} -> {kept, true}
-    end
-  end
+  # The line is already secret-masked when it gets here — `CommandPreview`
+  # masks before quoting and the runner's receipt is recorded masked — so the
+  # cut can never split a redaction marker open or strand half a secret.
+  defp bounded_command(line), do: EncodedText.bound(line, @max_projected_command_bytes)
 
   defp render_trusted_command(%ActionRun{} = run, %Catalog.RunnerAction{} = advertised_action) do
     with {:ok, args} <- decode_action_args(run.args_raw),

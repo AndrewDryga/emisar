@@ -36,6 +36,7 @@ defmodule Emisar.Approvals do
   alias Emisar.Approvals.{Authorizer, Decision, DecisionInput, Grant, GrantLifetimeInput, Request}
   alias Emisar.{Audit, Auth, Catalog, Repo, Runbooks, Runners, Runs, Users}
   alias Emisar.Auth.Subject
+  alias Emisar.EncodedText
   alias Emisar.SafeText
   require Logger
 
@@ -722,33 +723,10 @@ defmodule Emisar.Approvals do
   # forbids. Leading blank lines are the one part of an overflowing text that
   # says nothing; a text that fits is forwarded exactly as snapshotted.
   defp bounded_encoded_bytes(text, limit) do
-    if encoded_size(text) <= limit,
+    if EncodedText.size(text) <= limit,
       do: {text, false},
-      else: {text |> String.trim_leading() |> codepoint_prefix_within(limit), true}
+      else: {text |> String.trim_leading() |> EncodedText.prefix_within(limit), true}
   end
-
-  # The longest prefix of `text` whose encoded form is within `limit` bytes and
-  # ends on a code point boundary. JSON escapes one code point at a time, so
-  # the encoded sizes add up; a code point is never split, so the cut is valid
-  # UTF-8.
-  defp codepoint_prefix_within(text, limit) do
-    text
-    |> String.codepoints()
-    |> Enum.reduce_while({[], 0}, fn codepoint, {kept, size} ->
-      case size + encoded_size(codepoint) do
-        size when size <= limit -> {:cont, {[codepoint | kept], size}}
-        _over -> {:halt, {kept, size}}
-      end
-    end)
-    |> elem(0)
-    |> Enum.reverse()
-    |> IO.iodata_to_binary()
-  end
-
-  # The bytes a string costs inside a JSON document under Jason's default
-  # escaping, the mode the MCP frame is encoded with: its escaped form,
-  # without the enclosing quotes.
-  defp encoded_size(text), do: byte_size(Jason.encode!(text)) - 2
 
   @doc """
   The recorded votes on a request, oldest first, with each decider preloaded

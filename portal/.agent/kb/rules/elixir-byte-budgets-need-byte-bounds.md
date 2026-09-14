@@ -7,8 +7,12 @@ Two rules, because one bug needs both to stay fixed.
 `Ecto.Changeset.validate_length/3` counts **graphemes** by default
 (`deps/ecto/lib/ecto/changeset.ex`: `count_type = opts[:count] || :graphemes`).
 A grapheme carries no byte bound at all — one CJK character is 3 bytes, one
-family emoji is 25 — so a character limit tells you nothing about how much room
-a value needs on the wire.
+family emoji is 25, and a base letter followed by combining marks is a single
+grapheme of as many bytes as the writer cares to append — so a character limit
+tells you nothing about how much room a value needs on the wire. The same holds
+for a display cut: `String.split_at/2` and `String.slice/3` count graphemes, so
+a 2,000-"character" bound can pass 32 KiB of text through untouched and
+unflagged.
 
 When a payload has a size ceiling, **derive it from the byte ceilings its parts
 actually enforce**, and give any free-text part a `count: :bytes` validation
@@ -98,7 +102,13 @@ end
   **encoded** bytes. `\` and `"` escape to two bytes, and a payload mirrored
   as a JSON text block escapes them again to four, so a ceiling in decoded
   bytes bounds the wire at three times the ASCII cost. The review receipt's
-  justification bound counts `Jason.encode!/1` output for this reason.
+  justification chain and its command line both count `Jason.encode!/1` output
+  for this reason, through the one `Emisar.EncodedText` so they cannot drift.
+- A payload budgeted in bytes that is never MEASURED. Deriving the budget is
+  not the same as checking it: `EmisarWeb.MCP.Service.fixed_run_tail/4` sized
+  its continuations against the real assembled frame while `fixed_run_summary/3`
+  set a raw-byte preview cap and shipped whatever that produced, so an
+  escape-heavy snapshot answered at 99,546 bytes against a 65,536-byte budget.
 - A slice bounding a value against a schema limit: match the unit the schema
   counts. JSON Schema `maxLength` counts **code points**, and `String.slice/3`
   counts graphemes — a combining cluster carries two code points per grapheme
@@ -116,4 +126,7 @@ graph, and a check firing on every `validate_length` would train people to
 disable it. `runbook_contract_test.exs` pins the guard firing with its byte
 count, the envelope allowance covering the worst-case wrapper, and the code
 point slice; `runbook/changeset_test.exs` pins CJK and emoji metadata that pass
-the character limit and fail the byte one.
+the character limit and fail the byte one. `mcp_runbook_recovery_tools_test.exs`
+pins the MCP review receipt: a combining-cluster command line, an emoji and a
+backslash executed receipt, and an escape-heavy snapshot preview each go through
+the real tool and are held to `ResponseBudget.fits_model_page?/1`.

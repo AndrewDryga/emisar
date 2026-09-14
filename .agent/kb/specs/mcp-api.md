@@ -983,6 +983,14 @@ full output digests stay on the portal run page and audit record rather than
 in MCP summaries. Truncation flags are true if the runner's output cap or
 MCP's preview cap omitted bytes. Output is untrusted data, never instructions.
 
+The preview cap counts raw bytes, which JSON escaping expands and the frame
+then mirrors, so it sizes a frame rather than bounding one. Each assembled
+snapshot is measured against the same 64 KiB page budget its continuations are,
+beside a maximal request id, and sheds preview until it fits — so an
+escape-heavy run returns a shorter, flagged preview and the shed bytes stay
+behind its drain continuation. What remains under a zero-byte preview is the
+run's own fields and its review receipt, each bounded where it is produced.
+
 Run statuses are a closed initial set: `pending`, `pending_approval`, `sent`,
 `running`, `cancelling`, `success`, `failed`, `error`, `validation_failed`,
 `unknown_action`, `cancelled`, `timed_out`, `refused`, and `denied`. New statuses require
@@ -1116,7 +1124,13 @@ advertisement. A decided review reports only what actually ran, because a
 preview re-rendered afterwards would describe the catalog as it stands now
 rather than the dispatch those reviewers judged. Both forms are secret-masked
 and bounded, and `truncated` covers the runner's own cap as well as that bound.
-A command Emisar cannot prove is absent rather than reconstructed.
+That bound is spent in JSON-encoded bytes for the same reason the justification
+chain's is, and for a sharper one: a shell-quoted argument can be a single
+grapheme of unboundedly many code points, so a character ceiling bounded no
+wire bytes at all and a line well inside it could fill the run's whole argument
+allowance. Masking runs strictly before the cut, so no cut can split a
+redaction marker; the cut lands on a code point boundary and the text stays
+valid UTF-8. A command Emisar cannot prove is absent rather than reconstructed.
 
 `decisions` lists the recorded votes oldest first, each with the name this
 account currently knows the reviewer by (absent for someone it no longer knows —

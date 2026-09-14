@@ -2034,6 +2034,51 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
     assert narrow.truncated_stderr
   end
 
+  # The snapshot summary set its preview cap in RAW bytes and never measured the
+  # frame it assembled, so the 64 KiB page budget held only for content JSON
+  # does not expand. A stream of backslashes escapes once in the structured
+  # content and again in the mirrored text block — six wire bytes per raw one —
+  # and a preview at its own cap answered at nearly twice the page budget, caught
+  # only by the 512 KiB transport ceiling. It is measured the same way the tail
+  # path measures its own now, and sheds preview until it fits.
+  test "an escape-heavy snapshot preview is shed until its frame fits the page budget", %{
+    conn: conn,
+    account: account,
+    subject: subject,
+    key: key
+  } do
+    runner = setup_runner!(account, subject, "escape-heavy-preview")
+    run = create_mcp_history_run!(account, runner, key, 1)
+    chunk = String.duplicate("\\", 16_384)
+    append_progress!(run, 1, "stdout", chunk)
+
+    assert {:ok, _finished} =
+             Fixtures.Runs.finish(run, %{"status" => "success", "progress_chunks" => 1})
+
+    response =
+      rpc(conn, "tools/call", %{
+        "name" => "wait_for_run",
+        "arguments" => %{"run_id" => run.id, "timeout" => "0"}
+      })
+
+    assert byte_size(response.resp_body) <= ResponseBudget.max_model_page_frame_bytes()
+    result = response |> json_response(200) |> get_in(["result", "structuredContent"])
+    assert ResponseBudget.fits_model_page?(result)
+    assert_valid_tool_result("wait_for_run", result)
+    summary = result["run"]
+
+    # Shed, not emptied: the caller still gets the tail it can read, flagged.
+    assert summary["stdout"] != ""
+    assert byte_size(summary["stdout"]) < 16_384
+    assert String.ends_with?(chunk, summary["stdout"])
+    assert summary["truncated_stdout"]
+
+    # Nothing was lost — the shed bytes are still behind the drain continuation.
+    cursor = summary["next"]["arguments"]["cursor"]
+    assert is_binary(cursor)
+    assert {^chunk, _frames} = drain_tail!(conn, run, cursor, "", 0)
+  end
+
   test "recent history pages on the final mirrored frame size", %{
     conn: conn,
     account: account,
@@ -3462,6 +3507,135 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
     assert review["evidence_truncated"] == true
     assert review["expected_truncated"] == true
     assert Repo.reload!(run).reason == String.duplicate(backslash, 1_999) <> secret
+  end
+
+  # The command line rode the same page frame as the justification chain but was
+  # bounded in GRAPHEMES, which bound no bytes at all: one grapheme is an
+  # unbounded run of combining code points, so a shell-quoted path built from
+  # them filled the run's whole 32 KiB argument allowance while staying an order
+  # of magnitude inside the character ceiling — the bound never fired, and the
+  # frame answered past the model page budget beside a maximal request id. The
+  # ceiling is spent in encoded bytes now, so the line costs the frame what the
+  # frame reserved for it.
+  test "a maximal multi-byte command preview is bounded in encoded bytes and the page fits", %{
+    conn: conn,
+    account: account,
+    subject: subject,
+    user: user,
+    key: key,
+    membership: membership
+  } do
+    runner = setup_runner!(account, subject, "wide-command-node")
+    {_action, pack_ref} = Fixtures.Catalog.create_published_action(runner: runner)
+    pack = Emisar.Catalog.PublishedRegistry.get("linux-core")
+
+    # One grapheme, 100 code points, 199 bytes — and nothing a hostile caller
+    # needs: combining marks are neither control nor format characters, so they
+    # pass every ingest predicate on the way in.
+    cluster = "e" <> String.duplicate("́", 99)
+    assert String.length(cluster) == 1
+    assert byte_size(cluster) == 199
+
+    # The whole rendered line is 175 graphemes — an order of magnitude inside
+    # the old ceiling — and 32,647 bytes, over half the page budget on its own
+    # before the frame mirrors it a second time.
+    path = String.duplicate(cluster, 164)
+    assert String.length(path) == 164
+    assert byte_size(path) == 32_636
+
+    args_raw = Jason.encode!(%{"paths" => [path]})
+    assert byte_size(args_raw) <= 32_768
+
+    run =
+      create_mcp_history_run!(account, runner, key, 1, %{
+        action_id: "linux.disk_usage",
+        pack_ref: pack_ref,
+        expected_pack_hash: pack.content_hash,
+        status: :pending_approval,
+        requires_approval: true,
+        initiating_membership_id: membership.id,
+        args_raw: args_raw,
+        reason: "Check whether the mount filled before the reload storm."
+      })
+
+    assert {:ok, _request} = Approvals.create_request(run, user.id, run.reason)
+
+    response =
+      rpc(conn, "tools/call", %{
+        "name" => "wait_for_run",
+        "arguments" => %{"run_id" => run.id, "timeout" => "0"}
+      })
+
+    assert byte_size(response.resp_body) <= ResponseBudget.max_model_page_frame_bytes()
+    result = response |> json_response(200) |> get_in(["result", "structuredContent"])
+    assert ResponseBudget.fits_model_page?(result)
+    assert_valid_tool_result("wait_for_run", result)
+
+    # The cut lands on a code point boundary, so the text stays valid UTF-8 —
+    # here exactly ten whole clusters after the quoted binary and flag.
+    assert result["run"]["review"]["command"] == %{
+             "kind" => "preview",
+             "text" => "df -P -h '" <> String.duplicate(cluster, 10),
+             "truncated" => true
+           }
+
+    assert byte_size(result["run"]["review"]["command"]["text"]) == 2_000
+    assert String.valid?(result["run"]["review"]["command"]["text"])
+  end
+
+  # A four-byte emoji costs the frame its four bytes twice over, and a backslash
+  # escapes to two in the structured content and to four again in the mirrored
+  # text block. Both are cut at what they actually cost, not at what they look
+  # like, and the executed receipt obeys the same bound the preview does.
+  test "an executed command receipt is cut at what its characters cost the frame", %{
+    conn: conn,
+    account: account,
+    subject: subject,
+    user: user,
+    key: key,
+    membership: membership
+  } do
+    runner = setup_runner!(account, subject, "escaped-command-node")
+    {_action, pack_ref} = Fixtures.Catalog.create_published_action(runner: runner)
+    pack = Emisar.Catalog.PublishedRegistry.get("linux-core")
+    reviewer = named_reviewer(account, "Jane Doe")
+
+    for {char, kept, index, name} <- [
+          {"\u{1F600}", 500, 1, "emoji"},
+          {"\\", 1_000, 2, "backslash"}
+        ] do
+      run =
+        create_mcp_history_run!(account, runner, key, index, %{
+          action_id: "linux.disk_usage",
+          pack_ref: pack_ref,
+          expected_pack_hash: pack.content_hash,
+          status: :pending_approval,
+          requires_approval: true,
+          initiating_membership_id: membership.id,
+          args_raw: ~s({"paths":["/srv"]}),
+          operation_id: "op_024NN9NMDZ1T76NARWCKM5A0D#{index}",
+          reason: "Rotate the node before the window closes."
+        })
+
+      assert {:ok, request} = Approvals.create_request(run, user.id, run.reason)
+
+      assert {:ok, {%{status: :approved}, _released}} =
+               Approvals.approve_request(request, reviewer, "Agreed.")
+
+      Repo.reload!(run)
+      |> Ecto.Changeset.change(executed_command: String.duplicate(char, 4_000))
+      |> Repo.update!()
+
+      result = call(conn, "wait_for_run", %{"run_id" => run.id, "timeout" => "0"})
+      assert ResponseBudget.fits_model_page?(result), name
+
+      assert result["run"]["review"]["command"] == %{
+               "kind" => "executed",
+               "text" => String.duplicate(char, kept),
+               "truncated" => true
+             },
+             name
+    end
   end
 
   # A justification that fits carries no truncation flag at all, so a client
