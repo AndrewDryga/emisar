@@ -1619,11 +1619,7 @@ defmodule EmisarWeb.ProfileLiveTest do
 
       render_click(lv, "start_regenerate_recovery_codes", %{})
 
-      assert render_submit(lv, "regenerate_recovery_codes", %{
-               "mfa_recovery_regeneration" => %{
-                 "code" => NimbleTOTP.verification_code(secret)
-               }
-             }) =~ "New recovery codes generated."
+      assert submit_recovery_code_regeneration(lv, secret) =~ "New recovery codes generated."
 
       shown = lv |> element("#mfa-recovery-codes") |> render()
       [_, recovery_code | _] = Regex.run(~r/([a-z2-7]{16})/, shown)
@@ -1906,8 +1902,37 @@ defmodule EmisarWeb.ProfileLiveTest do
       "mfa_recovery_regeneration" => %{"code" => otp}
     })
 
-    {div(DateTime.to_unix(sampled_at), 30), div(DateTime.to_unix(DateTime.utc_now()), 30)}
+    {totp_bucket(sampled_at), totp_bucket(DateTime.utc_now())}
   end
+
+  # Submits a valid authenticator code to the regeneration form. `Crypto.valid_totp?/3`
+  # allows NO window, so a code minted at the end of a 30-second bucket is refused as
+  # invalid once the server's clock lands in the next one — the measured cause of the
+  # "regenerate + disable" flake. A refusal leaves `mfa_last_used_at` unset, so
+  # retrying with the now-current code cannot be rejected as a replay. Retry ONLY that
+  # measured straddle: a same-bucket refusal is a genuine failure and is returned as-is
+  # for the caller's assertion.
+  defp submit_recovery_code_regeneration(lv, secret) do
+    sampled_at = DateTime.utc_now()
+
+    html =
+      render_submit(lv, "regenerate_recovery_codes", %{
+        "mfa_recovery_regeneration" => %{
+          "code" => NimbleTOTP.verification_code(secret, time: sampled_at)
+        }
+      })
+
+    if html =~ "New recovery codes generated." or
+         totp_bucket(DateTime.utc_now()) == totp_bucket(sampled_at) do
+      html
+    else
+      render_submit(lv, "regenerate_recovery_codes", %{
+        "mfa_recovery_regeneration" => %{"code" => NimbleTOTP.verification_code(secret)}
+      })
+    end
+  end
+
+  defp totp_bucket(%DateTime{} = at), do: div(DateTime.to_unix(at), 30)
 
   # Submits the enrollment form, retrying once across a 30s-window straddle (the
   # code-gen/validate boundary) — the same flake Fixtures.Users.enroll_mfa guards, but
